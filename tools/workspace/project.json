@@ -85,7 +85,8 @@
         "{workspaceRoot}/scripts/architecture/gen-configs.ts"
       ],
       "outputs": [
-        "{workspaceRoot}/packages/*/safer-architecture.config.json"
+        "{workspaceRoot}/packages/*/safer-architecture.config.json",
+        "{workspaceRoot}/plugins/*/safer-architecture.config.json"
       ],
       "executor": "nx:run-commands",
       "options": {
@@ -101,7 +102,7 @@
       "executor": "nx:run-commands",
       "options": {
         "cwd": ".",
-        "command": "test -z \"$(git ls-files --others --exclude-standard -- 'packages/*/safer-architecture.config.json')\" && git diff --exit-code -- 'packages/*/safer-architecture.config.json'"
+        "command": "test -z \"$(git ls-files --others --exclude-standard -- 'packages/*/safer-architecture.config.json' 'plugins/*/safer-architecture.config.json')\" && git diff --exit-code -- 'packages/*/safer-architecture.config.json' 'plugins/*/safer-architecture.config.json'"
       }
     },
     "lint:architecture-boundaries": {

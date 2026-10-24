@@ -18,6 +18,7 @@ import {
   FINAL_PACKAGE_NAMES,
   FINAL_PACKAGES,
   type PackageDir,
+  PRIVATE_PLUGINS,
   REPOSITORY_URL,
 } from "./boundary-contract.ts";
 import {
@@ -111,8 +112,12 @@ export function checkWorkspaceRoots(run: BoundaryRun): void {
     actual: referencePaths(
       readJsonObject(path.join(run.repo, "tsconfig.json")),
     ).map((referencePath) => path.normalize(referencePath)),
-    wanted: FINAL_PACKAGE_DIRS.map((dir) => path.join("packages", dir)),
+    wanted: [
+      ...FINAL_PACKAGE_DIRS.map((dir) => path.join("packages", dir)),
+      ...PRIVATE_PLUGINS.map(({ root }) => path.normalize(root)),
+    ],
   });
+  checkPrivatePlugins(run);
   checkLintEntryPoints(run);
 }
 
@@ -167,6 +172,48 @@ export function checkReleaseSet(
     );
   }
   checkReleaseWorkflow(run);
+}
+
+/** Private plugins depend on Client, but never add a product manifest or internal entrypoint. */
+function checkPrivatePlugins(run: BoundaryRun): void {
+  for (const plugin of PRIVATE_PLUGINS) {
+    const directory = path.join(run.repo, plugin.root);
+    if (existsSync(path.join(directory, "package.json"))) {
+      run.failures.push(
+        `${plugin.root}: private plugins must not declare npm products`,
+      );
+    }
+    const project = readJsonObject(path.join(directory, "project.json"));
+    if (project.name !== plugin.name) {
+      run.failures.push(
+        `${plugin.root}/project.json: expected project name "${plugin.name}"`,
+      );
+    }
+    const missing = plugin.targets.filter(
+      (target) => !Object.hasOwn(objectAt(project, "targets"), target),
+    );
+    if (missing.length > 0) {
+      run.failures.push(
+        `${plugin.root}/project.json: missing required targets: ${missing.join(", ")}`,
+      );
+    }
+    failOnSetDrift(run, {
+      where: `${plugin.root}/project.json`,
+      what: "private plugin dependencies drifted",
+      actual: stringsAt(project, "implicitDependencies"),
+      wanted: plugin.dependencies.map((dir) => FINAL_PACKAGES[dir].npmName),
+    });
+    failOnSetDrift(run, {
+      where: `${plugin.root}/tsconfig.json`,
+      what: "private plugin project references drifted",
+      actual: referencePaths(
+        readJsonObject(path.join(directory, "tsconfig.json")),
+      ).map((reference) =>
+        path.relative(run.packagesRoot, path.resolve(directory, reference)),
+      ),
+      wanted: plugin.dependencies,
+    });
+  }
 }
 
 /**

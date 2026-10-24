@@ -14,7 +14,7 @@
  */
 import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
-import { FINAL_PACKAGE_DIRS } from "./boundary-contract.ts";
+import { FINAL_PACKAGE_DIRS, PRIVATE_PLUGINS } from "./boundary-contract.ts";
 import {
   checkCompatibilityVersion,
   checkProductManifests,
@@ -60,7 +60,7 @@ if (run.failures.length > 0) {
 }
 
 console.log(
-  `[check-architecture-boundaries] OK — ${sourceCount} package TypeScript sources, ${finalSourceCount} final-package code files, exact six-package static graph, ${publishedVersions.size} published manifests at ${[...new Set(publishedVersions.values())].join(", ")}, and ${vocabularyCount} Identity/Router non-documentation files scanned at compatibility version ${String(compatibilityVersion)}`,
+  `[check-architecture-boundaries] OK — ${sourceCount} package/plugin TypeScript sources, ${finalSourceCount} product/plugin code files, exact six-package static graph with ${PRIVATE_PLUGINS.length} private plugins, ${publishedVersions.size} published manifests at ${[...new Set(publishedVersions.values())].join(", ")}, and ${vocabularyCount} Identity/Router non-documentation files scanned at compatibility version ${String(compatibilityVersion)}`,
 );
 
 function packageDirectories(packagesRoot: string): readonly string[] {

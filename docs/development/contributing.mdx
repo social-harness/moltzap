@@ -83,23 +83,23 @@ boundary choice updates its public specification before implementation.
 ## Architecture checks
 
 `pnpm lint` runs the architecture gates: the package graph and boundary check,
-`arch:check` for every package, and `arch:config:check`. Run a gate on its own
+`arch:check` for every package and private plugin, and `arch:config:check`. Run a gate on its own
 from the repository root while you work. Successful analysis and drift checks
-exit with status 0; generation writes the package configuration files:
+exit with status 0; generation writes each project's configuration file:
 
 | Command | What it does |
 |---------|--------------|
-| `pnpm arch:check` | Run every package's architecture analysis |
-| `pnpm arch:config:generate` | Regenerate each `packages/*/safer-architecture.config.json` |
+| `pnpm arch:check` | Run architecture analysis for packages and private plugins |
+| `pnpm arch:config:generate` | Regenerate `safer-architecture.config.json` under `packages/*` and `plugins/*` |
 | `pnpm arch:config:check` | Fail when a committed config differs from the generator's output |
 
-Package budgets come from `scripts/architecture/gen-configs.ts`; the JSON files
+Project budgets come from `scripts/architecture/gen-configs.ts`; the JSON files
 are its output, so change a budget in the generator and regenerate. Exceptions
 are `safer-arch-ignore` directives in the source, most at the top of the file
 they cover. List them from the repository root:
 
 ```bash
-rg -n "safer-arch-ignore" packages/*/src
+rg -n "safer-arch-ignore" packages/*/src plugins/*/src
 ```
 
 Expected output: matching source paths, line numbers, and directives.

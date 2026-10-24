@@ -30,7 +30,7 @@ GREEN='\033[0;32m'
 NC='\033[0m'
 ERRORS=0
 
-PKG_SRC_GLOB="packages/*/src"
+readonly SOURCE_DIRS=(packages/*/src plugins/*/src)
 NON_TEST_EXCLUDE='__tests__|\.test\.|\.integration\.test\.|test-utils|/dist/'
 PRAGMA_TAG='#ignore-sloppy-code'
 
@@ -90,16 +90,20 @@ filter_pragma() {
   '
 }
 
-# check RULE_ID PATTERN MESSAGE [GLOB] [DIR]
+# check RULE_ID PATTERN MESSAGE [GLOB] [DIR...]
+# Source checks cover every product and private plugin. Explicit directories
+# select the broader roots for test-file checks without shell word splitting.
 check() {
   local rule="$1"
   local pattern="$2"
   local message="$3"
   local glob="${4:-*.ts}"
-  local dir="${5:-$PKG_SRC_GLOB}"
+  local dirs=("${SOURCE_DIRS[@]}")
+  if (( $# > 4 )); then
+    dirs=("${@:5}")
+  fi
 
-  # shellcheck disable=SC2086
-  matches=$(grep -rn --include="$glob" -E "$pattern" $dir 2>/dev/null \
+  matches=$(grep -rn --include="$glob" -E "$pattern" "${dirs[@]}" 2>/dev/null \
     | grep -vE "$NON_TEST_EXCLUDE" \
     | filter_pragma "$rule" \
     || true)
@@ -209,19 +213,19 @@ check integration-vi-mock \
   'vi\.mock|vi\.hoisted|vi\.spyOn' \
   "Integration tests must not use vi.mock/hoisted/spyOn — test the real flow" \
   "*.integration.test.ts" \
-  "packages/"
+  "packages/" "plugins/"
 
 check hardcoded-api-key \
   "api[Kk]ey.*=.*['\"][a-zA-Z0-9_-]{20,}['\"]" \
   "Hardcoded API key in test file — use environment variables" \
   "*.test.ts" \
-  "packages/"
+  "packages/" "plugins/"
 
 # `as unknown as` bypasses the type system. Use a type guard, a user-defined
 # predicate, or Effect.catchTag/catchTags for tagged unions. Legitimate
 # reflection/generic-erasure casts carry a
 # `#ignore-sloppy-code[as-unknown-as]: <reason>` pragma.
-matches=$(grep -rn --include="*.ts" -E 'as unknown as' packages/*/src 2>/dev/null \
+matches=$(grep -rn --include="*.ts" -E 'as unknown as' "${SOURCE_DIRS[@]}" 2>/dev/null \
   | filter_pragma 'as-unknown-as' \
   || true)
 matches=$(echo "$matches" | grep -v '^$' || true)
@@ -236,7 +240,7 @@ fi
 # Manual `_tag` narrow on wire-error classes. Use Effect.catchTag / catchTags.
 # Effect.Exit/Cause/Option internal tags are allowed — they're the idiomatic
 # narrow for those std unions.
-matches=$(grep -rn --include="*.ts" -E '\._tag\s*(===|!==|==|!=)\s*"(RpcServerError|NotConnectedError|RpcTimeoutError|AgentNotFoundError|MalformedFrameError|RpcFailure|InvalidParamsError|ForbiddenError|SqlError)"' packages/*/src 2>/dev/null \
+matches=$(grep -rn --include="*.ts" -E '\._tag\s*(===|!==|==|!=)\s*"(RpcServerError|NotConnectedError|RpcTimeoutError|AgentNotFoundError|MalformedFrameError|RpcFailure|InvalidParamsError|ForbiddenError|SqlError)"' "${SOURCE_DIRS[@]}" 2>/dev/null \
   | filter_pragma 'tag-discriminant' \
   || true)
 matches=$(echo "$matches" | grep -v '^$' || true)

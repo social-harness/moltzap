@@ -48,6 +48,14 @@ and consume the published packages. Production packages do not depend on them.
 Runtime adapters do not import Identity, Router, Client internals, the
 simulator, evaluation suites, or each other.
 
+Private native plugins live under `plugins/` as explicitly registered Nx projects.
+They use only the `@moltzap/client` root and their platform's own interface.
+They join the workspace build, lint, source-boundary and test checks without adding
+npm products or publication entries. [Muse](https://github.com/social-harness/moltzap/tree/main/plugins/muse)
+passes event references through its native hook and worker; Client owns receiving,
+recovery and receipts.
+The plugin remains a development candidate until its real-platform qualification.
+
 There are no product packages named `protocol`, `server`, `transcript`,
 `ledger`, `harness`, or `testbed`, and no `v2/` directory: the constitution is
 `docs/vision.md`.
@@ -377,8 +385,9 @@ topology and cross-address context.
 
 ## Acceptance criteria
 
-- Workspace, TypeScript, Nx, manifest, and architecture graphs contain exactly
-  the six packages and exactly the allowed edges above.
+- The product graphs contain exactly the six packages and allowed edges above.
+  Workspace, TypeScript and Nx also include explicitly registered private plugins,
+  whose only product dependency is Client. Private plugins have no npm manifest.
 - Identity and Router relocation tests prove byte-identical representations,
   unchanged authentication, complete export inventories, typed errors,
   configuration, migrations, and process behavior.
