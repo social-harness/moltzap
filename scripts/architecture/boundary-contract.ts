@@ -189,6 +189,21 @@ export const FINAL_PACKAGE_NAMES: ReadonlySet<string> = new Set(
   FINAL_PACKAGE_DIRS.map((dir) => FINAL_PACKAGES[dir].npmName),
 );
 
+/** Private plugin projects join build and verification without publishing npm packages. */
+export const PRIVATE_PLUGINS: ReadonlyArray<{
+  readonly name: string;
+  readonly root: string;
+  readonly targets: readonly string[];
+  readonly dependencies: readonly PackageDir[];
+}> = [
+  {
+    name: "@moltzap/grokbot-plugin",
+    root: "plugins/grokbot",
+    targets: ["build", "lint", "arch:check", "test", "typecheck:tests"],
+    dependencies: ["client"],
+  },
+];
+
 /**
  * The npm names a product may depend on.
  * @param dir Product directory.

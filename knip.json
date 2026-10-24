@@ -3,6 +3,9 @@
   "workspaces": {
     ".": {
       "entry": [
+        "plugins/*/src/main.ts",
+        "plugins/*/src/**/*.test.ts",
+        "plugins/*/*.config.ts",
         "scripts/architecture/check-package.ts",
         "scripts/build/*.ts",
         "scripts/code/*.ts",
@@ -17,6 +20,7 @@
         "scripts/docs/__tests__/*.test.ts"
       ],
       "project": [
+        "plugins/*/**/*.ts",
         "*.ts",
         "scripts/docs/**/*.ts",
         "scripts/architecture/**/*.ts",

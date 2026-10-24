@@ -477,6 +477,20 @@ const architectureConfigDefinitions: ReadonlyArray<{
   readonly packageRoot: string;
   readonly definition: PackageDefinition;
 }> = [
+  {
+    packageRoot: "plugins/grokbot",
+    definition: {
+      config: {
+        packageRuntime: "node",
+        publicTypePackages: [
+          publicTypePackage.effect,
+          publicTypePackage.platform,
+          publicTypePackage.client,
+        ],
+        allowedTestPublicSubpaths: [],
+      },
+    },
+  },
   ...Object.entries(packageDefinitions).map(([packageName, definition]) => ({
     packageRoot: `packages/${packageName}`,
     definition,

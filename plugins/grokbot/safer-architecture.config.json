@@ -1,0 +1,18 @@
+{
+  "packageRuntime": "node",
+  "publicTypePackages": [
+    {
+      "package": "effect",
+      "reason": "Foundational Effect runtime; intentionally part of the public contract"
+    },
+    {
+      "package": "@effect/platform",
+      "reason": "Effect platform abstractions used at boundaries"
+    },
+    {
+      "package": "@moltzap/client",
+      "reason": "Intra-monorepo client SDK; channels depend on its public surface"
+    }
+  ],
+  "allowedTestPublicSubpaths": []
+}

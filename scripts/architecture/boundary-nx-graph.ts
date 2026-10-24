@@ -13,6 +13,7 @@ import {
   FINAL_PACKAGE_NAMES,
   FINAL_PACKAGES,
   type PackageDir,
+  PRIVATE_PLUGINS,
 } from "./boundary-contract.ts";
 import {
   arrayAt,
@@ -34,11 +35,11 @@ interface NxGraph {
   readonly dependencies: JsonObject;
 }
 
-/** A tool project outside `packages/`: its root, required target, and edges. */
+/** A private project outside `packages/`: its root, required targets, and edges. */
 interface ToolProject {
   readonly name: string;
   readonly root: string;
-  readonly target: string;
+  readonly targets: readonly string[];
   readonly dependencies: readonly PackageDir[];
 }
 
@@ -46,13 +47,13 @@ const TOOL_PROJECTS: readonly ToolProject[] = [
   {
     name: "adapter-daemon",
     root: "tools/adapter-daemon",
-    target: "test:integration",
+    targets: ["test:integration"],
     dependencies: ["identity", "router", "client", "openclaw-channel"],
   },
   {
     name: "two-agents-example",
     root: "examples/two-agents",
-    target: "test:pack",
+    targets: ["test:pack"],
     dependencies: ["identity", "router", "client"],
   },
 ];
@@ -105,13 +106,14 @@ function checkNxGraph(run: BoundaryRun, graphFile: string): void {
       ...FINAL_PACKAGE_NAMES,
       "workspace",
       ...TOOL_PROJECTS.map(({ name }) => name),
+      ...PRIVATE_PLUGINS.map(({ name }) => name),
     ],
   });
   for (const dir of FINAL_PACKAGE_DIRS) {
     checkProductNode(run, nxGraph, dir);
   }
   checkWorkspaceNode(run, nxGraph);
-  for (const tool of TOOL_PROJECTS) {
+  for (const tool of [...TOOL_PROJECTS, ...PRIVATE_PLUGINS]) {
     checkToolNode(run, nxGraph, tool);
   }
 }
@@ -197,10 +199,12 @@ function checkToolNode(
       `${graph.label}: Nx project "${tool.name}" root is "${root ?? "missing"}", expected "${tool.root}"`,
     );
   }
-  if (!Object.hasOwn(objectAt(data, "targets"), tool.target)) {
-    run.failures.push(
-      `${graph.label}: Nx project "${tool.name}" is missing required target "${tool.target}"`,
-    );
+  for (const target of tool.targets) {
+    if (!Object.hasOwn(objectAt(data, "targets"), target)) {
+      run.failures.push(
+        `${graph.label}: Nx project "${tool.name}" is missing required target "${target}"`,
+      );
+    }
   }
   failOnSetDrift(run, {
     where: graph.label,

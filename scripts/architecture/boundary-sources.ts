@@ -14,6 +14,7 @@ import {
   FINAL_PACKAGE_DIRS,
   FINAL_PACKAGES,
   type PackageDir,
+  PRIVATE_PLUGINS,
 } from "./boundary-contract.ts";
 import {
   type BoundaryRun,
@@ -29,9 +30,9 @@ interface ImportSpecifier {
   readonly index: number;
 }
 
-/** One file of one product whose imports are being checked. */
+/** One checked source; an absent product directory denotes a private plugin. */
 interface ImportSite {
-  readonly dir: PackageDir;
+  readonly dir?: PackageDir;
   readonly packageDirectory: string;
   readonly file: string;
   readonly text: string;
@@ -77,20 +78,21 @@ const IMPORT_SPECIFIER =
   /(?:\bfrom\s*|\bimport\s*\(\s*|\brequire\s*\(\s*|\bimport\s+)["']([^"']+)["']/g;
 
 /**
- * Apply the shared wildcard-export and `#core` barrel rules to every package
+ * Apply the shared wildcard-export and `#core` barrel rules to every package or plugin
  * TypeScript source.
  * @param run Run collecting failures.
  * @returns How many sources were scanned.
  */
 export function checkSharedSourceRules(run: BoundaryRun): number {
-  const sourceFiles = walkFiles(
+  const sourceFiles = [
     run.packagesRoot,
-    (name) => name.endsWith(".ts"),
-    SKIPPED_DIRECTORIES,
+    path.join(run.repo, "plugins"),
+  ].flatMap((root) =>
+    walkFiles(root, (name) => name.endsWith(".ts"), SKIPPED_DIRECTORIES),
   );
   if (sourceFiles.length === 0) {
     run.failures.push(
-      "packages/: no TypeScript sources scanned; shared rules would pass vacuously",
+      "packages/, plugins/: no TypeScript sources scanned; shared rules would pass vacuously",
     );
   }
   for (const file of sourceFiles) {
@@ -136,25 +138,43 @@ export function checkLayerVocabulary(run: BoundaryRun): number {
 export function checkFinalImports(run: BoundaryRun): number {
   let scanned = 0;
   for (const dir of FINAL_PACKAGE_DIRS) {
-    const packageDirectory = path.join(run.packagesRoot, dir);
-    const files = walkFiles(
-      packageDirectory,
-      (name) => CODE_EXTENSIONS.has(path.extname(name)),
-      SKIPPED_DIRECTORIES,
+    scanned += checkDirectoryImports(
+      run,
+      path.join(run.packagesRoot, dir),
+      dir,
     );
-    if (files.length === 0) {
-      run.failures.push(
-        `packages/${dir}: no code files scanned; import rules would pass vacuously here`,
-      );
-      continue;
-    }
-    scanned += files.length;
-    for (const file of files) {
-      const text = readFileSync(file, "utf8");
-      checkImports(run, { dir, packageDirectory, file, text });
-    }
+  }
+  for (const plugin of PRIVATE_PLUGINS) {
+    scanned += checkDirectoryImports(run, path.join(run.repo, plugin.root));
   }
   return scanned;
+}
+
+function checkDirectoryImports(
+  run: BoundaryRun,
+  packageDirectory: string,
+  dir?: PackageDir,
+): number {
+  const files = walkFiles(
+    packageDirectory,
+    (name) => CODE_EXTENSIONS.has(path.extname(name)),
+    SKIPPED_DIRECTORIES,
+  );
+  if (files.length === 0) {
+    run.failures.push(
+      `${relativePath(run, packageDirectory)}: no code files scanned; import rules would pass vacuously here`,
+    );
+  }
+  for (const file of files) {
+    const text = readFileSync(file, "utf8");
+    checkImports(run, {
+      ...(dir === undefined ? {} : { dir }),
+      packageDirectory,
+      file,
+      text,
+    });
+  }
+  return files.length;
 }
 
 function checkSourceFile(run: BoundaryRun, file: string): void {
@@ -245,7 +265,7 @@ function checkProductImport(
       run,
       site.file,
       line,
-      `dependency DAG violation: "${site.dir}" may not import "${root}"`,
+      `dependency DAG violation: "${relativePath(run, site.packageDirectory)}" may not import "${root}"`,
     );
     return;
   }
@@ -310,6 +330,9 @@ function checkInternalImport(
 }
 
 function mayImport(site: ImportSite, root: string): boolean {
+  if (site.dir === undefined) {
+    return root === "@moltzap/client";
+  }
   const contract = FINAL_PACKAGES[site.dir];
   if (root === contract.npmName || dependencyNames(site.dir).includes(root)) {
     return true;
@@ -326,8 +349,12 @@ function exportSubpath(specifier: string, root: string): string {
   return specifier === root ? "." : `.${specifier.slice(root.length)}`;
 }
 
-function isRuntimeAdapter(dir: PackageDir): boolean {
-  return dir === "openclaw-channel" || dir === "nanoclaw-channel";
+function isRuntimeAdapter(dir?: PackageDir): boolean {
+  return (
+    dir === undefined ||
+    dir === "openclaw-channel" ||
+    dir === "nanoclaw-channel"
+  );
 }
 
 /**

@@ -1,6 +1,6 @@
 /**
  * @file Report for the workspace `lint:effect` target. Runs the Effect
- * language service over every package `tsconfig.json`, deduplicates the
+ * language service over package and plugin `tsconfig.json` files, deduplicates the
  * diagnostics that projects sharing a file report twice, and prints counts by
  * severity, rule, and package as JSON. `--details` adds every diagnostic.
  *
@@ -67,20 +67,32 @@ const program = Effect.gen(function* () {
 
 NodeRuntime.runMain(program.pipe(Effect.provide(NodeContext.layer)));
 
-/** Every package `tsconfig.json`, relative to the workspace root. */
+/** Every package or plugin TypeScript project, relative to the workspace root. */
 function packageConfigs() {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    const names = yield* fs.readDirectory(path.join(workspaceRoot, "packages"));
-    const candidates = names.map((name) =>
-      path.join("packages", name, "tsconfig.json"),
-    );
+    const candidates = (yield* Effect.forEach(
+      ["packages", "plugins"],
+      configsInRoot,
+      {
+        concurrency: 1,
+      },
+    )).flat();
     return yield* Effect.filter(
       candidates,
       (config) => fs.exists(path.join(workspaceRoot, config)),
       { concurrency: 1 },
     );
+  });
+}
+
+function configsInRoot(root: string) {
+  return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const names = yield* fs.readDirectory(path.join(workspaceRoot, root));
+    return names.map((name) => path.join(root, name, "tsconfig.json"));
   });
 }
 
