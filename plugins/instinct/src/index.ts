@@ -57,7 +57,9 @@ export const deliverToInstinct = Effect.fn("Instinct.deliver")(function* (
 
 function sendWakeup(sender: InstinctSender, eventId: string) {
   return Effect.gen(function* () {
-    const client = yield* HttpClient.HttpClient;
+    const client = (yield* HttpClient.HttpClient).pipe(
+      HttpClient.withTracerDisabledWhen(() => true),
+    );
     const request = yield* HttpClientRequest.post(
       `https://api.agentmail.to/v0/inboxes/${encodeURIComponent(sender.inboxId)}/messages/send`,
     ).pipe(
