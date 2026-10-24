@@ -4,6 +4,7 @@
 # tsc is TypeScript 7 (@typescript/native); "typescript" is the TypeScript 6 API, which typescript-eslint (<6.1.0) and other tools load.
 packages:
   - "packages/*"
+  - "tests/*"
 
 catalog:
   "@chughtapan/safer-architecture-lsp": 0.3.1

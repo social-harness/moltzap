@@ -8,10 +8,7 @@ import {
   type Server,
   type ServerResponse,
 } from "node:http";
-import { ProcessTestError } from "./daemon-process-harness.js";
-
-/** The only interface the servers listen on. */
-export const LOOPBACK_HOST = "127.0.0.1";
+import { LOOPBACK_HOST, ProcessTestError } from "./daemon-process-harness.js";
 
 /**
  * Reads one request body in full.

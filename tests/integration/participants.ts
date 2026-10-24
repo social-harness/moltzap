@@ -1,7 +1,6 @@
 /** @file Endpoints a collective-operation trace drives through real daemons. */
 
 import type { AgentName } from "@moltzap/identity";
-import { Duration, Effect, Queue, Schema, type Scope, Stream } from "effect";
 import {
   acquireHarnessEndpoint,
   AgentAddress,
@@ -9,7 +8,8 @@ import {
   type InboundDelivery,
   type InboundItem,
   SendInput,
-} from "../src/index.js";
+} from "@moltzap/client";
+import { Duration, Effect, Queue, Schema, type Scope, Stream } from "effect";
 import {
   acquireDaemonManagementClient,
   acquireDaemonProcess,

@@ -1,8 +1,8 @@
 /** @file Real daemons export their spans, and mark collectives and retries, over OTLP/HTTP protobuf. */
 
+import { CollectiveError, type InboundItem } from "@moltzap/client";
 import { Duration, Effect, Fiber } from "effect";
 import { expect, it } from "vitest";
-import { CollectiveError, type InboundItem } from "../src/index.js";
 import {
   acquireProcessInfrastructure,
   type DaemonProcessFixture,

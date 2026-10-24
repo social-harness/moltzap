@@ -1,0 +1,111 @@
+{
+  "name": "@moltzap/integration-tests",
+  "private": true,
+  "description": "Cross-package process acceptance suites",
+  "type": "module",
+  "scripts": {
+    "test:integration": "nx run @moltzap/integration-tests:test:integration",
+    "test:mixed-release": "nx run @moltzap/integration-tests:test:mixed-release",
+    "typecheck:tests": "nx run @moltzap/integration-tests:typecheck:tests",
+    "lint": "nx run @moltzap/integration-tests:lint"
+  },
+  "nx": {
+    "targets": {
+      "test:integration": {
+        "executor": "nx:run-commands",
+        "inputs": [
+          "sources",
+          "!{projectRoot}/mixed-release/**",
+          "!{projectRoot}/README.md",
+          "!{projectRoot}/eslint.config.ts",
+          "^production",
+          {
+            "runtime": "node --version"
+          },
+          {
+            "env": "SHARNESS_EXPERIMENT_HIDE_COLLECTIVES"
+          },
+          {
+            "env": "SHARNESS_MCP_URL"
+          }
+        ],
+        "options": {
+          "cwd": "tests/integration",
+          "command": "vitest run --config vitest.integration.config.ts"
+        }
+      },
+      "test:mixed-release": {
+        "cache": false,
+        "executor": "nx:run-commands",
+        "dependsOn": [
+          "@moltzap/client:build",
+          "@moltzap/registry:build"
+        ],
+        "options": {
+          "command": "vitest run --config tests/integration/mixed-release/vitest.config.ts",
+          "cwd": "."
+        }
+      },
+      "typecheck:tests": {
+        "executor": "nx:run-commands",
+        "dependsOn": [
+          "^build"
+        ],
+        "options": {
+          "cwd": "tests/integration",
+          "command": "tsc -p tsconfig.json"
+        },
+        "inputs": [
+          "default",
+          "^production",
+          "{workspaceRoot}/eslint.shared.ts",
+          "{workspaceRoot}/scripts/test/packed-workspace.ts",
+          "{workspaceRoot}/scripts/architecture/boundary-contract.ts",
+          "{workspaceRoot}/scripts/tsconfig.json",
+          {
+            "runtime": "node --version"
+          }
+        ]
+      },
+      "lint": {
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "tests/integration",
+          "command": "eslint . --cache --max-warnings=0"
+        },
+        "inputs": [
+          "default",
+          "^production",
+          "{workspaceRoot}/eslint.config.ts",
+          "{workspaceRoot}/eslint.shared.ts",
+          "{workspaceRoot}/knip.json",
+          "{workspaceRoot}/oxlint.json",
+          "{workspaceRoot}/tsconfig.eslint.json",
+          "{workspaceRoot}/scripts/test/packed-workspace.ts",
+          "{workspaceRoot}/scripts/architecture/boundary-contract.ts",
+          "{workspaceRoot}/scripts/tsconfig.json",
+          {
+            "runtime": "node --version"
+          }
+        ]
+      }
+    }
+  },
+  "devDependencies": {
+    "@moltzap/identity": "workspace:*",
+    "@moltzap/registry": "workspace:*",
+    "@moltzap/router": "workspace:*",
+    "@moltzap/client": "workspace:*",
+    "@moltzap/openclaw-channel": "workspace:*",
+    "@electric-sql/pglite-socket": "catalog:",
+    "@effect/platform": "catalog:",
+    "@effect/platform-node": "catalog:",
+    "@modelcontextprotocol/client": "catalog:",
+    "@typescript/native": "catalog:",
+    "effect": "catalog:",
+    "eslint": "catalog:",
+    "protobufjs": "catalog:",
+    "tsx": "catalog:",
+    "vitest": "catalog:"
+  }
+}

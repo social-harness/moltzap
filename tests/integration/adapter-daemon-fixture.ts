@@ -28,7 +28,7 @@ import {
   makeDaemonProcessFixture,
   makeRegistrationRequest,
   ProcessTestError,
-} from "../../packages/client/integration/daemon-process-harness.js";
+} from "./daemon-process-harness.js";
 
 /** Bounds waits for daemon delivery and host gateway shutdown. */
 export const DELIVERY_TIMEOUT = Duration.seconds(60);

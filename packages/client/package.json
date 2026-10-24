@@ -33,6 +33,12 @@
     "./service": {
       "types": "./dist/daemon/index.d.ts",
       "import": "./dist/daemon/index.js"
+    },
+    "./test": {
+      "sharness-test": {
+        "types": "./dist/test.d.ts",
+        "import": "./dist/test.js"
+      }
     }
   },
   "bin": {
@@ -43,8 +49,8 @@
     "build": "nx run @moltzap/client:build",
     "lint": "nx run @moltzap/client:lint",
     "test": "vitest run",
-    "test:integration": "nx run @moltzap/client:test:integration",
-    "typecheck:tests": "tsc -p tsconfig.test.json"
+    "typecheck:tests": "tsc -p tsconfig.test.json",
+    "test:integration": "nx run @moltzap/client:test:integration"
   },
   "nx": {
     "targets": {
@@ -67,36 +73,6 @@
           "command": "eslint . --cache --max-warnings=0"
         }
       },
-      "test:integration": {
-        "executor": "nx:run-commands",
-        "dependsOn": [
-          "build",
-          "^build",
-          {
-            "target": "build",
-            "projects": [
-              "@moltzap/registry"
-            ]
-          }
-        ],
-        "inputs": [
-          "sources",
-          "^production",
-          {
-            "dependentTasksOutputFiles": "**/*",
-            "transitive": true
-          },
-          {
-            "runtime": "node --version"
-          },
-          "{workspaceRoot}/packages/registry/src/**/*",
-          "{workspaceRoot}/packages/registry/bin/**/*"
-        ],
-        "options": {
-          "cwd": "packages/client",
-          "command": "tsc -p tsconfig.integration.json && vitest run --config vitest.integration.config.ts"
-        }
-      },
       "test:pack": {
         "executor": "nx:run-commands",
         "dependsOn": [
@@ -113,6 +89,17 @@
         "options": {
           "cwd": "packages/client",
           "command": "node ../../scripts/architecture/check-package.ts ."
+        }
+      },
+      "test:integration": {
+        "executor": "nx:run-commands",
+        "dependsOn": [
+          "build",
+          "^build"
+        ],
+        "options": {
+          "cwd": "packages/client",
+          "command": "vitest run --config vitest.integration.config.ts"
         }
       }
     }
@@ -143,7 +130,6 @@
     "@effect/vitest": "catalog:",
     "@typescript/native": "catalog:",
     "eslint": "catalog:",
-    "protobufjs": "catalog:",
     "tsx": "catalog:",
     "typescript": "catalog:",
     "undici": "catalog:",

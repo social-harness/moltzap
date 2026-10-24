@@ -29,7 +29,9 @@ import { initializeRegistryStorage, makeRegistryStorage } from "../storage.js";
 import { clockAt } from "./clock.js";
 import {
   BOOTSTRAP_SIGNATURE_INTERVAL_SECONDS,
+  callRegister,
   LOOPBACK_HOST,
+  makeOperationId,
   makePrivateKeyPem,
   makeRegistryRunner,
   makeSigningAuthority,
@@ -439,5 +441,55 @@ it(
         ).toStrictEqual([new AuthenticationFailedError()]);
       }).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
     ),
+  180_000,
+);
+
+it.each([
+  { conflict: "key", refused: "key_already_registered" },
+  { conflict: "name", refused: "name_taken" },
+])(
+  "admits one concurrent registration for the same $conflict on PostgreSQL",
+  ({ conflict, refused }) => {
+    expect.hasAssertions();
+    return Effect.runPromise(
+      Effect.gen(function* () {
+        const setup = yield* makePostgreSqlRegistrySetup;
+        yield* startReadyRegistry(setup.environment, setup.origin);
+        const run = makeRegistryRunner(
+          setup.origin,
+          setup.registrySignerPublicKey,
+        );
+        const first = yield* prepareAgent("postgresql-race");
+        const other = yield* prepareAgent("postgresql-other");
+        const second =
+          conflict === "key"
+            ? {
+                ...first,
+                request: { ...first.request, operationId: makeOperationId() },
+              }
+            : {
+                ...other,
+                request: {
+                  ...other.request,
+                  agentName: first.request.agentName,
+                },
+              };
+        const results = yield* Effect.all(
+          [callRegister(run, first), callRegister(run, second)],
+          { concurrency: 2 },
+        );
+        expect(
+          results.filter((result) => result.kind === REGISTERED_KIND),
+        ).toHaveLength(1);
+        expect(
+          results.filter((result) => result.kind === refused),
+        ).toHaveLength(1);
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(NodeFileSystem.layer),
+        Effect.provide(NodeHttpClient.layer),
+      ),
+    );
+  },
   180_000,
 );

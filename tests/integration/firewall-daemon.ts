@@ -13,13 +13,13 @@
  */
 
 import { NodeRuntime } from "@effect/platform-node";
-import { Config, ConfigProvider, Effect, Layer } from "effect";
 import {
   Daemon,
   type MessageMiddleware,
   type MiddlewareInput,
   type MiddlewareResult,
-} from "../src/daemon/index.js";
+} from "@moltzap/client/service";
+import { Config, ConfigProvider, Effect, Layer } from "effect";
 
 /** The marker an incoming text carries to be withheld. */
 const INCOMING_HOLD = "[in]";

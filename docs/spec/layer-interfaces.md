@@ -90,12 +90,19 @@ Client and adapter migration follows the accepted reduced boundary in
   `./internal` entry supplies service capabilities under `sharness-internal`.
 - The private Registry package owns the Registry server and `sharness-registry`
   boundary as specified by `identity.md`; operators run its
-  `bin/sharness-registry` executable.
+  `bin/sharness-registry` executable. Its condition-only `./test` entry starts
+  Registry with explicit wire versions under `sharness-test`, with no default
+  condition; the Registry package supplies its own internal resolution hook.
 - Router retains its root and server subpath plus `sharness-router` as specified
   by `router.md`.
 - Client owns one public root, process composition under `./service`, and the
   `sharnessd` executable. Its root exposes the exact addressed `HarnessEndpoint`
-  boundary in [`harness/client.md`](./harness/client.md).
+  boundary in [`harness/client.md`](./harness/client.md). Its condition-only
+  `./test` entry exposes `managementRegisterRequestSchema`,
+  `managementRegisterResultSchema`, `managementStatusResultSchema`,
+  `managementSearchConversationsResultSchema`, and
+  `managementReadConversationResultSchema` under `sharness-test`
+  for tests and test fixtures only, with no default condition or TypeDoc entry.
 - Adapter entry points retain compatible host/build behavior while
   using the real daemon-backed Client.
 
@@ -409,7 +416,8 @@ Four packages publish to npm, each at its own calendar version:
 `@moltzap/registry` and `@moltzap/nanoclaw-channel` stay private. Operators
 run Registry from the private package's `bin/sharness-registry` executable.
 No Registry image is published. Registry is excluded from npm release selection
-and pack gates. The simulator is not published.
+and pack gates. The simulator is not published. The private
+`@moltzap/integration-tests` workspace stays outside the release set.
 
 Each reset release establishes fresh wire and storage baselines: `WIRE_VERSION`
 takes a value no earlier release emitted, the live and history sets contain
@@ -460,7 +468,14 @@ mismatches. Release notes mark each reset release with the phrase
   is private, when its `engines.node` differs from the root `package.json`
   range, when its version is not a calendar version, when a sibling edge is
   not an exact `workspace:*` pin, when Registry or the NanoClaw adapter is not private, or
-  when the release workflow's package list drifts from the published set. The
+  when the release workflow's package list drifts from the published set, or when
+  the integration-test workspace changes its name, loses its private flag,
+  declared lanes, exact product dependency set (including Nx implicit edges), or
+  Knip root. It checks import and URL specifiers, internal-condition text,
+  and resolver configuration against the integration workspace rules. These
+  checks guard against accidental coupling and are not a security boundary.
+  The harness may launch product executables by path and start child
+  compositions with product working directories. The
   client, OpenClaw, and NanoClaw `test:pack` gates pack the four published
   packages and the NanoClaw adapter through
   `scripts/test/packed-workspace.ts` and prove each closure installs with
@@ -543,7 +558,7 @@ Absent metadata denotes a pre-reset release only below that boundary. Missing me
 release fails the gate; registry
 outages are retried and then logged explicitly if the gate must skip.
 Certified posts must flow in both
-directions. A separate Client process integration test covers concurrent first
+directions. A cross-package process test in `tests/integration` covers concurrent first
 sends before either peer has a foundation across adjacent live versions. If both selections name the same release, it runs once. Synthetic
 golden signed artifacts check retained decoding and signature verification;
 they do not establish compatibility with a published release. Fixtures from a

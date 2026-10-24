@@ -82,9 +82,12 @@ Closed Registry startup failure.
 - `admission.ts`
 - `http.ts`
 - `index.ts`
+- `internal-resolution.ts`
 - `issuance.ts`
+- `main.ts`
 - `migrations/0001_registry.ts`
 - `README.md`
 - `rpc.ts`
 - `server.ts`
 - `storage.ts`
+- `test.ts`

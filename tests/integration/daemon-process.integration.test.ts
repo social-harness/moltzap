@@ -1,14 +1,6 @@
 /** @file Two real daemons certify, deliver, and recover multicast operations. */
 
-import { WireVersions } from "@moltzap/identity/test";
-import { readdirSync } from "node:fs";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { DatabaseSync } from "node:sqlite";
 import { ProtocolErrorCode } from "@modelcontextprotocol/client";
-import { WIRE_VERSION, AgentCard, type AgentName } from "@moltzap/identity";
-import { Effect, Fiber, Option, Schema, Stream } from "effect";
-import { expect, it } from "vitest";
 import {
   acquireHarnessEndpoint,
   AgentAddress,
@@ -17,18 +9,29 @@ import {
   type InboundDelivery,
   SendError,
   type SendInput,
-} from "../src/index.js";
+} from "@moltzap/client";
+import { AgentCard, type AgentName, WIRE_VERSION } from "@moltzap/identity";
+import { WireVersions } from "@moltzap/identity/test";
+import { Effect, Fiber, Option, Schema, Stream } from "effect";
+import { readdirSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { fileURLToPath } from "node:url";
+import { expect, it } from "vitest";
 import {
   acquireDaemonManagementClient,
   acquireDaemonProcess,
   acquireProcessInfrastructure,
   awaitDaemonStartupFailure,
+  DAEMON_BINARY,
   type DaemonProcessFixture,
   makeDaemonProcessFixture,
   makeRegistrationRequest,
   ProcessTestError,
-  stopProcess,
   processTrace,
+  REGISTRY_BINARY,
+  ROUTER_BINARY,
+  stopProcess,
 } from "./daemon-process-harness.js";
 
 /**
@@ -710,7 +713,7 @@ const refusesStaleOutbox = Effect.scoped(
         "-e",
         retiredWindowDaemon,
       ],
-      cwd: fileURLToPath(new URL("../", import.meta.url)),
+      cwd: dirname(fileURLToPath(import.meta.url)),
     });
     expect(failed.exitCode).not.toBe(0);
     expect(failed.logs).toContain("outbox-too-old");
@@ -828,13 +831,10 @@ it(
           infrastructure,
           "legacy-key",
         );
-        for (const [binary, key] of [
-          ["client/bin/sharnessd", "MOLTZAPD_STATE_DIRECTORY"],
-          [
-            "registry/bin/sharness-registry",
-            "MOLTZAP_REGISTRY_ADMISSION_CREDENTIAL",
-          ],
-          ["router/bin/sharness-router", "MOLTZAP_ROUTER_PORT"],
+        for (const [executable, key] of [
+          [DAEMON_BINARY, "MOLTZAPD_STATE_DIRECTORY"],
+          [REGISTRY_BINARY, "MOLTZAP_REGISTRY_ADMISSION_CREDENTIAL"],
+          [ROUTER_BINARY, "MOLTZAP_ROUTER_PORT"],
         ] as const) {
           const failed = yield* awaitDaemonStartupFailure(
             {
@@ -844,12 +844,7 @@ it(
                 [key]: "retired-secret-value",
               },
             },
-            {
-              executable: fileURLToPath(
-                new URL(`../../${binary}`, import.meta.url),
-              ),
-              args: [],
-            },
+            { executable, args: [] },
           );
           expect(failed.exitCode).not.toBe(0);
           expect(failed.logs).toContain("legacy-key");

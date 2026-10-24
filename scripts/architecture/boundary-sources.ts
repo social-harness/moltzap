@@ -7,12 +7,14 @@
  * check that walks nothing passes vacuously and is indistinguishable from no
  * check at all.
  */
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   dependencyNames,
   FINAL_PACKAGE_DIRS,
   FINAL_PACKAGES,
+  INTEGRATION_TESTS,
   type PackageDir,
 } from "./boundary-contract.ts";
 import {
@@ -27,6 +29,7 @@ import {
 interface ImportSpecifier {
   readonly specifier: string;
   readonly index: number;
+  readonly urlRelative?: true;
 }
 
 /** One file of one product whose imports are being checked. */
@@ -74,7 +77,11 @@ const LAYER_NOTATION_SOURCE = String.raw`(?:^|[^A-Za-z0-9])(?:[Ll][12](?=$|[^a-z
  * Missing any one form would let a violating import in through that keyword.
  */
 const IMPORT_SPECIFIER =
-  /(?:\bfrom\s*|\bimport\s*\(\s*|\brequire\s*\(\s*|\bimport\s+)["']([^"']+)["']/g;
+  /(?:\bfrom\s*|\bimport\s*\(\s*|\brequire\s*\(\s*|\bimport\s+)(["'`])([^"'`]+)\1/g;
+
+/** Resolver calls name modules without loading them. */
+const RESOLVE_SPECIFIER =
+  /(?:\b(?:import\.meta|require)|\bcreateRequire\s*\([^)]*\))\.resolve\s*\(\s*(["'`])([^"'`]+)\1/g;
 
 /**
  * Apply the shared wildcard-export and `#core` barrel rules to every package
@@ -155,6 +162,302 @@ export function checkFinalImports(run: BoundaryRun): number {
     }
   }
   return scanned;
+}
+
+/**
+ * Test infrastructure consumes public and condition-only entries without enabling
+ * internal resolution. Configuration files are checked separately from code counts.
+ * @param run Run collecting failures.
+ * @returns How many integration code files were scanned.
+ */
+export function checkIntegrationImports(run: BoundaryRun): number {
+  const root = path.join(run.repo, INTEGRATION_TESTS.root);
+  checkIntegrationSymlinks(run, root);
+  const files = walkFiles(
+    root,
+    (name) => CODE_EXTENSIONS.has(path.extname(name)),
+    SKIPPED_DIRECTORIES,
+  );
+  if (files.length === 0) {
+    run.failures.push(
+      `${INTEGRATION_TESTS.root}: no code files scanned; import rules would pass vacuously here`,
+    );
+  }
+  const allowedRelative = new Set([
+    path.join(run.repo, "scripts/test/packed-workspace.js"),
+  ]);
+  const eslintRelative = new Set(
+    [
+      "eslint.shared.js",
+      "packages/client/eslint.config.js",
+      "packages/router/eslint.config.js",
+    ].map((module) => path.join(run.repo, module)),
+  );
+  for (const file of files) {
+    checkIntegrationSourceFile(run, {
+      file,
+      text: readFileSync(file, "utf8"),
+      allowedRelative,
+      eslintRelative,
+    });
+  }
+  checkIntegrationConfiguration(run, root);
+  return files.length;
+}
+
+/** Manifest commands and compiler settings cannot hide internal resolution. */
+function checkIntegrationConfiguration(run: BoundaryRun, root: string): void {
+  for (const file of walkFiles(
+    root,
+    (name) => name === "package.json" || /^tsconfig.*\.json$/.test(name),
+    SKIPPED_DIRECTORIES,
+  )) {
+    const text = readFileSync(file, "utf8");
+    checkIntegrationInternalCondition(run, file, text);
+    if (
+      (path.basename(file) === "package.json" && /"imports"\s*:/.test(text)) ||
+      (path.basename(file).startsWith("tsconfig") &&
+        /"(?:paths|baseUrl)"\s*:/.test(text))
+    ) {
+      fail(
+        run,
+        file,
+        1,
+        "test infrastructure must not configure import resolution bypasses",
+      );
+    }
+  }
+}
+
+/** One integration source and the exact shared modules it may resolve. */
+interface IntegrationSourceSite {
+  readonly file: string;
+  readonly text: string;
+  readonly allowedRelative: ReadonlySet<string>;
+  readonly eslintRelative: ReadonlySet<string>;
+}
+
+/** Integration consumers cannot enable private resolution or reach product source. */
+function checkIntegrationSourceFile(
+  run: BoundaryRun,
+  site: IntegrationSourceSite,
+): void {
+  const { file, text } = site;
+  checkIntegrationInternalCondition(run, file, text);
+  checkIntegrationLiteralImports(run, site);
+  checkIntegrationResolverConfig(run, site);
+  for (const input of importSpecifiers(text)) {
+    checkIntegrationPath(run, site, input);
+    if (
+      packageRoot(input.specifier).startsWith("@moltzap/") &&
+      !isIntegrationProductImport(input.specifier)
+    ) {
+      fail(
+        run,
+        file,
+        lineAt(text, input.index),
+        `test infrastructure must import public or test-only product exports from declared dependencies ("${input.specifier}")`,
+      );
+    }
+  }
+  for (const match of text.matchAll(
+    /new\s+URL\(\s*["'`]([^"'`]+)["'`]\s*,\s*import\.meta\.url\s*(?:,\s*)?\)/g,
+  )) {
+    checkIntegrationPath(run, site, {
+      specifier: match[1] ?? "",
+      index: match.index,
+      urlRelative: true,
+    });
+  }
+  checkIntegrationDependencyPaths(run, site);
+}
+
+/** Internal conditions remain forbidden in source and command/configuration text. */
+function checkIntegrationInternalCondition(
+  run: BoundaryRun,
+  file: string,
+  text: string,
+): void {
+  const index = text.indexOf("sharness-internal");
+  if (index !== -1) {
+    fail(
+      run,
+      file,
+      lineAt(text, index),
+      "test infrastructure must not enable sharness-internal",
+    );
+  }
+}
+
+/** Computed module arguments would hide a product import from this source gate. */
+function checkIntegrationLiteralImports(
+  run: BoundaryRun,
+  { file, text }: IntegrationSourceSite,
+): void {
+  for (const match of text.matchAll(/\b(?:import|require)\s*\(([^)]*)/g)) {
+    const argument = match[1] ?? "";
+    if (
+      !/^\s*(["'`])[^"'`]*\1\s*(?:,|$)/.test(argument) ||
+      /`[^`]*\$\{/.test(argument)
+    ) {
+      fail(
+        run,
+        file,
+        lineAt(text, match.index),
+        "test infrastructure imports must use string literals",
+      );
+    }
+  }
+}
+
+/** Vitest aliases must not redirect an allowed package name to private source. */
+function checkIntegrationResolverConfig(
+  run: BoundaryRun,
+  { file, text }: IntegrationSourceSite,
+): void {
+  if (
+    /vitest[^/]*config\.[cm]?[jt]s$/.test(file) &&
+    /["']?\balias["']?\s*(?:\]|:|[,}])|\bresolve\s*\.\s*alias\b/.test(text)
+  ) {
+    fail(
+      run,
+      file,
+      1,
+      "test infrastructure must not configure import resolution bypasses",
+    );
+  }
+}
+
+/** Binary paths must use dependencies installed for the integration workspace. */
+function checkIntegrationDependencyPaths(
+  run: BoundaryRun,
+  { file, text }: IntegrationSourceSite,
+): void {
+  for (const match of text.matchAll(
+    /["'`]([^"'`\n]*node_modules[^"'`\n]*)["'`]/g,
+  )) {
+    if (isForeignDependencyPath(run, file, match[1] ?? "")) {
+      fail(
+        run,
+        file,
+        lineAt(text, match.index),
+        "test infrastructure must not use another workspace's node_modules",
+      );
+    }
+  }
+}
+
+/** Root-relative workspace fragments also identify another workspace's dependency. */
+function isForeignDependencyPath(
+  run: BoundaryRun,
+  file: string,
+  specifier: string,
+): boolean {
+  const base = /^(?:packages|examples|tests)[/\\]/.test(specifier)
+    ? run.repo
+    : path.dirname(file);
+  return (
+    /(?:^|[/\\])node_modules(?:[/\\]|$)/.test(specifier) &&
+    !path
+      .resolve(base, specifier)
+      .startsWith(path.join(run.repo, INTEGRATION_TESTS.root) + path.sep)
+  );
+}
+
+/** File URLs and absolute paths obey the same containment rule as relative imports. */
+function checkIntegrationPath(
+  run: BoundaryRun,
+  site: IntegrationSourceSite,
+  input: ImportSpecifier,
+): void {
+  const { specifier, index } = input;
+  const syntaxError = integrationSpecifierError(input);
+  if (syntaxError !== undefined) {
+    fail(run, site.file, lineAt(site.text, index), syntaxError);
+    return;
+  }
+  if (!isIntegrationPathSpecifier(input)) {
+    return;
+  }
+  const { file, text } = site;
+  let resolved: string;
+  try {
+    resolved = resolveIntegrationPath(file, specifier);
+  } catch (cause) {
+    fail(
+      run,
+      file,
+      lineAt(text, index),
+      `test infrastructure must not cross its boundary by invalid or non-file URL ("${specifier}"): ${String(cause)}`,
+    );
+    return;
+  }
+  if (!isIntegrationPathAllowed(run, site, resolved)) {
+    fail(
+      run,
+      file,
+      lineAt(text, index),
+      `test infrastructure must not cross its boundary by relative path ("${specifier}")`,
+    );
+  }
+}
+
+/** Escapes and URL suffixes must not change what the containment check resolves. */
+function integrationSpecifierError(input: ImportSpecifier): string | undefined {
+  if (input.specifier.includes("\\")) {
+    return "test infrastructure must not use escaped import or URL specifiers";
+  }
+  return isIntegrationPathSpecifier(input) && /[?#%]/.test(input.specifier)
+    ? "test infrastructure must not use query, fragment, or encoded path specifiers"
+    : undefined;
+}
+
+/** Path references and URL schemes require containment; Node builtins resolve without files. */
+function isIntegrationPathSpecifier(input: ImportSpecifier): boolean {
+  const scheme = /^[a-z][a-z0-9+.-]*:/i.exec(input.specifier)?.[0];
+  if (scheme?.toLowerCase() === "node:") {
+    return false;
+  }
+  return (
+    input.urlRelative === true ||
+    input.specifier.startsWith(".") ||
+    path.isAbsolute(input.specifier) ||
+    scheme !== undefined
+  );
+}
+
+/** Every specifier resolves as a URL reference relative to the containing file. */
+function resolveIntegrationPath(file: string, specifier: string): string {
+  return fileURLToPath(new URL(specifier, pathToFileURL(file)));
+}
+
+/** Shared ESLint modules are available only to the integration ESLint configuration. */
+function isIntegrationPathAllowed(
+  run: BoundaryRun,
+  site: IntegrationSourceSite,
+  resolved: string,
+): boolean {
+  return (
+    resolved.startsWith(
+      path.join(run.repo, INTEGRATION_TESTS.root) + path.sep,
+    ) ||
+    site.allowedRelative.has(resolved) ||
+    (relativePath(run, site.file) === "tests/integration/eslint.config.ts" &&
+      site.eslintRelative.has(resolved))
+  );
+}
+
+function isIntegrationProductImport(specifier: string): boolean {
+  const root = packageRoot(specifier);
+  const dependencies: readonly PackageDir[] = INTEGRATION_TESTS.dependencies;
+  const target = dependencies.find(
+    (dir) => FINAL_PACKAGES[dir].npmName === root,
+  );
+  const entry =
+    target === undefined
+      ? undefined
+      : FINAL_PACKAGES[target].exports[exportSubpath(specifier, root)];
+  return entry !== undefined && entry.internalOnly !== true;
 }
 
 function checkSourceFile(run: BoundaryRun, file: string): void {
@@ -311,15 +614,7 @@ function checkInternalImport(
 
 function mayImport(site: ImportSite, root: string): boolean {
   const contract = FINAL_PACKAGES[site.dir];
-  if (root === contract.npmName || dependencyNames(site.dir).includes(root)) {
-    return true;
-  }
-  return (
-    site.file.includes(`${path.sep}integration${path.sep}`) &&
-    (contract.testDeps ?? []).some(
-      (dir) => FINAL_PACKAGES[dir].npmName === root,
-    )
-  );
+  return root === contract.npmName || dependencyNames(site.dir).includes(root);
 }
 
 function exportSubpath(specifier: string, root: string): string {
@@ -355,13 +650,15 @@ function sharedPackageConfigImports(run: BoundaryRun): ReadonlySet<string> {
 }
 
 function importSpecifiers(text: string): readonly ImportSpecifier[] {
-  return [...text.matchAll(IMPORT_SPECIFIER)].map((match) => ({
-    specifier: match[1] ?? "",
-    index: match.index,
-  }));
+  return [
+    ...text.matchAll(IMPORT_SPECIFIER),
+    ...text.matchAll(RESOLVE_SPECIFIER),
+  ]
+    .filter((match) => match[1] !== "`" || !(match[2] ?? "").includes("${"))
+    .map((match) => ({ specifier: match[2] ?? "", index: match.index }));
 }
 
-/** Test overrides may be imported by tests and their process fixtures only. */
+/** Test overrides may be imported by tests, __tests__ fixtures, and their own test-only entry source. */
 function checkTestOnlyImport(
   run: BoundaryRun,
   site: ImportSite,
@@ -373,9 +670,12 @@ function checkTestOnlyImport(
 ): void {
   if (
     input.testOnly === true &&
+    !isTestOnlyEntrySource(site) &&
     !site.file.endsWith(".test.ts") &&
-    !site.file.includes(`${path.sep}integration${path.sep}`) &&
-    !site.file.includes(`${path.sep}__tests__${path.sep}`)
+    !path
+      .relative(site.packageDirectory, site.file)
+      .split(path.sep)
+      .includes("__tests__")
   ) {
     fail(
       run,
@@ -384,6 +684,18 @@ function checkTestOnlyImport(
       `production source must not import test-only export "${input.specifier}"`,
     );
   }
+}
+
+/** An entry may compose the test capabilities of its declared dependencies. */
+function isTestOnlyEntrySource(site: ImportSite): boolean {
+  return Object.values(FINAL_PACKAGES[site.dir].exports).some(
+    (entry) =>
+      entry.testOnly === true &&
+      path.join(
+        site.packageDirectory,
+        entry.import.replace("./dist/", "src/").replace(/\.js$/, ".ts"),
+      ) === site.file,
+  );
 }
 
 /** The package a specifier addresses, ignoring any subpath export. */
@@ -395,4 +707,32 @@ function packageRoot(specifier: string): string {
       : specifier;
   }
   return parts[0] ?? specifier;
+}
+
+/** Linked files and directories would evade the source walk. Installed dependencies are excluded. */
+function checkIntegrationSymlinks(run: BoundaryRun, directory: string): void {
+  const installedDependencies = path.join(
+    run.repo,
+    INTEGRATION_TESTS.root,
+    "node_modules",
+  );
+  const entries = readdirSync(directory, { withFileTypes: true }).filter(
+    (entry) => path.join(directory, entry.name) !== installedDependencies,
+  );
+  for (const entry of entries) {
+    const file = path.join(directory, entry.name);
+    if (entry.isSymbolicLink()) {
+      fail(run, file, 1, "test infrastructure must not contain symbolic links");
+    } else if (entry.isDirectory()) {
+      if (entry.name === "node_modules" || entry.name === "dist") {
+        fail(
+          run,
+          file,
+          1,
+          "test infrastructure must not contain nested node_modules or dist directories",
+        );
+      }
+      checkIntegrationSymlinks(run, file);
+    }
+  }
 }

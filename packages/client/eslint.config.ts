@@ -60,11 +60,7 @@ const sealingSigner = {
 
 export default [
   ...packageEslintConfig({
-    projects: [
-      "./tsconfig.json",
-      "./tsconfig.test.json",
-      "./tsconfig.integration.json",
-    ],
+    projects: ["./tsconfig.json", "./tsconfig.test.json"],
     tsconfigRootDir: import.meta.dirname,
   }),
   soleOuterSigner,

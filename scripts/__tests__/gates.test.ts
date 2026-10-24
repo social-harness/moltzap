@@ -33,6 +33,22 @@ import {
   WIRE_VERSION_LITERAL,
   WIRE_VERSION_SOURCE,
 } from "../docs/sharness-version.ts";
+import {
+  INTEGRATION_BOUNDARY_CASES,
+  MALFORMED_BOUNDARY_CASES,
+} from "./integration-boundary-cases.ts";
+import { testIntegrationGraph } from "./integration-boundary-graph.ts";
+import {
+  testGuardIntegrity,
+  testIntegrationIntegrityGuards,
+} from "./integration-integrity.ts";
+import { testLintRelocation } from "./integration-lint-relocation.ts";
+import {
+  plantBoundarySource,
+  plantFile,
+  plantSymlink,
+  restoreAllPlants,
+} from "./plants.ts";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 
@@ -52,14 +68,6 @@ interface AssertionFailure {
 
 const failures: AssertionFailure[] = [];
 
-// Tests mutate real files under `docs/` to trigger gate hits, then
-// restore the original contents in a finally block. The plant stack
-// lets a single restoreAllPlants() call rewind in reverse order.
-const planted: Array<{
-  path: string;
-  original: string;
-}> = [];
-
 /** Idempotence snapshots run before any generator success case writes outputs, so they compare against the original on-disk bytes. */
 function main(): void {
   try {
@@ -74,6 +82,11 @@ function main(): void {
     testNonCalendarRetainedEntry();
     testDependencyVersions();
     testMalformedBoundaryInputs();
+    testIntegrationBoundaries();
+    testIntegrationGraph(test, runNode, workspaceRoot);
+    testIntegrationIntegrityGuards(test, workspaceRoot);
+    testGuardIntegrity(test, workspaceRoot);
+    testLintRelocation(test, runNode);
     testIsolatedFolderImports();
   } finally {
     restoreAllPlants();
@@ -359,8 +372,7 @@ function testCompatibilityVersionFile(): void {
     ...consumers,
     ...generated.map((p) => resolve(workspaceRoot, p)),
   ]) {
-    const original = readFileSync(path, "utf8");
-    planted.push({ path, original });
+    plantFile(path, (source) => source);
   }
   plantFile(WIRE_VERSION_SOURCE, withCompatibilityVersion(nextVersion));
   const bumped = runGenerate(workspaceRoot);
@@ -663,54 +675,49 @@ function testPublicationGuardsDriftedList(): void {
   restoreAllPlants();
 }
 
-const MALFORMED_BOUNDARY_CASES = [
-  {
-    path: "tsconfig.json",
-    before: '"references": [',
-    after: '"references": [null,',
-  },
-  {
-    path: "tsconfig.json",
-    before: '"references": [',
-    after: '"references": [{"path": 7},',
-  },
-  {
-    path: "tsconfig.json",
-    before: '"references": [',
-    after: '"references": [{},',
-  },
-  {
-    path: "knip.json",
-    before: '"@electric-sql/pglite",',
-    after: '7, "@electric-sql/pglite",',
-  },
-  {
-    path: "packages/identity/tsconfig.json",
-    before: '"references": []',
-    after: '"references": {}',
-  },
-  { path: "packages/identity/tsconfig.json", before: "", after: "" },
-] as const;
+/** Each plant must fail the public gate even without a resolved Nx graph. */
+function testIntegrationBoundaries(): void {
+  console.log("\n# check-boundaries integration workspace");
+  runBoundaryPlants(INTEGRATION_BOUNDARY_CASES);
+}
 
 /** Malformed additions must fail even when every valid entry remains present. */
 function testMalformedBoundaryInputs(): void {
   console.log("\n# check-boundaries malformed inputs");
-  for (const [index, input] of MALFORMED_BOUNDARY_CASES.entries()) {
+  runBoundaryPlants(
+    MALFORMED_BOUNDARY_CASES.map((input) => ({
+      ...input,
+      message: /Malformed/,
+    })),
+  );
+}
+
+/** Each mutation must be rejected by the rule named in its diagnostic. */
+function runBoundaryPlants(
+  cases: ReadonlyArray<{
+    readonly name?: string;
+    readonly path: string;
+    readonly before?: string;
+    readonly after?: string;
+    readonly prepend?: string;
+    readonly replace?: string;
+    readonly symlink?: string;
+    readonly message: RegExp;
+  }>,
+): void {
+  for (const [index, input] of cases.entries()) {
     try {
-      plantFile(input.path, (source) => {
-        if (input.before === "") {
-          return "[]";
-        }
-        if (!source.includes(input.before)) {
-          throw new Error(`Mutation target missing in ${input.path}`);
-        }
-        return source.replace(input.before, input.after);
-      });
-      const malformed = runBoundaries();
+      if (input.symlink !== undefined) {
+        plantSymlink(input.path, input.symlink);
+      } else {
+        plantBoundarySource(input);
+      }
+      const result = runBoundaries();
       test(
-        `rejects malformed boundary input ${index + 1}: ${input.path}`,
-        malformed.code === 1 && /Malformed/.test(malformed.stderr),
-        `expected malformed-input failure. exit=${malformed.code}, stderr=${malformed.stderr.slice(0, 300)}`,
+        input.name ??
+          `rejects malformed boundary input ${index + 1}: ${input.path}`,
+        result.code === 1 && input.message.test(result.stderr),
+        `expected boundary rejection. exit=${result.code}, stderr=${result.stderr}`,
       );
     } finally {
       restoreAllPlants();
@@ -1058,23 +1065,6 @@ function insertAfter(
     );
   }
   return source.replace(pattern, (head) => `${head}${insertion}`);
-}
-
-function plantFile(relPath: string, mutate: (s: string) => string): void {
-  const abs = resolve(workspaceRoot, relPath);
-  const original = readFileSync(abs, "utf8");
-  planted.push({ path: abs, original });
-  writeFileSync(abs, mutate(original));
-}
-
-function restoreAllPlants(): void {
-  while (planted.length > 0) {
-    const p = planted.pop();
-    if (p === undefined) {
-      break;
-    }
-    writeFileSync(p.path, p.original);
-  }
 }
 
 function checkRegeneratedVersion(

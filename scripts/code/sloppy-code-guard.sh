@@ -32,6 +32,7 @@ ERRORS=0
 
 PKG_SRC_GLOB="packages/*/src"
 NON_TEST_EXCLUDE='__tests__|\.test\.|\.integration\.test\.|test-utils|/dist/'
+NO_EXCLUDE='^$'
 PRAGMA_TAG='#ignore-sloppy-code'
 
 # Filter lines of the form `path:N:content` through the pragma rules.
@@ -39,6 +40,8 @@ PRAGMA_TAG='#ignore-sloppy-code'
 #   - `content` carries `<tag>[<rule>, ...]: <reason>` (same-line pragma), or
 #   - the file's line N-1 carries `<tag>-next-line[<rule>, ...]: <reason>`
 #     (next-line pragma, for multi-line signatures).
+# Lines are read through awk file redirection; a matched path is never passed
+# to a shell.
 # Invocation: `... | filter_pragma <rule>`.
 filter_pragma() {
   local rule="$1"
@@ -73,34 +76,56 @@ filter_pragma() {
 
       if (has_pragma(content, "")) next
 
-      # Check the preceding line for a `-next-line` pragma. Read via sed so
-      # we do not buffer whole files; scale fits fine (one spawn per match).
       if (path != "" && lineno > 1) {
-        cmd = "sed -n " (lineno - 1) "p \"" path "\" 2>/dev/null"
         prev = ""
-        if ((cmd | getline prev) > 0) {
-          close(cmd)
-          if (has_pragma(prev, "-next-line")) next
-        } else {
-          close(cmd)
+        for (i = 1; i < lineno; i++) {
+          if ((getline line < path) <= 0) break
+          prev = line
         }
+        close(path)
+        if (i == lineno && has_pragma(prev, "-next-line")) next
       }
       print
     }
   '
 }
 
-# check RULE_ID PATTERN MESSAGE [GLOB] [DIR]
+# check RULE_ID PATTERN MESSAGE [GLOB] [DIR] [EXCLUDE]
+# EXCLUDE defaults to NON_TEST_EXCLUDE for omitted or empty arguments.
+# Pass NO_EXCLUDE to scan tests too; its sentinel matches no grep result.
 check() {
   local rule="$1"
   local pattern="$2"
   local message="$3"
   local glob="${4:-*.ts}"
   local dir="${5:-$PKG_SRC_GLOB}"
+  local exclude="${6:-$NON_TEST_EXCLUDE}"
+  local case_option="${7:--E}"
+
+  local directory
+  # shellcheck disable=SC2086
+  for directory in $dir; do
+    if [[ ! -d "$directory" ]]; then
+      echo "[$rule] Directory does not exist: $directory" >&2
+      exit 1
+    fi
+  done
 
   # shellcheck disable=SC2086
-  matches=$(grep -rn --include="$glob" -E "$pattern" $dir 2>/dev/null \
-    | grep -vE "$NON_TEST_EXCLUDE" \
+  matches=$(grep -rn --include="$glob" "$case_option" "$pattern" $dir 2>/dev/null \
+    | awk -v rule="$rule" '
+      {
+        file = $0
+        sub(/:[0-9]+:.*/, "", file)
+        if (rule != "integration-vi-mock" ||
+            (file !~ /\/(node_modules|dist)\// &&
+             (file ~ /\.integration\.test\.ts$/ ||
+              (file !~ /\.test\.ts$/ &&
+               (file ~ /^tests\// ||
+                file ~ /^packages\/[^/]+\/src\/__tests__\//))))) print
+      }
+    ' \
+    | grep -vE "$exclude" \
     | filter_pragma "$rule" \
     || true)
 
@@ -207,15 +232,18 @@ echo ""
 
 check integration-vi-mock \
   'vi\.mock|vi\.hoisted|vi\.spyOn' \
-  "Integration tests must not use vi.mock/hoisted/spyOn — test the real flow" \
-  "*.integration.test.ts" \
-  "packages/"
+  "Integration tests and shared fixtures must not use vi.mock/hoisted/spyOn — test the real flow" \
+  "*.ts" \
+  "packages/ tests/" \
+  "$NO_EXCLUDE"
 
 check hardcoded-api-key \
-  "api[Kk]ey.*=.*['\"][a-zA-Z0-9_-]{20,}['\"]" \
-  "Hardcoded API key in test file — use environment variables" \
-  "*.test.ts" \
-  "packages/"
+  "api[_-]?key[\"']?[[:space:]]*[:=][[:space:]]*['\"][A-Za-z0-9_-]{20,}['\"]" \
+  "Hardcoded API key — use environment variables" \
+  "*.ts" \
+  "packages/ tests/ scripts/ examples/" \
+  "$NO_EXCLUDE" \
+  "-iE"
 
 # `as unknown as` bypasses the type system. Use a type guard, a user-defined
 # predicate, or Effect.catchTag/catchTags for tagged unions. Legitimate

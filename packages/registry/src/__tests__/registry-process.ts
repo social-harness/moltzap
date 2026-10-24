@@ -156,9 +156,10 @@ const startProcess = (
   executable: string,
   processArguments: readonly string[],
   environment: Readonly<Record<string, string>>,
+  cwd: string,
 ): RunningProcess => {
   const child = spawn(executable, processArguments, {
-    cwd: WORKSPACE_ROOT,
+    cwd,
     env: {
       PATH: CHILD_PATH,
       ...environment,
@@ -458,10 +459,13 @@ const managedProcess = (
   executable: string,
   processArguments: readonly string[],
   environment: Readonly<Record<string, string>> = {},
+  cwd = WORKSPACE_ROOT,
 ) =>
   // eslint-disable-next-line agent-code-guard/acquire-release-requires-scope -- Every importing integration behavior encloses this fixture in Effect.scoped.
   Effect.acquireRelease(
-    Effect.sync(() => startProcess(executable, processArguments, environment)),
+    Effect.sync(() =>
+      startProcess(executable, processArguments, environment, cwd),
+    ),
     stopProcess,
   );
 

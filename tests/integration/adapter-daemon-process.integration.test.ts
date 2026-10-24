@@ -5,10 +5,6 @@ import { Deferred, Effect, Fiber, Queue } from "effect";
 import { expect, it } from "vitest";
 
 import {
-  ProcessTestError,
-  processTrace,
-} from "../../packages/client/integration/daemon-process-harness.js";
-import {
   acquireGroupScenario,
   acquireScenario,
   assertDurableExchange,
@@ -35,6 +31,7 @@ import {
   requireRequest,
   startOpenClawGateway,
 } from "./adapter-daemon-fixture.ts";
+import { ProcessTestError, processTrace } from "./daemon-process-harness.js";
 
 const SLOT_SCHEMA = {
   type: "object",
