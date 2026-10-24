@@ -51,7 +51,7 @@ import {
   stopProcess,
   waitForExit,
   waitForHealthStatus,
-  waitForTcpListener,
+  waitForPgliteListening,
 } from "./registry-process.js";
 import { contentDigest, encodeCanonicalJson } from "./request-fixtures.js";
 
@@ -830,7 +830,7 @@ const setupRegistryInfrastructure = Effect.gen(function* () {
     `--host=${LOOPBACK_HOST}`,
     "--max-connections=20",
   ]);
-  yield* waitForTcpListener(postgresql, postgresqlPort);
+  yield* waitForPgliteListening(postgresql, postgresqlPort);
   const postgresqlUrl = `postgresql://postgres:postgres@${LOOPBACK_HOST}:${postgresqlPort}/postgres`;
   const origin = new URL(`http://${LOOPBACK_HOST}:${registryPort}`);
   const environment = registryEnvironment({

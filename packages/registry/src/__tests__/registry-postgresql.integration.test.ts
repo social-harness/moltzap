@@ -54,6 +54,17 @@ const SERVICE_UNAVAILABLE_STATUS = 503;
 const EMPTY_BODY = "";
 const FOUND_KIND = "found";
 const REGISTERED_KIND = "registered";
+/** Requests in each concurrency race: exactly one wins and the others are refused. */
+const CONTENDERS = 8;
+
+/** Copies of one prepared agent that differ only in operation id, so they race on the same key. */
+const sameKeyContenders = (
+  first: Effect.Effect.Success<ReturnType<typeof prepareAgent>>,
+) =>
+  Array.from({ length: CONTENDERS }, () => ({
+    ...first,
+    request: { ...first.request, operationId: makeOperationId() },
+  }));
 const NEWER_SCHEMA_REASON = "newer-schema";
 
 const stopPostgreSql = (container: StartedPostgreSqlContainer) =>
@@ -427,10 +438,10 @@ it(
           storage,
         };
         const outcomes = yield* Effect.all(
-          Array.from({ length: 8 }, () =>
+          Array.from({ length: CONTENDERS }, () =>
             verifyBootstrapRegistration(input).pipe(Effect.either),
           ),
-          { concurrency: 8 },
+          { concurrency: CONTENDERS },
         ).pipe(Effect.withClock(clockAt(prepared.expiresAt)));
         expect(
           outcomes.filter(Either.isRight).map((result) => result.right),
@@ -438,7 +449,10 @@ it(
         expect(
           outcomes.filter(Either.isLeft).map((result) => result.left),
         ).toStrictEqual(
-          Array.from({ length: 7 }, () => new AuthenticationFailedError()),
+          Array.from(
+            { length: CONTENDERS - 1 },
+            () => new AuthenticationFailedError(),
+          ),
         );
       }).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
     ),
@@ -460,29 +474,25 @@ it.each([
           setup.origin,
           setup.registrySignerPublicKey,
         );
-        const first = yield* prepareAgent("postgresql-race");
-        const contenders = yield* Effect.all(
-          Array.from({ length: 8 }, () =>
-            conflict === "key"
-              ? Effect.succeed({
-                  ...first,
-                  request: { ...first.request, operationId: makeOperationId() },
-                })
-              : prepareAgent("postgresql-race"),
-          ),
-          { concurrency: 8 },
-        );
+        const contenders = yield* conflict === "key"
+          ? prepareAgent("postgresql-race").pipe(Effect.map(sameKeyContenders))
+          : Effect.all(
+              Array.from({ length: CONTENDERS }, () =>
+                prepareAgent("postgresql-race"),
+              ),
+              { concurrency: CONTENDERS },
+            );
         const results = yield* Effect.forEach(
           contenders,
           (contender) => callRegister(run, contender),
-          { concurrency: 8 },
+          { concurrency: CONTENDERS },
         );
         expect(
           results.filter((result) => result.kind === REGISTERED_KIND),
         ).toHaveLength(1);
         expect(
           results.filter((result) => result.kind === refused),
-        ).toHaveLength(7);
+        ).toHaveLength(CONTENDERS - 1);
       }).pipe(
         Effect.scoped,
         Effect.provide(NodeFileSystem.layer),

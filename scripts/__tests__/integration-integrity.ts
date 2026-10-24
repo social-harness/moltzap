@@ -18,6 +18,7 @@ import {
 export function testGuardIntegrity(): void {
   testMissingGuardDirectory();
   testBrokenGuardTool();
+  testBrokenGuardFilters();
   testPragmaPathIsData();
   testIntegrationLaneCollection();
 }
@@ -152,6 +153,47 @@ function testBrokenGuardTool(): void {
     );
   } finally {
     restoreAllPlants();
+  }
+}
+
+/** Each stage after the search breaks the same way a broken search expression does. */
+const BROKEN_GUARD_FILTERS = [
+  {
+    stage: "exclude filter",
+    before:
+      "NON_TEST_EXCLUDE='^[^:]*(__tests__|\\.test\\.|test-utils|/dist/)[^:]*:'",
+    after: "NON_TEST_EXCLUDE='['",
+  },
+  {
+    stage: "pragma filter",
+    before: "function has_pragma(text,",
+    after: "function has_pragma((text,",
+  },
+] as const;
+
+/**
+ * A broken exclude or pragma stage is a tooling failure, never evidence of a clean tree.
+ *
+ * Value: protects=sloppy-code-guard exits nonzero and names the stage when its exclude grep or pragma awk program fails; fails_when=either stage's failure status is discarded so its empty output reads as no violations; why_new=testBrokenGuardTool breaks only the first grep, whose handling is separate; seam=none; no_claim=which lines either stage removes.
+ */
+function testBrokenGuardFilters(): void {
+  for (const { stage, before, after } of BROKEN_GUARD_FILTERS) {
+    try {
+      plantBoundarySource({
+        path: "scripts/code/sloppy-code-guard.sh",
+        before,
+        after,
+      });
+      const result = runSloppyGuard();
+      test(
+        `integrity guard fails closed on a broken ${stage}`,
+        result.status !== 0 &&
+          result.stderr.includes(`[raw-sql] ${stage} failed`),
+        result.stdout + result.stderr,
+      );
+    } finally {
+      restoreAllPlants();
+    }
   }
 }
 

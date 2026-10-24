@@ -205,8 +205,13 @@ const canConnect = (port: number) =>
     }),
   );
 
-const waitForTcpListener = (runningProcess: RunningProcess, port: number) =>
+/**
+ * PGlite announces its own listener only after its WASM database accepts
+ * connections, so another process holding the port cannot satisfy readiness.
+ */
+const waitForPgliteListening = (runningProcess: RunningProcess, port: number) =>
   Effect.gen(function* () {
+    const listening = `PGLiteSocketServer listening on {"port":${port},`;
     const deadline = Date.now() + STARTUP_TIMEOUT_MS;
     while (Date.now() < deadline) {
       if (
@@ -219,7 +224,7 @@ const waitForTcpListener = (runningProcess: RunningProcess, port: number) =>
           ),
         );
       }
-      if (yield* canConnect(port)) {
+      if (runningProcess.logs().includes(listening)) {
         return;
       }
       yield* Effect.sleep(Duration.millis(POLL_INTERVAL_MS));
@@ -737,7 +742,7 @@ export {
   stopProcess,
   waitForExit,
   waitForHealthStatus,
-  waitForTcpListener,
+  waitForPgliteListening,
 };
 /** Values passed between process-level acceptance helpers. */
 export type {

@@ -34,6 +34,7 @@ ERRORS=0
 PKG_SRC_GLOB="packages/*/src"
 NON_TEST_EXCLUDE='^[^:]*(__tests__|\.test\.|test-utils|/dist/)[^:]*:'
 NO_EXCLUDE='^$'
+BUILD_EXCLUDE='^[^:]*/(node_modules|dist)/[^:]*:'
 PRAGMA_TAG='#ignore-sloppy-code'
 
 # Filter lines of the form `path:N:content` through the pragma rules.
@@ -97,6 +98,7 @@ filter_pragma() {
 # GREP_MODE defaults to -E; pass -iE for case-insensitive extended regexes.
 # EXCLUDE defaults to NON_TEST_EXCLUDE for omitted or empty arguments.
 # Pass NO_EXCLUDE to scan tests too; its sentinel matches no grep result.
+# Pass BUILD_EXCLUDE to scan tests while skipping node_modules and dist trees.
 check() {
   local rule="$1"
   local pattern="$2"
@@ -243,7 +245,7 @@ check integration-vi-mock \
   "Integration tests must not use vi.mock/hoisted/spyOn — test the real flow" \
   "*.integration.test.ts" \
   "packages/ tests/" \
-  '^[^:]*/(node_modules|dist)/[^:]*:'
+  "$BUILD_EXCLUDE"
 
 fixture_directories=$(find packages \( -name node_modules -o -name dist \) -prune -o \
   -type d -name __tests__ -print)
@@ -259,14 +261,14 @@ check integration-vi-mock \
   "Integration fixtures must not use vi.mock/hoisted/spyOn — test the real flow" \
   "*.ts" \
   "tests/ packages/*/integration/" \
-  '^[^:]*/(node_modules|dist)/[^:]*:'
+  "$BUILD_EXCLUDE"
 
 check hardcoded-api-key \
   "api[_-]?keys?[\"']?[^=:]*[:=].*['\"\`][A-Za-z0-9_-]{20,}['\"\`]" \
   "Hardcoded API key — use environment variables" \
   "*.ts" \
   "packages/ tests/ scripts/ examples/" \
-  "$NO_EXCLUDE" \
+  "$BUILD_EXCLUDE" \
   "-iE"
 
 # `as unknown as` bypasses the type system. Use a type guard, a user-defined

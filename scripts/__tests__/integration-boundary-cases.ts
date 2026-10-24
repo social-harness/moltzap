@@ -425,6 +425,18 @@ export const INTEGRATION_INTEGRITY_CASES = [
     source: `\nconst result = db.query(); // ${comment}\n`,
     diagnostic: /\[raw-sql\]/,
   })),
+  /**
+   * Value: protects=the hardcoded-api-key guard scans scripts/ and examples/ as well as packages/ and tests/; fails_when=either root leaves the credential scan scope; why_new=every other credential row plants under packages/ or tests/; seam=none; no_claim=which credential spellings the pattern matches.
+   */
+  ...[
+    "scripts/credential-plant.ts",
+    "examples/two-agents/credential-plant.ts",
+  ].map((path) => ({
+    name: `credential guard scans ${path}`,
+    path,
+    source: '\nconst apiKey = "' + "synthetic".repeat(4) + '";\n',
+    diagnostic: /\[hardcoded-api-key\]/,
+  })),
   {
     name: "typed credential guard",
     path: "tests/integration/credential-plant.ts",

@@ -1,14 +1,6 @@
 /** @file Registry process failure reporting and environment configuration. */
 import { NodeRuntime } from "@effect/platform-node";
-import { ConfigProvider, Console, Data, Effect } from "effect";
-
-/** Dynamic module failures retain their cause and identify the startup module. */
-export class RegistryModuleLoadError extends Data.TaggedError(
-  "RegistryModuleLoadError",
-)<{
-  readonly cause: unknown;
-  readonly message: string;
-}> {}
+import { ConfigProvider, Console, Effect } from "effect";
 
 /** Reports startup failure messages and runs the process with environment configuration. */
 export function runRegistryMain<E extends { readonly message: string }>(
@@ -16,11 +8,7 @@ export function runRegistryMain<E extends { readonly message: string }>(
 ): void {
   program.pipe(
     Effect.catchAll((error) =>
-      Console.error(
-        error instanceof RegistryModuleLoadError && error.cause instanceof Error
-          ? `${error.message}: ${error.cause.message}`
-          : error.message,
-      ).pipe(
+      Console.error(error.message).pipe(
         Effect.andThen(
           Effect.sync(() => {
             process.exitCode = 1;

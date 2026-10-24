@@ -7,7 +7,7 @@
  * check that walks nothing passes vacuously and is indistinguishable from no
  * check at all.
  */
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, readlinkSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
@@ -709,7 +709,7 @@ function packageRoot(specifier: string): string {
   return parts[0] ?? specifier;
 }
 
-/** Rejects symbolic links and nested node_modules/dist directories; root installed dependencies are excluded. */
+/** Rejects symbolic links other than a `CLAUDE.md` pointing at its sibling `AGENTS.md`, and nested node_modules/dist directories; root installed dependencies are excluded. */
 function checkIntegrationTree(run: BoundaryRun, directory: string): void {
   const installedDependencies = path.join(
     run.repo,
@@ -721,7 +721,7 @@ function checkIntegrationTree(run: BoundaryRun, directory: string): void {
   );
   for (const entry of entries) {
     const file = path.join(directory, entry.name);
-    if (entry.isSymbolicLink()) {
+    if (entry.isSymbolicLink() && !isAgentInstructionsLink(file)) {
       fail(run, file, 1, "test infrastructure must not contain symbolic links");
     } else if (entry.isDirectory()) {
       if (entry.name === "node_modules" || entry.name === "dist") {
@@ -735,4 +735,11 @@ function checkIntegrationTree(run: BoundaryRun, directory: string): void {
       checkIntegrationTree(run, file);
     }
   }
+}
+
+/** Scoped agent instructions keep `CLAUDE.md` as a link to the `AGENTS.md` beside it. */
+function isAgentInstructionsLink(file: string): boolean {
+  return (
+    path.basename(file) === "CLAUDE.md" && readlinkSync(file) === "AGENTS.md"
+  );
 }

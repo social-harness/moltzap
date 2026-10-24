@@ -32,7 +32,7 @@ implemented.
 
 ## Exact package graph
 
-The workspace has six packages:
+The workspace has six product packages:
 
 | Package | May depend on | Owns |
 |---|---|---|
@@ -42,6 +42,8 @@ The workspace has six packages:
 | `@moltzap/client` | `@moltzap/identity`, `@moltzap/router` | conversations, endpoint history, tasks/norms, personal firewalls, daemon MCP, `HarnessEndpoint`, and `sharnessd` |
 | `@moltzap/openclaw-channel` | `@moltzap/client` | OpenClaw host integration against an injected or MCP-backed client |
 | `@moltzap/nanoclaw-channel` | `@moltzap/client` | NanoClaw host integration against its MCP-backed client |
+
+The private `@moltzap/integration-tests` workspace in `tests/integration` consumes the products it launches as development dependencies. It sits outside this graph and the release set, and no product depends on it.
 
 The simulator and evaluation applications are built outside this repository
 and consume the published packages. Production packages do not depend on them.

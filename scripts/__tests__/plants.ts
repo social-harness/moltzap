@@ -1,4 +1,4 @@
-/** @file Reversible file and symlink mutations shared by standalone gate tests. */
+/** @file Reversible file and symlink mutations, the assertion recorder, and the Node runner shared by standalone gate tests. */
 import { spawnSync } from "node:child_process";
 import {
   existsSync,
@@ -17,7 +17,7 @@ export const workspaceRoot = fileURLToPath(new URL("../../", import.meta.url));
 /** The stack unwinds entries and snapshots in reverse mutation order. */
 const planted: Array<{
   readonly path: string;
-  readonly original?: string;
+  readonly original?: Buffer;
   readonly directory?: true;
 }> = [];
 
@@ -47,14 +47,14 @@ export function plantBoundarySource(input: {
   });
 }
 
-/** Snapshots existing bytes or records a created file after its write succeeds. */
+/** Snapshots existing bytes, hands the mutator their UTF-8 text, and records a created file after its write succeeds. */
 export function plantFile(
   relativePath: string,
   mutate: (source: string) => string | Uint8Array,
 ): void {
   const path = resolve(workspaceRoot, relativePath);
-  const original = existsSync(path) ? readFileSync(path, "utf8") : undefined;
-  const source = mutate(original ?? "");
+  const original = existsSync(path) ? readFileSync(path) : undefined;
+  const source = mutate(original?.toString("utf8") ?? "");
   ensureParent(path);
   writeFileSync(path, source);
   planted.push(original === undefined ? { path } : { path, original });

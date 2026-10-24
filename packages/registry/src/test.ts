@@ -1,8 +1,16 @@
 /** @file Condition-only process composition for adjacent wire releases. */
 import { WireVersions } from "@moltzap/identity/test";
-import { Effect, Layer } from "effect";
+import { Data, Effect, Layer } from "effect";
 import { installInternalResolution } from "./internal-resolution.js";
-import { RegistryModuleLoadError, runRegistryMain } from "./main.js";
+import { runRegistryMain } from "./main.js";
+
+/** A startup module that fails to load, with its cause in the reported message. */
+class RegistryModuleLoadError extends Data.TaggedError(
+  "RegistryModuleLoadError",
+)<{
+  readonly cause: unknown;
+  readonly message: string;
+}> {}
 
 /** Internal Identity capabilities stay within the Registry process boundary. */
 export function startRegistry(versions: {
@@ -17,7 +25,7 @@ export function startRegistry(versions: {
       catch: (cause) =>
         new RegistryModuleLoadError({
           cause,
-          message: "Could not load Registry startup module ./server.js",
+          message: `Could not load Registry startup module ./server.js: ${cause instanceof Error ? cause.message : String(cause)}`,
         }),
     });
     return yield* Layer.launch(layer).pipe(

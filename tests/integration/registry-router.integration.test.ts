@@ -58,6 +58,7 @@ import {
   startPgliteRegistry,
   stopProcess,
 } from "./daemon-process-harness.js";
+import { acquireLoopbackServer } from "./loopback-server.js";
 const ADMISSION_CREDENTIAL = "registry-router-e2e-admission";
 const REGISTERED_KIND = "registered";
 const FOUND_KIND = "found";
@@ -873,6 +874,33 @@ testVersionMismatchRoundTrips(
     router: startInfrastructure.pipe(Effect.tap(startRouter)),
   },
   Redacted.make(ADMISSION_CREDENTIAL),
+);
+
+/**
+ * Another listener already holds the port PGlite is told to use.
+ *
+ * Value: protects=startPgliteRegistry fails with PGlite's own bind error, before any Registry starts, when another listener holds the PGlite port; fails_when=PGlite readiness accepts any listener on its port again; why_new=every other suite boots PGlite on a free port, where a connect probe and PGlite's listening line agree; seam=none; no_claim=how ports are reserved, how the Registry reports storage failures, or whether pglite-server exits on a bind error (0.1.4 logs it and exits later).
+ */
+const occupiedPgliteStartup = Effect.gen(function* () {
+  const unreadyPhase = /process (exited|timed out) before listening/;
+  const bindError = "EADDRINUSE";
+  const { registryPrivateKeyPath } = yield* makeRegistryIdentity;
+  const holder = yield* acquireLoopbackServer(() => Effect.void);
+  const registryPort = yield* reservePort;
+  const failure = yield* startPgliteRegistry({
+    postgresqlPort: holder.port,
+    registryPort,
+    registryKeyPath: registryPrivateKeyPath,
+    admissionCredential: ADMISSION_CREDENTIAL,
+  }).pipe(Effect.flip);
+  expect(failure.message).toMatch(unreadyPhase);
+  expect(failure.message).toContain(bindError);
+}).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer));
+
+it(
+  "reports PGlite's bind failure when another listener holds its port",
+  processTrace(occupiedPgliteStartup),
+  60_000,
 );
 
 /** Every concurrently registered daemon identity resolves through the Router. */
