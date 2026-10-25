@@ -38,9 +38,9 @@ variables use `SHARNESS_*`, and protocol namespaces use `org.social-harness/*`.
 `packages/*`; two publish to npm, each at its own calendar version, and
 `@moltzap/registry`, `@moltzap/router`, and `@moltzap/nanoclaw-channel` stay private, per
 `docs/spec/layer-interfaces.md` → Publication and versions.
-Releases run from `main` through `.github/workflows/publish.yml` on manual
-dispatch. A user-visible change adds a fragment under `changelog.d/` (see
-`towncrier.toml`).
+Releases follow the same section: a merge releases after CI passes, and resets
+release by hand. A user-visible change adds a fragment under `changelog.d/`
+(see `towncrier.toml`).
 
 **The constitution is `docs/vision.md` → The constitution.** It is canonical
 there and paraphrased nowhere, this file included: two copies at the top of the

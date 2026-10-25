@@ -10,12 +10,15 @@ name: Publish to npm
 # manifest records its own content hash; the OpenClaw channel's also records
 # `sharnessHostCodeHash` (`scripts/release/host-code-hash.ts`), the hash of the
 # code OpenClaw loads for it. The release commit records every manifest. The
-# trigger is manual. The bump resolves both committed image input keys to
-# signed indexes and records their digests in the example Compose file. Missing
-# keys fail before the release commit; rerunning after images.yml publishes
-# them resumes the bump. After npm publication, `images` runs no repository
-# install or build, adds version tags, and lists both digests in the GitHub
-# release body. Existing version tags are checked and skipped on reruns.
+# trigger is release-on-merge.yml after CI passes on main, or manual dispatch
+# for resets, resumes and start_new_version. The bump resolves both committed
+# image input keys to signed indexes and records their digests in the example
+# Compose file. It polls for missing keys for up to 45 minutes, then fails
+# before the release commit with a rerun hint. After npm publication, `images`
+# runs no repository install or build, adds version tags, and lists both digests
+# in the GitHub release body. Existing version tags are checked and skipped
+# on reruns.
+# After image tagging, dispatch sends the release version and digests to deployment.
 #
 # A release takes two runs, so npm's provenance names the commit whose tree
 # the tarballs were packed from. The dispatched run bumps: it writes the
@@ -49,9 +52,24 @@ name: Publish to npm
 # the dispatched commit instead. A release that can never complete is left behind by
 # dispatching with `start_new_version`, which mints the next version from the
 # tip instead.
+#
+# Prerequisites: a release GitHub App installed on this repository with
+# contents write and allowed to push main, and on social-harness/deployment
+# with contents write for the release dispatches; its client ID in the Actions
+# variable RELEASE_APP_CLIENT_ID and its private key in the Actions secret
+# RELEASE_APP_PRIVATE_KEY. npm publishes without a token, so each published
+# package lists this repository's publish.yml in the `release` environment as
+# a trusted publisher; a newly published package needs that entry first.
 on:
   workflow_dispatch:
     inputs:
+      gated_commit:
+        description: >-
+          Set by release-on-merge.yml to the commit whose CI passed. The run
+          mints a version only for that commit, while it is main's tip, and
+          only if the release gate still passes on it.
+        type: string
+        default: ""
       start_new_version:
         description: >-
           Abandon an incomplete release commit on main instead of resuming it
@@ -122,6 +140,7 @@ jobs:
         id: plan
         env:
           START_NEW_VERSION: ${{ inputs.start_new_version }}
+          GATED_COMMIT: ${{ inputs.gated_commit }}
           GH_TOKEN: ${{ github.token }}
         run: |
           git fetch origin main --quiet
@@ -194,6 +213,18 @@ jobs:
             fi
           fi
 
+          if [ -n "$GATED_COMMIT" ]; then
+            if [ "$GITHUB_SHA" != "$GATED_COMMIT" ] || [ "$(git rev-parse origin/main)" != "$GITHUB_SHA" ]; then
+              echo "::notice::main moved past the gated commit $GATED_COMMIT; the newer commit's own CI run gates it."
+              echo "mode=skip" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            if [ "$(GATE_COMMIT=$GATED_COMMIT scripts/release/push-gate.sh)" = skip ]; then
+              echo "::notice::The release gate skipped $GATED_COMMIT; no new version will be released."
+              echo "mode=skip" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
           [ "$(git rev-parse origin/main)" = "$GITHUB_SHA" ] || {
             echo "ERROR: main moved past the dispatched commit $GITHUB_SHA; dispatch the release again from the tip"
             exit 1
@@ -207,20 +238,20 @@ jobs:
           echo "mode=bump" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - if: steps.plan.outputs.mode != 'redispatch'
+      - if: steps.plan.outputs.mode == 'bump' || steps.plan.outputs.mode == 'resume'
         run: pnpm install --frozen-lockfile
 
       # Package versions are never compiled into `dist`, so the build does not
       # depend on which packages the selection later moves to the version.
       - name: Build all packages
-        if: steps.plan.outputs.mode != 'redispatch'
+        if: steps.plan.outputs.mode == 'bump' || steps.plan.outputs.mode == 'resume'
         run: pnpm build
 
       # Recorded before the content hash, so the hash covers it. A resume
       # writes only the key the release commit's manifest already holds, so
       # its content hash is unchanged.
       - name: Record emitted wire version in published Client metadata
-        if: steps.plan.outputs.mode != 'redispatch'
+        if: steps.plan.outputs.mode == 'bump' || steps.plan.outputs.mode == 'resume'
         working-directory: packages/client
         env:
           MODE: ${{ steps.plan.outputs.mode }}
@@ -239,7 +270,7 @@ jobs:
       # it installs from npm to that package's manifest version, so a checkout
       # of the release tag runs what that tag published.
       - name: Choose the packages this run publishes
-        if: steps.plan.outputs.mode != 'redispatch'
+        if: steps.plan.outputs.mode == 'bump' || steps.plan.outputs.mode == 'resume'
         id: select
         env:
           MODE: ${{ steps.plan.outputs.mode }}
@@ -292,13 +323,19 @@ jobs:
           mkdir -p "$DOCKER_CONFIG"
           KEYS=$(pnpm --silent image:keys)
           refs=()
+          deadline=$((SECONDS + 45 * 60))
           for service in registry router; do
             key=$(jq -r --arg s "$service" '.[$s] | sub("^sha256:"; "")' <<<"$KEYS")
             image="ghcr.io/social-harness/$service"
-            digest=$(docker buildx imagetools inspect "$image:inputs-$key" --format '{{.Manifest.Digest}}') || {
-              echo "ERROR: the images workflow must publish $service key $key and the ghcr.io/social-harness/{registry,router} packages must be public and pull anonymously; rerun once both conditions hold. Docs: https://docs.moltzap.xyz/spec/layer-interfaces#publication-and-versions" >&2
-              exit 1
-            }
+            until digest=$(docker buildx imagetools inspect "$image:inputs-$key" --format '{{.Manifest.Digest}}'); do
+              if (( SECONDS >= deadline )); then
+                echo "ERROR: the images workflow must publish $service key $key and the ghcr.io/social-harness/{registry,router} packages must be public and pull anonymously; rerun once both conditions hold. Docs: https://docs.moltzap.xyz/spec/layer-interfaces#publication-and-versions" >&2
+                exit 1
+              fi
+              remaining=$((deadline - SECONDS))
+              echo "Waiting for $image:inputs-$key; $remaining seconds remain."
+              sleep "$((remaining < 30 ? remaining : 30))"
+            done
             [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
             ref="$image@$digest"
             docker buildx imagetools inspect "$ref" >/dev/null || {
@@ -501,7 +538,7 @@ jobs:
       - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         id: app-token
         with:
-          app-id: ${{ vars.RELEASE_APP_ID }}
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
           permission-contents: write
 
@@ -629,12 +666,15 @@ jobs:
     permissions:
       contents: write
       packages: write
+    outputs:
+      payload: ${{ steps.tag.outputs.payload }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
       - name: Tag release indexes and record their digests
+        id: tag
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.build.outputs.version }}
@@ -674,3 +714,32 @@ jobs:
             fi
           done <<<"$REFS"
           gh release edit "v$VERSION" --repo "$GITHUB_REPOSITORY" --notes-file "$notes"
+          payload=$(jq -cn --arg version "$VERSION" '{version: $version}')
+          while read -r ref; do
+            service=${ref#ghcr.io/social-harness/}
+            service=${service%@*}
+            payload=$(jq -c --arg service "$service" --arg ref "$ref" '. + {($service): $ref}' <<<"$payload")
+          done <<<"$REFS"
+          echo "payload=$payload" >> "$GITHUB_OUTPUT"
+
+  dispatch:
+    needs: images
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions: {}
+    steps:
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: app-token
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: social-harness
+          repositories: deployment
+          permission-contents: write
+      - name: Notify deployment of the completed release
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PAYLOAD: ${{ needs.images.outputs.payload }}
+        run: |
+          jq -n --argjson payload "$PAYLOAD" '{event_type: "social-harness-released", client_payload: $payload}' \
+            | gh api --method POST repos/social-harness/deployment/dispatches --input -

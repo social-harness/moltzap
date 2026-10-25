@@ -432,6 +432,13 @@ mismatches. Release notes mark each reset release with the phrase
   release tested.
 - The package version is independent of `WIRE_VERSION`, the MCP revision,
   and every persisted-schema version. Advancing one never advances another.
+- A merge to `main` releases once CI passes on it, when the merged commit
+  has a changelog fragment, is not itself a release commit, keeps the last
+  release's `sharnessWireVersion`, and lowers no package version;
+  `.github/workflows/release-on-merge.yml` describes the gate. Resets,
+  resumes and abandoned releases are manual dispatches of
+  `.github/workflows/publish.yml`. A merge that lands while an earlier
+  release is unfinished releases with the next merge or a manual dispatch.
 - Releases run from `main` through `.github/workflows/publish.yml` with npm
   provenance and name the service images in each release. The OpenClaw and NanoClaw agent
   images are built and published outside this repository.
@@ -459,11 +466,21 @@ for `linux/amd64` and `linux/arm64`, built on native runners. The committed
 input key `sha256:<hex>` from `pnpm image:keys` names the immutable tag
 `inputs-<hex>`. Release-version tags name those same indexes; the release
 commit pins both digests in `examples/two-agents/compose.yaml`, and the GitHub
-release body lists both full digest references. Missing input tags stop the
-bump until the images workflow publishes them; a rerun completes the release.
+release body lists both full digest references. The bump waits for missing
+input tags and fails with a rerun hint if the images workflow has not
+published them in time.
+After npm publication and release image tagging succeed, a separate job sends
+`repository_dispatch` event `social-harness-released` to `social-harness/deployment`.
+Its `client_payload` is
+`{"version":"<calendar version>","registry":"ghcr.io/social-harness/registry@sha256:<digest>","router":"ghcr.io/social-harness/router@sha256:<digest>"}`.
+The references are the release's verified indexes. Deliveries
+may repeat or arrive out of order. The receiver ignores a version not newer
+than the one it runs, ordering calendar versions by their numeric year,
+month/day and sequence components.
+
 Both GHCR packages must be public before a release: the bump checks that both
 indexes pull anonymously before pinning them so the public quickstart works.
-No `moltzap-images` dispatch happens until both packages are public. After making
+No `social-harness-images` dispatch happens until both packages are public. After making
 them public, run `images.yml` from main with `workflow_dispatch` to send the
 current images to deployment. Reverting to an already-published input key also
 requires that manual run, because no new index is published.
@@ -476,21 +493,16 @@ and its OIDC issuer is `https://token.actions.githubusercontent.com`. Existing
 input tags are verified and skipped, never retagged; an unsigned index fails
 the run. Every index accepted for dispatch, pinning, release-commit push or
 release promotion is verified against that identity and issuer first.
-After publishing any index, on a rerun, or on `workflow_dispatch`, a token-free
-`tip` job checks out the current main tip, computes its keys and resolves and
-verifies both indexes.
-If either key is unpublished, it emits a notice and no payload; that tip's own
-run dispatches them once available. Denied, forbidden or unauthorized responses
-emit a warning that both packages must be public before deployment receives
-images. A separate `dispatch` job checks out nothing and holds the App token
-to send `repository_dispatch` event `moltzap-images` to
-`social-harness/deployment`. Both jobs require an uncancelled run with no failed
-`keys`, `build` or `publish` job. Its `client_payload` names both tip indexes
-and their revision:
+Once both of the current main tip's indexes are published and verified,
+`images.yml` sends `repository_dispatch` event `social-harness-images` to
+`social-harness/deployment`. Its `client_payload` names both tip indexes and
+their revision:
 `{"registry":"ghcr.io/social-harness/registry@sha256:<digest>","router":"ghcr.io/social-harness/router@sha256:<digest>","revision":"<tip sha>"}`.
-Before sending, `dispatch` compares the payload revision with main's current
-head. If they differ, it fails and directs the operator to run `images.yml`
-again from main with `workflow_dispatch`, which resolves the current tip afresh.
+Deliveries may repeat or arrive out of order. The receiver ignores a revision
+that is equal to or older than the one it runs, ordering revisions by main
+ancestry rather than by the SHA text. A run whose revision is no longer main's
+head sends nothing and fails; run `images.yml` again from main with
+`workflow_dispatch`.
 
 ### Unsupported Dockerfile form
 

@@ -7,9 +7,11 @@ name: Publish service images
 # and issuer https://token.actions.githubusercontent.com before its input tag
 # is created. Existing input tags are skipped, never retagged; partial reruns
 # converge by building only missing services. A publication, manual run or rerun
-# sends repository_dispatch moltzap-images to social-harness/deployment with
+# sends repository_dispatch social-harness-images to social-harness/deployment with
 # client_payload {"registry":"ghcr.io/social-harness/registry@sha256:…",
 # "router":"ghcr.io/social-harness/router@sha256:…","revision":"<tip sha>"}.
+# Deliveries may repeat or arrive out of order; the receiver ignores revisions
+# not newer than the one it runs, ordered by main ancestry.
 # A token-free tip job resolves and verifies the current main tip's own keys.
 # If either is unpublished, that tip's run dispatches them once available.
 # The dispatch job holds the App token, checks out nothing and sends only
@@ -233,7 +235,7 @@ jobs:
       - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         id: app-token
         with:
-          app-id: ${{ vars.RELEASE_APP_ID }}
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
           owner: social-harness
           repositories: deployment
@@ -250,5 +252,5 @@ jobs:
             echo "ERROR: payload revision $revision differs from main head $main_head; run images.yml again from main with workflow_dispatch. Docs: https://docs.moltzap.xyz/spec/layer-interfaces#publication-and-versions" >&2
             exit 1
           fi
-          jq -n --argjson payload "$PAYLOAD" '{event_type: "moltzap-images", client_payload: $payload}' \
+          jq -n --argjson payload "$PAYLOAD" '{event_type: "social-harness-images", client_payload: $payload}' \
             | gh api --method POST repos/social-harness/deployment/dispatches --input -
