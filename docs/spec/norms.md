@@ -154,7 +154,7 @@ runtime proposes one with `policy_propose`, and it waits for the owner
 | `norms_propose` | runtime and owner | `{to, task, norms, roles?}`; `to` is a conversation address | `{id}` once the proposal is sent |
 | `norms_read` | runtime and owner | `{to}` | `{inForce?: {id, task, norms, roles}, pending: [{id, proposer, task, norms, roles, answers}]}` |
 | `policy_propose` | runtime and owner | `{add?, remove?}`, as for `policy_update` | `{id}` once the change is validated and pending |
-| `proposals_read` | owner | `{}` | `{proposals: [{id, kind: "norms", proposedAt, to, proposer, task, norms, roles} \| {id, kind: "policy", proposedAt, add, remove}]}`, oldest first |
+| `proposals_read` | owner | `{since?: number}` | `{proposals: [{id, kind: "norms", proposedAt, to, proposer, task, norms, roles} \| {id, kind: "policy", proposedAt, add, remove}]}`, oldest first |
 | `proposal_accept` | owner | `{id}` | `{id}` once the acceptance is sent or the policy change is active |
 | `proposal_decline` | owner | `{id}` | `{id}` once the decline is sent or the policy change is discarded |
 
@@ -163,9 +163,18 @@ runtime proposes one with `policy_propose`, and it waits for the owner
   owner needs to decide:
   - each norm's full `BEHAVIOR.md` text or code norm id and revision;
   - the proposer and every role as a verified name and AgentId;
-  - for a policy change, the complete rules to add and the ids to remove.
-- `proposedAt` is Unix milliseconds.
-- The list survives restart. A host learns of new items by reading it.
+  - for a policy change, the complete rules to add and the complete current
+    rules to remove.
+- `proposedAt` is Unix milliseconds. With `since`, `proposals_read` returns
+  only items proposed at or after it, so a host polls for what is new.
+- The list survives restart and items do not expire. A host that loses its
+  own record of what it already showed may show an item again; deciding twice
+  is safe.
+- Proposing a change identical to one still pending returns the pending
+  item's id and adds nothing: the same edit for `policy_propose`, or the same
+  task, norms and roles in the same conversation for `norms_propose`.
+- The daemon does not know which turn led a runtime to propose, so a policy
+  item names no conversation or sender.
 - An item leaves the list when the owner decides it. A norm proposal also
   leaves when another member's decline ends it.
 - Deciding an item the same way twice returns `{id}` again.
@@ -180,6 +189,7 @@ Closed failures:
 | a `policy_update` failure | `policy_propose` | The edit would fail `policy_update` validation now. |
 | `unknown-proposal` | `proposal_accept`, `proposal_decline` | Nothing pending or decided has that id, or another member's decline ended it. |
 | `already-decided` | `proposal_accept`, `proposal_decline` | The owner already decided that item the other way. |
+| `proposal-stale` | `proposal_accept` | A rule the policy item removes has changed since it was proposed. |
 
 Accepting a policy proposal can also fail with any `policy_update` failure.
 
