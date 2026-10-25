@@ -177,7 +177,7 @@ overrides:
   '@chughtapan/safer-architecture-lsp>typescript': npm:@typescript/typescript6@6.0.2
   eslint-plugin-sonarjs>typescript: npm:@typescript/typescript6@6.0.2
   '@typescript/typescript6>@typescript/old': npm:typescript@6.0.3
-  undici@>=8.0.0 <8.12.2: 8.12.2
+  undici@>=8.0.0 <8.12.2: ^8.12.2
 
 importers:
 
@@ -7545,7 +7545,7 @@ packages:
       '@aws-sdk/credential-provider-node': '>=3.972.0 <4'
       '@smithy/hash-node': '>=4.3.0 <5'
       '@smithy/signature-v4': '>=5.4.0 <6'
-      undici: 8.12.2
+      undici: ^8.12.2
       ws: ^8.21.0
       zod: ^3.25 || ^4.0
     peerDependenciesMeta:

@@ -1,6 +1,7 @@
 # The catalog holds the one version range of every npm dependency a workspace
 # manifest declares; manifests say "catalog:". The overrides force one resolved
-# version across the whole graph.
+# version across the whole graph, except the undici one, which only raises
+# undici 8 to a floor at its first security-patched release.
 # tsc is TypeScript 7 (@typescript/native); "typescript" is the TypeScript 6 API, which typescript-eslint (<6.1.0) and other tools load.
 packages:
   - "packages/*"
@@ -69,4 +70,4 @@ overrides:
   "@chughtapan/safer-architecture-lsp>typescript": "catalog:"
   "eslint-plugin-sonarjs>typescript": "catalog:"
   "@typescript/typescript6>@typescript/old": "npm:typescript@6.0.3"
-  "undici@>=8.0.0 <8.12.2": 8.12.2
+  "undici@>=8.0.0 <8.12.2": ^8.12.2
