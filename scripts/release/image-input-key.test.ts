@@ -7,18 +7,22 @@ import { spawnSync } from "node:child_process";
 import {
   chmodSync,
   closeSync,
-  mkdirSync,
-  mkdtempSync,
   openSync,
   readFileSync,
   rmSync,
   symlinkSync,
-  writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { fixtureFiles } from "./image-input-key.fixture.ts";
+import {
+  commit,
+  dockerfile,
+  fixture,
+  git,
+  key,
+  lock,
+  write,
+} from "./image-input-key.fixture.ts";
 import {
   ImageInputError,
   imageInputs,
@@ -28,127 +32,6 @@ import {
 // @agent-code-guard/regression-only: Git fixtures pin image rebuild and refusal behavior through the release API.
 
 const command = path.join(import.meta.dirname, "image-input-key.ts");
-const lock = `lockfileVersion: '9.0'
-importers:
-  packages/router:
-    dependencies:
-      '@fixture/core':
-        version: link:../client
-      plain:
-        version: 0.97.0(effect@3.22.1)
-      alias:
-        version: external@1.0.0(peer@2.0.0)
-    devDependencies:
-      unused:
-        version: 1.0.0
-  packages/registry:
-    dependencies:
-      '@fixture/core':
-        version: link:../client
-  packages/client:
-    optionalDependencies:
-      leaf:
-        version: 1.0.0
-packages:
-  plain@0.97.0:
-    resolution: {integrity: sha512-plain}
-  effect@3.22.1:
-    resolution: {integrity: sha512-effect}
-  unused@1.0.0:
-    resolution: {integrity: sha512-unused}
-  dev-leaf@1.0.0:
-    resolution: {integrity: sha512-dev-leaf}
-  external@1.0.0:
-    resolution: {integrity: sha512-external}
-  leaf@1.0.0:
-    resolution: {integrity: sha512-leaf}
-  peer@2.0.0:
-    resolution: {integrity: sha512-peer}
-snapshots:
-  plain@0.97.0(effect@3.22.1):
-    dependencies:
-      effect: 3.22.1
-  effect@3.22.1: {}
-  unused@1.0.0:
-    dependencies:
-      dev-leaf: 1.0.0
-  dev-leaf@1.0.0: {}
-  external@1.0.0(peer@2.0.0):
-    dependencies:
-      peer: 2.0.0
-  peer@2.0.0: {}
-  leaf@1.0.0: {}
-`;
-
-const dockerfile = `FROM node:24 AS build
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
-COPY packages/router/ packages/router/
-COPY packages/client/src/index.ts packages/client/src/index.ts
-COPY packages/client/src/internal.ts packages/client/src/internal.ts
-COPY scripts/build/ scripts/build/
-RUN node scripts/build/image.ts
-FROM node:24
-COPY --from=build /app/dist /app
-COPY images/router/base-digest /base-digest
-`;
-
-/** Every fixture has both service names and a differently named library with condition-only exports. */
-function fixture(): string {
-  const repo = mkdtempSync(path.join(tmpdir(), "image-inputs-"));
-  const files = fixtureFiles(lock, dockerfile);
-  for (const service of ["router", "registry"]) {
-    files[`packages/${service}/package.json`] = JSON.stringify({
-      name: `@fixture/${service}`,
-      version: "1",
-      dependencies: { "@fixture/core": "workspace:*" },
-    });
-    files[`packages/${service}/src/index.test.ts`] =
-      'import "@fixture/core/test";\n';
-    files[`packages/${service}/src/index.ts`] =
-      'import "@fixture/core";\nimport "@fixture/core/internal";\n';
-  }
-  for (const [file, text] of Object.entries(files)) {
-    write(repo, file, text);
-  }
-  git(repo, ["init", "--quiet"]);
-  commit(repo);
-  return repo;
-}
-
-function write(repo: string, file: string, text: string): void {
-  mkdirSync(path.dirname(path.join(repo, file)), { recursive: true });
-  writeFileSync(path.join(repo, file), text);
-}
-
-function commit(repo: string): void {
-  git(repo, ["add", "."]);
-  git(repo, [
-    "-c",
-    "user.name=Fixture",
-    "-c",
-    "user.email=fixture@example.test",
-    "-c",
-    "commit.gpgsign=false",
-    "commit",
-    "--quiet",
-    "-m",
-    "Record fixture",
-  ]);
-}
-
-function git(repo: string, args: readonly string[]): void {
-  // eslint-disable-next-line sonarjs/no-os-command-from-path -- Fixtures exercise the installed Git's committed file semantics.
-  const result = spawnSync("git", ["-c", "core.autocrlf=false", ...args], {
-    cwd: repo,
-    encoding: "utf8",
-  });
-  assert.equal(result.status, 0, result.stderr);
-}
-
-function key(repo: string): string {
-  return Effect.runSync(imageInputs(repo)).router?.key ?? "";
-}
-
 /** Regular-file output also works where the sandbox denies subprocess pipe polling. */
 function run(repo: string) {
   const out = path.join(repo, ".git", "key.stdout");
@@ -783,7 +666,7 @@ await test("missing workspace subpaths and malformed manifests retain file-speci
   });
 });
 
-await test("pnpm options and optional run still identify nested build executables", (t) => {
+await test("root pnpm options and optional run identify nested build executables", (t) => {
   const repo = fixture();
   t.after(() => {
     rmSync(repo, { recursive: true, force: true });
@@ -800,7 +683,7 @@ await test("pnpm options and optional run still identify nested build executable
   write(
     repo,
     "images/router/Dockerfile",
-    `${dockerfile}\nRUN pnpm -w --silent --filter router -C . --workspace-root run --silent custom\n`,
+    `${dockerfile}\nRUN pnpm -w --silent --workspace-root run --silent custom\n`,
   );
   commit(repo);
   const before = key(repo);
@@ -1018,7 +901,7 @@ for (const name of [
     write(
       repo,
       `images/router/${name}`,
-      "FROM node:24\nCOPY assets/ /assets\n",
+      "FROM node:24@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nCOPY assets/ /assets\n",
     );
     commit(repo);
     const before = key(repo);
@@ -1076,3 +959,5 @@ for (const [label, file, content, message] of [
     });
   });
 }
+
+await import("./image-input-key.regression.test.ts");

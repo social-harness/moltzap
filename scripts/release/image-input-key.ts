@@ -5,13 +5,11 @@
  * print {service: key}. Reads HEAD, never uncommitted files or build output.
  * Manifests omit release metadata; other files retain Git mode and blob id.
  */
-import { Data, Effect, Either } from "effect";
-import { spawnSync } from "node:child_process";
+import { Effect } from "effect";
 import { createHash } from "node:crypto";
 import path from "node:path";
-import ts from "typescript";
 import { parse } from "yaml";
-import { exportCondition } from "../architecture/boundary-contract.ts";
+import { INTERNAL_EXPORT_CONDITION } from "../architecture/boundary-contract.ts";
 import {
   byteOrder,
   digestOf,
@@ -19,18 +17,29 @@ import {
   UNHASHED_FIELDS,
 } from "./content-hash.ts";
 import {
-  erasedImport,
+  asStrings,
+  compilerLayout,
+  configInputs,
+} from "./image-input-config.ts";
+import {
+  checkout,
+  ImageInputError,
+  inputError,
+  jsonValue,
+  mapping,
+  readJson,
+  type Tree,
+  under,
+  workspaceRoots,
+} from "./image-input-tree.ts";
+import { readsManifestVersion } from "./image-runtime-version.ts";
+import {
   moduleGraph,
   type ModuleReader,
-  runtimeCall,
   runtimeModule,
 } from "./module-graph.ts";
-
-/** A failed read or an incomplete committed input graph. */
-export class ImageInputError extends Data.TaggedError("ImageInputError")<{
-  readonly message: string;
-  readonly cause?: unknown;
-}> {}
+/** Typed refusal shared by image key callers. */
+export { ImageInputError } from "./image-input-tree.ts";
 
 /** Image keys omit wire metadata because releases record it without changing committed runtime inputs.
  * Packed content and host hashes retain it under their existing manifest contract.
@@ -43,18 +52,14 @@ const IMAGE_UNHASHED_FIELDS: ReadonlySet<string> = new Set([
 /** Image names are the only package layout choices the command fixes. */
 export const SERVICES = ["registry", "router"] as const;
 
-/** Git identity of one committed input. */
-interface File {
-  readonly mode: string;
-  readonly blob: string;
-}
-
-/** A snapshot keeps traversal and hashing on the same committed revision. */
-interface Tree {
-  readonly files: ReadonlyMap<string, File>;
-  readonly read: (file: string) => string;
-  readonly resolve: (file: string) => string;
-}
+const IMAGE_CONDITIONS = [
+  "node",
+  "module-sync",
+  "require",
+  "import",
+  INTERNAL_EXPORT_CONDITION,
+  "default",
+];
 
 /** Each class is disjoint; locked packages are virtual inputs, not whole lockfiles. */
 interface ImageInputs {
@@ -63,34 +68,34 @@ interface ImageInputs {
   readonly image: readonly string[];
   readonly tooling: readonly string[];
   readonly locked: readonly string[];
+  readonly runtime: readonly string[];
   readonly key: string;
+}
+
+interface ShellState {
+  quote: string;
+  comment: boolean;
+  escaped: boolean;
 }
 
 /** Lists reached modules that consume release versions; image workflows can enforce a version-free runtime. */
 export function runtimeVersionReads(
   repo: string,
 ): Effect.Effect<readonly string[], ImageInputError> {
-  return imageInputs(repo).pipe(
-    Effect.flatMap((images) =>
-      Effect.try({
-        try: () => {
-          const tree = checkout(repo);
-          return [
-            ...new Set(
-              Object.values(images).flatMap((image) => [
-                ...image.own,
-                ...image.modules,
-              ]),
-            ),
-          ]
-            .filter((file) => isRuntimeInput(tree, file))
-            .filter((file) => readsManifestVersion(tree.read(file)))
-            .sort(byteOrder);
-        },
-        catch: inputError,
-      }),
-    ),
-  );
+  return Effect.try({
+    try: () => {
+      const tree = checkout(repo);
+      return [
+        ...new Set(
+          Object.values(imagesFromTree(tree)).flatMap((image) => image.runtime),
+        ),
+      ]
+        .filter((file) => isRuntimeInput(tree, file))
+        .filter((file) => readsManifestVersion(tree.read(file)))
+        .sort(byteOrder);
+    },
+    catch: inputError,
+  });
 }
 
 /** Computes keys and their input inventory from HEAD for release callers. */
@@ -100,13 +105,17 @@ export function imageInputs(
   return Effect.try({
     try: () => {
       const tree = checkout(repo);
-      const roots = workspaceRoots(tree);
-      return Object.fromEntries(
-        SERVICES.map((service) => [service, inputs(service, roots, tree)]),
-      );
+      return imagesFromTree(tree);
     },
     catch: inputError,
   });
+}
+
+function imagesFromTree(tree: Tree): Readonly<Record<string, ImageInputs>> {
+  const roots = workspaceRoots(tree);
+  return Object.fromEntries(
+    SERVICES.map((service) => [service, inputs(service, roots, tree)]),
+  );
 }
 
 /** Manifest binaries can be extensionless, while declarations remain erased. */
@@ -133,58 +142,6 @@ function binTargets(bin: unknown): string[] {
       );
 }
 
-function checkout(repo: string): Tree {
-  const files = new Map<string, File>();
-  for (const entry of git(repo, ["ls-tree", "-rz", "HEAD"])
-    .split("\0")
-    .filter(Boolean)) {
-    const [header = "", file = ""] = entry.split("\t");
-    const [mode = "", kind, blob = ""] = header.split(" ");
-    if (kind === "blob") {
-      files.set(file, { mode, blob });
-    }
-  }
-  const cache = new Map<string, string>();
-  const resolve = (file: string) =>
-    treeTarget(
-      file,
-      files,
-      (id) => cache.get(id) ?? git(repo, ["cat-file", "blob", id]),
-      new Set(),
-    );
-  return {
-    files,
-    resolve,
-    read: (file) => {
-      const found = files.get(resolve(file));
-      if (found === undefined) {
-        throw new ImageInputError({
-          message: `Missing committed input ${file}`,
-        });
-      }
-      const text =
-        cache.get(found.blob) ?? git(repo, ["cat-file", "blob", found.blob]);
-      cache.set(found.blob, text);
-      return text;
-    },
-  };
-}
-
-function git(repo: string, args: readonly string[]): string {
-  // eslint-disable-next-line sonarjs/no-os-command-from-path -- Git is the release runner's installed Git.
-  const result = spawnSync("git", args, {
-    cwd: repo,
-    encoding: "utf8",
-    maxBuffer: 32 * 1024 * 1024,
-  });
-  if (result.status !== 0) {
-    throw new ImageInputError({
-      message: result.stderr || String(result.error),
-    });
-  }
-  return result.stdout;
-}
-
 function inputs(
   service: string,
   roots: ReadonlyMap<string, string>,
@@ -196,14 +153,25 @@ function inputs(
     throw new ImageInputError({ message: `Missing service ${service}` });
   }
   const own = under(tree, root);
-  const { modules, reached } = siblingInputs(name, own, roots, tree);
+  const { modules, reached, runtime } = siblingInputs(name, own, roots, tree);
+  const image = serviceImages(tree, service, name);
   const directories = [...reached].map((sibling) => roots.get(sibling) ?? "");
-  const image = under(tree, `images/${service}`);
-  const tooling = buildInputs(tree, directories, image).filter(
+  const locked = lockedClosure(tree.read("pnpm-lock.yaml"), root, {
+    roots,
+    tree,
+    directories,
+  });
+  const installed = locked
+    .filter(([id]) => id.startsWith("importer:"))
+    .map(([id]) => id.slice("importer:".length));
+  const tooling = buildInputs(
+    { ...tree, service: name },
+    [...new Set([...directories, ...installed])],
+    image,
+  ).filter(
     (file) =>
       !own.includes(file) && !modules.includes(file) && !image.includes(file),
   );
-  const locked = lockedClosure(tree.read("pnpm-lock.yaml"), root, roots);
   const entries = [...own, ...modules, ...image, ...tooling].map((file) =>
     committedEntry(tree, file),
   );
@@ -215,12 +183,21 @@ function inputs(
   );
   return {
     own,
+    runtime,
     modules,
     image,
     tooling,
     locked: locked.map(([id]) => id),
     key: digestOf(entries),
   };
+}
+
+function serviceImages(tree: Tree, service: string, name: string): string[] {
+  const files = under(tree, `images/${service}`);
+  for (const file of files.filter(isBuildFile)) {
+    validateDocker(tree.read(file), file, name);
+  }
+  return files;
 }
 
 /** Own files seed traversal; sibling manifests bind the exports used to reach their modules. */
@@ -239,15 +216,7 @@ function siblingInputs(
     })),
     roots,
     {
-      conditions: [
-        "node",
-        "module-sync",
-        "require",
-        "import",
-        exportCondition({ internalOnly: true, types: "", import: "" }) ??
-          "default",
-        "default",
-      ],
+      conditions: IMAGE_CONDITIONS,
       all: true,
     },
     reader,
@@ -267,7 +236,195 @@ function siblingInputs(
       modules.push(`${roots.get(sibling)}/package.json`);
     }
   }
-  return { modules, reached };
+  const runtime = runtimeInputs(name, own, roots, tree);
+  return { modules, reached, runtime };
+}
+
+function runtimeInputs(
+  name: string,
+  own: readonly string[],
+  roots: ReadonlyMap<string, string>,
+  tree: Tree,
+): string[] {
+  const root = roots.get(name) ?? "";
+  const reader = sourceReader(tree);
+  const inactive = new Set(
+    testEntryTargets(readJson(tree, `${root}/package.json`).exports)
+      .filter(
+        (target) =>
+          !activeEntryTargets(
+            readJson(tree, `${root}/package.json`).exports,
+          ).includes(target),
+      )
+      .flatMap((target) => reader.locate(root, target) ?? [])
+      .map((target) => path.posix.join(root, target)),
+  );
+  return moduleGraph(
+    own
+      .filter((file) => !testInput(file) && !inactive.has(file))
+      .map((file) => ({
+        name,
+        relative: path.posix.relative(root, tree.resolve(file)),
+      })),
+    roots,
+    {
+      conditions: IMAGE_CONDITIONS,
+      all: true,
+    },
+    reader,
+  ).map((module) =>
+    path.posix.join(roots.get(module.name) ?? "", module.relative),
+  );
+}
+
+function testEntryTargets(value: unknown, testOnly = false): string[] {
+  if (typeof value === "string") {
+    return testOnly ? [value] : [];
+  }
+  return Object.entries(mapping(value)).flatMap(([condition, target]) =>
+    testEntryTargets(target, testOnly || condition === "sharness-test"),
+  );
+}
+
+function activeEntryTargets(value: unknown): string[] {
+  if (typeof value === "string") {
+    return [value];
+  }
+  return Object.entries(mapping(value))
+    .filter(([condition]) => !["types", "sharness-test"].includes(condition))
+    .flatMap(([, target]) => activeEntryTargets(target));
+}
+
+function testInput(file: string): boolean {
+  return /(?:(?:^|\/)(?:test|tests|__tests__)[/.]|\.(?:test|spec|types-check)\.[cm]?[jt]s$)/u.test(
+    file,
+  );
+}
+
+/** Build commands discover executables; the whole root manifest binds installation and script configuration. */
+function buildInputs(
+  tree: Tree,
+  roots: readonly string[],
+  images: readonly string[],
+): string[] {
+  const buildTree: Tree = { ...tree, commandCwds: new Map() };
+  const fixed = [
+    "package.json",
+    ".npmrc",
+    ".dockerignore",
+    "nx.json",
+    "tsconfig.base.json",
+    ".node-version",
+    ".pnpmfile.cjs",
+  ].filter((file) => buildTree.files.has(file));
+  const files = new Set([
+    "pnpm-workspace.yaml",
+    ...fixed,
+    ...images
+      .filter(isBuildFile)
+      .flatMap((file) => dockerInputs(buildTree, file)),
+  ]);
+  const pending = [
+    ...fixed,
+    ...images.filter(isBuildFile),
+    ...roots
+      .map((root) => `${root}/tsconfig.json`)
+      .filter((file) => buildTree.files.has(file)),
+    ...roots.flatMap((root) => buildCommandFiles(buildTree, root)),
+    ...[".", ...roots].flatMap((root) => lifecycleFiles(buildTree, root)),
+  ];
+  const seen = new Set<string>();
+  for (let file = pending.pop(); file !== undefined; file = pending.pop()) {
+    const traversal = `${file}#${JSON.stringify([...(buildTree.commandCwds?.get(file) ?? [])].sort(byteOrder))}`;
+    if (seen.has(traversal)) {
+      continue;
+    }
+    seen.add(traversal);
+    files.add(file);
+    pending.push(...namedInputs(buildTree, file));
+  }
+  return [...files];
+}
+
+function buildCommandFiles(tree: Tree, root: string): string[] {
+  const manifest = readJson(tree, `${root}/package.json`);
+  const projectFile = `${root}/project.json`;
+  const targetFile = tree.files.has(projectFile)
+    ? projectFile
+    : `${root}/package.json`;
+  const project = tree.files.has(projectFile)
+    ? readJson(tree, projectFile)
+    : mapping(manifest.nx);
+  const target = mapping(mapping(project.targets).build);
+  if (unsupportedBuild(target)) {
+    throw new ImageInputError({
+      message: `Unsupported Nx build layout in ${targetFile}`,
+    });
+  }
+  const options = mapping(target.options);
+  const commands = [options.command, ...arrayValues(options.commands)]
+    .map((value) =>
+      typeof value === "string" ? value : mapping(value).command,
+    )
+    .filter((value): value is string => typeof value === "string");
+  const script = mapping(manifest.scripts).build;
+  return [
+    ...(tree.files.has(projectFile) ? [projectFile] : []),
+    ...(typeof script === "string" ? commandFiles(tree, root, script) : []),
+    ...commands.flatMap((command) =>
+      commandFiles(
+        tree,
+        typeof options.cwd === "string" ? options.cwd : root,
+        command,
+      ),
+    ),
+  ];
+}
+
+function unsupportedBuild(target: Record<string, unknown>): boolean {
+  return (
+    target.configurations !== undefined ||
+    (target.executor !== undefined && target.executor !== "nx:run-commands")
+  );
+}
+
+function arrayValues(value: unknown): readonly unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+/** Only executable text names build files; copied content never becomes a command. */
+function namedInputs(tree: Tree, file: string): string[] {
+  const text = tree.read(file);
+  if (/tsconfig[^/]*\.json$/u.test(file)) {
+    return configInputs(tree, file);
+  }
+  if (isBuildFile(file)) {
+    return commandFiles(
+      tree,
+      ".",
+      dockerExecutable(dockerCommands(text, file)),
+      file,
+    );
+  }
+  if (/\.[cm]?[jt]s$/u.test(file)) {
+    const roots = new Map([...workspaceRoots(tree), ["@image-build", "."]]);
+    return moduleGraph(
+      [{ name: "@image-build", relative: tree.resolve(file) }],
+      roots,
+      {
+        conditions: IMAGE_CONDITIONS,
+        all: true,
+      },
+      sourceReader(tree),
+    ).map((module) =>
+      path.posix.join(roots.get(module.name) ?? "", module.relative),
+    );
+  }
+  return file.endsWith(".sh") || text.startsWith("#!")
+    ? [...(tree.commandCwds?.get(file) ?? ["."])].flatMap((cwd) =>
+        commandFiles(tree, cwd, text, file),
+      )
+    : [];
 }
 
 /** Maps emitted export targets and relative JS imports back through each package's compiler layout. */
@@ -286,12 +443,16 @@ function sourceReader(tree: Tree): ModuleReader {
       }
       const config = `${root}/tsconfig.json`;
       const options = tree.files.has(config)
-        ? mapping(readJson(tree, config).compilerOptions)
+        ? compilerLayout(tree, config)
         : {};
       const outDir =
-        typeof options.outDir === "string" ? options.outDir : "dist";
+        typeof options.outDir === "string"
+          ? path.posix.relative(root, options.outDir)
+          : "dist";
       const rootDir =
-        typeof options.rootDir === "string" ? options.rootDir : "src";
+        typeof options.rootDir === "string"
+          ? path.posix.relative(root, options.rootDir)
+          : "src";
       const emitted = relative.replace(/^\.\//u, "");
       const source = emitted.startsWith(`${outDir}/`)
         ? `${rootDir}/${emitted.slice(outDir.length + 1)}`
@@ -313,78 +474,6 @@ function sourceReader(tree: Tree): ModuleReader {
   };
 }
 
-/** Build commands discover executables; the whole root manifest binds installation and script configuration. */
-function buildInputs(
-  tree: Tree,
-  roots: readonly string[],
-  images: readonly string[],
-): string[] {
-  const fixed = [
-    "package.json",
-    ".npmrc",
-    ".dockerignore",
-    "nx.json",
-    "tsconfig.base.json",
-    ".node-version",
-  ].filter((file) => tree.files.has(file));
-  const files = new Set(["pnpm-workspace.yaml", ...fixed]);
-  const pending = [
-    ...fixed,
-    ...under(tree, "scripts/build"),
-    ...images.filter(isBuildFile),
-    ...roots
-      .map((root) => `${root}/tsconfig.json`)
-      .filter((file) => tree.files.has(file)),
-    ...roots.flatMap((root) => buildCommandFiles(tree, root)),
-    ...images.filter(isBuildFile).flatMap((file) => dockerInputs(tree, file)),
-    ...lifecycleFiles(tree),
-  ];
-  const seen = new Set<string>();
-  for (let file = pending.pop(); file !== undefined; file = pending.pop()) {
-    if (seen.has(file)) {
-      continue;
-    }
-    seen.add(file);
-    files.add(file);
-    pending.push(...namedInputs(tree, file));
-  }
-  return [...files];
-}
-
-function buildCommandFiles(tree: Tree, root: string): string[] {
-  const { cwd, commands } = buildCommands(tree, root);
-  return commands.flatMap((command) => commandFiles(tree, cwd, command));
-}
-
-function buildCommands(tree: Tree, root: string) {
-  const manifest = readJson(tree, `${root}/package.json`);
-  const target = mapping(mapping(mapping(manifest.nx).targets).build);
-  const options = mapping(target.options);
-  const commands = [
-    mapping(manifest.scripts).build,
-    options.command,
-    ...asStrings(options.commands),
-  ].filter((command): command is string => typeof command === "string");
-  const cwd = typeof options.cwd === "string" ? options.cwd : root;
-  return { cwd, commands };
-}
-
-/** Config inheritance and command paths are separate from source files mentioned by include globs. */
-function namedInputs(tree: Tree, file: string): string[] {
-  const text = tree.read(file);
-  if (file.endsWith(".json") && !isBuildFile(file)) {
-    const parent = mapping(jsonValue(text, file)).extends;
-    const parents = typeof parent === "string" ? [parent] : asStrings(parent);
-    return parents
-      .map((entry) =>
-        path.posix.normalize(path.posix.join(path.posix.dirname(file), entry)),
-      )
-      .filter((entry) => tree.files.has(entry));
-  }
-  const body = isBuildFile(file) ? dockerCommands(text, file) : text;
-  return commandFiles(tree, path.posix.dirname(file), body);
-}
-
 function isBuildFile(file: string): boolean {
   const name = path.posix.basename(file);
   return (
@@ -396,8 +485,13 @@ function isBuildFile(file: string): boolean {
 function lockedClosure(
   text: string,
   root: string,
-  roots: ReadonlyMap<string, string>,
+  context: {
+    readonly roots: ReadonlyMap<string, string>;
+    readonly tree: Tree;
+    readonly directories: readonly string[];
+  },
 ): ReadonlyArray<readonly [string, unknown]> {
+  const { roots, tree, directories } = context;
   const lock: unknown = parse(text);
   const value = mapping(lock);
   if (String(value.lockfileVersion) !== "9.0") {
@@ -405,9 +499,20 @@ function lockedClosure(
       message: "Unsupported pnpm-lock.yaml version; expected 9.0",
     });
   }
-  const found = new Map<string, unknown>();
+  const found = new Map<string, unknown>([
+    ["settings", value.settings],
+    ["pnpmfileChecksum", value.pnpmfileChecksum],
+  ]);
   const seen = new Set<string>();
-  const pending = [{ id: root, importer: true }];
+  const pending = [
+    ...new Set([
+      ...directories.filter((directory) => directory !== root),
+      root,
+    ]),
+  ].map((id) => ({
+    id,
+    importer: true,
+  }));
   for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
     const { id, importer } = next;
     if (seen.has(id)) {
@@ -418,10 +523,43 @@ function lockedClosure(
     accountImporter(importer, id, block, roots);
     if (!importer) {
       found.set(id, pinnedPackage(value, id, block));
+    } else {
+      pending.push(...importerInputs(id, block, tree, found));
     }
     pending.push(...runtimeIds(block, id, importer));
   }
   return [...found].sort(([a], [b]) => (a < b ? -1 : Number(a !== b)));
+}
+
+function importerInputs(
+  id: string,
+  block: Record<string, unknown>,
+  tree: Tree,
+  found: Map<string, unknown>,
+) {
+  const sections = Object.fromEntries(
+    ["dependencies", "optionalDependencies"].map((section) => [
+      section,
+      Object.fromEntries(
+        Object.entries(mapping(block[section])).map(([name, entry]) => [
+          name,
+          lockedId(name, mapping(entry).version, id),
+        ]),
+      ),
+    ]),
+  );
+  found.set(`importer:${id}`, sections);
+  return Object.keys(
+    mapping(readJson(tree, `${id}/package.json`).devDependencies),
+  ).map((name) => {
+    const resolved = lockedId(
+      name,
+      mapping(mapping(block.devDependencies)[name]).version,
+      id,
+    );
+    found.set(`tool:${id}:${name}`, resolved);
+    return resolved;
+  });
 }
 
 /** Workspace links are accepted only when their import name and directory are both traversable. */
@@ -542,14 +680,13 @@ function lockedId(
   };
 }
 
-function under(tree: Tree, root: string): string[] {
-  return [...tree.files.keys()].filter((file) => file.startsWith(`${root}/`));
-}
-
 function committedEntry(tree: Tree, file: string): string {
   const entry = tree.files.get(file);
   if (entry === undefined) {
     throw new ImageInputError({ message: `Missing committed input ${file}` });
+  }
+  if (entry.mode === "160000") {
+    throw new ImageInputError({ message: `Unsupported gitlink input ${file}` });
   }
   if (entry.mode === "120000") {
     return `${file}\0${entry.mode}\0${entry.blob}\0${committedEntry(tree, tree.resolve(file))}\n`;
@@ -571,71 +708,83 @@ function committedEntry(tree: Tree, file: string): string {
   return `${file}\0${entry.mode}\0${blob}\n`;
 }
 
-function inputError(cause: unknown): ImageInputError {
-  return cause instanceof ImageInputError
-    ? cause
-    : new ImageInputError({ message: String(cause), cause });
-}
-
-function workspaceRoots(tree: Tree): ReadonlyMap<string, string> {
-  return new Map(
-    [...tree.files.keys()]
-      .filter((file) => /^packages\/[^/]+\/package\.json$/u.test(file))
-      .map((file) => [
-        String(readJson(tree, file).name),
-        path.posix.dirname(file),
-      ]),
+function lifecycleFiles(tree: Tree, root: string): string[] {
+  const scripts = mapping(
+    readJson(tree, path.posix.join(root, "package.json")).scripts,
   );
-}
-
-function treeTarget(
-  file: string,
-  files: ReadonlyMap<string, File>,
-  blob: (id: string) => string,
-  seen: ReadonlySet<string>,
-): string {
-  const entry = files.get(file);
-  if (entry === undefined || seen.has(file)) {
-    throw new ImageInputError({
-      message: `Missing or cyclic symlink image input ${file}`,
-    });
-  }
-  if (entry.mode !== "120000") {
-    return file;
-  }
-  const link = blob(entry.blob);
-  const target = path.posix.isAbsolute(link)
-    ? link
-    : path.posix.normalize(path.posix.join(path.posix.dirname(file), link));
-  if (target.startsWith("../") || path.posix.isAbsolute(target)) {
-    throw new ImageInputError({
-      message: `Outside-tree symlink image input ${file}`,
-    });
-  }
-  return treeTarget(target, files, blob, new Set([...seen, file]));
-}
-
-function lifecycleFiles(tree: Tree): string[] {
-  const scripts = mapping(readJson(tree, "package.json").scripts);
   return ["preinstall", "install", "postinstall", "prepare"].flatMap((name) => {
     const body = scripts[name];
-    return typeof body === "string" ? commandFiles(tree, ".", body) : [];
+    return typeof body === "string" ? commandFiles(tree, root, body) : [];
   });
 }
 
-function commandFiles(tree: Tree, cwd: string, body: string): string[] {
-  const scripts = mapping(readJson(tree, "package.json").scripts);
-  return [body, ...scriptBodies(body, scripts)]
+function commandFiles(
+  tree: Tree,
+  cwd: string,
+  body: string,
+  file = "",
+): string[] {
+  const manifest = path.posix.join(cwd, "package.json");
+  const sourceFile = file || manifest;
+  const scripts = tree.files.has(manifest)
+    ? mapping(readJson(tree, manifest).scripts)
+    : {};
+  const executable = shellText(body);
+  const bodies = [executable, ...scriptBodies(executable, scripts)].map(
+    shellText,
+  );
+  for (const text of bodies) {
+    if (scopedScript(text)) {
+      throw new ImageInputError({
+        message: `Unsupported scoped pnpm run in ${sourceFile}`,
+      });
+    }
+    if (tree.service !== undefined) {
+      validateInstall(text, sourceFile, tree.service);
+    }
+  }
+  const files = bodies
     .flatMap((text) => text.split(/[\s"'`=,;()[\]{}&|]+/u))
-    .flatMap((token) => [
-      token.replace(/^\.\//u, ""),
-      path.posix.normalize(path.posix.join(cwd, token)),
-    ])
+    .map((token) => path.posix.normalize(path.posix.join(cwd, token)))
     .filter(
       (target) =>
         tree.files.has(target) &&
         !["pnpm-lock.yaml", "package.json"].includes(target),
     );
+  recordCommands(tree, cwd, files);
+  return files;
+}
+
+function recordCommands(
+  tree: Tree,
+  cwd: string,
+  files: readonly string[],
+): void {
+  for (const target of files) {
+    const directories = tree.commandCwds?.get(target) ?? new Set<string>();
+    directories.add(cwd);
+    tree.commandCwds?.set(target, directories);
+  }
+}
+
+function scopedScript(text: string): boolean {
+  return text.split(/[;&|\n]+/u).some(scopedCommand);
+}
+
+function scopedCommand(text: string): boolean {
+  const tokens: readonly string[] =
+    text.match(/"[^"\n]*"|'[^'\n]*'|[^\s]+/gu) ?? [];
+  const index = tokens.indexOf("pnpm");
+  const scoped = tokens.some((token) =>
+    /^(?:--filter(?:=|$)|-F$|-C$|--dir(?:=|$))/u.test(token),
+  );
+  return (
+    index >= 0 &&
+    scoped &&
+    !["install", "deploy", "exec"].includes(
+      tokens[scriptToken(tokens, index + 1)] ?? "",
+    )
+  );
 }
 
 function scriptBodies(
@@ -646,9 +795,9 @@ function scriptBodies(
   const pending = scriptNames(text);
   for (let name = pending.pop(); name !== undefined; name = pending.pop()) {
     const body = scripts[name];
-    if (typeof body === "string" && !found.has(body)) {
-      found.add(body);
-      pending.push(...scriptNames(body));
+    if (typeof body === "string" && !found.has(shellText(body))) {
+      found.add(shellText(body));
+      pending.push(...scriptNames(shellText(body)));
     }
   }
   return [...found];
@@ -671,36 +820,6 @@ function scriptNames(text: string): string[] {
     }
   }
   return names;
-}
-
-function readJson(tree: Tree, file: string): Record<string, unknown> {
-  return mapping(jsonValue(tree.read(file), file));
-}
-
-function jsonValue(text: string, file: string): unknown {
-  return Either.match(
-    Effect.runSync(
-      Effect.either(
-        Effect.try({
-          try: (): unknown => JSON.parse(text),
-          catch: (cause) =>
-            new ImageInputError({ message: `Invalid JSON in ${file}`, cause }),
-        }),
-      ),
-    ),
-    {
-      onLeft: (error) => {
-        throw error;
-      },
-      onRight: (value) => value,
-    },
-  );
-}
-
-function mapping(value: unknown): Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? Object.fromEntries(Object.entries(value))
-    : {};
 }
 
 /** COPY and ADD read the build context; stage copies consume already keyed build outputs. */
@@ -763,10 +882,40 @@ function refuseContextMount(instruction: string, file: string): void {
   }
 }
 
-function asStrings(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === "string")
-    : [];
+/** Stage references can only point backwards; external inputs require an immutable digest. */
+function validateDocker(text: string, file: string, service: string): void {
+  const stages = new Set<string>();
+  let index = 0;
+  let current: string[] = [];
+  function image(reference: string): void {
+    if (
+      stages.has(reference.toLowerCase()) ||
+      reference === "scratch" ||
+      /@sha256:[a-f0-9]{64}$/u.test(reference)
+    ) {
+      return;
+    }
+    throw new ImageInputError({
+      message: `Unpinned image or undeclared earlier stage ${reference} in ${file}`,
+    });
+  }
+  for (const match of text.matchAll(
+    /^[ \t]*#[ \t]*syntax[ \t]*=[ \t]*(\S+)/gimu,
+  )) {
+    image(match[1] ?? "");
+  }
+  for (const line of dockerCommands(text, file).split("\n")) {
+    const from = stageDeclaration(line);
+    if (from !== undefined) {
+      current.forEach((stage) => stages.add(stage));
+      image(from.image);
+      current = [String(index++), ...from.names];
+    }
+    for (const reference of stageReferences(line)) {
+      image(reference);
+    }
+  }
+  validateInstall(dockerExecutable(dockerCommands(text, file)), file, service);
 }
 
 function dockerCommands(text: string, file: string): string {
@@ -777,138 +926,125 @@ function dockerCommands(text: string, file: string): string {
   }
   return text
     .replaceAll("\r\n", "\n")
-    .replace(/\\[ \t]*\n(?:[ \t]*(?:#[^\n]*)?\n)*/gu, " ");
+    .replace(/^[ \t]*#[^\n]*$/gmu, "")
+    .replace(/\\[ \t]*\n(?:[ \t]*\n)*/gu, " ");
+}
+
+/** Full-line Docker comments are removed before continuation folding. */
+function dockerExecutable(text: string): string {
+  const lines: string[] = [];
+  let delimiter: string | undefined;
+  for (const line of text.split("\n")) {
+    if (delimiter !== undefined) {
+      if (line.trim() === delimiter) {
+        delimiter = undefined;
+      } else {
+        lines.push(line);
+      }
+    } else if (/^(?:RUN|CMD|ENTRYPOINT)\b/iu.test(line.trim())) {
+      lines.push(shellText(line));
+      delimiter = /<<['"]?(\w+)/u.exec(line)?.[1];
+    }
+  }
+  return lines.join("\n");
+}
+
+/** Shell comments start outside quotes at a token boundary. */
+function shellText(text: string): string {
+  const state = { quote: "", comment: false, escaped: false };
+  let result = "";
+  for (let index = 0; index < text.length; index++) {
+    result += shellCharacter(state, text.charAt(index), text.charAt(index - 1));
+  }
+  return result;
+}
+
+function shellCharacter(
+  state: ShellState,
+  character: string,
+  previous: string,
+): string {
+  if (character === "\n") {
+    state.comment = false;
+  }
+  if (state.comment) {
+    return "";
+  }
+  if (startsShellComment(state, character, previous)) {
+    state.comment = true;
+    return "";
+  }
+  updateShellQuote(state, character);
+  state.escaped = !state.escaped && character === "\\" && state.quote !== "'";
+  return character;
+}
+
+function startsShellComment(
+  state: ShellState,
+  character: string,
+  previous: string,
+): boolean {
+  const boundary = previous === "" || /[\s;&|()<>]/u.test(previous);
+  return !state.escaped && state.quote === "" && character === "#" && boundary;
+}
+
+function updateShellQuote(state: ShellState, character: string): void {
+  if (state.escaped || !["'", '"', "`"].includes(character)) {
+    return;
+  }
+  if (state.quote === character) {
+    state.quote = "";
+  } else if (state.quote === "") {
+    state.quote = character;
+  }
+}
+
+function stageDeclaration(
+  line: string,
+): { readonly image: string; readonly names: readonly string[] } | undefined {
+  const match = /^FROM\s+(?:--platform=\S+\s+)?(\S+)(?:\s+AS\s+(\S+))?/iu.exec(
+    line.trim(),
+  );
+  return match === null
+    ? undefined
+    : {
+        image: match[1] ?? "",
+        names: match[2] === undefined ? [] : [match[2].toLowerCase()],
+      };
+}
+
+function stageReferences(line: string): string[] {
+  return [...line.matchAll(/(?:--from(?:=|\s+)|\bfrom=)([^\s,]+)/gu)].map(
+    (match) => match[1] ?? "",
+  );
+}
+
+function validateInstall(text: string, file: string, service: string): void {
+  for (const command of text.split(/[;&|\n]+/u)) {
+    if (
+      !/\b(?:pnpm|npm|yarn)\b[^;&]*\b(?:install|deploy|ci)\b/u.test(command)
+    ) {
+      continue;
+    }
+    const filter = installFilter(command);
+    const expected = `${service}${/\bdeploy\b/u.test(command) ? "" : "..."}`;
+    if (!/\bpnpm\b/u.test(command) || filter !== expected) {
+      throw new ImageInputError({
+        message: `Unscoped pnpm install/deploy in ${file}; expected --filter ${expected}`,
+      });
+    }
+  }
+}
+
+function installFilter(command: string): string | undefined {
+  return /(?:--filter(?:=|\s+)|-F\s+)([^\s]+)/u
+    .exec(command)?.[1]
+    ?.replace(/^["']|["']$/gu, "");
 }
 
 function nonDefaultEscape(line: string): boolean {
   const match = /^#[ \t]*escape[ \t]*=(.*)$/iu.exec(line.trim());
   return match !== null && match[1]?.trim() !== "\\";
-}
-
-function readsManifestVersion(text: string): boolean {
-  const source = ts.createSourceFile(
-    "module.ts",
-    text,
-    ts.ScriptTarget.Latest,
-    true,
-  );
-  const manifests = new Set<string>();
-  let reads = false;
-  function visit(node: ts.Node): void {
-    reads =
-      syntaxVersionRead(node, manifests) ||
-      reads ||
-      manifestFileRead(node) ||
-      npmVersionRead(node);
-    ts.forEachChild(node, visit);
-  }
-  visit(source);
-  return reads;
-}
-
-function syntaxVersionRead(node: ts.Node, manifests: Set<string>): boolean {
-  if (ts.isImportDeclaration(node)) {
-    return manifestImport(node, manifests);
-  }
-  if (
-    ts.isVariableDeclaration(node) &&
-    node.initializer !== undefined &&
-    manifestExpression(node.initializer, manifests)
-  ) {
-    return manifestBinding(node.name, manifests);
-  }
-  return expressionVersionRead(node, manifests);
-}
-
-/** Filesystem manifest reads conservatively consume version metadata regardless of later parsing. */
-function manifestFileRead(node: ts.Node): boolean {
-  if (
-    !ts.isCallExpression(node) ||
-    !["readFile", "readFileSync"].includes(callName(node.expression))
-  ) {
-    return false;
-  }
-  const argument = node.arguments[0];
-  if (argument === undefined) {
-    return false;
-  }
-  const target = manifestPath(argument);
-  return target !== undefined && manifestSpecifier(target);
-}
-
-function manifestPath(node: ts.Expression): ts.Expression | undefined {
-  if (ts.isNewExpression(node) && callName(node.expression) === "URL") {
-    return node.arguments?.[0];
-  }
-  return node;
-}
-
-function callName(node: ts.Expression): string {
-  if (ts.isIdentifier(node)) {
-    return node.text;
-  }
-  return ts.isPropertyAccessExpression(node) ? node.name.text : "";
-}
-
-function npmVersionRead(node: ts.Node): boolean {
-  if (
-    !ts.isPropertyAccessExpression(node) ||
-    node.name.text !== "npm_package_version" ||
-    !ts.isPropertyAccessExpression(node.expression) ||
-    node.expression.name.text !== "env"
-  ) {
-    return false;
-  }
-  const receiver = node.expression.expression;
-  return ts.isIdentifier(receiver) && receiver.text === "process";
-}
-
-function manifestImport(
-  node: ts.ImportDeclaration,
-  manifests: Set<string>,
-): boolean {
-  if (
-    erasedImport(node.importClause) ||
-    !manifestSpecifier(node.moduleSpecifier)
-  ) {
-    return false;
-  }
-  const clause = node.importClause;
-  if (clause?.name !== undefined) {
-    manifests.add(clause.name.text);
-  }
-  const bindings = clause?.namedBindings;
-  if (bindings === undefined) {
-    return false;
-  }
-  if (ts.isNamespaceImport(bindings)) {
-    manifests.add(bindings.name.text);
-    return false;
-  }
-  return bindings.elements.some(
-    (item) =>
-      !item.isTypeOnly && (item.propertyName ?? item.name).text === "version",
-  );
-}
-
-function manifestBinding(
-  name: ts.BindingName,
-  manifests: Set<string>,
-): boolean {
-  if (ts.isIdentifier(name)) {
-    manifests.add(name.text);
-    return false;
-  }
-  return (
-    ts.isObjectBindingPattern(name) &&
-    name.elements.some(
-      (item) =>
-        (item.propertyName ?? item.name)
-          .getText()
-          .replaceAll('"', "")
-          .replaceAll("'", "") === "version",
-    )
-  );
 }
 
 function scriptToken(tokens: readonly string[], start: number): number {
@@ -931,80 +1067,6 @@ function dockerArguments(body: string): string {
     text = text.slice(space).trimStart();
   }
   return text;
-}
-
-function expressionVersionRead(
-  node: ts.Node,
-  manifests: ReadonlySet<string>,
-): boolean {
-  return manifestExport(node) || versionAccess(node, manifests);
-}
-
-function versionAccess(node: ts.Node, manifests: ReadonlySet<string>): boolean {
-  if (ts.isPropertyAccessExpression(node)) {
-    return (
-      node.name.text === "version" &&
-      manifestExpression(node.expression, manifests)
-    );
-  }
-  if (
-    ts.isElementAccessExpression(node) &&
-    ts.isStringLiteral(node.argumentExpression)
-  ) {
-    return (
-      node.argumentExpression.text === "version" &&
-      manifestExpression(node.expression, manifests)
-    );
-  }
-  return false;
-}
-
-function manifestExpression(
-  node: ts.Node,
-  manifests: ReadonlySet<string>,
-): boolean {
-  if (ts.isIdentifier(node)) {
-    return manifests.has(node.text);
-  }
-  if (ts.isAwaitExpression(node) || ts.isParenthesizedExpression(node)) {
-    return manifestExpression(node.expression, manifests);
-  }
-  if (ts.isPropertyAccessExpression(node) && node.name.text === "default") {
-    return manifestExpression(node.expression, manifests);
-  }
-  return ts.isCallExpression(node) && manifestCall(node);
-}
-
-function manifestCall(node: ts.CallExpression): boolean {
-  return runtimeCall(node) && node.arguments.some(manifestSpecifier);
-}
-
-function manifestExport(node: ts.Node): boolean {
-  if (
-    !ts.isExportDeclaration(node) ||
-    node.isTypeOnly ||
-    node.moduleSpecifier === undefined
-  ) {
-    return false;
-  }
-  if (!manifestSpecifier(node.moduleSpecifier)) {
-    return false;
-  }
-  const bindings = node.exportClause;
-  if (bindings === undefined) {
-    return true;
-  }
-  return (
-    ts.isNamedExports(bindings) &&
-    bindings.elements.some(
-      (item) =>
-        !item.isTypeOnly && (item.propertyName ?? item.name).text === "version",
-    )
-  );
-}
-
-function manifestSpecifier(node: ts.Node): boolean {
-  return ts.isStringLiteral(node) && /(?:^|\/)package\.json$/u.test(node.text);
 }
 
 if (import.meta.main) {

@@ -21,7 +21,9 @@
  * Run from the repository root after `pnpm build`. Exits 1 when packing or
  * extracting fails.
  */
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { Data } from "effect";
+import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import {
   digestOf,
@@ -32,6 +34,11 @@ import {
   withScratch,
 } from "./content-hash.ts";
 import { moduleGraph } from "./module-graph.ts";
+
+/** Workspace inventory failures happen before packing starts. */
+class HostHashInputError extends Data.TaggedError("HostHashInputError")<{
+  readonly message: string;
+}> {}
 
 /**
  * Pack `packages/DIR` and its workspace dependency closure and hash the code a host
@@ -93,13 +100,31 @@ export function hostCodeHashOfDirectories(
 }
 
 function workspaceDirectories(repo: string): ReadonlyMap<string, string> {
-  return new Map(
-    readdirSync(path.join(repo, "packages"))
-      .filter((dir) =>
-        existsSync(path.join(repo, "packages", dir, "package.json")),
-      )
-      .map((dir) => [manifestName(repo, dir), dir] as const),
+  const result = spawnSync(
+    // eslint-disable-next-line sonarjs/no-os-command-from-path -- Git supplies the tracked workspace inventory.
+    "git",
+    ["ls-files", "-z", "--", "packages/*/package.json"],
+    { cwd: repo },
   );
+  if (result.status !== 0) {
+    throw new HostHashInputError({ message: result.stderr.toString("utf8") });
+  }
+  const files = new TextDecoder("utf-8", { fatal: true })
+    .decode(result.stdout)
+    .split("\0")
+    .filter((file) => /^packages\/[^/]+\/package\.json$/u.test(file));
+  const directories = new Map<string, string>();
+  for (const file of files) {
+    const dir = path.posix.basename(path.posix.dirname(file));
+    const name = manifestName(repo, dir);
+    if (directories.has(name)) {
+      throw new HostHashInputError({
+        message: `Duplicate workspace package name ${name} in ${file}`,
+      });
+    }
+    directories.set(name, dir);
+  }
+  return directories;
 }
 
 function manifestName(repo: string, dir: string): string {
@@ -149,13 +174,13 @@ function readJson(file: string): Record<string, unknown> | undefined {
 if (import.meta.main) {
   const [dir] = process.argv.slice(2);
   if (dir === undefined) {
-    console.error("usage: host-code-hash.ts DIR");
+    process.stderr.write("usage: host-code-hash.ts DIR\n");
     process.exit(2);
   }
   const hash = hostCodeHashOfPackage(process.cwd(), dir);
   if (typeof hash !== "string") {
-    console.error(hash.message);
+    process.stderr.write(`${hash.message}\n`);
     process.exit(1);
   }
-  console.log(hash);
+  process.stdout.write(`${hash}\n`);
 }
