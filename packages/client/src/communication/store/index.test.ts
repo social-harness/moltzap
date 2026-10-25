@@ -12,7 +12,10 @@ import {
   stateDirectory,
   withStore,
 } from "../../__tests__/store-schema-fixtures.js";
-import { LIVE_WIRE_VERSIONS, WIRE_VERSION } from "../../identity/wire-version.js";
+import {
+  LIVE_WIRE_VERSIONS,
+  WIRE_VERSION,
+} from "../../identity/wire-version.js";
 import {
   type CertifiedRecord,
   type ConversationFoundation,

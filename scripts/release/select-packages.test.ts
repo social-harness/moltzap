@@ -20,7 +20,10 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { FINAL_PACKAGES, RELEASE_PACKAGES } from "../architecture/boundary-contract.ts";
+import {
+  FINAL_PACKAGES,
+  RELEASE_PACKAGES,
+} from "../architecture/boundary-contract.ts";
 import {
   contentHashOfDirectory,
   contentHashOfTarball,
@@ -39,7 +42,9 @@ const PREVIOUS = "2099.100.0";
 
 /** Product release tests follow the same package set as release selection. */
 const DIRS = RELEASE_PACKAGES;
-const DEPENDENCIES = Object.fromEntries(DIRS.map((dir) => [dir, FINAL_PACKAGES[dir].deps]));
+const DEPENDENCIES = Object.fromEntries(
+  DIRS.map((dir) => [dir, FINAL_PACKAGES[dir].deps]),
+);
 
 const MANIFEST = {
   name: "@moltzap/openclaw-channel",
@@ -122,13 +127,11 @@ await test("an npm outage stops the selection", () => {
 await test("a package listed before a sibling it depends on stops the selection", () => {
   const { workspace, versions } = fakeWorkspace({}, AS_PUBLISHED);
   assert.deepEqual(
-    selectPackages(workspace, RELEASE, [
-      "openclaw-channel",
-      "client",
-    ]),
+    selectPackages(workspace, RELEASE, ["openclaw-channel", "client"]),
     {
       kind: "out-of-order",
-      message: "openclaw-channel depends on @moltzap/client, which must come before it",
+      message:
+        "openclaw-channel depends on @moltzap/client, which must come before it",
     },
   );
   assert.equal(versions.get("openclaw-channel"), PREVIOUS);

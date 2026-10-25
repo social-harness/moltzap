@@ -15,8 +15,11 @@ import {
 } from "../../encoding/canonical-json.js";
 import { AgentName } from "../../identity/agents.js";
 import { AgentCard, type VerifiedAgentCard } from "../../identity/cards.js";
-import { type AgentSigningAuthority as AgentSigningAuthorityValue, Ed25519PublicKey } from "../../identity/keys.js";
-import { WIRE_VERSION, WireVersions  } from "../../identity/wire-version.js";
+import {
+  type AgentSigningAuthority as AgentSigningAuthorityValue,
+  Ed25519PublicKey,
+} from "../../identity/keys.js";
+import { WIRE_VERSION, WireVersions } from "../../identity/wire-version.js";
 import { SealedBody } from "../envelope/sealed-body.js";
 import { SignedMessage } from "../envelope/signed-message.js";
 import { RouterInstanceId } from "../router/api/contract.js";

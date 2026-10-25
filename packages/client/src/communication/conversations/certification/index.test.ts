@@ -38,8 +38,15 @@ import {
   encodeCanonical,
 } from "../../../encoding/canonical-json.js";
 import { AgentCard, type VerifiedAgentCard } from "../../../identity/cards.js";
-import { type AgentSigningAuthority, Ed25519PublicKey } from "../../../identity/keys.js";
-import { LIVE_WIRE_VERSIONS, WIRE_VERSION, WireVersions  } from "../../../identity/wire-version.js";
+import {
+  type AgentSigningAuthority,
+  Ed25519PublicKey,
+} from "../../../identity/keys.js";
+import {
+  LIVE_WIRE_VERSIONS,
+  WIRE_VERSION,
+  WireVersions,
+} from "../../../identity/wire-version.js";
 import { SignedMessage } from "../../envelope/signed-message.js";
 import {
   type ActionCertifiedRecord as ActionCertifiedRecordValue,

@@ -273,9 +273,7 @@ export const liveWireVersions = Effect.fn("Launcher.liveWireVersions")(
   function* (prefix: string) {
     const path = yield* Path.Path;
     const manifest = yield* installedManifest(prefix, DAEMON_PACKAGE);
-    const entry = yield* Schema.decodeUnknown(clientExports)(
-      manifest.exports,
-    );
+    const entry = yield* Schema.decodeUnknown(clientExports)(manifest.exports);
     const module = path.join(
       prefix,
       "node_modules",

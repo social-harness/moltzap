@@ -15,7 +15,6 @@ const SCOPE = "@moltzap/";
 /** The package that carries `sharnessd`. */
 export const DAEMON_PACKAGE = "@moltzap/client";
 
-
 /** One published package version, with the fields the launcher reads. */
 export interface PublishedPackage {
   readonly name: string;

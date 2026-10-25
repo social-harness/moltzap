@@ -426,7 +426,8 @@ function testPublicationGuardsNamespaceExport(): void {
   plantFile(
     "packages/client/src/index.ts",
     (source) =>
-      source + '\nexport * as RegistryApi from "./identity/registry/contract.js";\n',
+      source +
+      '\nexport * as RegistryApi from "./identity/registry/contract.js";\n',
   );
   const wildcard = runBoundaries();
   test(

@@ -3,7 +3,10 @@
 import { Data, type Effect, type Redacted } from "effect";
 import type { MessagePolicyConfigurationFailure } from "../firewall/index.js";
 import type { HarnessMcpCredentials } from "../harness/mcp/index.js";
-import type { AgentSigningAuthority, Ed25519PublicKey as Ed25519PublicKeyValue } from "../identity/keys.js";
+import type {
+  AgentSigningAuthority,
+  Ed25519PublicKey as Ed25519PublicKeyValue,
+} from "../identity/keys.js";
 
 /** Closed reason that daemon configuration cannot become startup authority. */
 export type DaemonConfigurationFailure =

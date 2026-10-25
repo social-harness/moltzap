@@ -1,7 +1,7 @@
 /** @file Condition-only process composition for adjacent wire releases. */
 import { NodeRuntime } from "@effect/platform-node";
 import { WireVersions } from "@moltzap/client/test";
-import { ConfigProvider, Console, Data, Effect, Layer  } from "effect";
+import { ConfigProvider, Console, Data, Effect, Layer } from "effect";
 import { installInternalResolution } from "./internal-resolution.js";
 
 /** A startup module that fails to load, with its cause in the reported message. */

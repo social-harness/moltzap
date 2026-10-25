@@ -6,10 +6,13 @@
 
 import { FileSystem } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
-import { acquireHarnessEndpoint, AgentAddress,
+import {
+  acquireHarnessEndpoint,
+  AgentAddress,
   HISTORY_WIRE_VERSIONS,
   LIVE_WIRE_VERSIONS,
-  WIRE_VERSION } from "@moltzap/client";
+  WIRE_VERSION,
+} from "@moltzap/client";
 import { Data, Effect, Fiber, Option, Schedule, Schema, Stream } from "effect";
 import { join, resolve } from "node:path";
 import { expect, it, type TestContext } from "vitest";
@@ -83,7 +86,10 @@ function releaseWireVersion(
 ) {
   return releaseClosure(version, view).pipe(
     Effect.map((closure) => ({
-      name: closure[retiredIdentityPackage] === undefined ? "@moltzap/client" : retiredIdentityPackage,
+      name:
+        closure[retiredIdentityPackage] === undefined
+          ? "@moltzap/client"
+          : retiredIdentityPackage,
       version: closure[retiredIdentityPackage] ?? closure["@moltzap/client"],
     })),
     Effect.flatMap((identity) =>
@@ -128,10 +134,19 @@ function releaseWireVersion(
  */
 function releaseClosure(version: string, view = npmView) {
   return view([`@moltzap/client@${version}`, "dependencies"]).pipe(
-    Effect.flatMap(Schema.decodeUnknown(Schema.parseJson(
-      Schema.Record({ key: Schema.String, value: Schema.String }),
-    ))),
-    Effect.map((pins): Readonly<Record<string, string>> => ({ ...pins, "@moltzap/client": version })),
+    Effect.flatMap(
+      Schema.decodeUnknown(
+        Schema.parseJson(
+          Schema.Record({ key: Schema.String, value: Schema.String }),
+        ),
+      ),
+    ),
+    Effect.map(
+      (pins): Readonly<Record<string, string>> => ({
+        ...pins,
+        "@moltzap/client": version,
+      }),
+    ),
   );
 }
 

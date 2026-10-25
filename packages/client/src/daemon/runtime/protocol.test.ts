@@ -28,7 +28,11 @@ import {
   routerInstanceId,
 } from "../../__tests__/router-worker-fixtures.js";
 import { SealedBody } from "../../communication/envelope/sealed-body.js";
-import { type LiveSignedMessage, MessageId, SignedMessage } from "../../communication/envelope/signed-message.js";
+import {
+  type LiveSignedMessage,
+  MessageId,
+  SignedMessage,
+} from "../../communication/envelope/signed-message.js";
 import {
   type CatchUpRequest,
   ConversationId,

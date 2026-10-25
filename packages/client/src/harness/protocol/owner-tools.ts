@@ -17,7 +17,11 @@ import {
 } from "../../encoding/identifier.js";
 import { AgentId, AgentName, PrincipalId } from "../../identity/agents.js";
 import { AgentCard } from "../../identity/cards.js";
-import { OperationId, RegistryListRequest, RegistryLookupRequest } from "../../identity/registry/contract.js";
+import {
+  OperationId,
+  RegistryListRequest,
+  RegistryLookupRequest,
+} from "../../identity/registry/contract.js";
 
 const encodedAgentCard = Schema.encodedSchema(AgentCard);
 

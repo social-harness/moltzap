@@ -7,9 +7,20 @@ import type { AgentId as AgentIdValue } from "../identity/agents.js";
 import type { VerifiedAgentCard } from "../identity/cards.js";
 import type { AgentSigningAuthority as AgentSigningAuthorityValue } from "../identity/keys.js";
 import type { RegistryLookupResult } from "../identity/registry/contract.js";
-import { type LiveSignedMessage, MessageId, SignedMessage } from "../communication/envelope/signed-message.js";
+import {
+  type LiveSignedMessage,
+  MessageId,
+  SignedMessage,
+} from "../communication/envelope/signed-message.js";
 import { Router } from "../communication/router/api/client.js";
-import { PollCursor, type RouterConnectionError, RouterInstanceId, type RouterPollResult, type RouterSendRequest, type RouterSendResult } from "../communication/router/api/contract.js";
+import {
+  PollCursor,
+  type RouterConnectionError,
+  RouterInstanceId,
+  type RouterPollResult,
+  type RouterSendRequest,
+  type RouterSendResult,
+} from "../communication/router/api/contract.js";
 import { Registry } from "../identity/registry/index.js";
 import {
   identifier,

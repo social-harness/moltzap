@@ -41,7 +41,7 @@ import {
   sameEd25519PublicKey,
   snapshotRepresentation,
 } from "../../identity/keys.js";
-import { WIRE_VERSION, WireVersions  } from "../../identity/wire-version.js";
+import { WIRE_VERSION, WireVersions } from "../../identity/wire-version.js";
 import { WIRE_PROFILES } from "./wire-profile.js";
 
 /** Sender-scoped identity of one attributed message. */

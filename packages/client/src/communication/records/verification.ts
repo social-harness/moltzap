@@ -14,7 +14,12 @@ import {
 import { exactParseOptions } from "../../encoding/exact.js";
 import { isStrictlyAscending } from "../../encoding/identifier.js";
 import { AgentCard, type VerifiedAgentCard } from "../../identity/cards.js";
-import { type LiveSignedMessage, SignedMessage, type SignedMessage as SignedMessageValue, type VerifiedSignedMessage } from "../envelope/signed-message.js";
+import {
+  type LiveSignedMessage,
+  SignedMessage,
+  type SignedMessage as SignedMessageValue,
+  type VerifiedSignedMessage,
+} from "../envelope/signed-message.js";
 import {
   deriveConversationId,
   deriveEvidenceMessageId,

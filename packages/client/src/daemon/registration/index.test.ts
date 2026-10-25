@@ -9,7 +9,11 @@ import {
   type IdentityBinding,
 } from "../../communication/store/index.js";
 import { managementRegisterRequestSchema } from "../../harness/protocol/index.js";
-import { RegistryConnectionError, type RegistryRegisterRequest, type RegistryRegisterResult } from "../../identity/registry/contract.js";
+import {
+  RegistryConnectionError,
+  type RegistryRegisterRequest,
+  type RegistryRegisterResult,
+} from "../../identity/registry/contract.js";
 import { Registry } from "../../identity/registry/index.js";
 import { DaemonConfigurationError } from "../bootstrap.js";
 import {

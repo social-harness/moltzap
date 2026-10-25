@@ -3,7 +3,10 @@
 import { Effect, type ParseResult, Schema } from "effect";
 import type { ClientRepresentationError } from "../encoding/canonical-json.js";
 import type { SigningIdentity } from "./certified-history-fixtures.js";
-import { SignedMessage, type SignedMessageVerificationError } from "../communication/envelope/signed-message.js";
+import {
+  SignedMessage,
+  type SignedMessageVerificationError,
+} from "../communication/envelope/signed-message.js";
 import {
   type DecodedOuterBody,
   decodeOuterBody,

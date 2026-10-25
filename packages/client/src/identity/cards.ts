@@ -1,39 +1,39 @@
 /** @file Immutable AgentCard representation, verification, and digest. */
 
 import {
-Brand,
-Data,
-Effect,
-Encoding,
-ParseResult,
-Schema,
-type SchemaAST,
+  Brand,
+  Data,
+  Effect,
+  Encoding,
+  ParseResult,
+  Schema,
+  type SchemaAST,
 } from "effect";
 import { generalVerify } from "jose";
 import { createHash } from "node:crypto";
 import {
-decodeCanonicalJson,
-encodeCanonicalJson,
-exactStruct,
+  decodeCanonicalJson,
+  encodeCanonicalJson,
+  exactStruct,
 } from "../encoding/canonical-json.js";
 import { canonicalIdentifier } from "../encoding/identifier.js";
 import {
-AgentId,
-type AgentId as AgentIdValue,
-AgentName,
-type AgentName as AgentNameValue,
-PrincipalId,
-type PrincipalId as PrincipalIdValue,
+  AgentId,
+  type AgentId as AgentIdValue,
+  AgentName,
+  type AgentName as AgentNameValue,
+  PrincipalId,
+  type PrincipalId as PrincipalIdValue,
 } from "./agents.js";
 import {
-Ed25519PublicKey,
-ed25519PublicKeyThumbprintUri,
-type Ed25519PublicKey as Ed25519PublicKeyValue,
-ed25519VerificationKey,
-generalJwsRepresentation,
-snapshotRepresentation,
+  Ed25519PublicKey,
+  ed25519PublicKeyThumbprintUri,
+  type Ed25519PublicKey as Ed25519PublicKeyValue,
+  ed25519VerificationKey,
+  generalJwsRepresentation,
+  snapshotRepresentation,
 } from "./keys.js";
-import { AGENT_CARD_TYPE,WireVersions } from "./wire-version.js";
+import { AGENT_CARD_TYPE, WireVersions } from "./wire-version.js";
 
 const DIGEST_BYTE_LENGTH = 32;
 const WHOLE_SECOND_UTC =

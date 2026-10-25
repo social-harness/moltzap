@@ -27,7 +27,10 @@ import {
   AgentSigningAuthority,
   Ed25519PublicKey,
 } from "../packages/client/dist/identity/keys.js";
-import { WIRE_VERSION, WireVersions  } from "../packages/client/dist/identity/wire-version.js";
+import {
+  WIRE_VERSION,
+  WireVersions,
+} from "../packages/client/dist/identity/wire-version.js";
 registerHooks({
   resolve(specifier, context, nextResolve) {
     return nextResolve(specifier, {

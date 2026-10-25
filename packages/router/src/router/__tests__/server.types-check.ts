@@ -25,4 +25,10 @@ type ServerNamespaceIsExact = Expect<
   >
 >;
 /** Compile-time evidence that process construction stays self-contained. */
-export type ServerContracts = [ServerLayerProvidesNothing, ServerLayerFailsOnlyAtStartup, ServerLayerIsSelfContained, ServerExportsAreExact, ServerNamespaceIsExact];
+export type ServerContracts = [
+  ServerLayerProvidesNothing,
+  ServerLayerFailsOnlyAtStartup,
+  ServerLayerIsSelfContained,
+  ServerExportsAreExact,
+  ServerNamespaceIsExact,
+];

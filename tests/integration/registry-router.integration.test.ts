@@ -23,7 +23,7 @@ import {
   type RouterPollRequest,
   type RouterPollResult,
   type RouterSendRequest,
-  type RouterSendResult
+  type RouterSendResult,
 } from "@moltzap/client/service";
 import { Effect, Encoding, Redacted, Schema } from "effect";
 import { randomBytes } from "node:crypto";

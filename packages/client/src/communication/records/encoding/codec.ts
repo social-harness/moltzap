@@ -17,7 +17,14 @@ import {
 } from "../../../encoding/identifier.js";
 import { WIRE_VERSION } from "../../../identity/wire-version.js";
 import { SealedBody } from "../../envelope/sealed-body.js";
-import { type LiveSignedMessage, MessageId, type MessageId as MessageIdValue, SignedMessage, type SignedMessage as SignedMessageValue, type VerifiedSignedMessage } from "../../envelope/signed-message.js";
+import {
+  type LiveSignedMessage,
+  MessageId,
+  type MessageId as MessageIdValue,
+  SignedMessage,
+  type SignedMessage as SignedMessageValue,
+  type VerifiedSignedMessage,
+} from "../../envelope/signed-message.js";
 import {
   ActionCore,
   ActionHash,

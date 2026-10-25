@@ -9,7 +9,10 @@ import type {
   DaemonConfigurationError,
 } from "../bootstrap.js";
 import { exactParseOptions } from "../../encoding/exact.js";
-import { RegistryRegisterRequest, type RegistryRegisterResult } from "../../identity/registry/contract.js";
+import {
+  RegistryRegisterRequest,
+  type RegistryRegisterResult,
+} from "../../identity/registry/contract.js";
 import { Registry } from "../../identity/registry/index.js";
 import {
   bindCard,

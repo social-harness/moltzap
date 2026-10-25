@@ -11,7 +11,10 @@ import {
   decodeCanonical,
   encodeCanonical,
 } from "../../../encoding/canonical-json.js";
-import { SignedMessage, type SignedMessage as SignedMessageValue } from "../../envelope/signed-message.js";
+import {
+  SignedMessage,
+  type SignedMessage as SignedMessageValue,
+} from "../../envelope/signed-message.js";
 import {
   type AnchorHash as AnchorHashValue,
   CompletedReanchor,
