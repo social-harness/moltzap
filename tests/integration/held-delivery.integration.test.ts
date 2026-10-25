@@ -1,9 +1,9 @@
 /** @file A real daemon recovers a delivery held after Router ordering. */
 
-import type { AgentName } from "@moltzap/client";
 import {
   acquireHarnessEndpoint,
   AgentAddress,
+  type AgentName,
   type Content,
   type HarnessEndpoint,
   type InboundDelivery,

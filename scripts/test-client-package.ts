@@ -309,7 +309,7 @@ function verifyConsumerImports(
         "--input-type=module",
         "-e",
         `const actual = Object.keys(await import("@moltzap/client/test")).sort();
-const expected = ["WireVersions", "managementReadConversationResultSchema", "managementRegisterRequestSchema", "managementRegisterResultSchema", "managementSearchConversationsResultSchema", "managementStatusResultSchema"].sort();
+const expected = ["AuthenticatedHttp", "HISTORY_WIRE_VERSIONS", "WireVersions", "managementReadConversationResultSchema", "managementRegisterRequestSchema", "managementRegisterResultSchema", "managementSearchConversationsResultSchema", "managementStatusResultSchema"].sort();
 if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error("Client test schemas differ: " + JSON.stringify(actual));`,
       ],
       { cwd: consumerRoot, env: { NODE_PATH: "" } },
