@@ -11,7 +11,7 @@ import {
   SendError,
   type SendInput,
 } from "@moltzap/client";
-import { type AgentName, WIRE_VERSION } from "@moltzap/identity";
+import { AgentCard, type AgentName, WIRE_VERSION } from "@moltzap/identity";
 import { WireVersions } from "@moltzap/identity/test";
 import { Effect, Fiber, Option, Schema, Stream } from "effect";
 import { dirname, join } from "node:path";
@@ -63,7 +63,10 @@ const registerFixture = (fixture: DaemonProcessFixture) =>
       );
       expect(registered.kind).toBe(expectedRegistered);
       if (registered.kind === "registered") {
-        expect(registered.agentCard).toMatchObject({
+        const agentCard = yield* Schema.decodeUnknown(AgentCard)(
+          registered.agentCard,
+        );
+        expect(agentCard).toMatchObject({
           agentName: fixture.agentName,
         });
       }

@@ -1,4 +1,5 @@
 /** @file Operator-visible proof and membership assertions for process history. */
+import { AgentCard } from "@moltzap/identity";
 import { Schema } from "effect";
 import { expect } from "vitest";
 
@@ -51,12 +52,7 @@ function historyMembers(recordCore: unknown) {
     Schema.Struct({
       membership: Schema.optional(
         Schema.Struct({
-          members: Schema.Array(
-            Schema.Struct({
-              agentId: Schema.String,
-              agentName: Schema.String,
-            }),
-          ),
+          members: Schema.Array(AgentCard),
         }),
       ),
     }),
