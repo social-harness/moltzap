@@ -338,23 +338,55 @@ function inLeg(leg: string) {
 
 /**
  * The previous release's Registry and Router, which a daemon that upgrades
- * before its network must still reach.
+ * before its network must still reach. A release whose closure has no
+ * Registry bin ships both services only as images, so their `/app` trees are
+ * copied out of the release's version-tagged images and run with this Node.
  */
-function releaseNetwork(consumer: string) {
+function releaseNetwork(
+  consumer: string,
+  version: string,
+  temporaryRoot: string,
+) {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const published = join(consumer, "node_modules/.bin/sharness-registry");
-    if (!(yield* fs.exists(published))) {
-      return yield* new ProcessTestError({
-        message:
-          "Previous-release Registry bin is unavailable; the previous Registry comes from that release's image once images exist. Docs: https://github.com/social-harness/moltzap/blob/main/docs/spec/layer-interfaces.md#publication-and-versions",
-      });
+    if (yield* fs.exists(published)) {
+      return {
+        registry: published,
+        router: join(consumer, "node_modules/.bin/sharness-router"),
+      };
     }
+    const [registry, router] = yield* Effect.all(
+      [
+        releaseImageApp("registry", version, temporaryRoot),
+        releaseImageApp("router", version, temporaryRoot),
+      ],
+      { concurrency: 2 },
+    );
     return {
-      registry: published,
-      router: join(consumer, "node_modules/.bin/sharness-router"),
+      registry: join(registry, "bin/sharness-registry"),
+      router: join(router, "bin/sharness-router"),
     };
   });
+}
+
+/** Copies `/app` out of a created container that never starts; a failed Docker command names itself. */
+function releaseImageApp(
+  service: "registry" | "router",
+  version: string,
+  temporaryRoot: string,
+) {
+  const image = `ghcr.io/social-harness/${service}:${version}`;
+  const destination = join(temporaryRoot, `${service}-${version}`);
+  return Effect.acquireUseRelease(
+    runCommand("docker", ["pull", "--quiet", image]).pipe(
+      Effect.zipRight(runCommand("docker", ["create", image])),
+      Effect.map((container) => container.trim()),
+    ),
+    (container) =>
+      runCommand("docker", ["cp", `${container}:/app`, destination]),
+    (container) => runCommand("docker", ["rm", container]).pipe(Effect.ignore),
+  ).pipe(Effect.as(destination));
 }
 
 function installCurrent(temporaryRoot: string) {
@@ -445,7 +477,7 @@ const mixedRelease = Effect.scoped(
       if (version === releases[0]) {
         yield* Effect.scoped(
           acquireProcessInfrastructureFrom(
-            yield* releaseNetwork(consumer),
+            yield* releaseNetwork(consumer, version, temporaryRoot),
           ).pipe(
             Effect.flatMap((previousNetwork) =>
               certifyPair(previousNetwork, version, consumer, current),
