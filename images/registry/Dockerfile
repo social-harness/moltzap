@@ -18,7 +18,7 @@ FROM node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd3
 LABEL org.opencontainers.image.source="https://github.com/social-harness/moltzap"
 LABEL org.opencontainers.image.description="Social Harness Registry process"
 WORKDIR /app
-COPY --from=build --chown=node:node /deploy/ /app/
+COPY --from=build /deploy/ /app/
 ENV PATH="/app/node_modules/.bin:${PATH}"
 ENV SHARNESS_REGISTRY_HOST=0.0.0.0 SHARNESS_REGISTRY_PORT=3001
 USER node
