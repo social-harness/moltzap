@@ -1,62 +1,97 @@
-# L4 Shared Collaboration Norms
+# Shared norms
 
 Status: **proposed**
 
 A shared norm is a rule the members of one conversation agree, in that
 conversation, to apply to themselves. The agreement is ordinary messages, and
-each member applies the norm by adding it to its own personal firewall (L3).
-Nothing else carries a norm: no tool, field, or stored agreement. The GENESIS
+each member applies the norm by adding it to its own personal firewall (L3)
+with `policy_update`. Shared norms add no tool, message field or stored
+agreement. They are not the L4 contracts the vision defers, and the GENESIS
 and POST action rules of the [fixed post protocol](./harness/tasks.md) remain
-the norms that decide action validity; shared norms do not change them.
+the norms that decide action validity.
 
 ## A norm
 
 A shared norm is an [agentbehavior.dev](https://agentbehavior.dev)
-`BEHAVIOR.md` document: YAML frontmatter with a `name` and a `description`,
-then English. It maps onto a firewall rule as an owner's
-[behavior](./harness/message-policy.md#behaviors) does. Who it binds, in which
-conversations, for which task and until when are part of its English, for
-example "in conversations with agent:campus-scheduling about bookings, until
-the meeting is booked".
+`BEHAVIOR.md` document of kind `norm`, carried as message text:
+
+```markdown
+---
+name: meeting-booking
+description: How members book a meeting with agent:campus-scheduling.
+metadata:
+  social-harness:
+    guidance: Hold a slot before confirming it, and release holds you drop.
+---
+
+In conversations with agent:campus-scheduling about bookings, until the
+meeting is booked: hold a slot before confirming it, report free and busy
+times truthfully, and stop once the booking is confirmed.
+```
+
+It maps onto an editable English rule as a
+[behavior](./harness/message-policy.md#behaviors) does, so it needs the
+`guidance` that a `norm` rule requires. Who it binds, in which conversations,
+for which task and until when belong in its body, because `description` is not
+part of the rule.
 
 ## Agreeing
 
 1. **Propose.** A member sends the norm to the conversation in an ordinary
    message.
-2. **Decide.** Each member's firewall checks that message like any other. The
-   member's owner policies decide whether the agent may agree on its own. Where
-   they require the owner's approval, the firewall's guidance tells the agent
-   to ask its owner, and the agent asks through its host, for example with
-   `ask_user`, as with every approval.
+2. **Decide.** Each member's firewall checks that message like any other. An
+   owner who wants proposals brought to them says so in an owner rule of kind
+   `norm`, whose guidance tells the agent to ask its owner, through a host tool
+   such as `ask_user`, before it answers. An `autonomy` rule cannot express
+   this, because the firewall has no approval evidence
+   ([message-policy](./harness/message-policy.md)): it would hold every reply.
+   An owner who consents in advance says that in the same way, for example
+   "agree to `meeting-booking` from agent:campus-scheduling".
 3. **Answer.** The agent replies in the conversation that it agrees or
-   declines.
-4. **Apply.** Once the members it needs have agreed, each agent adds the norm
-   to its own firewall with `policy_update`. A norm is changed or ended the
-   same way: a message, the answers, and `policy_update`.
+   declines. A reply that reports the owner's answer is the agent's claim; the
+   firewall cannot verify it.
+4. **Apply.** Once the members the norm names have agreed, each agent adds the
+   norm with `policy_update`. When the norm ends, by its own terms or by a new
+   agreement, each agent removes it the same way.
 
-An owner who wants every proposal brought to them says so in an owner policy,
-such as "before agreeing to a proposed norm, ask me". An owner who consents in
-advance says that, such as "agree to `meeting-booking` from
-agent:campus-scheduling".
+An agent declines a norm it cannot apply:
+- it lacks `policy_update`, which only the owner and trusted-local catalogs
+  list;
+- it has no firewall, or no English policy;
+- the norm is not of kind `norm`;
+- its `name` is already a rule id in the agent's policy.
+
+An agent removes only rules it added for a norm.
+
+## Authority
+
+Adding a norm is an owner edit. `policy_update` is owner authority, so the
+added norm is an editable owner rule like any other, and the edit appears in
+the owner decisions feed's activations. An agent that holds `policy_update` can
+also remove the owner's editable rules. Owner rules that must bind such an
+agent belong in `fixedRules` or `fixedBehaviors`, which `policy_update`
+refuses to change.
 
 ## What is enforced
 
-Each member's firewall enforces the norms that member added, on the messages
-it receives and sends, not on the tool calls in between. Messages are what
-every host carries, so they are what shared norms enforce.
+Each member's firewall applies the norms that member added, in its owner's
+mode, to the messages it sends and, as guidance, to the messages it receives.
+It does not check tool calls. Messages are what every host carries, so they are
+what shared norms reach.
 
-Agreement is a promise between members. A member's firewall enforces only its
-own copy. A member that never adds the norm, or removes it, breaks the promise
-in messages that its peers' firewalls and certified history can show, and that
-an institution can act on ([L5 Social Institutions](./enforcement.md)).
+Agreement is a promise between members. A member that never adds a norm, or
+removes it early, shows that only through its messages, which its peers hold in
+certified history and can disclose to an institution
+([L5 Social Institutions](./enforcement.md)).
 
-The owner's approval travels through the agent. An agent that a peer has fooled
-can claim an approval it did not get; the firewall cannot tell, as with every
-approval a host relays.
+Every added norm is assessed on each later message the member sends or
+receives, so it costs decision-provider calls until it is removed.
 
 ## Acceptance
 
 - Proposing, agreeing and declining are ordinary messages.
-- A member applies a norm only through its own `policy_update`.
-- An owner policy can require the owner's approval before the agent agrees.
-- A norm's scope and duration live in its English.
+- A member applies a norm only through its own `policy_update`, and removes it
+  the same way.
+- An owner rule of kind `norm` can require the agent to ask its owner before
+  agreeing.
+- A norm's scope and duration live in its body.

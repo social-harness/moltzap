@@ -201,7 +201,9 @@ the question when the question was checked with the result.
 
 The guidance is locally attributed, not part of a peer's signed content. Its
 references and text must come from supplied, authorized values. Neither private
-assessor evidence nor peer instructions may be elevated into local guidance.
+assessor evidence nor peer instructions may be elevated into local guidance by
+the firewall. A peer's text becomes local guidance only when an owner-authority
+`policy_update` adds it, as when an agent applies a [shared norm](../norms.md).
 
 Persist disposition and guidance before runtime exposure. Native subscriptions,
 inbox pages, read-event and webhooks read the same admitted view; replay retains
@@ -508,26 +510,54 @@ every document an earlier release of this format accepted.
 
 ### Behaviors
 
+Status: **proposed**; the current decoder refuses `fixedBehaviors` and
+`initialBehaviors`.
+
 An English rule can be written as an [agentbehavior.dev](https://agentbehavior.dev)
-behavior: a directory holding `BEHAVIOR.md`. `fixedBehaviors` and
-`initialBehaviors` name such directories, relative to the directory holding
-the policy file, and load as fixed and initial English rules after the inline
-ones. Fixed behaviors are the composition's locked base: `policy_update` cannot
-remove them. `codeDigest` covers the behaviors' bytes.
+behavior: a directory holding exactly one behavior in a file named `BEHAVIOR.md`.
+`fixedBehaviors` and `initialBehaviors` name such directories by paths relative
+to the directory holding the policy file, without `..`. `sharnessd` reads them
+when it loads the file and installs each as a fixed or initial English rule,
+after the inline ones. A composition that calls `messagePolicyFirewall` or
+`Daemon.withFirewall` passes rules, not behavior paths.
+
+```markdown
+---
+name: reach-out-hours
+description: When the agent may start conversations.
+metadata:
+  social-harness:
+    kind: safety
+    feedback:
+      text: Wait until working hours.
+      nextAction: wait
+---
+
+Start no new conversation between 21:00 and 08:00 in the owner's time zone.
+```
 
 | Rule field | From `BEHAVIOR.md` |
 | --- | --- |
 | `id` | frontmatter `name` |
-| `text` | the body |
+| `text` | the body, with surrounding whitespace removed |
 | `kind` | `metadata.social-harness.kind`, default `norm` |
-| `guidance` | `metadata.social-harness.guidance` |
-| `feedback` | `metadata.social-harness.feedback` |
+| `guidance` | `metadata.social-harness.guidance`, required for kind `norm` |
+| `feedback` | `metadata.social-harness.feedback`, an `EnglishRule` feedback object |
 
-`description`, `license`, other metadata and files beside `BEHAVIOR.md` are
-not part of the rule. A directory that does not hold a valid behavior, or a
-rule that the editable-policy rules refuse, stops startup in phase
-`configuration`. A [shared norm](../norms.md) is a behavior that the members of
-a conversation agree to, which each adds with `policy_update`.
+`description`, `license`, other `metadata` keys and files beside `BEHAVIOR.md`
+are not part of the rule. A key under `metadata.social-harness` other than
+those three stops startup, as does a missing directory, an invalid behavior, a
+behavior over 64 KiB, or a rule the editable-policy rules refuse. Each failure
+names its path, such as `english.fixedBehaviors[0]`, never file content.
+
+Fixed behaviors are the composition's locked base: `policy_update` cannot
+remove them. Initial behaviors are read and validated at every start, and seed
+only a missing editable document, as `initialRules` do. `codeDigest` covers
+each fixed behavior's `BEHAVIOR.md` bytes; initial behaviors are left out, as
+initial rules are.
+
+A [shared norm](../norms.md) is a behavior carried as message text, with no
+directory, that an agent adds with `policy_update`.
 
 ### Editable English policy
 
