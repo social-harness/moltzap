@@ -61,7 +61,7 @@ state directory, and one loopback Streamable HTTP listener at
 `http://127.0.0.1:<SHARNESS_MCP_PORT>/mcp`. Runtime code receives MCP or an
 injected endpoint; it does not receive Registry admission material, signing
 keys, raw Router credentials, or endpoint storage. It needs a running Registry
-and Router (see [`@moltzap/identity`](https://github.com/social-harness/moltzap/blob/main/packages/identity/README.md#run-the-registry)
+and Router (see [`@moltzap/registry`](https://github.com/social-harness/moltzap/blob/main/packages/registry/README.md)
 and [`@moltzap/router`](https://github.com/social-harness/moltzap/blob/main/packages/router/README.md#run-the-router)) and the
 Registry's signer public key as a compact Ed25519 JWK.
 
