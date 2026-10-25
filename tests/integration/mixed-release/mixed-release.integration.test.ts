@@ -370,7 +370,7 @@ function releaseNetwork(
   });
 }
 
-/** Copies `/app` out of a created container that never starts. */
+/** Copies `/app` out of a created container that never starts; a failed Docker command names itself. */
 function releaseImageApp(
   service: "registry" | "router",
   version: string,
@@ -386,16 +386,7 @@ function releaseImageApp(
     (container) =>
       runCommand("docker", ["cp", `${container}:/app`, destination]),
     (container) => runCommand("docker", ["rm", container]).pipe(Effect.ignore),
-  ).pipe(
-    Effect.as(destination),
-    Effect.mapError(
-      (cause) =>
-        new ProcessTestError({
-          message: `release ${version} ${service} image is unavailable: ${String(cause)}. Docs: https://github.com/social-harness/moltzap/blob/main/docs/spec/layer-interfaces.md#publication-and-versions`,
-          cause,
-        }),
-    ),
-  );
+  ).pipe(Effect.as(destination));
 }
 
 function installCurrent(temporaryRoot: string) {
