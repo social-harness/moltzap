@@ -543,16 +543,10 @@ internal `WireVersions` context tag used by adjacent-release tests. The Client
 forbidden in production source. Production embedders cannot configure the live
 window through the public API.
 
-The wire envelope and the host channel configuration are stable between
-resets; an incompatible change to either ships in a reset release. The
-Registry HTTP API is stable between resets except for public read route
-removal. The live window exists so that a daemon that upgrades on its own
-schedule can cross a wire bump between resets.
-
-The Registry HTTP API may drop a public read route between resets; a released
-daemon that calls a dropped route reports `dependency-unavailable`. The
-Registry serves no listing route, so daemons released before it report
-`dependency-unavailable` for `search_agents` with an empty selector.
+The wire envelope, the Registry HTTP API, and the host channel configuration
+are stable between resets; an incompatible change to any of them ships in a
+reset release. The live window exists so that a daemon that upgrades on its
+own schedule can cross a wire bump between resets.
 
 Each release emits exactly `WIRE_VERSION`. `LIVE_WIRE_VERSIONS` holds the
 emitted version and at most one adjacent version, and the Registry, the
