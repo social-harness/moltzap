@@ -39,12 +39,12 @@ import {
   readFirewallEvidenceSlices,
   readFirewallFrontiers,
   readFirewallPolicy,
-  readOwnerProposals,
-  writeOwnerProposal,
   readFirewallRequestAdmission,
+  readOwnerProposals,
   readPendingFirewallItems,
   retireFirewallItem,
   writeFirewallPolicy,
+  writeOwnerProposal,
 } from "./firewall.js";
 import {
   acknowledgeInboxItem,

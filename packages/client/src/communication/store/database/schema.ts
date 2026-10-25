@@ -10,8 +10,8 @@ import {
   migrateStore,
   migrations,
   type MigrationSteps,
-  RESET_SCHEMA,
   ownerProposalsSql,
+  RESET_SCHEMA,
 } from "./migrations.js";
 import {
   EndpointStoreError,
