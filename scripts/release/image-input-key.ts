@@ -5,17 +5,30 @@
  * print {service: key}. Reads HEAD, never uncommitted files or build output.
  * Manifests omit release metadata; other files retain Git mode and blob id.
  */
-import { Data, Effect } from "effect";
+import { Data, Effect, Either } from "effect";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import path from "node:path";
+import ts from "typescript";
 import { parse } from "yaml";
-import { digestOf } from "./content-hash.ts";
-import { moduleGraph, type ModuleReader } from "./host-code-hash.ts";
+import { exportCondition } from "../architecture/boundary-contract.ts";
+import {
+  byteOrder,
+  digestOf,
+  sortedJson,
+  UNHASHED_FIELDS,
+} from "./content-hash.ts";
+import {
+  erasedImport,
+  moduleGraph,
+  type ModuleReader,
+  runtimeCall,
+} from "./module-graph.ts";
 
 /** A failed read or an incomplete committed input graph. */
 export class ImageInputError extends Data.TaggedError("ImageInputError")<{
   readonly message: string;
+  readonly cause?: unknown;
 }> {}
 
 /** Image names are the only package layout choices the command fixes. */
@@ -31,10 +44,11 @@ interface File {
 interface Tree {
   readonly files: ReadonlyMap<string, File>;
   readonly read: (file: string) => string;
+  readonly resolve: (file: string) => string;
 }
 
 /** Each class is disjoint; locked packages are virtual inputs, not whole lockfiles. */
-export interface ImageInputs {
+interface ImageInputs {
   readonly own: readonly string[];
   readonly modules: readonly string[];
   readonly image: readonly string[];
@@ -44,6 +58,36 @@ export interface ImageInputs {
   readonly key: string;
 }
 
+/** Lists reached modules that consume release versions; image workflows can enforce a version-free runtime. */
+export function runtimeVersionReads(
+  repo: string,
+): Effect.Effect<readonly string[], ImageInputError> {
+  return imageInputs(repo).pipe(
+    Effect.flatMap((images) =>
+      Effect.try({
+        try: () => {
+          const tree = checkout(repo);
+          return [
+            ...new Set(
+              Object.values(images).flatMap((image) => [
+                ...image.own,
+                ...image.modules,
+              ]),
+            ),
+          ]
+            .filter(
+              (file) =>
+                /\.[cm]?[jt]s$/u.test(file) && !/\.d\.[cm]?ts$/u.test(file),
+            )
+            .filter((file) => readsManifestVersion(tree.read(file)))
+            .sort(byteOrder);
+        },
+        catch: inputError,
+      }),
+    ),
+  );
+}
+
 /** Computes keys and their input inventory from HEAD for release callers. */
 export function imageInputs(
   repo: string,
@@ -51,20 +95,12 @@ export function imageInputs(
   return Effect.try({
     try: () => {
       const tree = checkout(repo);
-      const roots = new Map<string, string>();
-      for (const file of tree.files.keys()) {
-        if (/^packages\/[^/]+\/package\.json$/u.test(file)) {
-          roots.set(
-            String(json(tree.read(file)).name),
-            path.posix.dirname(file),
-          );
-        }
-      }
+      const roots = workspaceRoots(tree);
       return Object.fromEntries(
         SERVICES.map((service) => [service, inputs(service, roots, tree)]),
       );
     },
-    catch: (cause) => new ImageInputError({ message: String(cause) }),
+    catch: inputError,
   });
 }
 
@@ -80,10 +116,18 @@ function checkout(repo: string): Tree {
     }
   }
   const cache = new Map<string, string>();
+  const resolve = (file: string) =>
+    treeTarget(
+      file,
+      files,
+      (id) => cache.get(id) ?? git(repo, ["cat-file", "blob", id]),
+      new Set(),
+    );
   return {
     files,
+    resolve,
     read: (file) => {
-      const found = files.get(file);
+      const found = files.get(resolve(file));
       if (found === undefined) {
         throw new ImageInputError({
           message: `Missing committed input ${file}`,
@@ -137,16 +181,16 @@ function inputs(
   );
   const locked = lockedClosure(tree.read("pnpm-lock.yaml"), root);
   const entries = [...own, ...modules, ...image, ...tooling].map((file) =>
-    fileEntry(tree, file),
+    committedEntry(tree, file),
+  );
+
+  entries.push(
+    ...scripts.map(([name, body]) => `package.json#scripts.${name}\0${body}\n`),
   );
   entries.push(
-    `package.json#packageManager\0${stable(json(tree.read("package.json")).packageManager)}`,
-  );
-  entries.push(
-    ...scripts.map(([name, body]) => `package.json#scripts.${name}\0${body}`),
-  );
-  entries.push(
-    ...locked.map(([id, value]) => `pnpm-lock.yaml#${id}\0${stable(value)}`),
+    ...locked.map(
+      ([id, value]) => `pnpm-lock.yaml#${id}\0${sortedJson(value)}\n`,
+    ),
   );
   return {
     own,
@@ -169,8 +213,22 @@ function siblingInputs(
   const root = roots.get(name) ?? "";
   const reader = sourceReader(tree);
   const graph = moduleGraph(
-    own.map((file) => ({ name, relative: path.posix.relative(root, file) })),
+    own.map((file) => ({
+      name,
+      relative: path.posix.relative(root, tree.resolve(file)),
+    })),
     roots,
+    {
+      conditions: [
+        "node",
+        "module-sync",
+        "import",
+        exportCondition({ internalOnly: true, types: "", import: "" }) ??
+          "default",
+        "default",
+      ],
+      all: true,
+    },
     reader,
   );
   const reached = new Set(graph.map((module) => module.name));
@@ -197,7 +255,7 @@ function invokedScripts(
   files: readonly string[],
   commands: readonly string[],
 ): Array<readonly [string, string]> {
-  const scripts = mapping(json(tree.read("package.json")).scripts);
+  const scripts = mapping(readJson(tree, "package.json").scripts);
   const found = new Map<string, string>();
   const pending = files
     .filter((file) => !file.endsWith(".json"))
@@ -231,11 +289,11 @@ function sourceReader(tree: Tree): ModuleReader {
     locate: (root, relative) => {
       const file = path.posix.join(root, relative);
       if (tree.files.has(file)) {
-        return path.posix.relative(root, file);
+        return path.posix.relative(root, tree.resolve(file));
       }
       const config = `${root}/tsconfig.json`;
       const options = tree.files.has(config)
-        ? mapping(json(tree.read(config)).compilerOptions)
+        ? mapping(readJson(tree, config).compilerOptions)
         : {};
       const outDir =
         typeof options.outDir === "string" ? options.outDir : "dist";
@@ -255,7 +313,9 @@ function sourceReader(tree: Tree): ModuleReader {
       const found = candidates.find((candidate) =>
         tree.files.has(path.posix.join(root, candidate)),
       );
-      return found;
+      return found === undefined
+        ? undefined
+        : path.posix.relative(root, tree.resolve(path.posix.join(root, found)));
     },
   };
 }
@@ -266,17 +326,27 @@ function buildInputs(
   roots: readonly string[],
   images: readonly string[],
 ): string[] {
-  const fixed = ["nx.json", "tsconfig.base.json", ".node-version"].filter(
-    (file) => tree.files.has(file),
-  );
+  const fixed = [
+    "package.json",
+    ".npmrc",
+    ".dockerignore",
+    "nx.json",
+    "tsconfig.base.json",
+    ".node-version",
+  ].filter((file) => tree.files.has(file));
   const files = new Set(["pnpm-workspace.yaml", ...fixed]);
   const pending = [
+    ...fixed,
     ...under(tree, "scripts/build"),
     ...images.filter((file) => file.endsWith("Dockerfile")),
     ...roots
       .map((root) => `${root}/tsconfig.json`)
       .filter((file) => tree.files.has(file)),
     ...roots.flatMap((root) => buildCommandFiles(tree, root)),
+    ...images
+      .filter((file) => file.endsWith("Dockerfile"))
+      .flatMap((file) => dockerInputs(tree, file)),
+    ...lifecycleFiles(tree),
   ];
   const seen = new Set<string>();
   for (let file = pending.pop(); file !== undefined; file = pending.pop()) {
@@ -296,7 +366,7 @@ function buildCommandFiles(tree: Tree, root: string): string[] {
 }
 
 function buildCommands(tree: Tree, root: string) {
-  const manifest = json(tree.read(`${root}/package.json`));
+  const manifest = readJson(tree, `${root}/package.json`);
   const target = mapping(mapping(mapping(manifest.nx).targets).build);
   const options = mapping(target.options);
   const commands = [
@@ -312,7 +382,7 @@ function buildCommands(tree: Tree, root: string) {
 function namedInputs(tree: Tree, file: string): string[] {
   const text = tree.read(file);
   if (file.endsWith(".json")) {
-    const parent = json(text).extends;
+    const parent = json(text, file).extends;
     const parents = typeof parent === "string" ? [parent] : asStrings(parent);
     return parents
       .map((entry) =>
@@ -324,22 +394,197 @@ function namedInputs(tree: Tree, file: string): string[] {
   return commandFiles(tree, path.posix.dirname(file), body);
 }
 
-function asStrings(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === "string")
-    : [];
+/** Runtime edges include optional dependencies and workspace links, but exclude dev-only packages. */
+function lockedClosure(
+  text: string,
+  root: string,
+): ReadonlyArray<readonly [string, unknown]> {
+  const lock: unknown = parse(text);
+  const value = mapping(lock);
+  if (String(value.lockfileVersion) !== "9.0") {
+    throw new ImageInputError({
+      message: "Unsupported pnpm-lock.yaml version; expected 9.0",
+    });
+  }
+  const found = new Map<string, unknown>();
+  const seen = new Set<string>();
+  const pending = [{ id: root, importer: true }];
+  for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
+    const { id, importer } = next;
+    if (seen.has(id)) {
+      continue;
+    }
+    seen.add(id);
+    const block = lockedBlock(value, id, importer);
+    if (!importer) {
+      found.set(id, pinnedPackage(value, id, block));
+    }
+    pending.push(...runtimeIds(block, id, importer));
+  }
+  return [...found].sort(([a], [b]) => (a < b ? -1 : Number(a !== b)));
 }
 
-function dockerCommands(text: string): string {
-  return text
-    .replace(/\\\n/gu, " ")
-    .split("\n")
-    .filter((line) => /^\s*RUN\s/iu.test(line))
-    .join("\n");
+function lockedBlock(
+  lock: Record<string, unknown>,
+  id: string,
+  importer: boolean,
+): Record<string, unknown> {
+  const section = importer ? "importers" : "snapshots";
+  const block = mapping(lock[section])[id];
+  if (block === undefined) {
+    throw new ImageInputError({
+      message: `pnpm-lock.yaml has no ${importer ? "importer" : "snapshot"} ${id}`,
+    });
+  }
+  return mapping(block);
+}
+
+function pinnedPackage(
+  lock: Record<string, unknown>,
+  id: string,
+  block: unknown,
+): unknown {
+  const base = id.split("(")[0] ?? id;
+  const entry = mapping(lock.packages)[base];
+  if (entry === undefined) {
+    throw new ImageInputError({
+      message: `pnpm-lock.yaml has no package ${base}`,
+    });
+  }
+  if (mapping(mapping(entry).resolution).type === "directory") {
+    throw new ImageInputError({
+      message: `Directory dependency ${id} is not supported`,
+    });
+  }
+  return { package: entry, snapshot: block };
+}
+
+function runtimeIds(
+  block: Record<string, unknown>,
+  id: string,
+  importer: boolean,
+): Array<{ readonly id: string; readonly importer: boolean }> {
+  return ["dependencies", "optionalDependencies"].flatMap((section) =>
+    Object.entries(mapping(block[section])).map(([name, entry]) =>
+      lockedId(name, importer ? mapping(entry).version : entry, id),
+    ),
+  );
+}
+
+function lockedId(
+  name: string,
+  version: unknown,
+  importer: string,
+): { readonly id: string; readonly importer: boolean } {
+  if (typeof version !== "string") {
+    throw new ImageInputError({
+      message: `pnpm-lock.yaml has no locked version for ${name}`,
+    });
+  }
+  if (version.startsWith("file:")) {
+    throw new ImageInputError({
+      message: `Directory dependency ${name}: ${version} is not supported`,
+    });
+  }
+  if (version.startsWith("link:")) {
+    return {
+      id: path.posix.normalize(path.posix.join(importer, version.slice(5))),
+      importer: true,
+    };
+  }
+  const target = version.replace(/^npm:/u, "");
+  return {
+    id:
+      /^[^(@][^(@]*@/u.test(target) || target.startsWith("@")
+        ? target
+        : `${name}@${target}`,
+    importer: false,
+  };
+}
+
+function under(tree: Tree, root: string): string[] {
+  return [...tree.files.keys()].filter((file) => file.startsWith(`${root}/`));
+}
+
+function committedEntry(tree: Tree, file: string): string {
+  const entry = tree.files.get(file);
+  if (entry === undefined) {
+    throw new ImageInputError({ message: `Missing committed input ${file}` });
+  }
+  if (entry.mode === "120000") {
+    return `${file}\0${entry.mode}\0${entry.blob}\0${committedEntry(tree, tree.resolve(file))}\n`;
+  }
+  const blob =
+    path.posix.basename(file) === "package.json"
+      ? createHash("sha256")
+          .update(
+            sortedJson(
+              Object.fromEntries(
+                Object.entries(readJson(tree, file)).filter(
+                  ([key]) => !UNHASHED_FIELDS.has(key),
+                ),
+              ),
+            ),
+          )
+          .digest("hex")
+      : entry.blob;
+  return `${file}\0${entry.mode}\0${blob}\n`;
+}
+
+function inputError(cause: unknown): ImageInputError {
+  return cause instanceof ImageInputError
+    ? cause
+    : new ImageInputError({ message: String(cause), cause });
+}
+
+function workspaceRoots(tree: Tree): ReadonlyMap<string, string> {
+  return new Map(
+    [...tree.files.keys()]
+      .filter((file) => /^packages\/[^/]+\/package\.json$/u.test(file))
+      .map((file) => [
+        String(readJson(tree, file).name),
+        path.posix.dirname(file),
+      ]),
+  );
+}
+
+function treeTarget(
+  file: string,
+  files: ReadonlyMap<string, File>,
+  blob: (id: string) => string,
+  seen: ReadonlySet<string>,
+): string {
+  const entry = files.get(file);
+  if (entry === undefined || seen.has(file)) {
+    throw new ImageInputError({
+      message: `Missing or cyclic symlink image input ${file}`,
+    });
+  }
+  if (entry.mode !== "120000") {
+    return file;
+  }
+  const link = blob(entry.blob);
+  const target = path.posix.isAbsolute(link)
+    ? link
+    : path.posix.normalize(path.posix.join(path.posix.dirname(file), link));
+  if (target.startsWith("../") || path.posix.isAbsolute(target)) {
+    throw new ImageInputError({
+      message: `Outside-tree symlink image input ${file}`,
+    });
+  }
+  return treeTarget(target, files, blob, new Set([...seen, file]));
+}
+
+function lifecycleFiles(tree: Tree): string[] {
+  const scripts = mapping(readJson(tree, "package.json").scripts);
+  return ["preinstall", "install", "postinstall", "prepare"].flatMap((name) => {
+    const body = scripts[name];
+    return typeof body === "string" ? commandFiles(tree, ".", body) : [];
+  });
 }
 
 function commandFiles(tree: Tree, cwd: string, body: string): string[] {
-  const scripts = mapping(json(tree.read("package.json")).scripts);
+  const scripts = mapping(readJson(tree, "package.json").scripts);
   return [body, ...scriptBodies(body, scripts)]
     .flatMap((text) => text.split(/[\s"'`=,;()[\]{}&|]+/u))
     .flatMap((token) => [
@@ -370,132 +615,46 @@ function scriptBodies(
 }
 
 function scriptNames(text: string): string[] {
-  return [...text.matchAll(/\bpnpm\s+(?:run\s+)?([\w:-]+)/gu)].map(
-    (match) => match[1] ?? "",
-  );
-}
-
-/** Runtime edges include optional dependencies and workspace links, but exclude dev-only packages. */
-function lockedClosure(
-  text: string,
-  root: string,
-): ReadonlyArray<readonly [string, unknown]> {
-  const lock: unknown = parse(text);
-  const value = mapping(lock);
-  if (String(value.lockfileVersion) !== "9.0") {
-    throw new ImageInputError({
-      message: "Unsupported pnpm-lock.yaml version; expected 9.0",
-    });
-  }
-  const found = new Map<string, unknown>();
-  const seen = new Set<string>();
-  const pending = [root];
-  for (let id = pending.pop(); id !== undefined; id = pending.pop()) {
-    if (seen.has(id)) {
+  const tokens = text.match(/"[^"\n]*"|'[^'\n]*'|[^\s;&|]+/gu) ?? [];
+  const names: string[] = [];
+  for (const [index, token] of tokens.entries()) {
+    if (token !== "pnpm") {
       continue;
     }
-    seen.add(id);
-    const importer = Object.hasOwn(mapping(value.importers), id);
-    const block = lockedBlock(value, id, importer);
-    if (!importer) {
-      found.set(id, pinnedPackage(value, id, block));
+    let next = scriptToken(tokens, index + 1);
+    if (tokens[next] === "run") {
+      next = scriptToken(tokens, next + 1);
     }
-    pending.push(...runtimeIds(block, id, importer));
+    const name = tokens[next];
+    if (name !== undefined) {
+      names.push(name);
+    }
   }
-  return [...found].sort(([a], [b]) => (a < b ? -1 : Number(a !== b)));
+  return names;
 }
 
-function lockedBlock(
-  lock: Record<string, unknown>,
-  id: string,
-  importer: boolean,
-): Record<string, unknown> {
-  const section = importer ? "importers" : "snapshots";
-  const block = mapping(lock[section])[id];
-  if (block === undefined) {
-    throw new ImageInputError({
-      message: `pnpm-lock.yaml has no ${id.startsWith("packages/") ? "importer" : "snapshot"} ${id}`,
-    });
-  }
-  return mapping(block);
+function readJson(tree: Tree, file: string): Record<string, unknown> {
+  return json(tree.read(file), file);
 }
 
-function pinnedPackage(
-  lock: Record<string, unknown>,
-  id: string,
-  block: unknown,
-): unknown {
-  const base = id.split("(")[0] ?? id;
-  const entry = mapping(lock.packages)[base];
-  if (entry === undefined) {
-    throw new ImageInputError({
-      message: `pnpm-lock.yaml has no package ${base}`,
-    });
-  }
-  return { package: entry, snapshot: block };
-}
-
-function runtimeIds(
-  block: Record<string, unknown>,
-  id: string,
-  importer: boolean,
-): string[] {
-  return ["dependencies", "optionalDependencies"].flatMap((section) =>
-    Object.entries(mapping(block[section])).map(([name, entry]) =>
-      lockedId(name, importer ? mapping(entry).version : entry, id),
+function json(text: string, file: string): Record<string, unknown> {
+  return Either.match(
+    Effect.runSync(
+      Effect.either(
+        Effect.try({
+          try: () => mapping(JSON.parse(text)),
+          catch: (cause) =>
+            new ImageInputError({ message: `Invalid JSON in ${file}`, cause }),
+        }),
+      ),
     ),
+    {
+      onLeft: (error) => {
+        throw error;
+      },
+      onRight: (value) => value,
+    },
   );
-}
-
-function lockedId(name: string, version: unknown, importer: string): string {
-  if (typeof version !== "string") {
-    throw new ImageInputError({
-      message: `pnpm-lock.yaml has no locked version for ${name}`,
-    });
-  }
-  if (version.startsWith("link:")) {
-    return path.posix.normalize(path.posix.join(importer, version.slice(5)));
-  }
-  const target = version.replace(/^npm:/u, "");
-  return /^[^(@][^(]*@/u.test(target) || target.startsWith("@")
-    ? target
-    : `${name}@${target}`;
-}
-
-function under(tree: Tree, root: string): string[] {
-  return [...tree.files.keys()].filter((file) => file.startsWith(`${root}/`));
-}
-
-function fileEntry(tree: Tree, file: string): string {
-  const entry = tree.files.get(file);
-  if (entry === undefined) {
-    throw new ImageInputError({ message: `Missing committed input ${file}` });
-  }
-  const blob =
-    path.posix.basename(file) === "package.json"
-      ? createHash("sha256")
-          .update(
-            stable(
-              Object.fromEntries(
-                Object.entries(json(tree.read(file))).filter(
-                  ([key]) =>
-                    ![
-                      "version",
-                      "sharnessContentHash",
-                      "sharnessHostCodeHash",
-                    ].includes(key),
-                ),
-              ),
-            ),
-          )
-          .digest("hex")
-      : entry.blob;
-  return `${file}\0${entry.mode}\0${blob}`;
-}
-
-function json(text: string): Record<string, unknown> {
-  const value: unknown = JSON.parse(text);
-  return mapping(value);
 }
 
 function mapping(value: unknown): Record<string, unknown> {
@@ -504,17 +663,224 @@ function mapping(value: unknown): Record<string, unknown> {
     : {};
 }
 
-function stable(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map(stable).join(",")}]`;
+/** COPY and ADD read the build context; stage copies consume already keyed build outputs. */
+function dockerInputs(tree: Tree, file: string): string[] {
+  return dockerCommands(tree.read(file))
+    .split("\n")
+    .flatMap((line) => {
+      const instruction = line.trim();
+      const match = /^(COPY|ADD)\b/iu.exec(instruction);
+      if (match === null) {
+        return [];
+      }
+      const body = instruction.slice(match[0].length).trimStart();
+      if (/(?:^|[ \t])--from(?:=|[ \t])/u.test(body)) {
+        return [];
+      }
+      const argumentsText = dockerArguments(body);
+      const tokens = argumentsText.startsWith("[")
+        ? asStrings(JSON.parse(argumentsText))
+        : (argumentsText.match(/"[^"]*"|'[^']*'|\S+/gu) ?? []);
+      return tokens.slice(0, -1).flatMap((token) => {
+        const source = token
+          .replace(/^["']|["']$/gu, "")
+          .replace(/^\.\//u, "")
+          .replace(/\/$/u, "");
+        const candidates = [...tree.files.keys()].filter(
+          (candidate) =>
+            source === "." ||
+            candidate === source ||
+            candidate.startsWith(`${source}/`),
+        );
+        if (candidates.length === 0) {
+          throw new ImageInputError({
+            message: `Unsupported or missing ${match[1]} source ${source} in ${file}`,
+          });
+        }
+        return candidates.filter((candidate) => candidate !== "pnpm-lock.yaml");
+      });
+    });
+}
+
+function asStrings(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
+function dockerCommands(text: string): string {
+  return text.replaceAll("\r\n", "\n").replace(/\\\n/gu, " ");
+}
+
+function readsManifestVersion(text: string): boolean {
+  const source = ts.createSourceFile(
+    "module.ts",
+    text,
+    ts.ScriptTarget.Latest,
+    true,
+  );
+  const manifests = new Set<string>();
+  let reads = false;
+  function visit(node: ts.Node): void {
+    if (ts.isImportDeclaration(node)) {
+      reads = manifestImport(node, manifests) || reads;
+    }
+    if (
+      ts.isVariableDeclaration(node) &&
+      node.initializer !== undefined &&
+      manifestExpression(node.initializer, manifests)
+    ) {
+      reads = manifestBinding(node.name, manifests) || reads;
+    }
+    reads = expressionVersionRead(node, manifests) || reads;
+    ts.forEachChild(node, visit);
   }
-  if (typeof value === "object" && value !== null) {
-    return `{${Object.entries(value)
-      .sort(([a], [b]) => (a < b ? -1 : Number(a !== b)))
-      .map(([key, item]) => [JSON.stringify(key), stable(item)].join(":"))
-      .join(",")}}`;
+  visit(source);
+  return reads;
+}
+
+function manifestImport(
+  node: ts.ImportDeclaration,
+  manifests: Set<string>,
+): boolean {
+  if (
+    erasedImport(node.importClause) ||
+    !manifestSpecifier(node.moduleSpecifier)
+  ) {
+    return false;
   }
-  return JSON.stringify(value) ?? "null";
+  const clause = node.importClause;
+  if (clause?.name !== undefined) {
+    manifests.add(clause.name.text);
+  }
+  const bindings = clause?.namedBindings;
+  if (bindings === undefined) {
+    return false;
+  }
+  if (ts.isNamespaceImport(bindings)) {
+    manifests.add(bindings.name.text);
+    return false;
+  }
+  return bindings.elements.some(
+    (item) =>
+      !item.isTypeOnly && (item.propertyName ?? item.name).text === "version",
+  );
+}
+
+function manifestBinding(
+  name: ts.BindingName,
+  manifests: Set<string>,
+): boolean {
+  if (ts.isIdentifier(name)) {
+    manifests.add(name.text);
+    return false;
+  }
+  return (
+    ts.isObjectBindingPattern(name) &&
+    name.elements.some(
+      (item) =>
+        (item.propertyName ?? item.name)
+          .getText()
+          .replaceAll('"', "")
+          .replaceAll("'", "") === "version",
+    )
+  );
+}
+
+function scriptToken(tokens: readonly string[], start: number): number {
+  let next = start;
+  while (tokens[next]?.startsWith("-")) {
+    next += ["--filter", "-F", "-C", "--dir"].includes(tokens[next] ?? "")
+      ? 2
+      : 1;
+  }
+  return next;
+}
+
+function dockerArguments(body: string): string {
+  let text = body;
+  while (text.startsWith("--")) {
+    const space = text.search(/\s/u);
+    if (space < 0) {
+      return "";
+    }
+    text = text.slice(space).trimStart();
+  }
+  return text;
+}
+
+function expressionVersionRead(
+  node: ts.Node,
+  manifests: ReadonlySet<string>,
+): boolean {
+  return manifestExport(node) || versionAccess(node, manifests);
+}
+
+function versionAccess(node: ts.Node, manifests: ReadonlySet<string>): boolean {
+  if (ts.isPropertyAccessExpression(node)) {
+    return (
+      node.name.text === "version" &&
+      manifestExpression(node.expression, manifests)
+    );
+  }
+  if (
+    ts.isElementAccessExpression(node) &&
+    ts.isStringLiteral(node.argumentExpression)
+  ) {
+    return (
+      node.argumentExpression.text === "version" &&
+      manifestExpression(node.expression, manifests)
+    );
+  }
+  return false;
+}
+
+function manifestExpression(
+  node: ts.Node,
+  manifests: ReadonlySet<string>,
+): boolean {
+  if (ts.isIdentifier(node)) {
+    return manifests.has(node.text);
+  }
+  if (ts.isAwaitExpression(node) || ts.isParenthesizedExpression(node)) {
+    return manifestExpression(node.expression, manifests);
+  }
+  if (ts.isPropertyAccessExpression(node) && node.name.text === "default") {
+    return manifestExpression(node.expression, manifests);
+  }
+  return ts.isCallExpression(node) && manifestCall(node);
+}
+
+function manifestCall(node: ts.CallExpression): boolean {
+  return runtimeCall(node) && node.arguments.some(manifestSpecifier);
+}
+
+function manifestExport(node: ts.Node): boolean {
+  if (
+    !ts.isExportDeclaration(node) ||
+    node.isTypeOnly ||
+    node.moduleSpecifier === undefined
+  ) {
+    return false;
+  }
+  if (!manifestSpecifier(node.moduleSpecifier)) {
+    return false;
+  }
+  const bindings = node.exportClause;
+  if (bindings === undefined) {
+    return true;
+  }
+  return (
+    ts.isNamedExports(bindings) &&
+    bindings.elements.some(
+      (item) =>
+        !item.isTypeOnly && (item.propertyName ?? item.name).text === "version",
+    )
+  );
+}
+
+function manifestSpecifier(node: ts.Node): boolean {
+  return ts.isStringLiteral(node) && /(?:^|\/)package\.json$/u.test(node.text);
 }
 
 if (import.meta.main) {

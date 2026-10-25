@@ -402,3 +402,61 @@ function packedDirectory(
   }
   return root;
 }
+
+await test("packed channel declarations do not pull the Client service into the host hash", () => {
+  const packages = hostPackages();
+  writeFileSync(
+    path.join(packages.channel, "dist/plugin.d.ts"),
+    'import type { Service } from "@moltzap/client/service"; export type { Service };\n',
+  );
+  const before = hostHash(packages);
+  writeFileSync(
+    path.join(packages.client, "dist/daemon/index.js"),
+    "export const daemon = 2;\n",
+  );
+  assert.equal(hostHash(packages), before);
+  removePackages(packages);
+});
+
+await test("the host hash leaves sharness-internal subpaths inactive", () => {
+  const packages = hostPackages();
+  writeFileSync(
+    path.join(packages.client, "package.json"),
+    JSON.stringify({
+      ...CLIENT_MANIFEST,
+      exports: {
+        ...CLIENT_MANIFEST.exports,
+        "./internal": { "sharness-internal": "./dist/daemon/index.js" },
+      },
+    }),
+  );
+  writeFileSync(
+    path.join(packages.channel, "dist/plugin.js"),
+    'import "@moltzap/client"; import "@moltzap/client/internal";\n',
+  );
+  const before = hostHash(packages);
+  writeFileSync(
+    path.join(packages.client, "dist/daemon/index.js"),
+    "export const daemon = 2;\n",
+  );
+  assert.equal(hostHash(packages), before);
+  removePackages(packages);
+});
+
+await test("the host hash respects a blocked first matching Node condition", () => {
+  const packages = hostPackages();
+  writeFileSync(
+    path.join(packages.client, "package.json"),
+    JSON.stringify({
+      ...CLIENT_MANIFEST,
+      exports: { ".": { node: null, default: "./dist/daemon/index.js" } },
+    }),
+  );
+  const before = hostHash(packages);
+  writeFileSync(
+    path.join(packages.client, "dist/daemon/index.js"),
+    "export const daemon = 2;\n",
+  );
+  assert.equal(hostHash(packages), before);
+  removePackages(packages);
+});
