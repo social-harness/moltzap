@@ -146,7 +146,7 @@ jobs:
                 *) exit "$STATUS" ;;
               esac
             done
-            if [ -z "$MISSING" ]; then
+            if [ -z "$MISSING" ] && git cat-file -e "$RELEASE_COMMIT:examples/two-agents/compose.yaml" 2>/dev/null; then
               BODY=""
               if BODY=$(gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" --json body --jq .body 2>"$RUNNER_TEMP/release-error"); then
                 :

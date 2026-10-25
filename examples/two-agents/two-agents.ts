@@ -294,7 +294,7 @@ function runCompose(
   );
 }
 
-/** Drain both diagnostic streams before cleanup even when Compose exits unsuccessfully. */
+/** Drain diagnostics within 30 seconds, closing each child scope before Compose cleanup. */
 function captureCompose(
   command: Command.Command,
   label: string,
@@ -313,6 +313,13 @@ function captureCompose(
     );
     return `docker compose ${label} (exit ${code}):\n${output}`;
   }).pipe(
+    Effect.scoped,
+    Effect.timeoutOption(Duration.seconds(30)),
+    Effect.map(
+      Option.getOrElse(
+        () => `docker compose ${label} diagnostics timed out after 30 seconds`,
+      ),
+    ),
     Effect.catchAll((cause) =>
       Effect.succeed(`docker compose ${label} failed: ${String(cause)}`),
     ),

@@ -3,7 +3,7 @@
 # pin <file> <service> <ref@digest> edits exactly one existing service reference.
 # refs <file> prints Registry then Router, requiring exactly one digest each.
 # normalize <file> prints a complete file with digest placeholders for comparison.
-# Only shell builtins, grep and sed run here: the release push job installs nothing.
+# Only shell builtins, grep, sed and mv run here: the release push job installs nothing.
 set -euo pipefail
 
 # Require one complete digest reference, including when duplicate values agree.
@@ -32,7 +32,9 @@ main() {
       [[ "$service" == registry || "$service" == router ]] || return 1
       [[ "$4" =~ ^ghcr\.io/social-harness/$service@sha256:[a-f0-9]{64}$ ]] || return 1
       ref=$(service_ref "$file" "$service") || return 1
-      sed -i "s#${ref/ghcr.io/ghcr[.]io}#$4#" "$file"
+      local temporary="$file.tmp.$$.$RANDOM"
+      (set -o noclobber; sed "s#${ref/ghcr.io/ghcr[.]io}#$4#" "$file" > "$temporary")
+      mv "$temporary" "$file"
       ;;
     refs|normalize)
       [[ $# -eq 2 ]] || return 1

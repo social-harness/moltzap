@@ -6,14 +6,14 @@ name: Publish service images
 # https://github.com/social-harness/moltzap/.github/workflows/images.yml@refs/heads/main
 # and issuer https://token.actions.githubusercontent.com before its input tag
 # is created. Existing input tags are skipped, never retagged; partial reruns
-# converge by building only missing services. A publication, or any rerun,
+# converge by building only missing services. A publication, manual run or rerun
 # sends repository_dispatch moltzap-images to social-harness/deployment with
 # client_payload {"registry":"ghcr.io/social-harness/registry@sha256:…",
 # "router":"ghcr.io/social-harness/router@sha256:…","revision":"<tip sha>"}.
 # A token-free tip job resolves and verifies the current main tip's own keys.
 # If either is unpublished, that tip's run dispatches them once available.
 # The dispatch job holds the App token, checks out nothing and sends only
-# that prepared payload, so reruns never send the older run's image keys.
+# that prepared payload after checking its revision still names main's head.
 on:
   push:
     branches: [main]
@@ -177,7 +177,7 @@ jobs:
     if: >-
       !cancelled() && needs.keys.result == 'success' &&
       needs.build.result != 'failure' && needs.publish.result != 'failure' &&
-      (needs.publish.result == 'success' || github.run_attempt > 1)
+      (needs.publish.result == 'success' || github.run_attempt > 1 || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-24.04
     outputs:
       payload: ${{ steps.tip.outputs.payload }}
@@ -203,8 +203,11 @@ jobs:
             image="ghcr.io/social-harness/$service"
             if digest=$(docker buildx imagetools inspect "$image:inputs-$key" --format '{{.Manifest.Digest}}' 2>"$RUNNER_TEMP/inspect-error"); then
               [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
-            elif grep -Eqi 'manifest unknown|: not found|denied|forbidden|unauthorized' "$RUNNER_TEMP/inspect-error"; then
-              echo "::notice::main tip $revision has an image key that is not yet published or not public; the run that publishes it dispatches both."
+            elif grep -Eqi 'denied|forbidden|unauthorized' "$RUNNER_TEMP/inspect-error"; then
+              echo "::warning::The ghcr.io/social-harness/{registry,router} packages must be public before deployment receives images; then run images.yml from main with workflow_dispatch. Docs: https://docs.moltzap.xyz/spec/layer-interfaces#publication-and-versions"
+              exit 0
+            elif grep -Eqi 'manifest unknown|: not found' "$RUNNER_TEMP/inspect-error"; then
+              echo "::notice::main tip $revision has an image key that is not yet published; the run that publishes it dispatches both."
               exit 0
             else
               cat "$RUNNER_TEMP/inspect-error" >&2
@@ -222,7 +225,7 @@ jobs:
     if: >-
       !cancelled() && needs.keys.result == 'success' &&
       needs.build.result != 'failure' && needs.publish.result != 'failure' &&
-      (needs.publish.result == 'success' || github.run_attempt > 1) &&
+      (needs.publish.result == 'success' || github.run_attempt > 1 || github.event_name == 'workflow_dispatch') &&
       needs.tip.outputs.payload != ''
     runs-on: ubuntu-24.04
     permissions: {}
@@ -240,5 +243,12 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           PAYLOAD: ${{ needs.tip.outputs.payload }}
         run: |
+          revision=$(jq -r .revision <<<"$PAYLOAD")
+          main_head=$(git ls-remote https://github.com/social-harness/moltzap refs/heads/main)
+          main_head=${main_head%%$'\t'*}
+          if [[ "$revision" != "$main_head" ]]; then
+            echo "ERROR: payload revision $revision differs from main head $main_head; run images.yml again from main with workflow_dispatch. Docs: https://docs.moltzap.xyz/spec/layer-interfaces#publication-and-versions" >&2
+            exit 1
+          fi
           jq -n --argjson payload "$PAYLOAD" '{event_type: "moltzap-images", client_payload: $payload}' \
             | gh api --method POST repos/social-harness/deployment/dispatches --input -

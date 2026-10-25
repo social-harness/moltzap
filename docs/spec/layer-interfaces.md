@@ -463,6 +463,10 @@ release body lists both full digest references. Missing input tags stop the
 bump until the images workflow publishes them; a rerun completes the release.
 Both GHCR packages must be public before a release: the bump checks that both
 indexes pull anonymously before pinning them so the public quickstart works.
+No `moltzap-images` dispatch happens until both packages are public. After making
+them public, run `images.yml` from main with `workflow_dispatch` to send the
+current images to deployment. Reverting to an already-published input key also
+requires that manual run, because no new index is published.
 
 `.github/workflows/images.yml` pushes each index by digest, signs it with
 cosign keyless, and verifies it before creating its input tag. The certificate
@@ -472,16 +476,21 @@ and its OIDC issuer is `https://token.actions.githubusercontent.com`. Existing
 input tags are verified and skipped, never retagged; an unsigned index fails
 the run. Every index accepted for dispatch, pinning, release-commit push or
 release promotion is verified against that identity and issuer first.
-After publishing any index, or on a rerun, a token-free `tip` job checks out
-the current main tip, computes its keys and resolves and verifies both indexes.
+After publishing any index, on a rerun, or on `workflow_dispatch`, a token-free
+`tip` job checks out the current main tip, computes its keys and resolves and
+verifies both indexes.
 If either key is unpublished, it emits a notice and no payload; that tip's own
-run dispatches them once available. A separate `dispatch` job checks out nothing
-and holds the App token to send `repository_dispatch` event `moltzap-images` to
+run dispatches them once available. Denied, forbidden or unauthorized responses
+emit a warning that both packages must be public before deployment receives
+images. A separate `dispatch` job checks out nothing and holds the App token
+to send `repository_dispatch` event `moltzap-images` to
 `social-harness/deployment`. Both jobs require an uncancelled run with no failed
 `keys`, `build` or `publish` job. Its `client_payload` names both tip indexes
 and their revision:
 `{"registry":"ghcr.io/social-harness/registry@sha256:<digest>","router":"ghcr.io/social-harness/router@sha256:<digest>","revision":"<tip sha>"}`.
-An older run's rerun therefore sends the tip's keys rather than its old keys.
+Before sending, `dispatch` compares the payload revision with main's current
+head. If they differ, it fails and directs the operator to run `images.yml`
+again from main with `workflow_dispatch`, which resolves the current tip afresh.
 
 ### Unsupported Dockerfile form
 
