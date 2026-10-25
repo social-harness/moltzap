@@ -296,8 +296,8 @@ must not change shared history or the answers in a canonical all_gather result.
 Each endpoint's own firewall assesses what its agent asks for and what its agent
 is shown, at the boundary between the host and Client's operations: the send
 operation going out, and the admission worker coming in. It never checks the
-collective protocol underneath. Each member's installation includes the
-conversation's agreed shared norms, and each member decides independently.
+collective protocol underneath. Group norms are the same installation on every
+member, and each member decides independently.
 
 ### Outgoing collective checks
 
@@ -526,8 +526,8 @@ remove them. `codeDigest` covers the behaviors' bytes.
 `description`, `license`, other metadata and files beside `BEHAVIOR.md` are
 not part of the rule. A directory that does not hold a valid behavior, or a
 rule that the editable-policy rules refuse, stops startup in phase
-`configuration`. Shared norms use the same form; see
-[L4 Shared Collaboration Norms](../norms.md#english-norms).
+`configuration`. A [shared norm](../norms.md) is a behavior that the members of
+a conversation agree to, which each adds with `policy_update`.
 
 ### Editable English policy
 
@@ -647,21 +647,6 @@ refuses guidance-bearing deliveries without acknowledging them and reports send
 refusals through its existing refused-message callback; it is not a qualified
 firewall host.
 
-### Conversation policies
-
-A check in a conversation runs the owner's chain and then the policies in
-force for that conversation, which the conversation-policies port supplies,
-under the owner's mode. The port and the norms behind it are specified in
-[L4 Shared Collaboration Norms](../norms.md#the-l3-seam). The check's
-installation digest covers the conversation's policy revision, the agreement
-id.
-
-The text of an agreed shared norm, its guidance and feedback included, was
-written by a peer and agreed by every member. It reaches the runtime and the
-decisions feed attributed to that agreement, never as the owner's or the
-composition's registered text, and decision rows name it with `from: "norm"`
-and the agreement id.
-
 ### Decision reasons
 
 Each row of the owner decisions feed says which rules decided its outcome
@@ -689,8 +674,7 @@ trace.
 
 A rule's `from` says who wrote it, as `policy_read` lists it: `code` for a rule
 a code middleware declares, `fixed` for a fixed English rule composition
-installed, `editable` for an owner-editable English rule, and `norm` for an
-agreed shared norm, with its agreement id. A consumer that
+installed, and `editable` for an owner-editable English rule. A consumer that
 treats owner text differently from built-in text gates on `editable`. Client
 installs fixed and editable English rules as one middleware and records the
 fixed rule ids in that middleware's provenance, which is part of the immutable
