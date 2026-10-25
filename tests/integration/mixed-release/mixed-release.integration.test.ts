@@ -14,7 +14,7 @@ import {
 } from "@moltzap/client";
 import { HISTORY_WIRE_VERSIONS } from "@moltzap/client/test";
 import { Data, Effect, Fiber, Option, Schedule, Schema, Stream } from "effect";
-import { join, resolve } from "node:path";
+import { join, posix, resolve } from "node:path";
 import { expect, it, type TestContext } from "vitest";
 import {
   installPackedConsumer,
@@ -338,55 +338,121 @@ function inLeg(leg: string) {
 
 /**
  * The previous release's Registry and Router, which a daemon that upgrades
- * before its network must still reach. A release whose closure has no
- * Registry bin ships both services only as images, so their `/app` trees are
- * copied out of the release's version-tagged images and run with this Node.
+ * before its network must still reach. Releases ship both services only as
+ * images, so each image's installed tree is copied out and its entrypoint
+ * runs as a process with this Node, through the same harness as the current
+ * network.
  */
-function releaseNetwork(
-  consumer: string,
-  version: string,
-  temporaryRoot: string,
-) {
-  return Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const published = join(consumer, "node_modules/.bin/sharness-registry");
-    if (yield* fs.exists(published)) {
-      return {
-        registry: published,
-        router: join(consumer, "node_modules/.bin/sharness-router"),
-      };
-    }
-    const [registry, router] = yield* Effect.all(
-      [
-        releaseImageApp("registry", version, temporaryRoot),
-        releaseImageApp("router", version, temporaryRoot),
-      ],
-      { concurrency: 2 },
-    );
-    return {
-      registry: join(registry, "bin/sharness-registry"),
-      router: join(router, "bin/sharness-router"),
-    };
-  });
+function releaseNetwork(version: string, temporaryRoot: string) {
+  return releaseImages(version, temporaryRoot).pipe(
+    Effect.flatMap((images) =>
+      Effect.all(
+        {
+          registry: imageEntrypoint(
+            images.registry,
+            join(temporaryRoot, `registry-${version}`),
+          ),
+          router: imageEntrypoint(
+            images.router,
+            join(temporaryRoot, `router-${version}`),
+          ),
+        },
+        { concurrency: 2 },
+      ),
+    ),
+  );
 }
 
-/** Copies `/app` out of a created container that never starts; a failed Docker command names itself. */
-function releaseImageApp(
-  service: "registry" | "router",
-  version: string,
-  temporaryRoot: string,
-) {
-  const image = `ghcr.io/social-harness/${service}:${version}`;
-  const destination = join(temporaryRoot, `${service}-${version}`);
-  return Effect.acquireUseRelease(
-    runCommand("docker", ["pull", "--quiet", image]).pipe(
-      Effect.zipRight(runCommand("docker", ["create", image])),
-      Effect.map((container) => container.trim()),
+/**
+ * The release's own indexes, as its release commit's example Compose file
+ * pins them, read by the same script the release uses. The bump writes that
+ * file before npm publication, so it exists whenever npm lists the release,
+ * unlike the version tags added afterwards.
+ */
+function releaseImages(version: string, temporaryRoot: string) {
+  const compose = join(temporaryRoot, `compose-${version}.yaml`);
+  return runCommand("curl", [
+    "--fail",
+    "--silent",
+    "--show-error",
+    "--location",
+    "--retry",
+    "3",
+    "--output",
+    compose,
+    `https://raw.githubusercontent.com/social-harness/moltzap/refs/tags/v${version}/examples/two-agents/compose.yaml`,
+  ]).pipe(
+    Effect.zipRight(
+      runCommand("bash", [
+        join(workspaceRoot, "scripts/release/example-images.sh"),
+        "refs",
+        compose,
+      ]),
     ),
-    (container) =>
-      runCommand("docker", ["cp", `${container}:/app`, destination]),
-    (container) => runCommand("docker", ["rm", container]).pipe(Effect.ignore),
-  ).pipe(Effect.as(destination));
+    Effect.map((refs) => {
+      const [registry = "", router = ""] = refs.trim().split("\n");
+      return { registry, router };
+    }),
+  );
+}
+
+const imageConfig = Schema.parseJson(
+  Schema.Struct({
+    WorkingDir: Schema.String,
+    Entrypoint: Schema.Tuple(Schema.String),
+    Cmd: Schema.optional(Schema.NullOr(Schema.Array(Schema.String))),
+  }),
+);
+
+/**
+ * Copies `image`'s working directory out of a created container that never
+ * starts and returns its entrypoint's path inside the copy. The pull runs
+ * before the container exists, so an interrupted pull leaves nothing behind.
+ */
+function imageEntrypoint(image: string, destination: string) {
+  return Effect.gen(function* () {
+    yield* runCommand("docker", ["pull", "--quiet", image]);
+    const config = yield* runCommand("docker", [
+      "image",
+      "inspect",
+      "--format",
+      "{{json .Config}}",
+      image,
+    ]).pipe(Effect.flatMap(Schema.decodeUnknown(imageConfig)));
+    const entrypoint = posix.relative(
+      config.WorkingDir,
+      posix.resolve(config.WorkingDir, config.Entrypoint[0]),
+    );
+    if (
+      entrypoint === "" ||
+      entrypoint.startsWith("..") ||
+      (config.Cmd?.length ?? 0) > 0
+    ) {
+      return yield* new ProcessTestError({
+        message: `${image} must run one entrypoint file inside its working directory ${config.WorkingDir} with no arguments; it has ${JSON.stringify(config.Entrypoint)} and ${JSON.stringify(config.Cmd)}`,
+      });
+    }
+    yield* Effect.acquireUseRelease(
+      runCommand("docker", ["create", image]).pipe(
+        Effect.map((container) => container.trim()),
+      ),
+      (container) =>
+        runCommand("docker", [
+          "cp",
+          `${container}:${config.WorkingDir}`,
+          destination,
+        ]),
+      (container) =>
+        runCommand("docker", ["rm", container]).pipe(Effect.ignore),
+    );
+    const copied = join(destination, entrypoint);
+    if (!(yield* (yield* FileSystem.FileSystem).exists(copied))) {
+      return yield* new ProcessTestError({
+        message: `${image}'s entrypoint ${config.Entrypoint[0]} is missing from its copied working directory`,
+      });
+    }
+    return copied;
+  });
 }
 
 function installCurrent(temporaryRoot: string) {
@@ -467,6 +533,9 @@ const mixedRelease = Effect.scoped(
     if (releases.length === 0) {
       return RESET_SKIP_REASON;
     }
+    yield* runCommand("docker", ["version"]).pipe(
+      inLeg("Docker, which runs the previous release's network"),
+    );
     const current = yield* installCurrent(temporaryRoot);
     const currentNetwork = yield* acquireProcessInfrastructure;
     for (const version of releases) {
@@ -476,9 +545,8 @@ const mixedRelease = Effect.scoped(
       );
       if (version === releases[0]) {
         yield* Effect.scoped(
-          acquireProcessInfrastructureFrom(
-            yield* releaseNetwork(consumer, version, temporaryRoot),
-          ).pipe(
+          releaseNetwork(version, temporaryRoot).pipe(
+            Effect.flatMap(acquireProcessInfrastructureFrom),
             Effect.flatMap((previousNetwork) =>
               certifyPair(previousNetwork, version, consumer, current),
             ),
