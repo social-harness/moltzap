@@ -1,6 +1,10 @@
+# The Registry image runs both the Registry and its PGlite database, so it is
+# named once and the release pins one digest for it.
+x-registry-image: &registry-image ${SHARNESS_REGISTRY_IMAGE:-ghcr.io/social-harness/registry@sha256:0000000000000000000000000000000000000000000000000000000000000000}
+
 services:
   database:
-    image: ${SHARNESS_REGISTRY_IMAGE:-ghcr.io/social-harness/registry@sha256:0000000000000000000000000000000000000000000000000000000000000000}
+    image: *registry-image
     entrypoint: pglite-server
     command: ["--db=memory://", "--host=0.0.0.0", "--port=5432", "--max-connections=20"]
     healthcheck:
@@ -9,7 +13,7 @@ services:
       timeout: 5s
       retries: 60
   registry:
-    image: ${SHARNESS_REGISTRY_IMAGE:-ghcr.io/social-harness/registry@sha256:0000000000000000000000000000000000000000000000000000000000000000}
+    image: *registry-image
     user: ${SHARNESS_EXAMPLE_UID:-1000}:${SHARNESS_EXAMPLE_GID:-1000}
     depends_on:
       database:

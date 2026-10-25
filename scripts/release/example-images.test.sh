@@ -70,6 +70,15 @@ YAML
   check "no references fails completeness" 1 "" "$SCRIPT" refs "$FILE"
   printf '%s\n' "$ROUTER" > "$FILE"
   check "missing Registry fails completeness" 1 "" "$SCRIPT" refs "$FILE"
+  local example="$SCRIPT_DIR/../../examples/two-agents/compose.yaml"
+  local placeholder
+  placeholder=$(printf '0%.0s' {1..64})
+  check "the example's Compose file names each image once" 0 \
+    "ghcr.io/social-harness/registry@sha256:$placeholder"$'\n'"ghcr.io/social-harness/router@sha256:$placeholder" \
+    "$SCRIPT" refs "$example"
+  cp "$example" "$FILE"
+  check "the example's Compose file pins the Registry" 0 "" "$SCRIPT" pin "$FILE" registry "$NEW_REGISTRY"
+  check "the pinned example keeps the Router" 0 "$NEW_REGISTRY"$'\n'"ghcr.io/social-harness/router@sha256:$placeholder" "$SCRIPT" refs "$FILE"
   printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"
   [[ "$FAIL" -eq 0 ]]
 }

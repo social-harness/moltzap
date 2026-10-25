@@ -204,7 +204,7 @@ jobs:
             if digest=$(docker buildx imagetools inspect "$image:inputs-$key" --format '{{.Manifest.Digest}}' 2>"$RUNNER_TEMP/inspect-error"); then
               [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
             elif grep -Eqi 'manifest unknown|: not found|denied|forbidden|unauthorized' "$RUNNER_TEMP/inspect-error"; then
-              echo "::notice::main tip $revision has image keys not yet publicly available; the tip's own run dispatches them."
+              echo "::notice::main tip $revision has an image key that is not yet published or not public; the run that publishes it dispatches both."
               exit 0
             else
               cat "$RUNNER_TEMP/inspect-error" >&2
