@@ -217,12 +217,15 @@ export function manifestExportTarget({
   return condition === undefined ? target : { [condition]: target };
 }
 
+/** The internal module condition is shared by manifests and image resolution. */
+export const INTERNAL_EXPORT_CONDITION = "sharness-internal";
+
 /** Visibility metadata selects a named condition independently of object key order. */
 export function exportCondition(
   target: ExportTarget,
 ): "sharness-internal" | "sharness-test" | undefined {
   if (target.internalOnly === true) {
-    return "sharness-internal";
+    return INTERNAL_EXPORT_CONDITION;
   }
   return target.testOnly === true ? "sharness-test" : undefined;
 }

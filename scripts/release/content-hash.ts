@@ -44,13 +44,13 @@ export interface PackFailure {
   readonly message: string;
 }
 
-/** Whether a hashed manifest keeps its `@moltzap/*` dependency entries. */
-export interface ManifestView {
-  readonly siblingPins: "keep" | "drop";
-}
+/** Whether a hashed manifest keeps its workspace dependency entries. */
+export type ManifestView =
+  | { readonly kind: "keep" }
+  | { readonly kind: "drop"; readonly names: ReadonlySet<string> };
 
 /** Manifest fields a release writes without changing what a package is. */
-const UNHASHED_FIELDS: ReadonlySet<string> = new Set([
+export const UNHASHED_FIELDS: ReadonlySet<string> = new Set([
   "version",
   CONTENT_HASH_FIELD,
   HOST_CODE_HASH_FIELD,
@@ -81,20 +81,6 @@ export function contentHashOfPackage(
 }
 
 /**
- * Hash an extracted package directory: every file path, in byte order, with
- * its executable bit and the SHA-256 of its hashed bytes.
- * @param root The directory `package/` of an extracted tarball.
- * @returns `sha256:` and the hex digest over the directory's files.
- */
-export function contentHashOfDirectory(root: string): string {
-  return digestOf(
-    packedFiles(root).map((relative) =>
-      fileEntry(root, relative, relative, { siblingPins: "keep" }),
-    ),
-  );
-}
-
-/**
  * Hash a packed tarball's contents, the same way {@link contentHashOfPackage}
  * hashes what `pnpm pack` writes.
  * @param file The `.tgz` to extract.
@@ -110,6 +96,20 @@ export function contentHashOfTarball(file: string): string | PackFailure {
       ? contentHashOfDirectory(extracted)
       : extracted;
   });
+}
+
+/**
+ * Hash an extracted package directory: every file path, in byte order, with
+ * its executable bit and the SHA-256 of its hashed bytes.
+ * @param root The directory `package/` of an extracted tarball.
+ * @returns `sha256:` and the hex digest over the directory's files.
+ */
+export function contentHashOfDirectory(root: string): string {
+  return digestOf(
+    packedFiles(root).map((relative) =>
+      fileEntry(root, relative, relative, { kind: "keep" }),
+    ),
+  );
 }
 
 /**
@@ -201,6 +201,28 @@ export function digestOf(entries: readonly string[]): string {
   return `sha256:${digest.digest("hex")}`;
 }
 
+/** JSON with object keys sorted at every depth, so key order never matters. */
+export function sortedJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(sortedJson).join(",")}]`;
+  }
+  if (value !== null && typeof value === "object") {
+    const members = Object.entries(value)
+      .sort(([left], [right]) => byteOrder(left, right))
+      .map(([key, item]) => `${JSON.stringify(key)}:${sortedJson(item)}`);
+    return `{${members.join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+/** Compare paths without locale-dependent collation. */
+export function byteOrder(left: string, right: string): number {
+  if (left === right) {
+    return 0;
+  }
+  return left < right ? -1 : 1;
+}
+
 /**
  * Runs one command to completion.
  * @returns Nothing on success, otherwise the failure with its output.
@@ -258,41 +280,23 @@ function hashedBytes(
   const kept = Object.entries(manifest)
     .filter(([key]) => !UNHASHED_FIELDS.has(key))
     .map(([key, value]): [string, unknown] =>
-      view.siblingPins === "drop" && DEPENDENCY_SECTIONS.includes(key)
-        ? [key, withoutSiblings(value)]
+      view.kind === "drop" && DEPENDENCY_SECTIONS.includes(key)
+        ? [key, withoutSiblings(value, view.names)]
         : [key, value],
     );
   return Buffer.from(sortedJson(Object.fromEntries(kept)));
 }
 
-function withoutSiblings(section: unknown): unknown {
+function withoutSiblings(
+  section: unknown,
+  siblings: ReadonlySet<string>,
+): unknown {
   if (typeof section !== "object" || section === null) {
     return section;
   }
   return Object.fromEntries(
-    Object.entries(section).filter(([name]) => !name.startsWith("@moltzap/")),
+    Object.entries(section).filter(([name]) => !siblings.has(name)),
   );
-}
-
-/** JSON with object keys sorted at every depth, so key order never matters. */
-function sortedJson(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map(sortedJson).join(",")}]`;
-  }
-  if (value !== null && typeof value === "object") {
-    const members = Object.entries(value)
-      .sort(([left], [right]) => byteOrder(left, right))
-      .map(([key, item]) => `${JSON.stringify(key)}:${sortedJson(item)}`);
-    return `{${members.join(",")}}`;
-  }
-  return JSON.stringify(value);
-}
-
-function byteOrder(left: string, right: string): number {
-  if (left === right) {
-    return 0;
-  }
-  return left < right ? -1 : 1;
 }
 
 if (import.meta.main) {

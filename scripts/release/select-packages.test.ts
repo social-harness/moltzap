@@ -42,6 +42,16 @@ const PREVIOUS = "2099.100.0";
 
 /** Product release tests follow the same package set as release selection. */
 const DIRS = RELEASE_PACKAGES;
+
+/**
+ * Every workspace package name, as `hostCodeHashOfPackage` passes them: the
+ * private services are workspace packages outside the release set.
+ */
+const WORKSPACE_NAMES: ReadonlySet<string> = new Set(
+  [...DIRS, "nanoclaw-channel", "registry", "router"].map(
+    (dir) => `@moltzap/${dir}`,
+  ),
+);
 const DEPENDENCIES = Object.fromEntries(
   DIRS.map((dir) => [dir, FINAL_PACKAGES[dir].deps]),
 );
@@ -268,6 +278,35 @@ await test("the host-code hash ignores sibling versions and pins", () => {
   removePackages(packages);
 });
 
+for (const section of [
+  "devDependencies",
+  "peerDependencies",
+  "optionalDependencies",
+] as const) {
+  await test(`the host-code hash ignores non-closure workspace ${section} pins`, (t) => {
+    const packages = hostPackages();
+    t.after(() => {
+      removePackages(packages);
+    });
+    writeFileSync(
+      path.join(packages.channel, "package.json"),
+      JSON.stringify({
+        ...CHANNEL_MANIFEST,
+        [section]: { "@moltzap/router": PREVIOUS },
+      }),
+    );
+    const before = hostHash(packages);
+    writeFileSync(
+      path.join(packages.channel, "package.json"),
+      JSON.stringify({
+        ...CHANNEL_MANIFEST,
+        [section]: { "@moltzap/router": RELEASE },
+      }),
+    );
+    assert.equal(hostHash(packages), before);
+  });
+}
+
 /** An in-memory workspace and the manifest version of each package. */
 interface Fake {
   readonly workspace: Workspace;
@@ -378,6 +417,7 @@ function hostHash(packages: HostPackages): string {
       [CHANNEL_MANIFEST.name, packages.channel],
       [CLIENT_MANIFEST.name, packages.client],
     ]),
+    WORKSPACE_NAMES,
   );
 }
 
@@ -398,3 +438,68 @@ function packedDirectory(
   }
   return root;
 }
+
+await test("packed channel declarations do not pull the Client service into the host hash", () => {
+  const packages = hostPackages();
+  writeFileSync(
+    path.join(packages.channel, "dist/plugin.d.ts"),
+    'export * from "@moltzap/client/service";\n',
+  );
+  const before = hostHash(packages);
+  writeFileSync(
+    path.join(packages.client, "dist/daemon/index.js"),
+    "export const daemon = 2;\n",
+  );
+  assert.equal(hostHash(packages), before);
+  removePackages(packages);
+});
+
+await test("the host hash leaves sharness-internal subpaths inactive", () => {
+  const packages = hostPackages();
+  writeFileSync(
+    path.join(packages.client, "package.json"),
+    JSON.stringify({
+      ...CLIENT_MANIFEST,
+      exports: {
+        ...CLIENT_MANIFEST.exports,
+        "./internal": { "sharness-internal": "./dist/daemon/index.js" },
+      },
+    }),
+  );
+  writeFileSync(
+    path.join(packages.channel, "dist/plugin.js"),
+    'import "@moltzap/client"; import "@moltzap/client/internal";\n',
+  );
+  const before = hostHash(packages);
+  writeFileSync(
+    path.join(packages.client, "dist/daemon/index.js"),
+    "export const daemon = 2;\n",
+  );
+  assert.equal(hostHash(packages), before);
+  removePackages(packages);
+});
+
+await test("the host hash respects a blocked first matching Node condition", () => {
+  const packages = hostPackages();
+  writeFileSync(
+    path.join(packages.client, "package.json"),
+    JSON.stringify({
+      ...CLIENT_MANIFEST,
+      exports: { ".": { node: null, default: "./dist/daemon/index.js" } },
+    }),
+  );
+  const before = hostHash(packages);
+  writeFileSync(
+    path.join(packages.client, "dist/daemon/index.js"),
+    "export const daemon = 2;\n",
+  );
+  assert.equal(hostHash(packages), before);
+  removePackages(packages);
+});
+
+await test("the content hash covers sharnessWireVersion", () => {
+  assert.notEqual(
+    hashOf({ ...MANIFEST, sharnessWireVersion: "next" }, FILES),
+    hashOf(MANIFEST, FILES),
+  );
+});

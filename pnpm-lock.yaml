@@ -431,6 +431,12 @@ importers:
       '@effect/sql-pg':
         specifier: 'catalog:'
         version: 0.53.0(@effect/experimental@0.61.0(@effect/platform@0.97.0(effect@3.22.1))(effect@3.22.1))(@effect/platform@0.97.0(effect@3.22.1))(@effect/sql@0.52.0(@effect/experimental@0.61.0(@effect/platform@0.97.0(effect@3.22.1))(effect@3.22.1))(@effect/platform@0.97.0(effect@3.22.1))(effect@3.22.1))(effect@3.22.1)
+      '@electric-sql/pglite':
+        specifier: 'catalog:'
+        version: 0.4.4
+      '@electric-sql/pglite-socket':
+        specifier: 'catalog:'
+        version: 0.1.4(@electric-sql/pglite@0.4.4)
       '@moltzap/client':
         specifier: workspace:*
         version: link:../client
@@ -441,12 +447,6 @@ importers:
       '@effect/vitest':
         specifier: 'catalog:'
         version: 0.30.0(effect@3.22.1)(vitest@3.2.4(@types/debug@4.1.13)(@types/node@25.5.0)(jiti@2.7.0)(terser@5.49.0)(tsx@4.21.0)(yaml@2.9.1))
-      '@electric-sql/pglite':
-        specifier: 'catalog:'
-        version: 0.4.4
-      '@electric-sql/pglite-socket':
-        specifier: 'catalog:'
-        version: 0.1.4(@electric-sql/pglite@0.4.4)
       '@testcontainers/postgresql':
         specifier: 'catalog:'
         version: 10.28.0

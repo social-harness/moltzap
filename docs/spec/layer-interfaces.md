@@ -382,7 +382,10 @@ topology and cross-address context.
 
 Two packages publish to npm at independent calendar versions:
 `@moltzap/client` and `@moltzap/openclaw-channel`. Registry, Router and NanoClaw
-stay private. Operators run the Registry and Router package executables.
+stay private. Registry and Router ship as images built from
+`images/<service>/Dockerfile` with the repository root as build context, keyed
+by `pnpm image:keys`. The Registry image carries `pglite-server` for run-scoped
+and development databases.
 The integration-test workspace stays outside the product graph and release set.
 The published set derives from `FINAL_PACKAGES`; literal tool configuration is
 checked against that contract.
@@ -448,6 +451,18 @@ mismatches. Release notes mark each reset release with the phrase
   `scripts/test/packed-workspace.ts` and verify exact sibling pins and declared
   executables. NanoClaw's ABI check compiles its source against Client; it has
   no tarball installation gate because deployment copies its source.
+
+### Unsupported Dockerfile form
+
+`pnpm image:keys` refuses unsupported Dockerfile instructions with the file,
+line and form. Keep image recipes in the explicit two-stage form used by
+`images/registry/Dockerfile` and `images/router/Dockerfile`: pinned Node bases,
+named context paths, the exact Corepack setup and filtered pnpm install,
+Nx build and legacy production deploy commands, and the declared runtime
+metadata. Replace the reported instruction with that form. `ADD`, context-wide
+copies, globs, arbitrary shell commands and Docker parser directives are refused.
+Docker applies `.dockerignore` to the named context roots; both image keys hash
+the whole file as a fixed build input.
 
 ## Consumer migration boundary
 
