@@ -1,9 +1,9 @@
 /**
- * @file Starts a local Social Harness network from host executables and a private workspace Registry,
+ * @file Starts a local Social Harness network from Docker images and the installed Client,
  * registers the agents `alice` and `bob`, sends one message from alice to bob,
  * and prints the message bob receives.
  *
- * The network is one in-memory PGlite database, one Registry, one Router, and
+ * The network is one Compose project with an in-memory PGlite database, one Registry, one Router, and
  * one `sharnessd` per agent, each on a free loopback port. Registration goes
  * through each daemon's MCP `register` tool; the message goes through the
  * `HarnessEndpoint` that `@moltzap/client` acquires from the same MCP URL.
@@ -30,8 +30,6 @@ import {
   SendInput,
 } from "@moltzap/client";
 import {
-  Config,
-  type ConfigError,
   Console,
   Data,
   Duration,
@@ -41,6 +39,7 @@ import {
   Option,
   type ParseResult,
   Ref,
+  Schedule,
   Schema,
   type Scope,
   Stream,
@@ -51,25 +50,10 @@ import { isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HOST = "127.0.0.1";
-const ADMISSION_CREDENTIAL = "two-agents-example";
+const ADMISSION_CREDENTIAL = randomBytes(32).toString("base64url");
 const MCP_PROTOCOL_VERSION = "2026-07-28";
 const BIN_DIRECTORY = fileURLToPath(
   new URL("node_modules/.bin/", import.meta.url),
-);
-const routerBinary = Config.string("SHARNESS_ROUTER_BIN").pipe(
-  Config.withDefault(
-    fileURLToPath(
-      new URL("../../packages/router/bin/sharness-router", import.meta.url),
-    ),
-  ),
-);
-
-const registryBinary = Config.string("SHARNESS_REGISTRY_BIN").pipe(
-  Config.withDefault(
-    fileURLToPath(
-      new URL("../../packages/registry/bin/sharness-registry", import.meta.url),
-    ),
-  ),
 );
 const POLL_INTERVAL = Duration.millis(50);
 const RUN_TIMEOUT = Duration.minutes(2);
@@ -108,7 +92,6 @@ interface Network {
 /** Every way a setup step fails: a check, a file or process, or a decode. */
 type StepError =
   | ExampleError
-  | ConfigError.ConfigError
   | PlatformError.PlatformError
   | ParseResult.ParseError;
 
@@ -168,11 +151,12 @@ function startNetwork(): Effect.Effect<Network, StepError, Services> {
     const directory = yield* fs.makeTempDirectoryScoped({
       prefix: "sharness-two-agents-",
     });
-    const registryKey = join(directory, "registry-signing.pem");
+    const keyDirectory = join(directory, "registry");
+    yield* fs.makeDirectory(keyDirectory);
+    const registryKey = join(keyDirectory, "registry-signing.pem");
     const registryPrivateKey = makePrivateKeyPem();
     yield* fs.writeFileString(registryKey, registryPrivateKey, { mode: 0o600 });
-    const [databasePort, registryPort, routerPort] = yield* Effect.all([
-      freePort(),
+    const [registryPort, routerPort] = yield* Effect.all([
       freePort(),
       freePort(),
     ]);
@@ -180,31 +164,56 @@ function startNetwork(): Effect.Effect<Network, StepError, Services> {
     const routerOrigin = `http://${HOST}:${routerPort}`;
     const registrySigner = publicJwk(registryPrivateKey);
 
-    const database = yield* start("pglite-server", "pglite", [
-      "--db=memory://",
-      `--host=${HOST}`,
-      `--port=${databasePort}`,
-      "--max-connections=20",
-    ]);
-    yield* awaitReady(database, canConnect(databasePort));
-    const registry = yield* start(yield* registryBinary, "registry", [], {
-      SHARNESS_REGISTRY_HOST: HOST,
-      SHARNESS_REGISTRY_PORT: String(registryPort),
-      SHARNESS_REGISTRY_SQL_POOL_SIZE: "1",
-      SHARNESS_REGISTRY_POSTGRESQL_URL: `postgresql://postgres:postgres@${HOST}:${databasePort}/postgres`,
-      SHARNESS_REGISTRY_ADMISSION_CREDENTIAL: ADMISSION_CREDENTIAL,
-      SHARNESS_REGISTRY_SIGNING_PRIVATE_KEY_PATH: registryKey,
-    });
-    const router = yield* start(yield* routerBinary, "router", [], {
-      SHARNESS_ROUTER_HOST: HOST,
-      SHARNESS_ROUTER_PORT: String(routerPort),
-      SHARNESS_ROUTER_REGISTRY_ORIGIN: registryOrigin,
-      SHARNESS_ROUTER_REGISTRY_SIGNER_PUBLIC_KEY: registrySigner,
-    });
-    yield* awaitReady(registry, isHealthy(registryOrigin));
-    yield* awaitReady(router, isHealthy(routerOrigin));
+    const environment = {
+      SHARNESS_EXAMPLE_KEY_DIRECTORY: keyDirectory,
+      SHARNESS_EXAMPLE_UID: String(process.getuid?.() ?? 1000),
+      SHARNESS_EXAMPLE_GID: String(process.getgid?.() ?? 1000),
+      SHARNESS_EXAMPLE_REGISTRY_PORT: String(registryPort),
+      SHARNESS_EXAMPLE_ROUTER_PORT: String(routerPort),
+      SHARNESS_EXAMPLE_ADMISSION_CREDENTIAL: ADMISSION_CREDENTIAL,
+      SHARNESS_EXAMPLE_REGISTRY_SIGNER: registrySigner,
+    };
+    yield* startCompose(environment);
+    yield* Effect.repeat(
+      Effect.all([isHealthy(registryOrigin), isHealthy(routerOrigin)]),
+      {
+        until: (healthy) => healthy.every(Boolean),
+        schedule: Schedule.spaced(POLL_INTERVAL),
+      },
+    );
     yield* Console.log(`registry ${registryOrigin}, router ${routerOrigin}`);
     return { directory, registryOrigin, routerOrigin, registrySigner };
+  });
+}
+
+/** Compose cleanup runs before the scratch directory finalizer removes its bind mount. */
+function startCompose(
+  environment: Readonly<Record<string, string>>,
+): Effect.Effect<void, StepError, Services> {
+  return Effect.gen(function* () {
+    const composeArgs = [
+      "compose",
+      "--file",
+      fileURLToPath(new URL("compose.yaml", import.meta.url)),
+      "--project-name",
+      `sharness-example-${randomBytes(8).toString("hex")}`,
+    ];
+    const compose = (...args: readonly string[]) =>
+      Command.make("docker", ...composeArgs, ...args).pipe(
+        Command.env(environment),
+        Command.exitCode,
+        Effect.flatMap((code) =>
+          code === 0
+            ? Effect.void
+            : fail(
+                `docker compose exited with ${code}. Docs: https://docs.moltzap.xyz/quickstart#docker-compose-fails`,
+              ),
+        ),
+      );
+    yield* Effect.addFinalizer(() =>
+      compose("down", "--volumes", "--remove-orphans").pipe(Effect.orDie),
+    );
+    yield* compose("up", "--detach");
   });
 }
 

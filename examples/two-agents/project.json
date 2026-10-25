@@ -1,32 +1,5 @@
 {
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "name": "two-agents-example",
-  "targets": {
-    "test:pack": {
-      "executor": "nx:run-commands",
-      "dependsOn": [
-        "^build",
-        {
-          "target": "build",
-          "projects": [
-            "@moltzap/registry",
-            "@moltzap/router"
-          ]
-        }
-      ],
-      "cache": false,
-      "options": {
-        "cwd": ".",
-        "command": "node scripts/test-two-agents-example.ts"
-      },
-      "inputs": [
-        "default",
-        "^production",
-        "{workspaceRoot}/packages/registry/src/**/*",
-        "{workspaceRoot}/packages/registry/bin/**/*",
-        "{workspaceRoot}/packages/router/src/**/*",
-        "{workspaceRoot}/packages/router/bin/**/*"
-      ]
-    }
-  }
+  "targets": {}
 }

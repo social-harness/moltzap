@@ -57,7 +57,6 @@ jobs:
       - run: pnpm build
       # Pack gates install the published closures in isolated consumers.
       # NanoClaw checks its Client ABI without packing the source-copied adapter.
-      # The example launches the private Registry and Router executables.
       - name: Verify the published closure installs from tarballs
         run: pnpm nx run-many -t test:pack,test:abi --parallel=4
       - run: pnpm typecheck
@@ -189,3 +188,10 @@ jobs:
             }
             throw new Error("Router /healthz did not return 204");
           '
+      - uses: ./.github/actions/setup-toolchain
+      - run: pnpm install --frozen-lockfile
+      - name: Run the npm consumer example against these images
+        env:
+          SHARNESS_REGISTRY_IMAGE: sharness-registry:ci
+          SHARNESS_ROUTER_IMAGE: sharness-router:ci
+        run: pnpm nx run @moltzap/integration-tests:test:example
