@@ -272,7 +272,7 @@ export const INTEGRATION_BOUNDARY_CASES = [
   {
     name: "ESLint relative exception belongs only to its config",
     path: "tests/integration/daemon-process-harness.ts",
-    prepend: 'import "../../packages/client/eslint.config.js";\n',
+    prepend: 'import "../../eslint.shared.js";\n',
     message: /test infrastructure must not cross its boundary/,
   },
   {
@@ -525,4 +525,20 @@ export const INTEGRATION_INTEGRITY_CASES = [
     source: '\nconst apiKey = "' + "synthetic".repeat(4) + '";\n',
     diagnostic: /\[hardcoded-api-key\]/,
   },
+  ...["tests/integration", "packages/client/integration"].flatMap(
+    (directory) => [
+      {
+        name: `cast-chain guard scans ${directory}`,
+        path: `${directory}/cast-plant.ts`,
+        source: "\nconst value = input as unknown as string;\n",
+        diagnostic: /\[as-unknown-as\]/,
+      },
+      {
+        name: `wire-error dispatch guard scans ${directory}`,
+        path: `${directory}/dispatch-plant.ts`,
+        source: '\nif (error._tag === "RpcServerError") {}\n',
+        diagnostic: /\[tag-discriminant\]/,
+      },
+    ],
+  ),
 ] as const;

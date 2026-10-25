@@ -40,7 +40,6 @@ import {
   testGuardIntegrity,
   testIntegrationIntegrityGuards,
 } from "./integration-integrity.ts";
-import { testLintRelocation } from "./integration-lint-relocation.ts";
 import {
   failures,
   plantBoundarySource,
@@ -76,9 +75,9 @@ function main(): void {
     testIntegrationBoundaries();
     testIntegrationAgentInstructionsLink();
     testIntegrationGraph();
+    testIntegrationLintProfile();
     testIntegrationIntegrityGuards();
     testGuardIntegrity();
-    testLintRelocation(test, runNode);
     testIsolatedFolderImports();
   } finally {
     restoreAllPlants();
@@ -88,6 +87,36 @@ function main(): void {
     process.exit(1);
   }
   console.log("\nAll gate + generator tests passed.");
+}
+
+/** Resolved config protects every tracked fixture and process suite from glob drift. */
+function testIntegrationLintProfile(): void {
+  const result = runNode(["scripts/__tests__/integration-lint-profile.ts"]);
+  test(
+    "tracked integration sources resolve strict and integration-test lint profiles",
+    result.code === 0,
+    result.stderr,
+  );
+  try {
+    plantBoundarySource({
+      path: "eslint.shared.ts",
+      before:
+        'makeStrictBlock(["**/*.ts"], languageOptions, makeStrictRules())',
+      after:
+        'makeStrictBlock(["src/**/*.ts"], languageOptions, makeStrictRules())',
+    });
+    const narrowed = runNode(["scripts/__tests__/integration-lint-profile.ts"]);
+    test(
+      "integration lint gate rejects a narrowed strict-profile glob",
+      narrowed.code !== 0 &&
+        narrowed.stderr.includes(
+          "strict profile must enforce max-lines as error",
+        ),
+      narrowed.stderr,
+    );
+  } finally {
+    restoreAllPlants();
+  }
 }
 
 function testNoHardcodedConstants(): void {

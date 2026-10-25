@@ -33,19 +33,27 @@ import {
   makeRegistrationRequest,
   processTrace,
 } from "./daemon-process-harness.js";
+import {
+  auditActivationKind,
+  auditCompleteKind,
+} from "./expected-contracts.js";
+import {
+  anyNumber,
+  anyString,
+  arrayContaining,
+  objectContaining,
+} from "./test-matchers.js";
 
-const secretText = "private candidate never returned by the decisions feed";
-const blockedRule = {
-  id: "private",
-  kind: "safety",
-  text: "Never disclose private text.",
-} as const;
-const fixedRule = {
-  id: "owner",
-  kind: "norm",
-  text: "Follow the owner.",
-  guidance: "Ask the owner.",
-} as const;
+const pair = Effect.gen(function* () {
+  const infrastructure = yield* acquireProcessInfrastructure;
+  const alice = yield* makeDaemonProcessFixture(infrastructure, "alice");
+  const bob = yield* makeDaemonProcessFixture(infrastructure, "bob");
+  yield* acquireDaemonProcess(bob);
+  const management = yield* acquireDaemonManagementClient(bob.endpoint);
+  yield* management.register(makeRegistrationRequest(bob));
+  return { alice, bob };
+});
+
 const settings = {
   timeoutMilliseconds: 10000,
   middlewareTimeoutMilliseconds: 8000,
@@ -53,40 +61,10 @@ const settings = {
   maximumResultBytes: 1000000,
 };
 
-function answer(request: DecisionRequest) {
-  return {
-    provider: "fixture",
-    model: "deterministic",
-    usage: {},
-    raw: secretText,
-    answers: Object.fromEntries(
-      Object.entries(request.questions).map(([id, question]) => {
-        const selected =
-          request.stage === "safety"
-            ? "prohibited"
-            : (["compliant", "autonomous", "none", "relevant"].find((choice) =>
-                Object.hasOwn(question.criteria, choice),
-              ) ?? "unresolved");
-        return [
-          id,
-          {
-            choice: selected,
-            probabilities: Object.fromEntries(
-              Object.keys(question.criteria).map((choice) => [
-                choice,
-                choice === selected ? 1 : 0,
-              ]),
-            ),
-          },
-        ];
-      }),
-    ),
-  };
-}
-
 const provider: DecisionProvider = {
   decide: (request) => Effect.succeed(answer(request)),
 };
+
 const options: Daemon.FirewallOptions = {
   mode: "enforcement",
   incoming: [],
@@ -104,122 +82,70 @@ const options: Daemon.FirewallOptions = {
   },
 };
 
-function start(
-  fixture: DaemonProcessFixture,
-  policy: Daemon.FirewallOptions,
-  extra: Readonly<Record<string, string>> = {},
-) {
-  return Layer.launch(Daemon.withFirewall(policy)).pipe(
-    Effect.withConfigProvider(
-      ConfigProvider.fromMap(
-        new Map(Object.entries({ ...fixture.environment, ...extra })),
-      ),
-    ),
-    Effect.forkScoped,
-  );
-}
-
-function connect(endpoint: URL, bearer?: string) {
-  return Effect.gen(function* () {
-    const client = new Client(
-      { name: "policy-test", version: "1" },
-      { capabilities: {}, versionNegotiation: { mode: { pin: "2026-07-28" } } },
-    );
-    yield* Effect.acquireRelease(
-      Effect.tryPromise(() =>
-        client.connect(
-          new StreamableHTTPClientTransport(
-            endpoint,
-            bearer === undefined
-              ? {}
-              : {
-                  requestInit: {
-                    headers: { authorization: `Bearer ${bearer}` },
-                  },
-                },
-          ),
-        ),
-      ).pipe(
-        Effect.retry(
-          Schedule.intersect(
-            Schedule.spaced("25 millis"),
-            Schedule.recurs(200),
-          ),
-        ),
-      ),
-      () => Effect.tryPromise(() => client.close()).pipe(Effect.ignore),
-    );
-    return client;
-  });
-}
-
-function call(
-  client: Client,
-  name: string,
-  args: Readonly<Record<string, unknown>> = {},
-) {
-  return Effect.tryPromise(() =>
-    client.callTool({ name, arguments: args }),
-  ).pipe(Effect.map((result) => result.structuredContent));
-}
-
 const readSchema = Schema.Struct({
   rules: Schema.Array(Schema.Struct({ id: Schema.String })),
   fixedRules: Schema.Array(Schema.Unknown),
   activeRevision: Schema.String,
 });
-const updateSchema = Schema.Struct({
-  activeRevision: Schema.String,
-  retroactive: Schema.Literal(false),
-});
-const decisionsSchema = Schema.Struct({
-  decisions: Schema.Array(
-    Schema.Struct({
-      checkId: Schema.String,
-      time: Schema.Number,
-      direction: Schema.String,
-      peerAgentId: Schema.NullOr(Schema.String),
-      outcome: Schema.String,
-      cause: Schema.String,
-      decidedBy: Schema.Array(
-        Schema.Struct({ ruleId: Schema.String, from: Schema.String }),
-      ),
-      checkedRuleIds: Schema.Array(Schema.String),
-      activeRevision: Schema.String,
-    }),
-  ),
-});
+
 const read = (client: Client) =>
   call(client, "policy_read").pipe(
     Effect.flatMap(Schema.decodeUnknown(readSchema)),
   );
+
+const updateSchema = Schema.Struct({
+  activeRevision: Schema.String,
+  retroactive: Schema.Literal(false),
+});
+
 const update = (client: Client, args: Readonly<Record<string, unknown>>) =>
   call(client, "policy_update", args).pipe(
     Effect.flatMap(Schema.decodeUnknown(updateSchema)),
   );
+
+const secretText = "private candidate never returned by the decisions feed";
+
 const send = (client: Client) =>
   call(client, "send_message", {
     input: { to: "agent:bob", text: secretText },
   });
 
-const pair = Effect.gen(function* () {
-  const infrastructure = yield* acquireProcessInfrastructure;
-  const alice = yield* makeDaemonProcessFixture(infrastructure, "alice");
-  const bob = yield* makeDaemonProcessFixture(infrastructure, "bob");
-  yield* acquireDaemonProcess(bob);
-  const management = yield* acquireDaemonManagementClient(bob.endpoint);
-  yield* management.register(makeRegistrationRequest(bob));
-  return { alice, bob };
-});
+const blockedRule = {
+  id: "private",
+  kind: "safety",
+  text: "Never disclose private text.",
+} as const;
 
-function register(client: Client, fixture: DaemonProcessFixture) {
-  return call(client, "register", { ...makeRegistrationRequest(fixture) });
+interface PolicyCheckScenario {
+  readonly entered: Deferred.Deferred<undefined>;
+  readonly release: Deferred.Deferred<undefined>;
+  readonly auditExport: string;
+  readonly runtime: Fiber.RuntimeFiber<never, unknown>;
+  readonly client: Client;
 }
 
-const swapDuringCheck = Effect.gen(function* () {
+interface PolicyRevisions {
+  readonly before: { readonly activeRevision: string };
+  readonly changed: {
+    readonly activeRevision: string;
+    readonly retroactive: boolean;
+  };
+}
+
+interface FixedPolicyScenario {
+  readonly client: Client;
+  readonly codeRule: {
+    readonly id: string;
+    readonly kind: "safety";
+    readonly guidance: string;
+  };
+  readonly middleware: MessageMiddleware;
+}
+
+const acquirePolicyCheckScenario = Effect.gen(function* () {
   const { alice } = yield* pair;
-  const entered = yield* Deferred.make<void>();
-  const release = yield* Deferred.make<void>();
+  const entered = yield* Deferred.make<undefined>();
+  const release = yield* Deferred.make<undefined>();
   const middleware: MessageMiddleware = {
     id: "code",
     revision: "1",
@@ -241,6 +167,73 @@ const swapDuringCheck = Effect.gen(function* () {
   });
   const client = yield* connect(alice.endpoint);
   yield* register(client, alice);
+  return { entered, release, auditExport, runtime, client };
+});
+
+const fixedRule = {
+  id: "owner",
+  kind: "norm",
+  text: "Follow the owner.",
+  guidance: "Ask the owner.",
+} as const;
+
+const acquireFixedPolicyScenario = Effect.gen(function* () {
+  const { alice } = yield* pair;
+  const codeRule = {
+    id: "no-links",
+    kind: "safety",
+    guidance: "Send the page title instead of the link.",
+  } as const;
+  const middleware: MessageMiddleware = {
+    id: "links",
+    revision: "1",
+    rules: [codeRule],
+    check: () =>
+      Effect.succeed({
+        findings: [{ ruleId: codeRule.id, outcome: "pass" }],
+        expectations: [],
+      }),
+  };
+  yield* start(alice, {
+    ...options,
+    incoming: [middleware],
+    outgoing: [middleware],
+    english: {
+      provider,
+      settings: {
+        minimumProbability: 0.5,
+        maximumRequestBytes: 1000000,
+        timeoutMilliseconds: 5000,
+      },
+      fixedRules: [fixedRule],
+    },
+  });
+  const client = yield* connect(alice.endpoint);
+  yield* register(client, alice);
+  return { codeRule, middleware, client };
+});
+
+const decisionsSchema = Schema.Struct({
+  decisions: Schema.Array(
+    Schema.Struct({
+      checkId: Schema.String,
+      time: Schema.Number,
+      direction: Schema.String,
+      peerAgentId: Schema.NullOr(Schema.String),
+      outcome: Schema.String,
+      cause: Schema.String,
+      decidedBy: Schema.Array(
+        Schema.Struct({ ruleId: Schema.String, from: Schema.String }),
+      ),
+      checkedRuleIds: Schema.Array(Schema.String),
+      activeRevision: Schema.String,
+    }),
+  ),
+});
+
+const swapDuringCheck = Effect.gen(function* () {
+  const scenario = yield* acquirePolicyCheckScenario;
+  const { client, entered } = scenario;
   const before = yield* read(client);
   expect(
     yield* update(client, { remove: ["fixed-code"] }).pipe(Effect.isFailure),
@@ -250,54 +243,10 @@ const swapDuringCheck = Effect.gen(function* () {
   const changed = yield* update(client, { add: [blockedRule] });
   expect(changed.activeRevision).not.toBe(before.activeRevision);
   expect(changed.retroactive).toBe(false);
-  yield* Deferred.succeed(release, undefined);
+  yield* Deferred.succeed(scenario.release, undefined);
   yield* Fiber.join(inFlight);
-  expect(yield* send(client).pipe(Effect.isFailure)).toBe(true);
-  const raw = yield* call(client, "firewall_decisions");
-  expect(JSON.stringify(raw)).not.toContain(secretText);
-  expect(JSON.stringify(raw)).not.toContain(blockedRule.text);
-  const feed = yield* Schema.decodeUnknown(decisionsSchema)(raw);
-  expect(feed.decisions).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        activeRevision: before.activeRevision,
-        outcome: "allow",
-        direction: "outgoing",
-        cause: "default",
-        decidedBy: [],
-      }),
-      expect.objectContaining({
-        activeRevision: changed.activeRevision,
-        outcome: "block",
-        cause: "judgment",
-        decidedBy: [{ ruleId: blockedRule.id, from: "editable" }],
-        checkedRuleIds: ["fixed-code", blockedRule.id],
-      }),
-    ]),
-  );
-  expect(
-    feed.decisions.every((decision) =>
-      decision.peerAgentId?.startsWith("agt_"),
-    ),
-  ).toBe(true);
-  expect(
-    yield* call(client, "firewall_decisions", {
-      since: Number.MAX_SAFE_INTEGER,
-    }),
-  ).toEqual({ decisions: [], activations: [] });
-  yield* Fiber.interrupt(runtime);
-  const fs = yield* FileSystem.FileSystem;
-  const records = yield* Effect.forEach(
-    (yield* fs.readFileString(auditExport)).trim().split("\n"),
-    (line) => Schema.decodeUnknown(Schema.parseJson(FirewallAuditRecord))(line),
-  );
-  expect(
-    records
-      .filter((record) => record.kind === "check")
-      .map((record) => record.input.configurationDigest),
-  ).toEqual(
-    expect.arrayContaining([before.activeRevision, changed.activeRevision]),
-  );
+  yield* expectPolicyRevisionsInDecisionFeed(client, { before, changed });
+  yield* expectPolicyRevisionsInAudit(scenario, { before, changed });
 });
 
 const persistAndValidate = Effect.gen(function* () {
@@ -351,62 +300,9 @@ const persistAndValidate = Effect.gen(function* () {
   yield* Fiber.interrupt(restarted);
 });
 
-const readFixed = Effect.gen(function* () {
-  const { alice } = yield* pair;
-  const codeRule = {
-    id: "no-links",
-    kind: "safety",
-    guidance: "Send the page title instead of the link.",
-  } as const;
-  const middleware: MessageMiddleware = {
-    id: "links",
-    revision: "1",
-    rules: [codeRule],
-    check: () =>
-      Effect.succeed({
-        findings: [{ ruleId: codeRule.id, outcome: "pass" }],
-        expectations: [],
-      }),
-  };
-  yield* start(alice, {
-    ...options,
-    incoming: [middleware],
-    outgoing: [middleware],
-    english: {
-      provider,
-      settings: {
-        minimumProbability: 0.5,
-        maximumRequestBytes: 1000000,
-        timeoutMilliseconds: 5000,
-      },
-      fixedRules: [fixedRule],
-    },
-  });
-  const client = yield* connect(alice.endpoint);
-  yield* register(client, alice);
-
-  const policy = yield* call(client, "policy_read");
-  const removeCode = yield* call(client, "policy_update", {
-    remove: [codeRule.id],
-  }).pipe(Effect.flip);
-  const replaceEnglish = yield* call(client, "policy_update", {
-    add: [{ ...blockedRule, id: fixedRule.id }],
-  }).pipe(Effect.flip);
-
-  expect(policy).toEqual({
-    rules: [],
-    fixedRules: [
-      { from: "code", middleware: middleware.id, ...codeRule },
-      { from: "english", ...fixedRule },
-    ],
-    activeRevision: expect.any(String),
-  });
-  expect(removeCode.cause).toMatchObject({ data: { reason: "fixed-rule" } });
-  expect(replaceEnglish.cause).toMatchObject({
-    data: { reason: "fixed-rule" },
-  });
-  expect(yield* call(client, "policy_read")).toEqual(policy);
-});
+const readFixed = acquireFixedPolicyScenario.pipe(
+  Effect.flatMap(expectFixedPolicyCannotBeEdited),
+);
 
 const emptyEnglish = Effect.gen(function* () {
   const { alice } = yield* pair;
@@ -484,11 +380,17 @@ const concurrentEdits = Effect.gen(function* () {
     { ...fixedRule, id: "third" },
   ];
   yield* Effect.forEach(additions, (rule) => update(client, { add: [rule] }), {
-    concurrency: "unbounded",
+    concurrency: 4,
   });
   const before = yield* read(client);
-  expect(before.rules.map((rule) => rule.id).sort()).toEqual(
-    additions.map((rule) => rule.id).sort(),
+  expect(
+    before.rules
+      .map((rule) => rule.id)
+      .sort((left, right) => left.localeCompare(right)),
+  ).toEqual(
+    additions
+      .map((rule) => rule.id)
+      .sort((left, right) => left.localeCompare(right)),
   );
   yield* send(client);
   yield* Fiber.interrupt(runtime);
@@ -514,13 +416,13 @@ const consecutiveActivations = Effect.gen(function* () {
   const feed = yield* call(client, "firewall_decisions");
   const expected = [
     {
-      time: expect.any(Number),
+      time: anyNumber,
       activeRevision: second.activeRevision,
       addedRuleIds: [fixedRule.id],
       removedRuleIds: [blockedRule.id],
     },
     {
-      time: expect.any(Number),
+      time: anyNumber,
       activeRevision: first.activeRevision,
       addedRuleIds: [blockedRule.id],
       removedRuleIds: [],
@@ -532,13 +434,14 @@ const consecutiveActivations = Effect.gen(function* () {
   const records = yield* Effect.forEach(
     (yield* fs.readFileString(auditExport)).trim().split("\n"),
     (line) => Schema.decodeUnknown(Schema.parseJson(FirewallAuditRecord))(line),
+    { concurrency: 1 },
   );
-  expect(records.filter((record) => record.kind === "activation")).toEqual([
-    { kind: "activation", ...expected[1] },
-    { kind: "activation", ...expected[0] },
+  expect(records.filter((item) => item.kind === auditActivationKind)).toEqual([
+    { kind: auditActivationKind, ...expected[1] },
+    { kind: auditActivationKind, ...expected[0] },
   ]);
   expect(records.at(-1)).toMatchObject({
-    kind: "complete",
+    kind: auditCompleteKind,
     checkCount: 0,
     activationCount: 2,
   });
@@ -564,11 +467,11 @@ const tunnelAuthority = Effect.gen(function* () {
   yield* register(owner, alice);
   const runtime = yield* connect(alice.endpoint, runtimeToken);
   const catalog = yield* Effect.tryPromise(() => runtime.listTools());
-  expect(catalog.tools.map((tool) => tool.name).sort()).toEqual([
-    "read_event",
-    "search_agents",
-    "send_message",
-  ]);
+  expect(
+    catalog.tools
+      .map((tool) => tool.name)
+      .sort((left, right) => left.localeCompare(right)),
+  ).toEqual(["read_event", "search_agents", "send_message"]);
   expect(yield* call(runtime, "policy_read").pipe(Effect.isFailure)).toBe(true);
   expect(
     yield* call(runtime, "policy_update", { add: [blockedRule] }).pipe(
@@ -592,53 +495,221 @@ describe("editable firewall through the daemon public API", () => {
   );
   it(
     "rejects invalid and fixed edits and restores active policy after restart",
-    processTrace(
-      Effect.scoped(persistAndValidate).pipe(Effect.provide(NodeContext.layer)),
-    ),
+    processTrace(persistAndValidate.pipe(Effect.provide(NodeContext.layer))),
     60000,
   );
   it(
     "returns fixed English text and code rule descriptions and refuses to edit them",
-    processTrace(
-      Effect.scoped(readFixed).pipe(Effect.provide(NodeContext.layer)),
-    ),
+    processTrace(readFixed.pipe(Effect.provide(NodeContext.layer))),
     60000,
   );
   it(
     "omits English inference for an empty document, including after restart",
-    processTrace(
-      Effect.scoped(emptyEnglish).pipe(Effect.provide(NodeContext.layer)),
-    ),
+    processTrace(emptyEnglish.pipe(Effect.provide(NodeContext.layer))),
     60000,
   );
   it(
     "keeps the active and persisted chain when replacement construction fails",
-    processTrace(
-      Effect.scoped(failedBuild).pipe(Effect.provide(NodeContext.layer)),
-    ),
+    processTrace(failedBuild.pipe(Effect.provide(NodeContext.layer))),
     60000,
   );
   it(
     "serializes concurrent additions without losing rules across restart",
-    processTrace(
-      Effect.scoped(concurrentEdits).pipe(Effect.provide(NodeContext.layer)),
-    ),
+    processTrace(concurrentEdits.pipe(Effect.provide(NodeContext.layer))),
     60000,
   );
   it(
     "retains consecutive activations with no intervening messages in the feed and audit",
     processTrace(
-      Effect.scoped(consecutiveActivations).pipe(
-        Effect.provide(NodeContext.layer),
-      ),
+      consecutiveActivations.pipe(Effect.provide(NodeContext.layer)),
     ),
     60000,
   );
   it(
     "exposes policy management only to owner authority in tunnel mode",
-    processTrace(
-      Effect.scoped(tunnelAuthority).pipe(Effect.provide(NodeContext.layer)),
-    ),
+    processTrace(tunnelAuthority.pipe(Effect.provide(NodeContext.layer))),
     60000,
   );
 });
+
+function expectPolicyRevisionsInDecisionFeed(
+  client: Client,
+  { before, changed }: PolicyRevisions,
+) {
+  return Effect.gen(function* () {
+    expect(yield* send(client).pipe(Effect.isFailure)).toBe(true);
+    const raw = yield* call(client, "firewall_decisions");
+    expect(JSON.stringify(raw)).not.toContain(secretText);
+    expect(JSON.stringify(raw)).not.toContain(blockedRule.text);
+    const feed = yield* Schema.decodeUnknown(decisionsSchema)(raw);
+    expect(feed.decisions).toEqual(
+      arrayContaining([
+        objectContaining({
+          activeRevision: before.activeRevision,
+          outcome: "allow",
+          direction: "outgoing",
+          cause: "default",
+          decidedBy: [],
+        }),
+        objectContaining({
+          activeRevision: changed.activeRevision,
+          outcome: "block",
+          cause: "judgment",
+          decidedBy: [{ ruleId: blockedRule.id, from: "editable" }],
+          checkedRuleIds: ["fixed-code", blockedRule.id],
+        }),
+      ]),
+    );
+    expect(
+      feed.decisions.every((decision) =>
+        decision.peerAgentId?.startsWith("agt_"),
+      ),
+    ).toBe(true);
+  });
+}
+
+function expectPolicyRevisionsInAudit(
+  { auditExport, runtime, client }: PolicyCheckScenario,
+  { before, changed }: PolicyRevisions,
+) {
+  return Effect.gen(function* () {
+    expect(
+      yield* call(client, "firewall_decisions", {
+        since: Number.MAX_SAFE_INTEGER,
+      }),
+    ).toEqual({ decisions: [], activations: [] });
+    yield* Fiber.interrupt(runtime);
+    const fs = yield* FileSystem.FileSystem;
+    const records = yield* Effect.forEach(
+      (yield* fs.readFileString(auditExport)).trim().split("\n"),
+      (line) =>
+        Schema.decodeUnknown(Schema.parseJson(FirewallAuditRecord))(line),
+      { concurrency: 1 },
+    );
+    expect(
+      records
+        .filter((record) => record.kind === "check")
+        .map((record) => record.input.configurationDigest),
+    ).toEqual(arrayContaining([before.activeRevision, changed.activeRevision]));
+  });
+}
+
+function expectFixedPolicyCannotBeEdited(state: FixedPolicyScenario) {
+  return Effect.gen(function* () {
+    const { codeRule, middleware, client } = state;
+    const policy = yield* call(client, "policy_read");
+    const removeCode = yield* call(client, "policy_update", {
+      remove: [codeRule.id],
+    }).pipe(Effect.flip);
+    const replaceEnglish = yield* call(client, "policy_update", {
+      add: [{ ...blockedRule, id: fixedRule.id }],
+    }).pipe(Effect.flip);
+    expect(policy).toEqual({
+      rules: [],
+      fixedRules: [
+        { from: "code", middleware: middleware.id, ...codeRule },
+        { from: "english", ...fixedRule },
+      ],
+      activeRevision: anyString,
+    });
+    expect(removeCode.cause).toMatchObject({ data: { reason: "fixed-rule" } });
+    expect(replaceEnglish.cause).toMatchObject({
+      data: { reason: "fixed-rule" },
+    });
+    expect(yield* call(client, "policy_read")).toEqual(policy);
+  });
+}
+
+function answer(request: DecisionRequest) {
+  return {
+    provider: "fixture",
+    model: "deterministic",
+    usage: {},
+    raw: secretText,
+    answers: Object.fromEntries(
+      Object.entries(request.questions).map(([id, question]) => {
+        const selected =
+          request.stage === "safety"
+            ? "prohibited"
+            : (["compliant", "autonomous", "none", "relevant"].find((choice) =>
+                Object.hasOwn(question.criteria, choice),
+              ) ?? "unresolved");
+        return [
+          id,
+          {
+            choice: selected,
+            probabilities: Object.fromEntries(
+              Object.keys(question.criteria).map((choice) => [
+                choice,
+                choice === selected ? 1 : 0,
+              ]),
+            ),
+          },
+        ];
+      }),
+    ),
+  };
+}
+
+function start(
+  fixture: DaemonProcessFixture,
+  policy: Daemon.FirewallOptions,
+  extra: Readonly<Record<string, string>> = {},
+) {
+  return Layer.launch(Daemon.withFirewall(policy)).pipe(
+    Effect.withConfigProvider(
+      ConfigProvider.fromMap(
+        new Map(Object.entries({ ...fixture.environment, ...extra })),
+      ),
+    ),
+    Effect.forkScoped,
+  );
+}
+
+function connect(endpoint: URL, bearer?: string) {
+  return Effect.gen(function* () {
+    const client = new Client(
+      { name: "policy-test", version: "1" },
+      { capabilities: {}, versionNegotiation: { mode: { pin: "2026-07-28" } } },
+    );
+    yield* Effect.acquireRelease(
+      Effect.tryPromise(() =>
+        client.connect(
+          new StreamableHTTPClientTransport(
+            endpoint,
+            bearer === undefined
+              ? {}
+              : {
+                  requestInit: {
+                    headers: { authorization: `Bearer ${bearer}` },
+                  },
+                },
+          ),
+        ),
+      ).pipe(
+        Effect.retry(
+          Schedule.intersect(
+            Schedule.spaced("25 millis"),
+            Schedule.recurs(200),
+          ),
+        ),
+      ),
+      () => Effect.tryPromise(() => client.close()).pipe(Effect.ignore),
+    );
+    return client;
+  });
+}
+
+function register(client: Client, fixture: DaemonProcessFixture) {
+  return call(client, "register", { ...makeRegistrationRequest(fixture) });
+}
+
+function call(
+  client: Client,
+  name: string,
+  args: Readonly<Record<string, unknown>> = {},
+) {
+  return Effect.tryPromise(() =>
+    client.callTool({ name, arguments: args }),
+  ).pipe(Effect.map((result) => result.structuredContent));
+}
