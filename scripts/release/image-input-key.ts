@@ -371,7 +371,10 @@ function buildInputs(
   return [...files];
 }
 
-/** Copied siblings bind only packed non-source content; executable inputs are discovered separately. */
+/**
+ * Copied siblings bind only packed non-source content; executable inputs are discovered separately.
+ * A copied sibling must declare `files`: without it pnpm packs whatever its ignore files allow.
+ */
 function includedCopy(
   tree: Tree,
   file: string,
@@ -388,7 +391,13 @@ function includedCopy(
   if (/^(?:src|bin)\//u.test(relative)) {
     return false;
   }
-  const patterns = asStrings(readJson(tree, `${sibling}/package.json`).files);
+  const declared = readJson(tree, `${sibling}/package.json`).files;
+  if (!Array.isArray(declared)) {
+    throw new ImageInputError({
+      message: `Copied workspace package ${sibling}/package.json declares no files list; an image binds a copied sibling by what it packs`,
+    });
+  }
+  const patterns = asStrings(declared);
   return (
     /^(?:package\.json|readme(?:\..*)?|licen[cs]e(?:\..*)?|notice(?:\..*)?)$/iu.test(
       relative,
