@@ -97,7 +97,6 @@
               "modules/client/harness/protocol",
               "modules/client/identity",
               "modules/client/identity/registry",
-              "modules/client/identity/signing/registered",
               "modules/client/src",
               "modules/openclaw-channel/src",
               "modules/registry/src",

@@ -7,11 +7,14 @@ import { PgClient } from "@effect/sql-pg";
 import {
   AgentCard,
   AgentSigningAuthority,
-  AuthenticationFailedError,
   type VerifiedAgentCard,
   WIRE_VERSION,
 } from "@moltzap/client";
-import { Registry, RegistryApi } from "@moltzap/client/internal";
+import {
+  httpErrors,
+  Registry,
+  registryContract,
+} from "@moltzap/client/internal";
 import {
   PostgreSqlContainer,
   type StartedPostgreSqlContainer,
@@ -118,7 +121,9 @@ const makePostgreSqlRegistrySetup = Effect.gen(function* () {
 });
 
 const issuedCard = (
-  result: RegistryApi.RegistryLookupResult | RegistryApi.RegistryRegisterResult,
+  result:
+    | typeof registryContract.lookupResultSchema.Type
+    | typeof registryContract.registerResultSchema.Type,
 ) =>
   Match.value(result).pipe(
     Match.when({ kind: "registered" }, ({ agentCard }) =>
@@ -218,7 +223,7 @@ it("reopens a known ledger and serves the same card", () => {
       });
       const prepared = yield* prepareAgent("ledger-authority");
       const requestBytes = yield* Schema.encode(
-        RegistryApi.RegistryRegisterRequest,
+        registryContract.RegistryRegisterRequest,
       )(prepared.request).pipe(Effect.flatMap(encodeCanonicalJson));
       const registered = yield* storage.register({
         request: prepared.request,
@@ -448,7 +453,7 @@ it(
         ).toStrictEqual(
           Array.from(
             { length: CONTENDERS - 1 },
-            () => new AuthenticationFailedError(),
+            () => new httpErrors.AuthenticationFailedError(),
           ),
         );
       }).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),

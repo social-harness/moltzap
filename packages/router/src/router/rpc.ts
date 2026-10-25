@@ -7,12 +7,10 @@ import {
   RpcServer,
 } from "@effect/rpc";
 import {
-  AuthenticationFailedError,
-  InternalServerError,
-  OverloadedError,
+  httpErrors,
+  routerContract,
   type VerifiedAgentRequest,
-} from "@moltzap/client";
-import { RouterApi } from "@moltzap/client/internal";
+} from "@moltzap/client/internal";
 import {
   Context,
   Deferred,
@@ -27,18 +25,24 @@ import type { RouterPoll } from "./poll.js";
 import type { RouterSend } from "./send.js";
 
 type RouterHandlerError =
-  | AuthenticationFailedError
-  | OverloadedError
-  | InternalServerError;
+  | InstanceType<typeof httpErrors.AuthenticationFailedError>
+  | InstanceType<typeof httpErrors.OverloadedError>
+  | InstanceType<typeof httpErrors.InternalServerError>;
 
 /** Typed package-private client used by the HTTP adapter. */
 export interface RouterRpcClient {
   readonly send: (input: {
-    readonly request: RouterApi.RawRouterSendRequest;
-  }) => Effect.Effect<RouterApi.RouterSendResult, RouterHandlerError>;
+    readonly request: typeof routerContract.RawRouterSendRequest.Type;
+  }) => Effect.Effect<
+    typeof routerContract.RouterSendResult.Type,
+    RouterHandlerError
+  >;
   readonly poll: (input: {
-    readonly request: RouterApi.RouterPollRequest;
-  }) => Effect.Effect<RouterApi.RouterPollResult, RouterHandlerError>;
+    readonly request: typeof routerContract.RouterPollRequest.Type;
+  }) => Effect.Effect<
+    typeof routerContract.RouterPollResult.Type,
+    RouterHandlerError
+  >;
 }
 
 const currentVerifiedRequest = FiberRef.unsafeMake(
@@ -54,7 +58,7 @@ class VerifiedRouterRequest extends Context.Tag(
 class RegisteredAgentRequest extends RpcMiddleware.Tag<RegisteredAgentRequest>()(
   "@moltzap/router/RegisteredAgentRequest",
   {
-    failure: AuthenticationFailedError,
+    failure: httpErrors.AuthenticationFailedError,
     provides: VerifiedRouterRequest,
   },
 ) {}
@@ -63,22 +67,25 @@ const registeredAgentRequestLayer = Layer.succeed(RegisteredAgentRequest, () =>
   FiberRef.get(currentVerifiedRequest).pipe(
     Effect.flatMap(
       Option.match({
-        onNone: () => Effect.fail(new AuthenticationFailedError()),
+        onNone: () => Effect.fail(new httpErrors.AuthenticationFailedError()),
         onSome: Effect.succeed,
       }),
     ),
   ),
 );
 
-const handlerErrors = Schema.Union(OverloadedError, InternalServerError);
+const handlerErrors = Schema.Union(
+  httpErrors.OverloadedError,
+  httpErrors.InternalServerError,
+);
 const sendRpc = Rpc.make("send", {
-  payload: { request: RouterApi.RawRouterSendRequest },
-  success: RouterApi.RouterSendResult,
+  payload: { request: routerContract.RawRouterSendRequest },
+  success: routerContract.RouterSendResult,
   error: handlerErrors,
 }).middleware(RegisteredAgentRequest);
 const pollRpc = Rpc.make("poll", {
-  payload: { request: RouterApi.RouterPollRequest },
-  success: RouterApi.RouterPollResult,
+  payload: { request: routerContract.RouterPollRequest },
+  success: routerContract.RouterPollResult,
   error: handlerErrors,
 }).middleware(RegisteredAgentRequest);
 

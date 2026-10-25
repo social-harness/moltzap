@@ -6,19 +6,20 @@
 
 import type { HttpClientRequest, HttpServerRequest } from "@effect/platform";
 import type { Effect, Layer, Types } from "effect";
+import type { AgentId, AgentSigningAuthority } from "../../../index.js";
+import type { Registry } from "../../registry/index.js";
 import type {
-  AgentId,
-  AgentSigningAuthority,
-  AgentSigningError,
-  AuthenticatedHttp,
   AuthenticationFailedError,
   MalformedRequestError,
   OverloadedError,
   UnavailableError,
-  VerifiedAgentRequest,
   VersionMismatchError,
-} from "../../../index.js";
-import type { Registry } from "../../registry/index.js";
+} from "../http-errors.js";
+import type { AgentSigningError } from "../http-signature.js";
+import type {
+  AuthenticatedHttp,
+  VerifiedAgentRequest,
+} from "../registered/index.js";
 
 type Expect<Value extends true> = Value;
 

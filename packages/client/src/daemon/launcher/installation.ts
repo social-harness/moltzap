@@ -267,21 +267,29 @@ export const pruneReleases = Effect.fn("Launcher.pruneReleases")(
 
 /**
  * The wire versions the daemon installed under `prefix` admits, read from
- * the Client package it runs, or an `integrity` failure.
+ * the Client root or the pre-fold Identity root, or an `integrity` failure.
  */
 export const liveWireVersions = Effect.fn("Launcher.liveWireVersions")(
   function* (prefix: string) {
     const path = yield* Path.Path;
-    const manifest = yield* installedManifest(prefix, DAEMON_PACKAGE);
-    const entry = yield* Schema.decodeUnknown(clientExports)(manifest.exports);
-    const module = path.join(
-      prefix,
-      "node_modules",
-      DAEMON_PACKAGE,
-      entry["."].import,
+    const readWindow = (name: string) =>
+      Effect.gen(function* () {
+        const manifest = yield* installedManifest(prefix, name);
+        const entry = yield* Schema.decodeUnknown(clientExports)(
+          manifest.exports,
+        );
+        const module = path.join(
+          prefix,
+          "node_modules",
+          name,
+          entry["."].import,
+        );
+        const loaded: unknown = yield* Effect.tryPromise(() => import(module));
+        return yield* Schema.decodeUnknown(liveWindow)(loaded);
+      }).pipe(Effect.withSpan("Launcher.readInstalledWireWindow"));
+    const window = yield* readWindow(DAEMON_PACKAGE).pipe(
+      Effect.catchAll(() => readWindow("@moltzap/identity")),
     );
-    const loaded: unknown = yield* Effect.tryPromise(() => import(module));
-    const window = yield* Schema.decodeUnknown(liveWindow)(loaded);
     return window.LIVE_WIRE_VERSIONS;
   },
   Effect.mapError(() =>

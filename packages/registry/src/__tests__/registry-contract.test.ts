@@ -1,12 +1,7 @@
 /** @file Registry configuration, private RPC, client, and server composition contract tests. */
 
-import {
-  AgentName,
-  AgentSigningAuthority,
-  PrincipalId,
-  UnavailableError,
-} from "@moltzap/client";
-import { RegistryApi } from "@moltzap/client/internal";
+import { AgentName, AgentSigningAuthority, PrincipalId } from "@moltzap/client";
+import { httpErrors, registryContract } from "@moltzap/client/internal";
 import {
   ConfigProvider,
   Effect,
@@ -103,8 +98,8 @@ const makePrivateKeyPem = (): string => {
 };
 
 const makeRequest = (name: string) =>
-  Schema.decodeUnknownSync(RegistryApi.RegistryRegisterRequest)({
-    operationId: Schema.decodeUnknownSync(RegistryApi.OperationId)(
+  Schema.decodeUnknownSync(registryContract.RegistryRegisterRequest)({
+    operationId: Schema.decodeUnknownSync(registryContract.OperationId)(
       "opn_AAAAAAAAAAAAAAAAAAAAAA",
     ),
     principalId: Schema.decodeUnknownSync(PrincipalId)(
@@ -125,7 +120,7 @@ const makeRpcStorage = (calls: Ref.Ref<number>): RegistryStorage => ({
     Ref.updateAndGet(calls, (current) => current + 1).pipe(
       Effect.flatMap(() =>
         request.agentName === "rpc-failure"
-          ? Effect.fail(new UnavailableError())
+          ? Effect.fail(new httpErrors.UnavailableError())
           : Effect.succeed(Object.freeze({ kind: NAME_TAKEN_KIND })),
       ),
     ),

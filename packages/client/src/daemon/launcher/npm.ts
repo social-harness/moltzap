@@ -201,7 +201,10 @@ function visit(
 
 function toPublished(published: typeof manifest.Type): PublishedPackage {
   const wireVersion =
-    published.sharnessWireVersion ?? published.moltzapWireVersion;
+    published.sharnessWireVersion ??
+    (published.name === "@moltzap/identity"
+      ? published.moltzapWireVersion
+      : undefined);
   return {
     name: published.name,
     version: published.version,

@@ -1,10 +1,4 @@
-/**
- * @file Public Router contracts: opaque SignedMessages addressed to
- * explicit AgentIds, send results, and bounded endpoint-wide
- * PollCursors. Router carries no ConversationId, membership,
- * transaction, persistence, replay, or recovery semantics; those
- * belong to the endpoint Harness in `@moltzap/client`.
- */
+/** @file Router API domain: opaque envelopes, send and poll codecs, and HTTP client capabilities. Conversation, membership, certification and recovery semantics belong to communication/conversations. */
 
 /** Canonical Router-owned refined values. */
 export {

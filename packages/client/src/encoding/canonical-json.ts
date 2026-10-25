@@ -1,4 +1,4 @@
-/** @file Exact canonical JSON parsing and encoding for identity boundaries. */
+/** @file Shared canonical JSON parsing and encoding for signed and stored representations. */
 
 import canonicalize from "canonicalize";
 import { Data, Effect, Schema } from "effect";
@@ -435,8 +435,8 @@ export class CanonicalJsonError extends Data.TaggedError(
   "CanonicalJsonError",
 ) {}
 
-const canonicalIdentityBytes = (
-  value: JsonValue,
+const canonicalJsonBytes = (
+  value: unknown,
 ): Effect.Effect<Uint8Array, CanonicalJsonError> =>
   Effect.try({
     try: () => {
@@ -455,7 +455,7 @@ const canonicalIdentityBytes = (
 const everyByte = Uint8Array.prototype.every;
 
 /** Compares complete byte sequences, rejecting detached or exotic typed arrays. */
-const sameIdentityBytes = (left: Uint8Array, right: Uint8Array): boolean => {
+export const sameBytes = (left: Uint8Array, right: Uint8Array): boolean => {
   try {
     return (
       everyByte.call(left, (byte, index) => byte === right[index]) &&
@@ -497,8 +497,8 @@ export const parseCanonicalJson = (
       return yield* new CanonicalJsonError();
     }
     const value = snapshot.value;
-    const encoded = yield* canonicalIdentityBytes(value);
-    if (!sameIdentityBytes(bytes, encoded)) {
+    const encoded = yield* canonicalJsonBytes(value);
+    if (!sameBytes(bytes, encoded)) {
       return yield* new CanonicalJsonError();
     }
     return value;
@@ -544,18 +544,10 @@ export const encodeCanonicalJson = (
   }).pipe(
     Effect.flatMap((snapshot) =>
       snapshot.valid
-        ? canonicalIdentityBytes(snapshot.value)
+        ? canonicalJsonBytes(snapshot.value)
         : Effect.fail(new CanonicalJsonError()),
     ),
   );
-
-/** Rejects excess members and absent required fields at identity boundaries. */
-export const exactStruct = <Fields extends Schema.Struct.Fields>(
-  fields: Fields,
-) =>
-  Schema.Struct(fields).annotations({
-    parseOptions: { exact: true, onExcessProperty: "error" },
-  });
 
 /** A Client-owned representation, hash, or verification check failed. */
 export class ClientRepresentationError extends Data.TaggedError(
@@ -566,33 +558,11 @@ export class ClientRepresentationError extends Data.TaggedError(
 export const representationFailure = (): ClientRepresentationError =>
   new ClientRepresentationError();
 
-/** Compare exact lengths and bytes without coercing either representation. */
-export const sameBytes = (left: Uint8Array, right: Uint8Array): boolean => {
-  if (left.byteLength !== right.byteLength) {
-    return false;
-  }
-  for (let index = 0; index < left.byteLength; index += 1) {
-    if (left[index] !== right[index]) {
-      return false;
-    }
-  }
-  return true;
-};
-
 /** Encode JSON as canonical UTF-8, rejecting values with no JSON representation. */
 export const canonicalBytes = (
   value: unknown,
 ): Effect.Effect<Uint8Array, ClientRepresentationError> =>
-  Effect.try({
-    try: () => canonicalize(value),
-    catch: representationFailure,
-  }).pipe(
-    Effect.flatMap((text) =>
-      text === undefined
-        ? Effect.fail(representationFailure())
-        : Effect.succeed(utf8Encoder.encode(text)),
-    ),
-  );
+  canonicalJsonBytes(value).pipe(Effect.mapError(representationFailure));
 
 /** Encode one closed value into its unique JCS UTF-8 representation. */
 export const encodeCanonical = <A, I, R>(

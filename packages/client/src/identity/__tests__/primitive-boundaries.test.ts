@@ -19,6 +19,8 @@ it.each(["agents", "keys", "cards"])(
     const localModules = new Set([
       "keys.js",
       "../encoding/canonical-json.js",
+      "../encoding/exact.js",
+      "bounded-cache.js",
       "../encoding/identifier.js",
       "agents.js",
       "wire-version.js",

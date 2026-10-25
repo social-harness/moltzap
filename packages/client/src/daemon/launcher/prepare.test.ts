@@ -15,7 +15,7 @@ import { live as it } from "@effect/vitest";
 import { Effect, Exit, Layer, Option } from "effect";
 import { describe, expect } from "vitest";
 import type { LauncherConfiguration } from "./selection.js";
-import { readRecord } from "./installation.js";
+import { readRecord, writeRecord } from "./installation.js";
 import { integrityOf } from "./integrity.js";
 import { prepare } from "./prepare.js";
 
@@ -301,6 +301,119 @@ const followsANewImage = () =>
       Option.some("2026.1022.1"),
     );
   }).pipe(Effect.scoped, Effect.provide(NodeContext.layer));
+
+/** A recorded pre-fold install keeps wire policy in the separate Identity package. */
+const preFoldVolume = Effect.gen(function* () {
+  const installed = yield* volume;
+  const fs = yield* FileSystem.FileSystem;
+  const clientRoot = `${installed.seed}/node_modules/@moltzap/client`;
+  const identityRoot = `${installed.seed}/node_modules/@moltzap/identity`;
+  yield* fs.writeFileString(`${clientRoot}/dist/index.js`, "export {};\n");
+  yield* fs.makeDirectory(`${identityRoot}/dist`, { recursive: true });
+  yield* fs.writeFileString(
+    `${identityRoot}/package.json`,
+    JSON.stringify({
+      name: "@moltzap/identity",
+      version: "2026.1021.1",
+      type: "module",
+      exports: { ".": { import: "./dist/index.js" } },
+    }),
+  );
+  yield* fs.writeFileString(
+    `${identityRoot}/dist/index.js`,
+    `export const LIVE_WIRE_VERSIONS = [${JSON.stringify(WIRE)}];\n`,
+  );
+  const image = yield* volume;
+  yield* fs.makeDirectory(installed.home, { recursive: true });
+  const tarball = `${installed.home}/recorded-client.tgz`;
+  const bytes = new TextEncoder().encode("recorded verified Client tarball");
+  yield* fs.writeFile(tarball, bytes);
+  yield* writeRecord(installed.home, {
+    format: "org.social-harness/launcher-record/v1",
+    releasePackage: CHANNEL,
+    version: "2026.1021.1",
+    prefix: installed.seed,
+    hostCodeHash: "sha256:seed",
+    packages: [
+      {
+        name: "@moltzap/client",
+        version: "2026.1021.1",
+        tarball,
+        integrity: integrityOf(bytes),
+      },
+    ],
+  });
+  return { ...installed, seed: image.seed, recordedPrefix: installed.seed };
+});
+
+/** Identity metadata remains provenance-bound within the pre-fold release closure. */
+const preFoldRelease = (
+  version: string,
+  field: "sharnessWireVersion" | "moltzapWireVersion",
+): Routes => {
+  const routes = release(version);
+  const clientUrl = `${REGISTRY}/@moltzap%2fclient/${version}`;
+  const identityUrl = `${REGISTRY}/@moltzap%2fidentity/${version}`;
+  const metadata = (name: string) => ({
+    name,
+    version,
+    dist: {
+      integrity: integrityOf(new TextEncoder().encode("other bytes")),
+      tarball: `${REGISTRY}/tarballs/${name}-${version}.tgz`,
+    },
+  });
+  return {
+    ...routes,
+    [clientUrl]: json({
+      ...metadata("@moltzap/client"),
+      dependencies: { "@moltzap/identity": version },
+    }),
+    [identityUrl]: json({ ...metadata("@moltzap/identity"), [field]: WIRE }),
+    [`${REGISTRY}/tarballs/@moltzap/identity-${version}.tgz`]: () =>
+      new Response("unverified identity"),
+  };
+};
+
+it("follows from a recorded pre-fold installation using its Identity live window", () =>
+  Effect.gen(function* () {
+    const { home, seed } = yield* preFoldVolume;
+    const asked: string[] = [];
+    const prepared = yield* prepare(configuration(home, follow), seed).pipe(
+      Effect.provide(start(release("2026.1025.1", WIRE), asked)),
+    );
+    expect(prepared.kept).toBe("unverified");
+    expect(asked.some((url) => url.includes("/tarballs/"))).toBe(true);
+  }).pipe(Effect.scoped, Effect.provide(NodeContext.layer)));
+
+it.each(["sharnessWireVersion", "moltzapWireVersion"] as const)(
+  "follows a pre-fold candidate using its pinned Identity %s",
+  (field) =>
+    Effect.gen(function* () {
+      const { home, seed } = yield* volume;
+      const asked: string[] = [];
+      const prepared = yield* prepare(configuration(home, follow), seed).pipe(
+        Effect.provide(start(preFoldRelease("2026.1025.1", field), asked)),
+      );
+      expect(prepared.kept).toBe("unverified");
+      expect(asked.some((url) => url.includes("/tarballs/"))).toBe(true);
+    }).pipe(Effect.scoped, Effect.provide(NodeContext.layer)),
+);
+
+it("takes an exact pre-fold pin without reading either wire compatibility input", () =>
+  Effect.gen(function* () {
+    const { home, seed, recordedPrefix } = yield* preFoldVolume;
+    const fs = yield* FileSystem.FileSystem;
+    yield* fs.remove(`${recordedPrefix}/node_modules/@moltzap/identity`, {
+      recursive: true,
+    });
+    const asked: string[] = [];
+    const prepared = yield* prepare(
+      configuration(home, { kind: "pinned", version: "2026.1010.1" }),
+      seed,
+    ).pipe(Effect.provide(start(release("2026.1010.1"), asked)));
+    expect(prepared.kept).toBe("unverified");
+    expect(asked.some((url) => url.includes("/tarballs/"))).toBe(true);
+  }).pipe(Effect.scoped, Effect.provide(NodeContext.layer)));
 
 // @agent-code-guard/regression-only: Each start outcome is one closed launcher rule, pinned by its example.
 describe("a launcher start", () => {

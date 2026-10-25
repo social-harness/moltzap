@@ -5,12 +5,12 @@
  */
 
 import type {
-  AgentCardDigest,
   AgentId,
   AgentName,
   MessageId,
   PrincipalId,
 } from "../../index.js";
+import type { AgentCardDigest } from "../cards.js";
 import type { OperationId } from "../registry/index.js";
 import type { AgentCardIssuedAt } from "./agent-card-fixtures.js";
 

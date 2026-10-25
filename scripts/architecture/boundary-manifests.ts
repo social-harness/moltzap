@@ -21,6 +21,7 @@ import {
   FINAL_PACKAGES,
   INTEGRATION_TESTS,
   type PackageDir,
+  RELEASE_PACKAGES,
   REPOSITORY_URL,
 } from "./boundary-contract.ts";
 import {
@@ -66,18 +67,18 @@ const PRODUCTION_SECTIONS = [
  * @returns The literal when it is a calendar version, otherwise null.
  */
 export function checkCompatibilityVersion(run: BoundaryRun): string | null {
-  const identitySource = path.join(run.packagesRoot, "client", "src");
-  const versionPath = path.join(identitySource, "identity", "wire-version.ts");
+  const clientSource = path.join(run.packagesRoot, "client", "src");
+  const versionPath = path.join(clientSource, "identity", "wire-version.ts");
   const compatibilityVersion = readCompatibilityVersion(run, versionPath);
   checkWireVersionSets(run);
-  const identityIndex = path.join(identitySource, "index.ts");
-  if (!existsSync(identityIndex)) {
+  const clientIndex = path.join(clientSource, "index.ts");
+  if (!existsSync(clientIndex)) {
     run.failures.push(
       "packages/client/src/index.ts: missing; it exports the compatibility value",
     );
   } else if (
     !/export\s*\{[^}]*\bWIRE_VERSION\b[^}]*\}\s*from\s*["']\.\/identity\/wire-version\.js["']/.test(
-      readFileSync(identityIndex, "utf8"),
+      readFileSync(clientIndex, "utf8"),
     )
   ) {
     run.failures.push(
@@ -672,7 +673,7 @@ function checkReleaseWorkflow(run: BoundaryRun): void {
     where: ".github/workflows/publish.yml",
     what: "RELEASE_PACKAGES drifted from the published set",
     actual: releasePackages.trim().split(/\s+/),
-    wanted: FINAL_PACKAGE_DIRS.filter((dir) => FINAL_PACKAGES[dir].published),
+    wanted: RELEASE_PACKAGES,
   });
 }
 

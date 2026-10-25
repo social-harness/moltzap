@@ -7,15 +7,9 @@ import {
 import { NodeHttpServerRequest } from "@effect/platform-node";
 import {
   AuthenticatedHttp,
-  InternalServerError,
-  MalformedRequestError,
-  MethodNotAllowedError,
-  OverloadedError,
-  PayloadTooLargeError,
-  RouteNotFoundError,
-  UnsupportedMediaTypeError,
-} from "@moltzap/client";
-import { RouterApi } from "@moltzap/client/internal";
+  httpErrors,
+  routerContract,
+} from "@moltzap/client/internal";
 import canonicalize from "canonicalize";
 import { Cause, Effect, Option, Schema } from "effect";
 import type { RouterFeed } from "./feed.js";
@@ -61,7 +55,9 @@ export const routerHealthResponse = (
 
 const rawPollRequest = Schema.Struct({
   pollCursor: Schema.optional(
-    Schema.String.pipe(Schema.maxLength(RouterApi.maximumPollCursorLength)),
+    Schema.String.pipe(
+      Schema.maxLength(routerContract.maximumPollCursorLength),
+    ),
   ),
 }).annotations({
   parseOptions: { exact: true, onExcessProperty: "error" },
@@ -70,11 +66,11 @@ const rawPollRequest = Schema.Struct({
 const jsonText = (body: string, status: number) =>
   HttpServerResponse.text(body, {
     status,
-    contentType: RouterApi.routerJsonContentType,
+    contentType: routerContract.routerJsonContentType,
   });
 
 const errorResponse = (error: { readonly _tag: string }) => {
-  const mapped = RouterApi.routerHttpErrorEnvelope(error._tag);
+  const mapped = routerContract.routerHttpErrorEnvelope(error._tag);
   return mapped === undefined
     ? jsonText('{"error":"internal"}', 500)
     : jsonText(mapped.body, mapped.status);
@@ -86,7 +82,7 @@ const recoverUnexpectedFailure = <E, R>(
   effect.pipe(
     Effect.catchAllCause((cause) =>
       Effect.logError("Router route failed", Cause.squash(cause)).pipe(
-        Effect.as(errorResponse(new InternalServerError())),
+        Effect.as(errorResponse(new httpErrors.InternalServerError())),
       ),
     ),
   );
@@ -94,13 +90,18 @@ const recoverUnexpectedFailure = <E, R>(
 const resultResponse = <A, I>(
   schema: Schema.Schema<A, I>,
   value: A,
-): Effect.Effect<HttpServerResponse.HttpServerResponse, InternalServerError> =>
+): Effect.Effect<
+  HttpServerResponse.HttpServerResponse,
+  InstanceType<typeof httpErrors.InternalServerError>
+> =>
   Schema.encode(schema)(value).pipe(
-    Effect.catchTag("ParseError", () => Effect.fail(new InternalServerError())),
+    Effect.catchTag("ParseError", () =>
+      Effect.fail(new httpErrors.InternalServerError()),
+    ),
     Effect.flatMap((encoded) => {
       const body = canonicalize(encoded);
       return body === undefined
-        ? Effect.fail(new InternalServerError())
+        ? Effect.fail(new httpErrors.InternalServerError())
         : Effect.succeed(jsonText(body, 200));
     }),
   );
@@ -157,20 +158,24 @@ const framingIsMalformed = (
 const mediaTypeIsUnsupported = (
   request: HttpServerRequest.HttpServerRequest,
 ): boolean =>
-  request.headers["content-type"] !== RouterApi.routerJsonContentType ||
+  request.headers["content-type"] !== routerContract.routerJsonContentType ||
   request.headers["content-encoding"] !== undefined;
 
 const validateDeclaredLength = (
   request: HttpServerRequest.HttpServerRequest,
   maximumBytes: number,
-): Effect.Effect<void, MalformedRequestError | PayloadTooLargeError> => {
+): Effect.Effect<
+  void,
+  | InstanceType<typeof httpErrors.MalformedRequestError>
+  | InstanceType<typeof httpErrors.PayloadTooLargeError>
+> => {
   const headerIsPresent = request.headers["content-length"] !== undefined;
   const declaredLength = canonicalContentLength(request);
   if (headerIsPresent && declaredLength === undefined) {
-    return Effect.fail(new MalformedRequestError());
+    return Effect.fail(new httpErrors.MalformedRequestError());
   }
   if (declaredLength !== undefined && declaredLength > maximumBytes) {
-    return Effect.fail(new PayloadTooLargeError());
+    return Effect.fail(new httpErrors.PayloadTooLargeError());
   }
   return Effect.void;
 };
@@ -180,13 +185,15 @@ const validateRequestFraming = (
   maximumBytes: number,
 ): Effect.Effect<
   void,
-  PayloadTooLargeError | MalformedRequestError | UnsupportedMediaTypeError
+  | InstanceType<typeof httpErrors.PayloadTooLargeError>
+  | InstanceType<typeof httpErrors.MalformedRequestError>
+  | InstanceType<typeof httpErrors.UnsupportedMediaTypeError>
 > => {
   if (framingIsMalformed(request)) {
-    return Effect.fail(new MalformedRequestError());
+    return Effect.fail(new httpErrors.MalformedRequestError());
   }
   if (mediaTypeIsUnsupported(request)) {
-    return Effect.fail(new UnsupportedMediaTypeError());
+    return Effect.fail(new httpErrors.UnsupportedMediaTypeError());
   }
   return validateDeclaredLength(request, maximumBytes);
 };
@@ -194,7 +201,11 @@ const validateRequestFraming = (
 const readBoundedBody = (
   request: HttpServerRequest.HttpServerRequest,
   maximumBytes: number,
-): Effect.Effect<Uint8Array, PayloadTooLargeError | MalformedRequestError> =>
+): Effect.Effect<
+  Uint8Array,
+  | InstanceType<typeof httpErrors.PayloadTooLargeError>
+  | InstanceType<typeof httpErrors.MalformedRequestError>
+> =>
   // #ignore-sloppy-code-next-line[async-keyword]: This Effect callback constructor does not use the JavaScript keyword.
   Effect.async((resume) => {
     const incoming = NodeHttpServerRequest.toIncomingMessage(request);
@@ -209,7 +220,7 @@ const readBoundedBody = (
       if (length + chunk.byteLength > maximumBytes) {
         cleanup();
         incoming.resume();
-        resume(Effect.fail(new PayloadTooLargeError()));
+        resume(Effect.fail(new httpErrors.PayloadTooLargeError()));
         return;
       }
       body.set(chunk, length);
@@ -221,7 +232,7 @@ const readBoundedBody = (
     }
     function onError() {
       cleanup();
-      resume(Effect.fail(new MalformedRequestError()));
+      resume(Effect.fail(new httpErrors.MalformedRequestError()));
     }
     incoming.on("data", onData);
     incoming.once("end", onEnd);
@@ -268,7 +279,7 @@ const runAdmittedDomainRequest = <
       },
     ).pipe(
       Effect.catchTag("ParseError", () =>
-        Effect.fail(new MalformedRequestError()),
+        Effect.fail(new httpErrors.MalformedRequestError()),
       ),
     );
     const result = yield* withVerifiedRouterRequest(
@@ -284,14 +295,15 @@ const handleDomainRequest = <Request, RequestEncoded, Result, ResultEncoded>(
   Effect.gen(function* () {
     const httpRequest = yield* HttpServerRequest.HttpServerRequest;
     if (httpRequest.url !== input.routePath) {
-      return errorResponse(new RouteNotFoundError());
+      return errorResponse(new httpErrors.RouteNotFoundError());
     }
     yield* validateRequestFraming(httpRequest, input.bodyCap);
     const admitted = yield* input.requestSemaphore.withPermitsIfAvailable(1)(
       runAdmittedDomainRequest(input, httpRequest),
     );
     return yield* Option.match(admitted, {
-      onNone: () => Effect.succeed(errorResponse(new OverloadedError())),
+      onNone: () =>
+        Effect.succeed(errorResponse(new httpErrors.OverloadedError())),
       onSome: Effect.succeed,
     });
   }).pipe(
@@ -301,12 +313,12 @@ const handleDomainRequest = <Request, RequestEncoded, Result, ResultEncoded>(
 
 function sendRoute(input: RouterHttpInput) {
   return HttpRouter.post(
-    RouterApi.routerSendRoutePattern,
+    routerContract.routerSendRoutePattern,
     handleDomainRequest({
-      routePath: RouterApi.routerSendPath,
-      outerRequestSchema: RouterApi.RawRouterSendRequest,
-      resultSchema: RouterApi.RouterSendResult,
-      bodyCap: RouterApi.routerRepresentationLimits.sendRequestBodyBytes,
+      routePath: routerContract.routerSendPath,
+      outerRequestSchema: routerContract.RawRouterSendRequest,
+      resultSchema: routerContract.RouterSendResult,
+      bodyCap: routerContract.routerRepresentationLimits.sendRequestBodyBytes,
       invoke: (client, request) => client.send({ request }),
       client: input.client,
       requestSemaphore: input.requestSemaphore,
@@ -316,14 +328,14 @@ function sendRoute(input: RouterHttpInput) {
 
 function pollRoute(input: RouterHttpInput) {
   return HttpRouter.post(
-    RouterApi.routerPollRoutePattern,
+    routerContract.routerPollRoutePattern,
     handleDomainRequest({
-      routePath: RouterApi.routerPollPath,
+      routePath: routerContract.routerPollPath,
       outerRequestSchema: rawPollRequest,
-      resultSchema: RouterApi.RouterPollResult,
-      bodyCap: RouterApi.routerRepresentationLimits.pollRequestBodyBytes,
+      resultSchema: routerContract.RouterPollResult,
+      bodyCap: routerContract.routerRepresentationLimits.pollRequestBodyBytes,
       invoke: (client, request) =>
-        Schema.decodeUnknown(RouterApi.RouterPollRequest)(request, {
+        Schema.decodeUnknown(routerContract.RouterPollRequest)(request, {
           exact: true,
           onExcessProperty: "error",
         }).pipe(
@@ -341,12 +353,12 @@ function pollRoute(input: RouterHttpInput) {
 
 function healthRoute(input: RouterHttpInput) {
   return HttpRouter.get(
-    RouterApi.routerHealthPath,
+    routerContract.routerHealthPath,
     recoverUnexpectedFailure(
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest;
-        if (request.url !== RouterApi.routerHealthPath) {
-          return errorResponse(new RouteNotFoundError());
+        if (request.url !== routerContract.routerHealthPath) {
+          return errorResponse(new httpErrors.RouteNotFoundError());
         }
         return yield* routerHealthResponse(input.feed);
       }),
@@ -361,17 +373,17 @@ function fallbackRoute() {
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest;
         if (request.url.includes("?")) {
-          return errorResponse(new RouteNotFoundError());
+          return errorResponse(new httpErrors.RouteNotFoundError());
         }
         const path = request.url.split("?", 1)[0];
         if (
-          path === RouterApi.routerSendPath ||
-          path === RouterApi.routerPollPath ||
-          path === RouterApi.routerHealthPath
+          path === routerContract.routerSendPath ||
+          path === routerContract.routerPollPath ||
+          path === routerContract.routerHealthPath
         ) {
-          return errorResponse(new MethodNotAllowedError());
+          return errorResponse(new httpErrors.MethodNotAllowedError());
         }
-        return errorResponse(new RouteNotFoundError());
+        return errorResponse(new httpErrors.RouteNotFoundError());
       }),
     ),
   );

@@ -27,6 +27,7 @@ import type {
   VersionMismatchError,
 } from "../../../identity/signing/http-errors.js";
 import type { AgentSigningError } from "../../../identity/signing/http-signature.js";
+import type { HttpOrigin } from "../../../identity/signing/origin.js";
 import type { LiveSignedMessage } from "../../envelope/signed-message.js";
 import type * as RouterPackage from "../api/index.js";
 
@@ -147,7 +148,7 @@ type LayerInputIsExact = Expect<
   Types.Equals<
     Parameters<typeof RouterPackage.Router.layer>[0],
     Readonly<{
-      origin: URL;
+      origin: HttpOrigin;
       sendTimeout: Duration.Duration;
       pollTimeout: Duration.Duration;
     }>

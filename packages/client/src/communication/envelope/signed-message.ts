@@ -13,8 +13,8 @@ import { GeneralSign, generalVerify } from "jose";
 import {
   decodeCanonicalJson,
   encodeCanonicalJson,
-  exactStruct,
 } from "../../encoding/canonical-json.js";
+import { exactStruct } from "../../encoding/exact.js";
 import {
   canonicalIdentifier,
   compareAgentIds,

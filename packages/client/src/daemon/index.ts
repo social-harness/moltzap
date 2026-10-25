@@ -43,7 +43,7 @@ import {
 } from "./registration/index.js";
 import { spanExport } from "./telemetry.js";
 
-// safer-arch-ignore no-large-public-surface: Trusted process composition and its operator audit decoder share this service-only boundary; moving the decoder to another entrypoint would split one fixed installation contract.
+// safer-arch-ignore no-large-public-surface: Daemon process composition, firewall installation and audit decoding, and the actual Registry and Router client tags with their operation values share the trusted service embedding boundary.
 
 const REGISTRY_REQUEST_TIMEOUT = Duration.seconds(30);
 const ROUTER_SEND_TIMEOUT = Duration.seconds(30);
@@ -315,10 +315,10 @@ function networkLayer(configuration: DaemonProcessConfiguration) {
 }
 
 /** Immutable resolution and registration require only an injected HTTP client. */
-export { Registry } from "../identity/registry/capability.js";
+export { Registry } from "../identity/registry/index.js";
 
 /** Closed network operation values and client failures for service embedders. */
-export { Router } from "../communication/router/api/capability.js";
+export { Router } from "../communication/router/api/client.js";
 /** Route refusals and transport failures retain separate typed channels. */
 export {
   PollCursor,

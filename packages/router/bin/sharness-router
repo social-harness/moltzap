@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import { NodeRuntime } from "@effect/platform-node";
-import { ConfigProvider, Console, Effect, Layer } from "effect";
+import { Console, Layer } from "effect";
+import { runRouterMain } from "../dist/main.js";
 import { installInternalResolution } from "../dist/internal-resolution.js";
 
 installInternalResolution();
@@ -10,14 +10,4 @@ const program = process.argv.includes("--help")
   ? Console.log(RouterServer.help)
   : Layer.launch(RouterServer.layer);
 
-program.pipe(
-  Effect.catchAll((error) =>
-    Console.error(error.message).pipe(
-      Effect.andThen(Effect.sync(() => {
-        process.exitCode = 1;
-      })),
-    ),
-  ),
-  Effect.withConfigProvider(ConfigProvider.fromEnv()),
-  NodeRuntime.runMain,
-);
+runRouterMain(program);

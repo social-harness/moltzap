@@ -11,7 +11,7 @@ import {
   type VerifiedAgentCard,
   WIRE_VERSION,
 } from "@moltzap/client";
-import { Registry, RegistryApi } from "@moltzap/client/internal";
+import { Registry, registryContract } from "@moltzap/client/internal";
 import { Duration, Effect, Redacted, Ref, Schema } from "effect";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
@@ -209,7 +209,7 @@ const assertLookupAndPaging = (
 const listEveryCard = (runRegistry: RegistryRunner) =>
   Effect.gen(function* () {
     const agentCards: VerifiedAgentCard[] = [];
-    let request: RegistryApi.RegistryListRequest = {};
+    let request: typeof registryContract.RegistryListRequest.Type = {};
     while (true) {
       const page = yield* runRegistry(Registry.list(request));
       agentCards.push(...page.agentCards);
@@ -408,9 +408,9 @@ const assertRetiredAdmissionSchemeRejected = (origin: URL) =>
 const makeIdentityPointForgery = (origin: URL) =>
   Effect.gen(function* () {
     const prepared = yield* prepareAgent("identity-point-forgery");
-    const encoded = yield* Schema.encode(RegistryApi.RegistryRegisterRequest)(
-      prepared.request,
-    );
+    const encoded = yield* Schema.encode(
+      registryContract.RegistryRegisterRequest,
+    )(prepared.request);
     const bodyBytes = yield* encodeCanonicalJson({
       request: {
         ...encoded,

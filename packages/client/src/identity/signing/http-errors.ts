@@ -84,3 +84,17 @@ export type HttpEnvelopeError =
   | OverloadedError
   | UnavailableError
   | InternalServerError;
+
+/** Service adapters construct and decode the same closed HTTP envelope failures as their clients. */
+export const httpErrors = Object.freeze({
+  AuthenticationFailedError,
+  InternalServerError,
+  MalformedRequestError,
+  MethodNotAllowedError,
+  OverloadedError,
+  PayloadTooLargeError,
+  RouteNotFoundError,
+  UnavailableError,
+  UnsupportedMediaTypeError,
+  VersionMismatchError,
+});

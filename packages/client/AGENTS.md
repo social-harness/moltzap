@@ -19,9 +19,9 @@ host-side service facade, channel-core abstraction, profile acquisition,
 protocol/server proxy, bespoke CLI, Unix socket, generic-send path, or
 standalone notification catalog. The `./service` subpath is the admitted
 process composition that `sharnessd` runs; it is not such a facade.
-The condition-only `./test` entry is the admitted test-fixture surface for the
-management schemas named by `docs/spec/layer-interfaces.md`; it is not part of
-the production public surface.
+The condition-only `./test` entry is the process-test composition surface
+named by `docs/spec/layer-interfaces.md`; it is not part of the production
+public surface.
 
 Identity lives in `identity/`; attributed envelopes and the Router API and
 client live in `communication/`. Encoding stays below both domains.
@@ -53,12 +53,15 @@ The final `HarnessEndpoint` has these invariants:
   native callback success and webhook HTTP receipt establish handoff only;
   processing and notification remain host responsibilities.
 
-The public root exposes the semantic `HarnessEndpoint`, address, content,
-operation and inbound item schemas, endpoint acquisition, and closed errors. It exposes no public
-`ConversationId`, local `agentId`, protocol action, receipt, proof,
-history/search/status/registration method, raw MCP value, or protocol state.
-Private `PostIntentHash`, `ActionHash`, `RecordHash`, certificates, and recovery
-state remain inside Client and its owner-authorized management representation.
+The public root exposes `HarnessEndpoint`, host operation and delivery schemas,
+endpoint acquisition and closed endpoint errors, plus the identity and envelope
+values named by `docs/spec/layer-interfaces.md` → Library entries. Registry and
+Router clients and daemon composition live at `./service`; verification, service
+wire contracts and card signing live at condition-only `./internal`. Host
+operations expose no conversation protocol state, receipts, proofs, raw MCP
+values or management methods. Identity values do not grant endpoint management
+authority. Private record hashes, certificates and recovery state stay inside
+Client and its owner-authorized management representation.
 
 Keep type canaries on this accepted surface. Private implementation types
 never become a compatibility shim.

@@ -1,8 +1,8 @@
 /** @file Condition-only process composition for adjacent wire releases. */
-import { NodeRuntime } from "@effect/platform-node";
 import { WireVersions } from "@moltzap/client/test";
-import { ConfigProvider, Console, Data, Effect, Layer } from "effect";
+import { Data, Effect, Layer } from "effect";
 import { installInternalResolution } from "./internal-resolution.js";
+import { runRouterMain } from "./main.js";
 
 /** A startup module that fails to load, with its cause in the reported message. */
 class RouterModuleLoadError extends Data.TaggedError("RouterModuleLoadError")<{
@@ -29,18 +29,5 @@ export function startRouter(versions: {
     return yield* Layer.launch(RouterServer.layer).pipe(
       Effect.provideService(WireVersions, versions),
     );
-  }).pipe(
-    Effect.withSpan("startRouter"),
-    Effect.catchAll((error) =>
-      Console.error(error.message).pipe(
-        Effect.andThen(
-          Effect.sync(() => {
-            process.exitCode = 1;
-          }),
-        ),
-      ),
-    ),
-    Effect.withConfigProvider(ConfigProvider.fromEnv()),
-    NodeRuntime.runMain,
-  );
+  }).pipe(Effect.withSpan("startRouter"), runRouterMain);
 }

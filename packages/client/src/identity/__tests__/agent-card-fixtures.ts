@@ -2,16 +2,16 @@
 
 import { Effect } from "effect";
 import {
-  type AgentCardClaims,
-  agentCardSigning,
-} from "../../daemon/internal.js";
-import {
   AgentCard,
-  type AgentCardVerificationError,
   AgentSigningAuthority,
   type VerifiedAgentCard,
-  wireVersions,
 } from "../../index.js";
+import {
+  type AgentCardClaims,
+  agentCardSigning,
+  type AgentCardVerificationError,
+} from "../cards.js";
+import { wireVersions } from "../wire-version.js";
 
 /** Whole-second UTC issuance evidence carried by an AgentCard. */
 // eslint-disable-next-line @typescript-eslint/naming-convention -- Effect Schemas share the package-owned domain name they decode.

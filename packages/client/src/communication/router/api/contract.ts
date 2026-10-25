@@ -26,12 +26,12 @@ export const routerSendPath = "/v1/messages:send";
 /** Exact Router poll target. */
 export const routerPollPath = "/v1/messages:poll";
 /** Exact Router health target. */
-export const routerHealthPath = "/healthz";
+const routerHealthPath = "/healthz";
 
 /** Effect HTTP Router pattern for the exact send target. */
-export const routerSendRoutePattern = "/v1/messages::send";
+const routerSendRoutePattern = "/v1/messages::send";
 /** Effect HTTP Router pattern for the exact poll target. */
-export const routerPollRoutePattern = "/v1/messages::poll";
+const routerPollRoutePattern = "/v1/messages::poll";
 
 /** Exact media type for Router-owned JSON representations. */
 export const routerJsonContentType = "application/json";
@@ -46,7 +46,7 @@ const wireProfiles = {
 } as const;
 
 /** Exact protected header carried by every PollCursor. */
-export const pollCursorProtectedHeader = Object.freeze({
+const pollCursorProtectedHeader = Object.freeze({
   alg: "dir" as const,
   enc: "A256GCM" as const,
   typ: wireProfiles[WIRE_VERSION].pollCursorType,
@@ -56,7 +56,7 @@ export const pollCursorProtectedHeader = Object.freeze({
 const pollCursorProtectedHeaderJson = `{"alg":"dir","enc":"A256GCM","typ":"${wireProfiles[WIRE_VERSION].pollCursorType}"}`;
 
 /** Canonical encoded protected header carried by every PollCursor. */
-export const encodedPollCursorProtectedHeader = Encoding.encodeBase64Url(
+const encodedPollCursorProtectedHeader = Encoding.encodeBase64Url(
   new TextEncoder().encode(pollCursorProtectedHeaderJson),
 );
 const encodedPollCursorProtectedHeaderLength = Math.ceil(
@@ -64,7 +64,7 @@ const encodedPollCursorProtectedHeaderLength = Math.ceil(
 );
 
 /** Prefix separating PollCursor values from unrefined compact JWE text. */
-export const pollCursorPrefix = "plc_";
+const pollCursorPrefix = "plc_";
 
 /* eslint-disable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare --
  * Named Effect Schemas share their domain names with the types they decode.
@@ -112,13 +112,13 @@ const closedStruct = <Fields extends Schema.Struct.Fields>(fields: Fields) =>
   Schema.Struct(fields).annotations({ parseOptions: exact });
 
 /** Exact private send shape that preserves instance-fence precedence. */
-export const RawRouterSendRequest = closedStruct({
+const RawRouterSendRequest = closedStruct({
   expectedRouterInstanceId: RouterInstanceId,
   mode: Schema.Literal("initial", "retry"),
   signedMessage: Schema.Unknown,
 }).annotations({ identifier: "RawRouterSendRequest" });
 /** Private send shape before the identity-owned artifact is decoded. */
-export type RawRouterSendRequest = typeof RawRouterSendRequest.Type;
+type RawRouterSendRequest = typeof RawRouterSendRequest.Type;
 
 const sendRequest = closedStruct({
   expectedRouterInstanceId: RouterInstanceId,
@@ -331,7 +331,7 @@ const isRouterHttpErrorTag = (
  * @param tag Candidate typed failure tag.
  * @returns Its exact envelope or `undefined` when the tag is not recognized.
  */
-export const routerHttpErrorEnvelope = (
+const routerHttpErrorEnvelope = (
   tag: string,
 ): Readonly<{ status: number; body: string }> | undefined =>
   isRouterHttpErrorTag(tag) ? routerHttpErrors[tag] : undefined;
@@ -378,12 +378,12 @@ export const routerHttpErrorFromResponse = (
 };
 
 /** A Router enclosing representation cannot be measured safely. */
-export class RouterRepresentationLengthError extends Data.TaggedError(
+class RouterRepresentationLengthError extends Data.TaggedError(
   "RouterRepresentationLengthError",
 ) {}
 
 /** Exact maxima for the Router-owned enclosing representations. */
-export interface RouterRepresentationLimits {
+interface RouterRepresentationLimits {
   readonly sendRequestBodyBytes: number;
   readonly pollRequestBodyBytes: number;
   readonly oneMessageBatchBytes: number;
@@ -406,7 +406,7 @@ const maximumRouterInstanceId = "rti_AAAAAAAAAAAAAAAAAAAAAA";
  * @param input.lastScannedOrder Private order bound into the continuation.
  * @returns The complete prefixed Compact JWE length.
  */
-export const pollCursorEncodedLength = (input: {
+const pollCursorEncodedLength = (input: {
   readonly agentId: AgentId;
   readonly routerInstanceId: RouterInstanceId;
   readonly lastScannedOrder: bigint;
@@ -434,7 +434,7 @@ export const pollCursorEncodedLength = (input: {
 };
 
 /** Maximum ASCII characters in a valid PollCursor. */
-export const maximumPollCursorLength = pollCursorEncodedLength({
+const maximumPollCursorLength = pollCursorEncodedLength({
   agentId: Schema.decodeUnknownSync(AgentId)(maximumAgentId),
   routerInstanceId: Schema.decodeUnknownSync(RouterInstanceId)(
     maximumRouterInstanceId,
@@ -503,7 +503,7 @@ const maximumOneMessageBatch = {
  * @param maximumSignedMessageByteLength Identity-owned complete message limit.
  * @returns Exact maximum Router request and one-message result byte lengths.
  */
-export const calculateRouterRepresentationLimits = (
+const calculateRouterRepresentationLimits = (
   maximumSignedMessageByteLength: number,
 ): Effect.Effect<RouterRepresentationLimits, RouterRepresentationLengthError> =>
   Effect.gen(function* () {
@@ -530,12 +530,12 @@ export const calculateRouterRepresentationLimits = (
   }).pipe(Effect.withSpan("calculateRouterRepresentationLimits"));
 
 /** Exact limits derived from the current closed Router representations. */
-export const routerRepresentationLimits = Effect.runSync(
+const routerRepresentationLimits = Effect.runSync(
   calculateRouterRepresentationLimits(SignedMessage.maximumEncodedByteLength),
 );
 
 /** Encoded byte width of a RouterInstanceId payload. */
-export const routerInstanceIdByteLength = INSTANCE_BYTE_LENGTH;
+const routerInstanceIdByteLength = INSTANCE_BYTE_LENGTH;
 
 interface CursorSegments {
   readonly encodedHeader: string;
@@ -636,3 +636,30 @@ function canonicalValue<const Name extends string>(
     }),
   );
 }
+
+/** Router processes and clients share these exact routes, representation limits, request and result schemas, cursor encodings, and HTTP error projection. */
+export const routerContract = Object.freeze({
+  calculateRouterRepresentationLimits,
+  encodedPollCursorProtectedHeader,
+  maximumPollCursorLength,
+  PollCursor,
+  pollCursorEncodedLength,
+  pollCursorPrefix,
+  pollCursorProtectedHeader,
+  RawRouterSendRequest,
+  routerHealthPath,
+  routerHttpErrorEnvelope,
+  RouterInstanceId,
+  routerInstanceIdByteLength,
+  routerJsonContentType,
+  routerPollPath,
+  RouterPollRequest,
+  RouterPollResult,
+  routerPollRoutePattern,
+  routerRepresentationLimits,
+  routerSendPath,
+  RouterSendRequest,
+  RouterSendResult,
+  routerSendRoutePattern,
+  SignedMessageDigest,
+});

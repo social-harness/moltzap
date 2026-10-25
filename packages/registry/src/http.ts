@@ -7,19 +7,10 @@ import {
 } from "@effect/platform";
 import { NodeHttpServerRequest } from "@effect/platform-node";
 import {
-  type AuthenticationFailedError,
-  InternalServerError,
-  MalformedRequestError,
-  MethodNotAllowedError,
-  OverloadedError,
-  PayloadTooLargeError,
-  RouteNotFoundError,
-  type UnavailableError,
-  UnsupportedMediaTypeError,
-  VersionMismatchError,
+  httpErrors,
+  registryContract,
   wireVersions,
-} from "@moltzap/client";
-import { RegistryApi } from "@moltzap/client/internal";
+} from "@moltzap/client/internal";
 import { Cause, Effect, Option } from "effect";
 import type { RegistryStorage } from "./storage.js";
 import { verifyBootstrapRegistration } from "./admission.js";
@@ -48,7 +39,7 @@ type RegistryHttpAppInput = Readonly<{
  */
 export function makeRegistryHttpApp(input: RegistryHttpAppInput) {
   return HttpRouter.empty.pipe(
-    HttpRouter.post(RegistryApi.REGISTER_ROUTE, registerHandler(input)),
+    HttpRouter.post(registryContract.REGISTER_ROUTE, registerHandler(input)),
     lookupRoute(input),
     listRoute(input),
     healthRoute(input.storage),
@@ -75,12 +66,12 @@ const SINGLE_VALUE_HEADERS = [
 
 function lookupRoute(input: RegistryHttpAppInput) {
   return HttpRouter.post(
-    RegistryApi.LOOKUP_ROUTE,
+    registryContract.LOOKUP_ROUTE,
     publicReadHandler({
-      path: RegistryApi.LOOKUP_PATH,
-      bodyCap: RegistryApi.LOOKUP_BODY_CAP,
-      decodeRequest: RegistryApi.registryLookupCodec.request.decode,
-      encodeResponse: RegistryApi.registryLookupCodec.response.encode,
+      path: registryContract.LOOKUP_PATH,
+      bodyCap: registryContract.LOOKUP_BODY_CAP,
+      decodeRequest: registryContract.registryLookupCodec.request.decode,
+      encodeResponse: registryContract.registryLookupCodec.response.encode,
       invoke: (request) => input.client.lookup(request),
       requestSemaphore: input.requestSemaphore,
     }),
@@ -89,12 +80,12 @@ function lookupRoute(input: RegistryHttpAppInput) {
 
 function listRoute(input: RegistryHttpAppInput) {
   return HttpRouter.post(
-    RegistryApi.LIST_ROUTE,
+    registryContract.LIST_ROUTE,
     publicReadHandler({
-      path: RegistryApi.LIST_PATH,
-      bodyCap: RegistryApi.LIST_BODY_CAP,
-      decodeRequest: RegistryApi.registryListCodec.request.decode,
-      encodeResponse: RegistryApi.registryListCodec.response.encode,
+      path: registryContract.LIST_PATH,
+      bodyCap: registryContract.LIST_BODY_CAP,
+      decodeRequest: registryContract.registryListCodec.request.decode,
+      encodeResponse: registryContract.registryListCodec.response.encode,
       invoke: (request) => input.client.list(request),
       requestSemaphore: input.requestSemaphore,
     }),
@@ -103,11 +94,11 @@ function listRoute(input: RegistryHttpAppInput) {
 
 function healthRoute(storage: RegistryStorage) {
   return HttpRouter.get(
-    RegistryApi.HEALTH_PATH,
+    registryContract.HEALTH_PATH,
     Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest;
-      if (request.url !== RegistryApi.HEALTH_PATH) {
-        return errorResponse(new RouteNotFoundError());
+      if (request.url !== registryContract.HEALTH_PATH) {
+        return errorResponse(new httpErrors.RouteNotFoundError());
       }
       return yield* storage.checkReadiness().pipe(
         Effect.match({
@@ -128,12 +119,12 @@ function fallbackRoute() {
     Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest;
       if (request.url.includes("?")) {
-        return errorResponse(new RouteNotFoundError());
+        return errorResponse(new httpErrors.RouteNotFoundError());
       }
       const path = request.url.split("?", 1)[0] ?? "";
-      return RegistryApi.KNOWN_PATHS.has(path)
-        ? errorResponse(new MethodNotAllowedError())
-        : errorResponse(new RouteNotFoundError());
+      return registryContract.KNOWN_PATHS.has(path)
+        ? errorResponse(new httpErrors.MethodNotAllowedError())
+        : errorResponse(new httpErrors.RouteNotFoundError());
     }),
   );
 }
@@ -150,12 +141,12 @@ function registerHandler(input: {
   return recoverHttpResponse(
     Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest;
-      if (request.url !== RegistryApi.REGISTER_PATH) {
-        return yield* new RouteNotFoundError();
+      if (request.url !== registryContract.REGISTER_PATH) {
+        return yield* new httpErrors.RouteNotFoundError();
       }
       yield* validateRequestFraming({
         request,
-        maximumBytes: RegistryApi.REGISTER_BODY_CAP,
+        maximumBytes: registryContract.REGISTER_BODY_CAP,
         profile: "registration",
       });
       return yield* executeWithPermit(
@@ -163,7 +154,7 @@ function registerHandler(input: {
         Effect.gen(function* () {
           const bodyBytes = yield* readBoundedBody(
             request,
-            RegistryApi.REGISTER_BODY_CAP,
+            registryContract.REGISTER_BODY_CAP,
           );
           const registration = yield* verifyBootstrapRegistration({
             httpRequest: request,
@@ -176,7 +167,7 @@ function registerHandler(input: {
             input.client.register(registration),
           );
           return yield* resultResponse(
-            RegistryApi.registryRegisterCodec.response.encode(result),
+            registryContract.registryRegisterCodec.response.encode(result),
           );
         }),
       );
@@ -202,7 +193,7 @@ function publicReadHandler<Request, Result, DecodeError, EncodeError>(input: {
     Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest;
       if (request.url !== input.path) {
-        return yield* new RouteNotFoundError();
+        return yield* new httpErrors.RouteNotFoundError();
       }
       yield* validateRequestFraming({
         request,
@@ -215,12 +206,13 @@ function publicReadHandler<Request, Result, DecodeError, EncodeError>(input: {
           const bodyBytes = yield* readBoundedBody(request, input.bodyCap);
           const version = request.headers["sharness-version"];
           if (version === undefined || !(yield* wireVersions.live(version))) {
-            return yield* new VersionMismatchError();
+            return yield* new httpErrors.VersionMismatchError();
           }
-          const decoded = yield* input.decodeRequest(bodyBytes).pipe(
-            // eslint-disable-next-line agent-code-guard/no-effect-error-coalescing -- Every canonical body or request-schema failure has the same public malformed-request meaning.
-            Effect.mapError(() => new MalformedRequestError()),
-          );
+          const decoded = yield* input
+            .decodeRequest(bodyBytes)
+            .pipe(
+              Effect.mapError(() => new httpErrors.MalformedRequestError()),
+            );
           const result = yield* input.invoke(decoded);
           return yield* resultResponse(input.encodeResponse(result));
         }),
@@ -242,7 +234,7 @@ function recoverHttpResponse<R>(
     Effect.catchAll((error) => Effect.succeed(errorResponse(error))),
     Effect.catchAllCause((cause) =>
       Effect.logError("Registry request failed", Cause.squash(cause)).pipe(
-        Effect.as(errorResponse(new InternalServerError())),
+        Effect.as(errorResponse(new httpErrors.InternalServerError())),
       ),
     ),
   );
@@ -251,13 +243,13 @@ function recoverHttpResponse<R>(
 function executeWithPermit<A, E, R>(
   semaphore: Effect.Semaphore,
   effect: Effect.Effect<A, E, R>,
-): Effect.Effect<A, E | OverloadedError, R> {
+): Effect.Effect<A, E | InstanceType<typeof httpErrors.OverloadedError>, R> {
   return semaphore
     .withPermitsIfAvailable(1)(effect)
     .pipe(
       Effect.flatMap(
         Option.match({
-          onNone: () => Effect.fail(new OverloadedError()),
+          onNone: () => Effect.fail(new httpErrors.OverloadedError()),
           onSome: Effect.succeed,
         }),
       ),
@@ -270,13 +262,21 @@ function validateRequestFraming(input: {
   readonly profile: RequestProfile;
 }): Effect.Effect<
   void,
-  MalformedRequestError | UnsupportedMediaTypeError | PayloadTooLargeError
+  | InstanceType<typeof httpErrors.MalformedRequestError>
+  | InstanceType<typeof httpErrors.UnsupportedMediaTypeError>
+  | InstanceType<typeof httpErrors.PayloadTooLargeError>
 > {
   if (requestFramingIsMalformed(input)) {
-    return rejectBeforeBodyRead(input.request, new MalformedRequestError());
+    return rejectBeforeBodyRead(
+      input.request,
+      new httpErrors.MalformedRequestError(),
+    );
   }
   if (mediaTypeIsUnsupported(input.request)) {
-    return rejectBeforeBodyRead(input.request, new UnsupportedMediaTypeError());
+    return rejectBeforeBodyRead(
+      input.request,
+      new httpErrors.UnsupportedMediaTypeError(),
+    );
   }
   return validateDeclaredLength(input.request, input.maximumBytes);
 }
@@ -328,14 +328,21 @@ function mediaTypeIsUnsupported(
 function validateDeclaredLength(
   request: HttpServerRequest.HttpServerRequest,
   maximumBytes: number,
-): Effect.Effect<void, MalformedRequestError | PayloadTooLargeError> {
+): Effect.Effect<
+  void,
+  | InstanceType<typeof httpErrors.MalformedRequestError>
+  | InstanceType<typeof httpErrors.PayloadTooLargeError>
+> {
   const headerIsPresent = request.headers["content-length"] !== undefined;
   const declaredLength = canonicalContentLength(request);
   if (headerIsPresent && declaredLength === undefined) {
-    return rejectBeforeBodyRead(request, new MalformedRequestError());
+    return rejectBeforeBodyRead(
+      request,
+      new httpErrors.MalformedRequestError(),
+    );
   }
   if (declaredLength !== undefined && declaredLength > maximumBytes) {
-    return rejectBeforeBodyRead(request, new PayloadTooLargeError());
+    return rejectBeforeBodyRead(request, new httpErrors.PayloadTooLargeError());
   }
   return Effect.void;
 }
@@ -370,7 +377,11 @@ interface BodyReader {
 function readBoundedBody(
   request: HttpServerRequest.HttpServerRequest,
   maximumBytes: number,
-): Effect.Effect<Uint8Array, PayloadTooLargeError | MalformedRequestError> {
+): Effect.Effect<
+  Uint8Array,
+  | InstanceType<typeof httpErrors.PayloadTooLargeError>
+  | InstanceType<typeof httpErrors.MalformedRequestError>
+> {
   // #ignore-sloppy-code-next-line[async-keyword]: This Effect callback constructor does not use the JavaScript keyword.
   return Effect.async((resume) => {
     const incoming = NodeHttpServerRequest.toIncomingMessage(request);
@@ -386,7 +397,7 @@ function readBoundedBody(
         if (length + chunk.byteLength > maximumBytes) {
           reader.cleanup();
           incoming.resume();
-          resume(Effect.fail(new PayloadTooLargeError()));
+          resume(Effect.fail(new httpErrors.PayloadTooLargeError()));
           return;
         }
         body.set(chunk, length);
@@ -398,7 +409,7 @@ function readBoundedBody(
       },
       onError: () => {
         reader.cleanup();
-        resume(Effect.fail(new MalformedRequestError()));
+        resume(Effect.fail(new httpErrors.MalformedRequestError()));
       },
     };
     incoming.on("data", reader.onData);
@@ -413,11 +424,14 @@ function readBoundedBody(
 
 function resultResponse<E>(
   encoded: Effect.Effect<Uint8Array, E>,
-): Effect.Effect<HttpServerResponse.HttpServerResponse, InternalServerError> {
+): Effect.Effect<
+  HttpServerResponse.HttpServerResponse,
+  InstanceType<typeof httpErrors.InternalServerError>
+> {
   return encoded.pipe(
     Effect.map((bytes) => jsonResponse(bytes, 200)),
-    // eslint-disable-next-line agent-code-guard/no-effect-error-coalescing -- Response serialization is an internal closed boundary with no client-actionable detail.
-    Effect.mapError(() => new InternalServerError()),
+
+    Effect.mapError(() => new httpErrors.InternalServerError()),
   );
 }
 
@@ -450,16 +464,16 @@ function jsonResponse(
 
 /** Closed failures represented by the shared HTTP error envelope. */
 type HttpEnvelopeError =
-  | MalformedRequestError
-  | AuthenticationFailedError
-  | RouteNotFoundError
-  | MethodNotAllowedError
-  | VersionMismatchError
-  | PayloadTooLargeError
-  | UnsupportedMediaTypeError
-  | OverloadedError
-  | UnavailableError
-  | InternalServerError;
+  | InstanceType<typeof httpErrors.MalformedRequestError>
+  | InstanceType<typeof httpErrors.AuthenticationFailedError>
+  | InstanceType<typeof httpErrors.RouteNotFoundError>
+  | InstanceType<typeof httpErrors.MethodNotAllowedError>
+  | InstanceType<typeof httpErrors.VersionMismatchError>
+  | InstanceType<typeof httpErrors.PayloadTooLargeError>
+  | InstanceType<typeof httpErrors.UnsupportedMediaTypeError>
+  | InstanceType<typeof httpErrors.OverloadedError>
+  | InstanceType<typeof httpErrors.UnavailableError>
+  | InstanceType<typeof httpErrors.InternalServerError>;
 
 const mappings = Object.freeze({
   MalformedRequestError: { status: 400, code: "malformed" },

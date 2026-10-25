@@ -460,13 +460,13 @@ describe("module documentation", () => {
       "Complete production Registry process composition.",
     );
     // eslint-disable-next-line agent-code-guard/no-hardcoded-assertion-literals -- The expected text is the observable output for this fixed input fixture.
-    expect(identityModule).not.toContain("@moltzap/client/server");
+    expect(libraryModule).not.toContain("@moltzap/client/server");
     // eslint-disable-next-line agent-code-guard/no-hardcoded-assertion-literals -- The expected text is the observable output for this fixed input fixture.
-    expect(identityModule).not.toContain("#### [`RegistryServer`]");
+    expect(libraryModule).not.toContain("#### [`RegistryServer`]");
     // eslint-disable-next-line agent-code-guard/no-hardcoded-assertion-literals -- The expected text is the observable output for this fixed input fixture.
-    expect(identityModule).not.toContain("RegistryServer.");
+    expect(libraryModule).not.toContain("RegistryServer.");
     // eslint-disable-next-line agent-code-guard/no-hardcoded-assertion-literals -- The expected text is the observable output for this fixed input fixture.
-    expect(identityModule).not.toContain("privateClient");
+    expect(libraryModule).not.toContain("privateClient");
   });
 
   it("lists only production identity files", () => {

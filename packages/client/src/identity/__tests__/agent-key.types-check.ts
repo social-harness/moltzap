@@ -11,8 +11,8 @@ import type {
   AgentSigningAuthority,
   AgentSigningAuthority as AgentSigningAuthorityValue,
   Ed25519PublicKey,
-  InvalidAgentPrivateKeyError,
 } from "../../index.js";
+import type { InvalidAgentPrivateKeyError } from "../keys.js";
 
 type Expect<Value extends true> = Value;
 

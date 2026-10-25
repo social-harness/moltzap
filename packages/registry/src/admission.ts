@@ -1,17 +1,10 @@
 /** @file Registry-owned bootstrap admission before private dispatch. */
 
 import type { HttpServerRequest } from "@effect/platform";
+import { Ed25519PublicKey } from "@moltzap/client";
 import {
-  AuthenticationFailedError,
-  Ed25519PublicKey,
-  type InternalServerError,
-  MalformedRequestError,
-  OverloadedError,
-  type UnavailableError,
-  type VersionMismatchError,
-} from "@moltzap/client";
-import {
-  RegistryApi,
+  httpErrors,
+  registryContract,
   type VerifiedHttpSignature,
   verifyBootstrapRequest,
 } from "@moltzap/client/internal";
@@ -61,13 +54,13 @@ type BootstrapRegistrationInput = Readonly<{
 export function verifyBootstrapRegistration(
   input: BootstrapRegistrationInput,
 ): Effect.Effect<
-  RegistryApi.RegistryRegisterRequest,
-  | MalformedRequestError
-  | AuthenticationFailedError
-  | OverloadedError
-  | VersionMismatchError
-  | UnavailableError
-  | InternalServerError
+  typeof registryContract.RegistryRegisterRequest.Type,
+  | InstanceType<typeof httpErrors.MalformedRequestError>
+  | InstanceType<typeof httpErrors.AuthenticationFailedError>
+  | InstanceType<typeof httpErrors.OverloadedError>
+  | InstanceType<typeof httpErrors.VersionMismatchError>
+  | InstanceType<typeof httpErrors.UnavailableError>
+  | InstanceType<typeof httpErrors.InternalServerError>
 > {
   return Effect.gen(function* () {
     const { parsedBody } = yield* verifyBootstrapRequest({
@@ -77,7 +70,7 @@ export function verifyBootstrapRegistration(
       claimNonce: (signature) => claimNonce(input, signature),
     });
     const complete = yield* malformedRequest(
-      Schema.decodeUnknown(RegistryApi.registrationBody)(parsedBody, {
+      Schema.decodeUnknown(registryContract.registrationBody)(parsedBody, {
         exact: true,
         onExcessProperty: "error",
       }),
@@ -101,31 +94,35 @@ function admitPublicKey(
 
 function malformedRequest<A, E, R>(
   effect: Effect.Effect<A, E, R>,
-): Effect.Effect<A, MalformedRequestError, R> {
+): Effect.Effect<A, InstanceType<typeof httpErrors.MalformedRequestError>, R> {
   return effect.pipe(
-    // eslint-disable-next-line agent-code-guard/no-effect-error-coalescing -- Canonical JSON and closed request-schema failures share one exact public malformed envelope.
-    Effect.mapError(() => new MalformedRequestError()),
+    Effect.mapError(() => new httpErrors.MalformedRequestError()),
   );
 }
 
 function requireAdmissionCredential(
   input: BootstrapRegistrationInput,
-): Effect.Effect<void, AuthenticationFailedError> {
+): Effect.Effect<
+  void,
+  InstanceType<typeof httpErrors.AuthenticationFailedError>
+> {
   const credential = readAdmissionCredential(
     input.httpRequest.headers.authorization,
   );
   return credential !== undefined &&
     sameCredential(credential, input.admissionCredential)
     ? Effect.void
-    : Effect.fail(new AuthenticationFailedError());
+    : Effect.fail(new httpErrors.AuthenticationFailedError());
 }
 
 function authenticatePublicKey(
   candidate: typeof registrationPublicKeyRepresentation.Type,
-): Effect.Effect<Ed25519PublicKey, AuthenticationFailedError> {
+): Effect.Effect<
+  Ed25519PublicKey,
+  InstanceType<typeof httpErrors.AuthenticationFailedError>
+> {
   return Schema.decodeUnknown(Ed25519PublicKey)(candidate).pipe(
-    // eslint-disable-next-line agent-code-guard/no-effect-error-coalescing -- A syntactically valid but cryptographically unusable verification key is an authentication failure.
-    Effect.mapError(() => new AuthenticationFailedError()),
+    Effect.mapError(() => new httpErrors.AuthenticationFailedError()),
   );
 }
 
@@ -134,10 +131,10 @@ function claimNonce(
   signature: VerifiedHttpSignature,
 ): Effect.Effect<
   void,
-  | AuthenticationFailedError
-  | OverloadedError
-  | UnavailableError
-  | InternalServerError
+  | InstanceType<typeof httpErrors.AuthenticationFailedError>
+  | InstanceType<typeof httpErrors.OverloadedError>
+  | InstanceType<typeof httpErrors.UnavailableError>
+  | InstanceType<typeof httpErrors.InternalServerError>
 > {
   return Effect.gen(function* () {
     const claim = yield* input.storage.claimRegistrationNonce({
@@ -147,10 +144,10 @@ function claimNonce(
       capacity: input.nonceCapacity,
     });
     if (claim === "replayed") {
-      return yield* new AuthenticationFailedError();
+      return yield* new httpErrors.AuthenticationFailedError();
     }
     if (claim === "full") {
-      return yield* new OverloadedError();
+      return yield* new httpErrors.OverloadedError();
     }
   });
 }

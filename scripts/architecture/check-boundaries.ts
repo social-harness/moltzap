@@ -64,7 +64,7 @@ if (run.failures.length > 0) {
 }
 
 console.log(
-  `[check-architecture-boundaries] OK — ${sourceCount} package TypeScript sources, ${finalSourceCount} final-package code files, ${integrationSourceCount} integration code files, exact product static graph, ${publishedVersions.size} published manifests at ${[...new Set(publishedVersions.values())].join(", ")}, and ${vocabularyCount} Identity/Router non-documentation files scanned at compatibility version ${String(compatibilityVersion)}`,
+  `[check-architecture-boundaries] OK — ${sourceCount} package TypeScript sources, ${finalSourceCount} final-package code files, ${integrationSourceCount} integration code files, exact product static graph, ${publishedVersions.size} published manifests at ${[...new Set(publishedVersions.values())].join(", ")}, and ${vocabularyCount} product non-documentation files scanned at compatibility version ${String(compatibilityVersion)}`,
 );
 
 function packageDirectories(packagesRoot: string): readonly string[] {

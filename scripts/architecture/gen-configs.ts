@@ -165,19 +165,68 @@ const clientDomains: readonly ClientDomain[] = [
   {
     name: "identity",
     root: "identity",
-    host: true,
     entrypoints: [
-      "agents.ts",
-      "keys.ts",
-      "cards.ts",
-      "wire-version.ts",
-      "signing/registered/index.ts",
-      "index.ts",
-      "signing/http-signature.ts",
-      "signing/http-errors.ts",
-      "registry/index.ts",
-      "registry/capability.ts",
-      "registry/contract.ts",
+      {
+        file: "agents.ts",
+        host: true,
+        reason: "Canonical agent, principal and immutable name schemas",
+      },
+      {
+        file: "keys.ts",
+        host: true,
+        reason: "Exact Ed25519 public keys and opaque signing authority",
+      },
+      {
+        file: "cards.ts",
+        host: true,
+        reason:
+          "Immutable AgentCard representation, digest and pinned verification",
+      },
+      {
+        file: "wire-version.ts",
+        host: true,
+        reason: "Wire emission and live or retained compatibility policy",
+      },
+      {
+        file: "signing/registered/index.ts",
+        host: false,
+        reason:
+          "Registered-request authentication capability with opaque verification proofs",
+      },
+      {
+        file: "index.ts",
+        reason:
+          "Identity request authentication and immutable Registry resolution",
+      },
+      {
+        file: "signing/http-signature.ts",
+        host: false,
+        reason:
+          "Bootstrap and registered HTTP signing and verification boundary",
+      },
+      {
+        file: "signing/http-errors.ts",
+        host: false,
+        reason: "Closed authenticated HTTP framing and admission errors",
+      },
+      {
+        file: "registry/index.ts",
+        host: false,
+        reason:
+          "Registry class tag and HTTP client composition for immutable resolution",
+      },
+      {
+        file: "bounded-cache.ts",
+        host: true,
+        reason:
+          "Bounded immutable-key caches shared by identity implementations",
+      },
+      {
+        file: "registry/contract.ts",
+        host: false,
+        reason:
+          "Exact Registry routes, operation grammar and canonical wire codecs",
+      },
     ],
     reason:
       "Identity, request authentication and immutable Registry resolution",
@@ -185,8 +234,25 @@ const clientDomains: readonly ClientDomain[] = [
   {
     name: "envelope",
     root: "communication/envelope",
-    host: true,
-    entrypoints: ["signed-message.ts", "sealed-body.ts"],
+    entrypoints: [
+      {
+        file: "signed-message.ts",
+        host: true,
+        reason:
+          "Opaque attributed message representation, signing and verification",
+      },
+      {
+        file: "sealed-body.ts",
+        host: false,
+        reason: "End-to-end sealing and opening of attributed message bodies",
+      },
+      {
+        file: "wire-profile.ts",
+        host: true,
+        reason:
+          "Attributed envelope representation parameters read by host-loaded SignedMessage schemas",
+      },
+    ],
     reason:
       "Opaque attributed and sealed message bodies below endpoint protocols",
   },
@@ -218,7 +284,21 @@ const clientDomains: readonly ClientDomain[] = [
     name: "router-api",
     root: "communication/router/api",
     host: false,
-    entrypoints: ["index.ts", "contract.ts", "client.ts", "capability.ts"],
+    entrypoints: [
+      {
+        file: "index.ts",
+        reason: "Opaque Router operation schemas and client capability entry",
+      },
+      {
+        file: "contract.ts",
+        reason:
+          "Exact Router routes, operation grammar, bounds and wire codecs",
+      },
+      {
+        file: "client.ts",
+        reason: "Router class tag and authenticated send or poll HTTP client",
+      },
+    ],
     reason:
       "Opaque Router values and HTTP client below endpoint protocol records",
   },
@@ -404,8 +484,9 @@ const clientEntrypointFacades: readonly FacadeFile[] = clientDomains.flatMap(
 
 const clientCompositionRoots = [
   {
-    path: "src/daemon/internal.ts",
-    reason: "Condition-only service capabilities",
+    path: "src/internal.ts",
+    reason:
+      "Condition-only identity verification, card signing, Registry and Router service contracts",
   },
   {
     path: "src/test.ts",
@@ -470,6 +551,11 @@ const packageDefinitions: Readonly<Record<string, PackageDefinition>> = {
       folderReadmeFileNames: ["README.md", "../README.md"],
       facadeFiles: [
         ...clientEntrypointFacades,
+        {
+          file: "internal.ts",
+          reason:
+            "Condition-only named service verification, signing and wire contracts",
+        },
         {
           file: "communication/records/schemas.ts",
           reason:

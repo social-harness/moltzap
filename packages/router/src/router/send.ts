@@ -1,13 +1,14 @@
 /** @file Verified opaque-message acceptance into the volatile feed. */
 import {
-  InternalServerError,
   type LiveSignedMessage,
-  OverloadedError,
   SignedMessage,
-  type VerifiedAgentRequest,
   type VerifiedSignedMessage,
 } from "@moltzap/client";
-import { RouterApi } from "@moltzap/client/internal";
+import {
+  httpErrors,
+  routerContract,
+  type VerifiedAgentRequest,
+} from "@moltzap/client/internal";
 import canonicalize from "canonicalize";
 import { Effect, Encoding, Schema } from "effect";
 import type { RouterFeed } from "./feed.js";
@@ -16,16 +17,17 @@ import type { PollWaiters } from "./poll-waiters.js";
 /** Send domain operation after HTTP authentication. */
 export interface RouterSend {
   readonly handle: (
-    request: RouterApi.RawRouterSendRequest,
+    request: typeof routerContract.RawRouterSendRequest.Type,
     verifiedRequest: VerifiedAgentRequest,
   ) => Effect.Effect<
-    RouterApi.RouterSendResult,
-    OverloadedError | InternalServerError
+    typeof routerContract.RouterSendResult.Type,
+    | InstanceType<typeof httpErrors.OverloadedError>
+    | InstanceType<typeof httpErrors.InternalServerError>
   >;
 }
 
 interface SendDependencies {
-  readonly routerInstanceId: RouterApi.RouterInstanceId;
+  readonly routerInstanceId: typeof routerContract.RouterInstanceId.Type;
   readonly feed: RouterFeed;
   readonly pollWaiters: PollWaiters;
 }
@@ -42,12 +44,14 @@ interface SendDependencies {
 export const makeRouterSend = (input: SendDependencies): RouterSend =>
   Object.freeze({
     handle: (
-      request: RouterApi.RawRouterSendRequest,
+      request: typeof routerContract.RawRouterSendRequest.Type,
       verifiedRequest: VerifiedAgentRequest,
     ) => handleSend(input, request, verifiedRequest),
   });
 
-const messageInvalid: RouterApi.RouterSendResult = { kind: "message_invalid" };
+const messageInvalid: typeof routerContract.RouterSendResult.Type = {
+  kind: "message_invalid",
+};
 const utf8Encoder = new TextEncoder();
 
 const encodedLengthIsValid = (
@@ -63,11 +67,12 @@ const encodedLengthIsValid = (
 
 const retainMessage = (
   input: SendDependencies,
-  mode: RouterApi.RawRouterSendRequest["mode"],
+  mode: (typeof routerContract.RawRouterSendRequest.Type)["mode"],
   message: LiveSignedMessage & VerifiedSignedMessage,
 ): Effect.Effect<
-  RouterApi.RouterSendResult,
-  OverloadedError | InternalServerError
+  typeof routerContract.RouterSendResult.Type,
+  | InstanceType<typeof httpErrors.OverloadedError>
+  | InstanceType<typeof httpErrors.InternalServerError>
 > =>
   Effect.gen(function* () {
     const encodedMessageJcs = yield* encodeMessage(message);
@@ -87,7 +92,7 @@ const retainMessage = (
       signedMessageDigest,
     });
     if (accepted.kind === "overloaded") {
-      return yield* Effect.fail(new OverloadedError());
+      return yield* Effect.fail(new httpErrors.OverloadedError());
     }
     if (accepted.acceptedRecipients !== undefined) {
       yield* input.pollWaiters.notify(accepted.acceptedRecipients);
@@ -97,12 +102,13 @@ const retainMessage = (
 
 const handleDecodedMessage = (
   input: SendDependencies,
-  request: RouterApi.RawRouterSendRequest,
+  request: typeof routerContract.RawRouterSendRequest.Type,
   verifiedRequest: VerifiedAgentRequest,
   signedMessage: LiveSignedMessage,
 ): Effect.Effect<
-  RouterApi.RouterSendResult,
-  OverloadedError | InternalServerError
+  typeof routerContract.RouterSendResult.Type,
+  | InstanceType<typeof httpErrors.OverloadedError>
+  | InstanceType<typeof httpErrors.InternalServerError>
 > => {
   if (signedMessage.senderAgentId !== verifiedRequest.callerAgentId) {
     return Effect.succeed(messageInvalid);
@@ -120,11 +126,12 @@ const handleDecodedMessage = (
 
 const handleCurrentInstance = (
   input: SendDependencies,
-  request: RouterApi.RawRouterSendRequest,
+  request: typeof routerContract.RawRouterSendRequest.Type,
   verifiedRequest: VerifiedAgentRequest,
 ): Effect.Effect<
-  RouterApi.RouterSendResult,
-  OverloadedError | InternalServerError
+  typeof routerContract.RouterSendResult.Type,
+  | InstanceType<typeof httpErrors.OverloadedError>
+  | InstanceType<typeof httpErrors.InternalServerError>
 > =>
   Schema.decodeUnknown(SignedMessage.live)(request.signedMessage, {
     exact: true,
@@ -139,11 +146,12 @@ const handleCurrentInstance = (
 
 function handleSend(
   input: SendDependencies,
-  request: RouterApi.RawRouterSendRequest,
+  request: typeof routerContract.RawRouterSendRequest.Type,
   verifiedRequest: VerifiedAgentRequest,
 ): Effect.Effect<
-  RouterApi.RouterSendResult,
-  OverloadedError | InternalServerError
+  typeof routerContract.RouterSendResult.Type,
+  | InstanceType<typeof httpErrors.OverloadedError>
+  | InstanceType<typeof httpErrors.InternalServerError>
 > {
   return request.expectedRouterInstanceId !== input.routerInstanceId
     ? Effect.succeed({
@@ -155,13 +163,15 @@ function handleSend(
 
 function encodeMessage(
   signedMessage: LiveSignedMessage & VerifiedSignedMessage,
-): Effect.Effect<string, InternalServerError> {
+): Effect.Effect<string, InstanceType<typeof httpErrors.InternalServerError>> {
   return Schema.encode(SignedMessage)(signedMessage).pipe(
-    Effect.catchTag("ParseError", () => Effect.fail(new InternalServerError())),
+    Effect.catchTag("ParseError", () =>
+      Effect.fail(new httpErrors.InternalServerError()),
+    ),
     Effect.flatMap((encoded) => {
       const jcs = canonicalize(encoded);
       return jcs === undefined
-        ? Effect.fail(new InternalServerError())
+        ? Effect.fail(new httpErrors.InternalServerError())
         : Effect.succeed(jcs);
     }),
   );
@@ -170,8 +180,8 @@ function encodeMessage(
 function digestMessage(
   encodedMessageJcs: string,
 ): Effect.Effect<
-  typeof RouterApi.SignedMessageDigest.Type,
-  InternalServerError
+  typeof routerContract.SignedMessageDigest.Type,
+  InstanceType<typeof httpErrors.InternalServerError>
 > {
   return Effect.tryPromise({
     try: () =>
@@ -179,12 +189,14 @@ function digestMessage(
         "SHA-256",
         utf8Encoder.encode(encodedMessageJcs),
       ),
-    catch: () => new InternalServerError(),
+    catch: () => new httpErrors.InternalServerError(),
   }).pipe(
     Effect.map(
       (digest) => `smd_${Encoding.encodeBase64Url(new Uint8Array(digest))}`,
     ),
-    Effect.flatMap(Schema.decodeUnknown(RouterApi.SignedMessageDigest)),
-    Effect.catchTag("ParseError", () => Effect.fail(new InternalServerError())),
+    Effect.flatMap(Schema.decodeUnknown(routerContract.SignedMessageDigest)),
+    Effect.catchTag("ParseError", () =>
+      Effect.fail(new httpErrors.InternalServerError()),
+    ),
   );
 }

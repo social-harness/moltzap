@@ -42,8 +42,8 @@
     },
     "./internal": {
       "sharness-internal": {
-        "types": "./dist/daemon/internal.d.ts",
-        "import": "./dist/daemon/internal.js"
+        "types": "./dist/internal.d.ts",
+        "import": "./dist/internal.js"
       }
     }
   },

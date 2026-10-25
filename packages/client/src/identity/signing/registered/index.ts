@@ -12,22 +12,19 @@ import {
   Ref,
   Schema,
 } from "effect";
+import type { AgentSigningAuthority } from "../../keys.js";
 import type { RegistryLookupResult } from "../../registry/contract.js";
 import {
   decodeCanonicalJson,
   encodeCanonicalJson,
-  exactStruct,
 } from "../../../encoding/canonical-json.js";
+import { exactStruct } from "../../../encoding/exact.js";
 import { AgentId, type AgentId as AgentIdValue } from "../../agents.js";
+import { type BoundedCache, makeBoundedCache } from "../../bounded-cache.js";
 import {
   type VerifiedAgentCard,
   verifiedAgentCardSchema,
 } from "../../cards.js";
-import {
-  type AgentSigningAuthority,
-  type BoundedCache,
-  makeBoundedCache,
-} from "../../keys.js";
 import { Registry } from "../../registry/index.js";
 import { WireVersions } from "../../wire-version.js";
 import {

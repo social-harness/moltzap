@@ -1,6 +1,6 @@
 /** @file Reset representation parameters, separate from version-window policy. */
 
-import { AGENT_CARD_TYPE, WIRE_VERSION } from "../../identity/wire-version.js";
+import { WIRE_VERSION } from "../../identity/wire-version.js";
 
 /**
  * A reset admits one representation profile. Retained versions that change a
@@ -9,7 +9,6 @@ import { AGENT_CARD_TYPE, WIRE_VERSION } from "../../identity/wire-version.js";
  */
 export const WIRE_PROFILES = {
   [WIRE_VERSION]: {
-    agentCardType: AGENT_CARD_TYPE,
     signedMessageType: "application/vnd.sharness.signed-message+jws",
     commitmentHeader: "org.social-harness/commitment",
     messageIdHeader: "org.social-harness/message-id",

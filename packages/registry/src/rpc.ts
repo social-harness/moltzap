@@ -1,5 +1,6 @@
 /** @file Private admitted Registry operations and in-process RPC dispatch. */
 
+import type { AgentSigningAuthority } from "@moltzap/client";
 import {
   Rpc,
   RpcClient,
@@ -7,20 +8,7 @@ import {
   RpcMiddleware,
   RpcServer,
 } from "@effect/rpc";
-import {
-  type AgentSigningAuthority,
-  AuthenticationFailedError,
-  InternalServerError,
-  MalformedRequestError,
-  MethodNotAllowedError,
-  OverloadedError,
-  PayloadTooLargeError,
-  RouteNotFoundError,
-  UnavailableError,
-  UnsupportedMediaTypeError,
-  VersionMismatchError,
-} from "@moltzap/client";
-import { RegistryApi } from "@moltzap/client/internal";
+import { httpErrors, registryContract } from "@moltzap/client/internal";
 import {
   Context,
   Deferred,
@@ -29,6 +17,7 @@ import {
   Layer,
   Option,
   Schema,
+  type Scope,
 } from "effect";
 import type { RegistryStorage } from "./storage.js";
 
@@ -40,14 +29,23 @@ class BootstrapAdmissionContext extends Context.Tag(
   "@moltzap/client/BootstrapAdmissionContext",
 )<BootstrapAdmissionContext, BootstrapAdmission>() {}
 
-/** Required private RPC admission boundary for Registry registration. */
-export class RegistryAdmission extends RpcMiddleware.Tag<RegistryAdmission>()(
+const registryAdmissionTag: RpcMiddleware.TagClass<
+  RegistryAdmission,
+  "@moltzap/client/RegistryAdmission",
+  {
+    readonly provides: typeof BootstrapAdmissionContext;
+    readonly failure: typeof httpErrors.AuthenticationFailedError;
+  }
+> = RpcMiddleware.Tag<RegistryAdmission>()(
   "@moltzap/client/RegistryAdmission",
   {
     provides: BootstrapAdmissionContext,
-    failure: AuthenticationFailedError,
+    failure: httpErrors.AuthenticationFailedError,
   },
-) {}
+);
+
+/** Required private RPC admission boundary for Registry registration. */
+export class RegistryAdmission extends registryAdmissionTag {}
 
 const currentAdmission = FiberRef.unsafeMake<Option.Option<BootstrapAdmission>>(
   Option.none(),
@@ -70,7 +68,7 @@ export const withBootstrapAdmission = <A, E, R>(
 const readAdmission = FiberRef.get(currentAdmission).pipe(
   Effect.flatMap(
     Option.match({
-      onNone: () => Effect.fail(new AuthenticationFailedError()),
+      onNone: () => Effect.fail(new httpErrors.AuthenticationFailedError()),
       onSome: Effect.succeed,
     }),
   ),
@@ -82,58 +80,86 @@ export const registryAdmissionLayer = Layer.succeed(
   () => readAdmission,
 );
 
-const registerErrors = Schema.Union(
-  MalformedRequestError,
-  AuthenticationFailedError,
-  RouteNotFoundError,
-  MethodNotAllowedError,
-  VersionMismatchError,
-  PayloadTooLargeError,
-  UnsupportedMediaTypeError,
-  OverloadedError,
-  UnavailableError,
-  InternalServerError,
+const registerErrors: Schema.Schema<
+  InstanceType<(typeof httpErrors)[keyof typeof httpErrors]>,
+  Schema.Schema.Encoded<(typeof httpErrors)[keyof typeof httpErrors]>
+> = Schema.Union(
+  httpErrors.MalformedRequestError,
+  httpErrors.AuthenticationFailedError,
+  httpErrors.RouteNotFoundError,
+  httpErrors.MethodNotAllowedError,
+  httpErrors.VersionMismatchError,
+  httpErrors.PayloadTooLargeError,
+  httpErrors.UnsupportedMediaTypeError,
+  httpErrors.OverloadedError,
+  httpErrors.UnavailableError,
+  httpErrors.InternalServerError,
 );
 
-const publicReadErrors = Schema.Union(
-  MalformedRequestError,
-  RouteNotFoundError,
-  MethodNotAllowedError,
-  VersionMismatchError,
-  PayloadTooLargeError,
-  UnsupportedMediaTypeError,
-  OverloadedError,
-  UnavailableError,
-  InternalServerError,
+const publicReadErrors: Schema.Schema<
+  Exclude<
+    InstanceType<(typeof httpErrors)[keyof typeof httpErrors]>,
+    InstanceType<typeof httpErrors.AuthenticationFailedError>
+  >,
+  Schema.Schema.Encoded<
+    Exclude<
+      (typeof httpErrors)[keyof typeof httpErrors],
+      typeof httpErrors.AuthenticationFailedError
+    >
+  >
+> = Schema.Union(
+  httpErrors.MalformedRequestError,
+  httpErrors.RouteNotFoundError,
+  httpErrors.MethodNotAllowedError,
+  httpErrors.VersionMismatchError,
+  httpErrors.PayloadTooLargeError,
+  httpErrors.UnsupportedMediaTypeError,
+  httpErrors.OverloadedError,
+  httpErrors.UnavailableError,
+  httpErrors.InternalServerError,
 );
 
 /** Private registration operation including its admission middleware. */
-const registerOperation = Rpc.make("register", {
-  payload: RegistryApi.RegistryRegisterRequest,
-  success: RegistryApi.registerResultSchema,
+const registerOperation: Rpc.Rpc<
+  "register",
+  typeof registryContract.RegistryRegisterRequest,
+  typeof registryContract.registerResultSchema,
+  typeof registerErrors,
+  typeof RegistryAdmission
+> = Rpc.make("register", {
+  payload: registryContract.RegistryRegisterRequest,
+  success: registryContract.registerResultSchema,
   error: registerErrors,
 }).middleware(RegistryAdmission);
 
 /** Private lookup operation. */
-const lookupOperation = Rpc.make("lookup", {
-  payload: RegistryApi.RegistryLookupRequest,
-  success: RegistryApi.lookupResultSchema,
+const lookupOperation: Rpc.Rpc<
+  "lookup",
+  typeof registryContract.RegistryLookupRequest,
+  typeof registryContract.lookupResultSchema,
+  typeof publicReadErrors
+> = Rpc.make("lookup", {
+  payload: registryContract.RegistryLookupRequest,
+  success: registryContract.lookupResultSchema,
   error: publicReadErrors,
 });
 
 /** Private deterministic list operation. */
-const listOperation = Rpc.make("list", {
-  payload: RegistryApi.RegistryListRequest,
-  success: RegistryApi.listResultSchema,
+const listOperation: Rpc.Rpc<
+  "list",
+  typeof registryContract.RegistryListRequest,
+  typeof registryContract.listResultSchema,
+  typeof publicReadErrors
+> = Rpc.make("list", {
+  payload: registryContract.RegistryListRequest,
+  success: registryContract.listResultSchema,
   error: publicReadErrors,
 });
 
 /** The package-private no-serialization Registry operation group. */
-const registryOperations = RpcGroup.make(
-  registerOperation,
-  lookupOperation,
-  listOperation,
-);
+const registryOperations: RpcGroup.RpcGroup<
+  typeof registerOperation | typeof lookupOperation | typeof listOperation
+> = RpcGroup.make(registerOperation, lookupOperation, listOperation);
 
 /** Private in-process client for the Registry operation group. */
 export type RegistryRpcClient = RpcClient.FromGroup<typeof registryOperations>;
@@ -148,7 +174,13 @@ type NoSerializationClient = Effect.Effect.Success<
 >;
 
 /** Connects the private Registry RPC client and server in memory. */
-export const makeRegistryRpcClient = Effect.gen(function* () {
+export const makeRegistryRpcClient: Effect.Effect<
+  RegistryRpcClient,
+  never,
+  | Scope.Scope
+  | Rpc.ToHandler<RpcGroup.Rpcs<typeof registryOperations>>
+  | RegistryAdmission
+> = Effect.gen(function* () {
   const clientReady = yield* Deferred.make<NoSerializationClient>();
   const server = yield* RpcServer.makeNoSerialization(registryOperations, {
     onFromServer: (message) =>
@@ -165,19 +197,18 @@ export const makeRegistryRpcClient = Effect.gen(function* () {
 }).pipe(Effect.withSpan("makeRegistryRpcClient"));
 
 const canonicalRegisterRequest = (
-  request: typeof RegistryApi.RegistryRegisterRequest.Type,
+  request: typeof registryContract.RegistryRegisterRequest.Type,
 ) =>
-  RegistryApi.registryRegisterCodec.request.encode(request).pipe(
-    // eslint-disable-next-line agent-code-guard/no-effect-error-coalescing -- Private serialization failure has one closed domain error at the RPC boundary.
-    Effect.mapError(() => new InternalServerError()),
-  );
+  registryContract.registryRegisterCodec.request
+    .encode(request)
+    .pipe(Effect.mapError(() => new httpErrors.InternalServerError()));
 
 const registerHandler =
   (input: {
     readonly storage: RegistryStorage;
     readonly registrySigningAuthority: AgentSigningAuthority;
   }) =>
-  (request: typeof RegistryApi.RegistryRegisterRequest.Type) =>
+  (request: typeof registryContract.RegistryRegisterRequest.Type) =>
     canonicalRegisterRequest(request).pipe(
       Effect.flatMap((requestBytes) =>
         input.storage.register({

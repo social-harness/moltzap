@@ -1,7 +1,7 @@
-/** @file Public barrel for the final endpoint runtime capability. */
+/** @file Host entry for endpoint operations, delivery schemas, and immutable identity and envelope values. */
 // safer-arch-ignore no-folder-cycle: release/index.ts imports package.json for the Client release version, which places the package root below every domain that reads it, while this facade re-exports from harness/endpoint.
-// safer-arch-ignore require-curated-public-facade: Each re-export names one domain's adapter-facing values; the root re-exports them from their owners instead of from a shared contract module.
-// safer-arch-ignore no-large-public-surface: The root is the one adapter-facing boundary, and each operation and inbound item is a closed schema its adapters decode; splitting them behind narrower entrypoints would give adapters a second import path for one contract.
+// safer-arch-ignore require-curated-public-facade: Named re-exports join endpoint operations and delivery schemas with the immutable identities, cards, signing authority, attributed envelopes, and wire constants hosts read from their owning domains.
+// safer-arch-ignore no-large-public-surface: Hosts share one entry for endpoint operations, inbound items, immutable identity and envelope values, and launcher wire constants; service verification and Registry or Router composition use the condition-only internal entry.
 
 /** The endpoint capability a host acquires, and its connect and delivery types. */
 export {
@@ -80,63 +80,18 @@ export {
 /** Host adapters reject retired environment keys before acquiring an endpoint. */
 export { legacyKeys } from "./environment.js";
 
-/** Emission and admission share one wire namespace, independent of npm and MCP. */
-export {
-  HISTORY_WIRE_VERSIONS,
-  LIVE_WIRE_VERSIONS,
-  WIRE_VERSION,
-  type WireVersion,
-} from "./identity/wire-version.js";
-/** Compatibility operations have no injectable context tag in the published API. */
-export { wireVersions } from "./identity/wire-version.js";
-
-/** Canonical refined values shared by identity and its consumers. */
+/** Wire emission and the installed daemon's live compatibility window. */
+export { LIVE_WIRE_VERSIONS, WIRE_VERSION } from "./identity/wire-version.js";
+/** Canonical identities a host reads from immutable cards and messages. */
 export { AgentId, AgentName, PrincipalId } from "./identity/agents.js";
-/** Exact immutable public-key representation used by identity artifacts. */
-export {
-  AgentSigningAuthority,
-  Ed25519PublicKey,
-  InvalidAgentPrivateKeyError,
-} from "./identity/keys.js";
-/** Immutable Registry attestation and its pinned verification boundary. */
-export {
-  AgentCard,
-  AgentCardDigest,
-  AgentCardVerificationError,
-  type VerifiedAgentCard,
-} from "./identity/cards.js";
-/** Opaque attributed payload and endpoint-owned signing operations. */
+/** Opaque signing authority and exact public-key representation. */
+export { AgentSigningAuthority, Ed25519PublicKey } from "./identity/keys.js";
+/** Immutable Registry identity and its verified brand. */
+export { AgentCard, type VerifiedAgentCard } from "./identity/cards.js";
+/** Attributed envelope values a host reads without service composition. */
 export {
   type LiveSignedMessage,
   MessageId,
   SignedMessage,
-  SignedMessageSigningError,
-  SignedMessageVerificationError,
   type VerifiedSignedMessage,
 } from "./communication/envelope/signed-message.js";
-/** End-to-end sealed SignedMessage bodies and their closed failures. */
-export {
-  SealedBody,
-  SealedBodyOpeningError,
-  SealedBodySealingError,
-} from "./communication/envelope/sealed-body.js";
-/** Registered-agent HTTP authentication and its opaque verified proof. */
-export {
-  AuthenticatedHttp,
-  type VerifiedAgentRequest,
-} from "./identity/signing/registered/index.js";
-/** Shared closed HTTP-envelope failures. */
-export {
-  AuthenticationFailedError,
-  InternalServerError,
-  MalformedRequestError,
-  MethodNotAllowedError,
-  OverloadedError,
-  PayloadTooLargeError,
-  RouteNotFoundError,
-  UnavailableError,
-  UnsupportedMediaTypeError,
-  VersionMismatchError,
-} from "./identity/signing/http-errors.js";
-/** HTTP request signing failure without implementation detail. */
-export { AgentSigningError } from "./identity/signing/http-signature.js";

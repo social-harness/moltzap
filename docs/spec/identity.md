@@ -46,10 +46,10 @@ Identity capabilities are part of `@moltzap/client`, published under the
 
 | Entry | Resolution | Purpose |
 |---|---|---|
-| `@moltzap/client` | normal production resolution | Identity values and capabilities alongside the host endpoint |
+| `@moltzap/client` | normal production resolution | Immutable identity and attributed message values alongside the host endpoint |
 | `@moltzap/client/service` | normal production resolution | Registry client and contract values alongside daemon composition |
-| `@moltzap/client/test` | `sharness-test` condition only | `WireVersions` overrides and management fixture schemas |
-| `@moltzap/client/internal` | `sharness-internal` condition only | Request verification, `RegistryApi` and `RouterApi` with their codecs, Registry and Router client tags, and typed card signing |
+| `@moltzap/client/test` | `sharness-test` condition only | Process-test composition: management fixture schemas, the `WireVersions` override, `AuthenticatedHttp` request signing, and the `HISTORY_WIRE_VERSIONS` history window |
+| `@moltzap/client/internal` | `sharness-internal` condition only | Request verification, grouped `registryContract` and `routerContract` wire contracts, `httpErrors`, Registry and Router client tags, and typed card signing |
 
 The `@moltzap/client` root exports these identity-specific same-named Effect
 Schema values and TypeScript types:
@@ -58,7 +58,6 @@ Schema values and TypeScript types:
 - `PrincipalId`;
 - `AgentName`;
 - `MessageId`;
-- `AgentCardDigest`;
 - `Ed25519PublicKey`;
 - `AgentCard`;
 - `SignedMessage`.
@@ -75,9 +74,7 @@ The root exports these type-only trust states:
 
 - `VerifiedAgentCard`;
 - `VerifiedSignedMessage`;
-- `LiveSignedMessage`;
-- `WireVersion`;
-- `VerifiedAgentRequest`.
+- `LiveSignedMessage`.
 
 The Client service entry exports these type-only capability results:
 
@@ -85,16 +82,20 @@ The Client service entry exports these type-only capability results:
 - `RegistryLookupResult`; and
 - `RegistryListResult`.
 
-The remaining root exports are `WIRE_VERSION`, `LIVE_WIRE_VERSIONS`,
-`HISTORY_WIRE_VERSIONS`, `wireVersions`, `AgentSigningAuthority`, `SealedBody`,
-`AuthenticatedHttp`, `legacyKeys`, and the shared exact error classes in
-[Error contract](#error-contract).
-The Client service entry also exports `Registry` and its exact client error
-classes.
+The remaining identity root exports are `WIRE_VERSION`, `LIVE_WIRE_VERSIONS`,
+`AgentSigningAuthority` and `legacyKeys`. The condition-only `./internal` entry
+exposes request verification, card signing, `registryContract`, `routerContract`,
+`httpErrors`, Registry and Router client tags, and the service wire-version
+values and proof types listed in
+[Library entries](./layer-interfaces.md#library-entries). Services construct the
+HTTP error classes through `httpErrors`. The Client service entry also exports
+`Registry` and its exact client error classes.
 
 `wireVersions` exposes frozen compatibility operations for the binary's emitted,
 live and retained-history sets. It exposes no configurable service or context
-tag. `@moltzap/client/test` resolves the internal `WireVersions` tag and management fixture schemas when
+tag. `@moltzap/client/test` resolves the `WireVersions` override, management
+fixture schemas, `AuthenticatedHttp` request signing, and the
+`HISTORY_WIRE_VERSIONS` history window when
 the explicit `sharness-test` module-resolution condition is enabled. Normal
 production resolution refuses that subpath. Tests and the child processes they
 start enable the condition to compose adjacent releases. The Registry's

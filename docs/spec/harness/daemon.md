@@ -114,9 +114,12 @@ cached tarball must still have the integrity it was verified with, and its
 prefix must hold the recorded version. A failure stops the start.
 
 Following the dist-tag takes a release only when it is newer than the
-recorded one and the wire version its Identity pin publishes
-(`sharnessWireVersion`, else `moltzapWireVersion`) is in the recorded
-daemon's `LIVE_WIRE_VERSIONS`. A reset release is always outside that window,
+recorded one and its Client manifest's `sharnessWireVersion` is in the recorded
+daemon's `LIVE_WIRE_VERSIONS`. For a pre-fold release, the candidate wire
+version comes from its pinned `@moltzap/identity` manifest
+(`sharnessWireVersion`, else `moltzapWireVersion`), and the recorded live window
+comes from its Identity root when the Client root lacks it. Exact pins do not
+read either compatibility input. A reset release is always outside that window,
 so it never applies on its own, and no start moves an agent to an older
 release. Any jump within the window is allowed. An exact pin takes that
 release in either direction and across a wire change; the endpoint store

@@ -28,37 +28,40 @@ export const OperationId = canonicalIdentifier("OperationId", "opn_", 16)
 
 Idempotency identity for a registration operation.
 
-### [`Registry`](./capability.ts#L10)
+### [`Registry`](./index.ts#L14)
 
-_TypeAlias_
-
-```ts
-export type Registry = RegistryTag;
-```
-
-Immutable resolution retains the same Effect requirement as internal Registry calls.
-
-### [`Registry`](./capability.ts#L26)
-
-_Variable_
+_Class_
 
 ```ts
-export const Registry: RegistryCapability = Object.assign(
-  Context.GenericTag<Registry, RegistryClientService>(RegistryTag.key),
-  {
-    register: RegistryTag.register,
-    lookup: RegistryTag.lookup,
-    list: RegistryTag.list,
-    layer: (input: {
-      readonly origin: HttpOrigin;
-      readonly registrySignerPublicKey: Ed25519PublicKey;
-      readonly requestTimeout: Duration.Duration;
-    }) => RegistryTag.layer({ ...input, origin: new URL(input.origin.href) }),
-  },
-)
+export class Registry extends Context.Tag("@moltzap/client/Registry")<
+  Registry,
+  RegistryClientService
+>() {
+  static readonly register = Effect.serviceFunctionEffect(
+    Registry,
+    (service) => service.register,
+  );
+
+  static readonly lookup = Effect.serviceFunctionEffect(
+    Registry,
+    (service) => service.lookup,
+  );
+
+  static readonly list = Effect.serviceFunctionEffect(
+    Registry,
+    (service) => service.list,
+  );
+
+  static readonly layer = (input: {
+    readonly origin: HttpOrigin;
+    readonly registrySignerPublicKey: Ed25519PublicKey;
+    readonly requestTimeout: Duration.Duration;
+  }): Layer.Layer<Registry, never, HttpClient.HttpClient> =>
+    Layer.effect(Registry, makeRegistryService(input));
+}
 ```
 
-Trusted compositions install one Registry capability using only a serialized origin.
+Bootstrap registration and immutable identity resolution.
 
 ### [`RegistryConnectionError`](./contract.ts#L28)
 
@@ -227,5 +230,5 @@ The configured complete Registry call deadline expired.
 
 ## Files
 
-- `capability.ts`
 - `contract.ts`
+- `index.ts`

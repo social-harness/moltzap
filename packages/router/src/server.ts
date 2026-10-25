@@ -5,8 +5,8 @@
  */
 import { HttpServer } from "@effect/platform";
 import { NodeHttpClient, NodeHttpServer } from "@effect/platform-node";
-import { AuthenticatedHttp, WIRE_VERSION } from "@moltzap/client";
-import { Registry } from "@moltzap/client/internal";
+import { WIRE_VERSION } from "@moltzap/client";
+import { AuthenticatedHttp, Registry } from "@moltzap/client/internal";
 import { ConfigError, Console, Data, Duration, Effect, Layer } from "effect";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- NodeHttpServer.make requires Node's server factory at this adapter boundary.
 import { createServer } from "node:http";

@@ -9,11 +9,13 @@ import {
   type AgentId as AgentIdValue,
   type AgentSigningAuthority,
   type Ed25519PublicKey,
-  InternalServerError,
-  UnavailableError,
   type VerifiedAgentCard,
 } from "@moltzap/client";
-import { agentCardSigning, RegistryApi } from "@moltzap/client/internal";
+import {
+  agentCardSigning,
+  httpErrors,
+  registryContract,
+} from "@moltzap/client/internal";
 import { Clock, Data, Effect, Either, Encoding, Schema } from "effect";
 import { randomBytes } from "node:crypto";
 import { AgentCardIssuedAt, issueAgentCard } from "./issuance.js";
@@ -43,7 +45,9 @@ const PRE_RESET_LEDGERS = [
   "sharness_registry_migrations",
 ] as const;
 
-type StorageError = UnavailableError | InternalServerError;
+type StorageError =
+  | InstanceType<typeof httpErrors.UnavailableError>
+  | InstanceType<typeof httpErrors.InternalServerError>;
 type StorageInput = Readonly<{
   sql: SqlClient;
   registrySignerPublicKey: Ed25519PublicKey;
@@ -51,7 +55,7 @@ type StorageInput = Readonly<{
   operationTimeoutMilliseconds: number;
 }>;
 type RegisterInput = Readonly<{
-  request: RegistryApi.RegistryRegisterRequest;
+  request: typeof registryContract.RegistryRegisterRequest.Type;
   requestBytes: Uint8Array;
   registrySigningAuthority: AgentSigningAuthority;
 }>;
@@ -71,13 +75,22 @@ export interface RegistryStorage {
   }) => Effect.Effect<"claimed" | "replayed" | "full", StorageError>;
   readonly register: (
     input: RegisterInput,
-  ) => Effect.Effect<RegistryApi.RegistryRegisterResult, StorageError>;
+  ) => Effect.Effect<
+    typeof registryContract.registerResultSchema.Type,
+    StorageError
+  >;
   readonly lookup: (
-    request: RegistryApi.RegistryLookupRequest,
-  ) => Effect.Effect<RegistryApi.RegistryLookupResult, StorageError>;
+    request: typeof registryContract.RegistryLookupRequest.Type,
+  ) => Effect.Effect<
+    typeof registryContract.lookupResultSchema.Type,
+    StorageError
+  >;
   readonly list: (
-    request: RegistryApi.RegistryListRequest,
-  ) => Effect.Effect<RegistryApi.RegistryListResult, StorageError>;
+    request: typeof registryContract.RegistryListRequest.Type,
+  ) => Effect.Effect<
+    typeof registryContract.listResultSchema.Type,
+    StorageError
+  >;
 }
 
 /**
@@ -176,16 +189,16 @@ const readinessRow = exactStruct({
 
 const internalFailure = <A, E, R>(
   effect: Effect.Effect<A, E, R>,
-): Effect.Effect<A, InternalServerError, R> =>
-  effect.pipe(
-    // eslint-disable-next-line agent-code-guard/no-effect-error-coalescing -- Stored bytes and internal cryptographic failures cross one closed, non-diagnostic storage boundary.
-    Effect.mapError(() => new InternalServerError()),
-  );
+): Effect.Effect<A, InstanceType<typeof httpErrors.InternalServerError>, R> =>
+  effect.pipe(Effect.mapError(() => new httpErrors.InternalServerError()));
 
 const exactRows = <A, I>(
   schema: Schema.Schema<A, I>,
   rows: unknown,
-): Effect.Effect<readonly A[], InternalServerError> =>
+): Effect.Effect<
+  readonly A[],
+  InstanceType<typeof httpErrors.InternalServerError>
+> =>
   internalFailure(
     Schema.decodeUnknown(Schema.Array(schema))(rows, {
       exact: true,
@@ -194,23 +207,31 @@ const exactRows = <A, I>(
   ).pipe(Effect.map((decoded) => Object.freeze([...decoded])));
 
 const withStorageDeadline = <A>(
-  effect: Effect.Effect<A, InternalServerError | SqlError>,
+  effect: Effect.Effect<
+    A,
+    InstanceType<typeof httpErrors.InternalServerError> | SqlError
+  >,
   timeoutMilliseconds: number,
 ): Effect.Effect<A, StorageError> =>
   effect.pipe(
-    Effect.catchTag("SqlError", () => Effect.fail(new UnavailableError())),
+    Effect.catchTag("SqlError", () =>
+      Effect.fail(new httpErrors.UnavailableError()),
+    ),
     Effect.timeoutFail({
       duration: timeoutMilliseconds,
-      onTimeout: () => new UnavailableError(),
+      onTimeout: () => new httpErrors.UnavailableError(),
     }),
   );
 
 const decodeStoredCard = (
   bytes: Uint8Array,
   registrySignerPublicKey: Ed25519PublicKey,
-): Effect.Effect<VerifiedAgentCard, InternalServerError> =>
+): Effect.Effect<
+  VerifiedAgentCard,
+  InstanceType<typeof httpErrors.InternalServerError>
+> =>
   internalFailure(
-    RegistryApi.registryAgentCardCodec
+    registryContract.registryAgentCardCodec
       .decode(bytes)
       .pipe(
         Effect.flatMap((agentCard) =>
@@ -220,18 +241,26 @@ const decodeStoredCard = (
   );
 
 const encodeResult = (
-  result: RegistryApi.RegistryRegisterResult,
-): Effect.Effect<Uint8Array, InternalServerError> =>
-  internalFailure(RegistryApi.registryRegisterCodec.response.encode(result));
+  result: typeof registryContract.registerResultSchema.Type,
+): Effect.Effect<
+  Uint8Array,
+  InstanceType<typeof httpErrors.InternalServerError>
+> =>
+  internalFailure(
+    registryContract.registryRegisterCodec.response.encode(result),
+  );
 
 const decodeResult = (
   bytes: Uint8Array,
   registrySignerPublicKey: Ed25519PublicKey,
-): Effect.Effect<RegistryApi.RegistryRegisterResult, InternalServerError> =>
+): Effect.Effect<
+  typeof registryContract.registerResultSchema.Type,
+  InstanceType<typeof httpErrors.InternalServerError>
+> =>
   internalFailure(
     Effect.gen(function* () {
       const result =
-        yield* RegistryApi.registryRegisterCodec.response.decode(bytes);
+        yield* registryContract.registryRegisterCodec.response.decode(bytes);
       if (result.kind !== "registered") {
         return Object.freeze({ kind: result.kind });
       }
@@ -243,24 +272,30 @@ const decodeResult = (
     }),
   );
 
-const mintAgentId = (): Effect.Effect<AgentIdValue, InternalServerError> =>
+const mintAgentId = (): Effect.Effect<
+  AgentIdValue,
+  InstanceType<typeof httpErrors.InternalServerError>
+> =>
   internalFailure(
     Effect.try({
       try: () => `agt_${randomBytes(16).toString("base64url")}`,
-      catch: () => new InternalServerError(),
+      catch: () => new httpErrors.InternalServerError(),
     }).pipe(Effect.flatMap(Schema.decodeUnknown(AgentId))),
   );
 
 const retainedCount = (
   rows: unknown,
-): Effect.Effect<number, InternalServerError> =>
+): Effect.Effect<number, InstanceType<typeof httpErrors.InternalServerError>> =>
   exactRows(countRow, rows).pipe(
     Effect.map((decoded) => Number(decoded[0]?.retained ?? 0)),
   );
 
 const mintUnusedAgentId = (
   sql: SqlClient,
-): Effect.Effect<AgentIdValue, SqlError | InternalServerError> =>
+): Effect.Effect<
+  AgentIdValue,
+  SqlError | InstanceType<typeof httpErrors.InternalServerError>
+> =>
   Effect.gen(function* () {
     for (let attempt = 0; attempt < AGENT_ID_MINT_ATTEMPTS; attempt += 1) {
       const candidate = yield* mintAgentId();
@@ -273,12 +308,12 @@ const mintUnusedAgentId = (
         return candidate;
       }
     }
-    return yield* new InternalServerError();
+    return yield* new httpErrors.InternalServerError();
   });
 
 const issueTime = (): Effect.Effect<
   typeof AgentCardIssuedAt.Type,
-  InternalServerError
+  InstanceType<typeof httpErrors.InternalServerError>
 > =>
   internalFailure(
     Clock.currentTimeMillis.pipe(
@@ -293,9 +328,12 @@ const issueTime = (): Effect.Effect<
 
 const decodeAgentIdBytes = (
   agentId: AgentIdValue,
-): Effect.Effect<Uint8Array, InternalServerError> =>
+): Effect.Effect<
+  Uint8Array,
+  InstanceType<typeof httpErrors.InternalServerError>
+> =>
   Either.match(Encoding.decodeBase64Url(agentId.slice(4)), {
-    onLeft: () => Effect.fail(new InternalServerError()),
+    onLeft: () => Effect.fail(new httpErrors.InternalServerError()),
     onRight: Effect.succeed,
   });
 
@@ -309,7 +347,7 @@ function makeCheckReadiness(
         Effect.flatMap((rows) =>
           rows.length === 1
             ? Effect.void
-            : Effect.fail(new InternalServerError()),
+            : Effect.fail(new httpErrors.InternalServerError()),
         ),
       ),
       input.operationTimeoutMilliseconds,
@@ -457,8 +495,11 @@ function makeClaimRegistrationNonce(
 const findStoredOperation = (
   sql: SqlClient,
   keyThumbprint: string,
-  operationId: RegistryApi.RegistryRegisterRequest["operationId"],
-): Effect.Effect<StoredOperation | undefined, SqlError | InternalServerError> =>
+  operationId: (typeof registryContract.RegistryRegisterRequest.Type)["operationId"],
+): Effect.Effect<
+  StoredOperation | undefined,
+  SqlError | InstanceType<typeof httpErrors.InternalServerError>
+> =>
   sql`
     SELECT
       request_bytes AS "requestBytes",
@@ -483,7 +524,7 @@ const keyIsRegistered = (sql: SqlClient, thumbprint: string) =>
 
 const nameIsRegistered = (
   sql: SqlClient,
-  agentName: RegistryApi.RegistryRegisterRequest["agentName"],
+  agentName: (typeof registryContract.RegistryRegisterRequest.Type)["agentName"],
 ) =>
   sql`
     SELECT COUNT(*)::text AS retained
@@ -499,8 +540,8 @@ const insertNewAgent = (
   call: RegisterInput,
   keyThumbprint: string,
 ): Effect.Effect<
-  RegistryApi.RegistryRegisterResult,
-  SqlError | InternalServerError
+  typeof registryContract.registerResultSchema.Type,
+  SqlError | InstanceType<typeof httpErrors.InternalServerError>
 > =>
   Effect.gen(function* () {
     const agentId = yield* mintUnusedAgentId(input.sql);
@@ -516,7 +557,7 @@ const insertNewAgent = (
       }),
     );
     const agentCardBytes = yield* internalFailure(
-      RegistryApi.registryAgentCardCodec.encode(agentCard),
+      registryContract.registryAgentCardCodec.encode(agentCard),
     );
     const agentIdBytes = yield* decodeAgentIdBytes(agentId);
     yield* input.sql`
@@ -548,7 +589,7 @@ const decideRegistration = (
 const recordOperation = (input: {
   readonly sql: SqlClient;
   readonly keyThumbprint: string;
-  readonly operationId: RegistryApi.RegistryRegisterRequest["operationId"];
+  readonly operationId: (typeof registryContract.RegistryRegisterRequest.Type)["operationId"];
   readonly requestBytes: Uint8Array;
   readonly resultBytes: Uint8Array;
 }) =>
@@ -613,7 +654,7 @@ function makeRegister(input: StorageInput): RegistryStorage["register"] {
 
 const findCardRows = (
   sql: SqlClient,
-  request: RegistryApi.RegistryLookupRequest,
+  request: typeof registryContract.RegistryLookupRequest.Type,
 ) =>
   "agentId" in request
     ? sql`
@@ -639,7 +680,7 @@ function makeLookup(input: StorageInput): RegistryStorage["lookup"] {
           return Object.freeze({ kind: "not_found" } as const);
         }
         if (cards.length !== 1) {
-          return yield* new InternalServerError();
+          return yield* new httpErrors.InternalServerError();
         }
         const agentCard = yield* decodeStoredCard(
           card.agentCardBytes,

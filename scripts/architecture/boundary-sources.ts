@@ -107,7 +107,7 @@ export function checkSharedSourceRules(run: BoundaryRun): number {
 }
 
 /**
- * Fail any numbered layer notation in Identity and Router file paths or
+ * Fail any numbered layer notation in product non-documentation file paths or
  * non-documentation file text.
  * @param run Run collecting failures.
  * @returns How many non-documentation files were scanned.

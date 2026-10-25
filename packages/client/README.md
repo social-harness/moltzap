@@ -23,7 +23,7 @@ publishes under the `@moltzap` scope at its own calendar version, installs
 | `@moltzap/client` | `HarnessEndpoint`, operation and inbound item values, endpoint acquisition, and closed operation failures |
 | `@moltzap/client/service` | Production daemon composition and Registry/Router client values |
 | `@moltzap/client/internal` | Named service capabilities; `sharness-internal` condition only |
-| `@moltzap/client/test` | Management schemas and wire overrides; `sharness-test` condition only, with no default condition |
+| `@moltzap/client/test` | Process-test composition: management schemas, the `WireVersions` override, `AuthenticatedHttp` request signing, and the `HISTORY_WIRE_VERSIONS` history window; `sharness-test` condition only, with no default condition |
 
 `HarnessEndpoint.send` performs one collective operation: text to an explicit
 `agent:` or `group:` address with an optional `collective` operation,

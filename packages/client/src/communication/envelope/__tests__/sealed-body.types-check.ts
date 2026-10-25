@@ -11,13 +11,15 @@ import type {
   AgentId,
   AgentSigningAuthority,
   MessageId,
-  SealedBody,
-  SealedBodyOpeningError,
-  SealedBodySealingError,
   SignedMessage,
   VerifiedAgentCard,
   VerifiedSignedMessage,
 } from "../../../index.js";
+import type {
+  SealedBody,
+  SealedBodyOpeningError,
+  SealedBodySealingError,
+} from "../sealed-body.js";
 
 type Expect<Value extends true> = Value;
 

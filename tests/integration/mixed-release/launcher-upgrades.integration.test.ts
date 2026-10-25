@@ -12,9 +12,9 @@ import {
   PackGateError,
   packProductClosure,
   runCommand,
-} from "../../scripts/test/packed-workspace.js";
+} from "../../../scripts/test/packed-workspace.js";
 
-const workspaceRoot = resolve(import.meta.dirname, "../..");
+const workspaceRoot = resolve(import.meta.dirname, "../../..");
 const prepared = Schema.parseJson(
   Schema.Struct({
     version: Schema.String,
@@ -126,9 +126,19 @@ function attestation(version: string, digest: string): Reply {
   });
 }
 
+/** Only transient registry failures waive this network-dependent installation gate. */
+function npmOutage(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    /EAI_AGAIN|ENOTFOUND|ECONNRESET|ECONNREFUSED|ETIMEDOUT|E(?:408|429|500|502|503|504)|ERR_PNPM_FETCH_(?:408|429|500|502|503|504)|FETCH_ERROR|fetch failed/iu.test(
+      error.message,
+    )
+  );
+}
+
 it(
   "performs two consecutive launcher upgrades between real packed installations",
-  () =>
+  ({ skip }) =>
     Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
@@ -214,7 +224,7 @@ it(
               process.execPath,
               [
                 "--import",
-                join(import.meta.dirname, "launcher-provenance.ts"),
+                join(import.meta.dirname, "../launcher-provenance.ts"),
                 join(
                   prefix,
                   "node_modules/@moltzap/client/bin/sharnessd-launcher",
@@ -252,7 +262,17 @@ it(
             previous = version;
           }
         }),
-      ).pipe(Effect.provide(NodeContext.layer)),
+      ).pipe(
+        Effect.provide(NodeContext.layer),
+        Effect.catchIf(npmOutage, (error) =>
+          Effect.sync(() => {
+            skip(
+              true,
+              `npm outage; launcher upgrade gate skipped: ${String(error)}`,
+            );
+          }),
+        ),
+      ),
     ),
   600_000,
 );

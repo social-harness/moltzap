@@ -152,8 +152,10 @@ function differingField(
     ["host-code hash", packed.sharnessHostCodeHash === published.hostCodeHash],
     [
       "wire version",
-      (packed.sharnessWireVersion ?? packed.moltzapWireVersion) ===
-        published.wireVersion,
+      (packed.sharnessWireVersion ??
+        (packed.name === "@moltzap/identity"
+          ? packed.moltzapWireVersion
+          : undefined)) === published.wireVersion,
     ],
   ];
   return checks.find(([, same]) => !same)?.[0];

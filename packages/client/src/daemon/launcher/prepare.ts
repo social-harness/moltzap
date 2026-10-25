@@ -177,9 +177,18 @@ function candidate(
     const choice = choose(
       {
         version: recorded.version,
-        liveWireVersions: yield* liveWireVersions(recorded.prefix),
+        liveWireVersions:
+          selection.kind === "follow"
+            ? yield* liveWireVersions(recorded.prefix)
+            : [],
       },
-      { version, wireVersion: yield* wireVersionOf(closure, version) },
+      {
+        version,
+        wireVersion:
+          selection.kind === "follow"
+            ? yield* wireVersionOf(closure, version)
+            : "",
+      },
       selection,
     );
     if (choice.kind === "keep") {
@@ -192,14 +201,16 @@ function candidate(
   });
 }
 
-/** The wire version the release's daemon emits, from the Client manifest. */
+/** The daemon wire version comes from its Client manifest or its pre-fold Identity pin. */
 function wireVersionOf(
   closure: readonly PublishedPackage[],
   version: string,
 ): Effect.Effect<string, LauncherError> {
   const daemon = closure.find((entry) => entry.name === DAEMON_PACKAGE);
-  return daemon?.wireVersion !== undefined
-    ? Effect.succeed(daemon.wireVersion)
+  const identity = closure.find((entry) => entry.name === "@moltzap/identity");
+  const wireVersion = daemon?.wireVersion ?? identity?.wireVersion;
+  return wireVersion !== undefined
+    ? Effect.succeed(wireVersion)
     : Effect.fail(
         launcherError(
           "registry",

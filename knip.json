@@ -136,7 +136,7 @@
     "packages/client/src/harness/protocol/owner-tools.ts": [
       "exports"
     ],
-    "packages/client/src/communication/store/rows.ts": [
+    "packages/client/src/communication/store/rows/index.ts": [
       "exports"
     ]
   }

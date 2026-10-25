@@ -83,6 +83,7 @@ flowchart LR
 
 - `index.ts`
 - `internal-resolution.ts`
+- `main.ts`
 - `router/configuration.ts`
 - `router/feed.ts`
 - `router/http.ts`

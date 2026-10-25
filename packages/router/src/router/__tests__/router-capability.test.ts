@@ -7,19 +7,19 @@ import {
   AgentName,
   AgentSigningAuthority,
   type AgentSigningAuthority as AgentSigningAuthorityValue,
-  AuthenticationFailedError,
-  InternalServerError,
   MessageId,
   type MessageId as MessageIdValue,
-  OverloadedError,
   PrincipalId,
   SignedMessage,
   type SignedMessage as SignedMessageValue,
   type VerifiedAgentCard,
-  type VerifiedAgentRequest,
   WIRE_VERSION,
 } from "@moltzap/client";
-import { RouterApi } from "@moltzap/client/internal";
+import {
+  httpErrors,
+  routerContract,
+  type VerifiedAgentRequest,
+} from "@moltzap/client/internal";
 import canonicalize from "canonicalize";
 import {
   Brand,
@@ -60,8 +60,10 @@ const makeAgentId = (seed: number): AgentIdValue =>
 const makeMessageId = (seed: number): MessageIdValue =>
   Schema.decodeUnknownSync(MessageId)(`msg_${identifierPayload(seed)}`);
 
-const makeRouterInstanceId = (seed: number): RouterApi.RouterInstanceId =>
-  Schema.decodeUnknownSync(RouterApi.RouterInstanceId)(
+const makeRouterInstanceId = (
+  seed: number,
+): typeof routerContract.RouterInstanceId.Type =>
+  Schema.decodeUnknownSync(routerContract.RouterInstanceId)(
     `rti_${identifierPayload(seed)}`,
   );
 
@@ -294,7 +296,9 @@ describe("private RPC behavior", () => {
                   verifiedRequest,
                 ]),
               ),
-              Effect.zipRight(Effect.fail(new InternalServerError())),
+              Effect.zipRight(
+                Effect.fail(new httpErrors.InternalServerError()),
+              ),
             ),
         },
         poll: {
@@ -330,7 +334,7 @@ describe("private RPC behavior", () => {
         .pipe(Effect.either);
       Either.match(missingSendProof, {
         onLeft: (error) => {
-          expect(error).toBeInstanceOf(AuthenticationFailedError);
+          expect(error).toBeInstanceOf(httpErrors.AuthenticationFailedError);
         },
         onRight: () => {
           expect.fail("send RPC ran without registered-agent proof");
@@ -338,7 +342,7 @@ describe("private RPC behavior", () => {
       });
       Either.match(missingPollProof, {
         onLeft: (error) => {
-          expect(error).toBeInstanceOf(AuthenticationFailedError);
+          expect(error).toBeInstanceOf(httpErrors.AuthenticationFailedError);
         },
         onRight: () => {
           expect.fail("poll RPC ran without registered-agent proof");
@@ -363,7 +367,7 @@ describe("private RPC behavior", () => {
       ).pipe(Effect.either);
       Either.match(handlerFailure, {
         onLeft: (error) => {
-          expect(error).toBeInstanceOf(InternalServerError);
+          expect(error).toBeInstanceOf(httpErrors.InternalServerError);
         },
         onRight: () => {
           expect.fail("handler failure was converted into success");
@@ -469,7 +473,7 @@ describe("send exhaustion behavior", () => {
           .pipe(Effect.either);
         Either.match(exhausted, {
           onLeft: (error) => {
-            expect(error).toBeInstanceOf(OverloadedError);
+            expect(error).toBeInstanceOf(httpErrors.OverloadedError);
           },
           onRight: () => {
             expect.fail("fresh append succeeded past the final position");
@@ -517,7 +521,9 @@ describe("configuration behavior", () => {
           ["SHARNESS_ROUTER_POLL_MESSAGE_LIMIT", "1"],
           [
             "SHARNESS_ROUTER_POLL_RESPONSE_BYTE_LIMIT",
-            String(RouterApi.routerRepresentationLimits.oneMessageBatchBytes),
+            String(
+              routerContract.routerRepresentationLimits.oneMessageBatchBytes,
+            ),
           ],
           ["SHARNESS_ROUTER_REQUEST_CONCURRENCY_LIMIT", "4"],
           ["SHARNESS_ROUTER_HELD_POLL_CAPACITY", "3"],
@@ -534,7 +540,7 @@ describe("configuration behavior", () => {
         retainedMessageByteCapacity: 500_000,
         pollMessageLimit: 1,
         pollResponseByteLimit:
-          RouterApi.routerRepresentationLimits.oneMessageBatchBytes,
+          routerContract.routerRepresentationLimits.oneMessageBatchBytes,
         requestConcurrencyLimit: 4,
         heldPollCapacity: 3,
         liveNonceCapacity: 5,
@@ -549,7 +555,7 @@ describe("configuration behavior", () => {
       ).toBe("::");
       expect(
         yield* effectFails(
-          RouterApi.calculateRouterRepresentationLimits(
+          routerContract.calculateRouterRepresentationLimits(
             Number.MAX_SAFE_INTEGER,
           ),
         ),
@@ -654,7 +660,8 @@ describe("configuration behavior", () => {
             [
               "SHARNESS_ROUTER_POLL_RESPONSE_BYTE_LIMIT",
               String(
-                RouterApi.routerRepresentationLimits.oneMessageBatchBytes - 1,
+                routerContract.routerRepresentationLimits.oneMessageBatchBytes -
+                  1,
               ),
             ],
           ]),

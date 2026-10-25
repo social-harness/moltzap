@@ -7,21 +7,6 @@
 import type { HttpClient } from "@effect/platform";
 import type { Duration, Effect, Layer, Redacted, Types } from "effect";
 import type {
-  AgentSigningAuthority,
-  AgentSigningError,
-  AuthenticationFailedError,
-  Ed25519PublicKey,
-  InternalServerError,
-  MalformedRequestError,
-  MethodNotAllowedError,
-  OverloadedError,
-  PayloadTooLargeError,
-  RouteNotFoundError,
-  UnavailableError,
-  UnsupportedMediaTypeError,
-  VersionMismatchError,
-} from "../../../index.js";
-import type {
   Registry,
   RegistryConnectionError,
   RegistryInvalidResponseError,
@@ -32,7 +17,25 @@ import type {
   RegistryRegisterRequest,
   RegistryRegisterResult,
   RegistryRequestTimeoutError,
-} from "../index.js";
+} from "../../../daemon/index.js";
+import type {
+  AgentSigningAuthority,
+  Ed25519PublicKey,
+} from "../../../index.js";
+import type {
+  AuthenticationFailedError,
+  InternalServerError,
+  MalformedRequestError,
+  MethodNotAllowedError,
+  OverloadedError,
+  PayloadTooLargeError,
+  RouteNotFoundError,
+  UnavailableError,
+  UnsupportedMediaTypeError,
+  VersionMismatchError,
+} from "../../signing/http-errors.js";
+import type { AgentSigningError } from "../../signing/http-signature.js";
+import type { HttpOrigin } from "../../signing/origin.js";
 
 type Expect<Value extends true> = Value;
 
@@ -95,7 +98,7 @@ type RegistryLayerInputIsExact = Expect<
   Types.Equals<
     Parameters<typeof Registry.layer>[0],
     Readonly<{
-      origin: URL;
+      origin: HttpOrigin;
       registrySignerPublicKey: Ed25519PublicKey;
       requestTimeout: Duration.Duration;
     }>

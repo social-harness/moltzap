@@ -6,7 +6,6 @@ import {
   AgentName,
   AgentSigningAuthority,
   type AgentSigningAuthority as AgentSigningAuthorityValue,
-  AuthenticatedHttp,
   type LiveSignedMessage,
   MessageId,
   PrincipalId,
@@ -25,6 +24,7 @@ import {
   type RouterSendRequest,
   type RouterSendResult,
 } from "@moltzap/client/service";
+import { AuthenticatedHttp } from "@moltzap/client/test";
 import { Effect, Encoding, Redacted, Schema } from "effect";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";

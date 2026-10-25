@@ -4,7 +4,7 @@ _`packages/client/src`_
 
 ## Purpose
 
-Public barrel for the final endpoint runtime capability.
+Host entry for endpoint operations, delivery schemas, and immutable identity and envelope values.
 
 ## Public surface
 
@@ -46,7 +46,7 @@ export const AgentAddress = addressInput.pipe(
 
 An explicit direct destination using one canonical Registry name.
 
-### [`AgentCard (type)`](./identity/cards.ts#L97)
+### [`AgentCard (type)`](./identity/cards.ts#L99)
 
 _Interface_
 
@@ -62,7 +62,7 @@ export interface AgentCard {
 
 Immutable public identity fields carried by an AgentCard.
 
-### [`AgentCard (value)`](./identity/cards.ts#L325)
+### [`AgentCard (value)`](./identity/cards.ts#L327)
 
 _Variable_
 
@@ -78,42 +78,6 @@ export const AgentCard = Object.assign(agentCardSchema, {
 ```
 
 Verifies immutable Registry attestation without exposing JOSE mechanics.
-
-### [`AgentCardDigest (type)`](./identity/cards.ts#L63)
-
-_TypeAlias_
-
-```ts
-export type AgentCardDigest = typeof AgentCardDigest.Type;
-```
-
-Validated nominal value decoded by AgentCardDigest.
-
-### [`AgentCardDigest (value)`](./identity/cards.ts#L56)
-
-_Variable_
-
-```ts
-export const AgentCardDigest = canonicalIdentifier(
-  "AgentCardDigest",
-  "acd_",
-  DIGEST_BYTE_LENGTH,
-)
-```
-
-Digest binding a message to one complete immutable AgentCard.
-
-### [`AgentCardVerificationError`](./identity/cards.ts#L247)
-
-_Class_
-
-```ts
-export class AgentCardVerificationError extends Data.TaggedError(
-  "AgentCardVerificationError",
-) {}
-```
-
-A parsed AgentCard does not verify against the pinned Registry signer.
 
 ### [`AgentId (type)`](./identity/agents.ts#L19)
 
@@ -168,7 +132,7 @@ export const AgentName = Schema.String.pipe(
 
 Immutable Registry-wide human-facing agent handle.
 
-### [`AgentSigningAuthority (type)`](./identity/keys.ts#L473)
+### [`AgentSigningAuthority (type)`](./identity/keys.ts#L424)
 
 _Interface_
 
@@ -181,7 +145,7 @@ export interface AgentSigningAuthority {
 Opaque authority over one imported Ed25519 private key and the X25519
 opening key derived from it.
 
-### [`AgentSigningAuthority (value)`](./identity/keys.ts#L686)
+### [`AgentSigningAuthority (value)`](./identity/keys.ts#L637)
 
 _Variable_
 
@@ -194,62 +158,6 @@ export const AgentSigningAuthority = Object.freeze({
 
 Loads and identifies one Ed25519 signing authority without exposing its
 private keys or a generic signing or decryption operation.
-
-### [`AgentSigningError`](./identity/signing/http-signature.ts#L37)
-
-_Class_
-
-```ts
-export class AgentSigningError extends Data.TaggedError("AgentSigningError") {}
-```
-
-An agent-owned HTTP request could not be signed.
-
-### [`AuthenticatedHttp`](./identity/signing/registered/index.ts#L69)
-
-_Class_
-
-```ts
-export class AuthenticatedHttp extends Context.Tag(
-  "@moltzap/client/AuthenticatedHttp",
-)<AuthenticatedHttp, AuthenticatedHttpService>() {
-  static readonly signAgentRequest = signAgentRequest;
-
-  static readonly verifyAgentRequest: (input: {
-    readonly httpRequest: HttpServerRequest.HttpServerRequest;
-    readonly bodyBytes: Uint8Array;
-  }) => Effect.Effect<
-    VerifiedAgentRequest,
-    AuthenticationError,
-    AuthenticatedHttp
-  > = Effect.serviceFunctionEffect(
-    AuthenticatedHttp,
-    (service) => service.verifyAgentRequest,
-  );
-
-  static readonly layer = (input: {
-    readonly liveNonceCapacity: number;
-    readonly agentCardCacheCapacity: number;
-    readonly registryLookupConcurrencyLimit: number;
-  }): Layer.Layer<AuthenticatedHttp, never, Registry> =>
-    Layer.effect(AuthenticatedHttp, makeService({ ...input }));
-}
-```
-
-Registered-agent request signing and verification.
-
-### [`AuthenticationFailedError`](./identity/signing/http-errors.ts#L13)
-
-_Class_
-
-```ts
-export class AuthenticationFailedError extends Schema.TaggedError<AuthenticationFailedError>()(
-  "AuthenticationFailedError",
-  {},
-) {}
-```
-
-The request does not prove the required identity or admission authority.
 
 ### [`CheckedGuidance`](./firewall/outcome/index.ts#L51)
 
@@ -426,7 +334,7 @@ export type DirectMessage = typeof directMessage.Type;
 
 One certified remote-authored direct message.
 
-### [`Ed25519PublicKey (type)`](./identity/keys.ts#L301)
+### [`Ed25519PublicKey (type)`](./identity/keys.ts#L252)
 
 _TypeAlias_
 
@@ -436,7 +344,7 @@ export type Ed25519PublicKey = typeof Ed25519PublicKey.Type;
 
 Validated immutable Ed25519 public JWK.
 
-### [`Ed25519PublicKey (value)`](./identity/keys.ts#L270)
+### [`Ed25519PublicKey (value)`](./identity/keys.ts#L221)
 
 _Variable_
 
@@ -571,19 +479,6 @@ stream. A multicast has no operation id, so its failure is always returned.
 A firewall refusal always returns on the send call before creating an intent,
 including when inbound failure delivery was requested.
 
-### [`HISTORY_WIRE_VERSIONS`](./identity/wire-version.ts#L45)
-
-_Variable_
-
-```ts
-export const HISTORY_WIRE_VERSIONS = [
-  ...LIVE_WIRE_VERSIONS,
-  ...RETIRED_WIRE_VERSIONS,
-] as const
-```
-
-Retained artifacts remain readable until the next protocol reset.
-
 ### [`HistoryExportRecord (type)`](./harness/inbox/history-export.ts#L54)
 
 _TypeAlias_
@@ -692,33 +587,6 @@ export const InboundMessage = Schema.Union(
 
 One certified remote-authored post, direct or to a fixed group.
 
-### [`InternalServerError`](./identity/signing/http-errors.ts#L70)
-
-_Class_
-
-```ts
-export class InternalServerError extends Schema.TaggedError<InternalServerError>()(
-  "InternalServerError",
-  {},
-) {}
-```
-
-An unexpected implementation failure prevented a closed result.
-
-### [`InvalidAgentPrivateKeyError`](./identity/keys.ts#L482)
-
-_Class_
-
-```ts
-export class InvalidAgentPrivateKeyError extends Data.TaggedError(
-  "InvalidAgentPrivateKeyError",
-) {}
-```
-
-The supplied private-key material cannot act as an Ed25519 signer or yield
-its X25519 opening key. The public contract represents every such cause with
-this one empty error.
-
 ### [`JsonValue (type)`](./communication/records/values.ts#L58)
 
 _TypeAlias_
@@ -816,19 +684,6 @@ export type LocalGuidance = typeof localGuidanceSchema.Type;
 
 Local advice accompanies the envelope and never changes a certified item.
 
-### [`MalformedRequestError`](./identity/signing/http-errors.ts#L7)
-
-_Class_
-
-```ts
-export class MalformedRequestError extends Schema.TaggedError<MalformedRequestError>()(
-  "MalformedRequestError",
-  {},
-) {}
-```
-
-The request representation is not valid for the selected operation.
-
 ### [`MessageAddressInput (type)`](./communication/records/values.ts#L210)
 
 _TypeAlias_
@@ -889,32 +744,6 @@ A message text states an operation it does not validly carry, or is plain
 text that is not well-formed Unicode. The message names each failing field
 so a host can hand it to its model as the tool error.
 
-### [`MethodNotAllowedError`](./identity/signing/http-errors.ts#L25)
-
-_Class_
-
-```ts
-export class MethodNotAllowedError extends Schema.TaggedError<MethodNotAllowedError>()(
-  "MethodNotAllowedError",
-  {},
-) {}
-```
-
-The selected route does not accept the request method.
-
-### [`OverloadedError`](./identity/signing/http-errors.ts#L58)
-
-_Class_
-
-```ts
-export class OverloadedError extends Schema.TaggedError<OverloadedError>()(
-  "OverloadedError",
-  {},
-) {}
-```
-
-A finite immediate resource permit is unavailable.
-
 ### [`parseMessageText`](./communication/collectives/message-text.ts#L94)
 
 _Function_
@@ -930,19 +759,6 @@ Read one message text as the send it states.
 
 **Returns:** The send input, or an error naming each field a stated operation
   gets wrong.
-
-### [`PayloadTooLargeError`](./identity/signing/http-errors.ts#L46)
-
-_Class_
-
-```ts
-export class PayloadTooLargeError extends Schema.TaggedError<PayloadTooLargeError>()(
-  "PayloadTooLargeError",
-  {},
-) {}
-```
-
-The received body exceeds the selected route's derived representation cap.
 
 ### [`PostId (type)`](./communication/records/values.ts#L47)
 
@@ -1038,60 +854,6 @@ A message's content as the text a model reads: each text part as written,
 each data part as JSON, one part per line.
 
 **Returns:** The text a host puts in the model's turn.
-
-### [`RouteNotFoundError`](./identity/signing/http-errors.ts#L19)
-
-_Class_
-
-```ts
-export class RouteNotFoundError extends Schema.TaggedError<RouteNotFoundError>()(
-  "RouteNotFoundError",
-  {},
-) {}
-```
-
-No exact HTTP route owns the request target.
-
-### [`SealedBody`](./communication/envelope/sealed-body.ts#L605)
-
-_Variable_
-
-```ts
-export const SealedBody = Object.freeze({
-  seal,
-  open,
-  sealedByteLength,
-  maximumPlaintextByteLength,
-})
-```
-
-Seals a SignedMessage body to its recipients, opens a verified sealed body,
-and reports sealed sizes. `SignedMessage.sign` never seals; the caller
-chooses which bodies to seal and signs the sealed bytes.
-
-### [`SealedBodyOpeningError`](./communication/envelope/sealed-body.ts#L192)
-
-_Class_
-
-```ts
-export class SealedBodyOpeningError extends Data.TaggedError(
-  "SealedBodyOpeningError",
-) {}
-```
-
-A verified SignedMessage body does not open as a sealed body for this agent.
-
-### [`SealedBodySealingError`](./communication/envelope/sealed-body.ts#L187)
-
-_Class_
-
-```ts
-export class SealedBodySealingError extends Data.TaggedError(
-  "SealedBodySealingError",
-) {}
-```
-
-A body cannot be sealed from the supplied sender to the supplied recipients.
 
 ### [`SendError`](./communication/conversations/errors.ts#L54)
 
@@ -1207,57 +969,7 @@ export const SignedMessage = Object.assign(signedMessageSchema, {
 
 Opaque attributed message operations and exact representation Schema.
 
-### [`SignedMessageSigningError`](./communication/envelope/signed-message.ts#L281)
-
-_Class_
-
-```ts
-export class SignedMessageSigningError extends Data.TaggedError(
-  "SignedMessageSigningError",
-) {}
-```
-
-A message cannot be signed under the supplied immutable identity.
-
-### [`SignedMessageVerificationError`](./communication/envelope/signed-message.ts#L286)
-
-_Class_
-
-```ts
-export class SignedMessageVerificationError extends Data.TaggedError(
-  "SignedMessageVerificationError",
-) {}
-```
-
-A SignedMessage does not bind to the supplied verified AgentCard.
-
-### [`UnavailableError`](./identity/signing/http-errors.ts#L64)
-
-_Class_
-
-```ts
-export class UnavailableError extends Schema.TaggedError<UnavailableError>()(
-  "UnavailableError",
-  {},
-) {}
-```
-
-A required service or durable operation cannot currently complete.
-
-### [`UnsupportedMediaTypeError`](./identity/signing/http-errors.ts#L52)
-
-_Class_
-
-```ts
-export class UnsupportedMediaTypeError extends Schema.TaggedError<UnsupportedMediaTypeError>()(
-  "UnsupportedMediaTypeError",
-  {},
-) {}
-```
-
-The selected route cannot consume the request content framing.
-
-### [`VerifiedAgentCard`](./identity/cards.ts#L232)
+### [`VerifiedAgentCard`](./identity/cards.ts#L234)
 
 _TypeAlias_
 
@@ -1266,21 +978,6 @@ export type VerifiedAgentCard = AgentCard & Brand.Brand<"VerifiedAgentCard">;
 ```
 
 AgentCard verified against a deployment-pinned Registry signer.
-
-### [`VerifiedAgentRequest`](./identity/signing/registered/index.ts#L47)
-
-_TypeAlias_
-
-```ts
-export type VerifiedAgentRequest = Readonly<{
-  readonly callerAgentId: AgentIdValue;
-  readonly agentCard: VerifiedAgentCard;
-  readonly request: unknown;
-}> &
-  Brand.Brand<"VerifiedAgentRequest">;
-```
-
-Request body and caller identity established by AuthenticatedHttp.
 
 ### [`VerifiedSignedMessage`](./communication/envelope/signed-message.ts#L275)
 
@@ -1293,28 +990,6 @@ export type VerifiedSignedMessage = SignedMessage &
 
 SignedMessage whose sender attribution and signature are verified.
 
-### [`VersionMismatchError`](./identity/signing/http-errors.ts#L31)
-
-_Class_
-
-```ts
-export class VersionMismatchError extends Schema.TaggedError<VersionMismatchError>()(
-  "VersionMismatchError",
-  {
-    supported: Schema.optionalWith(Schema.Array(Schema.String), {
-      default: () => LIVE_WIRE_VERSIONS,
-    }),
-  },
-) {
-  /** A mismatch response advertises at least one calendar wire version. */
-  static readonly supportedSchema = Schema.NonEmptyArray(
-    Schema.String.pipe(Schema.pattern(WIRE_VERSION_PATTERN)),
-  );
-}
-```
-
-The request carries a different wire compatibility value.
-
 ### [`WIRE_VERSION`](./identity/wire-version.ts#L13)
 
 _Variable_
@@ -1326,38 +1001,6 @@ export const WIRE_VERSION = "2026.1021.3"
 Every newly signed artifact carries this wire value. Live admission accepts
 no other value, so a peer that emits a different one fails with
 `version-mismatch`; package publication never determines wire compatibility.
-
-### [`WireVersion`](./identity/wire-version.ts#L51)
-
-_TypeAlias_
-
-```ts
-export type WireVersion = (typeof HISTORY_WIRE_VERSIONS)[number];
-```
-
-A version represented by retained protocol artifacts.
-
-### [`wireVersions`](./identity/wire-version.ts#L108)
-
-_Variable_
-
-```ts
-export const wireVersions = Object.freeze({
-  emitted: WireVersions.emitted,
-  history: WireVersions.history,
-  live: WireVersions.live,
-  liveSet: Effect.serviceOption(WireVersions).pipe(
-    Effect.map((configuration) =>
-      Option.match(configuration, {
-        onNone: () => LIVE_WIRE_VERSIONS,
-        onSome: (sets) => sets.live,
-      }),
-    ),
-  ),
-})
-```
-
-Read-only compatibility operations expose no injectable context tag.
 
 ## Package subpaths
 
@@ -1535,6 +1178,41 @@ export class MiddlewareError extends Data.TaggedError("MiddlewareError")<{
 
 Operational failures carry closed reasons, never arbitrary exception text.
 
+#### [`Registry`](./identity/registry/index.ts#L14)
+
+_Class_
+
+```ts
+export class Registry extends Context.Tag("@moltzap/client/Registry")<
+  Registry,
+  RegistryClientService
+>() {
+  static readonly register = Effect.serviceFunctionEffect(
+    Registry,
+    (service) => service.register,
+  );
+
+  static readonly lookup = Effect.serviceFunctionEffect(
+    Registry,
+    (service) => service.lookup,
+  );
+
+  static readonly list = Effect.serviceFunctionEffect(
+    Registry,
+    (service) => service.list,
+  );
+
+  static readonly layer = (input: {
+    readonly origin: HttpOrigin;
+    readonly registrySignerPublicKey: Ed25519PublicKey;
+    readonly requestTimeout: Duration.Duration;
+  }): Layer.Layer<Registry, never, HttpClient.HttpClient> =>
+    Layer.effect(Registry, makeRegistryService(input));
+}
+```
+
+Bootstrap registration and immutable identity resolution.
+
 #### [`RegistryConnectionError`](./identity/registry/contract.ts#L28)
 
 _Class_
@@ -1570,6 +1248,40 @@ export class RegistryRequestTimeoutError extends Data.TaggedError(
 ```
 
 The configured complete Registry call deadline expired.
+
+#### [`Router`](./communication/router/api/client.ts#L52)
+
+_Class_
+
+```ts
+export class Router extends Context.Tag("@moltzap/client/Router")<
+  Router,
+  RouterClientService
+>() {
+  static readonly send: (input: {
+    readonly request: RouterSendRequest;
+    readonly callerAgentId: AgentId;
+    readonly signingAuthority: AgentSigningAuthority;
+  }) => Effect.Effect<RouterSendResult, RouterClientError, Router> =
+    Effect.serviceFunctionEffect(Router, (service) => service.send);
+
+  static readonly poll: (input: {
+    readonly request: RouterPollRequest;
+    readonly callerAgentId: AgentId;
+    readonly signingAuthority: AgentSigningAuthority;
+  }) => Effect.Effect<RouterPollResult, RouterClientError, Router> =
+    Effect.serviceFunctionEffect(Router, (service) => service.poll);
+
+  static readonly layer = (input: {
+    readonly origin: HttpOrigin;
+    readonly sendTimeout: Duration.Duration;
+    readonly pollTimeout: Duration.Duration;
+  }): Layer.Layer<Router, never, HttpClient.HttpClient> =>
+    Layer.effect(Router, makeRouterClient(input));
+}
+```
+
+Opaque message acceptance and endpoint-wide bounded polling.
 
 #### [`RouterConnectionError`](./communication/router/api/contract.ts#L225)
 
@@ -1912,16 +1624,6 @@ export type PollCursor = typeof PollCursor.Type;
 
 Validated opaque Router poll continuation.
 
-#### [`Registry (type)`](./identity/registry/capability.ts#L10)
-
-_TypeAlias_
-
-```ts
-export type Registry = RegistryTag;
-```
-
-Immutable resolution retains the same Effect requirement as internal Registry calls.
-
 #### [`RegistryListRequest (type)`](./identity/registry/contract.ts#L90)
 
 _TypeAlias_
@@ -1991,16 +1693,6 @@ export type RegistryRegisterResult =
 ```
 
 Closed domain outcome from one bootstrap registration attempt.
-
-#### [`Router (type)`](./communication/router/api/capability.ts#L8)
-
-_TypeAlias_
-
-```ts
-export type Router = RouterTag;
-```
-
-Send and poll retain the internal Router's exact Effect requirement.
 
 #### [`RouterInstanceId (type)`](./communication/router/api/contract.ts#L80)
 
@@ -2381,28 +2073,6 @@ export const PollCursor = Schema.String.pipe(
 
 Opaque, authenticated continuation for one caller and Router instance.
 
-#### [`Registry (value)`](./identity/registry/capability.ts#L26)
-
-_Variable_
-
-```ts
-export const Registry: RegistryCapability = Object.assign(
-  Context.GenericTag<Registry, RegistryClientService>(RegistryTag.key),
-  {
-    register: RegistryTag.register,
-    lookup: RegistryTag.lookup,
-    list: RegistryTag.list,
-    layer: (input: {
-      readonly origin: HttpOrigin;
-      readonly registrySignerPublicKey: Ed25519PublicKey;
-      readonly requestTimeout: Duration.Duration;
-    }) => RegistryTag.layer({ ...input, origin: new URL(input.origin.href) }),
-  },
-)
-```
-
-Trusted compositions install one Registry capability using only a serialized origin.
-
 #### [`RegistryListRequest (value)`](./identity/registry/contract.ts#L82)
 
 _Variable_
@@ -2461,29 +2131,6 @@ export const RegistryRegisterRequest = exactStruct({
 ```
 
 Closed Registry bootstrap registration request.
-
-#### [`Router (value)`](./communication/router/api/capability.ts#L23)
-
-_Variable_
-
-```ts
-export const Router: RouterCapability = Object.assign(
-  Context.GenericTag<Router, Context.Tag.Service<typeof RouterTag>>(
-    RouterTag.key,
-  ),
-  {
-    send: RouterTag.send,
-    poll: RouterTag.poll,
-    layer: (input: {
-      readonly origin: HttpOrigin;
-      readonly sendTimeout: Duration.Duration;
-      readonly pollTimeout: Duration.Duration;
-    }) => RouterTag.layer({ ...input, origin: new URL(input.origin.href) }),
-  },
-)
-```
-
-Trusted compositions install the same Router tag using a serialized origin.
 
 #### [`RouterInstanceId (value)`](./communication/router/api/contract.ts#L74)
 
@@ -2635,7 +2282,6 @@ owns timeouts; the Effect is interruptible through response-body consumption.
 - `communication/records/schemas.ts`
 - `communication/records/values.ts`
 - `communication/records/verification.ts`
-- `communication/router/api/capability.ts`
 - `communication/router/api/client.ts`
 - `communication/router/api/contract.ts`
 - `communication/router/api/index.ts`
@@ -2670,7 +2316,6 @@ owns timeouts; the Effect is interruptible through response-body consumption.
 - `daemon/credentials.ts`
 - `daemon/errors.ts`
 - `daemon/index.ts`
-- `daemon/internal.ts`
 - `daemon/launcher/configuration.ts`
 - `daemon/launcher/errors.ts`
 - `daemon/launcher/index.ts`
@@ -2757,10 +2402,10 @@ owns timeouts; the Effect is interruptible through response-body consumption.
 - `harness/protocol/schemas.ts`
 - `harness/README.md`
 - `identity/agents.ts`
+- `identity/bounded-cache.ts`
 - `identity/cards.ts`
 - `identity/index.ts`
 - `identity/keys.ts`
-- `identity/registry/capability.ts`
 - `identity/registry/client.ts`
 - `identity/registry/contract.ts`
 - `identity/registry/index.ts`
@@ -2770,6 +2415,7 @@ owns timeouts; the Effect is interruptible through response-body consumption.
 - `identity/signing/registered/index.ts`
 - `identity/wire-version.ts`
 - `index.ts`
+- `internal.ts`
 - `README.md`
 - `release/index.ts`
 - `release/README.md`

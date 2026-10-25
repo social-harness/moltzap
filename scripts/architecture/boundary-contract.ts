@@ -111,8 +111,8 @@ export const FINAL_PACKAGES: Readonly<Record<PackageDir, PackageContract>> = {
       ".": ROOT_EXPORT,
       "./internal": {
         internalOnly: true,
-        types: "./dist/daemon/internal.d.ts",
-        import: "./dist/daemon/internal.js",
+        types: "./dist/internal.d.ts",
+        import: "./dist/internal.js",
       },
       "./test": {
         testOnly: true,

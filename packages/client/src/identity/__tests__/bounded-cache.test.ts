@@ -3,7 +3,7 @@
 import { Option } from "effect";
 import * as fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { makeBoundedCache } from "../keys.js";
+import { makeBoundedCache } from "../bounded-cache.js";
 
 describe("makeBoundedCache eviction", () => {
   it("drops the least recently used entry once past its capacity", () => {

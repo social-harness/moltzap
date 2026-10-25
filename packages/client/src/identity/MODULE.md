@@ -8,7 +8,7 @@ Identity request authentication and immutable Registry resolution for communicat
 
 ## Public surface
 
-### [`AgentCard`](./cards.ts#L97)
+### [`AgentCard`](./cards.ts#L99)
 
 _Interface_
 
@@ -24,7 +24,7 @@ export interface AgentCard {
 
 Immutable public identity fields carried by an AgentCard.
 
-### [`AgentCard`](./cards.ts#L325)
+### [`AgentCard`](./cards.ts#L327)
 
 _Variable_
 
@@ -40,42 +40,6 @@ export const AgentCard = Object.assign(agentCardSchema, {
 ```
 
 Verifies immutable Registry attestation without exposing JOSE mechanics.
-
-### [`AgentCardDigest`](./cards.ts#L63)
-
-_TypeAlias_
-
-```ts
-export type AgentCardDigest = typeof AgentCardDigest.Type;
-```
-
-Validated nominal value decoded by AgentCardDigest.
-
-### [`AgentCardDigest`](./cards.ts#L56)
-
-_Variable_
-
-```ts
-export const AgentCardDigest = canonicalIdentifier(
-  "AgentCardDigest",
-  "acd_",
-  DIGEST_BYTE_LENGTH,
-)
-```
-
-Digest binding a message to one complete immutable AgentCard.
-
-### [`AgentCardVerificationError`](./cards.ts#L247)
-
-_Class_
-
-```ts
-export class AgentCardVerificationError extends Data.TaggedError(
-  "AgentCardVerificationError",
-) {}
-```
-
-A parsed AgentCard does not verify against the pinned Registry signer.
 
 ### [`AgentId`](./agents.ts#L19)
 
@@ -130,7 +94,7 @@ export const AgentName = Schema.String.pipe(
 
 Immutable Registry-wide human-facing agent handle.
 
-### [`AgentSigningAuthority`](./keys.ts#L473)
+### [`AgentSigningAuthority`](./keys.ts#L424)
 
 _Interface_
 
@@ -143,7 +107,7 @@ export interface AgentSigningAuthority {
 Opaque authority over one imported Ed25519 private key and the X25519
 opening key derived from it.
 
-### [`AgentSigningAuthority`](./keys.ts#L686)
+### [`AgentSigningAuthority`](./keys.ts#L637)
 
 _Variable_
 
@@ -157,7 +121,7 @@ export const AgentSigningAuthority = Object.freeze({
 Loads and identifies one Ed25519 signing authority without exposing its
 private keys or a generic signing or decryption operation.
 
-### [`Ed25519PublicKey`](./keys.ts#L301)
+### [`Ed25519PublicKey`](./keys.ts#L252)
 
 _TypeAlias_
 
@@ -167,7 +131,7 @@ export type Ed25519PublicKey = typeof Ed25519PublicKey.Type;
 
 Validated immutable Ed25519 public JWK.
 
-### [`Ed25519PublicKey`](./keys.ts#L270)
+### [`Ed25519PublicKey`](./keys.ts#L221)
 
 _Variable_
 
@@ -204,33 +168,6 @@ export const Ed25519PublicKey = Schema.transform(
 
 Exact immutable Ed25519 public JWK.
 
-### [`HISTORY_WIRE_VERSIONS`](./wire-version.ts#L45)
-
-_Variable_
-
-```ts
-export const HISTORY_WIRE_VERSIONS = [
-  ...LIVE_WIRE_VERSIONS,
-  ...RETIRED_WIRE_VERSIONS,
-] as const
-```
-
-Retained artifacts remain readable until the next protocol reset.
-
-### [`InvalidAgentPrivateKeyError`](./keys.ts#L482)
-
-_Class_
-
-```ts
-export class InvalidAgentPrivateKeyError extends Data.TaggedError(
-  "InvalidAgentPrivateKeyError",
-) {}
-```
-
-The supplied private-key material cannot act as an Ed25519 signer or yield
-its X25519 opening key. The public contract represents every such cause with
-this one empty error.
-
 ### [`LIVE_WIRE_VERSIONS`](./wire-version.ts#L39)
 
 _Variable_
@@ -266,7 +203,7 @@ export const PrincipalId = canonicalIdentifier(
 
 Opaque identity of the principal represented by an agent.
 
-### [`VerifiedAgentCard`](./cards.ts#L232)
+### [`VerifiedAgentCard`](./cards.ts#L234)
 
 _TypeAlias_
 
@@ -287,38 +224,6 @@ export const WIRE_VERSION = "2026.1021.3"
 Every newly signed artifact carries this wire value. Live admission accepts
 no other value, so a peer that emits a different one fails with
 `version-mismatch`; package publication never determines wire compatibility.
-
-### [`WireVersion`](./wire-version.ts#L51)
-
-_TypeAlias_
-
-```ts
-export type WireVersion = (typeof HISTORY_WIRE_VERSIONS)[number];
-```
-
-A version represented by retained protocol artifacts.
-
-### [`wireVersions`](./wire-version.ts#L108)
-
-_Variable_
-
-```ts
-export const wireVersions = Object.freeze({
-  emitted: WireVersions.emitted,
-  history: WireVersions.history,
-  live: WireVersions.live,
-  liveSet: Effect.serviceOption(WireVersions).pipe(
-    Effect.map((configuration) =>
-      Option.match(configuration, {
-        onNone: () => LIVE_WIRE_VERSIONS,
-        onSome: (sets) => sets.live,
-      }),
-    ),
-  ),
-})
-```
-
-Read-only compatibility operations expose no injectable context tag.
 
 ## Files
 

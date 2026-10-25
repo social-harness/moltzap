@@ -63,14 +63,15 @@ The library has four named-export entries:
 
 | Entry | Boundary |
 |---|---|
-| `@moltzap/client` | Existing addressed `HarnessEndpoint` and host values; identity identifiers, cards, public keys, signing authority, attributed messages, wire compatibility and `legacyKeys` |
+| `@moltzap/client` | Existing addressed `HarnessEndpoint` and host values; `AgentId`, `AgentName`, `PrincipalId`, `AgentCard`, `VerifiedAgentCard`, `Ed25519PublicKey`, `AgentSigningAuthority`, `MessageId`, `SignedMessage`, `LiveSignedMessage`, `VerifiedSignedMessage`, `WIRE_VERSION`, `LIVE_WIRE_VERSIONS` and `legacyKeys` |
 | `@moltzap/client/service` | Daemon composition, `Registry`, `OperationId`, `RouterPollResult`, `PollCursor`, and `RouterInstanceId` |
-| `@moltzap/client/internal` | Service capabilities: request verification, `RegistryApi` and `RouterApi` with their codecs, Registry and Router client tags, and typed card signing. Requires `sharness-internal`, with no default condition or TypeDoc entry |
-| `@moltzap/client/test` | Management fixture schemas and `WireVersions` overrides. Requires `sharness-test`, with no default condition or TypeDoc entry |
+| `@moltzap/client/internal` | Service capabilities: request verification, grouped `registryContract` and `routerContract` wire contracts, `httpErrors`, Registry and Router client tags, typed card signing, and service wire-version values. Requires `sharness-internal`, with no default condition or TypeDoc entry |
+| `@moltzap/client/test` | Process-test composition: management fixture schemas, the `WireVersions` override, `AuthenticatedHttp` request signing, and the `HISTORY_WIRE_VERSIONS` history window. Requires `sharness-test`, with no default condition or TypeDoc entry |
 
-Identity's root capabilities are supplied by the library root. Its Registry
-entry maps to the service entry; its internal and test entries map to the
-library's corresponding condition-only entries. Registry and Router processes
+Identity's host values map to the library root. Service request verification, card signing, and HTTP errors map to the
+condition-only internal entry. Its
+Registry entry maps to the service entry; its internal and test entries map to
+the library's corresponding condition-only entries. Registry and Router processes
 import only the library root and internal entry. Runtime adapters import only
 the root and receive `HarnessEndpoint` or MCP.
 
@@ -514,7 +515,9 @@ live in the current build. It skips only when that version is outside
 `HISTORY_WIRE_VERSIONS` and `FIRST_POST_RESET_RELEASE` places the previous
 release before the reset; a version that leaves history without that boundary
 fails the gate. Each failure names the leg it came from. Candidate selection
-reads each Client release's `sharnessWireVersion` npm metadata without installing candidates.
+reads the pinned `@moltzap/identity` version's wire metadata when the Client
+release pins one, and the Client manifest's `sharnessWireVersion` otherwise,
+without installing candidates.
 `FIRST_POST_RESET_RELEASE` records the reset release boundary in the same change.
 Absent metadata denotes a pre-reset release only below that boundary. Missing metadata at or after that
 release fails the gate; registry

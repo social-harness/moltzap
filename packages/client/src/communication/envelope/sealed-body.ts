@@ -9,8 +9,8 @@ import type { VerifiedAgentCard } from "../../identity/cards.js";
 import {
   decodeCanonicalJson,
   encodeCanonicalJson,
-  exactStruct,
 } from "../../encoding/canonical-json.js";
+import { exactStruct } from "../../encoding/exact.js";
 import {
   compareAgentIds,
   decodeCanonicalBase64Url,

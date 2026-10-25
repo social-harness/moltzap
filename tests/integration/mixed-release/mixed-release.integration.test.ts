@@ -9,10 +9,10 @@ import { NodeContext } from "@effect/platform-node";
 import {
   acquireHarnessEndpoint,
   AgentAddress,
-  HISTORY_WIRE_VERSIONS,
   LIVE_WIRE_VERSIONS,
   WIRE_VERSION,
 } from "@moltzap/client";
+import { HISTORY_WIRE_VERSIONS } from "@moltzap/client/test";
 import { Data, Effect, Fiber, Option, Schedule, Schema, Stream } from "effect";
 import { join, resolve } from "node:path";
 import { expect, it, type TestContext } from "vitest";

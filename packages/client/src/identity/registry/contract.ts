@@ -6,8 +6,8 @@ import type { AgentSigningError } from "../signing/http-signature.js";
 import {
   decodeCanonicalJson,
   encodeCanonicalJson,
-  exactStruct,
 } from "../../encoding/canonical-json.js";
+import { exactStruct } from "../../encoding/exact.js";
 import { canonicalIdentifier } from "../../encoding/identifier.js";
 import { AgentId, AgentName, PrincipalId } from "../agents.js";
 import {
@@ -150,8 +150,8 @@ export interface RegistryClientService {
 }
 
 /** Package-private validated registration outcome. */
-// eslint-disable-next-line agent-code-guard/no-exported-brand-constructor -- The private RPC descriptor consumes this verified in-process Schema; the package root does not export it.
-export const registerResultSchema = Schema.Union(
+
+const registerResultSchema = Schema.Union(
   exactStruct({
     kind: Schema.Literal("registered"),
     agentCard: verifiedAgentCardSchema,
@@ -162,8 +162,8 @@ export const registerResultSchema = Schema.Union(
 );
 
 /** Package-private validated lookup outcome. */
-// eslint-disable-next-line agent-code-guard/no-exported-brand-constructor -- The private RPC descriptor consumes this verified in-process Schema; the package root does not export it.
-export const lookupResultSchema = Schema.Union(
+
+const lookupResultSchema = Schema.Union(
   exactStruct({
     kind: Schema.Literal("found"),
     agentCard: verifiedAgentCardSchema,
@@ -172,7 +172,7 @@ export const lookupResultSchema = Schema.Union(
 );
 
 /** Package-private validated list outcome. */
-export const listResultSchema = exactStruct({
+const listResultSchema = exactStruct({
   kind: Schema.Literal("page"),
   agentCards: Schema.Array(verifiedAgentCardSchema),
   hasMore: Schema.Boolean,
@@ -208,7 +208,7 @@ const listResponseSchema = exactStruct({
 });
 
 /** Exact bootstrap registration HTTP body. */
-export const registrationBody = exactStruct({
+const registrationBody = exactStruct({
   request: RegistryRegisterRequest,
 });
 
@@ -219,17 +219,17 @@ export const LOOKUP_PATH = "/v1/identities:lookup";
 /** Exact public list request path. */
 export const LIST_PATH = "/v1/identities:list";
 /** Exact Registry readiness path. */
-export const HEALTH_PATH = "/healthz";
+const HEALTH_PATH = "/healthz";
 
 /** Effect Router patterns escape the literal colon in Registry paths. */
-export const REGISTER_ROUTE = "/v1/identities::register";
+const REGISTER_ROUTE = "/v1/identities::register";
 /** Effect Router pattern for the literal lookup path. */
-export const LOOKUP_ROUTE = "/v1/identities::lookup";
+const LOOKUP_ROUTE = "/v1/identities::lookup";
 /** Effect Router pattern for the literal list path. */
-export const LIST_ROUTE = "/v1/identities::list";
+const LIST_ROUTE = "/v1/identities::list";
 
 /** Exact paths used to classify method mismatches at the fallback route. */
-export const KNOWN_PATHS = new Set([
+const KNOWN_PATHS = new Set([
   REGISTER_PATH,
   LOOKUP_PATH,
   LIST_PATH,
@@ -245,7 +245,7 @@ const byteLength = (value: unknown): number =>
   new TextEncoder().encode(JSON.stringify(value)).byteLength;
 
 /** Derived exact maximum bootstrap registration body size. */
-export const REGISTER_BODY_CAP = byteLength({
+const REGISTER_BODY_CAP = byteLength({
   request: {
     operationId: maximumOperationId,
     principalId: maximumPrincipalId,
@@ -259,13 +259,13 @@ export const REGISTER_BODY_CAP = byteLength({
 });
 
 /** Derived exact maximum public lookup body size. */
-export const LOOKUP_BODY_CAP = Math.max(
+const LOOKUP_BODY_CAP = Math.max(
   byteLength({ agentId: maximumIdentifier }),
   byteLength({ agentName: maximumName }),
 );
 
 /** Derived exact maximum public list body size. */
-export const LIST_BODY_CAP = byteLength({
+const LIST_BODY_CAP = byteLength({
   afterAgentId: maximumIdentifier,
 });
 
@@ -289,7 +289,7 @@ export const registryListCodec = {
 };
 
 /** Stored cards retain their complete canonical signed representation. */
-export const registryAgentCardCodec = canonicalCodec(AgentCard);
+const registryAgentCardCodec = canonicalCodec(AgentCard);
 
 function canonicalCodec<A, I>(schema: Schema.Schema<A, I>) {
   return {
@@ -298,3 +298,30 @@ function canonicalCodec<A, I>(schema: Schema.Schema<A, I>) {
     decode: (bytes: Uint8Array) => decodeCanonicalJson(schema, bytes),
   };
 }
+
+/** Registry HTTP adapters and persistence share these exact routes, bounds, request and result schemas, and canonical codecs. */
+export const registryContract = Object.freeze({
+  HEALTH_PATH,
+  KNOWN_PATHS,
+  LIST_BODY_CAP,
+  LIST_PATH,
+  LIST_ROUTE,
+  listResultSchema,
+  LOOKUP_BODY_CAP,
+  LOOKUP_PATH,
+  LOOKUP_ROUTE,
+  lookupResultSchema,
+  OperationId,
+  REGISTER_BODY_CAP,
+  REGISTER_PATH,
+  REGISTER_ROUTE,
+  registerResultSchema,
+  registrationBody,
+  registryAgentCardCodec,
+  registryListCodec,
+  RegistryListRequest,
+  registryLookupCodec,
+  RegistryLookupRequest,
+  registryRegisterCodec,
+  RegistryRegisterRequest,
+});

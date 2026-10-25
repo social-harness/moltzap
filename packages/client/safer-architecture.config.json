@@ -25,63 +25,71 @@
     },
     {
       "file": "identity/agents.ts",
-      "reason": "Named domain capability boundary"
+      "reason": "Canonical agent, principal and immutable name schemas"
     },
     {
       "file": "identity/keys.ts",
-      "reason": "Named domain capability boundary"
+      "reason": "Exact Ed25519 public keys and opaque signing authority"
     },
     {
       "file": "identity/cards.ts",
-      "reason": "Named domain capability boundary"
+      "reason": "Immutable AgentCard representation, digest and pinned verification"
     },
     {
       "file": "identity/wire-version.ts",
-      "reason": "Named domain capability boundary"
+      "reason": "Wire emission and live or retained compatibility policy"
     },
     {
       "file": "identity/signing/registered/index.ts",
-      "reason": "Named domain capability boundary"
+      "reason": "Registered-request authentication capability with opaque verification proofs"
+    },
+    {
+      "file": "identity/index.ts",
+      "reason": "Identity request authentication and immutable Registry resolution"
     },
     {
       "file": "identity/signing/http-signature.ts",
-      "reason": "Named domain capability boundary"
+      "reason": "Bootstrap and registered HTTP signing and verification boundary"
     },
     {
       "file": "identity/signing/http-errors.ts",
-      "reason": "Named domain capability boundary"
+      "reason": "Closed authenticated HTTP framing and admission errors"
     },
     {
       "file": "identity/registry/index.ts",
-      "reason": "Named domain capability boundary"
+      "reason": "Registry class tag and HTTP client composition for immutable resolution"
     },
     {
-      "file": "identity/registry/capability.ts",
-      "reason": "Named domain capability boundary"
+      "file": "identity/bounded-cache.ts",
+      "reason": "Bounded immutable-key caches shared by identity implementations"
     },
     {
       "file": "identity/registry/contract.ts",
-      "reason": "Named domain capability boundary"
+      "reason": "Exact Registry routes, operation grammar and canonical wire codecs"
     },
     {
       "file": "communication/envelope/signed-message.ts",
-      "reason": "Named domain capability boundary"
+      "reason": "Opaque attributed message representation, signing and verification"
     },
     {
       "file": "communication/envelope/sealed-body.ts",
-      "reason": "Named domain capability boundary"
+      "reason": "End-to-end sealing and opening of attributed message bodies"
+    },
+    {
+      "file": "communication/envelope/wire-profile.ts",
+      "reason": "Attributed envelope representation parameters read by host-loaded SignedMessage schemas"
+    },
+    {
+      "file": "communication/router/api/index.ts",
+      "reason": "Opaque Router operation schemas and client capability entry"
     },
     {
       "file": "communication/router/api/contract.ts",
-      "reason": "Named domain capability boundary"
+      "reason": "Exact Router routes, operation grammar, bounds and wire codecs"
     },
     {
       "file": "communication/router/api/client.ts",
-      "reason": "Named domain capability boundary"
-    },
-    {
-      "file": "communication/router/api/capability.ts",
-      "reason": "Named domain capability boundary"
+      "reason": "Router class tag and authenticated send or poll HTTP client"
     },
     {
       "file": "communication/records/values.ts",
@@ -132,6 +140,10 @@
       "reason": "History export values hosts decode without loading inbox state or SQLite"
     },
     {
+      "file": "internal.ts",
+      "reason": "Condition-only named service verification, signing and wire contracts"
+    },
+    {
       "file": "communication/records/schemas.ts",
       "reason": "Closed Client wire grammar shared by encoding and verification within the records domain"
     },
@@ -146,8 +158,8 @@
   ],
   "compositionRoots": [
     {
-      "path": "src/daemon/internal.ts",
-      "reason": "Condition-only service capabilities"
+      "path": "src/internal.ts",
+      "reason": "Condition-only identity verification, card signing, Registry and Router service contracts"
     },
     {
       "path": "src/test.ts",
@@ -198,7 +210,7 @@
         "src/identity/signing/http-signature.ts",
         "src/identity/signing/http-errors.ts",
         "src/identity/registry/index.ts",
-        "src/identity/registry/capability.ts",
+        "src/identity/bounded-cache.ts",
         "src/identity/registry/contract.ts"
       ],
       "reason": "Identity, request authentication and immutable Registry resolution"
@@ -210,7 +222,8 @@
       ],
       "entrypoints": [
         "src/communication/envelope/signed-message.ts",
-        "src/communication/envelope/sealed-body.ts"
+        "src/communication/envelope/sealed-body.ts",
+        "src/communication/envelope/wire-profile.ts"
       ],
       "reason": "Opaque attributed and sealed message bodies below endpoint protocols"
     },
@@ -252,8 +265,7 @@
       "entrypoints": [
         "src/communication/router/api/index.ts",
         "src/communication/router/api/contract.ts",
-        "src/communication/router/api/client.ts",
-        "src/communication/router/api/capability.ts"
+        "src/communication/router/api/client.ts"
       ],
       "reason": "Opaque Router values and HTTP client below endpoint protocol records"
     },

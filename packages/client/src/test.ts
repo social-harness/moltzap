@@ -1,4 +1,6 @@
-/** @file Test-only wire policy overrides. */
+/**
+ * @file Condition-only process-test composition surface: management fixture schemas, the WireVersions override, and the request-signing capability and history window process tests compose with.
+ */
 
 /** Injectable release policy is available only with the test condition. */
 export { WireVersions } from "./identity/wire-version.js";
@@ -11,3 +13,8 @@ export {
   managementSearchConversationsResultSchema,
   managementStatusResultSchema,
 } from "./harness/protocol/index.js";
+
+/** Process tests sign registered requests through the production capability. */
+export { AuthenticatedHttp } from "./identity/signing/registered/index.js";
+/** Mixed-release process tests compose the installed history compatibility window. */
+export { HISTORY_WIRE_VERSIONS } from "./identity/wire-version.js";

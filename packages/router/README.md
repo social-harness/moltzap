@@ -20,6 +20,12 @@ The package stays private and depends only on `@moltzap/client`.
 | `@moltzap/router/server` | Private in-memory Router process composition |
 | `@moltzap/router/test` | Explicit wire-version startup; `sharness-test` condition only |
 
+Direct composition of `@moltzap/router` or `@moltzap/router/server` needs
+`--conditions=sharness-internal`. The executable installs scoped resolution
+before loading the server. `@moltzap/router/test` exports `startRouter` under
+`sharness-test`; its hook admits internal resolution only for Router `dist/`
+and `bin/` parents, leaving external callers and nested dependencies unchanged.
+
 ## Run the Router
 
 `sharness-router` reads its configuration from the environment and serves HTTP

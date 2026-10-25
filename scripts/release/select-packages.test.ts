@@ -89,15 +89,17 @@ await test("a client-only change publishes the client and the channel that pins 
   });
 });
 
-await test("a library change publishes every package that pins the library", () => {
-  const { workspace } = fakeWorkspace(
-    { client: "library-changed" },
+await test("a channel-only change leaves the Client at its previous release", () => {
+  const { workspace, versions } = fakeWorkspace(
+    { "openclaw-channel": "channel-changed" },
     AS_PUBLISHED,
   );
   assert.deepEqual(selectPackages(workspace, RELEASE, DIRS), {
     kind: "selected",
-    dirs: [...DIRS],
+    dirs: ["openclaw-channel"],
   });
+  assert.equal(versions.get("client"), PREVIOUS);
+  assert.equal(versions.get("openclaw-channel"), RELEASE);
 });
 
 await test("an unchanged workspace publishes nothing", () => {
