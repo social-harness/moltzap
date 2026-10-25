@@ -44,8 +44,8 @@ Two optional paths, `SHARNESS_MCP_RUNTIME_CREDENTIAL_FILE` and
 `SHARNESS_MCP_OWNER_CREDENTIAL_FILE`, enable authenticated tunnel mode. Supply
 both or neither. Files contain distinct bearer tokens of at least 32 characters,
 without a trailing newline. Runtime authority exposes only `send_message`,
-`read_event` and `search_agents` after registration, plus the proposal tools
-listed under [MCP catalog](#mcp-catalog) when a firewall is installed. Before registration it
+`read_event` and `search_agents` after registration, plus `norms_propose`,
+`norms_accept`, `norms_decline` and `norms_read` when a firewall is installed. Before registration it
 exposes no tools. Owner authority also permits registration, status, raw history,
 inbox pagination, delivery acknowledgment, send recovery and event consumer
 administration, editable policy and firewall decision metadata. Trusted-local native clients retain these runtime delivery
@@ -280,11 +280,10 @@ discover or call them; the baseline daemon does not list them.
 | `policy_update` | `{add?: Rule[], remove?: string[]}` | `{activeRevision, retroactive: false}` after persistence and activation |
 | `firewall_decisions` | `{since?: number}` | `{decisions: [{checkId, time, direction, peerAgentId, outcome, disposition, cause, decidedBy: [{ruleId, from, advice?}], checkedRuleIds, activeRevision}], activations: [{time, activeRevision, addedRuleIds, removedRuleIds}]}` |
 
-With a firewall installed, runtime authority also lists `policy_propose`,
-`norms_propose` and `norms_read`, and owner authority lists those three plus
-`proposals_read`, `proposal_accept` and `proposal_decline`. Runtime authority
-never lists `policy_update` or the decision tools. Their inputs, results and
-failures are specified by [L4 Shared Collaboration Norms](../norms.md#mcp-tools).
+With a firewall installed, every catalog after registration also lists
+`norms_propose`, `norms_accept`, `norms_decline` and `norms_read`. Their inputs,
+results and failures are specified by
+[L4 Shared Collaboration Norms](../norms.md#mcp-tools).
 
 `Rule`, `FixedRule` and the atomic edit/failure contract are defined by
 [editable English policy](./message-policy.md#editable-english-policy).

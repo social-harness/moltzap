@@ -2,227 +2,200 @@
 
 Status: **proposed**
 
-A norm is a firewall policy that the members of one conversation agree to
-apply together. Each member's own personal firewall (L3) applies the norms in
-force for a conversation to that member's incoming and outgoing messages in
-it, after the member's owner policies.
+A shared norm is a firewall policy that the members of one conversation agree
+to apply together. Each member's own personal firewall (L3) applies the shared
+norms in force for a conversation to that member's incoming and outgoing
+messages in it, after the member's owner policies. The GENESIS and POST action
+rules of the [fixed post protocol](./harness/tasks.md) remain the norms that
+decide action validity; shared norms compose over certified records without
+changing them.
 
 ## Boundary
 
-- Agreement is in-band. A member proposes norms in the conversation they
+- Agreement is in-band. A member proposes shared norms in the conversation they
   govern, at any point in it, and the members answer there. A later completed
   agreement replaces the earlier one.
 - L4 relies on three L2 guarantees: fixed membership, one certified order of
   messages, and durable certified history. It uses no other L2 mechanism.
-  Agreement messages are ordinary application messages; their payload is
-  opaque to the Router and to the post protocol.
-- A member's firewall decides under its owner's policies, or the owner
-  decides. A runtime proposes norms and never accepts or declines them.
-- A norm grants no privilege. An institution proposes and answers norms like
-  any other member ([L5 Social Institutions](./enforcement.md)).
-- The firewall checks messages: the request a member receives and the reply
-  it sends. A runtime's tool calls between the two are not checked. Messages
-  are what every host carries, so they are what norms enforce.
+- Whether a member agrees is decided by its firewall, under its owner's
+  policies, or by its owner. The runtime sends the answer the firewall or owner
+  gave. Client never authors an agreement message on the runtime's behalf.
+- The owner's approval reaches the runtime the way every other approval does:
+  the firewall's guidance tells the runtime to ask its owner, and the runtime
+  asks through its host, for example with `ask_user`. The firewall cannot
+  verify that the runtime asked.
+- The firewall checks the messages a member receives and sends, not the tool
+  calls in between. Messages are what every host carries, so they are what
+  shared norms enforce.
+- A shared norm grants no infrastructure privilege. Roles carry only the
+  authority every member agreed to, and an institution proposes and answers
+  like any other member ([L5 Social Institutions](./enforcement.md)).
 
 ## Norm forms
 
-A norm is either an English behavior or a built-in code middleware.
+A shared norm is either an English behavior or a built-in code middleware.
 
 ### English norms
 
 An English norm is an [agentbehavior.dev](https://agentbehavior.dev)
-`BEHAVIOR.md` file: YAML frontmatter followed by a free-form English body.
-
-| Field | Required | Meaning |
-| --- | --- | --- |
-| `name` | yes | Lowercase letters, digits and hyphens, at most 64 characters. Unique within one proposal. |
-| `description` | yes | One sentence a member or owner reads before agreeing. |
-| `license` | no | Carried, not interpreted. |
-| `metadata.social-harness.kind` | no | `norm` (default), `autonomy` or `safety`, with the meaning the [editable English policy](./harness/message-policy.md#editable-english-policy) gives a rule kind. |
-| `metadata.social-harness.guidance` | with kind `norm` | The guidance template of a norm rule. |
-| `metadata.social-harness.feedback` | no | `{text, nextAction}` as in `EnglishRule`. |
-
-The body is the rule text. Other frontmatter and other `metadata` keys are
-carried and ignored. A norm is identified by its `name` and the SHA-256 of
-its exact UTF-8 bytes. Files beside `BEHAVIOR.md`, such as `references/`, are
-not part of an agreed norm.
+`BEHAVIOR.md` file. It becomes an English rule exactly as an owner's
+[behavior](./harness/message-policy.md#behaviors) does. A shared norm also
+needs a `description`, the sentence a member or owner reads before agreeing,
+and its `name` is unique within one proposal. Files beside `BEHAVIOR.md`, such
+as `references/`, are not part of an agreed norm.
 
 Scope, duration and conditions belong in the English: "applies until the
 meeting is booked" needs no field.
 
 ### Code norms
 
-A code norm names built-in Client middleware by `use` and exact `revision`,
-the same middleware a [message-policy file](./harness/message-policy.md#message-policy-file)
-selects. A member whose Client has no middleware with that id at that revision
-declines the proposal. The collective norm bundle is the code norm
-`collective-norms`; its `facilitator` comes from the proposal's roles.
+A code norm names built-in Client middleware by `use`, as a
+[message-policy file](./harness/message-policy.md#message-policy-file) does.
+`collective-norms` is the only code norm. It requires the role `facilitator`.
+A middleware the owner's chain already installs runs once.
 
 ### Roles
 
-A proposal binds role names to members: `{"approver": "<AgentId>"}`. Norm
-text refers to the role by name ("the approver confirms each booking"). Every
-role value is a member of the conversation. When a member's firewall checks a
+A proposal binds role names to members: `{"approver": "agent:alice"}` at the
+tool, carried as AgentIds on the wire. Norm text refers to a role by name
+("the approver confirms each booking"). When a member's firewall checks a
 message under the norms, its context states each binding with the member's
 verified name and AgentId.
 
 ## Agreement messages
 
-An agreement message is a multicast to the conversation. Its content is a
-`text` part, which states the step in plain words for any reader, followed by
-one `data` part whose value is an object with the key
-`org.social-harness/norms`:
+An agreement message is a multicast to the conversation. Client certifies its
+`text` part, then the one `data` part every post carries, whose object holds the
+`org.social-harness/collective` operation key and one more key,
+`org.social-harness/norms/v1`:
 
-| `kind` | Value | Sent by |
-| --- | --- | --- |
-| `propose` | `{"kind": "propose", "id", "nonce", "task", "norms", "roles"}` | the proposing member's runtime, through `norms_propose` |
-| `accept` | `{"kind": "accept", "id"}` | a member's Client, when its firewall or owner accepts |
-| `decline` | `{"kind": "decline", "id"}` | a member's Client, when its firewall or owner declines |
+| `kind` | Value |
+| --- | --- |
+| `propose` | `{"kind": "propose", "id", "nonce", "task", "norms", "roles"}` |
+| `accept` | `{"kind": "accept", "id"}` |
+| `decline` | `{"kind": "decline", "id"}` |
 
 - `task` is one line saying what the norms are for.
-- `norms` is a nonempty array of `{"behavior": "<BEHAVIOR.md text>"}` or
-  `{"use": "<middleware id>", "revision": "<hex>"}`.
-- `id` is `nrm_` followed by the base64url SHA-256 of
-  `org.social-harness/norm-proposal`, a NUL, the proposer's `agent:` address,
-  a NUL and `nonce`.
+- `norms` is an array of `{"behavior": "<BEHAVIOR.md text>"}` or
+  `{"use": "collective-norms"}`. An empty array clears the agreement.
+- `nonce` is 32 random bytes in unpadded base64url.
+- `id` is `nrm_` followed by the unpadded base64url SHA-256 of
+  `org.social-harness/norm-proposal`, a NUL, the conversation address, a NUL,
+  the proposer's `agent:` address, a NUL and `nonce`.
+- Client writes the `text` part from the value: who proposes which norms for
+  what task, or who accepts or declines which proposal, followed by a decline's
+  optional reason.
 
-The whole message fits the content limit of one send. A decline may say why
-in its `text` part.
+For agreement, a member's Client ignores:
+- a `propose` whose `id` does not derive as above, whose role names a
+  non-member, or whose norms do not parse;
+- an answer to a proposal not certified earlier in the same conversation;
+- a member's second answer to one proposal.
 
-A member ignores an agreement message that:
-- comes from a non-member;
-- reuses a proposal `id`;
-- answers a proposal not certified earlier in the same conversation; or
-- repeats a member's earlier answer to the same proposal.
-
-A member's first answer to a proposal is final.
+The message is still delivered as an ordinary multicast. A Client released
+before this protocol delivers agreement messages as ordinary multicasts and
+never answers, so a proposal in a conversation that includes one never
+completes.
 
 ## Agreement in force
 
 - The proposer's `propose` counts as its acceptance.
 - A proposal completes when every member's acceptance is certified, and fails
   at the first certified `decline`.
-- The agreement in force is the completed proposal whose last acceptance is
-  latest in certified order. A member that sees no completed proposal has no
-  norms in force.
+- When a proposal completes, every proposal certified before its `propose`
+  fails.
+- The agreement in force is the last completed proposal. A conversation with
+  none has no shared norms.
 - A member applies an agreement to every check it starts after it holds the
   agreement's last certified acceptance. Each member derives the agreement
   from its own certified history, so restart does not change it.
 
 ## Who decides
 
-### The runtime
-
-The runtime's only L4 action is `norms_propose`. The proposer's own firewall
-checks the outgoing proposal like any other outgoing message.
-
 ### The firewall
 
 Each incoming `propose` is checked by the member's firewall like any other
-incoming message. L4 reads that check's outcome, not its admission, so
-guidance mode does not accept on the owner's behalf:
+incoming message, with the proposal's norms, task and roles in the check's
+context. Through the conversation-policies port, L4 adds one built-in English
+rule to every conversation's incoming checks, `norm-proposals` (kind `norm`):
+agreeing to proposed norms needs the owner's approval unless one of the owner's
+policies already agrees to such norms from this proposer. Its guidance tells
+the runtime to ask its owner whether to agree, then accept or decline as the
+owner says. An owner policy that consents, such as "agree to `meeting-booking`
+from agent:campus-scheduling", produces guidance to accept. A blocked proposal
+is withheld from the runtime and never answered.
 
-| Outcome | L4 |
-| --- | --- |
-| allow | sends `accept` |
-| block | sends `decline` |
-| hold, unavailable, or any other | leaves the proposal pending for the owner |
+The proposer's own `propose` is an outgoing message, checked by its own
+firewall under its owner's policies, which may require the owner's approval
+before the runtime proposes.
 
-With no owner policy that addresses a proposal, the outcome is hold: the
-owner sees "X proposes that this conversation follow norms N for task T".
-Standing consent is an owner policy added with `policy_update`, such as
-"accept `meeting-booking` from members of campus-scheduling". A daemon with no
-firewall leaves every proposal pending.
+### The runtime
 
-### The owner
+The runtime proposes with `norms_propose` and answers with `norms_accept` or
+`norms_decline`, as its firewall's guidance or its owner directs. Each is an
+outgoing send its firewall checks like any other. A runtime that a peer has
+fooled can claim an approval it did not get; the firewall cannot tell, as with
+every approval a host relays.
 
-The owner decides what is pending with `proposal_accept` or
-`proposal_decline`, after reading it with `proposals_read`. Only
-[owner authority](./harness/daemon.md#mcp-catalog) lists these tools;
-runtime authority cannot discover or call them. A host reaches the owner in
-the owner's own channel, outside the model, and calls them with the owner
-credential.
-
-The same three tools decide proposed changes to the owner's own policy. A
-runtime proposes one with `policy_propose`, and it waits for the owner
-([editable English policy](./harness/message-policy.md#editable-english-policy)).
+`norms_accept` fails with `not-enforceable` when the member cannot apply the
+norms: it has no firewall, English norms arrive and it has no decision
+provider, or a code norm is unknown to its Client. The runtime then declines.
 
 ## MCP tools
 
-| Tool | Authority | Input | Result |
-| --- | --- | --- | --- |
-| `norms_propose` | runtime and owner | `{to, task, norms, roles?}`; `to` is a conversation address | `{id}` once the proposal is sent |
-| `norms_read` | runtime and owner | `{to}` | `{inForce?: {id, task, norms, roles}, pending: [{id, proposer, task, norms, roles, answers}]}` |
-| `policy_propose` | runtime and owner | `{add?, remove?}`, as for `policy_update` | `{id}` once the change is validated and pending |
-| `proposals_read` | owner | `{since?: number}` | `{proposals: [{id, kind: "norms", proposedAt, to, proposer, task, norms, roles} \| {id, kind: "policy", proposedAt, add, remove}]}`, oldest first |
-| `proposal_accept` | owner | `{id}` | `{id}` once the acceptance is sent or the policy change is active |
-| `proposal_decline` | owner | `{id}` | `{id}` once the decline is sent or the policy change is discarded |
+Runtime and owner authority both list these tools when a firewall is installed.
 
-- `answers` lists each member that has answered, with `accept` or `decline`.
-- `proposals_read` lists only items waiting for this owner, with everything the
-  owner needs to decide:
-  - each norm's full `BEHAVIOR.md` text or code norm id and revision;
-  - the proposer and every role as a verified name and AgentId;
-  - for a policy change, the complete rules to add and the complete current
-    rules to remove.
-- `proposedAt` is Unix milliseconds. With `since`, `proposals_read` returns
-  only items proposed at or after it, so a host polls for what is new.
-- The list survives restart and items do not expire. A host that loses its
-  own record of what it already showed may show an item again; deciding twice
-  is safe.
-- Proposing a change identical to one still pending returns the pending
-  item's id and adds nothing: the same edit for `policy_propose`, or the same
-  task, norms and roles in the same conversation for `norms_propose`.
-- The daemon does not know which turn led a runtime to propose, so a policy
-  item names no conversation or sender.
-- An item leaves the list when the owner decides it. A norm proposal also
-  leaves when another member's decline ends it.
-- Deciding an item the same way twice returns `{id}` again.
+| Tool | Input | Result |
+| --- | --- | --- |
+| `norms_propose` | `{to, task, norms, roles?}`; `to` is a conversation address, `roles` maps names to `agent:` addresses | `{id}` once the proposal is certified |
+| `norms_accept` | `{id}` | `{id}` once the acceptance is certified |
+| `norms_decline` | `{id, reason?}` | `{id}` once the decline is certified |
+| `norms_read` | `{to}` | `{inForce?: {id, task, norms, roles}, pending: [{id, proposer, task, norms, roles, acceptedBy}]}` |
 
-Closed failures:
+- `proposer`, role values and `acceptedBy` entries are `agent:` addresses.
+- `norms_read` lists a pending proposal only if this member proposed it or its
+  firewall admitted it to the runtime.
+- Proposing what this member already has pending, with the same task, norms and
+  roles in the same conversation, returns that proposal's id and sends nothing.
+
+Closed failures, beyond the [send failures](./harness/client.md#closed-failures)
+and firewall refusals of the underlying multicast:
 
 | Reason | Tools | Meaning |
 | --- | --- | --- |
-| `invalid-norm` | `norms_propose` | A behavior does not parse, a name repeats, or a code norm is unknown to this Client. |
+| `invalid-norm` | `norms_propose` | A behavior does not parse, a name repeats, a code norm is not `collective-norms`, or `facilitator` is missing for it. |
 | `not-member` | `norms_propose` | A role names an agent outside the conversation. |
-| `content-invalid` | `norms_propose` | The proposal does not fit one send. |
-| a `policy_update` failure | `policy_propose` | The edit would fail `policy_update` validation now. |
-| `unknown-proposal` | `proposal_accept`, `proposal_decline` | Nothing pending or decided has that id, or another member's decline ended it. |
-| `already-decided` | `proposal_accept`, `proposal_decline` | The owner already decided that item the other way. |
-| `proposal-stale` | `proposal_accept` | A rule the policy item removes has changed since it was proposed. |
-
-Accepting a policy proposal can also fail with any `policy_update` failure.
-
-Send failures are the [send errors](./harness/client.md) of the underlying
-multicast.
+| `content-invalid` | `norms_propose`, `norms_decline` | The message does not fit one send. |
+| `unknown-proposal` | `norms_accept`, `norms_decline` | No pending proposal this member can see has that id. |
+| `not-enforceable` | `norms_accept` | The member cannot apply these norms. |
 
 ## The L3 seam
 
-L3 owns decisions, the owner's policies and their edits, and the
-`BEHAVIOR.md` loader. L4 owns norm forms, agreement messages and the
-agreement in force.
+L3 owns decisions, the owner's policies and their edits, and `BEHAVIOR.md`
+loading. L4 owns norm forms, agreement messages and the agreement in force.
 
-- L3 declares one port, *conversation policies*. Given a conversation
-  address, it returns the incoming and outgoing `MessageMiddleware` in force
-  for that conversation, with a revision and the role bindings for check
-  context.
-- L3 runs the owner's chain first and the conversation's policies after it,
-  in both directions, under the owner's mode. A norm adds checks and removes
-  none. The captured installation digest covers the conversation revision.
+- L3 declares one port, *conversation policies*. Given a conversation address,
+  it returns the incoming and outgoing `MessageMiddleware` for that
+  conversation, the agreement id as its revision, and the role bindings for
+  check context.
 - L4 implements the port with L3's public interface: `makeEnglishPolicy` for
-  English norms and the built-in middleware catalog for code norms.
+  `norm-proposals` and the agreed English norms, under the middleware id
+  `org.social-harness/norms`, and the built-in catalog for code norms.
+- L3 runs the owner's chain first and the conversation's policies after it, in
+  both directions, under the owner's mode. Shared norms add checks and remove
+  none. A group send or a collective result uses the norms of the conversation
+  it is sent in.
 - L3 never imports L4. The daemon's composition supplies L4's implementation
   to L3.
 
 ## Acceptance
 
-- Norms apply only once every member has accepted, and a decline ends a
-  proposal.
-- The runtime authority has no accept or decline, and guidance mode accepts
-  nothing. A runtime's `policy_propose` changes nothing until the owner
-  accepts it.
-- A member's firewall accepts or declines under its owner's policies, and the
-  owner decides what the firewall leaves pending.
+- Shared norms apply only once every member has accepted, and a decline ends
+  a proposal.
+- Client authors no agreement message; the runtime proposes and answers.
+- With no consenting owner policy, a proposal reaches the runtime with
+  guidance to ask its owner.
+- A member that cannot apply proposed norms cannot accept them.
 - Role bindings reach check context.
 - The agreement in force survives restart.
 - `firewall/` imports nothing from `norms/`.

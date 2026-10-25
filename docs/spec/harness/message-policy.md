@@ -296,8 +296,8 @@ must not change shared history or the answers in a canonical all_gather result.
 Each endpoint's own firewall assesses what its agent asks for and what its agent
 is shown, at the boundary between the host and Client's operations: the send
 operation going out, and the admission worker coming in. It never checks the
-collective protocol underneath. Group norms are the same installation on every
-member, and each member decides independently.
+collective protocol underneath. Each member's installation includes the
+conversation's agreed shared norms, and each member decides independently.
 
 ### Outgoing collective checks
 
@@ -510,9 +510,10 @@ every document an earlier release of this format accepted.
 
 An English rule can be written as an [agentbehavior.dev](https://agentbehavior.dev)
 behavior: a directory holding `BEHAVIOR.md`. `fixedBehaviors` and
-`initialBehaviors` name such directories, relative to the policy file, and
-load as fixed and initial English rules after the inline ones. Fixed
-behaviors are the owner's locked base: `policy_update` cannot remove them.
+`initialBehaviors` name such directories, relative to the directory holding
+the policy file, and load as fixed and initial English rules after the inline
+ones. Fixed behaviors are the composition's locked base: `policy_update` cannot
+remove them. `codeDigest` covers the behaviors' bytes.
 
 | Rule field | From `BEHAVIOR.md` |
 | --- | --- |
@@ -571,12 +572,6 @@ guidance, feedback or provider traces. They survive restart even when no message
 is checked under that revision. Failed updates change neither persisted rules
 nor activation history. The owner decisions feed exposes them in a parallel `activations`
 array, as specified by the [daemon](./daemon.md#mcp-catalog).
-
-Runtime authority cannot edit the policy. Its `policy_propose`, with the same
-`{add?, remove?}` input as `policy_update`, validates the edit and records it
-as pending for the owner. It changes nothing until the owner accepts it with
-`proposal_accept`, which applies it as `policy_update` would, or discards it
-with `proposal_decline` ([owner decisions](../norms.md#the-owner)).
 
 Each check captures one active installation before constructing context and
 running middleware. Checks already in flight finish on that installation;
@@ -658,7 +653,14 @@ A check in a conversation runs the owner's chain and then the policies in
 force for that conversation, which the conversation-policies port supplies,
 under the owner's mode. The port and the norms behind it are specified in
 [L4 Shared Collaboration Norms](../norms.md#the-l3-seam). The check's
-installation digest covers the conversation's policy revision.
+installation digest covers the conversation's policy revision, the agreement
+id.
+
+The text of an agreed shared norm, its guidance and feedback included, was
+written by a peer and agreed by every member. It reaches the runtime and the
+decisions feed attributed to that agreement, never as the owner's or the
+composition's registered text, and decision rows name it with `from: "norm"`
+and the agreement id.
 
 ### Decision reasons
 
@@ -687,7 +689,8 @@ trace.
 
 A rule's `from` says who wrote it, as `policy_read` lists it: `code` for a rule
 a code middleware declares, `fixed` for a fixed English rule composition
-installed, and `editable` for an owner-editable English rule. A consumer that
+installed, `editable` for an owner-editable English rule, and `norm` for an
+agreed shared norm, with its agreement id. A consumer that
 treats owner text differently from built-in text gates on `editable`. Client
 installs fixed and editable English rules as one middleware and records the
 fixed rule ids in that middleware's provenance, which is part of the immutable

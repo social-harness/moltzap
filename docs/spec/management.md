@@ -143,7 +143,8 @@ authority, or a host notification.
 ## Adapter operations
 
 The registered authenticated runtime catalog carries `send_message`,
-`read_event` and `search_agents`. Trusted-local native clients and owner
+`read_event` and `search_agents`, and with a firewall installed the shared-norm
+tools of [`norms.md`](./norms.md#mcp-tools). Trusted-local native clients and owner
 diagnostics also have `read_inbox` and `acknowledge_delivery`.
 Their exact inputs and semantics are owned by
 `harness/output.md` and `harness/ingress.md`. Receive uses the pinned draft Events

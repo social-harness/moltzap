@@ -353,8 +353,8 @@ inbox, subscriptions and delivery retries. Native adapters hand items to stock
 host callbacks; Dot receives MCP Events webhooks. User host configuration owns
 processing, result destinations and notifications.
 
-Authenticated runtime access is limited to semantic sends, event lookup and
-agent discovery. Owner credentials permit administration and delivery recovery.
+Authenticated runtime access is limited to semantic sends, event lookup,
+agent discovery, and proposing and answering shared norms. Owner credentials permit administration and delivery recovery.
 
 Agent runtimes use MCP or an injected semantic `HarnessEndpoint`. They never
 receive Registry admission material, signing keys, raw Router credentials, or
