@@ -21,6 +21,10 @@ import {
 } from "effect";
 import type { RegistryStorage } from "./storage.js";
 
+/* eslint-disable @typescript-eslint/naming-convention -- Closed HTTP error constructors retain their class names when bound from the service capability. */
+const { AuthenticationFailedError, InternalServerError } = httpErrors;
+/* eslint-enable @typescript-eslint/naming-convention -- Restore variable naming after binding error constructors. */
+
 interface BootstrapAdmission {
   readonly admitted: true;
 }
@@ -68,7 +72,7 @@ export const withBootstrapAdmission = <A, E, R>(
 const readAdmission = FiberRef.get(currentAdmission).pipe(
   Effect.flatMap(
     Option.match({
-      onNone: () => Effect.fail(new httpErrors.AuthenticationFailedError()),
+      onNone: () => Effect.fail(new AuthenticationFailedError()),
       onSome: Effect.succeed,
     }),
   ),
@@ -199,9 +203,10 @@ export const makeRegistryRpcClient: Effect.Effect<
 const canonicalRegisterRequest = (
   request: typeof registryContract.RegistryRegisterRequest.Type,
 ) =>
-  registryContract.registryRegisterCodec.request
-    .encode(request)
-    .pipe(Effect.mapError(() => new httpErrors.InternalServerError()));
+  registryContract.registryRegisterCodec.request.encode(request).pipe(
+    // eslint-disable-next-line agent-code-guard/no-effect-error-coalescing -- Private serialization failure has one closed domain error at the RPC boundary.
+    Effect.mapError(() => new InternalServerError()),
+  );
 
 const registerHandler =
   (input: {

@@ -16,6 +16,19 @@ import type { RegistryStorage } from "./storage.js";
 import { verifyBootstrapRegistration } from "./admission.js";
 import { type RegistryRpcClient, withBootstrapAdmission } from "./rpc.js";
 
+/* eslint-disable @typescript-eslint/naming-convention -- Closed HTTP error constructors retain their class names when bound from the service capability. */
+const {
+  InternalServerError,
+  MalformedRequestError,
+  MethodNotAllowedError,
+  OverloadedError,
+  PayloadTooLargeError,
+  RouteNotFoundError,
+  UnsupportedMediaTypeError,
+  VersionMismatchError,
+} = httpErrors;
+/* eslint-enable @typescript-eslint/naming-convention -- Restore variable naming after binding error constructors. */
+
 type RegistryHttpAppInput = Readonly<{
   client: RegistryRpcClient;
   storage: RegistryStorage;
@@ -98,7 +111,7 @@ function healthRoute(storage: RegistryStorage) {
     Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest;
       if (request.url !== registryContract.HEALTH_PATH) {
-        return errorResponse(new httpErrors.RouteNotFoundError());
+        return errorResponse(new RouteNotFoundError());
       }
       return yield* storage.checkReadiness().pipe(
         Effect.match({
@@ -119,12 +132,12 @@ function fallbackRoute() {
     Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest;
       if (request.url.includes("?")) {
-        return errorResponse(new httpErrors.RouteNotFoundError());
+        return errorResponse(new RouteNotFoundError());
       }
       const path = request.url.split("?", 1)[0] ?? "";
       return registryContract.KNOWN_PATHS.has(path)
-        ? errorResponse(new httpErrors.MethodNotAllowedError())
-        : errorResponse(new httpErrors.RouteNotFoundError());
+        ? errorResponse(new MethodNotAllowedError())
+        : errorResponse(new RouteNotFoundError());
     }),
   );
 }
@@ -142,7 +155,7 @@ function registerHandler(input: {
     Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest;
       if (request.url !== registryContract.REGISTER_PATH) {
-        return yield* new httpErrors.RouteNotFoundError();
+        return yield* new RouteNotFoundError();
       }
       yield* validateRequestFraming({
         request,
@@ -193,7 +206,7 @@ function publicReadHandler<Request, Result, DecodeError, EncodeError>(input: {
     Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest;
       if (request.url !== input.path) {
-        return yield* new httpErrors.RouteNotFoundError();
+        return yield* new RouteNotFoundError();
       }
       yield* validateRequestFraming({
         request,
@@ -206,13 +219,12 @@ function publicReadHandler<Request, Result, DecodeError, EncodeError>(input: {
           const bodyBytes = yield* readBoundedBody(request, input.bodyCap);
           const version = request.headers["sharness-version"];
           if (version === undefined || !(yield* wireVersions.live(version))) {
-            return yield* new httpErrors.VersionMismatchError();
+            return yield* new VersionMismatchError();
           }
-          const decoded = yield* input
-            .decodeRequest(bodyBytes)
-            .pipe(
-              Effect.mapError(() => new httpErrors.MalformedRequestError()),
-            );
+          const decoded = yield* input.decodeRequest(bodyBytes).pipe(
+            // eslint-disable-next-line agent-code-guard/no-effect-error-coalescing -- Every canonical body or request-schema failure has the same public malformed-request meaning.
+            Effect.mapError(() => new MalformedRequestError()),
+          );
           const result = yield* input.invoke(decoded);
           return yield* resultResponse(input.encodeResponse(result));
         }),
@@ -234,7 +246,7 @@ function recoverHttpResponse<R>(
     Effect.catchAll((error) => Effect.succeed(errorResponse(error))),
     Effect.catchAllCause((cause) =>
       Effect.logError("Registry request failed", Cause.squash(cause)).pipe(
-        Effect.as(errorResponse(new httpErrors.InternalServerError())),
+        Effect.as(errorResponse(new InternalServerError())),
       ),
     ),
   );
@@ -249,7 +261,7 @@ function executeWithPermit<A, E, R>(
     .pipe(
       Effect.flatMap(
         Option.match({
-          onNone: () => Effect.fail(new httpErrors.OverloadedError()),
+          onNone: () => Effect.fail(new OverloadedError()),
           onSome: Effect.succeed,
         }),
       ),
@@ -267,16 +279,10 @@ function validateRequestFraming(input: {
   | InstanceType<typeof httpErrors.PayloadTooLargeError>
 > {
   if (requestFramingIsMalformed(input)) {
-    return rejectBeforeBodyRead(
-      input.request,
-      new httpErrors.MalformedRequestError(),
-    );
+    return rejectBeforeBodyRead(input.request, new MalformedRequestError());
   }
   if (mediaTypeIsUnsupported(input.request)) {
-    return rejectBeforeBodyRead(
-      input.request,
-      new httpErrors.UnsupportedMediaTypeError(),
-    );
+    return rejectBeforeBodyRead(input.request, new UnsupportedMediaTypeError());
   }
   return validateDeclaredLength(input.request, input.maximumBytes);
 }
@@ -336,13 +342,10 @@ function validateDeclaredLength(
   const headerIsPresent = request.headers["content-length"] !== undefined;
   const declaredLength = canonicalContentLength(request);
   if (headerIsPresent && declaredLength === undefined) {
-    return rejectBeforeBodyRead(
-      request,
-      new httpErrors.MalformedRequestError(),
-    );
+    return rejectBeforeBodyRead(request, new MalformedRequestError());
   }
   if (declaredLength !== undefined && declaredLength > maximumBytes) {
-    return rejectBeforeBodyRead(request, new httpErrors.PayloadTooLargeError());
+    return rejectBeforeBodyRead(request, new PayloadTooLargeError());
   }
   return Effect.void;
 }
@@ -397,7 +400,7 @@ function readBoundedBody(
         if (length + chunk.byteLength > maximumBytes) {
           reader.cleanup();
           incoming.resume();
-          resume(Effect.fail(new httpErrors.PayloadTooLargeError()));
+          resume(Effect.fail(new PayloadTooLargeError()));
           return;
         }
         body.set(chunk, length);
@@ -409,7 +412,7 @@ function readBoundedBody(
       },
       onError: () => {
         reader.cleanup();
-        resume(Effect.fail(new httpErrors.MalformedRequestError()));
+        resume(Effect.fail(new MalformedRequestError()));
       },
     };
     incoming.on("data", reader.onData);
@@ -430,8 +433,8 @@ function resultResponse<E>(
 > {
   return encoded.pipe(
     Effect.map((bytes) => jsonResponse(bytes, 200)),
-
-    Effect.mapError(() => new httpErrors.InternalServerError()),
+    // eslint-disable-next-line agent-code-guard/no-effect-error-coalescing -- Response serialization is an internal closed boundary with no client-actionable detail.
+    Effect.mapError(() => new InternalServerError()),
   );
 }
 

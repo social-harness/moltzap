@@ -10,7 +10,6 @@ import type { AgentSigningAuthority } from "../../../identity/keys.js";
 import {
   AgentSigningError,
   AuthenticatedHttp,
-  type HttpOrigin,
 } from "../../../identity/index.js";
 import {
   isCanonicalRouterJson,
@@ -68,7 +67,7 @@ export class Router extends Context.Tag("@moltzap/client/Router")<
     Effect.serviceFunctionEffect(Router, (service) => service.poll);
 
   static readonly layer = (input: {
-    readonly origin: HttpOrigin;
+    readonly origin: URL;
     readonly sendTimeout: Duration.Duration;
     readonly pollTimeout: Duration.Duration;
   }): Layer.Layer<Router, never, HttpClient.HttpClient> =>
@@ -76,7 +75,7 @@ export class Router extends Context.Tag("@moltzap/client/Router")<
 }
 
 function makeRouterClient(input: {
-  readonly origin: HttpOrigin;
+  readonly origin: URL;
   readonly sendTimeout: Duration.Duration;
   readonly pollTimeout: Duration.Duration;
 }): Effect.Effect<RouterClientService, never, HttpClient.HttpClient> {

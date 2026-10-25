@@ -15,6 +15,18 @@ import { Cause, Effect, Option, Schema } from "effect";
 import type { RouterFeed } from "./feed.js";
 import { type RouterRpcClient, withVerifiedRouterRequest } from "./rpc.js";
 
+/* eslint-disable @typescript-eslint/naming-convention -- Closed HTTP error constructors retain their class names when bound from the service capability. */
+const {
+  InternalServerError,
+  MalformedRequestError,
+  MethodNotAllowedError,
+  OverloadedError,
+  PayloadTooLargeError,
+  RouteNotFoundError,
+  UnsupportedMediaTypeError,
+} = httpErrors;
+/* eslint-enable @typescript-eslint/naming-convention -- Restore variable naming after binding error constructors. */
+
 interface RouterHttpInput {
   readonly client: RouterRpcClient;
   readonly feed: RouterFeed;
@@ -82,7 +94,7 @@ const recoverUnexpectedFailure = <E, R>(
   effect.pipe(
     Effect.catchAllCause((cause) =>
       Effect.logError("Router route failed", Cause.squash(cause)).pipe(
-        Effect.as(errorResponse(new httpErrors.InternalServerError())),
+        Effect.as(errorResponse(new InternalServerError())),
       ),
     ),
   );
@@ -95,13 +107,11 @@ const resultResponse = <A, I>(
   InstanceType<typeof httpErrors.InternalServerError>
 > =>
   Schema.encode(schema)(value).pipe(
-    Effect.catchTag("ParseError", () =>
-      Effect.fail(new httpErrors.InternalServerError()),
-    ),
+    Effect.catchTag("ParseError", () => Effect.fail(new InternalServerError())),
     Effect.flatMap((encoded) => {
       const body = canonicalize(encoded);
       return body === undefined
-        ? Effect.fail(new httpErrors.InternalServerError())
+        ? Effect.fail(new InternalServerError())
         : Effect.succeed(jsonText(body, 200));
     }),
   );
@@ -172,10 +182,10 @@ const validateDeclaredLength = (
   const headerIsPresent = request.headers["content-length"] !== undefined;
   const declaredLength = canonicalContentLength(request);
   if (headerIsPresent && declaredLength === undefined) {
-    return Effect.fail(new httpErrors.MalformedRequestError());
+    return Effect.fail(new MalformedRequestError());
   }
   if (declaredLength !== undefined && declaredLength > maximumBytes) {
-    return Effect.fail(new httpErrors.PayloadTooLargeError());
+    return Effect.fail(new PayloadTooLargeError());
   }
   return Effect.void;
 };
@@ -190,10 +200,10 @@ const validateRequestFraming = (
   | InstanceType<typeof httpErrors.UnsupportedMediaTypeError>
 > => {
   if (framingIsMalformed(request)) {
-    return Effect.fail(new httpErrors.MalformedRequestError());
+    return Effect.fail(new MalformedRequestError());
   }
   if (mediaTypeIsUnsupported(request)) {
-    return Effect.fail(new httpErrors.UnsupportedMediaTypeError());
+    return Effect.fail(new UnsupportedMediaTypeError());
   }
   return validateDeclaredLength(request, maximumBytes);
 };
@@ -220,7 +230,7 @@ const readBoundedBody = (
       if (length + chunk.byteLength > maximumBytes) {
         cleanup();
         incoming.resume();
-        resume(Effect.fail(new httpErrors.PayloadTooLargeError()));
+        resume(Effect.fail(new PayloadTooLargeError()));
         return;
       }
       body.set(chunk, length);
@@ -232,7 +242,7 @@ const readBoundedBody = (
     }
     function onError() {
       cleanup();
-      resume(Effect.fail(new httpErrors.MalformedRequestError()));
+      resume(Effect.fail(new MalformedRequestError()));
     }
     incoming.on("data", onData);
     incoming.once("end", onEnd);
@@ -279,7 +289,7 @@ const runAdmittedDomainRequest = <
       },
     ).pipe(
       Effect.catchTag("ParseError", () =>
-        Effect.fail(new httpErrors.MalformedRequestError()),
+        Effect.fail(new MalformedRequestError()),
       ),
     );
     const result = yield* withVerifiedRouterRequest(
@@ -295,15 +305,14 @@ const handleDomainRequest = <Request, RequestEncoded, Result, ResultEncoded>(
   Effect.gen(function* () {
     const httpRequest = yield* HttpServerRequest.HttpServerRequest;
     if (httpRequest.url !== input.routePath) {
-      return errorResponse(new httpErrors.RouteNotFoundError());
+      return errorResponse(new RouteNotFoundError());
     }
     yield* validateRequestFraming(httpRequest, input.bodyCap);
     const admitted = yield* input.requestSemaphore.withPermitsIfAvailable(1)(
       runAdmittedDomainRequest(input, httpRequest),
     );
     return yield* Option.match(admitted, {
-      onNone: () =>
-        Effect.succeed(errorResponse(new httpErrors.OverloadedError())),
+      onNone: () => Effect.succeed(errorResponse(new OverloadedError())),
       onSome: Effect.succeed,
     });
   }).pipe(
@@ -358,7 +367,7 @@ function healthRoute(input: RouterHttpInput) {
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest;
         if (request.url !== routerContract.routerHealthPath) {
-          return errorResponse(new httpErrors.RouteNotFoundError());
+          return errorResponse(new RouteNotFoundError());
         }
         return yield* routerHealthResponse(input.feed);
       }),
@@ -373,7 +382,7 @@ function fallbackRoute() {
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest;
         if (request.url.includes("?")) {
-          return errorResponse(new httpErrors.RouteNotFoundError());
+          return errorResponse(new RouteNotFoundError());
         }
         const path = request.url.split("?", 1)[0];
         if (
@@ -381,9 +390,9 @@ function fallbackRoute() {
           path === routerContract.routerPollPath ||
           path === routerContract.routerHealthPath
         ) {
-          return errorResponse(new httpErrors.MethodNotAllowedError());
+          return errorResponse(new MethodNotAllowedError());
         }
-        return errorResponse(new httpErrors.RouteNotFoundError());
+        return errorResponse(new RouteNotFoundError());
       }),
     ),
   );

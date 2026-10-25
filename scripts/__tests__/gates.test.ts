@@ -415,6 +415,7 @@ function testPublicationGuards(): void {
   testPublicationGuardsForeignRepository();
   testPublicationGuardsSemver();
   testPublicationGuardsWireSemver();
+  testManifestWireVersion();
   testPublicationGuardsDriftedList();
   testPublicationGuardsTestOnly();
   testPublicationGuardsNamespaceExport();
@@ -594,6 +595,24 @@ function testPublicationGuardsSemver(): void {
         semver.stderr,
       ),
     `expected calver failure. exit=${semver.code}, stderr=${semver.stderr.slice(0, 300)}`,
+  );
+  restoreAllPlants();
+}
+
+/** Published wire metadata must describe the artifacts the package emits. */
+function testManifestWireVersion(): void {
+  plantFile("packages/client/package.json", (source) =>
+    source.replace(
+      /"sharnessWireVersion": "[^"]+"/,
+      '"sharnessWireVersion": "2099.101.0"',
+    ),
+  );
+  const result = runBoundaries();
+  test(
+    "rejects Client manifest wire metadata that differs from WIRE_VERSION",
+    result.code === 1 &&
+      /sharnessWireVersion must equal WIRE_VERSION/.test(result.stderr),
+    `expected wire metadata rejection. exit=${result.code}, stderr=${result.stderr}`,
   );
   restoreAllPlants();
 }

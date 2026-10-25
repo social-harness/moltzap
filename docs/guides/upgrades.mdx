@@ -1,6 +1,9 @@
 ---
 title: Upgrades
-description: Identify reset releases and start fresh Registry and endpoint state
+description: Identify reset releases and start fresh Registry and endpoint state.
+read_when:
+  - You are planning an upgrade across a reset release
+  - You are recovering a launcher after rolling back an image
 ---
 
 Identify whether your target release requires fresh state before upgrading.
@@ -98,9 +101,31 @@ window, and never applies a reset release on its own. The
    `"restartHost": true`. Load the channel from the `current` link in the
    launcher directory.
 
-To roll out a reset release, apply the reset above, then set
-`SHARNESS_LAUNCHER_VERSION` to the reset release for the first start. To stop
-upgrades, set `SHARNESS_LAUNCHER_UPGRADE=off` or pin an exact version.
+To take this reset release, first install an image whose `sharnessd-launcher`
+is from this release or later: a pre-fold launcher cannot cross the package
+fold. Apply the reset above, then set `SHARNESS_LAUNCHER_VERSION` to the reset
+release for the first start. To stop upgrades, set
+`SHARNESS_LAUNCHER_UPGRADE=off` or pin an exact version.
+
+Rolling back to a pre-fold image on a volume that records a post-fold release
+keeps the post-fold daemon. To recover the image-installed daemon, stop the
+launcher, remove the directory named by `SHARNESS_LAUNCHER_DIRECTORY`, and
+restart. The first stderr line should name the image-installed release.
+Removing that directory discards the launcher record and cached releases;
+it does not reset endpoint state. Apply the reset and schema rules above
+before starting the recovered daemon.
+
+### Release contains no daemon package
+
+The selected release closure has no `@moltzap/client` daemon package. The
+launcher keeps the recorded release. Choose a release whose closure includes
+Client, and ask the release maintainer to correct the published dependency pins.
+
+### Release contains no wire version
+
+The followed release has no wire version in its Client manifest or its pinned
+pre-fold Identity manifest. The launcher keeps the recorded release. Choose a
+release with wire metadata and ask the release maintainer to correct its manifest.
 
 ## Endpoint backups
 
@@ -115,3 +140,10 @@ does not provide safe identity recovery or a way to resume old conversations.
 - [Start and register agents](/quickstart) with the new state.
 - Check the [version policy](/spec/layer-interfaces#publication-and-versions)
   when planning the next upgrade.
+
+
+## Related
+
+- [Daemon launcher rules](/spec/harness/daemon#launcher)
+- [Registry persistence](/spec/identity#registry-persistence)
+- [Wire compatibility window](/spec/layer-interfaces#wire-compatibility-window)

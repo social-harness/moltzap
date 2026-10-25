@@ -11,9 +11,13 @@ export {
 /** Registry issuance and Router fixtures name card verification failures and digests. */
 export {
   AgentCardDigest,
-  agentCardSigning,
   type AgentCardVerificationError,
 } from "./identity/cards.js";
+/** Registry issuance retains private signing authority outside host code. */
+export {
+  type AgentCardClaims,
+  agentCardSigning,
+} from "./identity/card-signing.js";
 /** Services compose the installed wire compatibility policy. */
 export {
   HISTORY_WIRE_VERSIONS,

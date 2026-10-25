@@ -149,8 +149,7 @@ export interface RegistryClientService {
   >;
 }
 
-/** Package-private validated registration outcome. */
-
+/** Validated registration outcomes shared through registryContract. */
 const registerResultSchema = Schema.Union(
   exactStruct({
     kind: Schema.Literal("registered"),
@@ -161,8 +160,7 @@ const registerResultSchema = Schema.Union(
   exactStruct({ kind: Schema.Literal("idempotency_conflict") }),
 );
 
-/** Package-private validated lookup outcome. */
-
+/** Validated lookup outcomes shared through registryContract. */
 const lookupResultSchema = Schema.Union(
   exactStruct({
     kind: Schema.Literal("found"),
@@ -171,7 +169,7 @@ const lookupResultSchema = Schema.Union(
   exactStruct({ kind: Schema.Literal("not_found") }),
 );
 
-/** Package-private validated list outcome. */
+/** Validated list outcomes shared through registryContract. */
 const listResultSchema = exactStruct({
   kind: Schema.Literal("page"),
   agentCards: Schema.Array(verifiedAgentCardSchema),

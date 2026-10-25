@@ -15,7 +15,11 @@ import { createHash } from "node:crypto";
 import { verify } from "sigstore";
 import { launcherError, type LauncherError } from "./errors.js";
 import { integrityOf } from "./integrity.js";
-import { downloadJson, type PublishedPackage } from "./npm.js";
+import {
+  downloadJson,
+  PRE_FOLD_IDENTITY_PACKAGE,
+  type PublishedPackage,
+} from "./npm.js";
 import { type PackedManifest, readPackedManifest } from "./packed-manifest.js";
 
 /**
@@ -153,7 +157,7 @@ function differingField(
     [
       "wire version",
       (packed.sharnessWireVersion ??
-        (packed.name === "@moltzap/identity"
+        (packed.name === PRE_FOLD_IDENTITY_PACKAGE
           ? packed.moltzapWireVersion
           : undefined)) === published.wireVersion,
     ],

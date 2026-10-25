@@ -30,6 +30,7 @@ import {
 import {
   DAEMON_PACKAGE,
   download,
+  PRE_FOLD_IDENTITY_PACKAGE,
   type PublishedPackage,
   releaseClosure,
   taggedVersion,
@@ -174,6 +175,12 @@ function candidate(
         ? selection.version
         : yield* taggedVersion(registry, releasePackage, selection.distTag);
     const closure = yield* releaseClosure(registry, releasePackage, version);
+    if (!closure.some((entry) => entry.name === DAEMON_PACKAGE)) {
+      return yield* launcherError(
+        "registry",
+        `release ${version} contains no daemon package (${DAEMON_PACKAGE}). Docs: https://docs.moltzap.xyz/guides/upgrades#release-contains-no-daemon-package`,
+      );
+    }
     const choice = choose(
       {
         version: recorded.version,
@@ -207,14 +214,16 @@ function wireVersionOf(
   version: string,
 ): Effect.Effect<string, LauncherError> {
   const daemon = closure.find((entry) => entry.name === DAEMON_PACKAGE);
-  const identity = closure.find((entry) => entry.name === "@moltzap/identity");
+  const identity = closure.find(
+    (entry) => entry.name === PRE_FOLD_IDENTITY_PACKAGE,
+  );
   const wireVersion = daemon?.wireVersion ?? identity?.wireVersion;
   return wireVersion !== undefined
     ? Effect.succeed(wireVersion)
     : Effect.fail(
         launcherError(
           "registry",
-          `release ${version} names no daemon or no wire version`,
+          `release ${version} contains no wire version in its Client or pre-fold Identity manifest. Docs: https://docs.moltzap.xyz/guides/upgrades#release-contains-no-wire-version`,
         ),
       );
 }

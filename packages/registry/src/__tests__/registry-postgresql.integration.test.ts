@@ -48,6 +48,10 @@ import {
 } from "./registry-process.js";
 import { encodeCanonicalJson } from "./request-fixtures.js";
 
+/* eslint-disable @typescript-eslint/naming-convention -- Closed HTTP error constructors retain their class names when bound from the service capability. */
+const { AuthenticationFailedError } = httpErrors;
+/* eslint-enable @typescript-eslint/naming-convention -- Restore variable naming after binding error constructors. */
+
 const SERVICE_UNAVAILABLE_STATUS = 503;
 const EMPTY_BODY = "";
 const FOUND_KIND = "found";
@@ -453,7 +457,7 @@ it(
         ).toStrictEqual(
           Array.from(
             { length: CONTENDERS - 1 },
-            () => new httpErrors.AuthenticationFailedError(),
+            () => new AuthenticationFailedError(),
           ),
         );
       }).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),

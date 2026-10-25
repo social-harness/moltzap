@@ -1,16 +1,13 @@
 /** @file Immutable card fixtures signed through the Identity capability. */
 
 import { Effect } from "effect";
+import type { AgentCardVerificationError } from "../cards.js";
 import {
   AgentCard,
   AgentSigningAuthority,
   type VerifiedAgentCard,
 } from "../../index.js";
-import {
-  type AgentCardClaims,
-  agentCardSigning,
-  type AgentCardVerificationError,
-} from "../cards.js";
+import { type AgentCardClaims, agentCardSigning } from "../card-signing.js";
 import { wireVersions } from "../wire-version.js";
 
 /** Whole-second UTC issuance evidence carried by an AgentCard. */

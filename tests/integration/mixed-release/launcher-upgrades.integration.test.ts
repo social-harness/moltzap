@@ -219,7 +219,11 @@ function installSeed(
   });
 }
 
-function verifyUpgrade(installation: LauncherInstallation, version: string) {
+function verifyUpgrade(
+  installation: LauncherInstallation,
+  version: string,
+  pinned: boolean,
+) {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const { seed, home, prefix, previous, origin } = installation;
@@ -238,7 +242,7 @@ function verifyUpgrade(installation: LauncherInstallation, version: string) {
           SHARNESS_LAUNCHER_SEED: seed,
           SHARNESS_LAUNCHER_PACKAGE: "@moltzap/client",
           SHARNESS_LAUNCHER_UPGRADE: "on",
-          SHARNESS_LAUNCHER_VERSION: version,
+          ...(pinned ? { SHARNESS_LAUNCHER_VERSION: version } : {}),
           SHARNESS_LAUNCHER_REGISTRY: origin,
         },
       },
@@ -271,8 +275,12 @@ function consecutiveUpgrades() {
       yield* packRelease(release, "2099.101.1");
       yield* packRelease(release, "2099.101.2");
       const seed = yield* installSeed(release, firstArchive, first);
-      const upgraded = yield* verifyUpgrade(seed, "2099.101.1");
-      yield* verifyUpgrade(upgraded, "2099.101.2");
+      const upgraded = yield* verifyUpgrade(seed, "2099.101.1", true);
+      release.replies.set(
+        "/-/package/@moltzap%2fclient/dist-tags",
+        json({ latest: "2099.101.2" }),
+      );
+      yield* verifyUpgrade(upgraded, "2099.101.2", false);
     }),
   );
 }

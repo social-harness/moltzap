@@ -9,7 +9,7 @@ import {
   Schema,
   type SchemaAST,
 } from "effect";
-import { GeneralSign, generalVerify } from "jose";
+import { generalVerify } from "jose";
 import { createHash } from "node:crypto";
 import {
   decodeCanonicalJson,
@@ -26,8 +26,6 @@ import {
   type PrincipalId as PrincipalIdValue,
 } from "./agents.js";
 import {
-  AgentSigningAuthority,
-  agentSigningPrivateKey,
   Ed25519PublicKey,
   ed25519PublicKeyThumbprintUri,
   type Ed25519PublicKey as Ed25519PublicKeyValue,
@@ -65,7 +63,7 @@ export const AgentCardDigest = canonicalIdentifier(
 export type AgentCardDigest = typeof AgentCardDigest.Type;
 
 /** Shared whole-second UTC validation for parsed and issued AgentCards. */
-const agentCardIssuedAtSchema = Schema.String.pipe(
+export const agentCardIssuedAtSchema = Schema.String.pipe(
   Schema.pattern(WHOLE_SECOND_UTC),
   Schema.filter(isWholeSecondUtc, {
     identifier: "AgentCardIssuedAt",
@@ -335,60 +333,3 @@ export const AgentCard = Object.assign(agentCardSchema, {
 /* eslint-enable @typescript-eslint/no-redeclare, @typescript-eslint/naming-convention, agent-code-guard/require-assertion-rationale --
  * The accepted same-name Schema/type API retains the exact private General JWS AST while erasing only its encoded TypeScript type.
  */
-
-/** Complete immutable claims accepted by the card-signing capability. */
-export interface AgentCardClaims {
-  readonly kind: "agentCard";
-  readonly sharnessVersion: string;
-  readonly agentId: AgentId;
-  readonly principalId: PrincipalId;
-  readonly agentName: AgentName;
-  readonly publicKey: Ed25519PublicKey;
-  readonly issuedAt: typeof agentCardIssuedAtSchema.Type;
-}
-
-interface CardSigning {
-  readonly issuedAt: typeof agentCardIssuedAtSchema;
-  readonly publicKeyId: typeof ed25519PublicKeyThumbprintUri;
-  readonly sign: (
-    payload: AgentCardClaims,
-    authority: AgentSigningAuthority,
-  ) => Effect.Effect<AgentCard, AgentCardVerificationError>;
-}
-
-/** Card signing retains private key access and wire-profile details inside Identity. */
-export const agentCardSigning: CardSigning = Object.freeze({
-  issuedAt: agentCardIssuedAtSchema,
-  publicKeyId: ed25519PublicKeyThumbprintUri,
-  sign: signCardPayload,
-});
-
-function signCardPayload(
-  payload: AgentCardClaims,
-  authority: AgentSigningAuthority,
-): Effect.Effect<AgentCard, AgentCardVerificationError> {
-  return Effect.gen(function* () {
-    const failure = () => new AgentCardVerificationError();
-    const bytes = yield* encodeCanonicalJson(payload).pipe(
-      Effect.mapError(failure),
-    );
-    const kid = yield* ed25519PublicKeyThumbprintUri(
-      AgentSigningAuthority.publicKey(authority),
-    ).pipe(Effect.mapError(failure));
-    const representation = yield* Effect.tryPromise({
-      try: () =>
-        new GeneralSign(bytes)
-          .addSignature(agentSigningPrivateKey(authority))
-          .setProtectedHeader({
-            alg: "Ed25519",
-            kid,
-            typ: AGENT_CARD_TYPE,
-          })
-          .sign(),
-      catch: failure,
-    });
-    return yield* Schema.decodeUnknown(AgentCard)(representation).pipe(
-      Effect.mapError(failure),
-    );
-  }).pipe(Effect.withSpan("agentCardSigning"));
-}

@@ -7,6 +7,10 @@ import type { PollCursorCodec } from "./poll-cursor.js";
 import type { PollWaiters } from "./poll-waiters.js";
 import { entriesAfter, type FeedSnapshot, type RouterFeed } from "./feed.js";
 
+/* eslint-disable @typescript-eslint/naming-convention -- Closed HTTP error constructors retain their class names when bound from the service capability. */
+const { InternalServerError, OverloadedError } = httpErrors;
+/* eslint-enable @typescript-eslint/naming-convention -- Restore variable naming after binding error constructors. */
+
 type PollFailure =
   | InstanceType<typeof httpErrors.OverloadedError>
   | InstanceType<typeof httpErrors.InternalServerError>;
@@ -75,13 +79,11 @@ const encodedResultLength = (
   result: typeof routerContract.RouterPollResult.Type,
 ): Effect.Effect<number, InstanceType<typeof httpErrors.InternalServerError>> =>
   Schema.encode(routerContract.RouterPollResult)(result).pipe(
-    Effect.catchTag("ParseError", () =>
-      Effect.fail(new httpErrors.InternalServerError()),
-    ),
+    Effect.catchTag("ParseError", () => Effect.fail(new InternalServerError())),
     Effect.flatMap((encoded) => {
       const jcs = canonicalize(encoded);
       return jcs === undefined
-        ? Effect.fail(new httpErrors.InternalServerError())
+        ? Effect.fail(new InternalServerError())
         : Effect.succeed(utf8Encoder.encode(jcs).byteLength);
     }),
   );
@@ -112,7 +114,7 @@ const makeBatch = (
 > =>
   input.cursorCodec.encrypt({ agentId: callerAgentId, lastScannedOrder }).pipe(
     Effect.catchTag("PollCursorEncryptionError", () =>
-      Effect.fail(new httpErrors.InternalServerError()),
+      Effect.fail(new InternalServerError()),
     ),
     Effect.map(
       (pollCursor): PollBatch => ({
@@ -213,7 +215,7 @@ const holdAtTail = (
     .pipe(
       Effect.raceFirst(Effect.sleep(HOLD_DURATION)),
       Effect.catchTag("HeldPollCapacityError", () =>
-        Effect.fail(new httpErrors.OverloadedError()),
+        Effect.fail(new OverloadedError()),
       ),
     );
 

@@ -7,7 +7,6 @@ import {
 } from "@effect/platform";
 import { Duration, Effect, ParseResult, Redacted, Schema } from "effect";
 import type { AgentId } from "../agents.js";
-import type { HttpOrigin } from "../signing/origin.js";
 import { decodeCanonicalJson } from "../../encoding/canonical-json.js";
 import { compareAgentIds } from "../../encoding/identifier.js";
 import { AgentCard, type VerifiedAgentCard } from "../cards.js";
@@ -65,7 +64,7 @@ import {
  * @returns The configured service, requiring an Effect HTTP client.
  */
 export function makeRegistryService(input: {
-  readonly origin: HttpOrigin;
+  readonly origin: URL;
   readonly registrySignerPublicKey: Ed25519PublicKey;
   readonly requestTimeout: Duration.Duration;
 }): Effect.Effect<RegistryClientService, never, HttpClient.HttpClient> {

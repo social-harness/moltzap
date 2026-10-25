@@ -46,7 +46,7 @@ export const AgentAddress = addressInput.pipe(
 
 An explicit direct destination using one canonical Registry name.
 
-### [`AgentCard (type)`](./identity/cards.ts#L99)
+### [`AgentCard (type)`](./identity/cards.ts#L97)
 
 _Interface_
 
@@ -62,7 +62,7 @@ export interface AgentCard {
 
 Immutable public identity fields carried by an AgentCard.
 
-### [`AgentCard (value)`](./identity/cards.ts#L327)
+### [`AgentCard (value)`](./identity/cards.ts#L325)
 
 _Variable_
 
@@ -969,7 +969,7 @@ export const SignedMessage = Object.assign(signedMessageSchema, {
 
 Opaque attributed message operations and exact representation Schema.
 
-### [`VerifiedAgentCard`](./identity/cards.ts#L234)
+### [`VerifiedAgentCard`](./identity/cards.ts#L232)
 
 _TypeAlias_
 
@@ -1178,7 +1178,7 @@ export class MiddlewareError extends Data.TaggedError("MiddlewareError")<{
 
 Operational failures carry closed reasons, never arbitrary exception text.
 
-#### [`Registry`](./identity/registry/index.ts#L14)
+#### [`Registry`](./identity/registry/index.ts#L13)
 
 _Class_
 
@@ -1203,7 +1203,7 @@ export class Registry extends Context.Tag("@moltzap/client/Registry")<
   );
 
   static readonly layer = (input: {
-    readonly origin: HttpOrigin;
+    readonly origin: URL;
     readonly registrySignerPublicKey: Ed25519PublicKey;
     readonly requestTimeout: Duration.Duration;
   }): Layer.Layer<Registry, never, HttpClient.HttpClient> =>
@@ -1249,7 +1249,7 @@ export class RegistryRequestTimeoutError extends Data.TaggedError(
 
 The configured complete Registry call deadline expired.
 
-#### [`Router`](./communication/router/api/client.ts#L52)
+#### [`Router`](./communication/router/api/client.ts#L51)
 
 _Class_
 
@@ -1273,7 +1273,7 @@ export class Router extends Context.Tag("@moltzap/client/Router")<
     Effect.serviceFunctionEffect(Router, (service) => service.poll);
 
   static readonly layer = (input: {
-    readonly origin: HttpOrigin;
+    readonly origin: URL;
     readonly sendTimeout: Duration.Duration;
     readonly pollTimeout: Duration.Duration;
   }): Layer.Layer<Router, never, HttpClient.HttpClient> =>
@@ -2403,6 +2403,7 @@ owns timeouts; the Effect is interruptible through response-body consumption.
 - `harness/README.md`
 - `identity/agents.ts`
 - `identity/bounded-cache.ts`
+- `identity/card-signing.ts`
 - `identity/cards.ts`
 - `identity/index.ts`
 - `identity/keys.ts`
@@ -2411,7 +2412,6 @@ owns timeouts; the Effect is interruptible through response-body consumption.
 - `identity/registry/index.ts`
 - `identity/signing/http-errors.ts`
 - `identity/signing/http-signature.ts`
-- `identity/signing/origin.ts`
 - `identity/signing/registered/index.ts`
 - `identity/wire-version.ts`
 - `index.ts`

@@ -77,6 +77,16 @@ stdio server, second MCP listener, address override, or product Ledger.
 
 ## Launcher
 
+Taking the reset release requires an image whose `sharnessd-launcher` comes
+from this release or later before pinning `SHARNESS_LAUNCHER_VERSION`. A
+pre-fold launcher cannot cross the package fold. Rolling back to a pre-fold
+image on a volume that records a post-fold release keeps the post-fold daemon;
+the image alone does not roll it back. To recover the image-installed daemon,
+stop the launcher and remove the directory named by
+`SHARNESS_LAUNCHER_DIRECTORY`, then restart. This discards cached releases and
+the launcher record; endpoint state remains subject to the reset and schema
+rules below.
+
 `sharnessd-launcher`, in `@moltzap/client`, is the process an agent image runs
 in place of a fixed `sharnessd`. Each start chooses a release, then runs that
 release's `sharnessd` as a child process with the launcher's environment and
@@ -118,7 +128,9 @@ recorded one and its Client manifest's `sharnessWireVersion` is in the recorded
 daemon's `LIVE_WIRE_VERSIONS`. For a pre-fold release, the candidate wire
 version comes from its pinned `@moltzap/identity` manifest
 (`sharnessWireVersion`, else `moltzapWireVersion`), and the recorded live window
-comes from its Identity root when the Client root lacks it. Exact pins do not
+comes from its Identity root only when the installed Client manifest has no
+`sharnessWireVersion`. A Client read failure otherwise keeps the recorded release.
+Every candidate closure must contain `@moltzap/client`, including exact pins. Exact pins do not
 read either compatibility input. A reset release is always outside that window,
 so it never applies on its own, and no start moves an agent to an older
 release. Any jump within the window is allowed. An exact pin takes that

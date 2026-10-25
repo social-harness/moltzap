@@ -14,6 +14,10 @@ import { Effect, Encoding, Schema } from "effect";
 import type { RouterFeed } from "./feed.js";
 import type { PollWaiters } from "./poll-waiters.js";
 
+/* eslint-disable @typescript-eslint/naming-convention -- Closed HTTP error constructors retain their class names when bound from the service capability. */
+const { InternalServerError, OverloadedError } = httpErrors;
+/* eslint-enable @typescript-eslint/naming-convention -- Restore variable naming after binding error constructors. */
+
 /** Send domain operation after HTTP authentication. */
 export interface RouterSend {
   readonly handle: (
@@ -92,7 +96,7 @@ const retainMessage = (
       signedMessageDigest,
     });
     if (accepted.kind === "overloaded") {
-      return yield* Effect.fail(new httpErrors.OverloadedError());
+      return yield* Effect.fail(new OverloadedError());
     }
     if (accepted.acceptedRecipients !== undefined) {
       yield* input.pollWaiters.notify(accepted.acceptedRecipients);
@@ -165,13 +169,11 @@ function encodeMessage(
   signedMessage: LiveSignedMessage & VerifiedSignedMessage,
 ): Effect.Effect<string, InstanceType<typeof httpErrors.InternalServerError>> {
   return Schema.encode(SignedMessage)(signedMessage).pipe(
-    Effect.catchTag("ParseError", () =>
-      Effect.fail(new httpErrors.InternalServerError()),
-    ),
+    Effect.catchTag("ParseError", () => Effect.fail(new InternalServerError())),
     Effect.flatMap((encoded) => {
       const jcs = canonicalize(encoded);
       return jcs === undefined
-        ? Effect.fail(new httpErrors.InternalServerError())
+        ? Effect.fail(new InternalServerError())
         : Effect.succeed(jcs);
     }),
   );
@@ -189,14 +191,12 @@ function digestMessage(
         "SHA-256",
         utf8Encoder.encode(encodedMessageJcs),
       ),
-    catch: () => new httpErrors.InternalServerError(),
+    catch: () => new InternalServerError(),
   }).pipe(
     Effect.map(
       (digest) => `smd_${Encoding.encodeBase64Url(new Uint8Array(digest))}`,
     ),
     Effect.flatMap(Schema.decodeUnknown(routerContract.SignedMessageDigest)),
-    Effect.catchTag("ParseError", () =>
-      Effect.fail(new httpErrors.InternalServerError()),
-    ),
+    Effect.catchTag("ParseError", () => Effect.fail(new InternalServerError())),
   );
 }

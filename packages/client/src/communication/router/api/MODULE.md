@@ -38,7 +38,7 @@ export const PollCursor = Schema.String.pipe(
 
 Opaque, authenticated continuation for one caller and Router instance.
 
-### [`Router`](./client.ts#L52)
+### [`Router`](./client.ts#L51)
 
 _Class_
 
@@ -62,7 +62,7 @@ export class Router extends Context.Tag("@moltzap/client/Router")<
     Effect.serviceFunctionEffect(Router, (service) => service.poll);
 
   static readonly layer = (input: {
-    readonly origin: HttpOrigin;
+    readonly origin: URL;
     readonly sendTimeout: Duration.Duration;
     readonly pollTimeout: Duration.Duration;
   }): Layer.Layer<Router, never, HttpClient.HttpClient> =>

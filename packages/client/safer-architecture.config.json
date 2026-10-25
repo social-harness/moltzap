@@ -36,6 +36,10 @@
       "reason": "Immutable AgentCard representation, digest and pinned verification"
     },
     {
+      "file": "identity/card-signing.ts",
+      "reason": "Registry card issuance with private signing authority"
+    },
+    {
       "file": "identity/wire-version.ts",
       "reason": "Wire emission and live or retained compatibility policy"
     },
@@ -204,6 +208,7 @@
         "src/identity/agents.ts",
         "src/identity/keys.ts",
         "src/identity/cards.ts",
+        "src/identity/card-signing.ts",
         "src/identity/wire-version.ts",
         "src/identity/signing/registered/index.ts",
         "src/identity/index.ts",
@@ -545,6 +550,10 @@
     {
       "package": "@effect/platform",
       "reason": "Effect platform abstractions used at boundaries"
+    },
+    {
+      "package": "node",
+      "reason": "URL is the platform-standard endpoint locator required by the public acquisition contract"
     }
   ],
   "allowedTestPublicSubpaths": [

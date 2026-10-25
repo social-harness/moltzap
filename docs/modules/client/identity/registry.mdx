@@ -33,7 +33,7 @@ export const OperationId = canonicalIdentifier("OperationId", "opn_", 16)
 
 Idempotency identity for a registration operation.
 
-### [`Registry`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/identity/registry/index.ts#L14)
+### [`Registry`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/identity/registry/index.ts#L13)
 
 _Class_
 
@@ -58,7 +58,7 @@ export class Registry extends Context.Tag("@moltzap/client/Registry")<
   );
 
   static readonly layer = (input: {
-    readonly origin: HttpOrigin;
+    readonly origin: URL;
     readonly registrySignerPublicKey: Ed25519PublicKey;
     readonly requestTimeout: Duration.Duration;
   }): Layer.Layer<Registry, never, HttpClient.HttpClient> =>

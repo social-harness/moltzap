@@ -47,6 +47,10 @@ import { makePollWaiters } from "../poll-waiters.js";
 import { makeRouterRpcClient, withVerifiedRouterRequest } from "../rpc.js";
 import { makeRouterSend } from "../send.js";
 
+/* eslint-disable @typescript-eslint/naming-convention -- Closed HTTP error constructors retain their class names when bound from the service capability. */
+const { InternalServerError } = httpErrors;
+/* eslint-enable @typescript-eslint/naming-convention -- Restore variable naming after binding error constructors. */
+
 /* eslint sonarjs/no-empty-test-file: "off" -- Effect's scoped registrations are invisible to Sonar's direct Vitest-call detector. */
 /* eslint-disable max-lines-per-function, sonarjs/max-lines-per-function, max-nested-callbacks, agent-code-guard/no-hardcoded-assertion-literals -- Each scenario observes the deep capability at its public or private call boundary. */
 const utf8Encoder = new TextEncoder();
@@ -296,9 +300,7 @@ describe("private RPC behavior", () => {
                   verifiedRequest,
                 ]),
               ),
-              Effect.zipRight(
-                Effect.fail(new httpErrors.InternalServerError()),
-              ),
+              Effect.zipRight(Effect.fail(new InternalServerError())),
             ),
         },
         poll: {

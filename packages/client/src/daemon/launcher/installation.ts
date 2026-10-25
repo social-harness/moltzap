@@ -16,7 +16,7 @@ import {
 import { Effect, Option, Schema, Stream } from "effect";
 import { launcherError, type LauncherError } from "./errors.js";
 import { integrityOf } from "./integrity.js";
-import { DAEMON_PACKAGE } from "./npm.js";
+import { DAEMON_PACKAGE, PRE_FOLD_IDENTITY_PACKAGE } from "./npm.js";
 
 const RECORD_FORMAT = "org.social-harness/launcher-record/v1";
 
@@ -69,6 +69,7 @@ const manifestSchema = Schema.Struct({
   name: Schema.String,
   version: Schema.String,
   sharnessHostCodeHash: Schema.optional(Schema.String),
+  sharnessWireVersion: Schema.optional(Schema.String),
   exports: Schema.optional(Schema.Unknown),
 });
 
@@ -287,8 +288,11 @@ export const liveWireVersions = Effect.fn("Launcher.liveWireVersions")(
         const loaded: unknown = yield* Effect.tryPromise(() => import(module));
         return yield* Schema.decodeUnknown(liveWindow)(loaded);
       }).pipe(Effect.withSpan("Launcher.readInstalledWireWindow"));
-    const window = yield* readWindow(DAEMON_PACKAGE).pipe(
-      Effect.catchAll(() => readWindow("@moltzap/identity")),
+    const client = yield* installedManifest(prefix, DAEMON_PACKAGE);
+    const window = yield* readWindow(
+      client.sharnessWireVersion === undefined
+        ? PRE_FOLD_IDENTITY_PACKAGE
+        : DAEMON_PACKAGE,
     );
     return window.LIVE_WIRE_VERSIONS;
   },

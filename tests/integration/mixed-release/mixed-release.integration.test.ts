@@ -128,9 +128,9 @@ function releaseWireVersion(
 }
 
 /**
- * The exact Identity and Router versions a published Client release pins.
- * Packages publish at their own versions, so a Client release names its
- * closure; a pin it lacks is a malformed release.
+ * Pre-fold releases pin Identity and Router; post-fold releases keep those
+ * capabilities inside Client. Only `@moltzap/*` dependencies join the installed
+ * product closure, each at the exact version its Client release pins.
  */
 function releaseClosure(version: string, view = npmView) {
   return view([`@moltzap/client@${version}`, "dependencies"]).pipe(
@@ -143,7 +143,9 @@ function releaseClosure(version: string, view = npmView) {
     ),
     Effect.map(
       (pins): Readonly<Record<string, string>> => ({
-        ...pins,
+        ...Object.fromEntries(
+          Object.entries(pins).filter(([name]) => name.startsWith("@moltzap/")),
+        ),
         "@moltzap/client": version,
       }),
     ),

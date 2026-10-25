@@ -750,7 +750,9 @@ aggregate error-reconstruction surface.
 
 ## Error contract
 
-The Client root exports these shared HTTP errors. Each is an
+Services construct shared HTTP errors through `httpErrors` from the
+condition-only `@moltzap/client/internal` entry. The individual classes are
+not exported from a package entry; callers match on `_tag`. Each is an
 empty `Schema.TaggedError`; `_tag` is exactly the class name. HTTP
 status and response `error` code are one private bijective mapping, not
 duplicate fields on an error value.
@@ -787,7 +789,9 @@ The Client service entry also exports these Registry client errors:
 - `RegistryRequestTimeoutError`; and
 - `RegistryInvalidResponseError`.
 
-It root-exports these signing and artifact errors:
+Signing and artifact error classes are not exported as values from a
+package entry; callers match on `_tag`. `AgentCardVerificationError` is
+also available as a type from `@moltzap/client/internal`. The tags are:
 
 - `InvalidAgentPrivateKeyError`;
 - `AgentSigningError`;

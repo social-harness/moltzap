@@ -3,7 +3,6 @@
 import type { HttpClient } from "@effect/platform";
 import { Context, type Duration, Effect, Layer } from "effect";
 import type { Ed25519PublicKey } from "../keys.js";
-import type { HttpOrigin } from "../signing/origin.js";
 import type { RegistryClientService } from "./contract.js";
 import { makeRegistryService } from "./client.js";
 
@@ -31,7 +30,7 @@ export class Registry extends Context.Tag("@moltzap/client/Registry")<
   );
 
   static readonly layer = (input: {
-    readonly origin: HttpOrigin;
+    readonly origin: URL;
     readonly registrySignerPublicKey: Ed25519PublicKey;
     readonly requestTimeout: Duration.Duration;
   }): Layer.Layer<Registry, never, HttpClient.HttpClient> =>

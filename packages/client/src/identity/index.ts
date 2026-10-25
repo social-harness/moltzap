@@ -1,7 +1,5 @@
 /** @file Identity request authentication and immutable Registry resolution for communication. */
 
-/** Origins carry only the serialized network locator. */
-export type { HttpOrigin } from "./signing/origin.js";
 /** Registered requests resolve immutable cards through the Registry capability. */
 export { AuthenticatedHttp } from "./signing/registered/index.js";
 /** Signature proofs remain typed inside authenticated service admission. */

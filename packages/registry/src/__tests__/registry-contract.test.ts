@@ -27,6 +27,10 @@ import {
   StartupError,
 } from "../server.js";
 
+/* eslint-disable @typescript-eslint/naming-convention -- Closed HTTP error constructors retain their class names when bound from the service capability. */
+const { UnavailableError } = httpErrors;
+/* eslint-enable @typescript-eslint/naming-convention -- Restore variable naming after binding error constructors. */
+
 const CONFIGURATION_PHASE = "configuration";
 const AUTHENTICATION_FAILED_TAG = "AuthenticationFailedError";
 const UNAVAILABLE_TAG = "UnavailableError";
@@ -120,7 +124,7 @@ const makeRpcStorage = (calls: Ref.Ref<number>): RegistryStorage => ({
     Ref.updateAndGet(calls, (current) => current + 1).pipe(
       Effect.flatMap(() =>
         request.agentName === "rpc-failure"
-          ? Effect.fail(new httpErrors.UnavailableError())
+          ? Effect.fail(new UnavailableError())
           : Effect.succeed(Object.freeze({ kind: NAME_TAKEN_KIND })),
       ),
     ),

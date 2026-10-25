@@ -183,6 +183,11 @@ const clientDomains: readonly ClientDomain[] = [
           "Immutable AgentCard representation, digest and pinned verification",
       },
       {
+        file: "card-signing.ts",
+        host: false,
+        reason: "Registry card issuance with private signing authority",
+      },
+      {
         file: "wire-version.ts",
         host: true,
         reason: "Wire emission and live or retained compatibility policy",
@@ -594,6 +599,11 @@ const packageDefinitions: Readonly<Record<string, PackageDefinition>> = {
       publicTypePackages: [
         publicTypePackage.effect,
         publicTypePackage.platform,
+        {
+          package: "node",
+          reason:
+            "URL is the platform-standard endpoint locator required by the public acquisition contract",
+        },
       ],
       allowedTestPublicSubpaths: [
         {

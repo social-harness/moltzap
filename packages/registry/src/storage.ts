@@ -20,6 +20,10 @@ import { Clock, Data, Effect, Either, Encoding, Schema } from "effect";
 import { randomBytes } from "node:crypto";
 import { AgentCardIssuedAt, issueAgentCard } from "./issuance.js";
 import { registryMigration } from "./migrations/0001_registry.js";
+
+/* eslint-disable @typescript-eslint/naming-convention -- Closed HTTP error constructors retain their class names when bound from the service capability. */
+const { InternalServerError, UnavailableError } = httpErrors;
+/* eslint-enable @typescript-eslint/naming-convention -- Restore variable naming after binding error constructors. */
 const ed25519PublicKeyThumbprintUri = agentCardSigning.publicKeyId;
 
 /** Storage initialization failed before the Registry became ready. */
@@ -190,7 +194,10 @@ const readinessRow = exactStruct({
 const internalFailure = <A, E, R>(
   effect: Effect.Effect<A, E, R>,
 ): Effect.Effect<A, InstanceType<typeof httpErrors.InternalServerError>, R> =>
-  effect.pipe(Effect.mapError(() => new httpErrors.InternalServerError()));
+  effect.pipe(
+    // eslint-disable-next-line agent-code-guard/no-effect-error-coalescing -- Stored bytes and internal cryptographic failures cross one closed, non-diagnostic storage boundary.
+    Effect.mapError(() => new InternalServerError()),
+  );
 
 const exactRows = <A, I>(
   schema: Schema.Schema<A, I>,
@@ -214,12 +221,10 @@ const withStorageDeadline = <A>(
   timeoutMilliseconds: number,
 ): Effect.Effect<A, StorageError> =>
   effect.pipe(
-    Effect.catchTag("SqlError", () =>
-      Effect.fail(new httpErrors.UnavailableError()),
-    ),
+    Effect.catchTag("SqlError", () => Effect.fail(new UnavailableError())),
     Effect.timeoutFail({
       duration: timeoutMilliseconds,
-      onTimeout: () => new httpErrors.UnavailableError(),
+      onTimeout: () => new UnavailableError(),
     }),
   );
 
@@ -279,7 +284,7 @@ const mintAgentId = (): Effect.Effect<
   internalFailure(
     Effect.try({
       try: () => `agt_${randomBytes(16).toString("base64url")}`,
-      catch: () => new httpErrors.InternalServerError(),
+      catch: () => new InternalServerError(),
     }).pipe(Effect.flatMap(Schema.decodeUnknown(AgentId))),
   );
 
@@ -308,7 +313,7 @@ const mintUnusedAgentId = (
         return candidate;
       }
     }
-    return yield* new httpErrors.InternalServerError();
+    return yield* new InternalServerError();
   });
 
 const issueTime = (): Effect.Effect<
@@ -333,7 +338,7 @@ const decodeAgentIdBytes = (
   InstanceType<typeof httpErrors.InternalServerError>
 > =>
   Either.match(Encoding.decodeBase64Url(agentId.slice(4)), {
-    onLeft: () => Effect.fail(new httpErrors.InternalServerError()),
+    onLeft: () => Effect.fail(new InternalServerError()),
     onRight: Effect.succeed,
   });
 
@@ -347,7 +352,7 @@ function makeCheckReadiness(
         Effect.flatMap((rows) =>
           rows.length === 1
             ? Effect.void
-            : Effect.fail(new httpErrors.InternalServerError()),
+            : Effect.fail(new InternalServerError()),
         ),
       ),
       input.operationTimeoutMilliseconds,
@@ -680,7 +685,7 @@ function makeLookup(input: StorageInput): RegistryStorage["lookup"] {
           return Object.freeze({ kind: "not_found" } as const);
         }
         if (cards.length !== 1) {
-          return yield* new httpErrors.InternalServerError();
+          return yield* new InternalServerError();
         }
         const agentCard = yield* decodeStoredCard(
           card.agentCardBytes,

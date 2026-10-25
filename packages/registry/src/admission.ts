@@ -12,6 +12,11 @@ import { Effect, Redacted, Schema } from "effect";
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { RegistryStorage } from "./storage.js";
 
+/* eslint-disable @typescript-eslint/naming-convention -- Closed HTTP error constructors retain their class names when bound from the service capability. */
+const { AuthenticationFailedError, MalformedRequestError, OverloadedError } =
+  httpErrors;
+/* eslint-enable @typescript-eslint/naming-convention -- Restore variable naming after binding error constructors. */
+
 const registrationPublicKeyRepresentation = Schema.Struct({
   crv: Schema.Literal("Ed25519"),
   kty: Schema.Literal("OKP"),
@@ -96,7 +101,8 @@ function malformedRequest<A, E, R>(
   effect: Effect.Effect<A, E, R>,
 ): Effect.Effect<A, InstanceType<typeof httpErrors.MalformedRequestError>, R> {
   return effect.pipe(
-    Effect.mapError(() => new httpErrors.MalformedRequestError()),
+    // eslint-disable-next-line agent-code-guard/no-effect-error-coalescing -- Canonical JSON and closed request-schema failures share one exact public malformed envelope.
+    Effect.mapError(() => new MalformedRequestError()),
   );
 }
 
@@ -112,7 +118,7 @@ function requireAdmissionCredential(
   return credential !== undefined &&
     sameCredential(credential, input.admissionCredential)
     ? Effect.void
-    : Effect.fail(new httpErrors.AuthenticationFailedError());
+    : Effect.fail(new AuthenticationFailedError());
 }
 
 function authenticatePublicKey(
@@ -122,7 +128,8 @@ function authenticatePublicKey(
   InstanceType<typeof httpErrors.AuthenticationFailedError>
 > {
   return Schema.decodeUnknown(Ed25519PublicKey)(candidate).pipe(
-    Effect.mapError(() => new httpErrors.AuthenticationFailedError()),
+    // eslint-disable-next-line agent-code-guard/no-effect-error-coalescing -- A syntactically valid but cryptographically unusable verification key is an authentication failure.
+    Effect.mapError(() => new AuthenticationFailedError()),
   );
 }
 
@@ -144,10 +151,10 @@ function claimNonce(
       capacity: input.nonceCapacity,
     });
     if (claim === "replayed") {
-      return yield* new httpErrors.AuthenticationFailedError();
+      return yield* new AuthenticationFailedError();
     }
     if (claim === "full") {
-      return yield* new httpErrors.OverloadedError();
+      return yield* new OverloadedError();
     }
   });
 }

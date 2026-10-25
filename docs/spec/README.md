@@ -64,8 +64,10 @@ The final workspace contains exactly these five package products:
 - `@moltzap/openclaw-channel`;
 - `@moltzap/nanoclaw-channel`.
 
-[`layer-interfaces.md`](./layer-interfaces.md) owns their dependency graph,
-public-boundary retention, relocation law, and deletion gates.
+[`layer-interfaces.md` → Exact package graph](./layer-interfaces.md#exact-package-graph),
+[Library entries](./layer-interfaces.md#library-entries), and
+[Publication and versions](./layer-interfaces.md#publication-and-versions)
+own the package boundaries, exports, and releases.
 
 ## Gate 1 chapters
 

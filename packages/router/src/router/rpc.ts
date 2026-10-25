@@ -24,6 +24,10 @@ import {
 import type { RouterPoll } from "./poll.js";
 import type { RouterSend } from "./send.js";
 
+/* eslint-disable @typescript-eslint/naming-convention -- Closed HTTP error constructors retain their class names when bound from the service capability. */
+const { AuthenticationFailedError } = httpErrors;
+/* eslint-enable @typescript-eslint/naming-convention -- Restore variable naming after binding error constructors. */
+
 type RouterHandlerError =
   | InstanceType<typeof httpErrors.AuthenticationFailedError>
   | InstanceType<typeof httpErrors.OverloadedError>
@@ -67,7 +71,7 @@ const registeredAgentRequestLayer = Layer.succeed(RegisteredAgentRequest, () =>
   FiberRef.get(currentVerifiedRequest).pipe(
     Effect.flatMap(
       Option.match({
-        onNone: () => Effect.fail(new httpErrors.AuthenticationFailedError()),
+        onNone: () => Effect.fail(new AuthenticationFailedError()),
         onSome: Effect.succeed,
       }),
     ),

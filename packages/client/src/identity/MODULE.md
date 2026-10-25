@@ -8,7 +8,7 @@ Identity request authentication and immutable Registry resolution for communicat
 
 ## Public surface
 
-### [`AgentCard`](./cards.ts#L99)
+### [`AgentCard`](./cards.ts#L97)
 
 _Interface_
 
@@ -24,7 +24,7 @@ export interface AgentCard {
 
 Immutable public identity fields carried by an AgentCard.
 
-### [`AgentCard`](./cards.ts#L327)
+### [`AgentCard`](./cards.ts#L325)
 
 _Variable_
 
@@ -203,7 +203,7 @@ export const PrincipalId = canonicalIdentifier(
 
 Opaque identity of the principal represented by an agent.
 
-### [`VerifiedAgentCard`](./cards.ts#L234)
+### [`VerifiedAgentCard`](./cards.ts#L232)
 
 _TypeAlias_
 

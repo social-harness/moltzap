@@ -71,6 +71,17 @@ export function checkCompatibilityVersion(run: BoundaryRun): string | null {
   const versionPath = path.join(clientSource, "identity", "wire-version.ts");
   const compatibilityVersion = readCompatibilityVersion(run, versionPath);
   checkWireVersionSets(run);
+  const manifest = readJsonObject(
+    path.join(run.packagesRoot, "client", "package.json"),
+  );
+  if (
+    compatibilityVersion !== null &&
+    manifest.sharnessWireVersion !== compatibilityVersion
+  ) {
+    run.failures.push(
+      `packages/client/package.json: sharnessWireVersion must equal WIRE_VERSION "${compatibilityVersion}"`,
+    );
+  }
   const clientIndex = path.join(clientSource, "index.ts");
   if (!existsSync(clientIndex)) {
     run.failures.push(

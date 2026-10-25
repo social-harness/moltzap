@@ -10,7 +10,6 @@ export {
   type InboundDelivery,
 } from "./harness/endpoint/index.js";
 /** Acquire the structural endpoint for one loopback daemon endpoint. */
-// safer-arch-ignore no-public-vendor-type-leak: URL is the platform-standard endpoint locator required by the public acquisition contract.
 export { acquireHarnessEndpoint } from "./harness/endpoint/index.js";
 /**
  * Decoders of the daemon's MCP tool results, refusal data and

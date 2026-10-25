@@ -35,7 +35,6 @@ import type {
   VersionMismatchError,
 } from "../../signing/http-errors.js";
 import type { AgentSigningError } from "../../signing/http-signature.js";
-import type { HttpOrigin } from "../../signing/origin.js";
 
 type Expect<Value extends true> = Value;
 
@@ -98,7 +97,7 @@ type RegistryLayerInputIsExact = Expect<
   Types.Equals<
     Parameters<typeof Registry.layer>[0],
     Readonly<{
-      origin: HttpOrigin;
+      origin: URL;
       registrySignerPublicKey: Ed25519PublicKey;
       requestTimeout: Duration.Duration;
     }>
