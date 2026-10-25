@@ -17,6 +17,62 @@ sections are the codebase's history as MoltZap.
 
 <!-- towncrier release notes start -->
 
+## [2026.1025.0] - 2026-10-25
+
+### Added
+
+- Add the condition-only `@moltzap/client/test` entry for management request and
+  result schemas in process tests. Enable it with the `sharness-test` resolution
+  condition; it has no default export condition (#1435).
+- The Registry and Router build as container images from
+  `images/registry/Dockerfile` and `images/router/Dockerfile`. The Registry
+  image includes `pglite-server` for run-scoped and development databases
+  (#1449).
+- Registry and Router publish signed multi-architecture service images. npm
+  releases pin their image digests, and the two-agents example runs with Docker
+  Compose and the npm Client.
+
+### Changed
+
+- The Client library owns identity and Router client capabilities. Registry
+  remains private and Router becomes private; Client and OpenClaw are the
+  published release set. Operators: a `sharnessd-launcher` from a release that
+  includes `@moltzap/identity` keeps its recorded release when offered this one.
+  Install an image whose launcher comes from this release or later before taking
+  it, and remove the launcher directory when rolling back to an older image. See
+  [Upgrade daemons on
+  restart](https://github.com/social-harness/moltzap/blob/main/docs/guides/upgrades.mdx#upgrade-daemons-on-restart).
+  Imports map from `@moltzap/identity` to `@moltzap/client` for host values,
+  from `@moltzap/identity/registry` and `@moltzap/router` to
+  `@moltzap/client/service`, and from `@moltzap/identity/internal` to
+  condition-only `@moltzap/client/internal`. Services import `registryContract`,
+  `routerContract` and `httpErrors` from `./internal`. `AgentCardDigest`,
+  `AuthenticatedHttp`, `VerifiedAgentRequest`, `VerifiedHttpSignature`,
+  `verifyBootstrapRequest`, `agentCardSigning`, `AgentCardClaims`,
+  `AgentCardVerificationError` (type only), `HISTORY_WIRE_VERSIONS`,
+  `wireVersions` and `WireVersion` use condition-only `./internal`;
+  `WireVersions` overrides use condition-only `./test` with the `sharness-test`
+  condition. `./internal` requires `sharness-internal`. `Registry` and `Router`
+  clients use `./service` for embedders. `SealedBody` and the individual HTTP
+  and signing/artifact error classes are no longer exported as values. Match
+  failures on `_tag`; service implementations construct HTTP errors through
+  `httpErrors`. The retired error values are `MalformedRequestError`,
+  `AuthenticationFailedError`, `RouteNotFoundError`, `MethodNotAllowedError`,
+  `VersionMismatchError`, `PayloadTooLargeError`, `UnsupportedMediaTypeError`,
+  `OverloadedError`, `UnavailableError`, `InternalServerError`,
+  `InvalidAgentPrivateKeyError`, `AgentSigningError`,
+  `AgentCardVerificationError`, `SignedMessageSigningError`,
+  `SignedMessageVerificationError`, `SealedBodySealingError` and
+  `SealedBodyOpeningError` (#1018).
+
+### Fixed
+
+- The Router and Registry clients report a 412 whose body is not the exact
+  canonical `{"error":"version_mismatch","supported":[...]}` envelope, including
+  the body without `supported` that releases before 2026.1019.2 sent, as
+  RouterInvalidResponseError or RegistryInvalidResponseError instead of
+  VersionMismatchError (#1418).
+
 ## [2026.1022.0] - 2026-10-22
 
 ### Changed
