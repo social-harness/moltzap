@@ -39,7 +39,8 @@
         "executor": "nx:run-commands",
         "dependsOn": [
           "@moltzap/client:build",
-          "@moltzap/registry:build"
+          "@moltzap/registry:build",
+          "@moltzap/router:build"
         ],
         "options": {
           "command": "vitest run --config tests/integration/mixed-release/vitest.config.ts",
