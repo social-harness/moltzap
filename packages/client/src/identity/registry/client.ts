@@ -161,7 +161,7 @@ const textDecoder = new TextDecoder("utf-8", {
 const exactText = (bytes: Uint8Array): string | undefined => {
   try {
     return textDecoder.decode(bytes);
-    // eslint-disable-next-line agent-code-guard/bare-catch -- Invalid UTF-8 is an ordinary closed-response validation failure. #ignore-sloppy-code-next-line[bare-catch]: The decoder returns undefined.
+    // eslint-disable-next-line agent-code-guard/bare-catch -- Invalid UTF-8 is an ordinary closed-response validation failure.
   } catch {
     return undefined;
   }

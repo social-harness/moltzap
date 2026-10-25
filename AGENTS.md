@@ -175,8 +175,8 @@ and a check fails when the copy disagrees with its source.
   (admission, the firewall, release provenance) are ours to validate.
 
 Effect idiom, typed errors, exhaustive switches, and cast bans are enforced by
-`lint:sloppy-code-guard` and the `agent-code-guard` eslint rules. Read their
-output rather than a summary of it here.
+the `agent-code-guard` eslint rules. Read their output rather than a summary
+of it here.
 
 ## Tests
 

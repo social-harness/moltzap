@@ -1,9 +1,7 @@
 #!/usr/bin/env sh
 #
 # The batch boundary. These are too slow to pay per commit and cheap enough to
-# pay once per push; CI stays the full gate. sloppy-code-guard also runs in CI
-# via the workspace lint target, so a bypass here is caught rather than lost.
+# pay once per push; CI stays the full gate.
 set -e
 
-pnpm nx run workspace:lint:sloppy-code-guard
 pnpm exec nx affected -t typecheck

@@ -154,7 +154,7 @@ const sameBytes = (left: Uint8Array, right: Uint8Array): boolean => {
       everyByte.call(left, (byte, index) => byte === right[index]) &&
       everyByte.call(right, (byte, index) => byte === left[index])
     );
-    // eslint-disable-next-line agent-code-guard/bare-catch -- Detached or exotic typed arrays are non-canonical inputs, not defects. #ignore-sloppy-code-next-line[bare-catch]: The comparison returns false.
+    // eslint-disable-next-line agent-code-guard/bare-catch -- Detached or exotic typed arrays are non-canonical inputs, not defects.
   } catch {
     return false;
   }

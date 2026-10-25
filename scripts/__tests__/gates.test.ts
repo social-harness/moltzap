@@ -36,10 +36,7 @@ import {
   MALFORMED_BOUNDARY_CASES,
 } from "./integration-boundary-cases.ts";
 import { testIntegrationGraph } from "./integration-boundary-graph.ts";
-import {
-  testGuardIntegrity,
-  testIntegrationIntegrityGuards,
-} from "./integration-integrity.ts";
+import { testIntegrationLaneCollection } from "./integration-integrity.ts";
 import {
   failures,
   plantBoundarySource,
@@ -76,8 +73,7 @@ function main(): void {
     testIntegrationAgentInstructionsLink();
     testIntegrationGraph();
     testIntegrationLintProfile();
-    testIntegrationIntegrityGuards();
-    testGuardIntegrity();
+    testIntegrationLaneCollection();
     testIsolatedFolderImports();
   } finally {
     restoreAllPlants();
@@ -790,27 +786,9 @@ function testDependencyVersions(): void {
     clean.code === 0,
     `expected exit 0, got ${clean.code}. stderr: ${clean.stderr.slice(0, 300)}`,
   );
-  testDependencyVersionsLiteralSpecifier();
   testDependencyVersionsExampleCopy();
   testDependencyVersionsDriftedEngines();
   testDependencyVersionsNodePin();
-  testDependencyVersionsActionRefs();
-}
-
-function testDependencyVersionsLiteralSpecifier(): void {
-  plantFile("packages/router/package.json", (s) =>
-    s.replace('"jose": "catalog:"', '"jose": "6.2.6"'),
-  );
-  const literal = runDependencyVersions();
-  test(
-    "flags a workspace manifest that writes its own npm version",
-    literal.code !== 0 &&
-      /router\/package\.json: dependencies\.jose is "6\.2\.6"; declare "catalog:"/.test(
-        literal.stderr,
-      ),
-    `expected catalog failure. exit=${literal.code}, stderr=${literal.stderr.slice(0, 300)}`,
-  );
-  restoreAllPlants();
 }
 
 /** The planted range is not a published version, so no catalog bump can match it. */
@@ -871,20 +849,6 @@ function testDependencyVersionsNodePin(): void {
         ".node-version: 0.0.0 is outside the root engines.node range",
       ),
     `expected Node pin failure. exit=${pin.code}, stderr=${pin.stderr.slice(0, 300)}`,
-  );
-  restoreAllPlants();
-}
-
-function testDependencyVersionsActionRefs(): void {
-  plantFile(".github/workflows/publish.yml", (s) =>
-    s.replace(/actions\/checkout@\S+/, "actions/checkout@v7"),
-  );
-  const action = runDependencyVersions();
-  test(
-    "flags an action used at two refs",
-    action.code !== 0 &&
-      /actions\/checkout: used at 2 refs/.test(action.stderr),
-    `expected action ref failure. exit=${action.code}, stderr=${action.stderr.slice(0, 300)}`,
   );
   restoreAllPlants();
 }

@@ -6,7 +6,6 @@ WORKDIR /build
 ENV HUSKY=0 NX_DAEMON=false NX_NO_CLOUD=true
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc .node-version nx.json tsconfig.base.json ./
 COPY scripts/build/clean-dist.ts scripts/build/clean-dist.ts
-COPY scripts/setup/restore-tsgo-exec-bit.ts scripts/setup/restore-tsgo-exec-bit.ts
 COPY packages/client/ packages/client/
 COPY packages/router/ packages/router/
 RUN corepack enable && corepack prepare pnpm@10.6.2 --activate

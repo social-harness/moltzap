@@ -385,7 +385,6 @@ function readBoundedBody(
   | InstanceType<typeof httpErrors.PayloadTooLargeError>
   | InstanceType<typeof httpErrors.MalformedRequestError>
 > {
-  // #ignore-sloppy-code-next-line[async-keyword]: This Effect callback constructor does not use the JavaScript keyword.
   return Effect.async((resume) => {
     const incoming = NodeHttpServerRequest.toIncomingMessage(request);
     const body = new Uint8Array(maximumBytes);

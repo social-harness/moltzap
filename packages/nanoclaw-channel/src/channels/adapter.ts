@@ -225,9 +225,7 @@ interface ChannelAdapter {
   supportsThreads: boolean;
 
   // Lifecycle
-  // #ignore-sloppy-code-next-line[promise-type]: NanoClaw's ChannelAdapter ABI is Promise-based.
   setup(config: ChannelSetup): Promise<void>;
-  // #ignore-sloppy-code-next-line[promise-type]: NanoClaw's ChannelAdapter ABI is Promise-based.
   teardown(): Promise<void>;
   isConnected(): boolean;
 
@@ -236,7 +234,6 @@ interface ChannelAdapter {
     platformId: string,
     threadId: string | null,
     message: OutboundMessage,
-    // #ignore-sloppy-code-next-line[promise-type]: NanoClaw's ChannelAdapter ABI is Promise-based.
   ): Promise<string | undefined>;
 
   // Optional
@@ -245,11 +242,8 @@ interface ChannelAdapter {
     threadId: string | null,
     status?: string,
     statusKind?: "auto" | "agent",
-    // #ignore-sloppy-code-next-line[promise-type]: NanoClaw's ChannelAdapter ABI is Promise-based.
   ): Promise<void>;
-  // #ignore-sloppy-code-next-line[promise-type]: NanoClaw's ChannelAdapter ABI is Promise-based.
   syncConversations?(): Promise<ConversationInfo[]>;
-  // #ignore-sloppy-code-next-line[promise-type]: NanoClaw's ChannelAdapter ABI is Promise-based.
   resolveChannelName?(platformId: string): Promise<string | null>;
   /**
    * Set a human-readable title on a conversation thread. Platforms with a
@@ -265,13 +259,11 @@ interface ChannelAdapter {
     platformId: string,
     threadId: string,
     title: string,
-    // #ignore-sloppy-code-next-line[promise-type]: NanoClaw's ChannelAdapter ABI is Promise-based.
   ): Promise<void>;
   setSuggestedPrompts?(
     platformId: string,
     prompts: Array<{ title: string; message: string }>,
     title?: string,
-    // #ignore-sloppy-code-next-line[promise-type]: NanoClaw's ChannelAdapter ABI is Promise-based.
   ): Promise<void>;
 
   /**
@@ -283,7 +275,6 @@ interface ChannelAdapter {
    * Platforms without a subscription concept can omit this; the router
    * treats absence as a no-op.
    */
-  // #ignore-sloppy-code-next-line[promise-type]: NanoClaw's ChannelAdapter ABI is Promise-based.
   subscribe?(platformId: string, threadId: string): Promise<void>;
 
   /**
@@ -301,7 +292,6 @@ interface ChannelAdapter {
    * chat.openDM, which hits the platform's idempotent open-DM endpoint.
    * Returning the same platform_id on repeated calls is expected.
    */
-  // #ignore-sloppy-code-next-line[promise-type]: NanoClaw's ChannelAdapter ABI is Promise-based.
   openDM?(userHandle: string): Promise<string>;
 
   /**

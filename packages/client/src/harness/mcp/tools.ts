@@ -287,7 +287,6 @@ const toolResult = <Value extends Readonly<Record<string, unknown>>>(
  * JSON Schema decides structural admission; Effect supplies field diagnostics
  * only for rejected inputs, leaving semantic refusals with their operations.
  */
-// #ignore-sloppy-code-next-line[async-keyword]: The SDK's Standard Schema validator is Promise-capable at the MCP boundary.
 const decodeToolInput = async <Value, A, I>(
   schema: StandardSchemaV1<unknown, Value>,
   diagnosticsSchema: Schema.Schema<A, I>,
@@ -314,7 +313,6 @@ const decodeToolInput = async <Value, A, I>(
   return decoded.value;
 };
 
-// #ignore-sloppy-code-next-line[async-keyword]: MCP tool handlers are Promise callbacks, so this edge awaits Effect before returning the SDK result.
 const runOperation = async <Value extends Readonly<Record<string, unknown>>>(
   options: RunOperationOptions<Value>,
 ) => {
@@ -359,7 +357,6 @@ const runOperation = async <Value extends Readonly<Record<string, unknown>>>(
  * @param services The trusted daemon services captured when the handler is acquired.
  * @returns The send's tool result.
  */
-// #ignore-sloppy-code-next-line[async-keyword]: MCP tool handlers are Promise callbacks, so this edge awaits Effect before returning the SDK result.
 const runSendOperation = async (
   operation: Effect.Effect<
     HarnessSendResult,
@@ -386,7 +383,6 @@ const runSendOperation = async (
   return toolResult(outcome.value);
 };
 
-// #ignore-sloppy-code-next-line[async-keyword]: Standard Schema output validation is Promise-capable and runs inside the MCP SDK's Promise callback contract.
 const validateToolOutput = async <
   Value,
   Result extends Readonly<{ structuredContent: Value }>,
@@ -405,7 +401,6 @@ const validateToolOutput = async <
   return result;
 };
 
-// #ignore-sloppy-code-next-line[async-keyword]: The MCP SDK callback must await both the Promise-native operation bridge and output validation before returning.
 const runValidatedOperation = async <
   Value extends Readonly<Record<string, unknown>>,
 >(
@@ -615,7 +610,6 @@ const decodeInvocationInput = <A>(
  * @param operations The daemon operations that run the send.
  * @returns The send's validated tool result.
  */
-// #ignore-sloppy-code-next-line[async-keyword]: The low-level MCP request handler awaits schema validation and the Promise-native operation bridge.
 const handleSendToolCall = async (
   input: ToolCallInput,
   operations: HarnessMcpOperations,
@@ -660,7 +654,6 @@ interface ToolOperations extends HarnessMcpOperations {
   readonly services: Runtime.Runtime<never>;
 }
 
-// #ignore-sloppy-code-next-line[async-keyword]: The MCP edge validates its Promise-native tool schema before running the owner operation.
 const handleOwnerOperation = async (
   operation: Effect.Effect<Readonly<Record<string, unknown>>, ProtocolError>,
   input: ToolCallInput,
@@ -709,7 +702,6 @@ const makeToolHandler =
       ) => Effect.Effect<Value, ClosedOperationError>;
     },
   ): ToolHandler =>
-  // #ignore-sloppy-code-next-line[async-keyword]: The MCP callback awaits Promise-capable schema validation and the Effect bridge.
   async (input, operations) => {
     const request = await decodeToolInput(
       inputSchema,
@@ -893,7 +885,6 @@ const currentTools = (
     : tools;
 };
 
-// #ignore-sloppy-code-next-line[async-keyword]: The low-level MCP dispatcher awaits the selected Promise-native tool handler.
 const handleToolCall = async (
   input: ToolCallInput,
   operations: ToolOperations,

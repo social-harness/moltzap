@@ -28,7 +28,6 @@
         "scripts/__tests__/**/*.ts"
       ],
       "ignoreDependencies": [
-        "@effect/tsgo",
         "@mermaid-js/mermaid-cli",
         "oxlint",
         "puppeteer"

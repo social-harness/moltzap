@@ -101,7 +101,7 @@ export const closeStoreState = (state: StoreState): Effect.Effect<void> =>
     state.snapshots.clear();
     try {
       state.database.close();
-      // eslint-disable-next-line agent-code-guard/bare-catch, no-empty -- Finalization must remain infallible and disclose no SQLite diagnostic. #ignore-sloppy-code-next-line[bare-catch]: Store finalization preserves its infallible persistence boundary.
+      // eslint-disable-next-line agent-code-guard/bare-catch, no-empty -- Finalization must remain infallible and disclose no SQLite diagnostic.
     } catch {}
   });
 
@@ -168,7 +168,7 @@ function rollback(database: DatabaseSync): boolean {
   try {
     database.exec("ROLLBACK");
     return true;
-    // eslint-disable-next-line agent-code-guard/bare-catch -- Rollback failure is outcome evidence, never a replacement diagnostic. #ignore-sloppy-code-next-line[bare-catch]: The transaction reports uncertainty after a failed rollback.
+    // eslint-disable-next-line agent-code-guard/bare-catch -- Rollback failure is outcome evidence, never a replacement diagnostic.
   } catch {
     return false;
   }
@@ -209,7 +209,7 @@ function initializeStoreState(
   } catch (failure) {
     try {
       database?.close();
-      // eslint-disable-next-line agent-code-guard/bare-catch, no-empty -- Failed acquisition closes best-effort without replacing the startup failure. #ignore-sloppy-code-next-line[bare-catch]: The original persistence startup failure remains authoritative.
+      // eslint-disable-next-line agent-code-guard/bare-catch, no-empty -- Failed acquisition closes best-effort without replacing the startup failure.
     } catch {}
     throw failure;
   }
