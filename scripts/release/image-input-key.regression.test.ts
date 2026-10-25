@@ -103,7 +103,7 @@ await test("a full-line comment continuation cannot hide COPY", (t) => {
     "images/router/Dockerfile",
     dockerfile.replace(
       "COPY package.json",
-      "# comment \\\nCOPY assets/ /assets\nCOPY package.json",
+      "# comment \\\nCOPY assets/ assets/\nCOPY package.json",
     ),
   );
   commit(repo);
@@ -683,6 +683,8 @@ await test("installed workspace lifecycle inputs bind keys without runtime impor
 for (const instruction of [
   "FROM node:24-slim",
   "COPY . /app",
+  "COPY packages/client/src/daemon/run.ts packages/router/src/server.ts",
+  "COPY packages/client/src/index.ts ./",
   "COPY ./ /app",
   "COPY packages/* /app",
   "COPY https://example.test/archive /app",
@@ -830,6 +832,43 @@ await test("real Dockerfiles exclude daemon-only source and sibling version read
   commit(repo);
   assert.deepEqual(Effect.runSync(imageInputs(repo)), changedSibling);
 });
+
+for (const [file, content, changesKey] of [
+  ["integration/daemon.test.ts", "daemon-only integration test", false],
+  ["safer-architecture.config.json", "{}", false],
+  ["vitest.config.ts", "export {};", false],
+  ["tsconfig.test.json", "{}", false],
+  ["typedoc.json", "{}", false],
+  ["AGENTS.md", "daemon-only instructions", false],
+  [
+    "tsconfig.json",
+    '{"extends":"../../tsconfig.base.json","compilerOptions":{"rootDir":"src","outDir":"dist","strict":true}}',
+    true,
+  ],
+] as const) {
+  await test(`real Dockerfiles exclude daemon-only source: ${file} ${changesKey ? "changes" : "preserves"} both keys`, (t) => {
+    const repo = realImageFixture();
+    t.after(() => {
+      rmSync(repo, { recursive: true, force: true });
+    });
+    const target = `packages/client/${file}`;
+    write(repo, target, "daemon-only baseline");
+    if (changesKey) {
+      write(
+        repo,
+        target,
+        '{"extends":"../../tsconfig.base.json","compilerOptions":{"rootDir":"src","outDir":"dist"}}\n',
+      );
+    }
+    commit(repo);
+    const before = Effect.runSync(imageInputs(repo));
+    write(repo, target, content);
+    commit(repo);
+    const after = Effect.runSync(imageInputs(repo));
+    assert.equal(after.router?.key !== before.router?.key, changesKey);
+    assert.equal(after.registry?.key !== before.registry?.key, changesKey);
+  });
+}
 
 await test("adding PGlite runtime dependencies changes only the Registry image", (t) => {
   const repo = realImageFixture();

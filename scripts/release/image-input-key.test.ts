@@ -73,7 +73,7 @@ const changes = [
     true,
   ],
   ["npm configuration", ".npmrc", "strict-peer-dependencies=true", true, true],
-  ["Docker ignore rules", ".dockerignore", "node_modules\n.tmp", false, false],
+  ["Docker ignore rules", ".dockerignore", "node_modules\n.tmp", true, true],
   ["Nx configuration", "nx.json", '{"parallel":2}', true, true],
   [
     "base TypeScript config",
@@ -438,26 +438,62 @@ for (const [label, instruction] of [
   ["JSON ADD", 'ADD ["assets/", "/config"]'],
   ["CRLF continuation", "COPY \\\r\n assets/ /assets"],
   ["spaced continuation", "COPY \\ \t\n assets/ /assets"],
-  ["comment continuation", "COPY \\n\n # ignored\n assets/ /assets"],
+  ["comment continuation", "COPY \\\n\n # ignored\n assets/ /assets"],
   ["heredoc RUN", "RUN <<EOF\nnode tools/heredoc-task.ts\nEOF"],
   ["entrypoint", 'ENTRYPOINT ["node", "assets/config"]'],
+  ["lowercase copy", "copy assets/ assets/"],
+  ["lowercase run", "run pnpm nx run @fixture/router:build"],
 ] as const) {
   await test(`refuses ${label}`, (t) => {
     const repo = fixture();
     t.after(() => {
       rmSync(repo, { recursive: true, force: true });
     });
-    write(repo, "images/router/Dockerfile", `${dockerfile}\n${instruction}\n`);
+    write(
+      repo,
+      "images/router/Dockerfile",
+      dockerfile.replace(
+        "COPY package.json",
+        `${instruction}\nCOPY package.json`,
+      ),
+    );
     commit(repo);
     Either.match(Effect.runSync(Effect.either(imageInputs(repo))), {
       onLeft: (error) => {
         assert.ok(error instanceof ImageInputError);
-        assert.match(error.message, /images\/router\/Dockerfile line \d+/u);
+        assert.match(error.message, /images\/router\/Dockerfile line 2:/u);
       },
       onRight: () => assert.fail("Expected refusal"),
     });
   });
 }
+
+await test("refuses a well-formed COPY of an uncommitted source at its line", (t) => {
+  const repo = fixture();
+  t.after(() => {
+    rmSync(repo, { recursive: true, force: true });
+  });
+  write(
+    repo,
+    "images/router/Dockerfile",
+    dockerfile.replace(
+      "COPY package.json",
+      "COPY assets/uncommitted assets/uncommitted\nCOPY package.json",
+    ),
+  );
+  commit(repo);
+  write(repo, "assets/uncommitted", "uncommitted");
+  Either.match(Effect.runSync(Effect.either(imageInputs(repo))), {
+    onLeft: (error) => {
+      assert.ok(error instanceof ImageInputError);
+      assert.match(
+        error.message,
+        /images\/router\/Dockerfile line 2: COPY assets\/uncommitted assets\/uncommitted/u,
+      );
+    },
+    onRight: () => assert.fail("Expected refusal"),
+  });
+});
 
 await test("refuses symlink image inputs", (t) => {
   const repo = fixture();
@@ -802,27 +838,27 @@ for (const [label, instruction, message] of [
   [
     "non-default Docker escape",
     "# escape=`\nCOPY assets/ /assets",
-    /images\/router\/Dockerfile line/u,
+    /images\/router\/Dockerfile line 2:/u,
   ],
   [
     "default-source bind mount",
     "RUN --mount=type=bind,target=/context cat /context/assets/config",
-    /images\/router\/Dockerfile line/u,
+    /images\/router\/Dockerfile line 2:/u,
   ],
   [
     "explicit-source bind mount",
     "RUN --mount=type=bind,source=assets,target=/context cat /context/config",
-    /images\/router\/Dockerfile line/u,
+    /images\/router\/Dockerfile line 2:/u,
   ],
   [
     "malformed JSON ADD",
     'ADD ["assets/",]',
-    /images\/router\/Dockerfile line/u,
+    /images\/router\/Dockerfile line 2:/u,
   ],
   [
     "missing context source",
-    "COPY missing/ /assets",
-    /images\/router\/Dockerfile line.*missing/u,
+    "COPY missing/ missing/",
+    /images\/router\/Dockerfile line 2: COPY missing\/ missing\//u,
   ],
 ] as const) {
   await test(`refuses ${label} with a file-specific typed error`, (t) => {
@@ -830,7 +866,14 @@ for (const [label, instruction, message] of [
     t.after(() => {
       rmSync(repo, { recursive: true, force: true });
     });
-    write(repo, "images/router/Dockerfile", `${instruction}\n${dockerfile}`);
+    write(
+      repo,
+      "images/router/Dockerfile",
+      dockerfile.replace(
+        "COPY package.json",
+        `${instruction}\nCOPY package.json`,
+      ),
+    );
     commit(repo);
     const result = Effect.runSync(Effect.either(imageInputs(repo)));
     Either.match(result, {
@@ -895,7 +938,7 @@ for (const name of [
       `images/router/${name}`,
       dockerfile.replace(
         "COPY package.json",
-        "COPY assets/ /assets\nCOPY package.json",
+        "COPY assets/ assets/\nCOPY package.json",
       ),
     );
     commit(repo);

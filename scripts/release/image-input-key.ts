@@ -17,7 +17,11 @@ import {
   UNHASHED_FIELDS,
 } from "./content-hash.ts";
 import { dockerContextInputs } from "./image-dockerfile.ts";
-import { compilerLayout, configInputs } from "./image-input-config.ts";
+import {
+  asStrings,
+  compilerLayout,
+  configInputs,
+} from "./image-input-config.ts";
 import {
   checkout,
   ImageInputError,
@@ -173,9 +177,7 @@ function inputs(
     { ...tree, service: name },
     [...new Set([...directories, ...installed])],
     image,
-  ).filter((file) =>
-    includedTool(file, { own, modules, image, directories, root }),
-  );
+  ).filter((file) => ![...own, ...modules, ...image].includes(file));
   const entries = [...own, ...modules, ...image, ...tooling].map((file) =>
     committedEntry(tree, file),
   );
@@ -194,27 +196,6 @@ function inputs(
     locked: locked.map(([id]) => id),
     key: digestOf(entries),
   };
-}
-
-/** Sibling source bytes bind through the reached graph; copied build configuration still binds in full. */
-function includedTool(
-  file: string,
-  context: {
-    readonly own: readonly string[];
-    readonly modules: readonly string[];
-    readonly image: readonly string[];
-    readonly directories: readonly string[];
-    readonly root: string;
-  },
-): boolean {
-  if ([...context.own, ...context.modules, ...context.image].includes(file)) {
-    return false;
-  }
-  return !context.directories.some(
-    (directory) =>
-      directory !== context.root &&
-      ["src", "bin"].some((part) => file.startsWith(`${directory}/${part}/`)),
-  );
 }
 
 function serviceImages(tree: Tree, service: string, name: string): string[] {
@@ -350,6 +331,7 @@ function buildInputs(
   const fixed = [
     "package.json",
     ".npmrc",
+    ".dockerignore",
     "nx.json",
     "tsconfig.base.json",
     ".node-version",
@@ -361,12 +343,15 @@ function buildInputs(
     ...images
       .filter(isBuildFile)
       .flatMap((file) =>
-        dockerContextInputs(buildTree, file, tree.service ?? ""),
+        dockerContextInputs(buildTree, file, tree.service ?? "").filter(
+          (input) => includedCopy(buildTree, input, roots),
+        ),
       ),
   ]);
   const pending = [
     ...fixed,
     ...images.filter(isBuildFile),
+    ...roots.map((root) => path.posix.join(root, "package.json")),
     ...roots
       .map((root) => `${root}/tsconfig.json`)
       .filter((file) => buildTree.files.has(file)),
@@ -384,6 +369,46 @@ function buildInputs(
     pending.push(...namedInputs(buildTree, file));
   }
   return [...files];
+}
+
+/** Copied siblings bind only packed non-source content; executable inputs are discovered separately. */
+function includedCopy(
+  tree: Tree,
+  file: string,
+  roots: readonly string[],
+): boolean {
+  const own = workspaceRoots(tree).get(tree.service ?? "");
+  const sibling = roots.find(
+    (root) => root !== "." && root !== own && file.startsWith(`${root}/`),
+  );
+  if (sibling === undefined) {
+    return true;
+  }
+  const relative = path.posix.relative(sibling, file);
+  if (/^(?:src|bin)\//u.test(relative)) {
+    return false;
+  }
+  const patterns = asStrings(readJson(tree, `${sibling}/package.json`).files);
+  return (
+    /^(?:package\.json|readme(?:\..*)?|licen[cs]e(?:\..*)?|notice(?:\..*)?)$/iu.test(
+      relative,
+    ) ||
+    (patterns.some(
+      (pattern) => !pattern.startsWith("!") && packedPath(relative, pattern),
+    ) &&
+      !patterns.some(
+        (pattern) =>
+          pattern.startsWith("!") && packedPath(relative, pattern.slice(1)),
+      ))
+  );
+}
+
+function packedPath(file: string, pattern: string): boolean {
+  const normalized = pattern.replace(/^\.\//u, "").replace(/\/$/u, "");
+  return (
+    path.posix.matchesGlob(file, normalized) ||
+    path.posix.matchesGlob(file, `${normalized}/**`)
+  );
 }
 
 function buildCommandFiles(tree: Tree, root: string): string[] {

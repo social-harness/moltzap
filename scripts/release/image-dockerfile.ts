@@ -4,7 +4,7 @@ import { ImageInputError, readJson, type Tree } from "./image-input-tree.ts";
 
 /**
  * Inventories named context sources after validating every instruction.
- * No Docker ignore rules apply: context-wide sources and globbing are refused.
+ * Named roots are inventoried conservatively; ignore rules bind as a fixed input.
  * Stage copies consume the already inventoried build output.
  */
 export function dockerContextInputs(
@@ -96,10 +96,7 @@ function allowedInstruction(line: string, state: DockerStage): boolean {
   if (state.stage === 1 && state.commands.has(line.slice(4))) {
     return line.startsWith("RUN ");
   }
-  if (
-    state.stage === 2 &&
-    line === "COPY --from=build --chown=node:node /deploy/ /app/"
-  ) {
+  if (state.stage === 2 && line === "COPY --from=build /deploy/ /app/") {
     return true;
   }
   return allowedMetadata(line, state.stage, state.service);
@@ -108,12 +105,31 @@ function allowedInstruction(line: string, state: DockerStage): boolean {
 function contextCopy(tree: Tree, line: DockerLine): string[] {
   const sources = line.text.slice(5).split(/\s+/u);
   const destination = sources.pop() ?? "";
-  const validDestination =
-    destination === "./" || namedPath(destination.replace(/^\//u, ""));
-  if (sources.length === 0 || !sources.every(namedPath) || !validDestination) {
+  if (
+    sources.length === 0 ||
+    !sources.every(namedPath) ||
+    !copyDestination(tree, sources, destination)
+  ) {
     refuse(line);
   }
   return sources.flatMap((source) => copiedFiles(tree, source, line));
+}
+
+function copyDestination(
+  tree: Tree,
+  sources: readonly string[],
+  destination: string,
+): boolean {
+  if (destination === "./") {
+    return sources.every(
+      (source) => !source.includes("/") && tree.files.has(source),
+    );
+  }
+  return (
+    sources.length === 1 &&
+    namedPath(destination) &&
+    destination.replace(/\/$/u, "") === sources[0]?.replace(/\/$/u, "")
+  );
 }
 
 function copiedFiles(tree: Tree, source: string, line: DockerLine): string[] {

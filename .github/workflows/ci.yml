@@ -156,7 +156,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Build service images for amd64
         run: |
-          docker buildx create --use
           for service in registry router; do
             docker buildx build --platform linux/amd64 --load \
               --file "images/${service}/Dockerfile" \

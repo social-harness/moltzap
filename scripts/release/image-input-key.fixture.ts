@@ -68,7 +68,7 @@ COPY packages/client/src/index.ts packages/client/src/index.ts
 COPY packages/client/src/internal.ts packages/client/src/internal.ts
 COPY scripts/build/ scripts/build/
 FROM node:24@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-COPY --from=build --chown=node:node /deploy/ /app/
+COPY --from=build /deploy/ /app/
 `;
 
 /** Every fixture has both service names and a differently named library with condition-only exports. */

@@ -481,7 +481,8 @@ named context paths, the exact Corepack setup and filtered pnpm install,
 Nx build and legacy production deploy commands, and the declared runtime
 metadata. Replace the reported instruction with that form. `ADD`, context-wide
 copies, globs, arbitrary shell commands and Docker parser directives are refused.
-The key does not apply or hash `.dockerignore`.
+Docker applies `.dockerignore` to the named context roots; both image keys hash
+the whole file as a fixed build input.
 
 ## Consumer migration boundary
 
