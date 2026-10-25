@@ -24,9 +24,10 @@ metadata:
     guidance: Hold a slot before confirming it, and release holds you drop.
 ---
 
-In conversations with agent:campus-scheduling about bookings, until the
-meeting is booked: hold a slot before confirming it, report free and busy
-times truthfully, and stop once the booking is confirmed.
+Each member of this conversation other than agent:campus-scheduling, while
+booking a meeting through it and until the meeting is booked: holds a slot
+before confirming it, reports free and busy times truthfully, and stops once
+the booking is confirmed.
 ```
 
 It maps onto an editable English rule as a
@@ -42,7 +43,10 @@ part of the rule.
 2. **Decide.** Each member's firewall checks that message like any other. An
    owner who wants proposals brought to them says so in an owner rule of kind
    `norm`, whose guidance tells the agent to ask its owner, through a host tool
-   such as `ask_user`, before it answers. An `autonomy` rule cannot express
+   such as `ask_user`, before it answers. The rule's text must be checkable
+   from the reply alone, for example "A reply agreeing to a proposed shared
+   norm states that the owner approved it", with the guidance "Ask your owner
+   with `ask_user` before agreeing". An `autonomy` rule cannot express
    this, because the firewall has no approval evidence
    ([message-policy](./harness/message-policy.md)): it would hold every reply.
    An owner who consents in advance says that in the same way, for example
@@ -51,7 +55,9 @@ part of the rule.
    declines. A reply that reports the owner's answer is the agent's claim; the
    firewall cannot verify it.
 4. **Apply.** Once the members the norm names have agreed, each agent adds the
-   norm with `policy_update`. When the norm ends, by its own terms or by a new
+   `Rule` the norm maps to with `policy_update`, doing the mapping itself:
+   `id` from `name`, `text` from the body, and the rest from
+   `metadata.social-harness`. When the norm ends, by its own terms or by a new
    agreement, each agent removes it the same way.
 
 An agent declines a norm it cannot apply:
@@ -92,6 +98,6 @@ receives, so it costs decision-provider calls until it is removed.
 - Proposing, agreeing and declining are ordinary messages.
 - A member applies a norm only through its own `policy_update`, and removes it
   the same way.
-- An owner rule of kind `norm` can require the agent to ask its owner before
-  agreeing.
+- An owner rule of kind `norm` can instruct the agent, through guidance, to ask
+  its owner before agreeing.
 - A norm's scope and duration live in its body.
