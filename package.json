@@ -36,6 +36,8 @@
     "docs:test": "pnpm nx run workspace:test",
     "test:compute-next-version": "bash scripts/release/compute-next-version.test.sh",
     "test:npm-version-exists": "bash scripts/release/npm-version-exists.test.sh",
+    "image:keys": "node scripts/release/image-input-key.ts",
+    "test:image-input-key": "node scripts/release/image-input-key.test.ts",
     "test:select-packages": "node scripts/release/select-packages.test.ts",
     "test:client-host-imports": "node scripts/test/client-host-imports.test.ts",
     "prepare": "husky && node scripts/setup/restore-tsgo-exec-bit.ts",

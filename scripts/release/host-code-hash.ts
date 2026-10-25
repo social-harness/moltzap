@@ -21,10 +21,9 @@
  * Run from the repository root after `pnpm build`. Exits 1 when packing or
  * extracting fails.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import ts from "typescript";
-import { FINAL_PACKAGE_DIRS } from "../architecture/boundary-contract.ts";
 import {
   digestOf,
   fileEntry,
@@ -35,7 +34,7 @@ import {
 } from "./content-hash.ts";
 
 /** One file of one package in the module graph. */
-interface Module {
+export interface Module {
   readonly name: string;
   readonly relative: string;
 }
@@ -78,30 +77,62 @@ export function hostCodeHashOfDirectories(
   roots: ReadonlyMap<string, string>,
 ): string {
   const hostRoot = roots.get(host) ?? "";
-  const pending: Module[] = packedFiles(hostRoot).map((relative) => ({
+  const seeds = packedFiles(hostRoot).map((relative) => ({
     name: host,
     relative,
   }));
-  const seen = new Set<string>();
-  const entries: string[] = [];
+  return digestOf(
+    moduleGraph(seeds, roots).map((module) =>
+      fileEntry(
+        roots.get(module.name) ?? "",
+        module.relative,
+        `${module.name}/${module.relative}`,
+        { siblingPins: "drop" },
+      ),
+    ),
+  );
+}
+
+/** Reads a module graph from packed files or a committed source tree. */
+export interface ModuleReader {
+  readonly read: (file: string) => string;
+  readonly locate: (root: string, relative: string) => string | undefined;
+  readonly missing?: (specifier: string) => never;
+}
+
+const PACKED_READER: ModuleReader = {
+  read: (file) => readFileSync(file, "utf8"),
+  locate: (root, relative) =>
+    existsSync(path.join(root, relative)) ? relative : undefined,
+};
+
+/** Follows workspace exports and relative imports without including unrelated sibling modules. */
+export function moduleGraph(
+  seeds: readonly Module[],
+  roots: ReadonlyMap<string, string>,
+  reader: ModuleReader = PACKED_READER,
+): readonly Module[] {
+  const pending = [...seeds];
+  const seen = new Map<string, Module>();
   for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
-    const root = roots.get(next.name) ?? "";
     const label = `${next.name}/${next.relative}`;
-    if (seen.has(label)) {
-      continue;
+    if (!seen.has(label)) {
+      seen.set(label, next);
+      pending.push(
+        ...importedModules(next, roots.get(next.name) ?? "", roots, reader),
+      );
     }
-    seen.add(label);
-    entries.push(
-      fileEntry(root, next.relative, label, { siblingPins: "drop" }),
-    );
-    pending.push(...importedModules(next, root, roots));
   }
-  return digestOf(entries);
+  return [...seen.values()];
 }
 
 function workspaceDirectories(repo: string): ReadonlyMap<string, string> {
   return new Map(
-    FINAL_PACKAGE_DIRS.map((dir) => [manifestName(repo, dir), dir] as const),
+    readdirSync(path.join(repo, "packages"))
+      .filter((dir) =>
+        existsSync(path.join(repo, "packages", dir, "package.json")),
+      )
+      .map((dir) => [manifestName(repo, dir), dir] as const),
   );
 }
 
@@ -127,7 +158,7 @@ function siblingClosure(
     if (typeof dependencies === "object" && dependencies !== null) {
       pending.push(
         ...Object.keys(dependencies).filter((dependency) =>
-          dependency.startsWith("@moltzap/"),
+          directories.has(dependency),
         ),
       );
     }
@@ -140,66 +171,114 @@ function importedModules(
   module: Module,
   root: string,
   roots: ReadonlyMap<string, string>,
+  reader: ModuleReader,
 ): readonly Module[] {
-  if (!/\.[cm]?js$/u.test(module.relative)) {
+  if (!/\.[cm]?[jt]s$/u.test(module.relative)) {
     return [];
   }
-  const source = readFileSync(path.join(root, module.relative), "utf8");
+  const source = reader.read(path.join(root, module.relative));
   return ts
     .preProcessFile(source, true, true)
-    .importedFiles.map(({ fileName }) => resolve(module, fileName, roots))
-    .filter(
-      (target): target is Module =>
-        target !== undefined &&
-        existsSync(path.join(roots.get(target.name) ?? "", target.relative)),
-    );
+    .importedFiles.map(({ fileName }) =>
+      resolve(module, fileName, roots, reader),
+    )
+    .filter((target): target is Module => target !== undefined);
 }
 
 function resolve(
   from: Module,
   specifier: string,
   roots: ReadonlyMap<string, string>,
+  reader: ModuleReader,
 ): Module | undefined {
   if (specifier.startsWith(".")) {
-    return {
-      name: from.name,
-      relative: path.posix.normalize(
+    const relative = reader.locate(
+      rootOf(roots, from.name),
+      path.posix.normalize(
         path.posix.join(path.posix.dirname(from.relative), specifier),
       ),
-    };
+    );
+    return relative === undefined ? undefined : { name: from.name, relative };
   }
   const parts = specifier.split("/");
-  const name = parts.slice(0, 2).join("/");
+  const count = specifier.startsWith("@") ? 2 : 1;
+  const name = parts.slice(0, count).join("/");
   const root = roots.get(name);
   if (root === undefined) {
     return undefined;
   }
-  const subpath = parts.length > 2 ? `./${parts.slice(2).join("/")}` : ".";
-  const target = exportTarget(root, subpath);
-  return target === undefined
-    ? undefined
-    : { name, relative: path.posix.normalize(target) };
+  const subpath =
+    parts.length > count ? `./${parts.slice(count).join("/")}` : ".";
+  const target = exportTarget(root, subpath, reader);
+  return resolvedExport({ name, root, target, specifier }, reader);
 }
 
-/** The `import` target an `exports` entry gives production resolution. */
-function exportTarget(root: string, subpath: string): string | undefined {
-  const exports: unknown = readJson(path.join(root, "package.json"))?.exports;
-  if (typeof exports !== "object" || exports === null) {
+function resolvedExport(
+  request: {
+    readonly name: string;
+    readonly root: string;
+    readonly target?: string;
+    readonly specifier: string;
+  },
+  reader: ModuleReader,
+): Module | undefined {
+  if (request.target === undefined) {
     return undefined;
   }
-  return importCondition(
-    Object.entries(exports).find(([key]) => key === subpath)?.[1],
-  );
+  const relative = reader.locate(request.root, request.target);
+  if (relative === undefined) {
+    reader.missing?.(request.specifier);
+    return undefined;
+  }
+  return { name: request.name, relative };
+}
+
+/** Conditions are considered in manifest order, matching Node's conditional exports. */
+function exportTarget(
+  root: string,
+  subpath: string,
+  reader: ModuleReader,
+): string | undefined {
+  const exports = readExports(reader.read(path.join(root, "package.json")));
+  if (
+    typeof exports === "object" &&
+    exports !== null &&
+    Object.keys(exports).some((key) => key.startsWith("."))
+  ) {
+    return importCondition(
+      Object.entries(exports).find(([key]) => key === subpath)?.[1],
+    );
+  }
+  return subpath === "." ? importCondition(exports) : undefined;
+}
+
+function readExports(text: string): unknown {
+  const value: unknown = JSON.parse(text);
+  return typeof value === "object" && value !== null && "exports" in value
+    ? value.exports
+    : undefined;
+}
+
+function rootOf(roots: ReadonlyMap<string, string>, name: string): string {
+  return roots.get(name) ?? "";
 }
 
 function importCondition(entry: unknown): string | undefined {
   if (typeof entry === "string") {
     return entry;
   }
-  if (typeof entry !== "object" || entry === null || !("import" in entry)) {
+  if (Array.isArray(entry)) {
+    return entry.map(importCondition).find((target) => target !== undefined);
+  }
+  if (typeof entry !== "object" || entry === null) {
     return undefined;
   }
-  return typeof entry.import === "string" ? entry.import : undefined;
+  const active = Object.entries(entry).filter(([condition]) =>
+    ["import", "sharness-internal", "default"].includes(condition),
+  );
+  return active
+    .map(([, value]) => importCondition(value))
+    .find((target) => target !== undefined);
 }
 
 function readManifest(
