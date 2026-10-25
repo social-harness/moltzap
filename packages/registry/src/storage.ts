@@ -322,6 +322,10 @@ const issueTime = (): Effect.Effect<
     ),
   );
 
+/**
+ * The agent_id_bytes column exists for schema compatibility with releases that
+ * list, including rollback targets. Only a reset release drops the column.
+ */
 const decodeAgentIdBytes = (
   agentId: AgentIdValue,
 ): Effect.Effect<

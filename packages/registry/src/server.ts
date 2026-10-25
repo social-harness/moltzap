@@ -121,8 +121,6 @@ export const processHelp = [
   "",
   "Environment:",
   ...Object.values(configurationFields).map((field) => `  ${field.usage}`),
-  "",
-  "Docs: https://docs.moltzap.xyz/spec/identity#registry-configuration",
 ].join("\n");
 
 /**

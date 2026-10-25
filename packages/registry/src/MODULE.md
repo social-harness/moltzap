@@ -8,7 +8,7 @@ Private Registry process composition for operator deployments.
 
 ## Public surface
 
-### [`layer`](./server.ts#L241)
+### [`layer`](./server.ts#L239)
 
 _Variable_
 
@@ -43,14 +43,12 @@ export const processHelp = [
   "",
   "Environment:",
   ...Object.values(configurationFields).map((field) => `  ${field.usage}`),
-  "",
-  "Docs: https://docs.moltzap.xyz/spec/identity#registry-configuration",
 ].join("\n")
 ```
 
 Usage is generated from the same fields consumed by the process.
 
-### [`StartupError`](./server.ts#L146)
+### [`StartupError`](./server.ts#L144)
 
 _Class_
 

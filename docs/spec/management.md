@@ -30,9 +30,9 @@ once activation has brought the protocol up, including after a cancelled
 `register`, and the daemon then sends `notifications/tools/list_changed` to
 each host listening for tool list changes through `subscriptions/listen` with
 `notifications.toolsListChanged`. `search_agents` accepts only Identity's
-exact lookup by `agentId` or `agentName` after registration. Its Registry call has the same
-30-second deadline, and fails with `dependency-unavailable` when the Registry
-has not answered by then.
+exact lookup by `agentId` or `agentName` after registration. Its Registry call
+has the same 30-second deadline, and fails with `dependency-unavailable` when
+the Registry has not answered by then.
 
 ## Conversation search and history
 

@@ -451,8 +451,42 @@ const failsReadOverGenesisAnchorSelectingRecord = () =>
     );
   });
 
+const checksExactAgentLookups = () =>
+  Effect.gen(function* () {
+    const fixture = yield* makeIdentityFixture;
+    const operations = yield* makeDaemonManagementOperations({
+      store: unusedEndpointStore("management lookup test"),
+      bootstrap: fixture.bootstrap,
+      registration: activeRegistration(fixture.cards[0]),
+    }).pipe(Effect.provide(makeRegistryLayer(fixture.cards)));
+    const remote = fixture.cards[1];
+    const found = {
+      kind: "found",
+      agentCard: yield* Schema.encode(AgentCard)(remote),
+    };
+
+    expect(
+      yield* operations.searchAgents({ agentName: remote.agentName }),
+    ).toEqual(found);
+    expect(yield* operations.searchAgents({ agentId: remote.agentId })).toEqual(
+      found,
+    );
+    expect(
+      yield* operations.searchAgents(
+        Schema.decodeUnknownSync(managementSearchAgentsRequestSchema)({
+          agentName: "unknown-agent",
+        }),
+      ),
+    ).toEqual({ kind: "not_found" });
+  });
+
 // @agent-code-guard/regression-only: these cases pin the addressed owner-management contract.
 describe("addressed daemon management", () => {
+  it(
+    "returns encoded cards for exact names and ids and not_found for unknown names",
+    checksExactAgentLookups,
+  );
+
   it("pages canonical addresses without exposing conversation identity", () =>
     Effect.gen(function* () {
       const fixture = yield* makeIdentityFixture;
@@ -763,18 +797,13 @@ const failsAtTheRegistryDeadline = () =>
     expect(yield* operations.readStatus()).toEqual({ kind: "unregistered" });
   });
 
-/** Exact identity lookups made by `search_agents`. */
-const agentSearches = [{ search: "lookup", request: { agentName: "bob" } }];
-
 /**
  * `search_agents` gives its Registry call the same deadline: a Registry that
  * never answers ends the search as dependency-unavailable at the deadline.
  * Fails when the search outlives the deadline or the timeout maps to another
  * reason.
  */
-const failsSearchAtTheRegistryDeadline = ({
-  request,
-}: (typeof agentSearches)[number]) =>
+const failsSearchAtTheRegistryDeadline = () =>
   Effect.gen(function* () {
     const fixture = yield* makeIdentityFixture;
     const requested = yield* Deferred.make<undefined>();
@@ -786,7 +815,9 @@ const failsSearchAtTheRegistryDeadline = ({
 
     const error = yield* failureAtTheRegistryDeadline({
       operation: operations.searchAgents(
-        Schema.decodeUnknownSync(managementSearchAgentsRequestSchema)(request),
+        Schema.decodeUnknownSync(managementSearchAgentsRequestSchema)({
+          agentName: "bob",
+        }),
       ),
       requested,
       hung: "search_agents outlived the Registry deadline",
@@ -860,8 +891,8 @@ describe("daemon registration through the register tool", () => {
     "fails a register at the Registry deadline when the Registry never answers",
     failsAtTheRegistryDeadline,
   );
-  itOnTestClock.each(agentSearches)(
-    "fails a search_agents $search at the Registry deadline when the Registry never answers",
+  itOnTestClock(
+    "fails search_agents at the Registry deadline when the Registry never answers",
     failsSearchAtTheRegistryDeadline,
   );
   it(

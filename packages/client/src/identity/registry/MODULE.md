@@ -82,7 +82,7 @@ export class RegistryInvalidResponseError extends Data.TaggedError(
 
 A Registry response did not match the selected operation contract.
 
-### [`RegistryLookupRequest`](./contract.ts#L78)
+### [`RegistryLookupRequest`](./contract.ts#L75)
 
 _TypeAlias_
 
@@ -112,16 +112,13 @@ export const RegistryLookupRequest = Schema.Union(
   }),
 ).annotations({
   identifier: "RegistryLookupRequest",
-  parseOptions: {
-    exact: true,
-    onExcessProperty: "error",
-  },
+  parseOptions: exactParseOptions,
 })
 ```
 
 Closed Registry lookup selector.
 
-### [`RegistryLookupResult`](./contract.ts#L88)
+### [`RegistryLookupResult`](./contract.ts#L85)
 
 _TypeAlias_
 
@@ -158,7 +155,7 @@ export const RegistryRegisterRequest = exactStruct({
 
 Closed Registry bootstrap registration request.
 
-### [`RegistryRegisterResult`](./contract.ts#L81)
+### [`RegistryRegisterResult`](./contract.ts#L78)
 
 _TypeAlias_
 

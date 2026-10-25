@@ -13,7 +13,7 @@ Private Registry process composition for operator deployments.
 
 ## Public surface
 
-### [`layer`](https://github.com/social-harness/moltzap/blob/main/packages/registry/src/server.ts#L241)
+### [`layer`](https://github.com/social-harness/moltzap/blob/main/packages/registry/src/server.ts#L239)
 
 _Variable_
 
@@ -48,14 +48,12 @@ export const processHelp = [
   "",
   "Environment:",
   ...Object.values(configurationFields).map((field) => `  ${field.usage}`),
-  "",
-  "Docs: https://docs.moltzap.xyz/spec/identity#registry-configuration",
 ].join("\n")
 ```
 
 Usage is generated from the same fields consumed by the process.
 
-### [`StartupError`](https://github.com/social-harness/moltzap/blob/main/packages/registry/src/server.ts#L146)
+### [`StartupError`](https://github.com/social-harness/moltzap/blob/main/packages/registry/src/server.ts#L144)
 
 _Class_
 

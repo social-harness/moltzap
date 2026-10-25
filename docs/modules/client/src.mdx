@@ -1624,7 +1624,7 @@ export type PollCursor = typeof PollCursor.Type;
 
 Validated opaque Router poll continuation.
 
-#### [`RegistryLookupRequest (type)`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/identity/registry/contract.ts#L78)
+#### [`RegistryLookupRequest (type)`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/identity/registry/contract.ts#L75)
 
 _TypeAlias_
 
@@ -1634,7 +1634,7 @@ export type RegistryLookupRequest = typeof RegistryLookupRequest.Type;
 
 Validated Registry lookup selector.
 
-#### [`RegistryLookupResult`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/identity/registry/contract.ts#L88)
+#### [`RegistryLookupResult`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/identity/registry/contract.ts#L85)
 
 _TypeAlias_
 
@@ -1656,7 +1656,7 @@ export type RegistryRegisterRequest = typeof RegistryRegisterRequest.Type;
 
 Validated Registry bootstrap registration request.
 
-#### [`RegistryRegisterResult`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/identity/registry/contract.ts#L81)
+#### [`RegistryRegisterResult`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/identity/registry/contract.ts#L78)
 
 _TypeAlias_
 
@@ -2069,10 +2069,7 @@ export const RegistryLookupRequest = Schema.Union(
   }),
 ).annotations({
   identifier: "RegistryLookupRequest",
-  parseOptions: {
-    exact: true,
-    onExcessProperty: "error",
-  },
+  parseOptions: exactParseOptions,
 })
 ```
 

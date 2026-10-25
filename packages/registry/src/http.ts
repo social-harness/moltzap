@@ -77,17 +77,7 @@ const SINGLE_VALUE_HEADERS = [
 ] as const;
 
 function lookupRoute(input: RegistryHttpAppInput) {
-  return HttpRouter.post(
-    registryContract.LOOKUP_ROUTE,
-    publicReadHandler({
-      path: registryContract.LOOKUP_PATH,
-      bodyCap: registryContract.LOOKUP_BODY_CAP,
-      decodeRequest: registryContract.registryLookupCodec.request.decode,
-      encodeResponse: registryContract.registryLookupCodec.response.encode,
-      invoke: (request) => input.client.lookup(request),
-      requestSemaphore: input.requestSemaphore,
-    }),
-  );
+  return HttpRouter.post(registryContract.LOOKUP_ROUTE, lookupHandler(input));
 }
 
 function healthRoute(storage: RegistryStorage) {
@@ -173,45 +163,39 @@ function registerHandler(input: {
   );
 }
 
-function publicReadHandler<Request, Result, DecodeError, EncodeError>(input: {
-  readonly path: string;
-  readonly bodyCap: number;
-  readonly decodeRequest: (
-    bytes: Uint8Array,
-  ) => Effect.Effect<Request, DecodeError>;
-  readonly encodeResponse: (
-    result: Result,
-  ) => Effect.Effect<Uint8Array, EncodeError>;
-  readonly invoke: (
-    request: Request,
-  ) => Effect.Effect<Result, HttpEnvelopeError>;
-  readonly requestSemaphore: Effect.Semaphore;
-}) {
+function lookupHandler(input: RegistryHttpAppInput) {
   return recoverHttpResponse(
     Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest;
-      if (request.url !== input.path) {
+      if (request.url !== registryContract.LOOKUP_PATH) {
         return yield* new RouteNotFoundError();
       }
       yield* validateRequestFraming({
         request,
-        maximumBytes: input.bodyCap,
+        maximumBytes: registryContract.LOOKUP_BODY_CAP,
         profile: "public-read",
       });
       return yield* executeWithPermit(
         input.requestSemaphore,
         Effect.gen(function* () {
-          const bodyBytes = yield* readBoundedBody(request, input.bodyCap);
+          const bodyBytes = yield* readBoundedBody(
+            request,
+            registryContract.LOOKUP_BODY_CAP,
+          );
           const version = request.headers["sharness-version"];
           if (version === undefined || !(yield* wireVersions.live(version))) {
             return yield* new VersionMismatchError();
           }
-          const decoded = yield* input.decodeRequest(bodyBytes).pipe(
-            // eslint-disable-next-line agent-code-guard/no-effect-error-coalescing -- Every canonical body or request-schema failure has the same public malformed-request meaning.
-            Effect.mapError(() => new MalformedRequestError()),
+          const decoded = yield* registryContract.registryLookupCodec.request
+            .decode(bodyBytes)
+            .pipe(
+              // eslint-disable-next-line agent-code-guard/no-effect-error-coalescing -- Every canonical body or request-schema failure has the same public malformed-request meaning.
+              Effect.mapError(() => new MalformedRequestError()),
+            );
+          const result = yield* input.client.lookup(decoded);
+          return yield* resultResponse(
+            registryContract.registryLookupCodec.response.encode(result),
           );
-          const result = yield* input.invoke(decoded);
-          return yield* resultResponse(input.encodeResponse(result));
         }),
       );
     }),

@@ -474,7 +474,8 @@ const toolListings = {
     inputSchema: emptyInput,
   },
   [SEARCH_AGENTS_TOOL]: {
-    description: "Look up an agent by exact identity or immutable name.",
+    description:
+      "Look up an agent by its exact AgentId or agentName; a display name or partial name returns not_found.",
     inputSchema: searchAgentsInput,
     outputSchema: searchAgentsOutput,
   },

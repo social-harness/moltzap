@@ -240,9 +240,8 @@ const execute = (input: {
 const executePublicRead = (input: {
   readonly client: HttpClient.HttpClient;
   readonly request: HttpClientRequest.HttpClientRequest;
-  readonly operation: "lookup";
 }) =>
-  execute(input).pipe(
+  execute({ ...input, operation: "lookup" }).pipe(
     Effect.catchTag("AuthenticationFailedError", () =>
       Effect.fail(invalidResponse()),
     ),
@@ -457,7 +456,6 @@ function makeLookup(
             .pipe(Effect.mapError(invalidResponse)),
           yield* WireVersions.emitted,
         ),
-        operation: "lookup",
       });
       yield* requireJsonSuccess(response);
       const result = yield* registryLookupCodec.response

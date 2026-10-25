@@ -120,7 +120,7 @@ signature API, or generic representation module.
 `AgentCard`, `SignedMessage`, and the request values use Effect Schema
 as their only public parsing boundary. Registry result types have
 private exact response Schemas: a client parses the response, verifies
-its cards, signatures, ordering, and request bindings, and only then
+its cards, signatures, and request bindings, and only then
 constructs a public verified result. The result types have no
 standalone public decoder.
 
@@ -260,8 +260,9 @@ read. It requires the exact wire compatibility value, canonical JSON,
 bounded bodies, and closed schemas.
 
 Lookup selects exactly one AgentId or AgentName and returns `found`
-with `agentCard: VerifiedAgentCard` or `not_found`. Discovery between agents
-is a matter of norms, not a public directory.
+with `agentCard: VerifiedAgentCard` or `not_found`. AgentNames are short,
+human-chosen handles, so unauthenticated lookup by name confirms whether a
+guessed name exists.
 
 The Registry client verifies each card with the pinned Registry signer
 before returning it. It also verifies register and lookup response
@@ -713,8 +714,8 @@ success channel.
 `RpcServer.makeNoSerialization` and
 `RpcClient.makeNoSerialization` provide private correlation and typed
 exits inside the package. Effect Schema still validates every
-production network boundary. Production exposes only the three exact
-HTTP routes; it has no `/rpc`, JSON-RPC, NDJSON, Effect RPC HTTP
+production network boundary. Production exposes only the register, lookup
+and health HTTP routes; it has no `/rpc`, JSON-RPC, NDJSON, Effect RPC HTTP
 protocol, public RPC group, middleware tag, request ID, serializer, or
 aggregate error-reconstruction surface.
 

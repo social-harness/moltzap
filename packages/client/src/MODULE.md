@@ -1619,7 +1619,7 @@ export type PollCursor = typeof PollCursor.Type;
 
 Validated opaque Router poll continuation.
 
-#### [`RegistryLookupRequest (type)`](./identity/registry/contract.ts#L78)
+#### [`RegistryLookupRequest (type)`](./identity/registry/contract.ts#L75)
 
 _TypeAlias_
 
@@ -1629,7 +1629,7 @@ export type RegistryLookupRequest = typeof RegistryLookupRequest.Type;
 
 Validated Registry lookup selector.
 
-#### [`RegistryLookupResult`](./identity/registry/contract.ts#L88)
+#### [`RegistryLookupResult`](./identity/registry/contract.ts#L85)
 
 _TypeAlias_
 
@@ -1651,7 +1651,7 @@ export type RegistryRegisterRequest = typeof RegistryRegisterRequest.Type;
 
 Validated Registry bootstrap registration request.
 
-#### [`RegistryRegisterResult`](./identity/registry/contract.ts#L81)
+#### [`RegistryRegisterResult`](./identity/registry/contract.ts#L78)
 
 _TypeAlias_
 
@@ -2064,10 +2064,7 @@ export const RegistryLookupRequest = Schema.Union(
   }),
 ).annotations({
   identifier: "RegistryLookupRequest",
-  parseOptions: {
-    exact: true,
-    onExcessProperty: "error",
-  },
+  parseOptions: exactParseOptions,
 })
 ```
 

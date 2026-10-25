@@ -157,6 +157,11 @@ const assertRegistrationPrecedence = (
       },
     });
     expect(sameName.kind).toBe(NAME_TAKEN_KIND);
+    expect(
+      (yield* runRegistry(
+        Registry.lookup({ agentName: otherKey.request.agentName }),
+      )).kind,
+    ).toBe(NOT_FOUND_KIND);
   });
 
 const assertWrongAdmission = (runRegistry: RegistryRunner) =>
@@ -171,19 +176,23 @@ const assertWrongAdmission = (runRegistry: RegistryRunner) =>
       Effect.catchTag("AuthenticationFailedError", () => Effect.succeed(true)),
     );
     expect(rejected).toBe(true);
+    expect(
+      (yield* runRegistry(
+        Registry.lookup({ agentName: prepared.request.agentName }),
+      )).kind,
+    ).toBe(NOT_FOUND_KIND);
   });
 
 const assertLookup = (
-  agents: readonly [RegisteredAgent, ...RegisteredAgent[]],
+  agent: RegisteredAgent,
+  selector: Parameters<typeof Registry.lookup>[0],
   runRegistry: RegistryRunner,
 ) =>
   Effect.gen(function* () {
-    const lookup = yield* runRegistry(
-      Registry.lookup({ agentName: agents[0].request.agentName }),
-    );
+    const lookup = yield* runRegistry(Registry.lookup(selector));
     expect(lookup.kind).toBe(FOUND_KIND);
     if (lookup.kind === FOUND_KIND) {
-      yield* expectExactCard(lookup.agentCard, agents[0].agentCard);
+      yield* expectExactCard(lookup.agentCard, agent.agentCard);
     }
   });
 
@@ -333,7 +342,10 @@ const assertSharedHttpEnvelopes = (port: number) =>
     yield* assertReceivedOverflow(port);
   });
 
-const assertBootstrapVersionPrecedence = (origin: URL) =>
+const assertBootstrapVersionPrecedence = (
+  origin: URL,
+  runRegistry: RegistryRunner,
+) =>
   Effect.gen(function* () {
     const prepared = yield* prepareAgent("version-precedence");
     const request = yield* makeVersionedBootstrapRequest(
@@ -345,13 +357,26 @@ const assertBootstrapVersionPrecedence = (origin: URL) =>
       status: VERSION_MISMATCH_STATUS,
       body: VERSION_MISMATCH_BODY,
     });
+    expect(
+      (yield* runRegistry(
+        Registry.lookup({ agentName: prepared.request.agentName }),
+      )).kind,
+    ).toBe(NOT_FOUND_KIND);
     assertBoundaryResponse(yield* executeRequest(request), {
       status: UNAUTHORIZED_STATUS,
       body: AUTHENTICATION_FAILED_BODY,
     });
+    expect(
+      (yield* runRegistry(
+        Registry.lookup({ agentName: prepared.request.agentName }),
+      )).kind,
+    ).toBe(NOT_FOUND_KIND);
   });
 
-const assertRetiredAdmissionSchemeRejected = (origin: URL) =>
+const assertRetiredAdmissionSchemeRejected = (
+  origin: URL,
+  runRegistry: RegistryRunner,
+) =>
   Effect.gen(function* () {
     const prepared = yield* prepareAgent("retired-admission-scheme");
     const request = yield* makeVersionedBootstrapRequest(
@@ -364,6 +389,11 @@ const assertRetiredAdmissionSchemeRejected = (origin: URL) =>
       status: UNAUTHORIZED_STATUS,
       body: AUTHENTICATION_FAILED_BODY,
     });
+    expect(
+      (yield* runRegistry(
+        Registry.lookup({ agentName: prepared.request.agentName }),
+      )).kind,
+    ).toBe(NOT_FOUND_KIND);
   });
 
 const makeIdentityPointForgery = (origin: URL) =>
@@ -626,15 +656,26 @@ const exerciseFirstRun = (
     yield* assertRegistrationPrecedence(first, runRegistry);
     yield* assertWrongAdmission(runRegistry);
     yield* assertIdentityPointForgeryRejected(origin, runRegistry);
-    yield* assertBootstrapVersionPrecedence(origin);
-    yield* assertRetiredAdmissionSchemeRejected(origin);
-    const additional = yield* Effect.forEach(
-      ["second-agent", "third-agent", "fourth-agent"],
-      (name) => registerAgent(name, runRegistry),
-      { concurrency: 1 },
+    yield* assertBootstrapVersionPrecedence(origin, runRegistry);
+    yield* assertRetiredAdmissionSchemeRejected(origin, runRegistry);
+    const second = yield* registerAgent("second-agent", runRegistry);
+    const third = yield* registerAgent("third-agent", runRegistry);
+    const fourth = yield* registerAgent("fourth-agent", runRegistry);
+    yield* assertLookup(
+      second,
+      { agentName: second.request.agentName },
+      runRegistry,
     );
-    const agents = [first, ...additional] as const;
-    yield* assertLookup(agents, runRegistry);
+    yield* assertLookup(
+      third,
+      { agentId: third.agentCard.agentId },
+      runRegistry,
+    );
+    yield* assertLookup(
+      fourth,
+      { agentId: fourth.agentCard.agentId },
+      runRegistry,
+    );
     yield* assertPublicAuthenticationFraming(origin);
     yield* assertPublicRequestBoundaries(origin);
     yield* assertRejectedRepresentations(origin, first);
@@ -644,7 +685,7 @@ const exerciseFirstRun = (
     const request = yield* Ref.get(captured.capturedRequest).pipe(
       Effect.flatMap(requireCapturedRequest),
     );
-    return { agents, first, request };
+    return { first, request };
   });
 
 const assertReplayRejected = (request: HttpClientRequest.HttpClientRequest) =>

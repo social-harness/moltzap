@@ -106,8 +106,10 @@ export const managementStatusResultSchema = Schema.Union(
   }),
 ).annotations({ parseOptions: exactParseOptions });
 
-/** Exact Registry selector used by agent discovery. */
-export const managementSearchAgentsRequestSchema = RegistryLookupRequest;
+/** Exact Registry lookup selector accepted by `search_agents`. */
+export const managementSearchAgentsRequestSchema = Schema.Union(
+  ...RegistryLookupRequest.members,
+).annotations({ parseOptions: exactParseOptions });
 
 /** Direct projection of exact Registry lookup results. */
 export const managementSearchAgentsResultSchema = Schema.Union(

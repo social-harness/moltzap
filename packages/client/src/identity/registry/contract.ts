@@ -7,7 +7,7 @@ import {
   decodeCanonicalJson,
   encodeCanonicalJson,
 } from "../../encoding/canonical-json.js";
-import { exactStruct } from "../../encoding/exact.js";
+import { exactParseOptions, exactStruct } from "../../encoding/exact.js";
 import { canonicalIdentifier } from "../../encoding/identifier.js";
 import { AgentId, AgentName, PrincipalId } from "../agents.js";
 import {
@@ -68,10 +68,7 @@ export const RegistryLookupRequest = Schema.Union(
   }),
 ).annotations({
   identifier: "RegistryLookupRequest",
-  parseOptions: {
-    exact: true,
-    onExcessProperty: "error",
-  },
+  parseOptions: exactParseOptions,
 });
 /** Validated Registry lookup selector. */
 // eslint-disable-next-line @typescript-eslint/no-redeclare -- The same-named Schema and type form one boundary model.
