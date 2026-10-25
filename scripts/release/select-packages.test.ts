@@ -407,7 +407,7 @@ await test("packed channel declarations do not pull the Client service into the 
   const packages = hostPackages();
   writeFileSync(
     path.join(packages.channel, "dist/plugin.d.ts"),
-    'import type { Service } from "@moltzap/client/service"; export type { Service };\n',
+    'export * from "@moltzap/client/service";\n',
   );
   const before = hostHash(packages);
   writeFileSync(
@@ -459,4 +459,11 @@ await test("the host hash respects a blocked first matching Node condition", () 
   );
   assert.equal(hostHash(packages), before);
   removePackages(packages);
+});
+
+await test("the content hash covers sharnessWireVersion", () => {
+  assert.notEqual(
+    hashOf({ ...MANIFEST, sharnessWireVersion: "next" }, FILES),
+    hashOf(MANIFEST, FILES),
+  );
 });

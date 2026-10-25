@@ -18,7 +18,11 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { imageInputs, runtimeVersionReads } from "./image-input-key.ts";
+import {
+  ImageInputError,
+  imageInputs,
+  runtimeVersionReads,
+} from "./image-input-key.ts";
 
 // @agent-code-guard/regression-only: Git fixtures pin image rebuild and refusal behavior through the release API.
 
@@ -133,7 +137,10 @@ function commit(repo: string): void {
 
 function git(repo: string, args: readonly string[]): void {
   // eslint-disable-next-line sonarjs/no-os-command-from-path -- Fixtures exercise the installed Git's committed file semantics.
-  const result = spawnSync("git", args, { cwd: repo, encoding: "utf8" });
+  const result = spawnSync("git", ["-c", "core.autocrlf=false", ...args], {
+    cwd: repo,
+    encoding: "utf8",
+  });
   assert.equal(result.status, 0, result.stderr);
 }
 
@@ -168,6 +175,7 @@ const changes = [
     "packages/client/src/test.ts",
     "export const testOnly = 2;",
     false,
+    false,
   ],
   [
     "root pnpm installation policy",
@@ -178,14 +186,16 @@ const changes = [
       scripts: { prepare: "node scripts/setup/install.ts" },
     }),
     true,
+    true,
   ],
-  ["npm configuration", ".npmrc", "strict-peer-dependencies=true", true],
-  ["Docker ignore rules", ".dockerignore", "node_modules\n.tmp", true],
-  ["Nx configuration", "nx.json", '{"parallel":2}', true],
+  ["npm configuration", ".npmrc", "strict-peer-dependencies=true", true, true],
+  ["Docker ignore rules", ".dockerignore", "node_modules\n.tmp", true, true],
+  ["Nx configuration", "nx.json", '{"parallel":2}', true, true],
   [
     "base TypeScript config",
     "tsconfig.base.json",
     '{"extends":"./config/base.json","compilerOptions":{}}',
+    true,
     true,
   ],
   [
@@ -193,18 +203,21 @@ const changes = [
     "config/base.json",
     '{"compilerOptions":{"strict":true}}',
     true,
+    true,
   ],
   [
     "sibling TypeScript config",
     "packages/client/tsconfig.json",
     '{"extends":"../../tsconfig.base.json","compilerOptions":{"rootDir":"src","outDir":"dist","strict":true}}',
     true,
+    true,
   ],
-  ["Node toolchain", ".node-version", "24.19.0", true],
+  ["Node toolchain", ".node-version", "24.19.0", true, true],
   [
     "build command file outside scripts/build",
     "tools/image-task.ts",
     "export const changed = true;",
+    true,
     true,
   ],
   [
@@ -212,11 +225,13 @@ const changes = [
     "scripts/setup/install.ts",
     "export const changed = true;",
     true,
+    true,
   ],
   [
     "daemon-only source",
     "packages/client/src/daemon/run.ts",
     "export const daemon = 2;",
+    false,
     false,
   ],
   [
@@ -224,20 +239,23 @@ const changes = [
     "packages/router/src/index.ts",
     'import "@fixture/core/internal"; export const router = 2;',
     true,
+    false,
   ],
   [
     "Dockerfile",
     "images/router/Dockerfile",
     `${dockerfile}\nENV NEW=1\n`,
     true,
+    false,
   ],
-  ["base-image pin", "images/router/base-digest", "sha256:other", true],
+  ["base-image pin", "images/router/base-digest", "sha256:other", true, false],
   [
     "runtime external bump",
     "pnpm-lock.yaml",
     lock
-      .replaceAll("leaf@1.0.0", "leaf@1.0.1")
+      .replaceAll("  leaf@1.0.0:", "  leaf@1.0.1:")
       .replace("version: 1.0.0\npackages:", "version: 1.0.1\npackages:"),
+    true,
     true,
   ],
   [
@@ -245,17 +263,20 @@ const changes = [
     "pnpm-lock.yaml",
     lock.replace("sha512-peer", "sha512-new"),
     true,
+    false,
   ],
   [
     "condition-only internal module",
     "packages/client/src/private.ts",
     "export const privateValue = 2;",
     true,
+    true,
   ],
   [
     "default-condition module",
     "packages/client/src/index.ts",
     "export const publicValue = 2;",
+    true,
     true,
   ],
   [
@@ -267,8 +288,15 @@ const changes = [
       dependencies: { "@fixture/core": "workspace:*" },
     }),
     false,
+    false,
   ],
-  ["sibling version-only manifest", "packages/client/package.json", "", false],
+  [
+    "sibling version-only manifest",
+    "packages/client/package.json",
+    "",
+    false,
+    false,
+  ],
   [
     "unrelated dev dependency",
     "pnpm-lock.yaml",
@@ -281,8 +309,15 @@ const changes = [
       )
       .replace("dev-leaf: 1.0.0", "dev-leaf: 2.0.0"),
     false,
+    false,
   ],
-  ["build script", "scripts/build/image.ts", "export const build = 2;", true],
+  [
+    "build script",
+    "scripts/build/image.ts",
+    "export const build = 2;",
+    true,
+    true,
+  ],
   [
     "pnpm release",
     "package.json",
@@ -292,10 +327,11 @@ const changes = [
       scripts: { prepare: "node scripts/setup/install.ts" },
     }),
     true,
+    true,
   ],
 ] as const;
 
-for (const [label, file, content, changesKey] of changes) {
+for (const [label, file, content, changesKey, registryChanges] of changes) {
   await test(`Router key ${changesKey ? "changes" : "stays equal"} for ${label}`, (t) => {
     const repo = fixture();
     t.after(() => {
@@ -311,14 +347,10 @@ for (const [label, file, content, changesKey] of changes) {
       );
     write(repo, file, text);
     commit(repo);
-    const registryChanges =
-      changesKey &&
-      label !== "transitive runtime integrity" &&
-      !file.startsWith("packages/router/") &&
-      !file.startsWith("images/router/");
     assert.equal(
       Effect.runSync(imageInputs(repo)).registry?.key === beforeRegistry,
       !registryChanges,
+      `Registry key for ${label}`,
     );
     if (changesKey) {
       assert.notEqual(key(repo), before);
@@ -342,85 +374,6 @@ await test("uncommitted edits do not change a key, while committed executable mo
   assert.notEqual(key(repo), before);
 });
 
-await test("invoked root scripts and nested script flags change the key", (t) => {
-  const repo = fixture();
-  t.after(() => {
-    rmSync(repo, { recursive: true, force: true });
-  });
-  write(
-    repo,
-    "images/router/Dockerfile",
-    dockerfile.replace(
-      "RUN node scripts/build/image.ts",
-      "RUN pnpm run build:image",
-    ),
-  );
-  const manifest = {
-    packageManager: "pnpm@10.6.2",
-    scripts: {
-      "build:image": "pnpm compile:image",
-      "compile:image": "node scripts/build/image.ts",
-    },
-  };
-  write(repo, "package.json", JSON.stringify(manifest));
-  commit(repo);
-  const before = key(repo);
-  write(
-    repo,
-    "package.json",
-    JSON.stringify({
-      ...manifest,
-      scripts: {
-        ...manifest.scripts,
-        "compile:image": "node scripts/build/image.ts --new-mode",
-      },
-    }),
-  );
-  commit(repo);
-  assert.notEqual(key(repo), before);
-});
-
-await test("root script flags invoked by a package build target change the key", (t) => {
-  const repo = fixture();
-  t.after(() => {
-    rmSync(repo, { recursive: true, force: true });
-  });
-  const rootManifest = {
-    packageManager: "pnpm@10.6.2",
-    scripts: { "compile:image": "node scripts/build/image.ts" },
-  };
-  write(repo, "package.json", JSON.stringify(rootManifest));
-  const clientFile = "packages/client/package.json";
-  const parsed: unknown = JSON.parse(
-    readFileSync(path.join(repo, clientFile), "utf8"),
-  );
-  assert.ok(typeof parsed === "object" && parsed !== null);
-  write(
-    repo,
-    clientFile,
-    JSON.stringify({
-      ...parsed,
-      nx: {
-        targets: {
-          build: { options: { cwd: ".", command: "pnpm compile:image" } },
-        },
-      },
-    }),
-  );
-  commit(repo);
-  const before = key(repo);
-  write(
-    repo,
-    "package.json",
-    JSON.stringify({
-      ...rootManifest,
-      scripts: { "compile:image": "node scripts/build/image.ts --new-mode" },
-    }),
-  );
-  commit(repo);
-  assert.notEqual(key(repo), before);
-});
-
 await test("refuses an export whose source is absent", (t) => {
   const repo = fixture();
   t.after(() => {
@@ -437,7 +390,11 @@ await test("refuses an export whose source is absent", (t) => {
   commit(repo);
   const result = run(repo);
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /Missing workspace export target/u);
+  assert.equal(result.stdout, "");
+  assert.match(
+    result.stderr,
+    /Missing workspace export target packages\/client\/dist\/absent.js/u,
+  );
 });
 
 for (const [label, content, message] of [
@@ -465,7 +422,7 @@ for (const [label, content, message] of [
     /no package leaf@1.0.0/u,
   ],
 ] as const) {
-  await test(`refuses ${label} without printing partial keys`, (t) => {
+  await test(`refuses ${label}`, (t) => {
     const repo = fixture();
     t.after(() => {
       rmSync(repo, { recursive: true, force: true });
@@ -579,8 +536,14 @@ await test("runtime version gate names only reached modules consuming manifest v
     "packages/router/src/reexport.ts",
     'export { version as release } from "../package.json";',
   );
+  write(
+    repo,
+    "packages/client/src/index.ts",
+    'import manifest from "../package.json"; console.log(manifest.version);',
+  );
   commit(repo);
   assert.deepEqual(Effect.runSync(runtimeVersionReads(repo)), [
+    "packages/client/src/index.ts",
     "packages/registry/src/version.ts",
     "packages/router/src/reexport.ts",
     "packages/router/src/version.ts",
@@ -590,9 +553,11 @@ await test("runtime version gate names only reached modules consuming manifest v
 
 for (const [label, instruction] of [
   ["shell COPY", "COPY assets/ /assets"],
-  ["JSON ADD", 'ADD ["assets/config", "/config"]'],
-  ["CRLF continuation", "COPY assets/ \\\r\n /assets"],
-  ["heredoc RUN", "RUN <<EOF\nnode tools/image-task.ts\nEOF"],
+  ["JSON ADD", 'ADD ["assets/", "/config"]'],
+  ["CRLF continuation", "COPY \\\r\n assets/ /assets"],
+  ["spaced continuation", "COPY \\ \t\n assets/ /assets"],
+  ["comment continuation", "COPY \\\n\n # ignored\n assets/ /assets"],
+  ["heredoc RUN", "RUN <<EOF\nnode tools/heredoc-task.ts\nEOF"],
   ["entrypoint", 'ENTRYPOINT ["node", "assets/config"]'],
 ] as const) {
   await test(`${label} context inputs change the key`, (t) => {
@@ -605,7 +570,7 @@ for (const [label, instruction] of [
     const before = key(repo);
     write(
       repo,
-      label === "heredoc RUN" ? "tools/image-task.ts" : "assets/config",
+      label === "heredoc RUN" ? "tools/heredoc-task.ts" : "assets/config",
       "changed",
     );
     commit(repo);
@@ -649,6 +614,7 @@ function fixtureFiles(): Record<string, string> {
     "config/base.json": "{}",
     "scripts/setup/install.ts": "export {};",
     "tools/image-task.ts": "export {};",
+    "tools/heredoc-task.ts": "export {};",
     "assets/config": "initial",
     "pnpm-workspace.yaml": "packages:\n  - packages/*\n",
     "pnpm-lock.yaml": lock,
@@ -664,6 +630,10 @@ function fixtureFiles(): Record<string, string> {
     "packages/client/src/internal.ts":
       'export { privateValue } from "./private.js";\n',
     "packages/client/src/private.ts": "export const privateValue = 1;\n",
+    "packages/client/src/only-require.ts": "export {};",
+    "packages/client/src/only-node.ts": "export {};",
+    "packages/client/src/only-sync.ts": "export {};",
+    "packages/client/src/only-default.ts": "export {};",
     "packages/client/src/test.ts": "export const testOnly = 1;\n",
     "packages/client/src/daemon/run.ts": "export const daemon = 1;\n",
   };
@@ -701,18 +671,52 @@ for (const [label, manifest, source, mutation] of [
     "packages/client/src/private.ts",
   ],
   [
-    "all active conditional targets",
+    "active require conditional target",
+    { exports: { ".": { require: "./dist/only-require.js" } } },
+    'require("@fixture/core");',
+    "packages/client/src/only-require.ts",
+  ],
+  [
+    "active node conditional target",
     {
       exports: {
         ".": {
-          node: "./dist/index.js",
-          "module-sync": "./dist/private.js",
-          default: "./dist/internal.js",
+          node: "./dist/only-node.js",
+          "module-sync": "./dist/only-sync.js",
+          default: "./dist/only-default.js",
         },
       },
     },
     'import "@fixture/core";',
-    "packages/client/src/private.ts",
+    "packages/client/src/only-node.ts",
+  ],
+  [
+    "active module-sync conditional target",
+    {
+      exports: {
+        ".": {
+          node: "./dist/only-node.js",
+          "module-sync": "./dist/only-sync.js",
+          default: "./dist/only-default.js",
+        },
+      },
+    },
+    'import "@fixture/core";',
+    "packages/client/src/only-sync.ts",
+  ],
+  [
+    "active default conditional target",
+    {
+      exports: {
+        ".": {
+          node: "./dist/only-node.js",
+          "module-sync": "./dist/only-sync.js",
+          default: "./dist/only-default.js",
+        },
+      },
+    },
+    'import "@fixture/core";',
+    "packages/client/src/only-default.ts",
   ],
   [
     "legacy main",
@@ -755,6 +759,7 @@ for (const [label, manifest, source, mutation] of [
       write(repo, `packages/${service}/src/index.ts`, source);
       write(repo, `packages/${service}/src/index.test.ts`, "export {};");
     }
+    write(repo, "packages/client/src/internal.ts", "export {};");
     write(repo, "packages/client/src/index.ts", 'import "#private";');
     if (label !== "package imports aliases") {
       write(repo, "packages/client/src/index.ts", "export {};");
@@ -783,13 +788,6 @@ for (const [label, content, message] of [
       "resolution: {type: directory, directory: vendor}",
     ),
     /Directory dependency/u,
-  ],
-  [
-    "test importer",
-    lock
-      .replaceAll("link:../client", "link:../../tests/library")
-      .replace("packages/client:", "tests/missing:"),
-    /no importer tests\/library/u,
   ],
 ] as const) {
   await test(`refuses ${label} in process`, (t) => {
@@ -825,7 +823,7 @@ await test("missing workspace subpaths and malformed manifests retain file-speci
     onLeft: (error) => {
       assert.match(
         error.message,
-        /^Missing workspace export target @fixture\/core\/missing$/u,
+        /^Missing workspace export target packages\/client\/package.json \(@fixture\/core\/missing\)$/u,
       );
     },
     onRight: () => {
@@ -890,3 +888,186 @@ await test("in-tree symlink target content is keyed even outside the package", (
   commit(repo);
   assert.notEqual(key(repo), before);
 });
+
+for (const route of ["relative import", "symlink module"] as const) {
+  await test(`${route} outside the service keys transitive modules and version reads`, (t) => {
+    const repo = fixture();
+    t.after(() => {
+      rmSync(repo, { recursive: true, force: true });
+    });
+    write(repo, "packages/shared/entry.ts", 'import "./leaf.js";');
+    write(
+      repo,
+      "packages/shared/leaf.ts",
+      "console.log(process.env.npm_package_version);",
+    );
+    if (route === "relative import") {
+      write(
+        repo,
+        "packages/router/src/index.ts",
+        'import "../../shared/entry.js";',
+      );
+    } else {
+      symlinkSync(
+        "../../shared/entry.ts",
+        path.join(repo, "packages/router/src/link.ts"),
+      );
+    }
+    commit(repo);
+    const before = key(repo);
+    assert.deepEqual(Effect.runSync(runtimeVersionReads(repo)), [
+      "packages/shared/leaf.ts",
+    ]);
+    write(repo, "packages/shared/leaf.ts", "export const changed = true;");
+    commit(repo);
+    assert.notEqual(key(repo), before);
+  });
+}
+
+for (const [label, header, bin] of [
+  ["manifest bin", "", { tool: "bin/tool" }],
+  ["Node shebang", "#!/usr/bin/env node\n", undefined],
+] as const) {
+  await test(`${label} without an extension traverses imports and consumes versions`, (t) => {
+    const repo = fixture();
+    t.after(() => {
+      rmSync(repo, { recursive: true, force: true });
+    });
+    write(
+      repo,
+      "packages/router/package.json",
+      JSON.stringify({ name: "@fixture/router", bin }),
+    );
+    write(
+      repo,
+      "packages/router/bin/tool",
+      `${header}import "@fixture/core/service"; console.log(process.env.npm_package_version);`,
+    );
+    commit(repo);
+    const before = key(repo);
+    assert.deepEqual(Effect.runSync(runtimeVersionReads(repo)), [
+      "packages/router/bin/tool",
+    ]);
+    write(
+      repo,
+      "packages/client/src/daemon/run.ts",
+      "export const changed = true;",
+    );
+    commit(repo);
+    assert.notEqual(key(repo), before);
+  });
+}
+
+for (const [label, expression] of [
+  ["fs string path", 'readFileSync("../package.json", "utf8")'],
+  ["fs URL path", 'fs.readFile(new URL("../package.json", import.meta.url))'],
+  ["npm version environment", "process.env.npm_package_version"],
+  [
+    "spaced npm version environment",
+    "process.env /* version */ .npm_package_version",
+  ],
+] as const) {
+  await test(`runtime version gate detects ${label}`, (t) => {
+    const repo = fixture();
+    t.after(() => {
+      rmSync(repo, { recursive: true, force: true });
+    });
+    write(
+      repo,
+      "packages/router/src/version.ts",
+      `console.log(${expression});`,
+    );
+    commit(repo);
+    assert.deepEqual(Effect.runSync(runtimeVersionReads(repo)), [
+      "packages/router/src/version.ts",
+    ]);
+  });
+}
+
+for (const [label, instruction, message] of [
+  [
+    "non-default Docker escape",
+    "# escape=`\nCOPY assets/ /assets",
+    /escape directive.*images\/router\/Dockerfile/u,
+  ],
+  [
+    "default-source bind mount",
+    "RUN --mount=type=bind,target=/context cat /context/assets/config",
+    /bind mount.*images\/router\/Dockerfile/u,
+  ],
+  [
+    "explicit-source bind mount",
+    "RUN --mount=type=bind,source=assets,target=/context cat /context/config",
+    /bind mount.*images\/router\/Dockerfile/u,
+  ],
+  [
+    "malformed JSON ADD",
+    'ADD ["assets/",]',
+    /Invalid JSON in images\/router\/Dockerfile/u,
+  ],
+  [
+    "missing context source",
+    "COPY missing/ /assets",
+    /missing.*images\/router\/Dockerfile/u,
+  ],
+] as const) {
+  await test(`refuses ${label} with a file-specific typed error`, (t) => {
+    const repo = fixture();
+    t.after(() => {
+      rmSync(repo, { recursive: true, force: true });
+    });
+    write(repo, "images/router/Dockerfile", `${instruction}\n${dockerfile}`);
+    commit(repo);
+    const result = Effect.runSync(Effect.either(imageInputs(repo)));
+    Either.match(result, {
+      onLeft: (error) => {
+        assert.ok(error instanceof ImageInputError);
+        assert.match(error.message, message);
+      },
+      onRight: () => {
+        assert.fail("Expected refusal");
+      },
+    });
+  });
+}
+
+for (const [label, file, content, message] of [
+  [
+    "a reached workspace importer outside accounted package roots",
+    "pnpm-lock.yaml",
+    lock
+      .replaceAll("link:../client", "link:../../tests/library")
+      .replace("packages/client:", "tests/library:"),
+    /tests\/library\/package.json/u,
+  ],
+  [
+    "an aliased workspace link that module resolution cannot account for",
+    "pnpm-lock.yaml",
+    lock.replaceAll("'@fixture/core':", "'@fixture/alias':"),
+    /@fixture\/alias.*packages\/client\/package.json/u,
+  ],
+  [
+    "a missing reached relative module with its repository path",
+    "packages/router/src/index.ts",
+    'import "../../shared/missing.js";',
+    /packages\/shared\/missing.js/u,
+  ],
+] as const) {
+  await test(`refuses ${label}`, (t) => {
+    const repo = fixture();
+    t.after(() => {
+      rmSync(repo, { recursive: true, force: true });
+    });
+    write(repo, file, content);
+    commit(repo);
+    Either.match(Effect.runSync(Effect.either(imageInputs(repo))), {
+      onLeft: (error) => {
+        assert.ok(error instanceof ImageInputError);
+        assert.match(error.message, message);
+      },
+      onRight: () => {
+        assert.fail("Expected refusal");
+      },
+    });
+  });
+}

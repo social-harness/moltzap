@@ -45,17 +45,15 @@ export interface PackFailure {
 }
 
 /** Whether a hashed manifest keeps its workspace dependency entries. */
-export interface ManifestView {
-  readonly siblingPins: "keep" | "drop";
-  readonly siblings?: ReadonlySet<string>;
-}
+export type ManifestView =
+  | { readonly kind: "keep" }
+  | { readonly kind: "drop"; readonly names: ReadonlySet<string> };
 
 /** Manifest fields a release writes without changing what a package is. */
 export const UNHASHED_FIELDS: ReadonlySet<string> = new Set([
   "version",
   CONTENT_HASH_FIELD,
   HOST_CODE_HASH_FIELD,
-  "sharnessWireVersion",
 ]);
 
 const DEPENDENCY_SECTIONS = [
@@ -109,7 +107,7 @@ export function contentHashOfTarball(file: string): string | PackFailure {
 export function contentHashOfDirectory(root: string): string {
   return digestOf(
     packedFiles(root).map((relative) =>
-      fileEntry(root, relative, relative, { siblingPins: "keep" }),
+      fileEntry(root, relative, relative, { kind: "keep" }),
     ),
   );
 }
@@ -282,8 +280,8 @@ function hashedBytes(
   const kept = Object.entries(manifest)
     .filter(([key]) => !UNHASHED_FIELDS.has(key))
     .map(([key, value]): [string, unknown] =>
-      view.siblingPins === "drop" && DEPENDENCY_SECTIONS.includes(key)
-        ? [key, withoutSiblings(value, view.siblings)]
+      view.kind === "drop" && DEPENDENCY_SECTIONS.includes(key)
+        ? [key, withoutSiblings(value, view.names)]
         : [key, value],
     );
   return Buffer.from(sortedJson(Object.fromEntries(kept)));
@@ -291,13 +289,13 @@ function hashedBytes(
 
 function withoutSiblings(
   section: unknown,
-  siblings?: ReadonlySet<string>,
+  siblings: ReadonlySet<string>,
 ): unknown {
   if (typeof section !== "object" || section === null) {
     return section;
   }
   return Object.fromEntries(
-    Object.entries(section).filter(([name]) => !(siblings?.has(name) ?? false)),
+    Object.entries(section).filter(([name]) => !siblings.has(name)),
   );
 }
 

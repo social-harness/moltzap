@@ -23,6 +23,7 @@ import {
   moduleGraph,
   type ModuleReader,
   runtimeCall,
+  runtimeModule,
 } from "./module-graph.ts";
 
 /** A failed read or an incomplete committed input graph. */
@@ -30,6 +31,14 @@ export class ImageInputError extends Data.TaggedError("ImageInputError")<{
   readonly message: string;
   readonly cause?: unknown;
 }> {}
+
+/** Image keys omit wire metadata because releases record it without changing committed runtime inputs.
+ * Packed content and host hashes retain it under their existing manifest contract.
+ */
+const IMAGE_UNHASHED_FIELDS: ReadonlySet<string> = new Set([
+  ...UNHASHED_FIELDS,
+  "sharnessWireVersion",
+]);
 
 /** Image names are the only package layout choices the command fixes. */
 export const SERVICES = ["registry", "router"] as const;
@@ -53,7 +62,6 @@ interface ImageInputs {
   readonly modules: readonly string[];
   readonly image: readonly string[];
   readonly tooling: readonly string[];
-  readonly scripts: readonly string[];
   readonly locked: readonly string[];
   readonly key: string;
 }
@@ -75,10 +83,7 @@ export function runtimeVersionReads(
               ]),
             ),
           ]
-            .filter(
-              (file) =>
-                /\.[cm]?[jt]s$/u.test(file) && !/\.d\.[cm]?ts$/u.test(file),
-            )
+            .filter((file) => isRuntimeInput(tree, file))
             .filter((file) => readsManifestVersion(tree.read(file)))
             .sort(byteOrder);
         },
@@ -102,6 +107,30 @@ export function imageInputs(
     },
     catch: inputError,
   });
+}
+
+/** Manifest binaries can be extensionless, while declarations remain erased. */
+function isRuntimeInput(tree: Tree, file: string): boolean {
+  const root = [...workspaceRoots(tree).values()].find((directory) =>
+    file.startsWith(`${directory}/`),
+  );
+  const manifest =
+    root === undefined ? {} : readJson(tree, `${root}/package.json`);
+  return runtimeModule(
+    file,
+    tree.read(file),
+    binTargets(manifest.bin).some(
+      (target) => path.posix.join(root ?? "", target) === file,
+    ),
+  );
+}
+
+function binTargets(bin: unknown): string[] {
+  return typeof bin === "string"
+    ? [bin]
+    : Object.values(mapping(bin)).filter(
+        (target): target is string => typeof target === "string",
+      );
 }
 
 function checkout(repo: string): Tree {
@@ -174,19 +203,11 @@ function inputs(
     (file) =>
       !own.includes(file) && !modules.includes(file) && !image.includes(file),
   );
-  const scripts = invokedScripts(
-    tree,
-    [...image, ...tooling],
-    directories.flatMap((directory) => buildCommands(tree, directory).commands),
-  );
-  const locked = lockedClosure(tree.read("pnpm-lock.yaml"), root);
+  const locked = lockedClosure(tree.read("pnpm-lock.yaml"), root, roots);
   const entries = [...own, ...modules, ...image, ...tooling].map((file) =>
     committedEntry(tree, file),
   );
 
-  entries.push(
-    ...scripts.map(([name, body]) => `package.json#scripts.${name}\0${body}\n`),
-  );
   entries.push(
     ...locked.map(
       ([id, value]) => `pnpm-lock.yaml#${id}\0${sortedJson(value)}\n`,
@@ -197,7 +218,6 @@ function inputs(
     modules,
     image,
     tooling,
-    scripts: scripts.map(([name]) => name),
     locked: locked.map(([id]) => id),
     key: digestOf(entries),
   };
@@ -222,6 +242,7 @@ function siblingInputs(
       conditions: [
         "node",
         "module-sync",
+        "require",
         "import",
         exportCondition({ internalOnly: true, types: "", import: "" }) ??
           "default",
@@ -235,10 +256,10 @@ function siblingInputs(
   const modules = [
     ...new Set(
       graph
-        .filter((module) => module.name !== name)
         .map((module) =>
           path.posix.join(roots.get(module.name) ?? "", module.relative),
-        ),
+        )
+        .filter((file) => !own.includes(file)),
     ),
   ];
   for (const sibling of reached) {
@@ -247,34 +268,6 @@ function siblingInputs(
     }
   }
   return { modules, reached };
-}
-
-/** Root script bodies matter even when an edit changes only flags on the same executable. */
-function invokedScripts(
-  tree: Tree,
-  files: readonly string[],
-  commands: readonly string[],
-): Array<readonly [string, string]> {
-  const scripts = mapping(readJson(tree, "package.json").scripts);
-  const found = new Map<string, string>();
-  const pending = files
-    .filter((file) => !file.endsWith(".json"))
-    .map((file) =>
-      file.endsWith("Dockerfile")
-        ? dockerCommands(tree.read(file))
-        : tree.read(file),
-    );
-  pending.push(...commands);
-  for (let body = pending.pop(); body !== undefined; body = pending.pop()) {
-    for (const name of scriptNames(body)) {
-      const command = scripts[name];
-      if (typeof command === "string" && !found.has(name)) {
-        found.set(name, command);
-        pending.push(command);
-      }
-    }
-  }
-  return [...found];
 }
 
 /** Maps emitted export targets and relative JS imports back through each package's compiler layout. */
@@ -320,7 +313,7 @@ function sourceReader(tree: Tree): ModuleReader {
   };
 }
 
-/** Only build commands are traversed; unrelated manifest scripts and documentation are not build inputs. */
+/** Build commands discover executables; the whole root manifest binds installation and script configuration. */
 function buildInputs(
   tree: Tree,
   roots: readonly string[],
@@ -382,7 +375,7 @@ function buildCommands(tree: Tree, root: string) {
 function namedInputs(tree: Tree, file: string): string[] {
   const text = tree.read(file);
   if (file.endsWith(".json")) {
-    const parent = json(text, file).extends;
+    const parent = mapping(jsonValue(text, file)).extends;
     const parents = typeof parent === "string" ? [parent] : asStrings(parent);
     return parents
       .map((entry) =>
@@ -390,7 +383,7 @@ function namedInputs(tree: Tree, file: string): string[] {
       )
       .filter((entry) => tree.files.has(entry));
   }
-  const body = file.endsWith("Dockerfile") ? dockerCommands(text) : text;
+  const body = file.endsWith("Dockerfile") ? dockerCommands(text, file) : text;
   return commandFiles(tree, path.posix.dirname(file), body);
 }
 
@@ -398,6 +391,7 @@ function namedInputs(tree: Tree, file: string): string[] {
 function lockedClosure(
   text: string,
   root: string,
+  roots: ReadonlyMap<string, string>,
 ): ReadonlyArray<readonly [string, unknown]> {
   const lock: unknown = parse(text);
   const value = mapping(lock);
@@ -416,12 +410,53 @@ function lockedClosure(
     }
     seen.add(id);
     const block = lockedBlock(value, id, importer);
+    accountImporter(importer, id, block, roots);
     if (!importer) {
       found.set(id, pinnedPackage(value, id, block));
     }
     pending.push(...runtimeIds(block, id, importer));
   }
   return [...found].sort(([a], [b]) => (a < b ? -1 : Number(a !== b)));
+}
+
+/** Workspace links are accepted only when their import name and directory are both traversable. */
+function accountImporter(
+  importer: boolean,
+  id: string,
+  block: Record<string, unknown>,
+  roots: ReadonlyMap<string, string>,
+): void {
+  if (!importer) {
+    return;
+  }
+  if (![...roots.values()].includes(id)) {
+    throw new ImageInputError({
+      message: `Unaccounted workspace importer ${id}/package.json in pnpm-lock.yaml`,
+    });
+  }
+  const entries = ["dependencies", "optionalDependencies"].flatMap((section) =>
+    Object.entries(mapping(block[section])),
+  );
+  for (const [name, entry] of entries) {
+    const version = mapping(entry).version;
+    if (typeof version === "string" && version.startsWith("link:")) {
+      accountLink(name, version, id, roots);
+    }
+  }
+}
+
+function accountLink(
+  name: string,
+  version: string,
+  id: string,
+  roots: ReadonlyMap<string, string>,
+): void {
+  const target = path.posix.normalize(path.posix.join(id, version.slice(5)));
+  if (roots.get(name) !== target) {
+    throw new ImageInputError({
+      message: `Unaccounted workspace link ${name} to ${target}/package.json in pnpm-lock.yaml`,
+    });
+  }
 }
 
 function lockedBlock(
@@ -521,7 +556,7 @@ function committedEntry(tree: Tree, file: string): string {
             sortedJson(
               Object.fromEntries(
                 Object.entries(readJson(tree, file)).filter(
-                  ([key]) => !UNHASHED_FIELDS.has(key),
+                  ([key]) => !IMAGE_UNHASHED_FIELDS.has(key),
                 ),
               ),
             ),
@@ -634,15 +669,15 @@ function scriptNames(text: string): string[] {
 }
 
 function readJson(tree: Tree, file: string): Record<string, unknown> {
-  return json(tree.read(file), file);
+  return mapping(jsonValue(tree.read(file), file));
 }
 
-function json(text: string, file: string): Record<string, unknown> {
+function jsonValue(text: string, file: string): unknown {
   return Either.match(
     Effect.runSync(
       Effect.either(
         Effect.try({
-          try: () => mapping(JSON.parse(text)),
+          try: (): unknown => JSON.parse(text),
           catch: (cause) =>
             new ImageInputError({ message: `Invalid JSON in ${file}`, cause }),
         }),
@@ -665,11 +700,12 @@ function mapping(value: unknown): Record<string, unknown> {
 
 /** COPY and ADD read the build context; stage copies consume already keyed build outputs. */
 function dockerInputs(tree: Tree, file: string): string[] {
-  return dockerCommands(tree.read(file))
+  return dockerCommands(tree.read(file), file)
     .split("\n")
     .flatMap((line) => {
       const instruction = line.trim();
       const match = /^(COPY|ADD)\b/iu.exec(instruction);
+      refuseContextMount(instruction, file);
       if (match === null) {
         return [];
       }
@@ -679,7 +715,7 @@ function dockerInputs(tree: Tree, file: string): string[] {
       }
       const argumentsText = dockerArguments(body);
       const tokens = argumentsText.startsWith("[")
-        ? asStrings(JSON.parse(argumentsText))
+        ? asStrings(jsonValue(argumentsText, file))
         : (argumentsText.match(/"[^"]*"|'[^']*'|\S+/gu) ?? []);
       return tokens.slice(0, -1).flatMap((token) => {
         const source = token
@@ -702,14 +738,46 @@ function dockerInputs(tree: Tree, file: string): string[] {
     });
 }
 
+/** Bind mounts without a stage source read context paths the COPY inventory cannot account for. */
+function refuseContextMount(instruction: string, file: string): void {
+  if (!/^RUN\b/iu.test(instruction)) {
+    return;
+  }
+  for (const mount of instruction.matchAll(/--mount=([^\s]+)/gu)) {
+    const options = new Map(
+      (mount[1] ?? "").split(",").map((option) => {
+        const [name = "", value = ""] = option.split("=");
+        return [name, value];
+      }),
+    );
+    if ((options.get("type") ?? "bind") === "bind" && !options.has("from")) {
+      throw new ImageInputError({
+        message: `Unsupported build-context bind mount in ${file}`,
+      });
+    }
+  }
+}
+
 function asStrings(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string")
     : [];
 }
 
-function dockerCommands(text: string): string {
-  return text.replaceAll("\r\n", "\n").replace(/\\\n/gu, " ");
+function dockerCommands(text: string, file: string): string {
+  if (text.split("\n").some(nonDefaultEscape)) {
+    throw new ImageInputError({
+      message: `Unsupported escape directive in ${file}`,
+    });
+  }
+  return text
+    .replaceAll("\r\n", "\n")
+    .replace(/\\[ \t]*\n(?:[ \t]*(?:#[^\n]*)?\n)*/gu, " ");
+}
+
+function nonDefaultEscape(line: string): boolean {
+  const match = /^#[ \t]*escape[ \t]*=(.*)$/iu.exec(line.trim());
+  return match !== null && match[1]?.trim() !== "\\";
 }
 
 function readsManifestVersion(text: string): boolean {
@@ -722,21 +790,72 @@ function readsManifestVersion(text: string): boolean {
   const manifests = new Set<string>();
   let reads = false;
   function visit(node: ts.Node): void {
-    if (ts.isImportDeclaration(node)) {
-      reads = manifestImport(node, manifests) || reads;
-    }
-    if (
-      ts.isVariableDeclaration(node) &&
-      node.initializer !== undefined &&
-      manifestExpression(node.initializer, manifests)
-    ) {
-      reads = manifestBinding(node.name, manifests) || reads;
-    }
-    reads = expressionVersionRead(node, manifests) || reads;
+    reads =
+      syntaxVersionRead(node, manifests) ||
+      reads ||
+      manifestFileRead(node) ||
+      npmVersionRead(node);
     ts.forEachChild(node, visit);
   }
   visit(source);
   return reads;
+}
+
+function syntaxVersionRead(node: ts.Node, manifests: Set<string>): boolean {
+  if (ts.isImportDeclaration(node)) {
+    return manifestImport(node, manifests);
+  }
+  if (
+    ts.isVariableDeclaration(node) &&
+    node.initializer !== undefined &&
+    manifestExpression(node.initializer, manifests)
+  ) {
+    return manifestBinding(node.name, manifests);
+  }
+  return expressionVersionRead(node, manifests);
+}
+
+/** Filesystem manifest reads conservatively consume version metadata regardless of later parsing. */
+function manifestFileRead(node: ts.Node): boolean {
+  if (
+    !ts.isCallExpression(node) ||
+    !["readFile", "readFileSync"].includes(callName(node.expression))
+  ) {
+    return false;
+  }
+  const argument = node.arguments[0];
+  if (argument === undefined) {
+    return false;
+  }
+  const target = manifestPath(argument);
+  return target !== undefined && manifestSpecifier(target);
+}
+
+function manifestPath(node: ts.Expression): ts.Expression | undefined {
+  if (ts.isNewExpression(node) && callName(node.expression) === "URL") {
+    return node.arguments?.[0];
+  }
+  return node;
+}
+
+function callName(node: ts.Expression): string {
+  if (ts.isIdentifier(node)) {
+    return node.text;
+  }
+  return ts.isPropertyAccessExpression(node) ? node.name.text : "";
+}
+
+function npmVersionRead(node: ts.Node): boolean {
+  if (
+    !ts.isPropertyAccessExpression(node) ||
+    node.name.text !== "npm_package_version" ||
+    !ts.isPropertyAccessExpression(node.expression) ||
+    node.expression.name.text !== "env"
+  ) {
+    return false;
+  }
+  const receiver = node.expression.expression;
+  return ts.isIdentifier(receiver) && receiver.text === "process";
 }
 
 function manifestImport(

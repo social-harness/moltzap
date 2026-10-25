@@ -84,7 +84,7 @@ export function hostCodeHashOfDirectories(
         roots.get(module.name) ?? "",
         module.relative,
         `${module.name}/${module.relative}`,
-        { siblingPins: "drop", siblings: new Set(roots.keys()) },
+        { kind: "drop", names: new Set(roots.keys()) },
       ),
     ),
   );

@@ -43,10 +43,9 @@ export function moduleGraph(
       continue;
     }
     seen.set(label, next);
-    if (runtimeModule(next.relative)) {
-      const text = reader.read(
-        path.join(roots.get(next.name) ?? "", next.relative),
-      );
+    const root = roots.get(next.name) ?? "";
+    const text = reader.read(path.join(root, next.relative));
+    if (isRuntimeModule(next, root, text, reader)) {
       for (const specifier of runtimeImports(text)) {
         pending.push(
           ...resolve(next, specifier, { roots, resolution, reader }, new Set()),
@@ -105,6 +104,37 @@ export function erasedImport(clause?: ts.ImportClause): boolean {
   );
 }
 
+/** Declaration files never execute; manifest binaries and Node shebangs can omit an extension. */
+export function runtimeModule(
+  relative: string,
+  text: string,
+  bin = false,
+): boolean {
+  return (
+    !/\.d\.[cm]?ts$/u.test(relative) &&
+    (/\.[cm]?[jt]s$/u.test(relative) || bin || /^#![^\n]*\bnode\b/u.test(text))
+  );
+}
+
+function isRuntimeModule(
+  module: Module,
+  root: string,
+  text: string,
+  reader: ModuleReader,
+): boolean {
+  const bin = readManifest(root, reader).bin;
+  const bins = typeof bin === "string" ? [bin] : Object.values(bin ?? {});
+  return runtimeModule(
+    module.relative,
+    text,
+    bins.some(
+      (target) =>
+        typeof target === "string" &&
+        path.posix.normalize(target) === module.relative,
+    ),
+  );
+}
+
 function runtimeSpecifier(node: ts.Node): string | undefined {
   if (ts.isImportDeclaration(node)) {
     return importSpecifier(node);
@@ -139,10 +169,6 @@ function exportSpecifier(node: ts.ExportDeclaration): string | undefined {
     : undefined;
 }
 
-function runtimeModule(relative: string): boolean {
-  return /\.[cm]?[jt]s$/u.test(relative) && !/\.d\.[cm]?ts$/u.test(relative);
-}
-
 function importSpecifier(node: ts.ImportDeclaration): string | undefined {
   return !erasedImport(node.importClause) &&
     ts.isStringLiteral(node.moduleSpecifier)
@@ -160,7 +186,7 @@ function resolve(
     const target = path.posix.normalize(
       path.posix.join(path.posix.dirname(from.relative), specifier),
     );
-    return locate(from.name, target, specifier, context);
+    return locate(from.name, target, context);
   }
   if (specifier.startsWith("#")) {
     return resolveAlias(from, specifier, context, aliases);
@@ -184,7 +210,7 @@ function resolveAlias(
     specifier,
   );
   if (!entry.matched) {
-    context.reader.missing?.(specifier);
+    context.reader.missing?.(`${root}/package.json (${specifier})`);
   }
   const seen = new Set([...aliases, specifier]);
   return targets(entry.value, context.resolution).flatMap((target) =>
@@ -211,22 +237,19 @@ function resolvePackage(specifier: string, context: Context): Module[] {
         }
       : exportEntry(manifest.exports, subpath);
   if (!entry.matched) {
-    context.reader.missing?.(specifier);
+    context.reader.missing?.(`${root}/package.json (${specifier})`);
   }
   return targets(entry.value, context.resolution).flatMap((target) =>
-    locate(name, target, specifier, context),
+    locate(name, target, context),
   );
 }
 
-function locate(
-  name: string,
-  target: string,
-  specifier: string,
-  context: Context,
-): Module[] {
+function locate(name: string, target: string, context: Context): Module[] {
   const relative = context.reader.locate(context.roots.get(name) ?? "", target);
   if (relative === undefined) {
-    context.reader.missing?.(specifier);
+    context.reader.missing?.(
+      path.posix.join(context.roots.get(name) ?? "", target),
+    );
     return [];
   }
   return [{ name, relative }];
