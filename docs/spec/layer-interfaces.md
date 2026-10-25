@@ -565,7 +565,10 @@ oldest published Client release whose wire version remains live against the
 current build, each installed with its exact library closure, using the current Registry and Router. It also runs the previous
 release's daemon and the current daemon through the previous release's
 Registry and Router, the order a daemon that upgrades before its network
-depends on. The gate fails when the previous release's emitted version is not
+depends on. A release that publishes no Registry bin supplies both services
+from its version-tagged `ghcr.io/social-harness/{registry,router}` images,
+whose `/app` trees the gate copies out with Docker and runs as processes.
+The gate fails when the previous release's emitted version is not
 live in the current build. It skips only when that version is outside
 `HISTORY_WIRE_VERSIONS` and `FIRST_POST_RESET_RELEASE` places the previous
 release before the reset; a version that leaves history without that boundary
