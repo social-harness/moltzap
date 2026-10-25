@@ -10,17 +10,7 @@ import {
   SignedMessage,
   WIRE_VERSION,
 } from "@moltzap/client";
-import {
-  maximumPollCursorLength,
-  PollCursor,
-  pollCursorEncodedLength,
-  RouterInstanceId,
-  type RouterInstanceId as RouterInstanceIdValue,
-  RouterPollResult,
-  routerRepresentationLimits,
-  RouterSendRequest,
-  SignedMessageDigest,
-} from "@moltzap/client/internal";
+import { RouterApi } from "@moltzap/client/internal";
 import canonicalize from "canonicalize";
 import { Effect, Either, Encoding, Fiber, Schema } from "effect";
 import * as fc from "fast-check";
@@ -52,11 +42,13 @@ const makeAgentId = (seed: number): AgentIdValue =>
 const makeMessageId = (seed: number): MessageIdValue =>
   Schema.decodeUnknownSync(MessageId)(`msg_${identifierPayload(seed)}`);
 
-const makeRouterInstanceId = (seed: number): RouterInstanceIdValue =>
-  Schema.decodeUnknownSync(RouterInstanceId)(`rti_${identifierPayload(seed)}`);
+const makeRouterInstanceId = (seed: number): RouterApi.RouterInstanceId =>
+  Schema.decodeUnknownSync(RouterApi.RouterInstanceId)(
+    `rti_${identifierPayload(seed)}`,
+  );
 
 const makeDigest = (seed: number) =>
-  Schema.decodeUnknownSync(SignedMessageDigest)(
+  Schema.decodeUnknownSync(RouterApi.SignedMessageDigest)(
     `smd_${Encoding.encodeBase64Url(new Uint8Array(32).fill(seed))}`,
   );
 
@@ -197,7 +189,7 @@ describe("poll cursor behavior", () => {
         const tagStart = cursor.length - 22;
         const current = cursor.charAt(tagStart);
         const replacement = current === "A" ? "B" : "A";
-        const tampered = Schema.decodeUnknownSync(PollCursor)(
+        const tampered = Schema.decodeUnknownSync(RouterApi.PollCursor)(
           `${cursor.slice(0, tagStart)}${replacement}${cursor.slice(
             tagStart + 1,
           )}`,
@@ -239,7 +231,9 @@ describe("poll cursor behavior", () => {
               .encrypt(key),
           catch: () => new Error("cursor fixture encryption failed"),
         });
-        const cursor = Schema.decodeUnknownSync(PollCursor)(`plc_${compact}`);
+        const cursor = Schema.decodeUnknownSync(RouterApi.PollCursor)(
+          `plc_${compact}`,
+        );
         expect(yield* effectFails(codec.decrypt(cursor, firstRecipient))).toBe(
           true,
         );
@@ -265,9 +259,9 @@ describe("poll cursor behavior", () => {
           lastScannedOrder: maximumPrivateOrder,
         });
         expect(first).not.toBe(second);
-        expect(first.length).toBe(maximumPollCursorLength);
+        expect(first.length).toBe(RouterApi.maximumPollCursorLength);
         expect(first.length).toBe(
-          pollCursorEncodedLength({
+          RouterApi.pollCursorEncodedLength({
             agentId: firstRecipient,
             routerInstanceId,
             lastScannedOrder: maximumPrivateOrder,
@@ -280,7 +274,7 @@ describe("poll cursor behavior", () => {
               request: { pollCursor: first },
             }),
           ).byteLength,
-        ).toBe(routerRepresentationLimits.pollRequestBodyBytes);
+        ).toBe(RouterApi.routerRepresentationLimits.pollRequestBodyBytes);
 
         const overRangeCompact = yield* Effect.tryPromise({
           try: () =>
@@ -301,7 +295,7 @@ describe("poll cursor behavior", () => {
               .encrypt(key),
           catch: () => new Error("cursor fixture encryption failed"),
         });
-        const overRangeCursor = Schema.decodeUnknownSync(PollCursor)(
+        const overRangeCursor = Schema.decodeUnknownSync(RouterApi.PollCursor)(
           `plc_${overRangeCompact}`,
         );
         expect(
@@ -613,12 +607,12 @@ describe("representation bounds", () => {
         agentId: makeAgentId(255),
         lastScannedOrder: maximumPrivateOrder,
       });
-      const sendRequest = yield* Schema.encode(RouterSendRequest)({
+      const sendRequest = yield* Schema.encode(RouterApi.RouterSendRequest)({
         expectedRouterInstanceId: routerInstanceId,
         mode: "initial",
         signedMessage: maximumMessage,
       });
-      const pollResult = yield* Schema.encode(RouterPollResult)({
+      const pollResult = yield* Schema.encode(RouterApi.RouterPollResult)({
         kind: "batch",
         routerInstanceId,
         signedMessages: [maximumMessage],
@@ -635,8 +629,8 @@ describe("representation bounds", () => {
             request: sendRequest,
           }),
         ).byteLength,
-      ).toBe(routerRepresentationLimits.sendRequestBodyBytes);
-      expect(cursor.length).toBe(maximumPollCursorLength);
+      ).toBe(RouterApi.routerRepresentationLimits.sendRequestBodyBytes);
+      expect(cursor.length).toBe(RouterApi.maximumPollCursorLength);
       expect(
         utf8Encoder.encode(
           canonicalText({
@@ -644,9 +638,9 @@ describe("representation bounds", () => {
             request: { pollCursor: cursor },
           }),
         ).byteLength,
-      ).toBe(routerRepresentationLimits.pollRequestBodyBytes);
+      ).toBe(RouterApi.routerRepresentationLimits.pollRequestBodyBytes);
       expect(utf8Encoder.encode(canonicalText(pollResult)).byteLength).toBe(
-        routerRepresentationLimits.oneMessageBatchBytes,
+        RouterApi.routerRepresentationLimits.oneMessageBatchBytes,
       );
     }),
   );

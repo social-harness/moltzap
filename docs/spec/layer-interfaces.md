@@ -65,7 +65,7 @@ The library has four named-export entries:
 |---|---|
 | `@moltzap/client` | Existing addressed `HarnessEndpoint` and host values; identity identifiers, cards, public keys, signing authority, attributed messages, wire compatibility and `legacyKeys` |
 | `@moltzap/client/service` | Daemon composition, `Registry`, `OperationId`, `RouterPollResult`, `PollCursor`, and `RouterInstanceId` |
-| `@moltzap/client/internal` | Service capabilities: request verification, Registry and Router APIs and codecs, and typed card signing. Requires `sharness-internal`, with no default condition or TypeDoc entry |
+| `@moltzap/client/internal` | Service capabilities: request verification, `RegistryApi` and `RouterApi` with their codecs, Registry and Router client tags, and typed card signing. Requires `sharness-internal`, with no default condition or TypeDoc entry |
 | `@moltzap/client/test` | Management fixture schemas and `WireVersions` overrides. Requires `sharness-test`, with no default condition or TypeDoc entry |
 
 Identity's root capabilities are supplied by the library root. Its Registry

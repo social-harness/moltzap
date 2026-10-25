@@ -34,7 +34,6 @@ import {
   encodeRuntimeValue,
 } from "../../communication/store/index.js";
 import { eventIdOf } from "../../harness/protocol/operations.js";
-import { makeEnglishPolicy } from "../evaluator/index.js";
 import {
   type DecisionProvider,
   type DecisionRequest,
@@ -42,7 +41,8 @@ import {
   type MessageMiddleware,
   MiddlewareError,
   type MiddlewareInput,
-} from "../evaluator/values.js";
+} from "../evaluator/contract/index.js";
+import { makeEnglishPolicy } from "../evaluator/index.js";
 
 // @agent-code-guard/regression-only: Exercises durable admission, replay, interruption and races through SQLite and the protocol engine.
 

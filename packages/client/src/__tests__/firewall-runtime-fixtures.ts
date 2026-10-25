@@ -9,7 +9,7 @@ import type { InboundItem } from "../communication/collectives/inbound.js";
 import type {
   MessageMiddleware,
   MiddlewareResult,
-} from "../firewall/evaluator/values.js";
+} from "../firewall/evaluator/contract/index.js";
 import type { HarnessMessageReadyEvent } from "../harness/protocol/operations.js";
 import {
   makeCollectiveOperations,

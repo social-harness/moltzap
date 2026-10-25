@@ -13,17 +13,7 @@ import {
   UnavailableError,
   type VerifiedAgentCard,
 } from "@moltzap/client";
-import {
-  agentCardSigning,
-  registryAgentCardCodec,
-  type RegistryListRequest,
-  type RegistryListResult,
-  type RegistryLookupRequest,
-  type RegistryLookupResult,
-  registryRegisterCodec,
-  type RegistryRegisterRequest,
-  type RegistryRegisterResult
-} from "@moltzap/client/internal";
+import { agentCardSigning, RegistryApi } from "@moltzap/client/internal";
 import { Clock, Data, Effect, Either, Encoding, Schema } from "effect";
 import { randomBytes } from "node:crypto";
 import { AgentCardIssuedAt, issueAgentCard } from "./issuance.js";
@@ -61,7 +51,7 @@ type StorageInput = Readonly<{
   operationTimeoutMilliseconds: number;
 }>;
 type RegisterInput = Readonly<{
-  request: RegistryRegisterRequest;
+  request: RegistryApi.RegistryRegisterRequest;
   requestBytes: Uint8Array;
   registrySigningAuthority: AgentSigningAuthority;
 }>;
@@ -81,13 +71,13 @@ export interface RegistryStorage {
   }) => Effect.Effect<"claimed" | "replayed" | "full", StorageError>;
   readonly register: (
     input: RegisterInput,
-  ) => Effect.Effect<RegistryRegisterResult, StorageError>;
+  ) => Effect.Effect<RegistryApi.RegistryRegisterResult, StorageError>;
   readonly lookup: (
-    request: RegistryLookupRequest,
-  ) => Effect.Effect<RegistryLookupResult, StorageError>;
+    request: RegistryApi.RegistryLookupRequest,
+  ) => Effect.Effect<RegistryApi.RegistryLookupResult, StorageError>;
   readonly list: (
-    request: RegistryListRequest,
-  ) => Effect.Effect<RegistryListResult, StorageError>;
+    request: RegistryApi.RegistryListRequest,
+  ) => Effect.Effect<RegistryApi.RegistryListResult, StorageError>;
 }
 
 /**
@@ -220,7 +210,7 @@ const decodeStoredCard = (
   registrySignerPublicKey: Ed25519PublicKey,
 ): Effect.Effect<VerifiedAgentCard, InternalServerError> =>
   internalFailure(
-    registryAgentCardCodec
+    RegistryApi.registryAgentCardCodec
       .decode(bytes)
       .pipe(
         Effect.flatMap((agentCard) =>
@@ -230,17 +220,18 @@ const decodeStoredCard = (
   );
 
 const encodeResult = (
-  result: RegistryRegisterResult,
+  result: RegistryApi.RegistryRegisterResult,
 ): Effect.Effect<Uint8Array, InternalServerError> =>
-  internalFailure(registryRegisterCodec.response.encode(result));
+  internalFailure(RegistryApi.registryRegisterCodec.response.encode(result));
 
 const decodeResult = (
   bytes: Uint8Array,
   registrySignerPublicKey: Ed25519PublicKey,
-): Effect.Effect<RegistryRegisterResult, InternalServerError> =>
+): Effect.Effect<RegistryApi.RegistryRegisterResult, InternalServerError> =>
   internalFailure(
     Effect.gen(function* () {
-      const result = yield* registryRegisterCodec.response.decode(bytes);
+      const result =
+        yield* RegistryApi.registryRegisterCodec.response.decode(bytes);
       if (result.kind !== "registered") {
         return Object.freeze({ kind: result.kind });
       }
@@ -466,7 +457,7 @@ function makeClaimRegistrationNonce(
 const findStoredOperation = (
   sql: SqlClient,
   keyThumbprint: string,
-  operationId: RegistryRegisterRequest["operationId"],
+  operationId: RegistryApi.RegistryRegisterRequest["operationId"],
 ): Effect.Effect<StoredOperation | undefined, SqlError | InternalServerError> =>
   sql`
     SELECT
@@ -492,7 +483,7 @@ const keyIsRegistered = (sql: SqlClient, thumbprint: string) =>
 
 const nameIsRegistered = (
   sql: SqlClient,
-  agentName: RegistryRegisterRequest["agentName"],
+  agentName: RegistryApi.RegistryRegisterRequest["agentName"],
 ) =>
   sql`
     SELECT COUNT(*)::text AS retained
@@ -507,7 +498,10 @@ const insertNewAgent = (
   input: StorageInput,
   call: RegisterInput,
   keyThumbprint: string,
-): Effect.Effect<RegistryRegisterResult, SqlError | InternalServerError> =>
+): Effect.Effect<
+  RegistryApi.RegistryRegisterResult,
+  SqlError | InternalServerError
+> =>
   Effect.gen(function* () {
     const agentId = yield* mintUnusedAgentId(input.sql);
     const issuedAt = yield* issueTime();
@@ -522,7 +516,7 @@ const insertNewAgent = (
       }),
     );
     const agentCardBytes = yield* internalFailure(
-      registryAgentCardCodec.encode(agentCard),
+      RegistryApi.registryAgentCardCodec.encode(agentCard),
     );
     const agentIdBytes = yield* decodeAgentIdBytes(agentId);
     yield* input.sql`
@@ -554,7 +548,7 @@ const decideRegistration = (
 const recordOperation = (input: {
   readonly sql: SqlClient;
   readonly keyThumbprint: string;
-  readonly operationId: RegistryRegisterRequest["operationId"];
+  readonly operationId: RegistryApi.RegistryRegisterRequest["operationId"];
   readonly requestBytes: Uint8Array;
   readonly resultBytes: Uint8Array;
 }) =>
@@ -617,7 +611,10 @@ function makeRegister(input: StorageInput): RegistryStorage["register"] {
     );
 }
 
-const findCardRows = (sql: SqlClient, request: RegistryLookupRequest) =>
+const findCardRows = (
+  sql: SqlClient,
+  request: RegistryApi.RegistryLookupRequest,
+) =>
   "agentId" in request
     ? sql`
         SELECT agent_card_bytes AS "agentCardBytes"

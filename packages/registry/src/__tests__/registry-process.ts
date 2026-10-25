@@ -9,12 +9,7 @@ import {
   PrincipalId,
   type VerifiedAgentCard,
 } from "@moltzap/client";
-import {
-  OperationId,
-  Registry,
-  RegistryRegisterRequest,
-  type RegistryRegisterRequest as RegistryRegisterRequestValue,
-} from "@moltzap/client/internal";
+import { Registry, RegistryApi } from "@moltzap/client/internal";
 import {
   Clock,
   Data,
@@ -94,7 +89,7 @@ interface RawHttpResponse {
 }
 
 interface RegisteredAgent {
-  readonly request: RegistryRegisterRequestValue;
+  readonly request: RegistryApi.RegistryRegisterRequest;
   readonly signingAuthority: AgentSigningAuthority;
   readonly agentCard: VerifiedAgentCard;
 }
@@ -506,7 +501,9 @@ const randomIdentifierPayload = (): string =>
   randomBytes(16).toString("base64url");
 
 const makeOperationId = () =>
-  Schema.decodeUnknownSync(OperationId)(`opn_${randomIdentifierPayload()}`);
+  Schema.decodeUnknownSync(RegistryApi.OperationId)(
+    `opn_${randomIdentifierPayload()}`,
+  );
 
 const makePrincipalId = () =>
   Schema.decodeUnknownSync(PrincipalId)(`prn_${randomIdentifierPayload()}`);
@@ -557,7 +554,7 @@ const prepareAgent = (name: string) =>
       principalId: makePrincipalId(),
       agentName: Schema.decodeUnknownSync(AgentName)(name),
       publicKey: AgentSigningAuthority.publicKey(signingAuthority),
-    } satisfies RegistryRegisterRequestValue;
+    } satisfies RegistryApi.RegistryRegisterRequest;
     return { request, signingAuthority };
   });
 
@@ -623,7 +620,7 @@ const makeVersionedBootstrapRequest = (
   scheme = "Sharness-Admission",
 ) =>
   Effect.gen(function* () {
-    const encoded = yield* Schema.encode(RegistryRegisterRequest)(
+    const encoded = yield* Schema.encode(RegistryApi.RegistryRegisterRequest)(
       prepared.request,
     );
     const bodyBytes = yield* encodeCanonicalJson({ request: encoded });

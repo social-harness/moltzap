@@ -8,7 +8,7 @@ import {
 } from "@opentelemetry/sdk-trace-base";
 import { Deferred, Duration, Effect, Fiber } from "effect";
 import { describe, expect } from "vitest";
-import type { MiddlewareInput } from "../evaluator/values.js";
+import type { MiddlewareInput } from "../evaluator/contract/index.js";
 import {
   admitPending,
   answerBob,

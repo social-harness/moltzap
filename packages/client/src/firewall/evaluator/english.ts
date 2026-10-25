@@ -2,7 +2,6 @@
 
 import { Clock, Effect, Either, Schema } from "effect";
 import { createHash } from "node:crypto";
-import { makeEnglishRequest, questionEdition } from "./questions.js";
 import {
   captureResult,
   CheckInputError,
@@ -21,7 +20,8 @@ import {
   type PolicyFinding,
   type PolicyStageTrace,
   RuleDescription,
-} from "./values.js";
+} from "./contract/index.js";
+import { makeEnglishRequest, questionEdition } from "./questions.js";
 
 const decideWithinBudget = Effect.fn("EnglishPolicy.decideWithinBudget")(
   function* (

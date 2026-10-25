@@ -43,7 +43,7 @@ import {
   type CertificateSignatures,
   certifiedRecord,
   orderedSignatures,
-} from "./certificate.js";
+} from "./certificates/index.js";
 
 /**
  * The hash of a conversation's current anchor, which its next record binds.

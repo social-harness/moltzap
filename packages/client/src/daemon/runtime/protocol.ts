@@ -28,8 +28,8 @@ import {
   type OuterBodyReader,
 } from "../../communication/records/index.js";
 import { AgentAddress } from "../../communication/records/values.js";
-import { Router } from "../../communication/router/api/client.js";
 import {
+  Router,
   type RouterWorker,
   type RouterWorkerInput,
   RouterWorkerPayloadInvalidError,

@@ -8,7 +8,7 @@ import type {
   RegistryLookupResult,
 } from "../../registry/contract.js";
 import { Registry } from "../../registry/index.js";
-import { AuthenticatedHttp } from "../authenticated-http.js";
+import { AuthenticatedHttp } from "../registered/index.js";
 import {
   type IdentityFixture,
   makeIdentityFixture,

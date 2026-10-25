@@ -19,22 +19,7 @@ import {
   VersionMismatchError,
   wireVersions,
 } from "@moltzap/client";
-import {
-  HEALTH_PATH,
-  KNOWN_PATHS,
-  LIST_BODY_CAP,
-  LIST_PATH,
-  LIST_ROUTE,
-  LOOKUP_BODY_CAP,
-  LOOKUP_PATH,
-  LOOKUP_ROUTE,
-  REGISTER_BODY_CAP,
-  REGISTER_PATH,
-  REGISTER_ROUTE,
-  registryListCodec,
-  registryLookupCodec,
-  registryRegisterCodec,
-} from "@moltzap/client/internal";
+import { RegistryApi } from "@moltzap/client/internal";
 import { Cause, Effect, Option } from "effect";
 import type { RegistryStorage } from "./storage.js";
 import { verifyBootstrapRegistration } from "./admission.js";
@@ -63,7 +48,7 @@ type RegistryHttpAppInput = Readonly<{
  */
 export function makeRegistryHttpApp(input: RegistryHttpAppInput) {
   return HttpRouter.empty.pipe(
-    HttpRouter.post(REGISTER_ROUTE, registerHandler(input)),
+    HttpRouter.post(RegistryApi.REGISTER_ROUTE, registerHandler(input)),
     lookupRoute(input),
     listRoute(input),
     healthRoute(input.storage),
@@ -90,12 +75,12 @@ const SINGLE_VALUE_HEADERS = [
 
 function lookupRoute(input: RegistryHttpAppInput) {
   return HttpRouter.post(
-    LOOKUP_ROUTE,
+    RegistryApi.LOOKUP_ROUTE,
     publicReadHandler({
-      path: LOOKUP_PATH,
-      bodyCap: LOOKUP_BODY_CAP,
-      decodeRequest: registryLookupCodec.request.decode,
-      encodeResponse: registryLookupCodec.response.encode,
+      path: RegistryApi.LOOKUP_PATH,
+      bodyCap: RegistryApi.LOOKUP_BODY_CAP,
+      decodeRequest: RegistryApi.registryLookupCodec.request.decode,
+      encodeResponse: RegistryApi.registryLookupCodec.response.encode,
       invoke: (request) => input.client.lookup(request),
       requestSemaphore: input.requestSemaphore,
     }),
@@ -104,12 +89,12 @@ function lookupRoute(input: RegistryHttpAppInput) {
 
 function listRoute(input: RegistryHttpAppInput) {
   return HttpRouter.post(
-    LIST_ROUTE,
+    RegistryApi.LIST_ROUTE,
     publicReadHandler({
-      path: LIST_PATH,
-      bodyCap: LIST_BODY_CAP,
-      decodeRequest: registryListCodec.request.decode,
-      encodeResponse: registryListCodec.response.encode,
+      path: RegistryApi.LIST_PATH,
+      bodyCap: RegistryApi.LIST_BODY_CAP,
+      decodeRequest: RegistryApi.registryListCodec.request.decode,
+      encodeResponse: RegistryApi.registryListCodec.response.encode,
       invoke: (request) => input.client.list(request),
       requestSemaphore: input.requestSemaphore,
     }),
@@ -118,10 +103,10 @@ function listRoute(input: RegistryHttpAppInput) {
 
 function healthRoute(storage: RegistryStorage) {
   return HttpRouter.get(
-    HEALTH_PATH,
+    RegistryApi.HEALTH_PATH,
     Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest;
-      if (request.url !== HEALTH_PATH) {
+      if (request.url !== RegistryApi.HEALTH_PATH) {
         return errorResponse(new RouteNotFoundError());
       }
       return yield* storage.checkReadiness().pipe(
@@ -146,7 +131,7 @@ function fallbackRoute() {
         return errorResponse(new RouteNotFoundError());
       }
       const path = request.url.split("?", 1)[0] ?? "";
-      return KNOWN_PATHS.has(path)
+      return RegistryApi.KNOWN_PATHS.has(path)
         ? errorResponse(new MethodNotAllowedError())
         : errorResponse(new RouteNotFoundError());
     }),
@@ -165,18 +150,21 @@ function registerHandler(input: {
   return recoverHttpResponse(
     Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest;
-      if (request.url !== REGISTER_PATH) {
+      if (request.url !== RegistryApi.REGISTER_PATH) {
         return yield* new RouteNotFoundError();
       }
       yield* validateRequestFraming({
         request,
-        maximumBytes: REGISTER_BODY_CAP,
+        maximumBytes: RegistryApi.REGISTER_BODY_CAP,
         profile: "registration",
       });
       return yield* executeWithPermit(
         input.requestSemaphore,
         Effect.gen(function* () {
-          const bodyBytes = yield* readBoundedBody(request, REGISTER_BODY_CAP);
+          const bodyBytes = yield* readBoundedBody(
+            request,
+            RegistryApi.REGISTER_BODY_CAP,
+          );
           const registration = yield* verifyBootstrapRegistration({
             httpRequest: request,
             bodyBytes,
@@ -188,7 +176,7 @@ function registerHandler(input: {
             input.client.register(registration),
           );
           return yield* resultResponse(
-            registryRegisterCodec.response.encode(result),
+            RegistryApi.registryRegisterCodec.response.encode(result),
           );
         }),
       );

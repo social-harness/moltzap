@@ -695,10 +695,10 @@ const routerBinaryBehavior = Effect.gen(function* () {
 
   yield* stopProcess(router);
   expect(router.logs()).toContain(
-    `sharness-router listening on ${origin.origin}`,
+    `sharness-router listening on ${origin.origin} (`,
   );
   expect(router.logs()).toContain(`WIRE_VERSION ${WIRE_VERSION}`);
-  expect(router.logs()).toMatch(/\(package \S+;/u);
+  expect(router.logs()).toMatch(/\(WIRE_VERSION \S+\)/u);
   expect(router.logs().match(/sharness-router listening on/gu)).toHaveLength(1);
   expect(
     router.child.exitCode !== null || router.child.signalCode !== null,

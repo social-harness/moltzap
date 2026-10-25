@@ -40,7 +40,7 @@
       "reason": "Named domain capability boundary"
     },
     {
-      "file": "identity/signing/authenticated-http.ts",
+      "file": "identity/signing/registered/index.ts",
       "reason": "Named domain capability boundary"
     },
     {
@@ -53,6 +53,10 @@
     },
     {
       "file": "identity/registry/index.ts",
+      "reason": "Named domain capability boundary"
+    },
+    {
+      "file": "identity/registry/capability.ts",
       "reason": "Named domain capability boundary"
     },
     {
@@ -73,6 +77,10 @@
     },
     {
       "file": "communication/router/api/client.ts",
+      "reason": "Named domain capability boundary"
+    },
+    {
+      "file": "communication/router/api/capability.ts",
       "reason": "Named domain capability boundary"
     },
     {
@@ -185,10 +193,12 @@
         "src/identity/keys.ts",
         "src/identity/cards.ts",
         "src/identity/wire-version.ts",
-        "src/identity/signing/authenticated-http.ts",
+        "src/identity/signing/registered/index.ts",
+        "src/identity/index.ts",
         "src/identity/signing/http-signature.ts",
         "src/identity/signing/http-errors.ts",
         "src/identity/registry/index.ts",
+        "src/identity/registry/capability.ts",
         "src/identity/registry/contract.ts"
       ],
       "reason": "Identity, request authentication and immutable Registry resolution"
@@ -242,7 +252,8 @@
       "entrypoints": [
         "src/communication/router/api/index.ts",
         "src/communication/router/api/contract.ts",
-        "src/communication/router/api/client.ts"
+        "src/communication/router/api/client.ts",
+        "src/communication/router/api/capability.ts"
       ],
       "reason": "Opaque Router values and HTTP client below endpoint protocol records"
     },

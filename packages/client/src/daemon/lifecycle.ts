@@ -22,7 +22,7 @@ import {
 import { WIRE_VERSION } from "../identity/wire-version.js";
 import { packageVersion } from "../release/index.js";
 import { DaemonRuntimeError, runtimeFailure } from "./errors.js";
-import { makeDaemonManagementOperations } from "./management.js";
+import { makeDaemonManagementOperations } from "./management/index.js";
 import {
   type DaemonStartup,
   makeDaemon,

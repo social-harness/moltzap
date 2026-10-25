@@ -1,8 +1,8 @@
 /** @file Validated evidence and shared code/English middleware contracts. */
 
 import { Cause, Data, Effect, Either, Schema } from "effect";
-import { exactStruct } from "../../encoding/exact.js";
-import { AgentId } from "../../identity/agents.js";
+import { exactStruct } from "../../../encoding/exact.js";
+import { AgentId } from "../../../identity/agents.js";
 
 const identifier = Schema.NonEmptyTrimmedString;
 const visibility = Schema.Literal("runtime", "assessor");
@@ -434,7 +434,12 @@ export interface EnglishCheck {
   readonly rules: readonly EnglishRule[];
 }
 
-/** Inspect the full cause before capturing failures so cleanup cannot erase cancellation. */
+/**
+ * Inspect the full cause before capturing failures so cleanup cannot erase cancellation.
+ * @param check One bounded check whose interruption must propagate.
+ * @param onDefect Projects an unexpected defect to a closed check failure.
+ * @returns The completed result or typed failure, preserving interruption.
+ */
 export function captureResult<A, E, R>(
   check: Effect.Effect<A, E, R>,
   onDefect: () => E,
@@ -456,7 +461,12 @@ export function captureResult<A, E, R>(
   });
 }
 
-/** Copy before freezing so callers and injected policies cannot alter later checks. */
+/**
+ * Copy before freezing so callers and injected policies cannot alter later checks.
+ * @param schema Closed evidence grammar used for a detached round trip.
+ * @param input Caller-owned evidence whose references must not escape.
+ * @returns A deeply frozen copy or a typed decoding failure.
+ */
 export function decodeFrozen<A, I>(
   schema: Schema.Schema<A, I>,
   input: unknown,

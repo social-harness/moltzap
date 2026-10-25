@@ -20,15 +20,7 @@ import {
   UnsupportedMediaTypeError,
   VersionMismatchError,
 } from "@moltzap/client";
-import {
-  listResultSchema,
-  lookupResultSchema,
-  registerResultSchema,
-  RegistryListRequest,
-  RegistryLookupRequest,
-  registryRegisterCodec,
-  RegistryRegisterRequest
-} from "@moltzap/client/internal";
+import { RegistryApi } from "@moltzap/client/internal";
 import {
   Context,
   Deferred,
@@ -117,22 +109,22 @@ const publicReadErrors = Schema.Union(
 
 /** Private registration operation including its admission middleware. */
 const registerOperation = Rpc.make("register", {
-  payload: RegistryRegisterRequest,
-  success: registerResultSchema,
+  payload: RegistryApi.RegistryRegisterRequest,
+  success: RegistryApi.registerResultSchema,
   error: registerErrors,
 }).middleware(RegistryAdmission);
 
 /** Private lookup operation. */
 const lookupOperation = Rpc.make("lookup", {
-  payload: RegistryLookupRequest,
-  success: lookupResultSchema,
+  payload: RegistryApi.RegistryLookupRequest,
+  success: RegistryApi.lookupResultSchema,
   error: publicReadErrors,
 });
 
 /** Private deterministic list operation. */
 const listOperation = Rpc.make("list", {
-  payload: RegistryListRequest,
-  success: listResultSchema,
+  payload: RegistryApi.RegistryListRequest,
+  success: RegistryApi.listResultSchema,
   error: publicReadErrors,
 });
 
@@ -173,9 +165,9 @@ export const makeRegistryRpcClient = Effect.gen(function* () {
 }).pipe(Effect.withSpan("makeRegistryRpcClient"));
 
 const canonicalRegisterRequest = (
-  request: typeof RegistryRegisterRequest.Type,
+  request: typeof RegistryApi.RegistryRegisterRequest.Type,
 ) =>
-  registryRegisterCodec.request.encode(request).pipe(
+  RegistryApi.registryRegisterCodec.request.encode(request).pipe(
     // eslint-disable-next-line agent-code-guard/no-effect-error-coalescing -- Private serialization failure has one closed domain error at the RPC boundary.
     Effect.mapError(() => new InternalServerError()),
   );
@@ -185,7 +177,7 @@ const registerHandler =
     readonly storage: RegistryStorage;
     readonly registrySigningAuthority: AgentSigningAuthority;
   }) =>
-  (request: typeof RegistryRegisterRequest.Type) =>
+  (request: typeof RegistryApi.RegistryRegisterRequest.Type) =>
     canonicalRegisterRequest(request).pipe(
       Effect.flatMap((requestBytes) =>
         input.storage.register({

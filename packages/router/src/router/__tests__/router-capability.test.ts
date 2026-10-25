@@ -19,12 +19,7 @@ import {
   type VerifiedAgentRequest,
   WIRE_VERSION,
 } from "@moltzap/client";
-import {
-  calculateRouterRepresentationLimits,
-  RouterInstanceId,
-  type RouterInstanceId as RouterInstanceIdValue,
-  routerRepresentationLimits,
-} from "@moltzap/client/internal";
+import { RouterApi } from "@moltzap/client/internal";
 import canonicalize from "canonicalize";
 import {
   Brand,
@@ -52,6 +47,7 @@ import { makePollWaiters } from "../poll-waiters.js";
 import { makeRouterRpcClient, withVerifiedRouterRequest } from "../rpc.js";
 import { makeRouterSend } from "../send.js";
 
+/* eslint sonarjs/no-empty-test-file: "off" -- Effect's scoped registrations are invisible to Sonar's direct Vitest-call detector. */
 /* eslint-disable max-lines-per-function, sonarjs/max-lines-per-function, max-nested-callbacks, agent-code-guard/no-hardcoded-assertion-literals -- Each scenario observes the deep capability at its public or private call boundary. */
 const utf8Encoder = new TextEncoder();
 
@@ -64,8 +60,10 @@ const makeAgentId = (seed: number): AgentIdValue =>
 const makeMessageId = (seed: number): MessageIdValue =>
   Schema.decodeUnknownSync(MessageId)(`msg_${identifierPayload(seed)}`);
 
-const makeRouterInstanceId = (seed: number): RouterInstanceIdValue =>
-  Schema.decodeUnknownSync(RouterInstanceId)(`rti_${identifierPayload(seed)}`);
+const makeRouterInstanceId = (seed: number): RouterApi.RouterInstanceId =>
+  Schema.decodeUnknownSync(RouterApi.RouterInstanceId)(
+    `rti_${identifierPayload(seed)}`,
+  );
 
 const canonicalText = (value: unknown): string => {
   const text = canonicalize(value);
@@ -519,7 +517,7 @@ describe("configuration behavior", () => {
           ["SHARNESS_ROUTER_POLL_MESSAGE_LIMIT", "1"],
           [
             "SHARNESS_ROUTER_POLL_RESPONSE_BYTE_LIMIT",
-            String(routerRepresentationLimits.oneMessageBatchBytes),
+            String(RouterApi.routerRepresentationLimits.oneMessageBatchBytes),
           ],
           ["SHARNESS_ROUTER_REQUEST_CONCURRENCY_LIMIT", "4"],
           ["SHARNESS_ROUTER_HELD_POLL_CAPACITY", "3"],
@@ -535,7 +533,8 @@ describe("configuration behavior", () => {
         retainedMessageCapacity: 2,
         retainedMessageByteCapacity: 500_000,
         pollMessageLimit: 1,
-        pollResponseByteLimit: routerRepresentationLimits.oneMessageBatchBytes,
+        pollResponseByteLimit:
+          RouterApi.routerRepresentationLimits.oneMessageBatchBytes,
         requestConcurrencyLimit: 4,
         heldPollCapacity: 3,
         liveNonceCapacity: 5,
@@ -550,7 +549,9 @@ describe("configuration behavior", () => {
       ).toBe("::");
       expect(
         yield* effectFails(
-          calculateRouterRepresentationLimits(Number.MAX_SAFE_INTEGER),
+          RouterApi.calculateRouterRepresentationLimits(
+            Number.MAX_SAFE_INTEGER,
+          ),
         ),
       ).toBe(true);
     }),
@@ -652,7 +653,9 @@ describe("configuration behavior", () => {
           new Map([
             [
               "SHARNESS_ROUTER_POLL_RESPONSE_BYTE_LIMIT",
-              String(routerRepresentationLimits.oneMessageBatchBytes - 1),
+              String(
+                RouterApi.routerRepresentationLimits.oneMessageBatchBytes - 1,
+              ),
             ],
           ]),
         ] as const,

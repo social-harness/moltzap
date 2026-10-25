@@ -124,7 +124,7 @@ export {
 export {
   AuthenticatedHttp,
   type VerifiedAgentRequest,
-} from "./identity/signing/authenticated-http.js";
+} from "./identity/signing/registered/index.js";
 /** Shared closed HTTP-envelope failures. */
 export {
   AuthenticationFailedError,

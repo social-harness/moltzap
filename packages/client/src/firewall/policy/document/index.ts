@@ -1,13 +1,13 @@
 /** @file The message-policy document `sharnessd` installs as its firewall. */
 
 import { Schema } from "effect";
-import { AgentId } from "../../identity/agents.js";
+import { AgentId } from "../../../identity/agents.js";
 import {
   EnglishPolicySettings,
   EnglishRule,
   FirewallSettings,
   MessageContext,
-} from "../evaluator/index.js";
+} from "../../evaluator/index.js";
 
 /** The `format` every message-policy document names. */
 const messagePolicyFormat = "org.social-harness/message-policy/v1";

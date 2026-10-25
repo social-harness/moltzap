@@ -171,10 +171,12 @@ const clientDomains: readonly ClientDomain[] = [
       "keys.ts",
       "cards.ts",
       "wire-version.ts",
-      "signing/authenticated-http.ts",
+      "signing/registered/index.ts",
+      "index.ts",
       "signing/http-signature.ts",
       "signing/http-errors.ts",
       "registry/index.ts",
+      "registry/capability.ts",
       "registry/contract.ts",
     ],
     reason:
@@ -216,7 +218,7 @@ const clientDomains: readonly ClientDomain[] = [
     name: "router-api",
     root: "communication/router/api",
     host: false,
-    entrypoints: ["index.ts", "contract.ts", "client.ts"],
+    entrypoints: ["index.ts", "contract.ts", "client.ts", "capability.ts"],
     reason:
       "Opaque Router values and HTTP client below endpoint protocol records",
   },

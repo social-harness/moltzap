@@ -11,12 +11,7 @@ import {
   type VerifiedAgentCard,
   WIRE_VERSION,
 } from "@moltzap/client";
-import {
-  Registry,
-  type RegistryLookupResult,
-  RegistryRegisterRequest,
-  type RegistryRegisterResult,
-} from "@moltzap/client/internal";
+import { Registry, RegistryApi } from "@moltzap/client/internal";
 import {
   PostgreSqlContainer,
   type StartedPostgreSqlContainer,
@@ -122,7 +117,9 @@ const makePostgreSqlRegistrySetup = Effect.gen(function* () {
   };
 });
 
-const issuedCard = (result: RegistryLookupResult | RegistryRegisterResult) =>
+const issuedCard = (
+  result: RegistryApi.RegistryLookupResult | RegistryApi.RegistryRegisterResult,
+) =>
   Match.value(result).pipe(
     Match.when({ kind: "registered" }, ({ agentCard }) =>
       Effect.succeed(agentCard),
@@ -220,9 +217,9 @@ it("reopens a known ledger and serves the same card", () => {
         operationTimeoutMilliseconds: 5_000,
       });
       const prepared = yield* prepareAgent("ledger-authority");
-      const requestBytes = yield* Schema.encode(RegistryRegisterRequest)(
-        prepared.request,
-      ).pipe(Effect.flatMap(encodeCanonicalJson));
+      const requestBytes = yield* Schema.encode(
+        RegistryApi.RegistryRegisterRequest,
+      )(prepared.request).pipe(Effect.flatMap(encodeCanonicalJson));
       const registered = yield* storage.register({
         request: prepared.request,
         requestBytes,

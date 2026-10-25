@@ -1,7 +1,7 @@
 /** @file Router process configuration, validation, defaults, and operator feedback. */
 
 import { Ed25519PublicKey, legacyKeys, SignedMessage } from "@moltzap/client";
-import { routerRepresentationLimits } from "@moltzap/client/internal";
+import { RouterApi } from "@moltzap/client/internal";
 import { Config, type ConfigError, Data, Effect, Match, Schema } from "effect";
 
 /** ConfigError trees retain every missing field without printing rejected inputs. */
@@ -144,14 +144,14 @@ const retentionFits = (candidate: RouterConfiguration): boolean =>
 const pollBatchFits = (candidate: RouterConfiguration): boolean =>
   candidate.pollMessageLimit >= 1 &&
   candidate.pollResponseByteLimit >=
-    routerRepresentationLimits.oneMessageBatchBytes;
+    RouterApi.routerRepresentationLimits.oneMessageBatchBytes;
 
 const heldPollsFit = (candidate: RouterConfiguration): boolean =>
   candidate.heldPollCapacity < candidate.requestConcurrencyLimit;
 
 const resourceLimitMessages = {
   retention: `SHARNESS_ROUTER_RETAINED_MESSAGE_BYTE_CAPACITY must be at least ${SignedMessage.maximumEncodedByteLength} to retain one maximum-size message`,
-  pollBatch: `SHARNESS_ROUTER_POLL_RESPONSE_BYTE_LIMIT must be at least ${routerRepresentationLimits.oneMessageBatchBytes} to return one maximum-size message`,
+  pollBatch: `SHARNESS_ROUTER_POLL_RESPONSE_BYTE_LIMIT must be at least ${RouterApi.routerRepresentationLimits.oneMessageBatchBytes} to return one maximum-size message`,
   heldPolls:
     "SHARNESS_ROUTER_HELD_POLL_CAPACITY must be less than SHARNESS_ROUTER_REQUEST_CONCURRENCY_LIMIT",
 };

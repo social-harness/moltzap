@@ -5,6 +5,9 @@ import { Either, Schema } from "effect";
 import {
   copyBytes,
   mintDeliveryToken,
+  readBytes,
+  readInteger,
+  readText,
   requireBytes,
   requireEqual,
   requireSameBytes,
@@ -12,7 +15,7 @@ import {
   StoreSignal,
   transaction,
 } from "../database/index.js";
-import { readPendingDelivery, readStoredIdentity } from "../rows.js";
+import { readStoredIdentity } from "../rows/index.js";
 import {
   type CertifiedRecord,
   DeliveryToken,
@@ -190,4 +193,36 @@ function mintRetainedDeliveryToken(database: DatabaseSync): DeliveryToken {
   return Schema.decodeUnknownSync(DeliveryToken)(
     mintDeliveryToken((token) => collision.get(token) !== undefined),
   );
+}
+
+/**
+ * Projects one retained durable delivery row.
+ *
+ * @param row SQLite result row.
+ * @returns The detached delivery and its acknowledgment state.
+ */
+function readPendingDelivery(
+  row: Readonly<Record<string, unknown>>,
+): PendingDelivery {
+  const acknowledged = readInteger(row, "acknowledged");
+  if (acknowledged !== 0 && acknowledged !== 1) {
+    throw new StoreSignal("corrupt");
+  }
+  const deliveryToken = Either.match(
+    Schema.decodeUnknownEither(DeliveryToken)(readText(row, "delivery_token")),
+    {
+      onLeft: () => {
+        throw new StoreSignal("corrupt");
+      },
+      onRight: (token) => token,
+    },
+  );
+  return Object.freeze({
+    deliveryToken,
+    conversationId: readText(row, "conversation_id"),
+    recordHash: readText(row, "record_hash"),
+    recipientAgentId: readText(row, "recipient_agent_id"),
+    canonicalMessage: readBytes(row, "canonical_message"),
+    acknowledged: acknowledged === 1,
+  });
 }

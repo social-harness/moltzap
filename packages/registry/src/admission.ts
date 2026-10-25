@@ -10,10 +10,11 @@ import {
   type UnavailableError,
   type VersionMismatchError,
 } from "@moltzap/client";
-import { registrationBody,
-  type RegistryRegisterRequest as RegistryRegisterRequestValue,
+import {
+  RegistryApi,
   type VerifiedHttpSignature,
-  verifyBootstrapRequest } from "@moltzap/client/internal";
+  verifyBootstrapRequest,
+} from "@moltzap/client/internal";
 import { Effect, Redacted, Schema } from "effect";
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { RegistryStorage } from "./storage.js";
@@ -60,7 +61,7 @@ type BootstrapRegistrationInput = Readonly<{
 export function verifyBootstrapRegistration(
   input: BootstrapRegistrationInput,
 ): Effect.Effect<
-  RegistryRegisterRequestValue,
+  RegistryApi.RegistryRegisterRequest,
   | MalformedRequestError
   | AuthenticationFailedError
   | OverloadedError
@@ -76,7 +77,7 @@ export function verifyBootstrapRegistration(
       claimNonce: (signature) => claimNonce(input, signature),
     });
     const complete = yield* malformedRequest(
-      Schema.decodeUnknown(registrationBody)(parsedBody, {
+      Schema.decodeUnknown(RegistryApi.registrationBody)(parsedBody, {
         exact: true,
         onExcessProperty: "error",
       }),

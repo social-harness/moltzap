@@ -11,11 +11,7 @@ import {
   type VerifiedAgentCard,
   WIRE_VERSION,
 } from "@moltzap/client";
-import {
-  Registry,
-  type RegistryListRequest,
-  RegistryRegisterRequest,
-} from "@moltzap/client/internal";
+import { Registry, RegistryApi } from "@moltzap/client/internal";
 import { Duration, Effect, Redacted, Ref, Schema } from "effect";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
@@ -213,7 +209,7 @@ const assertLookupAndPaging = (
 const listEveryCard = (runRegistry: RegistryRunner) =>
   Effect.gen(function* () {
     const agentCards: VerifiedAgentCard[] = [];
-    let request: RegistryListRequest = {};
+    let request: RegistryApi.RegistryListRequest = {};
     while (true) {
       const page = yield* runRegistry(Registry.list(request));
       agentCards.push(...page.agentCards);
@@ -412,7 +408,7 @@ const assertRetiredAdmissionSchemeRejected = (origin: URL) =>
 const makeIdentityPointForgery = (origin: URL) =>
   Effect.gen(function* () {
     const prepared = yield* prepareAgent("identity-point-forgery");
-    const encoded = yield* Schema.encode(RegistryRegisterRequest)(
+    const encoded = yield* Schema.encode(RegistryApi.RegistryRegisterRequest)(
       prepared.request,
     );
     const bodyBytes = yield* encodeCanonicalJson({
@@ -945,8 +941,8 @@ const makeExternalConsumer = Effect.gen(function* () {
     join(scopeDirectory, "registry"),
   );
   yield* fileSystem.symlink(
-    fileURLToPath(new URL("../../../identity/", import.meta.url)),
-    join(scopeDirectory, "identity"),
+    fileURLToPath(new URL("../../../client/", import.meta.url)),
+    join(scopeDirectory, "client"),
   );
   return directory;
 });

@@ -15,7 +15,7 @@ import type { VerifiedAgentCard } from "../../identity/cards.js";
 import type { DaemonBootstrap } from "../bootstrap.js";
 import type { DaemonRegistrationState } from "../registration/index.js";
 import { CollectiveEmitError } from "../../communication/collectives/index.js";
-import { Router } from "../../communication/router/api/client.js";
+import { Router } from "../../communication/router/index.js";
 import {
   type HostDelivery,
   makeHostDelivery,

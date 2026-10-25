@@ -37,7 +37,7 @@ import {
   readStoredPosition,
   releaseProposalLock,
   requireSameReanchor,
-} from "./rows.js";
+} from "./rows/index.js";
 
 /** Singleton identity binding operations. */
 export const bindIdentity = Object.freeze({

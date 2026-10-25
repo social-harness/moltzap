@@ -15,21 +15,7 @@ import {
   RouteNotFoundError,
   UnsupportedMediaTypeError,
 } from "@moltzap/client";
-import {
-  maximumPollCursorLength,
-  RawRouterSendRequest,
-  routerHealthPath,
-  routerHttpErrorEnvelope,
-  routerJsonContentType,
-  routerPollPath,
-  RouterPollRequest,
-  RouterPollResult,
-  routerPollRoutePattern,
-  routerRepresentationLimits,
-  routerSendPath,
-  RouterSendResult,
-  routerSendRoutePattern,
-} from "@moltzap/client/internal";
+import { RouterApi } from "@moltzap/client/internal";
 import canonicalize from "canonicalize";
 import { Cause, Effect, Option, Schema } from "effect";
 import type { RouterFeed } from "./feed.js";
@@ -75,7 +61,7 @@ export const routerHealthResponse = (
 
 const rawPollRequest = Schema.Struct({
   pollCursor: Schema.optional(
-    Schema.String.pipe(Schema.maxLength(maximumPollCursorLength)),
+    Schema.String.pipe(Schema.maxLength(RouterApi.maximumPollCursorLength)),
   ),
 }).annotations({
   parseOptions: { exact: true, onExcessProperty: "error" },
@@ -84,11 +70,11 @@ const rawPollRequest = Schema.Struct({
 const jsonText = (body: string, status: number) =>
   HttpServerResponse.text(body, {
     status,
-    contentType: routerJsonContentType,
+    contentType: RouterApi.routerJsonContentType,
   });
 
 const errorResponse = (error: { readonly _tag: string }) => {
-  const mapped = routerHttpErrorEnvelope(error._tag);
+  const mapped = RouterApi.routerHttpErrorEnvelope(error._tag);
   return mapped === undefined
     ? jsonText('{"error":"internal"}', 500)
     : jsonText(mapped.body, mapped.status);
@@ -171,7 +157,7 @@ const framingIsMalformed = (
 const mediaTypeIsUnsupported = (
   request: HttpServerRequest.HttpServerRequest,
 ): boolean =>
-  request.headers["content-type"] !== routerJsonContentType ||
+  request.headers["content-type"] !== RouterApi.routerJsonContentType ||
   request.headers["content-encoding"] !== undefined;
 
 const validateDeclaredLength = (
@@ -315,12 +301,12 @@ const handleDomainRequest = <Request, RequestEncoded, Result, ResultEncoded>(
 
 function sendRoute(input: RouterHttpInput) {
   return HttpRouter.post(
-    routerSendRoutePattern,
+    RouterApi.routerSendRoutePattern,
     handleDomainRequest({
-      routePath: routerSendPath,
-      outerRequestSchema: RawRouterSendRequest,
-      resultSchema: RouterSendResult,
-      bodyCap: routerRepresentationLimits.sendRequestBodyBytes,
+      routePath: RouterApi.routerSendPath,
+      outerRequestSchema: RouterApi.RawRouterSendRequest,
+      resultSchema: RouterApi.RouterSendResult,
+      bodyCap: RouterApi.routerRepresentationLimits.sendRequestBodyBytes,
       invoke: (client, request) => client.send({ request }),
       client: input.client,
       requestSemaphore: input.requestSemaphore,
@@ -330,14 +316,14 @@ function sendRoute(input: RouterHttpInput) {
 
 function pollRoute(input: RouterHttpInput) {
   return HttpRouter.post(
-    routerPollRoutePattern,
+    RouterApi.routerPollRoutePattern,
     handleDomainRequest({
-      routePath: routerPollPath,
+      routePath: RouterApi.routerPollPath,
       outerRequestSchema: rawPollRequest,
-      resultSchema: RouterPollResult,
-      bodyCap: routerRepresentationLimits.pollRequestBodyBytes,
+      resultSchema: RouterApi.RouterPollResult,
+      bodyCap: RouterApi.routerRepresentationLimits.pollRequestBodyBytes,
       invoke: (client, request) =>
-        Schema.decodeUnknown(RouterPollRequest)(request, {
+        Schema.decodeUnknown(RouterApi.RouterPollRequest)(request, {
           exact: true,
           onExcessProperty: "error",
         }).pipe(
@@ -355,11 +341,11 @@ function pollRoute(input: RouterHttpInput) {
 
 function healthRoute(input: RouterHttpInput) {
   return HttpRouter.get(
-    routerHealthPath,
+    RouterApi.routerHealthPath,
     recoverUnexpectedFailure(
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest;
-        if (request.url !== routerHealthPath) {
+        if (request.url !== RouterApi.routerHealthPath) {
           return errorResponse(new RouteNotFoundError());
         }
         return yield* routerHealthResponse(input.feed);
@@ -379,9 +365,9 @@ function fallbackRoute() {
         }
         const path = request.url.split("?", 1)[0];
         if (
-          path === routerSendPath ||
-          path === routerPollPath ||
-          path === routerHealthPath
+          path === RouterApi.routerSendPath ||
+          path === RouterApi.routerPollPath ||
+          path === RouterApi.routerHealthPath
         ) {
           return errorResponse(new MethodNotAllowedError());
         }

@@ -22,7 +22,7 @@ import {
   type MessagePolicyConfigurationFailure,
   type PolicyConfiguration,
 } from "./configuration.js";
-import { decodeMessagePolicy, type MessagePolicy } from "./policy.js";
+import { decodeMessagePolicy, type MessagePolicy } from "./document/index.js";
 
 /** Larger than any document of 256 editable rules and the fixed rules beside them. */
 const MAXIMUM_POLICY_BYTES = 1_048_576;

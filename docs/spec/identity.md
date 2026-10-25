@@ -49,7 +49,7 @@ Identity capabilities are part of `@moltzap/client`, published under the
 | `@moltzap/client` | normal production resolution | Identity values and capabilities alongside the host endpoint |
 | `@moltzap/client/service` | normal production resolution | Registry client and contract values alongside daemon composition |
 | `@moltzap/client/test` | `sharness-test` condition only | `WireVersions` overrides and management fixture schemas |
-| `@moltzap/client/internal` | `sharness-internal` condition only | Request verification, Registry and Router APIs and codecs, and typed card signing |
+| `@moltzap/client/internal` | `sharness-internal` condition only | Request verification, `RegistryApi` and `RouterApi` with their codecs, Registry and Router client tags, and typed card signing |
 
 The `@moltzap/client` root exports these identity-specific same-named Effect
 Schema values and TypeScript types:

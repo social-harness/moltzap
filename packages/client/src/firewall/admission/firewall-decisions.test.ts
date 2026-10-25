@@ -16,7 +16,6 @@ import {
   rule,
   settings,
 } from "../../__tests__/firewall-runtime-fixtures.js";
-import { makeEnglishPolicy } from "../evaluator/index.js";
 import {
   type DecisionProvider,
   DecisionProviderError,
@@ -26,7 +25,8 @@ import {
   MiddlewareError,
   type MiddlewareInput,
   type MiddlewareResult,
-} from "../evaluator/values.js";
+} from "../evaluator/contract/index.js";
+import { makeEnglishPolicy } from "../evaluator/index.js";
 import { installEditableFirewall } from "../policy/editable.js";
 
 // @agent-code-guard/regression-only: Reads decisions retained by real admission through SQLite and the protocol engine.

@@ -12,33 +12,36 @@ import {
   Ref,
   Schema,
 } from "effect";
-import type { RegistryLookupResult } from "../registry/contract.js";
+import type { RegistryLookupResult } from "../../registry/contract.js";
 import {
   decodeCanonicalJson,
   encodeCanonicalJson,
   exactStruct,
-} from "../../encoding/canonical-json.js";
-import { AgentId, type AgentId as AgentIdValue } from "../agents.js";
-import { type VerifiedAgentCard, verifiedAgentCardSchema } from "../cards.js";
+} from "../../../encoding/canonical-json.js";
+import { AgentId, type AgentId as AgentIdValue } from "../../agents.js";
+import {
+  type VerifiedAgentCard,
+  verifiedAgentCardSchema,
+} from "../../cards.js";
 import {
   type AgentSigningAuthority,
   type BoundedCache,
   makeBoundedCache,
-} from "../keys.js";
-import { Registry } from "../registry/index.js";
-import { WireVersions } from "../wire-version.js";
+} from "../../keys.js";
+import { Registry } from "../../registry/index.js";
+import { WireVersions } from "../../wire-version.js";
 import {
   AuthenticationFailedError,
   MalformedRequestError,
   OverloadedError,
   UnavailableError,
   VersionMismatchError,
-} from "./http-errors.js";
+} from "../http-errors.js";
 import {
   AgentSigningError,
   signHttpRequest,
   verifyHttpRequestSignature,
-} from "./http-signature.js";
+} from "../http-signature.js";
 
 /** Request body and caller identity established by AuthenticatedHttp. */
 export type VerifiedAgentRequest = Readonly<{
@@ -352,6 +355,9 @@ function runLeadingResolution(
  * one recovery at this boundary, so a lookup that fails, throws or dies fails
  * as `UnavailableError` and still settles the pending resolution, while an
  * interrupted lookup stays interrupted.
+ * @param dependencies Bounded Registry lookup and shared card-resolution state.
+ * @param agentId Immutable identity whose verified card is required.
+ * @returns The verified card or a closed resolution failure.
  */
 function lookupCard(
   dependencies: CardResolverDependencies,
@@ -380,6 +386,9 @@ const isVerifiedAgentCard = Schema.is(verifiedAgentCardSchema);
  * requested `agentId`; the request's signature key alone does not bind the
  * AgentId. A result or card that throws on read, a card this package did not
  * verify, or another agent's card fails authentication.
+ * @param attempted Registry outcome, absent when no lookup permit was available.
+ * @param agentId Requested identity that the returned card must bind.
+ * @returns The authenticated card or an overload/authentication failure.
  */
 function resolveLookupAttempt(
   attempted: Option.Option<RegistryLookupResult>,
@@ -410,6 +419,11 @@ function resolveLookupAttempt(
 /**
  * Bounded-cache reads and writes are synchronous and never span a yield, so
  * cache access and pending-resolution decisions cannot interleave.
+ * @param pendingResolutions Shared in-flight resolutions whose entries must be preserved.
+ * @param cards Bounded cache of verified immutable cards.
+ * @param agentId Identity used as the cache and pending-resolution key.
+ * @param candidate Deferred value installed only if this lookup wins acquisition.
+ * @returns The cached card or shared pending lookup selected atomically.
  */
 function beginCardResolution(
   pendingResolutions: Ref.Ref<PendingResolutions>,

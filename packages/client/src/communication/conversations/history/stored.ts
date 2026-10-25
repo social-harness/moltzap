@@ -57,7 +57,7 @@ import {
   type CertificateSignatures,
   certifiedRecord,
   orderedSignatures,
-} from "./certificate.js";
+} from "./certificates/index.js";
 
 /** Why a stored row failed to decode or to match what it claims to hold. */
 export type StoredRowError =

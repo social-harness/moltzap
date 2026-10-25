@@ -7,8 +7,10 @@ import {
 import { Context, Duration, Effect, Layer, Option, Schema } from "effect";
 import type { AgentId } from "../../../identity/agents.js";
 import type { AgentSigningAuthority } from "../../../identity/keys.js";
-import { AuthenticatedHttp } from "../../../identity/signing/authenticated-http.js";
-import { AgentSigningError } from "../../../identity/signing/http-signature.js";
+import {
+  AgentSigningError,
+  AuthenticatedHttp,
+} from "../../../identity/index.js";
 import {
   isCanonicalRouterJson,
   type RouterClientError,

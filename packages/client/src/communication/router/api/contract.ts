@@ -1,9 +1,9 @@
 /** @file Closed Router wire values, requests, results, bounds, and client failures. */
 import canonicalize from "canonicalize";
 import { Data, Effect, Either, Encoding, Option, Schema } from "effect";
-import type { AgentSigningError } from "../../../identity/signing/http-signature.js";
 import { AgentId } from "../../../identity/agents.js";
 import {
+  type AgentSigningError,
   AuthenticationFailedError,
   InternalServerError,
   MalformedRequestError,
@@ -14,7 +14,7 @@ import {
   UnavailableError,
   UnsupportedMediaTypeError,
   VersionMismatchError,
-} from "../../../identity/signing/http-errors.js";
+} from "../../../identity/index.js";
 import {
   LIVE_WIRE_VERSIONS,
   WIRE_VERSION,

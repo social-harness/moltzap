@@ -465,18 +465,14 @@ function launchCommand(
   ];
 }
 
-/** Router and daemon compositions share Identity's test wire policy. */
+/** Daemon compositions select their test wire policy before process startup. */
 function serviceScript(
-  service: "RouterServer" | "Daemon",
+  service: "Daemon",
   versions: ProcessWireVersions,
 ): string {
-  const module =
-    service === "RouterServer"
-      ? "@moltzap/router/server"
-      : "@moltzap/client/service";
   return `import { NodeRuntime } from "@effect/platform-node";
 import { WireVersions } from "@moltzap/client/test";
-import { ${service} } from "${module}";
+import { ${service} } from "@moltzap/client/service";
 import { ConfigProvider, Effect, Layer } from "effect";
 Layer.launch(${service}.layer).pipe(Effect.provideService(WireVersions, ${JSON.stringify(versions)}), Effect.withConfigProvider(ConfigProvider.fromEnv()), NodeRuntime.runMain);`;
 }
@@ -622,7 +618,7 @@ export const acquireProcessInfrastructureFrom = (
           CONCURRENT_DAEMONS * HELD_POLLS_PER_DAEMON,
         ),
       },
-      join(WORKSPACE_ROOT, "packages/client"),
+      join(WORKSPACE_ROOT, "tests/integration"),
     ).pipe(
       Effect.tap((router) =>
         awaitReady(

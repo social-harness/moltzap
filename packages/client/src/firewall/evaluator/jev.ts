@@ -12,7 +12,7 @@ import {
   DecisionProviderError,
   type DecisionRequest,
   DecisionResponse,
-} from "./values.js";
+} from "./contract/index.js";
 
 const origin = "https://api.typesafe.ai/v1/systemone";
 const providerName = "typesafe";

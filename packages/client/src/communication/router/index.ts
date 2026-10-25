@@ -64,7 +64,7 @@ import {
   RouterWorkerTransportError,
   RouterWorkerUnavailableError,
   type RouterWorkerVerifiedIngress,
-} from "./types.js";
+} from "./worker/index.js";
 
 /** Router-worker errors used by endpoint composition. */
 export {
@@ -77,14 +77,14 @@ export {
   RouterWorkerRejectedError,
   RouterWorkerTransportError,
   RouterWorkerUnavailableError,
-} from "./types.js";
+} from "./worker/index.js";
 /** Why the worker or the outbound drain failed, for logs. */
 export { describeRouterWorkerFailure } from "./outage.js";
 /** Transient-failure policy shared with the endpoint's outbound drain. */
 export {
   isTransientRouterWorkerError,
   routerWorkerReconnectSchedule,
-} from "./types.js";
+} from "./worker/index.js";
 /** Router-worker protocol and capability types used by endpoint composition. */
 export type {
   RouterDiscontinuityReason,
@@ -96,7 +96,7 @@ export type {
   RouterWorkerInput,
   RouterWorkerRecovery,
   RouterWorkerSendError,
-} from "./types.js";
+} from "./worker/index.js";
 
 const mapAuthenticationError = () => new RouterWorkerAuthenticationError();
 const mapProtocolError = () => new RouterWorkerProtocolError();
@@ -861,3 +861,6 @@ export const makeRouterWorker = <Payload>(
     };
     return makeWorker(runtime);
   }).pipe(Effect.withSpan("makeRouterWorker"));
+
+/** Daemon composition installs the Router HTTP client behind the worker. */
+export { Router } from "./api/client.js";

@@ -12,16 +12,7 @@ import {
   OverloadedError,
   type VerifiedAgentRequest,
 } from "@moltzap/client";
-import {
-  RawRouterSendRequest,
-  type RawRouterSendRequest as RawRouterSendRequestValue,
-  RouterPollRequest,
-  type RouterPollRequest as RouterPollRequestValue,
-  RouterPollResult,
-  type RouterPollResult as RouterPollResultValue,
-  RouterSendResult,
-  type RouterSendResult as RouterSendResultValue,
-} from "@moltzap/client/internal";
+import { RouterApi } from "@moltzap/client/internal";
 import {
   Context,
   Deferred,
@@ -43,11 +34,11 @@ type RouterHandlerError =
 /** Typed package-private client used by the HTTP adapter. */
 export interface RouterRpcClient {
   readonly send: (input: {
-    readonly request: RawRouterSendRequestValue;
-  }) => Effect.Effect<RouterSendResultValue, RouterHandlerError>;
+    readonly request: RouterApi.RawRouterSendRequest;
+  }) => Effect.Effect<RouterApi.RouterSendResult, RouterHandlerError>;
   readonly poll: (input: {
-    readonly request: RouterPollRequestValue;
-  }) => Effect.Effect<RouterPollResultValue, RouterHandlerError>;
+    readonly request: RouterApi.RouterPollRequest;
+  }) => Effect.Effect<RouterApi.RouterPollResult, RouterHandlerError>;
 }
 
 const currentVerifiedRequest = FiberRef.unsafeMake(
@@ -81,13 +72,13 @@ const registeredAgentRequestLayer = Layer.succeed(RegisteredAgentRequest, () =>
 
 const handlerErrors = Schema.Union(OverloadedError, InternalServerError);
 const sendRpc = Rpc.make("send", {
-  payload: { request: RawRouterSendRequest },
-  success: RouterSendResult,
+  payload: { request: RouterApi.RawRouterSendRequest },
+  success: RouterApi.RouterSendResult,
   error: handlerErrors,
 }).middleware(RegisteredAgentRequest);
 const pollRpc = Rpc.make("poll", {
-  payload: { request: RouterPollRequest },
-  success: RouterPollResult,
+  payload: { request: RouterApi.RouterPollRequest },
+  success: RouterApi.RouterPollResult,
   error: handlerErrors,
 }).middleware(RegisteredAgentRequest);
 

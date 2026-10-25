@@ -5,13 +5,7 @@ import {
   type LiveSignedMessage,
   OverloadedError,
 } from "@moltzap/client";
-import {
-  type PollCursor,
-  type RouterInstanceId,
-  type RouterPollRequest,
-  RouterPollResult,
-  type RouterPollResult as RouterPollResultValue,
-} from "@moltzap/client/internal";
+import { RouterApi } from "@moltzap/client/internal";
 import canonicalize from "canonicalize";
 import { Duration, Effect, Option, Schema } from "effect";
 import type { PollCursorCodec } from "./poll-cursor.js";
@@ -25,7 +19,7 @@ interface VerifiedCaller {
 }
 
 interface PollDependencies {
-  readonly routerInstanceId: RouterInstanceId;
+  readonly routerInstanceId: RouterApi.RouterInstanceId;
   readonly feed: RouterFeed;
   readonly pollWaiters: PollWaiters;
   readonly cursorCodec: PollCursorCodec;
@@ -36,9 +30,9 @@ interface PollDependencies {
 /** Poll domain operation after HTTP authentication. */
 export interface RouterPoll {
   readonly handle: (
-    request: RouterPollRequest,
+    request: RouterApi.RouterPollRequest,
     verifiedRequest: VerifiedCaller,
-  ) => Effect.Effect<RouterPollResultValue, PollFailure>;
+  ) => Effect.Effect<RouterApi.RouterPollResult, PollFailure>;
 }
 
 /**
@@ -55,14 +49,19 @@ export interface RouterPoll {
  */
 export const makeRouterPoll = (input: PollDependencies): RouterPoll =>
   Object.freeze({
-    handle: (request: RouterPollRequest, verifiedRequest: VerifiedCaller) =>
-      handlePoll(input, request, verifiedRequest),
+    handle: (
+      request: RouterApi.RouterPollRequest,
+      verifiedRequest: VerifiedCaller,
+    ) => handlePoll(input, request, verifiedRequest),
   });
 
 const HOLD_DURATION = Duration.seconds(25);
 const utf8Encoder = new TextEncoder();
 
-type PollBatch = Extract<RouterPollResultValue, { readonly kind: "batch" }>;
+type PollBatch = Extract<
+  RouterApi.RouterPollResult,
+  { readonly kind: "batch" }
+>;
 
 interface ScanResult {
   readonly result: PollBatch;
@@ -76,9 +75,9 @@ interface ScanState {
 }
 
 const encodedResultLength = (
-  result: RouterPollResultValue,
+  result: RouterApi.RouterPollResult,
 ): Effect.Effect<number, InternalServerError> =>
-  Schema.encode(RouterPollResult)(result).pipe(
+  Schema.encode(RouterApi.RouterPollResult)(result).pipe(
     Effect.catchTag("ParseError", () => Effect.fail(new InternalServerError())),
     Effect.flatMap((encoded) => {
       const jcs = canonicalize(encoded);
@@ -187,8 +186,8 @@ const scan = (
   });
 
 const feedGap = (
-  routerInstanceId: RouterInstanceId,
-): RouterPollResultValue => ({
+  routerInstanceId: RouterApi.RouterInstanceId,
+): RouterApi.RouterPollResult => ({
   kind: "feed_gap",
   routerInstanceId,
 });
@@ -214,7 +213,7 @@ const continueFromOrder = (
   input: PollDependencies,
   callerAgentId: AgentId,
   startOrder: bigint,
-): Effect.Effect<RouterPollResultValue, PollFailure> =>
+): Effect.Effect<RouterApi.RouterPollResult, PollFailure> =>
   Effect.gen(function* () {
     const snapshot = yield* input.feed.snapshot;
     if (startOrder > snapshot.tailOrder) {
@@ -245,14 +244,14 @@ const continueFromOrder = (
 const continuePoll = (
   input: PollDependencies,
   callerAgentId: AgentId,
-  pollCursor: PollCursor,
-): Effect.Effect<RouterPollResultValue, PollFailure> =>
+  pollCursor: RouterApi.PollCursor,
+): Effect.Effect<RouterApi.RouterPollResult, PollFailure> =>
   input.cursorCodec.decrypt(pollCursor, callerAgentId).pipe(
     Effect.option,
     Effect.flatMap(
       Option.match({
         onNone: () =>
-          Effect.succeed<RouterPollResultValue>({
+          Effect.succeed<RouterApi.RouterPollResult>({
             kind: "cursor_invalid",
           }),
         onSome: (order) => continueFromOrder(input, callerAgentId, order),
@@ -262,9 +261,9 @@ const continuePoll = (
 
 function handlePoll(
   input: PollDependencies,
-  request: RouterPollRequest,
+  request: RouterApi.RouterPollRequest,
   verifiedRequest: VerifiedCaller,
-): Effect.Effect<RouterPollResultValue, PollFailure> {
+): Effect.Effect<RouterApi.RouterPollResult, PollFailure> {
   const callerAgentId = verifiedRequest.callerAgentId;
   if (request.pollCursor !== undefined) {
     return continuePoll(input, callerAgentId, request.pollCursor);

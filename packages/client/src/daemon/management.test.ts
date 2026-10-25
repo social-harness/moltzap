@@ -60,7 +60,7 @@ import { LIVE_WIRE_VERSIONS, WIRE_VERSION } from "../identity/wire-version.js";
 import {
   type DaemonManagementOperations,
   makeDaemonManagementOperations,
-} from "./management.js";
+} from "./management/index.js";
 
 interface IdentityFixture {
   readonly bootstrap: DaemonBootstrap;

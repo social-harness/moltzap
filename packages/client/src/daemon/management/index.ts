@@ -1,13 +1,13 @@
 /** @file Private owner-authorized management over Registry and endpoint state. */
 
 import { type Context, Data, Effect, Schema } from "effect";
-import type { SendError } from "../communication/conversations/errors.js";
+import type { SendError } from "../../communication/conversations/errors.js";
 import type {
   EndpointRecovery,
   EndpointStore,
   EndpointStoreError,
   HistoryPage,
-} from "../communication/store/index.js";
+} from "../../communication/store/index.js";
 import type {
   HarnessMcpOperations,
   ManagementReadConversationResult,
@@ -16,35 +16,43 @@ import type {
   ManagementSearchConversationsRequest,
   ManagementSearchConversationsResult,
   ManagementStatusResult,
-} from "../harness/mcp/index.js";
-import type { DaemonBootstrap, DaemonConfigurationError } from "./bootstrap.js";
-import type { DaemonActivationError } from "./errors.js";
+} from "../../harness/mcp/index.js";
+import type {
+  DaemonBootstrap,
+  DaemonConfigurationError,
+} from "../bootstrap.js";
+import type { DaemonActivationError } from "../errors.js";
 import {
   renderGroupAddress,
   resolveMessageAddress,
-} from "../communication/conversations/address.js";
+} from "../../communication/conversations/address.js";
 import {
   readStoredHistory,
   verifyStoredMembership,
-} from "../communication/conversations/index.js";
-import { SignedMessage } from "../communication/envelope/signed-message.js";
+} from "../../communication/conversations/index.js";
+import { SignedMessage } from "../../communication/envelope/signed-message.js";
 import {
   type CertifiedRecord,
   deriveConversationId,
   type VerifiedMembership,
-} from "../communication/records/index.js";
-import { AgentAddress } from "../communication/records/values.js";
-import { compareAscii } from "../encoding/identifier.js";
-import { AgentCard, type VerifiedAgentCard } from "../identity/cards.js";
-import { RegistryInvalidResponseError, type RegistryListResult, type RegistryLookupResult, type RegistryRegisterResult } from "../identity/registry/contract.js";
-import { Registry } from "../identity/registry/index.js";
+} from "../../communication/records/index.js";
+import { AgentAddress } from "../../communication/records/values.js";
+import { compareAscii } from "../../encoding/identifier.js";
+import { AgentCard, type VerifiedAgentCard } from "../../identity/cards.js";
+import {
+  RegistryInvalidResponseError,
+  type RegistryListResult,
+  type RegistryLookupResult,
+  type RegistryRegisterResult,
+} from "../../identity/registry/contract.js";
+import { Registry } from "../../identity/registry/index.js";
 import {
   type DaemonRegistrationPersistenceError,
   type DaemonRegistrationRepresentationError,
   type DaemonRegistrationState,
   type DaemonRegistrationUpstreamError,
   registerDaemonIdentity,
-} from "./registration/index.js";
+} from "../registration/index.js";
 
 type ManagementOperation =
   | "readStatus"
@@ -375,6 +383,8 @@ function mapHistoryStoreFailure(
 /**
  * Project one verified record to the MCP history record: its core, anchor,
  * and each certificate's signers with their signatures, in certificate order.
+ * @param record Complete certified evidence verified by the history reader.
+ * @returns The owner-visible history record with ordered signer evidence.
  */
 function projectHistoryRecord(
   record: CertifiedRecord,
@@ -465,6 +475,9 @@ const readStatusOperation =
  * the daemon's switch to active and the protocol activation finish. The
  * Registry call still ends at its own deadline, because
  * `registerDaemonIdentity` runs it in a detached interruptible fiber.
+ * @param input Exclusive store, fixed bootstrap, and registration activation port.
+ * @param registry Captured immutable Registry capability used for registration.
+ * @returns The cancellation-safe registration operation.
  */
 const registerOperation =
   (

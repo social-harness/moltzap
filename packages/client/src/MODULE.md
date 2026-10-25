@@ -205,7 +205,7 @@ export class AgentSigningError extends Data.TaggedError("AgentSigningError") {}
 
 An agent-owned HTTP request could not be signed.
 
-### [`AuthenticatedHttp`](./identity/signing/authenticated-http.ts#L66)
+### [`AuthenticatedHttp`](./identity/signing/registered/index.ts#L69)
 
 _Class_
 
@@ -1267,7 +1267,7 @@ export type VerifiedAgentCard = AgentCard & Brand.Brand<"VerifiedAgentCard">;
 
 AgentCard verified against a deployment-pinned Registry signer.
 
-### [`VerifiedAgentRequest`](./identity/signing/authenticated-http.ts#L44)
+### [`VerifiedAgentRequest`](./identity/signing/registered/index.ts#L47)
 
 _TypeAlias_
 
@@ -1363,11 +1363,11 @@ Read-only compatibility operations expose no injectable context tag.
 
 ### `@moltzap/client/service`
 
-#### [`Daemon`](./daemon/index.ts#L91)
+#### [`Daemon`](./daemon/index.ts#L83)
 
 _Namespace_
 
-#### [`Daemon.StartupError`](./daemon/index.ts#L105)
+#### [`Daemon.StartupError`](./daemon/index.ts#L97)
 
 _Class_
 
@@ -1404,7 +1404,7 @@ _Class_
 
 Closed startup phase with sanitized configuration details.
 
-#### [`Daemon.FirewallOptions`](./daemon/index.ts#L96)
+#### [`Daemon.FirewallOptions`](./daemon/index.ts#L88)
 
 _TypeAlias_
 
@@ -1420,7 +1420,7 @@ _TypeAlias_
 
 Trusted process composition fixes code and evidence while owner tools edit English rules.
 
-#### [`Daemon.help`](./daemon/index.ts#L93)
+#### [`Daemon.help`](./daemon/index.ts#L85)
 
 _Variable_
 
@@ -1430,7 +1430,7 @@ _Variable_
 
 Usage text listing the daemon process's environment variables.
 
-#### [`Daemon.layer`](./daemon/index.ts#L195)
+#### [`Daemon.layer`](./daemon/index.ts#L187)
 
 _Variable_
 
@@ -1443,7 +1443,7 @@ _Variable_
 Complete production process composition for `sharnessd`, with the
 firewall `SHARNESS_MESSAGE_POLICY_FILE` describes when it is set.
 
-#### [`Daemon.withFirewall`](./daemon/index.ts#L205)
+#### [`Daemon.withFirewall`](./daemon/index.ts#L197)
 
 _Function_
 
@@ -1458,7 +1458,7 @@ The environment must not also name a message-policy document.
 
 **Returns:** The complete daemon layer with both message boundaries checked.
 
-#### [`CheckInputError`](./firewall/evaluator/values.ts#L255)
+#### [`CheckInputError`](./firewall/evaluator/contract/index.ts#L255)
 
 _Class_
 
@@ -1470,7 +1470,7 @@ export class CheckInputError extends Data.TaggedError("CheckInputError")<{
 
 Invalid construction or evidence is a typed failure, never permission.
 
-#### [`DecisionProviderError`](./firewall/evaluator/values.ts#L379)
+#### [`DecisionProviderError`](./firewall/evaluator/contract/index.ts#L379)
 
 _Class_
 
@@ -1499,7 +1499,7 @@ export class DecisionProviderError extends Data.TaggedError(
 
 The adapter scrubs credentials before retaining optional private diagnostics.
 
-#### [`FirewallPolicyError`](./firewall/evaluator/values.ts#L617)
+#### [`FirewallPolicyError`](./firewall/evaluator/contract/index.ts#L627)
 
 _Class_
 
@@ -1518,7 +1518,7 @@ export class FirewallPolicyError extends Data.TaggedError(
 
 A failed edit never replaces the active installation or retained editable document.
 
-#### [`MiddlewareError`](./firewall/evaluator/values.ts#L199)
+#### [`MiddlewareError`](./firewall/evaluator/contract/index.ts#L199)
 
 _Class_
 
@@ -1534,41 +1534,6 @@ export class MiddlewareError extends Data.TaggedError("MiddlewareError")<{
 ```
 
 Operational failures carry closed reasons, never arbitrary exception text.
-
-#### [`Registry`](./identity/registry/index.ts#L24)
-
-_Class_
-
-```ts
-export class Registry extends Context.Tag("@moltzap/client/Registry")<
-  Registry,
-  RegistryClientService
->() {
-  static readonly register = Effect.serviceFunctionEffect(
-    Registry,
-    (service) => service.register,
-  );
-
-  static readonly lookup = Effect.serviceFunctionEffect(
-    Registry,
-    (service) => service.lookup,
-  );
-
-  static readonly list = Effect.serviceFunctionEffect(
-    Registry,
-    (service) => service.list,
-  );
-
-  static readonly layer = (input: {
-    readonly origin: URL;
-    readonly registrySignerPublicKey: Ed25519PublicKey;
-    readonly requestTimeout: Duration.Duration;
-  }): Layer.Layer<Registry, never, HttpClient.HttpClient> =>
-    Layer.effect(Registry, makeRegistryService(input));
-}
-```
-
-Bootstrap registration and immutable identity resolution.
 
 #### [`RegistryConnectionError`](./identity/registry/contract.ts#L28)
 
@@ -1606,40 +1571,6 @@ export class RegistryRequestTimeoutError extends Data.TaggedError(
 
 The configured complete Registry call deadline expired.
 
-#### [`Router`](./communication/router/api/client.ts#L49)
-
-_Class_
-
-```ts
-export class Router extends Context.Tag("@moltzap/client/Router")<
-  Router,
-  RouterClientService
->() {
-  static readonly send: (input: {
-    readonly request: RouterSendRequest;
-    readonly callerAgentId: AgentId;
-    readonly signingAuthority: AgentSigningAuthority;
-  }) => Effect.Effect<RouterSendResult, RouterClientError, Router> =
-    Effect.serviceFunctionEffect(Router, (service) => service.send);
-
-  static readonly poll: (input: {
-    readonly request: RouterPollRequest;
-    readonly callerAgentId: AgentId;
-    readonly signingAuthority: AgentSigningAuthority;
-  }) => Effect.Effect<RouterPollResult, RouterClientError, Router> =
-    Effect.serviceFunctionEffect(Router, (service) => service.poll);
-
-  static readonly layer = (input: {
-    readonly origin: URL;
-    readonly sendTimeout: Duration.Duration;
-    readonly pollTimeout: Duration.Duration;
-  }): Layer.Layer<Router, never, HttpClient.HttpClient> =>
-    Layer.effect(Router, makeRouterClient(input));
-}
-```
-
-Opaque message acceptance and endpoint-wide bounded polling.
-
 #### [`RouterConnectionError`](./communication/router/api/contract.ts#L225)
 
 _Class_
@@ -1676,7 +1607,7 @@ export class RouterRequestTimeoutError extends Data.TaggedError(
 
 The configured complete Router call deadline expired.
 
-#### [`DecisionProvider`](./firewall/evaluator/values.ts#L401)
+#### [`DecisionProvider`](./firewall/evaluator/contract/index.ts#L401)
 
 _Interface_
 
@@ -1692,7 +1623,7 @@ export interface DecisionProvider {
 
 Entirely code-based chains have no dependency on this optional capability.
 
-#### [`DecisionRequest`](./firewall/evaluator/values.ts#L343)
+#### [`DecisionRequest`](./firewall/evaluator/contract/index.ts#L343)
 
 _Interface_
 
@@ -1717,7 +1648,7 @@ export interface DecisionRequest {
 
 Provider input contains explicit questions and state, never execution authority.
 
-#### [`DecisionResponse`](./firewall/evaluator/values.ts#L361)
+#### [`DecisionResponse`](./firewall/evaluator/contract/index.ts#L361)
 
 _Interface_
 
@@ -1742,7 +1673,7 @@ export class DecisionResponse extends Schema.Class<DecisionResponse>(
 
 Raw distributions and provider confidence survive routing unchanged.
 
-#### [`EnglishPolicySettings`](./firewall/evaluator/values.ts#L326)
+#### [`EnglishPolicySettings`](./firewall/evaluator/contract/index.ts#L326)
 
 _Interface_
 
@@ -1758,7 +1689,7 @@ export class EnglishPolicySettings extends Schema.Class<EnglishPolicySettings>(
 
 Bytes bound allocation, not tokenizer capacity; probability is a routing setting.
 
-#### [`EnglishRule`](./firewall/evaluator/values.ts#L132)
+#### [`EnglishRule`](./firewall/evaluator/contract/index.ts#L132)
 
 _Interface_
 
@@ -1771,7 +1702,7 @@ export class EnglishRule extends Schema.Class<EnglishRule>("EnglishRule")({
 
 Text is interpreted by the provider; it is never compiled into executable code.
 
-#### [`Firewall`](./firewall/evaluator/values.ts#L314)
+#### [`Firewall`](./firewall/evaluator/contract/index.ts#L314)
 
 _Interface_
 
@@ -1790,7 +1721,7 @@ export interface Firewall {
 
 Checking returns data; Client separately owns fresh, atomic send/delivery admission.
 
-#### [`FirewallSettings`](./firewall/evaluator/values.ts#L245)
+#### [`FirewallSettings`](./firewall/evaluator/contract/index.ts#L245)
 
 _Interface_
 
@@ -1807,7 +1738,7 @@ export class FirewallSettings extends Schema.Class<FirewallSettings>(
 
 Sequential execution is bounded per entry and across the whole attempt.
 
-#### [`Message`](./firewall/evaluator/values.ts#L39)
+#### [`Message`](./firewall/evaluator/contract/index.ts#L39)
 
 _Interface_
 
@@ -1824,7 +1755,7 @@ export class Message extends Schema.Class<Message>("Message")({
 Attribution is supplied by Client, never inferred from names in the body.
 `operation` is absent for a plain message.
 
-#### [`MessageContext`](./firewall/evaluator/values.ts#L75)
+#### [`MessageContext`](./firewall/evaluator/contract/index.ts#L75)
 
 _Interface_
 
@@ -1865,7 +1796,7 @@ Trusted composition supplies authorized earlier evidence and candidate-specific
 approval. Agent identity and principal identity have different meanings.
 The first live composition supplies absent approval.
 
-#### [`MessageMiddleware`](./firewall/evaluator/values.ts#L233)
+#### [`MessageMiddleware`](./firewall/evaluator/contract/index.ts#L233)
 
 _Interface_
 
@@ -1886,7 +1817,7 @@ Code and English policies have the same contract. Registered code is trusted;
 it receives no conversation or store capability and must not retain conversation
 state or perform messaging side effects.
 
-#### [`MiddlewareInput`](./firewall/evaluator/values.ts#L220)
+#### [`MiddlewareInput`](./firewall/evaluator/contract/index.ts#L220)
 
 _Interface_
 
@@ -1902,7 +1833,7 @@ export class MiddlewareInput extends Schema.Class<MiddlewareInput>(
 
 Each invocation gets immutable evidence and previously validated observations.
 
-#### [`MiddlewareResult`](./firewall/evaluator/values.ts#L190)
+#### [`MiddlewareResult`](./firewall/evaluator/contract/index.ts#L190)
 
 _Interface_
 
@@ -1918,7 +1849,7 @@ export class MiddlewareResult extends Schema.Class<MiddlewareResult>(
 
 A result is atomic: interrupted middleware has no returned partial findings.
 
-#### [`RuleDescription`](./firewall/evaluator/values.ts#L116)
+#### [`RuleDescription`](./firewall/evaluator/contract/index.ts#L116)
 
 _Interface_
 
@@ -1951,7 +1882,7 @@ export type FirewallAuditRecord = typeof FirewallAuditRecord.Type;
 
 Completion verifies the snapshot, not completion or delivery of each attempt.
 
-#### [`MessagePolicy (type)`](./firewall/policy/policy.ts#L159)
+#### [`MessagePolicy (type)`](./firewall/policy/document/index.ts#L159)
 
 _TypeAlias_
 
@@ -1980,6 +1911,16 @@ export type PollCursor = typeof PollCursor.Type;
 ```
 
 Validated opaque Router poll continuation.
+
+#### [`Registry (type)`](./identity/registry/capability.ts#L10)
+
+_TypeAlias_
+
+```ts
+export type Registry = RegistryTag;
+```
+
+Immutable resolution retains the same Effect requirement as internal Registry calls.
 
 #### [`RegistryListRequest (type)`](./identity/registry/contract.ts#L90)
 
@@ -2051,6 +1992,16 @@ export type RegistryRegisterResult =
 
 Closed domain outcome from one bootstrap registration attempt.
 
+#### [`Router (type)`](./communication/router/api/capability.ts#L8)
+
+_TypeAlias_
+
+```ts
+export type Router = RouterTag;
+```
+
+Send and poll retain the internal Router's exact Effect requirement.
+
 #### [`RouterInstanceId (type)`](./communication/router/api/contract.ts#L80)
 
 _TypeAlias_
@@ -2117,7 +2068,7 @@ export type SignedMessageDigest = typeof SignedMessageDigest.Type;
 
 Validated SignedMessage equality receipt.
 
-#### [`decodeMessagePolicy`](./firewall/policy/policy.ts#L168)
+#### [`decodeMessagePolicy`](./firewall/policy/document/index.ts#L168)
 
 _Variable_
 
@@ -2301,7 +2252,7 @@ flowchart TD
   D --> R[Return to Client for enforcement]
 ```
 
-#### [`MessagePolicy (value)`](./firewall/policy/policy.ts#L135)
+#### [`MessagePolicy (value)`](./firewall/policy/document/index.ts#L135)
 
 _Variable_
 
@@ -2430,6 +2381,28 @@ export const PollCursor = Schema.String.pipe(
 
 Opaque, authenticated continuation for one caller and Router instance.
 
+#### [`Registry (value)`](./identity/registry/capability.ts#L26)
+
+_Variable_
+
+```ts
+export const Registry: RegistryCapability = Object.assign(
+  Context.GenericTag<Registry, RegistryClientService>(RegistryTag.key),
+  {
+    register: RegistryTag.register,
+    lookup: RegistryTag.lookup,
+    list: RegistryTag.list,
+    layer: (input: {
+      readonly origin: HttpOrigin;
+      readonly registrySignerPublicKey: Ed25519PublicKey;
+      readonly requestTimeout: Duration.Duration;
+    }) => RegistryTag.layer({ ...input, origin: new URL(input.origin.href) }),
+  },
+)
+```
+
+Trusted compositions install one Registry capability using only a serialized origin.
+
 #### [`RegistryListRequest (value)`](./identity/registry/contract.ts#L82)
 
 _Variable_
@@ -2488,6 +2461,29 @@ export const RegistryRegisterRequest = exactStruct({
 ```
 
 Closed Registry bootstrap registration request.
+
+#### [`Router (value)`](./communication/router/api/capability.ts#L23)
+
+_Variable_
+
+```ts
+export const Router: RouterCapability = Object.assign(
+  Context.GenericTag<Router, Context.Tag.Service<typeof RouterTag>>(
+    RouterTag.key,
+  ),
+  {
+    send: RouterTag.send,
+    poll: RouterTag.poll,
+    layer: (input: {
+      readonly origin: HttpOrigin;
+      readonly sendTimeout: Duration.Duration;
+      readonly pollTimeout: Duration.Duration;
+    }) => RouterTag.layer({ ...input, origin: new URL(input.origin.href) }),
+  },
+)
+```
+
+Trusted compositions install the same Router tag using a serialized origin.
 
 #### [`RouterInstanceId (value)`](./communication/router/api/contract.ts#L74)
 
@@ -2608,7 +2604,7 @@ owns timeouts; the Effect is interruptible through response-body consumption.
 - `communication/conversations/certification/README.md`
 - `communication/conversations/errors.ts`
 - `communication/conversations/history/build.ts`
-- `communication/conversations/history/certificate.ts`
+- `communication/conversations/history/certificates/index.ts`
 - `communication/conversations/history/index.ts`
 - `communication/conversations/history/README.md`
 - `communication/conversations/history/stored.ts`
@@ -2639,12 +2635,13 @@ owns timeouts; the Effect is interruptible through response-body consumption.
 - `communication/records/schemas.ts`
 - `communication/records/values.ts`
 - `communication/records/verification.ts`
+- `communication/router/api/capability.ts`
 - `communication/router/api/client.ts`
 - `communication/router/api/contract.ts`
 - `communication/router/api/index.ts`
 - `communication/router/index.ts`
 - `communication/router/outage.ts`
-- `communication/router/types.ts`
+- `communication/router/worker/index.ts`
 - `communication/store/anchors.ts`
 - `communication/store/database/index.ts`
 - `communication/store/database/migrations.ts`
@@ -2661,7 +2658,10 @@ owns timeouts; the Effect is interruptible through response-body consumption.
 - `communication/store/README.md`
 - `communication/store/reads.ts`
 - `communication/store/records.ts`
-- `communication/store/rows.ts`
+- `communication/store/rows/index.ts`
+- `communication/store/rows/proposals.ts`
+- `communication/store/rows/reanchors.ts`
+- `communication/store/rows/records.ts`
 - `communication/store/runtime-codec.ts`
 - `communication/store/store.ts`
 - `communication/store/types.ts`
@@ -2683,7 +2683,7 @@ owns timeouts; the Effect is interruptible through response-body consumption.
 - `daemon/launcher/README.md`
 - `daemon/launcher/selection.ts`
 - `daemon/lifecycle.ts`
-- `daemon/management.ts`
+- `daemon/management/index.ts`
 - `daemon/README.md`
 - `daemon/registration/binding.ts`
 - `daemon/registration/index.ts`
@@ -2707,22 +2707,22 @@ owns timeouts; the Effect is interruptible through response-body consumption.
 - `firewall/audit/firewall-audit.ts`
 - `firewall/audit/README.md`
 - `firewall/evaluator/chain.ts`
+- `firewall/evaluator/contract/index.ts`
 - `firewall/evaluator/decision.ts`
 - `firewall/evaluator/english.ts`
 - `firewall/evaluator/index.ts`
 - `firewall/evaluator/jev.ts`
 - `firewall/evaluator/questions.ts`
 - `firewall/evaluator/README.md`
-- `firewall/evaluator/values.ts`
 - `firewall/index.ts`
 - `firewall/outcome/index.ts`
 - `firewall/outcome/README.md`
 - `firewall/policy/compose.ts`
 - `firewall/policy/configuration.ts`
+- `firewall/policy/document/index.ts`
 - `firewall/policy/editable.ts`
 - `firewall/policy/index.ts`
 - `firewall/policy/load.ts`
-- `firewall/policy/policy.ts`
 - `firewall/policy/README.md`
 - `firewall/README.md`
 - `firewall/rules/builtin.ts`
@@ -2758,13 +2758,16 @@ owns timeouts; the Effect is interruptible through response-body consumption.
 - `harness/README.md`
 - `identity/agents.ts`
 - `identity/cards.ts`
+- `identity/index.ts`
 - `identity/keys.ts`
+- `identity/registry/capability.ts`
 - `identity/registry/client.ts`
 - `identity/registry/contract.ts`
 - `identity/registry/index.ts`
-- `identity/signing/authenticated-http.ts`
 - `identity/signing/http-errors.ts`
 - `identity/signing/http-signature.ts`
+- `identity/signing/origin.ts`
+- `identity/signing/registered/index.ts`
 - `identity/wire-version.ts`
 - `index.ts`
 - `README.md`

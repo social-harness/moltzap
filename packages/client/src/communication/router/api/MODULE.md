@@ -42,39 +42,38 @@ export const PollCursor = Schema.String.pipe(
 
 Opaque, authenticated continuation for one caller and Router instance.
 
-### [`Router`](./client.ts#L49)
+### [`Router`](./capability.ts#L8)
 
-_Class_
+_TypeAlias_
 
 ```ts
-export class Router extends Context.Tag("@moltzap/client/Router")<
-  Router,
-  RouterClientService
->() {
-  static readonly send: (input: {
-    readonly request: RouterSendRequest;
-    readonly callerAgentId: AgentId;
-    readonly signingAuthority: AgentSigningAuthority;
-  }) => Effect.Effect<RouterSendResult, RouterClientError, Router> =
-    Effect.serviceFunctionEffect(Router, (service) => service.send);
-
-  static readonly poll: (input: {
-    readonly request: RouterPollRequest;
-    readonly callerAgentId: AgentId;
-    readonly signingAuthority: AgentSigningAuthority;
-  }) => Effect.Effect<RouterPollResult, RouterClientError, Router> =
-    Effect.serviceFunctionEffect(Router, (service) => service.poll);
-
-  static readonly layer = (input: {
-    readonly origin: URL;
-    readonly sendTimeout: Duration.Duration;
-    readonly pollTimeout: Duration.Duration;
-  }): Layer.Layer<Router, never, HttpClient.HttpClient> =>
-    Layer.effect(Router, makeRouterClient(input));
-}
+export type Router = RouterTag;
 ```
 
-Opaque message acceptance and endpoint-wide bounded polling.
+Send and poll retain the internal Router's exact Effect requirement.
+
+### [`Router`](./capability.ts#L23)
+
+_Variable_
+
+```ts
+export const Router: RouterCapability = Object.assign(
+  Context.GenericTag<Router, Context.Tag.Service<typeof RouterTag>>(
+    RouterTag.key,
+  ),
+  {
+    send: RouterTag.send,
+    poll: RouterTag.poll,
+    layer: (input: {
+      readonly origin: HttpOrigin;
+      readonly sendTimeout: Duration.Duration;
+      readonly pollTimeout: Duration.Duration;
+    }) => RouterTag.layer({ ...input, origin: new URL(input.origin.href) }),
+  },
+)
+```
+
+Trusted compositions install the same Router tag using a serialized origin.
 
 ### [`RouterConnectionError`](./contract.ts#L225)
 
@@ -260,5 +259,5 @@ Equality receipt for one complete retained SignedMessage.
 
 ## Files
 
-- `client.ts`
+- `capability.ts`
 - `contract.ts`

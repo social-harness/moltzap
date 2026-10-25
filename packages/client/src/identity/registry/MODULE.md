@@ -28,40 +28,37 @@ export const OperationId = canonicalIdentifier("OperationId", "opn_", 16)
 
 Idempotency identity for a registration operation.
 
-### [`Registry`](./index.ts#L24)
+### [`Registry`](./capability.ts#L10)
 
-_Class_
+_TypeAlias_
 
 ```ts
-export class Registry extends Context.Tag("@moltzap/client/Registry")<
-  Registry,
-  RegistryClientService
->() {
-  static readonly register = Effect.serviceFunctionEffect(
-    Registry,
-    (service) => service.register,
-  );
-
-  static readonly lookup = Effect.serviceFunctionEffect(
-    Registry,
-    (service) => service.lookup,
-  );
-
-  static readonly list = Effect.serviceFunctionEffect(
-    Registry,
-    (service) => service.list,
-  );
-
-  static readonly layer = (input: {
-    readonly origin: URL;
-    readonly registrySignerPublicKey: Ed25519PublicKey;
-    readonly requestTimeout: Duration.Duration;
-  }): Layer.Layer<Registry, never, HttpClient.HttpClient> =>
-    Layer.effect(Registry, makeRegistryService(input));
-}
+export type Registry = RegistryTag;
 ```
 
-Bootstrap registration and immutable identity resolution.
+Immutable resolution retains the same Effect requirement as internal Registry calls.
+
+### [`Registry`](./capability.ts#L26)
+
+_Variable_
+
+```ts
+export const Registry: RegistryCapability = Object.assign(
+  Context.GenericTag<Registry, RegistryClientService>(RegistryTag.key),
+  {
+    register: RegistryTag.register,
+    lookup: RegistryTag.lookup,
+    list: RegistryTag.list,
+    layer: (input: {
+      readonly origin: HttpOrigin;
+      readonly registrySignerPublicKey: Ed25519PublicKey;
+      readonly requestTimeout: Duration.Duration;
+    }) => RegistryTag.layer({ ...input, origin: new URL(input.origin.href) }),
+  },
+)
+```
+
+Trusted compositions install one Registry capability using only a serialized origin.
 
 ### [`RegistryConnectionError`](./contract.ts#L28)
 
@@ -230,5 +227,5 @@ The configured complete Registry call deadline expired.
 
 ## Files
 
+- `capability.ts`
 - `contract.ts`
-- `index.ts`

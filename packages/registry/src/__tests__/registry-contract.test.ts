@@ -6,10 +6,7 @@ import {
   PrincipalId,
   UnavailableError,
 } from "@moltzap/client";
-import {
-  OperationId,
-  RegistryRegisterRequest,
-} from "@moltzap/client/internal";
+import { RegistryApi } from "@moltzap/client/internal";
 import {
   ConfigProvider,
   Effect,
@@ -106,8 +103,8 @@ const makePrivateKeyPem = (): string => {
 };
 
 const makeRequest = (name: string) =>
-  Schema.decodeUnknownSync(RegistryRegisterRequest)({
-    operationId: Schema.decodeUnknownSync(OperationId)(
+  Schema.decodeUnknownSync(RegistryApi.RegistryRegisterRequest)({
+    operationId: Schema.decodeUnknownSync(RegistryApi.OperationId)(
       "opn_AAAAAAAAAAAAAAAAAAAAAA",
     ),
     principalId: Schema.decodeUnknownSync(PrincipalId)(
