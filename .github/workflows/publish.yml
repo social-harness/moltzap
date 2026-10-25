@@ -10,27 +10,16 @@ name: Publish to npm
 # manifest records its own content hash; the OpenClaw channel's also records
 # `sharnessHostCodeHash` (`scripts/release/host-code-hash.ts`), the hash of the
 # code OpenClaw loads for it. The release commit records every manifest. The
-# trigger is a merge to main whose committed fragments and manifest wire
-# version pass the push gate. Push runs only gate and dispatch in a separate
-# concurrency group; all releases serialize in the dispatch group. Reset
-# releases require manual workflow_dispatch, including start_new_version.
-# After a resumed release finishes, the tip is gated again for remaining work.
-# The bump resolves both committed image input keys to
-# signed indexes and records their digests in the example Compose file. It waits
-# up to 45 minutes for missing input tags before failing with a rerun hint.
-# After npm publication, `images` runs no repository install or build, adds
-# version tags, and lists both digests in the GitHub release body. Existing version tags are checked and skipped on reruns.
-# After npm and image promotion succeed, a separate job sends repository_dispatch
-# social-harness-released to social-harness/deployment with client_payload
-# {"version":"<calendar version>","registry":"ghcr.io/social-harness/registry@sha256:…",
-# "router":"ghcr.io/social-harness/router@sha256:…"}. These are the verified
-# indexes images tagged. Deliveries may repeat or arrive out of order; the
-# receiver ignores calendar versions not newer than the one it runs.
-# A full rerun of a completed release promotes its verified indexes again and
-# retries notification without an install, build, or second npm publication.
+# trigger is manual. The bump resolves both committed image input keys to
+# signed indexes and records their digests in the example Compose file. Missing
+# keys fail before the release commit; rerunning after images.yml publishes
+# them resumes the bump. After npm publication, `images` runs no repository
+# install or build, adds version tags, and lists both digests in the GitHub
+# release body. Existing version tags are checked and skipped on reruns.
+# After image tagging, dispatch sends the release version and digests to deployment.
 #
 # A release takes two runs, so npm's provenance names the commit whose tree
-# the tarballs were packed from. The initial run bumps: it writes the
+# the tarballs were packed from. The dispatched run bumps: it writes the
 # release commit and tag, pushes them, and dispatches this workflow again on
 # main. That second run finds the release commit at the tip, resumes it, and
 # publishes; its OIDC token, and so the SLSA provenance, carries the release
@@ -62,8 +51,6 @@ name: Publish to npm
 # dispatching with `start_new_version`, which mints the next version from the
 # tip instead.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       start_new_version:
@@ -73,18 +60,14 @@ on:
           the abandoned version did publish.
         type: boolean
         default: false
-      gate_approved:
-        description: Started by the Social Harness push gate; recheck the current tip before bumping.
-        type: boolean
-        default: false
 
 # Two releases must never interleave: both would compute the same version from
 # the same npm state and race to push its release commit and tag. The resume
 # run that a bump dispatches waits here until the bump run ends. The group is
 # per ref, so a dispatch on another branch, which runs nothing, never replaces
-# a pending main run. Push gates cannot replace a pending release dispatch.
+# a pending main run.
 concurrency:
-  group: ${{ github.event_name == 'push' && 'publish-push' || 'publish' }}-${{ github.ref }}
+  group: publish-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
@@ -104,36 +87,14 @@ env:
   IMAGE_CERTIFICATE_OIDC_ISSUER: https://token.actions.githubusercontent.com
 
 jobs:
-  gate:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      actions: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Gate the push and dispatch a release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          git fetch origin main --quiet
-          DECISION=$(scripts/release/push-gate.sh)
-          if [ "$DECISION" = release ]; then
-            gh workflow run publish.yml --repo "$GITHUB_REPOSITORY" --ref main -f gate_approved=true
-          fi
-
   build:
     # Only main releases. A dispatch may name any branch, and the later jobs
     # push and publish, so an unreviewed branch must not reach here.
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: read
-      actions: read
     outputs:
       mode: ${{ steps.plan.outputs.mode }}
       version: ${{ steps.plan.outputs.version }}
@@ -150,23 +111,6 @@ jobs:
         with:
           registry-url: https://registry.npmjs.org
 
-      # A publication run remembers its release before installed code runs.
-      # Full reruns retry it only while it remains the latest release on main.
-      - name: Recover this run's release on a rerun
-        if: github.run_attempt > 1
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          ARTIFACT=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" \
-            --jq '.artifacts[] | select(.name == "release-plan" and .expired == false) | .id')
-          if [ -n "$ARTIFACT" ]; then
-            gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" \
-              --name release-plan --dir "$RUNNER_TEMP/retry-plan"
-            RETRY_RELEASE_COMMIT=$(cat "$RUNNER_TEMP/retry-plan/release-plan")
-            [[ "$RETRY_RELEASE_COMMIT" =~ ^[a-f0-9]{40}$ ]]
-            echo "RETRY_RELEASE_COMMIT=$RETRY_RELEASE_COMMIT" >> "$GITHUB_ENV"
-          fi
-
       # The last release commit on main decides whether this run resumes it:
       # a manifest version there that npm still lacks is published from that
       # commit's own tree. A run started on an older commit while the release
@@ -179,19 +123,10 @@ jobs:
         id: plan
         env:
           START_NEW_VERSION: ${{ inputs.start_new_version }}
-          GATE_APPROVED: ${{ inputs.gate_approved }}
           GH_TOKEN: ${{ github.token }}
         run: |
           git fetch origin main --quiet
-          RELEASE_COMMIT=""
-          MISSING=""
           RELEASE_LINE=$(git log origin/main --format='%H %s' | grep -m1 ' chore(release): moltzap@' || true)
-          if [ -n "${RETRY_RELEASE_COMMIT:-}" ] && [ "$START_NEW_VERSION" != true ]; then
-            if [ "$RETRY_RELEASE_COMMIT" != "${RELEASE_LINE%% *}" ]; then
-              echo "ERROR: Saved release $RETRY_RELEASE_COMMIT is no longer the latest release on main; dispatch a fresh run. Docs: https://docs.moltzap.xyz/spec/layer-interfaces#publication-and-versions" >&2
-              exit 1
-            fi
-          fi
           if [ -n "$RELEASE_LINE" ]; then
             RELEASE_COMMIT=${RELEASE_LINE%% *}
             VERSION=${RELEASE_LINE#* chore(release): moltzap@}
@@ -239,49 +174,31 @@ jobs:
               fi
             fi
             MISSING=${MISSING# }
-          fi
-          if [ -z "$MISSING" ] && [ -n "$RELEASE_COMMIT" ] && [ "$GITHUB_RUN_ATTEMPT" -gt 1 ] && [ "$START_NEW_VERSION" != true ] &&
-            { [ "$RELEASE_COMMIT" = "${RETRY_RELEASE_COMMIT:-}" ] || [ "$RELEASE_COMMIT" = "$GITHUB_SHA" ] || [ "$(git log -1 --format=%P "$RELEASE_COMMIT")" = "$GITHUB_SHA" ]; }; then
-            {
-              echo "mode=notify"
-              echo "version=$VERSION"
-              echo "release-commit=$RELEASE_COMMIT"
-            } >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          if [ -n "$MISSING" ] && [ "$START_NEW_VERSION" = "true" ]; then
-            echo "Abandoning release $VERSION from $RELEASE_COMMIT; not yet on npm: $MISSING"
-          elif [ -n "$MISSING" ]; then
-            if [ "$RELEASE_COMMIT" != "$GITHUB_SHA" ] && [ "$(git rev-parse origin/main)" = "$RELEASE_COMMIT" ]; then
-              echo "Release $VERSION is at the tip but this run started on $GITHUB_SHA; dispatching a run on the release commit"
-              echo "mode=redispatch" >> "$GITHUB_OUTPUT"
+            if [ -n "$MISSING" ] && [ "$START_NEW_VERSION" = "true" ]; then
+              echo "Abandoning release $VERSION from $RELEASE_COMMIT; not yet on npm: $MISSING"
+            elif [ -n "$MISSING" ]; then
+              if [ "$RELEASE_COMMIT" != "$GITHUB_SHA" ] && [ "$(git rev-parse origin/main)" = "$RELEASE_COMMIT" ]; then
+                echo "Release $VERSION is at the tip but this run started on $GITHUB_SHA; dispatching a run on the release commit"
+                echo "mode=redispatch" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              echo "Resuming release $VERSION from $RELEASE_COMMIT; packages to finish: $MISSING"
+              git checkout --quiet "$RELEASE_COMMIT"
+              [ "$RELEASE_COMMIT" = "$GITHUB_SHA" ] || echo "::warning::main moved past the release commit $RELEASE_COMMIT; this run's provenance names $GITHUB_SHA"
+              {
+                echo "release-commit=$RELEASE_COMMIT"
+                echo "mode=resume"
+                echo "version=$VERSION"
+                echo "packages=$MISSING"
+              } >> "$GITHUB_OUTPUT"
               exit 0
             fi
-            echo "Resuming release $VERSION from $RELEASE_COMMIT; packages to finish: $MISSING"
-            echo "$RELEASE_COMMIT" > "$RUNNER_TEMP/release-plan"
-            git checkout --quiet "$RELEASE_COMMIT"
-            [ "$RELEASE_COMMIT" = "$GITHUB_SHA" ] || echo "::warning::main moved past the release commit $RELEASE_COMMIT; this run's provenance names $GITHUB_SHA"
-            {
-              echo "release-commit=$RELEASE_COMMIT"
-              echo "mode=resume"
-              echo "version=$VERSION"
-              echo "packages=$MISSING"
-            } >> "$GITHUB_OUTPUT"
-            exit 0
           fi
 
-          if [ "$(git rev-parse origin/main)" != "$GITHUB_SHA" ]; then
-            echo "::notice::A queued run releases the newer main tip."
-            echo "mode=redispatch" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          if [ "$GATE_APPROVED" = true ]; then
-            DECISION=$(scripts/release/push-gate.sh)
-            if [ "$DECISION" = skip ]; then
-              echo "mode=skip" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-          fi
+          [ "$(git rev-parse origin/main)" = "$GITHUB_SHA" ] || {
+            echo "ERROR: main moved past the dispatched commit $GITHUB_SHA; dispatch the release again from the tip"
+            exit 1
+          }
           # A version whose release commit and tag were pushed but whose
           # publish never completed is taken even though npm has never seen it.
           TAKEN_VERSIONS=$(git ls-remote --tags --refs origin 'refs/tags/v*' | sed 's#.*refs/tags/v##')
@@ -291,30 +208,20 @@ jobs:
           echo "mode=bump" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Remember the release this run publishes
-        if: steps.plan.outputs.mode == 'resume'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: release-plan
-          path: ${{ runner.temp }}/release-plan
-          if-no-files-found: error
-          overwrite: true
-          retention-days: 7
-
-      - if: steps.plan.outputs.mode == 'bump' || steps.plan.outputs.mode == 'resume'
+      - if: steps.plan.outputs.mode != 'redispatch'
         run: pnpm install --frozen-lockfile
 
       # Package versions are never compiled into `dist`, so the build does not
       # depend on which packages the selection later moves to the version.
       - name: Build all packages
-        if: steps.plan.outputs.mode == 'bump' || steps.plan.outputs.mode == 'resume'
+        if: steps.plan.outputs.mode != 'redispatch'
         run: pnpm build
 
       # Recorded before the content hash, so the hash covers it. A resume
       # writes only the key the release commit's manifest already holds, so
       # its content hash is unchanged.
       - name: Record emitted wire version in published Client metadata
-        if: steps.plan.outputs.mode == 'bump' || steps.plan.outputs.mode == 'resume'
+        if: steps.plan.outputs.mode != 'redispatch'
         working-directory: packages/client
         env:
           MODE: ${{ steps.plan.outputs.mode }}
@@ -333,7 +240,7 @@ jobs:
       # it installs from npm to that package's manifest version, so a checkout
       # of the release tag runs what that tag published.
       - name: Choose the packages this run publishes
-        if: steps.plan.outputs.mode == 'bump' || steps.plan.outputs.mode == 'resume'
+        if: steps.plan.outputs.mode != 'redispatch'
         id: select
         env:
           MODE: ${{ steps.plan.outputs.mode }}
@@ -386,18 +293,13 @@ jobs:
           mkdir -p "$DOCKER_CONFIG"
           KEYS=$(pnpm --silent image:keys)
           refs=()
-          deadline=$((SECONDS + 45 * 60))
           for service in registry router; do
             key=$(jq -r --arg s "$service" '.[$s] | sub("^sha256:"; "")' <<<"$KEYS")
             image="ghcr.io/social-harness/$service"
-            until digest=$(docker buildx imagetools inspect "$image:inputs-$key" --format '{{.Manifest.Digest}}'); do
-              if (( SECONDS >= deadline )); then
-                echo "ERROR: the images workflow must publish $service key $key and the ghcr.io/social-harness/{registry,router} packages must be public and pull anonymously; rerun once both conditions hold. Docs: https://docs.moltzap.xyz/spec/layer-interfaces#publication-and-versions" >&2
-                exit 1
-              fi
-              echo "Waiting for $service inputs-$key; $((deadline - SECONDS)) seconds remain."
-              sleep 30
-            done
+            digest=$(docker buildx imagetools inspect "$image:inputs-$key" --format '{{.Manifest.Digest}}') || {
+              echo "ERROR: the images workflow must publish $service key $key and the ghcr.io/social-harness/{registry,router} packages must be public and pull anonymously; rerun once both conditions hold. Docs: https://docs.moltzap.xyz/spec/layer-interfaces#publication-and-versions" >&2
+              exit 1
+            }
             [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
             ref="$image@$digest"
             docker buildx imagetools inspect "$ref" >/dev/null || {
@@ -595,23 +497,12 @@ jobs:
           done <<<"$REFS"
           echo "COMMIT=$COMMIT" >> "$GITHUB_ENV"
 
-      - name: Check main before minting the release token
-        id: current
-        run: |
-          git fetch origin main --quiet
-          if [ "$(git rev-parse origin/main)" != "$GITHUB_SHA" ]; then
-            echo "::notice::A queued run releases the newer main tip."
-            exit 0
-          fi
-          echo "ready=true" >> "$GITHUB_OUTPUT"
-
       # The release App token is minted only now, scoped to contents, and
       # used for exactly one push.
       - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
-        if: steps.current.outputs.ready == 'true'
         id: app-token
         with:
-          app-id: ${{ vars.RELEASE_APP_ID }}
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
           permission-contents: write
 
@@ -619,21 +510,13 @@ jobs:
       # a workflow_dispatch run; it queues in the concurrency group until this
       # run ends, then publishes from the release commit at the tip.
       - name: Push the release commit and dispatch its publish
-        if: steps.current.outputs.ready == 'true'
         env:
           VERSION: ${{ needs.build.outputs.version }}
           RELEASE_TOKEN: ${{ steps.app-token.outputs.token }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          if ! git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$RELEASE_TOKEN" | base64 -w0)" \
-            push --atomic origin "$COMMIT:refs/heads/main" "refs/tags/v$VERSION" 2>"$RUNNER_TEMP/push-error"; then
-            cat "$RUNNER_TEMP/push-error" >&2
-            if grep -Eq 'non-fast-forward|fetch first' "$RUNNER_TEMP/push-error"; then
-              echo "::notice::A queued run releases the newer main tip."
-              exit 0
-            fi
-            exit 1
-          fi
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$RELEASE_TOKEN" | base64 -w0)" \
+            push --atomic origin "$COMMIT:refs/heads/main" "refs/tags/v$VERSION"
           gh workflow run publish.yml --repo "$GITHUB_REPOSITORY" --ref main
           echo "Pushed $COMMIT as v$VERSION and dispatched the run that publishes it." >> "$GITHUB_STEP_SUMMARY"
 
@@ -738,27 +621,24 @@ jobs:
       - name: Dispatch a run on the release commit
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run publish.yml --repo "$GITHUB_REPOSITORY" --ref main -f gate_approved=${{ inputs.gate_approved || false }}
+        run: gh workflow run publish.yml --repo "$GITHUB_REPOSITORY" --ref main
 
   images:
     needs: [build, publish]
-    if: >-
-      !cancelled() && needs.build.result == 'success' &&
-      (needs.publish.result == 'success' || needs.build.outputs.mode == 'notify')
     environment: release
     runs-on: ubuntu-24.04
     permissions:
       contents: write
       packages: write
     outputs:
-      payload: ${{ steps.images.outputs.payload }}
+      payload: ${{ steps.tag.outputs.payload }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
       - name: Tag release indexes and record their digests
-        id: images
+        id: tag
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.build.outputs.version }}
@@ -807,10 +687,7 @@ jobs:
           echo "payload=$payload" >> "$GITHUB_OUTPUT"
 
   dispatch:
-    needs: [build, publish, images]
-    if: >-
-      !cancelled() && needs.images.result == 'success' &&
-      (needs.publish.result == 'success' || needs.build.outputs.mode == 'notify')
+    needs: images
     runs-on: ubuntu-24.04
     environment: release
     permissions: {}
@@ -818,7 +695,7 @@ jobs:
       - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         id: app-token
         with:
-          app-id: ${{ vars.RELEASE_APP_ID }}
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
           owner: social-harness
           repositories: deployment
@@ -830,28 +707,3 @@ jobs:
         run: |
           jq -n --argjson payload "$PAYLOAD" '{event_type: "social-harness-released", client_payload: $payload}' \
             | gh api --method POST repos/social-harness/deployment/dispatches --input -
-
-  follow-up:
-    needs: [build, dispatch]
-    if: needs.dispatch.result == 'success' && (needs.build.outputs.mode == 'resume' || needs.build.outputs.mode == 'notify')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      actions: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: main
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Gate the tip after completing the release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          git fetch origin main --quiet
-          GITHUB_SHA=$(git rev-parse origin/main)
-          export GITHUB_SHA
-          DECISION=$(scripts/release/push-gate.sh)
-          if [ "$DECISION" = release ]; then
-            gh workflow run publish.yml --repo "$GITHUB_REPOSITORY" --ref main -f gate_approved=true
-          fi

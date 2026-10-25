@@ -432,25 +432,20 @@ mismatches. Release notes mark each reset release with the phrase
   release tested.
 - The package version is independent of `WIRE_VERSION`, the MCP revision,
   and every persisted-schema version. Advancing one never advances another.
-- A merge to `main` triggers the push gate in `.github/workflows/publish.yml`.
-  Push runs only evaluate whether a release is needed; they never release.
-  The gate reads fragments from the pushed commit's tree, excludes
-  `template.md`, and skips release-commit heads and stale pushes. It compares
-  `packages/client/package.json` → `sharnessWireVersion` with the last release
-  commit on main. Unreadable metadata fails; two readable values that differ
-  require a manual reset through `workflow_dispatch`. A restored fragment
-  deleted by the last release, or a package manifest version lower than that
-  release's, skips with a notice to prevent republishing a reverted release.
-  An admitted push dispatches this workflow on main with `gate_approved`.
-  Dispatch runs serialize per ref without cancelling a running release;
-  pushes have a separate concurrency group and cannot replace a pending resume.
-  The dispatch plan resumes an unfinished release before considering new work.
-  After completion, it gates the current tip again and dispatches another run
-  only if that tip still needs a release. A newer dispatch re-plans from the
-  tip; a run past the release commit publishes with provenance naming the
-  dispatched commit. A saved retry release must equal the latest release
-  commit on main; otherwise the rerun fails and requires a fresh dispatch.
-  Manual dispatch, including `start_new_version`, remains available.
+- A merge to `main` releases through the gate in
+  `.github/workflows/release-on-merge.yml`, which starts the ordinary release
+  dispatch in `.github/workflows/publish.yml` on main without inputs. The gate
+  reads only the pushed commit's tree and history. It skips release-commit
+  heads, trees without changelog fragments other than `template.md`, and
+  package manifest versions lower than those at the last release commit.
+  It compares the Client manifest's `sharnessWireVersion` with the last release
+  commit's value: unreadable metadata fails, and differing values require a
+  reset release by hand. With no earlier release, fragments start a release.
+  Push gates serialize separately from release dispatches, without cancelling
+  running jobs. A merge arriving while an earlier release is unfinished makes
+  the dispatched run resume that release; the merge's own changes release
+  with the next merge or a manual dispatch. Resumption, retries and abandonment
+  remain on the manual dispatch path, including `start_new_version`.
 - Releases run from `main` through `.github/workflows/publish.yml` with npm
   provenance and name the service images in each release. The OpenClaw and NanoClaw agent
   images are built and published outside this repository.
@@ -491,9 +486,7 @@ The notification job installs and builds nothing; its release App token is
 scoped to the deployment repository with contents write permission. Deliveries
 may repeat or arrive out of order. The receiver ignores a version not newer
 than the one it runs, ordering calendar versions by their numeric year,
-month/day and sequence components. A full rerun of a completed release retries
-image promotion and notification without installing, building, or publishing
-npm packages again.
+month/day and sequence components.
 
 Both GHCR packages must be public before a release: the bump checks that both
 indexes pull anonymously before pinning them so the public quickstart works.

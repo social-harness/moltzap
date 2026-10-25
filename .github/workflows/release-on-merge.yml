@@ -1,0 +1,37 @@
+name: Release Social Harness on merge
+
+# Start the ordinary release dispatch when the pushed tree needs a release.
+# A merge arriving while an earlier release is unfinished dispatches a run that
+# resumes that release; its own changes release with the next merge or a manual
+# dispatch.
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: social-harness-release-on-merge
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Gate the pushed commit and dispatch a release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          DECISION=$(scripts/release/push-gate.sh)
+          if [ "$DECISION" = release ]; then
+            gh workflow run publish.yml --repo "$GITHUB_REPOSITORY" --ref main
+          fi

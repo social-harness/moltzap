@@ -9,7 +9,6 @@ trap 'rm -rf "$TEMP_DIR"' EXIT
 export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null
 export GIT_AUTHOR_NAME='Social Harness test' GIT_AUTHOR_EMAIL=test@example.invalid
 export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME" GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
-export RELEASE_PACKAGES='client openclaw-channel'
 PASS=0
 
 # Clone a fresh release fixture for one independent behavior.
@@ -19,13 +18,12 @@ new_case() {
   cd "case-$PASS"
 }
 
-# Record the tree as both the run commit and current main tip.
+# Record the tree as the pushed commit.
 commit_tip() {
   git add .
   git -c core.hooksPath=/dev/null commit --quiet --allow-empty -m "$1"
   GITHUB_SHA=$(git rev-parse HEAD)
   export GITHUB_SHA
-  git update-ref refs/remotes/origin/main "$GITHUB_SHA"
 }
 
 # Assert the decision, exit status and reason exposed to the workflow.
@@ -54,7 +52,8 @@ main() {
   touch changelog.d/template.md changelog.d/consumed.Fixed.md
   commit_tip 'fix: previous change'
   rm changelog.d/consumed.Fixed.md
-  sed -i 's/2026.1024.1/2026.1025.1/g' packages/*/package.json
+  printf '%s\n' '{"version":"2026.1025.1","sharnessWireVersion":"2026.1021.3"}' > packages/client/package.json
+  cp packages/client/package.json packages/openclaw-channel/package.json
   commit_tip 'chore(release): moltzap@2026.1025.1'
 
   new_case
@@ -72,24 +71,24 @@ main() {
 
   new_case
   commit_tip 'chore(release): moltzap@2026.1025.1'
-  check 'release-commit head' skip 0 'dispatches its own publication'
+  check 'release-commit head' skip 0 'Release commits do not start a release'
 
   new_case
   touch changelog.d/new.Fixed.md
-  sed -i 's/2026.1021.3/2026.1025.0/' packages/client/package.json
+  printf '%s\n' '{"version":"2026.1025.1","sharnessWireVersion":"2026.1025.0"}' > packages/client/package.json
   commit_tip 'feat: reset wire'
   check 'readable wire change requires manual reset' skip 0 workflow_dispatch
 
   new_case
   touch changelog.d/new.Fixed.md
-  echo '{}' > packages/client/package.json
+  printf '%s\n' '{}' > packages/client/package.json
   commit_tip 'fix: missing wire field'
   check 'unreadable head wire fails' '' 1 packages/client/package.json
 
   new_case
-  echo '{}' > packages/client/package.json
+  printf '%s\n' '{}' > packages/client/package.json
   commit_tip 'chore(release): moltzap@2026.1025.2'
-  echo '{"version":"2026.1025.2","sharnessWireVersion":"2026.1021.3"}' > packages/client/package.json
+  printf '%s\n' '{"version":"2026.1025.2","sharnessWireVersion":"2026.1021.3"}' > packages/client/package.json
   touch changelog.d/new.Fixed.md
   commit_tip 'fix: restore readable head'
   check 'unreadable release wire fails' '' 1 packages/client/package.json
@@ -97,11 +96,11 @@ main() {
   new_case
   git -c core.hooksPath=/dev/null revert --no-edit HEAD >/dev/null
   commit_tip 'fix: revert release'
-  check 'reverted release restores consumed fragments' skip 0 'Restored release fragment'
+  check 'reverted release lowers package versions' skip 0 'older than the last release'
 
   new_case
   touch changelog.d/new.Fixed.md
-  sed -i 's/2026.1025.1/2026.1024.1/' packages/openclaw-channel/package.json
+  printf '%s\n' '{"version":"2026.1024.1"}' > packages/openclaw-channel/package.json
   commit_tip 'fix: revert package version with new notes'
   check 'lower package version skips without restored fragments' skip 0 'older than the last release'
 
@@ -110,7 +109,20 @@ main() {
   commit_tip 'fix: queued change'
   queued_sha=$GITHUB_SHA
   commit_tip 'fix: newer tip'
-  GITHUB_SHA=$queued_sha check 'stale push yields to newer tip' skip 0 'newer main tip'
+  GITHUB_SHA=$queued_sha check 'later commits do not change the pushed decision' release
+  new_case
+  touch changelog.d/consumed.Fixed.md
+  commit_tip 'fix: reuse an issue fragment name'
+  check 'new fragment reusing a released name' release
+
+  mkdir "$TEMP_DIR/first-release"
+  cd "$TEMP_DIR/first-release"
+  git init --quiet --initial-branch=main
+  mkdir -p packages/client changelog.d
+  printf '%s\n' '{"version":"2026.1025.1","sharnessWireVersion":"2026.1021.3"}' > packages/client/package.json
+  touch changelog.d/first.Fixed.md
+  commit_tip 'fix: first change'
+  check 'no earlier release' release 0 'No earlier release'
   echo "$PASS passed, 0 failed"
 }
 
