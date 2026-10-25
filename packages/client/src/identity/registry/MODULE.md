@@ -47,11 +47,6 @@ export class Registry extends Context.Tag("@moltzap/client/Registry")<
     (service) => service.lookup,
   );
 
-  static readonly list = Effect.serviceFunctionEffect(
-    Registry,
-    (service) => service.list,
-  );
-
   static readonly layer = (input: {
     readonly origin: URL;
     readonly registrySignerPublicKey: Ed25519PublicKey;
@@ -86,45 +81,6 @@ export class RegistryInvalidResponseError extends Data.TaggedError(
 ```
 
 A Registry response did not match the selected operation contract.
-
-### [`RegistryListRequest`](./contract.ts#L90)
-
-_TypeAlias_
-
-```ts
-export type RegistryListRequest = typeof RegistryListRequest.Type;
-```
-
-Validated Registry list continuation request.
-
-### [`RegistryListRequest`](./contract.ts#L82)
-
-_Variable_
-
-```ts
-export const RegistryListRequest = exactStruct({
-  afterAgentId: Schema.optional(AgentId).annotations({
-    description:
-      "Exclusive agent identity cursor for Registry listing; omit to start the first page.",
-  }),
-}).annotations({ identifier: "RegistryListRequest" })
-```
-
-Closed Registry list continuation request.
-
-### [`RegistryListResult`](./contract.ts#L105)
-
-_TypeAlias_
-
-```ts
-export type RegistryListResult = Readonly<{
-  kind: "page";
-  agentCards: readonly VerifiedAgentCard[];
-  hasMore: boolean;
-}>;
-```
-
-One deterministic page of complete immutable AgentCards.
 
 ### [`RegistryLookupRequest`](./contract.ts#L78)
 
@@ -165,7 +121,7 @@ export const RegistryLookupRequest = Schema.Union(
 
 Closed Registry lookup selector.
 
-### [`RegistryLookupResult`](./contract.ts#L100)
+### [`RegistryLookupResult`](./contract.ts#L88)
 
 _TypeAlias_
 
@@ -202,7 +158,7 @@ export const RegistryRegisterRequest = exactStruct({
 
 Closed Registry bootstrap registration request.
 
-### [`RegistryRegisterResult`](./contract.ts#L93)
+### [`RegistryRegisterResult`](./contract.ts#L81)
 
 _TypeAlias_
 

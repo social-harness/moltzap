@@ -222,7 +222,6 @@ it("reopens a known ledger and serves the same card", () => {
       const storage = makeRegistryStorage({
         sql,
         registrySignerPublicKey: setup.registrySignerPublicKey,
-        listPageSize: 100,
         operationTimeoutMilliseconds: 5_000,
       });
       const prepared = yield* prepareAgent("ledger-authority");
@@ -431,7 +430,6 @@ it(
         const storage = makeRegistryStorage({
           sql,
           registrySignerPublicKey: setup.registrySignerPublicKey,
-          listPageSize: 100,
           operationTimeoutMilliseconds: 5_000,
         });
         const prepared = yield* prepareBootstrapAdmission(setup.origin);

@@ -1197,11 +1197,6 @@ export class Registry extends Context.Tag("@moltzap/client/Registry")<
     (service) => service.lookup,
   );
 
-  static readonly list = Effect.serviceFunctionEffect(
-    Registry,
-    (service) => service.list,
-  );
-
   static readonly layer = (input: {
     readonly origin: URL;
     readonly registrySignerPublicKey: Ed25519PublicKey;
@@ -1624,30 +1619,6 @@ export type PollCursor = typeof PollCursor.Type;
 
 Validated opaque Router poll continuation.
 
-#### [`RegistryListRequest (type)`](./identity/registry/contract.ts#L90)
-
-_TypeAlias_
-
-```ts
-export type RegistryListRequest = typeof RegistryListRequest.Type;
-```
-
-Validated Registry list continuation request.
-
-#### [`RegistryListResult`](./identity/registry/contract.ts#L105)
-
-_TypeAlias_
-
-```ts
-export type RegistryListResult = Readonly<{
-  kind: "page";
-  agentCards: readonly VerifiedAgentCard[];
-  hasMore: boolean;
-}>;
-```
-
-One deterministic page of complete immutable AgentCards.
-
 #### [`RegistryLookupRequest (type)`](./identity/registry/contract.ts#L78)
 
 _TypeAlias_
@@ -1658,7 +1629,7 @@ export type RegistryLookupRequest = typeof RegistryLookupRequest.Type;
 
 Validated Registry lookup selector.
 
-#### [`RegistryLookupResult`](./identity/registry/contract.ts#L100)
+#### [`RegistryLookupResult`](./identity/registry/contract.ts#L88)
 
 _TypeAlias_
 
@@ -1680,7 +1651,7 @@ export type RegistryRegisterRequest = typeof RegistryRegisterRequest.Type;
 
 Validated Registry bootstrap registration request.
 
-#### [`RegistryRegisterResult`](./identity/registry/contract.ts#L93)
+#### [`RegistryRegisterResult`](./identity/registry/contract.ts#L81)
 
 _TypeAlias_
 
@@ -2072,21 +2043,6 @@ export const PollCursor = Schema.String.pipe(
 ```
 
 Opaque, authenticated continuation for one caller and Router instance.
-
-#### [`RegistryListRequest (value)`](./identity/registry/contract.ts#L82)
-
-_Variable_
-
-```ts
-export const RegistryListRequest = exactStruct({
-  afterAgentId: Schema.optional(AgentId).annotations({
-    description:
-      "Exclusive agent identity cursor for Registry listing; omit to start the first page.",
-  }),
-}).annotations({ identifier: "RegistryListRequest" })
-```
-
-Closed Registry list continuation request.
 
 #### [`RegistryLookupRequest (value)`](./identity/registry/contract.ts#L56)
 

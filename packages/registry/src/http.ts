@@ -54,7 +54,6 @@ export function makeRegistryHttpApp(input: RegistryHttpAppInput) {
   return HttpRouter.empty.pipe(
     HttpRouter.post(registryContract.REGISTER_ROUTE, registerHandler(input)),
     lookupRoute(input),
-    listRoute(input),
     healthRoute(input.storage),
     fallbackRoute(),
   );
@@ -86,20 +85,6 @@ function lookupRoute(input: RegistryHttpAppInput) {
       decodeRequest: registryContract.registryLookupCodec.request.decode,
       encodeResponse: registryContract.registryLookupCodec.response.encode,
       invoke: (request) => input.client.lookup(request),
-      requestSemaphore: input.requestSemaphore,
-    }),
-  );
-}
-
-function listRoute(input: RegistryHttpAppInput) {
-  return HttpRouter.post(
-    registryContract.LIST_ROUTE,
-    publicReadHandler({
-      path: registryContract.LIST_PATH,
-      bodyCap: registryContract.LIST_BODY_CAP,
-      decodeRequest: registryContract.registryListCodec.request.decode,
-      encodeResponse: registryContract.registryListCodec.response.encode,
-      invoke: (request) => input.client.list(request),
       requestSemaphore: input.requestSemaphore,
     }),
   );

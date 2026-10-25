@@ -173,7 +173,7 @@ const assertWrongAdmission = (runRegistry: RegistryRunner) =>
     expect(rejected).toBe(true);
   });
 
-const assertLookupAndPaging = (
+const assertLookup = (
   agents: readonly [RegisteredAgent, ...RegisteredAgent[]],
   runRegistry: RegistryRunner,
 ) =>
@@ -184,45 +184,6 @@ const assertLookupAndPaging = (
     expect(lookup.kind).toBe(FOUND_KIND);
     if (lookup.kind === FOUND_KIND) {
       yield* expectExactCard(lookup.agentCard, agents[0].agentCard);
-    }
-    const firstPage = yield* runRegistry(Registry.list({}));
-    expect(firstPage.agentCards).toHaveLength(2);
-    expect(firstPage.hasMore).toBe(true);
-    const lastCard = firstPage.agentCards[1];
-    if (lastCard === undefined) {
-      return yield* Effect.fail(processTestError("first page was incomplete"));
-    }
-    const secondPage = yield* runRegistry(
-      Registry.list({ afterAgentId: lastCard.agentId }),
-    );
-    expect(secondPage.agentCards).toHaveLength(2);
-    expect(secondPage.hasMore).toBe(false);
-    const actualIds = new Set(
-      [...firstPage.agentCards, ...secondPage.agentCards].map(
-        (card) => card.agentId,
-      ),
-    );
-    const expectedIds = new Set(agents.map((agent) => agent.agentCard.agentId));
-    expect(actualIds).toStrictEqual(expectedIds);
-  });
-
-const listEveryCard = (runRegistry: RegistryRunner) =>
-  Effect.gen(function* () {
-    const agentCards: VerifiedAgentCard[] = [];
-    let request: typeof registryContract.RegistryListRequest.Type = {};
-    while (true) {
-      const page = yield* runRegistry(Registry.list(request));
-      agentCards.push(...page.agentCards);
-      if (!page.hasMore) {
-        return Object.freeze([...agentCards]);
-      }
-      const lastCard = page.agentCards.at(-1);
-      if (lastCard === undefined) {
-        return yield* Effect.fail(
-          processTestError("Registry returned an empty partial page"),
-        );
-      }
-      request = { afterAgentId: lastCard.agentId };
     }
   });
 
@@ -481,7 +442,7 @@ const assertPublicAuthenticationFraming = (origin: URL) =>
     });
   });
 
-const assertPublicRequestBoundaries = (origin: URL, first: RegisteredAgent) =>
+const assertPublicRequestBoundaries = (origin: URL) =>
   Effect.gen(function* () {
     const maximumLookup = JSON.stringify({
       agentName: "a".repeat(32),
@@ -495,20 +456,6 @@ const assertPublicRequestBoundaries = (origin: URL, first: RegisteredAgent) =>
     assertBoundaryResponse(
       yield* executeRequest(
         makeJsonRequest(origin, "/v1/identities:lookup", `${maximumLookup} `),
-      ),
-      { status: PAYLOAD_TOO_LARGE_STATUS, body: PAYLOAD_TOO_LARGE_BODY },
-    );
-    const maximumList = JSON.stringify({
-      afterAgentId: first.agentCard.agentId,
-    });
-    expect(
-      (yield* executeRequest(
-        makeJsonRequest(origin, "/v1/identities:list", maximumList),
-      )).status,
-    ).toBe(OK_STATUS);
-    assertBoundaryResponse(
-      yield* executeRequest(
-        makeJsonRequest(origin, "/v1/identities:list", `${maximumList} `),
       ),
       { status: PAYLOAD_TOO_LARGE_STATUS, body: PAYLOAD_TOO_LARGE_BODY },
     );
@@ -687,9 +634,9 @@ const exerciseFirstRun = (
       { concurrency: 1 },
     );
     const agents = [first, ...additional] as const;
-    yield* assertLookupAndPaging(agents, runRegistry);
+    yield* assertLookup(agents, runRegistry);
     yield* assertPublicAuthenticationFraming(origin);
-    yield* assertPublicRequestBoundaries(origin, first);
+    yield* assertPublicRequestBoundaries(origin);
     yield* assertRejectedRepresentations(origin, first);
     yield* assertConcurrentRegistration(runRegistry);
     yield* registerAtMaximumBody(origin, registrySignerPublicKey);
@@ -731,18 +678,6 @@ const exerciseRestart = (input: {
     if (lookup.kind === FOUND_KIND) {
       yield* expectExactCard(lookup.agentCard, input.first.agentCard);
     }
-    const firstListing = yield* listEveryCard(runRegistry);
-    const repeatedListing = yield* listEveryCard(runRegistry);
-    expect(repeatedListing).toStrictEqual(firstListing);
-    const listedCard = firstListing.find(
-      (card) => card.agentId === input.first.agentCard.agentId,
-    );
-    if (listedCard === undefined) {
-      return yield* Effect.fail(
-        processTestError("restarted Registry list omitted the stored card"),
-      );
-    }
-    yield* expectExactCard(listedCard, input.first.agentCard);
     const repeated = yield* callRegister(runRegistry, input.first);
     expect(repeated.kind).toBe(REGISTERED_KIND);
     if (repeated.kind === REGISTERED_KIND) {

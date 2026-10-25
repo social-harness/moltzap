@@ -55,7 +55,6 @@ type StorageError =
 type StorageInput = Readonly<{
   sql: SqlClient;
   registrySignerPublicKey: Ed25519PublicKey;
-  listPageSize: number;
   operationTimeoutMilliseconds: number;
 }>;
 type RegisterInput = Readonly<{
@@ -87,12 +86,6 @@ export interface RegistryStorage {
     request: typeof registryContract.RegistryLookupRequest.Type,
   ) => Effect.Effect<
     typeof registryContract.lookupResultSchema.Type,
-    StorageError
-  >;
-  readonly list: (
-    request: typeof registryContract.RegistryListRequest.Type,
-  ) => Effect.Effect<
-    typeof registryContract.listResultSchema.Type,
     StorageError
   >;
 }
@@ -130,7 +123,6 @@ export function initializeRegistryStorage(input: {
  * @param input Storage dependencies and operation bounds.
  * @param input.sql Initialized SQL capability.
  * @param input.registrySignerPublicKey Pinned Registry verification key.
- * @param input.listPageSize Maximum complete cards in one list response.
  * @param input.operationTimeoutMilliseconds Complete SQL operation deadline.
  * @returns Durable Registry operations.
  */
@@ -140,7 +132,6 @@ export function makeRegistryStorage(input: StorageInput): RegistryStorage {
     claimRegistrationNonce: makeClaimRegistrationNonce(input),
     register: makeRegister(input),
     lookup: makeLookup(input),
-    list: makeList(input),
   });
 }
 
@@ -692,52 +683,6 @@ function makeLookup(input: StorageInput): RegistryStorage["lookup"] {
           input.registrySignerPublicKey,
         );
         return Object.freeze({ kind: "found", agentCard } as const);
-      }),
-      input.operationTimeoutMilliseconds,
-    );
-}
-
-const readListRows = (input: StorageInput, afterBytes?: Uint8Array) => {
-  const maximumRows = input.listPageSize + 1;
-  return afterBytes === undefined
-    ? input.sql`
-        SELECT agent_card_bytes AS "agentCardBytes"
-        FROM sharness_registry_agents
-        ORDER BY agent_id_bytes ASC
-        LIMIT ${maximumRows}
-      `
-    : input.sql`
-        SELECT agent_card_bytes AS "agentCardBytes"
-        FROM sharness_registry_agents
-        WHERE agent_id_bytes > ${afterBytes}
-        ORDER BY agent_id_bytes ASC
-        LIMIT ${maximumRows}
-      `;
-};
-
-function makeList(input: StorageInput): RegistryStorage["list"] {
-  return (request) =>
-    withStorageDeadline(
-      Effect.gen(function* () {
-        const afterBytes =
-          request.afterAgentId === undefined
-            ? undefined
-            : yield* decodeAgentIdBytes(request.afterAgentId);
-        const cardRows = yield* readListRows(input, afterBytes).pipe(
-          Effect.flatMap((rows) => exactRows(cardRow, rows)),
-        );
-        const hasMore = cardRows.length > input.listPageSize;
-        const agentCards = yield* Effect.forEach(
-          cardRows.slice(0, input.listPageSize),
-          (row) =>
-            decodeStoredCard(row.agentCardBytes, input.registrySignerPublicKey),
-          { concurrency: 1 },
-        );
-        return Object.freeze({
-          kind: "page",
-          agentCards: Object.freeze(agentCards),
-          hasMore,
-        });
       }),
       input.operationTimeoutMilliseconds,
     );

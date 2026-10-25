@@ -223,15 +223,12 @@ export const registryLayer = (cards: readonly VerifiedAgentCard[]) =>
           : { kind: "found" as const, agentCard: found },
       );
     },
-    list: () =>
-      Effect.succeed({ kind: "page", agentCards: cards, hasMore: false }),
     register: () => Effect.succeed({ kind: "idempotency_conflict" }),
   });
 
 /** Registry layer that proves pinned cards make live lookup unnecessary. */
 export const unavailableRegistryLayer = Layer.succeed(Registry, {
   lookup: () => Effect.die("Registry must not be queried for a pinned sender"),
-  list: () => Effect.die("Registry unavailable"),
   register: () => Effect.die("Registry unavailable"),
 });
 

@@ -6,9 +6,7 @@ import {
   type HttpClientResponse,
 } from "@effect/platform";
 import { Duration, Effect, ParseResult, Redacted, Schema } from "effect";
-import type { AgentId } from "../agents.js";
 import { decodeCanonicalJson } from "../../encoding/canonical-json.js";
-import { compareAgentIds } from "../../encoding/identifier.js";
 import { AgentCard, type VerifiedAgentCard } from "../cards.js";
 import {
   AgentSigningAuthority,
@@ -34,15 +32,11 @@ import {
 } from "../signing/http-signature.js";
 import { WireVersions } from "../wire-version.js";
 import {
-  LIST_PATH,
   LOOKUP_PATH,
   REGISTER_PATH,
   type RegistryClientService,
   RegistryConnectionError,
   RegistryInvalidResponseError,
-  registryListCodec,
-  RegistryListRequest,
-  type RegistryListResult,
   registryLookupCodec,
   RegistryLookupRequest,
   type RegistryLookupResult,
@@ -82,12 +76,6 @@ export function makeRegistryService(input: {
         requestTimeout,
       }),
       lookup: makeLookup({
-        client,
-        origin,
-        registrySignerPublicKey: input.registrySignerPublicKey,
-        requestTimeout,
-      }),
-      list: makeList({
         client,
         origin,
         registrySignerPublicKey: input.registrySignerPublicKey,
@@ -167,7 +155,7 @@ const exactText = (bytes: Uint8Array): string | undefined => {
   }
 };
 
-type ClientOperation = "register" | "lookup" | "list";
+type ClientOperation = "register" | "lookup";
 type RegistryClientInput = Readonly<{
   client: HttpClient.HttpClient;
   origin: URL;
@@ -252,7 +240,7 @@ const execute = (input: {
 const executePublicRead = (input: {
   readonly client: HttpClient.HttpClient;
   readonly request: HttpClientRequest.HttpClientRequest;
-  readonly operation: "lookup" | "list";
+  readonly operation: "lookup";
 }) =>
   execute(input).pipe(
     Effect.catchTag("AuthenticationFailedError", () =>
@@ -490,73 +478,4 @@ function makeLookup(
       }
       return Object.freeze({ kind: "found", agentCard });
     }).pipe((effect) => withDeadline(effect, input.requestTimeout));
-}
-
-function makeList(
-  input: RegistryClientInput,
-): (
-  call: typeof RegistryListRequest.Type,
-) => Effect.Effect<
-  RegistryListResult,
-  | RegistryPublicReadError
-  | RegistryConnectionError
-  | RegistryRequestTimeoutError
-  | RegistryInvalidResponseError
-> {
-  return (candidate) =>
-    Effect.gen(function* () {
-      const call = yield* snapshotRequest(
-        RegistryListRequest,
-        () => candidate,
-        invalidResponse,
-      );
-      const bodyBytes = yield* registryListCodec.request
-        .encode(call)
-        .pipe(Effect.mapError(invalidResponse));
-      const [response, responseBytes] = yield* executePublicRead({
-        client: input.client,
-        request: makePost(
-          input.origin,
-          LIST_PATH,
-          bodyBytes,
-          yield* WireVersions.emitted,
-        ),
-        operation: "list",
-      });
-      yield* requireJsonSuccess(response);
-      const result = yield* registryListCodec.response
-        .decode(responseBytes)
-        .pipe(Effect.mapError(invalidResponse));
-      const agentCards = yield* Effect.forEach(
-        result.agentCards,
-        (card) => verifyCard(card, input.registrySignerPublicKey),
-        { concurrency: 1 },
-      );
-      if (!cardsAreOrdered(agentCards, call.afterAgentId)) {
-        return yield* invalidResponse();
-      }
-      return Object.freeze({
-        kind: "page",
-        agentCards: Object.freeze([...agentCards]),
-        hasMore: result.hasMore,
-      });
-    }).pipe((effect) => withDeadline(effect, input.requestTimeout));
-}
-
-/** Registry pages advance strictly beyond the caller's continuation. */
-function cardsAreOrdered(
-  cards: readonly VerifiedAgentCard[],
-  afterAgentId?: AgentId,
-): boolean {
-  let previous = afterAgentId;
-  for (const card of cards) {
-    if (
-      previous !== undefined &&
-      compareAgentIds(previous, card.agentId) >= 0
-    ) {
-      return false;
-    }
-    previous = card.agentId;
-  }
-  return true;
 }

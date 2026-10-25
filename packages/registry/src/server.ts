@@ -95,11 +95,6 @@ const configurationFields = {
     "SHARNESS_REGISTRY_SIGNING_PRIVATE_KEY_PATH",
     absolutePath,
   ),
-  listPageSize: setting(
-    "SHARNESS_REGISTRY_LIST_PAGE_SIZE",
-    processInteger,
-    100,
-  ),
   requestConcurrencyLimit: setting(
     "SHARNESS_REGISTRY_REQUEST_CONCURRENCY_LIMIT",
     processInteger,
@@ -126,6 +121,8 @@ export const processHelp = [
   "",
   "Environment:",
   ...Object.values(configurationFields).map((field) => `  ${field.usage}`),
+  "",
+  "Docs: https://docs.moltzap.xyz/spec/identity#registry-configuration",
 ].join("\n");
 
 /**
@@ -139,7 +136,6 @@ export interface RegistryConfiguration {
   readonly postgresqlUrl: Redacted.Redacted;
   readonly admissionCredential: Redacted.Redacted;
   readonly signingPrivateKeyPath: Redacted.Redacted;
-  readonly listPageSize: number;
   readonly requestConcurrencyLimit: number;
   readonly liveNonceCapacity: number;
   readonly sqlPoolSize: number;
@@ -282,7 +278,6 @@ function connectStorage(
     return makeRegistryStorage({
       sql,
       registrySignerPublicKey,
-      listPageSize: configuration.listPageSize,
       operationTimeoutMilliseconds: configuration.sqlOperationTimeoutMs,
     });
   });

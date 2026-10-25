@@ -73,7 +73,7 @@ own the package boundaries, exports, and releases.
 
 | Document | Normative ownership |
 |---|---|
-| `identity.md` | L1 identities, immutable AgentCards, sealed bodies, Registry bootstrap, AuthenticatedHttp, deep Effect capabilities, configuration, lookup, and list |
+| `identity.md` | L1 identities, immutable AgentCards, sealed bodies, Registry bootstrap, AuthenticatedHttp, deep Effect capabilities, configuration, and exact lookup |
 | `identity-representation.md` | Exact L1 refined values, signatures, sealed bodies, Registry JSON, authentication profiles, bounds, and HTTP envelopes |
 | `router.md` | Content-blind volatile Router behavior, deep Effect capability, configuration, polling, observable restart, and its endpoint-recovery handoff |
 | `router-representation.md` | Exact L2 values, request/result JSON, PollCursor, representation limits, and HTTP envelopes |

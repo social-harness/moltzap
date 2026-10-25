@@ -241,8 +241,6 @@ function makeRegistryLayer(cards: readonly VerifiedAgentCard[]) {
   const service: Context.Tag.Service<typeof Registry> = {
     register: () => outsideManagementTest(),
     lookup: (request) => Effect.succeed(lookup(request)),
-    list: () =>
-      Effect.succeed({ kind: "page", agentCards: cards, hasMore: false }),
   };
   return Layer.succeed(Registry, service);
 }
@@ -506,7 +504,6 @@ const unregisteredPort = {
 const unusedRegistryLayer = Layer.succeed(Registry, {
   register: () => outsideManagementTest(),
   lookup: () => outsideManagementTest(),
-  list: () => outsideManagementTest(),
 });
 
 /** One owner read, named by its tool. */
@@ -766,11 +763,8 @@ const failsAtTheRegistryDeadline = () =>
     expect(yield* operations.readStatus()).toEqual({ kind: "unregistered" });
   });
 
-/** A lookup and a list, the two Registry calls `search_agents` makes. */
-const agentSearches = [
-  { search: "lookup", request: { agentName: "bob" } },
-  { search: "list", request: {} },
-];
+/** Exact identity lookups made by `search_agents`. */
+const agentSearches = [{ search: "lookup", request: { agentName: "bob" } }];
 
 /**
  * `search_agents` gives its Registry call the same deadline: a Registry that
@@ -814,7 +808,6 @@ function heldRegistry(
         Effect.as({ kind: "registered", agentCard: fixture.cards[0] } as const),
       ),
     lookup: () => outsideManagementTest(),
-    list: () => outsideManagementTest(),
   };
   return Layer.succeed(Registry, service);
 }
