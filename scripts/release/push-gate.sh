@@ -1,55 +1,72 @@
 #!/bin/bash
-# Decide whether a push skips, resumes, bumps, or retries notification.
-# Arguments: last release commit (or empty), packages still owed (or empty).
-# GITHUB_SHA names the push head; origin/main must be freshly fetched. The plan
-# owns completeness checks and resumption. Release-commit pushes always skip,
-# and a stale push with nothing to resume exits successfully. Fragment and wire
-# comparisons use committed trees, so a queued run cannot reuse consumed notes.
-# GITHUB_RUN_ATTEMPT defaults to 1. RETRY_RELEASE_COMMIT, when present, comes
-# from this run's saved plan; it ties a notification retry to its own release.
-# Output: skip, resume, notify, or bump on stdout; reset notices on stderr.
+# Decide whether Social Harness needs a release from GITHUB_SHA's tree.
+# origin/main must be freshly fetched; RELEASE_PACKAGES names published packages.
+# Output: release or skip on stdout, the reason on stderr. Unreadable metadata
+# fails instead of silently suppressing a release. Only the dispatch plan owns
+# resumption, version selection and notification retries.
 set -euo pipefail
 
-release_commit="$1"
-unfinished="$2"
-subject=$(git log -1 --format=%s "$GITHUB_SHA")
-if [[ "$subject" == 'chore(release): moltzap@'* ]]; then
+if [[ "$(git rev-parse origin/main)" != "$GITHUB_SHA" ]]; then
+  echo '::notice::A queued run releases the newer main tip.' >&2
   echo skip
   exit 0
 fi
-if [[ -n "$unfinished" ]]; then
-  echo resume
-  exit 0
-fi
-if [[ -n "$release_commit" && "${GITHUB_RUN_ATTEMPT:-1}" -gt 1 ]] &&
-  { [[ "$release_commit" == "${RETRY_RELEASE_COMMIT:-}" ]] ||
-    [[ "$release_commit" == "$GITHUB_SHA" ]] ||
-    [[ "$(git log -1 --format=%P "$release_commit")" == "$GITHUB_SHA" ]]; }; then
-  echo notify
-  exit 0
-fi
-if [[ "$(git rev-parse origin/main)" != "$GITHUB_SHA" ]]; then
+subject=$(git log -1 --format=%s "$GITHUB_SHA")
+if [[ "$subject" == 'chore(release): moltzap@'* ]]; then
+  echo '::notice::The release commit dispatches its own publication.' >&2
   echo skip
   exit 0
 fi
 fragments=$(git ls-tree -r --name-only "$GITHUB_SHA" -- changelog.d/)
-if ! grep -qvFx 'changelog.d/template.md' <<<"${fragments:-changelog.d/template.md}"; then
+fragments=$(grep -vFx 'changelog.d/template.md' <<<"$fragments" || true)
+if [[ -z "$fragments" ]]; then
+  echo '::notice::No changelog fragments need a release.' >&2
   echo skip
   exit 0
 fi
+release_line=$(git log origin/main --format='%H %s' |
+  grep -m1 ' chore(release): moltzap@' || true)
+release_commit=${release_line%% *}
 if [[ -z "$release_commit" ]]; then
   echo '::notice::No release wire baseline exists; use workflow_dispatch.' >&2
   echo skip
   exit 0
 fi
-wire_path=packages/client/src/identity/wire-version.ts
-head_wire=$(git show "$GITHUB_SHA:$wire_path" |
-  sed -nE 's/^export const WIRE_VERSION = "([^"]+)";$/\1/p')
-release_wire=$(git show "$release_commit:$wire_path" |
-  sed -nE 's/^export const WIRE_VERSION = "([^"]+)";$/\1/p')
-if [[ -z "$head_wire" || -z "$release_wire" || "$head_wire" != "$release_wire" ]]; then
-  echo '::notice::WIRE_VERSION differs from the last release or cannot be read; reset releases require workflow_dispatch.' >&2
+wire_path=packages/client/package.json
+if ! head_wire=$(git show "$GITHUB_SHA:$wire_path" |
+  jq -er '.sharnessWireVersion | strings | select(length > 0)') ||
+  ! release_wire=$(git show "$release_commit:$wire_path" |
+    jq -er '.sharnessWireVersion | strings | select(length > 0)'); then
+  echo "ERROR: Cannot read sharnessWireVersion from $wire_path. Docs: https://docs.moltzap.xyz/spec/layer-interfaces#publication-and-versions" >&2
+  exit 1
+fi
+if [[ "$head_wire" != "$release_wire" ]]; then
+  echo '::notice::WIRE_VERSION differs from the last release; reset releases require workflow_dispatch.' >&2
   echo skip
   exit 0
 fi
-echo bump
+deleted=$(git diff-tree --root --no-commit-id --name-only -r \
+  --no-renames --diff-filter=D "$release_commit" -- changelog.d/)
+while IFS= read -r fragment; do
+  if grep -qxF "$fragment" <<<"$deleted"; then
+    echo "::notice::Restored release fragment $fragment; skipping a reverted release." >&2
+    echo skip
+    exit 0
+  fi
+done <<<"$fragments"
+for pkg in $RELEASE_PACKAGES; do
+  manifest="packages/$pkg/package.json"
+  if ! head_version=$(git show "$GITHUB_SHA:$manifest" | jq -er '.version | strings') ||
+    ! release_version=$(git show "$release_commit:$manifest" | jq -er '.version | strings'); then
+    echo "ERROR: Cannot read version from $manifest. Docs: https://docs.moltzap.xyz/spec/layer-interfaces#publication-and-versions" >&2
+    exit 1
+  fi
+  if [[ "$head_version" != "$release_version" &&
+    "$(printf '%s\n' "$head_version" "$release_version" | sort -V | head -n1)" == "$head_version" ]]; then
+    echo "::notice::$manifest is older than the last release; skipping a reverted release." >&2
+    echo skip
+    exit 0
+  fi
+done
+echo '::notice::Changelog fragments need a Social Harness release.' >&2
+echo release

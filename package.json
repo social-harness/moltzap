@@ -34,6 +34,7 @@
     "docs:check:doc-imports-resolve": "node scripts/docs/check-doc-imports-resolve.ts",
     "docs:check:gates-test": "node scripts/__tests__/gates.test.ts",
     "docs:test": "pnpm nx run workspace:test",
+    "test:push-gate": "bash scripts/release/push-gate.test.sh",
     "test:compute-next-version": "bash scripts/release/compute-next-version.test.sh",
     "test:npm-version-exists": "bash scripts/release/npm-version-exists.test.sh",
     "test:ghcr-digest": "bash scripts/release/ghcr-digest.test.sh",

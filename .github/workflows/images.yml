@@ -10,6 +10,8 @@ name: Publish service images
 # sends repository_dispatch social-harness-images to social-harness/deployment with
 # client_payload {"registry":"ghcr.io/social-harness/registry@sha256:…",
 # "router":"ghcr.io/social-harness/router@sha256:…","revision":"<tip sha>"}.
+# Deliveries may repeat or arrive out of order; the receiver ignores revisions
+# not newer than the one it runs, ordered by main ancestry.
 # A token-free tip job resolves and verifies the current main tip's own keys.
 # If either is unpublished, that tip's run dispatches them once available.
 # The dispatch job holds the App token, checks out nothing and sends only

@@ -432,19 +432,25 @@ mismatches. Release notes mark each reset release with the phrase
   release tested.
 - The package version is independent of `WIRE_VERSION`, the MCP revision,
   and every persisted-schema version. Advancing one never advances another.
-- A merge to `main` triggers `.github/workflows/publish.yml`. Before any
-  build, a push releases only when `changelog.d/` contains a fragment other
-  than `template.md`, the head is not a `chore(release): moltzap@…` commit,
-  `WIRE_VERSION` equals its value at the last release commit, and no unfinished
-  release needs resumption. A changed wire version is a reset and requires
-  `workflow_dispatch`; the gate emits a notice. Release-commit pushes do
-  nothing because the bump run dispatches the resume. Other pushes let the
-  existing plan resume an unfinished release before minting a version.
-  Queued pushes whose commit is no longer main's tip exit cleanly when there
-  is nothing to resume. Runs serialize per ref without cancelling a running
-  release. Release-commit pushes have a separate no-op concurrency group so
-  they cannot replace the pending resume dispatch. Manual dispatch, including
-  `start_new_version`, remains available.
+- A merge to `main` triggers the push gate in `.github/workflows/publish.yml`.
+  Push runs only evaluate whether a release is needed; they never release.
+  The gate reads fragments from the pushed commit's tree, excludes
+  `template.md`, and skips release-commit heads and stale pushes. It compares
+  `packages/client/package.json` → `sharnessWireVersion` with the last release
+  commit on main. Unreadable metadata fails; two readable values that differ
+  require a manual reset through `workflow_dispatch`. A restored fragment
+  deleted by the last release, or a package manifest version lower than that
+  release's, skips with a notice to prevent republishing a reverted release.
+  An admitted push dispatches this workflow on main with `gate_approved`.
+  Dispatch runs serialize per ref without cancelling a running release;
+  pushes have a separate concurrency group and cannot replace a pending resume.
+  The dispatch plan resumes an unfinished release before considering new work.
+  After completion, it gates the current tip again and dispatches another run
+  only if that tip still needs a release. A newer dispatch re-plans from the
+  tip; a run past the release commit publishes with provenance naming the
+  dispatched commit. A saved retry release must equal the latest release
+  commit on main; otherwise the rerun fails and requires a fresh dispatch.
+  Manual dispatch, including `start_new_version`, remains available.
 - Releases run from `main` through `.github/workflows/publish.yml` with npm
   provenance and name the service images in each release. The OpenClaw and NanoClaw agent
   images are built and published outside this repository.
@@ -472,18 +478,22 @@ for `linux/amd64` and `linux/arm64`, built on native runners. The committed
 input key `sha256:<hex>` from `pnpm image:keys` names the immutable tag
 `inputs-<hex>`. Release-version tags name those same indexes; the release
 commit pins both digests in `examples/two-agents/compose.yaml`, and the GitHub
-release body lists both full digest references. Missing input tags stop the
-bump until the images workflow publishes them; a rerun completes the release.
+release body lists both full digest references. The bump polls for both input
+tags for up to 45 minutes, logging progress while the images workflow builds
+them. If they remain unavailable, it fails with a hint to rerun once both
+images are published and publicly readable.
 After npm publication and release image tagging succeed, a separate job sends
 `repository_dispatch` event `social-harness-released` to `social-harness/deployment`.
 Its `client_payload` is
 `{"version":"<calendar version>","registry":"ghcr.io/social-harness/registry@sha256:<digest>","router":"ghcr.io/social-harness/router@sha256:<digest>"}`.
 The references are the release's verified indexes tagged by the `images` job.
 The notification job installs and builds nothing; its release App token is
-scoped to the deployment repository with contents write permission. Reruns
-can send the same version again; the receiver treats it as idempotent. A full
-rerun of a completed release retries image promotion and notification without
-installing, building, or publishing npm packages again.
+scoped to the deployment repository with contents write permission. Deliveries
+may repeat or arrive out of order. The receiver ignores a version not newer
+than the one it runs, ordering calendar versions by their numeric year,
+month/day and sequence components. A full rerun of a completed release retries
+image promotion and notification without installing, building, or publishing
+npm packages again.
 
 Both GHCR packages must be public before a release: the bump checks that both
 indexes pull anonymously before pinning them so the public quickstart works.
@@ -512,6 +522,9 @@ to send `repository_dispatch` event `social-harness-images` to
 `keys`, `build` or `publish` job. Its `client_payload` names both tip indexes
 and their revision:
 `{"registry":"ghcr.io/social-harness/registry@sha256:<digest>","router":"ghcr.io/social-harness/router@sha256:<digest>","revision":"<tip sha>"}`.
+Deliveries may repeat or arrive out of order. The receiver ignores a revision
+that is equal to or older than the one it runs, ordering revisions by main
+ancestry rather than by the SHA text.
 Before sending, `dispatch` compares the payload revision with main's current
 head. If they differ, it fails and directs the operator to run `images.yml`
 again from main with `workflow_dispatch`, which resolves the current tip afresh.

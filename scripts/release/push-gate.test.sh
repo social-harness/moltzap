@@ -1,93 +1,117 @@
 #!/bin/bash
-# Exercise push admission against committed-tree responses without git or network.
-# The git stub exposes only subject, tip, fragment paths and wire source; assertions
-# cover release policy rather than the command sequence used to read that state.
+# Exercise Social Harness push admission using real committed trees and refs.
+# Every case clones a local fixture; no network or workspace git writes occur.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-TEMP_DIR=$(mktemp -d)
+TEMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/social-harness-push-gate.XXXXXX")
 trap 'rm -rf "$TEMP_DIR"' EXIT
+export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null
+export GIT_AUTHOR_NAME='Social Harness test' GIT_AUTHOR_EMAIL=test@example.invalid
+export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME" GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
+export RELEASE_PACKAGES='client openclaw-channel'
 PASS=0
-FAIL=0
-export GITHUB_SHA=head SUBJECT='fix: user-visible change' TIP=head
-export FRAGMENTS=$'changelog.d/template.md\nchangelog.d/+fix.Fixed.md'
-export GITHUB_RUN_ATTEMPT=1 RELEASE_PARENT=head RETRY_RELEASE_COMMIT=
-export HEAD_WIRE=2026.1021.3 RELEASE_WIRE=2026.1021.3
-cat > "$TEMP_DIR/git" <<'MOCK'
-#!/bin/bash
-set -euo pipefail
-case "$1" in
-  log)
-    if [[ "$3" == --format=%P ]]; then
-      printf '%s\n' "$RELEASE_PARENT"
-    else
-      printf '%s\n' "$SUBJECT"
-    fi ;;
 
-  rev-parse) printf '%s\n' "$TIP" ;;
-  ls-tree) printf '%s\n' "$FRAGMENTS" ;;
-  show)
-    case "$2" in
-      head:*) printf 'export const WIRE_VERSION = "%s";\n' "$HEAD_WIRE" ;;
-      release:*) printf 'export const WIRE_VERSION = "%s";\n' "$RELEASE_WIRE" ;;
-      *) exit 1 ;;
-    esac ;;
-  *) exit 1 ;;
-esac
-MOCK
-chmod +x "$TEMP_DIR/git"
-export PATH="$TEMP_DIR:$PATH"
+# Clone a fresh release fixture for one independent behavior.
+new_case() {
+  cd "$TEMP_DIR"
+  git clone --quiet --no-hardlinks fixture "case-$PASS"
+  cd "case-$PASS"
+}
 
-# Compare the admission decision and optional notice with a successful exit.
-# Arguments: case name, expected decision, last release, unfinished packages,
-# optional notice substring. Globals: SCRIPT_DIR, TEMP_DIR, PASS and FAIL.
+# Record the tree as both the run commit and current main tip.
+commit_tip() {
+  git add .
+  git -c core.hooksPath=/dev/null commit --quiet --allow-empty -m "$1"
+  GITHUB_SHA=$(git rev-parse HEAD)
+  export GITHUB_SHA
+  git update-ref refs/remotes/origin/main "$GITHUB_SHA"
+}
+
+# Assert the decision, exit status and reason exposed to the workflow.
+# Arguments: behavior, decision, status (default 0), reason substring.
 check() {
-  local name="$1" expected="$2" release="$3" unfinished="$4" notice="${5:-}"
-  local actual status=0
-  actual=$(bash "$SCRIPT_DIR/push-gate.sh" "$release" "$unfinished" \
-    2>"$TEMP_DIR/notice") || status=$?
-  if [[ "$status" == 0 && "$actual" == "$expected" ]] &&
-    { [[ -z "$notice" ]] || grep -qF "$notice" "$TEMP_DIR/notice"; }; then
-    echo "PASS: $name"
-    PASS=$((PASS + 1))
-  else
-    echo "FAIL: $name — expected $expected with notice '$notice', got $status '$actual'"
+  local name="$1" expected="$2" status="${3:-0}" reason="${4:-}"
+  local actual result=0
+  actual=$(bash "$SCRIPT_DIR/push-gate.sh" 2>"$TEMP_DIR/notice") || result=$?
+  if [[ "$result" != "$status" || "$actual" != "$expected" ]] ||
+    ! grep -qF "$reason" "$TEMP_DIR/notice"; then
+    echo "FAIL: $name: expected $status '$expected' and '$reason'; got $result '$actual'"
     cat "$TEMP_DIR/notice"
-    FAIL=$((FAIL + 1))
+    exit 1
   fi
+  echo "PASS: $name"
+  PASS=$((PASS + 1))
 }
 
 main() {
-  check 'fragment and unchanged wire admit a new release' bump release ''
-  FRAGMENTS=changelog.d/template.md check 'template alone skips' skip release ''
-  FRAGMENTS='' check 'no fragments skips' skip release ''
-  SUBJECT='chore(release): moltzap@2026.1025.1' \
-    check 'App release push skips even while publication is unfinished' skip release client
-  HEAD_WIRE=2026.1025.0 \
-    check 'reset requires a manual dispatch and emits a notice' skip release '' workflow_dispatch
-  HEAD_WIRE='' \
-    check 'unreadable wire cannot admit a release' skip release '' workflow_dispatch
-  check 'missing release baseline requires manual dispatch' skip '' '' workflow_dispatch
-  check 'unfinished npm release resumes instead of bumping' resume release client
-  FRAGMENTS='' HEAD_WIRE=2026.1025.0 \
-    check 'unfinished release resumes despite newer reset changes and no notes' resume release client
-  TIP=newer check 'queued push exits cleanly after main moves' skip release ''
-  TIP=release check 'queued push resumes a release that overtook it' resume release client
-  FRAGMENTS=changelog.d/template.md \
-    check 'completed release with consumed fragments does not republish' skip release ''
-  check 'next tip with new fragments admits the next version' bump release ''
-  GITHUB_RUN_ATTEMPT=2 TIP=newer FRAGMENTS='' \
-    check 'completed release rerun retries notification' notify release ''
-  GITHUB_RUN_ATTEMPT=2 RELEASE_PARENT=older \
-    check 'bump failure rerun retries the new release' bump release ''
-  GITHUB_RUN_ATTEMPT=2 RELEASE_PARENT=older RETRY_RELEASE_COMMIT=release \
-    check 'publication rerun after main advances retries its notification' notify release ''
-  GITHUB_RUN_ATTEMPT=2 \
-    check 'unfinished release rerun still resumes publication' resume release client
-  GITHUB_RUN_ATTEMPT=2 SUBJECT='chore(release): moltzap@2026.1025.1' \
-    check 'App push rerun remains a no-op' skip release ''
-  echo "$PASS passed, $FAIL failed"
-  [[ "$FAIL" == 0 ]]
+  mkdir "$TEMP_DIR/fixture"
+  cd "$TEMP_DIR/fixture"
+  git init --quiet --initial-branch=main
+  mkdir -p packages/client packages/openclaw-channel changelog.d
+  printf '%s\n' '{"version":"2026.1024.1","sharnessWireVersion":"2026.1021.3"}' > packages/client/package.json
+  cp packages/client/package.json packages/openclaw-channel/package.json
+  touch changelog.d/template.md changelog.d/consumed.Fixed.md
+  commit_tip 'fix: previous change'
+  rm changelog.d/consumed.Fixed.md
+  sed -i 's/2026.1024.1/2026.1025.1/g' packages/*/package.json
+  commit_tip 'chore(release): moltzap@2026.1025.1'
+
+  new_case
+  touch changelog.d/new.Fixed.md
+  commit_tip 'fix: new change'
+  check 'fragments present' release 0 'need a Social Harness release'
+  rm changelog.d/new.Fixed.md
+  check 'fragments come from GITHUB_SHA, despite working tree deletion' release
+
+  new_case
+  commit_tip 'chore: template only'
+  check 'template only' skip 0 'No changelog fragments'
+  touch changelog.d/untracked.Fixed.md
+  check 'working tree fragments do not trigger publication' skip
+
+  new_case
+  commit_tip 'chore(release): moltzap@2026.1025.1'
+  check 'release-commit head' skip 0 'dispatches its own publication'
+
+  new_case
+  touch changelog.d/new.Fixed.md
+  sed -i 's/2026.1021.3/2026.1025.0/' packages/client/package.json
+  commit_tip 'feat: reset wire'
+  check 'readable wire change requires manual reset' skip 0 workflow_dispatch
+
+  new_case
+  touch changelog.d/new.Fixed.md
+  echo '{}' > packages/client/package.json
+  commit_tip 'fix: missing wire field'
+  check 'unreadable head wire fails' '' 1 packages/client/package.json
+
+  new_case
+  echo '{}' > packages/client/package.json
+  commit_tip 'chore(release): moltzap@2026.1025.2'
+  echo '{"version":"2026.1025.2","sharnessWireVersion":"2026.1021.3"}' > packages/client/package.json
+  touch changelog.d/new.Fixed.md
+  commit_tip 'fix: restore readable head'
+  check 'unreadable release wire fails' '' 1 packages/client/package.json
+
+  new_case
+  git -c core.hooksPath=/dev/null revert --no-edit HEAD >/dev/null
+  commit_tip 'fix: revert release'
+  check 'reverted release restores consumed fragments' skip 0 'Restored release fragment'
+
+  new_case
+  touch changelog.d/new.Fixed.md
+  sed -i 's/2026.1025.1/2026.1024.1/' packages/openclaw-channel/package.json
+  commit_tip 'fix: revert package version with new notes'
+  check 'lower package version skips without restored fragments' skip 0 'older than the last release'
+
+  new_case
+  touch changelog.d/new.Fixed.md
+  commit_tip 'fix: queued change'
+  queued_sha=$GITHUB_SHA
+  commit_tip 'fix: newer tip'
+  GITHUB_SHA=$queued_sha check 'stale push yields to newer tip' skip 0 'newer main tip'
+  echo "$PASS passed, 0 failed"
 }
 
 main "$@"

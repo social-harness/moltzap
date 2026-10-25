@@ -10,23 +10,22 @@ name: Publish to npm
 # manifest records its own content hash; the OpenClaw channel's also records
 # `sharnessHostCodeHash` (`scripts/release/host-code-hash.ts`), the hash of the
 # code OpenClaw loads for it. The release commit records every manifest. The
-# trigger is a merge to main with a changelog fragment other than template.md,
-# unchanged WIRE_VERSION since the last release, and no unfinished release.
-# Release-commit pushes do nothing; unfinished releases use the plan's resume
-# path. Reset releases (a changed WIRE_VERSION) require workflow_dispatch,
-# which also supports start_new_version. Queued pushes whose commit is no
-# longer main's tip exit cleanly when there is nothing to resume.
+# trigger is a merge to main whose committed fragments and manifest wire
+# version pass the push gate. Push runs only gate and dispatch in a separate
+# concurrency group; all releases serialize in the dispatch group. Reset
+# releases require manual workflow_dispatch, including start_new_version.
+# After a resumed release finishes, the tip is gated again for remaining work.
 # The bump resolves both committed image input keys to
-# signed indexes and records their digests in the example Compose file. Missing
-# keys fail before the release commit; rerunning after images.yml publishes
-# them resumes the bump. After npm publication, `images` runs no repository
-# install or build, adds version tags, and lists both digests in the GitHub
-# release body. Existing version tags are checked and skipped on reruns.
+# signed indexes and records their digests in the example Compose file. It waits
+# up to 45 minutes for missing input tags before failing with a rerun hint.
+# After npm publication, `images` runs no repository install or build, adds
+# version tags, and lists both digests in the GitHub release body. Existing version tags are checked and skipped on reruns.
 # After npm and image promotion succeed, a separate job sends repository_dispatch
 # social-harness-released to social-harness/deployment with client_payload
 # {"version":"<calendar version>","registry":"ghcr.io/social-harness/registry@sha256:…",
 # "router":"ghcr.io/social-harness/router@sha256:…"}. These are the verified
-# indexes images tagged. Re-sending a version is idempotent for the receiver.
+# indexes images tagged. Deliveries may repeat or arrive out of order; the
+# receiver ignores calendar versions not newer than the one it runs.
 # A full rerun of a completed release promotes its verified indexes again and
 # retries notification without an install, build, or second npm publication.
 #
@@ -74,16 +73,18 @@ on:
           the abandoned version did publish.
         type: boolean
         default: false
+      gate_approved:
+        description: Started by the Social Harness push gate; recheck the current tip before bumping.
+        type: boolean
+        default: false
 
 # Two releases must never interleave: both would compute the same version from
 # the same npm state and race to push its release commit and tag. The resume
 # run that a bump dispatches waits here until the bump run ends. The group is
 # per ref, so a dispatch on another branch, which runs nothing, never replaces
-# a pending main run. GitHub retains only one pending run per group. Release-commit
-# pushes use a separate no-op group so their arrival cannot evict the resume.
+# a pending main run. Push gates cannot replace a pending release dispatch.
 concurrency:
-  group: >-
-    publish-${{ github.ref }}${{ github.event_name == 'push' && startsWith(github.event.head_commit.message, 'chore(release): moltzap@') && format('-noop-{0}', github.run_id) || '' }}
+  group: ${{ github.event_name == 'push' && 'publish-push' || 'publish' }}-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
@@ -103,10 +104,31 @@ env:
   IMAGE_CERTIFICATE_OIDC_ISSUER: https://token.actions.githubusercontent.com
 
 jobs:
+  gate:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Gate the push and dispatch a release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git fetch origin main --quiet
+          DECISION=$(scripts/release/push-gate.sh)
+          if [ "$DECISION" = release ]; then
+            gh workflow run publish.yml --repo "$GITHUB_REPOSITORY" --ref main -f gate_approved=true
+          fi
+
   build:
     # Only main releases. A dispatch may name any branch, and the later jobs
     # push and publish, so an unreviewed branch must not reach here.
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -129,7 +151,7 @@ jobs:
           registry-url: https://registry.npmjs.org
 
       # A publication run remembers its release before installed code runs.
-      # Full reruns retry that same release even after main advances again.
+      # Full reruns retry it only while it remains the latest release on main.
       - name: Recover this run's release on a rerun
         if: github.run_attempt > 1
         env:
@@ -157,7 +179,7 @@ jobs:
         id: plan
         env:
           START_NEW_VERSION: ${{ inputs.start_new_version }}
-          EVENT_NAME: ${{ github.event_name }}
+          GATE_APPROVED: ${{ inputs.gate_approved }}
           GH_TOKEN: ${{ github.token }}
         run: |
           git fetch origin main --quiet
@@ -165,7 +187,10 @@ jobs:
           MISSING=""
           RELEASE_LINE=$(git log origin/main --format='%H %s' | grep -m1 ' chore(release): moltzap@' || true)
           if [ -n "${RETRY_RELEASE_COMMIT:-}" ] && [ "$START_NEW_VERSION" != true ]; then
-            RELEASE_LINE=$(git log -1 --format='%H %s' "$RETRY_RELEASE_COMMIT")
+            if [ "$RETRY_RELEASE_COMMIT" != "${RELEASE_LINE%% *}" ]; then
+              echo "ERROR: Saved release $RETRY_RELEASE_COMMIT is no longer the latest release on main; dispatch a fresh run. Docs: https://docs.moltzap.xyz/spec/layer-interfaces#publication-and-versions" >&2
+              exit 1
+            fi
           fi
           if [ -n "$RELEASE_LINE" ]; then
             RELEASE_COMMIT=${RELEASE_LINE%% *}
@@ -215,13 +240,6 @@ jobs:
             fi
             MISSING=${MISSING# }
           fi
-          if [ "$EVENT_NAME" = push ]; then
-            DECISION=$(bash scripts/release/push-gate.sh "$RELEASE_COMMIT" "$MISSING")
-            if [ "$DECISION" = skip ]; then
-              echo "mode=skip" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-          fi
           if [ -z "$MISSING" ] && [ -n "$RELEASE_COMMIT" ] && [ "$GITHUB_RUN_ATTEMPT" -gt 1 ] && [ "$START_NEW_VERSION" != true ] &&
             { [ "$RELEASE_COMMIT" = "${RETRY_RELEASE_COMMIT:-}" ] || [ "$RELEASE_COMMIT" = "$GITHUB_SHA" ] || [ "$(git log -1 --format=%P "$RELEASE_COMMIT")" = "$GITHUB_SHA" ]; }; then
             {
@@ -252,10 +270,18 @@ jobs:
             exit 0
           fi
 
-          [ "$(git rev-parse origin/main)" = "$GITHUB_SHA" ] || {
-            echo "ERROR: main moved past the dispatched commit $GITHUB_SHA; dispatch the release again from the tip"
-            exit 1
-          }
+          if [ "$(git rev-parse origin/main)" != "$GITHUB_SHA" ]; then
+            echo "::notice::A queued run releases the newer main tip."
+            echo "mode=redispatch" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$GATE_APPROVED" = true ]; then
+            DECISION=$(scripts/release/push-gate.sh)
+            if [ "$DECISION" = skip ]; then
+              echo "mode=skip" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
           # A version whose release commit and tag were pushed but whose
           # publish never completed is taken even though npm has never seen it.
           TAKEN_VERSIONS=$(git ls-remote --tags --refs origin 'refs/tags/v*' | sed 's#.*refs/tags/v##')
@@ -360,13 +386,18 @@ jobs:
           mkdir -p "$DOCKER_CONFIG"
           KEYS=$(pnpm --silent image:keys)
           refs=()
+          deadline=$((SECONDS + 45 * 60))
           for service in registry router; do
             key=$(jq -r --arg s "$service" '.[$s] | sub("^sha256:"; "")' <<<"$KEYS")
             image="ghcr.io/social-harness/$service"
-            digest=$(docker buildx imagetools inspect "$image:inputs-$key" --format '{{.Manifest.Digest}}') || {
-              echo "ERROR: the images workflow must publish $service key $key and the ghcr.io/social-harness/{registry,router} packages must be public and pull anonymously; rerun once both conditions hold. Docs: https://docs.moltzap.xyz/spec/layer-interfaces#publication-and-versions" >&2
-              exit 1
-            }
+            until digest=$(docker buildx imagetools inspect "$image:inputs-$key" --format '{{.Manifest.Digest}}'); do
+              if (( SECONDS >= deadline )); then
+                echo "ERROR: the images workflow must publish $service key $key and the ghcr.io/social-harness/{registry,router} packages must be public and pull anonymously; rerun once both conditions hold. Docs: https://docs.moltzap.xyz/spec/layer-interfaces#publication-and-versions" >&2
+                exit 1
+              fi
+              echo "Waiting for $service inputs-$key; $((deadline - SECONDS)) seconds remain."
+              sleep 30
+            done
             [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
             ref="$image@$digest"
             docker buildx imagetools inspect "$ref" >/dev/null || {
@@ -564,9 +595,20 @@ jobs:
           done <<<"$REFS"
           echo "COMMIT=$COMMIT" >> "$GITHUB_ENV"
 
+      - name: Check main before minting the release token
+        id: current
+        run: |
+          git fetch origin main --quiet
+          if [ "$(git rev-parse origin/main)" != "$GITHUB_SHA" ]; then
+            echo "::notice::A queued run releases the newer main tip."
+            exit 0
+          fi
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
       # The release App token is minted only now, scoped to contents, and
       # used for exactly one push.
       - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        if: steps.current.outputs.ready == 'true'
         id: app-token
         with:
           app-id: ${{ vars.RELEASE_APP_ID }}
@@ -577,13 +619,21 @@ jobs:
       # a workflow_dispatch run; it queues in the concurrency group until this
       # run ends, then publishes from the release commit at the tip.
       - name: Push the release commit and dispatch its publish
+        if: steps.current.outputs.ready == 'true'
         env:
           VERSION: ${{ needs.build.outputs.version }}
           RELEASE_TOKEN: ${{ steps.app-token.outputs.token }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$RELEASE_TOKEN" | base64 -w0)" \
-            push --atomic origin "$COMMIT:refs/heads/main" "refs/tags/v$VERSION"
+          if ! git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$RELEASE_TOKEN" | base64 -w0)" \
+            push --atomic origin "$COMMIT:refs/heads/main" "refs/tags/v$VERSION" 2>"$RUNNER_TEMP/push-error"; then
+            cat "$RUNNER_TEMP/push-error" >&2
+            if grep -Eq 'non-fast-forward|fetch first' "$RUNNER_TEMP/push-error"; then
+              echo "::notice::A queued run releases the newer main tip."
+              exit 0
+            fi
+            exit 1
+          fi
           gh workflow run publish.yml --repo "$GITHUB_REPOSITORY" --ref main
           echo "Pushed $COMMIT as v$VERSION and dispatched the run that publishes it." >> "$GITHUB_STEP_SUMMARY"
 
@@ -688,7 +738,7 @@ jobs:
       - name: Dispatch a run on the release commit
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run publish.yml --repo "$GITHUB_REPOSITORY" --ref main
+        run: gh workflow run publish.yml --repo "$GITHUB_REPOSITORY" --ref main -f gate_approved=${{ inputs.gate_approved || false }}
 
   images:
     needs: [build, publish]
@@ -780,3 +830,28 @@ jobs:
         run: |
           jq -n --argjson payload "$PAYLOAD" '{event_type: "social-harness-released", client_payload: $payload}' \
             | gh api --method POST repos/social-harness/deployment/dispatches --input -
+
+  follow-up:
+    needs: [build, dispatch]
+    if: needs.dispatch.result == 'success' && (needs.build.outputs.mode == 'resume' || needs.build.outputs.mode == 'notify')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Gate the tip after completing the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git fetch origin main --quiet
+          GITHUB_SHA=$(git rev-parse origin/main)
+          export GITHUB_SHA
+          DECISION=$(scripts/release/push-gate.sh)
+          if [ "$DECISION" = release ]; then
+            gh workflow run publish.yml --repo "$GITHUB_REPOSITORY" --ref main -f gate_approved=true
+          fi
