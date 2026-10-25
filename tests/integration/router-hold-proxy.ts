@@ -1,7 +1,12 @@
 /** @file Test-only Router proxy that parks delivery-bearing poll responses. */
 
 import type { Scope } from "effect/Scope";
-import { HttpClient, HttpClientRequest, HttpMethod } from "@effect/platform";
+import {
+  HttpBody,
+  HttpClient,
+  HttpClientRequest,
+  HttpMethod,
+} from "@effect/platform";
 import { NodeHttpClient } from "@effect/platform-node";
 import { Deferred, Effect, Option, Ref, Schema } from "effect";
 import { Buffer } from "node:buffer";
@@ -86,23 +91,16 @@ const forward = (upstream: URL, incoming: IncomingMessage, body: Buffer) =>
         }),
       );
     }
-    const headers = Object.fromEntries(
-      Object.entries(withoutHopByHop(incoming.headers)).flatMap(
-        ([key, value]) =>
-          value === undefined
-            ? []
-            : [[key, typeof value === "string" ? value : value.join(", ")]],
-      ),
-    );
+    const contentType = incoming.headers["content-type"];
     const request = HttpClientRequest.make(method)(
       new URL(`${upstream.origin}${path}`),
     ).pipe(
-      HttpClientRequest.bodyUint8Array(body),
-      HttpClientRequest.setHeaders({
-        ...headers,
-        "content-length": String(body.byteLength),
-        connection: "close",
-      }),
+      HttpClientRequest.setBody(
+        contentType === undefined
+          ? HttpBody.empty
+          : HttpBody.uint8Array(body, contentType),
+      ),
+      HttpClientRequest.setHeaders(incoming.headers),
     );
     const response = yield* HttpClient.execute(request);
     return {
@@ -110,7 +108,11 @@ const forward = (upstream: URL, incoming: IncomingMessage, body: Buffer) =>
       headers: response.headers,
       body: Buffer.from(yield* response.arrayBuffer),
     };
-  }).pipe(Effect.scoped, Effect.provide(NodeHttpClient.layer));
+  }).pipe(
+    Effect.locally(HttpClient.currentTracerPropagation, false),
+    Effect.scoped,
+    Effect.provide(NodeHttpClient.layer),
+  );
 
 const carriesDeliveries = (
   incoming: IncomingMessage,

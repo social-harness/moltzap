@@ -13,12 +13,16 @@ interface MemberSignedRecord {
   }>;
 }
 
-/** Each two-member history record lists every member in both action signatures and durability votes. */
+/** For conversations with fewer than four members, every record lists all members in both action signatures and durability votes. */
 export function expectEveryMemberSigned(
   records: readonly MemberSignedRecord[],
   memberNames: readonly string[],
 ) {
   const members = historyMembers(records[0]?.recordCore);
+  expect(
+    members.length,
+    "expectEveryMemberSigned requires fewer than four members; larger conversations certify a quorum subset",
+  ).toBeLessThan(4);
   expect(
     members
       .map(({ agentName }) => agentName)

@@ -178,7 +178,7 @@ const SHUTDOWN_TIMEOUT = Duration.seconds(5);
  */
 const TEARDOWN_TIMEOUT_MS = 60_000;
 
-/** A live child must announce its listener within thirty seconds. */
+/** A live child must become ready within thirty seconds, with logs on failure. */
 const READINESS_TIMEOUT = Duration.seconds(30);
 
 const POLL_ATTEMPT_TIMEOUT = Duration.seconds(1);
@@ -441,7 +441,13 @@ export const makeSigningAuthority = (privateKeyPem?: string) =>
 
 const acquireTemporaryDirectory = FileSystem.FileSystem.pipe(
   Effect.flatMap((fs) =>
-    fs.makeTempDirectoryScoped({ prefix: "sharness-client-process-" }),
+    Effect.acquireRelease(
+      fs.makeTempDirectory({ prefix: "sharness-client-process-" }),
+      (directory) =>
+        fs
+          .remove(directory, { recursive: true, force: true })
+          .pipe(Effect.ignore),
+    ),
   ),
   Effect.provide(NodeFileSystem.layer),
   Effect.mapError((cause) =>
@@ -512,7 +518,7 @@ export const startPgliteRegistry = (input: {
         "sharness-registry",
         new URL(`http://${LOOPBACK_HOST}:${input.registryPort}`),
       ),
-      "listening",
+      "health response",
     ).pipe(
       Effect.mapError((error) =>
         processTestError(
@@ -933,7 +939,7 @@ function startNetworkRouter(
         awaitReady(
           router,
           serviceReady(router, "sharness-router", routerOrigin),
-          "listening",
+          "health response",
         ),
       ),
     );

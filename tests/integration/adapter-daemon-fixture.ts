@@ -104,10 +104,11 @@ interface OpenClawBuildContextInput {
     readonly bodyForAgent: string;
     readonly commandBody: string;
   };
-  /* eslint-disable @typescript-eslint/naming-convention -- OpenClaw defines the extra and inbound context keys. */
+  // eslint-disable-next-line @typescript-eslint/naming-convention -- OpenClaw defines the GroupMembers host context key.
   readonly extra?: { readonly GroupMembers?: string };
 }
 
+/* eslint-disable @typescript-eslint/naming-convention -- OpenClaw defines the inbound host context keys. */
 /** Models the host context keys consumed by the adapter acceptance scenarios. */
 export interface OpenClawInboundContext {
   readonly AccountId: string;

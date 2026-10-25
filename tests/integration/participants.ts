@@ -10,7 +10,6 @@ import {
   SendInput,
 } from "@moltzap/client";
 import { Duration, Effect, Queue, Schema, Stream } from "effect";
-import { expect } from "vitest";
 import {
   acquireDaemonManagementClient,
   acquireDaemonProcess,
@@ -20,6 +19,7 @@ import {
   type FirewallMode,
   makeDaemonProcessFixture,
   makeRegistrationRequest,
+  processTestError,
 } from "./daemon-process-harness.js";
 import { registrationResultKind } from "./expected-contracts.js";
 
@@ -50,10 +50,10 @@ const registerFixture = (fixture: DaemonProcessFixture) =>
     acquireDaemonManagementClient(fixture.endpoint).pipe(
       Effect.flatMap((management) =>
         management.register(makeRegistrationRequest(fixture)).pipe(
-          Effect.tap((result) =>
-            Effect.sync(() => {
-              expect(result.kind).toBe(registrationResultKind);
-            }),
+          Effect.filterOrFail(
+            (result) => result.kind === registrationResultKind,
+            (result) =>
+              processTestError(`fixture registration returned ${result.kind}`),
           ),
         ),
       ),
