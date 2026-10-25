@@ -210,6 +210,24 @@ export function rootEslintConfig(tsconfigRootDir: string) {
   ];
 }
 
+/** Flat configuration for tests/integration: the strict preset on every TypeScript file plus the integration-test preset on process suites. */
+export function integrationEslintConfig(tsconfigRootDir: string) {
+  const languageOptions = makeTsLanguageOptions(tsconfigRootDir, [
+    "./tsconfig.json",
+  ]);
+  return [
+    packageIgnores,
+    makeStrictBlock(["**/*.ts"], languageOptions, makeStrictRules()),
+    makePresetBlock(
+      ["**/*.integration.test.ts"],
+      languageOptions,
+      guard.configs.integrationTests,
+    ),
+    makeEslintDisableCommentRules(languageOptions),
+    configModuleRules,
+  ];
+}
+
 function makeTsLanguageOptions(
   tsconfigRootDir: string,
   project: readonly string[],

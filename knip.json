@@ -14,7 +14,8 @@
         "scripts/docs/generate-constants-snippets.ts",
         "scripts/docs/generate-modules.ts",
         "scripts/docs/vitest.config.ts",
-        "scripts/docs/__tests__/*.test.ts"
+        "scripts/docs/__tests__/*.test.ts",
+        "scripts/__tests__/integration-lint-profile.ts"
       ],
       "project": [
         "*.ts",

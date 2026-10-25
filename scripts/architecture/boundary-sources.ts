@@ -186,13 +186,7 @@ export function checkIntegrationImports(run: BoundaryRun): number {
   const allowedRelative = new Set([
     path.join(run.repo, "scripts/test/packed-workspace.js"),
   ]);
-  const eslintRelative = new Set(
-    [
-      "eslint.shared.js",
-      "packages/client/eslint.config.js",
-      "packages/router/eslint.config.js",
-    ].map((module) => path.join(run.repo, module)),
-  );
+  const eslintRelative = new Set([path.join(run.repo, "eslint.shared.js")]);
   for (const file of files) {
     checkIntegrationSourceFile(run, {
       file,

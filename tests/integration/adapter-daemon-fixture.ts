@@ -18,8 +18,8 @@ import {
   type Scope,
   Stream,
 } from "effect";
-import { expect } from "vitest";
-
+import { expect, vi } from "vitest";
+import { expectEveryMemberSigned } from "./certified-history.js";
 import {
   acquireDaemonManagementClient,
   acquireDaemonProcess,
@@ -29,21 +29,7 @@ import {
   makeRegistrationRequest,
   ProcessTestError,
 } from "./daemon-process-harness.js";
-
-/** Bounds waits for daemon delivery and host gateway shutdown. */
-export const DELIVERY_TIMEOUT = Duration.seconds(60);
-
-/** Keeps the host account identity distinct from daemon agent identities. */
-export const OPENCLAW_ACCOUNT_ID = "adapter-target";
-
-/** Pins host session routing while daemon addresses stay on the wire. */
-export const OPENCLAW_MAIN_SESSION_KEY = "agent:primary:main";
-
-/** Connects the host reply action to its durable daemon history assertions. */
-export const OPENCLAW_REPLY = "reply from the real OpenClaw adapter";
-
-/** The greeting shared by the caller and the host-side reply assertion. */
-export const OPENCLAW_INITIAL_TEXT = "hello through the real OpenClaw adapter";
+import { registrationResultKind } from "./expected-contracts.js";
 
 interface Scenario {
   readonly caller: DaemonProcessFixture;
@@ -118,55 +104,36 @@ interface OpenClawBuildContextInput {
     readonly bodyForAgent: string;
     readonly commandBody: string;
   };
-  // eslint-disable-next-line @typescript-eslint/naming-convention -- OpenClaw defines this host context key.
+  // eslint-disable-next-line @typescript-eslint/naming-convention -- OpenClaw defines the GroupMembers host context key.
   readonly extra?: { readonly GroupMembers?: string };
 }
 
+/* eslint-disable @typescript-eslint/naming-convention -- OpenClaw defines the inbound host context keys. */
 /** Models the host context keys consumed by the adapter acceptance scenarios. */
 export interface OpenClawInboundContext {
-  // eslint-disable-next-line @typescript-eslint/naming-convention -- OpenClaw defines these host context keys.
   readonly AccountId: string;
-  // eslint-disable-next-line @typescript-eslint/naming-convention -- OpenClaw defines these host context keys.
   readonly Body: string;
-  // eslint-disable-next-line @typescript-eslint/naming-convention -- OpenClaw defines these host context keys.
   readonly BodyForAgent: string;
-  // eslint-disable-next-line @typescript-eslint/naming-convention -- OpenClaw defines these host context keys.
   readonly BodyForCommands: string;
-  // eslint-disable-next-line @typescript-eslint/naming-convention -- OpenClaw defines these host context keys.
   readonly ChatId: string;
-  // eslint-disable-next-line @typescript-eslint/naming-convention -- OpenClaw defines these host context keys.
   readonly ChatType: "direct" | "group";
-  // eslint-disable-next-line @typescript-eslint/naming-convention -- OpenClaw defines these host context keys.
   readonly CommandAuthorized: boolean;
-  // eslint-disable-next-line @typescript-eslint/naming-convention -- OpenClaw defines these host context keys.
   readonly CommandBody: string;
-  // eslint-disable-next-line @typescript-eslint/naming-convention -- OpenClaw defines these host context keys.
   readonly From: string;
-  // eslint-disable-next-line @typescript-eslint/naming-convention -- OpenClaw defines these host context keys.
   readonly GroupMembers?: string;
-  // eslint-disable-next-line @typescript-eslint/naming-convention -- OpenClaw defines these host context keys.
   readonly GroupSubject?: string;
-  // eslint-disable-next-line @typescript-eslint/naming-convention -- OpenClaw defines these host context keys.
   readonly InboundEventKind: "message";
-  // eslint-disable-next-line @typescript-eslint/naming-convention -- OpenClaw defines these host context keys.
   readonly MessageSid: string;
-  // eslint-disable-next-line @typescript-eslint/naming-convention -- OpenClaw defines these host context keys.
   readonly OriginatingTo: string;
-  // eslint-disable-next-line @typescript-eslint/naming-convention -- OpenClaw defines these host context keys.
   readonly Provider: string;
-  // eslint-disable-next-line @typescript-eslint/naming-convention -- OpenClaw defines these host context keys.
   readonly RawBody: string;
-  // eslint-disable-next-line @typescript-eslint/naming-convention -- OpenClaw defines these host context keys.
   readonly SenderId: string;
-  // eslint-disable-next-line @typescript-eslint/naming-convention -- OpenClaw defines these host context keys.
   readonly SenderName: string;
-  // eslint-disable-next-line @typescript-eslint/naming-convention -- OpenClaw defines these host context keys.
   readonly SessionKey: string;
-  // eslint-disable-next-line @typescript-eslint/naming-convention -- OpenClaw defines these host context keys.
   readonly Surface: string;
-  // eslint-disable-next-line @typescript-eslint/naming-convention -- OpenClaw defines these host context keys.
   readonly To: string;
 }
+/* eslint-enable @typescript-eslint/naming-convention -- Restore repository naming outside the OpenClaw host context shapes. */
 
 interface OpenClawRecordInput {
   readonly ctx: OpenClawInboundContext;
@@ -311,8 +278,10 @@ interface OpenClawMessageActionResult {
 
 interface StableOpenClawChannelPlugin {
   readonly gateway: {
-    // eslint-disable-next-line agent-code-guard/promise-type, @typescript-eslint/no-invalid-void-type -- OpenClaw host callbacks require promises at this boundary.
-    readonly startAccount: (context: OpenClawGatewayContext) => Promise<void>;
+    readonly startAccount: (
+      context: OpenClawGatewayContext,
+      // eslint-disable-next-line agent-code-guard/promise-type -- OpenClaw host callbacks require promises at this boundary.
+    ) => Promise<undefined>;
   };
   readonly actions: {
     readonly handleAction: (
@@ -342,6 +311,21 @@ interface OpenClawReplyFixture {
 }
 
 type OpenClawRuntimeFixture = OpenClawReplyFixture;
+
+/** Bounds waits for daemon delivery and host gateway shutdown. */
+export const DELIVERY_TIMEOUT = Duration.seconds(60);
+
+/** Keeps the host account identity distinct from daemon agent identities. */
+export const OPENCLAW_ACCOUNT_ID = "adapter-target";
+
+/** Pins host session routing while daemon addresses stay on the wire. */
+export const OPENCLAW_MAIN_SESSION_KEY = "agent:primary:main";
+
+/** Connects the host reply action to its durable daemon history assertions. */
+export const OPENCLAW_REPLY = "reply from the real OpenClaw adapter";
+
+/** The greeting shared by the caller and the host-side reply assertion. */
+export const OPENCLAW_INITIAL_TEXT = "hello through the real OpenClaw adapter";
 
 /** The certified content of one multicast: its text, then its operation part. */
 export function multicastContent(text: string): Content {
@@ -580,21 +564,6 @@ export function startOpenClawGateway(
   }).pipe(Effect.withSpan("startOpenClawGateway"));
 }
 
-/** Maps external host callback failures into the process-fixture error channel. */
-export function effectFromPromise<A>(
-  operation: string,
-  evaluate: () => PromiseLike<A>,
-): Effect.Effect<A, ProcessTestError> {
-  return Effect.tryPromise({
-    try: evaluate,
-    catch: (cause) =>
-      new ProcessTestError({
-        message: `${operation} failed: ${cause instanceof Error ? cause.message : String(cause)}`,
-        cause,
-      }),
-  });
-}
-
 /** Fails with the named host event when its bounded wait expires. */
 export function awaitSignal(
   signal: Deferred.Deferred<undefined>,
@@ -709,6 +678,21 @@ export function requireRequest(item: InboundItem) {
       );
 }
 
+/** Maps external host callback failures into the process-fixture error channel. */
+export function effectFromPromise<A>(
+  operation: string,
+  evaluate: () => PromiseLike<A>,
+): Effect.Effect<A, ProcessTestError> {
+  return Effect.tryPromise({
+    try: evaluate,
+    catch: (cause) =>
+      new ProcessTestError({
+        message: `${operation} failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+        cause,
+      }),
+  });
+}
+
 function isStableOpenClawEntry(value: unknown): value is StableOpenClawEntry {
   return (
     typeof value === "object" &&
@@ -725,8 +709,7 @@ function registerFixture(fixture: DaemonProcessFixture) {
       expect(yield* management.status()).toEqual({ kind: "unregistered" });
       expect(
         (yield* management.register(makeRegistrationRequest(fixture))).kind,
-        // eslint-disable-next-line agent-code-guard/no-hardcoded-assertion-literals -- The daemon management API promises the registered discriminant.
-      ).toBe("registered");
+      ).toBe(registrationResultKind);
     }),
   );
 }
@@ -746,6 +729,11 @@ function assertFixtureHistory(
         hasMore: false,
       });
       const history = yield* management.readConversation(peerAddress);
+
+      expectEveryMemberSigned(history.records, [
+        fixture.agentName,
+        peerAddress.slice("agent:".length),
+      ]);
       expect(history.continuation).toBeNull();
       expect(history.records).toHaveLength(1 + replies.length);
       expect(
@@ -918,20 +906,11 @@ function dispatchOpenClawReply(
 /** Restores the process-global endpoint after the serial OpenClaw acceptance scope. */
 function useDaemonEndpoint(endpoint: string) {
   return Effect.gen(function* () {
-    // eslint-disable-next-line agent-code-guard/no-process-env-at-runtime -- The host reads its process-global endpoint; this serial fixture restores it on scope exit.
-    const previousEndpoint = process.env.SHARNESS_MCP_URL;
-    // eslint-disable-next-line agent-code-guard/no-process-env-at-runtime -- The host reads its process-global endpoint; this serial fixture restores it on scope exit.
-    process.env.SHARNESS_MCP_URL = endpoint;
+    vi.stubEnv("SHARNESS_MCP_URL", endpoint);
 
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
-        if (previousEndpoint === undefined) {
-          // eslint-disable-next-line agent-code-guard/no-process-env-at-runtime -- The host reads its process-global endpoint; this serial fixture restores it on scope exit.
-          Reflect.deleteProperty(process.env, "SHARNESS_MCP_URL");
-        } else {
-          // eslint-disable-next-line agent-code-guard/no-process-env-at-runtime -- The host reads its process-global endpoint; this serial fixture restores it on scope exit.
-          process.env.SHARNESS_MCP_URL = previousEndpoint;
-        }
+        vi.unstubAllEnvs();
       }),
     );
   });
