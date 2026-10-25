@@ -108,6 +108,7 @@ const acquireAllGatherScenario = Effect.gen(function* () {
     return yield* Effect.dieMessage("expected four participants");
   }
   const members = [guided, strictA, strictB];
+  /** The group's canonical spelling, its names in ASCII order, as results carry it. */
   const group = groupAddress([guided, requester, strictA, strictB]);
   const deadline = yield* measuredDeadlineSeconds(
     groupRound(requester, members),

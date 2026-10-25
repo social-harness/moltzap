@@ -9,8 +9,11 @@ export const registeredDaemonStatus = "active";
 /** Daemon read_conversation marks an anchor with this kind after Router recovery. */
 export const completedReanchorKind = "completed_reanchor";
 
-/** Daemon startup reports this phase when its persisted database cannot be opened. */
+/** Daemon startup reports this phase when its persisted state or identity row refuses this binary. */
 export const storageStartupPhase = "storage";
+
+/** Daemon.StartupError.phase reports this value when startup configuration is invalid. */
+export const configurationStartupPhase = "configuration";
 
 /** Daemon startup reports this reason when retained outbound bytes have left the live window. */
 export const outboxTooOldReason = "outbox-too-old";
@@ -43,6 +46,9 @@ export const credentialRefusalRemedy = "Remove credential-shaped text";
 
 /** The daemon firewall audit export opens with this record kind when the firewall starts. */
 export const auditStartKind = "start";
+
+/** The firewall audit record kind reports this value when a policy revision becomes active. */
+export const auditActivationKind = "activation";
 
 /** The daemon firewall audit export ends with this record kind after shutdown flushes its checks. */
 export const auditCompleteKind = "complete";

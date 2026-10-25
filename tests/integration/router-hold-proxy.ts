@@ -1,16 +1,16 @@
 /** @file Test-only Router proxy that parks delivery-bearing poll responses. */
 
-import { HttpClient, HttpClientRequest, HttpMethod } from "@effect/platform";
-import { NodeHttpClient } from "@effect/platform-node";
-import { Deferred, Effect, Option, Ref, Schema, type Scope } from "effect";
-import { Buffer } from "node:buffer";
-/** The proxy preserves the Node listener callback shapes while relaying Router bytes. */
+import type { Scope } from "effect/Scope";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- NodeHttpServer.make requires Node listener factories and callback types.
 import type {
   IncomingHttpHeaders,
   IncomingMessage,
   ServerResponse,
 } from "node:http";
+import { HttpClient, HttpClientRequest, HttpMethod } from "@effect/platform";
+import { NodeHttpClient } from "@effect/platform-node";
+import { Deferred, Effect, Option, Ref, Schema } from "effect";
+import { Buffer } from "node:buffer";
 import { LOOPBACK_HOST, ProcessTestError } from "./daemon-process-harness.js";
 import { acquireLoopbackServer, readBody } from "./loopback-server.js";
 
@@ -77,6 +77,14 @@ const forward = (upstream: URL, incoming: IncomingMessage, body: Buffer) =>
         }),
       );
     }
+    const path = incoming.url;
+    if (path === undefined || !path.startsWith("/") || path.startsWith("//")) {
+      return yield* Effect.fail(
+        new ProcessTestError({
+          message: "proxy received a request target outside the Router origin",
+        }),
+      );
+    }
     const headers = Object.fromEntries(
       Object.entries(withoutHopByHop(incoming.headers)).flatMap(
         ([key, value]) =>
@@ -86,7 +94,7 @@ const forward = (upstream: URL, incoming: IncomingMessage, body: Buffer) =>
       ),
     );
     const request = HttpClientRequest.make(method)(
-      new URL(incoming.url ?? "/", upstream),
+      new URL(`${upstream.origin}${path}`),
     ).pipe(
       HttpClientRequest.bodyUint8Array(body),
       HttpClientRequest.setHeaders({
@@ -184,7 +192,7 @@ const handle = (
  */
 export const acquireRouterHoldProxy = (
   upstream: URL,
-): Effect.Effect<RouterHoldProxy, ProcessTestError, Scope.Scope> =>
+): Effect.Effect<RouterHoldProxy, ProcessTestError, Scope> =>
   Effect.gen(function* () {
     const state = yield* Ref.make<HoldState>({
       gate: Option.none(),

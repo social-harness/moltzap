@@ -2,7 +2,6 @@
  * @file Published peers and the current daemon certify posts in both
  * directions, through the current network and through the previous release's
  * network.
- *
  */
 
 import { FileSystem } from "@effect/platform";

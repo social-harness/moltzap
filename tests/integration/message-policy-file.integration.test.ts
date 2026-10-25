@@ -68,7 +68,7 @@ const acquirePolicyFileScenario = Effect.gen(function* () {
   const management = yield* acquireDaemonManagementClient(alice.endpoint);
   yield* management.register(makeRegistrationRequest(alice));
   const client = yield* connect(alice.endpoint);
-  return { bob, auditExport, daemon, client };
+  return { auditExport, daemon, client };
 });
 
 const CREDENTIAL = "sk-proj-integrationCredential1234";

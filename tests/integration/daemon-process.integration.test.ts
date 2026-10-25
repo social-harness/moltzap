@@ -38,6 +38,7 @@ import {
 } from "./daemon-process-harness.js";
 import {
   completedReanchorKind,
+  configurationStartupPhase,
   legacySettingReason,
   newerSchemaReason,
   outboxTooOldReason,
@@ -350,6 +351,8 @@ const toRestartedText = "sent to the restarted daemon";
  */
 const singleRestartBehavior = Effect.gen(function* () {
   const scenario = yield* acquireRestartPair;
+  yield* registerFixture(scenario.restartedFixture);
+  yield* registerFixture(scenario.peerFixture);
   yield* restartSenderAndExpectDelivery(scenario);
   yield* expectRestartedRecipientHistory(scenario);
 }).pipe(Effect.scoped);
@@ -360,8 +363,6 @@ function restartSenderAndExpectDelivery({
   restartedDaemon,
 }: RestartScenario) {
   return Effect.gen(function* () {
-    yield* registerFixture(restartedFixture);
-    yield* registerFixture(peerFixture);
     yield* deliverDirect({
       from: restartedFixture,
       to: peerFixture,
@@ -435,7 +436,7 @@ const withAgentKeyOf = (
 /** Starts `fixture`'s daemon and expects it to stop in `phase` before it listens. */
 const expectStartupFailure = (
   fixture: DaemonProcessFixture,
-  phase: "configuration" | typeof storageStartupPhase,
+  phase: typeof configurationStartupPhase | typeof storageStartupPhase,
 ) =>
   awaitDaemonStartupFailure(fixture).pipe(
     Effect.tap((failure) =>
@@ -767,7 +768,6 @@ function restartRouterAndExpectBidirectionalDelivery(
       text: replyAfterRouterRestartText,
       send: sendOrQueue,
     });
-    return state;
   });
 }
 
@@ -850,7 +850,6 @@ function exchangeInitialPostsAndExpectDelivery(state: ProcessScenario) {
         yield* callerInbound.acknowledge;
       }),
     );
-    return state;
   });
 }
 
@@ -911,11 +910,11 @@ function expectIdentityAndAdmissionFailures(state: AdmissionScenario) {
     );
     yield* expectStartupFailure(
       withoutAdmissionCredential(unregisteredFixture),
-      "configuration",
+      configurationStartupPhase,
     );
     yield* expectStartupFailure(
       withMissingAdmissionCredential(unregisteredFixture),
-      "configuration",
+      configurationStartupPhase,
     );
   });
 }

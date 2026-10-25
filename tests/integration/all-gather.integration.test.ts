@@ -46,7 +46,7 @@ const allGather = (requester: Participant, to: string, deadline: number) =>
     collective: { op: "all_gather", deadline, requestedSchema: slotSchema },
   });
 
-/** Results use the canonical member spelling even when requests name the group in another order. */
+/** The group's canonical spelling, its names in ASCII order, as requests and results carry it. */
 const group =
   "group:all-gather-member-a,all-gather-member-b,all-gather-member-c,all-gather-requester";
 

@@ -277,8 +277,10 @@ interface OpenClawMessageActionResult {
 
 interface StableOpenClawChannelPlugin {
   readonly gateway: {
-    // eslint-disable-next-line agent-code-guard/promise-type, @typescript-eslint/no-invalid-void-type -- OpenClaw host callbacks require promises at this boundary.
-    readonly startAccount: (context: OpenClawGatewayContext) => Promise<void>;
+    readonly startAccount: (
+      context: OpenClawGatewayContext,
+      // eslint-disable-next-line agent-code-guard/promise-type -- OpenClaw host callbacks require promises at this boundary.
+    ) => Promise<undefined>;
   };
   readonly actions: {
     readonly handleAction: (

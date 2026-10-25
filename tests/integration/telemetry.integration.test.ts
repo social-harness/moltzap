@@ -184,6 +184,7 @@ const markerBehavior = Effect.gen(function* () {
   const scenario = yield* acquireMarkerParticipants;
   const gather = yield* completeGather(scenario);
   const allGather = yield* completeAllGather(scenario);
+  /** Every earlier proposal settles too, so the held send's is the one left pending. */
   const completed = yield* awaitSpans(
     scenario.receiver,
     (received) =>

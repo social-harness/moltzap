@@ -185,6 +185,7 @@ const WORKSPACE_ROOT = resolve(
   "../..",
 );
 
+/** Children use the current Node installation and system executables. */
 const CHILD_PATH = `${dirname(process.execPath)}:/usr/bin:/bin`;
 
 const PGLITE_BINARY = join(
@@ -255,6 +256,7 @@ export const reservePort = Effect.async<number, ProcessTestError>((resume) => {
   });
 });
 
+/** Capture both output streams while excluding the parent environment. */
 const startProcess = (
   executable: string,
   processArguments: readonly string[],
@@ -282,6 +284,7 @@ const startProcess = (
 export const hasExited = (child: ChildProcess): boolean =>
   child.exitCode !== null || child.signalCode !== null;
 
+/** Remove the exit listener when an enclosing scope interrupts the wait. */
 const waitForExit = (running: RunningProcess): Effect.Effect<void> => {
   if (hasExited(running.child)) {
     return Effect.void;

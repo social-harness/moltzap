@@ -33,7 +33,10 @@ import {
   makeRegistrationRequest,
   processTrace,
 } from "./daemon-process-harness.js";
-import { auditCompleteKind } from "./expected-contracts.js";
+import {
+  auditActivationKind,
+  auditCompleteKind,
+} from "./expected-contracts.js";
 import {
   anyNumber,
   anyString,
@@ -433,9 +436,9 @@ const consecutiveActivations = Effect.gen(function* () {
     (line) => Schema.decodeUnknown(Schema.parseJson(FirewallAuditRecord))(line),
     { concurrency: 1 },
   );
-  expect(records.filter((record) => record.kind === "activation")).toEqual([
-    { kind: "activation", ...expected[1] },
-    { kind: "activation", ...expected[0] },
+  expect(records.filter((item) => item.kind === auditActivationKind)).toEqual([
+    { kind: auditActivationKind, ...expected[1] },
+    { kind: auditActivationKind, ...expected[0] },
   ]);
   expect(records.at(-1)).toMatchObject({
     kind: auditCompleteKind,
