@@ -56,19 +56,21 @@ export function hostCodeHashOfPackage(
       }
       roots.set(name, root);
     }
-    return hostCodeHashOfDirectories(host, roots);
+    return hostCodeHashOfDirectories(host, roots, new Set(directories.keys()));
   });
 }
 
 /**
  * Hash the host package's files and every sibling module they reach.
  * @param host The plugin package's npm name.
- * @param roots Extracted `package/` directory of the host and each sibling.
+ * @param roots Extracted `package/` directories in the host's runtime dependency closure.
+ * @param workspaceNames All workspace package names, whose pins are omitted in every dependency section.
  * @returns `sha256:` and the hex digest.
  */
 export function hostCodeHashOfDirectories(
   host: string,
   roots: ReadonlyMap<string, string>,
+  workspaceNames: ReadonlySet<string>,
 ): string {
   const hostRoot = roots.get(host) ?? "";
   const seeds = packedFiles(hostRoot).map((relative) => ({
@@ -84,7 +86,7 @@ export function hostCodeHashOfDirectories(
         roots.get(module.name) ?? "",
         module.relative,
         `${module.name}/${module.relative}`,
-        { kind: "drop", names: new Set(roots.keys()) },
+        { kind: "drop", names: workspaceNames },
       ),
     ),
   );

@@ -331,14 +331,12 @@ function buildInputs(
   const pending = [
     ...fixed,
     ...under(tree, "scripts/build"),
-    ...images.filter((file) => file.endsWith("Dockerfile")),
+    ...images.filter(isBuildFile),
     ...roots
       .map((root) => `${root}/tsconfig.json`)
       .filter((file) => tree.files.has(file)),
     ...roots.flatMap((root) => buildCommandFiles(tree, root)),
-    ...images
-      .filter((file) => file.endsWith("Dockerfile"))
-      .flatMap((file) => dockerInputs(tree, file)),
+    ...images.filter(isBuildFile).flatMap((file) => dockerInputs(tree, file)),
     ...lifecycleFiles(tree),
   ];
   const seen = new Set<string>();
@@ -374,7 +372,7 @@ function buildCommands(tree: Tree, root: string) {
 /** Config inheritance and command paths are separate from source files mentioned by include globs. */
 function namedInputs(tree: Tree, file: string): string[] {
   const text = tree.read(file);
-  if (file.endsWith(".json")) {
+  if (file.endsWith(".json") && !isBuildFile(file)) {
     const parent = mapping(jsonValue(text, file)).extends;
     const parents = typeof parent === "string" ? [parent] : asStrings(parent);
     return parents
@@ -383,8 +381,15 @@ function namedInputs(tree: Tree, file: string): string[] {
       )
       .filter((entry) => tree.files.has(entry));
   }
-  const body = file.endsWith("Dockerfile") ? dockerCommands(text, file) : text;
+  const body = isBuildFile(file) ? dockerCommands(text, file) : text;
   return commandFiles(tree, path.posix.dirname(file), body);
+}
+
+function isBuildFile(file: string): boolean {
+  const name = path.posix.basename(file);
+  return (
+    /^(?:Dockerfile|Containerfile)/u.test(name) || name.endsWith(".Dockerfile")
+  );
 }
 
 /** Runtime edges include optional dependencies and workspace links, but exclude dev-only packages. */

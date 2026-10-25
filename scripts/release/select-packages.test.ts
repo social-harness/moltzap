@@ -272,6 +272,35 @@ await test("the host-code hash ignores sibling versions and pins", () => {
   removePackages(packages);
 });
 
+for (const section of [
+  "devDependencies",
+  "peerDependencies",
+  "optionalDependencies",
+] as const) {
+  await test(`the host-code hash ignores non-closure workspace ${section} pins`, (t) => {
+    const packages = hostPackages();
+    t.after(() => {
+      removePackages(packages);
+    });
+    writeFileSync(
+      path.join(packages.channel, "package.json"),
+      JSON.stringify({
+        ...CHANNEL_MANIFEST,
+        [section]: { "@moltzap/router": PREVIOUS },
+      }),
+    );
+    const before = hostHash(packages);
+    writeFileSync(
+      path.join(packages.channel, "package.json"),
+      JSON.stringify({
+        ...CHANNEL_MANIFEST,
+        [section]: { "@moltzap/router": RELEASE },
+      }),
+    );
+    assert.equal(hostHash(packages), before);
+  });
+}
+
 /** An in-memory workspace and the manifest version of each package. */
 interface Fake {
   readonly workspace: Workspace;
@@ -382,6 +411,7 @@ function hostHash(packages: HostPackages): string {
       [CHANNEL_MANIFEST.name, packages.channel],
       [CLIENT_MANIFEST.name, packages.client],
     ]),
+    new Set(DIRS.map((dir) => `@moltzap/${dir}`)),
   );
 }
 

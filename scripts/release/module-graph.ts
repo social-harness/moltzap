@@ -84,24 +84,9 @@ export function runtimeCall(node: ts.CallExpression): boolean {
   );
 }
 
-/** Import declarations with only erased bindings never execute their specifier. */
+/** Only whole-declaration import type is erased under verbatimModuleSyntax. */
 export function erasedImport(clause?: ts.ImportClause): boolean {
-  if (clause === undefined) {
-    return false;
-  }
-  if (clause.phaseModifier === ts.SyntaxKind.TypeKeyword) {
-    return true;
-  }
-  if (clause.name !== undefined) {
-    return false;
-  }
-  const bindings = clause.namedBindings;
-  return (
-    bindings !== undefined &&
-    ts.isNamedImports(bindings) &&
-    bindings.elements.length > 0 &&
-    bindings.elements.every((item) => item.isTypeOnly)
-  );
+  return clause?.phaseModifier === ts.SyntaxKind.TypeKeyword;
 }
 
 /** Declaration files never execute; manifest binaries and Node shebangs can omit an extension. */
@@ -153,15 +138,6 @@ function runtimeSpecifier(node: ts.Node): string | undefined {
 
 function exportSpecifier(node: ts.ExportDeclaration): string | undefined {
   if (node.isTypeOnly || node.moduleSpecifier === undefined) {
-    return undefined;
-  }
-  const bindings = node.exportClause;
-  if (
-    bindings !== undefined &&
-    ts.isNamedExports(bindings) &&
-    bindings.elements.length > 0 &&
-    bindings.elements.every((item) => item.isTypeOnly)
-  ) {
     return undefined;
   }
   return ts.isStringLiteral(node.moduleSpecifier)

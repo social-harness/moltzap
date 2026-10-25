@@ -18,6 +18,7 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import { fixtureFiles } from "./image-input-key.fixture.ts";
 import {
   ImageInputError,
   imageInputs,
@@ -94,7 +95,7 @@ COPY images/router/base-digest /base-digest
 /** Every fixture has both service names and a differently named library with condition-only exports. */
 function fixture(): string {
   const repo = mkdtempSync(path.join(tmpdir(), "image-inputs-"));
-  const files = fixtureFiles();
+  const files = fixtureFiles(lock, dockerfile);
   for (const service of ["router", "registry"]) {
     files[`packages/${service}/package.json`] = JSON.stringify({
       name: `@fixture/${service}`,
@@ -599,70 +600,6 @@ await test("refuses symlink image inputs", (t) => {
   });
 });
 
-function fixtureFiles(): Record<string, string> {
-  return {
-    "package.json": JSON.stringify({
-      packageManager: "pnpm@10.6.2",
-      pnpm: { onlyBuiltDependencies: [] },
-      scripts: { prepare: "node scripts/setup/install.ts" },
-    }),
-    ".npmrc": "strict-peer-dependencies=false\n",
-    ".dockerignore": "node_modules\n",
-    ".node-version": "24.18.0\n",
-    "nx.json": "{}",
-    "tsconfig.base.json": JSON.stringify({ extends: "./config/base.json" }),
-    "config/base.json": "{}",
-    "scripts/setup/install.ts": "export {};",
-    "tools/image-task.ts": "export {};",
-    "tools/heredoc-task.ts": "export {};",
-    "assets/config": "initial",
-    "pnpm-workspace.yaml": "packages:\n  - packages/*\n",
-    "pnpm-lock.yaml": lock,
-    "scripts/build/image.ts": "export {};\n",
-    "images/router/Dockerfile": dockerfile,
-    "images/router/base-digest": "sha256:base\n",
-    "packages/client/package.json": clientManifest(),
-    "packages/client/tsconfig.json": JSON.stringify({
-      extends: "../../tsconfig.base.json",
-      compilerOptions: { rootDir: "src", outDir: "dist" },
-    }),
-    "packages/client/src/index.ts": "export const publicValue = 1;\n",
-    "packages/client/src/internal.ts":
-      'export { privateValue } from "./private.js";\n',
-    "packages/client/src/private.ts": "export const privateValue = 1;\n",
-    "packages/client/src/only-require.ts": "export {};",
-    "packages/client/src/only-node.ts": "export {};",
-    "packages/client/src/only-sync.ts": "export {};",
-    "packages/client/src/only-default.ts": "export {};",
-    "packages/client/src/test.ts": "export const testOnly = 1;\n",
-    "packages/client/src/daemon/run.ts": "export const daemon = 1;\n",
-  };
-}
-
-function clientManifest(): string {
-  return JSON.stringify({
-    name: "@fixture/core",
-    version: "1",
-    scripts: { lint: "node src/daemon/run.ts" },
-    nx: {
-      targets: {
-        build: { options: { cwd: ".", command: "node tools/image-task.ts" } },
-      },
-    },
-    exports: {
-      ".": { types: "./dist/index.d.ts", default: "./dist/index.js" },
-      "./service": { import: "./dist/daemon/run.js" },
-      "./test": { "sharness-test": { import: "./dist/test.js" } },
-      "./internal": {
-        "sharness-internal": {
-          types: "./dist/internal.d.ts",
-          import: "./dist/internal.js",
-        },
-      },
-    },
-  });
-}
-
 for (const [label, manifest, source, mutation] of [
   [
     "constant dynamic import",
@@ -1031,14 +968,82 @@ for (const [label, instruction, message] of [
   });
 }
 
+for (const source of [
+  'import { type T } from "@fixture/core/private";',
+  'export { type T } from "@fixture/core/private";',
+] as const) {
+  await test(`${source} retains the runtime edge for keys and version reads`, (t) => {
+    const repo = fixture();
+    t.after(() => {
+      rmSync(repo, { recursive: true, force: true });
+    });
+    write(repo, "packages/router/src/index.ts", source);
+    write(repo, "packages/registry/src/index.ts", "export {};");
+    write(
+      repo,
+      "packages/client/package.json",
+      JSON.stringify({
+        name: "@fixture/core",
+        exports: { "./*": "./dist/*.js" },
+      }),
+    );
+    write(repo, "packages/client/src/private.ts", "export type T = string;");
+    commit(repo);
+    const before = key(repo);
+    write(
+      repo,
+      "packages/client/src/private.ts",
+      "export type T = string; console.log(process.env.npm_package_version);",
+    );
+    commit(repo);
+    assert.notEqual(key(repo), before);
+    assert.deepEqual(Effect.runSync(runtimeVersionReads(repo)), [
+      "packages/client/src/private.ts",
+    ]);
+  });
+}
+
+for (const name of [
+  "Dockerfile.release",
+  "Dockerfile.json",
+  "release.Dockerfile",
+  "Containerfile",
+  "Containerfile.release",
+] as const) {
+  await test(`${name} context inputs change the key`, (t) => {
+    const repo = fixture();
+    t.after(() => {
+      rmSync(repo, { recursive: true, force: true });
+    });
+    write(
+      repo,
+      `images/router/${name}`,
+      "FROM node:24\nCOPY assets/ /assets\n",
+    );
+    commit(repo);
+    const before = key(repo);
+    write(repo, "assets/config", "changed");
+    commit(repo);
+    assert.notEqual(key(repo), before);
+  });
+}
+
 for (const [label, file, content, message] of [
   [
     "a reached workspace importer outside accounted package roots",
     "pnpm-lock.yaml",
     lock
+      .replace("packages:\n", "  tests/library: {}\npackages:\n")
+      .replace("      peer: 2.0.0", "      library: link:../tests/library"),
+    /^Unaccounted workspace importer tests\/library\/package\.json in pnpm-lock\.yaml$/u,
+  ],
+  [
+    "a workspace link outside accounted package roots",
+    "pnpm-lock.yaml",
+    lock
       .replaceAll("link:../client", "link:../../tests/library")
       .replace("packages/client:", "tests/library:"),
-    /tests\/library\/package.json/u,
+    /^Unaccounted workspace link @fixture\/core to tests\/library\/package\.json in pnpm-lock\.yaml$/u,
   ],
   [
     "an aliased workspace link that module resolution cannot account for",
