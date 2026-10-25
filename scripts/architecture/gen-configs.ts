@@ -359,6 +359,11 @@ const clientEntrypointFacades: readonly FacadeFile[] = clientDomains.flatMap(
 
 const clientCompositionRoots = [
   {
+    path: "src/test.ts",
+    reason:
+      "Condition-only management schemas for cross-package process fixtures",
+  },
+  {
     path: "src/index.ts",
     host: true,
     reason:
@@ -452,7 +457,13 @@ const packageDefinitions: Readonly<Record<string, PackageDefinition>> = {
     },
     afterShared: {
       publicTypePackages: [publicTypePackage.effect],
-      allowedTestPublicSubpaths: [],
+      allowedTestPublicSubpaths: [
+        {
+          subpath: "./test",
+          reason:
+            "Management schemas require the explicit sharness-test resolution condition",
+        },
+      ],
     },
   },
   "nanoclaw-channel": {
@@ -558,10 +569,22 @@ const architectureConfigDefinitions: ReadonlyArray<{
         publicTypePackages: [
           publicTypePackage.effect,
           publicTypePackage.platform,
+          publicTypePackage.platformNode,
         ],
-        allowedTestPublicSubpaths: [],
+        allowedTestPublicSubpaths: [
+          {
+            subpath: "./test",
+            reason:
+              "Registry wire overrides require the explicit sharness-test resolution condition",
+          },
+        ],
         folderReadmeFileNames: ["README.md", "MODULE.md"],
         facadeFiles: [
+          {
+            file: "test.ts",
+            reason:
+              "Condition-only Registry process composition for compatibility tests",
+          },
           {
             file: "rpc.ts",
             reason:

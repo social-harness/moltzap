@@ -95,9 +95,10 @@ classes.
 live and retained-history sets. It exposes no configurable service or context
 tag. `@moltzap/identity/test` resolves only the internal `WireVersions` tag when
 the explicit `sharness-test` module-resolution condition is enabled. Normal
-production resolution refuses that subpath. Client tests and their child
-processes opt into the condition to compose adjacent releases; production
-sources cannot import the test-only entry.
+production resolution refuses that subpath. Tests and the child processes they
+start enable the condition to compose adjacent releases. The Registry's
+condition-only `./test` entry, which builds on this subpath, also resolves only
+under the condition. Production sources cannot import either test-only entry.
 
 `AgentCard.wireVersion` reads the card's retained signed version. Endpoints use
 the first canonical member's card to select a shared conversation foundation
@@ -897,6 +898,25 @@ enforces uniqueness, and commits the card with the operation result.
 migrations, database access, and the listener are ready. It returns 503
 otherwise.
 
+## Registry test composition
+
+The private Registry package exposes `@moltzap/registry/test` only under the
+`sharness-test` condition. Its sole runtime export is
+`startRegistry({ emitted, live, history })`, which launches the Registry using
+those wire compatibility sets and the ordinary Registry environment settings.
+The supplied `emitted` is the process's signing version and `live` is its effective
+live acceptance set. The effective history set is the union of supplied `history`
+and Identity's built-in `HISTORY_WIRE_VERSIONS`.
+
+Importing this entry installs no resolution hook. Calling `startRegistry`
+installs internal resolution before its dynamic server imports, scoped to
+imports whose parent module lies under the Registry package's `dist/` or
+`bin/` directory. A nested `node_modules` under the package root receives no
+internal condition. Other
+modules in the process cannot use this hook to resolve
+`@moltzap/identity/internal`. Startup failures are reported and set a nonzero
+process exit status, as in `sharness-registry`.
+
 ## Registry configuration
 
 Registry defines one private `Config.all` value. `Schema.Config`
@@ -926,7 +946,7 @@ The complete Registry process surface is:
 | `SHARNESS_REGISTRY_LIST_PAGE_SIZE` | server-owned identity-list page size | `100` | positive integer; clients cannot override | no |
 | `SHARNESS_REGISTRY_REQUEST_CONCURRENCY_LIMIT` | active request permits | `256` | positive integer | no |
 | `SHARNESS_REGISTRY_LIVE_NONCE_CAPACITY` | unexpired accepted registration nonces | `10,000` | positive integer; never evict a live nonce | no |
-| `SHARNESS_REGISTRY_SQL_POOL_SIZE` | PostgreSQL pool size | `10` | positive integer | no |
+| `SHARNESS_REGISTRY_SQL_POOL_SIZE` | PostgreSQL pool size; PGlite through `pglite-socket` requires `1` because it provides one Postgres session | `10` | positive integer | no |
 | `SHARNESS_REGISTRY_SQL_OPERATION_TIMEOUT_MS` | acquisition, execution, and retry deadline | `5,000` | positive milliseconds; expiry is 503 `unavailable` | no |
 
 Numeric environment values use canonical unsigned decimal with no

@@ -13,6 +13,7 @@ import { Router } from "@moltzap/router";
 import { Duration, Effect, Layer, Redacted, Schema, type Scope } from "effect";
 import { generateKeyPairSync } from "node:crypto";
 import { expect, it } from "vitest";
+import { processTrace } from "./daemon-process-harness.js";
 
 /** Registry setup shared by the independent process round trips. */
 export interface RegistryInfrastructure {
@@ -161,18 +162,19 @@ export const testVersionMismatchRoundTrips = (
       ),
     },
   ];
-  it.each(scenarios)(
-    "returns the live versions from the real $name through the public client",
-    ({ check }) =>
-      Effect.runPromise(
+  for (const { name, check } of scenarios) {
+    it(
+      `returns the live versions from the real ${name} through the public client`,
+      processTrace(
         check.pipe(
           Effect.scoped,
           Effect.provide(NodeFileSystem.layer),
           Effect.provide(NodeHttpClient.layer),
         ),
       ),
-    60_000,
-  );
+      60_000,
+    );
+  }
 };
 
 /** Process tests share the public Router client's production HTTP transport. */

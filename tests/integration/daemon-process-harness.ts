@@ -1,17 +1,21 @@
-/** @file Minimal real-process fixtures for the Client daemon acceptance test. */
+/** @file Shared real-process fixtures for the cross-package suites. */
 
 import type { MessageAddressInput } from "@moltzap/client";
-import { FileSystem, HttpClient } from "@effect/platform";
-import {
-  NodeContext,
-  NodeFileSystem,
-  NodeHttpClient,
-} from "@effect/platform-node";
+import type { startRegistry } from "@moltzap/registry/test";
+import { FileSystem } from "@effect/platform";
+import { NodeContext, NodeFileSystem } from "@effect/platform-node";
 import {
   Client,
   ProtocolError,
   StreamableHTTPClientTransport,
 } from "@modelcontextprotocol/client";
+import {
+  managementReadConversationResultSchema,
+  type managementRegisterRequestSchema,
+  managementRegisterResultSchema,
+  managementSearchConversationsResultSchema,
+  managementStatusResultSchema,
+} from "@moltzap/client/test";
 import {
   AgentName,
   AgentSigningAuthority,
@@ -36,16 +40,12 @@ import {
 import { type ChildProcess, spawn } from "node:child_process";
 import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { createRequire } from "node:module";
-import { createConnection, createServer } from "node:net";
-import { basename, dirname, join } from "node:path";
+import { createServer } from "node:net";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type TestContext } from "vitest";
 
-interface ManagementRegisterRequest {
-  readonly operationId: OperationId;
-  readonly principalId: PrincipalId;
-  readonly agentName: AgentName;
-}
+type ManagementRegisterRequest = typeof managementRegisterRequestSchema.Type;
 
 type ManagementRegisterResult = typeof managementRegisterResultSchema.Type;
 
@@ -56,6 +56,13 @@ type ManagementSearchConversationsResult =
 
 type ManagementReadConversationResult =
   typeof managementReadConversationResultSchema.Type;
+
+/** Every child composition receives an explicit emitted version and acceptance sets. */
+interface ProcessWireVersions {
+  readonly emitted: string;
+  readonly live: readonly string[];
+  readonly history: readonly string[];
+}
 
 /** The mode of the firewall a daemon fixture installs; absent for `sharnessd` itself. */
 export type FirewallMode = "guidance" | "enforcement";
@@ -98,11 +105,7 @@ export interface DaemonProcessFixture {
   readonly stateDirectory: string;
   readonly agentPrivateKeyFile: string;
   readonly firewall?: FirewallMode;
-  readonly wireVersions?: {
-    readonly emitted: string;
-    readonly live: readonly string[];
-    readonly history: readonly string[];
-  };
+  readonly wireVersions?: ProcessWireVersions;
 }
 
 /** Private management calls used to bootstrap and inspect a real daemon. */
@@ -148,116 +151,78 @@ export interface DaemonStartupFailure {
 /** Resolve the fixture's tsx loader independently of a child process's working directory. */
 const require = createRequire(import.meta.url);
 
-const LOOPBACK_HOST = "127.0.0.1";
+/** Disposable children listen only on loopback. */
+export const LOOPBACK_HOST = "127.0.0.1";
 
+/** Concurrent registration keeps this many daemon identities active. */
+export const CONCURRENT_DAEMONS = 16;
+/** Bounded boots limit process startup pressure while ports wait to bind. */
+const DAEMON_BOOT_CONCURRENCY = 4;
+/** Router admission allows concurrent management and protocol requests per daemon. */
+const REQUESTS_PER_DAEMON = 4;
+/** Each daemon can hold its active poll and a replacement poll. */
+const HELD_POLLS_PER_DAEMON = 2;
 const ADMISSION_CREDENTIAL = "client-process-admission";
-
-const READY_STATUS = 204;
 
 const SHUTDOWN_TIMEOUT = Duration.seconds(5);
 
 /**
- * How long a finished test waits for its trace's scope to stop every child: a
- * trace holds at most seven, PGlite, the Registry, the Router and four
- * daemons, stopped one at a time, each within `SHUTDOWN_TIMEOUT` before it is
- * killed.
+ * Daemon finalizers run in parallel within one shutdown timeout. Infrastructure
+ * then stops PGlite, Registry and Router; sixty seconds allows interruption
+ * and worker scheduling overhead.
  */
 const TEARDOWN_TIMEOUT_MS = 60_000;
 
-const POLL_ATTEMPT_TIMEOUT = Duration.seconds(1);
+/** A live child must announce its listener within thirty seconds. */
+const READINESS_TIMEOUT = Duration.seconds(30);
 
 const POLL_INTERVAL = Duration.millis(25);
 
 const MODERN_PROTOCOL_VERSION = "2026-07-28";
 
-const WORKSPACE_ROOT = fileURLToPath(new URL("../../", import.meta.url));
+const WORKSPACE_ROOT = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "../..",
+);
 
 const CHILD_PATH = `${dirname(process.execPath)}:/usr/bin:/bin`;
 
 const PGLITE_BINARY = join(
   WORKSPACE_ROOT,
-  "packages/registry/node_modules/.bin/pglite-server",
+  "tests/integration/node_modules/.bin/pglite-server",
 );
 
-const REGISTRY_BINARY = join(
+/** The Registry executable installs its internal resolution. */
+export const REGISTRY_BINARY = join(
   WORKSPACE_ROOT,
   "packages/registry/bin/sharness-registry",
 );
 
-const ROUTER_BINARY = join(
+/** The Router executable runs the built package. */
+export const ROUTER_BINARY = join(
   WORKSPACE_ROOT,
   "packages/router/bin/sharness-router",
 );
 
-const DAEMON_BINARY = join(WORKSPACE_ROOT, "packages/client/bin/sharnessd");
+/** The daemon executable runs the built Client. */
+export const DAEMON_BINARY = join(
+  WORKSPACE_ROOT,
+  "packages/client/bin/sharnessd",
+);
 
 const FIREWALL_DAEMON = join(
   WORKSPACE_ROOT,
   "tests/integration/firewall-daemon.ts",
 );
 
-/** Replies are observations, not copies of the daemon's closed response types. */
-const managementRegisterResultSchema = Schema.Struct({
-  kind: Schema.String,
-  agentCard: Schema.optional(Schema.Struct({ agentName: Schema.String })),
-});
+/** Fixture failures preserve causal errors for diagnostics. */
+export const processTestError = (
+  message: string,
+  cause?: unknown,
+): ProcessTestError => new ProcessTestError({ message, cause });
 
-const managementStatusResultSchema = Schema.Struct({ kind: Schema.String });
-
-const managementSearchConversationsResultSchema = Schema.Struct({
-  kind: Schema.String,
-  addresses: Schema.Array(Schema.String),
-  hasMore: Schema.Boolean,
-});
-
-const signerEvidenceSchema = Schema.Struct({
-  signerAgentId: Schema.String,
-  signature: Schema.String,
-});
-
-/** Retain uninspected core fields for the peer-history equality assertion. */
-const managementReadConversationResultSchema = Schema.Struct({
-  kind: Schema.String,
-  records: Schema.Array(
-    Schema.Struct({
-      recordHash: Schema.String,
-      actionSignatures: Schema.Array(signerEvidenceSchema),
-      durabilityVotes: Schema.Array(signerEvidenceSchema),
-      recordCore: Schema.Struct({
-        sharnessVersion: Schema.String,
-        membership: Schema.optional(
-          Schema.Struct({
-            members: Schema.Array(
-              Schema.Struct({
-                agentId: Schema.String,
-                agentName: Schema.String,
-              }),
-            ),
-          }),
-        ),
-        action: Schema.Struct({
-          kind: Schema.String,
-          postIntent: Schema.Struct({
-            postId: Schema.String,
-            content: Schema.Array(Schema.Unknown),
-          }),
-        }),
-      }),
-      routerAnchor: Schema.Struct({
-        kind: Schema.String,
-        reanchor: Schema.optional(
-          Schema.Struct({ sharnessVersion: Schema.String }),
-        ),
-      }),
-    }),
-  ),
-  continuation: Schema.NullOr(Schema.String),
-}).annotations({ parseOptions: { onExcessProperty: "preserve" } });
-
-const processTestError = (message: string, cause?: unknown): ProcessTestError =>
-  new ProcessTestError({ message, cause });
-
-const reservePort = Effect.async<number, ProcessTestError>((resume) => {
+/** Release an ephemeral listener before starting a child on its port. */
+export const reservePort = Effect.async<number, ProcessTestError>((resume) => {
   const server = createServer();
   const onError = (error: Error): void => {
     resume(Effect.fail(processTestError("could not reserve a port", error)));
@@ -314,7 +279,7 @@ const startProcess = (
 };
 
 /** Whether `child` has exited on its own or by a signal. */
-const hasExited = (child: ChildProcess): boolean =>
+export const hasExited = (child: ChildProcess): boolean =>
   child.exitCode !== null || child.signalCode !== null;
 
 const waitForExit = (running: RunningProcess): Effect.Effect<void> => {
@@ -362,7 +327,7 @@ export const stopProcess = (running: RunningProcess): Effect.Effect<void> =>
  * interruption, as a timed-out test's is, first prints the child's output, so
  * one run shows where a hang stood.
  */
-const managedProcess = (
+export const managedProcess = (
   executable: string,
   processArguments: readonly string[],
   environment: Readonly<Record<string, string>> = {},
@@ -380,55 +345,45 @@ const managedProcess = (
         : stopProcess(running),
   );
 
-const canConnect = (port: number) =>
-  Effect.async<boolean>((resume) => {
-    const socket = createConnection({ host: LOOPBACK_HOST, port });
-    const finish = (connected: boolean): void => {
-      socket.destroy();
-      resume(Effect.succeed(connected));
-    };
-    socket.once("connect", () => {
-      finish(true);
-    });
-    socket.once("error", () => {
-      finish(false);
-    });
-    return Effect.sync(() => {
-      socket.destroy();
-    });
-  }).pipe(
-    Effect.timeoutTo({
-      duration: POLL_ATTEMPT_TIMEOUT,
-      onTimeout: () => false,
-      onSuccess: (connected) => connected,
-    }),
-  );
+/**
+ * Whether the child printed its own listening line. A child prints it only
+ * after binding, so another process holding a released reservation cannot
+ * satisfy readiness the way it could answer a connect or health probe.
+ */
+const announced = (running: RunningProcess, line: string) =>
+  Effect.sync(() => running.logs().includes(line));
 
-/** Whether `origin` answers its health check as ready. */
-const isHealthy = (origin: URL) =>
-  Effect.scoped(HttpClient.get(new URL("/healthz", origin))).pipe(
-    Effect.map((response) => response.status === READY_STATUS),
-    Effect.provide(NodeHttpClient.layerUndici),
-    Effect.timeout(POLL_ATTEMPT_TIMEOUT),
-    Effect.orElseSucceed(() => false),
-  );
+/** PGlite announces its listener only after its WASM database accepts connections. */
+const pgliteListening = (running: RunningProcess, port: number) =>
+  announced(running, `PGLiteSocketServer listening on {"port":${port},`);
+
+/** The daemon announces its MCP endpoint once its loopback listener is bound. */
+const daemonListening = (running: RunningProcess, endpoint: URL) =>
+  announced(running, `sharnessd listening on ${endpoint.href} (`);
+
+/** A service is ready only after its own child announces its bound listener. */
+export const serviceReady = (
+  running: RunningProcess,
+  service: "sharness-registry" | "sharness-router",
+  origin: URL,
+) => announced(running, `${service} listening on ${origin.origin} (`);
 
 /**
  * Polls `probe` until it reads true, and fails with the child's output once
- * the child exits first.
+ * the child exits first or the readiness deadline expires.
  * @param running Child that must become ready.
  * @param probe One readiness check of the child.
  * @param phase What the child had yet to do, for the failure message.
  * @returns Completion once `probe` reads true.
  */
-const awaitReady = (
+export const awaitReady = (
   running: RunningProcess,
   probe: Effect.Effect<boolean>,
   phase: string,
 ) =>
   Effect.gen(function* () {
     while (!hasExited(running.child)) {
-      if (yield* probe) {
+      if ((yield* probe) && !hasExited(running.child)) {
         return;
       }
       yield* Effect.sleep(POLL_INTERVAL);
@@ -436,12 +391,28 @@ const awaitReady = (
     return yield* Effect.fail(
       processTestError(`process exited before ${phase}\n${running.logs()}`),
     );
-  });
+  }).pipe(
+    Effect.timeoutFail({
+      duration: READINESS_TIMEOUT,
+      onTimeout: () =>
+        processTestError(
+          `process timed out before ${phase}\n${running.logs()}`,
+        ),
+    }),
+    Effect.withSpan("awaitReady"),
+  );
 
-const makePrivateKeyPem = (): string => {
+/** Each fixture receives a fresh Ed25519 signing identity. */
+export const makePrivateKeyPem = (): string => {
   const { privateKey } = generateKeyPairSync("ed25519");
   return privateKey.export({ format: "pem", type: "pkcs8" });
 };
+
+/** Import private key material only inside disposable process fixtures. */
+export const makeSigningAuthority = (privateKeyPem?: string) =>
+  AgentSigningAuthority.fromPkcs8(
+    Redacted.make(privateKeyPem ?? makePrivateKeyPem()),
+  );
 
 const acquireTemporaryDirectory = FileSystem.FileSystem.pipe(
   Effect.flatMap((fs) =>
@@ -481,14 +452,72 @@ const encodePublicKey = (
     ),
   );
 
+/** A PGlite Registry uses one SQL connection because its backend is one session. */
+export const startPgliteRegistry = (input: {
+  readonly postgresqlPort: number;
+  readonly registryPort: number;
+  readonly registryKeyPath: string;
+  readonly admissionCredential: string;
+  readonly command?: readonly [string, readonly string[]];
+}) =>
+  Effect.gen(function* () {
+    const postgresql = yield* startPglite(input.postgresqlPort);
+    const command: readonly [string, readonly string[]] = input.command ?? [
+      REGISTRY_BINARY,
+      [],
+    ];
+    const registry = yield* managedProcess(
+      command[0],
+      command[1],
+      {
+        SHARNESS_REGISTRY_HOST: LOOPBACK_HOST,
+        SHARNESS_REGISTRY_PORT: String(input.registryPort),
+        SHARNESS_REGISTRY_SQL_POOL_SIZE: "1",
+        SHARNESS_REGISTRY_POSTGRESQL_URL: `postgresql://postgres:postgres@${LOOPBACK_HOST}:${input.postgresqlPort}/postgres`,
+        SHARNESS_REGISTRY_ADMISSION_CREDENTIAL: input.admissionCredential,
+        SHARNESS_REGISTRY_SIGNING_PRIVATE_KEY_PATH: input.registryKeyPath,
+        SHARNESS_REGISTRY_LIST_PAGE_SIZE: "16",
+      },
+      join(WORKSPACE_ROOT, "packages/registry"),
+    );
+    yield* awaitReady(
+      registry,
+      serviceReady(
+        registry,
+        "sharness-registry",
+        new URL(`http://${LOOPBACK_HOST}:${input.registryPort}`),
+      ),
+      "listening",
+    ).pipe(
+      Effect.mapError((error) =>
+        processTestError(
+          `${error.message}\nPGlite output:\n${postgresql.logs()}`,
+          error,
+        ),
+      ),
+    );
+    return registry;
+  }).pipe(Effect.withSpan("startPgliteRegistry"));
+
 const prepareInfrastructure = Effect.gen(function* () {
-  const versions = yield* Effect.serviceOption(WireVersions);
+  const configuredVersions = yield* Effect.serviceOption(WireVersions);
+  const versions = yield* Option.match(configuredVersions, {
+    onNone: () => Effect.succeed(Option.none<ProcessWireVersions>()),
+    onSome: (sets) =>
+      sets.emitted === undefined
+        ? Effect.fail(
+            processTestError(
+              "injected WireVersions is missing its emitted version",
+            ),
+          )
+        : Effect.succeed(Option.some({ ...sets, emitted: sets.emitted })),
+  });
   const temporaryDirectory = yield* acquireTemporaryDirectory;
   const registryKeyPath = join(temporaryDirectory, "registry-key.pem");
   const registryPrivateKey = makePrivateKeyPem();
   yield* writePrivateFile(registryKeyPath, registryPrivateKey);
-  const registryAuthority = yield* AgentSigningAuthority.fromPkcs8(
-    Redacted.make(registryPrivateKey),
+  const registryAuthority = yield* makeSigningAuthority(
+    registryPrivateKey,
   ).pipe(
     Effect.mapError((cause) =>
       processTestError("could not load Registry signer", cause),
@@ -632,15 +661,7 @@ export const acquireDaemonProcess = (
         : ([executable, []] as const);
     const [binary, args] =
       fixture.wireVersions !== undefined
-        ? ([
-            process.execPath,
-            [
-              "--conditions=sharness-test",
-              "--input-type=module",
-              "-e",
-              `import { NodeRuntime } from "@effect/platform-node"; import { WireVersions } from "@moltzap/identity/test"; import { Daemon } from "@moltzap/client/service"; import { ConfigProvider, Effect, Layer } from "effect"; Layer.launch(Daemon.layer).pipe(Effect.provideService(WireVersions, ${JSON.stringify(fixture.wireVersions)}), Effect.withConfigProvider(ConfigProvider.fromEnv()), NodeRuntime.runMain);`,
-            ],
-          ] as const)
+        ? launchCommand("Daemon", fixture.wireVersions)
         : baseCommand;
     const running = yield* managedProcess(
       binary,
@@ -650,11 +671,23 @@ export const acquireDaemonProcess = (
     );
     yield* awaitReady(
       running,
-      canConnect(Number(fixture.endpoint.port)),
+      daemonListening(running, fixture.endpoint),
       "listening",
     );
     return running;
   }).pipe(Effect.withSpan("acquireDaemonProcess"));
+
+/** Reserve each port and boot its daemon in one bounded step; release children in parallel. */
+export const acquireDaemonProcesses = (infrastructure: ProcessInfrastructure) =>
+  Effect.forEach(
+    [...Array(CONCURRENT_DAEMONS).keys()],
+    (index) =>
+      makeDaemonProcessFixture(
+        infrastructure,
+        `concurrent-agent-${index}`,
+      ).pipe(Effect.tap(acquireDaemonProcess)),
+    { concurrency: DAEMON_BOOT_CONCURRENCY },
+  ).pipe(Effect.parallelFinalizers);
 
 /**
  * Starts one sharnessd that must stop before it listens. A daemon that listens
@@ -681,18 +714,19 @@ export const awaitDaemonStartupFailure = (
     );
     const listened = yield* awaitReady(
       running,
-      canConnect(Number(fixture.endpoint.port)),
+      daemonListening(running, fixture.endpoint),
       "listening",
     ).pipe(
       Effect.as(true),
-      Effect.catchAll(() => Effect.succeed(false)),
+      Effect.catchAll((error) =>
+        hasExited(running.child) ? Effect.succeed(false) : Effect.fail(error),
+      ),
     );
     if (listened) {
       return yield* Effect.fail(
         processTestError(`daemon listened unexpectedly\n${running.logs()}`),
       );
     }
-    yield* waitForExit(running);
     return { exitCode: running.child.exitCode, logs: running.logs() };
   }).pipe(Effect.withSpan("awaitDaemonStartupFailure"));
 
@@ -819,48 +853,20 @@ function startNetworkRegistry(
   binaries: NetworkBinaries,
 ) {
   return Effect.gen(function* () {
-    const {
-      versions,
-      postgresqlPort,
-      registryPort,
-      registryOrigin,
-      registryKeyPath,
-    } = input;
+    const { versions, postgresqlPort, registryPort, registryKeyPath } = input;
 
-    const postgresql = yield* managedProcess(PGLITE_BINARY, [
-      "--db=memory://",
-      `--port=${postgresqlPort}`,
-      `--host=${LOOPBACK_HOST}`,
-      "--max-connections=20",
-    ]);
-    yield* awaitReady(postgresql, canConnect(postgresqlPort), "listening");
-    const registryCommand: readonly [string, readonly string[]] = Option.isNone(
+    const command: readonly [string, readonly string[]] = Option.isNone(
       versions,
     )
       ? [binaries.registry, []]
-      : [
-          process.execPath,
-          [
-            "--conditions=sharness-test",
-            "--input-type=module",
-            "-e",
-            `import { NodeRuntime } from "@effect/platform-node"; import { WireVersions } from "@moltzap/identity/test"; import { registerHooks } from "node:module"; registerHooks({ resolve(specifier, context, nextResolve) { return nextResolve(specifier, { ...context, conditions: [...context.conditions, "sharness-internal"] }); } }); const { layer } = await import("@moltzap/registry"); import { ConfigProvider, Effect, Layer } from "effect"; Layer.launch(layer).pipe(Effect.provideService(WireVersions, ${JSON.stringify(versions.value)}), Effect.withConfigProvider(ConfigProvider.fromEnv()), NodeRuntime.runMain);`,
-          ],
-        ];
-    const registry = yield* managedProcess(
-      registryCommand[0],
-      registryCommand[1],
-      {
-        SHARNESS_REGISTRY_HOST: LOOPBACK_HOST,
-        SHARNESS_REGISTRY_PORT: String(registryPort),
-        SHARNESS_REGISTRY_POSTGRESQL_URL: `postgresql://postgres:postgres@${LOOPBACK_HOST}:${postgresqlPort}/postgres`,
-        SHARNESS_REGISTRY_ADMISSION_CREDENTIAL: ADMISSION_CREDENTIAL,
-        SHARNESS_REGISTRY_SIGNING_PRIVATE_KEY_PATH: registryKeyPath,
-        SHARNESS_REGISTRY_LIST_PAGE_SIZE: "16",
-      },
-      join(WORKSPACE_ROOT, "packages/registry"),
-    );
-    yield* awaitReady(registry, isHealthy(registryOrigin), "health response");
+      : launchCommand("Registry", versions.value);
+    yield* startPgliteRegistry({
+      postgresqlPort,
+      registryPort,
+      registryKeyPath,
+      admissionCredential: ADMISSION_CREDENTIAL,
+      command,
+    });
   });
 }
 
@@ -880,15 +886,7 @@ function startNetworkRouter(
       versions,
     )
       ? [binaries.router, []]
-      : [
-          process.execPath,
-          [
-            "--conditions=sharness-test",
-            "--input-type=module",
-            "-e",
-            `import { NodeRuntime } from "@effect/platform-node"; import { WireVersions } from "@moltzap/identity/test"; import { RouterServer } from "@moltzap/router/server"; import { ConfigProvider, Effect, Layer } from "effect"; Layer.launch(RouterServer.layer).pipe(Effect.provideService(WireVersions, ${JSON.stringify(versions.value)}), Effect.withConfigProvider(ConfigProvider.fromEnv()), NodeRuntime.runMain);`,
-          ],
-        ];
+      : launchCommand("RouterServer", versions.value);
     return yield* managedProcess(
       routerCommand[0],
       routerCommand[1],
@@ -897,13 +895,21 @@ function startNetworkRouter(
         SHARNESS_ROUTER_PORT: String(routerPort),
         SHARNESS_ROUTER_REGISTRY_ORIGIN: registryOrigin.origin,
         SHARNESS_ROUTER_REGISTRY_SIGNER_PUBLIC_KEY: registrySignerPublicKeyJson,
-        SHARNESS_ROUTER_REQUEST_CONCURRENCY_LIMIT: "16",
-        SHARNESS_ROUTER_HELD_POLL_CAPACITY: "8",
+        SHARNESS_ROUTER_REQUEST_CONCURRENCY_LIMIT: String(
+          CONCURRENT_DAEMONS * REQUESTS_PER_DAEMON,
+        ),
+        SHARNESS_ROUTER_HELD_POLL_CAPACITY: String(
+          CONCURRENT_DAEMONS * HELD_POLLS_PER_DAEMON,
+        ),
       },
       join(WORKSPACE_ROOT, "packages/client"),
     ).pipe(
       Effect.tap((router) =>
-        awaitReady(router, isHealthy(routerOrigin), "health response"),
+        awaitReady(
+          router,
+          serviceReady(router, "sharness-router", routerOrigin),
+          "listening",
+        ),
       ),
     );
   });
@@ -944,4 +950,48 @@ function managementOperations(client: Client): DaemonManagementClient {
   };
 
   return management;
+}
+
+/** Child compositions receive wire sets through plain JavaScript under the test condition. */
+function launchCommand(
+  service: "Registry" | "RouterServer" | "Daemon",
+  versions: ProcessWireVersions,
+): readonly [string, readonly string[]] {
+  const script =
+    service === "Registry"
+      ? `import { startRegistry } from "@moltzap/registry/test"; startRegistry(${JSON.stringify(versions satisfies Parameters<typeof startRegistry>[0])});`
+      : serviceScript(service, versions);
+  return [
+    process.execPath,
+    ["--conditions=sharness-test", "--input-type=module", "-e", script],
+  ];
+}
+
+/** Router and daemon compositions share Identity's test wire policy. */
+function serviceScript(
+  service: "RouterServer" | "Daemon",
+  versions: ProcessWireVersions,
+): string {
+  const module =
+    service === "RouterServer"
+      ? "@moltzap/router/server"
+      : "@moltzap/client/service";
+  return `import { NodeRuntime } from "@effect/platform-node";
+import { WireVersions } from "@moltzap/identity/test";
+import { ${service} } from "${module}";
+import { ConfigProvider, Effect, Layer } from "effect";
+Layer.launch(${service}.layer).pipe(Effect.provideService(WireVersions, ${JSON.stringify(versions)}), Effect.withConfigProvider(ConfigProvider.fromEnv()), NodeRuntime.runMain);`;
+}
+
+function startPglite(port: number) {
+  return managedProcess(PGLITE_BINARY, [
+    "--db=memory://",
+    `--port=${port}`,
+    `--host=${LOOPBACK_HOST}`,
+    "--max-connections=20",
+  ]).pipe(
+    Effect.tap((running) =>
+      awaitReady(running, pgliteListening(running, port), "listening"),
+    ),
+  );
 }

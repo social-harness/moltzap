@@ -64,13 +64,15 @@ jobs:
       - name: Verify the published closure installs from tarballs
         run: pnpm nx run-many -t test:pack --parallel=4
       - run: pnpm typecheck
+      - run: pnpm nx run-many -t typecheck:tests
       - name: Lint
         run: pnpm lint
         timeout-minutes: 30
       # `pnpm build` and `pnpm lint` already run every project's build, lint,
       # and arch:check; this step pins the resolved graph itself: every
-      # project, root, edge, and package-specific target. Tests run in the
-      # `test` job.
+      # project, root, edge, and package-specific target. Unit tests run in
+      # `test`, process lanes in `integration`, and adjacent-release checks
+      # in `mixed-release`.
       - name: Verify the Nx project graph
         run: |
           pnpm nx graph --print > "${RUNNER_TEMP}/sharness-project-graph.json"
@@ -87,7 +89,7 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
-    # Bounds a hung test run. Green runs of this job have taken at most 340 s.
+    # Bounds a hung test run.
     timeout-minutes: 20
     environment: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') && 'nx-cache-write' || '' }}
     env:
@@ -109,10 +111,34 @@ jobs:
         if: github.event_name == 'pull_request'
       - name: Test the affected projects
         if: github.event_name == 'pull_request'
-        run: pnpm exec nx affected -t typecheck:tests test test:integration test:adapter-daemon
+        run: pnpm exec nx affected -t test
       - name: Test every project
         if: github.event_name != 'pull_request'
-        run: pnpm exec nx run-many -t typecheck:tests test test:integration test:adapter-daemon
+        run: pnpm exec nx run-many -t test
+
+  integration:
+    runs-on: ubuntu-latest
+    # Bounds a hung test run.
+    timeout-minutes: 20
+    environment: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') && 'nx-cache-write' || '' }}
+    env:
+      NX_SELF_HOSTED_REMOTE_CACHE_SERVER: ${{ vars.NX_CACHE_URL }}
+      NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) && secrets.NX_CACHE_WRITE_TOKEN || secrets.NX_CACHE_TOKEN }}
+      NX_SKIP_REMOTE_CACHE: ${{ (vars.NX_CACHE_DISABLED == 'true' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) || github.actor == 'dependabot[bot]') && 'true' || 'false' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-toolchain
+      - run: pnpm install --frozen-lockfile
+      - uses: nrwl/nx-set-shas@e602fada7ad5987b0f7b1905e7a99ea1c661514c # v5.1.0
+        if: github.event_name == 'pull_request'
+      - name: Run affected process lanes
+        if: github.event_name == 'pull_request'
+        run: pnpm exec nx affected -t test:integration --parallel=4
+      - name: Run every process lane
+        if: github.event_name != 'pull_request'
+        run: pnpm exec nx run-many -t test:integration --parallel=4
 
   mixed-release:
     runs-on: ubuntu-latest

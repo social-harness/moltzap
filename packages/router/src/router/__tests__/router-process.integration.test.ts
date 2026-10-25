@@ -571,6 +571,15 @@ const assertPreAuthenticationEnvelopes = (port: number) =>
     { concurrency: 1, discard: true },
   );
 
+/**
+ * The Router prints its listening line only after binding `origin`'s port,
+ * so another process answering on a released reservation cannot pass for it.
+ */
+const announcedListener = (runningProcess: RunningProcess, origin: URL) =>
+  runningProcess
+    .logs()
+    .includes(`sharness-router listening on ${origin.origin} (`);
+
 const waitForHealth = (runningProcess: RunningProcess, origin: URL) =>
   Effect.gen(function* () {
     const deadline = Date.now() + STARTUP_TIMEOUT_MS;
@@ -597,7 +606,8 @@ const waitForHealth = (runningProcess: RunningProcess, origin: URL) =>
       );
       if (
         Option.isSome(response) &&
-        response.value.status === NO_CONTENT_STATUS
+        response.value.status === NO_CONTENT_STATUS &&
+        announcedListener(runningProcess, origin)
       ) {
         return response.value;
       }

@@ -173,7 +173,7 @@ it("keeps the captured credential when caller configuration changes during a req
     const configuration = { apiKey: Redacted.make(secret), model };
     const fixedProvider = makeJevDecisionProvider(configuration);
     const fetch: typeof globalThis.fetch = () => {
-      configuration.apiKey = Redacted.make("different-credential");
+      configuration.apiKey = Redacted.make("different-key");
       return Promise.resolve(new Response(secret, { status: 401 }));
     };
     const error = yield* fixedProvider

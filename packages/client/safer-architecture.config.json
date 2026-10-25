@@ -86,6 +86,10 @@
   ],
   "compositionRoots": [
     {
+      "path": "src/test.ts",
+      "reason": "Condition-only management schemas for cross-package process fixtures"
+    },
+    {
       "path": "src/index.ts",
       "reason": "Package facade: re-exports the adapter-facing values each domain owns"
     },
@@ -398,5 +402,10 @@
       "reason": "Foundational Effect runtime; intentionally part of the public contract"
     }
   ],
-  "allowedTestPublicSubpaths": []
+  "allowedTestPublicSubpaths": [
+    {
+      "subpath": "./test",
+      "reason": "Management schemas require the explicit sharness-test resolution condition"
+    }
+  ]
 }

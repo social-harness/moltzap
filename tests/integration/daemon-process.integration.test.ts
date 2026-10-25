@@ -14,7 +14,7 @@ import {
 import { type AgentName, WIRE_VERSION } from "@moltzap/identity";
 import { WireVersions } from "@moltzap/identity/test";
 import { Effect, Fiber, Option, Schema, Stream } from "effect";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
@@ -24,11 +24,14 @@ import {
   acquireDaemonProcess,
   acquireProcessInfrastructure,
   awaitDaemonStartupFailure,
+  DAEMON_BINARY,
   type DaemonProcessFixture,
   makeDaemonProcessFixture,
   makeRegistrationRequest,
   ProcessTestError,
   processTrace,
+  REGISTRY_BINARY,
+  ROUTER_BINARY,
   stopProcess,
 } from "./daemon-process-harness.js";
 import {
@@ -60,7 +63,9 @@ const registerFixture = (fixture: DaemonProcessFixture) =>
       );
       expect(registered.kind).toBe(expectedRegistered);
       if (registered.kind === "registered") {
-        expect(registered.agentCard?.agentName).toBe(fixture.agentName);
+        expect(registered.agentCard).toMatchObject({
+          agentName: fixture.agentName,
+        });
       }
     }),
   );
@@ -520,7 +525,7 @@ const refusesStaleOutbox = Effect.scoped(
         "-e",
         retiredWindowDaemon,
       ],
-      cwd: fileURLToPath(new URL("../../packages/client/", import.meta.url)),
+      cwd: dirname(fileURLToPath(import.meta.url)),
     });
     expect(failed.exitCode).not.toBe(0);
     expect(failed.logs).toContain(expectedOutboxTooOld);
@@ -609,13 +614,10 @@ it(
           infrastructure,
           "legacy-key",
         );
-        for (const [binary, key] of [
-          ["client/bin/sharnessd", "MOLTZAPD_STATE_DIRECTORY"],
-          [
-            "registry/bin/sharness-registry",
-            "MOLTZAP_REGISTRY_ADMISSION_CREDENTIAL",
-          ],
-          ["router/bin/sharness-router", "MOLTZAP_ROUTER_PORT"],
+        for (const [executable, key] of [
+          [DAEMON_BINARY, "MOLTZAPD_STATE_DIRECTORY"],
+          [REGISTRY_BINARY, "MOLTZAP_REGISTRY_ADMISSION_CREDENTIAL"],
+          [ROUTER_BINARY, "MOLTZAP_ROUTER_PORT"],
         ] as const) {
           const failed = yield* awaitDaemonStartupFailure(
             {
@@ -626,9 +628,7 @@ it(
               },
             },
             {
-              executable: fileURLToPath(
-                new URL(`../../packages/${binary}`, import.meta.url),
-              ),
+              executable,
               args: [],
             },
           );

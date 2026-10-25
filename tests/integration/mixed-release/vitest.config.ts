@@ -5,7 +5,9 @@ export default defineConfig({
   resolve: { conditions: ["sharness-test"] },
   ssr: { resolve: { conditions: ["sharness-test"] } },
   test: {
-    include: ["tests/integration/mixed-release.integration.test.ts"],
+    include: [
+      "tests/integration/mixed-release/mixed-release.integration.test.ts",
+    ],
     maxWorkers: 1,
     passWithNoTests: false,
   },

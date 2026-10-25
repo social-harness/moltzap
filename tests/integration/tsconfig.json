@@ -13,11 +13,6 @@
     ]
   },
   "include": [
-    "*.ts"
-  ],
-  "exclude": [
-    "adapter-daemon-process.integration.test.ts",
-    "adapter-daemon-fixture.ts",
-    "adapter-daemon-vitest.config.ts"
+    "**/*.ts"
   ]
 }

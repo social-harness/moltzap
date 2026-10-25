@@ -214,7 +214,6 @@ export function rootEslintConfig(tsconfigRootDir: string) {
 export function integrationEslintConfig(tsconfigRootDir: string) {
   const languageOptions = makeTsLanguageOptions(tsconfigRootDir, [
     "./tsconfig.json",
-    "./tsconfig.adapter-daemon.json",
   ]);
   return [
     packageIgnores,

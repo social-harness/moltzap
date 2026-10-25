@@ -9,12 +9,8 @@ import type {
   IncomingMessage,
   ServerResponse,
 } from "./http-listener.js";
-import { ProcessTestError } from "./daemon-process-harness.js";
-import {
-  acquireLoopbackServer,
-  LOOPBACK_HOST,
-  readBody,
-} from "./loopback-server.js";
+import { LOOPBACK_HOST, ProcessTestError } from "./daemon-process-harness.js";
+import { acquireLoopbackServer, readBody } from "./loopback-server.js";
 
 /** Scoped control over one endpoint's Router link. */
 export interface RouterHoldProxy {

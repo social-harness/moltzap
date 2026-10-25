@@ -6,7 +6,6 @@
   "scripts": {
     "test:integration": "nx run @moltzap/integration-tests:test:integration",
     "test:mixed-release": "nx run @moltzap/integration-tests:test:mixed-release",
-    "test:adapter-daemon": "nx run @moltzap/integration-tests:test:adapter-daemon",
     "typecheck:tests": "nx run @moltzap/integration-tests:typecheck:tests",
     "lint": "nx run @moltzap/integration-tests:lint"
   },
@@ -14,29 +13,21 @@
     "targets": {
       "test:integration": {
         "executor": "nx:run-commands",
-        "dependsOn": [
-          "^build",
-          {
-            "target": "build",
-            "projects": [
-              "@moltzap/registry"
-            ]
-          }
-        ],
         "inputs": [
           "sources",
+          "!{projectRoot}/mixed-release/**",
+          "!{projectRoot}/README.md",
+          "!{projectRoot}/eslint.config.ts",
           "^production",
-          {
-            "dependentTasksOutputFiles": "**/*",
-            "transitive": true
-          },
           {
             "runtime": "node --version"
           },
-          "{workspaceRoot}/packages/registry/src/**/*",
-          "{workspaceRoot}/packages/registry/bin/**/*",
-          "{workspaceRoot}/scripts/test/packed-workspace.ts",
-          "{workspaceRoot}/scripts/tsconfig.json"
+          {
+            "env": "SHARNESS_EXPERIMENT_HIDE_COLLECTIVES"
+          },
+          {
+            "env": "SHARNESS_MCP_URL"
+          }
         ],
         "options": {
           "cwd": "tests/integration",
@@ -47,61 +38,12 @@
         "cache": false,
         "executor": "nx:run-commands",
         "dependsOn": [
-          "^build",
           "@moltzap/client:build",
           "@moltzap/registry:build"
         ],
-        "inputs": [
-          "sources",
-          "^production",
-          "{workspaceRoot}/packages/registry/src/**/*",
-          "{workspaceRoot}/packages/registry/bin/**/*",
-          "{workspaceRoot}/scripts/test/packed-workspace.ts",
-          "{workspaceRoot}/scripts/tsconfig.json"
-        ],
         "options": {
-          "command": "vitest run --config tests/integration/mixed-release-vitest.config.ts",
+          "command": "vitest run --config tests/integration/mixed-release/vitest.config.ts",
           "cwd": "."
-        }
-      },
-      "test:adapter-daemon": {
-        "inputs": [
-          "default",
-          "^production",
-          {
-            "dependentTasksOutputFiles": "**/*",
-            "transitive": true
-          },
-          {
-            "runtime": "node --version"
-          },
-          {
-            "env": "SHARNESS_EXPERIMENT_HIDE_COLLECTIVES"
-          },
-          {
-            "env": "SHARNESS_MCP_URL"
-          },
-          "{workspaceRoot}/tests/integration/daemon-process-harness.ts",
-          "{workspaceRoot}/tests/integration/adapter-daemon-*.ts",
-          "{workspaceRoot}/tests/integration/tsconfig.adapter-daemon.json",
-          "{workspaceRoot}/scripts/tsconfig.json",
-          "{workspaceRoot}/packages/registry/src/**/*",
-          "{workspaceRoot}/packages/registry/bin/**/*",
-          "{workspaceRoot}/scripts/test/packed-workspace.ts"
-        ],
-        "dependsOn": [
-          "^build",
-          {
-            "target": "build",
-            "projects": [
-              "@moltzap/registry"
-            ]
-          }
-        ],
-        "executor": "nx:run-commands",
-        "options": {
-          "cwd": ".",
-          "command": "pnpm exec vitest run --config tests/integration/adapter-daemon-vitest.config.ts"
         }
       },
       "typecheck:tests": {
@@ -111,14 +53,18 @@
         ],
         "options": {
           "cwd": "tests/integration",
-          "command": "tsc -p tsconfig.json && tsc -p tsconfig.adapter-daemon.json"
+          "command": "tsc -p tsconfig.json"
         },
         "inputs": [
           "default",
           "^production",
           "{workspaceRoot}/eslint.shared.ts",
           "{workspaceRoot}/scripts/test/packed-workspace.ts",
-          "{workspaceRoot}/scripts/tsconfig.json"
+          "{workspaceRoot}/scripts/architecture/boundary-contract.ts",
+          "{workspaceRoot}/scripts/tsconfig.json",
+          {
+            "runtime": "node --version"
+          }
         ]
       },
       "lint": {
@@ -136,19 +82,22 @@
           "{workspaceRoot}/oxlint.json",
           "{workspaceRoot}/tsconfig.eslint.json",
           "{workspaceRoot}/scripts/test/packed-workspace.ts",
-          "{workspaceRoot}/scripts/tsconfig.json"
+          "{workspaceRoot}/scripts/architecture/boundary-contract.ts",
+          "{workspaceRoot}/scripts/tsconfig.json",
+          {
+            "runtime": "node --version"
+          }
         ]
       }
-    },
-    "implicitDependencies": [
-      "@moltzap/registry"
-    ]
+    }
   },
   "devDependencies": {
     "@moltzap/identity": "workspace:*",
+    "@moltzap/registry": "workspace:*",
     "@moltzap/router": "workspace:*",
     "@moltzap/client": "workspace:*",
     "@moltzap/openclaw-channel": "workspace:*",
+    "@electric-sql/pglite-socket": "catalog:",
     "@effect/platform": "catalog:",
     "@effect/platform-node": "catalog:",
     "@modelcontextprotocol/client": "catalog:",
@@ -157,7 +106,6 @@
     "eslint": "catalog:",
     "protobufjs": "catalog:",
     "tsx": "catalog:",
-    "vitest": "catalog:",
-    "@effect/vitest": "catalog:"
+    "vitest": "catalog:"
   }
 }

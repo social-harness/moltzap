@@ -14,7 +14,7 @@
   "scripts": {
     "build": "nx run-many -t build",
     "test": "nx run-many -t test",
-    "test:integration": "nx run-many -t test:integration test:adapter-daemon",
+    "test:integration": "nx run-many -t test:integration",
     "lint": "pnpm nx run workspace:lint",
     "arch:check": "NODE_OPTIONS=--max-old-space-size=8192 nx run-many -t arch:check",
     "arch:config:generate": "node scripts/architecture/gen-configs.ts",

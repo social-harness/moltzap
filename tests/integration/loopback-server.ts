@@ -3,15 +3,12 @@
 import { NodeHttpServer } from "@effect/platform-node";
 import { Effect, FiberSet } from "effect";
 import { Buffer } from "node:buffer";
-import { ProcessTestError } from "./daemon-process-harness.js";
+import { LOOPBACK_HOST, ProcessTestError } from "./daemon-process-harness.js";
 import {
   createServer,
   type IncomingMessage,
   type ServerResponse,
 } from "./http-listener.js";
-
-/** The only interface the servers listen on. */
-export const LOOPBACK_HOST = "127.0.0.1";
 
 /**
  * Reads one request body in full.

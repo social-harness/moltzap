@@ -4,12 +4,8 @@ import type { Buffer } from "node:buffer";
 import { Cause, Duration, Effect, Ref, Schema, type Scope } from "effect";
 import protobuf from "protobufjs";
 import type { IncomingMessage, ServerResponse } from "./http-listener.js";
-import { ProcessTestError } from "./daemon-process-harness.js";
-import {
-  acquireLoopbackServer,
-  LOOPBACK_HOST,
-  readBody,
-} from "./loopback-server.js";
+import { LOOPBACK_HOST, ProcessTestError } from "./daemon-process-harness.js";
+import { acquireLoopbackServer, readBody } from "./loopback-server.js";
 
 /** A scalar attribute value as OTLP carries it. */
 type AttributeValue = string | number | boolean;

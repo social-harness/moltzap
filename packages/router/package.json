@@ -99,11 +99,7 @@
         "options": {
           "cwd": "packages/router",
           "command": "vitest run --config vitest.integration.config.ts"
-        },
-        "inputs": [
-          "sources",
-          "^production"
-        ]
+        }
       },
       "lint": {
         "executor": "nx:run-commands",

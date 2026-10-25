@@ -3,6 +3,7 @@
 import { Command } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
 import { scopedLive as it } from "@effect/vitest";
+import { WIRE_VERSION } from "@moltzap/identity";
 import { Effect, Stream } from "effect";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,16 +12,18 @@ import { expect } from "vitest";
 const binary = fileURLToPath(
   new URL("../../bin/sharness-registry", import.meta.url),
 );
+const packageRoot = fileURLToPath(new URL("../../", import.meta.url));
 const processName = "sharness-registry";
 const requiredVariable = "SHARNESS_REGISTRY_POSTGRESQL_URL";
 const defaultEntry = 'SHARNESS_REGISTRY_HOST: optional; default: "127.0.0.1"';
 const secret = "not a valid secret-value";
 const invalidVariable = "SHARNESS_REGISTRY_ADMISSION_CREDENTIAL";
 
-/** An empty environment makes missing-variable behavior independent of the test runner. */
+/** An empty environment makes missing-variable behavior independent of the test runner; `nodeArguments` selects the entry Node runs. */
 function runProcess(
   processArguments: readonly string[],
   environment: Readonly<Record<string, string>> = {},
+  nodeArguments: readonly string[] = [binary],
 ) {
   return Effect.gen(function* () {
     const child = yield* Command.start(
@@ -32,9 +35,9 @@ function runProcess(
           ([name, value]) => `${name}=${value}`,
         ),
         process.execPath,
-        binary,
+        ...nodeArguments,
         ...processArguments,
-      ),
+      ).pipe(Command.workingDirectory(packageRoot)),
     );
     return yield* Effect.all(
       {
@@ -105,6 +108,55 @@ it(
       expect(result.stderr).toContain(`${requiredVariable} is required`);
       // eslint-disable-next-line agent-code-guard/no-hardcoded-assertion-literals -- Node must reach the Registry configuration boundary instead of refusing the internal package entry.
       expect(result.stderr).not.toContain("ERR_PACKAGE_PATH_NOT_EXPORTED");
+    }),
+  15_000,
+);
+
+/**
+ * Value: protects=startRegistry reports a startup failure and exits nonzero,
+ * as the Registry test composition spec states; fails_when=its failure handler
+ * stops setting the exit status or printing the error; why_new=registry-binary
+ * starts the test entry only successfully; seam=none;
+ * no_claim=which configuration errors exist.
+ */
+it(
+  "reports a test-composition startup failure and exits unsuccessfully",
+  () =>
+    Effect.gen(function* () {
+      const result = yield* runProcess([], {}, [
+        "--conditions=sharness-test",
+        "--input-type=module",
+        "-e",
+        `import { startRegistry } from "@moltzap/registry/test"; startRegistry(${JSON.stringify({ emitted: WIRE_VERSION, live: [WIRE_VERSION], history: [WIRE_VERSION] })});`,
+      ]);
+      expect(result.exitCode).not.toBe(0);
+      expect(result.stderr).toContain(`${requiredVariable} is required`);
+    }),
+  15_000,
+);
+
+/** The test entry preserves resolution failures raised while loading its deferred server. */
+it(
+  "reports the module and cause when the test composition cannot load its server",
+  () =>
+    Effect.gen(function* () {
+      const underlyingError = "synthetic Registry module resolution failure";
+      const startupModule = "./server.js";
+      const result = yield* runProcess([], {}, [
+        "--conditions=sharness-test",
+        "--input-type=module",
+        "-e",
+        `import { registerHooks } from "node:module";
+import { startRegistry } from "@moltzap/registry/test";
+registerHooks({ resolve(specifier, context, nextResolve) {
+  if (specifier === ${JSON.stringify(startupModule)}) throw new Error(${JSON.stringify(underlyingError)});
+  return nextResolve(specifier, context);
+} });
+startRegistry(${JSON.stringify({ emitted: WIRE_VERSION, live: [WIRE_VERSION], history: [WIRE_VERSION] })});`,
+      ]);
+      expect(result.exitCode).not.toBe(0);
+      expect(result.stderr).toContain(startupModule);
+      expect(result.stderr).toContain(underlyingError);
     }),
   15_000,
 );

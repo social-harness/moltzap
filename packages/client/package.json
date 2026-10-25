@@ -33,6 +33,12 @@
     "./service": {
       "types": "./dist/daemon/index.d.ts",
       "import": "./dist/daemon/index.js"
+    },
+    "./test": {
+      "sharness-test": {
+        "types": "./dist/test.d.ts",
+        "import": "./dist/test.js"
+      }
     }
   },
   "bin": {
@@ -43,7 +49,8 @@
     "build": "nx run @moltzap/client:build",
     "lint": "nx run @moltzap/client:lint",
     "test": "vitest run",
-    "typecheck:tests": "tsc -p tsconfig.test.json"
+    "typecheck:tests": "tsc -p tsconfig.test.json",
+    "test:integration": "nx run @moltzap/client:test:integration"
   },
   "nx": {
     "targets": {
@@ -82,6 +89,17 @@
         "options": {
           "cwd": "packages/client",
           "command": "node ../../scripts/architecture/check-package.ts ."
+        }
+      },
+      "test:integration": {
+        "executor": "nx:run-commands",
+        "dependsOn": [
+          "build",
+          "^build"
+        ],
+        "options": {
+          "cwd": "packages/client",
+          "command": "vitest run --config vitest.integration.config.ts"
         }
       }
     }

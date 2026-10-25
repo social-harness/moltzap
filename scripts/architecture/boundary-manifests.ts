@@ -14,6 +14,8 @@ import {
 import {
   CALENDAR_VERSION,
   dependencyNames,
+  exportCondition,
+  type ExportTarget,
   FINAL_PACKAGE_DIRS,
   FINAL_PACKAGE_NAMES,
   FINAL_PACKAGES,
@@ -37,7 +39,7 @@ import {
 /** One product's manifest as the per-package rules read it. */
 interface ProductManifest {
   readonly dir: PackageDir;
-  /** `packages/DIR/package.json`, the prefix of every manifest failure. */
+  /** Repository-relative manifest path used to identify diagnostics. */
   readonly where: string;
   readonly manifest: JsonObject;
 }
@@ -112,7 +114,10 @@ export function checkWorkspaceRoots(run: BoundaryRun): void {
     actual: referencePaths(
       readJsonObject(path.join(run.repo, "tsconfig.json")),
     ).map((referencePath) => path.normalize(referencePath)),
-    wanted: FINAL_PACKAGE_DIRS.map((dir) => path.join("packages", dir)),
+    wanted: [
+      ...FINAL_PACKAGE_DIRS.map((dir) => path.join("packages", dir)),
+      path.join("packages", "registry", "tsconfig.test-entry.json"),
+    ],
   });
   checkLintEntryPoints(run);
 }
@@ -136,13 +141,16 @@ export function checkIntegrationTests(run: BoundaryRun): void {
       ...DEPENDENCY_SECTIONS.flatMap((section) =>
         Object.keys(objectAt(manifest, section)),
       ).filter((name) => name.startsWith("@moltzap/")),
-      ...arrayAt(objectAt(manifest, "nx"), "implicitDependencies").filter(
-        (name): name is string => typeof name === "string",
+      ...stringsAt(objectAt(manifest, "nx"), "implicitDependencies").map(
+        (name) => `nx.implicitDependencies:${name}`,
       ),
     ],
     wanted: INTEGRATION_TESTS.dependencies.map(
       (dir) => FINAL_PACKAGES[dir].npmName,
     ),
+  });
+  checkDeclaredTargets(run, { where, manifest }, INTEGRATION_TESTS.root, {
+    required: INTEGRATION_TESTS.targets,
   });
   failOnSetDrift(run, {
     where: "knip.json",
@@ -183,7 +191,10 @@ export function checkProductManifests(
     checkBinaries(run, product);
     checkDependencies(run, product);
     checkReferences(run, dir);
-    checkDeclaredTargets(run, product);
+    checkDeclaredTargets(run, product, `packages/${dir}`, {
+      required: FINAL_PACKAGES[dir].targets,
+      scriptTargets: Object.keys(objectAt(product.manifest, "scripts")),
+    });
     checkKnipIgnores(run, product, objectAt(knipWorkspaces, `packages/${dir}`));
   }
   return publishedVersions;
@@ -310,7 +321,7 @@ function checkIdentity(
       `${where}: name is "${String(name)}", expected "${expected}"`,
     );
   }
-  const project = readProject(run, dir);
+  const project = readProject(run, `packages/${dir}`);
   if (project !== null && project.name !== expected) {
     run.failures.push(
       `packages/${dir}/project.json: name is "${String(project.name)}", expected "${expected}"`,
@@ -404,8 +415,7 @@ function checkExports(
       {
         where,
         subpath,
-        testOnly: wantedTarget.testOnly,
-        internalOnly: wantedTarget.internalOnly,
+        target: wantedTarget,
       },
     );
     for (const condition of ["types", "import"] as const) {
@@ -435,25 +445,20 @@ function resolvedExportTarget(
   site: {
     readonly where: string;
     readonly subpath: string;
-    readonly testOnly?: true;
-    readonly internalOnly?: true;
+    readonly target: ExportTarget;
   },
 ): JsonObject {
-  if (site.testOnly !== true && site.internalOnly !== true) {
+  const condition = exportCondition(site.target);
+  if (condition === undefined) {
     return entry;
   }
   failOnSetDrift(run, {
     where: site.where,
     what: `test-only export "${site.subpath}" conditions drifted`,
     actual: Object.keys(entry),
-    wanted: [
-      site.internalOnly === true ? "sharness-internal" : "sharness-test",
-    ],
+    wanted: [condition],
   });
-  return objectAt(
-    entry,
-    site.internalOnly === true ? "sharness-internal" : "sharness-test",
-  );
+  return objectAt(entry, condition);
 }
 
 /**
@@ -569,17 +574,23 @@ function checkReferences(run: BoundaryRun, dir: PackageDir): void {
 
 function checkDeclaredTargets(
   run: BoundaryRun,
-  { dir, where, manifest }: ProductManifest,
+  { where, manifest }: Pick<ProductManifest, "where" | "manifest">,
+  projectRoot: string,
+  {
+    required,
+    scriptTargets = [],
+  }: {
+    readonly required: readonly string[];
+    readonly scriptTargets?: readonly string[];
+  },
 ): void {
-  const project = readProject(run, dir) ?? {};
+  const project = readProject(run, projectRoot) ?? {};
   const declaredTargets = new Set([
+    ...scriptTargets,
     ...Object.keys(objectAt(objectAt(manifest, "nx"), "targets")),
-    ...Object.keys(objectAt(manifest, "scripts")),
     ...Object.keys(objectAt(project, "targets")),
   ]);
-  const missing = FINAL_PACKAGES[dir].targets.filter(
-    (target) => !declaredTargets.has(target),
-  );
+  const missing = required.filter((target) => !declaredTargets.has(target));
   if (missing.length > 0) {
     run.failures.push(
       `${where}: required Nx target declarations are missing: ${missing.join(", ")}`,
@@ -587,8 +598,8 @@ function checkDeclaredTargets(
   }
 }
 
-function readProject(run: BoundaryRun, dir: PackageDir): JsonObject | null {
-  const projectPath = path.join(run.packagesRoot, dir, "project.json");
+function readProject(run: BoundaryRun, projectRoot: string): JsonObject | null {
+  const projectPath = path.join(run.repo, projectRoot, "project.json");
   return existsSync(projectPath) ? readJsonObject(projectPath) : null;
 }
 

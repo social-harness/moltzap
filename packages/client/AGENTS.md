@@ -20,6 +20,9 @@ host-side service facade, channel-core abstraction, profile acquisition,
 protocol/server proxy, bespoke CLI, Unix socket, generic-send path, or
 standalone notification catalog. The `./service` subpath is the admitted
 process composition that `sharnessd` runs; it is not such a facade.
+The condition-only `./test` entry is the admitted test-fixture surface for the
+management schemas named by `docs/spec/layer-interfaces.md`; it is not part of
+the production public surface.
 
 Further work may harden or validate the implementation without widening its
 public surface or relocating its admitted Identity and Router dependencies.

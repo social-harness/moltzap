@@ -43,8 +43,15 @@ interface ToolProject {
   readonly dependencies: readonly PackageDir[];
 }
 
-const TOOL_PROJECTS: readonly ToolProject[] = [
+/** Tool roots share the same graph contract in enforcement and gate fixtures. */
+export const TOOL_PROJECTS: readonly ToolProject[] = [
   INTEGRATION_TESTS,
+  {
+    name: "workspace",
+    root: "tools/workspace",
+    targets: ["lint", "lint:architecture-boundaries", "lint:effect"],
+    dependencies: [],
+  },
   {
     name: "two-agents-example",
     root: "examples/two-agents",
@@ -97,16 +104,11 @@ function checkNxGraph(run: BoundaryRun, graphFile: string): void {
     where: label,
     what: "Nx project nodes drifted",
     actual: Object.keys(nxGraph.nodes),
-    wanted: [
-      ...FINAL_PACKAGE_NAMES,
-      "workspace",
-      ...TOOL_PROJECTS.map(({ name }) => name),
-    ],
+    wanted: [...FINAL_PACKAGE_NAMES, ...TOOL_PROJECTS.map(({ name }) => name)],
   });
   for (const dir of FINAL_PACKAGE_DIRS) {
     checkProductNode(run, nxGraph, dir);
   }
-  checkWorkspaceNode(run, nxGraph);
   for (const tool of TOOL_PROJECTS) {
     checkToolNode(run, nxGraph, tool);
   }
@@ -150,34 +152,6 @@ function checkProductNode(
     what: `Nx dependencies for "${npmName}" violate the final DAG`,
     actual: dependencyTargets(graph, npmName),
     wanted: dependencyNames(dir),
-  });
-}
-
-function checkWorkspaceNode(run: BoundaryRun, graph: NxGraph): void {
-  const data = nodeData(graph, "workspace");
-  const root = stringAt(data, "root");
-  if (root !== "tools/workspace") {
-    run.failures.push(
-      `${graph.label}: Nx project "workspace" root is "${root ?? "missing"}", expected "tools/workspace"`,
-    );
-  }
-  const targets = objectAt(data, "targets");
-  for (const target of [
-    "lint",
-    "lint:architecture-boundaries",
-    "lint:effect",
-  ]) {
-    if (!Object.hasOwn(targets, target)) {
-      run.failures.push(
-        `${graph.label}: Nx project "workspace" is missing required target "${target}"`,
-      );
-    }
-  }
-  failOnSetDrift(run, {
-    where: graph.label,
-    what: 'Nx dependencies for "workspace" drifted',
-    actual: dependencyTargets(graph, "workspace"),
-    wanted: [],
   });
 }
 

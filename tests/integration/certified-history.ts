@@ -1,16 +1,10 @@
 /** @file Operator-visible proof and membership assertions for process history. */
+import { Schema } from "effect";
 import { expect } from "vitest";
 
 interface HistoryProof {
   readonly recordHash: string;
-  readonly recordCore: {
-    readonly membership?: {
-      readonly members: ReadonlyArray<{
-        readonly agentId: string;
-        readonly agentName: string;
-      }>;
-    };
-  };
+  readonly recordCore: unknown;
   readonly actionSignatures: ReadonlyArray<{
     readonly signerAgentId: string;
     readonly signature: string;
@@ -26,7 +20,7 @@ export function expectCertifiedHistory(
   records: readonly HistoryProof[],
   memberNames: readonly string[],
 ) {
-  const members = records[0]?.recordCore.membership?.members ?? [];
+  const members = historyMembers(records[0]?.recordCore);
   expect(
     members
       .map(({ agentName }) => agentName)
@@ -50,4 +44,22 @@ export function expectCertifiedHistory(
       }
     }
   }
+}
+
+function historyMembers(recordCore: unknown) {
+  const core = Schema.decodeUnknownSync(
+    Schema.Struct({
+      membership: Schema.optional(
+        Schema.Struct({
+          members: Schema.Array(
+            Schema.Struct({
+              agentId: Schema.String,
+              agentName: Schema.String,
+            }),
+          ),
+        }),
+      ),
+    }),
+  )(recordCore ?? {});
+  return core.membership?.members ?? [];
 }

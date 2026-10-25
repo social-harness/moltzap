@@ -24,7 +24,8 @@
         "scripts/code/**/*.ts",
         "scripts/setup/**/*.ts",
         "scripts/test/packed-workspace.ts",
-        "scripts/test-*-package.ts"
+        "scripts/test-*-package.ts",
+        "scripts/__tests__/**/*.ts"
       ],
       "ignoreDependencies": [
         "@effect/tsgo",
@@ -38,11 +39,13 @@
         "src/**/*.test.ts",
         "src/**/*.types-check.ts",
         "src/daemon/launcher/index.ts",
-        "vitest*.config.ts"
+        "vitest*.config.ts",
+        "integration/*.integration.test.ts"
       ],
       "project": [
         "src/**/*.ts",
-        "*.ts"
+        "*.ts",
+        "integration/*.ts"
       ]
     },
     "packages/nanoclaw-channel": {
@@ -100,12 +103,15 @@
     },
     "tests/integration": {
       "entry": [
-        "*.test.ts",
+        "**/*.integration.test.ts",
         "firewall-daemon.ts",
-        "*vitest*.config.ts"
+        "**/*vitest*.config.ts"
       ],
       "project": [
-        "*.ts"
+        "**/*.ts"
+      ],
+      "ignoreDependencies": [
+        "@electric-sql/pglite-socket"
       ]
     }
   },
