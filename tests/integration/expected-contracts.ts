@@ -1,58 +1,48 @@
-/** @file Expected operator-visible outcomes shared by the process assertions. */
-/** Operator-visible contract value. */
-export const expectedRegistered = "registered";
+/** @file Operator-visible contracts of daemon management, startup, sends and audit exports. */
 
-/** Operator-visible contract value. */
-export const expectedCompletedReanchor = "completed_reanchor";
+/** The daemon register tool reports this kind after committing its identity. */
+export const registrationResultKind = "registered";
 
-/** Operator-visible contract value. */
-export const expectedRetiredPublicIdentifier = "retired-public-identifier";
+/** The daemon status tool reports this kind when its persisted identity is active. */
+export const registeredDaemonStatus = "active";
 
-/** Operator-visible contract value. */
-export const expectedActive = "active";
+/** Daemon read_conversation marks an anchor with this kind after Router recovery. */
+export const completedReanchorKind = "completed_reanchor";
 
-/** Operator-visible contract value. */
-export const expectedOutboxTooOld = "outbox-too-old";
+/** Daemon startup reports this phase when its persisted database cannot be opened. */
+export const storageStartupPhase = "storage";
 
-/** Operator-visible contract value. */
-export const expectedDrainTheOutboxOnThePreviousRelease =
-  "Drain the outbox on the previous release";
+/** Daemon startup reports this reason when retained outbound bytes have left the live window. */
+export const outboxTooOldReason = "outbox-too-old";
 
-/** Operator-visible contract value. */
-export const expectedDocsGuidesUpgradesMdxApplyAResetRelease =
-  "docs/guides/upgrades.mdx#apply-a-reset-release";
+/** Daemon startup tells operators to drain retained outbound bytes with the previous release. */
+export const outboxTooOldRemedy = "Drain the outbox on the previous release";
 
-/** Operator-visible contract value. */
-export const expectedStorage = "storage";
+/** Daemon startup reports this reason when the database schema is newer than the binary. */
+export const newerSchemaReason = "newer-schema";
 
-/** Operator-visible contract value. */
-export const expectedNewerSchema = "newer-schema";
+/** Service startup reports this reason when a retired environment key is set. */
+export const legacySettingReason = "legacy-key";
 
-/** Operator-visible contract value. */
-export const expectedLegacyKey = "legacy-key";
+/** Daemon startup reports this reason for populated state from before the reset release. */
+export const preResetReason = "pre-reset";
 
-/** Operator-visible contract value. */
-export const expectedRetiredSecretValue = "retired-secret-value";
-
-/** Operator-visible contract value. */
-export const expectedPreReset = "pre-reset";
-
-/** Operator-visible contract value. */
-export const expectedStartWithAFreshStateDirectoryAndRegisterAgain =
+/** Daemon startup asks operators to register a fresh state directory when retained state predates the reset. */
+export const preResetRemedy =
   "Start with a fresh state directory and register again";
 
-/** Operator-visible contract value. */
-export const expectedRemoveCredentialShapedText =
-  "Remove credential-shaped text";
+/** Daemon startup links this upgrade heading when retained state requires a reset release. */
+export const resetReleaseDocsAnchor =
+  "docs/guides/upgrades.mdx#apply-a-reset-release";
 
-/** Operator-visible contract value. */
-export const expectedStart = "start";
+/** Daemon startup names this setting when its message-policy document is invalid. */
+export const messagePolicyFileSetting = "SHARNESS_MESSAGE_POLICY_FILE";
 
-/** Operator-visible contract value. */
-export const expectedComplete = "complete";
+/** The daemon send_message tool returns this remedy when its code rule refuses credential-shaped text. */
+export const credentialRefusalRemedy = "Remove credential-shaped text";
 
-/** Operator-visible contract value. */
-export const expectedSHARNESSMESSAGEPOLICYFILE = "SHARNESS_MESSAGE_POLICY_FILE";
+/** The daemon firewall audit export opens with this record kind when the firewall starts. */
+export const auditStartKind = "start";
 
-/** A successful management history query returns a page. */
-export const expectedPage = "page";
+/** The daemon firewall audit export ends with this record kind after shutdown flushes its checks. */
+export const auditCompleteKind = "complete";

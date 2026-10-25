@@ -4,11 +4,13 @@ import { HttpClient, HttpClientRequest, HttpMethod } from "@effect/platform";
 import { NodeHttpClient } from "@effect/platform-node";
 import { Deferred, Effect, Option, Ref, Schema, type Scope } from "effect";
 import { Buffer } from "node:buffer";
+/** The proxy preserves the Node listener callback shapes while relaying Router bytes. */
+// eslint-disable-next-line agent-code-guard/prefer-effect-platform -- NodeHttpServer.make requires Node listener factories and callback types.
 import type {
   IncomingHttpHeaders,
   IncomingMessage,
   ServerResponse,
-} from "./http-listener.js";
+} from "node:http";
 import { LOOPBACK_HOST, ProcessTestError } from "./daemon-process-harness.js";
 import { acquireLoopbackServer, readBody } from "./loopback-server.js";
 

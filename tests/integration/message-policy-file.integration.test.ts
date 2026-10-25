@@ -24,19 +24,20 @@ import {
   makeDaemonProcessFixture,
   makeRegistrationRequest,
   processTrace,
+  type RunningProcess,
   stopProcess,
 } from "./daemon-process-harness.js";
 import {
-  expectedComplete,
-  expectedRemoveCredentialShapedText,
-  expectedSHARNESSMESSAGEPOLICYFILE,
-  expectedStart,
+  auditCompleteKind,
+  auditStartKind,
+  credentialRefusalRemedy,
+  messagePolicyFileSetting,
 } from "./expected-contracts.js";
 import { arrayContaining, objectContaining } from "./test-matchers.js";
 
 const FORMAT = "org.social-harness/message-policy/v1";
 
-const enforcedCodeRulesInfrastructure = Effect.gen(function* () {
+const acquirePolicyFileScenario = Effect.gen(function* () {
   const infrastructure = yield* acquireProcessInfrastructure;
   const bob = yield* makeDaemonProcessFixture(infrastructure, "bob");
   yield* acquireDaemonProcess(bob);
@@ -78,9 +79,18 @@ const fixedRulesSchema = Schema.Struct({
   ),
 });
 
-const enforcedCodeRules = enforcedCodeRulesInfrastructure.pipe(
-  Effect.flatMap(enforcedCodeRulesPolicy),
-);
+interface PolicyFileScenario {
+  readonly auditExport: string;
+  readonly daemon: RunningProcess;
+  readonly client: Client;
+}
+
+const enforcedCodeRules = Effect.gen(function* () {
+  const scenario = yield* acquirePolicyFileScenario;
+  yield* expectDocumentRulesPublished(scenario.client);
+  yield* expectCredentialSendRefused(scenario.client);
+  yield* expectAuditPublishedOnShutdown(scenario);
+});
 
 const invalidDocument = Effect.gen(function* () {
   const infrastructure = yield* acquireProcessInfrastructure;
@@ -98,7 +108,7 @@ const invalidDocument = Effect.gen(function* () {
     withPolicy(stock, { SHARNESS_MESSAGE_POLICY_FILE: policyFile }),
   );
   expect(failure.exitCode).not.toBe(0);
-  expect(failure.logs).toContain(expectedSHARNESSMESSAGEPOLICYFILE);
+  expect(failure.logs).toContain(messagePolicyFileSetting);
 });
 
 describe("stock sharnessd with a message-policy file", () => {
@@ -115,11 +125,8 @@ describe("stock sharnessd with a message-policy file", () => {
   );
 });
 
-function enforcedCodeRulesPolicy(
-  state: Effect.Effect.Success<typeof enforcedCodeRulesInfrastructure>,
-) {
+function expectDocumentRulesPublished(client: Client) {
   return Effect.gen(function* () {
-    const { auditExport, daemon, client } = state;
     const policy = yield* call(client, "policy_read").pipe(
       Effect.flatMap(Schema.decodeUnknown(fixedRulesSchema)),
       Effect.retry(
@@ -132,15 +139,26 @@ function enforcedCodeRulesPolicy(
         objectContaining({ from: "code", id: "acknowledgement" }),
       ]),
     );
+  });
+}
+
+function expectCredentialSendRefused(client: Client) {
+  return Effect.gen(function* () {
     const refused = yield* call(client, "send_message", {
       input: { to: "agent:bob", text: `my key is ${CREDENTIAL}` },
     }).pipe(Effect.flip);
-    expect(JSON.stringify(refused)).toContain(
-      expectedRemoveCredentialShapedText,
-    );
+    expect(JSON.stringify(refused)).toContain(credentialRefusalRemedy);
     yield* call(client, "send_message", {
       input: { to: "agent:bob", text: "See you on Tuesday." },
     });
+  });
+}
+
+function expectAuditPublishedOnShutdown({
+  auditExport,
+  daemon,
+}: PolicyFileScenario) {
+  return Effect.gen(function* () {
     yield* stopProcess(daemon);
     const records = yield* Effect.forEach(
       (yield* (yield* FileSystem.FileSystem).readFileString(auditExport))
@@ -150,8 +168,8 @@ function enforcedCodeRulesPolicy(
         Schema.decodeUnknown(Schema.parseJson(FirewallAuditRecord))(line),
       { concurrency: 1 },
     );
-    expect(records.at(0)?.kind).toBe(expectedStart);
-    expect(records.at(-1)?.kind).toBe(expectedComplete);
+    expect(records.at(0)?.kind).toBe(auditStartKind);
+    expect(records.at(-1)?.kind).toBe(auditCompleteKind);
     expect(records.filter((record) => record.kind === "check")).toHaveLength(2);
   });
 }

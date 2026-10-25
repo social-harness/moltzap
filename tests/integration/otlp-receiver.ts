@@ -1,9 +1,10 @@
 /** @file Test-only OTLP/HTTP receiver that decodes the protobuf trace exports daemons send it. */
 
 import type { Buffer } from "node:buffer";
+// eslint-disable-next-line agent-code-guard/prefer-effect-platform -- NodeHttpServer.make requires Node listener factories and callback types.
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { Cause, Duration, Effect, Ref, Schema, type Scope } from "effect";
 import protobuf from "protobufjs";
-import type { IncomingMessage, ServerResponse } from "./http-listener.js";
 import { LOOPBACK_HOST, ProcessTestError } from "./daemon-process-harness.js";
 import { acquireLoopbackServer, readBody } from "./loopback-server.js";
 
@@ -45,7 +46,7 @@ const SPAN_WAIT_LIMIT = Duration.minutes(2);
 /**
  * The fields of opentelemetry-proto's `ExportTraceServiceRequest` the tests
  * read, with their wire field numbers. Decoding matches fields by number and
- * skips every other field, so the names are this file's own: a `keyValueSchema`'s
+ * skips every other field, so the names are this file's own: a `KeyValue`'s
  * `key` is `name` here.
  */
 const exportTraceServiceRequest = protobuf.Root.fromJSON({

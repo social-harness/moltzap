@@ -5,7 +5,9 @@ import {
   acquireHarnessEndpoint,
   AgentAddress,
   type Content,
+  type HarnessEndpoint,
   type InboundDelivery,
+  type SendResult,
 } from "@moltzap/client";
 import {
   Duration,
@@ -17,7 +19,7 @@ import {
   Stream,
 } from "effect";
 import { expect, it } from "vitest";
-import { expectCertifiedHistory } from "./certified-history.js";
+import { expectEveryMemberSigned } from "./certified-history.js";
 import {
   acquireDaemonManagementClient,
   acquireDaemonProcess,
@@ -28,8 +30,11 @@ import {
   makeRegistrationRequest,
   processTrace,
 } from "./daemon-process-harness.js";
-import { expectedPage, expectedRegistered } from "./expected-contracts.js";
-import { acquireRouterHoldProxy } from "./router-hold-proxy.js";
+import { registrationResultKind } from "./expected-contracts.js";
+import {
+  acquireRouterHoldProxy,
+  type RouterHoldProxy,
+} from "./router-hold-proxy.js";
 
 /**
  * The test starts PGlite, the Registry, the Router, a hold proxy and two
@@ -61,7 +66,7 @@ const registerFixture = (fixture: DaemonProcessFixture) =>
       const registered = yield* management.register(
         makeRegistrationRequest(fixture),
       );
-      expect(registered.kind).toBe(expectedRegistered);
+      expect(registered.kind).toBe(registrationResultKind);
     }),
   );
 
@@ -99,8 +104,8 @@ const readHistory = (fixture: DaemonProcessFixture, address: AgentAddress) =>
     Effect.gen(function* () {
       const management = yield* acquireDaemonManagementClient(fixture.endpoint);
       const history = yield* management.readConversation(address);
-      expect(history.kind).toBe(expectedPage);
-      expectCertifiedHistory(history.records, [
+
+      expectEveryMemberSigned(history.records, [
         fixture.agentName,
         address.slice("agent:".length),
       ]);
@@ -108,10 +113,23 @@ const readHistory = (fixture: DaemonProcessFixture, address: AgentAddress) =>
     }),
   );
 
-/**
- * The held-delivery trace with each daemon's firewall, if any: a firewall
- * that passes every message changes nothing a peer or host sees.
- */
+interface HeldPair {
+  readonly proxy: RouterHoldProxy;
+  readonly senderFixture: DaemonProcessFixture;
+  readonly targetFixture: DaemonProcessFixture;
+}
+
+interface HeldDelivery {
+  readonly proxy: RouterHoldProxy;
+  readonly sender: HarnessEndpoint;
+  readonly target: HarnessEndpoint;
+  readonly senderInbox: Queue.Queue<InboundDelivery>;
+  readonly targetInbox: Queue.Queue<InboundDelivery>;
+  readonly senderAddress: AgentAddress;
+  readonly targetAddress: AgentAddress;
+  readonly heldSend: Fiber.RuntimeFiber<SendResult, unknown>;
+}
+
 const acquireHeldPair = (firewalls: {
   readonly sender?: FirewallMode;
   readonly target?: FirewallMode;
@@ -142,12 +160,14 @@ const acquireHeldPair = (firewalls: {
       ],
       { concurrency: 2, discard: true },
     );
-    yield* registerFixture(senderFixture);
-    yield* registerFixture(targetFixture);
 
     return { proxy, senderFixture, targetFixture };
   });
 
+/**
+ * The held-delivery trace with each daemon's firewall, if any: a firewall
+ * that passes every message changes nothing a peer or host sees.
+ */
 const heldDeliveryBehavior = (
   firewalls: {
     readonly sender?: FirewallMode;
@@ -156,9 +176,12 @@ const heldDeliveryBehavior = (
 ) =>
   Effect.gen(function* () {
     const pair = yield* acquireHeldPair(firewalls);
+    yield* registerFixture(pair.senderFixture);
+    yield* registerFixture(pair.targetFixture);
     yield* Effect.scoped(
       waitForHeldDelivery(pair).pipe(
         Effect.flatMap(releaseHeldDelivery),
+        Effect.flatMap(replyToReleasedDelivery),
         Effect.flatMap(followUpHeldDelivery),
       ),
     );
@@ -193,9 +216,7 @@ function throughProxy(
   };
 }
 
-function waitForHeldDelivery(
-  pair: Effect.Effect.Success<ReturnType<typeof acquireHeldPair>>,
-) {
+function waitForHeldDelivery(pair: HeldPair) {
   return Effect.gen(function* () {
     const { proxy, senderFixture, targetFixture } = pair;
     const senderAddress = directAddress(senderFixture.agentName);
@@ -227,19 +248,9 @@ function waitForHeldDelivery(
   });
 }
 
-function releaseHeldDelivery(
-  state: Effect.Effect.Success<ReturnType<typeof waitForHeldDelivery>>,
-) {
+function releaseHeldDelivery(state: HeldDelivery) {
   return Effect.gen(function* () {
-    const {
-      proxy,
-      targetInbox,
-      heldSend,
-      target,
-      senderAddress,
-      senderInbox,
-      targetAddress,
-    } = state;
+    const { proxy, targetInbox, heldSend, senderAddress } = state;
     yield* proxy.release;
     const released = yield* Queue.take(targetInbox);
     expect(released.item).toMatchObject({
@@ -254,6 +265,13 @@ function releaseHeldDelivery(
     yield* released.acknowledge;
     yield* Fiber.join(heldSend);
 
+    return state;
+  });
+}
+
+function replyToReleasedDelivery(state: HeldDelivery) {
+  return Effect.gen(function* () {
+    const { target, senderAddress, targetAddress, senderInbox } = state;
     yield* target.send({ to: senderAddress, text: replyText });
     const reply = yield* Queue.take(senderInbox);
     expect(reply.item).toMatchObject({
@@ -271,9 +289,7 @@ function releaseHeldDelivery(
   });
 }
 
-function followUpHeldDelivery(
-  state: Effect.Effect.Success<ReturnType<typeof releaseHeldDelivery>>,
-) {
+function followUpHeldDelivery(state: HeldDelivery) {
   return Effect.gen(function* () {
     const {
       proxy,
@@ -302,9 +318,7 @@ function followUpHeldDelivery(
   });
 }
 
-function readHeldHistory(
-  pair: Effect.Effect.Success<ReturnType<typeof acquireHeldPair>>,
-) {
+function readHeldHistory(pair: HeldPair) {
   return Effect.gen(function* () {
     const { senderFixture, targetFixture } = pair;
     const senderAddress = directAddress(senderFixture.agentName);

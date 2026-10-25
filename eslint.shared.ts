@@ -210,7 +210,7 @@ export function rootEslintConfig(tsconfigRootDir: string) {
   ];
 }
 
-/** Process suites share strict rules regardless of their fixture's package of origin. */
+/** Flat configuration for tests/integration: the strict preset on every TypeScript file plus the integration-test preset on process suites. */
 export function integrationEslintConfig(tsconfigRootDir: string) {
   const languageOptions = makeTsLanguageOptions(tsconfigRootDir, [
     "./tsconfig.json",

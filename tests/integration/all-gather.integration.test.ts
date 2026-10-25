@@ -46,6 +46,7 @@ const allGather = (requester: Participant, to: string, deadline: number) =>
     collective: { op: "all_gather", deadline, requestedSchema: slotSchema },
   });
 
+/** Results use the canonical member spelling even when requests name the group in another order. */
 const group =
   "group:all-gather-member-a,all-gather-member-b,all-gather-member-c,all-gather-requester";
 
@@ -71,43 +72,72 @@ const answer = (member: Participant, slot: string) =>
     collectiveResponse: { action: "accept", content: { slot } },
   });
 
-const allAnsweredRequester = Effect.gen(function* () {
-  const { requester, first, second, third } = yield* acquireFour;
-  const unreachable = yield* allGather(
-    requester,
-    "group:all-gather-member-a,all-gather-nobody,all-gather-requester",
-    60,
-  ).pipe(Effect.flip);
-  expect(unreachable).toBeInstanceOf(CollectiveError);
-  expect(unreachable).toMatchObject({
-    failure: {
-      kind: "members-unreachable",
-      members: [{ member: "agent:all-gather-nobody", reason: "unknown-agent" }],
-    },
-  });
-  const started = yield* allGather(requester, group, ANSWERED_DEADLINE_SECONDS);
-  const request = {
-    kind: "collectiveRequest",
-    op: "all_gather",
-    id: started.operationId,
-    postId: anyString,
-    from: requester.address,
-    to: group,
-    question,
-    requestedSchema: slotSchema,
-    deadlineAt: anyNumber,
-  };
-  expect(yield* nextItem(first)).toEqual(request);
-  expect(yield* nextItem(second)).toEqual(request);
-  expect(yield* nextItem(third)).toEqual(request);
-  yield* answer(first, "tue");
-  yield* answer(second, "mon");
-  return { requester, first, second, third, started };
-});
+interface AllGatherParticipants {
+  readonly requester: Participant;
+  readonly first: Participant;
+  readonly second: Participant;
+  readonly third: Participant;
+}
 
-const allAnsweredBehavior = allAnsweredRequester
-  .pipe(Effect.flatMap(allAnsweredRequesterResult))
-  .pipe(Effect.scoped);
+/** A refused operation posts nothing before the valid all_gather requests arrive. */
+function expectUnreachableAllGatherRefused(requester: Participant) {
+  return Effect.gen(function* () {
+    const unreachable = yield* allGather(
+      requester,
+      "group:all-gather-member-a,all-gather-nobody,all-gather-requester",
+      60,
+    ).pipe(Effect.flip);
+    expect(unreachable).toBeInstanceOf(CollectiveError);
+    expect(unreachable).toMatchObject({
+      failure: {
+        kind: "members-unreachable",
+        members: [
+          { member: "agent:all-gather-nobody", reason: "unknown-agent" },
+        ],
+      },
+    });
+  });
+}
+
+function startAllGatherAndExpectRequests({
+  requester,
+  first,
+  second,
+  third,
+}: AllGatherParticipants) {
+  return Effect.gen(function* () {
+    const started = yield* allGather(
+      requester,
+      group,
+      ANSWERED_DEADLINE_SECONDS,
+    );
+    const request = {
+      kind: "collectiveRequest",
+      op: "all_gather",
+      id: started.operationId,
+      postId: anyString,
+      from: requester.address,
+      to: group,
+      question,
+      requestedSchema: slotSchema,
+      deadlineAt: anyNumber,
+    };
+    expect(yield* nextItem(first)).toEqual(request);
+    expect(yield* nextItem(second)).toEqual(request);
+    expect(yield* nextItem(third)).toEqual(request);
+    return started;
+  });
+}
+
+const allAnsweredBehavior = Effect.gen(function* () {
+  const participants = yield* acquireFour;
+  yield* expectUnreachableAllGatherRefused(participants.requester);
+  const started = yield* startAllGatherAndExpectRequests(participants);
+  yield* answerAllGatherAndExpectSharedResult(
+    participants,
+    started.operationId,
+  );
+}).pipe(Effect.scoped);
 
 /**
  * Two members answer and the third stays silent, so the all_gather closes at
@@ -157,11 +187,13 @@ it(
   ALL_GATHER_TEST_TIMEOUT_MS,
 );
 
-function allAnsweredRequesterResult(
-  state: Effect.Effect.Success<typeof allAnsweredRequester>,
+function answerAllGatherAndExpectSharedResult(
+  { requester, first, second, third }: AllGatherParticipants,
+  operationId?: string,
 ) {
   return Effect.gen(function* () {
-    const { requester, first, second, third, started } = state;
+    yield* answer(first, "tue");
+    yield* answer(second, "mon");
     yield* send(third, {
       to: group,
       collectiveResponse: { action: "decline" },
@@ -170,7 +202,7 @@ function allAnsweredRequesterResult(
     expect(requesterResult).toEqual({
       kind: "collectiveResult",
       op: "all_gather",
-      id: started.operationId,
+      id: operationId,
       to: group,
       question,
       outcomes: [

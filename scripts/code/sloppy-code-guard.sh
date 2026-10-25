@@ -283,7 +283,7 @@ check hardcoded-api-key \
 check as-unknown-as \
   'as unknown as' \
   "'as unknown as' cast chain bypasses the type system. Prefer a proper type guard, user-defined predicate, or Effect.catchTag/catchTags for tagged unions." \
-  "*.ts" "$PKG_SRC_GLOB tests" "$BUILD_EXCLUDE"
+  "*.ts" "$PKG_SRC_GLOB tests packages/*/integration" "$BUILD_EXCLUDE"
 
 
 # Manual `_tag` narrow on wire-error classes. Use Effect.catchTag / catchTags.
@@ -292,7 +292,7 @@ check as-unknown-as \
 check tag-discriminant \
   '\._tag[[:space:]]*(===|!==|==|!=)[[:space:]]*"(RpcServerError|NotConnectedError|RpcTimeoutError|AgentNotFoundError|MalformedFrameError|RpcFailure|InvalidParamsError|ForbiddenError|SqlError)"' \
   "Manual _tag discriminant on a wire-error class — use Effect.catchTag / catchTags so the dispatch is declarative and types flow through." \
-  "*.ts" "$PKG_SRC_GLOB tests" "$BUILD_EXCLUDE"
+  "*.ts" "$PKG_SRC_GLOB tests packages/*/integration" "$BUILD_EXCLUDE"
 
 
 

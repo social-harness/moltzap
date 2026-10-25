@@ -126,7 +126,7 @@ export interface DaemonManagementClient {
   ) => Effect.Effect<ManagementReadConversationResult, ProcessTestError>;
   readonly callExpectingProtocolError: (
     name: string,
-    processArguments: Readonly<Record<string, unknown>>,
+    toolArguments: Readonly<Record<string, unknown>>,
   ) => Effect.Effect<DaemonProtocolError, ProcessTestError>;
 }
 
@@ -157,7 +157,7 @@ export const LOOPBACK_HOST = "127.0.0.1";
 /** Concurrent registration keeps this many daemon identities active. */
 export const CONCURRENT_DAEMONS = 16;
 /** Bounded boots limit process startup pressure while ports wait to bind. */
-const DAEMON_BOOT_CONCURRENCY = 4;
+export const DAEMON_BOOT_CONCURRENCY = 4;
 /** Router admission allows concurrent management and protocol requests per daemon. */
 const REQUESTS_PER_DAEMON = 4;
 /** Each daemon can hold its active poll and a replacement poll. */
@@ -779,11 +779,11 @@ const closeManagementClient = (client: Client): Effect.Effect<void> =>
 const callExpectingProtocolError = (
   client: Client,
   name: string,
-  processArguments: Readonly<Record<string, unknown>>,
+  toolArguments: Readonly<Record<string, unknown>>,
 ): Effect.Effect<DaemonProtocolError, ProcessTestError> =>
   Effect.tryPromise({
     try: (signal) =>
-      client.callTool({ name, arguments: processArguments }, { signal }),
+      client.callTool({ name, arguments: toolArguments }, { signal }),
     catch: (cause) => processTestError(`${name} call failed`, cause),
   }).pipe(
     Effect.matchEffect({
@@ -945,8 +945,8 @@ function managementOperations(client: Client): DaemonManagementClient {
         arguments: { address },
         schema: managementReadConversationResultSchema,
       }),
-    callExpectingProtocolError: (name, processArguments) =>
-      callExpectingProtocolError(client, name, processArguments),
+    callExpectingProtocolError: (name, toolArguments) =>
+      callExpectingProtocolError(client, name, toolArguments),
   };
 
   return management;

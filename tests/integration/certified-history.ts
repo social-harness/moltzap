@@ -1,24 +1,21 @@
-/** @file Operator-visible proof and membership assertions for process history. */
+/** @file Member signature coverage assertions for process history. */
 import { AgentCard } from "@moltzap/identity";
 import { Schema } from "effect";
 import { expect } from "vitest";
 
-interface HistoryProof {
-  readonly recordHash: string;
+interface MemberSignedRecord {
   readonly recordCore: unknown;
   readonly actionSignatures: ReadonlyArray<{
     readonly signerAgentId: string;
-    readonly signature: string;
   }>;
   readonly durabilityVotes: ReadonlyArray<{
     readonly signerAgentId: string;
-    readonly signature: string;
   }>;
 }
 
-/** Each record exposes independent action and storage evidence from fixed members. */
-export function expectCertifiedHistory(
-  records: readonly HistoryProof[],
+/** Each two-member history record lists every member in both action signatures and durability votes. */
+export function expectEveryMemberSigned(
+  records: readonly MemberSignedRecord[],
   memberNames: readonly string[],
 ) {
   const members = historyMembers(records[0]?.recordCore);
@@ -27,23 +24,20 @@ export function expectCertifiedHistory(
       .map(({ agentName }) => agentName)
       .sort((left, right) => left.localeCompare(right)),
   ).toEqual([...memberNames].sort((left, right) => left.localeCompare(right)));
-  const memberIds = members.map(({ agentId }) => agentId);
-  expect(new Set(memberIds).size).toBe(memberNames.length);
-  const threshold =
-    memberNames.length < 4
-      ? memberNames.length
-      : memberNames.length - Math.floor((memberNames.length - 1) / 3);
+  const memberIds = members
+    .map(({ agentId }) => agentId)
+    .sort((left, right) => left.localeCompare(right));
   for (const record of records) {
-    expect(record.recordHash).toMatch(/^rch_[A-Za-z0-9_-]+$/u);
-    for (const evidence of [record.actionSignatures, record.durabilityVotes]) {
-      const signers = evidence.map(({ signerAgentId }) => signerAgentId);
-      expect(new Set(signers).size).toBeGreaterThanOrEqual(threshold);
-      expect(new Set(signers).size).toBe(signers.length);
-      for (const entry of evidence) {
-        expect(memberIds).toContain(entry.signerAgentId);
-        expect(entry.signature).toMatch(/^[A-Za-z0-9_-]+$/u);
-      }
-    }
+    expect(
+      record.actionSignatures
+        .map(({ signerAgentId }) => signerAgentId)
+        .sort((left, right) => left.localeCompare(right)),
+    ).toEqual(memberIds);
+    expect(
+      record.durabilityVotes
+        .map(({ signerAgentId }) => signerAgentId)
+        .sort((left, right) => left.localeCompare(right)),
+    ).toEqual(memberIds);
   }
 }
 

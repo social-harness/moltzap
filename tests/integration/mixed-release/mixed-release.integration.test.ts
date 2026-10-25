@@ -3,7 +3,6 @@
  * directions, through the current network and through the previous release's
  * network.
  *
- * \@agent-code-guard/regression-only: Operator failures and release boundaries use explicit regression scenarios.
  */
 
 import { FileSystem } from "@effect/platform";
@@ -32,6 +31,8 @@ import {
   makeRegistrationRequest,
   ProcessTestError,
 } from "../daemon-process-harness.js";
+
+// @agent-code-guard/regression-only: Regression cases exercise the reviewed release selection, reset boundary, missing metadata, and registry outage failures; the real process exchange checks interoperability.
 
 const RESET_SKIP_REASON =
   "No post-reset release is published; the mixed-release gate starts with the first release after the reset.";

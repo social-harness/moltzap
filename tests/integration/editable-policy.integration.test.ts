@@ -33,6 +33,7 @@ import {
   makeRegistrationRequest,
   processTrace,
 } from "./daemon-process-harness.js";
+import { auditCompleteKind } from "./expected-contracts.js";
 import {
   anyNumber,
   anyString,
@@ -112,7 +113,33 @@ const blockedRule = {
   text: "Never disclose private text.",
 } as const;
 
-const swapDuringCheckAlice = Effect.gen(function* () {
+interface PolicyCheckScenario {
+  readonly entered: Deferred.Deferred<undefined>;
+  readonly release: Deferred.Deferred<undefined>;
+  readonly auditExport: string;
+  readonly runtime: Fiber.RuntimeFiber<never, unknown>;
+  readonly client: Client;
+}
+
+interface PolicyRevisions {
+  readonly before: { readonly activeRevision: string };
+  readonly changed: {
+    readonly activeRevision: string;
+    readonly retroactive: boolean;
+  };
+}
+
+interface FixedPolicyScenario {
+  readonly client: Client;
+  readonly codeRule: {
+    readonly id: string;
+    readonly kind: "safety";
+    readonly guidance: string;
+  };
+  readonly middleware: MessageMiddleware;
+}
+
+const acquirePolicyCheckScenario = Effect.gen(function* () {
   const { alice } = yield* pair;
   const entered = yield* Deferred.make<undefined>();
   const release = yield* Deferred.make<undefined>();
@@ -137,15 +164,7 @@ const swapDuringCheckAlice = Effect.gen(function* () {
   });
   const client = yield* connect(alice.endpoint);
   yield* register(client, alice);
-  const before = yield* read(client);
-  expect(
-    yield* update(client, { remove: ["fixed-code"] }).pipe(Effect.isFailure),
-  ).toBe(true);
-  const inFlight = yield* send(client).pipe(Effect.forkScoped);
-  yield* Deferred.await(entered);
-  const changed = yield* update(client, { add: [blockedRule] });
-  expect(changed.activeRevision).not.toBe(before.activeRevision);
-  return { release, auditExport, runtime, client, before, inFlight, changed };
+  return { entered, release, auditExport, runtime, client };
 });
 
 const fixedRule = {
@@ -155,7 +174,7 @@ const fixedRule = {
   guidance: "Ask the owner.",
 } as const;
 
-const readFixedAlice = Effect.gen(function* () {
+const acquireFixedPolicyScenario = Effect.gen(function* () {
   const { alice } = yield* pair;
   const codeRule = {
     id: "no-links",
@@ -209,10 +228,23 @@ const decisionsSchema = Schema.Struct({
   ),
 });
 
-const swapDuringCheck = swapDuringCheckAlice.pipe(
-  Effect.flatMap(swapDuringCheckRaw),
-  Effect.flatMap(swapDuringCheckFs),
-);
+const swapDuringCheck = Effect.gen(function* () {
+  const scenario = yield* acquirePolicyCheckScenario;
+  const { client, entered } = scenario;
+  const before = yield* read(client);
+  expect(
+    yield* update(client, { remove: ["fixed-code"] }).pipe(Effect.isFailure),
+  ).toBe(true);
+  const inFlight = yield* send(client).pipe(Effect.forkScoped);
+  yield* Deferred.await(entered);
+  const changed = yield* update(client, { add: [blockedRule] });
+  expect(changed.activeRevision).not.toBe(before.activeRevision);
+  expect(changed.retroactive).toBe(false);
+  yield* Deferred.succeed(scenario.release, undefined);
+  yield* Fiber.join(inFlight);
+  yield* expectPolicyRevisionsInDecisionFeed(client, { before, changed });
+  yield* expectPolicyRevisionsInAudit(scenario, { before, changed });
+});
 
 const persistAndValidate = Effect.gen(function* () {
   const { alice } = yield* pair;
@@ -265,7 +297,9 @@ const persistAndValidate = Effect.gen(function* () {
   yield* Fiber.interrupt(restarted);
 });
 
-const readFixed = readFixedAlice.pipe(Effect.flatMap(readFixedPolicy));
+const readFixed = acquireFixedPolicyScenario.pipe(
+  Effect.flatMap(expectFixedPolicyCannotBeEdited),
+);
 
 const emptyEnglish = Effect.gen(function* () {
   const { alice } = yield* pair;
@@ -404,7 +438,7 @@ const consecutiveActivations = Effect.gen(function* () {
     { kind: "activation", ...expected[0] },
   ]);
   expect(records.at(-1)).toMatchObject({
-    kind: "complete",
+    kind: auditCompleteKind,
     checkCount: 0,
     activationCount: 2,
   });
@@ -495,14 +529,11 @@ describe("editable firewall through the daemon public API", () => {
   );
 });
 
-function swapDuringCheckRaw(
-  state: Effect.Effect.Success<typeof swapDuringCheckAlice>,
+function expectPolicyRevisionsInDecisionFeed(
+  client: Client,
+  { before, changed }: PolicyRevisions,
 ) {
   return Effect.gen(function* () {
-    const { release, client, before, inFlight, changed } = state;
-    expect(changed.retroactive).toBe(false);
-    yield* Deferred.succeed(release, undefined);
-    yield* Fiber.join(inFlight);
     expect(yield* send(client).pipe(Effect.isFailure)).toBe(true);
     const raw = yield* call(client, "firewall_decisions");
     expect(JSON.stringify(raw)).not.toContain(secretText);
@@ -531,15 +562,14 @@ function swapDuringCheckRaw(
         decision.peerAgentId?.startsWith("agt_"),
       ),
     ).toBe(true);
-    return state;
   });
 }
 
-function swapDuringCheckFs(
-  state: Effect.Effect.Success<ReturnType<typeof swapDuringCheckRaw>>,
+function expectPolicyRevisionsInAudit(
+  { auditExport, runtime, client }: PolicyCheckScenario,
+  { before, changed }: PolicyRevisions,
 ) {
   return Effect.gen(function* () {
-    const { auditExport, runtime, client, before, changed } = state;
     expect(
       yield* call(client, "firewall_decisions", {
         since: Number.MAX_SAFE_INTEGER,
@@ -561,7 +591,7 @@ function swapDuringCheckFs(
   });
 }
 
-function readFixedPolicy(state: Effect.Effect.Success<typeof readFixedAlice>) {
+function expectFixedPolicyCannotBeEdited(state: FixedPolicyScenario) {
   return Effect.gen(function* () {
     const { codeRule, middleware, client } = state;
     const policy = yield* call(client, "policy_read");

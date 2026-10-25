@@ -3,12 +3,13 @@
 import { NodeHttpServer } from "@effect/platform-node";
 import { Effect, FiberSet } from "effect";
 import { Buffer } from "node:buffer";
-import { LOOPBACK_HOST, ProcessTestError } from "./daemon-process-harness.js";
+// eslint-disable-next-line agent-code-guard/prefer-effect-platform -- NodeHttpServer.make requires Node listener factories and callback types.
 import {
   createServer,
   type IncomingMessage,
   type ServerResponse,
-} from "./http-listener.js";
+} from "node:http";
+import { LOOPBACK_HOST, ProcessTestError } from "./daemon-process-harness.js";
 
 /**
  * Reads one request body in full.

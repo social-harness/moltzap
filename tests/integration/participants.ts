@@ -15,12 +15,13 @@ import {
   acquireDaemonManagementClient,
   acquireDaemonProcess,
   acquireProcessInfrastructure,
+  DAEMON_BOOT_CONCURRENCY,
   type DaemonProcessFixture,
   type FirewallMode,
   makeDaemonProcessFixture,
   makeRegistrationRequest,
 } from "./daemon-process-harness.js";
-import { expectedRegistered } from "./expected-contracts.js";
+import { registrationResultKind } from "./expected-contracts.js";
 
 /** One endpoint and the items its subscription has delivered, in order. */
 export interface Participant {
@@ -51,7 +52,7 @@ const registerFixture = (fixture: DaemonProcessFixture) =>
         management.register(makeRegistrationRequest(fixture)).pipe(
           Effect.tap((result) =>
             Effect.sync(() => {
-              expect(result.kind).toBe(expectedRegistered);
+              expect(result.kind).toBe(registrationResultKind);
             }),
           ),
         ),
@@ -71,7 +72,7 @@ export const startParticipants = (fixtures: readonly DaemonProcessFixture[]) =>
       fixtures,
       (fixture) => acquireDaemonProcess(fixture),
       {
-        concurrency: 4,
+        concurrency: DAEMON_BOOT_CONCURRENCY,
         discard: true,
       },
     );
@@ -99,7 +100,7 @@ export const acquireParticipants = (
       names.map((name) =>
         makeDaemonProcessFixture(infrastructure, name, firewalls[name]),
       ),
-      { concurrency: 4 },
+      { concurrency: DAEMON_BOOT_CONCURRENCY },
     );
     return yield* startParticipants(fixtures);
   }).pipe(Effect.withSpan("acquireParticipants"));

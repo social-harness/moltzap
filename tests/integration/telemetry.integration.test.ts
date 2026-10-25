@@ -7,6 +7,7 @@ import {
   acquireProcessInfrastructure,
   type DaemonProcessFixture,
   makeDaemonProcessFixture,
+  type ProcessInfrastructure,
   processTrace,
 } from "./daemon-process-harness.js";
 import {
@@ -22,7 +23,10 @@ import {
   send,
   startParticipants,
 } from "./participants.js";
-import { acquireRouterHoldProxy } from "./router-hold-proxy.js";
+import {
+  acquireRouterHoldProxy,
+  type RouterHoldProxy,
+} from "./router-hold-proxy.js";
 import { anyNumber, anyString } from "./test-matchers.js";
 
 const question = "Which day works for the review?";
@@ -59,7 +63,25 @@ const gatherFrom = (
     },
   });
 
-const markerInfrastructure = Effect.gen(function* () {
+interface MarkerScenario {
+  readonly infrastructure: ProcessInfrastructure;
+  readonly receiver: OtlpReceiver;
+  readonly proxy: RouterHoldProxy;
+  readonly requester: Participant;
+  readonly member: Participant;
+  readonly held: Participant;
+  readonly group: string;
+}
+
+interface CompletedCollectives {
+  readonly gatherRequest: InboundItem;
+  readonly allGatherRequest: InboundItem;
+  readonly gatherId: string;
+  readonly allGatherId: string;
+  readonly completed: readonly ExportedSpan[];
+}
+
+const acquireMarkerParticipants = Effect.gen(function* () {
   const infrastructure = yield* acquireProcessInfrastructure;
   const receiver = yield* acquireOtlpReceiver;
   const proxy = yield* acquireRouterHoldProxy(infrastructure.routerOrigin);
@@ -89,20 +111,7 @@ const markerInfrastructure = Effect.gen(function* () {
     return yield* Effect.dieMessage("expected three participants");
   }
   const group = groupAddress([requester, member, held]);
-  const gathered = yield* gatherFrom(requester, group, "gather");
-  const gatherRequest = yield* nextItem(member);
-  yield* nextItem(held);
-  return {
-    infrastructure,
-    receiver,
-    proxy,
-    requester,
-    member,
-    held,
-    group,
-    gathered,
-    gatherRequest,
-  };
+  return { infrastructure, receiver, proxy, requester, member, held, group };
 });
 
 /** The standard batch delay, shortened from 5 s so spans reach the receiver sooner. */
@@ -171,15 +180,46 @@ const exportBehavior = Effect.gen(function* () {
  * requester's proposals uncertified. A restarted Router is a new instance, so
  * afterwards every conversation catches up.
  */
-const markerBehavior = markerInfrastructure
-  .pipe(
-    Effect.flatMap(markerAllGathered),
-    Effect.flatMap(markerHeldSend),
-    Effect.flatMap(markerPending),
-    Effect.flatMap(markerCaughtUp),
-    Effect.flatMap(markerVerification),
-  )
-  .pipe(Effect.scoped);
+const markerBehavior = Effect.gen(function* () {
+  const scenario = yield* acquireMarkerParticipants;
+  const gather = yield* completeGather(scenario);
+  const allGather = yield* completeAllGather(scenario);
+  const completed = yield* awaitSpans(
+    scenario.receiver,
+    (received) =>
+      markers(received, "collective.closed", "operationId", gather.id).length >
+        0 &&
+      markers(received, "collective.closed", "operationId", allGather.id)
+        .length > 0 &&
+      unsettledRetries(received).length === 0,
+  );
+  yield* expectCompletedCollectiveMarkers({
+    gatherId: gather.id,
+    gatherRequest: gather.request,
+    allGatherId: allGather.id,
+    allGatherRequest: allGather.request,
+    completed,
+  });
+  yield* scenario.proxy.hold;
+  yield* Effect.addFinalizer(() => scenario.proxy.release);
+  /** The held send stays in flight until its pending proposal is observed and the proxy releases it. */
+  const heldSend = yield* Effect.fork(
+    send(scenario.requester, {
+      to: scenario.held.address,
+      text: "sent while the member is held",
+    }),
+  );
+  const pendingId = yield* expectProposalPending(scenario.receiver);
+  const refused = yield* expectHeldCollectiveRefused(scenario, pendingId);
+  yield* scenario.proxy.release;
+  yield* Fiber.join(heldSend);
+  yield* expectProposalCertifiedAndCollectiveClosed(
+    scenario.receiver,
+    pendingId,
+    refused,
+  );
+  yield* restartRouterAndExpectRecovery(scenario);
+}).pipe(Effect.scoped);
 
 it(
   "exports send and receive spans only from the daemon given an OTLP endpoint",
@@ -193,11 +233,11 @@ it(
   TELEMETRY_TEST_TIMEOUT_MS,
 );
 
-function markerAllGathered(
-  state: Effect.Effect.Success<typeof markerInfrastructure>,
-) {
+function completeGather({ requester, member, held, group }: MarkerScenario) {
   return Effect.gen(function* () {
-    const { receiver, requester, member, held, group, gathered } = state;
+    const gathered = yield* gatherFrom(requester, group, "gather");
+    const gatherRequest = yield* nextItem(member);
+    yield* nextItem(held);
     yield* send(member, {
       to: requester.address,
       collectiveResponse: { action: "accept", content: { slot: "mon" } },
@@ -207,6 +247,12 @@ function markerAllGathered(
       collectiveResponse: { action: "decline" },
     });
     yield* nextItem(requester);
+    return { id: gathered.operationId ?? "", request: gatherRequest };
+  });
+}
+
+function completeAllGather({ requester, member, held, group }: MarkerScenario) {
+  return Effect.gen(function* () {
     const allGathered = yield* gatherFrom(requester, group, "all_gather");
     const allGatherRequest = yield* nextItem(member);
     yield* nextItem(held);
@@ -221,29 +267,13 @@ function markerAllGathered(
     yield* Effect.forEach([requester, member, held], nextItem, {
       concurrency: 1,
     });
-    const gatherId = gathered.operationId ?? "";
-    const allGatherId = allGathered.operationId ?? "";
-    const completed = yield* awaitSpans(
-      receiver,
-      (received) =>
-        markers(received, "collective.closed", "operationId", gatherId).length >
-          0 &&
-        markers(received, "collective.closed", "operationId", allGatherId)
-          .length > 0 &&
-        unsettledRetries(received).length === 0,
-    );
-    return { ...state, allGatherRequest, gatherId, allGatherId, completed };
+    return { id: allGathered.operationId ?? "", request: allGatherRequest };
   });
 }
 
-function markerHeldSend(
-  state: Effect.Effect.Success<ReturnType<typeof markerAllGathered>>,
-) {
-  return Effect.gen(function* () {
+function expectCompletedCollectiveMarkers(state: CompletedCollectives) {
+  return Effect.sync(() => {
     const {
-      proxy,
-      requester,
-      held,
       gatherRequest,
       allGatherRequest,
       gatherId,
@@ -271,39 +301,33 @@ function markerHeldSend(
     expect(
       attributesOf(markers(completed, "retry.settled", "kind", "outbound")),
     ).toContainEqual({ kind: "outbound", id: "outbox", outcome: "sent" });
-    yield* proxy.hold;
-    yield* Effect.addFinalizer(() => proxy.release);
-    const heldSend = yield* Effect.fork(
-      send(requester, {
-        to: held.address,
-        text: "sent while the member is held",
-      }),
-    );
-    const unsettledProposals = (received: readonly ExportedSpan[]) =>
-      unsettledRetries(received).filter(
-        (span) => span.attributes.kind === "proposal",
-      );
-    return { ...state, heldSend, unsettledProposals };
   });
 }
 
-function markerPending(
-  state: Effect.Effect.Success<ReturnType<typeof markerHeldSend>>,
-) {
+function unsettledProposals(received: readonly ExportedSpan[]) {
+  return unsettledRetries(received).filter(
+    (span) => span.attributes.kind === "proposal",
+  );
+}
+
+function expectProposalPending(receiver: OtlpReceiver) {
   return Effect.gen(function* () {
-    const { receiver, proxy, requester, group, heldSend, unsettledProposals } =
-      state;
     const [pending] = unsettledProposals(
       yield* awaitSpans(
         receiver,
         (received) => unsettledProposals(received).length > 0,
       ),
     );
-    expect(pending?.attributes).toEqual({
-      kind: "proposal",
-      id: anyString,
-    });
-    const pendingId = String(pending?.attributes.id);
+    expect(pending?.attributes).toEqual({ kind: "proposal", id: anyString });
+    return String(pending?.attributes.id);
+  });
+}
+
+function expectHeldCollectiveRefused(
+  { receiver, requester, group }: MarkerScenario,
+  pendingId: string,
+) {
+  return Effect.gen(function* () {
     const refused = yield* gatherFrom(requester, group, "all_gather").pipe(
       Effect.flip,
       Effect.filterOrDieMessage(
@@ -315,8 +339,16 @@ function markerPending(
     expect(
       markers(yield* receiver.spans, "retry.settled", "id", pendingId),
     ).toEqual([]);
-    yield* proxy.release;
-    yield* Fiber.join(heldSend);
+    return refused;
+  });
+}
+
+function expectProposalCertifiedAndCollectiveClosed(
+  receiver: OtlpReceiver,
+  pendingId: string,
+  refused: CollectiveError,
+) {
+  return Effect.gen(function* () {
     const settled = yield* awaitSpans(
       receiver,
       (received) =>
@@ -324,15 +356,6 @@ function markerPending(
         markers(received, "collective.closed", "operationId", refused.id)
           .length > 0,
     );
-    return { ...state, pending, pendingId, refused, settled };
-  });
-}
-
-function markerCaughtUp(
-  state: Effect.Effect.Success<ReturnType<typeof markerPending>>,
-) {
-  return Effect.gen(function* () {
-    const { infrastructure, receiver, pendingId, refused, settled } = state;
     expect(
       attributesOf(markers(settled, "retry.settled", "id", pendingId)),
     ).toEqual([{ kind: "proposal", id: pendingId, outcome: "certified" }]);
@@ -352,6 +375,14 @@ function markerCaughtUp(
         markers(settled, "collective.closed", "operationId", refused.id),
       ),
     ).toEqual([{ operationId: refused.id, outcome: "refused" }]);
+  });
+}
+
+function restartRouterAndExpectRecovery({
+  infrastructure,
+  receiver,
+}: MarkerScenario) {
+  return Effect.gen(function* () {
     yield* infrastructure.restartRouter;
     const caughtUp = yield* awaitSpans(
       receiver,
@@ -359,15 +390,6 @@ function markerCaughtUp(
         markers(received, "retry.pending", "kind", "catch-up").length > 0 &&
         unsettledRetries(received).length === 0,
     );
-    return { ...state, caughtUp };
-  });
-}
-
-function markerVerification(
-  state: Effect.Effect.Success<ReturnType<typeof markerCaughtUp>>,
-) {
-  return Effect.sync(() => {
-    const { caughtUp } = state;
     expect(
       attributesOf(markers(caughtUp, "retry.settled", "kind", "catch-up")),
     ).toContainEqual({

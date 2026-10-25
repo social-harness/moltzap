@@ -64,45 +64,66 @@ const GATHER_TEST_TIMEOUT_MS = 240_000;
  */
 const ANSWERED_DEADLINE_SECONDS = GATHER_TEST_TIMEOUT_MS / 1000;
 
-const allAnsweredRequester = Effect.gen(function* () {
-  const { requester, first, second } = yield* acquireThree;
-  const unreachable = yield* send(requester, {
-    to: `group:gather-member-a,gather-nobody,gather-requester`,
-    text: question,
-    collective: { op: "gather", deadline: 60, requestedSchema: slotSchema },
-  }).pipe(Effect.flip);
-  expect(unreachable).toBeInstanceOf(CollectiveError);
-  expect(unreachable).toMatchObject({
-    failure: {
-      kind: "members-unreachable",
-      members: [{ member: "agent:gather-nobody", reason: "unknown-agent" }],
-    },
-  });
-  const started = yield* gather(
-    requester,
-    [first, second],
-    ANSWERED_DEADLINE_SECONDS,
-  );
-  const firstRequest = yield* nextItem(first);
-  const secondRequest = yield* nextItem(second);
-  expect(firstRequest).toEqual({
-    kind: "collectiveRequest",
-    op: "gather",
-    id: started.operationId,
-    postId: anyString,
-    from: requester.address,
-    to: requester.address,
-    question,
-    requestedSchema: slotSchema,
-    deadlineAt: anyNumber,
-  });
-  expect(secondRequest).toMatchObject({ id: started.operationId });
-  return { requester, first, second, started };
-});
+interface GatherParticipants {
+  readonly requester: Participant;
+  readonly first: Participant;
+  readonly second: Participant;
+}
 
-const allAnsweredBehavior = allAnsweredRequester
-  .pipe(Effect.flatMap(allAnsweredInvalid))
-  .pipe(Effect.scoped);
+/** A refused gather posts nothing, so the following request is each member's first item. */
+function expectUnreachableGatherRefused({ requester }: GatherParticipants) {
+  return Effect.gen(function* () {
+    const unreachable = yield* send(requester, {
+      to: `group:gather-member-a,gather-nobody,gather-requester`,
+      text: question,
+      collective: { op: "gather", deadline: 60, requestedSchema: slotSchema },
+    }).pipe(Effect.flip);
+    expect(unreachable).toBeInstanceOf(CollectiveError);
+    expect(unreachable).toMatchObject({
+      failure: {
+        kind: "members-unreachable",
+        members: [{ member: "agent:gather-nobody", reason: "unknown-agent" }],
+      },
+    });
+  });
+}
+
+function startGatherAndExpectRequests({
+  requester,
+  first,
+  second,
+}: GatherParticipants) {
+  return Effect.gen(function* () {
+    const started = yield* gather(
+      requester,
+      [first, second],
+      ANSWERED_DEADLINE_SECONDS,
+    );
+    const firstRequest = yield* nextItem(first);
+    const secondRequest = yield* nextItem(second);
+    expect(firstRequest).toEqual({
+      kind: "collectiveRequest",
+      op: "gather",
+      id: started.operationId,
+      postId: anyString,
+      from: requester.address,
+      to: requester.address,
+      question,
+      requestedSchema: slotSchema,
+      deadlineAt: anyNumber,
+    });
+    expect(secondRequest).toMatchObject({ id: started.operationId });
+    return started;
+  });
+}
+
+const allAnsweredBehavior = Effect.gen(function* () {
+  const participants = yield* acquireThree;
+  yield* expectUnreachableGatherRefused(participants);
+  const started = yield* startGatherAndExpectRequests(participants);
+  yield* expectInvalidAnswerRefused(participants.first, participants.requester);
+  yield* answerGatherAndExpectResult(participants, started.operationId);
+}).pipe(Effect.scoped);
 
 /**
  * The deadline is measured on a post to the group of every participant. The
@@ -153,11 +174,11 @@ it(
   GATHER_TEST_TIMEOUT_MS,
 );
 
-function allAnsweredInvalid(
-  state: Effect.Effect.Success<typeof allAnsweredRequester>,
+function expectInvalidAnswerRefused(
+  first: Participant,
+  requester: Participant,
 ) {
   return Effect.gen(function* () {
-    const { requester, first, second, started } = state;
     const invalid = yield* send(first, {
       to: requester.address,
       collectiveResponse: { action: "accept", content: { slot: "sun" } },
@@ -165,6 +186,14 @@ function allAnsweredInvalid(
     expect(invalid).toMatchObject({
       failure: { kind: "answer-invalid", fields: [{ field: "slot" }] },
     });
+  });
+}
+
+function answerGatherAndExpectResult(
+  { requester, first, second }: GatherParticipants,
+  operationId?: string,
+) {
+  return Effect.gen(function* () {
     yield* send(first, {
       to: requester.address,
       collectiveResponse: { action: "accept", content: { slot: "tue" } },
@@ -176,7 +205,7 @@ function allAnsweredInvalid(
     expect(yield* nextItem(requester)).toEqual({
       kind: "collectiveResult",
       op: "gather",
-      id: started.operationId,
+      id: operationId,
       to: "group:gather-member-a,gather-member-b,gather-requester",
       question,
       outcomes: [

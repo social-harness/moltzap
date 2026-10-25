@@ -18,7 +18,7 @@ import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
-import { expectCertifiedHistory } from "./certified-history.js";
+import { expectEveryMemberSigned } from "./certified-history.js";
 import {
   acquireDaemonManagementClient,
   acquireDaemonProcess,
@@ -28,27 +28,26 @@ import {
   type DaemonProcessFixture,
   makeDaemonProcessFixture,
   makeRegistrationRequest,
+  type ProcessInfrastructure,
   ProcessTestError,
   processTrace,
   REGISTRY_BINARY,
   ROUTER_BINARY,
+  type RunningProcess,
   stopProcess,
 } from "./daemon-process-harness.js";
 import {
-  expectedActive,
-  expectedCompletedReanchor,
-  expectedDocsGuidesUpgradesMdxApplyAResetRelease,
-  expectedDrainTheOutboxOnThePreviousRelease,
-  expectedLegacyKey,
-  expectedNewerSchema,
-  expectedOutboxTooOld,
-  expectedPage,
-  expectedPreReset,
-  expectedRegistered,
-  expectedRetiredPublicIdentifier,
-  expectedRetiredSecretValue,
-  expectedStartWithAFreshStateDirectoryAndRegisterAgain,
-  expectedStorage,
+  completedReanchorKind,
+  legacySettingReason,
+  newerSchemaReason,
+  outboxTooOldReason,
+  outboxTooOldRemedy,
+  preResetReason,
+  preResetRemedy,
+  registeredDaemonStatus,
+  registrationResultKind,
+  resetReleaseDocsAnchor,
+  storageStartupPhase,
 } from "./expected-contracts.js";
 import { arrayContaining } from "./test-matchers.js";
 
@@ -61,8 +60,8 @@ const registerFixture = (fixture: DaemonProcessFixture) =>
       const registered = yield* management.register(
         makeRegistrationRequest(fixture),
       );
-      expect(registered.kind).toBe(expectedRegistered);
-      if (registered.kind === "registered") {
+      expect(registered.kind).toBe(registrationResultKind);
+      if (registered.kind === registrationResultKind) {
         const agentCard = yield* Schema.decodeUnknown(AgentCard)(
           registered.agentCard,
         );
@@ -112,7 +111,32 @@ const certifiedSend = (endpoint: HarnessEndpoint, input: SendInput) =>
 
 const fromRestartedText = "sent by the restarted daemon";
 
-const singleRestartInfrastructure = Effect.gen(function* () {
+interface RestartScenario {
+  readonly restartedFixture: DaemonProcessFixture;
+  readonly peerFixture: DaemonProcessFixture;
+  readonly restartedDaemon: RunningProcess;
+}
+
+interface RouterRestartScenario {
+  readonly infrastructure: ProcessInfrastructure;
+  readonly memberFixture: DaemonProcessFixture;
+  readonly conciergeFixture: DaemonProcessFixture;
+}
+
+interface ProcessScenario {
+  readonly callerFixture: DaemonProcessFixture;
+  readonly targetFixture: DaemonProcessFixture;
+  readonly targetDaemon: RunningProcess;
+  readonly callerAddress: AgentAddress;
+  readonly targetAddress: AgentAddress;
+}
+
+interface AdmissionScenario {
+  readonly registeredFixture: DaemonProcessFixture;
+  readonly unregisteredFixture: DaemonProcessFixture;
+}
+
+const acquireRestartPair = Effect.gen(function* () {
   const infrastructure = yield* acquireProcessInfrastructure;
   const [restartedFixture, peerFixture] = yield* Effect.all(
     [
@@ -128,26 +152,10 @@ const singleRestartInfrastructure = Effect.gen(function* () {
     ] as const,
     { concurrency: 2 },
   );
-  yield* registerFixture(restartedFixture);
-  yield* registerFixture(peerFixture);
-  yield* deliverDirect({
-    from: restartedFixture,
-    to: peerFixture,
-    text: beforeRestartText,
-    send: certifiedSend,
-  });
-  yield* stopProcess(restartedDaemon);
-  yield* acquireDaemonProcess(restartedFixture);
-  yield* deliverDirect({
-    from: restartedFixture,
-    to: peerFixture,
-    text: fromRestartedText,
-    send: sendOrQueue,
-  });
-  return { restartedFixture, peerFixture };
+  return { restartedFixture, peerFixture, restartedDaemon };
 });
 
-const routerRestartInfrastructure = Effect.gen(function* () {
+const acquireRouterRestartPair = Effect.gen(function* () {
   const infrastructure = yield* acquireProcessInfrastructure;
   const [memberFixture, conciergeFixture] = yield* Effect.all(
     [
@@ -177,12 +185,10 @@ const routerRestartInfrastructure = Effect.gen(function* () {
     ] as const,
     { concurrency: 2 },
   );
-  yield* registerFixture(memberFixture);
-  yield* registerFixture(conciergeFixture);
   return { infrastructure, memberFixture, conciergeFixture };
 });
 
-const processInfrastructure = Effect.gen(function* () {
+const acquireProcessPair = Effect.gen(function* () {
   const infrastructure = yield* acquireProcessInfrastructure;
   const [callerFixture, targetFixture] = yield* Effect.all(
     [
@@ -195,30 +201,40 @@ const processInfrastructure = Effect.gen(function* () {
     [acquireDaemonProcess(callerFixture), acquireDaemonProcess(targetFixture)],
     { concurrency: 2 },
   );
-  yield* registerFixture(callerFixture);
-  yield* registerFixture(targetFixture);
-  yield* Effect.scoped(
-    Effect.gen(function* () {
-      const management = yield* acquireDaemonManagementClient(
-        callerFixture.endpoint,
-      );
-      const malformed = yield* management.callExpectingProtocolError(
-        "read_conversation",
-        { conversationId: "retired-public-identifier" },
-      );
-      expect(malformed.code).toBe(ProtocolErrorCode.InvalidParams);
-      expect(malformed.data).toMatchObject({
-        issues: arrayContaining([
-          { path: ["conversationId"], message: "Unexpected field" },
-        ]),
-      });
-      expect(JSON.stringify(malformed.data)).not.toContain(
-        expectedRetiredPublicIdentifier,
-      );
-    }),
-  );
-  return { callerFixture, targetFixture, targetDaemon };
+  return {
+    callerFixture,
+    targetFixture,
+    targetDaemon,
+    callerAddress: directAddress(callerFixture.agentName),
+    targetAddress: directAddress(targetFixture.agentName),
+  };
 });
+
+function expectRetiredConversationIdentifierRefused(
+  callerFixture: DaemonProcessFixture,
+) {
+  return Effect.gen(function* () {
+    yield* Effect.scoped(
+      Effect.gen(function* () {
+        const management = yield* acquireDaemonManagementClient(
+          callerFixture.endpoint,
+        );
+        const retiredIdentifier = "retired-public-identifier";
+        const malformed = yield* management.callExpectingProtocolError(
+          "read_conversation",
+          { conversationId: retiredIdentifier },
+        );
+        expect(malformed.code).toBe(ProtocolErrorCode.InvalidParams);
+        expect(malformed.data).toMatchObject({
+          issues: arrayContaining([
+            { path: ["conversationId"], message: "Unexpected field" },
+          ]),
+        });
+        expect(JSON.stringify(malformed.data)).not.toContain(retiredIdentifier);
+      }),
+    );
+  });
+}
 
 const withoutAdmissionCredential = (
   fixture: DaemonProcessFixture,
@@ -260,7 +276,7 @@ const withAdmissionCredentialFile = (
   },
 });
 
-const admissionLifetimeInfrastructure = Effect.gen(function* () {
+const acquireAdmissionFixtures = Effect.gen(function* () {
   const infrastructure = yield* acquireProcessInfrastructure;
   const [registeredFixture, unregisteredFixture] = yield* Effect.all(
     [
@@ -269,35 +285,6 @@ const admissionLifetimeInfrastructure = Effect.gen(function* () {
     ] as const,
     { concurrency: 2 },
   );
-  const firstRun = yield* acquireDaemonProcess(registeredFixture);
-  yield* registerFixture(registeredFixture);
-  yield* stopProcess(firstRun);
-  expect(firstRun.logs()).toContain(
-    `sharnessd listening on ${registeredFixture.endpoint}`,
-  );
-  expect(firstRun.logs()).toMatch(/\(package \S+; WIRE_VERSION \S+\)/u);
-  expect(firstRun.logs().match(/sharnessd listening on/gu)).toHaveLength(1);
-  const unsetRun = yield* acquireDaemonProcess(
-    withoutAdmissionCredential(registeredFixture),
-  );
-  expect((yield* readActiveStatus(registeredFixture)).kind).toBe(
-    expectedActive,
-  );
-  yield* stopProcess(unsetRun);
-  const missingRun = yield* acquireDaemonProcess(
-    withMissingAdmissionCredential(registeredFixture),
-  );
-  expect((yield* readActiveStatus(registeredFixture)).kind).toBe(
-    expectedActive,
-  );
-  yield* stopProcess(missingRun);
-  const emptyRun = yield* acquireDaemonProcess(
-    withAdmissionCredentialFile(registeredFixture, ""),
-  );
-  expect((yield* readActiveStatus(registeredFixture)).kind).toBe(
-    expectedActive,
-  );
-  yield* stopProcess(emptyRun);
   return { registeredFixture, unregisteredFixture };
 });
 
@@ -344,8 +331,8 @@ const readDurableHistory = (
         hasMore: false,
       });
       const history = yield* management.readConversation(address);
-      expect(history.kind).toBe(expectedPage);
-      expectCertifiedHistory(history.records, [
+
+      expectEveryMemberSigned(history.records, [
         fixture.agentName,
         address.slice("agent:".length),
       ]);
@@ -361,9 +348,36 @@ const toRestartedText = "sent to the restarted daemon";
  * stored that record, and an endpoint stores a record only after the one it
  * extends, so its durable history then holds all three posts.
  */
-const singleRestartBehavior = singleRestartInfrastructure
-  .pipe(Effect.flatMap(singleRestartHistory))
-  .pipe(Effect.scoped);
+const singleRestartBehavior = Effect.gen(function* () {
+  const scenario = yield* acquireRestartPair;
+  yield* restartSenderAndExpectDelivery(scenario);
+  yield* expectRestartedRecipientHistory(scenario);
+}).pipe(Effect.scoped);
+
+function restartSenderAndExpectDelivery({
+  restartedFixture,
+  peerFixture,
+  restartedDaemon,
+}: RestartScenario) {
+  return Effect.gen(function* () {
+    yield* registerFixture(restartedFixture);
+    yield* registerFixture(peerFixture);
+    yield* deliverDirect({
+      from: restartedFixture,
+      to: peerFixture,
+      text: beforeRestartText,
+      send: certifiedSend,
+    });
+    yield* stopProcess(restartedDaemon);
+    yield* acquireDaemonProcess(restartedFixture);
+    yield* deliverDirect({
+      from: restartedFixture,
+      to: peerFixture,
+      text: fromRestartedText,
+      send: sendOrQueue,
+    });
+  });
+}
 
 const beforeRouterRestartText = "sent before the Router restarts";
 
@@ -376,73 +390,35 @@ const replyAfterRouterRestartText = "reply after the Router restarts";
  * replaces it. Both daemons must re-anchor their conversation under the new
  * Router instance and then deliver in both directions.
  */
-const routerRestartBehavior = routerRestartInfrastructure
-  .pipe(
-    Effect.flatMap(routerRestartDelivery),
-    Effect.flatMap(routerRestartHistory),
-  )
-  .pipe(Effect.scoped);
+const routerRestartBehavior = Effect.gen(function* () {
+  const scenario = yield* acquireRouterRestartPair;
+  yield* registerFixture(scenario.memberFixture);
+  yield* registerFixture(scenario.conciergeFixture);
+  yield* restartRouterAndExpectBidirectionalDelivery(scenario);
+  yield* expectRecoveredRouterHistory(scenario);
+}).pipe(Effect.scoped);
 
-const processVerification = Effect.fn(function* (
-  state: Effect.Effect.Success<ReturnType<typeof processCallerHistory>>,
-) {
-  const { callerFixture, targetFixture, callerAddress, targetAddress } = state;
-  yield* Effect.scoped(
-    Effect.gen(function* () {
-      const caller = yield* acquireHarnessEndpoint(callerFixture.endpoint);
-      const target = yield* acquireHarnessEndpoint(targetFixture.endpoint);
-      const targetDelivery = yield* Effect.forkScoped(
-        nextDelivery(target.messages),
-      );
-      yield* sendOrQueue(caller, {
-        to: targetAddress,
-        text: "new message after the recipient restarts",
-      });
-      const incoming = yield* Fiber.join(targetDelivery);
-      expect(incoming.item).toMatchObject({
-        kind: "multicast",
-        message: {
-          sender: callerAddress,
-          content: [
-            {
-              type: "text",
-              text: "new message after the recipient restarts",
-            },
-          ],
-        },
-      });
-      yield* incoming.acknowledge;
-
-      const callerDelivery = yield* Effect.forkScoped(
-        nextDelivery(caller.messages),
-      );
-      yield* sendOrQueue(target, {
-        to: callerAddress,
-        text: "reply from the restarted recipient",
-      });
-      const reply = yield* Fiber.join(callerDelivery);
-      expect(reply.item).toMatchObject({
-        kind: "multicast",
-        message: {
-          sender: targetAddress,
-          content: [
-            { type: "text", text: "reply from the restarted recipient" },
-          ],
-        },
-      });
-      yield* reply.acknowledge;
-    }),
-  );
-});
-
-const processBehavior = processInfrastructure
-  .pipe(
-    Effect.flatMap(processCallerAddress),
-    Effect.flatMap(processDelivery),
-    Effect.flatMap(processCallerHistory),
-    Effect.flatMap(processVerification),
-  )
-  .pipe(Effect.scoped);
+const processBehavior = Effect.gen(function* () {
+  const scenario = yield* acquireProcessPair;
+  yield* registerFixture(scenario.callerFixture);
+  yield* registerFixture(scenario.targetFixture);
+  yield* expectRetiredConversationIdentifierRefused(scenario.callerFixture);
+  yield* exchangeInitialPostsAndExpectDelivery(scenario);
+  yield* expectInitialHistoriesMatch(scenario);
+  yield* restartRecipientAndExpectRetainedHistory(scenario);
+  yield* deliverDirect({
+    from: scenario.callerFixture,
+    to: scenario.targetFixture,
+    text: "new message after the recipient restarts",
+    send: sendOrQueue,
+  });
+  yield* deliverDirect({
+    from: scenario.targetFixture,
+    to: scenario.callerFixture,
+    text: "reply from the restarted recipient",
+    send: sendOrQueue,
+  });
+}).pipe(Effect.scoped);
 
 /** `fixture` configured with `other`'s agent key in place of its own. */
 const withAgentKeyOf = (
@@ -459,7 +435,7 @@ const withAgentKeyOf = (
 /** Starts `fixture`'s daemon and expects it to stop in `phase` before it listens. */
 const expectStartupFailure = (
   fixture: DaemonProcessFixture,
-  phase: "configuration" | "storage",
+  phase: "configuration" | typeof storageStartupPhase,
 ) =>
   awaitDaemonStartupFailure(fixture).pipe(
     Effect.tap((failure) =>
@@ -479,9 +455,58 @@ const expectStartupFailure = (
  * it listens. An unregistered daemon without the credential stops in phase
  * configuration.
  */
-const admissionLifetimeBehavior = admissionLifetimeInfrastructure
-  .pipe(Effect.flatMap(admissionLifetimeInvalidRun))
-  .pipe(Effect.scoped);
+const admissionLifetimeBehavior = Effect.gen(function* () {
+  const scenario = yield* acquireAdmissionFixtures;
+  yield* registerAndExpectSingleStartupAnnouncement(scenario.registeredFixture);
+  yield* expectRegisteredRestartWithoutAdmission(
+    scenario.registeredFixture,
+    withoutAdmissionCredential(scenario.registeredFixture),
+  );
+  yield* expectRegisteredRestartWithoutAdmission(
+    scenario.registeredFixture,
+    withMissingAdmissionCredential(scenario.registeredFixture),
+  );
+  yield* expectRegisteredRestartWithoutAdmission(
+    scenario.registeredFixture,
+    withAdmissionCredentialFile(scenario.registeredFixture, ""),
+  );
+  yield* expectRegisteredRestartWithoutAdmission(
+    scenario.registeredFixture,
+    withAdmissionCredentialFile(
+      scenario.registeredFixture,
+      scenario.registeredFixture.agentPrivateKeyFile,
+    ),
+  );
+  yield* expectIdentityAndAdmissionFailures(scenario);
+}).pipe(Effect.scoped);
+
+function registerAndExpectSingleStartupAnnouncement(
+  registeredFixture: DaemonProcessFixture,
+) {
+  return Effect.gen(function* () {
+    const firstRun = yield* acquireDaemonProcess(registeredFixture);
+    yield* registerFixture(registeredFixture);
+    yield* stopProcess(firstRun);
+    expect(firstRun.logs()).toContain(
+      `sharnessd listening on ${registeredFixture.endpoint}`,
+    );
+    expect(firstRun.logs()).toMatch(/\(package \S+; WIRE_VERSION \S+\)/u);
+    expect(firstRun.logs().match(/sharnessd listening on/gu)).toHaveLength(1);
+  });
+}
+
+function expectRegisteredRestartWithoutAdmission(
+  fixture: DaemonProcessFixture,
+  configured: DaemonProcessFixture,
+) {
+  return Effect.gen(function* () {
+    const running = yield* acquireDaemonProcess(configured);
+    expect((yield* readActiveStatus(fixture)).kind).toBe(
+      registeredDaemonStatus,
+    );
+    yield* stopProcess(running);
+  });
+}
 
 /**
  * A release with an empty live window refuses this binary's retained outbound
@@ -531,11 +556,9 @@ const refusesStaleOutbox = Effect.scoped(
       cwd: dirname(fileURLToPath(import.meta.url)),
     });
     expect(failed.exitCode).not.toBe(0);
-    expect(failed.logs).toContain(expectedOutboxTooOld);
-    expect(failed.logs).toContain(expectedDrainTheOutboxOnThePreviousRelease);
-    expect(failed.logs).toContain(
-      expectedDocsGuidesUpgradesMdxApplyAResetRelease,
-    );
+    expect(failed.logs).toContain(outboxTooOldReason);
+    expect(failed.logs).toContain(outboxTooOldRemedy);
+    expect(failed.logs).toContain(resetReleaseDocsAnchor);
     const after = yield* storedSchema(local.stateDirectory);
     expect(after).toEqual(before);
   }),
@@ -598,8 +621,8 @@ it(
         const failed = yield* awaitDaemonStartupFailure(local);
 
         expect(failed.exitCode).not.toBe(0);
-        expect(failed.logs).toContain(expectedStorage);
-        expect(failed.logs).toContain(expectedNewerSchema);
+        expect(failed.logs).toContain(storageStartupPhase);
+        expect(failed.logs).toContain(newerSchemaReason);
         expect(yield* storedSchema(local.stateDirectory)).toEqual(before);
       }),
     ),
@@ -617,6 +640,7 @@ it(
           infrastructure,
           "legacy-key",
         );
+        const retiredSecret = "retired-secret-value";
         for (const [executable, key] of [
           [DAEMON_BINARY, "MOLTZAPD_STATE_DIRECTORY"],
           [REGISTRY_BINARY, "MOLTZAP_REGISTRY_ADMISSION_CREDENTIAL"],
@@ -627,7 +651,7 @@ it(
               ...local,
               environment: {
                 ...local.environment,
-                [key]: "retired-secret-value",
+                [key]: retiredSecret,
               },
             },
             {
@@ -636,9 +660,9 @@ it(
             },
           );
           expect(failed.exitCode).not.toBe(0);
-          expect(failed.logs).toContain(expectedLegacyKey);
+          expect(failed.logs).toContain(legacySettingReason);
           expect(failed.logs).toContain(key);
-          expect(failed.logs).not.toContain(expectedRetiredSecretValue);
+          expect(failed.logs).not.toContain(retiredSecret);
         }
       }),
     ),
@@ -669,13 +693,9 @@ it(
           const before = yield* fs.readDirectory(local.stateDirectory);
           const failed = yield* awaitDaemonStartupFailure(local);
           expect(failed.exitCode).not.toBe(0);
-          expect(failed.logs).toContain(expectedPreReset);
-          expect(failed.logs).toContain(
-            expectedStartWithAFreshStateDirectoryAndRegisterAgain,
-          );
-          expect(failed.logs).toContain(
-            expectedDocsGuidesUpgradesMdxApplyAResetRelease,
-          );
+          expect(failed.logs).toContain(preResetReason);
+          expect(failed.logs).toContain(preResetRemedy);
+          expect(failed.logs).toContain(resetReleaseDocsAnchor);
           expect(yield* fs.readDirectory(local.stateDirectory)).toEqual(before);
         }
       }),
@@ -684,9 +704,7 @@ it(
   PROCESS_TEST_TIMEOUT_MS,
 );
 
-function singleRestartHistory(
-  state: Effect.Effect.Success<typeof singleRestartInfrastructure>,
-) {
+function expectRestartedRecipientHistory(state: RestartScenario) {
   return Effect.gen(function* () {
     const { restartedFixture, peerFixture } = state;
     yield* deliverDirect({
@@ -714,8 +732,8 @@ function singleRestartHistory(
   });
 }
 
-function routerRestartDelivery(
-  state: Effect.Effect.Success<typeof routerRestartInfrastructure>,
+function restartRouterAndExpectBidirectionalDelivery(
+  state: RouterRestartScenario,
 ) {
   return Effect.gen(function* () {
     const { infrastructure, memberFixture, conciergeFixture } = state;
@@ -753,9 +771,7 @@ function routerRestartDelivery(
   });
 }
 
-function routerRestartHistory(
-  state: Effect.Effect.Success<ReturnType<typeof routerRestartDelivery>>,
-) {
+function expectRecoveredRouterHistory(state: RouterRestartScenario) {
   return Effect.gen(function* () {
     const { memberFixture, conciergeFixture } = state;
     const history = yield* readDurableHistory(
@@ -783,8 +799,8 @@ function routerRestartHistory(
       history.records.map(({ recordCore }) => recordCore),
     );
     const restartedAnchor = history.records[2]?.routerAnchor;
-    expect(restartedAnchor?.kind).toBe(expectedCompletedReanchor);
-    if (restartedAnchor?.kind === "completed_reanchor") {
+    expect(restartedAnchor?.kind).toBe(completedReanchorKind);
+    if (restartedAnchor?.kind === completedReanchorKind) {
       expect(restartedAnchor.reanchor?.sharnessVersion).toBe(
         history.records[1]?.recordCore.sharnessVersion,
       );
@@ -792,20 +808,7 @@ function routerRestartHistory(
   });
 }
 
-function processCallerAddress(
-  state: Effect.Effect.Success<typeof processInfrastructure>,
-) {
-  return Effect.sync(() => {
-    const { callerFixture, targetFixture } = state;
-    const callerAddress = directAddress(callerFixture.agentName);
-    const targetAddress = directAddress(targetFixture.agentName);
-    return { ...state, callerAddress, targetAddress };
-  });
-}
-
-function processDelivery(
-  state: Effect.Effect.Success<ReturnType<typeof processCallerAddress>>,
-) {
+function exchangeInitialPostsAndExpectDelivery(state: ProcessScenario) {
   return Effect.gen(function* () {
     const { callerFixture, targetFixture, callerAddress, targetAddress } =
       state;
@@ -851,17 +854,10 @@ function processDelivery(
   });
 }
 
-function processCallerHistory(
-  state: Effect.Effect.Success<ReturnType<typeof processDelivery>>,
-) {
+function expectInitialHistoriesMatch(state: ProcessScenario) {
   return Effect.gen(function* () {
-    const {
-      callerFixture,
-      targetFixture,
-      targetDaemon,
-      callerAddress,
-      targetAddress,
-    } = state;
+    const { callerFixture, targetFixture, callerAddress, targetAddress } =
+      state;
     const callerHistory = yield* readDurableHistory(
       callerFixture,
       targetAddress,
@@ -890,32 +886,28 @@ function processCallerHistory(
         ({ recordCore }) => recordCore.action.postIntent.content,
       ),
     ).toEqual([initialContent, responseContent]);
+  });
+}
+
+function restartRecipientAndExpectRetainedHistory({
+  targetDaemon,
+  targetFixture,
+  callerAddress,
+}: ProcessScenario) {
+  return Effect.gen(function* () {
     yield* stopProcess(targetDaemon);
     yield* acquireDaemonProcess(targetFixture);
     const recovered = yield* readDurableHistory(targetFixture, callerAddress);
     expect(recovered.records).toHaveLength(2);
-    return state;
   });
 }
 
-function admissionLifetimeInvalidRun(
-  state: Effect.Effect.Success<typeof admissionLifetimeInfrastructure>,
-) {
+function expectIdentityAndAdmissionFailures(state: AdmissionScenario) {
   return Effect.gen(function* () {
     const { registeredFixture, unregisteredFixture } = state;
-    const invalidRun = yield* acquireDaemonProcess(
-      withAdmissionCredentialFile(
-        registeredFixture,
-        registeredFixture.agentPrivateKeyFile,
-      ),
-    );
-    expect((yield* readActiveStatus(registeredFixture)).kind).toBe(
-      expectedActive,
-    );
-    yield* stopProcess(invalidRun);
     yield* expectStartupFailure(
       withAgentKeyOf(registeredFixture, unregisteredFixture),
-      "storage",
+      storageStartupPhase,
     );
     yield* expectStartupFailure(
       withoutAdmissionCredential(unregisteredFixture),

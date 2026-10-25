@@ -50,7 +50,24 @@ const collecting = (
     collective: { op, deadline: options.deadline, requestedSchema: formSchema },
   });
 
-const gatherRequester = Effect.gen(function* () {
+interface GatherScenario {
+  readonly requester: Participant;
+  readonly guided: Participant;
+  readonly strict: Participant;
+  readonly members: readonly Participant[];
+}
+
+interface AllGatherScenario {
+  readonly requester: Participant;
+  readonly guided: Participant;
+  readonly strictA: Participant;
+  readonly strictB: Participant;
+  readonly members: readonly Participant[];
+  readonly group: string;
+  readonly deadline: number;
+}
+
+const acquireGatherScenario = Effect.gen(function* () {
   const [requester, guided, strict] = yield* acquireParticipants(
     ["fw-gather-requester", "fw-gather-guided", "fw-gather-strict"],
     {
@@ -63,23 +80,10 @@ const gatherRequester = Effect.gen(function* () {
     return yield* Effect.dieMessage("expected three participants");
   }
   const members = [guided, strict];
-  const refused = yield* collecting(requester, "gather", members, {
-    question: "[out] Which day works?",
-    deadline: 60,
-  }).pipe(Effect.flip);
-  expect(refused).toBeInstanceOf(FirewallSendError);
-  expect(refused).toMatchObject({ refusal: "prohibited" });
-  const deadline = yield* measuredDeadlineSeconds(
-    groupRound(requester, members),
-  );
-  const withheld = yield* collecting(requester, "gather", members, {
-    question: "[in] Which day works?",
-    deadline: deadline,
-  });
-  return { requester, guided, strict, members, withheld };
+  return { requester, guided, strict, members };
 });
 
-const allGatherAll = Effect.gen(function* () {
+const acquireAllGatherScenario = Effect.gen(function* () {
   const all = yield* acquireParticipants(
     [
       "fw-all-gather-requester",
@@ -136,14 +140,14 @@ const accept = (member: Participant, to: string, content: object) =>
  * marked withheld in its result; and a guidance-mode requester sees every
  * answer with the advice each check gave.
  */
-const gatherBehavior = gatherRequester
-  .pipe(
-    Effect.flatMap(gatherAnswered),
-    Effect.flatMap(gatherAdvised),
-    Effect.flatMap(gatherUncertainAdvice),
-    Effect.flatMap(gatherUnsettled),
-  )
-  .pipe(Effect.scoped);
+const gatherBehavior = Effect.gen(function* () {
+  const scenario = yield* acquireGatherScenario;
+  yield* expectOutgoingGatherRefused(scenario.requester, scenario.members);
+  yield* expectIncomingGatherWithheld(scenario);
+  yield* expectGatherAnswerWithheld(scenario);
+  yield* expectGuidedGatherAdvice(scenario);
+  yield* expectUnsettledGatherAdvice(scenario);
+}).pipe(Effect.scoped);
 
 /**
  * A requester and two members in enforcement mode, and one in guidance
@@ -153,14 +157,12 @@ const gatherBehavior = gatherRequester
  * withheld in their results and nowhere else. Every endpoint's result has
  * the same members and the same outcome for every answer it shows.
  */
-const allGatherBehavior = allGatherAll
-  .pipe(
-    Effect.flatMap(allGatherWithheld),
-    Effect.flatMap(allGatherHidden),
-    Effect.flatMap(allGatherGuidedAnswer),
-    Effect.flatMap(allGatherVerification),
-  )
-  .pipe(Effect.scoped);
+const allGatherBehavior = Effect.gen(function* () {
+  const scenario = yield* acquireAllGatherScenario;
+  yield* expectAllGatherQuestionWithheld(scenario);
+  const operationId = yield* answerAllGatherWithPrivateContent(scenario);
+  yield* expectAllGatherAnswerVisibility(scenario, operationId);
+}).pipe(Effect.scoped);
 
 it(
   "checks a gather's question at each endpoint and its answers at the requester",
@@ -174,9 +176,36 @@ it(
   FIREWALL_TEST_TIMEOUT_MS,
 );
 
-function gatherAnswered(state: Effect.Effect.Success<typeof gatherRequester>) {
+/** A refused question posts nothing; the next incoming request must belong to the subsequent operation. */
+function expectOutgoingGatherRefused(
+  requester: Participant,
+  members: readonly Participant[],
+) {
   return Effect.gen(function* () {
-    const { requester, guided, strict, members, withheld } = state;
+    const refused = yield* collecting(requester, "gather", members, {
+      question: "[out] Which day works?",
+      deadline: 60,
+    }).pipe(Effect.flip);
+    expect(refused).toBeInstanceOf(FirewallSendError);
+    expect(refused).toMatchObject({ refusal: "prohibited" });
+  });
+}
+
+/** The strict member never receives the withheld request, so it has no response context and times out as no-answer. */
+function expectIncomingGatherWithheld({
+  requester,
+  guided,
+  strict,
+  members,
+}: GatherScenario) {
+  return Effect.gen(function* () {
+    const deadline = yield* measuredDeadlineSeconds(
+      groupRound(requester, members),
+    );
+    const withheld = yield* collecting(requester, "gather", members, {
+      question: "[in] Which day works?",
+      deadline: deadline,
+    });
     expect(yield* nextItem(guided)).toMatchObject({
       kind: "collectiveRequest",
       id: withheld.operationId,
@@ -195,6 +224,16 @@ function gatherAnswered(state: Effect.Effect.Success<typeof gatherRequester>) {
         { member: strict.address, outcome: { kind: "no-answer" } },
       ],
     });
+  });
+}
+
+function expectGatherAnswerWithheld({
+  requester,
+  guided,
+  strict,
+  members,
+}: GatherScenario) {
+  return Effect.gen(function* () {
     const answered = yield* collecting(requester, "gather", members, {
       question: "Which day works for the review?",
       deadline: ANSWERED_DEADLINE_SECONDS,
@@ -208,15 +247,6 @@ function gatherAnswered(state: Effect.Effect.Success<typeof gatherRequester>) {
       slot: "mon",
       note: "[in] my calendar is private",
     });
-    return { ...state, answered };
-  });
-}
-
-function gatherAdvised(
-  state: Effect.Effect.Success<ReturnType<typeof gatherAnswered>>,
-) {
-  return Effect.gen(function* () {
-    const { requester, guided, strict, answered } = state;
     yield* accept(strict, requester.address, { slot: "tue" });
     expect(yield* nextItem(requester)).toMatchObject({
       kind: "collectiveResult",
@@ -232,6 +262,15 @@ function gatherAdvised(
         },
       ],
     });
+  });
+}
+
+function expectGuidedGatherAdvice({
+  requester,
+  guided,
+  strict,
+}: GatherScenario) {
+  return Effect.gen(function* () {
     const advised = yield* collecting(guided, "gather", [requester, strict], {
       question: "Which day works for the retro?",
       deadline: ANSWERED_DEADLINE_SECONDS,
@@ -247,15 +286,6 @@ function gatherAdvised(
     yield* accept(strict, guided.address, { slot: "tue" });
     const result = yield* Queue.take(guided.inbox);
     yield* result.acknowledge;
-    return { ...state, advised, result };
-  });
-}
-
-function gatherUncertainAdvice(
-  state: Effect.Effect.Success<ReturnType<typeof gatherAdvised>>,
-) {
-  return Effect.sync(() => {
-    const { requester, strict, advised, result } = state;
     expect(result.item).toMatchObject({
       kind: "collectiveResult",
       id: advised.operationId,
@@ -278,21 +308,24 @@ function gatherUncertainAdvice(
         },
       ],
     });
-    const uncertainAdvice = {
-      middlewareId: "integration-markers",
-      ruleId: "marked",
-      uncertain: { choice: "none", probability: 0.33 },
-      instruction: "Respond to the marked message.",
-    };
-    return { ...state, uncertainAdvice };
   });
 }
 
-function gatherUnsettled(
-  state: Effect.Effect.Success<ReturnType<typeof gatherUncertainAdvice>>,
-) {
+const uncertainAdvice = {
+  middlewareId: "integration-markers",
+  ruleId: "marked",
+  uncertain: { choice: "none", probability: 0.33 },
+  instruction: "Respond to the marked message.",
+};
+
+/** An unsettled norm judgment supplies advice without blocking the question or its answer. */
+function expectUnsettledGatherAdvice({
+  requester,
+  guided,
+  strict,
+  members,
+}: GatherScenario) {
   return Effect.gen(function* () {
-    const { requester, guided, strict, members, uncertainAdvice } = state;
     const unsettled = yield* collecting(requester, "gather", members, {
       question: "[unsure] Which day works for the demo?",
       deadline: ANSWERED_DEADLINE_SECONDS,
@@ -329,10 +362,17 @@ function gatherUnsettled(
   });
 }
 
-function allGatherWithheld(state: Effect.Effect.Success<typeof allGatherAll>) {
+/** Withheld questions never reach enforcing members, yet those members still receive the close with the question hidden. */
+function expectAllGatherQuestionWithheld({
+  requester,
+  guided,
+  strictA,
+  strictB,
+  members,
+  group,
+  deadline,
+}: AllGatherScenario) {
   return Effect.gen(function* () {
-    const { requester, guided, strictA, strictB, members, group, deadline } =
-      state;
     const withheld = yield* collecting(requester, "all_gather", members, {
       question: "[in] Which day works?",
       deadline: deadline,
@@ -361,16 +401,6 @@ function allGatherWithheld(state: Effect.Effect.Success<typeof allGatherAll>) {
       question: "[in] Which day works?",
       outcomes,
     };
-    return { ...state, withheld, outcomes, shown };
-  });
-}
-
-function allGatherHidden(
-  state: Effect.Effect.Success<ReturnType<typeof allGatherWithheld>>,
-) {
-  return Effect.gen(function* () {
-    const { requester, guided, strictA, strictB, members, group, shown } =
-      state;
     const hidden = {
       ...shown,
       question: { kind: "withheld", reason: "prohibited" },
@@ -379,6 +409,18 @@ function allGatherHidden(
     expect(yield* nextItem(guided)).toEqual(shown);
     expect(yield* nextItem(strictA)).toMatchObject(hidden);
     expect(yield* nextItem(strictB)).toMatchObject(hidden);
+  });
+}
+
+function answerAllGatherWithPrivateContent({
+  requester,
+  guided,
+  strictA,
+  strictB,
+  members,
+  group,
+}: AllGatherScenario) {
+  return Effect.gen(function* () {
     const answered = yield* collecting(requester, "all_gather", members, {
       question: "Which day works for the review?",
       deadline: ANSWERED_DEADLINE_SECONDS,
@@ -395,15 +437,15 @@ function allGatherHidden(
       to: group,
       collectiveResponse: { action: "decline" },
     });
-    return { ...state, answered };
+    return answered.operationId;
   });
 }
 
-function allGatherGuidedAnswer(
-  state: Effect.Effect.Success<ReturnType<typeof allGatherHidden>>,
+function expectAllGatherAnswerVisibility(
+  { requester, guided, strictA, strictB, group }: AllGatherScenario,
+  operationId?: string,
 ) {
   return Effect.gen(function* () {
-    const { requester, guided, strictA, strictB, group, answered } = state;
     const guidedAnswer = {
       member: guided.address,
       outcome: {
@@ -425,7 +467,7 @@ function allGatherGuidedAnswer(
     const result = {
       kind: "collectiveResult",
       op: "all_gather",
-      id: answered.operationId,
+      id: operationId,
       to: group,
       question: "Which day works for the review?",
     };
@@ -433,23 +475,6 @@ function allGatherGuidedAnswer(
       ...result,
       outcomes: [withheldAnswer, ...others],
     });
-    return { ...state, guidedAnswer, withheldAnswer, others, result };
-  });
-}
-
-function allGatherVerification(
-  state: Effect.Effect.Success<ReturnType<typeof allGatherGuidedAnswer>>,
-) {
-  return Effect.gen(function* () {
-    const {
-      guided,
-      strictA,
-      strictB,
-      guidedAnswer,
-      withheldAnswer,
-      others,
-      result,
-    } = state;
     expect(yield* nextItem(guided)).toEqual({
       ...result,
       outcomes: [guidedAnswer, ...others],
