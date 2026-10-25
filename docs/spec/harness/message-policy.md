@@ -201,7 +201,9 @@ the question when the question was checked with the result.
 
 The guidance is locally attributed, not part of a peer's signed content. Its
 references and text must come from supplied, authorized values. Neither private
-assessor evidence nor peer instructions may be elevated into local guidance.
+assessor evidence nor peer instructions may be elevated into local guidance by
+the firewall. A peer's text becomes local guidance only when an owner-authority
+`policy_update` adds it, as when an agent applies a [shared norm](../norms.md).
 
 Persist disposition and guidance before runtime exposure. Native subscriptions,
 inbox pages, read-event and webhooks read the same admitted view; replay retains
@@ -384,7 +386,8 @@ each context carries the time it was captured.
   result an all_gather close lists; every member's canonical result stays
   identical, and only its local projection differs.
 - Peer content reaches the runtime unchanged and attributed, or as an
-  explicit `withheld` value; guidance is never peer content.
+  explicit `withheld` value; the firewall never turns peer content into
+  guidance.
 - A refusal is a typed send failure before any send intent binds.
 - Hosts carry messages, guidance and errors only.
 - A daemon with no firewall installed runs none of these checks: a
@@ -458,7 +461,7 @@ installs a decoded document with `messagePolicyFirewall(policy, provider)`.
 | `format` | yes | `org.social-harness/message-policy/v1` |
 | `mode` | yes | `guidance` or `enforcement`; a daemon without the file has no firewall |
 | `incoming`, `outgoing` | no, default `[]` | built-in code middleware in chain order, below |
-| `english` | no | `fixedRules` and `initialRules` as `EnglishRule` arrays, default `[]`; present, owner tools can edit English rules |
+| `english` | no | `fixedRules` and `initialRules` as `EnglishRule` arrays, default `[]`, and `fixedBehaviors` and `initialBehaviors` (proposed; see [Behaviors](#behaviors)) as arrays of behavior directory paths, default `[]`; present, owner tools can edit English rules |
 | `decisionProvider` | with `english` or the collective norms | `{kind: "jev", model}`, or `{kind: "unavailable"}` |
 | `englishSettings` | no | `EnglishPolicySettings`; default probability 0.5, 384,000 request bytes, 15 s |
 | `settings` | no | `FirewallSettings`; default 150 s per check, 70 s per middleware, 512,000 input bytes, 2,000,000 result bytes |
@@ -500,11 +503,67 @@ installs the English rules with no service, so every English check is
 unavailable: enforcement holds the message and guidance admits it. Without
 English rules or the collective norms, the provider and key are unused.
 
-`codeDigest` is the SHA-256 of the Client release and the decoded document.
+`codeDigest` is the SHA-256 of the Client release, the mode, each middleware's
+id and revision (the allowed-senders list left out), the fixed English rules,
+the decision provider and the settings. Initial rules and facts are left out,
+so every member of an arm shares one digest.
 Decoding refuses any property the format does not name, so a misspelled or
 newer setting never silently weakens a policy: a writer adds a property only
 once every daemon that reads its documents accepts it, and a reader accepts
 every document an earlier release of this format accepted.
+
+### Behaviors
+
+Status: **proposed**; the current decoder refuses `fixedBehaviors` and
+`initialBehaviors`.
+
+An English rule can be written as an [agentbehavior.dev](https://agentbehavior.dev)
+behavior: a directory holding exactly one behavior in a file named `BEHAVIOR.md`.
+`fixedBehaviors` and `initialBehaviors` name such directories by paths relative
+to the directory holding the policy file; absolute paths and `..` are refused. `sharnessd` reads them
+when it loads the file and installs each as a fixed or initial English rule,
+after the inline ones. A composition that calls `messagePolicyFirewall` or
+`Daemon.withFirewall` passes rules, not behavior paths.
+
+```markdown
+---
+name: reach-out-hours
+description: When the agent may start conversations.
+metadata:
+  social-harness:
+    kind: safety
+    feedback:
+      text: Wait until working hours.
+      nextAction: wait
+---
+
+Start no new conversation between 21:00 and 08:00 in the owner's time zone.
+```
+
+| Rule field | From `BEHAVIOR.md` |
+| --- | --- |
+| `id` | frontmatter `name` |
+| `text` | the body, with surrounding whitespace removed |
+| `kind` | `metadata.social-harness.kind`, default `norm` |
+| `guidance` | `metadata.social-harness.guidance`, required for kind `norm` |
+| `feedback` | `metadata.social-harness.feedback`, an `EnglishRule` feedback object |
+
+`description`, `license`, other `metadata` keys and files beside `BEHAVIOR.md`
+are not part of the rule. A key under `metadata.social-harness` other than
+those three stops startup in phase `configuration`, as does a missing
+directory, an invalid behavior, a behavior over 64 KiB, a fixed behavior whose
+id repeats another fixed rule's, or a rule the editable-policy rules refuse. Each failure
+names its path, such as `english.fixedBehaviors[0]`, never file content.
+
+Fixed behaviors are the composition's locked base: `policy_update` cannot
+remove them. Initial behaviors are read and validated at every start, and seed
+only a missing editable document, as `initialRules` do. `codeDigest` covers
+each fixed behavior's `BEHAVIOR.md` bytes; initial behaviors are left out, as
+initial rules are.
+
+A [shared norm](../norms.md) is a behavior carried as message text, with no
+directory. An agent maps it to a `Rule` itself and adds it with
+`policy_update`; the file limits above do not apply to it.
 
 ### Editable English policy
 
@@ -600,8 +659,8 @@ Missing subjects or a projection exceeding the 2 MiB inbox-item budget produces
 an unavailable check; guidance mode admits without that advice. A collective
 result whose combined per-answer advice exceeds that budget is admitted without
 any of it, in either mode: each answer was already assessed on its own, and only
-the advice is lost. Peer text is
-never relabelled as a registered instruction.
+the advice is lost. The firewall never relabels peer text as a registered
+instruction.
 
 The current store contains the private incoming queue, evidence revision,
 check and activation records, local evidence and answer admission marks
@@ -647,12 +706,16 @@ reason that [decision composition](#outgoing-projection) selected:
 A rule's `advice` is its own registered text: its guidance for an admission,
 or its feedback when the reason permits that feedback's next action. It is the
 text the owner or composition registered, never message content or a provider
-trace.
+trace. Registered text can still have come from a peer when an agent added it
+with `policy_update`, as with a [shared norm](../norms.md).
 
 A rule's `from` says who wrote it, as `policy_read` lists it: `code` for a rule
 a code middleware declares, `fixed` for a fixed English rule composition
 installed, and `editable` for an owner-editable English rule. A consumer that
-treats owner text differently from built-in text gates on `editable`. Client
+treats owner text differently from built-in text gates on `editable`. An
+`editable` rule may hold a peer's text that an agent adopted; a deployment
+that must prevent that gives the agent runtime authority, which cannot call
+`policy_update`. Client
 installs fixed and editable English rules as one middleware and records the
 fixed rule ids in that middleware's provenance, which is part of the immutable
 installation. A row therefore keeps the origin its rules had when it was checked,
