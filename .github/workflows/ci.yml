@@ -85,6 +85,7 @@ jobs:
       - run: pnpm test:compute-next-version
       - run: pnpm test:npm-version-exists
       - run: pnpm test:select-packages
+      - run: pnpm test:image-input-key
       - run: pnpm test:client-host-imports
 
   test:
