@@ -833,33 +833,39 @@ await test("real Dockerfiles exclude daemon-only source and sibling version read
   assert.deepEqual(Effect.runSync(imageInputs(repo)), changedSibling);
 });
 
-for (const [file, content, changesKey] of [
-  ["integration/daemon.test.ts", "daemon-only integration test", false],
-  ["safer-architecture.config.json", "{}", false],
-  ["vitest.config.ts", "export {};", false],
-  ["tsconfig.test.json", "{}", false],
-  ["typedoc.json", "{}", false],
-  ["AGENTS.md", "daemon-only instructions", false],
+/** The Client build tsconfig the real Dockerfile rows start from. */
+const BUILD_TSCONFIG =
+  '{"extends":"../../tsconfig.base.json","compilerOptions":{"rootDir":"src","outDir":"dist"}}\n';
+
+for (const [file, baseline, content, changesKey] of [
+  [
+    "integration/daemon.test.ts",
+    "baseline",
+    "daemon-only integration test",
+    false,
+  ],
+  ["safer-architecture.config.json", "{}", '{"layers":[]}', false],
+  ["vitest.config.ts", "export {};", "export const changed = 1;", false],
+  ["tsconfig.test.json", "{}", '{"include":["src"]}', false],
+  ["typedoc.json", "{}", '{"entryPoints":[]}', false],
+  ["AGENTS.md", "baseline", "daemon-only instructions", false],
+  ["assets/drafts/notes.md", "draft", "excluded draft edit", false],
+  ["LICENSE", "license", "changed license", true],
+  ["assets/schema.json", "{}", '{"shipped":true}', true],
   [
     "tsconfig.json",
+    BUILD_TSCONFIG,
     '{"extends":"../../tsconfig.base.json","compilerOptions":{"rootDir":"src","outDir":"dist","strict":true}}',
     true,
   ],
 ] as const) {
-  await test(`real Dockerfiles exclude daemon-only source: ${file} ${changesKey ? "changes" : "preserves"} both keys`, (t) => {
+  await test(`real Dockerfiles bind copied Client files by what the build reads or packs: ${file} ${changesKey ? "changes" : "preserves"} both keys`, (t) => {
     const repo = realImageFixture();
     t.after(() => {
       rmSync(repo, { recursive: true, force: true });
     });
     const target = `packages/client/${file}`;
-    write(repo, target, "daemon-only baseline");
-    if (changesKey) {
-      write(
-        repo,
-        target,
-        '{"extends":"../../tsconfig.base.json","compilerOptions":{"rootDir":"src","outDir":"dist"}}\n',
-      );
-    }
+    write(repo, target, baseline);
     commit(repo);
     const before = Effect.runSync(imageInputs(repo));
     write(repo, target, content);
@@ -869,6 +875,25 @@ for (const [file, content, changesKey] of [
     assert.equal(after.registry?.key !== before.registry?.key, changesKey);
   });
 }
+
+await test("a copied sibling without a files list is refused", (t) => {
+  const repo = realImageFixture();
+  t.after(() => {
+    rmSync(repo, { recursive: true, force: true });
+  });
+  const manifest = readFileSync(
+    path.join(repo, "packages/client/package.json"),
+    "utf8",
+  );
+  const withoutFiles = manifest.replace(/"files":\[[^\]]*\],/u, "");
+  assert.notEqual(withoutFiles, manifest);
+  write(repo, "packages/client/package.json", withoutFiles);
+  commit(repo);
+  assert.match(
+    refused(repo).message,
+    /packages\/client\/package\.json declares no files list/u,
+  );
+});
 
 await test("adding PGlite runtime dependencies changes only the Registry image", (t) => {
   const repo = realImageFixture();

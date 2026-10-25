@@ -180,6 +180,15 @@ function clientManifest(): string {
   return JSON.stringify({
     name: "@fixture/core",
     version: "1",
+    files: [
+      "dist",
+      "!dist/tsconfig.tsbuildinfo",
+      "bin",
+      "LICENSE",
+      "NOTICE",
+      "assets",
+      "!assets/drafts",
+    ],
     scripts: { lint: "node src/daemon/run.ts" },
     nx: {
       targets: {
