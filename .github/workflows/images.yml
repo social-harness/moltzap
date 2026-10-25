@@ -9,7 +9,11 @@ name: Publish service images
 # converge by building only missing services. A publication, or any rerun,
 # sends repository_dispatch moltzap-images to social-harness/deployment with
 # client_payload {"registry":"ghcr.io/social-harness/registry@sha256:…",
-# "router":"ghcr.io/social-harness/router@sha256:…"} for both current keys.
+# "router":"ghcr.io/social-harness/router@sha256:…","revision":"<tip sha>"}.
+# A token-free tip job resolves and verifies the current main tip's own keys.
+# If either is unpublished, that tip's run dispatches them once available.
+# The dispatch job holds the App token, checks out nothing and sends only
+# that prepared payload, so reruns never send the older run's image keys.
 on:
   push:
     branches: [main]
@@ -21,6 +25,10 @@ concurrency:
 
 permissions:
   contents: read
+
+env:
+  IMAGE_CERTIFICATE_IDENTITY: https://github.com/social-harness/moltzap/.github/workflows/images.yml@refs/heads/main
+  IMAGE_CERTIFICATE_OIDC_ISSUER: https://token.actions.githubusercontent.com
 
 defaults:
   run:
@@ -36,13 +44,13 @@ jobs:
     outputs:
       keys: ${{ steps.keys.outputs.keys }}
       missing: ${{ steps.keys.outputs.missing }}
-      present: ${{ steps.keys.outputs.present }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-toolchain
       - run: pnpm install --frozen-lockfile
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
       - name: Resolve committed input tags
         id: keys
         env:
@@ -51,14 +59,15 @@ jobs:
           printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           keys=$(pnpm --silent image:keys)
           missing='[]'
-          present='{}'
           for service in registry router; do
             key=$(jq -r --arg s "$service" '.[$s] | sub("^sha256:"; "")' <<<"$keys")
             image="ghcr.io/social-harness/$service"
             status=0
             digest=$(scripts/release/ghcr-digest.sh "$image:inputs-$key") || status=$?
             case $status in
-              0) present=$(jq -c --arg s "$service" --arg ref "$image@$digest" '. + {($s): $ref}' <<<"$present") ;;
+              0) cosign verify \
+                --certificate-identity "$IMAGE_CERTIFICATE_IDENTITY" \
+                --certificate-oidc-issuer "$IMAGE_CERTIFICATE_OIDC_ISSUER" "$image@$digest" ;;
               1) missing=$(jq -c --arg s "$service" '. + [$s]' <<<"$missing") ;;
               *) exit "$status" ;;
             esac
@@ -66,7 +75,6 @@ jobs:
           {
             echo "keys=$(jq -c . <<<"$keys")"
             echo "missing=$missing"
-            echo "present=$present"
           } >> "$GITHUB_OUTPUT"
 
   build:
@@ -141,9 +149,14 @@ jobs:
           key=$(jq -r --arg s "$SERVICE" '.[$s] | sub("^sha256:"; "")' <<<"$KEYS")
           tag="$image:inputs-$key"
           status=0
-          scripts/release/ghcr-digest.sh "$tag" || status=$?
+          digest=$(scripts/release/ghcr-digest.sh "$tag") || status=$?
           case $status in
-            0) exit 0 ;;
+            0)
+              cosign verify \
+                --certificate-identity "$IMAGE_CERTIFICATE_IDENTITY" \
+                --certificate-oidc-issuer "$IMAGE_CERTIFICATE_OIDC_ISSUER" "$image@$digest"
+              exit 0
+              ;;
             1) ;;
             *) exit "$status" ;;
           esac
@@ -155,18 +168,64 @@ jobs:
           docker buildx imagetools create --tag "$ref" "${sources[@]}"
           cosign sign --yes "$ref"
           cosign verify \
-            --certificate-identity https://github.com/social-harness/moltzap/.github/workflows/images.yml@refs/heads/main \
-            --certificate-oidc-issuer https://token.actions.githubusercontent.com "$ref"
+            --certificate-identity "$IMAGE_CERTIFICATE_IDENTITY" \
+            --certificate-oidc-issuer "$IMAGE_CERTIFICATE_OIDC_ISSUER" "$ref"
           docker buildx imagetools create --tag "$tag" "$ref"
 
-  dispatch:
+  tip:
     needs: [keys, build, publish]
     if: >-
-      always() && needs.keys.result == 'success' &&
+      !cancelled() && needs.keys.result == 'success' &&
+      needs.build.result != 'failure' && needs.publish.result != 'failure' &&
       (needs.publish.result == 'success' || github.run_attempt > 1)
     runs-on: ubuntu-24.04
-    permissions:
-      packages: read
+    outputs:
+      payload: ${{ steps.tip.outputs.payload }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: ./.github/actions/setup-toolchain
+      - run: pnpm install --frozen-lockfile
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: Resolve and verify the current tip's indexes
+        id: tip
+        env:
+          DOCKER_CONFIG: ${{ runner.temp }}/anonymous-docker
+        run: |
+          mkdir -p "$DOCKER_CONFIG"
+          keys=$(pnpm --silent image:keys)
+          revision=$(git rev-parse HEAD)
+          payload=$(jq -cn --arg revision "$revision" '{revision: $revision}')
+          for service in registry router; do
+            key=$(jq -r --arg s "$service" '.[$s] | sub("^sha256:"; "")' <<<"$keys")
+            image="ghcr.io/social-harness/$service"
+            if digest=$(docker buildx imagetools inspect "$image:inputs-$key" --format '{{.Manifest.Digest}}' 2>"$RUNNER_TEMP/inspect-error"); then
+              [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+            elif grep -Eqi 'manifest unknown|: not found|denied|forbidden|unauthorized' "$RUNNER_TEMP/inspect-error"; then
+              echo "::notice::main tip $revision has image keys not yet publicly available; the tip's own run dispatches them."
+              exit 0
+            else
+              cat "$RUNNER_TEMP/inspect-error" >&2
+              exit 1
+            fi
+            cosign verify \
+              --certificate-identity "$IMAGE_CERTIFICATE_IDENTITY" \
+              --certificate-oidc-issuer "$IMAGE_CERTIFICATE_OIDC_ISSUER" "$image@$digest"
+            payload=$(jq -c --arg s "$service" --arg ref "$image@$digest" '. + {($s): $ref}' <<<"$payload")
+          done
+          echo "payload=$payload" >> "$GITHUB_OUTPUT"
+
+  dispatch:
+    needs: [keys, build, publish, tip]
+    if: >-
+      !cancelled() && needs.keys.result == 'success' &&
+      needs.build.result != 'failure' && needs.publish.result != 'failure' &&
+      (needs.publish.result == 'success' || github.run_attempt > 1) &&
+      needs.tip.outputs.payload != ''
+    runs-on: ubuntu-24.04
+    permissions: {}
     steps:
       - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         id: app-token
@@ -176,19 +235,10 @@ jobs:
           owner: social-harness
           repositories: deployment
           permission-contents: write
-      - name: Dispatch both current index references
+      - name: Dispatch both current tip index references
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          REGISTRY_TOKEN: ${{ github.token }}
-          KEYS: ${{ needs.keys.outputs.keys }}
+          PAYLOAD: ${{ needs.tip.outputs.payload }}
         run: |
-          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          payload='{}'
-          for service in registry router; do
-            key=$(jq -r --arg s "$service" '.[$s] | sub("^sha256:"; "")' <<<"$KEYS")
-            image="ghcr.io/social-harness/$service"
-            digest=$(docker buildx imagetools inspect "$image:inputs-$key" --format '{{.Manifest.Digest}}')
-            payload=$(jq -c --arg s "$service" --arg ref "$image@$digest" '. + {($s): $ref}' <<<"$payload")
-          done
-          jq -n --argjson payload "$payload" '{event_type: "moltzap-images", client_payload: $payload}' \
+          jq -n --argjson payload "$PAYLOAD" '{event_type: "moltzap-images", client_payload: $payload}' \
             | gh api --method POST repos/social-harness/deployment/dispatches --input -

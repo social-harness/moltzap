@@ -2,8 +2,8 @@
 # Tests for ghcr-digest.sh against a mock docker and gh on PATH.
 #
 # The mock docker answers `docker buildx imagetools inspect` from DOCKER_EXIT,
-# DOCKER_STDOUT and DOCKER_STDERR; the mock gh answers `gh api` from GH_EXIT
-# and GH_STDERR.
+# DOCKER_STDOUT and DOCKER_STDERR only for the requested Router tag. The mock
+# gh answers only the Router package path, from GH_EXIT and GH_STDERR.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -30,17 +30,26 @@ check() {
 MOCK_DIR=$(mktemp -d)
 cat > "$MOCK_DIR/docker" <<'MOCK'
 #!/usr/bin/env bash
+if [[ "$1 $2 $3" != "buildx imagetools inspect" || "$4" != "$EXPECTED_REF" ]]; then
+  echo "unexpected image reference: $*" >&2
+  exit 2
+fi
 printf '%s' "${DOCKER_STDOUT:-}"
 printf '%s' "${DOCKER_STDERR:-}" >&2
 exit "${DOCKER_EXIT:-0}"
 MOCK
 cat > "$MOCK_DIR/gh" <<'MOCK'
 #!/usr/bin/env bash
+if [[ "$1 $2" != "api orgs/social-harness/packages/container/router" ]]; then
+  echo "gh: Not Found (HTTP 404)" >&2
+  exit 1
+fi
 printf '%s' "${GH_STDERR:-}" >&2
 exit "${GH_EXIT:-0}"
 MOCK
 chmod +x "$MOCK_DIR/docker" "$MOCK_DIR/gh"
 export PATH="$MOCK_DIR:$PATH"
+export EXPECTED_REF="$REF"
 
 cleanup() { rm -rf "$MOCK_DIR"; }
 trap cleanup EXIT

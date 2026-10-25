@@ -414,26 +414,6 @@ Router and NanoClaw stay private, as defined in
 [Publication and versions](spec/layer-interfaces.md#publication-and-versions).
 Package versions are independent of wire compatibility.
 
-Registry and Router publish as `ghcr.io/social-harness/registry` and
-`ghcr.io/social-harness/router`. Each image is a multi-architecture OCI index
-for `linux/amd64` and `linux/arm64`, built on native runners. The committed
-input key `sha256:<hex>` from `pnpm image:keys` names the immutable tag
-`inputs-<hex>`. Release-version tags name those same indexes; the release
-commit pins both digests in `examples/two-agents/compose.yaml`, and the GitHub
-release body lists both full digest references. Missing input tags stop the
-bump until the images workflow publishes them; a rerun completes the release.
-
-`.github/workflows/images.yml` pushes each index by digest, signs it with
-cosign keyless, and verifies it before creating its input tag. The certificate
-identity is
-`https://github.com/social-harness/moltzap/.github/workflows/images.yml@refs/heads/main`
-and its OIDC issuer is `https://token.actions.githubusercontent.com`. Existing
-input tags are skipped, never retagged. After publishing any index, or on a
-rerun, the workflow sends `repository_dispatch` event `moltzap-images` to
-`social-harness/deployment`. Its `client_payload` contains both current index
-references: `{"registry":"ghcr.io/social-harness/registry@sha256:<digest>","router":"ghcr.io/social-harness/router@sha256:<digest>"}`.
-
-
 The private `@moltzap/integration-tests` workspace in `tests/integration` owns
 cross-package process suites. It is test infrastructure, outside the product
 graph and release set. Suites that launch only their own package stay with that

@@ -30,6 +30,7 @@ import {
   SendInput,
 } from "@moltzap/client";
 import {
+  Cause,
   Console,
   Data,
   Duration,
@@ -87,6 +88,11 @@ interface Network {
   readonly registryOrigin: string;
   readonly routerOrigin: string;
   readonly registrySigner: string;
+  readonly diagnostics: Effect.Effect<
+    string,
+    never,
+    CommandExecutor.CommandExecutor | Scope.Scope
+  >;
 }
 
 /** Every way a setup step fails: a check, a file or process, or a decode. */
@@ -104,36 +110,52 @@ type Services =
 
 const twoAgents = Effect.gen(function* () {
   const network = yield* startNetwork();
-  const [alice, bob] = yield* Effect.all(
-    [startAgent(network, "alice"), startAgent(network, "bob")],
-    { concurrency: 2 },
-  );
-  yield* register(alice);
-  yield* register(bob);
-  yield* Console.log("registered agent:alice and agent:bob");
+  yield* Effect.gen(function* () {
+    yield* awaitNetwork(network);
+    const [alice, bob] = yield* Effect.all(
+      [startAgent(network, "alice"), startAgent(network, "bob")],
+      { concurrency: 2 },
+    );
+    yield* register(alice);
+    yield* register(bob);
+    yield* Console.log("registered agent:alice and agent:bob");
 
-  const aliceEndpoint = yield* acquireHarnessEndpoint(alice.mcp);
-  const bobEndpoint = yield* acquireHarnessEndpoint(bob.mcp);
-  const firstDelivery = yield* Effect.forkScoped(
-    Stream.runHead(bobEndpoint.messages),
-  );
+    const aliceEndpoint = yield* acquireHarnessEndpoint(alice.mcp);
+    const bobEndpoint = yield* acquireHarnessEndpoint(bob.mcp);
+    const firstDelivery = yield* Effect.forkScoped(
+      Stream.runHead(bobEndpoint.messages),
+    );
 
-  yield* aliceEndpoint.send(
-    yield* Schema.decodeUnknown(SendInput)({ to: "agent:bob", text: MESSAGE }),
-  );
-  yield* Console.log(`alice sent: ${MESSAGE}`);
+    yield* aliceEndpoint.send(
+      yield* Schema.decodeUnknown(SendInput)({
+        to: "agent:bob",
+        text: MESSAGE,
+      }),
+    );
+    yield* Console.log(`alice sent: ${MESSAGE}`);
 
-  const delivery = yield* Fiber.join(firstDelivery).pipe(
-    Effect.flatMap(
-      Option.match({
-        onNone: () => fail("bob's message stream ended before a delivery"),
-        onSome: Effect.succeed,
+    const delivery = yield* Fiber.join(firstDelivery).pipe(
+      Effect.flatMap(
+        Option.match({
+          onNone: () => fail("bob's message stream ended before a delivery"),
+          onSome: Effect.succeed,
+        }),
+      ),
+    );
+    yield* Console.log(`bob received: ${describe(delivery.item)}`);
+    yield* delivery.acknowledge;
+  }).pipe(
+    Effect.timeout(RUN_TIMEOUT),
+    Effect.catchAllCause((cause) =>
+      Effect.gen(function* () {
+        const diagnostics = yield* network.diagnostics;
+        return yield* fail(
+          `${Cause.pretty(cause)}\n${diagnostics}\nDocs: https://docs.moltzap.xyz/quickstart#docker-compose-fails`,
+        );
       }),
     ),
   );
-  yield* Console.log(`bob received: ${describe(delivery.item)}`);
-  yield* delivery.acknowledge;
-}).pipe(Effect.scoped, Effect.timeout(RUN_TIMEOUT));
+}).pipe(Effect.scoped);
 
 NodeRuntime.runMain(
   twoAgents.pipe(
@@ -141,9 +163,30 @@ NodeRuntime.runMain(
   ),
 );
 
+/** Wait for both public health endpoints before registering any agents. */
+function awaitNetwork(
+  network: Network,
+): Effect.Effect<void, never, HttpClient.HttpClient> {
+  return Effect.gen(function* () {
+    yield* Effect.repeat(
+      Effect.all([
+        isHealthy(network.registryOrigin),
+        isHealthy(network.routerOrigin),
+      ]),
+      {
+        until: (healthy) => healthy.every(Boolean),
+        schedule: Schedule.spaced(POLL_INTERVAL),
+      },
+    );
+    yield* Console.log(
+      `registry ${network.registryOrigin}, router ${network.routerOrigin}`,
+    );
+  });
+}
+
 /**
- * Starts PGlite, the Registry, and the Router, and returns once the Registry
- * and the Router answer their health checks.
+ * Starts the Compose project before the run budget begins. Health checks and
+ * agent communication share that budget; image downloads do not consume it.
  */
 function startNetwork(): Effect.Effect<Network, StepError, Services> {
   return Effect.gen(function* () {
@@ -173,23 +216,29 @@ function startNetwork(): Effect.Effect<Network, StepError, Services> {
       SHARNESS_EXAMPLE_ADMISSION_CREDENTIAL: ADMISSION_CREDENTIAL,
       SHARNESS_EXAMPLE_REGISTRY_SIGNER: registrySigner,
     };
-    yield* startCompose(environment);
-    yield* Effect.repeat(
-      Effect.all([isHealthy(registryOrigin), isHealthy(routerOrigin)]),
-      {
-        until: (healthy) => healthy.every(Boolean),
-        schedule: Schedule.spaced(POLL_INTERVAL),
-      },
-    );
-    yield* Console.log(`registry ${registryOrigin}, router ${routerOrigin}`);
-    return { directory, registryOrigin, routerOrigin, registrySigner };
+    const diagnostics = yield* startCompose(environment);
+    return {
+      directory,
+      registryOrigin,
+      routerOrigin,
+      registrySigner,
+      diagnostics,
+    };
   });
 }
 
-/** Compose cleanup runs before the scratch directory finalizer removes its bind mount. */
+/**
+ * Compose cleanup runs after diagnostics and before the scratch directory's
+ * bind mount is removed. Normal commands inherit output; diagnostics drain
+ * both pipes together and survive a failed diagnostic command.
+ */
 function startCompose(
   environment: Readonly<Record<string, string>>,
-): Effect.Effect<void, StepError, Services> {
+): Effect.Effect<
+  Effect.Effect<string, never, CommandExecutor.CommandExecutor | Scope.Scope>,
+  StepError,
+  Services
+> {
   return Effect.gen(function* () {
     const composeArgs = [
       "compose",
@@ -198,23 +247,76 @@ function startCompose(
       "--project-name",
       `sharness-example-${randomBytes(8).toString("hex")}`,
     ];
-    const compose = (...args: readonly string[]) =>
+    const command = (...args: readonly string[]) =>
       Command.make("docker", ...composeArgs, ...args).pipe(
         Command.env(environment),
-        Command.exitCode,
-        Effect.flatMap((code) =>
-          code === 0
-            ? Effect.void
-            : fail(
-                `docker compose exited with ${code}. Docs: https://docs.moltzap.xyz/quickstart#docker-compose-fails`,
-              ),
-        ),
       );
+    const compose = (...args: readonly string[]) =>
+      runCompose(command(...args));
     yield* Effect.addFinalizer(() =>
       compose("down", "--volumes", "--remove-orphans").pipe(Effect.orDie),
     );
-    yield* compose("up", "--detach");
+    const diagnostics = Effect.all(
+      [
+        captureCompose(command("ps", "--all"), "ps --all"),
+        captureCompose(command("logs"), "logs"),
+      ],
+      { concurrency: 2 },
+    ).pipe(Effect.map((outputs) => outputs.join("\n")));
+    yield* compose("up", "--detach").pipe(
+      Effect.catchAll((cause) =>
+        Effect.flatMap(diagnostics, (output) =>
+          fail(
+            `${String(cause)}\n${output}\nDocs: https://docs.moltzap.xyz/quickstart#docker-compose-fails`,
+          ),
+        ),
+      ),
+    );
+    return diagnostics;
   });
+}
+
+/** Inherit progress streams so pulls and shutdown cannot fill unread pipes. */
+function runCompose(
+  command: Command.Command,
+): Effect.Effect<void, StepError, CommandExecutor.CommandExecutor> {
+  return command.pipe(
+    Command.stdout("inherit"),
+    Command.stderr("inherit"),
+    Command.exitCode,
+    Effect.flatMap((code) =>
+      code === 0
+        ? Effect.void
+        : fail(
+            `docker compose exited with ${code}. Docs: https://docs.moltzap.xyz/quickstart#docker-compose-fails`,
+          ),
+    ),
+  );
+}
+
+/** Drain both diagnostic streams before cleanup even when Compose exits unsuccessfully. */
+function captureCompose(
+  command: Command.Command,
+  label: string,
+): Effect.Effect<string, never, CommandExecutor.CommandExecutor | Scope.Scope> {
+  return Effect.gen(function* () {
+    const child = yield* Command.start(command);
+    const [output, code] = yield* Effect.all(
+      [
+        Stream.merge(child.stdout, child.stderr).pipe(
+          Stream.decodeText(),
+          Stream.runFold("", (text, chunk) => text + chunk),
+        ),
+        child.exitCode,
+      ],
+      { concurrency: 2 },
+    );
+    return `docker compose ${label} (exit ${code}):\n${output}`;
+  }).pipe(
+    Effect.catchAll((cause) =>
+      Effect.succeed(`docker compose ${label} failed: ${String(cause)}`),
+    ),
+  );
 }
 
 /**

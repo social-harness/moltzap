@@ -28,7 +28,7 @@ name: Publish to npm
 # Each run splits into jobs by what they may touch. `build` installs, builds,
 # runs the pack gates and packs, with no OIDC token and no App token, so
 # nothing a dependency runs there can publish or push. `push` holds the
-# release App token and runs no repository code: it checks the release
+# release App token and runs no installed code: it checks the release
 # commit `build` made, pushes it with its tag, and dispatches the resume.
 # `publish` holds the OIDC token and runs no install or build: it checks the
 # tarballs `build` packed against the release commit's manifests and content
@@ -82,6 +82,8 @@ defaults:
 # the selection checks.
 env:
   RELEASE_PACKAGES: client openclaw-channel
+  IMAGE_CERTIFICATE_IDENTITY: https://github.com/social-harness/moltzap/.github/workflows/images.yml@refs/heads/main
+  IMAGE_CERTIFICATE_OIDC_ISSUER: https://token.actions.githubusercontent.com
 
 jobs:
   build:
@@ -144,12 +146,25 @@ jobs:
                 *) exit "$STATUS" ;;
               esac
             done
-            if [ -z "$MISSING" ] && git cat-file -e "$RELEASE_COMMIT:examples/two-agents/compose.yaml" 2>/dev/null; then
-              BODY=$(gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" --json body --jq .body 2>/dev/null || true)
+            if [ -z "$MISSING" ]; then
+              BODY=""
+              if BODY=$(gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" --json body --jq .body 2>"$RUNNER_TEMP/release-error"); then
+                :
+              elif grep -qxF 'release not found' "$RUNNER_TEMP/release-error"; then
+                BODY=""
+              else
+                cat "$RUNNER_TEMP/release-error" >&2
+                exit 1
+              fi
               COMPLETE=true
-              while read -r ref; do
-                grep -qF "$ref" <<<"$BODY" || COMPLETE=false
-              done < <(git show "$RELEASE_COMMIT:examples/two-agents/compose.yaml" | grep -oE 'ghcr.io/social-harness/(registry|router)@sha256:[a-f0-9]{64}' | sort -u)
+              if git show "$RELEASE_COMMIT:examples/two-agents/compose.yaml" > "$RUNNER_TEMP/release-compose.yaml" &&
+                REFS=$(scripts/release/example-images.sh refs "$RUNNER_TEMP/release-compose.yaml"); then
+                while read -r ref; do
+                  grep -qF "$ref" <<<"$BODY" || COMPLETE=false
+                done <<<"$REFS"
+              else
+                COMPLETE=false
+              fi
               if [ "$COMPLETE" = false ]; then
                 for pkg in $RELEASE_PACKAGES; do
                   VER=$(git show "$RELEASE_COMMIT:packages/$pkg/package.json" | jq -r .version)
@@ -267,22 +282,37 @@ jobs:
           pnpm install --no-frozen-lockfile --ignore-scripts
           echo "packages=$SELECTED" >> "$GITHUB_OUTPUT"
 
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        if: steps.plan.outputs.mode == 'bump' && steps.select.outputs.packages != ''
       - name: Pin the release service images
         if: steps.plan.outputs.mode == 'bump' && steps.select.outputs.packages != ''
         env:
-          GH_TOKEN: ${{ github.token }}
+          DOCKER_CONFIG: ${{ runner.temp }}/anonymous-docker
         run: |
-          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          mkdir -p "$DOCKER_CONFIG"
           KEYS=$(pnpm --silent image:keys)
+          refs=()
           for service in registry router; do
             key=$(jq -r --arg s "$service" '.[$s] | sub("^sha256:"; "")' <<<"$KEYS")
             image="ghcr.io/social-harness/$service"
             digest=$(docker buildx imagetools inspect "$image:inputs-$key" --format '{{.Manifest.Digest}}') || {
-              echo "ERROR: the images workflow has not published $service key $key yet; rerun this release once it has. Docs: https://docs.moltzap.xyz/spec/layer-interfaces#publication-and-versions" >&2
+              echo "ERROR: the images workflow must publish $service key $key and the ghcr.io/social-harness/{registry,router} packages must be public and pull anonymously; rerun once both conditions hold. Docs: https://docs.moltzap.xyz/spec/layer-interfaces#publication-and-versions" >&2
               exit 1
             }
             [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
-            sed -i "s|$image@sha256:[a-f0-9]\{64\}|$image@$digest|g" examples/two-agents/compose.yaml
+            ref="$image@$digest"
+            docker buildx imagetools inspect "$ref" >/dev/null || {
+              echo "ERROR: the ghcr.io/social-harness/{registry,router} packages must be public and pull anonymously before release. Docs: https://docs.moltzap.xyz/spec/layer-interfaces#publication-and-versions" >&2
+              exit 1
+            }
+            cosign verify \
+              --certificate-identity "$IMAGE_CERTIFICATE_IDENTITY" \
+              --certificate-oidc-issuer "$IMAGE_CERTIFICATE_OIDC_ISSUER" "$ref"
+            refs+=("$ref")
+          done
+          for ref in "${refs[@]}"; do
+            service=${ref#ghcr.io/social-harness/}
+            scripts/release/example-images.sh pin examples/two-agents/compose.yaml "${service%@*}" "$ref"
           done
 
       # Pack gates install the published closures in isolated consumers.
@@ -391,8 +421,8 @@ jobs:
       contents: read
       actions: write
     steps:
-      # The release commit's parent; nothing here installs or runs repository
-      # code, and the checkout keeps no credentials.
+      # The release commit's parent; nothing here installs or runs
+      # installed code, and the checkout keeps no credentials.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -405,6 +435,7 @@ jobs:
       # `build` ran installed dependencies, so the commit it made is checked
       # before it is pushed: one commit on the dispatched one, with the
       # release subject, touching only the files a release writes.
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
       - name: Check the release commit
         env:
           VERSION: ${{ needs.build.outputs.version }}
@@ -452,11 +483,17 @@ jobs:
             [ "$BEFORE" = "$AFTER" ] || { echo "ERROR: the release commit changes $manifest beyond the fields a release writes"; exit 1; }
           done
           for revision in "$GITHUB_SHA" "$COMMIT"; do
-            git show "$revision:examples/two-agents/compose.yaml" \
-              | sed -E 's|ghcr.io/social-harness/(registry|router)@sha256:[a-f0-9]{64}|ghcr.io/social-harness/\1@DIGEST|g' \
+            git show "$revision:examples/two-agents/compose.yaml" > "$RUNNER_TEMP/compose-$revision.yaml"
+            scripts/release/example-images.sh normalize "$RUNNER_TEMP/compose-$revision.yaml" \
               > "$RUNNER_TEMP/compose-$revision"
           done
-          cmp "$RUNNER_TEMP/compose-$GITHUB_SHA" "$RUNNER_TEMP/compose-$COMMIT"
+          cmp -s "$RUNNER_TEMP/compose-$GITHUB_SHA" "$RUNNER_TEMP/compose-$COMMIT" || { echo "ERROR: the release commit changes examples/two-agents/compose.yaml beyond the image digests"; exit 1; }
+          REFS=$(scripts/release/example-images.sh refs "$RUNNER_TEMP/compose-$COMMIT.yaml")
+          while read -r ref; do
+            cosign verify \
+              --certificate-identity "$IMAGE_CERTIFICATE_IDENTITY" \
+              --certificate-oidc-issuer "$IMAGE_CERTIFICATE_OIDC_ISSUER" "$ref"
+          done <<<"$REFS"
           echo "COMMIT=$COMMIT" >> "$GITHUB_ENV"
 
       # The release App token is minted only now, scoped to contents, and
@@ -590,35 +627,40 @@ jobs:
     environment: release
     runs-on: ubuntu-24.04
     permissions:
+      contents: write
       packages: write
     steps:
-      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
-        id: app-token
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          app-id: ${{ vars.RELEASE_APP_ID }}
-          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-          permission-contents: write
+          persist-credentials: false
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
       - name: Tag release indexes and record their digests
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          REGISTRY_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.build.outputs.version }}
           RELEASE_COMMIT: ${{ needs.build.outputs.release-commit }}
         run: |
-          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           gh api "repos/$GITHUB_REPOSITORY/contents/examples/two-agents/compose.yaml?ref=$RELEASE_COMMIT" \
             --jq .content | base64 --decode > "$RUNNER_TEMP/compose.yaml"
+          REFS=$(scripts/release/example-images.sh refs "$RUNNER_TEMP/compose.yaml")
+          while read -r ref; do
+            cosign verify \
+              --certificate-identity "$IMAGE_CERTIFICATE_IDENTITY" \
+              --certificate-oidc-issuer "$IMAGE_CERTIFICATE_OIDC_ISSUER" "$ref"
+          done <<<"$REFS"
           notes="$RUNNER_TEMP/notes.md"
-          if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" --json body --jq .body > "$notes"; then
+          if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" --json body --jq .body > "$notes" 2>"$RUNNER_TEMP/release-error"; then
             :
-          else
+          elif grep -qxF 'release not found' "$RUNNER_TEMP/release-error"; then
             gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes
             gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" --json body --jq .body > "$notes"
+          else
+            cat "$RUNNER_TEMP/release-error" >&2
+            exit 1
           fi
-          for service in registry router; do
-            image="ghcr.io/social-harness/$service"
-            ref=$(grep -oE "$image@sha256:[a-f0-9]{64}" "$RUNNER_TEMP/compose.yaml" | sort -u)
-            [[ "$ref" =~ ^ghcr.io/social-harness/$service@sha256:[a-f0-9]{64}$ ]]
+          while read -r ref; do
+            image=${ref%@*}
             if digest=$(docker buildx imagetools inspect "$image:$VERSION" --format '{{.Manifest.Digest}}' 2>"$RUNNER_TEMP/inspect-error"); then
               [[ "$ref" == "$image@$digest" ]]
             elif grep -Eqi 'manifest unknown|not found' "$RUNNER_TEMP/inspect-error"; then
@@ -630,5 +672,5 @@ jobs:
             if ! grep -qF "$ref" "$notes"; then
               printf '\n- `%s`\n' "$ref" >> "$notes"
             fi
-          done
+          done <<<"$REFS"
           gh release edit "v$VERSION" --repo "$GITHUB_REPOSITORY" --notes-file "$notes"
