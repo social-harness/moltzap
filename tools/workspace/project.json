@@ -297,7 +297,11 @@
         "sharedGlobals",
         {
           "runtime": "node --version"
-        }
+        },
+        "{workspaceRoot}/eslint.shared.ts",
+        "{workspaceRoot}/.pnpmfile.cjs",
+        "{workspaceRoot}/tools/**/*",
+        "{workspaceRoot}/tsconfig*.json"
       ],
       "options": {
         "command": "node scripts/release/image-input-key.test.ts"

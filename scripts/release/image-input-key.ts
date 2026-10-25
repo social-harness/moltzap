@@ -16,16 +16,12 @@ import {
   sortedJson,
   UNHASHED_FIELDS,
 } from "./content-hash.ts";
-import {
-  asStrings,
-  compilerLayout,
-  configInputs,
-} from "./image-input-config.ts";
+import { dockerContextInputs } from "./image-dockerfile.ts";
+import { compilerLayout, configInputs } from "./image-input-config.ts";
 import {
   checkout,
   ImageInputError,
   inputError,
-  jsonValue,
   mapping,
   readJson,
   type Tree,
@@ -61,7 +57,7 @@ const IMAGE_CONDITIONS = [
   "default",
 ];
 
-/** Each class is disjoint; locked packages are virtual inputs, not whole lockfiles. */
+/** Runtime modules are a subset of own and sibling inputs; locked packages are virtual inputs. */
 interface ImageInputs {
   readonly own: readonly string[];
   readonly modules: readonly string[];
@@ -78,7 +74,10 @@ interface ShellState {
   escaped: boolean;
 }
 
-/** Lists reached modules that consume release versions; image workflows can enforce a version-free runtime. */
+/**
+ * Lists reached modules in each service's own package that consume manifest versions.
+ * Sibling Client version strings belong to daemon reporting, outside this gate.
+ */
 export function runtimeVersionReads(
   repo: string,
 ): Effect.Effect<readonly string[], ImageInputError> {
@@ -87,7 +86,11 @@ export function runtimeVersionReads(
       const tree = checkout(repo);
       return [
         ...new Set(
-          Object.values(imagesFromTree(tree)).flatMap((image) => image.runtime),
+          Object.entries(imagesFromTree(tree)).flatMap(([service, image]) =>
+            image.runtime.filter((file) =>
+              file.startsWith(`packages/${service}/`),
+            ),
+          ),
         ),
       ]
         .filter((file) => isRuntimeInput(tree, file))
@@ -124,7 +127,9 @@ function isRuntimeInput(tree: Tree, file: string): boolean {
     file.startsWith(`${directory}/`),
   );
   const manifest =
-    root === undefined ? {} : readJson(tree, `${root}/package.json`);
+    root === undefined
+      ? {}
+      : readJson(tree, path.posix.join(root, "package.json"));
   return runtimeModule(
     file,
     tree.read(file),
@@ -168,9 +173,8 @@ function inputs(
     { ...tree, service: name },
     [...new Set([...directories, ...installed])],
     image,
-  ).filter(
-    (file) =>
-      !own.includes(file) && !modules.includes(file) && !image.includes(file),
+  ).filter((file) =>
+    includedTool(file, { own, modules, image, directories, root }),
   );
   const entries = [...own, ...modules, ...image, ...tooling].map((file) =>
     committedEntry(tree, file),
@@ -192,10 +196,31 @@ function inputs(
   };
 }
 
+/** Sibling source bytes bind through the reached graph; copied build configuration still binds in full. */
+function includedTool(
+  file: string,
+  context: {
+    readonly own: readonly string[];
+    readonly modules: readonly string[];
+    readonly image: readonly string[];
+    readonly directories: readonly string[];
+    readonly root: string;
+  },
+): boolean {
+  if ([...context.own, ...context.modules, ...context.image].includes(file)) {
+    return false;
+  }
+  return !context.directories.some(
+    (directory) =>
+      directory !== context.root &&
+      ["src", "bin"].some((part) => file.startsWith(`${directory}/${part}/`)),
+  );
+}
+
 function serviceImages(tree: Tree, service: string, name: string): string[] {
   const files = under(tree, `images/${service}`);
   for (const file of files.filter(isBuildFile)) {
-    validateDocker(tree.read(file), file, name);
+    dockerContextInputs(tree, file, name);
   }
   return files;
 }
@@ -210,10 +235,16 @@ function siblingInputs(
   const root = roots.get(name) ?? "";
   const reader = sourceReader(tree);
   const graph = moduleGraph(
-    own.map((file) => ({
-      name,
-      relative: path.posix.relative(root, tree.resolve(file)),
-    })),
+    own
+      .filter(
+        (file) =>
+          tree.files.get(file)?.mode !== "120000" ||
+          /\.[cm]?[jt]s$/u.test(file),
+      )
+      .map((file) => ({
+        name,
+        relative: path.posix.relative(root, tree.resolve(file)),
+      })),
     roots,
     {
       conditions: IMAGE_CONDITIONS,
@@ -249,11 +280,13 @@ function runtimeInputs(
   const root = roots.get(name) ?? "";
   const reader = sourceReader(tree);
   const inactive = new Set(
-    testEntryTargets(readJson(tree, `${root}/package.json`).exports)
+    testEntryTargets(
+      readJson(tree, path.posix.join(root, "package.json")).exports,
+    )
       .filter(
         (target) =>
           !activeEntryTargets(
-            readJson(tree, `${root}/package.json`).exports,
+            readJson(tree, path.posix.join(root, "package.json")).exports,
           ).includes(target),
       )
       .flatMap((target) => reader.locate(root, target) ?? [])
@@ -261,7 +294,13 @@ function runtimeInputs(
   );
   return moduleGraph(
     own
-      .filter((file) => !testInput(file) && !inactive.has(file))
+      .filter(
+        (file) =>
+          !testInput(file) &&
+          !inactive.has(file) &&
+          (tree.files.get(file)?.mode !== "120000" ||
+            /\.[cm]?[jt]s$/u.test(file)),
+      )
       .map((file) => ({
         name,
         relative: path.posix.relative(root, tree.resolve(file)),
@@ -311,7 +350,6 @@ function buildInputs(
   const fixed = [
     "package.json",
     ".npmrc",
-    ".dockerignore",
     "nx.json",
     "tsconfig.base.json",
     ".node-version",
@@ -322,7 +360,9 @@ function buildInputs(
     ...fixed,
     ...images
       .filter(isBuildFile)
-      .flatMap((file) => dockerInputs(buildTree, file)),
+      .flatMap((file) =>
+        dockerContextInputs(buildTree, file, tree.service ?? ""),
+      ),
   ]);
   const pending = [
     ...fixed,
@@ -347,11 +387,11 @@ function buildInputs(
 }
 
 function buildCommandFiles(tree: Tree, root: string): string[] {
-  const manifest = readJson(tree, `${root}/package.json`);
-  const projectFile = `${root}/project.json`;
+  const manifest = readJson(tree, path.posix.join(root, "package.json"));
+  const projectFile = path.posix.join(root, "project.json");
   const targetFile = tree.files.has(projectFile)
     ? projectFile
-    : `${root}/package.json`;
+    : path.posix.join(root, "package.json");
   const project = tree.files.has(projectFile)
     ? readJson(tree, projectFile)
     : mapping(manifest.nx);
@@ -397,14 +437,6 @@ function namedInputs(tree: Tree, file: string): string[] {
   const text = tree.read(file);
   if (/tsconfig[^/]*\.json$/u.test(file)) {
     return configInputs(tree, file);
-  }
-  if (isBuildFile(file)) {
-    return commandFiles(
-      tree,
-      ".",
-      dockerExecutable(dockerCommands(text, file)),
-      file,
-    );
   }
   if (/\.[cm]?[jt]s$/u.test(file)) {
     const roots = new Map([...workspaceRoots(tree), ["@image-build", "."]]);
@@ -507,6 +539,7 @@ function lockedClosure(
   const pending = [
     ...new Set([
       ...directories.filter((directory) => directory !== root),
+      ...(mapping(value.importers)["."] === undefined ? [] : ["."]),
       root,
     ]),
   ].map((id) => ({
@@ -550,7 +583,9 @@ function importerInputs(
   );
   found.set(`importer:${id}`, sections);
   return Object.keys(
-    mapping(readJson(tree, `${id}/package.json`).devDependencies),
+    mapping(
+      readJson(tree, path.posix.join(id, "package.json")).devDependencies,
+    ),
   ).map((name) => {
     const resolved = lockedId(
       name,
@@ -572,7 +607,7 @@ function accountImporter(
   if (!importer) {
     return;
   }
-  if (![...roots.values()].includes(id)) {
+  if (id !== "." && ![...roots.values()].includes(id)) {
     throw new ImageInputError({
       message: `Unaccounted workspace importer ${id}/package.json in pnpm-lock.yaml`,
     });
@@ -689,7 +724,9 @@ function committedEntry(tree: Tree, file: string): string {
     throw new ImageInputError({ message: `Unsupported gitlink input ${file}` });
   }
   if (entry.mode === "120000") {
-    return `${file}\0${entry.mode}\0${entry.blob}\0${committedEntry(tree, tree.resolve(file))}\n`;
+    return /\.[cm]?[jt]s$/u.test(file)
+      ? `${file}\0${entry.mode}\0${entry.blob}\0${committedEntry(tree, tree.resolve(file))}\n`
+      : `${file}\0${entry.mode}\0${entry.blob}\n`;
   }
   const blob =
     path.posix.basename(file) === "package.json"
@@ -822,133 +859,6 @@ function scriptNames(text: string): string[] {
   return names;
 }
 
-/** COPY and ADD read the build context; stage copies consume already keyed build outputs. */
-function dockerInputs(tree: Tree, file: string): string[] {
-  return dockerCommands(tree.read(file), file)
-    .split("\n")
-    .flatMap((line) => {
-      const instruction = line.trim();
-      const match = /^(COPY|ADD)\b/iu.exec(instruction);
-      refuseContextMount(instruction, file);
-      if (match === null) {
-        return [];
-      }
-      const body = instruction.slice(match[0].length).trimStart();
-      if (/(?:^|[ \t])--from(?:=|[ \t])/u.test(body)) {
-        return [];
-      }
-      const argumentsText = dockerArguments(body);
-      const tokens = argumentsText.startsWith("[")
-        ? asStrings(jsonValue(argumentsText, file))
-        : (argumentsText.match(/"[^"]*"|'[^']*'|\S+/gu) ?? []);
-      return tokens.slice(0, -1).flatMap((token) => {
-        const source = token
-          .replace(/^["']|["']$/gu, "")
-          .replace(/^\.\//u, "")
-          .replace(/\/$/u, "");
-        const candidates = [...tree.files.keys()].filter(
-          (candidate) =>
-            source === "." ||
-            candidate === source ||
-            candidate.startsWith(`${source}/`),
-        );
-        if (candidates.length === 0) {
-          throw new ImageInputError({
-            message: `Unsupported or missing ${match[1]} source ${source} in ${file}`,
-          });
-        }
-        return candidates.filter((candidate) => candidate !== "pnpm-lock.yaml");
-      });
-    });
-}
-
-/** Bind mounts without a stage source read context paths the COPY inventory cannot account for. */
-function refuseContextMount(instruction: string, file: string): void {
-  if (!/^RUN\b/iu.test(instruction)) {
-    return;
-  }
-  for (const mount of instruction.matchAll(/--mount=([^\s]+)/gu)) {
-    const options = new Map(
-      (mount[1] ?? "").split(",").map((option) => {
-        const [name = "", value = ""] = option.split("=");
-        return [name, value];
-      }),
-    );
-    if ((options.get("type") ?? "bind") === "bind" && !options.has("from")) {
-      throw new ImageInputError({
-        message: `Unsupported build-context bind mount in ${file}`,
-      });
-    }
-  }
-}
-
-/** Stage references can only point backwards; external inputs require an immutable digest. */
-function validateDocker(text: string, file: string, service: string): void {
-  const stages = new Set<string>();
-  let index = 0;
-  let current: string[] = [];
-  function image(reference: string): void {
-    if (
-      stages.has(reference.toLowerCase()) ||
-      reference === "scratch" ||
-      /@sha256:[a-f0-9]{64}$/u.test(reference)
-    ) {
-      return;
-    }
-    throw new ImageInputError({
-      message: `Unpinned image or undeclared earlier stage ${reference} in ${file}`,
-    });
-  }
-  for (const match of text.matchAll(
-    /^[ \t]*#[ \t]*syntax[ \t]*=[ \t]*(\S+)/gimu,
-  )) {
-    image(match[1] ?? "");
-  }
-  for (const line of dockerCommands(text, file).split("\n")) {
-    const from = stageDeclaration(line);
-    if (from !== undefined) {
-      current.forEach((stage) => stages.add(stage));
-      image(from.image);
-      current = [String(index++), ...from.names];
-    }
-    for (const reference of stageReferences(line)) {
-      image(reference);
-    }
-  }
-  validateInstall(dockerExecutable(dockerCommands(text, file)), file, service);
-}
-
-function dockerCommands(text: string, file: string): string {
-  if (text.split("\n").some(nonDefaultEscape)) {
-    throw new ImageInputError({
-      message: `Unsupported escape directive in ${file}`,
-    });
-  }
-  return text
-    .replaceAll("\r\n", "\n")
-    .replace(/^[ \t]*#[^\n]*$/gmu, "")
-    .replace(/\\[ \t]*\n(?:[ \t]*\n)*/gu, " ");
-}
-
-/** Full-line Docker comments are removed before continuation folding. */
-function dockerExecutable(text: string): string {
-  const lines: string[] = [];
-  let delimiter: string | undefined;
-  for (const line of text.split("\n")) {
-    if (delimiter !== undefined) {
-      if (line.trim() === delimiter) {
-        delimiter = undefined;
-      } else {
-        lines.push(line);
-      }
-    } else if (/^(?:RUN|CMD|ENTRYPOINT)\b/iu.test(line.trim())) {
-      lines.push(shellText(line));
-      delimiter = /<<['"]?(\w+)/u.exec(line)?.[1];
-    }
-  }
-  return lines.join("\n");
-}
-
 /** Shell comments start outside quotes at a token boundary. */
 function shellText(text: string): string {
   const state = { quote: "", comment: false, escaped: false };
@@ -999,26 +909,6 @@ function updateShellQuote(state: ShellState, character: string): void {
   }
 }
 
-function stageDeclaration(
-  line: string,
-): { readonly image: string; readonly names: readonly string[] } | undefined {
-  const match = /^FROM\s+(?:--platform=\S+\s+)?(\S+)(?:\s+AS\s+(\S+))?/iu.exec(
-    line.trim(),
-  );
-  return match === null
-    ? undefined
-    : {
-        image: match[1] ?? "",
-        names: match[2] === undefined ? [] : [match[2].toLowerCase()],
-      };
-}
-
-function stageReferences(line: string): string[] {
-  return [...line.matchAll(/(?:--from(?:=|\s+)|\bfrom=)([^\s,]+)/gu)].map(
-    (match) => match[1] ?? "",
-  );
-}
-
 function validateInstall(text: string, file: string, service: string): void {
   for (const command of text.split(/[;&|\n]+/u)) {
     if (
@@ -1042,11 +932,6 @@ function installFilter(command: string): string | undefined {
     ?.replace(/^["']|["']$/gu, "");
 }
 
-function nonDefaultEscape(line: string): boolean {
-  const match = /^#[ \t]*escape[ \t]*=(.*)$/iu.exec(line.trim());
-  return match !== null && match[1]?.trim() !== "\\";
-}
-
 function scriptToken(tokens: readonly string[], start: number): number {
   let next = start;
   while (tokens[next]?.startsWith("-")) {
@@ -1055,18 +940,6 @@ function scriptToken(tokens: readonly string[], start: number): number {
       : 1;
   }
   return next;
-}
-
-function dockerArguments(body: string): string {
-  let text = body;
-  while (text.startsWith("--")) {
-    const space = text.search(/\s/u);
-    if (space < 0) {
-      return "";
-    }
-    text = text.slice(space).trimStart();
-  }
-  return text;
 }
 
 if (import.meta.main) {

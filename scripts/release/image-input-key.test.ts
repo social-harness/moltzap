@@ -73,7 +73,7 @@ const changes = [
     true,
   ],
   ["npm configuration", ".npmrc", "strict-peer-dependencies=true", true, true],
-  ["Docker ignore rules", ".dockerignore", "node_modules\n.tmp", true, true],
+  ["Docker ignore rules", ".dockerignore", "node_modules\n.tmp", false, false],
   ["Nx configuration", "nx.json", '{"parallel":2}', true, true],
   [
     "base TypeScript config",
@@ -128,7 +128,7 @@ const changes = [
   [
     "Dockerfile",
     "images/router/Dockerfile",
-    `${dockerfile}\nENV NEW=1\n`,
+    `${dockerfile}\n# image configuration\n`,
     true,
     false,
   ],
@@ -427,7 +427,6 @@ await test("runtime version gate names only reached modules consuming manifest v
   );
   commit(repo);
   assert.deepEqual(Effect.runSync(runtimeVersionReads(repo)), [
-    "packages/client/src/index.ts",
     "packages/registry/src/version.ts",
     "packages/router/src/reexport.ts",
     "packages/router/src/version.ts",
@@ -436,29 +435,27 @@ await test("runtime version gate names only reached modules consuming manifest v
 });
 
 for (const [label, instruction] of [
-  ["shell COPY", "COPY assets/ /assets"],
   ["JSON ADD", 'ADD ["assets/", "/config"]'],
   ["CRLF continuation", "COPY \\\r\n assets/ /assets"],
   ["spaced continuation", "COPY \\ \t\n assets/ /assets"],
-  ["comment continuation", "COPY \\\n\n # ignored\n assets/ /assets"],
+  ["comment continuation", "COPY \\n\n # ignored\n assets/ /assets"],
   ["heredoc RUN", "RUN <<EOF\nnode tools/heredoc-task.ts\nEOF"],
   ["entrypoint", 'ENTRYPOINT ["node", "assets/config"]'],
 ] as const) {
-  await test(`${label} context inputs change the key`, (t) => {
+  await test(`refuses ${label}`, (t) => {
     const repo = fixture();
     t.after(() => {
       rmSync(repo, { recursive: true, force: true });
     });
     write(repo, "images/router/Dockerfile", `${dockerfile}\n${instruction}\n`);
     commit(repo);
-    const before = key(repo);
-    write(
-      repo,
-      label === "heredoc RUN" ? "tools/heredoc-task.ts" : "assets/config",
-      "changed",
-    );
-    commit(repo);
-    assert.notEqual(key(repo), before);
+    Either.match(Effect.runSync(Effect.either(imageInputs(repo))), {
+      onLeft: (error) => {
+        assert.ok(error instanceof ImageInputError);
+        assert.match(error.message, /images\/router\/Dockerfile line \d+/u);
+      },
+      onRight: () => assert.fail("Expected refusal"),
+    });
   });
 }
 
@@ -666,7 +663,7 @@ await test("missing workspace subpaths and malformed manifests retain file-speci
   });
 });
 
-await test("root pnpm options and optional run identify nested build executables", (t) => {
+await test("root pnpm options in Docker RUN are refused", (t) => {
   const repo = fixture();
   t.after(() => {
     rmSync(repo, { recursive: true, force: true });
@@ -686,27 +683,26 @@ await test("root pnpm options and optional run identify nested build executables
     `${dockerfile}\nRUN pnpm -w --silent --workspace-root run --silent custom\n`,
   );
   commit(repo);
-  const before = key(repo);
-  write(repo, "scripts/custom/task.ts", "export const changed = true;");
-  commit(repo);
-  assert.notEqual(key(repo), before);
+  Either.match(Effect.runSync(Effect.either(imageInputs(repo))), {
+    onLeft: (error) => {
+      assert.ok(error instanceof ImageInputError);
+    },
+    onRight: () => assert.fail("Expected refusal"),
+  });
 });
 
-await test("in-tree symlink target content is keyed even outside the package", (t) => {
+await test("copied directory symlinks hash the link without resolving it", (t) => {
   const repo = fixture();
   t.after(() => {
     rmSync(repo, { recursive: true, force: true });
   });
   write(repo, "assets/linked", "initial");
-  symlinkSync(
-    "../../../assets/linked",
-    path.join(repo, "packages/router/src/link"),
-  );
+  symlinkSync("../../../assets", path.join(repo, "packages/router/src/link"));
   commit(repo);
   const before = key(repo);
   write(repo, "assets/linked", "changed");
   commit(repo);
-  assert.notEqual(key(repo), before);
+  assert.equal(key(repo), before);
 });
 
 for (const route of ["relative import", "symlink module"] as const) {
@@ -735,9 +731,7 @@ for (const route of ["relative import", "symlink module"] as const) {
     }
     commit(repo);
     const before = key(repo);
-    assert.deepEqual(Effect.runSync(runtimeVersionReads(repo)), [
-      "packages/shared/leaf.ts",
-    ]);
+    assert.deepEqual(Effect.runSync(runtimeVersionReads(repo)), []);
     write(repo, "packages/shared/leaf.ts", "export const changed = true;");
     commit(repo);
     assert.notEqual(key(repo), before);
@@ -808,27 +802,27 @@ for (const [label, instruction, message] of [
   [
     "non-default Docker escape",
     "# escape=`\nCOPY assets/ /assets",
-    /escape directive.*images\/router\/Dockerfile/u,
+    /images\/router\/Dockerfile line/u,
   ],
   [
     "default-source bind mount",
     "RUN --mount=type=bind,target=/context cat /context/assets/config",
-    /bind mount.*images\/router\/Dockerfile/u,
+    /images\/router\/Dockerfile line/u,
   ],
   [
     "explicit-source bind mount",
     "RUN --mount=type=bind,source=assets,target=/context cat /context/config",
-    /bind mount.*images\/router\/Dockerfile/u,
+    /images\/router\/Dockerfile line/u,
   ],
   [
     "malformed JSON ADD",
     'ADD ["assets/",]',
-    /Invalid JSON in images\/router\/Dockerfile/u,
+    /images\/router\/Dockerfile line/u,
   ],
   [
     "missing context source",
     "COPY missing/ /assets",
-    /missing.*images\/router\/Dockerfile/u,
+    /images\/router\/Dockerfile line.*missing/u,
   ],
 ] as const) {
   await test(`refuses ${label} with a file-specific typed error`, (t) => {
@@ -880,9 +874,7 @@ for (const source of [
     );
     commit(repo);
     assert.notEqual(key(repo), before);
-    assert.deepEqual(Effect.runSync(runtimeVersionReads(repo)), [
-      "packages/client/src/private.ts",
-    ]);
+    assert.deepEqual(Effect.runSync(runtimeVersionReads(repo)), []);
   });
 }
 
@@ -901,7 +893,10 @@ for (const name of [
     write(
       repo,
       `images/router/${name}`,
-      "FROM node:24@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nCOPY assets/ /assets\n",
+      dockerfile.replace(
+        "COPY package.json",
+        "COPY assets/ /assets\nCOPY package.json",
+      ),
     );
     commit(repo);
     const before = key(repo);

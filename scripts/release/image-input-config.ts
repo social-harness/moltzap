@@ -30,7 +30,6 @@ export function configInputs(
   ];
 }
 
-/** Compiler paths retain the directory of the config that declares them. */
 /** Resolves compiler paths relative to their declaring configs. */
 export function compilerLayout(
   tree: Tree,

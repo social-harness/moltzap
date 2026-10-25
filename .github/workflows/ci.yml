@@ -10,6 +10,9 @@ on:
 # (NX_CACHE_WRITE_TOKEN) write. Forks and Dependabot run without it;
 # NX_CACHE_DISABLED=true turns it off everywhere.
 
+permissions:
+  contents: read
+
 jobs:
   ci:
     runs-on: ubuntu-latest
@@ -143,3 +146,46 @@ jobs:
       - uses: ./.github/actions/setup-toolchain
       - run: pnpm install --frozen-lockfile
       - run: pnpm nx run @moltzap/integration-tests:test:mixed-release
+
+  images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build service images for amd64
+        run: |
+          docker buildx create --use
+          for service in registry router; do
+            docker buildx build --platform linux/amd64 --load \
+              --file "images/${service}/Dockerfile" \
+              --tag "sharness-${service}:ci" .
+          done
+      - name: Smoke-test deployed executables
+        run: |
+          docker run --rm sharness-registry:ci --help
+          docker run --rm sharness-router:ci --help
+          docker run --rm --entrypoint pglite-server sharness-registry:ci --help
+      - name: Verify Router health
+        run: |
+          signer=$(docker run --rm --entrypoint node sharness-router:ci -e '
+            const {publicKey} = require("node:crypto").generateKeyPairSync("ed25519");
+            const {crv, kty, x} = publicKey.export({format: "jwk"});
+            console.log(JSON.stringify({crv, kty, x}));
+          ')
+          trap 'docker logs sharness-router-smoke; docker rm -f sharness-router-smoke' EXIT
+          docker run --detach --name sharness-router-smoke \
+            --env SHARNESS_ROUTER_REGISTRY_ORIGIN=http://127.0.0.1:3001 \
+            --env "SHARNESS_ROUTER_REGISTRY_SIGNER_PUBLIC_KEY=${signer}" \
+            sharness-router:ci
+          docker exec sharness-router-smoke node --input-type=module -e '
+            for (let attempt = 0; attempt < 60; attempt++) {
+              try {
+                const response = await fetch("http://127.0.0.1:3002/healthz");
+                if (response.status === 204) process.exit(0);
+              } catch {}
+              await new Promise((resolve) => setTimeout(resolve, 500));
+            }
+            throw new Error("Router /healthz did not return 204");
+          '

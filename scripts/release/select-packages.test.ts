@@ -42,6 +42,16 @@ const PREVIOUS = "2099.100.0";
 
 /** Product release tests follow the same package set as release selection. */
 const DIRS = RELEASE_PACKAGES;
+
+/**
+ * Every workspace package name, as `hostCodeHashOfPackage` passes them: the
+ * private services are workspace packages outside the release set.
+ */
+const WORKSPACE_NAMES: ReadonlySet<string> = new Set(
+  [...DIRS, "nanoclaw-channel", "registry", "router"].map(
+    (dir) => `@moltzap/${dir}`,
+  ),
+);
 const DEPENDENCIES = Object.fromEntries(
   DIRS.map((dir) => [dir, FINAL_PACKAGES[dir].deps]),
 );
@@ -407,7 +417,7 @@ function hostHash(packages: HostPackages): string {
       [CHANNEL_MANIFEST.name, packages.channel],
       [CLIENT_MANIFEST.name, packages.client],
     ]),
-    new Set(DIRS.map((dir) => `@moltzap/${dir}`)),
+    WORKSPACE_NAMES,
   );
 }
 

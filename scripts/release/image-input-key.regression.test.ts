@@ -79,11 +79,7 @@ await test("COPY service directories never turn release prose or comments into c
     "examples/two-agents/package.json",
     '{"dependencies":{"@fixture/router":"1"}}',
   );
-  write(
-    repo,
-    "images/router/Dockerfile",
-    `${dockerfile}\nRUN true # CHANGELOG.md\n`,
-  );
+  write(repo, "images/router/Dockerfile", `${dockerfile}\n# CHANGELOG.md\n`);
   commit(repo);
   const before = Effect.runSync(imageInputs(repo));
   write(repo, "CHANGELOG.md", "release");
@@ -105,7 +101,10 @@ await test("a full-line comment continuation cannot hide COPY", (t) => {
   write(
     repo,
     "images/router/Dockerfile",
-    `${dockerfile}\n# comment \\\nCOPY assets/ /assets\n`,
+    dockerfile.replace(
+      "COPY package.json",
+      "# comment \\\nCOPY assets/ /assets\nCOPY package.json",
+    ),
   );
   commit(repo);
   const before = key(repo);
@@ -497,7 +496,7 @@ for (const [label, instruction] of [
     );
     commit(repo);
     const error = refused(repo);
-    assert.match(error.message, /earlier stage.*images\/router\/Dockerfile/u);
+    assert.match(error.message, /images\/router\/Dockerfile line/u);
   });
 }
 
@@ -527,10 +526,18 @@ await test("shell inline comments cannot name release inputs", (t) => {
   t.after(() => {
     rmSync(repo, { recursive: true, force: true });
   });
+  write(repo, "images/router/Dockerfile", dockerfile);
   write(
     repo,
-    "images/router/Dockerfile",
-    `${dockerfile}\nRUN sh tools/build.sh`,
+    "packages/router/package.json",
+    JSON.stringify({
+      name: "@fixture/router",
+      nx: {
+        targets: {
+          build: { options: { cwd: ".", command: "sh tools/build.sh" } },
+        },
+      },
+    }),
   );
   write(repo, "tools/build.sh", "true;# CHANGELOG.md\n");
   write(repo, "CHANGELOG.md", "first");
@@ -575,8 +582,11 @@ await test("host hash refuses duplicate tracked workspace names", (t) => {
   });
   write(repo, "packages/duplicate/package.json", '{"name":"@fixture/router"}');
   commit(repo);
-  assert.throws(
-    () => hostCodeHashOfPackage(repo, "router"),
+  const result = hostCodeHashOfPackage(repo, "router");
+  assert.notEqual(typeof result, "string");
+  assert.ok(typeof result !== "string");
+  assert.match(
+    result.message,
     /Duplicate workspace package name @fixture\/router/u,
   );
 });
@@ -593,10 +603,18 @@ await test("shell executables retain the caller working directory", (t) => {
   t.after(() => {
     rmSync(repo, { recursive: true, force: true });
   });
+  write(repo, "images/router/Dockerfile", dockerfile);
   write(
     repo,
-    "images/router/Dockerfile",
-    `${dockerfile}\nRUN sh tools/build.sh`,
+    "packages/router/package.json",
+    JSON.stringify({
+      name: "@fixture/router",
+      nx: {
+        targets: {
+          build: { options: { cwd: ".", command: "sh tools/build.sh" } },
+        },
+      },
+    }),
   );
   write(repo, "tools/build.sh", "node tools/extra.ts");
   write(repo, "tools/extra.ts", 'import "./leaf.js";');
@@ -660,4 +678,259 @@ await test("installed workspace lifecycle inputs bind keys without runtime impor
   write(repo, "tools/install.ts", "export const value = 2;");
   commit(repo);
   assert.notEqual(key(repo), before);
+});
+
+for (const instruction of [
+  "FROM node:24-slim",
+  "COPY . /app",
+  "COPY ./ /app",
+  "COPY packages/* /app",
+  "COPY https://example.test/archive /app",
+  "ADD assets/ /app",
+  "RUN npm i effect",
+  "RUN pnpm i --filter @fixture/router...",
+  "RUN pnpm install --frozen-lockfile --filter @fixture/router... --filter @fixture/registry...",
+  "RUN pnpm install --frozen-lockfile --filter @fixture/registry...",
+  "RUN pnpm install --frozen-lockfile --filter @fixture/router... -w",
+  "RUN pnpm -r install",
+  "RUN apt-get update",
+  "RUN curl https://example.test",
+  "RUN <<EOF\ntrue\nEOF",
+  "RUN <<-EOF\ntrue\nEOF",
+  "RUN pnpm install --frozen-lockfile --filter @fixture/router... && npm i effect",
+  "COPY ./assets/ /app",
+  "COPY ../outside /app",
+  "COPY assets/? /app",
+  "COPY assets/[ab] /app",
+  'COPY ["assets/", "/app"]',
+] as const) {
+  await test(`Docker allowlist refuses ${instruction}`, (t) => {
+    const repo = fixture();
+    t.after(() => {
+      rmSync(repo, { recursive: true, force: true });
+    });
+    write(
+      repo,
+      "images/router/Dockerfile",
+      dockerfile.replace(
+        "COPY package.json",
+        `${instruction}\nCOPY package.json`,
+      ),
+    );
+    commit(repo);
+    const error = refused(repo);
+    assert.ok(error instanceof ImageInputError);
+    assert.match(error.message, /images\/router\/Dockerfile line 2:/u);
+    assert.ok(error.message.includes(instruction.split("\n")[0] ?? ""));
+  });
+}
+
+/** Real build recipes exercise the exported key API against committed fixture inputs. */
+function realImageFixture(): string {
+  const repo = fixture();
+  for (const service of ["registry", "router"]) {
+    const docker = readFileSync(
+      path.join(import.meta.dirname, `../../images/${service}/Dockerfile`),
+      "utf8",
+    );
+    write(
+      repo,
+      `images/${service}/Dockerfile`,
+      docker.replaceAll("@moltzap/", "@fixture/"),
+    );
+  }
+  for (const file of [
+    "scripts/build/clean-dist.ts",
+    "scripts/setup/restore-tsgo-exec-bit.ts",
+  ]) {
+    write(
+      repo,
+      file,
+      readFileSync(path.join(import.meta.dirname, "../..", file), "utf8"),
+    );
+  }
+  commit(repo);
+  return repo;
+}
+
+function checkCopyInventory(
+  docker: string,
+  inventory: readonly string[],
+  locked: readonly string[],
+): void {
+  const lines = docker
+    .split("\n")
+    .filter((line) => line.startsWith("COPY ") && !line.includes("--from="));
+  const sources = lines.flatMap((line) =>
+    line.slice(5).split(/\s+/u).slice(0, -1),
+  );
+  for (const source of sources) {
+    const covered =
+      source === "pnpm-lock.yaml"
+        ? locked.length > 0
+        : inventory.some(
+            (input) => input === source || input.startsWith(source),
+          );
+    assert.ok(covered, `Unaccounted COPY source ${source}`);
+  }
+}
+
+for (const service of ["registry", "router"]) {
+  await test(`real ${service} Dockerfile inventories named COPY roots and changes only its key`, (t) => {
+    const repo = realImageFixture();
+    t.after(() => {
+      rmSync(repo, { recursive: true, force: true });
+    });
+    const before = Effect.runSync(imageInputs(repo));
+    const image = before[service];
+    assert.ok(image);
+    const inventory = [
+      ...image.own,
+      ...image.modules,
+      ...image.image,
+      ...image.tooling,
+    ];
+    const file = `images/${service}/Dockerfile`;
+    const docker = readFileSync(path.join(repo, file), "utf8");
+    checkCopyInventory(docker, inventory, image.locked);
+    write(repo, file, `${docker}\n# smoke build recipe\n`);
+    commit(repo);
+    const after = Effect.runSync(imageInputs(repo));
+    assert.notEqual(after[service]?.key, before[service]?.key);
+    const other = service === "registry" ? "router" : "registry";
+    assert.equal(after[other]?.key, before[other]?.key);
+  });
+}
+
+await test("real Dockerfiles exclude daemon-only source and sibling version reads", (t) => {
+  const repo = realImageFixture();
+  t.after(() => {
+    rmSync(repo, { recursive: true, force: true });
+  });
+  const before = Effect.runSync(imageInputs(repo));
+  write(
+    repo,
+    "packages/client/src/daemon/run.ts",
+    "console.log(process.env.npm_package_version);",
+  );
+  write(
+    repo,
+    "packages/client/src/index.ts",
+    'import manifest from "../package.json"; console.log(manifest.version);',
+  );
+  commit(repo);
+  assert.deepEqual(Effect.runSync(runtimeVersionReads(repo)), []);
+  const changedSibling = Effect.runSync(imageInputs(repo));
+  assert.notEqual(changedSibling.router?.key, before.router?.key);
+  write(
+    repo,
+    "packages/client/src/daemon/run.ts",
+    "export const changed = true;",
+  );
+  commit(repo);
+  assert.deepEqual(Effect.runSync(imageInputs(repo)), changedSibling);
+});
+
+await test("adding PGlite runtime dependencies changes only the Registry image", (t) => {
+  const repo = realImageFixture();
+  t.after(() => {
+    rmSync(repo, { recursive: true, force: true });
+  });
+  const before = Effect.runSync(imageInputs(repo));
+  write(
+    repo,
+    "packages/registry/package.json",
+    JSON.stringify({
+      name: "@fixture/registry",
+      dependencies: {
+        "@fixture/core": "workspace:*",
+        "@electric-sql/pglite": "catalog:",
+        "@electric-sql/pglite-socket": "catalog:",
+      },
+    }),
+  );
+  write(
+    repo,
+    "pnpm-lock.yaml",
+    lock
+      .replace(
+        "  packages/registry:\n    dependencies:",
+        "  packages/registry:\n    dependencies:\n      '@electric-sql/pglite':\n        version: 0.4.4\n      '@electric-sql/pglite-socket':\n        version: 0.1.4",
+      )
+      .replace(
+        "packages:\n",
+        "packages:\n  '@electric-sql/pglite@0.4.4':\n    resolution: {integrity: sha512-pglite}\n  '@electric-sql/pglite-socket@0.1.4':\n    resolution: {integrity: sha512-socket}\n",
+      )
+      .replace(
+        "snapshots:\n",
+        "snapshots:\n  '@electric-sql/pglite@0.4.4': {}\n  '@electric-sql/pglite-socket@0.1.4': {}\n",
+      ),
+  );
+  commit(repo);
+  const after = Effect.runSync(imageInputs(repo));
+  assert.notEqual(after.registry?.key, before.registry?.key);
+  assert.equal(after.router?.key, before.router?.key);
+});
+
+await test("current services have no own manifest version reads", () => {
+  assert.deepEqual(
+    Effect.runSync(
+      runtimeVersionReads(path.resolve(import.meta.dirname, "../..")),
+    ),
+    [],
+  );
+});
+
+await test("root build tool resolution changes bind both images", (t) => {
+  const repo = realImageFixture();
+  t.after(() => {
+    rmSync(repo, { recursive: true, force: true });
+  });
+  write(
+    repo,
+    "package.json",
+    JSON.stringify({
+      packageManager: "pnpm@10.6.2",
+      devDependencies: { nx: "catalog:" },
+    }),
+  );
+  const initial = lock
+    .replace(
+      "importers:\n",
+      "importers:\n  .:\n    devDependencies:\n      nx:\n        version: 1.0.0\n",
+    )
+    .replace(
+      "packages:\n",
+      "packages:\n  nx@1.0.0:\n    resolution: {integrity: sha512-nx}\n",
+    )
+    .replace("snapshots:\n", "snapshots:\n  nx@1.0.0: {}\n");
+  write(repo, "pnpm-lock.yaml", initial);
+  commit(repo);
+  const before = Effect.runSync(imageInputs(repo));
+  write(
+    repo,
+    "pnpm-lock.yaml",
+    initial
+      .replaceAll("nx@1.0.0", "nx@2.0.0")
+      .replace(
+        "version: 1.0.0\n  packages/router",
+        "version: 2.0.0\n  packages/router",
+      ),
+  );
+  commit(repo);
+  const after = Effect.runSync(imageInputs(repo));
+  assert.notEqual(after.registry?.key, before.registry?.key);
+  assert.notEqual(after.router?.key, before.router?.key);
+});
+
+await test("host hash returns malformed tracked manifest failures", (t) => {
+  const repo = fixture();
+  t.after(() => {
+    rmSync(repo, { recursive: true, force: true });
+  });
+  write(repo, "packages/router/package.json", "{broken");
+  commit(repo);
+  const result = hostCodeHashOfPackage(repo, "router");
+  assert.ok(typeof result !== "string");
+  assert.match(result.message, /SyntaxError/u);
 });

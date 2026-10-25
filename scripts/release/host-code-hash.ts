@@ -21,7 +21,8 @@
  * Run from the repository root after `pnpm build`. Exits 1 when packing or
  * extracting fails.
  */
-import { Data } from "effect";
+
+import { Either } from "effect";
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -35,11 +36,6 @@ import {
 } from "./content-hash.ts";
 import { moduleGraph } from "./module-graph.ts";
 
-/** Workspace inventory failures happen before packing starts. */
-class HostHashInputError extends Data.TaggedError("HostHashInputError")<{
-  readonly message: string;
-}> {}
-
 /**
  * Pack `packages/DIR` and its workspace dependency closure and hash the code a host
  * loads for it.
@@ -52,6 +48,9 @@ export function hostCodeHashOfPackage(
   dir: string,
 ): string | PackFailure {
   const directories = workspaceDirectories(repo);
+  if (!(directories instanceof Map)) {
+    return directories;
+  }
   const host = manifestName(repo, dir);
   return withScratch((scratch) => {
     const roots = new Map<string, string>();
@@ -99,7 +98,23 @@ export function hostCodeHashOfDirectories(
   );
 }
 
-function workspaceDirectories(repo: string): ReadonlyMap<string, string> {
+/** Inventory and manifest decoding failures use the CLI's existing failure channel. */
+function workspaceDirectories(repo: string): Map<string, string> | PackFailure {
+  return Either.match(
+    Either.try({
+      try: () => trackedWorkspaceDirectories(repo),
+      catch: (cause): PackFailure => ({
+        kind: "pack-failed",
+        message: String(cause),
+      }),
+    }),
+    { onLeft: (failure) => failure, onRight: (directories) => directories },
+  );
+}
+
+function trackedWorkspaceDirectories(
+  repo: string,
+): Map<string, string> | PackFailure {
   const result = spawnSync(
     // eslint-disable-next-line sonarjs/no-os-command-from-path -- Git supplies the tracked workspace inventory.
     "git",
@@ -107,7 +122,10 @@ function workspaceDirectories(repo: string): ReadonlyMap<string, string> {
     { cwd: repo },
   );
   if (result.status !== 0) {
-    throw new HostHashInputError({ message: result.stderr.toString("utf8") });
+    return {
+      kind: "pack-failed",
+      message: result.stderr?.toString("utf8") || String(result.error),
+    };
   }
   const files = new TextDecoder("utf-8", { fatal: true })
     .decode(result.stdout)
@@ -118,9 +136,10 @@ function workspaceDirectories(repo: string): ReadonlyMap<string, string> {
     const dir = path.posix.basename(path.posix.dirname(file));
     const name = manifestName(repo, dir);
     if (directories.has(name)) {
-      throw new HostHashInputError({
+      return {
+        kind: "pack-failed",
         message: `Duplicate workspace package name ${name} in ${file}`,
-      });
+      };
     }
     directories.set(name, dir);
   }
