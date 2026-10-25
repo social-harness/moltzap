@@ -36,6 +36,7 @@
     "docs:test": "pnpm nx run workspace:test",
     "test:compute-next-version": "bash scripts/release/compute-next-version.test.sh",
     "test:npm-version-exists": "bash scripts/release/npm-version-exists.test.sh",
+    "test:ghcr-digest": "bash scripts/release/ghcr-digest.test.sh",
     "image:keys": "node scripts/release/image-input-key.ts",
     "test:image-input-key": "pnpm nx run workspace:test:image-input-key",
     "test:select-packages": "node scripts/release/select-packages.test.ts",
