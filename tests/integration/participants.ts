@@ -9,17 +9,19 @@ import {
   type InboundItem,
   SendInput,
 } from "@moltzap/client";
-import { Duration, Effect, Queue, Schema, type Scope, Stream } from "effect";
+import { Duration, Effect, Queue, Schema, Stream } from "effect";
 import {
   acquireDaemonManagementClient,
   acquireDaemonProcess,
   acquireProcessInfrastructure,
+  DAEMON_BOOT_CONCURRENCY,
   type DaemonProcessFixture,
   type FirewallMode,
   makeDaemonProcessFixture,
   makeRegistrationRequest,
-  ProcessTestError,
+  processTestError,
 } from "./daemon-process-harness.js";
+import { registrationResultKind } from "./expected-contracts.js";
 
 /** One endpoint and the items its subscription has delivered, in order. */
 export interface Participant {
@@ -28,27 +30,13 @@ export interface Participant {
   readonly inbox: Queue.Queue<InboundDelivery>;
 }
 
-function directAddress(agentName: AgentName): AgentAddress {
-  return Schema.decodeUnknownSync(AgentAddress)(`agent:${agentName}`);
-}
-
 /**
  * Acquires the endpoint of `fixture`'s running daemon and queues every
  * delivery its subscription receives.
  */
-const joinParticipant = (
-  fixture: DaemonProcessFixture,
-): Effect.Effect<Participant, ProcessTestError, Scope.Scope> =>
+const joinParticipant = (fixture: DaemonProcessFixture) =>
   Effect.gen(function* () {
-    const endpoint = yield* acquireHarnessEndpoint(fixture.endpoint).pipe(
-      Effect.mapError(
-        (cause) =>
-          new ProcessTestError({
-            message: "endpoint acquisition failed",
-            cause,
-          }),
-      ),
-    );
+    const endpoint = yield* acquireHarnessEndpoint(fixture.endpoint);
     const inbox = yield* Queue.unbounded<InboundDelivery>();
     yield* endpoint.messages.pipe(
       Stream.runForEach((delivery) => Queue.offer(inbox, delivery)),
@@ -61,7 +49,13 @@ const registerFixture = (fixture: DaemonProcessFixture) =>
   Effect.scoped(
     acquireDaemonManagementClient(fixture.endpoint).pipe(
       Effect.flatMap((management) =>
-        management.register(makeRegistrationRequest(fixture)),
+        management.register(makeRegistrationRequest(fixture)).pipe(
+          Effect.filterOrFail(
+            (result) => result.kind === registrationResultKind,
+            (result) =>
+              processTestError(`fixture registration returned ${result.kind}`),
+          ),
+        ),
       ),
     ),
   );
@@ -78,13 +72,16 @@ export const startParticipants = (fixtures: readonly DaemonProcessFixture[]) =>
       fixtures,
       (fixture) => acquireDaemonProcess(fixture),
       {
-        concurrency: "unbounded",
+        concurrency: DAEMON_BOOT_CONCURRENCY,
         discard: true,
       },
     );
-    yield* Effect.forEach(fixtures, registerFixture, { discard: true });
-    return yield* Effect.forEach(fixtures, joinParticipant);
-  });
+    yield* Effect.forEach(fixtures, registerFixture, {
+      discard: true,
+      concurrency: 1,
+    });
+    return yield* Effect.forEach(fixtures, joinParticipant, { concurrency: 1 });
+  }).pipe(Effect.withSpan("startParticipants"));
 
 /**
  * Starts PGlite, the Registry, the Router and one daemon per name, registers
@@ -103,10 +100,10 @@ export const acquireParticipants = (
       names.map((name) =>
         makeDaemonProcessFixture(infrastructure, name, firewalls[name]),
       ),
-      { concurrency: "unbounded" },
+      { concurrency: DAEMON_BOOT_CONCURRENCY },
     );
     return yield* startParticipants(fixtures);
-  });
+  }).pipe(Effect.withSpan("acquireParticipants"));
 
 /** Take the participant's next item and acknowledge its delivery. */
 export const nextItem = (participant: Participant) =>
@@ -136,7 +133,9 @@ export const groupRound = (
   send(requester, {
     to: groupAddress([requester, ...members]),
     text: "one measured round",
-  }).pipe(Effect.zipRight(Effect.forEach(members, nextItem)));
+  }).pipe(
+    Effect.zipRight(Effect.forEach(members, nextItem, { concurrency: 1 })),
+  );
 
 /**
  * How many measured rounds a silent-member trace's collecting operation waits
@@ -176,3 +175,7 @@ export const measuredDeadlineSeconds = <E, R>(
       ),
     ),
   );
+
+function directAddress(agentName: AgentName): AgentAddress {
+  return Schema.decodeUnknownSync(AgentAddress)(`agent:${agentName}`);
+}

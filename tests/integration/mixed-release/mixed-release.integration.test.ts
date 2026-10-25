@@ -31,7 +31,7 @@ import {
   ProcessTestError,
 } from "../daemon-process-harness.js";
 
-/* eslint-disable agent-code-guard/no-example-only-tests -- Regression cases exercise the reviewed release selection, reset boundary, missing metadata, and registry outage failures; the real process exchange checks interoperability. */
+// @agent-code-guard/regression-only: Regression cases exercise the reviewed release selection, reset boundary, missing metadata, and registry outage failures; the real process exchange checks interoperability.
 
 const RESET_SKIP_REASON =
   "No post-reset release is published; the mixed-release gate starts with the first release after the reset.";
@@ -688,5 +688,3 @@ it.each([
 ])("classifies registry availability: %s", (message, outage) => {
   expect(npmOutage(new Error(message))).toBe(outage);
 });
-
-/* eslint-enable agent-code-guard/no-example-only-tests -- Restore default testing policy outside these regression scenarios. */

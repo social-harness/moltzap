@@ -1,14 +1,43 @@
 /** @file Test-only OTLP/HTTP receiver that decodes the protobuf trace exports daemons send it. */
 
 import type { Buffer } from "node:buffer";
-import type { IncomingMessage, ServerResponse } from "node:http";
 import { Cause, Duration, Effect, Ref, Schema, type Scope } from "effect";
 import protobuf from "protobufjs";
 import { LOOPBACK_HOST, ProcessTestError } from "./daemon-process-harness.js";
-import { acquireLoopbackServer, readBody } from "./loopback-server.js";
+import {
+  acquireLoopbackServer,
+  type IncomingMessage,
+  readBody,
+  type ServerResponse,
+} from "./loopback-server.js";
+
+/** A scalar attribute value as OTLP carries it. */
+type AttributeValue = string | number | boolean;
+
+/** One exported span: its name, start, attributes and its resource's attributes. */
+export interface ExportedSpan {
+  readonly name: string;
+  readonly startTimeUnixNano: bigint;
+  readonly attributes: Readonly<Record<string, AttributeValue>>;
+  readonly resource: Readonly<Record<string, AttributeValue>>;
+}
+
+/** A running receiver and everything daemons have exported to it. */
+export interface OtlpReceiver {
+  /** The value for `OTEL_EXPORTER_OTLP_ENDPOINT`; traces post to `/v1/traces` under it. */
+  readonly endpoint: URL;
+  /** TCP connections accepted since the receiver started. */
+  readonly connections: Effect.Effect<number>;
+  /** Every span received, in arrival order. */
+  readonly spans: Effect.Effect<readonly ExportedSpan[]>;
+  /** Each request the receiver refused, as its method, path and content type, or why it failed to decode. */
+  readonly rejected: Effect.Effect<readonly string[]>;
+}
 
 const TRACES_PATH = "/v1/traces";
+
 const PROTOBUF_CONTENT_TYPE = "application/x-protobuf";
+
 const SPAN_POLL_INTERVAL = Duration.millis(100);
 
 /**
@@ -66,93 +95,35 @@ const exportTraceServiceRequest = protobuf.Root.fromJSON({
   },
 }).lookupType("ExportTraceServiceRequest");
 
-/** A scalar attribute value as OTLP carries it. */
-type AttributeValue = string | number | boolean;
-
-/** One exported span: its name, start, attributes and its resource's attributes. */
-export interface ExportedSpan {
-  readonly name: string;
-  readonly startTimeUnixNano: bigint;
-  readonly attributes: Readonly<Record<string, AttributeValue>>;
-  readonly resource: Readonly<Record<string, AttributeValue>>;
-}
-
-/** A running receiver and everything daemons have exported to it. */
-export interface OtlpReceiver {
-  /** The value for `OTEL_EXPORTER_OTLP_ENDPOINT`; traces post to `/v1/traces` under it. */
-  readonly endpoint: URL;
-  /** TCP connections accepted since the receiver started. */
-  readonly connections: Effect.Effect<number>;
-  /** Every span received, in arrival order. */
-  readonly spans: Effect.Effect<readonly ExportedSpan[]>;
-  /** Each request the receiver refused, as its method, path and content type, or why it failed to decode. */
-  readonly rejected: Effect.Effect<readonly string[]>;
-}
-
-const AnyValue = Schema.Struct({
+const anyValueSchema = Schema.Struct({
   stringValue: Schema.optional(Schema.String),
   boolValue: Schema.optional(Schema.Boolean),
   intValue: Schema.optional(Schema.NumberFromString),
   doubleValue: Schema.optional(Schema.Number),
 });
 
-const KeyValue = Schema.Struct({
+const keyValueSchema = Schema.Struct({
   name: Schema.String,
-  value: Schema.optional(AnyValue),
+  value: Schema.optional(anyValueSchema),
 });
 
-const Span = Schema.Struct({
+const spanSchema = Schema.Struct({
   name: Schema.String,
   startTimeUnixNano: Schema.BigInt,
-  attributes: Schema.Array(KeyValue),
+  attributes: Schema.Array(keyValueSchema),
 });
 
-const ResourceSpans = Schema.Struct({
+const resourceSpansSchema = Schema.Struct({
   resource: Schema.optional(
-    Schema.Struct({ attributes: Schema.Array(KeyValue) }),
+    Schema.Struct({ attributes: Schema.Array(keyValueSchema) }),
   ),
-  scopeSpans: Schema.Array(Schema.Struct({ spans: Schema.Array(Span) })),
+  scopeSpans: Schema.Array(Schema.Struct({ spans: Schema.Array(spanSchema) })),
 });
 
 /** The decoded request, with 64-bit integers as decimal strings. */
-const DecodedRequest = Schema.Struct({
-  resourceSpans: Schema.Array(ResourceSpans),
+const decodedRequestSchema = Schema.Struct({
+  resourceSpans: Schema.Array(resourceSpansSchema),
 });
-
-function attributeRecord(
-  keyValues: readonly (typeof KeyValue.Type)[],
-): Record<string, AttributeValue> {
-  return Object.fromEntries(
-    keyValues.flatMap(({ name, value }) => {
-      const scalar =
-        value?.stringValue ??
-        value?.intValue ??
-        value?.doubleValue ??
-        value?.boolValue;
-      return scalar === undefined ? [] : [[name, scalar]];
-    }),
-  );
-}
-
-/** The spans of one protobuf export. */
-function decodeSpans(body: Buffer): readonly ExportedSpan[] {
-  const request = Schema.decodeUnknownSync(DecodedRequest)(
-    exportTraceServiceRequest.toObject(exportTraceServiceRequest.decode(body), {
-      arrays: true,
-      longs: String,
-    }),
-  );
-  return request.resourceSpans.flatMap(({ resource, scopeSpans }) =>
-    scopeSpans.flatMap(({ spans }) =>
-      spans.map((span) => ({
-        name: span.name,
-        startTimeUnixNano: span.startTimeUnixNano,
-        attributes: attributeRecord(span.attributes),
-        resource: attributeRecord(resource?.attributes ?? []),
-      })),
-    ),
-  );
-}
 
 /**
  * Accepts only protobuf trace exports, as the evals controller does, and
@@ -222,7 +193,7 @@ export const acquireOtlpReceiver: Effect.Effect<
     spans: Ref.get(spans),
     rejected: Ref.get(rejected),
   };
-});
+}).pipe(Effect.withSpan("acquireOtlpReceiver"));
 
 /**
  * Polls the receiver until `ready` holds for the spans received so far.
@@ -254,3 +225,40 @@ export const awaitSpans = (
       ),
     ),
   );
+
+/** The spans of one protobuf export. */
+function decodeSpans(body: Buffer): readonly ExportedSpan[] {
+  const request = Schema.decodeUnknownSync(decodedRequestSchema)(
+    exportTraceServiceRequest.toObject(exportTraceServiceRequest.decode(body), {
+      arrays: true,
+      longs: String,
+    }),
+  );
+  return request.resourceSpans.flatMap(({ resource, scopeSpans }) =>
+    scopeSpans.flatMap(({ spans }) =>
+      spans.map((span) => ({
+        name: span.name,
+        startTimeUnixNano: span.startTimeUnixNano,
+        attributes: attributeRecord(span.attributes),
+        resource: attributeRecord(resource?.attributes ?? []),
+      })),
+    ),
+  );
+}
+
+function attributeRecord(
+  keyValues: ReadonlyArray<typeof keyValueSchema.Type>,
+): Record<string, AttributeValue> {
+  return Object.fromEntries(
+    keyValues.flatMap(({ name, value }) => {
+      const scalar = value === undefined ? undefined : scalarAttribute(value);
+      return scalar === undefined ? [] : [[name, scalar]];
+    }),
+  );
+}
+
+function scalarAttribute(value: typeof anyValueSchema.Type) {
+  return (
+    value.stringValue ?? value.intValue ?? value.doubleValue ?? value.boolValue
+  );
+}

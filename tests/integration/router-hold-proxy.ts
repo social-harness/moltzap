@@ -1,17 +1,48 @@
 /** @file Test-only Router proxy that parks delivery-bearing poll responses. */
 
-import { Deferred, Effect, Option, Ref, Schema, type Scope } from "effect";
-import { Buffer } from "node:buffer";
+import type { Scope } from "effect/Scope";
 import {
-  type IncomingHttpHeaders,
-  type IncomingMessage,
-  request as requestHttp,
-  type ServerResponse,
-} from "node:http";
+  HttpBody,
+  HttpClient,
+  HttpClientRequest,
+  HttpMethod,
+} from "@effect/platform";
+import { NodeHttpClient } from "@effect/platform-node";
+import { Deferred, Effect, Option, Ref, Schema } from "effect";
+import { Buffer } from "node:buffer";
 import { LOOPBACK_HOST, ProcessTestError } from "./daemon-process-harness.js";
-import { acquireLoopbackServer, readBody } from "./loopback-server.js";
+import {
+  acquireLoopbackServer,
+  type IncomingMessage,
+  readBody,
+  type ServerResponse,
+} from "./loopback-server.js";
+
+/** Scoped control over one endpoint's Router link. */
+export interface RouterHoldProxy {
+  /** Origin the held endpoint daemon uses as its Router. */
+  readonly origin: URL;
+  /** Parks every later delivery-bearing poll response until `release`. */
+  readonly hold: Effect.Effect<void>;
+  /** Writes every parked response verbatim and stops parking. */
+  readonly release: Effect.Effect<void>;
+  /** Count of delivery-bearing poll responses parked since acquisition. */
+  readonly parkedResponses: Effect.Effect<number>;
+}
+
+interface UpstreamResponse {
+  readonly status: number;
+  readonly headers: IncomingMessage["headers"];
+  readonly body: Buffer;
+}
+
+interface HoldState {
+  readonly gate: Option.Option<Deferred.Deferred<undefined>>;
+  readonly parkedResponses: number;
+}
 
 const ROUTER_POLL_PATH = "/v1/messages:poll";
+
 const HOP_BY_HOP_HEADERS = [
   "connection",
   "keep-alive",
@@ -32,93 +63,56 @@ const deliveryBatch = Schema.parseJson(
   }),
 );
 
-/** Scoped control over one endpoint's Router link. */
-export interface RouterHoldProxy {
-  /** Origin the held endpoint daemon uses as its Router. */
-  readonly origin: URL;
-  /** Parks every later delivery-bearing poll response until `release`. */
-  readonly hold: Effect.Effect<void>;
-  /** Writes every parked response verbatim and stops parking. */
-  readonly release: Effect.Effect<void>;
-  /** Count of delivery-bearing poll responses parked since acquisition. */
-  readonly parkedResponses: Effect.Effect<number>;
-}
+const withoutHopByHop = (
+  headers: IncomingMessage["headers"],
+): IncomingMessage["headers"] =>
+  Object.fromEntries(
+    Object.entries(headers).filter(
+      ([name]) => !HOP_BY_HOP_HEADERS.some((hop) => hop === name),
+    ),
+  );
 
-interface UpstreamResponse {
-  readonly status: number;
-  readonly headers: IncomingHttpHeaders;
-  readonly body: Buffer;
-}
-
-interface HoldState {
-  readonly gate: Option.Option<Deferred.Deferred<void>>;
-  readonly parkedResponses: number;
-}
-
-const withoutHopByHop = (headers: IncomingHttpHeaders): IncomingHttpHeaders => {
-  const copied = { ...headers };
-  for (const name of HOP_BY_HOP_HEADERS) {
-    delete copied[name];
-  }
-  return copied;
-};
-
-/**
- * Forwards one request byte-for-byte, keeping the endpoint's Host header
- * because the Router verifies it as the signed `@authority`.
- */
+/** Preserve the signed Host header while the platform client owns cancellation and response scope. */
 const forward = (upstream: URL, incoming: IncomingMessage, body: Buffer) =>
-  Effect.async<UpstreamResponse, ProcessTestError>((resume) => {
-    const outgoing = requestHttp(
-      {
-        hostname: upstream.hostname,
-        port: upstream.port,
-        method: incoming.method,
-        path: incoming.url,
-        headers: {
-          ...withoutHopByHop(incoming.headers),
-          "content-length": String(body.byteLength),
-          connection: "close",
-        },
-      },
-      (response) => {
-        const chunks: Buffer[] = [];
-        const fail = (cause?: unknown): void => {
-          resume(
-            Effect.fail(
-              new ProcessTestError({
-                message: "proxy upstream response failed",
-                cause,
-              }),
-            ),
-          );
-        };
-        response.on("data", (chunk: Buffer) => chunks.push(chunk));
-        response.once("error", fail);
-        response.once("aborted", () => fail());
-        response.once("end", () =>
-          resume(
-            Effect.succeed({
-              status: response.statusCode ?? 502,
-              headers: response.headers,
-              body: Buffer.concat(chunks),
-            }),
-          ),
-        );
-      },
-    );
-    outgoing.once("error", (cause) =>
-      resume(
-        Effect.fail(
-          new ProcessTestError({ message: "proxy upstream failed", cause }),
-        ),
+  Effect.gen(function* () {
+    const method = incoming.method;
+    if (!HttpMethod.isHttpMethod(method)) {
+      return yield* Effect.fail(
+        new ProcessTestError({
+          message: "proxy received an unsupported HTTP method",
+        }),
+      );
+    }
+    const path = incoming.url;
+    if (path === undefined || !path.startsWith("/") || path.startsWith("//")) {
+      return yield* Effect.fail(
+        new ProcessTestError({
+          message: "proxy received a request target outside the Router origin",
+        }),
+      );
+    }
+    const contentType = incoming.headers["content-type"];
+    const request = HttpClientRequest.make(method)(
+      new URL(`${upstream.origin}${path}`),
+    ).pipe(
+      HttpClientRequest.setBody(
+        contentType === undefined
+          ? HttpBody.empty
+          : HttpBody.uint8Array(body, contentType),
       ),
+      HttpClientRequest.setHeaders(incoming.headers),
     );
-    outgoing.end(body);
-    return Effect.sync(() => {
-      outgoing.destroy();
-    });
-  });
+    const response = yield* HttpClient.execute(request);
+    return {
+      status: response.status,
+      headers: response.headers,
+      body: Buffer.from(yield* response.arrayBuffer),
+    };
+  }).pipe(
+    Effect.locally(HttpClient.currentTracerPropagation, false),
+    Effect.scoped,
+    Effect.provide(NodeHttpClient.layer),
+  );
 
 const carriesDeliveries = (
   incoming: IncomingMessage,
@@ -186,7 +180,11 @@ const handle = (
     Effect.tapErrorCause((cause) =>
       Effect.logWarning("router hold proxy answered 502", cause),
     ),
-    Effect.catchAll(() => Effect.sync(() => failResponse(response))),
+    Effect.catchAll(() =>
+      Effect.sync(() => {
+        failResponse(response);
+      }),
+    ),
   );
 
 /**
@@ -197,7 +195,7 @@ const handle = (
  */
 export const acquireRouterHoldProxy = (
   upstream: URL,
-): Effect.Effect<RouterHoldProxy, ProcessTestError, Scope.Scope> =>
+): Effect.Effect<RouterHoldProxy, ProcessTestError, Scope> =>
   Effect.gen(function* () {
     const state = yield* Ref.make<HoldState>({
       gate: Option.none(),
@@ -206,7 +204,7 @@ export const acquireRouterHoldProxy = (
     const { port } = yield* acquireLoopbackServer((incoming, response) =>
       handle(upstream, state, incoming, response),
     );
-    const hold = Deferred.make<void>().pipe(
+    const hold = Deferred.make<undefined>().pipe(
       Effect.flatMap((gate) =>
         Ref.update(state, (current) => ({
           ...current,
@@ -234,4 +232,4 @@ export const acquireRouterHoldProxy = (
         Effect.map(({ parkedResponses }) => parkedResponses),
       ),
     };
-  });
+  }).pipe(Effect.withSpan("acquireRouterHoldProxy"));
