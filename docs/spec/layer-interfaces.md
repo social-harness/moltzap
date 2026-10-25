@@ -387,7 +387,8 @@ topology and cross-address context.
 ## Acceptance criteria
 
 - Workspace, TypeScript, Nx, manifest, and architecture graphs contain exactly
-  the six packages and exactly the allowed edges above.
+  the six product packages and exactly the allowed edges above between them. No
+  product depends on the integration-test workspace or an Nx tool project.
 - Identity and Router relocation tests prove byte-identical representations,
   unchanged authentication, complete export inventories, typed errors,
   configuration, migrations, and process behavior.

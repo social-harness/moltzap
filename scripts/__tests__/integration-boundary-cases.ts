@@ -69,6 +69,12 @@ export const INTEGRATION_BOUNDARY_CASES = [
     message: /test infrastructure must not contain symbolic links/,
   },
   {
+    name: "a CLAUDE.md link to another file cannot evade scanning",
+    path: "tests/integration/CLAUDE.md",
+    symlink: "../../packages/client/src/index.ts",
+    message: /test infrastructure must not contain symbolic links/,
+  },
+  {
     name: "escaped import cannot conceal an external path",
     path: "tests/integration/daemon-process-harness.ts",
     prepend: String.raw`import "\u002e\u002e/../packages/client/src/index.ts";`,

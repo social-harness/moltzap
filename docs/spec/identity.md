@@ -95,10 +95,10 @@ classes.
 live and retained-history sets. It exposes no configurable service or context
 tag. `@moltzap/identity/test` resolves only the internal `WireVersions` tag when
 the explicit `sharness-test` module-resolution condition is enabled. Normal
-production resolution refuses that subpath. Client and Registry unit tests, the
-`tests/integration` suites and their child processes, and the Registry's
-condition-only `./test` entry opt into the condition to compose adjacent
-releases; production sources cannot import the test-only entry.
+production resolution refuses that subpath. Tests and the child processes they
+start enable the condition to compose adjacent releases. The Registry's `./test`
+entry builds on this subpath, so it also resolves only under the condition.
+Production sources cannot import either test-only entry.
 
 `AgentCard.wireVersion` reads the card's retained signed version. Endpoints use
 the first canonical member's card to select a shared conversation foundation

@@ -39,7 +39,7 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { createRequire } from "node:module";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { createConnection, createServer } from "node:net";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -320,38 +320,24 @@ export const managedProcess = (
         : stopProcess(running),
   );
 
-/** Bound each readiness probe so a stalled socket cannot hang the fixture. */
-const canConnect = (port: number) =>
-  Effect.async<boolean>((resume) => {
-    const socket = createConnection({ host: LOOPBACK_HOST, port });
-    const finish = (connected: boolean): void => {
-      socket.destroy();
-      resume(Effect.succeed(connected));
-    };
-    socket.once("connect", () => finish(true));
-    socket.once("error", () => finish(false));
-    return Effect.sync(() => {
-      socket.destroy();
-    });
-  }).pipe(
-    Effect.timeoutTo({
-      duration: POLL_ATTEMPT_TIMEOUT,
-      onTimeout: () => false,
-      onSuccess: (connected) => connected,
-    }),
-  );
-
 /**
- * PGlite announces its own listener only after its WASM database accepts
- * connections, so another process holding the port cannot satisfy readiness.
+ * Whether the child printed its own listening line. A child prints it only
+ * after binding, so another process holding a released reservation cannot
+ * satisfy readiness the way it could answer a connect or health probe.
  */
+const announced = (running: RunningProcess, line: string) =>
+  Effect.sync(() => running.logs().includes(line));
+
+/** PGlite announces its listener only after its WASM database accepts connections. */
 const pgliteListening = (running: RunningProcess, port: number) =>
-  Effect.sync(() =>
-    running.logs().includes(`PGLiteSocketServer listening on {"port":${port},`),
-  );
+  announced(running, `PGLiteSocketServer listening on {"port":${port},`);
+
+/** The daemon announces its MCP endpoint once its loopback listener is bound. */
+const daemonListening = (running: RunningProcess, endpoint: URL) =>
+  announced(running, `sharnessd listening on ${endpoint.href} (`);
 
 /** Whether `origin` answers its health check as ready. */
-export const isHealthy = (origin: URL) =>
+const isHealthy = (origin: URL) =>
   Effect.tryPromise({
     try: (signal) =>
       fetch(new URL("/healthz", origin), { signal }).then(async (response) => {
@@ -362,6 +348,18 @@ export const isHealthy = (origin: URL) =>
   }).pipe(
     Effect.timeout(POLL_ATTEMPT_TIMEOUT),
     Effect.orElseSucceed(() => false),
+  );
+
+/** A Registry or Router is ready once it announced its own listener on `origin` and answers its health check as ready. */
+export const serviceReady = (
+  running: RunningProcess,
+  service: "sharness-registry" | "sharness-router",
+  origin: URL,
+) =>
+  announced(running, `${service} listening on ${origin.origin} (`).pipe(
+    Effect.flatMap((listening) =>
+      listening ? isHealthy(origin) : Effect.succeed(false),
+    ),
   );
 
 /**
@@ -520,7 +518,11 @@ export const startPgliteRegistry = (input: {
     );
     yield* awaitReady(
       registry,
-      isHealthy(new URL(`http://${LOOPBACK_HOST}:${input.registryPort}`)),
+      serviceReady(
+        registry,
+        "sharness-registry",
+        new URL(`http://${LOOPBACK_HOST}:${input.registryPort}`),
+      ),
       "health response",
     ).pipe(
       Effect.mapError((error) =>
@@ -620,7 +622,11 @@ export const acquireProcessInfrastructureFrom = (
       join(WORKSPACE_ROOT, "packages/client"),
     ).pipe(
       Effect.tap((router) =>
-        awaitReady(router, isHealthy(routerOrigin), "health response"),
+        awaitReady(
+          router,
+          serviceReady(router, "sharness-router", routerOrigin),
+          "health response",
+        ),
       ),
       Scope.extend(scope),
     );
@@ -724,7 +730,7 @@ export const acquireDaemonProcess = (
     );
     yield* awaitReady(
       running,
-      canConnect(Number(fixture.endpoint.port)),
+      daemonListening(running, fixture.endpoint),
       "listening",
     );
     return running;
@@ -773,7 +779,7 @@ export const awaitDaemonStartupFailure = (
     );
     const listened = yield* awaitReady(
       running,
-      canConnect(Number(fixture.endpoint.port)),
+      daemonListening(running, fixture.endpoint),
       "listening",
     ).pipe(
       Effect.as(true),

@@ -236,6 +236,15 @@ const waitForPgliteListening = (runningProcess: RunningProcess, port: number) =>
     );
   });
 
+/**
+ * The Registry prints its listening line only after binding `origin`'s port,
+ * so another process answering on a released reservation cannot pass for it.
+ */
+const announcedListener = (runningProcess: RunningProcess, origin: URL) =>
+  runningProcess
+    .logs()
+    .includes(`sharness-registry listening on ${origin.origin} (`);
+
 const waitForHealthStatus = (input: {
   readonly runningProcess: RunningProcess;
   readonly origin: URL;
@@ -266,7 +275,8 @@ const waitForHealthStatus = (input: {
       );
       if (
         Option.isSome(response) &&
-        response.value.status === input.expectedStatus
+        response.value.status === input.expectedStatus &&
+        announcedListener(input.runningProcess, input.origin)
       ) {
         return response.value;
       }

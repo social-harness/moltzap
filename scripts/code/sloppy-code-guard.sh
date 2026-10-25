@@ -249,12 +249,17 @@ check integration-vi-mock \
 
 fixture_directories=$(find packages \( -name node_modules -o -name dist \) -prune -o \
   -type d -name __tests__ -print)
+# An empty list would fall back to the production default and check no fixture.
+if [[ -z "$fixture_directories" ]]; then
+  echo "[integration-vi-mock] No __tests__ directories found under packages/" >&2
+  exit 1
+fi
 check integration-vi-mock \
   'vi\.mock|vi\.hoisted|vi\.spyOn' \
   "Shared fixtures must not use vi.mock/hoisted/spyOn — test the real flow" \
   "*.ts" \
   "$fixture_directories" \
-  '^[^:]*\.test\.ts:|^[^:]*/(node_modules|dist)/[^:]*:'
+  "^[^:]*\\.test\\.ts:|${BUILD_EXCLUDE}"
 
 check integration-vi-mock \
   'vi\.mock|vi\.hoisted|vi\.spyOn' \

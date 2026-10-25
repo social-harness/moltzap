@@ -74,6 +74,7 @@ function main(): void {
     testDependencyVersions();
     testMalformedBoundaryInputs();
     testIntegrationBoundaries();
+    testIntegrationAgentInstructionsLink();
     testIntegrationGraph();
     testIntegrationIntegrityGuards();
     testGuardIntegrity();
@@ -670,6 +671,22 @@ function testPublicationGuardsDriftedList(): void {
 function testIntegrationBoundaries(): void {
   console.log("\n# check-boundaries integration workspace");
   runBoundaryPlants(INTEGRATION_BOUNDARY_CASES);
+}
+
+/** Scoped agent instructions are the one link the integration tree accepts. */
+function testIntegrationAgentInstructionsLink(): void {
+  try {
+    plantFile("tests/integration/AGENTS.md", () => "# Integration tests\n");
+    plantSymlink("tests/integration/CLAUDE.md", "AGENTS.md");
+    const result = runBoundaries();
+    test(
+      "accepts a CLAUDE.md link to its sibling AGENTS.md",
+      result.code === 0,
+      `expected exit 0, got ${result.code}. stderr: ${result.stderr.slice(0, 300)}`,
+    );
+  } finally {
+    restoreAllPlants();
+  }
 }
 
 /** Malformed additions must fail even when every valid entry remains present. */

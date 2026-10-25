@@ -44,7 +44,6 @@ import {
   awaitReady,
   CONCURRENT_DAEMONS,
   hasExited,
-  isHealthy,
   LOOPBACK_HOST,
   makePrivateKeyPem,
   makeRegistrationRequest,
@@ -55,6 +54,7 @@ import {
   reservePort,
   ROUTER_BINARY,
   type RunningProcess,
+  serviceReady,
   startPgliteRegistry,
   stopProcess,
 } from "./daemon-process-harness.js";
@@ -169,9 +169,17 @@ const expectHttpObservation = (
   expect(observation.body).toBe(body);
 };
 
-const assertHealthy = (runningProcess: RunningProcess, origin: URL) =>
+const assertHealthy = (
+  runningProcess: RunningProcess,
+  service: "sharness-registry" | "sharness-router",
+  origin: URL,
+) =>
   Effect.gen(function* () {
-    yield* awaitReady(runningProcess, isHealthy(origin), "health response");
+    yield* awaitReady(
+      runningProcess,
+      serviceReady(runningProcess, service, origin),
+      "health response",
+    );
     expect(hasExited(runningProcess.child)).toBe(false);
     const health = yield* observeHttpRequest(
       HttpClientRequest.get(new URL("/healthz", origin)),
@@ -265,7 +273,7 @@ const startRegistryInfrastructure = Effect.gen(function* () {
     registryKeyPath: registryPrivateKeyPath,
     admissionCredential: ADMISSION_CREDENTIAL,
   });
-  yield* assertHealthy(registry, registryOrigin);
+  yield* assertHealthy(registry, "sharness-registry", registryOrigin);
   return {
     registryOrigin,
     registryProcess: registry,
@@ -300,7 +308,11 @@ const startRouterAt = (
       }),
       ...environment,
     });
-    yield* assertHealthy(router, new URL(`http://${LOOPBACK_HOST}:${port}`));
+    yield* assertHealthy(
+      router,
+      "sharness-router",
+      new URL(`http://${LOOPBACK_HOST}:${port}`),
+    );
     return router;
   });
 
