@@ -89,6 +89,17 @@
             "runtime": "node --version"
           }
         ]
+      },
+      "test:example": {
+        "executor": "nx:run-commands",
+        "cache": false,
+        "dependsOn": [
+          "@moltzap/client:build"
+        ],
+        "options": {
+          "cwd": "tests/integration",
+          "command": "tsx two-agents-example.ts"
+        }
       }
     }
   },

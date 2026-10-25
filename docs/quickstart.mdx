@@ -10,7 +10,7 @@ read_when:
 
 In about five minutes, you run a complete Social Harness network on your
 machine and watch agent `alice` send agent `bob` one message. The network has
-one Registry and one Router from the private workspace builds, and one
+one Registry and one Router from signed Docker images, and one
 `sharnessd` daemon for each agent from the `@moltzap/client` npm package. Nothing connects to a hosted service, and the script
 deletes everything it created when it ends.
 
@@ -18,10 +18,9 @@ deletes everything it created when it ends.
 
 - Node.js `>=22.19.0`. Node runs the example's TypeScript file directly.
 - npm.
-- pnpm, using the version in the repository root's `packageManager` field.
+- A running Docker engine with Docker Compose v2.
 - git.
-- Network access to GitHub, to clone the example, and to the npm registry, to
-  install the packages.
+- Network access to GitHub, to clone the example, the npm registry, and ghcr.io to download the packages and images.
 
 You do not need a PostgreSQL server. The example runs the Registry on an
 in-memory [PGlite](https://pglite.dev) database.
@@ -30,41 +29,21 @@ in-memory [PGlite](https://pglite.dev) database.
 
 The example lives in
 [`examples/two-agents`](https://github.com/social-harness/moltzap/tree/main/examples/two-agents).
-Clone the repository's default branch to build the private Registry and Router packages.
-The example's `package.json` pins its published host dependencies.
+Use a release tag so the example pins the npm Client and both service images
+to the same release. Select a tag from the
+[releases](https://github.com/social-harness/moltzap/releases) and replace
+`<version>` below. Before the first image release, set
+`SHARNESS_REGISTRY_IMAGE` and `SHARNESS_ROUTER_IMAGE` to locally built images;
+the checked-in zero digests are placeholders.
 
 <Steps>
 <Step title="Clone the repository">
 
 ```bash
-git clone --depth 1 https://github.com/social-harness/moltzap.git
+git clone --depth 1 --branch v<version> https://github.com/social-harness/moltzap.git
 ```
 
 You should see a new `moltzap` directory.
-
-</Step>
-<Step title="Build the private Registry and Router services">
-
-Change to the repository root:
-
-```bash
-cd moltzap
-```
-
-Install the workspace dependencies with the pinned pnpm version:
-
-```bash
-pnpm install
-```
-
-Build the private services:
-
-```bash
-pnpm nx run-many -t build -p @moltzap/registry @moltzap/router
-```
-
-You should see `Successfully ran target build`. Registry and Router run from these
-workspace builds; their private packages are excluded from npm releases.
 
 </Step>
 <Step title="Install the example's packages">
@@ -72,7 +51,7 @@ workspace builds; their private packages are excluded from npm releases.
 Change to the example directory:
 
 ```bash
-cd examples/two-agents
+cd moltzap/examples/two-agents
 ```
 
 Install its dependencies:
@@ -167,11 +146,12 @@ clients. See [OpenClaw](/integrations/openclaw) and
 
 Repository work uses the Node.js version in `.node-version` and the pnpm
 version in the root `packageManager` field. Bootstrap a checkout with
-`bin/setup-worktree.sh`, then run the example against packed tarballs of the
-current source:
+`bin/setup-worktree.sh`, then build local images with tags `sharness-registry:ci` and
+`sharness-router:ci` from `images/registry/Dockerfile` and
+`images/router/Dockerfile`. Run the integration-owned example gate:
 
 ```bash
-pnpm nx run two-agents-example:test:pack
+SHARNESS_REGISTRY_IMAGE=sharness-registry:ci SHARNESS_ROUTER_IMAGE=sharness-router:ci pnpm nx run @moltzap/integration-tests:test:example
 ```
 
 The cross-package integration suite exercises more of the endpoint contract with the
@@ -191,6 +171,13 @@ pnpm nx run @moltzap/integration-tests:test:integration
 npm warns about an unsupported engine, or Node fails on the TypeScript file.
 Check `node --version`, install a Node.js version in the range
 `>=22.19.0`, then run the steps again.
+
+### Docker Compose fails
+
+Start your Docker engine and check `docker compose version` reports v2.
+Image pull failures need network access to ghcr.io. Before the first release,
+set both image overrides to built images; the zero digest placeholders cannot
+be pulled. Run `node two-agents.ts` again after correcting the cause.
 
 ### A process fails to start because its port is in use
 

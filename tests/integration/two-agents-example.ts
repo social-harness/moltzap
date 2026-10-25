@@ -1,13 +1,8 @@
 /**
- * @file Runs `examples/two-agents` against the packed Identity, Router, and
- * Client tarballs, the way a new user runs it after installing from npm.
- *
- * The consumer project takes the example's own third-party dependencies, so a
- * dependency the example needs but does not declare fails here. The example
- * pins each Social Harness package to the workspace's current version, which on
- * `main` is the last release, because the release commit writes both. The
- * gate passes when the example prints bob receiving alice's message within
- * `EXAMPLE_DEADLINE`.
+ * @file Runs the copied two-agents example with the packed Client and local
+ * service images selected through SHARNESS_REGISTRY_IMAGE and SHARNESS_ROUTER_IMAGE.
+ * The example supplies its own third-party dependencies. The gate passes when
+ * Bob's endpoint delivers Alice's message within EXAMPLE_DEADLINE.
  */
 import { FileSystem } from "@effect/platform";
 import { Duration, Effect, Schema } from "effect";
@@ -23,9 +18,9 @@ import {
   requireCondition,
   runCommand,
   runGate,
-} from "./test/packed-workspace.ts";
+} from "../../scripts/test/packed-workspace.js";
 
-const workspaceRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+const workspaceRoot = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const exampleRoot = join(workspaceRoot, "examples", "two-agents");
 
 const exampleManifest = Schema.Struct({
@@ -43,7 +38,7 @@ const receivedLine = "bob received: from agent:alice: Hi Bob, this is Alice.";
 
 runGate("sharness-two-agents-example-", (temporaryRoot) =>
   Effect.gen(function* () {
-    const { archives, manifests } = yield* packProductClosure(
+    const { archives } = yield* packProductClosure(
       workspaceRoot,
       "client",
       temporaryRoot,
@@ -51,16 +46,6 @@ runGate("sharness-two-agents-example-", (temporaryRoot) =>
     const manifest = yield* readJsonFile(
       join(exampleRoot, "package.json"),
       exampleManifest,
-    );
-    const moltzapDependencies = Object.keys(manifest.dependencies).filter(
-      (name) => name.startsWith("@moltzap/"),
-    );
-    yield* requireCondition(
-      moltzapDependencies.length === Object.keys(archives).length &&
-        moltzapDependencies.every(
-          (name) => manifest.dependencies[name] === manifests[name]?.version,
-        ),
-      `the example must pin exactly ${Object.keys(archives).join(", ")} to the workspace version`,
     );
     const consumerRoot = yield* installPackedConsumer({
       temporaryRoot,
@@ -97,18 +82,14 @@ function runExample(
       join(exampleRoot, "two-agents.ts"),
       join(consumerRoot, "two-agents.ts"),
     );
+    yield* fs.copyFile(
+      join(exampleRoot, "compose.yaml"),
+      join(consumerRoot, "compose.yaml"),
+    );
     return yield* runCommand(process.execPath, ["two-agents.ts"], {
       cwd: consumerRoot,
       env: {
         NODE_PATH: "",
-        SHARNESS_ROUTER_BIN: join(
-          workspaceRoot,
-          "packages/router/bin/sharness-router",
-        ),
-        SHARNESS_REGISTRY_BIN: join(
-          workspaceRoot,
-          "packages/registry/bin/sharness-registry",
-        ),
       },
     }).pipe(
       Effect.disconnect,

@@ -10,7 +10,12 @@ name: Publish to npm
 # manifest records its own content hash; the OpenClaw channel's also records
 # `sharnessHostCodeHash` (`scripts/release/host-code-hash.ts`), the hash of the
 # code OpenClaw loads for it. The release commit records every manifest. The
-# trigger is manual.
+# trigger is manual. The bump resolves both committed image input keys to
+# signed indexes and records their digests in the example Compose file. Missing
+# keys fail before the release commit; rerunning after images.yml publishes
+# them resumes the bump. After npm publication, `images` runs no repository
+# install or build, adds version tags, and lists both digests in the GitHub
+# release body. Existing version tags are checked and skipped on reruns.
 #
 # A release takes two runs, so npm's provenance names the commit whose tree
 # the tarballs were packed from. The dispatched run bumps: it writes the
@@ -23,7 +28,7 @@ name: Publish to npm
 # Each run splits into jobs by what they may touch. `build` installs, builds,
 # runs the pack gates and packs, with no OIDC token and no App token, so
 # nothing a dependency runs there can publish or push. `push` holds the
-# release App token and runs no repository code: it checks the release
+# release App token and runs no installed code: it checks the release
 # commit `build` made, pushes it with its tag, and dispatches the resume.
 # `publish` holds the OIDC token and runs no install or build: it checks the
 # tarballs `build` packed against the release commit's manifests and content
@@ -36,7 +41,8 @@ name: Publish to npm
 # npm and the release tags (unchanged while nothing is published at it and
 # the UTC day has not turned). Once the release commit is on main, any run
 # finds it, checks out its tree, and publishes whatever manifest version
-# there npm still lacks, however many commits landed since. A run on an
+# there npm still lacks and finishes image tags and release notes, however
+# many commits landed since. A run on an
 # older commit while the release commit is still the tip, such as a rerun of
 # the bump run, dispatches a fresh run rather than publishing; once main has
 # moved past the release commit, the run publishes and its provenance names
@@ -76,6 +82,8 @@ defaults:
 # the selection checks.
 env:
   RELEASE_PACKAGES: client openclaw-channel
+  IMAGE_CERTIFICATE_IDENTITY: https://github.com/social-harness/moltzap/.github/workflows/images.yml@refs/heads/main
+  IMAGE_CERTIFICATE_OIDC_ISSUER: https://token.actions.githubusercontent.com
 
 jobs:
   build:
@@ -85,6 +93,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      packages: read
     outputs:
       mode: ${{ steps.plan.outputs.mode }}
       version: ${{ steps.plan.outputs.version }}
@@ -113,6 +122,7 @@ jobs:
         id: plan
         env:
           START_NEW_VERSION: ${{ inputs.start_new_version }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           git fetch origin main --quiet
           RELEASE_LINE=$(git log origin/main --format='%H %s' | grep -m1 ' chore(release): moltzap@' || true)
@@ -136,6 +146,32 @@ jobs:
                 *) exit "$STATUS" ;;
               esac
             done
+            if [ -z "$MISSING" ] && git cat-file -e "$RELEASE_COMMIT:examples/two-agents/compose.yaml" 2>/dev/null; then
+              BODY=""
+              if BODY=$(gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" --json body --jq .body 2>"$RUNNER_TEMP/release-error"); then
+                :
+              elif grep -qxF 'release not found' "$RUNNER_TEMP/release-error"; then
+                BODY=""
+              else
+                cat "$RUNNER_TEMP/release-error" >&2
+                exit 1
+              fi
+              COMPLETE=true
+              if git show "$RELEASE_COMMIT:examples/two-agents/compose.yaml" > "$RUNNER_TEMP/release-compose.yaml" &&
+                REFS=$(scripts/release/example-images.sh refs "$RUNNER_TEMP/release-compose.yaml"); then
+                while read -r ref; do
+                  grep -qF "$ref" <<<"$BODY" || COMPLETE=false
+                done <<<"$REFS"
+              else
+                COMPLETE=false
+              fi
+              if [ "$COMPLETE" = false ]; then
+                for pkg in $RELEASE_PACKAGES; do
+                  VER=$(git show "$RELEASE_COMMIT:packages/$pkg/package.json" | jq -r .version)
+                  [ "$VER" != "$VERSION" ] || MISSING="$MISSING $pkg"
+                done
+              fi
+            fi
             MISSING=${MISSING# }
             if [ -n "$MISSING" ] && [ "$START_NEW_VERSION" = "true" ]; then
               echo "Abandoning release $VERSION from $RELEASE_COMMIT; not yet on npm: $MISSING"
@@ -145,7 +181,7 @@ jobs:
                 echo "mode=redispatch" >> "$GITHUB_OUTPUT"
                 exit 0
               fi
-              echo "Resuming release $VERSION from $RELEASE_COMMIT; not yet on npm: $MISSING"
+              echo "Resuming release $VERSION from $RELEASE_COMMIT; packages to finish: $MISSING"
               git checkout --quiet "$RELEASE_COMMIT"
               [ "$RELEASE_COMMIT" = "$GITHUB_SHA" ] || echo "::warning::main moved past the release commit $RELEASE_COMMIT; this run's provenance names $GITHUB_SHA"
               {
@@ -246,9 +282,41 @@ jobs:
           pnpm install --no-frozen-lockfile --ignore-scripts
           echo "packages=$SELECTED" >> "$GITHUB_OUTPUT"
 
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        if: steps.plan.outputs.mode == 'bump' && steps.select.outputs.packages != ''
+      - name: Pin the release service images
+        if: steps.plan.outputs.mode == 'bump' && steps.select.outputs.packages != ''
+        env:
+          DOCKER_CONFIG: ${{ runner.temp }}/anonymous-docker
+        run: |
+          mkdir -p "$DOCKER_CONFIG"
+          KEYS=$(pnpm --silent image:keys)
+          refs=()
+          for service in registry router; do
+            key=$(jq -r --arg s "$service" '.[$s] | sub("^sha256:"; "")' <<<"$KEYS")
+            image="ghcr.io/social-harness/$service"
+            digest=$(docker buildx imagetools inspect "$image:inputs-$key" --format '{{.Manifest.Digest}}') || {
+              echo "ERROR: the images workflow must publish $service key $key and the ghcr.io/social-harness/{registry,router} packages must be public and pull anonymously; rerun once both conditions hold. Docs: https://docs.moltzap.xyz/spec/layer-interfaces#publication-and-versions" >&2
+              exit 1
+            }
+            [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+            ref="$image@$digest"
+            docker buildx imagetools inspect "$ref" >/dev/null || {
+              echo "ERROR: the ghcr.io/social-harness/{registry,router} packages must be public and pull anonymously before release. Docs: https://docs.moltzap.xyz/spec/layer-interfaces#publication-and-versions" >&2
+              exit 1
+            }
+            cosign verify \
+              --certificate-identity "$IMAGE_CERTIFICATE_IDENTITY" \
+              --certificate-oidc-issuer "$IMAGE_CERTIFICATE_OIDC_ISSUER" "$ref"
+            refs+=("$ref")
+          done
+          for ref in "${refs[@]}"; do
+            service=${ref#ghcr.io/social-harness/}
+            scripts/release/example-images.sh pin examples/two-agents/compose.yaml "${service%@*}" "$ref"
+          done
+
       # Pack gates install the published closures in isolated consumers.
       # NanoClaw checks its Client ABI without packing the source-copied adapter.
-      # The example launches the private Registry and Router executables.
       - name: Verify the published closure installs from tarballs
         if: steps.select.outputs.packages != ''
         run: pnpm nx run-many -t test:pack,test:abi --parallel=4
@@ -292,6 +360,7 @@ jobs:
           git config user.name "moltzap-release[bot]"
           git config user.email "moltzap-release[bot]@users.noreply.github.com"
           git add packages/*/package.json examples/two-agents/package.json \
+            examples/two-agents/compose.yaml \
             pnpm-lock.yaml CHANGELOG.md changelog.d/ \
             docs/ 'packages/**/MODULE.md' README.md
           PUBLISHED=""
@@ -352,8 +421,8 @@ jobs:
       contents: read
       actions: write
     steps:
-      # The release commit's parent; nothing here installs or runs repository
-      # code, and the checkout keeps no credentials.
+      # The release commit's parent; nothing here installs or runs
+      # installed code, and the checkout keeps no credentials.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -366,6 +435,7 @@ jobs:
       # `build` ran installed dependencies, so the commit it made is checked
       # before it is pushed: one commit on the dispatched one, with the
       # release subject, touching only the files a release writes.
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
       - name: Check the release commit
         env:
           VERSION: ${{ needs.build.outputs.version }}
@@ -383,7 +453,7 @@ jobs:
           node --input-type=module - "$RUNNER_TEMP/changes" <<'JS'
           import { readFileSync } from "node:fs";
           const fields = readFileSync(process.argv[2], "latin1").split("\0");
-          const written = /^(packages\/[^/]+\/package\.json|examples\/two-agents\/package\.json|pnpm-lock\.yaml|CHANGELOG\.md|docs\/.+\.mdx?|packages\/.+\/MODULE\.md|README\.md)$/;
+          const written = /^(packages\/[^/]+\/package\.json|examples\/two-agents\/(package\.json|compose\.yaml)|pnpm-lock\.yaml|CHANGELOG\.md|docs\/.+\.mdx?|packages\/.+\/MODULE\.md|README\.md)$/;
           const problems = [];
           for (let i = 0; i + 1 < fields.length; i += 2) {
             const [, newMode, , , status] = fields[i].split(/[ \t]/);
@@ -412,6 +482,18 @@ jobs:
             AFTER=$(git show "$COMMIT:$manifest" | jq -S "$RELEASE_FIELDS")
             [ "$BEFORE" = "$AFTER" ] || { echo "ERROR: the release commit changes $manifest beyond the fields a release writes"; exit 1; }
           done
+          for revision in "$GITHUB_SHA" "$COMMIT"; do
+            git show "$revision:examples/two-agents/compose.yaml" > "$RUNNER_TEMP/compose-$revision.yaml"
+            scripts/release/example-images.sh normalize "$RUNNER_TEMP/compose-$revision.yaml" \
+              > "$RUNNER_TEMP/compose-$revision"
+          done
+          cmp -s "$RUNNER_TEMP/compose-$GITHUB_SHA" "$RUNNER_TEMP/compose-$COMMIT" || { echo "ERROR: the release commit changes examples/two-agents/compose.yaml beyond the image digests"; exit 1; }
+          REFS=$(scripts/release/example-images.sh refs "$RUNNER_TEMP/compose-$COMMIT.yaml")
+          while read -r ref; do
+            cosign verify \
+              --certificate-identity "$IMAGE_CERTIFICATE_IDENTITY" \
+              --certificate-oidc-issuer "$IMAGE_CERTIFICATE_OIDC_ISSUER" "$ref"
+          done <<<"$REFS"
           echo "COMMIT=$COMMIT" >> "$GITHUB_ENV"
 
       # The release App token is minted only now, scoped to contents, and
@@ -539,3 +621,56 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run publish.yml --repo "$GITHUB_REPOSITORY" --ref main
+
+  images:
+    needs: [build, publish]
+    environment: release
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: Tag release indexes and record their digests
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+          RELEASE_COMMIT: ${{ needs.build.outputs.release-commit }}
+        run: |
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          gh api "repos/$GITHUB_REPOSITORY/contents/examples/two-agents/compose.yaml?ref=$RELEASE_COMMIT" \
+            --jq .content | base64 --decode > "$RUNNER_TEMP/compose.yaml"
+          REFS=$(scripts/release/example-images.sh refs "$RUNNER_TEMP/compose.yaml")
+          while read -r ref; do
+            cosign verify \
+              --certificate-identity "$IMAGE_CERTIFICATE_IDENTITY" \
+              --certificate-oidc-issuer "$IMAGE_CERTIFICATE_OIDC_ISSUER" "$ref"
+          done <<<"$REFS"
+          notes="$RUNNER_TEMP/notes.md"
+          if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" --json body --jq .body > "$notes" 2>"$RUNNER_TEMP/release-error"; then
+            :
+          elif grep -qxF 'release not found' "$RUNNER_TEMP/release-error"; then
+            gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes
+            gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" --json body --jq .body > "$notes"
+          else
+            cat "$RUNNER_TEMP/release-error" >&2
+            exit 1
+          fi
+          while read -r ref; do
+            image=${ref%@*}
+            if digest=$(docker buildx imagetools inspect "$image:$VERSION" --format '{{.Manifest.Digest}}' 2>"$RUNNER_TEMP/inspect-error"); then
+              [[ "$ref" == "$image@$digest" ]]
+            elif grep -Eqi 'manifest unknown|not found' "$RUNNER_TEMP/inspect-error"; then
+              docker buildx imagetools create --tag "$image:$VERSION" "$ref"
+            else
+              cat "$RUNNER_TEMP/inspect-error" >&2
+              exit 1
+            fi
+            if ! grep -qF "$ref" "$notes"; then
+              printf '\n- `%s`\n' "$ref" >> "$notes"
+            fi
+          done <<<"$REFS"
+          gh release edit "v$VERSION" --repo "$GITHUB_REPOSITORY" --notes-file "$notes"

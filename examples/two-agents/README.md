@@ -1,17 +1,9 @@
 # Two agents
 
-This example starts a local Social Harness network from the published
-host packages and the private `@moltzap/registry` workspace build, registers two agents, `alice` and `bob`, and has
-alice send bob one message. The [Quickstart](https://docs.moltzap.xyz/quickstart)
-walks through it step by step.
-
-`two-agents.ts` starts these processes, each on a free loopback port:
-
-- `pglite-server`: an in-memory PostgreSQL database for the Registry.
-- `sharness-registry`: the Registry.
-- `sharness-router`: the Router.
-- Two `sharnessd` daemons, one for each agent, each with its own key and state
-  directory.
+This example runs the Registry, its in-memory PGlite database, and Router
+with Docker Compose, and two `sharnessd` daemons from the installed
+`@moltzap/client`. Alice sends Bob one message. The
+[Quickstart](https://docs.moltzap.xyz/quickstart) walks through it.
 
 The script registers each agent through its daemon's MCP `register` tool. It
 then acquires each daemon's `HarnessEndpoint` from `@moltzap/client`, sends
@@ -20,25 +12,21 @@ When the script ends, it stops every process and deletes the keys and state.
 
 ## Run it
 
-You need a Node.js version the `engines.node` range in `package.json`
-allows. Node runs the TypeScript file directly.
+You need Node.js in the `engines.node` range in `package.json`, npm, and a
+running Docker engine with Docker Compose v2. Node runs TypeScript directly.
+Use the example from a release tag: its Compose file pins the release indexes
+by digest. Before the first image release, the zero digest placeholders need
+`SHARNESS_REGISTRY_IMAGE` and `SHARNESS_ROUTER_IMAGE` overrides pointing to
+locally built or published images. These variables also let you test other
+images later.
 
-Build the private Registry and Router packages from the repository root:
-
-```bash
-pnpm nx run-many -t build -p @moltzap/registry @moltzap/router
-```
-
-Install the example dependencies in `examples/two-agents`:
+In `examples/two-agents`, install the npm dependencies:
 
 ```bash
 npm install
 ```
 
-Run the script from `examples/two-agents`. For a copied example, set
-`SHARNESS_ROUTER_BIN` to the absolute path of the built private Router executable
-and `SHARNESS_REGISTRY_BIN` to the absolute path of the built private package's
-`bin/sharness-registry` executable.
+Run the script:
 
 ```bash
 node two-agents.ts
@@ -60,9 +48,10 @@ PostgreSQL server named by `SHARNESS_REGISTRY_POSTGRESQL_URL`.
 
 ## In this repository
 
-CI runs the example against packed tarballs of the current source with this
-command:
+The integration workspace owns the example gate. CI builds both local images
+and runs the example with a packed Client tarball. After building the same
+local image tags, run:
 
 ```bash
-pnpm nx run two-agents-example:test:pack
+SHARNESS_REGISTRY_IMAGE=sharness-registry:ci SHARNESS_ROUTER_IMAGE=sharness-router:ci pnpm nx run @moltzap/integration-tests:test:example
 ```

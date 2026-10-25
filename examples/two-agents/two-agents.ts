@@ -1,9 +1,9 @@
 /**
- * @file Starts a local Social Harness network from host executables and a private workspace Registry,
+ * @file Starts a local Social Harness network from Docker images and the installed Client,
  * registers the agents `alice` and `bob`, sends one message from alice to bob,
  * and prints the message bob receives.
  *
- * The network is one in-memory PGlite database, one Registry, one Router, and
+ * The network is one Compose project with an in-memory PGlite database, one Registry, one Router, and
  * one `sharnessd` per agent, each on a free loopback port. Registration goes
  * through each daemon's MCP `register` tool; the message goes through the
  * `HarnessEndpoint` that `@moltzap/client` acquires from the same MCP URL.
@@ -30,8 +30,7 @@ import {
   SendInput,
 } from "@moltzap/client";
 import {
-  Config,
-  type ConfigError,
+  Cause,
   Console,
   Data,
   Duration,
@@ -41,6 +40,7 @@ import {
   Option,
   type ParseResult,
   Ref,
+  Schedule,
   Schema,
   type Scope,
   Stream,
@@ -51,25 +51,10 @@ import { isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HOST = "127.0.0.1";
-const ADMISSION_CREDENTIAL = "two-agents-example";
+const ADMISSION_CREDENTIAL = randomBytes(32).toString("base64url");
 const MCP_PROTOCOL_VERSION = "2026-07-28";
 const BIN_DIRECTORY = fileURLToPath(
   new URL("node_modules/.bin/", import.meta.url),
-);
-const routerBinary = Config.string("SHARNESS_ROUTER_BIN").pipe(
-  Config.withDefault(
-    fileURLToPath(
-      new URL("../../packages/router/bin/sharness-router", import.meta.url),
-    ),
-  ),
-);
-
-const registryBinary = Config.string("SHARNESS_REGISTRY_BIN").pipe(
-  Config.withDefault(
-    fileURLToPath(
-      new URL("../../packages/registry/bin/sharness-registry", import.meta.url),
-    ),
-  ),
 );
 const POLL_INTERVAL = Duration.millis(50);
 const RUN_TIMEOUT = Duration.minutes(2);
@@ -103,12 +88,16 @@ interface Network {
   readonly registryOrigin: string;
   readonly routerOrigin: string;
   readonly registrySigner: string;
+  readonly diagnostics: Effect.Effect<
+    string,
+    never,
+    CommandExecutor.CommandExecutor | Scope.Scope
+  >;
 }
 
 /** Every way a setup step fails: a check, a file or process, or a decode. */
 type StepError =
   | ExampleError
-  | ConfigError.ConfigError
   | PlatformError.PlatformError
   | ParseResult.ParseError;
 
@@ -121,36 +110,52 @@ type Services =
 
 const twoAgents = Effect.gen(function* () {
   const network = yield* startNetwork();
-  const [alice, bob] = yield* Effect.all(
-    [startAgent(network, "alice"), startAgent(network, "bob")],
-    { concurrency: 2 },
-  );
-  yield* register(alice);
-  yield* register(bob);
-  yield* Console.log("registered agent:alice and agent:bob");
+  yield* Effect.gen(function* () {
+    yield* awaitNetwork(network);
+    const [alice, bob] = yield* Effect.all(
+      [startAgent(network, "alice"), startAgent(network, "bob")],
+      { concurrency: 2 },
+    );
+    yield* register(alice);
+    yield* register(bob);
+    yield* Console.log("registered agent:alice and agent:bob");
 
-  const aliceEndpoint = yield* acquireHarnessEndpoint(alice.mcp);
-  const bobEndpoint = yield* acquireHarnessEndpoint(bob.mcp);
-  const firstDelivery = yield* Effect.forkScoped(
-    Stream.runHead(bobEndpoint.messages),
-  );
+    const aliceEndpoint = yield* acquireHarnessEndpoint(alice.mcp);
+    const bobEndpoint = yield* acquireHarnessEndpoint(bob.mcp);
+    const firstDelivery = yield* Effect.forkScoped(
+      Stream.runHead(bobEndpoint.messages),
+    );
 
-  yield* aliceEndpoint.send(
-    yield* Schema.decodeUnknown(SendInput)({ to: "agent:bob", text: MESSAGE }),
-  );
-  yield* Console.log(`alice sent: ${MESSAGE}`);
+    yield* aliceEndpoint.send(
+      yield* Schema.decodeUnknown(SendInput)({
+        to: "agent:bob",
+        text: MESSAGE,
+      }),
+    );
+    yield* Console.log(`alice sent: ${MESSAGE}`);
 
-  const delivery = yield* Fiber.join(firstDelivery).pipe(
-    Effect.flatMap(
-      Option.match({
-        onNone: () => fail("bob's message stream ended before a delivery"),
-        onSome: Effect.succeed,
+    const delivery = yield* Fiber.join(firstDelivery).pipe(
+      Effect.flatMap(
+        Option.match({
+          onNone: () => fail("bob's message stream ended before a delivery"),
+          onSome: Effect.succeed,
+        }),
+      ),
+    );
+    yield* Console.log(`bob received: ${describe(delivery.item)}`);
+    yield* delivery.acknowledge;
+  }).pipe(
+    Effect.timeout(RUN_TIMEOUT),
+    Effect.catchAllCause((cause) =>
+      Effect.gen(function* () {
+        const diagnostics = yield* network.diagnostics;
+        return yield* fail(
+          `${Cause.pretty(cause)}\n${diagnostics}\nDocs: https://docs.moltzap.xyz/quickstart#docker-compose-fails`,
+        );
       }),
     ),
   );
-  yield* Console.log(`bob received: ${describe(delivery.item)}`);
-  yield* delivery.acknowledge;
-}).pipe(Effect.scoped, Effect.timeout(RUN_TIMEOUT));
+}).pipe(Effect.scoped);
 
 NodeRuntime.runMain(
   twoAgents.pipe(
@@ -158,9 +163,30 @@ NodeRuntime.runMain(
   ),
 );
 
+/** Wait for both public health endpoints before registering any agents. */
+function awaitNetwork(
+  network: Network,
+): Effect.Effect<void, never, HttpClient.HttpClient> {
+  return Effect.gen(function* () {
+    yield* Effect.repeat(
+      Effect.all([
+        isHealthy(network.registryOrigin),
+        isHealthy(network.routerOrigin),
+      ]),
+      {
+        until: (healthy) => healthy.every(Boolean),
+        schedule: Schedule.spaced(POLL_INTERVAL),
+      },
+    );
+    yield* Console.log(
+      `registry ${network.registryOrigin}, router ${network.routerOrigin}`,
+    );
+  });
+}
+
 /**
- * Starts PGlite, the Registry, and the Router, and returns once the Registry
- * and the Router answer their health checks.
+ * Starts the Compose project before the run budget begins. Health checks and
+ * agent communication share that budget; image downloads do not consume it.
  */
 function startNetwork(): Effect.Effect<Network, StepError, Services> {
   return Effect.gen(function* () {
@@ -168,11 +194,12 @@ function startNetwork(): Effect.Effect<Network, StepError, Services> {
     const directory = yield* fs.makeTempDirectoryScoped({
       prefix: "sharness-two-agents-",
     });
-    const registryKey = join(directory, "registry-signing.pem");
+    const keyDirectory = join(directory, "registry");
+    yield* fs.makeDirectory(keyDirectory);
+    const registryKey = join(keyDirectory, "registry-signing.pem");
     const registryPrivateKey = makePrivateKeyPem();
     yield* fs.writeFileString(registryKey, registryPrivateKey, { mode: 0o600 });
-    const [databasePort, registryPort, routerPort] = yield* Effect.all([
-      freePort(),
+    const [registryPort, routerPort] = yield* Effect.all([
       freePort(),
       freePort(),
     ]);
@@ -180,32 +207,123 @@ function startNetwork(): Effect.Effect<Network, StepError, Services> {
     const routerOrigin = `http://${HOST}:${routerPort}`;
     const registrySigner = publicJwk(registryPrivateKey);
 
-    const database = yield* start("pglite-server", "pglite", [
-      "--db=memory://",
-      `--host=${HOST}`,
-      `--port=${databasePort}`,
-      "--max-connections=20",
-    ]);
-    yield* awaitReady(database, canConnect(databasePort));
-    const registry = yield* start(yield* registryBinary, "registry", [], {
-      SHARNESS_REGISTRY_HOST: HOST,
-      SHARNESS_REGISTRY_PORT: String(registryPort),
-      SHARNESS_REGISTRY_SQL_POOL_SIZE: "1",
-      SHARNESS_REGISTRY_POSTGRESQL_URL: `postgresql://postgres:postgres@${HOST}:${databasePort}/postgres`,
-      SHARNESS_REGISTRY_ADMISSION_CREDENTIAL: ADMISSION_CREDENTIAL,
-      SHARNESS_REGISTRY_SIGNING_PRIVATE_KEY_PATH: registryKey,
-    });
-    const router = yield* start(yield* routerBinary, "router", [], {
-      SHARNESS_ROUTER_HOST: HOST,
-      SHARNESS_ROUTER_PORT: String(routerPort),
-      SHARNESS_ROUTER_REGISTRY_ORIGIN: registryOrigin,
-      SHARNESS_ROUTER_REGISTRY_SIGNER_PUBLIC_KEY: registrySigner,
-    });
-    yield* awaitReady(registry, isHealthy(registryOrigin));
-    yield* awaitReady(router, isHealthy(routerOrigin));
-    yield* Console.log(`registry ${registryOrigin}, router ${routerOrigin}`);
-    return { directory, registryOrigin, routerOrigin, registrySigner };
+    const environment = {
+      SHARNESS_EXAMPLE_KEY_DIRECTORY: keyDirectory,
+      SHARNESS_EXAMPLE_UID: String(process.getuid?.() ?? 1000),
+      SHARNESS_EXAMPLE_GID: String(process.getgid?.() ?? 1000),
+      SHARNESS_EXAMPLE_REGISTRY_PORT: String(registryPort),
+      SHARNESS_EXAMPLE_ROUTER_PORT: String(routerPort),
+      SHARNESS_EXAMPLE_ADMISSION_CREDENTIAL: ADMISSION_CREDENTIAL,
+      SHARNESS_EXAMPLE_REGISTRY_SIGNER: registrySigner,
+    };
+    const diagnostics = yield* startCompose(environment);
+    return {
+      directory,
+      registryOrigin,
+      routerOrigin,
+      registrySigner,
+      diagnostics,
+    };
   });
+}
+
+/**
+ * Compose cleanup runs after diagnostics and before the scratch directory's
+ * bind mount is removed. Normal commands inherit output; diagnostics drain
+ * both pipes together and survive a failed diagnostic command.
+ */
+function startCompose(
+  environment: Readonly<Record<string, string>>,
+): Effect.Effect<
+  Effect.Effect<string, never, CommandExecutor.CommandExecutor | Scope.Scope>,
+  StepError,
+  Services
+> {
+  return Effect.gen(function* () {
+    const composeArgs = [
+      "compose",
+      "--file",
+      fileURLToPath(new URL("compose.yaml", import.meta.url)),
+      "--project-name",
+      `sharness-example-${randomBytes(8).toString("hex")}`,
+    ];
+    const command = (...args: readonly string[]) =>
+      Command.make("docker", ...composeArgs, ...args).pipe(
+        Command.env(environment),
+      );
+    const compose = (...args: readonly string[]) =>
+      runCompose(command(...args));
+    yield* Effect.addFinalizer(() =>
+      compose("down", "--volumes", "--remove-orphans").pipe(Effect.orDie),
+    );
+    const diagnostics = Effect.all(
+      [
+        captureCompose(command("ps", "--all"), "ps --all"),
+        captureCompose(command("logs"), "logs"),
+      ],
+      { concurrency: 2 },
+    ).pipe(Effect.map((outputs) => outputs.join("\n")));
+    yield* compose("up", "--detach").pipe(
+      Effect.catchAll((cause) =>
+        Effect.flatMap(diagnostics, (output) =>
+          fail(
+            `${String(cause)}\n${output}\nDocs: https://docs.moltzap.xyz/quickstart#docker-compose-fails`,
+          ),
+        ),
+      ),
+    );
+    return diagnostics;
+  });
+}
+
+/** Inherit progress streams so pulls and shutdown cannot fill unread pipes. */
+function runCompose(
+  command: Command.Command,
+): Effect.Effect<void, StepError, CommandExecutor.CommandExecutor> {
+  return command.pipe(
+    Command.stdout("inherit"),
+    Command.stderr("inherit"),
+    Command.exitCode,
+    Effect.flatMap((code) =>
+      code === 0
+        ? Effect.void
+        : fail(
+            `docker compose exited with ${code}. Docs: https://docs.moltzap.xyz/quickstart#docker-compose-fails`,
+          ),
+    ),
+  );
+}
+
+/** Drain diagnostics within 30 seconds, closing each child scope before Compose cleanup. */
+function captureCompose(
+  command: Command.Command,
+  label: string,
+): Effect.Effect<string, never, CommandExecutor.CommandExecutor | Scope.Scope> {
+  return Effect.gen(function* () {
+    const child = yield* Command.start(command);
+    const [output, code] = yield* Effect.all(
+      [
+        Stream.merge(child.stdout, child.stderr).pipe(
+          Stream.decodeText(),
+          Stream.runFold("", (text, chunk) => text + chunk),
+        ),
+        child.exitCode,
+      ],
+      { concurrency: 2 },
+    );
+    return `docker compose ${label} (exit ${code}):\n${output}`;
+  }).pipe(
+    Effect.scoped,
+    Effect.timeoutOption(Duration.seconds(30)),
+    Effect.map(
+      Option.getOrElse(
+        () => `docker compose ${label} diagnostics timed out after 30 seconds`,
+      ),
+    ),
+    Effect.catchAll((cause) =>
+      Effect.succeed(`docker compose ${label} failed: ${String(cause)}`),
+    ),
+  );
 }
 
 /**
