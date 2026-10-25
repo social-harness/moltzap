@@ -35,6 +35,7 @@ import {
   type FirewallRequestAdmission,
   type InboxEntry,
   MAXIMUM_RUNTIME_ITEM_BYTES,
+  type OwnerProposal,
 } from "./types.js";
 
 // safer-arch-ignore file-implicit-boundary-module: Store composition and intent admission share these private transaction primitives so the audit, inbox, and intent writes commit atomically; only store/index.ts exposes the store capability.
@@ -446,6 +447,7 @@ export function writeFirewallPolicy(
   database: DatabaseSync,
   rules: Uint8Array,
   activation?: FirewallActivation,
+  acceptedProposalId?: string,
 ): void {
   requireBytes(rules);
   transaction(database, () => {
@@ -453,6 +455,16 @@ export function writeFirewallPolicy(
       .prepare(`INSERT INTO firewall_policy (singleton, canonical_rules) VALUES (1, ?)
       ON CONFLICT(singleton) DO UPDATE SET canonical_rules = excluded.canonical_rules`)
       .run(rules);
+    if (acceptedProposalId !== undefined) {
+      const changed = database
+        .prepare(
+          "UPDATE owner_proposals SET status = 'accepted' WHERE id = ? AND status = 'pending'",
+        )
+        .run(acceptedProposalId);
+      if (changed.changes !== 1) {
+        throw new StoreSignal("conflict");
+      }
+    }
     if (activation !== undefined) {
       database
         .prepare(`INSERT INTO firewall_activations
@@ -466,6 +478,47 @@ export function writeFirewallPolicy(
         );
     }
   });
+}
+
+/** Retained decisions accompany pending items so either decision remains idempotent after restart. */
+export function readOwnerProposals(
+  database: DatabaseSync,
+): readonly OwnerProposal[] {
+  return database
+    .prepare(`SELECT id, proposed_at, canonical_request,
+    canonical_removed_rules, status FROM owner_proposals ORDER BY proposed_at, rowid`)
+    .all()
+    .map((row) => ({
+      id: readText(row, "id"),
+      proposedAt: readInteger(row, "proposed_at"),
+      canonicalRequest: readBytes(row, "canonical_request"),
+      canonicalRemovedRules: readBytes(row, "canonical_removed_rules"),
+      status: Schema.decodeUnknownSync(
+        Schema.Literal("pending", "accepted", "declined"),
+      )(readText(row, "status")),
+    }));
+}
+
+/** Only the decision changes on an existing item; the proposed evidence stays intact. */
+export function writeOwnerProposal(
+  database: DatabaseSync,
+  proposal: OwnerProposal,
+): void {
+  requireText(proposal.id);
+  requireBytes(proposal.canonicalRequest);
+  requireBytes(proposal.canonicalRemovedRules);
+  database
+    .prepare(`INSERT INTO owner_proposals
+    (id, proposed_at, canonical_request, canonical_removed_rules, status)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET status = excluded.status`)
+    .run(
+      proposal.id,
+      proposal.proposedAt,
+      proposal.canonicalRequest,
+      proposal.canonicalRemovedRules,
+      proposal.status,
+    );
 }
 
 /** A sequence cursor preserves every edit in bounded exports, including identical revisions. */

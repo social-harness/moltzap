@@ -37,6 +37,7 @@ export type {
   InboxEntry,
   InboxPage,
   InboxSummary,
+  OwnerProposal,
   OutboundAttempt,
   OutboundMessageInput,
   PendingDelivery,

@@ -11,6 +11,7 @@ import {
   migrations,
   type MigrationSteps,
   RESET_SCHEMA,
+  ownerProposalsSql,
 } from "./migrations.js";
 import {
   EndpointStoreError,
@@ -625,6 +626,9 @@ function createStore(database: DatabaseSync, steps: MigrationSteps): void {
       database.exec(runtimeSchemaSql);
       database.exec(firewallSchemaSql);
       database.exec(editablePolicySql);
+      if (schemaVersion(steps) >= 12) {
+        database.exec(ownerProposalsSql);
+      }
       database.exec(`PRAGMA user_version = ${schemaVersion(steps)}`);
     },
     "EXCLUSIVE",

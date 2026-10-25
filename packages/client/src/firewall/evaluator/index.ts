@@ -104,4 +104,7 @@ export {
   policyReadSchema,
   policyUpdateResultSchema,
   policyUpdateSchema,
+  proposalDecisionSchema,
+  proposalsRequestSchema,
+  proposalsResultSchema,
 } from "./contract/index.js";

@@ -20,13 +20,26 @@ export type MigrationSteps = Readonly<
   Record<number, (database: DatabaseSync) => void>
 >;
 
-/**
- * Forward steps available to the production binary. Schema 11 drops
- * `runtime_sends`, the retained keyed-send invocations no harness reads.
- */
+/** Owner decisions remain durable independently of the conversation protocol's proposal locks. */
+export const ownerProposalsSql = `
+  CREATE TABLE owner_proposals (
+    id TEXT PRIMARY KEY,
+    proposed_at INTEGER NOT NULL,
+    canonical_request BLOB NOT NULL,
+    canonical_removed_rules BLOB NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('pending', 'accepted', 'declined'))
+  ) STRICT;
+  CREATE INDEX owner_proposals_pending ON owner_proposals(proposed_at)
+    WHERE status = 'pending';
+`;
+
+/** Forward steps retain all state outside the tables each step explicitly changes. */
 export const migrations: MigrationSteps = Object.freeze({
   11: (database: DatabaseSync) => {
     database.exec("DROP TABLE IF EXISTS runtime_sends");
+  },
+  12: (database: DatabaseSync) => {
+    database.exec(ownerProposalsSql);
   },
 });
 

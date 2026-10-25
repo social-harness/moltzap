@@ -398,6 +398,15 @@ export interface HistoryPage {
   readonly continuation: string | null;
 }
 
+/** Canonical edit and captured removals remain available after the owner decides. */
+export interface OwnerProposal {
+  readonly id: string;
+  readonly proposedAt: number;
+  readonly canonicalRequest: Uint8Array;
+  readonly canonicalRemovedRules: Uint8Array;
+  readonly status: "pending" | "accepted" | "declined";
+}
+
 /** Private durable operations owned by one daemon process. */
 export interface EndpointStore {
   readonly queueFirewallItem: (
@@ -431,6 +440,15 @@ export interface EndpointStore {
   readonly writeFirewallPolicy: (
     rules: Uint8Array,
     activation?: FirewallActivation,
+    acceptedProposalId?: string,
+  ) => Effect.Effect<void, EndpointStoreError>;
+  /** Includes decided items so repeated decisions survive restart. */
+  readonly readOwnerProposals: () => Effect.Effect<
+    readonly OwnerProposal[],
+    EndpointStoreError
+  >;
+  readonly writeOwnerProposal: (
+    proposal: OwnerProposal,
   ) => Effect.Effect<void, EndpointStoreError>;
   /** Recent edits, or ascending bounded pages for a complete shutdown snapshot. */
   readonly readFirewallActivations: (request: {

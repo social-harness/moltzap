@@ -163,7 +163,7 @@ export interface Firewall {
 
 Checking returns data; Client separately owns fresh, atomic send/delivery admission.
 
-### [`FirewallPolicyError`](./index.ts#L627)
+### [`FirewallPolicyError`](./index.ts#L652)
 
 _Class_
 
@@ -176,7 +176,10 @@ export class FirewallPolicyError extends Data.TaggedError(
     | "invalid-rule"
     | "fixed-rule"
     | "build-failed"
-    | "persistence-failed";
+    | "persistence-failed"
+    | "unknown-proposal"
+    | "already-decided"
+    | "proposal-stale";
 }> {}
 ```
 

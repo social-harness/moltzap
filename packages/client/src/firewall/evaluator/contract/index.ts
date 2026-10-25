@@ -524,6 +524,31 @@ export const policyUpdateSchema = exactStruct({
   ),
 });
 
+/** Owner decisions name retained items without granting authority through the id. */
+export const proposalDecisionSchema = exactStruct({
+  id: Schema.NonEmptyString,
+});
+
+/** Inclusive Unix milliseconds let hosts poll for newly pending edits. */
+export const proposalsRequestSchema = exactStruct({
+  since: Schema.optional(Schema.NonNegativeInt),
+});
+
+/** Complete removed rules let an owner assess an edit without reconstructing its history. */
+export const proposalsResultSchema = exactStruct({
+  proposals: Schema.Array(
+    Schema.Union(
+      exactStruct({
+        id: Schema.NonEmptyString,
+        kind: Schema.Literal("policy"),
+        proposedAt: Schema.NonNegativeInt,
+        add: Schema.Array(editableRuleSchema),
+        remove: Schema.Array(editableRuleSchema),
+      }),
+    ),
+  ),
+});
+
 const describedFields = {
   id: RuleDescription.fields.id,
   kind: RuleDescription.fields.kind,
@@ -632,7 +657,10 @@ export class FirewallPolicyError extends Data.TaggedError(
     | "invalid-rule"
     | "fixed-rule"
     | "build-failed"
-    | "persistence-failed";
+    | "persistence-failed"
+    | "unknown-proposal"
+    | "already-decided"
+    | "proposal-stale";
 }> {}
 
 /** Owner capabilities are separate from runtime send and inbox authority. */
@@ -644,6 +672,18 @@ export interface FirewallPolicyOperations {
   readonly update: (
     request: typeof policyUpdateSchema.Type,
   ) => Effect.Effect<typeof policyUpdateResultSchema.Type, FirewallPolicyError>;
+  readonly propose: (
+    request: typeof policyUpdateSchema.Type,
+  ) => Effect.Effect<typeof proposalDecisionSchema.Type, FirewallPolicyError>;
+  readonly proposals: (
+    request: typeof proposalsRequestSchema.Type,
+  ) => Effect.Effect<typeof proposalsResultSchema.Type, FirewallPolicyError>;
+  readonly accept: (
+    request: typeof proposalDecisionSchema.Type,
+  ) => Effect.Effect<typeof proposalDecisionSchema.Type, FirewallPolicyError>;
+  readonly decline: (
+    request: typeof proposalDecisionSchema.Type,
+  ) => Effect.Effect<typeof proposalDecisionSchema.Type, FirewallPolicyError>;
   readonly decisions: (
     request: typeof firewallDecisionsRequestSchema.Type,
   ) => Effect.Effect<typeof firewallDecisionsSchema.Type, FirewallPolicyError>;

@@ -34,6 +34,9 @@ import {
   policyReadSchema,
   policyUpdateResultSchema,
   policyUpdateSchema,
+  proposalDecisionSchema,
+  proposalsRequestSchema,
+  proposalsResultSchema,
 } from "../../firewall/index.js";
 import { FirewallSendError } from "../../firewall/outcome/index.js";
 import {
@@ -201,6 +204,18 @@ const policyUpdateInput = makeStandardSchema<typeof policyUpdateSchema.Type>(
 const policyUpdateOutput = makeStandardSchema<
   typeof policyUpdateResultSchema.Type
 >(makeJsonSchema(policyUpdateResultSchema));
+const proposalDecisionInput = makeStandardSchema<
+  typeof proposalDecisionSchema.Type
+>(makeJsonSchema(proposalDecisionSchema));
+const proposalDecisionOutput = makeStandardSchema<
+  typeof proposalDecisionSchema.Type
+>(makeJsonSchema(proposalDecisionSchema));
+const proposalsInput = makeStandardSchema<typeof proposalsRequestSchema.Type>(
+  makeJsonSchema(proposalsRequestSchema),
+);
+const proposalsOutput = makeStandardSchema<typeof proposalsResultSchema.Type>(
+  makeJsonSchema(proposalsResultSchema),
+);
 const decisionsInput = makeStandardSchema<
   typeof firewallDecisionsRequestSchema.Type
 >(makeJsonSchema(firewallDecisionsRequestSchema));
@@ -439,6 +454,28 @@ const toolListings = {
     inputSchema: policyUpdateInput,
     outputSchema: policyUpdateOutput,
   },
+  policy_propose: {
+    description:
+      "Propose an editable policy change for the owner to decide outside the model.",
+    inputSchema: policyUpdateInput,
+    outputSchema: proposalDecisionOutput,
+  },
+  proposals_read: {
+    description:
+      "Read pending policy proposals oldest first, optionally since inclusive Unix milliseconds.",
+    inputSchema: proposalsInput,
+    outputSchema: proposalsOutput,
+  },
+  proposal_accept: {
+    description: "Accept a pending policy proposal and activate its edit.",
+    inputSchema: proposalDecisionInput,
+    outputSchema: proposalDecisionOutput,
+  },
+  proposal_decline: {
+    description: "Decline a pending policy proposal and discard its edit.",
+    inputSchema: proposalDecisionInput,
+    outputSchema: proposalDecisionOutput,
+  },
   firewall_decisions: {
     description:
       "Read metadata for the latest 100 completed checks since inclusive Unix milliseconds: each outcome's cause and deciding rules with their registered advice; no message text. Groups have one row per peer.",
@@ -534,6 +571,10 @@ const ownerEventTools = [
 const activeTools = [
   "policy_read",
   "policy_update",
+  "policy_propose",
+  "proposals_read",
+  "proposal_accept",
+  "proposal_decline",
   "firewall_decisions",
   SEARCH_AGENTS_TOOL,
   SEARCH_CONVERSATIONS_TOOL,
@@ -559,7 +600,12 @@ const roleCatalogs = {
   },
   runtime: {
     inactive: [],
-    active: [SEARCH_AGENTS_TOOL, HARNESS_SEND_TOOL, HARNESS_READ_EVENT_TOOL],
+    active: [
+      SEARCH_AGENTS_TOOL,
+      HARNESS_SEND_TOOL,
+      HARNESS_READ_EVENT_TOOL,
+      "policy_propose",
+    ],
   },
 } as const satisfies Readonly<Record<HarnessMcpRole, RoleCatalog>>;
 
@@ -651,6 +697,9 @@ const POLICY_REASONS = new Set([
   "fixed-rule",
   "build-failed",
   "persistence-failed",
+  "unknown-proposal",
+  "already-decided",
+  "proposal-stale",
 ]);
 
 /** The operations a tool call runs: the daemon's and the event subscription's. */
@@ -724,48 +773,73 @@ const makeToolHandler =
     });
   };
 
+function makePolicyHandler<
+  Request,
+  Value extends Readonly<Record<string, unknown>>,
+>(
+  label: string,
+  execute: (
+    policy: FirewallPolicyOperations,
+    request: Request,
+  ) => Effect.Effect<Value, ClosedOperationError>,
+  schemas: readonly [
+    StandardSchemaV1<unknown, Request>,
+    Schema.Schema<Request>,
+    StandardSchemaV1<unknown, Value>,
+  ],
+  fallbackReason = "persistence-failed",
+) {
+  return makeToolHandler(...schemas, {
+    execute: (operations, request) =>
+      operations.policy === undefined
+        ? Effect.fail({ reason: "not-configured" })
+        : execute(operations.policy, request),
+    label,
+    allowedReasons: POLICY_REASONS,
+    fallbackReason,
+  });
+}
+
 /**
  * The handler for each tool the catalog can list, keyed like `toolListings`,
  * so a listed tool without a handler does not compile.
  */
 const toolHandlers = {
-  policy_read: makeToolHandler(
+  policy_read: makePolicyHandler("Policy read", (policy) => policy.read(), [
     emptyInput,
     emptyRequestSchema,
     policyReadOutput,
-    {
-      execute: (operations) =>
-        operations.policy?.read() ?? Effect.fail({ reason: "not-configured" }),
-      label: "Policy read",
-      allowedReasons: POLICY_REASONS,
-      fallbackReason: "persistence-failed",
-    },
+  ]),
+  policy_update: makePolicyHandler(
+    "Policy update",
+    (policy, request) => policy.update(request),
+    [policyUpdateInput, policyUpdateSchema, policyUpdateOutput],
+    "build-failed",
   ),
-  policy_update: makeToolHandler(
-    policyUpdateInput,
-    policyUpdateSchema,
-    policyUpdateOutput,
-    {
-      execute: (operations, request) =>
-        operations.policy?.update(request) ??
-        Effect.fail({ reason: "not-configured" }),
-      label: "Policy update",
-      allowedReasons: POLICY_REASONS,
-      fallbackReason: "build-failed",
-    },
+  policy_propose: makePolicyHandler(
+    "Policy proposal",
+    (policy, request) => policy.propose(request),
+    [policyUpdateInput, policyUpdateSchema, proposalDecisionOutput],
   ),
-  firewall_decisions: makeToolHandler(
-    decisionsInput,
-    firewallDecisionsRequestSchema,
-    decisionsOutput,
-    {
-      execute: (operations, request) =>
-        operations.policy?.decisions(request) ??
-        Effect.fail({ reason: "not-configured" }),
-      label: "Firewall decisions",
-      allowedReasons: POLICY_REASONS,
-      fallbackReason: "persistence-failed",
-    },
+  proposals_read: makePolicyHandler(
+    "Pending proposals",
+    (policy, request) => policy.proposals(request),
+    [proposalsInput, proposalsRequestSchema, proposalsOutput],
+  ),
+  proposal_accept: makePolicyHandler(
+    "Proposal acceptance",
+    (policy, request) => policy.accept(request),
+    [proposalDecisionInput, proposalDecisionSchema, proposalDecisionOutput],
+  ),
+  proposal_decline: makePolicyHandler(
+    "Proposal decline",
+    (policy, request) => policy.decline(request),
+    [proposalDecisionInput, proposalDecisionSchema, proposalDecisionOutput],
+  ),
+  firewall_decisions: makePolicyHandler(
+    "Firewall decisions",
+    (policy, request) => policy.decisions(request),
+    [decisionsInput, firewallDecisionsRequestSchema, decisionsOutput],
   ),
   [STATUS_TOOL]: makeToolHandler(emptyInput, emptyRequestSchema, statusOutput, {
     execute: (operations, request) => {
@@ -870,6 +944,16 @@ const toolHandlers = {
   ),
 } satisfies Readonly<Record<ToolName, ToolHandler>>;
 
+const policyTools: ReadonlySet<ToolName> = new Set([
+  "policy_read",
+  "policy_update",
+  "policy_propose",
+  "proposals_read",
+  "proposal_accept",
+  "proposal_decline",
+  "firewall_decisions",
+]);
+
 /**
  * The tools `role` lists and may call now: its catalog for whether the
  * daemon's protocol is up. Listing and admission read this one answer.
@@ -884,12 +968,7 @@ const currentTools = (
   const catalog = roleCatalogs[role];
   const tools = operations.protocolActive() ? catalog.active : catalog.inactive;
   return operations.policy === undefined
-    ? tools.filter(
-        (name) =>
-          name !== "policy_read" &&
-          name !== "policy_update" &&
-          name !== "firewall_decisions",
-      )
+    ? tools.filter((name) => !policyTools.has(name))
     : tools;
 };
 

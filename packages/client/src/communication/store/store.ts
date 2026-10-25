@@ -39,6 +39,8 @@ import {
   readFirewallEvidenceSlices,
   readFirewallFrontiers,
   readFirewallPolicy,
+  readOwnerProposals,
+  writeOwnerProposal,
   readFirewallRequestAdmission,
   readPendingFirewallItems,
   retireFirewallItem,
@@ -232,9 +234,19 @@ function makeEndpointStore(state: StoreState): EndpointStore {
     readPendingFirewallItems: (after) =>
       run(() => readPendingFirewallItems(state.database, after)),
     readFirewallPolicy: () => run(() => readFirewallPolicy(state.database)),
-    writeFirewallPolicy: (rules, activation) =>
+    writeFirewallPolicy: (rules, activation, acceptedProposalId) =>
       run(() => {
-        writeFirewallPolicy(state.database, rules, activation);
+        writeFirewallPolicy(
+          state.database,
+          rules,
+          activation,
+          acceptedProposalId,
+        );
+      }),
+    readOwnerProposals: () => run(() => readOwnerProposals(state.database)),
+    writeOwnerProposal: (proposal) =>
+      run(() => {
+        writeOwnerProposal(state.database, proposal);
       }),
     readFirewallActivations: (request) =>
       run(() => readFirewallActivations(state.database, request)),

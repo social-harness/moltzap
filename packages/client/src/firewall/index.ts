@@ -27,6 +27,9 @@ export {
   policyReadSchema,
   policyUpdateResultSchema,
   policyUpdateSchema,
+  proposalDecisionSchema,
+  proposalsRequestSchema,
+  proposalsResultSchema,
   RuleDescription,
 } from "./evaluator/index.js";
 /** Trusted composition installs policy before admitting application traffic. */

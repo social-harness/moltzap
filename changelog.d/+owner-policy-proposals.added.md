@@ -1,0 +1,1 @@
+Runtime authority can propose policy changes with `policy_propose`; owner authority can read pending changes with `proposals_read` and decide them with `proposal_accept` or `proposal_decline` outside the model.

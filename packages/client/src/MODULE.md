@@ -1142,7 +1142,7 @@ export class DecisionProviderError extends Data.TaggedError(
 
 The adapter scrubs credentials before retaining optional private diagnostics.
 
-#### [`FirewallPolicyError`](./firewall/evaluator/contract/index.ts#L627)
+#### [`FirewallPolicyError`](./firewall/evaluator/contract/index.ts#L652)
 
 _Class_
 
@@ -1155,7 +1155,10 @@ export class FirewallPolicyError extends Data.TaggedError(
     | "invalid-rule"
     | "fixed-rule"
     | "build-failed"
-    | "persistence-failed";
+    | "persistence-failed"
+    | "unknown-proposal"
+    | "already-decided"
+    | "proposal-stale";
 }> {}
 ```
 

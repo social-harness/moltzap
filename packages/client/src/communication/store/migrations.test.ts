@@ -27,7 +27,7 @@ import {
 } from "../../__tests__/store-schema-fixtures.js";
 import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { readStoredHistory } from "../conversations/index.js";
-import { RESET_SCHEMA } from "./database/migrations.js";
+import { migrations, RESET_SCHEMA } from "./database/migrations.js";
 import { closeStoreState, openStoreState } from "./database/schema.js";
 import { openEndpointStore } from "./index.js";
 
@@ -345,7 +345,9 @@ it("drops the retained keyed sends of a schema-10 store and keeps the rest of it
       }).pipe(Effect.flatMap((store) => store.recover())),
     );
 
-    expect(version(subject.path)).toBe(RESET_SCHEMA + 1);
+    expect(version(subject.path)).toBe(
+      Math.max(...Object.keys(migrations).map(Number)),
+    );
     expect(version(subject.backup)).toBe(RESET_SCHEMA);
     const upgraded = new DatabaseSync(subject.path, { readOnly: true });
     expect(
@@ -356,3 +358,46 @@ it("drops the retained keyed sends of a schema-10 store and keeps the rest of it
     upgraded.close();
     expect(recovered).toEqual(before);
   }));
+
+function upgradesOwnerProposals() {
+  return Effect.gen(function* () {
+    const subject = yield* prepare();
+    const before = yield* withStore(subject.directory, (store) =>
+      Effect.gen(function* () {
+        yield* store.putConversationFoundation(
+          storedConversation("owner-proposal-upgrade").foundation,
+        );
+        return yield* store.recover();
+      }),
+    );
+    const database = new DatabaseSync(subject.path);
+    database.exec("DROP TABLE owner_proposals; PRAGMA user_version = 11");
+    database.close();
+    yield* withStore(subject.directory, (store) =>
+      Effect.gen(function* () {
+        expect(yield* store.recover()).toEqual(before);
+        expect(yield* store.readOwnerProposals()).toEqual([]);
+        const proposal = {
+          id: "pol_migration",
+          proposedAt: 10,
+          canonicalRequest: new TextEncoder().encode("{}"),
+          canonicalRemovedRules: new TextEncoder().encode("[]"),
+          status: "pending" as const,
+        };
+        yield* store.writeOwnerProposal(proposal);
+        expect(yield* store.readOwnerProposals()).toEqual([proposal]);
+      }),
+    );
+    expect(version(subject.path)).toBe(
+      Math.max(...Object.keys(migrations).map(Number)),
+    );
+    const backup = `${subject.path}.schema-11.backup`;
+    expect(version(backup)).toBe(RESET_SCHEMA + 1);
+    expect(statSync(backup).mode & 0o077).toBe(0);
+  });
+}
+
+it(
+  "preserves conversation state and a private backup when upgrading to durable owner proposals",
+  upgradesOwnerProposals,
+);
