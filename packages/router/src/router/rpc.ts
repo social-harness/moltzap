@@ -7,11 +7,10 @@ import {
   RpcServer,
 } from "@effect/rpc";
 import {
-  AuthenticationFailedError,
-  InternalServerError,
-  OverloadedError,
+  httpErrors,
+  routerContract,
   type VerifiedAgentRequest,
-} from "@moltzap/identity";
+} from "@moltzap/client/internal";
 import {
   Context,
   Deferred,
@@ -24,30 +23,30 @@ import {
 } from "effect";
 import type { RouterPoll } from "./poll.js";
 import type { RouterSend } from "./send.js";
-import {
-  RawRouterSendRequest,
-  type RawRouterSendRequest as RawRouterSendRequestValue,
-  RouterPollRequest,
-  type RouterPollRequest as RouterPollRequestValue,
-  RouterPollResult,
-  type RouterPollResult as RouterPollResultValue,
-  RouterSendResult,
-  type RouterSendResult as RouterSendResultValue,
-} from "./contract.js";
+
+/* eslint-disable @typescript-eslint/naming-convention -- Closed HTTP error constructors retain their class names when bound from the service capability. */
+const { AuthenticationFailedError } = httpErrors;
+/* eslint-enable @typescript-eslint/naming-convention -- Restore variable naming after binding error constructors. */
 
 type RouterHandlerError =
-  | AuthenticationFailedError
-  | OverloadedError
-  | InternalServerError;
+  | InstanceType<typeof httpErrors.AuthenticationFailedError>
+  | InstanceType<typeof httpErrors.OverloadedError>
+  | InstanceType<typeof httpErrors.InternalServerError>;
 
 /** Typed package-private client used by the HTTP adapter. */
 export interface RouterRpcClient {
   readonly send: (input: {
-    readonly request: RawRouterSendRequestValue;
-  }) => Effect.Effect<RouterSendResultValue, RouterHandlerError>;
+    readonly request: typeof routerContract.RawRouterSendRequest.Type;
+  }) => Effect.Effect<
+    typeof routerContract.RouterSendResult.Type,
+    RouterHandlerError
+  >;
   readonly poll: (input: {
-    readonly request: RouterPollRequestValue;
-  }) => Effect.Effect<RouterPollResultValue, RouterHandlerError>;
+    readonly request: typeof routerContract.RouterPollRequest.Type;
+  }) => Effect.Effect<
+    typeof routerContract.RouterPollResult.Type,
+    RouterHandlerError
+  >;
 }
 
 const currentVerifiedRequest = FiberRef.unsafeMake(
@@ -63,7 +62,7 @@ class VerifiedRouterRequest extends Context.Tag(
 class RegisteredAgentRequest extends RpcMiddleware.Tag<RegisteredAgentRequest>()(
   "@moltzap/router/RegisteredAgentRequest",
   {
-    failure: AuthenticationFailedError,
+    failure: httpErrors.AuthenticationFailedError,
     provides: VerifiedRouterRequest,
   },
 ) {}
@@ -79,15 +78,18 @@ const registeredAgentRequestLayer = Layer.succeed(RegisteredAgentRequest, () =>
   ),
 );
 
-const handlerErrors = Schema.Union(OverloadedError, InternalServerError);
+const handlerErrors = Schema.Union(
+  httpErrors.OverloadedError,
+  httpErrors.InternalServerError,
+);
 const sendRpc = Rpc.make("send", {
-  payload: { request: RawRouterSendRequest },
-  success: RouterSendResult,
+  payload: { request: routerContract.RawRouterSendRequest },
+  success: routerContract.RouterSendResult,
   error: handlerErrors,
 }).middleware(RegisteredAgentRequest);
 const pollRpc = Rpc.make("poll", {
-  payload: { request: RouterPollRequest },
-  success: RouterPollResult,
+  payload: { request: routerContract.RouterPollRequest },
+  success: routerContract.RouterPollResult,
   error: handlerErrors,
 }).middleware(RegisteredAgentRequest);
 

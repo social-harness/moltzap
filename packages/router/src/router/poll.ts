@@ -1,31 +1,26 @@
 /** @file Verified polling over the volatile feed, cursor codec, and bounded waiters. */
-import {
-  type AgentId,
-  InternalServerError,
-  type LiveSignedMessage,
-  OverloadedError,
-} from "@moltzap/identity";
+import type { AgentId, LiveSignedMessage } from "@moltzap/client";
+import { httpErrors, routerContract } from "@moltzap/client/internal";
 import canonicalize from "canonicalize";
 import { Duration, Effect, Option, Schema } from "effect";
 import type { PollCursorCodec } from "./poll-cursor.js";
 import type { PollWaiters } from "./poll-waiters.js";
-import {
-  type PollCursor,
-  type RouterInstanceId,
-  type RouterPollRequest,
-  RouterPollResult,
-  type RouterPollResult as RouterPollResultValue,
-} from "./contract.js";
 import { entriesAfter, type FeedSnapshot, type RouterFeed } from "./feed.js";
 
-type PollFailure = OverloadedError | InternalServerError;
+/* eslint-disable @typescript-eslint/naming-convention -- Closed HTTP error constructors retain their class names when bound from the service capability. */
+const { InternalServerError, OverloadedError } = httpErrors;
+/* eslint-enable @typescript-eslint/naming-convention -- Restore variable naming after binding error constructors. */
+
+type PollFailure =
+  | InstanceType<typeof httpErrors.OverloadedError>
+  | InstanceType<typeof httpErrors.InternalServerError>;
 
 interface VerifiedCaller {
   readonly callerAgentId: AgentId;
 }
 
 interface PollDependencies {
-  readonly routerInstanceId: RouterInstanceId;
+  readonly routerInstanceId: typeof routerContract.RouterInstanceId.Type;
   readonly feed: RouterFeed;
   readonly pollWaiters: PollWaiters;
   readonly cursorCodec: PollCursorCodec;
@@ -36,9 +31,9 @@ interface PollDependencies {
 /** Poll domain operation after HTTP authentication. */
 export interface RouterPoll {
   readonly handle: (
-    request: RouterPollRequest,
+    request: typeof routerContract.RouterPollRequest.Type,
     verifiedRequest: VerifiedCaller,
-  ) => Effect.Effect<RouterPollResultValue, PollFailure>;
+  ) => Effect.Effect<typeof routerContract.RouterPollResult.Type, PollFailure>;
 }
 
 /**
@@ -55,14 +50,19 @@ export interface RouterPoll {
  */
 export const makeRouterPoll = (input: PollDependencies): RouterPoll =>
   Object.freeze({
-    handle: (request: RouterPollRequest, verifiedRequest: VerifiedCaller) =>
-      handlePoll(input, request, verifiedRequest),
+    handle: (
+      request: typeof routerContract.RouterPollRequest.Type,
+      verifiedRequest: VerifiedCaller,
+    ) => handlePoll(input, request, verifiedRequest),
   });
 
 const HOLD_DURATION = Duration.seconds(25);
 const utf8Encoder = new TextEncoder();
 
-type PollBatch = Extract<RouterPollResultValue, { readonly kind: "batch" }>;
+type PollBatch = Extract<
+  typeof routerContract.RouterPollResult.Type,
+  { readonly kind: "batch" }
+>;
 
 interface ScanResult {
   readonly result: PollBatch;
@@ -76,9 +76,9 @@ interface ScanState {
 }
 
 const encodedResultLength = (
-  result: RouterPollResultValue,
-): Effect.Effect<number, InternalServerError> =>
-  Schema.encode(RouterPollResult)(result).pipe(
+  result: typeof routerContract.RouterPollResult.Type,
+): Effect.Effect<number, InstanceType<typeof httpErrors.InternalServerError>> =>
+  Schema.encode(routerContract.RouterPollResult)(result).pipe(
     Effect.catchTag("ParseError", () => Effect.fail(new InternalServerError())),
     Effect.flatMap((encoded) => {
       const jcs = canonicalize(encoded);
@@ -108,7 +108,10 @@ const makeBatch = (
   callerAgentId: AgentId,
   signedMessages: readonly LiveSignedMessage[],
   lastScannedOrder: bigint,
-): Effect.Effect<PollBatch, InternalServerError> =>
+): Effect.Effect<
+  PollBatch,
+  InstanceType<typeof httpErrors.InternalServerError>
+> =>
   input.cursorCodec.encrypt({ agentId: callerAgentId, lastScannedOrder }).pipe(
     Effect.catchTag("PollCursorEncryptionError", () =>
       Effect.fail(new InternalServerError()),
@@ -128,7 +131,10 @@ const scanEntry = (
   callerAgentId: AgentId,
   state: ScanState,
   entry: FeedSnapshot["entries"][number],
-): Effect.Effect<Option.Option<ScanState>, InternalServerError> => {
+): Effect.Effect<
+  Option.Option<ScanState>,
+  InstanceType<typeof httpErrors.InternalServerError>
+> => {
   if (!entry.recipients.has(callerAgentId)) {
     return Effect.succeed(
       Option.some({
@@ -159,7 +165,10 @@ const scan = (
   snapshot: FeedSnapshot,
   callerAgentId: AgentId,
   startOrder: bigint,
-): Effect.Effect<ScanResult, InternalServerError> =>
+): Effect.Effect<
+  ScanResult,
+  InstanceType<typeof httpErrors.InternalServerError>
+> =>
   Effect.gen(function* () {
     let state: ScanState = {
       selected: [],
@@ -187,8 +196,8 @@ const scan = (
   });
 
 const feedGap = (
-  routerInstanceId: RouterInstanceId,
-): RouterPollResultValue => ({
+  routerInstanceId: typeof routerContract.RouterInstanceId.Type,
+): typeof routerContract.RouterPollResult.Type => ({
   kind: "feed_gap",
   routerInstanceId,
 });
@@ -197,7 +206,7 @@ const holdAtTail = (
   input: PollDependencies,
   callerAgentId: AgentId,
   startOrder: bigint,
-): Effect.Effect<void, OverloadedError> =>
+): Effect.Effect<void, InstanceType<typeof httpErrors.OverloadedError>> =>
   input.pollWaiters
     .awaitSignal(
       callerAgentId,
@@ -214,7 +223,7 @@ const continueFromOrder = (
   input: PollDependencies,
   callerAgentId: AgentId,
   startOrder: bigint,
-): Effect.Effect<RouterPollResultValue, PollFailure> =>
+): Effect.Effect<typeof routerContract.RouterPollResult.Type, PollFailure> =>
   Effect.gen(function* () {
     const snapshot = yield* input.feed.snapshot;
     if (startOrder > snapshot.tailOrder) {
@@ -245,14 +254,14 @@ const continueFromOrder = (
 const continuePoll = (
   input: PollDependencies,
   callerAgentId: AgentId,
-  pollCursor: PollCursor,
-): Effect.Effect<RouterPollResultValue, PollFailure> =>
+  pollCursor: typeof routerContract.PollCursor.Type,
+): Effect.Effect<typeof routerContract.RouterPollResult.Type, PollFailure> =>
   input.cursorCodec.decrypt(pollCursor, callerAgentId).pipe(
     Effect.option,
     Effect.flatMap(
       Option.match({
         onNone: () =>
-          Effect.succeed<RouterPollResultValue>({
+          Effect.succeed<typeof routerContract.RouterPollResult.Type>({
             kind: "cursor_invalid",
           }),
         onSome: (order) => continueFromOrder(input, callerAgentId, order),
@@ -262,9 +271,9 @@ const continuePoll = (
 
 function handlePoll(
   input: PollDependencies,
-  request: RouterPollRequest,
+  request: typeof routerContract.RouterPollRequest.Type,
   verifiedRequest: VerifiedCaller,
-): Effect.Effect<RouterPollResultValue, PollFailure> {
+): Effect.Effect<typeof routerContract.RouterPollResult.Type, PollFailure> {
   const callerAgentId = verifiedRequest.callerAgentId;
   if (request.pollCursor !== undefined) {
     return continuePoll(input, callerAgentId, request.pollCursor);

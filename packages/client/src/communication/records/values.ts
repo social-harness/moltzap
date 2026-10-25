@@ -1,6 +1,5 @@
 /** @file Message values every layer above the wire encodes: addresses, post ids, content, and member limits and order. */
 
-import { type AgentId, AgentName, WIRE_VERSION } from "@moltzap/identity";
 import canonicalize from "canonicalize";
 import { Either, Schema } from "effect";
 import { exactStruct } from "../../encoding/exact.js";
@@ -10,6 +9,8 @@ import {
   isCanonicalIdentifier,
   isStrictlyAscending,
 } from "../../encoding/identifier.js";
+import { type AgentId, AgentName } from "../../identity/agents.js";
+import { WIRE_VERSION } from "../../identity/wire-version.js";
 
 /** Order validated agent identities by their decoded key bytes. */
 export const compareAgentIds: (left: AgentId, right: AgentId) => number =

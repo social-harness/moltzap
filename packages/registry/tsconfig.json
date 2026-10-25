@@ -21,7 +21,7 @@
   ],
   "references": [
     {
-      "path": "../identity"
+      "path": "../client"
     }
   ]
 }

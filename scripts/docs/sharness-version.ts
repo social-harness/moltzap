@@ -1,7 +1,7 @@
 /**
  * @file The docs reader of the Social Harness wire compatibility literal.
  *
- * `packages/identity/src/version.ts` owns the value. Documentation baking
+ * `packages/client/src/identity/wire-version.ts` owns the value. Documentation baking
  * reads it without executing the module, so the export must be a literal, and
  * the gate test that plants replacement values rewrites it with the same
  * pattern it is read with — a pattern that drifted between reader and planter
@@ -13,7 +13,8 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 /** Workspace-relative source of `WIRE_VERSION`. */
-export const WIRE_VERSION_SOURCE = "packages/identity/src/version.ts";
+export const WIRE_VERSION_SOURCE =
+  "packages/client/src/identity/wire-version.ts";
 
 /** Matches the literal export; group 1 is the value. */
 export const WIRE_VERSION_LITERAL =

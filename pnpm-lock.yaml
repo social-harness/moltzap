@@ -281,12 +281,9 @@ importers:
       '@modelcontextprotocol/server':
         specifier: 'catalog:'
         version: 2.0.0-beta.5
-      '@moltzap/identity':
-        specifier: workspace:*
-        version: link:../identity
-      '@moltzap/router':
-        specifier: workspace:*
-        version: link:../router
+      '@noble/curves':
+        specifier: 'catalog:'
+        version: 2.4.0
       '@opentelemetry/api':
         specifier: 'catalog:'
         version: 1.9.1
@@ -320,52 +317,15 @@ importers:
       effect:
         specifier: 3.22.1
         version: 3.22.1
-      sigstore:
-        specifier: 'catalog:'
-        version: 4.1.1
-    devDependencies:
-      '@effect/vitest':
-        specifier: 'catalog:'
-        version: 0.30.0(effect@3.22.1)(vitest@3.2.4(@types/debug@4.1.13)(@types/node@25.5.0)(jiti@2.7.0)(terser@5.49.0)(tsx@4.21.0)(yaml@2.9.1))
-      '@typescript/native':
-        specifier: 'catalog:'
-        version: typescript@7.0.2
-      eslint:
-        specifier: 'catalog:'
-        version: 9.39.4(jiti@2.7.0)
-      tsx:
-        specifier: 'catalog:'
-        version: 4.21.0
-      typescript:
-        specifier: 'catalog:'
-        version: '@typescript/typescript6@6.0.2'
-      undici:
-        specifier: 'catalog:'
-        version: 7.29.0
-      vitest:
-        specifier: 'catalog:'
-        version: 3.2.4(@types/debug@4.1.13)(@types/node@25.5.0)(jiti@2.7.0)(terser@5.49.0)(tsx@4.21.0)(yaml@2.9.1)
-
-  packages/identity:
-    dependencies:
-      '@effect/platform':
-        specifier: 'catalog:'
-        version: 0.97.0(effect@3.22.1)
-      '@noble/curves':
-        specifier: 'catalog:'
-        version: 2.4.0
-      canonicalize:
-        specifier: 'catalog:'
-        version: 3.0.0
-      effect:
-        specifier: 3.22.1
-        version: 3.22.1
       http-message-signatures:
         specifier: 'catalog:'
         version: 1.0.6
       jose:
         specifier: 'catalog:'
         version: 6.2.5
+      sigstore:
+        specifier: 'catalog:'
+        version: 4.1.1
       structured-headers:
         specifier: 'catalog:'
         version: 2.0.3
@@ -382,9 +342,15 @@ importers:
       fast-check:
         specifier: 'catalog:'
         version: 3.23.2
+      tsx:
+        specifier: 'catalog:'
+        version: 4.21.0
       typescript:
         specifier: 'catalog:'
         version: '@typescript/typescript6@6.0.2'
+      undici:
+        specifier: 'catalog:'
+        version: 7.29.0
       vitest:
         specifier: 'catalog:'
         version: 3.2.4(@types/debug@4.1.13)(@types/node@25.5.0)(jiti@2.7.0)(terser@5.49.0)(tsx@4.21.0)(yaml@2.9.1)
@@ -465,9 +431,9 @@ importers:
       '@effect/sql-pg':
         specifier: 'catalog:'
         version: 0.53.0(@effect/experimental@0.61.0(@effect/platform@0.97.0(effect@3.22.1))(effect@3.22.1))(@effect/platform@0.97.0(effect@3.22.1))(@effect/sql@0.52.0(@effect/experimental@0.61.0(@effect/platform@0.97.0(effect@3.22.1))(effect@3.22.1))(@effect/platform@0.97.0(effect@3.22.1))(effect@3.22.1))(effect@3.22.1)
-      '@moltzap/identity':
+      '@moltzap/client':
         specifier: workspace:*
-        version: link:../identity
+        version: link:../client
       effect:
         specifier: 3.22.1
         version: 3.22.1
@@ -511,9 +477,9 @@ importers:
       '@effect/rpc':
         specifier: 'catalog:'
         version: 0.76.0(@effect/platform@0.97.0(effect@3.22.1))(effect@3.22.1)
-      '@moltzap/identity':
+      '@moltzap/client':
         specifier: workspace:*
-        version: link:../identity
+        version: link:../client
       canonicalize:
         specifier: 'catalog:'
         version: 3.0.0
@@ -560,9 +526,6 @@ importers:
       '@moltzap/client':
         specifier: workspace:*
         version: link:../../packages/client
-      '@moltzap/identity':
-        specifier: workspace:*
-        version: link:../../packages/identity
       '@moltzap/openclaw-channel':
         specifier: workspace:*
         version: link:../../packages/openclaw-channel

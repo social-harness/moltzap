@@ -12,7 +12,7 @@ import type {
   PolicyFinding,
   RuleDescription,
   UncertainNormGuidance,
-} from "./values.js";
+} from "./contract/index.js";
 
 type Reason = FirewallCheck["reason"];
 

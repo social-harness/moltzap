@@ -1,7 +1,6 @@
 /** @file Sequential checking middleware; Client retains exclusive admission authority. */
 
 import { Clock, Effect, Either, Schema } from "effect";
-import { composeDecision } from "./decision.js";
 import {
   captureResult,
   CheckInputError,
@@ -16,7 +15,8 @@ import {
   MiddlewareResult,
   type PolicyFinding,
   RuleDescription,
-} from "./values.js";
+} from "./contract/index.js";
+import { composeDecision } from "./decision.js";
 
 const utf8 = new TextEncoder();
 const registration = Schema.Struct({

@@ -30,7 +30,7 @@ import {
   registerOpenClawChannel,
   requireRequest,
   startOpenClawGateway,
-} from "./adapter-daemon-fixture.ts";
+} from "./adapter-daemon-fixture.js";
 import { ProcessTestError, processTrace } from "./daemon-process-harness.js";
 
 const SLOT_SCHEMA = {

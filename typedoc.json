@@ -5,7 +5,6 @@
     "packages/client",
     "packages/nanoclaw-channel",
     "packages/openclaw-channel",
-    "packages/identity",
     "packages/router",
     "packages/registry"
   ],

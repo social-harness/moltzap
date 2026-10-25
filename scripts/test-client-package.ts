@@ -162,6 +162,7 @@ function verifyPackedManifest(
       `packed client must expose exactly these contract entrypoints: ${Object.keys(FINAL_PACKAGES.client.exports).join(", ")}`,
     );
     yield* verifyExportTargets(extractedPackage, manifest, exportEntries);
+    yield* verifyLibraryContents(archive, manifest);
     yield* verifyHostImportGraph(extractedPackage, String(manifest.main));
     yield* Effect.forEach(
       Object.entries(FINAL_PACKAGES.client.bin),
@@ -176,6 +177,34 @@ function verifyPackedManifest(
           ? manifest.name
           : `${manifest.name}/${subpath.slice(2)}`,
       );
+  });
+}
+
+/** Private service code and SQL dependencies stay outside the installed library. */
+function verifyLibraryContents(
+  archive: string,
+  manifest: PackedManifest,
+): Effect.Effect<void, GateError, GateServices> {
+  return Effect.gen(function* () {
+    yield* requireCondition(
+      !Object.keys(manifest.dependencies ?? {}).some((name) =>
+        name.startsWith("@effect/sql"),
+      ),
+      "packed library must not depend on Registry SQL storage",
+    );
+    const listing = yield* runCommand("tar", ["-tzf", archive]);
+    yield* requireCondition(
+      !listing
+        .split("\n")
+        .some(
+          (file) =>
+            /(?:^|\/)(?:issuance|storage|server)\.(?:js|d\.ts)$/u.test(file) ||
+            /\/(?:dist|identity\/registry|communication\/router)\/configuration\.(?:js|d\.ts)$/u.test(
+              file,
+            ),
+        ),
+      "packed library must not contain service issuance, storage or server configuration",
+    );
   });
 }
 
@@ -280,11 +309,12 @@ function verifyConsumerImports(
         "--input-type=module",
         "-e",
         `const actual = Object.keys(await import("@moltzap/client/test")).sort();
-const expected = ["managementReadConversationResultSchema", "managementRegisterRequestSchema", "managementRegisterResultSchema", "managementSearchConversationsResultSchema", "managementStatusResultSchema"].sort();
+const expected = ["AuthenticatedHttp", "HISTORY_WIRE_VERSIONS", "WireVersions", "managementReadConversationResultSchema", "managementRegisterRequestSchema", "managementRegisterResultSchema", "managementSearchConversationsResultSchema", "managementStatusResultSchema"].sort();
 if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error("Client test schemas differ: " + JSON.stringify(actual));`,
       ],
       { cwd: consumerRoot, env: { NODE_PATH: "" } },
     );
+    yield* verifyInternalResolution(consumerRoot);
     yield* runCommand(process.execPath, [checkPath], {
       cwd: consumerRoot,
       env: { NODE_PATH: "" },
@@ -366,6 +396,43 @@ function verifyPreparedDaemon(
         !isAbsolute(daemonPath) &&
         !daemonPath.split(sep).includes(".."),
       `Prepared daemon must be under the consumer root: ${choice.daemon}`,
+    );
+  });
+}
+
+/** Service capabilities resolve only under the private service condition. */
+function verifyInternalResolution(consumerRoot: string) {
+  return Effect.gen(function* () {
+    yield* runCommand(
+      process.execPath,
+      [
+        "--input-type=module",
+        "-e",
+        `
+try {
+  await import("@moltzap/client/internal");
+  throw new Error("internal entry resolved without its condition");
+} catch (error) {
+  if (error.code !== "ERR_PACKAGE_PATH_NOT_EXPORTED") throw error;
+}
+`,
+      ],
+      { cwd: consumerRoot, env: { NODE_PATH: "" } },
+    );
+    yield* runCommand(
+      process.execPath,
+      [
+        "--conditions=sharness-internal",
+        "--input-type=module",
+        "-e",
+        `
+const internal = await import("@moltzap/client/internal");
+for (const name of ["verifyBootstrapRequest", "agentCardSigning", "Registry", "Router"]) {
+  if (!(name in internal)) throw new Error("missing internal capability " + name);
+}
+`,
+      ],
+      { cwd: consumerRoot, env: { NODE_PATH: "" } },
     );
   });
 }

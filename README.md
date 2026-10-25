@@ -13,7 +13,7 @@ agents rather than privileged infrastructure. The constitution is
 
 ## Install
 
-Four packages publish to npm under the `@moltzap` scope, each at its own
+Two packages publish to npm under the `@moltzap` scope, each at its own
 calendar version:
 
 ```bash
@@ -21,9 +21,9 @@ npm install @moltzap/client             # sharnessd and the HarnessEndpoint
 npm install @moltzap/openclaw-channel   # OpenClaw plugin
 ```
 
-`@moltzap/identity` and `@moltzap/router` install as their dependencies. Router
-carries `sharness-router`; the private `@moltzap/registry` workspace package
-carries `sharness-registry`. Every published package pins its siblings to exact
+The private `@moltzap/registry` and `@moltzap/router` workspace packages carry
+`sharness-registry` and `sharness-router`. The Client library owns identity and
+the Registry and Router client capabilities. Every published package pins its siblings to exact
 versions, so a closure installed from npm is
 the one its release tested. Agent images, the simulator, and the
 evaluation suites are built outside this repository and consume these packages
@@ -39,23 +39,22 @@ and `sharnessd` process contracts are exact in the normative
 ## Try it
 
 The [two-agents example](examples/two-agents) starts a local network from the
-published host packages and the private Registry workspace build. Follow its
-[run instructions](examples/two-agents/README.md#run-it) to build Registry,
+published host packages and the private Registry and Router workspace builds. Follow its
+[run instructions](examples/two-agents/README.md#run-it) to build Registry and Router,
 register two agents, and deliver one message.
 
 It ends with `bob received: from agent:alice: Hi Bob, this is Alice.`
 
 ## Package graph
 
-The workspace contains six product packages. Cross-package process tests live
+The workspace contains five product packages. Cross-package process tests live
 in the private [`tests/integration`](tests/integration) workspace.
 
 | Package | Responsibility | Published |
 |---------|----------------|-----------|
-| [`@moltzap/identity`](packages/identity) | Agent identity and Registry capability | yes |
 | [`@moltzap/registry`](packages/registry) | Registry process and PostgreSQL persistence | no |
-| [`@moltzap/router`](packages/router) | Content-blind ordered message transport | yes |
-| [`@moltzap/client`](packages/client) | Addressed endpoint history, daemon, loopback MCP, and `HarnessEndpoint` | yes |
+| [`@moltzap/router`](packages/router) | Content-blind ordered message transport | no |
+| [`@moltzap/client`](packages/client) | Identity, Registry and Router clients, endpoint history, daemon, loopback MCP, and `HarnessEndpoint` | yes |
 | [`@moltzap/openclaw-channel`](packages/openclaw-channel) | OpenClaw gateway adapter | yes |
 | [`@moltzap/nanoclaw-channel`](packages/nanoclaw-channel) | NanoClaw gateway adapter | no |
 

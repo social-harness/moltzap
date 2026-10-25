@@ -1,6 +1,6 @@
 # Firewall policy
 
-`policy.ts` holds the `MessagePolicy` document schema. `load.ts` reads the
+`document/index.ts` holds the `MessagePolicy` document schema. `load.ts` reads the
 policy document, decision-provider key and audit destination. `compose.ts`
 constructs the installed middleware chains from the document and built-in
 rules in `../rules/`. `configuration.ts` owns the policy file locations and

@@ -5,7 +5,7 @@
       "name": "V2_PROTOCOL_VERSION",
       "value": "2026.1021.3",
       "kind": "string",
-      "sourcePath": "packages/identity/src/version.ts",
+      "sourcePath": "packages/client/src/identity/wire-version.ts",
       "note": "Current wire compatibility value for Identity and Router representations; package release versions are independent of it."
     },
     {

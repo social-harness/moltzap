@@ -4,10 +4,8 @@
  */
 
 import { NodeHttpClient } from "@effect/platform-node";
-import { wireVersions } from "@moltzap/identity";
-import { Registry } from "@moltzap/identity/registry";
-import { Router } from "@moltzap/router";
 import { Data, Duration, Effect, Layer } from "effect";
+import { Router } from "../communication/router/api/client.js";
 import {
   type EndpointStoreError,
   inspectEndpointStore,
@@ -23,6 +21,8 @@ import {
   type MessagePolicyConfigurationError,
   policyInstallationError,
 } from "../firewall/index.js";
+import { Registry } from "../identity/registry/index.js";
+import { wireVersions } from "../identity/wire-version.js";
 import {
   DaemonConfigurationError,
   type DaemonProcessConfiguration,
@@ -43,7 +43,7 @@ import {
 } from "./registration/index.js";
 import { spanExport } from "./telemetry.js";
 
-// safer-arch-ignore no-large-public-surface: Trusted process composition and its operator audit decoder share this service-only boundary; moving the decoder to another entrypoint would split one fixed installation contract.
+// safer-arch-ignore no-large-public-surface: Daemon process composition, firewall installation and audit decoding, and the actual Registry and Router client tags with their operation values share the trusted service embedding boundary.
 
 const REGISTRY_REQUEST_TIMEOUT = Duration.seconds(30);
 const ROUTER_SEND_TIMEOUT = Duration.seconds(30);
@@ -51,40 +51,32 @@ const ROUTER_POLL_TIMEOUT = Duration.seconds(35);
 
 const liveWireVersions = wireVersions.liveSet;
 
-/** Trusted operators decode retained checks without reading private storage schemas. */
-export { FirewallAuditRecord } from "../firewall/index.js";
-
-/** Writers build policy documents with the schema the daemon decodes them with. */
-export { decodeMessagePolicy, MessagePolicy } from "../firewall/index.js";
-
-/** Trusted composition installs a decoded document with its own decision provider. */
-export { messagePolicyFirewall } from "../firewall/index.js";
-
-/** Checking factories have no daemon execution authority. */
+/** Policy composition exposes checking factories, owner documents, and their validated contracts. */
 export {
   CheckInputError,
+  type DecisionProvider,
   DecisionProviderError,
+  type DecisionRequest,
+  type DecisionResponse,
+  decodeMessagePolicy,
+  type EnglishPolicySettings,
+  type EnglishRule,
+  type Firewall,
+  FirewallAuditRecord,
   FirewallPolicyError,
+  type FirewallSettings,
   makeEnglishPolicy,
   makeFirewall,
   makeJevDecisionProvider,
+  type Message,
+  type MessageContext,
+  type MessageMiddleware,
+  MessagePolicy,
+  messagePolicyFirewall,
   MiddlewareError,
-} from "../firewall/index.js";
-/** Policy composition uses data contracts independently of agent-facing transport. */
-export type {
-  DecisionProvider,
-  DecisionRequest,
-  DecisionResponse,
-  EnglishPolicySettings,
-  EnglishRule,
-  Firewall,
-  FirewallSettings,
-  Message,
-  MessageContext,
-  MessageMiddleware,
-  MiddlewareInput,
-  MiddlewareResult,
-  RuleDescription,
+  type MiddlewareInput,
+  type MiddlewareResult,
+  type RuleDescription,
 } from "../firewall/index.js";
 
 // eslint-disable-next-line @typescript-eslint/no-namespace -- The published service subpath intentionally merges its runtime values with the closed startup-error type.
@@ -321,3 +313,35 @@ function networkLayer(configuration: DaemonProcessConfiguration) {
     }),
   ).pipe(Layer.provide(NodeHttpClient.layer));
 }
+
+/** Immutable resolution and registration require only an injected HTTP client. */
+export { Registry } from "../identity/registry/index.js";
+
+/** Closed network operation values and client failures for service embedders. */
+export { Router } from "../communication/router/api/client.js";
+/** Route refusals and transport failures retain separate typed channels. */
+export {
+  PollCursor,
+  RouterConnectionError,
+  RouterInstanceId,
+  RouterInvalidResponseError,
+  RouterPollRequest,
+  RouterPollResult,
+  RouterRequestTimeoutError,
+  RouterSendRequest,
+  RouterSendResult,
+  SignedMessageDigest,
+} from "../communication/router/api/contract.js";
+/** Registration and immutable reads preserve exact operation errors and results. */
+export {
+  OperationId,
+  RegistryConnectionError,
+  RegistryInvalidResponseError,
+  RegistryListRequest,
+  type RegistryListResult,
+  RegistryLookupRequest,
+  type RegistryLookupResult,
+  RegistryRegisterRequest,
+  type RegistryRegisterResult,
+  RegistryRequestTimeoutError,
+} from "../identity/registry/contract.js";

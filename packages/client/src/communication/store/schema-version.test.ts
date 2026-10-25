@@ -1,7 +1,6 @@
 /** @file A store from an earlier schema is refused unchanged: schemas below the migration baseline require an explicit reset. */
 
 import { live as it } from "@effect/vitest";
-import { LIVE_WIRE_VERSIONS } from "@moltzap/identity";
 import { Effect, Exit } from "effect";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- The test compares the exact database bytes before and after the refused open.
 import { readFileSync } from "node:fs";
@@ -12,6 +11,7 @@ import {
   stateDirectory,
   withStore,
 } from "../../__tests__/store-schema-fixtures.js";
+import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { RESET_SCHEMA } from "./database/migrations.js";
 import { openEndpointStore } from "./index.js";
 

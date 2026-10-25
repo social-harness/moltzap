@@ -13,7 +13,7 @@ Package-private facade for the complete Client protocol representation.
 
 ## Public surface
 
-### [`AgentAddress`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/communication/records/values.ts#L195)
+### [`AgentAddress`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/communication/records/values.ts#L196)
 
 _TypeAlias_
 
@@ -23,7 +23,7 @@ export type AgentAddress = typeof AgentAddress.Type;
 
 A validated direct destination.
 
-### [`AgentAddress`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/communication/records/values.ts#L189)
+### [`AgentAddress`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/communication/records/values.ts#L190)
 
 _Variable_
 
@@ -37,7 +37,7 @@ export const AgentAddress = addressInput.pipe(
 
 An explicit direct destination using one canonical Registry name.
 
-### [`Content`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/communication/records/values.ts#L94)
+### [`Content`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/communication/records/values.ts#L95)
 
 _TypeAlias_
 
@@ -47,7 +47,7 @@ export type Content = typeof Content.Type;
 
 Validated nonempty semantic content.
 
-### [`Content`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/communication/records/values.ts#L89)
+### [`Content`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/communication/records/values.ts#L90)
 
 _Variable_
 
@@ -60,7 +60,7 @@ export const Content = contentStructure.pipe(
 
 Nonempty semantic content whose canonical JSON is at most 32,768 bytes.
 
-### [`ContentPart`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/communication/records/values.ts#L84)
+### [`ContentPart`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/communication/records/values.ts#L85)
 
 _TypeAlias_
 
@@ -70,7 +70,7 @@ export type ContentPart = typeof ContentPart.Type;
 
 A validated semantic message part.
 
-### [`ContentPart`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/communication/records/values.ts#L79)
+### [`ContentPart`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/communication/records/values.ts#L80)
 
 _Variable_
 
@@ -83,7 +83,7 @@ export const ContentPart = Schema.Union(
 
 One exact semantic part of a message.
 
-### [`GroupAddress`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/communication/records/values.ts#L204)
+### [`GroupAddress`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/communication/records/values.ts#L205)
 
 _TypeAlias_
 
@@ -93,7 +93,7 @@ export type GroupAddress = typeof GroupAddress.Type;
 
 A validated canonical complete group destination.
 
-### [`GroupAddress`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/communication/records/values.ts#L198)
+### [`GroupAddress`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/communication/records/values.ts#L199)
 
 _Variable_
 
@@ -107,7 +107,7 @@ export const GroupAddress = addressInput.pipe(
 
 A complete fixed-member group address in unsigned ASCII name order.
 
-### [`JsonValue`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/communication/records/values.ts#L57)
+### [`JsonValue`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/communication/records/values.ts#L58)
 
 _TypeAlias_
 
@@ -123,7 +123,7 @@ export type JsonValue =
 
 A value accepted by the closed semantic content boundary.
 
-### [`JsonValue`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/communication/records/values.ts#L67)
+### [`JsonValue`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/communication/records/values.ts#L68)
 
 _Variable_
 
@@ -142,7 +142,7 @@ export const JsonValue: Schema.Schema<JsonValue> = Schema.suspend(() =>
 
 Runtime validation for the closed recursive JSON value.
 
-### [`MessageAddressInput`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/communication/records/values.ts#L209)
+### [`MessageAddressInput`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/communication/records/values.ts#L210)
 
 _TypeAlias_
 
@@ -152,7 +152,7 @@ export type MessageAddressInput = typeof MessageAddressInput.Type;
 
 A validated explicit destination input.
 
-### [`MessageAddressInput`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/communication/records/values.ts#L207)
+### [`MessageAddressInput`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/communication/records/values.ts#L208)
 
 _Variable_
 
@@ -162,7 +162,7 @@ export const MessageAddressInput = addressInput
 
 Either accepted destination input, including noncanonical group order.
 
-### [`PostId`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/communication/records/values.ts#L46)
+### [`PostId`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/communication/records/values.ts#L47)
 
 _TypeAlias_
 
@@ -172,7 +172,7 @@ export type PostId = typeof PostId.Type;
 
 A validated author-scoped post identity.
 
-### [`PostId`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/communication/records/values.ts#L37)
+### [`PostId`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/communication/records/values.ts#L38)
 
 _Variable_
 

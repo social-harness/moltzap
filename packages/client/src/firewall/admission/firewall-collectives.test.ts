@@ -10,7 +10,7 @@ import type { MessageAddressInput } from "../../communication/records/values.js"
 import type {
   MessageMiddleware,
   MiddlewareInput,
-} from "../evaluator/values.js";
+} from "../evaluator/contract/index.js";
 import type { FirewallOptions } from "./firewall.js";
 import { digest } from "../../__tests__/agent-card-fixtures.js";
 import { appendCertifiedPost } from "../../__tests__/certified-history-fixtures.js";

@@ -5,13 +5,13 @@
  */
 
 import { live as it } from "@effect/vitest";
-import { Ed25519PublicKey } from "@moltzap/identity";
 import { Effect, Schema } from "effect";
 import { describe, expect } from "vitest";
 import {
   decodeCanonical,
   encodeCanonical,
 } from "../../encoding/canonical-json.js";
+import { Ed25519PublicKey } from "../../identity/keys.js";
 import {
   ActionCertifiedRecord,
   CertifiedRecord,

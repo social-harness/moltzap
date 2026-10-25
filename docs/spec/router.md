@@ -50,7 +50,7 @@ Router application.
 ## Public package boundary
 
 Social Harness packages publish to npm under the `@moltzap` scope.
-`@moltzap/router` root-exports exactly:
+`@moltzap/client/service` exports these Router values:
 
 - the same-named Effect Schema values and TypeScript types
   `RouterInstanceId`, `SignedMessageDigest`, `PollCursor`,
@@ -60,10 +60,10 @@ Social Harness packages publish to npm under the `@moltzap` scope.
 - `RouterConnectionError`, `RouterRequestTimeoutError`, and
   `RouterInvalidResponseError`.
 
-`@moltzap/router/server` exports only `RouterServer`, including its
+The private `@moltzap/router/server` entry exports only `RouterServer`, including its
 nested `StartupError`. Router consumes identity values, signed
 artifacts, signing authority, and shared HTTP errors from
-`@moltzap/identity`; it does not redeclare or re-export aliases for
+`@moltzap/client`; it does not redeclare or re-export aliases for
 them.
 
 There is no public Router order, delivery wrapper, client class,
@@ -634,3 +634,16 @@ RouterInstanceId and order.
 Persistent feeds, Router replication, ordering consensus, Router-level fork
 detection, transparent Router restart, per-recipient retention indexes,
 negotiated resource limits, and network push transports.
+
+## Process entries
+
+Direct composition through `@moltzap/router` or `@moltzap/router/server` requires
+`--conditions=sharness-internal`. The `sharness-router` executable installs a
+scoped internal-resolution hook before loading its process composition.
+
+`@moltzap/router/test` exports `startRouter` only under `sharness-test`. It accepts
+explicit emitted, live and history wire versions for process fixtures and installs
+the same hook. Only parents under the Router's built `dist/` and executable
+`bin/` directories receive `sharness-internal`; callers outside those directories,
+including nested dependencies under the package root, retain their original
+conditions and cannot resolve `@moltzap/client/internal`.

@@ -21,6 +21,10 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import {
+  FINAL_PACKAGES,
+  RELEASE_PACKAGES,
+} from "../architecture/boundary-contract.ts";
+import {
   contentHashOfDirectory,
   contentHashOfTarball,
 } from "./content-hash.ts";
@@ -36,15 +40,11 @@ import {
 const RELEASE = "2099.101.0";
 const PREVIOUS = "2099.100.0";
 
-/** The four published packages, in the order publish.yml lists them. */
-const DIRS = ["identity", "router", "client", "openclaw-channel"] as const;
-
-const DEPENDENCIES: Readonly<Record<string, readonly string[]>> = {
-  identity: [],
-  router: ["identity"],
-  client: ["identity", "router"],
-  "openclaw-channel": ["client"],
-};
+/** Product release tests follow the same package set as release selection. */
+const DIRS = RELEASE_PACKAGES;
+const DEPENDENCIES = Object.fromEntries(
+  DIRS.map((dir) => [dir, FINAL_PACKAGES[dir].deps]),
+);
 
 const MANIFEST = {
   name: "@moltzap/openclaw-channel",
@@ -84,22 +84,22 @@ await test("a client-only change publishes the client and the channel that pins 
     dirs: ["client", "openclaw-channel"],
   });
   assert.deepEqual(Object.fromEntries(versions), {
-    identity: PREVIOUS,
-    router: PREVIOUS,
     client: RELEASE,
     "openclaw-channel": RELEASE,
   });
 });
 
-await test("an identity change publishes every package, since each pins identity", () => {
-  const { workspace } = fakeWorkspace(
-    { identity: "identity-changed" },
+await test("a channel-only change leaves the Client at its previous release", () => {
+  const { workspace, versions } = fakeWorkspace(
+    { "openclaw-channel": "channel-changed" },
     AS_PUBLISHED,
   );
   assert.deepEqual(selectPackages(workspace, RELEASE, DIRS), {
     kind: "selected",
-    dirs: [...DIRS],
+    dirs: ["openclaw-channel"],
   });
+  assert.equal(versions.get("client"), PREVIOUS);
+  assert.equal(versions.get("openclaw-channel"), RELEASE);
 });
 
 await test("an unchanged workspace publishes nothing", () => {
@@ -112,11 +112,11 @@ await test("an unchanged workspace publishes nothing", () => {
 
 await test("a version npm holds without a recorded hash is republished", () => {
   const { workspace } = fakeWorkspace({}, (name) =>
-    name === "@moltzap/router" ? { kind: "absent" } : undefined,
+    name === "@moltzap/client" ? { kind: "absent" } : undefined,
   );
   assert.deepEqual(selectPackages(workspace, RELEASE, DIRS), {
     kind: "selected",
-    dirs: ["router", "client", "openclaw-channel"],
+    dirs: [...DIRS],
   });
 });
 
@@ -129,18 +129,14 @@ await test("an npm outage stops the selection", () => {
 await test("a package listed before a sibling it depends on stops the selection", () => {
   const { workspace, versions } = fakeWorkspace({}, AS_PUBLISHED);
   assert.deepEqual(
-    selectPackages(workspace, RELEASE, [
-      "router",
-      "identity",
-      "client",
-      "openclaw-channel",
-    ]),
+    selectPackages(workspace, RELEASE, ["openclaw-channel", "client"]),
     {
       kind: "out-of-order",
-      message: "router depends on @moltzap/identity, which must come before it",
+      message:
+        "openclaw-channel depends on @moltzap/client, which must come before it",
     },
   );
-  assert.equal(versions.get("router"), PREVIOUS);
+  assert.equal(versions.get("openclaw-channel"), PREVIOUS);
 });
 
 await test("the content hash ignores the version, the recorded hash, and key order", () => {

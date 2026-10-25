@@ -51,7 +51,7 @@ cross-service compatibility profile.
 Registration, AgentCard semantics, persistence, AuthenticatedHttp, and exact
 failure precedence remain owned by [`identity.md`](./identity.md) and
 [`identity-representation.md`](./identity-representation.md). Relocation to
-`@moltzap/identity` changes no wire bytes or authentication behavior.
+`@moltzap/client` changes no wire bytes or authentication behavior.
 
 Registry returns complete immutable identity facts only. It contains no
 conversation membership, history head, institutional standing, monitor result,

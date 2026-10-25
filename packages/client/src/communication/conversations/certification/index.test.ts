@@ -1,20 +1,8 @@
 /** @file Real N4 fixed-post certification through four durable endpoint engines. */
 
-import type { RegistryLookupResult } from "@moltzap/identity/registry";
 import { FileSystem } from "@effect/platform";
 import { NodeFileSystem } from "@effect/platform-node";
 import { scopedLive as it, scoped as itOnTestClock } from "@effect/vitest";
-import {
-  AgentCard,
-  type AgentSigningAuthority,
-  Ed25519PublicKey,
-  LIVE_WIRE_VERSIONS,
-  SignedMessage,
-  type VerifiedAgentCard,
-  WIRE_VERSION,
-} from "@moltzap/identity";
-import { WireVersions } from "@moltzap/identity/test";
-import { RouterInstanceId } from "@moltzap/router";
 import {
   Cause,
   Deferred,
@@ -32,6 +20,7 @@ import {
 } from "effect";
 import { generateKeyPairSync } from "node:crypto";
 import { describe, expect } from "vitest";
+import type { RegistryLookupResult } from "../../../identity/registry/contract.js";
 import type { AddressRegistryPort } from "../address.js";
 import { advanceClock, untilLive } from "../../../__tests__/advance-clock.js";
 import {
@@ -48,6 +37,17 @@ import {
   decodeCanonical,
   encodeCanonical,
 } from "../../../encoding/canonical-json.js";
+import { AgentCard, type VerifiedAgentCard } from "../../../identity/cards.js";
+import {
+  type AgentSigningAuthority,
+  Ed25519PublicKey,
+} from "../../../identity/keys.js";
+import {
+  LIVE_WIRE_VERSIONS,
+  WIRE_VERSION,
+  WireVersions,
+} from "../../../identity/wire-version.js";
+import { SignedMessage } from "../../envelope/signed-message.js";
 import {
   type ActionCertifiedRecord as ActionCertifiedRecordValue,
   type ActionProposal,
@@ -72,6 +72,7 @@ import {
   verifyMembershipDescriptor,
 } from "../../records/index.js";
 import { MessageAddressInput } from "../../records/values.js";
+import { RouterInstanceId } from "../../router/api/contract.js";
 import {
   type RouterIngressDisposition,
   type RouterTailAnchor,

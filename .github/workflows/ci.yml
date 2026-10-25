@@ -52,17 +52,11 @@ jobs:
           pnpm install --lockfile-only --ignore-scripts
           git diff --exit-code pnpm-lock.yaml
       - run: pnpm build
-      # The gates pack the four published packages and the NanoClaw adapter,
-      # whose gate proves it still compiles against the Client ABI in isolation
-      # (deployment's image build copies its source, not a tarball), and run
-      # examples/two-agents against the packed tarballs; Registry stays in its private image package; Identity and Router
-      # travel in every closure, and each gate is a boundary-check floor, so
-      # run-many cannot silently skip one. Each gate packs, installs and runs in
-      # its own temporary directory, on free loopback ports and with its own
-      # OpenClaw state, and pnpm shares its store safely between processes,
-      # so the gates run concurrently.
+      # Pack gates install the published closures in isolated consumers.
+      # NanoClaw checks its Client ABI without packing the source-copied adapter.
+      # The example launches the private Registry and Router executables.
       - name: Verify the published closure installs from tarballs
-        run: pnpm nx run-many -t test:pack --parallel=4
+        run: pnpm nx run-many -t test:pack,test:abi --parallel=4
       - run: pnpm typecheck
       - run: pnpm nx run-many -t typecheck:tests
       - name: Lint

@@ -8,6 +8,7 @@
  * passing while guarding nothing.
  */
 import { existsSync, writeFileSync } from "node:fs";
+import { FINAL_PACKAGE_DIRS } from "./boundary-contract.ts";
 
 interface Allowance {
   readonly package: string;
@@ -150,6 +151,7 @@ const clientDomains: readonly ClientDomain[] = [
       },
       {
         file: "canonical-json.ts",
+        host: true,
         reason: "Canonical JSON encoding of signed and stored values",
       },
       {
@@ -159,6 +161,105 @@ const clientDomains: readonly ClientDomain[] = [
       },
     ],
     reason: "Leaf codecs depending only on Effect and canonicalize",
+  },
+  {
+    name: "identity",
+    root: "identity",
+    entrypoints: [
+      {
+        file: "agents.ts",
+        host: true,
+        reason: "Canonical agent, principal and immutable name schemas",
+      },
+      {
+        file: "keys.ts",
+        host: true,
+        reason: "Exact Ed25519 public keys and opaque signing authority",
+      },
+      {
+        file: "cards.ts",
+        host: true,
+        reason:
+          "Immutable AgentCard representation, digest and pinned verification",
+      },
+      {
+        file: "card-signing.ts",
+        host: false,
+        reason: "Registry card issuance with private signing authority",
+      },
+      {
+        file: "wire-version.ts",
+        host: true,
+        reason: "Wire emission and live or retained compatibility policy",
+      },
+      {
+        file: "signing/registered/index.ts",
+        host: false,
+        reason:
+          "Registered-request authentication capability with opaque verification proofs",
+      },
+      {
+        file: "index.ts",
+        reason:
+          "Identity request authentication and immutable Registry resolution",
+      },
+      {
+        file: "signing/http-signature.ts",
+        host: false,
+        reason:
+          "Bootstrap and registered HTTP signing and verification boundary",
+      },
+      {
+        file: "signing/http-errors.ts",
+        host: false,
+        reason: "Closed authenticated HTTP framing and admission errors",
+      },
+      {
+        file: "registry/index.ts",
+        host: false,
+        reason:
+          "Registry class tag and HTTP client composition for immutable resolution",
+      },
+      {
+        file: "bounded-cache.ts",
+        host: true,
+        reason:
+          "Bounded immutable-key caches shared by identity implementations",
+      },
+      {
+        file: "registry/contract.ts",
+        host: false,
+        reason:
+          "Exact Registry routes, operation grammar and canonical wire codecs",
+      },
+    ],
+    reason:
+      "Identity, request authentication and immutable Registry resolution",
+  },
+  {
+    name: "envelope",
+    root: "communication/envelope",
+    entrypoints: [
+      {
+        file: "signed-message.ts",
+        host: true,
+        reason:
+          "Opaque attributed message representation, signing and verification",
+      },
+      {
+        file: "sealed-body.ts",
+        host: false,
+        reason: "End-to-end sealing and opening of attributed message bodies",
+      },
+      {
+        file: "wire-profile.ts",
+        host: true,
+        reason:
+          "Attributed envelope representation parameters read by host-loaded SignedMessage schemas",
+      },
+    ],
+    reason:
+      "Opaque attributed and sealed message bodies below endpoint protocols",
   },
   {
     name: "release",
@@ -183,6 +284,28 @@ const clientDomains: readonly ClientDomain[] = [
     entrypoints: ["index.ts"],
     reason:
       "Isolated code and English evaluation depends on encoding, runtime-safe outcomes and packages",
+  },
+  {
+    name: "router-api",
+    root: "communication/router/api",
+    host: false,
+    entrypoints: [
+      {
+        file: "index.ts",
+        reason: "Opaque Router operation schemas and client capability entry",
+      },
+      {
+        file: "contract.ts",
+        reason:
+          "Exact Router routes, operation grammar, bounds and wire codecs",
+      },
+      {
+        file: "client.ts",
+        reason: "Router class tag and authenticated send or poll HTTP client",
+      },
+    ],
+    reason:
+      "Opaque Router values and HTTP client below endpoint protocol records",
   },
   {
     name: "records",
@@ -353,11 +476,23 @@ const clientDomains: readonly ClientDomain[] = [
 const clientEntrypointFacades: readonly FacadeFile[] = clientDomains.flatMap(
   ({ root, entrypoints }) =>
     entrypoints
-      .filter((entry) => typeof entry !== "string")
-      .map(({ file, reason }) => ({ file: `${root}/${file}`, reason })),
+      .filter((entry) => typeof entry !== "string" || entry !== "index.ts")
+      .map((entry) =>
+        typeof entry === "string"
+          ? {
+              file: `${root}/${entry}`,
+              reason: "Named domain capability boundary",
+            }
+          : { file: `${root}/${entry.file}`, reason: entry.reason },
+      ),
 );
 
 const clientCompositionRoots = [
+  {
+    path: "src/internal.ts",
+    reason:
+      "Condition-only identity verification, card signing, Registry and Router service contracts",
+  },
   {
     path: "src/test.ts",
     reason:
@@ -422,6 +557,11 @@ const packageDefinitions: Readonly<Record<string, PackageDefinition>> = {
       facadeFiles: [
         ...clientEntrypointFacades,
         {
+          file: "internal.ts",
+          reason:
+            "Condition-only named service verification, signing and wire contracts",
+        },
+        {
           file: "communication/records/schemas.ts",
           reason:
             "Closed Client wire grammar shared by encoding and verification within the records domain",
@@ -456,12 +596,20 @@ const packageDefinitions: Readonly<Record<string, PackageDefinition>> = {
       })),
     },
     afterShared: {
-      publicTypePackages: [publicTypePackage.effect],
+      publicTypePackages: [
+        publicTypePackage.effect,
+        publicTypePackage.platform,
+        {
+          package: "node",
+          reason:
+            "URL is the platform-standard endpoint locator required by the public acquisition contract",
+        },
+      ],
       allowedTestPublicSubpaths: [
         {
           subpath: "./test",
           reason:
-            "Management schemas require the explicit sharness-test resolution condition",
+            "Management schemas and wire overrides require the explicit sharness-test resolution condition",
         },
       ],
     },
@@ -493,74 +641,6 @@ const architectureConfigDefinitions: ReadonlyArray<{
     packageRoot: `packages/${packageName}`,
     definition,
   })),
-  {
-    packageRoot: "packages/identity",
-    definition: {
-      config: {
-        packageRuntime: "node",
-        minExportedSiblingModules: 12,
-        maxPublicExports: 40,
-        minPublicFacadeModules: 13,
-        publicTypePackages: [
-          publicTypePackage.effect,
-          publicTypePackage.platform,
-        ],
-        allowedTestPublicSubpaths: [
-          {
-            subpath: "./test",
-            reason:
-              "Adjacent-release overrides require the explicit sharness-test resolution condition and are forbidden in production source",
-          },
-        ],
-        folderReadmeFileNames: ["README.md", "MODULE.md"],
-        folderChildCountOverrides: [
-          {
-            folder: ".",
-            maxChildren: 12,
-            reason:
-              "The identity package keeps its closed identifier, key, signed-artifact, request-authentication, and Registry capability boundaries as peer deep modules",
-          },
-        ],
-        facadeFiles: [
-          {
-            file: "agent-card.ts",
-            reason:
-              "Immutable Registry attestation boundary for verification and digest operations",
-          },
-          {
-            file: "agent-key.ts",
-            reason:
-              "Domain entrypoint for Ed25519 public keys, signing authority, and the single-signature General JWS representation shared by AgentCard and SignedMessage",
-          },
-          {
-            file: "http-signature.ts",
-            reason:
-              "Standards adapter boundary for the closed Social Harness HTTP signature profiles",
-          },
-          {
-            file: "registry.ts",
-            reason:
-              "Public deep Registry capability and infrastructure-failure boundary",
-          },
-          {
-            file: "registry/client.ts",
-            reason:
-              "Private HTTP adapter hidden behind the public Registry capability",
-          },
-          {
-            file: "registry/contract.ts",
-            reason:
-              "Closed Registry request, result, operation value, representation, route, and client-failure contract",
-          },
-          {
-            file: "signed-message.ts",
-            reason:
-              "Domain entrypoint for the root-exported SignedMessage: signing, verification, the verified trust state, and the recipient order and bounds a sealed body inherits",
-          },
-        ],
-      },
-    },
-  },
   {
     packageRoot: "packages/registry",
     definition: {
@@ -618,7 +698,13 @@ const architectureConfigDefinitions: ReadonlyArray<{
           publicTypePackage.effect,
           publicTypePackage.platform,
         ],
-        allowedTestPublicSubpaths: [],
+        allowedTestPublicSubpaths: [
+          {
+            subpath: "./test",
+            reason:
+              "Router wire overrides require the explicit sharness-test resolution condition",
+          },
+        ],
         folderReadmeFileNames: ["README.md", "MODULE.md"],
         folderChildCountOverrides: [
           {
@@ -633,11 +719,6 @@ const architectureConfigDefinitions: ReadonlyArray<{
             file: "router/feed.ts",
             reason:
               "Sole state boundary for ordering, retention, and retry identity",
-          },
-          {
-            file: "router/contract.ts",
-            reason:
-              "Closed Router request, result, operation value, representation, route, limit, and client-failure contract",
           },
           {
             file: "router/poll.ts",
@@ -666,6 +747,19 @@ const architectureConfigDefinitions: ReadonlyArray<{
 ];
 
 if (import.meta.main) {
+  const configured = new Set(
+    architectureConfigDefinitions.map(({ packageRoot }) => packageRoot),
+  );
+  if (
+    configured.size !== FINAL_PACKAGE_DIRS.length ||
+    FINAL_PACKAGE_DIRS.some((dir) => !configured.has(`packages/${dir}`))
+  ) {
+    process.stderr.write(
+      "Architecture configurations must cover FINAL_PACKAGES exactly\n",
+    );
+    process.exit(1);
+  }
+
   const resolved = architectureConfigDefinitions.map(
     ({ packageRoot, definition }) => ({
       packageRoot,

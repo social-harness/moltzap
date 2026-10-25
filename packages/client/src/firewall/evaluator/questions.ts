@@ -7,7 +7,7 @@ import {
   type NormExpectation,
   type PolicyStage,
   type PolicyStageTrace,
-} from "./values.js";
+} from "./contract/index.js";
 
 type QuestionEntry = readonly [string, DecisionRequest["questions"][string]];
 const utf8 = new TextEncoder();

@@ -24,6 +24,78 @@
       "reason": "Canonical identifiers and ordering used by host-loaded values"
     },
     {
+      "file": "identity/agents.ts",
+      "reason": "Canonical agent, principal and immutable name schemas"
+    },
+    {
+      "file": "identity/keys.ts",
+      "reason": "Exact Ed25519 public keys and opaque signing authority"
+    },
+    {
+      "file": "identity/cards.ts",
+      "reason": "Immutable AgentCard representation, digest and pinned verification"
+    },
+    {
+      "file": "identity/card-signing.ts",
+      "reason": "Registry card issuance with private signing authority"
+    },
+    {
+      "file": "identity/wire-version.ts",
+      "reason": "Wire emission and live or retained compatibility policy"
+    },
+    {
+      "file": "identity/signing/registered/index.ts",
+      "reason": "Registered-request authentication capability with opaque verification proofs"
+    },
+    {
+      "file": "identity/index.ts",
+      "reason": "Identity request authentication and immutable Registry resolution"
+    },
+    {
+      "file": "identity/signing/http-signature.ts",
+      "reason": "Bootstrap and registered HTTP signing and verification boundary"
+    },
+    {
+      "file": "identity/signing/http-errors.ts",
+      "reason": "Closed authenticated HTTP framing and admission errors"
+    },
+    {
+      "file": "identity/registry/index.ts",
+      "reason": "Registry class tag and HTTP client composition for immutable resolution"
+    },
+    {
+      "file": "identity/bounded-cache.ts",
+      "reason": "Bounded immutable-key caches shared by identity implementations"
+    },
+    {
+      "file": "identity/registry/contract.ts",
+      "reason": "Exact Registry routes, operation grammar and canonical wire codecs"
+    },
+    {
+      "file": "communication/envelope/signed-message.ts",
+      "reason": "Opaque attributed message representation, signing and verification"
+    },
+    {
+      "file": "communication/envelope/sealed-body.ts",
+      "reason": "End-to-end sealing and opening of attributed message bodies"
+    },
+    {
+      "file": "communication/envelope/wire-profile.ts",
+      "reason": "Attributed envelope representation parameters read by host-loaded SignedMessage schemas"
+    },
+    {
+      "file": "communication/router/api/index.ts",
+      "reason": "Opaque Router operation schemas and client capability entry"
+    },
+    {
+      "file": "communication/router/api/contract.ts",
+      "reason": "Exact Router routes, operation grammar, bounds and wire codecs"
+    },
+    {
+      "file": "communication/router/api/client.ts",
+      "reason": "Router class tag and authenticated send or poll HTTP client"
+    },
+    {
       "file": "communication/records/values.ts",
       "reason": "Addresses, post ids, content, and member limits hosts decode without loading signing, verification, or the Router client"
     },
@@ -72,6 +144,10 @@
       "reason": "History export values hosts decode without loading inbox state or SQLite"
     },
     {
+      "file": "internal.ts",
+      "reason": "Condition-only named service verification, signing and wire contracts"
+    },
+    {
       "file": "communication/records/schemas.ts",
       "reason": "Closed Client wire grammar shared by encoding and verification within the records domain"
     },
@@ -85,6 +161,10 @@
     }
   ],
   "compositionRoots": [
+    {
+      "path": "src/internal.ts",
+      "reason": "Condition-only identity verification, card signing, Registry and Router service contracts"
+    },
     {
       "path": "src/test.ts",
       "reason": "Condition-only management schemas for cross-package process fixtures"
@@ -120,6 +200,39 @@
       "reason": "Leaf codecs depending only on Effect and canonicalize"
     },
     {
+      "name": "identity",
+      "roots": [
+        "src/identity"
+      ],
+      "entrypoints": [
+        "src/identity/agents.ts",
+        "src/identity/keys.ts",
+        "src/identity/cards.ts",
+        "src/identity/card-signing.ts",
+        "src/identity/wire-version.ts",
+        "src/identity/signing/registered/index.ts",
+        "src/identity/index.ts",
+        "src/identity/signing/http-signature.ts",
+        "src/identity/signing/http-errors.ts",
+        "src/identity/registry/index.ts",
+        "src/identity/bounded-cache.ts",
+        "src/identity/registry/contract.ts"
+      ],
+      "reason": "Identity, request authentication and immutable Registry resolution"
+    },
+    {
+      "name": "envelope",
+      "roots": [
+        "src/communication/envelope"
+      ],
+      "entrypoints": [
+        "src/communication/envelope/signed-message.ts",
+        "src/communication/envelope/sealed-body.ts",
+        "src/communication/envelope/wire-profile.ts"
+      ],
+      "reason": "Opaque attributed and sealed message bodies below endpoint protocols"
+    },
+    {
       "name": "release",
       "roots": [
         "src/release"
@@ -148,6 +261,18 @@
         "src/firewall/evaluator/index.ts"
       ],
       "reason": "Isolated code and English evaluation depends on encoding, runtime-safe outcomes and packages"
+    },
+    {
+      "name": "router-api",
+      "roots": [
+        "src/communication/router/api"
+      ],
+      "entrypoints": [
+        "src/communication/router/api/index.ts",
+        "src/communication/router/api/contract.ts",
+        "src/communication/router/api/client.ts"
+      ],
+      "reason": "Opaque Router values and HTTP client below endpoint protocol records"
     },
     {
       "name": "records",
@@ -368,6 +493,13 @@
       "reason": "Canonical protocol encoding, verification, and the message values every layer encodes"
     },
     {
+      "name": "router-api",
+      "folders": [
+        "communication/router/api"
+      ],
+      "reason": "Opaque Router values and HTTP client below endpoint protocol records"
+    },
+    {
       "name": "firewall-evaluator",
       "folders": [
         "firewall/evaluator"
@@ -389,6 +521,20 @@
       "reason": "Client package release metadata used by MCP peers, policy provenance and telemetry"
     },
     {
+      "name": "envelope",
+      "folders": [
+        "communication/envelope"
+      ],
+      "reason": "Opaque attributed and sealed message bodies below endpoint protocols"
+    },
+    {
+      "name": "identity",
+      "folders": [
+        "identity"
+      ],
+      "reason": "Identity, request authentication and immutable Registry resolution"
+    },
+    {
       "name": "encoding",
       "folders": [
         "encoding"
@@ -400,12 +546,20 @@
     {
       "package": "effect",
       "reason": "Foundational Effect runtime; intentionally part of the public contract"
+    },
+    {
+      "package": "@effect/platform",
+      "reason": "Effect platform abstractions used at boundaries"
+    },
+    {
+      "package": "node",
+      "reason": "URL is the platform-standard endpoint locator required by the public acquisition contract"
     }
   ],
   "allowedTestPublicSubpaths": [
     {
       "subpath": "./test",
-      "reason": "Management schemas require the explicit sharness-test resolution condition"
+      "reason": "Management schemas and wire overrides require the explicit sharness-test resolution condition"
     }
   ]
 }

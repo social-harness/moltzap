@@ -15,12 +15,5 @@
     "src/**/__tests__",
     "dist"
   ],
-  "references": [
-    {
-      "path": "../identity"
-    },
-    {
-      "path": "../router"
-    }
-  ]
+  "references": []
 }

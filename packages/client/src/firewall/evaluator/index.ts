@@ -10,7 +10,7 @@ import {
   type Message,
   type MessageContext,
   type MessageMiddleware,
-} from "./values.js";
+} from "./contract/index.js";
 
 // safer-arch-ignore no-inventory-barrel: The checking contract preserves code and English factories, decision projection and validated values as one evaluator boundary for policy and admission.
 
@@ -41,7 +41,7 @@ export {
   PrivateCheckTrace,
   RuleDescription,
   UncertainNormGuidance,
-} from "./values.js";
+} from "./contract/index.js";
 /** Policy authors exchange validated data; only guidance and feedback are runtime projections. */
 export type {
   DecisionProvider,
@@ -52,7 +52,7 @@ export type {
   MessageMiddleware,
   MiddlewareInput,
   MiddlewareResult,
-} from "./values.js";
+} from "./contract/index.js";
 
 /**
  * Runs every installed check in order within the budget. Refusals accumulate;
@@ -104,4 +104,4 @@ export {
   policyReadSchema,
   policyUpdateResultSchema,
   policyUpdateSchema,
-} from "./values.js";
+} from "./contract/index.js";

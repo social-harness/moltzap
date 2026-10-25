@@ -1,15 +1,7 @@
 /** @file Registry configuration, private RPC, client, and server composition contract tests. */
 
-import {
-  AgentName,
-  AgentSigningAuthority,
-  PrincipalId,
-  UnavailableError,
-} from "@moltzap/identity";
-import {
-  OperationId,
-  RegistryRegisterRequest,
-} from "@moltzap/identity/registry";
+import { AgentName, AgentSigningAuthority, PrincipalId } from "@moltzap/client";
+import { httpErrors, registryContract } from "@moltzap/client/internal";
 import {
   ConfigProvider,
   Effect,
@@ -34,6 +26,10 @@ import {
   layer as registryServerLayer,
   StartupError,
 } from "../server.js";
+
+/* eslint-disable @typescript-eslint/naming-convention -- Closed HTTP error constructors retain their class names when bound from the service capability. */
+const { UnavailableError } = httpErrors;
+/* eslint-enable @typescript-eslint/naming-convention -- Restore variable naming after binding error constructors. */
 
 const CONFIGURATION_PHASE = "configuration";
 const AUTHENTICATION_FAILED_TAG = "AuthenticationFailedError";
@@ -106,8 +102,8 @@ const makePrivateKeyPem = (): string => {
 };
 
 const makeRequest = (name: string) =>
-  Schema.decodeUnknownSync(RegistryRegisterRequest)({
-    operationId: Schema.decodeUnknownSync(OperationId)(
+  Schema.decodeUnknownSync(registryContract.RegistryRegisterRequest)({
+    operationId: Schema.decodeUnknownSync(registryContract.OperationId)(
       "opn_AAAAAAAAAAAAAAAAAAAAAA",
     ),
     principalId: Schema.decodeUnknownSync(PrincipalId)(

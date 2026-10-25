@@ -1,6 +1,5 @@
 /** @file Immutable policy metadata and versioned operator audit values. */
 
-import { AgentId } from "@moltzap/identity";
 import { Effect, Schema } from "effect";
 import { InboundItem } from "../../communication/collectives/inbound.js";
 import { PostIntent } from "../../communication/records/index.js";
@@ -11,6 +10,7 @@ import {
   type FirewallAuditEntry,
 } from "../../communication/store/index.js";
 import { exactStruct } from "../../encoding/exact.js";
+import { AgentId } from "../../identity/agents.js";
 import {
   decodeFrozen,
   firewallActivationSchema,

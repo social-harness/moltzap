@@ -15,8 +15,8 @@ const SCOPE = "@moltzap/";
 /** The package that carries `sharnessd`. */
 export const DAEMON_PACKAGE = "@moltzap/client";
 
-/** The package that carries the wire version a daemon emits. */
-export const IDENTITY_PACKAGE = "@moltzap/identity";
+/** Identity metadata exists for releases published before the fold. */
+export const PRE_FOLD_IDENTITY_PACKAGE = "@moltzap/identity";
 
 /** One published package version, with the fields the launcher reads. */
 export interface PublishedPackage {
@@ -204,7 +204,10 @@ function visit(
 
 function toPublished(published: typeof manifest.Type): PublishedPackage {
   const wireVersion =
-    published.sharnessWireVersion ?? published.moltzapWireVersion;
+    published.sharnessWireVersion ??
+    (published.name === PRE_FOLD_IDENTITY_PACKAGE
+      ? published.moltzapWireVersion
+      : undefined);
   return {
     name: published.name,
     version: published.version,

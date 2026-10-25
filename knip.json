@@ -65,17 +65,6 @@
         "*.ts"
       ]
     },
-    "packages/identity": {
-      "entry": [
-        "src/**/*.test.ts",
-        "src/**/*.types-check.ts",
-        "vitest*.config.ts"
-      ],
-      "project": [
-        "src/**/*.ts",
-        "*.ts"
-      ]
-    },
     "packages/router": {
       "entry": [
         "src/**/*.test.ts",
@@ -106,6 +95,7 @@
       "entry": [
         "**/*.integration.test.ts",
         "firewall-daemon.ts",
+        "launcher-provenance.ts",
         "**/*vitest*.config.ts"
       ],
       "project": [
@@ -144,10 +134,10 @@
     "packages/client/src/communication/store/database/schema.ts": [
       "types"
     ],
-    "packages/client/src/communication/store/rows/index.ts": [
+    "packages/client/src/harness/protocol/owner-tools.ts": [
       "exports"
     ],
-    "packages/client/src/harness/protocol/owner-tools.ts": [
+    "packages/client/src/communication/store/rows/index.ts": [
       "exports"
     ]
   }

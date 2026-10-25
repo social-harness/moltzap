@@ -30,7 +30,7 @@ import {
 import {
   DAEMON_PACKAGE,
   download,
-  IDENTITY_PACKAGE,
+  PRE_FOLD_IDENTITY_PACKAGE,
   type PublishedPackage,
   releaseClosure,
   taggedVersion,
@@ -175,12 +175,27 @@ function candidate(
         ? selection.version
         : yield* taggedVersion(registry, releasePackage, selection.distTag);
     const closure = yield* releaseClosure(registry, releasePackage, version);
+    if (!closure.some((entry) => entry.name === DAEMON_PACKAGE)) {
+      return yield* launcherError(
+        "registry",
+        `release ${version} contains no daemon package (${DAEMON_PACKAGE}). Docs: https://docs.moltzap.xyz/guides/upgrades#release-contains-no-daemon-package`,
+      );
+    }
     const choice = choose(
       {
         version: recorded.version,
-        liveWireVersions: yield* liveWireVersions(recorded.prefix),
+        liveWireVersions:
+          selection.kind === "follow"
+            ? yield* liveWireVersions(recorded.prefix)
+            : [],
       },
-      { version, wireVersion: yield* wireVersionOf(closure, version) },
+      {
+        version,
+        wireVersion:
+          selection.kind === "follow"
+            ? yield* wireVersionOf(closure, version)
+            : "",
+      },
       selection,
     );
     if (choice.kind === "keep") {
@@ -193,19 +208,22 @@ function candidate(
   });
 }
 
-/** The wire version the release's daemon emits, from its Identity pin. */
+/** The daemon wire version comes from its Client manifest or its pre-fold Identity pin. */
 function wireVersionOf(
   closure: readonly PublishedPackage[],
   version: string,
 ): Effect.Effect<string, LauncherError> {
-  const identity = closure.find((entry) => entry.name === IDENTITY_PACKAGE);
-  const hasDaemon = closure.some((entry) => entry.name === DAEMON_PACKAGE);
-  return hasDaemon && identity?.wireVersion !== undefined
-    ? Effect.succeed(identity.wireVersion)
+  const daemon = closure.find((entry) => entry.name === DAEMON_PACKAGE);
+  const identity = closure.find(
+    (entry) => entry.name === PRE_FOLD_IDENTITY_PACKAGE,
+  );
+  const wireVersion = daemon?.wireVersion ?? identity?.wireVersion;
+  return wireVersion !== undefined
+    ? Effect.succeed(wireVersion)
     : Effect.fail(
         launcherError(
           "registry",
-          `release ${version} names no daemon or no wire version`,
+          `release ${version} contains no wire version in its Client or pre-fold Identity manifest. Docs: https://docs.moltzap.xyz/guides/upgrades#release-contains-no-wire-version`,
         ),
       );
 }

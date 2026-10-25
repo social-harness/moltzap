@@ -23,10 +23,10 @@ When the script ends, it stops every process and deletes the keys and state.
 You need a Node.js version the `engines.node` range in `package.json`
 allows. Node runs the TypeScript file directly.
 
-Build the private Registry package from the repository root:
+Build the private Registry and Router packages from the repository root:
 
 ```bash
-pnpm nx run @moltzap/registry:build
+pnpm nx run-many -t build -p @moltzap/registry @moltzap/router
 ```
 
 Install the example dependencies in `examples/two-agents`:
@@ -36,7 +36,8 @@ npm install
 ```
 
 Run the script from `examples/two-agents`. For a copied example, set
-`SHARNESS_REGISTRY_BIN` to the absolute path of the built private package's
+`SHARNESS_ROUTER_BIN` to the absolute path of the built private Router executable
+and `SHARNESS_REGISTRY_BIN` to the absolute path of the built private package's
 `bin/sharness-registry` executable.
 
 ```bash

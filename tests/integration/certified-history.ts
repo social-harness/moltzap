@@ -1,5 +1,5 @@
 /** @file Member signature coverage assertions for process history. */
-import { AgentCard } from "@moltzap/identity";
+import { AgentCard } from "@moltzap/client";
 import { Schema } from "effect";
 import { expect } from "vitest";
 

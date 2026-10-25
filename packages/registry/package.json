@@ -127,7 +127,7 @@
     "@effect/sql": "catalog:",
     "@effect/sql-pg": "catalog:",
     "effect": "catalog:",
-    "@moltzap/identity": "workspace:*"
+    "@moltzap/client": "workspace:*"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",

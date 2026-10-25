@@ -1,7 +1,6 @@
 /** @file Runtime state and interrupted admission checks survive store restart. */
 
 import { live as it } from "@effect/vitest";
-import { WIRE_VERSION } from "@moltzap/identity";
 import { Array, Effect, Schema } from "effect";
 import { describe, expect } from "vitest";
 import { digest } from "../../__tests__/agent-card-fixtures.js";
@@ -11,6 +10,7 @@ import {
   storedConversation,
   withStore,
 } from "../../__tests__/store-schema-fixtures.js";
+import { WIRE_VERSION } from "../../identity/wire-version.js";
 import {
   type CertifiedRecord,
   DeliveryToken,
