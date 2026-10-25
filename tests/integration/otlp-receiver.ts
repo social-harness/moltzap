@@ -1,12 +1,15 @@
 /** @file Test-only OTLP/HTTP receiver that decodes the protobuf trace exports daemons send it. */
 
 import type { Buffer } from "node:buffer";
-// eslint-disable-next-line agent-code-guard/prefer-effect-platform -- NodeHttpServer.make requires Node listener factories and callback types.
-import type { IncomingMessage, ServerResponse } from "node:http";
 import { Cause, Duration, Effect, Ref, Schema, type Scope } from "effect";
 import protobuf from "protobufjs";
 import { LOOPBACK_HOST, ProcessTestError } from "./daemon-process-harness.js";
-import { acquireLoopbackServer, readBody } from "./loopback-server.js";
+import {
+  acquireLoopbackServer,
+  type IncomingMessage,
+  readBody,
+  type ServerResponse,
+} from "./loopback-server.js";
 
 /** A scalar attribute value as OTLP carries it. */
 type AttributeValue = string | number | boolean;

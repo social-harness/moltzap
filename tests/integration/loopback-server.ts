@@ -11,6 +11,9 @@ import {
 } from "node:http";
 import { LOOPBACK_HOST, ProcessTestError } from "./daemon-process-harness.js";
 
+/** Callback types for handlers served by the loopback Node listener. */
+export type { IncomingMessage, ServerResponse };
+
 /**
  * Reads one request body in full.
  * @param incoming The request to read.

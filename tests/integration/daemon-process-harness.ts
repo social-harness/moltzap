@@ -2,8 +2,12 @@
 
 import type { MessageAddressInput } from "@moltzap/client";
 import type { startRegistry } from "@moltzap/registry/test";
-import { FileSystem } from "@effect/platform";
-import { NodeContext, NodeFileSystem } from "@effect/platform-node";
+import { FileSystem, HttpClient } from "@effect/platform";
+import {
+  NodeContext,
+  NodeFileSystem,
+  NodeHttpClient,
+} from "@effect/platform-node";
 import {
   Client,
   ProtocolError,
@@ -163,6 +167,7 @@ const REQUESTS_PER_DAEMON = 4;
 /** Each daemon can hold its active poll and a replacement poll. */
 const HELD_POLLS_PER_DAEMON = 2;
 const ADMISSION_CREDENTIAL = "client-process-admission";
+const READY_STATUS = 204;
 
 const SHUTDOWN_TIMEOUT = Duration.seconds(5);
 
@@ -175,6 +180,8 @@ const TEARDOWN_TIMEOUT_MS = 60_000;
 
 /** A live child must announce its listener within thirty seconds. */
 const READINESS_TIMEOUT = Duration.seconds(30);
+
+const POLL_ATTEMPT_TIMEOUT = Duration.seconds(1);
 
 const POLL_INTERVAL = Duration.millis(25);
 
@@ -364,12 +371,27 @@ const pgliteListening = (running: RunningProcess, port: number) =>
 const daemonListening = (running: RunningProcess, endpoint: URL) =>
   announced(running, `sharnessd listening on ${endpoint.href} (`);
 
-/** A service is ready only after its own child announces its bound listener. */
+/** Whether `origin` answers its health check as ready. */
+const isHealthy = (origin: URL) =>
+  HttpClient.get(new URL("/healthz", origin)).pipe(
+    Effect.map((response) => response.status === READY_STATUS),
+    Effect.timeout(POLL_ATTEMPT_TIMEOUT),
+    Effect.orElseSucceed(() => false),
+    Effect.scoped,
+    Effect.provide(NodeHttpClient.layer),
+  );
+
+/** A Registry or Router is ready once it announced its own listener on `origin` and answers its health check as ready. */
 export const serviceReady = (
   running: RunningProcess,
   service: "sharness-registry" | "sharness-router",
   origin: URL,
-) => announced(running, `${service} listening on ${origin.origin} (`);
+) =>
+  announced(running, `${service} listening on ${origin.origin} (`).pipe(
+    Effect.flatMap((listening) =>
+      listening ? isHealthy(origin) : Effect.succeed(false),
+    ),
+  );
 
 /**
  * Polls `probe` until it reads true, and fails with the child's output once

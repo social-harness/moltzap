@@ -1,18 +1,17 @@
 /** @file Test-only Router proxy that parks delivery-bearing poll responses. */
 
 import type { Scope } from "effect/Scope";
-// eslint-disable-next-line agent-code-guard/prefer-effect-platform -- NodeHttpServer.make requires Node listener factories and callback types.
-import type {
-  IncomingHttpHeaders,
-  IncomingMessage,
-  ServerResponse,
-} from "node:http";
 import { HttpClient, HttpClientRequest, HttpMethod } from "@effect/platform";
 import { NodeHttpClient } from "@effect/platform-node";
 import { Deferred, Effect, Option, Ref, Schema } from "effect";
 import { Buffer } from "node:buffer";
 import { LOOPBACK_HOST, ProcessTestError } from "./daemon-process-harness.js";
-import { acquireLoopbackServer, readBody } from "./loopback-server.js";
+import {
+  acquireLoopbackServer,
+  type IncomingMessage,
+  readBody,
+  type ServerResponse,
+} from "./loopback-server.js";
 
 /** Scoped control over one endpoint's Router link. */
 export interface RouterHoldProxy {
@@ -28,7 +27,7 @@ export interface RouterHoldProxy {
 
 interface UpstreamResponse {
   readonly status: number;
-  readonly headers: IncomingHttpHeaders;
+  readonly headers: IncomingMessage["headers"];
   readonly body: Buffer;
 }
 
@@ -59,7 +58,9 @@ const deliveryBatch = Schema.parseJson(
   }),
 );
 
-const withoutHopByHop = (headers: IncomingHttpHeaders): IncomingHttpHeaders =>
+const withoutHopByHop = (
+  headers: IncomingMessage["headers"],
+): IncomingMessage["headers"] =>
   Object.fromEntries(
     Object.entries(headers).filter(
       ([name]) => !HOP_BY_HOP_HEADERS.some((hop) => hop === name),
