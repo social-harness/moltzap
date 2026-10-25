@@ -14,7 +14,7 @@ import {
 } from "@moltzap/client";
 import { HISTORY_WIRE_VERSIONS } from "@moltzap/client/test";
 import { Data, Effect, Fiber, Option, Schedule, Schema, Stream } from "effect";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { join, posix, resolve } from "node:path";
 import { expect, it, type TestContext } from "vitest";
 import {
   installPackedConsumer,
@@ -344,7 +344,7 @@ function inLeg(leg: string) {
  * network.
  */
 function releaseNetwork(version: string, temporaryRoot: string) {
-  return releaseImages(version).pipe(
+  return releaseImages(version, temporaryRoot).pipe(
     Effect.flatMap((images) =>
       Effect.all(
         {
@@ -365,10 +365,12 @@ function releaseNetwork(version: string, temporaryRoot: string) {
 
 /**
  * The release's own indexes, as its release commit's example Compose file
- * pins them. The bump writes that file before npm publication, so it exists
- * whenever npm lists the release, unlike the version tags added afterwards.
+ * pins them, read by the same script the release uses. The bump writes that
+ * file before npm publication, so it exists whenever npm lists the release,
+ * unlike the version tags added afterwards.
  */
-function releaseImages(version: string) {
+function releaseImages(version: string, temporaryRoot: string) {
+  const compose = join(temporaryRoot, `compose-${version}.yaml`);
   return runCommand("curl", [
     "--fail",
     "--silent",
@@ -376,39 +378,29 @@ function releaseImages(version: string) {
     "--location",
     "--retry",
     "3",
-    `https://raw.githubusercontent.com/social-harness/moltzap/v${version}/examples/two-agents/compose.yaml`,
+    "--output",
+    compose,
+    `https://raw.githubusercontent.com/social-harness/moltzap/refs/tags/v${version}/examples/two-agents/compose.yaml`,
   ]).pipe(
-    Effect.flatMap((compose) =>
-      Effect.all({
-        registry: pinnedIndex(compose, "registry", version),
-        router: pinnedIndex(compose, "router", version),
-      }),
+    Effect.zipRight(
+      runCommand("bash", [
+        join(workspaceRoot, "scripts/release/example-images.sh"),
+        "refs",
+        compose,
+      ]),
     ),
+    Effect.map((refs) => {
+      const [registry = "", router = ""] = refs.trim().split("\n");
+      return { registry, router };
+    }),
   );
-}
-
-function pinnedIndex(
-  compose: string,
-  service: "registry" | "router",
-  version: string,
-) {
-  const match = new RegExp(
-    `ghcr\\.io/social-harness/${service}@sha256:[0-9a-f]{64}`,
-    "u",
-  ).exec(compose);
-  return match === null
-    ? Effect.fail(
-        new ProcessTestError({
-          message: `release ${version}'s examples/two-agents/compose.yaml pins no ${service} index`,
-        }),
-      )
-    : Effect.succeed(match[0]);
 }
 
 const imageConfig = Schema.parseJson(
   Schema.Struct({
     WorkingDir: Schema.String,
-    Entrypoint: Schema.NonEmptyArray(Schema.String),
+    Entrypoint: Schema.Tuple(Schema.String),
+    Cmd: Schema.NullOr(Schema.Array(Schema.String)),
   }),
 );
 
@@ -427,10 +419,17 @@ function imageEntrypoint(image: string, destination: string) {
       "{{json .Config}}",
       image,
     ]).pipe(Effect.flatMap(Schema.decodeUnknown(imageConfig)));
-    const entrypoint = relative(config.WorkingDir, config.Entrypoint[0]);
-    if (entrypoint.startsWith("..") || isAbsolute(entrypoint)) {
+    const entrypoint = posix.relative(
+      config.WorkingDir,
+      posix.resolve(config.WorkingDir, config.Entrypoint[0]),
+    );
+    if (
+      entrypoint === "" ||
+      entrypoint.startsWith("..") ||
+      (config.Cmd?.length ?? 0) > 0
+    ) {
       return yield* new ProcessTestError({
-        message: `${image}'s entrypoint ${config.Entrypoint[0]} is outside its working directory ${config.WorkingDir}`,
+        message: `${image} must run one entrypoint file inside its working directory ${config.WorkingDir} with no arguments; it has ${JSON.stringify(config.Entrypoint)} and ${JSON.stringify(config.Cmd)}`,
       });
     }
     yield* Effect.acquireUseRelease(
@@ -446,7 +445,13 @@ function imageEntrypoint(image: string, destination: string) {
       (container) =>
         runCommand("docker", ["rm", container]).pipe(Effect.ignore),
     );
-    return join(destination, entrypoint);
+    const copied = join(destination, entrypoint);
+    if (!(yield* (yield* FileSystem.FileSystem).exists(copied))) {
+      return yield* new ProcessTestError({
+        message: `${image}'s entrypoint ${config.Entrypoint[0]} is missing from its copied working directory`,
+      });
+    }
+    return copied;
   });
 }
 
