@@ -141,28 +141,12 @@ pages, and source-owned constants generate shared snippets. Run
 
 - `main` is the only long-lived branch; every change lands there by pull
   request.
-- Merges release through `.github/workflows/release-on-merge.yml` after CI
-  passes on `main`. Manual dispatch of `.github/workflows/publish.yml`
-  covers resets, resumes and `start_new_version`. The
-  dispatched run computes one calendar version, commits it for the public
-  packages that changed since their last published version, along with any
-  changelog section it writes from the fragments in `changelog.d/`, pushes
-  that release commit and its tag, and dispatches a second run. The second
-  run publishes from the release commit, so npm's provenance names it.
-  Building and packing run in a job that holds no token; the push and the
-  publish run in separate jobs in the `release` GitHub environment, which
-  has no protection rules. CI on `main` gates merge releases; the maintainer
-  gates manual dispatches. The push uses a GitHub App token:
-  `RELEASE_APP_CLIENT_ID` is an Actions variable holding the App's client ID,
-  and `RELEASE_APP_PRIVATE_KEY` is an Actions secret for an App installed on
-  this repository with contents write access and allowed to push `main`.
-  npm publishes without a token, so each published package lists `publish.yml`
-  on this repository as a trusted publisher.
-- A release commit on `main` whose version some package still lacks on npm is
-  resumed by every later run. When that release can never complete, dispatch
-  with **Start a new version** checked: the run leaves the release commit
-  alone, takes the next free version from the tip, and the maintainer
-  deprecates whatever the abandoned version did publish.
+- A user-visible change adds a fragment under `changelog.d/` (see
+  `towncrier.toml`); merging it releases after CI passes on `main`. Resets,
+  resumes and abandoned releases are maintainer dispatches of
+  `.github/workflows/publish.yml`, described in
+  [Publication and versions](/spec/layer-interfaces#publication-and-versions)
+  and the workflow's header.
 - The OpenClaw and NanoClaw agent images are built and published outside
   this repository, not by a release here.
 - Public design contracts live in `docs/vision.md` and `docs/spec/`; see

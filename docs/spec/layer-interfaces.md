@@ -432,27 +432,13 @@ mismatches. Release notes mark each reset release with the phrase
   release tested.
 - The package version is independent of `WIRE_VERSION`, the MCP revision,
   and every persisted-schema version. Advancing one never advances another.
-- A merge to `main` releases through the gate in
-  `.github/workflows/release-on-merge.yml` after CI succeeds for a push to
-  `main`. It gates that CI run's `head_sha` with full history, then checks
-  main's current head before dispatching `.github/workflows/publish.yml`
-  with `automatic=true`. If main moved, it skips: the newer commit's own CI
-  run gates it. Before minting a new version, an automatic dispatch runs the
-  gate again on the commit it will release; `skip` ends the run successfully
-  without releasing. `automatic` defaults to false, so plain manual dispatch
-  is unchanged. The gate skips release-commit
-  heads, trees without changelog fragments other than `template.md`, and
-  top-level `packages/<name>/package.json` versions lower than those at the
-  last release commit; manifests absent at that release are ignored.
-  It compares the Client manifest's `sharnessWireVersion` with the last release
-  commit's value: unreadable metadata fails, and differing values require a
-  reset release by hand. With no earlier release, fragments start a release.
-  CI-completion gates serialize separately from release dispatches, without
-  cancelling running jobs. A merge arriving while an earlier release is
-  unfinished makes the dispatched run resume that release; the merge's own
-  changes release with the next merge or a manual dispatch. Resumption,
-  retries and abandonment remain on the manual dispatch path, including
-  `start_new_version`.
+- A merge to `main` releases once CI passes on it, when the merged commit
+  has a changelog fragment, is not itself a release commit, keeps the last
+  release's `sharnessWireVersion`, and lowers no package version;
+  `.github/workflows/release-on-merge.yml` describes the gate. Resets,
+  resumes and abandoned releases are manual dispatches of
+  `.github/workflows/publish.yml`. A merge that lands while an earlier
+  release is unfinished releases with the next merge or a manual dispatch.
 - Releases run from `main` through `.github/workflows/publish.yml` with npm
   provenance and name the service images in each release. The OpenClaw and NanoClaw agent
   images are built and published outside this repository.
@@ -480,17 +466,14 @@ for `linux/amd64` and `linux/arm64`, built on native runners. The committed
 input key `sha256:<hex>` from `pnpm image:keys` names the immutable tag
 `inputs-<hex>`. Release-version tags name those same indexes; the release
 commit pins both digests in `examples/two-agents/compose.yaml`, and the GitHub
-release body lists both full digest references. The bump polls for both input
-tags for up to 45 minutes, logging progress while the images workflow builds
-them. If they remain unavailable, it fails with a hint to rerun once both
-images are published and publicly readable.
+release body lists both full digest references. The bump waits for missing
+input tags and fails with a rerun hint if the images workflow has not
+published them in time.
 After npm publication and release image tagging succeed, a separate job sends
 `repository_dispatch` event `social-harness-released` to `social-harness/deployment`.
 Its `client_payload` is
 `{"version":"<calendar version>","registry":"ghcr.io/social-harness/registry@sha256:<digest>","router":"ghcr.io/social-harness/router@sha256:<digest>"}`.
-The references are the release's verified indexes tagged by the `images` job.
-The notification job installs and builds nothing; its release App token is
-scoped to the deployment repository with contents write permission. Deliveries
+The references are the release's verified indexes. Deliveries
 may repeat or arrive out of order. The receiver ignores a version not newer
 than the one it runs, ordering calendar versions by their numeric year,
 month/day and sequence components.
