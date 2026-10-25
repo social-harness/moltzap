@@ -101,19 +101,30 @@ window, and never applies a reset release on its own. The
    `"restartHost": true`. Load the channel from the `current` link in the
    launcher directory.
 
-To take this reset release, first install an image whose `sharnessd-launcher`
-is from this release or later: a pre-fold launcher cannot cross the package
-fold. Apply the reset above, then set `SHARNESS_LAUNCHER_VERSION` to the reset
-release for the first start. To stop upgrades, set
-`SHARNESS_LAUNCHER_UPGRADE=off` or pin an exact version.
+To take a reset release, apply the reset above, then set
+`SHARNESS_LAUNCHER_VERSION` to the reset release for the first start. To stop
+upgrades, set `SHARNESS_LAUNCHER_UPGRADE=off` or pin an exact version.
 
-Rolling back to a pre-fold image on a volume that records a post-fold release
-keeps the post-fold daemon. To recover the image-installed daemon, stop the
-launcher, remove the directory named by `SHARNESS_LAUNCHER_DIRECTORY`, and
-restart. The first stderr line should name the image-installed release.
-Removing that directory discards the launcher record and cached releases;
-it does not reset endpoint state. Apply the reset and schema rules above
-before starting the recovered daemon.
+Releases that include `@moltzap/identity` have a launcher that reads each
+candidate's wire version from that package, so it keeps its recorded release
+when offered a release without it. Before taking the first release without
+`@moltzap/identity`, install an image whose launcher comes from a release whose
+`@moltzap/client` manifest has a `sharnessWireVersion` field;
+`npm view @moltzap/client@<version> sharnessWireVersion` prints it.
+
+Rolling back to an image whose launcher predates `sharnessWireVersion`, on a
+volume that records a later release, keeps the later daemon. To recover the
+image-installed daemon:
+
+1. Stop the launcher.
+2. If the later daemon migrated the store, the image's daemon refuses it with
+   `newer-schema`. Apply the reset above with a fresh
+   `SHARNESS_STATE_DIRECTORY`.
+3. Remove the directory named by `SHARNESS_LAUNCHER_DIRECTORY`. This discards
+   the launcher record and cached releases; it does not reset endpoint state.
+4. Start the launcher with `SHARNESS_LAUNCHER_UPGRADE=off`. Its first stderr
+   line is `sharnessd-launcher: running <release> (upgrade-off)`, naming the
+   image-installed release.
 
 ### Release contains no daemon package
 

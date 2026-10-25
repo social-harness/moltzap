@@ -467,12 +467,27 @@ it("keeps a pinned release whose closure contains Identity but no Client", () =>
   }).pipe(Effect.scoped, Effect.provide(NodeContext.layer)));
 
 it.each([
-  "unreadable-root",
-  "invalid-window",
-  "missing-client-manifest",
-] as const)(
-  "keeps a release with %s instead of falling back to an installed Identity window",
-  (failure) =>
+  {
+    name: "unreadable-root",
+    corrupt: (fs: FileSystem.FileSystem, client: string) =>
+      fs.remove(`${client}/dist/index.js`),
+  },
+  {
+    name: "invalid-window",
+    corrupt: (fs: FileSystem.FileSystem, client: string) =>
+      fs.writeFileString(
+        `${client}/dist/index.js`,
+        'export const LIVE_WIRE_VERSIONS = "invalid";\n',
+      ),
+  },
+  {
+    name: "missing-client-manifest",
+    corrupt: (fs: FileSystem.FileSystem, client: string) =>
+      fs.remove(`${client}/package.json`),
+  },
+])(
+  "keeps a release with $name instead of falling back to an installed Identity window",
+  ({ corrupt }) =>
     Effect.gen(function* () {
       const { home, seed, recordedPrefix } = yield* preFoldVolume;
       const fs = yield* FileSystem.FileSystem;
@@ -487,16 +502,7 @@ it.each([
           exports: { ".": { import: "./dist/index.js" } },
         }),
       );
-      if (failure === "unreadable-root") {
-        yield* fs.remove(`${client}/dist/index.js`);
-      } else if (failure === "invalid-window") {
-        yield* fs.writeFileString(
-          `${client}/dist/index.js`,
-          'export const LIVE_WIRE_VERSIONS = "invalid";\n',
-        );
-      } else {
-        yield* fs.remove(`${client}/package.json`);
-      }
+      yield* corrupt(fs, client);
       const asked: string[] = [];
       const prepared = yield* prepare(configuration(home, follow), seed).pipe(
         Effect.provide(start(release("2026.1025.1", WIRE), asked)),

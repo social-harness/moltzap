@@ -77,15 +77,17 @@ stdio server, second MCP listener, address override, or product Ledger.
 
 ## Launcher
 
-Taking the reset release requires an image whose `sharnessd-launcher` comes
-from this release or later before pinning `SHARNESS_LAUNCHER_VERSION`. A
-pre-fold launcher cannot cross the package fold. Rolling back to a pre-fold
-image on a volume that records a post-fold release keeps the post-fold daemon;
-the image alone does not roll it back. To recover the image-installed daemon,
-stop the launcher and remove the directory named by
-`SHARNESS_LAUNCHER_DIRECTORY`, then restart. This discards cached releases and
-the launcher record; endpoint state remains subject to the reset and schema
-rules below.
+A launcher from a release that includes `@moltzap/identity` reads each
+candidate's wire version from that package and keeps its recorded release when
+offered a release without it. Taking the first release without
+`@moltzap/identity` therefore requires an image whose launcher comes from a
+release whose `@moltzap/client` manifest has `sharnessWireVersion`. Rolling
+back to an image whose launcher predates that field, on a volume that records a
+later release, keeps the later daemon; the image alone does not roll it back.
+Recovery stops the launcher, applies the reset and schema rules below to the
+state directory, removes the directory named by `SHARNESS_LAUNCHER_DIRECTORY`,
+and starts with `SHARNESS_LAUNCHER_UPGRADE=off`. Removing that directory
+discards cached releases and the launcher record, not endpoint state.
 
 `sharnessd-launcher`, in `@moltzap/client`, is the process an agent image runs
 in place of a fixed `sharnessd`. Each start chooses a release, then runs that
