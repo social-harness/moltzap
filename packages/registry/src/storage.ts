@@ -1,14 +1,6 @@
 /** @file Durable Registry persistence for admission, immutable cards, and idempotent operations. */
 
 import type { SqlError } from "@effect/sql/SqlError";
-import type {
-  RegistryListRequest,
-  RegistryListResult,
-  RegistryLookupRequest,
-  RegistryLookupResult,
-  RegistryRegisterRequest,
-  RegistryRegisterResult,
-} from "@moltzap/identity/registry";
 import * as Migrator from "@effect/sql/Migrator";
 import { SqlClient } from "@effect/sql/SqlClient";
 import {
@@ -20,12 +12,18 @@ import {
   InternalServerError,
   UnavailableError,
   type VerifiedAgentCard,
-} from "@moltzap/identity";
+} from "@moltzap/client";
 import {
   agentCardSigning,
   registryAgentCardCodec,
+  type RegistryListRequest,
+  type RegistryListResult,
+  type RegistryLookupRequest,
+  type RegistryLookupResult,
   registryRegisterCodec,
-} from "@moltzap/identity/internal";
+  type RegistryRegisterRequest,
+  type RegistryRegisterResult
+} from "@moltzap/client/internal";
 import { Clock, Data, Effect, Either, Encoding, Schema } from "effect";
 import { randomBytes } from "node:crypto";
 import { AgentCardIssuedAt, issueAgentCard } from "./issuance.js";

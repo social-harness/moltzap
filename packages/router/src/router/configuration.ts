@@ -1,8 +1,8 @@
 /** @file Router process configuration, validation, defaults, and operator feedback. */
 
-import { Ed25519PublicKey, legacyKeys, SignedMessage } from "@moltzap/identity";
+import { Ed25519PublicKey, legacyKeys, SignedMessage } from "@moltzap/client";
+import { routerRepresentationLimits } from "@moltzap/client/internal";
 import { Config, type ConfigError, Data, Effect, Match, Schema } from "effect";
-import { routerRepresentationLimits } from "./contract.js";
 
 /** ConfigError trees retain every missing field without printing rejected inputs. */
 export function configurationMessage(error: ConfigError.ConfigError): string {

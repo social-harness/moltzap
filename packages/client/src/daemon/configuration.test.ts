@@ -1,7 +1,6 @@
 /** @file Exact process-input and secret-file tests for daemon bootstrap. */
 
 import { live as it } from "@effect/vitest";
-import { AgentSigningAuthority } from "@moltzap/identity";
 import { ConfigProvider, Effect, Redacted } from "effect";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Tests create and remove exact temporary secret-file fixtures around the configuration boundary.
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -12,6 +11,7 @@ import type {
   DaemonConfigurationError,
   DaemonProcessConfiguration,
 } from "./bootstrap.js";
+import { AgentSigningAuthority } from "../identity/keys.js";
 import {
   loadDaemonBootstrap,
   loadDaemonProcessConfiguration,

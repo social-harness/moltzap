@@ -1,10 +1,5 @@
 /** @file Public Router capability tests across HTTP success and typed failure paths. */
-import {
-  HttpClient,
-  HttpClientError,
-  HttpClientResponse,
-} from "@effect/platform";
-import { it as effectIt } from "@effect/vitest";
+import { it } from "@effect/vitest";
 import {
   AgentCard,
   AgentId,
@@ -12,7 +7,6 @@ import {
   AgentName,
   AgentSigningAuthority,
   type AgentSigningAuthority as AgentSigningAuthorityValue,
-  AgentSigningError,
   AuthenticationFailedError,
   InternalServerError,
   MessageId,
@@ -24,18 +18,22 @@ import {
   type VerifiedAgentCard,
   type VerifiedAgentRequest,
   WIRE_VERSION,
-} from "@moltzap/identity";
+} from "@moltzap/client";
+import {
+  calculateRouterRepresentationLimits,
+  RouterInstanceId,
+  type RouterInstanceId as RouterInstanceIdValue,
+  routerRepresentationLimits,
+} from "@moltzap/client/internal";
 import canonicalize from "canonicalize";
 import {
   Brand,
   ConfigProvider,
   Data,
-  Duration,
   Effect,
   Either,
   Encoding,
   Layer,
-  Option,
   Redacted,
   Ref,
   Schema,
@@ -46,20 +44,9 @@ import {
   createServer as createNetServer,
   type Server as NetServer,
 } from "node:net";
-import { describe, expect, it } from "vitest";
-import { Router } from "../../router.js";
+import { describe, expect } from "vitest";
 import { RouterServer } from "../../server.js";
 import { loadRouterConfiguration } from "../configuration.js";
-import {
-  calculateRouterRepresentationLimits,
-  type PollCursor as PollCursorValue,
-  RouterConnectionError,
-  RouterInstanceId,
-  type RouterInstanceId as RouterInstanceIdValue,
-  RouterInvalidResponseError,
-  routerRepresentationLimits,
-  RouterRequestTimeoutError,
-} from "../contract.js";
 import { makeRouterFeedAtOrder, maximumPrivateOrder } from "../feed.js";
 import { makePollWaiters } from "../poll-waiters.js";
 import { makeRouterRpcClient, withVerifiedRouterRequest } from "../rpc.js";
@@ -86,22 +73,6 @@ const canonicalText = (value: unknown): string => {
     throw new Error("test fixture is not canonical JSON");
   }
   return text;
-};
-
-const withUtf8Bom = (text: string): Uint8Array => {
-  const bytes = utf8Encoder.encode(text);
-  const marked = new Uint8Array(bytes.byteLength + 3);
-  marked.set([0xef, 0xbb, 0xbf]);
-  marked.set(bytes, 3);
-  return marked;
-};
-
-const withMalformedUtf8Suffix = (text: string): Uint8Array => {
-  const bytes = utf8Encoder.encode(text);
-  const malformed = new Uint8Array(bytes.byteLength + 1);
-  malformed.set(bytes);
-  malformed[bytes.byteLength] = 0xff;
-  return malformed;
 };
 
 const encodedCanonicalJson = (value: unknown): string =>
@@ -305,132 +276,108 @@ const makeVerifiedRequestFixture = (
   );
 };
 
-const runPollWithClient = (
-  httpClient: HttpClient.HttpClient,
-  signingAuthority: AgentSigningAuthorityValue,
-  pollTimeout: Duration.Duration,
-) =>
-  Router.poll({
-    request: {},
-    callerAgentId: recipient,
-    signingAuthority,
-  }).pipe(
-    Effect.provide(
-      Router.layer({
-        origin: new URL("http://router.example:3010"),
-        sendTimeout: Duration.seconds(5),
-        pollTimeout,
-      }).pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, httpClient))),
-    ),
-    Effect.either,
-  );
-
 describe("private RPC behavior", () => {
-  effectIt.scoped(
-    "requires proof and preserves context and typed failures",
-    () =>
-      Effect.gen(function* () {
-        const pollCallers = yield* Ref.make<readonly AgentIdValue[]>([]);
-        const sendRequests = yield* Ref.make<readonly VerifiedAgentRequest[]>(
-          [],
-        );
-        const client = yield* makeRouterRpcClient({
-          send: {
-            handle: (request, verifiedRequest) =>
-              Effect.sync(() => {
-                expect(request.expectedRouterInstanceId).toBe(
-                  makeRouterInstanceId(1),
-                );
-                expect(verifiedRequest.callerAgentId).toBe(sender);
-              }).pipe(
-                Effect.zipRight(
-                  Ref.update(sendRequests, (requests) => [
-                    ...requests,
-                    verifiedRequest,
-                  ]),
-                ),
-                Effect.zipRight(Effect.fail(new InternalServerError())),
+  it.scoped("requires proof and preserves context and typed failures", () =>
+    Effect.gen(function* () {
+      const pollCallers = yield* Ref.make<readonly AgentIdValue[]>([]);
+      const sendRequests = yield* Ref.make<readonly VerifiedAgentRequest[]>([]);
+      const client = yield* makeRouterRpcClient({
+        send: {
+          handle: (request, verifiedRequest) =>
+            Effect.sync(() => {
+              expect(request.expectedRouterInstanceId).toBe(
+                makeRouterInstanceId(1),
+              );
+              expect(verifiedRequest.callerAgentId).toBe(sender);
+            }).pipe(
+              Effect.zipRight(
+                Ref.update(sendRequests, (requests) => [
+                  ...requests,
+                  verifiedRequest,
+                ]),
               ),
-          },
-          poll: {
-            handle: (request, verifiedRequest) =>
-              Effect.sync(() => {
-                expect(request).toEqual({});
-              }).pipe(
-                Effect.zipRight(
-                  Ref.update(pollCallers, (callers) => [
-                    ...callers,
-                    verifiedRequest.callerAgentId,
-                  ]),
-                ),
-                Effect.as({ kind: "cursor_invalid" } as const),
+              Effect.zipRight(Effect.fail(new InternalServerError())),
+            ),
+        },
+        poll: {
+          handle: (request, verifiedRequest) =>
+            Effect.sync(() => {
+              expect(request).toEqual({});
+            }).pipe(
+              Effect.zipRight(
+                Ref.update(pollCallers, (callers) => [
+                  ...callers,
+                  verifiedRequest.callerAgentId,
+                ]),
               ),
-          },
-        });
-        const rpcSendRequest = {
-          expectedRouterInstanceId: makeRouterInstanceId(1),
-          mode: "initial",
-          signedMessage: makeSignedMessage({
-            senderAgentId: sender,
-            recipientAgentIds: [recipient],
-            messageId: makeMessageId(1),
-            body: "rpc-context",
-          }),
-        } as const;
-        const missingSendProof = yield* client
-          .send({ request: rpcSendRequest })
-          .pipe(Effect.either);
-        const missingPollProof = yield* client
-          .poll({ request: {} })
-          .pipe(Effect.either);
-        Either.match(missingSendProof, {
-          onLeft: (error) => {
-            expect(error).toBeInstanceOf(AuthenticationFailedError);
-          },
-          onRight: () => {
-            expect.fail("send RPC ran without registered-agent proof");
-          },
-        });
-        Either.match(missingPollProof, {
-          onLeft: (error) => {
-            expect(error).toBeInstanceOf(AuthenticationFailedError);
-          },
-          onRight: () => {
-            expect.fail("poll RPC ran without registered-agent proof");
-          },
-        });
-        expect(yield* Ref.get(sendRequests)).toEqual([]);
-        expect(yield* Ref.get(pollCallers)).toEqual([]);
+              Effect.as({ kind: "cursor_invalid" } as const),
+            ),
+        },
+      });
+      const rpcSendRequest = {
+        expectedRouterInstanceId: makeRouterInstanceId(1),
+        mode: "initial",
+        signedMessage: makeSignedMessage({
+          senderAgentId: sender,
+          recipientAgentIds: [recipient],
+          messageId: makeMessageId(1),
+          body: "rpc-context",
+        }),
+      } as const;
+      const missingSendProof = yield* client
+        .send({ request: rpcSendRequest })
+        .pipe(Effect.either);
+      const missingPollProof = yield* client
+        .poll({ request: {} })
+        .pipe(Effect.either);
+      Either.match(missingSendProof, {
+        onLeft: (error) => {
+          expect(error).toBeInstanceOf(AuthenticationFailedError);
+        },
+        onRight: () => {
+          expect.fail("send RPC ran without registered-agent proof");
+        },
+      });
+      Either.match(missingPollProof, {
+        onLeft: (error) => {
+          expect(error).toBeInstanceOf(AuthenticationFailedError);
+        },
+        onRight: () => {
+          expect.fail("poll RPC ran without registered-agent proof");
+        },
+      });
+      expect(yield* Ref.get(sendRequests)).toEqual([]);
+      expect(yield* Ref.get(pollCallers)).toEqual([]);
 
-        const signingAuthority = yield* makeSigningAuthority();
-        const verifiedRequest = makeVerifiedRequestFixture(signingAuthority);
-        expect(
-          yield* withVerifiedRouterRequest(
-            verifiedRequest,
-            client.poll({ request: {} }),
-          ),
-        ).toEqual({ kind: "cursor_invalid" });
-        expect(yield* Ref.get(pollCallers)).toEqual([sender]);
-
-        const handlerFailure = yield* withVerifiedRouterRequest(
+      const signingAuthority = yield* makeSigningAuthority();
+      const verifiedRequest = makeVerifiedRequestFixture(signingAuthority);
+      expect(
+        yield* withVerifiedRouterRequest(
           verifiedRequest,
-          client.send({ request: rpcSendRequest }),
-        ).pipe(Effect.either);
-        Either.match(handlerFailure, {
-          onLeft: (error) => {
-            expect(error).toBeInstanceOf(InternalServerError);
-          },
-          onRight: () => {
-            expect.fail("handler failure was converted into success");
-          },
-        });
-        expect(yield* Ref.get(sendRequests)).toEqual([verifiedRequest]);
-      }),
+          client.poll({ request: {} }),
+        ),
+      ).toEqual({ kind: "cursor_invalid" });
+      expect(yield* Ref.get(pollCallers)).toEqual([sender]);
+
+      const handlerFailure = yield* withVerifiedRouterRequest(
+        verifiedRequest,
+        client.send({ request: rpcSendRequest }),
+      ).pipe(Effect.either);
+      Either.match(handlerFailure, {
+        onLeft: (error) => {
+          expect(error).toBeInstanceOf(InternalServerError);
+        },
+        onRight: () => {
+          expect.fail("handler failure was converted into success");
+        },
+      });
+      expect(yield* Ref.get(sendRequests)).toEqual([verifiedRequest]);
+    }),
   );
 });
 
 describe("send exhaustion behavior", () => {
-  effectIt.effect(
+  it.effect(
     "preserves instance, validation, retry, and conflict precedence at the final position",
     () =>
       Effect.gen(function* () {
@@ -536,7 +483,7 @@ describe("send exhaustion behavior", () => {
 });
 
 describe("configuration behavior", () => {
-  effectIt.effect("loads only declared values and owns its defaults", () =>
+  it.effect("loads only declared values and owns its defaults", () =>
     Effect.gen(function* () {
       const defaults = yield* loadConfiguration(
         new Map([["SHARNESS_ROUTER_UNUSED", "ignored"]]),
@@ -609,7 +556,7 @@ describe("configuration behavior", () => {
     }),
   );
 
-  effectIt.effect("rejects invalid values and inconsistent bounds", () =>
+  it.effect("rejects invalid values and inconsistent bounds", () =>
     Effect.gen(function* () {
       const numericKeys = [
         "SHARNESS_ROUTER_PORT",
@@ -745,7 +692,7 @@ describe("configuration behavior", () => {
     }),
   );
 
-  effectIt.scoped("reports configuration and listener startup phases", () =>
+  it.scoped("reports configuration and listener startup phases", () =>
     Effect.gen(function* () {
       const configurationOutcome = yield* Layer.build(RouterServer.layer).pipe(
         Effect.withConfigProvider(ConfigProvider.fromMap(new Map())),
@@ -790,289 +737,4 @@ describe("configuration behavior", () => {
   );
 });
 
-describe("public client behavior", () => {
-  effectIt.effect(
-    "snapshots its origin and rejects the wrong response media type",
-    () =>
-      Effect.gen(function* () {
-        let requestedUrl = "";
-        const httpClient = HttpClient.make((request, url) => {
-          requestedUrl = url.href;
-          return Effect.succeed(
-            HttpClientResponse.fromWeb(
-              request,
-              new Response('{"kind":"cursor_invalid"}', {
-                status: 200,
-                headers: { "content-type": "text/plain" },
-              }),
-            ),
-          );
-        });
-        const origin = new URL("http://router.example:3010");
-        const routerLayer = Router.layer({
-          origin,
-          sendTimeout: Duration.seconds(5),
-          pollTimeout: Duration.seconds(5),
-        }).pipe(
-          Layer.provide(Layer.succeed(HttpClient.HttpClient, httpClient)),
-        );
-        origin.hostname = "mutated.example";
-        const signingAuthority = yield* makeSigningAuthority();
-        const outcome = yield* Router.poll({
-          request: {},
-          callerAgentId: recipient,
-          signingAuthority,
-        }).pipe(Effect.provide(routerLayer), Effect.either);
-        expect(requestedUrl).toBe(
-          "http://router.example:3010/v1/messages:poll",
-        );
-        Either.match(outcome, {
-          onLeft: (error) => {
-            expect(error).toBeInstanceOf(RouterInvalidResponseError);
-          },
-          onRight: () => {
-            expect.fail("wrong response media type was accepted");
-          },
-        });
-      }),
-  );
-
-  it("keeps server, invalid-response, connection, and timeout failures distinct", () =>
-    Effect.runPromise(
-      Effect.gen(function* () {
-        const signingAuthority = yield* makeSigningAuthority();
-        const responseCases = [
-          {
-            name: "malformed request",
-            status: 400,
-            body: '{"error":"malformed"}',
-            expectedTag: "MalformedRequestError",
-          },
-          {
-            name: "authentication failure",
-            status: 401,
-            body: '{"error":"authentication_failed"}',
-            expectedTag: "AuthenticationFailedError",
-          },
-          {
-            name: "route not found",
-            status: 404,
-            body: '{"error":"not_found"}',
-            expectedTag: "RouteNotFoundError",
-          },
-          {
-            name: "method not allowed",
-            status: 405,
-            body: '{"error":"method_not_allowed"}',
-            expectedTag: "MethodNotAllowedError",
-          },
-          {
-            name: "payload too large",
-            status: 413,
-            body: '{"error":"payload_too_large"}',
-            expectedTag: "PayloadTooLargeError",
-          },
-          {
-            name: "unsupported media type",
-            status: 415,
-            body: '{"error":"unsupported_media_type"}',
-            expectedTag: "UnsupportedMediaTypeError",
-          },
-          {
-            name: "overloaded",
-            status: 429,
-            body: '{"error":"overloaded"}',
-            expectedTag: "OverloadedError",
-          },
-          {
-            name: "internal failure",
-            status: 500,
-            body: '{"error":"internal"}',
-            expectedTag: "InternalServerError",
-          },
-          {
-            name: "unavailable",
-            status: 503,
-            body: '{"error":"unavailable"}',
-            expectedTag: "UnavailableError",
-          },
-          {
-            name: "mismatched server envelope",
-            status: 503,
-            body: '{"error":"internal"}',
-            expectedTag: "RouterInvalidResponseError",
-          },
-          {
-            name: "undeclared status",
-            status: 418,
-            body: '{"error":"unavailable"}',
-            expectedTag: "RouterInvalidResponseError",
-          },
-          {
-            name: "noncanonical success",
-            status: 200,
-            body: '{ "kind":"cursor_invalid" }',
-            expectedTag: "RouterInvalidResponseError",
-          },
-        ] as const;
-        for (const scenario of responseCases) {
-          const client = HttpClient.make((request) =>
-            Effect.succeed(
-              HttpClientResponse.fromWeb(
-                request,
-                new Response(scenario.body, {
-                  status: scenario.status,
-                  headers: { "content-type": "application/json" },
-                }),
-              ),
-            ),
-          );
-          const outcome = yield* runPollWithClient(
-            client,
-            signingAuthority,
-            Duration.seconds(5),
-          );
-          const tag = Either.match(outcome, {
-            onLeft: (error) => error._tag,
-            onRight: () => "unexpected_success",
-          });
-          expect(tag, scenario.name).toBe(scenario.expectedTag);
-        }
-
-        const invalidByteResponseCases = [
-          {
-            name: "success response with a UTF-8 byte-order mark",
-            status: 200,
-            body: withUtf8Bom('{"kind":"cursor_invalid"}'),
-          },
-          {
-            name: "success response with malformed UTF-8",
-            status: 200,
-            body: withMalformedUtf8Suffix('{"kind":"cursor_invalid"}'),
-          },
-          {
-            name: "error response with a UTF-8 byte-order mark",
-            status: 503,
-            body: withUtf8Bom('{"error":"unavailable"}'),
-          },
-          {
-            name: "error response with malformed UTF-8",
-            status: 503,
-            body: withMalformedUtf8Suffix('{"error":"unavailable"}'),
-          },
-        ] as const;
-        for (const scenario of invalidByteResponseCases) {
-          const client = HttpClient.make((request) =>
-            Effect.succeed(
-              HttpClientResponse.fromWeb(
-                request,
-                new Response(scenario.body, {
-                  status: scenario.status,
-                  headers: { "content-type": "application/json" },
-                }),
-              ),
-            ),
-          );
-          const outcome = yield* runPollWithClient(
-            client,
-            signingAuthority,
-            Duration.seconds(5),
-          );
-          const tag = Either.match(outcome, {
-            onLeft: (error) => error._tag,
-            onRight: () => "unexpected_success",
-          });
-          expect(tag, scenario.name).toBe("RouterInvalidResponseError");
-        }
-
-        for (const status of [502, 503, 504]) {
-          const client = HttpClient.make((request) =>
-            Effect.succeed(
-              HttpClientResponse.fromWeb(
-                request,
-                new Response("<html><body>Bad Gateway</body></html>", {
-                  status,
-                  headers: { "content-type": "text/html" },
-                }),
-              ),
-            ),
-          );
-          const outcome = yield* runPollWithClient(
-            client,
-            signingAuthority,
-            Duration.seconds(5),
-          );
-          const tag = Either.match(outcome, {
-            onLeft: (error) => error._tag,
-            onRight: () => "unexpected_success",
-          });
-          expect(tag, `gateway ${String(status)} page`).toBe(
-            "RouterConnectionError",
-          );
-        }
-
-        const connectionOutcome = yield* runPollWithClient(
-          HttpClient.make((request) =>
-            Effect.fail(
-              new HttpClientError.RequestError({
-                request,
-                reason: "Transport",
-              }),
-            ),
-          ),
-          signingAuthority,
-          Duration.seconds(5),
-        );
-        expect(
-          Option.getOrThrow(Either.getLeft(connectionOutcome)),
-        ).toBeInstanceOf(RouterConnectionError);
-
-        const timeoutOutcome = yield* runPollWithClient(
-          HttpClient.make(() => Effect.never),
-          signingAuthority,
-          Duration.millis(5),
-        );
-        expect(
-          Option.getOrThrow(Either.getLeft(timeoutOutcome)),
-        ).toBeInstanceOf(RouterRequestTimeoutError);
-
-        let requestCount = 0;
-        const signingOutcome = yield* Router.poll({
-          request: {
-            pollCursor: Brand.nominal<PollCursorValue>()("not-a-poll-cursor"),
-          },
-          callerAgentId: recipient,
-          signingAuthority,
-        }).pipe(
-          Effect.provide(
-            Router.layer({
-              origin: new URL("http://router.example:3010"),
-              sendTimeout: Duration.seconds(5),
-              pollTimeout: Duration.seconds(5),
-            }).pipe(
-              Layer.provide(
-                Layer.succeed(
-                  HttpClient.HttpClient,
-                  HttpClient.make(() => {
-                    requestCount += 1;
-                    return Effect.die("invalid request reached HTTP");
-                  }),
-                ),
-              ),
-            ),
-          ),
-          Effect.either,
-        );
-        Either.match(signingOutcome, {
-          onLeft: (error) => {
-            expect(error).toBeInstanceOf(AgentSigningError);
-          },
-          onRight: () => {
-            expect.fail("invalid local request was signed");
-          },
-        });
-        expect(requestCount).toBe(0);
-      }),
-    ));
-});
-/* eslint-enable max-lines-per-function, sonarjs/max-lines-per-function, max-nested-callbacks, agent-code-guard/no-hardcoded-assertion-literals -- Restore production defaults after the scenario suite. */
+/* eslint-enable max-lines-per-function, sonarjs/max-lines-per-function, max-nested-callbacks, agent-code-guard/no-hardcoded-assertion-literals -- Restore defaults after the process scenarios. */

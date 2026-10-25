@@ -75,7 +75,7 @@ defaults:
 # Dependency order: each package comes after the siblings it depends on, which
 # the selection checks.
 env:
-  RELEASE_PACKAGES: identity router client openclaw-channel
+  RELEASE_PACKAGES: client openclaw-channel
 
 jobs:
   build:
@@ -183,13 +183,13 @@ jobs:
       # Recorded before the content hash, so the hash covers it. A resume
       # writes only the key the release commit's manifest already holds, so
       # its content hash is unchanged.
-      - name: Record emitted wire version in published Identity metadata
+      - name: Record emitted wire version in published Client metadata
         if: steps.plan.outputs.mode != 'redispatch'
-        working-directory: packages/identity
+        working-directory: packages/client
         env:
           MODE: ${{ steps.plan.outputs.mode }}
         run: |
-          WIRE_VERSION=$(node --input-type=module -e 'import { WIRE_VERSION } from "@moltzap/identity"; console.log(WIRE_VERSION)')
+          WIRE_VERSION=$(node --input-type=module -e 'import { WIRE_VERSION } from "@moltzap/client"; console.log(WIRE_VERSION)')
           jq --arg v "$WIRE_VERSION" --arg mode "$MODE" '
             if $mode == "bump" or has("sharnessWireVersion")
             then .sharnessWireVersion = $v else . end' package.json > tmp.json
@@ -246,17 +246,12 @@ jobs:
           pnpm install --no-frozen-lockfile --ignore-scripts
           echo "packages=$SELECTED" >> "$GITHUB_OUTPUT"
 
-      # The gates pack the four published packages and the NanoClaw adapter,
-      # whose gate proves it still compiles against the Client ABI in isolation
-      # (deployment's image build copies its source, not a tarball); Registry stays in its private image package; Identity and Router
-      # travel in every closure, and each gate is a boundary-check floor, so
-      # run-many cannot silently skip one. Each gate packs, installs and runs in
-      # its own temporary directory, on free loopback ports and with its own
-      # OpenClaw state, and pnpm shares its store safely between processes,
-      # so the gates run concurrently.
+      # Pack gates install the published closures in isolated consumers.
+      # NanoClaw checks its Client ABI without packing the source-copied adapter.
+      # The example launches the private Registry and Router executables.
       - name: Verify the published closure installs from tarballs
         if: steps.select.outputs.packages != ''
-        run: pnpm nx run-many -t test:pack --parallel=4
+        run: pnpm nx run-many -t test:pack,test:abi --parallel=4
 
       # The runner's pnpm install wired the husky hooks; the release commit
       # is made of generated output CI already gated, so the hooks stay out.

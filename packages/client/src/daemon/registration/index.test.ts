@@ -1,12 +1,6 @@
 /** @file Startup recovery and atomic Registry-to-store identity binding tests. */
 
 import { live as it } from "@effect/vitest";
-import {
-  Registry,
-  RegistryConnectionError,
-  type RegistryRegisterRequest,
-  type RegistryRegisterResult,
-} from "@moltzap/identity/registry";
 import { type Context, Effect, Layer, Redacted, Ref, Schema } from "effect";
 import { describe, expect } from "vitest";
 import { makeFixture } from "../../__tests__/daemon-runtime-fixtures.js";
@@ -15,6 +9,8 @@ import {
   type IdentityBinding,
 } from "../../communication/store/index.js";
 import { managementRegisterRequestSchema } from "../../harness/protocol/index.js";
+import { RegistryConnectionError, type RegistryRegisterRequest, type RegistryRegisterResult } from "../../identity/registry/contract.js";
+import { Registry } from "../../identity/registry/index.js";
 import { DaemonConfigurationError } from "../bootstrap.js";
 import {
   DaemonRegistrationPersistenceError,

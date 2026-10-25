@@ -50,7 +50,7 @@ Router application.
 ## Public package boundary
 
 Social Harness packages publish to npm under the `@moltzap` scope.
-`@moltzap/router` root-exports exactly:
+`@moltzap/client/service` exports these Router values:
 
 - the same-named Effect Schema values and TypeScript types
   `RouterInstanceId`, `SignedMessageDigest`, `PollCursor`,
@@ -60,10 +60,10 @@ Social Harness packages publish to npm under the `@moltzap` scope.
 - `RouterConnectionError`, `RouterRequestTimeoutError`, and
   `RouterInvalidResponseError`.
 
-`@moltzap/router/server` exports only `RouterServer`, including its
+The private `@moltzap/router/server` entry exports only `RouterServer`, including its
 nested `StartupError`. Router consumes identity values, signed
 artifacts, signing authority, and shared HTTP errors from
-`@moltzap/identity`; it does not redeclare or re-export aliases for
+`@moltzap/client`; it does not redeclare or re-export aliases for
 them.
 
 There is no public Router order, delivery wrapper, client class,

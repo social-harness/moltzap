@@ -4,17 +4,14 @@
  * completed re-anchor they certify.
  */
 
-import {
-  type AgentId,
-  SignedMessage,
-  type SignedMessage as SignedMessageValue,
-} from "@moltzap/identity";
 import { Effect, Schema } from "effect";
+import type { AgentId } from "../../../identity/agents.js";
 import type { EngineActionFold, EngineRuntime } from "../runtime/index.js";
 import {
   decodeCanonical,
   encodeCanonical,
 } from "../../../encoding/canonical-json.js";
+import { SignedMessage, type SignedMessage as SignedMessageValue } from "../../envelope/signed-message.js";
 import {
   type AnchorHash as AnchorHashValue,
   CompletedReanchor,

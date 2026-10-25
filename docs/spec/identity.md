@@ -41,16 +41,17 @@ the membership, remain verifiable without a live Registry.
 
 ## Public package boundary
 
-Identity publishes to npm under the `@moltzap` scope with these entries:
+Identity capabilities are part of `@moltzap/client`, published under the
+`@moltzap` scope. They resolve through these library entries:
 
 | Entry | Resolution | Purpose |
 |---|---|---|
-| `.` | normal production resolution | Identity values and capabilities |
-| `./registry` | normal production resolution | Registry client and contract values |
-| `./test` | `sharness-test` condition only | `WireVersions` override tag only |
-| `./internal` | `sharness-internal` condition only | Request verification, Registry API and codecs, and typed card signing |
+| `@moltzap/client` | normal production resolution | Identity values and capabilities alongside the host endpoint |
+| `@moltzap/client/service` | normal production resolution | Registry client and contract values alongside daemon composition |
+| `@moltzap/client/test` | `sharness-test` condition only | `WireVersions` overrides and management fixture schemas |
+| `@moltzap/client/internal` | `sharness-internal` condition only | Request verification, Registry and Router APIs and codecs, and typed card signing |
 
-The `@moltzap/identity` root exports exactly these same-named Effect
+The `@moltzap/client` root exports these identity-specific same-named Effect
 Schema values and TypeScript types:
 
 - `AgentId`;
@@ -62,7 +63,7 @@ Schema values and TypeScript types:
 - `AgentCard`;
 - `SignedMessage`.
 
-The `@moltzap/identity/registry` subpath exports exactly these
+The `@moltzap/client/service` subpath exports these Registry-specific
 same-named Effect Schema values and TypeScript types:
 
 - `OperationId`;
@@ -78,7 +79,7 @@ The root exports these type-only trust states:
 - `WireVersion`;
 - `VerifiedAgentRequest`.
 
-The Registry subpath exports these type-only capability results:
+The Client service entry exports these type-only capability results:
 
 - `RegistryRegisterResult`;
 - `RegistryLookupResult`; and
@@ -88,12 +89,12 @@ The remaining root exports are `WIRE_VERSION`, `LIVE_WIRE_VERSIONS`,
 `HISTORY_WIRE_VERSIONS`, `wireVersions`, `AgentSigningAuthority`, `SealedBody`,
 `AuthenticatedHttp`, `legacyKeys`, and the shared exact error classes in
 [Error contract](#error-contract).
-The Registry subpath also exports `Registry` and its exact client error
+The Client service entry also exports `Registry` and its exact client error
 classes.
 
 `wireVersions` exposes frozen compatibility operations for the binary's emitted,
 live and retained-history sets. It exposes no configurable service or context
-tag. `@moltzap/identity/test` resolves only the internal `WireVersions` tag when
+tag. `@moltzap/client/test` resolves the internal `WireVersions` tag and management fixture schemas when
 the explicit `sharness-test` module-resolution condition is enabled. Normal
 production resolution refuses that subpath. Tests and the child processes they
 start enable the condition to compose adjacent releases. The Registry's
@@ -748,7 +749,7 @@ aggregate error-reconstruction surface.
 
 ## Error contract
 
-Identity owns and root-exports these shared HTTP errors. Each is an
+The Client root exports these shared HTTP errors. Each is an
 empty `Schema.TaggedError`; `_tag` is exactly the class name. HTTP
 status and response `error` code are one private bijective mapping, not
 duplicate fields on an error value.
@@ -779,7 +780,7 @@ lookup value with `kind: "not_found"` is not that error.
 authentication stage. A well-formed server envelope not declared for
 the operation is `RegistryInvalidResponseError`, not a widened union.
 
-The Registry subpath also exports these Registry client errors:
+The Client service entry also exports these Registry client errors:
 
 - `RegistryConnectionError`;
 - `RegistryRequestTimeoutError`; and
@@ -906,7 +907,7 @@ The private Registry package exposes `@moltzap/registry/test` only under the
 those wire compatibility sets and the ordinary Registry environment settings.
 The supplied `emitted` is the process's signing version and `live` is its effective
 live acceptance set. The effective history set is the union of supplied `history`
-and Identity's built-in `HISTORY_WIRE_VERSIONS`.
+and the library's built-in `HISTORY_WIRE_VERSIONS`.
 
 Importing this entry installs no resolution hook. Calling `startRegistry`
 installs internal resolution before its dynamic server imports, scoped to
@@ -914,7 +915,7 @@ imports whose parent module lies under the Registry package's `dist/` or
 `bin/` directory. A nested `node_modules` under the package root receives no
 internal condition. Other
 modules in the process cannot use this hook to resolve
-`@moltzap/identity/internal`. Startup failures are reported and set a nonzero
+`@moltzap/client/internal`. Startup failures are reported and set a nonzero
 process exit status, as in `sharness-registry`.
 
 ## Registry configuration

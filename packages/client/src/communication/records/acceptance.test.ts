@@ -1,18 +1,6 @@
 /** @file Cryptographic acceptance tests for addressed GENESIS and POST records. */
 
 import { live as it } from "@effect/vitest";
-import {
-  AgentCard,
-  AgentName,
-  type AgentSigningAuthority as AgentSigningAuthorityValue,
-  Ed25519PublicKey,
-  SealedBody,
-  SignedMessage,
-  type VerifiedAgentCard,
-  WIRE_VERSION,
-} from "@moltzap/identity";
-import { WireVersions } from "@moltzap/identity/test";
-import { RouterInstanceId } from "@moltzap/router";
 import { Effect, Option, Schema } from "effect";
 import { generateKeyPairSync } from "node:crypto";
 import { describe, expect } from "vitest";
@@ -25,6 +13,13 @@ import {
   ClientRepresentationError,
   encodeCanonical,
 } from "../../encoding/canonical-json.js";
+import { AgentName } from "../../identity/agents.js";
+import { AgentCard, type VerifiedAgentCard } from "../../identity/cards.js";
+import { type AgentSigningAuthority as AgentSigningAuthorityValue, Ed25519PublicKey } from "../../identity/keys.js";
+import { WIRE_VERSION, WireVersions  } from "../../identity/wire-version.js";
+import { SealedBody } from "../envelope/sealed-body.js";
+import { SignedMessage } from "../envelope/signed-message.js";
+import { RouterInstanceId } from "../router/api/contract.js";
 import {
   type ActionCertifiedRecord,
   type ActionCore,

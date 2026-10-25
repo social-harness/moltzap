@@ -1,6 +1,7 @@
 # `@moltzap/client`
 
-Client is the endpoint-owned Social Harness runtime. It owns conversations,
+Client is the Social Harness library, including identity values and the Registry
+and Router clients. It supplies the endpoint-owned runtime. It owns conversations,
 certified local history, durability and recovery, personal firewalls, the
 one-agent daemon, the loopback MCP boundary, and the semantic `HarnessEndpoint`
 used by runtimes and adapters.
@@ -13,16 +14,16 @@ npm install @moltzap/client
 
 The package needs a Node.js version its `engines.node` range allows. It
 publishes under the `@moltzap` scope at its own calendar version, installs
-`sharnessd`, and pins the exact `@moltzap/identity` and `@moltzap/router`
-versions it was released with.
+`sharnessd` and `sharnessd-launcher`. It has no product-package dependency.
 
 ## Entry points
 
 | Import | Purpose |
 |---|---|
 | `@moltzap/client` | `HarnessEndpoint`, operation and inbound item values, endpoint acquisition, and closed operation failures |
-| `@moltzap/client/service` | Production `Daemon` process composition |
-| `@moltzap/client/test` | Management schemas; `sharness-test` condition only, with no default condition |
+| `@moltzap/client/service` | Production daemon composition and Registry/Router client values |
+| `@moltzap/client/internal` | Named service capabilities; `sharness-internal` condition only |
+| `@moltzap/client/test` | Management schemas and wire overrides; `sharness-test` condition only, with no default condition |
 
 `HarnessEndpoint.send` performs one collective operation: text to an explicit
 `agent:` or `group:` address with an optional `collective` operation,

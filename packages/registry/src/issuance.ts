@@ -10,8 +10,8 @@ import {
   type PrincipalId as PrincipalIdValue,
   type VerifiedAgentCard,
   wireVersions,
-} from "@moltzap/identity";
-import { agentCardSigning } from "@moltzap/identity/internal";
+} from "@moltzap/client";
+import { agentCardSigning } from "@moltzap/client/internal";
 import { Effect } from "effect";
 
 /** Whole-second UTC issuance evidence carried by an AgentCard. */

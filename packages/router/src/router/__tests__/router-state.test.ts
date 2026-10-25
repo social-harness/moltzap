@@ -9,12 +9,7 @@ import {
   type MessageId as MessageIdValue,
   SignedMessage,
   WIRE_VERSION,
-} from "@moltzap/identity";
-import canonicalize from "canonicalize";
-import { Effect, Either, Encoding, Fiber, Schema } from "effect";
-import * as fc from "fast-check";
-import { CompactEncrypt } from "jose";
-import { describe, expect, it } from "vitest";
+} from "@moltzap/client";
 import {
   maximumPollCursorLength,
   PollCursor,
@@ -25,7 +20,12 @@ import {
   routerRepresentationLimits,
   RouterSendRequest,
   SignedMessageDigest,
-} from "../contract.js";
+} from "@moltzap/client/internal";
+import canonicalize from "canonicalize";
+import { Effect, Either, Encoding, Fiber, Schema } from "effect";
+import * as fc from "fast-check";
+import { CompactEncrypt } from "jose";
+import { describe, expect, it } from "vitest";
 import {
   entriesAfter,
   makeRouterFeed,

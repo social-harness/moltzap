@@ -18,7 +18,7 @@ import {
   UnsupportedMediaTypeError,
   VersionMismatchError,
   wireVersions,
-} from "@moltzap/identity";
+} from "@moltzap/client";
 import {
   HEALTH_PATH,
   KNOWN_PATHS,
@@ -34,7 +34,7 @@ import {
   registryListCodec,
   registryLookupCodec,
   registryRegisterCodec,
-} from "@moltzap/identity/internal";
+} from "@moltzap/client/internal";
 import { Cause, Effect, Option } from "effect";
 import type { RegistryStorage } from "./storage.js";
 import { verifyBootstrapRegistration } from "./admission.js";

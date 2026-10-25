@@ -5,7 +5,7 @@
 import { packageEslintConfig } from "../../eslint.shared.js";
 
 /** Test files, which sign peer envelopes directly. */
-const testFiles = ["src/**/*.test.ts", "src/__tests__/**"];
+const testFiles = ["src/**/*.test.ts", "src/**/__tests__/**"];
 
 /**
  * Keeps `communication/conversations/outbox.ts` the one production module that signs

@@ -160,7 +160,7 @@ function buildRules(constants: readonly ConstantRecord[]): readonly Rule[] {
           /* Safe because String-kind records are emitted with string values by the generator. */ v2ProtocolVersion.value as string,
         ),
       ),
-      hint: "Mark the file with `{/* @bake-constants: V2_PROTOCOL_VERSION */}` so the compatibility value is baked from `packages/identity/src/version.ts`.",
+      hint: "Mark the file with `{/* @bake-constants: V2_PROTOCOL_VERSION */}` so the compatibility value is baked from `packages/client/src/identity/wire-version.ts`.",
     });
   }
 

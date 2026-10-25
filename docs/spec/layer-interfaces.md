@@ -13,11 +13,10 @@ The five conceptual layers of the social harness are L1 Unforgeable,
 Verifiable Identities; L2 Reliable, Ordered Communication; L3 Personal
 Firewalls; L4 Shared Collaboration Norms; and L5 Social Institutions.
 Social Harness packages publish to npm under the `@moltzap` scope.
-`@moltzap/identity` owns L1, `@moltzap/router` owns L2 delivery, and
-`@moltzap/client` owns endpoint communication, L3 firewalls, L4 norms, and the
-certified records that L5 relies on. Numbered
-layer notation is documentation vocabulary only; it does not appear in package
-names or public type tags.
+`@moltzap/client` is the library for L1 identities, L2 delivery clients and
+endpoint communication, L3 firewalls, L4 norms, and the certified records L5
+relies on. The private Registry and Router packages own the network processes.
+Numbered layer notation is documentation vocabulary only.
 
 L2 communication has two parts. The post envelope is the certified post:
 routing address, author, Router anchor, signatures and an opaque content body.
@@ -32,16 +31,15 @@ implemented.
 
 ## Exact package graph
 
-The workspace has six product packages:
+The workspace has five product packages:
 
 | Package | May depend on | Owns |
 |---|---|---|
-| `@moltzap/identity` | none | identity representation and Registry client |
-| `@moltzap/registry` | `@moltzap/identity` | private Registry process, admission, issuance, PostgreSQL storage, migrations, and `sharness-registry` |
-| `@moltzap/router` | `@moltzap/identity` | opaque Router representation, Router client, Router server, and `sharness-router` |
-| `@moltzap/client` | `@moltzap/identity`, `@moltzap/router` | conversations, endpoint history, tasks/norms, personal firewalls, daemon MCP, `HarnessEndpoint`, and `sharnessd` |
-| `@moltzap/openclaw-channel` | `@moltzap/client` | OpenClaw host integration against an injected or MCP-backed client |
-| `@moltzap/nanoclaw-channel` | `@moltzap/client` | NanoClaw host integration against its MCP-backed client |
+| `@moltzap/client` | none | identity representation, Registry and Router clients, communication, endpoint history, tasks/norms, personal firewalls, daemon MCP, `HarnessEndpoint`, and `sharnessd` |
+| `@moltzap/registry` | `@moltzap/client` | private Registry process, admission, issuance, PostgreSQL storage, migrations, and `sharness-registry` |
+| `@moltzap/router` | `@moltzap/client` | private Router process, HTTP, RPC, send, poll, cursors, waiters, feed, and `sharness-router` |
+| `@moltzap/openclaw-channel` | `@moltzap/client` | OpenClaw host integration |
+| `@moltzap/nanoclaw-channel` | `@moltzap/client` | NanoClaw host integration |
 
 The private `@moltzap/integration-tests` workspace in `tests/integration` consumes the products it launches as development dependencies. It sits outside this graph and the release set, and no product depends on it.
 
@@ -59,57 +57,26 @@ may consume several package artifacts without
 creating package-runtime dependencies. Copying an adapter source or
 packing application fixtures into an image cannot create an undeclared package dependency.
 
-## Relocation and deletion law
+## Library entries
 
-`v2/identity` moves intact to `packages/identity` and becomes
-`@moltzap/identity`. `v2/router` moves intact to `packages/router` and becomes
-`@moltzap/router`. The moves preserve source, migrations, tests, capability
-depth, wire bytes, errors, configuration behavior, and process binaries except
-for package-path and package-name references.
+The library has four named-export entries:
 
-After their consumers and documentation tooling have final owners, delete:
+| Entry | Boundary |
+|---|---|
+| `@moltzap/client` | Existing addressed `HarnessEndpoint` and host values; identity identifiers, cards, public keys, signing authority, attributed messages, wire compatibility and `legacyKeys` |
+| `@moltzap/client/service` | Daemon composition, `Registry`, `OperationId`, `RouterPollResult`, `PollCursor`, and `RouterInstanceId` |
+| `@moltzap/client/internal` | Service capabilities: request verification, Registry and Router APIs and codecs, and typed card signing. Requires `sharness-internal`, with no default condition or TypeDoc entry |
+| `@moltzap/client/test` | Management fixture schemas and `WireVersions` overrides. Requires `sharness-test`, with no default condition or TypeDoc entry |
 
-- `packages/protocol`;
-- `packages/server`;
-- the replaced `packages/client` implementation;
-- `v2/transcript`;
-- `v2/harness`;
-- `v2/simulator`;
-- `v2/testbed`; and
-- the vacated `v2/identity` and `v2/router` implementation roots.
+Identity's root capabilities are supplied by the library root. Its Registry
+entry maps to the service entry; its internal and test entries map to the
+library's corresponding condition-only entries. Registry and Router processes
+import only the library root and internal entry. Runtime adapters import only
+the root and receive `HarnessEndpoint` or MCP.
 
-No compatibility alias, re-export facade, dual implementation, or hidden
-product-Ledger process survives those deletions. Generic documentation tooling
-owned by a deleted package moves to root tooling before that package is
-removed.
-
-Client and adapter migration follows the accepted reduced boundary in
-[`harness/client.md`](./harness/client.md).
-
-## Public boundaries retained through cutover
-
-- Identity exposes its root and Registry client subpath. Its condition-only
-  `./internal` entry supplies service capabilities under `sharness-internal`.
-- The private Registry package owns the Registry server and `sharness-registry`
-  boundary as specified by `identity.md`; operators run its
-  `bin/sharness-registry` executable. Its condition-only `./test` entry starts
-  Registry with explicit wire versions under `sharness-test`, with no default
-  condition; the Registry package supplies its own internal resolution hook.
-- Router retains its root and server subpath plus `sharness-router` as specified
-  by `router.md`.
-- Client owns one public root, process composition under `./service`, and the
-  `sharnessd` executable. Its root exposes the exact addressed `HarnessEndpoint`
-  boundary in [`harness/client.md`](./harness/client.md). Its condition-only
-  `./test` entry exposes `managementRegisterRequestSchema`,
-  `managementRegisterResultSchema`, `managementStatusResultSchema`,
-  `managementSearchConversationsResultSchema`, and
-  `managementReadConversationResultSchema` under `sharness-test`
-  for tests and test fixtures only, with no default condition or TypeDoc entry.
-- Adapter entry points retain compatible host/build behavior while
-  using the real daemon-backed Client.
-
-The final publication list and versioning policy are release choices. They do
-not change this dependency graph or authorize extra packages.
+The private Registry and Router packages expose condition-only `./test` startup
+entries under `sharness-test`. Registry and Router executables install scoped internal
+resolution before loading their process compositions.
 
 ## Representation ownership
 
@@ -211,8 +178,7 @@ semantic chapters:
 - AuthenticatedHttp requires Registry so Router can resolve and cache verified
   immutable AgentCards without importing Registry internals;
 - Registry bootstrap does not require AuthenticatedHttp;
-- each process-composition subpath (Identity and Router `server`, Client
-  `service`) exposes the admitted discard Layer that reads private
+- each private service composition and the library `service` entry exposes the admitted discard Layer that reads private
   Effect Config and owns process composition; and
 - private Effect RPC remains in-process, typed, and absent from the network and
   export maps.
@@ -387,7 +353,7 @@ topology and cross-address context.
 ## Acceptance criteria
 
 - Workspace, TypeScript, Nx, manifest, and architecture graphs contain exactly
-  the six product packages and exactly the allowed edges above between them. No
+  the five product packages and exactly the allowed edges above between them. No
   product depends on the integration-test workspace or an Nx tool project.
 - Identity and Router relocation tests prove byte-identical representations,
   unchanged authentication, complete export inventories, typed errors,
@@ -413,14 +379,12 @@ topology and cross-address context.
 
 ## Publication and versions
 
-Four packages publish to npm, each at its own calendar version:
-`@moltzap/identity`, `@moltzap/router`, `@moltzap/client`, and
-`@moltzap/openclaw-channel`.
-`@moltzap/registry` and `@moltzap/nanoclaw-channel` stay private. Operators
-run Registry from the private package's `bin/sharness-registry` executable.
-No Registry image is published. Registry is excluded from npm release selection
-and pack gates. The simulator is not published. The private
-`@moltzap/integration-tests` workspace stays outside the release set.
+Two packages publish to npm at independent calendar versions:
+`@moltzap/client` and `@moltzap/openclaw-channel`. Registry, Router and NanoClaw
+stay private. Operators run the Registry and Router package executables.
+The integration-test workspace stays outside the product graph and release set.
+The published set derives from `FINAL_PACKAGES`; literal tool configuration is
+checked against that contract.
 
 Each reset release establishes fresh wire and storage baselines: `WIRE_VERSION`
 takes a value no earlier release emitted, the live and history sets contain
@@ -439,7 +403,7 @@ mismatches. Release notes mark each reset release with the phrase
 [upgrade guide](../guides/upgrades.mdx) gives the operator steps.
 
 - One release computes one calendar version, `YYYY.MDD.N`, one past the
-  highest counter in the union of the four packages' npm histories and the
+  highest counter in the union of the published packages' npm histories and the
   `v<version>` release tags. It publishes at that version only the packages
   whose packed content changed since the version their manifest names; the
   other packages keep their versions.
@@ -449,7 +413,7 @@ mismatches. Release notes mark each reset release with the phrase
   selects a package when the hash differs from the value npm recorded for its
   manifest's version, or when npm recorded none. Two versions of a package
   with equal hashes carry the same code. The first release that records
-  hashes republishes all four packages.
+  hashes republishes both packages.
 - The OpenClaw channel's published manifest also records
   `sharnessHostCodeHash`: the hash of the code OpenClaw loads for the
   channel, meaning every packed channel file plus each sibling module its
@@ -470,7 +434,7 @@ mismatches. Release notes mark each reset release with the phrase
 - `scripts/architecture/check-boundaries.ts` fails when a published manifest
   is private, when its `engines.node` differs from the root `package.json`
   range, when its version is not a calendar version, when a sibling edge is
-  not an exact `workspace:*` pin, when Registry or the NanoClaw adapter is not private, or
+  not an exact `workspace:*` pin, when Registry, Router or the NanoClaw adapter is not private, or
   when the release workflow's package list drifts from the published set, or when
   the integration-test workspace changes its name, loses its private flag,
   declared lanes, exact product dependency set (including Nx implicit edges), or
@@ -479,13 +443,10 @@ mismatches. Release notes mark each reset release with the phrase
   checks guard against accidental coupling and are not a security boundary.
   The harness may launch product executables by path and start child
   compositions with product working directories. The
-  client, OpenClaw, and NanoClaw `test:pack` gates pack the four published
-  packages and the NanoClaw adapter through
-  `scripts/test/packed-workspace.ts` and prove each closure installs with
-  exact sibling pins and every declared executable present. The NanoClaw gate
-  proves the adapter compiles against the Client ABI in isolation;
-  deployment's NanoClaw image build copies its source rather than installing
-  a tarball.
+  Client and OpenClaw `test:pack` gates pack their published closures through
+  `scripts/test/packed-workspace.ts` and verify exact sibling pins and declared
+  executables. NanoClaw's ABI check compiles its source against Client; it has
+  no tarball installation gate because deployment copies its source.
 
 ## Consumer migration boundary
 
@@ -508,8 +469,8 @@ Every signed and canonical wire representation uses `sharnessVersion`.
 Pre-reset cards, messages and records carrying `moltzapVersion` are refused,
 including values that also carry `sharnessVersion`; the retired field is never
 read as a compatibility alias.
-The public Identity root exposes read-only compatibility operations, not the
-internal `WireVersions` context tag used by adjacent-release tests. The Identity
+The public Client root exposes read-only compatibility operations, not the
+internal `WireVersions` context tag used by adjacent-release tests. The Client
 `/test` subpath requires the explicit `sharness-test` resolution condition and is
 forbidden in production source. Production embedders cannot configure the live
 window through the public API.
@@ -545,8 +506,7 @@ live window require a reset.
 
 The mixed-release CI gate runs the previous published Client release and the
 oldest published Client release whose wire version remains live against the
-current build, each installed with the exact Identity and Router versions it
-pins, using the current Registry and Router. It also runs the previous
+current build, each installed with its exact library closure, using the current Registry and Router. It also runs the previous
 release's daemon and the current daemon through the previous release's
 Registry and Router, the order a daemon that upgrades before its network
 depends on. The gate fails when the previous release's emitted version is not
@@ -554,8 +514,7 @@ live in the current build. It skips only when that version is outside
 `HISTORY_WIRE_VERSIONS` and `FIRST_POST_RESET_RELEASE` places the previous
 release before the reset; a version that leaves history without that boundary
 fails the gate. Each failure names the leg it came from. Candidate selection
-reads each Client release's Identity pin and that Identity version's
-`sharnessWireVersion` npm metadata without installing candidates.
+reads each Client release's `sharnessWireVersion` npm metadata without installing candidates.
 `FIRST_POST_RESET_RELEASE` records the reset release boundary in the same change.
 Absent metadata denotes a pre-reset release only below that boundary. Missing metadata at or after that
 release fails the gate; registry

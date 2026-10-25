@@ -5,7 +5,6 @@
  */
 
 import { live as it } from "@effect/vitest";
-import { LIVE_WIRE_VERSIONS } from "@moltzap/identity";
 import { Effect, Encoding, Option, Schema, Scope } from "effect";
 import { expect } from "vitest";
 import { digest } from "../../__tests__/agent-card-fixtures.js";
@@ -25,6 +24,7 @@ import {
   type EndpointStore,
   openEndpointStore,
 } from "../../communication/store/index.js";
+import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { readRuntimeInbox, recoverRuntimeInbox } from "./inbox.js";
 
 const self = Schema.decodeUnknownSync(AgentAddress)("agent:alice");

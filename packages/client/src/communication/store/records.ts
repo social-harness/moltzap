@@ -35,7 +35,7 @@ import {
   readStoredPosition,
   releaseProposalLock,
   requireSameRecord,
-} from "./rows/index.js";
+} from "./rows.js";
 
 /**
  * Atomically stages an action-certified record and its send obligation.

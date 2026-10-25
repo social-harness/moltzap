@@ -63,19 +63,19 @@ beforeAll(async () => {
   const docsModulesDir = join(sandbox, "docs/modules");
 
   writeFixture(
-    "packages/identity/package.json",
-    JSON.stringify({ name: "@moltzap/identity" }),
+    "packages/client/package.json",
+    JSON.stringify({ name: "@moltzap/client" }),
   );
   writeFixture(
-    "packages/identity/src/index.ts",
+    "packages/client/src/identity/index.ts",
     "/**\n * @file Public identity values.\n * @module identity\n */\nexport interface AgentCard {}\n",
   );
   writeFixture(
-    "packages/identity/src/private/index.ts",
+    "packages/client/src/identity/private/index.ts",
     "/**\n * @file Private identity helpers.\n * @internal\n */\nexport const privateHelper = true;\n",
   );
   writeFixture(
-    "packages/identity/src/registry.ts",
+    "packages/client/src/identity/registry.ts",
     'export class Registry {}\nexport type OperationId = string;\nexport const OperationId = "operation";\n',
   );
   writeFixture(
@@ -83,20 +83,23 @@ beforeAll(async () => {
     '/** @file Private Registry process. */\nexport class StartupError extends Error {}\n/** Complete production Registry process composition. */\nexport const layer = "layer";\n',
   );
   writeFixture(
-    "packages/identity/src/registry/client.ts",
+    "packages/client/src/identity/registry/client.ts",
     "export const privateClient = {};\n",
   );
-  writeFixture("packages/identity/src/registry/README.md", "# Registry\n");
   writeFixture(
-    "packages/identity/src/ignored.test.ts",
+    "packages/client/src/identity/registry/README.md",
+    "# Registry\n",
+  );
+  writeFixture(
+    "packages/client/src/identity/ignored.test.ts",
     "export const ignoredTest = true;\n",
   );
   writeFixture(
-    "packages/identity/src/registry/__tests__/fixture.ts",
+    "packages/client/src/identity/registry/__tests__/fixture.ts",
     "export const ignoredFixture = true;\n",
   );
   writeFixture(
-    "packages/identity/src/registry/registry.types-check.ts",
+    "packages/client/src/identity/registry/registry.types-check.ts",
     "export type IgnoredCanary = true;\n",
   );
 
@@ -127,7 +130,7 @@ beforeAll(async () => {
   );
   writeFixture(
     "packages/client/src/index.ts",
-    "/** @file Public client values. */\nexport interface HarnessEndpoint {}\n",
+    '/** @file Public client values. */\nexport interface HarnessEndpoint {}\nexport { AgentCard } from "./identity/index.js";\n',
   );
   writeFixture(
     "packages/client/src/service/index.ts",
@@ -142,10 +145,10 @@ beforeAll(async () => {
     JSON.stringify({
       children: [
         {
-          name: "@moltzap/identity",
+          name: "@moltzap/client",
           children: [
             {
-              id: 30,
+              id: 100,
               name: "private",
               kind: ReflectionKind.Module,
               children: [
@@ -153,12 +156,15 @@ beforeAll(async () => {
                   id: 31,
                   name: "privateHelper",
                   kind: ReflectionKind.Variable,
-                  sources: source("packages/identity/src/private/index.ts", 5),
+                  sources: source(
+                    "packages/client/src/identity/private/index.ts",
+                    5,
+                  ),
                 },
               ],
             },
             {
-              id: 3,
+              id: 101,
               name: "index",
               kind: ReflectionKind.Module,
               children: [
@@ -166,37 +172,75 @@ beforeAll(async () => {
                   id: 4,
                   name: "AgentCard",
                   kind: ReflectionKind.Interface,
-                  sources: source("packages/identity/src/index.ts", 5),
+                  sources: source("packages/client/src/identity/index.ts", 5),
+                },
+                {
+                  id: 20,
+                  name: "HarnessEndpoint",
+                  kind: ReflectionKind.Interface,
+                  sources: source("packages/client/src/index.ts", 2),
                 },
               ],
             },
             {
-              id: 5,
-              name: "registry",
+              id: 102,
+              name: "service",
               kind: ReflectionKind.Module,
               children: [
                 {
                   id: 6,
                   name: "Registry",
                   kind: ReflectionKind.Class,
-                  sources: source("packages/identity/src/registry.ts", 1),
+                  sources: source(
+                    "packages/client/src/identity/registry.ts",
+                    1,
+                  ),
                 },
                 {
                   id: 7,
                   name: "OperationId",
                   kind: ReflectionKind.TypeAlias,
-                  sources: source("packages/identity/src/registry.ts", 2),
+                  sources: source(
+                    "packages/client/src/identity/registry.ts",
+                    2,
+                  ),
                 },
                 {
                   id: 8,
                   name: "OperationId",
                   kind: ReflectionKind.Variable,
-                  sources: source("packages/identity/src/registry.ts", 3),
+                  sources: source(
+                    "packages/client/src/identity/registry.ts",
+                    3,
+                  ),
+                },
+                {
+                  id: 22,
+                  name: "Daemon",
+                  kind: ReflectionKind.Namespace,
+                  sources: source("packages/client/src/service/index.ts", 2),
+                  children: [
+                    {
+                      id: 23,
+                      name: "withFirewall",
+                      kind: ReflectionKind.Variable,
+                      sources: source(
+                        "packages/client/src/service/index.ts",
+                        3,
+                      ),
+                    },
+                  ],
+                },
+                {
+                  id: 24,
+                  name: "makeFirewall",
+                  kind: ReflectionKind.Variable,
+                  sources: source("packages/client/src/service/index.ts", 5),
                 },
               ],
             },
             {
-              id: 12,
+              id: 103,
               name: "registry/client",
               kind: ReflectionKind.Module,
               children: [
@@ -205,7 +249,7 @@ beforeAll(async () => {
                   name: "privateClient",
                   kind: ReflectionKind.Variable,
                   sources: source(
-                    "packages/identity/src/registry/client.ts",
+                    "packages/client/src/identity/registry/client.ts",
                     1,
                   ),
                 },
@@ -217,7 +261,7 @@ beforeAll(async () => {
           name: "@moltzap/registry",
           children: [
             {
-              id: 9,
+              id: 100,
               name: "index",
               kind: ReflectionKind.Module,
               children: [
@@ -249,58 +293,10 @@ beforeAll(async () => {
           ],
         },
         {
-          name: "@moltzap/client",
-          children: [
-            {
-              id: 19,
-              name: "index",
-              kind: ReflectionKind.Module,
-              children: [
-                {
-                  id: 20,
-                  name: "HarnessEndpoint",
-                  kind: ReflectionKind.Interface,
-                  sources: source("packages/client/src/index.ts", 2),
-                },
-              ],
-            },
-            {
-              id: 21,
-              name: "service",
-              kind: ReflectionKind.Module,
-              children: [
-                {
-                  id: 22,
-                  name: "Daemon",
-                  kind: ReflectionKind.Namespace,
-                  sources: source("packages/client/src/service/index.ts", 2),
-                  children: [
-                    {
-                      id: 23,
-                      name: "withFirewall",
-                      kind: ReflectionKind.Variable,
-                      sources: source(
-                        "packages/client/src/service/index.ts",
-                        3,
-                      ),
-                    },
-                  ],
-                },
-                {
-                  id: 24,
-                  name: "makeFirewall",
-                  kind: ReflectionKind.Variable,
-                  sources: source("packages/client/src/service/index.ts", 5),
-                },
-              ],
-            },
-          ],
-        },
-        {
           name: "@moltzap/router",
           children: [
             {
-              id: 14,
+              id: 100,
               name: "index",
               kind: ReflectionKind.Module,
               children: [
@@ -313,7 +309,7 @@ beforeAll(async () => {
               ],
             },
             {
-              id: 16,
+              id: 101,
               name: "server",
               kind: ReflectionKind.Module,
               children: [
@@ -354,10 +350,13 @@ beforeAll(async () => {
     }).pipe(Effect.provide(NodeContext.layer)),
   );
   identityModule = readFileSync(
-    join(sandbox, "packages/identity/src/MODULE.md"),
+    join(sandbox, "packages/client/src/identity/MODULE.md"),
     "utf8",
   );
-  identityMdx = readFileSync(join(docsModulesDir, "identity/src.mdx"), "utf8");
+  identityMdx = readFileSync(
+    join(docsModulesDir, "client/identity.mdx"),
+    "utf8",
+  );
 });
 
 afterAll(() => {
@@ -370,12 +369,12 @@ afterAll(() => {
 // eslint-disable-next-line max-lines-per-function, sonarjs/max-lines-per-function -- The declarative suite keeps the related generated-document regression cases together.
 describe("module documentation", () => {
   it("omits folders with a leading JSDoc @internal tag line", () => {
-    const folder = "packages/identity/src/private";
+    const folder = "packages/client/src/identity/private";
     expect(rendered.map((result) => result.folder)).not.toContain(folder);
     expect(existsSync(join(sandbox, folder, "MODULE.md"))).toBe(false);
-    expect(existsSync(join(sandbox, "docs/modules/identity/private.mdx"))).toBe(
-      false,
-    );
+    expect(
+      existsSync(join(sandbox, "docs/modules/client/identity/private.mdx")),
+    ).toBe(false);
   });
   // eslint-disable-next-line agent-code-guard/async-keyword -- Vitest awaits this Promise boundary; the implementation under test remains an Effect.
   it("normalizes declaration roots reported from a worktree", async () => {
@@ -385,11 +384,11 @@ describe("module documentation", () => {
       JSON.stringify({
         children: [
           {
-            name: "@moltzap/identity",
+            name: "@moltzap/client",
             children: [
               {
-                id: 101,
-                name: "registry",
+                id: 100,
+                name: "service",
                 kind: ReflectionKind.Module,
                 children: [
                   {
@@ -397,7 +396,7 @@ describe("module documentation", () => {
                     name: "Registry",
                     kind: ReflectionKind.Class,
                     sources: source(
-                      "/workspace/moltzap-worktree/packages/identity/dist/registry.d.ts",
+                      "/workspace/moltzap-worktree/packages/client/dist/registry.d.ts",
                       1,
                     ),
                   },
@@ -411,25 +410,29 @@ describe("module documentation", () => {
 
     const cache = await Effect.runPromise(
       loadTypeDoc(cachePath, {
-        packageSubpaths: ["@moltzap/identity/registry"],
+        packageSubpaths: ["@moltzap/client/service"],
       }).pipe(Effect.provide(NodeContext.layer)),
     );
     const [declaration] = cache.all;
 
     expect(declaration?.sources[0]?.fileName).toBe(
       // eslint-disable-next-line agent-code-guard/no-hardcoded-assertion-literals -- The expected text is the observable output for this fixed input fixture.
-      "packages/identity/dist/registry.d.ts",
+      "packages/client/dist/registry.d.ts",
     );
     expect(declaration === undefined ? "" : folderOf(declaration)).toBe(
       // eslint-disable-next-line agent-code-guard/no-hardcoded-assertion-literals -- The expected text is the observable output for this fixed input fixture.
-      "packages/identity/dist",
+      "packages/client/dist",
     );
   });
 
   it("renders Registry APIs only under their public package subpaths", () => {
-    const [publicSurface = ""] = identityModule.split("## Package subpaths");
-    const registrySection = identityModule
-      .split("### `@moltzap/identity/registry`\n")[1]
+    const libraryModule = readFileSync(
+      join(sandbox, "packages/client/src/MODULE.md"),
+      "utf8",
+    );
+    const [publicSurface = ""] = libraryModule.split("## Package subpaths");
+    const registrySection = libraryModule
+      .split("### `@moltzap/client/service`\n")[1]
       ?.split("## Files\n")[0];
     const serverSection = readFileSync(
       join(sandbox, "packages/registry/src/MODULE.md"),
@@ -457,7 +460,7 @@ describe("module documentation", () => {
       "Complete production Registry process composition.",
     );
     // eslint-disable-next-line agent-code-guard/no-hardcoded-assertion-literals -- The expected text is the observable output for this fixed input fixture.
-    expect(identityModule).not.toContain("@moltzap/identity/server");
+    expect(identityModule).not.toContain("@moltzap/client/server");
     // eslint-disable-next-line agent-code-guard/no-hardcoded-assertion-literals -- The expected text is the observable output for this fixed input fixture.
     expect(identityModule).not.toContain("#### [`RegistryServer`]");
     // eslint-disable-next-line agent-code-guard/no-hardcoded-assertion-literals -- The expected text is the observable output for this fixed input fixture.
@@ -467,7 +470,16 @@ describe("module documentation", () => {
   });
 
   it("lists only production identity files", () => {
-    const filesSection = identityModule.split("## Files\n")[1]?.trim();
+    const filesSection = readFileSync(
+      join(sandbox, "packages/client/src/MODULE.md"),
+      "utf8",
+    )
+      .split("## Files\n")[1]
+      ?.trim()
+      .split("\n")
+      .filter((line) => line.startsWith("- `identity/"))
+      .map((line) => line.replace("- `identity/", "- `"))
+      .join("\n");
 
     expect(filesSection).toBe(
       [
@@ -495,8 +507,8 @@ describe("module documentation", () => {
   it("uses final package paths and main-branch source links", () => {
     expect(rendered.map(({ folder, pageSlug }) => [folder, pageSlug])).toEqual([
       ["packages/client/src", "client/src"],
+      ["packages/client/src/identity", "client/identity"],
       ["packages/client/src/service", "client/service"],
-      ["packages/identity/src", "identity/src"],
       ["packages/registry/src", "registry/src"],
       ["packages/router/src", "router/src"],
     ]);
@@ -511,9 +523,9 @@ describe("module documentation", () => {
     expect(identityModule).not.toMatch(/@module/u);
     expect(identityMdx).not.toMatch(/@module/u);
     // eslint-disable-next-line agent-code-guard/no-hardcoded-assertion-literals -- The expected text is the observable output for this fixed input fixture.
-    expect(identityModule).toContain("# identity/src\n");
+    expect(identityModule).toContain("# client/identity\n");
     // eslint-disable-next-line agent-code-guard/no-hardcoded-assertion-literals -- The expected text is the observable output for this fixed input fixture.
-    expect(identityModule).toContain("_`packages/identity/src`_");
+    expect(identityModule).toContain("_`packages/client/src/identity`_");
     expect(existsSync(join(sandbox, "docs/modules/router/src.mdx"))).toBe(true);
     expect(
       readFileSync(join(sandbox, "docs/modules/registry/src.mdx"), "utf8"),
@@ -539,7 +551,7 @@ describe("module documentation", () => {
     );
 
     const missingSubpathEntries = new Map(typeDocCache.byPackageEntrypoint);
-    missingSubpathEntries.delete("@moltzap/identity/registry");
+    missingSubpathEntries.delete("@moltzap/client/service");
     await expect(
       Effect.runPromise(
         generateModuleDocs(
@@ -551,7 +563,7 @@ describe("module documentation", () => {
         ).pipe(Effect.provide(NodeContext.layer)),
       ),
     ).rejects.toThrow(
-      "Required TypeDoc package subpaths were not loaded: @moltzap/identity/registry",
+      "Required TypeDoc package subpaths were not loaded: @moltzap/client/service",
     );
   });
 

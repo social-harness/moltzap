@@ -18,10 +18,11 @@ import {
   AgentSigningAuthority,
   Ed25519PublicKey,
   PrincipalId,
-} from "@moltzap/identity";
-import { OperationId } from "@moltzap/identity/registry";
-import { WireVersions } from "@moltzap/identity/test";
+} from "@moltzap/client";
+import { OperationId } from "@moltzap/client/service";
+import { WireVersions } from "@moltzap/client/test";
 import type { startRegistry } from "@moltzap/registry/test";
+import type { startRouter } from "@moltzap/router/test";
 import {
   Console,
   Data,
@@ -455,7 +456,9 @@ function launchCommand(
   const script =
     service === "Registry"
       ? `import { startRegistry } from "@moltzap/registry/test"; startRegistry(${JSON.stringify(versions satisfies Parameters<typeof startRegistry>[0])});`
-      : serviceScript(service, versions);
+      : service === "RouterServer"
+        ? `import { startRouter } from "@moltzap/router/test"; startRouter(${JSON.stringify(versions satisfies Parameters<typeof startRouter>[0])});`
+        : serviceScript(service, versions);
   return [
     process.execPath,
     ["--conditions=sharness-test", "--input-type=module", "-e", script],
@@ -472,7 +475,7 @@ function serviceScript(
       ? "@moltzap/router/server"
       : "@moltzap/client/service";
   return `import { NodeRuntime } from "@effect/platform-node";
-import { WireVersions } from "@moltzap/identity/test";
+import { WireVersions } from "@moltzap/client/test";
 import { ${service} } from "${module}";
 import { ConfigProvider, Effect, Layer } from "effect";
 Layer.launch(${service}.layer).pipe(Effect.provideService(WireVersions, ${JSON.stringify(versions)}), Effect.withConfigProvider(ConfigProvider.fromEnv()), NodeRuntime.runMain);`;

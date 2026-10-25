@@ -8,6 +8,7 @@
  * passing while guarding nothing.
  */
 import { existsSync, writeFileSync } from "node:fs";
+import { FINAL_PACKAGE_DIRS } from "./boundary-contract.ts";
 
 interface Allowance {
   readonly package: string;
@@ -150,6 +151,7 @@ const clientDomains: readonly ClientDomain[] = [
       },
       {
         file: "canonical-json.ts",
+        host: true,
         reason: "Canonical JSON encoding of signed and stored values",
       },
       {
@@ -159,6 +161,32 @@ const clientDomains: readonly ClientDomain[] = [
       },
     ],
     reason: "Leaf codecs depending only on Effect and canonicalize",
+  },
+  {
+    name: "identity",
+    root: "identity",
+    host: true,
+    entrypoints: [
+      "agents.ts",
+      "keys.ts",
+      "cards.ts",
+      "wire-version.ts",
+      "signing/authenticated-http.ts",
+      "signing/http-signature.ts",
+      "signing/http-errors.ts",
+      "registry/index.ts",
+      "registry/contract.ts",
+    ],
+    reason:
+      "Identity, request authentication and immutable Registry resolution",
+  },
+  {
+    name: "envelope",
+    root: "communication/envelope",
+    host: true,
+    entrypoints: ["signed-message.ts", "sealed-body.ts"],
+    reason:
+      "Opaque attributed and sealed message bodies below endpoint protocols",
   },
   {
     name: "release",
@@ -183,6 +211,14 @@ const clientDomains: readonly ClientDomain[] = [
     entrypoints: ["index.ts"],
     reason:
       "Isolated code and English evaluation depends on encoding, runtime-safe outcomes and packages",
+  },
+  {
+    name: "router-api",
+    root: "communication/router/api",
+    host: false,
+    entrypoints: ["index.ts", "contract.ts", "client.ts"],
+    reason:
+      "Opaque Router values and HTTP client below endpoint protocol records",
   },
   {
     name: "records",
@@ -353,11 +389,22 @@ const clientDomains: readonly ClientDomain[] = [
 const clientEntrypointFacades: readonly FacadeFile[] = clientDomains.flatMap(
   ({ root, entrypoints }) =>
     entrypoints
-      .filter((entry) => typeof entry !== "string")
-      .map(({ file, reason }) => ({ file: `${root}/${file}`, reason })),
+      .filter((entry) => typeof entry !== "string" || entry !== "index.ts")
+      .map((entry) =>
+        typeof entry === "string"
+          ? {
+              file: `${root}/${entry}`,
+              reason: "Named domain capability boundary",
+            }
+          : { file: `${root}/${entry.file}`, reason: entry.reason },
+      ),
 );
 
 const clientCompositionRoots = [
+  {
+    path: "src/daemon/internal.ts",
+    reason: "Condition-only service capabilities",
+  },
   {
     path: "src/test.ts",
     reason:
@@ -456,12 +503,15 @@ const packageDefinitions: Readonly<Record<string, PackageDefinition>> = {
       })),
     },
     afterShared: {
-      publicTypePackages: [publicTypePackage.effect],
+      publicTypePackages: [
+        publicTypePackage.effect,
+        publicTypePackage.platform,
+      ],
       allowedTestPublicSubpaths: [
         {
           subpath: "./test",
           reason:
-            "Management schemas require the explicit sharness-test resolution condition",
+            "Management schemas and wire overrides require the explicit sharness-test resolution condition",
         },
       ],
     },
@@ -493,74 +543,6 @@ const architectureConfigDefinitions: ReadonlyArray<{
     packageRoot: `packages/${packageName}`,
     definition,
   })),
-  {
-    packageRoot: "packages/identity",
-    definition: {
-      config: {
-        packageRuntime: "node",
-        minExportedSiblingModules: 12,
-        maxPublicExports: 40,
-        minPublicFacadeModules: 13,
-        publicTypePackages: [
-          publicTypePackage.effect,
-          publicTypePackage.platform,
-        ],
-        allowedTestPublicSubpaths: [
-          {
-            subpath: "./test",
-            reason:
-              "Adjacent-release overrides require the explicit sharness-test resolution condition and are forbidden in production source",
-          },
-        ],
-        folderReadmeFileNames: ["README.md", "MODULE.md"],
-        folderChildCountOverrides: [
-          {
-            folder: ".",
-            maxChildren: 12,
-            reason:
-              "The identity package keeps its closed identifier, key, signed-artifact, request-authentication, and Registry capability boundaries as peer deep modules",
-          },
-        ],
-        facadeFiles: [
-          {
-            file: "agent-card.ts",
-            reason:
-              "Immutable Registry attestation boundary for verification and digest operations",
-          },
-          {
-            file: "agent-key.ts",
-            reason:
-              "Domain entrypoint for Ed25519 public keys, signing authority, and the single-signature General JWS representation shared by AgentCard and SignedMessage",
-          },
-          {
-            file: "http-signature.ts",
-            reason:
-              "Standards adapter boundary for the closed Social Harness HTTP signature profiles",
-          },
-          {
-            file: "registry.ts",
-            reason:
-              "Public deep Registry capability and infrastructure-failure boundary",
-          },
-          {
-            file: "registry/client.ts",
-            reason:
-              "Private HTTP adapter hidden behind the public Registry capability",
-          },
-          {
-            file: "registry/contract.ts",
-            reason:
-              "Closed Registry request, result, operation value, representation, route, and client-failure contract",
-          },
-          {
-            file: "signed-message.ts",
-            reason:
-              "Domain entrypoint for the root-exported SignedMessage: signing, verification, the verified trust state, and the recipient order and bounds a sealed body inherits",
-          },
-        ],
-      },
-    },
-  },
   {
     packageRoot: "packages/registry",
     definition: {
@@ -618,7 +600,13 @@ const architectureConfigDefinitions: ReadonlyArray<{
           publicTypePackage.effect,
           publicTypePackage.platform,
         ],
-        allowedTestPublicSubpaths: [],
+        allowedTestPublicSubpaths: [
+          {
+            subpath: "./test",
+            reason:
+              "Router wire overrides require the explicit sharness-test resolution condition",
+          },
+        ],
         folderReadmeFileNames: ["README.md", "MODULE.md"],
         folderChildCountOverrides: [
           {
@@ -633,11 +621,6 @@ const architectureConfigDefinitions: ReadonlyArray<{
             file: "router/feed.ts",
             reason:
               "Sole state boundary for ordering, retention, and retry identity",
-          },
-          {
-            file: "router/contract.ts",
-            reason:
-              "Closed Router request, result, operation value, representation, route, limit, and client-failure contract",
           },
           {
             file: "router/poll.ts",
@@ -666,6 +649,19 @@ const architectureConfigDefinitions: ReadonlyArray<{
 ];
 
 if (import.meta.main) {
+  const configured = new Set(
+    architectureConfigDefinitions.map(({ packageRoot }) => packageRoot),
+  );
+  if (
+    configured.size !== FINAL_PACKAGE_DIRS.length ||
+    FINAL_PACKAGE_DIRS.some((dir) => !configured.has(`packages/${dir}`))
+  ) {
+    process.stderr.write(
+      "Architecture configurations must cover FINAL_PACKAGES exactly\n",
+    );
+    process.exit(1);
+  }
+
   const resolved = architectureConfigDefinitions.map(
     ({ packageRoot, definition }) => ({
       packageRoot,

@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 import { NodeRuntime } from "@effect/platform-node";
 import { ConfigProvider, Console, Effect, Layer } from "effect";
-import { RouterServer } from "../dist/server.js";
+import { installInternalResolution } from "../dist/internal-resolution.js";
+
+installInternalResolution();
+const { RouterServer } = await import("../dist/server.js");
 
 const program = process.argv.includes("--help")
   ? Console.log(RouterServer.help)

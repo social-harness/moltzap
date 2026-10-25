@@ -5,11 +5,10 @@ endpoint-local certified history, durability and recovery protocols, tasks and
 norms, personal firewalls, daemon composition, the loopback MCP boundary, and
 the adapter-facing `HarnessEndpoint` capability.
 
-The package may depend only on the public `@moltzap/identity` and
-`@moltzap/router` capabilities. Keep Identity and Router representations at
-their owning boundaries; Client must not re-export their wire internals or
-expose Registry/Router clients, credentials, signing authority, store handles,
-private action evidence, or protocol folds to runtimes.
+The library has no product-package dependency. It owns L1 identity and the
+Registry and Router client capabilities below endpoint communication. Services
+consume named capabilities through the condition-only `./internal` entry;
+runtimes receive the root's host values and `HarnessEndpoint`.
 
 ## Current package boundary
 
@@ -24,8 +23,8 @@ The condition-only `./test` entry is the admitted test-fixture surface for the
 management schemas named by `docs/spec/layer-interfaces.md`; it is not part of
 the production public surface.
 
-Further work may harden or validate the implementation without widening its
-public surface or relocating its admitted Identity and Router dependencies.
+Identity lives in `identity/`; attributed envelopes and the Router API and
+client live in `communication/`. Encoding stays below both domains.
 Publication follows `docs/spec/layer-interfaces.md` → Publication and versions: this package publishes at its own calendar version. Publication does not change this package boundary.
 
 ## Stable Client law

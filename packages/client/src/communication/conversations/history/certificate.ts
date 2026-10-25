@@ -4,8 +4,8 @@
  * engine builds and the records it restores from the store.
  */
 
-import { SignedMessage } from "@moltzap/identity";
 import { Effect, type ParseResult, Schema } from "effect";
+import { SignedMessage } from "../../envelope/signed-message.js";
 import {
   type ActionCertifiedRecord,
   type CertifiedRecord,

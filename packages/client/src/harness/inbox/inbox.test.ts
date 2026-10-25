@@ -1,7 +1,6 @@
 /** @file Exercises classified delivery durability and loss of request context. */
 
 import { scopedLive as it } from "@effect/vitest";
-import { LIVE_WIRE_VERSIONS } from "@moltzap/identity";
 import { Effect, Array as EffectArray, Schema, Scope } from "effect";
 import { describe, expect } from "vitest";
 import { digest } from "../../__tests__/agent-card-fixtures.js";
@@ -22,6 +21,7 @@ import {
   encodeRuntimeValue,
   openEndpointStore,
 } from "../../communication/store/index.js";
+import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import {
   eventIdOf,
   type HarnessMessageReadyEvent,

@@ -1,5 +1,5 @@
 /** @file Bounded long-poll waiter coordination keyed by addressed agent. */
-import type { AgentId } from "@moltzap/identity";
+import type { AgentId } from "@moltzap/client";
 import { Data, Deferred, Effect, Ref } from "effect";
 
 /** Bounded addressed-notification capability. */

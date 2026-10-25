@@ -1,8 +1,8 @@
 /** @file The firewall's installation, its outgoing admission, and the check of a certified incoming item. */
 
-import type { AgentCard, VerifiedAgentCard } from "@moltzap/identity";
 import { Effect, Option, Schema } from "effect";
 import { createHash } from "node:crypto";
+import type { AgentCard, VerifiedAgentCard } from "../../identity/cards.js";
 import type { FirewallSendError } from "../outcome/index.js";
 import { InboundItem } from "../../communication/collectives/inbound.js";
 import {

@@ -1,11 +1,11 @@
 /** @file Volatile globally ordered Router feed with bounded retention and retry identity. */
-import type { AgentId, LiveSignedMessage, MessageId } from "@moltzap/identity";
-import { Data, Effect, Ref } from "effect";
+import type { AgentId, LiveSignedMessage, MessageId } from "@moltzap/client";
 import type {
   RouterInstanceId,
   RouterSendResult,
   SignedMessageDigest,
-} from "./contract.js";
+} from "@moltzap/client/internal";
+import { Data, Effect, Ref } from "effect";
 
 /** Greatest private feed order representable by this Router process. */
 export const maximumPrivateOrder = (1n << 128n) - 1n;

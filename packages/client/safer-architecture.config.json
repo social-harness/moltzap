@@ -24,6 +24,58 @@
       "reason": "Canonical identifiers and ordering used by host-loaded values"
     },
     {
+      "file": "identity/agents.ts",
+      "reason": "Named domain capability boundary"
+    },
+    {
+      "file": "identity/keys.ts",
+      "reason": "Named domain capability boundary"
+    },
+    {
+      "file": "identity/cards.ts",
+      "reason": "Named domain capability boundary"
+    },
+    {
+      "file": "identity/wire-version.ts",
+      "reason": "Named domain capability boundary"
+    },
+    {
+      "file": "identity/signing/authenticated-http.ts",
+      "reason": "Named domain capability boundary"
+    },
+    {
+      "file": "identity/signing/http-signature.ts",
+      "reason": "Named domain capability boundary"
+    },
+    {
+      "file": "identity/signing/http-errors.ts",
+      "reason": "Named domain capability boundary"
+    },
+    {
+      "file": "identity/registry/index.ts",
+      "reason": "Named domain capability boundary"
+    },
+    {
+      "file": "identity/registry/contract.ts",
+      "reason": "Named domain capability boundary"
+    },
+    {
+      "file": "communication/envelope/signed-message.ts",
+      "reason": "Named domain capability boundary"
+    },
+    {
+      "file": "communication/envelope/sealed-body.ts",
+      "reason": "Named domain capability boundary"
+    },
+    {
+      "file": "communication/router/api/contract.ts",
+      "reason": "Named domain capability boundary"
+    },
+    {
+      "file": "communication/router/api/client.ts",
+      "reason": "Named domain capability boundary"
+    },
+    {
       "file": "communication/records/values.ts",
       "reason": "Addresses, post ids, content, and member limits hosts decode without loading signing, verification, or the Router client"
     },
@@ -86,6 +138,10 @@
   ],
   "compositionRoots": [
     {
+      "path": "src/daemon/internal.ts",
+      "reason": "Condition-only service capabilities"
+    },
+    {
       "path": "src/test.ts",
       "reason": "Condition-only management schemas for cross-package process fixtures"
     },
@@ -120,6 +176,35 @@
       "reason": "Leaf codecs depending only on Effect and canonicalize"
     },
     {
+      "name": "identity",
+      "roots": [
+        "src/identity"
+      ],
+      "entrypoints": [
+        "src/identity/agents.ts",
+        "src/identity/keys.ts",
+        "src/identity/cards.ts",
+        "src/identity/wire-version.ts",
+        "src/identity/signing/authenticated-http.ts",
+        "src/identity/signing/http-signature.ts",
+        "src/identity/signing/http-errors.ts",
+        "src/identity/registry/index.ts",
+        "src/identity/registry/contract.ts"
+      ],
+      "reason": "Identity, request authentication and immutable Registry resolution"
+    },
+    {
+      "name": "envelope",
+      "roots": [
+        "src/communication/envelope"
+      ],
+      "entrypoints": [
+        "src/communication/envelope/signed-message.ts",
+        "src/communication/envelope/sealed-body.ts"
+      ],
+      "reason": "Opaque attributed and sealed message bodies below endpoint protocols"
+    },
+    {
       "name": "release",
       "roots": [
         "src/release"
@@ -148,6 +233,18 @@
         "src/firewall/evaluator/index.ts"
       ],
       "reason": "Isolated code and English evaluation depends on encoding, runtime-safe outcomes and packages"
+    },
+    {
+      "name": "router-api",
+      "roots": [
+        "src/communication/router/api"
+      ],
+      "entrypoints": [
+        "src/communication/router/api/index.ts",
+        "src/communication/router/api/contract.ts",
+        "src/communication/router/api/client.ts"
+      ],
+      "reason": "Opaque Router values and HTTP client below endpoint protocol records"
     },
     {
       "name": "records",
@@ -368,6 +465,13 @@
       "reason": "Canonical protocol encoding, verification, and the message values every layer encodes"
     },
     {
+      "name": "router-api",
+      "folders": [
+        "communication/router/api"
+      ],
+      "reason": "Opaque Router values and HTTP client below endpoint protocol records"
+    },
+    {
       "name": "firewall-evaluator",
       "folders": [
         "firewall/evaluator"
@@ -389,6 +493,20 @@
       "reason": "Client package release metadata used by MCP peers, policy provenance and telemetry"
     },
     {
+      "name": "envelope",
+      "folders": [
+        "communication/envelope"
+      ],
+      "reason": "Opaque attributed and sealed message bodies below endpoint protocols"
+    },
+    {
+      "name": "identity",
+      "folders": [
+        "identity"
+      ],
+      "reason": "Identity, request authentication and immutable Registry resolution"
+    },
+    {
       "name": "encoding",
       "folders": [
         "encoding"
@@ -400,12 +518,16 @@
     {
       "package": "effect",
       "reason": "Foundational Effect runtime; intentionally part of the public contract"
+    },
+    {
+      "package": "@effect/platform",
+      "reason": "Effect platform abstractions used at boundaries"
     }
   ],
   "allowedTestPublicSubpaths": [
     {
       "subpath": "./test",
-      "reason": "Management schemas require the explicit sharness-test resolution condition"
+      "reason": "Management schemas and wire overrides require the explicit sharness-test resolution condition"
     }
   ]
 }

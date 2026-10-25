@@ -14,10 +14,7 @@ import {
   PayloadTooLargeError,
   RouteNotFoundError,
   UnsupportedMediaTypeError,
-} from "@moltzap/identity";
-import canonicalize from "canonicalize";
-import { Cause, Effect, Option, Schema } from "effect";
-import type { RouterFeed } from "./feed.js";
+} from "@moltzap/client";
 import {
   maximumPollCursorLength,
   RawRouterSendRequest,
@@ -32,7 +29,10 @@ import {
   routerSendPath,
   RouterSendResult,
   routerSendRoutePattern,
-} from "./contract.js";
+} from "@moltzap/client/internal";
+import canonicalize from "canonicalize";
+import { Cause, Effect, Option, Schema } from "effect";
+import type { RouterFeed } from "./feed.js";
 import { type RouterRpcClient, withVerifiedRouterRequest } from "./rpc.js";
 
 interface RouterHttpInput {

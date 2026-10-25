@@ -1,8 +1,8 @@
 /** @file Validated evidence and shared code/English middleware contracts. */
 
-import { AgentId } from "@moltzap/identity";
 import { Cause, Data, Effect, Either, Schema } from "effect";
 import { exactStruct } from "../../encoding/exact.js";
+import { AgentId } from "../../identity/agents.js";
 
 const identifier = Schema.NonEmptyTrimmedString;
 const visibility = Schema.Literal("runtime", "assessor");

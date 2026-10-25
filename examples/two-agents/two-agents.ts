@@ -56,6 +56,14 @@ const MCP_PROTOCOL_VERSION = "2026-07-28";
 const BIN_DIRECTORY = fileURLToPath(
   new URL("node_modules/.bin/", import.meta.url),
 );
+const routerBinary = Config.string("SHARNESS_ROUTER_BIN").pipe(
+  Config.withDefault(
+    fileURLToPath(
+      new URL("../../packages/router/bin/sharness-router", import.meta.url),
+    ),
+  ),
+);
+
 const registryBinary = Config.string("SHARNESS_REGISTRY_BIN").pipe(
   Config.withDefault(
     fileURLToPath(
@@ -187,7 +195,7 @@ function startNetwork(): Effect.Effect<Network, StepError, Services> {
       SHARNESS_REGISTRY_ADMISSION_CREDENTIAL: ADMISSION_CREDENTIAL,
       SHARNESS_REGISTRY_SIGNING_PRIVATE_KEY_PATH: registryKey,
     });
-    const router = yield* start("sharness-router", "router", [], {
+    const router = yield* start(yield* routerBinary, "router", [], {
       SHARNESS_ROUTER_HOST: HOST,
       SHARNESS_ROUTER_PORT: String(routerPort),
       SHARNESS_ROUTER_REGISTRY_ORIGIN: registryOrigin,

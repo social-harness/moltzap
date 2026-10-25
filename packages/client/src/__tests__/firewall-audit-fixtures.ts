@@ -1,6 +1,5 @@
 /** @file Real checker outputs for retained-audit persistence and lifecycle tests. */
 
-import { WIRE_VERSION } from "@moltzap/identity";
 import { Effect, Schema } from "effect";
 import { createHash } from "node:crypto";
 import { InboundItem } from "../communication/collectives/inbound.js";
@@ -8,6 +7,7 @@ import { PostIntent } from "../communication/records/index.js";
 import { encodeRuntimeValue } from "../communication/store/index.js";
 import { FirewallAuditRecord } from "../daemon/index.js";
 import { installFirewall, Message, MessageContext } from "../firewall/index.js";
+import { WIRE_VERSION } from "../identity/wire-version.js";
 import { digest, identifier } from "./agent-card-fixtures.js";
 
 const policy = {

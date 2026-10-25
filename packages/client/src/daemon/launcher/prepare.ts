@@ -30,7 +30,6 @@ import {
 import {
   DAEMON_PACKAGE,
   download,
-  IDENTITY_PACKAGE,
   type PublishedPackage,
   releaseClosure,
   taggedVersion,
@@ -193,15 +192,14 @@ function candidate(
   });
 }
 
-/** The wire version the release's daemon emits, from its Identity pin. */
+/** The wire version the release's daemon emits, from the Client manifest. */
 function wireVersionOf(
   closure: readonly PublishedPackage[],
   version: string,
 ): Effect.Effect<string, LauncherError> {
-  const identity = closure.find((entry) => entry.name === IDENTITY_PACKAGE);
-  const hasDaemon = closure.some((entry) => entry.name === DAEMON_PACKAGE);
-  return hasDaemon && identity?.wireVersion !== undefined
-    ? Effect.succeed(identity.wireVersion)
+  const daemon = closure.find((entry) => entry.name === DAEMON_PACKAGE);
+  return daemon?.wireVersion !== undefined
+    ? Effect.succeed(daemon.wireVersion)
     : Effect.fail(
         launcherError(
           "registry",

@@ -1,14 +1,5 @@
 /** @file Private Router worker contracts shared by orchestration and transport. */
 
-import type {
-  AgentId,
-  AgentSigningAuthority,
-  LiveSignedMessage,
-  VerifiedAgentCard,
-  VerifiedSignedMessage,
-} from "@moltzap/identity";
-import type { Registry } from "@moltzap/identity/registry";
-import type { PollCursor, Router, RouterInstanceId } from "@moltzap/router";
 import {
   type Context,
   Data,
@@ -17,7 +8,17 @@ import {
   Schedule,
   type SubscriptionRef,
 } from "effect";
+import type { AgentId } from "../../identity/agents.js";
+import type { VerifiedAgentCard } from "../../identity/cards.js";
+import type { AgentSigningAuthority } from "../../identity/keys.js";
+import type { Registry } from "../../identity/registry/index.js";
+import type {
+  LiveSignedMessage,
+  VerifiedSignedMessage,
+} from "../envelope/signed-message.js";
 import type { EndpointStore } from "../store/index.js";
+import type { Router } from "./api/client.js";
+import type { PollCursor, RouterInstanceId } from "./api/contract.js";
 
 /** An outer sender card could not be resolved, pinned, or authenticated. */
 export class RouterWorkerAuthenticationError extends Data.TaggedError(

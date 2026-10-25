@@ -34,7 +34,7 @@ import {
   readRecoveredReanchor,
   readStagedRecord,
   readStoredIdentity,
-} from "./rows/index.js";
+} from "./rows.js";
 
 const HISTORY_PAGE_SIZE = 50;
 const historySelect = `

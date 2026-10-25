@@ -1,11 +1,6 @@
 /** @file Loads the daemon process configuration and its redacted bootstrap material from the environment. */
 
 import {
-  AgentSigningAuthority,
-  Ed25519PublicKey,
-  legacyKeys,
-} from "@moltzap/identity";
-import {
   Config,
   type ConfigError,
   Effect,
@@ -14,10 +9,12 @@ import {
   Schema,
 } from "effect";
 import type { MessagePolicyConfigurationFailure } from "../firewall/index.js";
+import { legacyKeys } from "../environment.js";
 import {
   credentialMatches,
   type HarnessMcpCredentials,
 } from "../harness/mcp/index.js";
+import { AgentSigningAuthority, Ed25519PublicKey } from "../identity/keys.js";
 import {
   type DaemonBootstrap,
   DaemonConfigurationError,

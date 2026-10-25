@@ -4,10 +4,8 @@
  */
 
 import { NodeHttpClient } from "@effect/platform-node";
-import { wireVersions } from "@moltzap/identity";
-import { Registry } from "@moltzap/identity/registry";
-import { Router } from "@moltzap/router";
 import { Data, Duration, Effect, Layer } from "effect";
+import { Router } from "../communication/router/api/client.js";
 import {
   type EndpointStoreError,
   inspectEndpointStore,
@@ -23,6 +21,8 @@ import {
   type MessagePolicyConfigurationError,
   policyInstallationError,
 } from "../firewall/index.js";
+import { Registry } from "../identity/registry/index.js";
+import { wireVersions } from "../identity/wire-version.js";
 import {
   DaemonConfigurationError,
   type DaemonProcessConfiguration,
@@ -321,3 +321,39 @@ function networkLayer(configuration: DaemonProcessConfiguration) {
     }),
   ).pipe(Layer.provide(NodeHttpClient.layer));
 }
+
+/** Network client capabilities used by embedded daemon compositions. */
+export {
+  PollCursor,
+  RouterInstanceId,
+  RouterPollResult,
+} from "../communication/router/api/contract.js";
+/** Bootstrap retries bind to one persisted operation identity. */
+export { OperationId } from "../identity/registry/contract.js";
+/** Immutable resolution and registration require only an injected HTTP client. */
+export { Registry } from "../identity/registry/index.js";
+
+/** Closed network operation values and client failures for service embedders. */
+export { Router } from "../communication/router/api/client.js";
+/** Route refusals and transport failures retain separate typed channels. */
+export {
+  RouterConnectionError,
+  RouterInvalidResponseError,
+  RouterPollRequest,
+  RouterRequestTimeoutError,
+  RouterSendRequest,
+  RouterSendResult,
+  SignedMessageDigest,
+} from "../communication/router/api/contract.js";
+/** Registration and immutable reads preserve exact operation errors and results. */
+export {
+  RegistryConnectionError,
+  RegistryInvalidResponseError,
+  RegistryListRequest,
+  type RegistryListResult,
+  RegistryLookupRequest,
+  type RegistryLookupResult,
+  RegistryRegisterRequest,
+  type RegistryRegisterResult,
+  RegistryRequestTimeoutError,
+} from "../identity/registry/contract.js";

@@ -1,21 +1,6 @@
 /** @file Private Router polling, authenticated ingress, and retry coordination. */
 
 import {
-  AgentCard,
-  type AgentId,
-  type LiveSignedMessage,
-  SignedMessage,
-  type VerifiedAgentCard,
-} from "@moltzap/identity";
-import { Registry } from "@moltzap/identity/registry";
-import {
-  Router,
-  type RouterInstanceId,
-  type RouterPollResult,
-  type RouterSendResult,
-  SignedMessageDigest,
-} from "@moltzap/router";
-import {
   Effect,
   Encoding,
   Option,
@@ -26,8 +11,22 @@ import {
   SubscriptionRef,
 } from "effect";
 import { createHash } from "node:crypto";
+import type { AgentId } from "../../identity/agents.js";
 import type { StoredOutboundMessage } from "../store/index.js";
 import { decodeCanonical } from "../../encoding/canonical-json.js";
+import { AgentCard, type VerifiedAgentCard } from "../../identity/cards.js";
+import { Registry } from "../../identity/registry/index.js";
+import {
+  type LiveSignedMessage,
+  SignedMessage,
+} from "../envelope/signed-message.js";
+import { Router } from "./api/client.js";
+import {
+  type RouterInstanceId,
+  type RouterPollResult,
+  type RouterSendResult,
+  SignedMessageDigest,
+} from "./api/contract.js";
 import {
   detach,
   isTransportFailure,

@@ -15,8 +15,6 @@ const SCOPE = "@moltzap/";
 /** The package that carries `sharnessd`. */
 export const DAEMON_PACKAGE = "@moltzap/client";
 
-/** The package that carries the wire version a daemon emits. */
-export const IDENTITY_PACKAGE = "@moltzap/identity";
 
 /** One published package version, with the fields the launcher reads. */
 export interface PublishedPackage {

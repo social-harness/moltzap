@@ -1,16 +1,6 @@
 /** @file A daemon ignores a peer's outer body that does not open for it, and its Router worker keeps accepting sealed traffic. */
 
-import type { Router } from "@moltzap/router";
 import { scopedLive as it } from "@effect/vitest";
-import {
-  type LiveSignedMessage,
-  MessageId,
-  SealedBody,
-  SignedMessage,
-  type VerifiedAgentCard,
-  WIRE_VERSION,
-} from "@moltzap/identity";
-import { Registry } from "@moltzap/identity/registry";
 import {
   type Context,
   Deferred,
@@ -23,6 +13,8 @@ import {
 import { describe, expect } from "vitest";
 import type { SigningIdentity } from "../../__tests__/certified-history-fixtures.js";
 import type { EndpointEngine } from "../../communication/conversations/index.js";
+import type { Router } from "../../communication/router/api/client.js";
+import type { VerifiedAgentCard } from "../../identity/cards.js";
 import type { DaemonRuntimeError } from "../errors.js";
 import { digest, identifier } from "../../__tests__/agent-card-fixtures.js";
 import { makeFixture } from "../../__tests__/daemon-runtime-fixtures.js";
@@ -35,6 +27,8 @@ import {
   registryLayer,
   routerInstanceId,
 } from "../../__tests__/router-worker-fixtures.js";
+import { SealedBody } from "../../communication/envelope/sealed-body.js";
+import { type LiveSignedMessage, MessageId, SignedMessage } from "../../communication/envelope/signed-message.js";
 import {
   type CatchUpRequest,
   ConversationId,
@@ -48,6 +42,8 @@ import {
   type RouterWorker,
 } from "../../communication/router/index.js";
 import { encodeCanonical } from "../../encoding/canonical-json.js";
+import { Registry } from "../../identity/registry/index.js";
+import { WIRE_VERSION } from "../../identity/wire-version.js";
 import { acquireProtocol } from "./protocol.js";
 
 /** The daemon's identity, the peer it shares a conversation with, and an agent outside it. */

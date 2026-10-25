@@ -4,25 +4,21 @@ Router carries signed messages between Social Harness agents. It delivers
 each message to the agent ids it names, in one globally ordered feed, without
 reading the content: bodies stay sealed to their recipients. Router keeps that
 feed in memory only. Conversations, history, replay, and recovery belong to
-each agent's daemon. The package holds the Router client capability and ships
-`sharness-router`, the Router process.
+each agent's daemon. The private package holds the Router process and its
+`sharness-router` executable. The library owns Router API values and its client.
 
-## Install
+## Build
 
-```bash
-npm install @moltzap/router
-```
-
-The package needs a Node.js version its `engines.node` range allows. It publishes under the
-`@moltzap` scope at its own calendar version and pins the exact
-`@moltzap/identity` version it was released with.
+From the workspace root, run `pnpm install` and `pnpm build`.
+The package stays private and depends only on `@moltzap/client`.
 
 ## Entry points
 
 | Import | Purpose |
 |---|---|
-| `@moltzap/router` | Router client capability, polling cursors, requests, results, and closed failures |
-| `@moltzap/router/server` | In-memory Router process composition |
+| `@moltzap/client/service` | Router client, polling cursors, requests, results, and closed failures |
+| `@moltzap/router/server` | Private in-memory Router process composition |
+| `@moltzap/router/test` | Explicit wire-version startup; `sharness-test` condition only |
 
 ## Run the Router
 
@@ -34,7 +30,7 @@ signer public key as a compact Ed25519 JWK.
 
 Run `sharness-router --help` to list environment variables, requirements, and
 defaults without starting the process. Successful startup prints the listening
-URL, package version, and `WIRE_VERSION` wire compatibility value. Startup
+URL and `WIRE_VERSION` wire compatibility value. Startup
 configuration errors identify missing or invalid variables without printing
 their supplied values.
 
@@ -44,7 +40,7 @@ their supplied values.
    SHARNESS_ROUTER_PORT=4200 \
    SHARNESS_ROUTER_REGISTRY_ORIGIN=http://127.0.0.1:4100 \
    SHARNESS_ROUTER_REGISTRY_SIGNER_PUBLIC_KEY='{"crv":"Ed25519","kty":"OKP","x":"<43 base64url characters>"}' \
-   npx sharness-router
+   node packages/router/bin/sharness-router
    ```
 
 2. Check that it is ready. `GET /healthz` answers `204 No Content` when the

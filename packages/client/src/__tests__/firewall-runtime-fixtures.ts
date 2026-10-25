@@ -2,13 +2,6 @@
 
 import { FileSystem } from "@effect/platform";
 import { NodeFileSystem } from "@effect/platform-node";
-import {
-  AgentCard,
-  Ed25519PublicKey,
-  LIVE_WIRE_VERSIONS,
-  WIRE_VERSION,
-} from "@moltzap/identity";
-import { RouterInstanceId } from "@moltzap/router";
 import { Deferred, Effect, Queue, Schema, Scope } from "effect";
 import { generateKeyPairSync } from "node:crypto";
 import { join } from "node:path";
@@ -31,6 +24,7 @@ import {
   RecordHash,
   verifyMembershipDescriptor,
 } from "../communication/records/index.js";
+import { RouterInstanceId } from "../communication/router/api/contract.js";
 import {
   decodeRuntimeValue,
   DeliveryToken,
@@ -49,6 +43,9 @@ import {
 import { beginFirewallAudit } from "../firewall/audit/firewall-audit.js";
 import { noHistoryExport } from "../harness/inbox/history-export.js";
 import { makeHostDelivery } from "../harness/inbox/host-delivery.js";
+import { AgentCard } from "../identity/cards.js";
+import { Ed25519PublicKey } from "../identity/keys.js";
+import { LIVE_WIRE_VERSIONS, WIRE_VERSION } from "../identity/wire-version.js";
 import {
   digest,
   identifier,

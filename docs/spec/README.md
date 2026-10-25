@@ -45,8 +45,8 @@ protocol, and daemon representation cuts are ready.
 
 | Slice | Normative owners | State |
 |---|---|---|
-| Relocate Identity to `packages/identity` and rename it `@moltzap/identity` | `identity.md`, `identity-representation.md`, `layer-interfaces.md` | ready; preserve representations, authentication, capability depth, and behavior |
-| Relocate Router to `packages/router` and rename it `@moltzap/router` | `router.md`, `router-representation.md`, `layer-interfaces.md` | ready; preserve wire behavior and move restart recovery above Router |
+| Maintain Identity in the Client library | `identity.md`, `identity-representation.md`, `layer-interfaces.md` | ready; preserve representations, authentication, capability depth, and behavior |
+| Maintain the private Router process in `packages/router` | `router.md`, `router-representation.md`, `layer-interfaces.md` | ready; preserve wire behavior and move restart recovery above Router |
 | Endpoint history, durability, catch-up, and Router re-anchor | `conversation-history.md`, `harness/tasks.md`, `router.md` | ready; Client owns the exact canonical evidence, nested transport, fixed limits, genesis anchor, and private hashes |
 | Daemon process and one state-dependent `/mcp` | `harness/daemon.md`, `management.md` | ready; process configuration, SQLite ownership, extension listen adapter, and closed management DTO semantics are exact |
 | `HarnessEndpoint` and adapter migration | `harness/client.md`, `harness/output.md`, `harness/ingress.md`, `harness/channels.md`, `management.md` | ready; explicit agent/group send, stable addressed delivery, stock host callbacks, and MCP-only management |
@@ -58,9 +58,9 @@ Client work must not use compatibility shims or semantic reinterpretation.
 
 The final workspace contains exactly these five package products:
 
-- `@moltzap/identity`;
-- `@moltzap/router`;
 - `@moltzap/client`;
+- `@moltzap/registry`;
+- `@moltzap/router`;
 - `@moltzap/openclaw-channel`;
 - `@moltzap/nanoclaw-channel`.
 
@@ -128,7 +128,7 @@ AgentId and signature bytes while logical hashes exclude evidence maps.
   [daemon persistence contract](./harness/daemon.md#persistence).
 - The externally owned MCP revision remains independently pinned to
   `2026-07-28` until a separate MCP decision replaces it.
-- The npm package version is a release namespace of its own: four packages
+- The npm package version is a release namespace of its own: two packages
   publish, each at its own calendar version, while `@moltzap/nanoclaw-channel` stays private, per
   [`layer-interfaces.md`](./layer-interfaces.md) → Publication and versions.
   It never implies a wire, MCP, or persisted-schema compatibility fact.

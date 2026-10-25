@@ -13,20 +13,18 @@ import {
   SignedMessage,
   type SignedMessage as SignedMessageValue,
   type VerifiedAgentCard,
-} from "@moltzap/identity";
+} from "@moltzap/client";
 import {
   OperationId,
   Registry,
   type RegistryLookupRequest,
   type RegistryRegisterRequest,
-} from "@moltzap/identity/registry";
-import {
   Router,
   type RouterPollRequest,
   type RouterPollResult,
   type RouterSendRequest,
-  type RouterSendResult,
-} from "@moltzap/router";
+  type RouterSendResult
+} from "@moltzap/client/service";
 import { Effect, Encoding, Redacted, Schema } from "effect";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";

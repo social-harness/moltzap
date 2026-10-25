@@ -92,7 +92,6 @@
     }
   },
   "devDependencies": {
-    "@moltzap/identity": "workspace:*",
     "@moltzap/registry": "workspace:*",
     "@moltzap/router": "workspace:*",
     "@moltzap/client": "workspace:*",

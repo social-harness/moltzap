@@ -16,7 +16,7 @@ import {
 import { Effect, Option, Schema, Stream } from "effect";
 import { launcherError, type LauncherError } from "./errors.js";
 import { integrityOf } from "./integrity.js";
-import { DAEMON_PACKAGE, IDENTITY_PACKAGE } from "./npm.js";
+import { DAEMON_PACKAGE } from "./npm.js";
 
 const RECORD_FORMAT = "org.social-harness/launcher-record/v1";
 
@@ -74,7 +74,7 @@ const manifestSchema = Schema.Struct({
 
 type InstalledManifest = typeof manifestSchema.Type;
 
-const identityExports = Schema.Struct({
+const clientExports = Schema.Struct({
   ".": Schema.Struct({ import: Schema.String }),
 });
 
@@ -267,19 +267,19 @@ export const pruneReleases = Effect.fn("Launcher.pruneReleases")(
 
 /**
  * The wire versions the daemon installed under `prefix` admits, read from
- * the Identity package it runs, or an `integrity` failure.
+ * the Client package it runs, or an `integrity` failure.
  */
 export const liveWireVersions = Effect.fn("Launcher.liveWireVersions")(
   function* (prefix: string) {
     const path = yield* Path.Path;
-    const manifest = yield* installedManifest(prefix, IDENTITY_PACKAGE);
-    const entry = yield* Schema.decodeUnknown(identityExports)(
+    const manifest = yield* installedManifest(prefix, DAEMON_PACKAGE);
+    const entry = yield* Schema.decodeUnknown(clientExports)(
       manifest.exports,
     );
     const module = path.join(
       prefix,
       "node_modules",
-      IDENTITY_PACKAGE,
+      DAEMON_PACKAGE,
       entry["."].import,
     );
     const loaded: unknown = yield* Effect.tryPromise(() => import(module));
@@ -289,7 +289,7 @@ export const liveWireVersions = Effect.fn("Launcher.liveWireVersions")(
   Effect.mapError(() =>
     launcherError(
       "integrity",
-      "the recorded release holds no readable Identity package",
+      "the recorded release holds no readable Client package",
     ),
   ),
 );

@@ -114,7 +114,7 @@ export function checkSharedSourceRules(run: BoundaryRun): number {
  */
 export function checkLayerVocabulary(run: BoundaryRun): number {
   let scanned = 0;
-  for (const dir of ["identity", "router"]) {
+  for (const dir of FINAL_PACKAGE_DIRS) {
     const files = walkFiles(
       path.join(run.packagesRoot, dir),
       (name) => path.extname(name) !== ".md" && path.extname(name) !== ".mdx",
@@ -601,13 +601,13 @@ function checkInternalImport(
   if (
     FINAL_PACKAGES[target].exports[subpath]?.internalOnly === true &&
     site.dir !== "registry" &&
-    site.dir !== "identity"
+    site.dir !== "router"
   ) {
     fail(
       run,
       site.file,
       line,
-      `internal Identity capabilities are reserved for Registry compositions ("${specifier}")`,
+      `internal Client capabilities are reserved for Registry and Router compositions ("${specifier}")`,
     );
   }
 }

@@ -12,7 +12,7 @@ import {
   StoreSignal,
   transaction,
 } from "../database/index.js";
-import { readPendingDelivery, readStoredIdentity } from "../rows/index.js";
+import { readPendingDelivery, readStoredIdentity } from "../rows.js";
 import {
   type CertifiedRecord,
   DeliveryToken,

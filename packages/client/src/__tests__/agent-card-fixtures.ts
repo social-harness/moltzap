@@ -1,15 +1,5 @@
 /** @file Deterministic identifiers and Registry-signed AgentCards for client tests. */
 
-import {
-  AgentCard,
-  AgentId,
-  AgentName,
-  AgentSigningAuthority,
-  Ed25519PublicKey,
-  PrincipalId,
-  type VerifiedAgentCard,
-  WIRE_VERSION,
-} from "@moltzap/identity";
 import canonicalize from "canonicalize";
 import { Effect, Encoding, Redacted, Schema } from "effect";
 import {
@@ -18,6 +8,10 @@ import {
   type KeyObject,
   sign as signBytes,
 } from "node:crypto";
+import { AgentId, AgentName, PrincipalId } from "../identity/agents.js";
+import { AgentCard, type VerifiedAgentCard } from "../identity/cards.js";
+import { AgentSigningAuthority, Ed25519PublicKey } from "../identity/keys.js";
+import { WIRE_VERSION } from "../identity/wire-version.js";
 
 /** A Registry signing key pair, as `generateKeyPairSync("ed25519")` returns. */
 export interface RegistryKeyPair {

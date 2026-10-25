@@ -10,25 +10,24 @@ import { createHash } from "node:crypto";
 import { registerHooks } from "node:module";
 import { fileURLToPath } from "node:url";
 import {
-  AgentCard,
-  digestAgentCard,
-} from "../packages/identity/dist/agent-card.js";
-import {
-  AgentSigningAuthority,
-  Ed25519PublicKey,
-} from "../packages/identity/dist/agent-key.js";
-import { encodeCanonicalJson } from "../packages/identity/dist/canonical-json.js";
+  MessageId,
+  SignedMessage,
+} from "../packages/client/dist/communication/envelope/signed-message.js";
+import { encodeCanonicalJson } from "../packages/client/dist/encoding/canonical-json.js";
 import {
   AgentId,
   AgentName,
   PrincipalId,
-} from "../packages/identity/dist/identifiers.js";
+} from "../packages/client/dist/identity/agents.js";
 import {
-  MessageId,
-  SignedMessage,
-} from "../packages/identity/dist/signed-message.js";
-import { WIRE_VERSION } from "../packages/identity/dist/version.js";
-import { WireVersions } from "../packages/identity/dist/wire-versions.js";
+  AgentCard,
+  digestAgentCard,
+} from "../packages/client/dist/identity/cards.js";
+import {
+  AgentSigningAuthority,
+  Ed25519PublicKey,
+} from "../packages/client/dist/identity/keys.js";
+import { WIRE_VERSION, WireVersions  } from "../packages/client/dist/identity/wire-version.js";
 registerHooks({
   resolve(specifier, context, nextResolve) {
     return nextResolve(specifier, {
@@ -212,7 +211,7 @@ await Effect.runPromise(
             fileSystem.writeFileString(
               fileURLToPath(
                 new URL(
-                  "../packages/identity/src/__tests__/wire-golden.json",
+                  "../packages/client/src/communication/envelope/__tests__/wire-golden.json",
                   import.meta.url,
                 ),
               ),
@@ -221,7 +220,7 @@ await Effect.runPromise(
             fileSystem.writeFileString(
               fileURLToPath(
                 new URL(
-                  "../packages/identity/src/__tests__/wire-cofactored-golden.json",
+                  "../packages/client/src/communication/envelope/__tests__/wire-cofactored-golden.json",
                   import.meta.url,
                 ),
               ),

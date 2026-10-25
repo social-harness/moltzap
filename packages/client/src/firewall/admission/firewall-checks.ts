@@ -4,7 +4,6 @@
  * admission share these; neither holds a protocol or delivery lock.
  */
 
-import { AgentCard, type VerifiedAgentCard } from "@moltzap/identity";
 import { Clock, Effect, Option, Schema } from "effect";
 import { createHash, randomBytes } from "node:crypto";
 import type {
@@ -49,6 +48,7 @@ import {
   type FirewallLocalEntry,
   MAXIMUM_RUNTIME_ITEM_BYTES,
 } from "../../communication/store/index.js";
+import { AgentCard, type VerifiedAgentCard } from "../../identity/cards.js";
 import {
   type Firewall,
   type FirewallCheck,

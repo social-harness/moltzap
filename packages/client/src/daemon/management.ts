@@ -1,17 +1,5 @@
 /** @file Private owner-authorized management over Registry and endpoint state. */
 
-import {
-  AgentCard,
-  SignedMessage,
-  type VerifiedAgentCard,
-} from "@moltzap/identity";
-import {
-  Registry,
-  RegistryInvalidResponseError,
-  type RegistryListResult,
-  type RegistryLookupResult,
-  type RegistryRegisterResult,
-} from "@moltzap/identity/registry";
 import { type Context, Data, Effect, Schema } from "effect";
 import type { SendError } from "../communication/conversations/errors.js";
 import type {
@@ -39,6 +27,7 @@ import {
   readStoredHistory,
   verifyStoredMembership,
 } from "../communication/conversations/index.js";
+import { SignedMessage } from "../communication/envelope/signed-message.js";
 import {
   type CertifiedRecord,
   deriveConversationId,
@@ -46,6 +35,9 @@ import {
 } from "../communication/records/index.js";
 import { AgentAddress } from "../communication/records/values.js";
 import { compareAscii } from "../encoding/identifier.js";
+import { AgentCard, type VerifiedAgentCard } from "../identity/cards.js";
+import { RegistryInvalidResponseError, type RegistryListResult, type RegistryLookupResult, type RegistryRegisterResult } from "../identity/registry/contract.js";
+import { Registry } from "../identity/registry/index.js";
 import {
   type DaemonRegistrationPersistenceError,
   type DaemonRegistrationRepresentationError,

@@ -101,6 +101,7 @@ function runExample(
       cwd: consumerRoot,
       env: {
         NODE_PATH: "",
+        SHARNESS_ROUTER_BIN: join(workspaceRoot, "packages/router/bin/sharness-router"),
         SHARNESS_REGISTRY_BIN: join(
           workspaceRoot,
           "packages/registry/bin/sharness-registry",

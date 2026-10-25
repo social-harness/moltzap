@@ -39,6 +39,12 @@
         "types": "./dist/test.d.ts",
         "import": "./dist/test.js"
       }
+    },
+    "./internal": {
+      "sharness-internal": {
+        "types": "./dist/daemon/internal.d.ts",
+        "import": "./dist/daemon/internal.js"
+      }
     }
   },
   "bin": {
@@ -111,8 +117,6 @@
     "@modelcontextprotocol/client": "catalog:",
     "@modelcontextprotocol/node": "catalog:",
     "@modelcontextprotocol/server": "catalog:",
-    "@moltzap/identity": "workspace:*",
-    "@moltzap/router": "workspace:*",
     "@opentelemetry/api": "catalog:",
     "@opentelemetry/exporter-trace-otlp-proto": "catalog:",
     "@opentelemetry/resources": "catalog:",
@@ -124,7 +128,11 @@
     "@sigstore/bundle": "catalog:",
     "canonicalize": "catalog:",
     "effect": "catalog:",
-    "sigstore": "catalog:"
+    "sigstore": "catalog:",
+    "@noble/curves": "catalog:",
+    "http-message-signatures": "catalog:",
+    "jose": "catalog:",
+    "structured-headers": "catalog:"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",
@@ -133,7 +141,9 @@
     "tsx": "catalog:",
     "typescript": "catalog:",
     "undici": "catalog:",
-    "vitest": "catalog:"
+    "vitest": "catalog:",
+    "fast-check": "catalog:"
   },
-  "sharnessContentHash": "sha256:0a01c4338b61fb1fbbddcc6d6f4c11fec2686a176bda7a8f8d189b74b15b57c7"
+  "sharnessContentHash": "sha256:0a01c4338b61fb1fbbddcc6d6f4c11fec2686a176bda7a8f8d189b74b15b57c7",
+  "sharnessWireVersion": "2026.1021.3"
 }

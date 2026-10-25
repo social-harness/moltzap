@@ -84,6 +84,7 @@
               "modules/client/communication/collectives",
               "modules/client/communication/conversations",
               "modules/client/communication/records",
+              "modules/client/communication/router/api",
               "modules/client/daemon",
               "modules/client/firewall/admission",
               "modules/client/firewall/evaluator",
@@ -92,8 +93,8 @@
               "modules/client/harness/endpoint",
               "modules/client/harness/inbox",
               "modules/client/harness/protocol",
+              "modules/client/identity/registry",
               "modules/client/src",
-              "modules/identity/src",
               "modules/openclaw-channel/src",
               "modules/registry/src",
               "modules/router/src"

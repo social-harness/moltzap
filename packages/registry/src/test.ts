@@ -1,5 +1,5 @@
 /** @file Condition-only process composition for adjacent wire releases. */
-import { WireVersions } from "@moltzap/identity/test";
+import { WireVersions } from "@moltzap/client/test";
 import { Data, Effect, Layer } from "effect";
 import { installInternalResolution } from "./internal-resolution.js";
 import { runRegistryMain } from "./main.js";

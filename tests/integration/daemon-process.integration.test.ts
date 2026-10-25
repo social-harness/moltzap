@@ -10,8 +10,8 @@ import {
   SendError,
   type SendInput,
 } from "@moltzap/client";
-import { AgentCard, type AgentName, WIRE_VERSION } from "@moltzap/identity";
-import { WireVersions } from "@moltzap/identity/test";
+import { AgentCard, type AgentName, WIRE_VERSION } from "@moltzap/client";
+import { WireVersions } from "@moltzap/client/test";
 import { Effect, Fiber, Option, Schema, Stream } from "effect";
 import { readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -759,7 +759,7 @@ function storedSchema(directory: string) {
  */
 const retiredWindowDaemon = `
   import { NodeRuntime } from "@effect/platform-node";
-  import { WIRE_VERSION } from "@moltzap/identity"; import { WireVersions } from "@moltzap/identity/test";
+  import { WIRE_VERSION } from "@moltzap/client"; import { WireVersions } from "@moltzap/client/test";
   import { Daemon } from "@moltzap/client/service";
   import { ConfigProvider, Effect, Layer } from "effect";
   Layer.launch(Daemon.layer).pipe(

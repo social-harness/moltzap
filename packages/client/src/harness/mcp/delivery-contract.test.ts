@@ -1,7 +1,6 @@
 /** @file Durable delivery behaviour through the loopback MCP tools and native endpoint. */
 
 import { scopedLive as it } from "@effect/vitest";
-import { LIVE_WIRE_VERSIONS } from "@moltzap/identity";
 import { Chunk, Effect, Schema, Scope, Stream } from "effect";
 import { describe, expect } from "vitest";
 import type { EndpointEngine } from "../../communication/conversations/index.js";
@@ -22,6 +21,7 @@ import { encodeCollectiveContent } from "../../communication/collectives/part/in
 import { DeliveryAcknowledgeError } from "../../communication/conversations/errors.js";
 import { AgentAddress } from "../../communication/records/index.js";
 import { openEndpointStore } from "../../communication/store/index.js";
+import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { acquireHarnessEndpoint } from "../endpoint/index.js";
 import { type HostDelivery, makeHostDelivery } from "../inbox/host-delivery.js";
 import { decodeHarnessReadInboxResult } from "../protocol/operations.js";

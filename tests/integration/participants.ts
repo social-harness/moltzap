@@ -1,6 +1,6 @@
 /** @file Endpoints a collective-operation trace drives through real daemons. */
 
-import type { AgentName } from "@moltzap/identity";
+import type { AgentName } from "@moltzap/client";
 import {
   acquireHarnessEndpoint,
   AgentAddress,

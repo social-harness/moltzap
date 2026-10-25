@@ -32,14 +32,14 @@ export const INTEGRATION_BOUNDARY_CASES = [
   {
     name: "nested node_modules cannot evade scanning",
     path: "tests/integration/mixed-release/node_modules/boundary-plant.ts",
-    prepend: 'import "@moltzap/identity/internal";\n',
+    prepend: 'import "@moltzap/client/internal";\n',
     message:
       /test infrastructure must not contain nested node_modules or dist directories/,
   },
   {
     name: "nested dist cannot evade scanning",
     path: "tests/integration/mixed-release/dist/boundary-plant.ts",
-    prepend: 'import "@moltzap/identity/internal";\n',
+    prepend: 'import "@moltzap/client/internal";\n',
     message:
       /test infrastructure must not contain nested node_modules or dist directories/,
   },
@@ -278,7 +278,7 @@ export const INTEGRATION_BOUNDARY_CASES = [
   {
     name: "__tests__ must occupy a whole path segment",
     path: "packages/client/src/__tests__suffix-gate.ts",
-    prepend: 'import "@moltzap/identity/test";\n',
+    prepend: 'import "@moltzap/client/test";\n',
     message: /production source must not import test-only export/,
   },
   {
@@ -319,7 +319,7 @@ export const INTEGRATION_BOUNDARY_CASES = [
   {
     name: "integration fixtures cannot import internal Identity",
     path: "tests/integration/daemon-process-harness.ts",
-    prepend: 'import "@moltzap/identity/internal";\n',
+    prepend: 'import "@moltzap/client/internal";\n',
     message:
       /test infrastructure must import public or test-only product exports/,
   },
@@ -356,7 +356,7 @@ export const INTEGRATION_BOUNDARY_CASES = [
   {
     name: "package integration test-only entry",
     path: "packages/client/integration/boundary-plant.ts",
-    prepend: 'import { WireVersions } from "@moltzap/identity/test";\n',
+    prepend: 'import { WireVersions } from "@moltzap/client/test";\n',
     message: /production source must not import test-only export/,
   },
 ];
@@ -389,11 +389,11 @@ export const MALFORMED_BOUNDARY_CASES = [
     after: '7, "@electric-sql/pglite",',
   },
   {
-    path: "packages/identity/tsconfig.json",
+    path: "packages/client/tsconfig.json",
     before: '"references": []',
     after: '"references": {}',
   },
-  { path: "packages/identity/tsconfig.json", replace: "[]" },
+  { path: "packages/client/tsconfig.json", replace: "[]" },
 ] as const;
 
 /** Test-integrity rules apply to integration tests as well as product tests. */

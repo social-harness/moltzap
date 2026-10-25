@@ -6,17 +6,17 @@ import {
   SignedMessage,
   type VerifiedAgentRequest,
   type VerifiedSignedMessage,
-} from "@moltzap/identity";
-import canonicalize from "canonicalize";
-import { Effect, Encoding, Schema } from "effect";
-import type { RouterFeed } from "./feed.js";
-import type { PollWaiters } from "./poll-waiters.js";
+} from "@moltzap/client";
 import {
   type RawRouterSendRequest,
   type RouterInstanceId,
   type RouterSendResult,
   SignedMessageDigest,
-} from "./contract.js";
+} from "@moltzap/client/internal";
+import canonicalize from "canonicalize";
+import { Effect, Encoding, Schema } from "effect";
+import type { RouterFeed } from "./feed.js";
+import type { PollWaiters } from "./poll-waiters.js";
 
 /** Send domain operation after HTTP authentication. */
 export interface RouterSend {

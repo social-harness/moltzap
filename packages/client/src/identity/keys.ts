@@ -1,0 +1,725 @@
+/** @file Exact Ed25519 public keys, opaque private signing authority, and the single-signature General JWS that AgentCard and SignedMessage carry. */
+
+import type { LazyArg } from "effect/Function";
+import { ed25519 } from "@noble/curves/ed25519.js";
+import {
+  Data,
+  Effect,
+  Either,
+  Encoding,
+  Option,
+  Redacted,
+  Schema,
+} from "effect";
+import {
+  calculateJwkThumbprintUri,
+  type CryptoKey,
+  exportJWK,
+  importJWK,
+  importPKCS8,
+  type JWK,
+} from "jose";
+import { exactStruct } from "../encoding/canonical-json.js";
+import { decodeCanonicalBase64Url } from "../encoding/identifier.js";
+
+/**
+ * A map that keeps at most its capacity of entries. Reading or storing an
+ * entry makes it the most recently used, and storing past the capacity drops
+ * the least recently used entry, so memory stays bounded however many
+ * distinct keys arrive.
+ */
+export interface BoundedCache<K, V> {
+  /** The value for `key`, which becomes the most recently used entry. */
+  readonly get: (key: K) => Option.Option<V>;
+  /** Stores `value` as the most recently used entry for `key`. */
+  readonly set: (key: K, value: V) => void;
+  /** The number of entries held, never more than the capacity. */
+  readonly size: () => number;
+}
+
+/**
+ * Creates an empty cache that keeps at most `capacity` entries, at least one.
+ * A `Map` iterates in insertion order, so re-inserting an entry moves it to
+ * the end, and the first key is the least recently used.
+ */
+export const makeBoundedCache = <K, V>(
+  capacity: number,
+): BoundedCache<K, V> => {
+  const entries = new Map<K, { readonly value: V }>();
+  const touch = (key: K, entry: { readonly value: V }): void => {
+    entries.delete(key);
+    entries.set(key, entry);
+  };
+  return Object.freeze({
+    get: (key: K): Option.Option<V> => {
+      const entry = entries.get(key);
+      if (entry === undefined) {
+        return Option.none();
+      }
+      touch(key, entry);
+      return Option.some(entry.value);
+    },
+    set: (key: K, value: V): void => {
+      touch(key, { value });
+      if (entries.size > capacity) {
+        const oldest = entries.keys().next();
+        if (oldest.done !== true) {
+          entries.delete(oldest.value);
+        }
+      }
+    },
+    size: (): number => entries.size,
+  });
+};
+
+const PUBLIC_KEY_BYTE_LENGTH = 32;
+const SIGNATURE_BYTE_LENGTH = 64;
+
+const FIELD_MODULUS = Uint8Array.from([
+  0xed, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+  0xff, 0xff, 0xff, 0xff, 0xff, 0x7f,
+]);
+
+const SCALAR_ORDER = Uint8Array.from([
+  0xed, 0xd3, 0xf5, 0x5c, 0x1a, 0x63, 0x12, 0x58, 0xd6, 0x9c, 0xf7, 0xa2, 0xde,
+  0xf9, 0xde, 0x14, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
+]);
+
+const bytesFromHex = (value: string): Uint8Array =>
+  new Uint8Array(Buffer.from(value, "hex"));
+
+const SMALL_ORDER_POINTS = Object.freeze([
+  bytesFromHex("00".repeat(32)),
+  bytesFromHex(`01${"00".repeat(31)}`),
+  bytesFromHex(
+    "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+  ),
+  bytesFromHex(
+    "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+  ),
+  bytesFromHex(`ec${"ff".repeat(30)}7f`),
+  bytesFromHex(`ed${"ff".repeat(30)}7f`),
+  bytesFromHex(`ee${"ff".repeat(30)}7f`),
+]);
+
+const isLessThanLittleEndian = (
+  value: Uint8Array,
+  upperBound: Uint8Array,
+): boolean => {
+  if (value.byteLength !== upperBound.byteLength) {
+    return false;
+  }
+  for (let index = value.byteLength - 1; index >= 0; index -= 1) {
+    const valueByte = value[index];
+    const boundByte = upperBound[index];
+    if (valueByte === undefined || boundByte === undefined) {
+      return false;
+    }
+    if (valueByte !== boundByte) {
+      return valueByte < boundByte;
+    }
+  }
+  return false;
+};
+
+const hasCanonicalPointEncoding = (value: Uint8Array): boolean => {
+  if (value.byteLength !== PUBLIC_KEY_BYTE_LENGTH) {
+    return false;
+  }
+  const coordinate = new Uint8Array(value);
+  const finalByte = coordinate[PUBLIC_KEY_BYTE_LENGTH - 1];
+  if (finalByte === undefined) {
+    return false;
+  }
+  coordinate[PUBLIC_KEY_BYTE_LENGTH - 1] = finalByte & 0x7f;
+  return isLessThanLittleEndian(coordinate, FIELD_MODULUS);
+};
+
+const encodesSmallOrderPoint = (value: Uint8Array): boolean =>
+  SMALL_ORDER_POINTS.some((point) => {
+    for (let index = 0; index < PUBLIC_KEY_BYTE_LENGTH; index += 1) {
+      const valueByte = value[index];
+      const pointByte = point[index];
+      if (valueByte === undefined || pointByte === undefined) {
+        return false;
+      }
+      const mask = index === PUBLIC_KEY_BYTE_LENGTH - 1 ? 0x7f : 0xff;
+      if ((valueByte & mask) !== pointByte) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+const hasAcceptedPublicKeyEncoding = (value: Uint8Array): boolean =>
+  hasCanonicalPointEncoding(value) && !encodesSmallOrderPoint(value);
+
+const decodeAcceptedPublicKey = (value: string): Uint8Array | undefined => {
+  const bytes = decodeCanonicalBase64Url(value);
+  return bytes !== undefined && hasAcceptedPublicKeyEncoding(bytes)
+    ? bytes
+    : undefined;
+};
+
+/**
+ * Checks the closed Ed25519 signature representation before cryptographic
+ * verification.
+ *
+ * The standards verifier supplies the strict verification equation. This
+ * boundary additionally rejects alternate point and scalar encodings that
+ * permissive platform verifiers may otherwise accept. The public-key Schema
+ * separately rejects small-order verification keys.
+ *
+ * @param signature Candidate 64-byte Ed25519 signature.
+ * @returns Whether its point and scalar use the single accepted encoding.
+ */
+export const hasCanonicalEd25519SignatureEncoding = (
+  signature: Uint8Array,
+): boolean => {
+  if (signature.byteLength !== SIGNATURE_BYTE_LENGTH) {
+    return false;
+  }
+  const encodedPoint = signature.subarray(0, PUBLIC_KEY_BYTE_LENGTH);
+  const scalar = signature.subarray(PUBLIC_KEY_BYTE_LENGTH);
+  return (
+    hasCanonicalPointEncoding(encodedPoint) &&
+    isLessThanLittleEndian(scalar, SCALAR_ORDER)
+  );
+};
+
+type PublicKeyValue = Readonly<{
+  crv: "Ed25519";
+  kty: "OKP";
+  x: string;
+}>;
+
+const missingMember = Symbol("missingMember");
+
+const hasExactPublicKeyNames = (value: object): boolean => {
+  const keys = Reflect.ownKeys(value);
+  const names = new Set(keys);
+  return (
+    keys.length === 3 && names.has("crv") && names.has("kty") && names.has("x")
+  );
+};
+
+const readPublicKeyMember = (
+  value: object,
+  name: "crv" | "kty" | "x",
+): unknown => {
+  const descriptor = Object.getOwnPropertyDescriptor(value, name);
+  if (
+    descriptor === undefined ||
+    descriptor.enumerable !== true ||
+    !("value" in descriptor)
+  ) {
+    return missingMember;
+  }
+  return descriptor.value;
+};
+
+const hasPublicKeyMembers = (value: object): value is PublicKeyValue => {
+  if (!hasExactPublicKeyNames(value)) {
+    return false;
+  }
+  const crv = readPublicKeyMember(value, "crv");
+  const kty = readPublicKeyMember(value, "kty");
+  const x = readPublicKeyMember(value, "x");
+  return crv === "Ed25519" && kty === "OKP" && typeof x === "string";
+};
+
+const isFrozenPublicKey = (value: unknown): value is PublicKeyValue => {
+  try {
+    return (
+      typeof value === "object" &&
+      value !== null &&
+      Object.isFrozen(value) &&
+      hasPublicKeyMembers(value)
+    );
+    // eslint-disable-next-line agent-code-guard/bare-catch -- A Schema predicate converts hostile reflection into ordinary validation failure. #ignore-sloppy-code-next-line[bare-catch]: The predicate returns false.
+  } catch {
+    return false;
+  }
+};
+
+const publicKeyValueSchema = Schema.declare(isFrozenPublicKey, {
+  identifier: "Ed25519PublicKeyValue",
+});
+
+const publicKeyRepresentation = Schema.Struct({
+  crv: Schema.Literal("Ed25519"),
+  kty: Schema.Literal("OKP"),
+  x: Schema.String.pipe(
+    Schema.filter((value) => decodeAcceptedPublicKey(value) !== undefined, {
+      identifier: "Ed25519PublicKeyCoordinate",
+      description: "Canonical non-small-order Ed25519 public-key coordinate",
+    }),
+  ),
+}).annotations({
+  identifier: "Ed25519PublicKeyRepresentation",
+  parseOptions: {
+    exact: true,
+    onExcessProperty: "error",
+  },
+});
+
+/** Exact immutable Ed25519 public JWK. */
+// eslint-disable-next-line @typescript-eslint/naming-convention -- Effect Schemas use the public model's type name so callers import one vocabulary term.
+export const Ed25519PublicKey = Schema.transform(
+  publicKeyRepresentation,
+  publicKeyValueSchema,
+  {
+    strict: true,
+    decode: (value) =>
+      Object.freeze({
+        crv: value.crv,
+        kty: value.kty,
+        x: value.x,
+      }),
+    encode: (value) => ({
+      crv: value.crv,
+      kty: value.kty,
+      x: value.x,
+    }),
+  },
+).pipe(
+  Schema.brand("Ed25519PublicKey"),
+  Schema.annotations({
+    identifier: "Ed25519PublicKey",
+    description: "Exact immutable Ed25519 public JWK",
+    parseOptions: {
+      exact: true,
+      onExcessProperty: "error",
+    },
+  }),
+);
+
+/** Validated immutable Ed25519 public JWK. */
+// eslint-disable-next-line @typescript-eslint/no-redeclare -- Effect's same-named Schema and inferred type form one public boundary model.
+export type Ed25519PublicKey = typeof Ed25519PublicKey.Type;
+
+/**
+ * Reports failure to read a key, to derive its standard thumbprint URI or
+ * X25519 key, or to import it.
+ */
+export class Ed25519PublicKeyOperationError extends Data.TaggedError(
+  "Ed25519PublicKeyOperationError",
+) {}
+
+const publicKeyOperationFailure = (): Ed25519PublicKeyOperationError =>
+  new Ed25519PublicKeyOperationError();
+
+/**
+ * Calls each thunk and reads its key's `x` under one try, so a key, or a card,
+ * request or authority holding one, that throws on read fails with
+ * `Ed25519PublicKeyOperationError` instead of a defect. `crv` and `kty` are
+ * fixed and `x` has one accepted spelling, so equal `x` means the same key.
+ */
+export const sameEd25519PublicKey = (
+  left: LazyArg<Ed25519PublicKey>,
+  right: LazyArg<Ed25519PublicKey>,
+): Effect.Effect<boolean, Ed25519PublicKeyOperationError> =>
+  Effect.try({
+    try: () => left().x === right().x,
+    catch: publicKeyOperationFailure,
+  });
+
+/**
+ * Most keys that each per-key cache below keeps: eight times
+ * `signed-message.ts → MAXIMUM_RECIPIENTS`, so the keys of eight full
+ * conversations stay cached. Each entry is one short string or one imported
+ * public `CryptoKey`.
+ */
+const PUBLIC_KEY_CACHE_ENTRIES = 1_024;
+
+/**
+ * Derives a value from a public key once while the key stays among the
+ * `PUBLIC_KEY_CACHE_ENTRIES` most recently used. Entries are keyed by `x`:
+ * `crv` and `kty` are fixed and `x` has one accepted spelling, so `x`
+ * determines the RFC 7638 canonical JWK the thumbprint hashes, and two keys
+ * share an entry only when they are the same key. Keying by value keeps a hit
+ * for every AgentCard decode, each of which makes a new key object. The entry
+ * and its derivation share one read of `x`, so an entry holds its own key's
+ * value even for an object whose members change between reads. A key whose
+ * `x` cannot be read fails with `Ed25519PublicKeyOperationError`. A failed
+ * derivation is not kept, and the caches hold key material, never a
+ * verification outcome.
+ */
+const cachedPerPublicKey = <A>(
+  entries: BoundedCache<string, A>,
+  publicKey: Ed25519PublicKey,
+  derive: (
+    jwk: PublicKeyValue,
+  ) => Effect.Effect<A, Ed25519PublicKeyOperationError>,
+): Effect.Effect<A, Ed25519PublicKeyOperationError> =>
+  Effect.try({
+    try: (): PublicKeyValue =>
+      Object.freeze({ crv: "Ed25519", kty: "OKP", x: publicKey.x }),
+    catch: publicKeyOperationFailure,
+  }).pipe(
+    Effect.flatMap((jwk) =>
+      Option.match(entries.get(jwk.x), {
+        onNone: () =>
+          Effect.tap(derive(jwk), (derived) => {
+            entries.set(jwk.x, derived);
+          }),
+        onSome: (cached) => Effect.succeed(cached),
+      }),
+    ),
+  );
+
+const thumbprintUris = makeBoundedCache<string, string>(
+  PUBLIC_KEY_CACHE_ENTRIES,
+);
+
+/**
+ * Derives the RFC JWK thumbprint URI for a validated Ed25519 public key.
+ *
+ * @param publicKey Validated public key.
+ * @returns The standard SHA-256 JWK thumbprint URI.
+ * @failure Ed25519PublicKeyOperationError when the key's `x` cannot be read
+ * or the JOSE implementation cannot derive the URI.
+ */
+export const ed25519PublicKeyThumbprintUri = (
+  publicKey: Ed25519PublicKey,
+): Effect.Effect<string, Ed25519PublicKeyOperationError> =>
+  cachedPerPublicKey(thumbprintUris, publicKey, (jwk) =>
+    Effect.tryPromise({
+      try: () => calculateJwkThumbprintUri(jwk, "sha256"),
+      catch: publicKeyOperationFailure,
+    }),
+  );
+
+const importPublicJwk = (
+  jwk: PublicKeyValue | X25519PublicJwk,
+  algorithm: string,
+): Effect.Effect<CryptoKey, Ed25519PublicKeyOperationError> =>
+  Effect.tryPromise({
+    try: () => importJWK(jwk, algorithm),
+    catch: publicKeyOperationFailure,
+  });
+
+const verificationKeys = makeBoundedCache<string, CryptoKey>(
+  PUBLIC_KEY_CACHE_ENTRIES,
+);
+
+/** Imports a validated Ed25519 public key to verify signatures under it. */
+export const ed25519VerificationKey = (
+  publicKey: Ed25519PublicKey,
+): Effect.Effect<CryptoKey, Ed25519PublicKeyOperationError> =>
+  cachedPerPublicKey(verificationKeys, publicKey, (jwk) =>
+    importPublicJwk(jwk, "Ed25519"),
+  );
+
+/** JWE key management of sealed bodies; the opening key is imported for it. */
+export const SEALED_BODY_KEY_MANAGEMENT_ALGORITHM = "ECDH-ES+A256KW";
+
+/** X25519 public JWK of one agent: the key a sealed body is encrypted to. */
+export interface X25519PublicJwk {
+  readonly crv: "X25519";
+  readonly kty: "OKP";
+  readonly x: string;
+}
+
+/**
+ * Maps a validated Ed25519 public key to the same agent's X25519 public key
+ * through the RFC 7748 birational map `u = (1 + y) / (1 - y)`. The opening key
+ * that `fromPkcs8` derives is the private half of this key.
+ *
+ * The Ed25519 public-key Schema admits canonical encodings that are not curve
+ * points, and the map fails for those.
+ *
+ * @param publicKey Validated Ed25519 public key, such as an AgentCard key.
+ * @returns The X25519 public JWK.
+ */
+export const x25519PublicJwk = (
+  publicKey: PublicKeyValue,
+): Either.Either<X25519PublicJwk, Ed25519PublicKeyOperationError> =>
+  Either.try({
+    try: (): X25519PublicJwk => ({
+      crv: "X25519",
+      kty: "OKP",
+      x: Encoding.encodeBase64Url(
+        ed25519.utils.toMontgomery(
+          Encoding.decodeBase64Url(publicKey.x).pipe(Either.getOrThrow),
+        ),
+      ),
+    }),
+    catch: publicKeyOperationFailure,
+  });
+
+const sealingKeys = makeBoundedCache<string, CryptoKey>(
+  PUBLIC_KEY_CACHE_ENTRIES,
+);
+
+/** Imports the `x25519PublicJwk` image of a validated key to seal bodies to. */
+export const x25519SealingKey = (
+  publicKey: Ed25519PublicKey,
+): Effect.Effect<CryptoKey, Ed25519PublicKeyOperationError> =>
+  cachedPerPublicKey(sealingKeys, publicKey, (jwk) =>
+    Effect.flatMap(x25519PublicJwk(jwk), (agreementKey) =>
+      importPublicJwk(agreementKey, SEALED_BODY_KEY_MANAGEMENT_ALGORITHM),
+    ),
+  );
+
+declare const agentSigningAuthorityBrand: unique symbol;
+
+/**
+ * Opaque authority over one imported Ed25519 private key and the X25519
+ * opening key derived from it.
+ */
+export interface AgentSigningAuthority {
+  readonly [agentSigningAuthorityBrand]: "AgentSigningAuthority";
+}
+
+/**
+ * The supplied private-key material cannot act as an Ed25519 signer or yield
+ * its X25519 opening key. The public contract represents every such cause with
+ * this one empty error.
+ */
+export class InvalidAgentPrivateKeyError extends Data.TaggedError(
+  "InvalidAgentPrivateKeyError",
+) {}
+
+type AuthorityState = Readonly<{
+  privateKey: CryptoKey;
+  openingKey: CryptoKey;
+  publicKey: Ed25519PublicKey;
+}>;
+
+const authorityState = new WeakMap<AgentSigningAuthority, AuthorityState>();
+
+const getAuthorityState = (
+  authority: AgentSigningAuthority,
+): AuthorityState => {
+  const state = authorityState.get(authority);
+  // eslint-disable-next-line agent-code-guard/require-assertion-rationale -- The construction invariant inserts state before this opaque value escapes.
+  return state!;
+};
+
+const invalidPrivateKey = (): InvalidAgentPrivateKeyError =>
+  new InvalidAgentPrivateKeyError();
+
+/** Length of the SHA-512 expansion whose first half is the X25519 secret. */
+const EXPANDED_SECRET_BYTES = 64;
+
+/**
+ * Selects the bytes to erase for `bytes`: its whole buffer when the view
+ * starts that buffer and the buffer is no larger than the SHA-512 expansion,
+ * and only the view otherwise.
+ *
+ * The decoded seed and the expansion behind the X25519 secret each sit alone
+ * in such a buffer, so erasing it also removes the expansion's RFC 8032 nonce
+ * prefix. A view into a larger shared buffer, such as Node's pooled Buffer
+ * slab, is erased alone so that unrelated data survives.
+ *
+ * @param bytes Key bytes.
+ * @returns The bytes to overwrite.
+ */
+const erasableBytes = (bytes: Uint8Array): Uint8Array =>
+  bytes.byteOffset === 0 && bytes.buffer.byteLength <= EXPANDED_SECRET_BYTES
+    ? new Uint8Array(bytes.buffer)
+    : bytes;
+
+/**
+ * Overwrites the key bytes behind `bytes` once `effect` settles. The
+ * base64url strings that JOSE requires cannot be zeroed and remain until
+ * garbage collection.
+ *
+ * @param bytes Key bytes to erase.
+ * @param effect Work that reads them.
+ * @returns `effect`, with the erasure attached.
+ */
+const zeroAfter = <A, E>(
+  bytes: Uint8Array,
+  effect: Effect.Effect<A, E>,
+): Effect.Effect<A, E> =>
+  effect.pipe(
+    Effect.ensuring(
+      Effect.sync(() => {
+        erasableBytes(bytes).fill(0);
+      }),
+    ),
+  );
+
+/**
+ * Derives the non-extractable X25519 opening key from the Ed25519 seed.
+ *
+ * The secret is the clamped first half of SHA-512 over the seed, which is the
+ * RFC 8032 signing scalar. The JWK pairs it with `x25519PublicJwk` of the
+ * Ed25519 public key, and the import refuses a pair whose halves disagree, so
+ * the opener and every sealer use the same key.
+ *
+ * @param seed Ed25519 seed decoded from the exported private JWK.
+ * @param publicKey Ed25519 public key of the same seed.
+ * @returns The opening key, usable only for X25519 `deriveBits`.
+ */
+const importFromSeed = (
+  seed: Uint8Array,
+  publicKey: Ed25519PublicKey,
+): Effect.Effect<CryptoKey, InvalidAgentPrivateKeyError> =>
+  Effect.gen(function* () {
+    const agreementPublicKey = yield* Either.mapLeft(
+      x25519PublicJwk(publicKey),
+      invalidPrivateKey,
+    );
+    const secret = yield* Effect.try({
+      try: () => ed25519.utils.toMontgomerySecret(seed),
+      catch: invalidPrivateKey,
+    });
+    return yield* zeroAfter(
+      secret,
+      Effect.tryPromise({
+        try: () =>
+          importJWK(
+            { ...agreementPublicKey, d: Encoding.encodeBase64Url(secret) },
+            SEALED_BODY_KEY_MANAGEMENT_ALGORITHM,
+            { extractable: false },
+          ),
+        catch: invalidPrivateKey,
+      }),
+    );
+  });
+
+/**
+ * Decodes the seed from the private JWK exported from the PKCS#8 key, derives
+ * the opening key against the Ed25519 public key of the same seed, and erases
+ * the decoded seed.
+ */
+const importOpeningKey = (
+  exportedKey: JWK,
+  publicKey: Ed25519PublicKey,
+): Effect.Effect<CryptoKey, InvalidAgentPrivateKeyError> =>
+  Effect.gen(function* () {
+    if (exportedKey.d === undefined) {
+      return yield* new InvalidAgentPrivateKeyError();
+    }
+    const seed = yield* Either.mapLeft(
+      Encoding.decodeBase64Url(exportedKey.d),
+      invalidPrivateKey,
+    );
+    return yield* zeroAfter(seed, importFromSeed(seed, publicKey));
+  });
+
+/**
+ * Imports one Ed25519 PKCS#8 key as an opaque authority.
+ *
+ * JOSE needs an extractable import to derive the public JWK and the seed of
+ * the opening key, while the authority retains a separate non-extractable
+ * import for signing.
+ *
+ * @param pkcs8 Redacted unencrypted Ed25519 PKCS#8 text.
+ * @returns The authority.
+ */
+const fromPkcs8 = (
+  pkcs8: Redacted.Redacted,
+): Effect.Effect<AgentSigningAuthority, InvalidAgentPrivateKeyError> =>
+  Effect.gen(function* () {
+    const extractableKey = yield* Effect.tryPromise({
+      try: () =>
+        importPKCS8(Redacted.value(pkcs8), "Ed25519", {
+          extractable: true,
+        }),
+      catch: invalidPrivateKey,
+    });
+    const exportedKey = yield* Effect.tryPromise({
+      try: () => exportJWK(extractableKey),
+      catch: invalidPrivateKey,
+    });
+    const publicKey = yield* Schema.decodeUnknown(Ed25519PublicKey)(
+      {
+        crv: exportedKey.crv,
+        kty: exportedKey.kty,
+        x: exportedKey.x,
+      },
+      {
+        exact: true,
+        onExcessProperty: "error",
+      },
+    ).pipe(Effect.mapError(invalidPrivateKey));
+    const openingKey = yield* importOpeningKey(exportedKey, publicKey);
+
+    const privateKey = yield* Effect.tryPromise({
+      try: () =>
+        importPKCS8(Redacted.value(pkcs8), "Ed25519", {
+          extractable: false,
+        }),
+      catch: invalidPrivateKey,
+    });
+    // eslint-disable-next-line agent-code-guard/require-assertion-rationale -- This assertion is safe because this module alone constructs values after inserting their WeakMap state.
+    const authority = Object.freeze({}) as AgentSigningAuthority;
+    authorityState.set(authority, { privateKey, openingKey, publicKey });
+    return authority;
+  });
+
+const publicKey = (authority: AgentSigningAuthority): Ed25519PublicKey =>
+  getAuthorityState(authority).publicKey;
+
+/**
+ * Returns the non-extractable key to identity-owned signed-artifact modules.
+ *
+ * @param authority Authority whose private key is needed.
+ * @returns The authority's non-extractable private key.
+ */
+export const agentSigningPrivateKey = (
+  authority: AgentSigningAuthority,
+): CryptoKey => getAuthorityState(authority).privateKey;
+
+/**
+ * Returns the non-extractable X25519 key to the identity-owned sealed-body
+ * module.
+ *
+ * @param authority Authority whose opening key is needed.
+ * @returns The authority's non-extractable X25519 opening key.
+ */
+export const agentOpeningPrivateKey = (
+  authority: AgentSigningAuthority,
+): CryptoKey => getAuthorityState(authority).openingKey;
+
+/**
+ * Loads and identifies one Ed25519 signing authority without exposing its
+ * private keys or a generic signing or decryption operation.
+ */
+// eslint-disable-next-line @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- The approved Effect-style API uses one name for its opaque type and capability value.
+export const AgentSigningAuthority = Object.freeze({
+  fromPkcs8,
+  publicKey,
+});
+
+const canonicalBase64Url = Schema.String.pipe(
+  Schema.filter((value) => decodeCanonicalBase64Url(value) !== undefined),
+);
+
+const jwsSignatureRepresentation = exactStruct({
+  protected: canonicalBase64Url,
+  signature: Schema.String.pipe(
+    Schema.filter((value) => {
+      const bytes = decodeCanonicalBase64Url(value);
+      return bytes !== undefined && hasCanonicalEd25519SignatureEncoding(bytes);
+    }),
+  ),
+});
+
+/** Exact General JWS with one canonical Ed25519 signature and no extra members. */
+export const generalJwsRepresentation = exactStruct({
+  payload: canonicalBase64Url,
+  signatures: Schema.Tuple(jwsSignatureRepresentation),
+});
+
+type SingleSignatureJwsRepresentation = typeof generalJwsRepresentation.Type;
+
+/** Retains immutable copies of every admitted JWS member. */
+export const snapshotRepresentation = (
+  representation: SingleSignatureJwsRepresentation,
+): SingleSignatureJwsRepresentation =>
+  Object.freeze({
+    payload: representation.payload,
+    signatures: Object.freeze([
+      Object.freeze({
+        protected: representation.signatures[0].protected,
+        signature: representation.signatures[0].signature,
+      }),
+    ] as const),
+  });

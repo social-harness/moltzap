@@ -151,7 +151,7 @@ function testDocImportsResolveClean(): void {
   plantFile(
     CONTRIBUTING_DOC,
     (s) =>
-      `${s}\n\`\`\`typescript\nimport { foo } from "@moltzap/identity/does-not-exist";\n\`\`\`\n`,
+      `${s}\n\`\`\`typescript\nimport { foo } from "@moltzap/client/does-not-exist";\n\`\`\`\n`,
   );
   const r1 = runScript(
     "scripts/docs/check-doc-imports-resolve.ts",
@@ -169,7 +169,7 @@ function testDocImportsResolveR2(): void {
   plantFile(
     CONTRIBUTING_DOC,
     (s) =>
-      `${s}\n\`\`\`typescript\nimport { ThisSymbolDoesNotExist } from "@moltzap/identity";\n\`\`\`\n`,
+      `${s}\n\`\`\`typescript\nimport { ThisSymbolDoesNotExist } from "@moltzap/client";\n\`\`\`\n`,
   );
   const r2 = runScript(
     "scripts/docs/check-doc-imports-resolve.ts",
@@ -188,7 +188,7 @@ function testDocImportsResolveR4(): void {
   plantFile(
     CONTRIBUTING_DOC,
     (s) =>
-      `${s}\n\`\`\`typescript\nimport {\n  ThisSymbolDoesNotExist,\n  AlsoNotExported,\n} from "@moltzap/identity";\n\`\`\`\n`,
+      `${s}\n\`\`\`typescript\nimport {\n  ThisSymbolDoesNotExist,\n  AlsoNotExported,\n} from "@moltzap/client";\n\`\`\`\n`,
   );
   const r4 = runScript(
     "scripts/docs/check-doc-imports-resolve.ts",
@@ -209,7 +209,7 @@ function testDocImportsResolveR5(): void {
   plantFile(
     CONTRIBUTING_DOC,
     (s) =>
-      `${s}\n\`\`\`typescript\nimport {\n  AgentId,\n  AgentName,\n} from "@moltzap/identity";\n\`\`\`\n`,
+      `${s}\n\`\`\`typescript\nimport {\n  AgentId,\n  AgentName,\n} from "@moltzap/client";\n\`\`\`\n`,
   );
   const r5 = runScript(
     "scripts/docs/check-doc-imports-resolve.ts",
@@ -227,7 +227,7 @@ function testDocImportsResolveR6(): void {
   plantFile(
     CONTRIBUTING_DOC,
     (s) =>
-      `${s}\n\`\`\`typescript\nimport { WIRE_VERSION } from "@moltzap/identity";\nimport { Registry } from "@moltzap/identity/registry";\nimport "@moltzap/registry";\nimport "@moltzap/router/server";\n\`\`\`\n`,
+      `${s}\n\`\`\`typescript\nimport { WIRE_VERSION } from "@moltzap/client";\nimport { Registry } from "@moltzap/client/service";\nimport "@moltzap/registry";\nimport "@moltzap/router/server";\n\`\`\`\n`,
   );
   const r6 = runScript(
     "scripts/docs/check-doc-imports-resolve.ts",
@@ -245,7 +245,7 @@ function testDocImportsResolveR7(): void {
   plantFile(
     CONTRIBUTING_DOC,
     (s) =>
-      `${s}\n\`\`\`typescript\nimport { ThisIdentitySymbolDoesNotExist } from "@moltzap/identity";\n\`\`\`\n`,
+      `${s}\n\`\`\`typescript\nimport { ThisIdentitySymbolDoesNotExist } from "@moltzap/client";\n\`\`\`\n`,
   );
   const r7 = runScript(
     "scripts/docs/check-doc-imports-resolve.ts",
@@ -393,7 +393,7 @@ function testPublicationGuards(): void {
 
 /** Test overrides require an explicit condition and cannot enter production source. */
 function testPublicationGuardsTestOnly(): void {
-  plantFile("packages/identity/package.json", (source) =>
+  plantFile("packages/client/package.json", (source) =>
     source.replace('"sharness-test": {', '"default": {'),
   );
   const unconditional = runBoundaries();
@@ -407,7 +407,7 @@ function testPublicationGuardsTestOnly(): void {
   plantFile(
     "packages/client/src/communication/conversations/index.ts",
     (source) =>
-      'import { WireVersions } from "@moltzap/identity/test";\n' + source,
+      'import { WireVersions } from "@moltzap/client/test";\n' + source,
   );
   const production = runBoundaries();
   test(
@@ -424,9 +424,9 @@ function testPublicationGuardsTestOnly(): void {
 /** Namespace wildcard exports expose the same unbounded surface as bare wildcards. */
 function testPublicationGuardsNamespaceExport(): void {
   plantFile(
-    "packages/identity/src/index.ts",
+    "packages/client/src/index.ts",
     (source) =>
-      source + '\nexport * as RegistryApi from "./registry/contract.js";\n',
+      source + '\nexport * as RegistryApi from "./identity/registry/contract.js";\n',
   );
   const wildcard = runBoundaries();
   test(
@@ -492,14 +492,14 @@ function testPublicationGuardsPublicNanoClaw(): void {
 }
 
 function testPublicationGuardsPrivateIdentity(): void {
-  plantFile("packages/identity/package.json", (s) =>
+  plantFile("packages/client/package.json", (s) =>
     s.replace('"version"', '"private": true,\n  "version"'),
   );
   const privateIdentity = runBoundaries();
   test(
     "flags a published package that carries private",
     privateIdentity.code !== 0 &&
-      /identity\/package\.json: a published package must not carry "private"/.test(
+      /client\/package\.json: a published package must not carry "private"/.test(
         privateIdentity.stderr,
       ),
     `expected published-private failure. exit=${privateIdentity.code}, stderr=${privateIdentity.stderr.slice(0, 300)}`,
@@ -508,33 +508,33 @@ function testPublicationGuardsPrivateIdentity(): void {
 }
 
 function testPublicationGuardsWrongLicense(): void {
-  plantFile("packages/router/package.json", (s) =>
+  plantFile("packages/client/package.json", (s) =>
     s.replace('"license": "Apache-2.0"', '"license": "MIT"'),
   );
   const wrongLicense = runBoundaries();
   test(
     "flags a published package with another license",
     wrongLicense.code !== 0 &&
-      /router\/package\.json: license is "MIT"/.test(wrongLicense.stderr),
+      /client\/package\.json: license is "MIT"/.test(wrongLicense.stderr),
     `expected license failure. exit=${wrongLicense.code}, stderr=${wrongLicense.stderr.slice(0, 300)}`,
   );
   restoreAllPlants();
 }
 
 function testPublicationGuardsDriftedNotice(): void {
-  plantFile("packages/router/NOTICE", (s) => `${s}Extra line.\n`);
+  plantFile("packages/client/NOTICE", (s) => `${s}Extra line.\n`);
   const driftedNotice = runBoundaries();
   test(
     "flags a packaged NOTICE that differs from the repository NOTICE",
     driftedNotice.code !== 0 &&
-      /router\/NOTICE: must be an identical copy/.test(driftedNotice.stderr),
+      /client\/NOTICE: must be an identical copy/.test(driftedNotice.stderr),
     `expected NOTICE drift failure. exit=${driftedNotice.code}, stderr=${driftedNotice.stderr.slice(0, 300)}`,
   );
   restoreAllPlants();
 }
 
 function testPublicationGuardsForeignRepository(): void {
-  plantFile("packages/router/package.json", (s) =>
+  plantFile("packages/client/package.json", (s) =>
     s.replace(
       "git+https://github.com/social-harness/moltzap.git",
       "https://example.invalid/fork.git",
@@ -544,7 +544,7 @@ function testPublicationGuardsForeignRepository(): void {
   test(
     "flags a published package pointing at another repository",
     foreignRepository.code !== 0 &&
-      /router\/package\.json: repository\.url must be/.test(
+      /client\/package\.json: repository\.url must be/.test(
         foreignRepository.stderr,
       ),
     `expected repository failure. exit=${foreignRepository.code}, stderr=${foreignRepository.stderr.slice(0, 300)}`,
@@ -553,14 +553,14 @@ function testPublicationGuardsForeignRepository(): void {
 }
 
 function testPublicationGuardsSemver(): void {
-  plantFile("packages/router/package.json", (s) =>
+  plantFile("packages/client/package.json", (s) =>
     s.replace(/"version": "[^"]+"/, '"version": "1.2.3"'),
   );
   const semver = runBoundaries();
   test(
     "flags a published manifest whose version is not a calendar version",
     semver.code !== 0 &&
-      /router\/package\.json: version "1\.2\.3" is not a YYYY\.MDD\.N CalVer/.test(
+      /client\/package\.json: version "1\.2\.3" is not a YYYY\.MDD\.N CalVer/.test(
         semver.stderr,
       ),
     `expected calver failure. exit=${semver.code}, stderr=${semver.stderr.slice(0, 300)}`,
@@ -611,8 +611,8 @@ function testNonCalendarLiveEntry(): void {
     live.code === 1 &&
       isDeepStrictEqual(live.stderr.trim().split("\n"), [
         "[check-architecture-boundaries] FAIL",
-        '  packages/identity/src/version.ts: LIVE_WIRE_VERSIONS entry "invalid" is not a YYYY.MDD.N CalVer',
-        '  packages/identity/src/version.ts: HISTORY_WIRE_VERSIONS entry "invalid" is not a YYYY.MDD.N CalVer',
+        '  packages/client/src/identity/wire-version.ts: LIVE_WIRE_VERSIONS entry "invalid" is not a YYYY.MDD.N CalVer',
+        '  packages/client/src/identity/wire-version.ts: HISTORY_WIRE_VERSIONS entry "invalid" is not a YYYY.MDD.N CalVer',
       ]),
     `expected exactly the live and inherited history failures. exit=${live.code}, stderr=${live.stderr}`,
   );
@@ -629,7 +629,7 @@ function testNonCalendarRetainedEntry(): void {
     retained.code === 1 &&
       isDeepStrictEqual(retained.stderr.trim().split("\n"), [
         "[check-architecture-boundaries] FAIL",
-        '  packages/identity/src/version.ts: HISTORY_WIRE_VERSIONS entry "1.2.3" is not a YYYY.MDD.N CalVer',
+        '  packages/client/src/identity/wire-version.ts: HISTORY_WIRE_VERSIONS entry "1.2.3" is not a YYYY.MDD.N CalVer',
       ]),
     `expected exactly the retained history failure. exit=${retained.code}, stderr=${retained.stderr}`,
   );
@@ -796,14 +796,14 @@ function testDependencyVersionsExampleCopy(): void {
 }
 
 function testDependencyVersionsDriftedEngines(): void {
-  plantFile("packages/router/package.json", (s) =>
+  plantFile("packages/client/package.json", (s) =>
     s.replace(/"node": "[^"]+"/, '"node": ">=20"'),
   );
   const engines = runDependencyVersions();
   test(
     "flags a published Node.js range that differs from the workspace root",
     engines.code !== 0 &&
-      /router\/package\.json: engines\.node is ">=20", expected the root/.test(
+      /client\/package\.json: engines\.node is ">=20", expected the root/.test(
         engines.stderr,
       ),
     `expected engines failure. exit=${engines.code}, stderr=${engines.stderr.slice(0, 300)}`,

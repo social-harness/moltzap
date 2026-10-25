@@ -5,12 +5,11 @@
  */
 import { HttpServer } from "@effect/platform";
 import { NodeHttpClient, NodeHttpServer } from "@effect/platform-node";
-import { AuthenticatedHttp, WIRE_VERSION } from "@moltzap/identity";
-import { Registry } from "@moltzap/identity/registry";
+import { AuthenticatedHttp, WIRE_VERSION } from "@moltzap/client";
+import { Registry } from "@moltzap/client/internal";
 import { ConfigError, Console, Data, Duration, Effect, Layer } from "effect";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- NodeHttpServer.make requires Node's server factory at this adapter boundary.
 import { createServer } from "node:http";
-import packageJson from "../package.json" with { type: "json" };
 import {
   configurationMessage,
   loadRouterConfiguration,
@@ -68,7 +67,7 @@ export namespace RouterServer {
       Effect.provide(NodeHttpServer.layerContext),
     );
     yield* Console.log(
-      `sharness-router listening on ${listeningUrl(httpServer.address)} (package ${packageJson.version}; WIRE_VERSION ${WIRE_VERSION})`,
+      `sharness-router listening on ${listeningUrl(httpServer.address)} (WIRE_VERSION ${WIRE_VERSION})`,
     );
   }).pipe(Effect.withSpan("RouterServer.layer"));
 

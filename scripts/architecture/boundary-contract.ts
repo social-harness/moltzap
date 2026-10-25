@@ -12,7 +12,6 @@
 /** Directory name of one final product under `packages/`. */
 export type PackageDir =
   | "client"
-  | "identity"
   | "nanoclaw-channel"
   | "openclaw-channel"
   | "router"
@@ -70,34 +69,10 @@ const SERVICE_TARGETS = [
 
 /** The contract of every final product, keyed by its directory. */
 export const FINAL_PACKAGES: Readonly<Record<PackageDir, PackageContract>> = {
-  identity: {
-    npmName: "@moltzap/identity",
-    published: true,
-    deps: [],
-    exports: {
-      ".": ROOT_EXPORT,
-      "./registry": {
-        types: "./dist/registry.d.ts",
-        import: "./dist/registry.js",
-      },
-      "./internal": {
-        internalOnly: true,
-        types: "./dist/internal/index.d.ts",
-        import: "./dist/internal/index.js",
-      },
-      "./test": {
-        testOnly: true,
-        types: "./dist/internal/test.d.ts",
-        import: "./dist/internal/test.js",
-      },
-    },
-    bin: {},
-    targets: SERVICE_TARGETS.filter((target) => target !== "test:integration"),
-  },
   registry: {
     npmName: "@moltzap/registry",
     published: false,
-    deps: ["identity"],
+    deps: ["client"],
     exports: {
       ".": ROOT_EXPORT,
       "./test": {
@@ -111,10 +86,15 @@ export const FINAL_PACKAGES: Readonly<Record<PackageDir, PackageContract>> = {
   },
   router: {
     npmName: "@moltzap/router",
-    published: true,
-    deps: ["identity"],
+    published: false,
+    deps: ["client"],
     exports: {
       ".": ROOT_EXPORT,
+      "./test": {
+        testOnly: true,
+        types: "./dist/test.d.ts",
+        import: "./dist/test.js",
+      },
       "./server": {
         types: "./dist/server.d.ts",
         import: "./dist/server.js",
@@ -126,9 +106,14 @@ export const FINAL_PACKAGES: Readonly<Record<PackageDir, PackageContract>> = {
   client: {
     npmName: "@moltzap/client",
     published: true,
-    deps: ["identity", "router"],
+    deps: [],
     exports: {
       ".": ROOT_EXPORT,
+      "./internal": {
+        internalOnly: true,
+        types: "./dist/daemon/internal.d.ts",
+        import: "./dist/daemon/internal.js",
+      },
       "./test": {
         testOnly: true,
         types: "./dist/test.d.ts",
@@ -179,19 +164,19 @@ export const FINAL_PACKAGES: Readonly<Record<PackageDir, PackageContract>> = {
       },
     },
     bin: {},
-    targets: ["arch:check", "build", "lint", "test:pack", "typecheck:tests"],
+    targets: ["arch:check", "build", "lint", "test:abi", "typecheck:tests"],
   },
 };
 
 /** Every product directory, in the order the checks report them. */
-export const FINAL_PACKAGE_DIRS: readonly PackageDir[] = [
-  "identity",
-  "registry",
-  "router",
-  "client",
-  "openclaw-channel",
-  "nanoclaw-channel",
-];
+export const FINAL_PACKAGE_DIRS = Object.keys(FINAL_PACKAGES).filter(
+  (dir): dir is PackageDir => Object.hasOwn(FINAL_PACKAGES, dir),
+);
+
+/** Published products in dependency order, derived from the product contract. */
+export const RELEASE_PACKAGES = FINAL_PACKAGE_DIRS.filter(
+  (dir) => FINAL_PACKAGES[dir].published,
+);
 
 /** Every product's npm name. */
 export const FINAL_PACKAGE_NAMES: ReadonlySet<string> = new Set(
@@ -219,13 +204,7 @@ export const INTEGRATION_TESTS = {
     "typecheck:tests",
     "lint",
   ],
-  dependencies: [
-    "identity",
-    "registry",
-    "router",
-    "client",
-    "openclaw-channel",
-  ],
+  dependencies: ["registry", "router", "client", "openclaw-channel"],
 } as const;
 
 /** Contract-only visibility metadata becomes the exact manifest condition object. */

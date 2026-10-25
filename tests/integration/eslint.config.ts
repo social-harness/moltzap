@@ -19,6 +19,8 @@ export default [
       "gather.integration.test.ts",
       "held-delivery.integration.test.ts",
       "loopback-server.ts",
+      "launcher-upgrades.integration.test.ts",
+      "launcher-provenance.ts",
       "message-policy-file.integration.test.ts",
       "otlp-receiver.ts",
       "participants.ts",

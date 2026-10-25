@@ -33,6 +33,12 @@
     "./server": {
       "types": "./dist/server.d.ts",
       "import": "./dist/server.js"
+    },
+    "./test": {
+      "sharness-test": {
+        "types": "./dist/test.d.ts",
+        "import": "./dist/test.js"
+      }
     }
   },
   "bin": {
@@ -58,7 +64,7 @@
         ],
         "options": {
           "cwd": "packages/router",
-          "command": "node ../../scripts/build/clean-dist.ts && tsc -b"
+          "command": "node ../../scripts/build/clean-dist.ts && tsc -b tsconfig.json tsconfig.test-entry.json"
         }
       },
       "typecheck": {
@@ -121,10 +127,10 @@
     "@effect/platform": "catalog:",
     "@effect/platform-node": "catalog:",
     "@effect/rpc": "catalog:",
-    "@moltzap/identity": "workspace:*",
     "canonicalize": "catalog:",
     "effect": "catalog:",
-    "jose": "catalog:"
+    "jose": "catalog:",
+    "@moltzap/client": "workspace:*"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",
@@ -134,5 +140,6 @@
     "typescript": "catalog:",
     "vitest": "catalog:"
   },
-  "sharnessContentHash": "sha256:1d08edc115acab64bc85bb78675c57469c2416eec118a8685e04a2cad546f67f"
+  "sharnessContentHash": "sha256:1d08edc115acab64bc85bb78675c57469c2416eec118a8685e04a2cad546f67f",
+  "private": true
 }

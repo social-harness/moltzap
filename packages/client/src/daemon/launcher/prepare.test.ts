@@ -30,8 +30,8 @@ type Routes = Readonly<Record<string, () => Response>>;
 
 const json = (body: unknown) => () => Response.json(body);
 
-/** A published release of the channel, its daemon and Identity at `version`. */
-const release = (version: string, wireVersion: string): Routes => {
+/** A published release of the channel and its daemon at `version`. */
+const release = (version: string, wireVersion?: string): Routes => {
   const tarball = new TextEncoder().encode(`tarball ${version}`);
   const published = (name: string, dependencies: Record<string, string>) => ({
     name,
@@ -50,20 +50,15 @@ const release = (version: string, wireVersion: string): Routes => {
     [`${REGISTRY}/@moltzap%2fopenclaw-channel/${version}`]: json(
       published(CHANNEL, { "@moltzap/client": version, effect: "^3" }),
     ),
-    [`${REGISTRY}/@moltzap%2fclient/${version}`]: json(
-      published("@moltzap/client", { "@moltzap/identity": version }),
-    ),
-    [`${REGISTRY}/@moltzap%2fidentity/${version}`]: json({
-      ...published("@moltzap/identity", {}),
-      moltzapWireVersion: wireVersion,
+    [`${REGISTRY}/@moltzap%2fclient/${version}`]: json({
+      ...published("@moltzap/client", {}),
+      sharnessWireVersion: wireVersion,
     }),
     ...Object.fromEntries(
-      ["@moltzap/openclaw-channel", "@moltzap/client", "@moltzap/identity"].map(
-        (name) => [
-          `${REGISTRY}/tarballs/${name}-${version}.tgz`,
-          () => new Response(tarball),
-        ],
-      ),
+      ["@moltzap/openclaw-channel", "@moltzap/client"].map((name) => [
+        `${REGISTRY}/tarballs/${name}-${version}.tgz`,
+        () => new Response(tarball),
+      ]),
     ),
   };
 };
@@ -105,16 +100,16 @@ const volume = Effect.gen(function* () {
     }),
   );
   yield* write(
-    "@moltzap/identity/package.json",
+    "@moltzap/client/package.json",
     JSON.stringify({
-      name: "@moltzap/identity",
+      name: "@moltzap/client",
       version: "2026.1021.1",
       type: "module",
       exports: { ".": { import: "./dist/index.js" } },
     }),
   );
   yield* write(
-    "@moltzap/identity/dist/index.js",
+    "@moltzap/client/dist/index.js",
     `export const LIVE_WIRE_VERSIONS = [${JSON.stringify(WIRE)}];\n`,
   );
   return { home: path.join(root, "home"), seed };
@@ -212,7 +207,7 @@ const keepsAnUnsafePin = () =>
                 integrity: integrityOf(new TextEncoder().encode("client")),
                 tarball: `${REGISTRY}/tarballs/client.tgz`,
               },
-              dependencies: { "@moltzap/identity": "../../../escape" },
+              dependencies: { "@moltzap/client": "../../../escape" },
             }),
           },
           asked,
@@ -341,3 +336,23 @@ describe("a launcher start", () => {
 });
 
 /* eslint-enable agent-code-guard/no-hardcoded-assertion-literals -- Restore assertion rules outside the launcher contract tests. */
+
+/** A library release without wire metadata is kept out before downloading bytes. */
+const keepsMissingLibraryWireVersion = () =>
+  Effect.gen(function* () {
+    const { home, seed } = yield* volume;
+    const asked: string[] = [];
+    const prepared = yield* prepare(configuration(home, follow), seed).pipe(
+      Effect.provide(start(release("2026.1101.1"), asked)),
+    );
+    expect(prepared).toMatchObject({
+      version: "2026.1021.1",
+      kept: "unresolved",
+    });
+    expect(asked.filter((url) => url.includes("/tarballs/"))).toEqual([]);
+  }).pipe(Effect.scoped, Effect.provide(NodeContext.layer));
+
+it(
+  "keeps the recorded release when the Client manifest has no wire version",
+  keepsMissingLibraryWireVersion,
+);

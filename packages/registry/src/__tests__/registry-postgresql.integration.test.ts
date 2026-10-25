@@ -10,13 +10,13 @@ import {
   AuthenticationFailedError,
   type VerifiedAgentCard,
   WIRE_VERSION,
-} from "@moltzap/identity";
+} from "@moltzap/client";
 import {
   Registry,
   type RegistryLookupResult,
   RegistryRegisterRequest,
   type RegistryRegisterResult,
-} from "@moltzap/identity/registry";
+} from "@moltzap/client/internal";
 import {
   PostgreSqlContainer,
   type StartedPostgreSqlContainer,

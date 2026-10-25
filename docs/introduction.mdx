@@ -55,11 +55,11 @@ host channel API and forward each requested send once.
 
 ## Packages
 
-Four packages publish to npm under the `@moltzap` scope, each at its own
-calendar version: `@moltzap/identity`, `@moltzap/router`, `@moltzap/client`,
+Two packages publish to npm under the `@moltzap` scope, each at its own
+calendar version: `@moltzap/client`,
 and `@moltzap/openclaw-channel`.
-Installing the client pulls the exact identity and router versions it was
-released with. `@moltzap/nanoclaw-channel` stays private. Client implements addressed
+Registry, Router and NanoClaw stay private. The Client library contains the
+identity and network client capabilities. Client implements addressed
 GENESIS/POST certification, durable delivery, recovery, and the daemon-backed
 `HarnessEndpoint`; OpenClaw (`2026.10.3` or later) and NanoClaw v2.3.0
 integrations use their stock channel APIs.

@@ -1,18 +1,8 @@
 /** @file Restart catch-up and threshold re-anchor tests for the addressed engine. */
 
-import type { RegistryLookupResult } from "@moltzap/identity/registry";
 import { FileSystem } from "@effect/platform";
 import { NodeFileSystem } from "@effect/platform-node";
 import { scopedLive as it, scoped as itOnTestClock } from "@effect/vitest";
-import {
-  AgentCard,
-  Ed25519PublicKey,
-  LIVE_WIRE_VERSIONS,
-  SignedMessage,
-  type VerifiedAgentCard,
-  WIRE_VERSION,
-} from "@moltzap/identity";
-import { RouterInstanceId } from "@moltzap/router";
 import {
   Chunk,
   Deferred,
@@ -32,6 +22,7 @@ import {
 } from "effect";
 import { generateKeyPairSync } from "node:crypto";
 import { describe, expect, vi } from "vitest";
+import type { RegistryLookupResult } from "../../../identity/registry/contract.js";
 import type { AddressRegistryPort } from "../address.js";
 import type { EngineRuntime } from "../runtime/index.js";
 import {
@@ -58,6 +49,10 @@ import {
   decodeCanonical,
   encodeCanonical,
 } from "../../../encoding/canonical-json.js";
+import { AgentCard, type VerifiedAgentCard } from "../../../identity/cards.js";
+import { Ed25519PublicKey } from "../../../identity/keys.js";
+import { LIVE_WIRE_VERSIONS, WIRE_VERSION } from "../../../identity/wire-version.js";
+import { SignedMessage } from "../../envelope/signed-message.js";
 import {
   type ActionCertifiedRecord as ActionCertifiedRecordValue,
   type ActionProposal,
@@ -98,6 +93,7 @@ import {
   verifyMembershipDescriptor,
 } from "../../records/index.js";
 import { compareAgentIds, MessageAddressInput } from "../../records/values.js";
+import { RouterInstanceId } from "../../router/api/contract.js";
 import {
   type RouterDiscontinuityReason,
   type RouterIngressDisposition,

@@ -1,12 +1,5 @@
 /** @file Acquisition and supervision of the protocol one daemon identity runs. */
 
-import {
-  AgentCard,
-  type AgentId,
-  type VerifiedAgentCard,
-} from "@moltzap/identity";
-import { Registry } from "@moltzap/identity/registry";
-import { Router } from "@moltzap/router";
 import { Cause, type Context, Deferred, Effect, Schema, Scope } from "effect";
 import type { ListenError } from "../../communication/conversations/errors.js";
 import type {
@@ -14,6 +7,7 @@ import type {
   EndpointStoreError,
   StoredMembership,
 } from "../../communication/store/index.js";
+import type { AgentId } from "../../identity/agents.js";
 import type { DaemonBootstrap } from "../bootstrap.js";
 import {
   type CollectiveEmitError,
@@ -34,6 +28,7 @@ import {
   type OuterBodyReader,
 } from "../../communication/records/index.js";
 import { AgentAddress } from "../../communication/records/values.js";
+import { Router } from "../../communication/router/api/client.js";
 import {
   type RouterWorker,
   type RouterWorkerInput,
@@ -47,6 +42,8 @@ import {
   collectiveAdmission,
   type InstalledFirewall,
 } from "../../firewall/index.js";
+import { AgentCard, type VerifiedAgentCard } from "../../identity/cards.js";
+import { Registry } from "../../identity/registry/index.js";
 import {
   activationFailure,
   type DaemonActivationError,

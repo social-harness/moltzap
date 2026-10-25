@@ -56,7 +56,7 @@ export const TOOL_PROJECTS: readonly ToolProject[] = [
     name: "two-agents-example",
     root: "examples/two-agents",
     targets: ["test:pack"],
-    dependencies: ["identity", "router", "client"],
+    dependencies: ["client"],
   },
 ];
 

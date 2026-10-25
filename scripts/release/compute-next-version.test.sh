@@ -48,7 +48,7 @@ cleanup() { rm -rf "$MOCK_DIR"; }
 trap cleanup EXIT
 
 # The packages publish.yml passes as RELEASE_PACKAGES.
-RELEASED="identity router client openclaw-channel"
+RELEASED=$(node --input-type=module -e 'import { RELEASE_PACKAGES } from "./scripts/architecture/boundary-contract.ts"; console.log(RELEASE_PACKAGES.join(" "))')
 
 echo "--- Test 1: No existing versions ---"
 export NPM_MOCK_RESPONSES='{"@moltzap/client":[]}'
@@ -111,13 +111,13 @@ set -e
 assert_eq "empty-body failure exits 1" "1" "$STATUS"
 
 echo "--- Test 8: One version over the union of the released histories ---"
-export NPM_MOCK_RESPONSES="{\"@moltzap/identity\":[\"${TODAY}.0\",\"${TODAY}.2\"],\"@moltzap/openclaw-channel\":[\"${TODAY}.1\"],\"@moltzap/client\":[\"2026.812.0\"]}"
+export NPM_MOCK_RESPONSES="{\"@moltzap/client\":[\"${TODAY}.0\",\"${TODAY}.2\"],\"@moltzap/openclaw-channel\":[\"${TODAY}.1\"]}"
 # shellcheck disable=SC2086 -- the package list is deliberately word-split.
 RESULT=$("$SCRIPT_DIR/compute-next-version.sh" $RELEASED)
 assert_eq "union takes the highest counter across packages" "${TODAY}.3" "$RESULT"
 
 echo "--- Test 9: Never-published packages (mock 404) alongside published ones ---"
-export NPM_MOCK_RESPONSES="{\"@moltzap/identity\":[\"${TODAY}.0\"],\"@moltzap/openclaw-channel\":\"${TODAY}.0\",\"@moltzap/client\":[\"${TODAY}.0\"]}"
+export NPM_MOCK_RESPONSES="{\"@moltzap/client\":[\"${TODAY}.0\"],\"@moltzap/openclaw-channel\":\"${TODAY}.0\"}"
 # shellcheck disable=SC2086
 RESULT=$("$SCRIPT_DIR/compute-next-version.sh" $RELEASED)
 assert_eq "404 packages do not block a published sibling's counter" "${TODAY}.1" "$RESULT"

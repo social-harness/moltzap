@@ -11,7 +11,17 @@ import {
   InternalServerError,
   OverloadedError,
   type VerifiedAgentRequest,
-} from "@moltzap/identity";
+} from "@moltzap/client";
+import {
+  RawRouterSendRequest,
+  type RawRouterSendRequest as RawRouterSendRequestValue,
+  RouterPollRequest,
+  type RouterPollRequest as RouterPollRequestValue,
+  RouterPollResult,
+  type RouterPollResult as RouterPollResultValue,
+  RouterSendResult,
+  type RouterSendResult as RouterSendResultValue,
+} from "@moltzap/client/internal";
 import {
   Context,
   Deferred,
@@ -24,16 +34,6 @@ import {
 } from "effect";
 import type { RouterPoll } from "./poll.js";
 import type { RouterSend } from "./send.js";
-import {
-  RawRouterSendRequest,
-  type RawRouterSendRequest as RawRouterSendRequestValue,
-  RouterPollRequest,
-  type RouterPollRequest as RouterPollRequestValue,
-  RouterPollResult,
-  type RouterPollResult as RouterPollResultValue,
-  RouterSendResult,
-  type RouterSendResult as RouterSendResultValue,
-} from "./contract.js";
 
 type RouterHandlerError =
   | AuthenticationFailedError

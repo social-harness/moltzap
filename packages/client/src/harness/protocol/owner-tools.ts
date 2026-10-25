@@ -1,11 +1,5 @@
 /** @file Exact private MCP schemas for daemon management and history reads. */
 
-import { AgentCard, AgentId, AgentName, PrincipalId } from "@moltzap/identity";
-import {
-  OperationId,
-  RegistryListRequest,
-  RegistryLookupRequest,
-} from "@moltzap/identity/registry";
 import { Schema } from "effect";
 import {
   AgentAddress,
@@ -21,6 +15,9 @@ import {
   decodeCanonicalBase64Url,
   isStrictlyAscending,
 } from "../../encoding/identifier.js";
+import { AgentId, AgentName, PrincipalId } from "../../identity/agents.js";
+import { AgentCard } from "../../identity/cards.js";
+import { OperationId, RegistryListRequest, RegistryLookupRequest } from "../../identity/registry/contract.js";
 
 const encodedAgentCard = Schema.encodedSchema(AgentCard);
 

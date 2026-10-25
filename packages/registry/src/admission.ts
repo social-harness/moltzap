@@ -1,7 +1,6 @@
 /** @file Registry-owned bootstrap admission before private dispatch. */
 
 import type { HttpServerRequest } from "@effect/platform";
-import type { RegistryRegisterRequest as RegistryRegisterRequestValue } from "@moltzap/identity/registry";
 import {
   AuthenticationFailedError,
   Ed25519PublicKey,
@@ -10,12 +9,11 @@ import {
   OverloadedError,
   type UnavailableError,
   type VersionMismatchError,
-} from "@moltzap/identity";
-import {
-  registrationBody,
+} from "@moltzap/client";
+import { registrationBody,
+  type RegistryRegisterRequest as RegistryRegisterRequestValue,
   type VerifiedHttpSignature,
-  verifyBootstrapRequest,
-} from "@moltzap/identity/internal";
+  verifyBootstrapRequest } from "@moltzap/client/internal";
 import { Effect, Redacted, Schema } from "effect";
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { RegistryStorage } from "./storage.js";

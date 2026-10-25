@@ -5,8 +5,8 @@
  * recovery asks of it.
  */
 
-import { type Ed25519PublicKey, SignedMessage } from "@moltzap/identity";
 import { Effect, type ParseResult, Schema } from "effect";
+import type { Ed25519PublicKey } from "../../../identity/keys.js";
 import type {
   EndpointEngineInput,
   EngineConversation,
@@ -16,6 +16,7 @@ import {
   type ClientRepresentationError,
   decodeCanonical,
 } from "../../../encoding/canonical-json.js";
+import { SignedMessage } from "../../envelope/signed-message.js";
 import {
   type AnchorHash as AnchorHashValue,
   type CertifiedRecord,

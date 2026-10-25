@@ -1,19 +1,16 @@
 /** @file Crash-recoverable daemon identity binding over Registry and endpoint storage. */
 
-import type { VerifiedAgentCard } from "@moltzap/identity";
-import {
-  Registry,
-  RegistryRegisterRequest,
-  type RegistryRegisterResult,
-} from "@moltzap/identity/registry";
 import { Data, Effect, Fiber, Schema } from "effect";
 import type { StoreOpening } from "../../communication/store/index.js";
 import type { HarnessMcpOperations } from "../../harness/mcp/index.js";
+import type { VerifiedAgentCard } from "../../identity/cards.js";
 import type {
   DaemonBootstrap,
   DaemonConfigurationError,
 } from "../bootstrap.js";
 import { exactParseOptions } from "../../encoding/exact.js";
+import { RegistryRegisterRequest, type RegistryRegisterResult } from "../../identity/registry/contract.js";
+import { Registry } from "../../identity/registry/index.js";
 import {
   bindCard,
   DaemonRegistrationPersistenceError,

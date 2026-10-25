@@ -77,6 +77,12 @@
           "cwd": "packages/openclaw-channel",
           "command": "node ../../scripts/architecture/check-package.ts ."
         }
+      },
+      "test": {
+        "dependsOn": [
+          "build",
+          "^build"
+        ]
       }
     }
   },

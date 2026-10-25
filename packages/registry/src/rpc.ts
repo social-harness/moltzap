@@ -19,18 +19,16 @@ import {
   UnavailableError,
   UnsupportedMediaTypeError,
   VersionMismatchError,
-} from "@moltzap/identity";
+} from "@moltzap/client";
 import {
   listResultSchema,
   lookupResultSchema,
   registerResultSchema,
-  registryRegisterCodec,
-} from "@moltzap/identity/internal";
-import {
   RegistryListRequest,
   RegistryLookupRequest,
-  RegistryRegisterRequest,
-} from "@moltzap/identity/registry";
+  registryRegisterCodec,
+  RegistryRegisterRequest
+} from "@moltzap/client/internal";
 import {
   Context,
   Deferred,
@@ -47,12 +45,12 @@ interface BootstrapAdmission {
 }
 
 class BootstrapAdmissionContext extends Context.Tag(
-  "@moltzap/identity/BootstrapAdmissionContext",
+  "@moltzap/client/BootstrapAdmissionContext",
 )<BootstrapAdmissionContext, BootstrapAdmission>() {}
 
 /** Required private RPC admission boundary for Registry registration. */
 export class RegistryAdmission extends RpcMiddleware.Tag<RegistryAdmission>()(
-  "@moltzap/identity/RegistryAdmission",
+  "@moltzap/client/RegistryAdmission",
   {
     provides: BootstrapAdmissionContext,
     failure: AuthenticationFailedError,

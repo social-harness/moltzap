@@ -1,9 +1,5 @@
 /** @file Caller-bound authenticated cursor encoding for volatile Router polling. */
-import { type AgentId, AgentId as AgentIdSchema } from "@moltzap/identity";
-import canonicalize from "canonicalize";
-import { Data, Effect, Encoding, Schema } from "effect";
-import { compactDecrypt, CompactEncrypt } from "jose";
-import { createSecretKey } from "node:crypto";
+import { type AgentId, AgentId as AgentIdSchema } from "@moltzap/client";
 import {
   encodedPollCursorProtectedHeader,
   PollCursor,
@@ -13,7 +9,11 @@ import {
   RouterInstanceId,
   routerInstanceIdByteLength,
   type RouterInstanceId as RouterInstanceIdValue,
-} from "./contract.js";
+} from "@moltzap/client/internal";
+import canonicalize from "canonicalize";
+import { Data, Effect, Encoding, Schema } from "effect";
+import { compactDecrypt, CompactEncrypt } from "jose";
+import { createSecretKey } from "node:crypto";
 import { maximumPrivateOrder } from "./feed.js";
 
 /** Cursor construction failed before a result could be returned. */

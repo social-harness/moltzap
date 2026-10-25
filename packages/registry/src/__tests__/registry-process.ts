@@ -8,13 +8,13 @@ import {
   type AgentSigningAuthority as AgentSigningAuthorityValue,
   PrincipalId,
   type VerifiedAgentCard,
-} from "@moltzap/identity";
+} from "@moltzap/client";
 import {
   OperationId,
   Registry,
   RegistryRegisterRequest,
   type RegistryRegisterRequest as RegistryRegisterRequestValue,
-} from "@moltzap/identity/registry";
+} from "@moltzap/client/internal";
 import {
   Clock,
   Data,

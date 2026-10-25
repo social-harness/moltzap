@@ -1,7 +1,7 @@
 /** @file The message-policy document `sharnessd` installs as its firewall. */
 
-import { AgentId } from "@moltzap/identity";
 import { Schema } from "effect";
+import { AgentId } from "../../identity/agents.js";
 import {
   EnglishPolicySettings,
   EnglishRule,

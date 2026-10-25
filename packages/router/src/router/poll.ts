@@ -4,18 +4,18 @@ import {
   InternalServerError,
   type LiveSignedMessage,
   OverloadedError,
-} from "@moltzap/identity";
-import canonicalize from "canonicalize";
-import { Duration, Effect, Option, Schema } from "effect";
-import type { PollCursorCodec } from "./poll-cursor.js";
-import type { PollWaiters } from "./poll-waiters.js";
+} from "@moltzap/client";
 import {
   type PollCursor,
   type RouterInstanceId,
   type RouterPollRequest,
   RouterPollResult,
   type RouterPollResult as RouterPollResultValue,
-} from "./contract.js";
+} from "@moltzap/client/internal";
+import canonicalize from "canonicalize";
+import { Duration, Effect, Option, Schema } from "effect";
+import type { PollCursorCodec } from "./poll-cursor.js";
+import type { PollWaiters } from "./poll-waiters.js";
 import { entriesAfter, type FeedSnapshot, type RouterFeed } from "./feed.js";
 
 type PollFailure = OverloadedError | InternalServerError;

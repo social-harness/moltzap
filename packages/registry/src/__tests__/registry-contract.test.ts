@@ -5,11 +5,11 @@ import {
   AgentSigningAuthority,
   PrincipalId,
   UnavailableError,
-} from "@moltzap/identity";
+} from "@moltzap/client";
 import {
   OperationId,
   RegistryRegisterRequest,
-} from "@moltzap/identity/registry";
+} from "@moltzap/client/internal";
 import {
   ConfigProvider,
   Effect,
