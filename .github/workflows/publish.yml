@@ -10,15 +10,28 @@ name: Publish to npm
 # manifest records its own content hash; the OpenClaw channel's also records
 # `sharnessHostCodeHash` (`scripts/release/host-code-hash.ts`), the hash of the
 # code OpenClaw loads for it. The release commit records every manifest. The
-# trigger is manual. The bump resolves both committed image input keys to
+# trigger is a merge to main with a changelog fragment other than template.md,
+# unchanged WIRE_VERSION since the last release, and no unfinished release.
+# Release-commit pushes do nothing; unfinished releases use the plan's resume
+# path. Reset releases (a changed WIRE_VERSION) require workflow_dispatch,
+# which also supports start_new_version. Queued pushes whose commit is no
+# longer main's tip exit cleanly when there is nothing to resume.
+# The bump resolves both committed image input keys to
 # signed indexes and records their digests in the example Compose file. Missing
 # keys fail before the release commit; rerunning after images.yml publishes
 # them resumes the bump. After npm publication, `images` runs no repository
 # install or build, adds version tags, and lists both digests in the GitHub
 # release body. Existing version tags are checked and skipped on reruns.
+# After npm and image promotion succeed, a separate job sends repository_dispatch
+# social-harness-released to social-harness/deployment with client_payload
+# {"version":"<calendar version>","registry":"ghcr.io/social-harness/registry@sha256:…",
+# "router":"ghcr.io/social-harness/router@sha256:…"}. These are the verified
+# indexes images tagged. Re-sending a version is idempotent for the receiver.
+# A full rerun of a completed release promotes its verified indexes again and
+# retries notification without an install, build, or second npm publication.
 #
 # A release takes two runs, so npm's provenance names the commit whose tree
-# the tarballs were packed from. The dispatched run bumps: it writes the
+# the tarballs were packed from. The initial run bumps: it writes the
 # release commit and tag, pushes them, and dispatches this workflow again on
 # main. That second run finds the release commit at the tip, resumes it, and
 # publishes; its OIDC token, and so the SLSA provenance, carries the release
@@ -50,6 +63,8 @@ name: Publish to npm
 # dispatching with `start_new_version`, which mints the next version from the
 # tip instead.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       start_new_version:
@@ -64,9 +79,11 @@ on:
 # the same npm state and race to push its release commit and tag. The resume
 # run that a bump dispatches waits here until the bump run ends. The group is
 # per ref, so a dispatch on another branch, which runs nothing, never replaces
-# a pending main run.
+# a pending main run. GitHub retains only one pending run per group. Release-commit
+# pushes use a separate no-op group so their arrival cannot evict the resume.
 concurrency:
-  group: publish-${{ github.ref }}
+  group: >-
+    publish-${{ github.ref }}${{ github.event_name == 'push' && startsWith(github.event.head_commit.message, 'chore(release): moltzap@') && format('-noop-{0}', github.run_id) || '' }}
   cancel-in-progress: false
 
 permissions:
@@ -94,6 +111,7 @@ jobs:
     permissions:
       contents: read
       packages: read
+      actions: read
     outputs:
       mode: ${{ steps.plan.outputs.mode }}
       version: ${{ steps.plan.outputs.version }}
@@ -110,6 +128,23 @@ jobs:
         with:
           registry-url: https://registry.npmjs.org
 
+      # A publication run remembers its release before installed code runs.
+      # Full reruns retry that same release even after main advances again.
+      - name: Recover this run's release on a rerun
+        if: github.run_attempt > 1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ARTIFACT=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" \
+            --jq '.artifacts[] | select(.name == "release-plan" and .expired == false) | .id')
+          if [ -n "$ARTIFACT" ]; then
+            gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+              --name release-plan --dir "$RUNNER_TEMP/retry-plan"
+            RETRY_RELEASE_COMMIT=$(cat "$RUNNER_TEMP/retry-plan/release-plan")
+            [[ "$RETRY_RELEASE_COMMIT" =~ ^[a-f0-9]{40}$ ]]
+            echo "RETRY_RELEASE_COMMIT=$RETRY_RELEASE_COMMIT" >> "$GITHUB_ENV"
+          fi
+
       # The last release commit on main decides whether this run resumes it:
       # a manifest version there that npm still lacks is published from that
       # commit's own tree. A run started on an older commit while the release
@@ -122,10 +157,16 @@ jobs:
         id: plan
         env:
           START_NEW_VERSION: ${{ inputs.start_new_version }}
+          EVENT_NAME: ${{ github.event_name }}
           GH_TOKEN: ${{ github.token }}
         run: |
           git fetch origin main --quiet
+          RELEASE_COMMIT=""
+          MISSING=""
           RELEASE_LINE=$(git log origin/main --format='%H %s' | grep -m1 ' chore(release): moltzap@' || true)
+          if [ -n "${RETRY_RELEASE_COMMIT:-}" ] && [ "$START_NEW_VERSION" != true ]; then
+            RELEASE_LINE=$(git log -1 --format='%H %s' "$RETRY_RELEASE_COMMIT")
+          fi
           if [ -n "$RELEASE_LINE" ]; then
             RELEASE_COMMIT=${RELEASE_LINE%% *}
             VERSION=${RELEASE_LINE#* chore(release): moltzap@}
@@ -173,25 +214,42 @@ jobs:
               fi
             fi
             MISSING=${MISSING# }
-            if [ -n "$MISSING" ] && [ "$START_NEW_VERSION" = "true" ]; then
-              echo "Abandoning release $VERSION from $RELEASE_COMMIT; not yet on npm: $MISSING"
-            elif [ -n "$MISSING" ]; then
-              if [ "$RELEASE_COMMIT" != "$GITHUB_SHA" ] && [ "$(git rev-parse origin/main)" = "$RELEASE_COMMIT" ]; then
-                echo "Release $VERSION is at the tip but this run started on $GITHUB_SHA; dispatching a run on the release commit"
-                echo "mode=redispatch" >> "$GITHUB_OUTPUT"
-                exit 0
-              fi
-              echo "Resuming release $VERSION from $RELEASE_COMMIT; packages to finish: $MISSING"
-              git checkout --quiet "$RELEASE_COMMIT"
-              [ "$RELEASE_COMMIT" = "$GITHUB_SHA" ] || echo "::warning::main moved past the release commit $RELEASE_COMMIT; this run's provenance names $GITHUB_SHA"
-              {
-                echo "release-commit=$RELEASE_COMMIT"
-                echo "mode=resume"
-                echo "version=$VERSION"
-                echo "packages=$MISSING"
-              } >> "$GITHUB_OUTPUT"
+          fi
+          if [ "$EVENT_NAME" = push ]; then
+            DECISION=$(bash scripts/release/push-gate.sh "$RELEASE_COMMIT" "$MISSING")
+            if [ "$DECISION" = skip ]; then
+              echo "mode=skip" >> "$GITHUB_OUTPUT"
               exit 0
             fi
+          fi
+          if [ -z "$MISSING" ] && [ -n "$RELEASE_COMMIT" ] && [ "$GITHUB_RUN_ATTEMPT" -gt 1 ] && [ "$START_NEW_VERSION" != true ] &&
+            { [ "$RELEASE_COMMIT" = "${RETRY_RELEASE_COMMIT:-}" ] || [ "$RELEASE_COMMIT" = "$GITHUB_SHA" ] || [ "$(git log -1 --format=%P "$RELEASE_COMMIT")" = "$GITHUB_SHA" ]; }; then
+            {
+              echo "mode=notify"
+              echo "version=$VERSION"
+              echo "release-commit=$RELEASE_COMMIT"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -n "$MISSING" ] && [ "$START_NEW_VERSION" = "true" ]; then
+            echo "Abandoning release $VERSION from $RELEASE_COMMIT; not yet on npm: $MISSING"
+          elif [ -n "$MISSING" ]; then
+            if [ "$RELEASE_COMMIT" != "$GITHUB_SHA" ] && [ "$(git rev-parse origin/main)" = "$RELEASE_COMMIT" ]; then
+              echo "Release $VERSION is at the tip but this run started on $GITHUB_SHA; dispatching a run on the release commit"
+              echo "mode=redispatch" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "Resuming release $VERSION from $RELEASE_COMMIT; packages to finish: $MISSING"
+            echo "$RELEASE_COMMIT" > "$RUNNER_TEMP/release-plan"
+            git checkout --quiet "$RELEASE_COMMIT"
+            [ "$RELEASE_COMMIT" = "$GITHUB_SHA" ] || echo "::warning::main moved past the release commit $RELEASE_COMMIT; this run's provenance names $GITHUB_SHA"
+            {
+              echo "release-commit=$RELEASE_COMMIT"
+              echo "mode=resume"
+              echo "version=$VERSION"
+              echo "packages=$MISSING"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
           fi
 
           [ "$(git rev-parse origin/main)" = "$GITHUB_SHA" ] || {
@@ -207,20 +265,30 @@ jobs:
           echo "mode=bump" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - if: steps.plan.outputs.mode != 'redispatch'
+      - name: Remember the release this run publishes
+        if: steps.plan.outputs.mode == 'resume'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-plan
+          path: ${{ runner.temp }}/release-plan
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+
+      - if: steps.plan.outputs.mode == 'bump' || steps.plan.outputs.mode == 'resume'
         run: pnpm install --frozen-lockfile
 
       # Package versions are never compiled into `dist`, so the build does not
       # depend on which packages the selection later moves to the version.
       - name: Build all packages
-        if: steps.plan.outputs.mode != 'redispatch'
+        if: steps.plan.outputs.mode == 'bump' || steps.plan.outputs.mode == 'resume'
         run: pnpm build
 
       # Recorded before the content hash, so the hash covers it. A resume
       # writes only the key the release commit's manifest already holds, so
       # its content hash is unchanged.
       - name: Record emitted wire version in published Client metadata
-        if: steps.plan.outputs.mode != 'redispatch'
+        if: steps.plan.outputs.mode == 'bump' || steps.plan.outputs.mode == 'resume'
         working-directory: packages/client
         env:
           MODE: ${{ steps.plan.outputs.mode }}
@@ -239,7 +307,7 @@ jobs:
       # it installs from npm to that package's manifest version, so a checkout
       # of the release tag runs what that tag published.
       - name: Choose the packages this run publishes
-        if: steps.plan.outputs.mode != 'redispatch'
+        if: steps.plan.outputs.mode == 'bump' || steps.plan.outputs.mode == 'resume'
         id: select
         env:
           MODE: ${{ steps.plan.outputs.mode }}
@@ -624,17 +692,23 @@ jobs:
 
   images:
     needs: [build, publish]
+    if: >-
+      !cancelled() && needs.build.result == 'success' &&
+      (needs.publish.result == 'success' || needs.build.outputs.mode == 'notify')
     environment: release
     runs-on: ubuntu-24.04
     permissions:
       contents: write
       packages: write
+    outputs:
+      payload: ${{ steps.images.outputs.payload }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
       - name: Tag release indexes and record their digests
+        id: images
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.build.outputs.version }}
@@ -674,3 +748,35 @@ jobs:
             fi
           done <<<"$REFS"
           gh release edit "v$VERSION" --repo "$GITHUB_REPOSITORY" --notes-file "$notes"
+          payload=$(jq -cn --arg version "$VERSION" '{version: $version}')
+          while read -r ref; do
+            service=${ref#ghcr.io/social-harness/}
+            service=${service%@*}
+            payload=$(jq -c --arg service "$service" --arg ref "$ref" '. + {($service): $ref}' <<<"$payload")
+          done <<<"$REFS"
+          echo "payload=$payload" >> "$GITHUB_OUTPUT"
+
+  dispatch:
+    needs: [build, publish, images]
+    if: >-
+      !cancelled() && needs.images.result == 'success' &&
+      (needs.publish.result == 'success' || needs.build.outputs.mode == 'notify')
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions: {}
+    steps:
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: app-token
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: social-harness
+          repositories: deployment
+          permission-contents: write
+      - name: Notify deployment of the completed release
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PAYLOAD: ${{ needs.images.outputs.payload }}
+        run: |
+          jq -n --argjson payload "$PAYLOAD" '{event_type: "social-harness-released", client_payload: $payload}' \
+            | gh api --method POST repos/social-harness/deployment/dispatches --input -

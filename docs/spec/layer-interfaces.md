@@ -432,6 +432,19 @@ mismatches. Release notes mark each reset release with the phrase
   release tested.
 - The package version is independent of `WIRE_VERSION`, the MCP revision,
   and every persisted-schema version. Advancing one never advances another.
+- A merge to `main` triggers `.github/workflows/publish.yml`. Before any
+  build, a push releases only when `changelog.d/` contains a fragment other
+  than `template.md`, the head is not a `chore(release): moltzap@…` commit,
+  `WIRE_VERSION` equals its value at the last release commit, and no unfinished
+  release needs resumption. A changed wire version is a reset and requires
+  `workflow_dispatch`; the gate emits a notice. Release-commit pushes do
+  nothing because the bump run dispatches the resume. Other pushes let the
+  existing plan resume an unfinished release before minting a version.
+  Queued pushes whose commit is no longer main's tip exit cleanly when there
+  is nothing to resume. Runs serialize per ref without cancelling a running
+  release. Release-commit pushes have a separate no-op concurrency group so
+  they cannot replace the pending resume dispatch. Manual dispatch, including
+  `start_new_version`, remains available.
 - Releases run from `main` through `.github/workflows/publish.yml` with npm
   provenance and name the service images in each release. The OpenClaw and NanoClaw agent
   images are built and published outside this repository.
@@ -461,9 +474,20 @@ input key `sha256:<hex>` from `pnpm image:keys` names the immutable tag
 commit pins both digests in `examples/two-agents/compose.yaml`, and the GitHub
 release body lists both full digest references. Missing input tags stop the
 bump until the images workflow publishes them; a rerun completes the release.
+After npm publication and release image tagging succeed, a separate job sends
+`repository_dispatch` event `social-harness-released` to `social-harness/deployment`.
+Its `client_payload` is
+`{"version":"<calendar version>","registry":"ghcr.io/social-harness/registry@sha256:<digest>","router":"ghcr.io/social-harness/router@sha256:<digest>"}`.
+The references are the release's verified indexes tagged by the `images` job.
+The notification job installs and builds nothing; its release App token is
+scoped to the deployment repository with contents write permission. Reruns
+can send the same version again; the receiver treats it as idempotent. A full
+rerun of a completed release retries image promotion and notification without
+installing, building, or publishing npm packages again.
+
 Both GHCR packages must be public before a release: the bump checks that both
 indexes pull anonymously before pinning them so the public quickstart works.
-No `moltzap-images` dispatch happens until both packages are public. After making
+No `social-harness-images` dispatch happens until both packages are public. After making
 them public, run `images.yml` from main with `workflow_dispatch` to send the
 current images to deployment. Reverting to an already-published input key also
 requires that manual run, because no new index is published.
@@ -483,7 +507,7 @@ If either key is unpublished, it emits a notice and no payload; that tip's own
 run dispatches them once available. Denied, forbidden or unauthorized responses
 emit a warning that both packages must be public before deployment receives
 images. A separate `dispatch` job checks out nothing and holds the App token
-to send `repository_dispatch` event `moltzap-images` to
+to send `repository_dispatch` event `social-harness-images` to
 `social-harness/deployment`. Both jobs require an uncancelled run with no failed
 `keys`, `build` or `publish` job. Its `client_payload` names both tip indexes
 and their revision:
