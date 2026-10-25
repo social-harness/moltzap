@@ -168,8 +168,8 @@ and a check fails when the copy disagrees with its source.
   adding a layer, flag, or special case.
 - Build only what this repository owns. Before writing code, find what
   already does it (a dependency, the agent host, the platform, another
-  layer or a sibling repository) and use or configure that. Do not re-
-  implement, override, or wrap another system's behaviour in waits,
+  layer or a sibling repository) and use or configure that. Do not
+  re-implement, override, or wrap another system's behaviour in waits,
   retries, preflights or gates; keep no second copy that a check must hold
   in step; and name in the PR the existing options you rejected for any
   new machinery. Do not add regression tests which check the absence of
