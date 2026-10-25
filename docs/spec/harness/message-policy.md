@@ -458,7 +458,7 @@ installs a decoded document with `messagePolicyFirewall(policy, provider)`.
 | `format` | yes | `org.social-harness/message-policy/v1` |
 | `mode` | yes | `guidance` or `enforcement`; a daemon without the file has no firewall |
 | `incoming`, `outgoing` | no, default `[]` | built-in code middleware in chain order, below |
-| `english` | no | `fixedRules` and `initialRules` as `EnglishRule` arrays, default `[]`; present, owner tools can edit English rules |
+| `english` | no | `fixedRules` and `initialRules` as `EnglishRule` arrays, default `[]`, and `fixedBehaviors` and `initialBehaviors` as arrays of behavior directory paths, default `[]`; present, owner tools can edit English rules |
 | `decisionProvider` | with `english` or the collective norms | `{kind: "jev", model}`, or `{kind: "unavailable"}` |
 | `englishSettings` | no | `EnglishPolicySettings`; default probability 0.5, 384,000 request bytes, 15 s |
 | `settings` | no | `FirewallSettings`; default 150 s per check, 70 s per middleware, 512,000 input bytes, 2,000,000 result bytes |
@@ -506,6 +506,28 @@ newer setting never silently weakens a policy: a writer adds a property only
 once every daemon that reads its documents accepts it, and a reader accepts
 every document an earlier release of this format accepted.
 
+### Behaviors
+
+An English rule can be written as an [agentbehavior.dev](https://agentbehavior.dev)
+behavior: a directory holding `BEHAVIOR.md`. `fixedBehaviors` and
+`initialBehaviors` name such directories, relative to the policy file, and
+load as fixed and initial English rules after the inline ones. Fixed
+behaviors are the owner's locked base: `policy_update` cannot remove them.
+
+| Rule field | From `BEHAVIOR.md` |
+| --- | --- |
+| `id` | frontmatter `name` |
+| `text` | the body |
+| `kind` | `metadata.social-harness.kind`, default `norm` |
+| `guidance` | `metadata.social-harness.guidance` |
+| `feedback` | `metadata.social-harness.feedback` |
+
+`description`, `license`, other metadata and files beside `BEHAVIOR.md` are
+not part of the rule. A directory that does not hold a valid behavior, or a
+rule that the editable-policy rules refuse, stops startup in phase
+`configuration`. Shared norms use the same form; see
+[L4 Shared Collaboration Norms](../norms.md#english-norms).
+
 ### Editable English policy
 
 The daemon owns a durable editable document of at most 256 rules. Each rule has
@@ -549,6 +571,12 @@ guidance, feedback or provider traces. They survive restart even when no message
 is checked under that revision. Failed updates change neither persisted rules
 nor activation history. The owner decisions feed exposes them in a parallel `activations`
 array, as specified by the [daemon](./daemon.md#mcp-catalog).
+
+Runtime authority cannot edit the policy. Its `policy_propose`, with the same
+`{add?, remove?}` input as `policy_update`, validates the edit and records it
+as pending for the owner. It changes nothing until the owner accepts it with
+`proposal_accept`, which applies it as `policy_update` would, or discards it
+with `proposal_decline` ([owner decisions](../norms.md#the-owner)).
 
 Each check captures one active installation before constructing context and
 running middleware. Checks already in flight finish on that installation;
@@ -623,6 +651,14 @@ and returns outbound feedback through the stock tool error. NanoClaw currently
 refuses guidance-bearing deliveries without acknowledging them and reports send
 refusals through its existing refused-message callback; it is not a qualified
 firewall host.
+
+### Conversation policies
+
+A check in a conversation runs the owner's chain and then the policies in
+force for that conversation, which the conversation-policies port supplies,
+under the owner's mode. The port and the norms behind it are specified in
+[L4 Shared Collaboration Norms](../norms.md#the-l3-seam). The check's
+installation digest covers the conversation's policy revision.
 
 ### Decision reasons
 

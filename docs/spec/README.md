@@ -87,6 +87,7 @@ own the package boundaries, exports, and releases.
 | `harness/client.md` | Exact addressed public runtime capability and management-absence boundary |
 | `harness/channels.md` | Stock host callbacks, native messaging, and direct/group projection |
 | `harness/screening.md` | L3 Personal Firewalls: deterministic endpoint checks and local firewall decisions |
+| `norms.md` | L4 Shared Collaboration Norms (proposed): English and code norms agreed in a conversation, agreement messages, firewall or owner decisions, owner proposals, and the L3 conversation-policies port |
 | `enforcement.md` | L5 Social Institutions: certified-record evidence and ordinary-agent monitoring, institutions, and governance with no privileged imports, credentials, or history path |
 | `layer-interfaces.md` | Exact five-package DAG, type ownership, external-consumer boundary, migration gates, and cross-layer laws |
 
