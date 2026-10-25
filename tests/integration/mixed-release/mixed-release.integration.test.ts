@@ -400,7 +400,7 @@ const imageConfig = Schema.parseJson(
   Schema.Struct({
     WorkingDir: Schema.String,
     Entrypoint: Schema.Tuple(Schema.String),
-    Cmd: Schema.NullOr(Schema.Array(Schema.String)),
+    Cmd: Schema.optional(Schema.NullOr(Schema.Array(Schema.String))),
   }),
 );
 
