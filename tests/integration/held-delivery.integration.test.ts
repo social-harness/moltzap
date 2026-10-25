@@ -2,6 +2,12 @@
 
 import type { AgentName } from "@moltzap/identity";
 import {
+  acquireHarnessEndpoint,
+  AgentAddress,
+  type Content,
+  type InboundDelivery,
+} from "@moltzap/client";
+import {
   Duration,
   Effect,
   Fiber,
@@ -11,12 +17,6 @@ import {
   Stream,
 } from "effect";
 import { expect, it } from "vitest";
-import {
-  acquireHarnessEndpoint,
-  AgentAddress,
-  type Content,
-  type InboundDelivery,
-} from "../src/index.js";
 import {
   acquireDaemonManagementClient,
   acquireDaemonProcess,

@@ -114,7 +114,10 @@
       ],
       "inputs": [
         "sources",
-        "^production"
+        "^production",
+        {
+          "runtime": "node --version"
+        }
       ],
       "cache": true
     },

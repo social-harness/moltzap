@@ -18,6 +18,9 @@
     },
     {
       "path": "packages/registry"
+    },
+    {
+      "path": "packages/registry/tsconfig.test-entry.json"
     }
   ]
 }

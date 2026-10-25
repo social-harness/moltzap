@@ -12,6 +12,7 @@ import {
   FINAL_PACKAGE_DIRS,
   FINAL_PACKAGE_NAMES,
   FINAL_PACKAGES,
+  INTEGRATION_TESTS,
   type PackageDir,
 } from "./boundary-contract.ts";
 import {
@@ -34,25 +35,27 @@ interface NxGraph {
   readonly dependencies: JsonObject;
 }
 
-/** A tool project outside `packages/`: its root, required target, and edges. */
+/** A tool project outside `packages/`: its root, required targets, and edges. */
 interface ToolProject {
   readonly name: string;
   readonly root: string;
-  readonly target: string;
+  readonly targets: readonly string[];
   readonly dependencies: readonly PackageDir[];
 }
 
-const TOOL_PROJECTS: readonly ToolProject[] = [
+/** Tool roots share the same graph contract in enforcement and gate fixtures. */
+export const TOOL_PROJECTS: readonly ToolProject[] = [
+  INTEGRATION_TESTS,
   {
-    name: "adapter-daemon",
-    root: "tools/adapter-daemon",
-    target: "test:integration",
-    dependencies: ["identity", "router", "client", "openclaw-channel"],
+    name: "workspace",
+    root: "tools/workspace",
+    targets: ["lint", "lint:architecture-boundaries", "lint:effect"],
+    dependencies: [],
   },
   {
     name: "two-agents-example",
     root: "examples/two-agents",
-    target: "test:pack",
+    targets: ["test:pack"],
     dependencies: ["identity", "router", "client"],
   },
 ];
@@ -101,16 +104,11 @@ function checkNxGraph(run: BoundaryRun, graphFile: string): void {
     where: label,
     what: "Nx project nodes drifted",
     actual: Object.keys(nxGraph.nodes),
-    wanted: [
-      ...FINAL_PACKAGE_NAMES,
-      "workspace",
-      ...TOOL_PROJECTS.map(({ name }) => name),
-    ],
+    wanted: [...FINAL_PACKAGE_NAMES, ...TOOL_PROJECTS.map(({ name }) => name)],
   });
   for (const dir of FINAL_PACKAGE_DIRS) {
     checkProductNode(run, nxGraph, dir);
   }
-  checkWorkspaceNode(run, nxGraph);
   for (const tool of TOOL_PROJECTS) {
     checkToolNode(run, nxGraph, tool);
   }
@@ -157,34 +155,6 @@ function checkProductNode(
   });
 }
 
-function checkWorkspaceNode(run: BoundaryRun, graph: NxGraph): void {
-  const data = nodeData(graph, "workspace");
-  const root = stringAt(data, "root");
-  if (root !== "tools/workspace") {
-    run.failures.push(
-      `${graph.label}: Nx project "workspace" root is "${root ?? "missing"}", expected "tools/workspace"`,
-    );
-  }
-  const targets = objectAt(data, "targets");
-  for (const target of [
-    "lint",
-    "lint:architecture-boundaries",
-    "lint:effect",
-  ]) {
-    if (!Object.hasOwn(targets, target)) {
-      run.failures.push(
-        `${graph.label}: Nx project "workspace" is missing required target "${target}"`,
-      );
-    }
-  }
-  failOnSetDrift(run, {
-    where: graph.label,
-    what: 'Nx dependencies for "workspace" drifted',
-    actual: dependencyTargets(graph, "workspace"),
-    wanted: [],
-  });
-}
-
 function checkToolNode(
   run: BoundaryRun,
   graph: NxGraph,
@@ -197,10 +167,12 @@ function checkToolNode(
       `${graph.label}: Nx project "${tool.name}" root is "${root ?? "missing"}", expected "${tool.root}"`,
     );
   }
-  if (!Object.hasOwn(objectAt(data, "targets"), tool.target)) {
-    run.failures.push(
-      `${graph.label}: Nx project "${tool.name}" is missing required target "${tool.target}"`,
-    );
+  for (const target of tool.targets) {
+    if (!Object.hasOwn(objectAt(data, "targets"), target)) {
+      run.failures.push(
+        `${graph.label}: Nx project "${tool.name}" is missing required target "${target}"`,
+      );
+    }
   }
   failOnSetDrift(run, {
     where: graph.label,

@@ -197,7 +197,7 @@ export function rootEslintConfig(tsconfigRootDir: string) {
   ]);
   return [
     {
-      ignores: [".claude/**", ".repos/**", "packages/**"],
+      ignores: [".claude/**", ".repos/**", "packages/**", "tests/**"],
     },
     packageIgnores,
     makeStrictBlock(

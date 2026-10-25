@@ -182,6 +182,7 @@ function startNetwork(): Effect.Effect<Network, StepError, Services> {
     const registry = yield* start(yield* registryBinary, "registry", [], {
       SHARNESS_REGISTRY_HOST: HOST,
       SHARNESS_REGISTRY_PORT: String(registryPort),
+      SHARNESS_REGISTRY_SQL_POOL_SIZE: "1",
       SHARNESS_REGISTRY_POSTGRESQL_URL: `postgresql://postgres:postgres@${HOST}:${databasePort}/postgres`,
       SHARNESS_REGISTRY_ADMISSION_CREDENTIAL: ADMISSION_CREDENTIAL,
       SHARNESS_REGISTRY_SIGNING_PRIVATE_KEY_PATH: registryKey,

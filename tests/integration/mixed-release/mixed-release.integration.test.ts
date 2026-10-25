@@ -7,9 +7,19 @@
 import { FileSystem } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
 import { acquireHarnessEndpoint, AgentAddress } from "@moltzap/client";
+import {
+  HISTORY_WIRE_VERSIONS,
+  LIVE_WIRE_VERSIONS,
+  WIRE_VERSION,
+} from "@moltzap/identity";
 import { Data, Effect, Fiber, Option, Schedule, Schema, Stream } from "effect";
 import { join, resolve } from "node:path";
 import { expect, it, type TestContext } from "vitest";
+import {
+  installPackedConsumer,
+  packWorkspaceClosure,
+  runCommand,
+} from "../../../scripts/test/packed-workspace.js";
 import {
   acquireDaemonManagementClient,
   acquireDaemonProcess,
@@ -19,23 +29,13 @@ import {
   makeDaemonProcessFixture,
   makeRegistrationRequest,
   ProcessTestError,
-} from "../../packages/client/integration/daemon-process-harness.js";
-import {
-  HISTORY_WIRE_VERSIONS,
-  LIVE_WIRE_VERSIONS,
-  WIRE_VERSION,
-} from "../../packages/identity/src/version.js";
-import {
-  installPackedConsumer,
-  packWorkspaceClosure,
-  runCommand,
-} from "./packed-workspace.js";
+} from "../daemon-process-harness.js";
 
 /* eslint-disable agent-code-guard/no-example-only-tests -- Regression cases exercise the reviewed release selection, reset boundary, missing metadata, and registry outage failures; the real process exchange checks interoperability. */
 
 const RESET_SKIP_REASON =
   "No post-reset release is published; the mixed-release gate starts with the first release after the reset.";
-const workspaceRoot = resolve(import.meta.dirname, "../..");
+const workspaceRoot = resolve(import.meta.dirname, "../../..");
 const packages = {
   "@moltzap/identity": join(workspaceRoot, "packages/identity"),
   "@moltzap/router": join(workspaceRoot, "packages/router"),

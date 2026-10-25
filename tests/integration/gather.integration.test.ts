@@ -1,8 +1,8 @@
 /** @file Three real daemons run gather operations end to end. */
 
+import { CollectiveError } from "@moltzap/client";
 import { Effect } from "effect";
 import { expect, it } from "vitest";
-import { CollectiveError } from "../src/index.js";
 import { processTrace } from "./daemon-process-harness.js";
 import {
   acquireParticipants,

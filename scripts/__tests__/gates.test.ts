@@ -12,7 +12,6 @@
  *   0 — every assertion passed.
  *   1 — one or more assertions failed; details printed to stderr.
  */
-import { spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -24,8 +23,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 
 import {
@@ -33,8 +31,26 @@ import {
   WIRE_VERSION_LITERAL,
   WIRE_VERSION_SOURCE,
 } from "../docs/sharness-version.ts";
-
-const scriptDir = dirname(fileURLToPath(import.meta.url));
+import {
+  INTEGRATION_BOUNDARY_CASES,
+  MALFORMED_BOUNDARY_CASES,
+} from "./integration-boundary-cases.ts";
+import { testIntegrationGraph } from "./integration-boundary-graph.ts";
+import {
+  testGuardIntegrity,
+  testIntegrationIntegrityGuards,
+} from "./integration-integrity.ts";
+import { testLintRelocation } from "./integration-lint-relocation.ts";
+import {
+  failures,
+  plantBoundarySource,
+  plantFile,
+  plantSymlink,
+  restoreAllPlants,
+  runNode,
+  test,
+  workspaceRoot,
+} from "./plants.ts";
 
 const CONTRIBUTING_DOC = "docs/development/contributing.mdx";
 
@@ -42,23 +58,6 @@ const CONTRIBUTING_DOC = "docs/development/contributing.mdx";
 const LIVE_WINDOW_HEAD = /const liveWindow = \[WIRE_VERSION/u;
 /** The head of version.ts's retired list, after which planted entries go. */
 const RETIRED_HEAD = /const RETIRED_WIRE_VERSIONS = \[/u;
-
-const workspaceRoot = resolve(scriptDir, "..", "..");
-
-interface AssertionFailure {
-  readonly name: string;
-  readonly message: string;
-}
-
-const failures: AssertionFailure[] = [];
-
-// Tests mutate real files under `docs/` to trigger gate hits, then
-// restore the original contents in a finally block. The plant stack
-// lets a single restoreAllPlants() call rewind in reverse order.
-const planted: Array<{
-  path: string;
-  original: string;
-}> = [];
 
 /** Idempotence snapshots run before any generator success case writes outputs, so they compare against the original on-disk bytes. */
 function main(): void {
@@ -74,6 +73,12 @@ function main(): void {
     testNonCalendarRetainedEntry();
     testDependencyVersions();
     testMalformedBoundaryInputs();
+    testIntegrationBoundaries();
+    testIntegrationAgentInstructionsLink();
+    testIntegrationGraph();
+    testIntegrationIntegrityGuards();
+    testGuardIntegrity();
+    testLintRelocation(test, runNode);
     testIsolatedFolderImports();
   } finally {
     restoreAllPlants();
@@ -359,8 +364,7 @@ function testCompatibilityVersionFile(): void {
     ...consumers,
     ...generated.map((p) => resolve(workspaceRoot, p)),
   ]) {
-    const original = readFileSync(path, "utf8");
-    planted.push({ path, original });
+    plantFile(path, (source) => source);
   }
   plantFile(WIRE_VERSION_SOURCE, withCompatibilityVersion(nextVersion));
   const bumped = runGenerate(workspaceRoot);
@@ -663,54 +667,65 @@ function testPublicationGuardsDriftedList(): void {
   restoreAllPlants();
 }
 
-const MALFORMED_BOUNDARY_CASES = [
-  {
-    path: "tsconfig.json",
-    before: '"references": [',
-    after: '"references": [null,',
-  },
-  {
-    path: "tsconfig.json",
-    before: '"references": [',
-    after: '"references": [{"path": 7},',
-  },
-  {
-    path: "tsconfig.json",
-    before: '"references": [',
-    after: '"references": [{},',
-  },
-  {
-    path: "knip.json",
-    before: '"@electric-sql/pglite",',
-    after: '7, "@electric-sql/pglite",',
-  },
-  {
-    path: "packages/identity/tsconfig.json",
-    before: '"references": []',
-    after: '"references": {}',
-  },
-  { path: "packages/identity/tsconfig.json", before: "", after: "" },
-] as const;
+/** Each plant must fail the public gate even without a resolved Nx graph. */
+function testIntegrationBoundaries(): void {
+  console.log("\n# check-boundaries integration workspace");
+  runBoundaryPlants(INTEGRATION_BOUNDARY_CASES);
+}
+
+/** Scoped agent instructions are the one link the integration tree accepts. */
+function testIntegrationAgentInstructionsLink(): void {
+  try {
+    plantFile("tests/integration/AGENTS.md", () => "# Integration tests\n");
+    plantSymlink("tests/integration/CLAUDE.md", "AGENTS.md");
+    const result = runBoundaries();
+    test(
+      "accepts a CLAUDE.md link to its sibling AGENTS.md",
+      result.code === 0,
+      `expected exit 0, got ${result.code}. stderr: ${result.stderr.slice(0, 300)}`,
+    );
+  } finally {
+    restoreAllPlants();
+  }
+}
 
 /** Malformed additions must fail even when every valid entry remains present. */
 function testMalformedBoundaryInputs(): void {
   console.log("\n# check-boundaries malformed inputs");
-  for (const [index, input] of MALFORMED_BOUNDARY_CASES.entries()) {
+  runBoundaryPlants(
+    MALFORMED_BOUNDARY_CASES.map((input) => ({
+      ...input,
+      message: /Malformed/,
+    })),
+  );
+}
+
+/** Each mutation must be rejected by the rule named in its diagnostic. */
+function runBoundaryPlants(
+  cases: ReadonlyArray<{
+    readonly name?: string;
+    readonly path: string;
+    readonly before?: string;
+    readonly after?: string;
+    readonly prepend?: string;
+    readonly replace?: string;
+    readonly symlink?: string;
+    readonly message: RegExp;
+  }>,
+): void {
+  for (const [index, input] of cases.entries()) {
     try {
-      plantFile(input.path, (source) => {
-        if (input.before === "") {
-          return "[]";
-        }
-        if (!source.includes(input.before)) {
-          throw new Error(`Mutation target missing in ${input.path}`);
-        }
-        return source.replace(input.before, input.after);
-      });
-      const malformed = runBoundaries();
+      if (input.symlink !== undefined) {
+        plantSymlink(input.path, input.symlink);
+      } else {
+        plantBoundarySource(input);
+      }
+      const result = runBoundaries();
       test(
-        `rejects malformed boundary input ${index + 1}: ${input.path}`,
-        malformed.code === 1 && /Malformed/.test(malformed.stderr),
-        `expected malformed-input failure. exit=${malformed.code}, stderr=${malformed.stderr.slice(0, 300)}`,
+        input.name ??
+          `rejects malformed boundary input ${index + 1}: ${input.path}`,
+        result.code === 1 && input.message.test(result.stderr),
+        `expected boundary rejection. exit=${result.code}, stderr=${result.stderr}`,
       );
     } finally {
       restoreAllPlants();
@@ -1013,25 +1028,6 @@ function runScript(
   return runNode([script], cwd);
 }
 
-function runNode(
-  args: readonly string[],
-  cwd = workspaceRoot,
-): {
-  code: number;
-  stdout: string;
-  stderr: string;
-} {
-  const r = spawnSync(process.execPath, [...args], {
-    cwd,
-    encoding: "utf8",
-  });
-  return {
-    code: r.status ?? -1,
-    stdout: r.stdout ?? "",
-    stderr: r.stderr ?? "",
-  };
-}
-
 function readCompatibilityVersion(): string {
   const read = readCompatibilityVersionSource(workspaceRoot);
   if ("error" in read) {
@@ -1060,23 +1056,6 @@ function insertAfter(
   return source.replace(pattern, (head) => `${head}${insertion}`);
 }
 
-function plantFile(relPath: string, mutate: (s: string) => string): void {
-  const abs = resolve(workspaceRoot, relPath);
-  const original = readFileSync(abs, "utf8");
-  planted.push({ path: abs, original });
-  writeFileSync(abs, mutate(original));
-}
-
-function restoreAllPlants(): void {
-  while (planted.length > 0) {
-    const p = planted.pop();
-    if (p === undefined) {
-      break;
-    }
-    writeFileSync(p.path, p.original);
-  }
-}
-
 function checkRegeneratedVersion(
   consumers: readonly string[],
   generated: readonly string[],
@@ -1095,16 +1074,6 @@ function checkRegeneratedVersion(
       readFileSync(resolve(workspaceRoot, path), "utf8").includes(nextVersion),
       `${path} did not contain ${nextVersion} after regeneration`,
     );
-  }
-}
-
-function test(name: string, cond: boolean, message: string): void {
-  // eslint-disable-next-line sonarjs/no-selector-parameter -- A boolean assertion selects the success or failure report in this standalone test runner.
-  if (cond) {
-    console.log(`  ✓ ${name}`);
-  } else {
-    failures.push({ name, message });
-    console.error(`  ✗ ${name}: ${message}`);
   }
 }
 

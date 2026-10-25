@@ -11,11 +11,10 @@ import {
   StreamableHTTPClientTransport,
 } from "@modelcontextprotocol/client";
 import { Effect, Schedule, Schema } from "effect";
-// This black-box test owns its exact temporary policy and export files at the process boundary.
+import { FirewallAuditRecord } from "@moltzap/client/service";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { FirewallAuditRecord } from "../src/daemon/index.js";
 import {
   acquireDaemonManagementClient,
   acquireDaemonProcess,

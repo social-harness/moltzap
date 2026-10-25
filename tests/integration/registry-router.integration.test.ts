@@ -21,35 +21,44 @@ import {
   type RegistryRegisterRequest,
 } from "@moltzap/identity/registry";
 import {
-  Data,
-  Duration,
-  Effect,
-  Encoding,
-  Option,
-  Redacted,
-  Schema,
-} from "effect";
-import { type ChildProcess, spawn } from "node:child_process";
-import { generateKeyPairSync, randomBytes } from "node:crypto";
-import { createConnection, createServer } from "node:net";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { expect, it } from "vitest";
-import {
   Router,
   type RouterPollRequest,
   type RouterPollResult,
   type RouterSendRequest,
   type RouterSendResult,
-} from "../../index.js";
+} from "@moltzap/router";
+import { Effect, Encoding, Redacted, Schema } from "effect";
+import { randomBytes } from "node:crypto";
+import { join } from "node:path";
+import { expect, it } from "vitest";
 import {
   makeRegistryRunner,
   makeRouterRunner,
   type RegistryInfrastructure,
   testVersionMismatchRoundTrips,
-} from "./integration/client-version-roundtrip.js";
-
-const LOOPBACK_HOST = "127.0.0.1";
+} from "./client-version-roundtrip.js";
+import {
+  acquireDaemonManagementClient,
+  acquireDaemonProcesses,
+  acquireProcessInfrastructure,
+  awaitReady,
+  CONCURRENT_DAEMONS,
+  hasExited,
+  LOOPBACK_HOST,
+  makePrivateKeyPem,
+  makeRegistrationRequest,
+  makeSigningAuthority,
+  managedProcess,
+  processTestError,
+  processTrace,
+  reservePort,
+  ROUTER_BINARY,
+  type RunningProcess,
+  serviceReady,
+  startPgliteRegistry,
+  stopProcess,
+} from "./daemon-process-harness.js";
+import { acquireLoopbackServer } from "./loopback-server.js";
 const ADMISSION_CREDENTIAL = "registry-router-e2e-admission";
 const REGISTERED_KIND = "registered";
 const FOUND_KIND = "found";
@@ -62,39 +71,12 @@ const NO_CONTENT_STATUS = 204;
 const AUTHENTICATION_FAILED_STATUS = 401;
 const OVERLOADED_STATUS = 429;
 const UNAVAILABLE_STATUS = 503;
-const EMPTY_BODY = "";
-const STARTUP_TIMEOUT_MS = 30_000;
-const SHUTDOWN_TIMEOUT_MS = 5_000;
-const POLL_ATTEMPT_TIMEOUT = Duration.seconds(1);
-const POLL_INTERVAL_MS = 25;
 const JSON_CONTENT_TYPE = "application/json";
 const MESSAGE_INVALID_BODY = '{"kind":"message_invalid"}';
 const OVERLOADED_BODY = '{"error":"overloaded"}';
 const AUTHENTICATION_FAILED_BODY = '{"error":"authentication_failed"}';
 const UNAVAILABLE_BODY = '{"error":"unavailable"}';
 const BATCH_BODY_FRAGMENT = '"kind":"batch"';
-const WORKSPACE_ROOT = fileURLToPath(
-  new URL("../../../../../", import.meta.url),
-);
-const CHILD_PATH = `${dirname(process.execPath)}:/usr/bin:/bin`;
-const PGLITE_BINARY = join(
-  WORKSPACE_ROOT,
-  "packages/registry/node_modules/.bin/pglite-server",
-);
-const REGISTRY_BINARY = join(
-  WORKSPACE_ROOT,
-  "packages/registry/bin/sharness-registry",
-);
-const ROUTER_BINARY = join(
-  WORKSPACE_ROOT,
-  "packages/router/bin/sharness-router",
-);
-
-interface RunningProcess {
-  readonly child: ChildProcess;
-  readonly logs: () => string;
-}
-
 interface RegisteredAgent {
   readonly signingAuthority: AgentSigningAuthorityValue;
   readonly agentCard: VerifiedAgentCard;
@@ -139,228 +121,6 @@ interface HttpObservation {
   readonly contentType: string;
   readonly body: string;
 }
-
-class ProcessTestError extends Data.TaggedError("ProcessTestError")<{
-  readonly message: string;
-  readonly cause?: unknown;
-}> {}
-
-const processTestError = (message: string, cause?: unknown): ProcessTestError =>
-  new ProcessTestError({ message, cause });
-
-const reservePort = Effect.async<number, ProcessTestError>((resume) => {
-  const server = createServer();
-  const onError = (error: Error): void => {
-    resume(Effect.fail(processTestError("could not reserve a port", error)));
-  };
-  server.once("error", onError);
-  server.listen(0, LOOPBACK_HOST, () => {
-    server.removeListener("error", onError);
-    const address = server.address();
-    if (address === null || typeof address === "string") {
-      server.close();
-      resume(
-        Effect.fail(processTestError("ephemeral listener exposed no port")),
-      );
-      return;
-    }
-    server.close((error) => {
-      resume(
-        error === undefined
-          ? Effect.succeed(address.port)
-          : Effect.fail(
-              processTestError("could not release reserved port", error),
-            ),
-      );
-    });
-  });
-  return Effect.sync(() => {
-    if (server.listening) {
-      server.close();
-    }
-  });
-});
-
-const startProcess = (
-  executable: string,
-  processArguments: readonly string[],
-  environment: Readonly<Record<string, string>> = {},
-): RunningProcess => {
-  const child = spawn(executable, processArguments, {
-    cwd: WORKSPACE_ROOT,
-    env: {
-      PATH: CHILD_PATH,
-      ...environment,
-    },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  let output = "";
-  child.stdout?.setEncoding("utf8");
-  child.stderr?.setEncoding("utf8");
-  child.stdout?.on("data", (chunk: string) => {
-    output += chunk;
-  });
-  child.stderr?.on("data", (chunk: string) => {
-    output += chunk;
-  });
-  return {
-    child,
-    logs: () => output,
-  };
-};
-
-const canConnect = (port: number) =>
-  Effect.async<boolean>((resume) => {
-    const socket = createConnection({ host: LOOPBACK_HOST, port });
-    const finish = (connected: boolean): void => {
-      socket.destroy();
-      resume(Effect.succeed(connected));
-    };
-    socket.once("connect", () => {
-      finish(true);
-    });
-    socket.once("error", () => {
-      finish(false);
-    });
-    return Effect.sync(() => {
-      socket.destroy();
-    });
-  }).pipe(
-    Effect.timeoutTo({
-      duration: POLL_ATTEMPT_TIMEOUT,
-      onTimeout: () => false,
-      onSuccess: (connected) => connected,
-    }),
-  );
-
-const waitForTcpListener = (runningProcess: RunningProcess, port: number) =>
-  Effect.gen(function* () {
-    const deadline = Date.now() + STARTUP_TIMEOUT_MS;
-    while (Date.now() < deadline) {
-      if (
-        runningProcess.child.exitCode !== null ||
-        runningProcess.child.signalCode !== null
-      ) {
-        return yield* Effect.fail(
-          processTestError(
-            `process exited before listening\n${runningProcess.logs()}`,
-          ),
-        );
-      }
-      if (yield* canConnect(port)) {
-        return;
-      }
-      yield* Effect.sleep(Duration.millis(POLL_INTERVAL_MS));
-    }
-    return yield* Effect.fail(
-      processTestError(
-        `process did not listen before timeout\n${runningProcess.logs()}`,
-      ),
-    );
-  });
-
-const waitForHealth = (runningProcess: RunningProcess, origin: URL) =>
-  Effect.gen(function* () {
-    const deadline = Date.now() + STARTUP_TIMEOUT_MS;
-    const healthUrl = new URL("/healthz", origin);
-    while (Date.now() < deadline) {
-      if (
-        runningProcess.child.exitCode !== null ||
-        runningProcess.child.signalCode !== null
-      ) {
-        return yield* Effect.fail(
-          processTestError(
-            `process exited before readiness\n${runningProcess.logs()}`,
-          ),
-        );
-      }
-      const response = yield* HttpClient.get(healthUrl).pipe(
-        Effect.flatMap((result) =>
-          result.text.pipe(
-            Effect.map((body) => ({ status: result.status, body })),
-          ),
-        ),
-        Effect.timeout(POLL_ATTEMPT_TIMEOUT),
-        Effect.option,
-      );
-      if (
-        Option.isSome(response) &&
-        response.value.status === NO_CONTENT_STATUS
-      ) {
-        return response.value;
-      }
-      yield* Effect.sleep(Duration.millis(POLL_INTERVAL_MS));
-    }
-    return yield* Effect.fail(
-      processTestError(
-        `process did not become ready\n${runningProcess.logs()}`,
-      ),
-    );
-  });
-
-const assertHealthy = (runningProcess: RunningProcess, origin: URL) =>
-  Effect.gen(function* () {
-    const health = yield* waitForHealth(runningProcess, origin);
-    expect(health.status).toBe(NO_CONTENT_STATUS);
-    expect(health.body).toBe(EMPTY_BODY);
-  });
-
-const waitForExit = (runningProcess: RunningProcess) => {
-  if (
-    runningProcess.child.exitCode !== null ||
-    runningProcess.child.signalCode !== null
-  ) {
-    return Effect.void;
-  }
-  return Effect.async<undefined>((resume) => {
-    const onExit = (): void => {
-      resume(Effect.succeed(undefined));
-    };
-    runningProcess.child.once("exit", onExit);
-    return Effect.sync(() => {
-      runningProcess.child.removeListener("exit", onExit);
-    });
-  });
-};
-
-const stopProcess = (runningProcess: RunningProcess) =>
-  Effect.gen(function* () {
-    if (
-      runningProcess.child.exitCode !== null ||
-      runningProcess.child.signalCode !== null
-    ) {
-      return;
-    }
-    runningProcess.child.kill("SIGTERM");
-    const stopped = yield* Effect.raceFirst(
-      waitForExit(runningProcess).pipe(Effect.as(true)),
-      Effect.sleep(Duration.millis(SHUTDOWN_TIMEOUT_MS)).pipe(Effect.as(false)),
-    );
-    if (!stopped) {
-      runningProcess.child.kill("SIGKILL");
-      yield* waitForExit(runningProcess);
-    }
-  });
-
-const managedProcess = (
-  executable: string,
-  processArguments: readonly string[],
-  environment: Readonly<Record<string, string>> = {},
-) =>
-  Effect.acquireRelease(
-    Effect.sync(() => startProcess(executable, processArguments, environment)),
-    stopProcess,
-  );
-
-const makePrivateKeyPem = (): string => {
-  const { privateKey } = generateKeyPairSync("ed25519");
-  return privateKey.export({ format: "pem", type: "pkcs8" });
-};
-
-const makeSigningAuthority = (privateKeyPem?: string) =>
-  AgentSigningAuthority.fromPkcs8(
-    Redacted.make(privateKeyPem ?? makePrivateKeyPem()),
-  );
 
 const randomIdentifierPayload = (): string =>
   randomBytes(16).toString("base64url");
@@ -408,6 +168,25 @@ const expectHttpObservation = (
   expect(observation.contentType).toBe(JSON_CONTENT_TYPE);
   expect(observation.body).toBe(body);
 };
+
+const assertHealthy = (
+  runningProcess: RunningProcess,
+  service: "sharness-registry" | "sharness-router",
+  origin: URL,
+) =>
+  Effect.gen(function* () {
+    yield* awaitReady(
+      runningProcess,
+      serviceReady(runningProcess, service, origin),
+      "health response",
+    );
+    expect(hasExited(runningProcess.child)).toBe(false);
+    const health = yield* observeHttpRequest(
+      HttpClientRequest.get(new URL("/healthz", origin)),
+    );
+    expect(health.status).toBe(NO_CONTENT_STATUS);
+    expect(health.body).toBe("");
+  });
 
 const registerAgent = (name: string, runRegistry: RegistryRunner) =>
   Effect.gen(function* () {
@@ -488,21 +267,13 @@ const startRegistryInfrastructure = Effect.gen(function* () {
     { concurrency: 2 },
   );
   const registryOrigin = new URL(`http://${LOOPBACK_HOST}:${registryPort}`);
-  const postgresql = yield* managedProcess(PGLITE_BINARY, [
-    "--db=memory://",
-    `--port=${postgresqlPort}`,
-    `--host=${LOOPBACK_HOST}`,
-    "--max-connections=20",
-  ]);
-  yield* waitForTcpListener(postgresql, postgresqlPort);
-  const registry = yield* managedProcess(REGISTRY_BINARY, [], {
-    SHARNESS_REGISTRY_HOST: LOOPBACK_HOST,
-    SHARNESS_REGISTRY_PORT: String(registryPort),
-    SHARNESS_REGISTRY_POSTGRESQL_URL: `postgresql://postgres:postgres@${LOOPBACK_HOST}:${postgresqlPort}/postgres`,
-    SHARNESS_REGISTRY_ADMISSION_CREDENTIAL: ADMISSION_CREDENTIAL,
-    SHARNESS_REGISTRY_SIGNING_PRIVATE_KEY_PATH: registryPrivateKeyPath,
+  const registry = yield* startPgliteRegistry({
+    postgresqlPort,
+    registryPort,
+    registryKeyPath: registryPrivateKeyPath,
+    admissionCredential: ADMISSION_CREDENTIAL,
   });
-  yield* assertHealthy(registry, registryOrigin);
+  yield* assertHealthy(registry, "sharness-registry", registryOrigin);
   return {
     registryOrigin,
     registryProcess: registry,
@@ -537,7 +308,11 @@ const startRouterAt = (
       }),
       ...environment,
     });
-    yield* assertHealthy(router, new URL(`http://${LOOPBACK_HOST}:${port}`));
+    yield* assertHealthy(
+      router,
+      "sharness-router",
+      new URL(`http://${LOOPBACK_HOST}:${port}`),
+    );
     return router;
   });
 
@@ -1099,10 +874,11 @@ const runEndToEndBehavior = Effect.gen(function* () {
   Effect.provide(NodeHttpClient.layer),
 );
 
-it("registers identities and preserves opaque multicast behavior across Router restart", () => {
-  expect.hasAssertions();
-  return Effect.runPromise(runEndToEndBehavior);
-}, 120_000);
+it(
+  "registers identities and preserves opaque multicast behavior across Router restart",
+  processTrace(runEndToEndBehavior),
+  120_000,
+);
 
 testVersionMismatchRoundTrips(
   {
@@ -1110,4 +886,84 @@ testVersionMismatchRoundTrips(
     router: startInfrastructure.pipe(Effect.tap(startRouter)),
   },
   Redacted.make(ADMISSION_CREDENTIAL),
+);
+
+/**
+ * Another listener already holds the port PGlite is told to use.
+ *
+ * Value: protects=startPgliteRegistry fails with PGlite's own bind error, before any Registry starts, when another listener holds the PGlite port; fails_when=PGlite readiness accepts any listener on its port again; why_new=every other suite boots PGlite on a free port, where a connect probe and PGlite's listening line agree; seam=none; no_claim=how ports are reserved, how the Registry reports storage failures, or whether pglite-server exits on a bind error (0.1.4 logs it and exits later).
+ */
+const occupiedPgliteStartup = Effect.gen(function* () {
+  const unreadyPhase = /process (exited|timed out) before listening/;
+  const bindError = "EADDRINUSE";
+  const { registryPrivateKeyPath } = yield* makeRegistryIdentity;
+  const holder = yield* acquireLoopbackServer(() => Effect.void);
+  const registryPort = yield* reservePort;
+  const failure = yield* startPgliteRegistry({
+    postgresqlPort: holder.port,
+    registryPort,
+    registryKeyPath: registryPrivateKeyPath,
+    admissionCredential: ADMISSION_CREDENTIAL,
+  }).pipe(Effect.flip);
+  expect(failure.message).toMatch(unreadyPhase);
+  expect(failure.message).toContain(bindError);
+}).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer));
+
+it(
+  "reports PGlite's bind failure when another listener holds its port",
+  processTrace(occupiedPgliteStartup),
+  60_000,
+);
+
+/** Every concurrently registered daemon identity resolves through the Router. */
+const concurrentRegistration = Effect.gen(function* () {
+  const infrastructure = yield* acquireProcessInfrastructure;
+  const fileSystem = yield* FileSystem.FileSystem;
+  const runRouter = makeRouterRunner(infrastructure.routerOrigin);
+  const fixtures = yield* acquireDaemonProcesses(infrastructure);
+  yield* Effect.forEach(
+    fixtures,
+    (fixture) =>
+      Effect.gen(function* () {
+        const management = yield* acquireDaemonManagementClient(
+          fixture.endpoint,
+        );
+        const registered = yield* management.register(
+          makeRegistrationRequest(fixture),
+        );
+        expect(registered.kind).toBe(REGISTERED_KIND);
+        if (registered.kind !== REGISTERED_KIND) {
+          return yield* Effect.fail(
+            processTestError(`registration returned ${registered.kind}`),
+          );
+        }
+        const agentCard = yield* Schema.decodeUnknown(AgentCard)(
+          registered.agentCard,
+        );
+        expect(agentCard.agentName).toBe(fixture.agentName);
+        const privateKey = yield* fileSystem.readFileString(
+          fixture.agentPrivateKeyFile,
+        );
+        const signingAuthority = yield* makeSigningAuthority(privateKey);
+        const result = yield* runRouter(
+          Router.poll({
+            request: {},
+            callerAgentId: agentCard.agentId,
+            signingAuthority,
+          }),
+        );
+        expect(result.kind).toBe(BATCH_KIND);
+      }),
+    { concurrency: CONCURRENT_DAEMONS, discard: true },
+  );
+}).pipe(
+  Effect.scoped,
+  Effect.provide(NodeFileSystem.layer),
+  Effect.provide(NodeHttpClient.layer),
+);
+
+it(
+  `registers ${CONCURRENT_DAEMONS} daemons concurrently and resolves every identity through the Router`,
+  processTrace(concurrentRegistration),
+  180_000,
 );

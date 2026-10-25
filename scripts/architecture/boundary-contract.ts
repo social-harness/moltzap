@@ -19,7 +19,7 @@ export type PackageDir =
   | "registry";
 
 /** The `types` and `import` conditions one public subpath resolves to. */
-interface ExportTarget {
+export interface ExportTarget {
   readonly testOnly?: true;
   readonly internalOnly?: true;
   readonly types: string;
@@ -37,8 +37,6 @@ interface PackageContract {
    * graph.
    */
   readonly deps: readonly PackageDir[];
-  /** Process fixtures launch services without adding a production dependency. */
-  readonly testDeps?: readonly PackageDir[];
   readonly exports: Readonly<Record<string, ExportTarget>>;
   readonly bin: Readonly<Record<string, string>>;
   /**
@@ -100,7 +98,14 @@ export const FINAL_PACKAGES: Readonly<Record<PackageDir, PackageContract>> = {
     npmName: "@moltzap/registry",
     published: false,
     deps: ["identity"],
-    exports: { ".": ROOT_EXPORT },
+    exports: {
+      ".": ROOT_EXPORT,
+      "./test": {
+        testOnly: true,
+        types: "./dist/test.d.ts",
+        import: "./dist/test.js",
+      },
+    },
     bin: { "sharness-registry": "./bin/sharness-registry" },
     targets: SERVICE_TARGETS,
   },
@@ -122,9 +127,13 @@ export const FINAL_PACKAGES: Readonly<Record<PackageDir, PackageContract>> = {
     npmName: "@moltzap/client",
     published: true,
     deps: ["identity", "router"],
-    testDeps: ["registry"],
     exports: {
       ".": ROOT_EXPORT,
+      "./test": {
+        testOnly: true,
+        types: "./dist/test.d.ts",
+        import: "./dist/test.js",
+      },
       "./service": {
         types: "./dist/daemon/index.d.ts",
         import: "./dist/daemon/index.js",
@@ -198,4 +207,43 @@ export function dependencyNames(dir: PackageDir): readonly string[] {
   return FINAL_PACKAGES[dir].deps.map(
     (dependency) => FINAL_PACKAGES[dependency].npmName,
   );
+}
+
+/** Test infrastructure stays outside the product dependency graph and release set. */
+export const INTEGRATION_TESTS = {
+  name: "@moltzap/integration-tests",
+  root: "tests/integration",
+  targets: [
+    "test:integration",
+    "test:mixed-release",
+    "typecheck:tests",
+    "lint",
+  ],
+  dependencies: [
+    "identity",
+    "registry",
+    "router",
+    "client",
+    "openclaw-channel",
+  ],
+} as const;
+
+/** Contract-only visibility metadata becomes the exact manifest condition object. */
+export function manifestExportTarget({
+  testOnly,
+  internalOnly,
+  ...target
+}: ExportTarget): Readonly<Record<string, unknown>> {
+  const condition = exportCondition({ testOnly, internalOnly, ...target });
+  return condition === undefined ? target : { [condition]: target };
+}
+
+/** Visibility metadata selects a named condition independently of object key order. */
+export function exportCondition(
+  target: ExportTarget,
+): "sharness-internal" | "sharness-test" | undefined {
+  if (target.internalOnly === true) {
+    return "sharness-internal";
+  }
+  return target.testOnly === true ? "sharness-test" : undefined;
 }

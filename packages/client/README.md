@@ -22,6 +22,7 @@ versions it was released with.
 |---|---|
 | `@moltzap/client` | `HarnessEndpoint`, operation and inbound item values, endpoint acquisition, and closed operation failures |
 | `@moltzap/client/service` | Production `Daemon` process composition |
+| `@moltzap/client/test` | Management schemas; `sharness-test` condition only, with no default condition |
 
 `HarnessEndpoint.send` performs one collective operation: text to an explicit
 `agent:` or `group:` address with an optional `collective` operation,
@@ -60,7 +61,7 @@ state directory, and one loopback Streamable HTTP listener at
 `http://127.0.0.1:<SHARNESS_MCP_PORT>/mcp`. Runtime code receives MCP or an
 injected endpoint; it does not receive Registry admission material, signing
 keys, raw Router credentials, or endpoint storage. It needs a running Registry
-and Router (see [`@moltzap/identity`](https://github.com/social-harness/moltzap/blob/main/packages/identity/README.md#run-the-registry)
+and Router (see [`@moltzap/registry`](https://github.com/social-harness/moltzap/blob/main/packages/registry/README.md)
 and [`@moltzap/router`](https://github.com/social-harness/moltzap/blob/main/packages/router/README.md#run-the-router)) and the
 Registry's signer public key as a compact Ed25519 JWK.
 
@@ -163,3 +164,6 @@ pnpm nx run @moltzap/client:test:pack
 pnpm nx run @moltzap/client:lint
 pnpm nx run @moltzap/client:arch:check
 ```
+
+See the [cross-package integration suites](https://github.com/social-harness/moltzap/blob/main/tests/integration/README.md)
+for Registry, Router, daemon, adapter, and mixed-release checks.

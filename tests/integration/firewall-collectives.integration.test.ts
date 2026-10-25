@@ -10,9 +10,9 @@
  * the answers it receives, a member checks the question it is asked.
  */
 
+import { FirewallSendError } from "@moltzap/client";
 import { Effect, Queue } from "effect";
 import { expect, it } from "vitest";
-import { FirewallSendError } from "../src/index.js";
 import { processTrace } from "./daemon-process-harness.js";
 import {
   acquireParticipants,

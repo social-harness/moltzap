@@ -8,12 +8,8 @@ import {
   request as requestHttp,
   type ServerResponse,
 } from "node:http";
-import { ProcessTestError } from "./daemon-process-harness.js";
-import {
-  acquireLoopbackServer,
-  LOOPBACK_HOST,
-  readBody,
-} from "./loopback-server.js";
+import { LOOPBACK_HOST, ProcessTestError } from "./daemon-process-harness.js";
+import { acquireLoopbackServer, readBody } from "./loopback-server.js";
 
 const ROUTER_POLL_PATH = "/v1/messages:poll";
 const HOP_BY_HOP_HEADERS = [

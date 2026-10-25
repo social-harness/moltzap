@@ -17,6 +17,7 @@ import path from "node:path";
 import { FINAL_PACKAGE_DIRS } from "./boundary-contract.ts";
 import {
   checkCompatibilityVersion,
+  checkIntegrationTests,
   checkProductManifests,
   checkReleaseSet,
   checkWorkspaceRoots,
@@ -25,6 +26,7 @@ import { checkNxGraphArgument } from "./boundary-nx-graph.ts";
 import { type BoundaryRun, failOnSetDrift } from "./boundary-run.ts";
 import {
   checkFinalImports,
+  checkIntegrationImports,
   checkLayerVocabulary,
   checkSharedSourceRules,
 } from "./boundary-sources.ts";
@@ -46,9 +48,11 @@ failOnSetDrift(run, {
 const vocabularyCount = checkLayerVocabulary(run);
 const compatibilityVersion = checkCompatibilityVersion(run);
 checkWorkspaceRoots(run);
+checkIntegrationTests(run);
 const publishedVersions = checkProductManifests(run);
 checkReleaseSet(run, publishedVersions);
 const finalSourceCount = checkFinalImports(run);
+const integrationSourceCount = checkIntegrationImports(run);
 checkNxGraphArgument(run, process.argv.slice(2));
 
 if (run.failures.length > 0) {
@@ -60,7 +64,7 @@ if (run.failures.length > 0) {
 }
 
 console.log(
-  `[check-architecture-boundaries] OK — ${sourceCount} package TypeScript sources, ${finalSourceCount} final-package code files, exact six-package static graph, ${publishedVersions.size} published manifests at ${[...new Set(publishedVersions.values())].join(", ")}, and ${vocabularyCount} Identity/Router non-documentation files scanned at compatibility version ${String(compatibilityVersion)}`,
+  `[check-architecture-boundaries] OK — ${sourceCount} package TypeScript sources, ${finalSourceCount} final-package code files, ${integrationSourceCount} integration code files, exact six-package static graph, ${publishedVersions.size} published manifests at ${[...new Set(publishedVersions.values())].join(", ")}, and ${vocabularyCount} Identity/Router non-documentation files scanned at compatibility version ${String(compatibilityVersion)}`,
 );
 
 function packageDirectories(packagesRoot: string): readonly string[] {

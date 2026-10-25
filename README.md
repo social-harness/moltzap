@@ -47,7 +47,8 @@ It ends with `bob received: from agent:alice: Hi Bob, this is Alice.`
 
 ## Package graph
 
-The workspace contains six packages.
+The workspace contains six product packages. Cross-package process tests live
+in the private [`tests/integration`](tests/integration) workspace.
 
 | Package | Responsibility | Published |
 |---------|----------------|-----------|

@@ -7,6 +7,13 @@ import {
   StreamableHTTPClientTransport,
 } from "@modelcontextprotocol/client";
 import {
+  Daemon,
+  type DecisionProvider,
+  type DecisionRequest,
+  FirewallAuditRecord,
+  type MessageMiddleware,
+} from "@moltzap/client/service";
+import {
   ConfigProvider,
   Deferred,
   Effect,
@@ -17,13 +24,6 @@ import {
 } from "effect";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import {
-  Daemon,
-  type DecisionProvider,
-  type DecisionRequest,
-  FirewallAuditRecord,
-  type MessageMiddleware,
-} from "../src/daemon/index.js";
 import {
   acquireDaemonManagementClient,
   acquireDaemonProcess,

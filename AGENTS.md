@@ -159,7 +159,7 @@ and a check fails when the copy disagrees with its source.
   touched CLI `--help`, ends with a `Docs:` URL to the heading that
   matches its error text or command.
 - Fix every instance of a defect or wrong pattern, not the reported
-  one: grep `packages/`, `scripts/`, `tools/`, `bin/`, `.github/`, and
+  one: grep `packages/`, `tests/`, `scripts/`, `tools/`, `bin/`, `.github/`, and
   `docs/`, and fix all of it in the same change; one corrected call
   site with five untouched siblings is a regression waiting to be
   rediscovered. Style and guide conformance is the exception, and

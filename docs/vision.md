@@ -416,6 +416,11 @@ publish to npm, each at its own calendar version, while `@moltzap/registry` and
 [Publication and versions](spec/layer-interfaces.md#publication-and-versions).
 The package version is independent of the wire compatibility value.
 
+The private `@moltzap/integration-tests` workspace in `tests/integration` owns
+cross-package process suites. It is test infrastructure, outside the product
+graph and release set. Suites that launch only their own package stay with that
+package.
+
 The simulator is an external consumer built outside this repository with the
 evaluation suites; it is not a product of this repository. Its link-fault
 controls act at a run-scoped boundary after Router ordering and before

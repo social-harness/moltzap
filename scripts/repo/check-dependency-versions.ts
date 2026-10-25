@@ -24,6 +24,7 @@ import { parse } from "yaml";
 import {
   FINAL_PACKAGE_DIRS,
   FINAL_PACKAGES,
+  INTEGRATION_TESTS,
 } from "../architecture/boundary-contract.ts";
 import {
   isJsonObject,
@@ -96,6 +97,7 @@ function main(): void {
     ...FINAL_PACKAGE_DIRS.map((dir) =>
       manifestAt(`packages/${dir}/package.json`),
     ),
+    manifestAt(`${INTEGRATION_TESTS.root}/package.json`),
   ];
   const examples = exampleManifests();
 

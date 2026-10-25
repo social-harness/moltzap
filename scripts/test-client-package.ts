@@ -7,7 +7,11 @@ import { FileSystem } from "@effect/platform";
 import { Effect, Schema } from "effect";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { FINAL_PACKAGES } from "./architecture/boundary-contract.ts";
+import { isDeepStrictEqual } from "node:util";
+import {
+  FINAL_PACKAGES,
+  manifestExportTarget,
+} from "./architecture/boundary-contract.ts";
 import { verifyHostImportGraph } from "./test/client-host-imports.ts";
 import {
   type Archives,
@@ -154,9 +158,8 @@ function verifyPackedManifest(
     );
     const exportEntries = Object.entries(manifest.exports ?? {});
     yield* requireCondition(
-      JSON.stringify(manifest.exports) ===
-        JSON.stringify(FINAL_PACKAGES.client.exports),
-      "packed client must expose exactly the root and ./service entrypoints",
+      isDeepStrictEqual(manifest.exports, packedExportContract()),
+      `packed client must expose exactly these contract entrypoints: ${Object.keys(FINAL_PACKAGES.client.exports).join(", ")}`,
     );
     yield* verifyExportTargets(extractedPackage, manifest, exportEntries);
     yield* verifyHostImportGraph(extractedPackage, String(manifest.main));
@@ -166,10 +169,24 @@ function verifyPackedManifest(
         verifyExecutable(join(extractedPackage, target), name),
       { concurrency: 1, discard: true },
     );
-    return exportEntries.map(([subpath]) =>
-      subpath === "." ? manifest.name : `${manifest.name}/${subpath.slice(2)}`,
-    );
+    return Object.entries(FINAL_PACKAGES.client.exports)
+      .filter(([, target]) => !target.testOnly && !target.internalOnly)
+      .map(([subpath]) =>
+        subpath === "."
+          ? manifest.name
+          : `${manifest.name}/${subpath.slice(2)}`,
+      );
   });
+}
+
+/** Contract metadata becomes condition-only manifest export objects. */
+function packedExportContract() {
+  return Object.fromEntries(
+    Object.entries(FINAL_PACKAGES.client.exports).map(([subpath, target]) => [
+      subpath,
+      manifestExportTarget(target),
+    ]),
+  );
 }
 
 function collectExportTargets(value: unknown): readonly unknown[] {
@@ -255,6 +272,18 @@ function verifyConsumerImports(
         `if (!("HistoryExportRecord" in root)) throw new Error("Client root does not export HistoryExportRecord");\n` +
         `\nconst service = await import("@moltzap/client/service");\n` +
         policyConsumerCheck,
+    );
+    yield* runCommand(
+      process.execPath,
+      [
+        "--conditions=sharness-test",
+        "--input-type=module",
+        "-e",
+        `const actual = Object.keys(await import("@moltzap/client/test")).sort();
+const expected = ["managementReadConversationResultSchema", "managementRegisterRequestSchema", "managementRegisterResultSchema", "managementSearchConversationsResultSchema", "managementStatusResultSchema"].sort();
+if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error("Client test schemas differ: " + JSON.stringify(actual));`,
+      ],
+      { cwd: consumerRoot, env: { NODE_PATH: "" } },
     );
     yield* runCommand(process.execPath, [checkPath], {
       cwd: consumerRoot,
