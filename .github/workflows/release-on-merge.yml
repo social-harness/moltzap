@@ -1,11 +1,13 @@
 name: Release Social Harness on merge
 
-# Start the ordinary release dispatch when the pushed tree needs a release.
+# Start the ordinary release dispatch after CI passes on a main push.
 # A merge arriving while an earlier release is unfinished dispatches a run that
 # resumes that release; its own changes release with the next merge or a manual
 # dispatch.
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
 
 concurrency:
@@ -16,6 +18,7 @@ permissions: {}
 
 jobs:
   release:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -23,15 +26,21 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Gate the pushed commit and dispatch a release
+      - name: Gate the tested commit and dispatch a release
         env:
           GH_TOKEN: ${{ github.token }}
+          GATE_COMMIT: ${{ github.event.workflow_run.head_sha }}
         shell: bash
         run: |
           DECISION=$(scripts/release/push-gate.sh)
           if [ "$DECISION" = release ]; then
-            gh workflow run publish.yml --repo "$GITHUB_REPOSITORY" --ref main
+            MAIN_HEAD=$(git ls-remote "https://github.com/$GITHUB_REPOSITORY" refs/heads/main)
+            if [ "${MAIN_HEAD%%[[:space:]]*}" != "$GATE_COMMIT" ]; then
+              echo "::notice::main moved past $GATE_COMMIT; the newer commit's own CI run gates it."
+              exit 0
+            fi
+            gh workflow run publish.yml --repo "$GITHUB_REPOSITORY" --ref main -f automatic=true
           fi

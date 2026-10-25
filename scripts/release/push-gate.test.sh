@@ -18,7 +18,7 @@ new_case() {
   cd "case-$PASS"
 }
 
-# Record the tree as the pushed commit.
+# Record the tree as the commit being gated.
 commit_tip() {
   git add .
   git -c core.hooksPath=/dev/null commit --quiet --allow-empty -m "$1"
@@ -43,6 +43,7 @@ check() {
 }
 
 main() {
+  local queued_sha
   mkdir "$TEMP_DIR/fixture"
   cd "$TEMP_DIR/fixture"
   git init --quiet --initial-branch=main
@@ -108,8 +109,39 @@ main() {
   touch changelog.d/new.Fixed.md
   commit_tip 'fix: queued change'
   queued_sha=$GITHUB_SHA
-  commit_tip 'fix: newer tip'
-  GITHUB_SHA=$queued_sha check 'later commits do not change the pushed decision' release
+  rm changelog.d/new.Fixed.md
+  commit_tip 'chore: remove fragments at newer tip'
+  check 'newer tip without fragments skips' skip 0 'No changelog fragments'
+  GITHUB_SHA=$queued_sha check 'gated commit releases despite newer tip deletion' release
+
+  new_case
+  touch changelog.d/new.Fixed.md
+  printf '%s\n' '{"version":"next"}' > packages/openclaw-channel/package.json
+  commit_tip 'fix: unreadable manifest version'
+  check 'unreadable manifest version fails' '' 1 'Cannot read version'
+
+  new_case
+  mkdir -p packages/new-service
+  printf '%s\n' '{"version":"next"}' > packages/new-service/package.json
+  touch changelog.d/new.Fixed.md
+  commit_tip 'feat: add Social Harness service'
+  check 'manifest absent at last release is ignored by revert check' release
+
+  new_case
+  mkdir -p packages/client/fixture
+  printf '%s\n' '{"version":"2026.1025.1"}' > packages/client/fixture/package.json
+  commit_tip 'chore(release): moltzap@2026.1025.2'
+  printf '%s\n' '{"version":"2026.1024.1"}' > packages/client/fixture/package.json
+  touch changelog.d/new.Fixed.md
+  commit_tip 'test: change nested fixture version'
+  check 'nested manifests are ignored by revert check' release
+
+  cd "$TEMP_DIR"
+  git clone --quiet --depth=1 "file://$TEMP_DIR/fixture" shallow
+  cd shallow
+  GITHUB_SHA=$(git rev-parse HEAD)
+  check 'shallow history fails even at a release head' '' 1 'requires full history'
+
   new_case
   touch changelog.d/consumed.Fixed.md
   commit_tip 'fix: reuse an issue fragment name'

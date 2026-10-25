@@ -87,7 +87,9 @@ or activate the Node version in [`.node-version`](.node-version) and run
 `pnpm run docs:dev` for a local preview. Use `pnpm run docs:open` when you
 also want the preview to open in a browser.
 
-Releases are manual: a run of `.github/workflows/publish.yml` computes one
+Merges release through `.github/workflows/release-on-merge.yml` after CI
+passes on `main`. Manual dispatch covers resets, resumes and
+`start_new_version`. A run of `.github/workflows/publish.yml` computes one
 calendar version, commits it for the packages that changed since their last
 published version, and starts a second run that publishes them with npm
 provenance naming that release commit. `CHANGELOG.md` carries the notes each

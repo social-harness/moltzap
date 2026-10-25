@@ -433,19 +433,26 @@ mismatches. Release notes mark each reset release with the phrase
 - The package version is independent of `WIRE_VERSION`, the MCP revision,
   and every persisted-schema version. Advancing one never advances another.
 - A merge to `main` releases through the gate in
-  `.github/workflows/release-on-merge.yml`, which starts the ordinary release
-  dispatch in `.github/workflows/publish.yml` on main without inputs. The gate
-  reads only the pushed commit's tree and history. It skips release-commit
+  `.github/workflows/release-on-merge.yml` after CI succeeds for a push to
+  `main`. It gates that CI run's `head_sha` with full history, then checks
+  main's current head before dispatching `.github/workflows/publish.yml`
+  with `automatic=true`. If main moved, it skips: the newer commit's own CI
+  run gates it. Before minting a new version, an automatic dispatch runs the
+  gate again on the commit it will release; `skip` ends the run successfully
+  without releasing. `automatic` defaults to false, so plain manual dispatch
+  is unchanged. The gate skips release-commit
   heads, trees without changelog fragments other than `template.md`, and
-  package manifest versions lower than those at the last release commit.
+  top-level `packages/<name>/package.json` versions lower than those at the
+  last release commit; manifests absent at that release are ignored.
   It compares the Client manifest's `sharnessWireVersion` with the last release
   commit's value: unreadable metadata fails, and differing values require a
   reset release by hand. With no earlier release, fragments start a release.
-  Push gates serialize separately from release dispatches, without cancelling
-  running jobs. A merge arriving while an earlier release is unfinished makes
-  the dispatched run resume that release; the merge's own changes release
-  with the next merge or a manual dispatch. Resumption, retries and abandonment
-  remain on the manual dispatch path, including `start_new_version`.
+  CI-completion gates serialize separately from release dispatches, without
+  cancelling running jobs. A merge arriving while an earlier release is
+  unfinished makes the dispatched run resume that release; the merge's own
+  changes release with the next merge or a manual dispatch. Resumption,
+  retries and abandonment remain on the manual dispatch path, including
+  `start_new_version`.
 - Releases run from `main` through `.github/workflows/publish.yml` with npm
   provenance and name the service images in each release. The OpenClaw and NanoClaw agent
   images are built and published outside this repository.
