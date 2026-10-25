@@ -1,7 +1,6 @@
 /** @file Migration admission, atomic rollback, replaceable backups, and retained history. */
 
 import { live as it } from "@effect/vitest";
-import { LIVE_WIRE_VERSIONS } from "@moltzap/identity";
 import { Effect, Exit } from "effect";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- These tests exercise real SQLite files and directory permissions at the synchronous ownership boundary.
 import {
@@ -26,6 +25,7 @@ import {
   storedConversation,
   withStore,
 } from "../../__tests__/store-schema-fixtures.js";
+import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { readStoredHistory } from "../conversations/index.js";
 import { RESET_SCHEMA } from "./database/migrations.js";
 import { closeStoreState, openStoreState } from "./database/schema.js";

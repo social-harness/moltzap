@@ -250,7 +250,7 @@ describe("extractSignatureText", () => {
   });
 
   it("renders the type declaration from a Schema value/type pair", () => {
-    const fileName = "packages/identity/src/identifiers.ts";
+    const fileName = "packages/client/src/identity/identifiers.ts";
     const source = [
       "export const AgentId = Schema.String;",
       "export type AgentId = typeof AgentId.Type;",
@@ -271,7 +271,7 @@ describe("extractSignatureText", () => {
   });
 
   it("keeps multiline aliases complete for the final identity package", () => {
-    const fileName = "packages/identity/src/registry.ts";
+    const fileName = "packages/client/src/identity/registry.ts";
     const source = [
       "export type RegistryLookupResult =",
       '  | Readonly<{ kind: "found"; agentCard: VerifiedAgentCard }>',
@@ -298,7 +298,7 @@ describe("extractSignatureText", () => {
   });
 
   it("renders the value declaration from an interface/value pair", () => {
-    const fileName = "packages/identity/src/agent-key.ts";
+    const fileName = "packages/client/src/identity/agent-key.ts";
     const source = [
       "export interface AgentSigningAuthority {",
       '  readonly _brand: "AgentSigningAuthority";',

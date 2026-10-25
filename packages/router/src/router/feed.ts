@@ -1,11 +1,7 @@
 /** @file Volatile globally ordered Router feed with bounded retention and retry identity. */
-import type { AgentId, LiveSignedMessage, MessageId } from "@moltzap/identity";
+import type { AgentId, LiveSignedMessage, MessageId } from "@moltzap/client";
+import type { routerContract } from "@moltzap/client/internal";
 import { Data, Effect, Ref } from "effect";
-import type {
-  RouterInstanceId,
-  RouterSendResult,
-  SignedMessageDigest,
-} from "./contract.js";
 
 /** Greatest private feed order representable by this Router process. */
 export const maximumPrivateOrder = (1n << 128n) - 1n;
@@ -25,7 +21,7 @@ export interface RouterFeed {
 }
 
 interface RouterFeedInput {
-  readonly routerInstanceId: RouterInstanceId;
+  readonly routerInstanceId: typeof routerContract.RouterInstanceId.Type;
   readonly retainedMessageCapacity: number;
   readonly retainedMessageByteCapacity: number;
 }
@@ -90,7 +86,7 @@ interface FeedEntry {
   readonly recipients: ReadonlySet<AgentId>;
   readonly senderAgentId: AgentId;
   readonly messageId: MessageId;
-  readonly signedMessageDigest: SignedMessageDigest;
+  readonly signedMessageDigest: typeof routerContract.SignedMessageDigest.Type;
 }
 
 interface FeedState {
@@ -105,7 +101,7 @@ interface FeedState {
 type FeedAcceptResult =
   | Readonly<{
       kind: "result";
-      result: RouterSendResult;
+      result: typeof routerContract.RouterSendResult.Type;
       acceptedRecipients?: ReadonlySet<AgentId>;
     }>
   | Readonly<{ kind: "overloaded" }>;
@@ -118,7 +114,7 @@ interface FeedCandidate {
   readonly recipients: ReadonlySet<AgentId>;
   readonly senderAgentId: AgentId;
   readonly messageId: MessageId;
-  readonly signedMessageDigest: SignedMessageDigest;
+  readonly signedMessageDigest: typeof routerContract.SignedMessageDigest.Type;
 }
 
 const retryKey = (senderAgentId: AgentId, messageId: MessageId): string =>
@@ -133,22 +129,25 @@ const makeInitialState = (tailOrder: bigint): FeedState => ({
 });
 
 const acceptedResult = (
-  routerInstanceId: RouterInstanceId,
+  routerInstanceId: typeof routerContract.RouterInstanceId.Type,
   entry: FeedEntry,
-): Extract<RouterSendResult, { readonly kind: "accepted" }> => ({
+): Extract<
+  typeof routerContract.RouterSendResult.Type,
+  { readonly kind: "accepted" }
+> => ({
   kind: "accepted",
   routerInstanceId,
   signedMessageDigest: entry.signedMessageDigest,
 });
 
 const retryResult = (
-  routerInstanceId: RouterInstanceId,
+  routerInstanceId: typeof routerContract.RouterInstanceId.Type,
   candidate: FeedCandidate,
   retryIndex: ReadonlyMap<string, FeedEntry>,
   key: string,
 ): FeedAcceptResult => {
   const retained = retryIndex.get(key);
-  let result: RouterSendResult;
+  let result: typeof routerContract.RouterSendResult.Type;
   if (retained === undefined) {
     result = { kind: "retry_identity_unknown" };
   } else if (retained.encodedMessageJcs !== candidate.encodedMessageJcs) {
@@ -196,7 +195,7 @@ const appendCandidate = (
   candidate: FeedCandidate,
   key: string,
   input: {
-    readonly routerInstanceId: RouterInstanceId;
+    readonly routerInstanceId: typeof routerContract.RouterInstanceId.Type;
     readonly retainedMessageCapacity: number;
     readonly retainedMessageByteCapacity: number;
   },
@@ -237,7 +236,7 @@ const modifyFeed = (
   current: FeedState,
   candidate: FeedCandidate,
   input: {
-    readonly routerInstanceId: RouterInstanceId;
+    readonly routerInstanceId: typeof routerContract.RouterInstanceId.Type;
     readonly retainedMessageCapacity: number;
     readonly retainedMessageByteCapacity: number;
   },

@@ -10,7 +10,6 @@ import { FileSystem } from "@effect/platform";
 import { NodeFileSystem } from "@effect/platform-node";
 import { scopedLive as it } from "@effect/vitest";
 import { SUBSCRIPTION_ID_META_KEY } from "@modelcontextprotocol/server";
-import { AgentCard } from "@moltzap/identity";
 import {
   Cause,
   Data,
@@ -62,6 +61,7 @@ import {
 } from "../communication/store/index.js";
 import { HistoryExportRecord } from "../harness/inbox/history-export.js";
 import { INBOX_PENDING_EVENT } from "../harness/protocol/names.js";
+import { AgentCard } from "../identity/cards.js";
 import { SendInput } from "../index.js";
 import { DaemonRuntimeError } from "./lifecycle.js";
 

@@ -9,7 +9,8 @@
         {
           "target": "build",
           "projects": [
-            "@moltzap/registry"
+            "@moltzap/registry",
+            "@moltzap/router"
           ]
         }
       ],
@@ -22,7 +23,9 @@
         "default",
         "^production",
         "{workspaceRoot}/packages/registry/src/**/*",
-        "{workspaceRoot}/packages/registry/bin/**/*"
+        "{workspaceRoot}/packages/registry/bin/**/*",
+        "{workspaceRoot}/packages/router/src/**/*",
+        "{workspaceRoot}/packages/router/bin/**/*"
       ]
     }
   }

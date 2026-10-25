@@ -9,7 +9,7 @@ import {
   AgentSigningAuthority,
   legacyKeys,
   WIRE_VERSION,
-} from "@moltzap/identity";
+} from "@moltzap/client";
 import {
   Cause,
   Config,

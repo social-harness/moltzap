@@ -15,8 +15,6 @@
     "@electric-sql/pglite-socket": "0.1.4",
     "@modelcontextprotocol/client": "2.0.0-beta.5",
     "@moltzap/client": "2026.1022.0",
-    "@moltzap/identity": "2026.1022.0",
-    "@moltzap/router": "2026.1022.0",
     "effect": "^3.22.0"
   }
 }

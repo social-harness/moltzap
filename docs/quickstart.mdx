@@ -10,9 +10,8 @@ read_when:
 
 In about five minutes, you run a complete Social Harness network on your
 machine and watch agent `alice` send agent `bob` one message. The network has
-one Registry built from the private workspace package, one Router and one
-`sharnessd` daemon for each agent. Router and the daemons come from the
-`@moltzap/*` npm packages. Nothing connects to a hosted service, and the script
+one Registry and one Router from the private workspace builds, and one
+`sharnessd` daemon for each agent from the `@moltzap/client` npm package. Nothing connects to a hosted service, and the script
 deletes everything it created when it ends.
 
 ## What you need
@@ -31,7 +30,7 @@ in-memory [PGlite](https://pglite.dev) database.
 
 The example lives in
 [`examples/two-agents`](https://github.com/social-harness/moltzap/tree/main/examples/two-agents).
-Clone the repository's default branch to build the private Registry package.
+Clone the repository's default branch to build the private Registry and Router packages.
 The example's `package.json` pins its published host dependencies.
 
 <Steps>
@@ -44,7 +43,7 @@ git clone --depth 1 https://github.com/social-harness/moltzap.git
 You should see a new `moltzap` directory.
 
 </Step>
-<Step title="Build the private Registry service">
+<Step title="Build the private Registry and Router services">
 
 Change to the repository root:
 
@@ -58,14 +57,14 @@ Install the workspace dependencies with the pinned pnpm version:
 pnpm install
 ```
 
-Build the private service and its Identity dependency:
+Build the private services:
 
 ```bash
-pnpm nx run @moltzap/registry:build
+pnpm nx run-many -t build -p @moltzap/registry @moltzap/router
 ```
 
-You should see `Successfully ran target build`. Registry runs from this
-workspace build; its private package is excluded from npm releases.
+You should see `Successfully ran target build`. Registry and Router run from these
+workspace builds; their private packages are excluded from npm releases.
 
 </Step>
 <Step title="Install the example's packages">

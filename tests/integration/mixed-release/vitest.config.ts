@@ -7,6 +7,7 @@ export default defineConfig({
   test: {
     include: [
       "tests/integration/mixed-release/mixed-release.integration.test.ts",
+      "tests/integration/mixed-release/launcher-upgrades.integration.test.ts",
     ],
     maxWorkers: 1,
     passWithNoTests: false,

@@ -1,7 +1,7 @@
 /** @file Shared real-process fixtures for the cross-package suites. */
 
-import type { MessageAddressInput } from "@moltzap/client";
 import type { startRegistry } from "@moltzap/registry/test";
+import type { startRouter } from "@moltzap/router/test";
 import { FileSystem, HttpClient } from "@effect/platform";
 import {
   NodeContext,
@@ -14,20 +14,21 @@ import {
   StreamableHTTPClientTransport,
 } from "@modelcontextprotocol/client";
 import {
+  AgentName,
+  AgentSigningAuthority,
+  Ed25519PublicKey,
+  type MessageAddressInput,
+  PrincipalId,
+} from "@moltzap/client";
+import { OperationId } from "@moltzap/client/service";
+import {
   managementReadConversationResultSchema,
   type managementRegisterRequestSchema,
   managementRegisterResultSchema,
   managementSearchConversationsResultSchema,
   managementStatusResultSchema,
+  WireVersions,
 } from "@moltzap/client/test";
-import {
-  AgentName,
-  AgentSigningAuthority,
-  Ed25519PublicKey,
-  PrincipalId,
-} from "@moltzap/identity";
-import { OperationId } from "@moltzap/identity/registry";
-import { WireVersions } from "@moltzap/identity/test";
 import {
   Console,
   Data,
@@ -933,7 +934,7 @@ function startNetworkRouter(
           CONCURRENT_DAEMONS * HELD_POLLS_PER_DAEMON,
         ),
       },
-      join(WORKSPACE_ROOT, "packages/client"),
+      join(WORKSPACE_ROOT, "packages/router"),
     ).pipe(
       Effect.tap((router) =>
         awaitReady(
@@ -988,28 +989,28 @@ function launchCommand(
   service: "Registry" | "RouterServer" | "Daemon",
   versions: ProcessWireVersions,
 ): readonly [string, readonly string[]] {
-  const script =
-    service === "Registry"
-      ? `import { startRegistry } from "@moltzap/registry/test"; startRegistry(${JSON.stringify(versions satisfies Parameters<typeof startRegistry>[0])});`
-      : serviceScript(service, versions);
+  let script: string;
+  if (service === "Registry") {
+    script = `import { startRegistry } from "@moltzap/registry/test"; startRegistry(${JSON.stringify(versions satisfies Parameters<typeof startRegistry>[0])});`;
+  } else if (service === "RouterServer") {
+    script = `import { startRouter } from "@moltzap/router/test"; startRouter(${JSON.stringify(versions satisfies Parameters<typeof startRouter>[0])});`;
+  } else {
+    script = serviceScript(service, versions);
+  }
   return [
     process.execPath,
     ["--conditions=sharness-test", "--input-type=module", "-e", script],
   ];
 }
 
-/** Router and daemon compositions share Identity's test wire policy. */
+/** Daemon compositions select their test wire policy before process startup. */
 function serviceScript(
-  service: "RouterServer" | "Daemon",
+  service: "Daemon",
   versions: ProcessWireVersions,
 ): string {
-  const module =
-    service === "RouterServer"
-      ? "@moltzap/router/server"
-      : "@moltzap/client/service";
   return `import { NodeRuntime } from "@effect/platform-node";
-import { WireVersions } from "@moltzap/identity/test";
-import { ${service} } from "${module}";
+import { WireVersions } from "@moltzap/client/test";
+import { ${service} } from "@moltzap/client/service";
 import { ConfigProvider, Effect, Layer } from "effect";
 Layer.launch(${service}.layer).pipe(Effect.provideService(WireVersions, ${JSON.stringify(versions)}), Effect.withConfigProvider(ConfigProvider.fromEnv()), NodeRuntime.runMain);`;
 }

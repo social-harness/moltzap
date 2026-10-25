@@ -15,7 +15,11 @@ import { createHash } from "node:crypto";
 import { verify } from "sigstore";
 import { launcherError, type LauncherError } from "./errors.js";
 import { integrityOf } from "./integrity.js";
-import { downloadJson, type PublishedPackage } from "./npm.js";
+import {
+  downloadJson,
+  PRE_FOLD_IDENTITY_PACKAGE,
+  type PublishedPackage,
+} from "./npm.js";
 import { type PackedManifest, readPackedManifest } from "./packed-manifest.js";
 
 /**
@@ -152,8 +156,10 @@ function differingField(
     ["host-code hash", packed.sharnessHostCodeHash === published.hostCodeHash],
     [
       "wire version",
-      (packed.sharnessWireVersion ?? packed.moltzapWireVersion) ===
-        published.wireVersion,
+      (packed.sharnessWireVersion ??
+        (packed.name === PRE_FOLD_IDENTITY_PACKAGE
+          ? packed.moltzapWireVersion
+          : undefined)) === published.wireVersion,
     ],
   ];
   return checks.find(([, same]) => !same)?.[0];

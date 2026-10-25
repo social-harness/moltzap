@@ -228,7 +228,7 @@ result proves that a calendar write occurred.
 
 The evaluator lives in this folder: `chain.ts` runs middleware, `decision.ts`
 composes findings, `english.ts` adapts English rules, `questions.ts` constructs
-versioned questions, `jev.ts` handles TypeSafe HTTP, and `values.ts` defines the
+versioned questions, `jev.ts` handles TypeSafe HTTP, and `contract/index.ts` defines the
 shared values. `index.ts` is the module entry point. Client's
 `../admission/firewall.ts` owns live admission, every step of a collective
 operation included; `../outcome/index.ts` defines the

@@ -7,16 +7,14 @@ import { PgClient } from "@effect/sql-pg";
 import {
   AgentCard,
   AgentSigningAuthority,
-  AuthenticationFailedError,
   type VerifiedAgentCard,
   WIRE_VERSION,
-} from "@moltzap/identity";
+} from "@moltzap/client";
 import {
+  httpErrors,
   Registry,
-  type RegistryLookupResult,
-  RegistryRegisterRequest,
-  type RegistryRegisterResult,
-} from "@moltzap/identity/registry";
+  registryContract,
+} from "@moltzap/client/internal";
 import {
   PostgreSqlContainer,
   type StartedPostgreSqlContainer,
@@ -49,6 +47,10 @@ import {
   waitForHealthStatus,
 } from "./registry-process.js";
 import { encodeCanonicalJson } from "./request-fixtures.js";
+
+/* eslint-disable @typescript-eslint/naming-convention -- Closed HTTP error constructors retain their class names when bound from the service capability. */
+const { AuthenticationFailedError } = httpErrors;
+/* eslint-enable @typescript-eslint/naming-convention -- Restore variable naming after binding error constructors. */
 
 const SERVICE_UNAVAILABLE_STATUS = 503;
 const EMPTY_BODY = "";
@@ -122,7 +124,11 @@ const makePostgreSqlRegistrySetup = Effect.gen(function* () {
   };
 });
 
-const issuedCard = (result: RegistryLookupResult | RegistryRegisterResult) =>
+const issuedCard = (
+  result:
+    | typeof registryContract.lookupResultSchema.Type
+    | typeof registryContract.registerResultSchema.Type,
+) =>
   Match.value(result).pipe(
     Match.when({ kind: "registered" }, ({ agentCard }) =>
       Effect.succeed(agentCard),
@@ -220,9 +226,9 @@ it("reopens a known ledger and serves the same card", () => {
         operationTimeoutMilliseconds: 5_000,
       });
       const prepared = yield* prepareAgent("ledger-authority");
-      const requestBytes = yield* Schema.encode(RegistryRegisterRequest)(
-        prepared.request,
-      ).pipe(Effect.flatMap(encodeCanonicalJson));
+      const requestBytes = yield* Schema.encode(
+        registryContract.RegistryRegisterRequest,
+      )(prepared.request).pipe(Effect.flatMap(encodeCanonicalJson));
       const registered = yield* storage.register({
         request: prepared.request,
         requestBytes,

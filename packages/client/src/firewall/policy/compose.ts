@@ -13,7 +13,7 @@ import type {
   IncomingMiddlewareEntry,
   MessagePolicy,
   OutgoingMiddlewareEntry,
-} from "./policy.js";
+} from "./document/index.js";
 import { packageVersion } from "../../release/index.js";
 import {
   acknowledgementsPolicy,

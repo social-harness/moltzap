@@ -15,7 +15,7 @@ import { live as it } from "@effect/vitest";
 import { Effect, Exit, Layer, Option } from "effect";
 import { describe, expect } from "vitest";
 import type { LauncherConfiguration } from "./selection.js";
-import { readRecord } from "./installation.js";
+import { readRecord, writeRecord } from "./installation.js";
 import { integrityOf } from "./integrity.js";
 import { prepare } from "./prepare.js";
 
@@ -30,8 +30,8 @@ type Routes = Readonly<Record<string, () => Response>>;
 
 const json = (body: unknown) => () => Response.json(body);
 
-/** A published release of the channel, its daemon and Identity at `version`. */
-const release = (version: string, wireVersion: string): Routes => {
+/** A published release of the channel and its daemon at `version`. */
+const release = (version: string, wireVersion?: string): Routes => {
   const tarball = new TextEncoder().encode(`tarball ${version}`);
   const published = (name: string, dependencies: Record<string, string>) => ({
     name,
@@ -50,20 +50,15 @@ const release = (version: string, wireVersion: string): Routes => {
     [`${REGISTRY}/@moltzap%2fopenclaw-channel/${version}`]: json(
       published(CHANNEL, { "@moltzap/client": version, effect: "^3" }),
     ),
-    [`${REGISTRY}/@moltzap%2fclient/${version}`]: json(
-      published("@moltzap/client", { "@moltzap/identity": version }),
-    ),
-    [`${REGISTRY}/@moltzap%2fidentity/${version}`]: json({
-      ...published("@moltzap/identity", {}),
-      moltzapWireVersion: wireVersion,
+    [`${REGISTRY}/@moltzap%2fclient/${version}`]: json({
+      ...published("@moltzap/client", {}),
+      sharnessWireVersion: wireVersion,
     }),
     ...Object.fromEntries(
-      ["@moltzap/openclaw-channel", "@moltzap/client", "@moltzap/identity"].map(
-        (name) => [
-          `${REGISTRY}/tarballs/${name}-${version}.tgz`,
-          () => new Response(tarball),
-        ],
-      ),
+      ["@moltzap/openclaw-channel", "@moltzap/client"].map((name) => [
+        `${REGISTRY}/tarballs/${name}-${version}.tgz`,
+        () => new Response(tarball),
+      ]),
     ),
   };
 };
@@ -83,6 +78,16 @@ const registry = (routes: Routes, asked: string[]) =>
       );
     }),
   );
+
+/** Installed Client entry and wire metadata used by the launcher fixtures. */
+const installedClientManifest = (wireVersion?: string) =>
+  JSON.stringify({
+    name: "@moltzap/client",
+    version: "2026.1021.1",
+    type: "module",
+    sharnessWireVersion: wireVersion,
+    exports: { ".": { import: "./dist/index.js" } },
+  });
 
 /** A home volume and an image install of channel release `2026.1021.1`. */
 const volume = Effect.gen(function* () {
@@ -104,17 +109,9 @@ const volume = Effect.gen(function* () {
       sharnessHostCodeHash: "sha256:seed",
     }),
   );
+  yield* write("@moltzap/client/package.json", installedClientManifest(WIRE));
   yield* write(
-    "@moltzap/identity/package.json",
-    JSON.stringify({
-      name: "@moltzap/identity",
-      version: "2026.1021.1",
-      type: "module",
-      exports: { ".": { import: "./dist/index.js" } },
-    }),
-  );
-  yield* write(
-    "@moltzap/identity/dist/index.js",
+    "@moltzap/client/dist/index.js",
     `export const LIVE_WIRE_VERSIONS = [${JSON.stringify(WIRE)}];\n`,
   );
   return { home: path.join(root, "home"), seed };
@@ -212,7 +209,7 @@ const keepsAnUnsafePin = () =>
                 integrity: integrityOf(new TextEncoder().encode("client")),
                 tarball: `${REGISTRY}/tarballs/client.tgz`,
               },
-              dependencies: { "@moltzap/identity": "../../../escape" },
+              dependencies: { "@moltzap/client": "../../../escape" },
             }),
           },
           asked,
@@ -307,6 +304,246 @@ const followsANewImage = () =>
     );
   }).pipe(Effect.scoped, Effect.provide(NodeContext.layer));
 
+/** A recorded pre-fold install keeps wire policy in the separate Identity package. */
+const preFoldVolume = Effect.gen(function* () {
+  const installed = yield* volume;
+  const fs = yield* FileSystem.FileSystem;
+  const clientRoot = `${installed.seed}/node_modules/@moltzap/client`;
+  const identityRoot = `${installed.seed}/node_modules/@moltzap/identity`;
+  yield* fs.writeFileString(
+    `${clientRoot}/package.json`,
+    installedClientManifest(),
+  );
+  yield* fs.writeFileString(`${clientRoot}/dist/index.js`, "export {};\n");
+  yield* fs.makeDirectory(`${identityRoot}/dist`, { recursive: true });
+  yield* fs.writeFileString(
+    `${identityRoot}/package.json`,
+    JSON.stringify({
+      name: "@moltzap/identity",
+      version: "2026.1021.1",
+      type: "module",
+      exports: { ".": { import: "./dist/index.js" } },
+    }),
+  );
+  yield* fs.writeFileString(
+    `${identityRoot}/dist/index.js`,
+    `export const LIVE_WIRE_VERSIONS = [${JSON.stringify(WIRE)}];\n`,
+  );
+  const image = yield* volume;
+  yield* fs.makeDirectory(installed.home, { recursive: true });
+  const tarball = `${installed.home}/recorded-client.tgz`;
+  const bytes = new TextEncoder().encode("recorded verified Client tarball");
+  yield* fs.writeFile(tarball, bytes);
+  yield* writeRecord(installed.home, {
+    format: "org.social-harness/launcher-record/v1",
+    releasePackage: CHANNEL,
+    version: "2026.1021.1",
+    prefix: installed.seed,
+    hostCodeHash: "sha256:seed",
+    packages: [
+      {
+        name: "@moltzap/client",
+        version: "2026.1021.1",
+        tarball,
+        integrity: integrityOf(bytes),
+      },
+    ],
+  });
+  return { ...installed, seed: image.seed, recordedPrefix: installed.seed };
+});
+
+/** Identity metadata remains provenance-bound within the pre-fold release closure. */
+const preFoldRelease = (
+  version: string,
+  field: "sharnessWireVersion" | "moltzapWireVersion",
+): Routes => {
+  const routes = release(version);
+  const clientUrl = `${REGISTRY}/@moltzap%2fclient/${version}`;
+  const identityUrl = `${REGISTRY}/@moltzap%2fidentity/${version}`;
+  const metadata = (name: string) => ({
+    name,
+    version,
+    dist: {
+      integrity: integrityOf(new TextEncoder().encode("other bytes")),
+      tarball: `${REGISTRY}/tarballs/${name}-${version}.tgz`,
+    },
+  });
+  return {
+    ...routes,
+    [clientUrl]: json({
+      ...metadata("@moltzap/client"),
+      dependencies: { "@moltzap/identity": version },
+    }),
+    [identityUrl]: json({ ...metadata("@moltzap/identity"), [field]: WIRE }),
+    [`${REGISTRY}/tarballs/@moltzap/identity-${version}.tgz`]: () =>
+      new Response("unverified identity"),
+  };
+};
+
+it("follows from a recorded pre-fold installation using its Identity live window", () =>
+  Effect.gen(function* () {
+    const { home, seed } = yield* preFoldVolume;
+    const asked: string[] = [];
+    const prepared = yield* prepare(configuration(home, follow), seed).pipe(
+      Effect.provide(start(release("2026.1025.1", WIRE), asked)),
+    );
+    expect(prepared.kept).toBe("unverified");
+    expect(asked.some((url) => url.includes("/tarballs/"))).toBe(true);
+  }).pipe(Effect.scoped, Effect.provide(NodeContext.layer)));
+
+it.each(["sharnessWireVersion", "moltzapWireVersion"] as const)(
+  "follows a pre-fold candidate using its pinned Identity %s",
+  (field) =>
+    Effect.gen(function* () {
+      const { home, seed } = yield* volume;
+      const asked: string[] = [];
+      const prepared = yield* prepare(configuration(home, follow), seed).pipe(
+        Effect.provide(start(preFoldRelease("2026.1025.1", field), asked)),
+      );
+      expect(prepared.kept).toBe("unverified");
+      expect(asked.some((url) => url.includes("/tarballs/"))).toBe(true);
+    }).pipe(Effect.scoped, Effect.provide(NodeContext.layer)),
+);
+
+it("takes an exact pre-fold pin without reading either wire compatibility input", () =>
+  Effect.gen(function* () {
+    const { home, seed, recordedPrefix } = yield* preFoldVolume;
+    const fs = yield* FileSystem.FileSystem;
+    yield* fs.remove(`${recordedPrefix}/node_modules/@moltzap/identity`, {
+      recursive: true,
+    });
+    const asked: string[] = [];
+    const prepared = yield* prepare(
+      configuration(home, { kind: "pinned", version: "2026.1010.1" }),
+      seed,
+    ).pipe(Effect.provide(start(release("2026.1010.1"), asked)));
+    expect(prepared.kept).toBe("unverified");
+    expect(asked.some((url) => url.includes("/tarballs/"))).toBe(true);
+  }).pipe(Effect.scoped, Effect.provide(NodeContext.layer)));
+
+it("keeps a pinned release whose closure contains Identity but no Client", () =>
+  Effect.gen(function* () {
+    const { home, seed } = yield* volume;
+    yield* prepare(configuration(home, { kind: "off" }), seed).pipe(
+      Effect.provide(start({})),
+    );
+    const before = yield* readRecord(home);
+    const fs = yield* FileSystem.FileSystem;
+    yield* fs.makeDirectory(`${home}/releases/retained`, { recursive: true });
+    const version = "2026.1025.1";
+    const routes = preFoldRelease(version, "sharnessWireVersion");
+    const asked: string[] = [];
+    const prepared = yield* prepare(
+      configuration(home, { kind: "pinned", version }),
+      seed,
+    ).pipe(
+      Effect.provide(
+        start(
+          {
+            ...routes,
+            [`${REGISTRY}/@moltzap%2fopenclaw-channel/${version}`]: json({
+              name: CHANNEL,
+              version,
+              dependencies: { "@moltzap/identity": version },
+              dist: {
+                integrity: integrityOf(new TextEncoder().encode("channel")),
+                tarball: `${REGISTRY}/tarballs/channel.tgz`,
+              },
+            }),
+          },
+          asked,
+        ),
+      ),
+    );
+    expect(prepared).toMatchObject({
+      version: "2026.1021.1",
+      prefix: seed,
+      kept: "unresolved",
+    });
+    expect(asked.filter((url) => url.includes("/tarballs/"))).toEqual([]);
+    expect(yield* readRecord(home)).toEqual(before);
+    expect(yield* fs.readLink(`${home}/current`)).toBe(seed);
+    expect(yield* fs.exists(`${home}/releases/retained`)).toBe(true);
+  }).pipe(Effect.scoped, Effect.provide(NodeContext.layer)));
+
+it.each([
+  {
+    name: "unreadable-root",
+    corrupt: (fs: FileSystem.FileSystem, client: string) =>
+      fs.remove(`${client}/dist/index.js`),
+  },
+  {
+    name: "invalid-window",
+    corrupt: (fs: FileSystem.FileSystem, client: string) =>
+      fs.writeFileString(
+        `${client}/dist/index.js`,
+        'export const LIVE_WIRE_VERSIONS = "invalid";\n',
+      ),
+  },
+  {
+    name: "missing-client-manifest",
+    corrupt: (fs: FileSystem.FileSystem, client: string) =>
+      fs.remove(`${client}/package.json`),
+  },
+])(
+  "keeps a release with $name instead of falling back to an installed Identity window",
+  ({ corrupt }) =>
+    Effect.gen(function* () {
+      const { home, seed, recordedPrefix } = yield* preFoldVolume;
+      const fs = yield* FileSystem.FileSystem;
+      const client = `${recordedPrefix}/node_modules/@moltzap/client`;
+      yield* fs.writeFileString(
+        `${client}/package.json`,
+        JSON.stringify({
+          name: "@moltzap/client",
+          version: "2026.1021.1",
+          type: "module",
+          sharnessWireVersion: WIRE,
+          exports: { ".": { import: "./dist/index.js" } },
+        }),
+      );
+      yield* corrupt(fs, client);
+      const asked: string[] = [];
+      const prepared = yield* prepare(configuration(home, follow), seed).pipe(
+        Effect.provide(start(release("2026.1025.1", WIRE), asked)),
+      );
+      expect(prepared).toMatchObject({
+        version: "2026.1021.1",
+        kept: "uninstalled",
+      });
+      expect(asked.filter((url) => url.includes("/tarballs/"))).toEqual([]);
+    }).pipe(Effect.scoped, Effect.provide(NodeContext.layer)),
+);
+
+it("uses Client metadata even when a stale Identity package is installed", () =>
+  Effect.gen(function* () {
+    const { home, seed, recordedPrefix } = yield* preFoldVolume;
+    const fs = yield* FileSystem.FileSystem;
+    const client = `${recordedPrefix}/node_modules/@moltzap/client`;
+    yield* fs.writeFileString(
+      `${client}/package.json`,
+      JSON.stringify({
+        name: "@moltzap/client",
+        version: "2026.1021.1",
+        type: "module",
+        sharnessWireVersion: WIRE,
+        exports: { ".": { import: "./dist/index.js" } },
+      }),
+    );
+    yield* fs.writeFileString(
+      `${client}/dist/index.js`,
+      `export const LIVE_WIRE_VERSIONS = [${JSON.stringify(WIRE)}];\n`,
+    );
+    yield* fs.writeFileString(
+      `${recordedPrefix}/node_modules/@moltzap/identity/dist/index.js`,
+      "export const LIVE_WIRE_VERSIONS = [];\n",
+    );
+    const prepared = yield* prepare(configuration(home, follow), seed).pipe(
+      Effect.provide(start(release("2026.1025.1", WIRE))),
+    );
+    expect(prepared.kept).toBe("unverified");
+  }).pipe(Effect.scoped, Effect.provide(NodeContext.layer)));
+
 // @agent-code-guard/regression-only: Each start outcome is one closed launcher rule, pinned by its example.
 describe("a launcher start", () => {
   it("seeds the record from the image install and runs it", seedsTheRecord);
@@ -341,3 +578,23 @@ describe("a launcher start", () => {
 });
 
 /* eslint-enable agent-code-guard/no-hardcoded-assertion-literals -- Restore assertion rules outside the launcher contract tests. */
+
+/** A library release without wire metadata is kept out before downloading bytes. */
+const keepsMissingLibraryWireVersion = () =>
+  Effect.gen(function* () {
+    const { home, seed } = yield* volume;
+    const asked: string[] = [];
+    const prepared = yield* prepare(configuration(home, follow), seed).pipe(
+      Effect.provide(start(release("2026.1101.1"), asked)),
+    );
+    expect(prepared).toMatchObject({
+      version: "2026.1021.1",
+      kept: "unresolved",
+    });
+    expect(asked.filter((url) => url.includes("/tarballs/"))).toEqual([]);
+  }).pipe(Effect.scoped, Effect.provide(NodeContext.layer));
+
+it(
+  "keeps the recorded release when the Client manifest has no wire version",
+  keepsMissingLibraryWireVersion,
+);

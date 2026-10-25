@@ -5,14 +5,16 @@ import { ProtocolErrorCode } from "@modelcontextprotocol/client";
 import {
   acquireHarnessEndpoint,
   AgentAddress,
+  AgentCard,
+  type AgentName,
   type Content,
   type HarnessEndpoint,
   type InboundDelivery,
   SendError,
   type SendInput,
+  WIRE_VERSION,
 } from "@moltzap/client";
-import { AgentCard, type AgentName, WIRE_VERSION } from "@moltzap/identity";
-import { WireVersions } from "@moltzap/identity/test";
+import { WireVersions } from "@moltzap/client/test";
 import { Effect, Fiber, Option, Schema, Stream } from "effect";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -511,11 +513,11 @@ function expectRegisteredRestartWithoutAdmission(
 
 /**
  * A release with an empty live window refuses this binary's retained outbound
- * bytes. The child composes only published service and Identity APIs.
+ * bytes. The child composes only published Client service and test APIs.
  */
 const retiredWindowDaemon = `
   import { NodeRuntime } from "@effect/platform-node";
-  import { WIRE_VERSION } from "@moltzap/identity"; import { WireVersions } from "@moltzap/identity/test";
+  import { WIRE_VERSION } from "@moltzap/client"; import { WireVersions } from "@moltzap/client/test";
   import { Daemon } from "@moltzap/client/service";
   import { ConfigProvider, Effect, Layer } from "effect";
   Layer.launch(Daemon.layer).pipe(

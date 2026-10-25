@@ -10,7 +10,7 @@ import {
   HISTORY_WIRE_VERSIONS,
   LIVE_WIRE_VERSIONS,
   WIRE_VERSION_PATTERN,
-} from "../../packages/identity/src/version.ts";
+} from "../../packages/client/src/identity/wire-version.ts";
 import {
   CALENDAR_VERSION,
   dependencyNames,
@@ -21,6 +21,7 @@ import {
   FINAL_PACKAGES,
   INTEGRATION_TESTS,
   type PackageDir,
+  RELEASE_PACKAGES,
   REPOSITORY_URL,
 } from "./boundary-contract.ts";
 import {
@@ -66,22 +67,33 @@ const PRODUCTION_SECTIONS = [
  * @returns The literal when it is a calendar version, otherwise null.
  */
 export function checkCompatibilityVersion(run: BoundaryRun): string | null {
-  const identitySource = path.join(run.packagesRoot, "identity", "src");
-  const versionPath = path.join(identitySource, "version.ts");
+  const clientSource = path.join(run.packagesRoot, "client", "src");
+  const versionPath = path.join(clientSource, "identity", "wire-version.ts");
   const compatibilityVersion = readCompatibilityVersion(run, versionPath);
   checkWireVersionSets(run);
-  const identityIndex = path.join(identitySource, "index.ts");
-  if (!existsSync(identityIndex)) {
+  const manifest = readJsonObject(
+    path.join(run.packagesRoot, "client", "package.json"),
+  );
+  if (
+    compatibilityVersion !== null &&
+    manifest.sharnessWireVersion !== compatibilityVersion
+  ) {
     run.failures.push(
-      "packages/identity/src/index.ts: missing; it exports the compatibility value",
+      `packages/client/package.json: sharnessWireVersion must equal WIRE_VERSION "${compatibilityVersion}"`,
+    );
+  }
+  const clientIndex = path.join(clientSource, "index.ts");
+  if (!existsSync(clientIndex)) {
+    run.failures.push(
+      "packages/client/src/index.ts: missing; it exports the compatibility value",
     );
   } else if (
-    !/export\s*\{[^}]*\bWIRE_VERSION\b[^}]*\}\s*from\s*["']\.\/version\.js["']/.test(
-      readFileSync(identityIndex, "utf8"),
+    !/export\s*\{[^}]*\bWIRE_VERSION\b[^}]*\}\s*from\s*["']\.\/identity\/wire-version\.js["']/.test(
+      readFileSync(clientIndex, "utf8"),
     )
   ) {
     run.failures.push(
-      "packages/identity/src/index.ts: must re-export WIRE_VERSION from ./version.js",
+      "packages/client/src/index.ts: must re-export WIRE_VERSION from ./identity/wire-version.js",
     );
   }
   return compatibilityVersion;
@@ -117,7 +129,17 @@ export function checkWorkspaceRoots(run: BoundaryRun): void {
     wanted: [
       ...FINAL_PACKAGE_DIRS.map((dir) => path.join("packages", dir)),
       path.join("packages", "registry", "tsconfig.test-entry.json"),
+      path.join("packages", "router", "tsconfig.test-entry.json"),
     ],
+  });
+  failOnSetDrift(run, {
+    where: "typedoc.json",
+    what: "TypeDoc product roots drifted",
+    actual: arrayAt(
+      readJsonObject(path.join(run.repo, "typedoc.json")),
+      "entryPoints",
+    ).filter((entry): entry is string => typeof entry === "string"),
+    wanted: FINAL_PACKAGE_DIRS.map((dir) => `packages/${dir}`),
   });
   checkLintEntryPoints(run);
 }
@@ -231,7 +253,7 @@ function checkWireVersionSets(run: BoundaryRun): void {
       (value) => !WIRE_VERSION_PATTERN.test(value),
     )) {
       run.failures.push(
-        `packages/identity/src/version.ts: ${name} entry "${version}" is not a YYYY.MDD.N CalVer`,
+        `packages/client/src/identity/wire-version.ts: ${name} entry "${version}" is not a YYYY.MDD.N CalVer`,
       );
     }
   }
@@ -246,13 +268,13 @@ function readCompatibilityVersion(
   )?.[1];
   if (literal === undefined) {
     run.failures.push(
-      "packages/identity/src/version.ts: must export the literal WIRE_VERSION",
+      "packages/client/src/identity/wire-version.ts: must export the literal WIRE_VERSION",
     );
     return null;
   }
   if (!WIRE_VERSION_PATTERN.test(literal)) {
     run.failures.push(
-      `packages/identity/src/version.ts: WIRE_VERSION "${literal}" is not a YYYY.MDD.N CalVer`,
+      `packages/client/src/identity/wire-version.ts: WIRE_VERSION "${literal}" is not a YYYY.MDD.N CalVer`,
     );
     return null;
   }
@@ -662,7 +684,7 @@ function checkReleaseWorkflow(run: BoundaryRun): void {
     where: ".github/workflows/publish.yml",
     what: "RELEASE_PACKAGES drifted from the published set",
     actual: releasePackages.trim().split(/\s+/),
-    wanted: FINAL_PACKAGE_DIRS.filter((dir) => FINAL_PACKAGES[dir].published),
+    wanted: RELEASE_PACKAGES,
   });
 }
 

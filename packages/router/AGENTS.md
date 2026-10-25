@@ -5,9 +5,9 @@ Extends the workspace-root `AGENTS.md`. The five-layer constitution in
 the Router representation chapters govern this package.
 
 `@moltzap/router` owns opaque message delivery, the volatile global feed,
-polling, cursors, Router instance identity, authenticated Router HTTP, the
+polling, process cursors, authenticated Router HTTP, the
 Router process, and `sharness-router`. Its only production workspace dependency
-is `@moltzap/identity`.
+is `@moltzap/client`.
 
 Router remains content-blind and volatile. It does not own conversations,
 membership semantics, certified history, persistence, replay, catch-up,
@@ -16,7 +16,7 @@ It never queries a product Ledger or privileged governance service.
 
 Preserve the admitted wire bytes, routes, bounds, authentication, ordering,
 typed failures, and process behavior unless their governing authority changes.
-Publication follows `docs/spec/layer-interfaces.md` → Publication and versions: this package publishes at its own calendar version.
+Publication follows `docs/spec/layer-interfaces.md` → Publication and versions: this package stays private.
 
 Run build, typecheck, test, integration, lint, and architecture checks through
 Nx:

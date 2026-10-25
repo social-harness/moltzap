@@ -4,18 +4,6 @@ import { FileSystem, HttpClient } from "@effect/platform";
 import { NodeFileSystem } from "@effect/platform-node";
 import { scopedLive as it, scoped as itOnTestClock } from "@effect/vitest";
 import {
-  AgentCard,
-  AgentSigningAuthority,
-  Ed25519PublicKey,
-  LIVE_WIRE_VERSIONS,
-  type VerifiedAgentCard,
-  WIRE_VERSION,
-} from "@moltzap/identity";
-import {
-  Registry,
-  type RegistryLookupResult,
-} from "@moltzap/identity/registry";
-import {
   type Context,
   Deferred,
   Duration,
@@ -28,6 +16,7 @@ import {
 } from "effect";
 import { generateKeyPairSync } from "node:crypto";
 import { describe, expect } from "vitest";
+import type { RegistryLookupResult } from "../identity/registry/contract.js";
 import type { DaemonBootstrap } from "./bootstrap.js";
 import type { DaemonRegistrationState } from "./registration/index.js";
 import { advanceClock } from "../__tests__/advance-clock.js";
@@ -64,10 +53,14 @@ import {
   managementRegisterRequestSchema,
   managementSearchAgentsRequestSchema,
 } from "../harness/protocol/index.js";
+import { AgentCard, type VerifiedAgentCard } from "../identity/cards.js";
+import { AgentSigningAuthority, Ed25519PublicKey } from "../identity/keys.js";
+import { Registry } from "../identity/registry/index.js";
+import { LIVE_WIRE_VERSIONS, WIRE_VERSION } from "../identity/wire-version.js";
 import {
   type DaemonManagementOperations,
   makeDaemonManagementOperations,
-} from "./management.js";
+} from "./management/index.js";
 
 interface IdentityFixture {
   readonly bootstrap: DaemonBootstrap;

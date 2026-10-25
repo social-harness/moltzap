@@ -16,10 +16,15 @@ import {
 const hostPackages: ReadonlySet<string> = new Set([
   "@effect/platform",
   "@modelcontextprotocol/client",
-  "@moltzap/identity",
   "canonicalize",
   "effect",
   "node:crypto",
+  "node:util",
+  "@noble/curves/ed25519.js",
+  "effect/Function",
+  "jose",
+  "http-message-signatures",
+  "structured-headers",
 ]);
 
 /**

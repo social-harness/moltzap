@@ -8,7 +8,10 @@
 import { FileSystem, Path } from "@effect/platform";
 import { Effect, Schema } from "effect";
 import * as ts from "typescript";
-
+import {
+  FINAL_PACKAGE_DIRS,
+  FINAL_PACKAGES,
+} from "../architecture/boundary-contract.ts";
 import { extractSignatureText } from "./signature-extract.ts";
 import {
   folderOf,
@@ -42,27 +45,24 @@ const SOURCE_LINK_BASE = "https://github.com/social-harness/moltzap/blob/main";
  * Final package roots are required generator inputs even before their
  * public barrels contain behavioral exports.
  */
-const REQUIRED_MODULE_FOLDERS = [
-  "packages/client/src",
-  "packages/identity/src",
-  "packages/router/src",
-  "packages/registry/src",
-] as const;
+const REQUIRED_MODULE_FOLDERS = FINAL_PACKAGE_DIRS.filter(
+  (dir) => !dir.endsWith("-channel"),
+).map((dir) => `packages/${dir}/src`);
 
-/** TypeDoc package projects required by the final MODULE pages. */
-const REQUIRED_PACKAGE_NAMES = [
-  "@moltzap/client",
-  "@moltzap/identity",
-  "@moltzap/router",
-  "@moltzap/registry",
-] as const;
+/** Package projects required by product module documentation. */
+const REQUIRED_PACKAGE_NAMES = FINAL_PACKAGE_DIRS.filter(
+  (dir) => !dir.endsWith("-channel"),
+).map((dir) => FINAL_PACKAGES[dir].npmName);
 
-/** Package subpaths admitted to generated final module documentation. */
-export const REQUIRED_PACKAGE_SUBPATHS = [
-  "@moltzap/client/service",
-  "@moltzap/identity/registry",
-  "@moltzap/router/server",
-] as const;
+/** Public production subpaths documented by the module generator. */
+export const REQUIRED_PACKAGE_SUBPATHS = FINAL_PACKAGE_DIRS.flatMap((dir) =>
+  Object.entries(FINAL_PACKAGES[dir].exports)
+    .filter(
+      ([entry, target]) =>
+        entry !== "." && !target.testOnly && !target.internalOnly,
+    )
+    .map(([entry]) => `${FINAL_PACKAGES[dir].npmName}/${entry.slice(2)}`),
+);
 
 interface LinkContext {
   readonly mode: "module-md" | "mdx";

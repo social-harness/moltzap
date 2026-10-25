@@ -2,12 +2,18 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "tsBuildInfoFile": "./dist/tsconfig.test-entry.tsbuildinfo",
-    "customConditions": ["sharness-internal", "sharness-test"]
+    "customConditions": [
+      "sharness-internal",
+      "sharness-test"
+    ]
   },
-  "include": ["src/test.ts"],
+  "include": [
+    "src/test.ts"
+  ],
   "exclude": [],
   "references": [
-    { "path": "./tsconfig.json" },
-    { "path": "../identity" }
+    {
+      "path": "./tsconfig.json"
+    }
   ]
 }

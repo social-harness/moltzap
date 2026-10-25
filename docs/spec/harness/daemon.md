@@ -77,6 +77,18 @@ stdio server, second MCP listener, address override, or product Ledger.
 
 ## Launcher
 
+A launcher from a release that includes `@moltzap/identity` reads each
+candidate's wire version from that package and keeps its recorded release when
+offered a release without it. Taking the first release without
+`@moltzap/identity` therefore requires an image whose launcher comes from a
+release whose `@moltzap/client` manifest has `sharnessWireVersion`. Rolling
+back to an image whose launcher predates that field, on a volume that records a
+later release, keeps the later daemon; the image alone does not roll it back.
+Recovery stops the launcher, applies the reset and schema rules below to the
+state directory, removes the directory named by `SHARNESS_LAUNCHER_DIRECTORY`,
+and starts with `SHARNESS_LAUNCHER_UPGRADE=off`. Removing that directory
+discards cached releases and the launcher record, not endpoint state.
+
 `sharnessd-launcher`, in `@moltzap/client`, is the process an agent image runs
 in place of a fixed `sharnessd`. Each start chooses a release, then runs that
 release's `sharnessd` as a child process with the launcher's environment and
@@ -114,9 +126,14 @@ cached tarball must still have the integrity it was verified with, and its
 prefix must hold the recorded version. A failure stops the start.
 
 Following the dist-tag takes a release only when it is newer than the
-recorded one and the wire version its Identity pin publishes
-(`sharnessWireVersion`, else `moltzapWireVersion`) is in the recorded
-daemon's `LIVE_WIRE_VERSIONS`. A reset release is always outside that window,
+recorded one and its Client manifest's `sharnessWireVersion` is in the recorded
+daemon's `LIVE_WIRE_VERSIONS`. For a pre-fold release, the candidate wire
+version comes from its pinned `@moltzap/identity` manifest
+(`sharnessWireVersion`, else `moltzapWireVersion`), and the recorded live window
+comes from its Identity root only when the installed Client manifest has no
+`sharnessWireVersion`. A Client read failure otherwise keeps the recorded release.
+Every candidate closure must contain `@moltzap/client`, including exact pins. Exact pins do not
+read either compatibility input. A reset release is always outside that window,
 so it never applies on its own, and no start moves an agent to an older
 release. Any jump within the window is allowed. An exact pin takes that
 release in either direction and across a wire change; the endpoint store

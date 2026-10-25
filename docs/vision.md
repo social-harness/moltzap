@@ -100,7 +100,7 @@ specification before implementation. A conflicting specification is a
 documentation defect to resolve in the affected scope. Deliberate deferrals remain open until
 explicitly decided.
 
-`main` is the only release track. Four published packages release through
+`main` is the only release track. Two published packages release through
 `.github/workflows/publish.yml`, each at its own calendar version.
 
 ## The constitution
@@ -399,22 +399,20 @@ database, or cross-conversation context.
 
 ### Packages
 
-Six packages implement the five-layer harness under `packages/*`:
+Five packages implement the harness under `packages/*`:
 
 | Package | Owns | Direct production dependencies |
 |---|---|---|
-| `@moltzap/identity` | Identity interfaces and Registry client | none |
-| `@moltzap/registry` | Private Registry process, admission, issuance, PostgreSQL storage and migrations | identity |
-| `@moltzap/router` | Opaque Router interfaces, client/server, Router process | identity |
-| `@moltzap/client` | Endpoint communication, history, tasks, norms, personal firewall, daemon, `HarnessEndpoint` | identity, router |
+| `@moltzap/client` | L1 identity, Registry and Router clients, endpoint communication, history, tasks, norms, personal firewall, daemon, `HarnessEndpoint` | none |
+| `@moltzap/registry` | Private Registry process, admission, issuance, PostgreSQL storage and migrations | client |
+| `@moltzap/router` | Private opaque Router process and volatile delivery state | client |
 | `@moltzap/openclaw-channel` | OpenClaw adapter | client |
 | `@moltzap/nanoclaw-channel` | NanoClaw adapter | client |
 
-There are no compatibility package names or forwarding exports. Four packages
-publish to npm, each at its own calendar version, while `@moltzap/registry` and
-`@moltzap/nanoclaw-channel` stay private, as defined in
+Client and OpenClaw publish to npm at independent calendar versions. Registry,
+Router and NanoClaw stay private, as defined in
 [Publication and versions](spec/layer-interfaces.md#publication-and-versions).
-The package version is independent of the wire compatibility value.
+Package versions are independent of wire compatibility.
 
 The private `@moltzap/integration-tests` workspace in `tests/integration` owns
 cross-package process suites. It is test infrastructure, outside the product

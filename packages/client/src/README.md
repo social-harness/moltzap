@@ -15,9 +15,12 @@ the firewall and host inbox rows of the layers above.
 
 - `encoding/`: exact struct decoding, canonical JSON and byte equality, canonical
   identifiers and ordering; depends only on Effect and canonicalize.
+- `identity/`: agent identifiers, keys, immutable cards, authenticated HTTP and Registry resolution.
+- `communication/envelope/`: opaque attributed messages and sealed bodies.
 - `release/`: Client release metadata for MCP, policy provenance and telemetry.
 - `firewall/outcome/`: runtime-safe refusal and guidance values.
 - `firewall/evaluator/`: isolated code and English policy evaluation.
+- `communication/router/api/`: Router operation values, codecs and HTTP client.
 - `communication/records/`: canonical encoding, verification, and the message values
   every layer encodes.
 - `communication/store/`: the one SQLite replica: certified history, outbox, deliveries,
@@ -27,15 +30,17 @@ the firewall and host inbox rows of the layers above.
   recovery.
 - `communication/collectives/`: gather and all_gather carried in posts, and the
   inbound items the endpoint delivers.
-- `firewall/`: built-in rules, policy loading and editing, admission and audit.
 - `harness/protocol/`: shared MCP tools, events, operation values and schemas.
 - `harness/endpoint/`: the `HarnessEndpoint` library hosts load.
+- `firewall/`: built-in rules, policy loading and editing, admission and audit.
 - `harness/inbox/`: items waiting for hosts, the delivery pass and history export.
 - `harness/mcp/`: the daemon's loopback MCP server and event delivery.
 - `daemon/`: the always-on daemon process that composes the rest;
   `bin/sharnessd` is its entry point.
 - `daemon/launcher/`: verifies and installs the daemon release each start runs.
 
-`index.ts` re-exports the adapter-facing values each domain owns. The exact
+`index.ts` re-exports endpoint operations, delivery schemas and the immutable identity
+and envelope values hosts read. `internal.ts` is the condition-only `./internal`
+entry for service verification, card signing and Registry and Router contracts. The exact
 registration, recovery, and `sharnessd` process contracts live in the daemon and
-management specifications; keep implementation details behind `./service`.
+management specifications; trusted process composition lives at `./service`.

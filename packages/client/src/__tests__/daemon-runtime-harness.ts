@@ -6,8 +6,6 @@ import {
   CLIENT_INFO_META_KEY,
   PROTOCOL_VERSION_META_KEY,
 } from "@modelcontextprotocol/server";
-import { Registry } from "@moltzap/identity/registry";
-import { Router } from "@moltzap/router";
 import { type Context, Deferred, Duration, Effect } from "effect";
 import type { EventStore } from "../harness/protocol/operations.js";
 import type { Fixture } from "./daemon-runtime-fixtures.js";
@@ -20,6 +18,7 @@ import {
   EngineOutboundError,
   type EnginePendingMessage,
 } from "../communication/conversations/index.js";
+import { Router } from "../communication/router/api/client.js";
 import {
   type RouterWorker,
   RouterWorkerPersistenceError,
@@ -45,6 +44,7 @@ import {
   makeHarnessMcpHttpHandler,
 } from "../harness/mcp/tools.js";
 import { INBOX_PENDING_EVENT } from "../harness/protocol/names.js";
+import { Registry } from "../identity/registry/index.js";
 import { unusedEndpointStore } from "./unused-endpoint-store.js";
 
 /** The MCP handler the daemon installed; throws before installation. */

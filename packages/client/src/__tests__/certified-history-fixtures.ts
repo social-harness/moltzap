@@ -3,13 +3,6 @@
  * keeps, and the corrupt reads of those rows stored-history tests start from.
  */
 
-import {
-  AgentCard,
-  type AgentSigningAuthority,
-  SignedMessage,
-  type VerifiedAgentCard,
-  WIRE_VERSION,
-} from "@moltzap/identity";
 import { Effect, Schema } from "effect";
 import type {
   EndpointStore,
@@ -17,11 +10,13 @@ import type {
   StoredAnchor,
   CertifiedRecord as StoredCertifiedRecord,
 } from "../communication/store/index.js";
+import type { AgentSigningAuthority } from "../identity/keys.js";
 import {
   inboundDelivery,
   protocolEvidence,
   stagedRecord,
 } from "../communication/conversations/history/index.js";
+import { SignedMessage } from "../communication/envelope/signed-message.js";
 import {
   ActionCore,
   type ActionHash,
@@ -44,6 +39,8 @@ import {
   type VerifiedMembership,
 } from "../communication/records/index.js";
 import { encodeCanonical } from "../encoding/canonical-json.js";
+import { AgentCard, type VerifiedAgentCard } from "../identity/cards.js";
+import { WIRE_VERSION } from "../identity/wire-version.js";
 
 /** One member's verified card and the authority that signs as it. */
 export interface SigningIdentity {

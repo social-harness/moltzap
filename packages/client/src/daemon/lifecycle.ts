@@ -1,11 +1,10 @@
 /** @file Private lifecycle composition for one registered endpoint daemon. */
 
 import type { Implementation } from "@modelcontextprotocol/server";
-import type { Registry } from "@moltzap/identity/registry";
-import type { Router } from "@moltzap/router";
 import { NodeFileSystem } from "@effect/platform-node";
-import { WIRE_VERSION } from "@moltzap/identity";
 import { Console, Effect, type Scope } from "effect";
+import type { Router } from "../communication/router/api/client.js";
+import type { Registry } from "../identity/registry/index.js";
 import { makeEndpointEngine } from "../communication/conversations/index.js";
 import { makeRouterWorker } from "../communication/router/index.js";
 import { beginFirewallAudit } from "../firewall/index.js";
@@ -20,9 +19,10 @@ import {
   LOOPBACK_HOST,
   makeHarnessMcpHttpHandler,
 } from "../harness/mcp/index.js";
+import { WIRE_VERSION } from "../identity/wire-version.js";
 import { packageVersion } from "../release/index.js";
 import { DaemonRuntimeError, runtimeFailure } from "./errors.js";
-import { makeDaemonManagementOperations } from "./management.js";
+import { makeDaemonManagementOperations } from "./management/index.js";
 import {
   type DaemonStartup,
   makeDaemon,

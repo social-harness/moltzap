@@ -1,6 +1,5 @@
 /** @file The daemon's durable identity row: read, verify and bind. */
 
-import { AgentCard, type VerifiedAgentCard } from "@moltzap/identity";
 import { Data, Effect } from "effect";
 import type {
   EndpointStore,
@@ -11,6 +10,7 @@ import {
   decodeCanonical,
   encodeCanonical,
 } from "../../encoding/canonical-json.js";
+import { AgentCard, type VerifiedAgentCard } from "../../identity/cards.js";
 
 /** Endpoint identity state could not be read or atomically committed. */
 export class DaemonRegistrationPersistenceError extends Data.TaggedError(

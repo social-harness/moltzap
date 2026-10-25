@@ -3,7 +3,6 @@
 import { FileSystem } from "@effect/platform";
 import { NodeFileSystem } from "@effect/platform-node";
 import { scopedLive as it } from "@effect/vitest";
-import { LIVE_WIRE_VERSIONS } from "@moltzap/identity";
 import { Clock, Deferred, Effect, Fiber } from "effect";
 import { join } from "node:path";
 import { describe, expect } from "vitest";
@@ -17,6 +16,7 @@ import {
   withStore,
 } from "../../__tests__/store-schema-fixtures.js";
 import { openEndpointStore } from "../../communication/store/index.js";
+import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { beginFirewallAudit } from "./firewall-audit.js";
 
 type UnsafeStaging = "symlink" | "hardlink" | "directory" | "public-file";
