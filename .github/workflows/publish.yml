@@ -52,13 +52,24 @@ name: Publish to npm
 # the dispatched commit instead. A release that can never complete is left behind by
 # dispatching with `start_new_version`, which mints the next version from the
 # tip instead.
+#
+# Prerequisites: a release GitHub App installed on this repository with
+# contents write and allowed to push main, and on social-harness/deployment
+# with contents write for the release dispatches; its client ID in the Actions
+# variable RELEASE_APP_CLIENT_ID and its private key in the Actions secret
+# RELEASE_APP_PRIVATE_KEY. npm publishes without a token, so each published
+# package lists this repository's publish.yml in the `release` environment as
+# a trusted publisher; a newly published package needs that entry first.
 on:
   workflow_dispatch:
     inputs:
-      automatic:
-        description: Recheck the release gate before minting a new version
-        type: boolean
-        default: false
+      gated_commit:
+        description: >-
+          Set by release-on-merge.yml to the commit whose CI passed. The run
+          mints a version only for that commit, while it is main's tip, and
+          only if the release gate still passes on it.
+        type: string
+        default: ""
       start_new_version:
         description: >-
           Abandon an incomplete release commit on main instead of resuming it
@@ -129,7 +140,7 @@ jobs:
         id: plan
         env:
           START_NEW_VERSION: ${{ inputs.start_new_version }}
-          AUTOMATIC: ${{ inputs.automatic }}
+          GATED_COMMIT: ${{ inputs.gated_commit }}
           GH_TOKEN: ${{ github.token }}
         run: |
           git fetch origin main --quiet
@@ -202,18 +213,22 @@ jobs:
             fi
           fi
 
-          [ "$(git rev-parse origin/main)" = "$GITHUB_SHA" ] || {
-            echo "ERROR: main moved past the dispatched commit $GITHUB_SHA; dispatch the release again from the tip"
-            exit 1
-          }
-          if [ "$AUTOMATIC" = true ]; then
-            DECISION=$(scripts/release/push-gate.sh)
-            if [ "$DECISION" = skip ]; then
-              echo "::notice::The automatic release gate skipped $GITHUB_SHA; no new version will be released."
+          if [ -n "$GATED_COMMIT" ]; then
+            if [ "$GITHUB_SHA" != "$GATED_COMMIT" ] || [ "$(git rev-parse origin/main)" != "$GITHUB_SHA" ]; then
+              echo "::notice::main moved past the gated commit $GATED_COMMIT; the newer commit's own CI run gates it."
+              echo "mode=skip" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            if [ "$(GATE_COMMIT=$GATED_COMMIT scripts/release/push-gate.sh)" = skip ]; then
+              echo "::notice::The release gate skipped $GATED_COMMIT; no new version will be released."
               echo "mode=skip" >> "$GITHUB_OUTPUT"
               exit 0
             fi
           fi
+          [ "$(git rev-parse origin/main)" = "$GITHUB_SHA" ] || {
+            echo "ERROR: main moved past the dispatched commit $GITHUB_SHA; dispatch the release again from the tip"
+            exit 1
+          }
           # A version whose release commit and tag were pushed but whose
           # publish never completed is taken even though npm has never seen it.
           TAKEN_VERSIONS=$(git ls-remote --tags --refs origin 'refs/tags/v*' | sed 's#.*refs/tags/v##')

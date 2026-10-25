@@ -3,8 +3,8 @@ name: Release Social Harness on merge
 # Start the ordinary release dispatch after CI passes on a main push.
 # scripts/release/push-gate.sh decides from that CI run's commit (GATE_COMMIT).
 # The dispatch happens only while main still points at that commit, and it
-# passes automatic=true so publish.yml re-runs the gate on the commit it is
-# about to release before minting a version.
+# passes the commit as gated_commit, so publish.yml mints a version only for
+# that commit and re-runs the gate on it first.
 # A merge arriving while an earlier release is unfinished dispatches a run that
 # resumes that release; its own changes release with the next merge or a manual
 # dispatch.
@@ -46,5 +46,5 @@ jobs:
               echo "::notice::main moved past $GATE_COMMIT; the newer commit's own CI run gates it."
               exit 0
             fi
-            gh workflow run publish.yml --repo "$GITHUB_REPOSITORY" --ref main -f automatic=true
+            gh workflow run publish.yml --repo "$GITHUB_REPOSITORY" --ref main -f gated_commit="$GATE_COMMIT"
           fi

@@ -493,24 +493,16 @@ and its OIDC issuer is `https://token.actions.githubusercontent.com`. Existing
 input tags are verified and skipped, never retagged; an unsigned index fails
 the run. Every index accepted for dispatch, pinning, release-commit push or
 release promotion is verified against that identity and issuer first.
-After publishing any index, on a rerun, or on `workflow_dispatch`, a token-free
-`tip` job checks out the current main tip, computes its keys and resolves and
-verifies both indexes.
-If either key is unpublished, it emits a notice and no payload; that tip's own
-run dispatches them once available. Denied, forbidden or unauthorized responses
-emit a warning that both packages must be public before deployment receives
-images. A separate `dispatch` job checks out nothing and holds the App token
-to send `repository_dispatch` event `social-harness-images` to
-`social-harness/deployment`. Both jobs require an uncancelled run with no failed
-`keys`, `build` or `publish` job. Its `client_payload` names both tip indexes
-and their revision:
+Once both of the current main tip's indexes are published and verified,
+`images.yml` sends `repository_dispatch` event `social-harness-images` to
+`social-harness/deployment`. Its `client_payload` names both tip indexes and
+their revision:
 `{"registry":"ghcr.io/social-harness/registry@sha256:<digest>","router":"ghcr.io/social-harness/router@sha256:<digest>","revision":"<tip sha>"}`.
 Deliveries may repeat or arrive out of order. The receiver ignores a revision
 that is equal to or older than the one it runs, ordering revisions by main
-ancestry rather than by the SHA text.
-Before sending, `dispatch` compares the payload revision with main's current
-head. If they differ, it fails and directs the operator to run `images.yml`
-again from main with `workflow_dispatch`, which resolves the current tip afresh.
+ancestry rather than by the SHA text. A run whose revision is no longer main's
+head sends nothing and fails; run `images.yml` again from main with
+`workflow_dispatch`.
 
 ### Unsupported Dockerfile form
 
