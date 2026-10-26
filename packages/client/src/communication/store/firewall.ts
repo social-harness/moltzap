@@ -61,7 +61,7 @@ const auditDisposition = Schema.Literal(
   "withheld",
 );
 
-/** Shutdown readers page over every attempt while daemon writers are stopped. */
+/** Retained readers page over attempts in insertion order. */
 export function readFirewallAuditPage(
   database: DatabaseSync,
   after: number,
@@ -462,30 +462,20 @@ export function writeFirewallPolicy(
   });
 }
 
-/** A sequence cursor preserves every edit in bounded exports, including identical revisions. */
+/** Recent edits preserve activation order when timestamps coincide. */
 export function readFirewallActivations(
   database: DatabaseSync,
-  request: { readonly since?: number; readonly after?: number },
+  request: { readonly since?: number },
 ) {
   const since = request.since ?? 0;
-  const after = request.after ?? 0;
-  if (
-    !Number.isSafeInteger(since) ||
-    since < 0 ||
-    !Number.isSafeInteger(after) ||
-    after < 0
-  ) {
+  if (!Number.isSafeInteger(since) || since < 0) {
     throw new StoreSignal("invalid-input");
   }
-  const order =
-    request.after === undefined
-      ? "activated_at DESC, sequence DESC"
-      : "sequence";
   return database
     .prepare(`SELECT sequence, activated_at, active_revision,
     added_rule_ids, removed_rule_ids FROM firewall_activations
-    WHERE activated_at >= ? AND sequence > ? ORDER BY ${order} LIMIT 100`)
-    .all(since, after)
+    WHERE activated_at >= ? ORDER BY activated_at DESC, sequence DESC LIMIT 100`)
+    .all(since)
     .map((row) => ({
       sequence: readInteger(row, "sequence"),
       activation: {

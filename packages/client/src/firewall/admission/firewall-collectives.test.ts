@@ -280,8 +280,8 @@ function checksARequestAsItsQuestion() {
       deadlineAt,
     });
     expect(seen[0]?.context.now).toEqual(expect.any(Number));
-    expect((yield* auditChecks(subject))[0]?.post).toMatchObject({
-      authorAgentId: subject.remote.card.agentId,
+    expect((yield* auditChecks(subject))[0]?.input.message).toMatchObject({
+      sender: subject.remote.card.agentId,
     });
   });
 }
@@ -538,7 +538,6 @@ function admitsAFailureWithoutInference() {
     expect(failureChecks).toMatchObject([
       {
         disposition: "admitted",
-        post: null,
         result: { judgment: "allow", checks: [] },
         input: { message: { text: failure.error } },
       },
@@ -794,9 +793,7 @@ function admitsAResultWithNoAnswerWithoutInference() {
       (yield* auditChecks(subject)).filter(
         (check) => check.input.message?.operation?.kind === "result",
       ),
-    ).toMatchObject([
-      { disposition: "admitted", post: null, result: { checks: [] } },
-    ]);
+    ).toMatchObject([{ disposition: "admitted", result: { checks: [] } }]);
   });
 }
 

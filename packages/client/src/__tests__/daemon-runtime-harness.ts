@@ -425,7 +425,6 @@ export const run = (
   fixture: Fixture,
   store: EndpointStore,
   harness: RuntimeHarness,
-  auditExport?: string,
 ) => {
   const services = makeServices(fixture);
   return readDaemonRegistrationState({
@@ -439,7 +438,6 @@ export const run = (
           store,
           bootstrap: fixture.bootstrap,
           registration,
-          ...(auditExport === undefined ? {} : { auditExport }),
         },
         harness.dependencies,
       ),

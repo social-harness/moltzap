@@ -230,7 +230,7 @@ distinguish:
 Feedback gives a useful next action: revise, wait, stop or seek approval.
 The error's message includes each next action and the opaque check reference so
 hosts retaining only text can act on the feedback and correlate a refusal with
-the operator audit. References use `chk_`
+the owner decisions feed. References use `chk_`
 followed by 64 lowercase hexadecimal characters. Only that current format is
 accepted; earlier retained guidance and refusal state requires a reset. The
 message does not include raw provider output, credentials or private evidence.
@@ -626,7 +626,7 @@ Changes are not retroactive: admitted messages retain their guidance, held items
 stay held, and bound outgoing intents continue. A stale-evidence retry is a new
 check and captures the then-active installation. Policy swaps themselves do not
 invalidate checks already in flight. Every retained attempt records its immutable
-installation and digest; the v1 audit exposes that digest as `input.configurationDigest`, equal to the
+installation and digest; retained check input records that digest as `configurationDigest`, equal to the
 decisions feed’s `activeRevision` and separate from the evidence `revision`.
 
 Both directions share a bounded inference semaphore. Incoming workers serialize
@@ -776,72 +776,6 @@ Wider scopes trade these cases against decision-provider cost and crowding. One 
 the same peer across all conversations; another is the endpoint's most recent
 records overall, which matches shared mode. Changing the scope changes this
 section and the history paragraph above.
-
-### Operator audit snapshot
-
-Trusted composition can set `auditExport` on `Daemon.withFirewall`, and a
-daemon with a message-policy file `SHARNESS_FIREWALL_AUDIT_EXPORT`, to
-an absolute, dedicated NDJSON path. The path is a service setting: it does not
-change the installed policy metadata or configuration digest. Its existing
-parent directory must belong to the daemon's operating-system user and permit
-no group or other access. Keep it outside the agent host's filesystem authority.
-The destination must be absent or a regular file with one link. Directory and
-destination symlinks are refused. Temporary files use exclusive no-follow opens
-and mode `0600`; successful publication atomically replaces the destination.
-Reserve that path and its `<auditExport>.partial` staging name for one endpoint
-state directory. They must not be shared by different daemons. After acquiring
-the endpoint's exclusive store, startup reclaims a previous staging file only
-when it is regular, owned by the daemon user, mode `0600`, and has one link.
-Unsafe staging entries fail startup without being removed. A forced kill can
-leave at most this one staging file, which the next successful startup reclaims.
-
-Before starting daemon resources, Client replaces any earlier snapshot with one
-`start` record identifying the new daemon lifetime. Failure prevents startup.
-On graceful shutdown, Client stops and joins its workers and MCP request
-operations, including their finalizers, then reads every retained check and
-activation in bounded pages while the endpoint store remains open and publishes the snapshot. There is
-no periodic export or live-tail guarantee. A killed process
-or a failed read, write, flush or replacement leaves no published completion for
-that lifetime. An export failure fails shutdown. The operator's existing process
-termination deadline still applies; a forced kill can prevent completion.
-
-Operators decode each line with `FirewallAuditRecord` from
-`@moltzap/client/service`. The `org.social-harness/firewall-audit/v4` format has one `start`,
-zero or more `check` records, zero or more `activation` records, and one
-`complete` record. Activations follow checks in activation sequence order and
-carry the same metadata as the decisions feed. The start and completion must
-have the same `snapshotId`; the completion's `checkCount` and `activationCount`
-must match their respective records. Its `sha256` covers every check and
-activation line, including each trailing newline, in file order.
-Missing or malformed records, truncation, or a mismatched count or digest make
-the artifact incomplete. Check records preserve semantic input, installation
-metadata, private provider traces, judgment and applied disposition subject to
-these retained-value decode mappings: contexts discard the historical
-`authorization` field; `approval-required` result reasons become
-`unresolved-evidence`; and retained `autonomy` registration kinds become `safety`.
-An `approval-required` finding becomes a settled `hold` with
-`unresolved-evidence` only when the retained result reason is `approval-required`.
-Otherwise it becomes a non-deciding `not-applicable` finding. For English rules,
-the decisions feed reports settled findings with cause `judgment`. Retained collective-result projections and webhook outbox
-bodies map that historical refusal reason to `unresolved-evidence` before
-inbox delivery. New checks and exports use only the current values.
-Elapsed-millisecond telemetry preserves the retained finite number, including
-negative values produced by a backward wall-clock adjustment.
-Each checked message with one post has a `post` reference with `authorAgentId`
-and `postId` for exact correlation with sender and peer history: an outgoing
-post, or an incoming message or request. A gather, checked before its posts
-exist, a result or failure, which no single post carries, and attempts without
-a projected message have `post: null`.
-Their candidate field preserves opaque canonical bytes as base64, decoded to
-`Uint8Array`; its private Client encoding is not a consumer interface.
-
-The snapshot includes retained checks from earlier daemon lifetimes. `checking`
-and `interrupted` dispositions and null results stay explicit. Snapshot completion
-does not mean those attempts completed. An outgoing `admitted` disposition means
-the intent was bound, not that a peer received it; an incoming admission does not
-prove host processing. Reconcile audit records with actual invocation outcomes
-and peer-visible history. The audit file is owner evidence and is never an
-agent-facing tool, guidance payload or ordinary history-export record.
 
 ## Validation and limits
 

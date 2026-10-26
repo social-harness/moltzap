@@ -346,9 +346,6 @@ importers:
       fast-check:
         specifier: 'catalog:'
         version: 3.23.2
-      tsx:
-        specifier: 'catalog:'
-        version: 4.21.0
       typescript:
         specifier: 'catalog:'
         version: '@typescript/typescript6@6.0.2'

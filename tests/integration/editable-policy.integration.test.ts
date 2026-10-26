@@ -10,7 +10,6 @@ import {
   Daemon,
   type DecisionProvider,
   type DecisionRequest,
-  FirewallAuditRecord,
   type MessageMiddleware,
 } from "@moltzap/client/service";
 import {
@@ -33,10 +32,6 @@ import {
   makeRegistrationRequest,
   processTrace,
 } from "./daemon-process-harness.js";
-import {
-  auditActivationKind,
-  auditCompleteKind,
-} from "./expected-contracts.js";
 import {
   anyNumber,
   anyString,
@@ -116,14 +111,6 @@ const blockedRule = {
   text: "Never disclose private text.",
 } as const;
 
-interface PolicyCheckScenario {
-  readonly entered: Deferred.Deferred<undefined>;
-  readonly release: Deferred.Deferred<undefined>;
-  readonly auditExport: string;
-  readonly runtime: Fiber.RuntimeFiber<never, unknown>;
-  readonly client: Client;
-}
-
 interface PolicyRevisions {
   readonly before: { readonly activeRevision: string };
   readonly changed: {
@@ -159,15 +146,13 @@ const acquirePolicyCheckScenario = Effect.gen(function* () {
         }),
       ),
   };
-  const auditExport = join(alice.stateDirectory, "audit.ndjson");
-  const runtime = yield* start(alice, {
+  yield* start(alice, {
     ...options,
     outgoing: [middleware],
-    auditExport,
   });
   const client = yield* connect(alice.endpoint);
   yield* register(client, alice);
-  return { entered, release, auditExport, runtime, client };
+  return { entered, release, client };
 });
 
 const fixedRule = {
@@ -246,7 +231,11 @@ const swapDuringCheck = Effect.gen(function* () {
   yield* Deferred.succeed(scenario.release, undefined);
   yield* Fiber.join(inFlight);
   yield* expectPolicyRevisionsInDecisionFeed(client, { before, changed });
-  yield* expectPolicyRevisionsInAudit(scenario, { before, changed });
+  expect(
+    yield* call(client, "firewall_decisions", {
+      since: Number.MAX_SAFE_INTEGER,
+    }),
+  ).toEqual({ decisions: [], activations: [] });
 });
 
 const persistAndValidate = Effect.gen(function* () {
@@ -401,8 +390,7 @@ const concurrentEdits = Effect.gen(function* () {
 
 const consecutiveActivations = Effect.gen(function* () {
   const { alice } = yield* pair;
-  const auditExport = join(alice.stateDirectory, "audit.ndjson");
-  const runtime = yield* start(alice, { ...options, auditExport });
+  const runtime = yield* start(alice, options);
   const client = yield* connect(alice.endpoint);
   yield* register(client, alice);
   const before = yield* read(client);
@@ -430,21 +418,6 @@ const consecutiveActivations = Effect.gen(function* () {
   ];
   expect(feed).toEqual({ decisions: [], activations: expected });
   yield* Fiber.interrupt(runtime);
-  const fs = yield* FileSystem.FileSystem;
-  const records = yield* Effect.forEach(
-    (yield* fs.readFileString(auditExport)).trim().split("\n"),
-    (line) => Schema.decodeUnknown(Schema.parseJson(FirewallAuditRecord))(line),
-    { concurrency: 1 },
-  );
-  expect(records.filter((item) => item.kind === auditActivationKind)).toEqual([
-    { kind: auditActivationKind, ...expected[1] },
-    { kind: auditActivationKind, ...expected[0] },
-  ]);
-  expect(records.at(-1)).toMatchObject({
-    kind: auditCompleteKind,
-    checkCount: 0,
-    activationCount: 2,
-  });
   yield* start(alice, options);
   const fresh = yield* connect(alice.endpoint);
   expect(yield* call(fresh, "firewall_decisions")).toEqual(feed);
@@ -487,7 +460,7 @@ const tunnelAuthority = Effect.gen(function* () {
 
 describe("editable firewall through the daemon public API", () => {
   it(
-    "swaps at the next check while retaining an in-flight decision and both audited revisions",
+    "swaps at the next check while retaining an in-flight decision and both decision revisions",
     processTrace(
       Effect.scoped(swapDuringCheck).pipe(Effect.provide(NodeContext.layer)),
     ),
@@ -519,7 +492,7 @@ describe("editable firewall through the daemon public API", () => {
     60000,
   );
   it(
-    "retains consecutive activations with no intervening messages in the feed and audit",
+    "retains consecutive activations with no intervening messages in the feed",
     processTrace(
       consecutiveActivations.pipe(Effect.provide(NodeContext.layer)),
     ),
@@ -565,32 +538,6 @@ function expectPolicyRevisionsInDecisionFeed(
         decision.peerAgentId?.startsWith("agt_"),
       ),
     ).toBe(true);
-  });
-}
-
-function expectPolicyRevisionsInAudit(
-  { auditExport, runtime, client }: PolicyCheckScenario,
-  { before, changed }: PolicyRevisions,
-) {
-  return Effect.gen(function* () {
-    expect(
-      yield* call(client, "firewall_decisions", {
-        since: Number.MAX_SAFE_INTEGER,
-      }),
-    ).toEqual({ decisions: [], activations: [] });
-    yield* Fiber.interrupt(runtime);
-    const fs = yield* FileSystem.FileSystem;
-    const records = yield* Effect.forEach(
-      (yield* fs.readFileString(auditExport)).trim().split("\n"),
-      (line) =>
-        Schema.decodeUnknown(Schema.parseJson(FirewallAuditRecord))(line),
-      { concurrency: 1 },
-    );
-    expect(
-      records
-        .filter((record) => record.kind === "check")
-        .map((record) => record.input.configurationDigest),
-    ).toEqual(arrayContaining([before.activeRevision, changed.activeRevision]));
   });
 }
 

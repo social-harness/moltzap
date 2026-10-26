@@ -4,7 +4,7 @@ import { scopedLive as it } from "@effect/vitest";
 import { Effect, Logger, Queue, Schema, Struct } from "effect";
 import { expect } from "vitest";
 import type { InstalledFirewall } from "./firewall-checks.js";
-import { makeAuditFixture } from "../../__tests__/firewall-audit-fixtures.js";
+import { makeRetainedCheckFixture } from "../../__tests__/firewall-retained-fixtures.js";
 import {
   churnPolicy,
   destination,
@@ -34,10 +34,7 @@ import {
 import { englishPolicyFormat, makeEnglishPolicy } from "../evaluator/index.js";
 import { decodeMessagePolicy } from "../policy/document/index.js";
 import { installEditableFirewall } from "../policy/editable.js";
-import {
-  decodeFirewallAuditEntry,
-  FirewallAuditRecord,
-} from "./firewall-values.js";
+import { decodeFirewallAuditEntry } from "./firewall-values.js";
 import { captureRegistration, type FirewallOptions } from "./firewall.js";
 
 // @agent-code-guard/regression-only: Reads decisions retained by real admission through SQLite and the protocol engine.
@@ -735,7 +732,7 @@ it("carries no message text in an explained decision", () =>
 
 /** A retained English registration and its settled finding identify the same rule. */
 const retainedEnglishAudit = Effect.gen(function* () {
-  const audit = yield* makeAuditFixture;
+  const audit = yield* makeRetainedCheckFixture;
   const legacyRule = { id: "privacy", kind: "autonomy" };
   const input = {
     ...audit.input,
@@ -814,7 +811,7 @@ function readRetainedEnglishAudit(subject: Fixture, unresolved = false) {
   });
 }
 
-it("reads historical approval holds through the audit and decisions feed", () =>
+it("reads historical approval holds through retained checks and the decisions feed", () =>
   Effect.gen(function* () {
     const subject = yield* fixture;
     const { audit, legacyRule, decoded } =
@@ -835,13 +832,6 @@ it("reads historical approval holds through the audit and decisions feed", () =>
         },
       ],
     });
-    const exported = yield* Schema.encode(
-      Schema.parseJson(FirewallAuditRecord),
-    )(decoded);
-    const roundTrip = yield* Schema.decodeUnknown(
-      Schema.parseJson(FirewallAuditRecord),
-    )(exported);
-    expect(roundTrip).toEqual(decoded);
     const installed = yield* installEditableFirewall(
       options([]),
       subject.store,

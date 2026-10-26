@@ -139,7 +139,6 @@
     "@effect/vitest": "catalog:",
     "@typescript/native": "catalog:",
     "eslint": "catalog:",
-    "tsx": "catalog:",
     "typescript": "catalog:",
     "undici": "catalog:",
     "vitest": "catalog:",

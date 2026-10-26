@@ -63,7 +63,6 @@ function refusesAHeldGatherOnTheToolCall() {
       {
         direction: "outgoing",
         disposition: "withheld",
-        post: null,
         input: { message: { operation: { kind: "request", op: "gather" } } },
       },
     ]);

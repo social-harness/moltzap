@@ -94,7 +94,6 @@ Set these in the daemon's environment, then start `sharnessd` as before:
 | --- | --- |
 | `SHARNESS_MESSAGE_POLICY_FILE` | The path of `message-policy.json`. |
 | `SHARNESS_DECISION_PROVIDER_KEY_FILE` | With `jev`: a file holding only the provider's API key. |
-| `SHARNESS_FIREWALL_AUDIT_EXPORT` | Optional: an absolute path where the daemon writes every retained check on shutdown. |
 
 You should see `Message policy installed in guidance mode with` followed by
 each built-in rule set's id and revision, then `and English rules`.
@@ -105,11 +104,11 @@ Set `mode` to `enforcement`, restart the daemon, and ask your agent to send a
 message containing a made-up API key, such as `sk-test-0000000000000000`. You
 should see the send fail with a `FirewallSendError` that asks the agent to
 revise the message. In `guidance` mode the same send succeeds, and the check is
-recorded for the audit.
+retained locally.
 
-To read the checks afterwards, stop the daemon and decode each line of the
-audit export with `FirewallAuditRecord`, as described in
-[Operator audit snapshot](/spec/harness/message-policy#operator-audit-snapshot).
+Use the owner `firewall_decisions` tool to read recent decisions and policy
+activations. Read certified conversation records from the
+[history export](/spec/harness/daemon#process-and-configuration).
 
 ## If this does not work
 

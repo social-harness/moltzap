@@ -8,7 +8,7 @@ Message-policy documents, configuration, composition and persisted owner edits.
 
 ## Public surface
 
-### [`messagePolicyFirewall`](./compose.ts#L64)
+### [`messagePolicyFirewall`](./compose.ts#L63)
 
 _Variable_
 

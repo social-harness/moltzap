@@ -426,43 +426,6 @@ function interruptedSend() {
 }
 
 it(
-  "exports the real incoming and outgoing author-scoped post references",
-  auditCorrelatesPosts,
-);
-
-function auditCorrelatesPosts() {
-  return Effect.gen(function* () {
-    const subject = yield* fixture;
-    const allow = policy(() => Effect.succeed(pass));
-    const incoming = yield* incomingFixture(subject, allow);
-    yield* incoming.runPass;
-    yield* Queue.take(incoming.completed);
-    const outgoing = yield* outgoingFixture(subject, allow);
-    const sending = yield* outgoing.operations
-      .send({
-        input: { to: destination, text: "Reply to the certified post" },
-      })
-      .pipe(Effect.forkScoped);
-    yield* Deferred.await(subject.outbound);
-    const intent = (yield* subject.store.recover()).postIntents[0];
-    const checks = yield* auditChecks(subject);
-    expect(
-      checks.find((check) => check.direction === "incoming")?.post,
-    ).toEqual({
-      authorAgentId: subject.remote.card.agentId,
-      postId: incoming.candidate.message.postId,
-    });
-    expect(
-      checks.find((check) => check.direction === "outgoing")?.post,
-    ).toEqual({
-      authorAgentId: subject.local.card.agentId,
-      postId: intent?.postId,
-    });
-    yield* Fiber.interrupt(sending);
-  });
-}
-
-it(
   "holds a concurrent send when its evidence is incomplete and its recheck is unavailable",
   concurrentSends,
 );

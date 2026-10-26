@@ -5,7 +5,6 @@ other firewall folders. `firewall.ts` installs fixed policy and checks outgoing 
 `firewall-checks.ts` captures context and projects guidance for both directions;
 `firewall-results.ts` checks collective results one answer at a time.
 `admission.ts` drains each conversation's pending incoming queue and commits
-its disposition. `firewall-values.ts` encodes retained checks and the
-operator audit representation.
+its disposition. `firewall-values.ts` decodes retained checks for owner decisions and admission reads.
 
 See the [firewall overview](../README.md).

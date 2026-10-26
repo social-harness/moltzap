@@ -1,10 +1,7 @@
 /** @file Real storage and prepared send fixtures shared by firewall admission tests. */
 
-import { FileSystem } from "@effect/platform";
-import { NodeFileSystem } from "@effect/platform-node";
 import { Deferred, Effect, Queue, Schema, Scope } from "effect";
 import { generateKeyPairSync } from "node:crypto";
-import { join } from "node:path";
 import type { InboundItem } from "../communication/collectives/inbound.js";
 import type {
   MessageMiddleware,
@@ -36,11 +33,11 @@ import {
 import { encodeCanonical } from "../encoding/canonical-json.js";
 import {
   collectiveAdmission,
+  decodeFirewallAuditEntry,
   type FirewallOptions,
   type InstalledFirewall,
   installFirewall,
 } from "../firewall/admission/index.js";
-import { beginFirewallAudit } from "../firewall/audit/firewall-audit.js";
 import { noHistoryExport } from "../harness/inbox/history-export.js";
 import { makeHostDelivery } from "../harness/inbox/host-delivery.js";
 import { AgentCard } from "../identity/cards.js";
@@ -56,7 +53,6 @@ import {
   buildCertifiedGenesis,
   storeCertifiedGenesis,
 } from "./certified-history-fixtures.js";
-import { decodeAudit } from "./firewall-audit-fixtures.js";
 import { pollCursor } from "./router-worker-fixtures.js";
 import { stateDirectory } from "./store-schema-fixtures.js";
 
@@ -188,16 +184,22 @@ export const fixture = engineFixture();
 /** The acquired identities and storage remain live for the test scope. */
 export type Fixture = Effect.Effect.Success<typeof fixture>;
 
-/** Decode the public operator snapshot after all writes settle. */
+/** Read retained checks in insertion order through the store and decisions decoder. */
 export const auditChecks = (subject: Fixture) =>
   Effect.gen(function* () {
-    const path = join(subject.directory, "audit.ndjson");
-    yield* (yield* beginFirewallAudit(path, subject.store)).finish;
-    const fileSystem = yield* FileSystem.FileSystem;
-    return decodeAudit(yield* fileSystem.readFileString(path)).records.filter(
-      (record) => record.kind === "check",
-    );
-  }).pipe(Effect.provide(NodeFileSystem.layer), Effect.withSpan("auditChecks"));
+    const checks = [];
+    let after = 0;
+    while (true) {
+      const page = yield* subject.store.readFirewallAuditPage(after);
+      for (const entry of page) {
+        checks.push(yield* decodeFirewallAuditEntry(entry));
+        after = entry.sequence;
+      }
+      if (page.length === 0) {
+        return checks;
+      }
+    }
+  }).pipe(Effect.withSpan("auditChecks"));
 
 /** Fixed registration and settings are captured before delivery operations run. */
 export const installation = (

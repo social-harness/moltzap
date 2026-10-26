@@ -97,7 +97,6 @@ export const makeFirewall = Effect.fn("makeFirewall")(function* (options: {
 /** Owner management values grant no runtime messaging capability. */
 export {
   editableDocumentSchema,
-  firewallActivationSchema,
   firewallDecisionsRequestSchema,
   firewallDecisionsSchema,
   FirewallPolicyError,
