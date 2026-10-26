@@ -1,7 +1,8 @@
 /** @file Owner behavior files resolve before composition and preserve fixed policy and editable state. */
 
 import { live as it } from "@effect/vitest";
-import { ConfigProvider, Effect, Layer, Option } from "effect";
+import { ConfigProvider, Effect, Layer, Option, Schema } from "effect";
+import { spawnSync } from "node:child_process";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Tests create exact owner behavior files around the configuration boundary.
 import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -12,11 +13,13 @@ import {
 } from "../../__tests__/store-schema-fixtures.js";
 import { readCredential } from "../../daemon/credentials.js";
 import { Daemon } from "../../daemon/index.js";
+import { FirewallPolicyError } from "../evaluator/index.js";
 import { policyInstallationError } from "./compose.js";
 import {
   decodeMessagePolicy,
   firewallInstallation,
   installEditableFirewall,
+  MessagePolicy,
   messagePolicyFirewall,
 } from "./index.js";
 import { loadMessagePolicy, MAXIMUM_BEHAVIOR_BYTES } from "./load.js";
@@ -312,7 +315,49 @@ it(
   }),
 );
 
+it("attributes an invalid inline seed to initialRules before reading behaviors", () =>
+  Effect.gen(function* () {
+    const { path, document } = fixture();
+    writeFileSync(
+      path,
+      JSON.stringify({
+        ...document,
+        english: {
+          ...document.english,
+          initialRules: [{ id: INITIAL.id, kind: "norm", text: INITIAL.text }],
+          fixedBehaviors: ["absent"],
+        },
+      }),
+    );
+    const error = yield* loaded(path).pipe(Effect.flip);
+    expect(error.message).toContain("invalid at english.initialRules");
+    expect(error.behaviorReason).toBeUndefined();
+  }));
+
+it("attributes an oversized inline seed to initialRules", () =>
+  Effect.gen(function* () {
+    const { path } = seedFixture(257);
+    const error = yield* loaded(path).pipe(Effect.flip);
+    expect(error.message).toContain("invalid at english.initialRules");
+    expect(error.behaviorReason).toBeUndefined();
+  }));
+
 const INVALID_BEHAVIORS = [
+  [
+    "custom tag",
+    "frontmatter",
+    "fixed",
+    BEHAVIOR.replace(
+      "license: MIT",
+      "license: !private-invalid-behavior secret",
+    ),
+  ],
+  [
+    "binary tag",
+    "frontmatter",
+    "fixed",
+    BEHAVIOR.replace("license: MIT", "license: !!binary c2VjcmV0"),
+  ],
   ["missing directory", "missing", "absent", BEHAVIOR],
   ["missing file", "missing", ".", BEHAVIOR],
   ["absolute path", "schema", "/private-owner-directory", BEHAVIOR],
@@ -521,7 +566,7 @@ it.each(["", "\uFEFF"])(
     }),
 );
 
-it("composes a decoded inline policy with defaulted empty behavior paths", () =>
+it("composes and encodes a decoded inline policy without adding behavior paths", () =>
   Effect.gen(function* () {
     const policy = yield* decodeMessagePolicy(
       JSON.stringify({
@@ -531,6 +576,11 @@ it("composes a decoded inline policy with defaulted empty behavior paths", () =>
         english: { fixedRules: [FIXED], initialRules: [INITIAL] },
       }),
     );
+    const encoded = yield* Schema.encode(MessagePolicy)(policy);
+    expect(encoded.english).toEqual({
+      fixedRules: [FIXED],
+      initialRules: [INITIAL],
+    });
     const composed = yield* messagePolicyFirewall(policy, {
       decide: () => Effect.die("no assessment requested"),
     });
@@ -624,9 +674,51 @@ it("names the fixed behavior colliding with a stored editable rule", () =>
           installation.behaviorRulePaths,
         );
         expect(error.reason).toBe("fixed-rule");
-        expect(startup.message).toContain("english.fixedBehaviors.0");
+        expect(startup.message).toContain(
+          "invalid at english.fixedBehaviors.0 (duplicate-id)",
+        );
+        expect(startup.message).toContain("Docs:");
+        expect(startup.behaviorReason).toBe("duplicate-id");
       }),
     );
   }));
+
+it("keeps the inline installation failure message", () =>
+  Effect.sync(() => {
+    const error = policyInstallationError(
+      new FirewallPolicyError({ reason: "invalid-rule" }),
+    );
+    expect(error.message).toBe(
+      "SHARNESS_MESSAGE_POLICY_FILE must contain a valid org.social-harness/message-policy/v1 document; its rules could not be installed (invalid-rule)",
+    );
+    expect(error.behaviorReason).toBeUndefined();
+  }));
+
+it(
+  "refuses a BEHAVIOR.md FIFO without waiting for a writer",
+  (context) =>
+    Effect.gen(function* () {
+      const { path, root } = fixture();
+      const behavior = join(root, "fixed", "BEHAVIOR.md");
+      rmSync(behavior);
+      // eslint-disable-next-line sonarjs/no-os-command-from-path -- The fixture uses the host's mkfifo when available and passes only a generated temporary path.
+      const result = spawnSync("mkfifo", [behavior]);
+      if (
+        result.error !== undefined &&
+        "code" in result.error &&
+        result.error.code === "ENOENT"
+      ) {
+        context.skip();
+        return;
+      }
+      expect(result.status).toBe(0);
+      const error = yield* loaded(path).pipe(
+        Effect.flip,
+        Effect.timeout("1 second"),
+      );
+      expect(error.behaviorReason).toBe("not-a-file");
+    }),
+  2_000,
+);
 
 /* eslint-enable agent-code-guard/no-hardcoded-assertion-literals -- Restore assertion defaults outside owner policy contract tests. */

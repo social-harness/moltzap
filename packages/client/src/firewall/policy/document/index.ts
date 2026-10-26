@@ -102,12 +102,8 @@ const document = Schema.Struct({
     Schema.Struct({
       fixedRules: englishRules,
       initialRules: englishRules,
-      fixedBehaviors: Schema.optionalWith(Schema.Array(Schema.String), {
-        default: () => [],
-      }),
-      initialBehaviors: Schema.optionalWith(Schema.Array(Schema.String), {
-        default: () => [],
-      }),
+      fixedBehaviors: Schema.optional(Schema.Array(Schema.String)),
+      initialBehaviors: Schema.optional(Schema.Array(Schema.String)),
     }),
   ),
   decisionProvider: Schema.optional(decisionProvider),

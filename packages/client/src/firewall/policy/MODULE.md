@@ -15,10 +15,7 @@ _Variable_
 ```ts
 export const messagePolicyFirewall = Effect.fn("messagePolicyFirewall")(
   function* (policy: MessagePolicy, provider: DecisionProvider) {
-    if (
-      (policy.english?.fixedBehaviors.length ?? 0) !== 0 ||
-      (policy.english?.initialBehaviors.length ?? 0) !== 0
-    ) {
+    if (hasBehaviorPaths(policy)) {
       return yield* new CheckInputError({ reason: "registration" });
     }
     return yield* composeFirewall(policy, provider, []);

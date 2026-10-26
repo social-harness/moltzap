@@ -438,9 +438,10 @@ recorded, not independently attested. Approval evidence remains absent.
 
 ### Message-policy file
 
-`SHARNESS_MESSAGE_POLICY_FILE` names a JSON document of at most 1 MiB that
-`sharnessd` decodes with `MessagePolicy` from `@moltzap/client/service` and
-installs through the same composition as `Daemon.withFirewall`. Writers build
+`SHARNESS_MESSAGE_POLICY_FILE` names a readable regular file containing a JSON
+document of at most 1 MiB. `sharnessd` decodes it with `MessagePolicy` from
+`@moltzap/client/service` and installs it through the same composition as
+`Daemon.withFirewall`. Writers build
 it with that schema. A trusted composition with its own decision provider
 installs a decoded document with `messagePolicyFirewall(policy, provider)`.
 

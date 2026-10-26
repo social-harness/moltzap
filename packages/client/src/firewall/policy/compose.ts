@@ -63,10 +63,7 @@ export interface FirewallInstallation {
  */
 export const messagePolicyFirewall = Effect.fn("messagePolicyFirewall")(
   function* (policy: MessagePolicy, provider: DecisionProvider) {
-    if (
-      (policy.english?.fixedBehaviors.length ?? 0) !== 0 ||
-      (policy.english?.initialBehaviors.length ?? 0) !== 0
-    ) {
+    if (hasBehaviorPaths(policy)) {
       return yield* new CheckInputError({ reason: "registration" });
     }
     return yield* composeFirewall(policy, provider, []);
@@ -140,12 +137,23 @@ export function policyInstallationError(
       ? undefined
       : behaviorRulePaths?.get(cause.ruleId);
   const base = policyConfigurationError("message-policy");
-  const location = path === undefined ? "" : `; invalid at ${path}`;
+  const location =
+    path === undefined
+      ? ""
+      : `; invalid at ${path} (duplicate-id). Docs: https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/message-policy.md#behaviors`;
   return new MessagePolicyConfigurationError({
     reason: "message-policy",
     behaviorReason: path === undefined ? undefined : "duplicate-id",
-    message: `${base.message}; its rules could not be installed (${cause.reason})${location}. Docs: https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/message-policy.md#behaviors`,
+    message: `${base.message}; its rules could not be installed (${cause.reason})${location}`,
   });
+}
+
+/** Only file loading resolves paths into rules before trusted composition. */
+function hasBehaviorPaths(policy: MessagePolicy) {
+  return (
+    (policy.english?.fixedBehaviors?.length ?? 0) !== 0 ||
+    (policy.english?.initialBehaviors?.length ?? 0) !== 0
+  );
 }
 
 /** File loading supplies byte digests after resolving behavior paths into rules. */

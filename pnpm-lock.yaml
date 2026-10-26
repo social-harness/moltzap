@@ -169,7 +169,7 @@ catalogs:
       specifier: 3.2.4
       version: 3.2.4
     yaml:
-      specifier: ^2.9.1
+      specifier: 2.9.1
       version: 2.9.1
 
 overrides:

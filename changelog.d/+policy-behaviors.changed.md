@@ -1,1 +1,4 @@
-Restore decoded `MessagePolicy` documents as inputs to trusted firewall composition; unresolved behavior paths fail with `CheckInputError`. Installation failures can identify the conflicting rule id.
+`messagePolicyFirewall` refuses non-empty behavior paths with `CheckInputError`
+(`registration`). `SHARNESS_MESSAGE_POLICY_FILE` must name a regular file.
+Installation failures carry `ruleId` and `behaviorReason` to identify conflicting
+behavior rules.

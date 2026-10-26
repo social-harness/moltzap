@@ -14,7 +14,7 @@ import { constants } from "node:fs";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Configuration reads the configured policy file before the daemon composes its platform services.
 import { type FileHandle, lstat, open, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep, win32 } from "node:path";
-import { parse } from "yaml";
+import { parseDocument } from "yaml";
 import { exactStruct } from "../../encoding/exact.js";
 import {
   type DecisionProvider,
@@ -60,7 +60,7 @@ const failureMessages: Readonly<
   Record<MessagePolicyConfigurationFailure, string>
 > = {
   "message-policy-file":
-    "SHARNESS_MESSAGE_POLICY_FILE must name a readable file of at most 1 MiB",
+    "SHARNESS_MESSAGE_POLICY_FILE must name a readable regular file of at most 1 MiB. Docs: https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/message-policy.md#message-policy-file",
   "message-policy":
     "SHARNESS_MESSAGE_POLICY_FILE must contain a valid org.social-harness/message-policy/v1 document",
   "message-policy-required":
@@ -224,16 +224,7 @@ function decodeBehavior(
     ) {
       return yield* refused("frontmatter");
     }
-    const frontmatter = yield* Effect.try({
-      try: (): unknown => parse(parts[1] ?? "", { schema: "core" }),
-      catch: () => refused("frontmatter"),
-    }).pipe(
-      Effect.flatMap((value) =>
-        Schema.decodeUnknown(behaviorFrontmatter)(value).pipe(
-          Effect.mapError(() => refused("schema")),
-        ),
-      ),
-    );
+    const frontmatter = yield* decodeFrontmatter(parts[1], refused);
     const metadata = frontmatter.metadata["social-harness"];
     const rules = yield* Schema.decodeUnknown(policyReadSchema.fields.rules)([
       {
@@ -249,6 +240,37 @@ function decodeBehavior(
   });
 }
 
+/** YAML diagnostics stay inside the parser boundary, including unresolved tags. */
+function decodeFrontmatter(
+  text: string,
+  refused: (reason: BehaviorFailure) => MessagePolicyConfigurationError,
+) {
+  return Effect.gen(function* () {
+    const doc = yield* Effect.try({
+      try: () =>
+        parseDocument(text, {
+          schema: "core",
+          resolveKnownTags: false,
+          logLevel: "error",
+        }),
+      catch: () => refused("frontmatter"),
+    });
+    if (doc.errors.length !== 0 || doc.warnings.length !== 0) {
+      return yield* refused("frontmatter");
+    }
+    return yield* Effect.try({
+      try: (): unknown => doc.toJS(),
+      catch: () => refused("frontmatter"),
+    }).pipe(
+      Effect.flatMap((value) =>
+        Schema.decodeUnknown(behaviorFrontmatter)(value).pipe(
+          Effect.mapError(() => refused("schema")),
+        ),
+      ),
+    );
+  });
+}
+
 /** Initial behaviors are validated even when persisted editable rules already exist. */
 function resolveBehaviors(policy: MessagePolicy, root: string) {
   return Effect.gen(function* () {
@@ -257,30 +279,34 @@ function resolveBehaviors(policy: MessagePolicy, root: string) {
     if (english === undefined) {
       return { policy, behaviorRulePaths, fixedBehaviorDigests: undefined };
     }
+    yield* Schema.decodeUnknown(editableDocumentSchema)(
+      english.initialRules,
+    ).pipe(
+      Effect.mapError(() =>
+        policyConfigurationError("message-policy", "english.initialRules"),
+      ),
+    );
     const state = {
       root,
       ids: new Set(
         [...english.fixedRules, ...english.initialRules].map((rule) => rule.id),
       ),
       behaviorRulePaths,
+      initialRuleCount: english.initialRules.length,
     };
     const fixed = yield* loadBehaviors(
-      english.fixedBehaviors,
+      english.fixedBehaviors ?? [],
       "fixedBehaviors",
       state,
-      { mode: "fixed" },
     );
     const initial = yield* loadBehaviors(
-      english.initialBehaviors,
+      english.initialBehaviors ?? [],
       "initialBehaviors",
       state,
-      { mode: "initial", seed: english.initialRules },
     );
     const resolved: MessagePolicy = {
       ...policy,
       english: {
-        fixedBehaviors: [],
-        initialBehaviors: [],
         fixedRules: [...english.fixedRules, ...fixed.map(({ rule }) => rule)],
         initialRules: [
           ...english.initialRules,
@@ -292,9 +318,7 @@ function resolveBehaviors(policy: MessagePolicy, root: string) {
       policy: resolved,
       behaviorRulePaths,
       fixedBehaviorDigests:
-        fixed.length === 0
-          ? undefined
-          : fixed.map((behavior) => behavior.digest),
+        fixed.length === 0 ? undefined : fixed.map(({ digest }) => digest),
     };
   });
 }
@@ -306,12 +330,10 @@ function loadBehaviors(
     readonly root: string;
     readonly ids: Set<string>;
     readonly behaviorRulePaths: Map<string, string>;
+    readonly initialRuleCount: number;
   },
-  mode:
-    | { readonly mode: "fixed" }
-    | { readonly mode: "initial"; readonly seed: readonly EnglishRule[] },
 ) {
-  const rules = mode.mode === "initial" ? [...mode.seed] : [];
+  let count = state.initialRuleCount;
   return Effect.forEach(
     directories,
     (directory, index) =>
@@ -321,11 +343,11 @@ function loadBehaviors(
         if (state.ids.has(behavior.rule.id)) {
           return yield* invalidBehavior(path, "duplicate-id");
         }
-        if (mode.mode === "initial") {
-          rules.push(behavior.rule);
-          yield* Schema.decodeUnknown(editableDocumentSchema)(rules).pipe(
-            Effect.mapError(() => invalidBehavior(path, "editable-limit")),
-          );
+        if (field === "initialBehaviors") {
+          count += 1;
+          if (count > 256) {
+            return yield* invalidBehavior(path, "editable-limit");
+          }
         }
         state.ids.add(behavior.rule.id);
         state.behaviorRulePaths.set(behavior.rule.id, path);
@@ -363,9 +385,17 @@ function contained(root: string, path: string) {
 }
 
 function readPolicyText(path: string) {
-  return readBoundedFile(path, MAXIMUM_POLICY_BYTES, () =>
-    policyConfigurationError("message-policy-file"),
-  ).pipe(Effect.map((bytes) => bytes.toString("utf8")));
+  return Effect.tryPromise({
+    try: () => realpath(path),
+    catch: () => policyConfigurationError("message-policy-file"),
+  }).pipe(
+    Effect.flatMap((canonical) =>
+      readBoundedFile(canonical, MAXIMUM_POLICY_BYTES, () =>
+        policyConfigurationError("message-policy-file"),
+      ),
+    ),
+    Effect.map((bytes) => bytes.toString("utf8")),
+  );
 }
 
 /** The descriptor owns both the file-kind check and the bounded read. */
@@ -374,34 +404,44 @@ function readBoundedFile(
   maximumBytes: number,
   refused: (reason: BehaviorFailure) => MessagePolicyConfigurationError,
 ) {
-  return Effect.acquireUseRelease(
-    Effect.tryPromise({
-      try: () => open(path, constants.O_RDONLY | constants.O_NONBLOCK),
+  return Effect.gen(function* () {
+    const before = yield* Effect.tryPromise({
+      try: () => lstat(path),
       catch: () => refused("missing"),
-    }),
-    (file) =>
-      Effect.gen(function* () {
-        const stat = yield* Effect.tryPromise({
-          try: () => file.stat(),
-          catch: () => refused("missing"),
-        });
-        if (!stat.isFile()) {
-          return yield* refused("not-a-file");
-        }
-        const bytes = yield* readDescriptor(file, maximumBytes).pipe(
-          Effect.mapError(() => refused("missing")),
-        );
-        if (bytes.byteLength > maximumBytes) {
-          return yield* refused("too-large");
-        }
-        return bytes;
-      }),
-    (file) =>
+    });
+    const file = yield* Effect.acquireRelease(
       Effect.tryPromise({
-        try: () => file.close(),
+        try: () =>
+          open(
+            path,
+            constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW,
+          ),
         catch: () => refused("missing"),
-      }).pipe(Effect.orDie),
-  ).pipe(Effect.scoped);
+      }),
+      (file) =>
+        Effect.tryPromise({
+          try: () => file.close(),
+          catch: () => refused("missing"),
+        }).pipe(Effect.orDie),
+    );
+    const stat = yield* Effect.tryPromise({
+      try: () => file.stat(),
+      catch: () => refused("missing"),
+    });
+    if (!stat.isFile()) {
+      return yield* refused("not-a-file");
+    }
+    if (stat.dev !== before.dev || stat.ino !== before.ino) {
+      return yield* refused("missing");
+    }
+    const bytes = yield* readDescriptor(file, maximumBytes).pipe(
+      Effect.mapError(() => refused("missing")),
+    );
+    if (bytes.byteLength > maximumBytes) {
+      return yield* refused("too-large");
+    }
+    return bytes;
+  }).pipe(Effect.scoped);
 }
 
 /** A short read need not be EOF; stop only at EOF or the extra byte. */

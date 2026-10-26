@@ -1595,7 +1595,7 @@ export type FirewallAuditRecord = typeof FirewallAuditRecord.Type;
 
 Completion verifies the snapshot, not completion or delivery of each attempt.
 
-#### [`MessagePolicy (type)`](./firewall/policy/document/index.ts#L168)
+#### [`MessagePolicy (type)`](./firewall/policy/document/index.ts#L164)
 
 _TypeAlias_
 
@@ -1761,7 +1761,7 @@ export type SignedMessageDigest = typeof SignedMessageDigest.Type;
 
 Validated SignedMessage equality receipt.
 
-#### [`decodeMessagePolicy`](./firewall/policy/document/index.ts#L177)
+#### [`decodeMessagePolicy`](./firewall/policy/document/index.ts#L173)
 
 _Variable_
 
@@ -1945,7 +1945,7 @@ flowchart TD
   D --> R[Return to Client for enforcement]
 ```
 
-#### [`MessagePolicy (value)`](./firewall/policy/document/index.ts#L144)
+#### [`MessagePolicy (value)`](./firewall/policy/document/index.ts#L140)
 
 _Variable_
 
@@ -1990,10 +1990,7 @@ _Variable_
 ```ts
 export const messagePolicyFirewall = Effect.fn("messagePolicyFirewall")(
   function* (policy: MessagePolicy, provider: DecisionProvider) {
-    if (
-      (policy.english?.fixedBehaviors.length ?? 0) !== 0 ||
-      (policy.english?.initialBehaviors.length ?? 0) !== 0
-    ) {
+    if (hasBehaviorPaths(policy)) {
       return yield* new CheckInputError({ reason: "registration" });
     }
     return yield* composeFirewall(policy, provider, []);
