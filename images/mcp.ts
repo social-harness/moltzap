@@ -139,7 +139,9 @@ function register(
   return Effect.gen(function* () {
     const client = yield* connect(url);
     const status = yield* callTool(client, "status", {}).pipe(
-      Effect.mapError((failure) => commandError(failure.message, "tool-failed")),
+      Effect.mapError((failure) =>
+        commandError(failure.message, "tool-failed"),
+      ),
       Effect.flatMap((result) => decode(statusResult, result, "status")),
     );
     if (status.kind === "unregistered") {
@@ -242,7 +244,9 @@ function call(
     );
     const client = yield* connect(url);
     const result = yield* callTool(client, tool, parsed).pipe(
-      Effect.mapError((failure) => commandError(failure.message, "tool-failed")),
+      Effect.mapError((failure) =>
+        commandError(failure.message, "tool-failed"),
+      ),
     );
     yield* Console.log(JSON.stringify(result, null, 2));
   });

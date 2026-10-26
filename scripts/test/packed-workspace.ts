@@ -164,7 +164,7 @@ export function runProcess(
       );
       return { stdout, stderr, exitCode };
     }),
-  );
+  ).pipe(Effect.withSpan("packedWorkspace.runProcess"));
 }
 
 /**

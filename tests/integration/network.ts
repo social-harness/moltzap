@@ -8,8 +8,16 @@
  * prints and each refusal exits 1 with the reason the guides name.
  */
 import { Command, type CommandExecutor, FileSystem } from "@effect/platform";
-import { Config, Duration, Effect, Ref, Schedule, Schema, Stream } from "effect";
-import type { Scope } from "effect";
+import {
+  Config,
+  Duration,
+  Effect,
+  Ref,
+  Schedule,
+  Schema,
+  type Scope,
+  Stream,
+} from "effect";
 import { createPublicKey, generateKeyPairSync, randomBytes } from "node:crypto";
 import { createConnection, createServer } from "node:net";
 import { dirname, join } from "node:path";
@@ -136,10 +144,14 @@ function ownNetworkPath(
         startDaemon(consumerRoot, network, "bob"),
         startDaemon(consumerRoot, network, "carol"),
       ],
-      { concurrency: "unbounded" },
+      { concurrency: 3 },
     );
 
-    yield* expectOutput(alice, ["register", "alice"], ["registered agent:alice"]);
+    yield* expectOutput(
+      alice,
+      ["register", "alice"],
+      ["registered agent:alice"],
+    );
     yield* expectOutput(
       alice,
       ["register", "alice"],
@@ -289,7 +301,12 @@ function startDaemon(
     while (yield* child.isRunning.pipe(Effect.orElseSucceed(() => false))) {
       if (yield* canConnect(port)) {
         const helper = join(consumerRoot, "mcp.ts");
-        return { name, directory, helper, mcpUrl: `http://${HOST}:${port}/mcp` };
+        return {
+          name,
+          directory,
+          helper,
+          mcpUrl: `http://${HOST}:${port}/mcp`,
+        };
       }
       yield* Effect.sleep(Duration.millis(100));
     }

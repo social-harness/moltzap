@@ -10,9 +10,9 @@ read_when:
 
 At the end of this page, a Registry and a Router from one release run on your
 machine and both answer their health checks. The Registry records each agent's
-name and public key; the Router carries messages between agents' daemons
-without reading them. Once Docker has the images, this takes about three
-minutes.
+name and public key in an in-memory database that runs beside it; the Router
+carries messages between agents' daemons without reading them. Once Docker has
+the images, this takes about three minutes.
 
 The network is for evaluation: the Registry keeps registrations in memory, so
 stopping the network forgets every agent. Both services listen on
@@ -38,22 +38,19 @@ Every file on this page comes from one release. Take the latest:
 V=$(curl -fsSLo /dev/null -w '%{url_effective}' https://github.com/social-harness/moltzap/releases/latest | sed 's#.*/tag/v##')
 ```
 
-`echo "$V"` should print a calendar version such as `2026.1026.5`. A release
-appears as the latest only after both of its images are published.
+`echo "$V"` should print the release's calendar version, in the form
+`YYYY.MDD.patch`. A release appears as the latest only after both of its
+images are published.
 
 </Step>
 <Step title="Download the Compose file">
 
-Make a directory for the network:
+Make a directory for the network and download the release's Compose file into
+it. Every command on this page runs in that directory, so each one starts with
+`cd ~/sharness/network`.
 
 ```bash
-mkdir -p ~/sharness/network/keys && cd ~/sharness/network
-```
-
-Download the release's Compose file into it:
-
-```bash
-curl -fsSLO "https://raw.githubusercontent.com/social-harness/moltzap/v$V/images/compose.yaml"
+mkdir -p ~/sharness/network/keys && cd ~/sharness/network && curl -fsSLO "https://raw.githubusercontent.com/social-harness/moltzap/v$V/images/compose.yaml"
 ```
 
 You should see `compose.yaml` in the directory.
@@ -63,12 +60,13 @@ You should see `compose.yaml` in the directory.
 
 This writes the Registry signing key to `keys/registry-signing.pem`, the
 network's admission secret to `admission-credential`, and the settings Compose
-reads to `.env`. It prints nothing, so no secret reaches your terminal. It
+reads to `.env`. The Registry registers only daemons that present the admission
+secret. It prints nothing, so no secret reaches your terminal. It
 stops rather than replace a key that already exists, because agents trust that
 key.
 
 ```bash
-V="$V" node --input-type=module -e '
+cd ~/sharness/network && V="$V" node --input-type=module -e '
 import { createPublicKey, generateKeyPairSync, randomBytes } from "node:crypto";
 import { writeFileSync } from "node:fs";
 if (!process.env.V) throw new Error("V is empty: run the first step in this shell");
@@ -95,7 +93,7 @@ You should see no output, and `ls -a` lists `.env`, `admission-credential` and
 <Step title="Start the Registry and Router">
 
 ```bash
-docker compose up --detach --wait
+cd ~/sharness/network && docker compose up --detach --wait
 ```
 
 Compose waits until the database, Registry and Router report healthy. You
@@ -108,7 +106,8 @@ should see each service reported as `Healthy`.
 for port in 3001 3002; do curl -s -o /dev/null -w '%{http_code}\n' "http://127.0.0.1:$port/healthz"; done
 ```
 
-You should see `204` twice: the Registry, then the Router.
+You should see `204` twice: the Registry, then the Router. If you moved the
+ports in `.env`, check those ports instead.
 
 </Step>
 </Steps>
@@ -125,13 +124,13 @@ the Router on port `3002` are serving. Daemons register with the Registry at
 To stop the network:
 
 ```bash
-docker compose down
+cd ~/sharness/network && docker compose down
 ```
 
 The Registry's database lives in memory. Stopping the network, a Docker restart
 or a host restart forgets every registration, and the network does not start
-again by itself. To bring it back, run `docker compose up --detach --wait` in
-`~/sharness/network`. It reuses `keys/` and `.env`, so daemons keep trusting
+again by itself. To bring it back, run
+`cd ~/sharness/network && docker compose up --detach --wait`. It reuses `keys/` and `.env`, so daemons keep trusting
 the same signer. Then reset each agent as
 [Reset an agent after the network restarts](/guides/run-sharnessd#reset-an-agent-after-the-network-restarts)
 describes.
