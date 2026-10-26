@@ -149,7 +149,6 @@ const nearTieProvider: DecisionProvider = {
           request.stage === "applicability" && question.ruleId === announce.id
             ? {
                 choice: "relevant",
-                confidence: 0.25,
                 probabilities: {
                   relevant: 0.49,
                   irrelevant: 0.5,
@@ -735,6 +734,55 @@ it.each([
       });
     }),
 );
+
+it("explains a decision retained with historical rule metadata", () =>
+  Effect.gen(function* () {
+    const subject = yield* fixture;
+    const retained = yield* makeRetainedCheckFixture;
+    const checkId = "historical-rule-metadata";
+    const registration = (
+      entry: (typeof retained.input.installation.incoming)[number],
+    ) => ({
+      ...entry,
+      rules: entry.rules.map((rule) => ({
+        ...Struct.omit(rule),
+        source: "owner",
+      })),
+    });
+    yield* subject.store.beginFirewallAttempt({
+      checkId,
+      direction: "outgoing",
+      revision: 0,
+      canonicalCandidate: retained.canonicalCandidate,
+      canonicalInput: yield* encodeRuntimeValue({
+        ...retained.input,
+        installation: {
+          ...retained.input.installation,
+          incoming: retained.input.installation.incoming.map(registration),
+          outgoing: retained.input.installation.outgoing.map(registration),
+        },
+      }),
+    });
+    yield* subject.store.admitFirewallOperation(
+      {
+        checkId,
+        admit: false,
+        canonicalResult: yield* encodeRuntimeValue(retained.result),
+      },
+      retained.canonicalCandidate,
+    );
+    const installed = yield* installEditableFirewall(
+      options([]),
+      subject.store,
+    );
+    expect((yield* installed.policy.decisions({})).decisions).toMatchObject([
+      {
+        checkId,
+        outcome: "block",
+        decidedBy: [{ ruleId: "privacy", from: "code" }],
+      },
+    ]);
+  }));
 
 it("refuses autonomy in live code middleware registration", () =>
   Effect.gen(function* () {

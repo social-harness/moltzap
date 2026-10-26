@@ -36,8 +36,8 @@ import {
   decodeFirewallAuditEntry,
   type FirewallOptions,
   type InstalledFirewall,
-  installFirewall,
 } from "../firewall/admission/index.js";
+import { installEditableFirewall } from "../firewall/index.js";
 import { noHistoryExport } from "../harness/inbox/history-export.js";
 import { makeHostDelivery } from "../harness/inbox/host-delivery.js";
 import { AgentCard } from "../identity/cards.js";
@@ -197,18 +197,22 @@ export const auditChecks = (subject: Fixture) =>
 
 /** Fixed registration and settings are captured before delivery operations run. */
 export const installation = (
+  store: EndpointStore,
   middleware: MessageMiddleware,
   overrides: Partial<FirewallOptions> = {},
 ) =>
-  installFirewall({
-    incoming: [middleware],
-    outgoing: [middleware],
-    settings,
-    facts: [],
-    codeDigest: "a".repeat(64),
-    mode: "enforcement",
-    ...overrides,
-  });
+  installEditableFirewall(
+    {
+      incoming: [middleware],
+      outgoing: [middleware],
+      settings,
+      facts: [],
+      codeDigest: "a".repeat(64),
+      mode: "enforcement",
+      ...overrides,
+    },
+    store,
+  );
 
 /**
  * One collective layer with the firewall's admission ports and the delivery
@@ -302,7 +306,7 @@ export const incomingFixture = (
   overrides: Partial<FirewallOptions> = {},
   seed = true,
 ) =>
-  installation(middleware, overrides).pipe(
+  installation(subject.store, middleware, overrides).pipe(
     Effect.flatMap((installed) => incomingThrough(subject, installed, seed)),
   );
 
@@ -312,7 +316,7 @@ export function outgoingFixture(
   middleware: MessageMiddleware,
   overrides: Partial<FirewallOptions> = {},
 ) {
-  return installation(middleware, overrides).pipe(
+  return installation(subject.store, middleware, overrides).pipe(
     Effect.flatMap((installed) => outgoingThrough(subject, installed)),
     Effect.withSpan("outgoingFixture"),
   );
