@@ -142,6 +142,13 @@ const defaultSettings = {
   maximumResultBytes: 2_000_000,
 };
 
+const englishDocument = Schema.Struct({
+  fixedRules: englishRules,
+  initialRules: englishRules,
+  fixedBehaviors: Schema.optional(Schema.Array(Schema.String)),
+  initialBehaviors: Schema.optional(Schema.Array(Schema.String)),
+});
+
 const document = Schema.Struct({
   format: Schema.Literal(messagePolicyFormat),
   mode: Schema.Literal("guidance", "enforcement"),
@@ -151,9 +158,7 @@ const document = Schema.Struct({
   outgoing: Schema.optionalWith(Schema.Array(outgoingMiddleware), {
     default: () => [],
   }),
-  english: Schema.optional(
-    Schema.Struct({ fixedRules: englishRules, initialRules: englishRules }),
-  ),
+  english: Schema.optional(englishDocument),
   decisionProvider: Schema.optional(decisionProvider),
   englishSettings: Schema.optionalWith(
     Schema.Struct(EnglishPolicySettings.fields),
@@ -225,6 +230,7 @@ export const decodeMessagePolicy = Schema.decodeUnknown(
         ...document.fields,
         english: Schema.optional(
           Schema.Struct({
+            ...englishDocument.fields,
             fixedRules: retainedEnglishRules,
             initialRules: retainedEnglishRules,
           }),

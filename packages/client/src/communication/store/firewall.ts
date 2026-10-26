@@ -203,12 +203,6 @@ export function readFirewallEvidenceSlices(
   }
   return {
     revision: firewallRevision(database),
-    pendingOutgoing:
-      database
-        .prepare(
-          "SELECT 1 AS pending FROM post_intents WHERE completed_record_hash IS NULL LIMIT 1",
-        )
-        .get() !== undefined,
     slices: input.ranges.map((range) =>
       readSlice(database, range, input.maximumRecords),
     ),
@@ -690,24 +684,49 @@ function readSlice(
   if (candidate === undefined) {
     return range.beforeDelivery === undefined &&
       range.beforeRecord === undefined
-      ? boundedHistory(database, {
-          maximumRecords,
-          beforePosition: Number.MAX_SAFE_INTEGER,
-          beforeSequence: Number.MAX_SAFE_INTEGER,
-          ...range,
-        })
-      : { history: [], overflow: false, earlierHistoryOmitted: false };
+      ? {
+          pendingOutgoing:
+            range.conversationId !== undefined &&
+            unresolvedSend(database, range.conversationId),
+          ...boundedHistory(database, {
+            maximumRecords,
+            beforePosition: Number.MAX_SAFE_INTEGER,
+            beforeSequence: Number.MAX_SAFE_INTEGER,
+            ...range,
+          }),
+        }
+      : {
+          pendingOutgoing: false,
+          history: [],
+          overflow: false,
+          earlierHistoryOmitted: false,
+        };
   }
+  const conversationId = readText(candidate, "conversation_id");
   return {
+    pendingOutgoing: unresolvedSend(database, conversationId),
     ...boundedHistory(database, {
       maximumRecords,
       beforePosition: readInteger(candidate, "position"),
       beforeSequence: readInteger(candidate, "sequence"),
       ...range,
-      conversationId: readText(candidate, "conversation_id"),
+      conversationId,
     }),
     candidate: historyEntry(candidate),
   };
+}
+
+function unresolvedSend(
+  database: DatabaseSync,
+  conversationId: string,
+): boolean {
+  return (
+    database
+      .prepare(
+        "SELECT 1 AS pending FROM post_intents WHERE conversation_id = ? AND completed_record_hash IS NULL LIMIT 1",
+      )
+      .get(conversationId) !== undefined
+  );
 }
 
 /** The certified record a range ends before, when it names one. */

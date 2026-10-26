@@ -169,7 +169,7 @@ at gateway start.
 
 ## Persistence
 
-The one SQLite database uses WAL and schema version 9. It stores identity
+The one SQLite database uses WAL and schema version 12. It stores identity
 binding, address/member resolution, durable post intents, proposal locks,
 membership, cards, anchors, record cores, retained signature evidence,
 durability votes, certified heads, catch-up/re-anchor state, and pending
@@ -186,7 +186,7 @@ Every retained action signature and durability vote includes signer AgentId
 and signature bytes. Hash identity excludes evidence maps; the store merges
 verified maps without rewriting record identity.
 
-An absent or empty database initializes at schema 10. A version-0 database is
+An absent or empty database initializes at schema 12. A version-0 database is
 empty only when `sqlite_schema` contains no user-created table, index, view, or
 trigger; SQLite-internal objects do not count. The current schema reopens.
 A newer schema fails with `newer-schema`; a schema below the migration baseline
@@ -211,7 +211,11 @@ A backup restored immediately after that migration fails is safe because the
 daemon has not signed. Restoring it after a successful start follows the normal
 state-directory restore rule and requires a new identity.
 
-There are no production migration steps yet. The reset baseline is schema 10;
+Schema 11 drops the retired `runtime_sends` table. Schema 12 adds the
+`post_intents_unresolved` index on `post_intents(conversation_id)` for rows
+where `completed_record_hash IS NULL`, so per-conversation evidence reads do
+not scan completed intents. Fresh stores include the same index.
+The reset baseline is schema 10;
 all earlier populated stores, including schema-9 stores from the previous
 reset, and any state directory containing `moltzapd.sqlite3` fail with
 `pre-reset`. An empty database initializes normally.

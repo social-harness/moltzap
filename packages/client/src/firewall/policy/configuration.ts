@@ -12,6 +12,16 @@ export type MessagePolicyConfigurationFailure =
   | "decision-provider-key-file"
   | "decision-provider-key";
 
+/** Behavior diagnostics reveal only a closed category and the policy entry. */
+export type BehaviorFailure =
+  | "missing"
+  | "too-large"
+  | "not-a-file"
+  | "frontmatter"
+  | "schema"
+  | "duplicate-id"
+  | "editable-limit";
+
 /** Only policy and provider file locations enter the loader. */
 export interface PolicyConfiguration {
   readonly messagePolicyFile?: string;
@@ -25,6 +35,7 @@ export class MessagePolicyConfigurationError extends Data.TaggedError(
 )<{
   readonly reason: MessagePolicyConfigurationFailure;
   readonly message: string;
+  readonly behaviorReason?: BehaviorFailure;
 }> {}
 
 /** The daemon supplies secret-file access without granting policy loading bootstrap authority. */

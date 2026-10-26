@@ -132,7 +132,8 @@
     "@noble/curves": "catalog:",
     "http-message-signatures": "catalog:",
     "jose": "catalog:",
-    "structured-headers": "catalog:"
+    "structured-headers": "catalog:",
+    "yaml": "catalog:"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",

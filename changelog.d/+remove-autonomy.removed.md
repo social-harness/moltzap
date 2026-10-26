@@ -11,7 +11,7 @@ message-policy files (`english.fixedRules` and `initialRules`) and persisted
 editable documents migrate those rules to `safety`, preserving their ids, text
 and guidance. Feedback survives only when safety permits its next action;
 otherwise the rule registers `stop` feedback: “This message needs your owner's
-review under rule <id> and stays held. Revise it or stop.” Editable migrations
+review under rule `<id>` and stays held. Revise it or stop.” Editable migrations
 persist and produce an activation listing each replaced id in both arrays.
 Editable and file migrations log migrated ids and ids whose incompatible feedback
 was dropped. No `ask_user` guidance is added. Owner approval can be expressed through norm guidance and
