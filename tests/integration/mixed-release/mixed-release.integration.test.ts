@@ -18,6 +18,7 @@ import { join, posix, resolve } from "node:path";
 import { expect, it, type TestContext } from "vitest";
 import {
   installPackedConsumer,
+  PackGateError,
   packWorkspaceClosure,
   runCommand,
 } from "../../../scripts/test/packed-workspace.js";
@@ -187,14 +188,24 @@ function exchange(from: DaemonProcessFixture, to: DaemonProcessFixture) {
   );
 }
 
-/** Calendar releases use npm's semver ordering. */
-function publishedVersions() {
-  return npmView(["@moltzap/client", "versions"]).pipe(
-    Effect.flatMap(
-      Schema.decodeUnknown(Schema.parseJson(Schema.Array(Schema.String))),
+/** Calendar releases use npm's semver ordering; an unpublished name has no peers. */
+function publishedVersions(view = npmView) {
+  return view(["@moltzap/social-harness", "versions"]).pipe(
+    Effect.catchIf(
+      (error) => error instanceof Error && /\bE404\b/u.test(error.message),
+      () => Effect.succeed("[]"),
+    ),
+    Effect.flatMap((output) =>
+      Schema.decodeUnknown(
+        Schema.parseJson(
+          Schema.Union(Schema.Array(Schema.String), Schema.String),
+        ),
+      )(output.trim() === "" ? "[]" : output),
     ),
     Effect.map((versions) =>
-      versions.filter((version) => /^\d{4}\.\d{3,4}\.\d+$/u.test(version)),
+      (typeof versions === "string" ? [versions] : versions).filter((version) =>
+        /^\d{4}\.\d{3,4}\.\d+$/u.test(version),
+      ),
     ),
   );
 }
@@ -267,9 +278,7 @@ function selectReleases(
   return Effect.gen(function* () {
     const previous = versions.at(-1);
     if (previous === undefined) {
-      return yield* new ProcessTestError({
-        message: "npm returned no calendar releases",
-      });
+      return [];
     }
     const previousWireVersion = yield* readVersion(previous);
     if (!sets.history.includes(previousWireVersion)) {
@@ -501,7 +510,9 @@ const mixedRelease = Effect.scoped(
     const versions = yield* publishedVersions();
     const releases = yield* selectReleases(versions);
     if (releases.length === 0) {
-      return RESET_SKIP_REASON;
+      return versions.length === 0
+        ? "No calendar release is published under @moltzap/social-harness; the mixed-release gate starts after its first release."
+        : RESET_SKIP_REASON;
     }
     yield* runCommand("docker", ["version"]).pipe(
       inLeg("Docker, which runs the previous release's network"),
@@ -654,6 +665,58 @@ it("runs a single peer when the previous release is also the oldest live release
       ),
     ),
   ));
+
+it.each(["", "[]", '"0.0.0-bootstrap.0"', '["0.0.0-bootstrap.0"]'])(
+  "starts without peers when npm has no calendar history (%s)",
+  (output) =>
+    Effect.runPromise(
+      publishedVersions(() => Effect.succeed(output)).pipe(
+        Effect.flatMap((versions) => selectReleases(versions)),
+        Effect.provide(NodeContext.layer),
+        Effect.tap((releases) =>
+          Effect.sync(() => {
+            expect(releases).toEqual([]);
+          }),
+        ),
+        Effect.asVoid,
+      ),
+    ),
+);
+
+it("starts without peers when the package name is unpublished", () =>
+  Effect.runPromise(
+    publishedVersions(() =>
+      Effect.fail(new PackGateError({ message: '{"error":{"code":"E404"}}' })),
+    ).pipe(
+      Effect.flatMap((versions) => selectReleases(versions)),
+      Effect.provide(NodeContext.layer),
+      Effect.tap((releases) =>
+        Effect.sync(() => {
+          expect(releases).toEqual([]);
+        }),
+      ),
+      Effect.asVoid,
+    ),
+  ));
+
+it.each(['"2099.101.0"', '["0.0.0-bootstrap.0","2099.101.0"]'])(
+  "selects a published calendar peer after bootstrap (%s)",
+  (output) =>
+    Effect.runPromise(
+      publishedVersions(() => Effect.succeed(output)).pipe(
+        Effect.flatMap((versions) =>
+          selectReleases(versions, () => Effect.succeed(WIRE_VERSION)),
+        ),
+        Effect.provide(NodeContext.layer),
+        Effect.tap((releases) =>
+          Effect.sync(() => {
+            expect(releases).toEqual(["2099.101.0"]);
+          }),
+        ),
+        Effect.asVoid,
+      ),
+    ),
+);
 
 it("skips when the reset boundary places the previous release before the reset", () =>
   Effect.runPromise(

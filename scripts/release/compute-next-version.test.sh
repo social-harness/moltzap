@@ -63,6 +63,16 @@ assert_eq "taken versions join the union" "${TODAY}.4" "$RESULT"
 RESULT=$(TAKEN_VERSIONS="" "$SCRIPT_DIR/compute-next-version.sh" client)
 assert_eq "empty taken versions change nothing" "${TODAY}.0" "$RESULT"
 
+export NPM_MOCK_RESPONSES='{"@moltzap/social-harness":"0.0.0-bootstrap.0"}'
+RESULT=$("$SCRIPT_DIR/compute-next-version.sh" client)
+assert_eq "bootstrap starts a calendar history" "${TODAY}.0" "$RESULT"
+export NPM_MOCK_RESPONSES='{"@moltzap/social-harness":{"exit":0,"body":""}}'
+RESULT=$("$SCRIPT_DIR/compute-next-version.sh" client)
+assert_eq "bootstrap without latest starts a calendar history" "${TODAY}.0" "$RESULT"
+export NPM_MOCK_RESPONSES="{\"@moltzap/social-harness\":{\"exit\":0,\"body\":\"\"},\"@moltzap/openclaw-channel\":[\"${TODAY}.2\"]}"
+RESULT=$("$SCRIPT_DIR/compute-next-version.sh" client openclaw-channel)
+assert_eq "bootstrap preserves the sibling counter" "${TODAY}.3" "$RESULT"
+
 echo "--- Test 2: One existing version today ---"
 export NPM_MOCK_RESPONSES="{\"@moltzap/client\":[\"${TODAY}.0\"]}"
 RESULT=$("$SCRIPT_DIR/compute-next-version.sh" client)

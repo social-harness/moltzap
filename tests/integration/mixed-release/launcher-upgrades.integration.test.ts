@@ -1,7 +1,7 @@
 /** @file Real packed library releases upgrade twice through one persistent launcher record. */
 import { FileSystem } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
-import { WIRE_VERSION } from "@moltzap/client";
+import { WIRE_VERSION } from "@moltzap/social-harness";
 import { Effect, Schema } from "effect";
 import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";

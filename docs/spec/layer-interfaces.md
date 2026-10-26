@@ -584,7 +584,9 @@ depends on. That Registry and Router are the indexes the previous release's
 version tags name; the gate copies each
 image's working directory out with Docker and runs its entrypoint as a
 process with the gate's own Node, so the gate needs Docker. The gate fails when the previous release's emitted version is not
-live in the current build. It skips only when that version is outside
+live in the current build. With no published calendar release under the package
+name, including a bootstrap-only history, it skips until the first release.
+Otherwise, it skips only when that version is outside
 `HISTORY_WIRE_VERSIONS` and `FIRST_POST_RESET_RELEASE` places the previous
 release before the reset; a version that leaves history without that boundary
 fails the gate. Each failure names the leg it came from. Candidate selection
