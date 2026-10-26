@@ -112,7 +112,6 @@ function installConsumer(
     );
     const consumerRoot = yield* installPackedConsumer({
       temporaryRoot,
-      workspaceRoot,
       name: "sharness-network",
       archives,
       dependencies: manifest.dependencies,

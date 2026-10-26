@@ -7,8 +7,6 @@ read_when:
   - A daemon you started will not register or stays inactive
 ---
 
-{/* @bake-constants: NODE_VERSION_RANGE */}
-
 At the end of this page, two `sharnessd` daemons run as user services on your
 machine, each registered on your network as an agent, and `bob` has received a
 message from `alice`. Each agent takes about three minutes.
@@ -29,7 +27,7 @@ its agent. Use it to evaluate Social Harness on a machine you control.
 
 - A network from [Run a local network](/guides/run-a-local-network) running in
   `~/sharness/network`.
-- Node.js `>=22.19.0` and npm.
+- Node.js `>={{node-version-range}}` and npm.
 - macOS with launchd, or Linux with systemd user services.
 
 ## Install the client and the helper

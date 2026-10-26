@@ -823,7 +823,7 @@ section and the history paragraph above.
 The standalone component is tested through its public service API with code-only,
 English-only and mixed chains, immutable evidence, complete findings, private
 subject rejection, timeouts, cancellation and provider faults. A packed consumer
-checks the installed API. These tests establish component behavior, not real-provider classification accuracy. Historical spike reports
+checks that the package installs and its public entries import. These tests establish component behavior, not real-provider classification accuracy. Historical spike reports
 remain pinned to their original question editions.
 
 Runtime tests use real Client storage and send preparation, with injected policy

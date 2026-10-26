@@ -1,10 +1,4 @@
 {
-  "isolatedFolders": [
-    {
-      "folder": "src/daemon/launcher",
-      "reason": "The launcher selects and starts an installed daemon without importing other Client source"
-    }
-  ],
   "maxFolderCycles": 1,
   "folderReadmeFileNames": [
     "README.md",

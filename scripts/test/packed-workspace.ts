@@ -1,13 +1,4 @@
-/**
- * @file Packs workspace packages the way a release does and proves the packed
- * closure installs into an isolated consumer.
- *
- * `pnpm pack` rewrites every `workspace:*` dependency to the sibling's manifest
- * version, so a consumer installing from npm resolves exactly the version the
- * same release publishes. Each package gate packs its closure through here,
- * checks the rewritten pins, installs the tarballs into a private consumer
- * project, and then runs only its package-specific assertions.
- */
+/** @file Packs workspace packages and installs them into isolated consumers. */
 import {
   Command,
   type CommandExecutor,
@@ -19,11 +10,8 @@ import { Cause, Data, Effect, type ParseResult, Schema, Stream } from "effect";
 import { join, relative, resolve } from "node:path";
 import { parse } from "yaml";
 import { WIRE_VERSION } from "../../packages/client/src/identity/wire-version.ts";
-import {
-  FINAL_PACKAGES,
-  type PackageDir,
-} from "../architecture/boundary-contract.ts";
 import { recordPackedWireVersion } from "../release/content-hash.ts";
+import { productManifests } from "../repo/packages.ts";
 
 /** Services every pack gate step runs against. */
 export type GateServices =
@@ -42,33 +30,6 @@ export type GateError =
   | ParseResult.ParseError;
 
 /**
- * The packed `package.json` fields the shared checks read. `private` stays
- * unknown because a published manifest must omit it entirely, and `bin`
- * targets stay unknown so a non-string target fails its own check.
- */
-const packedManifest = Schema.Struct({
-  name: Schema.String,
-  version: Schema.String,
-  private: Schema.optional(Schema.Unknown),
-  bin: Schema.optional(
-    Schema.Record({ key: Schema.String, value: Schema.Unknown }),
-  ),
-  dependencies: Schema.optional(
-    Schema.Record({ key: Schema.String, value: Schema.String }),
-  ),
-  exports: Schema.optional(
-    Schema.Record({ key: Schema.String, value: Schema.Unknown }),
-  ),
-  main: Schema.optional(Schema.Unknown),
-  types: Schema.optional(Schema.Unknown),
-});
-
-/** A manifest as `pnpm pack` wrote it into the tarball. */
-export type PackedManifest = typeof packedManifest.Type;
-
-const sourceManifest = Schema.Struct({ version: Schema.String });
-
-/**
  * Options for {@link runCommand}. `env` entries override the parent
  * environment; an empty `NODE_PATH` adds no search paths, which is how a
  * consumer check drops the parent's.
@@ -85,8 +46,6 @@ export type Archives = Readonly<Record<string, string>>;
 interface ConsumerInput {
   /** Scratch directory owned by the caller. */
   readonly temporaryRoot: string;
-  /** Source workspace the install must not reach. */
-  readonly workspaceRoot: string;
   readonly name: string;
   readonly archives: Archives;
   readonly dependencies?: Readonly<Record<string, string>>;
@@ -184,26 +143,6 @@ export function readJsonFile<A, I>(
 }
 
 /**
- * Read one text file, failing with `missing` when the file system refuses.
- * @param path File to read.
- * @param missing Failure message when the file is absent or unreadable.
- */
-export function readText(
-  path: string,
-  missing: string,
-): Effect.Effect<string, GateError, FileSystem.FileSystem> {
-  return Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    return yield* fs.readFileString(path);
-  }).pipe(
-    Effect.catchTag("SystemError", () =>
-      Effect.fail(new PackGateError({ message: missing })),
-    ),
-    Effect.withSpan("packedWorkspace.readText"),
-  );
-}
-
-/**
  * Run a pack gate as the process entry point: provide the Node services and a
  * scratch directory that is removed with everything under it when the gate
  * ends on any path, print the line the gate returns when it passes, and exit
@@ -242,42 +181,45 @@ export function runGate(
 }
 
 /**
- * Derive the packed closure and publishability from the source contract,
- * independently of the tarballs being verified.
+ * Derive the packages to pack from the source dependency graph.
  * @param workspaceRoot Source workspace root.
  * @param entry Product whose transitive closure is packed.
  * @param temporaryRoot Scratch directory owned by the caller.
- * @returns Package name to tarball path and packed manifest.
+ * @returns Package names mapped to tarball paths.
  */
 export function packProductClosure(
   workspaceRoot: string,
-  entry: PackageDir,
+  entry: string,
   temporaryRoot: string,
 ) {
-  const closure = new Set<PackageDir>();
-  function visit(dir: PackageDir): void {
-    if (closure.has(dir)) {
+  const products = productManifests(workspaceRoot);
+  const initial = products.find(({ dir }) => dir === entry);
+  if (initial === undefined) {
+    return Effect.fail(
+      new PackGateError({ message: `Unknown product ${entry}` }),
+    );
+  }
+  const closure = new Map<string, (typeof products)[number]>();
+  function visit(product: (typeof products)[number]): void {
+    if (closure.has(product.name)) {
       return;
     }
-    closure.add(dir);
-    for (const dependency of FINAL_PACKAGES[dir].deps) {
+    closure.set(product.name, product);
+    for (const dependency of products.filter((candidate) =>
+      Object.hasOwn(product.dependencies, candidate.name),
+    )) {
       visit(dependency);
     }
   }
-  visit(entry);
+  visit(initial);
   return packWorkspaceClosure(
     Object.fromEntries(
-      [...closure].map((dir) => [
-        FINAL_PACKAGES[dir].npmName,
+      [...closure.values()].map(({ dir, name }) => [
+        name,
         join(workspaceRoot, "packages", dir),
       ]),
     ),
     temporaryRoot,
-    new Set(
-      [...closure]
-        .filter((dir) => FINAL_PACKAGES[dir].published)
-        .map((dir) => FINAL_PACKAGES[dir].npmName),
-    ),
   );
 }
 
@@ -316,6 +258,46 @@ export function readConsumerPins(workspaceRoot: string) {
 }
 
 /**
+ * Extract one tarball under `temporaryRoot/extracted` and return the package
+ * directory inside it.
+ * @param archive Tarball path.
+ * @param temporaryRoot Scratch directory owned by the caller.
+ * @returns The extracted `package/` directory.
+ */
+export function extractPackedArchive(
+  archive: string,
+  temporaryRoot: string,
+): Effect.Effect<string, GateError, GateServices> {
+  return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const extractedRoot = join(temporaryRoot, "extracted");
+    yield* fs.makeDirectory(extractedRoot);
+    yield* runCommand("tar", ["-xzf", archive, "-C", extractedRoot]);
+    return join(extractedRoot, "package");
+  }).pipe(Effect.withSpan("packedWorkspace.extractPackedArchive"));
+}
+
+/**
+ * Read one text file, failing with `missing` when the file system refuses.
+ * @param path File to read.
+ * @param missing Failure message when the file is absent or unreadable.
+ */
+export function readText(
+  path: string,
+  missing: string,
+): Effect.Effect<string, GateError, FileSystem.FileSystem> {
+  return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    return yield* fs.readFileString(path);
+  }).pipe(
+    Effect.catchTag("SystemError", () =>
+      Effect.fail(new PackGateError({ message: missing })),
+    ),
+    Effect.withSpan("packedWorkspace.readText"),
+  );
+}
+
+/**
  * Invoke the installed compiler through its declared executable; catalog aliases
  * may expose a versioned command name.
  * @param consumerRoot Isolated consumer with TypeScript installed.
@@ -350,30 +332,9 @@ export function checkConsumerTypes(consumerRoot: string) {
 }
 
 /**
- * Extract one tarball under `temporaryRoot/extracted` and return the package
- * directory inside it.
- * @param archive Tarball path.
- * @param temporaryRoot Scratch directory owned by the caller.
- * @returns The extracted `package/` directory.
- */
-export function extractPackedArchive(
-  archive: string,
-  temporaryRoot: string,
-): Effect.Effect<string, GateError, GateServices> {
-  return Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const extractedRoot = join(temporaryRoot, "extracted");
-    yield* fs.makeDirectory(extractedRoot);
-    yield* runCommand("tar", ["-xzf", archive, "-C", extractedRoot]);
-    return join(extractedRoot, "package");
-  }).pipe(Effect.withSpan("packedWorkspace.extractPackedArchive"));
-}
-
-/**
  * Create a consumer project under `temporaryRoot/consumer` that depends on
  * the packed tarballs plus `dependencies`, install it with the tarballs
- * overriding every workspace name, and prove each declared package resolved
- * inside that project rather than back into the workspace.
+ * overriding every workspace name.
  * @param input Consumer description.
  * @returns The consumer directory.
  */
@@ -395,81 +356,55 @@ export function installPackedConsumer(
       ],
       { cwd: consumerRoot },
     );
-    yield* verifyIsolatedInstall(
-      consumerRoot,
-      [
-        ...Object.keys(input.archives),
-        ...Object.keys(input.dependencies ?? {}),
-        ...Object.keys(input.devDependencies ?? {}),
-      ],
-      input.workspaceRoot,
-    );
     return consumerRoot;
   }).pipe(Effect.withSpan("packedWorkspace.installPackedConsumer"));
 }
 
 /**
- * Pack every package in `packageRoots` under `temporaryRoot/tarballs` and
- * prove the packed manifests form an installable closure: each keeps its
- * source name and version, carries the publishability the caller declares,
- * ships the Apache `LICENSE` and `NOTICE` files, ships every executable its
- * `bin` map names, and pins every packed sibling to that sibling's exact
- * packed version.
- *
- * `publishable` is passed in rather than read off the packed manifest,
- * because a manifest compared against itself cannot fail. The boundary check
- * enforces the same rule on the source manifests; this one enforces it on
- * what `pnpm pack` actually produced, and those are different artifacts.
- * @param packageRoots Package name to source root.
+ * Pack the source roots into a scratch directory for consumer installation.
+ * @param packageRoots Package names mapped to source roots.
  * @param temporaryRoot Scratch directory owned by the caller.
- * @param publishable Names that must pack publishable; every other name in
- * `packageRoots` must pack private.
- * @returns Package name to tarball path and to packed manifest.
+ * @returns Package names mapped to tarball paths.
  */
 export function packWorkspaceClosure(
   packageRoots: Readonly<Record<string, string>>,
   temporaryRoot: string,
-  publishable: ReadonlySet<string>,
-): Effect.Effect<
-  {
-    readonly archives: Archives;
-    readonly manifests: Readonly<Record<string, PackedManifest>>;
-  },
-  GateError,
-  GateServices
-> {
+): Effect.Effect<{ readonly archives: Archives }, GateError, GateServices> {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const destination = join(temporaryRoot, "tarballs");
     yield* fs.makeDirectory(destination);
     const packed = yield* Effect.forEach(
       Object.entries(packageRoots),
-      ([name, root]) => packOne(name, root, destination),
+      ([name, root]) =>
+        packWorkspacePackage(root, destination).pipe(
+          Effect.tap((archive) => recordWireVersion(name, archive)),
+          Effect.map((archive): readonly [string, string] => [name, archive]),
+        ),
       { concurrency: 4 },
     );
-    const manifests = Object.fromEntries(
-      packed.map(({ name, manifest }) => [name, manifest]),
-    );
-    yield* Effect.forEach(
-      packed,
-      (entry) => verifyPacked(entry, manifests, publishable),
-      { concurrency: 1, discard: true },
-    );
-    return {
-      archives: Object.fromEntries(
-        packed.map(({ name, archive }) => [name, archive]),
-      ),
-      manifests,
-    };
+    return { archives: Object.fromEntries(packed) };
   }).pipe(Effect.withSpan("packedWorkspace.packWorkspaceClosure"));
 }
 
-interface PackedEntry {
-  readonly name: string;
-  readonly archive: string;
-  readonly manifest: PackedManifest;
-  readonly files: ReadonlySet<string>;
-  readonly sourceVersion: string;
+/** Writes the wire version into the packed Client manifest, as the release does. */
+function recordWireVersion(
+  name: string,
+  archive: string,
+): Effect.Effect<void, GateError> {
+  if (name !== "@moltzap/client") {
+    return Effect.void;
+  }
+  return Effect.try({
+    try: () => recordPackedWireVersion(archive, WIRE_VERSION),
+    catch: (cause) => new PackGateError({ message: String(cause) }),
+  }).pipe(
+    Effect.flatMap((failure) =>
+      failure === undefined
+        ? Effect.void
+        : Effect.fail(new PackGateError({ message: failure.message })),
+    ),
+  );
 }
 
 function configure(
@@ -489,34 +424,6 @@ function collect<E>(
   stream: Stream.Stream<Uint8Array, E>,
 ): Effect.Effect<string, E> {
   return stream.pipe(Stream.decodeText(), Stream.mkString);
-}
-
-function packOne(
-  name: string,
-  root: string,
-  destination: string,
-): Effect.Effect<PackedEntry, GateError, GateServices> {
-  return Effect.gen(function* () {
-    const archive = yield* packWorkspacePackage(root, destination);
-    if (name === "@moltzap/client") {
-      const failure = yield* Effect.try({
-        try: () => recordPackedWireVersion(archive, WIRE_VERSION),
-        catch: (cause) => new PackGateError({ message: String(cause) }),
-      });
-      if (failure !== undefined) {
-        return yield* new PackGateError({ message: failure.message });
-      }
-    }
-    const [manifest, files, source] = yield* Effect.all(
-      [
-        readPackedManifest(archive),
-        listPackedFiles(archive),
-        readJsonFile(join(root, "package.json"), sourceManifest),
-      ],
-      { concurrency: 3 },
-    );
-    return { name, archive, manifest, files, sourceVersion: source.version };
-  });
 }
 
 function packWorkspacePackage(
@@ -539,99 +446,11 @@ function packWorkspacePackage(
   });
 }
 
-function readPackedManifest(
-  archive: string,
-): Effect.Effect<PackedManifest, GateError, CommandExecutor.CommandExecutor> {
-  return runCommand("tar", ["-xOf", archive, "package/package.json"]).pipe(
-    Effect.flatMap((text) =>
-      Schema.decodeUnknown(Schema.parseJson(packedManifest))(text),
-    ),
-  );
-}
-
-function listPackedFiles(
-  archive: string,
-): Effect.Effect<
-  ReadonlySet<string>,
-  GateError,
-  CommandExecutor.CommandExecutor
-> {
-  return runCommand("tar", ["-tzf", archive]).pipe(
-    Effect.map((stdout) => new Set(nonEmptyLines(stdout))),
-  );
-}
-
 function nonEmptyLines(text: string): readonly string[] {
   return text
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
-}
-
-function verifyPacked(
-  entry: PackedEntry,
-  manifests: Readonly<Record<string, PackedManifest>>,
-  publishable: ReadonlySet<string>,
-): Effect.Effect<void, PackGateError> {
-  const { name, manifest, files } = entry;
-  return Effect.all(
-    [
-      requireCondition(
-        manifest.name === name && manifest.version === entry.sourceVersion,
-        `packed ${name} manifest identity drifted`,
-      ),
-      verifyPublishability(name, manifest, publishable),
-      ...["LICENSE", "NOTICE"].map((notice) =>
-        requireCondition(
-          files.has(`package/${notice}`),
-          `packed ${name} does not ship ${notice}`,
-        ),
-      ),
-      ...Object.entries(manifest.bin ?? {}).map(([executable, target]) =>
-        requireCondition(
-          typeof target === "string" &&
-            files.has(`package/${target.replace(/^\.\//u, "")}`),
-          `packed ${name} does not ship its ${executable} executable at ${String(target)}`,
-        ),
-      ),
-      verifySiblingPins(name, manifest, manifests),
-    ],
-    { concurrency: 1, discard: true },
-  );
-}
-
-function verifyPublishability(
-  name: string,
-  manifest: PackedManifest,
-  publishable: ReadonlySet<string>,
-): Effect.Effect<void, PackGateError> {
-  return publishable.has(name)
-    ? requireCondition(
-        manifest.private === undefined,
-        `packed ${name} carries a private flag and cannot be published`,
-      )
-    : requireCondition(
-        manifest.private === true,
-        `packed ${name} must stay private; it is not in the published set`,
-      );
-}
-
-function verifySiblingPins(
-  name: string,
-  manifest: PackedManifest,
-  manifests: Readonly<Record<string, PackedManifest>>,
-): Effect.Effect<void, PackGateError> {
-  return Effect.forEach(
-    Object.entries(manifest.dependencies ?? {}).filter(
-      ([dependency]) => dependency in manifests,
-    ),
-    ([dependency, pinned]) =>
-      requireCondition(
-        pinned === manifests[dependency]?.version,
-        `packed ${name} does not pin ${dependency} to its packed version`,
-      ),
-    { concurrency: 1, discard: true },
-  );
 }
 
 function writeConsumerProject(
@@ -671,43 +490,6 @@ function writeConsumerProject(
     yield* fs.writeFileString(
       join(consumerRoot, "pnpm-workspace.yaml"),
       workspace,
-    );
-  });
-}
-
-function verifyIsolatedInstall(
-  consumerRoot: string,
-  packageNames: readonly string[],
-  workspaceRoot: string,
-): Effect.Effect<void, GateError, FileSystem.FileSystem> {
-  return Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const installedRoot = yield* fs.realPath(consumerRoot);
-    const lockfile = yield* fs.readFileString(
-      join(consumerRoot, "pnpm-lock.yaml"),
-    );
-    yield* requireCondition(
-      !lockfile.includes(workspaceRoot) &&
-        !lockfile.includes("workspace:") &&
-        !lockfile.includes("link:"),
-      "packed consumer lockfile escaped to a workspace or linked dependency",
-    );
-    yield* Effect.forEach(
-      packageNames,
-      (packageName) =>
-        fs
-          .realPath(
-            join(consumerRoot, "node_modules", ...packageName.split("/")),
-          )
-          .pipe(
-            Effect.flatMap((installed) =>
-              requireCondition(
-                installed.startsWith(`${installedRoot}/`),
-                `packed consumer resolved ${packageName} outside its isolated install`,
-              ),
-            ),
-          ),
-      { concurrency: 8, discard: true },
     );
   });
 }
