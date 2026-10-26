@@ -5,8 +5,6 @@
       "entry": [
         "scripts/architecture/check-package.ts",
         "scripts/build/*.ts",
-        "scripts/code/*.ts",
-        "scripts/setup/*.ts",
         "scripts/test-*-package.ts",
         "examples/*/*.ts",
         "scripts/docs/check-mermaid.ts",
@@ -21,14 +19,11 @@
         "scripts/docs/**/*.ts",
         "scripts/architecture/**/*.ts",
         "scripts/build/**/*.ts",
-        "scripts/code/**/*.ts",
-        "scripts/setup/**/*.ts",
         "scripts/test/packed-workspace.ts",
         "scripts/test-*-package.ts",
         "scripts/__tests__/**/*.ts"
       ],
       "ignoreDependencies": [
-        "@effect/tsgo",
         "@mermaid-js/mermaid-cli",
         "oxlint",
         "puppeteer"

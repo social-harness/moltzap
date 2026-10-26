@@ -64,7 +64,7 @@ const postgresqlUrl = Schema.String.pipe(
         parsed.pathname.length > 1 &&
         parsed.hash === ""
       );
-      // eslint-disable-next-line agent-code-guard/bare-catch -- URL parsing failure is the false branch of this Schema predicate. #ignore-sloppy-code-next-line[bare-catch]: The predicate returns false.
+      // eslint-disable-next-line agent-code-guard/bare-catch -- URL parsing failure is the false branch of this Schema predicate.
     } catch {
       return false;
     }

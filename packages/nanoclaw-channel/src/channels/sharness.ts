@@ -288,7 +288,6 @@ class HarnessChannelAdapter {
     this.mcpEndpoint = mcpEndpoint;
   }
 
-  // #ignore-sloppy-code-next-line[promise-type]: NanoClaw's ChannelAdapter lifecycle is Promise-native at the host boundary.
   setup(config: ChannelSetup): Promise<void> {
     return Effect.runPromise(
       this.lifecycleGate.withPermits(1)(
@@ -297,7 +296,6 @@ class HarnessChannelAdapter {
     );
   }
 
-  // #ignore-sloppy-code-next-line[promise-type]: NanoClaw's ChannelAdapter lifecycle is Promise-native at the host boundary.
   teardown(): Promise<void> {
     return Effect.runPromise(
       this.lifecycleGate.withPermits(1)(Effect.suspend(() => this.stop())),
@@ -311,7 +309,6 @@ class HarnessChannelAdapter {
   deliver(
     platformId: string,
     ...args: [threadId: string | null, message: OutboundMessage]
-    // #ignore-sloppy-code-next-line[promise-type]: NanoClaw's ChannelAdapter delivery contract is Promise-native at the host boundary.
   ): Promise<string | undefined> {
     return Effect.runPromise(
       this.deliverEffect(platformId, args[1]).pipe(Effect.as(undefined)),

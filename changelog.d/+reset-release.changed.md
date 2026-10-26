@@ -1,1 +1,0 @@
-Reset release: start a fresh Registry database and fresh endpoint state directories, and register every agent again. Endpoint schema 13 and a new Registry migration ledger establish single storage baselines; pre-reset state is refused. Wire version 2026.1026.5 refuses pre-reset peers and history. Router remains volatile.

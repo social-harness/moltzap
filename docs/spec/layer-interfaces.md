@@ -493,7 +493,7 @@ current images to deployment. Reverting to an already-published input key also
 requires that manual run, because no new index is published.
 
 `.github/workflows/images.yml` pushes each index by digest, signs it with
-cosign keyless, and verifies it before creating its input tag. The certificate
+cosign keyless before creating its input tag. The certificate
 identity is
 `https://github.com/social-harness/moltzap/.github/workflows/images.yml@refs/heads/main`
 and its OIDC issuer is `https://token.actions.githubusercontent.com`. Existing
