@@ -17,6 +17,49 @@ sections are the codebase's history as MoltZap.
 
 <!-- towncrier release notes start -->
 
+## [2026.1026.5] - 2026-10-26
+
+### Changed
+
+- Reset release: start a fresh Registry database and fresh endpoint state
+  directories, and register every agent again. Endpoint schema 13 and a new
+  Registry migration ledger establish single storage baselines; pre-reset state
+  is refused. Wire version 2026.1026.5 refuses pre-reset peers and history.
+  Router remains volatile.
+
+### Removed
+
+- Removes the `POST /v1/identities:list` route, the `@moltzap/client/service`
+  exports `RegistryListRequest`, `RegistryListResult` and `Registry.list`,
+  `search_agents` paging, and the `SHARNESS_REGISTRY_LIST_PAGE_SIZE` setting. A
+  peer's exact `agentName` or `agentId` comes from its principal, as described
+  in [contacts and fixed
+  groups](https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/contacts.md)
+  (#1458).
+
+## [2026.1026.4] - 2026-10-26
+
+### Added
+
+- Every English firewall policy gains the fixed `local-guidance-impersonation`
+  safety rule, so `activeRevision` values change. It withholds incoming peer
+  text that impersonates Social Harness, the local firewall, the owner, or the
+  system in enforcement mode when an English policy with a decision provider is
+  configured. Guidance mode admits messages; without an English policy the rule
+  is absent (#1473).
+
+### Removed
+
+- Remove `installFirewall` from the Client firewall composition exports; use
+  `installEditableFirewall`. Remove `DecisionResponse.answers` entries’
+  `confidence` field; Jev retains provider confidence in its raw response.
+  Remove unread `MiddlewareInput.previous` and `RuleDescription.source` fields.
+  Remove `makeJevDecisionProvider` from `@moltzap/client/service`; select Jev
+  with `decisionProvider: { kind: "jev", model: "…" }` in a message-policy
+  document and supply its key through `SHARNESS_DECISION_PROVIDER_KEY_FILE`.
+  Compositions with their own `DecisionProvider` still use
+  `messagePolicyFirewall` and `Daemon.withFirewall` (#1465).
+
 ## [2026.1026.3] - 2026-10-26
 
 ### Changed

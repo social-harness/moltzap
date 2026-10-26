@@ -94,12 +94,11 @@ const toMessageHeaders = (
 const signBytes = (
   authority: AgentSigningAuthority,
   bytes: Buffer,
-  // #ignore-sloppy-code-next-line[promise-type]: The HTTP Message Signatures adapter requires a Promise-returning signing callback.
 ): Promise<Buffer> => {
   const copiedBytes = new Uint8Array(bytes);
   return webcrypto.subtle
     .sign("Ed25519", agentSigningPrivateKey(authority), copiedBytes)
-    .then((signature) => Buffer.from(signature)); // #ignore-sloppy-code[then-chain]: WebCrypto exposes its signature result as a Promise at this adapter boundary.
+    .then((signature) => Buffer.from(signature));
 };
 /* eslint-enable agent-code-guard/promise-type, agent-code-guard/then-chain -- restore Effect-first Promise rules */
 
@@ -303,8 +302,7 @@ const parseExactSignature = (
       parameters: covered.value.parameters,
       signature: signature.value,
     });
-    // Invalid structured fields are ordinary authentication failures.
-    // eslint-disable-next-line agent-code-guard/bare-catch -- Parser rejection is expected untrusted input. #ignore-sloppy-code-next-line[bare-catch]: The failure is represented by Option.none.
+    // eslint-disable-next-line agent-code-guard/bare-catch -- Parser rejection is expected untrusted input.
   } catch {
     return Option.none();
   }
@@ -419,8 +417,7 @@ const serverRequestUrl = (
   }
   try {
     return Option.some(new URL(request.url, `http://${authority}`));
-    // Invalid authority or request-target text is an authentication failure.
-    // eslint-disable-next-line agent-code-guard/bare-catch -- Invalid authority is expected untrusted input. #ignore-sloppy-code-next-line[bare-catch]: The failure is represented by Option.none.
+    // eslint-disable-next-line agent-code-guard/bare-catch -- Invalid authority is expected untrusted input.
   } catch {
     return Option.none();
   }

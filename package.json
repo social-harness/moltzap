@@ -42,7 +42,7 @@
     "test:image-input-key": "pnpm nx run workspace:test:image-input-key",
     "test:select-packages": "node scripts/release/select-packages.test.ts",
     "test:client-host-imports": "node scripts/test/client-host-imports.test.ts",
-    "prepare": "husky && node scripts/setup/restore-tsgo-exec-bit.ts",
+    "prepare": "husky",
     "effect:source": "./scripts/setup/prepare-effect.sh",
     "test:affected": "nx affected -t test"
   },
@@ -51,7 +51,6 @@
     "@effect/language-service": "catalog:",
     "@effect/platform": "catalog:",
     "@effect/platform-node": "catalog:",
-    "@effect/tsgo": "catalog:",
     "@eslint-community/eslint-plugin-eslint-comments": "catalog:",
     "@mermaid-js/mermaid-cli": "catalog:",
     "@modelcontextprotocol/client": "catalog:",

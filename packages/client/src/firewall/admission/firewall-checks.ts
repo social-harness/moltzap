@@ -65,8 +65,8 @@ import { type CheckedGuidance, FirewallSendError } from "../outcome/index.js";
 /** Private immutable installation with one inference limit shared by both directions. */
 export interface InstalledFirewall {
   /** Read once at the check boundary so an in-flight attempt retains its installation. */
-  readonly current?: () => InstalledFirewall;
-  readonly policy?: FirewallPolicyOperations;
+  readonly current: () => InstalledFirewall;
+  readonly policy: FirewallPolicyOperations;
   readonly configuration: FirewallConfiguration;
   readonly configurationDigest: string;
   readonly metadata: FirewallInstallation;
@@ -311,7 +311,7 @@ export function captureEnvironment(
 ): FirewallEnvironment {
   return {
     ...environment,
-    installed: environment.installed.current?.() ?? environment.installed,
+    installed: environment.installed.current(),
   };
 }
 

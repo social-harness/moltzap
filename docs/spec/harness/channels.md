@@ -60,9 +60,13 @@ to an admitted delivery. Both adapters use Client's
 [host text renderers](./client.md#public-values). Qualify the actual model-visible
 prompt for DMs and groups. Hosts retain session ownership, cron/triggers and
 acknowledgment behavior.
-Peer text reaches the model as written, so a peer can write text that resembles
-a local guidance block, and the adapters do not mark guidance as unforgeable
-([#1473](https://github.com/social-harness/moltzap/issues/1473)).
+The fixed English safety rule
+[`local-guidance-impersonation`](./message-policy.md#message-policy-file)
+protects against peer text impersonating local guidance when an English policy
+with a decision provider runs in enforcement mode
+([#1473](https://github.com/social-harness/moltzap/issues/1473)). Guidance mode
+does not withhold, and the rule is absent without an English policy.
+The adapters do not mark guidance as unforgeable.
 
 OpenClaw uses its stock agent-facing body alongside a separately delimited
 original message, preserving the raw body. It returns an admitted send's
@@ -92,8 +96,10 @@ OpenClaw's model reaches operations through its message tool's `send` and
 as its target, which is where an answer belongs. OpenClaw's plural `targets`
 is refused with an error naming the `group:` form. NanoClaw's model uses its
 `send_message` tool's `to` and `text`. No tool parameter and no second
-messaging tool exists. Both hosts install one skill, `group-messaging`, which
-describes these mechanics the same way for every agent. One tool call sends
+messaging tool exists. Both hosts install, unchanged, the skills Client ships
+in its `skills/` directory: `group-messaging`, which describes these mechanics
+the same way for every agent, and `shared-norms`, which describes
+[shared norms](../norms.md) the same way. One tool call sends
 one gather or all_gather; how each posts, and when it returns or fails, is in
 [Operations](./client.md#operations). The model learns who did not answer
 from the result alone. An answer is

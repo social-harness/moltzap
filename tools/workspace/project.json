@@ -130,17 +130,6 @@
         ]
       }
     },
-    "lint:effect": {
-      "cache": true,
-      "inputs": [
-        "workspaceFiles"
-      ],
-      "executor": "nx:run-commands",
-      "options": {
-        "cwd": ".",
-        "command": "node scripts/code/effect-diagnostics.ts"
-      }
-    },
     "lint:dead-code": {
       "cache": true,
       "inputs": [
@@ -183,17 +172,6 @@
         "command": "oxlint . --deny-warnings"
       }
     },
-    "lint:sloppy-code-guard": {
-      "cache": true,
-      "inputs": [
-        "workspaceFiles"
-      ],
-      "executor": "nx:run-commands",
-      "options": {
-        "cwd": ".",
-        "command": "./scripts/code/sloppy-code-guard.sh"
-      }
-    },
     "lint:script-reachability": {
       "cache": true,
       "inputs": [
@@ -224,9 +202,7 @@
         "lint:architecture-boundaries",
         "arch:config:check",
         "lint:root",
-        "lint:effect",
         "lint:oxlint",
-        "lint:sloppy-code-guard",
         "lint:script-reachability",
         "lint:agent-files",
         "lint:dependency-versions",

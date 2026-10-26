@@ -159,7 +159,7 @@ export const AgentSigningAuthority = Object.freeze({
 Loads and identifies one Ed25519 signing authority without exposing its
 private keys or a generic signing or decryption operation.
 
-### [`CheckedGuidance`](./firewall/outcome/index.ts#L51)
+### [`CheckedGuidance`](./firewall/outcome/index.ts#L52)
 
 _TypeAlias_
 
@@ -449,7 +449,7 @@ export type GroupMessage = typeof groupMessage.Type;
 
 One certified remote-authored fixed-group message.
 
-### [`GuidanceBodyOrigin`](./firewall/outcome/index.ts#L81)
+### [`GuidanceBodyOrigin`](./firewall/outcome/index.ts#L82)
 
 _TypeAlias_
 
@@ -684,7 +684,7 @@ export type LiveSignedMessage = SignedMessage &
 
 A decoded outer envelope whose version is admitted by the live window.
 
-### [`LocalGuidance`](./firewall/outcome/index.ts#L75)
+### [`LocalGuidance`](./firewall/outcome/index.ts#L76)
 
 _TypeAlias_
 
@@ -866,7 +866,7 @@ each data part as JSON, one part per line.
 
 **Returns:** The text a host puts in the model's turn.
 
-### [`renderLocalGuidance`](./firewall/outcome/index.ts#L91)
+### [`renderLocalGuidance`](./firewall/outcome/index.ts#L92)
 
 _Function_
 
@@ -1021,7 +1021,7 @@ SignedMessage whose sender attribution and signature are verified.
 _Variable_
 
 ```ts
-export const WIRE_VERSION = "2026.1021.3"
+export const WIRE_VERSION = "2026.1026.5"
 ```
 
 Every newly signed artifact carries this wire value. Live admission accepts
@@ -1032,11 +1032,11 @@ no other value, so a peer that emits a different one fails with
 
 ### `@moltzap/client/service`
 
-#### [`Daemon`](./daemon/index.ts#L82)
+#### [`Daemon`](./daemon/index.ts#L81)
 
 _Namespace_
 
-#### [`Daemon.StartupError`](./daemon/index.ts#L90)
+#### [`Daemon.StartupError`](./daemon/index.ts#L89)
 
 _Class_
 
@@ -1073,7 +1073,7 @@ _Class_
 
 Closed startup phase with sanitized configuration details.
 
-#### [`Daemon.FirewallOptions`](./daemon/index.ts#L87)
+#### [`Daemon.FirewallOptions`](./daemon/index.ts#L86)
 
 _TypeAlias_
 
@@ -1083,7 +1083,7 @@ _TypeAlias_
 
 Trusted process composition fixes code and evidence while owner tools edit English rules.
 
-#### [`Daemon.help`](./daemon/index.ts#L84)
+#### [`Daemon.help`](./daemon/index.ts#L83)
 
 _Variable_
 
@@ -1093,7 +1093,7 @@ _Variable_
 
 Usage text listing the daemon process's environment variables.
 
-#### [`Daemon.layer`](./daemon/index.ts#L179)
+#### [`Daemon.layer`](./daemon/index.ts#L178)
 
 _Variable_
 
@@ -1106,7 +1106,7 @@ _Variable_
 Complete production process composition for `sharnessd`, with the
 firewall `SHARNESS_MESSAGE_POLICY_FILE` describes when it is set.
 
-#### [`Daemon.withFirewall`](./daemon/index.ts#L189)
+#### [`Daemon.withFirewall`](./daemon/index.ts#L188)
 
 _Function_
 
@@ -1121,7 +1121,7 @@ The environment must not also name a message-policy document.
 
 **Returns:** The complete daemon layer with both message boundaries checked.
 
-#### [`CheckInputError`](./firewall/evaluator/contract/index.ts#L235)
+#### [`CheckInputError`](./firewall/evaluator/contract/index.ts#L233)
 
 _Class_
 
@@ -1133,7 +1133,7 @@ export class CheckInputError extends Data.TaggedError("CheckInputError")<{
 
 Invalid construction or evidence is a typed failure, never permission.
 
-#### [`DecisionProviderError`](./firewall/evaluator/contract/index.ts#L357)
+#### [`DecisionProviderError`](./firewall/evaluator/contract/index.ts#L388)
 
 _Class_
 
@@ -1162,7 +1162,7 @@ export class DecisionProviderError extends Data.TaggedError(
 
 The adapter scrubs credentials before retaining optional private diagnostics.
 
-#### [`FirewallPolicyError`](./firewall/evaluator/contract/index.ts#L610)
+#### [`FirewallPolicyError`](./firewall/evaluator/contract/index.ts#L641)
 
 _Class_
 
@@ -1182,7 +1182,7 @@ export class FirewallPolicyError extends Data.TaggedError(
 
 A failed edit never replaces the active installation or retained editable document.
 
-#### [`MiddlewareError`](./firewall/evaluator/contract/index.ts#L179)
+#### [`MiddlewareError`](./firewall/evaluator/contract/index.ts#L178)
 
 _Class_
 
@@ -1216,11 +1216,6 @@ export class Registry extends Context.Tag("@moltzap/client/Registry")<
   static readonly lookup = Effect.serviceFunctionEffect(
     Registry,
     (service) => service.lookup,
-  );
-
-  static readonly list = Effect.serviceFunctionEffect(
-    Registry,
-    (service) => service.list,
   );
 
   static readonly layer = (input: {
@@ -1340,7 +1335,7 @@ export class RouterRequestTimeoutError extends Data.TaggedError(
 
 The configured complete Router call deadline expired.
 
-#### [`DecisionProvider`](./firewall/evaluator/contract/index.ts#L379)
+#### [`DecisionProvider`](./firewall/evaluator/contract/index.ts#L410)
 
 _Interface_
 
@@ -1356,7 +1351,7 @@ export interface DecisionProvider {
 
 Entirely code-based chains have no dependency on this optional capability.
 
-#### [`DecisionRequest`](./firewall/evaluator/contract/index.ts#L321)
+#### [`DecisionRequest`](./firewall/evaluator/contract/index.ts#L353)
 
 _Interface_
 
@@ -1381,7 +1376,7 @@ export interface DecisionRequest {
 
 Provider input contains explicit questions and state, never execution authority.
 
-#### [`DecisionResponse`](./firewall/evaluator/contract/index.ts#L339)
+#### [`DecisionResponse`](./firewall/evaluator/contract/index.ts#L371)
 
 _Interface_
 
@@ -1396,7 +1391,6 @@ export class DecisionResponse extends Schema.Class<DecisionResponse>(
     value: Schema.Struct({
       choice: identifier,
       probabilities: Schema.Record({ key: identifier, value: probability }),
-      confidence: Schema.optional(probability),
     }),
   }),
   usage: Schema.Record({ key: identifier, value: Schema.NonNegativeInt }),
@@ -1404,9 +1398,9 @@ export class DecisionResponse extends Schema.Class<DecisionResponse>(
 }) {}
 ```
 
-Raw distributions and provider confidence survive routing unchanged.
+Raw provider bytes and distributions survive routing unchanged.
 
-#### [`EnglishPolicySettings`](./firewall/evaluator/contract/index.ts#L305)
+#### [`EnglishPolicySettings`](./firewall/evaluator/contract/index.ts#L337)
 
 _Interface_
 
@@ -1422,7 +1416,7 @@ export class EnglishPolicySettings extends Schema.Class<EnglishPolicySettings>(
 
 Bytes bound allocation, not tokenizer capacity; probability is a routing setting.
 
-#### [`EnglishRule`](./firewall/evaluator/contract/index.ts#L118)
+#### [`EnglishRule`](./firewall/evaluator/contract/index.ts#L117)
 
 _Interface_
 
@@ -1435,7 +1429,7 @@ export class EnglishRule extends Schema.Class<EnglishRule>("EnglishRule")({
 
 Text is interpreted by the provider; it is never compiled into executable code.
 
-#### [`Firewall`](./firewall/evaluator/contract/index.ts#L293)
+#### [`Firewall`](./firewall/evaluator/contract/index.ts#L325)
 
 _Interface_
 
@@ -1448,13 +1442,13 @@ export interface Firewall {
   readonly checkOutgoing: (
     draft: Message,
     context: MessageContext,
-  ) => Effect.Effect<OutgoingCheck, CheckInputError>;
+  ) => Effect.Effect<FirewallCheck, CheckInputError>;
 }
 ```
 
 Checking returns data; Client separately owns fresh, atomic send/delivery admission.
 
-#### [`FirewallSettings`](./firewall/evaluator/contract/index.ts#L225)
+#### [`FirewallSettings`](./firewall/evaluator/contract/index.ts#L223)
 
 _Interface_
 
@@ -1523,7 +1517,7 @@ export class MessageContext extends Schema.Class<MessageContext>(
 
 Trusted composition supplies authorized earlier evidence and distinct agent and principal identities.
 
-#### [`MessageMiddleware`](./firewall/evaluator/contract/index.ts#L213)
+#### [`MessageMiddleware`](./firewall/evaluator/contract/index.ts#L211)
 
 _Interface_
 
@@ -1544,7 +1538,7 @@ Code and English policies have the same contract. Registered code is trusted;
 it receives no conversation or store capability and must not retain conversation
 state or perform messaging side effects.
 
-#### [`MiddlewareInput`](./firewall/evaluator/contract/index.ts#L200)
+#### [`MiddlewareInput`](./firewall/evaluator/contract/index.ts#L199)
 
 _Interface_
 
@@ -1554,13 +1548,12 @@ export class MiddlewareInput extends Schema.Class<MiddlewareInput>(
 )({
   event: messageEvent,
   context: MessageContext,
-  previous: Schema.Array(MiddlewareObservation),
 }) {}
 ```
 
-Each invocation gets immutable evidence and previously validated observations.
+Each invocation gets immutable message evidence and authorized context.
 
-#### [`MiddlewareResult`](./firewall/evaluator/contract/index.ts#L170)
+#### [`MiddlewareResult`](./firewall/evaluator/contract/index.ts#L169)
 
 _Interface_
 
@@ -1586,7 +1579,6 @@ export class RuleDescription extends Schema.Class<RuleDescription>(
 )({
   id: identifier,
   kind: Schema.Literal("safety", "norm"),
-  source: Schema.optional(identifier),
   guidance: Schema.optional(Schema.NonEmptyString),
   feedback: Schema.optional(
     Schema.Struct({
@@ -1629,31 +1621,7 @@ export type PollCursor = typeof PollCursor.Type;
 
 Validated opaque Router poll continuation.
 
-#### [`RegistryListRequest (type)`](./identity/registry/contract.ts#L90)
-
-_TypeAlias_
-
-```ts
-export type RegistryListRequest = typeof RegistryListRequest.Type;
-```
-
-Validated Registry list continuation request.
-
-#### [`RegistryListResult`](./identity/registry/contract.ts#L105)
-
-_TypeAlias_
-
-```ts
-export type RegistryListResult = Readonly<{
-  kind: "page";
-  agentCards: readonly VerifiedAgentCard[];
-  hasMore: boolean;
-}>;
-```
-
-One deterministic page of complete immutable AgentCards.
-
-#### [`RegistryLookupRequest (type)`](./identity/registry/contract.ts#L78)
+#### [`RegistryLookupRequest (type)`](./identity/registry/contract.ts#L75)
 
 _TypeAlias_
 
@@ -1663,7 +1631,7 @@ export type RegistryLookupRequest = typeof RegistryLookupRequest.Type;
 
 Validated Registry lookup selector.
 
-#### [`RegistryLookupResult`](./identity/registry/contract.ts#L100)
+#### [`RegistryLookupResult`](./identity/registry/contract.ts#L85)
 
 _TypeAlias_
 
@@ -1685,7 +1653,7 @@ export type RegistryRegisterRequest = typeof RegistryRegisterRequest.Type;
 
 Validated Registry bootstrap registration request.
 
-#### [`RegistryRegisterResult`](./identity/registry/contract.ts#L93)
+#### [`RegistryRegisterResult`](./identity/registry/contract.ts#L78)
 
 _TypeAlias_
 
@@ -1794,7 +1762,7 @@ Decodes the text of a message-policy document, refusing any property it
 does not name, so a misspelled or newer setting never silently weakens the
 policy.
 
-#### [`makeEnglishPolicy`](./firewall/evaluator/english.ts#L268)
+#### [`makeEnglishPolicy`](./firewall/evaluator/english.ts#L249)
 
 _Variable_
 
@@ -1866,7 +1834,7 @@ flowchart TD
   C --> R[Return all findings and private stage trace]
 ```
 
-#### [`makeFirewall`](./firewall/evaluator/index.ts#L71)
+#### [`makeFirewall`](./firewall/evaluator/index.ts#L70)
 
 _Variable_
 
@@ -2007,21 +1975,6 @@ export const PollCursor = Schema.String.pipe(
 
 Opaque, authenticated continuation for one caller and Router instance.
 
-#### [`RegistryListRequest (value)`](./identity/registry/contract.ts#L82)
-
-_Variable_
-
-```ts
-export const RegistryListRequest = exactStruct({
-  afterAgentId: Schema.optional(AgentId).annotations({
-    description:
-      "Exclusive agent identity cursor for Registry listing; omit to start the first page.",
-  }),
-}).annotations({ identifier: "RegistryListRequest" })
-```
-
-Closed Registry list continuation request.
-
 #### [`RegistryLookupRequest (value)`](./identity/registry/contract.ts#L56)
 
 _Variable_
@@ -2042,10 +1995,7 @@ export const RegistryLookupRequest = Schema.Union(
   }),
 ).annotations({
   identifier: "RegistryLookupRequest",
-  parseOptions: {
-    exact: true,
-    onExcessProperty: "error",
-  },
+  parseOptions: exactParseOptions,
 })
 ```
 
@@ -2145,21 +2095,6 @@ export const SignedMessageDigest = canonicalValue(
 ```
 
 Equality receipt for one complete retained SignedMessage.
-
-#### [`makeJevDecisionProvider`](./firewall/evaluator/jev.ts#L182)
-
-_Function_
-
-```ts
-export function makeJevDecisionProvider(options: {
-  readonly apiKey: Redacted.Redacted;
-  readonly model: string;
-}): DecisionProvider
-```
-
-Uses the fixed TypeSafe origin and an explicitly pinned model. No retry,
-environment lookup or credential serialization occurs here. The evaluator
-owns timeouts; the Effect is interruptible through response-body consumption.
 
 ## Files
 

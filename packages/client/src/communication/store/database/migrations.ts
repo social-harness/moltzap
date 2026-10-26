@@ -13,27 +13,15 @@ import { dirname } from "node:path";
 import { StoreSignal } from "./values.js";
 
 /** Lowest schema admitted to forward upgrades; raising it establishes a reset boundary. */
-export const RESET_SCHEMA = 10;
+export const RESET_SCHEMA = 13;
 
 /** Destination schema numbers map to the one step from their immediate predecessor. */
 export type MigrationSteps = Readonly<
   Record<number, (database: DatabaseSync) => void>
 >;
 
-/**
- * Forward steps available to the production binary. Retired state is dropped,
- * and unresolved intents are indexed by the conversation their evidence affects.
- */
-export const migrations: MigrationSteps = Object.freeze({
-  11: (database: DatabaseSync) => {
-    database.exec("DROP TABLE IF EXISTS runtime_sends");
-  },
-  12: (database: DatabaseSync) => {
-    database.exec(
-      "CREATE INDEX IF NOT EXISTS post_intents_unresolved ON post_intents(conversation_id) WHERE completed_record_hash IS NULL",
-    );
-  },
-});
+/** Forward steps start after the reset baseline created by this binary. */
+export const migrations: MigrationSteps = Object.freeze({});
 
 /**
  * Publishes a fresh backup before committing each numbered step independently.

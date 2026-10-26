@@ -8,7 +8,7 @@ Runtime-safe projections of local message policy, separate from peer content.
 
 ## Public surface
 
-### [`CheckedGuidance`](./index.ts#L51)
+### [`CheckedGuidance`](./index.ts#L52)
 
 _TypeAlias_
 
@@ -39,7 +39,7 @@ export class FirewallSendError extends Data.TaggedError("FirewallSendError")<
 A refusal is returned only before an application invocation creates any intent.
 Its opaque check reference survives hosts that retain only the error message.
 
-### [`GuidanceBodyOrigin`](./index.ts#L81)
+### [`GuidanceBodyOrigin`](./index.ts#L82)
 
 _TypeAlias_
 
@@ -49,7 +49,7 @@ export type GuidanceBodyOrigin = "peer" | "endpoint";
 
 Attribution of the body quoted alongside local instructions.
 
-### [`LocalGuidance`](./index.ts#L75)
+### [`LocalGuidance`](./index.ts#L76)
 
 _TypeAlias_
 
@@ -59,7 +59,7 @@ export type LocalGuidance = typeof localGuidanceSchema.Type;
 
 Local advice accompanies the envelope and never changes a certified item.
 
-### [`renderLocalGuidance`](./index.ts#L91)
+### [`renderLocalGuidance`](./index.ts#L92)
 
 _Function_
 

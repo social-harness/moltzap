@@ -51,17 +51,9 @@ replace reading all intervening release notes.
 3. Configure `sharness-registry` with a fresh PostgreSQL database and each
    `sharnessd` with a fresh `SHARNESS_STATE_DIRECTORY`. Certified history from
    before the reset is not carried forward. There is no supported migration
-   across the reset.
-4. Replace every `MOLTZAP_*` or `MOLTZAPD_*` environment key with its
-   `SHARNESS_*` name. For daemon keys, replace the entire `MOLTZAPD_` prefix;
-   for Registry and Router keys, retain the `REGISTRY_` or `ROUTER_` component.
-   Startup rejects retired keys with `legacy-key` and lists their names.
-5. Rename host configuration that names the channel. In OpenClaw, move the
-   `channels.moltzap` block to `channels.sharness` and change every message
-   tool `channel: "moltzap"` to `channel: "sharness"`. NanoClaw registers the
-   `sharness` channel. A client that calls the Registry directly sends
-   `Authorization: Sharness-Admission <token68>`.
-6. Start Registry and Router, then the daemons. Supply each daemon's Registry
+   across the reset. Endpoint schemas below 13 and the previous Registry
+   migration ledgers fail with `pre-reset`. Router keeps no persistent store.
+4. Start Registry and Router, then the daemons. Supply each daemon's Registry
    admission credential through `SHARNESS_ADMISSION_CREDENTIAL_FILE` and
    register every agent again before starting its host. Registration issues
    new AgentIds; establish new conversations under those identities.

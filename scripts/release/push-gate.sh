@@ -5,6 +5,7 @@
 # fails instead of silently suppressing a release. Resumption and retries belong
 # to the ordinary manual release dispatch.
 set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 commit="${GATE_COMMIT:-${GITHUB_SHA:?GATE_COMMIT or GITHUB_SHA must name the commit to gate}}"
 
 if [[ "$(git rev-parse --is-shallow-repository)" == true ]]; then
@@ -34,11 +35,18 @@ if [[ -z "$release_commit" ]]; then
   exit 0
 fi
 wire_path=packages/client/package.json
-if ! head_wire=$(git show "$commit:$wire_path" |
-  jq -er '.sharnessWireVersion | strings | select(length > 0)') ||
+source_path=packages/client/src/identity/wire-version.ts
+if ! head_wire=$(git show "$commit:$source_path" |
+  node --input-type=module -e '
+    import { readFileSync } from "node:fs";
+    const { parseCompatibilityVersion } = await import(process.argv[1]);
+    const result = parseCompatibilityVersion(readFileSync(0, "utf8"));
+    if ("error" in result) { console.error(result.error); process.exit(1); }
+    console.log(result.value);
+  ' "$SCRIPT_DIR/../docs/sharness-version.ts") ||
   ! release_wire=$(git show "$release_commit:$wire_path" |
     jq -er '.sharnessWireVersion | strings | select(length > 0)'); then
-  echo "ERROR: Cannot read sharnessWireVersion from $wire_path. Docs: https://docs.moltzap.xyz/spec/layer-interfaces#publication-and-versions" >&2
+  echo "ERROR: Cannot read WIRE_VERSION from $source_path or sharnessWireVersion from $wire_path. Docs: https://docs.moltzap.xyz/spec/layer-interfaces#publication-and-versions" >&2
   exit 1
 fi
 if [[ "$head_wire" != "$release_wire" ]]; then

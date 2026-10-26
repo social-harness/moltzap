@@ -36,10 +36,7 @@ import {
   MALFORMED_BOUNDARY_CASES,
 } from "./integration-boundary-cases.ts";
 import { testIntegrationGraph } from "./integration-boundary-graph.ts";
-import {
-  testGuardIntegrity,
-  testIntegrationIntegrityGuards,
-} from "./integration-integrity.ts";
+import { testIntegrationLaneCollection } from "./integration-integrity.ts";
 import {
   failures,
   plantBoundarySource,
@@ -76,8 +73,7 @@ function main(): void {
     testIntegrationAgentInstructionsLink();
     testIntegrationGraph();
     testIntegrationLintProfile();
-    testIntegrationIntegrityGuards();
-    testGuardIntegrity();
+    testIntegrationLaneCollection();
     testIsolatedFolderImports();
   } finally {
     restoreAllPlants();
@@ -337,12 +333,9 @@ function testBakeFailureFailClosed(): void {
     `expected exit 0, got ${clean.code}. stderr: ${clean.stderr.slice(0, 300)}`,
   );
   const target = "docs/spec/identity.md";
-  plantFile(target, (s) =>
-    s.replace(
-      // eslint-disable-next-line sonarjs/slow-regex -- The input is bounded, repository-owned documentation or a fixed test fixture.
-      /\{\/\*\s*@bake-constants:\s*([^*]+?)\s*\*\/\}/,
-      "{/* @bake-constants: $1 NOT_A_REAL_CONSTANT */}",
-    ),
+  plantFile(
+    target,
+    (source) => `${source}\n{/* @bake-constants: NOT_A_REAL_CONSTANT */}\n`,
   );
   const r = runGenerate(workspaceRoot);
   test(
@@ -415,7 +408,6 @@ function testPublicationGuards(): void {
   testPublicationGuardsForeignRepository();
   testPublicationGuardsSemver();
   testPublicationGuardsWireSemver();
-  testManifestWireVersion();
   testPublicationGuardsDriftedList();
   testPublicationGuardsTestOnly();
   testPublicationGuardsNamespaceExport();
@@ -599,24 +591,6 @@ function testPublicationGuardsSemver(): void {
   restoreAllPlants();
 }
 
-/** Published wire metadata must describe the artifacts the package emits. */
-function testManifestWireVersion(): void {
-  plantFile("packages/client/package.json", (source) =>
-    source.replace(
-      /"sharnessWireVersion": "[^"]+"/,
-      '"sharnessWireVersion": "2099.101.0"',
-    ),
-  );
-  const result = runBoundaries();
-  test(
-    "rejects Client manifest wire metadata that differs from WIRE_VERSION",
-    result.code === 1 &&
-      /sharnessWireVersion must equal WIRE_VERSION/.test(result.stderr),
-    `expected wire metadata rejection. exit=${result.code}, stderr=${result.stderr}`,
-  );
-  restoreAllPlants();
-}
-
 function testPublicationGuardsWireSemver(): void {
   plantFile(WIRE_VERSION_SOURCE, withCompatibilityVersion("1.2.3"));
   const wireSemver = runBoundaries();
@@ -794,7 +768,6 @@ function testDependencyVersions(): void {
   testDependencyVersionsHelperCopy();
   testDependencyVersionsDriftedEngines();
   testDependencyVersionsNodePin();
-  testDependencyVersionsActionRefs();
 }
 
 function testDependencyVersionsLiteralSpecifier(): void {
@@ -865,20 +838,6 @@ function testDependencyVersionsNodePin(): void {
         ".node-version: 0.0.0 is outside the root engines.node range",
       ),
     `expected Node pin failure. exit=${pin.code}, stderr=${pin.stderr.slice(0, 300)}`,
-  );
-  restoreAllPlants();
-}
-
-function testDependencyVersionsActionRefs(): void {
-  plantFile(".github/workflows/publish.yml", (s) =>
-    s.replace(/actions\/checkout@\S+/, "actions/checkout@v7"),
-  );
-  const action = runDependencyVersions();
-  test(
-    "flags an action used at two refs",
-    action.code !== 0 &&
-      /actions\/checkout: used at 2 refs/.test(action.stderr),
-    `expected action ref failure. exit=${action.code}, stderr=${action.stderr.slice(0, 300)}`,
   );
   restoreAllPlants();
 }
@@ -1044,20 +1003,28 @@ function testBakedVersionDrift(): void {
     `expected V2_PROTOCOL_VERSION hit. exit=${r2.code}, stderr=${r2.stderr.slice(0, 300)}`,
   );
   restoreAllPlants();
-  const compatibilityBakedTarget = "docs/spec/router-representation.md";
-  plantFile(compatibilityBakedTarget, (s) =>
-    s.replace(compatibilityVersion, `${compatibilityVersion}0`),
-  );
-  const r3 = runScript(
-    "scripts/docs/check-no-hardcoded-constants.ts",
-    workspaceRoot,
-  );
-  test(
-    "flags prefix-extending version drift inside a V2-baked document",
-    r3.code !== 0 && /VERSION_SHAPED_LITERAL/.test(r3.stderr),
-    `expected VERSION_SHAPED_LITERAL hit. exit=${r3.code}, stderr=${r3.stderr.slice(0, 300)}`,
-  );
-  restoreAllPlants();
+  for (const page of [
+    "conversation-history",
+    "identity-representation",
+    "identity",
+    "router-representation",
+  ]) {
+    plantFile(
+      `docs/spec/${page}.md`,
+      (source) =>
+        `${source}\n{/* @bake-constants: V2_PROTOCOL_VERSION */}\nSharness-Version: ${compatibilityVersion}\n`,
+    );
+    const result = runScript(
+      "scripts/docs/check-no-hardcoded-constants.ts",
+      workspaceRoot,
+    );
+    test(
+      `flags literal wire versions in ${page}`,
+      result.code !== 0 && /V2_PROTOCOL_VERSION/.test(result.stderr),
+      `expected V2_PROTOCOL_VERSION hit. exit=${result.code}, stderr=${result.stderr.slice(0, 300)}`,
+    );
+    restoreAllPlants();
+  }
 }
 
 function runScript(

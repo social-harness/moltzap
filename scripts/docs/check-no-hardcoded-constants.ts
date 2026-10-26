@@ -160,7 +160,7 @@ function buildRules(constants: readonly ConstantRecord[]): readonly Rule[] {
           /* Safe because String-kind records are emitted with string values by the generator. */ v2ProtocolVersion.value as string,
         ),
       ),
-      hint: "Mark the file with `{/* @bake-constants: V2_PROTOCOL_VERSION */}` so the compatibility value is baked from `packages/client/src/identity/wire-version.ts`.",
+      hint: "Use `WIRE_VERSION` in specifications. Other docs can use `{/* @bake-constants: V2_PROTOCOL_VERSION */}` to bake the value from `packages/client/src/identity/wire-version.ts`.",
     });
   }
 
@@ -182,7 +182,7 @@ function buildRules(constants: readonly ConstantRecord[]): readonly Rule[] {
   rules.push({
     name: "VERSION_SHAPED_LITERAL",
     regex: /\b\d{4}\.\d{3,4}\.\d+\b/,
-    hint: `Mark compatibility values with \`{/* @bake-constants: V2_PROTOCOL_VERSION */}\` so \`scripts/docs/generate-constants-snippets.ts\` keeps them in sync. For non-version examples, use the placeholder string \`YYYY.MDD.patch\` on its own.`,
+    hint: `Use \`WIRE_VERSION\` in specifications. In other docs, mark compatibility values with \`{/* @bake-constants: V2_PROTOCOL_VERSION */}\` so \`scripts/docs/generate-constants-snippets.ts\` keeps them in sync. For non-version examples, use the placeholder string \`YYYY.MDD.patch\` on its own.`,
     skipLine: (line) =>
       line.includes("YYYY.MDD.patch") &&
       !/\b\d{4}\.\d{3,4}\.\d+\b/.test(line.replace(/YYYY\.MDD\.patch/g, "")),
@@ -200,7 +200,12 @@ function scanFile(
     return [];
   }
   const text = readFileSync(absPath, "utf8");
-  const bakedConstants = readBakedConstants(text);
+  const bakedConstants = new Set(
+    [...readBakedConstants(text)].filter(
+      (name) =>
+        !relPath.startsWith("docs/spec/") || name !== "V2_PROTOCOL_VERSION",
+    ),
+  );
   const bakedVersionValues = new Set(
     constants
       .filter(

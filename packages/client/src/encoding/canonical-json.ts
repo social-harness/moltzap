@@ -415,7 +415,7 @@ const snapshotJsonValue = (root: unknown): JsonSnapshot => {
       ancestors: new Set(),
       containerDepth: 0,
     });
-    // eslint-disable-next-line agent-code-guard/bare-catch -- The snapshot boundary converts hostile reflection into ordinary validation failure. #ignore-sloppy-code-next-line[bare-catch]: The function returns an invalid snapshot.
+    // eslint-disable-next-line agent-code-guard/bare-catch -- The snapshot boundary converts hostile reflection into ordinary validation failure.
   } catch {
     return invalidJsonSnapshot();
   }
@@ -461,7 +461,7 @@ export const sameBytes = (left: Uint8Array, right: Uint8Array): boolean => {
       everyByte.call(left, (byte, index) => byte === right[index]) &&
       everyByte.call(right, (byte, index) => byte === left[index])
     );
-    // eslint-disable-next-line agent-code-guard/bare-catch -- Detached or exotic typed arrays are non-canonical inputs, not defects. #ignore-sloppy-code-next-line[bare-catch]: The comparison returns false.
+    // eslint-disable-next-line agent-code-guard/bare-catch -- Detached or exotic typed arrays are non-canonical inputs, not defects.
   } catch {
     return false;
   }

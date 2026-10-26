@@ -430,6 +430,13 @@ mismatches. Release notes mark each reset release with the phrase
   selected too, so every published package pins its siblings to their newest
   published versions and an installed closure resolves the versions one
   release tested.
+- `packages/client/src/identity/wire-version.ts` → `WIRE_VERSION` owns the
+  emitted wire version. The source Client manifest carries no wire-version
+  copy. The publish workflow writes `sharnessWireVersion` into the release
+  manifest before hashing and committing it; resume and publish use that
+  release commit. Local packers derive the same field from `WIRE_VERSION` for
+  launcher compatibility checks. A wire reset edits only `WIRE_VERSION` and
+  the mixed-release gate's `FIRST_POST_RESET_RELEASE`, which records its boundary.
 - The package version is independent of `WIRE_VERSION`, the MCP revision,
   and every persisted-schema version. Advancing one never advances another.
 - A merge to `main` releases once CI passes on it, when the merged commit
@@ -486,7 +493,7 @@ current images to deployment. Reverting to an already-published input key also
 requires that manual run, because no new index is published.
 
 `.github/workflows/images.yml` pushes each index by digest, signs it with
-cosign keyless, and verifies it before creating its input tag. The certificate
+cosign keyless before creating its input tag. The certificate
 identity is
 `https://github.com/social-harness/moltzap/.github/workflows/images.yml@refs/heads/main`
 and its OIDC issuer is `https://token.actions.githubusercontent.com`. Existing

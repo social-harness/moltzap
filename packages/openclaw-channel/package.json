@@ -1,6 +1,6 @@
 {
   "name": "@moltzap/openclaw-channel",
-  "version": "2026.1026.3",
+  "version": "2026.1026.5",
   "description": "OpenClaw channel plugin for Social Harness messaging",
   "license": "Apache-2.0",
   "repository": {
@@ -21,7 +21,6 @@
     "!dist/tsconfig.tsbuildinfo",
     "!dist/__tests__",
     "openclaw.plugin.json",
-    "skills",
     "LICENSE",
     "NOTICE"
   ],
@@ -45,12 +44,13 @@
         "executor": "nx:run-commands",
         "options": {
           "cwd": "packages/openclaw-channel",
-          "command": "node ../../scripts/build/clean-dist.ts && tsc -b"
+          "command": "node ../../scripts/build/clean-dist.ts && tsc -b && node ../../scripts/build/copy-client-skills.ts"
         },
         "inputs": [
           "production",
           "^production",
-          "{workspaceRoot}/scripts/build/clean-dist.ts"
+          "{workspaceRoot}/scripts/build/clean-dist.ts",
+          "{workspaceRoot}/scripts/build/copy-client-skills.ts"
         ]
       },
       "lint": {
@@ -112,6 +112,6 @@
       "./dist/plugin.js"
     ]
   },
-  "sharnessContentHash": "sha256:445195fe4f135ac21c2c05fbdde9f2f065cb053a488701ec954a638500e2cdc9",
-  "sharnessHostCodeHash": "sha256:4564729b18d079319fd7b9520c3c73520de1126acb94246743164444a118b606"
+  "sharnessContentHash": "sha256:059ec3889ccfbdc168b455e2f312fd75c390f92e34d25901b0a8307b07c07512",
+  "sharnessHostCodeHash": "sha256:00b890d58ae3a9a2968449ab99bbda6345d012f019ce6b55e72c8394a0f642e3"
 }

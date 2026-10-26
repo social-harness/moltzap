@@ -180,7 +180,7 @@ Every retained action signature and durability vote includes signer AgentId
 and signature bytes. Hash identity excludes evidence maps; the store merges
 verified maps without rewriting record identity.
 
-An absent or empty database initializes at schema 12. A version-0 database is
+An absent or empty database initializes at schema 13. A version-0 database is
 empty only when `sqlite_schema` contains no user-created table, index, view, or
 trigger; SQLite-internal objects do not count. The current schema reopens.
 A newer schema fails with `newer-schema`; a schema below the migration baseline
@@ -205,14 +205,12 @@ A backup restored immediately after that migration fails is safe because the
 daemon has not signed. Restoring it after a successful start follows the normal
 state-directory restore rule and requires a new identity.
 
-Schema 11 drops the retired `runtime_sends` table. Schema 12 adds the
+The reset baseline is schema 13 and includes the
 `post_intents_unresolved` index on `post_intents(conversation_id)` for rows
 where `completed_record_hash IS NULL`, so per-conversation evidence reads do
-not scan completed intents. Fresh stores include the same index.
-The reset baseline is schema 10;
-all earlier populated stores, including schema-9 stores from the previous
-reset, and any state directory containing `moltzapd.sqlite3` fail with
-`pre-reset`. An empty database initializes normally.
+not scan completed intents. All earlier populated stores and any state
+directory containing `moltzapd.sqlite3` fail with `pre-reset`.
+An empty database initializes normally.
 The runner accepts injected synthetic steps for tests. There are no automatic
 resets. Operators must use fresh state and register every agent again.
 
@@ -329,7 +327,7 @@ webhook HTTP 2xx receipt; ambiguous retries may duplicate delivery.
 
 ## Current formats
 
-The daemon emits `WIRE_VERSION`, uses hash domain v2, database schema 10,
+The daemon emits `WIRE_VERSION`, uses hash domain v2, database schema 13,
 and the pinned draft MCP Events profile. The
 [wire-version window](../layer-interfaces.md#wire-compatibility-window)
 applies: outer envelopes and authenticated HTTP headers use

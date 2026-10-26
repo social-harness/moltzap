@@ -17,7 +17,6 @@ catalog:
   "@effect/rpc": ^0.76.0
   "@effect/sql": ^0.52.0
   "@effect/sql-pg": ^0.53.0
-  "@effect/tsgo": 0.24.3
   "@effect/vitest": ^0.30.0
   "@electric-sql/pglite": 0.4.4
   "@electric-sql/pglite-socket": 0.1.4

@@ -731,10 +731,7 @@ function realImageFixture(): string {
       docker.replaceAll("@moltzap/", "@fixture/"),
     );
   }
-  for (const file of [
-    "scripts/build/clean-dist.ts",
-    "scripts/setup/restore-tsgo-exec-bit.ts",
-  ]) {
+  for (const file of ["scripts/build/clean-dist.ts"]) {
     write(
       repo,
       file,

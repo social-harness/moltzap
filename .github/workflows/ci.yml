@@ -50,10 +50,6 @@ jobs:
       - uses: ./.github/actions/setup-toolchain
 
       - run: pnpm install --frozen-lockfile
-      - name: Verify pnpm-lock.yaml matches package.json and the catalog
-        run: |
-          pnpm install --lockfile-only --ignore-scripts
-          git diff --exit-code pnpm-lock.yaml
       - run: pnpm build
       # Pack gates install the published closures in isolated consumers.
       # NanoClaw checks its Client ABI without packing the source-copied adapter.

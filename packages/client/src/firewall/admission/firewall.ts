@@ -54,7 +54,6 @@ import {
   decodeRecord,
   type FirewallEnvironment,
   hashedId,
-  type InstalledFirewall,
   postProjection,
   refusedSend,
   requestText,
@@ -95,21 +94,12 @@ export interface FirewallOptions {
   };
 }
 
-/** Configuration and registration bytes are captured before a daemon accepts operations. */
-export const installFirewall = Effect.fn("installFirewall")(function* (
+/** Builds an immutable chain from registrations already captured by policy composition. */
+export const buildFirewall = Effect.fn("buildFirewall")(function* (
   options: FirewallOptions,
 ) {
   const configuration = yield* captureConfiguration(options);
-  const incoming = yield* Effect.forEach(
-    options.incoming,
-    captureRegistration,
-    { concurrency: 1 },
-  );
-  const outgoing = yield* Effect.forEach(
-    options.outgoing,
-    captureRegistration,
-    { concurrency: 1 },
-  );
+  const { incoming, outgoing } = options;
   const metadata = yield* captureInstallation(
     configuration,
     options.settings,
@@ -132,7 +122,7 @@ export const installFirewall = Effect.fn("installFirewall")(function* (
     configurationDigest: createHash("sha256").update(bytes).digest("hex"),
     firewall,
     permits: yield* Effect.makeSemaphore(configuration.maximumConcurrentChecks),
-  }) satisfies InstalledFirewall;
+  });
 });
 
 /** Capture executable registration once so caller mutation cannot affect later rebuilds. */

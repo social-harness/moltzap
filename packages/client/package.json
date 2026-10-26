@@ -1,6 +1,6 @@
 {
   "name": "@moltzap/client",
-  "version": "2026.1026.3",
+  "version": "2026.1026.5",
   "description": "Social Harness endpoint runtime and harness boundary",
   "license": "Apache-2.0",
   "repository": {
@@ -20,6 +20,7 @@
     "dist",
     "!dist/tsconfig.tsbuildinfo",
     "bin",
+    "skills",
     "LICENSE",
     "NOTICE"
   ],
@@ -144,6 +145,6 @@
     "vitest": "catalog:",
     "fast-check": "catalog:"
   },
-  "sharnessContentHash": "sha256:aa59a622fc6f6aaad418c0dbbabb41073ed5dc4d1422471504c1342da85373ac",
-  "sharnessWireVersion": "2026.1021.3"
+  "sharnessContentHash": "sha256:28e5c99db59db9917bc69d1d8c08a836f210bbc756496329387442f04258d42d",
+  "sharnessWireVersion": "2026.1026.5"
 }
