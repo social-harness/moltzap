@@ -47,6 +47,7 @@ import {
 import { Registry } from "../../identity/registry/index.js";
 import {
   type DaemonRegistrationPersistenceError,
+  type DaemonRegistrationRefusedError,
   type DaemonRegistrationRepresentationError,
   type DaemonRegistrationState,
   type DaemonRegistrationUpstreamError,
@@ -61,6 +62,7 @@ type ManagementOperation =
   | "readConversation";
 
 type ManagementFailure =
+  | "admission-refused"
   | "dependency-unavailable"
   | "history-gap"
   | "incompatible-daemon"
@@ -195,6 +197,7 @@ function mapRegistrationFailure(
   error:
     | DaemonRegistrationPersistenceError
     | DaemonRegistrationRepresentationError
+    | DaemonRegistrationRefusedError
     | DaemonRegistrationUpstreamError
     | DaemonConfigurationError,
 ): DaemonManagementError {
@@ -205,6 +208,8 @@ function mapRegistrationFailure(
       return persistenceFailure();
     case "DaemonRegistrationRepresentationError":
       return incompatibleDaemon();
+    case "DaemonRegistrationRefusedError":
+      return managementFailure(error.reason);
     case "DaemonRegistrationUpstreamError":
       return managementFailure("dependency-unavailable");
     default: {

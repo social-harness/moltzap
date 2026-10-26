@@ -384,3 +384,10 @@ outbox with `OutboxTooOldError`. `Daemon.StartupError.reason` carries the
 closed reason `outbox-too-old` to the process log, alongside the storage
 phase. Operators drain that outbox using an earlier release before upgrading.
 No schema or backup changes accompany this refusal.
+
+A Router rejection of this endpoint's authentication stops the daemon in phase
+`listener` with `Daemon.StartupError.reason` set to `agent-not-admitted`.
+The message explains that the network was reset and directs the operator to
+[reset the agent and register again](../../guides/run-sharnessd.mdx#reset-an-agent-after-the-network-restarts).
+Other Router failures retain their existing handling; the daemon exposes no new
+registration status.

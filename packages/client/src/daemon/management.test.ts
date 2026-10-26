@@ -16,7 +16,6 @@ import {
 } from "effect";
 import { generateKeyPairSync } from "node:crypto";
 import { describe, expect } from "vitest";
-import type { RegistryLookupResult } from "../identity/registry/contract.js";
 import type { DaemonBootstrap } from "./bootstrap.js";
 import type { DaemonRegistrationState } from "./registration/index.js";
 import { advanceClock } from "../__tests__/advance-clock.js";
@@ -55,7 +54,12 @@ import {
 } from "../harness/protocol/index.js";
 import { AgentCard, type VerifiedAgentCard } from "../identity/cards.js";
 import { AgentSigningAuthority, Ed25519PublicKey } from "../identity/keys.js";
+import {
+  RegistryConnectionError,
+  type RegistryLookupResult,
+} from "../identity/registry/contract.js";
 import { Registry } from "../identity/registry/index.js";
+import { AuthenticationFailedError } from "../identity/signing/http-errors.js";
 import { LIVE_WIRE_VERSIONS, WIRE_VERSION } from "../identity/wire-version.js";
 import {
   type DaemonManagementOperations,
@@ -900,3 +904,24 @@ describe("daemon registration through the register tool", () => {
     bindsWhenCancelledDuringTheRegistryCall,
   );
 });
+
+/** Closed registration failures distinguish a final credential refusal from an outage. */
+it.each([
+  { failure: new AuthenticationFailedError(), reason: "admission-refused" },
+  { failure: new RegistryConnectionError(), reason: "dependency-unavailable" },
+])("reports $reason from registration", ({ failure, reason }) =>
+  Effect.gen(function* () {
+    const fixture = yield* makeIdentityFixture;
+    const registry = Layer.succeed(Registry, {
+      register: () => Effect.fail(failure),
+      lookup: () => Effect.succeed({ kind: "not_found" as const }),
+    });
+    const { operations } = yield* makeRegisteringOperations(fixture).pipe(
+      Effect.provide(registry),
+    );
+    const error = yield* operations
+      .register(localRegisterRequest(fixture))
+      .pipe(Effect.flip);
+    expect(error).toMatchObject({ reason });
+  }),
+);
