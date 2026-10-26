@@ -1,7 +1,8 @@
 /** @file Channel configuration writes remain restartable after an abandoned temporary write. */
 
 import assert from "node:assert/strict";
-import filesystem, {
+import { execFile } from "node:child_process";
+import {
   mkdir,
   mkdtemp,
   readdir,
@@ -10,10 +11,16 @@ import filesystem, {
   symlink,
   writeFile,
 } from "node:fs/promises";
-import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
+
+const run = promisify(execFile);
+const script = fileURLToPath(
+  new URL("./configure-channel.ts", import.meta.url),
+);
 
 test("abandoned channel writes do not block installing the image channel", async (context) => {
   const root = await mkdtemp(join(tmpdir(), "social-harness-channel-config-"));
@@ -34,15 +41,17 @@ test("abandoned channel writes do not block installing the image channel", async
       },
     }),
   );
-  const environment = { ...process.env };
-  context.after(() => {
-    process.env = environment;
-  });
   await symlink(root, join(root, "current"));
-  process.env.SHARNESS_LAUNCHER_DIRECTORY = root;
-  process.env.OPENCLAW_CONFIG_PATH = path;
 
-  await import("./configure-channel.ts");
+  await assert.doesNotReject(
+    run(process.execPath, [script], {
+      env: {
+        ...process.env,
+        SHARNESS_LAUNCHER_DIRECTORY: root,
+        OPENCLAW_CONFIG_PATH: path,
+      },
+    }),
+  );
 
   assert.deepEqual(JSON.parse(await readFile(path, "utf8")), {
     plugins: {
@@ -73,30 +82,33 @@ test("a failed configuration rename keeps the old configuration and removes temp
     },
   });
   await writeFile(path, original);
-  const environment = { ...process.env };
-  const exitCode = process.exitCode;
-  context.after(() => {
-    process.env = environment;
-    process.exitCode = exitCode;
-    context.mock.restoreAll();
-    syncBuiltinESMExports();
-  });
   await symlink(root, join(root, "current"));
-  process.env.SHARNESS_LAUNCHER_DIRECTORY = root;
-  process.env.OPENCLAW_CONFIG_PATH = path;
-  context.mock.method(filesystem, "rename", () =>
-    Promise.reject(new Error("injected configuration rename failure")),
-  );
-  context.mock.method(console, "error", () => undefined);
-  syncBuiltinESMExports();
-  const script = new URL(
-    "./configure-channel.ts?rename-failure",
-    import.meta.url,
+  const preload = `
+    import filesystem from "node:fs/promises";
+    import { syncBuiltinESMExports } from "node:module";
+    filesystem.rename = () => Promise.reject(new Error("injected configuration rename failure"));
+    syncBuiltinESMExports();
+  `;
+
+  await assert.rejects(
+    run(
+      process.execPath,
+      [
+        "--import",
+        `data:text/javascript,${encodeURIComponent(preload)}`,
+        script,
+      ],
+      {
+        env: {
+          ...process.env,
+          SHARNESS_LAUNCHER_DIRECTORY: root,
+          OPENCLAW_CONFIG_PATH: path,
+        },
+      },
+    ),
+    { code: 1 },
   );
 
-  await import(script.href);
-
-  assert.equal(process.exitCode, 1);
   assert.equal(await readFile(path, "utf8"), original);
   assert.deepEqual(await readdir(root), ["current", "openclaw.json"]);
 });
@@ -109,15 +121,15 @@ test("initializes channel loading in a stock host configuration", async (context
     path,
     JSON.stringify({ channels: { sharness: { enabled: true } } }),
   );
-  const environment = { ...process.env };
-  context.after(() => {
-    process.env = environment;
-  });
   await symlink(root, join(root, "current"));
-  process.env.SHARNESS_LAUNCHER_DIRECTORY = root;
-  process.env.OPENCLAW_CONFIG_PATH = path;
-  await import(
-    new URL("./configure-channel.ts?stock-config", import.meta.url).href
+  await assert.doesNotReject(
+    run(process.execPath, [script], {
+      env: {
+        ...process.env,
+        SHARNESS_LAUNCHER_DIRECTORY: root,
+        OPENCLAW_CONFIG_PATH: path,
+      },
+    }),
   );
   assert.partialDeepStrictEqual(JSON.parse(await readFile(path, "utf8")), {
     plugins: {

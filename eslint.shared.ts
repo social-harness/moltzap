@@ -219,14 +219,13 @@ export function rootEslintConfig(tsconfigRootDir: string) {
 
 /**
  * Image bootstrap programs run on Node built-ins before runtime packages are
- * installed.
+ * installed. Their process fixtures use node:test's Promise-native boundary.
  */
 export function agentImageEslintConfig(tsconfigRootDir: string) {
   return [
     ...integrationEslintConfig(tsconfigRootDir),
     {
-      files: ["*.ts"],
-      ignores: ["*.test.ts", "eslint.config.ts"],
+      files: ["**/*.ts"],
       rules: {
         "agent-code-guard/async-keyword": "off",
         "agent-code-guard/promise-type": "off",
@@ -248,11 +247,12 @@ export function agentImageEslintConfig(tsconfigRootDir: string) {
       },
     },
     {
-      ...makePresetBlock(
-        ["*.test.ts"],
-        makeTsLanguageOptions(tsconfigRootDir, ["./tsconfig.json"]),
-        guard.configs.integrationTests,
-      ),
+      files: ["**/*.test.ts"],
+      rules: {
+        "agent-code-guard/no-example-only-tests": "off",
+        "agent-code-guard/no-hardcoded-assertion-literals": "off",
+        "sonarjs/no-os-command-from-path": "off",
+      },
     },
   ];
 }
