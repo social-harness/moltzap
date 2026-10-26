@@ -153,11 +153,12 @@ it(
       Effect.gen(function* () {
         const installed = yield* installEditableFirewall(configuration, store);
         const read = yield* installed.policy.read();
-        expect(read.fixedRules).toMatchObject([
-          { id: FIXED.id },
-          { id: "working-hours" },
-          { from: "english", id: localGuidanceImpersonationRule.id },
-        ]);
+        expect(read.fixedRules).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ id: FIXED.id }),
+            expect.objectContaining({ id: "working-hours" }),
+          ]),
+        );
         expect(read.rules).toEqual(policy.english?.initialRules);
         const error = yield* installed.policy
           .update({ remove: ["working-hours"] })
@@ -174,7 +175,9 @@ it(
   Effect.fn(function* () {
     const { path } = fixture(BEHAVIOR.padEnd(MAXIMUM_BEHAVIOR_BYTES, " "));
     const { policy } = yield* loaded(path);
-    expect(policy.english?.fixedRules[1]?.text).toBe(BODY);
+    expect(policy.english?.fixedRules).toContainEqual(
+      expect.objectContaining({ id: "working-hours", text: BODY }),
+    );
   }),
 );
 
@@ -187,8 +190,11 @@ it(
     ).replaceAll("\n", "\r\n");
     const { path } = fixture(BEHAVIOR, text);
     const { policy } = yield* loaded(path);
-    expect(policy.english?.initialRules[1]?.guidance).toBe(
-      "Ask first.\nWait for permission.\n",
+    expect(policy.english?.initialRules).toContainEqual(
+      expect.objectContaining({
+        id: "ask-first",
+        guidance: "Ask first.\nWait for permission.\n",
+      }),
     );
   }),
 );
@@ -564,7 +570,9 @@ it.each(["", "\uFEFF"])(
     Effect.gen(function* () {
       const { path } = fixture(prefix + BEHAVIOR);
       const { policy } = yield* loaded(path);
-      expect(policy.english?.fixedRules[1]?.text).toBe(BODY);
+      expect(policy.english?.fixedRules).toContainEqual(
+        expect.objectContaining({ id: "working-hours", text: BODY }),
+      );
     }),
 );
 

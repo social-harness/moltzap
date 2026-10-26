@@ -516,8 +516,8 @@ A `jev` provider reads its key from `SHARNESS_DECISION_PROVIDER_KEY_FILE`,
 ignoring surrounding whitespace, and retries an unreachable service, a rate
 limit or a server error twice within each stage's timeout. `unavailable`
 installs the English rules with no service, so every English check is
-unavailable: enforcement holds the message and guidance admits it. Without
-English rules or the collective norms, the provider and key are unused.
+unavailable: enforcement holds the message and guidance admits it. Without an
+English policy or the collective norms, the provider and key are unused.
 
 `codeDigest` is the SHA-256 of the Client release, the mode, each middleware's
 id and revision (the allowed-senders list left out), the fixed English rules
@@ -621,9 +621,11 @@ both replacement chains, atomically persist the editable document and an
 activation record, and activate it before returning `activeRevision`. Each chain
 consists of its fixed code middleware,
 then one English middleware (`org.social-harness/english`, policy id `org.social-harness/english-policy.v1`) over fixed plus editable English
-rules. That middleware id is reserved when English rules are present. With no
-English rules, it is omitted; an entirely empty chain still validates input and
-required evidence without invoking a provider.
+rules. When `english` is configured with a decision provider, this middleware
+is always present because it includes the fixed `local-guidance-impersonation`
+rule, even for an empty English document. Its middleware id is reserved whenever
+`english` is configured. The English middleware is absent only without `english`.
+A chain with no middleware still validates input and required evidence.
 
 Updates are serialized. Remove and add the same editable id to replace it
 atomically; adding an existing id without removing it, removing an unknown id,
