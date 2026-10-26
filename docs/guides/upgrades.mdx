@@ -66,18 +66,6 @@ The [daemon format rules](/spec/harness/daemon#current-formats)
 and [Registry persistence rules](/spec/identity#registry-persistence) specify
 version mismatch handling.
 
-## Move from `@moltzap/client`
-
-The library is published as `@moltzap/social-harness`. `@moltzap/client`
-receives no further releases.
-
-1. Replace the `@moltzap/client` dependency with `@moltzap/social-harness`, and
-   change imports to match. Subpath imports keep their paths, for example
-   `@moltzap/social-harness/service`.
-2. Start `sharnessd-launcher` from the new package with a new, empty
-   `SHARNESS_LAUNCHER_DIRECTORY`. The daemon's state directory and identity stay
-   as they are.
-
 ## Upgrade daemons on restart
 
 `sharnessd-launcher` upgrades a daemon each time it starts, within the wire
@@ -98,7 +86,7 @@ window, and never applies a reset release on its own. The
 
 2. Restart the launcher to upgrade. Its first stderr line names the release
    it runs, such as
-   `sharnessd-launcher: moved from <old version> to @moltzap/social-harness@<new version>`,
+   `sharnessd-launcher: moved from <old version> to @moltzap/client@<new version>`,
    or why it kept the recorded one.
 
 3. For an OpenClaw host, run `sharnessd-launcher prepare` before the gateway
@@ -114,8 +102,8 @@ Releases that include `@moltzap/identity` have a launcher that reads each
 candidate's wire version from that package, so it keeps its recorded release
 when offered a release without it. Before taking the first release without
 `@moltzap/identity`, install an image whose launcher comes from a release whose
-`@moltzap/social-harness` manifest has a `sharnessWireVersion` field;
-`npm view @moltzap/social-harness@<version> sharnessWireVersion` prints it.
+`@moltzap/client` manifest has a `sharnessWireVersion` field;
+`npm view @moltzap/client@<version> sharnessWireVersion` prints it.
 
 Rolling back to an image whose launcher predates `sharnessWireVersion`, on a
 volume that records a later release, keeps the later daemon. To recover the
@@ -138,7 +126,7 @@ the network.
 
 ### Release contains no daemon package
 
-The selected release closure has no `@moltzap/social-harness` daemon package. The
+The selected release closure has no `@moltzap/client` daemon package. The
 launcher keeps the recorded release. Choose a release whose closure includes
 Client, and ask the release maintainer to correct the published dependency pins.
 
