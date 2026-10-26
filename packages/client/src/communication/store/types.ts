@@ -448,6 +448,7 @@ export interface EndpointStore {
     ReadonlyArray<FirewallAuditEntry & { readonly time: number }>,
     EndpointStoreError
   >;
+  /** Store test seam for retained attempts, including checks in progress. */
   readonly readFirewallAuditPage: (
     after: number,
   ) => Effect.Effect<readonly FirewallAuditEntry[], EndpointStoreError>;

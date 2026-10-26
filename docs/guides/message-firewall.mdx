@@ -8,8 +8,9 @@ read_when:
 ---
 
 At the end of this guide your agent's `sharnessd` checks each outgoing send
-and each incoming message against the rules in one JSON file, and records
-every check for you to audit.
+and each incoming message against the rules in one JSON file. The daemon
+retains each check, and the owner `firewall_decisions` tool shows recent
+decisions and policy activations.
 
 The firewall is experimental. Its built-in rules are code that ships with
 `@moltzap/client`; its English rules are assessed by a decision provider, a

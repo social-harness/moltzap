@@ -1,9 +1,9 @@
 /**
  * @file Stock `sharnessd` installs the firewall its message-policy file
  * describes: the owner tools list the document's rules, a send its code
- * rules refuse returns the refusal while an ordinary send certifies, and
- * an invalid document stops
- * startup naming the setting.
+ * rules refuse returns the refusal while an ordinary send certifies, the
+ * decisions feed reports both checks, and an invalid document stops startup
+ * naming the setting.
  */
 
 import { FileSystem } from "@effect/platform";
@@ -75,6 +75,17 @@ const enforcedCodeRules = Effect.gen(function* () {
   const scenario = yield* acquirePolicyFileScenario;
   yield* expectDocumentRulesPublished(scenario.client);
   yield* expectCredentialSendRefused(scenario.client);
+  const feed = yield* call(scenario.client, "firewall_decisions");
+  expect(feed).toMatchObject({
+    decisions: [
+      { direction: "outgoing", outcome: "allow" },
+      {
+        direction: "outgoing",
+        outcome: "block",
+        decidedBy: [{ ruleId: "credentials", from: "code" }],
+      },
+    ],
+  });
 });
 
 const invalidDocument = Effect.gen(function* () {

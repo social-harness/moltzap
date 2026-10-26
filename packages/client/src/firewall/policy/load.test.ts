@@ -162,7 +162,7 @@ it("names where a document is invalid, never what it holds", () =>
     expect(error.message).not.toContain("private-mode-value");
   }));
 
-it("installs the document with its key, Client's default settings", () =>
+it("installs the document with its key and Client's default settings", () =>
   Effect.gen(function* () {
     const installed = yield* firewallInstallation(
       {

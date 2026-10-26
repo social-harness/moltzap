@@ -184,21 +184,15 @@ export const fixture = engineFixture();
 /** The acquired identities and storage remain live for the test scope. */
 export type Fixture = Effect.Effect.Success<typeof fixture>;
 
-/** Read retained checks in insertion order through the store and decisions decoder. */
+/** Read completed checks in insertion order through the production store read. */
 export const auditChecks = (subject: Fixture) =>
   Effect.gen(function* () {
-    const checks = [];
-    let after = 0;
-    while (true) {
-      const page = yield* subject.store.readFirewallAuditPage(after);
-      for (const entry of page) {
-        checks.push(yield* decodeFirewallAuditEntry(entry));
-        after = entry.sequence;
-      }
-      if (page.length === 0) {
-        return checks;
-      }
-    }
+    const entries = yield* subject.store.readFirewallDecisions();
+    return yield* Effect.forEach(
+      [...entries].sort((left, right) => left.sequence - right.sequence),
+      (entry) => decodeFirewallAuditEntry(entry),
+      { concurrency: 1 },
+    );
   }).pipe(Effect.withSpan("auditChecks"));
 
 /** Fixed registration and settings are captured before delivery operations run. */

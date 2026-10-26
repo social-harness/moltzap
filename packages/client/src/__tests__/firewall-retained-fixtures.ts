@@ -75,8 +75,6 @@ export const makeRetainedCheckFixture = Effect.gen(function* () {
   return {
     input,
     result,
-    canonicalInput: yield* encodeRuntimeValue(input),
     canonicalCandidate: yield* encodeRuntimeValue(outgoing),
-    canonicalResult: yield* encodeRuntimeValue(result),
   };
 }).pipe(Effect.withSpan("makeRetainedCheckFixture"));

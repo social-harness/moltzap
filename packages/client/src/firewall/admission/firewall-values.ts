@@ -243,7 +243,6 @@ export const decodeFirewallAuditEntry = Effect.fn("decodeFirewallAuditEntry")(
         ? null
         : yield* decodeRuntimeValue(firewallAuditResult, entry.canonicalResult);
     return {
-      kind: "check" as const,
       checkId: entry.checkId,
       direction: entry.direction,
       revision: entry.revision,

@@ -61,7 +61,7 @@ const auditDisposition = Schema.Literal(
   "withheld",
 );
 
-/** Retained readers page over attempts in insertion order. */
+/** Store test seam for attempts in insertion order, including checks in progress. */
 export function readFirewallAuditPage(
   database: DatabaseSync,
   after: number,

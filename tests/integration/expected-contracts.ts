@@ -1,4 +1,4 @@
-/** @file Operator-visible contracts of daemon management, startup, sends. */
+/** @file Operator-visible contracts of daemon management, startup and sends. */
 
 /** The daemon register tool reports this kind after committing its identity. */
 export const registrationResultKind = "registered";

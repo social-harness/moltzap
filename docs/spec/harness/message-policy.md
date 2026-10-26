@@ -122,7 +122,7 @@ All configured stages run even after a semantic rejection, except that a
 dependent stage with invalid input is explicitly unavailable. Diagnostics never
 override a rejection. Missing required evidence in the context, invalid output
 and provider failure cannot produce admission; an uncertain norm judgment admits
-as described below. They remain distinct in the audit.
+as described below. They remain distinct in the retained check.
 
 An answer is uncertain when its choice is `unresolved`, its probability is
 below `minimumProbability`, or another option is more probable, as in a rounded
@@ -141,8 +141,7 @@ applicability, expectations or conformance:
   uncertain subject reference is left out of its expectation;
 - an uncertain applicability, expectation or conformance answer is a `pass`
   finding with reason `uncertain`, the decision provider's choice and its
-  probability,
-  which the audit retains; and
+  probability, both recorded in the retained check; and
 - each uncertain finding whose rule registers guidance reaches the agent as an
   instruction carrying the rule, that choice and probability, and the rule's
   guidance.
@@ -310,7 +309,7 @@ deadline can still arrive during the check. Just before the answer binds,
 Client matches its request again, still open in its conversation and before
 its deadline, and claims it; when it no longer matches, the answer is refused
 with its collective failure and nothing is sent; the check still commits,
-withheld, so the audit keeps its judgment. An all_gather opens, and its
+withheld, so the retained check keeps its judgment. An all_gather opens, and its
 deadline timer starts, just before its group post binds, and only when its
 check admits it; the check's duration comes out of the deadline the agent
 set, which is fixed in the checked content. A gather's check likewise
@@ -353,7 +352,7 @@ check withheld the request, and otherwise checked with the result.
 ### Collective projection
 
 The runtime reads a local projection of each admitted result; the canonical
-result stays in the private queue and the audit. Each withheld answer becomes
+result stays in the private queue and retained checks. Each withheld answer becomes
 `{ kind: "withheld", checkId, reason }`, and a withheld question the same
 value. Native subscriptions, inbox pages, read-event and webhooks all serve
 only the projection. Guidance mode withholds nothing and attaches each
@@ -695,6 +694,14 @@ and how. Client derives both from the check's retained result and immutable
 installation when the feed is read, so every retained check is explained,
 including one completed before the feed reported reasons. Nothing new is
 stored and the store schema is unchanged.
+
+When decoding retained checks for `firewall_decisions`,
+`decodeFirewallAuditEntry` drops `authorization` from retained contexts and
+maps retained `autonomy` registrations to `safety`. A retained
+`approval-required` finding becomes a settled `hold` with reason
+`unresolved-evidence` only when the retained result reason was
+`approval-required`; otherwise it becomes a non-deciding `not-applicable`
+finding.
 
 `decidedBy` lists the deciding rules once each, in chain order, chosen by the
 reason that [decision composition](#outgoing-projection) selected:

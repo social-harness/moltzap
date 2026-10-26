@@ -645,6 +645,54 @@ it("refuses unknown stored editable properties as persistence failures", () =>
     ).toMatchObject({ reason: "persistence-failed" });
   }));
 
+it.each([
+  {
+    name: "malformed input bytes",
+    input: () => Effect.succeed(new TextEncoder().encode("{")),
+  },
+  {
+    name: "an extra context field",
+    input: (
+      input: Effect.Effect.Success<typeof makeRetainedCheckFixture>["input"],
+    ) =>
+      encodeRuntimeValue({
+        ...input,
+        context: { ...Struct.omit(input.context), unexpected: true },
+      }),
+  },
+])(
+  "refuses a completed check with $name as a persistence failure",
+  ({ input }) =>
+    Effect.gen(function* () {
+      const subject = yield* fixture;
+      const retained = yield* makeRetainedCheckFixture;
+      const checkId = "corrupt-retained-input";
+      yield* subject.store.beginFirewallAttempt({
+        checkId,
+        direction: "outgoing",
+        revision: 0,
+        canonicalCandidate: retained.canonicalCandidate,
+        canonicalInput: yield* input(retained.input),
+      });
+      yield* subject.store.admitFirewallOperation(
+        {
+          checkId,
+          admit: false,
+          canonicalResult: yield* encodeRuntimeValue(retained.result),
+        },
+        retained.canonicalCandidate,
+      );
+      const installed = yield* installEditableFirewall(
+        options([]),
+        subject.store,
+      );
+
+      expect(yield* Effect.flip(installed.policy.decisions({}))).toMatchObject({
+        reason: "persistence-failed",
+      });
+    }),
+);
+
 it("refuses autonomy in live code middleware registration", () =>
   Effect.gen(function* () {
     const live = contactsPolicy("pass");

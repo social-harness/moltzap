@@ -14,7 +14,7 @@ export {
   type FirewallEnvironment,
   type InstalledFirewall,
 } from "./firewall-checks.js";
-/** Audit readers decode the retained checks independently of private storage. */
+/** The decisions feed decodes retained checks independently of private storage. */
 export { decodeFirewallAuditEntry } from "./firewall-values.js";
 /** Delivery supplies verified context to the incoming admission worker. */
 export { type AdmissionContext, runAdmission } from "./admission.js";
