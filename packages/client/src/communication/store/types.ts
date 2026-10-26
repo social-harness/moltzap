@@ -82,6 +82,7 @@ export const MAXIMUM_RUNTIME_ITEM_BYTES = 2 * 1024 * 1024;
 
 /** One conversation's evidence window before one candidate. */
 export interface FirewallEvidenceSlice {
+  readonly pendingOutgoing: boolean;
   readonly history: ReadonlyArray<FirewallHistoryEntry | FirewallLocalEntry>;
   readonly overflow: boolean;
   readonly earlierHistoryOmitted: boolean;
@@ -91,7 +92,6 @@ export interface FirewallEvidenceSlice {
 /** Older records outside the window are distinct from a byte-bound evidence gap. */
 export interface FirewallEvidence extends FirewallEvidenceSlice {
   readonly revision: number;
-  readonly pendingOutgoing: boolean;
 }
 
 /**
@@ -110,7 +110,6 @@ export interface FirewallEvidenceRange {
 /** Several windows read at one evidence revision, one per checked text of a result. */
 export interface FirewallEvidenceSlices {
   readonly revision: number;
-  readonly pendingOutgoing: boolean;
   readonly slices: readonly FirewallEvidenceSlice[];
 }
 

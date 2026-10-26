@@ -203,12 +203,6 @@ export function readFirewallEvidenceSlices(
   }
   return {
     revision: firewallRevision(database),
-    pendingOutgoing:
-      database
-        .prepare(
-          "SELECT 1 AS pending FROM post_intents WHERE completed_record_hash IS NULL LIMIT 1",
-        )
-        .get() !== undefined,
     slices: input.ranges.map((range) =>
       readSlice(database, range, input.maximumRecords),
     ),
@@ -687,24 +681,43 @@ function readSlice(
   maximumRecords: number,
 ): FirewallEvidenceSlice {
   const candidate = windowCandidate(database, range);
+  const conversationId =
+    candidate === undefined
+      ? range.conversationId
+      : readText(candidate, "conversation_id");
+  const pendingOutgoing =
+    database
+      .prepare(
+        "SELECT 1 AS pending FROM post_intents WHERE conversation_id = ? AND completed_record_hash IS NULL LIMIT 1",
+      )
+      .get(conversationId ?? null) !== undefined;
   if (candidate === undefined) {
     return range.beforeDelivery === undefined &&
       range.beforeRecord === undefined
-      ? boundedHistory(database, {
-          maximumRecords,
-          beforePosition: Number.MAX_SAFE_INTEGER,
-          beforeSequence: Number.MAX_SAFE_INTEGER,
-          ...range,
-        })
-      : { history: [], overflow: false, earlierHistoryOmitted: false };
+      ? {
+          pendingOutgoing,
+          ...boundedHistory(database, {
+            maximumRecords,
+            beforePosition: Number.MAX_SAFE_INTEGER,
+            beforeSequence: Number.MAX_SAFE_INTEGER,
+            ...range,
+          }),
+        }
+      : {
+          pendingOutgoing: false,
+          history: [],
+          overflow: false,
+          earlierHistoryOmitted: false,
+        };
   }
   return {
+    pendingOutgoing,
     ...boundedHistory(database, {
       maximumRecords,
       beforePosition: readInteger(candidate, "position"),
       beforeSequence: readInteger(candidate, "sequence"),
       ...range,
-      conversationId: readText(candidate, "conversation_id"),
+      conversationId,
     }),
     candidate: historyEntry(candidate),
   };

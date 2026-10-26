@@ -103,9 +103,28 @@ function preservesStateAcrossRestart() {
           inboxItem,
         );
         expect(
-          (yield* store.readFirewallEvidence({ maximumRecords: 10 }))
-            .pendingOutgoing,
+          (yield* store.readFirewallEvidence({
+            conversationId: foundation.conversationId,
+            maximumRecords: 10,
+          })).pendingOutgoing,
         ).toBe(true);
+        expect(
+          (yield* store.readFirewallEvidence({
+            conversationId: "conversation:other",
+            maximumRecords: 10,
+          })).pendingOutgoing,
+        ).toBe(false);
+        const captured = yield* store.readFirewallEvidenceSlices({
+          ranges: [
+            { beforeRecord: record.recordHash },
+            { conversationId: "conversation:other" },
+          ],
+          maximumRecords: 10,
+        });
+        expect(captured.slices.map((slice) => slice.pendingOutgoing)).toEqual([
+          true,
+          false,
+        ]);
       }),
     );
   });
@@ -134,8 +153,10 @@ function invalidatesInterruptedChecks() {
     yield* withStore(path, (store) =>
       Effect.gen(function* () {
         expect(
-          (yield* store.readFirewallEvidence({ maximumRecords: 10 }))
-            .pendingOutgoing,
+          (yield* store.readFirewallEvidence({
+            conversationId: foundation.conversationId,
+            maximumRecords: 10,
+          })).pendingOutgoing,
         ).toBe(true);
         expect(
           yield* Effect.flip(
