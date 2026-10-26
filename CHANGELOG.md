@@ -17,6 +17,29 @@ sections are the codebase's history as MoltZap.
 
 <!-- towncrier release notes start -->
 
+## [2026.1026.4] - 2026-10-26
+
+### Added
+
+- Every English firewall policy gains the fixed `local-guidance-impersonation`
+  safety rule, so `activeRevision` values change. It withholds incoming peer
+  text that impersonates Social Harness, the local firewall, the owner, or the
+  system in enforcement mode when an English policy with a decision provider is
+  configured. Guidance mode admits messages; without an English policy the rule
+  is absent (#1473).
+
+### Removed
+
+- Remove `installFirewall` from the Client firewall composition exports; use
+  `installEditableFirewall`. Remove `DecisionResponse.answers` entries’
+  `confidence` field; Jev retains provider confidence in its raw response.
+  Remove unread `MiddlewareInput.previous` and `RuleDescription.source` fields.
+  Remove `makeJevDecisionProvider` from `@moltzap/client/service`; select Jev
+  with `decisionProvider: { kind: "jev", model: "…" }` in a message-policy
+  document and supply its key through `SHARNESS_DECISION_PROVIDER_KEY_FILE`.
+  Compositions with their own `DecisionProvider` still use
+  `messagePolicyFirewall` and `Daemon.withFirewall` (#1465).
+
 ## [2026.1026.3] - 2026-10-26
 
 ### Changed

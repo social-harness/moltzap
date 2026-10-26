@@ -2,6 +2,7 @@
 
 import { Data, Schema } from "effect";
 import { exactStruct } from "../../encoding/exact.js";
+import { firewallCheckSchema } from "../evaluator/contract/index.js";
 
 /** An opaque local assessment reference conveys no approval or lookup authority. */
 const checkIdSchema = Schema.String.pipe(Schema.pattern(/^chk_[a-f0-9]{64}$/u));
@@ -172,10 +173,9 @@ function quoteForAgent(value: unknown): string {
 
 /** Why a local check holds a text: the same closed set for a refused send and a withheld incoming text. */
 const firewallRefusal = Schema.Literal(
-  "prohibited",
-  "unresolved-evidence",
-  "check-unavailable",
-  "norm-violation",
+  ...firewallCheckSchema.fields.reason.literals.filter(
+    (reason) => reason !== "eligible",
+  ),
 );
 
 /**
@@ -215,7 +215,7 @@ export const firewallRefusalSchema = exactStruct({
   refusal: firewallRefusal,
   feedback: Schema.Array(
     exactStruct({
-      nextAction: Schema.Literal("revise", "wait", "stop", "seek-approval"),
+      nextAction: firewallCheckSchema.fields.feedback.value.fields.nextAction,
       text: Schema.NonEmptyString,
     }),
   ),

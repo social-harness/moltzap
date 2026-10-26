@@ -13,91 +13,57 @@ errors; OpenClaw presents local guidance and refusal feedback to the agent.
 See the [runtime specification](../../../../../docs/spec/harness/message-policy.md)
 for composition, persistence, host support and qualification limits.
 
-## Compose a chain
+## Select Jev through a policy document
 
-Inside an Effect program, trusted composition can install both kinds together:
+Save a message-policy document such as this as `message-policy.json`:
 
-```ts
-import { Config, Effect } from "effect";
-import {
-  makeEnglishPolicy,
-  makeFirewall,
-  makeJevDecisionProvider,
-  type MessageMiddleware,
-} from "@moltzap/client/service";
-
-const bodyLimit = 10_000;
-const sizePolicy: MessageMiddleware = {
-  id: "body-size",
-  revision: `characters-${bodyLimit}`,
-  rules: [{ id: "size", kind: "safety" }],
-  check: ({ event }) => Effect.succeed({
-    findings: [{
-      ruleId: "size",
-      outcome: event.message.text.length <= bodyLimit ? "pass" : "block",
-    }],
-    expectations: [],
-  }),
-};
-const english = yield* makeEnglishPolicy({
-  id: "owner-policy",
-  rules: [{
-    id: "proposal-acceptance",
-    kind: "norm",
-    text: "Everyone must accept the same concrete proposal before it is finalized. Availability alone is not acceptance.",
-    guidance: "Address the open proposal and wait for required acceptance.",
-    feedback: { text: "Ask for acceptance before announcing agreement.", nextAction: "revise" },
-  }],
-  provider: makeJevDecisionProvider({
-    apiKey: yield* Config.redacted("TYPESAFE_API_KEY"),
-    model: "jev-1.13.0",
-  }),
-  settings: {
-    minimumProbability: 0.5,
-    maximumRequestBytes: 60_000,
-    timeoutMilliseconds: 30_000,
+```json
+{
+  "format": "org.social-harness/message-policy/v1",
+  "mode": "enforcement",
+  "english": {
+    "fixedRules": [{
+      "id": "proposal-acceptance",
+      "kind": "norm",
+      "text": "Everyone must accept the same concrete proposal before it is finalized. Availability alone is not acceptance.",
+      "guidance": "Address the open proposal and wait for required acceptance.",
+      "feedback": {
+        "text": "Ask for acceptance before announcing agreement.",
+        "nextAction": "revise"
+      }
+    }]
   },
-});
-const firewall = yield* makeFirewall({
-  incoming: [sizePolicy, english],
-  outgoing: [sizePolicy, english],
-  settings: {
-    timeoutMilliseconds: 180_000,
-    middlewareTimeoutMilliseconds: 160_000,
-    maximumInputBytes: 100_000,
-    maximumResultBytes: 1_000_000,
-  },
-});
-const result = yield* firewall.checkOutgoing({
-  id: "attempt-1",
-  sender: "organizer-agent",
-  recipients: ["participant-agent"],
-  text: "The meeting is confirmed; everyone agreed.",
-}, {
-  agentId: "organizer-agent",
-  principal: "organizer-owner",
-  participants: [{ agentId: "participant-agent", principal: "participant-owner" }],
-  history: [],
-  facts: [],
-  gaps: ["The required participants' acceptance messages are unavailable."],
-});
+  "decisionProvider": { "kind": "jev", "model": "jev-1.13.0" }
+}
 ```
 
-The example holds because it declares missing evidence. A code-only chain needs
-no provider or credential. The example's model and probability threshold are
-experimental settings, not accuracy guarantees. Composition supplies the model
-and credential explicitly; the component never reads environment variables.
+Set `SHARNESS_MESSAGE_POLICY_FILE` to that document's path and
+`SHARNESS_DECISION_PROVIDER_KEY_FILE` to a readable file containing your Jev
+key, then start `sharnessd`. The daemon loads the configured provider and
+installs the policy before admitting messages. The model and probability
+threshold are experimental settings, not accuracy guarantees.
+
+A trusted composition that supplies its own `DecisionProvider` installs a
+decoded document with `messagePolicyFirewall(policy, provider)` and passes
+the resulting options to `Daemon.withFirewall`. Code-only chains need no
+provider or credential. See the
+[message-policy file contract](../../../../../docs/spec/harness/message-policy.md#message-policy-file)
+for configuration and defaults.
 
 ## Middleware contract
 
 | Value | Meaning |
 | --- | --- |
 | `MessageMiddleware` | Stable `id`, implementation `revision`, registered `rules`, and `check(input)` returning an Effect of `MiddlewareResult` or `MiddlewareError`. |
-| `MiddlewareInput` | Immutable `event`, `context`, and `previous` validated middleware observations. Earlier private traces are excluded. |
+| `MiddlewareInput` | Immutable `event` and authorized `context`. |
 | `Message` | The checked text with its verified sender and recipients, and the collective `operation` it belongs to: a request, an answer, a result or a failure; absent for a plain message. |
 | `MessageContext` | Local agent and principal identity, verified participant attribution, authorized earlier history, owner facts, evidence gaps, and the capture time `now`. |
 | `MiddlewareResult` | Per-rule `findings`, contextual norm `expectations`, and optional opaque private `trace`. |
 | `Firewall.checkIncoming` / `checkOutgoing` result | Composed `judgment` and `reason`, permitted `feedback` and `guidance`, and attributed private `checks`. |
+
+The data-only evaluator contract owns `firewallCheckSchema`. Retained audits
+and host-safe refusal projections derive their fields from it. Hosts load the
+contract entry without loading evaluation or provider clients.
 
 The runner owns advancement: middleware has no `next()` callback and cannot
 short-circuit another installed check. Every declared rule must have a finding;
@@ -134,9 +100,7 @@ policy's hidden closure state.
 
 `makeEnglishPolicy` freezes English rules and runs applicability, personal trust
 (safety), norm expectations, and outgoing conformance. Every active
-rule runs within the budget; applicability never prunes safety checks. The
-English adapter ignores `previous`: earlier findings might have been derived
-from an outgoing draft. Outgoing expectations use original history and facts
+rule runs within the budget; applicability never prunes safety checks. Outgoing expectations use original history and facts
 without the draft's text or id. Conformance then sees the draft
 and the independently established expectations.
 
@@ -147,9 +111,9 @@ applicability, expectation or conformance answer is an uncertain `pass`, the
 norm is still assessed by expectations and conformance, conformance assesses
 only the expectations the decision provider settled, and an uncertain subject reference is left
 out of its expectation. A failed or invalid provider answer holds in every stage.
-A rounded near-tie is valid: in a distribution reported in hundredths, Jev's
-stated choice may trail another option by the same tolerance its sum has. Such
-a trailing choice is uncertain.
+Provider probabilities use a tolerance of 0.02 for both their sum and the
+stated choice's distance from the maximum. Distributions remain unchanged;
+a stated choice that trails another option is uncertain.
 
 Every norm checks each admitted, runtime-visible message reference independently.
 Incoming messages may also anchor their own guidance. Private facts, withheld
@@ -238,9 +202,9 @@ Execution diagrams live with their owners:
 [`index.ts`](./index.ts) → `makeFirewall` and
 [`english.ts`](./english.ts) → `makeEnglishPolicy`.
 
-`chain.test.ts`, `english.test.ts` and `jev.test.ts` check behavior through the
-public service API. Provider fakes verify composition, failure closure and
-projection; real-provider experiments measure classification separately.
+`chain.test.ts` and `english.test.ts` check evaluator behavior;
+`jev.test.ts` tests the internal provider through its module. Provider fakes
+verify composition, failure closure and projection; real-provider experiments measure classification separately.
 Client runtime and adapter tests cover send refusal, retained admission and
 guidance projection. Real-agent experiments must separately retain actual tool
 errors, model-authored repair, rendered guidance and peer delivery; component

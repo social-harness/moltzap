@@ -3,9 +3,14 @@
 import { Effect, Schema } from "effect";
 import { PostIntent } from "../communication/records/index.js";
 import { encodeRuntimeValue } from "../communication/store/index.js";
-import { installFirewall, Message, MessageContext } from "../firewall/index.js";
+import {
+  installEditableFirewall,
+  Message,
+  MessageContext,
+} from "../firewall/index.js";
 import { WIRE_VERSION } from "../identity/wire-version.js";
 import { digest, identifier } from "./agent-card-fixtures.js";
+import { stateDirectory, withStore } from "./store-schema-fixtures.js";
 
 const policy = {
   id: "owner",
@@ -47,34 +52,38 @@ const candidate = Schema.decodeUnknown(PostIntent)({
 });
 
 /** A shadow refusal retains private diagnostics even though Client may admit it. */
-export const makeRetainedCheckFixture = Effect.gen(function* () {
-  const installed = yield* installFirewall(policyOptions);
-  const outgoing = yield* candidate;
-  const message = new Message({
-    id: "candidate",
-    sender: identifier("agt_", 1),
-    recipients: [identifier("agt_", 2)],
-    text: "private meeting",
-  });
-  const context = new MessageContext({
-    agentId: identifier("agt_", 1),
-    principal: "alice-owner",
-    participants: [],
-    history: [],
-    facts: [],
-    gaps: [],
-  });
-  const input = {
-    configurationDigest: installed.configurationDigest,
-    installation: installed.metadata,
-    context,
-    message,
-    terminal: false,
-  };
-  const result = yield* installed.firewall.checkOutgoing(message, context);
-  return {
-    input,
-    result,
-    canonicalCandidate: yield* encodeRuntimeValue(outgoing),
-  };
-}).pipe(Effect.withSpan("makeRetainedCheckFixture"));
+export const makeRetainedCheckFixture = Effect.suspend(() =>
+  withStore(stateDirectory(), (store) =>
+    Effect.gen(function* () {
+      const installed = yield* installEditableFirewall(policyOptions, store);
+      const outgoing = yield* candidate;
+      const message = new Message({
+        id: "candidate",
+        sender: identifier("agt_", 1),
+        recipients: [identifier("agt_", 2)],
+        text: "private meeting",
+      });
+      const context = new MessageContext({
+        agentId: identifier("agt_", 1),
+        principal: "alice-owner",
+        participants: [],
+        history: [],
+        facts: [],
+        gaps: [],
+      });
+      const input = {
+        configurationDigest: installed.configurationDigest,
+        installation: installed.metadata,
+        context,
+        message,
+        terminal: false,
+      };
+      const result = yield* installed.firewall.checkOutgoing(message, context);
+      return {
+        input,
+        result,
+        canonicalCandidate: yield* encodeRuntimeValue(outgoing),
+      };
+    }),
+  ),
+).pipe(Effect.withSpan("makeRetainedCheckFixture"));
