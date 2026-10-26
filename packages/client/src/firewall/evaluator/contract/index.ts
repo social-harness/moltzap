@@ -514,6 +514,11 @@ const editableRuleSchema = Schema.Union(
   }),
 );
 
+/** The complete editable document shares one bound across seeding, persistence and updates. */
+export const editableDocumentSchema = Schema.Array(editableRuleSchema).pipe(
+  Schema.maxItems(256),
+);
+
 /** Removing and adding the same editable id replaces it in one activation. */
 export const policyUpdateSchema = exactStruct({
   add: Schema.optional(
@@ -627,6 +632,7 @@ export const firewallDecisionsSchema = exactStruct({
 export class FirewallPolicyError extends Data.TaggedError(
   "FirewallPolicyError",
 )<{
+  readonly ruleId?: string;
   readonly reason:
     | "not-configured"
     | "invalid-rule"

@@ -307,21 +307,9 @@ function firewallFor(fields: object) {
     }),
   ).pipe(
     Effect.flatMap((policy) =>
-      messagePolicyFirewall(
-        {
-          ...policy,
-          english:
-            policy.english === undefined
-              ? undefined
-              : {
-                  fixedRules: policy.english.fixedRules,
-                  initialRules: policy.english.initialRules,
-                },
-        },
-        {
-          decide: () => Effect.die("no English rules are installed"),
-        },
-      ),
+      messagePolicyFirewall(policy, {
+        decide: () => Effect.die("no English rules are installed"),
+      }),
     ),
     Effect.flatMap((options) =>
       makeFirewall({

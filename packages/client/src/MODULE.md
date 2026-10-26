@@ -1142,7 +1142,7 @@ export class DecisionProviderError extends Data.TaggedError(
 
 The adapter scrubs credentials before retaining optional private diagnostics.
 
-#### [`FirewallPolicyError`](./firewall/evaluator/contract/index.ts#L627)
+#### [`FirewallPolicyError`](./firewall/evaluator/contract/index.ts#L632)
 
 _Class_
 
@@ -1150,6 +1150,7 @@ _Class_
 export class FirewallPolicyError extends Data.TaggedError(
   "FirewallPolicyError",
 )<{
+  readonly ruleId?: string;
   readonly reason:
     | "not-configured"
     | "invalid-rule"
@@ -1760,7 +1761,7 @@ export type SignedMessageDigest = typeof SignedMessageDigest.Type;
 
 Validated SignedMessage equality receipt.
 
-#### [`decodeMessagePolicy`](./firewall/policy/document/index.ts#L189)
+#### [`decodeMessagePolicy`](./firewall/policy/document/index.ts#L177)
 
 _Variable_
 
@@ -1982,52 +1983,20 @@ provider, the collective norms with the `unavailable` provider, which would
 leave every one of their English checks unavailable, and an English rule
 id given twice across the fixed and initial rules are refused.
 
-#### [`messagePolicyFirewall`](./firewall/policy/compose.ts#L62)
+#### [`messagePolicyFirewall`](./firewall/policy/compose.ts#L64)
 
 _Variable_
 
 ```ts
 export const messagePolicyFirewall = Effect.fn("messagePolicyFirewall")(
-  function* (
-    policy: ResolvedMessagePolicy,
-    provider: DecisionProvider,
-  ): Effect.fn.Return<FirewallOptions, CheckInputError> {
-    const bundle = yield* Effect.cached(
-      collectiveNorms(
-        provider,
-        policy.englishSettings,
-        policy.maximumHistoryRecords,
-      ),
-    );
-    const incomingChain = yield* Effect.forEach(
-      policy.incoming,
-      (entry) => incoming(entry, bundle),
-      { concurrency: 1 },
-    );
-    const outgoingChain = yield* Effect.forEach(
-      policy.outgoing,
-      (entry) => outgoing(entry, bundle),
-      { concurrency: 1 },
-    );
-    return {
-      mode: policy.mode,
-      incoming: incomingChain,
-      outgoing: outgoingChain,
-      settings: policy.settings,
-      facts: policy.facts,
-      codeDigest: armDigest(policy, [...incomingChain, ...outgoingChain]),
-      maximumHistoryRecords: policy.maximumHistoryRecords,
-      maximumConcurrentChecks: policy.maximumConcurrentChecks,
-      english:
-        policy.english === undefined
-          ? undefined
-          : {
-              fixedRules: policy.english.fixedRules,
-              initialRules: policy.english.initialRules,
-              provider,
-              settings: policy.englishSettings,
-            },
-    };
+  function* (policy: MessagePolicy, provider: DecisionProvider) {
+    if (
+      (policy.english?.fixedBehaviors.length ?? 0) !== 0 ||
+      (policy.english?.initialBehaviors.length ?? 0) !== 0
+    ) {
+      return yield* new CheckInputError({ reason: "registration" });
+    }
+    return yield* composeFirewall(policy, provider, []);
   },
 )
 ```
@@ -2038,11 +2007,12 @@ its settings. This is the trusted-composition hook: a composition that
 brings its own decision provider installs the result with
 `Daemon.withFirewall`. `codeDigest` is the SHA-256 of the Client release,
 the mode, each registration's id and revision, the fixed English rules
-and behavior bytes,
-the decision provider and the settings. It leaves out what differs between
-the agents of one arm: the facilitator role, which no revision holds, the
+and behavior bytes, the decision provider and the settings. It leaves out
+what differs between the agents of one arm: the facilitator role, which no revision holds, the
 allowed-sender list and the initial editable rules, so every member
 records the same digest.
+Nonempty behavior paths fail with `CheckInputError` (`registration`); only
+file loading resolves behavior paths.
 
 #### [`OperationId (value)`](./identity/registry/contract.ts#L22)
 

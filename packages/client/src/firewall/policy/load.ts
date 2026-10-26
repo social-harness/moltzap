@@ -8,34 +8,36 @@ import {
   Schedule,
   Schema,
 } from "effect";
-import { load as loadYaml } from "js-yaml";
 import { createHash } from "node:crypto";
+// eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Nonblocking descriptor opens let fstat reject special files without waiting for a writer.
+import { constants } from "node:fs";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Configuration reads the configured policy file before the daemon composes its platform services.
-import { lstat, readFile } from "node:fs/promises";
-import { dirname, isAbsolute, resolve, win32 } from "node:path";
+import { type FileHandle, lstat, open, realpath } from "node:fs/promises";
+import { dirname, isAbsolute, relative, resolve, sep, win32 } from "node:path";
+import { parse } from "yaml";
 import { exactStruct } from "../../encoding/exact.js";
 import {
   type DecisionProvider,
   DecisionProviderError,
+  editableDocumentSchema,
   EnglishRule,
   makeJevDecisionProvider,
   policyReadSchema,
-  policyUpdateSchema,
 } from "../evaluator/index.js";
 import {
+  type BehaviorFailure,
   type CredentialReader,
   MessagePolicyConfigurationError,
   type MessagePolicyConfigurationFailure,
   type PolicyConfiguration,
 } from "./configuration.js";
-import {
-  decodeMessagePolicy,
-  type MessagePolicy,
-  type ResolvedMessagePolicy,
-} from "./document/index.js";
+import { decodeMessagePolicy, type MessagePolicy } from "./document/index.js";
 
 /** Larger than any document of 256 editable rules and the fixed rules beside them. */
 const MAXIMUM_POLICY_BYTES = 1_048_576;
+
+/** The Behaviors spec limits each BEHAVIOR.md to 64 KiB: docs/spec/harness/message-policy.md#behaviors. */
+export const MAXIMUM_BEHAVIOR_BYTES = 65_536;
 
 /** A key is one token; surrounding whitespace, such as a trailing newline, is ignored. */
 const decisionProviderKey = Schema.Trim.pipe(
@@ -75,7 +77,8 @@ const failureMessages: Readonly<
 
 /** A configured document with the decision provider it names, and where its audit goes. */
 export interface LoadedMessagePolicy {
-  readonly policy: ResolvedMessagePolicy;
+  readonly policy: MessagePolicy;
+  readonly fixedBehaviorDigests?: readonly string[];
   readonly provider: DecisionProvider;
   readonly behaviorRulePaths: ReadonlyMap<string, string>;
   readonly auditExport?: string;
@@ -119,6 +122,7 @@ export const loadMessagePolicy = (
     }
     return Option.some({
       policy: resolved.policy,
+      fixedBehaviorDigests: resolved.fixedBehaviorDigests,
       behaviorRulePaths: resolved.behaviorRulePaths,
       provider: yield* decisionProvider(policy, configuration, readCredential),
       auditExport,
@@ -130,18 +134,22 @@ export const loadMessagePolicy = (
  * operator message.
  * @param reason Why the setting cannot start the daemon.
  * @param path The indexed behavior entry, if one fails.
+ * @param behaviorReason The closed behavior failure category.
  * @returns The failure, naming no configured value.
  */
 export function policyConfigurationError(
   reason: MessagePolicyConfigurationFailure,
   path?: string,
+  behaviorReason?: BehaviorFailure,
 ): MessagePolicyConfigurationError {
+  const category = behaviorReason === undefined ? "" : ` (${behaviorReason})`;
   return new MessagePolicyConfigurationError({
     reason,
+    behaviorReason,
     message:
       path === undefined
         ? failureMessages[reason]
-        : `${failureMessages[reason]}; invalid at ${path}. Docs: https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/message-policy.md#behaviors`,
+        : `${failureMessages[reason]}; invalid at ${path}${category}. Docs: https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/message-policy.md#behaviors`,
   });
 }
 
@@ -161,43 +169,70 @@ const behaviorFrontmatter = Schema.Struct({
 });
 
 /** Reports only the policy entry; YAML diagnostics may contain private file content. */
-function invalidBehavior(path: string) {
-  return policyConfigurationError("message-policy", path);
+function invalidBehavior(path: string, reason: BehaviorFailure) {
+  return policyConfigurationError("message-policy", path, reason);
 }
 
 function readBehavior(root: string, directory: string, path: string) {
-  const refused = () => invalidBehavior(path);
+  const refused = (reason: BehaviorFailure) => invalidBehavior(path, reason);
   if (
     isAbsolute(directory) ||
     win32.isAbsolute(directory) ||
     directory.split(/[\\/]/u).includes("..")
   ) {
-    return Effect.fail(refused());
+    return Effect.fail(refused("schema"));
   }
   return Effect.gen(function* () {
-    const bytes = yield* Effect.tryPromise({
-      try: () => readFile(resolve(root, directory, "BEHAVIOR.md")),
-      catch: refused,
+    const canonical = (location: string) =>
+      Effect.tryPromise({
+        try: () => realpath(location),
+        catch: () => refused("missing"),
+      });
+    const locations = yield* Effect.all({
+      root: canonical(root),
+      directory: canonical(resolve(root, directory)),
+      file: canonical(resolve(root, directory, "BEHAVIOR.md")),
     });
-    if (bytes.byteLength > 65_536) {
-      return yield* refused();
+    if (
+      !contained(locations.root, locations.directory) ||
+      !contained(locations.root, locations.file)
+    ) {
+      return yield* refused("schema");
     }
+    const bytes = yield* readBoundedFile(
+      locations.file,
+      MAXIMUM_BEHAVIOR_BYTES,
+      refused,
+    );
+    return yield* decodeBehavior(bytes, refused);
+  });
+}
+
+/** YAML parser diagnostics stay private; only a closed category crosses this boundary. */
+function decodeBehavior(
+  bytes: Buffer,
+  refused: (reason: BehaviorFailure) => MessagePolicyConfigurationError,
+) {
+  return Effect.gen(function* () {
     const parts = /^---\r?\n([\s\S]*?)^---[ \t]*(?:\r?\n|$)([\s\S]*)/mu.exec(
-      bytes.toString("utf8"),
+      bytes.toString("utf8").replace(/^\uFEFF/u, ""),
     );
     if (
       parts?.[1] === undefined ||
       parts[2] === undefined ||
       parts.index !== 0
     ) {
-      return yield* refused();
+      return yield* refused("frontmatter");
     }
     const frontmatter = yield* Effect.try({
-      try: (): unknown => loadYaml(parts[1] ?? ""),
-      catch: refused,
+      try: (): unknown => parse(parts[1] ?? "", { schema: "core" }),
+      catch: () => refused("frontmatter"),
     }).pipe(
-      Effect.flatMap(Schema.decodeUnknown(behaviorFrontmatter)),
-      Effect.mapError(refused),
+      Effect.flatMap((value) =>
+        Schema.decodeUnknown(behaviorFrontmatter)(value).pipe(
+          Effect.mapError(() => refused("schema")),
+        ),
+      ),
     );
     const metadata = frontmatter.metadata["social-harness"];
     const rules = yield* Schema.decodeUnknown(policyReadSchema.fields.rules)([
@@ -206,9 +241,9 @@ function readBehavior(root: string, directory: string, path: string) {
         text: parts[2].trim(),
         ...metadata,
       },
-    ]).pipe(Effect.mapError(refused));
+    ]).pipe(Effect.mapError(() => refused("schema")));
     const rule = yield* Effect.fromNullable(rules[0]).pipe(
-      Effect.mapError(refused),
+      Effect.mapError(() => refused("schema")),
     );
     return { rule, digest: createHash("sha256").update(bytes).digest("hex") };
   });
@@ -220,7 +255,7 @@ function resolveBehaviors(policy: MessagePolicy, root: string) {
     const behaviorRulePaths = new Map<string, string>();
     const english = policy.english;
     if (english === undefined) {
-      return { policy: { ...policy, english: undefined }, behaviorRulePaths };
+      return { policy, behaviorRulePaths, fixedBehaviorDigests: undefined };
     }
     const state = {
       root,
@@ -233,30 +268,34 @@ function resolveBehaviors(policy: MessagePolicy, root: string) {
       english.fixedBehaviors,
       "fixedBehaviors",
       state,
+      { mode: "fixed" },
     );
     const initial = yield* loadBehaviors(
       english.initialBehaviors,
       "initialBehaviors",
       state,
-      english.initialRules,
+      { mode: "initial", seed: english.initialRules },
     );
-    const resolved: ResolvedMessagePolicy = {
+    const resolved: MessagePolicy = {
       ...policy,
       english: {
-        fixedRules: [
-          ...english.fixedRules,
-          ...fixed.map((behavior) => behavior.rule),
-        ],
+        fixedBehaviors: [],
+        initialBehaviors: [],
+        fixedRules: [...english.fixedRules, ...fixed.map(({ rule }) => rule)],
         initialRules: [
           ...english.initialRules,
-          ...initial.map((behavior) => behavior.rule),
+          ...initial.map(({ rule }) => rule),
         ],
       },
-      ...(fixed.length === 0
-        ? {}
-        : { fixedBehaviorDigests: fixed.map((behavior) => behavior.digest) }),
     };
-    return { policy: resolved, behaviorRulePaths };
+    return {
+      policy: resolved,
+      behaviorRulePaths,
+      fixedBehaviorDigests:
+        fixed.length === 0
+          ? undefined
+          : fixed.map((behavior) => behavior.digest),
+    };
   });
 }
 
@@ -268,22 +307,24 @@ function loadBehaviors(
     readonly ids: Set<string>;
     readonly behaviorRulePaths: Map<string, string>;
   },
-  seed?: readonly EnglishRule[],
+  mode:
+    | { readonly mode: "fixed" }
+    | { readonly mode: "initial"; readonly seed: readonly EnglishRule[] },
 ) {
-  const rules = [...(seed ?? [])];
+  const rules = mode.mode === "initial" ? [...mode.seed] : [];
   return Effect.forEach(
     directories,
     (directory, index) =>
       Effect.gen(function* () {
-        const path = `english.${field}[${index}]`;
+        const path = `english.${field}.${index}`;
         const behavior = yield* readBehavior(state.root, directory, path);
         if (state.ids.has(behavior.rule.id)) {
-          return yield* invalidBehavior(path);
+          return yield* invalidBehavior(path, "duplicate-id");
         }
-        if (seed !== undefined) {
+        if (mode.mode === "initial") {
           rules.push(behavior.rule);
-          yield* Schema.decodeUnknown(policyUpdateSchema)({ add: rules }).pipe(
-            Effect.mapError(() => invalidBehavior(path)),
+          yield* Schema.decodeUnknown(editableDocumentSchema)(rules).pipe(
+            Effect.mapError(() => invalidBehavior(path, "editable-limit")),
           );
         }
         state.ids.add(behavior.rule.id);
@@ -315,17 +356,71 @@ function requirePrivateParent(path: string) {
   );
 }
 
+/** Relative paths must stay in the canonical policy directory after symlink resolution. */
+function contained(root: string, path: string) {
+  const child = relative(root, path);
+  return !isAbsolute(child) && child !== ".." && !child.startsWith(`..${sep}`);
+}
+
 function readPolicyText(path: string) {
-  return Effect.tryPromise({
-    try: () => readFile(path),
-    catch: () => policyConfigurationError("message-policy-file"),
-  }).pipe(
-    Effect.filterOrFail(
-      (bytes) => bytes.byteLength <= MAXIMUM_POLICY_BYTES,
-      () => policyConfigurationError("message-policy-file"),
-    ),
-    Effect.map((bytes) => bytes.toString("utf8")),
-  );
+  return readBoundedFile(path, MAXIMUM_POLICY_BYTES, () =>
+    policyConfigurationError("message-policy-file"),
+  ).pipe(Effect.map((bytes) => bytes.toString("utf8")));
+}
+
+/** The descriptor owns both the file-kind check and the bounded read. */
+function readBoundedFile(
+  path: string,
+  maximumBytes: number,
+  refused: (reason: BehaviorFailure) => MessagePolicyConfigurationError,
+) {
+  return Effect.acquireUseRelease(
+    Effect.tryPromise({
+      try: () => open(path, constants.O_RDONLY | constants.O_NONBLOCK),
+      catch: () => refused("missing"),
+    }),
+    (file) =>
+      Effect.gen(function* () {
+        const stat = yield* Effect.tryPromise({
+          try: () => file.stat(),
+          catch: () => refused("missing"),
+        });
+        if (!stat.isFile()) {
+          return yield* refused("not-a-file");
+        }
+        const bytes = yield* readDescriptor(file, maximumBytes).pipe(
+          Effect.mapError(() => refused("missing")),
+        );
+        if (bytes.byteLength > maximumBytes) {
+          return yield* refused("too-large");
+        }
+        return bytes;
+      }),
+    (file) =>
+      Effect.tryPromise({
+        try: () => file.close(),
+        catch: () => refused("missing"),
+      }).pipe(Effect.orDie),
+  ).pipe(Effect.scoped);
+}
+
+/** A short read need not be EOF; stop only at EOF or the extra byte. */
+function readDescriptor(file: FileHandle, maximumBytes: number) {
+  return Effect.gen(function* () {
+    const buffer = Buffer.alloc(maximumBytes + 1);
+    let length = 0;
+    while (length < buffer.length) {
+      const offset = length;
+      const read = yield* Effect.tryPromise(() =>
+        file.read(buffer, offset, buffer.length - offset, null),
+      );
+      if (read.bytesRead === 0) {
+        break;
+      }
+      length += read.bytesRead;
+    }
+    return buffer.subarray(0, length);
+  });
 }
 
 /** Names where the document is invalid, never what it holds there. */

@@ -4,17 +4,17 @@ import { Effect, Option } from "effect";
 import { createHash } from "node:crypto";
 import type { FirewallOptions } from "../admission/index.js";
 import type {
-  CheckInputError,
-  DecisionProvider,
-  FirewallPolicyError,
-  MessageMiddleware,
-} from "../evaluator/index.js";
-import type {
   IncomingMiddlewareEntry,
+  MessagePolicy,
   OutgoingMiddlewareEntry,
-  ResolvedMessagePolicy,
 } from "./document/index.js";
 import { packageVersion } from "../../release/index.js";
+import {
+  CheckInputError,
+  type DecisionProvider,
+  type FirewallPolicyError,
+  type MessageMiddleware,
+} from "../evaluator/index.js";
 import {
   acknowledgementsPolicy,
   ALLOWED_SENDERS_ID,
@@ -40,6 +40,7 @@ export interface FirewallInstallation {
   readonly options?: FirewallOptions;
   readonly auditExport?: string;
   readonly fromPolicyFile?: boolean;
+  readonly behaviorRulePaths?: ReadonlyMap<string, string>;
 }
 
 /**
@@ -49,21 +50,111 @@ export interface FirewallInstallation {
  * brings its own decision provider installs the result with
  * `Daemon.withFirewall`. `codeDigest` is the SHA-256 of the Client release,
  * the mode, each registration's id and revision, the fixed English rules
- * and behavior bytes,
- * the decision provider and the settings. It leaves out what differs between
- * the agents of one arm: the facilitator role, which no revision holds, the
+ * and behavior bytes, the decision provider and the settings. It leaves out
+ * what differs between the agents of one arm: the facilitator role, which no revision holds, the
  * allowed-sender list and the initial editable rules, so every member
  * records the same digest.
- * @param policy The resolved document with rules in place of behavior paths.
+ * Nonempty behavior paths fail with `CheckInputError` (`registration`); only
+ * file loading resolves behavior paths.
+ * @param policy A decoded document with inline rules and no behavior paths.
  * @param provider The service that assesses its English rules and the
  *     collective norms; unused when the document installs neither.
  * @returns The options `Daemon.withFirewall` installs.
  */
 export const messagePolicyFirewall = Effect.fn("messagePolicyFirewall")(
-  function* (
-    policy: ResolvedMessagePolicy,
-    provider: DecisionProvider,
-  ): Effect.fn.Return<FirewallOptions, CheckInputError> {
+  function* (policy: MessagePolicy, provider: DecisionProvider) {
+    if (
+      (policy.english?.fixedBehaviors.length ?? 0) !== 0 ||
+      (policy.english?.initialBehaviors.length ?? 0) !== 0
+    ) {
+      return yield* new CheckInputError({ reason: "registration" });
+    }
+    return yield* composeFirewall(policy, provider, []);
+  },
+);
+
+/**
+ * The firewall a composition installs, or else the one the environment's
+ * message-policy file describes, which is logged with its registrations. A
+ * composition with its own firewall refuses that file.
+ * @param configuration The policy and provider file locations.
+ * @param readCredential The daemon-owned secret-file reader.
+ * @param composed The firewall the composition installs itself, if any.
+ * @returns What the daemon installs; neither field is set without a firewall.
+ */
+export const firewallInstallation = (
+  configuration: PolicyConfiguration,
+  readCredential: CredentialReader,
+  composed?: FirewallInstallation,
+): Effect.Effect<FirewallInstallation, MessagePolicyConfigurationError> =>
+  loadMessagePolicy(configuration, readCredential).pipe(
+    Effect.flatMap((configured) =>
+      Option.match(configured, {
+        onNone: () => Effect.succeed(composed ?? {}),
+        onSome: ({
+          policy,
+          provider,
+          auditExport,
+          behaviorRulePaths,
+          fixedBehaviorDigests,
+        }) =>
+          composed === undefined
+            ? composeFirewall(
+                policy,
+                provider,
+                fixedBehaviorDigests ?? [],
+              ).pipe(
+                Effect.mapError(() =>
+                  policyConfigurationError("message-policy"),
+                ),
+                Effect.tap((options) =>
+                  validateBehaviorIds(options, behaviorRulePaths),
+                ),
+                Effect.tap(logInstalled),
+                Effect.map((options) => ({
+                  options,
+                  auditExport,
+                  fromPolicyFile: true,
+                  behaviorRulePaths,
+                })),
+              )
+            : Effect.fail(policyConfigurationError("message-policy-composed")),
+      }),
+    ),
+  );
+
+/**
+ * The configuration failure for a document whose rules the daemon could not
+ * install against its store, such as an initial rule reusing a code rule's
+ * id.
+ * @param cause The closed installation failure.
+ * @param behaviorRulePaths The source entry for each file-loaded behavior.
+ * @returns The failure naming `SHARNESS_MESSAGE_POLICY_FILE` and the reason.
+ */
+export function policyInstallationError(
+  cause: FirewallPolicyError,
+  behaviorRulePaths?: ReadonlyMap<string, string>,
+): MessagePolicyConfigurationError {
+  const path =
+    cause.ruleId === undefined
+      ? undefined
+      : behaviorRulePaths?.get(cause.ruleId);
+  const base = policyConfigurationError("message-policy");
+  const location = path === undefined ? "" : `; invalid at ${path}`;
+  return new MessagePolicyConfigurationError({
+    reason: "message-policy",
+    behaviorReason: path === undefined ? undefined : "duplicate-id",
+    message: `${base.message}; its rules could not be installed (${cause.reason})${location}. Docs: https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/message-policy.md#behaviors`,
+  });
+}
+
+/** File loading supplies byte digests after resolving behavior paths into rules. */
+function composeFirewall(
+  policy: MessagePolicy,
+  provider: DecisionProvider,
+  fixedBehaviorDigests: readonly string[],
+): Effect.Effect<FirewallOptions, CheckInputError> {
+  return Effect.gen(function* () {
     const bundle = yield* Effect.cached(
       collectiveNorms(
         provider,
@@ -87,7 +178,11 @@ export const messagePolicyFirewall = Effect.fn("messagePolicyFirewall")(
       outgoing: outgoingChain,
       settings: policy.settings,
       facts: policy.facts,
-      codeDigest: armDigest(policy, [...incomingChain, ...outgoingChain]),
+      codeDigest: armDigest(
+        policy,
+        [...incomingChain, ...outgoingChain],
+        fixedBehaviorDigests,
+      ),
       maximumHistoryRecords: policy.maximumHistoryRecords,
       maximumConcurrentChecks: policy.maximumConcurrentChecks,
       english:
@@ -100,62 +195,6 @@ export const messagePolicyFirewall = Effect.fn("messagePolicyFirewall")(
               settings: policy.englishSettings,
             },
     };
-  },
-);
-
-/**
- * The firewall a composition installs, or else the one the environment's
- * message-policy file describes, which is logged with its registrations. A
- * composition with its own firewall refuses that file.
- * @param configuration The policy and provider file locations.
- * @param readCredential The daemon-owned secret-file reader.
- * @param composed The firewall the composition installs itself, if any.
- * @returns What the daemon installs; neither field is set without a firewall.
- */
-export const firewallInstallation = (
-  configuration: PolicyConfiguration,
-  readCredential: CredentialReader,
-  composed?: FirewallInstallation,
-): Effect.Effect<FirewallInstallation, MessagePolicyConfigurationError> =>
-  loadMessagePolicy(configuration, readCredential).pipe(
-    Effect.flatMap((configured) =>
-      Option.match(configured, {
-        onNone: () => Effect.succeed(composed ?? {}),
-        onSome: ({ policy, provider, auditExport, behaviorRulePaths }) =>
-          composed === undefined
-            ? messagePolicyFirewall(policy, provider).pipe(
-                Effect.mapError(() =>
-                  policyConfigurationError("message-policy"),
-                ),
-                Effect.tap((options) =>
-                  validateBehaviorIds(options, behaviorRulePaths),
-                ),
-                Effect.tap(logInstalled),
-                Effect.map((options) => ({
-                  options,
-                  auditExport,
-                  fromPolicyFile: true,
-                })),
-              )
-            : Effect.fail(policyConfigurationError("message-policy-composed")),
-      }),
-    ),
-  );
-
-/**
- * The configuration failure for a document whose rules the daemon could not
- * install against its store, such as an initial rule reusing a code rule's
- * id.
- * @param cause The closed installation failure.
- * @returns The failure naming `SHARNESS_MESSAGE_POLICY_FILE` and the reason.
- */
-export function policyInstallationError(
-  cause: FirewallPolicyError,
-): MessagePolicyConfigurationError {
-  const base = policyConfigurationError("message-policy");
-  return new MessagePolicyConfigurationError({
-    reason: "message-policy",
-    message: `${base.message}; its rules could not be installed (${cause.reason})`,
   });
 }
 
@@ -171,13 +210,20 @@ function validateBehaviorIds(
   const collision = [...behaviorRulePaths].find(([id]) => codeIds.has(id));
   return collision === undefined
     ? Effect.void
-    : Effect.fail(policyConfigurationError("message-policy", collision[1]));
+    : Effect.fail(
+        policyConfigurationError(
+          "message-policy",
+          collision[1],
+          "duplicate-id",
+        ),
+      );
 }
 
 /** The digest every agent of one arm shares; see {@link messagePolicyFirewall}. */
 function armDigest(
-  policy: ResolvedMessagePolicy,
+  policy: MessagePolicy,
   registrations: readonly MessageMiddleware[],
+  fixedBehaviorDigests: readonly string[],
 ): string {
   return createHash("sha256")
     .update(
@@ -188,9 +234,7 @@ function armDigest(
           id === ALLOWED_SENDERS_ID ? { id } : { id, revision },
         ),
         fixedRules: policy.english?.fixedRules ?? null,
-        ...(policy.fixedBehaviorDigests === undefined
-          ? {}
-          : { fixedBehaviorDigests: policy.fixedBehaviorDigests }),
+        ...(fixedBehaviorDigests.length === 0 ? {} : { fixedBehaviorDigests }),
         decisionProvider: policy.decisionProvider ?? null,
         englishSettings: policy.englishSettings,
         settings: policy.settings,

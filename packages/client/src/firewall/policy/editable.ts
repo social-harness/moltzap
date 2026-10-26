@@ -19,6 +19,7 @@ import {
   type DecidingRule,
   decidingRules,
   decodeFrozen,
+  editableDocumentSchema,
   englishPolicyFormat,
   EnglishPolicySettings,
   EnglishRule,
@@ -26,13 +27,12 @@ import {
   FirewallPolicyError,
   type FirewallPolicyOperations,
   makeEnglishPolicy,
-  policyReadSchema,
+  type policyReadSchema,
   policyUpdateSchema,
   PrivateCheckTrace,
   type RuleDescription,
 } from "../evaluator/index.js";
 
-const editableRules = policyReadSchema.fields.rules.pipe(Schema.maxItems(256));
 type FixedRules = typeof policyReadSchema.fields.fixedRules.Type;
 const englishId = "org.social-harness/english";
 
@@ -51,7 +51,7 @@ const captureEnglish = Effect.fn("captureEnglishOptions")(function* (
     english.fixedRules ?? [],
   );
   const initialRules = yield* decodeFrozen(
-    editableRules,
+    editableDocumentSchema,
     english.initialRules ?? [],
   );
   const settings = yield* decodeFrozen(EnglishPolicySettings, english.settings);
@@ -175,8 +175,11 @@ function validateIds(
   rules: readonly EnglishRule[],
   fixedRuleIds: readonly string[],
 ) {
-  if (rules.some((rule) => fixedRuleIds.includes(rule.id))) {
-    return Effect.fail(new FirewallPolicyError({ reason: "fixed-rule" }));
+  const collision = rules.find((rule) => fixedRuleIds.includes(rule.id));
+  if (collision !== undefined) {
+    return Effect.fail(
+      new FirewallPolicyError({ reason: "fixed-rule", ruleId: collision.id }),
+    );
   }
   return new Set(rules.map((rule) => rule.id)).size === rules.length
     ? Effect.void
@@ -184,7 +187,7 @@ function validateIds(
 }
 
 interface PolicyState {
-  rules: typeof editableRules.Type;
+  rules: typeof editableDocumentSchema.Type;
   readonly fixedRuleIds: readonly string[];
   active: InstalledFirewall;
 }
@@ -208,7 +211,7 @@ export const installEditableFirewall = Effect.fn("installEditableFirewall")(
     const rules =
       stored === undefined
         ? (captured.english?.initialRules ?? [])
-        : yield* decodeRuntimeValue(editableRules, stored).pipe(
+        : yield* decodeRuntimeValue(editableDocumentSchema, stored).pipe(
             Effect.mapError(persistenceFailure),
           );
     yield* validateIds(rules, fixedRuleIds);
@@ -262,7 +265,7 @@ function editedRules(
     if (remove.some((id) => !rules.some((rule) => rule.id === id))) {
       return yield* invalidRule();
     }
-    const next = yield* decodeFrozen(editableRules, [
+    const next = yield* decodeFrozen(editableDocumentSchema, [
       ...rules.filter((rule) => !remove.includes(rule.id)),
       ...(request.add ?? []),
     ]).pipe(Effect.mapError(invalidRule));

@@ -96,9 +96,6 @@ catalogs:
     '@types/estree':
       specifier: ^1.0.8
       version: 1.0.9
-    '@types/js-yaml':
-      specifier: 4.0.9
-      version: 4.0.9
     '@types/node':
       specifier: ^25.5.0
       version: 25.5.0
@@ -129,9 +126,6 @@ catalogs:
     jose:
       specifier: 6.2.5
       version: 6.2.5
-    js-yaml:
-      specifier: 4.1.1
-      version: 4.1.1
     mint:
       specifier: 4.2.749
       version: 4.2.749
@@ -330,22 +324,19 @@ importers:
       jose:
         specifier: 'catalog:'
         version: 6.2.5
-      js-yaml:
-        specifier: 'catalog:'
-        version: 4.1.1
       sigstore:
         specifier: 'catalog:'
         version: 4.1.1
       structured-headers:
         specifier: 'catalog:'
         version: 2.0.3
+      yaml:
+        specifier: 'catalog:'
+        version: 2.9.1
     devDependencies:
       '@effect/vitest':
         specifier: 'catalog:'
         version: 0.30.0(effect@3.22.1)(vitest@3.2.4(@types/debug@4.1.13)(@types/node@25.5.0)(jiti@2.7.0)(terser@5.49.0)(tsx@4.21.0)(yaml@2.9.1))
-      '@types/js-yaml':
-        specifier: 'catalog:'
-        version: 4.0.9
       '@typescript/native':
         specifier: 'catalog:'
         version: typescript@7.0.2
@@ -3896,9 +3887,6 @@ packages:
 
   '@types/http-cache-semantics@4.2.0':
     resolution: {integrity: sha512-L3LgimLHXtGkWikKnsPg0/VFx9OGZaC+eN1u4r+OB1XRqH3meBIAVC2zr1WdMH+RHmnRkqliQAOHNJ/E0j/e0Q==}
-
-  '@types/js-yaml@4.0.9':
-    resolution: {integrity: sha512-k4MGaQl5TGo/iipqb2UDG2UwjXziSWkh0uysQelTlJpX1qGlpUZYm8PnO4DxG1qBomtJUdYJ6qR6xdIah10JLg==}
 
   '@types/jsesc@2.5.1':
     resolution: {integrity: sha512-9VN+6yxLOPLOav+7PwjZbxiID2bVaeq0ED4qSQmdQTdjnXJSaCVKTR58t15oqH1H5t8Ng2ZX1SabJVoN9Q34bw==}
@@ -13195,8 +13183,6 @@ snapshots:
       '@types/unist': 3.0.3
 
   '@types/http-cache-semantics@4.2.0': {}
-
-  '@types/js-yaml@4.0.9': {}
 
   '@types/jsesc@2.5.1': {}
 

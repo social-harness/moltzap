@@ -46,12 +46,17 @@ type AuditPathIsOptional = Expect<
 type PolicyModeIsExact = Expect<
   Types.Equals<MessagePolicy["mode"], "guidance" | "enforcement">
 >;
-/** A decoded document installs through the same options as `withFirewall`. */
+/** A decoded inline document installs through the same options as `withFirewall`. */
 type PolicyInstallsAsFirewall = Expect<
   Types.Equals<
     ReturnType<typeof messagePolicyFirewall>,
     Effect.Effect<Omit<Daemon.FirewallOptions, "auditExport">, CheckInputError>
   >
+>;
+
+/** Decoding preserves the trusted composition input type, including defaulted empty paths. */
+type DecodedPolicyComposes = Expect<
+  Types.Equals<Parameters<typeof messagePolicyFirewall>[0], MessagePolicy>
 >;
 
 /** Compile-time witnesses for the closed Client process boundary. */
@@ -66,4 +71,5 @@ export type DaemonCanaries = [
   AuditPathIsOptional,
   PolicyModeIsExact,
   PolicyInstallsAsFirewall,
+  DecodedPolicyComposes,
 ];

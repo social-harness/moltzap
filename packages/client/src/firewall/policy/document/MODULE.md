@@ -8,7 +8,7 @@ The message-policy document `sharnessd` installs as its firewall.
 
 ## Public surface
 
-### [`decodeMessagePolicy`](./index.ts#L189)
+### [`decodeMessagePolicy`](./index.ts#L177)
 
 _Variable_
 

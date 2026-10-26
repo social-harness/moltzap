@@ -167,18 +167,6 @@ export const MessagePolicy = document.pipe(
 /** One decoded message-policy document, with Client's defaults filled in. */
 export type MessagePolicy = typeof MessagePolicy.Type;
 
-/** Composition receives resolved rules; behavior paths belong only to file loading. */
-export interface ResolvedMessagePolicy extends Omit<MessagePolicy, "english"> {
-  readonly english?: {
-    readonly fixedRules: readonly EnglishRule[];
-    readonly initialRules: readonly EnglishRule[];
-    readonly fixedBehaviors?: never;
-    readonly initialBehaviors?: never;
-  };
-  /** Fixed file byte hashes in installation order; omission preserves digests for inline-only policies. */
-  readonly fixedBehaviorDigests?: readonly string[];
-}
-
 /* eslint-enable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Restore naming after the Schema/type pair. */
 
 /**
