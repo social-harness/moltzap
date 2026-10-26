@@ -431,10 +431,9 @@ export interface EndpointStore {
     rules: Uint8Array,
     activation?: FirewallActivation,
   ) => Effect.Effect<void, EndpointStoreError>;
-  /** Recent edits, or ascending bounded pages for a complete shutdown snapshot. */
+  /** Recent edits ordered by activation time, newest first. */
   readonly readFirewallActivations: (request: {
     readonly since?: number;
-    readonly after?: number;
   }) => Effect.Effect<
     ReadonlyArray<{
       readonly sequence: number;
@@ -449,6 +448,7 @@ export interface EndpointStore {
     ReadonlyArray<FirewallAuditEntry & { readonly time: number }>,
     EndpointStoreError
   >;
+  /** Store test seam for retained attempts, including checks in progress. */
   readonly readFirewallAuditPage: (
     after: number,
   ) => Effect.Effect<readonly FirewallAuditEntry[], EndpointStoreError>;

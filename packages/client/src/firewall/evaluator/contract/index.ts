@@ -550,7 +550,7 @@ export const firewallDecisionsRequestSchema = exactStruct({
 });
 
 /** Activation metadata contains rule ids only, never their text or templates. */
-export const firewallActivationSchema = exactStruct({
+const firewallActivationSchema = exactStruct({
   time: Schema.NonNegativeInt,
   activeRevision: Schema.NonEmptyString,
   addedRuleIds: Schema.Array(Schema.NonEmptyString),

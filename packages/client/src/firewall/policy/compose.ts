@@ -32,13 +32,12 @@ import {
 import { loadMessagePolicy, policyConfigurationError } from "./load.js";
 
 /**
- * The firewall a daemon installs, if any, and where its audit goes.
+ * The firewall a daemon installs, if any.
  * `fromPolicyFile` marks one the environment's message-policy file
  * describes, so an installation failure names that setting.
  */
 export interface FirewallInstallation {
   readonly options?: FirewallOptions;
-  readonly auditExport?: string;
   readonly fromPolicyFile?: boolean;
   readonly behaviorRulePaths?: ReadonlyMap<string, string>;
 }
@@ -91,7 +90,6 @@ export const firewallInstallation = (
         onSome: ({
           policy,
           provider,
-          auditExport,
           behaviorRulePaths,
           fixedBehaviorDigests,
         }) =>
@@ -110,7 +108,6 @@ export const firewallInstallation = (
                 Effect.tap(logInstalled),
                 Effect.map((options) => ({
                   options,
-                  auditExport,
                   fromPolicyFile: true,
                   behaviorRulePaths,
                 })),

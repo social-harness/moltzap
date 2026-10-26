@@ -63,10 +63,6 @@ const failureMessages: Readonly<
     "SHARNESS_MESSAGE_POLICY_FILE must name a readable regular file of at most 1 MiB. Docs: https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/message-policy.md#message-policy-file",
   "message-policy":
     "SHARNESS_MESSAGE_POLICY_FILE must contain a valid org.social-harness/message-policy/v1 document",
-  "message-policy-required":
-    "SHARNESS_FIREWALL_AUDIT_EXPORT requires SHARNESS_MESSAGE_POLICY_FILE",
-  "firewall-audit-export":
-    "SHARNESS_FIREWALL_AUDIT_EXPORT must be an absolute path in an existing directory owned by the daemon's user with no group or other access",
   "message-policy-composed":
     "SHARNESS_MESSAGE_POLICY_FILE cannot be set for a daemon whose composition installs its own firewall",
   "decision-provider-key-file":
@@ -75,26 +71,23 @@ const failureMessages: Readonly<
     "SHARNESS_DECISION_PROVIDER_KEY_FILE must contain one key without inner whitespace",
 };
 
-/** A configured document with the decision provider it names, and where its audit goes. */
+/** A configured document with the decision provider it names, and its behavior sources. */
 export interface LoadedMessagePolicy {
   readonly policy: MessagePolicy;
   readonly fixedBehaviorDigests?: readonly string[];
   readonly provider: DecisionProvider;
   readonly behaviorRulePaths: ReadonlyMap<string, string>;
-  readonly auditExport?: string;
 }
 
 /**
  * The document `SHARNESS_MESSAGE_POLICY_FILE` names, or none when it is
  * unset. A `jev` decision provider reads its key from
  * `SHARNESS_DECISION_PROVIDER_KEY_FILE` and retries transient failures; the
- * key file is not read for any other provider. An audit export without a
- * policy or outside a private directory of the daemon's user, an unreadable
- * or invalid document, and a missing or invalid key fail configuration naming
- * no file content.
+ * key file is not read for any other provider. An unreadable or invalid
+ * document and a missing or invalid key fail configuration naming no file content.
  * @param configuration The policy and provider file locations.
  * @param readCredential The daemon-owned secret-file reader.
- * @returns The document, its decision provider and its audit export path.
+ * @returns The document, its decision provider and resolved behavior sources.
  */
 export const loadMessagePolicy = (
   configuration: PolicyConfiguration,
@@ -106,9 +99,7 @@ export const loadMessagePolicy = (
   Effect.gen(function* () {
     const path = configuration.messagePolicyFile;
     if (path === undefined) {
-      return configuration.firewallAuditExport === undefined
-        ? Option.none()
-        : yield* policyConfigurationError("message-policy-required");
+      return Option.none();
     }
     const policy = yield* readPolicyText(path).pipe(
       Effect.flatMap((text) =>
@@ -116,16 +107,11 @@ export const loadMessagePolicy = (
       ),
     );
     const resolved = yield* resolveBehaviors(policy, dirname(path));
-    const auditExport = configuration.firewallAuditExport;
-    if (auditExport !== undefined) {
-      yield* requirePrivateParent(auditExport);
-    }
     return Option.some({
       policy: resolved.policy,
       fixedBehaviorDigests: resolved.fixedBehaviorDigests,
       behaviorRulePaths: resolved.behaviorRulePaths,
       provider: yield* decisionProvider(policy, configuration, readCredential),
-      auditExport,
     });
   }).pipe(Effect.withSpan("loadMessagePolicy"));
 
@@ -354,27 +340,6 @@ function loadBehaviors(
         return behavior;
       }),
     { concurrency: 1 },
-  );
-}
-
-/** The audit export's directory exists, belongs to the daemon's user and admits no one else. */
-function requirePrivateParent(path: string) {
-  const refused = () => policyConfigurationError("firewall-audit-export");
-  if (!isAbsolute(path)) {
-    return Effect.fail(refused());
-  }
-  return Effect.tryPromise({
-    try: () => lstat(dirname(path)),
-    catch: refused,
-  }).pipe(
-    Effect.filterOrFail(
-      (parent) =>
-        parent.isDirectory() &&
-        parent.uid === process.getuid?.() &&
-        (parent.mode & 0o077) === 0,
-      refused,
-    ),
-    Effect.asVoid,
   );
 }
 

@@ -32,7 +32,7 @@ the firewall and host inbox rows of the layers above.
   inbound items the endpoint delivers.
 - `harness/protocol/`: shared MCP tools, events, operation values and schemas.
 - `harness/endpoint/`: the `HarnessEndpoint` library hosts load.
-- `firewall/`: built-in rules, policy loading and editing, admission and audit.
+- `firewall/`: built-in rules, policy loading and editing, admission and retained checks.
 - `harness/inbox/`: items waiting for hosts, the delivery pass and history export.
 - `harness/mcp/`: the daemon's loopback MCP server and event delivery.
 - `daemon/`: the always-on daemon process that composes the rest;

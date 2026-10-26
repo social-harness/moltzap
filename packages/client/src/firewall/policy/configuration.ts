@@ -6,9 +6,7 @@ import { Data, type Effect, type Redacted, type Schema } from "effect";
 export type MessagePolicyConfigurationFailure =
   | "message-policy-file"
   | "message-policy"
-  | "message-policy-required"
   | "message-policy-composed"
-  | "firewall-audit-export"
   | "decision-provider-key-file"
   | "decision-provider-key";
 
@@ -26,7 +24,6 @@ export type BehaviorFailure =
 export interface PolicyConfiguration {
   readonly messagePolicyFile?: string;
   readonly decisionProviderKeyFile?: Redacted.Redacted;
-  readonly firewallAuditExport?: string;
 }
 
 /** Policy loading fails with a closed reason and a safe operator message. */

@@ -41,9 +41,6 @@ type HelpIsExact = Expect<Types.Equals<typeof Daemon.help, string>>;
 type LayerIsExact = Expect<
   Types.Equals<typeof Daemon.layer, Layer.Layer<never, Daemon.StartupError>>
 >;
-type AuditPathIsOptional = Expect<
-  Types.Equals<Daemon.FirewallOptions["auditExport"], string | undefined>
->;
 /** A document always names a firewall mode; a daemon without one has no firewall. */
 type PolicyModeIsExact = Expect<
   Types.Equals<MessagePolicy["mode"], "guidance" | "enforcement">
@@ -59,7 +56,7 @@ type PolicyWriterKindsAreExact = Expect<
 type PolicyInstallsAsFirewall = Expect<
   Types.Equals<
     ReturnType<typeof messagePolicyFirewall>,
-    Effect.Effect<Omit<Daemon.FirewallOptions, "auditExport">, CheckInputError>
+    Effect.Effect<Daemon.FirewallOptions, CheckInputError>
   >
 >;
 
@@ -90,7 +87,6 @@ export type DaemonCanaries = [
   StartupDetailIsExact,
   HelpIsExact,
   LayerIsExact,
-  AuditPathIsOptional,
   PolicyModeIsExact,
   PolicyWriterKindsAreExact,
   PolicyInstallsAsFirewall,

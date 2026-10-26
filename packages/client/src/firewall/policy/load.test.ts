@@ -3,13 +3,7 @@
 import { live as it } from "@effect/vitest";
 import { Effect, Logger, Redacted } from "effect";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Tests create and remove exact temporary policy and key files around the configuration boundary.
-import {
-  chmodSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -59,11 +53,6 @@ it("installs no firewall without a policy file", () =>
 
 // @agent-code-guard/regression-only: each case pins one closed configuration failure of the message-policy settings.
 it.each([
-  [
-    "an audit export without a policy file",
-    () => ({ firewallAuditExport: "/var/lib/sharness/firewall.ndjson" }),
-    "message-policy-required",
-  ],
   [
     "a missing policy file",
     () => ({ messagePolicyFile: join(directory(), "absent.json") }),
@@ -145,30 +134,6 @@ it.each([
     }),
     "message-policy",
   ],
-  [
-    "a relative audit export",
-    () => ({
-      messagePolicyFile: file(UNAVAILABLE_DOCUMENT),
-      firewallAuditExport: "exports/firewall.ndjson",
-    }),
-    "firewall-audit-export",
-  ],
-  [
-    "an audit export in a missing directory",
-    () => ({
-      messagePolicyFile: file(UNAVAILABLE_DOCUMENT),
-      firewallAuditExport: join(directory(), "absent", "firewall.ndjson"),
-    }),
-    "firewall-audit-export",
-  ],
-  [
-    "an audit export in a directory others can read",
-    () => ({
-      messagePolicyFile: file(UNAVAILABLE_DOCUMENT),
-      firewallAuditExport: join(sharedDirectory(), "firewall.ndjson"),
-    }),
-    "firewall-audit-export",
-  ],
 ] as const)("refuses %s", ([, fields, reason]) =>
   Effect.gen(function* () {
     const error = yield* firewallInstallation(fields(), readCredential).pipe(
@@ -197,9 +162,8 @@ it("names where a document is invalid, never what it holds", () =>
     expect(error.message).not.toContain("private-mode-value");
   }));
 
-it("installs the document with its key, Client's default settings and the audit export", () =>
+it("installs the document with its key and Client's default settings", () =>
   Effect.gen(function* () {
-    const auditExport = join(directory(), "firewall.ndjson");
     const installed = yield* firewallInstallation(
       {
         messagePolicyFile: file({
@@ -207,7 +171,6 @@ it("installs the document with its key, Client's default settings and the audit 
           maximumConcurrentChecks: 2,
         }),
         decisionProviderKeyFile: Redacted.make(file("key-value\n")),
-        firewallAuditExport: auditExport,
       },
       readCredential,
     );
@@ -221,7 +184,6 @@ it("installs the document with its key, Client's default settings and the audit 
       "builtin.policy-owner",
     ]);
     expect(options.english?.provider.provenance?.data).toContain("jev-1.13.0");
-    expect(installed.auditExport).toBe(auditExport);
   }));
 
 it("installs the example policy the message firewall guide documents", () =>
@@ -280,13 +242,6 @@ function file(content: unknown): string {
     { mode: 0o600 },
   );
   return path;
-}
-
-/** A directory of the daemon's user that its group and others can read. */
-function sharedDirectory(): string {
-  const shared = directory();
-  chmodSync(shared, 0o755);
-  return shared;
 }
 
 function directory(): string {

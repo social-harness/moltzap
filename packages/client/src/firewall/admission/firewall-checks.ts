@@ -423,7 +423,7 @@ export function hashedId(identity: string): string {
 
 /**
  * A fresh opaque check reference. Hex survives host credential redaction and
- * keeps native audit correlation.
+ * keeps native check correlation.
  * @returns `chk_` and 64 lowercase hexadecimal characters.
  */
 export function mintCheckId(): string {
