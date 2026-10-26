@@ -40,6 +40,7 @@ const configModuleRules = {
 };
 
 const PACKAGE_SOURCE_FILES = [
+  "integration/**/*.ts",
   "src/**/*.ts",
   "src/**/*.cts",
   "src/**/*.mts",

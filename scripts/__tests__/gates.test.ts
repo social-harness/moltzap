@@ -786,9 +786,26 @@ function testDependencyVersions(): void {
     clean.code === 0,
     `expected exit 0, got ${clean.code}. stderr: ${clean.stderr.slice(0, 300)}`,
   );
+  testDependencyVersionsLiteralSpecifier();
   testDependencyVersionsExampleCopy();
   testDependencyVersionsDriftedEngines();
   testDependencyVersionsNodePin();
+}
+
+function testDependencyVersionsLiteralSpecifier(): void {
+  plantFile("packages/router/package.json", (s) =>
+    s.replace('"jose": "catalog:"', '"jose": "6.2.6"'),
+  );
+  const literal = runDependencyVersions();
+  test(
+    "flags a workspace manifest that writes its own npm version",
+    literal.code !== 0 &&
+      /router\/package\.json: dependencies\.jose is "6\.2\.6"; declare "catalog:"/.test(
+        literal.stderr,
+      ),
+    `expected catalog failure. exit=${literal.code}, stderr=${literal.stderr.slice(0, 300)}`,
+  );
+  restoreAllPlants();
 }
 
 /** The planted range is not a published version, so no catalog bump can match it. */

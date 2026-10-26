@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 #
-# The batch boundary. These are too slow to pay per commit and cheap enough to
-# pay once per push; CI stays the full gate.
+# The batch boundary. Typechecking is too slow to pay per commit and cheap
+# enough to pay once per push; CI stays the full gate.
 set -e
 
 pnpm exec nx affected -t typecheck

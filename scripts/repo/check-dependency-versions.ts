@@ -80,6 +80,7 @@ function main(): void {
   ];
   const examples = exampleManifests();
 
+  checkInstalledSpecifiers(workspaceManifests);
   checkPeerFloors(workspaceManifests, catalog);
   checkExampleCopies(examples, catalog);
   checkEffectCheckout(overrides);
@@ -133,6 +134,31 @@ function exampleManifests(): readonly Manifest[] {
       existsSync(path.join(repo, "examples", name, "package.json")),
     )
     .map((name) => manifestAt(`examples/${name}/package.json`));
+}
+
+/**
+ * A workspace manifest names no npm version itself.
+ * @param manifests Root and package manifests.
+ * @returns The names declared through `catalog:`.
+ */
+function checkInstalledSpecifiers(
+  manifests: readonly Manifest[],
+): ReadonlySet<string> {
+  const declarations = manifests.flatMap((manifest) =>
+    declarationsOf(manifest, INSTALLED_SECTIONS),
+  );
+  for (const { where, section, name, value } of declarations) {
+    if (value !== "catalog:" && value !== "workspace:*") {
+      failures.push(
+        `${where}: ${section}.${name} is ${JSON.stringify(value)}; declare "catalog:" and set the range in the pnpm-workspace.yaml catalog`,
+      );
+    }
+  }
+  return new Set(
+    declarations
+      .filter((declaration) => declaration.value === "catalog:")
+      .map((declaration) => declaration.name),
+  );
 }
 
 /**
