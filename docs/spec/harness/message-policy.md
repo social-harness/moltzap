@@ -145,6 +145,10 @@ applicability, expectations or conformance:
   instruction carrying the rule, that choice and probability, and the rule's
   guidance.
 
+Provider probabilities use one tolerance of 0.02 for their sum and for the
+stated choice's distance from the maximum. The evaluator retains distributions
+unchanged; a choice below the maximum remains uncertain.
+
 A settled judgment keeps its effect: a conformance violation still asks for
 revision, and a settled expectation still becomes guidance.
 
@@ -156,9 +160,7 @@ The initial bounded catalog and authorized history are supplied in full within
 the configured budget. Required omitted context causes a hold. Retrieval
 pruning, summaries and caching are later experiments.
 
-The English adapter ignores previous middleware observations because they may be
-derived from an outgoing draft. Outgoing expectations also exclude the draft's
-text and id. Conformance sees the draft only after expectations
+Outgoing expectations exclude the draft's text and id. Conformance sees the draft only after expectations
 are established from the original evidence. The question edition and rules are
 part of the English revision; provider/model identity is captured in immutable installation provenance before
 inference, including attempts that fail or are interrupted. Experiment manifests
@@ -407,7 +409,7 @@ const daemon = Daemon.withFirewall({
   english: {
     fixedRules: fixedEnglishRules,
     initialRules: initialEditableRules,
-    provider: jevProvider,
+    provider: decisionProvider,
     settings: englishSettings,
   },
   settings,
@@ -434,7 +436,11 @@ document of at most 1 MiB. `sharnessd` decodes it with `MessagePolicy` from
 `@moltzap/client/service` and installs it through the same composition as
 `Daemon.withFirewall`. Writers build
 it with that schema. A trusted composition with its own decision provider
-installs a decoded document with `messagePolicyFirewall(policy, provider)`.
+installs a decoded document with `messagePolicyFirewall(policy, provider)`
+and passes the resulting options to `Daemon.withFirewall`. Consumers select
+Jev through the document's `decisionProvider` setting and supply its key
+through `SHARNESS_DECISION_PROVIDER_KEY_FILE`; its constructor is internal
+to Client.
 
 ```json
 {
