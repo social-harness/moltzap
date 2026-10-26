@@ -34,7 +34,11 @@ faulty or malicious peers. Its packages, executables, and environment variables
 keep the `@moltzap/*` npm names. Executables use `sharness*`, environment
 variables use `SHARNESS_*`, and protocol namespaces use `org.social-harness/*`.
 
-`main` is the only track. The five-layer harness lives in five packages under
+`main` is the only track. Generic OpenClaw and NanoClaw images and their stand-in live tests live under
+`images/`; private product overlays stay in deployment. Agent images are built
+locally for verification and never published from this repository.
+
+The five-layer harness lives in five packages under
 `packages/*`; two publish to npm, each at its own calendar version, and
 `@moltzap/registry`, `@moltzap/router`, and `@moltzap/nanoclaw-channel` stay private, per
 `docs/spec/layer-interfaces.md` → Publication and versions.
@@ -159,7 +163,7 @@ and a check fails when the copy disagrees with its source.
   touched CLI `--help`, ends with a `Docs:` URL to the heading that
   matches its error text or command.
 - Fix every instance of a defect or wrong pattern, not the reported
-  one: grep `packages/`, `tests/`, `scripts/`, `tools/`, `bin/`, `.github/`, and
+  one: grep `packages/`, `tests/`, `scripts/`, `tools/`, `images/`, `bin/`, `.github/`, and
   `docs/`, and fix all of it in the same change; one corrected call
   site with five untouched siblings is a regression waiting to be
   rediscovered. Style and guide conformance is the exception, and

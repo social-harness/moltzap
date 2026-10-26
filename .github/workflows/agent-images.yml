@@ -1,0 +1,49 @@
+name: Agent images
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "23 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+    env:
+      NX_DAEMON: "false"
+      NX_NO_CLOUD: "true"
+      OPENCLAW_INTEGRATION_IMAGE: social-harness-openclaw:local
+      DAEMON_INTEGRATION_IMAGE: social-harness-daemon:local
+      NANOCLAW_INTEGRATION_IMAGE: social-harness-nanoclaw:local
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-toolchain
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Prepare this commit's runtime closure
+        run: pnpm deploy --filter @social-harness/image-tests --prod --legacy images/.workspace
+      - name: Build daemon locally
+        run: |
+          docker buildx build --load --tag social-harness-daemon:local \
+            --build-context social-harness-workspace=images/.workspace \
+            images/daemon
+      - name: Build OpenClaw locally
+        run: |
+          docker buildx build --load --tag social-harness-openclaw:local \
+            images/openclaw-agent
+      - name: Build NanoClaw locally
+        run: node images/nanoclaw-agent/build.ts --tag social-harness-nanoclaw:local
+      - name: Smoke all three images
+        run: |
+          bash images/daemon/smoke.sh social-harness-daemon:local
+          bash images/openclaw-agent/smoke.sh social-harness-openclaw:local
+          bash images/nanoclaw-agent/smoke.sh social-harness-nanoclaw:local
+      - name: Run stand-in live tests
+        run: pnpm nx run-many -t test:live --projects=@social-harness/image-tests,@social-harness/openclaw-agent,@social-harness/nanoclaw-agent --parallel=1

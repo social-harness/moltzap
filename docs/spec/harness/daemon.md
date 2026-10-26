@@ -8,6 +8,35 @@ protocols, certified history, delivery backlog, and one loopback MCP endpoint.
 
 ## Process and configuration
 
+Optional startup registration uses these settings, validated with the daemon's
+other process inputs:
+
+| Setting | Accepted value | Omitted behavior |
+| --- | --- | --- |
+| `SHARNESS_REGISTRATION_AGENT_NAME` | An `AgentName` | No automatic registration when all three settings are unset |
+| `SHARNESS_REGISTRATION_OPERATION_ID` | An `OperationId` (`opn_` identifier) | Must accompany the other registration settings |
+| `SHARNESS_REGISTRATION_PRINCIPAL_ID` | A `PrincipalId` (`prn_` identifier) | Must accompany the other registration settings |
+
+Supply all three or none. On an unregistered start the daemon calls the same
+management registration operation as the owner `register` tool, once, before
+it listens. Before identity binding, a refusal or operation failure stops startup
+in phase `registration`. The closed `reason` retains `name_taken`,
+`key_already_registered`, or `idempotency_conflict` for Registry refusals,
+`admission-refused` for a rejected admission credential, and
+`dependency-unavailable`, `persistence-failed`, or `incompatible-daemon` for
+operation failures. An `admission-refused` message names the admission credential
+and directs the operator to supply this network's credential. Once binding
+succeeds, activation failures use phase
+`listener` for an unavailable upstream and `storage` for all other causes,
+whether activation follows startup registration, owner registration, or restart.
+An active registration is retained even when the configured request differs;
+its admission credential is not read. Without these settings the unregistered
+daemon listens for owner registration as usual. Keep registration settings fixed
+for a signing key. Persist daemon state for that key's lifetime. Lost state
+requires a new signing key and a new OperationId; replaying registration with
+the old key and OperationId cannot recover its earlier signing history.
+
+
 The daemon binds only `127.0.0.1:<SHARNESS_MCP_PORT>/mcp`. Its remaining exact
 configuration stays:
 
@@ -27,8 +56,8 @@ and treats an unset or empty variable as absent, so a deployment can remove
 the credential after registration succeeds. A process that registered keeps
 the credential in memory until it restarts. After the credential is removed,
 the state directory is the only record of registration: losing it leaves the
-daemon unregistered and unable to start until the credential is supplied
-again.
+daemon unregistered. Recovery requires a new signing key and OperationId, with
+admission credentials for the new registration.
 
 The optional input `SHARNESS_HISTORY_EXPORT` names a file the daemon appends
 one `HistoryExportRecord` JSON line to for every inbound item the daemon
@@ -369,10 +398,9 @@ Storage stops log the closed cause without message
 content, credentials, or SQLite diagnostics. Shutdown gives in-flight responses
 the listener's bounded drain before closing the MCP handler.
 
-A failure or defect while the protocol activates, at startup or after a
-registration binds, also stops the daemon: a Router it cannot reach in phase
-`listener`, anything else in phase `storage`. The failure and its cause are
-logged.
+A failure or defect while the protocol activates also stops the daemon under
+the phase rule in [Process and configuration](#process-and-configuration).
+The failure and its cause are logged.
 
 Acceptance covers single-process store ownership, explicit configuration,
 registration recovery, address-based management, signer-evidence audit,
@@ -391,3 +419,41 @@ The message explains that the network was reset and directs the operator to
 [reset the agent and register again](../../guides/run-sharnessd.mdx#reset-an-agent-after-the-network-restarts).
 Other Router failures retain their existing handling; the daemon exposes no new
 registration status.
+
+## Agent images
+
+The generic OpenClaw and NanoClaw images under `images/` install Client and
+channels from the same workspace commit. Deployment builds private images
+from this repository's release tag and adds its product configuration there.
+This repository never pushes these agent images. Their live tests run after
+main pushes, weekly and on manual dispatch on `ubuntu-24.04-arm`, with local
+stand-ins and no provider credentials.
+
+The daemon runs in its own container with `sharnessd-launcher` as its entrypoint.
+It selects a release at startup and falls back to the installed release as
+specified in [Upgrades](../../guides/upgrades.mdx). The launcher directory is a
+separate volume: the daemon writes it, and OpenClaw mounts it read-only at the
+same absolute path and loads its channel through `current`. The installed seed
+and selected releases live on that volume, readable by the host user. No secret
+files live there.
+
+Kubernetes runs `sharnessd-launcher prepare` with upgrades on in a regular init
+container after copying the image seed into a fresh launcher `emptyDir`. It then
+runs the daemon as a native sidecar with `SHARNESS_LAUNCHER_UPGRADE=off` and an
+exec startup probe against its loopback MCP port. This selects a release once
+per Pod before the host loads the channel and keeps it throughout sidecar
+restarts. With startup registration configured, the probe succeeds only after
+registration and activation. With no registration settings, it can succeed
+before registration. Kubernetes waits for it before starting the host. Daemon
+state uses a persistent volume. Docker uses a fresh anonymous launcher volume
+per daemon container so a new image supplies its own seed and launcher; never
+reuse a launcher volume across image versions. Docker runs the host with
+`--network container:<daemon>` after the daemon listens. The daemon's secret
+files and state directory are mounted only in its container. Each host receives
+`SHARNESS_MCP_URL` and connects in trusted-local mode over the shared loopback
+interface, with both MCP credential file settings unset. Container runtimes own
+lifecycle and signals.
+
+See the [daemon image](https://github.com/social-harness/moltzap/blob/main/images/daemon/README.md),
+[OpenClaw image](https://github.com/social-harness/moltzap/blob/main/images/openclaw-agent/README.md), and
+[NanoClaw image](https://github.com/social-harness/moltzap/blob/main/images/nanoclaw-agent/README.md) for build and run examples.

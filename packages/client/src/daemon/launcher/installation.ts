@@ -184,6 +184,9 @@ export const install = Effect.fn("Launcher.install")(
       `${fileName(release.releasePackage)}-${release.version}`,
     );
     yield* installInto(prefix, packages, release.registry);
+    const fs = yield* FileSystem.FileSystem;
+    // eslint-disable-next-line sonarjs/file-permissions -- This directory holds only installed public package code shared with another host user.
+    yield* fs.chmod(path.dirname(prefix), 0o755);
     const manifest = yield* installedManifest(prefix, release.releasePackage);
     return recordOf(release.releasePackage, prefix, manifest, packages);
   },
@@ -202,9 +205,19 @@ export const lockDirectory = Effect.fn("Launcher.lockDirectory")(function* (
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const lock = path.join(directory, LOCK_FILE);
-  yield* fs
-    .makeDirectory(directory, { recursive: true })
+  const exists = yield* fs
+    .exists(directory)
     .pipe(Effect.mapError(() => recordFailure(directory)));
+  if (!exists) {
+    yield* fs
+      .makeDirectory(directory, { recursive: true })
+      .pipe(Effect.mapError(() => recordFailure(directory)));
+    // eslint-disable-next-line sonarjs/file-permissions -- The launcher creates this directory to share public package code with the host user.
+    const openCreatedDirectory = fs.chmod(directory, 0o755);
+    yield* openCreatedDirectory.pipe(
+      Effect.mapError(() => recordFailure(directory)),
+    );
+  }
   const holder = yield* lockHolder(lock);
   if (holder !== undefined) {
     return yield* launcherError(
@@ -235,6 +248,35 @@ export const pointCurrent = Effect.fn("Launcher.pointCurrent")(
     yield* fs.rename(temporary, link);
   },
   Effect.mapError((failure) => launcherError("record", failure.message)),
+);
+
+/**
+ * Package code contains no secrets and must load from a host running as
+ * another user. Symbolic links are left alone: a workspace link may dangle,
+ * and following one would change modes outside the release.
+ */
+export const readableRelease = Effect.fn("Launcher.readableRelease")(
+  function* (prefix: string) {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const entries = [
+      "",
+      ...(yield* fs.readDirectory(prefix, { recursive: true })),
+    ];
+    for (const entry of entries) {
+      const target = path.join(prefix, entry);
+      if (Option.isSome(yield* Effect.option(fs.readLink(target)))) {
+        continue;
+      }
+      const info = yield* fs.stat(target);
+      const read =
+        info.type === "Directory" || (info.mode & 0o111) !== 0 ? 0o555 : 0o444;
+      if ((info.mode & read) !== read) {
+        yield* fs.chmod(target, info.mode | read);
+      }
+    }
+  },
+  Effect.mapError((failure) => launcherError("install", failure.message)),
 );
 
 /**

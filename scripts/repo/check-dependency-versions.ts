@@ -5,7 +5,7 @@
  * published Node engine ranges, the development Node pin, peer support floors,
  * and the Effect source tag.
  */
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { parse } from "yaml";
 import {
@@ -74,6 +74,7 @@ function main(): void {
     root,
     ...products.map(({ dir }) => manifestAt(`packages/${dir}/package.json`)),
     manifestAt("tests/integration/package.json"),
+    ...imageManifests(),
   ];
   const helpers = manifestAt(HELPERS_MANIFEST);
 
@@ -123,6 +124,16 @@ function stringRecord(
 
 function manifestAt(where: string): Manifest {
   return { where, manifest: readJsonObject(path.join(repo, where)) };
+}
+
+function imageManifests(): readonly Manifest[] {
+  return readdirSync(path.join(repo, "images"))
+    .filter(
+      (name) =>
+        !name.startsWith(".") &&
+        existsSync(path.join(repo, "images", name, "package.json")),
+    )
+    .map((name) => manifestAt(`images/${name}/package.json`));
 }
 
 /**

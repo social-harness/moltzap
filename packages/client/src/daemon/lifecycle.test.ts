@@ -61,6 +61,7 @@ import {
 } from "../communication/store/index.js";
 import { HistoryExportRecord } from "../harness/inbox/history-export.js";
 import { INBOX_PENDING_EVENT } from "../harness/protocol/names.js";
+import { AgentName } from "../identity/agents.js";
 import { AgentCard } from "../identity/cards.js";
 import { SendInput } from "../index.js";
 import { DaemonRuntimeError } from "./lifecycle.js";
@@ -961,6 +962,29 @@ const stopsWhenActivationFails = (row: ActivationFault) =>
     expect(stopped.phase, "phase the daemon stopped in").toBe(row.phase);
   });
 
+/** Startup registration reports the same activation phase as owner registration. */
+const stopsWhenStartupActivationFails = (row: ActivationFault) =>
+  Effect.gen(function* () {
+    const base = yield* makeFixture;
+    const fixture = {
+      ...base,
+      bootstrap: {
+        ...base.bootstrap,
+        configuration: {
+          ...base.bootstrap.configuration,
+          registration: base.registerRequest,
+        },
+      },
+    };
+    const harness = row.harness(yield* makeHarness(fixture, "none"));
+    const stopped = yield* run(
+      fixture,
+      row.store(makeStore(fixture, false)),
+      harness,
+    ).pipe(Effect.flip);
+    expect(stopped.phase).toBe(row.phase);
+  });
+
 /** A listener the operating system refused to open. */
 class ListenerUnavailableError extends Data.TaggedError(
   "ListenerUnavailableError",
@@ -1096,7 +1120,75 @@ const keepsTheInboxUsableAcrossARetriedRegister = () =>
     expect(yield* readInboxThroughMcp(handler)).toEqual([]);
   });
 
+/** The listener exposes the registered catalog only after startup activates the endpoint. */
+const registersBeforeListening = (active: boolean) =>
+  Effect.gen(function* () {
+    const base = yield* makeFixture;
+    const fixture = {
+      ...base,
+      bootstrap: {
+        ...base.bootstrap,
+        configuration: {
+          ...base.bootstrap.configuration,
+          registration: {
+            ...base.registerRequest,
+            agentName: active
+              ? Schema.decodeUnknownSync(AgentName)("different-agent")
+              : base.registerRequest.agentName,
+          },
+        },
+      },
+    };
+    const harness = yield* makeHarness(fixture, "none");
+    const store = makeStore(fixture, active);
+    yield* Effect.forkScoped(run(fixture, store, harness));
+    yield* awaitStage(
+      Deferred.await(harness.listenerReady),
+      "registered listener",
+    );
+    expect(yield* requireOperations(harness).readStatus()).toEqual({
+      kind: "active",
+      agentCard: yield* Schema.encode(AgentCard)(fixture.localCard),
+    });
+    expect((yield* store.readIdentity())?.agentId).toBe(
+      fixture.localCard.agentId,
+    );
+  });
+
+/** A Registry refusal ends startup rather than exposing an unregistered listener. */
+const failsStartupRegistration = (reason: "name_taken" | "admission-refused") =>
+  Effect.gen(function* () {
+    const base = yield* makeFixture;
+    const fixture = {
+      ...base,
+      bootstrap: {
+        ...base.bootstrap,
+        configuration: {
+          ...base.bootstrap.configuration,
+          registration: {
+            ...base.registerRequest,
+          },
+        },
+      },
+    };
+    const harness = yield* makeHarness(fixture, "none");
+    const failure = yield* Effect.flip(
+      run(fixture, makeStore(fixture, false), harness, reason),
+    );
+    expect(failure).toEqual(
+      new DaemonRuntimeError({ phase: "registration", reason }),
+    );
+  });
+
 describe("daemon runtime composition", () => {
+  it("registers and activates before listening", () =>
+    registersBeforeListening(false));
+  it("retains an active registration at startup", () =>
+    registersBeforeListening(true));
+  it.each(["name_taken", "admission-refused"] as const)(
+    "fails startup with %s when registration cannot complete",
+    failsStartupRegistration,
+  );
   it(
     "closes after fatal persistence with a receipt waiting for the delivery gate",
     closesWhileReceiptWaitsOnFailedPersistence,
@@ -1152,6 +1244,10 @@ describe("daemon activation", () => {
   it.each(activationFaults)(
     "stops the daemon when activation $fault",
     stopsWhenActivationFails,
+  );
+  it.each(activationFaults)(
+    "fails startup registration in phase $phase when activation $fault",
+    stopsWhenStartupActivationFails,
   );
   it.each(startupFaults)(
     "fails a registered startup in phase $phase when $fault",

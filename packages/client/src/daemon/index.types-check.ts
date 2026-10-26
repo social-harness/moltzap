@@ -26,7 +26,10 @@ type StartupTagIsExact = Expect<
   Types.Equals<StartupValue["_tag"], "DaemonStartupError">
 >;
 type StartupPhaseIsExact = Expect<
-  Types.Equals<StartupValue["phase"], "configuration" | "storage" | "listener">
+  Types.Equals<
+    StartupValue["phase"],
+    "configuration" | "storage" | "listener" | "registration"
+  >
 >;
 type StartupReasonIsExact = Expect<
   Types.Equals<
@@ -36,6 +39,13 @@ type StartupReasonIsExact = Expect<
     | "pre-reset"
     | "legacy-key"
     | "agent-not-admitted"
+    | "admission-refused"
+    | "name_taken"
+    | "key_already_registered"
+    | "idempotency_conflict"
+    | "dependency-unavailable"
+    | "persistence-failed"
+    | "incompatible-daemon"
     | undefined
   >
 >;

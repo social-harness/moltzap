@@ -23,6 +23,7 @@ import {
   lockDirectory,
   pointCurrent,
   pruneReleases,
+  readableRelease,
   readRecord,
   seedRecord,
   writeRecord,
@@ -94,6 +95,7 @@ export const prepare = Effect.fn("Launcher.prepare")(function* (
   yield* lockDirectory(configuration.directory);
   const recorded = yield* recordedRelease(configuration, seed);
   yield* checkIntegrity(recorded);
+  yield* readableRelease(recorded.prefix);
   const outcome = yield* candidate(configuration, recorded).pipe(
     Effect.catchAll((failure) =>
       Console.error(`sharnessd-launcher: ${failure.message}`).pipe(
@@ -260,6 +262,7 @@ function take(
       registry: configuration.registry,
     });
     yield* checkIntegrity(record);
+    yield* readableRelease(record.prefix);
     return record;
   });
 }

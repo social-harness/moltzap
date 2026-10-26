@@ -21,6 +21,7 @@ import {
   type MessagePolicyConfigurationError,
   policyInstallationError,
 } from "../firewall/index.js";
+import { registrationAdmissionRefusalMessage } from "../harness/protocol/index.js";
 import { Registry } from "../identity/registry/index.js";
 import { wireVersions } from "../identity/wire-version.js";
 import {
@@ -87,13 +88,20 @@ export namespace Daemon {
 
   /** Closed startup phase with sanitized configuration details. */
   export class StartupError extends Data.TaggedError("DaemonStartupError")<{
-    readonly phase: "configuration" | "storage" | "listener";
+    readonly phase: "configuration" | "storage" | "listener" | "registration";
     readonly reason?:
       | "outbox-too-old"
       | "newer-schema"
       | "pre-reset"
       | "legacy-key"
-      | "agent-not-admitted";
+      | "agent-not-admitted"
+      | "admission-refused"
+      | "name_taken"
+      | "key_already_registered"
+      | "idempotency_conflict"
+      | "dependency-unavailable"
+      | "persistence-failed"
+      | "incompatible-daemon";
     readonly keys?: readonly string[];
     readonly detail?: string;
   }> {
@@ -108,6 +116,8 @@ export namespace Daemon {
       if (this.reason === "agent-not-admitted") {
         remedy =
           ". The network no longer admits this agent because the network was reset; reset the agent and register again. Docs: https://docs.moltzap.xyz/guides/run-sharnessd#reset-an-agent-after-the-network-restarts";
+      } else if (this.reason === "admission-refused") {
+        remedy = `. ${registrationAdmissionRefusalMessage}`;
       } else if (this.reason === "pre-reset") {
         remedy =
           ". Start with a fresh state directory and register again; see https://github.com/social-harness/moltzap/blob/main/docs/guides/upgrades.mdx#apply-a-reset-release.";
