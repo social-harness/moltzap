@@ -297,42 +297,52 @@ function directory(): string {
 
 /* eslint-enable agent-code-guard/no-hardcoded-assertion-literals -- Restore default assertion rules outside the configuration contract tests. */
 
-it("loads autonomy rules in both message-policy English lists as norms", () =>
-  Effect.gen(function* () {
-    const rule = {
-      id: "spending",
-      kind: "autonomy",
-      text: "Ask before spending.",
-    };
-    const fixed = {
-      ...rule,
-      id: "fixed-spending",
-      guidance: "Check the budget.",
-    };
-    const installed = yield* firewallInstallation(
-      {
-        messagePolicyFile: file({
-          ...UNAVAILABLE_DOCUMENT,
-          english: { fixedRules: [fixed], initialRules: [rule] },
-        }),
-      },
-      readCredential,
-    );
-    expect(installed.options?.english).toMatchObject({
-      fixedRules: [
+it.each([
+  {
+    nextAction: "wait",
+    retained: { feedback: { nextAction: "wait", text: "Review the budget." } },
+  },
+  {
+    nextAction: "stop",
+    retained: { feedback: { nextAction: "stop", text: "Review the budget." } },
+  },
+  { nextAction: "revise", retained: {} },
+  { nextAction: "seek-approval", retained: {} },
+])(
+  "migrates file autonomy rules to safety with $nextAction feedback",
+  ({ nextAction, retained }) =>
+    Effect.gen(function* () {
+      const rule = {
+        id: "spending",
+        kind: "autonomy",
+        text: "Ask before spending.",
+        feedback: { nextAction, text: "Review the budget." },
+      };
+      const fixed = {
+        ...rule,
+        id: "fixed-spending",
+        guidance: "Check the budget.",
+      };
+      const installed = yield* firewallInstallation(
         {
-          ...fixed,
-          kind: "norm",
-          guidance:
-            "Ask your owner with ask_user before this. Check the budget.",
+          messagePolicyFile: file({
+            ...UNAVAILABLE_DOCUMENT,
+            english: { fixedRules: [fixed], initialRules: [rule] },
+          }),
         },
-      ],
-      initialRules: [
+        readCredential,
+      );
+      expect(installed.options?.english?.fixedRules).toEqual([
         {
-          ...rule,
-          kind: "norm",
-          guidance: "Ask your owner with ask_user before this.",
+          id: fixed.id,
+          kind: "safety",
+          text: fixed.text,
+          guidance: fixed.guidance,
+          ...retained,
         },
-      ],
-    });
-  }));
+      ]);
+      expect(installed.options?.english?.initialRules).toEqual([
+        { id: rule.id, kind: "safety", text: rule.text, ...retained },
+      ]);
+    }),
+);

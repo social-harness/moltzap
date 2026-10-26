@@ -1,6 +1,7 @@
 /**
  * @file Process factories expose discard Layers and a closed startup error,
  * keeping private daemon services outside the trusted composition boundary.
+ * Message-policy writers use current rule kinds so migration cannot broaden authored policy.
  */
 
 import type { Effect, Layer, Types } from "effect";
@@ -46,6 +47,13 @@ type AuditPathIsOptional = Expect<
 type PolicyModeIsExact = Expect<
   Types.Equals<MessagePolicy["mode"], "guidance" | "enforcement">
 >;
+type EncodedEnglish = NonNullable<(typeof MessagePolicy.Encoded)["english"]>;
+type PolicyWriterKindsAreExact = Expect<
+  Types.Equals<
+    NonNullable<EncodedEnglish["fixedRules"]>[number]["kind"],
+    "safety" | "norm"
+  >
+>;
 /** A decoded document installs through the same options as `withFirewall`. */
 type PolicyInstallsAsFirewall = Expect<
   Types.Equals<
@@ -65,5 +73,6 @@ export type DaemonCanaries = [
   LayerIsExact,
   AuditPathIsOptional,
   PolicyModeIsExact,
+  PolicyWriterKindsAreExact,
   PolicyInstallsAsFirewall,
 ];

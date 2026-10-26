@@ -8,13 +8,26 @@ The message-policy document `sharnessd` installs as its firewall.
 
 ## Public surface
 
-### [`decodeMessagePolicy`](./index.ts#L188)
+### [`decodeMessagePolicy`](./index.ts#L206)
 
 _Variable_
 
 ```ts
 export const decodeMessagePolicy = Schema.decodeUnknown(
-  Schema.parseJson(MessagePolicy),
+  Schema.parseJson(
+    Schema.compose(
+      Schema.Struct({
+        ...document.fields,
+        english: Schema.optional(
+          Schema.Struct({
+            fixedRules: retainedEnglishRules,
+            initialRules: retainedEnglishRules,
+          }),
+        ),
+      }),
+      MessagePolicy,
+    ),
+  ),
   { onExcessProperty: "error" },
 )
 ```
@@ -23,7 +36,7 @@ Decodes the text of a message-policy document, refusing any property it
 does not name, so a misspelled or newer setting never silently weakens the
 policy.
 
-### [`MessagePolicy`](./index.ts#L179)
+### [`MessagePolicy`](./index.ts#L197)
 
 _TypeAlias_
 
@@ -33,7 +46,7 @@ export type MessagePolicy = typeof MessagePolicy.Type;
 
 One decoded message-policy document, with Client's defaults filled in.
 
-### [`MessagePolicy`](./index.ts#L155)
+### [`MessagePolicy`](./index.ts#L173)
 
 _Variable_
 

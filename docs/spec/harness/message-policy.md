@@ -560,9 +560,11 @@ The daemon owns a durable editable document of at most 256 rules. Each rule has
 `{id, kind: "norm" | "safety", text, guidance?, feedback?}`;
 `feedback` is `{text, nextAction}` as in `EnglishRule`. A norm requires a nonempty
 `guidance` template. On load, persisted `autonomy` rules and message-policy
-`english.fixedRules` and `initialRules` of that kind become `norm` rules. Their
-guidance starts with "Ask your owner with ask_user before this." and retains
-any existing guidance. New edits accept only `norm` and `safety`. Rule ids must be unique in the editable document and cannot
+`english.fixedRules` and `initialRules` of that kind become `safety` rules,
+keeping their ids, text and guidance. Feedback is retained only when its next
+action is allowed for safety findings; otherwise the default feedback applies.
+The daemon records an activation listing the migrated editable rule ids and
+logs those ids at startup. New edits accept only `norm` and `safety`. Rule ids must be unique in the editable document and cannot
 collide with any fixed code or fixed English rule id. Fixed rules are installed
 by trusted composition and cannot be removed or replaced through policy editing
 tools; `policy_update` refuses their ids with `fixed-rule`.
@@ -801,15 +803,15 @@ have the same `snapshotId`; the completion's `checkCount` and `activationCount`
 must match their respective records. Its `sha256` covers every check and
 activation line, including each trailing newline, in file order.
 Missing or malformed records, truncation, or a mismatched count or digest make
-the artifact incomplete. Check records preserve the exact semantic input,
-installation metadata, private provider traces, judgment and applied disposition.
-Retained contexts accept and discard the historical `authorization` field.
-Historical `approval-required` reasons and findings decode as
-`hold` with `unresolved-evidence`; retained autonomy registration kinds decode
-as `norm`. The decisions feed uses those holding rules to explain the hold.
-Retained collective-result projections map that historical refusal reason to
-`unresolved-evidence` before inbox delivery. New checks and exports use only
-the current values.
+the artifact incomplete. Check records preserve semantic input, installation
+metadata, private provider traces, judgment and applied disposition subject to
+these retained-value decode mappings: contexts discard the historical
+`authorization` field; `approval-required` reasons and findings become settled
+`hold` findings with `unresolved-evidence`; and retained `autonomy` registration
+kinds become `safety`. For English rules, the decisions feed reports those
+settled findings with cause `judgment`. Retained collective-result projections and webhook outbox
+bodies map that historical refusal reason to `unresolved-evidence` before
+inbox delivery. New checks and exports use only the current values.
 Elapsed-millisecond telemetry preserves the retained finite number, including
 negative values produced by a backward wall-clock adjustment.
 Each checked message with one post has a `post` reference with `authorAgentId`

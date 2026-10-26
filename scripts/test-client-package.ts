@@ -80,7 +80,6 @@ const context = {
   history: [],
   facts: [],
   gaps: [],
-  authorization: { kind: "absent" },
 };
 const assessment = await Effect.runPromise(firewall.checkOutgoing(message, context));
 if (assessment.judgment !== "hold" ||

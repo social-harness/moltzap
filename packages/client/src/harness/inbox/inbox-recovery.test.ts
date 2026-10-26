@@ -1,7 +1,8 @@
 /**
  * @file A pending collective request delivery stays answerable across a
  * restart of a current store, and one still waiting for firewall admission
- * retires unseen.
+ * retires unseen. Retained collective results decode historical withheld
+ * reasons during recovery and inbox delivery.
  */
 
 import { live as it } from "@effect/vitest";
@@ -233,6 +234,7 @@ it("delivers retained collective results with historical approval holds", () =>
         ),
         canonicalItem: yield* encodeRuntimeValue(item),
       });
+      yield* recoverRuntimeInbox(store);
       const projected = { ...withheld, reason: "unresolved-evidence" };
       expect((yield* readRuntimeInbox(store, {})).items).toMatchObject([
         {

@@ -229,7 +229,10 @@ function decidingFinding(
   if (reason === "check-unavailable") {
     return "unavailable";
   }
-  return finding.outcome === "hold" ? "uncertain" : "settled";
+  return finding.outcome === "hold" &&
+    !("settled" in finding && finding.settled === true)
+    ? "uncertain"
+    : "settled";
 }
 
 function registeredAdvice(
@@ -390,10 +393,8 @@ function validNextAction(
   reason: Reason,
   action: FirewallCheck["feedback"][number]["nextAction"],
 ): boolean {
-  return reason === "norm-violation"
-    ? action === "revise" ||
-        action === "wait" ||
-        action === "stop" ||
-        action === "seek-approval"
-    : action === defaultFeedback[reason][0]?.nextAction;
+  return (
+    reason === "norm-violation" ||
+    action === defaultFeedback[reason][0]?.nextAction
+  );
 }

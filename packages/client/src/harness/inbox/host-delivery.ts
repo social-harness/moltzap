@@ -15,7 +15,7 @@ import type {
   HistoryExportRecord,
 } from "./history-export.js";
 import {
-  InboundItem,
+  type InboundItem,
   retainedInboundItem,
 } from "../../communication/collectives/inbound.js";
 import {
@@ -402,7 +402,7 @@ const runPass = <E>(
  *   Q --> F[Run full incoming middleware chain]
  *   F --> A[Compare evidence and commit disposition]
  *   A -->|admit| V[Inbox with original item and local guidance]
- *   A -->|hold| H[Retain privately for owner review]
+ *   A -->|hold| H[Retain privately for inspection]
  *   V --> R[Native subscription, read-event, inbox and webhook]
  * ```
  * @param service The store, history export, active collective layer and service scope.

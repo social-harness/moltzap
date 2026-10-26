@@ -470,7 +470,7 @@ it("holds missing context and publishes no incoming advice", () =>
     expect(result.guidance).toEqual([]);
   }));
 
-it("keeps seek-approval as norm feedback", () =>
+it("projects seek-approval as norm feedback", () =>
   Effect.gen(function* () {
     const feedback = {
       text: "Ask your owner with ask_user before committing.",

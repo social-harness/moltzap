@@ -1,9 +1,10 @@
 /** @file The owner decisions feed explains each checked message through real Client storage. */
 
 import { scopedLive as it } from "@effect/vitest";
-import { Effect, Queue, Schema } from "effect";
+import { Effect, Queue, Schema, Struct } from "effect";
 import { expect } from "vitest";
-import type { FirewallOptions } from "./firewall.js";
+import type { InstalledFirewall } from "./firewall-checks.js";
+import { makeAuditFixture } from "../../__tests__/firewall-audit-fixtures.js";
 import {
   churnPolicy,
   destination,
@@ -17,6 +18,10 @@ import {
   settings,
 } from "../../__tests__/firewall-runtime-fixtures.js";
 import {
+  decodeRuntimeValue,
+  encodeRuntimeValue,
+} from "../../communication/store/index.js";
+import {
   type DecisionProvider,
   DecisionProviderError,
   type DecisionRequest,
@@ -26,17 +31,14 @@ import {
   type MiddlewareInput,
   type MiddlewareResult,
 } from "../evaluator/contract/index.js";
-import {
-  encodeRuntimeValue,
-  decodeRuntimeValue,
-} from "../../communication/store/index.js";
-import { makeAuditFixture } from "../../__tests__/firewall-audit-fixtures.js";
+import { englishPolicyFormat, makeEnglishPolicy } from "../evaluator/index.js";
+import { decodeMessagePolicy } from "../policy/document/index.js";
+import { installEditableFirewall } from "../policy/editable.js";
 import {
   decodeFirewallAuditEntry,
   FirewallAuditRecord,
 } from "./firewall-values.js";
-import { makeEnglishPolicy } from "../evaluator/index.js";
-import { installEditableFirewall } from "../policy/editable.js";
+import { captureRegistration, type FirewallOptions } from "./firewall.js";
 
 // @agent-code-guard/regression-only: Reads decisions retained by real admission through SQLite and the protocol engine.
 
@@ -168,7 +170,7 @@ function certain(
   const choices = Object.keys(question.criteria);
   const choice =
     selected ??
-    ["compliant", "autonomous", "none", "relevant"].find((candidate) =>
+    ["compliant", "none", "relevant"].find((candidate) =>
       choices.includes(candidate),
     ) ??
     "unresolved";
@@ -453,6 +455,183 @@ it("names the norm that asked an outgoing draft for revision, naming the recipie
     ]);
   }));
 
+const legacy = {
+  id: "spending",
+  kind: "autonomy",
+  text: "Ask before spending.",
+  guidance: "Check the budget.",
+  feedback: { nextAction: "seek-approval", text: "Ask the owner." },
+};
+const migratedEditableRules = [
+  {
+    id: legacy.id,
+    kind: "safety",
+    text: legacy.text,
+    guidance: legacy.guidance,
+  },
+];
+/** Enforcing checks withhold a matching text in either direction. */
+function checkMigratedMessage(
+  subject: Fixture,
+  installed: InstalledFirewall,
+  direction: "incoming" | "outgoing",
+) {
+  return Effect.gen(function* () {
+    if (direction === "incoming") {
+      const runtime = yield* incomingThrough(subject, installed);
+      yield* runtime.runPass;
+      yield* Queue.take(runtime.completed);
+      expect((yield* runtime.delivery.operations.readInbox({})).items).toEqual(
+        [],
+      );
+    } else {
+      const runtime = yield* outgoingThrough(subject, installed);
+      expect(
+        yield* Effect.flip(
+          runtime.operations.send({
+            input: { to: destination, text: "Spend ten dollars." },
+          }),
+        ),
+      ).toMatchObject({ refusal: "unresolved-evidence" });
+    }
+  });
+}
+
+const migratedFilePolicy = decodeMessagePolicy(
+  JSON.stringify({
+    format: "org.social-harness/message-policy/v1",
+    mode: "enforcement",
+    english: {
+      fixedRules: [
+        {
+          id: "fixed-review",
+          kind: "autonomy",
+          text: "Hold expenses for owner review.",
+        },
+      ],
+      initialRules: [
+        {
+          id: "initial-review",
+          kind: "autonomy",
+          text: "Hold new purchases for owner review.",
+        },
+      ],
+    },
+    decisionProvider: { kind: "unavailable" },
+  }),
+);
+
+it.each(["incoming", "outgoing"] as const)(
+  "migrates editable autonomy to safety and holds %s messages",
+  (direction) =>
+    Effect.gen(function* () {
+      const subject = yield* fixture;
+      yield* subject.store.writeFirewallPolicy(
+        yield* encodeRuntimeValue([legacy]),
+      );
+      const configuration = options(
+        [],
+        english(decisionProvider("unresolved"), {}),
+      );
+      const installed = yield* installEditableFirewall(
+        configuration,
+        subject.store,
+      );
+      expect((yield* installed.policy.read()).rules).toEqual(
+        migratedEditableRules,
+      );
+      const stored = yield* subject.store.readFirewallPolicy();
+      expect(
+        yield* decodeRuntimeValue(Schema.Unknown, stored ?? new Uint8Array()),
+      ).toEqual(migratedEditableRules);
+      yield* checkMigratedMessage(subject, installed, direction);
+      const feed = yield* installed.policy.decisions({});
+      expect(feed.decisions).toMatchObject([
+        {
+          direction,
+          outcome: "hold",
+          disposition: "withheld",
+          decidedBy: [{ ruleId: legacy.id, from: "editable" }],
+        },
+      ]);
+      expect(feed.activations).toMatchObject([
+        { addedRuleIds: [legacy.id], removedRuleIds: [] },
+      ]);
+      const restarted = yield* installEditableFirewall(
+        configuration,
+        subject.store,
+      );
+      expect((yield* restarted.policy.decisions({})).activations).toEqual(
+        feed.activations,
+      );
+    }),
+);
+
+it.each(["incoming", "outgoing"] as const)(
+  "holds %s messages under migrated fixed and initial file rules",
+  (direction) =>
+    Effect.gen(function* () {
+      const subject = yield* fixture;
+      const document = yield* migratedFilePolicy;
+      const installed = yield* installEditableFirewall(
+        options(
+          [],
+          english(decisionProvider("unresolved"), {
+            fixed: [...(document.english?.fixedRules ?? [])],
+            initial: [...(document.english?.initialRules ?? [])],
+          }),
+        ),
+        subject.store,
+      );
+      yield* checkMigratedMessage(subject, installed, direction);
+      expect((yield* installed.policy.decisions({})).decisions).toMatchObject([
+        {
+          direction,
+          outcome: "hold",
+          decidedBy: [
+            { ruleId: "fixed-review", from: "fixed" },
+            { ruleId: "initial-review", from: "editable" },
+          ],
+        },
+      ]);
+    }),
+);
+
+it("refuses unknown stored editable properties as persistence failures", () =>
+  Effect.gen(function* () {
+    const subject = yield* fixture;
+    yield* subject.store.writeFirewallPolicy(
+      yield* encodeRuntimeValue([
+        {
+          id: "review",
+          kind: "autonomy",
+          text: "Hold for review.",
+          unexpected: true,
+        },
+      ]),
+    );
+    expect(
+      yield* Effect.flip(
+        installEditableFirewall(
+          options([], english(decisionProvider(), {})),
+          subject.store,
+        ),
+      ),
+    ).toMatchObject({ reason: "persistence-failed" });
+  }));
+
+it("refuses autonomy in live code middleware registration", () =>
+  Effect.gen(function* () {
+    const live = contactsPolicy("pass");
+    Object.defineProperty(live, "rules", {
+      value: [{ id: "review", kind: "autonomy" }],
+    });
+    expect(yield* Effect.flip(captureRegistration(live))).toMatchObject({
+      _tag: "CheckInputError",
+      reason: "registration",
+    });
+  }));
+
 it("keeps the rules active at check time after the owner removes the deciding rule", () =>
   Effect.gen(function* () {
     const subject = yield* fixture;
@@ -526,61 +705,46 @@ it("carries no message text in an explained decision", () =>
     expect(JSON.stringify(feed)).not.toContain(text);
   }));
 
-it("migrates a retained editable autonomy document and persists its norm guidance", () =>
-  Effect.gen(function* () {
-    const subject = yield* fixture;
-    const legacy = {
-      id: "spending",
-      kind: "autonomy",
-      text: "Ask before spending.",
-      guidance: "Check the budget.",
-    };
-    yield* subject.store.writeFirewallPolicy(
-      yield* encodeRuntimeValue([legacy]),
-    );
-    const installed = yield* installEditableFirewall(
-      options([], english(decisionProvider(), {})),
-      subject.store,
-    );
-    const expected = [
-      {
-        ...legacy,
-        kind: "norm",
-        guidance: "Ask your owner with ask_user before this. Check the budget.",
-      },
-    ];
-    expect((yield* installed.policy.read()).rules).toEqual(expected);
-    const stored = yield* subject.store.readFirewallPolicy();
-    expect(
-      yield* decodeRuntimeValue(Schema.Unknown, stored ?? new Uint8Array()),
-    ).toEqual(expected);
-  }));
-
-it("reads historical approval holds through the audit and decisions feed", () =>
-  Effect.gen(function* () {
-    const subject = yield* fixture;
-    const audit = yield* makeAuditFixture;
-    const legacyRule = { id: "privacy", kind: "autonomy" };
-    const input = {
-      ...audit.input,
-      context: { ...audit.input.context, authorization: { kind: "absent" } },
-      installation: {
-        ...audit.input.installation,
-        outgoing: audit.input.installation.outgoing.map((entry) => ({
-          ...entry,
-          rules: [legacyRule],
-        })),
-      },
-    };
-    const result = {
-      ...audit.result,
-      judgment: "hold",
-      reason: "approval-required",
-      checks: audit.result.checks.map((entry) => ({
+/** A retained English registration and its settled finding identify the same rule. */
+const retainedEnglishAudit = Effect.gen(function* () {
+  const audit = yield* makeAuditFixture;
+  const legacyRule = { id: "privacy", kind: "autonomy" };
+  const input = {
+    ...audit.input,
+    context: {
+      ...Struct.omit(audit.input.context),
+      authorization: { kind: "absent" },
+    },
+    installation: {
+      ...audit.input.installation,
+      outgoing: audit.input.installation.outgoing.map((entry) => ({
         ...entry,
-        findings: [{ ruleId: legacyRule.id, outcome: "approval-required" }],
+        id: "org.social-harness/english",
+        provenance: {
+          format: englishPolicyFormat,
+          data: JSON.stringify({ fixedRuleIds: [legacyRule.id] }),
+        },
+        rules: [legacyRule],
       })),
-    };
+    },
+  };
+  const result = {
+    ...audit.result,
+    judgment: "hold",
+    reason: "approval-required",
+    checks: audit.result.checks.map((entry) => ({
+      ...entry,
+      middlewareId: "org.social-harness/english",
+      findings: [{ ruleId: legacyRule.id, outcome: "approval-required" }],
+    })),
+  };
+  return { audit, legacyRule, input, result };
+});
+
+/** A historical English hold is read through the persisted decisions feed. */
+function readRetainedEnglishAudit(subject: Fixture) {
+  return Effect.gen(function* () {
+    const { audit, legacyRule, input, result } = yield* retainedEnglishAudit;
     const checkId = "historical-approval";
     yield* subject.store.beginFirewallAttempt({
       checkId,
@@ -600,6 +764,15 @@ it("reads historical approval holds through the audit and decisions feed", () =>
     const entries = yield* subject.store.readFirewallDecisions();
     const entry = yield* Effect.fromNullable(entries[0]);
     const decoded = yield* decodeFirewallAuditEntry(entry);
+    return { audit, legacyRule, decoded };
+  });
+}
+
+it("reads historical approval holds through the audit and decisions feed", () =>
+  Effect.gen(function* () {
+    const subject = yield* fixture;
+    const { audit, legacyRule, decoded } =
+      yield* readRetainedEnglishAudit(subject);
     expect(decoded.input.context).toEqual(audit.input.context);
     expect(decoded.result).toMatchObject({
       judgment: "hold",
@@ -630,8 +803,8 @@ it("reads historical approval holds through the audit and decisions feed", () =>
     expect((yield* installed.policy.decisions({})).decisions).toMatchObject([
       {
         outcome: "hold",
-        cause: "code",
-        decidedBy: [{ ruleId: legacyRule.id, from: "code" }],
+        cause: "judgment",
+        decidedBy: [{ ruleId: legacyRule.id, from: "fixed" }],
       },
     ]);
   }));

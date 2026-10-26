@@ -64,19 +64,20 @@ const context: typeof MessageContext.Encoded = {
   ],
   gaps: [],
 };
+const proposalAcceptance: EnglishRule = {
+  id: "proposal-acceptance",
+  kind: "norm",
+  text: "Availability is not acceptance. Everyone must accept the same concrete proposal before it is finalized.",
+  guidance: reminder,
+  feedback: { text: repair, nextAction: "revise" },
+};
 const rules: readonly EnglishRule[] = [
   {
     id: "privacy",
     kind: "safety",
     text: "Do not disclose unrelated private appointments.",
   },
-  {
-    id: "proposal-acceptance",
-    kind: "norm",
-    text: "Availability is not acceptance. Everyone must accept the same concrete proposal before it is finalized.",
-    guidance: reminder,
-    feedback: { text: repair, nextAction: "revise" },
-  },
+  proposalAcceptance,
 ];
 /** One answer exactly as a provider reports it. */
 type Answer = DecisionResponse["answers"][string];
@@ -112,7 +113,7 @@ function responseFor(
     answers: Object.fromEntries(
       Object.entries(request.questions).map(([id, question]) => {
         const fallback =
-          ["compliant", "autonomous", "none", "relevant"].find((choice) =>
+          ["compliant", "none", "relevant"].find((choice) =>
             Object.hasOwn(question.criteria, choice),
           ) ?? "unresolved";
         const selected =
@@ -780,7 +781,12 @@ it("holds confidently unresolved evidence while running independent stages", () 
       provider({ "safety:privacy:assessment": "unresolved" }, requests),
     );
     expect(result.reason).toBe("unresolved-evidence");
-    expect(requests.some((entry) => entry.stage === "conformance")).toBe(true);
+    expect(requests.map((entry) => entry.stage)).toEqual([
+      "applicability",
+      "safety",
+      "expectations",
+      "conformance",
+    ]);
     expect(result.guidance).toEqual([]);
   }));
 
@@ -791,7 +797,7 @@ it("keeps renderer templates out of model assessment rules", () =>
     for (const request of requests) {
       expect(request.state).not.toContain(reminder);
       expect(request.state).not.toContain(repair);
-      expect(request.state).toContain(rules[1]?.text);
+      expect(request.state).toContain(proposalAcceptance.text);
     }
   }));
 

@@ -3,7 +3,7 @@
 import { Effect, Encoding, Schema } from "effect";
 import { randomBytes } from "node:crypto";
 import {
-  InboundItem,
+  type InboundItem,
   retainedInboundItem,
 } from "../../communication/collectives/inbound.js";
 import {

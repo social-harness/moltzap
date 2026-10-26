@@ -2,7 +2,7 @@
 
 import { Effect, Schema, Struct } from "effect";
 import {
-  InboundItem,
+  type InboundItem,
   retainedInboundItem,
 } from "../../communication/collectives/inbound.js";
 import { PostIntent } from "../../communication/records/index.js";
@@ -26,6 +26,7 @@ import {
   RuleDescription,
   UncertainNormGuidance,
 } from "../evaluator/index.js";
+import { retainedFirewallRefusal } from "../outcome/index.js";
 
 // safer-arch-ignore file-implicit-boundary-module: Checking and audit projection share exact retained value schemas; only admission/index.ts exposes these private implementations to service composition.
 
@@ -38,34 +39,12 @@ const firewallConfiguration = Schema.Struct({
   maximumConcurrentChecks: Schema.Int.pipe(Schema.between(1, 32)),
 });
 
-/** Historical judgments remain holds under the closed unresolved-evidence reason. */
-export const retainedFirewallReason = Schema.transform(
-  Schema.Literal(
-    "eligible",
-    "prohibited",
-    "unresolved-evidence",
-    "check-unavailable",
-    "norm-violation",
-    "approval-required",
-  ),
-  Schema.Literal(
-    "eligible",
-    "prohibited",
-    "unresolved-evidence",
-    "check-unavailable",
-    "norm-violation",
-  ),
-  {
-    strict: true,
-    decode: (reason) =>
-      reason === "approval-required"
-        ? ("unresolved-evidence" as const)
-        : reason,
-    encode: (reason) => reason,
-  },
+const retainedFirewallReason = Schema.Union(
+  Schema.Literal("eligible"),
+  retainedFirewallRefusal,
 );
 
-/** Retained registration metadata has no authority to install a live rule. */
+/** A retained autonomy rule decodes as safety metadata without installation authority. */
 const retainedRule = Schema.Struct({
   ...RuleDescription.fields,
   kind: Schema.transform(
@@ -73,7 +52,7 @@ const retainedRule = Schema.Struct({
     RuleDescription.fields.kind,
     {
       strict: true,
-      decode: (kind) => (kind === "autonomy" ? ("norm" as const) : kind),
+      decode: (kind) => (kind === "autonomy" ? ("safety" as const) : kind),
       encode: (kind) => kind,
     },
   ),
@@ -93,35 +72,46 @@ const retainedContext = Schema.transform(
   },
 );
 
-/** Historical approval findings explain a hold without creating resumable work. */
-const retainedFinding = Schema.transform(
-  Schema.Union(
-    MiddlewareObservation.fields.findings.value,
+/** A retained approval finding is settled even though its current reason holds the message. */
+const settledHold = Schema.Struct({
+  ruleId: Schema.NonEmptyTrimmedString,
+  outcome: Schema.Literal("hold"),
+  reason: Schema.Literal("unresolved-evidence"),
+  settled: Schema.Literal(true),
+});
+const retainedFinding = Schema.Union(
+  settledHold,
+  MiddlewareObservation.fields.findings.value,
+  Schema.transform(
     Schema.Struct({
       ruleId: Schema.NonEmptyTrimmedString,
-      outcome: Schema.Literal("approval-required"),
+      outcome: Schema.Literal("approval-required").pipe(
+        Schema.compose(retainedFirewallRefusal),
+        Schema.compose(Schema.Literal("unresolved-evidence")),
+      ),
     }),
+    settledHold,
+    {
+      strict: true,
+      decode: (finding) => ({
+        ruleId: finding.ruleId,
+        outcome: "hold" as const,
+        reason: finding.outcome,
+        settled: true as const,
+      }),
+      encode: (finding) => ({
+        ruleId: finding.ruleId,
+        outcome: "unresolved-evidence" as const,
+      }),
+    },
   ),
-  MiddlewareObservation.fields.findings.value,
-  {
-    strict: true,
-    decode: (finding) =>
-      finding.outcome === "approval-required"
-        ? {
-            ruleId: finding.ruleId,
-            outcome: "hold" as const,
-            reason: "unresolved-evidence" as const,
-          }
-        : finding,
-    encode: (finding) => finding,
-  },
 );
 
 /** Registration provenance is retained without giving it execution authority. */
 const firewallRegistration = Schema.Struct({
   id: Schema.NonEmptyTrimmedString,
   revision: Schema.NonEmptyTrimmedString,
-  rules: Schema.Array(retainedRule),
+  rules: Schema.Array(RuleDescription),
   provenance: PrivateCheckTrace,
 });
 
@@ -133,10 +123,20 @@ const firewallInstallation = Schema.Struct({
   outgoing: Schema.Array(firewallRegistration),
 });
 
+const retainedRegistration = Schema.Struct({
+  ...firewallRegistration.fields,
+  rules: Schema.Array(retainedRule),
+});
+const retainedInstallation = Schema.Struct({
+  ...firewallInstallation.fields,
+  incoming: Schema.Array(retainedRegistration),
+  outgoing: Schema.Array(retainedRegistration),
+});
+
 /** A missing projected message records an unsupported candidate without inventing attribution. */
 const firewallAuditInput = exactStruct({
   configurationDigest: Schema.String.pipe(Schema.pattern(/^[a-f0-9]{64}$/u)),
-  installation: firewallInstallation,
+  installation: retainedInstallation,
   context: retainedContext,
   message: Schema.NullOr(Message),
   terminal: Schema.Boolean,

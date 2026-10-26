@@ -10,10 +10,7 @@ import type {
   FirewallConfiguration,
   FirewallInstallation,
 } from "./firewall-values.js";
-import {
-  InboundItem,
-  retainedInboundItem,
-} from "../../communication/collectives/inbound.js";
+import { InboundItem } from "../../communication/collectives/inbound.js";
 import {
   type CollectiveValue,
   readCollectiveValue,
@@ -331,7 +328,7 @@ export function requestText(
   item: Extract<InboundItem, { readonly kind: "collectiveRequest" }>,
 ): Effect.Effect<string, EndpointStoreError> {
   return encodeRuntimeValue(item).pipe(
-    Effect.flatMap((bytes) => decodeRuntimeValue(retainedInboundItem, bytes)),
+    Effect.flatMap((bytes) => decodeRuntimeValue(InboundItem, bytes)),
     Effect.flatMap((stored) =>
       stored.kind === "collectiveRequest"
         ? Effect.succeed(renderCollectiveRequestBody(stored))

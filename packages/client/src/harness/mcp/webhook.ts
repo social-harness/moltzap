@@ -4,7 +4,10 @@ import { HttpClient } from "@effect/platform";
 import { ProtocolError } from "@modelcontextprotocol/server";
 import { type Clock, Effect, Schema, type Scope } from "effect";
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
-import { retainedInboundItem } from "../../communication/collectives/inbound.js";
+import {
+  InboundItem,
+  retainedInboundItem,
+} from "../../communication/collectives/inbound.js";
 import {
   retryPending,
   retrySettled,
@@ -100,6 +103,40 @@ const registrationSchema = Schema.Struct({
 const stateSchema = Schema.Struct({
   registration: Schema.NullOr(registrationSchema),
 });
+const eventEnvelope = {
+  eventId: Schema.String,
+  name: Schema.Literal(INBOX_ITEM_EVENT),
+  timestamp: Schema.String,
+  cursor: Schema.Null,
+};
+const eventData = {
+  kind: Schema.Literal("item"),
+  guidance: Schema.optional(localGuidanceSchema),
+};
+const retainedItemEvent = Schema.parseJson(
+  Schema.Struct({
+    ...eventEnvelope,
+    data: Schema.Struct({ ...eventData, item: retainedInboundItem }),
+  }),
+);
+const currentItemEvent = Schema.parseJson(
+  Schema.Struct({
+    ...eventEnvelope,
+    data: Schema.Struct({ ...eventData, item: InboundItem }),
+  }),
+);
+
+/** Only historical withheld refusals require new durable callback bytes. */
+const retainedOccurrenceBody = (body: string) =>
+  Schema.decodeUnknown(currentItemEvent)(body).pipe(
+    Effect.as(body),
+    Effect.orElse(() =>
+      Schema.decodeUnknown(retainedItemEvent)(body).pipe(
+        Effect.map((event) => JSON.stringify(event)),
+      ),
+    ),
+    Effect.orElseSucceed(() => body),
+  );
 const challengeSchema = Schema.parseJson(
   Schema.Struct({ challenge: Schema.String }),
 );
@@ -550,7 +587,16 @@ const prepareOccurrence = (runtime: WebhookRuntime) =>
       }
       const registration = yield* removeRetiredOccurrence(runtime, current);
       if (registration.outbox !== null) {
-        return registration;
+        const body = yield* retainedOccurrenceBody(registration.outbox.body);
+        if (body === registration.outbox.body) {
+          return registration;
+        }
+        const next = {
+          ...registration,
+          outbox: { ...registration.outbox, body },
+        };
+        yield* save(runtime, next);
+        return next;
       }
       const page = yield* runtime.store
         .readInbox({ limit: 1 })

@@ -12,7 +12,7 @@ import {
 import type { CollectiveOperations } from "../../communication/collectives/index.js";
 import type { FirewallEnvironment } from "./firewall-checks.js";
 import {
-  InboundItem,
+  type InboundItem,
   retainedInboundItem,
 } from "../../communication/collectives/inbound.js";
 import { untilFresh } from "../../communication/conversations/index.js";

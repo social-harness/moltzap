@@ -2,7 +2,10 @@
 
 import { Schema } from "effect";
 import { exactStruct } from "../../encoding/exact.js";
-import { withheldText } from "../../firewall/outcome/index.js";
+import {
+  retainedWithheldText,
+  withheldText,
+} from "../../firewall/outcome/index.js";
 import { InboundMessage } from "../conversations/message.js";
 import {
   AgentAddress,
@@ -117,27 +120,10 @@ export const InboundItem = Schema.Union(
 /** A validated inbound item. */
 export type InboundItem = typeof InboundItem.Type;
 
-/** Historical withheld projections retain their closed refusal meaning on read. */
-const retainedWithheldText = exactStruct({
-  ...withheldText.fields,
-  reason: Schema.transform(
-    Schema.Union(
-      withheldText.fields.reason,
-      Schema.Literal("approval-required"),
-    ),
-    withheldText.fields.reason,
-    {
-      strict: true,
-      decode: (reason) =>
-        reason === "approval-required"
-          ? ("unresolved-evidence" as const)
-          : reason,
-      encode: (reason) => reason,
-    },
-  ),
-});
-
-/** Stored collective results use current values before delivery or audit projection. */
+/**
+ * Stored collective results use current values before delivery or audit projection.
+ * A retained withheld text's approval-required reason decodes as unresolved-evidence.
+ */
 export const retainedInboundItem = Schema.Union(
   InboundItem,
   exactStruct({
@@ -150,6 +136,6 @@ export const retainedInboundItem = Schema.Union(
       }),
     ),
   }),
-);
+).annotations({ identifier: "RetainedInboundItem" });
 
 /* eslint-enable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Restore the package naming rules after the Schema/type pairs. */

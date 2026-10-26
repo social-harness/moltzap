@@ -112,8 +112,8 @@ A norm rule may also `pass` with reason `uncertain`, naming the decision
 provider's `choice` and `probability`: the rule admits, and its registered guidance
 reaches the agent with that choice and probability. Any other rule kind must
 hold instead.
-Composition prioritizes prohibition, unavailable/uncertain evidence, norm
-revision. Opposing `required` and `wait` expectations
+Composition prioritizes prohibition, then unavailable or uncertain evidence,
+then norm revision. Opposing `required` and `wait` expectations
 about the same subject hold for review. Incoming checks never request revision.
 
 A completed middleware result is atomic. The runner retains all completed
@@ -137,7 +137,7 @@ policy's hidden closure state.
 rule runs within the budget; applicability never prunes safety checks. The
 English adapter ignores `previous`: earlier findings might have been derived
 from an outgoing draft. Outgoing expectations use original history and facts
-without the draft text, or id. Conformance then sees the draft
+without the draft's text or id. Conformance then sees the draft
 and the independently established expectations.
 
 An answer is uncertain when its choice is `unresolved`, its probability is

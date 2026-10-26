@@ -41,7 +41,7 @@ direct address names none. Hosts list them on a group turn.
 
 **Returns:** The group's member addresses, or an empty list.
 
-### [`InboundItem`](./inbound.ts#L118)
+### [`InboundItem`](./inbound.ts#L121)
 
 _TypeAlias_
 
@@ -51,7 +51,7 @@ export type InboundItem = typeof InboundItem.Type;
 
 A validated inbound item.
 
-### [`InboundItem`](./inbound.ts#L109)
+### [`InboundItem`](./inbound.ts#L112)
 
 _Variable_
 

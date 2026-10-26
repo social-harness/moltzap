@@ -381,7 +381,7 @@ export const Ed25519PublicKey = Schema.transform(
 
 Exact immutable Ed25519 public JWK.
 
-### [`FirewallSendError`](./firewall/outcome/index.ts#L119)
+### [`FirewallSendError`](./firewall/outcome/index.ts#L139)
 
 _Class_
 
@@ -533,7 +533,7 @@ export interface InboundDelivery {
 
 One inbound item plus its transport-only acknowledgment.
 
-### [`InboundItem (type)`](./communication/collectives/inbound.ts#L118)
+### [`InboundItem (type)`](./communication/collectives/inbound.ts#L121)
 
 _TypeAlias_
 
@@ -543,7 +543,7 @@ export type InboundItem = typeof InboundItem.Type;
 
 A validated inbound item.
 
-### [`InboundItem (value)`](./communication/collectives/inbound.ts#L109)
+### [`InboundItem (value)`](./communication/collectives/inbound.ts#L112)
 
 _Variable_
 
@@ -1588,7 +1588,7 @@ export type FirewallAuditRecord = typeof FirewallAuditRecord.Type;
 
 Completion verifies the snapshot, not completion or delivery of each attempt.
 
-#### [`MessagePolicy (type)`](./firewall/policy/document/index.ts#L179)
+#### [`MessagePolicy (type)`](./firewall/policy/document/index.ts#L197)
 
 _TypeAlias_
 
@@ -1754,13 +1754,26 @@ export type SignedMessageDigest = typeof SignedMessageDigest.Type;
 
 Validated SignedMessage equality receipt.
 
-#### [`decodeMessagePolicy`](./firewall/policy/document/index.ts#L188)
+#### [`decodeMessagePolicy`](./firewall/policy/document/index.ts#L206)
 
 _Variable_
 
 ```ts
 export const decodeMessagePolicy = Schema.decodeUnknown(
-  Schema.parseJson(MessagePolicy),
+  Schema.parseJson(
+    Schema.compose(
+      Schema.Struct({
+        ...document.fields,
+        english: Schema.optional(
+          Schema.Struct({
+            fixedRules: retainedEnglishRules,
+            initialRules: retainedEnglishRules,
+          }),
+        ),
+      }),
+      MessagePolicy,
+    ),
+  ),
   { onExcessProperty: "error" },
 )
 ```
@@ -1937,7 +1950,7 @@ flowchart TD
   D --> R[Return to Client for enforcement]
 ```
 
-#### [`MessagePolicy (value)`](./firewall/policy/document/index.ts#L155)
+#### [`MessagePolicy (value)`](./firewall/policy/document/index.ts#L173)
 
 _Variable_
 

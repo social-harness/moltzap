@@ -1,6 +1,6 @@
 /** @file The message-policy document `sharnessd` installs as its firewall. */
 
-import { Schema } from "effect";
+import { Schema, Struct } from "effect";
 import { AgentId } from "../../../identity/agents.js";
 import {
   EnglishPolicySettings,
@@ -69,8 +69,8 @@ const decisionProvider = Schema.Union(
   Schema.Struct({ kind: Schema.Literal("unavailable") }),
 );
 
-/** Stored autonomy rules become host-directed norms before installation. */
-export const storedEnglishRule = Schema.transform(
+/** Retained autonomy rules decode as safety rules with compatible registered advice. */
+const storedEnglishRule = Schema.transform(
   Schema.Struct({
     ...EnglishRule.fields,
     kind: Schema.Literal("safety", "norm", "autonomy"),
@@ -80,19 +80,37 @@ export const storedEnglishRule = Schema.transform(
     strict: true,
     decode: (rule) =>
       rule.kind === "autonomy"
-        ? {
-            ...rule,
-            kind: "norm" as const,
-            guidance: `Ask your owner with ask_user before this.${rule.guidance === undefined ? "" : ` ${rule.guidance}`}`,
-          }
+        ? migrateAutonomyRule(rule)
         : { ...rule, kind: rule.kind },
     encode: (rule) => rule,
   },
 );
 
-const englishRules = Schema.optionalWith(Schema.Array(storedEnglishRule), {
+/**
+ * Safety permits stop for prohibition and wait for unresolved evidence.
+ * @param rule Retained owner text and registered advice.
+ * @returns A safety rule whose feedback is valid for a safety finding.
+ */
+export function migrateAutonomyRule(rule: Omit<EnglishRule, "kind">) {
+  const feedback = rule.feedback;
+  return {
+    ...Struct.omit(rule, "feedback"),
+    kind: "safety" as const,
+    ...(feedback?.nextAction === "stop" || feedback?.nextAction === "wait"
+      ? { feedback }
+      : {}),
+  };
+}
+
+const englishRules = Schema.optionalWith(Schema.Array(EnglishRule), {
   default: () => [],
 });
+const retainedEnglishRules = Schema.optionalWith(
+  Schema.Array(storedEnglishRule),
+  {
+    default: () => [],
+  },
+);
 
 /** English assessment defaults: the lowest routing probability Client accepts, and the request bounds the collective norms are sized to. */
 const defaultEnglishSettings = {
@@ -186,7 +204,20 @@ export type MessagePolicy = typeof MessagePolicy.Type;
  * policy.
  */
 export const decodeMessagePolicy = Schema.decodeUnknown(
-  Schema.parseJson(MessagePolicy),
+  Schema.parseJson(
+    Schema.compose(
+      Schema.Struct({
+        ...document.fields,
+        english: Schema.optional(
+          Schema.Struct({
+            fixedRules: retainedEnglishRules,
+            initialRules: retainedEnglishRules,
+          }),
+        ),
+      }),
+      MessagePolicy,
+    ),
+  ),
   { onExcessProperty: "error" },
 );
 

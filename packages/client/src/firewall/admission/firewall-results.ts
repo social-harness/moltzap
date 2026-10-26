@@ -12,7 +12,6 @@ import type {
   MessageAddressInput,
 } from "../../communication/records/values.js";
 import type { FirewallCheck, Message } from "../evaluator/index.js";
-import type { LocalGuidance } from "../outcome/index.js";
 import { ResultProvenance } from "../../communication/collectives/index.js";
 import {
   renderCollectiveResult,
@@ -30,6 +29,10 @@ import {
   MAXIMUM_RUNTIME_ITEM_BYTES,
 } from "../../communication/store/index.js";
 import {
+  type LocalGuidance,
+  retainedFirewallRefusal,
+} from "../outcome/index.js";
+import {
   assess,
   attemptInput,
   captureEnvironment,
@@ -44,7 +47,17 @@ import {
   mintCheckId,
   refusalReason,
 } from "./firewall-checks.js";
-import { retainedFirewallReason } from "./firewall-values.js";
+const firewallReason: Schema.Schema<FirewallCheck["reason"]> = Schema.Literal(
+  "eligible",
+  "prohibited",
+  "unresolved-evidence",
+  "check-unavailable",
+  "norm-violation",
+);
+const retainedFirewallReason = Schema.Union(
+  Schema.Literal("eligible"),
+  retainedFirewallRefusal,
+).pipe(Schema.compose(firewallReason));
 
 /** The window of a check with no history: a result's missing record, or a failure. */
 const EMPTY_WINDOW = {
@@ -103,7 +116,7 @@ const ENDPOINT_SENDER = "sharness";
 /**
  * The judgment and reason of a retained check result; the rest is not read
  * here. Historical approval requirements decode under the unresolved-evidence
- * reason used by current holds.
+ * reason for holds.
  */
 const retainedJudgment = Schema.Struct({
   judgment: Schema.Literal("allow", "block", "hold", "revise"),

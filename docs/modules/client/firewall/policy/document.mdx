@@ -13,13 +13,26 @@ The message-policy document `sharnessd` installs as its firewall.
 
 ## Public surface
 
-### [`decodeMessagePolicy`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/firewall/policy/document/index.ts#L188)
+### [`decodeMessagePolicy`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/firewall/policy/document/index.ts#L206)
 
 _Variable_
 
 ```ts
 export const decodeMessagePolicy = Schema.decodeUnknown(
-  Schema.parseJson(MessagePolicy),
+  Schema.parseJson(
+    Schema.compose(
+      Schema.Struct({
+        ...document.fields,
+        english: Schema.optional(
+          Schema.Struct({
+            fixedRules: retainedEnglishRules,
+            initialRules: retainedEnglishRules,
+          }),
+        ),
+      }),
+      MessagePolicy,
+    ),
+  ),
   { onExcessProperty: "error" },
 )
 ```
@@ -28,7 +41,7 @@ Decodes the text of a message-policy document, refusing any property it
 does not name, so a misspelled or newer setting never silently weakens the
 policy.
 
-### [`MessagePolicy`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/firewall/policy/document/index.ts#L179)
+### [`MessagePolicy`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/firewall/policy/document/index.ts#L197)
 
 _TypeAlias_
 
@@ -38,7 +51,7 @@ export type MessagePolicy = typeof MessagePolicy.Type;
 
 One decoded message-policy document, with Client's defaults filled in.
 
-### [`MessagePolicy`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/firewall/policy/document/index.ts#L155)
+### [`MessagePolicy`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/firewall/policy/document/index.ts#L173)
 
 _Variable_
 
