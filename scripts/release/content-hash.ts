@@ -28,9 +28,12 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+
+import { readCompatibilityVersion } from "../docs/sharness-version.ts";
 
 /** The manifest field the release writes the content hash into. */
 export const CONTENT_HASH_FIELD = "sharnessContentHash";
@@ -144,10 +147,56 @@ export function packInto(
   if (typeof packed !== "string") {
     return packed;
   }
+  if (dir === "client") {
+    const version = readCompatibilityVersion(repo);
+    if ("error" in version) {
+      return { kind: "pack-failed", message: version.error };
+    }
+    const failure = recordPackedWireVersion(packed, version.value);
+    if (failure !== undefined) {
+      return failure;
+    }
+  }
   return (
     run("tar", ["-xzf", packed, "-C", destination], { cwd: destination }) ??
     path.join(destination, "package")
   );
+}
+
+/**
+ * Add launcher metadata to a local Client archive without mutating the checkout.
+ * The package manager owns file selection and workspace pins; only the extracted manifest changes.
+ */
+export function recordPackedWireVersion(
+  archive: string,
+  version: string,
+): PackFailure | undefined {
+  const scratch = mkdtempSync(path.join(tmpdir(), "sharness-wire-pack-"));
+  try {
+    const failure = run("tar", ["-xzf", archive, "-C", scratch], {
+      cwd: scratch,
+    });
+    if (failure !== undefined) {
+      return failure;
+    }
+    const manifestPath = path.join(scratch, "package", "package.json");
+    const manifest: unknown = JSON.parse(readFileSync(manifestPath, "utf8"));
+    if (typeof manifest !== "object" || manifest === null) {
+      return {
+        kind: "pack-failed",
+        message: "packed Client manifest is not an object",
+      };
+    }
+    writeFileSync(
+      manifestPath,
+      `${JSON.stringify({ ...manifest, sharnessWireVersion: version }, null, 2)}\n`,
+    );
+    return run("tar", ["-czf", archive, "-C", scratch, "package"], {
+      cwd: scratch,
+    });
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
 }
 
 /**

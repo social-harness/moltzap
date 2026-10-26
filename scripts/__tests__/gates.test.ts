@@ -333,12 +333,9 @@ function testBakeFailureFailClosed(): void {
     `expected exit 0, got ${clean.code}. stderr: ${clean.stderr.slice(0, 300)}`,
   );
   const target = "docs/spec/identity.md";
-  plantFile(target, (s) =>
-    s.replace(
-      // eslint-disable-next-line sonarjs/slow-regex -- The input is bounded, repository-owned documentation or a fixed test fixture.
-      /\{\/\*\s*@bake-constants:\s*([^*]+?)\s*\*\/\}/,
-      "{/* @bake-constants: $1 NOT_A_REAL_CONSTANT */}",
-    ),
+  plantFile(
+    target,
+    (source) => `${source}\n{/* @bake-constants: NOT_A_REAL_CONSTANT */}\n`,
   );
   const r = runGenerate(workspaceRoot);
   test(
@@ -411,7 +408,6 @@ function testPublicationGuards(): void {
   testPublicationGuardsForeignRepository();
   testPublicationGuardsSemver();
   testPublicationGuardsWireSemver();
-  testManifestWireVersion();
   testPublicationGuardsDriftedList();
   testPublicationGuardsTestOnly();
   testPublicationGuardsNamespaceExport();
@@ -591,24 +587,6 @@ function testPublicationGuardsSemver(): void {
         semver.stderr,
       ),
     `expected calver failure. exit=${semver.code}, stderr=${semver.stderr.slice(0, 300)}`,
-  );
-  restoreAllPlants();
-}
-
-/** Published wire metadata must describe the artifacts the package emits. */
-function testManifestWireVersion(): void {
-  plantFile("packages/client/package.json", (source) =>
-    source.replace(
-      /"sharnessWireVersion": "[^"]+"/,
-      '"sharnessWireVersion": "2099.101.0"',
-    ),
-  );
-  const result = runBoundaries();
-  test(
-    "rejects Client manifest wire metadata that differs from WIRE_VERSION",
-    result.code === 1 &&
-      /sharnessWireVersion must equal WIRE_VERSION/.test(result.stderr),
-    `expected wire metadata rejection. exit=${result.code}, stderr=${result.stderr}`,
   );
   restoreAllPlants();
 }
@@ -1031,20 +1009,28 @@ function testBakedVersionDrift(): void {
     `expected V2_PROTOCOL_VERSION hit. exit=${r2.code}, stderr=${r2.stderr.slice(0, 300)}`,
   );
   restoreAllPlants();
-  const compatibilityBakedTarget = "docs/spec/router-representation.md";
-  plantFile(compatibilityBakedTarget, (s) =>
-    s.replace(compatibilityVersion, `${compatibilityVersion}0`),
-  );
-  const r3 = runScript(
-    "scripts/docs/check-no-hardcoded-constants.ts",
-    workspaceRoot,
-  );
-  test(
-    "flags prefix-extending version drift inside a V2-baked document",
-    r3.code !== 0 && /VERSION_SHAPED_LITERAL/.test(r3.stderr),
-    `expected VERSION_SHAPED_LITERAL hit. exit=${r3.code}, stderr=${r3.stderr.slice(0, 300)}`,
-  );
-  restoreAllPlants();
+  for (const page of [
+    "conversation-history",
+    "identity-representation",
+    "identity",
+    "router-representation",
+  ]) {
+    plantFile(
+      `docs/spec/${page}.md`,
+      (source) =>
+        `${source}\n{/* @bake-constants: V2_PROTOCOL_VERSION */}\nSharness-Version: ${compatibilityVersion}\n`,
+    );
+    const result = runScript(
+      "scripts/docs/check-no-hardcoded-constants.ts",
+      workspaceRoot,
+    );
+    test(
+      `flags literal wire versions in ${page}`,
+      result.code !== 0 && /V2_PROTOCOL_VERSION/.test(result.stderr),
+      `expected V2_PROTOCOL_VERSION hit. exit=${result.code}, stderr=${result.stderr.slice(0, 300)}`,
+    );
+    restoreAllPlants();
+  }
 }
 
 function runScript(

@@ -430,6 +430,13 @@ mismatches. Release notes mark each reset release with the phrase
   selected too, so every published package pins its siblings to their newest
   published versions and an installed closure resolves the versions one
   release tested.
+- `packages/client/src/identity/wire-version.ts` → `WIRE_VERSION` owns the
+  emitted wire version. The source Client manifest carries no wire-version
+  copy. The publish workflow writes `sharnessWireVersion` into the release
+  manifest before hashing and committing it; resume and publish use that
+  release commit. Local packers derive the same field from `WIRE_VERSION` for
+  launcher compatibility checks. A wire reset edits only `WIRE_VERSION` and
+  the mixed-release gate's `FIRST_POST_RESET_RELEASE`, which records its boundary.
 - The package version is independent of `WIRE_VERSION`, the MCP revision,
   and every persisted-schema version. Advancing one never advances another.
 - A merge to `main` releases once CI passes on it, when the merged commit

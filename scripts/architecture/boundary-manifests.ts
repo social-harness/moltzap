@@ -11,6 +11,7 @@ import {
   LIVE_WIRE_VERSIONS,
   WIRE_VERSION_PATTERN,
 } from "../../packages/client/src/identity/wire-version.ts";
+import { parseCompatibilityVersion } from "../docs/sharness-version.ts";
 import {
   CALENDAR_VERSION,
   dependencyNames,
@@ -71,17 +72,6 @@ export function checkCompatibilityVersion(run: BoundaryRun): string | null {
   const versionPath = path.join(clientSource, "identity", "wire-version.ts");
   const compatibilityVersion = readCompatibilityVersion(run, versionPath);
   checkWireVersionSets(run);
-  const manifest = readJsonObject(
-    path.join(run.packagesRoot, "client", "package.json"),
-  );
-  if (
-    compatibilityVersion !== null &&
-    manifest.sharnessWireVersion !== compatibilityVersion
-  ) {
-    run.failures.push(
-      `packages/client/package.json: sharnessWireVersion must equal WIRE_VERSION "${compatibilityVersion}"`,
-    );
-  }
   const clientIndex = path.join(clientSource, "index.ts");
   if (!existsSync(clientIndex)) {
     run.failures.push(
@@ -263,15 +253,14 @@ function readCompatibilityVersion(
   run: BoundaryRun,
   identityVersion: string,
 ): string | null {
-  const literal = /export\s+const\s+WIRE_VERSION\s*=\s*["']([^"']*)["']/.exec(
+  const parsed = parseCompatibilityVersion(
     readFileSync(identityVersion, "utf8"),
-  )?.[1];
-  if (literal === undefined) {
-    run.failures.push(
-      "packages/client/src/identity/wire-version.ts: must export the literal WIRE_VERSION",
-    );
+  );
+  if ("error" in parsed) {
+    run.failures.push(parsed.error);
     return null;
   }
+  const literal = parsed.value;
   if (!WIRE_VERSION_PATTERN.test(literal)) {
     run.failures.push(
       `packages/client/src/identity/wire-version.ts: WIRE_VERSION "${literal}" is not a YYYY.MDD.N CalVer`,
