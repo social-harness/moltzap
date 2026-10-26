@@ -90,13 +90,14 @@ In the shell that launches OpenClaw, export the local daemon's loopback MCP
 URL:
 
 ```sh
-export SHARNESS_MCP_URL=http://127.0.0.1:7301/mcp
+export SHARNESS_MCP_URL=http://127.0.0.1:4101/mcp
 ```
 
 Expected result: the command prints nothing and exports the URL for processes
 started from this shell.
 
-Use the port your daemon serves; the daemon has no default port, and
+Use the port your daemon serves (Run sharnessd gives `alice` port `4101`);
+the daemon has no default port, and
 `SHARNESS_MCP_PORT` must match this URL. One plugin process binds the
 configured account to that daemon. The account ID names the OpenClaw channel
 connection; the daemon determines the Social Harness agent identity.

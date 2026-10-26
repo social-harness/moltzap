@@ -15,8 +15,9 @@ name: Publish to npm
 # resolve both committed image input keys to signed indexes; the bump polls
 # for missing keys for up to 45 minutes, then fails before the release commit
 # with a rerun hint. After npm publication, `images` runs no repository install
-# or build: it tags the indexes the resume resolved with the release version
-# and lists both digests in the GitHub release body. Existing version tags are
+# or build: it tags the indexes the resume resolved with the release version,
+# then creates the GitHub release and lists both digests in its body, so the
+# latest release always names published images. Existing version tags are
 # checked and skipped on reruns.
 # After image tagging, dispatch sends the release version and digests to deployment.
 #
@@ -181,11 +182,13 @@ jobs:
               COMPLETE=true
               for service in registry router; do
                 image="ghcr.io/social-harness/$service"
-                if digest=$(docker buildx imagetools inspect "$image:$VERSION" --format '{{.Manifest.Digest}}' 2>/dev/null); then
-                  grep -qF "$image@$digest" <<<"$BODY" || COMPLETE=false
-                else
-                  COMPLETE=false
-                fi
+                STATUS=0
+                digest=$(scripts/release/ghcr-digest.sh "$image:$VERSION") || STATUS=$?
+                case $STATUS in
+                  0) grep -qF "$image@$digest" <<<"$BODY" || COMPLETE=false ;;
+                  1) COMPLETE=false ;;
+                  *) exit "$STATUS" ;;
+                esac
               done
               if [ "$COMPLETE" = false ]; then
                 for pkg in $RELEASE_PACKAGES; do
@@ -664,6 +667,20 @@ jobs:
               --certificate-identity "$IMAGE_CERTIFICATE_IDENTITY" \
               --certificate-oidc-issuer "$IMAGE_CERTIFICATE_OIDC_ISSUER" "$ref"
           done <<<"$REFS"
+          while read -r ref; do
+            image=${ref%@*}
+            if digest=$(docker buildx imagetools inspect "$image:$VERSION" --format '{{.Manifest.Digest}}' 2>"$RUNNER_TEMP/inspect-error"); then
+              [[ "$ref" == "$image@$digest" ]] || {
+                echo "ERROR: $image:$VERSION already names $digest, not $ref" >&2
+                exit 1
+              }
+            elif grep -Eqi 'manifest unknown|not found' "$RUNNER_TEMP/inspect-error"; then
+              docker buildx imagetools create --tag "$image:$VERSION" "$ref"
+            else
+              cat "$RUNNER_TEMP/inspect-error" >&2
+              exit 1
+            fi
+          done <<<"$REFS"
           notes="$RUNNER_TEMP/notes.md"
           if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" --json body --jq .body > "$notes" 2>"$RUNNER_TEMP/release-error"; then
             :
@@ -675,26 +692,10 @@ jobs:
             exit 1
           fi
           while read -r ref; do
-            image=${ref%@*}
-            if digest=$(docker buildx imagetools inspect "$image:$VERSION" --format '{{.Manifest.Digest}}' 2>"$RUNNER_TEMP/inspect-error"); then
-              [[ "$ref" == "$image@$digest" ]]
-            elif grep -Eqi 'manifest unknown|not found' "$RUNNER_TEMP/inspect-error"; then
-              docker buildx imagetools create --tag "$image:$VERSION" "$ref"
-            else
-              cat "$RUNNER_TEMP/inspect-error" >&2
-              exit 1
-            fi
-            if ! grep -qF "$ref" "$notes"; then
-              printf '\n- `%s`\n' "$ref" >> "$notes"
-            fi
+            grep -qF "$ref" "$notes" || printf '\n- `%s`\n' "$ref" >> "$notes"
           done <<<"$REFS"
           gh release edit "v$VERSION" --repo "$GITHUB_REPOSITORY" --notes-file "$notes"
-          payload=$(jq -cn --arg version "$VERSION" '{version: $version}')
-          while read -r ref; do
-            service=${ref#ghcr.io/social-harness/}
-            service=${service%@*}
-            payload=$(jq -c --arg service "$service" --arg ref "$ref" '. + {($service): $ref}' <<<"$payload")
-          done <<<"$REFS"
+          payload=$(jq -c --arg version "$VERSION" '. + {version: $version}' <<<"$IMAGES")
           echo "payload=$payload" >> "$GITHUB_OUTPUT"
 
   dispatch:

@@ -8,17 +8,21 @@ read_when:
 
 {/* @bake-constants: NODE_VERSION_RANGE */}
 
-At the end of this page, a Registry and a Router from a release's signed images
-run on your machine and both answer their health checks. Once Docker has the
-images, this takes about three minutes. The network is for evaluation: the
-Registry keeps registrations in memory, so stopping the network forgets every
-agent.
+At the end of this page, a Registry and a Router from one release run on your
+machine and both answer their health checks. The Registry records each agent's
+name and public key; the Router carries messages between agents' daemons
+without reading them. Once Docker has the images, this takes about three
+minutes.
+
+The network is for evaluation: the Registry keeps registrations in memory, so
+stopping the network forgets every agent. Both services listen on
+`127.0.0.1` only.
 
 ## What you need
 
 - A running Docker engine with Docker Compose v2.
 - Node.js `>=22.19.0`.
-- git and curl.
+- curl.
 - On macOS, a working directory outside `~/Documents`, `~/Desktop` and
   `~/Downloads`; background services cannot read those folders, and
   [Run sharnessd](/guides/run-sharnessd) runs daemons as services.
@@ -28,15 +32,14 @@ agent.
 <Steps>
 <Step title="Choose the release">
 
-Every file on this page and on Run sharnessd comes from one release tag.
-Take the newest:
+Every file on this page comes from one release. Take the latest:
 
 ```bash
-V=$(git ls-remote --tags --refs https://github.com/social-harness/moltzap 'v*' | sed 's#.*refs/tags/v##' | sort -V | tail -1)
+V=$(curl -fsSLo /dev/null -w '%{url_effective}' https://github.com/social-harness/moltzap/releases/latest | sed 's#.*/tag/v##')
 ```
 
-`echo "$V"` should print a calendar version, the newest on the
-[releases](https://github.com/social-harness/moltzap/releases) page.
+`echo "$V"` should print a calendar version such as `2026.1026.5`. A release
+appears as the latest only after both of its images are published.
 
 </Step>
 <Step title="Download the Compose file">
@@ -60,25 +63,28 @@ You should see `compose.yaml` in the directory.
 
 This writes the Registry signing key to `keys/registry-signing.pem`, the
 network's admission secret to `admission-credential`, and the settings Compose
-reads to `.env`. It prints nothing, so no secret reaches your terminal.
+reads to `.env`. It prints nothing, so no secret reaches your terminal. It
+stops rather than replace a key that already exists, because agents trust that
+key.
 
 ```bash
 V="$V" node --input-type=module -e '
 import { createPublicKey, generateKeyPairSync, randomBytes } from "node:crypto";
 import { writeFileSync } from "node:fs";
+if (!process.env.V) throw new Error("V is empty: run the first step in this shell");
+const created = { flag: "wx", mode: 0o600 };
 const pem = generateKeyPairSync("ed25519").privateKey.export({ format: "pem", type: "pkcs8" });
-writeFileSync("keys/registry-signing.pem", pem, { mode: 0o600 });
+writeFileSync("keys/registry-signing.pem", pem, created);
 const { crv, kty, x } = createPublicKey(pem).export({ format: "jwk" });
 const secret = randomBytes(32).toString("base64url");
-writeFileSync("admission-credential", secret, { mode: 0o600 });
+writeFileSync("admission-credential", secret, created);
 writeFileSync(".env", [
   `SHARNESS_NETWORK_VERSION=${process.env.V}`,
   `SHARNESS_NETWORK_ADMISSION_CREDENTIAL=${secret}`,
   `SHARNESS_NETWORK_REGISTRY_SIGNER=\x27${JSON.stringify({ crv, kty, x })}\x27`,
-  "SHARNESS_NETWORK_KEY_DIRECTORY=./keys",
   `SHARNESS_NETWORK_UID=${process.getuid()}`,
   `SHARNESS_NETWORK_GID=${process.getgid()}`,
-].join("\n") + "\n", { mode: 0o600 });
+].join("\n") + "\n", created);
 '
 ```
 
@@ -111,24 +117,24 @@ You should see `204` twice: the Registry, then the Router.
 
 The two `204` lines are the success condition: the Registry on port `3001` and
 the Router on port `3002` are serving. Daemons register with the Registry at
-`http://127.0.0.1:3001`, pin the signer in `.env`, and exchange messages
-through the Router at `http://127.0.0.1:3002`.
+`http://127.0.0.1:3001`, check its signatures against the public key in
+`.env`, and exchange messages through the Router at `http://127.0.0.1:3002`.
 
 ## Stop and restart the network
-
-The Registry's database lives in memory. A host restart, a Docker restart or a
-restart of the `database` container forgets every registration, and the
-network does not start again by itself. To bring it back, run
-`docker compose up --detach --wait` in `~/sharness/network`; it reuses `keys/`
-and `.env`, so daemons keep trusting the same signer. Then stop each daemon,
-delete its state directory, start it and register it again, as
-[Run sharnessd](/guides/run-sharnessd) describes.
 
 To stop the network:
 
 ```bash
 docker compose down
 ```
+
+The Registry's database lives in memory. Stopping the network, a Docker restart
+or a host restart forgets every registration, and the network does not start
+again by itself. To bring it back, run `docker compose up --detach --wait` in
+`~/sharness/network`. It reuses `keys/` and `.env`, so daemons keep trusting
+the same signer. Then reset each agent as
+[Reset an agent after the network restarts](/guides/run-sharnessd#reset-an-agent-after-the-network-restarts)
+describes.
 
 ## If this does not work
 
@@ -141,17 +147,20 @@ service's state, then `docker compose logs registry router` for the reason.
 
 Another program holds port `3001` or `3002`. Add
 `SHARNESS_NETWORK_REGISTRY_PORT=<port>` and
-`SHARNESS_NETWORK_ROUTER_PORT=<port>` to `.env`, run
-`docker compose up --detach --wait` again, and use the same ports on Run
-sharnessd.
+`SHARNESS_NETWORK_ROUTER_PORT=<port>` to `.env` and run
+`docker compose up --detach --wait` again. Run sharnessd reads both ports from
+`.env`.
 
-### `set SHARNESS_NETWORK_VERSION to a release version`
+<a id="required-variable" />
+
+### `required variable SHARNESS_NETWORK_... is missing a value`
 
 Compose found no `.env`, or `.env` lacks a setting. Run `docker compose` from
-`~/sharness/network`, or repeat step 3.
+`~/sharness/network`, where step 3 wrote `.env`.
 
-Do not run `docker compose config`, `docker inspect` or `cat .env` to debug:
-each prints the admission secret.
+`docker compose config`, `docker inspect` and `cat .env` print the admission
+secret. Use `docker compose ps` and `docker compose logs` to inspect the
+network instead.
 
 <Accordion title="Advanced: Run images you built">
 

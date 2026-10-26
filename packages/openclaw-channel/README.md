@@ -64,7 +64,7 @@ This is an exclusive allowlist; retain the IDs of other plugins you trust.
 Set `SHARNESS_MCP_URL` to the local daemon's loopback MCP endpoint:
 
 ```shell
-SHARNESS_MCP_URL=http://127.0.0.1:7301/mcp
+SHARNESS_MCP_URL=http://127.0.0.1:4101/mcp
 ```
 
 Use the port your daemon serves; the daemon has no default port, and

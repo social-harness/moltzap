@@ -1,27 +1,21 @@
 /**
- * @file Runs the own-network path the docs describe, end to end. The packed
+ * @file Runs the own-network path the guides describe, end to end. The packed
  * Client and the `images/` helper install from tarballs and npm,
- * `images/compose.yaml` starts the images tagged `SHARNESS_NETWORK_VERSION`,
- * three `sharnessd` daemons start unregistered, and `images/mcp.ts` registers
- * them and sends a message. The gate passes when each step prints what the
- * docs say it prints and each refusal exits 1 with the reason the docs name.
+ * `images/compose.yaml` starts the images tagged `SHARNESS_NETWORK_VERSION`
+ * from a `.env` written as Run a local network writes it, three `sharnessd`
+ * daemons start unregistered, and `images/mcp.ts` registers them and sends a
+ * message. The gate passes when each step prints what the guides say it
+ * prints and each refusal exits 1 with the reason the guides name.
  */
 import { Command, type CommandExecutor, FileSystem } from "@effect/platform";
-import {
-  Config,
-  Duration,
-  Effect,
-  Ref,
-  Schedule,
-  Schema,
-  type Scope,
-  Stream,
-} from "effect";
+import { Config, Duration, Effect, Ref, Schedule, Schema, Stream } from "effect";
+import type { Scope } from "effect";
 import { createPublicKey, generateKeyPairSync, randomBytes } from "node:crypto";
 import { createConnection, createServer } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  type Finished,
   type GateError,
   type GateServices,
   installPackedConsumer,
@@ -30,6 +24,7 @@ import {
   readJsonFile,
   requireCondition,
   runGate,
+  runProcess,
 } from "../../scripts/test/packed-workspace.js";
 
 const workspaceRoot = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
@@ -37,7 +32,7 @@ const imagesRoot = join(workspaceRoot, "images");
 const HOST = "127.0.0.1";
 const MESSAGE = "Hi Bob, this is Alice.";
 
-/** How long the path may take once the images are present. */
+/** How long the path may take, including any image pull Compose makes. */
 const GATE_DEADLINE = Duration.minutes(6);
 
 /** How often bob's inbox is read before the message must have arrived. */
@@ -47,13 +42,6 @@ const helperManifest = Schema.Struct({
   dependencies: Schema.Record({ key: Schema.String, value: Schema.String }),
 });
 
-/** What a finished command printed and how it exited. */
-interface Finished {
-  readonly stdout: string;
-  readonly stderr: string;
-  readonly exitCode: number;
-}
-
 /** The settings every daemon on the network shares. */
 interface Network {
   readonly registryOrigin: string;
@@ -62,24 +50,49 @@ interface Network {
   readonly admissionCredential: string;
 }
 
-/** One daemon the helper talks to: its working directory and MCP URL. */
+/** One daemon the helper talks to: where the helper runs and what it calls. */
 interface Daemon {
   readonly name: string;
   readonly directory: string;
+  readonly helper: string;
   readonly mcpUrl: string;
 }
 
 runGate("sharness-network-", (temporaryRoot) =>
   Effect.gen(function* () {
     const version = yield* Config.string("SHARNESS_NETWORK_VERSION").pipe(
-      Effect.mapError(
-        () =>
+      Effect.catchTag("ConfigError", () =>
+        Effect.fail(
           new PackGateError({
             message:
               "set SHARNESS_NETWORK_VERSION to the tag of the Registry and Router images to run",
           }),
+        ),
       ),
     );
+    const consumerRoot = yield* installConsumer(temporaryRoot);
+    return yield* Effect.scoped(ownNetworkPath(consumerRoot, version)).pipe(
+      Effect.timeoutFail({
+        duration: GATE_DEADLINE,
+        onTimeout: () =>
+          new PackGateError({
+            message: `the own-network path did not finish within ${Duration.format(GATE_DEADLINE)}`,
+          }),
+      }),
+    );
+  }),
+);
+
+/**
+ * Installs the packed Client with the helper's dependencies, and copies in
+ * the two files a reader downloads.
+ * @param temporaryRoot Scratch directory the gate owns.
+ * @returns The consumer directory.
+ */
+function installConsumer(
+  temporaryRoot: string,
+): Effect.Effect<string, GateError, GateServices> {
+  return Effect.gen(function* () {
     const { archives } = yield* packProductClosure(
       workspaceRoot,
       "client",
@@ -97,29 +110,16 @@ runGate("sharness-network-", (temporaryRoot) =>
       dependencies: manifest.dependencies,
     });
     const fs = yield* FileSystem.FileSystem;
-    yield* fs.copyFile(
-      join(imagesRoot, "compose.yaml"),
-      join(consumerRoot, "compose.yaml"),
-    );
-    yield* fs.copyFile(
-      join(imagesRoot, "mcp.ts"),
-      join(consumerRoot, "mcp.ts"),
-    );
-    return yield* Effect.scoped(ownNetworkPath(consumerRoot, version)).pipe(
-      Effect.timeoutFail({
-        duration: GATE_DEADLINE,
-        onTimeout: () =>
-          new PackGateError({
-            message: `the own-network path did not finish within ${Duration.format(GATE_DEADLINE)}`,
-          }),
-      }),
-    );
-  }),
-);
+    for (const file of ["compose.yaml", "mcp.ts"]) {
+      yield* fs.copyFile(join(imagesRoot, file), join(consumerRoot, file));
+    }
+    return consumerRoot;
+  });
+}
 
 /**
  * Starts the network and three daemons in `consumerRoot`, then registers and
- * messages through the helper as the docs do.
+ * messages through the helper as the guides do.
  * @param consumerRoot Directory holding the installed packages and copied files.
  * @param version Image tag the Compose file runs.
  * @returns The line the gate prints when it passes.
@@ -130,42 +130,54 @@ function ownNetworkPath(
 ): Effect.Effect<string, GateError, GateServices | Scope.Scope> {
   return Effect.gen(function* () {
     const network = yield* startNetwork(consumerRoot, version);
-    const alice = yield* startDaemon(consumerRoot, network, "alice");
-    const bob = yield* startDaemon(consumerRoot, network, "bob");
-    const carol = yield* startDaemon(consumerRoot, network, "carol");
+    const [alice, bob, carol] = yield* Effect.all(
+      [
+        startDaemon(consumerRoot, network, "alice"),
+        startDaemon(consumerRoot, network, "bob"),
+        startDaemon(consumerRoot, network, "carol"),
+      ],
+      { concurrency: "unbounded" },
+    );
 
-    yield* expectOutput(alice, ["register", "alice"], "registered agent:alice");
+    yield* expectOutput(alice, ["register", "alice"], ["registered agent:alice"]);
     yield* expectOutput(
       alice,
       ["register", "alice"],
-      "already active: agent:alice",
+      ["already active: agent:alice"],
     );
-    yield* expectOutput(bob, ["register", "bob"], "registered agent:bob");
+    yield* expectOutput(bob, ["register", "bob"], ["registered agent:bob"]);
     yield* expectRefusal(carol, ["register", "alice"], "name_taken");
-    yield* expectOutput(alice, ["call", "status", "{}"], '"kind": "active"');
+    yield* expectOutput(alice, ["call", "status"], ['"kind": "active"']);
 
-    const message = JSON.stringify({ to: "agent:bob", text: MESSAGE });
-    yield* expectOutput(alice, ["call", "send_message", message], "{");
-    yield* expectOutput(bob, ["call", "read_inbox", "{}"], MESSAGE).pipe(
+    yield* expectOutput(alice, ["call", "send_message", sendTo("bob")], ["{"]);
+    yield* expectOutput(
+      bob,
+      ["call", "read_inbox"],
+      [MESSAGE, "agent:alice"],
+    ).pipe(
       Effect.retry(
         Schedule.spaced(Duration.seconds(1)).pipe(
           Schedule.intersect(Schedule.recurs(DELIVERY_ATTEMPTS)),
         ),
       ),
     );
-    const unknown = JSON.stringify({ to: "agent:nobody", text: MESSAGE });
     yield* expectRefusal(
       alice,
-      ["call", "send_message", unknown],
-      "send_message failed",
+      ["call", "send_message", sendTo("nobody")],
+      "send_message failed: unknown-agent",
     );
     return "own-network path passed";
   });
 }
 
+/** The `send_message` arguments Run sharnessd passes, addressed to `name`. */
+function sendTo(name: string): string {
+  return JSON.stringify({ input: { to: `agent:${name}`, text: MESSAGE } });
+}
+
 /**
- * Writes the keys and settings the network page writes, then starts Compose
- * with `--detach --wait` for the enclosing scope.
+ * Writes the keys and `.env` that Run a local network writes, then starts
+ * Compose with `--detach --wait` for the enclosing scope.
  * @param consumerRoot Directory holding `compose.yaml`.
  * @param version Image tag the Compose file runs.
  * @returns The origins and secrets daemons join the network with.
@@ -175,48 +187,17 @@ function startNetwork(
   version: string,
 ): Effect.Effect<Network, GateError, GateServices | Scope.Scope> {
   return Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const keyDirectory = join(consumerRoot, "keys");
-    yield* fs.makeDirectory(keyDirectory);
-    const registryKey = makePrivateKeyPem();
-    yield* fs.writeFileString(
-      join(keyDirectory, "registry-signing.pem"),
-      registryKey,
-      { mode: 0o600 },
-    );
-    const [registryPort, routerPort] = yield* Effect.all([
-      freePort(),
-      freePort(),
-    ]);
-    const network: Network = {
-      registryOrigin: `http://${HOST}:${registryPort}`,
-      routerOrigin: `http://${HOST}:${routerPort}`,
-      registrySigner: publicJwk(registryKey),
-      admissionCredential: randomBytes(32).toString("base64url"),
-    };
-    const environment = {
-      SHARNESS_NETWORK_VERSION: version,
-      SHARNESS_NETWORK_ADMISSION_CREDENTIAL: network.admissionCredential,
-      SHARNESS_NETWORK_REGISTRY_SIGNER: network.registrySigner,
-      SHARNESS_NETWORK_KEY_DIRECTORY: keyDirectory,
-      SHARNESS_NETWORK_UID: String(process.getuid?.() ?? 1000),
-      SHARNESS_NETWORK_GID: String(process.getgid?.() ?? 1000),
-      SHARNESS_NETWORK_REGISTRY_PORT: String(registryPort),
-      SHARNESS_NETWORK_ROUTER_PORT: String(routerPort),
-    };
+    const network = yield* writeNetworkFiles(consumerRoot, version);
     const project = `sharness-network-${randomBytes(8).toString("hex")}`;
     const compose = (...args: readonly string[]) =>
-      finish(
-        Command.make(
-          "docker",
-          "compose",
-          "--file",
-          join(consumerRoot, "compose.yaml"),
-          "--project-name",
-          project,
-          ...args,
-        ).pipe(Command.env(environment)),
-      );
+      runProcess("docker", [
+        "compose",
+        "--file",
+        join(consumerRoot, "compose.yaml"),
+        "--project-name",
+        project,
+        ...args,
+      ]);
     yield* Effect.addFinalizer(() =>
       compose("down", "--volumes", "--remove-orphans").pipe(Effect.ignore),
     );
@@ -234,8 +215,52 @@ function startNetwork(
 }
 
 /**
- * Starts one unregistered `sharnessd` from the installed Client, with the six
- * settings and the admission credential file the daemon page sets, for the
+ * Writes the Registry key and the `.env` Compose reads, in the form Run a
+ * local network writes them, on free ports.
+ */
+function writeNetworkFiles(
+  consumerRoot: string,
+  version: string,
+): Effect.Effect<Network, GateError, FileSystem.FileSystem> {
+  return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const registryKey = makePrivateKeyPem();
+    yield* fs.makeDirectory(join(consumerRoot, "keys"));
+    yield* fs.writeFileString(
+      join(consumerRoot, "keys", "registry-signing.pem"),
+      registryKey,
+      { mode: 0o600 },
+    );
+    const [registryPort, routerPort] = yield* Effect.all([
+      freePort(),
+      freePort(),
+    ]);
+    const network: Network = {
+      registryOrigin: `http://${HOST}:${registryPort}`,
+      routerOrigin: `http://${HOST}:${routerPort}`,
+      registrySigner: publicJwk(registryKey),
+      admissionCredential: randomBytes(32).toString("base64url"),
+    };
+    const settings = [
+      `SHARNESS_NETWORK_VERSION=${version}`,
+      `SHARNESS_NETWORK_ADMISSION_CREDENTIAL=${network.admissionCredential}`,
+      `SHARNESS_NETWORK_REGISTRY_SIGNER='${network.registrySigner}'`,
+      `SHARNESS_NETWORK_UID=${process.getuid?.() ?? 1000}`,
+      `SHARNESS_NETWORK_GID=${process.getgid?.() ?? 1000}`,
+      `SHARNESS_NETWORK_REGISTRY_PORT=${registryPort}`,
+      `SHARNESS_NETWORK_ROUTER_PORT=${routerPort}`,
+    ];
+    yield* fs.writeFileString(
+      join(consumerRoot, ".env"),
+      `${settings.join("\n")}\n`,
+      { mode: 0o600 },
+    );
+    return network;
+  });
+}
+
+/**
+ * Starts one unregistered `sharnessd` from the installed Client for the
  * enclosing scope. Returns once its MCP port accepts connections, and fails
  * with the daemon's output when it exits first.
  * @param consumerRoot Directory holding the installed packages.
@@ -249,37 +274,12 @@ function startDaemon(
   name: string,
 ): Effect.Effect<Daemon, GateError, GateServices | Scope.Scope> {
   return Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
     const directory = join(consumerRoot, "agents", name);
-    yield* fs.makeDirectory(join(directory, "state"), { recursive: true });
-    yield* fs.writeFileString(
-      join(directory, "agent-key.pem"),
-      makePrivateKeyPem(),
-      { mode: 0o600 },
-    );
-    yield* fs.writeFileString(
-      join(directory, "admission-credential"),
-      network.admissionCredential,
-      { mode: 0o600 },
-    );
     const port = yield* freePort();
+    const environment = yield* writeAgentFiles(directory, network, port);
     const child = yield* Command.make(
       join(consumerRoot, "node_modules", ".bin", "sharnessd"),
-    ).pipe(
-      Command.env({
-        SHARNESS_MCP_PORT: String(port),
-        SHARNESS_STATE_DIRECTORY: join(directory, "state"),
-        SHARNESS_REGISTRY_ORIGIN: network.registryOrigin,
-        SHARNESS_REGISTRY_SIGNER_PUBLIC_KEY: network.registrySigner,
-        SHARNESS_ROUTER_ORIGIN: network.routerOrigin,
-        SHARNESS_AGENT_PRIVATE_KEY_FILE: join(directory, "agent-key.pem"),
-        SHARNESS_ADMISSION_CREDENTIAL_FILE: join(
-          directory,
-          "admission-credential",
-        ),
-      }),
-      Command.start,
-    );
+    ).pipe(Command.env(environment), Command.start);
     const output = yield* Ref.make("");
     yield* Stream.merge(child.stdout, child.stderr).pipe(
       Stream.decodeText(),
@@ -288,7 +288,8 @@ function startDaemon(
     );
     while (yield* child.isRunning.pipe(Effect.orElseSucceed(() => false))) {
       if (yield* canConnect(port)) {
-        return { name, directory, mcpUrl: `http://${HOST}:${port}/mcp` };
+        const helper = join(consumerRoot, "mcp.ts");
+        return { name, directory, helper, mcpUrl: `http://${HOST}:${port}/mcp` };
       }
       yield* Effect.sleep(Duration.millis(100));
     }
@@ -301,18 +302,48 @@ function startDaemon(
 }
 
 /**
- * Runs the helper for `daemon` and requires exit 0 with `expected` in its
- * standard output.
+ * Writes the agent's key and admission file, as Run sharnessd does, and
+ * answers the daemon's six settings and admission file.
+ */
+function writeAgentFiles(
+  directory: string,
+  network: Network,
+  port: number,
+): Effect.Effect<Record<string, string>, GateError, FileSystem.FileSystem> {
+  return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    yield* fs.makeDirectory(join(directory, "state"), { recursive: true });
+    const keyFile = join(directory, "agent-key.pem");
+    const admissionFile = join(directory, "admission-credential");
+    yield* fs.writeFileString(keyFile, makePrivateKeyPem(), { mode: 0o600 });
+    yield* fs.writeFileString(admissionFile, network.admissionCredential, {
+      mode: 0o600,
+    });
+    return {
+      SHARNESS_MCP_PORT: String(port),
+      SHARNESS_STATE_DIRECTORY: join(directory, "state"),
+      SHARNESS_REGISTRY_ORIGIN: network.registryOrigin,
+      SHARNESS_REGISTRY_SIGNER_PUBLIC_KEY: network.registrySigner,
+      SHARNESS_ROUTER_ORIGIN: network.routerOrigin,
+      SHARNESS_AGENT_PRIVATE_KEY_FILE: keyFile,
+      SHARNESS_ADMISSION_CREDENTIAL_FILE: admissionFile,
+    };
+  });
+}
+
+/**
+ * Runs the helper for `daemon` and requires exit 0 with every `expected`
+ * text in its standard output.
  */
 function expectOutput(
   daemon: Daemon,
   args: readonly string[],
-  expected: string,
+  expected: readonly string[],
 ): Effect.Effect<void, GateError, CommandExecutor.CommandExecutor> {
   return helper(daemon, args).pipe(
     Effect.flatMap(({ stdout, stderr, exitCode }) =>
       requireCondition(
-        exitCode === 0 && stdout.includes(expected),
+        exitCode === 0 && expected.every((text) => stdout.includes(text)),
         `node mcp.ts ${args.join(" ")} for ${daemon.name}: expected exit 0 printing ${JSON.stringify(expected)}, got exit ${exitCode}:\n${stdout}${stderr}`,
       ),
     ),
@@ -343,41 +374,10 @@ function helper(
   daemon: Daemon,
   args: readonly string[],
 ): Effect.Effect<Finished, GateError, CommandExecutor.CommandExecutor> {
-  return finish(
-    Command.make(
-      process.execPath,
-      join(dirname(dirname(daemon.directory)), "mcp.ts"),
-      ...args,
-    ).pipe(
-      Command.workingDirectory(daemon.directory),
-      Command.env({ SHARNESS_MCP_URL: daemon.mcpUrl, NODE_PATH: "" }),
-    ),
-  );
-}
-
-/** Runs `command` to completion and reports its output and exit code. */
-function finish(
-  command: Command.Command,
-): Effect.Effect<Finished, GateError, CommandExecutor.CommandExecutor> {
-  return Effect.scoped(
-    Effect.gen(function* () {
-      const child = yield* Command.start(command);
-      const [stdout, stderr, exitCode] = yield* Effect.all(
-        [decode(child.stdout), decode(child.stderr), child.exitCode],
-        { concurrency: 3 },
-      );
-      return { stdout, stderr, exitCode };
-    }),
-  );
-}
-
-function decode<E>(
-  stream: Stream.Stream<Uint8Array, E>,
-): Effect.Effect<string, E> {
-  return stream.pipe(
-    Stream.decodeText(),
-    Stream.runFold("", (all, chunk) => all + chunk),
-  );
+  return runProcess(process.execPath, [daemon.helper, ...args], {
+    cwd: daemon.directory,
+    env: { SHARNESS_MCP_URL: daemon.mcpUrl, NODE_PATH: "" },
+  });
 }
 
 /** Whether a TCP connection to the loopback `port` succeeds. */

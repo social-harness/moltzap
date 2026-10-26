@@ -471,9 +471,10 @@ Registry and Router publish as `ghcr.io/social-harness/registry` and
 `ghcr.io/social-harness/router`. Each image is a multi-architecture OCI index
 for `linux/amd64` and `linux/arm64`, built on native runners. The committed
 input key `sha256:<hex>` from `pnpm image:keys` names the immutable tag
-`inputs-<hex>`. Release-version tags name those same indexes, and the GitHub
-release body lists both full digest references. `images/compose.yaml` runs a
-local network from the indexes a release-version tag names. The bump waits for
+`inputs-<hex>`. Release-version tags name those same indexes. The GitHub
+release is created only after both version tags exist, and its body lists both
+full digest references. `images/compose.yaml` runs a local network from the
+indexes a release-version tag names. The bump waits for
 missing input tags and fails with a rerun hint if the images workflow has not
 published them in time.
 After npm publication and release image tagging succeed, a separate job sends

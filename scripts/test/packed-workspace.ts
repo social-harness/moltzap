@@ -124,6 +124,37 @@ export function runCommand(
   args: readonly string[],
   options: RunOptions = {},
 ): Effect.Effect<string, GateError, CommandExecutor.CommandExecutor> {
+  return runProcess(command, args, options).pipe(
+    Effect.tap(({ stdout, stderr, exitCode }) =>
+      requireCondition(
+        exitCode === 0,
+        `${[command, ...args].join(" ")} exited with ${exitCode}:\n${stdout}${stderr}`,
+      ),
+    ),
+    Effect.map(({ stdout }) => stdout),
+    Effect.withSpan("packedWorkspace.runCommand"),
+  );
+}
+
+/** What a finished process printed and how it exited. */
+export interface Finished {
+  readonly stdout: string;
+  readonly stderr: string;
+  readonly exitCode: number;
+}
+
+/**
+ * Run one command to completion and report both output streams and its exit
+ * code, for a check that expects a particular failure.
+ * @param command Executable name or path.
+ * @param args Arguments passed verbatim.
+ * @param options Working directory and environment overrides.
+ */
+export function runProcess(
+  command: string,
+  args: readonly string[],
+  options: RunOptions = {},
+): Effect.Effect<Finished, GateError, CommandExecutor.CommandExecutor> {
   return Effect.scoped(
     Effect.gen(function* () {
       const child = yield* Command.start(configure(command, args, options));
@@ -131,13 +162,9 @@ export function runCommand(
         [collect(child.stdout), collect(child.stderr), child.exitCode],
         { concurrency: 3 },
       );
-      yield* requireCondition(
-        exitCode === 0,
-        `${[command, ...args].join(" ")} exited with ${exitCode}:\n${stdout}${stderr}`,
-      );
-      return stdout;
+      return { stdout, stderr, exitCode };
     }),
-  ).pipe(Effect.withSpan("packedWorkspace.runCommand"));
+  );
 }
 
 /**

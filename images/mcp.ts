@@ -2,18 +2,18 @@
  * @file Calls the MCP tools of one local `sharnessd` from the command line.
  * `SHARNESS_MCP_URL` names the daemon's loopback endpoint.
  *
- * `node mcp.ts register <name>` registers the daemon's agent under `<name>`.
- * It reads `status` first, so a rerun after a registration whose answer was
- * lost reports the active agent instead of registering again. Before it calls
- * `register` it saves the request in `registration.json` in the current
- * directory, and a rerun sends that same request, which the daemon treats as
- * the same registration.
+ * `node mcp.ts register NAME` registers the daemon's agent under NAME. It
+ * reads `status` first, so a rerun after a registration whose answer was
+ * lost reports the active agent instead of registering again. Until the
+ * daemon gives a final answer, the request waits in `registration.json` in
+ * the current directory, and a rerun sends that same request, which the
+ * daemon treats as the same registration.
  *
- * `node mcp.ts call <tool> [json]` calls one tool with a JSON object of
+ * `node mcp.ts call TOOL [JSON]` calls one tool with a JSON object of
  * arguments, `{}` when omitted, and prints the tool's structured result.
  *
- * A refusal or failure exits 1 and prints the reason and a `Docs:` link on
- * standard error.
+ * A refusal or failure exits 1 and prints the reason and the `Docs:` link of
+ * the troubleshooting entry that names it on standard error.
  */
 import { FileSystem } from "@effect/platform";
 import { NodeContext, NodeRuntime } from "@effect/platform-node";
@@ -26,7 +26,6 @@ import {
   Config,
   Console,
   Data,
-  Duration,
   Effect,
   Match,
   Option,
@@ -37,29 +36,45 @@ import { randomBytes } from "node:crypto";
 
 /** The one MCP revision `sharnessd` accepts. */
 const MCP_PROTOCOL_VERSION = "2026-07-28";
-const REQUEST_TIMEOUT = Duration.seconds(30);
+/** JSON-RPC's invalid-params code: the daemon refused the arguments itself. */
+const INVALID_PARAMS = -32602;
 const REGISTRATION_FILE = "registration.json";
-const DOCS =
-  "Docs: https://docs.moltzap.xyz/guides/run-sharnessd#if-this-does-not-work";
+const DOCS = "https://docs.moltzap.xyz/guides/run-sharnessd#";
 const USAGE =
-  "usage: node mcp.ts register <name>, or node mcp.ts call <tool> [json]";
+  "usage: node mcp.ts register NAME, or node mcp.ts call TOOL [JSON]";
 
-/** A command that did not complete; `message` is what the reader sees. */
+/**
+ * A command that did not complete. `message` is what the reader sees, and
+ * `entry` is the troubleshooting anchor that explains it.
+ */
 class CommandError extends Data.TaggedError("CommandError")<{
   readonly message: string;
+  readonly entry: string;
 }> {}
 
+/** A tool call that failed; `refused` marks arguments the daemon rejected. */
+class ToolFailure extends Data.TaggedError("ToolFailure")<{
+  readonly message: string;
+  readonly refused: boolean;
+}> {}
+
+/** The agent name inside the encoded AgentCard's base64url JSON payload. */
+const cardPayload = Schema.compose(
+  Schema.StringFromBase64Url,
+  Schema.parseJson(Schema.Struct({ agentName: Schema.String })),
+);
+
 /** The `status` fields this script reads. */
-const Status = Schema.Union(
+const statusResult = Schema.Union(
   Schema.Struct({ kind: Schema.Literal("unregistered") }),
   Schema.Struct({
     kind: Schema.Literal("active"),
-    agentCard: Schema.Struct({ agentName: Schema.String }),
+    agentCard: Schema.Struct({ payload: cardPayload }),
   }),
 );
 
 /** Every outcome `register` returns. */
-const Registration = Schema.Struct({
+const registerResult = Schema.Struct({
   kind: Schema.Literal(
     "registered",
     "name_taken",
@@ -69,28 +84,30 @@ const Registration = Schema.Struct({
 });
 
 /** The `register` request, saved so that a rerun repeats it exactly. */
-const SavedRequest = Schema.Struct({
+const savedRequest = Schema.Struct({
   operationId: Schema.String,
   principalId: Schema.String,
   agentName: Schema.String,
 });
 
 /** The JSON-RPC error data the daemon attaches to a failed tool call. */
-const FailureData = Schema.Struct({ reason: Schema.String });
+const failureData = Schema.Struct({
+  reason: Schema.optional(Schema.String),
+  issues: Schema.optional(
+    Schema.Array(Schema.Struct({ message: Schema.String })),
+  ),
+});
 
 /** Tool arguments given on the command line as one JSON object. */
-const ToolArguments = Schema.parseJson(
+const toolArguments = Schema.parseJson(
   Schema.Record({ key: Schema.String, value: Schema.Unknown }),
 );
 
 const program = Effect.gen(function* () {
   const url = yield* Config.url("SHARNESS_MCP_URL").pipe(
-    Effect.mapError(() =>
-      commandError(
-        "set SHARNESS_MCP_URL to the daemon's MCP URL, such as http://127.0.0.1:4101/mcp",
-      ),
-    ),
+    Effect.mapError(() => commandError(USAGE, "helper-usage")),
   );
+  // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- two positional commands; the helper installs no @effect/cli
   const [command, first, second = "{}"] = process.argv.slice(2);
   if (command === "register" && first !== undefined) {
     return yield* register(url, first);
@@ -98,12 +115,14 @@ const program = Effect.gen(function* () {
   if (command === "call" && first !== undefined) {
     return yield* call(url, first, second);
   }
-  return yield* Effect.fail(commandError(USAGE));
+  return yield* Effect.fail(commandError(USAGE, "helper-usage"));
 }).pipe(Effect.scoped);
 
 NodeRuntime.runMain(
   program.pipe(
-    Effect.tapError((error) => Console.error(`${error.message}\n${DOCS}`)),
+    Effect.tapError((error) =>
+      Console.error(`${error.message}\nDocs: ${DOCS}${error.entry}`),
+    ),
     Effect.provide(NodeContext.layer),
   ),
   { disableErrorReporting: true },
@@ -119,56 +138,91 @@ function register(
 ): Effect.Effect<void, CommandError, FileSystem.FileSystem | Scope.Scope> {
   return Effect.gen(function* () {
     const client = yield* connect(url);
-    const status = yield* decode(
-      Status,
-      yield* callTool(client, "status", {}),
-      "status",
+    const status = yield* callTool(client, "status", {}).pipe(
+      Effect.mapError((failure) => commandError(failure.message, "tool-failed")),
+      Effect.flatMap((result) => decode(statusResult, result, "status")),
     );
-    if (status.kind === "active") {
-      if (status.agentCard.agentName !== name) {
-        return yield* Effect.fail(
-          commandError(
-            `this daemon is already registered as agent:${status.agentCard.agentName}`,
-          ),
-        );
-      }
-      return yield* Console.log(`already active: agent:${name}`);
+    if (status.kind === "unregistered") {
+      return yield* submit(client, name);
     }
-    const request = yield* savedRequest(name);
-    const answer = yield* callTool(client, "register", request).pipe(
-      Effect.mapError((error) =>
+    const active = status.agentCard.payload.agentName;
+    if (active !== name) {
+      return yield* Effect.fail(
         commandError(
-          `${error.message}; rerun the same command, which repeats the request saved in ${REGISTRATION_FILE}`,
+          `this daemon is already registered as agent:${active}`,
+          "already-registered",
         ),
-      ),
-    );
-    const { kind } = yield* decode(Registration, answer, "register");
-    return yield* Match.value(kind).pipe(
-      Match.when("registered", () => Console.log(`registered agent:${name}`)),
-      Match.when("name_taken", () =>
-        Effect.fail(
-          commandError(
-            `register agent:${name}: name_taken; another agent holds this name, so choose another`,
-          ),
-        ),
-      ),
-      Match.when("key_already_registered", () =>
-        Effect.fail(
-          commandError(
-            `register agent:${name}: key_already_registered; this daemon's key belongs to another registered agent, so start the daemon with that agent's state directory or with a new key`,
-          ),
-        ),
-      ),
-      Match.when("idempotency_conflict", () =>
-        Effect.fail(
-          commandError(
-            `register agent:${name}: idempotency_conflict; ${REGISTRATION_FILE} holds a different request under an operationId the Registry has already seen`,
-          ),
-        ),
-      ),
-      Match.exhaustive,
-    );
+      );
+    }
+    return yield* Console.log(`already active: agent:${name}`);
   });
+}
+
+/**
+ * Sends the saved or a new `register` request for `name`. A final answer
+ * deletes the saved request; a failed call keeps it for the rerun.
+ */
+function submit(
+  client: Client,
+  name: string,
+): Effect.Effect<void, CommandError, FileSystem.FileSystem> {
+  return Effect.gen(function* () {
+    const request = yield* savedOrNewRequest(name);
+    const answer = yield* callTool(client, "register", request).pipe(
+      Effect.catchTag("ToolFailure", (failure) =>
+        failure.refused
+          ? forgetRequest().pipe(
+              Effect.zipRight(
+                Effect.fail(commandError(failure.message, "register-failed")),
+              ),
+            )
+          : Effect.fail(
+              commandError(
+                `${failure.message}; rerun the same command, which repeats the request saved in ${REGISTRATION_FILE}`,
+                "register-failed",
+              ),
+            ),
+      ),
+    );
+    const { kind } = yield* decode(registerResult, answer, "register");
+    yield* forgetRequest();
+    return yield* outcome(kind, name);
+  });
+}
+
+/** Prints a registration or fails with the refusal `kind` names. */
+function outcome(
+  kind: typeof registerResult.Type.kind,
+  name: string,
+): Effect.Effect<void, CommandError> {
+  return Match.value(kind).pipe(
+    Match.when("registered", () => Console.log(`registered agent:${name}`)),
+    Match.when("name_taken", () =>
+      Effect.fail(
+        commandError(
+          `register agent:${name}: name_taken; another agent holds this name, so choose another`,
+          "name-taken",
+        ),
+      ),
+    ),
+    Match.when("key_already_registered", () =>
+      Effect.fail(
+        commandError(
+          `register agent:${name}: key_already_registered; this daemon's key belongs to another registered agent`,
+          "key-already-registered",
+        ),
+      ),
+    ),
+    Match.when("idempotency_conflict", () =>
+      Effect.fail(
+        commandError(
+          `register agent:${name}: idempotency_conflict; the Registry already saw this operation id with another request`,
+          "idempotency-conflict",
+        ),
+      ),
+    ),
+    Match.exhaustive,
+  );
 }
 
 /** Calls `tool` at `url` with the JSON arguments `json` and prints its result. */
@@ -178,27 +232,31 @@ function call(
   json: string,
 ): Effect.Effect<void, CommandError, Scope.Scope> {
   return Effect.gen(function* () {
-    const toolArguments = yield* Schema.decode(ToolArguments)(json).pipe(
+    const parsed = yield* Schema.decode(toolArguments)(json).pipe(
       Effect.mapError(() =>
         commandError(
-          `the arguments must be one JSON object, such as '{"to":"agent:bob","text":"Hi"}'`,
+          `the arguments must be one JSON object, such as '{"input":{"to":"agent:bob","text":"Hi"}}'`,
+          "helper-usage",
         ),
       ),
     );
     const client = yield* connect(url);
-    const result = yield* callTool(client, tool, toolArguments);
+    const result = yield* callTool(client, tool, parsed).pipe(
+      Effect.mapError((failure) => commandError(failure.message, "tool-failed")),
+    );
     yield* Console.log(JSON.stringify(result, null, 2));
   });
 }
 
 /**
- * The request saved in `registration.json` for `name`, or a new one written
- * there before it is sent.
+ * The request saved in `registration.json` for `name`, or a new one created
+ * there before it is sent. Creation fails rather than replace a request
+ * another run saved at the same moment.
  */
-function savedRequest(
+function savedOrNewRequest(
   name: string,
 ): Effect.Effect<
-  typeof SavedRequest.Type,
+  typeof savedRequest.Type,
   CommandError,
   FileSystem.FileSystem
 > {
@@ -207,11 +265,12 @@ function savedRequest(
     if (yield* fs.exists(REGISTRATION_FILE)) {
       const saved = yield* fs
         .readFileString(REGISTRATION_FILE)
-        .pipe(Effect.flatMap(Schema.decode(Schema.parseJson(SavedRequest))));
+        .pipe(Effect.flatMap(Schema.decode(Schema.parseJson(savedRequest))));
       if (saved.agentName !== name) {
         return yield* Effect.fail(
           commandError(
-            `${REGISTRATION_FILE} registers agent:${saved.agentName}; run this command in the directory of the agent you are registering`,
+            `${REGISTRATION_FILE} registers agent:${saved.agentName}; rerun with that name, or delete ${REGISTRATION_FILE} to choose another`,
+            "registration-json",
           ),
         );
       }
@@ -225,7 +284,7 @@ function savedRequest(
     yield* fs.writeFileString(
       REGISTRATION_FILE,
       `${JSON.stringify(request, null, 2)}\n`,
-      { mode: 0o600 },
+      { flag: "wx", mode: 0o600 },
     );
     return request;
   }).pipe(
@@ -233,6 +292,22 @@ function savedRequest(
       BadArgument: (error) => Effect.fail(fileError(error.message)),
       SystemError: (error) => Effect.fail(fileError(error.message)),
       ParseError: (error) => Effect.fail(fileError(error.message)),
+    }),
+  );
+}
+
+/** Deletes the saved request once the daemon has given a final answer. */
+function forgetRequest(): Effect.Effect<
+  void,
+  CommandError,
+  FileSystem.FileSystem
+> {
+  return Effect.flatMap(FileSystem.FileSystem, (fs) =>
+    fs.remove(REGISTRATION_FILE, { force: true }),
+  ).pipe(
+    Effect.catchTags({
+      BadArgument: (error) => Effect.fail(fileError(error.message)),
+      SystemError: (error) => Effect.fail(fileError(error.message)),
     }),
   );
 }
@@ -253,65 +328,58 @@ function connect(url: URL): Effect.Effect<Client, CommandError, Scope.Scope> {
       catch: () =>
         commandError(
           `could not connect to ${url.href}; check that sharnessd is running and that SHARNESS_MCP_URL names its port`,
+          "could-not-connect",
         ),
-    }).pipe(
-      Effect.timeoutFail({
-        duration: REQUEST_TIMEOUT,
-        onTimeout: () =>
-          commandError(
-            `${url.href} did not answer within ${Duration.format(REQUEST_TIMEOUT)}`,
-          ),
-      }),
-      Effect.as(client),
-    ),
-    () =>
-      Effect.tryPromise(() => client.close()).pipe(Effect.ignore),
+    }).pipe(Effect.as(client)),
+    () => Effect.tryPromise(() => client.close()).pipe(Effect.ignore),
   );
 }
 
 /**
  * Calls `tool` once and answers its structured result. A JSON-RPC error
- * fails with the daemon's `reason`; a tool error fails with its text.
+ * fails with the daemon's reason; a tool error fails with its text.
  */
 function callTool(
   client: Client,
   tool: string,
-  toolArguments: Readonly<Record<string, unknown>>,
-): Effect.Effect<unknown, CommandError> {
+  args: Readonly<Record<string, unknown>>,
+): Effect.Effect<unknown, ToolFailure> {
   return Effect.tryPromise({
     try: (signal) =>
-      client.callTool({ name: tool, arguments: { ...toolArguments } }, { signal }),
-    catch: (cause) => commandError(`${tool} failed: ${failureReason(cause)}`),
+      client.callTool({ name: tool, arguments: { ...args } }, { signal }),
+    catch: (cause) =>
+      new ToolFailure({
+        message: `${tool} failed: ${failureReason(cause)}`,
+        refused:
+          ProtocolError.isInstance(cause) && cause.code === INVALID_PARAMS,
+      }),
   }).pipe(
-    Effect.timeoutFail({
-      duration: REQUEST_TIMEOUT,
-      onTimeout: () =>
-        commandError(
-          `${tool} got no answer within ${Duration.format(REQUEST_TIMEOUT)}`,
-        ),
-    }),
     Effect.flatMap((result) =>
       result.isError === true
         ? Effect.fail(
-            commandError(
-              `${tool} failed: ${result.content
+            new ToolFailure({
+              message: `${tool} failed: ${result.content
                 .flatMap((part) => (part.type === "text" ? [part.text] : []))
                 .join("\n")}`,
-            ),
+              refused: false,
+            }),
           )
         : Effect.succeed(result.structuredContent),
     ),
   );
 }
 
-/** The daemon's `reason` for a failed call, or the error's own text. */
+/** The daemon's reason and issues for a failed call, or the error's text. */
 function failureReason(cause: unknown): string {
   if (!ProtocolError.isInstance(cause)) {
     return String(cause);
   }
-  return Option.match(Schema.decodeUnknownOption(FailureData)(cause.data), {
+  return Option.match(Schema.decodeUnknownOption(failureData)(cause.data), {
     onNone: () => cause.message,
-    onSome: ({ reason }) => reason,
+    onSome: ({ reason, issues = [] }) =>
+      [reason ?? cause.message, ...issues.map((issue) => issue.message)].join(
+        "; ",
+      ),
   });
 }
 
@@ -325,15 +393,19 @@ function decode<A, I>(
     Effect.mapError(() =>
       commandError(
         `${tool} returned a result this script does not read: ${JSON.stringify(value)}`,
+        "result-not-read",
       ),
     ),
   );
 }
 
 function fileError(detail: string): CommandError {
-  return commandError(`could not use ${REGISTRATION_FILE}: ${detail}`);
+  return commandError(
+    `could not use ${REGISTRATION_FILE}: ${detail}`,
+    "registration-json",
+  );
 }
 
-function commandError(message: string): CommandError {
-  return new CommandError({ message });
+function commandError(message: string, entry: string): CommandError {
+  return new CommandError({ message, entry });
 }
