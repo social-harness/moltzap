@@ -113,11 +113,7 @@ function verifyTypes(
  */
 function pluginHost(
   consumerRoot: string,
-): Effect.Effect<
-  { readonly openclaw: OpenClawCli },
-  GateError,
-  GateServices
-> {
+): Effect.Effect<{ readonly openclaw: OpenClawCli }, GateError, GateServices> {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const pluginRoot = yield* fs.realPath(
@@ -235,7 +231,9 @@ function verifySkillsServed(
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const skillsRoot = join(
-      yield* fs.realPath(join(consumerRoot, "node_modules", "@moltzap", "client")),
+      yield* fs.realPath(
+        join(consumerRoot, "node_modules", "@moltzap", "client"),
+      ),
       "skills",
     );
     const names = yield* fs.readDirectory(skillsRoot);
