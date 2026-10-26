@@ -34,6 +34,7 @@ import {
 import { englishPolicyFormat, makeEnglishPolicy } from "../evaluator/index.js";
 import { decodeMessagePolicy } from "../policy/document/index.js";
 import { installEditableFirewall } from "../policy/editable.js";
+import { localGuidanceImpersonationRule } from "../rules/index.js";
 import { decodeFirewallAuditEntry } from "./firewall-values.js";
 import { captureRegistration, type FirewallOptions } from "./firewall.js";
 
@@ -107,7 +108,7 @@ function codePolicy(
   };
 }
 
-/** A decision provider certain of every answer, choosing `safety` for each safety question. */
+/** Owner safety rules take `safety`; the built-in impersonation rule is compliant. */
 function decisionProvider(
   safety?: "prohibited" | "unresolved",
 ): DecisionProvider {
@@ -121,14 +122,20 @@ function decisionProvider(
         answers: Object.fromEntries(
           Object.entries(request.questions).map(([id, question]) => [
             id,
-            certain(question, request.stage === "safety" ? safety : undefined),
+            certain(
+              question,
+              request.stage === "safety" &&
+                question.ruleId !== localGuidanceImpersonationRule.id
+                ? safety
+                : undefined,
+            ),
           ]),
         ),
       }),
   };
 }
 
-/** A decision provider certain of every answer but applicability, which it answers with a near-tie. */
+/** Owner-rule applicability uses a near-tie; the built-in impersonation rule settles. */
 const nearTieProvider: DecisionProvider = {
   decide: (request) =>
     Effect.succeed({
@@ -139,7 +146,8 @@ const nearTieProvider: DecisionProvider = {
       answers: Object.fromEntries(
         Object.entries(request.questions).map(([id, question]) => [
           id,
-          request.stage === "applicability"
+          request.stage === "applicability" &&
+          question.ruleId !== localGuidanceImpersonationRule.id
             ? {
                 choice: "relevant",
                 confidence: 0.25,
@@ -239,7 +247,7 @@ it("names the fixed English rule whose settled judgment blocked a message", () =
         decidedBy: [
           { ruleId: privacy.id, from: "fixed", advice: privacy.feedback.text },
         ],
-        checkedRuleIds: [privacy.id],
+        checkedRuleIds: [privacy.id, localGuidanceImpersonationRule.id],
       },
     ]);
   }));
@@ -299,6 +307,7 @@ it("reports an unreachable decision provider as the cause of a hold", () =>
         cause: "unavailable",
         decidedBy: [
           { ruleId: review.id, from: "fixed", advice: review.feedback?.text },
+          { ruleId: localGuidanceImpersonationRule.id, from: "fixed" },
         ],
       },
     ]);
@@ -389,7 +398,11 @@ it("names code and English rules that both blocked, reading the cause from the E
           { ruleId: contacts.id, from: "code" },
           { ruleId: privacy.id, from: "fixed" },
         ],
-        checkedRuleIds: [contacts.id, privacy.id],
+        checkedRuleIds: [
+          contacts.id,
+          privacy.id,
+          localGuidanceImpersonationRule.id,
+        ],
       },
     ]);
   }));

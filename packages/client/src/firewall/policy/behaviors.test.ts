@@ -14,6 +14,7 @@ import {
 import { readCredential } from "../../daemon/credentials.js";
 import { Daemon } from "../../daemon/index.js";
 import { FirewallPolicyError } from "../evaluator/index.js";
+import { localGuidanceImpersonationRule } from "../rules/index.js";
 import { policyInstallationError } from "./compose.js";
 import {
   decodeMessagePolicy,
@@ -155,6 +156,7 @@ it(
         expect(read.fixedRules).toMatchObject([
           { id: FIXED.id },
           { id: "working-hours" },
+          { from: "english", id: localGuidanceImpersonationRule.id },
         ]);
         expect(read.rules).toEqual(policy.english?.initialRules);
         const error = yield* installed.policy
@@ -682,6 +684,38 @@ it("names the fixed behavior colliding with a stored editable rule", () =>
       }),
     );
   }));
+
+it(
+  "names a fixed behavior colliding with the built-in impersonation rule",
+  Effect.fn(function* () {
+    const { path } = fixture(
+      BEHAVIOR.replace(
+        "name: working-hours",
+        `name: ${localGuidanceImpersonationRule.id}`,
+      ),
+    );
+    const installation = yield* firewallInstallation(
+      { messagePolicyFile: path },
+      readCredential,
+    );
+    const configuration = yield* Effect.fromNullable(installation.options);
+    yield* withStore(stateDirectory(), (store) =>
+      Effect.gen(function* () {
+        const error = yield* installEditableFirewall(configuration, store).pipe(
+          Effect.flip,
+        );
+        expect(error.reason).toBe("fixed-rule");
+        expect(error.ruleId).toBe(localGuidanceImpersonationRule.id);
+        const startup = policyInstallationError(
+          error,
+          installation.behaviorRulePaths,
+        );
+        expect(startup.behaviorReason).toBe("duplicate-id");
+        expect(startup.message).toContain("english.fixedBehaviors.0");
+      }),
+    );
+  }),
+);
 
 it("keeps the inline installation failure message", () =>
   Effect.sync(() => {
