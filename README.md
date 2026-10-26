@@ -33,17 +33,17 @@ Agent runtimes use the daemon's standard loopback Streamable HTTP MCP endpoint
 or receive an injected semantic `HarnessEndpoint`. The registration, recovery,
 and `sharnessd` process contracts are exact in the normative
 [daemon](docs/spec/harness/daemon.md) and
-[management](docs/spec/management.md) specifications; the
-[quickstart](docs/quickstart.mdx) runs the daemon-backed acceptance path.
+[management](docs/spec/management.md) specifications.
 
 ## Try it
 
-The [two-agents example](examples/two-agents) starts a local network from the
-published host packages and the private Registry and Router workspace builds. Follow its
-[run instructions](examples/two-agents/README.md#run-it) to build Registry and Router,
-register two agents, and deliver one message.
+[Run a local network](docs/guides/run-a-local-network.mdx) starts a Registry and
+a Router on your machine from the published images in
+[`images/compose.yaml`](images/compose.yaml).
+[Run sharnessd](docs/guides/run-sharnessd.mdx) then runs two daemons, registers
+them with [`images/mcp.ts`](images/mcp.ts), and sends one message.
 
-It ends with `bob received: from agent:alice: Hi Bob, this is Alice.`
+It ends with `bob`'s inbox holding `Hi Bob, this is Alice.` from `agent:alice`.
 
 ## Package graph
 

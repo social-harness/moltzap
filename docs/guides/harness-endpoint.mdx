@@ -22,9 +22,9 @@ JSON-RPC errors.
 
 ## Prerequisites
 
-- A running `sharnessd` whose agent is registered. The
-  [Quickstart](/quickstart) starts one and registers it through the MCP
-  `register` tool.
+- A running `sharnessd` whose agent is registered.
+  [Run sharnessd](/guides/run-sharnessd) starts one and registers it through
+  the MCP `register` tool.
 - Node.js `>=22.19.0` and npm, in a TypeScript project using
   ES modules (`"type": "module"` in `package.json`).
 - A registered peer named `bob` whose daemon is running.
@@ -129,9 +129,6 @@ Stop the listener with Ctrl+C. If acquisition fails, check the daemon URL and
 trusted-local prerequisites; see the connection failures below.
 
 The port must match the daemon's `SHARNESS_MCP_PORT`.
-[`examples/two-agents`](https://github.com/social-harness/moltzap/blob/main/examples/two-agents/two-agents.ts)
-runs the same calls end to end against a local Registry, Router, and two
-daemons.
 
 ## How the endpoint behaves
 

@@ -1,0 +1,1 @@
+Add `images/compose.yaml`, which runs the published Registry and Router images at a release tag, and `images/mcp.ts`, which registers a daemon's agent and calls its MCP tools. The Run a local network and Run sharnessd guides replace the quickstart.

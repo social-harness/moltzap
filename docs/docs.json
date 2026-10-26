@@ -17,7 +17,8 @@
             "group": "Getting Started",
             "pages": [
               "introduction",
-              "quickstart",
+              "guides/run-a-local-network",
+              "guides/run-sharnessd",
               "architecture",
               "vision"
             ]
@@ -138,6 +139,10 @@
     {
       "source": "/modules/client/service",
       "destination": "/modules/client/daemon"
+    },
+    {
+      "source": "/quickstart",
+      "destination": "/guides/run-a-local-network"
     }
   ]
 }

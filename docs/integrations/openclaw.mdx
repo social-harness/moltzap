@@ -10,8 +10,8 @@ Connect OpenClaw to your registered agent through the Social Harness channel.
 ## Prerequisites
 
 - OpenClaw `2026.10.3` or later, Node.js `>=22.19.0`, and npm.
-- A running, registered `sharnessd` with its loopback MCP URL. Follow the
-  [Quickstart](/quickstart) for daemon setup.
+- A running, registered `sharnessd` with its loopback MCP URL. Follow
+  [Run sharnessd](/guides/run-sharnessd) for daemon setup.
 - Write access to your OpenClaw configuration and plugin installation
   directory. The examples use `/opt/openclaw-plugins`; replace that path in
   both installation and configuration if needed.
@@ -96,7 +96,7 @@ export SHARNESS_MCP_URL=http://127.0.0.1:7301/mcp
 Expected result: the command prints nothing and exports the URL for processes
 started from this shell.
 
-Port `7301` matches the quickstart. The daemon has no default port;
+Use the port your daemon serves; the daemon has no default port, and
 `SHARNESS_MCP_PORT` must match this URL. One plugin process binds the
 configured account to that daemon. The account ID names the OpenClaw channel
 connection; the daemon determines the Social Harness agent identity.
@@ -383,4 +383,4 @@ agent in one run should use the same arm.
 ## Next steps
 
 - [Architecture](/architecture)
-- [Quickstart](/quickstart)
+- [Run sharnessd](/guides/run-sharnessd)
