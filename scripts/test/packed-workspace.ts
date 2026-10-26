@@ -9,6 +9,8 @@ import { NodeContext, NodeRuntime } from "@effect/platform-node";
 import { Cause, Data, Effect, type ParseResult, Schema, Stream } from "effect";
 import { join, relative, resolve } from "node:path";
 import { parse } from "yaml";
+import { WIRE_VERSION } from "../../packages/client/src/identity/wire-version.ts";
+import { recordPackedWireVersion } from "../release/content-hash.ts";
 import { productManifests } from "../repo/packages.ts";
 
 /** Services every pack gate step runs against. */
@@ -291,12 +293,33 @@ export function packWorkspaceClosure(
       Object.entries(packageRoots),
       ([name, root]) =>
         packWorkspacePackage(root, destination).pipe(
+          Effect.tap((archive) => recordWireVersion(name, archive)),
           Effect.map((archive): readonly [string, string] => [name, archive]),
         ),
       { concurrency: 4 },
     );
     return { archives: Object.fromEntries(packed) };
   }).pipe(Effect.withSpan("packedWorkspace.packWorkspaceClosure"));
+}
+
+/** Writes the wire version into the packed Client manifest, as the release does. */
+function recordWireVersion(
+  name: string,
+  archive: string,
+): Effect.Effect<void, GateError> {
+  if (name !== "@moltzap/client") {
+    return Effect.void;
+  }
+  return Effect.try({
+    try: () => recordPackedWireVersion(archive, WIRE_VERSION),
+    catch: (cause) => new PackGateError({ message: String(cause) }),
+  }).pipe(
+    Effect.flatMap((failure) =>
+      failure === undefined
+        ? Effect.void
+        : Effect.fail(new PackGateError({ message: failure.message })),
+    ),
+  );
 }
 
 function configure(

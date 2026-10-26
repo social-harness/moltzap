@@ -33,6 +33,7 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
           persist-credentials: false
+      - uses: ./.github/actions/setup-toolchain
       - name: Gate the tested commit and dispatch a release
         env:
           GH_TOKEN: ${{ github.token }}

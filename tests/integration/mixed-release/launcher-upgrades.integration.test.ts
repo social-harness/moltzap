@@ -1,6 +1,7 @@
 /** @file Real packed library releases upgrade twice through one persistent launcher record. */
 import { FileSystem } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
+import { WIRE_VERSION } from "@moltzap/client";
 import { Effect, Schema } from "effect";
 import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";
@@ -153,7 +154,11 @@ const prepareReleaseSource = Effect.gen(function* () {
 function packRelease(release: ReleaseSource, version: string) {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
-    const manifest = { ...release.original, version };
+    const manifest = {
+      ...release.original,
+      version,
+      sharnessWireVersion: WIRE_VERSION,
+    };
     yield* fs.writeFileString(release.manifestFile, JSON.stringify(manifest));
     yield* runCommand(
       "npm",

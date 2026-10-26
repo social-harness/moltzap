@@ -1,5 +1,8 @@
 # L1: identity, attribution, and authenticated requests
 
+`WIRE_VERSION` is defined in `packages/client/src/identity/wire-version.ts`.
+Examples use its name in place of the emitted string value.
+
 Status: **Gate 1 normative**
 
 Exact representation:
@@ -289,7 +292,7 @@ Registry state.
 
 ## Wire versions
 
-Every new artifact emits `WIRE_VERSION`, currently `2026.1026.5`. `LIVE_WIRE_VERSIONS` admits outer
+Every new artifact emits `WIRE_VERSION`. `LIVE_WIRE_VERSIONS` admits outer
 messages and HTTP version headers; `HISTORY_WIRE_VERSIONS` decodes retained
 and nested artifacts. The live set holds the emitted version and at most one
 adjacent version, per the

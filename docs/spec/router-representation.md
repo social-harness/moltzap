@@ -1,5 +1,8 @@
 # L2 Router representation
 
+`WIRE_VERSION` is defined in `packages/client/src/identity/wire-version.ts`.
+Examples use its name in place of the emitted string value.
+
 Status: **Gate 1 normative**
 
 Semantic contract: [`router.md`](./router.md)
@@ -113,7 +116,7 @@ recipient. For send it must also equal the verified SignedMessage
 sender.
 
 Requests use `Content-Type: application/json`,
-`Sharness-Version: 2026.1026.5`, exact Content-Digest, and the
+`Sharness-Version: WIRE_VERSION`, exact Content-Digest, and the
 `sharness-request-v1` HTTP message-signature profile. Application code
 imposes no URL scheme or TLS requirement.
 

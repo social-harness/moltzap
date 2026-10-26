@@ -1,5 +1,8 @@
 # Addressed conversation history
 
+`WIRE_VERSION` is defined in `packages/client/src/identity/wire-version.ts`.
+Examples use its name in place of the emitted string value.
+
 Status: **cutover normative**
 
 This chapter defines Client-owned fixed-member conversation identity,
@@ -99,10 +102,6 @@ string, an array of `JsonValue`, or a JSON object whose string keys and values
 are well formed. The protocol decoder rejects duplicate object names, lone
 surrogates, non-JSON numbers, noncanonical bytes, and excess protocol fields.
 
-`WIRE_VERSION` is the emitted value from
-`packages/client/src/identity/wire-version.ts`, as defined by
-[Wire versions](./identity.md#wire-versions).
-
 ### Membership and identifiers
 
 The exact membership and identifier preimages are:
@@ -114,7 +113,7 @@ interface ConversationIdentityInput {
 }
 
 interface MembershipDescriptor {
-  readonly sharnessVersion: "2026.1026.5"
+  readonly sharnessVersion: typeof WIRE_VERSION
   readonly kind: "membership_descriptor"
   readonly conversationId: ConversationId
   readonly members: readonly [
@@ -138,7 +137,7 @@ peer validates its canonical form and rejects changed intent under the same
 
 ```ts
 interface PostIntent {
-  readonly sharnessVersion: "2026.1026.5"
+  readonly sharnessVersion: typeof WIRE_VERSION
   readonly kind: "post_intent"
   readonly conversationId: ConversationId
   readonly membershipHash: MembershipHash
@@ -148,7 +147,7 @@ interface PostIntent {
 }
 
 interface GenesisAnchorBody {
-  readonly sharnessVersion: "2026.1026.5"
+  readonly sharnessVersion: typeof WIRE_VERSION
   readonly kind: "genesis_anchor_body"
   readonly conversationId: ConversationId
   readonly membershipHash: MembershipHash
@@ -156,7 +155,7 @@ interface GenesisAnchorBody {
 }
 
 interface ReanchorBody {
-  readonly sharnessVersion: "2026.1026.5"
+  readonly sharnessVersion: typeof WIRE_VERSION
   readonly kind: "reanchor_body"
   readonly conversationId: ConversationId
   readonly membershipHash: MembershipHash
@@ -168,7 +167,7 @@ interface ReanchorBody {
 type AnchorBody = GenesisAnchorBody | ReanchorBody
 
 interface GenesisActionCore {
-  readonly sharnessVersion: "2026.1026.5"
+  readonly sharnessVersion: typeof WIRE_VERSION
   readonly kind: "GENESIS"
   readonly conversationId: ConversationId
   readonly membership: MembershipDescriptor
@@ -179,7 +178,7 @@ interface GenesisActionCore {
 }
 
 interface PostActionCore {
-  readonly sharnessVersion: "2026.1026.5"
+  readonly sharnessVersion: typeof WIRE_VERSION
   readonly kind: "POST"
   readonly conversationId: ConversationId
   readonly membershipHash: MembershipHash
@@ -192,7 +191,7 @@ interface PostActionCore {
 type ActionCore = GenesisActionCore | PostActionCore
 
 interface GenesisRecordCore {
-  readonly sharnessVersion: "2026.1026.5"
+  readonly sharnessVersion: typeof WIRE_VERSION
   readonly kind: "record_core"
   readonly membership: MembershipDescriptor
   readonly anchorHash: AnchorHash
@@ -201,7 +200,7 @@ interface GenesisRecordCore {
 }
 
 interface PostRecordCore {
-  readonly sharnessVersion: "2026.1026.5"
+  readonly sharnessVersion: typeof WIRE_VERSION
   readonly kind: "record_core"
   readonly membershipHash: MembershipHash
   readonly anchorHash: AnchorHash
@@ -273,14 +272,14 @@ sign a bare hash. The exact statement and certificate schemas are:
 
 ```ts
 interface ActionSignatureStatement {
-  readonly sharnessVersion: "2026.1026.5"
+  readonly sharnessVersion: typeof WIRE_VERSION
   readonly kind: "action_signature"
   readonly signerAgentId: AgentId
   readonly actionHash: ActionHash
 }
 
 interface DurabilityVoteStatement {
-  readonly sharnessVersion: "2026.1026.5"
+  readonly sharnessVersion: typeof WIRE_VERSION
   readonly kind: "durability_vote"
   readonly signerAgentId: AgentId
   readonly conversationId: ConversationId
@@ -289,7 +288,7 @@ interface DurabilityVoteStatement {
 }
 
 interface ReanchorVoteStatement {
-  readonly sharnessVersion: "2026.1026.5"
+  readonly sharnessVersion: typeof WIRE_VERSION
   readonly kind: "reanchor_vote"
   readonly signerAgentId: AgentId
   readonly anchorHash: AnchorHash
@@ -302,28 +301,28 @@ type EvidenceMessages = readonly [
 ]
 
 interface ActionCertificate {
-  readonly sharnessVersion: "2026.1026.5"
+  readonly sharnessVersion: typeof WIRE_VERSION
   readonly kind: "action_certificate"
   readonly actionHash: ActionHash
   readonly signatures: EvidenceMessages
 }
 
 interface DurabilityCertificate {
-  readonly sharnessVersion: "2026.1026.5"
+  readonly sharnessVersion: typeof WIRE_VERSION
   readonly kind: "durability_certificate"
   readonly recordHash: RecordHash
   readonly votes: EvidenceMessages
 }
 
 interface ReanchorCertificate {
-  readonly sharnessVersion: "2026.1026.5"
+  readonly sharnessVersion: typeof WIRE_VERSION
   readonly kind: "reanchor_certificate"
   readonly anchorHash: AnchorHash
   readonly votes: EvidenceMessages
 }
 
 interface CompletedReanchor {
-  readonly sharnessVersion: "2026.1026.5"
+  readonly sharnessVersion: typeof WIRE_VERSION
   readonly kind: "completed_reanchor"
   readonly anchorHash: AnchorHash
   readonly reanchor: ReanchorBody
@@ -333,7 +332,7 @@ interface CompletedReanchor {
 type RouterAnchor = GenesisAnchorBody | CompletedReanchor
 
 interface ActionCertifiedRecord {
-  readonly sharnessVersion: "2026.1026.5"
+  readonly sharnessVersion: typeof WIRE_VERSION
   readonly kind: "action_certified_record"
   readonly recordHash: RecordHash
   readonly recordCore: RecordCore
@@ -342,7 +341,7 @@ interface ActionCertifiedRecord {
 }
 
 interface CertifiedRecord {
-  readonly sharnessVersion: "2026.1026.5"
+  readonly sharnessVersion: typeof WIRE_VERSION
   readonly kind: "certified_record"
   readonly actionCertifiedRecord: ActionCertifiedRecord
   readonly durabilityCertificate: DurabilityCertificate
@@ -488,7 +487,7 @@ Catch-up uses these exact closed values:
 
 ```ts
 interface CatchUpRequest {
-  readonly sharnessVersion: "2026.1026.5"
+  readonly sharnessVersion: typeof WIRE_VERSION
   readonly kind: "catch_up_request"
   readonly conversationId: ConversationId
   readonly membershipHash: MembershipHash
@@ -500,7 +499,7 @@ interface CatchUpRequest {
 type CatchUpItem = CertifiedRecord | CompletedReanchor
 
 interface CatchUpAttestationStatement {
-  readonly sharnessVersion: "2026.1026.5"
+  readonly sharnessVersion: typeof WIRE_VERSION
   readonly kind: "catch_up_attestation"
   readonly signerAgentId: AgentId
   readonly request: CatchUpRequest
@@ -513,7 +512,7 @@ interface CatchUpAttestationStatement {
 }
 
 interface CatchUpPage {
-  readonly sharnessVersion: "2026.1026.5"
+  readonly sharnessVersion: typeof WIRE_VERSION
   readonly kind: "catch_up_page"
   readonly request: CatchUpRequest
   readonly item: CatchUpItem
@@ -522,7 +521,7 @@ interface CatchUpPage {
 }
 
 interface CatchUpIncomplete {
-  readonly sharnessVersion: "2026.1026.5"
+  readonly sharnessVersion: typeof WIRE_VERSION
   readonly kind: "catch_up_incomplete"
   readonly request: CatchUpRequest
   readonly attestation: EncodedSignedMessage
@@ -609,7 +608,7 @@ The exact direct packet union is:
 
 ```ts
 interface ActionProposal {
-  readonly sharnessVersion: "2026.1026.5"
+  readonly sharnessVersion: typeof WIRE_VERSION
   readonly kind: "action_proposal"
   readonly action: ActionCore
 }

@@ -1,5 +1,8 @@
 # L1 representation
 
+`WIRE_VERSION` is defined in `packages/client/src/identity/wire-version.ts`.
+Examples use its name in place of the emitted string value.
+
 Status: **Gate 1 normative**
 
 Semantic contract: [`identity.md`](./identity.md)
@@ -140,7 +143,7 @@ The payload is exactly:
 ```json
 {
   "kind": "agentCard",
-  "sharnessVersion": "2026.1026.5",
+  "sharnessVersion": "WIRE_VERSION",
   "agentId": "agt_<22-character-base64url>",
   "principalId": "prn_<22-character-base64url>",
   "agentName": "example-agent",
@@ -221,7 +224,7 @@ The payload is exactly:
 ```json
 {
   "kind": "signedMessage",
-  "sharnessVersion": "2026.1026.5",
+  "sharnessVersion": "WIRE_VERSION",
   "senderAgentId": "agt_<22-character-base64url>",
   "agentCardDigest": "acd_<43-character-base64url>",
   "recipientAgentIds": [
