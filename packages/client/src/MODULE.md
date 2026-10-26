@@ -381,7 +381,7 @@ export const Ed25519PublicKey = Schema.transform(
 
 Exact immutable Ed25519 public JWK.
 
-### [`FirewallSendError`](./firewall/outcome/index.ts#L121)
+### [`FirewallSendError`](./firewall/outcome/index.ts#L139)
 
 _Class_
 
@@ -497,7 +497,7 @@ _Variable_
 export const HistoryExportRecord = Schema.Union(
   exactStruct({
     kind: Schema.Literal("inbound"),
-    item: InboundItem,
+    item: retainedInboundItem,
     at: Schema.DateTimeUtc,
   }),
   exactStruct({
@@ -533,7 +533,7 @@ export interface InboundDelivery {
 
 One inbound item plus its transport-only acknowledgment.
 
-### [`InboundItem (type)`](./communication/collectives/inbound.ts#L118)
+### [`InboundItem (type)`](./communication/collectives/inbound.ts#L121)
 
 _TypeAlias_
 
@@ -543,7 +543,7 @@ export type InboundItem = typeof InboundItem.Type;
 
 A validated inbound item.
 
-### [`InboundItem (value)`](./communication/collectives/inbound.ts#L109)
+### [`InboundItem (value)`](./communication/collectives/inbound.ts#L112)
 
 _Variable_
 
@@ -1101,7 +1101,7 @@ The environment must not also name a message-policy document.
 
 **Returns:** The complete daemon layer with both message boundaries checked.
 
-#### [`CheckInputError`](./firewall/evaluator/contract/index.ts#L255)
+#### [`CheckInputError`](./firewall/evaluator/contract/index.ts#L235)
 
 _Class_
 
@@ -1113,7 +1113,7 @@ export class CheckInputError extends Data.TaggedError("CheckInputError")<{
 
 Invalid construction or evidence is a typed failure, never permission.
 
-#### [`DecisionProviderError`](./firewall/evaluator/contract/index.ts#L379)
+#### [`DecisionProviderError`](./firewall/evaluator/contract/index.ts#L357)
 
 _Class_
 
@@ -1142,7 +1142,7 @@ export class DecisionProviderError extends Data.TaggedError(
 
 The adapter scrubs credentials before retaining optional private diagnostics.
 
-#### [`FirewallPolicyError`](./firewall/evaluator/contract/index.ts#L632)
+#### [`FirewallPolicyError`](./firewall/evaluator/contract/index.ts#L610)
 
 _Class_
 
@@ -1162,7 +1162,7 @@ export class FirewallPolicyError extends Data.TaggedError(
 
 A failed edit never replaces the active installation or retained editable document.
 
-#### [`MiddlewareError`](./firewall/evaluator/contract/index.ts#L199)
+#### [`MiddlewareError`](./firewall/evaluator/contract/index.ts#L179)
 
 _Class_
 
@@ -1320,7 +1320,7 @@ export class RouterRequestTimeoutError extends Data.TaggedError(
 
 The configured complete Router call deadline expired.
 
-#### [`DecisionProvider`](./firewall/evaluator/contract/index.ts#L401)
+#### [`DecisionProvider`](./firewall/evaluator/contract/index.ts#L379)
 
 _Interface_
 
@@ -1336,7 +1336,7 @@ export interface DecisionProvider {
 
 Entirely code-based chains have no dependency on this optional capability.
 
-#### [`DecisionRequest`](./firewall/evaluator/contract/index.ts#L343)
+#### [`DecisionRequest`](./firewall/evaluator/contract/index.ts#L321)
 
 _Interface_
 
@@ -1361,7 +1361,7 @@ export interface DecisionRequest {
 
 Provider input contains explicit questions and state, never execution authority.
 
-#### [`DecisionResponse`](./firewall/evaluator/contract/index.ts#L361)
+#### [`DecisionResponse`](./firewall/evaluator/contract/index.ts#L339)
 
 _Interface_
 
@@ -1386,7 +1386,7 @@ export class DecisionResponse extends Schema.Class<DecisionResponse>(
 
 Raw distributions and provider confidence survive routing unchanged.
 
-#### [`EnglishPolicySettings`](./firewall/evaluator/contract/index.ts#L326)
+#### [`EnglishPolicySettings`](./firewall/evaluator/contract/index.ts#L305)
 
 _Interface_
 
@@ -1402,7 +1402,7 @@ export class EnglishPolicySettings extends Schema.Class<EnglishPolicySettings>(
 
 Bytes bound allocation, not tokenizer capacity; probability is a routing setting.
 
-#### [`EnglishRule`](./firewall/evaluator/contract/index.ts#L132)
+#### [`EnglishRule`](./firewall/evaluator/contract/index.ts#L118)
 
 _Interface_
 
@@ -1415,7 +1415,7 @@ export class EnglishRule extends Schema.Class<EnglishRule>("EnglishRule")({
 
 Text is interpreted by the provider; it is never compiled into executable code.
 
-#### [`Firewall`](./firewall/evaluator/contract/index.ts#L314)
+#### [`Firewall`](./firewall/evaluator/contract/index.ts#L293)
 
 _Interface_
 
@@ -1434,7 +1434,7 @@ export interface Firewall {
 
 Checking returns data; Client separately owns fresh, atomic send/delivery admission.
 
-#### [`FirewallSettings`](./firewall/evaluator/contract/index.ts#L245)
+#### [`FirewallSettings`](./firewall/evaluator/contract/index.ts#L225)
 
 _Interface_
 
@@ -1468,7 +1468,7 @@ export class Message extends Schema.Class<Message>("Message")({
 Attribution is supplied by Client, never inferred from names in the body.
 `operation` is absent for a plain message.
 
-#### [`MessageContext`](./firewall/evaluator/contract/index.ts#L75)
+#### [`MessageContext`](./firewall/evaluator/contract/index.ts#L65)
 
 _Interface_
 
@@ -1498,18 +1498,12 @@ export class MessageContext extends Schema.Class<MessageContext>(
     }),
   ),
   gaps: Schema.Array(Schema.NonEmptyString),
-  authorization: Schema.Union(
-    Schema.Struct({ kind: Schema.Literal("absent") }),
-    approval,
-  ),
 }) {}
 ```
 
-Trusted composition supplies authorized earlier evidence and candidate-specific
-approval. Agent identity and principal identity have different meanings.
-The first live composition supplies absent approval.
+Trusted composition supplies authorized earlier evidence and distinct agent and principal identities.
 
-#### [`MessageMiddleware`](./firewall/evaluator/contract/index.ts#L233)
+#### [`MessageMiddleware`](./firewall/evaluator/contract/index.ts#L213)
 
 _Interface_
 
@@ -1530,7 +1524,7 @@ Code and English policies have the same contract. Registered code is trusted;
 it receives no conversation or store capability and must not retain conversation
 state or perform messaging side effects.
 
-#### [`MiddlewareInput`](./firewall/evaluator/contract/index.ts#L220)
+#### [`MiddlewareInput`](./firewall/evaluator/contract/index.ts#L200)
 
 _Interface_
 
@@ -1546,7 +1540,7 @@ export class MiddlewareInput extends Schema.Class<MiddlewareInput>(
 
 Each invocation gets immutable evidence and previously validated observations.
 
-#### [`MiddlewareResult`](./firewall/evaluator/contract/index.ts#L190)
+#### [`MiddlewareResult`](./firewall/evaluator/contract/index.ts#L170)
 
 _Interface_
 
@@ -1562,7 +1556,7 @@ export class MiddlewareResult extends Schema.Class<MiddlewareResult>(
 
 A result is atomic: interrupted middleware has no returned partial findings.
 
-#### [`RuleDescription`](./firewall/evaluator/contract/index.ts#L116)
+#### [`RuleDescription`](./firewall/evaluator/contract/index.ts#L102)
 
 _Interface_
 
@@ -1571,7 +1565,7 @@ export class RuleDescription extends Schema.Class<RuleDescription>(
   "RuleDescription",
 )({
   id: identifier,
-  kind: Schema.Literal("safety", "autonomy", "norm"),
+  kind: Schema.Literal("safety", "norm"),
   source: Schema.optional(identifier),
   guidance: Schema.optional(Schema.NonEmptyString),
   feedback: Schema.optional(
@@ -1585,7 +1579,7 @@ export class RuleDescription extends Schema.Class<RuleDescription>(
 
 Runtime advice can only select templates registered by trusted composition.
 
-#### [`FirewallAuditRecord (type)`](./firewall/admission/firewall-values.ts#L171)
+#### [`FirewallAuditRecord (type)`](./firewall/admission/firewall-values.ts#L287)
 
 _TypeAlias_
 
@@ -1595,7 +1589,7 @@ export type FirewallAuditRecord = typeof FirewallAuditRecord.Type;
 
 Completion verifies the snapshot, not completion or delivery of each attempt.
 
-#### [`MessagePolicy (type)`](./firewall/policy/document/index.ts#L164)
+#### [`MessagePolicy (type)`](./firewall/policy/document/index.ts#L217)
 
 _TypeAlias_
 
@@ -1761,13 +1755,27 @@ export type SignedMessageDigest = typeof SignedMessageDigest.Type;
 
 Validated SignedMessage equality receipt.
 
-#### [`decodeMessagePolicy`](./firewall/policy/document/index.ts#L173)
+#### [`decodeMessagePolicy`](./firewall/policy/document/index.ts#L226)
 
 _Variable_
 
 ```ts
 export const decodeMessagePolicy = Schema.decodeUnknown(
-  Schema.parseJson(MessagePolicy),
+  Schema.parseJson(
+    Schema.compose(
+      Schema.Struct({
+        ...document.fields,
+        english: Schema.optional(
+          Schema.Struct({
+            ...englishDocument.fields,
+            fixedRules: retainedEnglishRules,
+            initialRules: retainedEnglishRules,
+          }),
+        ),
+      }),
+      MessagePolicy,
+    ),
+  ),
   { onExcessProperty: "error" },
 )
 ```
@@ -1776,7 +1784,7 @@ Decodes the text of a message-policy document, refusing any property it
 does not name, so a misspelled or newer setting never silently weakens the
 policy.
 
-#### [`FirewallAuditRecord (value)`](./firewall/admission/firewall-values.ts#L132)
+#### [`FirewallAuditRecord (value)`](./firewall/admission/firewall-values.ts#L248)
 
 _Variable_
 
@@ -1827,7 +1835,7 @@ Candidate bytes are opaque canonical Client data, encoded as base64. A null
 result or checking/interrupted disposition never represents permission.
 The nullable post reference identifies supported messages without decoding candidate bytes.
 
-#### [`makeEnglishPolicy`](./firewall/evaluator/english.ts#L274)
+#### [`makeEnglishPolicy`](./firewall/evaluator/english.ts#L268)
 
 _Variable_
 
@@ -1894,8 +1902,7 @@ rules were fixed, and never changes checking.
 flowchart TD
   I[Original message and context] --> A[Applicability]
   A --> S[Personal trust]
-  S --> U[Autonomy]
-  U --> N[Norm expectations from permitted evidence]
+  S --> N[Norm expectations from permitted evidence]
   N --> C[Outgoing conformance against the settled expectations]
   C --> R[Return all findings and private stage trace]
 ```
@@ -1945,7 +1952,7 @@ flowchart TD
   D --> R[Return to Client for enforcement]
 ```
 
-#### [`MessagePolicy (value)`](./firewall/policy/document/index.ts#L140)
+#### [`MessagePolicy (value)`](./firewall/policy/document/index.ts#L193)
 
 _Variable_
 

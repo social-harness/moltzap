@@ -63,7 +63,13 @@ const context: typeof MessageContext.Encoded = {
     },
   ],
   gaps: [],
-  authorization: { kind: "absent" },
+};
+const proposalAcceptance: EnglishRule = {
+  id: "proposal-acceptance",
+  kind: "norm",
+  text: "Availability is not acceptance. Everyone must accept the same concrete proposal before it is finalized.",
+  guidance: reminder,
+  feedback: { text: repair, nextAction: "revise" },
 };
 const rules: readonly EnglishRule[] = [
   {
@@ -71,18 +77,7 @@ const rules: readonly EnglishRule[] = [
     kind: "safety",
     text: "Do not disclose unrelated private appointments.",
   },
-  {
-    id: "authority",
-    kind: "autonomy",
-    text: "Tentative proposals are autonomous. Final commitments require owner approval.",
-  },
-  {
-    id: "proposal-acceptance",
-    kind: "norm",
-    text: "Availability is not acceptance. Everyone must accept the same concrete proposal before it is finalized.",
-    guidance: reminder,
-    feedback: { text: repair, nextAction: "revise" },
-  },
+  proposalAcceptance,
 ];
 /** One answer exactly as a provider reports it. */
 type Answer = DecisionResponse["answers"][string];
@@ -118,7 +113,7 @@ function responseFor(
     answers: Object.fromEntries(
       Object.entries(request.questions).map(([id, question]) => {
         const fallback =
-          ["compliant", "autonomous", "none", "relevant"].find((choice) =>
+          ["compliant", "none", "relevant"].find((choice) =>
             Object.hasOwn(question.criteria, choice),
           ) ?? "unresolved";
         const selected =
@@ -633,11 +628,10 @@ it("captures evidence before asynchronous inference", () =>
     );
   }));
 
-it("returns norm repair before approval with only registered feedback", () =>
+it("returns norm repair with only registered feedback", () =>
   Effect.gen(function* () {
     const result = yield* check(
       provider({
-        "autonomy:authority:assessment": "approval-required",
         "conformance:proposal-acceptance:assessment": "violation",
       }),
     );
@@ -656,7 +650,7 @@ it.each(["failure", "defect", "timeout"])(
         decide: (request) =>
           Effect.gen(function* () {
             requests.push(request);
-            if (request.stage === "autonomy") {
+            if (request.stage === "conformance") {
               if (fault === "failure") {
                 return yield* new DecisionProviderError({
                   reason: "http",
@@ -682,7 +676,7 @@ it.each(["failure", "defect", "timeout"])(
       const result = yield* Fiber.join(running);
       expect(result.judgment).toBe("block");
       expect(result.checks[0]?.findings).toContainEqual({
-        ruleId: "authority",
+        ruleId: "proposal-acceptance",
         outcome: "hold",
         reason: "check-unavailable",
       });
@@ -787,7 +781,12 @@ it("holds confidently unresolved evidence while running independent stages", () 
       provider({ "safety:privacy:assessment": "unresolved" }, requests),
     );
     expect(result.reason).toBe("unresolved-evidence");
-    expect(requests.some((entry) => entry.stage === "conformance")).toBe(true);
+    expect(requests.map((entry) => entry.stage)).toEqual([
+      "applicability",
+      "safety",
+      "expectations",
+      "conformance",
+    ]);
     expect(result.guidance).toEqual([]);
   }));
 
@@ -798,7 +797,7 @@ it("keeps renderer templates out of model assessment rules", () =>
     for (const request of requests) {
       expect(request.state).not.toContain(reminder);
       expect(request.state).not.toContain(repair);
-      expect(request.state).toContain(rules[2]?.text);
+      expect(request.state).toContain(proposalAcceptance.text);
     }
   }));
 

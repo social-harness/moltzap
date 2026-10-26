@@ -425,7 +425,6 @@ function context(history: readonly HistoryEntry[]): MessageContext {
     now: NOW,
     facts: [],
     gaps: [],
-    authorization: { kind: "absent" },
   };
 }
 
@@ -504,7 +503,7 @@ function unsettledProvider(stage: DecisionRequest["stage"]): DecisionProvider {
 
 /**
  * Answers each question with the first of these choices it offers:
- * relevant, compliant, autonomous, a permitted response. It exercises
+ * relevant, compliant, a permitted response. It exercises
  * composition, not English judgment.
  */
 function firstChoiceProvider(): DecisionProvider {
@@ -514,7 +513,7 @@ function firstChoiceProvider(): DecisionProvider {
         answers(
           request,
           (criteria) =>
-            ["relevant", "compliant", "autonomous", "permitted"].find((name) =>
+            ["relevant", "compliant", "permitted"].find((name) =>
               Object.hasOwn(criteria, name),
             ) ?? "unresolved",
         ),

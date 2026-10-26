@@ -308,7 +308,7 @@ function nearTieProvider(rule: EnglishRule): DecisionProvider {
 function certainAnswer(question: DecisionRequest["questions"][string]) {
   const choices = Object.keys(question.criteria);
   const choice =
-    ["compliant", "autonomous", "none", "relevant"].find((candidate) =>
+    ["compliant", "none", "relevant"].find((candidate) =>
       choices.includes(candidate),
     ) ?? "unresolved";
   return {

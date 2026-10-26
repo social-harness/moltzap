@@ -301,7 +301,8 @@ came about (`judgment`, `uncertain`, `unavailable`, `code`, `endpoint` or
 `default`), and `decidedBy` names the rules that produced it, each with
 where it is defined (`from`: `code`, `fixed` or `editable`, as `policy_read`
 lists it) and its registered `advice` when it has one, as specified by
-[decision reasons](./message-policy.md#decision-reasons).
+[decision reasons](./message-policy.md#decision-reasons). Historical approval
+findings decode as settled holds under the closed `unresolved-evidence` reason.
 `checkedRuleIds` lists every rule with a finding in the completed chain.
 The feed contains no message text, owner facts or provider traces; its only
 text is the deciding rules' own registered feedback or guidance. Pollers deduplicate by `checkId` and peer; this bounded recent view is

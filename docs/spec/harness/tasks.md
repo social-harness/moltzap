@@ -75,7 +75,7 @@ decides. Signing is never Router or Registry policy.
 Refusal is allowed and may halt progress. A model does not sign or send a
 confirmation on the protocol's behalf.
 
-Personal trust, autonomy and communication norms run through the optional
+Personal trust and communication norms run through the optional
 [message firewall](./message-policy.md) before a local application send creates
 an intent and before a certified incoming item becomes runtime-visible. Those
 checks do not withhold certification votes or delay collective protocol folds.

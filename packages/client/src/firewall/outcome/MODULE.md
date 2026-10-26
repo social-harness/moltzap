@@ -18,7 +18,7 @@ export type CheckedGuidance = typeof checkedGuidanceSchema.Type;
 
 The guidance of one checked text: a message, a request, an answer, a question or a send.
 
-### [`FirewallSendError`](./index.ts#L121)
+### [`FirewallSendError`](./index.ts#L139)
 
 _Class_
 

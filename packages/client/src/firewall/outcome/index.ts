@@ -80,7 +80,6 @@ const firewallRefusal = Schema.Literal(
   "unresolved-evidence",
   "check-unavailable",
   "norm-violation",
-  "approval-required",
 );
 
 /**
@@ -92,6 +91,26 @@ export const withheldText = exactStruct({
   kind: Schema.Literal("withheld"),
   checkId: checkIdSchema,
   reason: firewallRefusal,
+});
+
+/** Stored approval requirements decode as unresolved evidence at read boundaries. */
+export const retainedFirewallRefusal = Schema.transform(
+  Schema.Union(firewallRefusal, Schema.Literal("approval-required")),
+  firewallRefusal,
+  {
+    strict: true,
+    decode: (reason) =>
+      reason === "approval-required"
+        ? ("unresolved-evidence" as const)
+        : reason,
+    encode: (reason) => reason,
+  },
+);
+
+/** Retained withheld text uses the same refusal mapping as retained check results. */
+export const retainedWithheldText = exactStruct({
+  ...withheldText.fields,
+  reason: retainedFirewallRefusal,
 });
 
 /** Closed refusal data is retained verbatim for idempotent send retries. */
@@ -108,10 +127,9 @@ export const firewallRefusalSchema = exactStruct({
 
 const refusalText = {
   prohibited: "local policy prohibits this message",
-  "unresolved-evidence": "local policy needs more evidence or owner review",
+  "unresolved-evidence": "local policy needs more evidence",
   "check-unavailable": "the message policy check could not complete",
   "norm-violation": "the message does not satisfy local norms",
-  "approval-required": "this message requires owner approval",
 } as const;
 
 /**

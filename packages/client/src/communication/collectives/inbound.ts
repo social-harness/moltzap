@@ -2,7 +2,10 @@
 
 import { Schema } from "effect";
 import { exactStruct } from "../../encoding/exact.js";
-import { withheldText } from "../../firewall/outcome/index.js";
+import {
+  retainedWithheldText,
+  withheldText,
+} from "../../firewall/outcome/index.js";
 import { InboundMessage } from "../conversations/message.js";
 import {
   AgentAddress,
@@ -116,5 +119,23 @@ export const InboundItem = Schema.Union(
 });
 /** A validated inbound item. */
 export type InboundItem = typeof InboundItem.Type;
+
+/**
+ * Stored collective results use current values before delivery or audit projection.
+ * A retained withheld text's approval-required reason decodes as unresolved-evidence.
+ */
+export const retainedInboundItem = Schema.Union(
+  InboundItem,
+  exactStruct({
+    ...collectiveResultItem.fields,
+    question: Schema.Union(wellFormedString, retainedWithheldText),
+    outcomes: Schema.NonEmptyArray(
+      exactStruct({
+        member: AgentAddress,
+        outcome: Schema.Union(memberOutcome, retainedWithheldText),
+      }),
+    ),
+  }),
+).annotations({ identifier: "RetainedInboundItem" });
 
 /* eslint-enable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Restore the package naming rules after the Schema/type pairs. */

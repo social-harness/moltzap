@@ -227,7 +227,6 @@ export const contextFrom = Effect.fn("firewallContext")(function* (
     now: yield* Clock.currentTimeMillis,
     facts: environment.installed.configuration.facts,
     gaps: evidenceGaps(evidence),
-    authorization: { kind: "absent" },
   });
 });
 

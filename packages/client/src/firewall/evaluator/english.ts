@@ -223,12 +223,7 @@ const checkEnglish = Effect.fn("EnglishPolicy.check")(function* (
     revision: policy.revision,
   };
   const trace: PolicyStageTrace[] = [];
-  for (const stage of [
-    "applicability",
-    "safety",
-    "autonomy",
-    "expectations",
-  ] as const) {
+  for (const stage of ["applicability", "safety", "expectations"] as const) {
     trace.push(
       yield* runStage(
         makeEnglishRequest(stage, check, settings.maximumRequestBytes),
@@ -265,8 +260,7 @@ const checkEnglish = Effect.fn("EnglishPolicy.check")(function* (
  * flowchart TD
  *   I[Original message and context] --> A[Applicability]
  *   A --> S[Personal trust]
- *   S --> U[Autonomy]
- *   U --> N[Norm expectations from permitted evidence]
+ *   S --> N[Norm expectations from permitted evidence]
  *   N --> C[Outgoing conformance against the settled expectations]
  *   C --> R[Return all findings and private stage trace]
  * ```
@@ -460,8 +454,8 @@ function stageFindings(
 }
 
 /**
- * One answered question's finding. An unsettled answer about a safety or
- * autonomy rule holds. One about a norm never holds: its applicability,
+ * One answered question's finding. An unsettled answer about a safety
+ * rule holds. One about a norm never holds: its applicability,
  * expectation or conformance passes with the decision provider's choice and
  * probability, so the norm is still assessed and the agent advised, and an unsettled
  * reference only drops out of its expectation.
@@ -501,8 +495,6 @@ function answerOutcome(
       return "block";
     case "violation":
       return "revise";
-    case "approval-required":
-      return "approval-required";
     default:
       return "pass";
   }

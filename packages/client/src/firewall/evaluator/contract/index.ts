@@ -61,17 +61,7 @@ export type HistoryEntry = typeof HistoryEntry.Type;
 
 /* eslint-enable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Restore naming after the Schema/type pair. */
 
-const approval = Schema.Struct({
-  kind: Schema.Literal("verified"),
-  principal: identifier,
-  candidate: Message,
-});
-
-/**
- * Trusted composition supplies authorized earlier evidence and candidate-specific
- * approval. Agent identity and principal identity have different meanings.
- * The first live composition supplies absent approval.
- */
+/** Trusted composition supplies authorized earlier evidence and distinct agent and principal identities. */
 export class MessageContext extends Schema.Class<MessageContext>(
   "MessageContext",
 )({
@@ -97,10 +87,6 @@ export class MessageContext extends Schema.Class<MessageContext>(
     }),
   ),
   gaps: Schema.Array(Schema.NonEmptyString),
-  authorization: Schema.Union(
-    Schema.Struct({ kind: Schema.Literal("absent") }),
-    approval,
-  ),
 }) {}
 
 /** A direction is assigned by the boundary method, not by a peer's payload. */
@@ -117,7 +103,7 @@ export class RuleDescription extends Schema.Class<RuleDescription>(
   "RuleDescription",
 )({
   id: identifier,
-  kind: Schema.Literal("safety", "autonomy", "norm"),
+  kind: Schema.Literal("safety", "norm"),
   source: Schema.optional(identifier),
   guidance: Schema.optional(Schema.NonEmptyString),
   feedback: Schema.optional(
@@ -151,13 +137,7 @@ const policyFinding = Schema.Union(
   }),
   Schema.Struct({
     ruleId: identifier,
-    outcome: Schema.Literal(
-      "pass",
-      "not-applicable",
-      "block",
-      "revise",
-      "approval-required",
-    ),
+    outcome: Schema.Literal("pass", "not-applicable", "block", "revise"),
   }),
   Schema.Struct({
     ruleId: identifier,
@@ -292,8 +272,7 @@ export interface FirewallCheck {
     | "prohibited"
     | "unresolved-evidence"
     | "check-unavailable"
-    | "norm-violation"
-    | "approval-required";
+    | "norm-violation";
   readonly feedback: ReadonlyArray<{
     readonly nextAction: typeof nextAction.Type;
     readonly text: string;
@@ -335,7 +314,6 @@ export class EnglishPolicySettings extends Schema.Class<EnglishPolicySettings>(
 export type PolicyStage =
   | "applicability"
   | "safety"
-  | "autonomy"
   | "expectations"
   | "conformance";
 
@@ -509,7 +487,7 @@ const editableRuleSchema = Schema.Union(
   }),
   exactStruct({
     ...ruleFields,
-    kind: Schema.Literal("safety", "autonomy"),
+    kind: Schema.Literal("safety"),
     guidance: EnglishRule.fields.guidance,
   }),
 );

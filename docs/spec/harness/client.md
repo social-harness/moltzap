@@ -513,7 +513,7 @@ contain no private check trace. A certified `InboundItem` is unchanged; a
 result's projection replaces only withheld text.
 `FirewallSendError` means the invocation created no message intent. Its closed
 reason is `prohibited`, `unresolved-evidence`, `check-unavailable`,
-`norm-violation` or `approval-required`; feedback comes from registered policy
+or `norm-violation`; feedback comes from registered policy
 templates. A corrected draft is a new explicit send invocation. Multicasts,
 gathers, all_gathers and answers are checked alike before anything is sent.
 
