@@ -272,7 +272,7 @@ check hardcoded-api-key \
   "api[_-]?keys?[\"']?[^=:]*[:=].*['\"\`][A-Za-z0-9_-]{20,}['\"\`]" \
   "Hardcoded API key — use environment variables" \
   "*.ts" \
-  "packages/ tests/ scripts/ examples/" \
+  "packages/ tests/ scripts/ images/" \
   "$BUILD_EXCLUDE" \
   "-iE"
 

@@ -82,7 +82,6 @@ jobs:
       - run: pnpm test:push-gate
       - run: pnpm test:npm-version-exists
       - run: pnpm test:ghcr-digest
-      - run: pnpm test:example-images
       - run: pnpm test:select-packages
       - run: pnpm nx run workspace:test:image-input-key
       - run: pnpm test:client-host-imports
@@ -156,44 +155,23 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Tagged with the published names so images/compose.yaml runs them
+      # with SHARNESS_NETWORK_VERSION=ci and pulls nothing.
       - name: Build service images for amd64
         run: |
           for service in registry router; do
             docker buildx build --platform linux/amd64 --load \
               --file "images/${service}/Dockerfile" \
-              --tag "sharness-${service}:ci" .
+              --tag "ghcr.io/social-harness/${service}:ci" .
           done
       - name: Smoke-test deployed executables
         run: |
-          docker run --rm sharness-registry:ci --help
-          docker run --rm sharness-router:ci --help
-          docker run --rm --entrypoint pglite-server sharness-registry:ci --help
-      - name: Verify Router health
-        run: |
-          signer=$(docker run --rm --entrypoint node sharness-router:ci -e '
-            const {publicKey} = require("node:crypto").generateKeyPairSync("ed25519");
-            const {crv, kty, x} = publicKey.export({format: "jwk"});
-            console.log(JSON.stringify({crv, kty, x}));
-          ')
-          trap 'docker logs sharness-router-smoke; docker rm -f sharness-router-smoke' EXIT
-          docker run --detach --name sharness-router-smoke \
-            --env SHARNESS_ROUTER_REGISTRY_ORIGIN=http://127.0.0.1:3001 \
-            --env "SHARNESS_ROUTER_REGISTRY_SIGNER_PUBLIC_KEY=${signer}" \
-            sharness-router:ci
-          docker exec sharness-router-smoke node --input-type=module -e '
-            for (let attempt = 0; attempt < 60; attempt++) {
-              try {
-                const response = await fetch("http://127.0.0.1:3002/healthz");
-                if (response.status === 204) process.exit(0);
-              } catch {}
-              await new Promise((resolve) => setTimeout(resolve, 500));
-            }
-            throw new Error("Router /healthz did not return 204");
-          '
+          docker run --rm ghcr.io/social-harness/registry:ci --help
+          docker run --rm ghcr.io/social-harness/router:ci --help
+          docker run --rm --entrypoint pglite-server ghcr.io/social-harness/registry:ci --help
       - uses: ./.github/actions/setup-toolchain
       - run: pnpm install --frozen-lockfile
-      - name: Run the npm consumer example against these images
+      - name: Run the documented own-network path against these images
         env:
-          SHARNESS_REGISTRY_IMAGE: sharness-registry:ci
-          SHARNESS_ROUTER_IMAGE: sharness-router:ci
-        run: pnpm nx run @moltzap/integration-tests:test:example
+          SHARNESS_NETWORK_VERSION: ci
+        run: pnpm nx run @moltzap/integration-tests:test:network

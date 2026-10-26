@@ -52,12 +52,6 @@ export const TOOL_PROJECTS: readonly ToolProject[] = [
     targets: ["lint", "lint:architecture-boundaries", "lint:effect"],
     dependencies: [],
   },
-  {
-    name: "two-agents-example",
-    root: "examples/two-agents",
-    targets: [],
-    dependencies: ["client"],
-  },
 ];
 
 /**
