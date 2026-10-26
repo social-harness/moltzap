@@ -18,10 +18,12 @@ import { NodeContext, NodeRuntime } from "@effect/platform-node";
 import { Cause, Data, Effect, type ParseResult, Schema, Stream } from "effect";
 import { join, relative, resolve } from "node:path";
 import { parse } from "yaml";
+import { WIRE_VERSION } from "../../packages/client/src/identity/wire-version.ts";
 import {
   FINAL_PACKAGES,
   type PackageDir,
 } from "../architecture/boundary-contract.ts";
+import { recordPackedWireVersion } from "../release/content-hash.ts";
 
 /** Services every pack gate step runs against. */
 export type GateServices =
@@ -469,6 +471,15 @@ function packOne(
 ): Effect.Effect<PackedEntry, GateError, GateServices> {
   return Effect.gen(function* () {
     const archive = yield* packWorkspacePackage(root, destination);
+    if (name === "@moltzap/client") {
+      const failure = yield* Effect.try({
+        try: () => recordPackedWireVersion(archive, WIRE_VERSION),
+        catch: (cause) => new PackGateError({ message: String(cause) }),
+      });
+      if (failure !== undefined) {
+        return yield* new PackGateError({ message: failure.message });
+      }
+    }
     const [manifest, files, source] = yield* Effect.all(
       [
         readPackedManifest(archive),
