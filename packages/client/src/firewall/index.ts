@@ -17,7 +17,6 @@ export {
   FirewallSettings,
   makeEnglishPolicy,
   makeFirewall,
-  makeJevDecisionProvider,
   Message,
   MessageContext,
   type MessageMiddleware,

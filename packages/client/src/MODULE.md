@@ -1032,11 +1032,11 @@ no other value, so a peer that emits a different one fails with
 
 ### `@moltzap/client/service`
 
-#### [`Daemon`](./daemon/index.ts#L82)
+#### [`Daemon`](./daemon/index.ts#L81)
 
 _Namespace_
 
-#### [`Daemon.StartupError`](./daemon/index.ts#L90)
+#### [`Daemon.StartupError`](./daemon/index.ts#L89)
 
 _Class_
 
@@ -1073,7 +1073,7 @@ _Class_
 
 Closed startup phase with sanitized configuration details.
 
-#### [`Daemon.FirewallOptions`](./daemon/index.ts#L87)
+#### [`Daemon.FirewallOptions`](./daemon/index.ts#L86)
 
 _TypeAlias_
 
@@ -1083,7 +1083,7 @@ _TypeAlias_
 
 Trusted process composition fixes code and evidence while owner tools edit English rules.
 
-#### [`Daemon.help`](./daemon/index.ts#L84)
+#### [`Daemon.help`](./daemon/index.ts#L83)
 
 _Variable_
 
@@ -1093,7 +1093,7 @@ _Variable_
 
 Usage text listing the daemon process's environment variables.
 
-#### [`Daemon.layer`](./daemon/index.ts#L179)
+#### [`Daemon.layer`](./daemon/index.ts#L178)
 
 _Variable_
 
@@ -1106,7 +1106,7 @@ _Variable_
 Complete production process composition for `sharnessd`, with the
 firewall `SHARNESS_MESSAGE_POLICY_FILE` describes when it is set.
 
-#### [`Daemon.withFirewall`](./daemon/index.ts#L189)
+#### [`Daemon.withFirewall`](./daemon/index.ts#L188)
 
 _Function_
 
@@ -2142,21 +2142,6 @@ export const SignedMessageDigest = canonicalValue(
 ```
 
 Equality receipt for one complete retained SignedMessage.
-
-#### [`makeJevDecisionProvider`](./firewall/evaluator/jev.ts#L190)
-
-_Function_
-
-```ts
-export function makeJevDecisionProvider(options: {
-  readonly apiKey: Redacted.Redacted;
-  readonly model: string;
-}): DecisionProvider
-```
-
-Uses the fixed TypeSafe origin and an explicitly pinned model. No retry,
-environment lookup or credential serialization occurs here. The evaluator
-owns timeouts; the Effect is interruptible through response-body consumption.
 
 ## Files
 

@@ -125,23 +125,7 @@ flowchart TD
   D --> R[Return to Client for enforcement]
 ```
 
-### [`makeJevDecisionProvider`](./jev.ts#L190)
-
-_Function_
-
-```ts
-export function makeJevDecisionProvider(options: {
-  readonly apiKey: Redacted.Redacted;
-  readonly model: string;
-}): DecisionProvider
-```
-
-Uses the fixed TypeSafe origin and an explicitly pinned model. No retry,
-environment lookup or credential serialization occurs here. The evaluator
-owns timeouts; the Effect is interruptible through response-body consumption.
-
 ## Files
 
 - `english.ts`
 - `index.ts`
-- `jev.ts`
