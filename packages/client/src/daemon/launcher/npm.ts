@@ -13,7 +13,7 @@ import { launcherError, type LauncherError } from "./errors.js";
 const SCOPE = "@moltzap/";
 
 /** The package that carries `sharnessd`. */
-export const DAEMON_PACKAGE = "@moltzap/client";
+export const DAEMON_PACKAGE = "@moltzap/social-harness";
 
 /** Identity metadata exists for releases published before the fold. */
 export const PRE_FOLD_IDENTITY_PACKAGE = "@moltzap/identity";

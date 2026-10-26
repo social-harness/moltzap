@@ -16,7 +16,7 @@ const hook = pathToFileURL(
 ).href;
 const denied = `
   try {
-    await import("@moltzap/client/internal");
+    await import("@moltzap/social-harness/internal");
     throw new Error("caller resolved private Client exports");
   } catch (error) {
     if (error.code !== "ERR_PACKAGE_PATH_NOT_EXPORTED") throw error;

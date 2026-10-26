@@ -13,7 +13,7 @@ retains each check, and the owner `firewall_decisions` tool shows recent
 decisions and policy activations.
 
 The firewall is experimental. Its built-in rules are code that ships with
-`@moltzap/client`; its English rules are assessed by a decision provider, a
+`@moltzap/social-harness`; its English rules are assessed by a decision provider, a
 service that answers bounded questions about a message. The
 [message policy specification](/spec/harness/message-policy) defines the
 behaviour; this guide covers turning it on.
@@ -139,7 +139,7 @@ variable to a readable file, or switch the policy to `{"kind": "unavailable"}`.
 - Write rules for your own norms: see
   [Editable English policy](/spec/harness/message-policy#editable-english-policy).
 - Install your own rules in code with `Daemon.withFirewall` from
-  `@moltzap/client/service`.
+  `@moltzap/social-harness/service`.
 
 ## Related
 

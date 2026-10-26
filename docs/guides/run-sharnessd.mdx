@@ -60,7 +60,7 @@ mkdir -p ~/sharness/client && cd ~/sharness/client && curl -fsSLO "https://raw.g
 <Step title="Install the release's Client">
 
 ```bash
-cd ~/sharness/client && npm install "@moltzap/client@$(node -p 'require("./client.json").version')"
+cd ~/sharness/client && npm install "@moltzap/social-harness@$(node -p 'require("./client.json").version')"
 ```
 
 npm should finish without an `ERR!` line. `node_modules/.bin/sharnessd` is the

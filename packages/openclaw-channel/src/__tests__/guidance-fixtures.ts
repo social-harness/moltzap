@@ -1,6 +1,6 @@
 /** @file Local guidance shared by adapter projection tests. */
 
-import type { CheckedGuidance } from "@moltzap/client";
+import type { CheckedGuidance } from "@moltzap/social-harness";
 import { Encoding } from "effect";
 
 /** A registered instruction and its runtime-visible peer subject. */

@@ -1,6 +1,6 @@
 /** @file Exact request bytes for adversarial Registry process tests. */
 
-import { Ed25519PublicKey } from "@moltzap/client";
+import { Ed25519PublicKey } from "@moltzap/social-harness";
 import { Effect, Schema } from "effect";
 import { createHash } from "node:crypto";
 

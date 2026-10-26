@@ -8,8 +8,11 @@ import {
   type MessageId as MessageIdValue,
   SignedMessage,
   WIRE_VERSION,
-} from "@moltzap/client";
-import { AgentCardDigest, routerContract } from "@moltzap/client/internal";
+} from "@moltzap/social-harness";
+import {
+  AgentCardDigest,
+  routerContract,
+} from "@moltzap/social-harness/internal";
 import canonicalize from "canonicalize";
 import { Effect, Either, Encoding, Fiber, Schema } from "effect";
 import * as fc from "fast-check";

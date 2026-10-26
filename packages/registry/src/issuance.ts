@@ -8,12 +8,12 @@ import {
   type Ed25519PublicKey as Ed25519PublicKeyValue,
   type PrincipalId as PrincipalIdValue,
   type VerifiedAgentCard,
-} from "@moltzap/client";
+} from "@moltzap/social-harness";
 import {
   agentCardSigning,
   type AgentCardVerificationError,
   wireVersions,
-} from "@moltzap/client/internal";
+} from "@moltzap/social-harness/internal";
 import { Effect } from "effect";
 
 /** Whole-second UTC issuance evidence carried by an AgentCard. */

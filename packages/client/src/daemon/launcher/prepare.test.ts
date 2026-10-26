@@ -48,14 +48,14 @@ const release = (version: string, wireVersion?: string): Routes => {
       latest: version,
     }),
     [`${REGISTRY}/@moltzap%2fopenclaw-channel/${version}`]: json(
-      published(CHANNEL, { "@moltzap/client": version, effect: "^3" }),
+      published(CHANNEL, { "@moltzap/social-harness": version, effect: "^3" }),
     ),
-    [`${REGISTRY}/@moltzap%2fclient/${version}`]: json({
-      ...published("@moltzap/client", {}),
+    [`${REGISTRY}/@moltzap%2fsocial-harness/${version}`]: json({
+      ...published("@moltzap/social-harness", {}),
       sharnessWireVersion: wireVersion,
     }),
     ...Object.fromEntries(
-      ["@moltzap/openclaw-channel", "@moltzap/client"].map((name) => [
+      ["@moltzap/openclaw-channel", "@moltzap/social-harness"].map((name) => [
         `${REGISTRY}/tarballs/${name}-${version}.tgz`,
         () => new Response(tarball),
       ]),
@@ -82,7 +82,7 @@ const registry = (routes: Routes, asked: string[]) =>
 /** Installed Client entry and wire metadata used by the launcher fixtures. */
 const installedClientManifest = (wireVersion?: string) =>
   JSON.stringify({
-    name: "@moltzap/client",
+    name: "@moltzap/social-harness",
     version: "2026.1021.1",
     type: "module",
     sharnessWireVersion: wireVersion,
@@ -109,9 +109,12 @@ const volume = Effect.gen(function* () {
       sharnessHostCodeHash: "sha256:seed",
     }),
   );
-  yield* write("@moltzap/client/package.json", installedClientManifest(WIRE));
   yield* write(
-    "@moltzap/client/dist/index.js",
+    "@moltzap/social-harness/package.json",
+    installedClientManifest(WIRE),
+  );
+  yield* write(
+    "@moltzap/social-harness/dist/index.js",
     `export const LIVE_WIRE_VERSIONS = [${JSON.stringify(WIRE)}];\n`,
   );
   return { home: path.join(root, "home"), seed };
@@ -207,14 +210,14 @@ const keepsAnUnsafePin = () =>
         start(
           {
             ...routes,
-            [`${REGISTRY}/@moltzap%2fclient/2026.1025.1`]: json({
-              name: "@moltzap/client",
+            [`${REGISTRY}/@moltzap%2fsocial-harness/2026.1025.1`]: json({
+              name: "@moltzap/social-harness",
               version: "2026.1025.1",
               dist: {
                 integrity: integrityOf(new TextEncoder().encode("client")),
                 tarball: `${REGISTRY}/tarballs/client.tgz`,
               },
-              dependencies: { "@moltzap/client": "../../../escape" },
+              dependencies: { "@moltzap/social-harness": "../../../escape" },
             }),
           },
           asked,
@@ -263,7 +266,7 @@ const refusesAChangedTarball = () =>
         prefix: seed,
         packages: [
           {
-            name: "@moltzap/client",
+            name: "@moltzap/social-harness",
             version: "2026.1021.1",
             integrity: integrityOf(new TextEncoder().encode("verified")),
             tarball,
@@ -313,7 +316,7 @@ const followsANewImage = () =>
 const preFoldVolume = Effect.gen(function* () {
   const installed = yield* volume;
   const fs = yield* FileSystem.FileSystem;
-  const clientRoot = `${installed.seed}/node_modules/@moltzap/client`;
+  const clientRoot = `${installed.seed}/node_modules/@moltzap/social-harness`;
   const identityRoot = `${installed.seed}/node_modules/@moltzap/identity`;
   yield* fs.writeFileString(
     `${clientRoot}/package.json`,
@@ -347,7 +350,7 @@ const preFoldVolume = Effect.gen(function* () {
     hostCodeHash: "sha256:seed",
     packages: [
       {
-        name: "@moltzap/client",
+        name: "@moltzap/social-harness",
         version: "2026.1021.1",
         tarball,
         integrity: integrityOf(bytes),
@@ -363,7 +366,7 @@ const preFoldRelease = (
   field: "sharnessWireVersion" | "moltzapWireVersion",
 ): Routes => {
   const routes = release(version);
-  const clientUrl = `${REGISTRY}/@moltzap%2fclient/${version}`;
+  const clientUrl = `${REGISTRY}/@moltzap%2fsocial-harness/${version}`;
   const identityUrl = `${REGISTRY}/@moltzap%2fidentity/${version}`;
   const metadata = (name: string) => ({
     name,
@@ -376,7 +379,7 @@ const preFoldRelease = (
   return {
     ...routes,
     [clientUrl]: json({
-      ...metadata("@moltzap/client"),
+      ...metadata("@moltzap/social-harness"),
       dependencies: { "@moltzap/identity": version },
     }),
     [identityUrl]: json({ ...metadata("@moltzap/identity"), [field]: WIRE }),
@@ -496,11 +499,11 @@ it.each([
     Effect.gen(function* () {
       const { home, seed, recordedPrefix } = yield* preFoldVolume;
       const fs = yield* FileSystem.FileSystem;
-      const client = `${recordedPrefix}/node_modules/@moltzap/client`;
+      const client = `${recordedPrefix}/node_modules/@moltzap/social-harness`;
       yield* fs.writeFileString(
         `${client}/package.json`,
         JSON.stringify({
-          name: "@moltzap/client",
+          name: "@moltzap/social-harness",
           version: "2026.1021.1",
           type: "module",
           sharnessWireVersion: WIRE,
@@ -524,11 +527,11 @@ it("uses Client metadata even when a stale Identity package is installed", () =>
   Effect.gen(function* () {
     const { home, seed, recordedPrefix } = yield* preFoldVolume;
     const fs = yield* FileSystem.FileSystem;
-    const client = `${recordedPrefix}/node_modules/@moltzap/client`;
+    const client = `${recordedPrefix}/node_modules/@moltzap/social-harness`;
     yield* fs.writeFileString(
       `${client}/package.json`,
       JSON.stringify({
-        name: "@moltzap/client",
+        name: "@moltzap/social-harness",
         version: "2026.1021.1",
         type: "module",
         sharnessWireVersion: WIRE,

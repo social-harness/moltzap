@@ -12,7 +12,7 @@ import {
   SignedMessage,
   type SignedMessage as SignedMessageValue,
   type VerifiedAgentCard,
-} from "@moltzap/client";
+} from "@moltzap/social-harness";
 import {
   OperationId,
   Registry,
@@ -23,8 +23,8 @@ import {
   type RouterPollResult,
   type RouterSendRequest,
   type RouterSendResult,
-} from "@moltzap/client/service";
-import { AuthenticatedHttp } from "@moltzap/client/test";
+} from "@moltzap/social-harness/service";
+import { AuthenticatedHttp } from "@moltzap/social-harness/test";
 import { Effect, Encoding, Redacted, Schema } from "effect";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";

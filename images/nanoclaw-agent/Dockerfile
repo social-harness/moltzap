@@ -30,12 +30,12 @@ RUN git apply --check /opt/moltzap/nanoclaw/nanoclaw-v2.3.0.patch \
   && cp /opt/moltzap/nanoclaw/pnpm-lock.yaml pnpm-lock.yaml \
   && HUSKY=0 pnpm install --frozen-lockfile \
   && mkdir -p node_modules/@moltzap node_modules/@modelcontextprotocol \
-  && ln -s /opt/social-harness/workspace/node_modules/@moltzap/client node_modules/@moltzap/client \
+  && ln -s /opt/social-harness/workspace/node_modules/@moltzap/social-harness node_modules/@moltzap/social-harness \
   && ln -s /opt/social-harness/workspace/node_modules/effect node_modules/effect \
   && ln -s /opt/social-harness/workspace/node_modules/@modelcontextprotocol/client node_modules/@modelcontextprotocol/client \
   && pnpm run build \
   && mkdir -p /app/node_modules/@moltzap \
-  && ln -s /opt/moltzap/nanoclaw/app/node_modules/@moltzap/client /app/node_modules/@moltzap/client \
+  && ln -s /opt/moltzap/nanoclaw/app/node_modules/@moltzap/social-harness /app/node_modules/@moltzap/social-harness \
   && ln -s /opt/moltzap/nanoclaw/app/node_modules/effect /app/node_modules/effect \
   && ln -s /app/node_modules container/agent-runner/node_modules \
   && /app/node_modules/.bin/tsc --noEmit -p container/agent-runner/tsconfig.json \
@@ -56,7 +56,7 @@ COPY --from=builder /opt/moltzap/nanoclaw/app /opt/moltzap/nanoclaw/app
 # NanoClaw links every directory under container/skills into each agent
 # group's ~/.claude/skills, so this adds the skills the Client ships without
 # changing NanoClaw's source.
-COPY --from=social-harness-workspace node_modules/@moltzap/client/skills/ /opt/moltzap/nanoclaw/app/container/skills/
+COPY --from=social-harness-workspace node_modules/@moltzap/social-harness/skills/ /opt/moltzap/nanoclaw/app/container/skills/
 COPY entrypoint.ts /opt/moltzap/nanoclaw/entrypoint.ts
 COPY gateway.ts preload.ts process-driver.ts provision.ts /opt/moltzap/nanoclaw/
 
@@ -64,7 +64,7 @@ COPY gateway.ts preload.ts process-driver.ts provision.ts /opt/moltzap/nanoclaw/
 # its extracted tree. The links give both processes the same patched packages.
 RUN mkdir -p /var/lib/moltzap/nanoclaw \
   && mkdir -p /app/node_modules/@moltzap \
-  && ln -s /opt/moltzap/nanoclaw/app/node_modules/@moltzap/client /app/node_modules/@moltzap/client \
+  && ln -s /opt/moltzap/nanoclaw/app/node_modules/@moltzap/social-harness /app/node_modules/@moltzap/social-harness \
   && ln -s /opt/moltzap/nanoclaw/app/node_modules/effect /app/node_modules/effect \
   && ln -s /opt/moltzap/nanoclaw/app/node_modules /opt/moltzap/node_modules \
   && ln -s /opt/moltzap/nanoclaw/app/container/agent-runner/src /app/src \

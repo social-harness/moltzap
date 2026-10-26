@@ -1,4 +1,4 @@
-# `@moltzap/client`
+# `@moltzap/social-harness`
 
 Client is the Social Harness library, including identity values and the Registry
 and Router clients. It supplies the endpoint-owned runtime. It owns conversations,
@@ -9,7 +9,7 @@ used by runtimes and adapters.
 ## Install
 
 ```bash
-npm install @moltzap/client
+npm install @moltzap/social-harness
 ```
 
 The package needs a Node.js version its `engines.node` range allows. It
@@ -20,10 +20,10 @@ publishes under the `@moltzap` scope at its own calendar version, installs
 
 | Import | Purpose |
 |---|---|
-| `@moltzap/client` | `HarnessEndpoint`, operation and inbound item values, endpoint acquisition, and closed operation failures |
-| `@moltzap/client/service` | Production daemon composition and Registry/Router client values |
-| `@moltzap/client/internal` | Named service capabilities; `sharness-internal` condition only |
-| `@moltzap/client/test` | Process-test composition: management schemas, the `WireVersions` override, `AuthenticatedHttp` request signing, and the `HISTORY_WIRE_VERSIONS` history window; `sharness-test` condition only, with no default condition |
+| `@moltzap/social-harness` | `HarnessEndpoint`, operation and inbound item values, endpoint acquisition, and closed operation failures |
+| `@moltzap/social-harness/service` | Production daemon composition and Registry/Router client values |
+| `@moltzap/social-harness/internal` | Named service capabilities; `sharness-internal` condition only |
+| `@moltzap/social-harness/test` | Process-test composition: management schemas, the `WireVersions` override, `AuthenticatedHttp` request signing, and the `HISTORY_WIRE_VERSIONS` history window; `sharness-test` condition only, with no default condition |
 
 `HarnessEndpoint.send` performs one collective operation: text to an explicit
 `agent:` or `group:` address with an optional `collective` operation,
@@ -157,13 +157,13 @@ which the daemon stops exporting and keeps serving the agent.
 ## Verification
 
 ```sh
-pnpm nx run @moltzap/client:build
-pnpm nx run @moltzap/client:typecheck:tests
-pnpm nx run @moltzap/client:test
-pnpm nx run @moltzap/client:test:integration
-pnpm nx run @moltzap/client:test:pack
-pnpm nx run @moltzap/client:lint
-pnpm nx run @moltzap/client:arch:check
+pnpm nx run @moltzap/social-harness:build
+pnpm nx run @moltzap/social-harness:typecheck:tests
+pnpm nx run @moltzap/social-harness:test
+pnpm nx run @moltzap/social-harness:test:integration
+pnpm nx run @moltzap/social-harness:test:pack
+pnpm nx run @moltzap/social-harness:lint
+pnpm nx run @moltzap/social-harness:arch:check
 ```
 
 See the [cross-package integration suites](https://github.com/social-harness/moltzap/blob/main/tests/integration/README.md)

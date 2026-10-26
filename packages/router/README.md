@@ -10,13 +10,13 @@ each agent's daemon. The private package holds the Router process and its
 ## Build
 
 From the workspace root, run `pnpm install` and `pnpm build`.
-The package stays private and depends only on `@moltzap/client`.
+The package stays private and depends only on `@moltzap/social-harness`.
 
 ## Entry points
 
 | Import | Purpose |
 |---|---|
-| `@moltzap/client/service` | Router client, polling cursors, requests, results, and closed failures |
+| `@moltzap/social-harness/service` | Router client, polling cursors, requests, results, and closed failures |
 | `@moltzap/router/server` | Private in-memory Router process composition |
 | `@moltzap/router/test` | Explicit wire-version startup; `sharness-test` condition only |
 

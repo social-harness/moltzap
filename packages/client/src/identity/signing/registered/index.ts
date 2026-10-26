@@ -64,7 +64,7 @@ interface AuthenticatedHttpService {
 
 /** Registered-agent request signing and verification. */
 export class AuthenticatedHttp extends Context.Tag(
-  "@moltzap/client/AuthenticatedHttp",
+  "@moltzap/social-harness/AuthenticatedHttp",
 )<AuthenticatedHttp, AuthenticatedHttpService>() {
   static readonly signAgentRequest = signAgentRequest;
 

@@ -33,4 +33,4 @@ The `daemon-process-harness.ts` helpers compose disposable services and daemons.
 `client-version-roundtrip.ts` exercises each real service through its public
 client. `firewall-daemon.ts` is a fixture child process. The Vitest configurations
 keep the process and mixed-release lanes distinct. Client-only process feedback runs with
-`pnpm nx run @moltzap/client:test:integration`.
+`pnpm nx run @moltzap/social-harness:test:integration`.

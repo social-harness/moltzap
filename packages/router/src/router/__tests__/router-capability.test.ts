@@ -14,12 +14,12 @@ import {
   type SignedMessage as SignedMessageValue,
   type VerifiedAgentCard,
   WIRE_VERSION,
-} from "@moltzap/client";
+} from "@moltzap/social-harness";
 import {
   httpErrors,
   routerContract,
   type VerifiedAgentRequest,
-} from "@moltzap/client/internal";
+} from "@moltzap/social-harness/internal";
 import canonicalize from "canonicalize";
 import {
   Brand,

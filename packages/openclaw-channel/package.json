@@ -87,7 +87,7 @@
     }
   },
   "dependencies": {
-    "@moltzap/client": "workspace:*",
+    "@moltzap/social-harness": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {

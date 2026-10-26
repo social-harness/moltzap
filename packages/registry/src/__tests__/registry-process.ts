@@ -8,8 +8,8 @@ import {
   type AgentSigningAuthority as AgentSigningAuthorityValue,
   PrincipalId,
   type VerifiedAgentCard,
-} from "@moltzap/client";
-import { Registry, registryContract } from "@moltzap/client/internal";
+} from "@moltzap/social-harness";
+import { Registry, registryContract } from "@moltzap/social-harness/internal";
 import {
   Clock,
   Data,

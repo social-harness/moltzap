@@ -1,7 +1,11 @@
 /** @file Router process configuration, validation, defaults, and operator feedback. */
 
-import { Ed25519PublicKey, legacyKeys, SignedMessage } from "@moltzap/client";
-import { routerContract } from "@moltzap/client/internal";
+import {
+  Ed25519PublicKey,
+  legacyKeys,
+  SignedMessage,
+} from "@moltzap/social-harness";
+import { routerContract } from "@moltzap/social-harness/internal";
 import { Config, type ConfigError, Data, Effect, Match, Schema } from "effect";
 
 /** ConfigError trees retain every missing field without printing rejected inputs. */

@@ -130,7 +130,7 @@
     "canonicalize": "catalog:",
     "effect": "catalog:",
     "jose": "catalog:",
-    "@moltzap/client": "workspace:*"
+    "@moltzap/social-harness": "workspace:*"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",

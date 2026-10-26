@@ -18,7 +18,7 @@ import {
   type MessageMiddleware,
   type MiddlewareInput,
   type MiddlewareResult,
-} from "@moltzap/client/service";
+} from "@moltzap/social-harness/service";
 import { Config, ConfigProvider, Effect, Layer } from "effect";
 
 /** The marker an incoming text carries to be withheld. */

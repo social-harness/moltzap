@@ -10,12 +10,12 @@ import {
   type AgentSigningAuthority,
   type Ed25519PublicKey,
   type VerifiedAgentCard,
-} from "@moltzap/client";
+} from "@moltzap/social-harness";
 import {
   agentCardSigning,
   httpErrors,
   registryContract,
-} from "@moltzap/client/internal";
+} from "@moltzap/social-harness/internal";
 import { Clock, Data, Effect, Schema } from "effect";
 import { randomBytes } from "node:crypto";
 import { AgentCardIssuedAt, issueAgentCard } from "./issuance.js";

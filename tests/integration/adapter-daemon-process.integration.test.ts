@@ -1,6 +1,9 @@
 /** @file Real-daemon acceptance for the runtime adapter boundaries. */
 
-import { acquireHarnessEndpoint, type InboundDelivery } from "@moltzap/client";
+import {
+  acquireHarnessEndpoint,
+  type InboundDelivery,
+} from "@moltzap/social-harness";
 import { Deferred, Effect, Fiber, Queue } from "effect";
 import { expect, it } from "vitest";
 

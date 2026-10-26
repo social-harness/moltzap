@@ -11,7 +11,7 @@ import {
   type DecisionProvider,
   type DecisionRequest,
   type MessageMiddleware,
-} from "@moltzap/client/service";
+} from "@moltzap/social-harness/service";
 import {
   ConfigProvider,
   Deferred,

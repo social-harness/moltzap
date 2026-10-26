@@ -33,9 +33,9 @@ const tarball = (files: Readonly<Record<string, string>>): Uint8Array => {
 };
 
 const manifest = {
-  name: "@moltzap/client",
+  name: "@moltzap/social-harness",
   version: "2026.1025.1",
-  dependencies: { "@moltzap/client": "2026.1025.1" },
+  dependencies: { "@moltzap/social-harness": "2026.1025.1" },
 };
 
 // @agent-code-guard/regression-only: The tarball layout is npm's, pinned by its examples.
@@ -103,7 +103,11 @@ const attestationResponse = (
 it.each([
   { name: "@moltzap/identity", packedWire: "2026.1019.2", accepted: true },
   { name: "@moltzap/identity", packedWire: "2026.1019.1", accepted: false },
-  { name: "@moltzap/client", packedWire: "2026.1019.2", accepted: false },
+  {
+    name: "@moltzap/social-harness",
+    packedWire: "2026.1019.2",
+    accepted: false,
+  },
 ])(
   "binds legacy wire metadata only for the signed Identity manifest: $name $packedWire",
   ({ name, packedWire, accepted }) =>

@@ -10,7 +10,7 @@ import {
   httpErrors,
   registryContract,
   wireVersions,
-} from "@moltzap/client/internal";
+} from "@moltzap/social-harness/internal";
 import { Cause, Effect, Option } from "effect";
 import type { RegistryStorage } from "./storage.js";
 import { verifyBootstrapRegistration } from "./admission.js";

@@ -1,6 +1,6 @@
 # Client source boundary
 
-This tree implements `@moltzap/client`. Agent runtimes use the semantic
+This tree implements `@moltzap/social-harness`. Agent runtimes use the semantic
 `HarnessEndpoint`; the loopback MCP is private transport between that client
 and one configured local daemon.
 

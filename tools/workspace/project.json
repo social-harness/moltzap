@@ -212,7 +212,7 @@
     "docs:api": {
       "cache": true,
       "dependsOn": [
-        { "projects": ["@moltzap/client", "@moltzap/registry", "@moltzap/router", "@moltzap/openclaw-channel", "@moltzap/nanoclaw-channel"], "target": "build" }
+        { "projects": ["@moltzap/social-harness", "@moltzap/registry", "@moltzap/router", "@moltzap/openclaw-channel", "@moltzap/nanoclaw-channel"], "target": "build" }
       ],
       "inputs": [
         "{workspaceRoot}/typedoc.json",

@@ -266,12 +266,12 @@ importers:
       '@modelcontextprotocol/client':
         specifier: 'catalog:'
         version: 2.0.0-beta.5
-      '@moltzap/client':
-        specifier: workspace:*
-        version: link:../../packages/client
       '@moltzap/openclaw-channel':
         specifier: workspace:*
         version: link:../../packages/openclaw-channel
+      '@moltzap/social-harness':
+        specifier: workspace:*
+        version: link:../../packages/client
       effect:
         specifier: 3.22.1
         version: 3.22.1
@@ -385,7 +385,7 @@ importers:
 
   packages/nanoclaw-channel:
     dependencies:
-      '@moltzap/client':
+      '@moltzap/social-harness':
         specifier: workspace:*
         version: link:../client
       '@types/node':
@@ -410,7 +410,7 @@ importers:
 
   packages/openclaw-channel:
     dependencies:
-      '@moltzap/client':
+      '@moltzap/social-harness':
         specifier: workspace:*
         version: link:../client
       effect:
@@ -465,7 +465,7 @@ importers:
       '@electric-sql/pglite-socket':
         specifier: 'catalog:'
         version: 0.1.4(@electric-sql/pglite@0.4.4)
-      '@moltzap/client':
+      '@moltzap/social-harness':
         specifier: workspace:*
         version: link:../client
       effect:
@@ -505,7 +505,7 @@ importers:
       '@effect/rpc':
         specifier: 'catalog:'
         version: 0.76.0(@effect/platform@0.97.0(effect@3.22.1))(effect@3.22.1)
-      '@moltzap/client':
+      '@moltzap/social-harness':
         specifier: workspace:*
         version: link:../client
       canonicalize:
@@ -551,9 +551,6 @@ importers:
       '@modelcontextprotocol/client':
         specifier: 'catalog:'
         version: 2.0.0-beta.5
-      '@moltzap/client':
-        specifier: workspace:*
-        version: link:../../packages/client
       '@moltzap/openclaw-channel':
         specifier: workspace:*
         version: link:../../packages/openclaw-channel
@@ -563,6 +560,9 @@ importers:
       '@moltzap/router':
         specifier: workspace:*
         version: link:../../packages/router
+      '@moltzap/social-harness':
+        specifier: workspace:*
+        version: link:../../packages/client
       '@typescript/native':
         specifier: 'catalog:'
         version: typescript@7.0.2

@@ -10,7 +10,7 @@
  * the answers it receives, a member checks the question it is asked.
  */
 
-import { FirewallSendError } from "@moltzap/client";
+import { FirewallSendError } from "@moltzap/social-harness";
 import { Effect, Queue } from "effect";
 import { expect, it } from "vitest";
 import { processTrace } from "./daemon-process-harness.js";

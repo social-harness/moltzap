@@ -127,7 +127,7 @@
     "@effect/sql": "catalog:",
     "@effect/sql-pg": "catalog:",
     "effect": "catalog:",
-    "@moltzap/client": "workspace:*",
+    "@moltzap/social-harness": "workspace:*",
     "@electric-sql/pglite": "catalog:",
     "@electric-sql/pglite-socket": "catalog:"
   },

@@ -10,7 +10,7 @@ import {
   httpErrors,
   routerContract,
   type VerifiedAgentRequest,
-} from "@moltzap/client/internal";
+} from "@moltzap/social-harness/internal";
 import {
   Context,
   Deferred,

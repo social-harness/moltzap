@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@moltzap/client": "workspace:*",
+    "@moltzap/social-harness": "workspace:*",
     "@moltzap/openclaw-channel": "workspace:*",
     "@modelcontextprotocol/client": "catalog:",
     "effect": "catalog:"

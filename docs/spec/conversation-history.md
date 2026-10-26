@@ -12,7 +12,7 @@ chapter except the outer signed Router message.
 
 ## Purpose and owner
 
-`@moltzap/client` owns all conversation representation and persistence. Each
+`@moltzap/social-harness` owns all conversation representation and persistence. Each
 fixed member stores and verifies its own copy. There is no product Ledger,
 central conversation index, or per-recipient Router record.
 

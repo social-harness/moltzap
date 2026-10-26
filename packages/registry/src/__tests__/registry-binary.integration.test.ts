@@ -10,8 +10,8 @@ import {
   AgentSigningAuthority,
   type VerifiedAgentCard,
   WIRE_VERSION,
-} from "@moltzap/client";
-import { Registry, registryContract } from "@moltzap/client/internal";
+} from "@moltzap/social-harness";
+import { Registry, registryContract } from "@moltzap/social-harness/internal";
 import { Duration, Effect, Redacted, Ref, Schema } from "effect";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
@@ -925,7 +925,7 @@ const makeExternalConsumer = Effect.gen(function* () {
 
 const assertExternalResolutionDenied = `
   try {
-    await import("@moltzap/client/internal");
+    await import("@moltzap/social-harness/internal");
     throw new Error("external caller resolved private Identity exports");
   } catch (error) {
     if (error.code !== "ERR_PACKAGE_PATH_NOT_EXPORTED") throw error;
@@ -935,7 +935,7 @@ const assertExternalResolutionDenied = `
 /**
  * A module under the Registry package root, outside its built modules and executable.
  *
- * Value: protects=after startRegistry installs internal resolution, a module in a nested node_modules under the Registry package root still cannot resolve `@moltzap/client/internal`; fails_when=the hook's parent scope includes the package root rather than only dist/ and bin/; why_new=the external consumer lives in a temporary directory outside the package root, which both scopes deny; seam=none; no_claim=resolution for parents outside the package root.
+ * Value: protects=after startRegistry installs internal resolution, a module in a nested node_modules under the Registry package root still cannot resolve `@moltzap/social-harness/internal`; fails_when=the hook's parent scope includes the package root rather than only dist/ and bin/; why_new=the external consumer lives in a temporary directory outside the package root, which both scopes deny; seam=none; no_claim=resolution for parents outside the package root.
  */
 const makeNestedProbe = Effect.acquireRelease(
   Effect.gen(function* () {

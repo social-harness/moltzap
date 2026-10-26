@@ -70,7 +70,7 @@
     }
   },
   "dependencies": {
-    "@moltzap/client": "workspace:*",
+    "@moltzap/social-harness": "workspace:*",
     "@types/node": "catalog:",
     "effect": "catalog:"
   },

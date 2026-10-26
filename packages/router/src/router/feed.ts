@@ -1,6 +1,10 @@
 /** @file Volatile globally ordered Router feed with bounded retention and retry identity. */
-import type { AgentId, LiveSignedMessage, MessageId } from "@moltzap/client";
-import type { routerContract } from "@moltzap/client/internal";
+import type {
+  AgentId,
+  LiveSignedMessage,
+  MessageId,
+} from "@moltzap/social-harness";
+import type { routerContract } from "@moltzap/social-harness/internal";
 import { Data, Effect, Ref } from "effect";
 
 /** Greatest private feed order representable by this Router process. */

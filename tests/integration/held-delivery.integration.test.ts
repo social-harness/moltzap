@@ -8,7 +8,7 @@ import {
   type HarnessEndpoint,
   type InboundDelivery,
   type SendResult,
-} from "@moltzap/client";
+} from "@moltzap/social-harness";
 import {
   Duration,
   Effect,

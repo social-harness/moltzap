@@ -9,12 +9,12 @@ import {
   AgentSigningAuthority,
   type VerifiedAgentCard,
   WIRE_VERSION,
-} from "@moltzap/client";
+} from "@moltzap/social-harness";
 import {
   httpErrors,
   Registry,
   registryContract,
-} from "@moltzap/client/internal";
+} from "@moltzap/social-harness/internal";
 import {
   PostgreSqlContainer,
   type StartedPostgreSqlContainer,

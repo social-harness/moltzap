@@ -11,8 +11,8 @@ import {
   AgentAddress,
   LIVE_WIRE_VERSIONS,
   WIRE_VERSION,
-} from "@moltzap/client";
-import { HISTORY_WIRE_VERSIONS } from "@moltzap/client/test";
+} from "@moltzap/social-harness";
+import { HISTORY_WIRE_VERSIONS } from "@moltzap/social-harness/test";
 import { Data, Effect, Fiber, Option, Schedule, Schema, Stream } from "effect";
 import { join, posix, resolve } from "node:path";
 import { expect, it, type TestContext } from "vitest";
@@ -39,7 +39,7 @@ const RESET_SKIP_REASON =
   "No post-reset release is published; the mixed-release gate starts with the first release after the reset.";
 const workspaceRoot = resolve(import.meta.dirname, "../../..");
 const packages = {
-  "@moltzap/client": join(workspaceRoot, "packages/client"),
+  "@moltzap/social-harness": join(workspaceRoot, "packages/client"),
 };
 
 /**
@@ -89,9 +89,10 @@ function releaseWireVersion(
     Effect.map((closure) => ({
       name:
         closure[retiredIdentityPackage] === undefined
-          ? "@moltzap/client"
+          ? "@moltzap/social-harness"
           : retiredIdentityPackage,
-      version: closure[retiredIdentityPackage] ?? closure["@moltzap/client"],
+      version:
+        closure[retiredIdentityPackage] ?? closure["@moltzap/social-harness"],
     })),
     Effect.flatMap((identity) =>
       view([`${identity.name}@${identity.version}`]).pipe(
@@ -121,7 +122,7 @@ function releaseWireVersion(
         ? Effect.succeed(PRE_RESET_WIRE_VERSION)
         : Effect.fail(
             new ProcessTestError({
-              message: `${identity}, pinned by @moltzap/client@${version}, is missing published sharnessWireVersion metadata`,
+              message: `${identity}, pinned by @moltzap/social-harness@${version}, is missing published sharnessWireVersion metadata`,
             }),
           );
     }),
@@ -134,7 +135,7 @@ function releaseWireVersion(
  * product closure, each at the exact version its Client release pins.
  */
 function releaseClosure(version: string, view = npmView) {
-  return view([`@moltzap/client@${version}`, "dependencies"]).pipe(
+  return view([`@moltzap/social-harness@${version}`, "dependencies"]).pipe(
     Effect.flatMap(
       Schema.decodeUnknown(
         Schema.parseJson(
@@ -147,7 +148,7 @@ function releaseClosure(version: string, view = npmView) {
         ...Object.fromEntries(
           Object.entries(pins).filter(([name]) => name.startsWith("@moltzap/")),
         ),
-        "@moltzap/client": version,
+        "@moltzap/social-harness": version,
       }),
     ),
   );
@@ -587,7 +588,7 @@ const PINNED_WIRE_VERSION = "2099.1.1";
 function publishedMetadata(identity: string) {
   return (args: readonly string[]) =>
     Effect.succeed(
-      args[0]?.startsWith("@moltzap/client@") === true
+      args[0]?.startsWith("@moltzap/social-harness@") === true
         ? JSON.stringify({
             [retiredIdentityPackage]: PINNED_IDENTITY,
             "@moltzap/router": "2099.2.0",
@@ -603,7 +604,7 @@ it("reads a Client release's wire version from the Identity version it pins", ()
       (args) =>
         Effect.succeed(
           JSON.stringify(
-            args[0] === "@moltzap/client@2099.101.0"
+            args[0] === "@moltzap/social-harness@2099.101.0"
               ? {
                   [retiredIdentityPackage]: PINNED_IDENTITY,
                   "@moltzap/router": "2099.2.0",
@@ -774,7 +775,7 @@ it.each(["2099.101.0", "2099.102.0"])(
           Effect.sync(() => {
             expect(error).toMatchObject({
               _tag: "ProcessTestError",
-              message: `${retiredIdentityPackage}@${PINNED_IDENTITY}, pinned by @moltzap/client@${version}, is missing published sharnessWireVersion metadata`,
+              message: `${retiredIdentityPackage}@${PINNED_IDENTITY}, pinned by @moltzap/social-harness@${version}, is missing published sharnessWireVersion metadata`,
             });
           }),
         ),

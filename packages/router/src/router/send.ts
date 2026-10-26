@@ -3,12 +3,12 @@ import {
   type LiveSignedMessage,
   SignedMessage,
   type VerifiedSignedMessage,
-} from "@moltzap/client";
+} from "@moltzap/social-harness";
 import {
   httpErrors,
   routerContract,
   type VerifiedAgentRequest,
-} from "@moltzap/client/internal";
+} from "@moltzap/social-harness/internal";
 import canonicalize from "canonicalize";
 import { Effect, Encoding, Schema } from "effect";
 import type { RouterFeed } from "./feed.js";
