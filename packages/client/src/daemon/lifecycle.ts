@@ -17,6 +17,7 @@ import {
   type HarnessMcpEventHandler,
   LOOPBACK_HOST,
   makeHarnessMcpHttpHandler,
+  type ManagementRegisterRequest,
 } from "../harness/mcp/index.js";
 import { WIRE_VERSION } from "../identity/wire-version.js";
 import { packageVersion } from "../release/index.js";
@@ -90,6 +91,7 @@ export const runDaemonRuntime = (
       yield* registerAtStart(
         management,
         daemon.readRegistration().kind === "active",
+        daemon,
         input.bootstrap.configuration.registration,
       );
       const handler = yield* makeHandler(
@@ -142,17 +144,28 @@ function makeHandler(
 function registerAtStart(
   management: DaemonManagementOperations,
   active: boolean,
-  request?: Parameters<DaemonManagementOperations["register"]>[0],
+  daemon: RunningDaemon,
+  request?: ManagementRegisterRequest,
 ) {
   if (request === undefined || active) {
     return Effect.void;
   }
   return management.register(request).pipe(
-    Effect.mapError(() => runtimeFailure("registration")),
+    Effect.mapError(registrationFailure),
+    Effect.catchAllCause((cause) =>
+      daemon.readRegistration().kind === "active"
+        ? daemon.awaitFailure
+        : Effect.failCause(cause),
+    ),
     Effect.flatMap((result) =>
       result.kind === "registered"
         ? Effect.void
-        : Effect.fail(runtimeFailure("registration")),
+        : Effect.fail(
+            new DaemonRuntimeError({
+              phase: "registration",
+              reason: result.kind,
+            }),
+          ),
     ),
   );
 }
@@ -166,4 +179,23 @@ function openHistoryExport(
   return path === undefined
     ? Effect.succeed(noHistoryExport)
     : dependencies.makeHistoryExport(path);
+}
+
+/** Only registration failures cross into startup before the identity binds. */
+function registrationFailure(error: {
+  readonly reason: string;
+}): DaemonRuntimeError {
+  switch (error.reason) {
+    case "dependency-unavailable":
+    case "persistence-failed":
+      return new DaemonRuntimeError({
+        phase: "registration",
+        reason: error.reason,
+      });
+    default:
+      return new DaemonRuntimeError({
+        phase: "registration",
+        reason: "incompatible-daemon",
+      });
+  }
 }

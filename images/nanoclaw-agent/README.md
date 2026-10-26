@@ -28,7 +28,7 @@ in both the Docker command and Kubernetes host container:
   "agentName": "alice",
   "stateDirectory": "/var/lib/moltzap/nanoclaw",
   "workspaceDirectory": "/run/sharness/workspace",
-  "gateway": { "host": "0.0.0.0", "port": 7777 },
+  "gateway": { "host": "127.0.0.1", "port": 7777 },
   "mcpServers": []
 }
 ```

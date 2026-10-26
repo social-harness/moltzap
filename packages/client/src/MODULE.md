@@ -1047,7 +1047,13 @@ _Class_
       | "outbox-too-old"
       | "newer-schema"
       | "pre-reset"
-      | "legacy-key";
+      | "legacy-key"
+      | "name_taken"
+      | "key_already_registered"
+      | "idempotency_conflict"
+      | "dependency-unavailable"
+      | "persistence-failed"
+      | "incompatible-daemon";
     readonly keys?: readonly string[];
     readonly detail?: string;
   }> {
@@ -1093,7 +1099,7 @@ _Variable_
 
 Usage text listing the daemon process's environment variables.
 
-#### [`Daemon.layer`](./daemon/index.ts#L178)
+#### [`Daemon.layer`](./daemon/index.ts#L184)
 
 _Variable_
 
@@ -1106,7 +1112,7 @@ _Variable_
 Complete production process composition for `sharnessd`, with the
 firewall `SHARNESS_MESSAGE_POLICY_FILE` describes when it is set.
 
-#### [`Daemon.withFirewall`](./daemon/index.ts#L188)
+#### [`Daemon.withFirewall`](./daemon/index.ts#L194)
 
 _Function_
 

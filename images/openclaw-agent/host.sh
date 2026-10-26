@@ -66,13 +66,19 @@ prepare() {
 # Globals:
 #   ENTRY
 # Returns:
-#   0 when it does, nonzero when it does not or the listing fails.
+#   0 when it does, 1 when it does not; a failed listing ends the host.
 #######################################
 has_openai_profile() {
-  node "${ENTRY}" models auth list --provider openai --json 2>/dev/null \
-    | node --input-type=module --eval \
+  local profiles
+  profiles="$(node "${ENTRY}" models auth list --provider openai --json)" || {
+    echo "[social harness openclaw host] auth profile listing failed; not starting the gateway. Docs: https://github.com/social-harness/moltzap/tree/main/images/openclaw-agent#openclaw-host-image" >&2
+    exit 1
+  }
+  local has_profile
+  has_profile="$(node --input-type=module --eval \
       'const { profiles } = JSON.parse(await new Response(process.stdin).text());
-       process.exit(profiles.length > 0 ? 0 : 1);'
+       console.log(profiles.length > 0 ? "yes" : "no");' <<<"${profiles}")" || exit 1
+  [[ "${has_profile}" == "yes" ]]
 }
 
 prepare doctor doctor --non-interactive

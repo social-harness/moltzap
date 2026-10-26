@@ -78,4 +78,4 @@ RUN mkdir -p /var/lib/moltzap/nanoclaw \
 ENV NODE_ENV=production
 WORKDIR /var/lib/moltzap/nanoclaw
 USER node
-ENTRYPOINT ["node", "/opt/moltzap/nanoclaw/entrypoint.ts"]
+ENTRYPOINT ["/usr/bin/tini", "--", "node", "/opt/moltzap/nanoclaw/entrypoint.ts"]

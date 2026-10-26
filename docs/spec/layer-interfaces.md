@@ -328,10 +328,11 @@ alter message bytes, forge messages, or change Router state or order.
 
 ## Agent images
 
-Each published agent image runs the host and `sharnessd` in one application
-container. Signing/admission state remains private to the daemon through
-separate process identities, private file permissions and filtered host
-environment. Registration completes before the host starts. The host accesses
+Agent images are built locally and are not published from this repository.
+Each agent runs its host and `sharnessd` in separate containers sharing a network
+namespace. Signing/admission state is mounted only in the daemon container.
+When startup registration is configured, registration and activation complete
+before the host starts. The host accesses
 the Client only through `SHARNESS_MCP_URL=http://127.0.0.1:<port>/mcp`.
 
 Client injects no cross-conversation context. Stock runtimes own their session
@@ -371,7 +372,7 @@ topology and cross-address context.
   management-absence boundary.
 - Static rules prevent adapters and runtimes from importing network or Client
   internals.
-- Agent images run the host and daemon in one application container per agent
+- Agent images run the host and daemon in separate containers per agent
   and expose only loopback MCP to the host.
 - Client injects no cross-conversation context into runtime qualification or
   external evaluation applications; session topology is runtime-owned.

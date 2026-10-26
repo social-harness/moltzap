@@ -7,6 +7,7 @@ import filesystem, {
   readdir,
   readFile,
   rm,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import { syncBuiltinESMExports } from "node:module";
@@ -37,6 +38,8 @@ test("abandoned channel writes do not block installing the image channel", async
   context.after(() => {
     process.env = environment;
   });
+  await symlink(root, join(root, "current"));
+  process.env.SHARNESS_LAUNCHER_DIRECTORY = root;
   process.env.OPENCLAW_CONFIG_PATH = path;
 
   await import("./configure-channel.ts");
@@ -44,9 +47,7 @@ test("abandoned channel writes do not block installing the image channel", async
   assert.deepEqual(JSON.parse(await readFile(path, "utf8")), {
     plugins: {
       load: {
-        paths: [
-          "/opt/social-harness/launcher/current/node_modules/@moltzap/openclaw-channel",
-        ],
+        paths: [`${root}/current/node_modules/@moltzap/openclaw-channel`],
       },
     },
   });
@@ -54,6 +55,7 @@ test("abandoned channel writes do not block installing the image channel", async
     (await readdir(root)).sort((left, right) => left.localeCompare(right)),
     [
       ".social-harness-channel-abandoned",
+      "current",
       "openclaw.json",
       `openclaw.json.channel-${String(process.pid)}`,
     ],
@@ -79,6 +81,8 @@ test("a failed configuration rename keeps the old configuration and removes temp
     context.mock.restoreAll();
     syncBuiltinESMExports();
   });
+  await symlink(root, join(root, "current"));
+  process.env.SHARNESS_LAUNCHER_DIRECTORY = root;
   process.env.OPENCLAW_CONFIG_PATH = path;
   context.mock.method(filesystem, "rename", () =>
     Promise.reject(new Error("injected configuration rename failure")),
@@ -94,7 +98,7 @@ test("a failed configuration rename keeps the old configuration and removes temp
 
   assert.equal(process.exitCode, 1);
   assert.equal(await readFile(path, "utf8"), original);
-  assert.deepEqual(await readdir(root), ["openclaw.json"]);
+  assert.deepEqual(await readdir(root), ["current", "openclaw.json"]);
 });
 
 test("initializes channel loading in a stock host configuration", async (context) => {
@@ -109,6 +113,8 @@ test("initializes channel loading in a stock host configuration", async (context
   context.after(() => {
     process.env = environment;
   });
+  await symlink(root, join(root, "current"));
+  process.env.SHARNESS_LAUNCHER_DIRECTORY = root;
   process.env.OPENCLAW_CONFIG_PATH = path;
   await import(
     new URL("./configure-channel.ts?stock-config", import.meta.url).href
@@ -116,9 +122,7 @@ test("initializes channel loading in a stock host configuration", async (context
   assert.partialDeepStrictEqual(JSON.parse(await readFile(path, "utf8")), {
     plugins: {
       load: {
-        paths: [
-          "/opt/social-harness/launcher/current/node_modules/@moltzap/openclaw-channel",
-        ],
+        paths: [`${root}/current/node_modules/@moltzap/openclaw-channel`],
       },
     },
   });

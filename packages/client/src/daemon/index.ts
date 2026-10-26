@@ -92,7 +92,13 @@ export namespace Daemon {
       | "outbox-too-old"
       | "newer-schema"
       | "pre-reset"
-      | "legacy-key";
+      | "legacy-key"
+      | "name_taken"
+      | "key_already_registered"
+      | "idempotency_conflict"
+      | "dependency-unavailable"
+      | "persistence-failed"
+      | "incompatible-daemon";
     readonly keys?: readonly string[];
     readonly detail?: string;
   }> {

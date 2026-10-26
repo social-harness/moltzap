@@ -37,7 +37,7 @@ _Variable_
 
 Usage text listing the daemon process's environment variables.
 
-### [`layer`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/daemon/index.ts#L178)
+### [`layer`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/daemon/index.ts#L184)
 
 _Variable_
 
@@ -61,7 +61,13 @@ _Class_
       | "outbox-too-old"
       | "newer-schema"
       | "pre-reset"
-      | "legacy-key";
+      | "legacy-key"
+      | "name_taken"
+      | "key_already_registered"
+      | "idempotency_conflict"
+      | "dependency-unavailable"
+      | "persistence-failed"
+      | "incompatible-daemon";
     readonly keys?: readonly string[];
     readonly detail?: string;
   }> {
@@ -87,7 +93,7 @@ _Class_
 
 Closed startup phase with sanitized configuration details.
 
-### [`withFirewall`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/daemon/index.ts#L188)
+### [`withFirewall`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/daemon/index.ts#L194)
 
 _Function_
 

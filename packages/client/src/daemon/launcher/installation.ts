@@ -205,16 +205,18 @@ export const lockDirectory = Effect.fn("Launcher.lockDirectory")(function* (
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const lock = path.join(directory, LOCK_FILE);
-  yield* fs
-    .makeDirectory(directory, { recursive: true })
+  const exists = yield* fs
+    .exists(directory)
     .pipe(Effect.mapError(() => recordFailure(directory)));
-  const directoryInfo = yield* fs
-    .stat(directory)
-    .pipe(Effect.mapError(() => recordFailure(directory)));
-  if ((directoryInfo.mode & 0o555) !== 0o555) {
+  if (!exists) {
     yield* fs
-      .chmod(directory, directoryInfo.mode | 0o555)
+      .makeDirectory(directory, { recursive: true })
       .pipe(Effect.mapError(() => recordFailure(directory)));
+    // eslint-disable-next-line sonarjs/file-permissions -- The launcher creates this directory to share public package code with the host user.
+    const openCreatedDirectory = fs.chmod(directory, 0o755);
+    yield* openCreatedDirectory.pipe(
+      Effect.mapError(() => recordFailure(directory)),
+    );
   }
   const holder = yield* lockHolder(lock);
   if (holder !== undefined) {
@@ -239,7 +241,6 @@ export const pointCurrent = Effect.fn("Launcher.pointCurrent")(
   function* (directory: string, prefix: string) {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    yield* readableRelease(prefix);
     const link = path.join(directory, CURRENT_LINK);
     const temporary = `${link}.tmp`;
     yield* fs.remove(temporary, { force: true });
@@ -254,8 +255,8 @@ export const pointCurrent = Effect.fn("Launcher.pointCurrent")(
  * another user. Symbolic links are left alone: a workspace link may dangle,
  * and following one would change modes outside the release.
  */
-function readableRelease(prefix: string) {
-  return Effect.gen(function* () {
+export const readableRelease = Effect.fn("Launcher.readableRelease")(
+  function* (prefix: string) {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const entries = [
@@ -274,8 +275,9 @@ function readableRelease(prefix: string) {
         yield* fs.chmod(target, info.mode | read);
       }
     }
-  });
-}
+  },
+  Effect.mapError((failure) => launcherError("install", failure.message)),
+);
 
 /**
  * Removes every installed prefix and cached tarball in `directory` that

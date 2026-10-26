@@ -240,10 +240,14 @@ export function makeStore(
   };
 }
 
-function makeServices(fixture: Fixture) {
+function makeServices(fixture: Fixture, result: "registered" | "name_taken") {
   const registry: Context.Tag.Service<typeof Registry> = {
     register: () =>
-      Effect.succeed({ kind: "registered", agentCard: fixture.localCard }),
+      Effect.succeed(
+        result === "registered"
+          ? { kind: "registered", agentCard: fixture.localCard }
+          : { kind: result },
+      ),
     lookup: () => Effect.succeed({ kind: "not_found" }),
     list: () =>
       Effect.succeed({ kind: "page", agentCards: [], hasMore: false }),
@@ -425,8 +429,9 @@ export const run = (
   fixture: Fixture,
   store: EndpointStore,
   harness: RuntimeHarness,
+  refusal?: "name_taken",
 ) => {
-  const services = makeServices(fixture);
+  const services = makeServices(fixture, refusal ?? "registered");
   return readDaemonRegistrationState({
     store,
     bootstrap: fixture.bootstrap,

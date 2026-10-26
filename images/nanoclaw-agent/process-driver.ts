@@ -435,7 +435,7 @@ async function prepareSession(
 /**
  * Stop the live session once when the host shuts down. NanoClaw leaves sessions
  * for a later host to adopt, while this container owns the session's lifetime.
- * The container's termination grace must cover STOP_GRACE_SECONDS and KILL_WAIT_MILLIS.
+ * The container's termination grace must cover the session's stopGraceSeconds and KILL_WAIT_MILLIS.
  */
 function stopWithHost(state: DriverState): Promise<undefined> {
   state.hostShutdown ??= stopLiveSession(state);

@@ -32,7 +32,7 @@ _Variable_
 
 Usage text listing the daemon process's environment variables.
 
-### [`layer`](./index.ts#L178)
+### [`layer`](./index.ts#L184)
 
 _Variable_
 
@@ -56,7 +56,13 @@ _Class_
       | "outbox-too-old"
       | "newer-schema"
       | "pre-reset"
-      | "legacy-key";
+      | "legacy-key"
+      | "name_taken"
+      | "key_already_registered"
+      | "idempotency_conflict"
+      | "dependency-unavailable"
+      | "persistence-failed"
+      | "incompatible-daemon";
     readonly keys?: readonly string[];
     readonly detail?: string;
   }> {
@@ -82,7 +88,7 @@ _Class_
 
 Closed startup phase with sanitized configuration details.
 
-### [`withFirewall`](./index.ts#L188)
+### [`withFirewall`](./index.ts#L194)
 
 _Function_
 

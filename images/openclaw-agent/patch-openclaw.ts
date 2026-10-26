@@ -387,9 +387,9 @@ const WORKER_EDITS: readonly AnchoredEdit[] = [
  * Every edit, in application order, across the gateway and both worker builds.
  */
 export const EDITS: readonly Edit[] = Object.freeze([
-  ...CHUNK_EDITS.map((edit) => ({ ...edit, copies: 1 })),
-  ...SQLITE_EDITS.map((edit) => ({ ...edit, copies: 1 })),
-  ...WORKER_EDITS.map((edit) => ({ ...edit, copies: 1 })),
+  ...CHUNK_EDITS,
+  ...SQLITE_EDITS,
+  ...WORKER_EDITS,
 ]);
 
 /**
@@ -407,22 +407,19 @@ if (import.meta.main) {
   await main();
 }
 
-/** One anchored text replacement, before its copy count is known. */
+/** One anchored text replacement in exactly one dist file. */
 export interface AnchoredEdit {
   /** Stable name reported in the marker file and build log. */
   readonly id: string;
   readonly description: string;
-  /** Exact text that must occur once in each of `copies` files under the dist root. */
+  /** Exact text that must occur once in one file under the dist root. */
   readonly before: string;
   /** The replacement, or a function of the imports it needs from other chunks. */
   readonly after: string;
 }
 
-/** An anchored edit with the number of dist files that carry its anchor. */
-export interface Edit extends AnchoredEdit {
-  /** The number of files that must carry the exact anchor. */
-  readonly copies: number;
-}
+/** An edit applied to exactly one dist file. */
+export type Edit = AnchoredEdit;
 
 /** An edit as the marker file and build log report it. */
 export interface AppliedEdit {
@@ -454,7 +451,7 @@ interface AnchorScan {
  * Applies every edit under the OpenClaw `dist` directory `distRoot`, or with
  * `dryRun` only reports what it would apply. It throws before writing
  * anything when any anchor is missing, repeated in a file, or found in a
- * different number of files than its edit's `copies`.
+ * number of files other than one.
  */
 export async function applyOpenClawPatch(
   distRoot: string,
@@ -569,18 +566,14 @@ function anchorProblems(
   edit: Edit,
   where: readonly AnchorHit[],
 ): string[] {
-  if (where.length === edit.copies && where.every((hit) => hit.count === 1)) {
+  if (where.length === 1 && where.every((hit) => hit.count === 1)) {
     return [];
   }
-  const expected =
-    edit.copies === 1 ? "one file" : `each of ${String(edit.copies)} files`;
   const found =
     where
       .map((hit) => `${relative(distRoot, hit.file)} x${String(hit.count)}`)
       .join(", ") || "nothing";
-  return [
-    `${edit.id}: expected the anchor once in ${expected}, found ${found}`,
-  ];
+  return [`${edit.id}: expected the anchor once in one file, found ${found}`];
 }
 
 /** `text` of `file` with every edit whose anchor it carries applied in order. */

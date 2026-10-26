@@ -19,10 +19,19 @@ other process inputs:
 
 Supply all three or none. On an unregistered start the daemon calls the same
 management registration operation as the owner `register` tool, once, before
-it listens. A refusal or operation failure stops startup in phase `registration`.
+it listens. Before identity binding, a refusal or operation failure stops startup
+in phase `registration`. The closed `reason` retains `name_taken`,
+`key_already_registered`, or `idempotency_conflict` for Registry refusals, and
+`dependency-unavailable`, `persistence-failed`, or `incompatible-daemon` for
+operation failures. Once binding succeeds, activation failures use phase
+`listener` for an unavailable upstream and `storage` for all other causes,
+whether activation follows startup registration, owner registration, or restart.
 An active registration is retained even when the configured request differs;
 its admission credential is not read. Without these settings the unregistered
-daemon listens for owner registration as usual.
+daemon listens for owner registration as usual. Keep registration settings fixed
+for a signing key. Persist daemon state for that key's lifetime. Lost state
+requires a new signing key and a new OperationId; replaying registration with
+the old key and OperationId cannot recover its earlier signing history.
 
 
 The daemon binds only `127.0.0.1:<SHARNESS_MCP_PORT>/mcp`. Its remaining exact
@@ -44,8 +53,8 @@ and treats an unset or empty variable as absent, so a deployment can remove
 the credential after registration succeeds. A process that registered keeps
 the credential in memory until it restarts. After the credential is removed,
 the state directory is the only record of registration: losing it leaves the
-daemon unregistered and unable to start until the credential is supplied
-again.
+daemon unregistered. Recovery requires a new signing key and OperationId, with
+admission credentials for the new registration.
 
 The optional input `SHARNESS_HISTORY_EXPORT` names a file the daemon appends
 one `HistoryExportRecord` JSON line to for every inbound item the daemon
@@ -388,10 +397,9 @@ Storage stops log the closed cause without message
 content, credentials, or SQLite diagnostics. Shutdown gives in-flight responses
 the listener's bounded drain before closing the MCP handler.
 
-A failure or defect while the protocol activates, at startup or after a
-registration binds, also stops the daemon: a Router it cannot reach in phase
-`listener`, anything else in phase `storage`. The failure and its cause are
-logged.
+A failure or defect while the protocol activates also stops the daemon under
+the phase rule in [Process and configuration](#process-and-configuration).
+The failure and its cause are logged.
 
 Acceptance covers single-process store ownership, explicit configuration,
 registration recovery, address-based management, signer-evidence audit,
@@ -421,9 +429,17 @@ same absolute path and loads its channel through `current`. The installed seed
 and selected releases live on that volume, readable by the host user. No secret
 files live there.
 
-Kubernetes runs the daemon as a native sidecar with an exec startup probe
-against its loopback MCP port. The probe succeeds only after registration and
-activation, before Kubernetes starts the host. Docker runs the host with
+Kubernetes runs `sharnessd-launcher prepare` with upgrades on in a regular init
+container after copying the image seed into a fresh launcher `emptyDir`. It then
+runs the daemon as a native sidecar with `SHARNESS_LAUNCHER_UPGRADE=off` and an
+exec startup probe against its loopback MCP port. This selects a release once
+per Pod before the host loads the channel and keeps it throughout sidecar
+restarts. With startup registration configured, the probe succeeds only after
+registration and activation. With no registration settings, it can succeed
+before registration. Kubernetes waits for it before starting the host. Daemon
+state uses a persistent volume. Docker uses a fresh anonymous launcher volume
+per daemon container so a new image supplies its own seed and launcher; never
+reuse a launcher volume across image versions. Docker runs the host with
 `--network container:<daemon>` after the daemon listens. The daemon's secret
 files and state directory are mounted only in its container. Each host receives
 `SHARNESS_MCP_URL` and connects in trusted-local mode over the shared loopback

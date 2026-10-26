@@ -2,7 +2,6 @@
 *
 !entrypoint.ts
 !gateway.ts
-!host-command.json
 !nanoclaw-v2.3.0.patch
 !pnpm-lock.yaml
 !preload.ts

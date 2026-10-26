@@ -3,8 +3,15 @@
 import assert from "node:assert/strict";
 import { type ChildProcess, spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdtempSync } from "node:fs";
-import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { closeSync, mkdtempSync, openSync, readFileSync } from "node:fs";
+import {
+  chmod,
+  mkdir,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { constants, tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
@@ -82,7 +89,21 @@ test("a failed doctor ends the host with its code and never starts the gateway",
   assert.equal(await gatewayStarted(fake.record), false);
 });
 
-test("a start keeps the image channel configuration", async () => {
+test("a missing configuration path ends the host with a clear error", async () => {
+  const { code, stderr } = await runHost({ OPENCLAW_CONFIG_PATH: "" });
+  assert.equal(code, 1);
+  assert.match(stderr, /OPENCLAW_CONFIG_PATH is required/u);
+});
+
+test("a missing launcher release ends the host with a clear error", async () => {
+  const { code, stderr } = await runHost({
+    SHARNESS_LAUNCHER_DIRECTORY: temporaryDirectory("missing-release-"),
+  });
+  assert.equal(code, 1);
+  assert.match(stderr, /launcher current release is missing/u);
+});
+
+test("a start selects the image channel configuration", async () => {
   const fake = await fakeOpenClaw();
   const root = temporaryDirectory("social-harness-channel-config-");
   const configPath = join(root, "openclaw.json");
@@ -103,7 +124,10 @@ test("a start keeps the image channel configuration", async () => {
   });
 
   assert.equal(code, 0);
-  assert.equal(await readFile(configPath, "utf8"), config);
+  assert.match(
+    await readFile(configPath, "utf8"),
+    /social-harness-launcher-.+current/u,
+  );
 });
 
 test("a failed apply ends the host with its code and never starts the gateway", async () => {
@@ -199,17 +223,14 @@ test("an agent that already holds an OpenAI profile keeps it and is not imported
   assert.equal(await gatewayStarted(fake.record), true);
 });
 
-test("a run without a Codex login imports nothing", async () => {
-  const fake = await fakeOpenClaw();
-
-  await runHost({ OPENCLAW_ENTRY: fake.entry });
-
-  assert.equal(
-    (await commandsRun(fake.record)).some(
-      (command) => command[0] === "migrate",
-    ),
-    false,
-  );
+test("a failed auth profile listing ends the host", async () => {
+  const fake = await fakeOpenClaw({ models: "fail" });
+  const { code, stderr } = await runHost({
+    OPENCLAW_ENTRY: fake.entry,
+    HOME: await homeWithCodexLogin(),
+  });
+  assert.equal(code, 1);
+  assert.match(stderr, /auth profile listing failed/u);
 });
 
 test("a failed Codex login import ends the host with its code and never starts the gateway", async () => {
@@ -242,7 +263,7 @@ type FakeBehaviour = "ok" | "profile" | "fail" | "die" | "wait";
 /** The stand-in's behaviour per OpenClaw command; an absent one succeeds. */
 interface FakeOptions {
   readonly doctor?: "ok" | "fail";
-  readonly models?: "ok" | "profile";
+  readonly models?: "ok" | "profile" | "fail";
   readonly migrate?: "ok" | "fail";
   readonly secrets?: "ok" | "fail" | "die";
   readonly gateway?: "ok" | "wait";
@@ -347,34 +368,40 @@ async function homeWithCodexLogin(): Promise<string> {
  * Runs the wrapper with `environment` added to the host environment, and
  * hands the child to `onStart` so a test can signal it.
  */
-function runHost(
+async function runHost(
   environment: Record<string, string>,
   onStart?: (child: ChildProcess) => void,
 ): Promise<HostExit> {
-  return new Promise((resolve, reject) => {
+  const launcher = temporaryDirectory("social-harness-launcher-");
+  await mkdir(join(launcher, "seed"));
+  await symlink(join(launcher, "seed"), join(launcher, "current"));
+  const configPath = join(launcher, "openclaw.json");
+  await writeFile(configPath, "{}");
+  const diagnosticPath = join(launcher, "host.stderr");
+  const diagnosticFile = openSync(diagnosticPath, "w");
+  return await new Promise((resolve, reject) => {
     refuseAfterEnd();
-    const child = spawn("bash", [HOST], {
+    const child = spawn("/bin/bash", [HOST], {
       detached: true,
       env: {
         ...hostEnvironment,
+        SHARNESS_LAUNCHER_DIRECTORY: launcher,
+        OPENCLAW_CONFIG_PATH: configPath,
         HOME: temporaryDirectory("moltzap-openclaw-home-"),
         ...environment,
       },
-      stdio: ["ignore", "ignore", "pipe"],
+      stdio: ["ignore", "ignore", diagnosticFile],
     });
     hosts.push(child);
-    let stderr = "";
-    child.stderr.on("data", (chunk) => {
-      stderr += String(chunk);
-    });
     child.once("error", reject);
     child.once("close", (code, signal) => {
+      closeSync(diagnosticFile);
       const pid = child.pid;
       resolve({
         ...(pid === undefined ? {} : { pid }),
         code,
         signal,
-        stderr,
+        stderr: readFileSync(diagnosticPath, "utf8"),
       });
     });
     onStart?.(child);

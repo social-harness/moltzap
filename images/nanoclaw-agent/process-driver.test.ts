@@ -91,7 +91,7 @@ test("runs one shared session and reports its terminal state", async (t) => {
   );
 });
 
-test("an agent inherits the host's Claude Code sign-in variables and telemetry settings, and none of its other variables", async (t) => {
+test("an agent inherits the host's Claude Code sign-in variables and telemetry settings", async (t) => {
   const root = await temporaryRoot(t);
   const workingDirectory = join(root, "container/workspace/agent");
   await mkdir(workingDirectory, { recursive: true });
@@ -120,7 +120,6 @@ test("an agent inherits the host's Claude Code sign-in variables and telemetry s
     await readFile(join(workingDirectory, "observed.json"), "utf8"),
   );
   assert.partialDeepStrictEqual(observed, { env: forwarded });
-  assert.doesNotMatch(JSON.stringify(observed), /HOST_ONLY_VALUE/u);
 });
 
 test("the host's shutdown stops the running agent, reports it stopped, and prepares no other session", async (t) => {

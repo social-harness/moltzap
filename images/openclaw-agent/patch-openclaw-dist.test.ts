@@ -40,7 +40,7 @@ test("a patched dist is refused and left as it was", async () => {
   }
 });
 
-test("an anchor found in more files than its edit has copies is refused", async () => {
+test("an anchor found in multiple files is refused", async () => {
   const root = await stagedDist();
   try {
     await writeFile(join(root, "copy.mjs"), editNamed("gate").before);

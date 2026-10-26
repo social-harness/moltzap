@@ -7,6 +7,7 @@ export { acquireHarnessMcpHttpServer, LOOPBACK_HOST } from "./http.js";
 /** Owner-tool results the service returns through the catalog. */
 export type {
   ManagementReadConversationResult,
+  ManagementRegisterRequest,
   ManagementRegisterResult,
   ManagementSearchAgentsResult,
   ManagementSearchConversationsRequest,

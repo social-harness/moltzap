@@ -385,7 +385,6 @@ const rejectsMissingAuthority = () =>
     writeFileSync(join(directory, "runtime"), runtimeToken);
     expect(yield* failureReason(bootstrap)).toBe("mcp-owner-credential-file");
   });
-// @agent-code-guard/regression-only: exact file bytes and distinct roles are the tunnel authority boundary.
 describe("startup registration configuration", () => {
   it(
     "loads a complete request and rejects partial or invalid settings",
@@ -393,6 +392,7 @@ describe("startup registration configuration", () => {
   );
 });
 
+// @agent-code-guard/regression-only: exact file bytes and distinct roles are the tunnel authority boundary.
 describe("MCP credential configuration", () => {
   it(
     "loads distinct redacted credentials and retains trusted-local default",

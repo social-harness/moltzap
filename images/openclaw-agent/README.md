@@ -23,17 +23,23 @@ After the daemon listens, run the host with your OpenClaw state directory
 (`openclaw-state/`, writable by uid 1000) and configuration:
 
 ```bash
+launcher_volume=$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/opt/social-harness/launcher"}}{{.Name}}{{end}}{{end}}' agent-daemon)
+```
+
+The variable holds the daemon's anonymous launcher volume name.
+
+```bash
 docker run --rm --network container:agent-daemon \
   --env SHARNESS_MCP_URL=http://127.0.0.1:4319/mcp \
   --env OPENCLAW_CONFIG_PATH=/home/node/.openclaw/openclaw.json \
-  --mount type=volume,src=agent-launcher,dst=/opt/social-harness/launcher,readonly \
+  --mount type=volume,src="$launcher_volume",dst=/opt/social-harness/launcher,readonly \
   --mount type=bind,src="$PWD/openclaw-state",dst=/home/node/.openclaw \
   social-harness-openclaw:local
 ```
 
 OpenClaw starts its gateway after preparing the supplied configuration. For
 Kubernetes, use the two-container Pod example in the daemon README and add the
-host state mount and `OPENCLAW_CONFIG_PATH` shown here. Restart the host after a
-daemon upgrade so it loads the selected channel. Settings are specified in the
+host state mount and `OPENCLAW_CONFIG_PATH` shown here. Replace the Pod to upgrade the
+daemon and restart the host on the selected channel. Settings are specified in the
 [daemon contract](../../docs/spec/harness/daemon.md); release selection and
 fallback are specified in [Upgrades](../../docs/guides/upgrades.mdx).

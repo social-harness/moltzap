@@ -4,7 +4,7 @@ import { Data, type Effect, type Redacted } from "effect";
 import type { MessagePolicyConfigurationFailure } from "../firewall/index.js";
 import type {
   HarnessMcpCredentials,
-  HarnessMcpOperations,
+  ManagementRegisterRequest,
 } from "../harness/mcp/index.js";
 import type {
   AgentSigningAuthority,
@@ -35,7 +35,7 @@ export class DaemonConfigurationError extends Data.TaggedError(
 
 /** Exact non-secret values and redacted secret-file locations for one daemon. */
 export interface DaemonProcessConfiguration {
-  readonly registration?: Parameters<HarnessMcpOperations["register"]>[0];
+  readonly registration?: ManagementRegisterRequest;
   readonly stateDirectory: string;
   readonly mcpPort: number;
   readonly registryOrigin: URL;

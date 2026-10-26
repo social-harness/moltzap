@@ -962,6 +962,29 @@ const stopsWhenActivationFails = (row: ActivationFault) =>
     expect(stopped.phase, "phase the daemon stopped in").toBe(row.phase);
   });
 
+/** Startup registration reports the same activation phase as owner registration. */
+const stopsWhenStartupActivationFails = (row: ActivationFault) =>
+  Effect.gen(function* () {
+    const base = yield* makeFixture;
+    const fixture = {
+      ...base,
+      bootstrap: {
+        ...base.bootstrap,
+        configuration: {
+          ...base.bootstrap.configuration,
+          registration: base.registerRequest,
+        },
+      },
+    };
+    const harness = row.harness(yield* makeHarness(fixture, "none"));
+    const stopped = yield* run(
+      fixture,
+      row.store(makeStore(fixture, false)),
+      harness,
+    ).pipe(Effect.flip);
+    expect(stopped.phase).toBe(row.phase);
+  });
+
 /** A listener the operating system refused to open. */
 class ListenerUnavailableError extends Data.TaggedError(
   "ListenerUnavailableError",
@@ -1144,16 +1167,17 @@ const failsStartupRegistration = () =>
           ...base.bootstrap.configuration,
           registration: {
             ...base.registerRequest,
-            agentName: Schema.decodeUnknownSync(AgentName)("different-agent"),
           },
         },
       },
     };
     const harness = yield* makeHarness(fixture, "none");
     const failure = yield* Effect.flip(
-      run(fixture, makeStore(fixture, false), harness),
+      run(fixture, makeStore(fixture, false), harness, "name_taken"),
     );
-    expect(failure).toEqual(new DaemonRuntimeError({ phase: "registration" }));
+    expect(failure).toEqual(
+      new DaemonRuntimeError({ phase: "registration", reason: "name_taken" }),
+    );
   });
 
 describe("daemon runtime composition", () => {
@@ -1220,6 +1244,10 @@ describe("daemon activation", () => {
   it.each(activationFaults)(
     "stops the daemon when activation $fault",
     stopsWhenActivationFails,
+  );
+  it.each(activationFaults)(
+    "fails startup registration in phase $phase when activation $fault",
+    stopsWhenStartupActivationFails,
   );
   it.each(startupFaults)(
     "fails a registered startup in phase $phase when $fault",

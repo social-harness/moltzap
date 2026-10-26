@@ -1,3 +1,3 @@
 /** @file Agent-image tooling uses the workspace strict lint rules. */
-import { agentImageEslintConfig } from "../../eslint.shared.js";
-export default agentImageEslintConfig(import.meta.dirname);
+import { integrationEslintConfig } from "../../eslint.shared.js";
+export default integrationEslintConfig(import.meta.dirname, ["**/*.ts"]);
