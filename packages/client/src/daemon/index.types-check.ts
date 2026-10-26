@@ -26,7 +26,10 @@ type StartupTagIsExact = Expect<
   Types.Equals<StartupValue["_tag"], "DaemonStartupError">
 >;
 type StartupPhaseIsExact = Expect<
-  Types.Equals<StartupValue["phase"], "configuration" | "storage" | "listener">
+  Types.Equals<
+    StartupValue["phase"],
+    "configuration" | "storage" | "listener" | "registration"
+  >
 >;
 type StartupReasonIsExact = Expect<
   Types.Equals<
