@@ -91,7 +91,10 @@ path is:
     `parseMessageText` and performs it as one Client operation, returning a
     gather's or all_gather's `operationId` or failing with the parser's or the
     Client's error. The tool result carries the local firewall's `guidance`
-    when it admitted the send with an uncertain norm judgment. The
+    when it admitted the send with an uncertain norm judgment: a structured
+    object with `checkId`, `subjects`, and `instructions`. Each instruction has
+    `ruleId`, `uncertain` (`choice` and `probability`), and `instruction`, without
+    `middlewareId`. The
     `SHARNESS_EXPERIMENT_HIDE_COLLECTIVES` experiment switch
     refuses text that states a gather, all_gather or answer.
 

@@ -8,7 +8,7 @@ Personal firewall composition for code and English policies.
 
 ## Public surface
 
-### [`makeEnglishPolicy`](./english.ts#L274)
+### [`makeEnglishPolicy`](./english.ts#L249)
 
 _Variable_
 
@@ -75,13 +75,12 @@ rules were fixed, and never changes checking.
 flowchart TD
   I[Original message and context] --> A[Applicability]
   A --> S[Personal trust]
-  S --> U[Autonomy]
-  U --> N[Norm expectations from permitted evidence]
+  S --> N[Norm expectations from permitted evidence]
   N --> C[Outgoing conformance against the settled expectations]
   C --> R[Return all findings and private stage trace]
 ```
 
-### [`makeFirewall`](./index.ts#L71)
+### [`makeFirewall`](./index.ts#L70)
 
 _Variable_
 
@@ -126,23 +125,7 @@ flowchart TD
   D --> R[Return to Client for enforcement]
 ```
 
-### [`makeJevDecisionProvider`](./jev.ts#L182)
-
-_Function_
-
-```ts
-export function makeJevDecisionProvider(options: {
-  readonly apiKey: Redacted.Redacted;
-  readonly model: string;
-}): DecisionProvider
-```
-
-Uses the fixed TypeSafe origin and an explicitly pinned model. No retry,
-environment lookup or credential serialization occurs here. The evaluator
-owns timeouts; the Effect is interruptible through response-body consumption.
-
 ## Files
 
 - `english.ts`
 - `index.ts`
-- `jev.ts`

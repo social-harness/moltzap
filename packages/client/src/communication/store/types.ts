@@ -82,6 +82,7 @@ export const MAXIMUM_RUNTIME_ITEM_BYTES = 2 * 1024 * 1024;
 
 /** One conversation's evidence window before one candidate. */
 export interface FirewallEvidenceSlice {
+  readonly pendingOutgoing: boolean;
   readonly history: ReadonlyArray<FirewallHistoryEntry | FirewallLocalEntry>;
   readonly overflow: boolean;
   readonly earlierHistoryOmitted: boolean;
@@ -91,7 +92,6 @@ export interface FirewallEvidenceSlice {
 /** Older records outside the window are distinct from a byte-bound evidence gap. */
 export interface FirewallEvidence extends FirewallEvidenceSlice {
   readonly revision: number;
-  readonly pendingOutgoing: boolean;
 }
 
 /**
@@ -110,7 +110,6 @@ export interface FirewallEvidenceRange {
 /** Several windows read at one evidence revision, one per checked text of a result. */
 export interface FirewallEvidenceSlices {
   readonly revision: number;
-  readonly pendingOutgoing: boolean;
   readonly slices: readonly FirewallEvidenceSlice[];
 }
 
@@ -432,10 +431,9 @@ export interface EndpointStore {
     rules: Uint8Array,
     activation?: FirewallActivation,
   ) => Effect.Effect<void, EndpointStoreError>;
-  /** Recent edits, or ascending bounded pages for a complete shutdown snapshot. */
+  /** Recent edits ordered by activation time, newest first. */
   readonly readFirewallActivations: (request: {
     readonly since?: number;
-    readonly after?: number;
   }) => Effect.Effect<
     ReadonlyArray<{
       readonly sequence: number;
@@ -450,6 +448,7 @@ export interface EndpointStore {
     ReadonlyArray<FirewallAuditEntry & { readonly time: number }>,
     EndpointStoreError
   >;
+  /** Store test seam for retained attempts, including checks in progress. */
   readonly readFirewallAuditPage: (
     after: number,
   ) => Effect.Effect<readonly FirewallAuditEntry[], EndpointStoreError>;

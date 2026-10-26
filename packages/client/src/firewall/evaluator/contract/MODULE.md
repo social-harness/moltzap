@@ -8,7 +8,7 @@ Validated evidence and shared code/English middleware contracts.
 
 ## Public surface
 
-### [`CheckInputError`](./index.ts#L255)
+### [`CheckInputError`](./index.ts#L233)
 
 _Class_
 
@@ -20,7 +20,7 @@ export class CheckInputError extends Data.TaggedError("CheckInputError")<{
 
 Invalid construction or evidence is a typed failure, never permission.
 
-### [`DecisionProvider`](./index.ts#L401)
+### [`DecisionProvider`](./index.ts#L410)
 
 _Interface_
 
@@ -36,7 +36,7 @@ export interface DecisionProvider {
 
 Entirely code-based chains have no dependency on this optional capability.
 
-### [`DecisionProviderError`](./index.ts#L379)
+### [`DecisionProviderError`](./index.ts#L388)
 
 _Class_
 
@@ -65,7 +65,7 @@ export class DecisionProviderError extends Data.TaggedError(
 
 The adapter scrubs credentials before retaining optional private diagnostics.
 
-### [`DecisionRequest`](./index.ts#L343)
+### [`DecisionRequest`](./index.ts#L353)
 
 _Interface_
 
@@ -90,7 +90,7 @@ export interface DecisionRequest {
 
 Provider input contains explicit questions and state, never execution authority.
 
-### [`DecisionResponse`](./index.ts#L361)
+### [`DecisionResponse`](./index.ts#L371)
 
 _Interface_
 
@@ -105,7 +105,6 @@ export class DecisionResponse extends Schema.Class<DecisionResponse>(
     value: Schema.Struct({
       choice: identifier,
       probabilities: Schema.Record({ key: identifier, value: probability }),
-      confidence: Schema.optional(probability),
     }),
   }),
   usage: Schema.Record({ key: identifier, value: Schema.NonNegativeInt }),
@@ -113,9 +112,9 @@ export class DecisionResponse extends Schema.Class<DecisionResponse>(
 }) {}
 ```
 
-Raw distributions and provider confidence survive routing unchanged.
+Raw provider bytes and distributions survive routing unchanged.
 
-### [`EnglishPolicySettings`](./index.ts#L326)
+### [`EnglishPolicySettings`](./index.ts#L337)
 
 _Interface_
 
@@ -131,7 +130,7 @@ export class EnglishPolicySettings extends Schema.Class<EnglishPolicySettings>(
 
 Bytes bound allocation, not tokenizer capacity; probability is a routing setting.
 
-### [`EnglishRule`](./index.ts#L132)
+### [`EnglishRule`](./index.ts#L117)
 
 _Interface_
 
@@ -144,7 +143,7 @@ export class EnglishRule extends Schema.Class<EnglishRule>("EnglishRule")({
 
 Text is interpreted by the provider; it is never compiled into executable code.
 
-### [`Firewall`](./index.ts#L314)
+### [`Firewall`](./index.ts#L325)
 
 _Interface_
 
@@ -157,13 +156,13 @@ export interface Firewall {
   readonly checkOutgoing: (
     draft: Message,
     context: MessageContext,
-  ) => Effect.Effect<OutgoingCheck, CheckInputError>;
+  ) => Effect.Effect<FirewallCheck, CheckInputError>;
 }
 ```
 
 Checking returns data; Client separately owns fresh, atomic send/delivery admission.
 
-### [`FirewallPolicyError`](./index.ts#L627)
+### [`FirewallPolicyError`](./index.ts#L641)
 
 _Class_
 
@@ -171,6 +170,7 @@ _Class_
 export class FirewallPolicyError extends Data.TaggedError(
   "FirewallPolicyError",
 )<{
+  readonly ruleId?: string;
   readonly reason:
     | "not-configured"
     | "invalid-rule"
@@ -182,7 +182,7 @@ export class FirewallPolicyError extends Data.TaggedError(
 
 A failed edit never replaces the active installation or retained editable document.
 
-### [`FirewallSettings`](./index.ts#L245)
+### [`FirewallSettings`](./index.ts#L223)
 
 _Interface_
 
@@ -216,7 +216,7 @@ export class Message extends Schema.Class<Message>("Message")({
 Attribution is supplied by Client, never inferred from names in the body.
 `operation` is absent for a plain message.
 
-### [`MessageContext`](./index.ts#L75)
+### [`MessageContext`](./index.ts#L65)
 
 _Interface_
 
@@ -246,18 +246,12 @@ export class MessageContext extends Schema.Class<MessageContext>(
     }),
   ),
   gaps: Schema.Array(Schema.NonEmptyString),
-  authorization: Schema.Union(
-    Schema.Struct({ kind: Schema.Literal("absent") }),
-    approval,
-  ),
 }) {}
 ```
 
-Trusted composition supplies authorized earlier evidence and candidate-specific
-approval. Agent identity and principal identity have different meanings.
-The first live composition supplies absent approval.
+Trusted composition supplies authorized earlier evidence and distinct agent and principal identities.
 
-### [`MessageMiddleware`](./index.ts#L233)
+### [`MessageMiddleware`](./index.ts#L211)
 
 _Interface_
 
@@ -278,7 +272,7 @@ Code and English policies have the same contract. Registered code is trusted;
 it receives no conversation or store capability and must not retain conversation
 state or perform messaging side effects.
 
-### [`MiddlewareError`](./index.ts#L199)
+### [`MiddlewareError`](./index.ts#L178)
 
 _Class_
 
@@ -295,7 +289,7 @@ export class MiddlewareError extends Data.TaggedError("MiddlewareError")<{
 
 Operational failures carry closed reasons, never arbitrary exception text.
 
-### [`MiddlewareInput`](./index.ts#L220)
+### [`MiddlewareInput`](./index.ts#L199)
 
 _Interface_
 
@@ -305,13 +299,12 @@ export class MiddlewareInput extends Schema.Class<MiddlewareInput>(
 )({
   event: messageEvent,
   context: MessageContext,
-  previous: Schema.Array(MiddlewareObservation),
 }) {}
 ```
 
-Each invocation gets immutable evidence and previously validated observations.
+Each invocation gets immutable message evidence and authorized context.
 
-### [`MiddlewareResult`](./index.ts#L190)
+### [`MiddlewareResult`](./index.ts#L169)
 
 _Interface_
 
@@ -327,7 +320,7 @@ export class MiddlewareResult extends Schema.Class<MiddlewareResult>(
 
 A result is atomic: interrupted middleware has no returned partial findings.
 
-### [`RuleDescription`](./index.ts#L116)
+### [`RuleDescription`](./index.ts#L102)
 
 _Interface_
 
@@ -336,8 +329,7 @@ export class RuleDescription extends Schema.Class<RuleDescription>(
   "RuleDescription",
 )({
   id: identifier,
-  kind: Schema.Literal("safety", "autonomy", "norm"),
-  source: Schema.optional(identifier),
+  kind: Schema.Literal("safety", "norm"),
   guidance: Schema.optional(Schema.NonEmptyString),
   feedback: Schema.optional(
     Schema.Struct({

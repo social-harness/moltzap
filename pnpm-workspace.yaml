@@ -65,7 +65,7 @@ catalog:
   typescript: npm:@typescript/typescript6@6.0.2
   undici: 7.30.1
   vitest: 3.2.4
-  yaml: ^2.9.1
+  yaml: 2.9.1
 
 overrides:
   effect: 3.22.1

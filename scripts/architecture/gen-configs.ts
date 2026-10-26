@@ -270,6 +270,21 @@ const clientDomains: readonly ClientDomain[] = [
       "Client package release metadata used by MCP peers, policy provenance and telemetry",
   },
   {
+    name: "firewall-evaluator",
+    root: "firewall/evaluator",
+    entrypoints: [
+      "index.ts",
+      {
+        file: "contract/index.ts",
+        host: true,
+        reason:
+          "Data-only firewall check schemas shared by evaluation and host-safe refusal projections",
+      },
+    ],
+    reason:
+      "Code and English evaluation and their shared evidence and check contracts",
+  },
+  {
     name: "firewall-outcome",
     host: true,
     root: "firewall/outcome",
@@ -278,13 +293,6 @@ const clientDomains: readonly ClientDomain[] = [
       "Closed refusal and guidance schemas hosts and communication decode without loading policy evaluation or provider clients",
   },
 
-  {
-    name: "firewall-evaluator",
-    root: "firewall/evaluator",
-    entrypoints: ["index.ts"],
-    reason:
-      "Isolated code and English evaluation depends on encoding, runtime-safe outcomes and packages",
-  },
   {
     name: "router-api",
     root: "communication/router/api",
@@ -430,7 +438,7 @@ const clientDomains: readonly ClientDomain[] = [
     root: "firewall",
     entrypoints: ["index.ts"],
     reason:
-      "Personal firewall evaluation, rules, policy, admission and audit above communication collectives",
+      "Personal firewall evaluation, rules, policy, admission and retained checks above communication collectives",
   },
   {
     name: "harness-inbox",

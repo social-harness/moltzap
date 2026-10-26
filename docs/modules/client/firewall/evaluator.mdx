@@ -13,7 +13,7 @@ Personal firewall composition for code and English policies.
 
 ## Public surface
 
-### [`makeEnglishPolicy`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/firewall/evaluator/english.ts#L274)
+### [`makeEnglishPolicy`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/firewall/evaluator/english.ts#L249)
 
 _Variable_
 
@@ -80,13 +80,12 @@ rules were fixed, and never changes checking.
 flowchart TD
   I[Original message and context] --> A[Applicability]
   A --> S[Personal trust]
-  S --> U[Autonomy]
-  U --> N[Norm expectations from permitted evidence]
+  S --> N[Norm expectations from permitted evidence]
   N --> C[Outgoing conformance against the settled expectations]
   C --> R[Return all findings and private stage trace]
 ```
 
-### [`makeFirewall`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/firewall/evaluator/index.ts#L71)
+### [`makeFirewall`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/firewall/evaluator/index.ts#L70)
 
 _Variable_
 
@@ -131,23 +130,7 @@ flowchart TD
   D --> R[Return to Client for enforcement]
 ```
 
-### [`makeJevDecisionProvider`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/firewall/evaluator/jev.ts#L182)
-
-_Function_
-
-```ts
-export function makeJevDecisionProvider(options: {
-  readonly apiKey: Redacted.Redacted;
-  readonly model: string;
-}): DecisionProvider
-```
-
-Uses the fixed TypeSafe origin and an explicitly pinned model. No retry,
-environment lookup or credential serialization occurs here. The evaluator
-owns timeouts; the Effect is interruptible through response-body consumption.
-
 ## Files
 
 - `english.ts`
 - `index.ts`
-- `jev.ts`

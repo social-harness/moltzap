@@ -122,11 +122,6 @@ const configurationFields = {
     configuredPath,
     undefined,
   ),
-  firewallAuditExport: setting(
-    "SHARNESS_FIREWALL_AUDIT_EXPORT",
-    configuredPath,
-    undefined,
-  ),
 };
 
 const configuredValues = Config.all(configurationFields);
@@ -137,7 +132,7 @@ export const processHelp = [
   "",
   "Environment:",
   "  Admission credential: required only before registration; MCP credential files: supply both or neither.",
-  "  Message policy: unset, no firewall; the decision-provider key and firewall audit export apply only with it.",
+  "  Message policy: unset, no firewall; the decision-provider key applies only with it.",
   ...Object.values(configurationFields).map((field) => `  ${field.usage}`),
   "",
   "Docs: https://docs.moltzap.xyz/spec/harness/daemon#process-and-configuration",

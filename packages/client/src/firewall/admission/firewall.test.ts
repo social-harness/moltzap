@@ -43,6 +43,7 @@ import {
   type MiddlewareInput,
 } from "../evaluator/contract/index.js";
 import { makeEnglishPolicy } from "../evaluator/index.js";
+import { type LocalGuidance, renderLocalGuidance } from "../outcome/index.js";
 
 // @agent-code-guard/regression-only: Exercises durable admission, replay, interruption and races through SQLite and the protocol engine.
 
@@ -130,13 +131,15 @@ function guidanceIncoming() {
     yield* Queue.take(runtime.completed);
     const page = yield* runtime.delivery.operations.readInbox({});
     expect(page.items).toEqual(runtime.published);
-    expect(page.items).toMatchObject([
-      { guidance: { instructions: [{ instruction: rule.guidance }] } },
-    ]);
     expect(page.items[0]?.item).toEqual({
       kind: "multicast",
       message: runtime.candidate.message,
     });
+    expectNamedSubjects(
+      `agent:${subject.remote.card.agentName}`,
+      `agent:${subject.local.card.agentName}`,
+      page.items[0]?.guidance,
+    );
     expect(seen[0]?.context.history).toEqual([]);
     expect(seen[0]?.event.message.sender).toBe(subject.remote.card.agentId);
     expect(seen[0]?.context.participants).toContainEqual({
@@ -149,6 +152,24 @@ function guidanceIncoming() {
       })).guidance,
     ).toEqual(page.items[0]?.guidance);
   });
+}
+
+/** Render production guidance with certified peer and local-agent addresses. */
+function expectNamedSubjects(
+  sender: string,
+  recipient: string,
+  guidance?: LocalGuidance,
+) {
+  if (guidance === undefined) {
+    throw new Error("Expected produced guidance");
+  }
+  expect(guidance).toMatchObject({
+    instructions: [{ instruction: rule.guidance }],
+    subjects: [{ sender, recipients: [recipient] }],
+  });
+  const rendered = renderLocalGuidance(guidance);
+  expect(rendered).toContain(`"sender":"${sender}"`);
+  expect(rendered).toContain(`"recipients":["${recipient}"]`);
 }
 
 it(
@@ -199,7 +220,6 @@ function unsettledIncoming() {
 /** A rounded near-tie, as Jev reports one: the stated choice trails the maximum by one hundredth. */
 const nearTie = {
   choice: "relevant",
-  confidence: 0.25,
   probabilities: { relevant: 0.49, irrelevant: 0.5, unresolved: 0.01 },
 };
 
@@ -308,7 +328,7 @@ function nearTieProvider(rule: EnglishRule): DecisionProvider {
 function certainAnswer(question: DecisionRequest["questions"][string]) {
   const choices = Object.keys(question.criteria);
   const choice =
-    ["compliant", "autonomous", "none", "relevant"].find((candidate) =>
+    ["compliant", "none", "relevant"].find((candidate) =>
       choices.includes(candidate),
     ) ?? "unresolved";
   return {
@@ -426,43 +446,6 @@ function interruptedSend() {
 }
 
 it(
-  "exports the real incoming and outgoing author-scoped post references",
-  auditCorrelatesPosts,
-);
-
-function auditCorrelatesPosts() {
-  return Effect.gen(function* () {
-    const subject = yield* fixture;
-    const allow = policy(() => Effect.succeed(pass));
-    const incoming = yield* incomingFixture(subject, allow);
-    yield* incoming.runPass;
-    yield* Queue.take(incoming.completed);
-    const outgoing = yield* outgoingFixture(subject, allow);
-    const sending = yield* outgoing.operations
-      .send({
-        input: { to: destination, text: "Reply to the certified post" },
-      })
-      .pipe(Effect.forkScoped);
-    yield* Deferred.await(subject.outbound);
-    const intent = (yield* subject.store.recover()).postIntents[0];
-    const checks = yield* auditChecks(subject);
-    expect(
-      checks.find((check) => check.direction === "incoming")?.post,
-    ).toEqual({
-      authorAgentId: subject.remote.card.agentId,
-      postId: incoming.candidate.message.postId,
-    });
-    expect(
-      checks.find((check) => check.direction === "outgoing")?.post,
-    ).toEqual({
-      authorAgentId: subject.local.card.agentId,
-      postId: intent?.postId,
-    });
-    yield* Fiber.interrupt(sending);
-  });
-}
-
-it(
   "holds a concurrent send when its evidence is incomplete and its recheck is unavailable",
   concurrentSends,
 );
@@ -572,9 +555,10 @@ function installationProvenance() {
       ...policy(() => Effect.succeed(pass)),
       provenance: { format: "provider", data: model },
     };
-    const installed = yield* installation(registration);
+    const subject = yield* fixture;
+    const installed = yield* installation(subject.store, registration);
     registration.provenance.data = "model-two";
-    const changed = yield* installation(registration);
+    const changed = yield* installation(subject.store, registration);
     expect(installed.metadata.incoming[0]?.provenance.data).toBe(model);
     expect(changed.configurationDigest).not.toBe(installed.configurationDigest);
   });
@@ -706,7 +690,7 @@ function ownerHistoryStaysPrivate() {
     const guidance = (yield* runtime.delivery.operations.readInbox({})).items[0]
       ?.guidance;
     expect(guidance).toMatchObject({
-      subjects: [{ sender: subject.remote.card.agentId }],
+      subjects: [{ sender: `agent:${subject.remote.card.agentName}` }],
     });
   });
 }

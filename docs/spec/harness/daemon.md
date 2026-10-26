@@ -76,18 +76,12 @@ calls. Unset, the daemon installs no firewall. An unreadable or invalid
 document, or one whose `jev` decision provider has no readable key in
 `SHARNESS_DECISION_PROVIDER_KEY_FILE`, stops startup in phase `configuration`;
 the error names the setting and, for an invalid document, the paths of the
-invalid properties, never their values. `SHARNESS_FIREWALL_AUDIT_EXPORT` sets
-the document's `auditExport` and requires `SHARNESS_MESSAGE_POLICY_FILE`.
+invalid properties, never their values.
 
 Trusted process code can instead install a firewall of its own with
 `Daemon.withFirewall(options)`; such a daemon refuses
 `SHARNESS_MESSAGE_POLICY_FILE` in phase `configuration`.
 The fixed and editable installation is described in [message policy](./message-policy.md).
-Its optional service-only `auditExport` writes a private retained-check snapshot
-after daemon workers stop and before the endpoint store closes. Operators use
-the [versioned audit decoder](./message-policy.md#operator-audit-snapshot), not
-private SQLite tables. Startup invalidates prior completion; file failures stop
-startup or fail shutdown without publishing a completed snapshot.
 
 There is no profile, selector, discovery fallback, bespoke CLI, Unix socket,
 stdio server, second MCP listener, address override, or product Ledger.
@@ -186,7 +180,7 @@ at gateway start.
 
 ## Persistence
 
-The one SQLite database uses WAL and schema version 9. It stores identity
+The one SQLite database uses WAL and schema version 12. It stores identity
 binding, address/member resolution, durable post intents, proposal locks,
 membership, cards, anchors, record cores, retained signature evidence,
 durability votes, certified heads, catch-up/re-anchor state, and pending
@@ -203,7 +197,7 @@ Every retained action signature and durability vote includes signer AgentId
 and signature bytes. Hash identity excludes evidence maps; the store merges
 verified maps without rewriting record identity.
 
-An absent or empty database initializes at schema 10. A version-0 database is
+An absent or empty database initializes at schema 12. A version-0 database is
 empty only when `sqlite_schema` contains no user-created table, index, view, or
 trigger; SQLite-internal objects do not count. The current schema reopens.
 A newer schema fails with `newer-schema`; a schema below the migration baseline
@@ -228,7 +222,11 @@ A backup restored immediately after that migration fails is safe because the
 daemon has not signed. Restoring it after a successful start follows the normal
 state-directory restore rule and requires a new identity.
 
-There are no production migration steps yet. The reset baseline is schema 10;
+Schema 11 drops the retired `runtime_sends` table. Schema 12 adds the
+`post_intents_unresolved` index on `post_intents(conversation_id)` for rows
+where `completed_record_hash IS NULL`, so per-conversation evidence reads do
+not scan completed intents. Fresh stores include the same index.
+The reset baseline is schema 10;
 all earlier populated stores, including schema-9 stores from the previous
 reset, and any state directory containing `moltzapd.sqlite3` fail with
 `pre-reset`. An empty database initializes normally.
@@ -314,7 +312,10 @@ came about (`judgment`, `uncertain`, `unavailable`, `code`, `endpoint` or
 `default`), and `decidedBy` names the rules that produced it, each with
 where it is defined (`from`: `code`, `fixed` or `editable`, as `policy_read`
 lists it) and its registered `advice` when it has one, as specified by
-[decision reasons](./message-policy.md#decision-reasons).
+[decision reasons](./message-policy.md#decision-reasons). Historical approval
+findings decode as settled holds under `unresolved-evidence` only when the
+retained result reason is `approval-required`; otherwise they decode as
+non-deciding `not-applicable` findings.
 `checkedRuleIds` lists every rule with a finding in the completed chain.
 The feed contains no message text, owner facts or provider traces; its only
 text is the deciding rules' own registered feedback or guidance. Pollers deduplicate by `checkId` and peer; this bounded recent view is
@@ -322,8 +323,7 @@ not a lossless audit stream. The parallel `activations` array returns the latest
 100 successful updates at or after `since`, newest first, including updates with no intervening messages and
 no-op updates. Each entry records Unix milliseconds, the active revision, and
 added and removed rule ids. Replacing a rule lists its id in both arrays; no
-rule text is included. Failed updates produce no activation. The shutdown audit
-remains the complete retained snapshot, including activations.
+rule text is included. Failed updates produce no activation.
 
 Receive uses one [draft MCP Events consumer](./ingress.md#mcp-events-and-inbox).
 Owner-authorized history reads include canonical record cores and verified

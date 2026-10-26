@@ -61,17 +61,7 @@ export type HistoryEntry = typeof HistoryEntry.Type;
 
 /* eslint-enable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Restore naming after the Schema/type pair. */
 
-const approval = Schema.Struct({
-  kind: Schema.Literal("verified"),
-  principal: identifier,
-  candidate: Message,
-});
-
-/**
- * Trusted composition supplies authorized earlier evidence and candidate-specific
- * approval. Agent identity and principal identity have different meanings.
- * The first live composition supplies absent approval.
- */
+/** Trusted composition supplies authorized earlier evidence and distinct agent and principal identities. */
 export class MessageContext extends Schema.Class<MessageContext>(
   "MessageContext",
 )({
@@ -97,10 +87,6 @@ export class MessageContext extends Schema.Class<MessageContext>(
     }),
   ),
   gaps: Schema.Array(Schema.NonEmptyString),
-  authorization: Schema.Union(
-    Schema.Struct({ kind: Schema.Literal("absent") }),
-    approval,
-  ),
 }) {}
 
 /** A direction is assigned by the boundary method, not by a peer's payload. */
@@ -117,8 +103,7 @@ export class RuleDescription extends Schema.Class<RuleDescription>(
   "RuleDescription",
 )({
   id: identifier,
-  kind: Schema.Literal("safety", "autonomy", "norm"),
-  source: Schema.optional(identifier),
+  kind: Schema.Literal("safety", "norm"),
   guidance: Schema.optional(Schema.NonEmptyString),
   feedback: Schema.optional(
     Schema.Struct({
@@ -151,13 +136,7 @@ const policyFinding = Schema.Union(
   }),
   Schema.Struct({
     ruleId: identifier,
-    outcome: Schema.Literal(
-      "pass",
-      "not-applicable",
-      "block",
-      "revise",
-      "approval-required",
-    ),
+    outcome: Schema.Literal("pass", "not-applicable", "block", "revise"),
   }),
   Schema.Struct({
     ruleId: identifier,
@@ -216,13 +195,12 @@ export class MiddlewareObservation extends Schema.Class<MiddlewareObservation>(
   expectations: Schema.Array(NormExpectation),
 }) {}
 
-/** Each invocation gets immutable evidence and previously validated observations. */
+/** Each invocation gets immutable message evidence and authorized context. */
 export class MiddlewareInput extends Schema.Class<MiddlewareInput>(
   "MiddlewareInput",
 )({
   event: messageEvent,
   context: MessageContext,
-  previous: Schema.Array(MiddlewareObservation),
 }) {}
 
 /**
@@ -285,30 +263,63 @@ export type UncertainNormGuidance = typeof UncertainNormGuidance.Type;
 /* eslint-enable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Restore naming after the Schema/type pair. */
 
 /** Private audit is separate from the only fields intended for a runtime. */
-export interface FirewallCheck {
-  readonly judgment: "allow" | "block" | "hold" | "revise";
-  readonly reason:
-    | "eligible"
-    | "prohibited"
-    | "unresolved-evidence"
-    | "check-unavailable"
-    | "norm-violation"
-    | "approval-required";
-  readonly feedback: ReadonlyArray<{
-    readonly nextAction: typeof nextAction.Type;
-    readonly text: string;
-  }>;
-  readonly guidance: ReadonlyArray<NormGuidance | UncertainNormGuidance>;
-  readonly checks: readonly MiddlewareCheck[];
-}
+export const firewallCheckSchema = exactStruct({
+  judgment: Schema.Literal("allow", "block", "hold", "revise"),
+  reason: Schema.Literal(
+    "eligible",
+    "prohibited",
+    "unresolved-evidence",
+    "check-unavailable",
+    "norm-violation",
+  ),
+  feedback: Schema.Array(Schema.Struct({ nextAction, text: Schema.String })),
+  guidance: Schema.Array(
+    Schema.Union(
+      Schema.Struct({
+        ...NormExpectation.fields,
+        middlewareId: Schema.String,
+        instruction: Schema.String,
+      }),
+      UncertainNormGuidance,
+    ),
+  ),
+  checks: Schema.Array(
+    Schema.Struct({
+      ...MiddlewareObservation.fields,
+      /** Wall-clock subtraction can be negative after a clock adjustment. */
+      elapsedMilliseconds: Schema.Finite,
+      failure: Schema.optional(
+        Schema.transform(
+          Schema.Struct({
+            _tag: Schema.Literal("MiddlewareError"),
+            reason: Schema.Literal(
+              "unavailable",
+              "timeout",
+              "invalid-result",
+              "budget",
+              "defect",
+            ),
+          }),
+          Schema.instanceOf(MiddlewareError),
+          {
+            strict: true,
+            decode: (error) => new MiddlewareError(error),
+            encode: (error) => ({ _tag: error._tag, reason: error.reason }),
+          },
+        ),
+      ),
+      trace: Schema.optional(PrivateCheckTrace),
+    }),
+  ),
+});
+
+/** The complete check keeps private traces distinct from runtime advice. */
+export type FirewallCheck = typeof firewallCheckSchema.Type;
 
 /** Incoming checks can guide the recipient but cannot ask the sender to revise. */
 interface IncomingCheck extends FirewallCheck {
   readonly judgment: "allow" | "block" | "hold";
 }
-
-/** A refusal leaves revision to a new explicit agent-authored send attempt. */
-type OutgoingCheck = FirewallCheck;
 
 /** Checking returns data; Client separately owns fresh, atomic send/delivery admission. */
 export interface Firewall {
@@ -319,7 +330,7 @@ export interface Firewall {
   readonly checkOutgoing: (
     draft: Message,
     context: MessageContext,
-  ) => Effect.Effect<OutgoingCheck, CheckInputError>;
+  ) => Effect.Effect<FirewallCheck, CheckInputError>;
 }
 
 /** Bytes bound allocation, not tokenizer capacity; probability is a routing setting. */
@@ -335,7 +346,6 @@ export class EnglishPolicySettings extends Schema.Class<EnglishPolicySettings>(
 export type PolicyStage =
   | "applicability"
   | "safety"
-  | "autonomy"
   | "expectations"
   | "conformance";
 
@@ -357,7 +367,7 @@ export interface DecisionRequest {
   >;
 }
 
-/** Raw distributions and provider confidence survive routing unchanged. */
+/** Raw provider bytes and distributions survive routing unchanged. */
 export class DecisionResponse extends Schema.Class<DecisionResponse>(
   "DecisionResponse",
 )({
@@ -368,7 +378,6 @@ export class DecisionResponse extends Schema.Class<DecisionResponse>(
     value: Schema.Struct({
       choice: identifier,
       probabilities: Schema.Record({ key: identifier, value: probability }),
-      confidence: Schema.optional(probability),
     }),
   }),
   usage: Schema.Record({ key: identifier, value: Schema.NonNegativeInt }),
@@ -509,9 +518,14 @@ const editableRuleSchema = Schema.Union(
   }),
   exactStruct({
     ...ruleFields,
-    kind: Schema.Literal("safety", "autonomy"),
+    kind: Schema.Literal("safety"),
     guidance: EnglishRule.fields.guidance,
   }),
+);
+
+/** The complete editable document shares one bound across seeding, persistence and updates. */
+export const editableDocumentSchema = Schema.Array(editableRuleSchema).pipe(
+  Schema.maxItems(256),
 );
 
 /** Removing and adding the same editable id replaces it in one activation. */
@@ -567,7 +581,7 @@ export const firewallDecisionsRequestSchema = exactStruct({
 });
 
 /** Activation metadata contains rule ids only, never their text or templates. */
-export const firewallActivationSchema = exactStruct({
+const firewallActivationSchema = exactStruct({
   time: Schema.NonNegativeInt,
   activeRevision: Schema.NonEmptyString,
   addedRuleIds: Schema.Array(Schema.NonEmptyString),
@@ -627,6 +641,7 @@ export const firewallDecisionsSchema = exactStruct({
 export class FirewallPolicyError extends Data.TaggedError(
   "FirewallPolicyError",
 )<{
+  readonly ruleId?: string;
   readonly reason:
     | "not-configured"
     | "invalid-rule"

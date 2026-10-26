@@ -59,8 +59,6 @@ export interface DaemonProcessConfiguration {
   readonly messagePolicyFile?: string;
   /** The key of the decision provider a message policy names. */
   readonly decisionProviderKeyFile?: Redacted.Redacted;
-  /** Where a message-policy daemon publishes its firewall audit on graceful shutdown. */
-  readonly firewallAuditExport?: string;
 }
 
 /** Loaded private authority required by daemon registration and network calls. */

@@ -31,16 +31,15 @@ export {
   decodeFrozen,
   EnglishPolicySettings,
   EnglishRule,
+  firewallCheckSchema,
   FirewallSettings,
   HistoryEntry,
   Message,
   MessageContext,
   MiddlewareError,
   MiddlewareObservation,
-  NormExpectation,
   PrivateCheckTrace,
   RuleDescription,
-  UncertainNormGuidance,
 } from "./contract/index.js";
 /** Policy authors exchange validated data; only guidance and feedback are runtime projections. */
 export type {
@@ -96,7 +95,7 @@ export const makeFirewall = Effect.fn("makeFirewall")(function* (options: {
 
 /** Owner management values grant no runtime messaging capability. */
 export {
-  firewallActivationSchema,
+  editableDocumentSchema,
   firewallDecisionsRequestSchema,
   firewallDecisionsSchema,
   FirewallPolicyError,

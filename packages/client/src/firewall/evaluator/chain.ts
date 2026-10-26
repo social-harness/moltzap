@@ -98,7 +98,7 @@ const captureInput = Effect.fn("Firewall.captureInput")(function* (
   ) {
     return yield* new CheckInputError({ reason: "context" });
   }
-  return { event: capturedEvent, context: capturedContext };
+  return Object.freeze({ event: capturedEvent, context: capturedContext });
 });
 
 /** Code policies receive exactly the same reference and advice validation as English. */
@@ -151,7 +151,7 @@ function validFinding(
   if (finding.outcome === "revise") {
     return event.direction === "outgoing" && rule.kind === "norm";
   }
-  return finding.outcome !== "approval-required" || rule.kind === "autonomy";
+  return true;
 }
 
 const invokeMiddleware = Effect.fn("Firewall.invokeMiddleware")(function* (
@@ -259,21 +259,9 @@ const checkMessage = Effect.fn("Firewall.check")(function* (
     (yield* Clock.currentTimeMillis) + settings.timeoutMilliseconds;
   const checks: MiddlewareCheck[] = [];
   for (const entry of middleware) {
-    const previous = Object.freeze(
-      checks.map((check) =>
-        Object.freeze({
-          middlewareId: check.middlewareId,
-          revision: check.revision,
-          status: check.status,
-          findings: Object.freeze(check.findings),
-          expectations: Object.freeze(check.expectations),
-        }),
-      ),
-    );
-    const input = Object.freeze({ ...captured, previous });
-    checks.push(yield* runMiddleware(entry, input, settings, deadline));
+    checks.push(yield* runMiddleware(entry, captured, settings, deadline));
   }
-  return composeDecision(captured.event, captured.context, middleware, checks);
+  return composeDecision(captured.context, middleware, checks);
 });
 
 /** Captures one direction's ordered checks without exposing mutable registration. */

@@ -84,6 +84,10 @@
       "reason": "Attributed envelope representation parameters read by host-loaded SignedMessage schemas"
     },
     {
+      "file": "firewall/evaluator/contract/index.ts",
+      "reason": "Data-only firewall check schemas shared by evaluation and host-safe refusal projections"
+    },
+    {
       "file": "communication/router/api/index.ts",
       "reason": "Opaque Router operation schemas and client capability entry"
     },
@@ -243,6 +247,17 @@
       "reason": "Client package release metadata used by MCP peers, policy provenance and telemetry"
     },
     {
+      "name": "firewall-evaluator",
+      "roots": [
+        "src/firewall/evaluator"
+      ],
+      "entrypoints": [
+        "src/firewall/evaluator/index.ts",
+        "src/firewall/evaluator/contract/index.ts"
+      ],
+      "reason": "Code and English evaluation and their shared evidence and check contracts"
+    },
+    {
       "name": "firewall-outcome",
       "roots": [
         "src/firewall/outcome"
@@ -251,16 +266,6 @@
         "src/firewall/outcome/index.ts"
       ],
       "reason": "Closed refusal and guidance schemas hosts and communication decode without loading policy evaluation or provider clients"
-    },
-    {
-      "name": "firewall-evaluator",
-      "roots": [
-        "src/firewall/evaluator"
-      ],
-      "entrypoints": [
-        "src/firewall/evaluator/index.ts"
-      ],
-      "reason": "Isolated code and English evaluation depends on encoding, runtime-safe outcomes and packages"
     },
     {
       "name": "router-api",
@@ -363,7 +368,7 @@
       "entrypoints": [
         "src/firewall/index.ts"
       ],
-      "reason": "Personal firewall evaluation, rules, policy, admission and audit above communication collectives"
+      "reason": "Personal firewall evaluation, rules, policy, admission and retained checks above communication collectives"
     },
     {
       "name": "harness-inbox",
@@ -441,7 +446,7 @@
       "folders": [
         "firewall"
       ],
-      "reason": "Personal firewall evaluation, rules, policy, admission and audit above communication collectives"
+      "reason": "Personal firewall evaluation, rules, policy, admission and retained checks above communication collectives"
     },
     {
       "name": "harness-endpoint",
@@ -500,18 +505,18 @@
       "reason": "Opaque Router values and HTTP client below endpoint protocol records"
     },
     {
-      "name": "firewall-evaluator",
-      "folders": [
-        "firewall/evaluator"
-      ],
-      "reason": "Isolated code and English evaluation depends on encoding, runtime-safe outcomes and packages"
-    },
-    {
       "name": "firewall-outcome",
       "folders": [
         "firewall/outcome"
       ],
       "reason": "Closed refusal and guidance schemas hosts and communication decode without loading policy evaluation or provider clients"
+    },
+    {
+      "name": "firewall-evaluator",
+      "folders": [
+        "firewall/evaluator"
+      ],
+      "reason": "Code and English evaluation and their shared evidence and check contracts"
     },
     {
       "name": "release",

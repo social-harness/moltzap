@@ -7,7 +7,6 @@ import type { Router } from "../communication/router/api/client.js";
 import type { Registry } from "../identity/registry/index.js";
 import { makeEndpointEngine } from "../communication/conversations/index.js";
 import { makeRouterWorker } from "../communication/router/index.js";
-import { beginFirewallAudit } from "../firewall/index.js";
 import {
   type HistoryExportPort,
   makeHistoryExport,
@@ -71,30 +70,10 @@ const productionDependencies: DaemonRuntimeDependencies = {
  * @returns A scoped process effect that ends only when a supervised resource fails.
  */
 export const runDaemonRuntime = (
-  input: DaemonStartup & { readonly auditExport?: string },
+  input: DaemonStartup,
   dependencies: DaemonRuntimeDependencies = productionDependencies,
 ): Effect.Effect<never, DaemonRuntimeError, Registry | Router | Scope.Scope> =>
   Effect.gen(function* () {
-    const { auditExport, ...startup } = input;
-    const audit =
-      auditExport === undefined
-        ? undefined
-        : yield* beginFirewallAudit(auditExport, input.store).pipe(
-            Effect.mapError(() => runtimeFailure("storage")),
-          );
-    return yield* Effect.scoped(runDaemonResources(startup, dependencies)).pipe(
-      Effect.onExit(() =>
-        audit === undefined ? Effect.void : audit.finish.pipe(Effect.orDie),
-      ),
-    );
-  }).pipe(Effect.withSpan("runDaemonRuntime"));
-
-/** Child resource finalizers finish before the outer audit reads the still-open store. */
-function runDaemonResources(
-  input: DaemonStartup,
-  dependencies: DaemonRuntimeDependencies,
-) {
-  return Effect.gen(function* () {
     const historyExport = yield* openHistoryExport(input, dependencies);
     const daemon = yield* makeDaemon({
       ...input,
@@ -132,8 +111,7 @@ function runDaemonResources(
       );
       return yield* daemon.awaitFailure;
     }).pipe(Effect.raceFirst(daemon.awaitFailure));
-  });
-}
+  }).pipe(Effect.withSpan("runDaemonRuntime"));
 
 /** The handler shares the daemon's delivery operations and fixed bootstrap credentials. */
 function makeHandler(
