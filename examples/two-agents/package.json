@@ -12,7 +12,7 @@
     "@effect/platform": "^0.97.0",
     "@effect/platform-node": "^0.108.0",
     "@modelcontextprotocol/client": "2.0.0-beta.5",
-    "@moltzap/client": "2026.1026.3",
+    "@moltzap/client": "2026.1026.4",
     "effect": "^3.22.0"
   }
 }
