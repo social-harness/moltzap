@@ -381,7 +381,7 @@ export const Ed25519PublicKey = Schema.transform(
 
 Exact immutable Ed25519 public JWK.
 
-### [`FirewallSendError`](./firewall/outcome/index.ts#L139)
+### [`FirewallSendError`](./firewall/outcome/index.ts#L235)
 
 _Class_
 
@@ -426,7 +426,7 @@ export const GroupAddress = addressInput.pipe(
 
 A complete fixed-member group address in unsigned ASCII name order.
 
-### [`groupMembers`](./communication/collectives/render.ts#L49)
+### [`groupMembers`](./communication/collectives/render.ts#L53)
 
 _Function_
 
@@ -448,6 +448,16 @@ export type GroupMessage = typeof groupMessage.Type;
 ```
 
 One certified remote-authored fixed-group message.
+
+### [`GuidanceBodyOrigin`](./firewall/outcome/index.ts#L81)
+
+_TypeAlias_
+
+```ts
+export type GuidanceBodyOrigin = "peer" | "endpoint";
+```
+
+Attribution of the body quoted alongside local instructions.
 
 ### [`HarnessEndpoint`](./harness/endpoint/capability.ts#L54)
 
@@ -811,7 +821,7 @@ export const PrincipalId = canonicalIdentifier(
 
 Opaque identity of the principal represented by an agent.
 
-### [`renderCollectiveRequest`](./communication/collectives/render.ts#L66)
+### [`renderCollectiveRequest`](./communication/collectives/render.ts#L71)
 
 _Function_
 
@@ -819,6 +829,7 @@ _Function_
 export function renderCollectiveRequest(
   item: CollectiveRequestItem,
   howToAnswer: string,
+  guidance?: LocalGuidance,
 ): string
 ```
 
@@ -828,7 +839,7 @@ by host, since each host's model sends the answer through its own tool.
 
 **Returns:** The text of the model's turn.
 
-### [`renderCollectiveResult`](./communication/collectives/render.ts#L105)
+### [`renderCollectiveResult`](./communication/collectives/render.ts#L118)
 
 _Function_
 
@@ -842,7 +853,7 @@ lines that read as other members' outcomes.
 
 **Returns:** The text of the model's turn.
 
-### [`renderContent`](./communication/collectives/render.ts#L22)
+### [`renderContent`](./communication/collectives/render.ts#L26)
 
 _Function_
 
@@ -854,6 +865,21 @@ A message's content as the text a model reads: each text part as written,
 each data part as JSON, one part per line.
 
 **Returns:** The text a host puts in the model's turn.
+
+### [`renderLocalGuidance`](./firewall/outcome/index.ts#L91)
+
+_Function_
+
+```ts
+export function renderLocalGuidance(
+  guidance: LocalGuidance,
+  quoted?: { text: string; origin: GuidanceBodyOrigin },
+): string
+```
+
+Registered local instructions stay separate from attributed, quoted peer text.
+
+**Returns:** Host-neutral model text, with no composition identifiers.
 
 ### [`SendError`](./communication/conversations/errors.ts#L54)
 

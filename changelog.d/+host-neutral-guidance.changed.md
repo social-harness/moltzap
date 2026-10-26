@@ -1,0 +1,1 @@
+Client supplies one host-neutral rendering of firewall guidance for OpenClaw and NanoClaw, keeping peer content quoted and attributed and omitting composition identifiers. NanoClaw now delivers guidance-bearing items and acknowledges successful host handoff.

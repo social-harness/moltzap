@@ -28,7 +28,7 @@ hands its model as the tool error: the failed action and its cause, naming
 each unreachable member or failing field. The operation id stays in the
 error's data, not its message.
 
-### [`groupMembers`](./render.ts#L49)
+### [`groupMembers`](./render.ts#L53)
 
 _Function_
 
@@ -108,7 +108,7 @@ Read one message text as the send it states.
 **Returns:** The send input, or an error naming each field a stated operation
   gets wrong.
 
-### [`renderCollectiveRequest`](./render.ts#L66)
+### [`renderCollectiveRequest`](./render.ts#L71)
 
 _Function_
 
@@ -116,6 +116,7 @@ _Function_
 export function renderCollectiveRequest(
   item: CollectiveRequestItem,
   howToAnswer: string,
+  guidance?: LocalGuidance,
 ): string
 ```
 
@@ -125,7 +126,7 @@ by host, since each host's model sends the answer through its own tool.
 
 **Returns:** The text of the model's turn.
 
-### [`renderCollectiveResult`](./render.ts#L105)
+### [`renderCollectiveResult`](./render.ts#L118)
 
 _Function_
 
@@ -139,7 +140,7 @@ lines that read as other members' outcomes.
 
 **Returns:** The text of the model's turn.
 
-### [`renderContent`](./render.ts#L22)
+### [`renderContent`](./render.ts#L26)
 
 _Function_
 

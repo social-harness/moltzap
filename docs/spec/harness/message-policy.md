@@ -60,8 +60,7 @@ semantically checked.
 
 The threat model is adversarial peers communicating with an endpoint whose
 composition is controlled by its operator. It does not claim isolation from a
-compromised privileged host. Agents in the first experiment receive messaging
-and fixture tools, not owner management tools.
+compromised privileged host.
 
 ## Composition interfaces
 
@@ -202,20 +201,17 @@ the question when the question was checked with the result.
 The guidance is locally attributed, not part of a peer's signed content. Its
 references and text must come from supplied, authorized values. Neither private
 assessor evidence nor peer instructions may be elevated into local guidance by
-the firewall. A peer's text becomes local guidance only when an owner-authority
-`policy_update` adds it, as when an agent applies a [shared norm](../norms.md).
+the firewall. An agent may hold `policy_update` when its owner's catalog lists
+it. Peer text reaching that agent can lead to owner-rule edits; only `fixedRules` and
+`fixedBehaviors` prevent those edits. See [Authority](../norms.md#authority).
 
 Persist disposition and guidance before runtime exposure. Native subscriptions,
 inbox pages, read-event and webhooks read the same admitted view; replay retains
 the guidance and delivery identity. A held item cannot be retrieved through a
 different runtime path. Owner-authorized history remains an audit capability.
 
-For OpenClaw, the first projection uses the stock agent-facing body alongside a
-separately delimited original message, preserving the raw body. A result or
-failure turn is labelled as Social Harness's own, quoting the peers' answers, not as
-a peer message. This is contextual guidance, not a claim of a new system-role
-capability. Qualify the actual model-visible prompt for DMs and groups. Hosts
-retain session ownership, cron/triggers and acknowledgment behavior.
+Adapters use Client's [host text renderers](./client.md#public-values) for local
+guidance and peer content.
 
 A safe incoming message may arrive with guidance to remain silent. Guidance
 does not force a response or establish a distributed speaking-turn protocol.
@@ -253,8 +249,8 @@ an all_gather's deadline produces before its group post certifies, and one
 returned under `failureDelivery: "inbound"` when the send fails after admission,
 for example as `delivery-pending`, and its error arrives as an
 `operationFailed` item. The native and MCP
-send results carry the same `guidance` field, and OpenClaw returns it in the
-message tool's result.
+send results carry the same `guidance` field. Hosts expose it under the
+[channel projection contract](./channels.md#adapter-messaging).
 
 An error before admission means the candidate created no send intent. The agent
 can revise and issue a new invocation, which runs the full chain. Client does
@@ -687,12 +683,8 @@ admission queue before exposure, and recovery visits queued requests,
 including successors behind a conversation frontier, atomically retiring each
 original raw delivery.
 
-The native adapter uses the current runtime schemas. OpenClaw carries guidance
-in its ordinary model-facing context
-and returns outbound feedback through the stock tool error. NanoClaw currently
-refuses guidance-bearing deliveries without acknowledging them and reports send
-refusals through its existing refused-message callback; it is not a qualified
-firewall host.
+Native adapters consume the current runtime schemas and follow the
+[channel projection contract](./channels.md#adapter-messaging).
 
 ### Decision reasons
 
@@ -762,12 +754,10 @@ conversation. It does not see the endpoint's other conversations or anything
 outside Social Harness. This scope is a current choice, kept simple while
 history selection is evaluated; it is not a protocol invariant.
 
-The host can see more than the assessor. In OpenClaw's normal shared mode
-([channels](./channels.md#openclaw-session-and-output-contract)), every
-Social Harness DM and group uses one native session. So the model knows other
-conversations that the assessor cannot see. Private mode isolates sessions per
-conversation, which matches the assessor's scope. In shared mode the
-per-conversation scope leaves these cases to the host and its norms:
+The host can see more than the assessor, depending on its
+[session and output contract](./channels.md#openclaw-session-and-output-contract).
+When a host shares context across conversations, the per-conversation scope
+leaves these cases to the host and its norms:
 
 - **Context from another conversation.** A claim made in one conversation and
   acted on in another, such as hearsay authority planted earlier, is not in

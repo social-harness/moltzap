@@ -386,7 +386,7 @@ export const Ed25519PublicKey = Schema.transform(
 
 Exact immutable Ed25519 public JWK.
 
-### [`FirewallSendError`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/firewall/outcome/index.ts#L139)
+### [`FirewallSendError`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/firewall/outcome/index.ts#L235)
 
 _Class_
 
@@ -431,7 +431,7 @@ export const GroupAddress = addressInput.pipe(
 
 A complete fixed-member group address in unsigned ASCII name order.
 
-### [`groupMembers`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/communication/collectives/render.ts#L49)
+### [`groupMembers`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/communication/collectives/render.ts#L53)
 
 _Function_
 
@@ -453,6 +453,16 @@ export type GroupMessage = typeof groupMessage.Type;
 ```
 
 One certified remote-authored fixed-group message.
+
+### [`GuidanceBodyOrigin`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/firewall/outcome/index.ts#L81)
+
+_TypeAlias_
+
+```ts
+export type GuidanceBodyOrigin = "peer" | "endpoint";
+```
+
+Attribution of the body quoted alongside local instructions.
 
 ### [`HarnessEndpoint`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/harness/endpoint/capability.ts#L54)
 
@@ -816,7 +826,7 @@ export const PrincipalId = canonicalIdentifier(
 
 Opaque identity of the principal represented by an agent.
 
-### [`renderCollectiveRequest`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/communication/collectives/render.ts#L66)
+### [`renderCollectiveRequest`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/communication/collectives/render.ts#L71)
 
 _Function_
 
@@ -824,6 +834,7 @@ _Function_
 export function renderCollectiveRequest(
   item: CollectiveRequestItem,
   howToAnswer: string,
+  guidance?: LocalGuidance,
 ): string
 ```
 
@@ -833,7 +844,7 @@ by host, since each host's model sends the answer through its own tool.
 
 **Returns:** The text of the model's turn.
 
-### [`renderCollectiveResult`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/communication/collectives/render.ts#L105)
+### [`renderCollectiveResult`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/communication/collectives/render.ts#L118)
 
 _Function_
 
@@ -847,7 +858,7 @@ lines that read as other members' outcomes.
 
 **Returns:** The text of the model's turn.
 
-### [`renderContent`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/communication/collectives/render.ts#L22)
+### [`renderContent`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/communication/collectives/render.ts#L26)
 
 _Function_
 
@@ -859,6 +870,21 @@ A message's content as the text a model reads: each text part as written,
 each data part as JSON, one part per line.
 
 **Returns:** The text a host puts in the model's turn.
+
+### [`renderLocalGuidance`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/firewall/outcome/index.ts#L91)
+
+_Function_
+
+```ts
+export function renderLocalGuidance(
+  guidance: LocalGuidance,
+  quoted?: { text: string; origin: GuidanceBodyOrigin },
+): string
+```
+
+Registered local instructions stay separate from attributed, quoted peer text.
+
+**Returns:** Host-neutral model text, with no composition identifiers.
 
 ### [`SendError`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/communication/conversations/errors.ts#L54)
 
