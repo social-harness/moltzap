@@ -72,14 +72,14 @@
         "{workspaceRoot}/package.json",
         "{workspaceRoot}/pnpm-lock.yaml",
         "{workspaceRoot}/*.ts",
-        "{workspaceRoot}/examples/**/*.ts",
+        "{workspaceRoot}/images/**/*.ts",
         "{workspaceRoot}/scripts/**/*.ts",
         "{workspaceRoot}/scripts/tsconfig.json"
       ],
       "executor": "nx:run-commands",
       "options": {
         "cwd": ".",
-        "command": "eslint '*.ts' 'examples/**/*.ts' 'scripts/**/*.ts' --no-error-on-unmatched-pattern --cache --max-warnings=0"
+        "command": "eslint '*.ts' 'images/**/*.ts' 'scripts/**/*.ts' --no-error-on-unmatched-pattern --cache --max-warnings=0"
       }
     },
     "lint:oxlint": {

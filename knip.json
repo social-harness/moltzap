@@ -5,7 +5,7 @@
       "entry": [
         "scripts/build/*.ts",
         "scripts/test-*-package.ts",
-        "examples/*/*.ts",
+        "images/*.ts",
         "scripts/docs/check-mermaid.ts",
         "scripts/docs/vitest.config.ts",
         "scripts/docs/__tests__/*.test.ts",

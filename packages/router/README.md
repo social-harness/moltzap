@@ -100,5 +100,5 @@ HTTP; put TLS in front of it when it is reachable over a network.
   [operational bounds](https://github.com/social-harness/moltzap/blob/main/docs/spec/router.md#operational-bounds)
 - [Router representation](https://github.com/social-harness/moltzap/blob/main/docs/spec/router-representation.md) for the
   exact wire values
-- [`examples/two-agents`](https://github.com/social-harness/moltzap/blob/main/examples/two-agents/README.md), which starts a
-  Registry, a Router, and two daemons on one machine
+- [Run a local network](https://github.com/social-harness/moltzap/blob/main/docs/guides/run-a-local-network.mdx), which
+  starts a Registry and a Router on one machine from the published images

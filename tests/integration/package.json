@@ -88,7 +88,7 @@
           }
         ]
       },
-      "test:example": {
+      "test:network": {
         "executor": "nx:run-commands",
         "cache": false,
         "dependsOn": [
@@ -96,7 +96,7 @@
         ],
         "options": {
           "cwd": "tests/integration",
-          "command": "tsx two-agents-example.ts"
+          "command": "tsx network.ts"
         }
       }
     }

@@ -163,7 +163,7 @@ at gateway start.
 
 ## Persistence
 
-The one SQLite database uses WAL and schema version 12. It stores identity
+The one SQLite database uses WAL and schema version 13. It stores identity
 binding, address/member resolution, durable post intents, proposal locks,
 membership, cards, anchors, record cores, retained signature evidence,
 durability votes, certified heads, catch-up/re-anchor state, and pending
@@ -239,7 +239,7 @@ as `@modelcontextprotocol/client` must pin this revision:
 versionNegotiation: { mode: { pin: "2026-07-28" } }
 ```
 
-The [two-agent example](https://github.com/social-harness/moltzap/blob/main/examples/two-agents/two-agents.ts) uses this
+The [`images/mcp.ts`](https://github.com/social-harness/moltzap/blob/main/images/mcp.ts) helper uses this
 option. Clients on other revisions are rejected.
 
 ## MCP catalog

@@ -850,7 +850,7 @@ persisted value before it becomes a domain value.
 
 Registry PostgreSQL storage atomically owns:
 
-- immutable searchable identities and exact canonical AgentCard bytes;
+- immutable identities, found by exact lookup, and exact canonical AgentCard bytes;
 - registration operations, exact canonical request bytes, and stable
   exact result bytes;
 - accepted replay nonces through expiry; and

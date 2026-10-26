@@ -94,16 +94,13 @@ function testDependencyVersionsLiteralSpecifier(): void {
 function testDependencyVersionsExampleCopy(): void {
   const example =
     /* Safe because the example manifest is repository-owned JSON with a dependencies object. */ JSON.parse(
-      readFileSync(
-        resolve(workspaceRoot, "examples/two-agents/package.json"),
-        "utf8",
-      ),
+      readFileSync(resolve(workspaceRoot, "images/package.json"), "utf8"),
     ) as { dependencies: Record<string, string> };
   const name =
     Object.keys(example.dependencies).find(
       (dependency) => !dependency.startsWith("@moltzap/"),
     ) ?? "";
-  plantFile("examples/two-agents/package.json", (s) =>
+  plantFile("images/package.json", (s) =>
     s.replace(
       `"${name}": "${example.dependencies[name] ?? ""}"`,
       `"${name}": "0.0.0-drift"`,
@@ -114,7 +111,7 @@ function testDependencyVersionsExampleCopy(): void {
     "flags an example dependency that differs from the catalog",
     drifted.code !== 0 &&
       drifted.stderr.includes(
-        `two-agents/package.json: dependencies.${name} is "0.0.0-drift", expected the catalog range`,
+        `images/package.json: dependencies.${name} is "0.0.0-drift", expected the catalog range`,
       ),
     `expected example copy failure for ${name}. exit=${drifted.code}, stderr=${drifted.stderr.slice(0, 300)}`,
   );

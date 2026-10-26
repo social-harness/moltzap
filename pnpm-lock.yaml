@@ -201,9 +201,6 @@ importers:
       '@modelcontextprotocol/client':
         specifier: 'catalog:'
         version: 2.0.0-beta.5
-      '@moltzap/client':
-        specifier: workspace:*
-        version: link:packages/client
       '@types/estree':
         specifier: 'catalog:'
         version: 1.0.9

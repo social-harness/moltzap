@@ -343,56 +343,32 @@ function inLeg(leg: string) {
  * network.
  */
 function releaseNetwork(version: string, temporaryRoot: string) {
-  return releaseImages(version, temporaryRoot).pipe(
-    Effect.flatMap((images) =>
-      Effect.all(
-        {
-          registry: imageEntrypoint(
-            images.registry,
-            join(temporaryRoot, `registry-${version}`),
-          ),
-          router: imageEntrypoint(
-            images.router,
-            join(temporaryRoot, `router-${version}`),
-          ),
-        },
-        { concurrency: 2 },
+  const images = releaseImages(version);
+  return Effect.all(
+    {
+      registry: imageEntrypoint(
+        images.registry,
+        join(temporaryRoot, `registry-${version}`),
       ),
-    ),
+      router: imageEntrypoint(
+        images.router,
+        join(temporaryRoot, `router-${version}`),
+      ),
+    },
+    { concurrency: 2 },
   );
 }
 
 /**
- * The release's own indexes, as its release commit's example Compose file
- * pins them, read by the same script the release uses. The bump writes that
- * file before npm publication, so it exists whenever npm lists the release,
- * unlike the version tags added afterwards.
+ * The release's own indexes, through the version tags its release workflow
+ * adds right after npm publication. A release whose tags are still missing
+ * fails this gate until that workflow finishes.
  */
-function releaseImages(version: string, temporaryRoot: string) {
-  const compose = join(temporaryRoot, `compose-${version}.yaml`);
-  return runCommand("curl", [
-    "--fail",
-    "--silent",
-    "--show-error",
-    "--location",
-    "--retry",
-    "3",
-    "--output",
-    compose,
-    `https://raw.githubusercontent.com/social-harness/moltzap/refs/tags/v${version}/examples/two-agents/compose.yaml`,
-  ]).pipe(
-    Effect.zipRight(
-      runCommand("bash", [
-        join(workspaceRoot, "scripts/release/example-images.sh"),
-        "refs",
-        compose,
-      ]),
-    ),
-    Effect.map((refs) => {
-      const [registry = "", router = ""] = refs.trim().split("\n");
-      return { registry, router };
-    }),
-  );
+function releaseImages(version: string) {
+  return {
+    registry: `ghcr.io/social-harness/registry:${version}`,
+    router: `ghcr.io/social-harness/router:${version}`,
+  };
 }
 
 const imageConfig = Schema.parseJson(
