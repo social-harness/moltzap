@@ -4,7 +4,7 @@
  * admission share these; neither holds a protocol or delivery lock.
  */
 
-import { Clock, Effect, Option, Schema } from "effect";
+import { Clock, Effect, Option, Schema, Struct } from "effect";
 import { createHash, randomBytes } from "node:crypto";
 import type {
   FirewallConfiguration,
@@ -271,7 +271,12 @@ export const assess = Effect.fn("assessMessage")(function* (
     completion: {
       checkId,
       admit,
-      canonicalResult: yield* encodeRuntimeValue(projection.result),
+      canonicalResult: yield* encodeRuntimeValue({
+        ...projection.result,
+        checks: projection.result.checks.map((check) =>
+          Struct.omit(check, "trace"),
+        ),
+      }),
       ...(input.terminal && mode === "guidance"
         ? ({ shadow: true } as const)
         : {}),

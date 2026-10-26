@@ -143,12 +143,12 @@ const firewallAuditInput = exactStruct({
   terminal: Schema.Boolean,
 });
 
-/** Retained approval findings keep their settled marker during projection. */
+/** Retained judgments exclude provider traces and preserve settled approval findings. */
 const currentAuditResult = exactStruct({
   ...firewallCheckSchema.fields,
   checks: Schema.Array(
     Schema.Struct({
-      ...firewallCheckSchema.fields.checks.value.fields,
+      ...Struct.omit(firewallCheckSchema.fields.checks.value.fields, "trace"),
       findings: Schema.Array(currentFinding),
     }),
   ),
@@ -166,6 +166,7 @@ const firewallAuditResult = Schema.transform(
       checks: Schema.Array(
         Schema.Struct({
           ...currentAuditResult.fields.checks.value.fields,
+          trace: Schema.optional(Schema.Unknown),
           findings: Schema.Array(retainedFinding),
         }),
       ),
@@ -181,7 +182,7 @@ const firewallAuditResult = Schema.transform(
           ? ("unresolved-evidence" as const)
           : result.reason,
       checks: result.checks.map((check) => ({
-        ...check,
+        ...Struct.omit(check, "trace"),
         findings: check.findings.map((finding) =>
           migrateApprovalFinding(
             finding,

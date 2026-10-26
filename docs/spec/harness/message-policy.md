@@ -146,8 +146,8 @@ applicability, expectations or conformance:
   guidance.
 
 Provider probabilities use one tolerance of 0.02 for their sum and for the
-stated choice's distance from the maximum. The evaluator retains distributions
-unchanged; a choice below the maximum remains uncertain.
+stated choice's distance from the maximum. The evaluator keeps distributions
+unchanged in memory; a choice below the maximum remains uncertain.
 
 A settled judgment keeps its effect: a conformance violation still asks for
 revision, and a settled expectation still becomes guidance.
@@ -271,6 +271,11 @@ transaction; an asynchronous preflight check alone is insufficient.
 
 Retain admission state separately from canonical records. Recovering a process
 cannot admit a previously held item. Held items remain available for inspection.
+
+Retained checks keep their judgment, decision reasons and immutable installation,
+but no decision-provider trace. Traces remain available only in memory to the
+code producing the check and are never written to the store. Older retained
+rows with traces still decode; decoding discards those traces before projection.
 
 Preserve incoming order with a retained per-conversation admission frontier.
 Assess a successor after its predecessor's disposition settles, including a
