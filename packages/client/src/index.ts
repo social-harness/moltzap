@@ -29,6 +29,7 @@ export {
   type CheckedGuidance,
   FirewallSendError,
   type LocalGuidance,
+  renderLocalGuidance,
 } from "./firewall/outcome/index.js";
 /** Send input and the closed error of a refused collective send. */
 export {

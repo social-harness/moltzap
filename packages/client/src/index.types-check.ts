@@ -17,7 +17,8 @@
  * its check's guidance, and fails with a closed send reason or a
  * collective failure. The exported send-result decoder yields that same
  * result type. Adapters compile against this surface, so any change these
- * canaries catch is a breaking release.
+ * canaries catch is a breaking release. Client renders local guidance as text
+ * for both adapters, keeping registered instructions apart from quoted peers.
  */
 
 import type { DateTime, Effect, Either, Scope, Stream, Types } from "effect";
@@ -46,6 +47,7 @@ import type {
   MessageTextError,
   parseMessageText,
   PostId,
+  renderLocalGuidance,
   SendError,
   SendInput,
   SendResult,
@@ -193,6 +195,16 @@ type ExpectedLocalGuidance =
     }>;
 type LocalGuidanceIsExact = Expect<
   Types.Equals<LocalGuidance, ExpectedLocalGuidance>
+>;
+type GuidanceRenderingIsExact = Expect<
+  Types.Equals<
+    typeof renderLocalGuidance,
+    (
+      guidance: LocalGuidance,
+      body?: string,
+      origin?: "peer" | "endpoint",
+    ) => string
+  >
 >;
 type ExpectedDelivery = Readonly<{
   item: InboundItem;
@@ -344,6 +356,7 @@ export type HarnessEndpointCanaries = [
   SendResultDecoderIsExact,
   InboundItemIsExact,
   LocalGuidanceIsExact,
+  GuidanceRenderingIsExact,
   DirectMessageIsExact,
   GroupMessageIsExact,
   InboundMessageIsExact,

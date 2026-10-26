@@ -8,7 +8,9 @@ import {
   type InboundDelivery,
   InboundItem,
   ListenError,
+  type LocalGuidance,
   renderCollectiveResult,
+  renderLocalGuidance,
   SendError,
 } from "@moltzap/client";
 import { Deferred, Effect, Queue, Schema, Stream } from "effect";
@@ -83,11 +85,16 @@ function directItem() {
   });
 }
 
-function enqueue(fake: ReturnType<typeof makeEndpoint>, item: InboundItem) {
+function enqueue(
+  fake: ReturnType<typeof makeEndpoint>,
+  item: InboundItem,
+  guidance?: LocalGuidance,
+) {
   const acknowledged = vi.fn<() => void>();
   Effect.runSync(
     Queue.offer(fake.inbox, {
       item,
+      ...(guidance === undefined ? {} : { guidance }),
       acknowledge: Effect.sync(() => {
         acknowledged();
       }),
@@ -603,6 +610,55 @@ it("propagates transient failure to NanoClaw's retry without retrying itself", a
   ).rejects.toThrow("network unavailable");
   expect(fake.send).toHaveBeenCalledTimes(1);
   expect(host.onInboundEvent).not.toHaveBeenCalled();
+});
+
+it("hands guidance and quoted peer text to the agent before acknowledging", async () => {
+  const fake = makeEndpoint();
+  const host = makeHost();
+  const accepted = Effect.runSync(Deferred.make<undefined>());
+  host.onInboundEvent.mockImplementation(() =>
+    Effect.runPromise(Deferred.await(accepted)),
+  );
+  const channel = await createAdapter();
+  await channel.setup(host);
+  const guidance: LocalGuidance = {
+    checkId: `chk_${"a".repeat(64)}`,
+    subjects: [
+      {
+        id: "hello",
+        sender: "agent:alice",
+        recipients: ["agent:bob"],
+        text: "hello",
+      },
+    ],
+    instructions: [
+      {
+        middlewareId: "norms",
+        ruleId: "reply",
+        expectation: "required",
+        subjects: ["hello"],
+        instruction: "Answer Alice.",
+      },
+    ],
+  };
+  const acknowledged = enqueue(fake, directItem(), guidance);
+  await vi.waitFor(() => {
+    expect(host.onInboundEvent).toHaveBeenCalledTimes(1);
+  });
+  expect(acknowledged).not.toHaveBeenCalled();
+  const event = host.onInboundEvent.mock.calls[0]?.[0];
+  if (event === undefined) {
+    throw new Error("Host did not receive guidance");
+  }
+  expect(eventContent(event)).toMatchObject({
+    sender: "agent:alice",
+    address: "agent:alice",
+    text: renderLocalGuidance(guidance, "hello"),
+  });
+  Effect.runSync(Deferred.succeed(accepted, undefined));
+  await vi.waitFor(() => {
+    expect(acknowledged).toHaveBeenCalledTimes(1);
+  });
 });
 
 /* eslint-enable agent-code-guard/async-keyword -- Restore Effect-first defaults after the Promise-native host boundary tests. */

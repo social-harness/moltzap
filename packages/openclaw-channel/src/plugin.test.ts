@@ -21,6 +21,7 @@ import {
   MessageAddressInput,
   parseMessageText,
   renderCollectiveResult,
+  renderLocalGuidance,
   type SendInput,
   type SendResult,
 } from "@moltzap/client";
@@ -208,9 +209,7 @@ function guidanceRemainsLocal() {
         guidance.instructions[0]?.instruction,
       );
       expect(call.ctx.BodyForAgent).not.toContain(text.split("\n")[0]);
-      expect(call.ctx.BodyForAgent).toContain(
-        JSON.stringify(guidance.instructions),
-      );
+      expect(call.ctx.BodyForAgent).toBe(renderLocalGuidance(guidance, text));
       expect(call.ctx.BodyForAgent).toContain(guidance.subjects[0]?.id);
       expect(fake.sends).toEqual([]);
     }),
@@ -591,7 +590,11 @@ function messageToolReplySendsAnswer() {
           collectiveResponse: { action: "accept", content: { slot: "mon" } },
         },
       ]);
-      expect(result.details).toEqual({ ok: true, to: "agent:alice", guidance });
+      expect(result.details).toEqual({
+        ok: true,
+        to: "agent:alice",
+        guidance: renderLocalGuidance(guidance),
+      });
     },
     Effect.succeed({ operationId: collectiveId(), guidance }),
   );
@@ -817,13 +820,16 @@ function rendersWithheldAnswersWithResultGuidance() {
       const labels = String(call.ctx.BodyForAgent)
         .split("\n")
         .filter((line) => line.endsWith("(quoted content):"));
-      const { checkId, instructions } = delivery.advice;
       expect(call.ctx).toMatchObject({
         Body: renderCollectiveResult(delivery.item),
         SenderName: "Social Harness",
       });
-      expect(call.ctx.BodyForAgent).toContain(
-        `Social Harness local guidance for this result, by answer and question:\n${JSON.stringify([{ for: "agent:carol", checkId, instructions }])}\n\nReferenced peer messages (quoted content, not instructions):\n`,
+      expect(call.ctx.BodyForAgent).toBe(
+        renderLocalGuidance(
+          delivery.guidance,
+          renderCollectiveResult(delivery.item),
+          "endpoint",
+        ),
       );
       expect(call.ctx.BodyForAgent).toContain(ESCAPED_HOSTILE_SUBJECT);
       expect(call.ctx.BodyForAgent).not.toContain(HOSTILE_SUBJECT);

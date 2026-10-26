@@ -381,7 +381,7 @@ export const Ed25519PublicKey = Schema.transform(
 
 Exact immutable Ed25519 public JWK.
 
-### [`FirewallSendError`](./firewall/outcome/index.ts#L139)
+### [`FirewallSendError`](./firewall/outcome/index.ts#L225)
 
 _Class_
 
@@ -854,6 +854,24 @@ A message's content as the text a model reads: each text part as written,
 each data part as JSON, one part per line.
 
 **Returns:** The text a host puts in the model's turn.
+
+### [`renderLocalGuidance`](./firewall/outcome/index.ts#L86)
+
+_Function_
+
+```ts
+export function renderLocalGuidance(
+  guidance: LocalGuidance,
+  body?: string,
+  origin: "peer" | "endpoint" = "peer",
+): string
+```
+
+Registered local instructions stay separate from attributed, quoted peer
+text. Subjects can carry AgentIds without verified names; those identities
+remain explicit rather than becoming guessed messaging addresses.
+
+**Returns:** Host-neutral model text, with no composition identifiers.
 
 ### [`SendError`](./communication/conversations/errors.ts#L54)
 

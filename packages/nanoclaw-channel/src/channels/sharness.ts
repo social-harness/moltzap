@@ -1,7 +1,6 @@
 /** @file Projects the public Social Harness endpoint capability into NanoClaw. */
 import {
   acquireHarnessEndpoint,
-  type InboundMessage as ClientInboundMessage,
   type CollectiveError,
   type ConnectError,
   type DeliveryAcknowledgeError,
@@ -16,6 +15,7 @@ import {
   renderCollectiveRequest,
   renderCollectiveResult,
   renderContent,
+  renderLocalGuidance,
   SendError,
 } from "@moltzap/client";
 import {
@@ -101,6 +101,13 @@ interface OutboundMessage {
 /** One outbound row's address and text, ready for the Client's parser. */
 interface OutboundText {
   readonly to: MessageAddressInput;
+  readonly text: string;
+}
+
+interface ProjectedItem {
+  readonly id: string;
+  readonly address: MessageAddressInput;
+  readonly sender: string;
   readonly text: string;
 }
 
@@ -221,12 +228,7 @@ function fromEndpoint(
  * NanoClaw's inbox shape for any delivered message, question, result or
  * failure. A group address keeps the native group flag and lists its members.
  */
-function endpointInbound(input: {
-  readonly id: string;
-  readonly address: MessageAddressInput;
-  readonly sender: string;
-  readonly text: string;
-}): InboundMessage {
+function endpointInbound(input: ProjectedItem): InboundMessage {
   const members = groupMembers(input.address);
   const isGroup = members.length > 0;
   return {
@@ -500,73 +502,21 @@ class HarnessChannelAdapter {
     if (config === null) {
       return Effect.void;
     }
-    if (delivery.guidance !== undefined) {
-      return Effect.fail(
-        new ChannelError({
-          reason:
-            "Social Harness local guidance requires a supported host projection; use the OpenClaw adapter for this experiment",
-        }),
-      );
-    }
-    return this.handleItem(config, delivery.item).pipe(
-      Effect.zipRight(delivery.acknowledge),
-    );
-  }
-
-  /**
-   * Hand one item to NanoClaw's main session with a Social Harness reply route, in
-   * the one fixed form its kind defines. A multicast keeps its message; a
-   * request is a message from the requester in the conversation it arrived
-   * in, direct for a gather and the group for an all_gather; a result or a failure is
-   * attributed to Social Harness and routed to the address its operation named.
-   * @param config The host callbacks from the active setup.
-   * @param item The item the endpoint delivered.
-   * @returns Completion after the host callback completed.
-   */
-  private handleItem(
-    config: ChannelSetup,
-    item: InboundItem,
-  ): Effect.Effect<void, ChannelError> {
-    switch (item.kind) {
-      case "multicast":
-        return this.handToHost(
-          config,
-          item.message.address,
-          this.toInboundMessage(item.message),
-        );
-      case "collectiveRequest":
-        return this.handToHost(
-          config,
-          item.to,
-          endpointInbound({
-            id: item.postId,
-            address: item.to,
-            sender: item.from,
-            text: renderCollectiveRequest(
-              item,
-              `Send the answer once as the whole text of send_message to ${item.to}.`,
-            ),
-          }),
-        );
-      case "collectiveResult":
-        return this.handToHost(
-          config,
-          item.to,
-          fromEndpoint(
-            `${item.id}:result`,
-            item.to,
-            renderCollectiveResult(item),
-          ),
-        );
-      case "operationFailed":
-        return this.handToHost(
-          config,
-          item.to,
-          fromEndpoint(`${item.id}:failed`, item.to, item.error),
-        );
-      default:
-        return absurd(item);
-    }
+    const projected = projectItem(delivery.item);
+    const origin =
+      delivery.item.kind === "multicast" ||
+      delivery.item.kind === "collectiveRequest"
+        ? "peer"
+        : "endpoint";
+    const text =
+      delivery.guidance === undefined
+        ? projected.text
+        : renderLocalGuidance(delivery.guidance, projected.text, origin);
+    return this.handToHost(
+      config,
+      projected.address,
+      endpointInbound({ ...projected, text }),
+    ).pipe(Effect.zipRight(delivery.acknowledge));
   }
 
   /**
@@ -618,20 +568,44 @@ class HarnessChannelAdapter {
         }),
     }).pipe(Effect.asVoid);
   }
+}
 
-  /**
-   * Projects one explicit Client recipient into NanoClaw's native attention
-   * signal and stable inbox shape.
-   * @param message Addressed message delivered by Client.
-   * @returns NanoClaw's stable native inbox representation.
-   */
-  private toInboundMessage(message: ClientInboundMessage): InboundMessage {
-    return endpointInbound({
-      id: message.postId,
-      address: message.address,
-      sender: message.sender,
-      text: renderContent(message.content),
-    });
+/** Each item keeps its canonical attribution and conversation before guidance is added. */
+function projectItem(item: InboundItem): ProjectedItem {
+  switch (item.kind) {
+    case "multicast":
+      return {
+        id: item.message.postId,
+        address: item.message.address,
+        sender: item.message.sender,
+        text: renderContent(item.message.content),
+      };
+    case "collectiveRequest":
+      return {
+        id: item.postId,
+        address: item.to,
+        sender: item.from,
+        text: renderCollectiveRequest(
+          item,
+          `Send the answer once as the whole text of send_message to ${item.to}.`,
+        ),
+      };
+    case "collectiveResult":
+      return {
+        id: `${item.id}:result`,
+        address: item.to,
+        sender: ENDPOINT_SENDER,
+        text: renderCollectiveResult(item),
+      };
+    case "operationFailed":
+      return {
+        id: `${item.id}:failed`,
+        address: item.to,
+        sender: ENDPOINT_SENDER,
+        text: item.error,
+      };
+    default:
+      return absurd(item);
   }
 }
 
