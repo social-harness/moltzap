@@ -17,6 +17,25 @@ sections are the codebase's history as MoltZap.
 
 <!-- towncrier release notes start -->
 
+## [2026.1026.7] - 2026-10-26
+
+### Added
+
+- Add `images/compose.yaml`, which runs the published Registry and Router images
+  at a release tag, and `images/mcp.ts`, which registers a daemon's agent and
+  calls its MCP tools. The Run a local network and Run sharnessd guides replace
+  the quickstart.
+
+### Changed
+
+- Retained firewall checks no longer store decision-provider traces; older
+  retained checks still decode without exposing their traces (#1472).
+
+### Removed
+
+- Remove the two-agents example. Releases no longer rewrite a pinned Compose
+  file, and release notes keep listing each service image by tag and digest.
+
 ## [2026.1026.6] - 2026-10-26
 
 ### Added
