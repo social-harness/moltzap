@@ -16,7 +16,7 @@ import {
   httpErrors,
   registryContract,
 } from "@moltzap/client/internal";
-import { Clock, Data, Effect, Either, Encoding, Schema } from "effect";
+import { Clock, Data, Effect, Schema } from "effect";
 import { randomBytes } from "node:crypto";
 import { AgentCardIssuedAt, issueAgentCard } from "./issuance.js";
 import { registryMigration } from "./migrations/0001_registry.js";
@@ -37,7 +37,7 @@ export class RegistryStorageInitializationError extends Data.TaggedError(
     | "unavailable";
 }> {}
 
-const LEDGER_TABLE = "sharness_registry_ledger";
+const LEDGER_TABLE = "sharness_registry_ledger_20261026";
 
 /**
  * Ledgers written by releases before the current reset. Their databases hold
@@ -47,6 +47,7 @@ const LEDGER_TABLE = "sharness_registry_ledger";
 const PRE_RESET_LEDGERS = [
   "moltzap_registry_migrations",
   "sharness_registry_migrations",
+  "sharness_registry_ledger",
 ] as const;
 
 type StorageError =
@@ -322,17 +323,6 @@ const issueTime = (): Effect.Effect<
     ),
   );
 
-const decodeAgentIdBytes = (
-  agentId: AgentIdValue,
-): Effect.Effect<
-  Uint8Array,
-  InstanceType<typeof httpErrors.InternalServerError>
-> =>
-  Either.match(Encoding.decodeBase64Url(agentId.slice(4)), {
-    onLeft: () => Effect.fail(new InternalServerError()),
-    onRight: Effect.succeed,
-  });
-
 function makeCheckReadiness(
   input: StorageInput,
 ): RegistryStorage["checkReadiness"] {
@@ -555,13 +545,12 @@ const insertNewAgent = (
     const agentCardBytes = yield* internalFailure(
       registryContract.registryAgentCardCodec.encode(agentCard),
     );
-    const agentIdBytes = yield* decodeAgentIdBytes(agentId);
     yield* input.sql`
       INSERT INTO sharness_registry_agents
-        (agent_id, agent_id_bytes, principal_id, agent_name,
+        (agent_id, principal_id, agent_name,
          public_key_thumbprint, agent_card_bytes)
       VALUES
-        (${agentId}, ${agentIdBytes}, ${call.request.principalId},
+        (${agentId}, ${call.request.principalId},
          ${call.request.agentName}, ${keyThumbprint}, ${agentCardBytes})
     `;
     return Object.freeze({ kind: "registered", agentCard });

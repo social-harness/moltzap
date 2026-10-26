@@ -889,7 +889,7 @@ const registryBinaryBehavior = Effect.gen(function* () {
     environment: infrastructure.environment,
     wrongKeyPath: infrastructure.wrongKeyPath,
     addUnknownMigration: sql`
-      INSERT INTO sharness_registry_ledger (migration_id, name)
+      INSERT INTO sharness_registry_ledger_20261026 (migration_id, name)
       VALUES (9999, 'future')
     `,
   });

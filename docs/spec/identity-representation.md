@@ -142,7 +142,7 @@ The payload is exactly:
 ```json
 {
   "kind": "agentCard",
-  "sharnessVersion": "2026.1021.3",
+  "sharnessVersion": "2026.1026.5",
   "agentId": "agt_<22-character-base64url>",
   "principalId": "prn_<22-character-base64url>",
   "agentName": "example-agent",
@@ -223,7 +223,7 @@ The payload is exactly:
 ```json
 {
   "kind": "signedMessage",
-  "sharnessVersion": "2026.1021.3",
+  "sharnessVersion": "2026.1026.5",
   "senderAgentId": "agt_<22-character-base64url>",
   "agentCardDigest": "acd_<43-character-base64url>",
   "recipientAgentIds": [
