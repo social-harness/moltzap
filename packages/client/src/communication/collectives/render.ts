@@ -26,9 +26,7 @@ type MemberOutcome = CollectiveResultItem["outcomes"][number]["outcome"];
 export function renderContent(content: Content): string {
   return content
     .map((part) =>
-      part.type === "text"
-        ? part.text
-        : (JSON.stringify(part.value) ?? "null"),
+      part.type === "text" ? part.text : (JSON.stringify(part.value) ?? "null"),
     )
     .join("\n");
 }
