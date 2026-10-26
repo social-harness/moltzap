@@ -127,9 +127,9 @@ Each page is exactly one type. Guides and quickstarts are how-tos.
   which readers also open on GitHub, are exempt from both rules.
 - Each step that runs a command says what success looks like: "You should see
   `<literal>`." Paste output only when the reader compares it line by line.
-- The quickstart states its time cost in its first paragraph, offers a
-  one-command path first, and ends at an observable success: a delivered
-  message, not a passing build.
+- A getting-started guide states its time cost in its first paragraph,
+  offers a one-command path first, and ends at an observable success: a
+  delivered message, not a passing build.
 - `<Accordion title="Advanced: …">` holds optional detail. `<Warning>` is only
   for data loss or security. `<Note>` is for cross-links.
 - When a page splits, its old anchors keep working: keep each moved heading

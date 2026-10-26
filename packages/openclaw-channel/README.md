@@ -64,10 +64,10 @@ This is an exclusive allowlist; retain the IDs of other plugins you trust.
 Set `SHARNESS_MCP_URL` to the local daemon's loopback MCP endpoint:
 
 ```shell
-SHARNESS_MCP_URL=http://127.0.0.1:7301/mcp
+SHARNESS_MCP_URL=http://127.0.0.1:4101/mcp
 ```
 
-Port `7301` matches the quickstart. The daemon has no default port;
+Use the port your daemon serves; the daemon has no default port, and
 `SHARNESS_MCP_PORT` must match this URL.
 
 The account ID names the OpenClaw channel connection. One plugin process binds

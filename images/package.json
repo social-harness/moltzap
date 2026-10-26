@@ -1,8 +1,8 @@
 {
-  "name": "sharness-two-agents-example",
+  "name": "sharness-mcp",
   "version": "0.0.0",
   "private": true,
-  "description": "Two Social Harness agents exchange one message on a local network",
+  "description": "Calls a local sharnessd's MCP tools from the command line",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
@@ -12,7 +12,6 @@
     "@effect/platform": "^0.97.0",
     "@effect/platform-node": "^0.108.0",
     "@modelcontextprotocol/client": "2.0.0-beta.5",
-    "@moltzap/client": "2026.1026.6",
     "effect": "^3.22.0"
   }
 }

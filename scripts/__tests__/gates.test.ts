@@ -765,7 +765,7 @@ function testDependencyVersions(): void {
     `expected exit 0, got ${clean.code}. stderr: ${clean.stderr.slice(0, 300)}`,
   );
   testDependencyVersionsLiteralSpecifier();
-  testDependencyVersionsExampleCopy();
+  testDependencyVersionsHelperCopy();
   testDependencyVersionsDriftedEngines();
   testDependencyVersionsNodePin();
 }
@@ -787,32 +787,26 @@ function testDependencyVersionsLiteralSpecifier(): void {
 }
 
 /** The planted range is not a published version, so no catalog bump can match it. */
-function testDependencyVersionsExampleCopy(): void {
-  const example =
-    /* Safe because the example manifest is repository-owned JSON with a dependencies object. */ JSON.parse(
-      readFileSync(
-        resolve(workspaceRoot, "examples/two-agents/package.json"),
-        "utf8",
-      ),
+function testDependencyVersionsHelperCopy(): void {
+  const helpers =
+    /* Safe because the helper manifest is repository-owned JSON with a dependencies object. */ JSON.parse(
+      readFileSync(resolve(workspaceRoot, "images/package.json"), "utf8"),
     ) as { dependencies: Record<string, string> };
-  const name =
-    Object.keys(example.dependencies).find(
-      (dependency) => !dependency.startsWith("@moltzap/"),
-    ) ?? "";
-  plantFile("examples/two-agents/package.json", (s) =>
+  const name = Object.keys(helpers.dependencies)[0] ?? "";
+  plantFile("images/package.json", (s) =>
     s.replace(
-      `"${name}": "${example.dependencies[name] ?? ""}"`,
+      `"${name}": "${helpers.dependencies[name] ?? ""}"`,
       `"${name}": "0.0.0-drift"`,
     ),
   );
   const drifted = runDependencyVersions();
   test(
-    "flags an example dependency that differs from the catalog",
+    "flags a helper dependency that differs from the catalog",
     drifted.code !== 0 &&
       drifted.stderr.includes(
-        `two-agents/package.json: dependencies.${name} is "0.0.0-drift", expected the catalog range`,
+        `images/package.json: dependencies.${name} is "0.0.0-drift", expected the catalog range`,
       ),
-    `expected example copy failure for ${name}. exit=${drifted.code}, stderr=${drifted.stderr.slice(0, 300)}`,
+    `expected helper copy failure for ${name}. exit=${drifted.code}, stderr=${drifted.stderr.slice(0, 300)}`,
   );
   restoreAllPlants();
 }

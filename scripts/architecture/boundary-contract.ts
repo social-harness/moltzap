@@ -201,7 +201,7 @@ export const INTEGRATION_TESTS = {
   targets: [
     "test:integration",
     "test:mixed-release",
-    "test:example",
+    "test:network",
     "typecheck:tests",
     "lint",
   ],

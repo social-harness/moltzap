@@ -6,7 +6,7 @@
         "scripts/architecture/check-package.ts",
         "scripts/build/*.ts",
         "scripts/test-*-package.ts",
-        "examples/*/*.ts",
+        "images/*.ts",
         "scripts/docs/check-mermaid.ts",
         "scripts/docs/generate-constants-snippets.ts",
         "scripts/docs/generate-modules.ts",

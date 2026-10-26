@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 /**
- * @file Checks version copies that package managers cannot reconcile: example
- * dependencies installed outside the workspace, published Node engine ranges,
- * the development Node pin, peer support floors, and the Effect source tag.
+ * @file Checks version copies that package managers cannot reconcile: the
+ * `images/` helper dependencies readers install outside the workspace,
+ * published Node engine ranges, the development Node pin, peer support floors,
+ * and the Effect source tag.
  */
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { parse } from "yaml";
 import {
@@ -27,6 +28,7 @@ const INSTALLED_SECTIONS = [
 ];
 
 const EFFECT_SCRIPT = "scripts/setup/prepare-effect.sh";
+const HELPERS_MANIFEST = "images/package.json";
 
 const repo = process.cwd();
 const failures: string[] = [];
@@ -78,13 +80,13 @@ function main(): void {
     ),
     manifestAt(`${INTEGRATION_TESTS.root}/package.json`),
   ];
-  const examples = exampleManifests();
+  const helpers = manifestAt(HELPERS_MANIFEST);
 
   checkInstalledSpecifiers(workspaceManifests);
   checkPeerFloors(workspaceManifests, catalog);
-  checkExampleCopies(examples, catalog);
+  checkHelperCopies(helpers, catalog);
   checkEffectCheckout(overrides);
-  checkNodeRange(root, examples);
+  checkNodeRange(root, helpers);
 
   if (failures.length > 0) {
     console.error("[check-dependency-versions] FAIL");
@@ -94,7 +96,7 @@ function main(): void {
     process.exit(1);
   }
   console.log(
-    `[check-dependency-versions] OK — ${Object.keys(catalog).length} catalog entries, ${workspaceManifests.length} workspace and ${examples.length} example manifests`,
+    `[check-dependency-versions] OK — ${Object.keys(catalog).length} catalog entries, ${workspaceManifests.length} workspace manifests and ${HELPERS_MANIFEST}`,
   );
 }
 
@@ -126,14 +128,6 @@ function stringRecord(
 
 function manifestAt(where: string): Manifest {
   return { where, manifest: readJsonObject(path.join(repo, where)) };
-}
-
-function exampleManifests(): readonly Manifest[] {
-  return readdirIfPresent(path.join(repo, "examples"))
-    .filter((name) =>
-      existsSync(path.join(repo, "examples", name, "package.json")),
-    )
-    .map((name) => manifestAt(`examples/${name}/package.json`));
 }
 
 /**
@@ -187,19 +181,19 @@ function checkPeerFloors(
 }
 
 /**
- * The example installs from npm, so it copies each catalog range literally;
- * its Social Harness pins are the release version the release workflow writes.
- * @param examples Example manifests.
+ * Readers install the helper manifest from npm, so it copies each catalog
+ * range literally.
+ * @param helpers The helper manifest.
  * @param catalog Catalog name to range.
  */
-function checkExampleCopies(
-  examples: readonly Manifest[],
+function checkHelperCopies(
+  helpers: Manifest,
   catalog: Readonly<Record<string, string>>,
 ): void {
-  const copies = examples
-    .flatMap((example) => declarationsOf(example, INSTALLED_SECTIONS))
-    .filter((declaration) => !declaration.name.startsWith("@moltzap/"));
-  for (const { where, section, name, value } of copies) {
+  for (const { where, section, name, value } of declarationsOf(
+    helpers,
+    INSTALLED_SECTIONS,
+  )) {
     if (value !== catalog[name]) {
       failures.push(
         `${where}: ${section}.${name} is ${JSON.stringify(value)}, expected the catalog range ${JSON.stringify(catalog[name] ?? "missing")}`,
@@ -232,7 +226,7 @@ function checkEffectCheckout(
   }
 }
 
-function checkNodeRange(root: Manifest, examples: readonly Manifest[]): void {
+function checkNodeRange(root: Manifest, helpers: Manifest): void {
   const nodeRange = stringAt(objectAt(root.manifest, "engines"), "node");
   if (nodeRange === undefined) {
     failures.push(
@@ -240,26 +234,23 @@ function checkNodeRange(root: Manifest, examples: readonly Manifest[]): void {
     );
     return;
   }
-  checkEngineCopies(nodeRange, examples);
+  checkEngineCopies(nodeRange, helpers);
   checkNodePin(nodeRange);
 }
 
 /**
- * Published manifests and examples must carry the root range; any other
- * package manifest that declares one must match it.
+ * Published manifests and the helper manifest must carry the root range; any
+ * other package manifest that declares one must match it.
  * @param nodeRange Root `engines.node`.
- * @param examples Example manifests.
+ * @param helpers The helper manifest.
  */
-function checkEngineCopies(
-  nodeRange: string,
-  examples: readonly Manifest[],
-): void {
+function checkEngineCopies(nodeRange: string, helpers: Manifest): void {
   const copies = [
     ...FINAL_PACKAGE_DIRS.map((dir) => ({
       required: FINAL_PACKAGES[dir].published,
       ...manifestAt(`packages/${dir}/package.json`),
     })),
-    ...examples.map((example) => ({ required: true, ...example })),
+    { required: true, ...helpers },
   ];
   for (const { where, manifest, required } of copies) {
     const node = stringAt(objectAt(manifest, "engines"), "node");
@@ -309,12 +300,6 @@ function parseVersion(text: string): Version | undefined {
     return undefined;
   }
   return [Number(match[1]), Number(match[2] ?? 0), Number(match[3] ?? 0)];
-}
-
-function readdirIfPresent(dir: string): readonly string[] {
-  return existsSync(dir)
-    ? readdirSync(dir).sort((left, right) => left.localeCompare(right))
-    : [];
 }
 
 main();
