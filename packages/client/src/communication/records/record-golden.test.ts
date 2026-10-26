@@ -1,6 +1,6 @@
 /**
  * @file Fixed GENESIS and POST records keep canonical bytes and hashes and verify
- * under the retained wire. A failure is a wire break requiring a protocol reset.
+ * under their synthetic retained wire policy, independently of the live reset.
  * Reproduce with node scripts/generate-client-record-golden.ts after pnpm build.
  */
 
@@ -12,6 +12,7 @@ import {
   encodeCanonical,
 } from "../../encoding/canonical-json.js";
 import { Ed25519PublicKey } from "../../identity/keys.js";
+import { WireVersions } from "../../identity/wire-version.js";
 import {
   ActionCertifiedRecord,
   CertifiedRecord,
@@ -54,7 +55,12 @@ describe("canonical record golden bytes", () => {
         record,
         membership: yield* membershipOf(form),
       });
-    }),
+    }).pipe(
+      Effect.provideService(WireVersions, {
+        live: [],
+        history: [form.membership.sharnessVersion],
+      }),
+    ),
   );
   it.each(golden.forms.filter((form) => form.kind === "certified_record"))(
     "preserves $name",
@@ -73,6 +79,11 @@ describe("canonical record golden bytes", () => {
           record,
           membership: yield* membershipOf(form),
         });
-      }),
+      }).pipe(
+        Effect.provideService(WireVersions, {
+          live: [],
+          history: [form.membership.sharnessVersion],
+        }),
+      ),
   );
 });

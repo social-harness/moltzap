@@ -148,22 +148,10 @@ const lookupOperation: Rpc.Rpc<
   error: publicReadErrors,
 });
 
-/** Private deterministic list operation. */
-const listOperation: Rpc.Rpc<
-  "list",
-  typeof registryContract.RegistryListRequest,
-  typeof registryContract.listResultSchema,
-  typeof publicReadErrors
-> = Rpc.make("list", {
-  payload: registryContract.RegistryListRequest,
-  success: registryContract.listResultSchema,
-  error: publicReadErrors,
-});
-
 /** The package-private no-serialization Registry operation group. */
 const registryOperations: RpcGroup.RpcGroup<
-  typeof registerOperation | typeof lookupOperation | typeof listOperation
-> = RpcGroup.make(registerOperation, lookupOperation, listOperation);
+  typeof registerOperation | typeof lookupOperation
+> = RpcGroup.make(registerOperation, lookupOperation);
 
 /** Private in-process client for the Registry operation group. */
 export type RegistryRpcClient = RpcClient.FromGroup<typeof registryOperations>;
@@ -171,7 +159,7 @@ export type RegistryRpcClient = RpcClient.FromGroup<typeof registryOperations>;
 type NoSerializationClient = Effect.Effect.Success<
   ReturnType<
     typeof RpcClient.makeNoSerialization<
-      typeof registerOperation | typeof lookupOperation | typeof listOperation,
+      typeof registerOperation | typeof lookupOperation,
       never
     >
   >
@@ -225,7 +213,7 @@ const registerHandler =
     );
 
 /**
- * Implements the three private operations over durable Registry storage.
+ * Implements registration and lookup over durable Registry storage.
  *
  * @param input Private RPC handler dependencies.
  * @param input.storage Durable Registry operations.
@@ -239,5 +227,4 @@ export const makeRegistryRpcHandlersLayer = (input: {
   registryOperations.toLayer({
     register: registerHandler(input),
     lookup: (request) => input.storage.lookup(request),
-    list: (request) => input.storage.list(request),
   });

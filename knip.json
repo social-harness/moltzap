@@ -4,8 +4,6 @@
     ".": {
       "entry": [
         "scripts/build/*.ts",
-        "scripts/code/*.ts",
-        "scripts/setup/*.ts",
         "scripts/test-*-package.ts",
         "examples/*/*.ts",
         "scripts/docs/check-mermaid.ts",
@@ -17,14 +15,11 @@
         "*.ts",
         "scripts/docs/**/*.ts",
         "scripts/build/**/*.ts",
-        "scripts/code/**/*.ts",
-        "scripts/setup/**/*.ts",
         "scripts/test/packed-workspace.ts",
         "scripts/test-*-package.ts",
         "scripts/__tests__/**/*.ts"
       ],
       "ignoreDependencies": [
-        "@effect/tsgo",
         "@mermaid-js/mermaid-cli",
         "oxlint",
         "puppeteer",

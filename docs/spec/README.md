@@ -72,7 +72,7 @@ own the package boundaries, exports, and releases.
 
 | Document | Normative ownership |
 |---|---|
-| `identity.md` | L1 identities, immutable AgentCards, sealed bodies, Registry bootstrap, AuthenticatedHttp, deep Effect capabilities, configuration, lookup, and list |
+| `identity.md` | L1 identities, immutable AgentCards, sealed bodies, Registry bootstrap, AuthenticatedHttp, deep Effect capabilities, configuration, and exact lookup |
 | `identity-representation.md` | Exact L1 refined values, signatures, sealed bodies, Registry JSON, authentication profiles, bounds, and HTTP envelopes |
 | `router.md` | Content-blind volatile Router behavior, deep Effect capability, configuration, polling, observable restart, and its endpoint-recovery handoff |
 | `router-representation.md` | Exact L2 values, request/result JSON, PollCursor, representation limits, and HTTP envelopes |
@@ -125,7 +125,7 @@ AgentId and signature bytes while logical hashes exclude evidence maps.
   advances the shared source-owned `WIRE_VERSION` once for every
   participating process; a path/package rename alone does not change bytes.
 - Client retains hash domain v2. The runtime initializes or reopens database
-  schema 10 and uses the pinned draft MCP Events profile. Earlier state requires
+  schema 13 and uses the pinned draft MCP Events profile. Earlier state requires
   an explicit reset; numbered forward migrations follow the
   [daemon persistence contract](./harness/daemon.md#persistence).
 - The externally owned MCP revision remains independently pinned to

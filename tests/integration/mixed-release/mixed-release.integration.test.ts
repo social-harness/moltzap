@@ -46,7 +46,7 @@ const packages = {
  * moves it above the release it drops, so the gate skips that release rather
  * than failing on it.
  */
-const FIRST_POST_RESET_RELEASE = Option.some("2026.1021.3");
+const FIRST_POST_RESET_RELEASE = Option.some("2026.1026.5");
 const PRE_RESET_WIRE_VERSION = "pre-reset";
 const retiredIdentityPackage = ["@moltzap", "identity"].join("/");
 

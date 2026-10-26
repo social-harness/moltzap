@@ -7,7 +7,7 @@ import {
   decodeCanonicalJson,
   encodeCanonicalJson,
 } from "../../encoding/canonical-json.js";
-import { exactStruct } from "../../encoding/exact.js";
+import { exactParseOptions, exactStruct } from "../../encoding/exact.js";
 import { canonicalIdentifier } from "../../encoding/identifier.js";
 import { AgentId, AgentName, PrincipalId } from "../agents.js";
 import {
@@ -68,26 +68,11 @@ export const RegistryLookupRequest = Schema.Union(
   }),
 ).annotations({
   identifier: "RegistryLookupRequest",
-  parseOptions: {
-    exact: true,
-    onExcessProperty: "error",
-  },
+  parseOptions: exactParseOptions,
 });
 /** Validated Registry lookup selector. */
 // eslint-disable-next-line @typescript-eslint/no-redeclare -- The same-named Schema and type form one boundary model.
 export type RegistryLookupRequest = typeof RegistryLookupRequest.Type;
-
-/** Closed Registry list continuation request. */
-// eslint-disable-next-line @typescript-eslint/naming-convention -- Effect Schemas share the public domain name they decode.
-export const RegistryListRequest = exactStruct({
-  afterAgentId: Schema.optional(AgentId).annotations({
-    description:
-      "Exclusive agent identity cursor for Registry listing; omit to start the first page.",
-  }),
-}).annotations({ identifier: "RegistryListRequest" });
-/** Validated Registry list continuation request. */
-// eslint-disable-next-line @typescript-eslint/no-redeclare -- The same-named Schema and type form one boundary model.
-export type RegistryListRequest = typeof RegistryListRequest.Type;
 
 /** Closed domain outcome from one bootstrap registration attempt. */
 export type RegistryRegisterResult =
@@ -100,13 +85,6 @@ export type RegistryRegisterResult =
 export type RegistryLookupResult =
   | Readonly<{ kind: "found"; agentCard: VerifiedAgentCard }>
   | Readonly<{ kind: "not_found" }>;
-
-/** One deterministic page of complete immutable AgentCards. */
-export type RegistryListResult = Readonly<{
-  kind: "page";
-  agentCards: readonly VerifiedAgentCard[];
-  hasMore: boolean;
-}>;
 
 /** Complete bootstrap registration call made through the Registry client. */
 export type RegistryRegisterCall = Readonly<{
@@ -141,12 +119,6 @@ export interface RegistryClientService {
     RegistryLookupResult,
     RegistryPublicReadError | RegistryClientError
   >;
-  readonly list: (
-    request: RegistryListRequest,
-  ) => Effect.Effect<
-    RegistryListResult,
-    RegistryPublicReadError | RegistryClientError
-  >;
 }
 
 /** Validated registration outcomes shared through registryContract. */
@@ -168,13 +140,6 @@ const lookupResultSchema = Schema.Union(
   }),
   exactStruct({ kind: Schema.Literal("not_found") }),
 );
-
-/** Validated list outcomes shared through registryContract. */
-const listResultSchema = exactStruct({
-  kind: Schema.Literal("page"),
-  agentCards: Schema.Array(verifiedAgentCardSchema),
-  hasMore: Schema.Boolean,
-});
 
 /** Exact registration response representation used by both HTTP adapters. */
 // eslint-disable-next-line agent-code-guard/no-exported-brand-constructor -- Private HTTP and storage adapters share this Schema; the package root does not export it.
@@ -198,13 +163,6 @@ export const lookupResponseSchema = Schema.Union(
   exactStruct({ kind: Schema.Literal("not_found") }),
 );
 
-/** Exact list response representation used by both HTTP adapters. */
-const listResponseSchema = exactStruct({
-  kind: Schema.Literal("page"),
-  agentCards: Schema.Array(AgentCard),
-  hasMore: Schema.Boolean,
-});
-
 /** Exact bootstrap registration HTTP body. */
 const registrationBody = exactStruct({
   request: RegistryRegisterRequest,
@@ -214,8 +172,6 @@ const registrationBody = exactStruct({
 export const REGISTER_PATH = "/v1/identities:register";
 /** Exact public lookup request path. */
 export const LOOKUP_PATH = "/v1/identities:lookup";
-/** Exact public list request path. */
-export const LIST_PATH = "/v1/identities:list";
 /** Exact Registry readiness path. */
 const HEALTH_PATH = "/healthz";
 
@@ -223,16 +179,8 @@ const HEALTH_PATH = "/healthz";
 const REGISTER_ROUTE = "/v1/identities::register";
 /** Effect Router pattern for the literal lookup path. */
 const LOOKUP_ROUTE = "/v1/identities::lookup";
-/** Effect Router pattern for the literal list path. */
-const LIST_ROUTE = "/v1/identities::list";
-
 /** Exact paths used to classify method mismatches at the fallback route. */
-const KNOWN_PATHS = new Set([
-  REGISTER_PATH,
-  LOOKUP_PATH,
-  LIST_PATH,
-  HEALTH_PATH,
-]);
+const KNOWN_PATHS = new Set([REGISTER_PATH, LOOKUP_PATH, HEALTH_PATH]);
 
 const maximumIdentifier = "agt_AAAAAAAAAAAAAAAAAAAAAA";
 const maximumOperationId = "opn_AAAAAAAAAAAAAAAAAAAAAA";
@@ -262,11 +210,6 @@ const LOOKUP_BODY_CAP = Math.max(
   byteLength({ agentName: maximumName }),
 );
 
-/** Derived exact maximum public list body size. */
-const LIST_BODY_CAP = byteLength({
-  afterAgentId: maximumIdentifier,
-});
-
 /** Registration body, durable operation identity, and response share exact codecs. */
 export const registryRegisterCodec = {
   request: { encode: canonicalCodec(RegistryRegisterRequest).encode },
@@ -278,12 +221,6 @@ export const registryRegisterCodec = {
 export const registryLookupCodec = {
   request: canonicalCodec(RegistryLookupRequest),
   response: canonicalCodec(lookupResponseSchema),
-};
-
-/** Public list bytes use the same closed representations on both HTTP sides. */
-export const registryListCodec = {
-  request: canonicalCodec(RegistryListRequest),
-  response: canonicalCodec(listResponseSchema),
 };
 
 /** Stored cards retain their complete canonical signed representation. */
@@ -301,10 +238,6 @@ function canonicalCodec<A, I>(schema: Schema.Schema<A, I>) {
 export const registryContract = Object.freeze({
   HEALTH_PATH,
   KNOWN_PATHS,
-  LIST_BODY_CAP,
-  LIST_PATH,
-  LIST_ROUTE,
-  listResultSchema,
   LOOKUP_BODY_CAP,
   LOOKUP_PATH,
   LOOKUP_ROUTE,
@@ -316,8 +249,6 @@ export const registryContract = Object.freeze({
   registerResultSchema,
   registrationBody,
   registryAgentCardCodec,
-  registryListCodec,
-  RegistryListRequest,
   registryLookupCodec,
   RegistryLookupRequest,
   registryRegisterCodec,

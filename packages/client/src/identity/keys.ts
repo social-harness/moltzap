@@ -189,7 +189,7 @@ const isFrozenPublicKey = (value: unknown): value is PublicKeyValue => {
       Object.isFrozen(value) &&
       hasPublicKeyMembers(value)
     );
-    // eslint-disable-next-line agent-code-guard/bare-catch -- A Schema predicate converts hostile reflection into ordinary validation failure. #ignore-sloppy-code-next-line[bare-catch]: The predicate returns false.
+    // eslint-disable-next-line agent-code-guard/bare-catch -- A Schema predicate converts hostile reflection into ordinary validation failure.
   } catch {
     return false;
   }

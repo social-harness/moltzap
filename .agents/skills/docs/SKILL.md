@@ -3,7 +3,7 @@ name: docs
 description: |
   Documentation style and regeneration in this repo — where flow
   diagrams live, the Mermaid dialect GitHub actually accepts, and when to
-  run pnpm docs:generate. Load for any docs page edit, adding a
+  use TypeDoc and Mintlify. Load for any docs page edit, adding a
   flow diagram, or touching anything under docs/.
 ---
 
@@ -12,25 +12,19 @@ description: |
 Authority order lives in `AGENTS.md → Docs` and governs how to *read* anything.
 This is how to *write* it.
 
-## Generated docs
+## API reference and shared values
 
-MODULE.md pages, the protocol reference, and constants snippets are generated.
-Refresh them **before merge, not per commit**:
+Build the API reference with `pnpm docs:api`. Native TypeDoc output lives in
+`dist/api`; never hand-edit it.
 
-```sh
-pnpm docs:generate
-```
-
-then commit the result. `pnpm docs:check:drift` is the CI backstop.
-
-Never hand-edit a generated file. `docs/snippets/constants/values.json` carries
-a `generatedBy` field naming its producer; edit the producer.
+Mintlify variables in `docs/docs.json` and reusable snippets under
+`docs/snippets/` own shared site content. Check site links with
+`pnpm -s docs:check`.
 
 ## Flow diagrams
 
-Flow diagrams are Mermaid in JSDoc above the owning symbol. Generated MODULE.md
-pages surface them, so the diagram lives with the code it describes and cannot
-drift into a separate document.
+Flow diagrams are Mermaid in JSDoc above the owning symbol. TypeDoc surfaces
+them in the API reference.
 
 Change a flow → update its diagram in the same PR.
 
@@ -123,7 +117,7 @@ Each page is exactly one type. Guides and quickstarts are how-tos.
   no artificial procedure or empty prerequisites section.
 - Every hand-written `.mdx` page ends with `## Related`: 3–6 root-relative
   links. These pages link to site pages, never to GitHub blob or tree URLs for
-  content the site has. Generated MODULE pages and the `docs/spec/*.md` pages,
+  content the site has. The `docs/spec/*.md` pages,
   which readers also open on GitHub, are exempt from both rules.
 - Each step that runs a command says what success looks like: "You should see
   `<literal>`." Paste output only when the reader compares it line by line.
@@ -136,7 +130,7 @@ Each page is exactly one type. Guides and quickstarts are how-tos.
   on the original page with a link to its new home. A moved page path gets a
   `docs.json` redirect.
 - The target `docs.json` layout is tabs that follow the reader's journey:
-  Get started → Guides → Concepts → Reference (specs, Modules) → Help. A PR
+  Get started → Guides → Concepts → Reference (specs, API) → Help. A PR
   that changes navigation moves toward it; one that leaves navigation alone
   is not held to it.
 

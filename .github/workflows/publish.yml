@@ -374,15 +374,6 @@ jobs:
           PACKAGES: ${{ steps.select.outputs.packages }}
           HUSKY: "0"
         run: |
-          # The CHANGELOG preamble predates per-package versions; this rewrite
-          # finds nothing to replace once a release commit has corrected it.
-          # shellcheck disable=SC2016 # The backticks are Markdown, not a substitution.
-          node -e '
-            const fs = require("node:fs");
-            const before = "Every published package\ncarries the same version in a release, and the release commit writes each\nsection below from the fragments in `changelog.d/`.";
-            const after = "A release publishes at\nits version only the packages that changed since their last published version;\nthe release commit lists them and writes each section below from the fragments\nin `changelog.d/`.";
-            fs.writeFileSync("CHANGELOG.md", fs.readFileSync("CHANGELOG.md", "utf8").replace(before, after));
-          '
           if ! grep -q "^## \[$VERSION\]" CHANGELOG.md; then
             grep -qxF '<!-- towncrier release notes start -->' CHANGELOG.md \
               || { echo "CHANGELOG.md lost its towncrier marker"; exit 1; }

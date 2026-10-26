@@ -329,8 +329,6 @@ export {
   OperationId,
   RegistryConnectionError,
   RegistryInvalidResponseError,
-  RegistryListRequest,
-  type RegistryListResult,
   RegistryLookupRequest,
   type RegistryLookupResult,
   RegistryRegisterRequest,

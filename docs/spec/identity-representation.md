@@ -1,9 +1,5 @@
 # L1 representation
 
-`<WIRE_VERSION>` in examples denotes the emitted value from
-`packages/client/src/identity/wire-version.ts`; see
-[Wire versions](./identity.md#wire-versions).
-
 Status: **Gate 1 normative**
 
 Semantic contract: [`identity.md`](./identity.md)
@@ -144,7 +140,7 @@ The payload is exactly:
 ```json
 {
   "kind": "agentCard",
-  "sharnessVersion": "<WIRE_VERSION>",
+  "sharnessVersion": "2026.1026.5",
   "agentId": "agt_<22-character-base64url>",
   "principalId": "prn_<22-character-base64url>",
   "agentName": "example-agent",
@@ -225,7 +221,7 @@ The payload is exactly:
 ```json
 {
   "kind": "signedMessage",
-  "sharnessVersion": "<WIRE_VERSION>",
+  "sharnessVersion": "2026.1026.5",
   "senderAgentId": "agt_<22-character-base64url>",
   "agentCardDigest": "acd_<43-character-base64url>",
   "recipientAgentIds": [
@@ -404,7 +400,7 @@ Identity defines three distinct HTTP boundary owners:
 - registered-agent `AuthenticatedHttp` owns only the normal profile;
 - Registry owns registration bootstrap admission and its
   proof-of-possession profile; and
-- Registry lookup and list are public reads with no signature profile.
+- Registry lookup is a public read with no signature profile.
 
 Registration never creates or consumes an authenticated existing-agent
 context. It does not add registration members to `AuthenticatedHttp`.
@@ -592,7 +588,7 @@ claim back.
 
 ### Public Registry read validation order
 
-Lookup and list perform:
+Lookup performs:
 
 1. exact route lookup and method check;
 2. content framing, content type, content encoding, body byte bound,
@@ -602,8 +598,8 @@ Lookup and list perform:
    JCS re-encoding, and byte comparison; and
 5. domain handling.
 
-Public lookup and list reject `Content-Digest`, `Signature-Input`,
-`Signature`, or `Authorization` as stage-2 400 `malformed`. They do not
+Public lookup rejects `Content-Digest`, `Signature-Input`,
+`Signature`, or `Authorization` as stage-2 400 `malformed`. It does not
 ignore or verify an authentication profile that the route does not own.
 
 When multiple conditions fail, the earliest stage determines the
@@ -716,10 +712,10 @@ introduced.
 
 ## Registry routes
 
-Register, lookup, and list each have one private overflow-checked
+Register and lookup each have one private overflow-checked
 request-body calculator derived from their closed maximum
 representation. The HTTP reader applies that route's cap before UTF-8
-decoding or parsing. These are three derived private values, not one
+decoding or parsing. These are two derived private values, not one
 generic bound, environment keys, or public configuration members.
 Boundary tests accept each exact maximum and reject one additional
 octet.
@@ -789,41 +785,11 @@ or:
 {"kind":"not_found"}
 ```
 
-### List
-
-`POST /v1/identities:list` is public and accepts:
-
-```json
-{}
-```
-
-or:
-
-```json
-{"afterAgentId":"agt_<22-character-base64url>"}
-```
-
-It returns status 200 and:
-
-```json
-{
-  "kind": "page",
-  "agentCards": [],
-  "hasMore": false
-}
-```
-
-`agentCards` contains complete General JWS AgentCards in strictly
-increasing decoded AgentId order. Its maximum length is the
-server-configured page size. `hasMore` is true exactly when another
-card exists after the last returned AgentId.
-
-Register, lookup, and list response Schemas are private. They first
-parse these exact untrusted representations. The client then verifies
-each AgentCard, request binding, ordering, uniqueness, and lower bound
-as applicable before constructing `RegistryRegisterResult`,
-`RegistryLookupResult`, or `RegistryListResult`. Those public result
-types are not standalone parsing Schemas.
+Register and lookup response Schemas are private. They first parse these
+exact untrusted representations. The client then verifies each AgentCard
+and request binding before constructing `RegistryRegisterResult` or
+`RegistryLookupResult`. Those public result types are not standalone parsing
+Schemas.
 
 ### Health
 
