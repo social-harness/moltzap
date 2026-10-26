@@ -5,8 +5,8 @@
  * It packs the channel's closure as a release does, installs the tarballs and
  * that OpenClaw into an isolated consumer, and checks three behaviours: the
  * package typechecks for a TypeScript consumer, OpenClaw loads it from its
- * install path and registers the `sharness` channel, and OpenClaw serves the
- * packed group-messaging skill to the model. Every check goes through the
+ * install path and registers the `sharness` channel, and OpenClaw serves every
+ * packed skill to the model. Every check goes through the
  * channel's public entry point or OpenClaw's CLI, so a new OpenClaw release
  * changes only the `openclaw` entry of the `pnpm-workspace.yaml` catalog.
  */
@@ -64,7 +64,7 @@ runGate("sharness-openclaw-pack-", (temporaryRoot) =>
     yield* verifyTypes(consumerRoot);
     const { openclaw, pluginRoot } = yield* pluginHost(consumerRoot);
     yield* verifyPluginLoaded(openclaw, openclawVersion);
-    yield* verifySkillServed(openclaw, pluginRoot);
+    yield* verifySkillsServed(openclaw, pluginRoot);
     return `OpenClaw ${openclawVersion} packed consumer check passed`;
   }),
 );
@@ -222,18 +222,41 @@ function verifyPluginLoaded(
   });
 }
 
-function verifySkillServed(
+/**
+ * Requires that OpenClaw shows the model each skill directory the package
+ * ships, with the packed text.
+ * @param openclaw The isolated OpenClaw CLI.
+ * @param pluginRoot The installed channel package.
+ */
+function verifySkillsServed(
   openclaw: OpenClawCli,
   pluginRoot: string,
 ): Effect.Effect<void, GateError, GateServices> {
   return Effect.gen(function* () {
-    const skill = yield* openclaw(
-      ["skills", "info", "group-messaging"],
-      jsonObject,
+    const fs = yield* FileSystem.FileSystem;
+    const names = yield* fs.readDirectory(join(pluginRoot, "skills"));
+    yield* requireCondition(
+      names.length > 0,
+      "expected the packed channel to ship its skills",
     );
+    yield* Effect.forEach(
+      names,
+      (name) => verifySkillServed(openclaw, pluginRoot, name),
+      { concurrency: 1, discard: true },
+    );
+  });
+}
+
+function verifySkillServed(
+  openclaw: OpenClawCli,
+  pluginRoot: string,
+  name: string,
+): Effect.Effect<void, GateError, GateServices> {
+  return Effect.gen(function* () {
+    const skill = yield* openclaw(["skills", "info", name], jsonObject);
     yield* requireCondition(
       skill.eligible === true && skill.modelVisible === true,
-      `expected OpenClaw to show the group-messaging skill to the model, got ${JSON.stringify(skill)}`,
+      `expected OpenClaw to show the ${name} skill to the model, got ${JSON.stringify(skill)}`,
     );
     const servedPath = skill.filePath;
     if (typeof servedPath !== "string") {
@@ -245,15 +268,15 @@ function verifySkillServed(
       [
         readText(servedPath, `OpenClaw serves a missing skill ${servedPath}`),
         readText(
-          join(pluginRoot, "skills", "group-messaging", "SKILL.md"),
-          "packed group-messaging skill is missing",
+          join(pluginRoot, "skills", name, "SKILL.md"),
+          `packed ${name} skill is missing`,
         ),
       ],
       { concurrency: 2 },
     );
     yield* requireCondition(
       served === packed,
-      "expected OpenClaw to serve the packed group-messaging skill text",
+      `expected OpenClaw to serve the packed ${name} skill text`,
     );
   });
 }

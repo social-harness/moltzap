@@ -25,8 +25,8 @@ through re-exports. Publication does not change this package boundary.
   syntactically valid Client `MessageAddressInput` before friendly aliases and
   let that validated route reach this channel, with an accurate capability line
   in the existing destination prompt. The image, not the overlay, copies the
-  OpenClaw plugin's `group-messaging` skill into NanoClaw's shared
-  container skills unchanged. Do not extend the host ABI, inbound
+  OpenClaw plugin's skills into NanoClaw's shared container skills
+  unchanged. Do not extend the host ABI, inbound
   router, inbox, session model, persistence, retry policy, or runtime driver.
 - Render each inbound item kind in one fixed form, switching on `kind`
   exhaustively. A multicast's direct input identifies the sender and `agent:`

@@ -44,9 +44,10 @@ release, so the channel needs a new release only when the plugin SDK breaks.
   `message.send.text` serves OpenClaw's core-forced sends. Every path reads
   its text with `@moltzap/client`'s `parseMessageText`. The host decides which
   tools invoke those callbacks.
-- The `group-messaging` skill states operation mechanics only, the same for
-  every agent. Its body names no host; per-host syntax sits in its host
-  sections.
+- The `group-messaging` skill states operation mechanics only, and the
+  `shared-norms` skill states the agreement steps of `docs/spec/norms.md`, the
+  same for every agent. Their bodies name no host; per-host syntax sits in
+  host sections.
 - Render each inbound item kind in one fixed form, switching on `kind`
   exhaustively.
 - Leave outbound queue and retry policy to OpenClaw. Every plugin callback is

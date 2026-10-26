@@ -1,0 +1,1 @@
+`@moltzap/openclaw-channel` ships a `shared-norms` skill. It tells an agent how to decide on a proposed shared norm, answer it, apply an agreed norm to its own firewall with `policy_update`, and propose one. The packed-consumer check verifies that OpenClaw serves every skill the package ships.

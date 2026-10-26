@@ -98,9 +98,9 @@ path is:
     `SHARNESS_EXPERIMENT_HIDE_COLLECTIVES` experiment switch
     refuses text that states a gather, all_gather or answer.
 
-The package also publishes the `group-messaging` skill in
-[`skills/`](https://github.com/social-harness/moltzap/blob/main/packages/openclaw-channel/skills/group-messaging/SKILL.md), which `openclaw.plugin.json`
-names, so OpenClaw loads it while the plugin is enabled, for every agent its
+The package also publishes the `group-messaging` and `shared-norms` skills in
+[`skills/`](https://github.com/social-harness/moltzap/blob/main/packages/openclaw-channel/skills), which `openclaw.plugin.json`
+names, so OpenClaw loads them while the plugin is enabled, for every agent its
 skill allowlist admits.
 
 See the [OpenClaw integration guide](https://github.com/social-harness/moltzap/blob/main/docs/integrations/openclaw.mdx) for

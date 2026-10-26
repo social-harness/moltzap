@@ -38,8 +38,8 @@ naming the failing fields. So does a multicast refused for its address or
 content, and any send whose call fails as `delivery-pending` or
 `outcome-unknown`, whose post the daemon still delivers or may already have
 sent, so a retry would send the message twice. Any other failed send fails the
-delivery, leaving retry to NanoClaw. The image also copies the `group-messaging`
-skill that `@moltzap/openclaw-channel` publishes into NanoClaw's shared
+delivery, leaving retry to NanoClaw. The image also copies the skills
+that `@moltzap/openclaw-channel` publishes into NanoClaw's shared
 container skills, which every agent group selects by default. Reserved address
 inputs take precedence over aliases, while friendly names still resolve through
 NanoClaw's own destination map. Explicit Social Harness address inputs need no
