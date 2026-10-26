@@ -145,5 +145,5 @@
     "fast-check": "catalog:"
   },
   "sharnessContentHash": "sha256:b2c7fa049bcb4da0a425db4ffdf865bd369ae5b9c693e794d360b66c6e57fbfa",
-  "sharnessWireVersion": "2026.1021.3"
+  "sharnessWireVersion": "2026.1026.5"
 }
