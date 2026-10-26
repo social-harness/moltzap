@@ -9,6 +9,7 @@ import type {
   DaemonConfigurationError,
 } from "../bootstrap.js";
 import { exactParseOptions } from "../../encoding/exact.js";
+import { registrationAdmissionRefusalMessage } from "../../harness/protocol/index.js";
 import {
   RegistryRegisterRequest,
   type RegistryRegisterResult,
@@ -40,6 +41,20 @@ export {
 export class DaemonRegistrationUpstreamError extends Data.TaggedError(
   "DaemonRegistrationUpstreamError",
 ) {}
+
+/** A refused credential cannot succeed when the same request is retried. */
+export class DaemonRegistrationRefusedError extends Data.TaggedError(
+  "DaemonRegistrationRefusedError",
+) {
+  readonly reason = "admission-refused";
+  /**
+   * The operator remedy contains no credential or upstream implementation detail.
+   * @returns The final refusal and the credential replacement instructions.
+   */
+  override get message(): string {
+    return registrationAdmissionRefusalMessage;
+  }
+}
 
 type RegistrationRequest = Parameters<HarnessMcpOperations["register"]>[0];
 
@@ -144,6 +159,7 @@ export const registerDaemonIdentity = (input: {
 }): Effect.Effect<
   RegistryRegisterResult,
   | DaemonRegistrationUpstreamError
+  | DaemonRegistrationRefusedError
   | DaemonRegistrationPersistenceError
   | DaemonRegistrationRepresentationError
   | DaemonConfigurationError,
@@ -156,7 +172,13 @@ export const registerDaemonIdentity = (input: {
       request,
       admissionCredential,
       signingAuthority: input.bootstrap.signingAuthority,
-    }).pipe(Effect.mapError(upstreamFailure));
+    }).pipe(
+      Effect.mapError((error) =>
+        error._tag === "AuthenticationFailedError"
+          ? new DaemonRegistrationRefusedError()
+          : upstreamFailure(),
+      ),
+    );
     if (result.kind === "registered") {
       if (
         !registrationMatches(result.agentCard, input.request, input.bootstrap)

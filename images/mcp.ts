@@ -52,7 +52,7 @@ class CommandError extends Data.TaggedError("CommandError")<{
   readonly entry: string;
 }> {}
 
-/** A tool call that failed; `refused` marks arguments the daemon rejected. */
+/** A tool call that failed; `refused` marks a final daemon refusal. */
 class ToolFailure extends Data.TaggedError("ToolFailure")<{
   readonly message: string;
   readonly refused: boolean;
@@ -355,7 +355,12 @@ function callTool(
       new ToolFailure({
         message: `${tool} failed: ${failureReason(cause)}`,
         refused:
-          ProtocolError.isInstance(cause) && cause.code === INVALID_PARAMS,
+          ProtocolError.isInstance(cause) &&
+          (cause.code === INVALID_PARAMS ||
+            Option.exists(
+              Schema.decodeUnknownOption(failureData)(cause.data),
+              (data) => data.reason === "admission-refused",
+            )),
       }),
   }).pipe(
     Effect.flatMap((result) =>
@@ -381,9 +386,12 @@ function failureReason(cause: unknown): string {
   return Option.match(Schema.decodeUnknownOption(failureData)(cause.data), {
     onNone: () => cause.message,
     onSome: ({ reason, issues = [] }) =>
-      [reason ?? cause.message, ...issues.map((issue) => issue.message)].join(
-        "; ",
-      ),
+      [
+        reason === "admission-refused"
+          ? cause.message
+          : (reason ?? cause.message),
+        ...issues.map((issue) => issue.message),
+      ].join("; "),
   });
 }
 

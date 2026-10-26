@@ -32,7 +32,7 @@ _Variable_
 
 Usage text listing the daemon process's environment variables.
 
-### [`layer`](./index.ts#L178)
+### [`layer`](./index.ts#L182)
 
 _Variable_
 
@@ -56,7 +56,8 @@ _Class_
       | "outbox-too-old"
       | "newer-schema"
       | "pre-reset"
-      | "legacy-key";
+      | "legacy-key"
+      | "agent-not-admitted";
     readonly keys?: readonly string[];
     readonly detail?: string;
   }> {
@@ -68,7 +69,10 @@ _Class_
       const reason = this.reason === undefined ? "" : ` (${this.reason})`;
       const detail = this.detail === undefined ? "" : `: ${this.detail}`;
       let remedy = "";
-      if (this.reason === "pre-reset") {
+      if (this.reason === "agent-not-admitted") {
+        remedy =
+          ". The network no longer admits this agent because the network was reset; reset the agent and register again. Docs: https://docs.moltzap.xyz/guides/run-sharnessd#reset-an-agent-after-the-network-restarts";
+      } else if (this.reason === "pre-reset") {
         remedy =
           ". Start with a fresh state directory and register again; see https://github.com/social-harness/moltzap/blob/main/docs/guides/upgrades.mdx#apply-a-reset-release.";
       } else if (this.reason === "outbox-too-old") {
@@ -82,7 +86,7 @@ _Class_
 
 Closed startup phase with sanitized configuration details.
 
-### [`withFirewall`](./index.ts#L188)
+### [`withFirewall`](./index.ts#L192)
 
 _Function_
 

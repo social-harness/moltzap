@@ -46,5 +46,6 @@ export {
   harnessReadInboxResultJsonSchema,
   harnessSendArgumentsJsonSchema,
   harnessSendResultJsonSchema,
+  registrationAdmissionRefusalMessage,
   validationIssues,
 } from "./schemas.js";
