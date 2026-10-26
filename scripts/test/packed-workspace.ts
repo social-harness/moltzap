@@ -199,7 +199,9 @@ export function packProductClosure(
 }
 
 /**
- * Use the workspace's OpenClaw catalog pin for the plugin installation check.
+ * Consumer installs use the workspace's Effect override and its TypeScript and
+ * OpenClaw catalog entries, including npm aliases, so they exercise the
+ * versions the workspace builds.
  * @param workspaceRoot Source workspace root.
  * @returns Dependency specifiers for the isolated consumer.
  */
@@ -217,11 +219,15 @@ export function readConsumerPins(workspaceRoot: string) {
       Schema.Struct({
         catalog: Schema.Struct({
           openclaw: Schema.String,
+          typescript: Schema.String,
         }),
+        overrides: Schema.Struct({ effect: Schema.String }),
       }),
     )(value);
     return {
+      effect: workspace.overrides.effect,
       openclaw: workspace.catalog.openclaw,
+      typescript: workspace.catalog.typescript,
     };
   }).pipe(Effect.withSpan("packedWorkspace.readConsumerPins"));
 }
@@ -244,6 +250,60 @@ export function extractPackedArchive(
     yield* runCommand("tar", ["-xzf", archive, "-C", extractedRoot]);
     return join(extractedRoot, "package");
   }).pipe(Effect.withSpan("packedWorkspace.extractPackedArchive"));
+}
+
+/**
+ * Read one text file, failing with `missing` when the file system refuses.
+ * @param path File to read.
+ * @param missing Failure message when the file is absent or unreadable.
+ */
+export function readText(
+  path: string,
+  missing: string,
+): Effect.Effect<string, GateError, FileSystem.FileSystem> {
+  return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    return yield* fs.readFileString(path);
+  }).pipe(
+    Effect.catchTag("SystemError", () =>
+      Effect.fail(new PackGateError({ message: missing })),
+    ),
+    Effect.withSpan("packedWorkspace.readText"),
+  );
+}
+
+/**
+ * Invoke the installed compiler through its declared executable; catalog aliases
+ * may expose a versioned command name.
+ * @param consumerRoot Isolated consumer with TypeScript installed.
+ */
+export function checkConsumerTypes(consumerRoot: string) {
+  return Effect.gen(function* () {
+    const compilerRoot = join(consumerRoot, "node_modules", "typescript");
+    const compiler = yield* readJsonFile(
+      join(compilerRoot, "package.json"),
+      Schema.Struct({
+        bin: Schema.Record({ key: Schema.String, value: Schema.String }),
+      }),
+    );
+    const target = Object.entries(compiler.bin).find(([name]) =>
+      /^tsc\d*$/u.test(name),
+    )?.[1];
+    if (target === undefined) {
+      return yield* new PackGateError({
+        message: "TypeScript declares no compiler executable",
+      });
+    }
+    yield* runCommand(
+      process.execPath,
+      [
+        join(compilerRoot, target),
+        "--project",
+        join(consumerRoot, "tsconfig.json"),
+      ],
+      { cwd: consumerRoot },
+    );
+  }).pipe(Effect.withSpan("packedWorkspace.checkConsumerTypes"));
 }
 
 /**

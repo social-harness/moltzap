@@ -21,7 +21,6 @@
     "!dist/tsconfig.tsbuildinfo",
     "!dist/__tests__",
     "openclaw.plugin.json",
-    "skills",
     "LICENSE",
     "NOTICE"
   ],
@@ -45,12 +44,13 @@
         "executor": "nx:run-commands",
         "options": {
           "cwd": "packages/openclaw-channel",
-          "command": "node ../../scripts/build/clean-dist.ts && tsc -b"
+          "command": "node ../../scripts/build/clean-dist.ts && tsc -b && node ../../scripts/build/copy-client-skills.ts"
         },
         "inputs": [
           "production",
           "^production",
-          "{workspaceRoot}/scripts/build/clean-dist.ts"
+          "{workspaceRoot}/scripts/build/clean-dist.ts",
+          "{workspaceRoot}/scripts/build/copy-client-skills.ts"
         ]
       },
       "lint": {

@@ -66,6 +66,13 @@ Client and its owner-authorized management representation.
 Keep type canaries on this accepted surface. Private implementation types
 never become a compatibility shim.
 
+## Agent skills
+
+`skills/` holds the agent skills every channel installs unchanged:
+`group-messaging` states operation mechanics only, and `shared-norms` states
+the agreement steps of `docs/spec/norms.md`, the same for every agent. Their
+bodies name no host; per-host syntax sits in host sections.
+
 ## Daemon boundary
 
 `sharnessd` is one explicitly configured process for one local `AgentId` and
