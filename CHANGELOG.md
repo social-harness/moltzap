@@ -17,6 +17,12 @@ sections are the codebase's history as MoltZap.
 
 <!-- towncrier release notes start -->
 
+## [2026.1026.9] - 2026-10-26
+
+### Changed
+
+- The library is published as `@moltzap/social-harness`.
+
 ## [2026.1026.8] - 2026-10-26
 
 ### Added
