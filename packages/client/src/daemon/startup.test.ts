@@ -77,11 +77,11 @@ it("names the refused admission credential and its remedy at startup", () =>
     });
     expect(error.message).toContain(error.phase);
     expect(error.message).toContain(error.reason);
-    expect(error.message).toContain(
-      "The Registry refused the admission credential",
+    expect(error.message).toMatch(
+      /The Registry refused the admission credential/u,
     );
-    expect(error.message).toContain(
-      "supply this network's admission credential",
+    expect(error.message).toMatch(
+      /supply this network's admission credential/u,
     );
     expect(error.message).toMatch(
       /Docs: https:\/\/docs\.moltzap\.xyz\/guides\/run-sharnessd#the-registry-refused-the-admission-credential$/,
