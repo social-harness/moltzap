@@ -17,6 +17,30 @@ sections are the codebase's history as MoltZap.
 
 <!-- towncrier release notes start -->
 
+## [2026.1026.3] - 2026-10-26
+
+### Changed
+
+- Client supplies one host-neutral rendering of firewall guidance for OpenClaw
+  and NanoClaw, keeping peer content quoted and attributed and omitting
+  composition identifiers. NanoClaw now delivers guidance-bearing items and
+  acknowledges successful host handoff.
+
+### Removed
+
+- Breaking harness interface change: remove `SHARNESS_FIREWALL_AUDIT_EXPORT`,
+  the `Daemon.FirewallOptions.auditExport` service option, and the
+  `FirewallAuditRecord` schema and type exports from `@moltzap/client/service`.
+  Operators read `firewall_decisions` for recent decisions and activations and
+  the history export for certified conversation records. The daemon ignores
+  `SHARNESS_FIREWALL_AUDIT_EXPORT`; unset it and delete any previously published
+  snapshot and its `.partial` file, which hold private provider traces.
+
+### Fixed
+
+- Firewall guidance subjects name senders and recipients by their verified
+  `agent:<name>` address instead of AgentId (#1471).
+
 ## [2026.1026.2] - 2026-10-26
 
 ### Changed
