@@ -2,6 +2,10 @@
 
 import type { Content, MessageAddressInput } from "../records/values.js";
 import type { InboundItem } from "./inbound.js";
+import {
+  type LocalGuidance,
+  renderLocalGuidance,
+} from "../../firewall/outcome/index.js";
 
 type CollectiveRequestItem = Extract<
   InboundItem,
@@ -61,16 +65,25 @@ export function groupMembers(address: MessageAddressInput): readonly string[] {
  * by host, since each host's model sends the answer through its own tool.
  * @param item The delivered question.
  * @param howToAnswer The host's sentence naming the tool that sends the answer to `item.to`.
+ * @param guidance Optional local instructions accompanying the peer question.
  * @returns The text of the model's turn.
  */
 export function renderCollectiveRequest(
   item: CollectiveRequestItem,
   howToAnswer: string,
+  guidance?: LocalGuidance,
 ): string {
-  return [
-    renderCollectiveRequestBody(item),
+  const body = renderCollectiveRequestBody(item);
+  const answerInstructions = [
     'Answer with: {"action":"accept","content":{...}} where content matches the form, or {"action":"decline"}',
     howToAnswer,
+  ];
+  if (guidance === undefined) {
+    return [body, ...answerInstructions].join("\n");
+  }
+  return [
+    renderLocalGuidance(guidance, { text: body, origin: "peer" }),
+    ...answerInstructions,
   ].join("\n");
 }
 

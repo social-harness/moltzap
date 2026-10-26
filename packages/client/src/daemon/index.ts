@@ -43,7 +43,7 @@ import {
 } from "./registration/index.js";
 import { spanExport } from "./telemetry.js";
 
-// safer-arch-ignore no-large-public-surface: Daemon process composition, firewall installation and audit decoding, and the actual Registry and Router client tags with their operation values share the trusted service embedding boundary.
+// safer-arch-ignore no-large-public-surface: Daemon process composition, firewall installation and the actual Registry and Router client tags with their operation values share the trusted service embedding boundary.
 
 const REGISTRY_REQUEST_TIMEOUT = Duration.seconds(30);
 const ROUTER_SEND_TIMEOUT = Duration.seconds(30);
@@ -62,7 +62,6 @@ export {
   type EnglishPolicySettings,
   type EnglishRule,
   type Firewall,
-  FirewallAuditRecord,
   FirewallPolicyError,
   type FirewallSettings,
   makeEnglishPolicy,
@@ -85,13 +84,7 @@ export namespace Daemon {
   export const help = processHelp;
 
   /** Trusted process composition fixes code and evidence while owner tools edit English rules. */
-  export type FirewallOptions = InstalledFirewallOptions & {
-    /**
-     * Dedicated file and adjacent `.partial` staging name for this endpoint's
-     * state directory, privately owned by the daemon and published on shutdown.
-     */
-    readonly auditExport?: string;
-  };
+  export type FirewallOptions = InstalledFirewallOptions;
 
   /** Closed startup phase with sanitized configuration details. */
   export class StartupError extends Data.TaggedError("DaemonStartupError")<{
@@ -167,7 +160,6 @@ export namespace Daemon {
         bootstrap,
         registration,
         firewall,
-        auditExport: installation.auditExport,
       }).pipe(
         Effect.provide(networkContext),
         Effect.mapError(runtimeStartupFailure),
@@ -197,10 +189,9 @@ export namespace Daemon {
   export const withFirewall = (
     options: FirewallOptions,
   ): Layer.Layer<never, StartupError> => {
-    const { auditExport, ...policyOptions } = options;
-    return Layer.scopedDiscard(
-      runDaemon({ options: policyOptions, auditExport }),
-    ).pipe(Layer.provide(telemetry));
+    return Layer.scopedDiscard(runDaemon({ options })).pipe(
+      Layer.provide(telemetry),
+    );
   };
 
   /**
@@ -227,7 +218,9 @@ export namespace Daemon {
   ): StartupError {
     if (installation.fromPolicyFile === true) {
       return configurationFailure(
-        daemonPolicyConfigurationError(policyInstallationError(cause)),
+        daemonPolicyConfigurationError(
+          policyInstallationError(cause, installation.behaviorRulePaths),
+        ),
       );
     }
     return configurationFailure(cause);

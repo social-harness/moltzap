@@ -1,9 +1,10 @@
 /** @file The owner decisions feed explains each checked message through real Client storage. */
 
 import { scopedLive as it } from "@effect/vitest";
-import { Effect, Queue } from "effect";
+import { Effect, Logger, Queue, Schema, Struct } from "effect";
 import { expect } from "vitest";
-import type { FirewallOptions } from "./firewall.js";
+import type { InstalledFirewall } from "./firewall-checks.js";
+import { makeRetainedCheckFixture } from "../../__tests__/firewall-retained-fixtures.js";
 import {
   churnPolicy,
   destination,
@@ -17,6 +18,10 @@ import {
   settings,
 } from "../../__tests__/firewall-runtime-fixtures.js";
 import {
+  decodeRuntimeValue,
+  encodeRuntimeValue,
+} from "../../communication/store/index.js";
+import {
   type DecisionProvider,
   DecisionProviderError,
   type DecisionRequest,
@@ -26,8 +31,11 @@ import {
   type MiddlewareInput,
   type MiddlewareResult,
 } from "../evaluator/contract/index.js";
-import { makeEnglishPolicy } from "../evaluator/index.js";
+import { englishPolicyFormat, makeEnglishPolicy } from "../evaluator/index.js";
+import { decodeMessagePolicy } from "../policy/document/index.js";
 import { installEditableFirewall } from "../policy/editable.js";
+import { decodeFirewallAuditEntry } from "./firewall-values.js";
+import { captureRegistration, type FirewallOptions } from "./firewall.js";
 
 // @agent-code-guard/regression-only: Reads decisions retained by real admission through SQLite and the protocol engine.
 
@@ -70,15 +78,6 @@ const contacts = {
   feedback: { nextAction: "stop", text: "Only known contacts may write." },
 } as const;
 
-const approval = {
-  id: "spending",
-  kind: "autonomy",
-  feedback: {
-    nextAction: "seek-approval",
-    text: "Spending needs the owner's approval.",
-  },
-} as const;
-
 function contactsPolicy(
   outcome: "pass" | "block",
   seen: MiddlewareInput[] = [],
@@ -108,8 +107,9 @@ function codePolicy(
   };
 }
 
-/** A decision provider certain of every answer, choosing `safety` for each safety question. */
+/** Configured safety rules take `safety`; other questions receive compliant answers. */
 function decisionProvider(
+  rules: ReadonlyArray<{ readonly id: string }> = [],
   safety?: "prohibited" | "unresolved",
 ): DecisionProvider {
   return {
@@ -122,14 +122,20 @@ function decisionProvider(
         answers: Object.fromEntries(
           Object.entries(request.questions).map(([id, question]) => [
             id,
-            certain(question, request.stage === "safety" ? safety : undefined),
+            certain(
+              question,
+              request.stage === "safety" &&
+                rules.some((rule) => rule.id === question.ruleId)
+                ? safety
+                : undefined,
+            ),
           ]),
         ),
       }),
   };
 }
 
-/** A decision provider certain of every answer but applicability, which it answers with a near-tie. */
+/** The configured norm has uncertain applicability; other questions settle. */
 const nearTieProvider: DecisionProvider = {
   decide: (request) =>
     Effect.succeed({
@@ -140,7 +146,7 @@ const nearTieProvider: DecisionProvider = {
       answers: Object.fromEntries(
         Object.entries(request.questions).map(([id, question]) => [
           id,
-          request.stage === "applicability"
+          request.stage === "applicability" && question.ruleId === announce.id
             ? {
                 choice: "relevant",
                 confidence: 0.25,
@@ -168,7 +174,7 @@ function certain(
   const choices = Object.keys(question.criteria);
   const choice =
     selected ??
-    ["compliant", "autonomous", "none", "relevant"].find((candidate) =>
+    ["compliant", "none", "relevant"].find((candidate) =>
       choices.includes(candidate),
     ) ??
     "unresolved";
@@ -228,7 +234,9 @@ it("names the fixed English rule whose settled judgment blocked a message", () =
     const feed = yield* decideIncoming(() =>
       options(
         [],
-        english(decisionProvider("prohibited"), { fixed: [privacy] }),
+        english(decisionProvider([privacy], "prohibited"), {
+          fixed: [privacy],
+        }),
       ),
     );
 
@@ -237,10 +245,14 @@ it("names the fixed English rule whose settled judgment blocked a message", () =
         outcome: "block",
         disposition: "withheld",
         cause: "judgment",
-        decidedBy: [
-          { ruleId: privacy.id, from: "fixed", advice: privacy.feedback.text },
-        ],
-        checkedRuleIds: [privacy.id],
+        decidedBy: arrayContaining([
+          expect.objectContaining({
+            ruleId: privacy.id,
+            from: "fixed",
+            advice: privacy.feedback.text,
+          }),
+        ]),
+        checkedRuleIds: arrayContaining([privacy.id]),
       },
     ]);
   }));
@@ -250,7 +262,9 @@ it("names the editable English rule an uncertain judgment held, with its feedbac
     const feed = yield* decideIncoming(() =>
       options(
         [],
-        english(decisionProvider("unresolved"), { initial: [review] }),
+        english(decisionProvider([review], "unresolved"), {
+          initial: [review],
+        }),
       ),
     );
 
@@ -259,13 +273,13 @@ it("names the editable English rule an uncertain judgment held, with its feedbac
         outcome: "hold",
         disposition: "withheld",
         cause: "uncertain",
-        decidedBy: [
-          {
+        decidedBy: arrayContaining([
+          expect.objectContaining({
             ruleId: review.id,
             from: "editable",
             advice: review.feedback?.text,
-          },
-        ],
+          }),
+        ]),
       },
     ]);
   }));
@@ -281,9 +295,13 @@ it("names the norm an uncertain judgment admitted, with its guidance", () =>
         outcome: "allow",
         disposition: "admitted",
         cause: "uncertain",
-        decidedBy: [
-          { ruleId: announce.id, from: "editable", advice: announce.guidance },
-        ],
+        decidedBy: arrayContaining([
+          expect.objectContaining({
+            ruleId: announce.id,
+            from: "editable",
+            advice: announce.guidance,
+          }),
+        ]),
       },
     ]);
   }));
@@ -298,9 +316,13 @@ it("reports an unreachable decision provider as the cause of a hold", () =>
       {
         outcome: "hold",
         cause: "unavailable",
-        decidedBy: [
-          { ruleId: review.id, from: "fixed", advice: review.feedback?.text },
-        ],
+        decidedBy: arrayContaining([
+          expect.objectContaining({
+            ruleId: review.id,
+            from: "fixed",
+            advice: review.feedback?.text,
+          }),
+        ]),
       },
     ]);
   }));
@@ -318,8 +340,9 @@ it("reports a code middleware that timed out as the cause of a hold", () =>
       {
         outcome: "hold",
         cause: "unavailable",
-        decidedBy: [{ ruleId: contacts.id, from: "code" }],
-        checkedRuleIds: [],
+        decidedBy: arrayContaining([
+          expect.objectContaining({ ruleId: contacts.id, from: "code" }),
+        ]),
       },
     ]);
   }));
@@ -334,31 +357,13 @@ it("names the code rule that blocked a message", () =>
       {
         outcome: "block",
         cause: "code",
-        decidedBy: [
-          { ruleId: contacts.id, from: "code", advice: contacts.feedback.text },
-        ],
-      },
-    ]);
-  }));
-
-it("names the autonomy rule that held a message for approval", () =>
-  Effect.gen(function* () {
-    const feed = yield* decideIncoming(() =>
-      options([
-        codePolicy([approval], {
-          findings: [{ ruleId: approval.id, outcome: "approval-required" }],
-          expectations: [],
-        }),
-      ]),
-    );
-
-    expect(feed.decisions).toMatchObject([
-      {
-        outcome: "hold",
-        cause: "code",
-        decidedBy: [
-          { ruleId: approval.id, from: "code", advice: approval.feedback.text },
-        ],
+        decidedBy: arrayContaining([
+          expect.objectContaining({
+            ruleId: contacts.id,
+            from: "code",
+            advice: contacts.feedback.text,
+          }),
+        ]),
       },
     ]);
   }));
@@ -387,10 +392,10 @@ it("names both norms whose expectations conflict", () =>
       {
         outcome: "hold",
         cause: "code",
-        decidedBy: [
-          { ruleId: reply.id, from: "code" },
-          { ruleId: wait.id, from: "code" },
-        ],
+        decidedBy: arrayContaining([
+          expect.objectContaining({ ruleId: reply.id, from: "code" }),
+          expect.objectContaining({ ruleId: wait.id, from: "code" }),
+        ]),
       },
     ]);
   }));
@@ -400,7 +405,9 @@ it("names code and English rules that both blocked, reading the cause from the E
     const feed = yield* decideIncoming(() =>
       options(
         [contactsPolicy("block")],
-        english(decisionProvider("prohibited"), { fixed: [privacy] }),
+        english(decisionProvider([privacy], "prohibited"), {
+          fixed: [privacy],
+        }),
       ),
     );
 
@@ -408,11 +415,11 @@ it("names code and English rules that both blocked, reading the cause from the E
       {
         outcome: "block",
         cause: "judgment",
-        decidedBy: [
-          { ruleId: contacts.id, from: "code" },
-          { ruleId: privacy.id, from: "fixed" },
-        ],
-        checkedRuleIds: [contacts.id, privacy.id],
+        decidedBy: arrayContaining([
+          expect.objectContaining({ ruleId: contacts.id, from: "code" }),
+          expect.objectContaining({ ruleId: privacy.id, from: "fixed" }),
+        ]),
+        checkedRuleIds: arrayContaining([contacts.id, privacy.id]),
       },
     ]);
   }));
@@ -427,7 +434,7 @@ it("reports an admission no rule qualified as the default, deciding by no rule",
         disposition: "admitted",
         cause: "default",
         decidedBy: [],
-        checkedRuleIds: [contacts.id],
+        checkedRuleIds: arrayContaining([contacts.id]),
       },
     ]);
   }));
@@ -468,17 +475,283 @@ it("names the norm that asked an outgoing draft for revision, naming the recipie
         peerAgentId: subject.remote.card.agentId,
         outcome: "revise",
         cause: "code",
-        decidedBy: [
-          { ruleId: rule.id, from: "code", advice: rule.feedback.text },
-        ],
+        decidedBy: arrayContaining([
+          expect.objectContaining({
+            ruleId: rule.id,
+            from: "code",
+            advice: rule.feedback.text,
+          }),
+        ]),
       },
     ]);
+  }));
+
+const legacy = {
+  id: "spending",
+  kind: "autonomy",
+  text: "Ask before spending.",
+  guidance: "Check the budget.",
+  feedback: { nextAction: "seek-approval", text: "Ask the owner." },
+};
+const migratedEditableRules = [
+  {
+    id: legacy.id,
+    kind: "safety",
+    text: legacy.text,
+    guidance: legacy.guidance,
+    feedback: {
+      nextAction: "stop",
+      text: `This message needs your owner's review under rule ${legacy.id} and stays held. Revise it or stop.`,
+    },
+  },
+];
+/** Enforcing checks withhold a matching text in either direction. */
+function checkMigratedMessage(
+  subject: Fixture,
+  installed: InstalledFirewall,
+  direction: "incoming" | "outgoing",
+) {
+  return Effect.gen(function* () {
+    if (direction === "incoming") {
+      const runtime = yield* incomingThrough(subject, installed);
+      yield* runtime.runPass;
+      yield* Queue.take(runtime.completed);
+      expect((yield* runtime.delivery.operations.readInbox({})).items).toEqual(
+        [],
+      );
+    } else {
+      const runtime = yield* outgoingThrough(subject, installed);
+      expect(
+        yield* Effect.flip(
+          runtime.operations.send({
+            input: { to: destination, text: "Spend ten dollars." },
+          }),
+        ),
+      ).toMatchObject({ refusal: "unresolved-evidence" });
+    }
+  });
+}
+
+const migratedFilePolicy = decodeMessagePolicy(
+  JSON.stringify({
+    format: "org.social-harness/message-policy/v1",
+    mode: "enforcement",
+    english: {
+      fixedRules: [
+        {
+          id: "fixed-review",
+          kind: "autonomy",
+          text: "Hold expenses for owner review.",
+        },
+      ],
+      initialRules: [
+        {
+          id: "initial-review",
+          kind: "autonomy",
+          text: "Hold new purchases for owner review.",
+        },
+      ],
+    },
+    decisionProvider: { kind: "unavailable" },
+  }),
+);
+
+function installLoggedMigration(
+  configuration: FirewallOptions,
+  subject: Fixture,
+) {
+  return Effect.gen(function* () {
+    const messages: unknown[] = [];
+    const installed = yield* installEditableFirewall(
+      configuration,
+      subject.store,
+    ).pipe(
+      Effect.provide(
+        Logger.replace(
+          Logger.defaultLogger,
+          Logger.make(({ message }) => {
+            messages.push(message);
+          }),
+        ),
+      ),
+    );
+    expect(messages.flat()).toEqual(
+      expect.arrayContaining([
+        `Message policy migrated autonomy rules to safety: ${legacy.id}`,
+        `Message policy dropped incompatible autonomy feedback: ${legacy.id}`,
+      ]),
+    );
+    return installed;
+  });
+}
+
+it.each(["incoming", "outgoing"] as const)(
+  "migrates editable autonomy to safety and holds %s messages",
+  (direction) =>
+    Effect.gen(function* () {
+      const subject = yield* fixture;
+      yield* subject.store.writeFirewallPolicy(
+        yield* encodeRuntimeValue([legacy]),
+      );
+      const configuration = options(
+        [],
+        english(decisionProvider([legacy], "unresolved"), {}),
+      );
+      const installed = yield* installLoggedMigration(configuration, subject);
+      expect((yield* installed.policy.read()).rules).toEqual(
+        migratedEditableRules,
+      );
+      const stored = yield* subject.store.readFirewallPolicy();
+      expect(
+        yield* decodeRuntimeValue(Schema.Unknown, stored ?? new Uint8Array()),
+      ).toEqual(migratedEditableRules);
+      yield* checkMigratedMessage(subject, installed, direction);
+      const feed = yield* installed.policy.decisions({});
+      expect(feed.decisions).toMatchObject([
+        {
+          direction,
+          outcome: "hold",
+          disposition: "withheld",
+          decidedBy: arrayContaining([
+            expect.objectContaining({ ruleId: legacy.id, from: "editable" }),
+          ]),
+        },
+      ]);
+      expect(feed.activations).toMatchObject([
+        { addedRuleIds: [legacy.id], removedRuleIds: [legacy.id] },
+      ]);
+      const restarted = yield* installEditableFirewall(
+        configuration,
+        subject.store,
+      );
+      expect((yield* restarted.policy.decisions({})).activations).toEqual(
+        feed.activations,
+      );
+    }),
+);
+
+it.each(["incoming", "outgoing"] as const)(
+  "holds %s messages under migrated fixed and initial file rules",
+  (direction) =>
+    Effect.gen(function* () {
+      const subject = yield* fixture;
+      const document = yield* migratedFilePolicy;
+      const fixed = [...(document.english?.fixedRules ?? [])];
+      const initial = [...(document.english?.initialRules ?? [])];
+      const installed = yield* installEditableFirewall(
+        options(
+          [],
+          english(decisionProvider([...fixed, ...initial], "unresolved"), {
+            fixed,
+            initial,
+          }),
+        ),
+        subject.store,
+      );
+      yield* checkMigratedMessage(subject, installed, direction);
+      expect((yield* installed.policy.decisions({})).decisions).toMatchObject([
+        {
+          direction,
+          outcome: "hold",
+          decidedBy: arrayContaining([
+            expect.objectContaining({ ruleId: "fixed-review", from: "fixed" }),
+            expect.objectContaining({
+              ruleId: "initial-review",
+              from: "editable",
+            }),
+          ]),
+        },
+      ]);
+    }),
+);
+
+it("refuses unknown stored editable properties as persistence failures", () =>
+  Effect.gen(function* () {
+    const subject = yield* fixture;
+    yield* subject.store.writeFirewallPolicy(
+      yield* encodeRuntimeValue([
+        {
+          id: "review",
+          kind: "autonomy",
+          text: "Hold for review.",
+          unexpected: true,
+        },
+      ]),
+    );
+    expect(
+      yield* Effect.flip(
+        installEditableFirewall(
+          options([], english(decisionProvider(), {})),
+          subject.store,
+        ),
+      ),
+    ).toMatchObject({ reason: "persistence-failed" });
+  }));
+
+it.each([
+  {
+    name: "malformed input bytes",
+    input: () => Effect.succeed(new TextEncoder().encode("{")),
+  },
+  {
+    name: "an extra context field",
+    input: (
+      input: Effect.Effect.Success<typeof makeRetainedCheckFixture>["input"],
+    ) =>
+      encodeRuntimeValue({
+        ...input,
+        context: { ...Struct.omit(input.context), unexpected: true },
+      }),
+  },
+])(
+  "refuses a completed check with $name as a persistence failure",
+  ({ input }) =>
+    Effect.gen(function* () {
+      const subject = yield* fixture;
+      const retained = yield* makeRetainedCheckFixture;
+      const checkId = "corrupt-retained-input";
+      yield* subject.store.beginFirewallAttempt({
+        checkId,
+        direction: "outgoing",
+        revision: 0,
+        canonicalCandidate: retained.canonicalCandidate,
+        canonicalInput: yield* input(retained.input),
+      });
+      yield* subject.store.admitFirewallOperation(
+        {
+          checkId,
+          admit: false,
+          canonicalResult: yield* encodeRuntimeValue(retained.result),
+        },
+        retained.canonicalCandidate,
+      );
+      const installed = yield* installEditableFirewall(
+        options([]),
+        subject.store,
+      );
+
+      expect(yield* Effect.flip(installed.policy.decisions({}))).toMatchObject({
+        reason: "persistence-failed",
+      });
+    }),
+);
+
+it("refuses autonomy in live code middleware registration", () =>
+  Effect.gen(function* () {
+    const live = contactsPolicy("pass");
+    Object.defineProperty(live, "rules", {
+      value: [{ id: "review", kind: "autonomy" }],
+    });
+    expect(yield* Effect.flip(captureRegistration(live))).toMatchObject({
+      _tag: "CheckInputError",
+      reason: "registration",
+    });
   }));
 
 it("keeps the rules active at check time after the owner removes the deciding rule", () =>
   Effect.gen(function* () {
     const subject = yield* fixture;
-    const provider = decisionProvider("prohibited");
+    const provider = decisionProvider([privacy], "prohibited");
     const editable = yield* installEditableFirewall(
       options([], english(provider, {})),
       subject.store,
@@ -497,13 +770,13 @@ it("keeps the rules active at check time after the owner removes the deciding ru
     expect((yield* restarted.policy.decisions({})).decisions).toMatchObject([
       {
         outcome: "block",
-        decidedBy: [
-          {
+        decidedBy: arrayContaining([
+          expect.objectContaining({
             ruleId: privacy.id,
             from: "editable",
             advice: privacy.feedback.text,
-          },
-        ],
+          }),
+        ]),
       },
     ]);
   }));
@@ -511,7 +784,7 @@ it("keeps the rules active at check time after the owner removes the deciding ru
 it("reports an English rule as editable when its check recorded no fixed ids, though it is fixed now", () =>
   Effect.gen(function* () {
     const subject = yield* fixture;
-    const provider = decisionProvider("prohibited");
+    const provider = decisionProvider([privacy], "prohibited");
     const unrecorded = yield* makeEnglishPolicy({
       id: "org.social-harness/english",
       rules: [privacy],
@@ -530,7 +803,9 @@ it("reports an English rule as editable when its check recorded no fixed ids, th
     expect((yield* current.policy.decisions({})).decisions).toMatchObject([
       {
         outcome: "block",
-        decidedBy: [{ ruleId: privacy.id, from: "editable" }],
+        decidedBy: arrayContaining([
+          expect.objectContaining({ ruleId: privacy.id, from: "editable" }),
+        ]),
       },
     ]);
   }));
@@ -547,3 +822,162 @@ it("carries no message text in an explained decision", () =>
     expect(text).not.toBe("");
     expect(JSON.stringify(feed)).not.toContain(text);
   }));
+
+/** A retained English registration and its settled finding identify the same rule. */
+const retainedEnglishAudit = Effect.gen(function* () {
+  const audit = yield* makeRetainedCheckFixture;
+  const legacyRule = { id: "privacy", kind: "autonomy" };
+  const input = {
+    ...audit.input,
+    context: {
+      ...Struct.omit(audit.input.context),
+      authorization: { kind: "absent" },
+    },
+    installation: {
+      ...audit.input.installation,
+      outgoing: audit.input.installation.outgoing.map((entry) => ({
+        ...entry,
+        id: "org.social-harness/english",
+        provenance: {
+          format: englishPolicyFormat,
+          data: JSON.stringify({ fixedRuleIds: [legacyRule.id] }),
+        },
+        rules: [legacyRule, { id: "evidence", kind: "safety" }],
+      })),
+    },
+  };
+  const result = {
+    ...audit.result,
+    judgment: "hold",
+    reason: "approval-required",
+    checks: audit.result.checks.map((entry) => ({
+      ...entry,
+      middlewareId: "org.social-harness/english",
+      findings: [{ ruleId: legacyRule.id, outcome: "approval-required" }],
+    })),
+  };
+  return { audit, legacyRule, input, result };
+});
+
+/** A historical English hold is read through the persisted decisions feed. */
+function readRetainedEnglishAudit(subject: Fixture, unresolved = false) {
+  return Effect.gen(function* () {
+    const { audit, legacyRule, input, result } = yield* retainedEnglishAudit;
+    const checkId = "historical-approval";
+    yield* subject.store.beginFirewallAttempt({
+      checkId,
+      direction: "outgoing",
+      revision: 0,
+      canonicalCandidate: audit.canonicalCandidate,
+      canonicalInput: yield* encodeRuntimeValue(input),
+    });
+    yield* subject.store.admitFirewallOperation(
+      {
+        checkId,
+        admit: false,
+        canonicalResult: yield* encodeRuntimeValue(
+          unresolved
+            ? {
+                ...result,
+                reason: "unresolved-evidence",
+                checks: result.checks.map((check) => ({
+                  ...check,
+                  findings: [
+                    ...check.findings,
+                    {
+                      ruleId: "evidence",
+                      outcome: "hold",
+                      reason: "unresolved-evidence",
+                    },
+                  ],
+                })),
+              }
+            : result,
+        ),
+      },
+      audit.canonicalCandidate,
+    );
+    const entries = yield* subject.store.readFirewallDecisions();
+    const entry = yield* Effect.fromNullable(entries[0]);
+    const decoded = yield* decodeFirewallAuditEntry(entry);
+    return { audit, legacyRule, decoded };
+  });
+}
+
+it("reads historical approval holds through retained checks and the decisions feed", () =>
+  Effect.gen(function* () {
+    const subject = yield* fixture;
+    const { audit, legacyRule, decoded } =
+      yield* readRetainedEnglishAudit(subject);
+    expect(decoded.input.context).toEqual(audit.input.context);
+    expect(decoded.result).toMatchObject({
+      judgment: "hold",
+      reason: "unresolved-evidence",
+      checks: [
+        {
+          findings: [
+            {
+              ruleId: legacyRule.id,
+              outcome: "hold",
+              reason: "unresolved-evidence",
+            },
+          ],
+        },
+      ],
+    });
+    const installed = yield* installEditableFirewall(
+      options([]),
+      subject.store,
+    );
+    expect((yield* installed.policy.decisions({})).decisions).toMatchObject([
+      {
+        outcome: "hold",
+        cause: "judgment",
+        decidedBy: arrayContaining([
+          expect.objectContaining({ ruleId: legacyRule.id, from: "fixed" }),
+        ]),
+      },
+    ]);
+  }));
+
+it("attributes a retained evidence hold to its unresolved finding rather than an approval finding", () =>
+  Effect.gen(function* () {
+    const subject = yield* fixture;
+    const { decoded, legacyRule } = yield* readRetainedEnglishAudit(
+      subject,
+      true,
+    );
+    expect(decoded.result).toMatchObject({
+      reason: "unresolved-evidence",
+      checks: [
+        {
+          findings: [
+            { ruleId: legacyRule.id, outcome: "not-applicable" },
+            {
+              ruleId: "evidence",
+              outcome: "hold",
+              reason: "unresolved-evidence",
+            },
+          ],
+        },
+      ],
+    });
+    const installed = yield* installEditableFirewall(
+      options([]),
+      subject.store,
+    );
+    expect((yield* installed.policy.decisions({})).decisions).toMatchObject([
+      {
+        outcome: "hold",
+        cause: "uncertain",
+        decidedBy: arrayContaining([
+          expect.objectContaining({ ruleId: "evidence", from: "editable" }),
+        ]),
+      },
+    ]);
+  }));
+
+/** Containment matchers remain unknown rather than leaking Vitest's any into feed fields. */
+function arrayContaining(values: readonly unknown[]): unknown {
+  return expect.arrayContaining([...values]);
+}

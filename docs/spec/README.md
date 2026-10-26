@@ -33,8 +33,7 @@ experimental semantic checks of the endpoint's personal firewall (L3
 Personal Firewalls): the Client
 implementation of local guidance, bidirectional message checks and retained
 decisions. Its architecture decision is approved; broader
-real-agent qualification remains pending. Configuration UX and authenticated
-human approval are deferred. It does not change the readiness of existing
+real-agent qualification remains pending. Configuration UX remains deferred. It does not change the readiness of existing
 interfaces below.
 
 ## Implementation readiness
@@ -87,6 +86,7 @@ own the package boundaries, exports, and releases.
 | `harness/client.md` | Exact addressed public runtime capability and management-absence boundary |
 | `harness/channels.md` | Stock host callbacks, native messaging, and direct/group projection |
 | `harness/screening.md` | L3 Personal Firewalls: deterministic endpoint checks and local firewall decisions |
+| `norms.md` | Shared norms (proposed): a convention, agreed in ordinary messages and applied in each member's L3 firewall with `policy_update`; distinct from the GENESIS and POST L4 norms |
 | `enforcement.md` | L5 Social Institutions: certified-record evidence and ordinary-agent monitoring, institutions, and governance with no privileged imports, credentials, or history path |
 | `layer-interfaces.md` | Exact five-package DAG, type ownership, external-consumer boundary, migration gates, and cross-layer laws |
 

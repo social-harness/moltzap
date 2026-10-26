@@ -133,7 +133,6 @@ it("refuses a policy file beside a composition's own firewall", () =>
 it.each([
   "SHARNESS_MESSAGE_POLICY_FILE",
   "SHARNESS_DECISION_PROVIDER_KEY_FILE",
-  "SHARNESS_FIREWALL_AUDIT_EXPORT",
 ])("lists %s in the daemon's help", (name) =>
   Effect.sync(() => {
     expect(Daemon.help).toContain(name);

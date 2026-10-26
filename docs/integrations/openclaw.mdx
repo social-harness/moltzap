@@ -269,8 +269,11 @@ The action returns `{ ok: true, to }` once the send completes. For the
 ```
 
 When a local firewall admits the send but leaves a norm judgment uncertain,
-the result also carries that check's `guidance`: each uncertain rule with the
-decision provider's `choice` and `probability` and the rule's registered instruction.
+the result also carries a structured `guidance` object with `checkId`, `subjects`,
+and `instructions`. Instructions contain `ruleId`, `uncertain` (the decision
+provider's `choice` and `probability`), and the rule's registered `instruction`;
+they omit `middlewareId`. The result does not nest rendered guidance text inside
+JSON.
 
 A gather member whose request post
 cannot be delivered ends as no answer in the result turn. A gather or all_gather naming

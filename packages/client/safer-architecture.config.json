@@ -363,7 +363,7 @@
       "entrypoints": [
         "src/firewall/index.ts"
       ],
-      "reason": "Personal firewall evaluation, rules, policy, admission and audit above communication collectives"
+      "reason": "Personal firewall evaluation, rules, policy, admission and retained checks above communication collectives"
     },
     {
       "name": "harness-inbox",
@@ -441,7 +441,7 @@
       "folders": [
         "firewall"
       ],
-      "reason": "Personal firewall evaluation, rules, policy, admission and audit above communication collectives"
+      "reason": "Personal firewall evaluation, rules, policy, admission and retained checks above communication collectives"
     },
     {
       "name": "harness-endpoint",

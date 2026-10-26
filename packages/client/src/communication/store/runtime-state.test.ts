@@ -103,12 +103,63 @@ function preservesStateAcrossRestart() {
           inboxItem,
         );
         expect(
-          (yield* store.readFirewallEvidence({ maximumRecords: 10 }))
-            .pendingOutgoing,
+          (yield* store.readFirewallEvidence({
+            conversationId: foundation.conversationId,
+            maximumRecords: 10,
+          })).pendingOutgoing,
         ).toBe(true);
       }),
     );
   });
+}
+
+function scopesUnresolvedSendEvidenceToEachSlicesConversation() {
+  const other = storedConversation("other-slice");
+  const otherRecord = {
+    ...other.record,
+    recordHash: digest("rch_", 4),
+    durabilityEvidence: other.record.durabilityEvidence.map((evidence) => ({
+      ...evidence,
+      subjectId: digest("rch_", 4),
+    })),
+  };
+  return withStore(stateDirectory(), (store) =>
+    Effect.gen(function* () {
+      yield* seedState(store);
+      yield* store.putConversationFoundation(other.foundation);
+      yield* store.applyCertifiedRecord(otherRecord, {
+        recipientAgentId: identity.agentId,
+        canonicalMessage: bytes("delivery"),
+      });
+      const own = yield* store.readFirewallEvidence({
+        conversationId: foundation.conversationId,
+        maximumRecords: 10,
+      });
+      const elsewhere = yield* store.readFirewallEvidence({
+        conversationId: other.foundation.conversationId,
+        maximumRecords: 10,
+      });
+      const captured = yield* store.readFirewallEvidenceSlices({
+        ranges: [
+          { beforeRecord: record.recordHash },
+          { beforeRecord: otherRecord.recordHash },
+          { conversationId: other.foundation.conversationId },
+          {},
+        ],
+        maximumRecords: 10,
+      });
+
+      expect(own.pendingOutgoing).toBe(true);
+      expect(elsewhere.pendingOutgoing).toBe(false);
+      expect(captured.slices[1]?.candidate).toBeDefined();
+      expect(captured.slices.map((slice) => slice.pendingOutgoing)).toEqual([
+        true,
+        false,
+        false,
+        false,
+      ]);
+    }),
+  );
 }
 
 function invalidatesInterruptedChecks() {
@@ -134,8 +185,10 @@ function invalidatesInterruptedChecks() {
     yield* withStore(path, (store) =>
       Effect.gen(function* () {
         expect(
-          (yield* store.readFirewallEvidence({ maximumRecords: 10 }))
-            .pendingOutgoing,
+          (yield* store.readFirewallEvidence({
+            conversationId: foundation.conversationId,
+            maximumRecords: 10,
+          })).pendingOutgoing,
         ).toBe(true);
         expect(
           yield* Effect.flip(
@@ -350,6 +403,10 @@ describe("endpoint runtime state", () => {
   it(
     "preserves identity, protocol and admitted runtime state across restart",
     preservesStateAcrossRestart,
+  );
+  it(
+    "scopes unresolved-send evidence to each slice's conversation",
+    scopesUnresolvedSendEvidenceToEachSlicesConversation,
   );
   it(
     "invalidates interrupted checks while preserving unresolved intent evidence",

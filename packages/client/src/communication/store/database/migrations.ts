@@ -21,12 +21,17 @@ export type MigrationSteps = Readonly<
 >;
 
 /**
- * Forward steps available to the production binary. Schema 11 drops
- * `runtime_sends`, the retained keyed-send invocations no harness reads.
+ * Forward steps available to the production binary. Retired state is dropped,
+ * and unresolved intents are indexed by the conversation their evidence affects.
  */
 export const migrations: MigrationSteps = Object.freeze({
   11: (database: DatabaseSync) => {
     database.exec("DROP TABLE IF EXISTS runtime_sends");
+  },
+  12: (database: DatabaseSync) => {
+    database.exec(
+      "CREATE INDEX IF NOT EXISTS post_intents_unresolved ON post_intents(conversation_id) WHERE completed_record_hash IS NULL",
+    );
   },
 });
 

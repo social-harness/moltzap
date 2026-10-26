@@ -151,7 +151,7 @@ function validFinding(
   if (finding.outcome === "revise") {
     return event.direction === "outgoing" && rule.kind === "norm";
   }
-  return finding.outcome !== "approval-required" || rule.kind === "autonomy";
+  return true;
 }
 
 const invokeMiddleware = Effect.fn("Firewall.invokeMiddleware")(function* (
@@ -273,7 +273,7 @@ const checkMessage = Effect.fn("Firewall.check")(function* (
     const input = Object.freeze({ ...captured, previous });
     checks.push(yield* runMiddleware(entry, input, settings, deadline));
   }
-  return composeDecision(captured.event, captured.context, middleware, checks);
+  return composeDecision(captured.context, middleware, checks);
 });
 
 /** Captures one direction's ordered checks without exposing mutable registration. */

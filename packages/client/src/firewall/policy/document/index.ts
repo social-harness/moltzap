@@ -1,6 +1,6 @@
 /** @file The message-policy document `sharnessd` installs as its firewall. */
 
-import { Schema } from "effect";
+import { Effect, Schema, Struct } from "effect";
 import { AgentId } from "../../../identity/agents.js";
 import {
   EnglishPolicySettings,
@@ -69,9 +69,62 @@ const decisionProvider = Schema.Union(
   Schema.Struct({ kind: Schema.Literal("unavailable") }),
 );
 
-const englishRules = Schema.optionalWith(
-  Schema.Array(Schema.Struct(EnglishRule.fields)),
-  { default: () => [] },
+/** Retained autonomy rules decode as safety rules with compatible registered advice. */
+const storedEnglishRule = Schema.transformOrFail(
+  Schema.Struct({
+    ...EnglishRule.fields,
+    kind: Schema.Literal("safety", "norm", "autonomy"),
+  }),
+  Schema.Struct(EnglishRule.fields),
+  {
+    strict: true,
+    decode: (rule) =>
+      rule.kind === "autonomy"
+        ? migrateAutonomyRule(rule)
+        : Effect.succeed({ ...rule, kind: rule.kind }),
+    encode: (rule) => Effect.succeed(rule),
+  },
+);
+
+/**
+ * Safety retains compatible advice and registers owner-review advice for permanent holds.
+ * @param rule Retained owner text and registered advice.
+ * @returns A logged migration with feedback valid for a safety finding.
+ */
+export function migrateAutonomyRule(rule: Omit<EnglishRule, "kind">) {
+  return Effect.gen(function* () {
+    const feedback = rule.feedback;
+    const compatible =
+      feedback?.nextAction === "stop" || feedback?.nextAction === "wait";
+    yield* Effect.logInfo(
+      `Message policy migrated autonomy rules to safety: ${rule.id}`,
+    );
+    if (feedback !== undefined && !compatible) {
+      yield* Effect.logInfo(
+        `Message policy dropped incompatible autonomy feedback: ${rule.id}`,
+      );
+    }
+    return {
+      ...Struct.omit(rule, "feedback"),
+      kind: "safety" as const,
+      feedback: compatible
+        ? feedback
+        : {
+            nextAction: "stop" as const,
+            text: `This message needs your owner's review under rule ${rule.id} and stays held. Revise it or stop.`,
+          },
+    };
+  }).pipe(Effect.withSpan("migrateAutonomyRule"));
+}
+
+const englishRules = Schema.optionalWith(Schema.Array(EnglishRule), {
+  default: () => [],
+});
+const retainedEnglishRules = Schema.optionalWith(
+  Schema.Array(storedEnglishRule),
+  {
+    default: () => [],
+  },
 );
 
 /** English assessment defaults: the lowest routing probability Client accepts, and the request bounds the collective norms are sized to. */
@@ -89,6 +142,13 @@ const defaultSettings = {
   maximumResultBytes: 2_000_000,
 };
 
+const englishDocument = Schema.Struct({
+  fixedRules: englishRules,
+  initialRules: englishRules,
+  fixedBehaviors: Schema.optional(Schema.Array(Schema.String)),
+  initialBehaviors: Schema.optional(Schema.Array(Schema.String)),
+});
+
 const document = Schema.Struct({
   format: Schema.Literal(messagePolicyFormat),
   mode: Schema.Literal("guidance", "enforcement"),
@@ -98,9 +158,7 @@ const document = Schema.Struct({
   outgoing: Schema.optionalWith(Schema.Array(outgoingMiddleware), {
     default: () => [],
   }),
-  english: Schema.optional(
-    Schema.Struct({ fixedRules: englishRules, initialRules: englishRules }),
-  ),
+  english: Schema.optional(englishDocument),
   decisionProvider: Schema.optional(decisionProvider),
   englishSettings: Schema.optionalWith(
     Schema.Struct(EnglishPolicySettings.fields),
@@ -166,7 +224,21 @@ export type MessagePolicy = typeof MessagePolicy.Type;
  * policy.
  */
 export const decodeMessagePolicy = Schema.decodeUnknown(
-  Schema.parseJson(MessagePolicy),
+  Schema.parseJson(
+    Schema.compose(
+      Schema.Struct({
+        ...document.fields,
+        english: Schema.optional(
+          Schema.Struct({
+            ...englishDocument.fields,
+            fixedRules: retainedEnglishRules,
+            initialRules: retainedEnglishRules,
+          }),
+        ),
+      }),
+      MessagePolicy,
+    ),
+  ),
   { onExcessProperty: "error" },
 );
 
