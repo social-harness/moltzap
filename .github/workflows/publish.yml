@@ -16,8 +16,9 @@ name: Publish to npm
 # for missing keys for up to 45 minutes, then fails before the release commit
 # with a rerun hint. After npm publication, `images` runs no repository install
 # or build: it tags the indexes the resume resolved with the release version,
-# then creates the GitHub release and lists both digests in its body, so the
-# latest release always names published images. Existing version tags are
+# then creates the GitHub release with the version's CHANGELOG.md section as
+# its notes and lists both digests after it, so the latest release always
+# names published images. Existing version tags are
 # checked and skipped on reruns.
 # After image tagging, dispatch sends the release version and digests to deployment.
 #
@@ -685,8 +686,11 @@ jobs:
           if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" --json body --jq .body > "$notes" 2>"$RUNNER_TEMP/release-error"; then
             :
           elif grep -qxF 'release not found' "$RUNNER_TEMP/release-error"; then
-            gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes
-            gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" --json body --jq .body > "$notes"
+            gh api "repos/$GITHUB_REPOSITORY/contents/CHANGELOG.md?ref=v$VERSION" \
+              -H "Accept: application/vnd.github.raw" |
+              awk -v heading="## [$VERSION]" \
+                'index($0, heading) == 1 { keep = 1; next } keep && /^## / { exit } keep' > "$notes"
+            gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --verify-tag --notes-file "$notes"
           else
             cat "$RUNNER_TEMP/release-error" >&2
             exit 1
