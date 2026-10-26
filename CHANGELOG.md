@@ -17,6 +17,27 @@ sections are the codebase's history as MoltZap.
 
 <!-- towncrier release notes start -->
 
+## [2026.1026.0] - 2026-10-26
+
+### Added
+
+- Owner message policies can load fixed and initial English rules from relative
+  directories containing `BEHAVIOR.md`, with fixed behavior bytes covered by the
+  code digest.
+
+### Changed
+
+- `messagePolicyFirewall` refuses non-empty behavior paths with
+  `CheckInputError` (`registration`). `SHARNESS_MESSAGE_POLICY_FILE` must name a
+  regular file. Installation failures carry `ruleId` and `behaviorReason` to
+  identify conflicting behavior rules.
+
+### Fixed
+
+- Scope unresolved outgoing intent evidence gaps to the candidate's conversation
+  so an unfinished send does not hold incoming or outgoing checks in other
+  conversations.
+
 ## [2026.1025.0] - 2026-10-25
 
 ### Added
