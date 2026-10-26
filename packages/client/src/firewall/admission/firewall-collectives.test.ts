@@ -397,7 +397,12 @@ function scopesUnresolvedEvidenceToTheMembersAnswer() {
       { disposition: "withheld", result: { reason: "unresolved-evidence" } },
       { disposition: "admitted", result: { reason: "eligible" } },
     ]);
-    expect(seen[1]?.context.gaps).toEqual([]);
+    const inputFrom = (sender: string) =>
+      seen.find((input) => input.event.message.sender === sender);
+    expect(inputFrom(subject.third.card.agentId)?.context.gaps).toEqual([]);
+    expect(inputFrom(subject.remote.card.agentId)?.context.gaps).toEqual([
+      "An earlier outgoing intent has not reached certified completion.",
+    ]);
   });
 }
 
@@ -947,15 +952,14 @@ describe("received requests under a firewall", () => {
   );
 });
 
-it(
-  "scopes unresolved-send evidence to the member whose answer shares the conversation",
-  scopesUnresolvedEvidenceToTheMembersAnswer,
-);
-
 describe("collective results under a firewall", () => {
   it(
     "withholds one answer from every runtime read while the result's other answers stay",
     withholdsOneAnswerFromEveryRuntimeRead,
+  );
+  it(
+    "scopes unresolved-send evidence to the member whose answer shares the conversation",
+    scopesUnresolvedEvidenceToTheMembersAnswer,
   );
   it(
     "checks an invalid answer's peer-controlled reason as the line a model reads",
@@ -969,10 +973,6 @@ describe("collective results under a firewall", () => {
     staleResult("enforcement"));
   it("shows every answer after two stale captures in guidance mode, without a third inference", () =>
     staleResult("guidance"));
-  it(
-    "admits an operation failure without inference under one deterministic audit record",
-    admitsAFailureWithoutInference,
-  );
   it(
     "leaves the shown result and its answers' admission in later evidence",
     leavesTheResultInLaterEvidence,
@@ -992,6 +992,13 @@ describe("collective results under a firewall", () => {
   it(
     "keeps an invalid answer's post content out of later runtime-visible history",
     keepsAnInvalidAnswerFromLaterRuntimeHistory,
+  );
+});
+
+describe("collective operation failures under a firewall", () => {
+  it(
+    "admits an operation failure without inference under one deterministic audit record",
+    admitsAFailureWithoutInference,
   );
   it(
     "names no peer for the endpoint's own failure in the owner's decisions feed",

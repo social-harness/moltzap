@@ -151,6 +151,7 @@ function scopesUnresolvedSendEvidenceToEachSlicesConversation() {
 
       expect(own.pendingOutgoing).toBe(true);
       expect(elsewhere.pendingOutgoing).toBe(false);
+      expect(captured.slices[1]?.candidate).toBeDefined();
       expect(captured.slices.map((slice) => slice.pendingOutgoing)).toEqual([
         true,
         false,
