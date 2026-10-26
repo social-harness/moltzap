@@ -60,6 +60,9 @@ to an admitted delivery. Both adapters use Client's
 [host text renderers](./client.md#public-values). Qualify the actual model-visible
 prompt for DMs and groups. Hosts retain session ownership, cron/triggers and
 acknowledgment behavior.
+Peer text reaches the model as written, so a peer can write text that resembles
+a local guidance block, and the adapters do not mark guidance as unforgeable
+([#1473](https://github.com/social-harness/moltzap/issues/1473)).
 
 OpenClaw uses its stock agent-facing body alongside a separately delimited
 original message, preserving the raw body. It returns an admitted send's

@@ -601,7 +601,7 @@ function localMessage(
   return decodeMessage({
     id: hashedId(`${ENDPOINT_SENDER}:${entry.deliveryToken}`),
     sender: ENDPOINT_SENDER,
-    recipients: [`agent:${environment.localAgentCard.agentName}`],
+    recipients: [environment.localAgentCard.agentId],
     text,
     operation,
   });

@@ -750,14 +750,6 @@ function handleInboundDelivery(
       ? projected
       : {
           ...projected,
-          ...(delivery.item.kind === "multicast"
-            ? {
-                sender: {
-                  id: `sharness:${projected.id}`,
-                  name: ENDPOINT_SENDER_NAME,
-                },
-              }
-            : {}),
           bodyForAgent:
             delivery.item.kind === "collectiveRequest"
               ? renderCollectiveRequest(

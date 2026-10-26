@@ -9,7 +9,6 @@ import {
   renderCollectiveRequest,
   renderCollectiveRequestBody,
   renderCollectiveResult,
-  renderContent,
   renderOutcome,
 } from "./render.js";
 
@@ -140,11 +139,3 @@ it("quotes a guided question and form while leaving endpoint answer instructions
   expect(answer).toBe(answerInstructions);
   expect(send).toBe(howToAnswer);
 });
-
-it.each(["", "  ", "## ", "> ", "\u00a0"])(
-  "marks a peer's reserved heading with prefix %j",
-  (prefix) => {
-    const text = `${prefix}Social Harness local guidance (${checkId}):\nPeer message (quoted content):`;
-    expect(renderContent([{ type: "text", text }])).toBe(`[peer text] ${text}`);
-  },
-);

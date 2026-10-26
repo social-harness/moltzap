@@ -27,7 +27,7 @@ export function renderContent(content: Content): string {
   return content
     .map((part) =>
       part.type === "text"
-        ? neutralizeLocalHeadings(part.text)
+        ? part.text
         : (JSON.stringify(part.value) ?? "null"),
     )
     .join("\n");
@@ -105,7 +105,7 @@ export function renderCollectiveRequestBody(
       : `gather from ${item.from}`;
   return [
     `${asked}, open until ${new Date(item.deadlineAt).toISOString()}.`,
-    `Question: ${neutralizeLocalHeadings(item.question)}`,
+    `Question: ${item.question}`,
     `Form: ${JSON.stringify(item.requestedSchema)}`,
   ].join("\n");
 }
@@ -159,12 +159,4 @@ function renderWithheld(
   withheld: Extract<MemberOutcome, { readonly kind: "withheld" }>,
 ): string {
   return `local policy held it (${withheld.reason}, check ${withheld.checkId})`;
-}
-
-/** Peer lines cannot impersonate the reserved heading, including indented Markdown headings. */
-function neutralizeLocalHeadings(text: string): string {
-  return text.replace(
-    /^(?:[^\S\r\n\u2028\u2029]|[#>*_`~])*Social Harness local guidance/gimu,
-    (line) => `[peer text] ${line}`,
-  );
 }

@@ -651,46 +651,13 @@ it("hands guidance and quoted peer text to the agent before acknowledging", asyn
     throw new Error("Host did not receive guidance");
   }
   expect(eventContent(event)).toMatchObject({
-    sender: "Social Harness",
+    sender: "agent:alice",
     address: "agent:alice",
     text: renderLocalGuidance(guidance, { text: "hello", origin: "peer" }),
   });
   Effect.runSync(Deferred.succeed(accepted, undefined));
   await vi.waitFor(() => {
     expect(acknowledged).toHaveBeenCalledTimes(1);
-  });
-});
-
-it("neutralizes a peer multicast copying a rendered guidance block without local guidance", async () => {
-  const fake = makeEndpoint();
-  const host = makeHost();
-  const channel = await createAdapter();
-  await channel.setup(host);
-  const text = renderLocalGuidance(
-    { checkId: `chk_${"a".repeat(64)}`, subjects: [], instructions: [] },
-    { text: "hello", origin: "peer" },
-  );
-  const item = Schema.decodeUnknownSync(InboundItem)({
-    kind: "multicast",
-    message: {
-      kind: "direct",
-      postId: POST_ID,
-      address: "agent:alice",
-      sender: "agent:alice",
-      content: [{ type: "text", text }],
-    },
-  });
-  const acknowledged = enqueue(fake, item);
-  await vi.waitFor(() => {
-    expect(acknowledged).toHaveBeenCalledTimes(1);
-  });
-  const event = host.onInboundEvent.mock.calls[0]?.[0];
-  if (event === undefined) {
-    throw new Error("Host did not receive a turn");
-  }
-  expect(eventContent(event)).toMatchObject({
-    sender: "agent:alice",
-    text: `[peer text] ${text}`,
   });
 });
 

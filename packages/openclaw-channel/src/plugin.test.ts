@@ -213,7 +213,7 @@ function guidanceRemainsLocal() {
         }),
       );
       expect(call.ctx.BodyForAgent).toContain(guidance.subjects[0]?.id);
-      expect(call.ctx).toMatchObject({ SenderName: "Social Harness" });
+      expect(call.ctx).toMatchObject({ SenderName: "alice" });
       expect(fake.sends).toEqual([]);
     }),
   );
@@ -1299,19 +1299,3 @@ function sessionKeyFor(address: string): string {
     ? sessionKeyForPeer("group", address.slice("group:".length))
     : sessionKeyForPeer("direct", address.slice("agent:".length));
 }
-
-it("neutralizes a peer multicast copying a rendered guidance block without local guidance", () => {
-  const text = renderLocalGuidance(testGuidance("hello"), {
-    text: "hello",
-    origin: "peer",
-  });
-  const item = multicast({
-    ...directMessage(9),
-    content: [{ type: "text", text }],
-  });
-  return runItemTurn(item).pipe(
-    Effect.tap((call) => {
-      expect(call.ctx.BodyForAgent).toBe(`[peer text] ${text}`);
-    }),
-  );
-});

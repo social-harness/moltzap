@@ -531,10 +531,6 @@ class HarnessChannelAdapter {
       endpointInbound({
         ...projected,
         text,
-        sender:
-          delivery.guidance !== undefined && delivery.item.kind === "multicast"
-            ? ENDPOINT_SENDER
-            : projected.sender,
       }),
     ).pipe(Effect.zipRight(delivery.acknowledge));
   }
