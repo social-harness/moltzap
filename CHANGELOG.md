@@ -17,6 +17,15 @@ sections are the codebase's history as MoltZap.
 
 <!-- towncrier release notes start -->
 
+## [2026.1026.2] - 2026-10-26
+
+### Changed
+
+- English firewall requests state the shared attribution and evidence-handling
+  instructions once, leaving more of the request budget for norm-by-message
+  checks. The question edition moves to `firewall-english-v3`, changing English
+  policy revisions and composed `activeRevision` values.
+
 ## [2026.1026.1] - 2026-10-26
 
 ### Removed
