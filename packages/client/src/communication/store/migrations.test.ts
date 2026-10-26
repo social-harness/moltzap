@@ -29,7 +29,7 @@ import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { readStoredHistory } from "../conversations/index.js";
 import { RESET_SCHEMA } from "./database/migrations.js";
 import { closeStoreState, openStoreState } from "./database/schema.js";
-import { openEndpointStore } from "./index.js";
+import { type EndpointStore, openEndpointStore } from "./index.js";
 
 const steps: Record<number, (database: DatabaseSync) => void> = {};
 const storeOptions = {
@@ -345,7 +345,7 @@ it("drops the retained keyed sends of a schema-10 store and keeps the rest of it
       }).pipe(Effect.flatMap((store) => store.recover())),
     );
 
-    expect(version(subject.path)).toBe(RESET_SCHEMA + 1);
+    expect(version(subject.path)).toBeGreaterThan(subject.from);
     expect(version(subject.backup)).toBe(RESET_SCHEMA);
     const upgraded = new DatabaseSync(subject.path, { readOnly: true });
     expect(
@@ -356,3 +356,78 @@ it("drops the retained keyed sends of a schema-10 store and keeps the rest of it
     upgraded.close();
     expect(recovered).toEqual(before);
   }));
+
+function seedUnresolvedIntent(store: EndpointStore) {
+  const { foundation } = storedConversation("schema-11");
+  return Effect.gen(function* () {
+    yield* store.bindIdentity({
+      agentId: "agent:alice",
+      canonicalAgentCard: new Uint8Array([1]),
+    });
+    yield* store.putConversationFoundation(foundation);
+    yield* store.bindPostIntent({
+      kind: "existing-conversation",
+      intent: {
+        conversationId: foundation.conversationId,
+        membershipHash: foundation.membershipHash,
+        authorAgentId: "agent:alice",
+        postId: "pst_pending",
+        canonicalIntent: new Uint8Array([1]),
+      },
+    });
+  });
+}
+
+function upgradesSchema11WithUnresolvedIntents() {
+  return Effect.gen(function* () {
+    const directory = stateDirectory();
+    const { foundation } = storedConversation("schema-11");
+    yield* withStore(directory, seedUnresolvedIntent);
+    const path = databasePath(directory);
+    const currentSchema = version(path);
+    const previousSchema = 11;
+    const database = new DatabaseSync(path);
+    const freshIndex = database
+      .prepare(
+        "SELECT name, partial FROM pragma_index_list('post_intents') WHERE name = 'post_intents_unresolved'",
+      )
+      .get();
+    database.exec(
+      `DROP INDEX post_intents_unresolved; PRAGMA user_version = ${previousSchema}`,
+    );
+    database.close();
+
+    const pending = yield* withStore(directory, (store) =>
+      store.readFirewallEvidence({
+        conversationId: foundation.conversationId,
+        maximumRecords: 10,
+      }),
+    );
+
+    expect(pending.pendingOutgoing).toBe(true);
+    expect(version(path)).toBe(currentSchema);
+    expect(version(`${path}.schema-${previousSchema}.backup`)).toBe(
+      previousSchema,
+    );
+    const upgraded = new DatabaseSync(path, { readOnly: true });
+    expect(
+      upgraded
+        .prepare(
+          "SELECT name, partial FROM pragma_index_list('post_intents') WHERE name = 'post_intents_unresolved'",
+        )
+        .get(),
+    ).toEqual(freshIndex);
+    const plan = upgraded
+      .prepare(
+        "EXPLAIN QUERY PLAN SELECT 1 FROM post_intents WHERE conversation_id = ? AND completed_record_hash IS NULL LIMIT 1",
+      )
+      .get(foundation.conversationId);
+    expect(plan?.detail).toContain(freshIndex?.name);
+    upgraded.close();
+  });
+}
+
+it(
+  "upgrades a schema-11 store with its unresolved intents and conversation index",
+  upgradesSchema11WithUnresolvedIntents,
+);

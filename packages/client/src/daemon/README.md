@@ -18,13 +18,6 @@ holds the closed failures they share. `index.ts` exposes trusted process composi
 through `./service`. The sibling `../internal.ts` is the condition-only `./internal`
 entry for identity verification, card signing, and Registry and Router contracts.
 
-When trusted composition sets `auditExport`, lifecycle publishes an incomplete
-marker before starting daemon resources. Those resources run in a child scope;
-the retained-check snapshot follows worker and MCP request finalization while
-the outer store is still open. Request cancellation and handler closure join
-the same scoped work. The file path does not enter the firewall installation
-or its digest.
-
 `telemetry.ts` configures opt-in OTLP span export. `credentials.ts` reads the
 daemon's key and credential files. `launcher/` chooses and installs a release
 and starts its daemon without importing other Client source.

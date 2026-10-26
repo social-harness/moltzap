@@ -430,7 +430,7 @@ const clientDomains: readonly ClientDomain[] = [
     root: "firewall",
     entrypoints: ["index.ts"],
     reason:
-      "Personal firewall evaluation, rules, policy, admission and audit above communication collectives",
+      "Personal firewall evaluation, rules, policy, admission and retained checks above communication collectives",
   },
   {
     name: "harness-inbox",

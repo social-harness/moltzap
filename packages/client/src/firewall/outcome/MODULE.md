@@ -18,7 +18,7 @@ export type CheckedGuidance = typeof checkedGuidanceSchema.Type;
 
 The guidance of one checked text: a message, a request, an answer, a question or a send.
 
-### [`FirewallSendError`](./index.ts#L121)
+### [`FirewallSendError`](./index.ts#L235)
 
 _Class_
 
@@ -39,6 +39,16 @@ export class FirewallSendError extends Data.TaggedError("FirewallSendError")<
 A refusal is returned only before an application invocation creates any intent.
 Its opaque check reference survives hosts that retain only the error message.
 
+### [`GuidanceBodyOrigin`](./index.ts#L81)
+
+_TypeAlias_
+
+```ts
+export type GuidanceBodyOrigin = "peer" | "endpoint";
+```
+
+Attribution of the body quoted alongside local instructions.
+
 ### [`LocalGuidance`](./index.ts#L75)
 
 _TypeAlias_
@@ -48,6 +58,21 @@ export type LocalGuidance = typeof localGuidanceSchema.Type;
 ```
 
 Local advice accompanies the envelope and never changes a certified item.
+
+### [`renderLocalGuidance`](./index.ts#L91)
+
+_Function_
+
+```ts
+export function renderLocalGuidance(
+  guidance: LocalGuidance,
+  quoted?: { text: string; origin: GuidanceBodyOrigin },
+): string
+```
+
+Registered local instructions stay separate from attributed, quoted peer text.
+
+**Returns:** Host-neutral model text, with no composition identifiers.
 
 ## Files
 

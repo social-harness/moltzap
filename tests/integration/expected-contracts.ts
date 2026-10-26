@@ -1,4 +1,4 @@
-/** @file Operator-visible contracts of daemon management, startup, sends and audit exports. */
+/** @file Operator-visible contracts of daemon management, startup and sends. */
 
 /** The daemon register tool reports this kind after committing its identity. */
 export const registrationResultKind = "registered";
@@ -43,12 +43,3 @@ export const messagePolicyFileSetting = "SHARNESS_MESSAGE_POLICY_FILE";
 
 /** The daemon send_message tool returns this remedy when its code rule refuses credential-shaped text. */
 export const credentialRefusalRemedy = "Remove credential-shaped text";
-
-/** The daemon firewall audit export opens with this record kind when the firewall starts. */
-export const auditStartKind = "start";
-
-/** The firewall audit record kind reports this value when a policy revision becomes active. */
-export const auditActivationKind = "activation";
-
-/** The daemon firewall audit export ends with this record kind after shutdown flushes its checks. */
-export const auditCompleteKind = "complete";

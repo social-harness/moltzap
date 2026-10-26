@@ -1,12 +1,14 @@
 /**
  * @file Process factories expose discard Layers and a closed startup error,
  * keeping private daemon services outside the trusted composition boundary.
+ * Message-policy writers use current rule kinds so migration cannot broaden authored policy.
  */
 
 import type { Effect, Layer, Types } from "effect";
 import type {
   CheckInputError,
   Daemon,
+  decodeMessagePolicy,
   MessagePolicy,
   messagePolicyFirewall,
 } from "./index.js";
@@ -39,19 +41,41 @@ type HelpIsExact = Expect<Types.Equals<typeof Daemon.help, string>>;
 type LayerIsExact = Expect<
   Types.Equals<typeof Daemon.layer, Layer.Layer<never, Daemon.StartupError>>
 >;
-type AuditPathIsOptional = Expect<
-  Types.Equals<Daemon.FirewallOptions["auditExport"], string | undefined>
->;
 /** A document always names a firewall mode; a daemon without one has no firewall. */
 type PolicyModeIsExact = Expect<
   Types.Equals<MessagePolicy["mode"], "guidance" | "enforcement">
 >;
-/** A decoded document installs through the same options as `withFirewall`. */
+type EncodedEnglish = NonNullable<(typeof MessagePolicy.Encoded)["english"]>;
+type PolicyWriterKindsAreExact = Expect<
+  Types.Equals<
+    NonNullable<EncodedEnglish["fixedRules"]>[number]["kind"],
+    "safety" | "norm"
+  >
+>;
+/** A decoded inline document installs through the same options as `withFirewall`. */
 type PolicyInstallsAsFirewall = Expect<
   Types.Equals<
     ReturnType<typeof messagePolicyFirewall>,
-    Effect.Effect<Omit<Daemon.FirewallOptions, "auditExport">, CheckInputError>
+    Effect.Effect<Daemon.FirewallOptions, CheckInputError>
   >
+>;
+
+/** Decoder output composes directly, so inline policies need no conversion. */
+type DecodedPolicyComposes = Expect<
+  Types.Equals<
+    Effect.Effect.Success<ReturnType<typeof decodeMessagePolicy>>,
+    Parameters<typeof messagePolicyFirewall>[0]
+  >
+>;
+
+/** Inline-only English blocks remain valid trusted composition inputs. */
+type InlineEnglishIsAssignable = Expect<
+  {
+    readonly fixedRules: readonly [];
+    readonly initialRules: readonly [];
+  } extends MessagePolicy["english"]
+    ? true
+    : false
 >;
 
 /** Compile-time witnesses for the closed Client process boundary. */
@@ -63,7 +87,9 @@ export type DaemonCanaries = [
   StartupDetailIsExact,
   HelpIsExact,
   LayerIsExact,
-  AuditPathIsOptional,
   PolicyModeIsExact,
+  PolicyWriterKindsAreExact,
   PolicyInstallsAsFirewall,
+  DecodedPolicyComposes,
+  InlineEnglishIsAssignable,
 ];

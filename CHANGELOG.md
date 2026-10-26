@@ -17,6 +17,97 @@ sections are the codebase's history as MoltZap.
 
 <!-- towncrier release notes start -->
 
+## [2026.1026.3] - 2026-10-26
+
+### Changed
+
+- Client supplies one host-neutral rendering of firewall guidance for OpenClaw
+  and NanoClaw, keeping peer content quoted and attributed and omitting
+  composition identifiers. NanoClaw now delivers guidance-bearing items and
+  acknowledges successful host handoff.
+
+### Removed
+
+- Breaking harness interface change: remove `SHARNESS_FIREWALL_AUDIT_EXPORT`,
+  the `Daemon.FirewallOptions.auditExport` service option, and the
+  `FirewallAuditRecord` schema and type exports from `@moltzap/client/service`.
+  Operators read `firewall_decisions` for recent decisions and activations and
+  the history export for certified conversation records. The daemon ignores
+  `SHARNESS_FIREWALL_AUDIT_EXPORT`; unset it and delete any previously published
+  snapshot and its `.partial` file, which hold private provider traces.
+
+### Fixed
+
+- Firewall guidance subjects name senders and recipients by their verified
+  `agent:<name>` address instead of AgentId (#1471).
+
+## [2026.1026.2] - 2026-10-26
+
+### Changed
+
+- English firewall requests state the shared attribution and evidence-handling
+  instructions once, leaving more of the request budget for norm-by-message
+  checks. The question edition moves to `firewall-english-v3`, changing English
+  policy revisions and composed `activeRevision` values.
+
+## [2026.1026.1] - 2026-10-26
+
+### Removed
+
+- Breaking harness interface change: remove the `autonomy` rule kind and
+  evaluator stage, the `approval-required` finding and refusal reason, and
+  `MessageContext.authorization` approval evidence. The narrowed `policy_update`
+  and `policy_read` schemas accept only `safety` and `norm` rule kinds. The
+  `FirewallSendError` refusal union and withheld reasons accept only
+  `prohibited`, `unresolved-evidence`, `check-unavailable` and `norm-violation`.
+  Live `MessageContext` decoding refuses `authorization`. `Daemon.withFirewall`
+  and `makeEnglishPolicy` refuse `autonomy` rules. Only message-policy files
+  (`english.fixedRules` and `initialRules`) and persisted editable documents
+  migrate those rules to `safety`, preserving their ids, text and guidance.
+  Feedback survives only when safety permits its next action; otherwise the rule
+  registers `stop` feedback: “This message needs your owner's review under rule
+  `<id>` and stays held. Revise it or stop.” Editable migrations persist and
+  produce an activation listing each replaced id in both arrays. Editable and
+  file migrations log migrated ids and ids whose incompatible feedback was
+  dropped. No `ask_user` guidance is added. Owner approval can be expressed
+  through norm guidance and `seek-approval` norm feedback. The default
+  unresolved-evidence feedback is “Required policy evidence is missing or
+  uncertain. The message was not admitted. Wait for the evidence and resend, or
+  revise the message.” The default unavailable-check feedback is “A required
+  policy check is unavailable. The message was not admitted. Wait for the check
+  to become available and resend, or revise the message.” The `questionEdition`
+  moves to `firewall-english-v2`, changing every English `activeRevision`.
+  Retained audit v4 contexts discard `authorization`; historical
+  `approval-required` result reasons decode as `unresolved-evidence`; approval
+  findings become settled holds only when that result reason decided the hold,
+  and otherwise become non-deciding findings. Retained autonomy registration
+  kinds decode as `safety`. Retained collective-result projections and webhook
+  outbox bodies map that refusal reason to `unresolved-evidence` before
+  delivery. New checks and exports use the current values. Downgrading to the
+  previous release is unsupported once a check has run, because the previous
+  release cannot read retained check inputs without `authorization`.
+
+## [2026.1026.0] - 2026-10-26
+
+### Added
+
+- Owner message policies can load fixed and initial English rules from relative
+  directories containing `BEHAVIOR.md`, with fixed behavior bytes covered by the
+  code digest.
+
+### Changed
+
+- `messagePolicyFirewall` refuses non-empty behavior paths with
+  `CheckInputError` (`registration`). `SHARNESS_MESSAGE_POLICY_FILE` must name a
+  regular file. Installation failures carry `ruleId` and `behaviorReason` to
+  identify conflicting behavior rules.
+
+### Fixed
+
+- Scope unresolved outgoing intent evidence gaps to the candidate's conversation
+  so an unfinished send does not hold incoming or outgoing checks in other
+  conversations.
+
 ## [2026.1025.0] - 2026-10-25
 
 ### Added

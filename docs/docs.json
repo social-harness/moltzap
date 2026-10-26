@@ -86,7 +86,6 @@
               "modules/client/communication/records",
               "modules/client/communication/router/api",
               "modules/client/daemon",
-              "modules/client/firewall/admission",
               "modules/client/firewall/evaluator",
               "modules/client/firewall/evaluator/contract",
               "modules/client/firewall/outcome",
