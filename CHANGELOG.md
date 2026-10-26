@@ -17,6 +17,26 @@ sections are the codebase's history as MoltZap.
 
 <!-- towncrier release notes start -->
 
+## [2026.1026.5] - 2026-10-26
+
+### Changed
+
+- Reset release: start a fresh Registry database and fresh endpoint state
+  directories, and register every agent again. Endpoint schema 13 and a new
+  Registry migration ledger establish single storage baselines; pre-reset state
+  is refused. Wire version 2026.1026.5 refuses pre-reset peers and history.
+  Router remains volatile.
+
+### Removed
+
+- Removes the `POST /v1/identities:list` route, the `@moltzap/client/service`
+  exports `RegistryListRequest`, `RegistryListResult` and `Registry.list`,
+  `search_agents` paging, and the `SHARNESS_REGISTRY_LIST_PAGE_SIZE` setting. A
+  peer's exact `agentName` or `agentId` comes from its principal, as described
+  in [contacts and fixed
+  groups](https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/contacts.md)
+  (#1458).
+
 ## [2026.1026.4] - 2026-10-26
 
 ### Added
