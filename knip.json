@@ -3,13 +3,10 @@
   "workspaces": {
     ".": {
       "entry": [
-        "scripts/architecture/check-package.ts",
         "scripts/build/*.ts",
         "scripts/test-*-package.ts",
         "images/*.ts",
         "scripts/docs/check-mermaid.ts",
-        "scripts/docs/generate-constants-snippets.ts",
-        "scripts/docs/generate-modules.ts",
         "scripts/docs/vitest.config.ts",
         "scripts/docs/__tests__/*.test.ts",
         "scripts/__tests__/integration-lint-profile.ts"
@@ -17,7 +14,6 @@
       "project": [
         "*.ts",
         "scripts/docs/**/*.ts",
-        "scripts/architecture/**/*.ts",
         "scripts/build/**/*.ts",
         "scripts/test/packed-workspace.ts",
         "scripts/test-*-package.ts",
@@ -26,7 +22,8 @@
       "ignoreDependencies": [
         "@mermaid-js/mermaid-cli",
         "oxlint",
-        "puppeteer"
+        "puppeteer",
+        "typedoc"
       ]
     },
     "packages/client": {

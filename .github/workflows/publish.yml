@@ -365,14 +365,13 @@ jobs:
       # fails the release. This job can push to main and mint the npm OIDC
       # token, so towncrier and its dependencies install only from hash-pinned
       # requirements.
-      - name: Regenerate docs and make the release commit
+      - name: Make the release commit
         if: steps.plan.outputs.mode == 'bump' && steps.select.outputs.packages != ''
         env:
           VERSION: ${{ steps.plan.outputs.version }}
           PACKAGES: ${{ steps.select.outputs.packages }}
           HUSKY: "0"
         run: |
-          pnpm docs:generate
           if ! grep -q "^## \[$VERSION\]" CHANGELOG.md; then
             grep -qxF '<!-- towncrier release notes start -->' CHANGELOG.md \
               || { echo "CHANGELOG.md lost its towncrier marker"; exit 1; }
@@ -386,8 +385,7 @@ jobs:
           git config user.name "moltzap-release[bot]"
           git config user.email "moltzap-release[bot]@users.noreply.github.com"
           git add packages/*/package.json \
-            pnpm-lock.yaml CHANGELOG.md changelog.d/ \
-            docs/ 'packages/**/MODULE.md' README.md
+            pnpm-lock.yaml CHANGELOG.md changelog.d/
           PUBLISHED=""
           for pkg in $PACKAGES; do
             PUBLISHED="$PUBLISHED$(jq -r '"- \(.name)@\(.version)"' "packages/$pkg/package.json")"$'\n'
@@ -477,7 +475,7 @@ jobs:
           node --input-type=module - "$RUNNER_TEMP/changes" <<'JS'
           import { readFileSync } from "node:fs";
           const fields = readFileSync(process.argv[2], "latin1").split("\0");
-          const written = /^(packages\/[^/]+\/package\.json|pnpm-lock\.yaml|CHANGELOG\.md|docs\/.+\.mdx?|packages\/.+\/MODULE\.md|README\.md)$/;
+          const written = /^(packages\/[^/]+\/package\.json|pnpm-lock\.yaml|CHANGELOG\.md)$/;
           const problems = [];
           for (let i = 0; i + 1 < fields.length; i += 2) {
             const [, newMode, , , status] = fields[i].split(/[ \t]/);

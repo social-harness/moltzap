@@ -60,27 +60,17 @@ jobs:
       - name: Lint
         run: pnpm lint
         timeout-minutes: 30
-      # `pnpm build` and `pnpm lint` already run every project's build, lint,
-      # and arch:check; this step pins the resolved graph itself: every
-      # project, root, edge, and package-specific target. Unit tests run in
-      # `test`, process lanes in `integration`, and adjacent-release checks
-      # in `mixed-release`.
-      - name: Verify the Nx project graph
-        run: |
-          pnpm nx graph --print > "${RUNNER_TEMP}/sharness-project-graph.json"
-          node scripts/architecture/check-boundaries.ts --nx-graph "${RUNNER_TEMP}/sharness-project-graph.json"
       - run: pnpm format:check
-      - run: pnpm docs:check:drift
+      - run: pnpm docs:api
       - run: pnpm docs:check
       - run: pnpm docs:check:mermaid
-      - run: pnpm docs:check:gates-test
+      - run: pnpm test:repo-gates
       - run: pnpm test:compute-next-version
       - run: pnpm test:push-gate
       - run: pnpm test:npm-version-exists
       - run: pnpm test:ghcr-digest
       - run: pnpm test:select-packages
       - run: pnpm nx run workspace:test:image-input-key
-      - run: pnpm test:client-host-imports
 
   test:
     runs-on: ubuntu-latest

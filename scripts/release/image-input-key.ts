@@ -9,7 +9,6 @@ import { Effect } from "effect";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import { parse } from "yaml";
-import { INTERNAL_EXPORT_CONDITION } from "../architecture/boundary-contract.ts";
 import {
   byteOrder,
   digestOf,
@@ -57,7 +56,7 @@ const IMAGE_CONDITIONS = [
   "module-sync",
   "require",
   "import",
-  INTERNAL_EXPORT_CONDITION,
+  "sharness-internal",
   "default",
 ];
 

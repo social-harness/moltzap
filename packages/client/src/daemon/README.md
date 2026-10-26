@@ -20,7 +20,7 @@ entry for identity verification, card signing, and Registry and Router contracts
 
 `telemetry.ts` configures opt-in OTLP span export. `credentials.ts` reads the
 daemon's key and credential files. `launcher/` chooses and installs a release
-and starts its daemon without importing other Client source.
+and starts its daemon.
 
 The daemon supplies policy file locations and its credential reader to `firewall/`, which loads and
 composes personal policy. It maps policy configuration failures to daemon

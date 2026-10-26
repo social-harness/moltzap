@@ -45,19 +45,14 @@ Expected result: Nx reports successful build and test targets; lint and
 format checks exit with status 0. Build before lint so typed linting can
 resolve package declarations.
 
-`pnpm check` runs `pnpm lint` and `pnpm format:check`. A documentation change
-also runs `pnpm docs:check:drift`, which regenerates module pages and
-constants before comparing them. Run it from the repository root after
-committing your authored docs edits, because its comparison includes all
-tracked changes under `docs/`:
+`pnpm check` runs `pnpm lint` and `pnpm format:check`. For a documentation
+change, also run the link check from the repository root:
 
 ```bash
-NX_DAEMON=false pnpm docs:check:drift
 pnpm docs:check
 ```
 
-Expected result: regeneration leaves no diff, constants and imports checks
-report success, and the link check reports no broken internal links.
+Expected result: no broken internal links.
 
 ## Monorepo conventions
 
@@ -82,20 +77,13 @@ boundary choice updates its public specification before implementation.
 
 ## Architecture checks
 
-`pnpm lint` runs the architecture gates: the package graph and boundary check,
-`arch:check` for every package, and `arch:config:check`. Run a gate on its own
-from the repository root while you work. Successful analysis and drift checks
-exit with status 0; generation writes the package configuration files:
+`pnpm lint` runs `arch:check` for every package through
+`safer-architecture-lsp check .`. Run `pnpm arch:check` from the repository root
+to analyze every package on its own. Successful analysis exits with status 0;
+findings exit 1, and a project that cannot be analyzed exits 2.
 
-| Command | What it does |
-|---------|--------------|
-| `pnpm arch:check` | Run every package's architecture analysis |
-| `pnpm arch:config:generate` | Regenerate each `packages/*/safer-architecture.config.json` |
-| `pnpm arch:config:check` | Fail when a committed config differs from the generator's output |
-
-Package budgets come from `scripts/architecture/gen-configs.ts`; the JSON files
-are its output, so change a budget in the generator and regenerate. Exceptions
-are `safer-arch-ignore` directives in the source, most at the top of the file
+Edit each package's `safer-architecture.config.json` by hand to change its
+budgets, domains, and entrypoints. Exceptions are `safer-arch-ignore` directives in the source, most at the top of the file
 they cover. List them from the repository root:
 
 ```bash
@@ -110,22 +98,24 @@ in the PR description.
 ## Documentation
 
 The docs site at `docs/` is built with
-[Mintlify](https://mintlify.com). Source JSDoc generates per-folder module
-pages, and source-owned constants generate shared snippets. Run
-`pnpm docs:generate` before landing changes to either surface.
+[Mintlify](https://mintlify.com). TypeDoc builds the API reference directly
+from source JSDoc with `pnpm docs:api`; open `dist/api/index.html` afterward.
+The standalone HTML reference is separate from the Mintlify site.
 
 | Command | What it does |
 |---------|--------------|
 | `pnpm run docs:dev` | Preview locally without opening a browser |
 | `pnpm run docs:open` | Preview locally and open a browser |
-| `pnpm docs:generate` | Regenerate module pages and shared constants |
+| `pnpm docs:api` | Build TypeDoc HTML in `dist/api` |
 | `pnpm docs:check` | Check for broken internal links |
-| `pnpm docs:check:drift` | Verify generated docs match their sources |
 
 - **Guides and development pages**: edit the MDX files directly in `docs/`.
-- **Module pages and constants**: edit their source or generator, then run
-  `pnpm docs:generate`.
-- **Reusable content**: shared snippets live in `docs/snippets/`.
+- **API reference**: edit JSDoc on the owning symbol, then run `pnpm docs:api`.
+- **Reusable content**: use [Mintlify snippets](https://www.mintlify.com/docs/create/reusable-snippets)
+  under `docs/snippets/` and [global variables](https://www.mintlify.com/docs/organize/settings-reference#variables)
+  in `docs/docs.json`. Keep each documentation value in one place.
+- **Wire examples**: use `WIRE_VERSION` from Client's identity module; the
+  [wire version contract](/spec/identity#wire-versions) names its source.
 
 ## Code style
 

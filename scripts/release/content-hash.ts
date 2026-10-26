@@ -33,7 +33,7 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { readCompatibilityVersion } from "../docs/sharness-version.ts";
+import { readCompatibilityVersion } from "./wire-version.ts";
 
 /** The manifest field the release writes the content hash into. */
 export const CONTENT_HASH_FIELD = "sharnessContentHash";

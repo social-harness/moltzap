@@ -78,30 +78,6 @@
               "architecture/layers",
               "architecture/components"
             ]
-          },
-          {
-            "group": "Modules",
-            "pages": [
-              "modules/client/communication/collectives",
-              "modules/client/communication/conversations",
-              "modules/client/communication/records",
-              "modules/client/communication/router/api",
-              "modules/client/daemon",
-              "modules/client/firewall/evaluator",
-              "modules/client/firewall/evaluator/contract",
-              "modules/client/firewall/outcome",
-              "modules/client/firewall/policy",
-              "modules/client/firewall/policy/document",
-              "modules/client/harness/endpoint",
-              "modules/client/harness/inbox",
-              "modules/client/harness/protocol",
-              "modules/client/identity",
-              "modules/client/identity/registry",
-              "modules/client/src",
-              "modules/openclaw-channel/src",
-              "modules/registry/src",
-              "modules/router/src"
-            ]
           }
         ]
       }
@@ -129,20 +105,16 @@
   },
   "redirects": [
     {
-      "source": "/modules/client/delivery",
-      "destination": "/modules/client/harness/inbox"
-    },
-    {
-      "source": "/modules/client/endpoint/harness-endpoint",
-      "destination": "/modules/client/harness/endpoint"
-    },
-    {
-      "source": "/modules/client/service",
-      "destination": "/modules/client/daemon"
+      "source": "/modules/:path*",
+      "destination": "/spec/harness/client"
     },
     {
       "source": "/quickstart",
       "destination": "/guides/run-a-local-network"
     }
-  ]
+  ],
+  "variables": {
+    "node-version-range": "22.19.0",
+    "openclaw-min-version": "2026.10.3"
+  }
 }
