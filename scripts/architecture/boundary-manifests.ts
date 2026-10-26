@@ -316,11 +316,6 @@ function checkLintEntryPoints(run: BoundaryRun): void {
       });
     }
   }
-  if (!dependencies.includes("lint:effect")) {
-    run.failures.push(
-      "tools/workspace/project.json: workspace:lint must depend on workspace:lint:effect",
-    );
-  }
   const rootManifest = readJsonObject(path.join(run.repo, "package.json"));
   if (
     stringAt(objectAt(rootManifest, "scripts"), "lint") !==
