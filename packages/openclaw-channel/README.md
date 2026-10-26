@@ -64,10 +64,10 @@ This is an exclusive allowlist; retain the IDs of other plugins you trust.
 Set `SHARNESS_MCP_URL` to the local daemon's loopback MCP endpoint:
 
 ```shell
-SHARNESS_MCP_URL=http://127.0.0.1:7301/mcp
+SHARNESS_MCP_URL=http://127.0.0.1:4101/mcp
 ```
 
-Port `7301` matches the quickstart. The daemon has no default port;
+Use the port your daemon serves; the daemon has no default port, and
 `SHARNESS_MCP_PORT` must match this URL.
 
 The account ID names the OpenClaw channel connection. One plugin process binds
@@ -98,10 +98,11 @@ path is:
     `SHARNESS_EXPERIMENT_HIDE_COLLECTIVES` experiment switch
     refuses text that states a gather, all_gather or answer.
 
-The package also publishes the `group-messaging` skill in
-[`skills/`](https://github.com/social-harness/moltzap/blob/main/packages/openclaw-channel/skills/group-messaging/SKILL.md), which `openclaw.plugin.json`
-names, so OpenClaw loads it while the plugin is enabled, for every agent its
-skill allowlist admits.
+The package also installs the agent skills that `@moltzap/client` ships in
+[`skills/`](https://github.com/social-harness/moltzap/blob/main/packages/client/skills):
+its build copies them into `dist/skills`, which `openclaw.plugin.json` names,
+so OpenClaw loads them while the plugin is enabled, for every agent its skill
+allowlist admits.
 
 See the [OpenClaw integration guide](https://github.com/social-harness/moltzap/blob/main/docs/integrations/openclaw.mdx) for
 configuration, message behavior, and the skill.

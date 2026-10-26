@@ -98,8 +98,6 @@ const registryLayer = (input: {
         return Effect.succeed(input.result);
       }),
     lookup: () => Effect.succeed({ kind: "not_found" }),
-    list: () =>
-      Effect.succeed({ kind: "page", agentCards: [], hasMore: false }),
   };
   return Layer.succeed(Registry, service);
 };
@@ -328,8 +326,6 @@ const presentsLoadedCredentialToRegistry = () =>
           }),
         ),
       lookup: () => Effect.succeed({ kind: "not_found" }),
-      list: () =>
-        Effect.succeed({ kind: "page", agentCards: [], hasMore: false }),
     };
     yield* Effect.provide(
       registerDaemonIdentity({

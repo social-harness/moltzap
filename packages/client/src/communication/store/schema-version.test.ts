@@ -15,7 +15,7 @@ import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { RESET_SCHEMA } from "./database/migrations.js";
 import { openEndpointStore } from "./index.js";
 
-/** The schema the previous release wrote. */
+/** The last schema before the reset is refused even with otherwise valid state. */
 const EARLIER_SCHEMA_VERSION = RESET_SCHEMA - 1;
 
 function refusesAnEarlierSchemaUnchanged() {
@@ -41,7 +41,32 @@ function refusesAnEarlierSchemaUnchanged() {
   });
 }
 
+function storedSchema(path: string) {
+  const database = new DatabaseSync(path, { readOnly: true });
+  try {
+    return database.prepare("PRAGMA user_version").get()?.user_version;
+  } finally {
+    database.close();
+  }
+}
+
+function opensFreshBaseline() {
+  return Effect.gen(function* () {
+    const directory = stateDirectory();
+    const initial = yield* withStore(directory, (store) => store.recover());
+    expect(storedSchema(databasePath(directory))).toBe(RESET_SCHEMA);
+
+    expect(yield* withStore(directory, (store) => store.recover())).toEqual(
+      initial,
+    );
+  });
+}
+
 describe("endpoint store schema version", () => {
+  it(
+    "opens a fresh store at the reset baseline and reopens it",
+    opensFreshBaseline,
+  );
   it(
     "refuses a store at an earlier schema version and leaves its file unchanged",
     refusesAnEarlierSchemaUnchanged,

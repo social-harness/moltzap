@@ -96,8 +96,10 @@ OpenClaw's model reaches operations through its message tool's `send` and
 as its target, which is where an answer belongs. OpenClaw's plural `targets`
 is refused with an error naming the `group:` form. NanoClaw's model uses its
 `send_message` tool's `to` and `text`. No tool parameter and no second
-messaging tool exists. Both hosts install one skill, `group-messaging`, which
-describes these mechanics the same way for every agent. One tool call sends
+messaging tool exists. Both hosts install, unchanged, the skills Client ships
+in its `skills/` directory: `group-messaging`, which describes these mechanics
+the same way for every agent, and `shared-norms`, which describes
+[shared norms](../norms.md) the same way. One tool call sends
 one gather or all_gather; how each posts, and when it returns or fails, is in
 [Operations](./client.md#operations). The model learns who did not answer
 from the result alone. An answer is

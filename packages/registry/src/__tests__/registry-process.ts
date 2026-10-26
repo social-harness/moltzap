@@ -694,7 +694,6 @@ const registryEnvironment = (input: {
   SHARNESS_REGISTRY_POSTGRESQL_URL: input.postgresqlUrl,
   SHARNESS_REGISTRY_ADMISSION_CREDENTIAL: ADMISSION_CREDENTIAL,
   SHARNESS_REGISTRY_SIGNING_PRIVATE_KEY_PATH: input.registryKeyPath,
-  SHARNESS_REGISTRY_LIST_PAGE_SIZE: "2",
   ...input.overrides,
 });
 

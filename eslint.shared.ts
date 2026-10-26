@@ -40,6 +40,7 @@ const configModuleRules = {
 };
 
 const PACKAGE_SOURCE_FILES = [
+  "integration/**/*.ts",
   "src/**/*.ts",
   "src/**/*.cts",
   "src/**/*.mts",
@@ -187,8 +188,8 @@ export function packageEslintConfig(options: PackageEslintOptions) {
 }
 
 /**
- * Flat configuration for the workspace root: root modules, examples, and the
- * Node-run scripts under `scripts/`.
+ * Flat configuration for the workspace root: root modules, the `images/`
+ * helper, and the Node-run scripts under `scripts/`.
  */
 export function rootEslintConfig(tsconfigRootDir: string) {
   const languageOptions = makeTsLanguageOptions(tsconfigRootDir, [
@@ -207,7 +208,7 @@ export function rootEslintConfig(tsconfigRootDir: string) {
     },
     packageIgnores,
     makeStrictBlock(
-      ["*.ts", "examples/**/*.ts", "scripts/**/*.ts"],
+      ["*.ts", "images/**/*.ts", "scripts/**/*.ts"],
       languageOptions,
       makeStrictRules(),
     ),

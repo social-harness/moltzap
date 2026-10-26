@@ -19,7 +19,6 @@ import { AgentId, AgentName, PrincipalId } from "../../identity/agents.js";
 import { AgentCard } from "../../identity/cards.js";
 import {
   OperationId,
-  RegistryListRequest,
   RegistryLookupRequest,
 } from "../../identity/registry/contract.js";
 
@@ -107,24 +106,18 @@ export const managementStatusResultSchema = Schema.Union(
   }),
 ).annotations({ parseOptions: exactParseOptions });
 
-/** Exact Registry lookup-or-list selector used by agent discovery. */
+/** Exact Registry lookup selector accepted by `search_agents`. */
 export const managementSearchAgentsRequestSchema = Schema.Union(
-  RegistryLookupRequest,
-  RegistryListRequest,
+  ...RegistryLookupRequest.members,
 ).annotations({ parseOptions: exactParseOptions });
 
-/** Direct projection of exact Registry lookup and list results. */
+/** Direct projection of exact Registry lookup results. */
 export const managementSearchAgentsResultSchema = Schema.Union(
   exactStruct({
     kind: Schema.Literal("found"),
     agentCard: encodedAgentCard,
   }),
   exactStruct({ kind: Schema.Literal("not_found") }),
-  exactStruct({
-    kind: Schema.Literal("page"),
-    agentCards: Schema.Array(encodedAgentCard),
-    hasMore: Schema.Boolean,
-  }),
 ).annotations({ parseOptions: exactParseOptions });
 
 /** Canonically ordered local-conversation page selector. */

@@ -10,8 +10,6 @@ import type {
   Registry,
   RegistryConnectionError,
   RegistryInvalidResponseError,
-  RegistryListRequest,
-  RegistryListResult,
   RegistryLookupRequest,
   RegistryLookupResult,
   RegistryRegisterRequest,
@@ -63,7 +61,6 @@ type RegisterCall = Readonly<{
 
 type RegisterEffect = ReturnType<typeof Registry.register>;
 type LookupEffect = ReturnType<typeof Registry.lookup>;
-type ListEffect = ReturnType<typeof Registry.list>;
 type RegistryLayer = ReturnType<typeof Registry.layer>;
 
 type RegisterInputIsExact = Expect<
@@ -83,15 +80,6 @@ type LookupChannelsAreExact = Expect<
 >;
 type LookupInputIsExact = Expect<
   Types.Equals<Parameters<typeof Registry.lookup>[0], RegistryLookupRequest>
->;
-type ListChannelsAreExact = Expect<
-  Types.Equals<
-    ListEffect,
-    Effect.Effect<RegistryListResult, RegistryClientFailure, Registry>
-  >
->;
-type ListInputIsExact = Expect<
-  Types.Equals<Parameters<typeof Registry.list>[0], RegistryListRequest>
 >;
 type RegistryLayerInputIsExact = Expect<
   Types.Equals<
@@ -115,8 +103,6 @@ export type RegistryCapabilityCanaries = [
   RegisterChannelsAreExact,
   LookupInputIsExact,
   LookupChannelsAreExact,
-  ListInputIsExact,
-  ListChannelsAreExact,
   RegistryLayerInputIsExact,
   RegistryLayerIsExact,
 ];

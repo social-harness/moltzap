@@ -20,7 +20,7 @@ bind sockets.
 | --- | --- |
 | `pnpm nx run @moltzap/integration-tests:test:integration` | Registry–Router, daemon, and OpenClaw adapter acceptance suites |
 | `pnpm nx run @moltzap/integration-tests:test:mixed-release` | Current and previous published Client release interoperability |
-| `pnpm nx run @moltzap/integration-tests:test:example` | Packed npm Client with the two-agents Compose network; requires Docker and both image overrides |
+| `pnpm nx run @moltzap/integration-tests:test:network` | The documented own-network path: `images/compose.yaml`, packed `sharnessd` daemons and `images/mcp.ts`; requires Docker and `SHARNESS_NETWORK_VERSION` naming local or published image tags |
 | `pnpm nx run @moltzap/integration-tests:typecheck:tests` | Type checks for the suites and adapter fixture |
 | `pnpm nx run @moltzap/integration-tests:lint` | ESLint for this workspace |
 

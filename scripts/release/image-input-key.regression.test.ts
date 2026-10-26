@@ -72,23 +72,13 @@ await test("COPY service directories never turn release prose or comments into c
     rmSync(repo, { recursive: true, force: true });
   });
   write(repo, "packages/router/README.md", "docs/guide.md");
-  write(repo, "docs/guide.md", "CHANGELOG.md examples/two-agents/package.json");
+  write(repo, "docs/guide.md", "CHANGELOG.md");
   write(repo, "CHANGELOG.md", "old");
-  write(
-    repo,
-    "examples/two-agents/package.json",
-    '{"dependencies":{"@fixture/router":"1"}}',
-  );
   write(repo, "images/router/Dockerfile", `${dockerfile}\n# CHANGELOG.md\n`);
   commit(repo);
   const before = Effect.runSync(imageInputs(repo));
   write(repo, "CHANGELOG.md", "release");
   write(repo, "docs/guide.md", "release docs");
-  write(
-    repo,
-    "examples/two-agents/package.json",
-    '{"dependencies":{"@fixture/router":"2"}}',
-  );
   commit(repo);
   assert.deepEqual(Effect.runSync(imageInputs(repo)), before);
 });
@@ -741,10 +731,7 @@ function realImageFixture(): string {
       docker.replaceAll("@moltzap/", "@fixture/"),
     );
   }
-  for (const file of [
-    "scripts/build/clean-dist.ts",
-    "scripts/setup/restore-tsgo-exec-bit.ts",
-  ]) {
+  for (const file of ["scripts/build/clean-dist.ts"]) {
     write(
       repo,
       file,

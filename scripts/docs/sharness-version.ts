@@ -1,13 +1,7 @@
 /**
  * @file The docs reader of the Social Harness wire compatibility literal.
  *
- * `packages/client/src/identity/wire-version.ts` owns the value. Documentation baking
- * reads it without executing the module, so the export must be a literal, and
- * the gate test that plants replacement values rewrites it with the same
- * pattern it is read with — a pattern that drifted between reader and planter
- * would let the plant become a silent no-op. The architecture check
- * in `scripts/architecture/boundary-manifests.ts` carries the same pattern and
- * must keep matching it.
+ * Source readers share one literal pattern without executing Client code.
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -37,6 +31,13 @@ export const readCompatibilityVersion = (
       error: `could not read ${WIRE_VERSION_SOURCE}: ${cause instanceof Error ? cause.message : String(cause)}`,
     };
   }
+  return parseCompatibilityVersion(source);
+};
+
+/** Read the emitted wire value from source text, including a committed tree. */
+export function parseCompatibilityVersion(
+  source: string,
+): { readonly value: string } | { readonly error: string } {
   const match = WIRE_VERSION_LITERAL.exec(source);
   if (match === null) {
     return {
@@ -47,4 +48,4 @@ export const readCompatibilityVersion = (
   return value.length === 0
     ? { error: `expected a nonempty version in ${WIRE_VERSION_SOURCE}` }
     : { value };
-};
+}

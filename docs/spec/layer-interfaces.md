@@ -403,8 +403,8 @@ Restoring an endpoint state directory from a backup is unsafe: the agent could
 sign conflicting successors and must be treated as a new identity. The
 [daemon format rules](./harness/daemon.md#current-formats) and
 [Registry persistence rules](./identity.md#registry-persistence) govern version
-mismatches. Release notes mark each reset release with the phrase
-"Reset release"; the
+mismatches. The changelog marks each reset release with the phrase
+"Reset release" in its section of `CHANGELOG.md`; the
 [upgrade guide](../guides/upgrades.mdx) gives the operator steps.
 
 - One release computes one calendar version, `YYYY.MDD.N`, one past the
@@ -431,6 +431,13 @@ mismatches. Release notes mark each reset release with the phrase
   selected too, so every published package pins its siblings to their newest
   published versions and an installed closure resolves the versions one
   release tested.
+- `packages/client/src/identity/wire-version.ts` → `WIRE_VERSION` owns the
+  emitted wire version. The source Client manifest carries no wire-version
+  copy. The publish workflow writes `sharnessWireVersion` into the release
+  manifest before hashing and committing it; resume and publish use that
+  release commit. Local packers derive the same field from `WIRE_VERSION` for
+  launcher compatibility checks. A wire reset edits only `WIRE_VERSION` and
+  the mixed-release gate's `FIRST_POST_RESET_RELEASE`, which records its boundary.
 - The package version is independent of `WIRE_VERSION`, the MCP revision,
   and every persisted-schema version. Advancing one never advances another.
 - A merge to `main` releases once CI passes on it, when the merged commit
@@ -465,10 +472,11 @@ Registry and Router publish as `ghcr.io/social-harness/registry` and
 `ghcr.io/social-harness/router`. Each image is a multi-architecture OCI index
 for `linux/amd64` and `linux/arm64`, built on native runners. The committed
 input key `sha256:<hex>` from `pnpm image:keys` names the immutable tag
-`inputs-<hex>`. Release-version tags name those same indexes; the release
-commit pins both digests in `examples/two-agents/compose.yaml`, and the GitHub
-release body lists both full digest references. The bump waits for missing
-input tags and fails with a rerun hint if the images workflow has not
+`inputs-<hex>`. Release-version tags name those same indexes. The GitHub
+release is created only after both version tags exist, and its body lists both
+full digest references. `images/compose.yaml` runs a local network from the
+indexes a release-version tag names. The bump waits for
+missing input tags and fails with a rerun hint if the images workflow has not
 published them in time.
 After npm publication and release image tagging succeed, a separate job sends
 `repository_dispatch` event `social-harness-released` to `social-harness/deployment`.
@@ -480,14 +488,14 @@ than the one it runs, ordering calendar versions by their numeric year,
 month/day and sequence components.
 
 Both GHCR packages must be public before a release: the bump checks that both
-indexes pull anonymously before pinning them so the public quickstart works.
+indexes pull anonymously so that anyone can run `images/compose.yaml`.
 No `social-harness-images` dispatch happens until both packages are public. After making
 them public, run `images.yml` from main with `workflow_dispatch` to send the
 current images to deployment. Reverting to an already-published input key also
 requires that manual run, because no new index is published.
 
 `.github/workflows/images.yml` pushes each index by digest, signs it with
-cosign keyless, and verifies it before creating its input tag. The certificate
+cosign keyless before creating its input tag. The certificate
 identity is
 `https://github.com/social-harness/moltzap/.github/workflows/images.yml@refs/heads/main`
 and its OIDC issuer is `https://token.actions.githubusercontent.com`. Existing
@@ -578,8 +586,8 @@ oldest published Client release whose wire version remains live against the
 current build, each installed with its exact library closure, using the current Registry and Router. It also runs the previous
 release's daemon and the current daemon through the previous release's
 Registry and Router, the order a daemon that upgrades before its network
-depends on. That Registry and Router are the indexes the previous release
-commit's `examples/two-agents/compose.yaml` pins; the gate copies each
+depends on. That Registry and Router are the indexes the previous release's
+version tags name; the gate copies each
 image's working directory out with Docker and runs its entrypoint as a
 process with the gate's own Node, so the gate needs Docker. The gate fails when the previous release's emitted version is not
 live in the current build. It skips only when that version is outside

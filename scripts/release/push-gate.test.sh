@@ -47,7 +47,8 @@ main() {
   mkdir "$TEMP_DIR/fixture"
   cd "$TEMP_DIR/fixture"
   git init --quiet --initial-branch=main
-  mkdir -p packages/client packages/openclaw-channel changelog.d
+  mkdir -p packages/client/src/identity packages/openclaw-channel changelog.d
+  printf '%s\n' 'export const WIRE_VERSION = "2026.1021.3";' > packages/client/src/identity/wire-version.ts
   printf '%s\n' '{"version":"2026.1024.1","sharnessWireVersion":"2026.1021.3"}' > packages/client/package.json
   cp packages/client/package.json packages/openclaw-channel/package.json
   touch changelog.d/template.md changelog.d/consumed.Fixed.md
@@ -59,6 +60,7 @@ main() {
 
   new_case
   touch changelog.d/new.Fixed.md
+  printf '%s\n' '{"version":"2026.1025.1"}' > packages/client/package.json
   commit_tip 'fix: new change'
   check 'fragments present' release 0 'need a Social Harness release'
   rm changelog.d/new.Fixed.md
@@ -76,15 +78,17 @@ main() {
 
   new_case
   touch changelog.d/new.Fixed.md
-  printf '%s\n' '{"version":"2026.1025.1","sharnessWireVersion":"2026.1025.0"}' > packages/client/package.json
+  printf '%s\n' 'export const WIRE_VERSION = "2026.1025.0";' > packages/client/src/identity/wire-version.ts
   commit_tip 'feat: reset wire'
   check 'readable wire change requires manual reset' skip 0 workflow_dispatch
+  printf '%s\n' 'export const WIRE_VERSION = "2026.1021.3";' > packages/client/src/identity/wire-version.ts
+  check 'wire version comes from the gated commit despite working tree edits' skip 0 workflow_dispatch
 
   new_case
   touch changelog.d/new.Fixed.md
-  printf '%s\n' '{}' > packages/client/package.json
-  commit_tip 'fix: missing wire field'
-  check 'unreadable head wire fails' '' 1 packages/client/package.json
+  printf '%s\n' 'export const OTHER = "2026.1021.3";' > packages/client/src/identity/wire-version.ts
+  commit_tip 'fix: missing wire source'
+  check 'unreadable head wire fails' '' 1 packages/client/src/identity/wire-version.ts
 
   new_case
   printf '%s\n' '{}' > packages/client/package.json

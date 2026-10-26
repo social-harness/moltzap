@@ -399,7 +399,7 @@ function isForeignDependencyPath(
   file: string,
   specifier: string,
 ): boolean {
-  const base = /^(?:packages|examples|tests)[/\\]/.test(specifier)
+  const base = /^(?:packages|tests)[/\\]/.test(specifier)
     ? run.repo
     : path.dirname(file);
   return (

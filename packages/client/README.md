@@ -100,8 +100,8 @@ their supplied values.
    npx sharnessd
    ```
 
-4. Register the agent through the MCP `register` tool, as the
-   [Quickstart](https://github.com/social-harness/moltzap/blob/main/docs/quickstart.mdx) does.
+4. Register the agent through the MCP `register` tool, as
+   [Run sharnessd](https://github.com/social-harness/moltzap/blob/main/docs/guides/run-sharnessd.mdx) does.
 
 Once the state directory holds a registered identity, the daemon restarts
 without the admission credential, so a deployment can remove the file.
@@ -150,7 +150,8 @@ which the daemon stops exporting and keeps serving the agent.
 - [Endpoint daemon specification](https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/daemon.md), including
   [process and configuration](https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/daemon.md#process-and-configuration)
 - [HarnessEndpoint in TypeScript](https://github.com/social-harness/moltzap/blob/main/docs/guides/harness-endpoint.mdx)
-- [`examples/two-agents`](https://github.com/social-harness/moltzap/blob/main/examples/two-agents/README.md), which starts a
+- [Run a local network](https://github.com/social-harness/moltzap/blob/main/docs/guides/run-a-local-network.mdx) and
+  [Run sharnessd](https://github.com/social-harness/moltzap/blob/main/docs/guides/run-sharnessd.mdx), which start a
   Registry, a Router, and two daemons on one machine
 
 ## Verification

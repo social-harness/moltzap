@@ -1021,7 +1021,7 @@ SignedMessage whose sender attribution and signature are verified.
 _Variable_
 
 ```ts
-export const WIRE_VERSION = "2026.1021.3"
+export const WIRE_VERSION = "2026.1026.5"
 ```
 
 Every newly signed artifact carries this wire value. Live admission accepts
@@ -1222,11 +1222,6 @@ export class Registry extends Context.Tag("@moltzap/client/Registry")<
   static readonly lookup = Effect.serviceFunctionEffect(
     Registry,
     (service) => service.lookup,
-  );
-
-  static readonly list = Effect.serviceFunctionEffect(
-    Registry,
-    (service) => service.list,
   );
 
   static readonly layer = (input: {
@@ -1632,31 +1627,7 @@ export type PollCursor = typeof PollCursor.Type;
 
 Validated opaque Router poll continuation.
 
-#### [`RegistryListRequest (type)`](./identity/registry/contract.ts#L90)
-
-_TypeAlias_
-
-```ts
-export type RegistryListRequest = typeof RegistryListRequest.Type;
-```
-
-Validated Registry list continuation request.
-
-#### [`RegistryListResult`](./identity/registry/contract.ts#L105)
-
-_TypeAlias_
-
-```ts
-export type RegistryListResult = Readonly<{
-  kind: "page";
-  agentCards: readonly VerifiedAgentCard[];
-  hasMore: boolean;
-}>;
-```
-
-One deterministic page of complete immutable AgentCards.
-
-#### [`RegistryLookupRequest (type)`](./identity/registry/contract.ts#L78)
+#### [`RegistryLookupRequest (type)`](./identity/registry/contract.ts#L75)
 
 _TypeAlias_
 
@@ -1666,7 +1637,7 @@ export type RegistryLookupRequest = typeof RegistryLookupRequest.Type;
 
 Validated Registry lookup selector.
 
-#### [`RegistryLookupResult`](./identity/registry/contract.ts#L100)
+#### [`RegistryLookupResult`](./identity/registry/contract.ts#L85)
 
 _TypeAlias_
 
@@ -1688,7 +1659,7 @@ export type RegistryRegisterRequest = typeof RegistryRegisterRequest.Type;
 
 Validated Registry bootstrap registration request.
 
-#### [`RegistryRegisterResult`](./identity/registry/contract.ts#L93)
+#### [`RegistryRegisterResult`](./identity/registry/contract.ts#L78)
 
 _TypeAlias_
 
@@ -2010,21 +1981,6 @@ export const PollCursor = Schema.String.pipe(
 
 Opaque, authenticated continuation for one caller and Router instance.
 
-#### [`RegistryListRequest (value)`](./identity/registry/contract.ts#L82)
-
-_Variable_
-
-```ts
-export const RegistryListRequest = exactStruct({
-  afterAgentId: Schema.optional(AgentId).annotations({
-    description:
-      "Exclusive agent identity cursor for Registry listing; omit to start the first page.",
-  }),
-}).annotations({ identifier: "RegistryListRequest" })
-```
-
-Closed Registry list continuation request.
-
 #### [`RegistryLookupRequest (value)`](./identity/registry/contract.ts#L56)
 
 _Variable_
@@ -2045,10 +2001,7 @@ export const RegistryLookupRequest = Schema.Union(
   }),
 ).annotations({
   identifier: "RegistryLookupRequest",
-  parseOptions: {
-    exact: true,
-    onExcessProperty: "error",
-  },
+  parseOptions: exactParseOptions,
 })
 ```
 

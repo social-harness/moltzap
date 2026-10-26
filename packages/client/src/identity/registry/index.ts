@@ -24,11 +24,6 @@ export class Registry extends Context.Tag("@moltzap/client/Registry")<
     (service) => service.lookup,
   );
 
-  static readonly list = Effect.serviceFunctionEffect(
-    Registry,
-    (service) => service.list,
-  );
-
   static readonly layer = (input: {
     readonly origin: URL;
     readonly registrySignerPublicKey: Ed25519PublicKey;

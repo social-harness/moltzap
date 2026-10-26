@@ -64,7 +64,7 @@ const postgresqlUrl = Schema.String.pipe(
         parsed.pathname.length > 1 &&
         parsed.hash === ""
       );
-      // eslint-disable-next-line agent-code-guard/bare-catch -- URL parsing failure is the false branch of this Schema predicate. #ignore-sloppy-code-next-line[bare-catch]: The predicate returns false.
+      // eslint-disable-next-line agent-code-guard/bare-catch -- URL parsing failure is the false branch of this Schema predicate.
     } catch {
       return false;
     }
@@ -94,11 +94,6 @@ const configurationFields = {
   signingPrivateKeyPath: setting(
     "SHARNESS_REGISTRY_SIGNING_PRIVATE_KEY_PATH",
     absolutePath,
-  ),
-  listPageSize: setting(
-    "SHARNESS_REGISTRY_LIST_PAGE_SIZE",
-    processInteger,
-    100,
   ),
   requestConcurrencyLimit: setting(
     "SHARNESS_REGISTRY_REQUEST_CONCURRENCY_LIMIT",
@@ -139,7 +134,6 @@ export interface RegistryConfiguration {
   readonly postgresqlUrl: Redacted.Redacted;
   readonly admissionCredential: Redacted.Redacted;
   readonly signingPrivateKeyPath: Redacted.Redacted;
-  readonly listPageSize: number;
   readonly requestConcurrencyLimit: number;
   readonly liveNonceCapacity: number;
   readonly sqlPoolSize: number;
@@ -282,7 +276,6 @@ function connectStorage(
     return makeRegistryStorage({
       sql,
       registrySignerPublicKey,
-      listPageSize: configuration.listPageSize,
       operationTimeoutMilliseconds: configuration.sqlOperationTimeoutMs,
     });
   });

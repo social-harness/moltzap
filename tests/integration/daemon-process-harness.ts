@@ -508,7 +508,6 @@ export const startPgliteRegistry = (input: {
         SHARNESS_REGISTRY_POSTGRESQL_URL: `postgresql://postgres:postgres@${LOOPBACK_HOST}:${input.postgresqlPort}/postgres`,
         SHARNESS_REGISTRY_ADMISSION_CREDENTIAL: input.admissionCredential,
         SHARNESS_REGISTRY_SIGNING_PRIVATE_KEY_PATH: input.registryKeyPath,
-        SHARNESS_REGISTRY_LIST_PAGE_SIZE: "16",
       },
       join(WORKSPACE_ROOT, "packages/registry"),
     );

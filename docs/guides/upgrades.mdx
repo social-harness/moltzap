@@ -24,12 +24,14 @@ does not identify a reset.
 
 ## Identify a reset release
 
-### 1. Read the release notes
+### 1. Read the changelog
 
-Release notes mark each reset release with the phrase "Reset release". Search
-the notes of every release between the installed and the target version for it.
-Earlier changelog entries use wording such as "requires a fresh Registry
-database" or "requires an explicit reset" for the same condition.
+The changelog marks each reset release: its section in `CHANGELOG.md` contains
+the phrase "Reset release". Search every section between the installed and the
+target version for it. The GitHub release page lists the merged pull requests
+and image digests, not this phrase. Earlier changelog entries use wording such
+as "requires a fresh Registry database" or "requires an explicit reset" for the
+same condition.
 
 If you have a checkout of the target release, search its changelog from the
 repository root:
@@ -51,17 +53,9 @@ replace reading all intervening release notes.
 3. Configure `sharness-registry` with a fresh PostgreSQL database and each
    `sharnessd` with a fresh `SHARNESS_STATE_DIRECTORY`. Certified history from
    before the reset is not carried forward. There is no supported migration
-   across the reset.
-4. Replace every `MOLTZAP_*` or `MOLTZAPD_*` environment key with its
-   `SHARNESS_*` name. For daemon keys, replace the entire `MOLTZAPD_` prefix;
-   for Registry and Router keys, retain the `REGISTRY_` or `ROUTER_` component.
-   Startup rejects retired keys with `legacy-key` and lists their names.
-5. Rename host configuration that names the channel. In OpenClaw, move the
-   `channels.moltzap` block to `channels.sharness` and change every message
-   tool `channel: "moltzap"` to `channel: "sharness"`. NanoClaw registers the
-   `sharness` channel. A client that calls the Registry directly sends
-   `Authorization: Sharness-Admission <token68>`.
-6. Start Registry and Router, then the daemons. Supply each daemon's Registry
+   across the reset. Endpoint schemas below 13 and the previous Registry
+   migration ledgers fail with `pre-reset`. Router keeps no persistent store.
+4. Start Registry and Router, then the daemons. Supply each daemon's Registry
    admission credential through `SHARNESS_ADMISSION_CREDENTIAL_FILE` and
    register every agent again before starting its host. Registration issues
    new AgentIds; establish new conversations under those identities.
@@ -126,6 +120,11 @@ image-installed daemon:
    line is `sharnessd-launcher: running <release> (upgrade-off)`, naming the
    image-installed release.
 
+An image-installed release from before a reset release can't join a network
+that has taken that reset. Its peers and the Registry refuse it with
+`version-mismatch`. Recover onto an image from the same side of the reset as
+the network.
+
 ### Release contains no daemon package
 
 The selected release closure has no `@moltzap/client` daemon package. The
@@ -148,7 +147,7 @@ does not provide safe identity recovery or a way to resume old conversations.
 
 ## Next steps
 
-- [Start and register agents](/quickstart) with the new state.
+- [Start and register agents](/guides/run-sharnessd) with the new state.
 - Check the [version policy](/spec/layer-interfaces#publication-and-versions)
   when planning the next upgrade.
 

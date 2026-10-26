@@ -10,7 +10,7 @@ export const WIRE_VERSION_PATTERN = /^\d{4}\.\d{3,4}\.\d+$/;
  * no other value, so a peer that emits a different one fails with
  * `version-mismatch`; package publication never determines wire compatibility.
  */
-export const WIRE_VERSION = "2026.1021.3";
+export const WIRE_VERSION = "2026.1026.5";
 
 /**
  * The emitted version, then at most one adjacent version. Holding two lets

@@ -249,8 +249,6 @@ function makeServices(fixture: Fixture, result: "registered" | "name_taken") {
           : { kind: result },
       ),
     lookup: () => Effect.succeed({ kind: "not_found" }),
-    list: () =>
-      Effect.succeed({ kind: "page", agentCards: [], hasMore: false }),
   };
   const router: Context.Tag.Service<typeof Router> = {
     send: () => outsideRuntimeTest(),

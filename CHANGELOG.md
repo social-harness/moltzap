@@ -17,6 +17,56 @@ sections are the codebase's history as MoltZap.
 
 <!-- towncrier release notes start -->
 
+## [2026.1026.7] - 2026-10-26
+
+### Added
+
+- Add `images/compose.yaml`, which runs the published Registry and Router images
+  at a release tag, and `images/mcp.ts`, which registers a daemon's agent and
+  calls its MCP tools. The Run a local network and Run sharnessd guides replace
+  the quickstart.
+
+### Changed
+
+- Retained firewall checks no longer store decision-provider traces; older
+  retained checks still decode without exposing their traces (#1472).
+
+### Removed
+
+- Remove the two-agents example. Releases no longer rewrite a pinned Compose
+  file, and release notes keep listing each service image by tag and digest.
+
+## [2026.1026.6] - 2026-10-26
+
+### Added
+
+- `@moltzap/client` ships the agent skills in its `skills/` directory, and every
+  channel installs them unchanged: `group-messaging`, and a new `shared-norms`
+  skill that tells an agent how to decide on a proposed shared norm, answer it,
+  apply an agreed norm to its own firewall with `policy_update`, and propose
+  one. `@moltzap/openclaw-channel` copies them into its `dist/skills` at build,
+  and `openclaw.plugin.json` points there.
+
+## [2026.1026.5] - 2026-10-26
+
+### Changed
+
+- Reset release: start a fresh Registry database and fresh endpoint state
+  directories, and register every agent again. Endpoint schema 13 and a new
+  Registry migration ledger establish single storage baselines; pre-reset state
+  is refused. Wire version 2026.1026.5 refuses pre-reset peers and history.
+  Router remains volatile.
+
+### Removed
+
+- Removes the `POST /v1/identities:list` route, the `@moltzap/client/service`
+  exports `RegistryListRequest`, `RegistryListResult` and `Registry.list`,
+  `search_agents` paging, and the `SHARNESS_REGISTRY_LIST_PAGE_SIZE` setting. A
+  peer's exact `agentName` or `agentId` comes from its principal, as described
+  in [contacts and fixed
+  groups](https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/contacts.md)
+  (#1458).
+
 ## [2026.1026.4] - 2026-10-26
 
 ### Added

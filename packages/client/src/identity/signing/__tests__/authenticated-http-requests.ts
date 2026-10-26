@@ -83,7 +83,6 @@ export const registryWithLookup = (
 ): RegistryClientService => ({
   register: () => Effect.dieMessage("registration is outside this test"),
   lookup,
-  list: () => Effect.dieMessage("listing is outside this test"),
 });
 
 /** AuthenticatedHttp over `registry`, with small test capacities. */

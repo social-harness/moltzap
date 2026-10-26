@@ -36,7 +36,6 @@ const AUTHENTICATION_FAILED_TAG = "AuthenticationFailedError";
 const UNAVAILABLE_TAG = "UnavailableError";
 const NAME_TAKEN_KIND = "name_taken";
 const NOT_FOUND_KIND = "not_found";
-const PAGE_KIND = "page";
 
 const requiredConfiguration = new Map([
   ["SHARNESS_REGISTRY_PORT", "4317"],
@@ -89,7 +88,6 @@ const invalidConfigurationOverrides = [
   new Map([["SHARNESS_REGISTRY_ADMISSION_CREDENTIAL", "short"]]),
   new Map([["SHARNESS_REGISTRY_ADMISSION_CREDENTIAL", "invalid!token"]]),
   new Map([["SHARNESS_REGISTRY_SIGNING_PRIVATE_KEY_PATH", "relative.pem"]]),
-  new Map([["SHARNESS_REGISTRY_LIST_PAGE_SIZE", "0"]]),
   new Map([["SHARNESS_REGISTRY_REQUEST_CONCURRENCY_LIMIT", "+2"]]),
   new Map([["SHARNESS_REGISTRY_LIVE_NONCE_CAPACITY", "1.5"]]),
   new Map([["SHARNESS_REGISTRY_SQL_POOL_SIZE", "0"]]),
@@ -129,14 +127,6 @@ const makeRpcStorage = (calls: Ref.Ref<number>): RegistryStorage => ({
       ),
     ),
   lookup: () => Effect.succeed(Object.freeze({ kind: NOT_FOUND_KIND })),
-  list: () =>
-    Effect.succeed(
-      Object.freeze({
-        kind: PAGE_KIND,
-        agentCards: Object.freeze([]),
-        hasMore: false,
-      }),
-    ),
 });
 
 const assertDefaultConfiguration = Effect.gen(function* () {
@@ -144,7 +134,6 @@ const assertDefaultConfiguration = Effect.gen(function* () {
   expect(configuration).toMatchObject({
     host: "127.0.0.1",
     port: 4317,
-    listPageSize: 100,
     requestConcurrencyLimit: 256,
     liveNonceCapacity: 10_000,
     sqlPoolSize: 10,
@@ -160,7 +149,6 @@ const assertDefaultConfiguration = Effect.gen(function* () {
   const overridden = yield* loadConfiguration(
     new Map([
       ["SHARNESS_REGISTRY_HOST", "::"],
-      ["SHARNESS_REGISTRY_LIST_PAGE_SIZE", "7"],
       ["SHARNESS_REGISTRY_REQUEST_CONCURRENCY_LIMIT", "8"],
       ["SHARNESS_REGISTRY_LIVE_NONCE_CAPACITY", "9"],
       ["SHARNESS_REGISTRY_SQL_POOL_SIZE", "3"],
@@ -169,7 +157,6 @@ const assertDefaultConfiguration = Effect.gen(function* () {
   );
   expect(overridden).toMatchObject({
     host: "::",
-    listPageSize: 7,
     requestConcurrencyLimit: 8,
     liveNonceCapacity: 9,
     sqlPoolSize: 3,
@@ -246,7 +233,6 @@ const rpcBehavior = Effect.gen(function* () {
     agentName: Schema.decodeUnknownSync(AgentName)("rpc-lookup"),
   });
   expect(lookup.kind).toBe(NOT_FOUND_KIND);
-  expect((yield* client.list({})).kind).toBe(PAGE_KIND);
 });
 
 describe("Registry private contracts", () => {
