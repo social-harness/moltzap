@@ -76,7 +76,6 @@ jobs:
       - run: pnpm test:example-images
       - run: pnpm test:select-packages
       - run: pnpm nx run workspace:test:image-input-key
-      - run: pnpm test:client-host-imports
 
   test:
     runs-on: ubuntu-latest

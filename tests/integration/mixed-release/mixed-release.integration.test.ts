@@ -462,11 +462,7 @@ function installCurrent(temporaryRoot: string) {
       directory: temporaryRoot,
       prefix: "current-",
     });
-    const { archives } = yield* packWorkspaceClosure(
-      packages,
-      root,
-      new Set(Object.keys(packages)),
-    );
+    const { archives } = yield* packWorkspaceClosure(packages, root);
     const currentRoot = join(root, "current");
     yield* fs.makeDirectory(currentRoot);
     return yield* installPackedConsumer({

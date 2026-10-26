@@ -447,8 +447,10 @@ mismatches. Release notes mark each reset release with the phrase
   The harness may launch product executables by path and start child
   compositions with product working directories. The
   Client and OpenClaw `test:pack` gates pack their published closures through
-  `scripts/test/packed-workspace.ts` and verify exact sibling pins and declared
-  executables. NanoClaw's ABI check compiles its source against Client; it has
+  `scripts/test/packed-workspace.ts`, install them in fresh consumers, and import
+  each public entry. Client also checks that `./internal` resolves only with
+  its condition. OpenClaw installs the packed plugin through its own plugin
+  installer. NanoClaw's ABI check compiles its source against Client; it has
   no tarball installation gate because deployment copies its source.
 
 

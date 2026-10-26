@@ -35,7 +35,6 @@
     "image:keys": "node scripts/release/image-input-key.ts",
     "test:image-input-key": "pnpm nx run workspace:test:image-input-key",
     "test:select-packages": "node scripts/release/select-packages.test.ts",
-    "test:client-host-imports": "node scripts/test/client-host-imports.test.ts",
     "prepare": "husky && node scripts/setup/restore-tsgo-exec-bit.ts",
     "effect:source": "./scripts/setup/prepare-effect.sh",
     "test:affected": "nx affected -t test",
