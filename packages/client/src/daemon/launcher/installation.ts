@@ -249,7 +249,11 @@ export const pointCurrent = Effect.fn("Launcher.pointCurrent")(
   Effect.mapError((failure) => launcherError("record", failure.message)),
 );
 
-/** Package code contains no secrets and must load from a host running as another user. */
+/**
+ * Package code contains no secrets and must load from a host running as
+ * another user. Symbolic links are left alone: a workspace link may dangle,
+ * and following one would change modes outside the release.
+ */
 function readableRelease(prefix: string) {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
@@ -260,6 +264,9 @@ function readableRelease(prefix: string) {
     ];
     for (const entry of entries) {
       const target = path.join(prefix, entry);
+      if (Option.isSome(yield* Effect.option(fs.readLink(target)))) {
+        continue;
+      }
       const info = yield* fs.stat(target);
       const read =
         info.type === "Directory" || (info.mode & 0o111) !== 0 ? 0o555 : 0o444;
