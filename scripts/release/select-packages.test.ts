@@ -44,10 +44,16 @@ const DIRS = ["client", "openclaw-channel"];
  * private services are workspace packages outside the release set.
  */
 const WORKSPACE_NAMES: ReadonlySet<string> = new Set(
-  [...DIRS, "nanoclaw-channel", "registry", "router"].map(
-    (dir) => `@moltzap/${dir}`,
-  ),
+  [...DIRS, "nanoclaw-channel", "registry", "router"].map(packageName),
 );
+/**
+ * The npm name of a package directory under `packages/`; the library's
+ * directory keeps the name `client`.
+ */
+function packageName(dir: string): string {
+  return dir === "client" ? "@moltzap/social-harness" : `@moltzap/${dir}`;
+}
+
 const DEPENDENCIES = Object.fromEntries(
   DIRS.map((dir) => [dir, dir === "client" ? [] : ["client"]]),
 );
@@ -321,17 +327,17 @@ function fakeWorkspace(
   const versions = new Map<string, string>(DIRS.map((dir) => [dir, PREVIOUS]));
   const published = new Map(
     DIRS.map((dir) => [
-      `@moltzap/${dir}@${PREVIOUS}`,
+      `${packageName(dir)}@${PREVIOUS}`,
       packedHash(dir, `${dir}-source`, () => PREVIOUS),
     ]),
   );
   const workspace: Workspace = {
     manifest: (dir): Manifest => ({
-      name: `@moltzap/${dir}`,
+      name: packageName(dir),
       version: versions.get(dir) ?? PREVIOUS,
       dependencies: Object.fromEntries(
         (DEPENDENCIES[dir] ?? []).map((sibling) => [
-          `@moltzap/${sibling}`,
+          packageName(sibling),
           "workspace:*",
         ]),
       ),
