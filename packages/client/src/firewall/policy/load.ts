@@ -8,13 +8,19 @@ import {
   Schedule,
   Schema,
 } from "effect";
+import { load as loadYaml } from "js-yaml";
+import { createHash } from "node:crypto";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Configuration reads the configured policy file before the daemon composes its platform services.
 import { lstat, readFile } from "node:fs/promises";
-import { dirname, isAbsolute } from "node:path";
+import { dirname, isAbsolute, resolve, win32 } from "node:path";
+import { exactStruct } from "../../encoding/exact.js";
 import {
   type DecisionProvider,
   DecisionProviderError,
+  EnglishRule,
   makeJevDecisionProvider,
+  policyReadSchema,
+  policyUpdateSchema,
 } from "../evaluator/index.js";
 import {
   type CredentialReader,
@@ -22,7 +28,11 @@ import {
   type MessagePolicyConfigurationFailure,
   type PolicyConfiguration,
 } from "./configuration.js";
-import { decodeMessagePolicy, type MessagePolicy } from "./document/index.js";
+import {
+  decodeMessagePolicy,
+  type MessagePolicy,
+  type ResolvedMessagePolicy,
+} from "./document/index.js";
 
 /** Larger than any document of 256 editable rules and the fixed rules beside them. */
 const MAXIMUM_POLICY_BYTES = 1_048_576;
@@ -65,8 +75,9 @@ const failureMessages: Readonly<
 
 /** A configured document with the decision provider it names, and where its audit goes. */
 export interface LoadedMessagePolicy {
-  readonly policy: MessagePolicy;
+  readonly policy: ResolvedMessagePolicy;
   readonly provider: DecisionProvider;
+  readonly behaviorRulePaths: ReadonlyMap<string, string>;
   readonly auditExport?: string;
 }
 
@@ -101,12 +112,14 @@ export const loadMessagePolicy = (
         decodeMessagePolicy(text).pipe(Effect.mapError(invalidPolicy)),
       ),
     );
+    const resolved = yield* resolveBehaviors(policy, dirname(path));
     const auditExport = configuration.firewallAuditExport;
     if (auditExport !== undefined) {
       yield* requirePrivateParent(auditExport);
     }
     return Option.some({
-      policy,
+      policy: resolved.policy,
+      behaviorRulePaths: resolved.behaviorRulePaths,
       provider: yield* decisionProvider(policy, configuration, readCredential),
       auditExport,
     });
@@ -116,15 +129,169 @@ export const loadMessagePolicy = (
  * The configuration failure for a message-policy setting, with its fixed
  * operator message.
  * @param reason Why the setting cannot start the daemon.
+ * @param path The indexed behavior entry, if one fails.
  * @returns The failure, naming no configured value.
  */
 export function policyConfigurationError(
   reason: MessagePolicyConfigurationFailure,
+  path?: string,
 ): MessagePolicyConfigurationError {
   return new MessagePolicyConfigurationError({
     reason,
-    message: failureMessages[reason],
+    message:
+      path === undefined
+        ? failureMessages[reason]
+        : `${failureMessages[reason]}; invalid at ${path}. Docs: https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/message-policy.md#behaviors`,
   });
+}
+
+/** YAML owns frontmatter syntax; only Social Harness metadata is a closed namespace. */
+const behaviorFrontmatter = Schema.Struct({
+  name: Schema.NonEmptyTrimmedString,
+  description: Schema.NonEmptyString,
+  metadata: Schema.Struct({
+    "social-harness": exactStruct({
+      kind: Schema.optionalWith(EnglishRule.fields.kind, {
+        default: () => "norm" as const,
+      }),
+      guidance: EnglishRule.fields.guidance,
+      feedback: EnglishRule.fields.feedback,
+    }),
+  }),
+});
+
+/** Reports only the policy entry; YAML diagnostics may contain private file content. */
+function invalidBehavior(path: string) {
+  return policyConfigurationError("message-policy", path);
+}
+
+function readBehavior(root: string, directory: string, path: string) {
+  const refused = () => invalidBehavior(path);
+  if (
+    isAbsolute(directory) ||
+    win32.isAbsolute(directory) ||
+    directory.split(/[\\/]/u).includes("..")
+  ) {
+    return Effect.fail(refused());
+  }
+  return Effect.gen(function* () {
+    const bytes = yield* Effect.tryPromise({
+      try: () => readFile(resolve(root, directory, "BEHAVIOR.md")),
+      catch: refused,
+    });
+    if (bytes.byteLength > 65_536) {
+      return yield* refused();
+    }
+    const parts = /^---\r?\n([\s\S]*?)^---[ \t]*(?:\r?\n|$)([\s\S]*)/mu.exec(
+      bytes.toString("utf8"),
+    );
+    if (
+      parts?.[1] === undefined ||
+      parts[2] === undefined ||
+      parts.index !== 0
+    ) {
+      return yield* refused();
+    }
+    const frontmatter = yield* Effect.try({
+      try: (): unknown => loadYaml(parts[1] ?? ""),
+      catch: refused,
+    }).pipe(
+      Effect.flatMap(Schema.decodeUnknown(behaviorFrontmatter)),
+      Effect.mapError(refused),
+    );
+    const metadata = frontmatter.metadata["social-harness"];
+    const rules = yield* Schema.decodeUnknown(policyReadSchema.fields.rules)([
+      {
+        id: frontmatter.name,
+        text: parts[2].trim(),
+        ...metadata,
+      },
+    ]).pipe(Effect.mapError(refused));
+    const rule = yield* Effect.fromNullable(rules[0]).pipe(
+      Effect.mapError(refused),
+    );
+    return { rule, digest: createHash("sha256").update(bytes).digest("hex") };
+  });
+}
+
+/** Initial behaviors are validated even when persisted editable rules already exist. */
+function resolveBehaviors(policy: MessagePolicy, root: string) {
+  return Effect.gen(function* () {
+    const behaviorRulePaths = new Map<string, string>();
+    const english = policy.english;
+    if (english === undefined) {
+      return { policy: { ...policy, english: undefined }, behaviorRulePaths };
+    }
+    const state = {
+      root,
+      ids: new Set(
+        [...english.fixedRules, ...english.initialRules].map((rule) => rule.id),
+      ),
+      behaviorRulePaths,
+    };
+    const fixed = yield* loadBehaviors(
+      english.fixedBehaviors,
+      "fixedBehaviors",
+      state,
+    );
+    const initial = yield* loadBehaviors(
+      english.initialBehaviors,
+      "initialBehaviors",
+      state,
+      english.initialRules,
+    );
+    const resolved: ResolvedMessagePolicy = {
+      ...policy,
+      english: {
+        fixedRules: [
+          ...english.fixedRules,
+          ...fixed.map((behavior) => behavior.rule),
+        ],
+        initialRules: [
+          ...english.initialRules,
+          ...initial.map((behavior) => behavior.rule),
+        ],
+      },
+      ...(fixed.length === 0
+        ? {}
+        : { fixedBehaviorDigests: fixed.map((behavior) => behavior.digest) }),
+    };
+    return { policy: resolved, behaviorRulePaths };
+  });
+}
+
+function loadBehaviors(
+  directories: readonly string[],
+  field: "fixedBehaviors" | "initialBehaviors",
+  state: {
+    readonly root: string;
+    readonly ids: Set<string>;
+    readonly behaviorRulePaths: Map<string, string>;
+  },
+  seed?: readonly EnglishRule[],
+) {
+  const rules = [...(seed ?? [])];
+  return Effect.forEach(
+    directories,
+    (directory, index) =>
+      Effect.gen(function* () {
+        const path = `english.${field}[${index}]`;
+        const behavior = yield* readBehavior(state.root, directory, path);
+        if (state.ids.has(behavior.rule.id)) {
+          return yield* invalidBehavior(path);
+        }
+        if (seed !== undefined) {
+          rules.push(behavior.rule);
+          yield* Schema.decodeUnknown(policyUpdateSchema)({ add: rules }).pipe(
+            Effect.mapError(() => invalidBehavior(path)),
+          );
+        }
+        state.ids.add(behavior.rule.id);
+        state.behaviorRulePaths.set(behavior.rule.id, path);
+        return behavior;
+      }),
+    { concurrency: 1 },
+  );
 }
 
 /** The audit export's directory exists, belongs to the daemon's user and admits no one else. */

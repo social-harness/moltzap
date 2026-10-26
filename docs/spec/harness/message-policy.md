@@ -461,7 +461,7 @@ installs a decoded document with `messagePolicyFirewall(policy, provider)`.
 | `format` | yes | `org.social-harness/message-policy/v1` |
 | `mode` | yes | `guidance` or `enforcement`; a daemon without the file has no firewall |
 | `incoming`, `outgoing` | no, default `[]` | built-in code middleware in chain order, below |
-| `english` | no | `fixedRules` and `initialRules` as `EnglishRule` arrays, default `[]`, and `fixedBehaviors` and `initialBehaviors` (proposed; see [Behaviors](#behaviors)) as arrays of behavior directory paths, default `[]`; present, owner tools can edit English rules |
+| `english` | no | `fixedRules` and `initialRules` as `EnglishRule` arrays, default `[]`, and `fixedBehaviors` and `initialBehaviors` as arrays of behavior directory paths, default `[]`; present, owner tools can edit English rules |
 | `decisionProvider` | with `english` or the collective norms | `{kind: "jev", model}`, or `{kind: "unavailable"}` |
 | `englishSettings` | no | `EnglishPolicySettings`; default probability 0.5, 384,000 request bytes, 15 s |
 | `settings` | no | `FirewallSettings`; default 150 s per check, 70 s per middleware, 512,000 input bytes, 2,000,000 result bytes |
@@ -513,9 +513,6 @@ once every daemon that reads its documents accepts it, and a reader accepts
 every document an earlier release of this format accepted.
 
 ### Behaviors
-
-Status: **proposed**; the current decoder refuses `fixedBehaviors` and
-`initialBehaviors`.
 
 An English rule can be written as an [agentbehavior.dev](https://agentbehavior.dev)
 behavior: a directory holding exactly one behavior in a file named `BEHAVIOR.md`.

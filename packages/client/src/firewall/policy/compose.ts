@@ -11,8 +11,8 @@ import type {
 } from "../evaluator/index.js";
 import type {
   IncomingMiddlewareEntry,
-  MessagePolicy,
   OutgoingMiddlewareEntry,
+  ResolvedMessagePolicy,
 } from "./document/index.js";
 import { packageVersion } from "../../release/index.js";
 import {
@@ -48,19 +48,20 @@ export interface FirewallInstallation {
  * its settings. This is the trusted-composition hook: a composition that
  * brings its own decision provider installs the result with
  * `Daemon.withFirewall`. `codeDigest` is the SHA-256 of the Client release,
- * the mode, each registration's id and revision, the fixed English rules,
+ * the mode, each registration's id and revision, the fixed English rules
+ * and behavior bytes,
  * the decision provider and the settings. It leaves out what differs between
  * the agents of one arm: the facilitator role, which no revision holds, the
  * allowed-sender list and the initial editable rules, so every member
  * records the same digest.
- * @param policy The decoded document.
+ * @param policy The resolved document with rules in place of behavior paths.
  * @param provider The service that assesses its English rules and the
  *     collective norms; unused when the document installs neither.
  * @returns The options `Daemon.withFirewall` installs.
  */
 export const messagePolicyFirewall = Effect.fn("messagePolicyFirewall")(
   function* (
-    policy: MessagePolicy,
+    policy: ResolvedMessagePolicy,
     provider: DecisionProvider,
   ): Effect.fn.Return<FirewallOptions, CheckInputError> {
     const bundle = yield* Effect.cached(
@@ -120,11 +121,14 @@ export const firewallInstallation = (
     Effect.flatMap((configured) =>
       Option.match(configured, {
         onNone: () => Effect.succeed(composed ?? {}),
-        onSome: ({ policy, provider, auditExport }) =>
+        onSome: ({ policy, provider, auditExport, behaviorRulePaths }) =>
           composed === undefined
             ? messagePolicyFirewall(policy, provider).pipe(
                 Effect.mapError(() =>
                   policyConfigurationError("message-policy"),
+                ),
+                Effect.tap((options) =>
+                  validateBehaviorIds(options, behaviorRulePaths),
                 ),
                 Effect.tap(logInstalled),
                 Effect.map((options) => ({
@@ -155,9 +159,24 @@ export function policyInstallationError(
   });
 }
 
+function validateBehaviorIds(
+  options: FirewallOptions,
+  behaviorRulePaths: ReadonlyMap<string, string>,
+) {
+  const codeIds = new Set(
+    [...options.incoming, ...options.outgoing].flatMap((middleware) =>
+      middleware.rules.map((rule) => rule.id),
+    ),
+  );
+  const collision = [...behaviorRulePaths].find(([id]) => codeIds.has(id));
+  return collision === undefined
+    ? Effect.void
+    : Effect.fail(policyConfigurationError("message-policy", collision[1]));
+}
+
 /** The digest every agent of one arm shares; see {@link messagePolicyFirewall}. */
 function armDigest(
-  policy: MessagePolicy,
+  policy: ResolvedMessagePolicy,
   registrations: readonly MessageMiddleware[],
 ): string {
   return createHash("sha256")
@@ -169,6 +188,9 @@ function armDigest(
           id === ALLOWED_SENDERS_ID ? { id } : { id, revision },
         ),
         fixedRules: policy.english?.fixedRules ?? null,
+        ...(policy.fixedBehaviorDigests === undefined
+          ? {}
+          : { fixedBehaviorDigests: policy.fixedBehaviorDigests }),
         decisionProvider: policy.decisionProvider ?? null,
         englishSettings: policy.englishSettings,
         settings: policy.settings,

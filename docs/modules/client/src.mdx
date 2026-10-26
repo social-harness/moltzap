@@ -1599,7 +1599,7 @@ export type FirewallAuditRecord = typeof FirewallAuditRecord.Type;
 
 Completion verifies the snapshot, not completion or delivery of each attempt.
 
-#### [`MessagePolicy (type)`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/firewall/policy/document/index.ts#L159)
+#### [`MessagePolicy (type)`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/firewall/policy/document/index.ts#L168)
 
 _TypeAlias_
 
@@ -1765,7 +1765,7 @@ export type SignedMessageDigest = typeof SignedMessageDigest.Type;
 
 Validated SignedMessage equality receipt.
 
-#### [`decodeMessagePolicy`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/firewall/policy/document/index.ts#L168)
+#### [`decodeMessagePolicy`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/firewall/policy/document/index.ts#L189)
 
 _Variable_
 
@@ -1949,7 +1949,7 @@ flowchart TD
   D --> R[Return to Client for enforcement]
 ```
 
-#### [`MessagePolicy (value)`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/firewall/policy/document/index.ts#L135)
+#### [`MessagePolicy (value)`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/firewall/policy/document/index.ts#L144)
 
 _Variable_
 
@@ -1987,14 +1987,14 @@ provider, the collective norms with the `unavailable` provider, which would
 leave every one of their English checks unavailable, and an English rule
 id given twice across the fixed and initial rules are refused.
 
-#### [`messagePolicyFirewall`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/firewall/policy/compose.ts#L61)
+#### [`messagePolicyFirewall`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/firewall/policy/compose.ts#L62)
 
 _Variable_
 
 ```ts
 export const messagePolicyFirewall = Effect.fn("messagePolicyFirewall")(
   function* (
-    policy: MessagePolicy,
+    policy: ResolvedMessagePolicy,
     provider: DecisionProvider,
   ): Effect.fn.Return<FirewallOptions, CheckInputError> {
     const bundle = yield* Effect.cached(
@@ -2042,7 +2042,8 @@ middleware in chain order, its English rules assessed by `provider`, and
 its settings. This is the trusted-composition hook: a composition that
 brings its own decision provider installs the result with
 `Daemon.withFirewall`. `codeDigest` is the SHA-256 of the Client release,
-the mode, each registration's id and revision, the fixed English rules,
+the mode, each registration's id and revision, the fixed English rules
+and behavior bytes,
 the decision provider and the settings. It leaves out what differs between
 the agents of one arm: the facilitator role, which no revision holds, the
 allowed-sender list and the initial editable rules, so every member

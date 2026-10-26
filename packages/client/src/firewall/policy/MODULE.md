@@ -8,14 +8,14 @@ Message-policy documents, configuration, composition and persisted owner edits.
 
 ## Public surface
 
-### [`messagePolicyFirewall`](./compose.ts#L61)
+### [`messagePolicyFirewall`](./compose.ts#L62)
 
 _Variable_
 
 ```ts
 export const messagePolicyFirewall = Effect.fn("messagePolicyFirewall")(
   function* (
-    policy: MessagePolicy,
+    policy: ResolvedMessagePolicy,
     provider: DecisionProvider,
   ): Effect.fn.Return<FirewallOptions, CheckInputError> {
     const bundle = yield* Effect.cached(
@@ -63,7 +63,8 @@ middleware in chain order, its English rules assessed by `provider`, and
 its settings. This is the trusted-composition hook: a composition that
 brings its own decision provider installs the result with
 `Daemon.withFirewall`. `codeDigest` is the SHA-256 of the Client release,
-the mode, each registration's id and revision, the fixed English rules,
+the mode, each registration's id and revision, the fixed English rules
+and behavior bytes,
 the decision provider and the settings. It leaves out what differs between
 the agents of one arm: the facilitator role, which no revision holds, the
 allowed-sender list and the initial editable rules, so every member

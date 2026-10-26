@@ -411,7 +411,21 @@ function chains(
       ...fields,
     }),
   ).pipe(
-    Effect.flatMap((policy) => messagePolicyFirewall(policy, provider)),
+    Effect.flatMap((policy) =>
+      messagePolicyFirewall(
+        {
+          ...policy,
+          english:
+            policy.english === undefined
+              ? undefined
+              : {
+                  fixedRules: policy.english.fixedRules,
+                  initialRules: policy.english.initialRules,
+                },
+        },
+        provider,
+      ),
+    ),
     Effect.orDie,
   );
 }

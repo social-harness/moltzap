@@ -132,7 +132,8 @@
     "@noble/curves": "catalog:",
     "http-message-signatures": "catalog:",
     "jose": "catalog:",
-    "structured-headers": "catalog:"
+    "structured-headers": "catalog:",
+    "js-yaml": "catalog:"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",
@@ -142,7 +143,8 @@
     "typescript": "catalog:",
     "undici": "catalog:",
     "vitest": "catalog:",
-    "fast-check": "catalog:"
+    "fast-check": "catalog:",
+    "@types/js-yaml": "catalog:"
   },
   "sharnessContentHash": "sha256:2b614cbfefc3f05b07772cf637e5743956cb79ef13771346ab46ecf61c6b87a5",
   "sharnessWireVersion": "2026.1021.3"
