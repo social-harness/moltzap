@@ -175,11 +175,11 @@ the candidate too. Renderer-only guidance and feedback are excluded from the
 assessment rules sent to the model.
 
 Each English request states the authenticated-attribution and evidence-handling
-instructions once in `state.instructions`; those instructions apply to every
-question. State also supplies every rule's text once. Assessment and subject
-questions refer to rule ids, and subject questions identify the message being
-assessed. The question edition is `firewall-english-v3`; changing the edition
-changes English revisions and the composed policy's `activeRevision`.
+instructions once in `state.instructions`. Every assessment and subject question
+starts its instructions with `Apply state.instructions first. `, followed by
+question-specific instructions. State also supplies every rule's text once.
+Questions refer to rule ids, and subject questions identify the message being
+assessed.
 
 ## Incoming projection
 

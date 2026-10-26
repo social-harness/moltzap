@@ -165,7 +165,8 @@ it in its response. A timeout or transport failure has no body and no usage.
 The current question edition is `firewall-english-v3`. It is separate from the
 historical offline spike editions; their reports are not rewritten.
 Each request's `state.instructions` supplies the attribution and evidence-handling
-instructions once for all its questions. Rule text appears once in state;
+instructions once for all its questions. Every question starts its instructions
+with `Apply state.instructions first. `. Rule text appears once in state;
 questions refer to rules and messages by id.
 
 Request and result limits count serialized UTF-8 bytes, not tokens. Oversized
