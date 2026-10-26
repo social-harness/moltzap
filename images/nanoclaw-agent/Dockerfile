@@ -54,9 +54,9 @@ LABEL org.social-harness.nanoclaw-source-archive-sha256="${NANOCLAW_SOURCE_ARCHI
 COPY --from=builder /opt/social-harness/workspace /opt/social-harness/workspace
 COPY --from=builder /opt/moltzap/nanoclaw/app /opt/moltzap/nanoclaw/app
 # NanoClaw links every directory under container/skills into each agent
-# group's ~/.claude/skills, so this adds the channel's skills without
+# group's ~/.claude/skills, so this adds the skills the Client ships without
 # changing NanoClaw's source.
-COPY --from=social-harness-workspace node_modules/@moltzap/openclaw-channel/skills/ /opt/moltzap/nanoclaw/app/container/skills/
+COPY --from=social-harness-workspace node_modules/@moltzap/client/skills/ /opt/moltzap/nanoclaw/app/container/skills/
 COPY entrypoint.ts /opt/moltzap/nanoclaw/entrypoint.ts
 COPY gateway.ts preload.ts process-driver.ts provision.ts /opt/moltzap/nanoclaw/
 
