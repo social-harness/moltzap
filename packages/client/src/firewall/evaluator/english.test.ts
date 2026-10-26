@@ -890,6 +890,68 @@ it("holds a model-selected private subject instead of projecting it", () =>
     expect(result.guidance).toEqual([]);
   }));
 
+const accumulatedNorms: readonly EnglishRule[] = EffectArray.makeBy(
+  8,
+  (index) => ({
+    id: `norm-${index}`,
+    kind: "norm",
+    text: `Address open request number ${index} before changing the subject.`,
+  }),
+);
+const longHistory: MessageContext["history"] = EffectArray.makeBy(
+  50,
+  (index) => ({
+    ...draft,
+    id: `visible-${index}`,
+    visibility: "runtime",
+    admission: "admitted",
+  }),
+);
+
+it.each([false, true])(
+  "assesses every norm over a long window within the default budget (incoming: %s)",
+  (incoming) =>
+    Effect.gen(function* () {
+      const requests: DecisionRequest[] = [];
+      const maximumRequestBytes = 384_000;
+      const result = yield* check(provider({}, requests), {
+        incoming,
+        message: incoming
+          ? {
+              ...draft,
+              sender: "participant-agent",
+              recipients: [context.agentId],
+            }
+          : draft,
+        rules: accumulatedNorms,
+        context: { ...context, history: longHistory },
+        settings: { ...settings, maximumRequestBytes },
+      });
+
+      expect(result.judgment).toBe("allow");
+      const expectations = requests.find(
+        (request) => request.stage === "expectations",
+      );
+      expect(expectations).toBeDefined();
+      expect(
+        Object.values(expectations?.questions ?? {}).filter(
+          (question) => question.purpose === "subject",
+        ),
+      ).toHaveLength(
+        accumulatedNorms.length * (longHistory.length + Number(incoming)),
+      );
+      for (const request of requests) {
+        const serialized = JSON.stringify(request);
+        expect(
+          new TextEncoder().encode(serialized).byteLength,
+        ).toBeLessThanOrEqual(maximumRequestBytes);
+        for (const rule of accumulatedNorms) {
+          expect(serialized.split(rule.text)).toHaveLength(2);
+        }
+      }
+    }),
+);
+
 it("bounds large policy-history products without submitting partial requests", () =>
   Effect.gen(function* () {
     const requests: DecisionRequest[] = [];

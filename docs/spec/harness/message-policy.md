@@ -174,6 +174,13 @@ guarantee of fitting a provider's context window. Provider limit failures hold
 the candidate too. Renderer-only guidance and feedback are excluded from the
 assessment rules sent to the model.
 
+Each English request states the authenticated-attribution and evidence-handling
+instructions once in `state.instructions`; those instructions apply to every
+question. State also supplies every rule's text once. Assessment and subject
+questions refer to rule ids, and subject questions identify the message being
+assessed. The question edition is `firewall-english-v3`; changing the edition
+changes English revisions and the composed policy's `activeRevision`.
+
 ## Incoming projection
 
 The existing delivery envelope carries optional local guidance beside its
