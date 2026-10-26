@@ -544,7 +544,7 @@ const assertUnreadableRequestRecords = Effect.gen(function* () {
   );
   const registryLayer = unsentRegistryLayer(signingAuthority);
   const request = makeRequest("unreadable-request");
-  const [registered, lookedUp, listed] = yield* Effect.all(
+  const [registered, lookedUp] = yield* Effect.all(
     [
       Registry.register({
         request: throwingOn(
@@ -560,27 +560,12 @@ const assertUnreadableRequestRecords = Effect.gen(function* () {
       Registry.lookup(
         throwingOn({ agentName: request.agentName }, "agentName"),
       ).pipe(Effect.either),
-      Registry.list(
-        throwingOn(
-          {
-            afterAgentId: Schema.decodeUnknownSync(AgentId)(
-              "agt_AAAAAAAAAAAAAAAAAAAAAA",
-            ),
-          },
-          "afterAgentId",
-        ),
-      ).pipe(Effect.either),
     ],
     { concurrency: 1 },
   ).pipe(Effect.provide(registryLayer));
 
-  expect([
-    outcomeName(registered),
-    outcomeName(lookedUp),
-    outcomeName(listed),
-  ]).toStrictEqual([
+  expect([outcomeName(registered), outcomeName(lookedUp)]).toStrictEqual([
     SIGNING_ERROR_TAG,
-    INVALID_RESPONSE_TAG,
     INVALID_RESPONSE_TAG,
   ]);
 });

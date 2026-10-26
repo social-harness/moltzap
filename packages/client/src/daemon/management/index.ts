@@ -41,7 +41,6 @@ import { compareAscii } from "../../encoding/identifier.js";
 import { AgentCard, type VerifiedAgentCard } from "../../identity/cards.js";
 import {
   RegistryInvalidResponseError,
-  type RegistryListResult,
   type RegistryLookupResult,
   type RegistryRegisterResult,
 } from "../../identity/registry/contract.js";
@@ -170,18 +169,6 @@ function encodeLookupResult(
   }
   return encodeAgentCard(result.agentCard).pipe(
     Effect.map((agentCard) => Object.freeze({ kind: "found", agentCard })),
-  );
-}
-
-function encodeListResult(
-  result: RegistryListResult,
-): Effect.Effect<ManagementSearchAgentsResult, DaemonManagementError> {
-  return Effect.forEach(result.agentCards, encodeAgentCard, {
-    concurrency: 1,
-  }).pipe(
-    Effect.map((agentCards) =>
-      Object.freeze({ kind: "page", agentCards, hasMore: result.hasMore }),
-    ),
   );
 }
 
@@ -512,22 +499,14 @@ const searchAgentsOperation =
   ): DaemonManagementOperations["searchAgents"] =>
   (request) =>
     readActiveCard(input.registration).pipe(
-      Effect.flatMap(() => {
-        if ("agentId" in request || "agentName" in request) {
-          return registry
-            .lookup(request)
-            .pipe(
-              Effect.mapError(mapRegistryFailure),
-              Effect.flatMap(encodeLookupResult),
-            );
-        }
-        return registry
-          .list(request)
+      Effect.flatMap(() =>
+        registry
+          .lookup(request)
           .pipe(
             Effect.mapError(mapRegistryFailure),
-            Effect.flatMap(encodeListResult),
-          );
-      }),
+            Effect.flatMap(encodeLookupResult),
+          ),
+      ),
     );
 
 const searchConversationsOperation =

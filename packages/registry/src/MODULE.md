@@ -8,7 +8,7 @@ Private Registry process composition for operator deployments.
 
 ## Public surface
 
-### [`layer`](./server.ts#L245)
+### [`layer`](./server.ts#L239)
 
 _Variable_
 
@@ -33,7 +33,7 @@ flowchart TD
   Http --> Response["HttpServerResponse"]
 ```
 
-### [`processHelp`](./server.ts#L124)
+### [`processHelp`](./server.ts#L119)
 
 _Variable_
 
@@ -48,7 +48,7 @@ export const processHelp = [
 
 Usage is generated from the same fields consumed by the process.
 
-### [`StartupError`](./server.ts#L150)
+### [`StartupError`](./server.ts#L144)
 
 _Class_
 

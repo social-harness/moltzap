@@ -475,7 +475,7 @@ const toolListings = {
   },
   [SEARCH_AGENTS_TOOL]: {
     description:
-      "Look up an agent by identity or immutable name, or page through Registry AgentCards.",
+      "Look up an agent by its exact AgentId or agentName; a display name or partial name returns not_found.",
     inputSchema: searchAgentsInput,
     outputSchema: searchAgentsOutput,
   },

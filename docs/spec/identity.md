@@ -34,7 +34,7 @@ continuity. A Registry that issues conflicting or contract-violating
 cards is outside the Gate 1 L1 identity-binding guarantee.
 
 Correctness does not imply availability. Registry outage prevents
-registration and public lookup or list operations. Router or an endpoint with
+registration and public exact lookup operations. Router or an endpoint with
 a positively cached immutable card can continue verifying that identity.
 Pinned cards and certified conversation histories, whose GENESIS record carries
 the membership, remain verifiable without a live Registry.
@@ -67,8 +67,7 @@ same-named Effect Schema values and TypeScript types:
 
 - `OperationId`;
 - `RegistryRegisterRequest`;
-- `RegistryLookupRequest`; and
-- `RegistryListRequest`.
+- `RegistryLookupRequest`.
 
 The root exports these type-only trust states:
 
@@ -79,8 +78,7 @@ The root exports these type-only trust states:
 The Client service entry exports these type-only capability results:
 
 - `RegistryRegisterResult`;
-- `RegistryLookupResult`; and
-- `RegistryListResult`.
+- `RegistryLookupResult`.
 
 The remaining identity root exports are `WIRE_VERSION`, `LIVE_WIRE_VERSIONS`,
 `AgentSigningAuthority` and `legacyKeys`. The condition-only `./internal` entry
@@ -122,7 +120,7 @@ signature API, or generic representation module.
 `AgentCard`, `SignedMessage`, and the request values use Effect Schema
 as their only public parsing boundary. Registry result types have
 private exact response Schemas: a client parses the response, verifies
-its cards, signatures, ordering, and request bindings, and only then
+its cards, signatures, and request bindings, and only then
 constructs a public verified result. The result types have no
 standalone public decoder.
 
@@ -172,7 +170,7 @@ chain, contact, institution, revocation, active status, policy, or
 extension bag. Service origins and channel protection are deployment
 configuration.
 
-Registry lookup and list return the complete immutable card, never a
+Registry lookup returns the complete immutable card, never a
 thinner identity projection. A verified card is nominally distinct
 from an encoded, untrusted card.
 
@@ -255,28 +253,21 @@ The results are:
 - `key_already_registered`; and
 - `idempotency_conflict`.
 
-## Public lookup and list
+## Public lookup
 
-The Registry exposes:
-
-- `POST /v1/identities:lookup`
-- `POST /v1/identities:list`
-
-Both are public unauthenticated reads. They still require the exact
-wire compatibility value, canonical JSON, bounded bodies, and closed schemas.
+The Registry exposes `POST /v1/identities:lookup` as a public unauthenticated
+read. It requires the exact wire compatibility value, canonical JSON,
+bounded bodies, and closed schemas.
 
 Lookup selects exactly one AgentId or AgentName and returns `found`
-with `agentCard: VerifiedAgentCard` or `not_found`.
-
-List accepts only optional `afterAgentId`; the server owns page size.
-It returns `page` with ordered `readonly VerifiedAgentCard[]` and
-`hasMore`. Ordering uses decoded AgentId bytes.
+with `agentCard: VerifiedAgentCard` or `not_found`. AgentNames are short,
+human-chosen handles, so unauthenticated lookup by name confirms whether a
+guessed name exists.
 
 The Registry client verifies each card with the pinned Registry signer
 before returning it. It also verifies register and lookup response
-bindings and list order, uniqueness, and lower bound. Those checks
-reject a mismatched valid card; they do not authenticate an unsigned
-response or prove list completeness.
+bindings. Those checks reject a mismatched valid card; they do not
+authenticate an unsigned response.
 
 ## Cache behavior
 
@@ -300,7 +291,7 @@ Registry state.
 
 ## Wire versions
 
-Every new artifact emits `WIRE_VERSION`, currently `2026.1021.3`. `LIVE_WIRE_VERSIONS` admits outer
+Every new artifact emits `WIRE_VERSION`, currently `2026.1026.5`. `LIVE_WIRE_VERSIONS` admits outer
 messages and HTTP version headers; `HISTORY_WIRE_VERSIONS` decodes retained
 and nested artifacts. The live set holds the emitted version and at most one
 adjacent version, per the
@@ -620,7 +611,7 @@ when the route verifies a caller's SignedMessage.
 Registration adds no `signRegistrationRequest` or
 `verifyRegistrationRequest` member. Shared HTTP verification supplies the
 bootstrap signature and version step; Registry keeps credential and key
-admission and durable nonce claim. Public Registry lookup and list use no
+admission and durable nonce claim. Public Registry lookup uses no
 signature profile.
 
 The verifier:
@@ -689,25 +680,6 @@ Registry.lookup(
   Registry
 >
 
-Registry.list(
-  request: RegistryListRequest,
-): Effect.Effect<
-  RegistryListResult,
-  MalformedRequestError
-    | RouteNotFoundError
-    | MethodNotAllowedError
-    | VersionMismatchError
-    | PayloadTooLargeError
-    | UnsupportedMediaTypeError
-    | OverloadedError
-    | UnavailableError
-    | InternalServerError
-    | RegistryConnectionError
-    | RegistryRequestTimeoutError
-    | RegistryInvalidResponseError,
-  Registry
->
-
 Registry.layer(input: {
   readonly origin: URL
   readonly registrySignerPublicKey: Ed25519PublicKey
@@ -723,14 +695,13 @@ member.
 ## Private Effect RPC
 
 Registry has one private Effect RPC group whose members are exactly
-`register`, `lookup`, and `list`. Health remains outside the group.
+`register` and `lookup`. Health remains outside the group.
 The execution order is:
 
 | Member | Required middleware context |
 |---|---|
 | `register` | successful Registry-owned bootstrap admission |
 | `lookup` | none |
-| `list` | none |
 
 Required middleware cannot be disabled. Admission failure
 short-circuits the handler, and successful middleware context reaches
@@ -743,8 +714,8 @@ success channel.
 `RpcServer.makeNoSerialization` and
 `RpcClient.makeNoSerialization` provide private correlation and typed
 exits inside the package. Effect Schema still validates every
-production network boundary. Production exposes only the three exact
-HTTP routes; it has no `/rpc`, JSON-RPC, NDJSON, Effect RPC HTTP
+production network boundary. Production exposes only the register, lookup
+and health HTTP routes; it has no `/rpc`, JSON-RPC, NDJSON, Effect RPC HTTP
 protocol, public RPC group, middleware tag, request ID, serializer, or
 aggregate error-reconstruction surface.
 
@@ -778,7 +749,7 @@ retry at an older version. Each release emits exactly `WIRE_VERSION`.
 `RouteNotFoundError` is the HTTP 404 envelope; the successful Registry
 lookup value with `kind: "not_found"` is not that error.
 `Registry.register` declares all ten HTTP classes.
-`Registry.lookup` and `Registry.list` declare all except
+`Registry.lookup` declares all except
 `AuthenticationFailedError`, because public reads have no admission or
 authentication stage. A well-formed server envelope not declared for
 the operation is `RegistryInvalidResponseError`, not a widened union.
@@ -893,8 +864,9 @@ their ledger entries commit transactionally; a failed migration rolls back.
 Operators run `pg_dump` before upgrading. Downgrades are unsupported.
 
 Startup refuses a pre-reset `moltzap_registry_migrations` or
-`sharness_registry_migrations` ledger with `pre-reset` before creating its
-`sharness_registry_ledger` ledger. Startup also
+`sharness_registry_migrations` or `sharness_registry_ledger` ledger with
+`pre-reset` before creating its `sharness_registry_ledger_20261026` ledger.
+Its single baseline contains the current exact-lookup storage shape. Startup also
 fails closed when the configured signer differs from the database metadata. A signer mismatch carries reason `signer-mismatch`.
 Other storage initialization failures carry reason `unavailable`.
 Registration serializes through the metadata row,
@@ -949,7 +921,6 @@ The complete Registry process surface is:
 | `SHARNESS_REGISTRY_POSTGRESQL_URL` | PostgreSQL connection URL | required | absolute PostgreSQL URL naming a database | entire value |
 | `SHARNESS_REGISTRY_ADMISSION_CREDENTIAL` | bootstrap admission credential | required | 8–512 token68 characters | entire value |
 | `SHARNESS_REGISTRY_SIGNING_PRIVATE_KEY_PATH` | AgentCard-signing key | required | absolute path to unencrypted Ed25519 PKCS#8 | entire path and key material |
-| `SHARNESS_REGISTRY_LIST_PAGE_SIZE` | server-owned identity-list page size | `100` | positive integer; clients cannot override | no |
 | `SHARNESS_REGISTRY_REQUEST_CONCURRENCY_LIMIT` | active request permits | `256` | positive integer | no |
 | `SHARNESS_REGISTRY_LIVE_NONCE_CAPACITY` | unexpired accepted registration nonces | `10,000` | positive integer; never evict a live nonce | no |
 | `SHARNESS_REGISTRY_SQL_POOL_SIZE` | PostgreSQL pool size; PGlite through `pglite-socket` requires `1` because it provides one Postgres session | `10` | positive integer | no |
@@ -960,7 +931,7 @@ whitespace, sign, fraction, or exponent. Their range is
 `1..2^31-1`, except the port range above.
 
 `CAPACITY` names aggregate retained or live state, `LIMIT` names one
-request or concurrency class, `SIZE` names a page or pool size, and
+request or concurrency class, `SIZE` names a pool size, and
 `TIMEOUT_MS` names milliseconds. `POSTGRESQL_URL` is the database key;
 there is no generic `DATABASE_URL`.
 
@@ -984,7 +955,6 @@ Acquiring a connection does not remove the execution deadline.
 | request body exceeds the route bound | 413 `payload_too_large` before authentication or domain handling |
 | the immediate request-concurrency permit is unavailable | 429 `overloaded`; no application request queue is created |
 | a novel bootstrap-admission nonce arrives while live-nonce capacity is full | 429 `overloaded`, without claiming it or evicting a live nonce |
-| list reaches its configured page size | bounded `page` with `hasMore`; no truncation is hidden |
 | SQL acquisition or required storage is unavailable or times out | 503 `unavailable` |
 | an unexpected implementation failure occurs | 500 `internal` |
 
@@ -1016,8 +986,8 @@ claimed nonce.
   returns the exact original result.
 - Concurrent attempts for one AgentName, key, or registration
   idempotency identity issue at most one canonical AgentCard.
-- Lookup and list return exact complete cards after Registry restart and
-  reject noncanonical or unknown request fields.
+- Lookup returns exact complete cards after Registry restart and
+  rejects noncanonical or unknown request fields.
 - Registry rejects nonce replay across process restart through expiry.
 - A recipient verifies a SignedMessage and principal binding without a
   live sender or trust in Router.
