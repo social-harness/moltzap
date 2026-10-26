@@ -478,6 +478,8 @@ const schemaSql = `
     FOREIGN KEY (conversation_id, membership_hash)
       REFERENCES memberships(conversation_id, membership_hash)
   ) STRICT;
+  CREATE INDEX post_intents_unresolved ON post_intents(conversation_id)
+    WHERE completed_record_hash IS NULL;
   CREATE TABLE memberships (
     conversation_id TEXT PRIMARY KEY,
     membership_hash TEXT NOT NULL,

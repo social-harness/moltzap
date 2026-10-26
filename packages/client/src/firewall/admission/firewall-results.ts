@@ -47,6 +47,7 @@ import {
 
 /** The window of a check with no history: a result's missing record, or a failure. */
 const EMPTY_WINDOW = {
+  pendingOutgoing: false,
   history: [],
   overflow: false,
   earlierHistoryOmitted: false,
@@ -438,7 +439,6 @@ function sliceEvidence(
 ): FirewallEvidence {
   return {
     revision: captured.revision,
-    pendingOutgoing: captured.pendingOutgoing,
     ...(captured.slices[index] ?? EMPTY_WINDOW),
   };
 }
@@ -626,7 +626,7 @@ function deterministicCheck(
   return Effect.gen(function* () {
     const context = yield* contextFrom(
       environment,
-      { revision: 0, pendingOutgoing: false, ...EMPTY_WINDOW },
+      { revision: 0, ...EMPTY_WINDOW },
       [],
     );
     const allowed: FirewallCheck = {

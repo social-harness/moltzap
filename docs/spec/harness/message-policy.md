@@ -652,9 +652,10 @@ conversation. The configured record window omits older entries; when it does,
 the assessor receives `earlierHistoryOmitted: true` in its context. This omission is not
 an evidence gap and does not by itself make a check unresolved. The window also
 has a 2 MiB bound on whole retained record/membership bytes. Exceeding that byte
-bound is an explicit evidence gap. Unresolved outgoing intents are also gaps:
-a concurrent send may have committed without certified history yet. Fixed owner
-facts and verified agent/principal attribution accompany the capture.
+bound is an explicit evidence gap. Unresolved outgoing intents in that
+conversation are also gaps: a concurrent send there may have committed without
+certified history yet. Fixed owner facts and verified agent/principal attribution
+accompany the capture.
 
 Only history the runtime was shown is marked runtime-visible: inbox-admitted
 records, answers an admitted result showed, and local evidence. Other history,
