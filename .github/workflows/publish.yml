@@ -687,9 +687,11 @@ jobs:
             :
           elif grep -qxF 'release not found' "$RUNNER_TEMP/release-error"; then
             gh api "repos/$GITHUB_REPOSITORY/contents/CHANGELOG.md?ref=v$VERSION" \
-              -H "Accept: application/vnd.github.raw" |
-              awk -v heading="## [$VERSION]" \
-                'index($0, heading) == 1 { keep = 1; next } keep && /^## / { exit } keep' > "$notes"
+              -H "Accept: application/vnd.github.raw" > "$RUNNER_TEMP/CHANGELOG.md"
+            awk -v heading="## [$VERSION]" \
+              'index($0, heading) == 1 { keep = 1; next } keep && /^## / { exit } keep' \
+              "$RUNNER_TEMP/CHANGELOG.md" > "$notes"
+            printf '\n### Images\n' >> "$notes"
             gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --verify-tag --notes-file "$notes"
           else
             cat "$RUNNER_TEMP/release-error" >&2
