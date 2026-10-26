@@ -51,6 +51,12 @@ runGate("sharness-openclaw-pack-", (temporaryRoot) =>
   }),
 );
 
+/**
+ * Installs the packed channel with OpenClaw's own installer, as a user would.
+ * Run without a terminal, OpenClaw needs `--force` to confirm a local archive
+ * from outside ClawHub and `--accept-capabilities` to consent to the plugin's
+ * capabilities; the archive is the one this check just packed.
+ */
 function installPlugin(
   temporaryRoot: string,
   archive: string,
@@ -69,6 +75,8 @@ function installPlugin(
         "plugins",
         "install",
         archive,
+        "--force",
+        "--accept-capabilities",
       ],
       {
         cwd: temporaryRoot,
