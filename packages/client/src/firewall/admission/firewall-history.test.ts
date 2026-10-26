@@ -6,7 +6,6 @@ import { expect } from "vitest";
 import type { CertifiedRecord } from "../../communication/records/index.js";
 import type { MiddlewareInput } from "../../daemon/index.js";
 import { appendCertifiedPost } from "../../__tests__/certified-history-fixtures.js";
-import { bytes } from "../../__tests__/store-schema-fixtures.js";
 import {
   addConversation,
   auditChecks,
@@ -20,6 +19,7 @@ import {
   seedIncoming,
   settings,
 } from "../../__tests__/firewall-runtime-fixtures.js";
+import { bytes } from "../../__tests__/store-schema-fixtures.js";
 
 // @agent-code-guard/regression-only: Exercises conversation-window and byte-bound failures through real certified history.
 

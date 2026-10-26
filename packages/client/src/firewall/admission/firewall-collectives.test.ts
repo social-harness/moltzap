@@ -47,6 +47,7 @@ import {
   seedIncoming,
   settings,
 } from "../../__tests__/firewall-runtime-fixtures.js";
+import { bytes } from "../../__tests__/store-schema-fixtures.js";
 import { InboundItem } from "../../communication/collectives/inbound.js";
 import { collectiveIdOf } from "../../communication/collectives/part/index.js";
 import {
@@ -351,6 +352,52 @@ function withholdsOneAnswerFromEveryRuntimeRead() {
       canonical,
       canonical,
     ]);
+  });
+}
+
+function scopesUnresolvedEvidenceToTheMembersAnswer() {
+  return Effect.gen(function* () {
+    const subject = yield* fixture;
+    const answers = { bob: { slot: "mon" }, carol: { slot: "tue" } };
+    const provenance = yield* seedAnswers(subject, answers);
+    yield* subject.store.bindPostIntent({
+      kind: "existing-conversation",
+      intent: {
+        conversationId: subject.membership.descriptor.conversationId,
+        membershipHash: subject.membership.hash,
+        authorAgentId: subject.local.card.agentId,
+        postId: "pst_unresolved",
+        canonicalIntent: bytes("pending send to Bob"),
+      },
+    });
+    const seen: MiddlewareInput[] = [];
+    const runtime = yield* incomingFixture(
+      subject,
+      holdMarked(seen),
+      {},
+      false,
+    );
+    yield* admitResult(runtime, gatherResult(answered(answers)), provenance);
+
+    expect(
+      (yield* runtime.delivery.operations.readInbox({})).items[0]?.item,
+    ).toMatchObject({
+      outcomes: [
+        {
+          member: bob,
+          outcome: { kind: "withheld", reason: "unresolved-evidence" },
+        },
+        {
+          member: carol,
+          outcome: { kind: "answered", content: answers.carol },
+        },
+      ],
+    });
+    expect(yield* auditChecks(subject)).toMatchObject([
+      { disposition: "withheld", result: { reason: "unresolved-evidence" } },
+      { disposition: "admitted", result: { reason: "eligible" } },
+    ]);
+    expect(seen[1]?.context.gaps).toEqual([]);
   });
 }
 
@@ -899,6 +946,11 @@ describe("received requests under a firewall", () => {
     checksPastAnUnrenderableDeadline,
   );
 });
+
+it(
+  "scopes unresolved-send evidence to the member whose answer shares the conversation",
+  scopesUnresolvedEvidenceToTheMembersAnswer,
+);
 
 describe("collective results under a firewall", () => {
   it(

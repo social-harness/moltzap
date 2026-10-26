@@ -681,21 +681,13 @@ function readSlice(
   maximumRecords: number,
 ): FirewallEvidenceSlice {
   const candidate = windowCandidate(database, range);
-  const conversationId =
-    candidate === undefined
-      ? range.conversationId
-      : readText(candidate, "conversation_id");
-  const pendingOutgoing =
-    database
-      .prepare(
-        "SELECT 1 AS pending FROM post_intents WHERE conversation_id = ? AND completed_record_hash IS NULL LIMIT 1",
-      )
-      .get(conversationId ?? null) !== undefined;
   if (candidate === undefined) {
     return range.beforeDelivery === undefined &&
       range.beforeRecord === undefined
       ? {
-          pendingOutgoing,
+          pendingOutgoing:
+            range.conversationId !== undefined &&
+            unresolvedSend(database, range.conversationId),
           ...boundedHistory(database, {
             maximumRecords,
             beforePosition: Number.MAX_SAFE_INTEGER,
@@ -710,8 +702,9 @@ function readSlice(
           earlierHistoryOmitted: false,
         };
   }
+  const conversationId = readText(candidate, "conversation_id");
   return {
-    pendingOutgoing,
+    pendingOutgoing: unresolvedSend(database, conversationId),
     ...boundedHistory(database, {
       maximumRecords,
       beforePosition: readInteger(candidate, "position"),
@@ -721,6 +714,19 @@ function readSlice(
     }),
     candidate: historyEntry(candidate),
   };
+}
+
+function unresolvedSend(
+  database: DatabaseSync,
+  conversationId: string,
+): boolean {
+  return (
+    database
+      .prepare(
+        "SELECT 1 AS pending FROM post_intents WHERE conversation_id = ? AND completed_record_hash IS NULL LIMIT 1",
+      )
+      .get(conversationId) !== undefined
+  );
 }
 
 /** The certified record a range ends before, when it names one. */
