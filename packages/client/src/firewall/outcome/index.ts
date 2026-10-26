@@ -80,7 +80,6 @@ const firewallRefusal = Schema.Literal(
   "unresolved-evidence",
   "check-unavailable",
   "norm-violation",
-  "approval-required",
 );
 
 /**
@@ -108,10 +107,9 @@ export const firewallRefusalSchema = exactStruct({
 
 const refusalText = {
   prohibited: "local policy prohibits this message",
-  "unresolved-evidence": "local policy needs more evidence or owner review",
+  "unresolved-evidence": "local policy needs more evidence",
   "check-unavailable": "the message policy check could not complete",
   "norm-violation": "the message does not satisfy local norms",
-  "approval-required": "this message requires owner approval",
 } as const;
 
 /**

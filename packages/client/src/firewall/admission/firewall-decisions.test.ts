@@ -1,7 +1,7 @@
 /** @file The owner decisions feed explains each checked message through real Client storage. */
 
 import { scopedLive as it } from "@effect/vitest";
-import { Effect, Queue } from "effect";
+import { Effect, Queue, Schema } from "effect";
 import { expect } from "vitest";
 import type { FirewallOptions } from "./firewall.js";
 import {
@@ -26,6 +26,15 @@ import {
   type MiddlewareInput,
   type MiddlewareResult,
 } from "../evaluator/contract/index.js";
+import {
+  encodeRuntimeValue,
+  decodeRuntimeValue,
+} from "../../communication/store/index.js";
+import { makeAuditFixture } from "../../__tests__/firewall-audit-fixtures.js";
+import {
+  decodeFirewallAuditEntry,
+  FirewallAuditRecord,
+} from "./firewall-values.js";
 import { makeEnglishPolicy } from "../evaluator/index.js";
 import { installEditableFirewall } from "../policy/editable.js";
 
@@ -68,15 +77,6 @@ const contacts = {
   id: "contacts",
   kind: "safety",
   feedback: { nextAction: "stop", text: "Only known contacts may write." },
-} as const;
-
-const approval = {
-  id: "spending",
-  kind: "autonomy",
-  feedback: {
-    nextAction: "seek-approval",
-    text: "Spending needs the owner's approval.",
-  },
 } as const;
 
 function contactsPolicy(
@@ -341,28 +341,6 @@ it("names the code rule that blocked a message", () =>
     ]);
   }));
 
-it("names the autonomy rule that held a message for approval", () =>
-  Effect.gen(function* () {
-    const feed = yield* decideIncoming(() =>
-      options([
-        codePolicy([approval], {
-          findings: [{ ruleId: approval.id, outcome: "approval-required" }],
-          expectations: [],
-        }),
-      ]),
-    );
-
-    expect(feed.decisions).toMatchObject([
-      {
-        outcome: "hold",
-        cause: "code",
-        decidedBy: [
-          { ruleId: approval.id, from: "code", advice: approval.feedback.text },
-        ],
-      },
-    ]);
-  }));
-
 it("names both norms whose expectations conflict", () =>
   Effect.gen(function* () {
     const reply = { id: "reply", kind: "norm" } as const;
@@ -546,4 +524,114 @@ it("carries no message text in an explained decision", () =>
     const text = seen[0]?.event.message.text ?? "";
     expect(text).not.toBe("");
     expect(JSON.stringify(feed)).not.toContain(text);
+  }));
+
+it("migrates a retained editable autonomy document and persists its norm guidance", () =>
+  Effect.gen(function* () {
+    const subject = yield* fixture;
+    const legacy = {
+      id: "spending",
+      kind: "autonomy",
+      text: "Ask before spending.",
+      guidance: "Check the budget.",
+    };
+    yield* subject.store.writeFirewallPolicy(
+      yield* encodeRuntimeValue([legacy]),
+    );
+    const installed = yield* installEditableFirewall(
+      options([], english(decisionProvider(), {})),
+      subject.store,
+    );
+    const expected = [
+      {
+        ...legacy,
+        kind: "norm",
+        guidance: "Ask your owner with ask_user before this. Check the budget.",
+      },
+    ];
+    expect((yield* installed.policy.read()).rules).toEqual(expected);
+    const stored = yield* subject.store.readFirewallPolicy();
+    expect(
+      yield* decodeRuntimeValue(Schema.Unknown, stored ?? new Uint8Array()),
+    ).toEqual(expected);
+  }));
+
+it("reads historical approval holds through the audit and decisions feed", () =>
+  Effect.gen(function* () {
+    const subject = yield* fixture;
+    const audit = yield* makeAuditFixture;
+    const legacyRule = { id: "privacy", kind: "autonomy" };
+    const input = {
+      ...audit.input,
+      context: { ...audit.input.context, authorization: { kind: "absent" } },
+      installation: {
+        ...audit.input.installation,
+        outgoing: audit.input.installation.outgoing.map((entry) => ({
+          ...entry,
+          rules: [legacyRule],
+        })),
+      },
+    };
+    const result = {
+      ...audit.result,
+      judgment: "hold",
+      reason: "approval-required",
+      checks: audit.result.checks.map((entry) => ({
+        ...entry,
+        findings: [{ ruleId: legacyRule.id, outcome: "approval-required" }],
+      })),
+    };
+    const checkId = "historical-approval";
+    yield* subject.store.beginFirewallAttempt({
+      checkId,
+      direction: "outgoing",
+      revision: 0,
+      canonicalCandidate: audit.canonicalCandidate,
+      canonicalInput: yield* encodeRuntimeValue(input),
+    });
+    yield* subject.store.admitFirewallOperation(
+      {
+        checkId,
+        admit: false,
+        canonicalResult: yield* encodeRuntimeValue(result),
+      },
+      audit.canonicalCandidate,
+    );
+    const entries = yield* subject.store.readFirewallDecisions();
+    const entry = yield* Effect.fromNullable(entries[0]);
+    const decoded = yield* decodeFirewallAuditEntry(entry);
+    expect(decoded.input.context).toEqual(audit.input.context);
+    expect(decoded.result).toMatchObject({
+      judgment: "hold",
+      reason: "unresolved-evidence",
+      checks: [
+        {
+          findings: [
+            {
+              ruleId: legacyRule.id,
+              outcome: "hold",
+              reason: "unresolved-evidence",
+            },
+          ],
+        },
+      ],
+    });
+    const exported = yield* Schema.encode(
+      Schema.parseJson(FirewallAuditRecord),
+    )(decoded);
+    const roundTrip = yield* Schema.decodeUnknown(
+      Schema.parseJson(FirewallAuditRecord),
+    )(exported);
+    expect(roundTrip).toEqual(decoded);
+    const installed = yield* installEditableFirewall(
+      options([]),
+      subject.store,
+    );
+    expect((yield* installed.policy.decisions({})).decisions).toMatchObject([
+      {
+        outcome: "hold",
+        cause: "code",
+        decidedBy: [{ ruleId: legacyRule.id, from: "code" }],
+      },
+    ]);
   }));

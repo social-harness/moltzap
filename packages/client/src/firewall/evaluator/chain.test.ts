@@ -61,7 +61,6 @@ const context: typeof MessageContext.Encoded = {
     },
   ],
   gaps: [],
-  authorization: { kind: "absent" },
 };
 const settings: typeof FirewallSettings.Encoded = {
   timeoutMilliseconds: 1_000,
@@ -425,18 +424,12 @@ it("lets only a norm pass with its judgment unsettled", () =>
     );
   }));
 
-it("does not ask an incoming sender to revise or accept non-autonomy approval", () =>
+it("does not ask an incoming sender to revise", () =>
   Effect.gen(function* () {
     const repair = yield* firewallFor([
       policy("repair", [{ ruleId: rule.id, outcome: "revise" }]),
     ]);
-    const approve = yield* firewallFor([
-      policy("approve", [{ ruleId: rule.id, outcome: "approval-required" }]),
-    ]);
     expect((yield* repair.checkIncoming(incoming, context)).reason).toBe(
-      "check-unavailable",
-    );
-    expect((yield* approve.checkOutgoing(draft, context)).reason).toBe(
       "check-unavailable",
     );
   }));
@@ -477,82 +470,39 @@ it("holds missing context and publishes no incoming advice", () =>
     expect(result.guidance).toEqual([]);
   }));
 
-it("accepts approval only for the same principal and complete candidate", () =>
+it("keeps seek-approval as norm feedback", () =>
   Effect.gen(function* () {
-    const authority: MessageMiddleware = {
-      ...policy("autonomy", [
-        { ruleId: rule.id, outcome: "approval-required" },
-      ]),
-      rules: [{ ...rule, kind: "autonomy" }],
+    const feedback = {
+      text: "Ask your owner with ask_user before committing.",
+      nextAction: "seek-approval" as const,
     };
-    const firewall = yield* firewallFor([authority]);
-    const approved: typeof MessageContext.Encoded = {
-      ...context,
-      authorization: {
-        kind: "verified",
-        principal: context.principal,
-        candidate: draft,
+    const firewall = yield* firewallFor([
+      {
+        ...policy("owner-consent", [{ ruleId: rule.id, outcome: "revise" }]),
+        rules: [{ ...rule, feedback }],
       },
-    };
-    expect((yield* firewall.checkOutgoing(draft, approved)).judgment).toBe(
-      "allow",
-    );
-    expect((yield* firewall.checkOutgoing(draft, context)).reason).toBe(
-      "approval-required",
-    );
-    for (const candidate of [
-      { ...draft, id: "different" },
-      { ...draft, sender: "forged" },
-      { ...draft, recipients: ["other-peer"] },
-      { ...draft, text: "Other commitment" },
-    ] satisfies readonly Message[]) {
-      const result = yield* firewall.checkOutgoing(draft, {
-        ...context,
-        authorization: {
-          kind: "verified",
-          principal: context.principal,
-          candidate,
-        },
-      });
-      expect(result.reason).toBe("approval-required");
-    }
-    const wrongOwner = yield* firewall.checkOutgoing(draft, {
-      ...context,
-      authorization: {
-        kind: "verified",
-        principal: "different-owner",
-        candidate: draft,
-      },
-    });
-    expect(wrongOwner.reason).toBe("approval-required");
+    ]);
+    const result = yield* firewall.checkOutgoing(draft, context);
+    expect(result.judgment).toBe("revise");
+    expect(result.feedback).toEqual([feedback]);
   }));
 
-it("approval cannot override prohibition or repair and cannot invite an invalid next action", () =>
+it("uses stop feedback for a prohibition with an incompatible template", () =>
   Effect.gen(function* () {
-    const approved: typeof MessageContext.Encoded = {
-      ...context,
-      authorization: {
-        kind: "verified",
-        principal: context.principal,
-        candidate: draft,
-      },
-    };
-    const feedback = {
-      text: "Ask for approval",
-      nextAction: "seek-approval",
-    } satisfies NonNullable<RuleDescription["feedback"]>;
     const blocked = yield* firewallFor([
-      { ...policy("block", [block]), rules: [{ ...rule, feedback }] },
+      {
+        ...policy("block", [block]),
+        rules: [
+          {
+            ...rule,
+            feedback: { text: "Ask for approval", nextAction: "seek-approval" },
+          },
+        ],
+      },
     ]);
-    const repair = yield* firewallFor([
-      policy("repair", [{ ruleId: rule.id, outcome: "revise" }]),
-    ]);
-    const result = yield* blocked.checkOutgoing(draft, approved);
+    const result = yield* blocked.checkOutgoing(draft, context);
     expect(result.judgment).toBe("block");
     expect(result.feedback[0]?.nextAction).toBe("stop");
-    expect((yield* repair.checkOutgoing(draft, approved)).judgment).toBe(
-      "revise",
-    );
   }));
 
 it("bounds input and results without converting skipped checks into passes", () =>

@@ -117,4 +117,39 @@ export const InboundItem = Schema.Union(
 /** A validated inbound item. */
 export type InboundItem = typeof InboundItem.Type;
 
+/** Historical withheld projections retain their closed refusal meaning on read. */
+const retainedWithheldText = exactStruct({
+  ...withheldText.fields,
+  reason: Schema.transform(
+    Schema.Union(
+      withheldText.fields.reason,
+      Schema.Literal("approval-required"),
+    ),
+    withheldText.fields.reason,
+    {
+      strict: true,
+      decode: (reason) =>
+        reason === "approval-required"
+          ? ("unresolved-evidence" as const)
+          : reason,
+      encode: (reason) => reason,
+    },
+  ),
+});
+
+/** Stored collective results use current values before delivery or audit projection. */
+export const retainedInboundItem = Schema.Union(
+  InboundItem,
+  exactStruct({
+    ...collectiveResultItem.fields,
+    question: Schema.Union(wellFormedString, retainedWithheldText),
+    outcomes: Schema.NonEmptyArray(
+      exactStruct({
+        member: AgentAddress,
+        outcome: Schema.Union(memberOutcome, retainedWithheldText),
+      }),
+    ),
+  }),
+);
+
 /* eslint-enable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Restore the package naming rules after the Schema/type pairs. */

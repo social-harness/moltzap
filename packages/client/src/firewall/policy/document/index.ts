@@ -69,10 +69,30 @@ const decisionProvider = Schema.Union(
   Schema.Struct({ kind: Schema.Literal("unavailable") }),
 );
 
-const englishRules = Schema.optionalWith(
-  Schema.Array(Schema.Struct(EnglishRule.fields)),
-  { default: () => [] },
+/** Stored autonomy rules become host-directed norms before installation. */
+export const storedEnglishRule = Schema.transform(
+  Schema.Struct({
+    ...EnglishRule.fields,
+    kind: Schema.Literal("safety", "norm", "autonomy"),
+  }),
+  Schema.Struct(EnglishRule.fields),
+  {
+    strict: true,
+    decode: (rule) =>
+      rule.kind === "autonomy"
+        ? {
+            ...rule,
+            kind: "norm" as const,
+            guidance: `Ask your owner with ask_user before this.${rule.guidance === undefined ? "" : ` ${rule.guidance}`}`,
+          }
+        : { ...rule, kind: rule.kind },
+    encode: (rule) => rule,
+  },
 );
+
+const englishRules = Schema.optionalWith(Schema.Array(storedEnglishRule), {
+  default: () => [],
+});
 
 /** English assessment defaults: the lowest routing probability Client accepts, and the request bounds the collective norms are sized to. */
 const defaultEnglishSettings = {

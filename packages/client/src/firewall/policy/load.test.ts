@@ -296,3 +296,43 @@ function directory(): string {
 }
 
 /* eslint-enable agent-code-guard/no-hardcoded-assertion-literals -- Restore default assertion rules outside the configuration contract tests. */
+
+it("loads autonomy rules in both message-policy English lists as norms", () =>
+  Effect.gen(function* () {
+    const rule = {
+      id: "spending",
+      kind: "autonomy",
+      text: "Ask before spending.",
+    };
+    const fixed = {
+      ...rule,
+      id: "fixed-spending",
+      guidance: "Check the budget.",
+    };
+    const installed = yield* firewallInstallation(
+      {
+        messagePolicyFile: file({
+          ...UNAVAILABLE_DOCUMENT,
+          english: { fixedRules: [fixed], initialRules: [rule] },
+        }),
+      },
+      readCredential,
+    );
+    expect(installed.options?.english).toMatchObject({
+      fixedRules: [
+        {
+          ...fixed,
+          kind: "norm",
+          guidance:
+            "Ask your owner with ask_user before this. Check the budget.",
+        },
+      ],
+      initialRules: [
+        {
+          ...rule,
+          kind: "norm",
+          guidance: "Ask your owner with ask_user before this.",
+        },
+      ],
+    });
+  }));

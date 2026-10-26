@@ -27,7 +27,6 @@ const CONTEXT = {
   history: [],
   facts: [],
   gaps: [],
-  authorization: { kind: "absent" },
 } satisfies MessageContext;
 const SENDING = { ...CONTEXT, agentId: MEMBER };
 /** Generated cases build a firewall per case alongside the package suite's CI workers. */

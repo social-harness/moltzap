@@ -20,7 +20,6 @@ it.each([
   { nextAction: "revise", refusal: "norm-violation" },
   { nextAction: "wait", refusal: "norm-violation" },
   { nextAction: "stop", refusal: "norm-violation" },
-  { nextAction: "seek-approval", refusal: "approval-required" },
 ] as const)(
   "prints the check, advice and $nextAction next action",
   ({ nextAction, refusal }) => {

@@ -425,7 +425,6 @@ function context(history: readonly HistoryEntry[]): MessageContext {
     now: NOW,
     facts: [],
     gaps: [],
-    authorization: { kind: "absent" },
   };
 }
 

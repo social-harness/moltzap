@@ -110,7 +110,11 @@ type ExpectedGroupMessage = Readonly<{
 type ExpectedWithheld = Readonly<{
   kind: "withheld";
   checkId: string;
-  reason: FirewallSendError["refusal"];
+  reason:
+    | "prohibited"
+    | "unresolved-evidence"
+    | "check-unavailable"
+    | "norm-violation";
 }>;
 type ExpectedMemberOutcome =
   | Readonly<{ kind: "answered"; content: ExpectedAnswerContent }>
@@ -319,6 +323,9 @@ type ConnectReasonsAreExact = Expect<
     "transport-failed" | "decode-failed" | "incompatible-daemon"
   >
 >;
+type FirewallRefusalReasonsAreExact = Expect<
+  Types.Equals<FirewallSendError["refusal"], ExpectedWithheld["reason"]>
+>;
 type AcquisitionIsScoped = Expect<
   Types.Equals<Parameters<typeof acquireHarnessEndpoint>, [endpoint: URL]>
 >;
@@ -346,6 +353,7 @@ export type HarnessEndpointCanaries = [
   AgentAddressIsInput,
   GroupAddressIsInput,
   SendReasonsAreExact,
+  FirewallRefusalReasonsAreExact,
   CollectiveFailureKindsAreExact,
   HistoryExportRecordIsExact,
   ListenReasonsAreExact,

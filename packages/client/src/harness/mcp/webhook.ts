@@ -4,7 +4,7 @@ import { HttpClient } from "@effect/platform";
 import { ProtocolError } from "@modelcontextprotocol/server";
 import { type Clock, Effect, Schema, type Scope } from "effect";
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
-import { InboundItem } from "../../communication/collectives/inbound.js";
+import { retainedInboundItem } from "../../communication/collectives/inbound.js";
 import {
   retryPending,
   retrySettled,
@@ -37,7 +37,10 @@ import {
 /** Persist the returned bytes before transmitting; retries must not regenerate them. */
 const encodeItemEvent = (entry: InboxEntry, timestamp: number) =>
   Effect.gen(function* () {
-    const item = yield* decodeRuntimeValue(InboundItem, entry.canonicalItem);
+    const item = yield* decodeRuntimeValue(
+      retainedInboundItem,
+      entry.canonicalItem,
+    );
     const guidance =
       entry.canonicalGuidance === undefined
         ? undefined

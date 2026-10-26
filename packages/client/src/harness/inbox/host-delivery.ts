@@ -14,7 +14,10 @@ import type {
   HistoryExportPort,
   HistoryExportRecord,
 } from "./history-export.js";
-import { InboundItem } from "../../communication/collectives/inbound.js";
+import {
+  InboundItem,
+  retainedInboundItem,
+} from "../../communication/collectives/inbound.js";
 import {
   DeliveryAcknowledgeError,
   SendError,
@@ -256,7 +259,7 @@ const readWebhookInbox = (
   bounds: Parameters<EndpointStore["readInbox"]>[0],
 ) =>
   readExported(input, input.store.readInbox(bounds), (entry) =>
-    decodeRuntimeValue(InboundItem, entry.canonicalItem),
+    decodeRuntimeValue(retainedInboundItem, entry.canonicalItem),
   );
 
 /** Waiters can stop during shutdown; an acquired receipt commits with its caller state intact. */

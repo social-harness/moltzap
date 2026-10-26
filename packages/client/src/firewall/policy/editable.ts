@@ -31,6 +31,7 @@ import {
   PrivateCheckTrace,
   type RuleDescription,
 } from "../evaluator/index.js";
+import { storedEnglishRule } from "./document/index.js";
 
 const editableRules = policyReadSchema.fields.rules.pipe(Schema.maxItems(256));
 type FixedRules = typeof policyReadSchema.fields.fixedRules.Type;
@@ -208,15 +209,16 @@ export const installEditableFirewall = Effect.fn("installEditableFirewall")(
     const rules =
       stored === undefined
         ? (captured.english?.initialRules ?? [])
-        : yield* decodeRuntimeValue(editableRules, stored).pipe(
-            Effect.mapError(persistenceFailure),
-          );
+        : yield* decodeRuntimeValue(
+            Schema.Array(storedEnglishRule).pipe(Schema.maxItems(256)),
+            stored,
+          )
+            .pipe(Effect.flatMap((rules) => decodeFrozen(editableRules, rules)))
+            .pipe(Effect.mapError(persistenceFailure));
     yield* validateIds(rules, fixedRuleIds);
     const active = yield* buildPolicy(captured, rules);
     const state: PolicyState = { rules, active, fixedRuleIds };
-    if (stored === undefined) {
-      yield* persistRules(store, rules);
-    }
+    yield* persistRules(store, rules);
     const gate = yield* Effect.makeSemaphore(1);
     const policy: FirewallPolicyOperations = {
       read: () =>

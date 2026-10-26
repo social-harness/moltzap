@@ -2,7 +2,10 @@
 
 import { Effect, Encoding, Schema } from "effect";
 import { randomBytes } from "node:crypto";
-import { InboundItem } from "../../communication/collectives/inbound.js";
+import {
+  InboundItem,
+  retainedInboundItem,
+} from "../../communication/collectives/inbound.js";
 import {
   decodeRuntimeValue,
   DeliveryToken,
@@ -57,7 +60,10 @@ export function decodeInboxEntry(
 ) {
   return Effect.gen(function* () {
     return {
-      item: yield* decodeRuntimeValue(InboundItem, retained.canonicalItem),
+      item: yield* decodeRuntimeValue(
+        retainedInboundItem,
+        retained.canonicalItem,
+      ),
       ...(retained.canonicalGuidance === undefined
         ? {}
         : {
@@ -140,7 +146,10 @@ export const readRuntimeInbox = (
         Effect.gen(function* () {
           return {
             deliveryToken: entry.deliveryToken,
-            item: yield* decodeRuntimeValue(InboundItem, entry.canonicalItem),
+            item: yield* decodeRuntimeValue(
+              retainedInboundItem,
+              entry.canonicalItem,
+            ),
             ...(entry.canonicalGuidance === undefined
               ? {}
               : {
@@ -187,7 +196,10 @@ const recoverRequest = Effect.fn("recoverRequest")(function* (
   entry: InboxEntry,
   withFirewall: boolean,
 ) {
-  const item = yield* decodeRuntimeValue(InboundItem, entry.canonicalItem);
+  const item = yield* decodeRuntimeValue(
+    retainedInboundItem,
+    entry.canonicalItem,
+  );
   if (item.kind !== "collectiveRequest") {
     return;
   }
@@ -256,7 +268,10 @@ function recoverPrivateRequests(store: EndpointStore) {
 
 function retireUnadmittedRequest(store: EndpointStore, entry: InboxEntry) {
   return Effect.gen(function* () {
-    const item = yield* decodeRuntimeValue(InboundItem, entry.canonicalItem);
+    const item = yield* decodeRuntimeValue(
+      retainedInboundItem,
+      entry.canonicalItem,
+    );
     if (item.kind !== "collectiveRequest") {
       return;
     }

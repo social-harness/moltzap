@@ -8,7 +8,7 @@ Personal firewall composition for code and English policies.
 
 ## Public surface
 
-### [`makeEnglishPolicy`](./english.ts#L274)
+### [`makeEnglishPolicy`](./english.ts#L268)
 
 _Variable_
 
@@ -75,8 +75,7 @@ rules were fixed, and never changes checking.
 flowchart TD
   I[Original message and context] --> A[Applicability]
   A --> S[Personal trust]
-  S --> U[Autonomy]
-  U --> N[Norm expectations from permitted evidence]
+  S --> N[Norm expectations from permitted evidence]
   N --> C[Outgoing conformance against the settled expectations]
   C --> R[Return all findings and private stage trace]
 ```

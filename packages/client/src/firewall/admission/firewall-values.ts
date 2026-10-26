@@ -1,7 +1,10 @@
 /** @file Immutable policy metadata and versioned operator audit values. */
 
-import { Effect, Schema } from "effect";
-import { InboundItem } from "../../communication/collectives/inbound.js";
+import { Effect, Schema, Struct } from "effect";
+import {
+  InboundItem,
+  retainedInboundItem,
+} from "../../communication/collectives/inbound.js";
 import { PostIntent } from "../../communication/records/index.js";
 import { PostId } from "../../communication/records/values.js";
 import {
@@ -35,11 +38,90 @@ const firewallConfiguration = Schema.Struct({
   maximumConcurrentChecks: Schema.Int.pipe(Schema.between(1, 32)),
 });
 
+/** Historical judgments remain holds under the closed unresolved-evidence reason. */
+export const retainedFirewallReason = Schema.transform(
+  Schema.Literal(
+    "eligible",
+    "prohibited",
+    "unresolved-evidence",
+    "check-unavailable",
+    "norm-violation",
+    "approval-required",
+  ),
+  Schema.Literal(
+    "eligible",
+    "prohibited",
+    "unresolved-evidence",
+    "check-unavailable",
+    "norm-violation",
+  ),
+  {
+    strict: true,
+    decode: (reason) =>
+      reason === "approval-required"
+        ? ("unresolved-evidence" as const)
+        : reason,
+    encode: (reason) => reason,
+  },
+);
+
+/** Retained registration metadata has no authority to install a live rule. */
+const retainedRule = Schema.Struct({
+  ...RuleDescription.fields,
+  kind: Schema.transform(
+    Schema.Literal("safety", "norm", "autonomy"),
+    RuleDescription.fields.kind,
+    {
+      strict: true,
+      decode: (kind) => (kind === "autonomy" ? ("norm" as const) : kind),
+      encode: (kind) => kind,
+    },
+  ),
+});
+
+/** The optional historical context field is discarded before projection or encoding. */
+const retainedContext = Schema.transform(
+  exactStruct({
+    ...MessageContext.fields,
+    authorization: Schema.optional(Schema.Unknown),
+  }),
+  MessageContext,
+  {
+    strict: true,
+    decode: (context) => Struct.omit(context, "authorization"),
+    encode: (context) => context,
+  },
+);
+
+/** Historical approval findings explain a hold without creating resumable work. */
+const retainedFinding = Schema.transform(
+  Schema.Union(
+    MiddlewareObservation.fields.findings.value,
+    Schema.Struct({
+      ruleId: Schema.NonEmptyTrimmedString,
+      outcome: Schema.Literal("approval-required"),
+    }),
+  ),
+  MiddlewareObservation.fields.findings.value,
+  {
+    strict: true,
+    decode: (finding) =>
+      finding.outcome === "approval-required"
+        ? {
+            ruleId: finding.ruleId,
+            outcome: "hold" as const,
+            reason: "unresolved-evidence" as const,
+          }
+        : finding,
+    encode: (finding) => finding,
+  },
+);
+
 /** Registration provenance is retained without giving it execution authority. */
 const firewallRegistration = Schema.Struct({
   id: Schema.NonEmptyTrimmedString,
   revision: Schema.NonEmptyTrimmedString,
-  rules: Schema.Array(RuleDescription),
+  rules: Schema.Array(retainedRule),
   provenance: PrivateCheckTrace,
 });
 
@@ -55,7 +137,7 @@ const firewallInstallation = Schema.Struct({
 const firewallAuditInput = exactStruct({
   configurationDigest: Schema.String.pipe(Schema.pattern(/^[a-f0-9]{64}$/u)),
   installation: firewallInstallation,
-  context: MessageContext,
+  context: retainedContext,
   message: Schema.NullOr(Message),
   terminal: Schema.Boolean,
 });
@@ -84,14 +166,7 @@ const middlewareFailure = Schema.Struct({
 /** Retained results keep private traces and judgments distinct from store admission. */
 const firewallAuditResult = exactStruct({
   judgment: Schema.Literal("allow", "block", "hold", "revise"),
-  reason: Schema.Literal(
-    "eligible",
-    "prohibited",
-    "unresolved-evidence",
-    "check-unavailable",
-    "norm-violation",
-    "approval-required",
-  ),
+  reason: retainedFirewallReason,
   feedback: Schema.Array(
     Schema.Struct({
       nextAction: Schema.Literal("revise", "wait", "stop", "seek-approval"),
@@ -111,6 +186,7 @@ const firewallAuditResult = exactStruct({
   checks: Schema.Array(
     Schema.Struct({
       ...MiddlewareObservation.fields,
+      findings: Schema.Array(retainedFinding),
       /** Wall-clock subtraction can be negative after a clock adjustment. */
       elapsedMilliseconds: Schema.Finite,
       failure: Schema.optional(middlewareFailure),
@@ -249,7 +325,7 @@ function outgoingPost(entry: FirewallAuditEntry, message: Message) {
 function incomingPost(entry: FirewallAuditEntry, message: Message) {
   return Effect.gen(function* () {
     const item = yield* decodeRuntimeValue(
-      InboundItem,
+      retainedInboundItem,
       entry.canonicalCandidate,
     );
     const postId = itemPostId(item);

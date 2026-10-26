@@ -11,7 +11,10 @@ import {
 } from "effect";
 import type { CollectiveOperations } from "../../communication/collectives/index.js";
 import type { FirewallEnvironment } from "./firewall-checks.js";
-import { InboundItem } from "../../communication/collectives/inbound.js";
+import {
+  InboundItem,
+  retainedInboundItem,
+} from "../../communication/collectives/inbound.js";
 import { untilFresh } from "../../communication/conversations/index.js";
 import {
   decodeRuntimeValue,
@@ -119,7 +122,10 @@ function admitItem(
   entry: FirewallInboxEntry,
 ) {
   return Effect.gen(function* () {
-    const item = yield* decodeRuntimeValue(InboundItem, entry.canonicalItem);
+    const item = yield* decodeRuntimeValue(
+      retainedInboundItem,
+      entry.canonicalItem,
+    );
     switch (item.kind) {
       case "multicast":
         return yield* admitRecordItem(input, environment, entry, item);
@@ -208,7 +214,7 @@ function admitLocalItem(
       Option.match({
         onNone: () => Effect.void,
         onSome: ({ disposition, shown }) =>
-          decodeRuntimeValue(InboundItem, shown).pipe(
+          decodeRuntimeValue(retainedInboundItem, shown).pipe(
             Effect.flatMap((projected) =>
               publishDisposition(input, entry, projected, disposition),
             ),

@@ -7,15 +7,17 @@ This chapter defines the experimental semantic checks of the endpoint's
 personal firewall (L3 Personal Firewalls).
 [Endpoint screening](./screening.md) owns its structural checks. Client
 assesses application messages before outgoing intent publication and
-incoming runtime admission. The evaluator separates safety and autonomy
+incoming runtime admission. The evaluator separates safety
 from contextual norms. Norm violations return actionable send errors; incoming
 items carry local guidance about whether to respond and what to address.
 
 Both middleware chains live in Client, with one interface for code and English
 policies. Local norm guidance stays distinct from peer content, and a withheld
 message returns actionable send-call feedback. Owner-authority tools edit
-English rules and activate policy in process. Authenticated human approval
-channels remain deferred.
+English rules and activate policy in process.
+
+Owner approval is norm guidance that asks the agent to ask its owner through
+its host, for example with `ask_user`; see [shared norms](../norms.md).
 
 `sharnessd` installs the firewall a [message-policy file](#message-policy-file)
 describes in the daemon's incoming and outgoing message paths.
@@ -72,7 +74,6 @@ These values belong to service composition, not the agent-facing endpoint.
 | Message and context | Exact candidate and direction, and the collective operation it belongs to; local agent and principal identity; verified participant attribution; authorized earlier history, owner facts, evidence gaps and the capture time. Context is data, not another service. |
 | Decision provider | State and named bounded-choice questions to validated distributions, provider/model identity, usage and latency, or a typed operational failure. Names of external providers/models remain data. |
 | Firewall | `makeFirewall({ incoming, outgoing, settings })` returns `checkIncoming(message, context)` and `checkOutgoing(draft, context)`. The runner validates and composes all returned findings and projects registered guidance/feedback. |
-| Authorization evidence | Verified exact-candidate evidence supplied by a trusted integration, or absent. The first live implementation supplies absent evidence; tests may supply explicitly simulated evidence. |
 | Client admission state | Retain the assessment and atomically compare candidate, policy and evidence versions before runtime admission or outgoing intent creation. Freshness is private Client state; there is no public Snapshot or Binding service. |
 
 Evaluator construction is exposed through the existing service composition
@@ -82,12 +83,6 @@ method on HarnessEndpoint and does not introduce a new npm package.
 Native and MCP schemas and error decoding change together. Client and adapter
 versions are deployed together and use the current schemas directly. Peer wire
 formats remain unchanged.
-
-Human authentication is upstream of authorization evidence. A peer claim,
-runtime-generated token or assessment reference is not approval. Future evidence
-must bind owner, candidate, recipients and applicable validity/version
-constraints. The architecture decision does not select an approval transport or
-release API.
 
 ## Middleware execution
 
@@ -115,12 +110,11 @@ The English middleware runs this fixed internal chain:
 2. Assess applicability across every active document. The first implementation
    records relevance but does not prune active rules.
 3. Assess safety: compliant, prohibited or unresolved for each safety rule.
-4. Assess autonomy: autonomous, approval-required, prohibited or unresolved.
-5. Assess norm expectations: required response, permitted response, wait or no
+4. Assess norm expectations: required response, permitted response, wait or no
    response, with selected rule and subject references.
-6. For outgoing messages, assess the candidate's conformance to the
+5. For outgoing messages, assess the candidate's conformance to the
    expectations the decision provider settled.
-7. Return all stage findings and a private trace to the common runner for
+6. Return all stage findings and a private trace to the common runner for
    validation, composition and permitted feedback projection. Client then commits
    the result and applies the configured admission mode.
 
@@ -132,7 +126,7 @@ as described below. They remain distinct in the audit.
 
 An answer is uncertain when its choice is `unresolved`, its probability is
 below `minimumProbability`, or another option is more probable, as in a rounded
-near-tie the policy accepts as valid. An uncertain answer about a safety or autonomy rule
+near-tie the policy accepts as valid. An uncertain answer about a safety rule
 holds the candidate, its applicability included, and a failed decision
 provider holds it in every stage. Applicability labels never prune active rules. Making
 applicability optional is a later experiment; increasing history length can
@@ -166,7 +160,7 @@ pruning, summaries and caching are later experiments.
 
 The English adapter ignores previous middleware observations because they may be
 derived from an outgoing draft. Outgoing expectations also exclude the draft's
-text, id and approval evidence. Conformance sees the draft only after expectations
+text and id. Conformance sees the draft only after expectations
 are established from the original evidence. The question edition and rules are
 part of the English revision; provider/model identity is captured in immutable installation provenance before
 inference, including attempts that fail or are interrupted. Experiment manifests
@@ -231,8 +225,7 @@ distinguish:
 - prohibited message;
 - unresolved required evidence;
 - unavailable assessment;
-- norm violation; and
-- required approval absent.
+- norm violation.
 
 Feedback gives a useful next action: revise, wait, stop or seek approval.
 The error's message includes each next action and the opaque check reference so
@@ -242,10 +235,8 @@ followed by 64 lowercase hexadecimal characters. Only that current format is
 accepted; earlier retained guidance and refusal state requires a reset. The
 message does not include raw provider output, credentials or private evidence.
 
-Compose decisions in this order: known safety/autonomy prohibition; required
-operational/evidence hold; norm repair; missing approval; otherwise admission.
-Approval satisfies an approval-required condition only and cannot override a
-prohibition or an independent norm violation.
+Compose decisions in this order: known safety prohibition; required
+operational/evidence hold; norm repair; otherwise admission.
 
 An admitted send returns its check's guidance in its result when the check
 left a norm judgment uncertain: the same instructions as incoming guidance,
@@ -275,9 +266,7 @@ evidence versions. Comparison and new intent binding must share the admission
 transaction; an asynchronous preflight check alone is insufficient.
 
 Retain admission state separately from canonical records. Recovering a process
-cannot admit a previously held item. The first implementation retains holds
-for inspection and does not implement human review/resumption. Future release
-must reassess and define how an older item is presented.
+cannot admit a previously held item. Held items remain available for inspection.
 
 Preserve incoming order with a retained per-conversation admission frontier.
 Assess a successor after its predecessor's disposition settles, including a
@@ -434,7 +423,7 @@ editable document, never an existing document, including an empty one.
 `maximumHistoryRecords` sets the recent certified-record window per candidate
 conversation in both directions (default 256, range 1–1024).
 `codeDigest` is the operator's SHA-256 identifier for the experiment code; it is
-recorded, not independently attested. Approval evidence remains absent.
+recorded, not independently attested.
 
 ### Message-policy file
 
@@ -568,9 +557,12 @@ directory. An agent maps it to a `Rule` itself and adds it with
 ### Editable English policy
 
 The daemon owns a durable editable document of at most 256 rules. Each rule has
-`{id, kind: "norm" | "autonomy" | "safety", text, guidance?, feedback?}`;
+`{id, kind: "norm" | "safety", text, guidance?, feedback?}`;
 `feedback` is `{text, nextAction}` as in `EnglishRule`. A norm requires a nonempty
-`guidance` template. Rule ids must be unique in the editable document and cannot
+`guidance` template. On load, persisted `autonomy` rules and message-policy
+`english.fixedRules` and `initialRules` of that kind become `norm` rules. Their
+guidance starts with "Ask your owner with ask_user before this." and retains
+any existing guidance. New edits accept only `norm` and `safety`. Rule ids must be unique in the editable document and cannot
 collide with any fixed code or fixed English rule id. Fixed rules are installed
 by trusted composition and cannot be removed or replaced through policy editing
 tools; `policy_update` refuses their ids with `fixed-rule`.
@@ -700,7 +692,6 @@ reason that [decision composition](#outgoing-projection) selected:
 | unavailable assessment | every rule of a check that could not run, and the rules whose judgment could not be obtained |
 | unresolved evidence | the rules that held, and the norms whose expectations conflict |
 | norm violation | the rules that found a violation |
-| approval required | the autonomy rules that require approval |
 | admission | the norms assessed as uncertain, which admit with guidance; otherwise none |
 
 A rule's `advice` is its own registered text: its guidance for an admission,
@@ -731,7 +722,7 @@ identified by its registration's provenance format.
 | Cause | Meaning |
 | --- | --- |
 | `judgment` | A settled English judgment. |
-| `uncertain` | An unsettled English judgment: a norm admitted with guidance, or a safety or autonomy rule held. |
+| `uncertain` | An unsettled English judgment: a norm admitted with guidance, or a safety rule held. |
 | `unavailable` | A check could not run: the decision provider failed, was unreachable or returned an invalid response, the request exceeded its budget, or a middleware failed or timed out, including one with no deciding rule. Enforcement holds the message. |
 | `code` | A code middleware's finding. |
 | `endpoint` | A hold Client made with no deciding rule: missing context evidence, a terminal or unsupported item, invalid evidence, or advice that could not be projected. |
@@ -812,6 +803,13 @@ activation line, including each trailing newline, in file order.
 Missing or malformed records, truncation, or a mismatched count or digest make
 the artifact incomplete. Check records preserve the exact semantic input,
 installation metadata, private provider traces, judgment and applied disposition.
+Retained contexts accept and discard the historical `authorization` field.
+Historical `approval-required` reasons and findings decode as
+`hold` with `unresolved-evidence`; retained autonomy registration kinds decode
+as `norm`. The decisions feed uses those holding rules to explain the hold.
+Retained collective-result projections map that historical refusal reason to
+`unresolved-evidence` before inbox delivery. New checks and exports use only
+the current values.
 Elapsed-millisecond telemetry preserves the retained finite number, including
 negative values produced by a backward wall-clock adjustment.
 Each checked message with one post has a `post` reference with `authorAgentId`
@@ -858,6 +856,5 @@ comparison does not isolate the contribution of each direction.
 
 A message gate cannot undo a prior tool action, prove an unseen calendar change,
 guarantee that an agent follows a reminder, or detect hidden collusion without
-evidence. Measure those outcomes separately. Approval fixtures do not qualify
-human authentication. Human approval UX, editable code/provider configuration and other client
-integrations are follow-up work.
+evidence. Measure those outcomes separately. Editable code/provider
+configuration and other client integrations are follow-up work.

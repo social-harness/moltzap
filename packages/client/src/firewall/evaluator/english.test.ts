@@ -63,18 +63,12 @@ const context: typeof MessageContext.Encoded = {
     },
   ],
   gaps: [],
-  authorization: { kind: "absent" },
 };
 const rules: readonly EnglishRule[] = [
   {
     id: "privacy",
     kind: "safety",
     text: "Do not disclose unrelated private appointments.",
-  },
-  {
-    id: "authority",
-    kind: "autonomy",
-    text: "Tentative proposals are autonomous. Final commitments require owner approval.",
   },
   {
     id: "proposal-acceptance",
@@ -633,11 +627,10 @@ it("captures evidence before asynchronous inference", () =>
     );
   }));
 
-it("returns norm repair before approval with only registered feedback", () =>
+it("returns norm repair with only registered feedback", () =>
   Effect.gen(function* () {
     const result = yield* check(
       provider({
-        "autonomy:authority:assessment": "approval-required",
         "conformance:proposal-acceptance:assessment": "violation",
       }),
     );
@@ -656,7 +649,7 @@ it.each(["failure", "defect", "timeout"])(
         decide: (request) =>
           Effect.gen(function* () {
             requests.push(request);
-            if (request.stage === "autonomy") {
+            if (request.stage === "conformance") {
               if (fault === "failure") {
                 return yield* new DecisionProviderError({
                   reason: "http",
@@ -682,7 +675,7 @@ it.each(["failure", "defect", "timeout"])(
       const result = yield* Fiber.join(running);
       expect(result.judgment).toBe("block");
       expect(result.checks[0]?.findings).toContainEqual({
-        ruleId: "authority",
+        ruleId: "proposal-acceptance",
         outcome: "hold",
         reason: "check-unavailable",
       });
@@ -798,7 +791,7 @@ it("keeps renderer templates out of model assessment rules", () =>
     for (const request of requests) {
       expect(request.state).not.toContain(reminder);
       expect(request.state).not.toContain(repair);
-      expect(request.state).toContain(rules[2]?.text);
+      expect(request.state).toContain(rules[1]?.text);
     }
   }));
 

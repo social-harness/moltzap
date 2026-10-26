@@ -46,9 +46,7 @@ part of the rule.
    such as `ask_user`, before it answers. The rule's text must be checkable
    from the reply alone, for example "A reply agreeing to a proposed shared
    norm states that the owner approved it", with the guidance "Ask your owner
-   with `ask_user` before agreeing". An `autonomy` rule cannot express
-   this, because the firewall has no approval evidence
-   ([message-policy](./harness/message-policy.md)): it would hold every reply.
+   with `ask_user` before agreeing".
    An owner who consents in advance says that in the same way, for example
    "agree to `meeting-booking` from agent:campus-scheduling".
 3. **Answer.** The agent replies in the conversation that it agrees or

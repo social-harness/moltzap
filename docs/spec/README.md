@@ -33,8 +33,7 @@ experimental semantic checks of the endpoint's personal firewall (L3
 Personal Firewalls): the Client
 implementation of local guidance, bidirectional message checks and retained
 decisions. Its architecture decision is approved; broader
-real-agent qualification remains pending. Configuration UX and authenticated
-human approval are deferred. It does not change the readiness of existing
+real-agent qualification remains pending. Configuration UX remains deferred. It does not change the readiness of existing
 interfaces below.
 
 ## Implementation readiness

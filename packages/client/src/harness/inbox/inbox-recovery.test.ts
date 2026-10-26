@@ -20,6 +20,7 @@ import { PostId, RecordHash } from "../../communication/records/index.js";
 import { AgentAddress } from "../../communication/records/values.js";
 import {
   decodeRuntimeValue,
+  DeliveryToken,
   encodeRuntimeValue,
   type EndpointStore,
   openEndpointStore,
@@ -206,3 +207,41 @@ function queueRequestBeforeRestart(path: string, counter: { count: number }) {
     }),
   );
 }
+
+it("delivers retained collective results with historical approval holds", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const store = yield* openEndpointStore(stateDirectory(), {
+        liveWireVersions: LIVE_WIRE_VERSIONS,
+      });
+      const withheld = {
+        kind: "withheld",
+        checkId: `chk_${"a".repeat(64)}`,
+        reason: "approval-required",
+      };
+      const item = {
+        kind: "collectiveResult",
+        op: "gather",
+        id,
+        to: sender,
+        question: withheld,
+        outcomes: [{ member: sender, outcome: withheld }],
+      };
+      yield* store.putInboxItem({
+        deliveryToken: Schema.decodeUnknownSync(DeliveryToken)(
+          digest("dlv_", 99),
+        ),
+        canonicalItem: yield* encodeRuntimeValue(item),
+      });
+      const projected = { ...withheld, reason: "unresolved-evidence" };
+      expect((yield* readRuntimeInbox(store, {})).items).toMatchObject([
+        {
+          item: {
+            ...item,
+            question: projected,
+            outcomes: [{ member: sender, outcome: projected }],
+          },
+        },
+      ]);
+    }),
+  ));

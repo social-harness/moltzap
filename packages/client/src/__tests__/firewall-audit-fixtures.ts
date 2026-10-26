@@ -78,7 +78,6 @@ export const makeAuditFixture = Effect.gen(function* () {
     history: [],
     facts: [],
     gaps: [],
-    authorization: { kind: "absent" },
   });
   const input = {
     configurationDigest: installed.configurationDigest,
