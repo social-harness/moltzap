@@ -168,7 +168,7 @@ export interface Firewall {
 
 Checking returns data; Client separately owns fresh, atomic send/delivery admission.
 
-### [`FirewallPolicyError`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/firewall/evaluator/contract/index.ts#L627)
+### [`FirewallPolicyError`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/firewall/evaluator/contract/index.ts#L632)
 
 _Class_
 
@@ -176,6 +176,7 @@ _Class_
 export class FirewallPolicyError extends Data.TaggedError(
   "FirewallPolicyError",
 )<{
+  readonly ruleId?: string;
   readonly reason:
     | "not-configured"
     | "invalid-rule"

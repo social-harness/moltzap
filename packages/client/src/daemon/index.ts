@@ -227,7 +227,9 @@ export namespace Daemon {
   ): StartupError {
     if (installation.fromPolicyFile === true) {
       return configurationFailure(
-        daemonPolicyConfigurationError(policyInstallationError(cause)),
+        daemonPolicyConfigurationError(
+          policyInstallationError(cause, installation.behaviorRulePaths),
+        ),
       );
     }
     return configurationFailure(cause);

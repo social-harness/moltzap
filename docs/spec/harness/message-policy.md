@@ -438,9 +438,10 @@ recorded, not independently attested. Approval evidence remains absent.
 
 ### Message-policy file
 
-`SHARNESS_MESSAGE_POLICY_FILE` names a JSON document of at most 1 MiB that
-`sharnessd` decodes with `MessagePolicy` from `@moltzap/client/service` and
-installs through the same composition as `Daemon.withFirewall`. Writers build
+`SHARNESS_MESSAGE_POLICY_FILE` names a readable regular file containing a JSON
+document of at most 1 MiB. `sharnessd` decodes it with `MessagePolicy` from
+`@moltzap/client/service` and installs it through the same composition as
+`Daemon.withFirewall`. Writers build
 it with that schema. A trusted composition with its own decision provider
 installs a decoded document with `messagePolicyFirewall(policy, provider)`.
 
@@ -461,7 +462,7 @@ installs a decoded document with `messagePolicyFirewall(policy, provider)`.
 | `format` | yes | `org.social-harness/message-policy/v1` |
 | `mode` | yes | `guidance` or `enforcement`; a daemon without the file has no firewall |
 | `incoming`, `outgoing` | no, default `[]` | built-in code middleware in chain order, below |
-| `english` | no | `fixedRules` and `initialRules` as `EnglishRule` arrays, default `[]`, and `fixedBehaviors` and `initialBehaviors` (proposed; see [Behaviors](#behaviors)) as arrays of behavior directory paths, default `[]`; present, owner tools can edit English rules |
+| `english` | no | `fixedRules` and `initialRules` as `EnglishRule` arrays, default `[]`, and `fixedBehaviors` and `initialBehaviors` as arrays of behavior directory paths, default `[]`; present, owner tools can edit English rules |
 | `decisionProvider` | with `english` or the collective norms | `{kind: "jev", model}`, or `{kind: "unavailable"}` |
 | `englishSettings` | no | `EnglishPolicySettings`; default probability 0.5, 384,000 request bytes, 15 s |
 | `settings` | no | `FirewallSettings`; default 150 s per check, 70 s per middleware, 512,000 input bytes, 2,000,000 result bytes |
@@ -504,8 +505,9 @@ unavailable: enforcement holds the message and guidance admits it. Without
 English rules or the collective norms, the provider and key are unused.
 
 `codeDigest` is the SHA-256 of the Client release, the mode, each middleware's
-id and revision (the allowed-senders list left out), the fixed English rules,
-the decision provider and the settings. Initial rules and facts are left out,
+id and revision (the allowed-senders list left out), the fixed English rules
+and fixed behavior bytes (see [Behaviors](#behaviors)), the decision provider
+and the settings. Initial rules and facts are left out,
 so every member of an arm shares one digest.
 Decoding refuses any property the format does not name, so a misspelled or
 newer setting never silently weakens a policy: a writer adds a property only
@@ -514,16 +516,17 @@ every document an earlier release of this format accepted.
 
 ### Behaviors
 
-Status: **proposed**; the current decoder refuses `fixedBehaviors` and
-`initialBehaviors`.
-
 An English rule can be written as an [agentbehavior.dev](https://agentbehavior.dev)
 behavior: a directory holding exactly one behavior in a file named `BEHAVIOR.md`.
 `fixedBehaviors` and `initialBehaviors` name such directories by paths relative
-to the directory holding the policy file; absolute paths and `..` are refused. `sharnessd` reads them
+to the directory holding the policy file; absolute paths, `..`, and directory
+or file symlinks escaping that directory are refused. `sharnessd` reads them
 when it loads the file and installs each as a fixed or initial English rule,
-after the inline ones. A composition that calls `messagePolicyFirewall` or
-`Daemon.withFirewall` passes rules, not behavior paths.
+after the inline ones. A composition can decode an inline-only document with
+`decodeMessagePolicy` and pass it directly to `messagePolicyFirewall(decodedPolicy, provider)`.
+`messagePolicyFirewall` refuses nonempty behavior paths with `CheckInputError`
+(`registration`); file loading resolves those paths before composing the rules.
+`Daemon.withFirewall` accepts the resulting firewall options.
 
 ```markdown
 ---
@@ -553,10 +556,14 @@ are not part of the rule. A key under `metadata.social-harness` other than
 those three stops startup in phase `configuration`, as does a missing
 directory, an invalid behavior, a behavior over 64 KiB, a fixed behavior whose
 id repeats another fixed rule's, or a rule the editable-policy rules refuse. Each failure
-names its path, such as `english.fixedBehaviors[0]`, never file content.
+names its path, such as `english.fixedBehaviors.0`, and a closed behavior reason:
+`missing`, `too-large`, `not-a-file`, `frontmatter`, `schema`, `duplicate-id`, or
+`editable-limit`, never file content.
 
 Fixed behaviors are the composition's locked base: `policy_update` cannot
-remove them. Initial behaviors are read and validated at every start, and seed
+remove them. If a fixed behavior collides with a stored editable rule, remove
+the editable rule with `policy_update` before enabling the behavior, or rename
+the behavior. Initial behaviors are read and validated at every start, and seed
 only a missing editable document, as `initialRules` do. `codeDigest` covers
 each fixed behavior's `BEHAVIOR.md` bytes; initial behaviors are left out, as
 initial rules are.

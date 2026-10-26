@@ -7,6 +7,7 @@ import type { Effect, Layer, Types } from "effect";
 import type {
   CheckInputError,
   Daemon,
+  decodeMessagePolicy,
   MessagePolicy,
   messagePolicyFirewall,
 } from "./index.js";
@@ -46,12 +47,30 @@ type AuditPathIsOptional = Expect<
 type PolicyModeIsExact = Expect<
   Types.Equals<MessagePolicy["mode"], "guidance" | "enforcement">
 >;
-/** A decoded document installs through the same options as `withFirewall`. */
+/** A decoded inline document installs through the same options as `withFirewall`. */
 type PolicyInstallsAsFirewall = Expect<
   Types.Equals<
     ReturnType<typeof messagePolicyFirewall>,
     Effect.Effect<Omit<Daemon.FirewallOptions, "auditExport">, CheckInputError>
   >
+>;
+
+/** Decoder output composes directly, so inline policies need no conversion. */
+type DecodedPolicyComposes = Expect<
+  Types.Equals<
+    Effect.Effect.Success<ReturnType<typeof decodeMessagePolicy>>,
+    Parameters<typeof messagePolicyFirewall>[0]
+  >
+>;
+
+/** Inline-only English blocks remain valid trusted composition inputs. */
+type InlineEnglishIsAssignable = Expect<
+  {
+    readonly fixedRules: readonly [];
+    readonly initialRules: readonly [];
+  } extends MessagePolicy["english"]
+    ? true
+    : false
 >;
 
 /** Compile-time witnesses for the closed Client process boundary. */
@@ -66,4 +85,6 @@ export type DaemonCanaries = [
   AuditPathIsOptional,
   PolicyModeIsExact,
   PolicyInstallsAsFirewall,
+  DecodedPolicyComposes,
+  InlineEnglishIsAssignable,
 ];

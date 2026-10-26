@@ -163,7 +163,7 @@ export interface Firewall {
 
 Checking returns data; Client separately owns fresh, atomic send/delivery admission.
 
-### [`FirewallPolicyError`](./index.ts#L627)
+### [`FirewallPolicyError`](./index.ts#L632)
 
 _Class_
 
@@ -171,6 +171,7 @@ _Class_
 export class FirewallPolicyError extends Data.TaggedError(
   "FirewallPolicyError",
 )<{
+  readonly ruleId?: string;
   readonly reason:
     | "not-configured"
     | "invalid-rule"
