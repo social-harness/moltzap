@@ -33,7 +33,6 @@ export {
 export {
   collectiveAdmission,
   type FirewallOptions,
-  installFirewall,
 } from "./admission/index.js";
 /** The daemon retains one installed admission capability. */
 export type { InstalledFirewall } from "./admission/index.js";

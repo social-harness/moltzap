@@ -4,10 +4,10 @@
 
 /** Trusted composition installs immutable chains, captures their registrations and builds outgoing collective admission. */
 export {
+  buildFirewall,
   captureRegistration,
   collectiveAdmission,
   type FirewallOptions,
-  installFirewall,
 } from "./firewall.js";
 /** Checking and delivery share the installed firewall and its execution environment. */
 export {

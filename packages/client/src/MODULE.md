@@ -159,7 +159,7 @@ export const AgentSigningAuthority = Object.freeze({
 Loads and identifies one Ed25519 signing authority without exposing its
 private keys or a generic signing or decryption operation.
 
-### [`CheckedGuidance`](./firewall/outcome/index.ts#L51)
+### [`CheckedGuidance`](./firewall/outcome/index.ts#L52)
 
 _TypeAlias_
 
@@ -449,7 +449,7 @@ export type GroupMessage = typeof groupMessage.Type;
 
 One certified remote-authored fixed-group message.
 
-### [`GuidanceBodyOrigin`](./firewall/outcome/index.ts#L81)
+### [`GuidanceBodyOrigin`](./firewall/outcome/index.ts#L82)
 
 _TypeAlias_
 
@@ -684,7 +684,7 @@ export type LiveSignedMessage = SignedMessage &
 
 A decoded outer envelope whose version is admitted by the live window.
 
-### [`LocalGuidance`](./firewall/outcome/index.ts#L75)
+### [`LocalGuidance`](./firewall/outcome/index.ts#L76)
 
 _TypeAlias_
 
@@ -866,7 +866,7 @@ each data part as JSON, one part per line.
 
 **Returns:** The text a host puts in the model's turn.
 
-### [`renderLocalGuidance`](./firewall/outcome/index.ts#L91)
+### [`renderLocalGuidance`](./firewall/outcome/index.ts#L92)
 
 _Function_
 
@@ -1121,7 +1121,7 @@ The environment must not also name a message-policy document.
 
 **Returns:** The complete daemon layer with both message boundaries checked.
 
-#### [`CheckInputError`](./firewall/evaluator/contract/index.ts#L235)
+#### [`CheckInputError`](./firewall/evaluator/contract/index.ts#L233)
 
 _Class_
 
@@ -1133,7 +1133,7 @@ export class CheckInputError extends Data.TaggedError("CheckInputError")<{
 
 Invalid construction or evidence is a typed failure, never permission.
 
-#### [`DecisionProviderError`](./firewall/evaluator/contract/index.ts#L357)
+#### [`DecisionProviderError`](./firewall/evaluator/contract/index.ts#L388)
 
 _Class_
 
@@ -1162,7 +1162,7 @@ export class DecisionProviderError extends Data.TaggedError(
 
 The adapter scrubs credentials before retaining optional private diagnostics.
 
-#### [`FirewallPolicyError`](./firewall/evaluator/contract/index.ts#L610)
+#### [`FirewallPolicyError`](./firewall/evaluator/contract/index.ts#L641)
 
 _Class_
 
@@ -1182,7 +1182,7 @@ export class FirewallPolicyError extends Data.TaggedError(
 
 A failed edit never replaces the active installation or retained editable document.
 
-#### [`MiddlewareError`](./firewall/evaluator/contract/index.ts#L179)
+#### [`MiddlewareError`](./firewall/evaluator/contract/index.ts#L178)
 
 _Class_
 
@@ -1340,7 +1340,7 @@ export class RouterRequestTimeoutError extends Data.TaggedError(
 
 The configured complete Router call deadline expired.
 
-#### [`DecisionProvider`](./firewall/evaluator/contract/index.ts#L379)
+#### [`DecisionProvider`](./firewall/evaluator/contract/index.ts#L410)
 
 _Interface_
 
@@ -1356,7 +1356,7 @@ export interface DecisionProvider {
 
 Entirely code-based chains have no dependency on this optional capability.
 
-#### [`DecisionRequest`](./firewall/evaluator/contract/index.ts#L321)
+#### [`DecisionRequest`](./firewall/evaluator/contract/index.ts#L353)
 
 _Interface_
 
@@ -1381,7 +1381,7 @@ export interface DecisionRequest {
 
 Provider input contains explicit questions and state, never execution authority.
 
-#### [`DecisionResponse`](./firewall/evaluator/contract/index.ts#L339)
+#### [`DecisionResponse`](./firewall/evaluator/contract/index.ts#L371)
 
 _Interface_
 
@@ -1396,7 +1396,6 @@ export class DecisionResponse extends Schema.Class<DecisionResponse>(
     value: Schema.Struct({
       choice: identifier,
       probabilities: Schema.Record({ key: identifier, value: probability }),
-      confidence: Schema.optional(probability),
     }),
   }),
   usage: Schema.Record({ key: identifier, value: Schema.NonNegativeInt }),
@@ -1404,9 +1403,9 @@ export class DecisionResponse extends Schema.Class<DecisionResponse>(
 }) {}
 ```
 
-Raw distributions and provider confidence survive routing unchanged.
+Raw provider bytes and distributions survive routing unchanged.
 
-#### [`EnglishPolicySettings`](./firewall/evaluator/contract/index.ts#L305)
+#### [`EnglishPolicySettings`](./firewall/evaluator/contract/index.ts#L337)
 
 _Interface_
 
@@ -1422,7 +1421,7 @@ export class EnglishPolicySettings extends Schema.Class<EnglishPolicySettings>(
 
 Bytes bound allocation, not tokenizer capacity; probability is a routing setting.
 
-#### [`EnglishRule`](./firewall/evaluator/contract/index.ts#L118)
+#### [`EnglishRule`](./firewall/evaluator/contract/index.ts#L117)
 
 _Interface_
 
@@ -1435,7 +1434,7 @@ export class EnglishRule extends Schema.Class<EnglishRule>("EnglishRule")({
 
 Text is interpreted by the provider; it is never compiled into executable code.
 
-#### [`Firewall`](./firewall/evaluator/contract/index.ts#L293)
+#### [`Firewall`](./firewall/evaluator/contract/index.ts#L325)
 
 _Interface_
 
@@ -1448,13 +1447,13 @@ export interface Firewall {
   readonly checkOutgoing: (
     draft: Message,
     context: MessageContext,
-  ) => Effect.Effect<OutgoingCheck, CheckInputError>;
+  ) => Effect.Effect<FirewallCheck, CheckInputError>;
 }
 ```
 
 Checking returns data; Client separately owns fresh, atomic send/delivery admission.
 
-#### [`FirewallSettings`](./firewall/evaluator/contract/index.ts#L225)
+#### [`FirewallSettings`](./firewall/evaluator/contract/index.ts#L223)
 
 _Interface_
 
@@ -1523,7 +1522,7 @@ export class MessageContext extends Schema.Class<MessageContext>(
 
 Trusted composition supplies authorized earlier evidence and distinct agent and principal identities.
 
-#### [`MessageMiddleware`](./firewall/evaluator/contract/index.ts#L213)
+#### [`MessageMiddleware`](./firewall/evaluator/contract/index.ts#L211)
 
 _Interface_
 
@@ -1544,7 +1543,7 @@ Code and English policies have the same contract. Registered code is trusted;
 it receives no conversation or store capability and must not retain conversation
 state or perform messaging side effects.
 
-#### [`MiddlewareInput`](./firewall/evaluator/contract/index.ts#L200)
+#### [`MiddlewareInput`](./firewall/evaluator/contract/index.ts#L199)
 
 _Interface_
 
@@ -1554,13 +1553,12 @@ export class MiddlewareInput extends Schema.Class<MiddlewareInput>(
 )({
   event: messageEvent,
   context: MessageContext,
-  previous: Schema.Array(MiddlewareObservation),
 }) {}
 ```
 
-Each invocation gets immutable evidence and previously validated observations.
+Each invocation gets immutable message evidence and authorized context.
 
-#### [`MiddlewareResult`](./firewall/evaluator/contract/index.ts#L170)
+#### [`MiddlewareResult`](./firewall/evaluator/contract/index.ts#L169)
 
 _Interface_
 
@@ -1586,7 +1584,6 @@ export class RuleDescription extends Schema.Class<RuleDescription>(
 )({
   id: identifier,
   kind: Schema.Literal("safety", "norm"),
-  source: Schema.optional(identifier),
   guidance: Schema.optional(Schema.NonEmptyString),
   feedback: Schema.optional(
     Schema.Struct({
@@ -1794,7 +1791,7 @@ Decodes the text of a message-policy document, refusing any property it
 does not name, so a misspelled or newer setting never silently weakens the
 policy.
 
-#### [`makeEnglishPolicy`](./firewall/evaluator/english.ts#L268)
+#### [`makeEnglishPolicy`](./firewall/evaluator/english.ts#L249)
 
 _Variable_
 
@@ -1866,7 +1863,7 @@ flowchart TD
   C --> R[Return all findings and private stage trace]
 ```
 
-#### [`makeFirewall`](./firewall/evaluator/index.ts#L71)
+#### [`makeFirewall`](./firewall/evaluator/index.ts#L70)
 
 _Variable_
 
@@ -2146,7 +2143,7 @@ export const SignedMessageDigest = canonicalValue(
 
 Equality receipt for one complete retained SignedMessage.
 
-#### [`makeJevDecisionProvider`](./firewall/evaluator/jev.ts#L182)
+#### [`makeJevDecisionProvider`](./firewall/evaluator/jev.ts#L190)
 
 _Function_
 

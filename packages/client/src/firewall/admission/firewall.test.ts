@@ -220,7 +220,6 @@ function unsettledIncoming() {
 /** A rounded near-tie, as Jev reports one: the stated choice trails the maximum by one hundredth. */
 const nearTie = {
   choice: "relevant",
-  confidence: 0.25,
   probabilities: { relevant: 0.49, irrelevant: 0.5, unresolved: 0.01 },
 };
 
@@ -556,9 +555,10 @@ function installationProvenance() {
       ...policy(() => Effect.succeed(pass)),
       provenance: { format: "provider", data: model },
     };
-    const installed = yield* installation(registration);
+    const subject = yield* fixture;
+    const installed = yield* installation(subject.store, registration);
     registration.provenance.data = "model-two";
-    const changed = yield* installation(registration);
+    const changed = yield* installation(subject.store, registration);
     expect(installed.metadata.incoming[0]?.provenance.data).toBe(model);
     expect(changed.configurationDigest).not.toBe(installed.configurationDigest);
   });

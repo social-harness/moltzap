@@ -91,7 +91,7 @@ it.prop(
     }),
 );
 
-it("sends choice questions with a pinned model and preserves reported probabilities and confidence", () =>
+it("sends choice questions with a pinned model and preserves reported probabilities and raw response", () =>
   Effect.gen(function* () {
     const fetch: typeof globalThis.fetch = (input, init) => {
       const sent = new Request(input, init);
@@ -126,9 +126,7 @@ it("sends choice questions with a pinned model and preserves reported probabilit
     expect(response.answers.safety?.probabilities).toEqual(
       wire.answers.safety.probabilities,
     );
-    expect(response.answers.safety?.confidence).toBe(
-      wire.answers.safety.confidence,
-    );
+    expect(JSON.parse(response.raw)).toEqual(wire);
     expect(response.usage).toEqual(wire.usage);
   }));
 

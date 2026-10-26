@@ -93,11 +93,15 @@ and credential explicitly; the component never reads environment variables.
 | Value | Meaning |
 | --- | --- |
 | `MessageMiddleware` | Stable `id`, implementation `revision`, registered `rules`, and `check(input)` returning an Effect of `MiddlewareResult` or `MiddlewareError`. |
-| `MiddlewareInput` | Immutable `event`, `context`, and `previous` validated middleware observations. Earlier private traces are excluded. |
+| `MiddlewareInput` | Immutable `event` and authorized `context`. |
 | `Message` | The checked text with its verified sender and recipients, and the collective `operation` it belongs to: a request, an answer, a result or a failure; absent for a plain message. |
 | `MessageContext` | Local agent and principal identity, verified participant attribution, authorized earlier history, owner facts, evidence gaps, and the capture time `now`. |
 | `MiddlewareResult` | Per-rule `findings`, contextual norm `expectations`, and optional opaque private `trace`. |
 | `Firewall.checkIncoming` / `checkOutgoing` result | Composed `judgment` and `reason`, permitted `feedback` and `guidance`, and attributed private `checks`. |
+
+The data-only evaluator contract owns `firewallCheckSchema`. Retained audits
+and host-safe refusal projections derive their fields from it. Hosts load the
+contract entry without loading evaluation or provider clients.
 
 The runner owns advancement: middleware has no `next()` callback and cannot
 short-circuit another installed check. Every declared rule must have a finding;
@@ -134,9 +138,7 @@ policy's hidden closure state.
 
 `makeEnglishPolicy` freezes English rules and runs applicability, personal trust
 (safety), norm expectations, and outgoing conformance. Every active
-rule runs within the budget; applicability never prunes safety checks. The
-English adapter ignores `previous`: earlier findings might have been derived
-from an outgoing draft. Outgoing expectations use original history and facts
+rule runs within the budget; applicability never prunes safety checks. Outgoing expectations use original history and facts
 without the draft's text or id. Conformance then sees the draft
 and the independently established expectations.
 
@@ -147,9 +149,9 @@ applicability, expectation or conformance answer is an uncertain `pass`, the
 norm is still assessed by expectations and conformance, conformance assesses
 only the expectations the decision provider settled, and an uncertain subject reference is left
 out of its expectation. A failed or invalid provider answer holds in every stage.
-A rounded near-tie is valid: in a distribution reported in hundredths, Jev's
-stated choice may trail another option by the same tolerance its sum has. Such
-a trailing choice is uncertain.
+Provider probabilities use a tolerance of 0.02 for both their sum and the
+stated choice's distance from the maximum. Distributions remain unchanged;
+a stated choice that trails another option is uncertain.
 
 Every norm checks each admitted, runtime-visible message reference independently.
 Incoming messages may also anchor their own guidance. Private facts, withheld

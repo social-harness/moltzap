@@ -8,7 +8,7 @@ Personal firewall composition for code and English policies.
 
 ## Public surface
 
-### [`makeEnglishPolicy`](./english.ts#L268)
+### [`makeEnglishPolicy`](./english.ts#L249)
 
 _Variable_
 
@@ -80,7 +80,7 @@ flowchart TD
   C --> R[Return all findings and private stage trace]
 ```
 
-### [`makeFirewall`](./index.ts#L71)
+### [`makeFirewall`](./index.ts#L70)
 
 _Variable_
 
@@ -125,7 +125,7 @@ flowchart TD
   D --> R[Return to Client for enforcement]
 ```
 
-### [`makeJevDecisionProvider`](./jev.ts#L182)
+### [`makeJevDecisionProvider`](./jev.ts#L190)
 
 _Function_
 

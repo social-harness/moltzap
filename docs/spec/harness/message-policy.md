@@ -145,6 +145,10 @@ applicability, expectations or conformance:
   instruction carrying the rule, that choice and probability, and the rule's
   guidance.
 
+Provider probabilities use one tolerance of 0.02 for their sum and for the
+stated choice's distance from the maximum. The evaluator retains distributions
+unchanged; a choice below the maximum remains uncertain.
+
 A settled judgment keeps its effect: a conformance violation still asks for
 revision, and a settled expectation still becomes guidance.
 
@@ -156,9 +160,7 @@ The initial bounded catalog and authorized history are supplied in full within
 the configured budget. Required omitted context causes a hold. Retrieval
 pruning, summaries and caching are later experiments.
 
-The English adapter ignores previous middleware observations because they may be
-derived from an outgoing draft. Outgoing expectations also exclude the draft's
-text and id. Conformance sees the draft only after expectations
+Outgoing expectations exclude the draft's text and id. Conformance sees the draft only after expectations
 are established from the original evidence. The question edition and rules are
 part of the English revision; provider/model identity is captured in immutable installation provenance before
 inference, including attempts that fail or are interrupted. Experiment manifests

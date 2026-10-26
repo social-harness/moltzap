@@ -8,14 +8,13 @@ import {
 import { exactStruct } from "../../encoding/exact.js";
 import {
   decodeFrozen,
+  firewallCheckSchema,
   FirewallSettings,
   Message,
   MessageContext,
   MiddlewareObservation,
-  NormExpectation,
   PrivateCheckTrace,
   RuleDescription,
-  UncertainNormGuidance,
 } from "../evaluator/index.js";
 import { retainedFirewallRefusal } from "../outcome/index.js";
 
@@ -35,19 +34,28 @@ const retainedFirewallReason = Schema.Union(
   retainedFirewallRefusal,
 );
 
-/** A retained autonomy rule decodes as safety metadata without installation authority. */
-const retainedRule = Schema.Struct({
-  ...RuleDescription.fields,
-  kind: Schema.transform(
-    Schema.Literal("safety", "norm", "autonomy"),
-    RuleDescription.fields.kind,
-    {
-      strict: true,
-      decode: (kind) => (kind === "autonomy" ? ("safety" as const) : kind),
-      encode: (kind) => kind,
-    },
-  ),
-});
+/** Historical descriptions discard inert metadata and decode autonomy as safety. */
+const retainedRule = Schema.transform(
+  Schema.Struct({
+    ...RuleDescription.fields,
+    source: Schema.optional(Schema.Unknown),
+    kind: Schema.transform(
+      Schema.Literal("safety", "norm", "autonomy"),
+      RuleDescription.fields.kind,
+      {
+        strict: true,
+        decode: (kind) => (kind === "autonomy" ? ("safety" as const) : kind),
+        encode: (kind) => kind,
+      },
+    ),
+  }),
+  Schema.Struct(RuleDescription.fields),
+  {
+    strict: true,
+    decode: (rule) => Struct.omit(rule, "source"),
+    encode: (rule) => rule,
+  },
+);
 
 /** The optional historical context field is discarded before projection or encoding. */
 const retainedContext = Schema.transform(
@@ -135,64 +143,34 @@ const firewallAuditInput = exactStruct({
   terminal: Schema.Boolean,
 });
 
-const middlewareFailure = Schema.Struct({
-  _tag: Schema.Literal("MiddlewareError"),
-  reason: Schema.Literal(
-    "unavailable",
-    "timeout",
-    "invalid-result",
-    "budget",
-    "defect",
-  ),
-});
-
-/** Retained results keep private traces and judgments distinct from store admission. */
+/** Retained approval findings keep their settled marker during projection. */
 const currentAuditResult = exactStruct({
-  judgment: Schema.Literal("allow", "block", "hold", "revise"),
-  reason: retainedFirewallReason,
-  feedback: Schema.Array(
-    Schema.Struct({
-      nextAction: Schema.Literal("revise", "wait", "stop", "seek-approval"),
-      text: Schema.String,
-    }),
-  ),
-  guidance: Schema.Array(
-    Schema.Union(
-      Schema.Struct({
-        ...NormExpectation.fields,
-        middlewareId: Schema.String,
-        instruction: Schema.String,
-      }),
-      UncertainNormGuidance,
-    ),
-  ),
+  ...firewallCheckSchema.fields,
   checks: Schema.Array(
     Schema.Struct({
-      ...MiddlewareObservation.fields,
+      ...firewallCheckSchema.fields.checks.value.fields,
       findings: Schema.Array(currentFinding),
-      /** Wall-clock subtraction can be negative after a clock adjustment. */
-      elapsedMilliseconds: Schema.Finite,
-      failure: Schema.optional(middlewareFailure),
-      trace: Schema.optional(PrivateCheckTrace),
     }),
   ),
 });
 
 /** Only the historical deciding approval reason gives an approval finding a settled hold. */
 const firewallAuditResult = Schema.transform(
-  exactStruct({
-    ...currentAuditResult.fields,
-    reason: Schema.Union(
-      Schema.Literal("approval-required"),
-      retainedFirewallReason,
-    ),
-    checks: Schema.Array(
-      Schema.Struct({
-        ...currentAuditResult.fields.checks.value.fields,
-        findings: Schema.Array(retainedFinding),
-      }),
-    ),
-  }),
+  Schema.encodedSchema(
+    exactStruct({
+      ...currentAuditResult.fields,
+      reason: Schema.Union(
+        Schema.Literal("approval-required"),
+        retainedFirewallReason,
+      ),
+      checks: Schema.Array(
+        Schema.Struct({
+          ...currentAuditResult.fields.checks.value.fields,
+          findings: Schema.Array(retainedFinding),
+        }),
+      ),
+    }),
+  ),
   currentAuditResult,
   {
     strict: true,

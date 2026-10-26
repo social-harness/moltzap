@@ -10,11 +10,11 @@ import {
 } from "../../communication/store/index.js";
 import { exactStruct } from "../../encoding/exact.js";
 import {
+  buildFirewall,
   captureRegistration,
   decodeFirewallAuditEntry,
   type FirewallOptions,
   type InstalledFirewall,
-  installFirewall,
 } from "../admission/index.js";
 import {
   type DecidingRule,
@@ -132,7 +132,7 @@ const captureOptions = Effect.fn("capturePolicyOptions")(function* (
     captureRegistration,
     { concurrency: 1 },
   );
-  const base = yield* installFirewall({ ...options, incoming, outgoing });
+  const base = yield* buildFirewall({ ...options, incoming, outgoing });
   return {
     base,
     fixed: {
@@ -164,7 +164,7 @@ function buildPolicy(options: CapturedOptions, rules: readonly EnglishRule[]) {
       settings: options.english.settings,
       fixedRuleIds: options.english.fixedRules.map((rule) => rule.id),
     });
-    return yield* installFirewall({
+    return yield* buildFirewall({
       ...options.fixed,
       incoming: [...options.fixed.incoming, english],
       outgoing: [...options.fixed.outgoing, english],
@@ -237,7 +237,7 @@ function validateIds(
 interface PolicyState {
   rules: typeof editableDocumentSchema.Type;
   readonly fixedRuleIds: readonly string[];
-  active: InstalledFirewall;
+  active: Omit<InstalledFirewall, "current" | "policy">;
 }
 
 /** Persist-before-swap is uninterruptible; cancellation cannot split desired and active state. */
@@ -282,14 +282,27 @@ export const installEditableFirewall = Effect.fn("installEditableFirewall")(
         gate.withPermits(1)(updatePolicy(captured, store, state, request)),
       decisions: (request) => readDecisions(store, request),
     };
-    return Object.freeze({
-      ...active,
-      permits: captured.base.permits,
-      current: () => state.active,
-      policy,
-    }) satisfies InstalledFirewall;
+    return liveInstallation(state, captured.base.permits, policy);
   },
 );
+
+/** Live handles follow owner edits; captured handles keep one installation throughout a check. */
+function liveInstallation(
+  state: PolicyState,
+  permits: Effect.Semaphore,
+  policy: FirewallPolicyOperations,
+): InstalledFirewall {
+  const current = (): InstalledFirewall => {
+    const snapshot: InstalledFirewall = Object.freeze({
+      ...state.active,
+      permits,
+      current: () => snapshot,
+      policy,
+    });
+    return snapshot;
+  };
+  return Object.freeze({ ...current(), current });
+}
 
 /** Startup writes only a new or changed document and records the migrated ids atomically. */
 function persistStartupRules(

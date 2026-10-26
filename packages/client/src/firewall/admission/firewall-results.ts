@@ -11,7 +11,6 @@ import type {
   AgentAddress,
   MessageAddressInput,
 } from "../../communication/records/values.js";
-import type { FirewallCheck, Message } from "../evaluator/index.js";
 import { ResultProvenance } from "../../communication/collectives/index.js";
 import {
   renderCollectiveResult,
@@ -28,6 +27,11 @@ import {
   type FirewallRequestAdmission,
   MAXIMUM_RUNTIME_ITEM_BYTES,
 } from "../../communication/store/index.js";
+import {
+  type FirewallCheck,
+  firewallCheckSchema,
+  type Message,
+} from "../evaluator/index.js";
 import {
   ENDPOINT_SENDER,
   type LocalGuidance,
@@ -48,17 +52,10 @@ import {
   mintCheckId,
   refusalReason,
 } from "./firewall-checks.js";
-const firewallReason: Schema.Schema<FirewallCheck["reason"]> = Schema.Literal(
-  "eligible",
-  "prohibited",
-  "unresolved-evidence",
-  "check-unavailable",
-  "norm-violation",
-);
 const retainedFirewallReason = Schema.Union(
   Schema.Literal("eligible"),
   retainedFirewallRefusal,
-).pipe(Schema.compose(firewallReason));
+).pipe(Schema.compose(firewallCheckSchema.fields.reason));
 
 /** The window of a check with no history: a result's missing record, or a failure. */
 const EMPTY_WINDOW = {
@@ -118,7 +115,7 @@ export const checkLocalItem = (
  * reason for holds.
  */
 const retainedJudgment = Schema.Struct({
-  judgment: Schema.Literal("allow", "block", "hold", "revise"),
+  judgment: firewallCheckSchema.fields.judgment,
   reason: retainedFirewallReason,
 });
 
