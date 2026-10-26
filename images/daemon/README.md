@@ -31,8 +31,9 @@ bash images/daemon/smoke.sh social-harness-daemon:local
 
 Prepare `daemon.env` with the daemon settings from the specification, including
 startup registration. Set secret paths under `/run/sharness`, the state directory
-to `/var/lib/sharness`, and MCP port to `4319`. Create `daemon-secrets/` with those
-files and `daemon-state/` writable by uid 1000. Leave both MCP credential file
+to `/var/lib/sharness/state`, and MCP port to `4319`. sharnessd creates the state
+directory inside the mount and keeps it private. Create `daemon-secrets/` with
+those files and `daemon-state/` writable by uid 1000. Leave both MCP credential file
 settings unset for trusted-local mode. The host connects over the shared loopback
 interface. Use a fresh anonymous launcher volume for each daemon container.
 Docker copies the image seed and launcher only when creating the volume, so do
@@ -65,8 +66,9 @@ startup probe before starting the host.
 
 The following Pod template excerpt assumes a `daemon-settings` ConfigMap, a
 `daemon-secrets` Secret and a `daemon-state` PersistentVolumeClaim. The ConfigMap
-sets the paths and port used in the Docker example. Supply your locally built
-images to your cluster. The seed init container populates `emptyDir`, which
+sets the paths and port used in the Docker example; `fsGroup` lets the daemon
+create its state directory on a new volume, whose root it does not own. Supply
+your locally built images to your cluster. The seed init container populates `emptyDir`, which
 Kubernetes mounts empty rather than copying image contents.
 
 ```yaml
