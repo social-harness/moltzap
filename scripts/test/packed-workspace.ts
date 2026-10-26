@@ -46,8 +46,6 @@ export type Archives = Readonly<Record<string, string>>;
 interface ConsumerInput {
   /** Scratch directory owned by the caller. */
   readonly temporaryRoot: string;
-  /** Source workspace the install must not reach. */
-  readonly workspaceRoot: string;
   readonly name: string;
   readonly archives: Archives;
   readonly dependencies?: Readonly<Record<string, string>>;

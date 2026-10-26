@@ -60,9 +60,7 @@
           "default",
           "^production",
           "{workspaceRoot}/eslint.shared.ts",
-          "{workspaceRoot}/scripts/test/packed-workspace.ts",
-          "{workspaceRoot}/scripts/repo/packages.ts",
-          "{workspaceRoot}/scripts/repo/json.ts",
+          "{workspaceRoot}/scripts/**/*.ts",
           "{workspaceRoot}/scripts/tsconfig.json",
           {
             "runtime": "node --version"
@@ -83,9 +81,7 @@
           "{workspaceRoot}/knip.json",
           "{workspaceRoot}/oxlint.json",
           "{workspaceRoot}/tsconfig.eslint.json",
-          "{workspaceRoot}/scripts/test/packed-workspace.ts",
-          "{workspaceRoot}/scripts/repo/packages.ts",
-          "{workspaceRoot}/scripts/repo/json.ts",
+          "{workspaceRoot}/scripts/**/*.ts",
           "{workspaceRoot}/scripts/tsconfig.json",
           {
             "runtime": "node --version"

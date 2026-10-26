@@ -23,8 +23,8 @@ Mintlify variables in `docs/docs.json` and reusable snippets under
 
 ## Flow diagrams
 
-Flow diagrams are Mermaid in JSDoc above the owning symbol. TypeDoc surfaces
-them in the API reference.
+Flow diagrams are Mermaid in JSDoc above the owning symbol.
+`pnpm docs:check:mermaid` checks them; TypeDoc displays them as code blocks.
 
 Change a flow → update its diagram in the same PR.
 

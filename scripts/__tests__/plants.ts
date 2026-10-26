@@ -1,4 +1,4 @@
-/** @file Reversible file and symlink mutations, the assertion recorder, and the Node runner shared by standalone gate tests. */
+/** @file Reversible file mutations, the assertion recorder, and the Node runner shared by standalone gate tests. */
 import { spawnSync } from "node:child_process";
 import {
   existsSync,

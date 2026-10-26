@@ -21,7 +21,6 @@ runGate("sharness-client-pack-", (temporaryRoot) =>
     );
     const consumerRoot = yield* installPackedConsumer({
       temporaryRoot,
-      workspaceRoot,
       name: "sharness-client-packed-consumer",
       archives,
     });

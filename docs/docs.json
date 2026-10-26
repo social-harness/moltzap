@@ -104,20 +104,12 @@
   },
   "redirects": [
     {
-      "source": "/modules/client/delivery",
-      "destination": "/spec/harness/client"
-    },
-    {
-      "source": "/modules/client/endpoint/harness-endpoint",
-      "destination": "/spec/harness/client"
-    },
-    {
-      "source": "/modules/client/service",
+      "source": "/modules/:path*",
       "destination": "/spec/harness/client"
     }
   ],
   "variables": {
-    "node-version-range": ">=22.19.0",
+    "node-version-range": "22.19.0",
     "openclaw-min-version": "2026.10.3"
   }
 }

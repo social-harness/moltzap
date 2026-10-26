@@ -29,19 +29,14 @@
     "blockTags": [
       "@file",
       "@failure",
-      "@error",
       "@param",
       "@returns",
       "@throws",
       "@example",
       "@deprecated",
       "@see",
-      "@remarks",
       "@internal",
-      "@since",
-      "@module",
-      "@relatedNotification",
-      "@triggeredBy"
+      "@module"
     ]
   },
   "outputs": [

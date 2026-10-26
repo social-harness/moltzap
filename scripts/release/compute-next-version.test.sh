@@ -47,7 +47,7 @@ export PATH="$MOCK_DIR:$PATH"
 cleanup() { rm -rf "$MOCK_DIR"; }
 trap cleanup EXIT
 
-# The packages publish.yml passes as RELEASE_PACKAGES.
+# Package names supplied to the release version planner.
 RELEASED="client openclaw-channel"
 
 echo "--- Test 1: No existing versions ---"

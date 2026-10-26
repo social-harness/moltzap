@@ -49,7 +49,6 @@ runGate("sharness-two-agents-example-", (temporaryRoot) =>
     );
     const consumerRoot = yield* installPackedConsumer({
       temporaryRoot,
-      workspaceRoot,
       name: "sharness-two-agents-example",
       archives,
       dependencies: Object.fromEntries(
