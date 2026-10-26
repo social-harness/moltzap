@@ -197,7 +197,13 @@ export function rootEslintConfig(tsconfigRootDir: string) {
   ]);
   return [
     {
-      ignores: [".claude/**", ".repos/**", "packages/**", "tests/**"],
+      ignores: [
+        ".claude/**",
+        ".repos/**",
+        "packages/**",
+        "tests/**",
+        "images/**",
+      ],
     },
     packageIgnores,
     makeStrictBlock(
@@ -207,6 +213,46 @@ export function rootEslintConfig(tsconfigRootDir: string) {
     ),
     makeEslintDisableCommentRules(languageOptions),
     configModuleRules,
+  ];
+}
+
+/**
+ * Image bootstrap programs run on Node built-ins before runtime packages are
+ * installed. Their process fixtures use node:test's Promise-native boundary.
+ */
+export function agentImageEslintConfig(tsconfigRootDir: string) {
+  return [
+    ...integrationEslintConfig(tsconfigRootDir),
+    {
+      files: ["**/*.ts"],
+      rules: {
+        "agent-code-guard/async-keyword": "off",
+        "agent-code-guard/promise-type": "off",
+        "agent-code-guard/no-raw-throw-new-error": "off",
+        "agent-code-guard/prefer-effect-platform": "off",
+        "agent-code-guard/no-process-env-at-runtime": "off",
+        "@typescript-eslint/no-floating-promises": [
+          "error",
+          {
+            allowForKnownSafeCalls: [
+              {
+                from: "package",
+                package: "node:test",
+                name: ["describe", "it", "suite", "test"],
+              },
+            ],
+          },
+        ],
+      },
+    },
+    {
+      files: ["**/*.test.ts"],
+      rules: {
+        "agent-code-guard/no-example-only-tests": "off",
+        "agent-code-guard/no-hardcoded-assertion-literals": "off",
+        "sonarjs/no-os-command-from-path": "off",
+      },
+    },
   ];
 }
 

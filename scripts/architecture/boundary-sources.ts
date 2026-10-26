@@ -49,6 +49,7 @@ interface ProductEntrySite {
 const SKIPPED_DIRECTORIES: ReadonlySet<string> = new Set([
   "dist",
   "node_modules",
+  ".workspace",
 ]);
 
 const CODE_EXTENSIONS: ReadonlySet<string> = new Set([
@@ -197,6 +198,57 @@ export function checkIntegrationImports(run: BoundaryRun): number {
   }
   checkIntegrationConfiguration(run, root);
   return files.length;
+}
+
+/** Image tooling consumes published products and keeps product source out of its runtime. */
+export function checkImageImports(run: BoundaryRun): number {
+  const root = path.join(run.repo, "images");
+  const files = walkFiles(
+    root,
+    (name) => CODE_EXTENSIONS.has(path.extname(name)),
+    SKIPPED_DIRECTORIES,
+  );
+  for (const file of files) {
+    const text = readFileSync(file, "utf8");
+    checkImageSourceImports(run, file, text);
+  }
+  return files.length;
+}
+
+/** Build scripts may copy source artifacts but runtime imports stay on public entries. */
+function checkImageSourceImports(
+  run: BoundaryRun,
+  file: string,
+  text: string,
+): void {
+  for (const input of importSpecifiers(text)) {
+    const specifier = input.specifier;
+    if (
+      specifier.startsWith("@social-harness/") ||
+      (specifier.startsWith("@moltzap/") &&
+        !isIntegrationProductImport(specifier))
+    ) {
+      fail(
+        run,
+        file,
+        lineAt(text, input.index),
+        `agent images must consume public product exports ("${specifier}")`,
+      );
+    }
+    if (
+      specifier.startsWith(".") &&
+      path
+        .resolve(path.dirname(file), specifier)
+        .startsWith(run.packagesRoot + path.sep)
+    ) {
+      fail(
+        run,
+        file,
+        lineAt(text, input.index),
+        "agent images must not import product source by relative path",
+      );
+    }
+  }
 }
 
 /** Manifest commands and compiler settings cannot hide internal resolution. */

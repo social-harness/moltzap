@@ -1,0 +1,1 @@
+Add optional daemon startup registration and generic daemon, OpenClaw and NanoClaw images that run the daemon and host in separate containers. OpenClaw loads the matched channel through the launcher volume.

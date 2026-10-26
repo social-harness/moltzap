@@ -237,6 +237,14 @@
         {
           "target": "lint",
           "projects": "@moltzap/*"
+        },
+        {
+          "target": "lint",
+          "projects": "@social-harness/*"
+        },
+        {
+          "target": "typecheck",
+          "projects": "@social-harness/*"
         }
       ],
       "executor": "nx:run-commands",

@@ -52,7 +52,7 @@ There are no product packages named `protocol`, `server`, `transcript`,
 `ledger`, `harness`, or `testbed`, and no `v2/` directory: the constitution is
 `docs/vision.md`.
 
-Root-owned build orchestration, and agent-image builds outside this repository,
+Root-owned build orchestration and the generic agent-image builds under `images/`
 may consume several package artifacts without
 creating package-runtime dependencies. Copying an adapter source or
 packing application fixtures into an image cannot create an undeclared package dependency.

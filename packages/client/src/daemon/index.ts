@@ -95,7 +95,7 @@ export namespace Daemon {
 
   /** Closed startup phase with sanitized configuration details. */
   export class StartupError extends Data.TaggedError("DaemonStartupError")<{
-    readonly phase: "configuration" | "storage" | "listener";
+    readonly phase: "configuration" | "storage" | "listener" | "registration";
     readonly reason?:
       | "outbox-too-old"
       | "newer-schema"

@@ -92,6 +92,37 @@ const loadsExactConfiguration = () =>
     );
   });
 
+const registrationSettings = new Map([
+  ["SHARNESS_REGISTRATION_AGENT_NAME", "alice"],
+  ["SHARNESS_REGISTRATION_OPERATION_ID", "opn_AAAAAAAAAAAAAAAAAAAAAA"],
+  ["SHARNESS_REGISTRATION_PRINCIPAL_ID", "prn_AAAAAAAAAAAAAAAAAAAAAA"],
+]);
+
+const loadsRegistration = () =>
+  Effect.gen(function* () {
+    const configuration = yield* loadConfiguration(
+      temporaryDirectory(),
+      registrationSettings,
+    );
+    expect(configuration.registration).toEqual({
+      agentName: "alice",
+      operationId: "opn_AAAAAAAAAAAAAAAAAAAAAA",
+      principalId: "prn_AAAAAAAAAAAAAAAAAAAAAA",
+    });
+    for (const name of registrationSettings.keys()) {
+      const partial = new Map(registrationSettings);
+      partial.delete(name);
+      expect(
+        yield* failureReason(loadConfiguration(temporaryDirectory(), partial)),
+      ).toBe("environment");
+      const invalid = new Map(registrationSettings);
+      invalid.set(name, "");
+      expect(
+        yield* failureReason(loadConfiguration(temporaryDirectory(), invalid)),
+      ).toBe("environment");
+    }
+  });
+
 const rejectsInvalidEnvironment = () =>
   Effect.gen(function* () {
     const directory = temporaryDirectory();
@@ -355,6 +386,13 @@ const rejectsMissingAuthority = () =>
     expect(yield* failureReason(bootstrap)).toBe("mcp-owner-credential-file");
   });
 // @agent-code-guard/regression-only: exact file bytes and distinct roles are the tunnel authority boundary.
+describe("startup registration configuration", () => {
+  it(
+    "loads a complete request and rejects partial or invalid settings",
+    loadsRegistration,
+  );
+});
+
 describe("MCP credential configuration", () => {
   it(
     "loads distinct redacted credentials and retains trusted-local default",

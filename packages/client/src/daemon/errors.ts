@@ -4,7 +4,7 @@ import { Data } from "effect";
 
 /** Closed private daemon failure projected onto the public startup phases. */
 export class DaemonRuntimeError extends Data.TaggedError("DaemonRuntimeError")<{
-  readonly phase: "storage" | "listener";
+  readonly phase: "storage" | "listener" | "registration";
   readonly reason?: "outbox-too-old";
 }> {}
 

@@ -41,11 +41,26 @@ interface ToolProject {
   readonly root: string;
   readonly targets: readonly string[];
   readonly dependencies: readonly PackageDir[];
+  readonly toolDependencies?: readonly string[];
 }
 
 /** Tool roots share the same graph contract in enforcement and gate fixtures. */
 export const TOOL_PROJECTS: readonly ToolProject[] = [
   INTEGRATION_TESTS,
+  ...["image-tests", "openclaw-agent", "nanoclaw-agent"].map((folder) => ({
+    name: `@social-harness/${folder}`,
+    root: folder === "image-tests" ? "images/tests" : `images/${folder}`,
+    targets:
+      folder === "image-tests"
+        ? ["test:live", "typecheck", "lint"]
+        : ["test", "test:live", "typecheck", "lint"],
+    toolDependencies:
+      folder === "image-tests" ? [] : ["@social-harness/image-tests"],
+    dependencies:
+      folder === "image-tests"
+        ? (["client", "registry", "router", "openclaw-channel"] as const)
+        : ([] as const),
+  })),
   {
     name: "workspace",
     root: "tools/workspace",
@@ -178,7 +193,10 @@ function checkToolNode(
     where: graph.label,
     what: `Nx dependencies for "${tool.name}" drifted`,
     actual: dependencyTargets(graph, tool.name),
-    wanted: tool.dependencies.map((dir) => FINAL_PACKAGES[dir].npmName),
+    wanted: [
+      ...tool.dependencies.map((dir) => FINAL_PACKAGES[dir].npmName),
+      ...(tool.toolDependencies ?? []),
+    ],
   });
 }
 

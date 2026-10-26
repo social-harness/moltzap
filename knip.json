@@ -103,6 +103,47 @@
       "ignoreDependencies": [
         "@electric-sql/pglite-socket"
       ]
+    },
+    "images/openclaw-agent": {
+      "entry": [
+        "*.test.ts",
+        "configure-channel.ts",
+        "patch-openclaw.ts"
+      ],
+      "project": [
+        "*.ts"
+      ],
+      "ignoreDependencies": [
+        "openclaw"
+      ]
+    },
+    "images/nanoclaw-agent": {
+      "entry": [
+        "*.test.ts",
+        "entrypoint.ts",
+        "prepare.ts",
+        "preload.ts",
+        "process-driver.ts",
+        "integration-probe.ts"
+      ],
+      "project": [
+        "*.ts"
+      ]
+    },
+    "images/tests": {
+      "entry": [
+        "*.test.ts"
+      ],
+      "project": [
+        "*.ts"
+      ],
+      "ignoreDependencies": [
+        "@moltzap/openclaw-channel",
+        "@moltzap/registry",
+        "@moltzap/router",
+        "@electric-sql/pglite",
+        "@electric-sql/pglite-socket"
+      ]
     }
   },
   "ignoreIssues": {

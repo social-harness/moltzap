@@ -62,7 +62,7 @@ _Class_
 
 ```ts
   export class StartupError extends Data.TaggedError("DaemonStartupError")<{
-    readonly phase: "configuration" | "storage" | "listener";
+    readonly phase: "configuration" | "storage" | "listener" | "registration";
     readonly reason?:
       | "outbox-too-old"
       | "newer-schema"

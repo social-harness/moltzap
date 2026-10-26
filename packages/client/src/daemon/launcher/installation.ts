@@ -184,6 +184,9 @@ export const install = Effect.fn("Launcher.install")(
       `${fileName(release.releasePackage)}-${release.version}`,
     );
     yield* installInto(prefix, packages, release.registry);
+    const fs = yield* FileSystem.FileSystem;
+    // eslint-disable-next-line sonarjs/file-permissions -- This directory holds only installed public package code shared with another host user.
+    yield* fs.chmod(path.dirname(prefix), 0o755);
     const manifest = yield* installedManifest(prefix, release.releasePackage);
     return recordOf(release.releasePackage, prefix, manifest, packages);
   },
@@ -205,6 +208,14 @@ export const lockDirectory = Effect.fn("Launcher.lockDirectory")(function* (
   yield* fs
     .makeDirectory(directory, { recursive: true })
     .pipe(Effect.mapError(() => recordFailure(directory)));
+  const directoryInfo = yield* fs
+    .stat(directory)
+    .pipe(Effect.mapError(() => recordFailure(directory)));
+  if ((directoryInfo.mode & 0o555) !== 0o555) {
+    yield* fs
+      .chmod(directory, directoryInfo.mode | 0o555)
+      .pipe(Effect.mapError(() => recordFailure(directory)));
+  }
   const holder = yield* lockHolder(lock);
   if (holder !== undefined) {
     return yield* launcherError(
@@ -228,6 +239,7 @@ export const pointCurrent = Effect.fn("Launcher.pointCurrent")(
   function* (directory: string, prefix: string) {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
+    yield* readableRelease(prefix);
     const link = path.join(directory, CURRENT_LINK);
     const temporary = `${link}.tmp`;
     yield* fs.remove(temporary, { force: true });
@@ -236,6 +248,27 @@ export const pointCurrent = Effect.fn("Launcher.pointCurrent")(
   },
   Effect.mapError((failure) => launcherError("record", failure.message)),
 );
+
+/** Package code contains no secrets and must load from a host running as another user. */
+function readableRelease(prefix: string) {
+  return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const entries = [
+      "",
+      ...(yield* fs.readDirectory(prefix, { recursive: true })),
+    ];
+    for (const entry of entries) {
+      const target = path.join(prefix, entry);
+      const info = yield* fs.stat(target);
+      const read =
+        info.type === "Directory" || (info.mode & 0o111) !== 0 ? 0o555 : 0o444;
+      if ((info.mode & read) !== read) {
+        yield* fs.chmod(target, info.mode | read);
+      }
+    }
+  });
+}
 
 /**
  * Removes every installed prefix and cached tarball in `directory` that

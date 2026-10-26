@@ -98,6 +98,7 @@ function main(): void {
       manifestAt(`packages/${dir}/package.json`),
     ),
     manifestAt(`${INTEGRATION_TESTS.root}/package.json`),
+    ...imageManifests(),
   ];
   const examples = exampleManifests();
 
@@ -150,6 +151,16 @@ function stringRecord(
 
 function manifestAt(where: string): Manifest {
   return { where, manifest: readJsonObject(path.join(repo, where)) };
+}
+
+function imageManifests(): readonly Manifest[] {
+  return readdirIfPresent(path.join(repo, "images"))
+    .filter(
+      (name) =>
+        !name.startsWith(".") &&
+        existsSync(path.join(repo, "images", name, "package.json")),
+    )
+    .map((name) => manifestAt(`images/${name}/package.json`));
 }
 
 function exampleManifests(): readonly Manifest[] {

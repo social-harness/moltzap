@@ -26,6 +26,7 @@ import { checkNxGraphArgument } from "./boundary-nx-graph.ts";
 import { type BoundaryRun, failOnSetDrift } from "./boundary-run.ts";
 import {
   checkFinalImports,
+  checkImageImports,
   checkIntegrationImports,
   checkLayerVocabulary,
   checkSharedSourceRules,
@@ -53,6 +54,7 @@ const publishedVersions = checkProductManifests(run);
 checkReleaseSet(run, publishedVersions);
 const finalSourceCount = checkFinalImports(run);
 const integrationSourceCount = checkIntegrationImports(run);
+const imageSourceCount = checkImageImports(run);
 checkNxGraphArgument(run, process.argv.slice(2));
 
 if (run.failures.length > 0) {
@@ -64,7 +66,7 @@ if (run.failures.length > 0) {
 }
 
 console.log(
-  `[check-architecture-boundaries] OK — ${sourceCount} package TypeScript sources, ${finalSourceCount} final-package code files, ${integrationSourceCount} integration code files, exact product static graph, ${publishedVersions.size} published manifests at ${[...new Set(publishedVersions.values())].join(", ")}, and ${vocabularyCount} product non-documentation files scanned at compatibility version ${String(compatibilityVersion)}`,
+  `[check-architecture-boundaries] OK — ${sourceCount} package TypeScript sources, ${finalSourceCount} final-package code files, ${integrationSourceCount} integration code files, ${imageSourceCount} image code files, exact product static graph, ${publishedVersions.size} published manifests at ${[...new Set(publishedVersions.values())].join(", ")}, and ${vocabularyCount} product non-documentation files scanned at compatibility version ${String(compatibilityVersion)}`,
 );
 
 function packageDirectories(packagesRoot: string): readonly string[] {

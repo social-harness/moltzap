@@ -22,11 +22,15 @@ import {
 import { WIRE_VERSION } from "../identity/wire-version.js";
 import { packageVersion } from "../release/index.js";
 import { DaemonRuntimeError, runtimeFailure } from "./errors.js";
-import { makeDaemonManagementOperations } from "./management/index.js";
+import {
+  type DaemonManagementOperations,
+  makeDaemonManagementOperations,
+} from "./management/index.js";
 import {
   type DaemonStartup,
   makeDaemon,
   type ProtocolEdges,
+  type RunningDaemon,
 } from "./runtime/index.js";
 
 /** Closed daemon startup and supervision failure. */
@@ -104,22 +108,17 @@ function runDaemonResources(
     });
     return yield* Effect.gen(function* () {
       yield* daemon.activateAtStart;
-      const handler = yield* dependencies
-        .makeHandler({
-          implementation: DAEMON_IMPLEMENTATION,
-          operations: Object.freeze({
-            ...management,
-            ...(input.firewall?.policy === undefined
-              ? {}
-              : { policy: input.firewall.policy }),
-            ...daemon.deliveryOperations,
-            protocolActive: daemon.protocolActive,
-          }),
-          credentials: input.bootstrap.mcpCredentials,
-          eventStore: daemon.eventStore,
-          onSubscriptionActiveChange: daemon.subscriptionChanged,
-        })
-        .pipe(Effect.mapError(() => runtimeFailure("storage")));
+      yield* registerAtStart(
+        management,
+        daemon.readRegistration().kind === "active",
+        input.bootstrap.configuration.registration,
+      );
+      const handler = yield* makeHandler(
+        input,
+        dependencies,
+        management,
+        daemon,
+      );
       yield* daemon.installHandler(handler);
       yield* daemon.runSubscriptions.pipe(Effect.forkScoped);
       yield* dependencies
@@ -134,6 +133,50 @@ function runDaemonResources(
       return yield* daemon.awaitFailure;
     }).pipe(Effect.raceFirst(daemon.awaitFailure));
   });
+}
+
+/** The handler shares the daemon's delivery operations and fixed bootstrap credentials. */
+function makeHandler(
+  input: DaemonStartup,
+  dependencies: DaemonRuntimeDependencies,
+  management: DaemonManagementOperations,
+  daemon: RunningDaemon,
+) {
+  return dependencies
+    .makeHandler({
+      implementation: DAEMON_IMPLEMENTATION,
+      operations: Object.freeze({
+        ...management,
+        ...(input.firewall?.policy === undefined
+          ? {}
+          : { policy: input.firewall.policy }),
+        ...daemon.deliveryOperations,
+        protocolActive: daemon.protocolActive,
+      }),
+      credentials: input.bootstrap.mcpCredentials,
+      eventStore: daemon.eventStore,
+      onSubscriptionActiveChange: daemon.subscriptionChanged,
+    })
+    .pipe(Effect.mapError(() => runtimeFailure("storage")));
+}
+
+/** The existing management operation commits and activates a new registration before MCP listens. */
+function registerAtStart(
+  management: DaemonManagementOperations,
+  active: boolean,
+  request?: Parameters<DaemonManagementOperations["register"]>[0],
+) {
+  if (request === undefined || active) {
+    return Effect.void;
+  }
+  return management.register(request).pipe(
+    Effect.mapError(() => runtimeFailure("registration")),
+    Effect.flatMap((result) =>
+      result.kind === "registered"
+        ? Effect.void
+        : Effect.fail(runtimeFailure("registration")),
+    ),
+  );
 }
 
 /** An unset export path leaves certified history in endpoint-owned storage. */
