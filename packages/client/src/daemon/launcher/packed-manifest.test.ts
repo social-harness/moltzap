@@ -1,14 +1,10 @@
 /** @file Reading the manifest a package tarball carries from its bytes. */
 
-import { HttpClient, HttpClientResponse } from "@effect/platform";
 import { effect as it } from "@effect/vitest";
 import { Effect, Exit } from "effect";
-import { createHash } from "node:crypto";
 import { gzipSync } from "node:zlib";
-import { describe, expect, vi } from "vitest";
-import { integrityOf } from "./integrity.js";
+import { describe, expect } from "vitest";
 import { readPackedManifest } from "./packed-manifest.js";
-import { verifyProvenance } from "./provenance.js";
 
 /** A gzipped ustar archive holding `files`, as `npm pack` lays one out. */
 const tarball = (files: Readonly<Record<string, string>>): Uint8Array => {
@@ -62,85 +58,3 @@ describe("a packed manifest", () => {
       }
     }));
 });
-
-/** Sigstore cryptography is independent of the signed manifest field binding exercised here. */
-vi.mock("sigstore", () => ({ verify: () => Promise.resolve() }));
-
-/** A signed subject binds the fixture bundle to the exact package bytes. */
-const attestationResponse = (
-  name: string,
-  version: string,
-  bytes: Uint8Array,
-) => {
-  const subject = {
-    name: `pkg:npm/%40moltzap/${name.slice("@moltzap/".length)}@${version}`,
-    digest: { sha512: createHash("sha512").update(bytes).digest("hex") },
-  };
-  const payload = Buffer.from(JSON.stringify({ subject: [subject] })).toString(
-    "base64",
-  );
-  return Response.json({
-    attestations: [
-      {
-        predicateType: "https://slsa.dev/provenance/v1",
-        bundle: {
-          mediaType: "application/vnd.dev.sigstore.bundle.v0.3+json",
-          verificationMaterial: {
-            certificate: { rawBytes: "AQ==" },
-            tlogEntries: [],
-          },
-          dsseEnvelope: {
-            payloadType: "application/vnd.in-toto+json",
-            payload,
-            signatures: [{ sig: "AQ==", keyid: "fixture" }],
-          },
-        },
-      },
-    ],
-  });
-};
-
-it.each([
-  { name: "@moltzap/identity", packedWire: "2026.1019.2", accepted: true },
-  { name: "@moltzap/identity", packedWire: "2026.1019.1", accepted: false },
-  {
-    name: "@moltzap/social-harness",
-    packedWire: "2026.1019.2",
-    accepted: false,
-  },
-])(
-  "binds legacy wire metadata only for the signed Identity manifest: $name $packedWire",
-  ({ name, packedWire, accepted }) =>
-    Effect.gen(function* () {
-      const version = "2026.1025.1";
-      const bytes = tarball({
-        "package/package.json": JSON.stringify({
-          name,
-          version,
-          moltzapWireVersion: packedWire,
-        }),
-      });
-      const http = HttpClient.make((request) =>
-        Effect.succeed(
-          HttpClientResponse.fromWeb(
-            request,
-            attestationResponse(name, version, bytes),
-          ),
-        ),
-      );
-      const exit = yield* verifyProvenance(
-        {
-          name,
-          version,
-          siblings: {},
-          wireVersion: "2026.1019.2",
-          integrity: integrityOf(bytes),
-          tarball: "https://registry.test/package.tgz",
-          attestations: "https://registry.test/attestations",
-        },
-        bytes,
-        { tufCachePath: "/unused" },
-      ).pipe(Effect.provideService(HttpClient.HttpClient, http), Effect.exit);
-      expect(Exit.isSuccess(exit)).toBe(accepted);
-    }),
-);

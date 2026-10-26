@@ -16,7 +16,7 @@ import {
 import { Effect, Option, Schema, Stream } from "effect";
 import { launcherError, type LauncherError } from "./errors.js";
 import { integrityOf } from "./integrity.js";
-import { DAEMON_PACKAGE, PRE_FOLD_IDENTITY_PACKAGE } from "./npm.js";
+import { DAEMON_PACKAGE } from "./npm.js";
 
 const RECORD_FORMAT = "org.social-harness/launcher-record/v1";
 
@@ -69,7 +69,6 @@ const manifestSchema = Schema.Struct({
   name: Schema.String,
   version: Schema.String,
   sharnessHostCodeHash: Schema.optional(Schema.String),
-  sharnessWireVersion: Schema.optional(Schema.String),
   exports: Schema.optional(Schema.Unknown),
 });
 
@@ -310,32 +309,21 @@ export const pruneReleases = Effect.fn("Launcher.pruneReleases")(
 
 /**
  * The wire versions the daemon installed under `prefix` admits, read from
- * the Client root or the pre-fold Identity root, or an `integrity` failure.
+ * the Client root, or an `integrity` failure.
  */
 export const liveWireVersions = Effect.fn("Launcher.liveWireVersions")(
   function* (prefix: string) {
     const path = yield* Path.Path;
-    const readWindow = (name: string) =>
-      Effect.gen(function* () {
-        const manifest = yield* installedManifest(prefix, name);
-        const entry = yield* Schema.decodeUnknown(clientExports)(
-          manifest.exports,
-        );
-        const module = path.join(
-          prefix,
-          "node_modules",
-          name,
-          entry["."].import,
-        );
-        const loaded: unknown = yield* Effect.tryPromise(() => import(module));
-        return yield* Schema.decodeUnknown(liveWindow)(loaded);
-      }).pipe(Effect.withSpan("Launcher.readInstalledWireWindow"));
-    const client = yield* installedManifest(prefix, DAEMON_PACKAGE);
-    const window = yield* readWindow(
-      client.sharnessWireVersion === undefined
-        ? PRE_FOLD_IDENTITY_PACKAGE
-        : DAEMON_PACKAGE,
+    const manifest = yield* installedManifest(prefix, DAEMON_PACKAGE);
+    const entry = yield* Schema.decodeUnknown(clientExports)(manifest.exports);
+    const module = path.join(
+      prefix,
+      "node_modules",
+      DAEMON_PACKAGE,
+      entry["."].import,
     );
+    const loaded: unknown = yield* Effect.tryPromise(() => import(module));
+    const window = yield* Schema.decodeUnknown(liveWindow)(loaded);
     return window.LIVE_WIRE_VERSIONS;
   },
   Effect.mapError(() =>
