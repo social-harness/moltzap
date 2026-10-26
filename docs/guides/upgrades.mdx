@@ -86,7 +86,7 @@ window, and never applies a reset release on its own. The
 
 2. Restart the launcher to upgrade. Its first stderr line names the release
    it runs, such as
-   `sharnessd-launcher: moved from <old version> to @moltzap/client@<new version>`,
+   `sharnessd-launcher: moved from <old version> to @moltzap/social-harness@<new version>`,
    or why it kept the recorded one.
 
 3. For an OpenClaw host, run `sharnessd-launcher prepare` before the gateway
@@ -105,7 +105,7 @@ the network.
 
 ### Release contains no daemon package
 
-The selected release closure has no `@moltzap/client` daemon package. The
+The selected release closure has no `@moltzap/social-harness` daemon package. The
 launcher keeps the recorded release. Choose a release whose closure includes
 Client, and ask the release maintainer to correct the published dependency pins.
 
