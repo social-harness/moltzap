@@ -186,6 +186,9 @@ Effect idiom, typed errors, exhaustive switches, and cast bans are enforced by
 `lint:sloppy-code-guard` and the `agent-code-guard` eslint rules. Read their
 output rather than a summary of it here.
 
+Package-local `safer-architecture.config.json` files are hand-maintained.
+`pnpm arch:check` runs safer-architecture-lsp against them.
+
 ## Tests
 
 - A change that touches a test file loads `google-swe-testing` first and

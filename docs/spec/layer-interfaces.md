@@ -387,8 +387,8 @@ stay private. Registry and Router ship as images built from
 by `pnpm image:keys`. The Registry image carries `pglite-server` for run-scoped
 and development databases.
 The integration-test workspace stays outside the product graph and release set.
-The published set derives from `FINAL_PACKAGES`; literal tool configuration is
-checked against that contract.
+Package manifests declare publication and dependency edges; the release
+workflow names the packages it publishes.
 
 Each reset release establishes fresh wire and storage baselines: `WIRE_VERSION`
 takes a value no earlier release emitted, the live and history sets contain
@@ -442,16 +442,8 @@ mismatches. Release notes mark each reset release with the phrase
 - Releases run from `main` through `.github/workflows/publish.yml` with npm
   provenance and name the service images in each release. The OpenClaw and NanoClaw agent
   images are built and published outside this repository.
-- `scripts/architecture/check-boundaries.ts` fails when a published manifest
-  is private, when its `engines.node` differs from the root `package.json`
-  range, when its version is not a calendar version, when a sibling edge is
-  not an exact `workspace:*` pin, when Registry, Router or the NanoClaw adapter is not private, or
-  when the release workflow's package list drifts from the published set, or when
-  the integration-test workspace changes its name, loses its private flag,
-  declared lanes, exact product dependency set (including Nx implicit edges), or
-  Knip root. It checks import and URL specifiers, internal-condition text,
-  and resolver configuration against the integration workspace rules. These
-  checks guard against accidental coupling and are not a security boundary.
+- Package manifests, pnpm's isolated `node_modules`, Node `exports`, Knip,
+  and package-local safer-architecture-lsp configurations enforce boundaries.
   The harness may launch product executables by path and start child
   compositions with product working directories. The
   Client and OpenClaw `test:pack` gates pack their published closures through

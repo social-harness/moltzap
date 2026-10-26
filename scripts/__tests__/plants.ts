@@ -2,11 +2,9 @@
 import { spawnSync } from "node:child_process";
 import {
   existsSync,
-  lstatSync,
   mkdirSync,
   readFileSync,
   rmSync,
-  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -58,17 +56,6 @@ export function plantFile(
   ensureParent(path);
   writeFileSync(path, source);
   planted.push(original === undefined ? { path } : { path, original });
-}
-
-/** Refuses existing entries, including dangling links, and records only a successfully created link. */
-export function plantSymlink(relativePath: string, target: string): void {
-  const path = resolve(workspaceRoot, relativePath);
-  if (lstatSync(path, { throwIfNoEntry: false }) !== undefined) {
-    throw new Error(`Plant path already exists: ${relativePath}`);
-  }
-  ensureParent(path);
-  symlinkSync(target, path);
-  planted.push({ path });
 }
 
 /** Created entries tolerate prior removal; existing files recover their exact original bytes. */

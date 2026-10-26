@@ -48,7 +48,7 @@ cleanup() { rm -rf "$MOCK_DIR"; }
 trap cleanup EXIT
 
 # The packages publish.yml passes as RELEASE_PACKAGES.
-RELEASED=$(node --input-type=module -e 'import { RELEASE_PACKAGES } from "./scripts/architecture/boundary-contract.ts"; console.log(RELEASE_PACKAGES.join(" "))')
+RELEASED="client openclaw-channel"
 
 echo "--- Test 1: No existing versions ---"
 export NPM_MOCK_RESPONSES='{"@moltzap/client":[]}'

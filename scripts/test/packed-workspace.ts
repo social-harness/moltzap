@@ -18,10 +18,7 @@ import { NodeContext, NodeRuntime } from "@effect/platform-node";
 import { Cause, Data, Effect, type ParseResult, Schema, Stream } from "effect";
 import { join, relative, resolve } from "node:path";
 import { parse } from "yaml";
-import {
-  FINAL_PACKAGES,
-  type PackageDir,
-} from "../architecture/boundary-contract.ts";
+import { productManifests } from "../repo/packages.ts";
 
 /** Services every pack gate step runs against. */
 export type GateServices =
@@ -213,7 +210,7 @@ export function runGate(
 }
 
 /**
- * Derive the packed closure and publishability from the source contract,
+ * Derive the packed closure and publishability from the source manifests,
  * independently of the tarballs being verified.
  * @param workspaceRoot Source workspace root.
  * @param entry Product whose transitive closure is packed.
@@ -222,32 +219,41 @@ export function runGate(
  */
 export function packProductClosure(
   workspaceRoot: string,
-  entry: PackageDir,
+  entry: string,
   temporaryRoot: string,
 ) {
-  const closure = new Set<PackageDir>();
-  function visit(dir: PackageDir): void {
-    if (closure.has(dir)) {
+  const products = productManifests(workspaceRoot);
+  const initial = products.find(({ dir }) => dir === entry);
+  if (initial === undefined) {
+    return Effect.fail(
+      new PackGateError({ message: `Unknown product ${entry}` }),
+    );
+  }
+  const closure = new Map<string, (typeof products)[number]>();
+  function visit(product: (typeof products)[number]): void {
+    if (closure.has(product.name)) {
       return;
     }
-    closure.add(dir);
-    for (const dependency of FINAL_PACKAGES[dir].deps) {
+    closure.set(product.name, product);
+    for (const dependency of products.filter((candidate) =>
+      Object.hasOwn(product.dependencies, candidate.name),
+    )) {
       visit(dependency);
     }
   }
-  visit(entry);
+  visit(initial);
   return packWorkspaceClosure(
     Object.fromEntries(
-      [...closure].map((dir) => [
-        FINAL_PACKAGES[dir].npmName,
+      [...closure.values()].map(({ dir, name }) => [
+        name,
         join(workspaceRoot, "packages", dir),
       ]),
     ),
     temporaryRoot,
     new Set(
-      [...closure]
-        .filter((dir) => FINAL_PACKAGES[dir].published)
-        .map((dir) => FINAL_PACKAGES[dir].npmName),
+      [...closure.values()]
+        .filter(({ published }) => published)
+        .map(({ name }) => name),
     ),
   );
 }
@@ -388,9 +394,8 @@ export function installPackedConsumer(
  * packed version.
  *
  * `publishable` is passed in rather than read off the packed manifest,
- * because a manifest compared against itself cannot fail. The boundary check
- * enforces the same rule on the source manifests; this one enforces it on
- * what `pnpm pack` actually produced, and those are different artifacts.
+ * because a manifest compared against itself cannot fail. Source manifests
+ * supply the publication policy for the archives that `pnpm pack` produces.
  * @param packageRoots Package name to source root.
  * @param temporaryRoot Scratch directory owned by the caller.
  * @param publishable Names that must pack publishable; every other name in

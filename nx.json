@@ -111,12 +111,6 @@
       "cache": true
     },
     "arch:check": {
-      "dependsOn": [
-        {
-          "target": "arch:config:generate",
-          "projects": "workspace"
-        }
-      ],
       "options": {
         "env": {
           "NODE_OPTIONS": "--max-old-space-size=8192"
@@ -124,8 +118,7 @@
       },
       "inputs": [
         "default",
-        "{projectRoot}/safer-architecture.config.json",
-        "{workspaceRoot}/scripts/architecture/check-package.ts"
+        "{projectRoot}/safer-architecture.config.json"
       ],
       "cache": true
     }

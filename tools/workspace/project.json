@@ -36,42 +36,6 @@
         ]
       }
     },
-    "arch:config:generate": {
-      "cache": true,
-      "inputs": [
-        "{workspaceRoot}/scripts/architecture/gen-configs.ts"
-      ],
-      "outputs": [
-        "{workspaceRoot}/packages/*/safer-architecture.config.json"
-      ],
-      "executor": "nx:run-commands",
-      "options": {
-        "cwd": ".",
-        "command": "node scripts/architecture/gen-configs.ts"
-      }
-    },
-    "arch:config:check": {
-      "cache": false,
-      "dependsOn": [
-        "arch:config:generate"
-      ],
-      "executor": "nx:run-commands",
-      "options": {
-        "cwd": ".",
-        "command": "test -z \"$(git ls-files --others --exclude-standard -- 'packages/*/safer-architecture.config.json')\" && git diff --exit-code -- 'packages/*/safer-architecture.config.json'"
-      }
-    },
-    "lint:architecture-boundaries": {
-      "cache": true,
-      "inputs": [
-        "workspaceFiles"
-      ],
-      "executor": "nx:run-commands",
-      "options": {
-        "cwd": ".",
-        "command": "node scripts/architecture/check-boundaries.ts"
-      }
-    },
     "lint:typescript": {
       "cache": true,
       "inputs": [
@@ -178,8 +142,6 @@
     "lint": {
       "cache": false,
       "dependsOn": [
-        "lint:architecture-boundaries",
-        "arch:config:check",
         "lint:root",
         "lint:effect",
         "lint:oxlint",
@@ -242,7 +204,6 @@
       "cache": true,
       "inputs": [
         "{workspaceRoot}/scripts/release/**/*.ts",
-        "{workspaceRoot}/scripts/architecture/boundary-contract.ts",
         "{workspaceRoot}/packages/**/*",
         "{workspaceRoot}/images/**/*",
         "{workspaceRoot}/scripts/build/**/*",

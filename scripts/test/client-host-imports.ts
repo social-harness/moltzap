@@ -2,12 +2,42 @@
 import type { FileSystem } from "@effect/platform";
 import { Effect } from "effect";
 import { dirname, relative, resolve } from "node:path";
-import { clientHostModules } from "../architecture/gen-configs.ts";
 import {
   type GateError,
   readText,
   requireCondition,
 } from "./packed-workspace.ts";
+
+/** Reviewed paths the packed root can load without daemon machinery. */
+const clientHostModules: ReadonlySet<string> = new Set([
+  "dist/index.js",
+  "dist/environment.js",
+  "package.json",
+  "dist/encoding/exact.js",
+  "dist/encoding/canonical-json.js",
+  "dist/encoding/identifier.js",
+  "dist/identity/agents.js",
+  "dist/identity/keys.js",
+  "dist/identity/cards.js",
+  "dist/identity/wire-version.js",
+  "dist/identity/bounded-cache.js",
+  "dist/communication/envelope/signed-message.js",
+  "dist/communication/envelope/wire-profile.js",
+  "dist/release/",
+  "dist/firewall/outcome/",
+  "dist/communication/records/values.js",
+  "dist/communication/store/types.js",
+  "dist/communication/conversations/errors.js",
+  "dist/communication/conversations/message.js",
+  "dist/communication/collectives/forms.js",
+  "dist/communication/collectives/inbound.js",
+  "dist/communication/collectives/message-text.js",
+  "dist/communication/collectives/render.js",
+  "dist/harness/protocol/operations.js",
+  "dist/harness/protocol/names.js",
+  "dist/harness/endpoint/",
+  "dist/harness/inbox/history-export.js",
+]);
 
 /**
  * Bare specifiers the packed root entry may import, matched exactly, so a

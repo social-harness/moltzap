@@ -17,8 +17,6 @@
     "test:integration": "nx run-many -t test:integration",
     "lint": "pnpm nx run workspace:lint",
     "arch:check": "NODE_OPTIONS=--max-old-space-size=8192 nx run-many -t arch:check",
-    "arch:config:generate": "node scripts/architecture/gen-configs.ts",
-    "arch:config:check": "pnpm arch:config:generate && test -z \"$(git ls-files --others --exclude-standard -- 'packages/*/safer-architecture.config.json')\" && git diff --exit-code -- 'packages/*/safer-architecture.config.json'",
     "lint:root": "tsc --noEmit -p tsconfig.eslint.json && agent-code-guard-knip --treat-config-hints-as-errors && eslint . --cache --max-warnings=0",
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",

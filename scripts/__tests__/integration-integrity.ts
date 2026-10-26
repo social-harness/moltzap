@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { INTEGRATION_INTEGRITY_CASES } from "./integration-boundary-cases.ts";
+import { INTEGRATION_INTEGRITY_CASES } from "./integration-integrity-cases.ts";
 import {
   plantBoundarySource,
   plantFile,

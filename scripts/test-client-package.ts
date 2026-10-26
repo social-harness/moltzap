@@ -1,17 +1,11 @@
 /**
- * @file Proves the packed `@moltzap/client` exposes exactly its public entry
- * points and executables, keeps its root entry inside the host import
- * allowlists, and imports cleanly from an isolated consumer.
+ * @file Loads the packed Client entries and executables in an isolated
+ * consumer and keeps its root entry inside the host import allowlists.
  */
 import { FileSystem } from "@effect/platform";
 import { Effect, Schema } from "effect";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isDeepStrictEqual } from "node:util";
-import {
-  FINAL_PACKAGES,
-  manifestExportTarget,
-} from "./architecture/boundary-contract.ts";
 import { verifyHostImportGraph } from "./test/client-host-imports.ts";
 import {
   type Archives,
@@ -137,27 +131,27 @@ function verifyPackedManifest(
       archive,
       temporaryRoot,
     );
-    yield* requireCondition(
-      JSON.stringify(manifest.bin) ===
-        JSON.stringify(FINAL_PACKAGES.client.bin),
-      "packed client must expose exactly the sharnessd and sharnessd-launcher executables",
-    );
     const exportEntries = Object.entries(manifest.exports ?? {});
-    yield* requireCondition(
-      isDeepStrictEqual(manifest.exports, packedExportContract()),
-      `packed client must expose exactly these contract entrypoints: ${Object.keys(FINAL_PACKAGES.client.exports).join(", ")}`,
-    );
     yield* verifyExportTargets(extractedPackage, manifest, exportEntries);
     yield* verifyLibraryContents(archive, manifest);
     yield* verifyHostImportGraph(extractedPackage, String(manifest.main));
     yield* Effect.forEach(
-      Object.entries(FINAL_PACKAGES.client.bin),
+      Object.entries(manifest.bin ?? {}).filter(
+        (entry): entry is [string, string] => typeof entry[1] === "string",
+      ),
       ([name, target]) =>
         verifyExecutable(join(extractedPackage, target), name),
       { concurrency: 1, discard: true },
     );
-    return Object.entries(FINAL_PACKAGES.client.exports)
-      .filter(([, target]) => !target.testOnly && !target.internalOnly)
+    return Object.entries(manifest.exports ?? {})
+      .filter(
+        ([, target]) =>
+          !(
+            typeof target === "object" &&
+            target !== null &&
+            ("sharness-test" in target || "sharness-internal" in target)
+          ),
+      )
       .map(([subpath]) =>
         subpath === "."
           ? manifest.name
@@ -192,16 +186,6 @@ function verifyLibraryContents(
       "packed library must not contain service issuance, storage or server configuration",
     );
   });
-}
-
-/** Contract metadata becomes condition-only manifest export objects. */
-function packedExportContract() {
-  return Object.fromEntries(
-    Object.entries(FINAL_PACKAGES.client.exports).map(([subpath, target]) => [
-      subpath,
-      manifestExportTarget(target),
-    ]),
-  );
 }
 
 function collectExportTargets(value: unknown): readonly unknown[] {

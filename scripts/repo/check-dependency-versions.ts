@@ -22,17 +22,13 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { parse } from "yaml";
 import {
-  FINAL_PACKAGE_DIRS,
-  FINAL_PACKAGES,
-  INTEGRATION_TESTS,
-} from "../architecture/boundary-contract.ts";
-import {
   isJsonObject,
   type JsonObject,
   objectAt,
   readJsonObject,
   stringAt,
-} from "../architecture/boundary-run.ts";
+} from "./json.ts";
+import { productManifests } from "./packages.ts";
 
 const INSTALLED_SECTIONS = [
   "dependencies",
@@ -43,6 +39,7 @@ const INSTALLED_SECTIONS = [
 const EFFECT_SCRIPT = "scripts/setup/prepare-effect.sh";
 
 const repo = process.cwd();
+const products = productManifests(repo);
 const failures: string[] = [];
 
 /** One package manifest and the repository-relative path failures name. */
@@ -94,10 +91,8 @@ function main(): void {
   const root = manifestAt("package.json");
   const workspaceManifests = [
     root,
-    ...FINAL_PACKAGE_DIRS.map((dir) =>
-      manifestAt(`packages/${dir}/package.json`),
-    ),
-    manifestAt(`${INTEGRATION_TESTS.root}/package.json`),
+    ...products.map(({ dir }) => manifestAt(`packages/${dir}/package.json`)),
+    manifestAt("tests/integration/package.json"),
   ];
   const examples = exampleManifests();
 
@@ -301,8 +296,8 @@ function checkEngineCopies(
   examples: readonly Manifest[],
 ): void {
   const copies = [
-    ...FINAL_PACKAGE_DIRS.map((dir) => ({
-      required: FINAL_PACKAGES[dir].published,
+    ...products.map(({ dir, published }) => ({
+      required: published,
       ...manifestAt(`packages/${dir}/package.json`),
     })),
     ...examples.map((example) => ({ required: true, ...example })),
