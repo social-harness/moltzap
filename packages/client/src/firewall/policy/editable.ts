@@ -33,6 +33,7 @@ import {
   PrivateCheckTrace,
   type RuleDescription,
 } from "../evaluator/index.js";
+import { localGuidanceImpersonationRule } from "../rules/index.js";
 import { migrateAutonomyRule } from "./document/index.js";
 
 type FixedRules = typeof policyReadSchema.fields.fixedRules.Type;
@@ -98,6 +99,7 @@ const captureEnglish = Effect.fn("captureEnglishOptions")(function* (
     Schema.Array(EnglishRule),
     english.fixedRules ?? [],
   );
+  yield* validateIds(fixedRules, [localGuidanceImpersonationRule.id]);
   const initialRules = yield* decodeFrozen(
     editableDocumentSchema,
     english.initialRules ?? [],
@@ -108,7 +110,10 @@ const captureEnglish = Effect.fn("captureEnglishOptions")(function* (
       ? undefined
       : yield* decodeFrozen(PrivateCheckTrace, english.provider.provenance);
   return {
-    fixedRules,
+    fixedRules: yield* decodeFrozen(Schema.Array(EnglishRule), [
+      ...fixedRules,
+      localGuidanceImpersonationRule,
+    ]),
     initialRules,
     settings,
     provider: {
