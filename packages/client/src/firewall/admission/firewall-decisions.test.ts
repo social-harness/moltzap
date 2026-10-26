@@ -1,7 +1,7 @@
 /** @file The owner decisions feed explains each checked message through real Client storage. */
 
 import { scopedLive as it } from "@effect/vitest";
-import { Effect, Queue, Schema, Struct } from "effect";
+import { Effect, Logger, Queue, Schema, Struct } from "effect";
 import { expect } from "vitest";
 import type { InstalledFirewall } from "./firewall-checks.js";
 import { makeAuditFixture } from "../../__tests__/firewall-audit-fixtures.js";
@@ -468,6 +468,10 @@ const migratedEditableRules = [
     kind: "safety",
     text: legacy.text,
     guidance: legacy.guidance,
+    feedback: {
+      nextAction: "stop",
+      text: `This message needs your owner's review under rule ${legacy.id} and stays held. Revise it or stop.`,
+    },
   },
 ];
 /** Enforcing checks withhold a matching text in either direction. */
@@ -521,6 +525,33 @@ const migratedFilePolicy = decodeMessagePolicy(
   }),
 );
 
+function installLoggedMigration(
+  configuration: FirewallOptions,
+  subject: Fixture,
+) {
+  return Effect.gen(function* () {
+    const messages: unknown[] = [];
+    const installed = yield* installEditableFirewall(
+      configuration,
+      subject.store,
+    ).pipe(
+      Effect.provide(
+        Logger.replace(
+          Logger.defaultLogger,
+          Logger.make(({ message }) => {
+            messages.push(message);
+          }),
+        ),
+      ),
+    );
+    expect(messages.flat()).toEqual([
+      `Message policy migrated autonomy rules to safety: ${legacy.id}`,
+      `Message policy dropped incompatible autonomy feedback: ${legacy.id}`,
+    ]);
+    return installed;
+  });
+}
+
 it.each(["incoming", "outgoing"] as const)(
   "migrates editable autonomy to safety and holds %s messages",
   (direction) =>
@@ -533,10 +564,7 @@ it.each(["incoming", "outgoing"] as const)(
         [],
         english(decisionProvider("unresolved"), {}),
       );
-      const installed = yield* installEditableFirewall(
-        configuration,
-        subject.store,
-      );
+      const installed = yield* installLoggedMigration(configuration, subject);
       expect((yield* installed.policy.read()).rules).toEqual(
         migratedEditableRules,
       );
@@ -555,7 +583,7 @@ it.each(["incoming", "outgoing"] as const)(
         },
       ]);
       expect(feed.activations).toMatchObject([
-        { addedRuleIds: [legacy.id], removedRuleIds: [] },
+        { addedRuleIds: [legacy.id], removedRuleIds: [legacy.id] },
       ]);
       const restarted = yield* installEditableFirewall(
         configuration,
@@ -724,7 +752,7 @@ const retainedEnglishAudit = Effect.gen(function* () {
           format: englishPolicyFormat,
           data: JSON.stringify({ fixedRuleIds: [legacyRule.id] }),
         },
-        rules: [legacyRule],
+        rules: [legacyRule, { id: "evidence", kind: "safety" }],
       })),
     },
   };
@@ -742,7 +770,7 @@ const retainedEnglishAudit = Effect.gen(function* () {
 });
 
 /** A historical English hold is read through the persisted decisions feed. */
-function readRetainedEnglishAudit(subject: Fixture) {
+function readRetainedEnglishAudit(subject: Fixture, unresolved = false) {
   return Effect.gen(function* () {
     const { audit, legacyRule, input, result } = yield* retainedEnglishAudit;
     const checkId = "historical-approval";
@@ -757,7 +785,25 @@ function readRetainedEnglishAudit(subject: Fixture) {
       {
         checkId,
         admit: false,
-        canonicalResult: yield* encodeRuntimeValue(result),
+        canonicalResult: yield* encodeRuntimeValue(
+          unresolved
+            ? {
+                ...result,
+                reason: "unresolved-evidence",
+                checks: result.checks.map((check) => ({
+                  ...check,
+                  findings: [
+                    ...check.findings,
+                    {
+                      ruleId: "evidence",
+                      outcome: "hold",
+                      reason: "unresolved-evidence",
+                    },
+                  ],
+                })),
+              }
+            : result,
+        ),
       },
       audit.canonicalCandidate,
     );
@@ -805,6 +851,41 @@ it("reads historical approval holds through the audit and decisions feed", () =>
         outcome: "hold",
         cause: "judgment",
         decidedBy: [{ ruleId: legacyRule.id, from: "fixed" }],
+      },
+    ]);
+  }));
+
+it("attributes a retained evidence hold to its unresolved finding rather than an approval finding", () =>
+  Effect.gen(function* () {
+    const subject = yield* fixture;
+    const { decoded, legacyRule } = yield* readRetainedEnglishAudit(
+      subject,
+      true,
+    );
+    expect(decoded.result).toMatchObject({
+      reason: "unresolved-evidence",
+      checks: [
+        {
+          findings: [
+            { ruleId: legacyRule.id, outcome: "not-applicable" },
+            {
+              ruleId: "evidence",
+              outcome: "hold",
+              reason: "unresolved-evidence",
+            },
+          ],
+        },
+      ],
+    });
+    const installed = yield* installEditableFirewall(
+      options([]),
+      subject.store,
+    );
+    expect((yield* installed.policy.decisions({})).decisions).toMatchObject([
+      {
+        outcome: "hold",
+        cause: "uncertain",
+        decidedBy: [{ ruleId: "evidence", from: "editable" }],
       },
     ]);
   }));

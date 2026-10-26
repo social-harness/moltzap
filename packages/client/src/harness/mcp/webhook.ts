@@ -56,27 +56,19 @@ const encodeItemEvent = (entry: InboxEntry, timestamp: number) =>
       name: INBOX_ITEM_EVENT,
       timestamp: new Date(timestamp).toISOString(),
       cursor: null,
-    };
-    const body = JSON.stringify({
-      ...envelope,
-      data: {
-        kind: "item",
-        item,
-        ...(guidance === undefined ? {} : { guidance }),
+    } as const;
+    return boundedItemEvent(
+      {
+        ...envelope,
+        data: {
+          kind: "item",
+          item,
+          ...(guidance === undefined ? {} : { guidance }),
+        },
       },
-    });
-    return Buffer.byteLength(body, "utf8") <= maximumEventBytes
-      ? body
-      : JSON.stringify({
-          ...envelope,
-          data: {
-            kind: "reference",
-            itemKind: item.kind,
-            bytes:
-              entry.canonicalItem.byteLength +
-              (entry.canonicalGuidance?.byteLength ?? 0),
-          },
-        });
+      entry.canonicalItem.byteLength +
+        (entry.canonicalGuidance?.byteLength ?? 0),
+    );
   }).pipe(Effect.withSpan("encodeItemEvent"));
 
 const maximumRetryDelay = 5 * 60_000;
@@ -126,13 +118,38 @@ const currentItemEvent = Schema.parseJson(
   }),
 );
 
+/** Both fresh and migrated callbacks fall back to a readable reference at the envelope bound. */
+function boundedItemEvent(
+  event: typeof currentItemEvent.Type,
+  bytes: number,
+): string {
+  const body = JSON.stringify(event);
+  return Buffer.byteLength(body, "utf8") <= maximumEventBytes
+    ? body
+    : JSON.stringify({
+        ...event,
+        data: { kind: "reference", itemKind: event.data.item.kind, bytes },
+      });
+}
+
 /** Only historical withheld refusals require new durable callback bytes. */
 const retainedOccurrenceBody = (body: string) =>
   Schema.decodeUnknown(currentItemEvent)(body).pipe(
     Effect.as(body),
     Effect.orElse(() =>
       Schema.decodeUnknown(retainedItemEvent)(body).pipe(
-        Effect.map((event) => JSON.stringify(event)),
+        Effect.map((event) =>
+          boundedItemEvent(
+            event,
+            Buffer.byteLength(JSON.stringify(event.data.item), "utf8") +
+              (event.data.guidance === undefined
+                ? 0
+                : Buffer.byteLength(
+                    JSON.stringify(event.data.guidance),
+                    "utf8",
+                  )),
+          ),
+        ),
       ),
     ),
     Effect.orElseSucceed(() => body),

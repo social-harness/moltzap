@@ -47,7 +47,7 @@ function decodeStoredRules(bytes: Uint8Array) {
   const migratedRuleIds: string[] = [];
   const retainedEditableRule = Schema.Union(
     policyReadSchema.fields.rules.value,
-    Schema.transform(
+    Schema.transformOrFail(
       exactStruct({
         id: EnglishRule.fields.id,
         text: EnglishRule.fields.text,
@@ -62,7 +62,8 @@ function decodeStoredRules(bytes: Uint8Array) {
           migratedRuleIds.push(rule.id);
           return migrateAutonomyRule(rule);
         },
-        encode: (rule) => ({ ...rule, kind: "autonomy" as const }),
+        encode: (rule) =>
+          Effect.succeed({ ...rule, kind: "autonomy" as const }),
       },
     ),
   );
@@ -315,16 +316,11 @@ function persistStartupRules(
             time: yield* Clock.currentTimeMillis,
             activeRevision,
             addedRuleIds: migratedRuleIds,
-            removedRuleIds: [],
+            removedRuleIds: migratedRuleIds,
           };
     yield* store
       .writeFirewallPolicy(encoded, activation)
       .pipe(Effect.mapError(persistenceFailure));
-    if (migratedRuleIds.length > 0) {
-      yield* Effect.logInfo(
-        `Message policy migrated autonomy rules to safety: ${migratedRuleIds.join(", ")}`,
-      );
-    }
   });
 }
 

@@ -562,9 +562,12 @@ The daemon owns a durable editable document of at most 256 rules. Each rule has
 `guidance` template. On load, persisted `autonomy` rules and message-policy
 `english.fixedRules` and `initialRules` of that kind become `safety` rules,
 keeping their ids, text and guidance. Feedback is retained only when its next
-action is allowed for safety findings; otherwise the default feedback applies.
-The daemon records an activation listing the migrated editable rule ids and
-logs those ids at startup. New edits accept only `norm` and `safety`. Rule ids must be unique in the editable document and cannot
+action is allowed for safety findings. Missing or incompatible feedback becomes
+registered `stop` feedback: "This message needs your owner's review under rule
+<id> and stays held. Revise it or stop." The text uses the rule id.
+The daemon records an activation listing migrated editable rule ids in both
+`addedRuleIds` and `removedRuleIds`. At load, editable and message-policy file
+migrations log migrated ids and ids whose incompatible feedback was dropped. New edits accept only `norm` and `safety`. Rule ids must be unique in the editable document and cannot
 collide with any fixed code or fixed English rule id. Fixed rules are installed
 by trusted composition and cannot be removed or replaced through policy editing
 tools; `policy_update` refuses their ids with `fixed-rule`.
@@ -806,10 +809,12 @@ Missing or malformed records, truncation, or a mismatched count or digest make
 the artifact incomplete. Check records preserve semantic input, installation
 metadata, private provider traces, judgment and applied disposition subject to
 these retained-value decode mappings: contexts discard the historical
-`authorization` field; `approval-required` reasons and findings become settled
-`hold` findings with `unresolved-evidence`; and retained `autonomy` registration
-kinds become `safety`. For English rules, the decisions feed reports those
-settled findings with cause `judgment`. Retained collective-result projections and webhook outbox
+`authorization` field; `approval-required` result reasons become
+`unresolved-evidence`; and retained `autonomy` registration kinds become `safety`.
+An `approval-required` finding becomes a settled `hold` with
+`unresolved-evidence` only when the retained result reason is `approval-required`.
+Otherwise it becomes a non-deciding `not-applicable` finding. For English rules,
+the decisions feed reports settled findings with cause `judgment`. Retained collective-result projections and webhook outbox
 bodies map that historical refusal reason to `unresolved-evidence` before
 inbox delivery. New checks and exports use only the current values.
 Elapsed-millisecond telemetry preserves the retained finite number, including

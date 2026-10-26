@@ -79,33 +79,35 @@ const settledHold = Schema.Struct({
   reason: Schema.Literal("unresolved-evidence"),
   settled: Schema.Literal(true),
 });
-const retainedFinding = Schema.Union(
+const currentFinding = Schema.Union(
   settledHold,
   MiddlewareObservation.fields.findings.value,
-  Schema.transform(
-    Schema.Struct({
-      ruleId: Schema.NonEmptyTrimmedString,
-      outcome: Schema.Literal("approval-required").pipe(
-        Schema.compose(retainedFirewallRefusal),
-        Schema.compose(Schema.Literal("unresolved-evidence")),
-      ),
-    }),
-    settledHold,
-    {
-      strict: true,
-      decode: (finding) => ({
-        ruleId: finding.ruleId,
-        outcome: "hold" as const,
-        reason: finding.outcome,
-        settled: true as const,
-      }),
-      encode: (finding) => ({
-        ruleId: finding.ruleId,
-        outcome: "unresolved-evidence" as const,
-      }),
-    },
-  ),
 );
+
+const retainedFinding = Schema.Union(
+  currentFinding,
+  Schema.Struct({
+    ruleId: Schema.NonEmptyTrimmedString,
+    outcome: Schema.Literal("approval-required"),
+  }),
+);
+
+function migrateApprovalFinding(
+  finding: typeof retainedFinding.Type,
+  approvalDecided: boolean,
+): typeof currentFinding.Type {
+  if (finding.outcome !== "approval-required") {
+    return finding;
+  }
+  return approvalDecided
+    ? {
+        ruleId: finding.ruleId,
+        outcome: "hold",
+        reason: "unresolved-evidence",
+        settled: true,
+      }
+    : { ruleId: finding.ruleId, outcome: "not-applicable" };
+}
 
 /** Registration provenance is retained without giving it execution authority. */
 const firewallRegistration = Schema.Struct({
@@ -164,7 +166,7 @@ const middlewareFailure = Schema.Struct({
 });
 
 /** Retained results keep private traces and judgments distinct from store admission. */
-const firewallAuditResult = exactStruct({
+const currentAuditResult = exactStruct({
   judgment: Schema.Literal("allow", "block", "hold", "revise"),
   reason: retainedFirewallReason,
   feedback: Schema.Array(
@@ -186,7 +188,7 @@ const firewallAuditResult = exactStruct({
   checks: Schema.Array(
     Schema.Struct({
       ...MiddlewareObservation.fields,
-      findings: Schema.Array(retainedFinding),
+      findings: Schema.Array(currentFinding),
       /** Wall-clock subtraction can be negative after a clock adjustment. */
       elapsedMilliseconds: Schema.Finite,
       failure: Schema.optional(middlewareFailure),
@@ -194,6 +196,44 @@ const firewallAuditResult = exactStruct({
     }),
   ),
 });
+
+/** Only the historical deciding approval reason gives an approval finding a settled hold. */
+const firewallAuditResult = Schema.transform(
+  exactStruct({
+    ...currentAuditResult.fields,
+    reason: Schema.Union(
+      Schema.Literal("approval-required"),
+      retainedFirewallReason,
+    ),
+    checks: Schema.Array(
+      Schema.Struct({
+        ...currentAuditResult.fields.checks.value.fields,
+        findings: Schema.Array(retainedFinding),
+      }),
+    ),
+  }),
+  currentAuditResult,
+  {
+    strict: true,
+    decode: (result) => ({
+      ...result,
+      reason:
+        result.reason === "approval-required"
+          ? ("unresolved-evidence" as const)
+          : result.reason,
+      checks: result.checks.map((check) => ({
+        ...check,
+        findings: check.findings.map((finding) =>
+          migrateApprovalFinding(
+            finding,
+            result.reason === "approval-required",
+          ),
+        ),
+      })),
+    }),
+    encode: (result) => result,
+  },
+);
 
 /* eslint-disable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Effect Schemas share their domain names with the decoded operator values. */
 

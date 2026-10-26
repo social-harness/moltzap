@@ -10,9 +10,11 @@ and `policy_read` schemas accept only `safety` and `norm` rule kinds. The
 message-policy files (`english.fixedRules` and `initialRules`) and persisted
 editable documents migrate those rules to `safety`, preserving their ids, text
 and guidance. Feedback survives only when safety permits its next action;
-otherwise the default applies. Editable migrations persist and produce an
-activation and startup log listing the migrated ids. No `ask_user` guidance is
-added. Owner approval can be expressed through norm guidance and
+otherwise the rule registers `stop` feedback: “This message needs your owner's
+review under rule <id> and stays held. Revise it or stop.” Editable migrations
+persist and produce an activation listing each replaced id in both arrays.
+Editable and file migrations log migrated ids and ids whose incompatible feedback
+was dropped. No `ask_user` guidance is added. Owner approval can be expressed through norm guidance and
 `seek-approval` norm feedback.
 
 The default unresolved-evidence feedback is “Required policy evidence is missing
@@ -23,8 +25,12 @@ available and resend, or revise the message.” The `questionEdition` moves to
 `firewall-english-v2`, changing every English `activeRevision`.
 
 Retained audit v4 contexts discard `authorization`; historical
-`approval-required` judgments and findings decode as settled holds with
-`unresolved-evidence`, and retained autonomy registration kinds decode as
-`safety`. Retained collective-result projections and webhook outbox bodies map
+`approval-required` result reasons decode as `unresolved-evidence`; approval
+findings become settled holds only when that result reason decided the hold,
+and otherwise become non-deciding findings. Retained autonomy registration kinds
+decode as `safety`. Retained collective-result projections and webhook outbox bodies map
 that refusal reason to `unresolved-evidence` before delivery. New checks and
 exports use the current values.
+
+Downgrading to the previous release is unsupported once a check has run, because
+the previous release cannot read retained check inputs without `authorization`.

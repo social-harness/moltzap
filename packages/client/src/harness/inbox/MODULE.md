@@ -26,7 +26,7 @@ _Variable_
 export const HistoryExportRecord = Schema.Union(
   exactStruct({
     kind: Schema.Literal("inbound"),
-    item: InboundItem,
+    item: retainedInboundItem,
     at: Schema.DateTimeUtc,
   }),
   exactStruct({

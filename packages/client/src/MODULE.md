@@ -497,7 +497,7 @@ _Variable_
 export const HistoryExportRecord = Schema.Union(
   exactStruct({
     kind: Schema.Literal("inbound"),
-    item: InboundItem,
+    item: retainedInboundItem,
     at: Schema.DateTimeUtc,
   }),
   exactStruct({
@@ -1578,7 +1578,7 @@ export class RuleDescription extends Schema.Class<RuleDescription>(
 
 Runtime advice can only select templates registered by trusted composition.
 
-#### [`FirewallAuditRecord (type)`](./firewall/admission/firewall-values.ts#L247)
+#### [`FirewallAuditRecord (type)`](./firewall/admission/firewall-values.ts#L287)
 
 _TypeAlias_
 
@@ -1588,7 +1588,7 @@ export type FirewallAuditRecord = typeof FirewallAuditRecord.Type;
 
 Completion verifies the snapshot, not completion or delivery of each attempt.
 
-#### [`MessagePolicy (type)`](./firewall/policy/document/index.ts#L197)
+#### [`MessagePolicy (type)`](./firewall/policy/document/index.ts#L212)
 
 _TypeAlias_
 
@@ -1754,7 +1754,7 @@ export type SignedMessageDigest = typeof SignedMessageDigest.Type;
 
 Validated SignedMessage equality receipt.
 
-#### [`decodeMessagePolicy`](./firewall/policy/document/index.ts#L206)
+#### [`decodeMessagePolicy`](./firewall/policy/document/index.ts#L221)
 
 _Variable_
 
@@ -1782,7 +1782,7 @@ Decodes the text of a message-policy document, refusing any property it
 does not name, so a misspelled or newer setting never silently weakens the
 policy.
 
-#### [`FirewallAuditRecord (value)`](./firewall/admission/firewall-values.ts#L208)
+#### [`FirewallAuditRecord (value)`](./firewall/admission/firewall-values.ts#L248)
 
 _Variable_
 
@@ -1950,7 +1950,7 @@ flowchart TD
   D --> R[Return to Client for enforcement]
 ```
 
-#### [`MessagePolicy (value)`](./firewall/policy/document/index.ts#L173)
+#### [`MessagePolicy (value)`](./firewall/policy/document/index.ts#L188)
 
 _Variable_
 
