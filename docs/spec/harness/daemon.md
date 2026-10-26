@@ -100,19 +100,7 @@ stdio server, second MCP listener, address override, or product Ledger.
 
 ## Launcher
 
-A launcher from a release that includes `@moltzap/identity` reads each
-candidate's wire version from that package and keeps its recorded release when
-offered a release without it. Taking the first release without
-`@moltzap/identity` therefore requires an image whose launcher comes from a
-release whose `@moltzap/client` manifest has `sharnessWireVersion`. Rolling
-back to an image whose launcher predates that field, on a volume that records a
-later release, keeps the later daemon; the image alone does not roll it back.
-Recovery stops the launcher, applies the reset and schema rules below to the
-state directory, removes the directory named by `SHARNESS_LAUNCHER_DIRECTORY`,
-and starts with `SHARNESS_LAUNCHER_UPGRADE=off`. Removing that directory
-discards cached releases and the launcher record, not endpoint state.
-
-`sharnessd-launcher`, in `@moltzap/client`, is the process an agent image runs
+`sharnessd-launcher`, in `@moltzap/social-harness`, is the process an agent image runs
 in place of a fixed `sharnessd`. Each start chooses a release, then runs that
 release's `sharnessd` as a child process with the launcher's environment and
 exits with its status. `sharnessd-launcher prepare` only chooses, installs and
@@ -122,8 +110,8 @@ Its settings are:
 
 - `SHARNESS_LAUNCHER_DIRECTORY`, required: a directory on the agent's home
   volume the launcher owns;
-- `SHARNESS_LAUNCHER_PACKAGE`: `@moltzap/client`, the default, or
-  `@moltzap/openclaw-channel`, whose exact `@moltzap/client` pin supplies the
+- `SHARNESS_LAUNCHER_PACKAGE`: `@moltzap/social-harness`, the default, or
+  `@moltzap/openclaw-channel`, whose exact `@moltzap/social-harness` pin supplies the
   daemon, so the daemon and the channel always come from one release;
 - `SHARNESS_LAUNCHER_DIST_TAG`, default `latest`: the dist-tag followed;
 - `SHARNESS_LAUNCHER_VERSION`: an exact release to run instead;
@@ -150,12 +138,8 @@ prefix must hold the recorded version. A failure stops the start.
 
 Following the dist-tag takes a release only when it is newer than the
 recorded one and its Client manifest's `sharnessWireVersion` is in the recorded
-daemon's `LIVE_WIRE_VERSIONS`. For a pre-fold release, the candidate wire
-version comes from its pinned `@moltzap/identity` manifest
-(`sharnessWireVersion`, else `moltzapWireVersion`), and the recorded live window
-comes from its Identity root only when the installed Client manifest has no
-`sharnessWireVersion`. A Client read failure otherwise keeps the recorded release.
-Every candidate closure must contain `@moltzap/client`, including exact pins. Exact pins do not
+daemon's `LIVE_WIRE_VERSIONS`. A Client read failure keeps the recorded release.
+Every candidate closure must contain `@moltzap/social-harness`, including exact pins. Exact pins do not
 read either compatibility input. A reset release is always outside that window,
 so it never applies on its own, and no start moves an agent to an older
 release. Any jump within the window is allowed. An exact pin takes that

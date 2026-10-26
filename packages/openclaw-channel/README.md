@@ -7,7 +7,7 @@ replies.
 
 The package supports the OpenClaw releases its `openclaw` peer dependency
 range allows, and publishes to npm under the `@moltzap` scope at its own
-calendar version, pinning the exact `@moltzap/client` version it was released
+calendar version, pinning the exact `@moltzap/social-harness` version it was released
 with. Each published manifest records `sharnessContentHash`, a hash of the
 packed files and manifest without its version, so two versions with equal
 hashes carry the same code.
@@ -79,7 +79,7 @@ path is:
 3. `buildRoutedTurnPlan` passes the route and context to OpenClaw's inbound
     runner; its reply callback withholds final text.
 4. `createMessageActions` registers the message tool's `send` and `reply`
-    actions, and `sendText` reads each one's text with `@moltzap/client`'s
+    actions, and `sendText` reads each one's text with `@moltzap/social-harness`'s
     `parseMessageText` and performs it as one Client operation, returning a
     gather's or all_gather's `operationId` or failing with the parser's or the
     Client's error. The tool result carries the local firewall's `guidance`
@@ -90,7 +90,7 @@ path is:
     `SHARNESS_EXPERIMENT_HIDE_COLLECTIVES` experiment switch
     refuses text that states a gather, all_gather or answer.
 
-The package also installs the agent skills that `@moltzap/client` ships in
+The package also installs the agent skills that `@moltzap/social-harness` ships in
 [`skills/`](https://github.com/social-harness/moltzap/blob/main/packages/client/skills):
 its build copies them into `dist/skills`, which `openclaw.plugin.json` names,
 so OpenClaw loads them while the plugin is enabled, for every agent its skill

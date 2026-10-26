@@ -10,7 +10,7 @@ import { makeRegistryService } from "./client.js";
 export { OperationId, RegistryRegisterRequest } from "./contract.js";
 
 /** Bootstrap registration and immutable identity resolution. */
-export class Registry extends Context.Tag("@moltzap/client/Registry")<
+export class Registry extends Context.Tag("@moltzap/social-harness/Registry")<
   Registry,
   RegistryClientService
 >() {

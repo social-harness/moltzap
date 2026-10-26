@@ -263,7 +263,7 @@ jobs:
         env:
           MODE: ${{ steps.plan.outputs.mode }}
         run: |
-          WIRE_VERSION=$(node --input-type=module -e 'import { WIRE_VERSION } from "@moltzap/client"; console.log(WIRE_VERSION)')
+          WIRE_VERSION=$(node --input-type=module -e 'import { WIRE_VERSION } from "@moltzap/social-harness"; console.log(WIRE_VERSION)')
           jq --arg v "$WIRE_VERSION" --arg mode "$MODE" '
             if $mode == "bump" or has("sharnessWireVersion")
             then .sharnessWireVersion = $v else . end' package.json > tmp.json

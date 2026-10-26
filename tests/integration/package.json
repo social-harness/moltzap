@@ -38,7 +38,7 @@
         "cache": false,
         "executor": "nx:run-commands",
         "dependsOn": [
-          "@moltzap/client:build",
+          "@moltzap/social-harness:build",
           "@moltzap/registry:build",
           "@moltzap/router:build"
         ],
@@ -92,7 +92,7 @@
         "executor": "nx:run-commands",
         "cache": false,
         "dependsOn": [
-          "@moltzap/client:build"
+          "@moltzap/social-harness:build"
         ],
         "options": {
           "cwd": "tests/integration",
@@ -104,7 +104,7 @@
   "devDependencies": {
     "@moltzap/registry": "workspace:*",
     "@moltzap/router": "workspace:*",
-    "@moltzap/client": "workspace:*",
+    "@moltzap/social-harness": "workspace:*",
     "@moltzap/openclaw-channel": "workspace:*",
     "@electric-sql/pglite-socket": "catalog:",
     "@effect/platform": "catalog:",

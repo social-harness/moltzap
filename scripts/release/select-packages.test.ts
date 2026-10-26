@@ -44,10 +44,16 @@ const DIRS = ["client", "openclaw-channel"];
  * private services are workspace packages outside the release set.
  */
 const WORKSPACE_NAMES: ReadonlySet<string> = new Set(
-  [...DIRS, "nanoclaw-channel", "registry", "router"].map(
-    (dir) => `@moltzap/${dir}`,
-  ),
+  [...DIRS, "nanoclaw-channel", "registry", "router"].map(packageName),
 );
+/**
+ * The npm name of a package directory under `packages/`; the library's
+ * directory keeps the name `client`.
+ */
+function packageName(dir: string): string {
+  return dir === "client" ? "@moltzap/social-harness" : `@moltzap/${dir}`;
+}
+
 const DEPENDENCIES = Object.fromEntries(
   DIRS.map((dir) => [dir, dir === "client" ? [] : ["client"]]),
 );
@@ -55,13 +61,13 @@ const DEPENDENCIES = Object.fromEntries(
 const MANIFEST = {
   name: "@moltzap/openclaw-channel",
   version: PREVIOUS,
-  dependencies: { "@moltzap/client": PREVIOUS },
+  dependencies: { "@moltzap/social-harness": PREVIOUS },
 };
 const FILES = { "dist/index.js": "export {};\n", "openclaw.plugin.json": "{}" };
 
 const CHANNEL_MANIFEST = MANIFEST;
 const CLIENT_MANIFEST = {
-  name: "@moltzap/client",
+  name: "@moltzap/social-harness",
   version: PREVIOUS,
   exports: {
     ".": { types: "./dist/index.d.ts", import: "./dist/index.js" },
@@ -118,7 +124,7 @@ await test("an unchanged workspace publishes nothing", () => {
 
 await test("a version npm holds without a recorded hash is republished", () => {
   const { workspace } = fakeWorkspace({}, (name) =>
-    name === "@moltzap/client" ? { kind: "absent" } : undefined,
+    name === "@moltzap/social-harness" ? { kind: "absent" } : undefined,
   );
   assert.deepEqual(selectPackages(workspace, RELEASE, DIRS), {
     kind: "selected",
@@ -139,7 +145,7 @@ await test("a package listed before a sibling it depends on stops the selection"
     {
       kind: "out-of-order",
       message:
-        "openclaw-channel depends on @moltzap/client, which must come before it",
+        "openclaw-channel depends on @moltzap/social-harness, which must come before it",
     },
   );
   assert.equal(versions.get("openclaw-channel"), PREVIOUS);
@@ -169,7 +175,7 @@ await test("the content hash changes with any packed file or sibling pin", () =>
   assert.notEqual(hashOf(MANIFEST, { ...FILES, "dist/extra.js": "" }), base);
   assert.notEqual(
     hashOf(
-      { ...MANIFEST, dependencies: { "@moltzap/client": RELEASE } },
+      { ...MANIFEST, dependencies: { "@moltzap/social-harness": RELEASE } },
       FILES,
     ),
     base,
@@ -201,7 +207,7 @@ await test("a packed tarball hashes as its extracted package does", () => {
 });
 
 await test("npm's answers classify as a hash, absent, or unavailable", () => {
-  const subject = "@moltzap/client@2099.100.0";
+  const subject = "@moltzap/social-harness@2099.100.0";
   assert.deepEqual(
     classifyNpmView({ status: 0, stdout: '"sha256:a"\n', stderr: "" }, subject),
     { kind: "hash", hash: "sha256:a" },
@@ -263,7 +269,7 @@ await test("the host-code hash ignores sibling versions and pins", () => {
     JSON.stringify({
       ...CHANNEL_MANIFEST,
       version: RELEASE,
-      dependencies: { "@moltzap/client": RELEASE },
+      dependencies: { "@moltzap/social-harness": RELEASE },
     }),
   );
   writeFileSync(
@@ -321,17 +327,17 @@ function fakeWorkspace(
   const versions = new Map<string, string>(DIRS.map((dir) => [dir, PREVIOUS]));
   const published = new Map(
     DIRS.map((dir) => [
-      `@moltzap/${dir}@${PREVIOUS}`,
+      `${packageName(dir)}@${PREVIOUS}`,
       packedHash(dir, `${dir}-source`, () => PREVIOUS),
     ]),
   );
   const workspace: Workspace = {
     manifest: (dir): Manifest => ({
-      name: `@moltzap/${dir}`,
+      name: packageName(dir),
       version: versions.get(dir) ?? PREVIOUS,
       dependencies: Object.fromEntries(
         (DEPENDENCIES[dir] ?? []).map((sibling) => [
-          `@moltzap/${sibling}`,
+          packageName(sibling),
           "workspace:*",
         ]),
       ),
@@ -393,7 +399,7 @@ function hostPackages(): HostPackages {
   return {
     channel: packedDirectory(CHANNEL_MANIFEST, {
       "dist/plugin.js":
-        'import { acquireHarnessEndpoint } from "@moltzap/client";\nexport default acquireHarnessEndpoint;\n',
+        'import { acquireHarnessEndpoint } from "@moltzap/social-harness";\nexport default acquireHarnessEndpoint;\n',
       "openclaw.plugin.json": "{}",
     }),
     client: packedDirectory(CLIENT_MANIFEST, {
@@ -439,7 +445,7 @@ await test("packed channel declarations do not pull the Client service into the 
   const packages = hostPackages();
   writeFileSync(
     path.join(packages.channel, "dist/plugin.d.ts"),
-    'export * from "@moltzap/client/service";\n',
+    'export * from "@moltzap/social-harness/service";\n',
   );
   const before = hostHash(packages);
   writeFileSync(
@@ -464,7 +470,7 @@ await test("the host hash leaves sharness-internal subpaths inactive", () => {
   );
   writeFileSync(
     path.join(packages.channel, "dist/plugin.js"),
-    'import "@moltzap/client"; import "@moltzap/client/internal";\n',
+    'import "@moltzap/social-harness"; import "@moltzap/social-harness/internal";\n',
   );
   const before = hostHash(packages);
   writeFileSync(

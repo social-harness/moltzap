@@ -1,6 +1,6 @@
 /** @file Private admitted Registry operations and in-process RPC dispatch. */
 
-import type { AgentSigningAuthority } from "@moltzap/client";
+import type { AgentSigningAuthority } from "@moltzap/social-harness";
 import {
   Rpc,
   RpcClient,
@@ -8,7 +8,7 @@ import {
   RpcMiddleware,
   RpcServer,
 } from "@effect/rpc";
-import { httpErrors, registryContract } from "@moltzap/client/internal";
+import { httpErrors, registryContract } from "@moltzap/social-harness/internal";
 import {
   Context,
   Deferred,
@@ -30,18 +30,18 @@ interface BootstrapAdmission {
 }
 
 class BootstrapAdmissionContext extends Context.Tag(
-  "@moltzap/client/BootstrapAdmissionContext",
+  "@moltzap/social-harness/BootstrapAdmissionContext",
 )<BootstrapAdmissionContext, BootstrapAdmission>() {}
 
 const registryAdmissionTag: RpcMiddleware.TagClass<
   RegistryAdmission,
-  "@moltzap/client/RegistryAdmission",
+  "@moltzap/social-harness/RegistryAdmission",
   {
     readonly provides: typeof BootstrapAdmissionContext;
     readonly failure: typeof httpErrors.AuthenticationFailedError;
   }
 > = RpcMiddleware.Tag<RegistryAdmission>()(
-  "@moltzap/client/RegistryAdmission",
+  "@moltzap/social-harness/RegistryAdmission",
   {
     provides: BootstrapAdmissionContext,
     failure: httpErrors.AuthenticationFailedError,

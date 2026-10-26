@@ -1,6 +1,6 @@
 /** @file A requester and three members run all_gather operations through four real daemons. */
 
-import { CollectiveError } from "@moltzap/client";
+import { CollectiveError } from "@moltzap/social-harness";
 import { Effect } from "effect";
 import { expect, it } from "vitest";
 import { processTrace } from "./daemon-process-harness.js";

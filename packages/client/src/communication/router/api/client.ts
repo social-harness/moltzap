@@ -48,7 +48,7 @@ interface RouterClientSettings {
 }
 
 /** Opaque message acceptance and endpoint-wide bounded polling. */
-export class Router extends Context.Tag("@moltzap/client/Router")<
+export class Router extends Context.Tag("@moltzap/social-harness/Router")<
   Router,
   RouterClientService
 >() {

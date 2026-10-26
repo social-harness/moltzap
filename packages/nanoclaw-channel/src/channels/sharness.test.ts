@@ -1,6 +1,6 @@
 /** @file Adapter behavior through NanoClaw's registry and public endpoint capability. */
 
-import type * as ClientPublic from "@moltzap/client";
+import type * as ClientPublic from "@moltzap/social-harness";
 import {
   type acquireHarnessEndpoint,
   ConnectError,
@@ -12,7 +12,7 @@ import {
   renderCollectiveResult,
   renderLocalGuidance,
   SendError,
-} from "@moltzap/client";
+} from "@moltzap/social-harness";
 import { Deferred, Effect, Queue, Schema, Stream } from "effect";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ChannelRegistration, ChannelSetup } from "./adapter.js";
@@ -29,7 +29,7 @@ const boundary = vi.hoisted(() => ({
 vi.mock("./channel-registry.js", () => ({
   registerChannelAdapter: boundary.register,
 }));
-vi.mock("@moltzap/client", async (importOriginal) => ({
+vi.mock("@moltzap/social-harness", async (importOriginal) => ({
   ...(await importOriginal<typeof ClientPublic>()),
   acquireHarnessEndpoint: boundary.acquire,
 }));

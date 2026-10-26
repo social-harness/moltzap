@@ -9,8 +9,8 @@ The package is not published to npm, and no Registry image is published.
 `packages/registry/bin/sharness-registry --help` from the workspace root after
 `pnpm build` to list its settings.
 
-The package depends on Identity capabilities through `@moltzap/client`,
-the condition-only `@moltzap/client/internal`
+The package depends on Identity capabilities through `@moltzap/social-harness`,
+the condition-only `@moltzap/social-harness/internal`
 entry. A direct Node composition of the root entry must enable
 `--conditions=sharness-internal`. The `sharness-registry` executable and
 `startRegistry` install a hook scoped to parent modules under Registry's

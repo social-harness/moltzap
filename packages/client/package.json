@@ -1,5 +1,5 @@
 {
-  "name": "@moltzap/client",
+  "name": "@moltzap/social-harness",
   "version": "2026.1026.8",
   "description": "Social Harness endpoint runtime and harness boundary",
   "license": "Apache-2.0",
@@ -53,11 +53,11 @@
     "sharnessd-launcher": "./bin/sharnessd-launcher"
   },
   "scripts": {
-    "build": "nx run @moltzap/client:build",
-    "lint": "nx run @moltzap/client:lint",
+    "build": "nx run @moltzap/social-harness:build",
+    "lint": "nx run @moltzap/social-harness:lint",
     "test": "vitest run",
     "typecheck:tests": "tsc -p tsconfig.test.json",
-    "test:integration": "nx run @moltzap/client:test:integration"
+    "test:integration": "nx run @moltzap/social-harness:test:integration"
   },
   "nx": {
     "targets": {

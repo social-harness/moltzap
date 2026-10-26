@@ -11,13 +11,14 @@ import {
   AgentAddress,
   LIVE_WIRE_VERSIONS,
   WIRE_VERSION,
-} from "@moltzap/client";
-import { HISTORY_WIRE_VERSIONS } from "@moltzap/client/test";
+} from "@moltzap/social-harness";
+import { HISTORY_WIRE_VERSIONS } from "@moltzap/social-harness/test";
 import { Data, Effect, Fiber, Option, Schedule, Schema, Stream } from "effect";
 import { join, posix, resolve } from "node:path";
 import { expect, it, type TestContext } from "vitest";
 import {
   installPackedConsumer,
+  PackGateError,
   packWorkspaceClosure,
   runCommand,
 } from "../../../scripts/test/packed-workspace.js";
@@ -38,7 +39,7 @@ const RESET_SKIP_REASON =
   "No post-reset release is published; the mixed-release gate starts with the first release after the reset.";
 const workspaceRoot = resolve(import.meta.dirname, "../../..");
 const packages = {
-  "@moltzap/client": join(workspaceRoot, "packages/client"),
+  "@moltzap/social-harness": join(workspaceRoot, "packages/client"),
 };
 
 /**
@@ -88,9 +89,10 @@ function releaseWireVersion(
     Effect.map((closure) => ({
       name:
         closure[retiredIdentityPackage] === undefined
-          ? "@moltzap/client"
+          ? "@moltzap/social-harness"
           : retiredIdentityPackage,
-      version: closure[retiredIdentityPackage] ?? closure["@moltzap/client"],
+      version:
+        closure[retiredIdentityPackage] ?? closure["@moltzap/social-harness"],
     })),
     Effect.flatMap((identity) =>
       view([`${identity.name}@${identity.version}`]).pipe(
@@ -120,7 +122,7 @@ function releaseWireVersion(
         ? Effect.succeed(PRE_RESET_WIRE_VERSION)
         : Effect.fail(
             new ProcessTestError({
-              message: `${identity}, pinned by @moltzap/client@${version}, is missing published sharnessWireVersion metadata`,
+              message: `${identity}, pinned by @moltzap/social-harness@${version}, is missing published sharnessWireVersion metadata`,
             }),
           );
     }),
@@ -133,7 +135,7 @@ function releaseWireVersion(
  * product closure, each at the exact version its Client release pins.
  */
 function releaseClosure(version: string, view = npmView) {
-  return view([`@moltzap/client@${version}`, "dependencies"]).pipe(
+  return view([`@moltzap/social-harness@${version}`, "dependencies"]).pipe(
     Effect.flatMap(
       Schema.decodeUnknown(
         Schema.parseJson(
@@ -146,7 +148,7 @@ function releaseClosure(version: string, view = npmView) {
         ...Object.fromEntries(
           Object.entries(pins).filter(([name]) => name.startsWith("@moltzap/")),
         ),
-        "@moltzap/client": version,
+        "@moltzap/social-harness": version,
       }),
     ),
   );
@@ -187,14 +189,24 @@ function exchange(from: DaemonProcessFixture, to: DaemonProcessFixture) {
   );
 }
 
-/** Calendar releases use npm's semver ordering. */
-function publishedVersions() {
-  return npmView(["@moltzap/client", "versions"]).pipe(
-    Effect.flatMap(
-      Schema.decodeUnknown(Schema.parseJson(Schema.Array(Schema.String))),
+/** Calendar releases use npm's semver ordering; an unpublished name has no peers. */
+function publishedVersions(view = npmView) {
+  return view(["@moltzap/social-harness", "versions"]).pipe(
+    Effect.catchIf(
+      (error) => error instanceof Error && /\bE404\b/u.test(error.message),
+      () => Effect.succeed("[]"),
+    ),
+    Effect.flatMap((output) =>
+      Schema.decodeUnknown(
+        Schema.parseJson(
+          Schema.Union(Schema.Array(Schema.String), Schema.String),
+        ),
+      )(output.trim() === "" ? "[]" : output),
     ),
     Effect.map((versions) =>
-      versions.filter((version) => /^\d{4}\.\d{3,4}\.\d+$/u.test(version)),
+      (typeof versions === "string" ? [versions] : versions).filter((version) =>
+        /^\d{4}\.\d{3,4}\.\d+$/u.test(version),
+      ),
     ),
   );
 }
@@ -267,9 +279,7 @@ function selectReleases(
   return Effect.gen(function* () {
     const previous = versions.at(-1);
     if (previous === undefined) {
-      return yield* new ProcessTestError({
-        message: "npm returned no calendar releases",
-      });
+      return [];
     }
     const previousWireVersion = yield* readVersion(previous);
     if (!sets.history.includes(previousWireVersion)) {
@@ -501,7 +511,9 @@ const mixedRelease = Effect.scoped(
     const versions = yield* publishedVersions();
     const releases = yield* selectReleases(versions);
     if (releases.length === 0) {
-      return RESET_SKIP_REASON;
+      return versions.length === 0
+        ? "No calendar release is published under @moltzap/social-harness; the mixed-release gate starts after its first release."
+        : RESET_SKIP_REASON;
     }
     yield* runCommand("docker", ["version"]).pipe(
       inLeg("Docker, which runs the previous release's network"),
@@ -576,7 +588,7 @@ const PINNED_WIRE_VERSION = "2099.1.1";
 function publishedMetadata(identity: string) {
   return (args: readonly string[]) =>
     Effect.succeed(
-      args[0]?.startsWith("@moltzap/client@") === true
+      args[0]?.startsWith("@moltzap/social-harness@") === true
         ? JSON.stringify({
             [retiredIdentityPackage]: PINNED_IDENTITY,
             "@moltzap/router": "2099.2.0",
@@ -592,7 +604,7 @@ it("reads a Client release's wire version from the Identity version it pins", ()
       (args) =>
         Effect.succeed(
           JSON.stringify(
-            args[0] === "@moltzap/client@2099.101.0"
+            args[0] === "@moltzap/social-harness@2099.101.0"
               ? {
                   [retiredIdentityPackage]: PINNED_IDENTITY,
                   "@moltzap/router": "2099.2.0",
@@ -655,6 +667,58 @@ it("runs a single peer when the previous release is also the oldest live release
     ),
   ));
 
+it.each(["", "[]", '"0.0.0-bootstrap.0"', '["0.0.0-bootstrap.0"]'])(
+  "starts without peers when npm has no calendar history (%s)",
+  (output) =>
+    Effect.runPromise(
+      publishedVersions(() => Effect.succeed(output)).pipe(
+        Effect.flatMap((versions) => selectReleases(versions)),
+        Effect.provide(NodeContext.layer),
+        Effect.tap((releases) =>
+          Effect.sync(() => {
+            expect(releases).toEqual([]);
+          }),
+        ),
+        Effect.asVoid,
+      ),
+    ),
+);
+
+it("starts without peers when the package name is unpublished", () =>
+  Effect.runPromise(
+    publishedVersions(() =>
+      Effect.fail(new PackGateError({ message: '{"error":{"code":"E404"}}' })),
+    ).pipe(
+      Effect.flatMap((versions) => selectReleases(versions)),
+      Effect.provide(NodeContext.layer),
+      Effect.tap((releases) =>
+        Effect.sync(() => {
+          expect(releases).toEqual([]);
+        }),
+      ),
+      Effect.asVoid,
+    ),
+  ));
+
+it.each(['"2099.101.0"', '["0.0.0-bootstrap.0","2099.101.0"]'])(
+  "selects a published calendar peer after bootstrap (%s)",
+  (output) =>
+    Effect.runPromise(
+      publishedVersions(() => Effect.succeed(output)).pipe(
+        Effect.flatMap((versions) =>
+          selectReleases(versions, () => Effect.succeed(WIRE_VERSION)),
+        ),
+        Effect.provide(NodeContext.layer),
+        Effect.tap((releases) =>
+          Effect.sync(() => {
+            expect(releases).toEqual(["2099.101.0"]);
+          }),
+        ),
+        Effect.asVoid,
+      ),
+    ),
+);
+
 it("skips when the reset boundary places the previous release before the reset", () =>
   Effect.runPromise(
     selectReleases(
@@ -711,7 +775,7 @@ it.each(["2099.101.0", "2099.102.0"])(
           Effect.sync(() => {
             expect(error).toMatchObject({
               _tag: "ProcessTestError",
-              message: `${retiredIdentityPackage}@${PINNED_IDENTITY}, pinned by @moltzap/client@${version}, is missing published sharnessWireVersion metadata`,
+              message: `${retiredIdentityPackage}@${PINNED_IDENTITY}, pinned by @moltzap/social-harness@${version}, is missing published sharnessWireVersion metadata`,
             });
           }),
         ),

@@ -1,6 +1,6 @@
 /** @file Verified polling over the volatile feed, cursor codec, and bounded waiters. */
-import type { AgentId, LiveSignedMessage } from "@moltzap/client";
-import { httpErrors, routerContract } from "@moltzap/client/internal";
+import type { AgentId, LiveSignedMessage } from "@moltzap/social-harness";
+import { httpErrors, routerContract } from "@moltzap/social-harness/internal";
 import canonicalize from "canonicalize";
 import { Duration, Effect, Option, Schema } from "effect";
 import type { PollCursorCodec } from "./poll-cursor.js";

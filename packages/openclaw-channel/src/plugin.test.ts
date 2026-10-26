@@ -24,7 +24,7 @@ import {
   renderLocalGuidance,
   type SendInput,
   type SendResult,
-} from "@moltzap/client";
+} from "@moltzap/social-harness";
 import { Effect, Either, Encoding, Fiber, Schema, Stream } from "effect";
 import { join } from "node:path";
 import { beforeAll, describe, expect, vi, it as vitestIt } from "vitest";

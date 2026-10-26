@@ -39,7 +39,7 @@ runGate("sharness-client-pack-", (temporaryRoot) =>
         "--conditions=sharness-test",
         "--input-type=module",
         "-e",
-        'await import("@moltzap/client/test");',
+        'await import("@moltzap/social-harness/test");',
       ],
       {
         cwd: consumerRoot,
@@ -83,7 +83,7 @@ function verifyInternalResolution(consumerRoot: string) {
         "-e",
         `
 try {
-  await import("@moltzap/client/internal");
+  await import("@moltzap/social-harness/internal");
   throw new Error("internal entry resolved without its condition");
 } catch (error) {
   if (error.code !== "ERR_PACKAGE_PATH_NOT_EXPORTED") throw error;
@@ -98,7 +98,7 @@ try {
         "--conditions=sharness-internal",
         "--input-type=module",
         "-e",
-        'await import("@moltzap/client/internal");',
+        'await import("@moltzap/social-harness/internal");',
       ],
       { cwd: consumerRoot, env: { NODE_PATH: "" } },
     );

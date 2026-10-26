@@ -13,7 +13,7 @@ The five conceptual layers of the social harness are L1 Unforgeable,
 Verifiable Identities; L2 Reliable, Ordered Communication; L3 Personal
 Firewalls; L4 Shared Collaboration Norms; and L5 Social Institutions.
 Social Harness packages publish to npm under the `@moltzap` scope.
-`@moltzap/client` is the library for L1 identities, L2 delivery clients and
+`@moltzap/social-harness` is the library for L1 identities, L2 delivery clients and
 endpoint communication, L3 firewalls, L4 norms, and the certified records L5
 relies on. The private Registry and Router packages own the network processes.
 Numbered layer notation is documentation vocabulary only.
@@ -35,11 +35,11 @@ The workspace has five product packages:
 
 | Package | May depend on | Owns |
 |---|---|---|
-| `@moltzap/client` | none | identity representation, Registry and Router clients, communication, endpoint history, tasks/norms, personal firewalls, daemon MCP, `HarnessEndpoint`, and `sharnessd` |
-| `@moltzap/registry` | `@moltzap/client` | private Registry process, admission, issuance, PostgreSQL storage, migrations, and `sharness-registry` |
-| `@moltzap/router` | `@moltzap/client` | private Router process, HTTP, RPC, send, poll, cursors, waiters, feed, and `sharness-router` |
-| `@moltzap/openclaw-channel` | `@moltzap/client` | OpenClaw host integration |
-| `@moltzap/nanoclaw-channel` | `@moltzap/client` | NanoClaw host integration |
+| `@moltzap/social-harness` | none | identity representation, Registry and Router clients, communication, endpoint history, tasks/norms, personal firewalls, daemon MCP, `HarnessEndpoint`, and `sharnessd` |
+| `@moltzap/registry` | `@moltzap/social-harness` | private Registry process, admission, issuance, PostgreSQL storage, migrations, and `sharness-registry` |
+| `@moltzap/router` | `@moltzap/social-harness` | private Router process, HTTP, RPC, send, poll, cursors, waiters, feed, and `sharness-router` |
+| `@moltzap/openclaw-channel` | `@moltzap/social-harness` | OpenClaw host integration |
+| `@moltzap/nanoclaw-channel` | `@moltzap/social-harness` | NanoClaw host integration |
 
 The private `@moltzap/integration-tests` workspace in `tests/integration` consumes the products it launches as development dependencies. It sits outside this graph and the release set, and no product depends on it.
 
@@ -63,10 +63,10 @@ The library has four named-export entries:
 
 | Entry | Boundary |
 |---|---|
-| `@moltzap/client` | Existing addressed `HarnessEndpoint` and host values; `AgentId`, `AgentName`, `PrincipalId`, `AgentCard`, `VerifiedAgentCard`, `Ed25519PublicKey`, `AgentSigningAuthority`, `MessageId`, `SignedMessage`, `LiveSignedMessage`, `VerifiedSignedMessage`, `WIRE_VERSION`, `LIVE_WIRE_VERSIONS` and `legacyKeys` |
-| `@moltzap/client/service` | Daemon composition, `Registry`, `OperationId`, `RouterPollResult`, `PollCursor`, and `RouterInstanceId` |
-| `@moltzap/client/internal` | Service capabilities: request verification, grouped `registryContract` and `routerContract` wire contracts, `httpErrors`, Registry and Router client tags, typed card signing, and service wire-version values. Requires `sharness-internal`, with no default condition or TypeDoc entry |
-| `@moltzap/client/test` | Process-test composition: management fixture schemas, the `WireVersions` override, `AuthenticatedHttp` request signing, and the `HISTORY_WIRE_VERSIONS` history window. Requires `sharness-test`, with no default condition or TypeDoc entry |
+| `@moltzap/social-harness` | Existing addressed `HarnessEndpoint` and host values; `AgentId`, `AgentName`, `PrincipalId`, `AgentCard`, `VerifiedAgentCard`, `Ed25519PublicKey`, `AgentSigningAuthority`, `MessageId`, `SignedMessage`, `LiveSignedMessage`, `VerifiedSignedMessage`, `WIRE_VERSION`, `LIVE_WIRE_VERSIONS` and `legacyKeys` |
+| `@moltzap/social-harness/service` | Daemon composition, `Registry`, `OperationId`, `RouterPollResult`, `PollCursor`, and `RouterInstanceId` |
+| `@moltzap/social-harness/internal` | Service capabilities: request verification, grouped `registryContract` and `routerContract` wire contracts, `httpErrors`, Registry and Router client tags, typed card signing, and service wire-version values. Requires `sharness-internal`, with no default condition or TypeDoc entry |
+| `@moltzap/social-harness/test` | Process-test composition: management fixture schemas, the `WireVersions` override, `AuthenticatedHttp` request signing, and the `HISTORY_WIRE_VERSIONS` history window. Requires `sharness-test`, with no default condition or TypeDoc entry |
 
 Identity's host values map to the library root. Service request verification, card signing, and HTTP errors map to the
 condition-only internal entry. Its
@@ -382,7 +382,7 @@ topology and cross-address context.
 ## Publication and versions
 
 Two packages publish to npm at independent calendar versions:
-`@moltzap/client` and `@moltzap/openclaw-channel`. Registry, Router and NanoClaw
+`@moltzap/social-harness` and `@moltzap/openclaw-channel`. Registry, Router and NanoClaw
 stay private. Registry and Router ship as images built from
 `images/<service>/Dockerfile` with the repository root as build context, keyed
 by `pnpm image:keys`. The Registry image carries `pglite-server` for run-scoped
@@ -584,7 +584,9 @@ depends on. That Registry and Router are the indexes the previous release's
 version tags name; the gate copies each
 image's working directory out with Docker and runs its entrypoint as a
 process with the gate's own Node, so the gate needs Docker. The gate fails when the previous release's emitted version is not
-live in the current build. It skips only when that version is outside
+live in the current build. With no published calendar release under the package
+name, including a bootstrap-only history, it skips until the first release.
+Otherwise, it skips only when that version is outside
 `HISTORY_WIRE_VERSIONS` and `FIRST_POST_RESET_RELEASE` places the previous
 release before the reset; a version that leaves history without that boundary
 fails the gate. Each failure names the leg it came from. Candidate selection

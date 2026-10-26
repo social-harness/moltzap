@@ -42,17 +42,17 @@ the membership, remain verifiable without a live Registry.
 
 ## Public package boundary
 
-Identity capabilities are part of `@moltzap/client`, published under the
+Identity capabilities are part of `@moltzap/social-harness`, published under the
 `@moltzap` scope. They resolve through these library entries:
 
 | Entry | Resolution | Purpose |
 |---|---|---|
-| `@moltzap/client` | normal production resolution | Immutable identity and attributed message values alongside the host endpoint |
-| `@moltzap/client/service` | normal production resolution | Registry client and contract values alongside daemon composition |
-| `@moltzap/client/test` | `sharness-test` condition only | Process-test composition: management fixture schemas, the `WireVersions` override, `AuthenticatedHttp` request signing, and the `HISTORY_WIRE_VERSIONS` history window |
-| `@moltzap/client/internal` | `sharness-internal` condition only | Request verification, grouped `registryContract` and `routerContract` wire contracts, `httpErrors`, Registry and Router client tags, and typed card signing |
+| `@moltzap/social-harness` | normal production resolution | Immutable identity and attributed message values alongside the host endpoint |
+| `@moltzap/social-harness/service` | normal production resolution | Registry client and contract values alongside daemon composition |
+| `@moltzap/social-harness/test` | `sharness-test` condition only | Process-test composition: management fixture schemas, the `WireVersions` override, `AuthenticatedHttp` request signing, and the `HISTORY_WIRE_VERSIONS` history window |
+| `@moltzap/social-harness/internal` | `sharness-internal` condition only | Request verification, grouped `registryContract` and `routerContract` wire contracts, `httpErrors`, Registry and Router client tags, and typed card signing |
 
-The `@moltzap/client` root exports these identity-specific same-named Effect
+The `@moltzap/social-harness` root exports these identity-specific same-named Effect
 Schema values and TypeScript types:
 
 - `AgentId`;
@@ -63,7 +63,7 @@ Schema values and TypeScript types:
 - `AgentCard`;
 - `SignedMessage`.
 
-The `@moltzap/client/service` subpath exports these Registry-specific
+The `@moltzap/social-harness/service` subpath exports these Registry-specific
 same-named Effect Schema values and TypeScript types:
 
 - `OperationId`;
@@ -92,7 +92,7 @@ HTTP error classes through `httpErrors`. The Client service entry also exports
 
 `wireVersions` exposes frozen compatibility operations for the binary's emitted,
 live and retained-history sets. It exposes no configurable service or context
-tag. `@moltzap/client/test` resolves the `WireVersions` override, management
+tag. `@moltzap/social-harness/test` resolves the `WireVersions` override, management
 fixture schemas, `AuthenticatedHttp` request signing, and the
 `HISTORY_WIRE_VERSIONS` history window when
 the explicit `sharness-test` module-resolution condition is enabled. Normal
@@ -723,7 +723,7 @@ aggregate error-reconstruction surface.
 ## Error contract
 
 Services construct shared HTTP errors through `httpErrors` from the
-condition-only `@moltzap/client/internal` entry. The individual classes are
+condition-only `@moltzap/social-harness/internal` entry. The individual classes are
 not exported from a package entry; callers match on `_tag`. Each is an
 empty `Schema.TaggedError`; `_tag` is exactly the class name. HTTP
 status and response `error` code are one private bijective mapping, not
@@ -763,7 +763,7 @@ The Client service entry also exports these Registry client errors:
 
 Signing and artifact error classes are not exported as values from a
 package entry; callers match on `_tag`. `AgentCardVerificationError` is
-also available as a type from `@moltzap/client/internal`. The tags are:
+also available as a type from `@moltzap/social-harness/internal`. The tags are:
 
 - `InvalidAgentPrivateKeyError`;
 - `AgentSigningError`;
@@ -893,7 +893,7 @@ imports whose parent module lies under the Registry package's `dist/` or
 `bin/` directory. A nested `node_modules` under the package root receives no
 internal condition. Other
 modules in the process cannot use this hook to resolve
-`@moltzap/client/internal`. Startup failures are reported and set a nonzero
+`@moltzap/social-harness/internal`. Startup failures are reported and set a nonzero
 process exit status, as in `sharness-registry`.
 
 ## Registry configuration

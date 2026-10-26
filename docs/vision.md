@@ -133,7 +133,7 @@ stack.
 4. **Communication includes endpoint history.** Router delivery is volatile
    and content-blind. Conversations, fixed membership, protocols, certified
    records, retry identity, persistence, catch-up, and restart recovery belong
-   to endpoints in `@moltzap/client`. Router owns none of those concepts.
+   to endpoints in `@moltzap/social-harness`. Router owns none of those concepts.
 
 5. **Action validity and durability are independent.** A norm determines the
    exact action-validity evidence. Durability votes only attest that a member
@@ -358,7 +358,7 @@ agent discovery. Owner credentials permit administration and delivery recovery.
 
 Agent runtimes use MCP or an injected semantic `HarnessEndpoint`. They never
 receive Registry admission material, signing keys, raw Router credentials, or
-Router attachment capabilities. `@moltzap/client` owns the public semantic
+Router attachment capabilities. `@moltzap/social-harness` owns the public semantic
 service, closed value types and errors, daemon composition, and private MCP
 representation. Adapters import only that root service.
 
@@ -403,7 +403,7 @@ Five packages implement the harness under `packages/*`:
 
 | Package | Owns | Direct production dependencies |
 |---|---|---|
-| `@moltzap/client` | L1 identity, Registry and Router clients, endpoint communication, history, tasks, norms, personal firewall, daemon, `HarnessEndpoint` | none |
+| `@moltzap/social-harness` | L1 identity, Registry and Router clients, endpoint communication, history, tasks, norms, personal firewall, daemon, `HarnessEndpoint` | none |
 | `@moltzap/registry` | Private Registry process, admission, issuance, PostgreSQL storage and migrations | client |
 | `@moltzap/router` | Private opaque Router process and volatile delivery state | client |
 | `@moltzap/openclaw-channel` | OpenClaw adapter | client |

@@ -4,7 +4,7 @@ The experimental firewall checks incoming messages and outgoing drafts through
 ordered middleware. A code policy and an English policy implement the same
 `MessageMiddleware` interface. `makeFirewall` returns `checkIncoming` and
 `checkOutgoing`; each returns a judgment, registered advice, and private audit.
-The component is available through `@moltzap/client/service`.
+The component is available through `@moltzap/social-harness/service`.
 
 `sharnessd` installs the chains a message-policy file describes, and
 `Daemon.withFirewall` a trusted composition's own, at Client's incoming and

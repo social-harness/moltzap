@@ -1,7 +1,7 @@
 /** @file Real packed library releases upgrade twice through one persistent launcher record. */
 import { FileSystem } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
-import { WIRE_VERSION } from "@moltzap/client";
+import { WIRE_VERSION } from "@moltzap/social-harness";
 import { Effect, Schema } from "effect";
 import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";
@@ -91,7 +91,7 @@ function attestation(version: string, digest: string): Reply {
               JSON.stringify({
                 subject: [
                   {
-                    name: `pkg:npm/%40moltzap/client@${version}`,
+                    name: `pkg:npm/%40moltzap/social-harness@${version}`,
                     digest: { sha512: digest },
                   },
                 ],
@@ -134,7 +134,7 @@ const prepareReleaseSource = Effect.gen(function* () {
     "client",
     scratch,
   );
-  const archive = archives["@moltzap/client"];
+  const archive = archives["@moltzap/social-harness"];
   if (archive === undefined) {
     return yield* new PackGateError({ message: "Client tarball is missing" });
   }
@@ -165,14 +165,17 @@ function packRelease(release: ReleaseSource, version: string) {
       ["pack", "--ignore-scripts", "--pack-destination", release.scratch],
       { cwd: release.source },
     );
-    const tarball = join(release.scratch, `moltzap-client-${version}.tgz`);
+    const tarball = join(
+      release.scratch,
+      `moltzap-social-harness-${version}.tgz`,
+    );
     const bytes = yield* fs.readFile(tarball);
     const digest = createHash("sha512").update(bytes).digest();
     const admitted = yield* Schema.decodeUnknown(manifestSchema)(
       JSON.stringify(manifest),
     );
     release.replies.set(
-      `/@moltzap%2fclient/${version}`,
+      `/@moltzap%2fsocial-harness/${version}`,
       json({
         ...admitted,
         dist: {
@@ -211,7 +214,7 @@ function installSeed(
     const seed = yield* installPackedConsumer({
       temporaryRoot: release.scratch,
       name: "launcher-upgrade-consumer",
-      archives: { "@moltzap/client": firstArchive },
+      archives: { "@moltzap/social-harness": firstArchive },
     });
     return {
       seed,
@@ -236,7 +239,10 @@ function verifyUpgrade(
       [
         "--import",
         join(import.meta.dirname, "../launcher-provenance.ts"),
-        join(prefix, "node_modules/@moltzap/client/bin/sharnessd-launcher"),
+        join(
+          prefix,
+          "node_modules/@moltzap/social-harness/bin/sharnessd-launcher",
+        ),
         "prepare",
       ],
       {
@@ -244,7 +250,7 @@ function verifyUpgrade(
         env: {
           SHARNESS_LAUNCHER_DIRECTORY: home,
           SHARNESS_LAUNCHER_SEED: seed,
-          SHARNESS_LAUNCHER_PACKAGE: "@moltzap/client",
+          SHARNESS_LAUNCHER_PACKAGE: "@moltzap/social-harness",
           SHARNESS_LAUNCHER_UPGRADE: "on",
           ...(pinned ? { SHARNESS_LAUNCHER_VERSION: version } : {}),
           SHARNESS_LAUNCHER_REGISTRY: origin,
@@ -281,7 +287,7 @@ function consecutiveUpgrades() {
       const seed = yield* installSeed(release, firstArchive, first);
       const upgraded = yield* verifyUpgrade(seed, "2099.101.1", true);
       release.replies.set(
-        "/-/package/@moltzap%2fclient/dist-tags",
+        "/-/package/@moltzap%2fsocial-harness/dist-tags",
         json({ latest: "2099.101.2" }),
       );
       yield* verifyUpgrade(upgraded, "2099.101.2", false);

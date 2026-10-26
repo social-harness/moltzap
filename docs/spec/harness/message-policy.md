@@ -21,7 +21,7 @@ its host, for example with `ask_user`; see [shared norms](../norms.md).
 
 `sharnessd` installs the firewall a [message-policy file](#message-policy-file)
 describes in the daemon's incoming and outgoing message paths.
-`@moltzap/client/service` also exposes the standalone evaluator and
+`@moltzap/social-harness/service` also exposes the standalone evaluator and
 `Daemon.withFirewall(options)`, which installs a trusted composition's own
 chains. Code and English policies implement the same
 `MessageMiddleware` interface. An installation captures fixed code and English rules, owner facts, settings
@@ -405,7 +405,7 @@ interrupted by restart binds nothing.
 Install trusted policy objects through the existing service layer:
 
 ```ts
-import { Daemon } from "@moltzap/client/service";
+import { Daemon } from "@moltzap/social-harness/service";
 
 const daemon = Daemon.withFirewall({
   mode: "enforcement",
@@ -438,7 +438,7 @@ recorded, not independently attested.
 
 `SHARNESS_MESSAGE_POLICY_FILE` names a readable regular file containing a JSON
 document of at most 1 MiB. `sharnessd` decodes it with `MessagePolicy` from
-`@moltzap/client/service` and installs it through the same composition as
+`@moltzap/social-harness/service` and installs it through the same composition as
 `Daemon.withFirewall`. Writers build
 it with that schema. A trusted composition with its own decision provider
 installs a decoded document with `messagePolicyFirewall(policy, provider)`

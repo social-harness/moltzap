@@ -1,6 +1,6 @@
-# @moltzap/client
+# @moltzap/social-harness
 
-`@moltzap/client` is the final endpoint package. It owns conversations,
+`@moltzap/social-harness` is the final endpoint package. It owns conversations,
 endpoint-local certified history, durability and recovery protocols, tasks and
 norms, personal firewalls, daemon composition, the loopback MCP boundary, and
 the adapter-facing `HarnessEndpoint` capability.

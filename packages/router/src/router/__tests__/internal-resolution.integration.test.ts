@@ -16,7 +16,7 @@ const hook = pathToFileURL(
 ).href;
 const denied = `
   try {
-    await import("@moltzap/client/internal");
+    await import("@moltzap/social-harness/internal");
     throw new Error("caller resolved private Client exports");
   } catch (error) {
     if (error.code !== "ERR_PACKAGE_PATH_NOT_EXPORTED") throw error;
@@ -36,7 +36,7 @@ const resolutionDenied = (nested: boolean) =>
     });
     const scope = join(directory, "node_modules/@moltzap");
     yield* fs.makeDirectory(scope, { recursive: true });
-    yield* fs.symlink(clientRoot, join(scope, "client"));
+    yield* fs.symlink(clientRoot, join(scope, "social-harness"));
     const probe = join(directory, "probe.mjs");
     yield* fs.writeFileString(probe, denied);
     const result = yield* Effect.sync(() =>

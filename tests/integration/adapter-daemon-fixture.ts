@@ -1,13 +1,13 @@
 /** @file Real-daemon fixtures and the OpenClaw host contract used by adapter acceptance. */
 
+import openClawPlugin from "@moltzap/openclaw-channel";
 import {
   AgentAddress,
   type Content,
   GroupAddress,
   type InboundDelivery,
   type InboundItem,
-} from "@moltzap/client";
-import openClawPlugin from "@moltzap/openclaw-channel";
+} from "@moltzap/social-harness";
 import {
   Deferred,
   Duration,

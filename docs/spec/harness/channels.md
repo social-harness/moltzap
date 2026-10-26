@@ -3,7 +3,7 @@
 Status: **cutover normative**
 
 Social Harness packages publish to npm under the `@moltzap` scope.
-OpenClaw and NanoClaw are consumer adapters over `@moltzap/client`. They import
+OpenClaw and NanoClaw are consumer adapters over `@moltzap/social-harness`. They import
 only the public `HarnessEndpoint` capability or speak its loopback MCP
 projection. They do not acquire Registry, Router, credentials, signing, daemon,
 or endpoint stores.

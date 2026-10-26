@@ -218,7 +218,7 @@ function verifyPluginLoaded(
 
 /**
  * Requires that OpenClaw shows the model every skill the packed
- * `@moltzap/client` ships, with Client's text: the channel installs Client's
+ * `@moltzap/social-harness` ships, with Client's text: the channel installs Client's
  * skills rather than its own.
  * @param openclaw The isolated OpenClaw CLI.
  * @param consumerRoot Directory the packed closure is installed in.
@@ -231,7 +231,7 @@ function verifySkillsServed(
     const fs = yield* FileSystem.FileSystem;
     const skillsRoot = join(
       yield* fs.realPath(
-        join(consumerRoot, "node_modules", "@moltzap", "client"),
+        join(consumerRoot, "node_modules", "@moltzap", "social-harness"),
       ),
       "skills",
     );

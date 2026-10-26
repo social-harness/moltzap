@@ -1,7 +1,11 @@
 /** @file Registry configuration, private RPC, client, and server composition contract tests. */
 
-import { AgentName, AgentSigningAuthority, PrincipalId } from "@moltzap/client";
-import { httpErrors, registryContract } from "@moltzap/client/internal";
+import {
+  AgentName,
+  AgentSigningAuthority,
+  PrincipalId,
+} from "@moltzap/social-harness";
+import { httpErrors, registryContract } from "@moltzap/social-harness/internal";
 import {
   ConfigProvider,
   Effect,

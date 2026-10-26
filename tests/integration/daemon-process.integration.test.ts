@@ -13,8 +13,8 @@ import {
   SendError,
   type SendInput,
   WIRE_VERSION,
-} from "@moltzap/client";
-import { WireVersions } from "@moltzap/client/test";
+} from "@moltzap/social-harness";
+import { WireVersions } from "@moltzap/social-harness/test";
 import { Effect, Fiber, Option, Schema, Stream } from "effect";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -521,8 +521,8 @@ function expectRegisteredRestartWithoutAdmission(
  */
 const retiredWindowDaemon = `
   import { NodeRuntime } from "@effect/platform-node";
-  import { WIRE_VERSION } from "@moltzap/client"; import { WireVersions } from "@moltzap/client/test";
-  import { Daemon } from "@moltzap/client/service";
+  import { WIRE_VERSION } from "@moltzap/social-harness"; import { WireVersions } from "@moltzap/social-harness/test";
+  import { Daemon } from "@moltzap/social-harness/service";
   import { ConfigProvider, Effect, Layer } from "effect";
   Layer.launch(Daemon.layer).pipe(
     Effect.provideService(WireVersions, { live: [], history: [WIRE_VERSION] }),

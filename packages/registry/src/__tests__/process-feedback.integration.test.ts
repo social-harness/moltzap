@@ -3,7 +3,7 @@
 import { Command } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
 import { scopedLive as it } from "@effect/vitest";
-import { WIRE_VERSION } from "@moltzap/client";
+import { WIRE_VERSION } from "@moltzap/social-harness";
 import { Effect, Stream } from "effect";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";

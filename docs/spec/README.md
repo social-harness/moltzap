@@ -57,7 +57,7 @@ Client work must not use compatibility shims or semantic reinterpretation.
 
 The final workspace contains exactly these five package products:
 
-- `@moltzap/client`;
+- `@moltzap/social-harness`;
 - `@moltzap/registry`;
 - `@moltzap/router`;
 - `@moltzap/openclaw-channel`;

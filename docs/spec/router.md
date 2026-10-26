@@ -50,7 +50,7 @@ Router application.
 ## Public package boundary
 
 Social Harness packages publish to npm under the `@moltzap` scope.
-`@moltzap/client/service` exports these Router values:
+`@moltzap/social-harness/service` exports these Router values:
 
 - the same-named Effect Schema values and TypeScript types
   `RouterInstanceId`, `SignedMessageDigest`, `PollCursor`,
@@ -63,7 +63,7 @@ Social Harness packages publish to npm under the `@moltzap` scope.
 The private `@moltzap/router/server` entry exports only `RouterServer`, including its
 nested `StartupError`. Router consumes identity values, signed
 artifacts, signing authority, and shared HTTP errors from
-`@moltzap/client`; it does not redeclare or re-export aliases for
+`@moltzap/social-harness`; it does not redeclare or re-export aliases for
 them.
 
 There is no public Router order, delivery wrapper, client class,
@@ -646,4 +646,4 @@ explicit emitted, live and history wire versions for process fixtures and instal
 the same hook. Only parents under the Router's built `dist/` and executable
 `bin/` directories receive `sharness-internal`; callers outside those directories,
 including nested dependencies under the package root, retain their original
-conditions and cannot resolve `@moltzap/client/internal`.
+conditions and cannot resolve `@moltzap/social-harness/internal`.

@@ -86,7 +86,7 @@ window, and never applies a reset release on its own. The
 
 2. Restart the launcher to upgrade. Its first stderr line names the release
    it runs, such as
-   `sharnessd-launcher: moved from <old version> to @moltzap/client@<new version>`,
+   `sharnessd-launcher: moved from <old version> to @moltzap/social-harness@<new version>`,
    or why it kept the recorded one.
 
 3. For an OpenClaw host, run `sharnessd-launcher prepare` before the gateway
@@ -98,27 +98,6 @@ To take a reset release, apply the reset above, then set
 `SHARNESS_LAUNCHER_VERSION` to the reset release for the first start. To stop
 upgrades, set `SHARNESS_LAUNCHER_UPGRADE=off` or pin an exact version.
 
-Releases that include `@moltzap/identity` have a launcher that reads each
-candidate's wire version from that package, so it keeps its recorded release
-when offered a release without it. Before taking the first release without
-`@moltzap/identity`, install an image whose launcher comes from a release whose
-`@moltzap/client` manifest has a `sharnessWireVersion` field;
-`npm view @moltzap/client@<version> sharnessWireVersion` prints it.
-
-Rolling back to an image whose launcher predates `sharnessWireVersion`, on a
-volume that records a later release, keeps the later daemon. To recover the
-image-installed daemon:
-
-1. Stop the launcher.
-2. If the later daemon migrated the store, the image's daemon refuses it with
-   `newer-schema`. Apply the reset above with a fresh
-   `SHARNESS_STATE_DIRECTORY`.
-3. Remove the directory named by `SHARNESS_LAUNCHER_DIRECTORY`. This discards
-   the launcher record and cached releases; it does not reset endpoint state.
-4. Start the launcher with `SHARNESS_LAUNCHER_UPGRADE=off`. Its first stderr
-   line is `sharnessd-launcher: running <release> (upgrade-off)`, naming the
-   image-installed release.
-
 An image-installed release from before a reset release can't join a network
 that has taken that reset. Its peers and the Registry refuse it with
 `version-mismatch`. Recover onto an image from the same side of the reset as
@@ -126,15 +105,15 @@ the network.
 
 ### Release contains no daemon package
 
-The selected release closure has no `@moltzap/client` daemon package. The
+The selected release closure has no `@moltzap/social-harness` daemon package. The
 launcher keeps the recorded release. Choose a release whose closure includes
 Client, and ask the release maintainer to correct the published dependency pins.
 
 ### Release contains no wire version
 
-The followed release has no wire version in its Client manifest or its pinned
-pre-fold Identity manifest. The launcher keeps the recorded release. Choose a
-release with wire metadata and ask the release maintainer to correct its manifest.
+The followed release has no wire version in its Client manifest. The launcher
+keeps the recorded release. Choose a release with wire metadata and ask the release
+maintainer to correct its manifest.
 
 ## Endpoint backups
 

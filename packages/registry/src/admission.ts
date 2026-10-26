@@ -1,13 +1,13 @@
 /** @file Registry-owned bootstrap admission before private dispatch. */
 
 import type { HttpServerRequest } from "@effect/platform";
-import { Ed25519PublicKey } from "@moltzap/client";
+import { Ed25519PublicKey } from "@moltzap/social-harness";
 import {
   httpErrors,
   registryContract,
   type VerifiedHttpSignature,
   verifyBootstrapRequest,
-} from "@moltzap/client/internal";
+} from "@moltzap/social-harness/internal";
 import { Effect, Redacted, Schema } from "effect";
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { RegistryStorage } from "./storage.js";

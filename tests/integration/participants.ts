@@ -8,7 +8,7 @@ import {
   type InboundDelivery,
   type InboundItem,
   SendInput,
-} from "@moltzap/client";
+} from "@moltzap/social-harness";
 import { Duration, Effect, Queue, Schema, Stream } from "effect";
 import {
   acquireDaemonManagementClient,

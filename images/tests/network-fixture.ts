@@ -16,7 +16,7 @@ import {
   type InboundItem,
   SendInput,
   type SendResult,
-} from "@moltzap/client";
+} from "@moltzap/social-harness";
 import { Chunk, Effect, Exit, Schema, Scope, Stream } from "effect";
 import { type ChildProcess, execFile, spawn } from "node:child_process";
 import { generateKeyPairSync, randomBytes } from "node:crypto";
@@ -433,7 +433,8 @@ async function startDaemon(
     image !== undefined && launch.program === undefined
       ? await startDaemonContainer(files, launch, environment, image)
       : startScript(
-          launch.program ?? packageFile("@moltzap/client", "bin/sharnessd"),
+          launch.program ??
+            packageFile("@moltzap/social-harness", "bin/sharnessd"),
           [],
           environment,
         );

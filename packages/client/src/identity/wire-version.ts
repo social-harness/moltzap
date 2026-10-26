@@ -54,7 +54,9 @@ export type WireVersion = (typeof HISTORY_WIRE_VERSIONS)[number];
  * Injectable release policy lets process tests compose adjacent wire releases.
  * Production compositions use the binary's emitted version and acceptance sets.
  */
-export class WireVersions extends Context.Tag("@moltzap/client/WireVersions")<
+export class WireVersions extends Context.Tag(
+  "@moltzap/social-harness/WireVersions",
+)<
   WireVersions,
   {
     readonly emitted?: string;

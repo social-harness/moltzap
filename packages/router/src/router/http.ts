@@ -9,7 +9,7 @@ import {
   AuthenticatedHttp,
   httpErrors,
   routerContract,
-} from "@moltzap/client/internal";
+} from "@moltzap/social-harness/internal";
 import canonicalize from "canonicalize";
 import { Cause, Effect, Option, Schema } from "effect";
 import type { RouterFeed } from "./feed.js";

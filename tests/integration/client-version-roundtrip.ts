@@ -6,9 +6,9 @@ import {
   AgentSigningAuthority,
   LIVE_WIRE_VERSIONS,
   PrincipalId,
-} from "@moltzap/client";
-import { OperationId, Registry, Router } from "@moltzap/client/service";
-import { WireVersions } from "@moltzap/client/test";
+} from "@moltzap/social-harness";
+import { OperationId, Registry, Router } from "@moltzap/social-harness/service";
+import { WireVersions } from "@moltzap/social-harness/test";
 import { Duration, Effect, Layer, Redacted, Schema, type Scope } from "effect";
 import { generateKeyPairSync } from "node:crypto";
 import { expect, it } from "vitest";

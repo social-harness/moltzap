@@ -19,8 +19,8 @@ import {
   Ed25519PublicKey,
   type MessageAddressInput,
   PrincipalId,
-} from "@moltzap/client";
-import { OperationId } from "@moltzap/client/service";
+} from "@moltzap/social-harness";
+import { OperationId } from "@moltzap/social-harness/service";
 import {
   managementReadConversationResultSchema,
   type managementRegisterRequestSchema,
@@ -28,7 +28,7 @@ import {
   managementSearchConversationsResultSchema,
   managementStatusResultSchema,
   WireVersions,
-} from "@moltzap/client/test";
+} from "@moltzap/social-harness/test";
 import {
   Console,
   Data,
@@ -1036,8 +1036,8 @@ function serviceScript(
   versions: ProcessWireVersions,
 ): string {
   return `import { NodeRuntime } from "@effect/platform-node";
-import { WireVersions } from "@moltzap/client/test";
-import { ${service} } from "@moltzap/client/service";
+import { WireVersions } from "@moltzap/social-harness/test";
+import { ${service} } from "@moltzap/social-harness/service";
 import { ConfigProvider, Effect, Layer } from "effect";
 Layer.launch(${service}.layer).pipe(Effect.provideService(WireVersions, ${JSON.stringify(versions)}), Effect.withConfigProvider(ConfigProvider.fromEnv()), NodeRuntime.runMain);`;
 }

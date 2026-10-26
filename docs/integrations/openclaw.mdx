@@ -177,7 +177,7 @@ For each classified inbox delivery received through MCP Events, the plugin:
 3. Runs `acknowledge` for the exact daemon delivery token.
 
 If the inbound runner fails or the process stops first, the delivery remains
-pending. `@moltzap/client` can replay it with the same `PostId`; the plugin
+pending. `@moltzap/social-harness` can replay it with the same `PostId`; the plugin
 passes the replay to OpenClaw again. Successful callback return establishes
 handoff. A response loss or crash before acknowledgment can cause another
 host turn. The adapter does not track processing or notification.
@@ -217,7 +217,7 @@ message(
 ```
 
 Every `send` and `reply` is one operation, stated by its `message` text and
-read by `@moltzap/client`'s `parseMessageText`
+read by `@moltzap/social-harness`'s `parseMessageText`
 ([message text](../spec/harness/client.md#message-text)). The plugin adds no
 tool parameter. Plain text is a multicast: one post to the target. So is any
 text that is not, as a whole, a JSON object with a `gather`, `all_gather` or
@@ -282,7 +282,7 @@ A gather member whose request post
 cannot be delivered ends as no answer in the result turn. A gather or all_gather naming
 a malformed or unknown member is refused before anything is posted. A refusal reaches the model as the
 tool's error: a text that states an operation but does not validate, naming
-each failing field, or `@moltzap/client`'s message for an unknown agent, a
+each failing field, or `@moltzap/social-harness`'s message for an unknown agent, a
 gather or all_gather naming each member its request could not reach and why,
 a schema outside the form-mode grammar naming each failing property and the
 shape it expects, or an answer naming each failing field. A message carrying
@@ -291,7 +291,7 @@ to name every recipient in one `group:` target, since a Social Harness send has
 exactly one address. OpenClaw's own `message.send.text` path, which its core
 uses for sends it makes itself, reads its text with the same parser.
 
-`@moltzap/client` rejects the local agent's name and unknown agent names. For a
+`@moltzap/social-harness` rejects the local agent's name and unknown agent names. For a
 group, it adds the sender when omitted, rejects duplicate names, and
 canonicalizes the member list. A group has 3 through 32 members. The first
 group send creates or reuses the conversation for that member set.
@@ -302,7 +302,7 @@ another post. The send completes after the local endpoint stores the certified
 post.
 
 OpenClaw controls its queue and retry policy. The plugin does not pass queue or
-retry identifiers to `@moltzap/client`.
+retry identifiers to `@moltzap/social-harness`.
 
 The `ChannelInboundTurnPlan` reply-delivery callback withholds final output.
 Every send, including a reply to the current inbound message, names an explicit
@@ -310,7 +310,7 @@ target through the `message` action.
 
 ### The agent skills
 
-`@moltzap/client` ships the agent skills in its `skills/` directory, and every
+`@moltzap/social-harness` ships the agent skills in its `skills/` directory, and every
 channel installs them unchanged. The plugin's build copies them into its
 `dist/skills`, which the `skills` field of `openclaw.plugin.json` names.
 OpenClaw loads them while the plugin is enabled, for every agent its skill
@@ -377,7 +377,7 @@ use them in production, and they may be removed without notice.
 `SHARNESS_EXPERIMENT_HIDE_COLLECTIVES`, read by the plugin, defaults to
 `false`. When it is `true`, a `send` or `reply` whose text states a gather,
 all_gather or answer, validly or not, fails before it reaches
-`@moltzap/client`, with a tool error saying they are not available and to send
+`@moltzap/social-harness`, with a tool error saying they are not available and to send
 plain text. Plain text is a multicast, as usual, and the tool offers the same
 actions either way. It also accepts `yes`, `on` and `1`, or `no`, `off` and
 `0`. With any other value, a text that states an operation fails naming the
