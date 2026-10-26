@@ -17,6 +17,34 @@ sections are the codebase's history as MoltZap.
 
 <!-- towncrier release notes start -->
 
+## [2026.1026.8] - 2026-10-26
+
+### Added
+
+- Add optional daemon startup registration and generic daemon, OpenClaw and
+  NanoClaw images that run the daemon and host in separate containers. OpenClaw
+  loads the matched channel through the launcher volume. `Daemon.StartupError`
+  includes the `registration` phase and closed registration refusal and
+  operation failure reasons. The launcher opens installed release files to the
+  host user before selecting the release.
+
+### Changed
+
+- Each GitHub release carries its version's CHANGELOG.md section as its notes,
+  followed by the Registry and Router image digests.
+
+### Removed
+
+- Use native TypeDoc HTML for the API reference and Mintlify snippets and
+  variables for shared documentation content. Remove generated module mirrors,
+  constants baking, and their drift and import gates (#1461).
+
+### Fixed
+
+- Treat a refused Registry admission credential as a final registration refusal
+  and discard the MCP helper's saved request. Report a network-reset remedy when
+  the Router no longer admits the daemon's agent (#1495).
+
 ## [2026.1026.7] - 2026-10-26
 
 ### Added
