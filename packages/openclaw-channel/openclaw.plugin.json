@@ -4,7 +4,7 @@
     "sharness"
   ],
   "skills": [
-    "./skills"
+    "./dist/skills"
   ],
   "configSchema": {
     "type": "object",
