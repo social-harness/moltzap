@@ -22,6 +22,7 @@ import {
   PackGateError,
   packProductClosure,
   readConsumerPins,
+  readJsonFile,
   readText,
   requireCondition,
   runCommand,
@@ -35,6 +36,9 @@ type OpenClawCli = <A, I>(
 ) => Effect.Effect<A, GateError, GateServices>;
 
 const jsonObject = Schema.Record({ key: Schema.String, value: Schema.Unknown });
+const openClawManifest = Schema.Struct({
+  scripts: Schema.Struct({ postinstall: Schema.String }),
+});
 const pluginList = Schema.Struct({ plugins: Schema.Array(jsonObject) });
 
 const workspaceRoot = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -57,10 +61,7 @@ runGate("sharness-openclaw-pack-", (temporaryRoot) =>
       devDependencies: { typescript: pins.typescript },
     });
     yield* verifyTypes(consumerRoot);
-    const { openclaw } = yield* pluginHost(
-      consumerRoot,
-      archives["@moltzap/openclaw-channel"] ?? "",
-    );
+    const { openclaw } = yield* pluginHost(consumerRoot);
     yield* verifyPluginLoaded(openclaw, openclawVersion);
     yield* verifySkillsServed(openclaw, consumerRoot);
     return `OpenClaw ${openclawVersion} packed consumer check passed`;
@@ -99,43 +100,42 @@ function verifyTypes(
 }
 
 /**
- * Install the packed channel through OpenClaw's installer in an isolated host.
- * Without a terminal, `--force` confirms the non-ClawHub tarball source and
- * `--accept-capabilities` supplies consent for the plugin's capabilities.
+ * Configure an isolated OpenClaw host that loads the channel by path, as the
+ * agent image does. The consumer install skipped every lifecycle script, and
+ * OpenClaw's CLI refuses to start from a package whose postinstall never ran,
+ * so this runs OpenClaw's own. The pnpm install leaves package files as hard
+ * links into its store, and OpenClaw silently skips a plugin whose files are
+ * hard links, so the channel's files are rewritten as plain files first, as
+ * an `npm` install leaves them.
  * @param consumerRoot Directory the packed closure is installed in.
- * @param archive Packed channel tarball.
  * @returns A runner for OpenClaw CLI commands that print JSON.
  */
 function pluginHost(
   consumerRoot: string,
-  archive: string,
 ): Effect.Effect<{ readonly openclaw: OpenClawCli }, GateError, GateServices> {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
+    const pluginRoot = yield* fs.realPath(
+      join(consumerRoot, "node_modules", "@moltzap", "openclaw-channel"),
+    );
     const openclawRoot = yield* fs.realPath(
       join(consumerRoot, "node_modules", "openclaw"),
     );
+    yield* unlinkPluginFiles(pluginRoot);
+    const { scripts } = yield* readJsonFile(
+      join(openclawRoot, "package.json"),
+      openClawManifest,
+    );
+    yield* runCommand("sh", ["-c", scripts.postinstall], { cwd: openclawRoot });
     const stateRoot = join(consumerRoot, "openclaw-state");
     const configPath = join(stateRoot, "openclaw.json");
-    yield* writeHostConfig(stateRoot, configPath);
+    yield* writeHostConfig(stateRoot, configPath, pluginRoot);
     const env = {
       HOME: stateRoot,
       OPENCLAW_CONFIG_PATH: configPath,
       OPENCLAW_HOME: stateRoot,
       OPENCLAW_STATE_DIR: stateRoot,
     };
-    yield* runCommand(
-      process.execPath,
-      [
-        join(openclawRoot, "openclaw.mjs"),
-        "plugins",
-        "install",
-        archive,
-        "--force",
-        "--accept-capabilities",
-      ],
-      { cwd: consumerRoot, env },
-    );
     const openclaw: OpenClawCli = (args, schema) =>
       runCommand(
         process.execPath,
@@ -150,14 +150,51 @@ function pluginHost(
   });
 }
 
+/**
+ * Rewrite every file under `root` as a plain file, replacing the hard link
+ * pnpm installed.
+ * @param root Directory to rewrite.
+ */
+function unlinkPluginFiles(
+  root: string,
+): Effect.Effect<void, GateError, FileSystem.FileSystem> {
+  return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const entries = yield* fs.readDirectory(root, { recursive: true });
+    yield* Effect.forEach(
+      entries.map((entry) => join(root, entry)),
+      (file) =>
+        Effect.gen(function* () {
+          const info = yield* fs.stat(file);
+          if (info.type === "File") {
+            const content = yield* fs.readFile(file);
+            yield* fs.remove(file);
+            yield* fs.writeFile(file, content);
+          }
+        }),
+      { concurrency: 1, discard: true },
+    );
+  });
+}
+
 function writeHostConfig(
   stateRoot: string,
   configPath: string,
+  pluginRoot: string,
 ): Effect.Effect<void, GateError, FileSystem.FileSystem> {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     yield* fs.makeDirectory(stateRoot);
-    yield* fs.writeFileString(configPath, "{}\n");
+    yield* fs.writeFileString(
+      configPath,
+      `${JSON.stringify({
+        channels: { sharness: { accounts: [{ id: "packed-agent" }] } },
+        plugins: {
+          load: { paths: [pluginRoot] },
+          entries: { "openclaw-channel": { enabled: true } },
+        },
+      })}\n`,
+    );
   });
 }
 
