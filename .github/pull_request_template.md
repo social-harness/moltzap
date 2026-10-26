@@ -11,7 +11,7 @@ Resolves #
 - [ ] `pnpm build`
 - [ ] `pnpm test:affected`
 - [ ] `pnpm check`
-- [ ] `pnpm docs:check:drift` and `pnpm docs:check`, for a documentation change
+- [ ] `pnpm docs:api` and `pnpm docs:check`, for a documentation change
 
 ## Contracts and changelog
 

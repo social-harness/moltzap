@@ -210,7 +210,6 @@ function installSeed(
   return Effect.gen(function* () {
     const seed = yield* installPackedConsumer({
       temporaryRoot: release.scratch,
-      workspaceRoot,
       name: "launcher-upgrade-consumer",
       archives: { "@moltzap/client": firstArchive },
     });

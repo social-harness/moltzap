@@ -21,27 +21,6 @@
         "command": "oxfmt --check ."
       }
     },
-    "docs:generate": {
-      "cache": true,
-      "inputs": [
-        "docsGeneration"
-      ],
-      "outputs": [
-        "{workspaceRoot}/README.md",
-        "{workspaceRoot}/docs",
-        "{workspaceRoot}/packages/**/src/**/MODULE.md"
-      ],
-      "executor": "nx:run-commands",
-      "options": {
-        "cwd": ".",
-        "parallel": false,
-        "commands": [
-          "pnpm exec typedoc",
-          "node scripts/docs/generate-modules.ts",
-          "node scripts/docs/generate-constants-snippets.ts"
-        ]
-      }
-    },
     "docs:check:mermaid": {
       "cache": true,
       "inputs": [
@@ -55,64 +34,6 @@
           "pnpm exec puppeteer browsers install chrome-headless-shell",
           "node scripts/docs/check-mermaid.ts"
         ]
-      }
-    },
-    "docs:check:no-hardcoded-constants": {
-      "cache": true,
-      "inputs": [
-        "workspaceFiles"
-      ],
-      "executor": "nx:run-commands",
-      "options": {
-        "cwd": ".",
-        "command": "node scripts/docs/check-no-hardcoded-constants.ts"
-      }
-    },
-    "docs:check:doc-imports-resolve": {
-      "cache": true,
-      "inputs": [
-        "workspaceFiles"
-      ],
-      "executor": "nx:run-commands",
-      "options": {
-        "cwd": ".",
-        "command": "node scripts/docs/check-doc-imports-resolve.ts"
-      }
-    },
-    "arch:config:generate": {
-      "cache": true,
-      "inputs": [
-        "{workspaceRoot}/scripts/architecture/gen-configs.ts"
-      ],
-      "outputs": [
-        "{workspaceRoot}/packages/*/safer-architecture.config.json"
-      ],
-      "executor": "nx:run-commands",
-      "options": {
-        "cwd": ".",
-        "command": "node scripts/architecture/gen-configs.ts"
-      }
-    },
-    "arch:config:check": {
-      "cache": false,
-      "dependsOn": [
-        "arch:config:generate"
-      ],
-      "executor": "nx:run-commands",
-      "options": {
-        "cwd": ".",
-        "command": "test -z \"$(git ls-files --others --exclude-standard -- 'packages/*/safer-architecture.config.json')\" && git diff --exit-code -- 'packages/*/safer-architecture.config.json'"
-      }
-    },
-    "lint:architecture-boundaries": {
-      "cache": true,
-      "inputs": [
-        "workspaceFiles"
-      ],
-      "executor": "nx:run-commands",
-      "options": {
-        "cwd": ".",
-        "command": "node scripts/architecture/check-boundaries.ts"
       }
     },
     "lint:typescript": {
@@ -199,8 +120,6 @@
     "lint": {
       "cache": false,
       "dependsOn": [
-        "lint:architecture-boundaries",
-        "arch:config:check",
         "lint:root",
         "lint:oxlint",
         "lint:script-reachability",
@@ -269,7 +188,6 @@
       "cache": true,
       "inputs": [
         "{workspaceRoot}/scripts/release/**/*.ts",
-        "{workspaceRoot}/scripts/architecture/boundary-contract.ts",
         "{workspaceRoot}/packages/**/*",
         "{workspaceRoot}/images/**/*",
         "{workspaceRoot}/scripts/build/**/*",
@@ -289,6 +207,27 @@
       ],
       "options": {
         "command": "node scripts/release/image-input-key.test.ts"
+      }
+    },
+    "docs:api": {
+      "cache": true,
+      "dependsOn": [
+        { "projects": ["@moltzap/client", "@moltzap/registry", "@moltzap/router", "@moltzap/openclaw-channel", "@moltzap/nanoclaw-channel"], "target": "build" }
+      ],
+      "inputs": [
+        "{workspaceRoot}/typedoc.json",
+        "{workspaceRoot}/tsconfig*.json",
+        "{workspaceRoot}/packages/**/*.ts",
+        "{workspaceRoot}/packages/**/*.json",
+        "sharedGlobals"
+      ],
+      "outputs": [
+        "{workspaceRoot}/dist/api"
+      ],
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": ".",
+        "command": "pnpm exec typedoc"
       }
     }
   }

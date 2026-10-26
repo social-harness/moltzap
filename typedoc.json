@@ -29,25 +29,20 @@
     "blockTags": [
       "@file",
       "@failure",
-      "@error",
       "@param",
       "@returns",
       "@throws",
       "@example",
       "@deprecated",
       "@see",
-      "@remarks",
       "@internal",
-      "@since",
-      "@module",
-      "@relatedNotification",
-      "@triggeredBy"
+      "@module"
     ]
   },
   "outputs": [
     {
-      "name": "json",
-      "path": "node_modules/.cache/typedoc.json"
+      "name": "html",
+      "path": "dist/api"
     }
   ],
   "readme": "none",

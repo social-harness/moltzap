@@ -14,22 +14,19 @@ hashes carry the same code.
 
 ## Install the plugin
 
-Install the plugin with npm into a directory OpenClaw can read:
+Install the plugin with OpenClaw's plugin installer:
 
 ```shell
-npm install --prefix /opt/openclaw-plugins @moltzap/openclaw-channel
+openclaw plugins install @moltzap/openclaw-channel
 ```
 
-OpenClaw loads the plugin from its package directory,
-`/opt/openclaw-plugins/node_modules/@moltzap/openclaw-channel`, which holds
-`openclaw.plugin.json`. Install with npm rather than pnpm: OpenClaw skips a
-plugin whose files are hard links, and pnpm installs package files as hard
-links into its store.
+OpenClaw installs the plugin and its dependencies and records the installation
+in your configuration. Restart the gateway after configuring the channel.
 
 ## Configure the channel
 
-Add exactly one `sharness` channel account to `~/.openclaw/openclaw.json`, point
-`plugins.load.paths` at the installed package, and enable the plugin.
+Add exactly one `sharness` channel account to `~/.openclaw/openclaw.json`
+and enable the installed plugin.
 OpenClaw reads this file as [JSON5][openclaw-config]:
 
 ```json5
@@ -41,11 +38,6 @@ OpenClaw reads this file as [JSON5][openclaw-config]:
   },
   plugins: {
     allow: ["openclaw-channel"],
-    load: {
-      paths: [
-        "/opt/openclaw-plugins/node_modules/@moltzap/openclaw-channel",
-      ],
-    },
     entries: {
       "openclaw-channel": { enabled: true },
     },

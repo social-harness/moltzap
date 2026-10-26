@@ -239,7 +239,6 @@ function installCandidate(temporaryRoot: string, version: string) {
     });
     return yield* installPackedConsumer({
       temporaryRoot: root,
-      workspaceRoot,
       name: "mixed-release-peer",
       archives: {},
       dependencies: yield* releaseClosure(version),
@@ -438,16 +437,11 @@ function installCurrent(temporaryRoot: string) {
       directory: temporaryRoot,
       prefix: "current-",
     });
-    const { archives } = yield* packWorkspaceClosure(
-      packages,
-      root,
-      new Set(Object.keys(packages)),
-    );
+    const { archives } = yield* packWorkspaceClosure(packages, root);
     const currentRoot = join(root, "current");
     yield* fs.makeDirectory(currentRoot);
     return yield* installPackedConsumer({
       temporaryRoot: currentRoot,
-      workspaceRoot,
       name: "mixed-release-current",
       archives,
     });

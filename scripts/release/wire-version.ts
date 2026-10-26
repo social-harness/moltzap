@@ -1,7 +1,7 @@
 /**
- * @file The docs reader of the Social Harness wire compatibility literal.
- *
- * Source readers share one literal pattern without executing Client code.
+ * @file Reads the Social Harness wire version literal from a workspace's
+ * source, so release scripts can read any checked-out tree without running
+ * its Client code.
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";

@@ -91,22 +91,15 @@ A merged change with a fragment in `changelog.d/` releases after CI passes on
 `main`; [Publication and versions](docs/spec/layer-interfaces.md#publication-and-versions)
 describes releases, and `CHANGELOG.md` carries each release's notes.
 
-`pnpm docs:generate` walks TypeDoc across the workspace and refreshes:
+`pnpm docs:api` builds the API reference directly from JSDoc with TypeDoc.
+Open `dist/api/index.html` to browse it. TypeDoc's standalone HTML is separate
+from the Mintlify site; the site's reference section contains the public
+specifications.
 
-- **Per-folder module pages** — `packages/*/src/**/MODULE.md` next to
-  source, with one MDX mirror under `docs/modules/`. Any folder whose
-  `index.ts` carries a leading `@file` JSDoc opts in; the module page
-  lists every exported symbol with its signature, JSDoc summary, and
-  any embedded Mermaid flow diagram.
-- **Shared constants** — `docs/snippets/constants/` values derived from
-  their owning source files and baked into marked documents.
-- **Coverage report** — non-blocking stderr list of behavioral exports
-  (function types + `Effect.Effect<...>` constants) missing a JSDoc
-  summary or flow diagram.
-
-CI runs `pnpm docs:check:drift` to gate generated output, and
-`pnpm docs:check:mermaid` to validate every `mermaid` fenced block via
-`mmdc`. Contributors should start with the
+Shared documentation values live in `docs/docs.json` variables, and reusable
+content lives in `docs/snippets/`. Mintlify resolves these at build time.
+CI runs `pnpm docs:check` for links and `pnpm docs:check:mermaid` for Mermaid
+fences. Contributors should start with the
 [workspace instructions](AGENTS.md), then the scoped `AGENTS.md` for the
 package they are changing.
 

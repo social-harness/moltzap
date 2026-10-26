@@ -114,7 +114,7 @@
         "executor": "nx:run-commands",
         "options": {
           "cwd": "packages/registry",
-          "command": "node ../../scripts/architecture/check-package.ts ."
+          "command": "safer-architecture-lsp check ."
         }
       }
     }

@@ -12,40 +12,14 @@
       "!{projectRoot}/tsconfig.test.json",
       "!{projectRoot}/vitest.config.ts",
       "!{projectRoot}/vitest.integration.config.ts",
-      "!{projectRoot}/**/MODULE.md",
       "!{projectRoot}/safer-architecture.config.json"
     ],
     "sources": [
       "default",
-      "!{projectRoot}/**/MODULE.md",
       "!{projectRoot}/safer-architecture.config.json"
     ],
     "workspaceFiles": [
       "{workspaceRoot}/**/*"
-    ],
-    "docsGeneration": [
-      "{workspaceRoot}/package.json",
-      "{workspaceRoot}/pnpm-lock.yaml",
-      "{workspaceRoot}/README.md",
-      "{workspaceRoot}/tsconfig.base.json",
-      "{workspaceRoot}/typedoc.json",
-      "{workspaceRoot}/scripts/docs/generate-constants-snippets.ts",
-      "{workspaceRoot}/scripts/docs/generate-modules.ts",
-      "{workspaceRoot}/scripts/docs/flow-coverage.ts",
-      "{workspaceRoot}/scripts/docs/mintlify-nav.ts",
-      "{workspaceRoot}/scripts/docs/modules.ts",
-      "{workspaceRoot}/scripts/docs/signature-extract.ts",
-      "{workspaceRoot}/scripts/docs/sharness-version.ts",
-      "{workspaceRoot}/scripts/docs/typedoc-load.ts",
-      "{workspaceRoot}/packages/**/*.json",
-      "{workspaceRoot}/packages/**/*.ts",
-      "!{workspaceRoot}/packages/**/*.test.ts",
-      "!{workspaceRoot}/packages/**/src/__tests__/**/*",
-      "!{workspaceRoot}/packages/**/dist/**/*",
-      "!{workspaceRoot}/packages/**/src/**/MODULE.md",
-      "{workspaceRoot}/docs/**/*",
-      "!{workspaceRoot}/docs/modules/**/*",
-      "!{workspaceRoot}/docs/snippets/constants/**/*"
     ],
     "sharedGlobals": [
       "{workspaceRoot}/tsconfig.base.json",
@@ -137,12 +111,6 @@
       "cache": true
     },
     "arch:check": {
-      "dependsOn": [
-        {
-          "target": "arch:config:generate",
-          "projects": "workspace"
-        }
-      ],
       "options": {
         "env": {
           "NODE_OPTIONS": "--max-old-space-size=8192"
@@ -150,8 +118,7 @@
       },
       "inputs": [
         "default",
-        "{projectRoot}/safer-architecture.config.json",
-        "{workspaceRoot}/scripts/architecture/check-package.ts"
+        "{projectRoot}/safer-architecture.config.json"
       ],
       "cache": true
     }

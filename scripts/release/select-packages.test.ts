@@ -21,10 +21,6 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import {
-  FINAL_PACKAGES,
-  RELEASE_PACKAGES,
-} from "../architecture/boundary-contract.ts";
-import {
   contentHashOfDirectory,
   contentHashOfTarball,
 } from "./content-hash.ts";
@@ -40,8 +36,8 @@ import {
 const RELEASE = "2099.101.0";
 const PREVIOUS = "2099.100.0";
 
-/** Product release tests follow the same package set as release selection. */
-const DIRS = RELEASE_PACKAGES;
+/** A library and its adapter exercise dependency-ordered release selection. */
+const DIRS = ["client", "openclaw-channel"];
 
 /**
  * Every workspace package name, as `hostCodeHashOfPackage` passes them: the
@@ -53,7 +49,7 @@ const WORKSPACE_NAMES: ReadonlySet<string> = new Set(
   ),
 );
 const DEPENDENCIES = Object.fromEntries(
-  DIRS.map((dir) => [dir, FINAL_PACKAGES[dir].deps]),
+  DIRS.map((dir) => [dir, dir === "client" ? [] : ["client"]]),
 );
 
 const MANIFEST = {

@@ -43,7 +43,7 @@ if ! head_wire=$(git show "$commit:$source_path" |
     const result = parseCompatibilityVersion(readFileSync(0, "utf8"));
     if ("error" in result) { console.error(result.error); process.exit(1); }
     console.log(result.value);
-  ' "$SCRIPT_DIR/../docs/sharness-version.ts") ||
+  ' "$SCRIPT_DIR/wire-version.ts") ||
   ! release_wire=$(git show "$release_commit:$wire_path" |
     jq -er '.sharnessWireVersion | strings | select(length > 0)'); then
   echo "ERROR: Cannot read WIRE_VERSION from $source_path or sharnessWireVersion from $wire_path. Docs: https://docs.moltzap.xyz/spec/layer-interfaces#publication-and-versions" >&2

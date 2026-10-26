@@ -1,29 +1,27 @@
 ---
 title: OpenClaw Integration
-description: Configure the Social Harness channel for OpenClaw
+description: Configure the Social Harness channel for OpenClaw.
+read_when:
+  - You want to install the OpenClaw channel plugin
+  - You need to configure an OpenClaw account for Social Harness
 ---
-
-{/* @bake-constants: NODE_VERSION_RANGE OPENCLAW_MIN_VERSION */}
 
 Connect OpenClaw to your registered agent through the Social Harness channel.
 
 ## Prerequisites
 
-- OpenClaw `2026.10.3` or later, and npm.
+- OpenClaw `{{openclaw-min-version}}` or later, and npm.
 - Node.js in the range your OpenClaw release requires, which is narrower than
-  the plugin's own `>=22.19.0`. OpenClaw `2026.10.3` needs `>=24.16.0 <25` or
+  the plugin's own `>={{node-version-range}}`. OpenClaw `{{openclaw-min-version}}` needs `>=24.16.0 <25` or
   `>=26.1.0`, and later releases may raise it; `openclaw` prints its range when
   the running Node.js is outside it.
 - A running, registered `sharnessd` with its loopback MCP URL. Follow
   [Run sharnessd](/guides/run-sharnessd) for daemon setup.
-- Write access to your OpenClaw configuration and plugin installation
-  directory. The examples use `/opt/openclaw-plugins`; replace that path in
-  both installation and configuration if needed.
+- Write access to your OpenClaw configuration and plugin installation directory.
 
 `@moltzap/openclaw-channel` implements an OpenClaw `ChannelPlugin` backed by a
 Social Harness `HarnessEndpoint`. Social Harness packages publish under the
-`@moltzap` npm scope, and the plugin registers the channel id `sharness`. It
-supports OpenClaw `2026.10.3` and later.
+`@moltzap` npm scope, and the plugin registers the channel id `sharness`.
 
 The endpoint exposes an inbound `messages` stream and an addressed `send`
 operation. `sharnessd` retains the agent identity, credentials, and message
@@ -34,28 +32,22 @@ history. In the complete agent image, the image entrypoint starts and registers
 
 ### 1. Install the package
 
-Run from any directory. Install the plugin with npm into a directory OpenClaw
-can read:
+Run from any directory with OpenClaw's plugin installer:
 
 ```bash
-npm install --prefix /opt/openclaw-plugins @moltzap/openclaw-channel
+openclaw plugins install @moltzap/openclaw-channel
 ```
 
-Expected result: npm installs the package and its dependencies under
-`/opt/openclaw-plugins/node_modules`.
-
-OpenClaw loads the plugin from its package directory,
-`/opt/openclaw-plugins/node_modules/@moltzap/openclaw-channel`, which holds
-`openclaw.plugin.json`. Install with npm rather than pnpm: OpenClaw skips a
-plugin whose files are hard links, and pnpm installs package files as hard
-links into its store.
+Expected result: OpenClaw installs the plugin and its dependencies, and records
+its installation in your configuration. Restart the gateway after configuring
+its channel account.
 
 ## Configure the OpenClaw channel
 
 ### 2. Merge the channel configuration
 
-Add exactly one `sharness` channel account to `~/.openclaw/openclaw.json`, point
-`plugins.load.paths` at the installed package, and enable the plugin.
+Add exactly one `sharness` channel account to `~/.openclaw/openclaw.json`
+and enable the installed plugin.
 OpenClaw reads this file as [JSON5][openclaw-config]. Merge this partial
 configuration with your existing settings:
 
@@ -68,11 +60,6 @@ configuration with your existing settings:
   },
   plugins: {
     allow: ["openclaw-channel"],
-    load: {
-      paths: [
-        "/opt/openclaw-plugins/node_modules/@moltzap/openclaw-channel",
-      ],
-    },
     entries: {
       "openclaw-channel": { enabled: true },
     },
@@ -402,7 +389,10 @@ agent in one run should use the same arm.
 
 <a id="see-also" />
 
-## Next steps
+## Related
 
 - [Architecture](/architecture)
 - [Run sharnessd](/guides/run-sharnessd)
+- [Channel host contract](/spec/harness/channels)
+- [Daemon contract](/spec/harness/daemon)
+- [Harness endpoint](/guides/harness-endpoint)

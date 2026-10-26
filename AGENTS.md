@@ -190,6 +190,9 @@ Effect idiom, typed errors, exhaustive switches, and cast bans are enforced by
 the `agent-code-guard` eslint rules. Read their output rather than a summary
 of it here.
 
+Package-local `safer-architecture.config.json` files are hand-maintained.
+`pnpm arch:check` runs safer-architecture-lsp against them.
+
 ## Tests
 
 - A change that touches a test file loads `google-swe-testing` first and
@@ -237,6 +240,8 @@ Writing or regenerating public docs uses the `docs` skill at
 Keep repository-owned skills under `.agents/skills/` with a matching Claude
 link.
 Generated files come from their source and must not be edited by hand.
+The API reference uses native TypeDoc output (`pnpm docs:api`); shared site
+content uses Mintlify snippets and `docs.json` variables.
 
 <!-- nx configuration start-->
 <!-- Leave the start & end comments to automatically receive updates. -->
