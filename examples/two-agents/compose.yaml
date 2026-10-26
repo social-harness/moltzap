@@ -1,6 +1,6 @@
 # The Registry image runs both the Registry and its PGlite database, so it is
 # named once and the release pins one digest for it.
-x-registry-image: &registry-image ${SHARNESS_REGISTRY_IMAGE:-ghcr.io/social-harness/registry@sha256:dac0f76cd7c9651d719f6b3f5fe0ea8196cabe53db6dbbad20c3aea36e86217b}
+x-registry-image: &registry-image ${SHARNESS_REGISTRY_IMAGE:-ghcr.io/social-harness/registry@sha256:485d550c0371682bdcca14dae675faa86c95ba94b8ce3958241ae10a2b15c79e}
 
 services:
   database:
@@ -28,7 +28,7 @@ services:
       SHARNESS_REGISTRY_ADMISSION_CREDENTIAL: ${SHARNESS_EXAMPLE_ADMISSION_CREDENTIAL:-two-agents-example}
       SHARNESS_REGISTRY_SIGNING_PRIVATE_KEY_PATH: /keys/registry-signing.pem
   router:
-    image: ${SHARNESS_ROUTER_IMAGE:-ghcr.io/social-harness/router@sha256:44cab789b6d9fb754ea39f3fc4e769c5f780aa3216f7573f6f1b5df86ffcf87c}
+    image: ${SHARNESS_ROUTER_IMAGE:-ghcr.io/social-harness/router@sha256:c6e3707b94c5920ad9e33295c185dc70ffdfd67d07a8afa945bd5baaa8101046}
     depends_on: [registry]
     ports:
       - "127.0.0.1:${SHARNESS_EXAMPLE_ROUTER_PORT:-3002}:3002"
