@@ -82,6 +82,7 @@ export class ProcessTestError extends Data.TaggedError("ProcessTestError")<{
 export interface RunningProcess {
   readonly child: ChildProcess;
   readonly logs: () => string;
+  readonly stderr: () => string;
 }
 
 /** Shared Registry and Router coordinates for two endpoint daemons. */
@@ -96,6 +97,8 @@ export interface ProcessInfrastructure {
    * `RouterInstanceId` and no envelopes, as a redeployed Router does.
    */
   readonly restartRouter: Effect.Effect<void, ProcessTestError>;
+  /** Recreates the empty in-memory Registry database and restarts both network services. */
+  readonly resetNetwork: Effect.Effect<void, ProcessTestError>;
 }
 
 /**
@@ -277,33 +280,39 @@ const startProcess = (
     stdio: ["ignore", "pipe", "pipe"],
   });
   let output = "";
+  let stderr = "";
   child.stdout?.setEncoding("utf8");
   child.stderr?.setEncoding("utf8");
   child.stdout?.on("data", (chunk: string) => {
     output += chunk;
   });
   child.stderr?.on("data", (chunk: string) => {
+    stderr += chunk;
     output += chunk;
   });
-  return { child, logs: () => output };
+  return { child, logs: () => output, stderr: () => stderr };
 };
 
 /** Whether `child` has exited on its own or by a signal. */
 export const hasExited = (child: ChildProcess): boolean =>
   child.exitCode !== null || child.signalCode !== null;
 
-/** Remove the exit listener when an enclosing scope interrupts the wait. */
-const waitForExit = (running: RunningProcess): Effect.Effect<void> => {
-  if (hasExited(running.child)) {
+/** Waits for the child and its output streams to close; cancellation removes the listener. */
+export const waitForExit = (running: RunningProcess): Effect.Effect<void> => {
+  if (
+    hasExited(running.child) &&
+    running.child.stdout?.closed &&
+    running.child.stderr?.closed
+  ) {
     return Effect.void;
   }
   return Effect.async<undefined>((resume) => {
     const onExit = (): void => {
       resume(Effect.succeed(undefined));
     };
-    running.child.once("exit", onExit);
+    running.child.once("close", onExit);
     return Effect.sync(() => {
-      running.child.removeListener("exit", onExit);
+      running.child.removeListener("close", onExit);
     });
   });
 };
@@ -595,14 +604,20 @@ export const acquireProcessInfrastructureFrom = (
       registrySignerPublicKeyJson,
       temporaryDirectory,
     } = prepared;
-    const startRegistry = startNetworkRegistry(prepared, binaries);
     const scope = yield* Effect.scope;
+    const startRegistry = startNetworkRegistry(prepared, binaries).pipe(
+      Scope.extend(scope),
+    );
     const startRouter = startNetworkRouter(prepared, binaries).pipe(
       Scope.extend(scope),
     );
-    const [, firstRouter] = yield* Effect.all([startRegistry, startRouter], {
-      concurrency: 2,
-    });
+    const [firstRegistry, firstRouter] = yield* Effect.all(
+      [startRegistry, startRouter],
+      {
+        concurrency: 2,
+      },
+    );
+    const registry = yield* Ref.make(firstRegistry);
     const router = yield* Ref.make(firstRouter);
     const restartRouter = Ref.get(router).pipe(
       Effect.flatMap(stopProcess),
@@ -610,12 +625,20 @@ export const acquireProcessInfrastructureFrom = (
       Effect.flatMap((restarted) => Ref.set(router, restarted)),
     );
 
+    const resetNetwork = Effect.gen(function* () {
+      yield* stopProcess(yield* Ref.get(router));
+      yield* Scope.close(yield* Ref.get(registry), Exit.void);
+      yield* Ref.set(registry, yield* startRegistry);
+      yield* Ref.set(router, yield* startRouter);
+    });
+
     return {
       registryOrigin,
       routerOrigin,
       registrySignerPublicKeyJson,
       temporaryDirectory,
       restartRouter,
+      resetNetwork,
     };
   }).pipe(Effect.withSpan("acquireProcessInfrastructureFrom"));
 
@@ -891,13 +914,18 @@ function startNetworkRegistry(
     )
       ? [binaries.registry, []]
       : launchCommand("Registry", versions.value);
+    const registryScope = yield* Effect.acquireRelease(
+      Scope.make(),
+      (acquired) => Scope.close(acquired, Exit.void),
+    );
     yield* startPgliteRegistry({
       postgresqlPort,
       registryPort,
       registryKeyPath,
       admissionCredential: ADMISSION_CREDENTIAL,
       command,
-    });
+    }).pipe(Scope.extend(registryScope));
+    return registryScope;
   });
 }
 

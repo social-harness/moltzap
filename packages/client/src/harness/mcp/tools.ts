@@ -64,6 +64,7 @@ import {
   managementSearchConversationsResultSchema,
   type ManagementStatusResult,
   managementStatusResultSchema,
+  registrationAdmissionRefusalMessage,
   validationIssues,
 } from "../protocol/index.js";
 import {
@@ -338,7 +339,9 @@ const runOperation = async <Value extends Readonly<Record<string, unknown>>>(
     });
     throw new ProtocolError(
       ProtocolErrorCode.InternalError,
-      `${options.label} failed`,
+      reason === "admission-refused"
+        ? registrationAdmissionRefusalMessage
+        : `${options.label} failed`,
       {
         reason,
       },

@@ -21,7 +21,11 @@ changes the catalog on the same MCP endpoint.
 the request. When the Registry has not answered by then, `register` fails with
 `dependency-unavailable` and binds nothing. Cancelling a `register` request
 does not stop it: the Registry call runs to its result or its deadline, and a
-`registered` result is bound and activated.
+`registered` result is bound and activated. A Registry authentication refusal
+fails with `admission-refused`, a final refusal naming the admission credential
+and directing the operator to supply this network's credential. The MCP helper
+deletes its saved registration request after this refusal; connection failures
+and timeouts remain retryable.
 
 `status` returns exact active AgentCard state from the moment the binding
 commits, while the daemon is still activating its protocol; `register` returns
@@ -179,6 +183,7 @@ interface ManagementErrorData<Reason extends string> {
 }
 
 type RegisterFailureReason =
+  | "admission-refused"
   | "dependency-unavailable"
   | "persistence-failed"
   | "incompatible-daemon"

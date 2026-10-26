@@ -1,6 +1,6 @@
 /** @file Startup failures expose safe diagnostics through every error representation. */
 
-import { live as it } from "@effect/vitest";
+import { scopedLive as it } from "@effect/vitest";
 import { ConfigProvider, Effect, Layer } from "effect";
 import { expect } from "vitest";
 import { loadDaemonProcessConfiguration } from "./configuration.js";
@@ -13,6 +13,7 @@ const environment = ConfigProvider.fromMap(
   new Map([[registryOriginVariable, rejectedValue]]),
 );
 
+// @agent-code-guard/regression-only: Exact startup failures pin redaction and operator remedies at the public daemon boundary.
 it("removes configured values from startup error serialization and causes", () =>
   Effect.gen(function* () {
     const error = yield* Layer.build(Daemon.layer).pipe(
@@ -50,4 +51,20 @@ it("names both the closed compatibility reason and safe operator detail", () =>
     expect(error.message).toContain(error.reason);
     expect(error.message).toContain(error.detail);
     expect(error.cause).toBeUndefined();
+  }));
+
+it("explains the network reset and remedy when the agent is no longer admitted", () =>
+  Effect.sync(() => {
+    const error = new Daemon.StartupError({
+      phase: "listener",
+      reason: "agent-not-admitted",
+    });
+    expect(error.message).toContain(error.phase);
+    expect(error.message).toContain(error.reason);
+    expect(error.message).toMatch(
+      /network was reset; reset the agent and register again/u,
+    );
+    expect(error.message).toMatch(
+      /Docs: https:\/\/docs\.moltzap\.xyz\/guides\/run-sharnessd#reset-an-agent-after-the-network-restarts$/,
+    );
   }));
