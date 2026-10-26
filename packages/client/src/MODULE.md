@@ -426,7 +426,7 @@ export const GroupAddress = addressInput.pipe(
 
 A complete fixed-member group address in unsigned ASCII name order.
 
-### [`groupMembers`](./communication/collectives/render.ts#L55)
+### [`groupMembers`](./communication/collectives/render.ts#L53)
 
 _Function_
 
@@ -821,7 +821,7 @@ export const PrincipalId = canonicalIdentifier(
 
 Opaque identity of the principal represented by an agent.
 
-### [`renderCollectiveRequest`](./communication/collectives/render.ts#L73)
+### [`renderCollectiveRequest`](./communication/collectives/render.ts#L71)
 
 _Function_
 
@@ -839,7 +839,7 @@ by host, since each host's model sends the answer through its own tool.
 
 **Returns:** The text of the model's turn.
 
-### [`renderCollectiveResult`](./communication/collectives/render.ts#L120)
+### [`renderCollectiveResult`](./communication/collectives/render.ts#L118)
 
 _Function_
 
