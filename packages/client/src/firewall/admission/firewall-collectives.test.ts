@@ -471,12 +471,12 @@ function showsEveryAnswerWithItsAdvice() {
         {
           member: bob,
           instructions: [{ instruction: rule.guidance }],
-          subjects: [{ sender: subject.remote.card.agentId }],
+          subjects: [{ sender: bob }],
         },
         {
           member: carol,
           instructions: [{ instruction: rule.guidance }],
-          subjects: [{ sender: subject.third.card.agentId }],
+          subjects: [{ sender: carol }],
         },
       ],
     });

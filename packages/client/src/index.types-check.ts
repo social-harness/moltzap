@@ -201,8 +201,7 @@ type GuidanceRenderingIsExact = Expect<
     typeof renderLocalGuidance,
     (
       guidance: LocalGuidance,
-      body?: string,
-      origin?: "peer" | "endpoint",
+      quoted?: { text: string; origin: "peer" | "endpoint" },
     ) => string
   >
 >;

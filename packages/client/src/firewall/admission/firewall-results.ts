@@ -29,6 +29,7 @@ import {
   MAXIMUM_RUNTIME_ITEM_BYTES,
 } from "../../communication/store/index.js";
 import {
+  ENDPOINT_SENDER,
   type LocalGuidance,
   retainedFirewallRefusal,
 } from "../outcome/index.js";
@@ -110,9 +111,6 @@ export const checkLocalItem = (
     }
   }
 };
-
-/** The sender a local item's evidence names: the endpoint itself, not any agent. */
-const ENDPOINT_SENDER = "sharness";
 
 /**
  * The judgment and reason of a retained check result; the rest is not read
@@ -603,7 +601,7 @@ function localMessage(
   return decodeMessage({
     id: hashedId(`${ENDPOINT_SENDER}:${entry.deliveryToken}`),
     sender: ENDPOINT_SENDER,
-    recipients: [environment.localAgentCard.agentId],
+    recipients: [`agent:${environment.localAgentCard.agentName}`],
     text,
     operation,
   });

@@ -23,7 +23,7 @@ export type CheckedGuidance = typeof checkedGuidanceSchema.Type;
 
 The guidance of one checked text: a message, a request, an answer, a question or a send.
 
-### [`FirewallSendError`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/firewall/outcome/index.ts#L225)
+### [`FirewallSendError`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/firewall/outcome/index.ts#L235)
 
 _Class_
 
@@ -44,6 +44,16 @@ export class FirewallSendError extends Data.TaggedError("FirewallSendError")<
 A refusal is returned only before an application invocation creates any intent.
 Its opaque check reference survives hosts that retain only the error message.
 
+### [`GuidanceBodyOrigin`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/firewall/outcome/index.ts#L81)
+
+_TypeAlias_
+
+```ts
+export type GuidanceBodyOrigin = "peer" | "endpoint";
+```
+
+Attribution of the body quoted alongside local instructions.
+
 ### [`LocalGuidance`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/firewall/outcome/index.ts#L75)
 
 _TypeAlias_
@@ -54,21 +64,18 @@ export type LocalGuidance = typeof localGuidanceSchema.Type;
 
 Local advice accompanies the envelope and never changes a certified item.
 
-### [`renderLocalGuidance`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/firewall/outcome/index.ts#L86)
+### [`renderLocalGuidance`](https://github.com/social-harness/moltzap/blob/main/packages/client/src/firewall/outcome/index.ts#L91)
 
 _Function_
 
 ```ts
 export function renderLocalGuidance(
   guidance: LocalGuidance,
-  body?: string,
-  origin: "peer" | "endpoint" = "peer",
+  quoted?: { text: string; origin: GuidanceBodyOrigin },
 ): string
 ```
 
-Registered local instructions stay separate from attributed, quoted peer
-text. Subjects can carry AgentIds without verified names; those identities
-remain explicit rather than becoming guessed messaging addresses.
+Registered local instructions stay separate from attributed, quoted peer text.
 
 **Returns:** Host-neutral model text, with no composition identifiers.
 

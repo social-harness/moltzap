@@ -30,6 +30,31 @@ The Client root exports closed Effect Schemas and corresponding types for:
 - closed `SendError`, `CollectiveError`, `FirewallSendError`, `ListenError`,
   `DeliveryAcknowledgeError`, and `ConnectError`.
 
+The root also exports host text renderers:
+
+- `renderContent(content)` renders text and JSON data parts, one per line.
+- `renderCollectiveRequest(item, howToAnswer, guidance?)` renders a question and
+  form with the endpoint's answer instructions outside any guidance quote.
+- `renderCollectiveResult(item)` renders the question and member outcomes.
+- `renderLocalGuidance(guidance, quoted?: { text: string; origin: GuidanceBodyOrigin })`
+  renders registered instructions and optionally quotes a peer or endpoint body.
+  `GuidanceBodyOrigin` is `"peer" | "endpoint"`.
+
+These renderers reserve lines headed `Social Harness local guidance` for local
+instructions. Peer text lines imitating that heading, including indented or
+Markdown headings, receive a visible `[peer text] ` prefix even when no guidance
+accompanies the message. Ordinary peer messages remain unquoted. Guidance omits
+`middlewareId`, groups result instructions by answer and question, and includes
+quoted, attributed subjects only when subjects exist. Subject senders and
+recipients use verified `agent:<name>` addresses from the check's capture,
+including the local agent; endpoint evidence renders as `Social Harness`.
+Retained AgentIds without names render as `agent agt_… (name not recorded)`.
+A guidance-bearing multicast is attributed to Social Harness and quotes the peer
+body while retaining its reply address. Collective requests retain requester
+attribution and quote their question and form separately from the endpoint's
+unescaped answer instructions. This text projection supplies contextual guidance,
+not a system-role capability.
+
 `Content` is a nonempty sequence of the exact closed union
 `{type: "text", text: string}` or `{type: "data", value: JsonValue}`.
 `JsonValue` contains only JSON null, booleans, finite numbers, strings,

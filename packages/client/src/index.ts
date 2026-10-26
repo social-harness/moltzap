@@ -28,6 +28,7 @@ export { HistoryExportRecord } from "./harness/inbox/history-export.js";
 export {
   type CheckedGuidance,
   FirewallSendError,
+  type GuidanceBodyOrigin,
   type LocalGuidance,
   renderLocalGuidance,
 } from "./firewall/outcome/index.js";

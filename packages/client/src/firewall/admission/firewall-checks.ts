@@ -260,12 +260,10 @@ export const assess = Effect.fn("assessMessage")(function* (
       exitOutcome(exit, "checked"),
     ),
   );
-  const projection = yield* guidanceProjection(
-    assessed,
-    input,
-    context,
+  const projection = yield* guidanceProjection(assessed, input, context, {
     checkId,
-  );
+    localAgentCard: environment.localAgentCard,
+  });
   const { mode } = environment.installed.configuration;
   const admit = mode === "guidance" || projection.result.judgment === "allow";
   return {
@@ -664,7 +662,7 @@ function guidanceProjection(
   result: FirewallCheck,
   input: AssessmentInput,
   context: MessageContext,
-  checkId: string,
+  capture: { readonly checkId: string; readonly localAgentCard: AgentCard },
 ): Effect.Effect<
   { readonly result: FirewallCheck; readonly guidance?: CheckedGuidance },
   EndpointStoreError
@@ -682,8 +680,21 @@ function guidanceProjection(
         "uncertain" in entry ? [] : entry.subjects,
       ),
     );
-    const subjects = guidanceSubjects(selected, input, context);
-    const guidance: CheckedGuidance = { checkId, instructions, subjects };
+    const history = yield* Effect.forEach(
+      input.evidence.history,
+      (entry) => decodeHistory(entry, capture.localAgentCard.agentId),
+      { concurrency: 1 },
+    );
+    const subjects = guidanceSubjects(selected, input, context, [
+      ...history.flatMap((entry) => entry.cards),
+      ...input.cards,
+      capture.localAgentCard,
+    ]);
+    const guidance: CheckedGuidance = {
+      checkId: capture.checkId,
+      instructions,
+      subjects,
+    };
     const bytes = yield* encodeRuntimeValue(guidance);
     if (
       subjects.length !== selected.size ||
@@ -703,7 +714,12 @@ function guidanceSubjects(
   selected: ReadonlySet<string>,
   input: AssessmentInput,
   context: MessageContext,
+  cards: readonly AgentCard[],
 ): CheckedGuidance["subjects"] {
+  const addresses = new Map<string, string>(
+    cards.map((card) => [card.agentId, `agent:${card.agentName}`]),
+  );
+  const address = (identity: string) => addresses.get(identity) ?? identity;
   const available = context.history.filter(
     (entry) => entry.visibility === "runtime" && entry.admission === "admitted",
   );
@@ -715,8 +731,8 @@ function guidanceSubjects(
     .filter((entry) => selected.has(entry.id))
     .map((entry) => ({
       id: entry.id,
-      sender: entry.sender,
-      recipients: entry.recipients,
+      sender: address(entry.sender),
+      recipients: entry.recipients.map(address),
       text: entry.text,
     }));
 }

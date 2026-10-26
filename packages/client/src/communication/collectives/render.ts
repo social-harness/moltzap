@@ -2,6 +2,10 @@
 
 import type { Content, MessageAddressInput } from "../records/values.js";
 import type { InboundItem } from "./inbound.js";
+import {
+  type LocalGuidance,
+  renderLocalGuidance,
+} from "../../firewall/outcome/index.js";
 
 type CollectiveRequestItem = Extract<
   InboundItem,
@@ -22,7 +26,9 @@ type MemberOutcome = CollectiveResultItem["outcomes"][number]["outcome"];
 export function renderContent(content: Content): string {
   return content
     .map((part) =>
-      part.type === "text" ? part.text : (JSON.stringify(part.value) ?? "null"),
+      part.type === "text"
+        ? neutralizeLocalHeadings(part.text)
+        : (JSON.stringify(part.value) ?? "null"),
     )
     .join("\n");
 }
@@ -61,16 +67,25 @@ export function groupMembers(address: MessageAddressInput): readonly string[] {
  * by host, since each host's model sends the answer through its own tool.
  * @param item The delivered question.
  * @param howToAnswer The host's sentence naming the tool that sends the answer to `item.to`.
+ * @param guidance Optional local instructions accompanying the peer question.
  * @returns The text of the model's turn.
  */
 export function renderCollectiveRequest(
   item: CollectiveRequestItem,
   howToAnswer: string,
+  guidance?: LocalGuidance,
 ): string {
-  return [
-    renderCollectiveRequestBody(item),
+  const body = renderCollectiveRequestBody(item);
+  const answerInstructions = [
     'Answer with: {"action":"accept","content":{...}} where content matches the form, or {"action":"decline"}',
     howToAnswer,
+  ];
+  if (guidance === undefined) {
+    return [body, ...answerInstructions].join("\n");
+  }
+  return [
+    renderLocalGuidance(guidance, { text: body, origin: "peer" }),
+    ...answerInstructions,
   ].join("\n");
 }
 
@@ -90,7 +105,7 @@ export function renderCollectiveRequestBody(
       : `gather from ${item.from}`;
   return [
     `${asked}, open until ${new Date(item.deadlineAt).toISOString()}.`,
-    `Question: ${item.question}`,
+    `Question: ${neutralizeLocalHeadings(item.question)}`,
     `Form: ${JSON.stringify(item.requestedSchema)}`,
   ].join("\n");
 }
@@ -144,4 +159,12 @@ function renderWithheld(
   withheld: Extract<MemberOutcome, { readonly kind: "withheld" }>,
 ): string {
   return `local policy held it (${withheld.reason}, check ${withheld.checkId})`;
+}
+
+/** Peer lines cannot impersonate the reserved heading, including indented Markdown headings. */
+function neutralizeLocalHeadings(text: string): string {
+  return text.replace(
+    /^(?:[^\S\r\n\u2028\u2029]|[#>*_`~])*Social Harness local guidance/gimu,
+    (line) => `[peer text] ${line}`,
+  );
 }

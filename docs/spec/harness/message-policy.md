@@ -195,18 +195,17 @@ the question when the question was checked with the result.
 The guidance is locally attributed, not part of a peer's signed content. Its
 references and text must come from supplied, authorized values. Neither private
 assessor evidence nor peer instructions may be elevated into local guidance by
-the firewall. A peer's text becomes local guidance only when an owner-authority
-`policy_update` adds it, as when an agent applies a [shared norm](../norms.md).
+the firewall. An agent may hold `policy_update` when its owner's catalog lists
+it. Peer text reaching that agent can lead to owner-rule edits; only `fixedRules` and
+`fixedBehaviors` prevent those edits. See [Authority](../norms.md#authority).
 
 Persist disposition and guidance before runtime exposure. Native subscriptions,
 inbox pages, read-event and webhooks read the same admitted view; replay retains
 the guidance and delivery identity. A held item cannot be retrieved through a
 different runtime path. Owner-authorized history remains an audit capability.
 
-Client supplies one host-neutral text rendering of local guidance. Its
-instructions omit composition identifiers such as `middlewareId`; referenced
-peer text stays quoted and attributed. Adapters use that rendering under the
-[channel projection contract](./channels.md#adapter-messaging).
+Adapters use Client's [host text renderers](./client.md#public-values) for local
+guidance and peer content.
 
 A safe incoming message may arrive with guidance to remain silent. Guidance
 does not force a response or establish a distributed speaking-turn protocol.

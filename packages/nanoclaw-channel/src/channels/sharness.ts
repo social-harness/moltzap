@@ -6,6 +6,7 @@ import {
   type DeliveryAcknowledgeError,
   type FirewallSendError,
   groupMembers,
+  type GuidanceBodyOrigin,
   type HarnessEndpoint,
   type InboundDelivery,
   type InboundItem,
@@ -105,6 +106,7 @@ interface OutboundText {
 }
 
 interface ProjectedItem {
+  readonly origin: GuidanceBodyOrigin;
   readonly id: string;
   readonly address: MessageAddressInput;
   readonly sender: string;
@@ -221,7 +223,13 @@ function fromEndpoint(
   address: MessageAddressInput,
   text: string,
 ): InboundMessage {
-  return endpointInbound({ id, address, sender: ENDPOINT_SENDER, text });
+  return endpointInbound({
+    id,
+    address,
+    sender: ENDPOINT_SENDER,
+    text,
+    origin: "endpoint",
+  });
 }
 
 /**
@@ -503,19 +511,31 @@ class HarnessChannelAdapter {
       return Effect.void;
     }
     const projected = projectItem(delivery.item);
-    const origin =
-      delivery.item.kind === "multicast" ||
-      delivery.item.kind === "collectiveRequest"
-        ? "peer"
-        : "endpoint";
-    const text =
-      delivery.guidance === undefined
-        ? projected.text
-        : renderLocalGuidance(delivery.guidance, projected.text, origin);
+    let text = projected.text;
+    if (delivery.guidance !== undefined) {
+      text =
+        delivery.item.kind === "collectiveRequest"
+          ? renderCollectiveRequest(
+              delivery.item,
+              `Send the answer once as the whole text of send_message to ${delivery.item.to}.`,
+              delivery.guidance,
+            )
+          : renderLocalGuidance(delivery.guidance, {
+              text: projected.text,
+              origin: projected.origin,
+            });
+    }
     return this.handToHost(
       config,
       projected.address,
-      endpointInbound({ ...projected, text }),
+      endpointInbound({
+        ...projected,
+        text,
+        sender:
+          delivery.guidance !== undefined && delivery.item.kind === "multicast"
+            ? ENDPOINT_SENDER
+            : projected.sender,
+      }),
     ).pipe(Effect.zipRight(delivery.acknowledge));
   }
 
@@ -575,6 +595,7 @@ function projectItem(item: InboundItem): ProjectedItem {
   switch (item.kind) {
     case "multicast":
       return {
+        origin: "peer",
         id: item.message.postId,
         address: item.message.address,
         sender: item.message.sender,
@@ -582,6 +603,7 @@ function projectItem(item: InboundItem): ProjectedItem {
       };
     case "collectiveRequest":
       return {
+        origin: "peer",
         id: item.postId,
         address: item.to,
         sender: item.from,
@@ -592,6 +614,7 @@ function projectItem(item: InboundItem): ProjectedItem {
       };
     case "collectiveResult":
       return {
+        origin: "endpoint",
         id: `${item.id}:result`,
         address: item.to,
         sender: ENDPOINT_SENDER,
@@ -599,6 +622,7 @@ function projectItem(item: InboundItem): ProjectedItem {
       };
     case "operationFailed":
       return {
+        origin: "endpoint",
         id: `${item.id}:failed`,
         address: item.to,
         sender: ENDPOINT_SENDER,

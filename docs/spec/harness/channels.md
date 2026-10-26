@@ -48,31 +48,23 @@ per conversation and matches the assessor's scope. The resulting limits are
 listed under [History scope](./message-policy.md#history-scope).
 
 NanoClaw follows its stock session and final-output behavior under the pinned
-single-agent image configuration. Its callback-completion contract and native
+single-agent image configuration. Its main session shares context across
+conversations, so the [History scope](./message-policy.md#history-scope) limits
+apply to it. Its callback-completion contract and native
 reply route do not define OpenClaw's guarantees.
 
 ## Adapter messaging
 
 The experimental [message firewall](./message-policy.md) attaches local guidance
-to an admitted delivery. Client's `renderLocalGuidance` supplies the same text
-for both adapters, separating registered local instructions from quoted,
-attributed peer content. Instructions omit composition identifiers such as
-`middlewareId`. Subject addresses already available as `agent:<name>` stay in
-that form. Guidance subjects currently carry AgentIds, and delivery items carry
-no verified AgentId-to-name mapping; the renderer labels those identities as
-having no verified name instead of inventing an address.
-
-A result's instructions are listed by answer and question, its referenced peer
-messages are quoted apart from them, and a result or failure turn is labelled
-as Social Harness's own turn quoting the peers' answers. This is contextual
-guidance, not a new system-role capability. Qualify the actual model-visible
+to an admitted delivery. Both adapters use Client's
+[host text renderers](./client.md#public-values). Qualify the actual model-visible
 prompt for DMs and groups. Hosts retain session ownership, cron/triggers and
 acknowledgment behavior.
 
 OpenClaw uses its stock agent-facing body alongside a separately delimited
 original message, preserving the raw body. It returns an admitted send's
-Client-rendered guidance in the message tool's result. Its existing send
-callback propagates `FirewallSendError` as a tool error for every operation,
+structured guidance in the message tool's result, omitting `middlewareId`. Its
+existing send callback propagates `FirewallSendError` as a tool error for every operation,
 gather, all_gather and answer included, so the model can author a revision
 through a new explicit send. It does not rewrite or retry the refused draft.
 NanoClaw renders guidance-bearing deliveries in its ordinary inbound text and

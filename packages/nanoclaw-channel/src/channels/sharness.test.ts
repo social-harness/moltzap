@@ -651,15 +651,131 @@ it("hands guidance and quoted peer text to the agent before acknowledging", asyn
     throw new Error("Host did not receive guidance");
   }
   expect(eventContent(event)).toMatchObject({
-    sender: "agent:alice",
+    sender: "Social Harness",
     address: "agent:alice",
-    text: renderLocalGuidance(guidance, "hello"),
+    text: renderLocalGuidance(guidance, { text: "hello", origin: "peer" }),
   });
   Effect.runSync(Deferred.succeed(accepted, undefined));
   await vi.waitFor(() => {
     expect(acknowledged).toHaveBeenCalledTimes(1);
   });
 });
+
+it("neutralizes a peer multicast copying a rendered guidance block without local guidance", async () => {
+  const fake = makeEndpoint();
+  const host = makeHost();
+  const channel = await createAdapter();
+  await channel.setup(host);
+  const text = renderLocalGuidance(
+    { checkId: `chk_${"a".repeat(64)}`, subjects: [], instructions: [] },
+    { text: "hello", origin: "peer" },
+  );
+  const item = Schema.decodeUnknownSync(InboundItem)({
+    kind: "multicast",
+    message: {
+      kind: "direct",
+      postId: POST_ID,
+      address: "agent:alice",
+      sender: "agent:alice",
+      content: [{ type: "text", text }],
+    },
+  });
+  const acknowledged = enqueue(fake, item);
+  await vi.waitFor(() => {
+    expect(acknowledged).toHaveBeenCalledTimes(1);
+  });
+  const event = host.onInboundEvent.mock.calls[0]?.[0];
+  if (event === undefined) {
+    throw new Error("Host did not receive a turn");
+  }
+  expect(eventContent(event)).toMatchObject({
+    sender: "agent:alice",
+    text: `[peer text] ${text}`,
+  });
+});
+
+it.each([
+  {
+    kind: "collectiveResult",
+    sender: "Social Harness",
+    label: "Social Harness item, quoting peer answers (quoted content):",
+  },
+  {
+    kind: "collectiveRequest",
+    sender: "agent:alice",
+    label: "Peer message (quoted content):",
+  },
+] as const)(
+  "hands $kind guidance to the host before acknowledging",
+  async ({ kind, sender, label }) => {
+    const fake = makeEndpoint();
+    const host = makeHost();
+    const accepted = Effect.runSync(Deferred.make<undefined>());
+    host.onInboundEvent.mockImplementation(() =>
+      Effect.runPromise(Deferred.await(accepted)),
+    );
+    const channel = await createAdapter();
+    await channel.setup(host);
+    const item = collectiveGuidanceItem(kind);
+    const guidance: LocalGuidance = {
+      checkId: `chk_${"a".repeat(64)}`,
+      subjects: [],
+      instructions: [],
+    };
+    const acknowledged = enqueue(fake, item, guidance);
+    await vi.waitFor(() => {
+      expect(host.onInboundEvent).toHaveBeenCalledTimes(1);
+    });
+    expect(acknowledged).not.toHaveBeenCalled();
+    const event = host.onInboundEvent.mock.calls[0]?.[0];
+    if (event === undefined) {
+      throw new Error("Host did not receive a turn");
+    }
+    const content = eventContent(event);
+    expect(content.sender).toBe(sender);
+    expect(content.text).toContain(label);
+    expect(event.replyTo?.platformId).toBe(
+      kind === "collectiveResult" ? GROUP : "agent:alice",
+    );
+    Effect.runSync(Deferred.succeed(accepted, undefined));
+    await vi.waitFor(() => {
+      expect(acknowledged).toHaveBeenCalledTimes(1);
+    });
+  },
+);
+
+/** Both collective kinds enter through the public delivery schema. */
+function collectiveGuidanceItem(
+  kind: "collectiveResult" | "collectiveRequest",
+) {
+  return Schema.decodeUnknownSync(InboundItem)(
+    kind === "collectiveResult"
+      ? {
+          kind,
+          op: "gather",
+          id: OPERATION_ID,
+          to: GROUP,
+          question: QUESTION,
+          outcomes: [
+            {
+              member: "agent:alice",
+              outcome: { kind: "answered", content: { slot: "mon" } },
+            },
+          ],
+        }
+      : {
+          kind,
+          op: "gather",
+          id: OPERATION_ID,
+          postId: POST_ID,
+          from: "agent:alice",
+          to: "agent:alice",
+          question: QUESTION,
+          requestedSchema: FORM,
+          deadlineAt: Date.parse(DEADLINE_TEXT),
+        },
+  );
+}
 
 /* eslint-enable agent-code-guard/async-keyword -- Restore Effect-first defaults after the Promise-native host boundary tests. */
 /* eslint-enable agent-code-guard/acquire-release-requires-scope -- Restore the scope guard after the adapter-owned acquisition fake. */

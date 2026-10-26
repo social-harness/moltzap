@@ -13,12 +13,12 @@ import type { ReplyPayload } from "openclaw/plugin-sdk/reply-payload";
 import {
   acquireHarnessEndpoint,
   groupMembers,
+  type GuidanceBodyOrigin,
   type HarnessEndpoint,
   type InboundDelivery,
   type InboundItem,
   type InboundMessage,
   legacyKeys,
-  type LocalGuidance,
   MessageAddressInput,
   type MessageAddressInput as MessageAddressInputValue,
   type MessageTextError,
@@ -57,6 +57,9 @@ import {
   defineChannelMessageAdapter,
   waitUntilAbort,
 } from "openclaw/plugin-sdk/channel-outbound";
+
+/** The sender OpenClaw records for a turn the endpoint itself emitted. */
+const ENDPOINT_SENDER_NAME = "Social Harness";
 
 const CHANNEL_ID = "sharness";
 const TARGET_HINT =
@@ -163,13 +166,13 @@ interface TurnSender {
 interface HostTurn {
   readonly id: string;
   /** Whether a peer authored the turn or the endpoint emitted it. */
-  readonly origin: "peer" | "endpoint";
+  readonly origin: GuidanceBodyOrigin;
   readonly kind: "direct" | "group";
   readonly address: MessageAddressInputValue;
   readonly sender: TurnSender;
   readonly members?: readonly string[];
   readonly body: string;
-  readonly guidance?: LocalGuidance;
+  readonly bodyForAgent?: string;
 }
 
 interface InboundTurnInput {
@@ -432,7 +435,25 @@ function handleMessageAction(
         to: input.to,
         ...(result.guidance === undefined
           ? {}
-          : { guidance: renderLocalGuidance(result.guidance) }),
+          : {
+              guidance: {
+                ...result.guidance,
+                instructions: result.guidance.instructions.map((instruction) =>
+                  "uncertain" in instruction
+                    ? {
+                        ruleId: instruction.ruleId,
+                        uncertain: instruction.uncertain,
+                        instruction: instruction.instruction,
+                      }
+                    : {
+                        ruleId: instruction.ruleId,
+                        expectation: instruction.expectation,
+                        subjects: instruction.subjects,
+                        instruction: instruction.instruction,
+                      },
+                ),
+              },
+            }),
       }),
     ),
   );
@@ -722,18 +743,38 @@ function handleInboundDelivery(
   runtime: OpenClawAccountRuntime,
   delivery: InboundDelivery,
 ) {
-  const turn = {
-    ...inboundItemTurn(delivery.item),
-    ...(delivery.guidance === undefined ? {} : { guidance: delivery.guidance }),
-  };
+  const projected = inboundItemTurn(delivery.item);
+  const guidance = delivery.guidance;
+  const turn: HostTurn =
+    guidance === undefined
+      ? projected
+      : {
+          ...projected,
+          ...(delivery.item.kind === "multicast"
+            ? {
+                sender: {
+                  id: `sharness:${projected.id}`,
+                  name: ENDPOINT_SENDER_NAME,
+                },
+              }
+            : {}),
+          bodyForAgent:
+            delivery.item.kind === "collectiveRequest"
+              ? renderCollectiveRequest(
+                  delivery.item,
+                  requestAnswerInstructions(delivery.item.to),
+                  guidance,
+                )
+              : renderLocalGuidance(guidance, {
+                  text: projected.body,
+                  origin: projected.origin,
+                }),
+        };
   return logInbound(ctx, turn).pipe(
     Effect.zipRight(runOpenClawTurn(ctx, runtime, turn)),
     Effect.zipRight(delivery.acknowledge),
   );
 }
-
-/** The sender OpenClaw records for a turn the endpoint itself emitted. */
-const ENDPOINT_SENDER_NAME = "Social Harness";
 
 /**
  * Render one inbound item as the turn its kind defines. Each kind has one
@@ -752,10 +793,7 @@ function inboundItemTurn(item: InboundItem): HostTurn {
       return addressedTurn(
         { id: item.postId, origin: "peer", sender: agentSender(item.from) },
         item.to,
-        renderCollectiveRequest(
-          item,
-          `Send the answer once as the whole message text, with the message tool's reply action or send to ${item.to}.`,
-        ),
+        renderCollectiveRequest(item, requestAnswerInstructions(item.to)),
       );
     case "collectiveResult":
       return endpointTurn(
@@ -768,6 +806,11 @@ function inboundItemTurn(item: InboundItem): HostTurn {
     default:
       return absurd(item);
   }
+}
+
+/** Reply instructions belong to the endpoint rather than the peer's quoted question. */
+function requestAnswerInstructions(to: MessageAddressInputValue): string {
+  return `Send the answer once as the whole message text, with the message tool's reply action or send to ${to}.`;
 }
 
 function multicastTurn(message: InboundMessage): HostTurn {
@@ -940,9 +983,7 @@ function buildInboundContext(
 
 /** The host keeps its raw body while Client renders the model-facing guidance. */
 function modelBody(turn: HostTurn): string {
-  return turn.guidance === undefined
-    ? turn.body
-    : renderLocalGuidance(turn.guidance, turn.body, turn.origin);
+  return turn.bodyForAgent ?? turn.body;
 }
 
 /**

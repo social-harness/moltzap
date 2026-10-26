@@ -43,6 +43,7 @@ import {
   type MiddlewareInput,
 } from "../evaluator/contract/index.js";
 import { makeEnglishPolicy } from "../evaluator/index.js";
+import { type LocalGuidance, renderLocalGuidance } from "../outcome/index.js";
 
 // @agent-code-guard/regression-only: Exercises durable admission, replay, interruption and races through SQLite and the protocol engine.
 
@@ -130,13 +131,15 @@ function guidanceIncoming() {
     yield* Queue.take(runtime.completed);
     const page = yield* runtime.delivery.operations.readInbox({});
     expect(page.items).toEqual(runtime.published);
-    expect(page.items).toMatchObject([
-      { guidance: { instructions: [{ instruction: rule.guidance }] } },
-    ]);
     expect(page.items[0]?.item).toEqual({
       kind: "multicast",
       message: runtime.candidate.message,
     });
+    expectNamedSubjects(
+      `agent:${subject.remote.card.agentName}`,
+      `agent:${subject.local.card.agentName}`,
+      page.items[0]?.guidance,
+    );
     expect(seen[0]?.context.history).toEqual([]);
     expect(seen[0]?.event.message.sender).toBe(subject.remote.card.agentId);
     expect(seen[0]?.context.participants).toContainEqual({
@@ -149,6 +152,24 @@ function guidanceIncoming() {
       })).guidance,
     ).toEqual(page.items[0]?.guidance);
   });
+}
+
+/** Render production guidance with certified peer and local-agent addresses. */
+function expectNamedSubjects(
+  sender: string,
+  recipient: string,
+  guidance?: LocalGuidance,
+) {
+  if (guidance === undefined) {
+    throw new Error("Expected produced guidance");
+  }
+  expect(guidance).toMatchObject({
+    instructions: [{ instruction: rule.guidance }],
+    subjects: [{ sender, recipients: [recipient] }],
+  });
+  const rendered = renderLocalGuidance(guidance);
+  expect(rendered).toContain(`"sender":"${sender}"`);
+  expect(rendered).toContain(`"recipients":["${recipient}"]`);
 }
 
 it(
@@ -706,7 +727,7 @@ function ownerHistoryStaysPrivate() {
     const guidance = (yield* runtime.delivery.operations.readInbox({})).items[0]
       ?.guidance;
     expect(guidance).toMatchObject({
-      subjects: [{ sender: subject.remote.card.agentId }],
+      subjects: [{ sender: `agent:${subject.remote.card.agentName}` }],
     });
   });
 }
