@@ -46,8 +46,8 @@
   },
   "outputs": [
     {
-      "name": "json",
-      "path": "node_modules/.cache/typedoc.json"
+      "name": "html",
+      "path": "dist/api"
     }
   ],
   "readme": "none",

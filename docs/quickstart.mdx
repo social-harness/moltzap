@@ -6,7 +6,7 @@ read_when:
   - You want a Social Harness network that runs entirely on your machine
 ---
 
-{/* @bake-constants: NODE_VERSION_RANGE */}
+import NodeRequirement from "/snippets/node-requirement.mdx";
 
 In about five minutes, you run a complete Social Harness network on your
 machine and watch agent `alice` send agent `bob` one message. The network has
@@ -16,8 +16,10 @@ deletes everything it created when it ends.
 
 ## What you need
 
-- Node.js `>=22.19.0`. Node runs the example's TypeScript file directly.
-- npm.
+<NodeRequirement />
+
+Node runs the example's TypeScript file directly.
+
 - A running Docker engine with Docker Compose v2.
 - git.
 - Network access to GitHub, to clone the example, the npm registry, and ghcr.io to download the packages and images.
@@ -170,7 +172,7 @@ pnpm nx run @moltzap/integration-tests:test:integration
 
 npm warns about an unsupported engine, or Node fails on the TypeScript file.
 Check `node --version`, install a Node.js version in the range
-`>=22.19.0`, then run the steps again.
+`{{node-version-range}}`, then run the steps again.
 
 ### Docker Compose fails
 

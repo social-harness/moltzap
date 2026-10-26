@@ -26,13 +26,8 @@
     "check": "pnpm lint && pnpm format:check",
     "docs:dev": "cd docs && mint dev --no-open",
     "docs:open": "cd docs && mint dev",
-    "docs:generate": "pnpm nx run workspace:docs:generate",
     "docs:check": "cd docs && mint broken-links",
-    "docs:check:drift": "pnpm docs:generate && test -z \"$(git ls-files --others --exclude-standard -- 'docs/modules/**' 'packages/**/MODULE.md')\" && git diff --exit-code docs/ 'packages/**/MODULE.md' README.md && pnpm docs:check:no-hardcoded-constants && pnpm docs:check:doc-imports-resolve",
     "docs:check:mermaid": "pnpm nx run workspace:docs:check:mermaid",
-    "docs:check:no-hardcoded-constants": "node scripts/docs/check-no-hardcoded-constants.ts",
-    "docs:check:doc-imports-resolve": "node scripts/docs/check-doc-imports-resolve.ts",
-    "docs:check:gates-test": "node scripts/__tests__/gates.test.ts",
     "docs:test": "pnpm nx run workspace:test",
     "test:push-gate": "bash scripts/release/push-gate.test.sh",
     "test:compute-next-version": "bash scripts/release/compute-next-version.test.sh",
@@ -45,7 +40,9 @@
     "test:client-host-imports": "node scripts/test/client-host-imports.test.ts",
     "prepare": "husky && node scripts/setup/restore-tsgo-exec-bit.ts",
     "effect:source": "./scripts/setup/prepare-effect.sh",
-    "test:affected": "nx affected -t test"
+    "test:affected": "nx affected -t test",
+    "docs:api": "pnpm nx run workspace:docs:api",
+    "test:repo-gates": "node scripts/__tests__/repo-gates.test.ts"
   },
   "devDependencies": {
     "@chughtapan/safer-architecture-lsp": "catalog:",

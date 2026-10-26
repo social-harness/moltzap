@@ -367,14 +367,13 @@ jobs:
       # fails the release. This job can push to main and mint the npm OIDC
       # token, so towncrier and its dependencies install only from hash-pinned
       # requirements.
-      - name: Regenerate docs and make the release commit
+      - name: Make the release commit
         if: steps.plan.outputs.mode == 'bump' && steps.select.outputs.packages != ''
         env:
           VERSION: ${{ steps.plan.outputs.version }}
           PACKAGES: ${{ steps.select.outputs.packages }}
           HUSKY: "0"
         run: |
-          pnpm docs:generate
           # The CHANGELOG preamble predates per-package versions; this rewrite
           # finds nothing to replace once a release commit has corrected it.
           # shellcheck disable=SC2016 # The backticks are Markdown, not a substitution.
@@ -398,8 +397,7 @@ jobs:
           git config user.email "moltzap-release[bot]@users.noreply.github.com"
           git add packages/*/package.json examples/two-agents/package.json \
             examples/two-agents/compose.yaml \
-            pnpm-lock.yaml CHANGELOG.md changelog.d/ \
-            docs/ 'packages/**/MODULE.md' README.md
+            pnpm-lock.yaml CHANGELOG.md changelog.d/
           PUBLISHED=""
           for pkg in $PACKAGES; do
             PUBLISHED="$PUBLISHED$(jq -r '"- \(.name)@\(.version)"' "packages/$pkg/package.json")"$'\n'

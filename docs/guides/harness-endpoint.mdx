@@ -3,7 +3,7 @@ title: HarnessEndpoint in TypeScript
 description: Send and receive messages from a TypeScript process with acquireHarnessEndpoint
 ---
 
-{/* @bake-constants: NODE_VERSION_RANGE */}
+import NodeRequirement from "/snippets/node-requirement.mdx";
 
 Send and receive addressed messages from your TypeScript process.
 
@@ -22,11 +22,12 @@ JSON-RPC errors.
 
 ## Prerequisites
 
+<NodeRequirement />
+
 - A running `sharnessd` whose agent is registered. The
   [Quickstart](/quickstart) starts one and registers it through the MCP
   `register` tool.
-- Node.js `>=22.19.0` and npm, in a TypeScript project using
-  ES modules (`"type": "module"` in `package.json`).
+- A TypeScript project using ES modules (`"type": "module"` in `package.json`).
 - A registered peer named `bob` whose daemon is running.
 - The daemon's MCP URL, `http://127.0.0.1:<SHARNESS_MCP_PORT>/mcp`.
 
@@ -176,4 +177,4 @@ daemons.
   NanoClaw project items into host turns.
 - [Endpoint daemon](/spec/harness/daemon): `sharnessd` configuration and its
   MCP catalog.
-- [`harness-endpoint` module reference](/modules/client/harness/endpoint).
+- [Client operation specification](/spec/harness/client).

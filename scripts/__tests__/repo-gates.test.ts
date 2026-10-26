@@ -1,36 +1,16 @@
 #!/usr/bin/env node
-/**
- * @file Gate + generator smoke tests. Plain Node, no vitest config —
- * runs the three doc-side scripts under controlled mutations that are
- * restored after each assertion. It proves (1) the gates pass on the clean
- * snapshot, (2) gates flag every planted regression, and (3) the constants
- * generator is idempotent across re-runs.
- *
- * Invoked via `pnpm docs:check:gates-test`.
- *
- * Exit codes:
- *   0 — every assertion passed.
- *   1 — one or more assertions failed; details printed to stderr.
- */
+/** @file Exercises repository-owned architecture, publication, and dependency gates through their CLI entry points. */
 import {
-  existsSync,
   mkdirSync,
   mkdtempSync,
-  readdirSync,
   readFileSync,
   rmSync,
-  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 
-import {
-  readCompatibilityVersion as readCompatibilityVersionSource,
-  WIRE_VERSION_LITERAL,
-  WIRE_VERSION_SOURCE,
-} from "../docs/sharness-version.ts";
 import {
   INTEGRATION_BOUNDARY_CASES,
   MALFORMED_BOUNDARY_CASES,
@@ -51,21 +31,16 @@ import {
   workspaceRoot,
 } from "./plants.ts";
 
-const CONTRIBUTING_DOC = "docs/development/contributing.mdx";
+const WIRE_VERSION_SOURCE = "packages/client/src/identity/wire-version.ts";
 
 /** The head of version.ts's live window, after which planted entries go. */
 const LIVE_WINDOW_HEAD = /const liveWindow = \[WIRE_VERSION/u;
 /** The head of version.ts's retired list, after which planted entries go. */
 const RETIRED_HEAD = /const RETIRED_WIRE_VERSIONS = \[/u;
 
-/** Idempotence snapshots run before any generator success case writes outputs, so they compare against the original on-disk bytes. */
+/** Every mutation is restored even if the gate under test fails. */
 function main(): void {
   try {
-    testNoHardcodedConstants();
-    testDocImportsResolve();
-    testGeneratorIdempotence();
-    testCompatibilityVersionFile();
-    testBakeFailureFailClosed();
     testPublicationGuards();
     testCalendarWireSets();
     testNonCalendarLiveEntry();
@@ -86,7 +61,7 @@ function main(): void {
     console.error(`\n${failures.length} assertion(s) failed.`);
     process.exit(1);
   }
-  console.log("\nAll gate + generator tests passed.");
+  console.log("\nAll repository gate tests passed.");
 }
 
 /** Resolved config protects every tracked fixture and process suite from glob drift. */
@@ -117,293 +92,6 @@ function testIntegrationLintProfile(): void {
   } finally {
     restoreAllPlants();
   }
-}
-
-function testNoHardcodedConstants(): void {
-  console.log("\n# check-no-hardcoded-constants");
-  const clean = runScript(
-    "scripts/docs/check-no-hardcoded-constants.ts",
-    workspaceRoot,
-  );
-  test(
-    "clean tree exits 0",
-    clean.code === 0,
-    `expected exit 0, got ${clean.code}. stderr: ${clean.stderr}`,
-  );
-  if (existsSync(resolve(workspaceRoot, CONTRIBUTING_DOC))) {
-    plantFile(
-      CONTRIBUTING_DOC,
-      (s) => `${s}\nProtocol pinned at 2026.524.1 for this run.\n`,
-    );
-    const r1 = runScript(
-      "scripts/docs/check-no-hardcoded-constants.ts",
-      workspaceRoot,
-    );
-    test(
-      "flags planted version-shaped literal",
-      r1.code !== 0 && /VERSION_SHAPED_LITERAL/.test(r1.stderr),
-      `expected VERSION_SHAPED_LITERAL hit. exit=${r1.code}, stderr=${r1.stderr.slice(0, 300)}`,
-    );
-    restoreAllPlants();
-  } else {
-    test(
-      "planted-regression target exists",
-      false,
-      `${CONTRIBUTING_DOC} not found`,
-    );
-  }
-  testBakedVersionDrift();
-}
-
-function testDocImportsResolve(): void {
-  testDocImportsResolveClean();
-  testDocImportsResolveR2();
-  testDocImportsResolveR4();
-  testDocImportsResolveR5();
-  testDocImportsResolveR6();
-  testDocImportsResolveR7();
-  testDocImportsResolveR8();
-  testDocImportsResolveR9();
-}
-
-function testDocImportsResolveClean(): void {
-  console.log("\n# check-doc-imports-resolve");
-  const clean = runScript(
-    "scripts/docs/check-doc-imports-resolve.ts",
-    workspaceRoot,
-  );
-  test(
-    "clean tree exits 0",
-    clean.code === 0,
-    `expected exit 0, got ${clean.code}. stderr: ${clean.stderr}`,
-  );
-  plantFile(
-    CONTRIBUTING_DOC,
-    (s) =>
-      `${s}\n\`\`\`typescript\nimport { foo } from "@moltzap/client/does-not-exist";\n\`\`\`\n`,
-  );
-  const r1 = runScript(
-    "scripts/docs/check-doc-imports-resolve.ts",
-    workspaceRoot,
-  );
-  test(
-    "flags unknown subpath",
-    r1.code !== 0 && /unknown-subpath/.test(r1.stderr),
-    `expected unknown-subpath. exit=${r1.code}, stderr=${r1.stderr.slice(0, 300)}`,
-  );
-  restoreAllPlants();
-}
-
-function testDocImportsResolveR2(): void {
-  plantFile(
-    CONTRIBUTING_DOC,
-    (s) =>
-      `${s}\n\`\`\`typescript\nimport { ThisSymbolDoesNotExist } from "@moltzap/client";\n\`\`\`\n`,
-  );
-  const r2 = runScript(
-    "scripts/docs/check-doc-imports-resolve.ts",
-    workspaceRoot,
-  );
-  test(
-    "flags missing named export",
-    r2.code !== 0 && /missing-export/.test(r2.stderr),
-    `expected missing-export. exit=${r2.code}, stderr=${r2.stderr.slice(0, 300)}`,
-  );
-  restoreAllPlants();
-}
-
-/** Unknown names in multiline imports must reach the binding validator rather than disappear during folding. */
-function testDocImportsResolveR4(): void {
-  plantFile(
-    CONTRIBUTING_DOC,
-    (s) =>
-      `${s}\n\`\`\`typescript\nimport {\n  ThisSymbolDoesNotExist,\n  AlsoNotExported,\n} from "@moltzap/client";\n\`\`\`\n`,
-  );
-  const r4 = runScript(
-    "scripts/docs/check-doc-imports-resolve.ts",
-    workspaceRoot,
-  );
-  test(
-    "multi-line import with unknown binding flagged as missing-export (joinMultiLineImports regression)",
-    r4.code !== 0 &&
-      /missing-export/.test(r4.stderr) &&
-      /ThisSymbolDoesNotExist/.test(r4.stderr),
-    `expected missing-export from folded multi-line import. exit=${r4.code}, stderr=${r4.stderr.slice(0, 300)}`,
-  );
-  restoreAllPlants();
-}
-
-/** Valid multiline bindings guard against false positives introduced by import folding. */
-function testDocImportsResolveR5(): void {
-  plantFile(
-    CONTRIBUTING_DOC,
-    (s) =>
-      `${s}\n\`\`\`typescript\nimport {\n  AgentId,\n  AgentName,\n} from "@moltzap/client";\n\`\`\`\n`,
-  );
-  const r5 = runScript(
-    "scripts/docs/check-doc-imports-resolve.ts",
-    workspaceRoot,
-  );
-  test(
-    "multi-line import with valid bindings still passes (joinMultiLineImports positive)",
-    r5.code === 0,
-    `expected clean pass, got exit=${r5.code}, stderr=${r5.stderr.slice(0, 300)}`,
-  );
-  restoreAllPlants();
-}
-
-function testDocImportsResolveR6(): void {
-  plantFile(
-    CONTRIBUTING_DOC,
-    (s) =>
-      `${s}\n\`\`\`typescript\nimport { WIRE_VERSION } from "@moltzap/client";\nimport { Registry } from "@moltzap/client/service";\nimport "@moltzap/registry";\nimport "@moltzap/router/server";\n\`\`\`\n`,
-  );
-  const r6 = runScript(
-    "scripts/docs/check-doc-imports-resolve.ts",
-    workspaceRoot,
-  );
-  test(
-    "final identity and router package subpaths resolve",
-    r6.code === 0,
-    `expected final package imports to pass. exit=${r6.code}, stderr=${r6.stderr.slice(0, 300)}`,
-  );
-  restoreAllPlants();
-}
-
-function testDocImportsResolveR7(): void {
-  plantFile(
-    CONTRIBUTING_DOC,
-    (s) =>
-      `${s}\n\`\`\`typescript\nimport { ThisIdentitySymbolDoesNotExist } from "@moltzap/client";\n\`\`\`\n`,
-  );
-  const r7 = runScript(
-    "scripts/docs/check-doc-imports-resolve.ts",
-    workspaceRoot,
-  );
-  test(
-    "flags missing identity named export",
-    r7.code !== 0 &&
-      /missing-export/.test(r7.stderr) &&
-      /ThisIdentitySymbolDoesNotExist/.test(r7.stderr),
-    `expected identity missing-export. exit=${r7.code}, stderr=${r7.stderr.slice(0, 300)}`,
-  );
-  restoreAllPlants();
-}
-
-function testDocImportsResolveR8(): void {
-  plantFile(
-    CONTRIBUTING_DOC,
-    (s) =>
-      `${s}\n\`\`\`typescript\nimport "@moltzap/router/does-not-exist";\n\`\`\`\n`,
-  );
-  const r8 = runScript(
-    "scripts/docs/check-doc-imports-resolve.ts",
-    workspaceRoot,
-  );
-  test(
-    "flags unknown router subpath",
-    r8.code !== 0 && /unknown-subpath/.test(r8.stderr),
-    `expected router unknown-subpath. exit=${r8.code}, stderr=${r8.stderr.slice(0, 300)}`,
-  );
-  restoreAllPlants();
-}
-
-function testDocImportsResolveR9(): void {
-  plantFile("packages/router/package.json", (s) =>
-    s.replace("./dist/server.js", "./dist/missing-server.js"),
-  );
-  plantFile(
-    CONTRIBUTING_DOC,
-    (s) => `${s}\n\`\`\`typescript\nimport "@moltzap/router/server";\n\`\`\`\n`,
-  );
-  const r9 = runScript(
-    "scripts/docs/check-doc-imports-resolve.ts",
-    workspaceRoot,
-  );
-  test(
-    "flags a documented router subpath with no source or built target",
-    r9.code !== 0 && /missing-target/.test(r9.stderr),
-    `expected router missing-target. exit=${r9.code}, stderr=${r9.stderr.slice(0, 300)}`,
-  );
-  restoreAllPlants();
-}
-
-function testBakeFailureFailClosed(): void {
-  console.log("\n# generate-constants-snippets bake-failure fail-closed");
-  const clean = runGenerate(workspaceRoot);
-  test(
-    "clean tree: generator exits 0",
-    clean.code === 0,
-    `expected exit 0, got ${clean.code}. stderr: ${clean.stderr.slice(0, 300)}`,
-  );
-  const target = "docs/spec/identity.md";
-  plantFile(target, (s) =>
-    s.replace(
-      // eslint-disable-next-line sonarjs/slow-regex -- The input is bounded, repository-owned documentation or a fixed test fixture.
-      /\{\/\*\s*@bake-constants:\s*([^*]+?)\s*\*\/\}/,
-      "{/* @bake-constants: $1 NOT_A_REAL_CONSTANT */}",
-    ),
-  );
-  const r = runGenerate(workspaceRoot);
-  test(
-    "unknown constant in bake marker triggers non-zero exit",
-    r.code !== 0,
-    `expected non-zero exit on unknown bake constant. exit=${r.code}, stderr=${r.stderr.slice(0, 300)}`,
-  );
-  test(
-    "bake-failure stderr names the unknown constant",
-    /NOT_A_REAL_CONSTANT/.test(r.stderr) &&
-      /marker lists unknown constant/.test(r.stderr),
-    `expected NOT_A_REAL_CONSTANT + 'unknown constant' in stderr. stderr=${r.stderr.slice(0, 300)}`,
-  );
-  restoreAllPlants();
-}
-
-function testCompatibilityVersionFile(): void {
-  console.log("\n# Social Harness compatibility version source");
-  plantFile(WIRE_VERSION_SOURCE, withCompatibilityVersion(""));
-  const empty = runGenerate(workspaceRoot);
-  test(
-    "empty Social Harness version fails closed",
-    empty.code !== 0 && /expected a nonempty version/.test(empty.stderr),
-    `expected empty-version failure. exit=${empty.code}, stderr=${empty.stderr.slice(0, 300)}`,
-  );
-  restoreAllPlants();
-  const currentVersion = readCompatibilityVersion();
-  const nextVersion = "2099.999.8";
-  const marker = "@bake-constants: V2_PROTOCOL_VERSION";
-  const consumers = [
-    ...walkFiles(resolve(workspaceRoot, "docs")),
-    resolve(workspaceRoot, "README.md"),
-  ]
-    .filter((path) => /\.mdx?$/.test(path))
-    .filter((path) => readFileSync(path, "utf8").includes(marker));
-  for (const path of consumers) {
-    test(
-      `compatibility marker has current value: ${path.split("/").slice(-2).join("/")}`,
-      readFileSync(path, "utf8").includes(currentVersion),
-      `${path} has a V2 bake marker but not ${currentVersion}`,
-    );
-  }
-  const generated = [
-    "docs/snippets/constants/values.json",
-    "docs/snippets/constants/values.mdx",
-  ];
-  for (const path of [
-    ...consumers,
-    ...generated.map((p) => resolve(workspaceRoot, p)),
-  ]) {
-    plantFile(path, (source) => source);
-  }
-  plantFile(WIRE_VERSION_SOURCE, withCompatibilityVersion(nextVersion));
-  const bumped = runGenerate(workspaceRoot);
-  test(
-    "changed Social Harness version regenerates constants",
-    bumped.code === 0,
-    `expected successful regeneration. exit=${bumped.code}, stderr=${bumped.stderr.slice(0, 300)}`,
-  );
-  checkRegeneratedVersion(consumers, generated, nextVersion);
-  restoreAllPlants();
 }
 
 function testPublicationGuards(): void {
@@ -958,131 +646,13 @@ function runBoundaries(): {
   ]);
 }
 
+/** The plant changes only the emitted literal, preserving the surrounding version sets. */
 function withCompatibilityVersion(next: string) {
   return (source: string): string =>
     source.replace(
-      WIRE_VERSION_LITERAL,
+      /export\s+const\s+WIRE_VERSION\s*=\s*["']([^"']*)["']/,
       `export const WIRE_VERSION = "${next}"`,
     );
-}
-
-function testGeneratorIdempotence(): void {
-  console.log("\n# generate-constants-snippets idempotence");
-  const valuesJsonPath = resolve(
-    workspaceRoot,
-    "docs/snippets/constants/values.json",
-  );
-  const valuesMdxPath = resolve(
-    workspaceRoot,
-    "docs/snippets/constants/values.mdx",
-  );
-  const beforeJson = readFileSync(valuesJsonPath, "utf8");
-  const beforeMdx = readFileSync(valuesMdxPath, "utf8");
-  const bakedFiles = [
-    ...walkFiles(resolve(workspaceRoot, "docs")),
-    resolve(workspaceRoot, "README.md"),
-  ]
-    .filter((path) => /\.mdx?$/.test(path))
-    .filter((path) => readFileSync(path, "utf8").includes("@bake-constants:"))
-    .sort((left, right) => (left < right ? -1 : Number(left > right)));
-  const before = bakedFiles.map((p) => readFileSync(p, "utf8"));
-  const r = runGenerate(workspaceRoot);
-  test(
-    "generator runs to completion",
-    r.code === 0,
-    `generator exit ${r.code}: ${r.stderr.slice(0, 300)}`,
-  );
-  test(
-    "values.json unchanged after re-generate",
-    readFileSync(valuesJsonPath, "utf8") === beforeJson,
-    "values.json contents drifted across re-runs",
-  );
-  test(
-    "values.mdx unchanged after re-generate",
-    readFileSync(valuesMdxPath, "utf8") === beforeMdx,
-    "values.mdx contents drifted across re-runs",
-  );
-  for (let i = 0; i < bakedFiles.length; i++) {
-    const after = readFileSync(bakedFiles[i] ?? "", "utf8");
-    test(
-      `baked file unchanged: ${bakedFiles[i]?.split("/").slice(-2).join("/")}`,
-      after === before[i],
-      `${bakedFiles[i]} drifted across re-runs`,
-    );
-  }
-}
-
-function runGenerate(cwd: string): {
-  code: number;
-  stdout: string;
-  stderr: string;
-} {
-  return runScript("scripts/docs/generate-constants-snippets.ts", cwd);
-}
-
-function walkFiles(root: string): readonly string[] {
-  const out: string[] = [];
-  for (const name of readdirSync(root)) {
-    const path = resolve(root, name);
-    if (statSync(path).isDirectory()) {
-      out.push(...walkFiles(path));
-    } else {
-      out.push(path);
-    }
-  }
-  return out;
-}
-
-function testBakedVersionDrift(): void {
-  const compatibilityVersion = readCompatibilityVersion();
-  plantFile(
-    CONTRIBUTING_DOC,
-    (s) =>
-      `${s}\nSocial Harness compatibility pinned at ${compatibilityVersion} for this run.\n`,
-  );
-  const r2 = runScript(
-    "scripts/docs/check-no-hardcoded-constants.ts",
-    workspaceRoot,
-  );
-  test(
-    "flags planted V2_PROTOCOL_VERSION literal",
-    r2.code !== 0 && /V2_PROTOCOL_VERSION/.test(r2.stderr),
-    `expected V2_PROTOCOL_VERSION hit. exit=${r2.code}, stderr=${r2.stderr.slice(0, 300)}`,
-  );
-  restoreAllPlants();
-  const compatibilityBakedTarget = "docs/spec/router-representation.md";
-  plantFile(compatibilityBakedTarget, (s) =>
-    s.replace(compatibilityVersion, `${compatibilityVersion}0`),
-  );
-  const r3 = runScript(
-    "scripts/docs/check-no-hardcoded-constants.ts",
-    workspaceRoot,
-  );
-  test(
-    "flags prefix-extending version drift inside a V2-baked document",
-    r3.code !== 0 && /VERSION_SHAPED_LITERAL/.test(r3.stderr),
-    `expected VERSION_SHAPED_LITERAL hit. exit=${r3.code}, stderr=${r3.stderr.slice(0, 300)}`,
-  );
-  restoreAllPlants();
-}
-
-function runScript(
-  script: string,
-  cwd: string,
-): {
-  code: number;
-  stdout: string;
-  stderr: string;
-} {
-  return runNode([script], cwd);
-}
-
-function readCompatibilityVersion(): string {
-  const read = readCompatibilityVersionSource(workspaceRoot);
-  if ("error" in read) {
-    throw new Error(read.error);
-  }
-  return read.value;
 }
 
 /**
@@ -1103,27 +673,6 @@ function insertAfter(
     );
   }
   return source.replace(pattern, (head) => `${head}${insertion}`);
-}
-
-function checkRegeneratedVersion(
-  consumers: readonly string[],
-  generated: readonly string[],
-  nextVersion: string,
-): void {
-  for (const path of consumers) {
-    test(
-      `re-bakes Social Harness version: ${path.split("/").slice(-2).join("/")}`,
-      readFileSync(path, "utf8").includes(nextVersion),
-      `${path} did not contain ${nextVersion} after regeneration`,
-    );
-  }
-  for (const path of generated) {
-    test(
-      `regenerates Social Harness version snippet: ${path.split("/").slice(-2).join("/")}`,
-      readFileSync(resolve(workspaceRoot, path), "utf8").includes(nextVersion),
-      `${path} did not contain ${nextVersion} after regeneration`,
-    );
-  }
 }
 
 main();

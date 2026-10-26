@@ -658,7 +658,7 @@ const architectureConfigDefinitions: ReadonlyArray<{
               "Registry wire overrides require the explicit sharness-test resolution condition",
           },
         ],
-        folderReadmeFileNames: ["README.md", "MODULE.md"],
+        folderReadmeFileNames: ["README.md", "../README.md"],
         facadeFiles: [
           {
             file: "test.ts",
@@ -705,7 +705,7 @@ const architectureConfigDefinitions: ReadonlyArray<{
               "Router wire overrides require the explicit sharness-test resolution condition",
           },
         ],
-        folderReadmeFileNames: ["README.md", "MODULE.md"],
+        folderReadmeFileNames: ["README.md", "../README.md"],
         folderChildCountOverrides: [
           {
             folder: "router",

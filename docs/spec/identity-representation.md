@@ -1,6 +1,8 @@
 # L1 representation
 
-{/* @bake-constants: V2_PROTOCOL_VERSION */}
+`<WIRE_VERSION>` in examples denotes the emitted value from
+`packages/client/src/identity/wire-version.ts`; see
+[Wire versions](./identity.md#wire-versions).
 
 Status: **Gate 1 normative**
 
@@ -142,7 +144,7 @@ The payload is exactly:
 ```json
 {
   "kind": "agentCard",
-  "sharnessVersion": "2026.1021.3",
+  "sharnessVersion": "<WIRE_VERSION>",
   "agentId": "agt_<22-character-base64url>",
   "principalId": "prn_<22-character-base64url>",
   "agentName": "example-agent",
@@ -223,7 +225,7 @@ The payload is exactly:
 ```json
 {
   "kind": "signedMessage",
-  "sharnessVersion": "2026.1021.3",
+  "sharnessVersion": "<WIRE_VERSION>",
   "senderAgentId": "agt_<22-character-base64url>",
   "agentCardDigest": "acd_<43-character-base64url>",
   "recipientAgentIds": [

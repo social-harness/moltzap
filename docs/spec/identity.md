@@ -1,7 +1,5 @@
 # L1: identity, attribution, and authenticated requests
 
-{/* @bake-constants: V2_PROTOCOL_VERSION */}
-
 Status: **Gate 1 normative**
 
 Exact representation:
@@ -300,7 +298,8 @@ Registry state.
 
 ## Wire versions
 
-Every new artifact emits `WIRE_VERSION`, currently `2026.1021.3`. `LIVE_WIRE_VERSIONS` admits outer
+Every new artifact emits `WIRE_VERSION` from
+`packages/client/src/identity/wire-version.ts`. `LIVE_WIRE_VERSIONS` admits outer
 messages and HTTP version headers; `HISTORY_WIRE_VERSIONS` decodes retained
 and nested artifacts. The live set holds the emitted version and at most one
 adjacent version, per the

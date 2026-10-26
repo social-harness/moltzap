@@ -74,10 +74,10 @@ jobs:
           pnpm nx graph --print > "${RUNNER_TEMP}/sharness-project-graph.json"
           node scripts/architecture/check-boundaries.ts --nx-graph "${RUNNER_TEMP}/sharness-project-graph.json"
       - run: pnpm format:check
-      - run: pnpm docs:check:drift
+      - run: pnpm docs:api
       - run: pnpm docs:check
       - run: pnpm docs:check:mermaid
-      - run: pnpm docs:check:gates-test
+      - run: pnpm test:repo-gates
       - run: pnpm test:compute-next-version
       - run: pnpm test:push-gate
       - run: pnpm test:npm-version-exists

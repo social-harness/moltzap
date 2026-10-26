@@ -236,8 +236,7 @@ guidance and send-refusal values exposed to hosts.
 
 Execution diagrams live with their owners:
 [`index.ts`](./index.ts) → `makeFirewall` and
-[`english.ts`](./english.ts) → `makeEnglishPolicy`. Generated
-[API documentation](./MODULE.md) includes both diagrams.
+[`english.ts`](./english.ts) → `makeEnglishPolicy`.
 
 `chain.test.ts`, `english.test.ts` and `jev.test.ts` check behavior through the
 public service API. Provider fakes verify composition, failure closure and

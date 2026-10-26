@@ -21,27 +21,6 @@
         "command": "oxfmt --check ."
       }
     },
-    "docs:generate": {
-      "cache": true,
-      "inputs": [
-        "docsGeneration"
-      ],
-      "outputs": [
-        "{workspaceRoot}/README.md",
-        "{workspaceRoot}/docs",
-        "{workspaceRoot}/packages/**/src/**/MODULE.md"
-      ],
-      "executor": "nx:run-commands",
-      "options": {
-        "cwd": ".",
-        "parallel": false,
-        "commands": [
-          "pnpm exec typedoc",
-          "node scripts/docs/generate-modules.ts",
-          "node scripts/docs/generate-constants-snippets.ts"
-        ]
-      }
-    },
     "docs:check:mermaid": {
       "cache": true,
       "inputs": [
@@ -55,28 +34,6 @@
           "pnpm exec puppeteer browsers install chrome-headless-shell",
           "node scripts/docs/check-mermaid.ts"
         ]
-      }
-    },
-    "docs:check:no-hardcoded-constants": {
-      "cache": true,
-      "inputs": [
-        "workspaceFiles"
-      ],
-      "executor": "nx:run-commands",
-      "options": {
-        "cwd": ".",
-        "command": "node scripts/docs/check-no-hardcoded-constants.ts"
-      }
-    },
-    "docs:check:doc-imports-resolve": {
-      "cache": true,
-      "inputs": [
-        "workspaceFiles"
-      ],
-      "executor": "nx:run-commands",
-      "options": {
-        "cwd": ".",
-        "command": "node scripts/docs/check-doc-imports-resolve.ts"
       }
     },
     "arch:config:generate": {
@@ -305,6 +262,24 @@
       ],
       "options": {
         "command": "node scripts/release/image-input-key.test.ts"
+      }
+    },
+    "docs:api": {
+      "cache": true,
+      "inputs": [
+        "{workspaceRoot}/typedoc.json",
+        "{workspaceRoot}/tsconfig*.json",
+        "{workspaceRoot}/packages/**/*.ts",
+        "{workspaceRoot}/packages/**/*.json",
+        "sharedGlobals"
+      ],
+      "outputs": [
+        "{workspaceRoot}/dist/api"
+      ],
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": ".",
+        "command": "pnpm exec typedoc"
       }
     }
   }
