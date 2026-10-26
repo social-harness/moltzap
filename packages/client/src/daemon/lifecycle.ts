@@ -186,6 +186,7 @@ function registrationFailure(error: {
   readonly reason: string;
 }): DaemonRuntimeError {
   switch (error.reason) {
+    case "admission-refused":
     case "dependency-unavailable":
     case "persistence-failed":
       return new DaemonRuntimeError({

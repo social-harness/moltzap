@@ -1,6 +1,14 @@
 /** @file Acquisition and supervision of the protocol one daemon identity runs. */
 
-import { Cause, type Context, Deferred, Effect, Schema, Scope } from "effect";
+import {
+  Cause,
+  type Context,
+  Deferred,
+  Effect,
+  Option,
+  Schema,
+  Scope,
+} from "effect";
 import type { ListenError } from "../../communication/conversations/errors.js";
 import type {
   EndpointStore,
@@ -34,6 +42,7 @@ import {
   type RouterWorkerInput,
   RouterWorkerPayloadInvalidError,
   type RouterWorkerProtocolError,
+  RouterWorkerRejectedError,
   type RouterWorkerTransportError,
 } from "../../communication/router/index.js";
 import { encodeCanonical, sameBytes } from "../../encoding/canonical-json.js";
@@ -47,7 +56,7 @@ import { Registry } from "../../identity/registry/index.js";
 import {
   activationFailure,
   type DaemonActivationError,
-  type DaemonRuntimeError,
+  DaemonRuntimeError,
   runtimeFailure,
 } from "../errors.js";
 
@@ -197,9 +206,16 @@ export const failFromBackgroundCause = <E>(
   if (Cause.isInterruptedOnly(cause)) {
     return Effect.failCause(cause);
   }
-  return Deferred.fail(fatal, runtimeFailure("listener")).pipe(
-    Effect.zipRight(Effect.never),
-  );
+  const failure = Option.getOrUndefined(Cause.failureOption(cause));
+  const error =
+    failure instanceof RouterWorkerRejectedError &&
+    failure.reason === "authentication"
+      ? new DaemonRuntimeError({
+          phase: "listener",
+          reason: "agent-not-admitted",
+        })
+      : runtimeFailure("listener");
+  return Deferred.fail(fatal, error).pipe(Effect.zipRight(Effect.never));
 };
 
 const superviseBackground = (

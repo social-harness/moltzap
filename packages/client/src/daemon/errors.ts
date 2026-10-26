@@ -7,6 +7,8 @@ export class DaemonRuntimeError extends Data.TaggedError("DaemonRuntimeError")<{
   readonly phase: "storage" | "listener" | "registration";
   readonly reason?:
     | "outbox-too-old"
+    | "agent-not-admitted"
+    | "admission-refused"
     | "name_taken"
     | "key_already_registered"
     | "idempotency_conflict"

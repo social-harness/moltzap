@@ -45,6 +45,7 @@ import {
 } from "../harness/mcp/tools.js";
 import { INBOX_PENDING_EVENT } from "../harness/protocol/names.js";
 import { Registry } from "../identity/registry/index.js";
+import { AuthenticationFailedError } from "../identity/signing/http-errors.js";
 import { unusedEndpointStore } from "./unused-endpoint-store.js";
 
 /** The MCP handler the daemon installed; throws before installation. */
@@ -240,14 +241,19 @@ export function makeStore(
   };
 }
 
-function makeServices(fixture: Fixture, result: "registered" | "name_taken") {
+function makeServices(
+  fixture: Fixture,
+  result: "registered" | "name_taken" | "admission-refused",
+) {
   const registry: Context.Tag.Service<typeof Registry> = {
     register: () =>
-      Effect.succeed(
-        result === "registered"
-          ? { kind: "registered", agentCard: fixture.localCard }
-          : { kind: result },
-      ),
+      result === "admission-refused"
+        ? Effect.fail(new AuthenticationFailedError())
+        : Effect.succeed(
+            result === "registered"
+              ? { kind: "registered", agentCard: fixture.localCard }
+              : { kind: result },
+          ),
     lookup: () => Effect.succeed({ kind: "not_found" }),
   };
   const router: Context.Tag.Service<typeof Router> = {
@@ -427,7 +433,7 @@ export const run = (
   fixture: Fixture,
   store: EndpointStore,
   harness: RuntimeHarness,
-  refusal?: "name_taken",
+  refusal?: "name_taken" | "admission-refused",
 ) => {
   const services = makeServices(fixture, refusal ?? "registered");
   return readDaemonRegistrationState({

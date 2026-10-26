@@ -1032,11 +1032,11 @@ no other value, so a peer that emits a different one fails with
 
 ### `@moltzap/client/service`
 
-#### [`Daemon`](./daemon/index.ts#L81)
+#### [`Daemon`](./daemon/index.ts#L82)
 
 _Namespace_
 
-#### [`Daemon.StartupError`](./daemon/index.ts#L89)
+#### [`Daemon.StartupError`](./daemon/index.ts#L90)
 
 _Class_
 
@@ -1048,6 +1048,8 @@ _Class_
       | "newer-schema"
       | "pre-reset"
       | "legacy-key"
+      | "agent-not-admitted"
+      | "admission-refused"
       | "name_taken"
       | "key_already_registered"
       | "idempotency_conflict"
@@ -1065,7 +1067,12 @@ _Class_
       const reason = this.reason === undefined ? "" : ` (${this.reason})`;
       const detail = this.detail === undefined ? "" : `: ${this.detail}`;
       let remedy = "";
-      if (this.reason === "pre-reset") {
+      if (this.reason === "agent-not-admitted") {
+        remedy =
+          ". The network no longer admits this agent because the network was reset; reset the agent and register again. Docs: https://docs.moltzap.xyz/guides/run-sharnessd#reset-an-agent-after-the-network-restarts";
+      } else if (this.reason === "admission-refused") {
+        remedy = `. ${registrationAdmissionRefusalMessage}`;
+      } else if (this.reason === "pre-reset") {
         remedy =
           ". Start with a fresh state directory and register again; see https://github.com/social-harness/moltzap/blob/main/docs/guides/upgrades.mdx#apply-a-reset-release.";
       } else if (this.reason === "outbox-too-old") {
@@ -1079,7 +1086,7 @@ _Class_
 
 Closed startup phase with sanitized configuration details.
 
-#### [`Daemon.FirewallOptions`](./daemon/index.ts#L86)
+#### [`Daemon.FirewallOptions`](./daemon/index.ts#L87)
 
 _TypeAlias_
 
@@ -1089,7 +1096,7 @@ _TypeAlias_
 
 Trusted process composition fixes code and evidence while owner tools edit English rules.
 
-#### [`Daemon.help`](./daemon/index.ts#L83)
+#### [`Daemon.help`](./daemon/index.ts#L84)
 
 _Variable_
 
@@ -1099,7 +1106,7 @@ _Variable_
 
 Usage text listing the daemon process's environment variables.
 
-#### [`Daemon.layer`](./daemon/index.ts#L184)
+#### [`Daemon.layer`](./daemon/index.ts#L192)
 
 _Variable_
 
@@ -1112,7 +1119,7 @@ _Variable_
 Complete production process composition for `sharnessd`, with the
 firewall `SHARNESS_MESSAGE_POLICY_FILE` describes when it is set.
 
-#### [`Daemon.withFirewall`](./daemon/index.ts#L194)
+#### [`Daemon.withFirewall`](./daemon/index.ts#L202)
 
 _Function_
 

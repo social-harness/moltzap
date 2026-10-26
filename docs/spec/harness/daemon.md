@@ -21,9 +21,12 @@ Supply all three or none. On an unregistered start the daemon calls the same
 management registration operation as the owner `register` tool, once, before
 it listens. Before identity binding, a refusal or operation failure stops startup
 in phase `registration`. The closed `reason` retains `name_taken`,
-`key_already_registered`, or `idempotency_conflict` for Registry refusals, and
+`key_already_registered`, or `idempotency_conflict` for Registry refusals,
+`admission-refused` for a rejected admission credential, and
 `dependency-unavailable`, `persistence-failed`, or `incompatible-daemon` for
-operation failures. Once binding succeeds, activation failures use phase
+operation failures. An `admission-refused` message names the admission credential
+and directs the operator to supply this network's credential. Once binding
+succeeds, activation failures use phase
 `listener` for an unavailable upstream and `storage` for all other causes,
 whether activation follows startup registration, owner registration, or restart.
 An active registration is retained even when the configured request differs;
@@ -409,6 +412,13 @@ outbox with `OutboxTooOldError`. `Daemon.StartupError.reason` carries the
 closed reason `outbox-too-old` to the process log, alongside the storage
 phase. Operators drain that outbox using an earlier release before upgrading.
 No schema or backup changes accompany this refusal.
+
+A Router rejection of this endpoint's authentication stops the daemon in phase
+`listener` with `Daemon.StartupError.reason` set to `agent-not-admitted`.
+The message explains that the network was reset and directs the operator to
+[reset the agent and register again](../../guides/run-sharnessd.mdx#reset-an-agent-after-the-network-restarts).
+Other Router failures retain their existing handling; the daemon exposes no new
+registration status.
 
 ## Agent images
 

@@ -1156,7 +1156,7 @@ const registersBeforeListening = (active: boolean) =>
   });
 
 /** A Registry refusal ends startup rather than exposing an unregistered listener. */
-const failsStartupRegistration = () =>
+const failsStartupRegistration = (reason: "name_taken" | "admission-refused") =>
   Effect.gen(function* () {
     const base = yield* makeFixture;
     const fixture = {
@@ -1173,10 +1173,10 @@ const failsStartupRegistration = () =>
     };
     const harness = yield* makeHarness(fixture, "none");
     const failure = yield* Effect.flip(
-      run(fixture, makeStore(fixture, false), harness, "name_taken"),
+      run(fixture, makeStore(fixture, false), harness, reason),
     );
     expect(failure).toEqual(
-      new DaemonRuntimeError({ phase: "registration", reason: "name_taken" }),
+      new DaemonRuntimeError({ phase: "registration", reason }),
     );
   });
 
@@ -1185,8 +1185,8 @@ describe("daemon runtime composition", () => {
     registersBeforeListening(false));
   it("retains an active registration at startup", () =>
     registersBeforeListening(true));
-  it(
-    "fails startup when registration cannot complete",
+  it.each(["name_taken", "admission-refused"] as const)(
+    "fails startup with %s when registration cannot complete",
     failsStartupRegistration,
   );
   it(

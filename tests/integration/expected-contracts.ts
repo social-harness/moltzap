@@ -43,3 +43,15 @@ export const messagePolicyFileSetting = "SHARNESS_MESSAGE_POLICY_FILE";
 
 /** The daemon send_message tool returns this remedy when its code rule refuses credential-shaped text. */
 export const credentialRefusalRemedy = "Remove credential-shaped text";
+
+/** A Router authentication rejection after reset stops the daemon at its listener boundary. */
+export const agentNotAdmittedDiagnostic =
+  "sharnessd startup failed in phase listener (agent-not-admitted)";
+
+/** Daemon startup explains the lost registration and the operator's recovery action. */
+export const agentNotAdmittedRemedy =
+  "network was reset; reset the agent and register again";
+
+/** The recovery guide ends the daemon's network-reset diagnostic. */
+export const agentResetDocsLink =
+  "Docs: https://docs.moltzap.xyz/guides/run-sharnessd#reset-an-agent-after-the-network-restarts";

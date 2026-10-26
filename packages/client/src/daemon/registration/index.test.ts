@@ -1,7 +1,16 @@
 /** @file Startup recovery and atomic Registry-to-store identity binding tests. */
 
+import { HttpClient, HttpClientResponse } from "@effect/platform";
 import { live as it } from "@effect/vitest";
-import { type Context, Effect, Layer, Redacted, Ref, Schema } from "effect";
+import {
+  type Context,
+  Duration,
+  Effect,
+  Layer,
+  Redacted,
+  Ref,
+  Schema,
+} from "effect";
 import { describe, expect } from "vitest";
 import { makeFixture } from "../../__tests__/daemon-runtime-fixtures.js";
 import {
@@ -18,6 +27,7 @@ import { Registry } from "../../identity/registry/index.js";
 import { DaemonConfigurationError } from "../bootstrap.js";
 import {
   DaemonRegistrationPersistenceError,
+  DaemonRegistrationRefusedError,
   DaemonRegistrationRepresentationError,
   type DaemonRegistrationStore,
   DaemonRegistrationUpstreamError,
@@ -416,3 +426,44 @@ describe("daemon registration", () => {
     startupSurfacesStoreFailure,
   );
 });
+
+/** The Registry client decodes the actual admission-refusal envelope. */
+it("makes a refused admission credential a final registration refusal", () =>
+  Effect.gen(function* () {
+    const fixture = yield* makeFixture;
+    const memory = yield* makeMemoryStore;
+    const registry = Registry.layer({
+      origin: fixture.bootstrap.configuration.registryOrigin,
+      registrySignerPublicKey:
+        fixture.bootstrap.configuration.registrySignerPublicKey,
+      requestTimeout: Duration.seconds(1),
+    }).pipe(
+      Layer.provide(
+        Layer.succeed(
+          HttpClient.HttpClient,
+          HttpClient.make((request) =>
+            Effect.succeed(
+              HttpClientResponse.fromWeb(
+                request,
+                new Response('{"error":"authentication_failed"}', {
+                  status: 401,
+                  headers: { "content-type": "application/json" },
+                }),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    const error = yield* registerDaemonIdentity({
+      request: fixture.registerRequest,
+      store: memory.store,
+      bootstrap: fixture.bootstrap,
+    }).pipe(Effect.provide(registry), Effect.flip);
+    expect(error).toBeInstanceOf(DaemonRegistrationRefusedError);
+    expect(error.message).toMatch(/Registry refused the admission credential/);
+    expect(error.message).toMatch(
+      /Docs: https:\/\/.*#the-registry-refused-the-admission-credential$/,
+    );
+    expect(yield* Ref.get(memory.binding)).toBeUndefined();
+  }));

@@ -38,6 +38,8 @@ type StartupReasonIsExact = Expect<
     | "newer-schema"
     | "pre-reset"
     | "legacy-key"
+    | "agent-not-admitted"
+    | "admission-refused"
     | "name_taken"
     | "key_already_registered"
     | "idempotency_conflict"

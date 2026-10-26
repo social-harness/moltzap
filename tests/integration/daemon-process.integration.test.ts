@@ -37,8 +37,12 @@ import {
   ROUTER_BINARY,
   type RunningProcess,
   stopProcess,
+  waitForExit,
 } from "./daemon-process-harness.js";
 import {
+  agentNotAdmittedDiagnostic,
+  agentNotAdmittedRemedy,
+  agentResetDocsLink,
   completedReanchorKind,
   configurationStartupPhase,
   legacySettingReason,
@@ -565,6 +569,32 @@ const refusesStaleOutbox = Effect.scoped(
     const after = yield* storedSchema(local.stateDirectory);
     expect(after).toEqual(before);
   }),
+);
+
+it(
+  "exits with the agent reset remedy after the network loses its registrations",
+  processTrace(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const infrastructure = yield* acquireProcessInfrastructure;
+        const local = yield* makeDaemonProcessFixture(
+          infrastructure,
+          "network-reset",
+        );
+        const daemon = yield* acquireDaemonProcess(local);
+        yield* registerFixture(local);
+
+        yield* infrastructure.resetNetwork;
+        yield* waitForExit(daemon);
+
+        expect(daemon.child.exitCode).toBe(1);
+        expect(daemon.stderr()).toContain(agentNotAdmittedDiagnostic);
+        expect(daemon.stderr()).toContain(agentNotAdmittedRemedy);
+        expect(daemon.stderr()).toContain(agentResetDocsLink);
+      }),
+    ),
+  ),
+  PROCESS_TEST_TIMEOUT_MS,
 );
 
 it(
