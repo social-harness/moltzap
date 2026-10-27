@@ -7,5 +7,5 @@
   },
   "include": ["src"],
   "exclude": ["src/**/*.test.ts", "src/__tests__"],
-  "references": [{"path": "../../packages/client"}]
+  "references": [{"path": "../../packages/social-harness"}]
 }

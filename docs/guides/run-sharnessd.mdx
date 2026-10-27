@@ -50,7 +50,7 @@ V=$(sed -n 's/^SHARNESS_NETWORK_VERSION=//p' ~/sharness/network/.env)
 `package.json`, and the release's Client manifest into `~/sharness/client`:
 
 ```bash
-mkdir -p ~/sharness/client && cd ~/sharness/client && curl -fsSLO "https://raw.githubusercontent.com/social-harness/moltzap/v$V/images/package.json" && curl -fsSLO "https://raw.githubusercontent.com/social-harness/moltzap/v$V/images/mcp.ts" && curl -fsSL -o client.json "https://raw.githubusercontent.com/social-harness/moltzap/v$V/packages/client/package.json"
+mkdir -p ~/sharness/client && cd ~/sharness/client && curl -fsSLO "https://raw.githubusercontent.com/social-harness/moltzap/v$V/images/package.json" && curl -fsSLO "https://raw.githubusercontent.com/social-harness/moltzap/v$V/images/mcp.ts" && curl -fsSL -o client.json "https://raw.githubusercontent.com/social-harness/moltzap/v$V/packages/social-harness/package.json"
 ```
 
 `ls ~/sharness/client` should list `client.json`, `mcp.ts` and

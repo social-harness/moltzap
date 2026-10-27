@@ -160,7 +160,7 @@ for (const [label, file, initial, changed] of [
   });
 }
 
-for (const root of ["packages/router", "packages/client"] as const) {
+for (const root of ["packages/router", "packages/social-harness"] as const) {
   await test(`${root} build tools bind their locked versions`, (t) => {
     const repo = fixture();
     t.after(() => {
@@ -177,10 +177,10 @@ for (const root of ["packages/router", "packages/client"] as const) {
       JSON.stringify({ ...manifest, devDependencies: { unused: "catalog:" } }),
     );
     const base =
-      root === "packages/client"
+      root === "packages/social-harness"
         ? lock.replace(
-            "  packages/client:",
-            "  packages/client:\n    devDependencies:\n      unused:\n        version: 1.0.0",
+            "  packages/social-harness:",
+            "  packages/social-harness:\n    devDependencies:\n      unused:\n        version: 1.0.0",
           )
         : lock;
     write(repo, "pnpm-lock.yaml", base);
@@ -210,19 +210,19 @@ for (const [label, root, scripts, nx] of [
   ],
   [
     "sibling lifecycle",
-    "packages/client",
+    "packages/social-harness",
     { prepare: "node ../../tools/extra.ts" },
     {},
   ],
   [
     "package build cwd",
-    "packages/client",
+    "packages/social-harness",
     { build: "node ../../tools/extra.ts" },
     { targets: { build: { options: { cwd: "tools" } } } },
   ],
   [
     "object Nx command",
-    "packages/client",
+    "packages/social-harness",
     {},
     {
       targets: {
@@ -261,7 +261,7 @@ await test("project.json build commands discover their executable", (t) => {
   });
   write(
     repo,
-    "packages/client/project.json",
+    "packages/social-harness/project.json",
     JSON.stringify({
       targets: {
         build: {
@@ -282,12 +282,12 @@ await test("project.json build commands discover their executable", (t) => {
 for (const [label, file, content] of [
   [
     "Nx executor",
-    "packages/client/project.json",
+    "packages/social-harness/project.json",
     JSON.stringify({ targets: { build: { executor: "@nx/js:tsc" } } }),
   ],
   [
     "Nx configurations",
-    "packages/client/package.json",
+    "packages/social-harness/package.json",
     JSON.stringify({
       name: "@fixture/core",
       exports: {
@@ -300,12 +300,12 @@ for (const [label, file, content] of [
   ],
   [
     "missing relative config",
-    "packages/client/tsconfig.json",
+    "packages/social-harness/tsconfig.json",
     '{"extends":"./missing"}',
   ],
   [
     "missing package config",
-    "packages/client/tsconfig.json",
+    "packages/social-harness/tsconfig.json",
     '{"extends":"@unkeyed/preset/tsconfig.json"}',
   ],
 ] as const) {
@@ -329,12 +329,12 @@ await test("JSONC extensionless inheritance and references bind compiler inputs"
   });
   write(
     repo,
-    "packages/client/tsconfig.json",
+    "packages/social-harness/tsconfig.json",
     '{// inherited layout\n"extends":"./layout", "references":[{"path":"../../config/ref"}],}',
   );
   write(
     repo,
-    "packages/client/layout.json",
+    "packages/social-harness/layout.json",
     '{"compilerOptions":{"outDir":"dist","rootDir":"src",},}',
   );
   write(repo, "config/ref/tsconfig.json", "{}");
@@ -393,7 +393,7 @@ await test("runtime version gate excludes tests and modules reached only by test
   );
   write(
     repo,
-    "packages/client/src/daemon/run.ts",
+    "packages/social-harness/src/daemon/run.ts",
     "console.log(process.env.npm_package_version);",
   );
   write(
@@ -451,21 +451,33 @@ await test("inherited nondefault compiler directories resolve emitted exports", 
   t.after(() => {
     rmSync(repo, { recursive: true, force: true });
   });
-  write(repo, "packages/client/tsconfig.json", '{"extends":"./layout"}');
   write(
     repo,
-    "packages/client/layout.json",
+    "packages/social-harness/tsconfig.json",
+    '{"extends":"./layout"}',
+  );
+  write(
+    repo,
+    "packages/social-harness/layout.json",
     '{"compilerOptions":{"outDir":"lib","rootDir":"source"}}',
   );
   write(
     repo,
-    "packages/client/package.json",
+    "packages/social-harness/package.json",
     '{"name":"@fixture/core","exports":{".":"./lib/index.js","./internal":"./lib/index.js","./test":{"sharness-test":"./lib/index.js"}}}',
   );
-  write(repo, "packages/client/source/index.ts", "export const value = 1;");
+  write(
+    repo,
+    "packages/social-harness/source/index.ts",
+    "export const value = 1;",
+  );
   commit(repo);
   const before = key(repo);
-  write(repo, "packages/client/source/index.ts", "export const value = 2;");
+  write(
+    repo,
+    "packages/social-harness/source/index.ts",
+    "export const value = 2;",
+  );
   commit(repo);
   assert.notEqual(key(repo), before);
 });
@@ -656,7 +668,7 @@ await test("installed workspace lifecycle inputs bind keys without runtime impor
   write(repo, "packages/registry/src/index.test.ts", "export {};");
   write(
     repo,
-    "packages/client/package.json",
+    "packages/social-harness/package.json",
     JSON.stringify({
       name: "@fixture/core",
       scripts: { postinstall: "node ../../tools/install.ts" },
@@ -673,8 +685,8 @@ await test("installed workspace lifecycle inputs bind keys without runtime impor
 for (const instruction of [
   "FROM node:24-slim",
   "COPY . /app",
-  "COPY packages/client/src/daemon/run.ts packages/router/src/server.ts",
-  "COPY packages/client/src/index.ts ./",
+  "COPY packages/social-harness/src/daemon/run.ts packages/router/src/server.ts",
+  "COPY packages/social-harness/src/index.ts ./",
   "COPY ./ /app",
   "COPY packages/* /app",
   "COPY https://example.test/archive /app",
@@ -799,12 +811,12 @@ await test("real Dockerfiles exclude daemon-only source and sibling version read
   const before = Effect.runSync(imageInputs(repo));
   write(
     repo,
-    "packages/client/src/daemon/run.ts",
+    "packages/social-harness/src/daemon/run.ts",
     "console.log(process.env.npm_package_version);",
   );
   write(
     repo,
-    "packages/client/src/index.ts",
+    "packages/social-harness/src/index.ts",
     'import manifest from "../package.json"; console.log(manifest.version);',
   );
   commit(repo);
@@ -813,7 +825,7 @@ await test("real Dockerfiles exclude daemon-only source and sibling version read
   assert.notEqual(changedSibling.router?.key, before.router?.key);
   write(
     repo,
-    "packages/client/src/daemon/run.ts",
+    "packages/social-harness/src/daemon/run.ts",
     "export const changed = true;",
   );
   commit(repo);
@@ -851,7 +863,7 @@ for (const [file, baseline, content, changesKey] of [
     t.after(() => {
       rmSync(repo, { recursive: true, force: true });
     });
-    const target = `packages/client/${file}`;
+    const target = `packages/social-harness/${file}`;
     write(repo, target, baseline);
     commit(repo);
     const before = Effect.runSync(imageInputs(repo));
@@ -869,16 +881,16 @@ await test("a copied sibling without a files list is refused", (t) => {
     rmSync(repo, { recursive: true, force: true });
   });
   const manifest = readFileSync(
-    path.join(repo, "packages/client/package.json"),
+    path.join(repo, "packages/social-harness/package.json"),
     "utf8",
   );
   const withoutFiles = manifest.replace(/"files":\[[^\]]*\],/u, "");
   assert.notEqual(withoutFiles, manifest);
-  write(repo, "packages/client/package.json", withoutFiles);
+  write(repo, "packages/social-harness/package.json", withoutFiles);
   commit(repo);
   assert.match(
     refused(repo).message,
-    /packages\/client\/package\.json declares no files list/u,
+    /packages\/social-harness\/package\.json declares no files list/u,
   );
 });
 

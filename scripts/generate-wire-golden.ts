@@ -12,25 +12,25 @@ import { fileURLToPath } from "node:url";
 import {
   MessageId,
   SignedMessage,
-} from "../packages/client/dist/communication/envelope/signed-message.js";
-import { encodeCanonicalJson } from "../packages/client/dist/encoding/canonical-json.js";
+} from "../packages/social-harness/dist/communication/envelope/signed-message.js";
+import { encodeCanonicalJson } from "../packages/social-harness/dist/encoding/canonical-json.js";
 import {
   AgentId,
   AgentName,
   PrincipalId,
-} from "../packages/client/dist/identity/agents.js";
+} from "../packages/social-harness/dist/identity/agents.js";
 import {
   AgentCard,
   digestAgentCard,
-} from "../packages/client/dist/identity/cards.js";
+} from "../packages/social-harness/dist/identity/cards.js";
 import {
   AgentSigningAuthority,
   Ed25519PublicKey,
-} from "../packages/client/dist/identity/keys.js";
+} from "../packages/social-harness/dist/identity/keys.js";
 import {
   WIRE_VERSION,
   WireVersions,
-} from "../packages/client/dist/identity/wire-version.js";
+} from "../packages/social-harness/dist/identity/wire-version.js";
 registerHooks({
   resolve(specifier, context, nextResolve) {
     return nextResolve(specifier, {
@@ -214,7 +214,7 @@ await Effect.runPromise(
             fileSystem.writeFileString(
               fileURLToPath(
                 new URL(
-                  "../packages/client/src/communication/envelope/__tests__/wire-golden.json",
+                  "../packages/social-harness/src/communication/envelope/__tests__/wire-golden.json",
                   import.meta.url,
                 ),
               ),
@@ -223,7 +223,7 @@ await Effect.runPromise(
             fileSystem.writeFileString(
               fileURLToPath(
                 new URL(
-                  "../packages/client/src/communication/envelope/__tests__/wire-cofactored-golden.json",
+                  "../packages/social-harness/src/communication/envelope/__tests__/wire-cofactored-golden.json",
                   import.meta.url,
                 ),
               ),

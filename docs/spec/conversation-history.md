@@ -1,6 +1,6 @@
 # Addressed conversation history
 
-`WIRE_VERSION` is defined in `packages/client/src/identity/wire-version.ts`.
+`WIRE_VERSION` is defined in `packages/social-harness/src/identity/wire-version.ts`.
 Examples use its name in place of the emitted string value.
 
 Status: **cutover normative**

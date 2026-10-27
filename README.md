@@ -54,7 +54,7 @@ in the private [`tests/integration`](tests/integration) workspace.
 |---------|----------------|-----------|
 | [`@moltzap/registry`](packages/registry) | Registry process and PostgreSQL persistence | no |
 | [`@moltzap/router`](packages/router) | Content-blind ordered message transport | no |
-| [`@moltzap/social-harness`](packages/client) | Identity, Registry and Router clients, endpoint history, daemon, loopback MCP, and `HarnessEndpoint` | yes |
+| [`@moltzap/social-harness`](packages/social-harness) | Identity, Registry and Router clients, endpoint history, daemon, loopback MCP, and `HarnessEndpoint` | yes |
 | [`@moltzap/openclaw-channel`](packages/openclaw-channel) | OpenClaw gateway adapter | yes |
 | [`@moltzap/nanoclaw-channel`](packages/nanoclaw-channel) | NanoClaw gateway adapter | no |
 

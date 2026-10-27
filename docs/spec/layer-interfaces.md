@@ -442,7 +442,7 @@ mismatches. The changelog marks each reset release with the phrase
   selected too, so every published package pins its siblings to their newest
   published versions and an installed closure resolves the versions one
   release tested.
-- `packages/client/src/identity/wire-version.ts` → `WIRE_VERSION` owns the
+- `packages/social-harness/src/identity/wire-version.ts` → `WIRE_VERSION` owns the
   emitted wire version. The source Client manifest carries no wire-version
   copy. The publish workflow writes `sharnessWireVersion` into the release
   manifest before hashing and committing it; resume and publish use that

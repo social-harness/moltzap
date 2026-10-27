@@ -9,7 +9,7 @@ import { expect, it } from "vitest";
 
 const routerRoot = fileURLToPath(new URL("../../../", import.meta.url));
 const clientRoot = fileURLToPath(
-  new URL("../../../../client/", import.meta.url),
+  new URL("../../../../social-harness/", import.meta.url),
 );
 const hook = pathToFileURL(
   join(routerRoot, "dist/internal-resolution.js"),

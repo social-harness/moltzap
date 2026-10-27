@@ -8,7 +8,7 @@ import { resolve } from "node:path";
 
 /** Workspace-relative source of `WIRE_VERSION`. */
 export const WIRE_VERSION_SOURCE =
-  "packages/client/src/identity/wire-version.ts";
+  "packages/social-harness/src/identity/wire-version.ts";
 
 /** Matches the literal export; group 1 is the value. */
 export const WIRE_VERSION_LITERAL =

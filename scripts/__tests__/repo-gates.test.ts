@@ -119,14 +119,14 @@ function testDependencyVersionsExampleCopy(): void {
 }
 
 function testDependencyVersionsDriftedEngines(): void {
-  plantFile("packages/client/package.json", (s) =>
+  plantFile("packages/social-harness/package.json", (s) =>
     s.replace(/"node": "[^"]+"/, '"node": ">=20"'),
   );
   const engines = runDependencyVersions();
   test(
     "flags a published Node.js range that differs from the workspace root",
     engines.code !== 0 &&
-      /client\/package\.json: engines\.node is ">=20", expected the root/.test(
+      /social-harness\/package\.json: engines\.node is ">=20", expected the root/.test(
         engines.stderr,
       ),
     `expected engines failure. exit=${engines.code}, stderr=${engines.stderr.slice(0, 300)}`,

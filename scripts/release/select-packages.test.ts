@@ -37,7 +37,7 @@ const RELEASE = "2099.101.0";
 const PREVIOUS = "2099.100.0";
 
 /** A library and its adapter exercise dependency-ordered release selection. */
-const DIRS = ["client", "openclaw-channel"];
+const DIRS = ["social-harness", "openclaw-channel"];
 
 /**
  * Every workspace package name, as `hostCodeHashOfPackage` passes them: the
@@ -46,16 +46,13 @@ const DIRS = ["client", "openclaw-channel"];
 const WORKSPACE_NAMES: ReadonlySet<string> = new Set(
   [...DIRS, "nanoclaw-channel", "registry", "router"].map(packageName),
 );
-/**
- * The npm name of a package directory under `packages/`; the library's
- * directory keeps the name `client`.
- */
+/** The npm name matches the package directory under `packages/`. */
 function packageName(dir: string): string {
-  return dir === "client" ? "@moltzap/social-harness" : `@moltzap/${dir}`;
+  return `@moltzap/${dir}`;
 }
 
 const DEPENDENCIES = Object.fromEntries(
-  DIRS.map((dir) => [dir, dir === "client" ? [] : ["client"]]),
+  DIRS.map((dir) => [dir, dir === "social-harness" ? [] : ["social-harness"]]),
 );
 
 const MANIFEST = {
@@ -88,15 +85,15 @@ const AS_PUBLISHED = (): Recorded | undefined => undefined;
 
 await test("a client-only change publishes the client and the channel that pins it", () => {
   const { workspace, versions } = fakeWorkspace(
-    { client: "client-changed" },
+    { "social-harness": "library-changed" },
     AS_PUBLISHED,
   );
   assert.deepEqual(selectPackages(workspace, RELEASE, DIRS), {
     kind: "selected",
-    dirs: ["client", "openclaw-channel"],
+    dirs: ["social-harness", "openclaw-channel"],
   });
   assert.deepEqual(Object.fromEntries(versions), {
-    client: RELEASE,
+    "social-harness": RELEASE,
     "openclaw-channel": RELEASE,
   });
 });
@@ -110,7 +107,7 @@ await test("a channel-only change leaves the Client at its previous release", ()
     kind: "selected",
     dirs: ["openclaw-channel"],
   });
-  assert.equal(versions.get("client"), PREVIOUS);
+  assert.equal(versions.get("social-harness"), PREVIOUS);
   assert.equal(versions.get("openclaw-channel"), RELEASE);
 });
 
@@ -141,7 +138,7 @@ await test("an npm outage stops the selection", () => {
 await test("a package listed before a sibling it depends on stops the selection", () => {
   const { workspace, versions } = fakeWorkspace({}, AS_PUBLISHED);
   assert.deepEqual(
-    selectPackages(workspace, RELEASE, ["openclaw-channel", "client"]),
+    selectPackages(workspace, RELEASE, ["openclaw-channel", "social-harness"]),
     {
       kind: "out-of-order",
       message:

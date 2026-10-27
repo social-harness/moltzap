@@ -33,10 +33,10 @@ import {
   RecordCore,
   RecordHash,
   signEvidenceMessage,
-} from "../packages/client/dist/communication/records/index.js";
-import { RouterInstanceId } from "../packages/client/dist/communication/router/api/index.js";
-import { encodeCanonical } from "../packages/client/dist/encoding/canonical-json.js";
-import { WireVersions } from "../packages/client/dist/identity/wire-version.js";
+} from "../packages/social-harness/dist/communication/records/index.js";
+import { RouterInstanceId } from "../packages/social-harness/dist/communication/router/api/index.js";
+import { encodeCanonical } from "../packages/social-harness/dist/encoding/canonical-json.js";
+import { WireVersions } from "../packages/social-harness/dist/identity/wire-version.js";
 import {
   AgentCard,
   AgentId,
@@ -45,7 +45,7 @@ import {
   Ed25519PublicKey,
   PrincipalId,
   SignedMessage,
-} from "../packages/client/dist/index.js";
+} from "../packages/social-harness/dist/index.js";
 import captured from "./client-record-golden-inputs.json" with { type: "json" };
 
 registerHooks({
@@ -440,7 +440,7 @@ await Effect.runPromise(
           fs.writeFileString(
             fileURLToPath(
               new URL(
-                "../packages/client/src/communication/records/record-golden.json",
+                "../packages/social-harness/src/communication/records/record-golden.json",
                 import.meta.url,
               ),
             ),

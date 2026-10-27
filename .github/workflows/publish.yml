@@ -101,7 +101,7 @@ defaults:
 # Dependency order: each package comes after the siblings it depends on, which
 # the selection checks.
 env:
-  RELEASE_PACKAGES: client openclaw-channel
+  RELEASE_PACKAGES: social-harness openclaw-channel
   IMAGE_CERTIFICATE_IDENTITY: https://github.com/social-harness/moltzap/.github/workflows/images.yml@refs/heads/main
   IMAGE_CERTIFICATE_OIDC_ISSUER: https://token.actions.githubusercontent.com
 
@@ -259,7 +259,7 @@ jobs:
       # its content hash is unchanged.
       - name: Record emitted wire version in published Client metadata
         if: steps.plan.outputs.mode == 'bump' || steps.plan.outputs.mode == 'resume'
-        working-directory: packages/client
+        working-directory: packages/social-harness
         env:
           MODE: ${{ steps.plan.outputs.mode }}
         run: |

@@ -147,7 +147,7 @@ export function packInto(
   if (typeof packed !== "string") {
     return packed;
   }
-  if (dir === "client") {
+  if (dir === "social-harness") {
     const version = readCompatibilityVersion(repo);
     if ("error" in version) {
       return { kind: "pack-failed", message: version.error };

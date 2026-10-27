@@ -26,7 +26,7 @@
         "typedoc"
       ]
     },
-    "packages/client": {
+    "packages/social-harness": {
       "entry": [
         "src/**/*.test.ts",
         "src/**/*.types-check.ts",
@@ -172,37 +172,37 @@
     }
   },
   "ignoreIssues": {
-    "packages/client/src/communication/conversations/runtime/index.ts": [
+    "packages/social-harness/src/communication/conversations/runtime/index.ts": [
       "types"
     ],
-    "packages/client/src/communication/conversations/index.ts": [
+    "packages/social-harness/src/communication/conversations/index.ts": [
       "exports",
       "types"
     ],
-    "packages/client/src/communication/records/schemas.ts": [
+    "packages/social-harness/src/communication/records/schemas.ts": [
       "exports"
     ],
-    "packages/client/src/communication/records/verification.ts": [
+    "packages/social-harness/src/communication/records/verification.ts": [
       "exports"
     ],
-    "packages/client/src/communication/records/index.ts": [
+    "packages/social-harness/src/communication/records/index.ts": [
       "exports",
       "types"
     ],
-    "packages/client/src/communication/store/index.ts": [
+    "packages/social-harness/src/communication/store/index.ts": [
       "types"
     ],
-    "packages/client/src/communication/store/database/index.ts": [
+    "packages/social-harness/src/communication/store/database/index.ts": [
       "exports",
       "types"
     ],
-    "packages/client/src/communication/store/database/schema.ts": [
+    "packages/social-harness/src/communication/store/database/schema.ts": [
       "types"
     ],
-    "packages/client/src/harness/protocol/owner-tools.ts": [
+    "packages/social-harness/src/harness/protocol/owner-tools.ts": [
       "exports"
     ],
-    "packages/client/src/communication/store/rows/index.ts": [
+    "packages/social-harness/src/communication/store/rows/index.ts": [
       "exports"
     ]
   }

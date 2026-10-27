@@ -6,7 +6,7 @@ and one configured local daemon.
 
 Domains, lowest first. A domain imports only the declared entrypoints of
 domains below it, which `pnpm arch:check` enforces.
-`packages/client/safer-architecture.config.json → domains` lists each domain's
+`packages/social-harness/safer-architecture.config.json → domains` lists each domain's
 entrypoints: usually its `index.ts`, plus schema files that hosts can load
 without the domain's runtime. `harness/` groups the protocol, host endpoint,
 inbox and daemon MCP server; each has its own declared entrypoints.

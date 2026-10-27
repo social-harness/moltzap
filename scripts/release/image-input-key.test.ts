@@ -56,7 +56,7 @@ function run(repo: string) {
 const changes = [
   [
     "test-only sibling module",
-    "packages/client/src/test.ts",
+    "packages/social-harness/src/test.ts",
     "export const testOnly = 2;",
     false,
     false,
@@ -91,7 +91,7 @@ const changes = [
   ],
   [
     "sibling TypeScript config",
-    "packages/client/tsconfig.json",
+    "packages/social-harness/tsconfig.json",
     '{"extends":"../../tsconfig.base.json","compilerOptions":{"rootDir":"src","outDir":"dist","strict":true}}',
     true,
     true,
@@ -113,7 +113,7 @@ const changes = [
   ],
   [
     "daemon-only source",
-    "packages/client/src/daemon/run.ts",
+    "packages/social-harness/src/daemon/run.ts",
     "export const daemon = 2;",
     false,
     false,
@@ -151,14 +151,14 @@ const changes = [
   ],
   [
     "condition-only internal module",
-    "packages/client/src/private.ts",
+    "packages/social-harness/src/private.ts",
     "export const privateValue = 2;",
     true,
     true,
   ],
   [
     "default-condition module",
-    "packages/client/src/index.ts",
+    "packages/social-harness/src/index.ts",
     "export const publicValue = 2;",
     true,
     true,
@@ -176,7 +176,7 @@ const changes = [
   ],
   [
     "sibling version-only manifest",
-    "packages/client/package.json",
+    "packages/social-harness/package.json",
     "",
     false,
     false,
@@ -265,7 +265,7 @@ await test("refuses an export whose source is absent", (t) => {
   });
   write(
     repo,
-    "packages/client/package.json",
+    "packages/social-harness/package.json",
     JSON.stringify({
       name: "@fixture/core",
       exports: { ".": "./dist/absent.js" },
@@ -277,7 +277,7 @@ await test("refuses an export whose source is absent", (t) => {
   assert.equal(result.stdout, "");
   assert.match(
     result.stderr,
-    /Missing workspace export target packages\/client\/dist\/absent.js/u,
+    /Missing workspace export target packages\/social-harness\/dist\/absent.js/u,
   );
 });
 
@@ -289,8 +289,8 @@ for (const [label, content, message] of [
   ],
   [
     "missing importer",
-    lock.replace("packages/client:", "packages/absent:"),
-    /no importer packages\/client/u,
+    lock.replace("packages/social-harness:", "packages/absent:"),
+    /no importer packages\/social-harness/u,
   ],
   [
     "missing snapshot",
@@ -352,7 +352,7 @@ await test("release-shaped metadata edits in own and sibling manifests preserve 
     rmSync(repo, { recursive: true, force: true });
   });
   const before = Effect.runSync(imageInputs(repo));
-  for (const service of ["router", "registry", "client"]) {
+  for (const service of ["router", "registry", "social-harness"]) {
     const file = `packages/${service}/package.json`;
     const manifest: unknown = JSON.parse(
       readFileSync(path.join(repo, file), "utf8"),
@@ -380,7 +380,7 @@ await test("sibling manifest non-version fields bind both images", (t) => {
     rmSync(repo, { recursive: true, force: true });
   });
   const before = Effect.runSync(imageInputs(repo));
-  const file = "packages/client/package.json";
+  const file = "packages/social-harness/package.json";
   write(
     repo,
     file,
@@ -412,7 +412,7 @@ await test("runtime version gate names only reached modules consuming manifest v
   );
   write(
     repo,
-    "packages/client/src/daemon/run.ts",
+    "packages/social-harness/src/daemon/run.ts",
     'import manifest from "../../package.json"; console.log(manifest.version);',
   );
   write(
@@ -422,7 +422,7 @@ await test("runtime version gate names only reached modules consuming manifest v
   );
   write(
     repo,
-    "packages/client/src/index.ts",
+    "packages/social-harness/src/index.ts",
     'import manifest from "../package.json"; console.log(manifest.version);',
   );
   commit(repo);
@@ -521,13 +521,13 @@ for (const [label, manifest, source, mutation] of [
     "constant dynamic import",
     { exports: { "./internal": { "sharness-internal": "./dist/private.js" } } },
     "await import(`@fixture/core/internal`);",
-    "packages/client/src/private.ts",
+    "packages/social-harness/src/private.ts",
   ],
   [
     "active require conditional target",
     { exports: { ".": { require: "./dist/only-require.js" } } },
     'require("@fixture/core");',
-    "packages/client/src/only-require.ts",
+    "packages/social-harness/src/only-require.ts",
   ],
   [
     "active node conditional target",
@@ -541,7 +541,7 @@ for (const [label, manifest, source, mutation] of [
       },
     },
     'import "@fixture/core";',
-    "packages/client/src/only-node.ts",
+    "packages/social-harness/src/only-node.ts",
   ],
   [
     "active module-sync conditional target",
@@ -555,7 +555,7 @@ for (const [label, manifest, source, mutation] of [
       },
     },
     'import "@fixture/core";',
-    "packages/client/src/only-sync.ts",
+    "packages/social-harness/src/only-sync.ts",
   ],
   [
     "active default conditional target",
@@ -569,19 +569,19 @@ for (const [label, manifest, source, mutation] of [
       },
     },
     'import "@fixture/core";',
-    "packages/client/src/only-default.ts",
+    "packages/social-harness/src/only-default.ts",
   ],
   [
     "legacy main",
     { main: "./dist/private.js" },
     'import "@fixture/core";',
-    "packages/client/src/private.ts",
+    "packages/social-harness/src/private.ts",
   ],
   [
     "wildcard subpaths",
     { exports: { "./*": "./dist/*.js" } },
     'import "@fixture/core/private";',
-    "packages/client/src/private.ts",
+    "packages/social-harness/src/private.ts",
   ],
   [
     "package imports aliases",
@@ -590,7 +590,7 @@ for (const [label, manifest, source, mutation] of [
       imports: { "#private": "./dist/private.js" },
     },
     'import "@fixture/core";',
-    "packages/client/src/private.ts",
+    "packages/social-harness/src/private.ts",
   ],
 ] as const) {
   await test(`${label} reach their runtime modules`, (t) => {
@@ -598,7 +598,7 @@ for (const [label, manifest, source, mutation] of [
     t.after(() => {
       rmSync(repo, { recursive: true, force: true });
     });
-    const file = "packages/client/package.json";
+    const file = "packages/social-harness/package.json";
     const original: unknown = JSON.parse(
       readFileSync(path.join(repo, file), "utf8"),
     );
@@ -612,10 +612,10 @@ for (const [label, manifest, source, mutation] of [
       write(repo, `packages/${service}/src/index.ts`, source);
       write(repo, `packages/${service}/src/index.test.ts`, "export {};");
     }
-    write(repo, "packages/client/src/internal.ts", "export {};");
-    write(repo, "packages/client/src/index.ts", 'import "#private";');
+    write(repo, "packages/social-harness/src/internal.ts", "export {};");
+    write(repo, "packages/social-harness/src/index.ts", 'import "#private";');
     if (label !== "package imports aliases") {
-      write(repo, "packages/client/src/index.ts", "export {};");
+      write(repo, "packages/social-harness/src/index.ts", "export {};");
     }
     commit(repo);
     const before = key(repo);
@@ -676,7 +676,7 @@ await test("missing workspace subpaths and malformed manifests retain file-speci
     onLeft: (error) => {
       assert.match(
         error.message,
-        /^Missing workspace export target packages\/client\/package.json \(@fixture\/core\/missing\)$/u,
+        /^Missing workspace export target packages\/social-harness\/package.json \(@fixture\/core\/missing\)$/u,
       );
     },
     onRight: () => {
@@ -800,7 +800,7 @@ for (const [label, header, bin] of [
     ]);
     write(
       repo,
-      "packages/client/src/daemon/run.ts",
+      "packages/social-harness/src/daemon/run.ts",
       "export const changed = true;",
     );
     commit(repo);
@@ -901,18 +901,22 @@ for (const source of [
     write(repo, "packages/registry/src/index.ts", "export {};");
     write(
       repo,
-      "packages/client/package.json",
+      "packages/social-harness/package.json",
       JSON.stringify({
         name: "@fixture/core",
         exports: { "./*": "./dist/*.js" },
       }),
     );
-    write(repo, "packages/client/src/private.ts", "export type T = string;");
+    write(
+      repo,
+      "packages/social-harness/src/private.ts",
+      "export type T = string;",
+    );
     commit(repo);
     const before = key(repo);
     write(
       repo,
-      "packages/client/src/private.ts",
+      "packages/social-harness/src/private.ts",
       "export type T = string; console.log(process.env.npm_package_version);",
     );
     commit(repo);
@@ -962,15 +966,15 @@ for (const [label, file, content, message] of [
     "a workspace link outside accounted package roots",
     "pnpm-lock.yaml",
     lock
-      .replaceAll("link:../client", "link:../../tests/library")
-      .replace("packages/client:", "tests/library:"),
+      .replaceAll("link:../social-harness", "link:../../tests/library")
+      .replace("packages/social-harness:", "tests/library:"),
     /^Unaccounted workspace link @fixture\/core to tests\/library\/package\.json in pnpm-lock\.yaml$/u,
   ],
   [
     "an aliased workspace link that module resolution cannot account for",
     "pnpm-lock.yaml",
     lock.replaceAll("'@fixture/core':", "'@fixture/alias':"),
-    /@fixture\/alias.*packages\/client\/package.json/u,
+    /@fixture\/alias.*packages\/social-harness\/package.json/u,
   ],
   [
     "a missing reached relative module with its repository path",

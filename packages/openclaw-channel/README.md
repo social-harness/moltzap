@@ -91,7 +91,7 @@ path is:
     refuses text that states a gather, all_gather or answer.
 
 The package also installs the agent skills that `@moltzap/social-harness` ships in
-[`skills/`](https://github.com/social-harness/moltzap/blob/main/packages/client/skills):
+[`skills/`](https://github.com/social-harness/moltzap/blob/main/packages/social-harness/skills):
 its build copies them into `dist/skills`, which `openclaw.plugin.json` names,
 so OpenClaw loads them while the plugin is enabled, for every agent its skill
 allowlist admits.
