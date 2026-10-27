@@ -114,7 +114,6 @@ function runOpenClawScenario() {
       );
       const returned = yield* Fiber.join(callerDelivery);
       assertReply(returned, targetAddress);
-      yield* returned.acknowledge;
 
       yield* stopGateway(abortController, runningGateway);
 

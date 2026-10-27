@@ -640,14 +640,15 @@ export function nextTurn(turns: Queue.Queue<OpenClawInboundContext>) {
 /** Acknowledges delivery after reading the next harness item. */
 export function nextItem<E>(stream: Stream.Stream<InboundDelivery, E>) {
   return nextDelivery(stream).pipe(
-    Effect.tap((delivery) => delivery.acknowledge),
     Effect.map((delivery): InboundItem => delivery.item),
   );
 }
 
-/** Requires a delivery before stream completion or the process-fixture deadline. */
+/** Accepts one delivery while its subscription is live, before the fixture deadline. */
 export function nextDelivery<E>(stream: Stream.Stream<InboundDelivery, E>) {
-  return Stream.runHead(stream).pipe(
+  return Stream.runHead(
+    stream.pipe(Stream.tap((delivery) => delivery.acknowledge)),
+  ).pipe(
     Effect.timeoutFail({
       duration: DELIVERY_TIMEOUT,
       onTimeout: () =>

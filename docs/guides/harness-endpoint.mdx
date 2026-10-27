@@ -1,6 +1,9 @@
 ---
 title: HarnessEndpoint in TypeScript
 description: Send and receive messages from a TypeScript process with acquireHarnessEndpoint
+read_when:
+  - You are connecting native host code to a local or remotely hosted daemon
+  - You need authenticated receiving with scoped delivery acknowledgments
 ---
 
 import NodeRequirement from "/snippets/node-requirement.mdx";
@@ -45,11 +48,12 @@ when upgrading peers together.
 | An MCP host where a model calls `send_message` as a tool | The loopback MCP endpoint |
 | A client in another language | The loopback MCP endpoint |
 | Registration, status, exact agent lookup, or conversation history | The loopback MCP endpoint; `HarnessEndpoint` has no management operations |
-| A connection through an authenticated tunnel | The loopback MCP endpoint; `acquireHarnessEndpoint` sends no bearer credential |
+| A TypeScript receiver connecting through an authenticated tunnel | `acquireHarnessEndpoint` with its runtime credential |
 
-Use `acquireHarnessEndpoint` only against a daemon in trusted-local mode, with
+The URL-only example uses a daemon in trusted-local mode, with
 neither `SHARNESS_MCP_RUNTIME_CREDENTIAL_FILE` nor
-`SHARNESS_MCP_OWNER_CREDENTIAL_FILE` set.
+`SHARNESS_MCP_OWNER_CREDENTIAL_FILE` set. For a hosted daemon, use
+[authenticated polling](#connect-to-a-hosted-daemon).
 
 ## Install and run your client
 
@@ -144,7 +148,8 @@ is the daemon's `SHARNESS_MCP_PORT` and that the daemon runs trusted-local, as
   connection stays open until the scope closes, so run the program inside
   `Effect.scoped` or a longer-lived scope such as a `Layer`.
 - **Connect.** Acquisition connects, then checks that the daemon offers the
-  `org.social-harness/inbox.pending` push event. It fails with a `ConnectError` whose
+  `org.social-harness/inbox.pending` push event, or the
+  `org.social-harness/inbox.item` polling event when given a credential. It fails with a `ConnectError` whose
   `reason` is `transport-failed` or `incompatible-daemon`.
 - **Send.** `send` takes a `SendInput`: text to an `agent:` or `group:`
   address, optionally a `gather` or `all_gather` collective, or an answer to
@@ -163,13 +168,53 @@ is the daemon's `SHARNESS_MCP_PORT` and that the daemon runs trusted-local, as
   item. An unacknowledged delivery stays pending and may be replayed with the
   same identity to a later subscription, including after a reconnect or daemon
   restart.
+- **Receipt lifetime.** A receipt stops working when its subscription closes or
+  loses its consumer. Recover unread work through a new subscription after
+  `consumer-revoked`. A failed cleanup does not make old receipts valid again.
 - **One listener.** One endpoint allows one active `messages` subscription.
   A second concurrent subscription fails with `ListenError` reason
   `already-listening`.
 
-<a id="related" />
+## Connect to a hosted daemon
+
+Run the receiver in your deployment or remote VM. You need the daemon's public
+HTTPS MCP URL and its runtime credential in that process's secret store. Keep
+the owner credential with administration code. The daemon must advertise polling.
+
+In the program above, import `Config` from `effect` and replace the acquisition
+with this fragment. Provide `NATIVE_MCP_URL` and `NATIVE_RUNTIME_CREDENTIAL` through
+your deployment configuration; these are environment names used by this example.
+
+```ts
+const endpoint = yield* acquireHarnessEndpoint(
+  new URL(yield* Config.string("NATIVE_MCP_URL")),
+  {
+    credential: yield* Config.redacted("NATIVE_RUNTIME_CREDENTIAL"),
+    onReady: Console.log("Native receiver ready"),
+  },
+);
+```
+
+When `messages` starts, you should see `Native receiver ready`, even with an
+empty inbox. Client renews ownership while your host processes an item and reads
+the same retained inbox used by local receiving. Acknowledge only after the
+host accepts each delivery. Readiness does not mean that processing is complete.
+
+Use HTTPS for remote addresses. HTTP is accepted only on literal `127.0.0.1` or
+`[::1]`, for a receiver next to the daemon. Credential-bearing requests reject
+redirects, URL userinfo and fragments. If connection fails, verify the URL and
+runtime credential; if it reports `incompatible-daemon`, verify polling support.
+If another consumer owns receiving, stop it or wait for its lease to expire.
+Closing the stream releases ownership; failed cleanup can delay a replacement
+until lease expiry. The [polling contract](/spec/harness/ingress#polling-consumer)
+defines those bounds.
 
 ## Next steps
+
+- Connect this capability to your host's acceptance callback, then verify restart
+  recovery before using it for real messages.
+
+## Related
 
 - [`HarnessEndpoint` runtime contract](/spec/harness/client): the exact
   service shape, operations, inbound items, and closed failures.

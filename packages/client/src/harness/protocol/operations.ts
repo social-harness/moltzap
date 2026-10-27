@@ -1,6 +1,6 @@
 /** @file The values harness operations take, return and persist: sends, inbox pages, events and acknowledgments. */
 
-import { Effect, type ParseResult, Schema } from "effect";
+import { Effect, JSONSchema, type ParseResult, Schema } from "effect";
 import type { SendError } from "../../communication/conversations/errors.js";
 import {
   type CollectiveError,
@@ -21,11 +21,72 @@ import {
   type FirewallSendError,
   localGuidanceSchema,
 } from "../../firewall/outcome/index.js";
+import { HARNESS_CONSUMER_META_KEY, INBOX_ITEM_EVENT } from "./names.js";
 
 /** Canonical event identities reuse the immutable inbox binding's random bytes. */
 export const eventIdSchema = Schema.String.pipe(
   Schema.pattern(/^evt_[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/u),
 );
+
+const consumerMetadataSchema = exactStruct({
+  generation: Schema.UUID,
+  release: Schema.optionalWith(Schema.Boolean, { exact: true }),
+});
+const metadataSchema = Schema.Struct({
+  [HARNESS_CONSUMER_META_KEY]: Schema.optional(consumerMetadataSchema),
+});
+const itemEventDataSchema = Schema.Union(
+  exactStruct({
+    kind: Schema.Literal("item"),
+    item: InboundItem,
+    guidance: Schema.optionalWith(localGuidanceSchema, { exact: true }),
+  }),
+  exactStruct({
+    kind: Schema.Literal("reference"),
+    itemKind: Schema.Literal(
+      "multicast",
+      "collectiveRequest",
+      "collectiveResult",
+      "operationFailed",
+    ),
+    bytes: Schema.NonNegativeInt,
+  }),
+);
+const itemEventSchema = Schema.Struct({
+  eventId: eventIdSchema,
+  name: Schema.Literal(INBOX_ITEM_EVENT),
+  timestamp: Schema.String,
+  data: itemEventDataSchema,
+  cursor: Schema.optional(Schema.Null),
+});
+const pollResultSchema = Schema.Struct({
+  events: Schema.Array(itemEventSchema),
+  cursor: Schema.String,
+  truncated: Schema.Boolean,
+  hasMore: Schema.Boolean,
+  nextPollMs: Schema.NonNegativeInt,
+  _meta: Schema.Struct(
+    { [HARNESS_CONSUMER_META_KEY]: consumerMetadataSchema },
+    Schema.Record({ key: Schema.String, value: Schema.Unknown }),
+  ),
+});
+
+/** Receipt binding distinguishes consumer lifetimes; bearer authentication is still required. */
+export type ConsumerMetadata = typeof consumerMetadataSchema.Type;
+/** Native polling carries a required consumer binding beside open SDK metadata. */
+export type PollResult = typeof pollResultSchema.Type;
+/** Classified payload has the same inline/reference union in each delivery mode. */
+export const itemEventDataJsonSchema = JSONSchema.make(itemEventDataSchema, {
+  target: "jsonSchema2020-12",
+});
+/** Validates only Social Harness metadata, leaving SDK bookkeeping open. */
+export const decodeConsumerMetadata = (metadata: unknown) =>
+  Schema.decodeUnknown(metadataSchema)(metadata ?? {}).pipe(
+    Effect.map((value) => value[HARNESS_CONSUMER_META_KEY]),
+  );
+/** Native hosts validate polling results without loading the daemon SDK. */
+export const decodePollResult = Schema.decodeUnknown(pollResultSchema);
+
 /** Read-only content lookup never acknowledges or retries delivery. */
 export const readEventRequestSchema = exactStruct({
   eventId: Schema.propertySignature(eventIdSchema).annotations({

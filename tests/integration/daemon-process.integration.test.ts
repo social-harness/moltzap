@@ -106,7 +106,6 @@ const deliverDirect = (input: {
           content: [{ type: "text", text: input.text }],
         },
       });
-      yield* inbound.acknowledge;
     }),
   );
 
@@ -866,7 +865,6 @@ function exchangeInitialPostsAndExpectDelivery(state: ProcessScenario) {
             content: [{ type: "text", text: initialText }],
           },
         });
-        yield* targetInbound.acknowledge;
 
         yield* target.send({ to: callerAddress, text: responseText });
         const callerInbound = yield* Fiber.join(callerDelivery);
@@ -879,7 +877,6 @@ function exchangeInitialPostsAndExpectDelivery(state: ProcessScenario) {
             content: [{ type: "text", text: responseText }],
           },
         });
-        yield* callerInbound.acknowledge;
       }),
     );
   });
@@ -955,9 +952,11 @@ function directAddress(agentName: AgentName): AgentAddress {
   return Schema.decodeUnknownSync(AgentAddress)(`agent:${agentName}`);
 }
 
-/** The next delivery on `stream`. */
+/** Accepts the next delivery before its owning subscription closes. */
 function nextDelivery<E>(stream: Stream.Stream<InboundDelivery, E>) {
-  return Stream.runHead(stream).pipe(Effect.flatMap(requireDelivery));
+  return Stream.runHead(
+    stream.pipe(Stream.tap((delivery) => delivery.acknowledge)),
+  ).pipe(Effect.flatMap(requireDelivery));
 }
 
 function requireDelivery(

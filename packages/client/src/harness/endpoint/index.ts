@@ -8,14 +8,21 @@ import {
   SdkHttpError,
   StreamableHTTPClientTransport,
 } from "@modelcontextprotocol/client";
-import { Data, Effect, Ref, type Scope, Stream } from "effect";
+import {
+  Data,
+  Deferred,
+  Effect,
+  Redacted,
+  Ref,
+  type Scope,
+  Stream,
+} from "effect";
 import {
   CollectiveError,
   type SendResult,
 } from "../../communication/collectives/forms.js";
 import {
   DeliveryAcknowledgeError,
-  deliveryAcknowledgeFailureReasons,
   ListenError,
   SendError,
   sendFailureReasons,
@@ -27,6 +34,7 @@ import {
   HARNESS_READ_INBOX_TOOL,
   HARNESS_SEND_META_KEY,
   HARNESS_SEND_TOOL,
+  INBOX_ITEM_EVENT,
   INBOX_PENDING_EVENT,
 } from "../protocol/names.js";
 import {
@@ -38,9 +46,12 @@ import {
 import {
   ConnectError,
   type HarnessEndpoint,
+  type HarnessEndpointOptions,
   type InboundDelivery,
 } from "./capability.js";
 import { inboxWakeups } from "./events.js";
+import { acknowledgeReason, isReason, listenFailure } from "./failures.js";
+import { pollWakeups } from "./poll.js";
 
 /* eslint-disable agent-code-guard/promise-type, @typescript-eslint/no-invalid-void-type -- The official MCP client lifecycle is Promise-native and is converted to Effect at this private edge. */
 
@@ -53,13 +64,19 @@ class CloseError extends Data.TaggedError("CloseError") {}
 
 /**
  * Acquire one real MCP-backed endpoint and its scoped connection.
- * @param endpoint Loopback MCP URL for the configured endpoint daemon.
+ * @param endpoint Explicit MCP URL for the configured endpoint daemon.
+ * @param options Runtime credential selects polling; omission preserves trusted-local push.
  * @returns An endpoint whose resources remain live for the caller's scope.
  */
 export function acquireHarnessEndpoint(
   endpoint: URL,
+  options?: HarnessEndpointOptions,
 ): Effect.Effect<HarnessEndpoint, ConnectError, Scope.Scope> {
-  return acquireEndpoint(endpoint).pipe(
+  const address = new URL(endpoint.href);
+  if (options !== undefined && !safeCredentialEndpoint(address)) {
+    return Effect.fail(new ConnectError({ reason: "transport-failed" }));
+  }
+  return acquireEndpoint(address, options).pipe(
     Effect.withSpan("acquireHarnessEndpoint"),
   );
 }
@@ -74,8 +91,19 @@ function closeQuietly(close: () => Promise<void>): Effect.Effect<void> {
   );
 }
 
-interface ReasonPayload {
-  readonly reason: unknown;
+/**
+ * Runtime credentials travel over TLS or literal loopback.
+ * @param endpoint Caller-owned address, copied before the effect runs.
+ * @returns Whether the address can carry a credential without userinfo or fragments.
+ */
+function safeCredentialEndpoint(endpoint: URL): boolean {
+  const secure = endpoint.protocol === "https:";
+  const loopback =
+    endpoint.protocol === "http:" &&
+    (endpoint.hostname === "127.0.0.1" || endpoint.hostname === "[::1]");
+  const plainAddress =
+    !endpoint.username && !endpoint.password && !endpoint.hash;
+  return (secure || loopback) && plainAddress;
 }
 
 /**
@@ -150,34 +178,6 @@ function neverReachedDaemon(cause: unknown): boolean {
   );
 }
 
-function acknowledgeReason(cause: unknown): DeliveryAcknowledgeError["reason"] {
-  const reason = operationReason(cause);
-  return isReason(reason, deliveryAcknowledgeFailureReasons)
-    ? reason
-    : "transport-failed";
-}
-
-function operationReason(cause: unknown): unknown {
-  if (hasReasonPayload(cause)) {
-    return cause.reason;
-  }
-  const protocolData: unknown = ProtocolError.isInstance(cause)
-    ? cause.data
-    : undefined;
-  return hasReasonPayload(protocolData) ? protocolData.reason : undefined;
-}
-
-function hasReasonPayload(value: unknown): value is ReasonPayload {
-  return typeof value === "object" && value !== null && "reason" in value;
-}
-
-function isReason<Reason>(
-  value: unknown,
-  allowed: readonly Reason[],
-): value is Reason {
-  return allowed.some((candidate) => candidate === value);
-}
-
 function callSend(
   client: Client,
   ...[input, options]: Parameters<HarnessEndpoint["send"]>
@@ -214,32 +214,6 @@ function callSend(
   );
 }
 
-function callAcknowledgeDelivery(
-  client: Client,
-  deliveryToken: DeliveryToken,
-): Effect.Effect<void, DeliveryAcknowledgeError> {
-  return Effect.tryPromise({
-    try: (signal) =>
-      client.callTool(
-        {
-          name: HARNESS_ACKNOWLEDGE_DELIVERY_TOOL,
-          arguments: { deliveryToken },
-        },
-        { signal },
-      ),
-    catch: (cause) =>
-      new DeliveryAcknowledgeError({ reason: acknowledgeReason(cause) }),
-  }).pipe(
-    Effect.flatMap((result) =>
-      result.isError === true
-        ? Effect.fail(
-            new DeliveryAcknowledgeError({ reason: "transport-failed" }),
-          )
-        : Effect.void,
-    ),
-  );
-}
-
 const eventsListOutput = fromJsonSchema<{
   events: ReadonlyArray<{ name: string; delivery: readonly string[] }>;
 }>({
@@ -262,6 +236,7 @@ const eventsListOutput = fromJsonSchema<{
 
 function supportsInboxEvents(
   client: Client,
+  authenticated: boolean,
 ): Effect.Effect<boolean, ConnectError> {
   return Effect.tryPromise({
     try: (signal) =>
@@ -279,7 +254,9 @@ function supportsInboxEvents(
     Effect.map((catalog) =>
       catalog.events.some(
         (event) =>
-          event.name === INBOX_PENDING_EVENT && event.delivery.includes("push"),
+          event.name ===
+            (authenticated ? INBOX_ITEM_EVENT : INBOX_PENDING_EVENT) &&
+          event.delivery.includes(authenticated ? "poll" : "push"),
       ),
     ),
   );
@@ -288,10 +265,11 @@ function supportsInboxEvents(
 function acquireConnection(
   client: Client,
   endpoint: URL,
+  options?: HarnessEndpointOptions,
 ): Effect.Effect<Client, ConnectError, Scope.Scope> {
   return Effect.uninterruptibleMask((restore) =>
     Effect.gen(function* () {
-      const connected = yield* restore(connect(client, endpoint));
+      const connected = yield* restore(connect(client, endpoint, options));
       yield* Effect.addFinalizer(() => closeClient(client));
       return connected;
     }),
@@ -301,14 +279,28 @@ function acquireConnection(
 function connect(
   client: Client,
   endpoint: URL,
+  options?: HarnessEndpointOptions,
 ): Effect.Effect<Client, ConnectError> {
   return Effect.tryPromise({
     try: (signal) =>
-      client.connect(new StreamableHTTPClientTransport(endpoint), { signal }),
+      client.connect(
+        new StreamableHTTPClientTransport(endpoint, {
+          requestInit:
+            options === undefined
+              ? {}
+              : {
+                  headers: {
+                    Authorization: `Bearer ${Redacted.value(options.credential)}`,
+                  },
+                  redirect: "error",
+                },
+        }),
+        { signal },
+      ),
     catch: () => new ConnectError({ reason: "transport-failed" }),
   }).pipe(
     Effect.flatMap(() =>
-      supportsInboxEvents(client).pipe(
+      supportsInboxEvents(client, options !== undefined).pipe(
         Effect.flatMap((supported) =>
           supported
             ? Effect.succeed(client)
@@ -319,6 +311,46 @@ function connect(
     Effect.onError(() => closeClient(client)),
   );
 }
+
+/** The local lifetime guards receipts even when remote cleanup fails. */
+interface ConsumerBinding {
+  readonly metadata: Readonly<Record<string, unknown>>;
+  readonly revoked: Deferred.Deferred<never, DeliveryAcknowledgeError>;
+}
+
+const callAcknowledgeDelivery = (
+  client: Client,
+  deliveryToken: DeliveryToken,
+  consumer: ConsumerBinding,
+): Effect.Effect<void, DeliveryAcknowledgeError> => {
+  const acknowledge = Effect.tryPromise({
+    try: (signal) =>
+      client.callTool(
+        {
+          name: HARNESS_ACKNOWLEDGE_DELIVERY_TOOL,
+          arguments: { deliveryToken },
+          _meta: consumer.metadata,
+        },
+        { signal },
+      ),
+    catch: (cause) =>
+      new DeliveryAcknowledgeError({ reason: acknowledgeReason(cause) }),
+  }).pipe(
+    Effect.flatMap((result) =>
+      result.isError === true
+        ? Effect.fail(
+            new DeliveryAcknowledgeError({ reason: "transport-failed" }),
+          )
+        : Effect.void,
+    ),
+  );
+  return Deferred.isDone(consumer.revoked).pipe(
+    Effect.flatMap((closed) =>
+      closed ? Deferred.await(consumer.revoked) : acknowledge,
+    ),
+    Effect.raceFirst(Deferred.await(consumer.revoked)),
+  );
+};
 
 const decodeInbox = (result: Awaited<ReturnType<Client["callTool"]>>) =>
   result.isError === true
@@ -332,9 +364,8 @@ const decodeInbox = (result: Awaited<ReturnType<Client["callTool"]>>) =>
 const unseenDeliveries = (
   client: Client,
   seen: Set<DeliveryToken>,
-  items: Effect.Effect.Success<
-    ReturnType<typeof decodeHarnessReadInboxResult>
-  >["items"],
+  items: Effect.Effect.Success<ReturnType<typeof decodeInbox>>["items"],
+  consumer: ConsumerBinding,
 ): InboundDelivery[] => {
   const deliveries: InboundDelivery[] = [];
   for (const entry of items) {
@@ -342,10 +373,13 @@ const unseenDeliveries = (
       continue;
     }
     seen.add(entry.deliveryToken);
-    const acknowledge = callAcknowledgeDelivery(client, entry.deliveryToken);
     deliveries.push({
       item: entry.item,
-      acknowledge,
+      acknowledge: callAcknowledgeDelivery(
+        client,
+        entry.deliveryToken,
+        consumer,
+      ),
       ...(entry.guidance === undefined ? {} : { guidance: entry.guidance }),
     });
   }
@@ -353,14 +387,19 @@ const unseenDeliveries = (
 };
 
 /**
- * Prune completed snapshots so acknowledged history cannot accumulate in a live listener.
- * @param client Scoped connection to the owning daemon.
- * @param seen Tokens already offered by this listener, retained through pending reads.
- * @returns New deliveries from one complete bounded inbox snapshot.
+ * A complete bounded snapshot prunes seen tokens; partial reads retain them.
+ * Recovery delivers canonical content and local guidance, independently of the
+ * wakeup envelope or cursor, and only the receipt can retire unread work.
+ *
+ * @param client The connected MCP transport.
+ * @param seen Tokens already yielded during this subscription.
+ * @param consumer Read authority and the local receipt lifetime.
+ * @returns Unseen deliveries from the pending snapshot.
  */
 function pendingInbox(
   client: Client,
   seen: Set<DeliveryToken>,
+  consumer: ConsumerBinding,
 ): Stream.Stream<InboundDelivery, ListenError> {
   const retained = new Set<DeliveryToken>();
   const page = (cursor?: string): Stream.Stream<InboundDelivery, ListenError> =>
@@ -371,10 +410,11 @@ function pendingInbox(
             {
               name: HARNESS_READ_INBOX_TOOL,
               arguments: cursor === undefined ? {} : { cursor },
+              _meta: consumer.metadata,
             },
             { signal },
           ),
-        catch: () => new ListenError({ reason: "transport-failed" }),
+        catch: listenFailure,
       }).pipe(
         Effect.flatMap(decodeInbox),
         Effect.map((result) => {
@@ -382,7 +422,7 @@ function pendingInbox(
             retained.add(entry.deliveryToken);
           }
           const current = Stream.fromIterable(
-            unseenDeliveries(client, seen, result.items),
+            unseenDeliveries(client, seen, result.items, consumer),
           );
           return result.nextCursor === undefined
             ? current
@@ -432,13 +472,26 @@ function messages(
   client: Client,
   listenerActive: Ref.Ref<boolean>,
   endpoint: URL,
+  options?: HarnessEndpointOptions,
 ): Stream.Stream<InboundDelivery, ListenError> {
   return Stream.unwrapScoped(
     Effect.gen(function* () {
       yield* acquireListenerSlot(listenerActive);
+      const revoked = yield* Deferred.make<never, DeliveryAcknowledgeError>();
+      const fence = Deferred.fail(
+        revoked,
+        new DeliveryAcknowledgeError({ reason: "consumer-revoked" }),
+      ).pipe(Effect.asVoid);
+      yield* Effect.addFinalizer(() => fence);
       const seen = new Set<DeliveryToken>();
-      return inboxWakeups(endpoint).pipe(
-        Stream.flatMap(() => pendingInbox(client, seen)),
+      const wakeups =
+        options === undefined
+          ? inboxWakeups(endpoint).pipe(Stream.as({}))
+          : pollWakeups(client, fence, options.onReady ?? Effect.void);
+      return wakeups.pipe(
+        Stream.flatMap((metadata) =>
+          pendingInbox(client, seen, { metadata, revoked }),
+        ),
       );
     }),
   );
@@ -453,14 +506,15 @@ function makeMcpClient(): Client {
 
 function acquireEndpoint(
   endpoint: URL,
+  options?: HarnessEndpointOptions,
 ): Effect.Effect<HarnessEndpoint, ConnectError, Scope.Scope> {
   return Effect.gen(function* () {
     const client = makeMcpClient();
-    yield* acquireConnection(client, endpoint);
+    yield* acquireConnection(client, endpoint, options);
     const listenerActive = yield* Ref.make(false);
     return {
       send: (input, options) => callSend(client, input, options),
-      messages: messages(client, listenerActive, endpoint),
+      messages: messages(client, listenerActive, endpoint, options),
     } satisfies HarnessEndpoint;
   });
 }
@@ -471,5 +525,6 @@ function acquireEndpoint(
 export {
   ConnectError,
   type HarnessEndpoint,
+  type HarnessEndpointOptions,
   type InboundDelivery,
 } from "./capability.js";

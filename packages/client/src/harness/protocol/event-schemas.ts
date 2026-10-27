@@ -5,12 +5,16 @@ import {
   type JsonSchemaType,
   type ProtocolError,
 } from "@modelcontextprotocol/server";
-import { Effect, JSONSchema, Schema } from "effect";
-import { InboundItem } from "../../communication/collectives/inbound.js";
-import { exactStruct } from "../../encoding/exact.js";
-import { localGuidanceSchema } from "../../firewall/outcome/index.js";
-import { HARNESS_CONSUMER_META_KEY, INBOX_ITEM_EVENT } from "./names.js";
-import { eventIdSchema } from "./operations.js";
+import { type Effect, JSONSchema, Schema } from "effect";
+/** Daemon event delivery uses the same host-safe wire values as polling receivers. */
+export {
+  type ConsumerMetadata,
+  decodeConsumerMetadata,
+  decodePollResult,
+  itemEventDataJsonSchema,
+  type PollResult,
+} from "./operations.js";
+
 /** Maximum complete UTF-8 callback body accepted by the event transport. */
 export const maximumEventBytes = 256 * 1024;
 
@@ -64,64 +68,6 @@ const pollSchema = Schema.Struct({
   }),
 });
 
-const consumerMetadataSchema = exactStruct({
-  generation: Schema.UUID,
-  release: Schema.optionalWith(Schema.Boolean, { exact: true }),
-});
-const metadataSchema = Schema.Struct({
-  [HARNESS_CONSUMER_META_KEY]: Schema.optional(consumerMetadataSchema),
-});
-const itemEventDataSchema = Schema.Union(
-  exactStruct({
-    kind: Schema.Literal("item"),
-    item: InboundItem,
-    guidance: Schema.optionalWith(localGuidanceSchema, { exact: true }),
-  }),
-  exactStruct({
-    kind: Schema.Literal("reference"),
-    itemKind: Schema.Literal(
-      "multicast",
-      "collectiveRequest",
-      "collectiveResult",
-      "operationFailed",
-    ),
-    bytes: Schema.NonNegativeInt,
-  }),
-);
-const itemEventSchema = Schema.Struct({
-  eventId: eventIdSchema,
-  name: Schema.Literal(INBOX_ITEM_EVENT),
-  timestamp: Schema.String,
-  data: itemEventDataSchema,
-  cursor: Schema.optional(Schema.Null),
-});
-const pollResultSchema = Schema.Struct({
-  events: Schema.Array(itemEventSchema),
-  cursor: Schema.String,
-  truncated: Schema.Boolean,
-  hasMore: Schema.Boolean,
-  nextPollMs: Schema.NonNegativeInt,
-  _meta: Schema.Struct(
-    { [HARNESS_CONSUMER_META_KEY]: consumerMetadataSchema },
-    Schema.Record({ key: Schema.String, value: Schema.Unknown }),
-  ),
-});
-
-/** Receipt binding distinguishes consumer lifetimes; bearer authentication is still required. */
-export type ConsumerMetadata = typeof consumerMetadataSchema.Type;
-/** Native polling carries a required consumer binding beside open SDK metadata. */
-export type PollResult = typeof pollResultSchema.Type;
-/** Classified payload has the same inline/reference union in each delivery mode. */
-export const itemEventDataJsonSchema = JSONSchema.make(itemEventDataSchema, {
-  target: "jsonSchema2020-12",
-});
-/** Validates only Social Harness metadata, leaving SDK bookkeeping open. */
-export const decodeConsumerMetadata = (metadata: unknown) =>
-  Schema.decodeUnknown(metadataSchema)(metadata ?? {}).pipe(
-    Effect.map((value) => value[HARNESS_CONSUMER_META_KEY]),
-  );
-/** Native hosts validate polling results without gaining store authority. */
-export const decodePollResult = Schema.decodeUnknown(pollResultSchema);
 /** Catalog pagination uses its own cursor rather than event replay state. */
 const listSchema = Schema.Struct({
   cursor: Schema.optionalWith(Schema.String, { exact: true }),

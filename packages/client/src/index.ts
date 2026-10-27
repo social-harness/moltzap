@@ -7,9 +7,10 @@
 export {
   ConnectError,
   type HarnessEndpoint,
+  type HarnessEndpointOptions,
   type InboundDelivery,
 } from "./harness/endpoint/index.js";
-/** Acquire the structural endpoint for one loopback daemon endpoint. */
+/** Acquire the structural endpoint for one configured daemon endpoint. */
 export { acquireHarnessEndpoint } from "./harness/endpoint/index.js";
 /**
  * Decoders of the daemon's MCP tool results, refusal data and

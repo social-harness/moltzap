@@ -36,6 +36,7 @@ import type {
   GroupAddress,
   GroupMessage,
   HarnessEndpoint,
+  HarnessEndpointOptions,
   HistoryExportRecord,
   InboundDelivery,
   InboundItem,
@@ -314,6 +315,7 @@ type ListenReasonsAreExact = Expect<
   Types.Equals<
     ListenError["reason"],
     | "already-listening"
+    | "consumer-revoked"
     | "incompatible-daemon"
     | "transport-failed"
     | "decode-failed"
@@ -323,6 +325,7 @@ type AcknowledgeReasonsAreExact = Expect<
   Types.Equals<
     DeliveryAcknowledgeError["reason"],
     | "unknown-delivery"
+    | "consumer-revoked"
     | "delivery-conflict"
     | "persistence-failed"
     | "transport-failed"
@@ -338,7 +341,10 @@ type FirewallRefusalReasonsAreExact = Expect<
   Types.Equals<FirewallSendError["refusal"], ExpectedWithheld["reason"]>
 >;
 type AcquisitionIsScoped = Expect<
-  Types.Equals<Parameters<typeof acquireHarnessEndpoint>, [endpoint: URL]>
+  Types.Equals<
+    Parameters<typeof acquireHarnessEndpoint>,
+    [endpoint: URL, options?: HarnessEndpointOptions]
+  >
 >;
 type AcquisitionResultIsExact = Expect<
   Types.Equals<

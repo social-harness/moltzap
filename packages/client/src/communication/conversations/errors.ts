@@ -66,6 +66,7 @@ export class SendError extends Data.TaggedError("SendError")<{
 
 type ListenFailure =
   | "already-listening"
+  | "consumer-revoked"
   | "incompatible-daemon"
   | "transport-failed"
   | "decode-failed";
@@ -75,12 +76,15 @@ export class ListenError extends Data.TaggedError("ListenError")<{
   readonly reason: ListenFailure;
 }> {
   override get message(): string {
-    return `listen failed: ${this.reason}`;
+    return this.reason === "consumer-revoked"
+      ? "listen failed: consumer-revoked. Reacquire the subscription. Docs: https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/ingress.md#polling-consumer"
+      : `listen failed: ${this.reason}`;
   }
 }
 
 /** Every reason one delivery acknowledgment can fail, in a fixed order. */
 export const deliveryAcknowledgeFailureReasons = [
+  "consumer-revoked",
   "unknown-delivery",
   "delivery-conflict",
   "persistence-failed",
@@ -98,6 +102,8 @@ export class DeliveryAcknowledgeError extends Data.TaggedError(
   readonly reason: DeliveryAcknowledgeFailure;
 }> {
   override get message(): string {
-    return `delivery acknowledgment failed: ${this.reason}`;
+    return this.reason === "consumer-revoked"
+      ? "delivery acknowledgment failed: consumer-revoked. Recover unread work through a new subscription. Docs: https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/ingress.md#polling-consumer"
+      : `delivery acknowledgment failed: ${this.reason}`;
   }
 }

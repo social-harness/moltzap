@@ -17,7 +17,7 @@ import {
   SendInput,
   type SendResult,
 } from "@moltzap/social-harness";
-import { Chunk, Effect, Exit, Schema, Scope, Stream } from "effect";
+import { Chunk, Effect, Exit, Option, Schema, Scope, Stream } from "effect";
 import { type ChildProcess, execFile, spawn } from "node:child_process";
 import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { once } from "node:events";
@@ -490,7 +490,8 @@ async function startDaemonContainer(
 
 /**
  * Awaits the next `count` items the harness endpoint delivers, acknowledging
- * each once all have arrived.
+ * each once all have arrived and before the subscription closes, since a
+ * closed subscription's receipts are stale.
  * @param harness The endpoint.
  * @param count How many items to await.
  * @returns The items, in delivery order.
@@ -501,20 +502,22 @@ async function nextItems(
 ): Promise<readonly InboundItem[]> {
   const deliveries = await Effect.runPromise(
     harness.messages.pipe(
-      Stream.take(count),
-      Stream.runCollect,
-      Effect.map(Chunk.toReadonlyArray),
+      Stream.grouped(count),
+      Stream.tap((batch) =>
+        Effect.all(
+          Chunk.map(batch, ({ acknowledge }) => acknowledge),
+          { discard: true },
+        ),
+      ),
+      Stream.runHead,
+      Effect.map(
+        Option.match({ onNone: () => [], onSome: Chunk.toReadonlyArray }),
+      ),
       Effect.timeoutFail({
         duration: DELIVERY_TIMEOUT_MILLIS,
         onTimeout: () =>
           new Error(`timed out awaiting ${String(count)} deliveries`),
       }),
-    ),
-  );
-  await Effect.runPromise(
-    Effect.all(
-      deliveries.map(({ acknowledge }) => acknowledge),
-      { discard: true },
     ),
   );
   return deliveries.map(({ item }) => item);

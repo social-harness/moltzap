@@ -1,6 +1,6 @@
 /** @file The structural capability one scoped endpoint connection gives its host. */
 
-import { Data, type Effect, type Stream } from "effect";
+import { Data, type Effect, type Redacted, type Stream } from "effect";
 import type {
   CollectiveError,
   FailureDelivery,
@@ -36,7 +36,15 @@ export class ConnectError extends Data.TaggedError("ConnectError")<{
 export interface InboundDelivery {
   readonly item: InboundItem;
   readonly guidance?: LocalGuidance;
+  /** Valid only while this subscription owns receiving, including after cleanup fails. */
   readonly acknowledge: Effect.Effect<void, DeliveryAcknowledgeError>;
+}
+
+/** Authenticated polling uses the runtime credential without exposing MCP details. */
+export interface HarnessEndpointOptions {
+  readonly credential: Redacted.Redacted;
+  /** Runs after consumer acquisition and renewal start, even when the inbox is empty. */
+  readonly onReady?: Effect.Effect<void>;
 }
 
 /**

@@ -197,8 +197,14 @@ interface HarnessEndpoint {
   readonly messages: Stream.Stream<InboundDelivery, ListenError>
 }
 
+interface HarnessEndpointOptions {
+  readonly credential: Redacted.Redacted
+  readonly onReady?: Effect.Effect<void>
+}
+
 declare function acquireHarnessEndpoint(
   endpoint: URL,
+  options?: HarnessEndpointOptions,
 ): Effect.Effect<HarnessEndpoint, ConnectError, Scope.Scope>
 
 declare function parseMessageText(
@@ -214,6 +220,28 @@ through the `send` signature above.
 The service is structural, not a public `Context.Tag`. One acquired endpoint
 represents one configured local AgentId and owns at most one active message
 subscription.
+
+Omitting acquisition options selects trusted-local push. Supplying the runtime
+`credential` selects authenticated MCP polling; the returned capability remains
+`send` and `messages`. The credential is input to the connection, never a returned
+identity, signing or management capability. Authenticated URLs require HTTPS or
+HTTP on literal `127.0.0.1` or `[::1]`, with no userinfo or fragment. Client copies
+the URL before execution and refuses redirects on credential-bearing requests.
+
+Connection acquisition checks the advertised receive mode. Starting `messages`
+acquires the exclusive consumer, starts lease renewal, and then invokes optional
+`onReady`, including for an empty inbox. Readiness does not mean unread recovery
+or host processing has completed. A failed or interrupted readiness effect closes
+the consumer. Renewal runs independently of downstream host callbacks; bounded
+wakeups coalesce while canonical unread items remain in the daemon.
+
+Closing a subscription invalidates its local receipt effects before a remote
+release attempt, which is bounded to five seconds. Failed release leaves unread
+work intact and may retain the remote lease until expiry. If acquisition loses
+the response containing its generation, lease expiry is the recovery bound.
+Both receive modes share canonical inbox decoding, local guidance, duplicate
+suppression and scoped receipts. Polling details stay behind this capability;
+[ingress](./ingress.md#polling-consumer) defines the wire contract.
 
 ## Operations
 
@@ -514,11 +542,14 @@ second post:
   once the Router answers or, when that failure stopped the daemon, once it
   restarts and resumes the post.
 
-`ListenError.reason` is exactly `already-listening`, `incompatible-daemon`,
+`ListenError.reason` is exactly `already-listening`, `consumer-revoked`, `incompatible-daemon`,
 `transport-failed`, or `decode-failed`.
 
-`DeliveryAcknowledgeError.reason` is exactly `unknown-delivery`,
+`DeliveryAcknowledgeError.reason` is exactly `consumer-revoked`, `unknown-delivery`,
 `delivery-conflict`, `persistence-failed`, or `transport-failed`.
+
+`consumer-revoked` requires a new subscription and unread recovery. A saved
+receipt from the old subscription cannot accept work on its replacement.
 
 `ConnectError.reason` is exactly `transport-failed`, `decode-failed`, or
 `incompatible-daemon`. Required MCP Events discovery absence or mismatch is
