@@ -10,7 +10,9 @@ session or checking its hash does not load its instructions.
 
 | Task | Load |
 | --- | --- |
+| Plan, design, write, review or land any change | `.agents/skills/checklist/SKILL.md` |
 | Plan a change or prepare a handoff | `.agents/skills/shared-sdlc/SKILL.md` |
+| Verify, merge or release a change, or brief another agent to | `.agents/skills/delivery/SKILL.md` |
 | Find, file or review an internal record | `.agents/skills/records/SKILL.md` |
 | Write or edit public documentation | `.agents/skills/docs/SKILL.md` |
 
@@ -160,29 +162,6 @@ and a check fails when the copy disagrees with its source.
 - A new or touched user-facing error with a known fix, and a new or
   touched CLI `--help`, ends with a `Docs:` URL to the heading that
   matches its error text or command.
-- Fix every instance of a defect or wrong pattern, not the reported
-  one: grep `packages/`, `tests/`, `scripts/`, `tools/`, `images/`, `bin/`, `.github/`, and
-  `docs/`, and fix all of it in the same change; one corrected call
-  site with five untouched siblings is a regression waiting to be
-  rediscovered. Style and guide conformance is the exception, and
-  follows the file the change touches.
-- A fix should shrink the system. Prefer removing or consolidating over
-  adding a layer, flag, or special case.
-- Build only what this repository owns. Before writing code, find what
-  already does it (a dependency, the agent host, the platform, another
-  layer or a sibling repository) and use or configure that. Do not
-  re-implement, override, or wrap another system's behaviour in waits,
-  retries, preflights or gates; keep no second copy that a check must hold
-  in step; and name in the PR the existing options you rejected for any
-  new machinery. Do not add regression tests which check the absence of
-  behavior. Understand scope and do not go after defense-in-depth.
-- Validate only what our code consumes. Configuration another system owns
-  (providers, models, credentials, harness and host settings) passes
-  through for that system to accept or reject; a closed set or refusal of it
-  in code narrows an interface that is not ours. Our own usage choices, such
-  as which credentials or limits we run with, go in AGENTS.md or the docs,
-  not in a check. Wire formats, our state machines and our trust boundaries
-  (admission, the firewall, release provenance) are ours to validate.
 
 Effect idiom, typed errors, exhaustive switches, and cast bans are enforced by
 the `agent-code-guard` eslint rules. Read their output rather than a summary
@@ -193,34 +172,11 @@ Package-local `safer-architecture.config.json` files are hand-maintained.
 
 ## Tests
 
-- A change that touches a test file loads `google-swe-testing` first and
-  applies it to every test in that file. A test that pins implementation
-  (a dependency's private modules or dist layout, exact manifest fields,
-  version numbers, call sequences) is deleted, not fixed. What stays tests
-  behaviour through public APIs and breaks only when behaviour changes. It
-  asserts what this repository owns: another repository's defaults, rendered
-  output or wording only where they are part of this repository's public
-  contract.
 - `*.types-check.ts` canaries pin current type-level invariants; the
   header states the invariant and why it matters. Pin what exists —
   never a negative canary for something deleted.
 
 ## Verify
-
-Run the tests covering what you changed, plus `pnpm lint`, then push and let CI
-be the full gate. Judge "affected" by callers rather than diff size; run
-everything when you cannot tell what a change reaches.
-
-A test that times out on a loaded machine is rerun once on its own; the
-suite is not rerun, and CI decides. A brief that hands work to another agent
-asks for these same affected checks, not a full local run.
-
-A mechanical merge conflict (lockfiles, generated
-snapshots or docs) goes to Copilot: comment `@copilot Resolve the merge
-conflicts with main.` on the PR. When its commit lands, merge only after CI
-passes on the new head (`gh pr checks <n> --watch`, then `gh pr merge`); main
-has no required checks, so GitHub auto-merge would merge a red PR. A conflict
-in logic the PR changes is resolved by the PR's author.
 
 `pnpm lint` needs a prior `pnpm build` — typed linting resolves against built
 `.d.ts` outputs, and CI builds first.

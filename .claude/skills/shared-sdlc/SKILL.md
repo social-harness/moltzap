@@ -19,16 +19,9 @@ require independent review and explicit human approval of the exact decision and
 review packet, then verify the landing receipt. Never fabricate human approval.
 All these paths are relative to `DOCS_INTERNAL_ROOT`, not the code checkout.
 
-When you plan or review a design, read `workflow/reference/architecture.md`.
-When it touches a public interface, port, package boundary or configuration
-surface, also read `workflow/reference/interface-design.md` and the sources it
-links.
+Every design and change follows the project checklist (`.agents/skills/checklist/SKILL.md`).
 
-Before verifying, merging or releasing, read `workflow/reference/delivery.md`.
-Verify locally only what the change reaches and let CI be the full gate. Merge
-only from inside a check gate, because no repository has required checks. Hand
-mechanical conflicts to `@copilot`. Follow the moltzap → deployment → evals
-release chain. Briefs to other agents carry the same verification scope.
+Before verifying, merging or releasing, or briefing another agent to, load the delivery skill (`.agents/skills/delivery/SKILL.md`).
 Before running or analysing an evaluation batch, read
 `data/evals/reference/running-studies.md`.
 
