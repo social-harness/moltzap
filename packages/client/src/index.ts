@@ -1,7 +1,7 @@
-/** @file Public barrel for the final endpoint runtime capability. */
+/** @file Host entry for endpoint operations, delivery schemas, and immutable identity and envelope values. */
 // safer-arch-ignore no-folder-cycle: release/index.ts imports package.json for the Client release version, which places the package root below every domain that reads it, while this facade re-exports from harness/endpoint.
-// safer-arch-ignore require-curated-public-facade: Each re-export names one domain's adapter-facing values; the root re-exports them from their owners instead of from a shared contract module.
-// safer-arch-ignore no-large-public-surface: The root is the one adapter-facing boundary, and each operation and inbound item is a closed schema its adapters decode; splitting them behind narrower entrypoints would give adapters a second import path for one contract.
+// safer-arch-ignore require-curated-public-facade: Named re-exports join endpoint operations and delivery schemas with the immutable identities, cards, signing authority, attributed envelopes, and wire constants hosts read from their owning domains.
+// safer-arch-ignore no-large-public-surface: Hosts share one entry for endpoint operations, inbound items, immutable identity and envelope values, and launcher wire constants; service verification and Registry or Router composition use the condition-only internal entry.
 
 /** The endpoint capability a host acquires, and its connect and delivery types. */
 export {
@@ -10,7 +10,6 @@ export {
   type InboundDelivery,
 } from "./harness/endpoint/index.js";
 /** Acquire the structural endpoint for one loopback daemon endpoint. */
-// safer-arch-ignore no-public-vendor-type-leak: URL is the platform-standard endpoint locator required by the public acquisition contract.
 export { acquireHarnessEndpoint } from "./harness/endpoint/index.js";
 /**
  * Decoders of the daemon's MCP tool results, refusal data and
@@ -29,7 +28,9 @@ export { HistoryExportRecord } from "./harness/inbox/history-export.js";
 export {
   type CheckedGuidance,
   FirewallSendError,
+  type GuidanceBodyOrigin,
   type LocalGuidance,
+  renderLocalGuidance,
 } from "./firewall/outcome/index.js";
 /** Send input and the closed error of a refused collective send. */
 export {
@@ -79,3 +80,19 @@ export {
 
 /** Host adapters reject retired environment keys before acquiring an endpoint. */
 export { legacyKeys } from "./environment.js";
+
+/** Wire emission and the installed daemon's live compatibility window. */
+export { LIVE_WIRE_VERSIONS, WIRE_VERSION } from "./identity/wire-version.js";
+/** Canonical identities a host reads from immutable cards and messages. */
+export { AgentId, AgentName, PrincipalId } from "./identity/agents.js";
+/** Opaque signing authority and exact public-key representation. */
+export { AgentSigningAuthority, Ed25519PublicKey } from "./identity/keys.js";
+/** Immutable Registry identity and its verified brand. */
+export { AgentCard, type VerifiedAgentCard } from "./identity/cards.js";
+/** Attributed envelope values a host reads without service composition. */
+export {
+  type LiveSignedMessage,
+  MessageId,
+  SignedMessage,
+  type VerifiedSignedMessage,
+} from "./communication/envelope/signed-message.js";

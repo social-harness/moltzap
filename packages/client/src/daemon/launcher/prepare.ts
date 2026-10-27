@@ -6,10 +6,10 @@
  * recorded release that fails its own checks stops the start.
  */
 
-import type {
-  CommandExecutor,
+import {
+  type CommandExecutor,
   FileSystem,
-  HttpClient,
+  type HttpClient,
   Path,
 } from "@effect/platform";
 import { Console, Effect, Option } from "effect";
@@ -23,6 +23,7 @@ import {
   lockDirectory,
   pointCurrent,
   pruneReleases,
+  readableRelease,
   readRecord,
   seedRecord,
   writeRecord,
@@ -30,7 +31,6 @@ import {
 import {
   DAEMON_PACKAGE,
   download,
-  IDENTITY_PACKAGE,
   type PublishedPackage,
   releaseClosure,
   taggedVersion,
@@ -94,6 +94,7 @@ export const prepare = Effect.fn("Launcher.prepare")(function* (
   yield* lockDirectory(configuration.directory);
   const recorded = yield* recordedRelease(configuration, seed);
   yield* checkIntegrity(recorded);
+  yield* readableRelease(recorded.prefix);
   const outcome = yield* candidate(configuration, recorded).pipe(
     Effect.catchAll((failure) =>
       Console.error(`sharnessd-launcher: ${failure.message}`).pipe(
@@ -128,7 +129,8 @@ export const prepare = Effect.fn("Launcher.prepare")(function* (
  * The release the agent last ran. A record of the image's own install, which
  * caches no tarball, follows the image: a new image installs another release
  * under the same prefix, so the start records that one again instead of
- * refusing the prefix it no longer matches.
+ * refusing the prefix it no longer matches. A recorded prefix must contain
+ * the daemon package before candidate failures can keep it running.
  */
 function recordedRelease(
   configuration: LauncherConfiguration,
@@ -142,19 +144,39 @@ function recordedRelease(
     Effect.flatMap(
       Option.match({
         onNone: () => seedRecord(seed, configuration.releasePackage),
-        onSome: (record) => {
-          if (record.releasePackage !== configuration.releasePackage) {
-            return Effect.fail(
-              launcherError(
-                "configuration",
-                `the recorded release follows ${record.releasePackage}, not ${configuration.releasePackage}`,
-              ),
+        onSome: (record) =>
+          Effect.gen(function* () {
+            if (record.releasePackage !== configuration.releasePackage) {
+              return yield* Effect.fail(
+                launcherError(
+                  "configuration",
+                  `the recorded release follows ${record.releasePackage}, not ${configuration.releasePackage}`,
+                ),
+              );
+            }
+            const fs = yield* FileSystem.FileSystem;
+            const path = yield* Path.Path;
+            const failure = launcherError(
+              "configuration",
+              `the recorded release in launcher directory ${configuration.directory} contains no daemon package (${DAEMON_PACKAGE}); start with an empty launcher directory. Docs: https://docs.moltzap.xyz/spec/harness/daemon#launcher`,
             );
-          }
-          return record.prefix === seed && record.packages.length === 0
-            ? seedRecord(seed, configuration.releasePackage)
-            : Effect.succeed(record);
-        },
+            const installed = yield* fs
+              .exists(
+                path.join(
+                  record.prefix,
+                  "node_modules",
+                  DAEMON_PACKAGE,
+                  "package.json",
+                ),
+              )
+              .pipe(Effect.mapError(() => failure));
+            if (!installed) {
+              return yield* failure;
+            }
+            return yield* record.prefix === seed && record.packages.length === 0
+              ? seedRecord(seed, configuration.releasePackage)
+              : Effect.succeed(record);
+          }),
       }),
     ),
   );
@@ -175,12 +197,27 @@ function candidate(
         ? selection.version
         : yield* taggedVersion(registry, releasePackage, selection.distTag);
     const closure = yield* releaseClosure(registry, releasePackage, version);
+    if (!closure.some((entry) => entry.name === DAEMON_PACKAGE)) {
+      return yield* launcherError(
+        "registry",
+        `release ${version} contains no daemon package (${DAEMON_PACKAGE}). Docs: https://docs.moltzap.xyz/guides/upgrades#release-contains-no-daemon-package`,
+      );
+    }
     const choice = choose(
       {
         version: recorded.version,
-        liveWireVersions: yield* liveWireVersions(recorded.prefix),
+        liveWireVersions:
+          selection.kind === "follow"
+            ? yield* liveWireVersions(recorded.prefix)
+            : [],
       },
-      { version, wireVersion: yield* wireVersionOf(closure, version) },
+      {
+        version,
+        wireVersion:
+          selection.kind === "follow"
+            ? yield* wireVersionOf(closure, version)
+            : "",
+      },
       selection,
     );
     if (choice.kind === "keep") {
@@ -193,19 +230,19 @@ function candidate(
   });
 }
 
-/** The wire version the release's daemon emits, from its Identity pin. */
+/** The daemon manifest supplies the candidate wire version. */
 function wireVersionOf(
   closure: readonly PublishedPackage[],
   version: string,
 ): Effect.Effect<string, LauncherError> {
-  const identity = closure.find((entry) => entry.name === IDENTITY_PACKAGE);
-  const hasDaemon = closure.some((entry) => entry.name === DAEMON_PACKAGE);
-  return hasDaemon && identity?.wireVersion !== undefined
-    ? Effect.succeed(identity.wireVersion)
+  const daemon = closure.find((entry) => entry.name === DAEMON_PACKAGE);
+  const wireVersion = daemon?.wireVersion;
+  return wireVersion !== undefined
+    ? Effect.succeed(wireVersion)
     : Effect.fail(
         launcherError(
           "registry",
-          `release ${version} names no daemon or no wire version`,
+          `release ${version} contains no wire version in its Client manifest. Docs: https://docs.moltzap.xyz/guides/upgrades#release-contains-no-wire-version`,
         ),
       );
 }
@@ -242,6 +279,7 @@ function take(
       registry: configuration.registry,
     });
     yield* checkIntegrity(record);
+    yield* readableRelease(record.prefix);
     return record;
   });
 }

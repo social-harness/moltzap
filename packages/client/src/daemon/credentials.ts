@@ -1,9 +1,9 @@
 /** @file Fail-closed loading of the agent key and secret credential files. */
 
-import { AgentSigningAuthority } from "@moltzap/identity";
 import { Data, Effect, Redacted, Schema } from "effect";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Bootstrap reads configured credential files before the daemon composes its platform services.
 import { readFile } from "node:fs/promises";
+import { AgentSigningAuthority } from "../identity/keys.js";
 
 /**
  * One non-diagnostic credential loading failure. Its stage says whether

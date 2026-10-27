@@ -10,7 +10,7 @@ import {
   McpServer,
   PROTOCOL_VERSION_META_KEY,
 } from "@modelcontextprotocol/server";
-import { LIVE_WIRE_VERSIONS } from "@moltzap/identity";
+import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { Deferred, Effect, Exit, Fiber, Scope } from "effect";
 import { expect } from "vitest";
 import type { PollResult } from "../protocol/index.js";

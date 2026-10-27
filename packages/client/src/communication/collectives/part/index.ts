@@ -8,10 +8,10 @@
  * each shape in turn.
  */
 
-import { WIRE_VERSION } from "@moltzap/identity";
 import { Data, Effect, Option, Schema } from "effect";
 import { createHash, randomBytes } from "node:crypto";
 import { exactStruct } from "../../../encoding/exact.js";
+import { WIRE_VERSION } from "../../../identity/wire-version.js";
 import { type AgentAddress, Content, RecordHash } from "../../records/index.js";
 import { wireProfiles } from "../../records/values.js";
 import {

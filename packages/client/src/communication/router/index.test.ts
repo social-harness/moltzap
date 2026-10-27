@@ -1,23 +1,6 @@
 /** @file Scripted Router worker ordering, cursor, replay, and recovery laws. */
 
-import type { Registry } from "@moltzap/identity/registry";
 import { live as it } from "@effect/vitest";
-import {
-  AuthenticationFailedError,
-  LIVE_WIRE_VERSIONS,
-  OverloadedError,
-  SignedMessage,
-  type SignedMessage as SignedMessageValue,
-  UnavailableError,
-  VersionMismatchError,
-} from "@moltzap/identity";
-import {
-  Router,
-  RouterConnectionError,
-  type RouterSendRequest,
-  type RouterSendResult,
-  SignedMessageDigest,
-} from "@moltzap/router";
 import {
   type Context,
   Deferred,
@@ -33,6 +16,7 @@ import {
 } from "effect";
 import { createHash } from "node:crypto";
 import { describe, expect } from "vitest";
+import type { Registry } from "../../identity/registry/index.js";
 import { advanceClock } from "../../__tests__/advance-clock.js";
 import {
   batch,
@@ -54,11 +38,29 @@ import {
 import { stateDirectory } from "../../__tests__/store-schema-fixtures.js";
 import { encodeCanonical } from "../../encoding/canonical-json.js";
 import {
+  AuthenticationFailedError,
+  OverloadedError,
+  UnavailableError,
+  VersionMismatchError,
+} from "../../identity/signing/http-errors.js";
+import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
+import {
+  SignedMessage,
+  type SignedMessage as SignedMessageValue,
+} from "../envelope/signed-message.js";
+import {
   type ConversationFoundation,
   type EndpointStore,
   openEndpointStore,
   type StoredOutboundMessage,
 } from "../store/index.js";
+import { Router } from "./api/client.js";
+import {
+  RouterConnectionError,
+  type RouterSendRequest,
+  type RouterSendResult,
+  SignedMessageDigest,
+} from "./api/contract.js";
 import {
   makeRouterWorker,
   RouterWorkerAuthenticationError,

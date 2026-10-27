@@ -13,11 +13,10 @@ The five conceptual layers of the social harness are L1 Unforgeable,
 Verifiable Identities; L2 Reliable, Ordered Communication; L3 Personal
 Firewalls; L4 Shared Collaboration Norms; and L5 Social Institutions.
 Social Harness packages publish to npm under the `@moltzap` scope.
-`@moltzap/identity` owns L1, `@moltzap/router` owns L2 delivery, and
-`@moltzap/client` owns endpoint communication, L3 firewalls, L4 norms, and the
-certified records that L5 relies on. Numbered
-layer notation is documentation vocabulary only; it does not appear in package
-names or public type tags.
+`@moltzap/social-harness` is the library for L1 identities, L2 delivery clients and
+endpoint communication, L3 firewalls, L4 norms, and the certified records L5
+relies on. The private Registry and Router packages own the network processes.
+Numbered layer notation is documentation vocabulary only.
 
 L2 communication has two parts. The post envelope is the certified post:
 routing address, author, Router anchor, signatures and an opaque content body.
@@ -32,16 +31,17 @@ implemented.
 
 ## Exact package graph
 
-The workspace has six packages:
+The workspace has five product packages:
 
 | Package | May depend on | Owns |
 |---|---|---|
-| `@moltzap/identity` | none | identity representation and Registry client |
-| `@moltzap/registry` | `@moltzap/identity` | private Registry process, admission, issuance, PostgreSQL storage, migrations, and `sharness-registry` |
-| `@moltzap/router` | `@moltzap/identity` | opaque Router representation, Router client, Router server, and `sharness-router` |
-| `@moltzap/client` | `@moltzap/identity`, `@moltzap/router` | conversations, endpoint history, tasks/norms, personal firewalls, daemon MCP, `HarnessEndpoint`, and `sharnessd` |
-| `@moltzap/openclaw-channel` | `@moltzap/client` | OpenClaw host integration against an injected or MCP-backed client |
-| `@moltzap/nanoclaw-channel` | `@moltzap/client` | NanoClaw host integration against its MCP-backed client |
+| `@moltzap/social-harness` | none | identity representation, Registry and Router clients, communication, endpoint history, tasks/norms, personal firewalls, daemon MCP, `HarnessEndpoint`, and `sharnessd` |
+| `@moltzap/registry` | `@moltzap/social-harness` | private Registry process, admission, issuance, PostgreSQL storage, migrations, and `sharness-registry` |
+| `@moltzap/router` | `@moltzap/social-harness` | private Router process, HTTP, RPC, send, poll, cursors, waiters, feed, and `sharness-router` |
+| `@moltzap/openclaw-channel` | `@moltzap/social-harness` | OpenClaw host integration |
+| `@moltzap/nanoclaw-channel` | `@moltzap/social-harness` | NanoClaw host integration |
+
+The private `@moltzap/integration-tests` workspace in `tests/integration` consumes the products it launches as development dependencies. It sits outside this graph and the release set, and no product depends on it.
 
 The simulator and evaluation applications are built outside this repository
 and consume the published packages. Production packages do not depend on them.
@@ -52,55 +52,32 @@ There are no product packages named `protocol`, `server`, `transcript`,
 `ledger`, `harness`, or `testbed`, and no `v2/` directory: the constitution is
 `docs/vision.md`.
 
-Root-owned build orchestration, and agent-image builds outside this repository,
+Root-owned build orchestration and the generic agent-image builds under `images/`
 may consume several package artifacts without
 creating package-runtime dependencies. Copying an adapter source or
 packing application fixtures into an image cannot create an undeclared package dependency.
 
-## Relocation and deletion law
+## Library entries
 
-`v2/identity` moves intact to `packages/identity` and becomes
-`@moltzap/identity`. `v2/router` moves intact to `packages/router` and becomes
-`@moltzap/router`. The moves preserve source, migrations, tests, capability
-depth, wire bytes, errors, configuration behavior, and process binaries except
-for package-path and package-name references.
+The library has four named-export entries:
 
-After their consumers and documentation tooling have final owners, delete:
+| Entry | Boundary |
+|---|---|
+| `@moltzap/social-harness` | Existing addressed `HarnessEndpoint` and host values; `AgentId`, `AgentName`, `PrincipalId`, `AgentCard`, `VerifiedAgentCard`, `Ed25519PublicKey`, `AgentSigningAuthority`, `MessageId`, `SignedMessage`, `LiveSignedMessage`, `VerifiedSignedMessage`, `WIRE_VERSION`, `LIVE_WIRE_VERSIONS` and `legacyKeys` |
+| `@moltzap/social-harness/service` | Daemon composition, `Registry`, `OperationId`, `RouterPollResult`, `PollCursor`, and `RouterInstanceId` |
+| `@moltzap/social-harness/internal` | Service capabilities: request verification, grouped `registryContract` and `routerContract` wire contracts, `httpErrors`, Registry and Router client tags, typed card signing, and service wire-version values. Requires `sharness-internal`, with no default condition or TypeDoc entry |
+| `@moltzap/social-harness/test` | Process-test composition: management fixture schemas, the `WireVersions` override, `AuthenticatedHttp` request signing, and the `HISTORY_WIRE_VERSIONS` history window. Requires `sharness-test`, with no default condition or TypeDoc entry |
 
-- `packages/protocol`;
-- `packages/server`;
-- the replaced `packages/client` implementation;
-- `v2/transcript`;
-- `v2/harness`;
-- `v2/simulator`;
-- `v2/testbed`; and
-- the vacated `v2/identity` and `v2/router` implementation roots.
+Identity's host values map to the library root. Service request verification, card signing, and HTTP errors map to the
+condition-only internal entry. Its
+Registry entry maps to the service entry; its internal and test entries map to
+the library's corresponding condition-only entries. Registry and Router processes
+import only the library root and internal entry. Runtime adapters import only
+the root and receive `HarnessEndpoint` or MCP.
 
-No compatibility alias, re-export facade, dual implementation, or hidden
-product-Ledger process survives those deletions. Generic documentation tooling
-owned by a deleted package moves to root tooling before that package is
-removed.
-
-Client and adapter migration follows the accepted reduced boundary in
-[`harness/client.md`](./harness/client.md).
-
-## Public boundaries retained through cutover
-
-- Identity exposes its root and Registry client subpath. Its condition-only
-  `./internal` entry supplies service capabilities under `sharness-internal`.
-- The private Registry package owns the Registry server and `sharness-registry`
-  boundary as specified by `identity.md`; operators run its
-  `bin/sharness-registry` executable.
-- Router retains its root and server subpath plus `sharness-router` as specified
-  by `router.md`.
-- Client owns one public root, process composition under `./service`, and the
-  `sharnessd` executable. Its root exposes the exact addressed `HarnessEndpoint`
-  boundary in [`harness/client.md`](./harness/client.md).
-- Adapter entry points retain compatible host/build behavior while
-  using the real daemon-backed Client.
-
-The final publication list and versioning policy are release choices. They do
-not change this dependency graph or authorize extra packages.
+The private Registry and Router packages expose condition-only `./test` startup
+entries under `sharness-test`. Registry and Router executables install scoped internal
+resolution before loading their process compositions.
 
 ## Representation ownership
 
@@ -202,8 +179,7 @@ semantic chapters:
 - AuthenticatedHttp requires Registry so Router can resolve and cache verified
   immutable AgentCards without importing Registry internals;
 - Registry bootstrap does not require AuthenticatedHttp;
-- each process-composition subpath (Identity and Router `server`, Client
-  `service`) exposes the admitted discard Layer that reads private
+- each private service composition and the library `service` entry exposes the admitted discard Layer that reads private
   Effect Config and owns process composition; and
 - private Effect RPC remains in-process, typed, and absent from the network and
   export maps.
@@ -352,10 +328,11 @@ alter message bytes, forge messages, or change Router state or order.
 
 ## Agent images
 
-Each published agent image runs the host and `sharnessd` in one application
-container. Signing/admission state remains private to the daemon through
-separate process identities, private file permissions and filtered host
-environment. Registration completes before the host starts. The host accesses
+Agent images are built locally and are not published from this repository.
+Each agent runs its host and `sharnessd` in separate containers sharing a network
+namespace. Signing/admission state is mounted only in the daemon container.
+When startup registration is configured, registration and activation complete
+before the host starts. The host accesses
 the Client only through `SHARNESS_MCP_URL=http://127.0.0.1:<port>/mcp`.
 
 Client injects no cross-conversation context. Stock runtimes own their session
@@ -378,7 +355,8 @@ topology and cross-address context.
 ## Acceptance criteria
 
 - Workspace, TypeScript, Nx, manifest, and architecture graphs contain exactly
-  the six packages and exactly the allowed edges above.
+  the five product packages and exactly the allowed edges above between them. No
+  product depends on the integration-test workspace or an Nx tool project.
 - Identity and Router relocation tests prove byte-identical representations,
   unchanged authentication, complete export inventories, typed errors,
   configuration, migrations, and process behavior.
@@ -394,7 +372,7 @@ topology and cross-address context.
   management-absence boundary.
 - Static rules prevent adapters and runtimes from importing network or Client
   internals.
-- Agent images run the host and daemon in one application container per agent
+- Agent images run the host and daemon in separate containers per agent
   and expose only loopback MCP to the host.
 - Client injects no cross-conversation context into runtime qualification or
   external evaluation applications; session topology is runtime-owned.
@@ -403,13 +381,15 @@ topology and cross-address context.
 
 ## Publication and versions
 
-Four packages publish to npm, each at its own calendar version:
-`@moltzap/identity`, `@moltzap/router`, `@moltzap/client`, and
-`@moltzap/openclaw-channel`.
-`@moltzap/registry` and `@moltzap/nanoclaw-channel` stay private. Operators
-run Registry from the private package's `bin/sharness-registry` executable.
-No Registry image is published. Registry is excluded from npm release selection
-and pack gates. The simulator is not published.
+Two packages publish to npm at independent calendar versions:
+`@moltzap/social-harness` and `@moltzap/openclaw-channel`. Registry, Router and NanoClaw
+stay private. Registry and Router ship as images built from
+`images/<service>/Dockerfile` with the repository root as build context, keyed
+by `pnpm image:keys`. The Registry image carries `pglite-server` for run-scoped
+and development databases.
+The integration-test workspace stays outside the product graph and release set.
+Package manifests declare publication and dependency edges; the release
+workflow names the packages it publishes.
 
 Each reset release establishes fresh wire and storage baselines: `WIRE_VERSION`
 takes a value no earlier release emitted, the live and history sets contain
@@ -423,12 +403,12 @@ Restoring an endpoint state directory from a backup is unsafe: the agent could
 sign conflicting successors and must be treated as a new identity. The
 [daemon format rules](./harness/daemon.md#current-formats) and
 [Registry persistence rules](./identity.md#registry-persistence) govern version
-mismatches. Release notes mark each reset release with the phrase
-"Reset release"; the
+mismatches. The changelog marks each reset release with the phrase
+"Reset release" in its section of `CHANGELOG.md`; the
 [upgrade guide](../guides/upgrades.mdx) gives the operator steps.
 
 - One release computes one calendar version, `YYYY.MDD.N`, one past the
-  highest counter in the union of the four packages' npm histories and the
+  highest counter in the union of the published packages' npm histories and the
   `v<version>` release tags. It publishes at that version only the packages
   whose packed content changed since the version their manifest names; the
   other packages keep their versions.
@@ -438,7 +418,7 @@ mismatches. Release notes mark each reset release with the phrase
   selects a package when the hash differs from the value npm recorded for its
   manifest's version, or when npm recorded none. Two versions of a package
   with equal hashes carry the same code. The first release that records
-  hashes republishes all four packages.
+  hashes republishes both packages.
 - The OpenClaw channel's published manifest also records
   `sharnessHostCodeHash`: the hash of the code OpenClaw loads for the
   channel, meaning every packed channel file plus each sibling module its
@@ -451,23 +431,93 @@ mismatches. Release notes mark each reset release with the phrase
   selected too, so every published package pins its siblings to their newest
   published versions and an installed closure resolves the versions one
   release tested.
+- `packages/client/src/identity/wire-version.ts` → `WIRE_VERSION` owns the
+  emitted wire version. The source Client manifest carries no wire-version
+  copy. The publish workflow writes `sharnessWireVersion` into the release
+  manifest before hashing and committing it; resume and publish use that
+  release commit. Local packers derive the same field from `WIRE_VERSION` for
+  launcher compatibility checks. A wire reset edits only `WIRE_VERSION` and
+  the mixed-release gate's `FIRST_POST_RESET_RELEASE`, which records its boundary.
 - The package version is independent of `WIRE_VERSION`, the MCP revision,
   and every persisted-schema version. Advancing one never advances another.
+- A merge to `main` releases once CI passes on it, when the merged commit
+  has a changelog fragment, is not itself a release commit, keeps the last
+  release's `sharnessWireVersion`, and lowers no package version;
+  `.github/workflows/release-on-merge.yml` describes the gate. Resets,
+  resumes and abandoned releases are manual dispatches of
+  `.github/workflows/publish.yml`. A merge that lands while an earlier
+  release is unfinished releases with the next merge or a manual dispatch.
 - Releases run from `main` through `.github/workflows/publish.yml` with npm
-  provenance and publish npm packages only. The OpenClaw and NanoClaw agent
+  provenance and name the service images in each release. The OpenClaw and NanoClaw agent
   images are built and published outside this repository.
-- `scripts/architecture/check-boundaries.ts` fails when a published manifest
-  is private, when its `engines.node` differs from the root `package.json`
-  range, when its version is not a calendar version, when a sibling edge is
-  not an exact `workspace:*` pin, when Registry or the NanoClaw adapter is not private, or
-  when the release workflow's package list drifts from the published set. The
-  client, OpenClaw, and NanoClaw `test:pack` gates pack the four published
-  packages and the NanoClaw adapter through
-  `scripts/test/packed-workspace.ts` and prove each closure installs with
-  exact sibling pins and every declared executable present. The NanoClaw gate
-  proves the adapter compiles against the Client ABI in isolation;
-  deployment's NanoClaw image build copies its source rather than installing
-  a tarball.
+- Package manifests, pnpm's isolated `node_modules`, Node `exports`, Knip,
+  and package-local safer-architecture-lsp configurations enforce boundaries.
+  The harness may launch product executables by path and start child
+  compositions with product working directories. The
+  Client and OpenClaw `test:pack` gates pack their published closures through
+  `scripts/test/packed-workspace.ts`, install them in fresh consumers, and import
+  each public entry. Client also checks that `./internal` resolves only with
+  its condition. OpenClaw installs the packed plugin through its own plugin
+  installer. NanoClaw's ABI check compiles its source against Client; it has
+  no tarball installation gate because deployment copies its source.
+
+
+Registry and Router publish as `ghcr.io/social-harness/registry` and
+`ghcr.io/social-harness/router`. Each image is a multi-architecture OCI index
+for `linux/amd64` and `linux/arm64`, built on native runners. The committed
+input key `sha256:<hex>` from `pnpm image:keys` names the immutable tag
+`inputs-<hex>`. Release-version tags name those same indexes. The GitHub
+release is created only after both version tags exist, and its body lists both
+full digest references. `images/compose.yaml` runs a local network from the
+indexes a release-version tag names. The bump waits for
+missing input tags and fails with a rerun hint if the images workflow has not
+published them in time.
+After npm publication and release image tagging succeed, a separate job sends
+`repository_dispatch` event `social-harness-released` to `social-harness/deployment`.
+Its `client_payload` is
+`{"version":"<calendar version>","registry":"ghcr.io/social-harness/registry@sha256:<digest>","router":"ghcr.io/social-harness/router@sha256:<digest>"}`.
+The references are the release's verified indexes. Deliveries
+may repeat or arrive out of order. The receiver ignores a version not newer
+than the one it runs, ordering calendar versions by their numeric year,
+month/day and sequence components.
+
+Both GHCR packages must be public before a release: the bump checks that both
+indexes pull anonymously so that anyone can run `images/compose.yaml`.
+No `social-harness-images` dispatch happens until both packages are public. After making
+them public, run `images.yml` from main with `workflow_dispatch` to send the
+current images to deployment. Reverting to an already-published input key also
+requires that manual run, because no new index is published.
+
+`.github/workflows/images.yml` pushes each index by digest, signs it with
+cosign keyless before creating its input tag. The certificate
+identity is
+`https://github.com/social-harness/moltzap/.github/workflows/images.yml@refs/heads/main`
+and its OIDC issuer is `https://token.actions.githubusercontent.com`. Existing
+input tags are verified and skipped, never retagged; an unsigned index fails
+the run. Every index accepted for dispatch, pinning, release-commit push or
+release promotion is verified against that identity and issuer first.
+Once both of the current main tip's indexes are published and verified,
+`images.yml` sends `repository_dispatch` event `social-harness-images` to
+`social-harness/deployment`. Its `client_payload` names both tip indexes and
+their revision:
+`{"registry":"ghcr.io/social-harness/registry@sha256:<digest>","router":"ghcr.io/social-harness/router@sha256:<digest>","revision":"<tip sha>"}`.
+Deliveries may repeat or arrive out of order. The receiver ignores a revision
+that is equal to or older than the one it runs, ordering revisions by main
+ancestry rather than by the SHA text. A run whose revision is no longer main's
+head sends nothing and fails; run `images.yml` again from main with
+`workflow_dispatch`.
+
+### Unsupported Dockerfile form
+
+`pnpm image:keys` refuses unsupported Dockerfile instructions with the file,
+line and form. Keep image recipes in the explicit two-stage form used by
+`images/registry/Dockerfile` and `images/router/Dockerfile`: pinned Node bases,
+named context paths, the exact Corepack setup and filtered pnpm install,
+Nx build and legacy production deploy commands, and the declared runtime
+metadata. Replace the reported instruction with that form. `ADD`, context-wide
+copies, globs, arbitrary shell commands and Docker parser directives are refused.
+Docker applies `.dockerignore` to the named context roots; both image keys hash
+the whole file as a fixed build input.
 
 ## Consumer migration boundary
 
@@ -490,8 +540,8 @@ Every signed and canonical wire representation uses `sharnessVersion`.
 Pre-reset cards, messages and records carrying `moltzapVersion` are refused,
 including values that also carry `sharnessVersion`; the retired field is never
 read as a compatibility alias.
-The public Identity root exposes read-only compatibility operations, not the
-internal `WireVersions` context tag used by adjacent-release tests. The Identity
+The public Client root exposes read-only compatibility operations, not the
+internal `WireVersions` context tag used by adjacent-release tests. The Client
 `/test` subpath requires the explicit `sharness-test` resolution condition and is
 forbidden in production source. Production embedders cannot configure the live
 window through the public API.
@@ -527,23 +577,28 @@ live window require a reset.
 
 The mixed-release CI gate runs the previous published Client release and the
 oldest published Client release whose wire version remains live against the
-current build, each installed with the exact Identity and Router versions it
-pins, using the current Registry and Router. It also runs the previous
+current build, each installed with its exact library closure, using the current Registry and Router. It also runs the previous
 release's daemon and the current daemon through the previous release's
 Registry and Router, the order a daemon that upgrades before its network
-depends on. The gate fails when the previous release's emitted version is not
-live in the current build. It skips only when that version is outside
+depends on. That Registry and Router are the indexes the previous release's
+version tags name; the gate copies each
+image's working directory out with Docker and runs its entrypoint as a
+process with the gate's own Node, so the gate needs Docker. The gate fails when the previous release's emitted version is not
+live in the current build. With no published calendar release under the package
+name, including a bootstrap-only history, it skips until the first release.
+Otherwise, it skips only when that version is outside
 `HISTORY_WIRE_VERSIONS` and `FIRST_POST_RESET_RELEASE` places the previous
 release before the reset; a version that leaves history without that boundary
 fails the gate. Each failure names the leg it came from. Candidate selection
-reads each Client release's Identity pin and that Identity version's
-`sharnessWireVersion` npm metadata without installing candidates.
+reads the pinned `@moltzap/identity` version's wire metadata when the Client
+release pins one, and the Client manifest's `sharnessWireVersion` otherwise,
+without installing candidates.
 `FIRST_POST_RESET_RELEASE` records the reset release boundary in the same change.
 Absent metadata denotes a pre-reset release only below that boundary. Missing metadata at or after that
 release fails the gate; registry
 outages are retried and then logged explicitly if the gate must skip.
 Certified posts must flow in both
-directions. A separate Client process integration test covers concurrent first
+directions. A cross-package process test in `tests/integration` covers concurrent first
 sends before either peer has a foundation across adjacent live versions. If both selections name the same release, it runs once. Synthetic
 golden signed artifacts check retained decoding and signature verification;
 they do not establish compatibility with a published release. Fixtures from a

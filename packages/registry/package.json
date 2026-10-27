@@ -18,10 +18,10 @@
   },
   "files": [
     "dist",
-    "!dist/tsconfig.tsbuildinfo",
     "bin",
     "LICENSE",
-    "NOTICE"
+    "NOTICE",
+    "!dist/*.tsbuildinfo"
   ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -29,6 +29,12 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./test": {
+      "sharness-test": {
+        "types": "./dist/test.d.ts",
+        "import": "./dist/test.js"
+      }
     }
   },
   "bin": {
@@ -54,7 +60,7 @@
         ],
         "options": {
           "cwd": "packages/registry",
-          "command": "node ../../scripts/build/clean-dist.ts && tsc -b"
+          "command": "node ../../scripts/build/clean-dist.ts && tsc -b tsconfig.json tsconfig.test-entry.json"
         }
       },
       "typecheck": {
@@ -108,7 +114,7 @@
         "executor": "nx:run-commands",
         "options": {
           "cwd": "packages/registry",
-          "command": "node ../../scripts/architecture/check-package.ts ."
+          "command": "safer-architecture-lsp check ."
         }
       }
     }
@@ -121,12 +127,12 @@
     "@effect/sql": "catalog:",
     "@effect/sql-pg": "catalog:",
     "effect": "catalog:",
-    "@moltzap/identity": "workspace:*"
+    "@moltzap/social-harness": "workspace:*",
+    "@electric-sql/pglite": "catalog:",
+    "@electric-sql/pglite-socket": "catalog:"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",
-    "@electric-sql/pglite": "catalog:",
-    "@electric-sql/pglite-socket": "catalog:",
     "@testcontainers/postgresql": "catalog:",
     "@typescript/native": "catalog:",
     "eslint": "catalog:",

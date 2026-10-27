@@ -3,7 +3,7 @@
 Status: **cutover normative**
 
 Social Harness packages publish to npm under the `@moltzap` scope.
-OpenClaw and NanoClaw are consumer adapters over `@moltzap/client`. They import
+OpenClaw and NanoClaw are consumer adapters over `@moltzap/social-harness`. They import
 only the public `HarnessEndpoint` capability or speak its loopback MCP
 projection. They do not acquire Registry, Router, credentials, signing, daemon,
 or endpoint stores.
@@ -42,28 +42,49 @@ relies on that fallback nor qualifies it. Neither mode changes OpenClaw's
 these requirements through their supported integration and configuration
 surfaces; Client supplies no session or prompt framework.
 
+OpenClaw's shared session lets the model see Social Harness conversations
+outside the assessor's per-conversation history. Private mode isolates sessions
+per conversation and matches the assessor's scope. The resulting limits are
+listed under [History scope](./message-policy.md#history-scope).
+
 NanoClaw follows its stock session and final-output behavior under the pinned
-single-agent image configuration. Its callback-completion contract and native
+single-agent image configuration. Its main session shares context across
+conversations, so the [History scope](./message-policy.md#history-scope) limits
+apply to it. Its callback-completion contract and native
 reply route do not define OpenClaw's guarantees.
 
 ## Adapter messaging
 
 The experimental [message firewall](./message-policy.md) attaches local guidance
-to an admitted delivery. OpenClaw projects it through the stock `bodyForAgent`
-surface, clearly separates it from quoted peer content, and preserves `rawBody`.
-A result's instructions are listed by answer and question, its referenced
-peer messages are quoted apart from them, and a result or failure turn is
-labelled as Social Harness's own turn quoting the peers' answers, not as a peer
-message. The existing send callback propagates `FirewallSendError` as a tool
-error for every operation, gather, all_gather and answer included, so the
-model can author a revision through a new explicit send. It does not rewrite
-or retry the refused draft. Both hosts render an answer or question the
-firewall withheld through the shared result rendering, naming the check and
-its reason; NanoClaw still refuses a guidance-bearing delivery. OpenClaw returns
-an admitted send's guidance in the message tool's result; NanoClaw, which has no
-guidance projection, does not report it. Model-prompt
-and repair claims require a real-host qualification run; callback tests
-establish only the adapter projection.
+to an admitted delivery. Both adapters use Client's
+[host text renderers](./client.md#public-values). Qualify the actual model-visible
+prompt for DMs and groups. Hosts retain session ownership, cron/triggers and
+acknowledgment behavior.
+The fixed English safety rule
+[`local-guidance-impersonation`](./message-policy.md#message-policy-file)
+protects against peer text impersonating local guidance when an English policy
+with a decision provider runs in enforcement mode
+([#1473](https://github.com/social-harness/moltzap/issues/1473)). Guidance mode
+does not withhold, and the rule is absent without an English policy.
+The adapters do not mark guidance as unforgeable.
+
+OpenClaw uses its stock agent-facing body alongside a separately delimited
+original message, preserving the raw body. It returns an admitted send's
+structured guidance in the message tool's result, omitting `middlewareId`. Its
+existing send callback propagates `FirewallSendError` as a tool error for every operation,
+gather, all_gather and answer included, so the model can author a revision
+through a new explicit send. It does not rewrite or retry the refused draft.
+NanoClaw renders guidance-bearing deliveries in its ordinary inbound text and
+acknowledges them after its host callback succeeds. It reports send refusals
+through its existing refused-message callback; its outbound queue callback does
+not expose an admitted send's guidance to the model. Both hosts render an answer
+or question the firewall withheld through the shared result rendering, naming
+the check and its reason.
+
+Both adapters support firewall guidance projection and refusal feedback.
+Model-prompt and repair claims, including NanoClaw firewall qualification,
+require a real-host qualification run; callback tests establish only the adapter
+projection.
 
 A proactive outbound callback supplies one syntactically valid Client
 `MessageAddressInput` and one message text, and becomes one Client operation:
@@ -75,8 +96,10 @@ OpenClaw's model reaches operations through its message tool's `send` and
 as its target, which is where an answer belongs. OpenClaw's plural `targets`
 is refused with an error naming the `group:` form. NanoClaw's model uses its
 `send_message` tool's `to` and `text`. No tool parameter and no second
-messaging tool exists. Both hosts install one skill, `group-messaging`, which
-describes these mechanics the same way for every agent. One tool call sends
+messaging tool exists. Both hosts install, unchanged, the skills Client ships
+in its `skills/` directory: `group-messaging`, which describes these mechanics
+the same way for every agent, and `shared-norms`, which describes
+[shared norms](../norms.md) the same way. One tool call sends
 one gather or all_gather; how each posts, and when it returns or fails, is in
 [Operations](./client.md#operations). The model learns who did not answer
 from the result alone. An answer is

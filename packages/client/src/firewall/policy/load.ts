@@ -8,24 +8,36 @@ import {
   Schedule,
   Schema,
 } from "effect";
+import { createHash } from "node:crypto";
+// eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Nonblocking descriptor opens let fstat reject special files without waiting for a writer.
+import { constants } from "node:fs";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Configuration reads the configured policy file before the daemon composes its platform services.
-import { lstat, readFile } from "node:fs/promises";
-import { dirname, isAbsolute } from "node:path";
+import { type FileHandle, lstat, open, realpath } from "node:fs/promises";
+import { dirname, isAbsolute, relative, resolve, sep, win32 } from "node:path";
+import { parseDocument } from "yaml";
+import { exactStruct } from "../../encoding/exact.js";
 import {
   type DecisionProvider,
   DecisionProviderError,
+  editableDocumentSchema,
+  EnglishRule,
   makeJevDecisionProvider,
+  policyReadSchema,
 } from "../evaluator/index.js";
 import {
+  type BehaviorFailure,
   type CredentialReader,
   MessagePolicyConfigurationError,
   type MessagePolicyConfigurationFailure,
   type PolicyConfiguration,
 } from "./configuration.js";
-import { decodeMessagePolicy, type MessagePolicy } from "./policy.js";
+import { decodeMessagePolicy, type MessagePolicy } from "./document/index.js";
 
 /** Larger than any document of 256 editable rules and the fixed rules beside them. */
 const MAXIMUM_POLICY_BYTES = 1_048_576;
+
+/** The Behaviors spec limits each BEHAVIOR.md to 64 KiB: docs/spec/harness/message-policy.md#behaviors. */
+export const MAXIMUM_BEHAVIOR_BYTES = 65_536;
 
 /** A key is one token; surrounding whitespace, such as a trailing newline, is ignored. */
 const decisionProviderKey = Schema.Trim.pipe(
@@ -48,13 +60,9 @@ const failureMessages: Readonly<
   Record<MessagePolicyConfigurationFailure, string>
 > = {
   "message-policy-file":
-    "SHARNESS_MESSAGE_POLICY_FILE must name a readable file of at most 1 MiB",
+    "SHARNESS_MESSAGE_POLICY_FILE must name a readable regular file of at most 1 MiB. Docs: https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/message-policy.md#message-policy-file",
   "message-policy":
     "SHARNESS_MESSAGE_POLICY_FILE must contain a valid org.social-harness/message-policy/v1 document",
-  "message-policy-required":
-    "SHARNESS_FIREWALL_AUDIT_EXPORT requires SHARNESS_MESSAGE_POLICY_FILE",
-  "firewall-audit-export":
-    "SHARNESS_FIREWALL_AUDIT_EXPORT must be an absolute path in an existing directory owned by the daemon's user with no group or other access",
   "message-policy-composed":
     "SHARNESS_MESSAGE_POLICY_FILE cannot be set for a daemon whose composition installs its own firewall",
   "decision-provider-key-file":
@@ -63,24 +71,23 @@ const failureMessages: Readonly<
     "SHARNESS_DECISION_PROVIDER_KEY_FILE must contain one key without inner whitespace",
 };
 
-/** A configured document with the decision provider it names, and where its audit goes. */
+/** A configured document with the decision provider it names, and its behavior sources. */
 export interface LoadedMessagePolicy {
   readonly policy: MessagePolicy;
+  readonly fixedBehaviorDigests?: readonly string[];
   readonly provider: DecisionProvider;
-  readonly auditExport?: string;
+  readonly behaviorRulePaths: ReadonlyMap<string, string>;
 }
 
 /**
  * The document `SHARNESS_MESSAGE_POLICY_FILE` names, or none when it is
  * unset. A `jev` decision provider reads its key from
  * `SHARNESS_DECISION_PROVIDER_KEY_FILE` and retries transient failures; the
- * key file is not read for any other provider. An audit export without a
- * policy or outside a private directory of the daemon's user, an unreadable
- * or invalid document, and a missing or invalid key fail configuration naming
- * no file content.
+ * key file is not read for any other provider. An unreadable or invalid
+ * document and a missing or invalid key fail configuration naming no file content.
  * @param configuration The policy and provider file locations.
  * @param readCredential The daemon-owned secret-file reader.
- * @returns The document, its decision provider and its audit export path.
+ * @returns The document, its decision provider and resolved behavior sources.
  */
 export const loadMessagePolicy = (
   configuration: PolicyConfiguration,
@@ -92,23 +99,19 @@ export const loadMessagePolicy = (
   Effect.gen(function* () {
     const path = configuration.messagePolicyFile;
     if (path === undefined) {
-      return configuration.firewallAuditExport === undefined
-        ? Option.none()
-        : yield* policyConfigurationError("message-policy-required");
+      return Option.none();
     }
     const policy = yield* readPolicyText(path).pipe(
       Effect.flatMap((text) =>
         decodeMessagePolicy(text).pipe(Effect.mapError(invalidPolicy)),
       ),
     );
-    const auditExport = configuration.firewallAuditExport;
-    if (auditExport !== undefined) {
-      yield* requirePrivateParent(auditExport);
-    }
+    const resolved = yield* resolveBehaviors(policy, dirname(path));
     return Option.some({
-      policy,
+      policy: resolved.policy,
+      fixedBehaviorDigests: resolved.fixedBehaviorDigests,
+      behaviorRulePaths: resolved.behaviorRulePaths,
       provider: yield* decisionProvider(policy, configuration, readCredential),
-      auditExport,
     });
   }).pipe(Effect.withSpan("loadMessagePolicy"));
 
@@ -116,49 +119,313 @@ export const loadMessagePolicy = (
  * The configuration failure for a message-policy setting, with its fixed
  * operator message.
  * @param reason Why the setting cannot start the daemon.
+ * @param path The indexed behavior entry, if one fails.
+ * @param behaviorReason The closed behavior failure category.
  * @returns The failure, naming no configured value.
  */
 export function policyConfigurationError(
   reason: MessagePolicyConfigurationFailure,
+  path?: string,
+  behaviorReason?: BehaviorFailure,
 ): MessagePolicyConfigurationError {
+  const category = behaviorReason === undefined ? "" : ` (${behaviorReason})`;
   return new MessagePolicyConfigurationError({
     reason,
-    message: failureMessages[reason],
+    behaviorReason,
+    message:
+      path === undefined
+        ? failureMessages[reason]
+        : `${failureMessages[reason]}; invalid at ${path}${category}. Docs: https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/message-policy.md#behaviors`,
   });
 }
 
-/** The audit export's directory exists, belongs to the daemon's user and admits no one else. */
-function requirePrivateParent(path: string) {
-  const refused = () => policyConfigurationError("firewall-audit-export");
-  if (!isAbsolute(path)) {
-    return Effect.fail(refused());
+/** YAML owns frontmatter syntax; only Social Harness metadata is a closed namespace. */
+const behaviorFrontmatter = Schema.Struct({
+  name: Schema.NonEmptyTrimmedString,
+  description: Schema.NonEmptyString,
+  metadata: Schema.Struct({
+    "social-harness": exactStruct({
+      kind: Schema.optionalWith(EnglishRule.fields.kind, {
+        default: () => "norm" as const,
+      }),
+      guidance: EnglishRule.fields.guidance,
+      feedback: EnglishRule.fields.feedback,
+    }),
+  }),
+});
+
+/** Reports only the policy entry; YAML diagnostics may contain private file content. */
+function invalidBehavior(path: string, reason: BehaviorFailure) {
+  return policyConfigurationError("message-policy", path, reason);
+}
+
+function readBehavior(root: string, directory: string, path: string) {
+  const refused = (reason: BehaviorFailure) => invalidBehavior(path, reason);
+  if (
+    isAbsolute(directory) ||
+    win32.isAbsolute(directory) ||
+    directory.split(/[\\/]/u).includes("..")
+  ) {
+    return Effect.fail(refused("schema"));
   }
-  return Effect.tryPromise({
-    try: () => lstat(dirname(path)),
-    catch: refused,
-  }).pipe(
-    Effect.filterOrFail(
-      (parent) =>
-        parent.isDirectory() &&
-        parent.uid === process.getuid?.() &&
-        (parent.mode & 0o077) === 0,
+  return Effect.gen(function* () {
+    const canonical = (location: string) =>
+      Effect.tryPromise({
+        try: () => realpath(location),
+        catch: () => refused("missing"),
+      });
+    const locations = yield* Effect.all({
+      root: canonical(root),
+      directory: canonical(resolve(root, directory)),
+      file: canonical(resolve(root, directory, "BEHAVIOR.md")),
+    });
+    if (
+      !contained(locations.root, locations.directory) ||
+      !contained(locations.root, locations.file)
+    ) {
+      return yield* refused("schema");
+    }
+    const bytes = yield* readBoundedFile(
+      locations.file,
+      MAXIMUM_BEHAVIOR_BYTES,
       refused,
-    ),
-    Effect.asVoid,
+    );
+    return yield* decodeBehavior(bytes, refused);
+  });
+}
+
+/** YAML parser diagnostics stay private; only a closed category crosses this boundary. */
+function decodeBehavior(
+  bytes: Buffer,
+  refused: (reason: BehaviorFailure) => MessagePolicyConfigurationError,
+) {
+  return Effect.gen(function* () {
+    const parts = /^---\r?\n([\s\S]*?)^---[ \t]*(?:\r?\n|$)([\s\S]*)/mu.exec(
+      bytes.toString("utf8").replace(/^\uFEFF/u, ""),
+    );
+    if (
+      parts?.[1] === undefined ||
+      parts[2] === undefined ||
+      parts.index !== 0
+    ) {
+      return yield* refused("frontmatter");
+    }
+    const frontmatter = yield* decodeFrontmatter(parts[1], refused);
+    const metadata = frontmatter.metadata["social-harness"];
+    const rules = yield* Schema.decodeUnknown(policyReadSchema.fields.rules)([
+      {
+        id: frontmatter.name,
+        text: parts[2].trim(),
+        ...metadata,
+      },
+    ]).pipe(Effect.mapError(() => refused("schema")));
+    const rule = yield* Effect.fromNullable(rules[0]).pipe(
+      Effect.mapError(() => refused("schema")),
+    );
+    return { rule, digest: createHash("sha256").update(bytes).digest("hex") };
+  });
+}
+
+/** YAML diagnostics stay inside the parser boundary, including unresolved tags. */
+function decodeFrontmatter(
+  text: string,
+  refused: (reason: BehaviorFailure) => MessagePolicyConfigurationError,
+) {
+  return Effect.gen(function* () {
+    const doc = yield* Effect.try({
+      try: () =>
+        parseDocument(text, {
+          schema: "core",
+          resolveKnownTags: false,
+          logLevel: "error",
+        }),
+      catch: () => refused("frontmatter"),
+    });
+    if (doc.errors.length !== 0 || doc.warnings.length !== 0) {
+      return yield* refused("frontmatter");
+    }
+    return yield* Effect.try({
+      try: (): unknown => doc.toJS(),
+      catch: () => refused("frontmatter"),
+    }).pipe(
+      Effect.flatMap((value) =>
+        Schema.decodeUnknown(behaviorFrontmatter)(value).pipe(
+          Effect.mapError(() => refused("schema")),
+        ),
+      ),
+    );
+  });
+}
+
+/** Initial behaviors are validated even when persisted editable rules already exist. */
+function resolveBehaviors(policy: MessagePolicy, root: string) {
+  return Effect.gen(function* () {
+    const behaviorRulePaths = new Map<string, string>();
+    const english = policy.english;
+    if (english === undefined) {
+      return { policy, behaviorRulePaths, fixedBehaviorDigests: undefined };
+    }
+    yield* Schema.decodeUnknown(editableDocumentSchema)(
+      english.initialRules,
+    ).pipe(
+      Effect.mapError(() =>
+        policyConfigurationError("message-policy", "english.initialRules"),
+      ),
+    );
+    const state = {
+      root,
+      ids: new Set(
+        [...english.fixedRules, ...english.initialRules].map((rule) => rule.id),
+      ),
+      behaviorRulePaths,
+      initialRuleCount: english.initialRules.length,
+    };
+    const fixed = yield* loadBehaviors(
+      english.fixedBehaviors ?? [],
+      "fixedBehaviors",
+      state,
+    );
+    const initial = yield* loadBehaviors(
+      english.initialBehaviors ?? [],
+      "initialBehaviors",
+      state,
+    );
+    const resolved: MessagePolicy = {
+      ...policy,
+      english: {
+        fixedRules: [...english.fixedRules, ...fixed.map(({ rule }) => rule)],
+        initialRules: [
+          ...english.initialRules,
+          ...initial.map(({ rule }) => rule),
+        ],
+      },
+    };
+    return {
+      policy: resolved,
+      behaviorRulePaths,
+      fixedBehaviorDigests:
+        fixed.length === 0 ? undefined : fixed.map(({ digest }) => digest),
+    };
+  });
+}
+
+function loadBehaviors(
+  directories: readonly string[],
+  field: "fixedBehaviors" | "initialBehaviors",
+  state: {
+    readonly root: string;
+    readonly ids: Set<string>;
+    readonly behaviorRulePaths: Map<string, string>;
+    readonly initialRuleCount: number;
+  },
+) {
+  let count = state.initialRuleCount;
+  return Effect.forEach(
+    directories,
+    (directory, index) =>
+      Effect.gen(function* () {
+        const path = `english.${field}.${index}`;
+        const behavior = yield* readBehavior(state.root, directory, path);
+        if (state.ids.has(behavior.rule.id)) {
+          return yield* invalidBehavior(path, "duplicate-id");
+        }
+        if (field === "initialBehaviors") {
+          count += 1;
+          if (count > 256) {
+            return yield* invalidBehavior(path, "editable-limit");
+          }
+        }
+        state.ids.add(behavior.rule.id);
+        state.behaviorRulePaths.set(behavior.rule.id, path);
+        return behavior;
+      }),
+    { concurrency: 1 },
   );
+}
+
+/** Relative paths must stay in the canonical policy directory after symlink resolution. */
+function contained(root: string, path: string) {
+  const child = relative(root, path);
+  return !isAbsolute(child) && child !== ".." && !child.startsWith(`..${sep}`);
 }
 
 function readPolicyText(path: string) {
   return Effect.tryPromise({
-    try: () => readFile(path),
+    try: () => realpath(path),
     catch: () => policyConfigurationError("message-policy-file"),
   }).pipe(
-    Effect.filterOrFail(
-      (bytes) => bytes.byteLength <= MAXIMUM_POLICY_BYTES,
-      () => policyConfigurationError("message-policy-file"),
+    Effect.flatMap((canonical) =>
+      readBoundedFile(canonical, MAXIMUM_POLICY_BYTES, () =>
+        policyConfigurationError("message-policy-file"),
+      ),
     ),
     Effect.map((bytes) => bytes.toString("utf8")),
   );
+}
+
+/** The descriptor owns both the file-kind check and the bounded read. */
+function readBoundedFile(
+  path: string,
+  maximumBytes: number,
+  refused: (reason: BehaviorFailure) => MessagePolicyConfigurationError,
+) {
+  return Effect.gen(function* () {
+    const before = yield* Effect.tryPromise({
+      try: () => lstat(path),
+      catch: () => refused("missing"),
+    });
+    const file = yield* Effect.acquireRelease(
+      Effect.tryPromise({
+        try: () =>
+          open(
+            path,
+            constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW,
+          ),
+        catch: () => refused("missing"),
+      }),
+      (file) =>
+        Effect.tryPromise({
+          try: () => file.close(),
+          catch: () => refused("missing"),
+        }).pipe(Effect.orDie),
+    );
+    const stat = yield* Effect.tryPromise({
+      try: () => file.stat(),
+      catch: () => refused("missing"),
+    });
+    if (!stat.isFile()) {
+      return yield* refused("not-a-file");
+    }
+    if (stat.dev !== before.dev || stat.ino !== before.ino) {
+      return yield* refused("missing");
+    }
+    const bytes = yield* readDescriptor(file, maximumBytes).pipe(
+      Effect.mapError(() => refused("missing")),
+    );
+    if (bytes.byteLength > maximumBytes) {
+      return yield* refused("too-large");
+    }
+    return bytes;
+  }).pipe(Effect.scoped);
+}
+
+/** A short read need not be EOF; stop only at EOF or the extra byte. */
+function readDescriptor(file: FileHandle, maximumBytes: number) {
+  return Effect.gen(function* () {
+    const buffer = Buffer.alloc(maximumBytes + 1);
+    let length = 0;
+    while (length < buffer.length) {
+      const offset = length;
+      const read = yield* Effect.tryPromise(() =>
+        file.read(buffer, offset, buffer.length - offset, null),
+      );
+      if (read.bytesRead === 0) {
+        break;
+      }
+      length += read.bytesRead;
+    }
+    return buffer.subarray(0, length);
+  });
 }
 
 /** Names where the document is invalid, never what it holds there. */

@@ -11,13 +11,16 @@
       "path": "packages/nanoclaw-channel"
     },
     {
-      "path": "packages/identity"
-    },
-    {
       "path": "packages/router"
     },
     {
       "path": "packages/registry"
+    },
+    {
+      "path": "packages/registry/tsconfig.test-entry.json"
+    },
+    {
+      "path": "packages/router/tsconfig.test-entry.json"
     }
   ]
 }

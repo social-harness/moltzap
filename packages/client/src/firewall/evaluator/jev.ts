@@ -12,7 +12,7 @@ import {
   DecisionProviderError,
   type DecisionRequest,
   DecisionResponse,
-} from "./values.js";
+} from "./contract/index.js";
 
 const origin = "https://api.typesafe.ai/v1/systemone";
 const providerName = "typesafe";
@@ -133,7 +133,15 @@ const parseJevResponse = Effect.fn("MessagePolicy.Jev.parseResponse")(
     return new DecisionResponse({
       provider: providerName,
       model: value.model,
-      answers: value.answers,
+      answers: Object.fromEntries(
+        Object.entries(value.answers).map(([id, answer]) => [
+          id,
+          {
+            choice: answer.choice,
+            probabilities: answer.probabilities,
+          },
+        ]),
+      ),
       usage: value.usage,
       raw,
     });

@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "noEmit": true,
+    "incremental": true,
+    "rootDir": "../..",
+    "tsBuildInfoFile": "./tsconfig.test.tsbuildinfo",
+    "allowImportingTsExtensions": true,
+    "customConditions": [
+      "sharness-test"
+    ]
+  },
+  "include": [
+    "**/*.ts"
+  ]
+}

@@ -1,7 +1,6 @@
 /** @file Exact preflight, proposal-lock, certification, and delivery tests. */
 
 import { live as it } from "@effect/vitest";
-import { LIVE_WIRE_VERSIONS, WIRE_VERSION } from "@moltzap/identity";
 import { Effect } from "effect";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Tests create and inspect exact real-SQLite permission fixtures around the scoped Effect resource.
 import { readFileSync, statSync } from "node:fs";
@@ -13,6 +12,10 @@ import {
   stateDirectory,
   withStore,
 } from "../../__tests__/store-schema-fixtures.js";
+import {
+  LIVE_WIRE_VERSIONS,
+  WIRE_VERSION,
+} from "../../identity/wire-version.js";
 import {
   type CertifiedRecord,
   type ConversationFoundation,

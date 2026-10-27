@@ -17,7 +17,8 @@
  * its check's guidance, and fails with a closed send reason or a
  * collective failure. The exported send-result decoder yields that same
  * result type. Adapters compile against this surface, so any change these
- * canaries catch is a breaking release.
+ * canaries catch is a breaking release. Client renders local guidance as text
+ * for both adapters, keeping registered instructions apart from quoted peers.
  */
 
 import type { DateTime, Effect, Either, Scope, Stream, Types } from "effect";
@@ -46,6 +47,7 @@ import type {
   MessageTextError,
   parseMessageText,
   PostId,
+  renderLocalGuidance,
   SendError,
   SendInput,
   SendResult,
@@ -110,7 +112,11 @@ type ExpectedGroupMessage = Readonly<{
 type ExpectedWithheld = Readonly<{
   kind: "withheld";
   checkId: string;
-  reason: FirewallSendError["refusal"];
+  reason:
+    | "prohibited"
+    | "unresolved-evidence"
+    | "check-unavailable"
+    | "norm-violation";
 }>;
 type ExpectedMemberOutcome =
   | Readonly<{ kind: "answered"; content: ExpectedAnswerContent }>
@@ -189,6 +195,15 @@ type ExpectedLocalGuidance =
     }>;
 type LocalGuidanceIsExact = Expect<
   Types.Equals<LocalGuidance, ExpectedLocalGuidance>
+>;
+type GuidanceRenderingIsExact = Expect<
+  Types.Equals<
+    typeof renderLocalGuidance,
+    (
+      guidance: LocalGuidance,
+      quoted?: { text: string; origin: "peer" | "endpoint" },
+    ) => string
+  >
 >;
 type ExpectedDelivery = Readonly<{
   item: InboundItem;
@@ -319,6 +334,9 @@ type ConnectReasonsAreExact = Expect<
     "transport-failed" | "decode-failed" | "incompatible-daemon"
   >
 >;
+type FirewallRefusalReasonsAreExact = Expect<
+  Types.Equals<FirewallSendError["refusal"], ExpectedWithheld["reason"]>
+>;
 type AcquisitionIsScoped = Expect<
   Types.Equals<Parameters<typeof acquireHarnessEndpoint>, [endpoint: URL]>
 >;
@@ -337,6 +355,7 @@ export type HarnessEndpointCanaries = [
   SendResultDecoderIsExact,
   InboundItemIsExact,
   LocalGuidanceIsExact,
+  GuidanceRenderingIsExact,
   DirectMessageIsExact,
   GroupMessageIsExact,
   InboundMessageIsExact,
@@ -346,6 +365,7 @@ export type HarnessEndpointCanaries = [
   AgentAddressIsInput,
   GroupAddressIsInput,
   SendReasonsAreExact,
+  FirewallRefusalReasonsAreExact,
   CollectiveFailureKindsAreExact,
   HistoryExportRecordIsExact,
   ListenReasonsAreExact,

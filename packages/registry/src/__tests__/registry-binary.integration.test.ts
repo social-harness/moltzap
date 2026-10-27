@@ -10,14 +10,12 @@ import {
   AgentSigningAuthority,
   type VerifiedAgentCard,
   WIRE_VERSION,
-} from "@moltzap/identity";
-import {
-  Registry,
-  type RegistryListRequest,
-  RegistryRegisterRequest,
-} from "@moltzap/identity/registry";
+} from "@moltzap/social-harness";
+import { Registry, registryContract } from "@moltzap/social-harness/internal";
 import { Duration, Effect, Redacted, Ref, Schema } from "effect";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { expect, it } from "vitest";
 import {
   callRegister,
@@ -48,7 +46,8 @@ import {
   startReadyRegistry,
   stopProcess,
   waitForExit,
-  waitForTcpListener,
+  waitForHealthStatus,
+  waitForPgliteListening,
 } from "./registry-process.js";
 import { contentDigest, encodeCanonicalJson } from "./request-fixtures.js";
 
@@ -158,6 +157,11 @@ const assertRegistrationPrecedence = (
       },
     });
     expect(sameName.kind).toBe(NAME_TAKEN_KIND);
+    expect(
+      (yield* runRegistry(
+        Registry.lookup({ agentName: otherKey.request.agentName }),
+      )).kind,
+    ).toBe(NOT_FOUND_KIND);
   });
 
 const assertWrongAdmission = (runRegistry: RegistryRunner) =>
@@ -172,58 +176,23 @@ const assertWrongAdmission = (runRegistry: RegistryRunner) =>
       Effect.catchTag("AuthenticationFailedError", () => Effect.succeed(true)),
     );
     expect(rejected).toBe(true);
+    expect(
+      (yield* runRegistry(
+        Registry.lookup({ agentName: prepared.request.agentName }),
+      )).kind,
+    ).toBe(NOT_FOUND_KIND);
   });
 
-const assertLookupAndPaging = (
-  agents: readonly [RegisteredAgent, ...RegisteredAgent[]],
+const assertLookup = (
+  agent: RegisteredAgent,
+  selector: Parameters<typeof Registry.lookup>[0],
   runRegistry: RegistryRunner,
 ) =>
   Effect.gen(function* () {
-    const lookup = yield* runRegistry(
-      Registry.lookup({ agentName: agents[0].request.agentName }),
-    );
+    const lookup = yield* runRegistry(Registry.lookup(selector));
     expect(lookup.kind).toBe(FOUND_KIND);
     if (lookup.kind === FOUND_KIND) {
-      yield* expectExactCard(lookup.agentCard, agents[0].agentCard);
-    }
-    const firstPage = yield* runRegistry(Registry.list({}));
-    expect(firstPage.agentCards).toHaveLength(2);
-    expect(firstPage.hasMore).toBe(true);
-    const lastCard = firstPage.agentCards[1];
-    if (lastCard === undefined) {
-      return yield* Effect.fail(processTestError("first page was incomplete"));
-    }
-    const secondPage = yield* runRegistry(
-      Registry.list({ afterAgentId: lastCard.agentId }),
-    );
-    expect(secondPage.agentCards).toHaveLength(2);
-    expect(secondPage.hasMore).toBe(false);
-    const actualIds = new Set(
-      [...firstPage.agentCards, ...secondPage.agentCards].map(
-        (card) => card.agentId,
-      ),
-    );
-    const expectedIds = new Set(agents.map((agent) => agent.agentCard.agentId));
-    expect(actualIds).toStrictEqual(expectedIds);
-  });
-
-const listEveryCard = (runRegistry: RegistryRunner) =>
-  Effect.gen(function* () {
-    const agentCards: VerifiedAgentCard[] = [];
-    let request: RegistryListRequest = {};
-    while (true) {
-      const page = yield* runRegistry(Registry.list(request));
-      agentCards.push(...page.agentCards);
-      if (!page.hasMore) {
-        return Object.freeze([...agentCards]);
-      }
-      const lastCard = page.agentCards.at(-1);
-      if (lastCard === undefined) {
-        return yield* Effect.fail(
-          processTestError("Registry returned an empty partial page"),
-        );
-      }
-      request = { afterAgentId: lastCard.agentId };
+      yield* expectExactCard(lookup.agentCard, agent.agentCard);
     }
   });
 
@@ -373,7 +342,10 @@ const assertSharedHttpEnvelopes = (port: number) =>
     yield* assertReceivedOverflow(port);
   });
 
-const assertBootstrapVersionPrecedence = (origin: URL) =>
+const assertBootstrapVersionPrecedence = (
+  origin: URL,
+  runRegistry: RegistryRunner,
+) =>
   Effect.gen(function* () {
     const prepared = yield* prepareAgent("version-precedence");
     const request = yield* makeVersionedBootstrapRequest(
@@ -385,13 +357,26 @@ const assertBootstrapVersionPrecedence = (origin: URL) =>
       status: VERSION_MISMATCH_STATUS,
       body: VERSION_MISMATCH_BODY,
     });
+    expect(
+      (yield* runRegistry(
+        Registry.lookup({ agentName: prepared.request.agentName }),
+      )).kind,
+    ).toBe(NOT_FOUND_KIND);
     assertBoundaryResponse(yield* executeRequest(request), {
       status: UNAUTHORIZED_STATUS,
       body: AUTHENTICATION_FAILED_BODY,
     });
+    expect(
+      (yield* runRegistry(
+        Registry.lookup({ agentName: prepared.request.agentName }),
+      )).kind,
+    ).toBe(NOT_FOUND_KIND);
   });
 
-const assertRetiredAdmissionSchemeRejected = (origin: URL) =>
+const assertRetiredAdmissionSchemeRejected = (
+  origin: URL,
+  runRegistry: RegistryRunner,
+) =>
   Effect.gen(function* () {
     const prepared = yield* prepareAgent("retired-admission-scheme");
     const request = yield* makeVersionedBootstrapRequest(
@@ -404,14 +389,19 @@ const assertRetiredAdmissionSchemeRejected = (origin: URL) =>
       status: UNAUTHORIZED_STATUS,
       body: AUTHENTICATION_FAILED_BODY,
     });
+    expect(
+      (yield* runRegistry(
+        Registry.lookup({ agentName: prepared.request.agentName }),
+      )).kind,
+    ).toBe(NOT_FOUND_KIND);
   });
 
 const makeIdentityPointForgery = (origin: URL) =>
   Effect.gen(function* () {
     const prepared = yield* prepareAgent("identity-point-forgery");
-    const encoded = yield* Schema.encode(RegistryRegisterRequest)(
-      prepared.request,
-    );
+    const encoded = yield* Schema.encode(
+      registryContract.RegistryRegisterRequest,
+    )(prepared.request);
     const bodyBytes = yield* encodeCanonicalJson({
       request: {
         ...encoded,
@@ -482,7 +472,7 @@ const assertPublicAuthenticationFraming = (origin: URL) =>
     });
   });
 
-const assertPublicRequestBoundaries = (origin: URL, first: RegisteredAgent) =>
+const assertPublicRequestBoundaries = (origin: URL) =>
   Effect.gen(function* () {
     const maximumLookup = JSON.stringify({
       agentName: "a".repeat(32),
@@ -496,20 +486,6 @@ const assertPublicRequestBoundaries = (origin: URL, first: RegisteredAgent) =>
     assertBoundaryResponse(
       yield* executeRequest(
         makeJsonRequest(origin, "/v1/identities:lookup", `${maximumLookup} `),
-      ),
-      { status: PAYLOAD_TOO_LARGE_STATUS, body: PAYLOAD_TOO_LARGE_BODY },
-    );
-    const maximumList = JSON.stringify({
-      afterAgentId: first.agentCard.agentId,
-    });
-    expect(
-      (yield* executeRequest(
-        makeJsonRequest(origin, "/v1/identities:list", maximumList),
-      )).status,
-    ).toBe(OK_STATUS);
-    assertBoundaryResponse(
-      yield* executeRequest(
-        makeJsonRequest(origin, "/v1/identities:list", `${maximumList} `),
       ),
       { status: PAYLOAD_TOO_LARGE_STATUS, body: PAYLOAD_TOO_LARGE_BODY },
     );
@@ -680,17 +656,28 @@ const exerciseFirstRun = (
     yield* assertRegistrationPrecedence(first, runRegistry);
     yield* assertWrongAdmission(runRegistry);
     yield* assertIdentityPointForgeryRejected(origin, runRegistry);
-    yield* assertBootstrapVersionPrecedence(origin);
-    yield* assertRetiredAdmissionSchemeRejected(origin);
-    const additional = yield* Effect.forEach(
-      ["second-agent", "third-agent", "fourth-agent"],
-      (name) => registerAgent(name, runRegistry),
-      { concurrency: 1 },
+    yield* assertBootstrapVersionPrecedence(origin, runRegistry);
+    yield* assertRetiredAdmissionSchemeRejected(origin, runRegistry);
+    const second = yield* registerAgent("second-agent", runRegistry);
+    const third = yield* registerAgent("third-agent", runRegistry);
+    const fourth = yield* registerAgent("fourth-agent", runRegistry);
+    yield* assertLookup(
+      second,
+      { agentName: second.request.agentName },
+      runRegistry,
     );
-    const agents = [first, ...additional] as const;
-    yield* assertLookupAndPaging(agents, runRegistry);
+    yield* assertLookup(
+      third,
+      { agentId: third.agentCard.agentId },
+      runRegistry,
+    );
+    yield* assertLookup(
+      fourth,
+      { agentId: fourth.agentCard.agentId },
+      runRegistry,
+    );
     yield* assertPublicAuthenticationFraming(origin);
-    yield* assertPublicRequestBoundaries(origin, first);
+    yield* assertPublicRequestBoundaries(origin);
     yield* assertRejectedRepresentations(origin, first);
     yield* assertConcurrentRegistration(runRegistry);
     yield* registerAtMaximumBody(origin, registrySignerPublicKey);
@@ -698,7 +685,7 @@ const exerciseFirstRun = (
     const request = yield* Ref.get(captured.capturedRequest).pipe(
       Effect.flatMap(requireCapturedRequest),
     );
-    return { agents, first, request };
+    return { first, request };
   });
 
 const assertReplayRejected = (request: HttpClientRequest.HttpClientRequest) =>
@@ -732,18 +719,6 @@ const exerciseRestart = (input: {
     if (lookup.kind === FOUND_KIND) {
       yield* expectExactCard(lookup.agentCard, input.first.agentCard);
     }
-    const firstListing = yield* listEveryCard(runRegistry);
-    const repeatedListing = yield* listEveryCard(runRegistry);
-    expect(repeatedListing).toStrictEqual(firstListing);
-    const listedCard = firstListing.find(
-      (card) => card.agentId === input.first.agentCard.agentId,
-    );
-    if (listedCard === undefined) {
-      return yield* Effect.fail(
-        processTestError("restarted Registry list omitted the stored card"),
-      );
-    }
-    yield* expectExactCard(listedCard, input.first.agentCard);
     const repeated = yield* callRegister(runRegistry, input.first);
     expect(repeated.kind).toBe(REGISTERED_KIND);
     if (repeated.kind === REGISTERED_KIND) {
@@ -827,13 +802,14 @@ const setupRegistryInfrastructure = Effect.gen(function* () {
     `--host=${LOOPBACK_HOST}`,
     "--max-connections=20",
   ]);
-  yield* waitForTcpListener(postgresql, postgresqlPort);
+  yield* waitForPgliteListening(postgresql, postgresqlPort);
   const postgresqlUrl = `postgresql://postgres:postgres@${LOOPBACK_HOST}:${postgresqlPort}/postgres`;
   const origin = new URL(`http://${LOOPBACK_HOST}:${registryPort}`);
   const environment = registryEnvironment({
     port: registryPort,
     postgresqlUrl,
     registryKeyPath,
+    overrides: { SHARNESS_REGISTRY_SQL_POOL_SIZE: "1" },
   });
   return {
     environment,
@@ -913,7 +889,7 @@ const registryBinaryBehavior = Effect.gen(function* () {
     environment: infrastructure.environment,
     wrongKeyPath: infrastructure.wrongKeyPath,
     addUnknownMigration: sql`
-      INSERT INTO sharness_registry_ledger (migration_id, name)
+      INSERT INTO sharness_registry_ledger_20261026 (migration_id, name)
       VALUES (9999, 'future')
     `,
   });
@@ -927,3 +903,108 @@ it("preserves Registry contracts across first boot, concurrency, and restart", (
   expect.hasAssertions();
   return Effect.runPromise(registryBinaryBehavior);
 }, 120_000);
+
+/** The external caller has the package links that an installed consumer receives. */
+const makeExternalConsumer = Effect.gen(function* () {
+  const fileSystem = yield* FileSystem.FileSystem;
+  const directory = yield* fileSystem.makeTempDirectoryScoped({
+    prefix: "sharness-registry-consumer-",
+  });
+  const scopeDirectory = join(directory, "node_modules", "@moltzap");
+  yield* fileSystem.makeDirectory(scopeDirectory, { recursive: true });
+  yield* fileSystem.symlink(
+    fileURLToPath(new URL("../../", import.meta.url)),
+    join(scopeDirectory, "registry"),
+  );
+  yield* fileSystem.symlink(
+    fileURLToPath(new URL("../../../client/", import.meta.url)),
+    join(scopeDirectory, "social-harness"),
+  );
+  return directory;
+});
+
+const assertExternalResolutionDenied = `
+  try {
+    await import("@moltzap/social-harness/internal");
+    throw new Error("external caller resolved private Identity exports");
+  } catch (error) {
+    if (error.code !== "ERR_PACKAGE_PATH_NOT_EXPORTED") throw error;
+  }
+`;
+
+/**
+ * A module under the Registry package root, outside its built modules and executable.
+ *
+ * Value: protects=after startRegistry installs internal resolution, a module in a nested node_modules under the Registry package root still cannot resolve `@moltzap/social-harness/internal`; fails_when=the hook's parent scope includes the package root rather than only dist/ and bin/; why_new=the external consumer lives in a temporary directory outside the package root, which both scopes deny; seam=none; no_claim=resolution for parents outside the package root.
+ */
+const makeNestedProbe = Effect.acquireRelease(
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const directory = fileURLToPath(
+      new URL(
+        `../../node_modules/.scope-probe-${randomUUID()}/`,
+        import.meta.url,
+      ),
+    );
+    yield* fileSystem.makeDirectory(directory, { recursive: true });
+    const probe = join(directory, "probe.mjs");
+    yield* fileSystem.writeFileString(probe, assertExternalResolutionDenied);
+    return { directory, url: pathToFileURL(probe).href };
+  }),
+  ({ directory }) =>
+    Effect.flatMap(FileSystem.FileSystem, (fileSystem) =>
+      fileSystem.remove(directory, { recursive: true }),
+    ).pipe(Effect.orDie),
+);
+
+it(
+  "test composition accepts an adjacent registration while external private exports stay inaccessible",
+  () =>
+    Effect.runPromise(
+      Effect.gen(function* () {
+        const infrastructure = yield* setupRegistryInfrastructure;
+        const cwd = yield* makeExternalConsumer;
+        const nested = yield* makeNestedProbe;
+        const adjacent = `${WIRE_VERSION}-adjacent`;
+        const versions = {
+          emitted: WIRE_VERSION,
+          live: [WIRE_VERSION, adjacent],
+          history: [WIRE_VERSION, adjacent],
+        };
+        const registry = yield* managedProcess(
+          process.execPath,
+          [
+            "--conditions=sharness-test",
+            "--input-type=module",
+            "-e",
+            `import { startRegistry } from "@moltzap/registry/test";
+         startRegistry(${JSON.stringify(versions)});
+         ${assertExternalResolutionDenied}
+         await import(${JSON.stringify(nested.url)});`,
+          ],
+          infrastructure.environment,
+          cwd,
+        );
+        yield* waitForHealthStatus({
+          runningProcess: registry,
+          origin: infrastructure.origin,
+          expectedStatus: NO_CONTENT_STATUS,
+        });
+        const prepared = yield* prepareAgent("adjacent-test-entry");
+        const request = yield* makeVersionedBootstrapRequest(
+          infrastructure.origin,
+          prepared,
+          adjacent,
+        );
+        const response = yield* executeRequest(request);
+        expect(response.status, response.body).toBe(OK_STATUS);
+        const result: unknown = JSON.parse(response.body);
+        expect(result).toHaveProperty("kind", REGISTERED_KIND);
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(NodeFileSystem.layer),
+        Effect.provide(NodeHttpClient.layer),
+      ),
+    ),
+  60_000,
+);

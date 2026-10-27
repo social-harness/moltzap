@@ -2,16 +2,18 @@
 
 import {
   AgentCard,
-  type AgentCardVerificationError,
   type AgentId as AgentIdValue,
   type AgentName as AgentNameValue,
   AgentSigningAuthority,
   type Ed25519PublicKey as Ed25519PublicKeyValue,
   type PrincipalId as PrincipalIdValue,
   type VerifiedAgentCard,
+} from "@moltzap/social-harness";
+import {
+  agentCardSigning,
+  type AgentCardVerificationError,
   wireVersions,
-} from "@moltzap/identity";
-import { agentCardSigning } from "@moltzap/identity/internal";
+} from "@moltzap/social-harness/internal";
 import { Effect } from "effect";
 
 /** Whole-second UTC issuance evidence carried by an AgentCard. */

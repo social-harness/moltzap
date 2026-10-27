@@ -29,9 +29,9 @@ const tarball = (files: Readonly<Record<string, string>>): Uint8Array => {
 };
 
 const manifest = {
-  name: "@moltzap/client",
+  name: "@moltzap/social-harness",
   version: "2026.1025.1",
-  dependencies: { "@moltzap/identity": "2026.1025.1" },
+  dependencies: { "@moltzap/social-harness": "2026.1025.1" },
 };
 
 // @agent-code-guard/regression-only: The tarball layout is npm's, pinned by its examples.

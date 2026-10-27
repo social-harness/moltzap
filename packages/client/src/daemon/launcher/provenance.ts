@@ -150,11 +150,7 @@ function differingField(
         JSON.stringify(sorted(Object.entries(published.siblings))),
     ],
     ["host-code hash", packed.sharnessHostCodeHash === published.hostCodeHash],
-    [
-      "wire version",
-      (packed.sharnessWireVersion ?? packed.moltzapWireVersion) ===
-        published.wireVersion,
-    ],
+    ["wire version", packed.sharnessWireVersion === published.wireVersion],
   ];
   return checks.find(([, same]) => !same)?.[0];
 }

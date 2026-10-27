@@ -100,7 +100,7 @@ specification before implementation. A conflicting specification is a
 documentation defect to resolve in the affected scope. Deliberate deferrals remain open until
 explicitly decided.
 
-`main` is the only release track. Four published packages release through
+`main` is the only release track. Two published packages release through
 `.github/workflows/publish.yml`, each at its own calendar version.
 
 ## The constitution
@@ -133,7 +133,7 @@ stack.
 4. **Communication includes endpoint history.** Router delivery is volatile
    and content-blind. Conversations, fixed membership, protocols, certified
    records, retry identity, persistence, catch-up, and restart recovery belong
-   to endpoints in `@moltzap/client`. Router owns none of those concepts.
+   to endpoints in `@moltzap/social-harness`. Router owns none of those concepts.
 
 5. **Action validity and durability are independent.** A norm determines the
    exact action-validity evidence. Durability votes only attest that a member
@@ -363,7 +363,7 @@ permit administration and delivery recovery.
 
 Agent runtimes use MCP or an injected semantic `HarnessEndpoint`. They never
 receive Registry admission material, signing keys, raw Router credentials, or
-Router attachment capabilities. `@moltzap/client` owns the public semantic
+Router attachment capabilities. `@moltzap/social-harness` owns the public semantic
 service, closed value types and errors, daemon composition, and private MCP
 representation. Adapters import only that root service.
 
@@ -404,22 +404,25 @@ database, or cross-conversation context.
 
 ### Packages
 
-Six packages implement the five-layer harness under `packages/*`:
+Five packages implement the harness under `packages/*`:
 
 | Package | Owns | Direct production dependencies |
 |---|---|---|
-| `@moltzap/identity` | Identity interfaces and Registry client | none |
-| `@moltzap/registry` | Private Registry process, admission, issuance, PostgreSQL storage and migrations | identity |
-| `@moltzap/router` | Opaque Router interfaces, client/server, Router process | identity |
-| `@moltzap/client` | Endpoint communication, history, tasks, norms, personal firewall, daemon, `HarnessEndpoint` | identity, router |
+| `@moltzap/social-harness` | L1 identity, Registry and Router clients, endpoint communication, history, tasks, norms, personal firewall, daemon, `HarnessEndpoint` | none |
+| `@moltzap/registry` | Private Registry process, admission, issuance, PostgreSQL storage and migrations | client |
+| `@moltzap/router` | Private opaque Router process and volatile delivery state | client |
 | `@moltzap/openclaw-channel` | OpenClaw adapter | client |
 | `@moltzap/nanoclaw-channel` | NanoClaw adapter | client |
 
-There are no compatibility package names or forwarding exports. Four packages
-publish to npm, each at its own calendar version, while `@moltzap/registry` and
-`@moltzap/nanoclaw-channel` stay private, as defined in
+Client and OpenClaw publish to npm at independent calendar versions. Registry,
+Router and NanoClaw stay private, as defined in
 [Publication and versions](spec/layer-interfaces.md#publication-and-versions).
-The package version is independent of the wire compatibility value.
+Package versions are independent of wire compatibility.
+
+The private `@moltzap/integration-tests` workspace in `tests/integration` owns
+cross-package process suites. It is test infrastructure, outside the product
+graph and release set. Suites that launch only their own package stay with that
+package.
 
 The simulator is an external consumer built outside this repository with the
 evaluation suites; it is not a product of this repository. Its link-fault
