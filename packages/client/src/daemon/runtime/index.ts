@@ -3,9 +3,6 @@
  * subscriptions, delivery passes and the fatal signal that stops it.
  */
 
-import type { VerifiedAgentCard } from "@moltzap/identity";
-import { Registry } from "@moltzap/identity/registry";
-import { Router } from "@moltzap/router";
 import { Cause, Deferred, Effect, Option, Queue, Scope } from "effect";
 import type {
   EndpointStore,
@@ -14,13 +11,16 @@ import type {
 import type { InstalledFirewall } from "../../firewall/index.js";
 import type { HistoryExportPort } from "../../harness/inbox/history-export.js";
 import type { HarnessMcpEventHandler } from "../../harness/mcp/index.js";
+import type { VerifiedAgentCard } from "../../identity/cards.js";
 import type { DaemonBootstrap } from "../bootstrap.js";
 import type { DaemonRegistrationState } from "../registration/index.js";
 import { CollectiveEmitError } from "../../communication/collectives/index.js";
+import { Router } from "../../communication/router/index.js";
 import {
   type HostDelivery,
   makeHostDelivery,
 } from "../../harness/inbox/index.js";
+import { Registry } from "../../identity/registry/index.js";
 import {
   activationFailure,
   type DaemonActivationError,

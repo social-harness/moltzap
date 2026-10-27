@@ -17,7 +17,8 @@
             "group": "Getting Started",
             "pages": [
               "introduction",
-              "quickstart",
+              "guides/run-a-local-network",
+              "guides/run-sharnessd",
               "architecture",
               "vision"
             ]
@@ -77,27 +78,6 @@
               "architecture/layers",
               "architecture/components"
             ]
-          },
-          {
-            "group": "Modules",
-            "pages": [
-              "modules/client/communication/collectives",
-              "modules/client/communication/conversations",
-              "modules/client/communication/records",
-              "modules/client/daemon",
-              "modules/client/firewall/admission",
-              "modules/client/firewall/evaluator",
-              "modules/client/firewall/outcome",
-              "modules/client/firewall/policy",
-              "modules/client/harness/endpoint",
-              "modules/client/harness/inbox",
-              "modules/client/harness/protocol",
-              "modules/client/src",
-              "modules/identity/src",
-              "modules/openclaw-channel/src",
-              "modules/registry/src",
-              "modules/router/src"
-            ]
           }
         ]
       }
@@ -125,16 +105,16 @@
   },
   "redirects": [
     {
-      "source": "/modules/client/delivery",
-      "destination": "/modules/client/harness/inbox"
+      "source": "/modules/:path*",
+      "destination": "/spec/harness/client"
     },
     {
-      "source": "/modules/client/endpoint/harness-endpoint",
-      "destination": "/modules/client/harness/endpoint"
-    },
-    {
-      "source": "/modules/client/service",
-      "destination": "/modules/client/daemon"
+      "source": "/quickstart",
+      "destination": "/guides/run-a-local-network"
     }
-  ]
+  ],
+  "variables": {
+    "node-version-range": "22.19.0",
+    "openclaw-min-version": "2026.10.3"
+  }
 }

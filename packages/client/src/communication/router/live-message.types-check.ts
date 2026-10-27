@@ -3,14 +3,14 @@
  * and Client ingress; retained history alone cannot satisfy either boundary.
  */
 
+import type { Types } from "effect";
 import type {
   LiveSignedMessage,
   SignedMessage,
   VerifiedSignedMessage,
-} from "@moltzap/identity";
-import type { RouterSendRequest } from "@moltzap/router";
-import type { Types } from "effect";
+} from "../envelope/signed-message.js";
 import type { verifyOuterMessage } from "../records/index.js";
+import type { RouterSendRequest } from "./api/contract.js";
 import type { RouterWorkerIngress } from "./index.js";
 
 type Expect<Value extends true> = Value;

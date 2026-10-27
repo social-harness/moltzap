@@ -1,6 +1,6 @@
 /** @file Muse's credential-free hook hands an immutable work reference to a started native worker. */
 
-import type { InboundDelivery } from "@moltzap/client";
+import type { InboundDelivery } from "@moltzap/social-harness";
 import { FileSystem } from "@effect/platform";
 import { Clock, Duration, Effect, Schedule } from "effect";
 import { randomUUID } from "node:crypto";

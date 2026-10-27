@@ -1,12 +1,6 @@
 /** @file Storage stops preserve send responses and report closed diagnostic causes. */
 
 import { scopedLive as it } from "@effect/vitest";
-import {
-  AgentCard,
-  Ed25519PublicKey,
-  LIVE_WIRE_VERSIONS,
-} from "@moltzap/identity";
-import { RouterInstanceId } from "@moltzap/router";
 import { Deferred, Effect, Fiber, Logger, Schema } from "effect";
 import { generateKeyPairSync } from "node:crypto";
 import { expect } from "vitest";
@@ -28,12 +22,16 @@ import {
 import { pollCursor } from "../../__tests__/router-worker-fixtures.js";
 import { stateDirectory } from "../../__tests__/store-schema-fixtures.js";
 import { makeEndpointEngine } from "../../communication/conversations/index.js";
+import { RouterInstanceId } from "../../communication/router/api/contract.js";
 import {
   EndpointStoreError,
   openEndpointStore,
 } from "../../communication/store/index.js";
 import { encodeCanonical } from "../../encoding/canonical-json.js";
 import { acquireHarnessMcpHttpServer } from "../../harness/mcp/index.js";
+import { AgentCard } from "../../identity/cards.js";
+import { Ed25519PublicKey } from "../../identity/keys.js";
+import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { SendInput } from "../../index.js";
 
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- Exact HTTP statuses and closed diagnostic reasons are boundary contracts; secret sentinels verify redaction. */

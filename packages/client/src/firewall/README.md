@@ -1,7 +1,7 @@
 # Personal firewall
 
 This folder owns the personal firewall: evaluation, built-in rules, policy
-loading and editing, incoming and outgoing admission, and operator audit.
+loading and editing, incoming and outgoing admission, and retained checks.
 `index.ts` is its entry for the rest of Client.
 
 | Folder | Holds |
@@ -11,9 +11,8 @@ loading and editing, incoming and outgoing admission, and operator audit.
 | `rules/` | Built-in code policies and the collective norm bundle. |
 | `policy/` | Policy documents, loading, composition and persisted owner edits. Configuration errors belong to policy loading. |
 | `admission/` | Installation, outgoing checks, incoming admission, result checks and retained check values. |
-| `audit/` | Operator audit snapshots and private file publication. |
 
-Rules, policy, admission and audit sit above `communication/collectives/`. `outcome/`
+Rules, policy and admission sit above `communication/collectives/`. `outcome/`
 and the isolated `evaluator/` sit below certified records. Client release
 metadata comes from `../release/`. Store owns persistence in
 `communication/store/firewall.ts`, and MCP owner tools live in `harness/mcp/tools.ts`.

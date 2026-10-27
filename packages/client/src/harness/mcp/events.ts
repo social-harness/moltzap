@@ -168,7 +168,6 @@ export const runRequest = <Value, Failure>(
  * @param services The trusted daemon services captured when the handler is acquired.
  * @returns The SDK result or a sanitized protocol exception.
  */
-// #ignore-sloppy-code-next-line[async-keyword]: MCP consumes this Promise-native protocol adapter.
 export const runEventOperation = async <A, E>(
   operation: Effect.Effect<A, E>,
   signal: AbortSignal,

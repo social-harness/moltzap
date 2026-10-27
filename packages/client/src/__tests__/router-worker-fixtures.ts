@@ -1,29 +1,27 @@
 /** @file Deterministic Identity and Router fixtures for Router worker tests. */
 
+import { type Context, Effect, Encoding, Layer, Ref, Schema } from "effect";
+import { generateKeyPairSync } from "node:crypto";
+import type { RouterWorkerInput } from "../communication/router/index.js";
+import type { AgentId as AgentIdValue } from "../identity/agents.js";
+import type { VerifiedAgentCard } from "../identity/cards.js";
+import type { AgentSigningAuthority as AgentSigningAuthorityValue } from "../identity/keys.js";
+import type { RegistryLookupResult } from "../identity/registry/contract.js";
 import {
-  type AgentId as AgentIdValue,
-  type AgentSigningAuthority as AgentSigningAuthorityValue,
   type LiveSignedMessage,
   MessageId,
   SignedMessage,
-  type VerifiedAgentCard,
-} from "@moltzap/identity";
-import {
-  Registry,
-  type RegistryLookupResult,
-} from "@moltzap/identity/registry";
+} from "../communication/envelope/signed-message.js";
+import { Router } from "../communication/router/api/client.js";
 import {
   PollCursor,
-  Router,
   type RouterConnectionError,
   RouterInstanceId,
   type RouterPollResult,
   type RouterSendRequest,
   type RouterSendResult,
-} from "@moltzap/router";
-import { type Context, Effect, Encoding, Layer, Ref, Schema } from "effect";
-import { generateKeyPairSync } from "node:crypto";
-import type { RouterWorkerInput } from "../communication/router/index.js";
+} from "../communication/router/api/contract.js";
+import { Registry } from "../identity/registry/index.js";
 import {
   identifier,
   issueTestCard,
@@ -225,15 +223,12 @@ export const registryLayer = (cards: readonly VerifiedAgentCard[]) =>
           : { kind: "found" as const, agentCard: found },
       );
     },
-    list: () =>
-      Effect.succeed({ kind: "page", agentCards: cards, hasMore: false }),
     register: () => Effect.succeed({ kind: "idempotency_conflict" }),
   });
 
 /** Registry layer that proves pinned cards make live lookup unnecessary. */
 export const unavailableRegistryLayer = Layer.succeed(Registry, {
   lookup: () => Effect.die("Registry must not be queried for a pinned sender"),
-  list: () => Effect.die("Registry unavailable"),
   register: () => Effect.die("Registry unavailable"),
 });
 

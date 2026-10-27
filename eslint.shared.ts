@@ -40,6 +40,7 @@ const configModuleRules = {
 };
 
 const PACKAGE_SOURCE_FILES = [
+  "integration/**/*.ts",
   "src/**/*.ts",
   "src/**/*.cts",
   "src/**/*.mts",
@@ -187,8 +188,8 @@ export function packageEslintConfig(options: PackageEslintOptions) {
 }
 
 /**
- * Flat configuration for the workspace root: root modules, examples, and the
- * Node-run scripts under `scripts/`.
+ * Flat configuration for the workspace root: root modules, the `images/`
+ * helper, and the Node-run scripts under `scripts/`.
  */
 export function rootEslintConfig(tsconfigRootDir: string) {
   const languageOptions = makeTsLanguageOptions(tsconfigRootDir, [
@@ -197,14 +198,78 @@ export function rootEslintConfig(tsconfigRootDir: string) {
   ]);
   return [
     {
-      ignores: [".claude/**", ".repos/**", "packages/**", "plugins/**"],
+      ignores: [
+        ".claude/**",
+        ".repos/**",
+        "packages/**",
+        "tests/**",
+        "images/**",
+        "plugins/**",
+      ],
     },
     packageIgnores,
     makeStrictBlock(
-      ["*.ts", "examples/**/*.ts", "scripts/**/*.ts"],
+      ["*.ts", "images/**/*.ts", "scripts/**/*.ts"],
       languageOptions,
       makeStrictRules(),
     ),
+    makeEslintDisableCommentRules(languageOptions),
+    configModuleRules,
+  ];
+}
+
+/**
+ * Image bootstrap programs run on Node built-ins before runtime packages are
+ * installed. Their process fixtures use node:test's Promise-native boundary.
+ */
+export function agentImageEslintConfig(tsconfigRootDir: string) {
+  return [
+    ...integrationEslintConfig(tsconfigRootDir),
+    {
+      files: ["**/*.ts"],
+      rules: {
+        "agent-code-guard/async-keyword": "off",
+        "agent-code-guard/promise-type": "off",
+        "agent-code-guard/no-raw-throw-new-error": "off",
+        "agent-code-guard/prefer-effect-platform": "off",
+        "agent-code-guard/no-process-env-at-runtime": "off",
+        "@typescript-eslint/no-floating-promises": [
+          "error",
+          {
+            allowForKnownSafeCalls: [
+              {
+                from: "package",
+                package: "node:test",
+                name: ["describe", "it", "suite", "test"],
+              },
+            ],
+          },
+        ],
+      },
+    },
+    {
+      files: ["**/*.test.ts"],
+      rules: {
+        "agent-code-guard/no-example-only-tests": "off",
+        "agent-code-guard/no-hardcoded-assertion-literals": "off",
+        "sonarjs/no-os-command-from-path": "off",
+      },
+    },
+  ];
+}
+
+/** Flat configuration for tests/integration: the strict preset on every TypeScript file plus the integration-test preset on process suites. */
+export function integrationEslintConfig(
+  tsconfigRootDir: string,
+  testFiles: readonly string[] = ["**/*.integration.test.ts"],
+) {
+  const languageOptions = makeTsLanguageOptions(tsconfigRootDir, [
+    "./tsconfig.json",
+  ]);
+  return [
+    packageIgnores,
+    makeStrictBlock(["**/*.ts"], languageOptions, makeStrictRules()),
+    makePresetBlock(testFiles, languageOptions, guard.configs.integrationTests),
     makeEslintDisableCommentRules(languageOptions),
     configModuleRules,
   ];

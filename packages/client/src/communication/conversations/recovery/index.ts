@@ -4,7 +4,6 @@
  * and catch-up retries it holds, and the ports its catch-up and re-anchor use.
  */
 
-import type { SignedMessage } from "@moltzap/identity";
 import {
   Duration,
   Effect,
@@ -14,6 +13,7 @@ import {
   Schedule,
   Scope,
 } from "effect";
+import type { SignedMessage } from "../../envelope/signed-message.js";
 import type {
   EndpointRecovery,
   StoredOutboundMessage,

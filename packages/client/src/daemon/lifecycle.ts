@@ -1,14 +1,12 @@
 /** @file Private lifecycle composition for one registered endpoint daemon. */
 
 import type { Implementation } from "@modelcontextprotocol/server";
-import type { Registry } from "@moltzap/identity/registry";
-import type { Router } from "@moltzap/router";
 import { NodeFileSystem } from "@effect/platform-node";
-import { WIRE_VERSION } from "@moltzap/identity";
 import { Console, Effect, type Scope } from "effect";
+import type { Router } from "../communication/router/api/client.js";
+import type { Registry } from "../identity/registry/index.js";
 import { makeEndpointEngine } from "../communication/conversations/index.js";
 import { makeRouterWorker } from "../communication/router/index.js";
-import { beginFirewallAudit } from "../firewall/index.js";
 import {
   type HistoryExportPort,
   makeHistoryExport,
@@ -19,14 +17,20 @@ import {
   type HarnessMcpEventHandler,
   LOOPBACK_HOST,
   makeHarnessMcpHttpHandler,
+  type ManagementRegisterRequest,
 } from "../harness/mcp/index.js";
+import { WIRE_VERSION } from "../identity/wire-version.js";
 import { packageVersion } from "../release/index.js";
 import { DaemonRuntimeError, runtimeFailure } from "./errors.js";
-import { makeDaemonManagementOperations } from "./management.js";
+import {
+  type DaemonManagementOperations,
+  makeDaemonManagementOperations,
+} from "./management/index.js";
 import {
   type DaemonStartup,
   makeDaemon,
   type ProtocolEdges,
+  type RunningDaemon,
 } from "./runtime/index.js";
 
 /** Closed daemon startup and supervision failure. */
@@ -67,30 +71,10 @@ const productionDependencies: DaemonRuntimeDependencies = {
  * @returns A scoped process effect that ends only when a supervised resource fails.
  */
 export const runDaemonRuntime = (
-  input: DaemonStartup & { readonly auditExport?: string },
+  input: DaemonStartup,
   dependencies: DaemonRuntimeDependencies = productionDependencies,
 ): Effect.Effect<never, DaemonRuntimeError, Registry | Router | Scope.Scope> =>
   Effect.gen(function* () {
-    const { auditExport, ...startup } = input;
-    const audit =
-      auditExport === undefined
-        ? undefined
-        : yield* beginFirewallAudit(auditExport, input.store).pipe(
-            Effect.mapError(() => runtimeFailure("storage")),
-          );
-    return yield* Effect.scoped(runDaemonResources(startup, dependencies)).pipe(
-      Effect.onExit(() =>
-        audit === undefined ? Effect.void : audit.finish.pipe(Effect.orDie),
-      ),
-    );
-  }).pipe(Effect.withSpan("runDaemonRuntime"));
-
-/** Child resource finalizers finish before the outer audit reads the still-open store. */
-function runDaemonResources(
-  input: DaemonStartup,
-  dependencies: DaemonRuntimeDependencies,
-) {
-  return Effect.gen(function* () {
     const historyExport = yield* openHistoryExport(input, dependencies);
     const daemon = yield* makeDaemon({
       ...input,
@@ -104,22 +88,18 @@ function runDaemonResources(
     });
     return yield* Effect.gen(function* () {
       yield* daemon.activateAtStart;
-      const handler = yield* dependencies
-        .makeHandler({
-          implementation: DAEMON_IMPLEMENTATION,
-          operations: Object.freeze({
-            ...management,
-            ...(input.firewall?.policy === undefined
-              ? {}
-              : { policy: input.firewall.policy }),
-            ...daemon.deliveryOperations,
-            protocolActive: daemon.protocolActive,
-          }),
-          credentials: input.bootstrap.mcpCredentials,
-          eventStore: daemon.eventStore,
-          onSubscriptionActiveChange: daemon.subscriptionChanged,
-        })
-        .pipe(Effect.mapError(() => runtimeFailure("storage")));
+      yield* registerAtStart(
+        management,
+        daemon.readRegistration().kind === "active",
+        daemon,
+        input.bootstrap.configuration.registration,
+      );
+      const handler = yield* makeHandler(
+        input,
+        dependencies,
+        management,
+        daemon,
+      );
       yield* daemon.installHandler(handler);
       yield* daemon.runSubscriptions.pipe(Effect.forkScoped);
       yield* dependencies
@@ -133,7 +113,61 @@ function runDaemonResources(
       );
       return yield* daemon.awaitFailure;
     }).pipe(Effect.raceFirst(daemon.awaitFailure));
-  });
+  }).pipe(Effect.withSpan("runDaemonRuntime"));
+
+/** The handler shares the daemon's delivery operations and fixed bootstrap credentials. */
+function makeHandler(
+  input: DaemonStartup,
+  dependencies: DaemonRuntimeDependencies,
+  management: DaemonManagementOperations,
+  daemon: RunningDaemon,
+) {
+  return dependencies
+    .makeHandler({
+      implementation: DAEMON_IMPLEMENTATION,
+      operations: Object.freeze({
+        ...management,
+        ...(input.firewall?.policy === undefined
+          ? {}
+          : { policy: input.firewall.policy }),
+        ...daemon.deliveryOperations,
+        protocolActive: daemon.protocolActive,
+      }),
+      credentials: input.bootstrap.mcpCredentials,
+      eventStore: daemon.eventStore,
+      onSubscriptionActiveChange: daemon.subscriptionChanged,
+    })
+    .pipe(Effect.mapError(() => runtimeFailure("storage")));
+}
+
+/** The existing management operation commits and activates a new registration before MCP listens. */
+function registerAtStart(
+  management: DaemonManagementOperations,
+  active: boolean,
+  daemon: RunningDaemon,
+  request?: ManagementRegisterRequest,
+) {
+  if (request === undefined || active) {
+    return Effect.void;
+  }
+  return management.register(request).pipe(
+    Effect.mapError(registrationFailure),
+    Effect.catchAllCause((cause) =>
+      daemon.readRegistration().kind === "active"
+        ? daemon.awaitFailure
+        : Effect.failCause(cause),
+    ),
+    Effect.flatMap((result) =>
+      result.kind === "registered"
+        ? Effect.void
+        : Effect.fail(
+            new DaemonRuntimeError({
+              phase: "registration",
+              reason: result.kind,
+            }),
+          ),
+    ),
+  );
 }
 
 /** An unset export path leaves certified history in endpoint-owned storage. */
@@ -145,4 +179,24 @@ function openHistoryExport(
   return path === undefined
     ? Effect.succeed(noHistoryExport)
     : dependencies.makeHistoryExport(path);
+}
+
+/** Only registration failures cross into startup before the identity binds. */
+function registrationFailure(error: {
+  readonly reason: string;
+}): DaemonRuntimeError {
+  switch (error.reason) {
+    case "admission-refused":
+    case "dependency-unavailable":
+    case "persistence-failed":
+      return new DaemonRuntimeError({
+        phase: "registration",
+        reason: error.reason,
+      });
+    default:
+      return new DaemonRuntimeError({
+        phase: "registration",
+        reason: "incompatible-daemon",
+      });
+  }
 }

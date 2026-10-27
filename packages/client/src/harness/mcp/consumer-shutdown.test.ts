@@ -10,13 +10,13 @@ import {
   McpServer,
   PROTOCOL_VERSION_META_KEY,
 } from "@modelcontextprotocol/server";
-import { LIVE_WIRE_VERSIONS } from "@moltzap/identity";
 import { Deferred, Effect, Exit, Fiber, Scope } from "effect";
 import { expect } from "vitest";
 import type { PollResult } from "../protocol/index.js";
 import { loopbackMcpEndpoint } from "../../__tests__/mcp-http-fixtures.js";
 import { stateDirectory } from "../../__tests__/store-schema-fixtures.js";
 import { openEndpointStore } from "../../communication/store/index.js";
+import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { INBOX_ITEM_EVENT, INBOX_PENDING_EVENT } from "../protocol/names.js";
 import {
   type HarnessEvents,

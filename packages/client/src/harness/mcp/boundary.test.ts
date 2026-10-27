@@ -12,7 +12,6 @@ import {
   ProtocolErrorCode,
   StreamableHTTPClientTransport,
 } from "@modelcontextprotocol/client";
-import { LIVE_WIRE_VERSIONS } from "@moltzap/identity";
 import {
   Deferred,
   Duration,
@@ -48,6 +47,7 @@ import {
   openEndpointStore,
 } from "../../communication/store/index.js";
 import { FirewallSendError } from "../../firewall/outcome/index.js";
+import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { acquireHarnessEndpoint } from "../endpoint/index.js";
 import { readRuntimeEvent } from "../inbox/inbox.js";
 import {

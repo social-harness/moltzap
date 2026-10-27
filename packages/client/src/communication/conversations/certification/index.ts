@@ -3,8 +3,8 @@
  * and the resume of durable dissemination obligations.
  */
 
-import type { SignedMessage } from "@moltzap/identity";
 import { absurd, Deferred, Effect } from "effect";
+import type { SignedMessage } from "../../envelope/signed-message.js";
 import type { SendError } from "../errors.js";
 import {
   ClientRepresentationError,

@@ -4,8 +4,8 @@
  * projects to.
  */
 
-import { type AgentId, SignedMessage } from "@moltzap/identity";
 import { Effect, Schema } from "effect";
+import type { AgentId } from "../../../identity/agents.js";
 import type {
   InboundDeliveryInput,
   ProtocolEvidence,
@@ -22,6 +22,7 @@ import {
   encodeCanonical,
   representationFailure,
 } from "../../../encoding/canonical-json.js";
+import { SignedMessage } from "../../envelope/signed-message.js";
 import {
   type ActionCertifiedRecord,
   type AnchorHash,
@@ -42,7 +43,7 @@ import {
   type CertificateSignatures,
   certifiedRecord,
   orderedSignatures,
-} from "./certificate.js";
+} from "./certificates/index.js";
 
 /**
  * The hash of a conversation's current anchor, which its next record binds.

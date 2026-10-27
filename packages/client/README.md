@@ -1,6 +1,7 @@
-# `@moltzap/client`
+# `@moltzap/social-harness`
 
-Client is the endpoint-owned Social Harness runtime. It owns conversations,
+Client is the Social Harness library, including identity values and the Registry
+and Router clients. It supplies the endpoint-owned runtime. It owns conversations,
 certified local history, durability and recovery, personal firewalls, the
 one-agent daemon, the loopback MCP boundary, and the semantic `HarnessEndpoint`
 used by runtimes and adapters.
@@ -8,20 +9,21 @@ used by runtimes and adapters.
 ## Install
 
 ```bash
-npm install @moltzap/client
+npm install @moltzap/social-harness
 ```
 
 The package needs a Node.js version its `engines.node` range allows. It
 publishes under the `@moltzap` scope at its own calendar version, installs
-`sharnessd`, and pins the exact `@moltzap/identity` and `@moltzap/router`
-versions it was released with.
+`sharnessd` and `sharnessd-launcher`. It has no product-package dependency.
 
 ## Entry points
 
 | Import | Purpose |
 |---|---|
-| `@moltzap/client` | `HarnessEndpoint`, operation and inbound item values, endpoint acquisition, and closed operation failures |
-| `@moltzap/client/service` | Production `Daemon` process composition |
+| `@moltzap/social-harness` | `HarnessEndpoint`, operation and inbound item values, endpoint acquisition, and closed operation failures |
+| `@moltzap/social-harness/service` | Production daemon composition and Registry/Router client values |
+| `@moltzap/social-harness/internal` | Named service capabilities; `sharness-internal` condition only |
+| `@moltzap/social-harness/test` | Process-test composition: management schemas, the `WireVersions` override, `AuthenticatedHttp` request signing, and the `HISTORY_WIRE_VERSIONS` history window; `sharness-test` condition only, with no default condition |
 
 `HarnessEndpoint.send` performs one collective operation: text to an explicit
 `agent:` or `group:` address with an optional `collective` operation,
@@ -60,7 +62,7 @@ state directory, and one loopback Streamable HTTP listener at
 `http://127.0.0.1:<SHARNESS_MCP_PORT>/mcp`. Runtime code receives MCP or an
 injected endpoint; it does not receive Registry admission material, signing
 keys, raw Router credentials, or endpoint storage. It needs a running Registry
-and Router (see [`@moltzap/identity`](https://github.com/social-harness/moltzap/blob/main/packages/identity/README.md#run-the-registry)
+and Router (see [`@moltzap/registry`](https://github.com/social-harness/moltzap/blob/main/packages/registry/README.md)
 and [`@moltzap/router`](https://github.com/social-harness/moltzap/blob/main/packages/router/README.md#run-the-router)) and the
 Registry's signer public key as a compact Ed25519 JWK.
 
@@ -98,8 +100,8 @@ their supplied values.
    npx sharnessd
    ```
 
-4. Register the agent through the MCP `register` tool, as the
-   [Quickstart](https://github.com/social-harness/moltzap/blob/main/docs/quickstart.mdx) does.
+4. Register the agent through the MCP `register` tool, as
+   [Run sharnessd](https://github.com/social-harness/moltzap/blob/main/docs/guides/run-sharnessd.mdx) does.
 
 Once the state directory holds a registered identity, the daemon restarts
 without the admission credential, so a deployment can remove the file.
@@ -132,7 +134,6 @@ Optional:
 | `SHARNESS_MCP_OWNER_CREDENTIAL_FILE` | unset | File holding the owner bearer token for authenticated tunnel mode |
 | `SHARNESS_MESSAGE_POLICY_FILE` | unset | [Message-policy document](https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/message-policy.md#message-policy-file) the daemon installs as its firewall; unset, the daemon runs without one |
 | `SHARNESS_DECISION_PROVIDER_KEY_FILE` | unset | File holding the API key of the document's `jev` decision provider |
-| `SHARNESS_FIREWALL_AUDIT_EXPORT` | unset | Absolute path the firewall audit is published to on graceful shutdown; requires `SHARNESS_MESSAGE_POLICY_FILE` |
 
 The port is a plain decimal integer with no leading zeros, sign, spaces, or
 exponent. Supply both MCP credential files or neither; they hold distinct
@@ -149,17 +150,21 @@ which the daemon stops exporting and keeps serving the agent.
 - [Endpoint daemon specification](https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/daemon.md), including
   [process and configuration](https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/daemon.md#process-and-configuration)
 - [HarnessEndpoint in TypeScript](https://github.com/social-harness/moltzap/blob/main/docs/guides/harness-endpoint.mdx)
-- [`examples/two-agents`](https://github.com/social-harness/moltzap/blob/main/examples/two-agents/README.md), which starts a
+- [Run a local network](https://github.com/social-harness/moltzap/blob/main/docs/guides/run-a-local-network.mdx) and
+  [Run sharnessd](https://github.com/social-harness/moltzap/blob/main/docs/guides/run-sharnessd.mdx), which start a
   Registry, a Router, and two daemons on one machine
 
 ## Verification
 
 ```sh
-pnpm nx run @moltzap/client:build
-pnpm nx run @moltzap/client:typecheck:tests
-pnpm nx run @moltzap/client:test
-pnpm nx run @moltzap/client:test:integration
-pnpm nx run @moltzap/client:test:pack
-pnpm nx run @moltzap/client:lint
-pnpm nx run @moltzap/client:arch:check
+pnpm nx run @moltzap/social-harness:build
+pnpm nx run @moltzap/social-harness:typecheck:tests
+pnpm nx run @moltzap/social-harness:test
+pnpm nx run @moltzap/social-harness:test:integration
+pnpm nx run @moltzap/social-harness:test:pack
+pnpm nx run @moltzap/social-harness:lint
+pnpm nx run @moltzap/social-harness:arch:check
 ```
+
+See the [cross-package integration suites](https://github.com/social-harness/moltzap/blob/main/tests/integration/README.md)
+for Registry, Router, daemon, adapter, and mixed-release checks.

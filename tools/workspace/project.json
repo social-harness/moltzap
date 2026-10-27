@@ -21,27 +21,6 @@
         "command": "oxfmt --check ."
       }
     },
-    "docs:generate": {
-      "cache": true,
-      "inputs": [
-        "docsGeneration"
-      ],
-      "outputs": [
-        "{workspaceRoot}/README.md",
-        "{workspaceRoot}/docs",
-        "{workspaceRoot}/packages/**/src/**/MODULE.md"
-      ],
-      "executor": "nx:run-commands",
-      "options": {
-        "cwd": ".",
-        "parallel": false,
-        "commands": [
-          "pnpm exec typedoc",
-          "node scripts/docs/generate-modules.ts",
-          "node scripts/docs/generate-constants-snippets.ts"
-        ]
-      }
-    },
     "docs:check:mermaid": {
       "cache": true,
       "inputs": [
@@ -57,65 +36,6 @@
         ]
       }
     },
-    "docs:check:no-hardcoded-constants": {
-      "cache": true,
-      "inputs": [
-        "workspaceFiles"
-      ],
-      "executor": "nx:run-commands",
-      "options": {
-        "cwd": ".",
-        "command": "node scripts/docs/check-no-hardcoded-constants.ts"
-      }
-    },
-    "docs:check:doc-imports-resolve": {
-      "cache": true,
-      "inputs": [
-        "workspaceFiles"
-      ],
-      "executor": "nx:run-commands",
-      "options": {
-        "cwd": ".",
-        "command": "node scripts/docs/check-doc-imports-resolve.ts"
-      }
-    },
-    "arch:config:generate": {
-      "cache": true,
-      "inputs": [
-        "{workspaceRoot}/scripts/architecture/gen-configs.ts"
-      ],
-      "outputs": [
-        "{workspaceRoot}/packages/*/safer-architecture.config.json",
-        "{workspaceRoot}/plugins/*/safer-architecture.config.json"
-      ],
-      "executor": "nx:run-commands",
-      "options": {
-        "cwd": ".",
-        "command": "node scripts/architecture/gen-configs.ts"
-      }
-    },
-    "arch:config:check": {
-      "cache": false,
-      "dependsOn": [
-        "arch:config:generate"
-      ],
-      "executor": "nx:run-commands",
-      "options": {
-        "cwd": ".",
-        "command": "test -z \"$(git ls-files --others --exclude-standard -- 'packages/*/safer-architecture.config.json' 'plugins/*/safer-architecture.config.json')\" && git diff --exit-code -- 'packages/*/safer-architecture.config.json' 'plugins/*/safer-architecture.config.json'"
-      }
-    },
-    "lint:architecture-boundaries": {
-      "cache": true,
-      "inputs": [
-        "workspaceFiles"
-      ],
-      "executor": "nx:run-commands",
-      "options": {
-        "cwd": ".",
-        "command": "node scripts/architecture/check-boundaries.ts"
-      }
-    },
     "lint:typescript": {
       "cache": true,
       "inputs": [
@@ -129,17 +49,6 @@
           "tsc --noEmit -p tsconfig.eslint.json",
           "tsc --noEmit -p scripts/tsconfig.json"
         ]
-      }
-    },
-    "lint:effect": {
-      "cache": true,
-      "inputs": [
-        "workspaceFiles"
-      ],
-      "executor": "nx:run-commands",
-      "options": {
-        "cwd": ".",
-        "command": "node scripts/code/effect-diagnostics.ts"
       }
     },
     "lint:dead-code": {
@@ -163,14 +72,14 @@
         "{workspaceRoot}/package.json",
         "{workspaceRoot}/pnpm-lock.yaml",
         "{workspaceRoot}/*.ts",
-        "{workspaceRoot}/examples/**/*.ts",
+        "{workspaceRoot}/images/**/*.ts",
         "{workspaceRoot}/scripts/**/*.ts",
         "{workspaceRoot}/scripts/tsconfig.json"
       ],
       "executor": "nx:run-commands",
       "options": {
         "cwd": ".",
-        "command": "eslint '*.ts' 'examples/**/*.ts' 'scripts/**/*.ts' --no-error-on-unmatched-pattern --cache --max-warnings=0"
+        "command": "eslint '*.ts' 'images/**/*.ts' 'scripts/**/*.ts' --no-error-on-unmatched-pattern --cache --max-warnings=0"
       }
     },
     "lint:oxlint": {
@@ -182,17 +91,6 @@
       "options": {
         "cwd": ".",
         "command": "oxlint . --deny-warnings"
-      }
-    },
-    "lint:sloppy-code-guard": {
-      "cache": true,
-      "inputs": [
-        "workspaceFiles"
-      ],
-      "executor": "nx:run-commands",
-      "options": {
-        "cwd": ".",
-        "command": "./scripts/code/sloppy-code-guard.sh"
       }
     },
     "lint:script-reachability": {
@@ -222,12 +120,8 @@
     "lint": {
       "cache": false,
       "dependsOn": [
-        "lint:architecture-boundaries",
-        "arch:config:check",
         "lint:root",
-        "lint:effect",
         "lint:oxlint",
-        "lint:sloppy-code-guard",
         "lint:script-reachability",
         "lint:agent-files",
         "lint:dependency-versions",
@@ -238,6 +132,14 @@
         {
           "target": "lint",
           "projects": "@moltzap/*"
+        },
+        {
+          "target": "lint",
+          "projects": "@social-harness/*"
+        },
+        {
+          "target": "typecheck",
+          "projects": "@social-harness/*"
         }
       ],
       "executor": "nx:run-commands",
@@ -281,28 +183,52 @@
         "command": "pnpm exec vitest run --config scripts/docs/vitest.config.ts"
       }
     },
-    "test:mixed-release": {
-      "cache": false,
+    "test:image-input-key": {
       "executor": "nx:run-commands",
-      "dependsOn": [
-        "@moltzap/client:build",
+      "cache": true,
+      "inputs": [
+        "{workspaceRoot}/scripts/release/**/*.ts",
+        "{workspaceRoot}/packages/**/*",
+        "{workspaceRoot}/images/**/*",
+        "{workspaceRoot}/scripts/build/**/*",
+        "{workspaceRoot}/scripts/setup/**/*",
+        "{workspaceRoot}/.node-version",
+        "{workspaceRoot}/.npmrc",
+        "{workspaceRoot}/.dockerignore",
+        "{workspaceRoot}/nx.json",
+        "sharedGlobals",
         {
-          "target": "build",
-          "projects": [
-            "@moltzap/registry"
-          ]
-        }
+          "runtime": "node --version"
+        },
+        "{workspaceRoot}/eslint.shared.ts",
+        "{workspaceRoot}/.pnpmfile.cjs",
+        "{workspaceRoot}/tools/**/*",
+        "{workspaceRoot}/tsconfig*.json"
       ],
       "options": {
-        "command": "vitest run --config scripts/test/mixed-release-vitest.config.ts",
-        "cwd": "."
-      },
+        "command": "node scripts/release/image-input-key.test.ts"
+      }
+    },
+    "docs:api": {
+      "cache": true,
+      "dependsOn": [
+        { "projects": ["@moltzap/social-harness", "@moltzap/registry", "@moltzap/router", "@moltzap/openclaw-channel", "@moltzap/nanoclaw-channel"], "target": "build" }
+      ],
       "inputs": [
-        "sources",
-        "^production",
-        "{workspaceRoot}/packages/registry/src/**/*",
-        "{workspaceRoot}/packages/registry/bin/**/*"
-      ]
+        "{workspaceRoot}/typedoc.json",
+        "{workspaceRoot}/tsconfig*.json",
+        "{workspaceRoot}/packages/**/*.ts",
+        "{workspaceRoot}/packages/**/*.json",
+        "sharedGlobals"
+      ],
+      "outputs": [
+        "{workspaceRoot}/dist/api"
+      ],
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": ".",
+        "command": "pnpm exec typedoc"
+      }
     }
   }
 }

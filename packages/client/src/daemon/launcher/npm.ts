@@ -13,10 +13,7 @@ import { launcherError, type LauncherError } from "./errors.js";
 const SCOPE = "@moltzap/";
 
 /** The package that carries `sharnessd`. */
-export const DAEMON_PACKAGE = "@moltzap/client";
-
-/** The package that carries the wire version a daemon emits. */
-export const IDENTITY_PACKAGE = "@moltzap/identity";
+export const DAEMON_PACKAGE = "@moltzap/social-harness";
 
 /** One published package version, with the fields the launcher reads. */
 export interface PublishedPackage {
@@ -48,7 +45,6 @@ const manifest = Schema.Struct({
   ),
   sharnessHostCodeHash: Schema.optional(Schema.String),
   sharnessWireVersion: Schema.optional(Schema.String),
-  moltzapWireVersion: Schema.optional(Schema.String),
 });
 
 const distTags = Schema.Record({ key: Schema.String, value: Schema.String });
@@ -203,8 +199,7 @@ function visit(
 }
 
 function toPublished(published: typeof manifest.Type): PublishedPackage {
-  const wireVersion =
-    published.sharnessWireVersion ?? published.moltzapWireVersion;
+  const wireVersion = published.sharnessWireVersion;
   return {
     name: published.name,
     version: published.version,

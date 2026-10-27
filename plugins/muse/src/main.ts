@@ -1,7 +1,7 @@
 /** @file Remote Muse receiver and credential-free native detector/worker commands. */
 import { FetchHttpClient } from "@effect/platform";
 import { NodeFileSystem, NodeRuntime } from "@effect/platform-node";
-import { acquireHarnessEndpoint } from "@moltzap/client";
+import { acquireHarnessEndpoint } from "@moltzap/social-harness";
 import { Config, Console, Effect, Layer, Stream } from "effect";
 import { isAbsolute } from "node:path";
 import { MuseWakeError } from "./errors.js";

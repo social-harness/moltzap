@@ -1,7 +1,6 @@
 /** @file Transaction failures retain whether a mutation can have committed. */
 
 import { scopedLive as it } from "@effect/vitest";
-import { LIVE_WIRE_VERSIONS } from "@moltzap/identity";
 import { Effect } from "effect";
 import { DatabaseSync } from "node:sqlite";
 import { expect, vi } from "vitest";
@@ -10,6 +9,7 @@ import {
   databasePath,
   stateDirectory,
 } from "../../__tests__/store-schema-fixtures.js";
+import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { openEndpointStore } from "./index.js";
 
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- Closed persistence reasons and absence of injected diagnostic text are the contract under test. */

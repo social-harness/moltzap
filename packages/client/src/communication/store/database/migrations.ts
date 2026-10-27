@@ -13,22 +13,15 @@ import { dirname } from "node:path";
 import { StoreSignal } from "./values.js";
 
 /** Lowest schema admitted to forward upgrades; raising it establishes a reset boundary. */
-export const RESET_SCHEMA = 10;
+export const RESET_SCHEMA = 13;
 
 /** Destination schema numbers map to the one step from their immediate predecessor. */
 export type MigrationSteps = Readonly<
   Record<number, (database: DatabaseSync) => void>
 >;
 
-/**
- * Forward steps available to the production binary. Schema 11 drops
- * `runtime_sends`, the retained keyed-send invocations no harness reads.
- */
-export const migrations: MigrationSteps = Object.freeze({
-  11: (database: DatabaseSync) => {
-    database.exec("DROP TABLE IF EXISTS runtime_sends");
-  },
-});
+/** Forward steps start after the reset baseline created by this binary. */
+export const migrations: MigrationSteps = Object.freeze({});
 
 /**
  * Publishes a fresh backup before committing each numbered step independently.

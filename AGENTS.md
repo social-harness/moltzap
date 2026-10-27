@@ -34,13 +34,15 @@ faulty or malicious peers. Its packages, executables, and environment variables
 keep the `@moltzap/*` npm names. Executables use `sharness*`, environment
 variables use `SHARNESS_*`, and protocol namespaces use `org.social-harness/*`.
 
-`main` is the only track. The five-layer harness lives in six packages under
-`packages/*`; four publish to npm, each at its own calendar version, and
-`@moltzap/registry` and `@moltzap/nanoclaw-channel` stay private, per
-`docs/spec/layer-interfaces.md` → Publication and versions.
-Releases run from `main` through `.github/workflows/publish.yml` on manual
-dispatch. A user-visible change adds a fragment under `changelog.d/` (see
-`towncrier.toml`).
+Generic OpenClaw and NanoClaw images and their stand-in live tests live under
+`images/`; private product overlays stay in deployment. Agent images are built
+locally for verification and never published from this repository.
+
+`main` is the only track; npm publication membership and versioning follow
+[Publication and versions](docs/spec/layer-interfaces.md#publication-and-versions).
+Releases follow the same section: a merge releases after CI passes, and resets
+release by hand. A user-visible change adds a fragment under `changelog.d/`
+(see `towncrier.toml`).
 
 **The constitution is `docs/vision.md` → The constitution.** It is canonical
 there and paraphrased nowhere, this file included: two copies at the top of the
@@ -159,13 +161,21 @@ and a check fails when the copy disagrees with its source.
   touched CLI `--help`, ends with a `Docs:` URL to the heading that
   matches its error text or command.
 - Fix every instance of a defect or wrong pattern, not the reported
-  one: grep `packages/`, `scripts/`, `tools/`, `bin/`, `.github/`, and
+  one: grep `packages/`, `tests/`, `scripts/`, `tools/`, `images/`, `bin/`, `.github/`, and
   `docs/`, and fix all of it in the same change; one corrected call
   site with five untouched siblings is a regression waiting to be
   rediscovered. Style and guide conformance is the exception, and
   follows the file the change touches.
 - A fix should shrink the system. Prefer removing or consolidating over
   adding a layer, flag, or special case.
+- Build only what this repository owns. Before writing code, find what
+  already does it (a dependency, the agent host, the platform, another
+  layer or a sibling repository) and use or configure that. Do not
+  re-implement, override, or wrap another system's behaviour in waits,
+  retries, preflights or gates; keep no second copy that a check must hold
+  in step; and name in the PR the existing options you rejected for any
+  new machinery. Do not add regression tests which check the absence of
+  behavior. Understand scope and do not go after defense-in-depth.
 - Validate only what our code consumes. Configuration another system owns
   (providers, models, credentials, harness and host settings) passes
   through for that system to accept or reject; a closed set or refusal of it
@@ -175,8 +185,11 @@ and a check fails when the copy disagrees with its source.
   (admission, the firewall, release provenance) are ours to validate.
 
 Effect idiom, typed errors, exhaustive switches, and cast bans are enforced by
-`lint:sloppy-code-guard` and the `agent-code-guard` eslint rules. Read their
-output rather than a summary of it here.
+the `agent-code-guard` eslint rules. Read their output rather than a summary
+of it here.
+
+Package-local `safer-architecture.config.json` files are hand-maintained.
+`pnpm arch:check` runs safer-architecture-lsp against them.
 
 ## Tests
 
@@ -225,6 +238,8 @@ Writing or regenerating public docs uses the `docs` skill at
 Keep repository-owned skills under `.agents/skills/` with a matching Claude
 link.
 Generated files come from their source and must not be edited by hand.
+The API reference uses native TypeDoc output (`pnpm docs:api`); shared site
+content uses Mintlify snippets and `docs.json` variables.
 
 <!-- nx configuration start-->
 <!-- Leave the start & end comments to automatically receive updates. -->
