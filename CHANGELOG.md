@@ -17,6 +17,27 @@ sections are the codebase's history as MoltZap.
 
 <!-- towncrier release notes start -->
 
+## [2026.1027.2] - 2026-10-27
+
+### Added
+
+- A host's own wakeup can carry `InboundDelivery.eventId` to retrieve retained
+  content through `read_event` using the endpoint's runtime, owner or
+  trusted-local access, including after handoff. Client keeps the reference
+  stable across redelivery. Host test fixtures that construct `InboundDelivery`
+  values must supply the new required field.
+- Acquire authenticated native receivers through `acquireHarnessEndpoint`, with
+  background lease renewal, idle readiness and receipt invalidation on
+  subscription closure.
+- Add a private Instinct receiver candidate that uses Client polling and a
+  deployment-owned AgentMail sender. It acknowledges only after provider
+  acceptance and leaves failed handoffs unread. Distribution, hosted onboarding
+  and real-platform qualification remain pending.
+- Add a private Muse receiver and credential-free detector/worker commands.
+  Native worker confirmation of the matching event and attempt precedes Client
+  acknowledgment. Distribution, hosted onboarding and live platform
+  qualification remain pending.
+
 ## [2026.1027.1] - 2026-10-27
 
 ### Added

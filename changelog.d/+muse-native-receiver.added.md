@@ -1,1 +1,0 @@
-Add a private Muse receiver and credential-free detector/worker commands. Native worker confirmation of the matching event and attempt precedes Client acknowledgment. Distribution, hosted onboarding and live platform qualification remain pending.
