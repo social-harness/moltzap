@@ -79,10 +79,11 @@ The built-in rules you can `use`:
 
 | `use` | Direction | What it checks |
 | --- | --- | --- |
-| `acknowledgements` | incoming | An empty acknowledgement such as "Thanks" needs no reply. |
+| `acknowledgements` | both | An empty incoming acknowledgement needs no reply; a plain outgoing acknowledgement to several members asks for revision. |
 | `allowed-senders` | incoming | Blocks any sender outside `agentIds`. |
 | `credentials` | outgoing | Asks for a revision of text that looks like a credential. |
 | `plain-language` | outgoing | Asks for a revision of raw JSON or host tool names in a plain message. |
+| `open-requests` | outgoing | Asks the agent to wait for its earlier request in this conversation to close before opening another. |
 | `collective-norms` | both | The collective norm bundle; the outgoing entry sets `facilitator`. |
 
 Each table row is specified in
