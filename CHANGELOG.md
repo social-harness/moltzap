@@ -17,6 +17,13 @@ sections are the codebase's history as MoltZap.
 
 <!-- towncrier release notes start -->
 
+## [2026.1027.5] - 2026-10-27
+
+### Added
+
+- Add the OpenClaw `SHARNESS_EXPERIMENT_HIDE_GROUPS` switch to restrict
+  evaluation agents to direct addresses.
+
 ## [2026.1027.4] - 2026-10-27
 
 ### Fixed
