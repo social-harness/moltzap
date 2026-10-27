@@ -8,7 +8,6 @@ import {
   CLIENT_INFO_META_KEY,
   PROTOCOL_VERSION_META_KEY,
 } from "@modelcontextprotocol/server";
-import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { Deferred, Effect, Fiber, Redacted, Schema } from "effect";
 import { describe, expect } from "vitest";
 import { loopbackMcpEndpoint } from "../../__tests__/mcp-http-fixtures.js";
@@ -19,6 +18,7 @@ import {
   encodeRuntimeValue,
   openEndpointStore,
 } from "../../communication/store/index.js";
+import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { noHistoryExport } from "../inbox/history-export.js";
 import { makeHostDelivery } from "../inbox/host-delivery.js";
 import { decodePollResult, type PollResult } from "../protocol/index.js";
