@@ -17,6 +17,13 @@ sections are the codebase's history as MoltZap.
 
 <!-- towncrier release notes start -->
 
+## [2026.1027.0] - 2026-10-27
+
+### Removed
+
+- `policy_update` returns `{activeRevision}` only; the constant `retroactive:
+  false` field is gone (#1465).
+
 ## [2026.1026.9] - 2026-10-26
 
 ### Changed
