@@ -9,7 +9,7 @@ import { NodeContext, NodeRuntime } from "@effect/platform-node";
 import { Cause, Data, Effect, type ParseResult, Schema, Stream } from "effect";
 import { join, relative, resolve } from "node:path";
 import { parse } from "yaml";
-import { WIRE_VERSION } from "../../packages/client/src/identity/wire-version.ts";
+import { WIRE_VERSION } from "../../packages/social-harness/src/identity/wire-version.ts";
 import { recordPackedWireVersion } from "../release/content-hash.ts";
 import { productManifests } from "../repo/packages.ts";
 

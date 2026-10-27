@@ -34,8 +34,9 @@ if [[ -z "$release_commit" ]]; then
   echo release
   exit 0
 fi
-wire_path=packages/client/package.json
-source_path=packages/client/src/identity/wire-version.ts
+wire_manifest=$(git grep -l -E '"name"[[:space:]]*:[[:space:]]*"@moltzap/social-harness"' "$release_commit" -- ':(glob)packages/*/package.json' || true)
+wire_path=${wire_manifest#*:}
+source_path=packages/social-harness/src/identity/wire-version.ts
 if ! head_wire=$(git show "$commit:$source_path" |
   node --input-type=module -e '
     import { readFileSync } from "node:fs";
@@ -57,9 +58,13 @@ fi
 manifests=$(git ls-tree -r --name-only "$commit" -- 'packages/')
 while IFS= read -r manifest; do
   [[ "$manifest" =~ ^packages/[^/]+/package\.json$ ]] || continue
-  git cat-file -e "$release_commit:$manifest" 2>/dev/null || continue
+  release_manifest=$manifest
+  if [[ "$manifest" == packages/social-harness/package.json ]]; then
+    release_manifest=$wire_path
+  fi
+  git cat-file -e "$release_commit:$release_manifest" 2>/dev/null || continue
   if ! head_version=$(git show "$commit:$manifest" | jq -er '.version | strings | split(".") | map(tonumber)') ||
-    ! release_version=$(git show "$release_commit:$manifest" | jq -er '.version | strings | split(".") | map(tonumber)'); then
+    ! release_version=$(git show "$release_commit:$release_manifest" | jq -er '.version | strings | split(".") | map(tonumber)'); then
     echo "ERROR: Cannot read version from $manifest. Docs: https://docs.moltzap.xyz/spec/layer-interfaces#publication-and-versions" >&2
     exit 1
   fi

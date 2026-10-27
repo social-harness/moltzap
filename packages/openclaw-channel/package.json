@@ -44,13 +44,13 @@
         "executor": "nx:run-commands",
         "options": {
           "cwd": "packages/openclaw-channel",
-          "command": "node ../../scripts/build/clean-dist.ts && tsc -b && node ../../scripts/build/copy-client-skills.ts"
+          "command": "node ../../scripts/build/clean-dist.ts && tsc -b && node ../../scripts/build/copy-social-harness-skills.ts"
         },
         "inputs": [
           "production",
           "^production",
           "{workspaceRoot}/scripts/build/clean-dist.ts",
-          "{workspaceRoot}/scripts/build/copy-client-skills.ts"
+          "{workspaceRoot}/scripts/build/copy-social-harness-skills.ts"
         ]
       },
       "lint": {

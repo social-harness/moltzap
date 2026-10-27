@@ -7,6 +7,6 @@ and English rules for collective participation; it reads open requests through
 `open-requests.ts`, as the built-in does, and the Client release from
 `../../release/` for revision and provenance bytes. `outcome.ts` holds shared
 rule results and digest construction. The bundle's English norms also ship as
-`BEHAVIOR.md` files under `packages/client/behaviors/collectives/`.
+`BEHAVIOR.md` files under `packages/social-harness/behaviors/collectives/`.
 
 See the [message-policy specification](https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/message-policy.md#message-policy-file).

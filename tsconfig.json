@@ -2,7 +2,7 @@
   "files": [],
   "references": [
     {
-      "path": "packages/client"
+      "path": "packages/social-harness"
     },
     {
       "path": "packages/openclaw-channel"

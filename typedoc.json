@@ -2,7 +2,7 @@
   "$schema": "https://typedoc.org/schema.json",
   "entryPointStrategy": "packages",
   "entryPoints": [
-    "packages/client",
+    "packages/social-harness",
     "packages/nanoclaw-channel",
     "packages/openclaw-channel",
     "packages/router",

@@ -39,7 +39,7 @@ const RESET_SKIP_REASON =
   "No post-reset release is published; the mixed-release gate starts with the first release after the reset.";
 const workspaceRoot = resolve(import.meta.dirname, "../../..");
 const packages = {
-  "@moltzap/social-harness": join(workspaceRoot, "packages/client"),
+  "@moltzap/social-harness": join(workspaceRoot, "packages/social-harness"),
 };
 
 /**

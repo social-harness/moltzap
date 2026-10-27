@@ -13,7 +13,7 @@ importers:
   packages/router:
     dependencies:
       '@fixture/core':
-        version: link:../client
+        version: link:../social-harness
       plain:
         version: 0.97.0(effect@3.22.1)
       alias:
@@ -24,8 +24,8 @@ importers:
   packages/registry:
     dependencies:
       '@fixture/core':
-        version: link:../client
-  packages/client:
+        version: link:../social-harness
+  packages/social-harness:
     optionalDependencies:
       leaf:
         version: 1.0.0
@@ -64,8 +64,8 @@ snapshots:
 export const dockerfile = `FROM node:24@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa AS build
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY packages/router/ packages/router/
-COPY packages/client/src/index.ts packages/client/src/index.ts
-COPY packages/client/src/internal.ts packages/client/src/internal.ts
+COPY packages/social-harness/src/index.ts packages/social-harness/src/index.ts
+COPY packages/social-harness/src/internal.ts packages/social-harness/src/internal.ts
 COPY scripts/build/ scripts/build/
 FROM node:24@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 COPY --from=build /deploy/ /app/
@@ -158,21 +158,22 @@ export function fixtureFiles(
     "scripts/build/image.ts": "export {};\n",
     "images/router/Dockerfile": dockerfile,
     "images/router/base-digest": "sha256:base\n",
-    "packages/client/package.json": clientManifest(),
-    "packages/client/tsconfig.json": JSON.stringify({
+    "packages/social-harness/package.json": clientManifest(),
+    "packages/social-harness/tsconfig.json": JSON.stringify({
       extends: "../../tsconfig.base.json",
       compilerOptions: { rootDir: "src", outDir: "dist" },
     }),
-    "packages/client/src/index.ts": "export const publicValue = 1;\n",
-    "packages/client/src/internal.ts":
+    "packages/social-harness/src/index.ts": "export const publicValue = 1;\n",
+    "packages/social-harness/src/internal.ts":
       'export { privateValue } from "./private.js";\n',
-    "packages/client/src/private.ts": "export const privateValue = 1;\n",
-    "packages/client/src/only-require.ts": "export {};",
-    "packages/client/src/only-node.ts": "export {};",
-    "packages/client/src/only-sync.ts": "export {};",
-    "packages/client/src/only-default.ts": "export {};",
-    "packages/client/src/test.ts": "export const testOnly = 1;\n",
-    "packages/client/src/daemon/run.ts": "export const daemon = 1;\n",
+    "packages/social-harness/src/private.ts":
+      "export const privateValue = 1;\n",
+    "packages/social-harness/src/only-require.ts": "export {};",
+    "packages/social-harness/src/only-node.ts": "export {};",
+    "packages/social-harness/src/only-sync.ts": "export {};",
+    "packages/social-harness/src/only-default.ts": "export {};",
+    "packages/social-harness/src/test.ts": "export const testOnly = 1;\n",
+    "packages/social-harness/src/daemon/run.ts": "export const daemon = 1;\n",
   };
 }
 

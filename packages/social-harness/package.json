@@ -6,9 +6,9 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/social-harness/moltzap.git",
-    "directory": "packages/client"
+    "directory": "packages/social-harness"
   },
-  "homepage": "https://github.com/social-harness/moltzap/tree/main/packages/client#readme",
+  "homepage": "https://github.com/social-harness/moltzap/tree/main/packages/social-harness#readme",
   "bugs": {
     "url": "https://github.com/social-harness/moltzap/issues"
   },
@@ -65,7 +65,7 @@
       "build": {
         "executor": "nx:run-commands",
         "options": {
-          "cwd": "packages/client",
+          "cwd": "packages/social-harness",
           "command": "node ../../scripts/build/clean-dist.ts && tsc -b"
         },
         "inputs": [
@@ -77,7 +77,7 @@
       "lint": {
         "executor": "nx:run-commands",
         "options": {
-          "cwd": "packages/client",
+          "cwd": "packages/social-harness",
           "command": "eslint . --cache --max-warnings=0"
         }
       },
@@ -89,13 +89,13 @@
         ],
         "cache": false,
         "options": {
-          "command": "node scripts/test-client-package.ts"
+          "command": "node scripts/test-social-harness-package.ts"
         }
       },
       "arch:check": {
         "executor": "nx:run-commands",
         "options": {
-          "cwd": "packages/client",
+          "cwd": "packages/social-harness",
           "command": "safer-architecture-lsp check ."
         }
       },
@@ -106,7 +106,7 @@
           "^build"
         ],
         "options": {
-          "cwd": "packages/client",
+          "cwd": "packages/social-harness",
           "command": "vitest run --config vitest.integration.config.ts"
         }
       }

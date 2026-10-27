@@ -12,11 +12,11 @@ import {
 
 const workspaceRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
-runGate("sharness-client-pack-", (temporaryRoot) =>
+runGate("sharness-social-harness-pack-", (temporaryRoot) =>
   Effect.gen(function* () {
     const { archives } = yield* packProductClosure(
       workspaceRoot,
-      "client",
+      "social-harness",
       temporaryRoot,
     );
     const consumerRoot = yield* installPackedConsumer({
@@ -47,14 +47,14 @@ runGate("sharness-client-pack-", (temporaryRoot) =>
       },
     );
     yield* verifyInternalResolution(consumerRoot);
-    return "client package consumer check passed";
+    return "social-harness package consumer check passed";
   }),
 );
 
 /** Source manifests select the entries an ordinary consumer can import. */
 function publicImports(): string {
   return productManifests(workspaceRoot)
-    .filter(({ dir }) => dir === "client")
+    .filter(({ name }) => name === "@moltzap/social-harness")
     .flatMap(({ name, exports }) =>
       Object.entries(exports)
         .filter(

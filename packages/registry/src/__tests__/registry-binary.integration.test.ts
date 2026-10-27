@@ -917,7 +917,7 @@ const makeExternalConsumer = Effect.gen(function* () {
     join(scopeDirectory, "registry"),
   );
   yield* fileSystem.symlink(
-    fileURLToPath(new URL("../../../client/", import.meta.url)),
+    fileURLToPath(new URL("../../../social-harness/", import.meta.url)),
     join(scopeDirectory, "social-harness"),
   );
   return directory;

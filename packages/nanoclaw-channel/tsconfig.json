@@ -14,7 +14,7 @@
   ],
   "references": [
     {
-      "path": "../client"
+      "path": "../social-harness"
     }
   ]
 }

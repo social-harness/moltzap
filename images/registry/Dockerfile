@@ -6,7 +6,7 @@ WORKDIR /build
 ENV HUSKY=0 NX_DAEMON=false NX_NO_CLOUD=true
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc .node-version nx.json tsconfig.base.json ./
 COPY scripts/build/clean-dist.ts scripts/build/clean-dist.ts
-COPY packages/client/ packages/client/
+COPY packages/social-harness/ packages/social-harness/
 COPY packages/registry/ packages/registry/
 RUN corepack enable && corepack prepare pnpm@10.6.2 --activate
 RUN pnpm install --frozen-lockfile --filter @moltzap/registry...

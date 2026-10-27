@@ -219,7 +219,7 @@ export const ROUTER_BINARY = join(
 /** The daemon executable runs the built Client. */
 export const DAEMON_BINARY = join(
   WORKSPACE_ROOT,
-  "packages/client/bin/sharnessd",
+  "packages/social-harness/bin/sharnessd",
 );
 
 const FIREWALL_DAEMON = join(
@@ -721,7 +721,7 @@ export const acquireDaemonProcess = (
       binary,
       args,
       fixture.environment,
-      join(WORKSPACE_ROOT, "packages/client"),
+      join(WORKSPACE_ROOT, "packages/social-harness"),
     );
     yield* awaitReady(
       running,
