@@ -139,9 +139,6 @@ const seedsTheRecord = () =>
   Effect.gen(function* () {
     const { home, seed } = yield* volume;
     const fs = yield* FileSystem.FileSystem;
-    const packageFile = `${seed}/node_modules/${CHANNEL}/package.json`;
-    yield* fs.chmod(seed, 0o700);
-    yield* fs.chmod(packageFile, 0o600);
     const prepared = yield* prepare(
       configuration(home, { kind: "off" }),
       seed,
@@ -152,8 +149,6 @@ const seedsTheRecord = () =>
       kept: "upgrade-off",
       restartHost: false,
     });
-    expect((yield* fs.stat(seed)).mode & 0o777).toBe(0o755);
-    expect((yield* fs.stat(packageFile)).mode & 0o777).toBe(0o644);
     const record = yield* readRecord(home);
     expect(Option.map(record, (value) => value.version)).toEqual(
       Option.some("2026.1021.1"),

@@ -14,6 +14,8 @@ import {
   Path,
 } from "@effect/platform";
 import { Effect, Option, Schema, Stream } from "effect";
+// eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Effect FileSystem has no lstat; the walk must identify symlinks without following them.
+import { lstat } from "node:fs/promises";
 import { launcherError, type LauncherError } from "./errors.js";
 import { integrityOf } from "./integrity.js";
 import { DAEMON_PACKAGE } from "./npm.js";
@@ -250,8 +252,9 @@ export const pointCurrent = Effect.fn("Launcher.pointCurrent")(
 );
 
 /**
- * Package code contains no secrets and must load from a host running as
- * another user. Symbolic links are left alone: a workspace link may dangle,
+ * Runs after the launcher installs a release, before recording it. Package
+ * code contains no secrets and must load from a host running as another user.
+ * Symbolic links are left alone: a workspace link may dangle,
  * and following one would change modes outside the release.
  */
 export const readableRelease = Effect.fn("Launcher.readableRelease")(
@@ -264,12 +267,12 @@ export const readableRelease = Effect.fn("Launcher.readableRelease")(
     ];
     for (const entry of entries) {
       const target = path.join(prefix, entry);
-      if (Option.isSome(yield* Effect.option(fs.readLink(target)))) {
+      const info = yield* Effect.tryPromise(() => lstat(target));
+      if (info.isSymbolicLink()) {
         continue;
       }
-      const info = yield* fs.stat(target);
       const read =
-        info.type === "Directory" || (info.mode & 0o111) !== 0 ? 0o555 : 0o444;
+        info.isDirectory() || (info.mode & 0o111) !== 0 ? 0o555 : 0o444;
       if ((info.mode & read) !== read) {
         yield* fs.chmod(target, info.mode | read);
       }
