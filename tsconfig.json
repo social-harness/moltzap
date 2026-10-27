@@ -2,6 +2,9 @@
   "files": [],
   "references": [
     {
+      "path": "plugins/grokbot"
+    },
+    {
       "path": "plugins/muse"
     },
     {
