@@ -136,6 +136,17 @@
         "@electric-sql/pglite",
         "@electric-sql/pglite-socket"
       ]
+    },
+    "plugins/instinct": {
+      "entry": [
+        "src/main.ts",
+        "src/**/*.test.ts",
+        "*.config.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "*.ts"
+      ]
     }
   },
   "ignoreIssues": {
