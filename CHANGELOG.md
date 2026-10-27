@@ -17,6 +17,20 @@ sections are the codebase's history as MoltZap.
 
 <!-- towncrier release notes start -->
 
+## [2026.1027.1] - 2026-10-27
+
+### Added
+
+- Client ships the collective norms as `BEHAVIOR.md` behaviors under
+  `behaviors/collectives/`, which a message-policy document adds through
+  `english.fixedBehaviors`, beside a new `open-requests` built-in and an
+  outgoing `acknowledgements` check that asks for revision of an exact
+  acknowledgement posted to several members (#1465).
+- Native receivers can poll the admitted inbox through MCP Events with bounded
+  replay and a renewable lease. Consumer generations prevent stopped or replaced
+  receivers from acknowledging work; push and webhook delivery share the same
+  single-consumer ownership.
+
 ## [2026.1027.0] - 2026-10-27
 
 ### Removed
