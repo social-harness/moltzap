@@ -572,7 +572,6 @@ export const policyReadSchema = exactStruct({
 /** Activation acknowledges future checks only; retained dispositions are unchanged. */
 export const policyUpdateResultSchema = exactStruct({
   activeRevision: Schema.NonEmptyString,
-  retroactive: Schema.Literal(false),
 });
 
 /** Inclusive Unix milliseconds permit polling across checks completed out of start order. */
