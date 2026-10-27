@@ -476,7 +476,7 @@ parameterizes them and adds no code:
 
 | `use` | Direction | Middleware id | Rules |
 | --- | --- | --- | --- |
-| `acknowledgements` | both | `org.social-harness/acknowledgements` | `acknowledgement`: an empty incoming acknowledgement needs no response unless the agent's own later message asked its sender something; `no-acknowledgement-posts`: asks for revision of a plain outgoing post to two or more members that only thanks or acknowledges |
+| `acknowledgements` | both | `org.social-harness/acknowledgements` | `acknowledgement`: an exact empty incoming acknowledgement, such as "Thanks", needs no response unless the agent's own later message asked its sender something; `no-acknowledgement-posts`: asks for revision of a plain outgoing post to two or more members whose whole text is such an acknowledgement |
 | `allowed-senders` | incoming | `org.social-harness/allowed-senders` | `allowed-sender` (safety): blocks any certified sender outside `agentIds`; an empty list admits none |
 | `credentials` | outgoing | `org.social-harness/credentials` | `credentials`: asks for revision of credential-shaped text or a labelled credential value other than a status word |
 | `plain-language` | outgoing | `org.social-harness/plain-language` | `plain-language`: asks for revision of a plain send that carries raw JSON, a name in `toolNames`, a name starting with one of `toolNamePrefixes`, or a name in `invocationToolNames` formatted or invoked as a tool |
@@ -513,12 +513,10 @@ a gather answer also closes its request, while an all_gather answer does not.
 A group-addressed gather posts each request in a direct conversation, outside
 the group history window, so this check cannot see those requests.
 
-Both directions of `acknowledgements` use one bounded vocabulary: every word
-must thank, acknowledge receipt, or be acknowledgement filler, with at least
-one acknowledgement word. A question mark, digit or link keeps a message from
-counting as empty. Consent or approval such as "sounds good" remains an answer.
-Incoming messages that may answer the agent's outstanding request retain their
-ordinary response expectations, including when the history has gaps.
+Both directions of `acknowledgements` recognize only an exact acknowledgement
+phrase ("thanks", "thank you", "got it", "noted", "ack" or "acknowledged",
+with trailing punctuation), so a message carrying anything else, such as an
+emoji, a name or a time, keeps its ordinary meaning.
 
 The collective norm bundle registers one middleware per direction under one
 revision, the SHA-256 of its edition, both directions' English revisions and
@@ -530,13 +528,14 @@ every release moves it. Its outgoing code rules are
 code rule refused the send. The incoming registration assesses those rules
 and `acknowledgement`. The facilitator role is recorded in the outgoing
 provenance, not the revision, so every member of a run registers the same
-revision. Its code rules read the same open-request history and
-acknowledgement vocabulary as the built-ins above. Because it registers its
-English rules as code, `firewall_decisions` reports their judgments under the
-bundle and `policy_read` lists them without text; the
-[shipped collective behaviors](#shipped-collective-behaviors) are the same
-norms as ordinary English rules. The daemon logs each registration's id and
-revision at startup.
+revision. Its `one-open-request` reads open requests as `open-requests` does;
+`no-acknowledgement-posts` uses the bundle's own bounded acknowledgement
+vocabulary, which its edition records. Because it registers its English rules
+as code, `firewall_decisions` reports their judgments under the bundle and
+`policy_read` lists them without text; the
+[shipped collective behaviors](#shipped-collective-behaviors) carry the same
+English norms as ordinary English rules. The daemon logs each registration's
+id and revision at startup.
 
 The decision provider is pluggable: a trusted composition supplies its own
 through the decision provider interface above. `jev` names Jev, an optional
@@ -635,13 +634,13 @@ ordinary English middleware, `org.social-harness/english`:
 
 Add the directories you want to `english.fixedBehaviors`, beside the
 deterministic `open-requests` and `acknowledgements` built-ins. A document uses
-either these behaviors or the `collective-norms` bundle: their rule ids
-collide, so loading both fails with `duplicate-id`.
+either these behaviors or the `collective-norms` bundle, not both: `one-gather`,
+`announce-once` and `result-settles` beside the bundle fail with `duplicate-id`.
+Fixed English behaviors are assessed in both directions.
 For example, save this policy beside the `node_modules` directory containing
-the installed Client package. Replace `agt_AAAAAAAAAAAAAAAAAAAAAA` with the
-facilitator's authenticated AgentId and describe the conversation the fact
-applies to. The evaluator sees AgentIds, so a fact naming only an agent name
-does not identify the sender it must compare:
+the installed Client package, and replace `agt_AAAAAAAAAAAAAAAAAAAAAA` with
+the facilitator's AgentId. The evaluator sees AgentIds, so a fact naming only
+an agent name does not identify the sender it must compare:
 
 ```json
 {
@@ -662,7 +661,7 @@ does not identify the sender it must compare:
   "facts": [{
     "id": "conversation-facilitator",
     "source": "owner",
-    "text": "For this conversation, AgentId agt_AAAAAAAAAAAAAAAAAAAAAA is the facilitator.",
+    "text": "AgentId agt_AAAAAAAAAAAAAAAAAAAAAA is the facilitator of this agent's group conversations.",
     "visibility": "assessor"
   }]
 }
@@ -676,9 +675,9 @@ apply to shipped behaviors as well.
 Set `SHARNESS_DECISION_PROVIDER_KEY_FILE` for `jev` as described above.
 On startup the behaviors load as fixed English rules; `policy_read` lists
 their full text with `from: "english"`, and `firewall_decisions` records their
-judgments as English. All members use the same facilitator behavior text;
-the owner facts name the facilitator. An agent proposing the facilitator role
-uses the [shared-norm agreement process](../norms.md) with that behavior.
+judgments as English. All members use the same facilitator behavior text,
+and each member's own document carries the owner fact that names the
+facilitator; `policy_update` adds rules, not facts.
 
 ### Editable English policy
 

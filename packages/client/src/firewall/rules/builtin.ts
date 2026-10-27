@@ -9,7 +9,6 @@ import type {
   MiddlewareInput,
   MiddlewareResult,
 } from "../evaluator/index.js";
-import { isAcknowledgementOnly } from "./acknowledgement.js";
 import { hasOpenRequest } from "./open-requests.js";
 import { revisionOutcome, sha256 } from "./outcome.js";
 
@@ -38,6 +37,10 @@ const CREDENTIAL_STATUS =
 /** A tool name stands alone: not inside a word, a URL path, a scheme or a code. */
 const BEFORE_NAME = String.raw`(?<![\w$:/-])`;
 const AFTER_NAME = String.raw`(?![\w$:/-])`;
+
+/** An acknowledgement and nothing else, such as "Thanks" or "Got it". */
+const EXACT_ACKNOWLEDGEMENT =
+  /^(?:thanks|thank you|got it|noted|ack|acknowledged)[.!\s]*$/iu;
 
 /**
  * Every send's text, a collective's rendered form and answer included, is
@@ -176,8 +179,9 @@ export function openRequestsPolicy(): MessageMiddleware {
  * reply unless the agent's own later message to its sender asked for one.
  * Questions, requests, collective operations and paraphrases keep their
  * ordinary response expectations: this bounded check does not classify
- * arbitrary prose. A plain outgoing post to two or more members that only
- * thanks or acknowledges asks for revision with registered stop feedback.
+ * arbitrary prose. A plain outgoing post to two or more members whose whole
+ * text is such an acknowledgement asks for revision with registered stop
+ * feedback.
  * @returns The `org.social-harness/acknowledgements` middleware.
  */
 export function acknowledgementsPolicy(): MessageMiddleware {
@@ -244,7 +248,7 @@ export function allowedSendersPolicy(
   };
 }
 
-/** One shared vocabulary drives incoming response expectations and outgoing revisions. */
+/** One exact phrase list drives incoming response expectations and outgoing revisions. */
 function checkAcknowledgements({
   event,
   context,
@@ -252,7 +256,7 @@ function checkAcknowledgements({
   const empty =
     event.direction === "incoming" &&
     event.message.operation === undefined &&
-    isAcknowledgementOnly(event.message.text) &&
+    EXACT_ACKNOWLEDGEMENT.test(event.message.text) &&
     !mayAnswerRequest(context, event.message.sender);
   return Effect.succeed({
     findings: [
@@ -264,7 +268,7 @@ function checkAcknowledgements({
         ruleId: "no-acknowledgement-posts",
         outcome:
           event.direction === "outgoing" && isGroupPost(event.message)
-            ? revisionOutcome(isAcknowledgementOnly(event.message.text))
+            ? revisionOutcome(EXACT_ACKNOWLEDGEMENT.test(event.message.text))
             : "not-applicable",
       },
     ],

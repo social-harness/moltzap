@@ -290,25 +290,22 @@ it.each([
     }),
 );
 
-it.each([
-  "Thanks everyone!",
-  "Received, thank you.",
-  "Got it, team.",
-  "Much appreciated.",
-])("asks for revision of a group acknowledgement: %s", (text) =>
-  Effect.gen(function* () {
-    const firewall = yield* firewallFor({
-      outgoing: [{ use: "acknowledgements" }],
-    });
-    const result = yield* firewall.checkOutgoing(
-      { ...message(text), recipients: ["alice", "bob"] },
-      SENDING,
-    );
-    expect(result.judgment).toBe("revise");
-    expect(result.feedback).toEqual([
-      expect.objectContaining({ nextAction: "stop" }),
-    ]);
-  }),
+it.each(["Thanks!", "Thank you.", "Got it", "Noted."])(
+  "asks for revision of a group acknowledgement: %s",
+  (text) =>
+    Effect.gen(function* () {
+      const firewall = yield* firewallFor({
+        outgoing: [{ use: "acknowledgements" }],
+      });
+      const result = yield* firewall.checkOutgoing(
+        { ...message(text), recipients: ["alice", "bob"] },
+        SENDING,
+      );
+      expect(result.judgment).toBe("revise");
+      expect(result.feedback).toEqual([
+        expect.objectContaining({ nextAction: "stop" }),
+      ]);
+    }),
 );
 
 it.each([
@@ -317,6 +314,8 @@ it.each([
   "Thanks for https://example.com/info",
   "Thanks, sounds good.",
   "Thanks, Bob.",
+  "Thanks 👎",
+  "Thanks, ❌",
   "👍",
 ])("sends group information and answers: %s", (text) =>
   Effect.gen(function* () {
@@ -349,17 +348,6 @@ it("sends a direct acknowledgement and a collective answer", () =>
     expect(answer.judgment).toBe("allow");
   }));
 
-it.each(["Received, thank you.", "Got it, team.", "Much appreciated."])(
-  "uses the shared acknowledgement vocabulary for incoming messages: %s",
-  (text) =>
-    Effect.gen(function* () {
-      const result = yield* received(message(text), CONTEXT);
-      expect(result.guidance).toEqual([
-        expect.objectContaining({ expectation: "none" }),
-      ]);
-    }),
-);
-
 const NOW = 1_792_000_000_000;
 const OPEN_REQUEST = {
   ...entry("prior-request", MEMBER, "concierge-id", "Which day?"),
@@ -380,7 +368,7 @@ const NEXT_REQUEST = {
   },
 } as const;
 
-it("refuses a second open request from persisted conversation history", () =>
+it("refuses a second request while its first is open in the conversation", () =>
   Effect.gen(function* () {
     const firewall = yield* firewallFor({
       outgoing: [{ use: "open-requests" }],
@@ -432,14 +420,10 @@ it("opens another request after the deadline", () =>
     expect(result.judgment).toBe("allow");
   }));
 
-it.each(["gather", "all_gather"] as const)(
-  "handles a %s answer while opening another request",
-  (op) =>
-    Effect.gen(function* () {
-      const firewall = yield* firewallFor({
-        outgoing: [{ use: "open-requests" }],
-      });
-      const result = yield* firewall.checkOutgoing(NEXT_REQUEST, {
+function afterAnswer(op: "gather" | "all_gather") {
+  return firewallFor({ outgoing: [{ use: "open-requests" }] }).pipe(
+    Effect.flatMap((firewall) =>
+      firewall.checkOutgoing(NEXT_REQUEST, {
         ...SENDING,
         now: NOW,
         history: [
@@ -449,10 +433,39 @@ it.each(["gather", "all_gather"] as const)(
             operation: { kind: "answer", op, id: "col_open" },
           },
         ],
-      });
-      expect(result.judgment).toBe(op === "gather" ? "allow" : "revise");
-    }),
-);
+      }),
+    ),
+  );
+}
+
+it("opens another request once its gather is answered", () =>
+  Effect.gen(function* () {
+    expect((yield* afterAnswer("gather")).judgment).toBe("allow");
+  }));
+
+it("keeps an all_gather open after one member answers", () =>
+  Effect.gen(function* () {
+    expect((yield* afterAnswer("all_gather")).judgment).toBe("revise");
+  }));
+
+it("opens a request while a peer's own request is open", () =>
+  Effect.gen(function* () {
+    const firewall = yield* firewallFor({
+      outgoing: [{ use: "open-requests" }],
+    });
+    const result = yield* firewall.checkOutgoing(NEXT_REQUEST, {
+      ...SENDING,
+      now: NOW,
+      history: [
+        {
+          ...OPEN_REQUEST,
+          ...entry("peer-request", "concierge-id", MEMBER, "Which day?"),
+          operation: OPEN_REQUEST.operation,
+        },
+      ],
+    });
+    expect(result.judgment).toBe("allow");
+  }));
 
 function received(candidate: typeof Message.Encoded, context: MessageContext) {
   return firewallFor(ACKNOWLEDGEMENTS).pipe(
