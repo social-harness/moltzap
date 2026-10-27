@@ -42,6 +42,7 @@ import {
   decodeHarnessSendErrorData,
   decodeHarnessSendResult,
   type DeliveryToken,
+  eventIdOf,
 } from "../protocol/operations.js";
 import {
   ConnectError,
@@ -374,6 +375,7 @@ const unseenDeliveries = (
     }
     seen.add(entry.deliveryToken);
     deliveries.push({
+      eventId: eventIdOf(entry.deliveryToken),
       item: entry.item,
       acknowledge: callAcknowledgeDelivery(
         client,

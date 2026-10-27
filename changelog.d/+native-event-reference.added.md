@@ -1,0 +1,1 @@
+A host's own wakeup can carry `InboundDelivery.eventId` to retrieve retained content through `read_event` using the endpoint's runtime, owner or trusted-local access, including after handoff. Client keeps the reference stable across redelivery. Host test fixtures that construct `InboundDelivery` values must supply the new required field.

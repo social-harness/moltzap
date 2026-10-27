@@ -7,12 +7,14 @@ import {
   Effect,
   Fiber,
   Queue,
+  Redacted,
   Schema,
   Stream,
   TestClock,
 } from "effect";
 import { describe, expect } from "vitest";
 import type { InboundDelivery } from "./capability.js";
+import { makeToolCallRequest } from "../../__tests__/daemon-runtime-harness.js";
 import { localGuidance } from "../../__tests__/message-policy-fixtures.js";
 import {
   nativeCredential,
@@ -78,6 +80,23 @@ const recoverCanonicalContent = () =>
     expect((yield* fixture.store.readInboxSummary()).pendingCount).toBe(0);
     yield* Fiber.interrupt(listening);
     expect(fixture.handler.hasActiveSubscription()).toBe(false);
+    const request = makeToolCallRequest({
+      id: "retained-native-work",
+      name: "read_event",
+      toolArguments: { eventId: delivery.eventId },
+    });
+    request.headers.set(
+      "authorization",
+      `Bearer ${Redacted.value(nativeCredential)}`,
+    );
+    const retained = yield* Effect.tryPromise(() =>
+      fixture.handler.fetch(request),
+    ).pipe(
+      Effect.flatMap((response) => Effect.tryPromise(() => response.json())),
+    );
+    expect(retained).toMatchObject({
+      result: { structuredContent: { item: payload, guidance } },
+    });
   });
 
 const signalIdleReadiness = () =>

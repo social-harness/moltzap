@@ -207,6 +207,7 @@ type GuidanceRenderingIsExact = Expect<
   >
 >;
 type ExpectedDelivery = Readonly<{
+  eventId: string;
   item: InboundItem;
   guidance?: LocalGuidance;
   acknowledge: Effect.Effect<void, DeliveryAcknowledgeError>;

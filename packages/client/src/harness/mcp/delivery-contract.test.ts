@@ -204,6 +204,32 @@ const readsFailure = () =>
     expect(yield* test.inbox).toEqual(page);
   });
 
+const retainsEventReference = () =>
+  Effect.gen(function* () {
+    const test = yield* fixture;
+    yield* test.deliver();
+    const endpoint = yield* acquireHarnessEndpoint(test.url);
+    const first = yield* endpoint.messages.pipe(
+      Stream.take(1),
+      Stream.runCollect,
+      Effect.map(Chunk.unsafeHead),
+    );
+    yield* endpoint.messages.pipe(
+      Stream.take(1),
+      Stream.runForEach((delivery) =>
+        Effect.gen(function* () {
+          expect(delivery.eventId).toBe(first.eventId);
+          yield* delivery.acknowledge;
+          const retained = yield* test.call("read_event", {
+            eventId: delivery.eventId,
+          });
+          expect(retained.structuredContent).toEqual({ item: first.item });
+        }),
+      ),
+    );
+    expect((yield* test.inbox).items).toEqual([]);
+  });
+
 const retainsFailedHandoff = () =>
   Effect.gen(function* () {
     const test = yield* fixture;
@@ -243,6 +269,10 @@ const retainsFailedHandoff = () =>
 
 // @agent-code-guard/regression-only: MCP conformance requires explicit delivery and failure transcripts.
 describe("MCP delivery contract", () => {
+  it(
+    "keeps a native event reference stable across redelivery and readable after acknowledgment",
+    retainsEventReference,
+  );
   it(
     "delivers a later multicast when acknowledging a consumed answer fails",
     continuesAfterAnswerAcknowledgmentFails,

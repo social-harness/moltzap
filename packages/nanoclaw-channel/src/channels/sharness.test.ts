@@ -94,6 +94,7 @@ function enqueue(
   Effect.runSync(
     Queue.offer(fake.inbox, {
       item,
+      eventId: "unused-event-reference",
       ...(guidance === undefined ? {} : { guidance }),
       acknowledge: Effect.sync(() => {
         acknowledged();

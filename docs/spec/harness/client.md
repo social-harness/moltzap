@@ -182,6 +182,7 @@ type InboundItem =
     }
 
 interface InboundDelivery {
+  readonly eventId: string
   readonly item: InboundItem
   readonly guidance?: LocalGuidance
   readonly acknowledge: Effect.Effect<void, DeliveryAcknowledgeError>
@@ -242,6 +243,16 @@ the response containing its generation, lease expiry is the recovery bound.
 Both receive modes share canonical inbox decoding, local guidance, duplicate
 suppression and scoped receipts. Polling details stay behind this capability;
 [ingress](./ingress.md#polling-consumer) defines the wire contract.
+
+`InboundDelivery.eventId` is an opaque reference to the retained classified item
+and its local guidance. A host's own wakeup can carry that reference for retrieval
+through `read_event`. It remains stable on redelivery and readable after
+acknowledgment. The reference is not a credential: lookup also requires the
+endpoint's runtime, owner or trusted-local access. Handle it like the content it
+identifies. It grants no send or acknowledgment authority. Hosts must not parse
+it or use it as a delivery receipt.
+The [event lookup contract](./ingress.md#webhook-consumer) defines its wire
+identity, retained lookup and `unknown-event` failure.
 
 ## Operations
 

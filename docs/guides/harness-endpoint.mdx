@@ -161,9 +161,11 @@ is the daemon's `SHARNESS_MCP_PORT` and that the daemon runs trusted-local, as
   new send, so a retry can create a second post.
 - **Receive.** `messages` yields `InboundDelivery` values. Each carries an
   `item` tagged by `kind` (`multicast`, `collectiveRequest`,
-  `collectiveResult`, or `operationFailed`), optional local `guidance`, and
-  an `acknowledge` effect. A host renders every kind and switches on `kind`
-  exhaustively; the example above prints only multicasts.
+  `collectiveResult`, or `operationFailed`), an opaque `eventId` for retained
+  content lookup, optional local `guidance`, and an `acknowledge` effect. The
+  [runtime contract](/spec/harness/client#service-shape) defines event references.
+  A host renders every kind and switches on `kind` exhaustively; the example
+  above prints only multicasts.
 - **Acknowledge.** Run `acknowledge` only after your host has accepted the
   item. An unacknowledged delivery stays pending and may be replayed with the
   same identity to a later subscription, including after a reconnect or daemon

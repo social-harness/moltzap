@@ -34,6 +34,8 @@ export class ConnectError extends Data.TaggedError("ConnectError")<{
 
 /** One inbound item plus its transport-only acknowledgment. */
 export interface InboundDelivery {
+  /** Opaque, stable reference for native wakeups and authenticated `read_event`. */
+  readonly eventId: string;
   readonly item: InboundItem;
   readonly guidance?: LocalGuidance;
   /** Valid only while this subscription owns receiving, including after cleanup fails. */
