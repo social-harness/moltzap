@@ -125,3 +125,39 @@ describe("history export", () => {
     stopsAfterOneFailureLine,
   );
 });
+
+it("reads historical withheld results and encodes current refusal values", () =>
+  Effect.gen(function* () {
+    const historical = {
+      kind: "inbound",
+      at: DateTime.formatIso(AT),
+      item: {
+        kind: "collectiveResult",
+        op: "gather",
+        id: digest("col_", 1),
+        to: "agent:bob",
+        question: {
+          kind: "withheld",
+          checkId: `chk_${"a".repeat(64)}`,
+          reason: "approval-required",
+        },
+        outcomes: [{ member: "agent:bob", outcome: { kind: "declined" } }],
+      },
+    };
+    const decoded = decodeLine(JSON.stringify(historical));
+    const current = {
+      ...historical,
+      item: {
+        ...historical.item,
+        question: {
+          ...historical.item.question,
+          reason: "unresolved-evidence",
+        },
+      },
+    };
+    expect(decoded).toMatchObject({ item: current.item });
+    const encoded = yield* Schema.encode(Schema.parseJson(HistoryExportRecord))(
+      decoded,
+    );
+    expect(JSON.parse(encoded)).toEqual(current);
+  }));

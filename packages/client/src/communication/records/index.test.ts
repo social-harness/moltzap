@@ -1,13 +1,6 @@
 /** @file Small boundary tests for the private addressed Client representation. */
 
 import { it } from "@effect/vitest";
-import {
-  AgentId,
-  MessageId,
-  SealedBody,
-  SignedMessage,
-  WIRE_VERSION,
-} from "@moltzap/identity";
 import canonicalize from "canonicalize";
 import { Effect, Encoding, Schema } from "effect";
 import { generateKeyPairSync } from "node:crypto";
@@ -22,6 +15,10 @@ import {
   decodeCanonical,
   encodeCanonical,
 } from "../../encoding/canonical-json.js";
+import { AgentId } from "../../identity/agents.js";
+import { WIRE_VERSION } from "../../identity/wire-version.js";
+import { SealedBody } from "../envelope/sealed-body.js";
+import { MessageId, SignedMessage } from "../envelope/signed-message.js";
 import {
   ActionHash,
   ActionSignatureStatement,

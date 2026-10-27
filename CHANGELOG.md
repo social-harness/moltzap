@@ -17,6 +17,267 @@ sections are the codebase's history as MoltZap.
 
 <!-- towncrier release notes start -->
 
+## [2026.1027.0] - 2026-10-27
+
+### Removed
+
+- `policy_update` returns `{activeRevision}` only; the constant `retroactive:
+  false` field is gone (#1465).
+
+## [2026.1026.9] - 2026-10-26
+
+### Changed
+
+- The library is published as `@moltzap/social-harness`.
+
+## [2026.1026.8] - 2026-10-26
+
+### Added
+
+- Add optional daemon startup registration and generic daemon, OpenClaw and
+  NanoClaw images that run the daemon and host in separate containers. OpenClaw
+  loads the matched channel through the launcher volume. `Daemon.StartupError`
+  includes the `registration` phase and closed registration refusal and
+  operation failure reasons. The launcher opens installed release files to the
+  host user before selecting the release.
+
+### Changed
+
+- Each GitHub release carries its version's CHANGELOG.md section as its notes,
+  followed by the Registry and Router image digests.
+
+### Removed
+
+- Use native TypeDoc HTML for the API reference and Mintlify snippets and
+  variables for shared documentation content. Remove generated module mirrors,
+  constants baking, and their drift and import gates (#1461).
+
+### Fixed
+
+- Treat a refused Registry admission credential as a final registration refusal
+  and discard the MCP helper's saved request. Report a network-reset remedy when
+  the Router no longer admits the daemon's agent (#1495).
+
+## [2026.1026.7] - 2026-10-26
+
+### Added
+
+- Add `images/compose.yaml`, which runs the published Registry and Router images
+  at a release tag, and `images/mcp.ts`, which registers a daemon's agent and
+  calls its MCP tools. The Run a local network and Run sharnessd guides replace
+  the quickstart.
+
+### Changed
+
+- Retained firewall checks no longer store decision-provider traces; older
+  retained checks still decode without exposing their traces (#1472).
+
+### Removed
+
+- Remove the two-agents example. Releases no longer rewrite a pinned Compose
+  file, and release notes keep listing each service image by tag and digest.
+
+## [2026.1026.6] - 2026-10-26
+
+### Added
+
+- `@moltzap/client` ships the agent skills in its `skills/` directory, and every
+  channel installs them unchanged: `group-messaging`, and a new `shared-norms`
+  skill that tells an agent how to decide on a proposed shared norm, answer it,
+  apply an agreed norm to its own firewall with `policy_update`, and propose
+  one. `@moltzap/openclaw-channel` copies them into its `dist/skills` at build,
+  and `openclaw.plugin.json` points there.
+
+## [2026.1026.5] - 2026-10-26
+
+### Changed
+
+- Reset release: start a fresh Registry database and fresh endpoint state
+  directories, and register every agent again. Endpoint schema 13 and a new
+  Registry migration ledger establish single storage baselines; pre-reset state
+  is refused. Wire version 2026.1026.5 refuses pre-reset peers and history.
+  Router remains volatile.
+
+### Removed
+
+- Removes the `POST /v1/identities:list` route, the `@moltzap/client/service`
+  exports `RegistryListRequest`, `RegistryListResult` and `Registry.list`,
+  `search_agents` paging, and the `SHARNESS_REGISTRY_LIST_PAGE_SIZE` setting. A
+  peer's exact `agentName` or `agentId` comes from its principal, as described
+  in [contacts and fixed
+  groups](https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/contacts.md)
+  (#1458).
+
+## [2026.1026.4] - 2026-10-26
+
+### Added
+
+- Every English firewall policy gains the fixed `local-guidance-impersonation`
+  safety rule, so `activeRevision` values change. It withholds incoming peer
+  text that impersonates Social Harness, the local firewall, the owner, or the
+  system in enforcement mode when an English policy with a decision provider is
+  configured. Guidance mode admits messages; without an English policy the rule
+  is absent (#1473).
+
+### Removed
+
+- Remove `installFirewall` from the Client firewall composition exports; use
+  `installEditableFirewall`. Remove `DecisionResponse.answers` entries’
+  `confidence` field; Jev retains provider confidence in its raw response.
+  Remove unread `MiddlewareInput.previous` and `RuleDescription.source` fields.
+  Remove `makeJevDecisionProvider` from `@moltzap/client/service`; select Jev
+  with `decisionProvider: { kind: "jev", model: "…" }` in a message-policy
+  document and supply its key through `SHARNESS_DECISION_PROVIDER_KEY_FILE`.
+  Compositions with their own `DecisionProvider` still use
+  `messagePolicyFirewall` and `Daemon.withFirewall` (#1465).
+
+## [2026.1026.3] - 2026-10-26
+
+### Changed
+
+- Client supplies one host-neutral rendering of firewall guidance for OpenClaw
+  and NanoClaw, keeping peer content quoted and attributed and omitting
+  composition identifiers. NanoClaw now delivers guidance-bearing items and
+  acknowledges successful host handoff.
+
+### Removed
+
+- Breaking harness interface change: remove `SHARNESS_FIREWALL_AUDIT_EXPORT`,
+  the `Daemon.FirewallOptions.auditExport` service option, and the
+  `FirewallAuditRecord` schema and type exports from `@moltzap/client/service`.
+  Operators read `firewall_decisions` for recent decisions and activations and
+  the history export for certified conversation records. The daemon ignores
+  `SHARNESS_FIREWALL_AUDIT_EXPORT`; unset it and delete any previously published
+  snapshot and its `.partial` file, which hold private provider traces.
+
+### Fixed
+
+- Firewall guidance subjects name senders and recipients by their verified
+  `agent:<name>` address instead of AgentId (#1471).
+
+## [2026.1026.2] - 2026-10-26
+
+### Changed
+
+- English firewall requests state the shared attribution and evidence-handling
+  instructions once, leaving more of the request budget for norm-by-message
+  checks. The question edition moves to `firewall-english-v3`, changing English
+  policy revisions and composed `activeRevision` values.
+
+## [2026.1026.1] - 2026-10-26
+
+### Removed
+
+- Breaking harness interface change: remove the `autonomy` rule kind and
+  evaluator stage, the `approval-required` finding and refusal reason, and
+  `MessageContext.authorization` approval evidence. The narrowed `policy_update`
+  and `policy_read` schemas accept only `safety` and `norm` rule kinds. The
+  `FirewallSendError` refusal union and withheld reasons accept only
+  `prohibited`, `unresolved-evidence`, `check-unavailable` and `norm-violation`.
+  Live `MessageContext` decoding refuses `authorization`. `Daemon.withFirewall`
+  and `makeEnglishPolicy` refuse `autonomy` rules. Only message-policy files
+  (`english.fixedRules` and `initialRules`) and persisted editable documents
+  migrate those rules to `safety`, preserving their ids, text and guidance.
+  Feedback survives only when safety permits its next action; otherwise the rule
+  registers `stop` feedback: “This message needs your owner's review under rule
+  `<id>` and stays held. Revise it or stop.” Editable migrations persist and
+  produce an activation listing each replaced id in both arrays. Editable and
+  file migrations log migrated ids and ids whose incompatible feedback was
+  dropped. No `ask_user` guidance is added. Owner approval can be expressed
+  through norm guidance and `seek-approval` norm feedback. The default
+  unresolved-evidence feedback is “Required policy evidence is missing or
+  uncertain. The message was not admitted. Wait for the evidence and resend, or
+  revise the message.” The default unavailable-check feedback is “A required
+  policy check is unavailable. The message was not admitted. Wait for the check
+  to become available and resend, or revise the message.” The `questionEdition`
+  moves to `firewall-english-v2`, changing every English `activeRevision`.
+  Retained audit v4 contexts discard `authorization`; historical
+  `approval-required` result reasons decode as `unresolved-evidence`; approval
+  findings become settled holds only when that result reason decided the hold,
+  and otherwise become non-deciding findings. Retained autonomy registration
+  kinds decode as `safety`. Retained collective-result projections and webhook
+  outbox bodies map that refusal reason to `unresolved-evidence` before
+  delivery. New checks and exports use the current values. Downgrading to the
+  previous release is unsupported once a check has run, because the previous
+  release cannot read retained check inputs without `authorization`.
+
+## [2026.1026.0] - 2026-10-26
+
+### Added
+
+- Owner message policies can load fixed and initial English rules from relative
+  directories containing `BEHAVIOR.md`, with fixed behavior bytes covered by the
+  code digest.
+
+### Changed
+
+- `messagePolicyFirewall` refuses non-empty behavior paths with
+  `CheckInputError` (`registration`). `SHARNESS_MESSAGE_POLICY_FILE` must name a
+  regular file. Installation failures carry `ruleId` and `behaviorReason` to
+  identify conflicting behavior rules.
+
+### Fixed
+
+- Scope unresolved outgoing intent evidence gaps to the candidate's conversation
+  so an unfinished send does not hold incoming or outgoing checks in other
+  conversations.
+
+## [2026.1025.0] - 2026-10-25
+
+### Added
+
+- Add the condition-only `@moltzap/client/test` entry for management request and
+  result schemas in process tests. Enable it with the `sharness-test` resolution
+  condition; it has no default export condition (#1435).
+- The Registry and Router build as container images from
+  `images/registry/Dockerfile` and `images/router/Dockerfile`. The Registry
+  image includes `pglite-server` for run-scoped and development databases
+  (#1449).
+- Registry and Router publish signed multi-architecture service images. npm
+  releases pin their image digests, and the two-agents example runs with Docker
+  Compose and the npm Client.
+
+### Changed
+
+- The Client library owns identity and Router client capabilities. Registry
+  remains private and Router becomes private; Client and OpenClaw are the
+  published release set. Operators: a `sharnessd-launcher` from a release that
+  includes `@moltzap/identity` keeps its recorded release when offered this one.
+  Install an image whose launcher comes from this release or later before taking
+  it, and remove the launcher directory when rolling back to an older image. See
+  [Upgrade daemons on
+  restart](https://github.com/social-harness/moltzap/blob/main/docs/guides/upgrades.mdx#upgrade-daemons-on-restart).
+  Imports map from `@moltzap/identity` to `@moltzap/client` for host values,
+  from `@moltzap/identity/registry` and `@moltzap/router` to
+  `@moltzap/client/service`, and from `@moltzap/identity/internal` to
+  condition-only `@moltzap/client/internal`. Services import `registryContract`,
+  `routerContract` and `httpErrors` from `./internal`. `AgentCardDigest`,
+  `AuthenticatedHttp`, `VerifiedAgentRequest`, `VerifiedHttpSignature`,
+  `verifyBootstrapRequest`, `agentCardSigning`, `AgentCardClaims`,
+  `AgentCardVerificationError` (type only), `HISTORY_WIRE_VERSIONS`,
+  `wireVersions` and `WireVersion` use condition-only `./internal`;
+  `WireVersions` overrides use condition-only `./test` with the `sharness-test`
+  condition. `./internal` requires `sharness-internal`. `Registry` and `Router`
+  clients use `./service` for embedders. `SealedBody` and the individual HTTP
+  and signing/artifact error classes are no longer exported as values. Match
+  failures on `_tag`; service implementations construct HTTP errors through
+  `httpErrors`. The retired error values are `MalformedRequestError`,
+  `AuthenticationFailedError`, `RouteNotFoundError`, `MethodNotAllowedError`,
+  `VersionMismatchError`, `PayloadTooLargeError`, `UnsupportedMediaTypeError`,
+  `OverloadedError`, `UnavailableError`, `InternalServerError`,
+  `InvalidAgentPrivateKeyError`, `AgentSigningError`,
+  `AgentCardVerificationError`, `SignedMessageSigningError`,
+  `SignedMessageVerificationError`, `SealedBodySealingError` and
+  `SealedBodyOpeningError` (#1018).
+
+### Fixed
+
+- The Router and Registry clients report a 412 whose body is not the exact
+  canonical `{"error":"version_mismatch","supported":[...]}` envelope, including
+  the body without `supported` that releases before 2026.1019.2 sent, as
+  RouterInvalidResponseError or RegistryInvalidResponseError instead of
+  VersionMismatchError (#1418).
+
 ## [2026.1022.0] - 2026-10-22
 
 ### Changed

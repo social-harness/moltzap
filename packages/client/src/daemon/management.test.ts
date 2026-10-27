@@ -4,18 +4,6 @@ import { FileSystem, HttpClient } from "@effect/platform";
 import { NodeFileSystem } from "@effect/platform-node";
 import { scopedLive as it, scoped as itOnTestClock } from "@effect/vitest";
 import {
-  AgentCard,
-  AgentSigningAuthority,
-  Ed25519PublicKey,
-  LIVE_WIRE_VERSIONS,
-  type VerifiedAgentCard,
-  WIRE_VERSION,
-} from "@moltzap/identity";
-import {
-  Registry,
-  type RegistryLookupResult,
-} from "@moltzap/identity/registry";
-import {
   type Context,
   Deferred,
   Duration,
@@ -64,10 +52,19 @@ import {
   managementRegisterRequestSchema,
   managementSearchAgentsRequestSchema,
 } from "../harness/protocol/index.js";
+import { AgentCard, type VerifiedAgentCard } from "../identity/cards.js";
+import { AgentSigningAuthority, Ed25519PublicKey } from "../identity/keys.js";
+import {
+  RegistryConnectionError,
+  type RegistryLookupResult,
+} from "../identity/registry/contract.js";
+import { Registry } from "../identity/registry/index.js";
+import { AuthenticationFailedError } from "../identity/signing/http-errors.js";
+import { LIVE_WIRE_VERSIONS, WIRE_VERSION } from "../identity/wire-version.js";
 import {
   type DaemonManagementOperations,
   makeDaemonManagementOperations,
-} from "./management.js";
+} from "./management/index.js";
 
 interface IdentityFixture {
   readonly bootstrap: DaemonBootstrap;
@@ -248,8 +245,6 @@ function makeRegistryLayer(cards: readonly VerifiedAgentCard[]) {
   const service: Context.Tag.Service<typeof Registry> = {
     register: () => outsideManagementTest(),
     lookup: (request) => Effect.succeed(lookup(request)),
-    list: () =>
-      Effect.succeed({ kind: "page", agentCards: cards, hasMore: false }),
   };
   return Layer.succeed(Registry, service);
 }
@@ -460,8 +455,42 @@ const failsReadOverGenesisAnchorSelectingRecord = () =>
     );
   });
 
+const checksExactAgentLookups = () =>
+  Effect.gen(function* () {
+    const fixture = yield* makeIdentityFixture;
+    const operations = yield* makeDaemonManagementOperations({
+      store: unusedEndpointStore("management lookup test"),
+      bootstrap: fixture.bootstrap,
+      registration: activeRegistration(fixture.cards[0]),
+    }).pipe(Effect.provide(makeRegistryLayer(fixture.cards)));
+    const remote = fixture.cards[1];
+    const found = {
+      kind: "found",
+      agentCard: yield* Schema.encode(AgentCard)(remote),
+    };
+
+    expect(
+      yield* operations.searchAgents({ agentName: remote.agentName }),
+    ).toEqual(found);
+    expect(yield* operations.searchAgents({ agentId: remote.agentId })).toEqual(
+      found,
+    );
+    expect(
+      yield* operations.searchAgents(
+        Schema.decodeUnknownSync(managementSearchAgentsRequestSchema)({
+          agentName: "unknown-agent",
+        }),
+      ),
+    ).toEqual({ kind: "not_found" });
+  });
+
 // @agent-code-guard/regression-only: these cases pin the addressed owner-management contract.
 describe("addressed daemon management", () => {
+  it(
+    "returns encoded cards for exact names and ids and not_found for unknown names",
+    checksExactAgentLookups,
+  );
+
   it("pages canonical addresses without exposing conversation identity", () =>
     Effect.gen(function* () {
       const fixture = yield* makeIdentityFixture;
@@ -513,7 +542,6 @@ const unregisteredPort = {
 const unusedRegistryLayer = Layer.succeed(Registry, {
   register: () => outsideManagementTest(),
   lookup: () => outsideManagementTest(),
-  list: () => outsideManagementTest(),
 });
 
 /** One owner read, named by its tool. */
@@ -773,21 +801,13 @@ const failsAtTheRegistryDeadline = () =>
     expect(yield* operations.readStatus()).toEqual({ kind: "unregistered" });
   });
 
-/** A lookup and a list, the two Registry calls `search_agents` makes. */
-const agentSearches = [
-  { search: "lookup", request: { agentName: "bob" } },
-  { search: "list", request: {} },
-];
-
 /**
  * `search_agents` gives its Registry call the same deadline: a Registry that
  * never answers ends the search as dependency-unavailable at the deadline.
  * Fails when the search outlives the deadline or the timeout maps to another
  * reason.
  */
-const failsSearchAtTheRegistryDeadline = ({
-  request,
-}: (typeof agentSearches)[number]) =>
+const failsSearchAtTheRegistryDeadline = () =>
   Effect.gen(function* () {
     const fixture = yield* makeIdentityFixture;
     const requested = yield* Deferred.make<undefined>();
@@ -799,7 +819,9 @@ const failsSearchAtTheRegistryDeadline = ({
 
     const error = yield* failureAtTheRegistryDeadline({
       operation: operations.searchAgents(
-        Schema.decodeUnknownSync(managementSearchAgentsRequestSchema)(request),
+        Schema.decodeUnknownSync(managementSearchAgentsRequestSchema)({
+          agentName: "bob",
+        }),
       ),
       requested,
       hung: "search_agents outlived the Registry deadline",
@@ -821,7 +843,6 @@ function heldRegistry(
         Effect.as({ kind: "registered", agentCard: fixture.cards[0] } as const),
       ),
     lookup: () => outsideManagementTest(),
-    list: () => outsideManagementTest(),
   };
   return Layer.succeed(Registry, service);
 }
@@ -874,8 +895,8 @@ describe("daemon registration through the register tool", () => {
     "fails a register at the Registry deadline when the Registry never answers",
     failsAtTheRegistryDeadline,
   );
-  itOnTestClock.each(agentSearches)(
-    "fails a search_agents $search at the Registry deadline when the Registry never answers",
+  itOnTestClock(
+    "fails search_agents at the Registry deadline when the Registry never answers",
     failsSearchAtTheRegistryDeadline,
   );
   it(
@@ -883,3 +904,24 @@ describe("daemon registration through the register tool", () => {
     bindsWhenCancelledDuringTheRegistryCall,
   );
 });
+
+/** Closed registration failures distinguish a final credential refusal from an outage. */
+it.each([
+  { failure: new AuthenticationFailedError(), reason: "admission-refused" },
+  { failure: new RegistryConnectionError(), reason: "dependency-unavailable" },
+])("reports $reason from registration", ({ failure, reason }) =>
+  Effect.gen(function* () {
+    const fixture = yield* makeIdentityFixture;
+    const registry = Layer.succeed(Registry, {
+      register: () => Effect.fail(failure),
+      lookup: () => Effect.succeed({ kind: "not_found" as const }),
+    });
+    const { operations } = yield* makeRegisteringOperations(fixture).pipe(
+      Effect.provide(registry),
+    );
+    const error = yield* operations
+      .register(localRegisterRequest(fixture))
+      .pipe(Effect.flip);
+    expect(error).toMatchObject({ reason });
+  }),
+);

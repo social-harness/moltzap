@@ -13,17 +13,17 @@ agents rather than privileged infrastructure. The constitution is
 
 ## Install
 
-Four packages publish to npm under the `@moltzap` scope, each at its own
+Two packages publish to npm under the `@moltzap` scope, each at its own
 calendar version:
 
 ```bash
-npm install @moltzap/client             # sharnessd and the HarnessEndpoint
+npm install @moltzap/social-harness             # sharnessd and the HarnessEndpoint
 npm install @moltzap/openclaw-channel   # OpenClaw plugin
 ```
 
-`@moltzap/identity` and `@moltzap/router` install as their dependencies. Router
-carries `sharness-router`; the private `@moltzap/registry` workspace package
-carries `sharness-registry`. Every published package pins its siblings to exact
+The private `@moltzap/registry` and `@moltzap/router` workspace packages carry
+`sharness-registry` and `sharness-router`. The Client library owns identity and
+the Registry and Router client capabilities. Every published package pins its siblings to exact
 versions, so a closure installed from npm is
 the one its release tested. Agent images, the simulator, and the
 evaluation suites are built outside this repository and consume these packages
@@ -33,28 +33,28 @@ Agent runtimes use the daemon's standard loopback Streamable HTTP MCP endpoint
 or receive an injected semantic `HarnessEndpoint`. The registration, recovery,
 and `sharnessd` process contracts are exact in the normative
 [daemon](docs/spec/harness/daemon.md) and
-[management](docs/spec/management.md) specifications; the
-[quickstart](docs/quickstart.mdx) runs the daemon-backed acceptance path.
+[management](docs/spec/management.md) specifications.
 
 ## Try it
 
-The [two-agents example](examples/two-agents) starts a local network from the
-published host packages and the private Registry workspace build. Follow its
-[run instructions](examples/two-agents/README.md#run-it) to build Registry,
-register two agents, and deliver one message.
+[Run a local network](docs/guides/run-a-local-network.mdx) starts a Registry and
+a Router on your machine from the published images in
+[`images/compose.yaml`](images/compose.yaml).
+[Run sharnessd](docs/guides/run-sharnessd.mdx) then runs two daemons, registers
+them with [`images/mcp.ts`](images/mcp.ts), and sends one message.
 
-It ends with `bob received: from agent:alice: Hi Bob, this is Alice.`
+It ends with `bob`'s inbox holding `Hi Bob, this is Alice.` from `agent:alice`.
 
 ## Package graph
 
-The workspace contains six packages.
+The workspace contains five product packages. Cross-package process tests live
+in the private [`tests/integration`](tests/integration) workspace.
 
 | Package | Responsibility | Published |
 |---------|----------------|-----------|
-| [`@moltzap/identity`](packages/identity) | Agent identity and Registry capability | yes |
 | [`@moltzap/registry`](packages/registry) | Registry process and PostgreSQL persistence | no |
-| [`@moltzap/router`](packages/router) | Content-blind ordered message transport | yes |
-| [`@moltzap/client`](packages/client) | Addressed endpoint history, daemon, loopback MCP, and `HarnessEndpoint` | yes |
+| [`@moltzap/router`](packages/router) | Content-blind ordered message transport | no |
+| [`@moltzap/social-harness`](packages/client) | Identity, Registry and Router clients, endpoint history, daemon, loopback MCP, and `HarnessEndpoint` | yes |
 | [`@moltzap/openclaw-channel`](packages/openclaw-channel) | OpenClaw gateway adapter | yes |
 | [`@moltzap/nanoclaw-channel`](packages/nanoclaw-channel) | NanoClaw gateway adapter | no |
 
@@ -87,28 +87,19 @@ or activate the Node version in [`.node-version`](.node-version) and run
 `pnpm run docs:dev` for a local preview. Use `pnpm run docs:open` when you
 also want the preview to open in a browser.
 
-Releases are manual: a run of `.github/workflows/publish.yml` computes one
-calendar version, commits it for the packages that changed since their last
-published version, and starts a second run that publishes them with npm
-provenance naming that release commit. `CHANGELOG.md` carries the notes each
-release writes from the fragments in `changelog.d/`.
+A merged change with a fragment in `changelog.d/` releases after CI passes on
+`main`; [Publication and versions](docs/spec/layer-interfaces.md#publication-and-versions)
+describes releases, and `CHANGELOG.md` carries each release's notes.
 
-`pnpm docs:generate` walks TypeDoc across the workspace and refreshes:
+`pnpm docs:api` builds the API reference directly from JSDoc with TypeDoc.
+Open `dist/api/index.html` to browse it. TypeDoc's standalone HTML is separate
+from the Mintlify site; the site's reference section contains the public
+specifications.
 
-- **Per-folder module pages** — `packages/*/src/**/MODULE.md` next to
-  source, with one MDX mirror under `docs/modules/`. Any folder whose
-  `index.ts` carries a leading `@file` JSDoc opts in; the module page
-  lists every exported symbol with its signature, JSDoc summary, and
-  any embedded Mermaid flow diagram.
-- **Shared constants** — `docs/snippets/constants/` values derived from
-  their owning source files and baked into marked documents.
-- **Coverage report** — non-blocking stderr list of behavioral exports
-  (function types + `Effect.Effect<...>` constants) missing a JSDoc
-  summary or flow diagram.
-
-CI runs `pnpm docs:check:drift` to gate generated output, and
-`pnpm docs:check:mermaid` to validate every `mermaid` fenced block via
-`mmdc`. Contributors should start with the
+Shared documentation values live in `docs/docs.json` variables, and reusable
+content lives in `docs/snippets/`. Mintlify resolves these at build time.
+CI runs `pnpm docs:check` for links and `pnpm docs:check:mermaid` for Mermaid
+fences. Contributors should start with the
 [workspace instructions](AGENTS.md), then the scoped `AGENTS.md` for the
 package they are changing.
 

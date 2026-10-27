@@ -1,15 +1,13 @@
 /** @file Exact closed schemas for every Client-owned conversation value. */
 
-import {
-  AgentCard,
-  AgentId,
-  SignedMessage,
-  wireVersions,
-} from "@moltzap/identity";
-import { RouterInstanceId } from "@moltzap/router";
 import { Schema } from "effect";
 import { exactStruct } from "../../encoding/exact.js";
 import { isCanonicalIdentifier } from "../../encoding/identifier.js";
+import { AgentId } from "../../identity/agents.js";
+import { AgentCard } from "../../identity/cards.js";
+import { wireVersions } from "../../identity/wire-version.js";
+import { SignedMessage } from "../envelope/signed-message.js";
+import { RouterInstanceId } from "../router/api/contract.js";
 import { Content, maximumMembers, PostId } from "./values.js";
 
 /* eslint-disable jsdoc/require-jsdoc -- These package-private Schema names are the exact closed protocol vocabulary. */

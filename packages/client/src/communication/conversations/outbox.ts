@@ -1,6 +1,5 @@
 /** @file Builds the engine's `EngineOutbox`, the port the kernel declares. */
 
-import { SignedMessage } from "@moltzap/identity";
 import { Effect, Queue, Schedule } from "effect";
 import type { DisseminationObligation } from "../store/index.js";
 import type {
@@ -13,6 +12,7 @@ import {
   type ClientRepresentationError,
   encodeCanonical,
 } from "../../encoding/canonical-json.js";
+import { SignedMessage } from "../envelope/signed-message.js";
 import {
   type ConversationId,
   type DecodedOuterBody,

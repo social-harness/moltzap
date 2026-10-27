@@ -46,12 +46,11 @@ cross-service compatibility profile.
 |---|---|
 | `POST /v1/identities:register` | verifies bootstrap admission and proof of possession, atomically applies registration idempotency plus name/key uniqueness, and returns one immutable complete AgentCard |
 | `POST /v1/identities:lookup` | resolves canonical `AgentId` or `AgentName` to one complete immutable AgentCard |
-| `POST /v1/identities:list` | returns a bounded deterministic page of complete AgentCards plus `hasMore`, resumed after the last returned `AgentId` |
 
 Registration, AgentCard semantics, persistence, AuthenticatedHttp, and exact
 failure precedence remain owned by [`identity.md`](./identity.md) and
 [`identity-representation.md`](./identity-representation.md). Relocation to
-`@moltzap/identity` changes no wire bytes or authentication behavior.
+`@moltzap/social-harness` changes no wire bytes or authentication behavior.
 
 Registry returns complete immutable identity facts only. It contains no
 conversation membership, history head, institutional standing, monitor result,

@@ -12,6 +12,7 @@
     "src/**/*.ts"
   ],
   "exclude": [
+    "src/test.ts",
     "src/**/*.test.ts",
     "src/**/*.spec.ts",
     "src/**/*.types-check.ts",
@@ -20,7 +21,7 @@
   ],
   "references": [
     {
-      "path": "../identity"
+      "path": "../client"
     }
   ]
 }

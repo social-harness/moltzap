@@ -12,7 +12,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   collectBlocks,
-  collectMarkdownFiles,
+  collectDiagramFiles,
   lintBlock,
   MERMAID_ROOTS,
   type MermaidBlock,
@@ -34,7 +34,7 @@ const program = Effect.gen(function* () {
   const path = yield* Path.Path;
   const roots = MERMAID_ROOTS.map((r) => resolve(WORKSPACE_ROOT, r));
   yield* requireRoots(fs, roots);
-  const files = yield* collectMarkdownFiles(fs, path, roots);
+  const files = yield* collectDiagramFiles(fs, path, roots);
   const blocks = yield* collectBlocks(fs, path, WORKSPACE_ROOT, files);
   yield* announce(blocks.length, files.length);
   const failures = yield* lintAll(blocks);

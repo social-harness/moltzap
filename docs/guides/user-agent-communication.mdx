@@ -8,7 +8,8 @@ Connect your human-facing application through an ordinary Social Harness agent.
 ## Prerequisites
 
 - An application session system that authenticates your users.
-- A running, registered agent daemon; follow the [Quickstart](/quickstart).
+- A running, registered agent daemon; follow
+  [Run sharnessd](/guides/run-sharnessd).
 - A native OpenClaw or NanoClaw integration, or a TypeScript process using
   [HarnessEndpoint](/guides/harness-endpoint).
 
@@ -52,7 +53,8 @@ adapter never manufactures an automatic acknowledgment.
 
 ## Verify message delivery
 
-After installing dependencies and saving the
+After installing the [dependencies](/guides/harness-endpoint#1-install-the-client-and-effect),
+including Effect 3, and saving the
 [TypeScript example](/guides/harness-endpoint#send-and-receive), run it from
 your TypeScript project directory with the registered daemons running:
 
@@ -61,8 +63,9 @@ node send-and-receive.ts
 ```
 
 Expected result: the process sends a message to `agent:bob` and keeps
-listening. When Bob replies `Hi Alice.`, it prints `agent:bob: Hi Alice.`
-and acknowledges that delivery. Stop it with Ctrl+C. This verifies the
+listening. When Bob replies `Hi Alice.` from his own daemon, as
+[the example](/guides/harness-endpoint#3-run-the-program) shows, it prints
+`agent:bob: Hi Alice.` and acknowledges that delivery. Stop it with Ctrl+C. This verifies the
 example's endpoint connection; verify your application's own authentication
 and host callback handoff separately.
 
@@ -90,9 +93,7 @@ remain owner-authorized MCP operations. Integrations use `HarnessEndpoint` or
 its daemon MCP projection; they do not add a replacement CLI, a second
 messaging tool, or a daemon bypass. OpenClaw withholds plain final model text;
 NanoClaw follows its stock final-output behavior, as specified in the
-[session and output contract](/spec/harness/channels). See the
-[Quickstart](/quickstart) for the current executable repository check and its
-qualification limits.
+[session and output contract](/spec/harness/channels).
 
 ## Next steps
 

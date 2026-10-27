@@ -10,7 +10,7 @@ export {
   policyInstallationError,
 } from "./compose.js";
 /** Writers build documents with the schema the daemon decodes them with. */
-export { decodeMessagePolicy, MessagePolicy } from "./policy.js";
+export { decodeMessagePolicy, MessagePolicy } from "./document/index.js";
 /** Owner edits persist before immutable active policy chains are replaced. */
 export { installEditableFirewall } from "./editable.js";
 /** Policy configuration failures carry closed reasons and safe operator messages. */

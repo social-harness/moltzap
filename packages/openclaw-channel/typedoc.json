@@ -1,7 +1,4 @@
 {
   "$schema": "https://typedoc.org/schema.json",
-  "entryPoints": ["src/plugin.ts"],
-  "outputs": [
-    { "name": "json", "path": "../../node_modules/.cache/typedoc-pkg.json" }
-  ]
+  "entryPoints": ["src/plugin.ts"]
 }

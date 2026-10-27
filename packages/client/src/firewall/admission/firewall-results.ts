@@ -11,8 +11,6 @@ import type {
   AgentAddress,
   MessageAddressInput,
 } from "../../communication/records/values.js";
-import type { FirewallCheck, Message } from "../evaluator/index.js";
-import type { LocalGuidance } from "../outcome/index.js";
 import { ResultProvenance } from "../../communication/collectives/index.js";
 import {
   renderCollectiveResult,
@@ -30,6 +28,16 @@ import {
   MAXIMUM_RUNTIME_ITEM_BYTES,
 } from "../../communication/store/index.js";
 import {
+  type FirewallCheck,
+  firewallCheckSchema,
+  type Message,
+} from "../evaluator/index.js";
+import {
+  ENDPOINT_SENDER,
+  type LocalGuidance,
+  retainedFirewallRefusal,
+} from "../outcome/index.js";
+import {
   assess,
   attemptInput,
   captureEnvironment,
@@ -44,9 +52,14 @@ import {
   mintCheckId,
   refusalReason,
 } from "./firewall-checks.js";
+const retainedFirewallReason = Schema.Union(
+  Schema.Literal("eligible"),
+  retainedFirewallRefusal,
+).pipe(Schema.compose(firewallCheckSchema.fields.reason));
 
 /** The window of a check with no history: a result's missing record, or a failure. */
 const EMPTY_WINDOW = {
+  pendingOutgoing: false,
   history: [],
   overflow: false,
   earlierHistoryOmitted: false,
@@ -96,26 +109,14 @@ export const checkLocalItem = (
   }
 };
 
-/** The sender a local item's evidence names: the endpoint itself, not any agent. */
-const ENDPOINT_SENDER = "sharness";
-
 /**
  * The judgment and reason of a retained check result; the rest is not read
- * here. Its type is the check's own, so a judgment or reason added there
- * fails to compile here rather than to decode.
+ * here. Historical approval requirements decode under the unresolved-evidence
+ * reason for holds.
  */
-const retainedJudgment: Schema.Schema<
-  Pick<FirewallCheck, "judgment" | "reason">
-> = Schema.Struct({
-  judgment: Schema.Literal("allow", "block", "hold", "revise"),
-  reason: Schema.Literal(
-    "eligible",
-    "prohibited",
-    "unresolved-evidence",
-    "check-unavailable",
-    "norm-violation",
-    "approval-required",
-  ),
+const retainedJudgment = Schema.Struct({
+  judgment: firewallCheckSchema.fields.judgment,
+  reason: retainedFirewallReason,
 });
 
 /** One result being admitted, and whether its stale budget is spent. */
@@ -438,7 +439,6 @@ function sliceEvidence(
 ): FirewallEvidence {
   return {
     revision: captured.revision,
-    pendingOutgoing: captured.pendingOutgoing,
     ...(captured.slices[index] ?? EMPTY_WINDOW),
   };
 }
@@ -626,7 +626,7 @@ function deterministicCheck(
   return Effect.gen(function* () {
     const context = yield* contextFrom(
       environment,
-      { revision: 0, pendingOutgoing: false, ...EMPTY_WINDOW },
+      { revision: 0, ...EMPTY_WINDOW },
       [],
     );
     const allowed: FirewallCheck = {

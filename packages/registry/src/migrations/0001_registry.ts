@@ -13,7 +13,6 @@ export const registryMigration = Effect.gen(function* () {
     );
     CREATE TABLE sharness_registry_agents (
       agent_id text PRIMARY KEY,
-      agent_id_bytes bytea NOT NULL UNIQUE,
       principal_id text NOT NULL,
       agent_name text NOT NULL UNIQUE,
       public_key_thumbprint text NOT NULL UNIQUE,

@@ -4,5 +4,9 @@ updates:
     directories:
       - /
       - /.github/actions/*
+    groups:
+      actions:
+        patterns:
+          - "*"
     schedule:
       interval: weekly

@@ -19,21 +19,21 @@
  *   participant ME as Member endpoint
  *   participant MM as Member host
  *   RM->>RE: send gather to, question, deadline, schema
- *   RE->>RE: validate schema, resolve every member&lt;br>refuse an address error before any post
- *   RE->>RE: mint id&lt;br>deadline = now + duration
+ *   RE->>RE: validate schema, resolve every member, refuse an address error before any post
+ *   RE->>RE: mint id, deadline = now + duration
  *   RE->>ME: one request post in each member's direct conversation
  *   alt every request post is refused
  *     RE-->>RM: error naming each member and its reason
  *   else otherwise, after at most 20 s
  *     RE-->>RM: operation id
- *     RE->>RE: a refused member is no-answer&lt;br>a pending one settles later, no-answer at the deadline
+ *     RE->>RE: a refused member is no-answer, a pending one settles later, no-answer at the deadline
  *   end
  *   ME->>MM: collectiveRequest item
  *   MM->>ME: send collectiveResponse to the requester, action, content
- *   ME->>ME: match the request open in that conversation&lt;br>validate content against its schema
+ *   ME->>ME: match the request open in that conversation, validate content against its schema
  *   ME->>RE: response post in the direct conversation
  *   RE->>RE: consume, validate and record the answer
- *   Note over RE: complete when every member has an outcome&lt;br>or at the deadline
+ *   Note over RE: complete when every member has an outcome, or at the deadline
  *   RE->>RM: collectiveResult item
  * ```
  *
@@ -49,7 +49,7 @@
  *   participant ME as Member endpoints
  *   participant MM as Member hosts
  *   RM->>RE: send all_gather to group, question, deadline, schema
- *   RE->>RE: validate schema, resolve every member&lt;br>refuse an address error before any post
+ *   RE->>RE: validate schema, resolve every member, refuse an address error before any post
  *   RE->>ME: one request post in the group conversation
  *   alt the group post is refused or not certified in time
  *     RE-->>RM: error naming every member with the post's reason
@@ -60,10 +60,10 @@
  *   end
  *   ME->>MM: collectiveRequest item
  *   MM->>ME: send collectiveResponse to the group, action, content
- *   ME->>ME: match the request open in the group&lt;br>validate content against its schema
+ *   ME->>ME: match the request open in the group, validate content against its schema
  *   ME->>RE: response post to the group
  *   ME->>ME: peer response posts, consumed and recorded by record hash
- *   Note over RE: complete when every member has an outcome&lt;br>or at the deadline
+ *   Note over RE: complete when every member has an outcome, or at the deadline
  *   RE->>ME: close post listing the counted answers' record hashes
  *   alt the close is not certified
  *     RE->>RM: operationFailed item, and members get no result

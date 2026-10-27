@@ -1,32 +1,29 @@
 /** @file Unit tests for workspace Mermaid block discovery and extraction. */
 
-import { statSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { extractMermaidBlocks, MERMAID_ROOTS } from "../mermaid-lint.ts";
-
-const WORKSPACE_ROOT = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  "..",
-  "..",
-  "..",
-);
-
-describe("MERMAID_ROOTS", () => {
-  // A root naming a tree that does not exist contributes no blocks. The
-  // gate's own `requireRoots` turns that into a hard failure at runtime;
-  // this pins the same invariant at the list, where the typo would land.
-  it.each(MERMAID_ROOTS)("resolves %s to a real directory", (root) => {
-    expect(statSync(resolve(WORKSPACE_ROOT, root)).isDirectory()).toBe(true);
-  });
-});
+import { extractMermaidBlocks } from "../mermaid-lint.ts";
 
 // eslint-disable-next-line max-lines-per-function, sonarjs/max-lines-per-function -- This declarative test group keeps its related regression cases and source fixtures together.
 describe("extractMermaidBlocks", () => {
   // @agent-code-guard/regression-only: fixed syntax and gate failure fixtures exercise distinct regressions.
   it("returns empty list when the source has no fenced blocks", () => {
     expect(extractMermaidBlocks("doc.md", "Plain prose.\n")).toEqual([]);
+  });
+
+  it("extracts JSDoc diagrams with source line numbers and indentation", () => {
+    const source = [
+      "const value = 1;",
+      "/**",
+      " * Flow.",
+      " * ```mermaid",
+      " * sequenceDiagram",
+      " *   A->>B: hi",
+      " * ```",
+      " */",
+    ].join("\n");
+    expect(extractMermaidBlocks("flow.ts", source)).toEqual([
+      { file: "flow.ts", startLine: 4, body: "sequenceDiagram\n  A->>B: hi" },
+    ]);
   });
 
   it("finds a single triple-backtick mermaid block", () => {
