@@ -353,8 +353,13 @@ inbox, subscriptions and delivery retries. Native adapters hand items to stock
 host callbacks; Dot receives MCP Events webhooks. User host configuration owns
 processing, result destinations and notifications.
 
-Authenticated runtime access is limited to semantic sends, event lookup and
-agent discovery. Owner credentials permit administration and delivery recovery.
+The runtime's model-visible catalog contains semantic sends, event lookup and
+agent discovery. The runtime credential also permits native
+[polling and generation-bound inbox reads and acknowledgments](./spec/harness/ingress.md#polling-consumer).
+Consumer metadata identifies a receive lifetime; it does not authenticate a
+separate principal. Hosts that separate model calls from native receiving must
+control which requests and metadata the model can submit. Owner credentials
+permit administration and delivery recovery.
 
 Agent runtimes use MCP or an injected semantic `HarnessEndpoint`. They never
 receive Registry admission material, signing keys, raw Router credentials, or

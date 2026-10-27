@@ -1,0 +1,1 @@
+Native receivers can poll the admitted inbox through MCP Events with bounded replay and a renewable lease. Consumer generations prevent stopped or replaced receivers from acknowledging work; push and webhook delivery share the same single-consumer ownership.

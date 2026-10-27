@@ -16,14 +16,12 @@ import {
   decodeRuntimeValue,
   DeliveryToken,
   encodeRuntimeValue,
-  type InboxEntry,
 } from "../../communication/store/index.js";
 import { localGuidanceSchema } from "../../firewall/outcome/index.js";
 import {
   callbackReasons,
   type EventSubscribeInput,
   type HarnessWebhookEvents,
-  maximumEventBytes,
   type WebhookStatus,
 } from "../protocol/index.js";
 import { INBOX_ITEM_EVENT } from "../protocol/names.js";
@@ -36,40 +34,7 @@ import {
   type WebhookFailureReason,
   webhookUrl,
 } from "./event-signing.js";
-
-/** Persist the returned bytes before transmitting; retries must not regenerate them. */
-const encodeItemEvent = (entry: InboxEntry, timestamp: number) =>
-  Effect.gen(function* () {
-    const item = yield* decodeRuntimeValue(
-      retainedInboundItem,
-      entry.canonicalItem,
-    );
-    const guidance =
-      entry.canonicalGuidance === undefined
-        ? undefined
-        : yield* decodeRuntimeValue(
-            localGuidanceSchema,
-            entry.canonicalGuidance,
-          );
-    const envelope = {
-      eventId: eventIdOf(entry.deliveryToken),
-      name: INBOX_ITEM_EVENT,
-      timestamp: new Date(timestamp).toISOString(),
-      cursor: null,
-    } as const;
-    return boundedItemEvent(
-      {
-        ...envelope,
-        data: {
-          kind: "item",
-          item,
-          ...(guidance === undefined ? {} : { guidance }),
-        },
-      },
-      entry.canonicalItem.byteLength +
-        (entry.canonicalGuidance?.byteLength ?? 0),
-    );
-  }).pipe(Effect.withSpan("encodeItemEvent"));
+import { boundItemEvent, makeItemEvent } from "./item.js";
 
 const maximumRetryDelay = 5 * 60_000;
 const maximumLease = 24 * 60 * 60_000;
@@ -118,20 +83,6 @@ const currentItemEvent = Schema.parseJson(
   }),
 );
 
-/** Both fresh and migrated callbacks fall back to a readable reference at the envelope bound. */
-function boundedItemEvent(
-  event: typeof currentItemEvent.Type,
-  bytes: number,
-): string {
-  const body = JSON.stringify(event);
-  return Buffer.byteLength(body, "utf8") <= maximumEventBytes
-    ? body
-    : JSON.stringify({
-        ...event,
-        data: { kind: "reference", itemKind: event.data.item.kind, bytes },
-      });
-}
-
 /** Only historical withheld refusals require new durable callback bytes. */
 const retainedOccurrenceBody = (body: string) =>
   Schema.decodeUnknown(currentItemEvent)(body).pipe(
@@ -139,15 +90,17 @@ const retainedOccurrenceBody = (body: string) =>
     Effect.orElse(() =>
       Schema.decodeUnknown(retainedItemEvent)(body).pipe(
         Effect.map((event) =>
-          boundedItemEvent(
-            event,
-            Buffer.byteLength(JSON.stringify(event.data.item), "utf8") +
-              (event.data.guidance === undefined
-                ? 0
-                : Buffer.byteLength(
-                    JSON.stringify(event.data.guidance),
-                    "utf8",
-                  )),
+          JSON.stringify(
+            boundItemEvent(
+              event,
+              Buffer.byteLength(JSON.stringify(event.data.item), "utf8") +
+                (event.data.guidance === undefined
+                  ? 0
+                  : Buffer.byteLength(
+                      JSON.stringify(event.data.guidance),
+                      "utf8",
+                    )),
+            ),
           ),
         ),
       ),
@@ -524,7 +477,7 @@ const commitReceipt = (
     return true;
   }).pipe(Effect.mapError(persistenceFailure), Effect.uninterruptible);
 
-/** Revocation and replacement fence responses from an earlier consumer. */
+/** Expiry, revocation and replacement fence responses from an earlier consumer. */
 const completeDelivery = (
   runtime: WebhookRuntime,
   registration: Registration,
@@ -534,6 +487,9 @@ const completeDelivery = (
   runtime.gate.withPermits(1)(
     Effect.suspend(() => {
       const current = runtime.state.registration;
+      if (!active(runtime)) {
+        return Effect.succeed(false);
+      }
       if (
         current === null ||
         current.id !== registration.id ||
@@ -623,7 +579,8 @@ const prepareOccurrence = (runtime: WebhookRuntime) =>
         return null;
       }
       const timestamp = now(runtime);
-      const body = yield* encodeItemEvent(entry, timestamp).pipe(
+      const body = yield* makeItemEvent(entry, timestamp).pipe(
+        Effect.map((event) => JSON.stringify(event)),
         Effect.mapError(persistenceFailure),
       );
       const next = {

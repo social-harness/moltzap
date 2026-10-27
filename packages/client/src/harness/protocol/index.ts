@@ -2,7 +2,12 @@
 /** Daemon event transport schemas and callback ports. */
 export {
   callbackReasons,
+  type ConsumerMetadata,
+  decodeConsumerMetadata,
+  decodePollResult,
   eventListInput,
+  type EventPollInput,
+  eventPollInput,
   type EventStreamInput,
   eventStreamInput,
   type EventSubscribeInput,
@@ -10,7 +15,9 @@ export {
   type EventUnsubscribeInput,
   eventUnsubscribeInput,
   type HarnessWebhookEvents,
+  itemEventDataJsonSchema,
   maximumEventBytes,
+  type PollResult,
   type WebhookStatus,
   webhookStatusJsonSchema,
 } from "./event-schemas.js";

@@ -6,7 +6,7 @@ Remote message ingress begins only from a complete locally certified
 remote-authored post. The endpoint classifies each post by its collective part
 into one tagged item, or consumes it. Locally emitted collective results and
 failures also enter the durable inbox without requiring a remote post. Native
-events announce pending items; webhooks carry classified items. Delivery
+push events announce pending items; polling and webhooks carry classified items. Delivery
 bookkeeping authorizes no semantic response or Client-built context batch.
 
 ## MCP Events and inbox
@@ -41,8 +41,9 @@ that stream. Activation precedes events. Recoverable
 inbox read. A canceled consumer's late notification failure cannot close its
 replacement.
 
-The native runtime tool `read_inbox`, available to trusted-local clients and
-owner diagnostics, accepts `{cursor?: string}` and returns:
+The native runtime tool `read_inbox`, available to trusted-local clients,
+owner diagnostics and an authenticated polling consumer, accepts
+`{cursor?: string}` and returns:
 
 ```ts
 interface InboxPage {
@@ -78,11 +79,63 @@ is never rebound to a different payload. An already acknowledged request does
 not become actionable again. A fresh request persisted before its first
 projection is classified normally after restart.
 
+## Polling consumer
+
+With explicit runtime and owner credentials, native receivers can use
+`events/poll` for `org.social-harness/inbox.item`. Polling reads the same
+firewall-admitted inbox as push and webhooks. One push, polling or webhook
+consumer owns the endpoint at a time.
+
+Send `{name, arguments: {}, cursor: null}` to acquire a polling consumer.
+An omitted cursor also means start now. The response contains no old events;
+it contains a fresh cursor and `_meta["org.social-harness/consumer"]` with
+an opaque `generation`. Then call `read_inbox` to recover all unread items,
+including arrivals between acquisition and that read. Echo the generation in
+the same metadata field on subsequent polls, native inbox reads and delivery
+acknowledgments. Metadata binds those operations to the consumer; every request
+still needs its bearer credential. The native read and acknowledgment calls
+are absent from the runtime's model-visible tool catalog.
+Any holder of the runtime credential can acquire a free polling consumer and
+acknowledge its inbox. Hosts must enforce their model-call boundary as described
+in the [daemon credential contract](./daemon.md#process-and-configuration).
+An arrival can appear in both unread recovery and a later poll. Deduplicate it
+by delivery token, represented as the stable event ID in polling responses.
+
+Each successful poll renews a 60-second process-local lease. Responses contain
+`events`, `cursor`, `truncated`, `hasMore` and `nextPollMs` (1000 milliseconds).
+Follow `hasMore` immediately; otherwise wait `nextPollMs`. Native receivers
+must renew independently of model processing or slow host callbacks.
+`maxEvents` is a positive integer, capped at 50. Each page uses the inbox's
+2 MiB stored-content budget and a fixed insertion upper bound, so new arrivals
+cannot extend an unfinished page. Each occurrence is bounded to 256 KiB,
+using the same retained-reference format as webhooks for larger content.
+Item identities and separate local guidance survive replay.
+
+`maxAgeMs` limits cursor replay age, with a default and cap of 24 hours.
+Malformed, expired or out-of-range cursors return a fresh cursor with
+`truncated: true`. Acknowledged rows are skipped without marking a replay gap.
+Recover the unread inbox whenever `truncated` is true. Cursor advancement never acknowledges
+an item. A poll consumer must meet its host-specific acceptance contract
+before calling `acknowledge_delivery`.
+
+To release the lease, poll with its generation and `release: true` in that
+metadata object. Release leaves unread items intact. Owner revocation, lease
+expiry, handler shutdown and daemon restart invalidate the generation.
+Reads and acknowledgments from it fail with `consumer-revoked`, including
+after a replacement acquires the inbox. A stale poll cannot reacquire a lease;
+explicit acquisition starts a new generation and unread recovery. Consumer
+validation and receipt commit share the ownership lock. Owner diagnostics
+without consumer metadata remain available independently of the lease.
+If acquisition succeeds but its response is lost, or a receiver restarts and
+loses its generation, reacquisition fails with `already-listening` until the
+60-second lease expires or an owner revokes it. Back off before retrying; do not
+treat an ambiguous acquisition as permission to replace a live consumer.
+
 ## Webhook consumer
 
 With explicit runtime and owner credentials, `events/subscribe` and
 `events/unsubscribe` implement the draft webhook profile for a private Dot.
-One push or webhook consumer owns the endpoint at a time. Subscriptions are
+One push, polling or webhook consumer owns the endpoint at a time. Subscriptions are
 keyed by principal, URL, event name and arguments; refresh retains their id.
 The default and maximum lease is 24 hours, with a 60-second floor.
 
@@ -115,6 +168,8 @@ HTTP 2xx receipt atomically retires the inbox item and underlying pending row
 and clears its callback occurrence. The daemon immediately offers the next
 pending item. It sends no post-receipt reminders. A receipt establishes handoff;
 processing and notification remain host responsibilities.
+Completion rechecks the lease and registration under the consumer lock. A late
+response after expiry or revocation cannot retire work for a replacement consumer.
 
 Callback failures retry with capped backoff and suspend after at least 100
 attempts spanning an hour. HTTP 410 and 413 suspend the subscription with a
@@ -155,7 +210,8 @@ catch-up creates missing pending deliveries.
 
 ## Delivery handoff
 
-The native runtime MCP tool `acknowledge_delivery`, available to trusted-local
+The native runtime MCP tool `acknowledge_delivery`, available to an authenticated
+polling consumer, trusted-local
 clients and owner diagnostics, accepts exactly
 `{"deliveryToken": DeliveryToken}` and returns exactly `{}`. Acknowledgment
 carries no content and authorizes no post. Crash or failure before

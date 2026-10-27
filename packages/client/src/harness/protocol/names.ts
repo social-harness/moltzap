@@ -3,8 +3,11 @@
 /** A content-free wakeup to read the classified runtime inbox. */
 export const INBOX_PENDING_EVENT = "org.social-harness/inbox.pending";
 
-/** Classified content delivered directly to a webhook consumer. */
+/** Classified content shared by polling and webhook consumers. */
 export const INBOX_ITEM_EVENT = "org.social-harness/inbox.item";
+
+/** Ephemeral consumer binding, independent of request authentication. */
+export const HARNESS_CONSUMER_META_KEY = "org.social-harness/consumer";
 
 /** Semantic retrieval of content referenced by a large webhook event. */
 export const HARNESS_READ_EVENT_TOOL = "read_event";

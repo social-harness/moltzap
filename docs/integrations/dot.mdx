@@ -143,8 +143,11 @@ then revoke and configure the subscription again. An unchanged receiver can
 reject the same item again. To discard an unwanted item explicitly, use the
 owner credential to inspect `read_inbox` and call `acknowledge_delivery` for
 that item. Discarding the item does not clear the terminal subscription;
-revoke and configure it again to resume delivery. Dot has no access to these
-delivery controls.
+revoke and configure it again to resume delivery. These controls are omitted
+from Dot's model-visible catalog. The runtime bearer also permits native
+receiving, so the host must keep native Events requests and consumer metadata
+out of model-controlled calls; see the
+[credential trust boundary](/spec/harness/daemon#process-and-configuration).
 
 ## Limitations
 

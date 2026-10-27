@@ -77,7 +77,15 @@ without a trailing newline. Runtime authority exposes only `send_message`,
 exposes no tools. Owner authority also permits registration, status, raw history,
 inbox pagination, delivery acknowledgment, send recovery and event consumer
 administration, editable policy and firewall decision metadata. Trusted-local native clients retain these runtime delivery
-operations; the Dot model cannot retire pending items.
+operations. An authenticated [polling consumer](./ingress.md#polling-consumer)
+can also call `read_inbox` and `acknowledge_delivery` with its active generation
+in request metadata. These calls stay outside the runtime's model-visible
+catalog, and a stopped or replaced consumer cannot acknowledge work.
+The runtime bearer therefore grants native receive and acknowledgment authority
+as well as the listed tools. A generation fences consumer lifetimes; it is not a
+second credential or proof that the caller is a native host. A host requiring
+model isolation must restrict model calls to the advertised catalog and keep
+native Events requests and consumer metadata under its own control.
 Every request, including discovery, requires authentication in this mode.
 Neither file contains Registry or Router credentials.
 

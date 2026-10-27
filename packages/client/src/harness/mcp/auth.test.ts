@@ -300,7 +300,7 @@ describe.each(registrationStates)(
 describe.each(registrationStates)(
   "runtime event authority for a daemon that is $state",
   ({ registered }) => {
-    it("lists only the webhook item event to the runtime credential", () =>
+    it("lists the polling and webhook item event to the runtime credential", () =>
       verify(
         credentialedHandler(registered),
         (handler) =>
@@ -313,7 +313,7 @@ describe.each(registrationStates)(
               events: [
                 {
                   name: "org.social-harness/inbox.item",
-                  delivery: ["webhook"],
+                  delivery: ["poll", "webhook"],
                 },
               ],
             },

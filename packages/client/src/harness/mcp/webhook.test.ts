@@ -36,6 +36,7 @@ import {
   sendWebhook,
   webhookHttpClientLayer,
 } from "./event-signing.js";
+import { makeHarnessPollEvents } from "./events.js";
 
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals, sonarjs/no-hardcoded-ip -- Protocol codes and deliberately unsafe IP fixtures pin the callback trust boundary. */
 
@@ -266,6 +267,46 @@ const permitsReadAndRevokeDuringDelivery = () =>
       expect((yield* store.readInboxSummary()).pendingCount).toBe(1);
     }),
   );
+
+const refusesExpiredReceipt = () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const store = yield* openEndpointStore(stateDirectory(), {
+        liveWireVersions: LIVE_WIRE_VERSIONS,
+      });
+      const test = scriptedWebhook(store);
+      const events = yield* test.acquire;
+      yield* enqueue(store, 1);
+      yield* events.subscribe({ ...input, ttlMs: 60_000 }, "runtime");
+      const entered = yield* Deferred.make<undefined>();
+      const release = yield* Deferred.make<undefined>();
+      test.onEvent(
+        Deferred.succeed(entered, undefined).pipe(
+          Effect.zipRight(Deferred.await(release)),
+          Effect.asVoid,
+        ),
+      );
+      const delivery = yield* events.observe().pipe(Effect.forkScoped);
+      yield* Deferred.await(entered);
+      yield* stepClock("61 seconds");
+      expect(events.hasActiveSubscription()).toBe(false);
+      const poll = yield* makeHarnessPollEvents(store, test.gate);
+      yield* poll.poll(
+        { name: input.name, arguments: {}, cursor: null },
+        {},
+        Effect.void,
+      );
+      yield* Deferred.succeed(release, undefined);
+      yield* Fiber.join(delivery);
+      expect(poll.hasActiveSubscription()).toBe(true);
+      expect((yield* store.readInboxSummary()).pendingCount).toBe(1);
+    }),
+  ).pipe(onSteppedClock);
+
+it(
+  "does not retire an item when an expired callback answers after polling takes over",
+  refusesExpiredReceipt,
+);
 
 const refreshPreservesTerminalReceipt = () =>
   Effect.scoped(
