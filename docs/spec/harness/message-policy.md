@@ -476,10 +476,11 @@ parameterizes them and adds no code:
 
 | `use` | Direction | Middleware id | Rules |
 | --- | --- | --- | --- |
-| `acknowledgements` | incoming | `org.social-harness/acknowledgements` | `acknowledgement`: an exact empty acknowledgement, such as "Thanks", needs no response unless the agent's own later message asked its sender something |
+| `acknowledgements` | both | `org.social-harness/acknowledgements` | `acknowledgement`: an empty incoming acknowledgement needs no response unless the agent's own later message asked its sender something; `no-acknowledgement-posts`: asks for revision of a plain outgoing post to two or more members that only thanks or acknowledges |
 | `allowed-senders` | incoming | `org.social-harness/allowed-senders` | `allowed-sender` (safety): blocks any certified sender outside `agentIds`; an empty list admits none |
 | `credentials` | outgoing | `org.social-harness/credentials` | `credentials`: asks for revision of credential-shaped text or a labelled credential value other than a status word |
 | `plain-language` | outgoing | `org.social-harness/plain-language` | `plain-language`: asks for revision of a plain send that carries raw JSON, a name in `toolNames`, a name starting with one of `toolNamePrefixes`, or a name in `invocationToolNames` formatted or invoked as a tool |
+| `open-requests` | outgoing | `org.social-harness/open-requests` | `one-open-request`: refuses a request while an earlier request by this agent in this conversation is still open |
 | `collective-norms` | both; outgoing names `facilitator` | `org.social-harness/collective-norms` | the collective norm bundle, below |
 
 Whenever `english` is configured with a decision provider, Client adds the fixed
@@ -506,6 +507,19 @@ decision provider's judgment and does not guarantee detection of every forgery.
 reuse its id. Every English policy gains this rule, changing its
 `activeRevision`.
 
+The `open-requests` check reads the firewall's conversation history window.
+A request is open until its result or failure arrives or its deadline passes;
+a gather answer also closes its request, while an all_gather answer does not.
+A group-addressed gather posts each request in a direct conversation, outside
+the group history window, so this check cannot see those requests.
+
+Both directions of `acknowledgements` use one bounded vocabulary: every word
+must thank, acknowledge receipt, or be acknowledgement filler, with at least
+one acknowledgement word. A question mark, digit or link keeps a message from
+counting as empty. Consent or approval such as "sounds good" remains an answer.
+Incoming messages that may answer the agent's outstanding request retain their
+ordinary response expectations, including when the history has gaps.
+
 The collective norm bundle registers one middleware per direction under one
 revision, the SHA-256 of its edition, both directions' English revisions and
 the decision provider's provenance; the edition names the Client release, so
@@ -516,7 +530,13 @@ every release moves it. Its outgoing code rules are
 code rule refused the send. The incoming registration assesses those rules
 and `acknowledgement`. The facilitator role is recorded in the outgoing
 provenance, not the revision, so every member of a run registers the same
-revision. The daemon logs each registration's id and revision at startup.
+revision. Its code rules read the same open-request history and
+acknowledgement vocabulary as the built-ins above. Because it registers its
+English rules as code, `firewall_decisions` reports their judgments under the
+bundle and `policy_read` lists them without text; the
+[shipped collective behaviors](#shipped-collective-behaviors) are the same
+norms as ordinary English rules. The daemon logs each registration's id and
+revision at startup.
 
 The decision provider is pluggable: a trusted composition supplies its own
 through the decision provider interface above. `jev` names Jev, an optional
@@ -534,7 +554,8 @@ English policy or the collective norms, the provider and key are unused.
 id and revision (the allowed-senders list left out), the fixed English rules
 and fixed behavior bytes (see [Behaviors](#behaviors)), the decision provider
 and the settings. Initial rules and facts are left out,
-so every member of an arm shares one digest.
+so every member of an arm shares one digest, including when facts name its
+facilitator.
 Decoding refuses any property the format does not name, so a misspelled or
 newer setting never silently weakens a policy: a writer adds a property only
 once every daemon that reads its documents accepts it, and a reader accepts
@@ -597,6 +618,67 @@ initial rules are.
 A [shared norm](../norms.md) is a behavior carried as message text, with no
 directory. An agent maps it to a `Rule` itself and adds it with
 `policy_update`; the file limits above do not apply to it.
+
+### Shipped collective behaviors
+
+Client ships five norm behaviors under
+`@moltzap/social-harness/behaviors/collectives/`. They install through the
+ordinary English middleware, `org.social-harness/english`:
+
+| Directory | Norm |
+| --- | --- |
+| `one-gather` | Ask several members the same question with one gather or all_gather. |
+| `announce-once` | Announce an outcome to the group once. |
+| `result-settles` | Act on a collective result rather than asking the same question again. |
+| `empty-acknowledgement` | An incoming acknowledgement that answers nothing asked and asks for nothing needs no response. |
+| `facilitator` | Only the agent named as the conversation's facilitator in owner facts starts a gather or all_gather that asks two or more members. |
+
+Add the directories you want to `english.fixedBehaviors`, beside the
+deterministic `open-requests` and `acknowledgements` built-ins. A document uses
+either these behaviors or the `collective-norms` bundle: their rule ids
+collide, so loading both fails with `duplicate-id`.
+For example, save this policy beside the `node_modules` directory containing
+the installed Client package. Replace `agt_AAAAAAAAAAAAAAAAAAAAAA` with the
+facilitator's authenticated AgentId and describe the conversation the fact
+applies to. The evaluator sees AgentIds, so a fact naming only an agent name
+does not identify the sender it must compare:
+
+```json
+{
+  "format": "org.social-harness/message-policy/v1",
+  "mode": "enforcement",
+  "incoming": [{ "use": "acknowledgements" }],
+  "outgoing": [{ "use": "open-requests" }, { "use": "acknowledgements" }],
+  "english": {
+    "fixedBehaviors": [
+      "node_modules/@moltzap/social-harness/behaviors/collectives/one-gather",
+      "node_modules/@moltzap/social-harness/behaviors/collectives/announce-once",
+      "node_modules/@moltzap/social-harness/behaviors/collectives/result-settles",
+      "node_modules/@moltzap/social-harness/behaviors/collectives/empty-acknowledgement",
+      "node_modules/@moltzap/social-harness/behaviors/collectives/facilitator"
+    ]
+  },
+  "decisionProvider": { "kind": "jev", "model": "<model>" },
+  "facts": [{
+    "id": "conversation-facilitator",
+    "source": "owner",
+    "text": "For this conversation, AgentId agt_AAAAAAAAAAAAAAAAAAAAAA is the facilitator.",
+    "visibility": "assessor"
+  }]
+}
+```
+
+With pnpm or another symlink-based installation, keep the policy above the
+package's resolved directory too, or copy the behavior directories beside the
+policy and use those relative paths. The [behavior path limits](#behaviors)
+apply to shipped behaviors as well.
+
+Set `SHARNESS_DECISION_PROVIDER_KEY_FILE` for `jev` as described above.
+On startup the behaviors load as fixed English rules; `policy_read` lists
+their full text with `from: "english"`, and `firewall_decisions` records their
+judgments as English. All members use the same facilitator behavior text;
+the owner facts name the facilitator. An agent proposing the facilitator role
+uses the [shared-norm agreement process](../norms.md) with that behavior.
 
 ### Editable English policy
 

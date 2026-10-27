@@ -20,6 +20,12 @@ import {
   type MiddlewareResult,
   type RuleDescription,
 } from "../evaluator/index.js";
+import {
+  ACKNOWLEDGEMENT_FILLER,
+  ACKNOWLEDGEMENT_WORDS,
+  isAcknowledgementOnly,
+} from "./acknowledgement.js";
+import { hasOpenRequest } from "./open-requests.js";
 import { revisionOutcome, sha256 } from "./outcome.js";
 
 /**
@@ -164,67 +170,6 @@ const CODE_RULES: readonly CodeRule[] = [
         : "not-applicable",
   },
 ];
-
-/** Words that thank or acknowledge receipt; a message needs one to count as an acknowledgement. */
-const ACKNOWLEDGEMENT_WORDS: ReadonlySet<string> = new Set([
-  "ack",
-  "acknowledged",
-  "appreciate",
-  "appreciated",
-  "cheers",
-  "got",
-  "noted",
-  "received",
-  "roger",
-  "thank",
-  "thanks",
-  "thx",
-  "ty",
-  "understood",
-]);
-
-/**
- * Words that may accompany an acknowledgement without adding information.
- * Consent and approval words such as "ok", "sounds good", "great" or
- * "perfect" answer a proposal, so a message carrying one is never an
- * acknowledgement, even with a thanks.
- */
-const ACKNOWLEDGEMENT_FILLER: ReadonlySet<string> = new Set([
-  "a",
-  "again",
-  "all",
-  "and",
-  "both",
-  "confirmation",
-  "confirming",
-  "everybody",
-  "everyone",
-  "folks",
-  "for",
-  "heads",
-  "hey",
-  "hi",
-  "info",
-  "it",
-  "just",
-  "know",
-  "letting",
-  "lot",
-  "much",
-  "organizing",
-  "really",
-  "so",
-  "team",
-  "that",
-  "the",
-  "this",
-  "up",
-  "update",
-  "updates",
-  "us",
-  "very",
-  "you",
-]);
 
 /**
  * Every rule of the bundle in each direction, with its full text and the
@@ -373,74 +318,4 @@ function registration(
       }),
     },
   };
-}
-
-/**
- * Whether a plain message only thanks or acknowledges: no question mark,
- * digit or link, and, once addresses and mentions are removed, every word an
- * acknowledgement or filler word, with at least one acknowledgement. An
- * emoji-only reply may consent to a proposal and a name is not filler, so
- * "👍" and "Thanks, Bob" are not acknowledgement-only: the rule refuses only
- * what certainly is.
- */
-function isAcknowledgementOnly(text: string): boolean {
-  if (/[?\d]|https?:\/\//u.test(text)) {
-    return false;
-  }
-  const remainder = text.replace(/(?:@|\b(?:agent|group):)\S+/gu, " ");
-  const words = remainder.toLowerCase().match(/\p{L}+(?:'\p{L}+)?/gu) ?? [];
-  return (
-    words.length > 0 &&
-    words.every(
-      (word) =>
-        ACKNOWLEDGEMENT_WORDS.has(word) || ACKNOWLEDGEMENT_FILLER.has(word),
-    ) &&
-    words.some((word) => ACKNOWLEDGEMENT_WORDS.has(word))
-  );
-}
-
-/**
- * Whether the window holds a request of the agent's own that is still open
- * in this conversation, assessed at the context's capture time. A gather's
- * answer closes its request, since its conversation has one member; an
- * all_gather stays open until its result. A group-addressed gather's request
- * posts sit in each member's direct conversation, outside the window its
- * check reads, so this rule cannot see them.
- */
-function hasOpenRequest(context: MessageContext): boolean {
-  const closed = new Set(
-    context.history.flatMap((entry) => closedRequest(entry.operation)),
-  );
-  return context.history.some(
-    (entry) =>
-      entry.sender === context.agentId &&
-      isOpenRequest(entry.operation, closed, context.now),
-  );
-}
-
-function isOpenRequest(
-  operation: Message["operation"],
-  closed: ReadonlySet<string>,
-  now?: number,
-): boolean {
-  return (
-    operation?.kind === "request" &&
-    !closed.has(operation.id) &&
-    (now === undefined || operation.deadlineAt > now)
-  );
-}
-
-function closedRequest(operation: Message["operation"]): readonly string[] {
-  switch (operation?.kind) {
-    case "result":
-    case "failure":
-      return [operation.id];
-    case "answer":
-      return operation.op === "gather" ? [operation.id] : [];
-    case "request":
-    case undefined:
-      return [];
-    default:
-      return operation satisfies never;
-  }
 }

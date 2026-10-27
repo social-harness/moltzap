@@ -290,6 +290,170 @@ it.each([
     }),
 );
 
+it.each([
+  "Thanks everyone!",
+  "Received, thank you.",
+  "Got it, team.",
+  "Much appreciated.",
+])("asks for revision of a group acknowledgement: %s", (text) =>
+  Effect.gen(function* () {
+    const firewall = yield* firewallFor({
+      outgoing: [{ use: "acknowledgements" }],
+    });
+    const result = yield* firewall.checkOutgoing(
+      { ...message(text), recipients: ["alice", "bob"] },
+      SENDING,
+    );
+    expect(result.judgment).toBe("revise");
+    expect(result.feedback).toEqual([
+      expect.objectContaining({ nextAction: "stop" }),
+    ]);
+  }),
+);
+
+it.each([
+  "Thanks. Can you book it?",
+  "Thanks, confirmed for 3 pm.",
+  "Thanks for https://example.com/info",
+  "Thanks, sounds good.",
+  "Thanks, Bob.",
+  "👍",
+])("sends group information and answers: %s", (text) =>
+  Effect.gen(function* () {
+    const firewall = yield* firewallFor({
+      outgoing: [{ use: "acknowledgements" }],
+    });
+    const result = yield* firewall.checkOutgoing(
+      { ...message(text), recipients: ["alice", "bob"] },
+      SENDING,
+    );
+    expect(result.judgment).toBe("allow");
+  }),
+);
+
+it("sends a direct acknowledgement and a collective answer", () =>
+  Effect.gen(function* () {
+    const firewall = yield* firewallFor({
+      outgoing: [{ use: "acknowledgements" }],
+    });
+    const direct = yield* firewall.checkOutgoing(message("Thanks!"), SENDING);
+    const answer = yield* firewall.checkOutgoing(
+      {
+        ...message("Thanks!"),
+        recipients: ["alice", "bob"],
+        operation: { kind: "answer", op: "all_gather", id: "col_open" },
+      },
+      SENDING,
+    );
+    expect(direct.judgment).toBe("allow");
+    expect(answer.judgment).toBe("allow");
+  }));
+
+it.each(["Received, thank you.", "Got it, team.", "Much appreciated."])(
+  "uses the shared acknowledgement vocabulary for incoming messages: %s",
+  (text) =>
+    Effect.gen(function* () {
+      const result = yield* received(message(text), CONTEXT);
+      expect(result.guidance).toEqual([
+        expect.objectContaining({ expectation: "none" }),
+      ]);
+    }),
+);
+
+const NOW = 1_792_000_000_000;
+const OPEN_REQUEST = {
+  ...entry("prior-request", MEMBER, "concierge-id", "Which day?"),
+  operation: {
+    kind: "request",
+    op: "all_gather",
+    id: "col_open",
+    deadlineAt: NOW + 60_000,
+  },
+} as const;
+const NEXT_REQUEST = {
+  ...message("Which time?"),
+  operation: {
+    kind: "request",
+    op: "gather",
+    id: "col_next",
+    deadlineAt: NOW + 120_000,
+  },
+} as const;
+
+it("refuses a second open request from persisted conversation history", () =>
+  Effect.gen(function* () {
+    const firewall = yield* firewallFor({
+      outgoing: [{ use: "open-requests" }],
+    });
+    const result = yield* firewall.checkOutgoing(NEXT_REQUEST, {
+      ...SENDING,
+      now: NOW,
+      history: [OPEN_REQUEST],
+    });
+    expect(result.judgment).toBe("revise");
+    expect(result.feedback).toEqual([
+      expect.objectContaining({ nextAction: "wait" }),
+    ]);
+  }));
+
+it.each([
+  { kind: "result", op: "all_gather", id: "col_open" },
+  { kind: "failure", id: "col_open" },
+] as const)("opens another request after a $kind", (operation) =>
+  Effect.gen(function* () {
+    const firewall = yield* firewallFor({
+      outgoing: [{ use: "open-requests" }],
+    });
+    const result = yield* firewall.checkOutgoing(NEXT_REQUEST, {
+      ...SENDING,
+      now: NOW,
+      history: [
+        OPEN_REQUEST,
+        {
+          ...entry("closed", "concierge-id", MEMBER, "Done"),
+          operation,
+        },
+      ],
+    });
+    expect(result.judgment).toBe("allow");
+  }),
+);
+
+it("opens another request after the deadline", () =>
+  Effect.gen(function* () {
+    const firewall = yield* firewallFor({
+      outgoing: [{ use: "open-requests" }],
+    });
+    const result = yield* firewall.checkOutgoing(NEXT_REQUEST, {
+      ...SENDING,
+      now: OPEN_REQUEST.operation.deadlineAt,
+      history: [OPEN_REQUEST],
+    });
+    expect(result.judgment).toBe("allow");
+  }));
+
+it.each(["gather", "all_gather"] as const)(
+  "handles a %s answer while opening another request",
+  (op) =>
+    Effect.gen(function* () {
+      const firewall = yield* firewallFor({
+        outgoing: [{ use: "open-requests" }],
+      });
+      const result = yield* firewall.checkOutgoing(NEXT_REQUEST, {
+        ...SENDING,
+        now: NOW,
+        history: [
+          { ...OPEN_REQUEST, operation: { ...OPEN_REQUEST.operation, op } },
+          {
+            ...entry("answer", "concierge-id", MEMBER, "Tuesday"),
+            operation: { kind: "answer", op, id: "col_open" },
+          },
+        ],
+      });
+      expect(result.judgment).toBe(op === "gather" ? "allow" : "revise");
+    }),
+);
+
 function received(candidate: typeof Message.Encoded, context: MessageContext) {
   return firewallFor(ACKNOWLEDGEMENTS).pipe(
     Effect.flatMap((firewall) => firewall.checkIncoming(candidate, context)),
