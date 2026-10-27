@@ -62,6 +62,9 @@ including the provider body, credentials, recipient or peer content:
 Each handoff closes its HTTP request on every exit, including a refused status
 whose body was not read.
 
+Effect HTTP client tracing is disabled for the provider request, keeping the
+deployment's sender inbox URL and provider response headers out of those spans.
+
 Failed handoffs remain unread in Client and can be delivered after restart. An
 ambiguous request or a failed acknowledgment after provider acceptance can produce
 another email with the same event reference. Instinct must follow the owner's
