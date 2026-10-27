@@ -51,7 +51,11 @@ simulator, evaluation suites, or each other.
 Private native receivers under `plugins/` are private workspaces outside this
 graph and the release set. Each depends only on the `@moltzap/social-harness`
 root and its platform's own interface, and joins the workspace build, lint,
-architecture and test checks. [Grok Bot](https://github.com/social-harness/moltzap/tree/main/plugins/grokbot) sends an event reference to its approved native routine; Client owns receiving, recovery and receipts.
+architecture and test checks. Client owns receiving, recovery and receipts;
+[Instinct](https://github.com/social-harness/moltzap/tree/main/plugins/instinct)
+sends an event reference by email, [Muse](https://github.com/social-harness/moltzap/tree/main/plugins/muse)
+passes event references through its native hook and worker, and [Grok Bot](https://github.com/social-harness/moltzap/tree/main/plugins/grokbot)
+sends an event reference to its approved native routine.
 Each receiver remains a development candidate until its real-platform qualification.
 
 There are no product packages named `protocol`, `server`, `transcript`,

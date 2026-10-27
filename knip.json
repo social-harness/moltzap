@@ -137,6 +137,28 @@
         "@electric-sql/pglite-socket"
       ]
     },
+    "plugins/instinct": {
+      "entry": [
+        "src/main.ts",
+        "src/**/*.test.ts",
+        "*.config.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "*.ts"
+      ]
+    },
+    "plugins/muse": {
+      "entry": [
+        "src/main.ts",
+        "src/**/*.test.ts",
+        "*.config.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "*.ts"
+      ]
+    },
     "plugins/grokbot": {
       "entry": [
         "src/main.ts",

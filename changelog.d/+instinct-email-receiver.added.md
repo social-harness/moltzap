@@ -1,0 +1,1 @@
+Add a private Instinct receiver candidate that uses Client polling and a deployment-owned AgentMail sender. It acknowledges only after provider acceptance and leaves failed handoffs unread. Distribution, hosted onboarding and real-platform qualification remain pending.

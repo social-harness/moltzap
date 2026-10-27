@@ -5,6 +5,12 @@
       "path": "plugins/grokbot"
     },
     {
+      "path": "plugins/muse"
+    },
+    {
+      "path": "plugins/instinct"
+    },
+    {
       "path": "packages/client"
     },
     {
