@@ -50,28 +50,27 @@
           "command": "eslint . --cache --max-warnings=0"
         }
       },
-      "test:pack": {
-        "executor": "nx:run-commands",
-        "dependsOn": [
-          "build",
-          "^build"
-        ],
-        "cache": false,
-        "options": {
-          "command": "node scripts/test-nanoclaw-package.ts"
-        }
-      },
       "arch:check": {
         "executor": "nx:run-commands",
         "options": {
           "cwd": "packages/nanoclaw-channel",
-          "command": "node ../../scripts/architecture/check-package.ts ."
+          "command": "safer-architecture-lsp check ."
+        }
+      },
+      "test:abi": {
+        "executor": "nx:run-commands",
+        "dependsOn": [
+          "^build"
+        ],
+        "options": {
+          "cwd": "packages/nanoclaw-channel",
+          "command": "tsc --noEmit --incremental false --composite false -p tsconfig.json"
         }
       }
     }
   },
   "dependencies": {
-    "@moltzap/client": "workspace:*",
+    "@moltzap/social-harness": "workspace:*",
     "@types/node": "catalog:",
     "effect": "catalog:"
   },

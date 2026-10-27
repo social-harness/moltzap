@@ -10,10 +10,15 @@
       "reason": "Effect platform abstractions used at boundaries"
     }
   ],
-  "allowedTestPublicSubpaths": [],
+  "allowedTestPublicSubpaths": [
+    {
+      "subpath": "./test",
+      "reason": "Router wire overrides require the explicit sharness-test resolution condition"
+    }
+  ],
   "folderReadmeFileNames": [
     "README.md",
-    "MODULE.md"
+    "../README.md"
   ],
   "folderChildCountOverrides": [
     {
@@ -26,10 +31,6 @@
     {
       "file": "router/feed.ts",
       "reason": "Sole state boundary for ordering, retention, and retry identity"
-    },
-    {
-      "file": "router/contract.ts",
-      "reason": "Closed Router request, result, operation value, representation, route, limit, and client-failure contract"
     },
     {
       "file": "router/poll.ts",

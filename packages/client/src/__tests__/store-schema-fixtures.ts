@@ -1,6 +1,5 @@
 /** @file Isolated state directories and scoped endpoint store fixtures. */
 
-import { LIVE_WIRE_VERSIONS } from "@moltzap/identity";
 import { Effect } from "effect";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Store tests create and remove real SQLite state directories around independent Effect scopes.
 import { mkdtempSync, rmSync } from "node:fs";
@@ -15,6 +14,7 @@ import {
   openEndpointStore,
   type OutboxTooOldError,
 } from "../communication/store/index.js";
+import { LIVE_WIRE_VERSIONS } from "../identity/wire-version.js";
 import { digest } from "./agent-card-fixtures.js";
 
 /**

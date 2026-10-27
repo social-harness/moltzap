@@ -4,8 +4,8 @@
  * the re-anchor once a quorum votes for it.
  */
 
-import type { SignedMessage as SignedMessageValue } from "@moltzap/identity";
 import { Effect, Schema } from "effect";
+import type { SignedMessage as SignedMessageValue } from "../../envelope/signed-message.js";
 import type { EngineRuntime } from "../runtime/index.js";
 import {
   type ClientRepresentationError,

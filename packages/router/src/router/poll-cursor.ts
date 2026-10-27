@@ -1,19 +1,13 @@
 /** @file Caller-bound authenticated cursor encoding for volatile Router polling. */
-import { type AgentId, AgentId as AgentIdSchema } from "@moltzap/identity";
+import {
+  type AgentId,
+  AgentId as AgentIdSchema,
+} from "@moltzap/social-harness";
+import { routerContract } from "@moltzap/social-harness/internal";
 import canonicalize from "canonicalize";
 import { Data, Effect, Encoding, Schema } from "effect";
 import { compactDecrypt, CompactEncrypt } from "jose";
 import { createSecretKey } from "node:crypto";
-import {
-  encodedPollCursorProtectedHeader,
-  PollCursor,
-  pollCursorPrefix,
-  pollCursorProtectedHeader,
-  type PollCursor as PollCursorValue,
-  RouterInstanceId,
-  routerInstanceIdByteLength,
-  type RouterInstanceId as RouterInstanceIdValue,
-} from "./contract.js";
 import { maximumPrivateOrder } from "./feed.js";
 
 /** Cursor construction failed before a result could be returned. */
@@ -31,9 +25,12 @@ export interface PollCursorCodec {
   readonly encrypt: (input: {
     readonly agentId: AgentId;
     readonly lastScannedOrder: bigint;
-  }) => Effect.Effect<PollCursorValue, PollCursorEncryptionError>;
+  }) => Effect.Effect<
+    typeof routerContract.PollCursor.Type,
+    PollCursorEncryptionError
+  >;
   readonly decrypt: (
-    cursor: PollCursorValue,
+    cursor: typeof routerContract.PollCursor.Type,
     callerAgentId: AgentId,
   ) => Effect.Effect<bigint, PollCursorInvalidError>;
 }
@@ -50,7 +47,7 @@ export interface PollCursorCodec {
  */
 export const makePollCursorCodec = (input: {
   readonly key: Uint8Array;
-  readonly routerInstanceId: RouterInstanceIdValue;
+  readonly routerInstanceId: typeof routerContract.RouterInstanceId.Type;
 }): PollCursorCodec => {
   const key = createSecretKey(new Uint8Array(input.key)).toCryptoKey(
     { name: "AES-GCM" },
@@ -66,8 +63,10 @@ export const makePollCursorCodec = (input: {
       readonly agentId: AgentId;
       readonly lastScannedOrder: bigint;
     }) => encodePollCursor(key, routerInstanceId, agentId, lastScannedOrder),
-    decrypt: (cursor: PollCursorValue, callerAgentId: AgentId) =>
-      decodePollCursor(key, routerInstanceId, cursor, callerAgentId),
+    decrypt: (
+      cursor: typeof routerContract.PollCursor.Type,
+      callerAgentId: AgentId,
+    ) => decodePollCursor(key, routerInstanceId, cursor, callerAgentId),
   });
 };
 
@@ -76,14 +75,15 @@ export const makePollCursorCodec = (input: {
  *
  * @returns A fresh random instance identifier.
  */
-export const generateRouterInstanceId = (): RouterInstanceIdValue =>
-  Schema.decodeUnknownSync(RouterInstanceId)(
-    `rti_${Encoding.encodeBase64Url(
-      globalThis.crypto.getRandomValues(
-        new Uint8Array(routerInstanceIdByteLength),
-      ),
-    )}`,
-  );
+export const generateRouterInstanceId =
+  (): typeof routerContract.RouterInstanceId.Type =>
+    Schema.decodeUnknownSync(routerContract.RouterInstanceId)(
+      `rti_${Encoding.encodeBase64Url(
+        globalThis.crypto.getRandomValues(
+          new Uint8Array(routerContract.routerInstanceIdByteLength),
+        ),
+      )}`,
+    );
 
 /**
  * Generates the process-local direct A256GCM key.
@@ -106,7 +106,7 @@ const orderText = Schema.String.pipe(
 
 const cursorPlaintext = Schema.Struct({
   agentId: AgentIdSchema,
-  routerInstanceId: RouterInstanceId,
+  routerInstanceId: routerContract.RouterInstanceId,
   lastScannedOrder: orderText,
 }).annotations({
   parseOptions: {
@@ -117,7 +117,7 @@ const cursorPlaintext = Schema.Struct({
 
 const canonicalPlaintext = (input: {
   readonly agentId: AgentId;
-  readonly routerInstanceId: RouterInstanceIdValue;
+  readonly routerInstanceId: typeof routerContract.RouterInstanceId.Type;
   readonly lastScannedOrder: bigint;
 }): string | undefined =>
   canonicalize({
@@ -130,10 +130,13 @@ const invalidCursor = () => new PollCursorInvalidError();
 
 function encodePollCursor(
   key: CryptoKey,
-  routerInstanceId: RouterInstanceIdValue,
+  routerInstanceId: typeof routerContract.RouterInstanceId.Type,
   agentId: AgentId,
   lastScannedOrder: bigint,
-): Effect.Effect<PollCursorValue, PollCursorEncryptionError> {
+): Effect.Effect<
+  typeof routerContract.PollCursor.Type,
+  PollCursorEncryptionError
+> {
   return Effect.gen(function* () {
     if (lastScannedOrder < 0n || lastScannedOrder > maximumPrivateOrder) {
       return yield* Effect.fail(new PollCursorEncryptionError());
@@ -149,12 +152,12 @@ function encodePollCursor(
     const compact = yield* Effect.tryPromise({
       try: () =>
         new CompactEncrypt(utf8Encoder.encode(plaintext))
-          .setProtectedHeader(pollCursorProtectedHeader)
+          .setProtectedHeader(routerContract.pollCursorProtectedHeader)
           .encrypt(key),
       catch: () => new PollCursorEncryptionError(),
     });
-    return yield* Schema.decodeUnknown(PollCursor)(
-      `${pollCursorPrefix}${compact}`,
+    return yield* Schema.decodeUnknown(routerContract.PollCursor)(
+      `${routerContract.pollCursorPrefix}${compact}`,
     ).pipe(
       Effect.catchTag("ParseError", () =>
         Effect.fail(new PollCursorEncryptionError()),
@@ -168,8 +171,8 @@ const plaintextIsCurrent = (input: {
   readonly text: string;
   readonly agentId: AgentId;
   readonly callerAgentId: AgentId;
-  readonly routerInstanceId: RouterInstanceIdValue;
-  readonly currentRouterInstanceId: RouterInstanceIdValue;
+  readonly routerInstanceId: typeof routerContract.RouterInstanceId.Type;
+  readonly currentRouterInstanceId: typeof routerContract.RouterInstanceId.Type;
 }): boolean => {
   if (input.canonical !== input.text) {
     return false;
@@ -192,13 +195,16 @@ const decodeCursorPlaintext = (
 
 function decodePollCursor(
   key: CryptoKey,
-  routerInstanceId: RouterInstanceIdValue,
-  cursor: PollCursorValue,
+  routerInstanceId: typeof routerContract.RouterInstanceId.Type,
+  cursor: typeof routerContract.PollCursor.Type,
   callerAgentId: AgentId,
 ): Effect.Effect<bigint, PollCursorInvalidError> {
   return Effect.gen(function* () {
-    const compact = cursor.slice(pollCursorPrefix.length);
-    if (compact.split(".", 1)[0] !== encodedPollCursorProtectedHeader) {
+    const compact = cursor.slice(routerContract.pollCursorPrefix.length);
+    if (
+      compact.split(".", 1)[0] !==
+      routerContract.encodedPollCursorProtectedHeader
+    ) {
       return yield* Effect.fail(invalidCursor());
     }
     const decrypted = yield* Effect.tryPromise({

@@ -61,7 +61,7 @@ const auditDisposition = Schema.Literal(
   "withheld",
 );
 
-/** Shutdown readers page over every attempt while daemon writers are stopped. */
+/** Store test seam for attempts in insertion order, including checks in progress. */
 export function readFirewallAuditPage(
   database: DatabaseSync,
   after: number,
@@ -203,12 +203,6 @@ export function readFirewallEvidenceSlices(
   }
   return {
     revision: firewallRevision(database),
-    pendingOutgoing:
-      database
-        .prepare(
-          "SELECT 1 AS pending FROM post_intents WHERE completed_record_hash IS NULL LIMIT 1",
-        )
-        .get() !== undefined,
     slices: input.ranges.map((range) =>
       readSlice(database, range, input.maximumRecords),
     ),
@@ -468,30 +462,20 @@ export function writeFirewallPolicy(
   });
 }
 
-/** A sequence cursor preserves every edit in bounded exports, including identical revisions. */
+/** Recent edits preserve activation order when timestamps coincide. */
 export function readFirewallActivations(
   database: DatabaseSync,
-  request: { readonly since?: number; readonly after?: number },
+  request: { readonly since?: number },
 ) {
   const since = request.since ?? 0;
-  const after = request.after ?? 0;
-  if (
-    !Number.isSafeInteger(since) ||
-    since < 0 ||
-    !Number.isSafeInteger(after) ||
-    after < 0
-  ) {
+  if (!Number.isSafeInteger(since) || since < 0) {
     throw new StoreSignal("invalid-input");
   }
-  const order =
-    request.after === undefined
-      ? "activated_at DESC, sequence DESC"
-      : "sequence";
   return database
     .prepare(`SELECT sequence, activated_at, active_revision,
     added_rule_ids, removed_rule_ids FROM firewall_activations
-    WHERE activated_at >= ? AND sequence > ? ORDER BY ${order} LIMIT 100`)
-    .all(since, after)
+    WHERE activated_at >= ? ORDER BY activated_at DESC, sequence DESC LIMIT 100`)
+    .all(since)
     .map((row) => ({
       sequence: readInteger(row, "sequence"),
       activation: {
@@ -690,24 +674,49 @@ function readSlice(
   if (candidate === undefined) {
     return range.beforeDelivery === undefined &&
       range.beforeRecord === undefined
-      ? boundedHistory(database, {
-          maximumRecords,
-          beforePosition: Number.MAX_SAFE_INTEGER,
-          beforeSequence: Number.MAX_SAFE_INTEGER,
-          ...range,
-        })
-      : { history: [], overflow: false, earlierHistoryOmitted: false };
+      ? {
+          pendingOutgoing:
+            range.conversationId !== undefined &&
+            unresolvedSend(database, range.conversationId),
+          ...boundedHistory(database, {
+            maximumRecords,
+            beforePosition: Number.MAX_SAFE_INTEGER,
+            beforeSequence: Number.MAX_SAFE_INTEGER,
+            ...range,
+          }),
+        }
+      : {
+          pendingOutgoing: false,
+          history: [],
+          overflow: false,
+          earlierHistoryOmitted: false,
+        };
   }
+  const conversationId = readText(candidate, "conversation_id");
   return {
+    pendingOutgoing: unresolvedSend(database, conversationId),
     ...boundedHistory(database, {
       maximumRecords,
       beforePosition: readInteger(candidate, "position"),
       beforeSequence: readInteger(candidate, "sequence"),
       ...range,
-      conversationId: readText(candidate, "conversation_id"),
+      conversationId,
     }),
     candidate: historyEntry(candidate),
   };
+}
+
+function unresolvedSend(
+  database: DatabaseSync,
+  conversationId: string,
+): boolean {
+  return (
+    database
+      .prepare(
+        "SELECT 1 AS pending FROM post_intents WHERE conversation_id = ? AND completed_record_hash IS NULL LIMIT 1",
+      )
+      .get(conversationId) !== undefined
+  );
 }
 
 /** The certified record a range ends before, when it names one. */

@@ -1,7 +1,7 @@
 /** @file Remote Grok receiver; a process supervisor restarts failed Client subscriptions. */
 import { FetchHttpClient } from "@effect/platform";
 import { NodeRuntime } from "@effect/platform-node";
-import { acquireHarnessEndpoint } from "@moltzap/client";
+import { acquireHarnessEndpoint } from "@moltzap/social-harness";
 import { Config, Data, Effect, Stream } from "effect";
 import { deliverToGrokBot, validateGrokRoutine } from "./index.js";
 

@@ -3,7 +3,6 @@
 import type {
   FirewallCheck,
   MessageContext,
-  MessageEvent,
   MessageMiddleware,
   MiddlewareCheck,
   MiddlewareObservation,
@@ -12,7 +11,7 @@ import type {
   PolicyFinding,
   RuleDescription,
   UncertainNormGuidance,
-} from "./values.js";
+} from "./contract/index.js";
 
 type Reason = FirewallCheck["reason"];
 
@@ -22,7 +21,6 @@ const judgments: Readonly<Record<Reason, FirewallCheck["judgment"]>> = {
   "unresolved-evidence": "hold",
   "check-unavailable": "hold",
   "norm-violation": "revise",
-  "approval-required": "hold",
 };
 
 const defaultFeedback: Readonly<Record<Reason, FirewallCheck["feedback"]>> = {
@@ -36,13 +34,13 @@ const defaultFeedback: Readonly<Record<Reason, FirewallCheck["feedback"]>> = {
   "unresolved-evidence": [
     {
       nextAction: "wait",
-      text: "Required policy evidence is missing or uncertain. The message is held for owner review.",
+      text: "Required policy evidence is missing or uncertain. The message was not admitted. Wait for the evidence and resend, or revise the message.",
     },
   ],
   "check-unavailable": [
     {
       nextAction: "wait",
-      text: "A required policy check is unavailable. The message is held for owner review.",
+      text: "A required policy check is unavailable. The message was not admitted. Wait for the check to become available and resend, or revise the message.",
     },
   ],
   "norm-violation": [
@@ -51,25 +49,18 @@ const defaultFeedback: Readonly<Record<Reason, FirewallCheck["feedback"]>> = {
       text: "Revise the message to satisfy the owner's communication norms before making a new send attempt.",
     },
   ],
-  "approval-required": [
-    {
-      nextAction: "seek-approval",
-      text: "Owner approval is required for this exact message. The message has not been admitted.",
-    },
-  ],
 };
 
 /**
- * A pass cannot erase another policy's findings. Approval satisfies only its
- * own requirement; prohibition, unavailable evidence and norm repair take priority.
+ * A pass cannot erase another policy's findings; prohibition, unavailable
+ * evidence and norm repair take priority.
  */
 export function composeDecision(
-  event: MessageEvent,
   context: MessageContext,
   middleware: readonly MessageMiddleware[],
   checks: readonly MiddlewareCheck[],
 ): FirewallCheck {
-  const reason = selectReason(event, context, checks);
+  const reason = selectReason(context, checks);
   return {
     judgment: judgments[reason],
     reason,
@@ -162,7 +153,6 @@ export function decidingRules(
 }
 
 function selectReason(
-  event: MessageEvent,
   context: MessageContext,
   checks: readonly MiddlewareCheck[],
 ): Reason {
@@ -178,12 +168,6 @@ function selectReason(
   }
   if (findings.some((finding) => finding.outcome === "revise")) {
     return "norm-violation";
-  }
-  if (
-    findings.some((finding) => finding.outcome === "approval-required") &&
-    !hasApproval(event, context)
-  ) {
-    return "approval-required";
   }
   return "eligible";
 }
@@ -245,7 +229,10 @@ function decidingFinding(
   if (reason === "check-unavailable") {
     return "unavailable";
   }
-  return finding.outcome === "hold" ? "uncertain" : "settled";
+  return finding.outcome === "hold" &&
+    !("settled" in finding && finding.settled === true)
+    ? "uncertain"
+    : "settled";
 }
 
 function registeredAdvice(
@@ -283,29 +270,6 @@ function unresolvedCheck(
     context.gaps.length !== 0 ||
     findings.some((finding) => finding.outcome === "hold") ||
     conflictingExpectations(checks).length !== 0
-  );
-}
-
-function hasApproval(event: MessageEvent, context: MessageContext): boolean {
-  const approval = context.authorization;
-  if (
-    approval.kind !== "verified" ||
-    approval.principal !== context.principal
-  ) {
-    return false;
-  }
-  const candidate = approval.candidate;
-  const message = event.message;
-  const sameRecipients =
-    candidate.recipients.length === message.recipients.length &&
-    candidate.recipients.every(
-      (recipient, index) => recipient === message.recipients[index],
-    );
-  return (
-    sameRecipients &&
-    candidate.id === message.id &&
-    candidate.text === message.text &&
-    candidate.sender === message.sender
   );
 }
 
@@ -361,7 +325,6 @@ function matchesReason(finding: PolicyFinding, reason: Reason): boolean {
     "not-applicable": "eligible",
     block: "prohibited",
     revise: "norm-violation",
-    "approval-required": "approval-required",
   } satisfies Record<Exclude<PolicyFinding["outcome"], "hold">, Reason>;
   if (reason === "eligible") {
     return false;
@@ -430,7 +393,8 @@ function validNextAction(
   reason: Reason,
   action: FirewallCheck["feedback"][number]["nextAction"],
 ): boolean {
-  return reason === "norm-violation"
-    ? action === "revise" || action === "wait" || action === "stop"
-    : action === defaultFeedback[reason][0]?.nextAction;
+  return (
+    reason === "norm-violation" ||
+    action === defaultFeedback[reason][0]?.nextAction
+  );
 }

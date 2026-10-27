@@ -18,13 +18,13 @@ import {
   DecisionProviderError,
   type DecisionRequest,
   type DecisionResponse,
+  decodeMessagePolicy,
   type EnglishPolicySettings,
   type EnglishRule,
   makeEnglishPolicy,
   makeFirewall,
   type Message,
   type MessageContext,
-  type MessageMiddleware,
 } from "../../daemon/index.js";
 
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- Closed judgments, stages and next actions are the public contract under test. */
@@ -63,7 +63,13 @@ const context: typeof MessageContext.Encoded = {
     },
   ],
   gaps: [],
-  authorization: { kind: "absent" },
+};
+const proposalAcceptance: EnglishRule = {
+  id: "proposal-acceptance",
+  kind: "norm",
+  text: "Availability is not acceptance. Everyone must accept the same concrete proposal before it is finalized.",
+  guidance: reminder,
+  feedback: { text: repair, nextAction: "revise" },
 };
 const rules: readonly EnglishRule[] = [
   {
@@ -71,18 +77,7 @@ const rules: readonly EnglishRule[] = [
     kind: "safety",
     text: "Do not disclose unrelated private appointments.",
   },
-  {
-    id: "authority",
-    kind: "autonomy",
-    text: "Tentative proposals are autonomous. Final commitments require owner approval.",
-  },
-  {
-    id: "proposal-acceptance",
-    kind: "norm",
-    text: "Availability is not acceptance. Everyone must accept the same concrete proposal before it is finalized.",
-    guidance: reminder,
-    feedback: { text: repair, nextAction: "revise" },
-  },
+  proposalAcceptance,
 ];
 /** One answer exactly as a provider reports it. */
 type Answer = DecisionResponse["answers"][string];
@@ -118,7 +113,7 @@ function responseFor(
     answers: Object.fromEntries(
       Object.entries(request.questions).map(([id, question]) => {
         const fallback =
-          ["compliant", "autonomous", "none", "relevant"].find((choice) =>
+          ["compliant", "none", "relevant"].find((choice) =>
             Object.hasOwn(question.criteria, choice),
           ) ?? "unresolved";
         const selected =
@@ -177,7 +172,6 @@ const check = (
     readonly rules?: readonly EnglishRule[];
     readonly settings?: EnglishPolicySettings;
     readonly incoming?: boolean;
-    readonly before?: readonly MessageMiddleware[];
   } = {},
 ) =>
   Effect.gen(function* () {
@@ -187,10 +181,9 @@ const check = (
       provider: decisions,
       settings: options.settings ?? settings,
     });
-    const chain = [...(options.before ?? []), english];
     const firewall = yield* makeFirewall({
-      incoming: chain,
-      outgoing: chain,
+      incoming: [english],
+      outgoing: [english],
       settings: firewallSettings,
     });
     const message = options.message ?? draft;
@@ -293,35 +286,6 @@ it.prop(
   { timeout: propertyTimeoutMilliseconds },
 );
 
-it("does not launder draft-derived permission through previous middleware", () =>
-  Effect.gen(function* () {
-    const requests: DecisionRequest[] = [];
-    const code: MessageMiddleware = {
-      id: "draft-derived",
-      revision: "v1",
-      rules: [{ id: "echo", kind: "norm" }],
-      check: (input) =>
-        Effect.succeed({
-          findings: [{ ruleId: "echo", outcome: "pass" }],
-          expectations: [
-            { ruleId: "echo", expectation: "permitted", subjects: [] },
-          ],
-          trace: { format: "draft-echo", data: input.event.message.text },
-        }),
-    };
-    const result = yield* check(provider({}, requests), { before: [code] });
-    const expectations = requests.find(
-      (entry) => entry.stage === "expectations",
-    );
-    expect(result.judgment).toBe("allow");
-    expect(expectations?.state).not.toContain(draft.text);
-    expect(expectations?.state).not.toContain(code.id);
-    expect(expectations?.state).not.toContain("echo");
-    expect(
-      requests.find((entry) => entry.stage === "conformance")?.state,
-    ).toContain(draft.text);
-  }));
-
 const malformedAnswers: ReadonlyArray<{
   readonly name: string;
   readonly choice: string;
@@ -353,14 +317,9 @@ const malformedAnswers: ReadonlyArray<{
     probabilities: { compliant: 0.1, prohibited: 0.8, unresolved: 0.1 },
   },
   {
-    name: "selection below the maximum by more than rounding",
+    name: "selection below the maximum by more than the probability tolerance",
     choice: "compliant",
-    probabilities: { compliant: 0.48, prohibited: 0.5, unresolved: 0.02 },
-  },
-  {
-    name: "unrounded nonmaximal selection",
-    choice: "compliant",
-    probabilities: { compliant: 0.4999, prohibited: 0.5001, unresolved: 0 },
+    probabilities: { compliant: 0.47, prohibited: 0.5, unresolved: 0.03 },
   },
 ];
 
@@ -410,14 +369,13 @@ it("keeps an invalid answer's usage in the trace", () =>
     });
   }));
 
-/** A rounded near-tie, as Jev reports one: the stated choice trails the maximum by one hundredth. */
+/** A stated choice can trail the maximum within the provider probability tolerance. */
 const nearTie = {
   choice: "relevant",
-  confidence: 0.25,
   probabilities: { relevant: 0.49, irrelevant: 0.5, unresolved: 0.01 },
 };
 
-it("accepts Jev's rounded near-tie and holds a safety rule whose applicability it leaves uncertain", () =>
+it("accepts a near-tie and holds a safety rule whose applicability it leaves uncertain", () =>
   Effect.gen(function* () {
     const result = yield* check(
       provider({ "applicability:privacy:assessment": nearTie }),
@@ -475,8 +433,13 @@ it.each([
     choice: "compliant",
     probabilities: { compliant: 0.5, prohibited: 0.51, unresolved: 0 },
   },
+  {
+    name: "a choice with more than two decimal places",
+    choice: "compliant",
+    probabilities: { compliant: 0.4999, prohibited: 0.5001, unresolved: 0 },
+  },
 ])(
-  "holds a safety rule whose stated choice trails another option within rounding: $name",
+  "holds a safety rule whose stated choice trails another option within the probability tolerance: $name",
   ({ choice, probabilities }) =>
     Effect.gen(function* () {
       const result = yield* check(
@@ -486,7 +449,7 @@ it.each([
     }),
 );
 
-it("admits a norm whose stated conformance trails a violation within rounding, advising that judgment", () =>
+it("admits a norm whose stated conformance trails a violation within the probability tolerance, advising that judgment", () =>
   Effect.gen(function* () {
     const result = yield* check(
       provider({
@@ -633,11 +596,10 @@ it("captures evidence before asynchronous inference", () =>
     );
   }));
 
-it("returns norm repair before approval with only registered feedback", () =>
+it("returns norm repair with only registered feedback", () =>
   Effect.gen(function* () {
     const result = yield* check(
       provider({
-        "autonomy:authority:assessment": "approval-required",
         "conformance:proposal-acceptance:assessment": "violation",
       }),
     );
@@ -656,7 +618,7 @@ it.each(["failure", "defect", "timeout"])(
         decide: (request) =>
           Effect.gen(function* () {
             requests.push(request);
-            if (request.stage === "autonomy") {
+            if (request.stage === "conformance") {
               if (fault === "failure") {
                 return yield* new DecisionProviderError({
                   reason: "http",
@@ -682,7 +644,7 @@ it.each(["failure", "defect", "timeout"])(
       const result = yield* Fiber.join(running);
       expect(result.judgment).toBe("block");
       expect(result.checks[0]?.findings).toContainEqual({
-        ruleId: "authority",
+        ruleId: "proposal-acceptance",
         outcome: "hold",
         reason: "check-unavailable",
       });
@@ -758,14 +720,13 @@ it.each([
     probabilities: { compliant: 0.7125, prohibited: 0.1875, unresolved: 0.1 },
   },
 ])(
-  "preserves $name distributions and routes by selected probability independently of confidence",
+  "preserves $name distributions and routes by selected probability",
   ({ probabilities }) =>
     Effect.gen(function* () {
       const decisions = provider({
         "safety:privacy:assessment": {
           choice: "compliant",
           probabilities,
-          confidence: 0.01,
         },
       });
       const allowed = yield* check(decisions);
@@ -780,17 +741,6 @@ it.each([
     }),
 );
 
-it("holds confidently unresolved evidence while running independent stages", () =>
-  Effect.gen(function* () {
-    const requests: DecisionRequest[] = [];
-    const result = yield* check(
-      provider({ "safety:privacy:assessment": "unresolved" }, requests),
-    );
-    expect(result.reason).toBe("unresolved-evidence");
-    expect(requests.some((entry) => entry.stage === "conformance")).toBe(true);
-    expect(result.guidance).toEqual([]);
-  }));
-
 it("keeps renderer templates out of model assessment rules", () =>
   Effect.gen(function* () {
     const requests: DecisionRequest[] = [];
@@ -798,7 +748,7 @@ it("keeps renderer templates out of model assessment rules", () =>
     for (const request of requests) {
       expect(request.state).not.toContain(reminder);
       expect(request.state).not.toContain(repair);
-      expect(request.state).toContain(rules[2]?.text);
+      expect(request.state).toContain(proposalAcceptance.text);
     }
   }));
 
@@ -890,6 +840,108 @@ it("holds a model-selected private subject instead of projecting it", () =>
     expect(result.reason).toBe("check-unavailable");
     expect(result.guidance).toEqual([]);
   }));
+
+it("submits a complete request at its UTF-8 byte limit and holds one byte below it", () =>
+  Effect.gen(function* () {
+    const captured: DecisionRequest[] = [];
+    const options = {
+      context: { ...context, history: [], facts: [] },
+      message: { ...draft, text: "Tuesday works. 🗓️" },
+      rules: rules.filter((rule) => rule.kind === "safety"),
+    };
+    yield* check(provider({}, captured), {
+      ...options,
+      settings: { ...settings, maximumRequestBytes: Number.MAX_SAFE_INTEGER },
+    });
+    const request = captured[0];
+    expect(request).toBeDefined();
+    const bytes = new TextEncoder().encode(JSON.stringify(request)).byteLength;
+    const submitted: DecisionRequest[] = [];
+    yield* check(provider({}, submitted), {
+      ...options,
+      settings: { ...settings, maximumRequestBytes: bytes },
+    });
+    expect(submitted).toHaveLength(1);
+    expect(
+      new TextEncoder().encode(JSON.stringify(submitted[0])).byteLength,
+    ).toBe(bytes);
+
+    const rejected: DecisionRequest[] = [];
+    const unavailable = yield* check(provider({}, rejected), {
+      ...options,
+      settings: { ...settings, maximumRequestBytes: bytes - 1 },
+    });
+    expect(unavailable.reason).toBe("check-unavailable");
+    expect(rejected).toEqual([]);
+  }));
+
+const accumulatedNorms: readonly EnglishRule[] = EffectArray.makeBy(
+  8,
+  (index) => ({
+    id: `norm-${index}`,
+    kind: "norm",
+    text: `Address open request number ${index} before changing the subject.`,
+  }),
+);
+const longHistory: MessageContext["history"] = EffectArray.makeBy(
+  50,
+  (index) => ({
+    ...draft,
+    id: `visible-${index}`,
+    visibility: "runtime",
+    admission: "admitted",
+  }),
+);
+
+it.each([false, true])(
+  "assesses every norm over a long window within the default budget (incoming: %s)",
+  (incoming) =>
+    Effect.gen(function* () {
+      const requests: DecisionRequest[] = [];
+      const { englishSettings } = yield* decodeMessagePolicy(
+        JSON.stringify({
+          format: "org.social-harness/message-policy/v1",
+          mode: "enforcement",
+        }),
+      );
+      const { maximumRequestBytes } = englishSettings;
+      const result = yield* check(provider({}, requests), {
+        incoming,
+        message: incoming
+          ? {
+              ...draft,
+              sender: "participant-agent",
+              recipients: [context.agentId],
+            }
+          : draft,
+        rules: accumulatedNorms,
+        context: { ...context, history: longHistory },
+        settings: { ...settings, maximumRequestBytes },
+      });
+
+      expect(result.judgment).toBe("allow");
+      const expectations = requests.find(
+        (request) => request.stage === "expectations",
+      );
+      expect(expectations).toBeDefined();
+      expect(
+        Object.values(expectations?.questions ?? {}).filter(
+          (question) => question.purpose === "subject",
+        ),
+      ).toHaveLength(
+        accumulatedNorms.length * (longHistory.length + Number(incoming)),
+      );
+      for (const request of requests) {
+        const serialized = JSON.stringify(request);
+        expect(
+          new TextEncoder().encode(serialized).byteLength,
+        ).toBeLessThanOrEqual(maximumRequestBytes);
+        for (const rule of accumulatedNorms) {
+          expect(serialized.split(rule.text)).toHaveLength(2);
+        }
+      }
+    }),
+);
 
 it("bounds large policy-history products without submitting partial requests", () =>
   Effect.gen(function* () {

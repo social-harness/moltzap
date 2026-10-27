@@ -1,6 +1,6 @@
 {
-  "name": "@moltzap/client",
-  "version": "2026.1022.0",
+  "name": "@moltzap/social-harness",
+  "version": "2026.1027.0",
   "description": "Social Harness endpoint runtime and harness boundary",
   "license": "Apache-2.0",
   "repository": {
@@ -20,6 +20,8 @@
     "dist",
     "!dist/tsconfig.tsbuildinfo",
     "bin",
+    "skills",
+    "behaviors",
     "LICENSE",
     "NOTICE"
   ],
@@ -33,6 +35,18 @@
     "./service": {
       "types": "./dist/daemon/index.d.ts",
       "import": "./dist/daemon/index.js"
+    },
+    "./test": {
+      "sharness-test": {
+        "types": "./dist/test.d.ts",
+        "import": "./dist/test.js"
+      }
+    },
+    "./internal": {
+      "sharness-internal": {
+        "types": "./dist/internal.d.ts",
+        "import": "./dist/internal.js"
+      }
     }
   },
   "bin": {
@@ -40,11 +54,11 @@
     "sharnessd-launcher": "./bin/sharnessd-launcher"
   },
   "scripts": {
-    "build": "nx run @moltzap/client:build",
-    "lint": "nx run @moltzap/client:lint",
+    "build": "nx run @moltzap/social-harness:build",
+    "lint": "nx run @moltzap/social-harness:lint",
     "test": "vitest run",
-    "test:integration": "nx run @moltzap/client:test:integration",
-    "typecheck:tests": "tsc -p tsconfig.test.json"
+    "typecheck:tests": "tsc -p tsconfig.test.json",
+    "test:integration": "nx run @moltzap/social-harness:test:integration"
   },
   "nx": {
     "targets": {
@@ -67,36 +81,6 @@
           "command": "eslint . --cache --max-warnings=0"
         }
       },
-      "test:integration": {
-        "executor": "nx:run-commands",
-        "dependsOn": [
-          "build",
-          "^build",
-          {
-            "target": "build",
-            "projects": [
-              "@moltzap/registry"
-            ]
-          }
-        ],
-        "inputs": [
-          "sources",
-          "^production",
-          {
-            "dependentTasksOutputFiles": "**/*",
-            "transitive": true
-          },
-          {
-            "runtime": "node --version"
-          },
-          "{workspaceRoot}/packages/registry/src/**/*",
-          "{workspaceRoot}/packages/registry/bin/**/*"
-        ],
-        "options": {
-          "cwd": "packages/client",
-          "command": "tsc -p tsconfig.integration.json && vitest run --config vitest.integration.config.ts"
-        }
-      },
       "test:pack": {
         "executor": "nx:run-commands",
         "dependsOn": [
@@ -112,7 +96,18 @@
         "executor": "nx:run-commands",
         "options": {
           "cwd": "packages/client",
-          "command": "node ../../scripts/architecture/check-package.ts ."
+          "command": "safer-architecture-lsp check ."
+        }
+      },
+      "test:integration": {
+        "executor": "nx:run-commands",
+        "dependsOn": [
+          "build",
+          "^build"
+        ],
+        "options": {
+          "cwd": "packages/client",
+          "command": "vitest run --config vitest.integration.config.ts"
         }
       }
     }
@@ -124,8 +119,6 @@
     "@modelcontextprotocol/client": "catalog:",
     "@modelcontextprotocol/node": "catalog:",
     "@modelcontextprotocol/server": "catalog:",
-    "@moltzap/identity": "workspace:*",
-    "@moltzap/router": "workspace:*",
     "@opentelemetry/api": "catalog:",
     "@opentelemetry/exporter-trace-otlp-proto": "catalog:",
     "@opentelemetry/resources": "catalog:",
@@ -137,17 +130,22 @@
     "@sigstore/bundle": "catalog:",
     "canonicalize": "catalog:",
     "effect": "catalog:",
-    "sigstore": "catalog:"
+    "sigstore": "catalog:",
+    "@noble/curves": "catalog:",
+    "http-message-signatures": "catalog:",
+    "jose": "catalog:",
+    "structured-headers": "catalog:",
+    "yaml": "catalog:"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",
     "@typescript/native": "catalog:",
     "eslint": "catalog:",
-    "protobufjs": "catalog:",
-    "tsx": "catalog:",
     "typescript": "catalog:",
     "undici": "catalog:",
-    "vitest": "catalog:"
+    "vitest": "catalog:",
+    "fast-check": "catalog:"
   },
-  "sharnessContentHash": "sha256:0a01c4338b61fb1fbbddcc6d6f4c11fec2686a176bda7a8f8d189b74b15b57c7"
+  "sharnessContentHash": "sha256:ca1f125c0d75c7809d52f215507c35a8e3e212caef7e9e76f14d2db4a04a8fc6",
+  "sharnessWireVersion": "2026.1026.5"
 }

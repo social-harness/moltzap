@@ -19,9 +19,10 @@ require independent review and explicit human approval of the exact decision and
 review packet, then verify the landing receipt. Never fabricate human approval.
 All these paths are relative to `DOCS_INTERNAL_ROOT`, not the code checkout.
 
-When you design or review a public interface, port, package boundary or
-configuration surface, read `workflow/reference/interface-design.md` and the
-sources it links.
+When you plan or review a design, read `workflow/reference/architecture.md`.
+When it touches a public interface, port, package boundary or configuration
+surface, also read `workflow/reference/interface-design.md` and the sources it
+links.
 
 Before verifying, merging or releasing, read `workflow/reference/delivery.md`.
 Verify locally only what the change reaches and let CI be the full gate. Merge

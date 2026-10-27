@@ -19,6 +19,7 @@ import {
   seedIncoming,
   settings,
 } from "../../__tests__/firewall-runtime-fixtures.js";
+import { bytes } from "../../__tests__/store-schema-fixtures.js";
 
 // @agent-code-guard/regression-only: Exercises conversation-window and byte-bound failures through real certified history.
 
@@ -52,6 +53,100 @@ function unrelatedHistory(subject: Fixture) {
 }
 
 const windowOptions = { maximumHistoryRecords: 2 };
+
+function bindUnresolvedSend(subject: Fixture) {
+  return subject.store.bindPostIntent({
+    kind: "existing-conversation",
+    intent: {
+      conversationId: subject.membership.descriptor.conversationId,
+      membershipHash: subject.membership.hash,
+      authorAgentId: subject.local.card.agentId,
+      postId: "pst_unresolved",
+      canonicalIntent: bytes("pending send"),
+    },
+  });
+}
+
+it("admits an incoming check despite an unresolved send in another conversation", () =>
+  Effect.gen(function* () {
+    const subject = yield* fixture;
+    const other = yield* addConversation(subject, true);
+    yield* bindUnresolvedSend({ ...subject, ...other });
+    const seen: MiddlewareInput[] = [];
+    const runtime = yield* incomingFixture(subject, recordInputs(seen));
+    yield* runtime.runPass;
+    yield* Queue.take(runtime.completed);
+
+    expect(runtime.published).toHaveLength(1);
+    expect(seen[0]?.context.gaps).toEqual([]);
+    expect((yield* auditChecks(subject))[0]).toMatchObject({
+      disposition: "admitted",
+      result: { reason: "eligible" },
+    });
+  }));
+
+it("withholds an incoming check with an unresolved send in its own conversation", () =>
+  Effect.gen(function* () {
+    const subject = yield* fixture;
+    yield* seedIncoming(subject);
+    yield* bindUnresolvedSend(subject);
+    const runtime = yield* incomingFixture(
+      subject,
+      policy(() => Effect.succeed(pass)),
+      {},
+      false,
+    );
+    yield* runtime.runPass;
+    yield* Queue.take(runtime.completed);
+
+    expect(runtime.published).toHaveLength(0);
+    expect((yield* auditChecks(subject))[0]).toMatchObject({
+      disposition: "withheld",
+      result: { reason: "unresolved-evidence" },
+    });
+  }));
+
+it("admits an outgoing check despite an unresolved send in another conversation", () =>
+  Effect.gen(function* () {
+    const subject = yield* fixture;
+    const other = yield* addConversation(subject, true);
+    yield* bindUnresolvedSend({ ...subject, ...other });
+    const seen: MiddlewareInput[] = [];
+    const runtime = yield* outgoingFixture(subject, recordInputs(seen));
+    const sending = yield* runtime.operations
+      .send({ input: { to: destination, text: "Independent send" } })
+      .pipe(Effect.forkScoped);
+    yield* Deferred.await(subject.outbound);
+    yield* Fiber.interrupt(sending);
+
+    expect(seen[0]?.context.gaps).toEqual([]);
+    expect((yield* auditChecks(subject))[0]).toMatchObject({
+      disposition: "admitted",
+      result: { reason: "eligible" },
+    });
+  }));
+
+it("refuses an outgoing check with an unresolved send in its own conversation", () =>
+  Effect.gen(function* () {
+    const subject = yield* fixture;
+    yield* seedIncoming(subject, true);
+    yield* bindUnresolvedSend(subject);
+    const runtime = yield* outgoingFixture(
+      subject,
+      policy(() => Effect.succeed(pass)),
+    );
+    const refusal = yield* Effect.flip(
+      runtime.operations.send({
+        input: { to: destination, text: "Concurrent send" },
+      }),
+    );
+
+    expect(refusal).toMatchObject({ refusal: "unresolved-evidence" });
+    expect((yield* auditChecks(subject))[0]).toMatchObject({
+      disposition: "withheld",
+      result: { reason: "unresolved-evidence" },
+    });
+  }));
 
 it("admits a fresh incoming conversation despite another conversation exceeding the window", () =>
   Effect.gen(function* () {

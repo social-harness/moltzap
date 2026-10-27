@@ -1,11 +1,11 @@
 /** @file Address resolution against verified immutable Registry cards. */
 
-import type { VerifiedAgentCard } from "@moltzap/identity";
-import type { RegistryLookupResult } from "@moltzap/identity/registry";
 import { live as it } from "@effect/vitest";
 import { Effect, Exit, Schema } from "effect";
 import { generateKeyPairSync } from "node:crypto";
 import { describe, expect } from "vitest";
+import type { VerifiedAgentCard } from "../../identity/cards.js";
+import type { RegistryLookupResult } from "../../identity/registry/contract.js";
 import {
   issueTestCard,
   makeTestAuthority,

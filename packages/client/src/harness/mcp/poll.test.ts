@@ -1,6 +1,5 @@
 /** @file Real inbox persistence and controlled clocks pin polling, receipt and consumer lifecycle laws. */
 
-import { LIVE_WIRE_VERSIONS } from "@moltzap/identity";
 import {
   Deferred,
   Effect,
@@ -22,6 +21,7 @@ import {
   EndpointStoreError,
   openEndpointStore,
 } from "../../communication/store/index.js";
+import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import {
   HARNESS_CONSUMER_META_KEY,
   INBOX_ITEM_EVENT,

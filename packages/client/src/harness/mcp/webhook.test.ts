@@ -2,7 +2,6 @@
 
 import * as NodeSdk from "@effect/opentelemetry/NodeSdk";
 import { live as it } from "@effect/vitest";
-import { LIVE_WIRE_VERSIONS } from "@moltzap/identity";
 import {
   InMemorySpanExporter,
   SimpleSpanProcessor,
@@ -10,6 +9,7 @@ import {
 import { Clock, Context, Deferred, Duration, Effect, Fiber } from "effect";
 import { createHmac } from "node:crypto";
 import { describe, expect } from "vitest";
+import { digest } from "../../__tests__/agent-card-fixtures.js";
 import { localGuidance } from "../../__tests__/message-policy-fixtures.js";
 import { stateDirectory } from "../../__tests__/store-schema-fixtures.js";
 import {
@@ -24,8 +24,10 @@ import {
 } from "../../__tests__/webhook-fixtures.js";
 import {
   encodeRuntimeValue,
+  type EndpointStore,
   openEndpointStore,
 } from "../../communication/store/index.js";
+import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { readRuntimeEvent } from "../inbox/inbox.js";
 import { maximumEventBytes } from "../protocol/index.js";
 import { eventIdOf } from "../protocol/operations.js";
@@ -387,6 +389,180 @@ const retriesAcrossRestart = () => {
   }).pipe(onSteppedClock);
 };
 
+const historicalWithheld = {
+  kind: "withheld",
+  checkId: `chk_${"a".repeat(64)}`,
+  reason: "approval-required",
+};
+const historicalResult = {
+  kind: "collectiveResult",
+  op: "gather",
+  id: digest("col_", 1),
+  to: "agent:bob",
+  question: historicalWithheld,
+  outcomes: [{ member: "agent:bob", outcome: historicalWithheld }],
+};
+const historicalEnvelope = {
+  eventId: eventIdOf(token(1)),
+  name: input.name,
+  timestamp: new Date(0).toISOString(),
+  cursor: null,
+};
+
+/** Seed an already attempted callback whose withheld reasons require decoding. */
+const seedRetainedWithheldOccurrence = (
+  store: EndpointStore,
+  id: string,
+  result: unknown = historicalResult,
+) =>
+  Effect.gen(function* () {
+    yield* store.putInboxItem({
+      deliveryToken: token(1),
+      canonicalItem: yield* encodeRuntimeValue(result),
+    });
+    yield* store.writeEventState(
+      yield* encodeRuntimeValue({
+        registration: {
+          id,
+          principal: "runtime",
+          url,
+          secret,
+          expiresAt: 24 * 60 * 60_000,
+          stalled: null,
+          lastError: null,
+          outbox: {
+            deliveryToken: token(1),
+            id: historicalEnvelope.eventId,
+            body: JSON.stringify({
+              ...historicalEnvelope,
+              data: { kind: "item", item: result },
+            }),
+            attempts: 1,
+            firstAttemptAt: 0,
+            nextAttemptAt: 2000,
+          },
+        },
+      }),
+    );
+  });
+
+/** A callback receipt after restart retires the mapped event with identical bytes. */
+const retryMappedOccurrence = (
+  test: ReturnType<typeof scriptedWebhook>,
+  store: EndpointStore,
+  firstBody?: string,
+) =>
+  Effect.gen(function* () {
+    const retry = yield* test.acquire;
+    test.status(200);
+    yield* stepClock("4 seconds");
+    yield* retry.observe();
+    expect(eventPosts(test.posts, 1)).toHaveLength(2);
+    expect(eventPosts(test.posts, 1)[1]?.body).toBe(firstBody);
+    expect(eventPosts(test.posts, 1)[1]?.headers["webhook-id"]).toBe(
+      historicalEnvelope.eventId,
+    );
+    expect((yield* store.readInboxSummary()).pendingCount).toBe(0);
+  });
+
+const retriesRetainedWithheldResults = () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const store = yield* openEndpointStore(stateDirectory(), {
+        liveWireVersions: LIVE_WIRE_VERSIONS,
+      });
+      const test = scriptedWebhook(store);
+      const events = yield* test.acquire;
+      const grant = yield* events.subscribe(input, "runtime");
+      yield* seedRetainedWithheldOccurrence(store, grant.id);
+      const restarted = yield* test.acquire;
+      yield* restarted.observe();
+      expect(eventPosts(test.posts, 1)).toEqual([]);
+      yield* stepClock("2 seconds");
+      test.status(503);
+      yield* restarted.observe();
+      const first = eventPosts(test.posts, 1)[0];
+      const projected = {
+        ...historicalWithheld,
+        reason: "unresolved-evidence",
+      };
+      expect(decodeOccurrence(first?.body)).toEqual({
+        ...historicalEnvelope,
+        data: {
+          kind: "item",
+          item: {
+            ...historicalResult,
+            question: projected,
+            outcomes: [{ member: "agent:bob", outcome: projected }],
+          },
+        },
+      });
+      expect((yield* store.readInboxSummary()).pendingCount).toBe(1);
+      yield* retryMappedOccurrence(test, store, first?.body);
+    }),
+  ).pipe(onSteppedClock);
+
+/** A historical item envelope exactly fills the bound before its refusal grows on decode. */
+function boundaryHistoricalResult() {
+  const empty = {
+    ...historicalResult,
+    outcomes: [
+      { member: "agent:bob", outcome: { kind: "invalid", reason: "" } },
+    ],
+  };
+  const base = JSON.stringify({
+    ...historicalEnvelope,
+    data: { kind: "item", item: empty },
+  });
+  return {
+    ...empty,
+    outcomes: [
+      {
+        member: "agent:bob",
+        outcome: {
+          kind: "invalid",
+          reason: "b".repeat(maximumEventBytes - Buffer.byteLength(base)),
+        },
+      },
+    ],
+  };
+}
+
+const boundsMigratedOccurrence = () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const store = yield* openEndpointStore(stateDirectory(), {
+        liveWireVersions: LIVE_WIRE_VERSIONS,
+      });
+      const test = scriptedWebhook(store);
+      const events = yield* test.acquire;
+      const grant = yield* events.subscribe(input, "runtime");
+      const result = boundaryHistoricalResult();
+      const oldBody = JSON.stringify({
+        ...historicalEnvelope,
+        data: { kind: "item", item: result },
+      });
+      expect(Buffer.byteLength(oldBody)).toBe(maximumEventBytes);
+      yield* seedRetainedWithheldOccurrence(store, grant.id, result);
+      const restarted = yield* test.acquire;
+      yield* stepClock("2 seconds");
+      test.status(503);
+      yield* restarted.observe();
+      const body = eventPosts(test.posts, 1)[0]?.body ?? "";
+      expect(Buffer.byteLength(body)).toBeLessThanOrEqual(maximumEventBytes);
+      expect(decodeOccurrence(body)).toMatchObject({
+        ...historicalEnvelope,
+        data: { kind: "reference", itemKind: result.kind },
+      });
+      expect(
+        (yield* readRuntimeEvent(store, historicalEnvelope.eventId)).item,
+      ).toMatchObject({
+        question: { ...historicalWithheld, reason: "unresolved-evidence" },
+      });
+      yield* retryMappedOccurrence(test, store, body);
+    }),
+  ).pipe(onSteppedClock);
+
 /** Records every span the scenario finishes in `exporter`. */
 const tracedInto = (exporter: InMemorySpanExporter) =>
   Effect.provide(
@@ -711,6 +887,14 @@ describe("local Dot webhook conformance", () => {
   it(
     "retries exact event bytes after database reopen and retires only on receipt",
     retriesAcrossRestart,
+  );
+  it(
+    "maps retained withheld result events and retries their durable bytes on schedule",
+    retriesRetainedWithheldResults,
+  );
+  it(
+    "bounds a migrated outbox body and retries its reference with the original event id",
+    boundsMigratedOccurrence,
   );
   it(
     "bounds complete envelopes, retains referenced payloads and drains beyond one page",

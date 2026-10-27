@@ -1,4 +1,4 @@
-/** @file Personal firewall evaluation, policy, admission and operator audit. */
+/** @file Personal firewall evaluation, policy, admission and owner decisions. */
 
 /** Code and English policies use one evaluator contract. */
 export {
@@ -17,7 +17,6 @@ export {
   FirewallSettings,
   makeEnglishPolicy,
   makeFirewall,
-  makeJevDecisionProvider,
   Message,
   MessageContext,
   type MessageMiddleware,
@@ -33,14 +32,9 @@ export {
 export {
   collectiveAdmission,
   type FirewallOptions,
-  installFirewall,
 } from "./admission/index.js";
 /** The daemon retains one installed admission capability. */
 export type { InstalledFirewall } from "./admission/index.js";
-/** Operator audit stays outside runtime-visible guidance. */
-export { beginFirewallAudit } from "./audit/firewall-audit.js";
-/** Retained judgments have a versioned operator representation. */
-export { FirewallAuditRecord } from "./admission/index.js";
 /** Owner edits preserve the daemon resource lifetime. */
 export { installEditableFirewall } from "./policy/index.js";
 /** Policy documents and their composition share one firewall boundary. */

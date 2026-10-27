@@ -1,16 +1,8 @@
 /** @file Cryptographic and cross-field verification for Client protocol values. */
 
-import {
-  AgentCard,
-  type AgentId,
-  type Ed25519PublicKey,
-  type LiveSignedMessage,
-  SignedMessage,
-  type SignedMessage as SignedMessageValue,
-  type VerifiedAgentCard,
-  type VerifiedSignedMessage,
-} from "@moltzap/identity";
 import { Effect, Schema } from "effect";
+import type { AgentId } from "../../identity/agents.js";
+import type { Ed25519PublicKey } from "../../identity/keys.js";
 import {
   type ClientRepresentationError,
   decodeCanonical,
@@ -21,6 +13,13 @@ import {
 } from "../../encoding/canonical-json.js";
 import { exactParseOptions } from "../../encoding/exact.js";
 import { isStrictlyAscending } from "../../encoding/identifier.js";
+import { AgentCard, type VerifiedAgentCard } from "../../identity/cards.js";
+import {
+  type LiveSignedMessage,
+  SignedMessage,
+  type SignedMessage as SignedMessageValue,
+  type VerifiedSignedMessage,
+} from "../envelope/signed-message.js";
 import {
   deriveConversationId,
   deriveEvidenceMessageId,

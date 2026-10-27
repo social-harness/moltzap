@@ -1,5 +1,5 @@
 /** @file Grok's native routine accepts a wake reference; Client owns receive and recovery. */
-import type { InboundDelivery } from "@moltzap/client";
+import type { InboundDelivery } from "@moltzap/social-harness";
 import {
   FetchHttpClient,
   HttpClient,

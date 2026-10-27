@@ -1,22 +1,12 @@
 /** @file Real storage and prepared send fixtures shared by firewall admission tests. */
 
-import { FileSystem } from "@effect/platform";
-import { NodeFileSystem } from "@effect/platform-node";
-import {
-  AgentCard,
-  Ed25519PublicKey,
-  LIVE_WIRE_VERSIONS,
-  WIRE_VERSION,
-} from "@moltzap/identity";
-import { RouterInstanceId } from "@moltzap/router";
 import { Deferred, Effect, Queue, Schema, Scope } from "effect";
 import { generateKeyPairSync } from "node:crypto";
-import { join } from "node:path";
 import type { InboundItem } from "../communication/collectives/inbound.js";
 import type {
   MessageMiddleware,
   MiddlewareResult,
-} from "../firewall/evaluator/values.js";
+} from "../firewall/evaluator/contract/index.js";
 import type { HarnessMessageReadyEvent } from "../harness/protocol/operations.js";
 import {
   makeCollectiveOperations,
@@ -31,6 +21,7 @@ import {
   RecordHash,
   verifyMembershipDescriptor,
 } from "../communication/records/index.js";
+import { RouterInstanceId } from "../communication/router/api/contract.js";
 import {
   decodeRuntimeValue,
   DeliveryToken,
@@ -42,13 +33,16 @@ import {
 import { encodeCanonical } from "../encoding/canonical-json.js";
 import {
   collectiveAdmission,
+  decodeFirewallAuditEntry,
   type FirewallOptions,
   type InstalledFirewall,
-  installFirewall,
 } from "../firewall/admission/index.js";
-import { beginFirewallAudit } from "../firewall/audit/firewall-audit.js";
+import { installEditableFirewall } from "../firewall/index.js";
 import { noHistoryExport } from "../harness/inbox/history-export.js";
 import { makeHostDelivery } from "../harness/inbox/host-delivery.js";
+import { AgentCard } from "../identity/cards.js";
+import { Ed25519PublicKey } from "../identity/keys.js";
+import { LIVE_WIRE_VERSIONS, WIRE_VERSION } from "../identity/wire-version.js";
 import {
   digest,
   identifier,
@@ -59,7 +53,6 @@ import {
   buildCertifiedGenesis,
   storeCertifiedGenesis,
 } from "./certified-history-fixtures.js";
-import { decodeAudit } from "./firewall-audit-fixtures.js";
 import { pollCursor } from "./router-worker-fixtures.js";
 import { stateDirectory } from "./store-schema-fixtures.js";
 
@@ -191,31 +184,35 @@ export const fixture = engineFixture();
 /** The acquired identities and storage remain live for the test scope. */
 export type Fixture = Effect.Effect.Success<typeof fixture>;
 
-/** Decode the public operator snapshot after all writes settle. */
+/** Read completed checks in insertion order through the production store read. */
 export const auditChecks = (subject: Fixture) =>
   Effect.gen(function* () {
-    const path = join(subject.directory, "audit.ndjson");
-    yield* (yield* beginFirewallAudit(path, subject.store)).finish;
-    const fileSystem = yield* FileSystem.FileSystem;
-    return decodeAudit(yield* fileSystem.readFileString(path)).records.filter(
-      (record) => record.kind === "check",
+    const entries = yield* subject.store.readFirewallDecisions();
+    return yield* Effect.forEach(
+      [...entries].sort((left, right) => left.sequence - right.sequence),
+      (entry) => decodeFirewallAuditEntry(entry),
+      { concurrency: 1 },
     );
-  }).pipe(Effect.provide(NodeFileSystem.layer), Effect.withSpan("auditChecks"));
+  }).pipe(Effect.withSpan("auditChecks"));
 
 /** Fixed registration and settings are captured before delivery operations run. */
 export const installation = (
+  store: EndpointStore,
   middleware: MessageMiddleware,
   overrides: Partial<FirewallOptions> = {},
 ) =>
-  installFirewall({
-    incoming: [middleware],
-    outgoing: [middleware],
-    settings,
-    facts: [],
-    codeDigest: "a".repeat(64),
-    mode: "enforcement",
-    ...overrides,
-  });
+  installEditableFirewall(
+    {
+      incoming: [middleware],
+      outgoing: [middleware],
+      settings,
+      facts: [],
+      codeDigest: "a".repeat(64),
+      mode: "enforcement",
+      ...overrides,
+    },
+    store,
+  );
 
 /**
  * One collective layer with the firewall's admission ports and the delivery
@@ -309,7 +306,7 @@ export const incomingFixture = (
   overrides: Partial<FirewallOptions> = {},
   seed = true,
 ) =>
-  installation(middleware, overrides).pipe(
+  installation(subject.store, middleware, overrides).pipe(
     Effect.flatMap((installed) => incomingThrough(subject, installed, seed)),
   );
 
@@ -319,7 +316,7 @@ export function outgoingFixture(
   middleware: MessageMiddleware,
   overrides: Partial<FirewallOptions> = {},
 ) {
-  return installation(middleware, overrides).pipe(
+  return installation(subject.store, middleware, overrides).pipe(
     Effect.flatMap((installed) => outgoingThrough(subject, installed)),
     Effect.withSpan("outgoingFixture"),
   );
