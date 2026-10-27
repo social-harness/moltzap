@@ -14,6 +14,8 @@ import { maximumEventBytes } from "../protocol/index.js";
 import { INBOX_ITEM_EVENT } from "../protocol/names.js";
 import { eventIdOf } from "../protocol/operations.js";
 
+// safer-arch-ignore file-implicit-boundary-module: Polling and webhook delivery share this one item formatter and envelope bound; nothing outside harness/mcp reads them.
+
 /**
  * Replaces an envelope exceeding the transport bound with a reference to the
  * retained event; neither content nor guidance is truncated.
