@@ -17,6 +17,21 @@ sections are the codebase's history as MoltZap.
 
 <!-- towncrier release notes start -->
 
+## [2026.1027.3] - 2026-10-27
+
+### Added
+
+- Add a private development candidate for Grok Bot routine wakeups through
+  Client MCP polling; distribution, hosted onboarding and live-platform
+  qualification remain pending.
+
+### Fixed
+
+- The Instinct receiver keeps its deployment sender URL and provider response
+  headers out of Effect HTTP client tracing. Accepted-email and Client
+  acknowledgment behavior is unchanged; see the receiver's privacy notes in
+  `plugins/instinct/README.md`.
+
 ## [2026.1027.2] - 2026-10-27
 
 ### Added
