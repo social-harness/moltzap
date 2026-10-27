@@ -80,12 +80,13 @@ const KEEP_REASONS: Readonly<Record<LauncherError["reason"], KeepReason>> = {
 };
 
 /**
- * Chooses, installs and records the release this start runs, given the
+ * Runs on every start to choose, install and record its release, given the
  * launcher's settings and the prefix the image installed, holding the
  * launcher directory for the scope. It fails only when nothing is safe to
- * run. The `current` link moves before the record commits, so a start
- * interrupted between them takes the release again and still reports
- * `restartHost`.
+ * run. Only a newly installed release is made readable; image seeds supply
+ * their own readable modes. The `current` link moves before the record commits,
+ * so a start interrupted between them takes the release again and still
+ * reports `restartHost`.
  */
 export const prepare = Effect.fn("Launcher.prepare")(function* (
   configuration: LauncherConfiguration,
@@ -94,7 +95,6 @@ export const prepare = Effect.fn("Launcher.prepare")(function* (
   yield* lockDirectory(configuration.directory);
   const recorded = yield* recordedRelease(configuration, seed);
   yield* checkIntegrity(recorded);
-  yield* readableRelease(recorded.prefix);
   const outcome = yield* candidate(configuration, recorded).pipe(
     Effect.catchAll((failure) =>
       Console.error(`sharnessd-launcher: ${failure.message}`).pipe(

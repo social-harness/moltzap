@@ -3,6 +3,7 @@ import { FileSystem } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
 import { WIRE_VERSION } from "@moltzap/social-harness";
 import { Effect, Schema } from "effect";
+import { S_IROTH, S_IXOTH } from "node:constants";
 import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";
 import { expect, it } from "vitest";
@@ -262,6 +263,7 @@ function verifyUpgrade(
     expect(choice.previous).toBe(previous);
     expect(choice.prefix).not.toBe(prefix);
     expect(yield* fs.exists(choice.daemon)).toBe(true);
+    yield* assertPublicRelease(choice.prefix, choice.daemon);
     const recorded = yield* fs
       .readFileString(join(home, "launcher.json"))
       .pipe(
@@ -273,6 +275,34 @@ function verifyUpgrade(
       );
     expect(recorded.version).toBe(version);
     return { ...installation, prefix: choice.prefix, previous: version };
+  });
+}
+
+/** Host users can traverse and read public code installed under the launcher's private umask. */
+function assertPublicRelease(prefix: string, daemon: string) {
+  return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const packageRoot = join(prefix, "node_modules/@moltzap/social-harness");
+    const directoryAccess = S_IROTH | S_IXOTH;
+    for (const directory of [
+      prefix,
+      join(prefix, "node_modules"),
+      join(prefix, "node_modules/@moltzap"),
+      packageRoot,
+      join(packageRoot, "bin"),
+      join(packageRoot, "dist"),
+    ]) {
+      expect((yield* fs.stat(directory)).mode & directoryAccess).toBe(
+        directoryAccess,
+      );
+    }
+    for (const file of [
+      daemon,
+      join(packageRoot, "package.json"),
+      join(packageRoot, "dist/index.js"),
+    ]) {
+      expect((yield* fs.stat(file)).mode & S_IROTH).toBe(S_IROTH);
+    }
   });
 }
 

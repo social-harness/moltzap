@@ -6,7 +6,8 @@ ENV PATH="/opt/social-harness/launcher/seed/node_modules/.bin:${PATH}"
 ENV SHARNESS_LAUNCHER_DIRECTORY=/opt/social-harness/launcher
 ENV SHARNESS_LAUNCHER_SEED=/opt/social-harness/launcher/seed
 ENV SHARNESS_LAUNCHER_PACKAGE=@moltzap/openclaw-channel
-RUN chown node:node /opt/social-harness/launcher
+RUN chown node:node /opt/social-harness/launcher \
+  && chmod -R a+rX /opt/social-harness/launcher/seed
 VOLUME ["/opt/social-harness/launcher"]
 USER node
 ENTRYPOINT ["sharnessd-launcher"]
