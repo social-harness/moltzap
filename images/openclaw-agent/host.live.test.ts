@@ -24,6 +24,11 @@ import { fakeClaude } from "../tests/claude-fixture.ts";
 import { type Network, startNetwork } from "../tests/network-fixture.ts";
 
 const docker = promisify(execFile);
+/** Fixture state is copied before the normal host entrypoint secures its directories. */
+const HOST_BOOTSTRAP = [
+  "cp -R /probe/state /home/node/test-state",
+  "exec bash /opt/moltzap/agent/host.sh",
+].join(" && ");
 const image = process.env.OPENCLAW_INTEGRATION_IMAGE;
 const skip =
   image === undefined || process.env.DAEMON_INTEGRATION_IMAGE === undefined
@@ -54,6 +59,7 @@ async function deliverTurn(
   );
 }
 
+/** The image user copies fixture state so OpenClaw owns the directories it secures. */
 async function startHost(
   container: string,
   daemon: string,
@@ -71,7 +77,6 @@ async function startHost(
   await docker("docker", [
     "run",
     "--detach",
-    "--rm",
     "--name",
     container,
     "--network",
@@ -83,18 +88,23 @@ async function startHost(
     "--mount",
     `type=bind,src=${directory}/claude,dst=/home/node/.local/bin/claude,readonly`,
     "--env",
-    "HOME=/probe",
+    "HOME=/home/node",
     "--env",
-    "OPENCLAW_STATE_DIR=/probe/state",
+    "OPENCLAW_STATE_DIR=/home/node/test-state",
     "--env",
-    "OPENCLAW_CONFIG_PATH=/probe/state/openclaw.json",
+    "OPENCLAW_CONFIG_PATH=/home/node/test-state/openclaw.json",
     "--env",
     `SHARNESS_MCP_URL=${mcp.href}`,
     "--env",
     "OPENCLAW_DISABLE_BONJOUR=1",
     "--env",
     "FAKE_CLAUDE_LOG=/probe/claude.ndjson",
+    "--env",
+    "ANTHROPIC_API_KEY=stand-in-key",
+    "--entrypoint=bash",
     image ?? "",
+    "-c",
+    HOST_BOOTSTRAP,
   ]);
 }
 
@@ -127,33 +137,13 @@ async function prepareHost(
   await chmod(directory, 0o777);
   const state = join(directory, "state");
   await mkdir(state, { mode: 0o777 });
-  await mkdir(join(directory, "workspace"), { mode: 0o777 });
   await chmod(state, 0o777);
-  await chmod(join(directory, "workspace"), 0o777);
   await writeFile(join(directory, "claude"), fakeClaude, { mode: 0o755 });
   await writeFile(
     join(state, "openclaw.json"),
     JSON.stringify(configuration(runtime, port)),
     { mode: 0o666 },
   );
-  const agent = join(state, "agents/main/agent");
-  await mkdir(agent, { recursive: true, mode: 0o777 });
-  await chmod(agent, 0o777);
-  await writeFile(
-    join(agent, "auth-profiles.json"),
-    JSON.stringify({
-      version: 1,
-      profiles: {
-        "anthropic:default": {
-          type: "token",
-          provider: "anthropic",
-          token: "sk-ant-oat01-stand-in",
-        },
-      },
-    }),
-    { mode: 0o666 },
-  );
-  await chmod(join(agent, "auth-profiles.json"), 0o666);
 }
 
 function configuration(runtime: string, port: number) {
@@ -179,7 +169,7 @@ function configuration(runtime: string, port: number) {
     },
     agents: {
       defaults: {
-        workspace: "/probe/workspace",
+        workspace: "/home/node/test-workspace",
         model: { primary: model },
         models: {
           [model]:

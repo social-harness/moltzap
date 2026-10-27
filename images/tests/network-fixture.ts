@@ -106,6 +106,7 @@ interface Daemon {
 /** A child process and everything it has written to stdout and stderr. */
 interface RunningProcess {
   stop?: () => Promise<undefined>;
+  stopped?: boolean;
   readonly child: ChildProcess;
   readonly logs: () => string;
 }
@@ -123,6 +124,7 @@ interface NetworkState {
   readonly directory: string;
   readonly authority: NetworkAuthority;
   readonly running: RunningProcess[];
+  readonly volumes: string[];
   readonly scope: Scope.CloseableScope;
 }
 
@@ -134,18 +136,19 @@ interface NetworkState {
 export async function startNetwork(): Promise<Network> {
   const directory = await mkdtemp(join(tmpdir(), "agent-image-network-"));
   const running: RunningProcess[] = [];
+  const volumes: string[] = [];
   const scope = Effect.runSync(Scope.make());
-  const close = async (): Promise<undefined> => {
-    await Effect.runPromise(Scope.close(scope, Exit.void));
-    for (const each of running.toReversed()) {
-      await stopProcess(each);
-    }
-    await rm(directory, { recursive: true, force: true });
-  };
+  const close = () => closeNetwork(directory, scope, running, volumes);
   try {
     const { registryOrigin, routerOrigin, authority } =
       await startInfrastructure(directory, running);
-    const state: NetworkState = { directory, authority, running, scope };
+    const state: NetworkState = {
+      directory,
+      authority,
+      running,
+      volumes,
+      scope,
+    };
     return {
       registryOrigin,
       routerOrigin,
@@ -167,6 +170,46 @@ export async function startNetwork(): Promise<Network> {
   } catch (cause) {
     await close();
     throw cause;
+  }
+}
+
+/** Cleanup continues after failures so one exited daemon cannot strand its peers or volumes. */
+async function closeNetwork(
+  directory: string,
+  scope: Scope.CloseableScope,
+  running: RunningProcess[],
+  volumes: string[],
+): Promise<undefined> {
+  const failures: unknown[] = [];
+  await collectCleanupFailure(failures, () =>
+    Effect.runPromise(Scope.close(scope, Exit.void)),
+  );
+  for (const each of running.toReversed()) {
+    await collectCleanupFailure(failures, () => stopProcess(each));
+  }
+  for (const volume of volumes) {
+    await collectCleanupFailure(failures, () =>
+      docker("docker", ["volume", "rm", volume]),
+    );
+  }
+  await collectCleanupFailure(failures, () =>
+    rm(directory, { recursive: true, force: true }),
+  );
+  if (failures.length > 0) {
+    throw new AggregateError(failures, failures.map(String).join("\n"));
+  }
+  return undefined;
+}
+
+/** Keeps teardown errors until every resource has had its cleanup attempted. */
+async function collectCleanupFailure(
+  failures: unknown[],
+  cleanup: () => Promise<unknown>,
+): Promise<undefined> {
+  try {
+    await cleanup();
+  } catch (cause) {
+    failures.push(cause);
   }
 }
 
@@ -328,6 +371,11 @@ async function startRegisteredDaemon(
 ): Promise<Daemon> {
   const files = await daemonFiles(join(state.directory, name), state.authority);
   const port = await freePort();
+  const stateVolume =
+    process.env.DAEMON_INTEGRATION_IMAGE !== undefined &&
+    options.program === undefined
+      ? await createDaemonVolume(state)
+      : undefined;
   const mcp = new URL(`http://${LOOPBACK_HOST}:${String(port)}/mcp`);
   const registration = {
     SHARNESS_MCP_URL: mcp.href,
@@ -341,6 +389,7 @@ async function startRegisteredDaemon(
       environment: { ...options.environment, ...registration },
       port,
       name,
+      ...(stateVolume === undefined ? {} : { stateVolume }),
     });
     state.running.push(started);
     return started;
@@ -349,7 +398,10 @@ async function startRegisteredDaemon(
   return {
     address: `agent:${name}`,
     mcp,
-    stateDirectory: files.stateDirectory,
+    stateDirectory:
+      stateVolume === undefined
+        ? files.stateDirectory
+        : "/home/node/sharness-state",
     stop: async () => {
       await stopProcess(current);
       return current.child.exitCode;
@@ -360,6 +412,14 @@ async function startRegisteredDaemon(
     },
     logs: () => current.logs(),
   };
+}
+
+/** Docker initializes the home volume with the image user's ownership, independent of host IDs. */
+async function createDaemonVolume(state: NetworkState): Promise<string> {
+  const volume = `sharness-daemon-state-${randomBytes(16).toString("hex")}`;
+  await docker("docker", ["volume", "create", volume]);
+  state.volumes.push(volume);
+  return volume;
 }
 
 /** One daemon's private files and state directory. */
@@ -401,6 +461,7 @@ async function daemonFiles(
 /** Where one daemon process listens and what it runs. */
 interface DaemonLaunch extends DaemonOptions {
   readonly port: number;
+  readonly stateVolume?: string;
   /** The agent name, used only for the error message. */
   readonly name: string;
 }
@@ -441,13 +502,23 @@ async function startDaemon(
   try {
     await awaitListening(daemon, launch.port);
   } catch (cause) {
-    void stopProcess(daemon);
-    throw new Error(`daemon ${launch.name} did not start`, { cause });
+    const failure = new Error(
+      `daemon ${launch.name} did not start: ${String(cause)}`,
+      {
+        cause,
+      },
+    );
+    try {
+      await stopProcess(daemon);
+    } catch (cleanup) {
+      throw new AggregateError([failure, cleanup], failure.message);
+    }
+    throw failure;
   }
   return daemon;
 }
 
-/** The host joins this container's network while its mounts remain independent. */
+/** Docker prepares volumes before the daemon readiness deadline starts; the host joins its network. */
 async function startDaemonContainer(
   files: DaemonFiles,
   launch: DaemonLaunch,
@@ -457,35 +528,82 @@ async function startDaemonContainer(
   const directory = dirname(files.stateDirectory);
   await chmod(dirname(directory), 0o755);
   await chmod(directory, 0o755);
-  await chmod(files.stateDirectory, 0o777);
   await chmod(files.keyFile, 0o644);
   await chmod(files.credentialFile, 0o644);
   const container = `sharness-daemon-${String(launch.port)}`;
   const args = [
-    "run",
-    "--rm",
+    "create",
     "--network=host",
     "--name",
     container,
     "--volume",
-    `${directory}:${directory}`,
+    `${directory}:${directory}:ro`,
+    "--mount",
+    `type=volume,src=${launch.stateVolume ?? ""},dst=/home/node`,
     "--env",
     "SHARNESS_LAUNCHER_UPGRADE=off",
     ...Object.entries(environment).flatMap(([name, value]) => [
       "--env",
       `${name}=${value}`,
     ]),
+    "--env",
+    "SHARNESS_STATE_DIRECTORY=/home/node/sharness-state",
     image,
   ];
-  const daemon = startProgram("docker", args, {});
-  daemon.stop = async () => {
-    await docker("docker", ["stop", "--time", "5", container]);
+  await docker("docker", args);
+  const daemon = startProgram("docker", ["start", "--attach", container], {});
+  daemon.stop = () => stopDaemonContainer(daemon, container);
+  return daemon;
+}
+
+/** Retains logs until exit reporting and removes only this daemon's container and volumes. */
+async function stopDaemonContainer(
+  daemon: RunningProcess,
+  container: string,
+): Promise<undefined> {
+  const state = await dockerIfPresent(
+    ["container", "inspect", "--format", "{{.State.Running}}", container],
+    container,
+  );
+  let unexpected = state?.trim() !== "true";
+  try {
+    if (!unexpected) {
+      unexpected =
+        (await dockerIfPresent(
+          ["stop", "--timeout", "5", container],
+          container,
+        )) === undefined;
+    }
     if (!hasExited(daemon.child)) {
       await once(daemon.child, "exit");
     }
+  } finally {
+    await dockerIfPresent(["rm", "--force", "--volumes", container], container);
+  }
+  if (unexpected) {
+    throw processExitError(daemon, `daemon ${container} was stopped`);
+  }
+  return undefined;
+}
+
+/** Missing containers are already cleaned up; other Docker failures remain visible. */
+async function dockerIfPresent(
+  args: string[],
+  container: string,
+): Promise<string | undefined> {
+  try {
+    const { stdout } = await docker("docker", args);
+    return stdout;
+  } catch (cause) {
+    if (
+      !isRecord(cause) ||
+      typeof cause.stderr !== "string" ||
+      !cause.stderr.includes(`No such container: ${container}`)
+    ) {
+      throw cause;
+    }
     return undefined;
-  };
-  return daemon;
+  }
 }
 
 /**
@@ -612,6 +730,10 @@ function startProgram(
  * @param running The started child and its logs.
  */
 async function stopProcess(running: RunningProcess): Promise<undefined> {
+  if (running.stopped === true) {
+    return;
+  }
+  running.stopped = true;
   if (running.stop !== undefined) {
     await running.stop();
     return;
@@ -656,7 +778,7 @@ async function awaitReady(
   const deadline = Date.now() + STARTUP_TIMEOUT_MILLIS;
   while (Date.now() < deadline) {
     if (hasExited(running.child)) {
-      throw new Error(`process exited before ${what}\n${running.logs()}`);
+      throw processExitError(running, what);
     }
     if (await check()) {
       return;
@@ -664,6 +786,13 @@ async function awaitReady(
     await delay(POLL_INTERVAL_MILLIS);
   }
   throw new Error(`process did not report ${what} in time\n${running.logs()}`);
+}
+
+/** Keeps the exit outcome and the most recent diagnostics together in test failures. */
+function processExitError(running: RunningProcess, what: string): Error {
+  return new Error(
+    `process exited with status ${String(running.child.exitCode)} (signal ${String(running.child.signalCode)}) before ${what}\n${running.logs().split("\n").slice(-50).join("\n")}`,
+  );
 }
 
 /**
