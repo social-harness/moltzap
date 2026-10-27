@@ -34,7 +34,9 @@ import {
   RecordHash,
   signEvidenceMessage,
 } from "../packages/client/dist/communication/records/index.js";
+import { RouterInstanceId } from "../packages/client/dist/communication/router/api/index.js";
 import { encodeCanonical } from "../packages/client/dist/encoding/canonical-json.js";
+import { WireVersions } from "../packages/client/dist/identity/wire-version.js";
 import {
   AgentCard,
   AgentId,
@@ -43,9 +45,7 @@ import {
   Ed25519PublicKey,
   PrincipalId,
   SignedMessage,
-} from "../packages/identity/dist/index.js";
-import { WireVersions } from "../packages/identity/dist/wire-versions.js";
-import { RouterInstanceId } from "../packages/router/dist/index.js";
+} from "../packages/client/dist/index.js";
 import captured from "./client-record-golden-inputs.json" with { type: "json" };
 
 registerHooks({

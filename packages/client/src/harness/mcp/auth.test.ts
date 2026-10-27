@@ -6,7 +6,6 @@ import {
   CLIENT_INFO_META_KEY,
   PROTOCOL_VERSION_META_KEY,
 } from "@modelcontextprotocol/server";
-import { AgentCard, LIVE_WIRE_VERSIONS } from "@moltzap/identity";
 import { Effect, Redacted, Schema } from "effect";
 import { describe, expect } from "vitest";
 import type { EventStore } from "../protocol/operations.js";
@@ -19,6 +18,8 @@ import {
   scriptedWebhook,
 } from "../../__tests__/webhook-fixtures.js";
 import { openEndpointStore } from "../../communication/store/index.js";
+import { AgentCard } from "../../identity/cards.js";
+import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import {
   type HarnessMcpOperations,
   makeHarnessMcpHttpHandler,

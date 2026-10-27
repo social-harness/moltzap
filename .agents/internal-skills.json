@@ -1,9 +1,9 @@
 {
   "repository": "social-harness/docs-internal",
-  "revision": "23869d86fec1abdc2d1f544012b9d7dd9568b8ff",
+  "revision": "efdeb4a2c169e80d58aac6adb6bee64f72492988",
   "files": {
-    ".agents/skills/shared-sdlc/SKILL.md": "bb1bde671b0b44787c34bf23f1272057238e8fbf336cd1c03cf33b43cc8796eb",
-    ".claude/skills/shared-sdlc/SKILL.md": "bb1bde671b0b44787c34bf23f1272057238e8fbf336cd1c03cf33b43cc8796eb",
+    ".agents/skills/shared-sdlc/SKILL.md": "7d40e2b01ef0a9ccdd0d66352db8a37a138d2dff33352c713c6b5d11ff4b4bf6",
+    ".claude/skills/shared-sdlc/SKILL.md": "7d40e2b01ef0a9ccdd0d66352db8a37a138d2dff33352c713c6b5d11ff4b4bf6",
     ".agents/skills/records/SKILL.md": "c6c3f7618691f67cb3cb7e2a5089df3e1ced1fc739260f786a05ab746e827f83",
     ".claude/skills/records/SKILL.md": "c6c3f7618691f67cb3cb7e2a5089df3e1ced1fc739260f786a05ab746e827f83"
   }

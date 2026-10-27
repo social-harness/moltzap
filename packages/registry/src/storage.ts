@@ -1,14 +1,6 @@
 /** @file Durable Registry persistence for admission, immutable cards, and idempotent operations. */
 
 import type { SqlError } from "@effect/sql/SqlError";
-import type {
-  RegistryListRequest,
-  RegistryListResult,
-  RegistryLookupRequest,
-  RegistryLookupResult,
-  RegistryRegisterRequest,
-  RegistryRegisterResult,
-} from "@moltzap/identity/registry";
 import * as Migrator from "@effect/sql/Migrator";
 import { SqlClient } from "@effect/sql/SqlClient";
 import {
@@ -17,19 +9,21 @@ import {
   type AgentId as AgentIdValue,
   type AgentSigningAuthority,
   type Ed25519PublicKey,
-  InternalServerError,
-  UnavailableError,
   type VerifiedAgentCard,
-} from "@moltzap/identity";
+} from "@moltzap/social-harness";
 import {
   agentCardSigning,
-  registryAgentCardCodec,
-  registryRegisterCodec,
-} from "@moltzap/identity/internal";
-import { Clock, Data, Effect, Either, Encoding, Schema } from "effect";
+  httpErrors,
+  registryContract,
+} from "@moltzap/social-harness/internal";
+import { Clock, Data, Effect, Schema } from "effect";
 import { randomBytes } from "node:crypto";
 import { AgentCardIssuedAt, issueAgentCard } from "./issuance.js";
 import { registryMigration } from "./migrations/0001_registry.js";
+
+/* eslint-disable @typescript-eslint/naming-convention -- Closed HTTP error constructors retain their class names when bound from the service capability. */
+const { InternalServerError, UnavailableError } = httpErrors;
+/* eslint-enable @typescript-eslint/naming-convention -- Restore variable naming after binding error constructors. */
 const ed25519PublicKeyThumbprintUri = agentCardSigning.publicKeyId;
 
 /** Storage initialization failed before the Registry became ready. */
@@ -43,7 +37,7 @@ export class RegistryStorageInitializationError extends Data.TaggedError(
     | "unavailable";
 }> {}
 
-const LEDGER_TABLE = "sharness_registry_ledger";
+const LEDGER_TABLE = "sharness_registry_ledger_20261026";
 
 /**
  * Ledgers written by releases before the current reset. Their databases hold
@@ -53,17 +47,19 @@ const LEDGER_TABLE = "sharness_registry_ledger";
 const PRE_RESET_LEDGERS = [
   "moltzap_registry_migrations",
   "sharness_registry_migrations",
+  "sharness_registry_ledger",
 ] as const;
 
-type StorageError = UnavailableError | InternalServerError;
+type StorageError =
+  | InstanceType<typeof httpErrors.UnavailableError>
+  | InstanceType<typeof httpErrors.InternalServerError>;
 type StorageInput = Readonly<{
   sql: SqlClient;
   registrySignerPublicKey: Ed25519PublicKey;
-  listPageSize: number;
   operationTimeoutMilliseconds: number;
 }>;
 type RegisterInput = Readonly<{
-  request: RegistryRegisterRequest;
+  request: typeof registryContract.RegistryRegisterRequest.Type;
   requestBytes: Uint8Array;
   registrySigningAuthority: AgentSigningAuthority;
 }>;
@@ -83,13 +79,16 @@ export interface RegistryStorage {
   }) => Effect.Effect<"claimed" | "replayed" | "full", StorageError>;
   readonly register: (
     input: RegisterInput,
-  ) => Effect.Effect<RegistryRegisterResult, StorageError>;
+  ) => Effect.Effect<
+    typeof registryContract.registerResultSchema.Type,
+    StorageError
+  >;
   readonly lookup: (
-    request: RegistryLookupRequest,
-  ) => Effect.Effect<RegistryLookupResult, StorageError>;
-  readonly list: (
-    request: RegistryListRequest,
-  ) => Effect.Effect<RegistryListResult, StorageError>;
+    request: typeof registryContract.RegistryLookupRequest.Type,
+  ) => Effect.Effect<
+    typeof registryContract.lookupResultSchema.Type,
+    StorageError
+  >;
 }
 
 /**
@@ -125,7 +124,6 @@ export function initializeRegistryStorage(input: {
  * @param input Storage dependencies and operation bounds.
  * @param input.sql Initialized SQL capability.
  * @param input.registrySignerPublicKey Pinned Registry verification key.
- * @param input.listPageSize Maximum complete cards in one list response.
  * @param input.operationTimeoutMilliseconds Complete SQL operation deadline.
  * @returns Durable Registry operations.
  */
@@ -135,7 +133,6 @@ export function makeRegistryStorage(input: StorageInput): RegistryStorage {
     claimRegistrationNonce: makeClaimRegistrationNonce(input),
     register: makeRegister(input),
     lookup: makeLookup(input),
-    list: makeList(input),
   });
 }
 
@@ -149,7 +146,7 @@ const sameBytes = (left: Uint8Array, right: Uint8Array): boolean => {
       everyByte.call(left, (byte, index) => byte === right[index]) &&
       everyByte.call(right, (byte, index) => byte === left[index])
     );
-    // eslint-disable-next-line agent-code-guard/bare-catch -- Detached or exotic typed arrays are non-canonical inputs, not defects. #ignore-sloppy-code-next-line[bare-catch]: The comparison returns false.
+    // eslint-disable-next-line agent-code-guard/bare-catch -- Detached or exotic typed arrays are non-canonical inputs, not defects.
   } catch {
     return false;
   }
@@ -188,7 +185,7 @@ const readinessRow = exactStruct({
 
 const internalFailure = <A, E, R>(
   effect: Effect.Effect<A, E, R>,
-): Effect.Effect<A, InternalServerError, R> =>
+): Effect.Effect<A, InstanceType<typeof httpErrors.InternalServerError>, R> =>
   effect.pipe(
     // eslint-disable-next-line agent-code-guard/no-effect-error-coalescing -- Stored bytes and internal cryptographic failures cross one closed, non-diagnostic storage boundary.
     Effect.mapError(() => new InternalServerError()),
@@ -197,7 +194,10 @@ const internalFailure = <A, E, R>(
 const exactRows = <A, I>(
   schema: Schema.Schema<A, I>,
   rows: unknown,
-): Effect.Effect<readonly A[], InternalServerError> =>
+): Effect.Effect<
+  readonly A[],
+  InstanceType<typeof httpErrors.InternalServerError>
+> =>
   internalFailure(
     Schema.decodeUnknown(Schema.Array(schema))(rows, {
       exact: true,
@@ -206,7 +206,10 @@ const exactRows = <A, I>(
   ).pipe(Effect.map((decoded) => Object.freeze([...decoded])));
 
 const withStorageDeadline = <A>(
-  effect: Effect.Effect<A, InternalServerError | SqlError>,
+  effect: Effect.Effect<
+    A,
+    InstanceType<typeof httpErrors.InternalServerError> | SqlError
+  >,
   timeoutMilliseconds: number,
 ): Effect.Effect<A, StorageError> =>
   effect.pipe(
@@ -220,9 +223,12 @@ const withStorageDeadline = <A>(
 const decodeStoredCard = (
   bytes: Uint8Array,
   registrySignerPublicKey: Ed25519PublicKey,
-): Effect.Effect<VerifiedAgentCard, InternalServerError> =>
+): Effect.Effect<
+  VerifiedAgentCard,
+  InstanceType<typeof httpErrors.InternalServerError>
+> =>
   internalFailure(
-    registryAgentCardCodec
+    registryContract.registryAgentCardCodec
       .decode(bytes)
       .pipe(
         Effect.flatMap((agentCard) =>
@@ -232,17 +238,26 @@ const decodeStoredCard = (
   );
 
 const encodeResult = (
-  result: RegistryRegisterResult,
-): Effect.Effect<Uint8Array, InternalServerError> =>
-  internalFailure(registryRegisterCodec.response.encode(result));
+  result: typeof registryContract.registerResultSchema.Type,
+): Effect.Effect<
+  Uint8Array,
+  InstanceType<typeof httpErrors.InternalServerError>
+> =>
+  internalFailure(
+    registryContract.registryRegisterCodec.response.encode(result),
+  );
 
 const decodeResult = (
   bytes: Uint8Array,
   registrySignerPublicKey: Ed25519PublicKey,
-): Effect.Effect<RegistryRegisterResult, InternalServerError> =>
+): Effect.Effect<
+  typeof registryContract.registerResultSchema.Type,
+  InstanceType<typeof httpErrors.InternalServerError>
+> =>
   internalFailure(
     Effect.gen(function* () {
-      const result = yield* registryRegisterCodec.response.decode(bytes);
+      const result =
+        yield* registryContract.registryRegisterCodec.response.decode(bytes);
       if (result.kind !== "registered") {
         return Object.freeze({ kind: result.kind });
       }
@@ -254,7 +269,10 @@ const decodeResult = (
     }),
   );
 
-const mintAgentId = (): Effect.Effect<AgentIdValue, InternalServerError> =>
+const mintAgentId = (): Effect.Effect<
+  AgentIdValue,
+  InstanceType<typeof httpErrors.InternalServerError>
+> =>
   internalFailure(
     Effect.try({
       try: () => `agt_${randomBytes(16).toString("base64url")}`,
@@ -264,14 +282,17 @@ const mintAgentId = (): Effect.Effect<AgentIdValue, InternalServerError> =>
 
 const retainedCount = (
   rows: unknown,
-): Effect.Effect<number, InternalServerError> =>
+): Effect.Effect<number, InstanceType<typeof httpErrors.InternalServerError>> =>
   exactRows(countRow, rows).pipe(
     Effect.map((decoded) => Number(decoded[0]?.retained ?? 0)),
   );
 
 const mintUnusedAgentId = (
   sql: SqlClient,
-): Effect.Effect<AgentIdValue, SqlError | InternalServerError> =>
+): Effect.Effect<
+  AgentIdValue,
+  SqlError | InstanceType<typeof httpErrors.InternalServerError>
+> =>
   Effect.gen(function* () {
     for (let attempt = 0; attempt < AGENT_ID_MINT_ATTEMPTS; attempt += 1) {
       const candidate = yield* mintAgentId();
@@ -289,7 +310,7 @@ const mintUnusedAgentId = (
 
 const issueTime = (): Effect.Effect<
   typeof AgentCardIssuedAt.Type,
-  InternalServerError
+  InstanceType<typeof httpErrors.InternalServerError>
 > =>
   internalFailure(
     Clock.currentTimeMillis.pipe(
@@ -301,14 +322,6 @@ const issueTime = (): Effect.Effect<
       Effect.flatMap(Schema.decodeUnknown(AgentCardIssuedAt)),
     ),
   );
-
-const decodeAgentIdBytes = (
-  agentId: AgentIdValue,
-): Effect.Effect<Uint8Array, InternalServerError> =>
-  Either.match(Encoding.decodeBase64Url(agentId.slice(4)), {
-    onLeft: () => Effect.fail(new InternalServerError()),
-    onRight: Effect.succeed,
-  });
 
 function makeCheckReadiness(
   input: StorageInput,
@@ -468,8 +481,11 @@ function makeClaimRegistrationNonce(
 const findStoredOperation = (
   sql: SqlClient,
   keyThumbprint: string,
-  operationId: RegistryRegisterRequest["operationId"],
-): Effect.Effect<StoredOperation | undefined, SqlError | InternalServerError> =>
+  operationId: (typeof registryContract.RegistryRegisterRequest.Type)["operationId"],
+): Effect.Effect<
+  StoredOperation | undefined,
+  SqlError | InstanceType<typeof httpErrors.InternalServerError>
+> =>
   sql`
     SELECT
       request_bytes AS "requestBytes",
@@ -494,7 +510,7 @@ const keyIsRegistered = (sql: SqlClient, thumbprint: string) =>
 
 const nameIsRegistered = (
   sql: SqlClient,
-  agentName: RegistryRegisterRequest["agentName"],
+  agentName: (typeof registryContract.RegistryRegisterRequest.Type)["agentName"],
 ) =>
   sql`
     SELECT COUNT(*)::text AS retained
@@ -509,7 +525,10 @@ const insertNewAgent = (
   input: StorageInput,
   call: RegisterInput,
   keyThumbprint: string,
-): Effect.Effect<RegistryRegisterResult, SqlError | InternalServerError> =>
+): Effect.Effect<
+  typeof registryContract.registerResultSchema.Type,
+  SqlError | InstanceType<typeof httpErrors.InternalServerError>
+> =>
   Effect.gen(function* () {
     const agentId = yield* mintUnusedAgentId(input.sql);
     const issuedAt = yield* issueTime();
@@ -524,15 +543,14 @@ const insertNewAgent = (
       }),
     );
     const agentCardBytes = yield* internalFailure(
-      registryAgentCardCodec.encode(agentCard),
+      registryContract.registryAgentCardCodec.encode(agentCard),
     );
-    const agentIdBytes = yield* decodeAgentIdBytes(agentId);
     yield* input.sql`
       INSERT INTO sharness_registry_agents
-        (agent_id, agent_id_bytes, principal_id, agent_name,
+        (agent_id, principal_id, agent_name,
          public_key_thumbprint, agent_card_bytes)
       VALUES
-        (${agentId}, ${agentIdBytes}, ${call.request.principalId},
+        (${agentId}, ${call.request.principalId},
          ${call.request.agentName}, ${keyThumbprint}, ${agentCardBytes})
     `;
     return Object.freeze({ kind: "registered", agentCard });
@@ -556,7 +574,7 @@ const decideRegistration = (
 const recordOperation = (input: {
   readonly sql: SqlClient;
   readonly keyThumbprint: string;
-  readonly operationId: RegistryRegisterRequest["operationId"];
+  readonly operationId: (typeof registryContract.RegistryRegisterRequest.Type)["operationId"];
   readonly requestBytes: Uint8Array;
   readonly resultBytes: Uint8Array;
 }) =>
@@ -619,7 +637,10 @@ function makeRegister(input: StorageInput): RegistryStorage["register"] {
     );
 }
 
-const findCardRows = (sql: SqlClient, request: RegistryLookupRequest) =>
+const findCardRows = (
+  sql: SqlClient,
+  request: typeof registryContract.RegistryLookupRequest.Type,
+) =>
   "agentId" in request
     ? sql`
         SELECT agent_card_bytes AS "agentCardBytes"
@@ -651,52 +672,6 @@ function makeLookup(input: StorageInput): RegistryStorage["lookup"] {
           input.registrySignerPublicKey,
         );
         return Object.freeze({ kind: "found", agentCard } as const);
-      }),
-      input.operationTimeoutMilliseconds,
-    );
-}
-
-const readListRows = (input: StorageInput, afterBytes?: Uint8Array) => {
-  const maximumRows = input.listPageSize + 1;
-  return afterBytes === undefined
-    ? input.sql`
-        SELECT agent_card_bytes AS "agentCardBytes"
-        FROM sharness_registry_agents
-        ORDER BY agent_id_bytes ASC
-        LIMIT ${maximumRows}
-      `
-    : input.sql`
-        SELECT agent_card_bytes AS "agentCardBytes"
-        FROM sharness_registry_agents
-        WHERE agent_id_bytes > ${afterBytes}
-        ORDER BY agent_id_bytes ASC
-        LIMIT ${maximumRows}
-      `;
-};
-
-function makeList(input: StorageInput): RegistryStorage["list"] {
-  return (request) =>
-    withStorageDeadline(
-      Effect.gen(function* () {
-        const afterBytes =
-          request.afterAgentId === undefined
-            ? undefined
-            : yield* decodeAgentIdBytes(request.afterAgentId);
-        const cardRows = yield* readListRows(input, afterBytes).pipe(
-          Effect.flatMap((rows) => exactRows(cardRow, rows)),
-        );
-        const hasMore = cardRows.length > input.listPageSize;
-        const agentCards = yield* Effect.forEach(
-          cardRows.slice(0, input.listPageSize),
-          (row) =>
-            decodeStoredCard(row.agentCardBytes, input.registrySignerPublicKey),
-          { concurrency: 1 },
-        );
-        return Object.freeze({
-          kind: "page",
-          agentCards: Object.freeze(agentCards),
-          hasMore,
-        });
       }),
       input.operationTimeoutMilliseconds,
     );

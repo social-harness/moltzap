@@ -1,11 +1,6 @@
 /** @file Loads the daemon process configuration and its redacted bootstrap material from the environment. */
 
 import {
-  AgentSigningAuthority,
-  Ed25519PublicKey,
-  legacyKeys,
-} from "@moltzap/identity";
-import {
   Config,
   type ConfigError,
   Effect,
@@ -14,10 +9,14 @@ import {
   Schema,
 } from "effect";
 import type { MessagePolicyConfigurationFailure } from "../firewall/index.js";
+import { legacyKeys } from "../environment.js";
 import {
   credentialMatches,
   type HarnessMcpCredentials,
 } from "../harness/mcp/index.js";
+import { AgentName, PrincipalId } from "../identity/agents.js";
+import { AgentSigningAuthority, Ed25519PublicKey } from "../identity/keys.js";
+import { OperationId } from "../identity/registry/contract.js";
 import {
   type DaemonBootstrap,
   DaemonConfigurationError,
@@ -70,6 +69,21 @@ const compactPublicKeyJson = Schema.String.pipe(
 );
 
 const configurationFields = {
+  registrationAgentName: setting(
+    "SHARNESS_REGISTRATION_AGENT_NAME",
+    AgentName,
+    undefined,
+  ),
+  registrationOperationId: setting(
+    "SHARNESS_REGISTRATION_OPERATION_ID",
+    OperationId,
+    undefined,
+  ),
+  registrationPrincipalId: setting(
+    "SHARNESS_REGISTRATION_PRINCIPAL_ID",
+    PrincipalId,
+    undefined,
+  ),
   stateDirectory: setting("SHARNESS_STATE_DIRECTORY", configuredPath),
   mcpPort: setting("SHARNESS_MCP_PORT", port),
   registryOrigin: setting("SHARNESS_REGISTRY_ORIGIN", origin),
@@ -108,11 +122,6 @@ const configurationFields = {
     configuredPath,
     undefined,
   ),
-  firewallAuditExport: setting(
-    "SHARNESS_FIREWALL_AUDIT_EXPORT",
-    configuredPath,
-    undefined,
-  ),
 };
 
 const configuredValues = Config.all(configurationFields);
@@ -123,8 +132,10 @@ export const processHelp = [
   "",
   "Environment:",
   "  Admission credential: required only before registration; MCP credential files: supply both or neither.",
-  "  Message policy: unset, no firewall; the decision-provider key and firewall audit export apply only with it.",
+  "  Message policy: unset, no firewall; the decision-provider key applies only with it.",
   ...Object.values(configurationFields).map((field) => `  ${field.usage}`),
+  "",
+  "Docs: https://docs.moltzap.xyz/spec/harness/daemon#process-and-configuration",
 ].join("\n");
 
 /** The process settings' failures; message-policy failures carry their own messages. */
@@ -163,66 +174,123 @@ const configurationError = (
   });
 
 const loadedConfiguration = configuredValues.pipe(
-  Effect.map(
-    (configuration): DaemonProcessConfiguration => ({
-      ...configuration,
-      agentPrivateKeyFile: Redacted.make(configuration.agentPrivateKeyFile),
-      admissionCredentialFile:
-        configuration.admissionCredentialFile === ""
-          ? undefined
-          : Redacted.make(configuration.admissionCredentialFile),
-      mcpRuntimeCredentialFile:
-        configuration.mcpRuntimeCredentialFile === undefined
-          ? undefined
-          : Redacted.make(configuration.mcpRuntimeCredentialFile),
-      mcpOwnerCredentialFile:
-        configuration.mcpOwnerCredentialFile === undefined
-          ? undefined
-          : Redacted.make(configuration.mcpOwnerCredentialFile),
-      decisionProviderKeyFile:
-        configuration.decisionProviderKeyFile === undefined
-          ? undefined
-          : Redacted.make(configuration.decisionProviderKeyFile),
-    }),
-  ),
+  Effect.flatMap((values) => {
+    const {
+      registrationAgentName,
+      registrationOperationId,
+      registrationPrincipalId,
+      ...configuration
+    } = values;
+    return registrationRequest({
+      registrationAgentName,
+      registrationOperationId,
+      registrationPrincipalId,
+    }).pipe(
+      Effect.map(
+        (registration): DaemonProcessConfiguration => ({
+          ...configuration,
+          ...(registration === undefined ? {} : { registration }),
+          agentPrivateKeyFile: Redacted.make(configuration.agentPrivateKeyFile),
+          admissionCredentialFile:
+            configuration.admissionCredentialFile === ""
+              ? undefined
+              : Redacted.make(configuration.admissionCredentialFile),
+          mcpRuntimeCredentialFile:
+            configuration.mcpRuntimeCredentialFile === undefined
+              ? undefined
+              : Redacted.make(configuration.mcpRuntimeCredentialFile),
+          mcpOwnerCredentialFile:
+            configuration.mcpOwnerCredentialFile === undefined
+              ? undefined
+              : Redacted.make(configuration.mcpOwnerCredentialFile),
+          decisionProviderKeyFile:
+            configuration.decisionProviderKeyFile === undefined
+              ? undefined
+              : Redacted.make(configuration.decisionProviderKeyFile),
+        }),
+      ),
+    );
+  }),
   Effect.mapError((cause) =>
-    Match.value(cause).pipe(
-      Match.discriminatorsExhaustive("_op")({
-        And: (error) =>
-          new DaemonConfigurationError({
-            reason: "environment",
-            message: configurationMessage(error),
+    cause instanceof DaemonConfigurationError
+      ? cause
+      : Match.value(cause).pipe(
+          Match.discriminatorsExhaustive("_op")({
+            And: (error) =>
+              new DaemonConfigurationError({
+                reason: "environment",
+                message: configurationMessage(error),
+              }),
+            Or: (error) =>
+              new DaemonConfigurationError({
+                reason: "environment",
+                message: configurationMessage(error),
+              }),
+            InvalidData: (error) =>
+              new DaemonConfigurationError({
+                reason: "environment",
+                message: configurationMessage(error),
+              }),
+            MissingData: (error) =>
+              new DaemonConfigurationError({
+                reason: "environment",
+                message: configurationMessage(error),
+              }),
+            SourceUnavailable: (error) =>
+              new DaemonConfigurationError({
+                reason: "environment",
+                message: configurationMessage(error),
+              }),
+            Unsupported: (error) =>
+              new DaemonConfigurationError({
+                reason: "environment",
+                message: configurationMessage(error),
+              }),
           }),
-        Or: (error) =>
-          new DaemonConfigurationError({
-            reason: "environment",
-            message: configurationMessage(error),
-          }),
-        InvalidData: (error) =>
-          new DaemonConfigurationError({
-            reason: "environment",
-            message: configurationMessage(error),
-          }),
-        MissingData: (error) =>
-          new DaemonConfigurationError({
-            reason: "environment",
-            message: configurationMessage(error),
-          }),
-        SourceUnavailable: (error) =>
-          new DaemonConfigurationError({
-            reason: "environment",
-            message: configurationMessage(error),
-          }),
-        Unsupported: (error) =>
-          new DaemonConfigurationError({
-            reason: "environment",
-            message: configurationMessage(error),
-          }),
-      }),
-    ),
+        ),
   ),
   Effect.withSpan("loadDaemonProcessConfiguration"),
 );
+
+/** A startup request is complete or omitted; partial registration cannot choose an identity. */
+function registrationRequest(
+  input: Pick<
+    Config.Config.Success<typeof configuredValues>,
+    | "registrationAgentName"
+    | "registrationOperationId"
+    | "registrationPrincipalId"
+  >,
+): Effect.Effect<
+  DaemonProcessConfiguration["registration"],
+  DaemonConfigurationError
+> {
+  const {
+    registrationAgentName: agentName,
+    registrationOperationId: operationId,
+    registrationPrincipalId: principalId,
+  } = input;
+  if (
+    agentName === undefined &&
+    operationId === undefined &&
+    principalId === undefined
+  ) {
+    return Effect.succeed(undefined);
+  }
+  if (
+    agentName === undefined ||
+    operationId === undefined ||
+    principalId === undefined
+  ) {
+    return Effect.fail(
+      new DaemonConfigurationError({
+        reason: "environment",
+        message:
+          "SHARNESS_REGISTRATION_AGENT_NAME, SHARNESS_REGISTRATION_OPERATION_ID and SHARNESS_REGISTRATION_PRINCIPAL_ID must all be supplied. Docs: https://docs.moltzap.xyz/spec/harness/daemon#process-and-configuration",
+      }),
+    );
+  }
+  return Effect.succeed({ agentName, operationId, principalId });
+}
 
 /** Loads explicit daemon inputs with optional export and MCP authority separation. */
 export const loadDaemonProcessConfiguration: Effect.Effect<

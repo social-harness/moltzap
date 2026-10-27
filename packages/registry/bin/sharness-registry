@@ -1,16 +1,9 @@
 #!/usr/bin/env node
-import { NodeRuntime } from "@effect/platform-node";
-import { ConfigProvider, Console, Effect, Layer } from "effect";
-import { registerHooks } from "node:module";
+import { Console, Layer } from "effect";
+import { installInternalResolution } from "../dist/internal-resolution.js";
+import { runRegistryMain } from "../dist/main.js";
 
-registerHooks({
-  resolve(specifier, context, nextResolve) {
-    return nextResolve(specifier, {
-      ...context,
-      conditions: [...context.conditions, "sharness-internal"],
-    });
-  },
-});
+installInternalResolution();
 
 const { layer, processHelp } = await import("../dist/server.js");
 
@@ -18,14 +11,4 @@ const program = process.argv.includes("--help")
   ? Console.log(processHelp)
   : Layer.launch(layer);
 
-program.pipe(
-  Effect.catchAll((error) =>
-    Console.error(error.message).pipe(
-      Effect.andThen(Effect.sync(() => {
-        process.exitCode = 1;
-      })),
-    ),
-  ),
-  Effect.withConfigProvider(ConfigProvider.fromEnv()),
-  NodeRuntime.runMain,
-);
+runRegistryMain(program);

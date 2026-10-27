@@ -1,6 +1,7 @@
 # L1: identity, attribution, and authenticated requests
 
-{/* @bake-constants: V2_PROTOCOL_VERSION */}
+`WIRE_VERSION` is defined in `packages/client/src/identity/wire-version.ts`.
+Examples use its name in place of the emitted string value.
 
 Status: **Gate 1 normative**
 
@@ -34,70 +35,71 @@ continuity. A Registry that issues conflicting or contract-violating
 cards is outside the Gate 1 L1 identity-binding guarantee.
 
 Correctness does not imply availability. Registry outage prevents
-registration and public lookup or list operations. Router or an endpoint with
+registration and public exact lookup operations. Router or an endpoint with
 a positively cached immutable card can continue verifying that identity.
 Pinned cards and certified conversation histories, whose GENESIS record carries
 the membership, remain verifiable without a live Registry.
 
 ## Public package boundary
 
-Identity publishes to npm under the `@moltzap` scope with these entries:
+Identity capabilities are part of `@moltzap/social-harness`, published under the
+`@moltzap` scope. They resolve through these library entries:
 
 | Entry | Resolution | Purpose |
 |---|---|---|
-| `.` | normal production resolution | Identity values and capabilities |
-| `./registry` | normal production resolution | Registry client and contract values |
-| `./test` | `sharness-test` condition only | `WireVersions` override tag only |
-| `./internal` | `sharness-internal` condition only | Request verification, Registry API and codecs, and typed card signing |
+| `@moltzap/social-harness` | normal production resolution | Immutable identity and attributed message values alongside the host endpoint |
+| `@moltzap/social-harness/service` | normal production resolution | Registry client and contract values alongside daemon composition |
+| `@moltzap/social-harness/test` | `sharness-test` condition only | Process-test composition: management fixture schemas, the `WireVersions` override, `AuthenticatedHttp` request signing, and the `HISTORY_WIRE_VERSIONS` history window |
+| `@moltzap/social-harness/internal` | `sharness-internal` condition only | Request verification, grouped `registryContract` and `routerContract` wire contracts, `httpErrors`, Registry and Router client tags, and typed card signing |
 
-The `@moltzap/identity` root exports exactly these same-named Effect
+The `@moltzap/social-harness` root exports these identity-specific same-named Effect
 Schema values and TypeScript types:
 
 - `AgentId`;
 - `PrincipalId`;
 - `AgentName`;
 - `MessageId`;
-- `AgentCardDigest`;
 - `Ed25519PublicKey`;
 - `AgentCard`;
 - `SignedMessage`.
 
-The `@moltzap/identity/registry` subpath exports exactly these
+The `@moltzap/social-harness/service` subpath exports these Registry-specific
 same-named Effect Schema values and TypeScript types:
 
 - `OperationId`;
 - `RegistryRegisterRequest`;
-- `RegistryLookupRequest`; and
-- `RegistryListRequest`.
+- `RegistryLookupRequest`.
 
 The root exports these type-only trust states:
 
 - `VerifiedAgentCard`;
 - `VerifiedSignedMessage`;
-- `LiveSignedMessage`;
-- `WireVersion`;
-- `VerifiedAgentRequest`.
+- `LiveSignedMessage`.
 
-The Registry subpath exports these type-only capability results:
+The Client service entry exports these type-only capability results:
 
 - `RegistryRegisterResult`;
-- `RegistryLookupResult`; and
-- `RegistryListResult`.
+- `RegistryLookupResult`.
 
-The remaining root exports are `WIRE_VERSION`, `LIVE_WIRE_VERSIONS`,
-`HISTORY_WIRE_VERSIONS`, `wireVersions`, `AgentSigningAuthority`, `SealedBody`,
-`AuthenticatedHttp`, `legacyKeys`, and the shared exact error classes in
-[Error contract](#error-contract).
-The Registry subpath also exports `Registry` and its exact client error
-classes.
+The remaining identity root exports are `WIRE_VERSION`, `LIVE_WIRE_VERSIONS`,
+`AgentSigningAuthority` and `legacyKeys`. The condition-only `./internal` entry
+exposes request verification, card signing, `registryContract`, `routerContract`,
+`httpErrors`, Registry and Router client tags, and the service wire-version
+values and proof types listed in
+[Library entries](./layer-interfaces.md#library-entries). Services construct the
+HTTP error classes through `httpErrors`. The Client service entry also exports
+`Registry` and its exact client error classes.
 
 `wireVersions` exposes frozen compatibility operations for the binary's emitted,
 live and retained-history sets. It exposes no configurable service or context
-tag. `@moltzap/identity/test` resolves only the internal `WireVersions` tag when
+tag. `@moltzap/social-harness/test` resolves the `WireVersions` override, management
+fixture schemas, `AuthenticatedHttp` request signing, and the
+`HISTORY_WIRE_VERSIONS` history window when
 the explicit `sharness-test` module-resolution condition is enabled. Normal
-production resolution refuses that subpath. Client tests and their child
-processes opt into the condition to compose adjacent releases; production
-sources cannot import the test-only entry.
+production resolution refuses that subpath. Tests and the child processes they
+start enable the condition to compose adjacent releases. The Registry's
+condition-only `./test` entry, which builds on this subpath, also resolves only
+under the condition. Production sources cannot import either test-only entry.
 
 `AgentCard.wireVersion` reads the card's retained signed version. Endpoints use
 the first canonical member's card to select a shared conversation foundation
@@ -119,7 +121,7 @@ signature API, or generic representation module.
 `AgentCard`, `SignedMessage`, and the request values use Effect Schema
 as their only public parsing boundary. Registry result types have
 private exact response Schemas: a client parses the response, verifies
-its cards, signatures, ordering, and request bindings, and only then
+its cards, signatures, and request bindings, and only then
 constructs a public verified result. The result types have no
 standalone public decoder.
 
@@ -169,7 +171,7 @@ chain, contact, institution, revocation, active status, policy, or
 extension bag. Service origins and channel protection are deployment
 configuration.
 
-Registry lookup and list return the complete immutable card, never a
+Registry lookup returns the complete immutable card, never a
 thinner identity projection. A verified card is nominally distinct
 from an encoded, untrusted card.
 
@@ -252,28 +254,21 @@ The results are:
 - `key_already_registered`; and
 - `idempotency_conflict`.
 
-## Public lookup and list
+## Public lookup
 
-The Registry exposes:
-
-- `POST /v1/identities:lookup`
-- `POST /v1/identities:list`
-
-Both are public unauthenticated reads. They still require the exact
-wire compatibility value, canonical JSON, bounded bodies, and closed schemas.
+The Registry exposes `POST /v1/identities:lookup` as a public unauthenticated
+read. It requires the exact wire compatibility value, canonical JSON,
+bounded bodies, and closed schemas.
 
 Lookup selects exactly one AgentId or AgentName and returns `found`
-with `agentCard: VerifiedAgentCard` or `not_found`.
-
-List accepts only optional `afterAgentId`; the server owns page size.
-It returns `page` with ordered `readonly VerifiedAgentCard[]` and
-`hasMore`. Ordering uses decoded AgentId bytes.
+with `agentCard: VerifiedAgentCard` or `not_found`. AgentNames are short,
+human-chosen handles, so unauthenticated lookup by name confirms whether a
+guessed name exists.
 
 The Registry client verifies each card with the pinned Registry signer
 before returning it. It also verifies register and lookup response
-bindings and list order, uniqueness, and lower bound. Those checks
-reject a mismatched valid card; they do not authenticate an unsigned
-response or prove list completeness.
+bindings. Those checks reject a mismatched valid card; they do not
+authenticate an unsigned response.
 
 ## Cache behavior
 
@@ -297,7 +292,7 @@ Registry state.
 
 ## Wire versions
 
-Every new artifact emits `WIRE_VERSION`, currently `2026.1021.3`. `LIVE_WIRE_VERSIONS` admits outer
+Every new artifact emits `WIRE_VERSION`. `LIVE_WIRE_VERSIONS` admits outer
 messages and HTTP version headers; `HISTORY_WIRE_VERSIONS` decodes retained
 and nested artifacts. The live set holds the emitted version and at most one
 adjacent version, per the
@@ -617,7 +612,7 @@ when the route verifies a caller's SignedMessage.
 Registration adds no `signRegistrationRequest` or
 `verifyRegistrationRequest` member. Shared HTTP verification supplies the
 bootstrap signature and version step; Registry keeps credential and key
-admission and durable nonce claim. Public Registry lookup and list use no
+admission and durable nonce claim. Public Registry lookup uses no
 signature profile.
 
 The verifier:
@@ -686,25 +681,6 @@ Registry.lookup(
   Registry
 >
 
-Registry.list(
-  request: RegistryListRequest,
-): Effect.Effect<
-  RegistryListResult,
-  MalformedRequestError
-    | RouteNotFoundError
-    | MethodNotAllowedError
-    | VersionMismatchError
-    | PayloadTooLargeError
-    | UnsupportedMediaTypeError
-    | OverloadedError
-    | UnavailableError
-    | InternalServerError
-    | RegistryConnectionError
-    | RegistryRequestTimeoutError
-    | RegistryInvalidResponseError,
-  Registry
->
-
 Registry.layer(input: {
   readonly origin: URL
   readonly registrySignerPublicKey: Ed25519PublicKey
@@ -720,14 +696,13 @@ member.
 ## Private Effect RPC
 
 Registry has one private Effect RPC group whose members are exactly
-`register`, `lookup`, and `list`. Health remains outside the group.
+`register` and `lookup`. Health remains outside the group.
 The execution order is:
 
 | Member | Required middleware context |
 |---|---|
 | `register` | successful Registry-owned bootstrap admission |
 | `lookup` | none |
-| `list` | none |
 
 Required middleware cannot be disabled. Admission failure
 short-circuits the handler, and successful middleware context reaches
@@ -740,14 +715,16 @@ success channel.
 `RpcServer.makeNoSerialization` and
 `RpcClient.makeNoSerialization` provide private correlation and typed
 exits inside the package. Effect Schema still validates every
-production network boundary. Production exposes only the three exact
-HTTP routes; it has no `/rpc`, JSON-RPC, NDJSON, Effect RPC HTTP
+production network boundary. Production exposes only the register, lookup
+and health HTTP routes; it has no `/rpc`, JSON-RPC, NDJSON, Effect RPC HTTP
 protocol, public RPC group, middleware tag, request ID, serializer, or
 aggregate error-reconstruction surface.
 
 ## Error contract
 
-Identity owns and root-exports these shared HTTP errors. Each is an
+Services construct shared HTTP errors through `httpErrors` from the
+condition-only `@moltzap/social-harness/internal` entry. The individual classes are
+not exported from a package entry; callers match on `_tag`. Each is an
 empty `Schema.TaggedError`; `_tag` is exactly the class name. HTTP
 status and response `error` code are one private bijective mapping, not
 duplicate fields on an error value.
@@ -773,18 +750,20 @@ retry at an older version. Each release emits exactly `WIRE_VERSION`.
 `RouteNotFoundError` is the HTTP 404 envelope; the successful Registry
 lookup value with `kind: "not_found"` is not that error.
 `Registry.register` declares all ten HTTP classes.
-`Registry.lookup` and `Registry.list` declare all except
+`Registry.lookup` declares all except
 `AuthenticationFailedError`, because public reads have no admission or
 authentication stage. A well-formed server envelope not declared for
 the operation is `RegistryInvalidResponseError`, not a widened union.
 
-The Registry subpath also exports these Registry client errors:
+The Client service entry also exports these Registry client errors:
 
 - `RegistryConnectionError`;
 - `RegistryRequestTimeoutError`; and
 - `RegistryInvalidResponseError`.
 
-It root-exports these signing and artifact errors:
+Signing and artifact error classes are not exported as values from a
+package entry; callers match on `_tag`. `AgentCardVerificationError` is
+also available as a type from `@moltzap/social-harness/internal`. The tags are:
 
 - `InvalidAgentPrivateKeyError`;
 - `AgentSigningError`;
@@ -871,7 +850,7 @@ persisted value before it becomes a domain value.
 
 Registry PostgreSQL storage atomically owns:
 
-- immutable searchable identities and exact canonical AgentCard bytes;
+- immutable identities, found by exact lookup, and exact canonical AgentCard bytes;
 - registration operations, exact canonical request bytes, and stable
   exact result bytes;
 - accepted replay nonces through expiry; and
@@ -886,8 +865,9 @@ their ledger entries commit transactionally; a failed migration rolls back.
 Operators run `pg_dump` before upgrading. Downgrades are unsupported.
 
 Startup refuses a pre-reset `moltzap_registry_migrations` or
-`sharness_registry_migrations` ledger with `pre-reset` before creating its
-`sharness_registry_ledger` ledger. Startup also
+`sharness_registry_migrations` or `sharness_registry_ledger` ledger with
+`pre-reset` before creating its `sharness_registry_ledger_20261026` ledger.
+Its single baseline contains the current exact-lookup storage shape. Startup also
 fails closed when the configured signer differs from the database metadata. A signer mismatch carries reason `signer-mismatch`.
 Other storage initialization failures carry reason `unavailable`.
 Registration serializes through the metadata row,
@@ -896,6 +876,25 @@ enforces uniqueness, and commits the card with the operation result.
 `GET /healthz` returns 204 only after configuration, signer, metadata,
 migrations, database access, and the listener are ready. It returns 503
 otherwise.
+
+## Registry test composition
+
+The private Registry package exposes `@moltzap/registry/test` only under the
+`sharness-test` condition. Its sole runtime export is
+`startRegistry({ emitted, live, history })`, which launches the Registry using
+those wire compatibility sets and the ordinary Registry environment settings.
+The supplied `emitted` is the process's signing version and `live` is its effective
+live acceptance set. The effective history set is the union of supplied `history`
+and the library's built-in `HISTORY_WIRE_VERSIONS`.
+
+Importing this entry installs no resolution hook. Calling `startRegistry`
+installs internal resolution before its dynamic server imports, scoped to
+imports whose parent module lies under the Registry package's `dist/` or
+`bin/` directory. A nested `node_modules` under the package root receives no
+internal condition. Other
+modules in the process cannot use this hook to resolve
+`@moltzap/social-harness/internal`. Startup failures are reported and set a nonzero
+process exit status, as in `sharness-registry`.
 
 ## Registry configuration
 
@@ -923,10 +922,9 @@ The complete Registry process surface is:
 | `SHARNESS_REGISTRY_POSTGRESQL_URL` | PostgreSQL connection URL | required | absolute PostgreSQL URL naming a database | entire value |
 | `SHARNESS_REGISTRY_ADMISSION_CREDENTIAL` | bootstrap admission credential | required | 8–512 token68 characters | entire value |
 | `SHARNESS_REGISTRY_SIGNING_PRIVATE_KEY_PATH` | AgentCard-signing key | required | absolute path to unencrypted Ed25519 PKCS#8 | entire path and key material |
-| `SHARNESS_REGISTRY_LIST_PAGE_SIZE` | server-owned identity-list page size | `100` | positive integer; clients cannot override | no |
 | `SHARNESS_REGISTRY_REQUEST_CONCURRENCY_LIMIT` | active request permits | `256` | positive integer | no |
 | `SHARNESS_REGISTRY_LIVE_NONCE_CAPACITY` | unexpired accepted registration nonces | `10,000` | positive integer; never evict a live nonce | no |
-| `SHARNESS_REGISTRY_SQL_POOL_SIZE` | PostgreSQL pool size | `10` | positive integer | no |
+| `SHARNESS_REGISTRY_SQL_POOL_SIZE` | PostgreSQL pool size; PGlite through `pglite-socket` requires `1` because it provides one Postgres session | `10` | positive integer | no |
 | `SHARNESS_REGISTRY_SQL_OPERATION_TIMEOUT_MS` | acquisition, execution, and retry deadline | `5,000` | positive milliseconds; expiry is 503 `unavailable` | no |
 
 Numeric environment values use canonical unsigned decimal with no
@@ -934,7 +932,7 @@ whitespace, sign, fraction, or exponent. Their range is
 `1..2^31-1`, except the port range above.
 
 `CAPACITY` names aggregate retained or live state, `LIMIT` names one
-request or concurrency class, `SIZE` names a page or pool size, and
+request or concurrency class, `SIZE` names a pool size, and
 `TIMEOUT_MS` names milliseconds. `POSTGRESQL_URL` is the database key;
 there is no generic `DATABASE_URL`.
 
@@ -958,7 +956,6 @@ Acquiring a connection does not remove the execution deadline.
 | request body exceeds the route bound | 413 `payload_too_large` before authentication or domain handling |
 | the immediate request-concurrency permit is unavailable | 429 `overloaded`; no application request queue is created |
 | a novel bootstrap-admission nonce arrives while live-nonce capacity is full | 429 `overloaded`, without claiming it or evicting a live nonce |
-| list reaches its configured page size | bounded `page` with `hasMore`; no truncation is hidden |
 | SQL acquisition or required storage is unavailable or times out | 503 `unavailable` |
 | an unexpected implementation failure occurs | 500 `internal` |
 
@@ -990,8 +987,8 @@ claimed nonce.
   returns the exact original result.
 - Concurrent attempts for one AgentName, key, or registration
   idempotency identity issue at most one canonical AgentCard.
-- Lookup and list return exact complete cards after Registry restart and
-  reject noncanonical or unknown request fields.
+- Lookup returns exact complete cards after Registry restart and
+  rejects noncanonical or unknown request fields.
 - Registry rejects nonce replay across process restart through expiry.
 - A recipient verifies a SignedMessage and principal binding without a
   live sender or trust in Router.

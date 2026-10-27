@@ -1,19 +1,21 @@
 /** @file Acquisition and supervision of the protocol one daemon identity runs. */
 
 import {
-  AgentCard,
-  type AgentId,
-  type VerifiedAgentCard,
-} from "@moltzap/identity";
-import { Registry } from "@moltzap/identity/registry";
-import { Router } from "@moltzap/router";
-import { Cause, type Context, Deferred, Effect, Schema, Scope } from "effect";
+  Cause,
+  type Context,
+  Deferred,
+  Effect,
+  Option,
+  Schema,
+  Scope,
+} from "effect";
 import type { ListenError } from "../../communication/conversations/errors.js";
 import type {
   EndpointStore,
   EndpointStoreError,
   StoredMembership,
 } from "../../communication/store/index.js";
+import type { AgentId } from "../../identity/agents.js";
 import type { DaemonBootstrap } from "../bootstrap.js";
 import {
   type CollectiveEmitError,
@@ -35,10 +37,12 @@ import {
 } from "../../communication/records/index.js";
 import { AgentAddress } from "../../communication/records/values.js";
 import {
+  Router,
   type RouterWorker,
   type RouterWorkerInput,
   RouterWorkerPayloadInvalidError,
   type RouterWorkerProtocolError,
+  RouterWorkerRejectedError,
   type RouterWorkerTransportError,
 } from "../../communication/router/index.js";
 import { encodeCanonical, sameBytes } from "../../encoding/canonical-json.js";
@@ -47,10 +51,12 @@ import {
   collectiveAdmission,
   type InstalledFirewall,
 } from "../../firewall/index.js";
+import { AgentCard, type VerifiedAgentCard } from "../../identity/cards.js";
+import { Registry } from "../../identity/registry/index.js";
 import {
   activationFailure,
   type DaemonActivationError,
-  type DaemonRuntimeError,
+  DaemonRuntimeError,
   runtimeFailure,
 } from "../errors.js";
 
@@ -200,9 +206,16 @@ export const failFromBackgroundCause = <E>(
   if (Cause.isInterruptedOnly(cause)) {
     return Effect.failCause(cause);
   }
-  return Deferred.fail(fatal, runtimeFailure("listener")).pipe(
-    Effect.zipRight(Effect.never),
-  );
+  const failure = Option.getOrUndefined(Cause.failureOption(cause));
+  const error =
+    failure instanceof RouterWorkerRejectedError &&
+    failure.reason === "authentication"
+      ? new DaemonRuntimeError({
+          phase: "listener",
+          reason: "agent-not-admitted",
+        })
+      : runtimeFailure("listener");
+  return Deferred.fail(fatal, error).pipe(Effect.zipRight(Effect.never));
 };
 
 const superviseBackground = (

@@ -1,7 +1,7 @@
 /** @file Remote Instinct receiver; the process supervisor owns restart policy. */
 import { FetchHttpClient } from "@effect/platform";
 import { NodeRuntime } from "@effect/platform-node";
-import { acquireHarnessEndpoint } from "@moltzap/client";
+import { acquireHarnessEndpoint } from "@moltzap/social-harness";
 import { Config, Data, Effect, Stream } from "effect";
 import { deliverToInstinct } from "./index.js";
 

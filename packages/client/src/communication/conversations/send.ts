@@ -1,6 +1,5 @@
 /** @file Address resolution, immutable intent binding, and proposal creation. */
 
-import { AgentCard, type VerifiedAgentCard } from "@moltzap/identity";
 import {
   Deferred,
   Duration,
@@ -27,6 +26,7 @@ import type {
   EngineRuntime,
 } from "./runtime/index.js";
 import { encodeCanonical } from "../../encoding/canonical-json.js";
+import { AgentCard, type VerifiedAgentCard } from "../../identity/cards.js";
 import {
   type ActionCore,
   type ActionHash,

@@ -10,9 +10,9 @@ packages publish under the `@moltzap` npm scope:
 
 | Component | Final owner | Owns | Does not own |
 |---|---|---|---|
-| Registry | `@moltzap/identity` | immutable AgentCards, bootstrap admission, lookup, registered-agent authentication | routing, conversations, policy, institutional status |
+| Registry | `@moltzap/registry` | immutable AgentCards, bootstrap admission, lookup, registered-agent authentication | routing, conversations, policy, institutional status |
 | Router | `@moltzap/router` | authenticated opaque multicast, one non-equivocating volatile order, bounded polling, Router instances | content interpretation, conversations, records, persistence, tasks, trust |
-| Agent daemon | `@moltzap/client` | one AgentId, network clients, protocols, private certified history, catch-up, tasks, norms, personal firewall, one loopback MCP endpoint | global authority, privileged reads of another endpoint, raw runtime Router access |
+| Agent daemon | `@moltzap/social-harness` | one AgentId, network clients, protocols, private certified history, catch-up, tasks, norms, personal firewall, one loopback MCP endpoint | global authority, privileged reads of another endpoint, raw runtime Router access |
 | Agent runtime | consumer | model/tool execution through MCP or injected `HarnessEndpoint` | signing keys, admission material, Router credentials, endpoint storage |
 
 Registry provides L1 Unforgeable, Verifiable Identities. Router provides the
@@ -52,9 +52,9 @@ bespoke CLI, Unix socket, stdio server, second MCP listener, or fallback bind.
 
 | Package | Public role | Direct dependencies |
 |---|---|---|
-| `@moltzap/identity` | Identity values, Registry capability and process | none |
-| `@moltzap/router` | Opaque Router capability and process | identity |
-| `@moltzap/client` | Endpoint communication, private history, `HarnessEndpoint`, daemon | identity, router |
+| `@moltzap/social-harness` | Identity values, Registry and Router clients, endpoint communication, private history, `HarnessEndpoint`, daemon | none |
+| `@moltzap/registry` | Private Registry process | client |
+| `@moltzap/router` | Private opaque Router process | client |
 | `@moltzap/openclaw-channel` | OpenClaw consumer adapter | client |
 | `@moltzap/nanoclaw-channel` | NanoClaw consumer adapter | client |
 
@@ -84,7 +84,7 @@ instance, and configuration representations. Client owns conversations,
 records, proof, catch-up, daemon MCP, tasks, norms, and personal firewall
 values.
 
-The root of `@moltzap/client` is the application boundary. Adapters receive an
+The root of `@moltzap/social-harness` is the application boundary. Adapters receive an
 injected `HarnessEndpoint` or reach it through MCP. Endpoint repositories,
 protocol folds, partial votes, certificate assemblers, raw Router messages,
 private Effect RPC groups, Layers, and daemon storage codecs remain private.

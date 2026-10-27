@@ -3,14 +3,15 @@
  * after its durable position, and any endpoint answers such requests.
  */
 
-import { type AgentId, SignedMessage } from "@moltzap/identity";
 import { Effect, Schema } from "effect";
+import type { AgentId } from "../../../identity/agents.js";
 import type { EndpointRecovery, StagedRecord } from "../../store/index.js";
 import type { EngineActionFold, EngineRuntime } from "../runtime/index.js";
 import {
   type ClientRepresentationError,
   decodeCanonical,
 } from "../../../encoding/canonical-json.js";
+import { SignedMessage } from "../../envelope/signed-message.js";
 import {
   AnchorHash,
   type AnchorHash as AnchorHashValue,

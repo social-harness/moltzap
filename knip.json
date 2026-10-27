@@ -3,53 +3,41 @@
   "workspaces": {
     ".": {
       "entry": [
-        "plugins/*/src/main.ts",
-        "plugins/*/src/**/*.test.ts",
-        "plugins/*/*.config.ts",
-        "scripts/architecture/check-package.ts",
         "scripts/build/*.ts",
-        "scripts/code/*.ts",
-        "scripts/setup/*.ts",
         "scripts/test-*-package.ts",
-        "scripts/test-two-agents-example.ts",
-        "examples/*/*.ts",
+        "images/*.ts",
         "scripts/docs/check-mermaid.ts",
-        "scripts/docs/generate-constants-snippets.ts",
-        "scripts/docs/generate-modules.ts",
         "scripts/docs/vitest.config.ts",
-        "scripts/docs/__tests__/*.test.ts"
+        "scripts/docs/__tests__/*.test.ts",
+        "scripts/__tests__/integration-lint-profile.ts"
       ],
       "project": [
-        "plugins/*/**/*.ts",
         "*.ts",
         "scripts/docs/**/*.ts",
-        "scripts/architecture/**/*.ts",
         "scripts/build/**/*.ts",
-        "scripts/code/**/*.ts",
-        "scripts/setup/**/*.ts",
         "scripts/test/packed-workspace.ts",
-        "scripts/test-*-package.ts"
+        "scripts/test-*-package.ts",
+        "scripts/__tests__/**/*.ts"
       ],
       "ignoreDependencies": [
-        "@effect/tsgo",
         "@mermaid-js/mermaid-cli",
         "oxlint",
-        "puppeteer"
+        "puppeteer",
+        "typedoc"
       ]
     },
     "packages/client": {
       "entry": [
         "src/**/*.test.ts",
         "src/**/*.types-check.ts",
-        "integration/**/*.integration.test.ts",
-        "integration/firewall-daemon.ts",
         "src/daemon/launcher/index.ts",
-        "vitest*.config.ts"
+        "vitest*.config.ts",
+        "integration/*.integration.test.ts"
       ],
       "project": [
         "src/**/*.ts",
-        "integration/**/*.ts",
-        "*.ts"
+        "*.ts",
+        "integration/*.ts"
       ]
     },
     "packages/nanoclaw-channel": {
@@ -61,17 +49,6 @@
     "packages/openclaw-channel": {
       "entry": [
         "src/**/*.test.ts",
-        "vitest*.config.ts"
-      ],
-      "project": [
-        "src/**/*.ts",
-        "*.ts"
-      ]
-    },
-    "packages/identity": {
-      "entry": [
-        "src/**/*.test.ts",
-        "src/**/*.types-check.ts",
         "vitest*.config.ts"
       ],
       "project": [
@@ -104,6 +81,72 @@
         "@electric-sql/pglite",
         "@electric-sql/pglite-socket"
       ]
+    },
+    "tests/integration": {
+      "entry": [
+        "**/*.integration.test.ts",
+        "firewall-daemon.ts",
+        "launcher-provenance.ts",
+        "**/*vitest*.config.ts"
+      ],
+      "project": [
+        "**/*.ts"
+      ],
+      "ignoreDependencies": [
+        "@electric-sql/pglite-socket"
+      ]
+    },
+    "images/openclaw-agent": {
+      "entry": [
+        "*.test.ts",
+        "configure-channel.ts",
+        "patch-openclaw.ts"
+      ],
+      "project": [
+        "*.ts"
+      ],
+      "ignoreDependencies": [
+        "openclaw"
+      ]
+    },
+    "images/nanoclaw-agent": {
+      "entry": [
+        "*.test.ts",
+        "entrypoint.ts",
+        "prepare.ts",
+        "preload.ts",
+        "process-driver.ts",
+        "integration-probe.ts"
+      ],
+      "project": [
+        "*.ts"
+      ]
+    },
+    "images/tests": {
+      "entry": [
+        "*.test.ts"
+      ],
+      "project": [
+        "*.ts"
+      ],
+      "ignoreDependencies": [
+        "@moltzap/openclaw-channel",
+        "@moltzap/registry",
+        "@moltzap/router",
+        "@electric-sql/pglite",
+        "@electric-sql/pglite-socket"
+      ]
+    },
+    "plugins/instinct": {
+      "entry": [
+        "src/main.ts",
+        "src/**/*.test.ts",
+        "*.config.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "*.ts"
+      ]
     }
   },
   "ignoreIssues": {
@@ -134,10 +177,10 @@
     "packages/client/src/communication/store/database/schema.ts": [
       "types"
     ],
-    "packages/client/src/communication/store/rows/index.ts": [
+    "packages/client/src/harness/protocol/owner-tools.ts": [
       "exports"
     ],
-    "packages/client/src/harness/protocol/owner-tools.ts": [
+    "packages/client/src/communication/store/rows/index.ts": [
       "exports"
     ]
   }

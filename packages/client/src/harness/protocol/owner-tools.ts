@@ -1,11 +1,5 @@
 /** @file Exact private MCP schemas for daemon management and history reads. */
 
-import { AgentCard, AgentId, AgentName, PrincipalId } from "@moltzap/identity";
-import {
-  OperationId,
-  RegistryListRequest,
-  RegistryLookupRequest,
-} from "@moltzap/identity/registry";
 import { Schema } from "effect";
 import {
   AgentAddress,
@@ -21,6 +15,12 @@ import {
   decodeCanonicalBase64Url,
   isStrictlyAscending,
 } from "../../encoding/identifier.js";
+import { AgentId, AgentName, PrincipalId } from "../../identity/agents.js";
+import { AgentCard } from "../../identity/cards.js";
+import {
+  OperationId,
+  RegistryLookupRequest,
+} from "../../identity/registry/contract.js";
 
 const encodedAgentCard = Schema.encodedSchema(AgentCard);
 
@@ -106,24 +106,18 @@ export const managementStatusResultSchema = Schema.Union(
   }),
 ).annotations({ parseOptions: exactParseOptions });
 
-/** Exact Registry lookup-or-list selector used by agent discovery. */
+/** Exact Registry lookup selector accepted by `search_agents`. */
 export const managementSearchAgentsRequestSchema = Schema.Union(
-  RegistryLookupRequest,
-  RegistryListRequest,
+  ...RegistryLookupRequest.members,
 ).annotations({ parseOptions: exactParseOptions });
 
-/** Direct projection of exact Registry lookup and list results. */
+/** Direct projection of exact Registry lookup results. */
 export const managementSearchAgentsResultSchema = Schema.Union(
   exactStruct({
     kind: Schema.Literal("found"),
     agentCard: encodedAgentCard,
   }),
   exactStruct({ kind: Schema.Literal("not_found") }),
-  exactStruct({
-    kind: Schema.Literal("page"),
-    agentCards: Schema.Array(encodedAgentCard),
-    hasMore: Schema.Boolean,
-  }),
 ).annotations({ parseOptions: exactParseOptions });
 
 /** Canonically ordered local-conversation page selector. */

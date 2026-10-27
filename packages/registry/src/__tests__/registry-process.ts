@@ -8,13 +8,8 @@ import {
   type AgentSigningAuthority as AgentSigningAuthorityValue,
   PrincipalId,
   type VerifiedAgentCard,
-} from "@moltzap/identity";
-import {
-  OperationId,
-  Registry,
-  RegistryRegisterRequest,
-  type RegistryRegisterRequest as RegistryRegisterRequestValue,
-} from "@moltzap/identity/registry";
+} from "@moltzap/social-harness";
+import { Registry, registryContract } from "@moltzap/social-harness/internal";
 import {
   Clock,
   Data,
@@ -94,7 +89,7 @@ interface RawHttpResponse {
 }
 
 interface RegisteredAgent {
-  readonly request: RegistryRegisterRequestValue;
+  readonly request: typeof registryContract.RegistryRegisterRequest.Type;
   readonly signingAuthority: AgentSigningAuthority;
   readonly agentCard: VerifiedAgentCard;
 }
@@ -156,9 +151,10 @@ const startProcess = (
   executable: string,
   processArguments: readonly string[],
   environment: Readonly<Record<string, string>>,
+  cwd: string,
 ): RunningProcess => {
   const child = spawn(executable, processArguments, {
-    cwd: WORKSPACE_ROOT,
+    cwd,
     env: {
       PATH: CHILD_PATH,
       ...environment,
@@ -204,8 +200,13 @@ const canConnect = (port: number) =>
     }),
   );
 
-const waitForTcpListener = (runningProcess: RunningProcess, port: number) =>
+/**
+ * PGlite announces its own listener only after its WASM database accepts
+ * connections, so another process holding the port cannot satisfy readiness.
+ */
+const waitForPgliteListening = (runningProcess: RunningProcess, port: number) =>
   Effect.gen(function* () {
+    const listening = `PGLiteSocketServer listening on {"port":${port},`;
     const deadline = Date.now() + STARTUP_TIMEOUT_MS;
     while (Date.now() < deadline) {
       if (
@@ -218,7 +219,7 @@ const waitForTcpListener = (runningProcess: RunningProcess, port: number) =>
           ),
         );
       }
-      if (yield* canConnect(port)) {
+      if (runningProcess.logs().includes(listening)) {
         return;
       }
       yield* Effect.sleep(Duration.millis(POLL_INTERVAL_MS));
@@ -229,6 +230,15 @@ const waitForTcpListener = (runningProcess: RunningProcess, port: number) =>
       ),
     );
   });
+
+/**
+ * The Registry prints its listening line only after binding `origin`'s port,
+ * so another process answering on a released reservation cannot pass for it.
+ */
+const announcedListener = (runningProcess: RunningProcess, origin: URL) =>
+  runningProcess
+    .logs()
+    .includes(`sharness-registry listening on ${origin.origin} (`);
 
 const waitForHealthStatus = (input: {
   readonly runningProcess: RunningProcess;
@@ -260,7 +270,8 @@ const waitForHealthStatus = (input: {
       );
       if (
         Option.isSome(response) &&
-        response.value.status === input.expectedStatus
+        response.value.status === input.expectedStatus &&
+        announcedListener(input.runningProcess, input.origin)
       ) {
         return response.value;
       }
@@ -458,10 +469,13 @@ const managedProcess = (
   executable: string,
   processArguments: readonly string[],
   environment: Readonly<Record<string, string>> = {},
+  cwd = WORKSPACE_ROOT,
 ) =>
   // eslint-disable-next-line agent-code-guard/acquire-release-requires-scope -- Every importing integration behavior encloses this fixture in Effect.scoped.
   Effect.acquireRelease(
-    Effect.sync(() => startProcess(executable, processArguments, environment)),
+    Effect.sync(() =>
+      startProcess(executable, processArguments, environment, cwd),
+    ),
     stopProcess,
   );
 
@@ -487,7 +501,9 @@ const randomIdentifierPayload = (): string =>
   randomBytes(16).toString("base64url");
 
 const makeOperationId = () =>
-  Schema.decodeUnknownSync(OperationId)(`opn_${randomIdentifierPayload()}`);
+  Schema.decodeUnknownSync(registryContract.OperationId)(
+    `opn_${randomIdentifierPayload()}`,
+  );
 
 const makePrincipalId = () =>
   Schema.decodeUnknownSync(PrincipalId)(`prn_${randomIdentifierPayload()}`);
@@ -538,7 +554,7 @@ const prepareAgent = (name: string) =>
       principalId: makePrincipalId(),
       agentName: Schema.decodeUnknownSync(AgentName)(name),
       publicKey: AgentSigningAuthority.publicKey(signingAuthority),
-    } satisfies RegistryRegisterRequestValue;
+    } satisfies typeof registryContract.RegistryRegisterRequest.Type;
     return { request, signingAuthority };
   });
 
@@ -604,9 +620,9 @@ const makeVersionedBootstrapRequest = (
   scheme = "Sharness-Admission",
 ) =>
   Effect.gen(function* () {
-    const encoded = yield* Schema.encode(RegistryRegisterRequest)(
-      prepared.request,
-    );
+    const encoded = yield* Schema.encode(
+      registryContract.RegistryRegisterRequest,
+    )(prepared.request);
     const bodyBytes = yield* encodeCanonicalJson({ request: encoded });
     const now = Math.floor((yield* Clock.currentTimeMillis) / 1_000);
     const keyid = yield* ed25519PublicKeyThumbprintUri(
@@ -678,7 +694,6 @@ const registryEnvironment = (input: {
   SHARNESS_REGISTRY_POSTGRESQL_URL: input.postgresqlUrl,
   SHARNESS_REGISTRY_ADMISSION_CREDENTIAL: ADMISSION_CREDENTIAL,
   SHARNESS_REGISTRY_SIGNING_PRIVATE_KEY_PATH: input.registryKeyPath,
-  SHARNESS_REGISTRY_LIST_PAGE_SIZE: "2",
   ...input.overrides,
 });
 
@@ -733,7 +748,7 @@ export {
   stopProcess,
   waitForExit,
   waitForHealthStatus,
-  waitForTcpListener,
+  waitForPgliteListening,
 };
 /** Values passed between process-level acceptance helpers. */
 export type {

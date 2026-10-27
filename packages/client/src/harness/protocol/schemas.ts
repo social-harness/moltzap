@@ -94,6 +94,10 @@ export const harnessEmptyResultJsonSchema = JSONSchema.make(
   { target: "jsonSchema2020-12" },
 );
 
+/** Admission refusal names the credential to replace without disclosing its value. */
+export const registrationAdmissionRefusalMessage =
+  "The Registry refused the admission credential; supply this network's admission credential and register again. Docs: https://docs.moltzap.xyz/guides/run-sharnessd#the-registry-refused-the-admission-credential";
+
 /** Closed wire failure vocabularies prevent internal diagnostics from escaping. */
 export const harnessFailureReasons = {
   RUNTIME_READ_REASONS: new Set([
@@ -104,6 +108,7 @@ export const harnessFailureReasons = {
     "persistence-failed",
   ]),
   REGISTER_REASONS: new Set([
+    "admission-refused",
     "dependency-unavailable",
     "persistence-failed",
     "incompatible-daemon",
