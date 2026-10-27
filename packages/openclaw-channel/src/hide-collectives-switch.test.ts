@@ -1,6 +1,6 @@
 /**
- * @file The `SHARNESS_EXPERIMENT_HIDE_COLLECTIVES` experiment switch: which
- * message texts it refuses.
+ * @file Experiment switches refuse collective message text and group targets
+ * before endpoint dispatch.
  */
 
 import type { ChannelMessageActionContext } from "openclaw/plugin-sdk/channel-contract";
@@ -11,6 +11,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createChannelPlugin } from "./plugin.js";
 
 const HIDE_COLLECTIVES = "SHARNESS_EXPERIMENT_HIDE_COLLECTIVES";
+const HIDE_GROUPS = "SHARNESS_EXPERIMENT_HIDE_GROUPS";
+const GROUP_REFUSAL = "group addresses are not available";
+const DIRECT_GUIDANCE = "message each agent at its agent: address";
+const GROUP_ADDRESS = "group:nova,sol";
 const REFUSAL = "gather, all_gather and answers are not available";
 const CONFIG: OpenClawConfig = {
   channels: { sharness: { accounts: [{ id: "primary" }] } },
@@ -34,7 +38,7 @@ class SwitchTestError extends Data.TaggedError("SwitchTestError")<{
   readonly detail: string;
 }> {}
 
-describe("OpenClaw hide-collectives experiment switch", () => {
+describe("OpenClaw experiment switches", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
   });
@@ -72,7 +76,72 @@ describe("OpenClaw hide-collectives experiment switch", () => {
     "fails an operation text naming the switch when its value is not a boolean",
     invalidSwitchFailsOperationText,
   );
+
+  describe.each(["send", "reply"] as const)(
+    "group switch on %s",
+    groupSwitchTests,
+  );
 });
+
+function groupSwitchTests(action: "send" | "reply") {
+  it("refuses group targets for every enabled value and message text", () =>
+    switchOnRefusesGroups(action));
+  it.each([undefined, "false", "no", "off", "0"])(
+    "passes group targets on to the account when set to %s",
+    (value) => {
+      vi.stubEnv(HIDE_GROUPS, value);
+
+      return reachesAccount("hello", GROUP_ADDRESS, action);
+    },
+  );
+  it("passes direct targets on to the account when enabled", () => {
+    vi.stubEnv(HIDE_GROUPS, "true");
+    vi.stubEnv(HIDE_COLLECTIVES, "true");
+
+    return reachesAccount("hello", "agent:nova", action);
+  });
+  it.each(["sometimes", "", "TRUE"])(
+    "fails a group target naming the switch for invalid value %s",
+    (value) => invalidGroupSwitchFails(action, value),
+  );
+}
+
+function switchOnRefusesGroups(action: "send" | "reply") {
+  return fc.assert(
+    fc.asyncProperty(
+      fc.constantFrom("true", "yes", "on", "1"),
+      fc.string(),
+      (value, message) => {
+        vi.stubEnv(HIDE_GROUPS, value);
+
+        return Effect.runPromise(
+          messageAction(action, { to: GROUP_ADDRESS, message }).pipe(
+            Effect.flip,
+            Effect.tap((failure) => {
+              expect(failure.detail).toContain(GROUP_REFUSAL);
+              expect(failure.detail).toContain(DIRECT_GUIDANCE);
+            }),
+            Effect.as(true),
+          ),
+        );
+      },
+    ),
+  );
+}
+
+function invalidGroupSwitchFails(action: "send" | "reply", value: string) {
+  vi.stubEnv(HIDE_GROUPS, value);
+
+  return Effect.runPromise(
+    messageAction(action, { to: GROUP_ADDRESS, message: "hello" }).pipe(
+      Effect.flip,
+      Effect.tap((failure) => {
+        expect(failure.detail).toContain(HIDE_GROUPS);
+      }),
+      Effect.asVoid,
+    ),
+  );
+}
 
 function switchLeavesActionsUnchanged() {
   vi.stubEnv(HIDE_COLLECTIVES, "true");
@@ -102,14 +171,19 @@ function switchOnPassesJsonProse() {
   return reachesAccount('{"note": "mon or tue"}');
 }
 
-function reachesAccount(message: string) {
+function reachesAccount(
+  message: string,
+  to = "agent:nova",
+  action: "send" | "reply" = "send",
+) {
   return Effect.runPromise(
-    messageAction("send", { to: "agent:nova", message }).pipe(
+    messageAction(action, { to, message }).pipe(
       Effect.flip,
       Effect.tap((failure) => {
         // eslint-disable-next-line agent-code-guard/no-hardcoded-assertion-literals -- Only a send past the switch reaches the account lookup.
         expect(failure.detail).toContain("not connected to Social Harness");
       }),
+      Effect.asVoid,
     ),
   );
 }

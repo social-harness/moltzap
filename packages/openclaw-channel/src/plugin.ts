@@ -75,6 +75,9 @@ const LOG_PREVIEW_CHARS = 80;
  */
 const HIDE_COLLECTIVES_VARIABLE = "SHARNESS_EXPERIMENT_HIDE_COLLECTIVES";
 
+/** Evaluation control that restricts outbound messages to agent addresses. */
+const HIDE_GROUPS_VARIABLE = "SHARNESS_EXPERIMENT_HIDE_GROUPS";
+
 /**
  * The message tool actions Social Harness handles. Both take the same text and send
  * it the same way; `reply` is where an answer belongs, because OpenClaw fills
@@ -231,6 +234,15 @@ class OpenClawCollectivesUnavailableError extends Data.TaggedError(
 ) {
   override get message(): string {
     return "send failed: gather, all_gather and answers are not available";
+  }
+}
+
+/** A group target refused before the endpoint receives the send. */
+class OpenClawGroupsUnavailableError extends Data.TaggedError(
+  "OpenClawGroupsUnavailableError",
+) {
+  override get message(): string {
+    return "send failed: group addresses are not available; message each agent at its agent: address";
   }
 }
 
@@ -487,7 +499,7 @@ function refuseHiddenCollectives(
   if (!operation) {
     return Effect.void;
   }
-  return experimentHidesCollectives().pipe(
+  return readExperimentSwitch(HIDE_COLLECTIVES_VARIABLE).pipe(
     Effect.flatMap((hidden) =>
       hidden
         ? Effect.fail(new OpenClawCollectivesUnavailableError())
@@ -498,12 +510,6 @@ function refuseHiddenCollectives(
 
 function statesOperation(input: SendInput): boolean {
   return "collectiveResponse" in input || input.collective !== undefined;
-}
-
-function experimentHidesCollectives() {
-  return Config.boolean(HIDE_COLLECTIVES_VARIABLE).pipe(
-    Config.withDefault(false),
-  );
 }
 
 function createMessageSection(connectedAccount: ConnectedAccountState) {
@@ -1181,35 +1187,60 @@ function requireEndpoint(
 /**
  * Read one host send's target and text as a send input. Text that states a
  * gather, all_gather or answer is refused while the experiment hides them,
- * including text that states one invalidly.
+ * including text that states one invalidly. Group targets are refused before
+ * parsing message text when the group experiment switch is enabled.
  */
-function readSendInput(
-  params: TextSend,
-): Effect.Effect<
+function readSendInput({
+  to,
+  text,
+}: TextSend): Effect.Effect<
   SendInput,
   | OpenClawOutboundError
   | MessageTextError
   | OpenClawCollectivesUnavailableError
+  | OpenClawGroupsUnavailableError
   | ConfigError.ConfigError
 > {
-  if (!isMessageAddressInput(params.to)) {
+  if (!isMessageAddressInput(to)) {
     return Effect.fail(
       new OpenClawOutboundError({ reason: "invalid-address" }),
     );
   }
-  if (typeof params.text !== "string") {
+  if (typeof text !== "string") {
     return Effect.fail(
       new OpenClawOutboundError({ reason: "invalid-operation" }),
     );
   }
-  return Either.match(parseMessageText(params.to, params.text), {
-    onLeft: (error) =>
-      refuseHiddenCollectives(error.operation !== "message").pipe(
-        Effect.zipRight(Effect.fail(error)),
-      ),
-    onRight: (input) =>
-      refuseHiddenCollectives(statesOperation(input)).pipe(Effect.as(input)),
-  });
+  return refuseHiddenGroups(to).pipe(
+    Effect.andThen(() =>
+      Either.match(parseMessageText(to, text), {
+        onLeft: (error) =>
+          refuseHiddenCollectives(error.operation !== "message").pipe(
+            Effect.zipRight(Effect.fail(error)),
+          ),
+        onRight: (input) =>
+          refuseHiddenCollectives(statesOperation(input)).pipe(
+            Effect.as(input),
+          ),
+      }),
+    ),
+  );
+}
+
+/** Read the group switch only for group sends, matching collective switch scope. */
+function refuseHiddenGroups(to: MessageAddressInputValue) {
+  if (!to.startsWith("group:")) {
+    return Effect.void;
+  }
+  return readExperimentSwitch(HIDE_GROUPS_VARIABLE).pipe(
+    Effect.flatMap((hidden) =>
+      hidden ? Effect.fail(new OpenClawGroupsUnavailableError()) : Effect.void,
+    ),
+  );
+}
+
+function readExperimentSwitch(variable: string) {
+  return Config.boolean(variable).pipe(Config.withDefault(false));
 }
 
 function makeMessageSendResult(messageId: string): ChannelMessageSendResult {

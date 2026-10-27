@@ -88,7 +88,11 @@ path is:
     `ruleId`, `uncertain` (`choice` and `probability`), and `instruction`, without
     `middlewareId`. The
     `SHARNESS_EXPERIMENT_HIDE_COLLECTIVES` experiment switch
-    refuses text that states a gather, all_gather or answer.
+    refuses text that states a gather, all_gather or answer;
+    `SHARNESS_EXPERIMENT_HIDE_GROUPS` refuses `group:` targets and directs the
+    agent to message each member at its `agent:` address. See
+    [Experiment switches](https://docs.moltzap.xyz/integrations/openclaw#experiment-switches)
+    for accepted values and defaults.
 
 The package also installs the agent skills that `@moltzap/social-harness` ships in
 [`skills/`](https://github.com/social-harness/moltzap/blob/main/packages/social-harness/skills):

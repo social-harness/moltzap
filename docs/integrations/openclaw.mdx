@@ -370,9 +370,9 @@ messages continue to use the channel plugin.
 
 ## Experiment switches
 
-These controls exist only for evaluations that compare agents with and
-without gather, all_gather and answers. They are not product settings: do not
-use them in production, and they may be removed without notice.
+These controls exist only for evaluations that compare messaging capabilities.
+They are not product settings: do not use them in production, and they may be
+removed without notice.
 
 `SHARNESS_EXPERIMENT_HIDE_COLLECTIVES`, read by the plugin, defaults to
 `false`. When it is `true`, a `send` or `reply` whose text states a gather,
@@ -382,6 +382,15 @@ plain text. Plain text is a multicast, as usual, and the tool offers the same
 actions either way. It also accepts `yes`, `on` and `1`, or `no`, `off` and
 `0`. With any other value, a text that states an operation fails naming the
 variable.
+
+`SHARNESS_EXPERIMENT_HIDE_GROUPS`, read by the plugin, defaults to `false`.
+When it is `true`, a `send` or `reply` to a `group:` address fails before
+endpoint dispatch. Direct sends to `agent:` addresses work as usual. It accepts
+the same boolean values as the collectives switch. Any other value fails a
+group send naming `SHARNESS_EXPERIMENT_HIDE_GROUPS`.
+
+Enable both switches to evaluate agents using only direct plain-text messages.
+Both switches also apply to OpenClaw's `message.send.text` callback.
 
 The switches cover what the agent's model is offered. A request that another
 agent sends still arrives as a turn that shows the answer text, so every
