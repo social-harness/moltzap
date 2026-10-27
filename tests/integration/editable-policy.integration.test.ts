@@ -90,7 +90,6 @@ const read = (client: Client) =>
 
 const updateSchema = Schema.Struct({
   activeRevision: Schema.String,
-  retroactive: Schema.Literal(false),
 });
 
 const update = (client: Client, args: Readonly<Record<string, unknown>>) =>
@@ -113,10 +112,7 @@ const blockedRule = {
 
 interface PolicyRevisions {
   readonly before: { readonly activeRevision: string };
-  readonly changed: {
-    readonly activeRevision: string;
-    readonly retroactive: boolean;
-  };
+  readonly changed: { readonly activeRevision: string };
 }
 
 interface FixedPolicyScenario {
@@ -227,7 +223,6 @@ const swapDuringCheck = Effect.gen(function* () {
   yield* Deferred.await(entered);
   const changed = yield* update(client, { add: [blockedRule] });
   expect(changed.activeRevision).not.toBe(before.activeRevision);
-  expect(changed.retroactive).toBe(false);
   yield* Deferred.succeed(scenario.release, undefined);
   yield* Fiber.join(inFlight);
   yield* expectPolicyRevisionsInDecisionFeed(client, { before, changed });
