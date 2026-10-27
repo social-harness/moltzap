@@ -47,6 +47,8 @@ const outgoingMiddleware = Schema.Union(
     use: Schema.Literal("collective-norms"),
     facilitator: Schema.Boolean,
   }),
+  Schema.Struct({ use: Schema.Literal("open-requests") }),
+  Schema.Struct({ use: Schema.Literal("acknowledgements") }),
 );
 
 /** One received-message middleware entry of a document. */
