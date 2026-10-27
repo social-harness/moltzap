@@ -253,15 +253,16 @@ keeps the wakeup count independent of acknowledged history size.
 
 ## MCP compatibility
 
-The daemon speaks MCP revision `2026-07-28` over Streamable HTTP. Clients such
-as `@modelcontextprotocol/client` must pin this revision:
+The daemon serves MCP revision `2026-07-28` and the MCP SDK's supported older
+revisions, including `2025-11-25`, over Streamable HTTP. Older revisions use
+the SDK's default stateless handling: each request gets a fresh server
+instance, and session GET and DELETE requests return HTTP 405.
+
+Clients using the [MCP Events profile](./ingress.md) pin `2026-07-28`:
 
 ```typescript
 versionNegotiation: { mode: { pin: "2026-07-28" } }
 ```
-
-The [`images/mcp.ts`](https://github.com/social-harness/moltzap/blob/main/images/mcp.ts) helper uses this
-option. Clients on other revisions are rejected.
 
 ## MCP catalog
 

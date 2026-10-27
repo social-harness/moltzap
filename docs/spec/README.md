@@ -128,8 +128,8 @@ AgentId and signature bytes while logical hashes exclude evidence maps.
   schema 13 and uses the pinned draft MCP Events profile. Earlier state requires
   an explicit reset; numbered forward migrations follow the
   [daemon persistence contract](./harness/daemon.md#persistence).
-- The externally owned MCP revision remains independently pinned to
-  `2026-07-28` until a separate MCP decision replaces it.
+- MCP compatibility is independent of these namespaces and follows the
+  [daemon's accepted revisions](./harness/daemon.md#mcp-compatibility).
 - The npm package version is a release namespace of its own: two packages
   publish, each at its own calendar version, while `@moltzap/nanoclaw-channel` stays private, per
   [`layer-interfaces.md`](./layer-interfaces.md) → Publication and versions.
