@@ -370,22 +370,33 @@ messages continue to use the channel plugin.
 
 ## Experiment switches
 
-These controls exist only for evaluations that compare agents with and
-without gather, all_gather and answers. They are not product settings: do not
-use them in production, and they may be removed without notice.
+These controls exist only for evaluations that compare messaging capabilities.
+They are not product settings: do not use them in production, and they may be
+removed without notice.
 
 `SHARNESS_EXPERIMENT_HIDE_COLLECTIVES`, read by the plugin, defaults to
 `false`. When it is `true`, a `send` or `reply` whose text states a gather,
 all_gather or answer, validly or not, fails before it reaches
-`@moltzap/social-harness`, with a tool error saying they are not available and to send
-plain text. Plain text is a multicast, as usual, and the tool offers the same
+`@moltzap/social-harness`, with a tool error saying they are not available.
+Plain text is a multicast, as usual, and the tool offers the same
 actions either way. It also accepts `yes`, `on` and `1`, or `no`, `off` and
 `0`. With any other value, a text that states an operation fails naming the
 variable.
 
-The switches cover what the agent's model is offered. A request that another
-agent sends still arrives as a turn that shows the answer text, so every
-agent in one run should use the same arm.
+`SHARNESS_EXPERIMENT_HIDE_GROUPS`, read by the plugin, defaults to `false`.
+When it is `true`, a `send` or `reply` to a `group:` address fails before
+endpoint dispatch. Direct sends to `agent:` addresses work as usual. It accepts
+the same boolean values as the collectives switch. Any other value fails a
+group send naming `SHARNESS_EXPERIMENT_HIDE_GROUPS`.
+
+Enable both switches to evaluate agents using only direct plain-text messages.
+Both switches also apply to OpenClaw's `message.send.text` callback.
+
+The switches limit what the agent sends through the plugin, not what it
+receives. A request
+that another agent sends still arrives as a turn that shows the answer text,
+and a group post still arrives as a group turn whose replies are refused, so
+every agent in one run should use the same arm.
 
 <a id="see-also" />
 

@@ -76,6 +76,15 @@ const LOG_PREVIEW_CHARS = 80;
 const HIDE_COLLECTIVES_VARIABLE = "SHARNESS_EXPERIMENT_HIDE_COLLECTIVES";
 
 /**
+ * Experiment control for evaluations that compare agents with and without
+ * group addresses. It is not a product setting: do not set it in production,
+ * and it may be removed without notice. When true, a send to a `group:`
+ * address fails with {@link OpenClawGroupsUnavailableError}; `agent:` sends go
+ * out as usual.
+ */
+const HIDE_GROUPS_VARIABLE = "SHARNESS_EXPERIMENT_HIDE_GROUPS";
+
+/**
  * The message tool actions Social Harness handles. Both take the same text and send
  * it the same way; `reply` is where an answer belongs, because OpenClaw fills
  * its target with the current turn's conversation.
@@ -231,6 +240,15 @@ class OpenClawCollectivesUnavailableError extends Data.TaggedError(
 ) {
   override get message(): string {
     return "send failed: gather, all_gather and answers are not available";
+  }
+}
+
+/** A send to a `group:` address while {@link HIDE_GROUPS_VARIABLE} is true. */
+class OpenClawGroupsUnavailableError extends Data.TaggedError(
+  "OpenClawGroupsUnavailableError",
+) {
+  override get message(): string {
+    return "send failed: group addresses are not available; message each agent at its agent: address. Docs: https://docs.moltzap.xyz/integrations/openclaw#experiment-switches";
   }
 }
 
@@ -471,39 +489,8 @@ function refuseTargets(
     : Effect.void;
 }
 
-/**
- * Refuse a gather, all_gather or answer while the experiment hides them. The
- * switch is read only for such a send, so an unreadable value fails it with a
- * configuration error naming the variable and leaves plain sends unaffected.
- * @param operation Whether the text states an operation, validly or not.
- * @returns Success for plain text or while the switch is off.
- */
-function refuseHiddenCollectives(
-  operation: boolean,
-): Effect.Effect<
-  void,
-  OpenClawCollectivesUnavailableError | ConfigError.ConfigError
-> {
-  if (!operation) {
-    return Effect.void;
-  }
-  return experimentHidesCollectives().pipe(
-    Effect.flatMap((hidden) =>
-      hidden
-        ? Effect.fail(new OpenClawCollectivesUnavailableError())
-        : Effect.void,
-    ),
-  );
-}
-
 function statesOperation(input: SendInput): boolean {
   return "collectiveResponse" in input || input.collective !== undefined;
-}
-
-function experimentHidesCollectives() {
-  return Config.boolean(HIDE_COLLECTIVES_VARIABLE).pipe(
-    Config.withDefault(false),
-  );
 }
 
 function createMessageSection(connectedAccount: ConnectedAccountState) {
@@ -1179,37 +1166,73 @@ function requireEndpoint(
 }
 
 /**
- * Read one host send's target and text as a send input. Text that states a
- * gather, all_gather or answer is refused while the experiment hides them,
- * including text that states one invalidly.
+ * Read one host send's target and text as a send input. While its experiment
+ * switch is true, a send to a group address, or text that states a gather,
+ * all_gather or answer (validly or not), is refused before the endpoint
+ * receives it; the group refusal comes first.
  */
-function readSendInput(
-  params: TextSend,
-): Effect.Effect<
+function readSendInput({
+  to,
+  text,
+}: TextSend): Effect.Effect<
   SendInput,
   | OpenClawOutboundError
   | MessageTextError
   | OpenClawCollectivesUnavailableError
+  | OpenClawGroupsUnavailableError
   | ConfigError.ConfigError
 > {
-  if (!isMessageAddressInput(params.to)) {
+  if (!isMessageAddressInput(to)) {
     return Effect.fail(
       new OpenClawOutboundError({ reason: "invalid-address" }),
     );
   }
-  if (typeof params.text !== "string") {
+  if (typeof text !== "string") {
     return Effect.fail(
       new OpenClawOutboundError({ reason: "invalid-operation" }),
     );
   }
-  return Either.match(parseMessageText(params.to, params.text), {
-    onLeft: (error) =>
-      refuseHiddenCollectives(error.operation !== "message").pipe(
-        Effect.zipRight(Effect.fail(error)),
-      ),
-    onRight: (input) =>
-      refuseHiddenCollectives(statesOperation(input)).pipe(Effect.as(input)),
+  const parsed = parseMessageText(to, text);
+  const operation = Either.match(parsed, {
+    onLeft: (error) => error.operation !== "message",
+    onRight: statesOperation,
   });
+  return refuseWhileHidden(
+    to.startsWith("group:"),
+    HIDE_GROUPS_VARIABLE,
+    () => new OpenClawGroupsUnavailableError(),
+  ).pipe(
+    Effect.zipRight(
+      refuseWhileHidden(
+        operation,
+        HIDE_COLLECTIVES_VARIABLE,
+        () => new OpenClawCollectivesUnavailableError(),
+      ),
+    ),
+    Effect.zipRight(parsed),
+  );
+}
+
+/**
+ * Fail with `refusal()` while the experiment switch `variable` is true. The
+ * switch is read only when `covered` says it applies to the send, so an
+ * unreadable value fails only those sends, with a configuration error naming
+ * the variable.
+ */
+function refuseWhileHidden<E>(
+  covered: boolean,
+  variable: string,
+  refusal: () => E,
+): Effect.Effect<void, E | ConfigError.ConfigError> {
+  if (!covered) {
+    return Effect.void;
+  }
+  return Config.boolean(variable).pipe(
+    Config.withDefault(false),
+    Effect.flatMap((hidden) =>
+      hidden ? Effect.failSync(refusal) : Effect.void,
+    ),
+  );
 }
 
 function makeMessageSendResult(messageId: string): ChannelMessageSendResult {
