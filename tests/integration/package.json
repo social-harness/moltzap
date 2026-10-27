@@ -26,6 +26,9 @@
             "env": "SHARNESS_EXPERIMENT_HIDE_COLLECTIVES"
           },
           {
+            "env": "SHARNESS_EXPERIMENT_HIDE_GROUPS"
+          },
+          {
             "env": "SHARNESS_MCP_URL"
           }
         ],
