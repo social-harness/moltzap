@@ -4,7 +4,7 @@ NanoClaw channel adapter and integration canary. Publication follows `docs/spec/
 
 ## Cutover boundary
 
-This adapter consumes public `@moltzap/client` capabilities only. It must not
+This adapter consumes public `@moltzap/social-harness` capabilities only. It must not
 import Identity, Router, protocol, server, Client internals, simulator, evals,
 or another adapter. NanoClaw creates it through the native channel registry,
 and it acquires one `HarnessEndpoint` from the configured loopback MCP URL. It
@@ -25,8 +25,8 @@ through re-exports. Publication does not change this package boundary.
   syntactically valid Client `MessageAddressInput` before friendly aliases and
   let that validated route reach this channel, with an accurate capability line
   in the existing destination prompt. The image, not the overlay, copies the
-  OpenClaw plugin's `group-messaging` skill into NanoClaw's shared
-  container skills unchanged. Do not extend the host ABI, inbound
+  skills `@moltzap/social-harness` ships into NanoClaw's shared container skills
+  unchanged. Do not extend the host ABI, inbound
   router, inbox, session model, persistence, retry policy, or runtime driver.
 - Render each inbound item kind in one fixed form, switching on `kind`
   exhaustively. A multicast's direct input identifies the sender and `agent:`

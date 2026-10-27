@@ -98,7 +98,6 @@ const makeResponseTracker = (): ResponseTracker => {
         ),
       );
     },
-    // #ignore-sloppy-code-next-line[async-keyword]: This is the Effect callback constructor, not JavaScript asynchronous syntax.
     waitForResponses: Effect.async((resume) => {
       if (inFlight.size === 0) {
         resume(Effect.void);
@@ -180,7 +179,6 @@ const listen = (
         }),
       );
     });
-    // #ignore-sloppy-code-next-line[async-keyword]: This is the Effect callback constructor, not JavaScript asynchronous syntax.
     return Effect.async((cancelResume) => {
       server.off("error", onError);
       const onClose = (): void => {

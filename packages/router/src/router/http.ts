@@ -7,6 +7,16 @@ import {
 import { NodeHttpServerRequest } from "@effect/platform-node";
 import {
   AuthenticatedHttp,
+  httpErrors,
+  routerContract,
+} from "@moltzap/social-harness/internal";
+import canonicalize from "canonicalize";
+import { Cause, Effect, Option, Schema } from "effect";
+import type { RouterFeed } from "./feed.js";
+import { type RouterRpcClient, withVerifiedRouterRequest } from "./rpc.js";
+
+/* eslint-disable @typescript-eslint/naming-convention -- Closed HTTP error constructors retain their class names when bound from the service capability. */
+const {
   InternalServerError,
   MalformedRequestError,
   MethodNotAllowedError,
@@ -14,26 +24,8 @@ import {
   PayloadTooLargeError,
   RouteNotFoundError,
   UnsupportedMediaTypeError,
-} from "@moltzap/identity";
-import canonicalize from "canonicalize";
-import { Cause, Effect, Option, Schema } from "effect";
-import type { RouterFeed } from "./feed.js";
-import {
-  maximumPollCursorLength,
-  RawRouterSendRequest,
-  routerHealthPath,
-  routerHttpErrorEnvelope,
-  routerJsonContentType,
-  routerPollPath,
-  RouterPollRequest,
-  RouterPollResult,
-  routerPollRoutePattern,
-  routerRepresentationLimits,
-  routerSendPath,
-  RouterSendResult,
-  routerSendRoutePattern,
-} from "./contract.js";
-import { type RouterRpcClient, withVerifiedRouterRequest } from "./rpc.js";
+} = httpErrors;
+/* eslint-enable @typescript-eslint/naming-convention -- Restore variable naming after binding error constructors. */
 
 interface RouterHttpInput {
   readonly client: RouterRpcClient;
@@ -75,7 +67,9 @@ export const routerHealthResponse = (
 
 const rawPollRequest = Schema.Struct({
   pollCursor: Schema.optional(
-    Schema.String.pipe(Schema.maxLength(maximumPollCursorLength)),
+    Schema.String.pipe(
+      Schema.maxLength(routerContract.maximumPollCursorLength),
+    ),
   ),
 }).annotations({
   parseOptions: { exact: true, onExcessProperty: "error" },
@@ -84,11 +78,11 @@ const rawPollRequest = Schema.Struct({
 const jsonText = (body: string, status: number) =>
   HttpServerResponse.text(body, {
     status,
-    contentType: routerJsonContentType,
+    contentType: routerContract.routerJsonContentType,
   });
 
 const errorResponse = (error: { readonly _tag: string }) => {
-  const mapped = routerHttpErrorEnvelope(error._tag);
+  const mapped = routerContract.routerHttpErrorEnvelope(error._tag);
   return mapped === undefined
     ? jsonText('{"error":"internal"}', 500)
     : jsonText(mapped.body, mapped.status);
@@ -108,7 +102,10 @@ const recoverUnexpectedFailure = <E, R>(
 const resultResponse = <A, I>(
   schema: Schema.Schema<A, I>,
   value: A,
-): Effect.Effect<HttpServerResponse.HttpServerResponse, InternalServerError> =>
+): Effect.Effect<
+  HttpServerResponse.HttpServerResponse,
+  InstanceType<typeof httpErrors.InternalServerError>
+> =>
   Schema.encode(schema)(value).pipe(
     Effect.catchTag("ParseError", () => Effect.fail(new InternalServerError())),
     Effect.flatMap((encoded) => {
@@ -171,13 +168,17 @@ const framingIsMalformed = (
 const mediaTypeIsUnsupported = (
   request: HttpServerRequest.HttpServerRequest,
 ): boolean =>
-  request.headers["content-type"] !== routerJsonContentType ||
+  request.headers["content-type"] !== routerContract.routerJsonContentType ||
   request.headers["content-encoding"] !== undefined;
 
 const validateDeclaredLength = (
   request: HttpServerRequest.HttpServerRequest,
   maximumBytes: number,
-): Effect.Effect<void, MalformedRequestError | PayloadTooLargeError> => {
+): Effect.Effect<
+  void,
+  | InstanceType<typeof httpErrors.MalformedRequestError>
+  | InstanceType<typeof httpErrors.PayloadTooLargeError>
+> => {
   const headerIsPresent = request.headers["content-length"] !== undefined;
   const declaredLength = canonicalContentLength(request);
   if (headerIsPresent && declaredLength === undefined) {
@@ -194,7 +195,9 @@ const validateRequestFraming = (
   maximumBytes: number,
 ): Effect.Effect<
   void,
-  PayloadTooLargeError | MalformedRequestError | UnsupportedMediaTypeError
+  | InstanceType<typeof httpErrors.PayloadTooLargeError>
+  | InstanceType<typeof httpErrors.MalformedRequestError>
+  | InstanceType<typeof httpErrors.UnsupportedMediaTypeError>
 > => {
   if (framingIsMalformed(request)) {
     return Effect.fail(new MalformedRequestError());
@@ -208,8 +211,11 @@ const validateRequestFraming = (
 const readBoundedBody = (
   request: HttpServerRequest.HttpServerRequest,
   maximumBytes: number,
-): Effect.Effect<Uint8Array, PayloadTooLargeError | MalformedRequestError> =>
-  // #ignore-sloppy-code-next-line[async-keyword]: This Effect callback constructor does not use the JavaScript keyword.
+): Effect.Effect<
+  Uint8Array,
+  | InstanceType<typeof httpErrors.PayloadTooLargeError>
+  | InstanceType<typeof httpErrors.MalformedRequestError>
+> =>
   Effect.async((resume) => {
     const incoming = NodeHttpServerRequest.toIncomingMessage(request);
     const body = new Uint8Array(maximumBytes);
@@ -315,12 +321,12 @@ const handleDomainRequest = <Request, RequestEncoded, Result, ResultEncoded>(
 
 function sendRoute(input: RouterHttpInput) {
   return HttpRouter.post(
-    routerSendRoutePattern,
+    routerContract.routerSendRoutePattern,
     handleDomainRequest({
-      routePath: routerSendPath,
-      outerRequestSchema: RawRouterSendRequest,
-      resultSchema: RouterSendResult,
-      bodyCap: routerRepresentationLimits.sendRequestBodyBytes,
+      routePath: routerContract.routerSendPath,
+      outerRequestSchema: routerContract.RawRouterSendRequest,
+      resultSchema: routerContract.RouterSendResult,
+      bodyCap: routerContract.routerRepresentationLimits.sendRequestBodyBytes,
       invoke: (client, request) => client.send({ request }),
       client: input.client,
       requestSemaphore: input.requestSemaphore,
@@ -330,14 +336,14 @@ function sendRoute(input: RouterHttpInput) {
 
 function pollRoute(input: RouterHttpInput) {
   return HttpRouter.post(
-    routerPollRoutePattern,
+    routerContract.routerPollRoutePattern,
     handleDomainRequest({
-      routePath: routerPollPath,
+      routePath: routerContract.routerPollPath,
       outerRequestSchema: rawPollRequest,
-      resultSchema: RouterPollResult,
-      bodyCap: routerRepresentationLimits.pollRequestBodyBytes,
+      resultSchema: routerContract.RouterPollResult,
+      bodyCap: routerContract.routerRepresentationLimits.pollRequestBodyBytes,
       invoke: (client, request) =>
-        Schema.decodeUnknown(RouterPollRequest)(request, {
+        Schema.decodeUnknown(routerContract.RouterPollRequest)(request, {
           exact: true,
           onExcessProperty: "error",
         }).pipe(
@@ -355,11 +361,11 @@ function pollRoute(input: RouterHttpInput) {
 
 function healthRoute(input: RouterHttpInput) {
   return HttpRouter.get(
-    routerHealthPath,
+    routerContract.routerHealthPath,
     recoverUnexpectedFailure(
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest;
-        if (request.url !== routerHealthPath) {
+        if (request.url !== routerContract.routerHealthPath) {
           return errorResponse(new RouteNotFoundError());
         }
         return yield* routerHealthResponse(input.feed);
@@ -379,9 +385,9 @@ function fallbackRoute() {
         }
         const path = request.url.split("?", 1)[0];
         if (
-          path === routerSendPath ||
-          path === routerPollPath ||
-          path === routerHealthPath
+          path === routerContract.routerSendPath ||
+          path === routerContract.routerPollPath ||
+          path === routerContract.routerHealthPath
         ) {
           return errorResponse(new MethodNotAllowedError());
         }

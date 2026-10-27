@@ -6,6 +6,7 @@ export {
   ALLOWED_SENDERS_ID,
   allowedSendersPolicy,
   credentialsPolicy,
+  localGuidanceImpersonationRule,
   plainLanguagePolicy,
 } from "./builtin.js";
 /** Collective participation composes code and English norms under one shared revision. */

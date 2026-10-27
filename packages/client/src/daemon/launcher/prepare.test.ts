@@ -15,7 +15,7 @@ import { live as it } from "@effect/vitest";
 import { Effect, Exit, Layer, Option } from "effect";
 import { describe, expect } from "vitest";
 import type { LauncherConfiguration } from "./selection.js";
-import { readRecord } from "./installation.js";
+import { readRecord, writeRecord } from "./installation.js";
 import { integrityOf } from "./integrity.js";
 import { prepare } from "./prepare.js";
 
@@ -30,8 +30,8 @@ type Routes = Readonly<Record<string, () => Response>>;
 
 const json = (body: unknown) => () => Response.json(body);
 
-/** A published release of the channel, its daemon and Identity at `version`. */
-const release = (version: string, wireVersion: string): Routes => {
+/** A published release of the channel and its daemon at `version`. */
+const release = (version: string, wireVersion?: string): Routes => {
   const tarball = new TextEncoder().encode(`tarball ${version}`);
   const published = (name: string, dependencies: Record<string, string>) => ({
     name,
@@ -48,22 +48,17 @@ const release = (version: string, wireVersion: string): Routes => {
       latest: version,
     }),
     [`${REGISTRY}/@moltzap%2fopenclaw-channel/${version}`]: json(
-      published(CHANNEL, { "@moltzap/client": version, effect: "^3" }),
+      published(CHANNEL, { "@moltzap/social-harness": version, effect: "^3" }),
     ),
-    [`${REGISTRY}/@moltzap%2fclient/${version}`]: json(
-      published("@moltzap/client", { "@moltzap/identity": version }),
-    ),
-    [`${REGISTRY}/@moltzap%2fidentity/${version}`]: json({
-      ...published("@moltzap/identity", {}),
-      moltzapWireVersion: wireVersion,
+    [`${REGISTRY}/@moltzap%2fsocial-harness/${version}`]: json({
+      ...published("@moltzap/social-harness", {}),
+      sharnessWireVersion: wireVersion,
     }),
     ...Object.fromEntries(
-      ["@moltzap/openclaw-channel", "@moltzap/client", "@moltzap/identity"].map(
-        (name) => [
-          `${REGISTRY}/tarballs/${name}-${version}.tgz`,
-          () => new Response(tarball),
-        ],
-      ),
+      ["@moltzap/openclaw-channel", "@moltzap/social-harness"].map((name) => [
+        `${REGISTRY}/tarballs/${name}-${version}.tgz`,
+        () => new Response(tarball),
+      ]),
     ),
   };
 };
@@ -83,6 +78,16 @@ const registry = (routes: Routes, asked: string[]) =>
       );
     }),
   );
+
+/** Installed Client entry and wire metadata used by the launcher fixtures. */
+const installedClientManifest = (wireVersion?: string) =>
+  JSON.stringify({
+    name: "@moltzap/social-harness",
+    version: "2026.1021.1",
+    type: "module",
+    sharnessWireVersion: wireVersion,
+    exports: { ".": { import: "./dist/index.js" } },
+  });
 
 /** A home volume and an image install of channel release `2026.1021.1`. */
 const volume = Effect.gen(function* () {
@@ -105,16 +110,11 @@ const volume = Effect.gen(function* () {
     }),
   );
   yield* write(
-    "@moltzap/identity/package.json",
-    JSON.stringify({
-      name: "@moltzap/identity",
-      version: "2026.1021.1",
-      type: "module",
-      exports: { ".": { import: "./dist/index.js" } },
-    }),
+    "@moltzap/social-harness/package.json",
+    installedClientManifest(WIRE),
   );
   yield* write(
-    "@moltzap/identity/dist/index.js",
+    "@moltzap/social-harness/dist/index.js",
     `export const LIVE_WIRE_VERSIONS = [${JSON.stringify(WIRE)}];\n`,
   );
   return { home: path.join(root, "home"), seed };
@@ -138,6 +138,10 @@ const start = (routes: Routes, asked: string[] = []) =>
 const seedsTheRecord = () =>
   Effect.gen(function* () {
     const { home, seed } = yield* volume;
+    const fs = yield* FileSystem.FileSystem;
+    const packageFile = `${seed}/node_modules/${CHANNEL}/package.json`;
+    yield* fs.chmod(seed, 0o700);
+    yield* fs.chmod(packageFile, 0o600);
     const prepared = yield* prepare(
       configuration(home, { kind: "off" }),
       seed,
@@ -148,11 +152,12 @@ const seedsTheRecord = () =>
       kept: "upgrade-off",
       restartHost: false,
     });
+    expect((yield* fs.stat(seed)).mode & 0o777).toBe(0o755);
+    expect((yield* fs.stat(packageFile)).mode & 0o777).toBe(0o644);
     const record = yield* readRecord(home);
     expect(Option.map(record, (value) => value.version)).toEqual(
       Option.some("2026.1021.1"),
     );
-    const fs = yield* FileSystem.FileSystem;
     expect(yield* fs.readLink(`${home}/current`)).toBe(seed);
   }).pipe(Effect.scoped, Effect.provide(NodeContext.layer));
 
@@ -205,14 +210,14 @@ const keepsAnUnsafePin = () =>
         start(
           {
             ...routes,
-            [`${REGISTRY}/@moltzap%2fclient/2026.1025.1`]: json({
-              name: "@moltzap/client",
+            [`${REGISTRY}/@moltzap%2fsocial-harness/2026.1025.1`]: json({
+              name: "@moltzap/social-harness",
               version: "2026.1025.1",
               dist: {
                 integrity: integrityOf(new TextEncoder().encode("client")),
                 tarball: `${REGISTRY}/tarballs/client.tgz`,
               },
-              dependencies: { "@moltzap/identity": "../../../escape" },
+              dependencies: { "@moltzap/social-harness": "../../../escape" },
             }),
           },
           asked,
@@ -261,7 +266,7 @@ const refusesAChangedTarball = () =>
         prefix: seed,
         packages: [
           {
-            name: "@moltzap/client",
+            name: "@moltzap/social-harness",
             version: "2026.1021.1",
             integrity: integrityOf(new TextEncoder().encode("verified")),
             tarball,
@@ -307,8 +312,42 @@ const followsANewImage = () =>
     );
   }).pipe(Effect.scoped, Effect.provide(NodeContext.layer));
 
+/** A channel record can point at a prefix carrying a different daemon package. */
+const refusesAnUnlaunchableRecordedRelease = () =>
+  Effect.gen(function* () {
+    const { home, seed } = yield* volume;
+    const installed = yield* volume;
+    const fs = yield* FileSystem.FileSystem;
+    yield* fs.rename(
+      `${installed.seed}/node_modules/@moltzap/social-harness`,
+      `${installed.seed}/node_modules/@moltzap/client`,
+    );
+    yield* fs.writeFileString(
+      `${installed.seed}/node_modules/@moltzap/client/package.json`,
+      JSON.stringify({ name: "@moltzap/client", version: "2026.1021.1" }),
+    );
+    yield* writeRecord(home, {
+      format: "org.social-harness/launcher-record/v1",
+      releasePackage: CHANNEL,
+      version: "2026.1021.1",
+      prefix: installed.seed,
+      packages: [],
+    });
+    const failure = yield* prepare(configuration(home, follow), seed).pipe(
+      Effect.provide(start(release("2026.1025.1", WIRE))),
+      Effect.flip,
+    );
+    expect(failure.reason).toBe("configuration");
+    expect(failure.message).toContain(home);
+    expect(failure.message).toContain("start with an empty launcher directory");
+  }).pipe(Effect.scoped, Effect.provide(NodeContext.layer));
+
 // @agent-code-guard/regression-only: Each start outcome is one closed launcher rule, pinned by its example.
 describe("a launcher start", () => {
+  it(
+    "refuses a recorded prefix holding the old daemon package",
+    refusesAnUnlaunchableRecordedRelease,
+  );
   it("seeds the record from the image install and runs it", seedsTheRecord);
   it(
     "keeps the recorded release when a newer one's wire version is outside its window, without downloading it",
@@ -341,3 +380,23 @@ describe("a launcher start", () => {
 });
 
 /* eslint-enable agent-code-guard/no-hardcoded-assertion-literals -- Restore assertion rules outside the launcher contract tests. */
+
+/** A library release without wire metadata is kept out before downloading bytes. */
+const keepsMissingLibraryWireVersion = () =>
+  Effect.gen(function* () {
+    const { home, seed } = yield* volume;
+    const asked: string[] = [];
+    const prepared = yield* prepare(configuration(home, follow), seed).pipe(
+      Effect.provide(start(release("2026.1101.1"), asked)),
+    );
+    expect(prepared).toMatchObject({
+      version: "2026.1021.1",
+      kept: "unresolved",
+    });
+    expect(asked.filter((url) => url.includes("/tarballs/"))).toEqual([]);
+  }).pipe(Effect.scoped, Effect.provide(NodeContext.layer));
+
+it(
+  "keeps the recorded release when the Client manifest has no wire version",
+  keepsMissingLibraryWireVersion,
+);

@@ -4,10 +4,8 @@
  */
 
 import { NodeHttpClient } from "@effect/platform-node";
-import { wireVersions } from "@moltzap/identity";
-import { Registry } from "@moltzap/identity/registry";
-import { Router } from "@moltzap/router";
 import { Data, Duration, Effect, Layer } from "effect";
+import { Router } from "../communication/router/api/client.js";
 import {
   type EndpointStoreError,
   inspectEndpointStore,
@@ -23,6 +21,9 @@ import {
   type MessagePolicyConfigurationError,
   policyInstallationError,
 } from "../firewall/index.js";
+import { registrationAdmissionRefusalMessage } from "../harness/protocol/index.js";
+import { Registry } from "../identity/registry/index.js";
+import { wireVersions } from "../identity/wire-version.js";
 import {
   DaemonConfigurationError,
   type DaemonProcessConfiguration,
@@ -43,7 +44,7 @@ import {
 } from "./registration/index.js";
 import { spanExport } from "./telemetry.js";
 
-// safer-arch-ignore no-large-public-surface: Trusted process composition and its operator audit decoder share this service-only boundary; moving the decoder to another entrypoint would split one fixed installation contract.
+// safer-arch-ignore no-large-public-surface: Daemon process composition, firewall installation and the actual Registry and Router client tags with their operation values share the trusted service embedding boundary.
 
 const REGISTRY_REQUEST_TIMEOUT = Duration.seconds(30);
 const ROUTER_SEND_TIMEOUT = Duration.seconds(30);
@@ -51,40 +52,30 @@ const ROUTER_POLL_TIMEOUT = Duration.seconds(35);
 
 const liveWireVersions = wireVersions.liveSet;
 
-/** Trusted operators decode retained checks without reading private storage schemas. */
-export { FirewallAuditRecord } from "../firewall/index.js";
-
-/** Writers build policy documents with the schema the daemon decodes them with. */
-export { decodeMessagePolicy, MessagePolicy } from "../firewall/index.js";
-
-/** Trusted composition installs a decoded document with its own decision provider. */
-export { messagePolicyFirewall } from "../firewall/index.js";
-
-/** Checking factories have no daemon execution authority. */
+/** Policy composition exposes checking factories, owner documents, and their validated contracts. */
 export {
   CheckInputError,
+  type DecisionProvider,
   DecisionProviderError,
+  type DecisionRequest,
+  type DecisionResponse,
+  decodeMessagePolicy,
+  type EnglishPolicySettings,
+  type EnglishRule,
+  type Firewall,
   FirewallPolicyError,
+  type FirewallSettings,
   makeEnglishPolicy,
   makeFirewall,
-  makeJevDecisionProvider,
+  type Message,
+  type MessageContext,
+  type MessageMiddleware,
+  MessagePolicy,
+  messagePolicyFirewall,
   MiddlewareError,
-} from "../firewall/index.js";
-/** Policy composition uses data contracts independently of agent-facing transport. */
-export type {
-  DecisionProvider,
-  DecisionRequest,
-  DecisionResponse,
-  EnglishPolicySettings,
-  EnglishRule,
-  Firewall,
-  FirewallSettings,
-  Message,
-  MessageContext,
-  MessageMiddleware,
-  MiddlewareInput,
-  MiddlewareResult,
-  RuleDescription,
+  type MiddlewareInput,
+  type MiddlewareResult,
+  type RuleDescription,
 } from "../firewall/index.js";
 
 // eslint-disable-next-line @typescript-eslint/no-namespace -- The published service subpath intentionally merges its runtime values with the closed startup-error type.
@@ -93,22 +84,24 @@ export namespace Daemon {
   export const help = processHelp;
 
   /** Trusted process composition fixes code and evidence while owner tools edit English rules. */
-  export type FirewallOptions = InstalledFirewallOptions & {
-    /**
-     * Dedicated file and adjacent `.partial` staging name for this endpoint's
-     * state directory, privately owned by the daemon and published on shutdown.
-     */
-    readonly auditExport?: string;
-  };
+  export type FirewallOptions = InstalledFirewallOptions;
 
   /** Closed startup phase with sanitized configuration details. */
   export class StartupError extends Data.TaggedError("DaemonStartupError")<{
-    readonly phase: "configuration" | "storage" | "listener";
+    readonly phase: "configuration" | "storage" | "listener" | "registration";
     readonly reason?:
       | "outbox-too-old"
       | "newer-schema"
       | "pre-reset"
-      | "legacy-key";
+      | "legacy-key"
+      | "agent-not-admitted"
+      | "admission-refused"
+      | "name_taken"
+      | "key_already_registered"
+      | "idempotency_conflict"
+      | "dependency-unavailable"
+      | "persistence-failed"
+      | "incompatible-daemon";
     readonly keys?: readonly string[];
     readonly detail?: string;
   }> {
@@ -120,7 +113,12 @@ export namespace Daemon {
       const reason = this.reason === undefined ? "" : ` (${this.reason})`;
       const detail = this.detail === undefined ? "" : `: ${this.detail}`;
       let remedy = "";
-      if (this.reason === "pre-reset") {
+      if (this.reason === "agent-not-admitted") {
+        remedy =
+          ". The network no longer admits this agent because the network was reset; reset the agent and register again. Docs: https://docs.moltzap.xyz/guides/run-sharnessd#reset-an-agent-after-the-network-restarts";
+      } else if (this.reason === "admission-refused") {
+        remedy = `. ${registrationAdmissionRefusalMessage}`;
+      } else if (this.reason === "pre-reset") {
         remedy =
           ". Start with a fresh state directory and register again; see https://github.com/social-harness/moltzap/blob/main/docs/guides/upgrades.mdx#apply-a-reset-release.";
       } else if (this.reason === "outbox-too-old") {
@@ -175,7 +173,6 @@ export namespace Daemon {
         bootstrap,
         registration,
         firewall,
-        auditExport: installation.auditExport,
       }).pipe(
         Effect.provide(networkContext),
         Effect.mapError(runtimeStartupFailure),
@@ -205,10 +202,9 @@ export namespace Daemon {
   export const withFirewall = (
     options: FirewallOptions,
   ): Layer.Layer<never, StartupError> => {
-    const { auditExport, ...policyOptions } = options;
-    return Layer.scopedDiscard(
-      runDaemon({ options: policyOptions, auditExport }),
-    ).pipe(Layer.provide(telemetry));
+    return Layer.scopedDiscard(runDaemon({ options })).pipe(
+      Layer.provide(telemetry),
+    );
   };
 
   /**
@@ -235,7 +231,9 @@ export namespace Daemon {
   ): StartupError {
     if (installation.fromPolicyFile === true) {
       return configurationFailure(
-        daemonPolicyConfigurationError(policyInstallationError(cause)),
+        daemonPolicyConfigurationError(
+          policyInstallationError(cause, installation.behaviorRulePaths),
+        ),
       );
     }
     return configurationFailure(cause);
@@ -321,3 +319,33 @@ function networkLayer(configuration: DaemonProcessConfiguration) {
     }),
   ).pipe(Layer.provide(NodeHttpClient.layer));
 }
+
+/** Immutable resolution and registration require only an injected HTTP client. */
+export { Registry } from "../identity/registry/index.js";
+
+/** Closed network operation values and client failures for service embedders. */
+export { Router } from "../communication/router/api/client.js";
+/** Route refusals and transport failures retain separate typed channels. */
+export {
+  PollCursor,
+  RouterConnectionError,
+  RouterInstanceId,
+  RouterInvalidResponseError,
+  RouterPollRequest,
+  RouterPollResult,
+  RouterRequestTimeoutError,
+  RouterSendRequest,
+  RouterSendResult,
+  SignedMessageDigest,
+} from "../communication/router/api/contract.js";
+/** Registration and immutable reads preserve exact operation errors and results. */
+export {
+  OperationId,
+  RegistryConnectionError,
+  RegistryInvalidResponseError,
+  RegistryLookupRequest,
+  type RegistryLookupResult,
+  RegistryRegisterRequest,
+  type RegistryRegisterResult,
+  RegistryRequestTimeoutError,
+} from "../identity/registry/contract.js";

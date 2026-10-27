@@ -117,9 +117,9 @@ export function requireRoots(
 }
 
 /**
- * Every `.md` and `.mdx` file below `roots`, sorted for stable output.
+ * Markdown files below `roots` and TypeScript under `packages/`, sorted for stable output.
  */
-export function collectMarkdownFiles(
+export function collectDiagramFiles(
   fs: FileSystem.FileSystem,
   path: Path.Path,
   roots: readonly string[],
@@ -130,7 +130,7 @@ export function collectMarkdownFiles(
       yield* walkInto(ctx, root);
     }
     return ctx.out.sort((left, right) => StringOps.localeCompare(right)(left));
-  }).pipe(Effect.withSpan("collectMarkdownFiles"));
+  }).pipe(Effect.withSpan("collectDiagramFiles"));
 }
 
 /**
@@ -166,18 +166,14 @@ export function extractMermaidBlocks(
   file: string,
   source: string,
 ): readonly MermaidBlock[] {
-  const lines = StringOps.split(source, "\n");
-  const state: ExtractorState = {
-    inFence: false,
-    fenceLang: null,
-    blockStart: -1,
-    bodyLines: [],
-    out: [],
-  };
-  for (let i = 0; i < lines.length; i++) {
-    processLine(file, lines[i] ?? "", i, state);
+  if (file.endsWith(".ts")) {
+    return [...source.matchAll(/\/\*\*[\s\S]*?\*\//gu)].flatMap((match) => {
+      const startLine = source.slice(0, match.index).split("\n").length - 1;
+      const body = match[0].replace(/^[ \t]*\* ?/gmu, "");
+      return extractFencedBlocks(file, body, startLine);
+    });
   }
-  return state.out;
+  return extractFencedBlocks(file, source);
 }
 
 /**
@@ -204,6 +200,25 @@ export function lintBlock(
     yield* cleanup(fs, inputPath, outputPath);
     return interpretResult(block, result);
   }).pipe(Effect.withSpan("lintBlock"));
+}
+
+function extractFencedBlocks(
+  file: string,
+  source: string,
+  startLine = 0,
+): readonly MermaidBlock[] {
+  const lines = StringOps.split(source, "\n");
+  const state: ExtractorState = {
+    inFence: false,
+    fenceLang: null,
+    blockStart: -1,
+    bodyLines: [],
+    out: [],
+  };
+  for (let i = 0; i < lines.length; i++) {
+    processLine(file, lines[i] ?? "", i + startLine, state);
+  }
+  return state.out;
 }
 
 function processLine(
@@ -397,7 +412,12 @@ function visitEntry(
       yield* walkInto(ctx, full);
       return;
     }
-    if (StringOps.endsWith(".md")(name) || StringOps.endsWith(".mdx")(name)) {
+    if (
+      StringOps.endsWith(".md")(name) ||
+      StringOps.endsWith(".mdx")(name) ||
+      (StringOps.endsWith(".ts")(name) &&
+        full.includes(`${ctx.path.sep}packages${ctx.path.sep}`))
+    ) {
       ctx.out.push(full);
     }
   });

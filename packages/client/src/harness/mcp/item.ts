@@ -1,7 +1,10 @@
 /** @file Classified inbox events shared by native delivery transports. */
 
 import { Effect } from "effect";
-import { InboundItem } from "../../communication/collectives/inbound.js";
+import {
+  type InboundItem,
+  retainedInboundItem,
+} from "../../communication/collectives/inbound.js";
 import {
   decodeRuntimeValue,
   type InboxEntry,
@@ -12,9 +15,32 @@ import { INBOX_ITEM_EVENT } from "../protocol/names.js";
 import { eventIdOf } from "../protocol/operations.js";
 
 /**
- * Keeps the original item and separate local guidance together. An envelope
- * exceeding the transport bound carries a reference to the retained event;
- * neither content nor guidance is truncated.
+ * Replaces an envelope exceeding the transport bound with a reference to the
+ * retained event; neither content nor guidance is truncated.
+ * @param event The complete item event.
+ * @param bytes The retained item and guidance size the reference reports.
+ * @returns The event when it fits, otherwise its reference form.
+ */
+export const boundItemEvent = <
+  E extends { readonly data: { readonly item: Pick<InboundItem, "kind"> } },
+>(
+  event: E,
+  bytes: number,
+) =>
+  Buffer.byteLength(JSON.stringify(event), "utf8") <= maximumEventBytes
+    ? event
+    : {
+        ...event,
+        data: {
+          kind: "reference" as const,
+          itemKind: event.data.item.kind,
+          bytes,
+        },
+      };
+
+/**
+ * Keeps the original item and separate local guidance together. A retained
+ * historical item decodes to its current form.
  * @param entry The admitted, immutable inbox row.
  * @param timestamp The occurrence's Unix time in milliseconds.
  * @returns A bounded event whose identity remains stable across retries.
@@ -23,7 +49,10 @@ export const makeItemEvent = Effect.fn("makeItemEvent")(function* (
   entry: InboxEntry,
   timestamp: number,
 ) {
-  const item = yield* decodeRuntimeValue(InboundItem, entry.canonicalItem);
+  const item = yield* decodeRuntimeValue(
+    retainedInboundItem,
+    entry.canonicalItem,
+  );
   const guidance =
     entry.canonicalGuidance === undefined
       ? undefined
@@ -34,24 +63,15 @@ export const makeItemEvent = Effect.fn("makeItemEvent")(function* (
     timestamp: new Date(timestamp).toISOString(),
     cursor: null,
   } as const;
-  const event = {
-    ...envelope,
-    data: {
-      kind: "item" as const,
-      item,
-      ...(guidance === undefined ? {} : { guidance }),
+  return boundItemEvent(
+    {
+      ...envelope,
+      data: {
+        kind: "item" as const,
+        item,
+        ...(guidance === undefined ? {} : { guidance }),
+      },
     },
-  };
-  return Buffer.byteLength(JSON.stringify(event), "utf8") <= maximumEventBytes
-    ? event
-    : {
-        ...envelope,
-        data: {
-          kind: "reference" as const,
-          itemKind: item.kind,
-          bytes:
-            entry.canonicalItem.byteLength +
-            (entry.canonicalGuidance?.byteLength ?? 0),
-        },
-      };
+    entry.canonicalItem.byteLength + (entry.canonicalGuidance?.byteLength ?? 0),
+  );
 });

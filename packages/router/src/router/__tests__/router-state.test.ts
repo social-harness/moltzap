@@ -1,7 +1,6 @@
 /** @file Stateful feed, cursor, polling, and retry invariants for one Router instance. */
 import { it as effectIt } from "@effect/vitest";
 import {
-  AgentCardDigest,
   AgentId,
   type AgentId as AgentIdValue,
   type LiveSignedMessage,
@@ -9,23 +8,16 @@ import {
   type MessageId as MessageIdValue,
   SignedMessage,
   WIRE_VERSION,
-} from "@moltzap/identity";
+} from "@moltzap/social-harness";
+import {
+  AgentCardDigest,
+  routerContract,
+} from "@moltzap/social-harness/internal";
 import canonicalize from "canonicalize";
 import { Effect, Either, Encoding, Fiber, Schema } from "effect";
 import * as fc from "fast-check";
 import { CompactEncrypt } from "jose";
 import { describe, expect, it } from "vitest";
-import {
-  maximumPollCursorLength,
-  PollCursor,
-  pollCursorEncodedLength,
-  RouterInstanceId,
-  type RouterInstanceId as RouterInstanceIdValue,
-  RouterPollResult,
-  routerRepresentationLimits,
-  RouterSendRequest,
-  SignedMessageDigest,
-} from "../contract.js";
 import {
   entriesAfter,
   makeRouterFeed,
@@ -52,11 +44,15 @@ const makeAgentId = (seed: number): AgentIdValue =>
 const makeMessageId = (seed: number): MessageIdValue =>
   Schema.decodeUnknownSync(MessageId)(`msg_${identifierPayload(seed)}`);
 
-const makeRouterInstanceId = (seed: number): RouterInstanceIdValue =>
-  Schema.decodeUnknownSync(RouterInstanceId)(`rti_${identifierPayload(seed)}`);
+const makeRouterInstanceId = (
+  seed: number,
+): typeof routerContract.RouterInstanceId.Type =>
+  Schema.decodeUnknownSync(routerContract.RouterInstanceId)(
+    `rti_${identifierPayload(seed)}`,
+  );
 
 const makeDigest = (seed: number) =>
-  Schema.decodeUnknownSync(SignedMessageDigest)(
+  Schema.decodeUnknownSync(routerContract.SignedMessageDigest)(
     `smd_${Encoding.encodeBase64Url(new Uint8Array(32).fill(seed))}`,
   );
 
@@ -197,7 +193,7 @@ describe("poll cursor behavior", () => {
         const tagStart = cursor.length - 22;
         const current = cursor.charAt(tagStart);
         const replacement = current === "A" ? "B" : "A";
-        const tampered = Schema.decodeUnknownSync(PollCursor)(
+        const tampered = Schema.decodeUnknownSync(routerContract.PollCursor)(
           `${cursor.slice(0, tagStart)}${replacement}${cursor.slice(
             tagStart + 1,
           )}`,
@@ -239,7 +235,9 @@ describe("poll cursor behavior", () => {
               .encrypt(key),
           catch: () => new Error("cursor fixture encryption failed"),
         });
-        const cursor = Schema.decodeUnknownSync(PollCursor)(`plc_${compact}`);
+        const cursor = Schema.decodeUnknownSync(routerContract.PollCursor)(
+          `plc_${compact}`,
+        );
         expect(yield* effectFails(codec.decrypt(cursor, firstRecipient))).toBe(
           true,
         );
@@ -265,9 +263,9 @@ describe("poll cursor behavior", () => {
           lastScannedOrder: maximumPrivateOrder,
         });
         expect(first).not.toBe(second);
-        expect(first.length).toBe(maximumPollCursorLength);
+        expect(first.length).toBe(routerContract.maximumPollCursorLength);
         expect(first.length).toBe(
-          pollCursorEncodedLength({
+          routerContract.pollCursorEncodedLength({
             agentId: firstRecipient,
             routerInstanceId,
             lastScannedOrder: maximumPrivateOrder,
@@ -280,7 +278,7 @@ describe("poll cursor behavior", () => {
               request: { pollCursor: first },
             }),
           ).byteLength,
-        ).toBe(routerRepresentationLimits.pollRequestBodyBytes);
+        ).toBe(routerContract.routerRepresentationLimits.pollRequestBodyBytes);
 
         const overRangeCompact = yield* Effect.tryPromise({
           try: () =>
@@ -301,9 +299,9 @@ describe("poll cursor behavior", () => {
               .encrypt(key),
           catch: () => new Error("cursor fixture encryption failed"),
         });
-        const overRangeCursor = Schema.decodeUnknownSync(PollCursor)(
-          `plc_${overRangeCompact}`,
-        );
+        const overRangeCursor = Schema.decodeUnknownSync(
+          routerContract.PollCursor,
+        )(`plc_${overRangeCompact}`);
         expect(
           yield* effectFails(codec.decrypt(overRangeCursor, firstRecipient)),
         ).toBe(true);
@@ -613,12 +611,14 @@ describe("representation bounds", () => {
         agentId: makeAgentId(255),
         lastScannedOrder: maximumPrivateOrder,
       });
-      const sendRequest = yield* Schema.encode(RouterSendRequest)({
+      const sendRequest = yield* Schema.encode(
+        routerContract.RouterSendRequest,
+      )({
         expectedRouterInstanceId: routerInstanceId,
         mode: "initial",
         signedMessage: maximumMessage,
       });
-      const pollResult = yield* Schema.encode(RouterPollResult)({
+      const pollResult = yield* Schema.encode(routerContract.RouterPollResult)({
         kind: "batch",
         routerInstanceId,
         signedMessages: [maximumMessage],
@@ -635,8 +635,8 @@ describe("representation bounds", () => {
             request: sendRequest,
           }),
         ).byteLength,
-      ).toBe(routerRepresentationLimits.sendRequestBodyBytes);
-      expect(cursor.length).toBe(maximumPollCursorLength);
+      ).toBe(routerContract.routerRepresentationLimits.sendRequestBodyBytes);
+      expect(cursor.length).toBe(routerContract.maximumPollCursorLength);
       expect(
         utf8Encoder.encode(
           canonicalText({
@@ -644,9 +644,9 @@ describe("representation bounds", () => {
             request: { pollCursor: cursor },
           }),
         ).byteLength,
-      ).toBe(routerRepresentationLimits.pollRequestBodyBytes);
+      ).toBe(routerContract.routerRepresentationLimits.pollRequestBodyBytes);
       expect(utf8Encoder.encode(canonicalText(pollResult)).byteLength).toBe(
-        routerRepresentationLimits.oneMessageBatchBytes,
+        routerContract.routerRepresentationLimits.oneMessageBatchBytes,
       );
     }),
   );

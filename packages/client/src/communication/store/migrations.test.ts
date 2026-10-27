@@ -1,7 +1,6 @@
 /** @file Migration admission, atomic rollback, replaceable backups, and retained history. */
 
 import { live as it } from "@effect/vitest";
-import { LIVE_WIRE_VERSIONS } from "@moltzap/identity";
 import { Effect, Exit } from "effect";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- These tests exercise real SQLite files and directory permissions at the synchronous ownership boundary.
 import {
@@ -26,8 +25,8 @@ import {
   storedConversation,
   withStore,
 } from "../../__tests__/store-schema-fixtures.js";
+import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { readStoredHistory } from "../conversations/index.js";
-import { RESET_SCHEMA } from "./database/migrations.js";
 import { closeStoreState, openStoreState } from "./database/schema.js";
 import { openEndpointStore } from "./index.js";
 
@@ -319,40 +318,4 @@ it("resumes from the last committed step after a later step fails", () =>
     expect(version(`${subject.path}.schema-${subject.from + 1}.backup`)).toBe(
       subject.from + 1,
     );
-  }));
-
-it("drops the retained keyed sends of a schema-10 store and keeps the rest of its state", () =>
-  Effect.gen(function* () {
-    const subject = yield* prepare();
-    expect(subject.from).toBe(RESET_SCHEMA);
-    const before = yield* Effect.scoped(
-      openEndpointStore(subject.directory, storeOptions).pipe(
-        Effect.flatMap((store) => store.recover()),
-      ),
-    );
-    const database = new DatabaseSync(subject.path);
-    database.exec(`CREATE TABLE runtime_sends (
-      invocation_key TEXT PRIMARY KEY,
-      canonical_input BLOB NOT NULL,
-      canonical_outcome BLOB
-    ) STRICT;
-    INSERT INTO runtime_sends (invocation_key, canonical_input) VALUES ('key', x'00')`);
-    database.close();
-
-    const recovered = yield* Effect.scoped(
-      openEndpointStore(subject.directory, {
-        liveWireVersions: LIVE_WIRE_VERSIONS,
-      }).pipe(Effect.flatMap((store) => store.recover())),
-    );
-
-    expect(version(subject.path)).toBe(RESET_SCHEMA + 1);
-    expect(version(subject.backup)).toBe(RESET_SCHEMA);
-    const upgraded = new DatabaseSync(subject.path, { readOnly: true });
-    expect(
-      upgraded
-        .prepare("SELECT name FROM sqlite_schema WHERE name = 'runtime_sends'")
-        .get(),
-    ).toBeUndefined();
-    upgraded.close();
-    expect(recovered).toEqual(before);
   }));

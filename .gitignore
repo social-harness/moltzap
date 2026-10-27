@@ -156,3 +156,5 @@ vite.config.ts.timestamp-*
 /.repos/effect/
 /eval-results/
 recordings/
+
+images/.workspace/

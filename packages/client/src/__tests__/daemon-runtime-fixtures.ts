@@ -1,11 +1,5 @@
 /** @file Verified identity and durable-message fixtures for daemon runtime tests. */
 
-import {
-  AgentCard,
-  AgentSigningAuthority,
-  Ed25519PublicKey,
-  type VerifiedAgentCard,
-} from "@moltzap/identity";
 import { Effect, Redacted, Schema } from "effect";
 import { generateKeyPairSync } from "node:crypto";
 import type { EnginePendingMessage } from "../communication/conversations/index.js";
@@ -15,6 +9,8 @@ import { RecordHash } from "../communication/records/index.js";
 import { DeliveryToken } from "../communication/store/index.js";
 import { encodeCanonical } from "../encoding/canonical-json.js";
 import { managementRegisterRequestSchema } from "../harness/protocol/index.js";
+import { AgentCard, type VerifiedAgentCard } from "../identity/cards.js";
+import { AgentSigningAuthority, Ed25519PublicKey } from "../identity/keys.js";
 import {
   digest,
   identifier,

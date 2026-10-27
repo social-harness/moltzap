@@ -17,7 +17,6 @@ const packedManifest = Schema.Struct({
   ),
   sharnessHostCodeHash: Schema.optional(Schema.String),
   sharnessWireVersion: Schema.optional(Schema.String),
-  moltzapWireVersion: Schema.optional(Schema.String),
 });
 
 /** The fields of a packed manifest the launcher reads. */

@@ -6,7 +6,6 @@
  */
 
 import { scopedLive as it } from "@effect/vitest";
-import { LIVE_WIRE_VERSIONS } from "@moltzap/identity";
 import { Deferred, Effect, Exit, Fiber, Ref, Schema, Scope } from "effect";
 import { describe, expect } from "vitest";
 import type { CollectiveOperations } from "../../communication/collectives/index.js";
@@ -34,6 +33,7 @@ import {
   EndpointStoreError,
   openEndpointStore,
 } from "../../communication/store/index.js";
+import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { makeHostDelivery } from "./host-delivery.js";
 
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- Closed error reasons and export record kinds are the contract under test. */

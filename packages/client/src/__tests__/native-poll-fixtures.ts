@@ -1,7 +1,7 @@
 /** @file Authenticated native receiving through the production HTTP handler and SQLite inbox. */
 
 import type { McpHttpHandler } from "@modelcontextprotocol/server";
-import { LIVE_WIRE_VERSIONS } from "@moltzap/identity";
+import { LIVE_WIRE_VERSIONS } from "../identity/wire-version.js";
 import { Effect, Redacted } from "effect";
 import { openEndpointStore } from "../communication/store/index.js";
 import { noHistoryExport } from "../harness/inbox/history-export.js";

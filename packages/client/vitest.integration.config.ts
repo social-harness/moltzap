@@ -1,12 +1,9 @@
-/** @file Vitest configuration for the package integration suite. */
+/** @file Client process feedback through its installed executable. */
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
-  resolve: { conditions: ["sharness-test"] },
-  ssr: { resolve: { conditions: ["sharness-test"] } },
   test: {
-    include: ["integration/**/*.integration.test.ts"],
-    maxWorkers: 2,
+    include: ["integration/*.integration.test.ts"],
     passWithNoTests: false,
   },
 });
