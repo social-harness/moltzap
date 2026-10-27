@@ -8,7 +8,7 @@ import {
 } from "@opentelemetry/sdk-trace-base";
 import { Deferred, Duration, Effect, Fiber } from "effect";
 import { describe, expect } from "vitest";
-import type { MiddlewareInput } from "../evaluator/values.js";
+import type { MiddlewareInput } from "../evaluator/contract/index.js";
 import {
   admitPending,
   answerBob,
@@ -40,6 +40,7 @@ import {
 } from "../../__tests__/firewall-runtime-fixtures.js";
 import { renderOutcome } from "../../communication/collectives/render.js";
 import { FirewallSendError } from "../outcome/index.js";
+import { decodeFirewallAuditEntry } from "./firewall-values.js";
 
 // @agent-code-guard/regression-only: Exercises collective refusal and binding through SQLite and the protocol engine.
 
@@ -63,7 +64,6 @@ function refusesAHeldGatherOnTheToolCall() {
       {
         direction: "outgoing",
         disposition: "withheld",
-        post: null,
         input: { message: { operation: { kind: "request", op: "gather" } } },
       },
     ]);
@@ -389,9 +389,13 @@ function bindsNothingWhenStoppedDuringAGatherCheck() {
     yield* Fiber.interrupt(sending);
 
     expect(yield* unfinishedIntents(subject)).toEqual([]);
-    expect(yield* auditChecks(subject)).toMatchObject([
-      { disposition: "checking", result: null },
-    ]);
+    const attempts = yield* subject.store.readFirewallAuditPage(0);
+    const checks = yield* Effect.forEach(
+      attempts,
+      (entry) => decodeFirewallAuditEntry(entry),
+      { concurrency: 1 },
+    );
+    expect(checks).toMatchObject([{ disposition: "checking", result: null }]);
   });
 }
 

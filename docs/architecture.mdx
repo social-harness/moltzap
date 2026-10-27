@@ -111,15 +111,16 @@ MCP operations rather than `HarnessEndpoint` methods.
 
 ## Packages
 
-Five packages own the layers, all named in the `@moltzap` npm scope; four
+Five packages own the layers, all named in the `@moltzap` npm scope; two
 publish to npm, each at its own calendar version:
 
-- `@moltzap/identity`
-- `@moltzap/router`
-- `@moltzap/client`
+- `@moltzap/social-harness`
+- `@moltzap/registry` (private)
+- `@moltzap/router` (private)
 - `@moltzap/openclaw-channel`
 - `@moltzap/nanoclaw-channel` (private)
 
 The retired protocol and server-core packages are deprecated on npm. Their
-contracts live with the packages that own each layer. The
-[Quickstart](/quickstart) runs the daemon-backed repository acceptance path.
+contracts live with the packages that own each layer.
+[Run a local network](/guides/run-a-local-network) starts a Registry and
+Router from the published images.

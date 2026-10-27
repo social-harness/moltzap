@@ -8,14 +8,27 @@
     {
       "package": "@effect/platform",
       "reason": "Effect platform abstractions used at boundaries"
+    },
+    {
+      "package": "@effect/platform-node",
+      "reason": "Effect Node integration used at boundaries"
     }
   ],
-  "allowedTestPublicSubpaths": [],
+  "allowedTestPublicSubpaths": [
+    {
+      "subpath": "./test",
+      "reason": "Registry wire overrides require the explicit sharness-test resolution condition"
+    }
+  ],
   "folderReadmeFileNames": [
     "README.md",
-    "MODULE.md"
+    "../README.md"
   ],
   "facadeFiles": [
+    {
+      "file": "test.ts",
+      "reason": "Condition-only Registry process composition for compatibility tests"
+    },
     {
       "file": "rpc.ts",
       "reason": "Correlated in-process RPC boundary between HTTP admission and storage operations"

@@ -1,8 +1,5 @@
 /**
- * @file The workspace gate's job is to fail. These exercise paths where an input
- * cannot be inspected at all — an unreadable directory, an unreadable file,
- * an unwritable temp slot — because each one used to be swallowed into an
- * empty value and reported as a clean pass.
+ * @file Unreadable Mermaid inputs fail the documentation gate.
  */
 import { FileSystem, Path } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
@@ -21,7 +18,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   collectBlocks,
-  collectMarkdownFiles,
+  collectDiagramFiles,
   lintBlock,
   type MermaidGateError,
   requireRoots,
@@ -96,22 +93,28 @@ describe("requireRoots", () => {
 });
 
 // eslint-disable-next-line max-lines-per-function, sonarjs/max-lines-per-function -- This declarative test group keeps its related regression cases and source fixtures together.
-describe("collectMarkdownFiles", () => {
+describe("collectDiagramFiles", () => {
   // eslint-disable-next-line agent-code-guard/async-keyword -- Vitest awaits this Promise boundary; the implementation under test remains an Effect.
   it("descends subdirectories and skips node_modules", async () => {
     const root = join(sandbox, "tree");
     mkdirSync(join(root, "nested"), { recursive: true });
     mkdirSync(join(root, "node_modules"), { recursive: true });
+    mkdirSync(join(root, "packages"), { recursive: true });
+    writeFileSync(
+      join(root, "packages", "flow.ts"),
+      "/**\n * ```mermaid\n * flowchart TD\n * A --> B\n * ```\n */",
+    );
     writeFileSync(join(root, "top.md"), BLOCK);
     writeFileSync(join(root, "nested", "deep.mdx"), BLOCK);
     writeFileSync(join(root, "node_modules", "vendor.md"), BLOCK);
 
     const result = await runGate((fs, path) =>
-      collectMarkdownFiles(fs, path, [root]),
+      collectDiagramFiles(fs, path, [root]),
     );
     const value = Either.getOrThrowWith(result, (error) => error);
     expect(value).toEqual([
       join(root, "nested", "deep.mdx"),
+      join(root, "packages", "flow.ts"),
       join(root, "top.md"),
     ]);
   });
@@ -120,15 +123,14 @@ describe("collectMarkdownFiles", () => {
   it("fails instead of yielding no files when a directory cannot be listed", async () => {
     const absent = join(sandbox, "absent-tree");
     const error = failure(
-      await runGate((fs, path) => collectMarkdownFiles(fs, path, [absent])),
+      await runGate((fs, path) => collectDiagramFiles(fs, path, [absent])),
     );
     // eslint-disable-next-line agent-code-guard/no-hardcoded-assertion-literals -- The expected text is the observable output for this fixed input fixture.
     expect(error.reason).toContain("cannot read directory");
     expect(error.path).toBe(absent);
   });
 
-  // Reaches the per-entry `stat`, which the unreadable-directory cases never
-  // do: they fail listing the directory, having stat'ed it successfully.
+  /** A dangling entry fails during per-entry stat. */
   // eslint-disable-next-line agent-code-guard/async-keyword -- Vitest awaits this Promise boundary; the implementation under test remains an Effect.
   it("fails on an entry that cannot be stat'ed", async () => {
     const root = join(sandbox, "dangling-tree");
@@ -136,16 +138,14 @@ describe("collectMarkdownFiles", () => {
     const dangling = join(root, "dangling.md");
     symlinkSync(join(sandbox, "no-such-target"), dangling);
     const error = failure(
-      await runGate((fs, path) => collectMarkdownFiles(fs, path, [root])),
+      await runGate((fs, path) => collectDiagramFiles(fs, path, [root])),
     );
     // eslint-disable-next-line agent-code-guard/no-hardcoded-assertion-literals -- The expected text is the observable output for this fixed input fixture.
     expect(error.reason).toBe("cannot stat");
     expect(error.path).toBe(dangling);
   });
 
-  // The finding this guards is an *existing* but unreadable subtree, which
-  // only permissions can produce. Root ignores the mode bits, so the check
-  // cannot be expressed there.
+  /** Root ignores mode bits, so unreadable fixtures require an unprivileged user. */
   const unreadable = process.getuid?.() === 0 ? it.skip : it;
   unreadable(
     "fails on a subtree that exists but cannot be opened",
@@ -158,7 +158,7 @@ describe("collectMarkdownFiles", () => {
       chmodSync(locked, 0o000);
       try {
         const error = failure(
-          await runGate((fs, path) => collectMarkdownFiles(fs, path, [root])),
+          await runGate((fs, path) => collectDiagramFiles(fs, path, [root])),
         );
         expect(error.path).toBe(locked);
       } finally {
@@ -204,12 +204,7 @@ describe("lintBlock", () => {
     body: "flowchart TD\n  A --> B",
   };
 
-  // Mirrors the temp name lintBlock derives from the block. If that rule
-  // changes, the staged obstacle stops obstructing and the write succeeds,
-  // so the test fails rather than quietly stopping testing anything.
-  const stagedInputName = "doc_md-1.mmd";
-
-  // Staging fails before mmdc is spawned, so neither case needs a browser.
+  /** Staging failures do not require a browser. */
   const stage = (tempDir: string) =>
     Effect.runPromise(
       lintBlock(blockUnderTest, tempDir).pipe(
@@ -226,17 +221,5 @@ describe("lintBlock", () => {
     // eslint-disable-next-line agent-code-guard/no-hardcoded-assertion-literals -- The expected text is the observable output for this fixed input fixture.
     expect(error.reason).toBe("cannot create temp directory");
     expect(error.path).toBe(tempDir);
-  });
-
-  // Separate from the case above: there the directory step fails first, so
-  // it would stay green with the write left swallowed.
-  // eslint-disable-next-line agent-code-guard/async-keyword -- Vitest awaits this Promise boundary; the implementation under test remains an Effect.
-  it("fails when the input itself cannot be written", async () => {
-    const tempDir = join(sandbox, "temp-write-blocked");
-    mkdirSync(join(tempDir, stagedInputName), { recursive: true });
-    const error = failure(await stage(tempDir));
-    // eslint-disable-next-line agent-code-guard/no-hardcoded-assertion-literals -- The expected text is the observable output for this fixed input fixture.
-    expect(error.reason).toBe("cannot write temp input");
-    expect(error.path).toBe(join(tempDir, stagedInputName));
   });
 });

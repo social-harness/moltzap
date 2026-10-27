@@ -7,16 +7,14 @@ import { PgClient } from "@effect/sql-pg";
 import {
   AgentCard,
   AgentSigningAuthority,
-  AuthenticationFailedError,
   type VerifiedAgentCard,
   WIRE_VERSION,
-} from "@moltzap/identity";
+} from "@moltzap/social-harness";
 import {
+  httpErrors,
   Registry,
-  type RegistryLookupResult,
-  RegistryRegisterRequest,
-  type RegistryRegisterResult,
-} from "@moltzap/identity/registry";
+  registryContract,
+} from "@moltzap/social-harness/internal";
 import {
   PostgreSqlContainer,
   type StartedPostgreSqlContainer,
@@ -29,7 +27,9 @@ import { initializeRegistryStorage, makeRegistryStorage } from "../storage.js";
 import { clockAt } from "./clock.js";
 import {
   BOOTSTRAP_SIGNATURE_INTERVAL_SECONDS,
+  callRegister,
   LOOPBACK_HOST,
+  makeOperationId,
   makePrivateKeyPem,
   makeRegistryRunner,
   makeSigningAuthority,
@@ -48,10 +48,25 @@ import {
 } from "./registry-process.js";
 import { encodeCanonicalJson } from "./request-fixtures.js";
 
+/* eslint-disable @typescript-eslint/naming-convention -- Closed HTTP error constructors retain their class names when bound from the service capability. */
+const { AuthenticationFailedError } = httpErrors;
+/* eslint-enable @typescript-eslint/naming-convention -- Restore variable naming after binding error constructors. */
+
 const SERVICE_UNAVAILABLE_STATUS = 503;
 const EMPTY_BODY = "";
 const FOUND_KIND = "found";
 const REGISTERED_KIND = "registered";
+/** Requests in each concurrency race: exactly one wins and the others are refused. */
+const CONTENDERS = 8;
+
+/** Copies of one prepared agent that differ only in operation id, so they race on the same key. */
+const sameKeyContenders = (
+  first: Effect.Effect.Success<ReturnType<typeof prepareAgent>>,
+) =>
+  Array.from({ length: CONTENDERS }, () => ({
+    ...first,
+    request: { ...first.request, operationId: makeOperationId() },
+  }));
 const NEWER_SCHEMA_REASON = "newer-schema";
 
 const stopPostgreSql = (container: StartedPostgreSqlContainer) =>
@@ -109,7 +124,11 @@ const makePostgreSqlRegistrySetup = Effect.gen(function* () {
   };
 });
 
-const issuedCard = (result: RegistryLookupResult | RegistryRegisterResult) =>
+const issuedCard = (
+  result:
+    | typeof registryContract.lookupResultSchema.Type
+    | typeof registryContract.registerResultSchema.Type,
+) =>
   Match.value(result).pipe(
     Match.when({ kind: "registered" }, ({ agentCard }) =>
       Effect.succeed(agentCard),
@@ -203,13 +222,12 @@ it("reopens a known ledger and serves the same card", () => {
       const storage = makeRegistryStorage({
         sql,
         registrySignerPublicKey: setup.registrySignerPublicKey,
-        listPageSize: 100,
         operationTimeoutMilliseconds: 5_000,
       });
       const prepared = yield* prepareAgent("ledger-authority");
-      const requestBytes = yield* Schema.encode(RegistryRegisterRequest)(
-        prepared.request,
-      ).pipe(Effect.flatMap(encodeCanonicalJson));
+      const requestBytes = yield* Schema.encode(
+        registryContract.RegistryRegisterRequest,
+      )(prepared.request).pipe(Effect.flatMap(encodeCanonicalJson));
       const registered = yield* storage.register({
         request: prepared.request,
         requestBytes,
@@ -295,7 +313,7 @@ it("refuses an unknown applied migration with newer-schema through storage and p
         sql,
         registrySignerPublicKey: setup.registrySignerPublicKey,
       });
-      yield* sql`INSERT INTO sharness_registry_ledger (migration_id, name) VALUES (9999, 'future')`;
+      yield* sql`INSERT INTO sharness_registry_ledger_20261026 (migration_id, name) VALUES (9999, 'future')`;
 
       const initialized = yield* initializeRegistryStorage({
         sql,
@@ -329,7 +347,11 @@ it("refuses an unknown applied migration with newer-schema through storage and p
   );
 }, 180_000);
 
-it.each(["moltzap_registry_migrations", "sharness_registry_migrations"])(
+it.each([
+  "moltzap_registry_migrations",
+  "sharness_registry_migrations",
+  "sharness_registry_ledger",
+])(
   "refuses a pre-reset %s ledger before creating the reset ledger",
   (preResetLedger) =>
     Effect.runPromise(
@@ -351,7 +373,7 @@ it.each(["moltzap_registry_migrations", "sharness_registry_migrations"])(
           }),
         ).toBe(preResetReason);
         const ledger =
-          yield* sql`SELECT to_regclass('sharness_registry_ledger')::text AS ledger`;
+          yield* sql`SELECT to_regclass('sharness_registry_ledger_20261026')::text AS ledger`;
         expect(ledger[0]?.ledger).toBeNull();
         const process = yield* managedProcess(
           REGISTRY_BINARY,
@@ -412,7 +434,6 @@ it(
         const storage = makeRegistryStorage({
           sql,
           registrySignerPublicKey: setup.registrySignerPublicKey,
-          listPageSize: 100,
           operationTimeoutMilliseconds: 5_000,
         });
         const prepared = yield* prepareBootstrapAdmission(setup.origin);
@@ -425,19 +446,67 @@ it(
           storage,
         };
         const outcomes = yield* Effect.all(
-          [
+          Array.from({ length: CONTENDERS }, () =>
             verifyBootstrapRegistration(input).pipe(Effect.either),
-            verifyBootstrapRegistration(input).pipe(Effect.either),
-          ],
-          { concurrency: 2 },
+          ),
+          { concurrency: CONTENDERS },
         ).pipe(Effect.withClock(clockAt(prepared.expiresAt)));
         expect(
           outcomes.filter(Either.isRight).map((result) => result.right),
         ).toStrictEqual([prepared.request]);
         expect(
           outcomes.filter(Either.isLeft).map((result) => result.left),
-        ).toStrictEqual([new AuthenticationFailedError()]);
+        ).toStrictEqual(
+          Array.from(
+            { length: CONTENDERS - 1 },
+            () => new AuthenticationFailedError(),
+          ),
+        );
       }).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
     ),
+  180_000,
+);
+
+it.each([
+  { conflict: "key", refused: "key_already_registered" },
+  { conflict: "name", refused: "name_taken" },
+])(
+  "admits one concurrent registration for the same $conflict on PostgreSQL",
+  ({ conflict, refused }) => {
+    expect.hasAssertions();
+    return Effect.runPromise(
+      Effect.gen(function* () {
+        const setup = yield* makePostgreSqlRegistrySetup;
+        yield* startReadyRegistry(setup.environment, setup.origin);
+        const run = makeRegistryRunner(
+          setup.origin,
+          setup.registrySignerPublicKey,
+        );
+        const contenders = yield* conflict === "key"
+          ? prepareAgent("postgresql-race").pipe(Effect.map(sameKeyContenders))
+          : Effect.all(
+              Array.from({ length: CONTENDERS }, () =>
+                prepareAgent("postgresql-race"),
+              ),
+              { concurrency: CONTENDERS },
+            );
+        const results = yield* Effect.forEach(
+          contenders,
+          (contender) => callRegister(run, contender),
+          { concurrency: CONTENDERS },
+        );
+        expect(
+          results.filter((result) => result.kind === REGISTERED_KIND),
+        ).toHaveLength(1);
+        expect(
+          results.filter((result) => result.kind === refused),
+        ).toHaveLength(CONTENDERS - 1);
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(NodeFileSystem.layer),
+        Effect.provide(NodeHttpClient.layer),
+      ),
+    );
+  },
   180_000,
 );

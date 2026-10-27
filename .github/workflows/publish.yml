@@ -10,7 +10,17 @@ name: Publish to npm
 # manifest records its own content hash; the OpenClaw channel's also records
 # `sharnessHostCodeHash` (`scripts/release/host-code-hash.ts`), the hash of the
 # code OpenClaw loads for it. The release commit records every manifest. The
-# trigger is manual.
+# trigger is release-on-merge.yml after CI passes on main, or manual dispatch
+# for resets, resumes and start_new_version. The bump and the resume each
+# resolve both committed image input keys to signed indexes; the bump polls
+# for missing keys for up to 45 minutes, then fails before the release commit
+# with a rerun hint. After npm publication, `images` runs no repository install
+# or build: it tags the indexes the resume resolved with the release version,
+# then creates the GitHub release with the version's CHANGELOG.md section as
+# its notes and lists both digests after it, so the latest release always
+# names published images. Existing version tags are
+# checked and skipped on reruns.
+# After image tagging, dispatch sends the release version and digests to deployment.
 #
 # A release takes two runs, so npm's provenance names the commit whose tree
 # the tarballs were packed from. The dispatched run bumps: it writes the
@@ -23,7 +33,7 @@ name: Publish to npm
 # Each run splits into jobs by what they may touch. `build` installs, builds,
 # runs the pack gates and packs, with no OIDC token and no App token, so
 # nothing a dependency runs there can publish or push. `push` holds the
-# release App token and runs no repository code: it checks the release
+# release App token and runs no installed code: it checks the release
 # commit `build` made, pushes it with its tag, and dispatches the resume.
 # `publish` holds the OIDC token and runs no install or build: it checks the
 # tarballs `build` packed against the release commit's manifests and content
@@ -36,16 +46,32 @@ name: Publish to npm
 # npm and the release tags (unchanged while nothing is published at it and
 # the UTC day has not turned). Once the release commit is on main, any run
 # finds it, checks out its tree, and publishes whatever manifest version
-# there npm still lacks, however many commits landed since. A run on an
+# there npm still lacks and finishes image tags and release notes, however
+# many commits landed since. A run on an
 # older commit while the release commit is still the tip, such as a rerun of
 # the bump run, dispatches a fresh run rather than publishing; once main has
 # moved past the release commit, the run publishes and its provenance names
 # the dispatched commit instead. A release that can never complete is left behind by
 # dispatching with `start_new_version`, which mints the next version from the
 # tip instead.
+#
+# Prerequisites: a release GitHub App installed on this repository with
+# contents write and allowed to push main, and on social-harness/deployment
+# with contents write for the release dispatches; its client ID in the Actions
+# variable RELEASE_APP_CLIENT_ID and its private key in the Actions secret
+# RELEASE_APP_PRIVATE_KEY. npm publishes without a token, so each published
+# package lists this repository's publish.yml in the `release` environment as
+# a trusted publisher; a newly published package needs that entry first.
 on:
   workflow_dispatch:
     inputs:
+      gated_commit:
+        description: >-
+          Set by release-on-merge.yml to the commit whose CI passed. The run
+          mints a version only for that commit, while it is main's tip, and
+          only if the release gate still passes on it.
+        type: string
+        default: ""
       start_new_version:
         description: >-
           Abandon an incomplete release commit on main instead of resuming it
@@ -75,7 +101,9 @@ defaults:
 # Dependency order: each package comes after the siblings it depends on, which
 # the selection checks.
 env:
-  RELEASE_PACKAGES: identity router client openclaw-channel
+  RELEASE_PACKAGES: client openclaw-channel
+  IMAGE_CERTIFICATE_IDENTITY: https://github.com/social-harness/moltzap/.github/workflows/images.yml@refs/heads/main
+  IMAGE_CERTIFICATE_OIDC_ISSUER: https://token.actions.githubusercontent.com
 
 jobs:
   build:
@@ -85,11 +113,13 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      packages: read
     outputs:
       mode: ${{ steps.plan.outputs.mode }}
       version: ${{ steps.plan.outputs.version }}
       packages: ${{ steps.select.outputs.packages }}
       release-commit: ${{ steps.plan.outputs.release-commit }}
+      images: ${{ steps.resolve.outputs.images }}
     steps:
       # Full history: the plan step looks for the last release commit.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -113,6 +143,8 @@ jobs:
         id: plan
         env:
           START_NEW_VERSION: ${{ inputs.start_new_version }}
+          GATED_COMMIT: ${{ inputs.gated_commit }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           git fetch origin main --quiet
           RELEASE_LINE=$(git log origin/main --format='%H %s' | grep -m1 ' chore(release): moltzap@' || true)
@@ -136,6 +168,36 @@ jobs:
                 *) exit "$STATUS" ;;
               esac
             done
+            # A release is complete once both images carry its version tag and
+            # its release body lists the digest each tag names.
+            if [ -z "$MISSING" ]; then
+              BODY=""
+              if BODY=$(gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" --json body --jq .body 2>"$RUNNER_TEMP/release-error"); then
+                :
+              elif grep -qxF 'release not found' "$RUNNER_TEMP/release-error"; then
+                BODY=""
+              else
+                cat "$RUNNER_TEMP/release-error" >&2
+                exit 1
+              fi
+              COMPLETE=true
+              for service in registry router; do
+                image="ghcr.io/social-harness/$service"
+                STATUS=0
+                digest=$(scripts/release/ghcr-digest.sh "$image:$VERSION") || STATUS=$?
+                case $STATUS in
+                  0) grep -qF "$image@$digest" <<<"$BODY" || COMPLETE=false ;;
+                  1) COMPLETE=false ;;
+                  *) exit "$STATUS" ;;
+                esac
+              done
+              if [ "$COMPLETE" = false ]; then
+                for pkg in $RELEASE_PACKAGES; do
+                  VER=$(git show "$RELEASE_COMMIT:packages/$pkg/package.json" | jq -r .version)
+                  [ "$VER" != "$VERSION" ] || MISSING="$MISSING $pkg"
+                done
+              fi
+            fi
             MISSING=${MISSING# }
             if [ -n "$MISSING" ] && [ "$START_NEW_VERSION" = "true" ]; then
               echo "Abandoning release $VERSION from $RELEASE_COMMIT; not yet on npm: $MISSING"
@@ -145,7 +207,7 @@ jobs:
                 echo "mode=redispatch" >> "$GITHUB_OUTPUT"
                 exit 0
               fi
-              echo "Resuming release $VERSION from $RELEASE_COMMIT; not yet on npm: $MISSING"
+              echo "Resuming release $VERSION from $RELEASE_COMMIT; packages to finish: $MISSING"
               git checkout --quiet "$RELEASE_COMMIT"
               [ "$RELEASE_COMMIT" = "$GITHUB_SHA" ] || echo "::warning::main moved past the release commit $RELEASE_COMMIT; this run's provenance names $GITHUB_SHA"
               {
@@ -158,6 +220,18 @@ jobs:
             fi
           fi
 
+          if [ -n "$GATED_COMMIT" ]; then
+            if [ "$GITHUB_SHA" != "$GATED_COMMIT" ] || [ "$(git rev-parse origin/main)" != "$GITHUB_SHA" ]; then
+              echo "::notice::main moved past the gated commit $GATED_COMMIT; the newer commit's own CI run gates it."
+              echo "mode=skip" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            if [ "$(GATE_COMMIT=$GATED_COMMIT scripts/release/push-gate.sh)" = skip ]; then
+              echo "::notice::The release gate skipped $GATED_COMMIT; no new version will be released."
+              echo "mode=skip" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
           [ "$(git rev-parse origin/main)" = "$GITHUB_SHA" ] || {
             echo "ERROR: main moved past the dispatched commit $GITHUB_SHA; dispatch the release again from the tip"
             exit 1
@@ -171,25 +245,25 @@ jobs:
           echo "mode=bump" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - if: steps.plan.outputs.mode != 'redispatch'
+      - if: steps.plan.outputs.mode == 'bump' || steps.plan.outputs.mode == 'resume'
         run: pnpm install --frozen-lockfile
 
       # Package versions are never compiled into `dist`, so the build does not
       # depend on which packages the selection later moves to the version.
       - name: Build all packages
-        if: steps.plan.outputs.mode != 'redispatch'
+        if: steps.plan.outputs.mode == 'bump' || steps.plan.outputs.mode == 'resume'
         run: pnpm build
 
       # Recorded before the content hash, so the hash covers it. A resume
       # writes only the key the release commit's manifest already holds, so
       # its content hash is unchanged.
-      - name: Record emitted wire version in published Identity metadata
-        if: steps.plan.outputs.mode != 'redispatch'
-        working-directory: packages/identity
+      - name: Record emitted wire version in published Client metadata
+        if: steps.plan.outputs.mode == 'bump' || steps.plan.outputs.mode == 'resume'
+        working-directory: packages/client
         env:
           MODE: ${{ steps.plan.outputs.mode }}
         run: |
-          WIRE_VERSION=$(node --input-type=module -e 'import { WIRE_VERSION } from "@moltzap/identity"; console.log(WIRE_VERSION)')
+          WIRE_VERSION=$(node --input-type=module -e 'import { WIRE_VERSION } from "@moltzap/social-harness"; console.log(WIRE_VERSION)')
           jq --arg v "$WIRE_VERSION" --arg mode "$MODE" '
             if $mode == "bump" or has("sharnessWireVersion")
             then .sharnessWireVersion = $v else . end' package.json > tmp.json
@@ -199,11 +273,9 @@ jobs:
       # hash into their manifests. A resume rebuilt the release commit's tree,
       # so each package it still owes must hash to the value that commit
       # recorded; a mismatch means the rebuild would publish other code than
-      # the release commit describes. The example pins each @moltzap package
-      # it installs from npm to that package's manifest version, so a checkout
-      # of the release tag runs what that tag published.
+      # the release commit describes.
       - name: Choose the packages this run publishes
-        if: steps.plan.outputs.mode != 'redispatch'
+        if: steps.plan.outputs.mode == 'bump' || steps.plan.outputs.mode == 'resume'
         id: select
         env:
           MODE: ${{ steps.plan.outputs.mode }}
@@ -235,28 +307,54 @@ jobs:
               packages/openclaw-channel/package.json > tmp.json
             mv tmp.json packages/openclaw-channel/package.json
           fi
-          PINS='{}'
-          for pkg in $RELEASE_PACKAGES; do
-            PINS=$(jq --argjson pins "$PINS" '$pins + {(.name): .version}' "packages/$pkg/package.json")
-          done
-          jq --argjson pins "$PINS" \
-            '.dependencies |= with_entries(if (.key | startswith("@moltzap/")) then .value = $pins[.key] else . end)' \
-            examples/two-agents/package.json > tmp.json
-          mv tmp.json examples/two-agents/package.json
           pnpm install --no-frozen-lockfile --ignore-scripts
           echo "packages=$SELECTED" >> "$GITHUB_OUTPUT"
 
-      # The gates pack the four published packages and the NanoClaw adapter,
-      # whose gate proves it still compiles against the Client ABI in isolation
-      # (deployment's image build copies its source, not a tarball); Registry stays in its private image package; Identity and Router
-      # travel in every closure, and each gate is a boundary-check floor, so
-      # run-many cannot silently skip one. Each gate packs, installs and runs in
-      # its own temporary directory, on free loopback ports and with its own
-      # OpenClaw state, and pnpm shares its store safely between processes,
-      # so the gates run concurrently.
+      # Image input keys ignore what a release writes, so the bump and the
+      # resume of one release resolve the same indexes. The images job tags
+      # the ones this step passes on.
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        if: (steps.plan.outputs.mode == 'bump' || steps.plan.outputs.mode == 'resume') && steps.select.outputs.packages != ''
+      - name: Resolve the release service images
+        id: resolve
+        if: (steps.plan.outputs.mode == 'bump' || steps.plan.outputs.mode == 'resume') && steps.select.outputs.packages != ''
+        env:
+          DOCKER_CONFIG: ${{ runner.temp }}/anonymous-docker
+        run: |
+          mkdir -p "$DOCKER_CONFIG"
+          KEYS=$(pnpm --silent image:keys)
+          images='{}'
+          deadline=$((SECONDS + 45 * 60))
+          for service in registry router; do
+            key=$(jq -r --arg s "$service" '.[$s] | sub("^sha256:"; "")' <<<"$KEYS")
+            image="ghcr.io/social-harness/$service"
+            until digest=$(docker buildx imagetools inspect "$image:inputs-$key" --format '{{.Manifest.Digest}}'); do
+              if (( SECONDS >= deadline )); then
+                echo "ERROR: the images workflow must publish $service key $key and the ghcr.io/social-harness/{registry,router} packages must be public and pull anonymously; rerun once both conditions hold. Docs: https://docs.moltzap.xyz/spec/layer-interfaces#publication-and-versions" >&2
+                exit 1
+              fi
+              remaining=$((deadline - SECONDS))
+              echo "Waiting for $image:inputs-$key; $remaining seconds remain."
+              sleep "$((remaining < 30 ? remaining : 30))"
+            done
+            [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+            ref="$image@$digest"
+            docker buildx imagetools inspect "$ref" >/dev/null || {
+              echo "ERROR: the ghcr.io/social-harness/{registry,router} packages must be public and pull anonymously before release. Docs: https://docs.moltzap.xyz/spec/layer-interfaces#publication-and-versions" >&2
+              exit 1
+            }
+            cosign verify \
+              --certificate-identity "$IMAGE_CERTIFICATE_IDENTITY" \
+              --certificate-oidc-issuer "$IMAGE_CERTIFICATE_OIDC_ISSUER" "$ref"
+            images=$(jq -c --arg service "$service" --arg ref "$ref" '. + {($service): $ref}' <<<"$images")
+          done
+          echo "images=$images" >> "$GITHUB_OUTPUT"
+
+      # Pack gates install the published closures in isolated consumers.
+      # NanoClaw checks its Client ABI without packing the source-copied adapter.
       - name: Verify the published closure installs from tarballs
         if: steps.select.outputs.packages != ''
-        run: pnpm nx run-many -t test:pack --parallel=4
+        run: pnpm nx run-many -t test:pack,test:abi --parallel=4
 
       # The runner's pnpm install wired the husky hooks; the release commit
       # is made of generated output CI already gated, so the hooks stay out.
@@ -267,23 +365,13 @@ jobs:
       # fails the release. This job can push to main and mint the npm OIDC
       # token, so towncrier and its dependencies install only from hash-pinned
       # requirements.
-      - name: Regenerate docs and make the release commit
+      - name: Make the release commit
         if: steps.plan.outputs.mode == 'bump' && steps.select.outputs.packages != ''
         env:
           VERSION: ${{ steps.plan.outputs.version }}
           PACKAGES: ${{ steps.select.outputs.packages }}
           HUSKY: "0"
         run: |
-          pnpm docs:generate
-          # The CHANGELOG preamble predates per-package versions; this rewrite
-          # finds nothing to replace once a release commit has corrected it.
-          # shellcheck disable=SC2016 # The backticks are Markdown, not a substitution.
-          node -e '
-            const fs = require("node:fs");
-            const before = "Every published package\ncarries the same version in a release, and the release commit writes each\nsection below from the fragments in `changelog.d/`.";
-            const after = "A release publishes at\nits version only the packages that changed since their last published version;\nthe release commit lists them and writes each section below from the fragments\nin `changelog.d/`.";
-            fs.writeFileSync("CHANGELOG.md", fs.readFileSync("CHANGELOG.md", "utf8").replace(before, after));
-          '
           if ! grep -q "^## \[$VERSION\]" CHANGELOG.md; then
             grep -qxF '<!-- towncrier release notes start -->' CHANGELOG.md \
               || { echo "CHANGELOG.md lost its towncrier marker"; exit 1; }
@@ -296,9 +384,8 @@ jobs:
 
           git config user.name "moltzap-release[bot]"
           git config user.email "moltzap-release[bot]@users.noreply.github.com"
-          git add packages/*/package.json examples/two-agents/package.json \
-            pnpm-lock.yaml CHANGELOG.md changelog.d/ \
-            docs/ 'packages/**/MODULE.md' README.md
+          git add packages/*/package.json \
+            pnpm-lock.yaml CHANGELOG.md changelog.d/
           PUBLISHED=""
           for pkg in $PACKAGES; do
             PUBLISHED="$PUBLISHED$(jq -r '"- \(.name)@\(.version)"' "packages/$pkg/package.json")"$'\n'
@@ -357,8 +444,8 @@ jobs:
       contents: read
       actions: write
     steps:
-      # The release commit's parent; nothing here installs or runs repository
-      # code, and the checkout keeps no credentials.
+      # The release commit's parent; nothing here installs or runs
+      # installed code, and the checkout keeps no credentials.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -388,7 +475,7 @@ jobs:
           node --input-type=module - "$RUNNER_TEMP/changes" <<'JS'
           import { readFileSync } from "node:fs";
           const fields = readFileSync(process.argv[2], "latin1").split("\0");
-          const written = /^(packages\/[^/]+\/package\.json|examples\/two-agents\/package\.json|pnpm-lock\.yaml|CHANGELOG\.md|docs\/.+\.mdx?|packages\/.+\/MODULE\.md|README\.md)$/;
+          const written = /^(packages\/[^/]+\/package\.json|pnpm-lock\.yaml|CHANGELOG\.md)$/;
           const problems = [];
           for (let i = 0; i + 1 < fields.length; i += 2) {
             const [, newMode, , , status] = fields[i].split(/[ \t]/);
@@ -412,7 +499,7 @@ jobs:
           # shellcheck disable=SC2016 # The dollar signs are jq variables.
           RELEASE_FIELDS='del(.version, .sharnessContentHash, .sharnessHostCodeHash, .sharnessWireVersion)
             | (.dependencies // {}) |= with_entries(if (.key | startswith("@moltzap/")) then .value = "" else . end)'
-          for manifest in $(git diff --name-only "$GITHUB_SHA" "$COMMIT" -- 'packages/*/package.json' examples/two-agents/package.json); do
+          for manifest in $(git diff --name-only "$GITHUB_SHA" "$COMMIT" -- 'packages/*/package.json'); do
             BEFORE=$(git show "$GITHUB_SHA:$manifest" | jq -S "$RELEASE_FIELDS")
             AFTER=$(git show "$COMMIT:$manifest" | jq -S "$RELEASE_FIELDS")
             [ "$BEFORE" = "$AFTER" ] || { echo "ERROR: the release commit changes $manifest beyond the fields a release writes"; exit 1; }
@@ -424,7 +511,7 @@ jobs:
       - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         id: app-token
         with:
-          app-id: ${{ vars.RELEASE_APP_ID }}
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
           permission-contents: write
 
@@ -544,3 +631,95 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run publish.yml --repo "$GITHUB_REPOSITORY" --ref main
+
+  images:
+    needs: [build, publish]
+    environment: release
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      packages: write
+    outputs:
+      payload: ${{ steps.tag.outputs.payload }}
+    steps:
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      # `build` ran installed code, so the references it passes are checked
+      # for shape and signature before anything is tagged.
+      - name: Tag release indexes and record their digests
+        id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+          IMAGES: ${{ needs.build.outputs.images }}
+        run: |
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          registry=$(jq -r '.registry // ""' <<<"$IMAGES")
+          router=$(jq -r '.router // ""' <<<"$IMAGES")
+          [[ "$registry" =~ ^ghcr\.io/social-harness/registry@sha256:[a-f0-9]{64}$ &&
+            "$router" =~ ^ghcr\.io/social-harness/router@sha256:[a-f0-9]{64}$ ]] || {
+            echo "ERROR: build passed no Registry and Router digest references: $IMAGES" >&2
+            exit 1
+          }
+          REFS=$(printf '%s\n%s' "$registry" "$router")
+          while read -r ref; do
+            cosign verify \
+              --certificate-identity "$IMAGE_CERTIFICATE_IDENTITY" \
+              --certificate-oidc-issuer "$IMAGE_CERTIFICATE_OIDC_ISSUER" "$ref"
+          done <<<"$REFS"
+          while read -r ref; do
+            image=${ref%@*}
+            if digest=$(docker buildx imagetools inspect "$image:$VERSION" --format '{{.Manifest.Digest}}' 2>"$RUNNER_TEMP/inspect-error"); then
+              [[ "$ref" == "$image@$digest" ]] || {
+                echo "ERROR: $image:$VERSION already names $digest, not $ref" >&2
+                exit 1
+              }
+            elif grep -Eqi 'manifest unknown|not found' "$RUNNER_TEMP/inspect-error"; then
+              docker buildx imagetools create --tag "$image:$VERSION" "$ref"
+            else
+              cat "$RUNNER_TEMP/inspect-error" >&2
+              exit 1
+            fi
+          done <<<"$REFS"
+          notes="$RUNNER_TEMP/notes.md"
+          if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" --json body --jq .body > "$notes" 2>"$RUNNER_TEMP/release-error"; then
+            :
+          elif grep -qxF 'release not found' "$RUNNER_TEMP/release-error"; then
+            gh api "repos/$GITHUB_REPOSITORY/contents/CHANGELOG.md?ref=v$VERSION" \
+              -H "Accept: application/vnd.github.raw" > "$RUNNER_TEMP/CHANGELOG.md"
+            awk -v heading="## [$VERSION]" \
+              'index($0, heading) == 1 { keep = 1; next } keep && /^## / { exit } keep' \
+              "$RUNNER_TEMP/CHANGELOG.md" > "$notes"
+            printf '\n### Images\n' >> "$notes"
+            gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --verify-tag --notes-file "$notes"
+          else
+            cat "$RUNNER_TEMP/release-error" >&2
+            exit 1
+          fi
+          while read -r ref; do
+            grep -qF "$ref" "$notes" || printf '\n- `%s`\n' "$ref" >> "$notes"
+          done <<<"$REFS"
+          gh release edit "v$VERSION" --repo "$GITHUB_REPOSITORY" --notes-file "$notes"
+          payload=$(jq -c --arg version "$VERSION" '. + {version: $version}' <<<"$IMAGES")
+          echo "payload=$payload" >> "$GITHUB_OUTPUT"
+
+  dispatch:
+    needs: images
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions: {}
+    steps:
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: app-token
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: social-harness
+          repositories: deployment
+          permission-contents: write
+      - name: Notify deployment of the completed release
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PAYLOAD: ${{ needs.images.outputs.payload }}
+        run: |
+          jq -n --argjson payload "$PAYLOAD" '{event_type: "social-harness-released", client_payload: $payload}' \
+            | gh api --method POST repos/social-harness/deployment/dispatches --input -

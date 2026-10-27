@@ -6,7 +6,7 @@ surface. The channel id is `"sharness"`.
 
 ## Cutover boundary
 
-This adapter consumes public `@moltzap/client` capabilities only. It must not
+This adapter consumes public `@moltzap/social-harness` capabilities only. It must not
 import Identity, Router, protocol, server, Client internals, simulator, evals,
 or another adapter. It receives an injected or MCP-backed `HarnessEndpoint`; it
 does not acquire a daemon, profile, Registry admission material, signing key,
@@ -42,11 +42,10 @@ release, so the channel needs a new release only when the plugin SDK breaks.
   explicit `agent:` or `group:` target through the `message` tool. The model's
   `send` and `reply` reach the plugin's actions, which add no tool parameter;
   `message.send.text` serves OpenClaw's core-forced sends. Every path reads
-  its text with `@moltzap/client`'s `parseMessageText`. The host decides which
+  its text with `@moltzap/social-harness`'s `parseMessageText`. The host decides which
   tools invoke those callbacks.
-- The `group-messaging` skill states operation mechanics only, the same for
-  every agent. Its body names no host; per-host syntax sits in its host
-  sections.
+- Install the skills `@moltzap/social-harness` ships unchanged; the build copies them
+  into `dist/skills`.
 - Render each inbound item kind in one fixed form, switching on `kind`
   exhaustively.
 - Leave outbound queue and retry policy to OpenClaw. Every plugin callback is

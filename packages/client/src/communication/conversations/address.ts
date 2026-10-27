@@ -1,9 +1,10 @@
 /** @file Private address resolution from runtime names to immutable cards. */
 
-import type { Registry } from "@moltzap/identity/registry";
-import { AgentName, type VerifiedAgentCard } from "@moltzap/identity";
 import { type Context, Effect, type ParseResult, Schema } from "effect";
+import type { VerifiedAgentCard } from "../../identity/cards.js";
+import type { Registry } from "../../identity/registry/index.js";
 import { compareAscii } from "../../encoding/identifier.js";
+import { AgentName } from "../../identity/agents.js";
 import {
   AGENT_ADDRESS_PREFIX,
   AgentAddress,

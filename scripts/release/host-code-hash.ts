@@ -8,23 +8,24 @@
  * The release records this value in the OpenClaw channel's published
  * manifest as `sharnessHostCodeHash`. OpenClaw loads the channel and every
  * module the channel's JavaScript reaches, including modules of the
- * `@moltzap/*` siblings it imports, and nothing else of those siblings: the
+ * workspace siblings it imports, and nothing else of those siblings: the
  * channel imports only the Client root entry, never `./service` or the
  * `sharnessd` binary. A launcher compares two versions' values and restarts
  * OpenClaw only when they differ. The hash therefore covers every packed
  * file of the plugin package, plus each sibling module reachable from it by
  * static or dynamic import through the sibling's `exports` map. Manifests
- * hash without `version`, the recorded hashes, and `@moltzap/*` dependency
+ * hash without `version`, the recorded hashes, and workspace dependency
  * entries, so a sibling version bump with identical reachable code leaves it
  * unchanged.
  *
  * Run from the repository root after `pnpm build`. Exits 1 when packing or
  * extracting fails.
  */
-import { existsSync, readFileSync } from "node:fs";
+
+import { Either } from "effect";
+import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import path from "node:path";
-import ts from "typescript";
-import { FINAL_PACKAGE_DIRS } from "../architecture/boundary-contract.ts";
 import {
   digestOf,
   fileEntry,
@@ -33,15 +34,10 @@ import {
   packInto,
   withScratch,
 } from "./content-hash.ts";
-
-/** One file of one package in the module graph. */
-interface Module {
-  readonly name: string;
-  readonly relative: string;
-}
+import { moduleGraph } from "./module-graph.ts";
 
 /**
- * Pack `packages/DIR` and its `@moltzap/*` closure and hash the code a host
+ * Pack `packages/DIR` and its workspace dependency closure and hash the code a host
  * loads for it.
  * @param repo Repository root.
  * @param dir Directory name under `packages/`.
@@ -52,6 +48,9 @@ export function hostCodeHashOfPackage(
   dir: string,
 ): string | PackFailure {
   const directories = workspaceDirectories(repo);
+  if (!(directories instanceof Map)) {
+    return directories;
+  }
   const host = manifestName(repo, dir);
   return withScratch((scratch) => {
     const roots = new Map<string, string>();
@@ -63,53 +62,95 @@ export function hostCodeHashOfPackage(
       }
       roots.set(name, root);
     }
-    return hostCodeHashOfDirectories(host, roots);
+    return hostCodeHashOfDirectories(host, roots, new Set(directories.keys()));
   });
 }
 
 /**
  * Hash the host package's files and every sibling module they reach.
  * @param host The plugin package's npm name.
- * @param roots Extracted `package/` directory of the host and each sibling.
+ * @param roots Extracted `package/` directories in the host's runtime dependency closure.
+ * @param workspaceNames All workspace package names, whose pins are omitted in every dependency section.
  * @returns `sha256:` and the hex digest.
  */
 export function hostCodeHashOfDirectories(
   host: string,
   roots: ReadonlyMap<string, string>,
+  workspaceNames: ReadonlySet<string>,
 ): string {
   const hostRoot = roots.get(host) ?? "";
-  const pending: Module[] = packedFiles(hostRoot).map((relative) => ({
+  const seeds = packedFiles(hostRoot).map((relative) => ({
     name: host,
     relative,
   }));
-  const seen = new Set<string>();
-  const entries: string[] = [];
-  for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
-    const root = roots.get(next.name) ?? "";
-    const label = `${next.name}/${next.relative}`;
-    if (seen.has(label)) {
-      continue;
-    }
-    seen.add(label);
-    entries.push(
-      fileEntry(root, next.relative, label, { siblingPins: "drop" }),
-    );
-    pending.push(...importedModules(next, root, roots));
-  }
-  return digestOf(entries);
+  return digestOf(
+    moduleGraph(seeds, roots, {
+      conditions: ["node", "module-sync", "import", "default"],
+      all: false,
+    }).map((module) =>
+      fileEntry(
+        roots.get(module.name) ?? "",
+        module.relative,
+        `${module.name}/${module.relative}`,
+        { kind: "drop", names: workspaceNames },
+      ),
+    ),
+  );
 }
 
-function workspaceDirectories(repo: string): ReadonlyMap<string, string> {
-  return new Map(
-    FINAL_PACKAGE_DIRS.map((dir) => [manifestName(repo, dir), dir] as const),
+/** Inventory and manifest decoding failures use the CLI's existing failure channel. */
+function workspaceDirectories(repo: string): Map<string, string> | PackFailure {
+  return Either.match(
+    Either.try({
+      try: () => trackedWorkspaceDirectories(repo),
+      catch: (cause): PackFailure => ({
+        kind: "pack-failed",
+        message: String(cause),
+      }),
+    }),
+    { onLeft: (failure) => failure, onRight: (directories) => directories },
   );
+}
+
+function trackedWorkspaceDirectories(
+  repo: string,
+): Map<string, string> | PackFailure {
+  const result = spawnSync(
+    // eslint-disable-next-line sonarjs/no-os-command-from-path -- Git supplies the tracked workspace inventory.
+    "git",
+    ["ls-files", "-z", "--", "packages/*/package.json"],
+    { cwd: repo },
+  );
+  if (result.status !== 0) {
+    return {
+      kind: "pack-failed",
+      message: result.stderr?.toString("utf8") || String(result.error),
+    };
+  }
+  const files = new TextDecoder("utf-8", { fatal: true })
+    .decode(result.stdout)
+    .split("\0")
+    .filter((file) => /^packages\/[^/]+\/package\.json$/u.test(file));
+  const directories = new Map<string, string>();
+  for (const file of files) {
+    const dir = path.posix.basename(path.posix.dirname(file));
+    const name = manifestName(repo, dir);
+    if (directories.has(name)) {
+      return {
+        kind: "pack-failed",
+        message: `Duplicate workspace package name ${name} in ${file}`,
+      };
+    }
+    directories.set(name, dir);
+  }
+  return directories;
 }
 
 function manifestName(repo: string, dir: string): string {
   return String(readManifest(repo, dir)?.name);
 }
 
-/** The package and every `@moltzap/*` package its dependencies reach. */
+/** The package and every workspace dependency it reaches. */
 function siblingClosure(
   repo: string,
   name: string,
@@ -127,79 +168,12 @@ function siblingClosure(
     if (typeof dependencies === "object" && dependencies !== null) {
       pending.push(
         ...Object.keys(dependencies).filter((dependency) =>
-          dependency.startsWith("@moltzap/"),
+          directories.has(dependency),
         ),
       );
     }
   }
   return closure;
-}
-
-/** The modules a JavaScript file imports that resolve inside `roots`. */
-function importedModules(
-  module: Module,
-  root: string,
-  roots: ReadonlyMap<string, string>,
-): readonly Module[] {
-  if (!/\.[cm]?js$/u.test(module.relative)) {
-    return [];
-  }
-  const source = readFileSync(path.join(root, module.relative), "utf8");
-  return ts
-    .preProcessFile(source, true, true)
-    .importedFiles.map(({ fileName }) => resolve(module, fileName, roots))
-    .filter(
-      (target): target is Module =>
-        target !== undefined &&
-        existsSync(path.join(roots.get(target.name) ?? "", target.relative)),
-    );
-}
-
-function resolve(
-  from: Module,
-  specifier: string,
-  roots: ReadonlyMap<string, string>,
-): Module | undefined {
-  if (specifier.startsWith(".")) {
-    return {
-      name: from.name,
-      relative: path.posix.normalize(
-        path.posix.join(path.posix.dirname(from.relative), specifier),
-      ),
-    };
-  }
-  const parts = specifier.split("/");
-  const name = parts.slice(0, 2).join("/");
-  const root = roots.get(name);
-  if (root === undefined) {
-    return undefined;
-  }
-  const subpath = parts.length > 2 ? `./${parts.slice(2).join("/")}` : ".";
-  const target = exportTarget(root, subpath);
-  return target === undefined
-    ? undefined
-    : { name, relative: path.posix.normalize(target) };
-}
-
-/** The `import` target an `exports` entry gives production resolution. */
-function exportTarget(root: string, subpath: string): string | undefined {
-  const exports: unknown = readJson(path.join(root, "package.json"))?.exports;
-  if (typeof exports !== "object" || exports === null) {
-    return undefined;
-  }
-  return importCondition(
-    Object.entries(exports).find(([key]) => key === subpath)?.[1],
-  );
-}
-
-function importCondition(entry: unknown): string | undefined {
-  if (typeof entry === "string") {
-    return entry;
-  }
-  if (typeof entry !== "object" || entry === null || !("import" in entry)) {
-    return undefined;
-  }
-  return typeof entry.import === "string" ? entry.import : undefined;
 }
 
 function readManifest(
@@ -219,13 +193,13 @@ function readJson(file: string): Record<string, unknown> | undefined {
 if (import.meta.main) {
   const [dir] = process.argv.slice(2);
   if (dir === undefined) {
-    console.error("usage: host-code-hash.ts DIR");
+    process.stderr.write("usage: host-code-hash.ts DIR\n");
     process.exit(2);
   }
   const hash = hostCodeHashOfPackage(process.cwd(), dir);
   if (typeof hash !== "string") {
-    console.error(hash.message);
+    process.stderr.write(`${hash.message}\n`);
     process.exit(1);
   }
-  console.log(hash);
+  process.stdout.write(`${hash}\n`);
 }

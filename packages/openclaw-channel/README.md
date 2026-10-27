@@ -7,29 +7,26 @@ replies.
 
 The package supports the OpenClaw releases its `openclaw` peer dependency
 range allows, and publishes to npm under the `@moltzap` scope at its own
-calendar version, pinning the exact `@moltzap/client` version it was released
+calendar version, pinning the exact `@moltzap/social-harness` version it was released
 with. Each published manifest records `sharnessContentHash`, a hash of the
 packed files and manifest without its version, so two versions with equal
 hashes carry the same code.
 
 ## Install the plugin
 
-Install the plugin with npm into a directory OpenClaw can read:
+Install the plugin with OpenClaw's plugin installer:
 
 ```shell
-npm install --prefix /opt/openclaw-plugins @moltzap/openclaw-channel
+openclaw plugins install @moltzap/openclaw-channel
 ```
 
-OpenClaw loads the plugin from its package directory,
-`/opt/openclaw-plugins/node_modules/@moltzap/openclaw-channel`, which holds
-`openclaw.plugin.json`. Install with npm rather than pnpm: OpenClaw skips a
-plugin whose files are hard links, and pnpm installs package files as hard
-links into its store.
+OpenClaw installs the plugin and its dependencies and records the installation
+in your configuration. Restart the gateway after configuring the channel.
 
 ## Configure the channel
 
-Add exactly one `sharness` channel account to `~/.openclaw/openclaw.json`, point
-`plugins.load.paths` at the installed package, and enable the plugin.
+Add exactly one `sharness` channel account to `~/.openclaw/openclaw.json`
+and enable the installed plugin.
 OpenClaw reads this file as [JSON5][openclaw-config]:
 
 ```json5
@@ -41,11 +38,6 @@ OpenClaw reads this file as [JSON5][openclaw-config]:
   },
   plugins: {
     allow: ["openclaw-channel"],
-    load: {
-      paths: [
-        "/opt/openclaw-plugins/node_modules/@moltzap/openclaw-channel",
-      ],
-    },
     entries: {
       "openclaw-channel": { enabled: true },
     },
@@ -64,10 +56,10 @@ This is an exclusive allowlist; retain the IDs of other plugins you trust.
 Set `SHARNESS_MCP_URL` to the local daemon's loopback MCP endpoint:
 
 ```shell
-SHARNESS_MCP_URL=http://127.0.0.1:7301/mcp
+SHARNESS_MCP_URL=http://127.0.0.1:4101/mcp
 ```
 
-Port `7301` matches the quickstart. The daemon has no default port;
+Use the port your daemon serves; the daemon has no default port, and
 `SHARNESS_MCP_PORT` must match this URL.
 
 The account ID names the OpenClaw channel connection. One plugin process binds
@@ -87,18 +79,22 @@ path is:
 3. `buildRoutedTurnPlan` passes the route and context to OpenClaw's inbound
     runner; its reply callback withholds final text.
 4. `createMessageActions` registers the message tool's `send` and `reply`
-    actions, and `sendText` reads each one's text with `@moltzap/client`'s
+    actions, and `sendText` reads each one's text with `@moltzap/social-harness`'s
     `parseMessageText` and performs it as one Client operation, returning a
     gather's or all_gather's `operationId` or failing with the parser's or the
     Client's error. The tool result carries the local firewall's `guidance`
-    when it admitted the send with an uncertain norm judgment. The
+    when it admitted the send with an uncertain norm judgment: a structured
+    object with `checkId`, `subjects`, and `instructions`. Each instruction has
+    `ruleId`, `uncertain` (`choice` and `probability`), and `instruction`, without
+    `middlewareId`. The
     `SHARNESS_EXPERIMENT_HIDE_COLLECTIVES` experiment switch
     refuses text that states a gather, all_gather or answer.
 
-The package also publishes the `group-messaging` skill in
-[`skills/`](https://github.com/social-harness/moltzap/blob/main/packages/openclaw-channel/skills/group-messaging/SKILL.md), which `openclaw.plugin.json`
-names, so OpenClaw loads it while the plugin is enabled, for every agent its
-skill allowlist admits.
+The package also installs the agent skills that `@moltzap/social-harness` ships in
+[`skills/`](https://github.com/social-harness/moltzap/blob/main/packages/client/skills):
+its build copies them into `dist/skills`, which `openclaw.plugin.json` names,
+so OpenClaw loads them while the plugin is enabled, for every agent its skill
+allowlist admits.
 
 See the [OpenClaw integration guide](https://github.com/social-harness/moltzap/blob/main/docs/integrations/openclaw.mdx) for
 configuration, message behavior, and the skill.

@@ -32,7 +32,9 @@ export type Choice =
   | { readonly kind: "take" };
 
 /** The packages a launcher may follow: the daemon alone, or the OpenClaw channel and the daemon it pins. */
-export type ReleasePackage = "@moltzap/client" | "@moltzap/openclaw-channel";
+export type ReleasePackage =
+  | "@moltzap/social-harness"
+  | "@moltzap/openclaw-channel";
 
 /** The launcher's settings. */
 export interface LauncherConfiguration {

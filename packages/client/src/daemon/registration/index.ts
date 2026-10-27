@@ -1,19 +1,20 @@
 /** @file Crash-recoverable daemon identity binding over Registry and endpoint storage. */
 
-import type { VerifiedAgentCard } from "@moltzap/identity";
-import {
-  Registry,
-  RegistryRegisterRequest,
-  type RegistryRegisterResult,
-} from "@moltzap/identity/registry";
 import { Data, Effect, Fiber, Schema } from "effect";
 import type { StoreOpening } from "../../communication/store/index.js";
 import type { HarnessMcpOperations } from "../../harness/mcp/index.js";
+import type { VerifiedAgentCard } from "../../identity/cards.js";
 import type {
   DaemonBootstrap,
   DaemonConfigurationError,
 } from "../bootstrap.js";
 import { exactParseOptions } from "../../encoding/exact.js";
+import { registrationAdmissionRefusalMessage } from "../../harness/protocol/index.js";
+import {
+  RegistryRegisterRequest,
+  type RegistryRegisterResult,
+} from "../../identity/registry/contract.js";
+import { Registry } from "../../identity/registry/index.js";
 import {
   bindCard,
   DaemonRegistrationPersistenceError,
@@ -40,6 +41,20 @@ export {
 export class DaemonRegistrationUpstreamError extends Data.TaggedError(
   "DaemonRegistrationUpstreamError",
 ) {}
+
+/** A refused credential cannot succeed when the same request is retried. */
+export class DaemonRegistrationRefusedError extends Data.TaggedError(
+  "DaemonRegistrationRefusedError",
+) {
+  readonly reason = "admission-refused";
+  /**
+   * The operator remedy contains no credential or upstream implementation detail.
+   * @returns The final refusal and the credential replacement instructions.
+   */
+  override get message(): string {
+    return registrationAdmissionRefusalMessage;
+  }
+}
 
 type RegistrationRequest = Parameters<HarnessMcpOperations["register"]>[0];
 
@@ -144,6 +159,7 @@ export const registerDaemonIdentity = (input: {
 }): Effect.Effect<
   RegistryRegisterResult,
   | DaemonRegistrationUpstreamError
+  | DaemonRegistrationRefusedError
   | DaemonRegistrationPersistenceError
   | DaemonRegistrationRepresentationError
   | DaemonConfigurationError,
@@ -156,7 +172,13 @@ export const registerDaemonIdentity = (input: {
       request,
       admissionCredential,
       signingAuthority: input.bootstrap.signingAuthority,
-    }).pipe(Effect.mapError(upstreamFailure));
+    }).pipe(
+      Effect.mapError((error) =>
+        error._tag === "AuthenticationFailedError"
+          ? new DaemonRegistrationRefusedError()
+          : upstreamFailure(),
+      ),
+    );
     if (result.kind === "registered") {
       if (
         !registrationMatches(result.agentCard, input.request, input.bootstrap)

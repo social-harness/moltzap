@@ -3,11 +3,6 @@
  * composition, and the assembly that binds the phases into one engine.
  */
 
-import {
-  AgentCard,
-  AgentSigningAuthority,
-  wireVersions,
-} from "@moltzap/identity";
 import { Data, Deferred, Duration, Effect, Schema, type Scope } from "effect";
 import type { FirewallSendError } from "../../firewall/outcome/index.js";
 import type {
@@ -30,6 +25,9 @@ import {
   decodeCanonical,
   encodeCanonical,
 } from "../../encoding/canonical-json.js";
+import { AgentCard } from "../../identity/cards.js";
+import { AgentSigningAuthority } from "../../identity/keys.js";
+import { wireVersions } from "../../identity/wire-version.js";
 import {
   type DecodedOuterBody,
   type MessageAddressInput,

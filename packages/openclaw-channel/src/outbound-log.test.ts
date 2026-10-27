@@ -9,7 +9,11 @@ import type {
 } from "openclaw/plugin-sdk/channel-contract";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/channel-core";
 import { live as it } from "@effect/vitest";
-import { CollectiveError, InboundItem, type SendResult } from "@moltzap/client";
+import {
+  CollectiveError,
+  InboundItem,
+  type SendResult,
+} from "@moltzap/social-harness";
 import { Data, Effect, Encoding, Fiber, Schema, Stream } from "effect";
 import {
   buildChannelInboundEventContext,

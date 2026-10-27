@@ -2,10 +2,11 @@
  * @file Package ESLint configuration: the shared workspace preset plus the
  * rules that keep envelope signing in its owning modules.
  */
+import { plugin as guard } from "eslint-plugin-agent-code-guard";
 import { packageEslintConfig } from "../../eslint.shared.js";
 
 /** Test files, which sign peer envelopes directly. */
-const testFiles = ["src/**/*.test.ts", "src/__tests__/**"];
+const testFiles = ["src/**/*.test.ts", "src/**/__tests__/**"];
 
 /**
  * Keeps `communication/conversations/outbox.ts` the one production module that signs
@@ -60,13 +61,13 @@ const sealingSigner = {
 
 export default [
   ...packageEslintConfig({
-    projects: [
-      "./tsconfig.json",
-      "./tsconfig.test.json",
-      "./tsconfig.integration.json",
-    ],
+    projects: ["./tsconfig.json", "./tsconfig.test.json"],
     tsconfigRootDir: import.meta.dirname,
   }),
+  {
+    ...guard.configs.integrationTests,
+    files: ["integration/**/*.ts"],
+  },
   soleOuterSigner,
   sealingSigner,
 ];

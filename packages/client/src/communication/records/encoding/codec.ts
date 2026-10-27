@@ -1,20 +1,10 @@
 /** @file Client protocol hashes, deterministic evidence, and Router envelopes. */
 
-import {
-  type AgentId,
-  type AgentSigningAuthority,
-  type LiveSignedMessage,
-  MessageId,
-  type MessageId as MessageIdValue,
-  SealedBody,
-  SignedMessage,
-  type SignedMessage as SignedMessageValue,
-  type VerifiedAgentCard,
-  type VerifiedSignedMessage,
-  WIRE_VERSION,
-} from "@moltzap/identity";
 import { Effect, Encoding, Schema } from "effect";
 import { createHash, randomBytes } from "node:crypto";
+import type { AgentId } from "../../../identity/agents.js";
+import type { VerifiedAgentCard } from "../../../identity/cards.js";
+import type { AgentSigningAuthority } from "../../../identity/keys.js";
 import {
   type ClientRepresentationError,
   decodeCanonical,
@@ -25,6 +15,16 @@ import {
   decodeCanonicalBase64Url,
   isStrictlyAscending,
 } from "../../../encoding/identifier.js";
+import { WIRE_VERSION } from "../../../identity/wire-version.js";
+import { SealedBody } from "../../envelope/sealed-body.js";
+import {
+  type LiveSignedMessage,
+  MessageId,
+  type MessageId as MessageIdValue,
+  SignedMessage,
+  type SignedMessage as SignedMessageValue,
+  type VerifiedSignedMessage,
+} from "../../envelope/signed-message.js";
 import {
   ActionCore,
   ActionHash,

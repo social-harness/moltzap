@@ -1,5 +1,5 @@
 /** @file Instinct's email acceptance boundary; Client owns receive and recovery. */
-import type { InboundDelivery } from "@moltzap/client";
+import type { InboundDelivery } from "@moltzap/social-harness";
 import {
   FetchHttpClient,
   HttpClient,

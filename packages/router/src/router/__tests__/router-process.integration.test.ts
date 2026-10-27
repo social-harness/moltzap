@@ -1,7 +1,7 @@
 /** @file Black-box Router binary tests for framing, configuration, bounds, and shutdown. */
 import { HttpClient } from "@effect/platform";
 import { NodeHttpClient } from "@effect/platform-node";
-import { WIRE_VERSION } from "@moltzap/identity";
+import { WIRE_VERSION } from "@moltzap/social-harness";
 import { Data, Duration, Effect, Option } from "effect";
 import { type ChildProcess, spawn } from "node:child_process";
 import { createPublicKey, generateKeyPairSync } from "node:crypto";
@@ -571,6 +571,15 @@ const assertPreAuthenticationEnvelopes = (port: number) =>
     { concurrency: 1, discard: true },
   );
 
+/**
+ * The Router prints its listening line only after binding `origin`'s port,
+ * so another process answering on a released reservation cannot pass for it.
+ */
+const announcedListener = (runningProcess: RunningProcess, origin: URL) =>
+  runningProcess
+    .logs()
+    .includes(`sharness-router listening on ${origin.origin} (`);
+
 const waitForHealth = (runningProcess: RunningProcess, origin: URL) =>
   Effect.gen(function* () {
     const deadline = Date.now() + STARTUP_TIMEOUT_MS;
@@ -597,7 +606,8 @@ const waitForHealth = (runningProcess: RunningProcess, origin: URL) =>
       );
       if (
         Option.isSome(response) &&
-        response.value.status === NO_CONTENT_STATUS
+        response.value.status === NO_CONTENT_STATUS &&
+        announcedListener(runningProcess, origin)
       ) {
         return response.value;
       }
@@ -685,10 +695,10 @@ const routerBinaryBehavior = Effect.gen(function* () {
 
   yield* stopProcess(router);
   expect(router.logs()).toContain(
-    `sharness-router listening on ${origin.origin}`,
+    `sharness-router listening on ${origin.origin} (`,
   );
   expect(router.logs()).toContain(`WIRE_VERSION ${WIRE_VERSION}`);
-  expect(router.logs()).toMatch(/\(package \S+;/u);
+  expect(router.logs()).toMatch(/\(WIRE_VERSION \S+\)/u);
   expect(router.logs().match(/sharness-router listening on/gu)).toHaveLength(1);
   expect(
     router.child.exitCode !== null || router.child.signalCode !== null,

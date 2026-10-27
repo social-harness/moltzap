@@ -3,7 +3,10 @@
   "compilerOptions": {
     "outDir": "dist",
     "tsBuildInfoFile": "./dist/tsconfig.tsbuildinfo",
-    "rootDir": "src"
+    "rootDir": "src",
+    "customConditions": [
+      "sharness-internal"
+    ]
   },
   "include": [
     "src/**/*.ts"
@@ -13,11 +16,12 @@
     "src/**/*.spec.ts",
     "src/**/*.types-check.ts",
     "src/**/__tests__",
-    "dist"
+    "dist",
+    "src/test.ts"
   ],
   "references": [
     {
-      "path": "../identity"
+      "path": "../client"
     }
   ]
 }

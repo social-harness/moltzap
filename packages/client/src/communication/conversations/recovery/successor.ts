@@ -7,8 +7,9 @@
  * vouch for it.
  */
 
-import type { AgentId, SignedMessage } from "@moltzap/identity";
 import { Effect } from "effect";
+import type { AgentId } from "../../../identity/agents.js";
+import type { SignedMessage } from "../../envelope/signed-message.js";
 import type {
   RouterIngressDisposition,
   RouterWorkerIngress,

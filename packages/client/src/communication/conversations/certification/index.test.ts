@@ -1,20 +1,8 @@
 /** @file Real N4 fixed-post certification through four durable endpoint engines. */
 
-import type { RegistryLookupResult } from "@moltzap/identity/registry";
 import { FileSystem } from "@effect/platform";
 import { NodeFileSystem } from "@effect/platform-node";
 import { scopedLive as it, scoped as itOnTestClock } from "@effect/vitest";
-import {
-  AgentCard,
-  type AgentSigningAuthority,
-  Ed25519PublicKey,
-  LIVE_WIRE_VERSIONS,
-  SignedMessage,
-  type VerifiedAgentCard,
-  WIRE_VERSION,
-} from "@moltzap/identity";
-import { WireVersions } from "@moltzap/identity/test";
-import { RouterInstanceId } from "@moltzap/router";
 import {
   Cause,
   Deferred,
@@ -32,6 +20,7 @@ import {
 } from "effect";
 import { generateKeyPairSync } from "node:crypto";
 import { describe, expect } from "vitest";
+import type { RegistryLookupResult } from "../../../identity/registry/contract.js";
 import type { AddressRegistryPort } from "../address.js";
 import { advanceClock, untilLive } from "../../../__tests__/advance-clock.js";
 import {
@@ -48,6 +37,17 @@ import {
   decodeCanonical,
   encodeCanonical,
 } from "../../../encoding/canonical-json.js";
+import { AgentCard, type VerifiedAgentCard } from "../../../identity/cards.js";
+import {
+  type AgentSigningAuthority,
+  Ed25519PublicKey,
+} from "../../../identity/keys.js";
+import {
+  LIVE_WIRE_VERSIONS,
+  WIRE_VERSION,
+  WireVersions,
+} from "../../../identity/wire-version.js";
+import { SignedMessage } from "../../envelope/signed-message.js";
 import {
   type ActionCertifiedRecord as ActionCertifiedRecordValue,
   type ActionProposal,
@@ -72,6 +72,7 @@ import {
   verifyMembershipDescriptor,
 } from "../../records/index.js";
 import { MessageAddressInput } from "../../records/values.js";
+import { RouterInstanceId } from "../../router/api/contract.js";
 import {
   type RouterIngressDisposition,
   type RouterTailAnchor,
@@ -2857,17 +2858,18 @@ interface ForwardTarget {
 }
 
 /**
- * A transmit that spends 100 ms in transit between beginning and completing
- * its outbox row, one transmit at a time as the real worker sends. A transmit
- * that waited for the one before it then finds the row inactive and forwards
- * nothing.
- * @param transmits Counts every transmit.
+ * A transmit held until the test releases it, one transmit at a time as the
+ * real worker sends. A transmit that waits for a completed row finds it
+ * inactive and forwards nothing.
+ * @param transmits Counts every worker send attempt.
  * @param target Store and Router queue, once the harness exists.
+ * @param release Completes when both drains have attempted the held row.
  * @returns A transmit wrapper for the scripted worker.
  */
-function serializedSlowTransmit(
+function serializedHeldTransmit(
   transmits: Ref.Ref<number>,
   target: Deferred.Deferred<ForwardTarget>,
+  release: Deferred.Deferred<undefined>,
 ) {
   const transmitUnder =
     (recoveryGate: Effect.Semaphore) => (messageId: string) =>
@@ -2875,7 +2877,11 @@ function serializedSlowTransmit(
         Effect.zipRight(Deferred.await(target)),
         Effect.flatMap(({ store, outbound }) =>
           recoveryGate.withPermits(1)(
-            forwardStoredOutbound(store, outbound, messageId, "100 millis"),
+            Deferred.await(release).pipe(
+              Effect.zipRight(
+                forwardStoredOutbound(store, outbound, messageId),
+              ),
+            ),
           ),
         ),
       );
@@ -2890,10 +2896,10 @@ function serializedSlowTransmit(
 
 /**
  * A local send's drain and the background drain run at once over the same
- * queue head. Both transmit it, and the outbox row still goes out once. The
- * first transmit holds the gate on a TestClock sleep, and the second counts
- * itself before it takes the gate, so both transmits are counted before the
- * clock moves.
+ * queue head. Both attempt it, and the outbox row still goes out once. The
+ * first transmit holds the worker gate until the second attempts the same
+ * row. Releasing it and awaiting a drain settles both attempts without
+ * advancing the clock into an uncertified proposal's resend schedule.
  */
 function concurrentDrainsSendEachOutboxOnce(): Effect.Effect<
   void,
@@ -2903,8 +2909,9 @@ function concurrentDrainsSendEachOutboxOnce(): Effect.Effect<
   return Effect.gen(function* () {
     const transmits = yield* Ref.make(0);
     const target = yield* Deferred.make<ForwardTarget>();
+    const release = yield* Deferred.make<undefined>();
     const harness = yield* makeProtocolHarness({
-      authorSend: yield* serializedSlowTransmit(transmits, target),
+      authorSend: yield* serializedHeldTransmit(transmits, target, release),
     });
     const author = yield* requireAt(harness.engines, 0, "endpoint engine");
     const store = yield* requireAt(harness.stores, 0, "endpoint store");
@@ -2921,11 +2928,13 @@ function concurrentDrainsSendEachOutboxOnce(): Effect.Effect<
     if (held === undefined) {
       return yield* Effect.dieMessage("the raced envelope was not stored");
     }
-    yield* advanceClock(Duration.seconds(1));
+    yield* Deferred.succeed(release, undefined);
+    yield* author.drainOutbound.pipe(Effect.orDie);
+    yield* author.drainOutbound.pipe(Effect.orDie);
     const delivered = yield* Queue.takeAll(harness.outbound);
-    expect(
-      [...delivered].filter((message) => message.messageId === held.messageId),
-    ).toHaveLength(1);
+    expect([...delivered].map((message) => message.messageId)).toEqual([
+      held.messageId,
+    ]);
     expect(
       (yield* store.recover().pipe(Effect.orDie)).outboundMessages,
     ).toEqual([]);

@@ -4,10 +4,6 @@
  * verify.
  */
 
-import {
-  SignedMessage,
-  type SignedMessage as SignedMessageValue,
-} from "@moltzap/identity";
 import { Effect, type ParseResult, Schema } from "effect";
 import type {
   EndpointRecovery,
@@ -16,6 +12,10 @@ import type {
   StoredOutboundMessage,
 } from "../store/index.js";
 import { decodeCanonical } from "../../encoding/canonical-json.js";
+import {
+  SignedMessage,
+  type SignedMessage as SignedMessageValue,
+} from "../envelope/signed-message.js";
 import {
   ActionCore,
   type ActionHash,

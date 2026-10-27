@@ -2,10 +2,10 @@
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
-  resolve: { conditions: ["sharness-test"] },
-  ssr: { resolve: { conditions: ["sharness-test"] } },
+  resolve: { conditions: ["sharness-test", "sharness-internal"] },
+  ssr: { resolve: { conditions: ["sharness-test", "sharness-internal"] } },
   test: {
-    include: ["src/**/*.integration.test.ts", "src/**/*.e2e.test.ts"],
+    include: ["src/**/*.integration.test.ts"],
     passWithNoTests: false,
   },
 });

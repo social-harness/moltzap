@@ -103,6 +103,12 @@ function request(
 }
 
 const invalidCalls = [
+  { name: "search_agents", arguments: {}, path: ["agentId"] },
+  {
+    name: "search_agents",
+    arguments: { agentId: `agt_${"A".repeat(22)}`, agentName: "bob" },
+    path: ["agentName"],
+  },
   { name: "status", arguments: { unexpected: true }, path: ["unexpected"] },
   { name: "read_event", arguments: { eventId: "bad" }, path: ["eventId"] },
   { name: "acknowledge_delivery", arguments: {}, path: ["deliveryToken"] },
@@ -393,8 +399,41 @@ const fieldDescriptionsSchema = Schema.Record({
   value: Schema.Struct({ description: Schema.String }),
 });
 
+const checksInlineLookupSelector = () =>
+  Effect.gen(function* () {
+    const handler = yield* acquireHandler({
+      ...operations,
+      protocolActive: () => true,
+    });
+    const response = yield* request(handler, "tools/list", {});
+    const catalog = yield* Schema.decodeUnknown(catalogSchema)(response.result);
+    const search = catalog.tools.find((tool) => tool.name === "search_agents");
+
+    expect(search?.inputSchema).not.toHaveProperty("$ref");
+    const alternatives = yield* Schema.decodeUnknown(
+      Schema.Array(
+        Schema.Struct({
+          type: Schema.Literal("object"),
+          required: Schema.Array(Schema.String),
+        }),
+      ),
+    )(search?.inputSchema.anyOf);
+    expect(alternatives).toHaveLength(2);
+    expect(alternatives.map((schema) => schema.required)).toContainEqual([
+      "agentId",
+    ]);
+    expect(alternatives.map((schema) => schema.required)).toContainEqual([
+      "agentName",
+    ]);
+  });
+
 // @agent-code-guard/regression-only: descriptions expose identifier, retry and pagination intent to tool consumers.
 describe("MCP tool discoverability", () => {
+  it(
+    "lists an inline exact lookup selector for search_agents",
+    checksInlineLookupSelector,
+  );
+
   it("describes every tool and the key input fields", () =>
     Effect.gen(function* () {
       const inactive = yield* acquireHandler(operations);

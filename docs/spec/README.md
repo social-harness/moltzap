@@ -33,8 +33,7 @@ experimental semantic checks of the endpoint's personal firewall (L3
 Personal Firewalls): the Client
 implementation of local guidance, bidirectional message checks and retained
 decisions. Its architecture decision is approved; broader
-real-agent qualification remains pending. Configuration UX and authenticated
-human approval are deferred. It does not change the readiness of existing
+real-agent qualification remains pending. Configuration UX remains deferred. It does not change the readiness of existing
 interfaces below.
 
 ## Implementation readiness
@@ -45,8 +44,8 @@ protocol, and daemon representation cuts are ready.
 
 | Slice | Normative owners | State |
 |---|---|---|
-| Relocate Identity to `packages/identity` and rename it `@moltzap/identity` | `identity.md`, `identity-representation.md`, `layer-interfaces.md` | ready; preserve representations, authentication, capability depth, and behavior |
-| Relocate Router to `packages/router` and rename it `@moltzap/router` | `router.md`, `router-representation.md`, `layer-interfaces.md` | ready; preserve wire behavior and move restart recovery above Router |
+| Maintain Identity in the Client library | `identity.md`, `identity-representation.md`, `layer-interfaces.md` | ready; preserve representations, authentication, capability depth, and behavior |
+| Maintain the private Router process in `packages/router` | `router.md`, `router-representation.md`, `layer-interfaces.md` | ready; preserve wire behavior and move restart recovery above Router |
 | Endpoint history, durability, catch-up, and Router re-anchor | `conversation-history.md`, `harness/tasks.md`, `router.md` | ready; Client owns the exact canonical evidence, nested transport, fixed limits, genesis anchor, and private hashes |
 | Daemon process and one state-dependent `/mcp` | `harness/daemon.md`, `management.md` | ready; process configuration, SQLite ownership, extension listen adapter, and closed management DTO semantics are exact |
 | `HarnessEndpoint` and adapter migration | `harness/client.md`, `harness/output.md`, `harness/ingress.md`, `harness/channels.md`, `management.md` | ready; explicit agent/group send, stable addressed delivery, stock host callbacks, and MCP-only management |
@@ -58,20 +57,22 @@ Client work must not use compatibility shims or semantic reinterpretation.
 
 The final workspace contains exactly these five package products:
 
-- `@moltzap/identity`;
+- `@moltzap/social-harness`;
+- `@moltzap/registry`;
 - `@moltzap/router`;
-- `@moltzap/client`;
 - `@moltzap/openclaw-channel`;
 - `@moltzap/nanoclaw-channel`.
 
-[`layer-interfaces.md`](./layer-interfaces.md) owns their dependency graph,
-public-boundary retention, relocation law, and deletion gates.
+[`layer-interfaces.md` → Exact package graph](./layer-interfaces.md#exact-package-graph),
+[Library entries](./layer-interfaces.md#library-entries), and
+[Publication and versions](./layer-interfaces.md#publication-and-versions)
+own the package boundaries, exports, and releases.
 
 ## Gate 1 chapters
 
 | Document | Normative ownership |
 |---|---|
-| `identity.md` | L1 identities, immutable AgentCards, sealed bodies, Registry bootstrap, AuthenticatedHttp, deep Effect capabilities, configuration, lookup, and list |
+| `identity.md` | L1 identities, immutable AgentCards, sealed bodies, Registry bootstrap, AuthenticatedHttp, deep Effect capabilities, configuration, and exact lookup |
 | `identity-representation.md` | Exact L1 refined values, signatures, sealed bodies, Registry JSON, authentication profiles, bounds, and HTTP envelopes |
 | `router.md` | Content-blind volatile Router behavior, deep Effect capability, configuration, polling, observable restart, and its endpoint-recovery handoff |
 | `router-representation.md` | Exact L2 values, request/result JSON, PollCursor, representation limits, and HTTP envelopes |
@@ -85,6 +86,7 @@ public-boundary retention, relocation law, and deletion gates.
 | `harness/client.md` | Exact addressed public runtime capability and management-absence boundary |
 | `harness/channels.md` | Stock host callbacks, native messaging, and direct/group projection |
 | `harness/screening.md` | L3 Personal Firewalls: deterministic endpoint checks and local firewall decisions |
+| `norms.md` | Shared norms (proposed): a convention, agreed in ordinary messages and applied in each member's L3 firewall with `policy_update`; distinct from the GENESIS and POST L4 norms |
 | `enforcement.md` | L5 Social Institutions: certified-record evidence and ordinary-agent monitoring, institutions, and governance with no privileged imports, credentials, or history path |
 | `layer-interfaces.md` | Exact five-package DAG, type ownership, external-consumer boundary, migration gates, and cross-layer laws |
 
@@ -123,12 +125,12 @@ AgentId and signature bytes while logical hashes exclude evidence maps.
   advances the shared source-owned `WIRE_VERSION` once for every
   participating process; a path/package rename alone does not change bytes.
 - Client retains hash domain v2. The runtime initializes or reopens database
-  schema 10 and uses the pinned draft MCP Events profile. Earlier state requires
+  schema 13 and uses the pinned draft MCP Events profile. Earlier state requires
   an explicit reset; numbered forward migrations follow the
   [daemon persistence contract](./harness/daemon.md#persistence).
 - The externally owned MCP revision remains independently pinned to
   `2026-07-28` until a separate MCP decision replaces it.
-- The npm package version is a release namespace of its own: four packages
+- The npm package version is a release namespace of its own: two packages
   publish, each at its own calendar version, while `@moltzap/nanoclaw-channel` stays private, per
   [`layer-interfaces.md`](./layer-interfaces.md) → Publication and versions.
   It never implies a wire, MCP, or persisted-schema compatibility fact.
