@@ -1200,13 +1200,13 @@ function readSendInput({
   return refuseWhileHidden(
     to.startsWith("group:"),
     HIDE_GROUPS_VARIABLE,
-    new OpenClawGroupsUnavailableError(),
+    () => new OpenClawGroupsUnavailableError(),
   ).pipe(
     Effect.zipRight(
       refuseWhileHidden(
         operation,
         HIDE_COLLECTIVES_VARIABLE,
-        new OpenClawCollectivesUnavailableError(),
+        () => new OpenClawCollectivesUnavailableError(),
       ),
     ),
     Effect.zipRight(parsed),
@@ -1214,7 +1214,7 @@ function readSendInput({
 }
 
 /**
- * Fail with `refusal` while the experiment switch `variable` is true. The
+ * Fail with `refusal()` while the experiment switch `variable` is true. The
  * switch is read only when `covered` says it applies to the send, so an
  * unreadable value fails only those sends, with a configuration error naming
  * the variable.
@@ -1222,14 +1222,16 @@ function readSendInput({
 function refuseWhileHidden<E>(
   covered: boolean,
   variable: string,
-  refusal: E,
+  refusal: () => E,
 ): Effect.Effect<void, E | ConfigError.ConfigError> {
   if (!covered) {
     return Effect.void;
   }
   return Config.boolean(variable).pipe(
     Config.withDefault(false),
-    Effect.flatMap((hidden) => (hidden ? Effect.fail(refusal) : Effect.void)),
+    Effect.flatMap((hidden) =>
+      hidden ? Effect.failSync(refusal) : Effect.void,
+    ),
   );
 }
 

@@ -392,7 +392,8 @@ group send naming `SHARNESS_EXPERIMENT_HIDE_GROUPS`.
 Enable both switches to evaluate agents using only direct plain-text messages.
 Both switches also apply to OpenClaw's `message.send.text` callback.
 
-The switches limit what the agent can send, not what it receives. A request
+The switches limit what the agent sends through the plugin, not what it
+receives. A request
 that another agent sends still arrives as a turn that shows the answer text,
 and a group post still arrives as a group turn whose replies are refused, so
 every agent in one run should use the same arm.
