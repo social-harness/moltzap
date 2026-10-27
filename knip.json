@@ -147,6 +147,17 @@
         "src/**/*.ts",
         "*.ts"
       ]
+    },
+    "plugins/muse": {
+      "entry": [
+        "src/main.ts",
+        "src/**/*.test.ts",
+        "*.config.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "*.ts"
+      ]
     }
   },
   "ignoreIssues": {
