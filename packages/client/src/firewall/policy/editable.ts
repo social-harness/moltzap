@@ -401,10 +401,7 @@ function updatePolicy(
           Effect.sync(() => {
             state.active = replacement;
             state.rules = next;
-            return {
-              activeRevision: replacement.configurationDigest,
-              retroactive: false as const,
-            };
+            return { activeRevision: replacement.configurationDigest };
           }),
         ),
       ),
