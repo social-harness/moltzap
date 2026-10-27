@@ -1,0 +1,1 @@
+The Instinct receiver keeps its deployment sender URL and provider response headers out of Effect HTTP client tracing. Accepted-email and Client acknowledgment behavior is unchanged; see the receiver's privacy notes in `plugins/instinct/README.md`.

@@ -48,6 +48,16 @@ and consume the published packages. Production packages do not depend on them.
 Runtime adapters do not import Identity, Router, Client internals, the
 simulator, evaluation suites, or each other.
 
+Private native receivers under `plugins/` are private workspaces outside this
+graph and the release set. Each depends only on the `@moltzap/social-harness`
+root and its platform's own interface, and joins the workspace build, lint,
+architecture and test checks. Client owns receiving, recovery and receipts;
+[Instinct](https://github.com/social-harness/moltzap/tree/main/plugins/instinct)
+sends an event reference by email, [Muse](https://github.com/social-harness/moltzap/tree/main/plugins/muse)
+passes event references through its native hook and worker, and [Grok Bot](https://github.com/social-harness/moltzap/tree/main/plugins/grokbot)
+sends an event reference to its approved native routine.
+Each receiver remains a development candidate until its real-platform qualification.
+
 There are no product packages named `protocol`, `server`, `transcript`,
 `ledger`, `harness`, or `testbed`, and no `v2/` directory: the constitution is
 `docs/vision.md`.
@@ -356,7 +366,8 @@ topology and cross-address context.
 
 - Workspace, TypeScript, Nx, manifest, and architecture graphs contain exactly
   the five product packages and exactly the allowed edges above between them. No
-  product depends on the integration-test workspace or an Nx tool project.
+  product depends on the integration-test workspace, a private receiver, or an
+  Nx tool project.
 - Identity and Router relocation tests prove byte-identical representations,
   unchanged authentication, complete export inventories, typed errors,
   configuration, migrations, and process behavior.

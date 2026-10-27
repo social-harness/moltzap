@@ -8,6 +8,7 @@ packages:
   - "tests/*"
   - "images/*-agent"
   - "images/tests"
+  - "plugins/*"
 
 catalog:
   "@chughtapan/safer-architecture-lsp": 0.3.1

@@ -77,7 +77,7 @@ boundary choice updates its public specification before implementation.
 
 ## Architecture checks
 
-`pnpm lint` runs `arch:check` for every package through
+`pnpm lint` runs `arch:check` for every package and private receiver through
 `safer-architecture-lsp check .`. Run `pnpm arch:check` from the repository root
 to analyze every package on its own. Successful analysis exits with status 0;
 findings exit 1, and a project that cannot be analyzed exits 2.
@@ -87,7 +87,7 @@ budgets, domains, and entrypoints. Exceptions are `safer-arch-ignore` directives
 they cover. List them from the repository root:
 
 ```bash
-rg -n "safer-arch-ignore" packages/*/src
+rg -n "safer-arch-ignore" packages/*/src plugins/*/src
 ```
 
 Expected output: matching source paths, line numbers, and directives.

@@ -204,6 +204,7 @@ export function rootEslintConfig(tsconfigRootDir: string) {
         "packages/**",
         "tests/**",
         "images/**",
+        "plugins/**",
       ],
     },
     packageIgnores,
