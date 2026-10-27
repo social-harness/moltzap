@@ -17,6 +17,13 @@ sections are the codebase's history as MoltZap.
 
 <!-- towncrier release notes start -->
 
+## [2026.1027.4] - 2026-10-27
+
+### Fixed
+
+- The launcher no longer walks the whole running release on every start, so
+  agents start in seconds rather than minutes.
+
 ## [2026.1027.3] - 2026-10-27
 
 ### Added
