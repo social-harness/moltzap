@@ -22,6 +22,7 @@ import {
   type CollectiveNorms,
   collectiveNorms,
   credentialsPolicy,
+  openRequestsPolicy,
   plainLanguagePolicy,
 } from "../rules/index.js";
 import {
@@ -296,6 +297,10 @@ function outgoing(
       return Effect.succeed(plainLanguagePolicy(entry));
     case "collective-norms":
       return Effect.map(bundle, (norms) => norms.outgoing(entry.facilitator));
+    case "open-requests":
+      return Effect.succeed(openRequestsPolicy());
+    case "acknowledgements":
+      return Effect.succeed(acknowledgementsPolicy());
     default:
       return entry satisfies never;
   }
