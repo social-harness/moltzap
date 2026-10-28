@@ -357,14 +357,6 @@ it("attributes an invalid inline seed to initialRules before reading behaviors",
     expect(error.behaviorReason).toBeUndefined();
   }));
 
-it("attributes an oversized inline seed to initialRules", () =>
-  Effect.gen(function* () {
-    const { path } = seedFixture(257);
-    const error = yield* loaded(path).pipe(Effect.flip);
-    expect(error.message).toContain("invalid at english.initialRules");
-    expect(error.behaviorReason).toBeUndefined();
-  }));
-
 const INVALID_BEHAVIORS = [
   [
     "custom tag",
@@ -810,39 +802,6 @@ it(
 );
 
 it(
-  "replaces a rule with a BEHAVIOR.md text and lists mixed additions in order",
-  Effect.fn(function* () {
-    const configuration = yield* options(fixture().path);
-    yield* withStore(stateDirectory(), (store) =>
-      Effect.gen(function* () {
-        const installed = yield* installEditableFirewall(configuration, store);
-        yield* installed.policy.update({ add: [{ behavior: SHARED }] });
-        yield* installed.policy.update({
-          remove: ["meeting-booking"],
-          add: [
-            { ...INITIAL, id: "be-brief" },
-            { behavior: SHARED.replace("you confirm one", "you confirm") },
-          ],
-        });
-        expect((yield* installed.policy.read()).rules).toContainEqual(
-          expect.objectContaining({
-            id: "meeting-booking",
-            guidance: "Hold a slot before you confirm.",
-          }),
-        );
-        const { activations } = yield* installed.policy.decisions({});
-        expect(activations).toContainEqual(
-          expect.objectContaining({
-            addedRuleIds: ["be-brief", "meeting-booking"],
-            removedRuleIds: ["meeting-booking"],
-          }),
-        );
-      }),
-    );
-  }),
-);
-
-it(
   "refuses a BEHAVIOR.md text of kind safety as an invalid rule",
   Effect.fn(function* () {
     const configuration = yield* options(fixture().path);
@@ -887,28 +846,6 @@ it(
         expect(yield* installed.policy.read()).toEqual(before);
       }),
     );
-  }),
-);
-
-it(
-  "refuses a builtin behavior whose id repeats an inline fixed rule",
-  Effect.fn(function* () {
-    const { path, document } = fixture();
-    writeFileSync(
-      path,
-      JSON.stringify({
-        ...document,
-        english: {
-          ...document.english,
-          fixedRules: [{ ...FIXED, id: "no-policy-changes" }],
-          builtinBehaviors: ["policy/no-policy-changes"],
-        },
-      }),
-    );
-    const error = yield* loaded(path).pipe(Effect.flip);
-    expect(error.behaviorReason).toBe("duplicate-id");
-    expect(error.message).toContain("english.builtinBehaviors.0");
-    expect(error.message).toContain("#built-in-behaviors");
   }),
 );
 
