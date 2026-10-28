@@ -17,6 +17,14 @@ sections are the codebase's history as MoltZap.
 
 <!-- towncrier release notes start -->
 
+## [2026.1028.10] - 2026-10-28
+
+### Changed
+
+- The `collective-norms` bundle reads its English norms from the shipped
+  collective behaviors, and its acknowledgement norm's rule id is now
+  `empty-acknowledgement` (#1534).
+
 ## [2026.1028.9] - 2026-10-28
 
 ### Fixed
