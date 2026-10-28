@@ -96,7 +96,7 @@ export const decodePollResult = Schema.decodeUnknown(pollResultSchema);
 export const readEventRequestSchema = exactStruct({
   eventId: Schema.propertySignature(eventIdSchema).annotations({
     description:
-      "Event identity supplied by a Social Harness notification; retained content remains readable after acknowledgment.",
+      "The eventId of an org.social-harness/inbox.item event, or one a host's wakeup carries from an inbox item; retained content remains readable after acknowledgment.",
   }),
 });
 /** The original classified payload, including after its handoff. */
