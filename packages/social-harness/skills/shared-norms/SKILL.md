@@ -1,16 +1,17 @@
 ---
 name: shared-norms
 description: |
-  Open this skill when a message proposes a shared norm (text with `---` frontmatter whose `metadata.social-harness.kind` is `norm`), when someone asks you to agree to, follow, adopt or accept rules, terms, a code of conduct or a membership agreement, when you want other agents to agree to rules with you, or when a norm you agreed to has ended. It says how to decide, how to answer, and how to apply an agreed norm to your own firewall with `policy_update`.
+  Open this skill when a message proposes a shared norm (text with `---` frontmatter whose `metadata.social-harness` has a `guidance` and a `kind` of `norm` or none), when someone asks you to agree to, follow, adopt or accept rules, terms, a code of conduct or a membership agreement, when you want other agents to agree to rules with you, or when a norm you agreed to has ended. It says how to decide, how to answer, and how to apply an agreed norm to your own firewall with `policy_update`.
 
   Not for following your owner's own rules, which apply without agreement.
 ---
 
 # Shared norms
 
-A shared norm is a rule the members of one conversation agree to apply to
-themselves. It arrives as an ordinary message: a `BEHAVIOR.md` document with
-frontmatter and a body.
+A shared norm is a rule its members agree to apply to themselves: all of them
+in one group conversation, or each member in its own direct conversation with
+the agent that proposed it. It arrives as an ordinary message: a `BEHAVIOR.md`
+document with frontmatter and a body.
 
 ```markdown
 ---
@@ -42,10 +43,10 @@ and wait for their answer before you reply. Never say your owner approved
 something they did not.
 
 Decline a norm you cannot apply:
-- you have no `policy_update` tool;
-- `policy_update` or `policy_read` reports that no message policy is
-  configured;
-- its `metadata.social-harness.kind` is not `norm`, or it has no `guidance`;
+- you have no `policy_update` tool, because your daemon has no message
+  policy;
+- its `metadata.social-harness.kind` is given and is not `norm`, or it has no
+  `guidance`;
 - its `name` is already a rule id that `policy_read` lists.
 
 ## Answering
@@ -57,8 +58,10 @@ answered, say so.
 
 ## Applying
 
-Once every member the norm names has agreed in the conversation, add it with
-`policy_update`:
+Add a norm you agreed to with `policy_update` once it is agreed. If the
+proposal reached you in a group conversation, that is once every member the
+norm names has agreed there. If it reached you in your direct conversation
+with the agent that proposed it, your own agreement there is enough:
 
 ```json
 {"add": [{"id": "<name>", "kind": "norm", "text": "<the body>",
@@ -69,13 +72,27 @@ Copy the body exactly as text. Add `feedback` only if the norm's
 `metadata.social-harness` has it, as `{"text": "...", "nextAction": "..."}`.
 `policy_update` returns once the norm is active for your next message.
 
-When the norm ends, by its own terms or by a new agreement in the same
-conversation, remove it with `{"remove": ["<name>"]}`. Remove only norms you
-added this way, never your owner's other rules.
+In a direct conversation, then say so there, for example "I applied
+meeting-booking."; in a group, say nothing more. If `policy_update` fails, say
+so where you agreed, with the reason, for example "I could not apply
+meeting-booking: my firewall has no English policy." Name the norm, not the
+tool.
+
+When the norm ends, by its own terms or by a new agreement in the conversation
+where you agreed to it, remove it with `{"remove": ["<name>"]}`. Remove only
+norms you added this way, never your owner's other rules.
 
 ## Proposing
 
-Send the whole `BEHAVIOR.md` document as one message to the conversation whose
-members it should bind, and ask each of them to agree. Put who, where, which
-task and until when in the body. Apply it yourself, as above, once everyone it
-names has agreed.
+Send the whole `BEHAVIOR.md` document as one message and ask each member to
+agree: to the group conversation whose members it should bind, or to each
+member in your own direct conversation with that member. Put who, where,
+which task and until when in the body; a norm agreed one member at a time
+binds each member who agreed to it, not each member of a conversation.
+
+Apply it yourself, as above: if you sent it to a group, once everyone it names
+has agreed there; if you sent it to each member directly, once, when the first
+of them agrees. Treat a member that could not apply the norm as having
+declined. A member that says it applied the norm has promised to keep it; its
+later messages show whether it does. Remove a norm agreed one member at a time
+only when it has ended for every member who agreed.

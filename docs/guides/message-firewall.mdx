@@ -130,10 +130,20 @@ state directory holds English rules from an earlier policy, but the file no
 longer configures `english`. Restore the `english` block, or start the daemon
 with a fresh state directory.
 
-### sharnessd stops naming `SHARNESS_DECISION_PROVIDER_KEY_FILE`
+<a id="decision-provider-key-file" />
 
-The policy uses `jev` and the key file is missing or unreadable. Set the
-variable to a readable file, or switch the policy to `{"kind": "unavailable"}`.
+### `SHARNESS_DECISION_PROVIDER_KEY_FILE must name a readable file`
+
+The policy uses `jev`, and the variable is unset or names a file the daemon
+cannot read. Set it to a readable file that holds only the provider's API key,
+or switch the policy to `{"kind": "unavailable"}`.
+
+<a id="decision-provider-key" />
+
+### `SHARNESS_DECISION_PROVIDER_KEY_FILE must contain one key without inner whitespace`
+
+The key file holds more than the key, such as a label or a second line. Leave
+only the key in the file; a trailing newline is fine.
 
 ## Next steps
 
