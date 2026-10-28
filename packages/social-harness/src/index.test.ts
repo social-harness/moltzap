@@ -284,13 +284,13 @@ describe("public collective response input", () => {
     expect(Schema.decodeUnknownSync(SendInput)(input)).toEqual(input);
   });
 
-  it("rejects a response that names a request id", () => {
-    expect(
-      decodingFails(SendInput, {
-        to: "agent:bob-agent",
-        collectiveResponse: { id: collectiveId, action: "decline" },
-      }),
-    ).toBe(true);
+  it("decodes a response that names the request it answers", () => {
+    const input = {
+      to: "agent:bob-agent",
+      collectiveResponse: { id: collectiveId, action: "decline" },
+    };
+
+    expect(Schema.decodeUnknownSync(SendInput)(input)).toEqual(input);
   });
 
   it("rejects a response without a conversation", () => {
