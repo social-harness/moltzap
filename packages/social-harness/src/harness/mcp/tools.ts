@@ -461,7 +461,7 @@ const toolListings = {
   },
   policy_update: {
     description:
-      'Add or remove editable English rules, such as a shared norm the agent agreed to: add takes whole rules or {"behavior": "<BEHAVIOR.md text>"}, which adds a shared norm\'s BEHAVIOR.md exactly as proposed; remove takes rule ids, and removing and adding one id replaces it. Fails with invalid-rule for an added id that already exists, a BEHAVIOR.md that is malformed or over 64 KiB, a removed id that does not exist, or more than 256 rules; fixed-rule for a fixed rule\'s id; and not-configured when the message policy has no english block. Returns the new activeRevision once the rules are active; changes are not retroactive: admitted guidance, held items and bound sends remain unchanged.',
+      'Add or remove editable English rules, such as a shared norm the agent agreed to: add takes whole rules or {"behavior": "<BEHAVIOR.md text>"}, which adds a shared norm\'s BEHAVIOR.md exactly as proposed; remove takes rule ids, and removing and adding one id replaces it. Fails with invalid-rule for an added id that already exists, a BEHAVIOR.md that does not start with its --- frontmatter line, lacks name, description or guidance, is not kind norm, or is over 64 KiB, a removed id that does not exist, or more than 256 rules; fixed-rule for a fixed rule\'s id; and not-configured when the message policy has no english block. Returns the new activeRevision once the rules are active; changes are not retroactive: admitted guidance, held items and bound sends remain unchanged.',
     inputSchema: policyUpdateInput,
     outputSchema: policyUpdateOutput,
     annotations: { readOnlyHint: false, openWorldHint: false },

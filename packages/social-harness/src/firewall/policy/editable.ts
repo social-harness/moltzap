@@ -34,8 +34,11 @@ import {
   type RuleDescription,
 } from "../evaluator/index.js";
 import { localGuidanceImpersonationRule } from "../rules/index.js";
-import { decodeBehavior, MAXIMUM_BEHAVIOR_BYTES } from "./behavior.js";
-import { migrateAutonomyRule } from "./document/index.js";
+import {
+  decodeBehavior,
+  MAXIMUM_BEHAVIOR_BYTES,
+  migrateAutonomyRule,
+} from "./document/index.js";
 
 type FixedRules = typeof policyReadSchema.fields.fixedRules.Type;
 const englishId = "org.social-harness/english";
@@ -374,13 +377,17 @@ function resolvedChange(change: typeof policyUpdateSchema.Type) {
   );
 }
 
+/** A shared norm is kind `norm`, so a peer's text never adds a rule that holds uncertain messages. */
 function behaviorRule(text: string) {
   const bytes = Buffer.from(text, "utf8");
   if (bytes.length > MAXIMUM_BEHAVIOR_BYTES) {
     return Effect.fail(invalidRule());
   }
   return decodeBehavior(bytes, () => invalidRule()).pipe(
-    Effect.map(({ rule }) => rule),
+    Effect.filterOrFail(
+      (rule) => rule.kind === "norm",
+      () => invalidRule(),
+    ),
   );
 }
 

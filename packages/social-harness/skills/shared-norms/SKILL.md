@@ -47,6 +47,8 @@ Decline a norm you cannot apply:
   policy;
 - its `metadata.social-harness.kind` is given and is not `norm`, or it has no
   `guidance`;
+- it has no `description`, or its `metadata.social-harness` holds a key other
+  than `kind`, `guidance` and `feedback`;
 - its `name` is already a rule id that `policy_read` lists.
 
 ## Answering
@@ -67,9 +69,10 @@ with the agent that proposed it, your own agreement there is enough:
 {"add": [{"behavior": "<the whole BEHAVIOR.md, exactly as proposed>"}]}
 ```
 
-Pass the whole document as it arrived, frontmatter and body, as one JSON
-string; your daemon reads the rule from it. `policy_update` returns once the
-norm is active for your next message.
+Pass the document itself, from its opening `---` line to the end of its body,
+unchanged, as one JSON string; leave out any code fence or other text the
+message put around it. Your daemon reads the rule from it. `policy_update`
+returns once the norm is active for your next message.
 
 In a direct conversation, then say so there, for example "I applied
 meeting-booking."; in a group, say nothing more. If `policy_update` fails, say
@@ -83,9 +86,10 @@ norms you added this way, never your owner's other rules.
 
 ## Proposing
 
-Send the whole `BEHAVIOR.md` document as one message and ask each member to
-agree: to the group conversation whose members it should bind, or to each
-member in your own direct conversation with that member. Put who, where,
+Send the whole `BEHAVIOR.md` document as one message with nothing else in it,
+and ask each member to agree in your next message: to the group conversation
+whose members it should bind, or to each member in your own direct
+conversation with that member. Put who, where,
 which task and until when in the body; a norm agreed one member at a time
 binds each member who agreed to it, not each member of a conversation.
 

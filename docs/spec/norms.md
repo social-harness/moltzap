@@ -40,7 +40,8 @@ part of the rule.
 
 ## Agreeing
 
-1. **Propose.** A member sends the norm in an ordinary message: to the group
+1. **Propose.** A member sends the norm, and nothing else, in an ordinary
+   message: to the group
    conversation whose members it should bind, or to each member in its own
    direct conversation.
 2. **Decide.** Each member's firewall checks that message like any other. An
@@ -75,6 +76,8 @@ An agent declines a norm it cannot apply:
   list;
 - it has no firewall, or no English policy;
 - the norm is not of kind `norm`, or has no `guidance`;
+- it is not a behavior that maps to a rule: for example it has no
+  `description`, or `metadata.social-harness` holds another key;
 - its `name` is already a rule id in the agent's policy.
 
 An agent removes only rules it added for a norm.

@@ -15,8 +15,8 @@ import { readCredential } from "../../daemon/credentials.js";
 import { Daemon } from "../../daemon/index.js";
 import { FirewallPolicyError } from "../evaluator/index.js";
 import { localGuidanceImpersonationRule } from "../rules/index.js";
-import { MAXIMUM_BEHAVIOR_BYTES } from "./behavior.js";
 import { policyInstallationError } from "./compose.js";
+import { MAXIMUM_BEHAVIOR_BYTES } from "./document/index.js";
 import {
   decodeMessagePolicy,
   firewallInstallation,
@@ -72,13 +72,13 @@ description: How members book a meeting.
 metadata:
   social-harness:
     kind: norm
-    guidance: Hold a slot before confirming it.
+    guidance: Hold a slot before you confirm one.
     feedback:
       text: Hold the slot first.
       nextAction: revise
 ---
 
-Hold a slot before confirming it.
+Each member holds a slot before confirming it.
 `;
 
 function seedFixture(count: number) {
@@ -789,8 +789,8 @@ it(
         expect((yield* installed.policy.read()).rules).toContainEqual({
           id: "meeting-booking",
           kind: "norm",
-          text: "Hold a slot before confirming it.",
-          guidance: "Hold a slot before confirming it.",
+          text: "Each member holds a slot before confirming it.",
+          guidance: "Hold a slot before you confirm one.",
           feedback: { text: "Hold the slot first.", nextAction: "revise" },
         });
         const { activations } = yield* installed.policy.decisions({});
@@ -806,6 +806,59 @@ it(
 );
 
 it(
+  "replaces a rule with a BEHAVIOR.md text and lists mixed additions in order",
+  Effect.fn(function* () {
+    const configuration = yield* options(fixture().path);
+    yield* withStore(stateDirectory(), (store) =>
+      Effect.gen(function* () {
+        const installed = yield* installEditableFirewall(configuration, store);
+        yield* installed.policy.update({ add: [{ behavior: SHARED }] });
+        yield* installed.policy.update({
+          remove: ["meeting-booking"],
+          add: [
+            { ...INITIAL, id: "be-brief" },
+            { behavior: SHARED.replace("you confirm one", "you confirm") },
+          ],
+        });
+        expect((yield* installed.policy.read()).rules).toContainEqual(
+          expect.objectContaining({
+            id: "meeting-booking",
+            guidance: "Hold a slot before you confirm.",
+          }),
+        );
+        const { activations } = yield* installed.policy.decisions({});
+        expect(activations.at(-1)).toEqual(
+          expect.objectContaining({
+            addedRuleIds: ["be-brief", "meeting-booking"],
+            removedRuleIds: ["meeting-booking"],
+          }),
+        );
+      }),
+    );
+  }),
+);
+
+it(
+  "refuses a BEHAVIOR.md text of kind safety as an invalid rule",
+  Effect.fn(function* () {
+    const configuration = yield* options(fixture().path);
+    yield* withStore(stateDirectory(), (store) =>
+      Effect.gen(function* () {
+        const installed = yield* installEditableFirewall(configuration, store);
+        const before = yield* installed.policy.read();
+        const error = yield* installed.policy
+          .update({
+            add: [{ behavior: SHARED.replace("kind: norm", "kind: safety") }],
+          })
+          .pipe(Effect.flip);
+        expect(error.reason).toBe("invalid-rule");
+        expect(yield* installed.policy.read()).toEqual(before);
+      }),
+    );
+  }),
+);
+
+it(
   "refuses a BEHAVIOR.md text without frontmatter or over 64 KiB as an invalid rule",
   Effect.fn(function* () {
     const configuration = yield* options(fixture().path);
@@ -814,7 +867,9 @@ it(
         const installed = yield* installEditableFirewall(configuration, store);
         const before = yield* installed.policy.read();
         const unframed = yield* installed.policy
-          .update({ add: [{ behavior: "Hold a slot before confirming it." }] })
+          .update({
+            add: [{ behavior: "Each member holds a slot before confirming it." }],
+          })
           .pipe(Effect.flip);
         const oversized = yield* installed.policy
           .update({

@@ -8,6 +8,7 @@ import {
   Schedule,
   Schema,
 } from "effect";
+import { createHash } from "node:crypto";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Nonblocking descriptor opens let fstat reject special files without waiting for a writer.
 import { constants } from "node:fs";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Configuration reads the configured policy file before the daemon composes its platform services.
@@ -19,7 +20,6 @@ import {
   editableDocumentSchema,
   makeJevDecisionProvider,
 } from "../evaluator/index.js";
-import { decodeBehavior, MAXIMUM_BEHAVIOR_BYTES } from "./behavior.js";
 import {
   type BehaviorFailure,
   type CredentialReader,
@@ -27,7 +27,12 @@ import {
   type MessagePolicyConfigurationFailure,
   type PolicyConfiguration,
 } from "./configuration.js";
-import { decodeMessagePolicy, type MessagePolicy } from "./document/index.js";
+import {
+  decodeBehavior,
+  decodeMessagePolicy,
+  MAXIMUM_BEHAVIOR_BYTES,
+  type MessagePolicy,
+} from "./document/index.js";
 
 /** Larger than any document of 256 editable rules and the fixed rules beside them. */
 const MAXIMUM_POLICY_BYTES = 1_048_576;
@@ -168,7 +173,8 @@ function readBehavior(root: string, directory: string, path: string) {
       MAXIMUM_BEHAVIOR_BYTES,
       refused,
     );
-    return yield* decodeBehavior(bytes, refused);
+    const rule = yield* decodeBehavior(bytes, refused);
+    return { rule, digest: createHash("sha256").update(bytes).digest("hex") };
   });
 }
 
