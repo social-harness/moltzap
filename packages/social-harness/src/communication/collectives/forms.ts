@@ -11,6 +11,7 @@ import {
 } from "../conversations/errors.js";
 import {
   AgentAddress,
+  type GroupAddress,
   JsonValue,
   MessageAddressInput,
   type PostId,
@@ -123,22 +124,30 @@ const CollectiveOperation = Schema.Union(
 /** A validated collective operation. */
 export type CollectiveOperation = typeof CollectiveOperation.Type;
 
+/** The request an answer names: the `col_` id its `collectiveRequest` item carries. */
+const answeredRequest = {
+  id: Schema.optionalWith(CollectiveId, { exact: true }),
+};
+
 /** An `accept` answer, the only one that carries content. */
 export const AcceptResponse = exactStruct({
   action: Schema.Literal("accept"),
   content: AnswerContent,
+  ...answeredRequest,
 });
 
 /** A `decline` answer. */
 export const DeclineResponse = exactStruct({
   action: Schema.Literal("decline"),
+  ...answeredRequest,
 });
 
 /**
- * A member's answer to the one request open in the conversation it is sent
- * to: the requester's direct conversation for a gather, the group for an
- * all_gather. It is MCP's `ElicitResult`; only `accept` carries content,
- * valid against the request's schema.
+ * A member's answer to a request open in the conversation it is sent to: the
+ * requester's direct conversation for a gather, the group for an all_gather.
+ * `id` names the request; without it the answer goes to the one request open
+ * there. It is MCP's `ElicitResult`; only `accept` carries content, valid
+ * against the request's schema.
  */
 const CollectiveResponse = Schema.Union(AcceptResponse, DeclineResponse);
 /** A validated collective response. */
@@ -181,12 +190,18 @@ const unreachableMembers = Schema.NonEmptyArray(
 );
 
 /**
- * What a completed send returns: a collecting operation names its id, and
- * `guidance` carries the local firewall's advice on the admitted send, such
- * as a norm judgment the decision provider left unsettled.
+ * What a completed send returns: a collecting operation names its id, and a
+ * response the id of the request it answered. A plain message and a response
+ * each create one post, and name it by `postId`, the id `read_conversation`
+ * records carry and, for a plain message, the recipients' `multicast` items,
+ * and by `address`, its conversation's canonical address. `guidance` carries
+ * the local firewall's advice on the admitted send, such as a norm judgment
+ * the decision provider left unsettled.
  */
 export interface SendResult {
   readonly operationId?: CollectiveId;
+  readonly postId?: PostId;
+  readonly address?: AgentAddress | GroupAddress;
   readonly guidance?: CheckedGuidance;
 }
 
@@ -302,7 +317,7 @@ type FixedFailureKind = Exclude<
 const fixedFailureText: Record<FixedFailureKind, string> = {
   "request-none": "reply failed: no question is open in this conversation",
   "request-ambiguous":
-    "reply failed: more than one question is open in this conversation, and answering one of several is not supported",
+    "reply failed: more than one question is open in this conversation, so the reply must name the id of the one it answers",
   "request-answered": "reply failed: the question was already answered",
   "request-expired": "reply failed: the question's deadline has passed",
   "deadline-passed":
@@ -351,15 +366,20 @@ export class CollectiveEmitError extends Data.TaggedError(
 /**
  * A gather, all_gather or answer was refused. The message is what a host
  * hands its model as the tool error: the failed action and its cause, naming
- * each unreachable member or failing field. The operation id stays in the
- * error's data, not its message.
+ * each unreachable member or failing field, and for an answer that named no
+ * request while several were open, each open request's id. The operation id
+ * stays in the error's data, not its message.
  */
 export class CollectiveError extends Data.TaggedError("CollectiveError")<{
   readonly id: CollectiveId;
   readonly failure: CollectiveFailure;
+  readonly openIds?: readonly CollectiveId[];
 }> {
   override get message(): string {
-    return describeCollectiveFailure(this.failure);
+    const text = describeCollectiveFailure(this.failure);
+    return this.openIds === undefined
+      ? text
+      : `${text}: ${this.openIds.join(", ")}`;
   }
 }
 

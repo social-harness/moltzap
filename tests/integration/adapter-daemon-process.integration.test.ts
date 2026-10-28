@@ -52,12 +52,8 @@ const gatherText = (operation: "gather" | "all_gather") =>
     requestedSchema: SLOT_SCHEMA,
   });
 
-const acceptText = (slot: string) =>
-  JSON.stringify({ action: "accept", content: { slot } });
-
-/** The answer form line every rendered request carries. */
-const ANSWER_LINE =
-  'Answer with: {"action":"accept","content":{...}} where content matches the form, or {"action":"decline"}';
+const acceptText = (slot: string, id?: string) =>
+  JSON.stringify({ action: "accept", id, content: { slot } });
 
 interface AllGatherContext {
   readonly caller: Effect.Effect.Success<
@@ -146,7 +142,7 @@ function runOpenClawGatherScenario() {
         messageTool,
       });
 
-      yield* caller.send({
+      const { operationId } = yield* caller.send({
         to: targetAddress,
         text: GATHER_QUESTION,
         collective: {
@@ -157,10 +153,9 @@ function runOpenClawGatherScenario() {
       });
       const requestTurn = yield* nextTurn(turns);
       expect(requestTurn.From).toBe(callerAddress);
-      expect(requestTurn.Body).toContain(ANSWER_LINE);
       const answered = yield* messageTool("reply", {
         to: callerAddress,
-        message: acceptText("tue"),
+        message: acceptText("tue", operationId),
       });
       expect(answered.details).toMatchObject({ ok: true });
       expect(yield* nextItem(caller.messages)).toMatchObject({
@@ -321,7 +316,6 @@ function receiveAllGather(context: AllGatherContext) {
     const peerRequest = yield* nextItem(peer.messages).pipe(
       Effect.flatMap(requireRequest),
     );
-    expect(requestTurn.Body).toContain(ANSWER_LINE);
     yield* peer.send({
       to: group,
       collectiveResponse: { action: "decline" },

@@ -9,8 +9,8 @@
  * plain text                                                   multicast
  * {"gather": "Which day?", "deadline": 600, "requestedSchema": {...}}
  * {"all_gather": "Which day?", "deadline": 600, "requestedSchema": {...}}
- * {"action": "accept", "content": {...}}                        answer
- * {"action": "decline"}                                         answer
+ * {"action": "accept", "id": "col_...", "content": {...}}       answer
+ * {"action": "decline", "id": "col_..."}                        answer
  * ```
  *
  * Only a whole text that is a JSON object with a `gather`, `all_gather` or

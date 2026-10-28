@@ -33,6 +33,7 @@ import { describe, expect } from "vitest";
 import { digest } from "../../__tests__/agent-card-fixtures.js";
 import { localGuidance } from "../../__tests__/message-policy-fixtures.js";
 import {
+  CollectiveError,
   CollectiveId,
   SendInput,
 } from "../../communication/collectives/forms.js";
@@ -407,12 +408,10 @@ const distinguishesSendValidationFailures = () =>
     });
   });
 
-const carriesARefusalDetailAcrossTheDaemonBoundary = () =>
+const carriesARefusalDetailAcrossTheDaemonBoundary = (
+  refusal: SendError | CollectiveError,
+) =>
   Effect.gen(function* () {
-    const refusal = new SendError({
-      reason: "unknown-agent",
-      detail: "agent:dana is not a known agent",
-    });
     const endpoint = yield* acquireSendEndpoint({
       ...operations,
       protocolActive: () => true,
@@ -423,6 +422,22 @@ const carriesARefusalDetailAcrossTheDaemonBoundary = () =>
 
     expect(error.message).toBe(refusal.message);
   });
+
+/** Refusals whose message names what failed: a send's detail, and the open ids of an answer that named no request. */
+const DETAILED_REFUSALS = [
+  new SendError({
+    reason: "unknown-agent",
+    detail: "agent:dana is not a known agent",
+  }),
+  new CollectiveError({
+    id: Schema.decodeUnknownSync(CollectiveId)(`col_${"A".repeat(43)}`),
+    failure: { kind: "request-ambiguous" },
+    openIds: [
+      Schema.decodeUnknownSync(CollectiveId)(`col_${"B".repeat(42)}A`),
+      Schema.decodeUnknownSync(CollectiveId)(`col_${"C".repeat(42)}A`),
+    ],
+  }),
+];
 
 const carriesDeliveryPendingAcrossTheDaemonBoundary = () =>
   Effect.gen(function* () {
@@ -790,8 +805,8 @@ describe("a refused send across the daemon boundary", () => {
     "preserves the typed firewall refusal and check reference through MCP",
     preservesFirewallRefusal,
   );
-  it(
-    "carries a refusal's detail",
+  it.each(DETAILED_REFUSALS)(
+    "carries the detail of a refusal: %s",
     carriesARefusalDetailAcrossTheDaemonBoundary,
   );
   it("carries delivery-pending", carriesDeliveryPendingAcrossTheDaemonBoundary);

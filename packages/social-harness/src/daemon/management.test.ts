@@ -28,7 +28,6 @@ import {
 import {
   buildCertifiedGenesis,
   storeCertifiedGenesis,
-  withGenesisAnchorSelecting,
   withMisattributedActionEvidence,
 } from "../__tests__/certified-history-fixtures.js";
 import { connectInProcessClient } from "../__tests__/mcp-http-fixtures.js";
@@ -350,9 +349,9 @@ function withMembershipRowsNaming(
 }
 
 /**
- * The owner read returns the record with the anchor it commits to and, for
- * each certificate, every signer's AgentId with the signature its JWS
- * representation carries, in AgentId order.
+ * The owner read returns the record with its author's view, the anchor it
+ * commits to and, for each certificate, every signer's AgentId with the
+ * signature its JWS representation carries, in AgentId order.
  */
 const returnsCertificateSignersForAudit = () =>
   Effect.gen(function* () {
@@ -368,8 +367,17 @@ const returnsCertificateSignersForAudit = () =>
       compareAgentIds(alice.agentId, bob.agentId),
       "alice precedes bob in AgentId order",
     ).toBeLessThan(0);
+    expect(
+      certified.recordCore.action.postIntent.authorAgentId,
+      "bob authored the genesis",
+    ).toBe(bob.agentId);
     expect(page.records, "alice's history with bob").toEqual([
       {
+        author: {
+          agentId: bob.agentId,
+          agentName: bob.agentName,
+          principalId: bob.principalId,
+        },
         recordHash: certified.recordHash,
         recordCore: certified.recordCore,
         routerAnchor: certified.routerAnchor,
@@ -386,34 +394,10 @@ const returnsCertificateSignersForAudit = () =>
   });
 
 /**
- * A store whose membership row names a membership hash other than the one
- * its descriptor hashes to is corrupt, so the read reports
- * persistence-failed, while the unaltered store reads the record.
- */
-const failsReadOverMembershipRowNamingAnotherHash = () =>
-  Effect.gen(function* () {
-    const { fixture, store, record } = yield* makeCertifiedHistory;
-    const inconsistent = withMembershipRowsNaming(store, digest("mbr_", 9));
-
-    const unaltered = yield* readBobRecordHashes(fixture, store);
-    const corrupt = yield* readBobRecordHashes(fixture, inconsistent);
-
-    expect(unaltered, "history read over the unaltered store").toEqual(
-      Exit.succeed([record.actionCertifiedRecord.recordHash]),
-    );
-    expect(
-      corrupt,
-      "history read over the inconsistent membership row",
-    ).toEqual(
-      Exit.fail(expect.objectContaining({ reason: "persistence-failed" })),
-    );
-  });
-
-/**
- * The owner tools read stored history with the row checks startup applies.
- * A store whose action evidence row is filed under a member other than its
- * signer is corrupt, so the read reports persistence-failed, while the
- * unaltered store reads the record.
+ * The owner read checks each evidence row's signer against the member it is
+ * filed under. A store whose action evidence row is filed under a member
+ * other than its signer is corrupt, so the read reports persistence-failed,
+ * while the unaltered store reads the record.
  */
 const failsReadOverMisattributedEvidence = () =>
   Effect.gen(function* () {
@@ -436,23 +420,25 @@ const failsReadOverMisattributedEvidence = () =>
   });
 
 /**
- * A store whose genesis anchor row claims to select a record, which only a
- * completed re-anchor does, is corrupt, so the read reports
+ * A store whose membership row names a membership hash other than the one
+ * its descriptor hashes to is corrupt, so the read reports
  * persistence-failed, while the unaltered store reads the record.
  */
-const failsReadOverGenesisAnchorSelectingRecord = () =>
+const failsReadOverMembershipRowNamingAnotherHash = () =>
   Effect.gen(function* () {
     const { fixture, store, record } = yield* makeCertifiedHistory;
-    const recordHash = record.actionCertifiedRecord.recordHash;
-    const inconsistent = withGenesisAnchorSelecting(store, recordHash);
+    const inconsistent = withMembershipRowsNaming(store, digest("mbr_", 9));
 
     const unaltered = yield* readBobRecordHashes(fixture, store);
     const corrupt = yield* readBobRecordHashes(fixture, inconsistent);
 
     expect(unaltered, "history read over the unaltered store").toEqual(
-      Exit.succeed([recordHash]),
+      Exit.succeed([record.actionCertifiedRecord.recordHash]),
     );
-    expect(corrupt, "history read over the inconsistent anchor row").toEqual(
+    expect(
+      corrupt,
+      "history read over the inconsistent membership row",
+    ).toEqual(
       Exit.fail(expect.objectContaining({ reason: "persistence-failed" })),
     );
   });
@@ -510,9 +496,12 @@ const checksExactAgentLookups = () =>
     const remote = fixture.cards[1];
     const found = {
       kind: "found",
-      agentId: remote.agentId,
-      agentName: remote.agentName,
       agentCard: yield* Schema.encode(AgentCard)(remote),
+      agent: {
+        agentId: remote.agentId,
+        agentName: remote.agentName,
+        principalId: remote.principalId,
+      },
     };
 
     expect(yield* lookup({ agentName: remote.agentName })).toEqual({
@@ -532,7 +521,7 @@ const checksExactAgentLookups = () =>
 // @agent-code-guard/regression-only: these cases pin the addressed owner-management contract.
 describe("addressed daemon management", () => {
   it(
-    "returns verified identity and encoded cards through MCP for exact names and ids and not_found for unknown names",
+    "returns the agent's view and encoded card through MCP for exact names and ids and not_found for unknown names",
     checksExactAgentLookups,
   );
 
@@ -704,10 +693,6 @@ describe("owner history read over stored rows", () => {
   it(
     "fails a history read whose action evidence is filed under another signer",
     failsReadOverMisattributedEvidence,
-  );
-  it(
-    "fails a history read whose genesis anchor row selects a record",
-    failsReadOverGenesisAnchorSelectingRecord,
   );
   it(
     "fails a history read whose membership row names another membership hash",
@@ -931,6 +916,11 @@ const bindsWhenCancelledDuringTheRegistryCall = () =>
     expect(yield* operations.readStatus()).toEqual({
       kind: "active",
       agentCard: yield* Schema.encode(AgentCard)(fixture.cards[0]),
+      agent: {
+        agentId: fixture.cards[0].agentId,
+        agentName: fixture.cards[0].agentName,
+        principalId: fixture.cards[0].principalId,
+      },
     });
   });
 

@@ -56,15 +56,17 @@ For a free-text answer, use one string field.
 
 ## Answering a question
 
-A question arrives with its form and the conversation to answer in. Answer
-once, in that conversation, with one of these as the whole text:
+A question arrives with its id, its form and the conversation to answer in.
+Answer once, in that conversation, with one of these as the whole text:
 
 ```
-{"action": "accept", "content": {"<field>": <value>}}
-{"action": "decline"}
+{"action": "accept", "id": "<the question's id>", "content": {"<field>": <value>}}
+{"action": "decline", "id": "<the question's id>"}
 ```
 
-`content` must match the form.
+`content` must match the form. The `id` picks the question when several are
+open in the conversation; without it, a reply goes to the one open question,
+and fails, listing the open ids, when several are open.
 
 ## Errors
 

@@ -31,70 +31,24 @@ import { revisionOutcome, sha256 } from "./outcome.js";
 const COLLECTIVE_NORMS_ID = "org.social-harness/collective-norms";
 
 /**
- * The English rule that asks for one collective in place of a hand-run
- * gather. A check reads one conversation's window, so the rule assesses
- * what that window shows: a plain message asking several members to each reply,
- * or a question it shows the agent already asked another member.
+ * The shipped behaviors in `behaviors/collectives/` the bundle's English norms
+ * are read from, each under its behavior name; the text has no other copy.
+ * These are assessed on what the agent sends and on what it receives.
  */
-const ONE_GATHER_RULE: EnglishRule = {
-  id: "one-gather",
-  kind: "norm",
-  text: "When an agent needs the same answer from several members, it asks all of them at once with one gather or all_gather, not with a plain message asking each of them to reply or with separate messages asking members one at a time. A plain message that asks several members to each reply with an answer to the same question violates this norm, and so does a message asking a member a question this conversation shows the agent already asked another member separately. Judge only from this conversation: without such evidence the message conforms. A reply, an answer to a request, or a question only that member can answer conforms.",
-  guidance:
-    "Ask several members the same question with one gather or all_gather to all of them, not with a plain message or separate direct messages; the group-messaging skill shows how.",
-  feedback: {
-    text: "Ask everyone this question at once instead of collecting replies by hand: start one gather or all_gather if you are the facilitator, or ask the facilitator to. The group-messaging skill shows the format.",
-    nextAction: "revise",
-  },
-};
-
-const ANNOUNCE_ONCE_RULE: EnglishRule = {
-  id: "announce-once",
-  kind: "norm",
-  text: "An outcome, such as a decision, a booking or a collective result, is announced to the group once. An agent does not announce again an outcome that it or another member already announced in this conversation, and does not post a message whose only content restates or confirms an announced outcome.",
-  guidance:
-    "An outcome is announced to the group once; do not announce or confirm it again.",
-  feedback: {
-    text: "This outcome was already announced in this conversation. Do not announce or confirm it again; send only new information.",
-    nextAction: "stop",
-  },
-};
-
-const RESULT_SETTLES_RULE: EnglishRule = {
-  id: "result-settles",
-  kind: "norm",
-  text: "A collective result settles the question its gather or all_gather asked. After a result in this conversation answered a question, an agent does not ask that question again, by message or by a new gather or all_gather, unless the result held no usable answer or the question has changed.",
-  guidance:
-    "A collective result settles the question it asked; act on the result rather than asking again.",
-  feedback: {
-    text: "A collective result already answered this question. Act on that result instead of asking again.",
-    nextAction: "revise",
-  },
-};
-
-/** The English rules assessed on what the agent sends. */
-const OUTGOING_ENGLISH_RULES: readonly EnglishRule[] = [
-  ONE_GATHER_RULE,
-  ANNOUNCE_ONCE_RULE,
-  RESULT_SETTLES_RULE,
+const OUTGOING_BEHAVIORS: readonly string[] = [
+  "collectives/one-gather",
+  "collectives/announce-once",
+  "collectives/result-settles",
 ];
 
 /**
- * The acknowledgement norm assessed on what the agent receives. It selects
- * response expectations; `none` is not a refusal.
+ * The norms assessed on what the agent receives: the outgoing ones and the
+ * acknowledgement norm, which selects response expectations; `none` is not a
+ * refusal.
  */
-const ACKNOWLEDGEMENT_RULE: EnglishRule = {
-  id: "acknowledgement",
-  kind: "norm",
-  text: "An acknowledgement that answers nothing you asked and asks for nothing needs no response. For such an incoming acknowledgement, select the response expectation none. An answer to an outstanding question or a new request is not an empty acknowledgement.",
-  guidance:
-    "No response is needed to an acknowledgement that answers nothing you asked and asks for nothing.",
-};
-
-/** The English rules assessed on what the agent receives. */
-const INCOMING_ENGLISH_RULES: readonly EnglishRule[] = [
-  ACKNOWLEDGEMENT_RULE,
-  ...OUTGOING_ENGLISH_RULES,
+const INCOMING_BEHAVIORS: readonly string[] = [
+  "collectives/empty-acknowledgement",
+  ...OUTGOING_BEHAVIORS,
 ];
 
 /**
@@ -227,33 +181,6 @@ const ACKNOWLEDGEMENT_FILLER: ReadonlySet<string> = new Set([
   "you",
 ]);
 
-/**
- * Every rule of the bundle in each direction, with its full text and the
- * acknowledgement vocabulary its code rule assesses with, and the Client
- * release, which can change how the decision provider's answers compose
- * without changing the question edition. The facilitator role is an input to
- * the code rules' assessment, not part of the edition. A change to how a code
- * rule assesses that these fields do not show bumps `edition`.
- */
-const EDITION = {
-  edition: "org.social-harness/collective-norms/v1",
-  client: packageVersion,
-  acknowledgement: {
-    words: [...ACKNOWLEDGEMENT_WORDS],
-    filler: [...ACKNOWLEDGEMENT_FILLER],
-  },
-  incoming: INCOMING_ENGLISH_RULES,
-  outgoing: [
-    ...CODE_RULES.map(({ description, statement }) => ({
-      id: description.id,
-      kind: description.kind,
-      feedback: description.feedback,
-      statement,
-    })),
-    ...OUTGOING_ENGLISH_RULES,
-  ],
-};
-
 /** The bundle's registration for each direction. */
 export interface CollectiveNorms {
   readonly incoming: MessageMiddleware;
@@ -273,6 +200,8 @@ export interface CollectiveNorms {
  * provenance records, so every member of a run registers the same revision.
  * @param provider The service that assesses the English rules.
  * @param settings The English assessment bounds.
+ * @param readBehavior Reads a shipped behavior by its pack and name. Policy
+ *     composition passes it in, because this folder reads no files.
  * @param historyRecords The history window each check reads, if the policy
  *     sets one.
  * @returns The incoming registration and the outgoing one for a role.
@@ -280,23 +209,33 @@ export interface CollectiveNorms {
 export const collectiveNorms = Effect.fn("collectiveNorms")(function* (
   provider: DecisionProvider,
   settings: EnglishPolicySettings,
+  readBehavior: (name: string) => Effect.Effect<EnglishRule>,
   historyRecords?: number,
 ): Effect.fn.Return<CollectiveNorms, CheckInputError> {
+  const incomingRules = yield* Effect.forEach(
+    INCOMING_BEHAVIORS,
+    readBehavior,
+    {
+      concurrency: 1,
+    },
+  );
+  const outgoingRules = incomingRules.slice(1);
+  const edition = editionOf(incomingRules, outgoingRules);
   const incoming = yield* makeEnglishPolicy({
     id: COLLECTIVE_NORMS_ID,
-    rules: INCOMING_ENGLISH_RULES,
+    rules: incomingRules,
     settings,
     provider,
   });
   const outgoing = yield* makeEnglishPolicy({
     id: COLLECTIVE_NORMS_ID,
-    rules: OUTGOING_ENGLISH_RULES,
+    rules: outgoingRules,
     settings,
     provider,
   });
   const revision = sha256(
     JSON.stringify({
-      edition: EDITION,
+      edition,
       english: { incoming: incoming.revision, outgoing: outgoing.revision },
       historyRecords: historyRecords ?? null,
       provider: provider.provenance ?? null,
@@ -304,16 +243,53 @@ export const collectiveNorms = Effect.fn("collectiveNorms")(function* (
   );
   return {
     incoming: {
-      ...registration(incoming, revision, {}),
+      ...registration(incoming, revision, edition, {}),
       check: (input) => incoming.check(input),
     },
     outgoing: (facilitator) => ({
-      ...registration(outgoing, revision, { facilitator }),
+      ...registration(outgoing, revision, edition, { facilitator }),
       rules: [...CODE_RULES.map((rule) => rule.description), ...outgoing.rules],
       check: (input) => checkOutgoing(input, outgoing, facilitator),
     }),
   };
 });
+
+/**
+ * Every rule of the bundle in each direction, with its full text and the
+ * acknowledgement vocabulary its code rule assesses with, and the Client
+ * release, which can change how the decision provider's answers compose
+ * without changing the question edition. The facilitator role is an input to
+ * the code rules' assessment, not part of the edition. A change to how a code
+ * rule assesses that these fields do not show bumps `edition`.
+ * @param incoming The English rules assessed on what the agent receives.
+ * @param outgoing The English rules assessed on what the agent sends.
+ * @returns The edition the revision and provenance record.
+ */
+function editionOf(
+  incoming: readonly EnglishRule[],
+  outgoing: readonly EnglishRule[],
+) {
+  return {
+    edition: "org.social-harness/collective-norms/v1",
+    client: packageVersion,
+    acknowledgement: {
+      words: [...ACKNOWLEDGEMENT_WORDS],
+      filler: [...ACKNOWLEDGEMENT_FILLER],
+    },
+    incoming,
+    outgoing: [
+      ...CODE_RULES.map(({ description, statement }) => ({
+        id: description.id,
+        kind: description.kind,
+        feedback: description.feedback,
+        statement,
+      })),
+      ...outgoing,
+    ],
+  };
+}
+
+type Edition = ReturnType<typeof editionOf>;
 
 /** A send's code findings, then the English findings unless a code rule refused it. */
 function checkOutgoing(
@@ -359,6 +335,7 @@ function checkOutgoing(
 function registration(
   english: MessageMiddleware,
   revision: string,
+  edition: Edition,
   role: Readonly<Record<string, boolean>>,
 ): Omit<MessageMiddleware, "check"> {
   return {
@@ -368,7 +345,7 @@ function registration(
     provenance: {
       format: "org.social-harness/collective-norms.v1",
       data: JSON.stringify({
-        edition: EDITION,
+        edition,
         ...role,
         english: english.provenance ?? null,
       }),

@@ -26,7 +26,7 @@ import {
 } from "../../communication/collectives/forms.js";
 import { InboundItem } from "../../communication/collectives/inbound.js";
 import { SendError } from "../../communication/conversations/errors.js";
-import { PostId } from "../../communication/records/index.js";
+import { AgentAddress, PostId } from "../../communication/records/index.js";
 import {
   DeliveryToken,
   type EndpointStore,
@@ -46,6 +46,7 @@ const input = Schema.decodeUnknownSync(SendInput)({
 });
 const operationId = Schema.decodeUnknownSync(CollectiveId)(digest("col_", 3));
 const postId = Schema.decodeUnknownSync(PostId)(digest("pst_", 4));
+const bob = Schema.decodeUnknownSync(AgentAddress)("agent:bob");
 const failure = Schema.decodeUnknownSync(InboundItem)({
   kind: "operationFailed",
   id: digest("col_", 1),
@@ -117,7 +118,7 @@ const refusesUntilRegistered = () =>
 /**
  * Each completed send lands in the history export with how it ended: the
  * certified posts and operation id, or the returned error's message. A
- * multicast returns an empty result.
+ * multicast returns the post it created and its conversation's address.
  */
 const exportsEachSend = () =>
   Effect.gen(function* () {
@@ -130,14 +131,14 @@ const exportsEachSend = () =>
       >
     > = [
       Effect.succeed({ operationId, postIds: [postId] }),
-      Effect.succeed({ postIds: [postId] }),
+      Effect.succeed({ postIds: [postId], postId, address: bob }),
       Effect.fail(new SendError({ reason: "content-invalid" })),
     ];
     slot.collectives = {
       send: () => outcomes.shift() ?? Effect.dieMessage("unexpected send"),
     };
     expect(yield* operations.send({ input })).toEqual({ operationId });
-    expect(yield* operations.send({ input })).toEqual({});
+    expect(yield* operations.send({ input })).toEqual({ postId, address: bob });
     const refused = yield* Effect.exit(operations.send({ input }));
     expect(refused).toEqual(
       Exit.fail(new SendError({ reason: "content-invalid" })),

@@ -1,4 +1,4 @@
-/** @file Reads the message-policy document and decision-provider key a daemon's environment names. */
+/** @file Reads the message-policy document and decision-provider key a daemon's environment names, and the behaviors Client ships. */
 
 import {
   Effect,
@@ -19,6 +19,7 @@ import {
   type DecisionProvider,
   DecisionProviderError,
   editableDocumentSchema,
+  type EnglishRule,
   makeJevDecisionProvider,
 } from "../evaluator/index.js";
 import {
@@ -144,6 +145,26 @@ export function policyConfigurationError(
         ? failureMessages[reason]
         : `${failureMessages[reason]}; invalid at ${path}${category}. Docs: https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/message-policy.md#${heading}`,
   });
+}
+
+/**
+ * A behavior Client ships, read by its pack and name, such as
+ * `collectives/one-gather`, from the installed package's `behaviors/`. The
+ * file is part of the installed package, so one that cannot be read is a
+ * broken installation, a defect whose message says to reinstall.
+ * @param name The behavior's pack and name.
+ * @returns Its English rule.
+ */
+export function readBuiltinBehavior(name: string): Effect.Effect<EnglishRule> {
+  return readBehavior(BUILTIN_BEHAVIORS, name, name).pipe(
+    Effect.map(({ rule }) => rule),
+    Effect.catchAll(() =>
+      Effect.dieMessage(
+        `Client's shipped behavior ${name} could not be read; reinstall @moltzap/social-harness. Docs: https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/message-policy.md#built-in-behaviors`,
+      ),
+    ),
+    Effect.withSpan("readBuiltinBehavior"),
+  );
 }
 
 /** Reports only the policy entry; YAML diagnostics may contain private file content. */

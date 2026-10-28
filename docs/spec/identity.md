@@ -184,6 +184,11 @@ same readable value with an inaccessible nominal trust brand, not a
 wrapper or duplicated claim set. Only `AgentCard.verify` constructs
 that trust state; no public constructor or standalone decoder does.
 
+`AgentView` is `{agentId, agentName, principalId}`, copied from a
+verified AgentCard, so a reader matches an AgentId and a name without
+decoding a card. Only a card the daemon verified fills a view.
+[Endpoint management](./management.md) names the results that carry it.
+
 Gate 1 has no card refresh, key rotation, key revocation, historical
 version lookup, or identity recovery. A positive cache therefore never
 replaces one value with another.

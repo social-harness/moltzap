@@ -10,6 +10,11 @@ import {
 } from "../../communication/collectives/forms.js";
 import { InboundItem } from "../../communication/collectives/inbound.js";
 import {
+  AgentAddress,
+  GroupAddress,
+  PostId,
+} from "../../communication/records/index.js";
+import {
   DeliveryToken,
   type EndpointStore,
   type InboxSummary,
@@ -132,12 +137,18 @@ const harnessSendRequestSchema = exactStruct({
 });
 /**
  * A completed operation. A collecting operation names the id its answers and
- * result carry; a multicast has none. `guidance` is the local firewall's
- * advice on the admitted send, absent when it gave none.
+ * result carry, and a response the id of the request it answered; a
+ * multicast has none. A multicast and a response name the one post they
+ * created and its conversation's canonical address. `guidance` is the local
+ * firewall's advice on the admitted send, absent when it gave none.
  */
 // eslint-disable-next-line agent-code-guard/no-exported-brand-constructor -- The MCP catalog projects the send result to JSON Schema; hosts decode it through this file's boundary functions.
 export const harnessSendResultSchema = Schema.Struct({
   operationId: Schema.optionalWith(CollectiveId, { exact: true }),
+  postId: Schema.optionalWith(PostId, { exact: true }),
+  address: Schema.optionalWith(Schema.Union(AgentAddress, GroupAddress), {
+    exact: true,
+  }),
   guidance: Schema.optionalWith(checkedGuidanceSchema, { exact: true }),
 });
 const harnessMessageReadyEventSchema = Schema.Struct({
@@ -178,8 +189,10 @@ const invocationValidationErrorSchema = Schema.Struct({
  * The JSON-RPC error data of a refused `send_message`: a `SendError` reason
  * with the detail naming its specific cause, or a refused collective send with its id and the failure naming each
  * unreachable member or failing field, which `decodeCollectiveFailure`
- * validates. Fields a newer daemon adds are ignored; a firewall or collective
- * refusal that misses its own fields never decodes as a plain reason.
+ * validates, and for an answer that named no request while several were
+ * open, `openIds`. Fields a newer daemon adds are ignored; a firewall or
+ * collective refusal that misses its own fields never decodes as a plain
+ * reason.
  */
 const harnessSendErrorDataSchema = Schema.Union(
   invocationValidationErrorSchema,
@@ -191,6 +204,7 @@ const harnessSendErrorDataSchema = Schema.Union(
     reason: Schema.Literal("collective-failed"),
     id: CollectiveId,
     failure: Schema.Unknown,
+    openIds: Schema.optionalWith(Schema.Array(CollectiveId), { exact: true }),
   }),
   Schema.Struct({
     reason: Schema.String.pipe(
@@ -240,6 +254,7 @@ export type HarnessSendErrorData =
       failure: Effect.Effect.Success<
         ReturnType<typeof decodeCollectiveFailure>
       >;
+      openIds?: readonly CollectiveId[];
     }>;
 
 /**
@@ -266,6 +281,7 @@ export function sendErrorData(
       reason: "collective-failed",
       id: error.id,
       failure: error.failure,
+      ...(error.openIds === undefined ? {} : { openIds: error.openIds }),
     };
   }
   if (error.detail === undefined) {

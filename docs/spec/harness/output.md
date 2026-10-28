@@ -15,8 +15,8 @@ durable addressed transport and does not interpret model output.
 `collectiveResponse` ([operations](./client.md#operations)). `to` is
 `agent:<AgentName>` or `group:<AgentName>,...`. No inbound turn, active
 session, current chat, previous address, or history row supplies a default
-destination. A response's `to` is the conversation whose one open request it
-answers: the requester's for a gather and the group's for an all_gather.
+destination. A response's `to` is the conversation its request arrived in:
+the requester's for a gather and the group's for an all_gather.
 Native adapters build the send from the model's message text with Client's
 `parseMessageText` ([message text](./client.md#message-text)).
 
@@ -106,18 +106,12 @@ interface SendMessageRequest {
 interface RuntimeSendOptions {
   readonly failureDelivery?: "result" | "inbound"
 }
-
-interface SendMessageResult {
-  /** `col_` followed by 43 base64url characters. */
-  readonly operationId?: CollectiveId
-  /** The local firewall's advice on the admitted send. */
-  readonly guidance?: CheckedGuidance
-}
 ```
 
-`CheckedGuidance` is the [local guidance](./client.md#local-guidance) of the
-send's check, present when the local firewall left a norm judgment of the
-admitted send uncertain.
+Its structured result is Client's `SendResult`, defined in the
+[service shape](./client.md#service-shape). Its `guidance` is the
+[local guidance](./client.md#local-guidance) of the send's check, present when
+the local firewall left a norm judgment of the admitted send uncertain.
 
 `RuntimeSendOptions` travels in request metadata at
 `_meta["org.social-harness/send"]`, outside the tool's argument schema. The MCP-backed
@@ -130,13 +124,16 @@ ordinary result delivery. There is no alternate argument format.
 Runtime code owns retry policy; the model chooses semantic actions. Retrying a
 send can create another post.
 
-It returns its structured result once the send completes. A multicast has no
-operation id, so its result is `{}`; a gather's or all_gather's result names its id,
-and a response's names the request it answered. A refused send is a JSON-RPC
+It returns its structured result once the send completes. A multicast or
+response returns the `postId` of the post it created and that post's
+conversation `address`; a response also returns the `operationId` of the
+request it answered, and a gather or all_gather returns its own. A refused send is a JSON-RPC
 error whose data is `{reason, detail?}` with the `SendError` reason and
 detail, or
-`{reason: "collective-failed", id, failure}` with the `CollectiveError`
-failure, from which the loopback Client rebuilds the same typed error. A send
+`{reason: "collective-failed", id, failure, openIds?}` with the
+`CollectiveError` failure and, for an answer that named no request while
+several were open, their ids, from which the loopback Client rebuilds the same
+typed error. A send
 may also return `{reason: "firewall-refused", checkId, refusal, feedback}`,
 which reconstructs `FirewallSendError` without exposing private evidence. A send
 that ends without a typed failure, or whose completed result fails the tool's

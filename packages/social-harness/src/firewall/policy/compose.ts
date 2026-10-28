@@ -30,7 +30,11 @@ import {
   MessagePolicyConfigurationError,
   type PolicyConfiguration,
 } from "./configuration.js";
-import { loadMessagePolicy, policyConfigurationError } from "./load.js";
+import {
+  loadMessagePolicy,
+  policyConfigurationError,
+  readBuiltinBehavior,
+} from "./load.js";
 
 /**
  * The firewall a daemon installs, if any.
@@ -55,7 +59,9 @@ export interface FirewallInstallation {
  * allowed-sender list and the initial editable rules, so every member
  * records the same digest.
  * A document that lists behaviors fails with `CheckInputError`
- * (`registration`); only file loading resolves behaviors.
+ * (`registration`); only file loading resolves behaviors. A document that
+ * installs the collective norms reads their English text from Client's
+ * installed `behaviors/`.
  * @param policy A decoded document with inline rules and no behaviors.
  * @param provider The service that assesses its English rules and the
  *     collective norms; unused when the document installs neither.
@@ -175,6 +181,7 @@ function composeFirewall(
       collectiveNorms(
         provider,
         policy.englishSettings,
+        readBuiltinBehavior,
         policy.maximumHistoryRecords,
       ),
     );

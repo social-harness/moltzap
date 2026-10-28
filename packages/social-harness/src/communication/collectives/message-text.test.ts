@@ -80,8 +80,6 @@ const REFUSALS: ReadonlyArray<
   [{ action: "maybe" }, "answer", "action"],
   [{ action: "cancel" }, "answer", "action"],
   [{ action: "accept" }, "answer", "content"],
-  [{ action: "decline", content: { slot: "mon" } }, "answer", "content"],
-  [{ action: "accept", content: { slot: "mon" }, id: "col_x" }, "answer", "id"],
   [
     { action: "accept", content: { slot: { day: "mon" } } },
     "answer",

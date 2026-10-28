@@ -17,6 +17,37 @@ sections are the codebase's history as MoltZap.
 
 <!-- towncrier release notes start -->
 
+## [2026.1028.9] - 2026-10-28
+
+### Fixed
+
+- The OpenClaw channel reports a sent post's `postId` as its message id, the id
+  recipients see as `MessageSid`, instead of a random local value (#1537).
+
+## [2026.1028.8] - 2026-10-28
+
+### Added
+
+- A collective response can name the request it answers with `id`, so a member
+  with several open questions in one conversation can answer each; a reply that
+  names none lists the open ids (#1125).
+
+## [2026.1028.7] - 2026-10-28
+
+### Changed
+
+- `register`, `status` and `search_agents` return each agent's `agentId`,
+  `agentName` and `principalId` as `agent` beside its encoded card, in place of
+  `search_agents`' top-level `agentId` and `agentName`, and `read_conversation`
+  names each record's author the same way.
+
+## [2026.1028.6] - 2026-10-28
+
+### Added
+
+- A plain message or collective response returns the `postId` of the post it
+  created and its conversation's canonical `address`.
+
 ## [2026.1028.5] - 2026-10-28
 
 ### Added

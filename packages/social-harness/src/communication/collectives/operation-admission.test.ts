@@ -48,6 +48,7 @@ import {
 } from "../../firewall/outcome/index.js";
 import { SendError } from "../conversations/errors.js";
 import { InboundMessage } from "../conversations/message.js";
+import { AgentAddress } from "../records/values.js";
 import { collectiveIdOf } from "./part/index.js";
 
 // @agent-code-guard/regression-only: Each case drives one ordering of check, claim, close and deadline that the admission ports allow.
@@ -200,6 +201,40 @@ function receiveGatherRequest(layer: CollectiveOperations, presented: boolean) {
       recordHash: recordHashOf(1),
     })
     .pipe(Effect.tap(() => layer.settleRequest(requestId, presented)));
+}
+
+/** Classify a second gather request from Bob to alice, open for a minute, and show it. */
+function receiveSecondGatherRequest(layer: CollectiveOperations) {
+  const nonce = "S".repeat(43);
+  const id = collectiveIdOf(
+    Schema.decodeUnknownSync(AgentAddress)("agent:bob"),
+    nonce,
+  );
+  return layer
+    .classify({
+      message: Schema.decodeUnknownSync(InboundMessage)({
+        kind: "direct",
+        postId: postId(2),
+        address: "agent:bob",
+        sender: "agent:bob",
+        content: [
+          { type: "text", text: questionText },
+          {
+            type: "data",
+            value: {
+              [collectiveKey]: {
+                ...allGatherRequest,
+                op: "gather",
+                id,
+                nonce,
+              },
+            },
+          },
+        ],
+      }),
+      recordHash: recordHashOf(2),
+    })
+    .pipe(Effect.tap(() => layer.settleRequest(id, true)));
 }
 
 /** Classify alice's all_gather request at Bob and settle its admission. */
@@ -630,6 +665,38 @@ function postsNothingWhenTheDeadlinePassesDuringTheCheck() {
   });
 }
 
+function answersTheMatchedRequestWhenAnotherOpensDuringTheCheck() {
+  return Effect.gen(function* () {
+    const observed = newObserved();
+    const gate = {
+      entered: yield* Deferred.make<undefined>(),
+      open: yield* Deferred.make<undefined>(),
+    };
+    const layer = yield* makeLayer(observed, {
+      admission: firewallDouble(observed, { gate }).admission,
+    });
+    yield* receiveGatherRequest(layer, true);
+
+    const answering = yield* send(layer, {
+      to: "agent:bob",
+      collectiveResponse: answer,
+    }).pipe(Effect.fork);
+    yield* Deferred.await(gate.entered);
+    yield* receiveSecondGatherRequest(layer);
+    yield* Deferred.succeed(gate.open, undefined);
+    yield* Fiber.join(answering);
+
+    expect(observed.sent).toMatchObject([
+      {
+        to: "agent:bob",
+        content: [
+          { value: { [collectiveKey]: { kind: "response", id: requestId } } },
+        ],
+      },
+    ]);
+  });
+}
+
 function sendsOneOfTwoConcurrentAnswers() {
   return Effect.gen(function* () {
     const observed = newObserved();
@@ -826,6 +893,10 @@ describe("answers checked before their request is claimed", () => {
   it(
     "sends one of two answers checked at once and refuses the other as answered",
     sendsOneOfTwoConcurrentAnswers,
+  );
+  it(
+    "answers the request it matched when another opens during the answer's check",
+    answersTheMatchedRequestWhenAnotherOpensDuringTheCheck,
   );
 });
 

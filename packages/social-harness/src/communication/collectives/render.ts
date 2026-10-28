@@ -61,8 +61,10 @@ export function groupMembers(address: MessageAddressInput): readonly string[] {
 
 /**
  * A question another agent asked: who asked and until when, the question,
- * its form, and the exact text that answers it. Only the last line differs
- * by host, since each host's model sends the answer through its own tool.
+ * its form, and the exact text that answers it, naming the question's id so
+ * the answer reaches it when several questions are open in the conversation.
+ * Only the last line differs by host, since each host's model sends the
+ * answer through its own tool.
  * @param item The delivered question.
  * @param howToAnswer The host's sentence naming the tool that sends the answer to `item.to`.
  * @param guidance Optional local instructions accompanying the peer question.
@@ -74,8 +76,9 @@ export function renderCollectiveRequest(
   guidance?: LocalGuidance,
 ): string {
   const body = renderCollectiveRequestBody(item);
+  const id = JSON.stringify(item.id);
   const answerInstructions = [
-    'Answer with: {"action":"accept","content":{...}} where content matches the form, or {"action":"decline"}',
+    `Answer with: {"action":"accept","id":${id},"content":{...}} where content matches the form, or {"action":"decline","id":${id}}`,
     howToAnswer,
   ];
   if (guidance === undefined) {

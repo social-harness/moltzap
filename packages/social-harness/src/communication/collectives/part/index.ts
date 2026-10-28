@@ -128,8 +128,12 @@ const responseHead = { kind: Schema.Literal("response"), id: CollectiveId };
 
 /** A member's reply to one request; only `accept` carries content. */
 const CollectiveResponse = Schema.Union(
-  exactStruct({ ...responseHead, ...AcceptResponse.fields }),
-  exactStruct({ ...responseHead, ...DeclineResponse.fields }),
+  exactStruct({
+    ...responseHead,
+    action: AcceptResponse.fields.action,
+    content: AcceptResponse.fields.content,
+  }),
+  exactStruct({ ...responseHead, action: DeclineResponse.fields.action }),
 );
 
 /** The requester's all_gather close: the included answers by certified record hash. */

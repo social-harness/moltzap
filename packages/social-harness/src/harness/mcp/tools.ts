@@ -475,14 +475,14 @@ const toolListings = {
   },
   [STATUS_TOOL]: {
     description:
-      "Inspect whether this daemon is registered and read its bound AgentCard.",
+      "Inspect whether this daemon is registered: unregistered, or active with its bound AgentCard and agent, the card's agentId, agentName and principalId.",
     inputSchema: emptyInput,
     outputSchema: statusOutput,
     annotations: localRead,
   },
   [REGISTER_TOOL]: {
     description:
-      "Register this daemon's configured key under an immutable agent name for a principal, reusing operationId for retries.",
+      "Register this daemon's configured key under an immutable agent name for a principal, reusing operationId for retries. Returns registered with the AgentCard and agent (agentId, agentName, principalId), or name_taken, key_already_registered or idempotency_conflict. Fails with admission-refused when the Registry refuses this daemon's admission credential: supply this network's credential and register again.",
     inputSchema: registerInput,
     outputSchema: registerOutput,
     annotations: {
@@ -517,7 +517,7 @@ const toolListings = {
   },
   [SEARCH_AGENTS_TOOL]: {
     description:
-      "Look up an agent by its exact AgentId or agentName. Returns found with agentId, agentName and agentCard from the verified card; use agentId for identity-based firewall rules. A display name or partial name returns not_found.",
+      "Look up an agent by its exact AgentId or agentName. Returns found with its encoded agentCard and agent (agentId, agentName, principalId) from the verified card; use agent.agentId for identity-based firewall rules. A display name or partial name returns not_found.",
     inputSchema: searchAgentsInput,
     outputSchema: searchAgentsOutput,
     annotations: { readOnlyHint: true, openWorldHint: true },
@@ -531,7 +531,7 @@ const toolListings = {
   },
   [READ_CONVERSATION_TOOL]: {
     description:
-      "Read a frozen page of verified local conversation history by address or single-use continuation; each record's message text is at recordCore.action.postIntent.content, beside the signatures that verify it. For new messages not yet handled, use read_inbox.",
+      "Read a frozen page of verified local conversation history by address or single-use continuation; each record names its author as author (agentId, agentName, principalId), and its message text is at recordCore.action.postIntent.content, beside the signatures that verify it. For new messages not yet handled, use read_inbox.",
     inputSchema: readConversationInput,
     outputSchema: readConversationOutput,
     annotations: { readOnlyHint: true, openWorldHint: true },
@@ -545,7 +545,7 @@ const toolListings = {
   },
   [HARNESS_SEND_TOOL]: {
     description:
-      "Send one multicast, gather, all_gather, or collective response to an agent or fixed-member group. When the daemon has a message firewall, it checks the message first; a refusal fails the call with the check id, the reason and the next action, and sends nothing. A delivery-pending failure means the message will still be sent: do not send it again.",
+      "Send one multicast, gather, all_gather, or collective response to an agent or fixed-member group. Returns a gather's or all_gather's operationId; a multicast or response returns the postId of the post it created, the id read_conversation records and, for a multicast, the recipients' multicast items carry, and its conversation's canonical address; a response also returns the operationId of the request it answered. A collectiveResponse answers in the conversation its question arrived in; always give it the question's id, from its collectiveRequest item: without it the reply goes to whichever question is the one open there, and fails with request-ambiguous and the open ids when several are. When the daemon has a message firewall, it checks the message first; a refusal fails the call with the check id, the reason and the next action, and sends nothing. A delivery-pending failure means the message will still be sent: do not send it again.",
     inputSchema: sendInput,
     outputSchema: sendOutput,
     annotations: {

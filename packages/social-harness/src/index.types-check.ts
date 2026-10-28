@@ -4,18 +4,19 @@
  * items. An operation carries an address, text and an optional collective
  * operation, multicast by default or a gather or all_gather with its deadline
  * and schema; a response names the conversation whose open request it
- * answers and no request id. One parser reads either from a message's text,
- * so the native channel adapters accept the same text. Each inbound
- * delivery carries one item plus transport-only acknowledgment: a multicast
+ * answers, and may name that request's id. One parser reads either from a
+ * message's text, so the native channel adapters accept the same text. Each
+ * inbound delivery carries one item plus transport-only acknowledgment: a multicast
  * with the certified direct or complete-group message, a collective request
  * naming the conversation it arrived in, a collective result, each naming
  * its operation, or an operation failure. A result's question or a member's
  * answer can be `withheld` by the local firewall, and local guidance is
  * either one check's or one per checked text of a result; each of its
  * instructions names a settled expectation or an unsettled norm judgment's
- * choice and probability. A send returns a collecting operation's id and
- * its check's guidance, and fails with a closed send reason or a
- * collective failure. The exported send-result decoder yields that same
+ * choice and probability. A send returns a collecting operation's id or the
+ * id of the request a response answered, the post a multicast or response
+ * created with its conversation's canonical address, and its check's
+ * guidance, and fails with a closed send reason or a collective failure. The exported send-result decoder yields that same
  * result type. Adapters compile against this surface, so any change these
  * canaries catch is a breaking release. Client renders local guidance as text
  * for both adapters, keeping registered instructions apart from quoted peers.
@@ -74,8 +75,12 @@ type ExpectedCollectiveOperation =
       requestedSchema: ExpectedRequestedSchema;
     }>;
 type ExpectedCollectiveResponse =
-  | Readonly<{ action: "accept"; content: ExpectedAnswerContent }>
-  | Readonly<{ action: "decline" }>;
+  | Readonly<{
+      action: "accept";
+      content: ExpectedAnswerContent;
+      id?: CollectiveId;
+    }>
+  | Readonly<{ action: "decline"; id?: CollectiveId }>;
 type ExpectedSendInput =
   | Readonly<{
       to: MessageAddressInput;
@@ -88,6 +93,8 @@ type ExpectedSendInput =
     }>;
 type ExpectedSendResult = Readonly<{
   operationId?: CollectiveId;
+  postId?: PostId;
+  address?: AgentAddress | GroupAddress;
   guidance?: ExpectedCheckedGuidance;
 }>;
 type ExpectedDirectMessage = Readonly<{

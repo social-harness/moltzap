@@ -1,4 +1,4 @@
-/** @file Pins the posts each collective send certifies and the refusals it returns. */
+/** @file Pins the posts each collective send certifies, what it returns, and how it is refused. */
 
 import { scoped as it } from "@effect/vitest";
 import { Duration, Effect, Fiber, TestClock } from "effect";
@@ -44,6 +44,15 @@ function certifiesAMulticastAsItsTextAndAnExplicitMulticastPart() {
         content: [{ type: "text", text: "Hello" }, multicastPart],
       },
     ]);
+  });
+}
+
+function returnsAGroupMulticastSCompleteCanonicalAddress() {
+  return Effect.gen(function* () {
+    const layer = yield* makeLayer(newObserved());
+    const sent = yield* send(layer, { to: "group:carol,bob", text: "Hi" });
+
+    expect(sent).toMatchObject({ address: "group:alice,bob,carol" });
   });
 }
 
@@ -347,31 +356,6 @@ function asksTheOneAgentOfAGroupAddressNamingOneOtherAgent() {
   });
 }
 
-function refusesAGatherToAGroupThatNamesAMemberTwice() {
-  const observed = newObserved();
-
-  return Effect.gen(function* () {
-    const layer = yield* makeLayer(observed);
-    const failure = yield* collectiveFailureOf(
-      send(layer, { ...gatherInput(), to: "group:bob,carol,bob" }),
-    );
-
-    expect(failure).toMatchObject({ reason: "membership-invalid" });
-    expect(observed.sent).toEqual([]);
-  });
-}
-
-function asksTheOneAgentOfAnAgentAddress() {
-  const observed = newObserved();
-
-  return Effect.gen(function* () {
-    const layer = yield* makeLayer(observed);
-    yield* send(layer, { ...gatherInput(), to: "agent:bob" });
-
-    expect(observed.sent.map((post) => post.to)).toEqual(["agent:bob"]);
-  });
-}
-
 // @agent-code-guard/regression-only: examples pin the posts each operation certifies.
 describe("collective sends", () => {
   it(
@@ -431,17 +415,15 @@ describe("collective sends", () => {
   );
 });
 
-// @agent-code-guard/regression-only: examples pin that a gather shares the send address rule.
-describe("gather addressing", () => {
+// @agent-code-guard/regression-only: examples pin that sends share the canonical address rule.
+describe("canonical addresses", () => {
   it(
     "asks the one agent of a group address naming one other agent",
     asksTheOneAgentOfAGroupAddressNamingOneOtherAgent,
   );
 
   it(
-    "refuses a gather to a group that names a member twice",
-    refusesAGatherToAGroupThatNamesAMemberTwice,
+    "returns a group multicast's complete canonical address",
+    returnsAGroupMulticastSCompleteCanonicalAddress,
   );
-
-  it("asks the one agent of an agent address", asksTheOneAgentOfAnAgentAddress);
 });

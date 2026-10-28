@@ -2,19 +2,24 @@
  * @file The requests a member endpoint received, and which one an answer
  * answers.
  *
- * An answer names no request: the model sends it to the conversation its
- * request arrived in, and the endpoint matches it to the one request open
- * there. Answering one of several open requests in a conversation is not
- * supported, so that answer is refused rather than guessed.
+ * The model sends an answer to the conversation its request arrived in. An
+ * answer that names its request's id answers that request; one that names
+ * none answers the one request open there, and is refused rather than
+ * guessed when several are open.
  */
 
 import { Duration, Either, Option } from "effect";
 import type { InboundMessage } from "../conversations/message.js";
 import type { PostId, RecordHash } from "../records/index.js";
-import type { AgentAddress, MessageAddressInput } from "../records/values.js";
+import type {
+  AgentAddress,
+  GroupAddress,
+  MessageAddressInput,
+} from "../records/values.js";
 import type { CertifiedPost } from "./ports.js";
 import type { SharedAnswers } from "./shared-answers.js";
 import {
+  CollectiveError,
   type CollectiveFailure,
   type CollectiveId,
   MAXIMUM_DEADLINE_SECONDS,
@@ -27,15 +32,16 @@ import {
 import { questionText } from "./render.js";
 
 /**
- * What matching reads of a received request: `to` is the conversation it
- * arrived in. `sending` holds the one answer in flight, so a member answers
- * at most once; an all_gather request becomes `closed` at its close. With a
- * firewall installed a request starts `unadmitted` and becomes `open` once
- * the runtime is shown it, or `withheld` when it is not; matching passes
- * over both, as though the request had not arrived.
+ * What matching reads of a received request: `to` is the canonical address
+ * of the conversation it arrived in. `sending` holds the one answer in
+ * flight, so a member answers at most once; an all_gather request becomes
+ * `closed` at its close. With a firewall installed a request starts
+ * `unadmitted` and becomes `open` once the runtime is shown it, or `withheld`
+ * when it is not; matching passes over both, as though the request had not
+ * arrived.
  */
 export interface RequestStatus {
-  readonly to: MessageAddressInput;
+  readonly to: AgentAddress | GroupAddress;
   readonly deadlineAt: number;
   readonly state:
     | "unadmitted"
@@ -52,11 +58,22 @@ export interface OpenRequest<Request extends RequestStatus> {
   readonly request: Request;
 }
 
-/** Why no single request takes an answer. */
-type UnmatchedAnswer = Extract<
-  CollectiveFailure["kind"],
-  `request-${"none" | "ambiguous" | "answered" | "expired"}`
->;
+/**
+ * Why no single request takes an answer: several are open, with their ids,
+ * when the answer named none; or none was received, it was answered, or it
+ * has expired.
+ */
+type UnmatchedAnswer =
+  | {
+      readonly kind: "request-ambiguous";
+      readonly openIds: readonly CollectiveId[];
+    }
+  | {
+      readonly kind: Extract<
+        CollectiveFailure["kind"],
+        `request-${"none" | "answered" | "expired"}`
+      >;
+    };
 
 /**
  * A request this endpoint received. `postId` is the request post it came in,
@@ -110,11 +127,14 @@ const RECEIVED_DEADLINE_HORIZON = Duration.toMillis(
 );
 
 /**
- * Find the one request open in a conversation: received, not yet answered,
- * and before its deadline and close.
+ * Find the request an answer answers, open in its conversation: received,
+ * not yet answered, and before its deadline and close. An answer with `id`
+ * answers the request with that id; one without, the one request open there.
  * @param requests Every request this endpoint holds, by id.
  * @param conversation The canonical address the answer is sent to.
  * @param now The current time in epoch milliseconds.
+ * @param answer The request the answer names, if any.
+ * @param answer.id The id of the request it names, if it names one.
  * @returns The open request, or why none takes the answer: several are open,
  *   one was already answered, none was received, or each has expired.
  */
@@ -122,58 +142,30 @@ export const matchOpenRequest = <Request extends RequestStatus>(
   requests: ReadonlyMap<CollectiveId, Request>,
   conversation: MessageAddressInput,
   now: number,
-): Either.Either<OpenRequest<Request>, UnmatchedAnswer> => {
-  const asked = [...requests]
-    .filter(
-      ([, request]) =>
-        request.to === conversation && requestShown(request.state),
-    )
-    .map(([id, request]) => ({
-      id,
-      request,
-      unavailable: requestUnavailable(request, now),
-    }));
-  const open = asked.filter(({ unavailable }) => unavailable === undefined);
-  const [only] = open;
-  if (only !== undefined && open.length === 1) {
-    return Either.right({ id: only.id, request: only.request });
-  }
-  if (open.length > 1) {
-    return Either.left("request-ambiguous");
-  }
-  if (asked.some(({ unavailable }) => unavailable === "request-answered")) {
-    return Either.left("request-answered");
-  }
-  return Either.left(asked.length === 0 ? "request-none" : "request-expired");
-};
+  answer: { readonly id?: CollectiveId },
+): Either.Either<OpenRequest<Request>, UnmatchedAnswer> =>
+  answer.id === undefined
+    ? onlyOpenRequest(requests, conversation, now)
+    : namedRequest(requests, conversation, now, answer.id);
 
 /**
- * Why a request the runtime was shown no longer takes an answer, or
- * undefined while it is open before its deadline.
- * @param request The received request's state and deadline.
- * @param now The current time in epoch milliseconds.
- * @returns The refusal an answer to it alone would get, or undefined.
+ * The refusal of an answer no request takes; it names the open requests' ids
+ * when the answer named none and several are open.
+ * @param id The id minted for the refusal.
+ * @param unmatched Why no request takes the answer.
+ * @returns The error the answer fails with.
  */
-export function requestUnavailable(
-  request: RequestStatus,
-  now: number,
-): "request-answered" | "request-expired" | undefined {
-  switch (request.state) {
-    case "open":
-      return now >= request.deadlineAt ? "request-expired" : undefined;
-    case "sending":
-    case "answered":
-      return "request-answered";
-    case "closed":
-    case "unadmitted":
-    case "withheld":
-      return "request-expired";
-    default: {
-      const exhaustive: never = request.state;
-      return exhaustive;
-    }
-  }
-}
+export const unmatchedAnswerError = (
+  id: CollectiveId,
+  unmatched: UnmatchedAnswer,
+) =>
+  unmatched.kind === "request-ambiguous"
+    ? new CollectiveError({
+        id,
+        failure: { kind: unmatched.kind },
+        openIds: unmatched.openIds,
+      })
+    : new CollectiveError({ id, failure: { kind: unmatched.kind } });
 
 /**
  * The request state a request post opens, when it arrived where its
@@ -247,6 +239,94 @@ export function forgetExpiredRequests(
   for (const [id, request] of requests) {
     if (now >= retainedUntil(request)) {
       requests.delete(id);
+    }
+  }
+}
+
+/** The one request open in `conversation`, or why no single request is. */
+function onlyOpenRequest<Request extends RequestStatus>(
+  requests: ReadonlyMap<CollectiveId, Request>,
+  conversation: MessageAddressInput,
+  now: number,
+): Either.Either<OpenRequest<Request>, UnmatchedAnswer> {
+  const asked = [...requests]
+    .filter(
+      ([, request]) =>
+        request.to === conversation && requestShown(request.state),
+    )
+    .map(([id, request]) => ({
+      id,
+      request,
+      unavailable: requestUnavailable(request, now),
+    }));
+  const open = asked.filter(({ unavailable }) => unavailable === undefined);
+  const [only] = open;
+  if (only !== undefined && open.length === 1) {
+    return Either.right({ id: only.id, request: only.request });
+  }
+  if (open.length > 1) {
+    return Either.left({
+      kind: "request-ambiguous",
+      openIds: open.map(({ id }) => id),
+    });
+  }
+  if (asked.some(({ unavailable }) => unavailable === "request-answered")) {
+    return Either.left({ kind: "request-answered" });
+  }
+  return Either.left({
+    kind: asked.length === 0 ? "request-none" : "request-expired",
+  });
+}
+
+/**
+ * The request with id `named`, when the runtime was shown it in
+ * `conversation` and it is still open; otherwise why it takes no answer, as
+ * `request-none` when no such request arrived there.
+ */
+function namedRequest<Request extends RequestStatus>(
+  requests: ReadonlyMap<CollectiveId, Request>,
+  conversation: MessageAddressInput,
+  now: number,
+  named: CollectiveId,
+): Either.Either<OpenRequest<Request>, UnmatchedAnswer> {
+  const request = requests.get(named);
+  if (
+    request === undefined ||
+    request.to !== conversation ||
+    !requestShown(request.state)
+  ) {
+    return Either.left({ kind: "request-none" });
+  }
+  const unavailable = requestUnavailable(request, now);
+  return unavailable === undefined
+    ? Either.right({ id: named, request })
+    : Either.left({ kind: unavailable });
+}
+
+/**
+ * Why a request the runtime was shown no longer takes an answer, or
+ * undefined while it is open before its deadline.
+ * @param request The received request's state and deadline.
+ * @param now The current time in epoch milliseconds.
+ * @returns The refusal an answer to it alone would get, or undefined.
+ */
+function requestUnavailable(
+  request: RequestStatus,
+  now: number,
+): "request-answered" | "request-expired" | undefined {
+  switch (request.state) {
+    case "open":
+      return now >= request.deadlineAt ? "request-expired" : undefined;
+    case "sending":
+    case "answered":
+      return "request-answered";
+    case "closed":
+    case "unadmitted":
+    case "withheld":
+      return "request-expired";
+    default: {
+      const exhaustive: never = request.state;
+      return exhaustive;
     }
   }
 }
