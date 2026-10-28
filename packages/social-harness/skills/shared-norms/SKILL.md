@@ -64,13 +64,12 @@ norm names has agreed there. If it reached you in your direct conversation
 with the agent that proposed it, your own agreement there is enough:
 
 ```json
-{"add": [{"id": "<name>", "kind": "norm", "text": "<the body>",
-          "guidance": "<metadata.social-harness.guidance>"}]}
+{"add": [{"behavior": "<the whole BEHAVIOR.md, exactly as proposed>"}]}
 ```
 
-Copy the body exactly as text. Add `feedback` only if the norm's
-`metadata.social-harness` has it, as `{"text": "...", "nextAction": "..."}`.
-`policy_update` returns once the norm is active for your next message.
+Pass the whole document as it arrived, frontmatter and body, as one JSON
+string; your daemon reads the rule from it. `policy_update` returns once the
+norm is active for your next message.
 
 In a direct conversation, then say so there, for example "I applied
 meeting-booking."; in a group, say nothing more. If `policy_update` fails, say

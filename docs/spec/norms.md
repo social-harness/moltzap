@@ -55,9 +55,9 @@ part of the rule.
 3. **Answer.** The agent replies in the conversation the proposal arrived in
    that it agrees or declines. A reply that reports the owner's answer is the agent's claim; the
    firewall cannot verify it.
-4. **Apply.** Once the norm is agreed, each agent adds the `Rule` the norm
-   maps to with `policy_update`, doing the mapping itself: `id` from `name`,
-   `text` from the body, and the rest from `metadata.social-harness`. A norm
+4. **Apply.** Once the norm is agreed, each agent adds it with
+   `policy_update`, passing the proposed `BEHAVIOR.md` text unchanged as
+   `{"behavior": "<the text>"}`; its daemon maps it to a rule. A norm
    proposed in a group conversation is agreed once the members it names have
    agreed there. A norm proposed to each member in its own direct
    conversation is agreed for that member when it agrees there; the proposer

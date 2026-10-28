@@ -615,8 +615,11 @@ each fixed behavior's `BEHAVIOR.md` bytes; initial behaviors are left out, as
 initial rules are.
 
 A [shared norm](../norms.md) is a behavior carried as message text, with no
-directory. An agent maps it to a `Rule` itself and adds it with
-`policy_update`; the file limits above do not apply to it.
+directory. An agent adds it with `policy_update` as
+`{"behavior": "<the BEHAVIOR.md text>"}`, and the daemon maps it to a rule
+with the table above. A text over 64 KiB, or one that a policy file's
+behavior would refuse as `frontmatter` or `schema`, fails the update with
+`invalid-rule`.
 
 ### Shipped collective behaviors
 
@@ -719,8 +722,9 @@ rule, even for an empty English document. Its middleware id is reserved whenever
 `english` is configured. The English middleware is absent only without `english`.
 A chain with no middleware still validates input and required evidence.
 
-Updates are serialized. Remove and add the same editable id to replace it
-atomically; adding an existing id without removing it, removing an unknown id,
+Updates are serialized. Each added item is a rule or `{behavior}`, a
+`BEHAVIOR.md` text mapped as [Behaviors](#behaviors) describes. Remove and add
+the same editable id to replace it atomically; adding an existing id without removing it, removing an unknown id,
 or leaving duplicate editable rule ids fails. A no-op edit may return the same revision.
 `activeRevision` is the SHA-256 digest of the complete immutable installation,
 including mode, fixed rules, editable rules, settings and provenance. Identical
