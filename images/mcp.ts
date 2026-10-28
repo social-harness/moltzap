@@ -52,10 +52,14 @@ class CommandError extends Data.TaggedError("CommandError")<{
   readonly entry: string;
 }> {}
 
-/** A tool call that failed; `refused` marks a final daemon refusal. */
+/**
+ * A tool call that failed. `refused` marks a final daemon refusal, and
+ * `entry` is the troubleshooting anchor that explains it.
+ */
 class ToolFailure extends Data.TaggedError("ToolFailure")<{
   readonly message: string;
   readonly refused: boolean;
+  readonly entry: string;
 }> {}
 
 /** The agent name inside the encoded AgentCard's base64url JSON payload. */
@@ -93,6 +97,7 @@ const savedRequest = Schema.Struct({
 /** The JSON-RPC error data the daemon attaches to a failed tool call. */
 const failureData = Schema.Struct({
   reason: Schema.optional(Schema.String),
+  detail: Schema.optional(Schema.String),
   issues: Schema.optional(
     Schema.Array(Schema.Struct({ message: Schema.String })),
   ),
@@ -140,7 +145,7 @@ function register(
     const client = yield* connect(url);
     const status = yield* callTool(client, "status", {}).pipe(
       Effect.mapError((failure) =>
-        commandError(failure.message, "tool-failed"),
+        commandError(failure.message, failure.entry),
       ),
       Effect.flatMap((result) => decode(statusResult, result, "status")),
     );
@@ -245,7 +250,7 @@ function call(
     const client = yield* connect(url);
     const result = yield* callTool(client, tool, parsed).pipe(
       Effect.mapError((failure) =>
-        commandError(failure.message, "tool-failed"),
+        commandError(failure.message, failure.entry),
       ),
     );
     yield* Console.log(JSON.stringify(result, null, 2));
@@ -341,7 +346,7 @@ function connect(url: URL): Effect.Effect<Client, CommandError, Scope.Scope> {
 
 /**
  * Calls `tool` once and answers its structured result. A JSON-RPC error
- * fails with the daemon's reason; a tool error fails with its text.
+ * fails as {@link toolFailure} says; a tool error fails with its text.
  */
 function callTool(
   client: Client,
@@ -351,17 +356,7 @@ function callTool(
   return Effect.tryPromise({
     try: (signal) =>
       client.callTool({ name: tool, arguments: { ...args } }, { signal }),
-    catch: (cause) =>
-      new ToolFailure({
-        message: `${tool} failed: ${failureReason(cause)}`,
-        refused:
-          ProtocolError.isInstance(cause) &&
-          (cause.code === INVALID_PARAMS ||
-            Option.exists(
-              Schema.decodeUnknownOption(failureData)(cause.data),
-              (data) => data.reason === "admission-refused",
-            )),
-      }),
+    catch: (cause) => toolFailure(tool, cause),
   }).pipe(
     Effect.flatMap((result) =>
       result.isError === true
@@ -371,6 +366,7 @@ function callTool(
                 .flatMap((part) => (part.type === "text" ? [part.text] : []))
                 .join("\n")}`,
               refused: false,
+              entry: "tool-failed",
             }),
           )
         : Effect.succeed(result.structuredContent),
@@ -378,20 +374,51 @@ function callTool(
   );
 }
 
-/** The daemon's reason and issues for a failed call, or the error's text. */
-function failureReason(cause: unknown): string {
+/**
+ * Reasons whose JSON-RPC message from the daemon already names the cause: an
+ * admission refusal, a send the agent's own firewall refused (its check and
+ * next action), and a refused collective (each unreachable member or failing
+ * field).
+ */
+const MESSAGE_REASONS: ReadonlySet<string> = new Set([
+  "admission-refused",
+  "firewall-refused",
+  "collective-failed",
+]);
+
+/**
+ * The failure for a call the daemon or the transport rejected: the daemon's
+ * message for {@link MESSAGE_REASONS}, otherwise its reason, then any detail
+ * and field issues. A firewall refusal has its own troubleshooting entry.
+ */
+function toolFailure(tool: string, cause: unknown): ToolFailure {
   if (!ProtocolError.isInstance(cause)) {
-    return String(cause);
+    return new ToolFailure({
+      message: `${tool} failed: ${String(cause)}`,
+      refused: false,
+      entry: "tool-failed",
+    });
   }
-  return Option.match(Schema.decodeUnknownOption(failureData)(cause.data), {
-    onNone: () => cause.message,
-    onSome: ({ reason, issues = [] }) =>
-      [
-        reason === "admission-refused"
-          ? cause.message
-          : (reason ?? cause.message),
-        ...issues.map((issue) => issue.message),
-      ].join("; "),
+  const {
+    reason,
+    detail,
+    issues = [],
+  } = Option.getOrElse(
+    Schema.decodeUnknownOption(failureData)(cause.data),
+    (): typeof failureData.Type => ({}),
+  );
+  const said =
+    reason === undefined || MESSAGE_REASONS.has(reason)
+      ? cause.message
+      : reason;
+  return new ToolFailure({
+    message: `${tool} failed: ${[
+      said,
+      ...(detail === undefined ? [] : [detail]),
+      ...issues.map((issue) => issue.message),
+    ].join("; ")}`,
+    refused: cause.code === INVALID_PARAMS || reason === "admission-refused",
+    entry: reason === "firewall-refused" ? "firewall-refused" : "tool-failed",
   });
 }
 

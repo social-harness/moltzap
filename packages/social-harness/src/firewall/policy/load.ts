@@ -66,9 +66,9 @@ const failureMessages: Readonly<
   "message-policy-composed":
     "SHARNESS_MESSAGE_POLICY_FILE cannot be set for a daemon whose composition installs its own firewall",
   "decision-provider-key-file":
-    "SHARNESS_DECISION_PROVIDER_KEY_FILE must name a readable file for the message policy's jev decision provider",
+    "SHARNESS_DECISION_PROVIDER_KEY_FILE must name a readable file for the message policy's jev decision provider. Docs: https://docs.moltzap.xyz/guides/message-firewall#decision-provider-key-file",
   "decision-provider-key":
-    "SHARNESS_DECISION_PROVIDER_KEY_FILE must contain one key without inner whitespace",
+    "SHARNESS_DECISION_PROVIDER_KEY_FILE must contain one key without inner whitespace. Docs: https://docs.moltzap.xyz/guides/message-firewall#decision-provider-key",
 };
 
 /** A configured document with the decision provider it names, and its behavior sources. */

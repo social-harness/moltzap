@@ -4,8 +4,10 @@
  * `images/compose.yaml` starts the images tagged `SHARNESS_NETWORK_VERSION`
  * from a `.env` written as Run a local network writes it, three `sharnessd`
  * daemons start unregistered, and `images/mcp.ts` registers them and sends a
- * message. The gate passes when each step prints what the guides say it
- * prints and each refusal exits 1 with the reason the guides name.
+ * message. Bob's daemon runs an enforcement policy with only the credentials
+ * rule, so a send its firewall refuses shows the check and the next action.
+ * The gate passes when each step prints what the guides say it prints and
+ * each refusal exits 1 with the reason the guides name.
  */
 import { Command, type CommandExecutor, FileSystem } from "@effect/platform";
 import {
@@ -39,6 +41,16 @@ const workspaceRoot = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const imagesRoot = join(workspaceRoot, "images");
 const HOST = "127.0.0.1";
 const MESSAGE = "Hi Bob, this is Alice.";
+
+/** An enforcement policy with only the credentials rule, needing no decision provider. */
+const FIREWALL_POLICY = JSON.stringify({
+  format: "org.social-harness/message-policy/v1",
+  mode: "enforcement",
+  outgoing: [{ use: "credentials" }],
+});
+
+/** A send the credentials rule refuses, as Turn on the message firewall's verification sends. */
+const CREDENTIAL_TEXT = "My key is sk-test-0000000000000000.";
 
 /** How long the path may take, including any image pull Compose makes. */
 const GATE_DEADLINE = Duration.minutes(6);
@@ -140,7 +152,7 @@ function ownNetworkPath(
     const [alice, bob, carol] = yield* Effect.all(
       [
         startDaemon(consumerRoot, network, "alice"),
-        startDaemon(consumerRoot, network, "bob"),
+        startDaemon(consumerRoot, network, "bob", FIREWALL_POLICY),
         startDaemon(consumerRoot, network, "carol"),
       ],
       { concurrency: 3 },
@@ -157,7 +169,7 @@ function ownNetworkPath(
       ["already active: agent:alice"],
     );
     yield* expectOutput(bob, ["register", "bob"], ["registered agent:bob"]);
-    yield* expectRefusal(carol, ["register", "alice"], "name_taken");
+    yield* expectRefusal(carol, ["register", "alice"], ["name_taken"]);
     yield* expectOutput(alice, ["call", "status"], ['"kind": "active"']);
 
     yield* expectOutput(alice, ["call", "send_message", sendTo("bob")], ["{"]);
@@ -172,18 +184,40 @@ function ownNetworkPath(
         ),
       ),
     );
-    yield* expectRefusal(
-      alice,
-      ["call", "send_message", sendTo("nobody")],
-      "send_message failed: unknown-agent",
-    );
+    yield* expectSendRefusals(alice, bob);
     return "own-network path passed";
   });
 }
 
-/** The `send_message` arguments Run sharnessd passes, addressed to `name`. */
-function sendTo(name: string): string {
-  return JSON.stringify({ input: { to: `agent:${name}`, text: MESSAGE } });
+/**
+ * Requires the send refusals the guides name: a recipient no agent holds, and
+ * a send bob's own firewall refuses, which prints its check and next action.
+ */
+function expectSendRefusals(
+  alice: Daemon,
+  bob: Daemon,
+): Effect.Effect<void, GateError, CommandExecutor.CommandExecutor> {
+  return Effect.gen(function* () {
+    yield* expectRefusal(
+      alice,
+      ["call", "send_message", sendTo("nobody")],
+      ["send_message failed: unknown-agent"],
+    );
+    yield* expectRefusal(
+      bob,
+      ["call", "send_message", sendTo("alice", CREDENTIAL_TEXT)],
+      [
+        "send_message failed: send withheld (check ",
+        "Next action: revise",
+        "run-sharnessd#firewall-refused",
+      ],
+    );
+  });
+}
+
+/** The `send_message` arguments Run sharnessd passes: `text` to `name`. */
+function sendTo(name: string, text = MESSAGE): string {
+  return JSON.stringify({ input: { to: `agent:${name}`, text } });
 }
 
 /**
@@ -277,17 +311,24 @@ function writeNetworkFiles(
  * @param consumerRoot Directory holding the installed packages.
  * @param network Settings the daemon joins with.
  * @param name Agent name, also the daemon's directory name.
+ * @param policy A message-policy document for the daemon's firewall, if any.
  * @returns Where the helper reaches the daemon.
  */
 function startDaemon(
   consumerRoot: string,
   network: Network,
   name: string,
+  policy?: string,
 ): Effect.Effect<Daemon, GateError, GateServices | Scope.Scope> {
   return Effect.gen(function* () {
     const directory = join(consumerRoot, "agents", name);
     const port = yield* freePort();
-    const environment = yield* writeAgentFiles(directory, network, port);
+    const environment = yield* writeAgentFiles(
+      directory,
+      network,
+      port,
+      policy,
+    );
     const child = yield* Command.make(
       join(consumerRoot, "node_modules", ".bin", "sharnessd"),
     ).pipe(Command.env(environment), Command.start);
@@ -319,12 +360,15 @@ function startDaemon(
 
 /**
  * Writes the agent's key and admission file, as Run sharnessd does, and
- * answers the daemon's six settings and admission file.
+ * answers the daemon's six settings and admission file. A `policy` is saved
+ * as `message-policy.json` and named in `SHARNESS_MESSAGE_POLICY_FILE`, as
+ * Turn on the message firewall does.
  */
 function writeAgentFiles(
   directory: string,
   network: Network,
   port: number,
+  policy?: string,
 ): Effect.Effect<Record<string, string>, GateError, FileSystem.FileSystem> {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
@@ -335,7 +379,14 @@ function writeAgentFiles(
     yield* fs.writeFileString(admissionFile, network.admissionCredential, {
       mode: 0o600,
     });
+    const policyFile = join(directory, "message-policy.json");
+    if (policy !== undefined) {
+      yield* fs.writeFileString(policyFile, policy);
+    }
     return {
+      ...(policy === undefined
+        ? {}
+        : { SHARNESS_MESSAGE_POLICY_FILE: policyFile }),
       SHARNESS_MCP_PORT: String(port),
       SHARNESS_STATE_DIRECTORY: join(directory, "state"),
       SHARNESS_REGISTRY_ORIGIN: network.registryOrigin,
@@ -367,19 +418,21 @@ function expectOutput(
 }
 
 /**
- * Runs the helper for `daemon` and requires exit 1 with `reason` and the
- * docs link every failure ends with in its standard error.
+ * Runs the helper for `daemon` and requires exit 1 with every `expected`
+ * text and the docs link every failure ends with in its standard error.
  */
 function expectRefusal(
   daemon: Daemon,
   args: readonly string[],
-  reason: string,
+  expected: readonly string[],
 ): Effect.Effect<void, GateError, CommandExecutor.CommandExecutor> {
   return helper(daemon, args).pipe(
     Effect.flatMap(({ stdout, stderr, exitCode }) =>
       requireCondition(
-        exitCode === 1 && stderr.includes(reason) && stderr.includes("Docs: "),
-        `node mcp.ts ${args.join(" ")} for ${daemon.name}: expected exit 1 naming ${JSON.stringify(reason)} and a Docs link, got exit ${exitCode}:\n${stdout}${stderr}`,
+        exitCode === 1 &&
+          expected.every((text) => stderr.includes(text)) &&
+          stderr.includes("Docs: "),
+        `node mcp.ts ${args.join(" ")} for ${daemon.name}: expected exit 1 naming ${JSON.stringify(expected)} and a Docs link, got exit ${exitCode}:\n${stdout}${stderr}`,
       ),
     ),
   );
