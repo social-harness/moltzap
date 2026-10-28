@@ -1,24 +1,27 @@
-/** @file MCP framing of the harness operations: send metadata and JSON Schema projections. */
+/** @file MCP framing of the harness operations: send metadata and the request and result schemas the tool catalog lists. */
 
 import {
+  fromJsonSchema,
+  type JsonSchemaType,
+  type StandardSchemaWithJSON,
+} from "@modelcontextprotocol/server";
+import {
   Array,
+  Brand,
   Effect,
   JSONSchema,
   Option,
   type ParseResult,
+  Predicate,
   Schema,
   SchemaAST,
 } from "effect";
 import { exactParseOptions } from "../../encoding/exact.js";
 import { HARNESS_SEND_META_KEY } from "./names.js";
 import {
-  harnessAcknowledgeDeliveryRequestSchema,
   harnessSendArgumentsSchema,
   harnessSendOptionsSchema,
   type HarnessSendRequest,
-  harnessSendResultSchema,
-  inboxRequestSchema,
-  inboxResultSchema,
 } from "./operations.js";
 
 const exactEmptyObject = Schema.Record({
@@ -26,24 +29,14 @@ const exactEmptyObject = Schema.Record({
   value: Schema.Never,
 }).annotations({ parseOptions: exactParseOptions });
 
-const harnessEmptyResultSchema = exactEmptyObject;
+/** The empty result of an adapter operation. */
+export const harnessEmptyResultSchema = exactEmptyObject;
 
 const harnessSendMetadataSchema = Schema.Struct({
   [HARNESS_SEND_META_KEY]: Schema.optionalWith(harnessSendOptionsSchema, {
     exact: true,
   }),
 });
-
-/** JSON Schema for the runtime inbox pagination arguments. */
-export const harnessReadInboxRequestJsonSchema = JSONSchema.make(
-  inboxRequestSchema,
-  { target: "jsonSchema2020-12" },
-);
-/** JSON Schema for classified inbox pages. */
-export const harnessReadInboxResultJsonSchema = JSONSchema.make(
-  inboxResultSchema,
-  { target: "jsonSchema2020-12" },
-);
 
 /**
  * Validate semantic arguments separately from runtime-owned send options.
@@ -70,29 +63,76 @@ export function decodeHarnessSendCall(
 /** Decoded empty adapter-operation result. */
 export type HarnessEmptyResult = typeof harnessEmptyResultSchema.Type;
 
-/** JSON Schema advertised for the delivery acknowledgment operation. */
-export const harnessAcknowledgeDeliveryRequestJsonSchema = JSONSchema.make(
-  harnessAcknowledgeDeliveryRequestSchema,
-  { target: "jsonSchema2020-12" },
-);
+/** The closed Standard Schema of an Effect Schema, which the MCP SDK validates. */
+function closedSchema<A, I>(
+  schema: Schema.Schema<A, I>,
+): StandardSchemaWithJSON<A, A> {
+  return fromJsonSchema<A>(
+    // eslint-disable-next-line agent-code-guard/require-assertion-rationale -- JSONSchema.make emits the exact JsonSchemaType consumed by the pinned MCP SDK.
+    JSONSchema.make(schema, { target: "jsonSchema2020-12" }) as JsonSchemaType,
+  );
+}
 
-/** JSON Schema advertised for `send_message` arguments. */
-export const harnessSendArgumentsJsonSchema = JSONSchema.make(
-  harnessSendArgumentsSchema,
-  { target: "jsonSchema2020-12" },
-);
+/**
+ * A tool's request schema as the catalog lists it: closed, so an argument the
+ * tool does not name fails.
+ * @param schema The Effect Schema of the request.
+ * @returns The schema the catalog lists and the SDK validates calls against.
+ */
+export function requestSchema<A, I>(
+  schema: Schema.Schema<A, I>,
+): StandardSchemaWithJSON<A, A> {
+  return closedSchema(schema);
+}
 
-/** JSON Schema advertised for `send_message` results. */
-export const harnessSendResultJsonSchema = JSONSchema.make(
-  harnessSendResultSchema,
-  { target: "jsonSchema2020-12" },
-);
+/** A tool's result schema as the catalog lists it; only `resultSchema` makes one. */
+export type ResultSchema<Value = unknown> = StandardSchemaWithJSON<
+  Value,
+  Value
+> &
+  Brand.Brand<"ResultSchema">;
 
-/** JSON Schema advertised for empty adapter-operation results. */
-export const harnessEmptyResultJsonSchema = JSONSchema.make(
-  harnessEmptyResultSchema,
-  { target: "jsonSchema2020-12" },
-);
+function openObject(
+  object: Readonly<Record<string, unknown>>,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(object).flatMap(([key, value]) =>
+      key === "additionalProperties" && value === false
+        ? []
+        : [[key, openValue(value)]],
+    ),
+  );
+}
+
+function openValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((entry) => openValue(entry));
+  }
+  return Predicate.isRecord(value) ? openObject(value) : value;
+}
+
+/**
+ * A tool's result schema. A result may gain fields in any release, so the
+ * JSON Schema a host lists is open at every object, and a host that listed an
+ * older daemon's tools still accepts a newer daemon's results. Its `validate`
+ * is the exact schema the daemon checks each result it returns against.
+ * @param schema The Effect Schema of the result.
+ * @returns The schema the catalog lists and the daemon checks results with.
+ */
+export function resultSchema<A, I>(
+  schema: Schema.Schema<A, I>,
+): ResultSchema<A> {
+  const exact = closedSchema(schema);
+  const listed = openObject(
+    exact["~standard"].jsonSchema.output({ target: "draft-2020-12" }),
+  );
+  return Brand.nominal<ResultSchema<A>>()({
+    "~standard": {
+      ...exact["~standard"],
+      jsonSchema: { input: () => listed, output: () => listed },
+    },
+  });
+}
 
 /** Admission refusal names the credential to replace without disclosing its value. */
 export const registrationAdmissionRefusalMessage =

@@ -1,4 +1,4 @@
-/** @file Exact private MCP schemas for daemon management and history reads. */
+/** @file Private MCP schemas for daemon management and history reads: exact requests, and results a reader decodes additively. */
 
 import { Schema } from "effect";
 import {
@@ -70,7 +70,7 @@ const orderedSignerEvidence = Schema.NonEmptyArray(signerEvidence).pipe(
   ),
 );
 
-const historyRecord = exactStruct({
+const historyRecord = Schema.Struct({
   /** The record's author, from its conversation's verified membership and outside the signed bytes. */
   author: agentView,
   recordHash: RecordHash,
@@ -96,42 +96,42 @@ export const managementRegisterRequestSchema = exactStruct({
   }),
 });
 
-/** Exact Registry domain outcomes returned by daemon registration. */
+/** Registry domain outcomes returned by daemon registration. */
 export const managementRegisterResultSchema = Schema.Union(
-  exactStruct({
+  Schema.Struct({
     kind: Schema.Literal("registered"),
     agentCard: encodedAgentCard,
     agent: agentView,
   }),
-  exactStruct({ kind: Schema.Literal("name_taken") }),
-  exactStruct({ kind: Schema.Literal("key_already_registered") }),
-  exactStruct({ kind: Schema.Literal("idempotency_conflict") }),
-).annotations({ parseOptions: exactParseOptions });
+  Schema.Struct({ kind: Schema.Literal("name_taken") }),
+  Schema.Struct({ kind: Schema.Literal("key_already_registered") }),
+  Schema.Struct({ kind: Schema.Literal("idempotency_conflict") }),
+);
 
-/** Closed daemon lifecycle visible to the loopback operator. */
+/** The daemon lifecycle visible to the loopback operator. */
 export const managementStatusResultSchema = Schema.Union(
-  exactStruct({ kind: Schema.Literal("unregistered") }),
-  exactStruct({
+  Schema.Struct({ kind: Schema.Literal("unregistered") }),
+  Schema.Struct({
     kind: Schema.Literal("active"),
     agentCard: encodedAgentCard,
     agent: agentView,
   }),
-).annotations({ parseOptions: exactParseOptions });
+);
 
 /** Exact Registry lookup selector accepted by `search_agents`. */
 export const managementSearchAgentsRequestSchema = Schema.Union(
   ...RegistryLookupRequest.members,
 ).annotations({ parseOptions: exactParseOptions });
 
-/** Exact Registry lookup with the found agent's view from the verified card. */
+/** Registry lookup result, with the found agent's view from the verified card. */
 export const managementSearchAgentsResultSchema = Schema.Union(
-  exactStruct({
+  Schema.Struct({
     kind: Schema.Literal("found"),
     agentCard: encodedAgentCard,
     agent: AgentView,
   }),
-  exactStruct({ kind: Schema.Literal("not_found") }),
-).annotations({ parseOptions: exactParseOptions });
+  Schema.Struct({ kind: Schema.Literal("not_found") }),
+);
 
 /** Canonically ordered local-conversation page selector. */
 export const managementSearchConversationsRequestSchema = exactStruct({
@@ -142,7 +142,7 @@ export const managementSearchConversationsRequestSchema = exactStruct({
 });
 
 /** Canonically ordered local-conversation address page. */
-export const managementSearchConversationsResultSchema = exactStruct({
+export const managementSearchConversationsResultSchema = Schema.Struct({
   kind: Schema.Literal("page"),
   addresses: Schema.Array(messageAddress).pipe(Schema.maxItems(50)),
   hasMore: Schema.Boolean,
@@ -175,7 +175,7 @@ export const managementReadConversationRequestSchema = Schema.Union(
 ).annotations({ parseOptions: exactParseOptions });
 
 /** Complete proof-bearing local certified-history page. */
-export const managementReadConversationResultSchema = exactStruct({
+export const managementReadConversationResultSchema = Schema.Struct({
   kind: Schema.Literal("page"),
   records: Schema.Array(historyRecord).pipe(Schema.maxItems(50)),
   continuation: Schema.NullOr(historyContinuation),

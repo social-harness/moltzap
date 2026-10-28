@@ -249,7 +249,7 @@ export const verifiedAgentCardSchema = Schema.declare(
  * without decoding a card.
  */
 // eslint-disable-next-line @typescript-eslint/naming-convention -- Effect Schemas share the public domain name they decode.
-export const AgentView = exactStruct({
+export const AgentView = Schema.Struct({
   agentId: AgentId,
   agentName: AgentName,
   principalId: PrincipalId,

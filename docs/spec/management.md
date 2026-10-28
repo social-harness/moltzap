@@ -236,7 +236,7 @@ requested `afterRecordHash` is not in that address's certified ancestry, or
 the retained local ancestry is not gap-free. Continuation failures never fall
 back to a new snapshot.
 
-Registration, status, and agent search retain their exact Identity-owned
+Registration, status, and agent search retain their Identity-owned
 result unions and use the failure-reason types above. Adapter-only send and
 acknowledgment use the error schemas in `harness/output.md` and
 `harness/ingress.md`; management does not rename or widen them. Raw decoders,

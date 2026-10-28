@@ -45,8 +45,6 @@ import {
 export { makeWebhookEvents } from "./webhook.js";
 /** Ephemeral polling shares the same consumer boundary and ownership gate. */
 export { makeHarnessPollEvents } from "./poll.js";
-/** Owner-only diagnostics use the same closed status schema. */
-export { webhookStatusJsonSchema } from "../protocol/index.js";
 /** Effect HTTP connection policy for callback delivery. */
 export { webhookHttpClientLayer } from "./event-signing.js";
 
