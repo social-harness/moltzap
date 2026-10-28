@@ -457,6 +457,34 @@ interface HistoryPageInput {
   readonly bootstrap: DaemonBootstrap;
 }
 
+function readHistoryPage(
+  input: HistoryPageInput,
+): Effect.Effect<ManagementReadConversationResult, DaemonManagementError> {
+  return Effect.all({
+    records: readStoredHistory(
+      input.bootstrap.configuration.registrySignerPublicKey,
+      input.recovery,
+      input.page.records,
+    ).pipe(Effect.mapError(persistenceFailure)),
+    authors: pageAuthors(input),
+  }).pipe(
+    Effect.flatMap(({ records, authors }) =>
+      Effect.forEach(
+        records,
+        (record) => projectHistoryRecord(record, authors),
+        { concurrency: 1 },
+      ),
+    ),
+    Effect.map((records) =>
+      Object.freeze({
+        kind: "page" as const,
+        records: Object.freeze(records),
+        continuation: input.page.continuation,
+      }),
+    ),
+  );
+}
+
 /**
  * The views of every member of the conversations a page names, from their
  * verified memberships; a record's author is one of them.
@@ -486,34 +514,6 @@ function pageAuthors(
         ),
     ),
     Effect.mapError(persistenceFailure),
-  );
-}
-
-function readHistoryPage(
-  input: HistoryPageInput,
-): Effect.Effect<ManagementReadConversationResult, DaemonManagementError> {
-  return Effect.all({
-    records: readStoredHistory(
-      input.bootstrap.configuration.registrySignerPublicKey,
-      input.recovery,
-      input.page.records,
-    ).pipe(Effect.mapError(persistenceFailure)),
-    authors: pageAuthors(input),
-  }).pipe(
-    Effect.flatMap(({ records, authors }) =>
-      Effect.forEach(
-        records,
-        (record) => projectHistoryRecord(record, authors),
-        { concurrency: 1 },
-      ),
-    ),
-    Effect.map((records) =>
-      Object.freeze({
-        kind: "page" as const,
-        records: Object.freeze(records),
-        continuation: input.page.continuation,
-      }),
-    ),
   );
 }
 

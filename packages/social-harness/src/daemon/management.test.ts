@@ -368,14 +368,14 @@ const returnsCertificateSignersForAudit = () =>
     ).toBeLessThan(0);
     expect(
       certified.recordCore.action.postIntent.authorAgentId,
-      "alice authored the genesis",
-    ).toBe(alice.agentId);
+      "bob authored the genesis",
+    ).toBe(bob.agentId);
     expect(page.records, "alice's history with bob").toEqual([
       {
         author: {
-          agentId: alice.agentId,
-          agentName: alice.agentName,
-          principalId: alice.principalId,
+          agentId: bob.agentId,
+          agentName: bob.agentName,
+          principalId: bob.principalId,
         },
         recordHash: certified.recordHash,
         recordCore: certified.recordCore,
