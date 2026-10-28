@@ -125,10 +125,18 @@ The file is unreadable or invalid. The error lists the path of each invalid
 property, such as `mode`. The file accepts only the properties the format
 names, so check spelling against the specification's property table.
 
-If the error ends `its rules could not be installed (not-configured)`, the
-state directory holds English rules from an earlier policy, but the file no
-longer configures `english`. Restore the `english` block, or start the daemon
-with a fresh state directory.
+<a id="stored-english-rules" />
+
+### `SHARNESS_MESSAGE_POLICY_FILE configures no English policy, but the state directory holds English rules`
+
+An earlier policy had an `english` block, and the agent added rules with
+`policy_update`, such as norms it agreed to. The daemon keeps those rules in its
+state directory and cannot install them without an English policy. Put the
+`english` block and its decision provider back, then restart the daemon. To
+drop the rules instead, list them with `policy_read`, remove them with
+`policy_update` `{"remove": ["<id>"]}`, then remove the block and restart
+again. A fresh state directory would also clear them, but a registered agent
+cannot register again from one.
 
 ### sharnessd stops naming `SHARNESS_DECISION_PROVIDER_KEY_FILE`
 

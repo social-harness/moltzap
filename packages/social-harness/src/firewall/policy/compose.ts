@@ -121,7 +121,9 @@ export const firewallInstallation = (
 /**
  * The configuration failure for a document whose rules the daemon could not
  * install against its store, such as an initial rule reusing a code rule's
- * id.
+ * id. `not-configured` here means the store holds editable English rules
+ * that a document without `english` cannot install; the document itself is
+ * valid, so that message names the stored rules instead.
  * @param cause The closed installation failure.
  * @param behaviorRulePaths The source entry for each file-loaded behavior.
  * @returns The failure naming `SHARNESS_MESSAGE_POLICY_FILE` and the reason.
@@ -142,7 +144,10 @@ export function policyInstallationError(
   return new MessagePolicyConfigurationError({
     reason: "message-policy",
     behaviorReason: path === undefined ? undefined : "duplicate-id",
-    message: `${base.message}; its rules could not be installed (${cause.reason})${location}`,
+    message:
+      cause.reason === "not-configured"
+        ? "SHARNESS_MESSAGE_POLICY_FILE configures no English policy, but the state directory holds English rules an earlier policy added; restore the english block, remove those rules with policy_update, then remove the block. Docs: https://docs.moltzap.xyz/guides/message-firewall#stored-english-rules"
+        : `${base.message}; its rules could not be installed (${cause.reason})${location}`,
   });
 }
 
