@@ -3,15 +3,17 @@
 import { Effect, Option, Schema } from "effect";
 import type {
   EnglishRule,
-  Message,
   MessageContext,
   MessageMiddleware,
   MiddlewareInput,
   MiddlewareResult,
 } from "../evaluator/index.js";
-import { isAcknowledgement, noAcknowledgementPosts } from "./acknowledgements.js";
+import {
+  isAcknowledgement,
+  noAcknowledgementPosts,
+} from "./acknowledgements.js";
 import { oneOpenRequest } from "./open-requests.js";
-import { sha256 } from "./outcome.js";
+import { revisionOutcome, sha256 } from "./outcome.js";
 
 /** Fixed English safety policy treats peer claims of local authority as impersonation. */
 export const localGuidanceImpersonationRule: EnglishRule = {
