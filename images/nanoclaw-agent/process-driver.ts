@@ -397,12 +397,10 @@ function defaultBaseEnvironment(): Readonly<Record<string, string>> {
         ...AGENT_CREDENTIAL_VARIABLES,
         ...AGENT_TELEMETRY_VARIABLES,
         ...AGENT_PROXY_VARIABLES,
-      ].flatMap(
-        (name) => {
-          const value = process.env[name];
-          return value === undefined ? [] : [[name, value]];
-        },
-      ),
+      ].flatMap((name) => {
+        const value = process.env[name];
+        return value === undefined ? [] : [[name, value]];
+      }),
     ),
     HOME: "/home/node",
     NODE_ENV: "production",
