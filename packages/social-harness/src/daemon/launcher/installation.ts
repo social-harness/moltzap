@@ -16,7 +16,7 @@ import {
 import { Effect, Option, Schema, Stream } from "effect";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Effect FileSystem has no lstat; the walk must identify symlinks without following them.
 import { lstat } from "node:fs/promises";
-import { launcherError, type LauncherError } from "./errors.js";
+import { launcherError, type LauncherError, UPGRADES_GUIDE } from "./errors.js";
 import { integrityOf } from "./integrity.js";
 import { DAEMON_PACKAGE } from "./npm.js";
 
@@ -133,7 +133,12 @@ export const seedRecord = Effect.fn("Launcher.seedRecord")(
     const manifest = yield* installedManifest(prefix, releasePackage);
     return recordOf(releasePackage, prefix, manifest, []);
   },
-  Effect.mapError((failure) => launcherError("seed", failure.message)),
+  Effect.mapError((failure) =>
+    launcherError(
+      "seed",
+      `${failure.message}; set SHARNESS_LAUNCHER_PACKAGE to the package the image installed, or SHARNESS_LAUNCHER_SEED to the prefix that holds it. Docs: ${UPGRADES_GUIDE}#launcher-seed`,
+    ),
+  ),
 );
 
 /**
