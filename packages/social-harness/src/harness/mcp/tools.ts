@@ -11,6 +11,7 @@ import {
   ProtocolErrorCode,
   type StandardSchemaV1,
   type StandardSchemaWithJSON,
+  type ToolAnnotations,
 } from "@modelcontextprotocol/server";
 import {
   Cause,
@@ -429,12 +430,8 @@ const runValidatedOperation = async <
  * `openWorldHint` to true, so a write that changes nothing it cannot undo, and
  * a tool that stays on this host, say so.
  */
-interface ToolHints {
-  readonly readOnlyHint: boolean;
-  readonly destructiveHint?: boolean;
-  readonly idempotentHint?: boolean;
-  readonly openWorldHint: boolean;
-}
+type ToolHints = ToolAnnotations &
+  Required<Pick<ToolAnnotations, "readOnlyHint" | "openWorldHint">>;
 
 /** A tool's catalog entry: its description, schemas and annotations. */
 interface ToolListing {
@@ -462,7 +459,7 @@ const toolListings = {
   },
   policy_update: {
     description:
-      "Add or remove editable English rules, such as a shared norm the agent agreed to: add takes whole rules, remove takes rule ids, and removing and adding one id replaces it. Fails with invalid-rule for an id that already exists or is missing, fixed-rule for a fixed rule, and not-configured when the daemon has no English policy. Returns the new activeRevision once the rules are active; changes are not retroactive: admitted guidance, held items and bound sends remain unchanged.",
+      "Add or remove editable English rules, such as a shared norm the agent agreed to: add takes whole rules, remove takes rule ids, and removing and adding one id replaces it. Fails with invalid-rule for an added id that already exists, a removed id that does not exist, or more than 256 rules; fixed-rule for a fixed rule's id; and not-configured when the message policy has no english block. Returns the new activeRevision once the rules are active; changes are not retroactive: admitted guidance, held items and bound sends remain unchanged.",
     inputSchema: policyUpdateInput,
     outputSchema: policyUpdateOutput,
     annotations: { readOnlyHint: false, openWorldHint: false },
@@ -513,7 +510,7 @@ const toolListings = {
     annotations: {
       readOnlyHint: false,
       destructiveHint: false,
-      openWorldHint: false,
+      openWorldHint: true,
     },
   },
   [SEARCH_AGENTS_TOOL]: {
@@ -532,10 +529,10 @@ const toolListings = {
   },
   [READ_CONVERSATION_TOOL]: {
     description:
-      "Read a frozen page of verified local conversation history by address or single-use continuation: signed records for verification and disclosure, not message text. Read message content with read_inbox or read_event.",
+      "Read a frozen page of verified local conversation history by address or single-use continuation; each record's message text is at recordCore.action.postIntent.content, beside the signatures that verify it. For new messages not yet handled, use read_inbox.",
     inputSchema: readConversationInput,
     outputSchema: readConversationOutput,
-    annotations: localRead,
+    annotations: { readOnlyHint: true, openWorldHint: true },
   },
   [HARNESS_READ_INBOX_TOOL]: {
     description:
@@ -546,7 +543,7 @@ const toolListings = {
   },
   [HARNESS_SEND_TOOL]: {
     description:
-      "Send one multicast, gather, all_gather, or collective response to an agent or fixed-member group. The sender's own firewall checks it first; a refusal fails the call with the check id, the reason and the next action, and sends nothing.",
+      "Send one multicast, gather, all_gather, or collective response to an agent or fixed-member group. When the daemon has a message firewall, it checks the message first; a refusal fails the call with the check id, the reason and the next action, and sends nothing.",
     inputSchema: sendInput,
     outputSchema: sendOutput,
     annotations: {
@@ -570,6 +567,7 @@ const toolListings = {
     annotations: {
       readOnlyHint: false,
       destructiveHint: false,
+      idempotentHint: true,
       openWorldHint: false,
     },
   },

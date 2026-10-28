@@ -96,5 +96,8 @@ or protocol machinery.
 - Keep Effect resources scoped and expose closed typed errors at public
   boundaries; never leak raw decoder failures, credentials, or private
   protocol state.
+- An MCP tool's description says what the tool returns, how it fails when
+  the failure has a fix, and which tool to use instead when one is easily
+  confused with it.
 - Tests for new behavior pin the stable laws above, not deleted v1 shapes.
 - Run package tasks through Nx from the workspace root.
