@@ -17,6 +17,13 @@ sections are the codebase's history as MoltZap.
 
 <!-- towncrier release notes start -->
 
+## [2026.1028.1] - 2026-10-28
+
+### Changed
+
+- `read_event`'s description says an inbox item's event id is its delivery token
+  with `evt_` in place of `dlv_`.
+
 ## [2026.1028.0] - 2026-10-28
 
 ### Added
