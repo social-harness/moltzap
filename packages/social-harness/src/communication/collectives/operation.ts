@@ -87,11 +87,6 @@ import {
   Schema,
 } from "effect";
 import type { InboundMessage } from "../conversations/message.js";
-import type {
-  AgentAddress,
-  MessageAddressInput,
-  RecordHash,
-} from "../records/index.js";
 import type { CollectiveMemberOutcome, InboundItem } from "./inbound.js";
 import type {
   AdmittedGather,
@@ -108,6 +103,12 @@ import type {
 } from "./ports.js";
 import { canonicalMessageAddress } from "../conversations/address.js";
 import { SendError } from "../conversations/errors.js";
+import {
+  type AgentAddress,
+  agentNameOf,
+  type MessageAddressInput,
+  type RecordHash,
+} from "../records/index.js";
 import {
   type OperationRefusal,
   refusedAs,
@@ -290,20 +291,21 @@ function multicast(
   to: MessageAddressInput,
   text: string,
 ): Effect.Effect<CollectiveSendOutcome, AuthoredPostError<never>> {
-  return encodeCollectiveContent(
-    { kind: "operation", op: "multicast" },
-    text,
-  ).pipe(
-    Effect.mapError(contentInvalid),
-    Effect.flatMap((content) =>
-      bindAuthoredPost(state, { to, content }, Effect.succeed(Effect.void)),
-    ),
-    Effect.flatMap(({ certified, guidance }) =>
-      certified.pipe(
-        Effect.map((post) => ({ postIds: [post.postId], guidance })),
-      ),
-    ),
-  );
+  return Effect.gen(function* () {
+    const content = yield* encodeCollectiveContent(
+      { kind: "operation", op: "multicast" },
+      text,
+    ).pipe(Effect.mapError(contentInvalid));
+    const self = agentNameOf(state.ports.self);
+    const { address } = yield* canonicalMessageAddress(to, self);
+    const { certified, guidance } = yield* bindAuthoredPost(
+      state,
+      { to, content },
+      Effect.succeed(Effect.void),
+    );
+    const { postId } = yield* certified;
+    return { postIds: [postId], postId, address, guidance };
+  });
 }
 
 /**
@@ -922,7 +924,7 @@ function respond(
     ).pipe(
       Effect.catchTag("SendError", (error) => Effect.fail(refused(error))),
     );
-    const post = yield* certified.pipe(
+    const { postId } = yield* certified.pipe(
       Effect.tapBoth({
         onFailure: () =>
           Effect.ignore(settleAnswer(state, id, request, Option.none())),
@@ -943,7 +945,8 @@ function respond(
         refusedAs<SendError | CollectiveError>(id, request.to, guidance),
       ),
     );
-    return { operationId: id, postIds: [post.postId], guidance };
+    const address = request.to;
+    return { operationId: id, postIds: [postId], postId, address, guidance };
   });
 }
 
@@ -977,7 +980,7 @@ function openRequest(
   return Effect.gen(function* () {
     const now = yield* Clock.currentTimeMillis;
     const { id } = yield* mintCollectiveId(state.ports.self);
-    const self = state.ports.self.slice("agent:".length);
+    const self = agentNameOf(state.ports.self);
     const { address } = yield* canonicalMessageAddress(to, self).pipe(
       Effect.mapError(refusedAs<SendError | CollectiveError>(id, to)),
     );

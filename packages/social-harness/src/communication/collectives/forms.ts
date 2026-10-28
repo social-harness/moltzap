@@ -11,6 +11,7 @@ import {
 } from "../conversations/errors.js";
 import {
   AgentAddress,
+  type GroupAddress,
   JsonValue,
   MessageAddressInput,
   type PostId,
@@ -181,12 +182,18 @@ const unreachableMembers = Schema.NonEmptyArray(
 );
 
 /**
- * What a completed send returns: a collecting operation names its id, and
- * `guidance` carries the local firewall's advice on the admitted send, such
- * as a norm judgment the decision provider left unsettled.
+ * What a completed send returns: a collecting operation names its id, and a
+ * response the id of the request it answered. A plain message and a response
+ * each create one post, and name it by `postId`, the id `read_conversation`
+ * records carry and, for a plain message, the recipients' `multicast` items,
+ * and by `address`, its conversation's canonical address. `guidance` carries
+ * the local firewall's advice on the admitted send, such as a norm judgment
+ * the decision provider left unsettled.
  */
 export interface SendResult {
   readonly operationId?: CollectiveId;
+  readonly postId?: PostId;
+  readonly address?: AgentAddress | GroupAddress;
   readonly guidance?: CheckedGuidance;
 }
 

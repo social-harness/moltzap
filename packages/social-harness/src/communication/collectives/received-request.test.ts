@@ -3,15 +3,14 @@
 import { Either, FastCheck as fc, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import type { CollectiveId } from "./forms.js";
-import { AgentAddress, MessageAddressInput } from "../records/values.js";
+import { AgentAddress, GroupAddress } from "../records/values.js";
 import { collectiveIdOf } from "./part/index.js";
 import { matchOpenRequest, type RequestStatus } from "./received-request.js";
 
 const NOW = 1_000_000;
 const bob = Schema.decodeUnknownSync(AgentAddress)("agent:bob");
-const bobConversation =
-  Schema.decodeUnknownSync(MessageAddressInput)("agent:bob");
-const groupConversation = Schema.decodeUnknownSync(MessageAddressInput)(
+const bobConversation = Schema.decodeUnknownSync(AgentAddress)("agent:bob");
+const groupConversation = Schema.decodeUnknownSync(GroupAddress)(
   "group:alice,bob,carol",
 );
 

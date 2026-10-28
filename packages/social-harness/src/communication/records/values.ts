@@ -195,6 +195,13 @@ export const AgentAddress = addressInput.pipe(
 /** A validated direct destination. */
 export type AgentAddress = typeof AgentAddress.Type;
 
+/**
+ * The registry name a validated `agent:` address names, such as the local
+ * agent's own name, which canonical addresses spell it by.
+ */
+export const agentNameOf = (address: AgentAddress): string =>
+  address.slice(AGENT_ADDRESS_PREFIX.length);
+
 /** A complete fixed-member group address in unsigned ASCII name order. */
 export const GroupAddress = addressInput.pipe(
   Schema.filter(isCanonicalGroupAddress),
