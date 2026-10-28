@@ -2,6 +2,7 @@
 import { Data, Effect, Either } from "effect";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
+import { workspaceDirectories } from "../repo/packages.ts";
 /** A failed read or an incomplete committed input graph. */
 export class ImageInputError extends Data.TaggedError("ImageInputError")<{
   readonly message: string;
@@ -77,19 +78,24 @@ export function inputError(cause: unknown): ImageInputError {
       });
 }
 
-/** Indexes committed package identities without working-tree directories. */
+/**
+ * Indexes committed package identities without working-tree directories: the
+ * packages the committed `pnpm-workspace.yaml` selects.
+ */
 export function workspaceRoots(tree: Tree): ReadonlyMap<string, string> {
   const roots = new Map<string, string>();
-  for (const file of [...tree.files.keys()].filter((file) =>
-    /^(?:packages\/[^/]+|images\/daemon)\/package\.json$/u.test(file),
+  for (const directory of workspaceDirectories(
+    tree.read("pnpm-workspace.yaml"),
+    tree.files.keys(),
   )) {
+    const file = `${directory}/package.json`;
     const name = String(readJson(tree, file).name);
     if (roots.has(name)) {
       throw new ImageInputError({
         message: `Duplicate workspace package name ${name} in ${file}`,
       });
     }
-    roots.set(name, path.posix.dirname(file));
+    roots.set(name, directory);
   }
   return roots;
 }

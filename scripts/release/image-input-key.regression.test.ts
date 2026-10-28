@@ -574,7 +574,7 @@ await test("host hash ignores untracked workspace directories", (t) => {
     rmSync(repo, { recursive: true, force: true });
   });
   write(repo, "packages/untracked/package.json", "invalid JSON");
-  assert.doesNotThrow(() => hostCodeHashOfPackage(repo, "router"));
+  assert.doesNotThrow(() => hostCodeHashOfPackage(repo, "packages/router"));
 });
 
 await test("host hash refuses duplicate tracked workspace names", (t) => {
@@ -584,7 +584,7 @@ await test("host hash refuses duplicate tracked workspace names", (t) => {
   });
   write(repo, "packages/duplicate/package.json", '{"name":"@fixture/router"}');
   commit(repo);
-  const result = hostCodeHashOfPackage(repo, "router");
+  const result = hostCodeHashOfPackage(repo, "packages/router");
   assert.notEqual(typeof result, "string");
   assert.ok(typeof result !== "string");
   assert.match(
@@ -996,7 +996,7 @@ await test("host hash returns malformed tracked manifest failures", (t) => {
   });
   write(repo, "packages/router/package.json", "{broken");
   commit(repo);
-  const result = hostCodeHashOfPackage(repo, "router");
+  const result = hostCodeHashOfPackage(repo, "packages/router");
   assert.ok(typeof result !== "string");
   assert.match(result.message, /SyntaxError/u);
 });

@@ -11,7 +11,7 @@ import { join, relative, resolve } from "node:path";
 import { parse } from "yaml";
 import { WIRE_VERSION } from "../../packages/social-harness/src/identity/wire-version.ts";
 import { recordPackedWireVersion } from "../release/content-hash.ts";
-import { productManifests } from "../repo/packages.ts";
+import { workspacePackages } from "../repo/packages.ts";
 
 /** Services every pack gate step runs against. */
 export type GateServices =
@@ -183,7 +183,8 @@ export function runGate(
 /**
  * Derive the packages to pack from the source dependency graph.
  * @param workspaceRoot Source workspace root.
- * @param entry Product whose transitive closure is packed.
+ * @param entry Repository-relative directory of the product whose
+ * transitive closure is packed.
  * @param temporaryRoot Scratch directory owned by the caller.
  * @returns Package names mapped to tarball paths.
  */
@@ -192,7 +193,7 @@ export function packProductClosure(
   entry: string,
   temporaryRoot: string,
 ) {
-  const products = productManifests(workspaceRoot);
+  const products = workspacePackages(workspaceRoot);
   const initial = products.find(({ dir }) => dir === entry);
   if (initial === undefined) {
     return Effect.fail(
@@ -216,7 +217,7 @@ export function packProductClosure(
     Object.fromEntries(
       [...closure.values()].map(({ dir, name }) => [
         name,
-        join(workspaceRoot, "packages", dir),
+        join(workspaceRoot, dir),
       ]),
     ),
     temporaryRoot,

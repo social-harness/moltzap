@@ -257,7 +257,7 @@ importers:
     dependencies:
       '@moltzap/openclaw-channel':
         specifier: workspace:*
-        version: link:../../packages/openclaw-channel
+        version: link:../../plugins/openclaw
       '@moltzap/social-harness':
         specifier: workspace:*
         version: link:../../packages/social-harness
@@ -277,7 +277,7 @@ importers:
         version: 2.0.0-beta.5
       '@moltzap/openclaw-channel':
         specifier: workspace:*
-        version: link:../../packages/openclaw-channel
+        version: link:../../plugins/openclaw
       '@moltzap/social-harness':
         specifier: workspace:*
         version: link:../../packages/social-harness
@@ -297,62 +297,6 @@ importers:
       '@moltzap/router':
         specifier: workspace:*
         version: link:../../packages/router
-
-  packages/nanoclaw-channel:
-    dependencies:
-      '@moltzap/social-harness':
-        specifier: workspace:*
-        version: link:../social-harness
-      '@types/node':
-        specifier: 'catalog:'
-        version: 25.5.0
-      effect:
-        specifier: 3.22.1
-        version: 3.22.1
-    devDependencies:
-      '@typescript/native':
-        specifier: 'catalog:'
-        version: typescript@7.0.2
-      eslint:
-        specifier: 'catalog:'
-        version: 9.39.4(jiti@2.7.0)
-      typescript:
-        specifier: 'catalog:'
-        version: '@typescript/typescript6@6.0.2'
-      vitest:
-        specifier: 'catalog:'
-        version: 3.2.4(@types/debug@4.1.13)(@types/node@25.5.0)(jiti@2.7.0)(terser@5.49.0)(tsx@4.21.0)(yaml@2.9.1)
-
-  packages/openclaw-channel:
-    dependencies:
-      '@moltzap/social-harness':
-        specifier: workspace:*
-        version: link:../social-harness
-      effect:
-        specifier: 3.22.1
-        version: 3.22.1
-    devDependencies:
-      '@effect/vitest':
-        specifier: 'catalog:'
-        version: 0.30.0(effect@3.22.1)(vitest@3.2.4(@types/debug@4.1.13)(@types/node@25.5.0)(jiti@2.7.0)(terser@5.49.0)(tsx@4.21.0)(yaml@2.9.1))
-      '@types/node':
-        specifier: 'catalog:'
-        version: 25.5.0
-      '@typescript/native':
-        specifier: 'catalog:'
-        version: typescript@7.0.2
-      eslint:
-        specifier: 'catalog:'
-        version: 9.39.4(jiti@2.7.0)
-      openclaw:
-        specifier: 'catalog:'
-        version: 2026.10.3(@aws-sdk/credential-provider-node@3.972.29)(@cfworker/json-schema@4.1.1)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.12.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.12.0(@opentelemetry/api@1.9.1))
-      typescript:
-        specifier: 'catalog:'
-        version: '@typescript/typescript6@6.0.2'
-      vitest:
-        specifier: 'catalog:'
-        version: 3.2.4(@types/debug@4.1.13)(@types/node@25.5.0)(jiti@2.7.0)(terser@5.49.0)(tsx@4.21.0)(yaml@2.9.1)
 
   packages/registry:
     dependencies:
@@ -612,6 +556,62 @@ importers:
         specifier: 'catalog:'
         version: 3.2.4(@types/debug@4.1.13)(@types/node@25.5.0)(jiti@2.7.0)(terser@5.49.0)(tsx@4.21.0)(yaml@2.9.1)
 
+  plugins/nanoclaw:
+    dependencies:
+      '@moltzap/social-harness':
+        specifier: workspace:*
+        version: link:../../packages/social-harness
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.5.0
+      effect:
+        specifier: 3.22.1
+        version: 3.22.1
+    devDependencies:
+      '@typescript/native':
+        specifier: 'catalog:'
+        version: typescript@7.0.2
+      eslint:
+        specifier: 'catalog:'
+        version: 9.39.4(jiti@2.7.0)
+      typescript:
+        specifier: 'catalog:'
+        version: '@typescript/typescript6@6.0.2'
+      vitest:
+        specifier: 'catalog:'
+        version: 3.2.4(@types/debug@4.1.13)(@types/node@25.5.0)(jiti@2.7.0)(terser@5.49.0)(tsx@4.21.0)(yaml@2.9.1)
+
+  plugins/openclaw:
+    dependencies:
+      '@moltzap/social-harness':
+        specifier: workspace:*
+        version: link:../../packages/social-harness
+      effect:
+        specifier: 3.22.1
+        version: 3.22.1
+    devDependencies:
+      '@effect/vitest':
+        specifier: 'catalog:'
+        version: 0.30.0(effect@3.22.1)(vitest@3.2.4(@types/debug@4.1.13)(@types/node@25.5.0)(jiti@2.7.0)(terser@5.49.0)(tsx@4.21.0)(yaml@2.9.1))
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.5.0
+      '@typescript/native':
+        specifier: 'catalog:'
+        version: typescript@7.0.2
+      eslint:
+        specifier: 'catalog:'
+        version: 9.39.4(jiti@2.7.0)
+      openclaw:
+        specifier: 'catalog:'
+        version: 2026.10.3(@aws-sdk/credential-provider-node@3.972.29)(@cfworker/json-schema@4.1.1)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.12.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.12.0(@opentelemetry/api@1.9.1))
+      typescript:
+        specifier: 'catalog:'
+        version: '@typescript/typescript6@6.0.2'
+      vitest:
+        specifier: 'catalog:'
+        version: 3.2.4(@types/debug@4.1.13)(@types/node@25.5.0)(jiti@2.7.0)(terser@5.49.0)(tsx@4.21.0)(yaml@2.9.1)
+
   tests/integration:
     devDependencies:
       '@effect/platform':
@@ -628,7 +628,7 @@ importers:
         version: 2.0.0-beta.5
       '@moltzap/openclaw-channel':
         specifier: workspace:*
-        version: link:../../packages/openclaw-channel
+        version: link:../../plugins/openclaw
       '@moltzap/registry':
         specifier: workspace:*
         version: link:../../packages/registry

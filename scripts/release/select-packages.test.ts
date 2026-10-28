@@ -37,22 +37,29 @@ const RELEASE = "2099.101.0";
 const PREVIOUS = "2099.100.0";
 
 /** A library and its adapter exercise dependency-ordered release selection. */
-const DIRS = ["social-harness", "openclaw-channel"];
+const DIRS = ["packages/social-harness", "plugins/openclaw"];
 
 /**
  * Every workspace package name, as `hostCodeHashOfPackage` passes them: the
  * private services are workspace packages outside the release set.
  */
 const WORKSPACE_NAMES: ReadonlySet<string> = new Set(
-  [...DIRS, "nanoclaw-channel", "registry", "router"].map(packageName),
+  [...DIRS, "plugins/nanoclaw", "packages/registry", "packages/router"].map(
+    packageName,
+  ),
 );
-/** The npm name matches the package directory under `packages/`. */
+/** Connector npm names retain their published channel suffix. */
 function packageName(dir: string): string {
-  return `@moltzap/${dir}`;
+  const name = path.basename(dir);
+  const suffix = dir.startsWith("plugins/") ? "-channel" : "";
+  return `@moltzap/${name}${suffix}`;
 }
 
 const DEPENDENCIES = Object.fromEntries(
-  DIRS.map((dir) => [dir, dir === "social-harness" ? [] : ["social-harness"]]),
+  DIRS.map((dir) => [
+    dir,
+    dir === "packages/social-harness" ? [] : ["packages/social-harness"],
+  ]),
 );
 
 const MANIFEST = {
@@ -85,30 +92,30 @@ const AS_PUBLISHED = (): Recorded | undefined => undefined;
 
 await test("a client-only change publishes the client and the channel that pins it", () => {
   const { workspace, versions } = fakeWorkspace(
-    { "social-harness": "library-changed" },
+    { "packages/social-harness": "library-changed" },
     AS_PUBLISHED,
   );
   assert.deepEqual(selectPackages(workspace, RELEASE, DIRS), {
     kind: "selected",
-    dirs: ["social-harness", "openclaw-channel"],
+    dirs: ["packages/social-harness", "plugins/openclaw"],
   });
   assert.deepEqual(Object.fromEntries(versions), {
-    "social-harness": RELEASE,
-    "openclaw-channel": RELEASE,
+    "packages/social-harness": RELEASE,
+    "plugins/openclaw": RELEASE,
   });
 });
 
 await test("a channel-only change leaves the Client at its previous release", () => {
   const { workspace, versions } = fakeWorkspace(
-    { "openclaw-channel": "channel-changed" },
+    { "plugins/openclaw": "channel-changed" },
     AS_PUBLISHED,
   );
   assert.deepEqual(selectPackages(workspace, RELEASE, DIRS), {
     kind: "selected",
-    dirs: ["openclaw-channel"],
+    dirs: ["plugins/openclaw"],
   });
-  assert.equal(versions.get("social-harness"), PREVIOUS);
-  assert.equal(versions.get("openclaw-channel"), RELEASE);
+  assert.equal(versions.get("packages/social-harness"), PREVIOUS);
+  assert.equal(versions.get("plugins/openclaw"), RELEASE);
 });
 
 await test("an unchanged workspace publishes nothing", () => {
@@ -138,14 +145,17 @@ await test("an npm outage stops the selection", () => {
 await test("a package listed before a sibling it depends on stops the selection", () => {
   const { workspace, versions } = fakeWorkspace({}, AS_PUBLISHED);
   assert.deepEqual(
-    selectPackages(workspace, RELEASE, ["openclaw-channel", "social-harness"]),
+    selectPackages(workspace, RELEASE, [
+      "plugins/openclaw",
+      "packages/social-harness",
+    ]),
     {
       kind: "out-of-order",
       message:
-        "openclaw-channel depends on @moltzap/social-harness, which must come before it",
+        "plugins/openclaw depends on @moltzap/social-harness, which must come before it",
     },
   );
-  assert.equal(versions.get("openclaw-channel"), PREVIOUS);
+  assert.equal(versions.get("plugins/openclaw"), PREVIOUS);
 });
 
 await test("the content hash ignores the version, the recorded hash, and key order", () => {

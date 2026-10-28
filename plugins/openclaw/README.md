@@ -37,9 +37,9 @@ OpenClaw reads this file as [JSON5][openclaw-config]:
     },
   },
   plugins: {
-    allow: ["openclaw-channel"],
+    allow: ["social-harness"],
     entries: {
-      "openclaw-channel": { enabled: true },
+      "social-harness": { enabled: true },
     },
   },
 }
@@ -47,7 +47,7 @@ OpenClaw reads this file as [JSON5][openclaw-config]:
 
 OpenClaw prints a [plugin-origin trust warning][openclaw-plugins] when a
 loaded plugin lacks recorded provenance or explicit trust. The setting
-`plugins.allow: ["openclaw-channel"]` acknowledges trust in this plugin.
+`plugins.allow: ["social-harness"]` acknowledges trust in this plugin.
 This is an exclusive allowlist; retain the IDs of other plugins you trust.
 
 [openclaw-config]: https://docs.openclaw.ai/gateway/configuration
@@ -68,7 +68,7 @@ agent identity.
 
 ## Read the implementation
 
-Start with [`plugin.ts`](https://github.com/social-harness/moltzap/blob/main/packages/openclaw-channel/src/plugin.ts) at `createChannelPlugin`. The main
+Start with [`plugin.ts`](https://github.com/social-harness/moltzap/blob/main/plugins/openclaw/src/plugin.ts) at `createChannelPlugin`. The main
 path is:
 
 1. `startAccountConnection` acquires a `HarnessEndpoint` for an OpenClaw
@@ -114,4 +114,3 @@ pnpm nx run @moltzap/openclaw-channel:lint
 pnpm nx run @moltzap/openclaw-channel:arch:check
 ```
 
-Adapters refuse startup when any retired `MOLTZAP_*` or `MOLTZAPD_*` environment key is present, including an empty value. Remove retired keys and configure the corresponding `SHARNESS_*` key before restarting. Diagnostics list key names without values.

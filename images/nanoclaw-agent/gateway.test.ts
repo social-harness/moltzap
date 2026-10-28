@@ -97,7 +97,7 @@ async function cliSocket(
   t: TestContext,
   onConnection: (connection: Socket) => unknown,
 ): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "moltzap-gateway-"));
+  const root = await mkdtemp(join(tmpdir(), "social-harness-gateway-"));
   const socketPath = join(root, "cli.sock");
   const server = createServer((connection) => {
     onConnection(connection);

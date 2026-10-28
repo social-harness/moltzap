@@ -47,15 +47,15 @@ main() {
   mkdir "$TEMP_DIR/fixture"
   cd "$TEMP_DIR/fixture"
   git init --quiet --initial-branch=main
-  mkdir -p packages/social-harness/src/identity packages/openclaw-channel changelog.d
+  mkdir -p packages/social-harness/src/identity plugins/openclaw changelog.d
   printf '%s\n' 'export const WIRE_VERSION = "2026.1021.3";' > packages/social-harness/src/identity/wire-version.ts
   printf '%s\n' '{"name":"@moltzap/social-harness","version":"2026.1024.1","sharnessWireVersion":"2026.1021.3"}' > packages/social-harness/package.json
-  sed 's|@moltzap/social-harness|@moltzap/openclaw-channel|' packages/social-harness/package.json > packages/openclaw-channel/package.json
+  sed 's|@moltzap/social-harness|@moltzap/openclaw-channel|' packages/social-harness/package.json > plugins/openclaw/package.json
   touch changelog.d/template.md changelog.d/consumed.Fixed.md
   commit_tip 'fix: previous change'
   rm changelog.d/consumed.Fixed.md
   printf '%s\n' '{"name":"@moltzap/social-harness","version":"2026.1025.1","sharnessWireVersion":"2026.1021.3"}' > packages/social-harness/package.json
-  sed 's|@moltzap/social-harness|@moltzap/openclaw-channel|' packages/social-harness/package.json > packages/openclaw-channel/package.json
+  sed 's|@moltzap/social-harness|@moltzap/openclaw-channel|' packages/social-harness/package.json > plugins/openclaw/package.json
   commit_tip 'chore(release): moltzap@2026.1025.1'
 
   new_case
@@ -116,7 +116,7 @@ main() {
 
   new_case
   touch changelog.d/new.Fixed.md
-  printf '%s\n' '{"name":"@moltzap/openclaw-channel","version":"2026.1024.1"}' > packages/openclaw-channel/package.json
+  printf '%s\n' '{"name":"@moltzap/openclaw-channel","version":"2026.1024.1"}' > plugins/openclaw/package.json
   commit_tip 'fix: revert package version with new notes'
   check 'lower package version skips without restored fragments' skip 0 'older than the last release'
 
@@ -131,7 +131,7 @@ main() {
 
   new_case
   touch changelog.d/new.Fixed.md
-  printf '%s\n' '{"name":"@moltzap/openclaw-channel","version":"next"}' > packages/openclaw-channel/package.json
+  printf '%s\n' '{"name":"@moltzap/openclaw-channel","version":"next"}' > plugins/openclaw/package.json
   commit_tip 'fix: unreadable manifest version'
   check 'unreadable manifest version fails' '' 1 'Cannot read version'
 
@@ -141,6 +141,14 @@ main() {
   touch changelog.d/new.Fixed.md
   commit_tip 'feat: add Social Harness service'
   check 'manifest absent at last release is ignored by revert check' release
+
+  new_case
+  mkdir -p plugins/receiver
+  printf '%s\n' '{"name":"@moltzap/receiver-plugin","private":true}' > plugins/receiver/package.json
+  commit_tip 'chore(release): moltzap@2026.1025.2'
+  touch changelog.d/new.Fixed.md
+  commit_tip 'fix: change beside a private connector'
+  check 'private manifest without a version is ignored by revert check' release
 
   new_case
   mkdir -p packages/social-harness/fixture

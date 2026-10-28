@@ -10,7 +10,6 @@ import {
   type HarnessEndpoint,
   type InboundDelivery,
   type InboundItem,
-  legacyKeys,
   MessageAddressInput,
   parseMessageText,
   renderCollectiveRequest,
@@ -627,13 +626,6 @@ function projectItem(item: InboundItem): ProjectedItem {
 }
 
 function makeHarnessChannelAdapter(): HarnessChannelAdapter | null {
-  // eslint-disable-next-line agent-code-guard/no-process-env-at-runtime -- Host startup enumerates unknown retired keys, which Effect.Config cannot name in advance.
-  const retiredKeys = legacyKeys(process.env);
-  if (retiredKeys.length > 0) {
-    throw new ChannelError({
-      reason: `Retired environment keys: ${retiredKeys.join(", ")}; use SHARNESS_* keys and restart.`,
-    });
-  }
   const { mcpEndpoint } = Effect.runSync(
     channelEnv.pipe(Effect.withConfigProvider(ConfigProvider.fromEnv())),
   );

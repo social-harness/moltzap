@@ -14,8 +14,8 @@ import {
   type SessionSpec,
 } from "./process-driver.ts";
 
-const APP_ROOT = "/opt/moltzap/nanoclaw/app";
-const GATEWAY_PROVIDER_KIND = "moltzap-process";
+const APP_ROOT = "/opt/social-harness/nanoclaw/app";
+const GATEWAY_PROVIDER_KIND = "social-harness-process";
 
 type ModuleRecord = Readonly<Record<string, unknown>>;
 

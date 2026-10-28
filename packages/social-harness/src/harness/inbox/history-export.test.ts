@@ -105,7 +105,9 @@ const stopsAfterOneFailureLine = () =>
   Effect.gen(function* () {
     const writes: string[] = [];
     yield* Effect.gen(function* () {
-      const sink = yield* makeHistoryExport("/var/run/sharness/history.ndjson");
+      const sink = yield* makeHistoryExport(
+        "/run/social-harness/history.ndjson",
+      );
       yield* sink.record(inbound());
       yield* sink.record(outbound());
       yield* sink.record(outbound());

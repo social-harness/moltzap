@@ -204,8 +204,7 @@ const PGLITE_BINARY = join(
   "tests/integration/node_modules/.bin/pglite-server",
 );
 
-/** The Registry executable installs its internal resolution. */
-export const REGISTRY_BINARY = join(
+const REGISTRY_BINARY = join(
   WORKSPACE_ROOT,
   "packages/registry/bin/sharness-registry",
 );
@@ -216,8 +215,7 @@ export const ROUTER_BINARY = join(
   "packages/router/bin/sharness-router",
 );
 
-/** The daemon executable runs the built Client. */
-export const DAEMON_BINARY = join(
+const DAEMON_BINARY = join(
   WORKSPACE_ROOT,
   "packages/social-harness/bin/sharnessd",
 );

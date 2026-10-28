@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
  * listed here: a tree left out is not reported as skipped, it simply
  * contributes zero blocks and the gate passes without having looked.
  */
-export const MERMAID_ROOTS = ["docs", "packages"] as const;
+export const MERMAID_ROOTS = ["docs", "packages", "plugins"] as const;
 
 /**
  * Something the gate was asked to inspect but could not.
@@ -117,7 +117,7 @@ export function requireRoots(
 }
 
 /**
- * Markdown files below `roots` and TypeScript under `packages/`, sorted for stable output.
+ * Markdown and TypeScript files below `roots`, sorted for stable output.
  */
 export function collectDiagramFiles(
   fs: FileSystem.FileSystem,
@@ -413,10 +413,9 @@ function visitEntry(
       return;
     }
     if (
-      StringOps.endsWith(".md")(name) ||
-      StringOps.endsWith(".mdx")(name) ||
-      (StringOps.endsWith(".ts")(name) &&
-        full.includes(`${ctx.path.sep}packages${ctx.path.sep}`))
+      [".md", ".mdx", ".ts"].some((extension) =>
+        StringOps.endsWith(extension)(name),
+      )
     ) {
       ctx.out.push(full);
     }

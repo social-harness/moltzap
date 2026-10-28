@@ -3,7 +3,7 @@
  * @file Content hash of one package as `pnpm pack` would publish it.
  *
  * Usage: `node scripts/release/content-hash.ts DIR`, where DIR names a
- * directory under `packages/`, or `--tarball FILE` for a packed tarball.
+ * repository-relative package directory, or `--tarball FILE` for a packed tarball.
  * Prints `sha256:` and a hex digest. The tarball form reads no workspace, so
  * the publish job checks what it publishes without installing anything.
  *
@@ -67,10 +67,10 @@ const DEPENDENCY_SECTIONS = [
 ];
 
 /**
- * Pack `packages/DIR` as the workspace stands and hash the tarball's
+ * Pack `DIR` as the workspace stands and hash the tarball's
  * contents.
  * @param repo Repository root.
- * @param dir Directory name under `packages/`.
+ * @param dir Repository-relative package directory.
  * @returns The content hash, or the step that failed.
  */
 export function contentHashOfPackage(
@@ -127,9 +127,9 @@ export function withScratch<T>(body: (scratch: string) => T): T {
 }
 
 /**
- * Pack `packages/DIR` into `scratch/DIR` and extract it there.
+ * Pack `DIR` into `scratch/DIR` and extract it there.
  * @param repo Repository root.
- * @param dir Directory name under `packages/`.
+ * @param dir Repository-relative package directory.
  * @param scratch Directory that receives the tarball and its contents.
  * @returns The extracted `package/` directory, or the step that failed.
  */
@@ -142,12 +142,12 @@ export function packInto(
   mkdirSync(destination, { recursive: true });
   const packed =
     run("pnpm", ["pack", "--pack-destination", destination], {
-      cwd: path.join(repo, "packages", dir),
+      cwd: path.join(repo, dir),
     }) ?? tarball(destination);
   if (typeof packed !== "string") {
     return packed;
   }
-  if (dir === "social-harness") {
+  if (dir === "packages/social-harness") {
     const version = readCompatibilityVersion(repo);
     if ("error" in version) {
       return { kind: "pack-failed", message: version.error };

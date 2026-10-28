@@ -40,13 +40,13 @@
         "integration/*.ts"
       ]
     },
-    "packages/nanoclaw-channel": {
+    "plugins/nanoclaw": {
       "project": [
         "src/**/*.ts",
         "*.ts"
       ]
     },
-    "packages/openclaw-channel": {
+    "plugins/openclaw": {
       "entry": [
         "src/**/*.test.ts",
         "vitest*.config.ts"

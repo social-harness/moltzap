@@ -189,6 +189,7 @@
       "inputs": [
         "{workspaceRoot}/scripts/release/**/*.ts",
         "{workspaceRoot}/packages/**/*",
+        "{workspaceRoot}/plugins/**/*",
         "{workspaceRoot}/images/**/*",
         "{workspaceRoot}/scripts/build/**/*",
         "{workspaceRoot}/scripts/setup/**/*",
@@ -212,14 +213,25 @@
     "docs:api": {
       "cache": true,
       "dependsOn": [
-        { "projects": ["@moltzap/social-harness", "@moltzap/registry", "@moltzap/router", "@moltzap/openclaw-channel", "@moltzap/nanoclaw-channel"], "target": "build" }
+        {
+          "projects": [
+            "@moltzap/social-harness",
+            "@moltzap/registry",
+            "@moltzap/router",
+            "@moltzap/openclaw-channel",
+            "@moltzap/nanoclaw-channel"
+          ],
+          "target": "build"
+        }
       ],
       "inputs": [
         "{workspaceRoot}/typedoc.json",
         "{workspaceRoot}/tsconfig*.json",
         "{workspaceRoot}/packages/**/*.ts",
         "{workspaceRoot}/packages/**/*.json",
-        "sharedGlobals"
+        "sharedGlobals",
+        "{workspaceRoot}/plugins/**/*.ts",
+        "{workspaceRoot}/plugins/**/*.json"
       ],
       "outputs": [
         "{workspaceRoot}/dist/api"

@@ -5,7 +5,7 @@
  * published Node engine ranges, the development Node pin, peer support floors,
  * and the Effect source tag.
  */
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { parse } from "yaml";
 import {
@@ -15,7 +15,7 @@ import {
   readJsonObject,
   stringAt,
 } from "./json.ts";
-import { productManifests } from "./packages.ts";
+import { workspacePackages } from "./packages.ts";
 
 const INSTALLED_SECTIONS = [
   "dependencies",
@@ -27,7 +27,7 @@ const EFFECT_SCRIPT = "scripts/setup/prepare-effect.sh";
 const HELPERS_MANIFEST = "images/package.json";
 
 const repo = process.cwd();
-const products = productManifests(repo);
+const packages = workspacePackages(repo);
 const failures: string[] = [];
 
 /** One package manifest and the repository-relative path failures name. */
@@ -72,9 +72,7 @@ function main(): void {
   const root = manifestAt("package.json");
   const workspaceManifests = [
     root,
-    ...products.map(({ dir }) => manifestAt(`packages/${dir}/package.json`)),
-    manifestAt("tests/integration/package.json"),
-    ...imageManifests(),
+    ...packages.map(({ dir }) => manifestAt(`${dir}/package.json`)),
   ];
   const helpers = manifestAt(HELPERS_MANIFEST);
 
@@ -124,16 +122,6 @@ function stringRecord(
 
 function manifestAt(where: string): Manifest {
   return { where, manifest: readJsonObject(path.join(repo, where)) };
-}
-
-function imageManifests(): readonly Manifest[] {
-  return readdirSync(path.join(repo, "images"))
-    .filter(
-      (name) =>
-        !name.startsWith(".") &&
-        existsSync(path.join(repo, "images", name, "package.json")),
-    )
-    .map((name) => manifestAt(`images/${name}/package.json`));
 }
 
 /**
@@ -252,9 +240,9 @@ function checkNodeRange(root: Manifest, helpers: Manifest): void {
  */
 function checkEngineCopies(nodeRange: string, helpers: Manifest): void {
   const copies = [
-    ...products.map(({ dir, published }) => ({
+    ...packages.map(({ dir, published }) => ({
       required: published,
-      ...manifestAt(`packages/${dir}/package.json`),
+      ...manifestAt(`${dir}/package.json`),
     })),
     { required: true, ...helpers },
   ];

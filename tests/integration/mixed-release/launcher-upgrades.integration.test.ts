@@ -132,7 +132,7 @@ const prepareReleaseSource = Effect.gen(function* () {
   });
   const { archives } = yield* packProductClosure(
     workspaceRoot,
-    "social-harness",
+    "packages/social-harness",
     scratch,
   );
   const archive = archives["@moltzap/social-harness"];

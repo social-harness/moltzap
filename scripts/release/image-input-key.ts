@@ -116,17 +116,19 @@ export function runtimeVersionReads(
   return Effect.try({
     try: () => {
       const tree = checkout(repo);
+      const roots = workspaceRoots(tree);
       return [
         ...new Set(
-          Object.entries(imagesFromTree(tree, ["registry", "router"])).flatMap(
-            ([service, image]) =>
-              image.runtime.filter((file) =>
-                file.startsWith(`packages/${service}/`),
-              ),
+          Object.entries(
+            imagesFromTree(tree, roots, ["registry", "router"]),
+          ).flatMap(([service, image]) =>
+            image.runtime.filter((file) =>
+              file.startsWith(`packages/${service}/`),
+            ),
           ),
         ),
       ]
-        .filter((file) => isRuntimeInput(tree, file))
+        .filter((file) => isRuntimeInput(tree, roots, file))
         .filter((file) => readsManifestVersion(tree.read(file)))
         .sort(byteOrder);
     },
@@ -145,7 +147,7 @@ export function imageInputs(
   return Effect.try({
     try: () => {
       const tree = checkout(repo);
-      return imagesFromTree(tree, services);
+      return imagesFromTree(tree, workspaceRoots(tree), services);
     },
     catch: inputError,
   });
@@ -153,9 +155,9 @@ export function imageInputs(
 
 function imagesFromTree(
   tree: Tree,
+  roots: ReadonlyMap<string, string>,
   services: readonly Service[],
 ): Readonly<Partial<Record<Service, ImageInputs>>> {
-  const roots = workspaceRoots(tree);
   return Object.fromEntries(
     services.map((service) => [service, serviceInputs(service, roots, tree)]),
   );
@@ -202,8 +204,12 @@ function serviceInputs(
 }
 
 /** Manifest binaries can be extensionless, while declarations remain erased. */
-function isRuntimeInput(tree: Tree, file: string): boolean {
-  const root = [...workspaceRoots(tree).values()].find((directory) =>
+function isRuntimeInput(
+  tree: Tree,
+  roots: ReadonlyMap<string, string>,
+  file: string,
+): boolean {
+  const root = [...roots.values()].find((directory) =>
     file.startsWith(`${directory}/`),
   );
   const manifest =

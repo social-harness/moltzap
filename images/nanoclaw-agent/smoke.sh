@@ -3,4 +3,4 @@
 set -euo pipefail
 readonly IMAGE="${1:?local NanoClaw image required}"
 docker run --rm --network none --entrypoint node "${IMAGE}" --input-type=module --eval \
-  'await import("/opt/moltzap/nanoclaw/app/dist/channels/sharness.js")'
+  'await import("/opt/social-harness/nanoclaw/app/dist/channels/sharness.js")'

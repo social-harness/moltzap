@@ -81,8 +81,8 @@ The Client service entry exports these type-only capability results:
 - `RegistryRegisterResult`;
 - `RegistryLookupResult`.
 
-The remaining identity root exports are `WIRE_VERSION`, `LIVE_WIRE_VERSIONS`,
-`AgentSigningAuthority` and `legacyKeys`. The condition-only `./internal` entry
+The remaining identity root exports are `WIRE_VERSION`, `LIVE_WIRE_VERSIONS`
+and `AgentSigningAuthority`. The condition-only `./internal` entry
 exposes request verification, card signing, `registryContract`, `routerContract`,
 `httpErrors`, Registry and Router client tags, and the service wire-version
 values and proof types listed in
@@ -912,9 +912,7 @@ executable supplies `ConfigProvider.fromEnv`; tests use
 provider. Configuration failure remains
 `RegistryServerStartupError` with phase `configuration`.
 
-Before loading declared values, `legacyKeys(process.env)` rejects every
-`MOLTZAP_*` or `MOLTZAPD_*` key with `legacy-key` and its name, without
-disclosing values. Effect Config reads the declared keys and ignores other
+Effect Config reads the declared keys and ignores other
 unrelated or unused values. There is no custom environment parser, generic
 public configuration type, mutable singleton, or hot reload.
 

@@ -12,21 +12,21 @@ RUN apt-get update \
     g++=4:12.2.0-3 make=4.3-4.1 python3=3.11.2-1+b1 \
   && rm -rf /var/lib/apt/lists/*
 
-COPY --from=nanoclaw-source . /opt/moltzap/nanoclaw/app
-COPY --from=social-harness-channel sharness.ts /opt/moltzap/nanoclaw/channel/sharness.ts
-COPY nanoclaw-v2.3.0.patch prepare.ts pnpm-lock.yaml /opt/moltzap/nanoclaw/
+COPY --from=nanoclaw-source . /opt/social-harness/nanoclaw/app
+COPY --from=social-harness-channel sharness.ts /opt/social-harness/nanoclaw/channel/sharness.ts
+COPY nanoclaw-v2.3.0.patch prepare.ts pnpm-lock.yaml /opt/social-harness/nanoclaw/
 
 # The install takes every dependency, with its integrity hash, from the
 # committed pnpm-lock.yaml that `build.ts lock` resolved for this patched
 # and prepared tree, and fails if the tree no longer matches it.
 COPY --from=social-harness-workspace . /opt/social-harness/workspace/
-WORKDIR /opt/moltzap/nanoclaw/app
-RUN git apply --check /opt/moltzap/nanoclaw/nanoclaw-v2.3.0.patch \
-  && git apply /opt/moltzap/nanoclaw/nanoclaw-v2.3.0.patch \
-  && node /opt/moltzap/nanoclaw/prepare.ts \
-    /opt/moltzap/nanoclaw/app \
-    /opt/moltzap/nanoclaw/channel/sharness.ts \
-  && cp /opt/moltzap/nanoclaw/pnpm-lock.yaml pnpm-lock.yaml \
+WORKDIR /opt/social-harness/nanoclaw/app
+RUN git apply --check /opt/social-harness/nanoclaw/nanoclaw-v2.3.0.patch \
+  && git apply /opt/social-harness/nanoclaw/nanoclaw-v2.3.0.patch \
+  && node /opt/social-harness/nanoclaw/prepare.ts \
+    /opt/social-harness/nanoclaw/app \
+    /opt/social-harness/nanoclaw/channel/sharness.ts \
+  && cp /opt/social-harness/nanoclaw/pnpm-lock.yaml pnpm-lock.yaml \
   && HUSKY=0 pnpm install --frozen-lockfile \
   && mkdir -p node_modules/@moltzap node_modules/@modelcontextprotocol \
   && ln -s /opt/social-harness/workspace/node_modules/@moltzap/social-harness node_modules/@moltzap/social-harness \
@@ -34,8 +34,8 @@ RUN git apply --check /opt/moltzap/nanoclaw/nanoclaw-v2.3.0.patch \
   && ln -s /opt/social-harness/workspace/node_modules/@modelcontextprotocol/client node_modules/@modelcontextprotocol/client \
   && pnpm run build \
   && mkdir -p /app/node_modules/@moltzap \
-  && ln -s /opt/moltzap/nanoclaw/app/node_modules/@moltzap/social-harness /app/node_modules/@moltzap/social-harness \
-  && ln -s /opt/moltzap/nanoclaw/app/node_modules/effect /app/node_modules/effect \
+  && ln -s /opt/social-harness/nanoclaw/app/node_modules/@moltzap/social-harness /app/node_modules/@moltzap/social-harness \
+  && ln -s /opt/social-harness/nanoclaw/app/node_modules/effect /app/node_modules/effect \
   && ln -s /app/node_modules container/agent-runner/node_modules \
   && /app/node_modules/.bin/tsc --noEmit -p container/agent-runner/tsconfig.json \
   && node --input-type=module --eval \
@@ -51,30 +51,30 @@ LABEL org.social-harness.nanoclaw-source-revision="${NANOCLAW_SOURCE_REVISION}"
 LABEL org.social-harness.nanoclaw-source-archive-sha256="${NANOCLAW_SOURCE_ARCHIVE_SHA256}"
 
 COPY --from=builder /opt/social-harness/workspace /opt/social-harness/workspace
-COPY --from=builder /opt/moltzap/nanoclaw/app /opt/moltzap/nanoclaw/app
+COPY --from=builder /opt/social-harness/nanoclaw/app /opt/social-harness/nanoclaw/app
 # NanoClaw links every directory under container/skills into each agent
 # group's ~/.claude/skills, so this adds the skills the Client ships without
 # changing NanoClaw's source.
-COPY --from=social-harness-workspace node_modules/@moltzap/social-harness/skills/ /opt/moltzap/nanoclaw/app/container/skills/
-COPY entrypoint.ts /opt/moltzap/nanoclaw/entrypoint.ts
-COPY gateway.ts preload.ts process-driver.ts provision.ts /opt/moltzap/nanoclaw/
+COPY --from=social-harness-workspace node_modules/@moltzap/social-harness/skills/ /opt/social-harness/nanoclaw/app/container/skills/
+COPY entrypoint.ts /opt/social-harness/nanoclaw/entrypoint.ts
+COPY gateway.ts preload.ts process-driver.ts provision.ts /opt/social-harness/nanoclaw/
 
 # Bun resolves the mounted runner from /app, while Node resolves the host from
 # its extracted tree. The links give both processes the same patched packages.
-RUN mkdir -p /var/lib/moltzap/nanoclaw \
+RUN mkdir -p /var/lib/social-harness/nanoclaw \
   && mkdir -p /app/node_modules/@moltzap \
-  && ln -s /opt/moltzap/nanoclaw/app/node_modules/@moltzap/social-harness /app/node_modules/@moltzap/social-harness \
-  && ln -s /opt/moltzap/nanoclaw/app/node_modules/effect /app/node_modules/effect \
-  && ln -s /opt/moltzap/nanoclaw/app/node_modules /opt/moltzap/node_modules \
-  && ln -s /opt/moltzap/nanoclaw/app/container/agent-runner/src /app/src \
-  && ln -s /opt/moltzap/nanoclaw/app/container/skills /app/skills \
-  && ln -s /opt/moltzap/nanoclaw/app/container/CLAUDE.md /app/CLAUDE.md \
-  && ln -s /var/lib/moltzap/nanoclaw/current-session-context /app/.nanoclaw-session.json \
+  && ln -s /opt/social-harness/nanoclaw/app/node_modules/@moltzap/social-harness /app/node_modules/@moltzap/social-harness \
+  && ln -s /opt/social-harness/nanoclaw/app/node_modules/effect /app/node_modules/effect \
+  && ln -s /opt/social-harness/nanoclaw/app/node_modules /opt/social-harness/node_modules \
+  && ln -s /opt/social-harness/nanoclaw/app/container/agent-runner/src /app/src \
+  && ln -s /opt/social-harness/nanoclaw/app/container/skills /app/skills \
+  && ln -s /opt/social-harness/nanoclaw/app/container/CLAUDE.md /app/CLAUDE.md \
+  && ln -s /var/lib/social-harness/nanoclaw/current-session-context /app/.nanoclaw-session.json \
   && rmdir /workspace/group /workspace/extra /workspace \
-  && ln -s /var/lib/moltzap/nanoclaw/current-workspace /workspace \
-  && chown -R node:node /var/lib/moltzap/nanoclaw
+  && ln -s /var/lib/social-harness/nanoclaw/current-workspace /workspace \
+  && chown -R node:node /var/lib/social-harness/nanoclaw
 
 ENV NODE_ENV=production
-WORKDIR /var/lib/moltzap/nanoclaw
+WORKDIR /var/lib/social-harness/nanoclaw
 USER node
-ENTRYPOINT ["/usr/bin/tini", "--", "node", "/opt/moltzap/nanoclaw/entrypoint.ts"]
+ENTRYPOINT ["/usr/bin/tini", "--", "node", "/opt/social-harness/nanoclaw/entrypoint.ts"]

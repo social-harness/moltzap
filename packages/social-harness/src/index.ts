@@ -79,9 +79,6 @@ export {
   PostId,
 } from "./communication/records/values.js";
 
-/** Host adapters reject retired environment keys before acquiring an endpoint. */
-export { legacyKeys } from "./environment.js";
-
 /** Wire emission and the installed daemon's live compatibility window. */
 export { LIVE_WIRE_VERSIONS, WIRE_VERSION } from "./identity/wire-version.js";
 /** Canonical identities a host reads from immutable cards and messages. */

@@ -10,7 +10,7 @@ index 5bf3fc7..77da6b3 100644
 - * The host re-validates on the delivery side against the central DB,
 - * so even if this table is stale the host's enforcement is authoritative.
 + * This table is both the routing map and the container-visible ACL for
-+ * NanoClaw-owned named destinations. An explicit MoltZap address input is
++ * NanoClaw-owned named destinations. An explicit Social Harness address input is
 + * validated by Client and reaches the registered channel without a table row.
 + * The host re-validates every other route against the central DB.
   */
@@ -24,7 +24,7 @@ index 5bf3fc7..77da6b3 100644
    return destination && destinationEntry(destination);
  }
  
-+/** Resolve an explicit MoltZap address before any local destination alias. */
++/** Resolve an explicit Social Harness address before any local destination alias. */
 +export function findMessageDestination(name: string): DestinationEntry | undefined {
 +  if (Schema.is(MessageAddressInput)(name)) {
 +    return {
@@ -47,7 +47,7 @@ index 5bf3fc7..77da6b3 100644
    if (all.length === 0) {
 -    lines.push('You currently have no configured destinations. You cannot send messages until an admin wires one up.');
 -    if (mode.kind === 'chat') return lines.join('\n');
-+    lines.push('You currently have no configured named destinations. You may still send to an explicit MoltZap `agent:name` or `group:name,...` address supplied by the request.');
++    lines.push('You currently have no configured named destinations. You may still send to an explicit Social Harness `agent:name` or `group:name,...` address supplied by the request.');
    } else if (all.length === 1) {
      const d = all[0];
      lines.push(`Your destination is \`${d.name}\`${destinationLabel(d)}.`);
@@ -58,14 +58,14 @@ index 5bf3fc7..77da6b3 100644
 -  lines.push('');
 +  lines.push(
 +    '',
-+    'A supplied MoltZap `agent:name` or `group:name,...` address is also a valid explicit destination. Client validates and canonicalizes it.',
++    'A supplied Social Harness `agent:name` or `group:name,...` address is also a valid explicit destination. Client validates and canonicalizes it.',
 +    '',
 +  );
  
    if (mode.kind === 'task') {
      lines.push(
 -      'This is an isolated task run with no attached chat. Only notify someone when the task asks you to. For a user-visible message, call `send_message({ to: "name", text: "..." })`; for a file, call `send_file` with `to`. Always pass the explicit named destination.',
-+      'This is an isolated task run with no attached chat. Only notify someone when the task asks you to. For a user-visible message, call `send_message({ to: "name-or-address", text: "..." })`; for a file, call `send_file` with `to`. Always pass the supplied named destination or MoltZap address.',
++      'This is an isolated task run with no attached chat. Only notify someone when the task asks you to. For a user-visible message, call `send_message({ to: "name-or-address", text: "..." })`; for a file, call `send_file` with `to`. Always pass the supplied named destination or Social Harness address.',
        '',
        `Your final output is not sent to the user. End with a concise work-log summary. It is recorded automatically in \`tasks/${mode.taskId}.md\`. Read that file when you need context from earlier runs. Use \`ncl tasks append-log --msg "…"\` only for optional mid-run notes.`,
      );
@@ -107,14 +107,14 @@ index 1bf9f2c..1acbbf3 100644
    tool: {
      name: 'send_message',
 -    description: 'Send a message to a named destination.',
-+    description: 'Send a message to a named destination or an explicit MoltZap agent: or group: address.',
++    description: 'Send a message to a named destination or an explicit Social Harness agent: or group: address.',
      inputSchema: {
        type: 'object' as const,
        properties: {
          to: {
            type: 'string',
 -          description: 'Destination name (e.g., "family", "worker-1").',
-+          description: 'Destination name or explicit MoltZap agent: or group: address.',
++          description: 'Destination name or explicit Social Harness agent: or group: address.',
          },
          text: { type: 'string', description: 'Message content' },
        },
@@ -188,15 +188,15 @@ index 5e2c028..71f8abd 100644
 -  // path in deliverSessionMessages and eventually marks the message as failed
 -  // (instead of marking it delivered when nothing was actually delivered,
 -  // which was the pre-refactor bug).
-+  // A syntactically valid explicit MoltZap address already contains the
++  // A syntactically valid explicit Social Harness address already contains the
 +  // complete Client route. It bypasses NanoClaw's messaging-group lookup and
 +  // named-destination ACL, then Client validates and canonicalizes it.
 +  //
 +  // Failures throw into deliverSessionMessages retry handling.
    let deliverInstance: string | undefined;
 -  if (msg.channelType && msg.platformId) {
-+  const explicitMoltZapRoute = msg.channelType === 'sharness' && Schema.is(MessageAddressInput)(msg.platformId);
-+  if (msg.channelType && msg.platformId && !explicitMoltZapRoute) {
++  const explicitSocialHarnessRoute = msg.channelType === 'sharness' && Schema.is(MessageAddressInput)(msg.platformId);
++  if (msg.channelType && msg.platformId && !explicitSocialHarnessRoute) {
      // Resolve the messaging group ORIGIN-SESSION-FIRST: when the message
      // targets the session's own chat address, the origin row wins even if
      // sibling instances share the same (channel_type, platform_id) — so the

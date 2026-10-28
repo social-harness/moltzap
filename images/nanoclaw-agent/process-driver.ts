@@ -20,7 +20,7 @@ import { dirname, isAbsolute, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 /** The driver kind NanoClaw's runtime registry selects this driver by. */
-export const PROCESS_DRIVER_KIND = "moltzap-process";
+export const PROCESS_DRIVER_KIND = "social-harness-process";
 
 /**
  * Claude Code's telemetry and content switches and the OTLP exporter's
@@ -86,7 +86,7 @@ const CAPABILITIES: DriverCapabilities = Object.freeze({
   imageBuild: false,
 });
 const DEFAULT_WORKING_DIRECTORY = "/workspace/agent";
-const DEFAULT_STATE_DIRECTORY = "/var/lib/moltzap/nanoclaw";
+const DEFAULT_STATE_DIRECTORY = "/var/lib/social-harness/nanoclaw";
 /** How long a process group has to exit after `SIGKILL`. */
 const KILL_WAIT_MILLIS = 1_000;
 /** How often a stop checks whether the agent's process group is gone. */
@@ -482,7 +482,7 @@ function makeHandle(
 ): SessionHandle {
   return Object.freeze({
     key: record.spec.key,
-    name: `moltzap-process-${record.spec.key.agentGroupId}`,
+    name: `social-harness-process-${record.spec.key.agentGroupId}`,
     start: () => startSession(state, record, ready),
     status: () => sessionStatus(record, ready),
     stop: () => stopSession(state, record, ready),

@@ -83,7 +83,7 @@ interface ProbeReport {
   readonly delivered: number;
   /** Rows still due after that pass, which the second pass sends again. */
   readonly retried: number;
-  /** The text of each message MoltZap itself gave the model in the expected conversation. */
+  /** The text of each message Social Harness itself gave the model in the expected conversation. */
   readonly endpointMessages: readonly string[];
 }
 

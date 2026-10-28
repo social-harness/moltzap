@@ -31,18 +31,14 @@ for (const [file, content, image] of [
     ),
     "daemon",
   ],
+  ["plugins/openclaw/src/index.ts", "export const channel = 42;", "daemon"],
   [
-    "packages/openclaw-channel/src/index.ts",
-    "export const channel = 42;",
-    "daemon",
-  ],
-  [
-    "packages/openclaw-channel/bin/loader",
+    "plugins/openclaw/bin/loader",
     "#!/usr/bin/env node\nconsole.log('updated');",
     "daemon",
   ],
   [
-    "packages/openclaw-channel/skills/connect/SKILL.md",
+    "plugins/openclaw/skills/connect/SKILL.md",
     "Updated skill instructions.",
     "daemon",
   ],

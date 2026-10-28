@@ -17,17 +17,17 @@ stages the verified tree and channel; `build.ts lock` updates its lockfile.
 bash images/nanoclaw-agent/smoke.sh social-harness-nanoclaw:local
 ```
 
-The entrypoint also requires `/run/moltzap/bootstrap/nanoclaw/runtime.json`.
+The entrypoint also requires `/run/social-harness/bootstrap/nanoclaw/runtime.json`.
 For example, save this as `runtime.json` and create `workspace/` writable by uid
-1000. Mount the file at that path read-only and `workspace/` at `/run/sharness/workspace`
+1000. Mount the file at that path read-only and `workspace/` at `/run/social-harness/workspace`
 in both the Docker command and Kubernetes host container:
 
 ```json
 {
-  "apiVersion": "moltzap.nanoclaw-application/v1",
+  "apiVersion": "org.social-harness/nanoclaw-application/v1",
   "agentName": "alice",
-  "stateDirectory": "/var/lib/moltzap/nanoclaw",
-  "workspaceDirectory": "/run/sharness/workspace",
+  "stateDirectory": "/var/lib/social-harness/nanoclaw",
+  "workspaceDirectory": "/run/social-harness/workspace",
   "gateway": { "host": "127.0.0.1", "port": 7777 },
   "mcpServers": []
 }
@@ -38,10 +38,10 @@ configuration:
 
 ```bash
 docker run --rm --network container:agent-daemon \
-  --mount type=bind,src="$PWD/runtime.json",dst=/run/moltzap/bootstrap/nanoclaw/runtime.json,readonly \
-  --mount type=bind,src="$PWD/workspace",dst=/run/sharness/workspace \
+  --mount type=bind,src="$PWD/runtime.json",dst=/run/social-harness/bootstrap/nanoclaw/runtime.json,readonly \
+  --mount type=bind,src="$PWD/workspace",dst=/run/social-harness/workspace \
   --env SHARNESS_MCP_URL=http://127.0.0.1:4319/mcp \
-  --mount type=bind,src="$PWD/nanoclaw-state",dst=/var/lib/moltzap/nanoclaw \
+  --mount type=bind,src="$PWD/nanoclaw-state",dst=/var/lib/social-harness/nanoclaw \
   social-harness-nanoclaw:local
 ```
 

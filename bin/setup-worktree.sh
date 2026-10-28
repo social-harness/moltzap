@@ -15,8 +15,8 @@
 #        and dependent workspace builds resolve consistently.
 #
 # Usage:
-#   git worktree add ../moltzap-feature -b feature origin/main
-#   cd ../moltzap-feature
+#   git worktree add ../social-harness-feature -b feature origin/main
+#   cd ../social-harness-feature
 #   bin/setup-worktree.sh
 
 set -euo pipefail

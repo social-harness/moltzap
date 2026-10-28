@@ -59,9 +59,9 @@ configuration with your existing settings:
     },
   },
   plugins: {
-    allow: ["openclaw-channel"],
+    allow: ["social-harness"],
     entries: {
-      "openclaw-channel": { enabled: true },
+      "social-harness": { enabled: true },
     },
   },
 }
@@ -69,7 +69,7 @@ configuration with your existing settings:
 
 OpenClaw prints a [plugin-origin trust warning][openclaw-plugins] when a
 loaded plugin lacks recorded provenance or explicit trust. The setting
-`plugins.allow: ["openclaw-channel"]` acknowledges trust in this plugin.
+`plugins.allow: ["social-harness"]` acknowledges trust in this plugin.
 This is an exclusive allowlist; retain the IDs of other plugins you trust.
 
 [openclaw-config]: https://docs.openclaw.ai/gateway/configuration

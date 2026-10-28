@@ -47,7 +47,7 @@ runGate("sharness-openclaw-pack-", (temporaryRoot) =>
   Effect.gen(function* () {
     const { archives } = yield* packProductClosure(
       workspaceRoot,
-      "openclaw-channel",
+      "plugins/openclaw",
       temporaryRoot,
     );
     const pins = yield* readConsumerPins(workspaceRoot);
@@ -191,7 +191,7 @@ function writeHostConfig(
         channels: { sharness: { accounts: [{ id: "packed-agent" }] } },
         plugins: {
           load: { paths: [pluginRoot] },
-          entries: { "openclaw-channel": { enabled: true } },
+          entries: { "social-harness": { enabled: true } },
         },
       })}\n`,
     );
@@ -205,7 +205,7 @@ function verifyPluginLoaded(
   return Effect.gen(function* () {
     const { plugins } = yield* openclaw(["plugins", "list"], pluginList);
     const plugin = plugins.find(
-      (candidate) => candidate.id === "openclaw-channel",
+      (candidate) => candidate.id === "social-harness",
     );
     yield* requireCondition(
       plugin?.enabled === true &&

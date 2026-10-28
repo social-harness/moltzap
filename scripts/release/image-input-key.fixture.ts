@@ -30,11 +30,11 @@ importers:
       '@fixture/core':
         version: link:../../packages/social-harness
       '@fixture/channel':
-        version: link:../../packages/openclaw-channel
-  packages/openclaw-channel:
+        version: link:../../plugins/openclaw
+  plugins/openclaw:
     dependencies:
       '@fixture/core':
-        version: link:../social-harness
+        version: link:../../packages/social-harness
   packages/social-harness:
     optionalDependencies:
       leaf:
@@ -85,7 +85,7 @@ COPY --from=build /deploy/ /app/
 export const daemonDockerfile = `FROM node:24@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa AS build
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY packages/social-harness/ packages/social-harness/
-COPY packages/openclaw-channel/ packages/openclaw-channel/
+COPY plugins/openclaw/ plugins/openclaw/
 COPY images/daemon/package.json images/daemon/package.json
 FROM node:24@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 COPY --from=build --chown=node:node /deploy/ /opt/social-harness/launcher/seed/
@@ -174,7 +174,8 @@ export function fixtureFiles(
     "tools/image-task.ts": "export {};",
     "tools/heredoc-task.ts": "export {};",
     "assets/config": "initial",
-    "pnpm-workspace.yaml": "packages:\n  - packages/*\n",
+    "pnpm-workspace.yaml":
+      "packages:\n  - packages/*\n  - images/daemon\n  - plugins/*\n",
     "pnpm-lock.yaml": lock,
     "scripts/build/image.ts": "export {};\n",
     ...agentFiles(),
@@ -254,23 +255,21 @@ function agentFiles(): Record<string, string> {
     }),
     "images/daemon/Dockerfile": daemonDockerfile,
     "images/daemon/README.md": "Run the daemon.\n",
-    "packages/openclaw-channel/package.json": JSON.stringify({
+    "plugins/openclaw/package.json": JSON.stringify({
       name: "@fixture/channel",
       private: true,
       dependencies: { "@fixture/core": "workspace:*" },
       files: ["dist", "skills", "bin"],
       exports: { ".": "./dist/index.js" },
     }),
-    "packages/openclaw-channel/tsconfig.json": JSON.stringify({
+    "plugins/openclaw/tsconfig.json": JSON.stringify({
       extends: "../../tsconfig.base.json",
       compilerOptions: { rootDir: "src", outDir: "dist" },
       include: ["src/**/*.ts"],
     }),
-    "packages/openclaw-channel/src/index.ts": 'import "@fixture/core";',
-    "packages/openclaw-channel/bin/loader":
-      "#!/usr/bin/env node\nconsole.log('load');",
-    "packages/openclaw-channel/skills/connect/SKILL.md":
-      "Connect to the daemon.",
+    "plugins/openclaw/src/index.ts": 'import "@fixture/core";',
+    "plugins/openclaw/bin/loader": "#!/usr/bin/env node\nconsole.log('load');",
+    "plugins/openclaw/skills/connect/SKILL.md": "Connect to the daemon.",
     "images/openclaw-agent/Dockerfile":
       "FROM upstream@sha256:host\nCOPY host.sh /host.sh\n",
     "images/openclaw-agent/.dockerignore":

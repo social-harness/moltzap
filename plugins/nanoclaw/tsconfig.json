@@ -14,7 +14,7 @@
   ],
   "references": [
     {
-      "path": "../social-harness"
+      "path": "../../packages/social-harness"
     }
   ]
 }

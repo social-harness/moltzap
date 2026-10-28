@@ -105,7 +105,7 @@ test("an agent inherits the host's Claude Code sign-in variables, telemetry sett
     https_proxy: "https://gateway.invalid:3128",
     NO_PROXY: "localhost",
     no_proxy: "localhost",
-    NODE_EXTRA_CA_CERTS: "/run/moltzap/bootstrap/provider-proxy-ca.pem",
+    NODE_EXTRA_CA_CERTS: "/run/social-harness/bootstrap/provider-proxy-ca.pem",
   };
   setHostEnvironment(t, { ...forwarded, HOST_ONLY_VALUE: "host" });
   const driver = createProcessSessionDriver({
@@ -349,7 +349,7 @@ function setHostEnvironment(
 }
 
 async function temporaryRoot(t: TestContext): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "moltzap-process-driver-"));
+  const root = await mkdtemp(join(tmpdir(), "social-harness-process-driver-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   return root;
 }

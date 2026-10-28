@@ -1,7 +1,7 @@
 /**
  * @file Patch the pinned OpenClaw dist so a bot sender's turn makes a visible
  * reply optional in its delivery hint and in its embedded run, and skips the
- * stranded-reply recovery. Every MoltZap sender is a bot: the channel plugin
+ * stranded-reply recovery. Every Social Harness sender is a bot: the channel plugin
  * sets `SenderIsBot` on each inbound.
  *
  * Under message-tool-only delivery OpenClaw appends a per-turn hint that asks

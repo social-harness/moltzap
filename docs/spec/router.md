@@ -441,9 +441,7 @@ The Router process defines one private `Config.all` value.
 `RouterServerStartupError` with phase `configuration`. The executable
 supplies `ConfigProvider.fromEnv`; tests use
 `ConfigProvider.fromMap`; embedded composition may supply another
-provider. Before loading declared values, `legacyKeys(process.env)` rejects
-every `MOLTZAP_*` or `MOLTZAPD_*` key with `legacy-key` and its name, without
-disclosing values. Other unrelated and unused entries are ignored. There is
+provider. Other unrelated and unused entries are ignored. There is
 no custom environment parser, mutable singleton, hot reload, or public
 configuration type.
 

@@ -20,7 +20,7 @@ import { fileURLToPath } from "node:url";
 import { isStringArray } from "../tests/test-support.ts";
 
 const HOST = fileURLToPath(new URL("./host.sh", import.meta.url));
-const PLAN = "/run/moltzap/bootstrap/secrets-plan.json";
+const PLAN = "/run/social-harness/bootstrap/secrets-plan.json";
 const STEP_FAILURE_EXIT_CODE = 3;
 /** Unlike 128 plus any signal number, so it can only be the gateway's own exit. */
 const GATEWAY_OWN_EXIT_CODE = 42;
@@ -170,7 +170,7 @@ for (const signal of ["SIGTERM", "SIGINT"] as const) {
 }
 
 test("a missing OpenClaw entry ends the host before a gateway", async () => {
-  const root = temporaryDirectory("moltzap-openclaw-host-");
+  const root = temporaryDirectory("social-harness-openclaw-host-");
   const { code, stderr } = await runHost({
     OPENCLAW_ENTRY: join(root, "absent.mjs"),
   });
@@ -292,7 +292,7 @@ interface HostExit {
  * unless `options` asks for one.
  */
 async function fakeOpenClaw(options: FakeOptions = {}): Promise<FakeOpenClaw> {
-  const root = temporaryDirectory("moltzap-openclaw-host-");
+  const root = temporaryDirectory("social-harness-openclaw-host-");
   const entry = join(root, "openclaw.mjs");
   const record = join(root, "record.ndjson");
   await writeFile(
@@ -358,7 +358,7 @@ function listProfiles(profiles: readonly object[]): string {
  * writes it.
  */
 async function homeWithCodexLogin(): Promise<string> {
-  const home = temporaryDirectory("moltzap-openclaw-home-");
+  const home = temporaryDirectory("social-harness-openclaw-home-");
   await mkdir(join(home, ".codex"));
   await writeFile(join(home, ".codex", "auth.json"), "{}");
   return home;
@@ -387,7 +387,7 @@ async function runHost(
         ...hostEnvironment,
         SHARNESS_LAUNCHER_DIRECTORY: launcher,
         OPENCLAW_CONFIG_PATH: configPath,
-        HOME: temporaryDirectory("moltzap-openclaw-home-"),
+        HOME: temporaryDirectory("social-harness-openclaw-home-"),
         ...environment,
       },
       stdio: ["ignore", "ignore", diagnosticFile],

@@ -3,7 +3,7 @@
  * @file Hash of the code a host process loads for one plugin package.
  *
  * Usage: `node scripts/release/host-code-hash.ts DIR`, where DIR names a
- * directory under `packages/`. Prints `sha256:` and a hex digest.
+ * repository-relative package directory. Prints `sha256:` and a hex digest.
  *
  * The release records this value in the OpenClaw channel's published
  * manifest as `sharnessHostCodeHash`. OpenClaw loads the channel and every
@@ -23,9 +23,9 @@
  */
 
 import { Either } from "effect";
-import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { workspacePackages } from "../repo/packages.ts";
 import {
   digestOf,
   fileEntry,
@@ -37,10 +37,10 @@ import {
 import { moduleGraph } from "./module-graph.ts";
 
 /**
- * Pack `packages/DIR` and its workspace dependency closure and hash the code a host
+ * Pack `DIR` and its workspace dependency closure and hash the code a host
  * loads for it.
  * @param repo Repository root.
- * @param dir Directory name under `packages/`.
+ * @param dir Repository-relative package directory.
  * @returns The host-code hash, or the step that failed.
  */
 export function hostCodeHashOfPackage(
@@ -102,7 +102,7 @@ export function hostCodeHashOfDirectories(
 function workspaceDirectories(repo: string): Map<string, string> | PackFailure {
   return Either.match(
     Either.try({
-      try: () => trackedWorkspaceDirectories(repo),
+      try: () => packageDirectories(repo),
       catch: (cause): PackFailure => ({
         kind: "pack-failed",
         message: String(cause),
@@ -112,33 +112,13 @@ function workspaceDirectories(repo: string): Map<string, string> | PackFailure {
   );
 }
 
-function trackedWorkspaceDirectories(
-  repo: string,
-): Map<string, string> | PackFailure {
-  const result = spawnSync(
-    // eslint-disable-next-line sonarjs/no-os-command-from-path -- Git supplies the tracked workspace inventory.
-    "git",
-    ["ls-files", "-z", "--", "packages/*/package.json"],
-    { cwd: repo },
-  );
-  if (result.status !== 0) {
-    return {
-      kind: "pack-failed",
-      message: result.stderr?.toString("utf8") || String(result.error),
-    };
-  }
-  const files = new TextDecoder("utf-8", { fatal: true })
-    .decode(result.stdout)
-    .split("\0")
-    .filter((file) => /^packages\/[^/]+\/package\.json$/u.test(file));
+function packageDirectories(repo: string): Map<string, string> | PackFailure {
   const directories = new Map<string, string>();
-  for (const file of files) {
-    const dir = path.posix.basename(path.posix.dirname(file));
-    const name = manifestName(repo, dir);
+  for (const { dir, name } of workspacePackages(repo)) {
     if (directories.has(name)) {
       return {
         kind: "pack-failed",
-        message: `Duplicate workspace package name ${name} in ${file}`,
+        message: `Duplicate workspace package name ${name} in ${dir}/package.json`,
       };
     }
     directories.set(name, dir);
@@ -180,7 +160,7 @@ function readManifest(
   repo: string,
   dir: string,
 ): Record<string, unknown> | undefined {
-  return readJson(path.join(repo, "packages", dir, "package.json"));
+  return readJson(path.join(repo, dir, "package.json"));
 }
 
 function readJson(file: string): Record<string, unknown> | undefined {

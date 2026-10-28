@@ -152,25 +152,6 @@ async function createAdapter() {
 }
 
 // @agent-code-guard/regression-only: The suite pins NanoClaw host handoff and the closed endpoint outcomes; real-host persistence is qualified outside this repository.
-it.each(["MOLTZAP_MCP_URL", "MOLTZAP_EXPERIMENT_HIDE_COLLECTIVES"])(
-  "refuses startup with retired key %s even without a current MCP URL",
-  async (key) => {
-    vi.stubEnv("SHARNESS_MCP_URL", undefined);
-    vi.stubEnv(key, "private-retired-value");
-    await expect(async () => await registration.factory()).rejects.toThrow(key);
-    await expect(async () => await registration.factory()).rejects.not.toThrow(
-      "private-retired-value",
-    );
-    expect(boundary.acquire).not.toHaveBeenCalled();
-  },
-);
-it("refuses an empty retired key", async () => {
-  vi.stubEnv("MOLTZAP_MCP_URL", "");
-  await expect(async () => await registration.factory()).rejects.toThrow(
-    "MOLTZAP_MCP_URL",
-  );
-});
-
 it("stays disabled without an MCP URL", async () => {
   vi.stubEnv("SHARNESS_MCP_URL", undefined);
   expect(await registration.factory()).toBeNull();

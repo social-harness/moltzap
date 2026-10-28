@@ -42,14 +42,14 @@ RUN case "${TARGETARCH}" in \
 USER root
 
 
-COPY patch-openclaw.ts /opt/moltzap/agent/
-RUN node /opt/moltzap/agent/patch-openclaw.ts /app/dist \
+COPY patch-openclaw.ts /opt/social-harness/agent/
+RUN node /opt/social-harness/agent/patch-openclaw.ts /app/dist \
     --base-image "${OPENCLAW_BASE_IMAGE}" \
-    --marker /opt/moltzap/agent/openclaw-patch.json
+    --marker /opt/social-harness/agent/openclaw-patch.json
 RUN mkdir -p /app/node_modules/@openai \
   && ln -s /app/dist/extensions/codex/node_modules/@openai/codex /app/node_modules/@openai/codex
-COPY host.sh configure-channel.ts /opt/moltzap/agent/
+COPY host.sh configure-channel.ts /opt/social-harness/agent/
 ENV NODE_ENV=production
 WORKDIR /app
 USER node
-ENTRYPOINT ["bash", "/opt/moltzap/agent/host.sh"]
+ENTRYPOINT ["bash", "/opt/social-harness/agent/host.sh"]
