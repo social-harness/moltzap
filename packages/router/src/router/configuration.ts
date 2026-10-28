@@ -1,12 +1,8 @@
 /** @file Router process configuration, validation, defaults, and operator feedback. */
 
-import {
-  Ed25519PublicKey,
-  legacyKeys,
-  SignedMessage,
-} from "@moltzap/social-harness";
+import { Ed25519PublicKey, SignedMessage } from "@moltzap/social-harness";
 import { routerContract } from "@moltzap/social-harness/internal";
-import { Config, type ConfigError, Data, Effect, Match, Schema } from "effect";
+import { Config, type ConfigError, Effect, Match, Schema } from "effect";
 
 /** ConfigError trees retain every missing field without printing rejected inputs. */
 export function configurationMessage(error: ConfigError.ConfigError): string {
@@ -175,23 +171,10 @@ const validatedConfiguration = configuredValues.pipe(
   }),
 );
 
-/** Legacy key names survive configuration mapping without rereading ambient state. */
-class LegacyConfigurationError extends Data.TaggedError(
-  "LegacyConfigurationError",
-)<{
-  readonly keys: readonly string[];
-}> {}
-
 /** Loads and cross-validates the complete private Router process configuration. */
-export const loadRouterConfiguration = Effect.gen(function* () {
-  // eslint-disable-next-line agent-code-guard/no-process-env-at-runtime -- Configuration acquisition enumerates unknown legacy keys, which Effect.Config cannot name in advance.
-  const keys = legacyKeys(process.env);
-  if (keys.length > 0) {
-    return yield* Effect.fail(new LegacyConfigurationError({ keys }));
-  }
-  const configuration: RouterConfiguration = yield* validatedConfiguration;
-  return configuration;
-}).pipe(Effect.withSpan("loadRouterConfiguration"));
+export const loadRouterConfiguration = validatedConfiguration.pipe(
+  Effect.withSpan("loadRouterConfiguration"),
+);
 
 /** Config and operator text share the name, schema and default at declaration. */
 function setting<A, D = never>(

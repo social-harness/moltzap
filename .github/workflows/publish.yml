@@ -101,7 +101,7 @@ defaults:
 # Dependency order: each package comes after the siblings it depends on, which
 # the selection checks.
 env:
-  RELEASE_PACKAGES: social-harness openclaw-channel
+  RELEASE_PACKAGES: packages/social-harness plugins/openclaw
   IMAGE_CERTIFICATE_IDENTITY: https://github.com/social-harness/moltzap/.github/workflows/images.yml@refs/heads/main
   IMAGE_CERTIFICATE_OIDC_ISSUER: https://token.actions.githubusercontent.com
 
@@ -157,7 +157,7 @@ jobs:
             }
             MISSING=""
             for pkg in $RELEASE_PACKAGES; do
-              MANIFEST=$(git show "$RELEASE_COMMIT:packages/$pkg/package.json" 2>/dev/null) || continue
+              MANIFEST=$(git show "$RELEASE_COMMIT:$pkg/package.json" 2>/dev/null) || continue
               NAME=$(jq -r .name <<<"$MANIFEST")
               VER=$(jq -r .version <<<"$MANIFEST")
               STATUS=0
@@ -193,7 +193,7 @@ jobs:
               done
               if [ "$COMPLETE" = false ]; then
                 for pkg in $RELEASE_PACKAGES; do
-                  VER=$(git show "$RELEASE_COMMIT:packages/$pkg/package.json" | jq -r .version)
+                  VER=$(git show "$RELEASE_COMMIT:$pkg/package.json" | jq -r .version)
                   [ "$VER" != "$VERSION" ] || MISSING="$MISSING $pkg"
                 done
               fi
@@ -284,10 +284,10 @@ jobs:
         run: |
           if [ "$MODE" = "resume" ]; then
             for pkg in $RESUME_PACKAGES; do
-              RECORDED=$(jq -r '.sharnessContentHash // ""' "packages/$pkg/package.json")
+              RECORDED=$(jq -r '.sharnessContentHash // ""' "$pkg/package.json")
               ACTUAL=$(node scripts/release/content-hash.ts "$pkg")
               [ "$RECORDED" = "$ACTUAL" ] || {
-                echo "ERROR: packages/$pkg rebuilt to $ACTUAL, but the release commit recorded '$RECORDED'"
+                echo "ERROR: $pkg rebuilt to $ACTUAL, but the release commit recorded '$RECORDED'"
                 exit 1
               }
             done
@@ -301,11 +301,11 @@ jobs:
             exit 0
           fi
           echo "Releasing $VERSION for: $SELECTED"
-          if [[ " $SELECTED " == *" openclaw-channel "* ]]; then
-            HOST_CODE_HASH=$(node scripts/release/host-code-hash.ts openclaw-channel)
+          if [[ " $SELECTED " == *" plugins/openclaw "* ]]; then
+            HOST_CODE_HASH=$(node scripts/release/host-code-hash.ts plugins/openclaw)
             jq --arg h "$HOST_CODE_HASH" '.sharnessHostCodeHash = $h' \
-              packages/openclaw-channel/package.json > tmp.json
-            mv tmp.json packages/openclaw-channel/package.json
+              plugins/openclaw/package.json > tmp.json
+            mv tmp.json plugins/openclaw/package.json
           fi
           pnpm install --no-frozen-lockfile --ignore-scripts
           echo "packages=$SELECTED" >> "$GITHUB_OUTPUT"
@@ -382,13 +382,13 @@ jobs:
               --version "$VERSION" --date "$(date -u +%F)" --yes
           fi
 
-          git config user.name "moltzap-release[bot]"
-          git config user.email "moltzap-release[bot]@users.noreply.github.com"
-          git add packages/*/package.json \
+          git config user.name "social-harness-release[bot]"
+          git config user.email "social-harness-release[bot]@users.noreply.github.com"
+          git add packages/*/package.json plugins/*/package.json \
             pnpm-lock.yaml CHANGELOG.md changelog.d/
           PUBLISHED=""
           for pkg in $PACKAGES; do
-            PUBLISHED="$PUBLISHED$(jq -r '"- \(.name)@\(.version)"' "packages/$pkg/package.json")"$'\n'
+            PUBLISHED="$PUBLISHED$(jq -r '"- \(.name)@\(.version)"' "$pkg/package.json")"$'\n'
           done
           git commit -m "chore(release): moltzap@$VERSION" -m "Publishes:"$'\n'"$PUBLISHED"
           git tag "v$VERSION"
@@ -414,15 +414,15 @@ jobs:
           OUT="$RUNNER_TEMP/tarballs"
           mkdir -p "$OUT"
           for pkg in $PACKAGES; do
-            VER=$(jq -r .version "packages/$pkg/package.json")
-            [ "$VER" = "$VERSION" ] || { echo "ERROR: packages/$pkg is at $VER, expected $VERSION"; exit 1; }
-            mkdir "$OUT/$pkg"
-            (cd "packages/$pkg" && pnpm pack --pack-gzip-level 9 --pack-destination "$OUT/$pkg" >/dev/null)
+            VER=$(jq -r .version "$pkg/package.json")
+            [ "$VER" = "$VERSION" ] || { echo "ERROR: $pkg is at $VER, expected $VERSION"; exit 1; }
+            mkdir -p "$OUT/$pkg"
+            (cd "$pkg" && pnpm pack --pack-gzip-level 9 --pack-destination "$OUT/$pkg" >/dev/null)
             TARBALLS=("$OUT/$pkg"/*.tgz)
-            [ "${#TARBALLS[@]}" -eq 1 ] && [ -f "${TARBALLS[0]}" ] || { echo "ERROR: pack of packages/$pkg did not write exactly one tarball"; exit 1; }
-            printf '%s\t%s\t%s\n' "$pkg" "$(jq -r .name "packages/$pkg/package.json")" "$pkg/$(basename "${TARBALLS[0]}")" >> "$OUT/packages.tsv"
+            [ "${#TARBALLS[@]}" -eq 1 ] && [ -f "${TARBALLS[0]}" ] || { echo "ERROR: pack of $pkg did not write exactly one tarball"; exit 1; }
+            printf '%s\t%s\t%s\n' "$pkg" "$(jq -r .name "$pkg/package.json")" "$pkg/$(basename "${TARBALLS[0]}")" >> "$OUT/packages.tsv"
           done
-          (cd "$OUT" && sha256sum ./*/*.tgz packages.tsv > SHA256SUMS)
+          (cd "$OUT" && sha256sum ./*/*/*.tgz packages.tsv > SHA256SUMS)
 
       - name: Keep the tarballs for the publish job
         if: steps.plan.outputs.mode == 'resume' && steps.select.outputs.packages != ''
@@ -475,7 +475,7 @@ jobs:
           node --input-type=module - "$RUNNER_TEMP/changes" <<'JS'
           import { readFileSync } from "node:fs";
           const fields = readFileSync(process.argv[2], "latin1").split("\0");
-          const written = /^(packages\/[^/]+\/package\.json|pnpm-lock\.yaml|CHANGELOG\.md)$/;
+          const written = /^((?:packages|plugins)\/[^/]+\/package\.json|pnpm-lock\.yaml|CHANGELOG\.md)$/;
           const problems = [];
           for (let i = 0; i + 1 < fields.length; i += 2) {
             const [, newMode, , , status] = fields[i].split(/[ \t]/);
@@ -499,7 +499,7 @@ jobs:
           # shellcheck disable=SC2016 # The dollar signs are jq variables.
           RELEASE_FIELDS='del(.version, .sharnessContentHash, .sharnessHostCodeHash, .sharnessWireVersion)
             | (.dependencies // {}) |= with_entries(if (.key | startswith("@moltzap/")) then .value = "" else . end)'
-          for manifest in $(git diff --name-only "$GITHUB_SHA" "$COMMIT" -- 'packages/*/package.json'); do
+          for manifest in $(git diff --name-only "$GITHUB_SHA" "$COMMIT" -- 'packages/*/package.json' 'plugins/*/package.json'); do
             BEFORE=$(git show "$GITHUB_SHA:$manifest" | jq -S "$RELEASE_FIELDS")
             AFTER=$(git show "$COMMIT:$manifest" | jq -S "$RELEASE_FIELDS")
             [ "$BEFORE" = "$AFTER" ] || { echo "ERROR: the release commit changes $manifest beyond the fields a release writes"; exit 1; }
@@ -584,7 +584,7 @@ jobs:
             ENTRY=$(awk -F '\t' -v p="$pkg" '$1 == p' "$OUT/packages.tsv")
             read -r _ _ FILE <<<"$ENTRY"
             [ -n "${FILE:-}" ] && [ -f "$OUT/$FILE" ] || { echo "ERROR: no tarball packed for $pkg"; exit 1; }
-            RELEASED=$(git show "$RELEASE_COMMIT:packages/$pkg/package.json")
+            RELEASED=$(git show "$RELEASE_COMMIT:$pkg/package.json")
             EXPECTED="$(jq -r .name <<<"$RELEASED")@$(jq -r .version <<<"$RELEASED")"
             PACKED_MANIFEST=$(tar -xOzf "$OUT/$FILE" package/package.json)
             PACKED=$(jq -r '"\(.name)@\(.version)"' <<<"$PACKED_MANIFEST")
@@ -606,7 +606,7 @@ jobs:
           for pkg in $PACKAGES; do
             ENTRY=$(awk -F '\t' -v p="$pkg" '$1 == p' "$OUT/packages.tsv")
             read -r _ _ FILE <<<"$ENTRY"
-            NAME=$(git show "$RELEASE_COMMIT:packages/$pkg/package.json" | jq -r .name)
+            NAME=$(git show "$RELEASE_COMMIT:$pkg/package.json" | jq -r .name)
             STATUS=0
             scripts/release/npm-version-exists.sh "${NAME}@${VERSION}" || STATUS=$?
             if [ "$STATUS" -eq 0 ]; then

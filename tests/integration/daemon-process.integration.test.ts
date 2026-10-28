@@ -26,15 +26,12 @@ import {
   acquireDaemonProcess,
   acquireProcessInfrastructure,
   awaitDaemonStartupFailure,
-  DAEMON_BINARY,
   type DaemonProcessFixture,
   makeDaemonProcessFixture,
   makeRegistrationRequest,
   type ProcessInfrastructure,
   ProcessTestError,
   processTrace,
-  REGISTRY_BINARY,
-  ROUTER_BINARY,
   type RunningProcess,
   stopProcess,
   waitForExit,
@@ -45,7 +42,6 @@ import {
   agentResetDocsLink,
   completedReanchorKind,
   configurationStartupPhase,
-  legacySettingReason,
   newerSchemaReason,
   outboxTooOldReason,
   outboxTooOldRemedy,
@@ -656,46 +652,6 @@ it(
         expect(failed.logs).toContain(storageStartupPhase);
         expect(failed.logs).toContain(newerSchemaReason);
         expect(yield* storedSchema(local.stateDirectory)).toEqual(before);
-      }),
-    ),
-  ),
-  PROCESS_TEST_TIMEOUT_MS,
-);
-
-it(
-  "reports legacy-key and key names without values for every service",
-  processTrace(
-    Effect.scoped(
-      Effect.gen(function* () {
-        const infrastructure = yield* acquireProcessInfrastructure;
-        const local = yield* makeDaemonProcessFixture(
-          infrastructure,
-          "legacy-key",
-        );
-        const retiredSecret = "retired-secret-value";
-        for (const [executable, key] of [
-          [DAEMON_BINARY, "MOLTZAPD_STATE_DIRECTORY"],
-          [REGISTRY_BINARY, "MOLTZAP_REGISTRY_ADMISSION_CREDENTIAL"],
-          [ROUTER_BINARY, "MOLTZAP_ROUTER_PORT"],
-        ] as const) {
-          const failed = yield* awaitDaemonStartupFailure(
-            {
-              ...local,
-              environment: {
-                ...local.environment,
-                [key]: retiredSecret,
-              },
-            },
-            {
-              executable,
-              args: [],
-            },
-          );
-          expect(failed.exitCode).not.toBe(0);
-          expect(failed.logs).toContain(legacySettingReason);
-          expect(failed.logs).toContain(key);
-          expect(failed.logs).not.toContain(retiredSecret);
-        }
       }),
     ),
   ),

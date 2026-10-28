@@ -37,7 +37,6 @@ type StartupReasonIsExact = Expect<
     | "outbox-too-old"
     | "newer-schema"
     | "pre-reset"
-    | "legacy-key"
     | "agent-not-admitted"
     | "admission-refused"
     | "name_taken"

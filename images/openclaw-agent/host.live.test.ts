@@ -27,7 +27,7 @@ const docker = promisify(execFile);
 /** Fixture state is copied before the normal host entrypoint secures its directories. */
 const HOST_BOOTSTRAP = [
   "cp -R /probe/state /home/node/test-state",
-  "exec bash /opt/moltzap/agent/host.sh",
+  "exec bash /opt/social-harness/agent/host.sh",
 ].join(" && ");
 const image = process.env.OPENCLAW_INTEGRATION_IMAGE;
 const skip =
@@ -156,10 +156,10 @@ function configuration(runtime: string, port: number) {
       auth: { mode: "token", token: "dummy-local-gateway-token" },
     },
     plugins: {
-      allow: ["anthropic", "openclaw-channel"],
+      allow: ["anthropic", "social-harness"],
       entries: {
         anthropic: { enabled: true },
-        "openclaw-channel": { enabled: true },
+        "social-harness": { enabled: true },
       },
     },
     channels: {

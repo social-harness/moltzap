@@ -9,7 +9,6 @@ import {
   Schema,
 } from "effect";
 import type { MessagePolicyConfigurationFailure } from "../firewall/index.js";
-import { legacyKeys } from "../environment.js";
 import {
   credentialMatches,
   type HarnessMcpCredentials,
@@ -147,7 +146,6 @@ type ProcessConfigurationFailure = Exclude<
 const configurationFailureMessages: Readonly<
   Record<ProcessConfigurationFailure, string>
 > = {
-  "legacy-key": "retired environment keys are configured",
   environment: "environment configuration is invalid",
   "agent-private-key-file":
     "SHARNESS_AGENT_PRIVATE_KEY_FILE must name a readable file",
@@ -296,20 +294,7 @@ function registrationRequest(
 export const loadDaemonProcessConfiguration: Effect.Effect<
   DaemonProcessConfiguration,
   DaemonConfigurationError
-> = Effect.suspend(() => {
-  // eslint-disable-next-line agent-code-guard/no-process-env-at-runtime -- Configuration acquisition enumerates unknown legacy keys, which Effect.Config cannot name in advance.
-  const keys = legacyKeys(process.env);
-  if (keys.length > 0) {
-    return Effect.fail(
-      new DaemonConfigurationError({
-        reason: "legacy-key",
-        keys,
-        message: `${configurationFailureMessages["legacy-key"]}: ${keys.join(", ")}`,
-      }),
-    );
-  }
-  return loadedConfiguration;
-});
+> = loadedConfiguration;
 
 const credentialFailure =
   (

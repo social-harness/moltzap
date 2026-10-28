@@ -5,15 +5,11 @@ import * as Reactivity from "@effect/experimental/Reactivity";
 import { FileSystem, HttpServer, HttpServerResponse } from "@effect/platform";
 import { NodeContext, NodeHttpServer } from "@effect/platform-node";
 import { PgClient } from "@effect/sql-pg";
-import {
-  AgentSigningAuthority,
-  legacyKeys,
-  WIRE_VERSION,
-} from "@moltzap/social-harness";
+import { AgentSigningAuthority, WIRE_VERSION } from "@moltzap/social-harness";
 import {
   Cause,
   Config,
-  ConfigError,
+  type ConfigError,
   Console,
   Data,
   Duration,
@@ -146,13 +142,11 @@ export class StartupError extends Data.TaggedError(
 )<{
   readonly phase: "configuration" | "storage" | "listener";
   readonly detail?: string;
-  readonly reason?: RegistryStorageInitializationError["reason"] | "legacy-key";
-  readonly keys?: readonly string[];
+  readonly reason?: RegistryStorageInitializationError["reason"];
 }> {
   /** Operator diagnostics exclude rejected inputs and platform paths. */
   override get message(): string {
-    const keys = this.keys === undefined ? "" : `: ${this.keys.join(", ")}`;
-    const detail = this.detail === undefined ? keys : `: ${this.detail}`;
+    const detail = this.detail === undefined ? "" : `: ${this.detail}`;
     const reason = this.reason === undefined ? "" : ` (${this.reason})`;
     const remedy =
       this.reason === "pre-reset"
@@ -169,37 +163,17 @@ export class StartupError extends Data.TaggedError(
  */
 export const loadRegistryConfiguration: Effect.Effect<
   RegistryConfiguration,
-  ConfigError.ConfigError | StartupError
-> = Effect.suspend(
-  (): Effect.Effect<
-    RegistryConfiguration,
-    ConfigError.ConfigError | StartupError
-  > => {
-    // eslint-disable-next-line agent-code-guard/no-process-env-at-runtime -- Configuration acquisition enumerates unknown legacy keys, which Effect.Config cannot name in advance.
-    const keys = legacyKeys(process.env);
-    if (keys.length > 0) {
-      return Effect.fail(
-        new StartupError({
-          phase: "configuration",
-          reason: "legacy-key",
-          keys,
-        }),
-      );
-    }
-    return configuredValues.pipe(
-      Effect.map(
-        (configuration): RegistryConfiguration => ({
-          ...configuration,
-          postgresqlUrl: Redacted.make(configuration.postgresqlUrl),
-          admissionCredential: Redacted.make(configuration.admissionCredential),
-          signingPrivateKeyPath: Redacted.make(
-            configuration.signingPrivateKeyPath,
-          ),
-        }),
-      ),
-      Effect.withSpan("loadRegistryConfiguration"),
-    );
-  },
+  ConfigError.ConfigError
+> = configuredValues.pipe(
+  Effect.map(
+    (configuration): RegistryConfiguration => ({
+      ...configuration,
+      postgresqlUrl: Redacted.make(configuration.postgresqlUrl),
+      admissionCredential: Redacted.make(configuration.admissionCredential),
+      signingPrivateKeyPath: Redacted.make(configuration.signingPrivateKeyPath),
+    }),
+  ),
+  Effect.withSpan("loadRegistryConfiguration"),
 );
 
 const runRegistryServer = Effect.gen(function* () {
@@ -337,15 +311,12 @@ function serveRegistry(
   });
 }
 
-function configurationFailure(cause: unknown) {
-  if (cause instanceof StartupError) {
-    return cause;
-  }
+function configurationFailure(
+  cause: Effect.Effect.Error<typeof loadRegistryConfiguration>,
+) {
   return new StartupError({
     phase: "configuration",
-    detail: ConfigError.isConfigError(cause)
-      ? configurationMessage(cause)
-      : undefined,
+    detail: configurationMessage(cause),
   });
 }
 

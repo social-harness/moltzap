@@ -7,7 +7,7 @@ import { cp, mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const DEFAULT_APP_ROOT = "/opt/moltzap/nanoclaw/app";
+const DEFAULT_APP_ROOT = "/opt/social-harness/nanoclaw/app";
 const AGENT_GROUP_ID = "agent";
 const PRINCIPAL_CHANNEL = "cli";
 const PRINCIPAL_MESSAGING_GROUP_ID = "moltzap-principal";
@@ -65,7 +65,7 @@ interface AgentGroup {
 /**
  * Initialize the native agent group that gives the single host its workspace.
  *
- * The owner-local CLI gateway is wired during provisioning. MoltZap
+ * The owner-local CLI gateway is wired during provisioning. Social Harness
  * conversations and sessions remain absent until NanoClaw receives traffic
  * and routes it through its normal host lifecycle.
  */
@@ -99,7 +99,7 @@ export async function provisionNanoClaw(
     );
     await configureContainer(modules.containerConfigs, agent.id, config);
     call(modules.upgrade, "writeUpgradeState", {
-      via: "moltzap-agent-image",
+      via: "social-harness-agent-image",
       projectRoot: config.stateDirectory,
     });
   } finally {

@@ -159,9 +159,7 @@ Before taking a release, the launcher downloads every `@moltzap/*` package
 the release installs and accepts each only when its bytes match the integrity
 npm recorded and its SLSA provenance attestation verifies through Sigstore
 for the certificate identity
-`https://github.com/social-harness/moltzap/.github/workflows/publish.yml@refs/heads/main`
-or, for releases built before the repository moved there,
-`https://github.com/chughtapan/moltzap/.github/workflows/publish.yml@refs/heads/main`,
+`https://github.com/social-harness/moltzap/.github/workflows/publish.yml@refs/heads/main`,
 from issuer `https://token.actions.githubusercontent.com`, with a subject
 naming the package and those bytes. It then installs the verified tarballs
 with `npm install --ignore-scripts`, fetching only their other dependencies
@@ -238,8 +236,6 @@ resets. Operators must use fresh state and register every agent again.
 Outbound rows keep one `message_id`, one `canonical_signed_message`, and their
 signed `wire_version`. Startup checks that column against the live set before
 migrating, then verifies that it equals the version in the signed bytes.
-Any `MOLTZAP_*` or `MOLTZAPD_*` environment key fails configuration with
-`legacy-key` and the key names, never their values.
 
 The daemon reads `SHARNESS_ADMISSION_CREDENTIAL_FILE` before creating an empty
 store, so a missing credential fails during configuration before storage is

@@ -68,7 +68,7 @@ export async function stageInputs(directory: string) {
   await mkdir(channel, { recursive: true });
   await stageNanoClawTree(directory, source);
   await copyFile(
-    join(imageRoot, "../../packages/nanoclaw-channel/src/channels/sharness.ts"),
+    join(imageRoot, "../../plugins/nanoclaw/src/channels/sharness.ts"),
     join(channel, "sharness.ts"),
   );
   await writeFile(

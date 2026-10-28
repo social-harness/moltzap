@@ -6,9 +6,9 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/social-harness/moltzap.git",
-    "directory": "packages/openclaw-channel"
+    "directory": "plugins/openclaw"
   },
-  "homepage": "https://github.com/social-harness/moltzap/tree/main/packages/openclaw-channel#readme",
+  "homepage": "https://github.com/social-harness/moltzap/tree/main/plugins/openclaw#readme",
   "bugs": {
     "url": "https://github.com/social-harness/moltzap/issues"
   },
@@ -43,7 +43,7 @@
       "build": {
         "executor": "nx:run-commands",
         "options": {
-          "cwd": "packages/openclaw-channel",
+          "cwd": "plugins/openclaw",
           "command": "node ../../scripts/build/clean-dist.ts && tsc -b && node ../../scripts/build/copy-social-harness-skills.ts"
         },
         "inputs": [
@@ -56,7 +56,7 @@
       "lint": {
         "executor": "nx:run-commands",
         "options": {
-          "cwd": "packages/openclaw-channel",
+          "cwd": "plugins/openclaw",
           "command": "eslint . --cache --max-warnings=0"
         }
       },
@@ -74,7 +74,7 @@
       "arch:check": {
         "executor": "nx:run-commands",
         "options": {
-          "cwd": "packages/openclaw-channel",
+          "cwd": "plugins/openclaw",
           "command": "safer-architecture-lsp check ."
         }
       },

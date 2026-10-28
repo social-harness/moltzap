@@ -16,7 +16,7 @@ runGate("sharness-social-harness-pack-", (temporaryRoot) =>
   Effect.gen(function* () {
     const { archives } = yield* packProductClosure(
       workspaceRoot,
-      "social-harness",
+      "packages/social-harness",
       temporaryRoot,
     );
     const consumerRoot = yield* installPackedConsumer({

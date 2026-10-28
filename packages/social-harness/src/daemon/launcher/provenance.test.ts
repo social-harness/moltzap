@@ -31,21 +31,13 @@ describe("a release's provenance signer", () => {
       expect(Exit.isSuccess(exit)).toBe(true);
     }));
 
-  it("is accepted from chughtapan/moltzap's release workflow", () =>
-    Effect.gen(function* () {
-      const exit = yield* Effect.exit(
-        signedByReleaseIdentity(
-          signedFor(identity("chughtapan/moltzap")),
-          refuse,
-        ),
-      );
-      expect(Exit.isSuccess(exit)).toBe(true);
-    }));
-
   it("is refused from any other repository", () =>
     Effect.gen(function* () {
       const exit = yield* Effect.exit(
-        signedByReleaseIdentity(signedFor(identity("someone/moltzap")), refuse),
+        signedByReleaseIdentity(
+          signedFor(identity("someone/other-repository")),
+          refuse,
+        ),
       );
       expect(Exit.isFailure(exit)).toBe(true);
     }));

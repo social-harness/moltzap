@@ -20,14 +20,15 @@ import { setTimeout as delay } from "node:timers/promises";
 import { type Gateway, type GatewayAddress, startGateway } from "./gateway.ts";
 import { type McpServer, provisionNanoClaw } from "./provision.ts";
 
-const APP_ROOT = "/opt/moltzap/nanoclaw/app";
-const PRELOAD = "/opt/moltzap/nanoclaw/preload.ts";
-const DEFAULT_CONFIG = "/run/moltzap/bootstrap/nanoclaw/runtime.json";
-const DEFAULT_STATE = "/var/lib/moltzap/nanoclaw";
+const APP_ROOT = "/opt/social-harness/nanoclaw/app";
+const PRELOAD = "/opt/social-harness/nanoclaw/preload.ts";
+const DEFAULT_CONFIG = "/run/social-harness/bootstrap/nanoclaw/runtime.json";
+const DEFAULT_STATE = "/var/lib/social-harness/nanoclaw";
 const STARTUP_TIMEOUT_MILLIS = 120_000;
 const SOCKET_POLL_MILLIS = 50;
 const MAX_PORT = 65_535;
-const INVALID_CONFIG = "invalid MoltZap NanoClaw application configuration";
+const INVALID_CONFIG =
+  "invalid Social Harness NanoClaw application configuration";
 /** The project directories NanoClaw writes in its state directory. */
 const STATE_DIRECTORIES = ["data", "groups", "store", "tmp"];
 /** The read-only application surfaces NanoClaw expects beside its state. */
@@ -240,7 +241,7 @@ function startHost(config: ApplicationConfig): ChildProcess {
   const environment = {
     ...process.env,
     ASSISTANT_NAME: config.agentName,
-    CONTAINER_IMAGE: "moltzap-nanoclaw-agent:embedded",
+    CONTAINER_IMAGE: "social-harness-nanoclaw-agent:embedded",
     DEFAULT_AGENT_PROVIDER: "claude",
     NANOCLAW_GATEWAY_PROVIDER: "moltzap-process",
     NANOCLAW_RUNTIME_DRIVER: "moltzap-process",

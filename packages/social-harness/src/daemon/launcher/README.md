@@ -11,8 +11,7 @@ record, checks it offline, resolves the candidate, and records what runs.
 `selection.ts` holds the pure rules that decide whether a candidate is taken.
 `npm.ts` reads the npm registry, `provenance.ts` accepts a tarball only
 when its Sigstore-verified SLSA provenance names the release workflow on
-`main` of `social-harness/moltzap` or of `chughtapan/moltzap`, the project's
-earlier home, and `installation.ts` owns the home-volume state: the
+`main` of `social-harness/moltzap`. `installation.ts` owns the home-volume state: the
 record, the cached tarballs, one installed prefix per release, and the
 `current` link. Nothing here imports another Client domain; the launcher runs
 the daemon as a child process.

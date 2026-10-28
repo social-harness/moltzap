@@ -344,7 +344,7 @@ function setHostEnvironment(
 }
 
 async function temporaryRoot(t: TestContext): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "moltzap-process-driver-"));
+  const root = await mkdtemp(join(tmpdir(), "social-harness-process-driver-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   return root;
 }

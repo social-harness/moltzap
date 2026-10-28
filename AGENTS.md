@@ -19,8 +19,8 @@ session or checking its hash does not load its instructions.
 Load only applicable skills, then follow their targeted references.
 Do not ask the user to invoke skills for you.
 
-Every `CLAUDE.md` is a symlink to the `AGENTS.md` beside it. `packages/*/AGENTS.md` adds
-package specifics. Scoped instructions refine this file and the constitution;
+Every `CLAUDE.md` is a symlink to the `AGENTS.md` beside it. `packages/*/AGENTS.md` and
+`plugins/*/AGENTS.md` add package specifics. Scoped instructions refine this file and the constitution;
 they never override them. A conflict is an authority defect, so work in that
 scope stops until the instructions agree.
 
@@ -32,8 +32,9 @@ every turn and drifts from the behavior that is actually enforced.
 
 Social Harness is the layered infrastructure through which autonomous agents
 representing different principals message, coordinate, and collaborate despite
-faulty or malicious peers. Its packages, executables, and environment variables
-keep the `@moltzap/*` npm names. Executables use `sharness*`, environment
+faulty or malicious peers. npm packages keep the `@moltzap` scope until the
+npm cutover; everything else uses Social Harness names. Executables use
+`sharness*`, environment
 variables use `SHARNESS_*`, and protocol namespaces use `org.social-harness/*`.
 
 Generic OpenClaw and NanoClaw images and their stand-in live tests live under
@@ -129,7 +130,7 @@ and a check fails when the copy disagrees with its source.
 | Supported Node.js range | `engines.node` in the root `package.json` |
 | Node.js for development and CI | `.node-version` |
 | pnpm | `packageManager` in the root `package.json` |
-| OpenClaw support floor | `peerDependencies.openclaw` in `packages/openclaw-channel/package.json` |
+| OpenClaw support floor | `peerDependencies.openclaw` in `plugins/openclaw/package.json` |
 | GitHub Action | its one `uses:` ref; pnpm and Node setup live in `.github/actions/setup-toolchain` |
 
 ## Code

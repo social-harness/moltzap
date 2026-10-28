@@ -67,7 +67,7 @@ function selectChannel(config: unknown): boolean {
   const selected = [
     ...paths.filter(
       (path) =>
-        path !== "/opt/moltzap/node_modules/@moltzap/openclaw-channel" &&
+        path !== "/opt/social-harness/node_modules/@moltzap/openclaw-channel" &&
         path !== IMAGE_CHANNEL,
     ),
     IMAGE_CHANNEL,

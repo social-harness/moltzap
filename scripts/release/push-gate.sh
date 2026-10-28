@@ -55,9 +55,9 @@ if [[ "$head_wire" != "$release_wire" ]]; then
   echo skip
   exit 0
 fi
-manifests=$(git ls-tree -r --name-only "$commit" -- 'packages/')
+manifests=$(git ls-tree -r --name-only "$commit" -- 'packages/' 'plugins/')
 while IFS= read -r manifest; do
-  [[ "$manifest" =~ ^packages/[^/]+/package\.json$ ]] || continue
+  [[ "$manifest" =~ ^(packages|plugins)/[^/]+/package\.json$ ]] || continue
   release_manifest=$manifest
   if [[ "$manifest" == packages/social-harness/package.json ]]; then
     release_manifest=$wire_path

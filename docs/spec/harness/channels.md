@@ -150,5 +150,3 @@ callback from generic tool and final-output sends and that inbound routing
 completion and failure propagate before acknowledgment. Qualification must use
 the real host entry points; a mock callback cannot establish host persistence,
 model-invocation, or final-output behavior.
-
-Adapters refuse startup when any retired `MOLTZAP_*` or `MOLTZAPD_*` environment key is present, including an empty value. Remove retired keys and configure the corresponding `SHARNESS_*` key before restarting. Diagnostics list key names without values.

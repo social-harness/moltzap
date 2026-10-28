@@ -59,19 +59,6 @@ describe("OpenClaw experiment switches", () => {
     vi.unstubAllEnvs();
   });
 
-  it.each(["MOLTZAP_MCP_URL", "MOLTZAP_EXPERIMENT_HIDE_COLLECTIVES"])(
-    "refuses startup with retired key %s without printing its value",
-    (key) => {
-      vi.stubEnv(key, "private-retired-value");
-      expect(() => createChannelPlugin()).toThrow(key);
-      expect(() => createChannelPlugin()).not.toThrow("private-retired-value");
-    },
-  );
-  it("refuses an empty retired key", () => {
-    vi.stubEnv("MOLTZAP_MCP_URL", "");
-    expect(() => createChannelPlugin()).toThrow("MOLTZAP_MCP_URL");
-  });
-
   describe("collectives switch", collectivesSwitchTests);
 
   describe.each(["send", "reply"] as const)(

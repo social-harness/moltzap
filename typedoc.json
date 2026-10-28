@@ -3,8 +3,8 @@
   "entryPointStrategy": "packages",
   "entryPoints": [
     "packages/social-harness",
-    "packages/nanoclaw-channel",
-    "packages/openclaw-channel",
+    "plugins/nanoclaw",
+    "plugins/openclaw",
     "packages/router",
     "packages/registry"
   ],

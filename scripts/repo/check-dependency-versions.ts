@@ -72,7 +72,7 @@ function main(): void {
   const root = manifestAt("package.json");
   const workspaceManifests = [
     root,
-    ...products.map(({ dir }) => manifestAt(`packages/${dir}/package.json`)),
+    ...products.map(({ dir }) => manifestAt(`${dir}/package.json`)),
     manifestAt("tests/integration/package.json"),
     ...imageManifests(),
   ];
@@ -254,7 +254,7 @@ function checkEngineCopies(nodeRange: string, helpers: Manifest): void {
   const copies = [
     ...products.map(({ dir, published }) => ({
       required: published,
-      ...manifestAt(`packages/${dir}/package.json`),
+      ...manifestAt(`${dir}/package.json`),
     })),
     { required: true, ...helpers },
   ];

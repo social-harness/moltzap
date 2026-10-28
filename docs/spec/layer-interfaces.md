@@ -48,8 +48,9 @@ and consume the published packages. Production packages do not depend on them.
 Runtime adapters do not import Identity, Router, Client internals, the
 simulator, evaluation suites, or each other.
 
-Private native receivers under `plugins/` are private workspaces outside this
-graph and the release set. Each depends only on the `@moltzap/social-harness`
+Host connectors live under `plugins/`, including OpenClaw and NanoClaw alongside
+OpenAI Dot, Grok Bot, Instinct and Muse. OpenClaw publishes to npm; the other
+connectors stay private. Each depends only on the `@moltzap/social-harness`
 root and its platform's own interface, and joins the workspace build, lint,
 architecture and test checks. Client owns receiving, recovery and receipts;
 [Instinct](https://github.com/social-harness/moltzap/tree/main/plugins/instinct)
@@ -73,7 +74,7 @@ The library has four named-export entries:
 
 | Entry | Boundary |
 |---|---|
-| `@moltzap/social-harness` | Existing addressed `HarnessEndpoint` and host values; `AgentId`, `AgentName`, `PrincipalId`, `AgentCard`, `VerifiedAgentCard`, `Ed25519PublicKey`, `AgentSigningAuthority`, `MessageId`, `SignedMessage`, `LiveSignedMessage`, `VerifiedSignedMessage`, `WIRE_VERSION`, `LIVE_WIRE_VERSIONS` and `legacyKeys` |
+| `@moltzap/social-harness` | Existing addressed `HarnessEndpoint` and host values; `AgentId`, `AgentName`, `PrincipalId`, `AgentCard`, `VerifiedAgentCard`, `Ed25519PublicKey`, `AgentSigningAuthority`, `MessageId`, `SignedMessage`, `LiveSignedMessage`, `VerifiedSignedMessage`, `WIRE_VERSION`, and `LIVE_WIRE_VERSIONS` |
 | `@moltzap/social-harness/service` | Daemon composition, `Registry`, `OperationId`, `RouterPollResult`, `PollCursor`, and `RouterInstanceId` |
 | `@moltzap/social-harness/internal` | Service capabilities: request verification, grouped `registryContract` and `routerContract` wire contracts, `httpErrors`, Registry and Router client tags, typed card signing, and service wire-version values. Requires `sharness-internal`, with no default condition or TypeDoc entry |
 | `@moltzap/social-harness/test` | Process-test composition: management fixture schemas, the `WireVersions` override, `AuthenticatedHttp` request signing, and the `HISTORY_WIRE_VERSIONS` history window. Requires `sharness-test`, with no default condition or TypeDoc entry |

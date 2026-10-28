@@ -24,7 +24,7 @@ PREFIX="$(date -u +%Y.%-m%d)."
 
 RESPONSES=("$(node -e 'console.log(JSON.stringify(process.argv[1].split(/\s+/u).filter(Boolean)))' "${TAKEN_VERSIONS:-}")")
 for PKG in "$@"; do
-  NPM_PACKAGE=$(node -p "require('./packages/$PKG/package.json').name")
+  NPM_PACKAGE=$(node -p "require('./$PKG/package.json').name")
   if VERSIONS=$(npm view "$NPM_PACKAGE" versions --json 2>/dev/null); then
     RESPONSES+=("${VERSIONS:-[]}")
   elif node -e 'process.exit(JSON.parse(process.argv[1])?.error?.code === "E404" ? 0 : 1)' "$VERSIONS" 2>/dev/null; then

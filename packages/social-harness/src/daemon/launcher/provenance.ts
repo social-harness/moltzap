@@ -18,16 +18,8 @@ import { integrityOf } from "./integrity.js";
 import { downloadJson, type PublishedPackage } from "./npm.js";
 import { type PackedManifest, readPackedManifest } from "./packed-manifest.js";
 
-/**
- * The repositories whose release workflow the launcher trusts. The project
- * lives at `social-harness/moltzap`; `chughtapan/moltzap`, its earlier home,
- * stays trusted so releases built in either place verify for launchers
- * installed from either.
- */
-const RELEASE_REPOSITORIES = [
-  "social-harness/moltzap",
-  "chughtapan/moltzap",
-] as const;
+/** The repository whose release workflow signs published packages. */
+const RELEASE_REPOSITORIES = ["social-harness/moltzap"] as const;
 
 /**
  * The build identities the launcher trusts: each certificate subject

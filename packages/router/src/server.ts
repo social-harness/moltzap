@@ -7,7 +7,7 @@ import { HttpServer } from "@effect/platform";
 import { NodeHttpClient, NodeHttpServer } from "@effect/platform-node";
 import { WIRE_VERSION } from "@moltzap/social-harness";
 import { AuthenticatedHttp, Registry } from "@moltzap/social-harness/internal";
-import { ConfigError, Console, Data, Duration, Effect, Layer } from "effect";
+import { Console, Data, Duration, Effect, Layer } from "effect";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- NodeHttpServer.make requires Node's server factory at this adapter boundary.
 import { createServer } from "node:http";
 import {
@@ -39,15 +39,10 @@ export namespace RouterServer {
   )<{
     readonly phase: "configuration" | "listener";
     readonly detail?: string;
-    readonly reason?: "legacy-key";
-    readonly keys?: readonly string[];
   }> {
     /** Rejected environment values never enter the operator message. */
     override get message(): string {
-      const keys = this.keys === undefined ? "" : `: ${this.keys.join(", ")}`;
-      const reason =
-        this.reason === undefined ? "" : ` (${this.reason}${keys})`;
-      const detail = this.detail === undefined ? reason : `: ${this.detail}`;
+      const detail = this.detail === undefined ? "" : `: ${this.detail}`;
       return `sharness-router startup failed in phase ${this.phase}${detail}`;
     }
   }
@@ -152,12 +147,7 @@ export namespace RouterServer {
   ) {
     return new StartupError({
       phase: "configuration",
-      ...(cause._tag === "LegacyConfigurationError"
-        ? { reason: "legacy-key" as const, keys: cause.keys }
-        : {}),
-      detail: ConfigError.isConfigError(cause)
-        ? configurationMessage(cause)
-        : undefined,
+      detail: configurationMessage(cause),
     });
   }
 

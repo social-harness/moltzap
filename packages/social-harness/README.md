@@ -138,8 +138,7 @@ Optional:
 The port is a plain decimal integer with no leading zeros, sign, spaces, or
 exponent. Supply both MCP credential files or neither; they hold distinct
 tokens of 32 to 512 token68 characters with no trailing newline. A missing or
-invalid value, or a retired environment key (reported as `legacy-key` with the
-key names), stops the process in phase `configuration`.
+invalid value stops the process in phase `configuration`.
 
 Decode the history export line by line with the root's `HistoryExportRecord`
 schema. An append that fails is recorded once as an `export-failed` line, after

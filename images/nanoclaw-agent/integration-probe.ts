@@ -1,6 +1,6 @@
 /**
  * @file Drives NanoClaw's native inbox and outbound queue through its
- * registered MoltZap channel, inside the NanoClaw agent image.
+ * registered Social Harness channel, inside the NanoClaw agent image.
  * `integration.live.test.ts` mounts it into a container of the image under test
  * and runs it with `node`; it reads the daemon's URL from `SHARNESS_MCP_URL`,
  * the sends to queue from `NANOCLAW_DESTINATIONS_JSON` and the inbound
@@ -17,16 +17,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
-const NANOCLAW_ROOT = "/opt/moltzap/nanoclaw";
+const NANOCLAW_ROOT = "/opt/social-harness/nanoclaw";
 const APP_ROOT = `${NANOCLAW_ROOT}/app`;
 const APP_DIST = `${APP_ROOT}/dist`;
-const RUNNER_ROOT = "/opt/moltzap/nanoclaw/app/container/agent-runner/src";
-const CURRENT_WORKSPACE = "/var/lib/moltzap/nanoclaw/current-workspace";
+const RUNNER_ROOT =
+  "/opt/social-harness/nanoclaw/app/container/agent-runner/src";
+const CURRENT_WORKSPACE = "/var/lib/social-harness/nanoclaw/current-workspace";
 const AGENT_GROUP_ID = "agent";
 const INBOUND_TIMEOUT_MILLIS = 60_000;
 const POLL_MILLIS = 50;
 const INBOUND_HISTORY_LIMIT = 10;
-/** The sender NanoClaw records for a message MoltZap itself gives the model. */
+/** The sender NanoClaw records for a message Social Harness itself gives the model. */
 const ENDPOINT_SENDER = "Social Harness";
 /** The prefix of the report line, which `integration.live.test.ts` looks for. */
 const REPORT_PREFIX = "nanoclaw probe report: ";
@@ -198,7 +199,7 @@ async function provisionStateRoot(): Promise<undefined> {
 }
 
 /**
- * Import the host modules, after the mailbox composition and the MoltZap
+ * Import the host modules, after the mailbox composition and the Social Harness
  * channel register themselves.
  */
 async function importHostModules(): Promise<HostModules> {
@@ -216,10 +217,10 @@ async function importHostModules(): Promise<HostModules> {
 }
 
 /**
- * Start the channel adapters, wait for the MoltZap message in the agent's
+ * Start the channel adapters, wait for the Social Harness message in the agent's
  * inbox, queue the destinations from that session's workspace, deliver
  * them in two passes, and print what the first pass completed, what the
- * second sent again and what MoltZap told the model.
+ * second sent again and what Social Harness told the model.
  */
 async function exchangeMessages(
   modules: HostModules,
@@ -230,8 +231,10 @@ async function exchangeMessages(
   await call(modules.channels, "initChannelAdapters", (adapter: unknown) =>
     adapterCallbacks(modules.router, expected, metadata, adapter),
   );
-  if (!hasMoltZapAdapter(call(modules.channels, "getActiveAdapters"))) {
-    throw new Error("NanoClaw did not start the MoltZap channel adapter");
+  if (!hasSocialHarnessAdapter(call(modules.channels, "getActiveAdapters"))) {
+    throw new Error(
+      "NanoClaw did not start the Social Harness channel adapter",
+    );
   }
   call(
     modules.delivery,
@@ -316,7 +319,7 @@ function inboundMessage(value: unknown): ModuleRecord {
   };
 }
 
-function hasMoltZapAdapter(adapters: unknown): boolean {
+function hasSocialHarnessAdapter(adapters: unknown): boolean {
   return (
     Array.isArray(adapters) &&
     adapters.some(
@@ -356,7 +359,9 @@ async function waitForInbound(
     }
     await delay(POLL_MILLIS);
   }
-  throw new Error("NanoClaw native inbox did not receive the MoltZap message");
+  throw new Error(
+    "NanoClaw native inbox did not receive the Social Harness message",
+  );
 }
 
 function historyHolds(history: unknown, expected: ExpectedInbound): boolean {
@@ -466,7 +471,7 @@ async function dueCount(
 }
 
 /**
- * The text of each message MoltZap itself gave the model in the
+ * The text of each message Social Harness itself gave the model in the
  * conversation at `address`, newest first.
  */
 async function endpointMessages(

@@ -216,7 +216,7 @@ export function packProductClosure(
     Object.fromEntries(
       [...closure.values()].map(({ dir, name }) => [
         name,
-        join(workspaceRoot, "packages", dir),
+        join(workspaceRoot, dir),
       ]),
     ),
     temporaryRoot,

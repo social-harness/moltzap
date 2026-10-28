@@ -9,7 +9,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc .node-version nx.jso
 COPY scripts/build/clean-dist.ts scripts/build/clean-dist.ts
 COPY scripts/build/copy-social-harness-skills.ts scripts/build/copy-social-harness-skills.ts
 COPY packages/social-harness/ packages/social-harness/
-COPY packages/openclaw-channel/ packages/openclaw-channel/
+COPY plugins/openclaw/ plugins/openclaw/
 COPY images/daemon/package.json images/daemon/package.json
 RUN corepack enable && corepack prepare pnpm@10.6.2 --activate
 RUN pnpm install --frozen-lockfile --filter @social-harness/daemon...

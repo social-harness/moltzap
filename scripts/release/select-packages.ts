@@ -3,7 +3,7 @@
  * @file Choose the packages one release publishes and write their manifests.
  *
  * Usage: `node scripts/release/select-packages.ts VERSION DIR...`, where each
- * DIR names a directory under `packages/`. Prints the selected directories,
+ * DIR names a repository-relative package directory. Prints the selected directories,
  * space-separated.
  *
  * A package is selected when its content hash (`content-hash.ts`) differs
@@ -195,7 +195,7 @@ function readManifest(repo: string, dir: string): Record<string, unknown> {
 }
 
 function manifestPath(repo: string, dir: string): string {
-  return path.join(repo, "packages", dir, "package.json");
+  return path.join(repo, dir, "package.json");
 }
 
 function stringRecord(value: unknown): Readonly<Record<string, string>> {

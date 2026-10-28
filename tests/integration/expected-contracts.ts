@@ -24,9 +24,6 @@ export const outboxTooOldRemedy = "Drain the outbox on the previous release";
 /** Daemon startup reports this reason when the database schema is newer than the binary. */
 export const newerSchemaReason = "newer-schema";
 
-/** Service startup reports this reason when a retired environment key is set. */
-export const legacySettingReason = "legacy-key";
-
 /** Daemon startup reports this reason for populated state from before the reset release. */
 export const preResetReason = "pre-reset";
 

@@ -14,10 +14,10 @@
       "path": "packages/social-harness"
     },
     {
-      "path": "packages/openclaw-channel"
+      "path": "plugins/openclaw"
     },
     {
-      "path": "packages/nanoclaw-channel"
+      "path": "plugins/nanoclaw"
     },
     {
       "path": "packages/router"

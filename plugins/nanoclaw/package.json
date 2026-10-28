@@ -34,7 +34,7 @@
       "build": {
         "executor": "nx:run-commands",
         "options": {
-          "cwd": "packages/nanoclaw-channel",
+          "cwd": "plugins/nanoclaw",
           "command": "node ../../scripts/build/clean-dist.ts && tsc -b"
         },
         "inputs": [
@@ -46,14 +46,14 @@
       "lint": {
         "executor": "nx:run-commands",
         "options": {
-          "cwd": "packages/nanoclaw-channel",
+          "cwd": "plugins/nanoclaw",
           "command": "eslint . --cache --max-warnings=0"
         }
       },
       "arch:check": {
         "executor": "nx:run-commands",
         "options": {
-          "cwd": "packages/nanoclaw-channel",
+          "cwd": "plugins/nanoclaw",
           "command": "safer-architecture-lsp check ."
         }
       },
@@ -63,7 +63,7 @@
           "^build"
         ],
         "options": {
-          "cwd": "packages/nanoclaw-channel",
+          "cwd": "plugins/nanoclaw",
           "command": "tsc --noEmit --incremental false --composite false -p tsconfig.json"
         }
       }

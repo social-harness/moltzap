@@ -1,5 +1,5 @@
 /**
- * @file A disposable MoltZap network for the agent image integration tests:
+ * @file A disposable Social Harness network for the agent image integration tests:
  * a local PGlite server, Registry and Router with registered local daemon
  * child processes on loopback ports: `sharnessd`
  * from this workspace, or another daemon program a

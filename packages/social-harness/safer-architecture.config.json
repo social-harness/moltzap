@@ -172,10 +172,6 @@
       "reason": "Package facade: re-exports the adapter-facing values each domain owns"
     },
     {
-      "path": "src/environment.ts",
-      "reason": "Host configuration check for retired environment names re-exported by the package facade"
-    },
-    {
       "path": "src/index.types-check.ts",
       "reason": "Type canary for the package facade's public types"
     },

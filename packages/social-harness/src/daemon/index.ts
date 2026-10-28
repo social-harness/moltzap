@@ -93,7 +93,6 @@ export namespace Daemon {
       | "outbox-too-old"
       | "newer-schema"
       | "pre-reset"
-      | "legacy-key"
       | "agent-not-admitted"
       | "admission-refused"
       | "name_taken"
@@ -102,7 +101,6 @@ export namespace Daemon {
       | "dependency-unavailable"
       | "persistence-failed"
       | "incompatible-daemon";
-    readonly keys?: readonly string[];
     readonly detail?: string;
   }> {
     /**
@@ -256,10 +254,6 @@ export namespace Daemon {
   function configurationFailure(cause: unknown): StartupError {
     return new StartupError({
       phase: "configuration",
-      ...(cause instanceof DaemonConfigurationError &&
-      cause.reason === "legacy-key"
-        ? { reason: "legacy-key" as const, keys: cause.keys }
-        : {}),
       detail:
         cause instanceof DaemonConfigurationError ? cause.message : undefined,
     });

@@ -10,7 +10,7 @@
     "erasableSyntaxOnly": true,
     "paths": {
       "@moltzap/openclaw-channel": [
-        "../packages/openclaw-channel/src/index.ts"
+        "../plugins/openclaw/src/index.ts"
       ]
     },
     "customConditions": [
