@@ -253,6 +253,15 @@ importers:
         specifier: 'catalog:'
         version: 2.9.1
 
+  images/daemon:
+    dependencies:
+      '@moltzap/openclaw-channel':
+        specifier: workspace:*
+        version: link:../../packages/openclaw-channel
+      '@moltzap/social-harness':
+        specifier: workspace:*
+        version: link:../../packages/social-harness
+
   images/nanoclaw-agent: {}
 
   images/openclaw-agent:

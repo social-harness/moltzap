@@ -59,11 +59,56 @@ export function compilerLayout(
   return { ...inherited, ...options };
 }
 
+/** A config's file selection, each path joined to the config that declares it. */
+export interface SourceGlobs {
+  readonly files: readonly string[];
+  readonly include: readonly string[];
+  readonly exclude: readonly string[];
+}
+
+/** Resolves `files`, `include` and `exclude` as TypeScript does, through `extends` and to its defaults. */
+export function sourceGlobs(tree: Tree, file: string): SourceGlobs {
+  const files = declaredGlobs(tree, file, "files");
+  return {
+    files: files ?? [],
+    include:
+      declaredGlobs(tree, file, "include") ??
+      (files === undefined
+        ? [path.posix.join(path.posix.dirname(file), "**/*")]
+        : []),
+    exclude: declaredGlobs(tree, file, "exclude") ?? [],
+  };
+}
+
 /** Narrows JSON arrays without coercing configuration values. */
 export function asStrings(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string")
     : [];
+}
+
+/** The nearest declaration of one selection list; a later `extends` entry overrides an earlier one. */
+function declaredGlobs(
+  tree: Tree,
+  file: string,
+  key: keyof SourceGlobs,
+  seen: ReadonlySet<string> = EMPTY_SEEN,
+): readonly string[] | undefined {
+  if (seen.has(file)) {
+    throw new ImageInputError({
+      message: `Cyclic tsconfig extends in ${file}`,
+    });
+  }
+  const config = configValue(tree, file);
+  if (Array.isArray(config[key])) {
+    return asStrings(config[key]).map((entry) =>
+      path.posix.normalize(path.posix.join(path.posix.dirname(file), entry)),
+    );
+  }
+  return configParents(tree, file)
+    .map((parent) => declaredGlobs(tree, parent, key, new Set([...seen, file])))
+    .filter((globs): globs is readonly string[] => globs !== undefined)
+    .at(-1);
 }
 
 function configParents(tree: Tree, file: string): string[] {

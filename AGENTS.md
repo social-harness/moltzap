@@ -37,8 +37,8 @@ keep the `@moltzap/*` npm names. Executables use `sharness*`, environment
 variables use `SHARNESS_*`, and protocol namespaces use `org.social-harness/*`.
 
 Generic OpenClaw and NanoClaw images and their stand-in live tests live under
-`images/`; private product overlays stay in deployment. Agent images are built
-locally for verification and never published from this repository.
+`images/`; private product overlays stay in deployment. Image publication follows
+[Publication and versions](docs/spec/layer-interfaces.md#publication-and-versions).
 
 `main` is the only track; npm publication membership and versioning follow
 [Publication and versions](docs/spec/layer-interfaces.md#publication-and-versions).

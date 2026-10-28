@@ -25,6 +25,16 @@ importers:
     dependencies:
       '@fixture/core':
         version: link:../social-harness
+  images/daemon:
+    dependencies:
+      '@fixture/core':
+        version: link:../../packages/social-harness
+      '@fixture/channel':
+        version: link:../../packages/openclaw-channel
+  packages/openclaw-channel:
+    dependencies:
+      '@fixture/core':
+        version: link:../social-harness
   packages/social-harness:
     optionalDependencies:
       leaf:
@@ -69,6 +79,17 @@ COPY packages/social-harness/src/internal.ts packages/social-harness/src/interna
 COPY scripts/build/ scripts/build/
 FROM node:24@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 COPY --from=build /deploy/ /app/
+`;
+
+/** The daemon recipe deploys its seed package from the repository root. */
+export const daemonDockerfile = `FROM node:24@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa AS build
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+COPY packages/social-harness/ packages/social-harness/
+COPY packages/openclaw-channel/ packages/openclaw-channel/
+COPY images/daemon/package.json images/daemon/package.json
+FROM node:24@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+COPY --from=build --chown=node:node /deploy/ /opt/social-harness/launcher/seed/
+ENTRYPOINT ["sharnessd-launcher"]
 `;
 
 /** Every fixture has both service names and a differently named library with condition-only exports. */
@@ -129,7 +150,7 @@ export function git(repo: string, args: readonly string[]): void {
 
 /** Returns the Router input key through the public API. */
 export function key(repo: string): string {
-  return Effect.runSync(imageInputs(repo)).router?.key ?? "";
+  return Effect.runSync(imageInputs(repo, ["router"])).router?.key ?? "";
 }
 
 /** Committed build, runtime, and unreachable inputs for the image-key contracts. */
@@ -156,12 +177,14 @@ export function fixtureFiles(
     "pnpm-workspace.yaml": "packages:\n  - packages/*\n",
     "pnpm-lock.yaml": lock,
     "scripts/build/image.ts": "export {};\n",
+    ...agentFiles(),
     "images/router/Dockerfile": dockerfile,
-    "images/router/base-digest": "sha256:base\n",
     "packages/social-harness/package.json": clientManifest(),
     "packages/social-harness/tsconfig.json": JSON.stringify({
       extends: "../../tsconfig.base.json",
       compilerOptions: { rootDir: "src", outDir: "dist" },
+      include: ["src/**/*.ts"],
+      exclude: ["src/**/*.test.ts"],
     }),
     "packages/social-harness/src/index.ts": "export const publicValue = 1;\n",
     "packages/social-harness/src/internal.ts":
@@ -177,7 +200,8 @@ export function fixtureFiles(
   };
 }
 
-function clientManifest(): string {
+/** The Client manifest every fixture commits. */
+export function clientManifest(): string {
   return JSON.stringify({
     name: "@fixture/core",
     version: "1",
@@ -213,4 +237,45 @@ function clientManifest(): string {
       },
     },
   });
+}
+
+/** The daemon seeds both runtime dependencies; the host builds from its own context. */
+function agentFiles(): Record<string, string> {
+  return {
+    "images/daemon/package.json": JSON.stringify({
+      name: "@social-harness/daemon",
+      private: true,
+      dependencies: {
+        "@fixture/core": "workspace:*",
+        "@fixture/channel": "workspace:*",
+      },
+      files: ["package.json"],
+      nx: { targets: { build: { executor: "nx:noop" } } },
+    }),
+    "images/daemon/Dockerfile": daemonDockerfile,
+    "images/daemon/README.md": "Run the daemon.\n",
+    "packages/openclaw-channel/package.json": JSON.stringify({
+      name: "@fixture/channel",
+      private: true,
+      dependencies: { "@fixture/core": "workspace:*" },
+      files: ["dist", "skills", "bin"],
+      exports: { ".": "./dist/index.js" },
+    }),
+    "packages/openclaw-channel/tsconfig.json": JSON.stringify({
+      extends: "../../tsconfig.base.json",
+      compilerOptions: { rootDir: "src", outDir: "dist" },
+      include: ["src/**/*.ts"],
+    }),
+    "packages/openclaw-channel/src/index.ts": 'import "@fixture/core";',
+    "packages/openclaw-channel/bin/loader":
+      "#!/usr/bin/env node\nconsole.log('load');",
+    "packages/openclaw-channel/skills/connect/SKILL.md":
+      "Connect to the daemon.",
+    "images/openclaw-agent/Dockerfile":
+      "FROM upstream@sha256:host\nCOPY host.sh /host.sh\n",
+    "images/openclaw-agent/.dockerignore":
+      "*\n!host.sh\n!patch-openclaw.ts\n!configure-channel.ts\n",
+    "images/openclaw-agent/host.sh": "exec openclaw gateway\n",
+    "images/openclaw-agent/README.md": "Run the host.\n",
+  };
 }

@@ -122,6 +122,12 @@
         "*.ts"
       ]
     },
+    "images/daemon": {
+      "ignoreDependencies": [
+        "@moltzap/social-harness",
+        "@moltzap/openclaw-channel"
+      ]
+    },
     "images/tests": {
       "entry": [
         "*.test.ts"

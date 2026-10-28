@@ -1,21 +1,17 @@
-name: Publish service images
+name: Publish images
 
-# Registry and Router publish as native amd64/arm64 indexes on main.
-# Each committed input key sha256:<hex> names inputs-<hex>. Platform images
-# and indexes push by digest first. The index is signed with
+# Registry, Router, daemon and OpenClaw agent publish native amd64/arm64 indexes
+# on main. Each committed input key sha256:<hex> names inputs-<hex>; releases
+# tag only the Registry and Router indexes (publish.yml). Every service builds
+# with docker buildx from its Dockerfile alone, so the build jobs, which hold
+# the publishing token, install and build nothing on the runner. Platform
+# images and indexes push by digest first. The index is signed with
 # https://github.com/social-harness/moltzap/.github/workflows/images.yml@refs/heads/main
 # and issuer https://token.actions.githubusercontent.com before its input tag
 # is created. Existing input tags are skipped, never retagged; partial reruns
-# converge by building only missing services. A publication, manual run or rerun
-# sends repository_dispatch social-harness-images to social-harness/deployment with
-# client_payload {"registry":"ghcr.io/social-harness/registry@sha256:…",
-# "router":"ghcr.io/social-harness/router@sha256:…","revision":"<tip sha>"}.
-# Deliveries may repeat or arrive out of order; the receiver ignores revisions
-# not newer than the one it runs, ordered by main ancestry.
-# A token-free tip job resolves and verifies the current main tip's own keys.
-# If either is unpublished, that tip's run dispatches them once available.
-# The dispatch job holds the App token, checks out nothing and sends only
-# that prepared payload after checking its revision still names main's head.
+# converge by building only missing services. Each service publishes from its
+# own two platform digests, so a service whose build fails leaves the others
+# publishing.
 on:
   push:
     branches: [main]
@@ -61,7 +57,7 @@ jobs:
           printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           keys=$(pnpm --silent image:keys)
           missing='[]'
-          for service in registry router; do
+          for service in registry router daemon openclaw-agent; do
             key=$(jq -r --arg s "$service" '.[$s] | sub("^sha256:"; "")' <<<"$keys")
             image="ghcr.io/social-harness/$service"
             status=0
@@ -109,10 +105,14 @@ jobs:
           printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           docker buildx create --use \
             --driver-opt image=moby/buildkit:v0.34.0@sha256:b059f8d7226d0b326bc871af489a5dddf65e36af4d20d14251b072974d9ee87c
+          context=.
+          if [[ "$SERVICE" == openclaw-agent ]]; then
+            context=images/openclaw-agent
+          fi
           docker buildx build --platform "linux/$PLATFORM" \
             --file "images/$SERVICE/Dockerfile" \
             --output "type=image,name=ghcr.io/social-harness/$SERVICE,push-by-digest=true,name-canonical=true,push=true" \
-            --metadata-file "$RUNNER_TEMP/metadata.json" .
+            --metadata-file "$RUNNER_TEMP/metadata.json" "$context"
           jq -r '."containerimage.digest"' "$RUNNER_TEMP/metadata.json" > "$RUNNER_TEMP/$PLATFORM"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -122,6 +122,7 @@ jobs:
 
   publish:
     needs: [keys, build]
+    if: ${{ !cancelled() && needs.keys.result == 'success' && needs.keys.outputs.missing != '[]' }}
     strategy:
       fail-fast: false
       matrix:
@@ -170,84 +171,3 @@ jobs:
           docker buildx imagetools create --tag "$ref" "${sources[@]}"
           cosign sign --yes "$ref"
           docker buildx imagetools create --tag "$tag" "$ref"
-
-  tip:
-    needs: [keys, build, publish]
-    if: >-
-      !cancelled() && needs.keys.result == 'success' &&
-      needs.build.result != 'failure' && needs.publish.result != 'failure' &&
-      (needs.publish.result == 'success' || github.run_attempt > 1 || github.event_name == 'workflow_dispatch')
-    runs-on: ubuntu-24.04
-    outputs:
-      payload: ${{ steps.tip.outputs.payload }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: main
-          persist-credentials: false
-      - uses: ./.github/actions/setup-toolchain
-      - run: pnpm install --frozen-lockfile
-      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-      - name: Resolve and verify the current tip's indexes
-        id: tip
-        env:
-          DOCKER_CONFIG: ${{ runner.temp }}/anonymous-docker
-        run: |
-          mkdir -p "$DOCKER_CONFIG"
-          keys=$(pnpm --silent image:keys)
-          revision=$(git rev-parse HEAD)
-          payload=$(jq -cn --arg revision "$revision" '{revision: $revision}')
-          for service in registry router; do
-            key=$(jq -r --arg s "$service" '.[$s] | sub("^sha256:"; "")' <<<"$keys")
-            image="ghcr.io/social-harness/$service"
-            if digest=$(docker buildx imagetools inspect "$image:inputs-$key" --format '{{.Manifest.Digest}}' 2>"$RUNNER_TEMP/inspect-error"); then
-              [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
-            elif grep -Eqi 'denied|forbidden|unauthorized' "$RUNNER_TEMP/inspect-error"; then
-              echo "::warning::The ghcr.io/social-harness/{registry,router} packages must be public before deployment receives images; then run images.yml from main with workflow_dispatch. Docs: https://docs.moltzap.xyz/spec/layer-interfaces#publication-and-versions"
-              exit 0
-            elif grep -Eqi 'manifest unknown|: not found' "$RUNNER_TEMP/inspect-error"; then
-              echo "::notice::main tip $revision has an image key that is not yet published; the run that publishes it dispatches both."
-              exit 0
-            else
-              cat "$RUNNER_TEMP/inspect-error" >&2
-              exit 1
-            fi
-            cosign verify \
-              --certificate-identity "$IMAGE_CERTIFICATE_IDENTITY" \
-              --certificate-oidc-issuer "$IMAGE_CERTIFICATE_OIDC_ISSUER" "$image@$digest"
-            payload=$(jq -c --arg s "$service" --arg ref "$image@$digest" '. + {($s): $ref}' <<<"$payload")
-          done
-          echo "payload=$payload" >> "$GITHUB_OUTPUT"
-
-  dispatch:
-    needs: [keys, build, publish, tip]
-    if: >-
-      !cancelled() && needs.keys.result == 'success' &&
-      needs.build.result != 'failure' && needs.publish.result != 'failure' &&
-      (needs.publish.result == 'success' || github.run_attempt > 1 || github.event_name == 'workflow_dispatch') &&
-      needs.tip.outputs.payload != ''
-    runs-on: ubuntu-24.04
-    permissions: {}
-    steps:
-      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
-        id: app-token
-        with:
-          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
-          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-          owner: social-harness
-          repositories: deployment
-          permission-contents: write
-      - name: Dispatch both current tip index references
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          PAYLOAD: ${{ needs.tip.outputs.payload }}
-        run: |
-          revision=$(jq -r .revision <<<"$PAYLOAD")
-          main_head=$(git ls-remote https://github.com/social-harness/moltzap refs/heads/main)
-          main_head=${main_head%%$'\t'*}
-          if [[ "$revision" != "$main_head" ]]; then
-            echo "ERROR: payload revision $revision differs from main head $main_head; run images.yml again from main with workflow_dispatch. Docs: https://docs.moltzap.xyz/spec/layer-interfaces#publication-and-versions" >&2
-            exit 1
-          fi
-          jq -n --argjson payload "$PAYLOAD" '{event_type: "social-harness-images", client_payload: $payload}' \
-            | gh api --method POST repos/social-harness/deployment/dispatches --input -

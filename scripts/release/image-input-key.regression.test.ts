@@ -776,7 +776,7 @@ function checkCopyInventory(
   }
 }
 
-for (const service of ["registry", "router"]) {
+for (const service of ["registry", "router"] as const) {
   await test(`real ${service} Dockerfile inventories named COPY roots and changes only its key`, (t) => {
     const repo = realImageFixture();
     t.after(() => {
@@ -829,7 +829,10 @@ await test("real Dockerfiles exclude daemon-only source and sibling version read
     "export const changed = true;",
   );
   commit(repo);
-  assert.deepEqual(Effect.runSync(imageInputs(repo)), changedSibling);
+  const after = Effect.runSync(imageInputs(repo));
+  assert.deepEqual(after.registry, changedSibling.registry);
+  assert.deepEqual(after.router, changedSibling.router);
+  assert.notEqual(after.daemon?.key, changedSibling.daemon?.key);
 });
 
 /** The Client build tsconfig the real Dockerfile rows start from. */

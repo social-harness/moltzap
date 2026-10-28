@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 /**
- * @file Committed inputs of the Registry and Router images.
- * Run `node scripts/release/image-input-key.ts` at the repository root to
- * print {service: key}. Reads HEAD, never uncommitted files or build output.
- * Manifests omit release metadata; other files retain Git mode and blob id.
+ * @file Committed inputs of the published container images.
+ * Run `node scripts/release/image-input-key.ts [service...]` at the repository
+ * root to print {service: key} for the named services, or for all of them.
+ * Reads HEAD, never uncommitted files or build output. Files retain Git mode
+ * and blob id; Registry and Router manifests omit release metadata.
  */
-import { Effect } from "effect";
+import { absurd, Effect, Either, Schema } from "effect";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import { parse } from "yaml";
@@ -15,12 +16,12 @@ import {
   sortedJson,
   UNHASHED_FIELDS,
 } from "./content-hash.ts";
-import { dockerContextInputs } from "./image-dockerfile.ts";
 import {
-  asStrings,
-  compilerLayout,
-  configInputs,
-} from "./image-input-config.ts";
+  admittedContext,
+  dockerContextInputs,
+  type DockerRuntime,
+} from "./image-dockerfile.ts";
+import { compilerLayout, configInputs } from "./image-input-config.ts";
 import {
   checkout,
   ImageInputError,
@@ -31,6 +32,7 @@ import {
   under,
   workspaceRoots,
 } from "./image-input-tree.ts";
+import { compiledSources, packedFile } from "./image-packed.ts";
 import { readsManifestVersion } from "./image-runtime-version.ts";
 import {
   moduleGraph,
@@ -40,16 +42,29 @@ import {
 /** Typed refusal shared by image key callers. */
 export { ImageInputError } from "./image-input-tree.ts";
 
-/** Image keys omit wire metadata because releases record it without changing committed runtime inputs.
- * Packed content and host hashes retain it under their existing manifest contract.
+/**
+ * Registry and Router keys omit the manifest fields a release writes, because
+ * neither process reads them; `runtimeVersionReads` gates that. Packed content
+ * and host hashes retain them under their existing manifest contract.
  */
 const IMAGE_UNHASHED_FIELDS: ReadonlySet<string> = new Set([
   ...UNHASHED_FIELDS,
   "sharnessWireVersion",
 ]);
 
+/** The daemon's launcher reads the release-written fields of the manifests its seed ships, so its key hashes them whole. */
+const WHOLE_MANIFESTS: ReadonlySet<string> = new Set();
+
 /** Image names are the only package layout choices the command fixes. */
-export const SERVICES = ["registry", "router"] as const;
+export const SERVICES = [
+  "registry",
+  "router",
+  "daemon",
+  "openclaw-agent",
+] as const;
+
+/** One published image. */
+export type Service = (typeof SERVICES)[number];
 
 const IMAGE_CONDITIONS = [
   "node",
@@ -71,6 +86,19 @@ interface ImageInputs {
   readonly key: string;
 }
 
+/** A root-context recipe and the package whose production closure it deploys. */
+interface Recipe {
+  readonly name: string;
+  readonly root: string;
+  readonly own: readonly string[];
+  readonly modules: readonly string[];
+  readonly reached: ReadonlySet<string>;
+  readonly runtime: readonly string[];
+  readonly directory: string;
+  readonly stage: DockerRuntime;
+  readonly unhashed: ReadonlySet<string>;
+}
+
 interface ShellState {
   quote: string;
   comment: boolean;
@@ -78,7 +106,8 @@ interface ShellState {
 }
 
 /**
- * Lists reached modules in each service's own package that consume manifest versions.
+ * Lists reached modules in the Registry and Router packages that consume
+ * manifest versions, which their keys omit.
  * Sibling Client version strings belong to daemon reporting, outside this gate.
  */
 export function runtimeVersionReads(
@@ -89,10 +118,11 @@ export function runtimeVersionReads(
       const tree = checkout(repo);
       return [
         ...new Set(
-          Object.entries(imagesFromTree(tree)).flatMap(([service, image]) =>
-            image.runtime.filter((file) =>
-              file.startsWith(`packages/${service}/`),
-            ),
+          Object.entries(imagesFromTree(tree, ["registry", "router"])).flatMap(
+            ([service, image]) =>
+              image.runtime.filter((file) =>
+                file.startsWith(`packages/${service}/`),
+              ),
           ),
         ),
       ]
@@ -104,24 +134,71 @@ export function runtimeVersionReads(
   });
 }
 
-/** Computes keys and their input inventory from HEAD for release callers. */
+/** Computes the services' keys and their input inventory from HEAD for release callers. */
 export function imageInputs(
   repo: string,
-): Effect.Effect<Readonly<Record<string, ImageInputs>>, ImageInputError> {
+  services: readonly Service[] = SERVICES,
+): Effect.Effect<
+  Readonly<Partial<Record<Service, ImageInputs>>>,
+  ImageInputError
+> {
   return Effect.try({
     try: () => {
       const tree = checkout(repo);
-      return imagesFromTree(tree);
+      return imagesFromTree(tree, services);
     },
     catch: inputError,
   });
 }
 
-function imagesFromTree(tree: Tree): Readonly<Record<string, ImageInputs>> {
+function imagesFromTree(
+  tree: Tree,
+  services: readonly Service[],
+): Readonly<Partial<Record<Service, ImageInputs>>> {
   const roots = workspaceRoots(tree);
   return Object.fromEntries(
-    SERVICES.map((service) => [service, inputs(service, roots, tree)]),
+    services.map((service) => [service, serviceInputs(service, roots, tree)]),
   );
+}
+
+function serviceInputs(
+  service: Service,
+  roots: ReadonlyMap<string, string>,
+  tree: Tree,
+): ImageInputs {
+  switch (service) {
+    case "registry":
+    case "router": {
+      const root = `packages/${service}`;
+      const name = packageName(roots, root);
+      const own = under(tree, root);
+      return builtInputs(tree, roots, {
+        name,
+        root,
+        own,
+        ...siblingInputs(name, own, roots, tree),
+        directory: `images/${service}`,
+        stage: "service",
+        unhashed: IMAGE_UNHASHED_FIELDS,
+      });
+    }
+    case "daemon": {
+      const root = "images/daemon";
+      return builtInputs(tree, roots, {
+        name: packageName(roots, root),
+        root,
+        own: [`${root}/package.json`],
+        ...seedInputs(tree, root, roots),
+        directory: root,
+        stage: "launcher",
+        unhashed: WHOLE_MANIFESTS,
+      });
+    }
+    case "openclaw-agent":
+      return hostInputs(tree, "images/openclaw-agent");
+    default:
+      return absurd(service);
+  }
 }
 
 /** Manifest binaries can be extensionless, while declarations remain erased. */
@@ -150,19 +227,17 @@ function binTargets(bin: unknown): string[] {
       );
 }
 
-function inputs(
-  service: string,
-  roots: ReadonlyMap<string, string>,
+/** A root-context recipe keys its build files, what they copy and build, and the closure it deploys. */
+function builtInputs(
   tree: Tree,
+  roots: ReadonlyMap<string, string>,
+  recipe: Recipe,
 ): ImageInputs {
-  const root = `packages/${service}`;
-  const name = [...roots].find(([, directory]) => directory === root)?.[0];
-  if (name === undefined) {
-    throw new ImageInputError({ message: `Missing service ${service}` });
-  }
-  const own = under(tree, root);
-  const { modules, reached, runtime } = siblingInputs(name, own, roots, tree);
-  const image = serviceImages(tree, service, name);
+  const { name, root, own, modules, reached, runtime, unhashed } = recipe;
+  const image = under(tree, recipe.directory).filter(isBuildFile);
+  const copied = image.flatMap((file) =>
+    dockerContextInputs(tree, file, name, recipe.stage),
+  );
   const directories = [...reached].map((sibling) => roots.get(sibling) ?? "");
   const locked = lockedClosure(tree.read("pnpm-lock.yaml"), root, {
     roots,
@@ -175,10 +250,10 @@ function inputs(
   const tooling = buildInputs(
     { ...tree, service: name },
     [...new Set([...directories, ...installed])],
-    image,
+    copied,
   ).filter((file) => ![...own, ...modules, ...image].includes(file));
   const entries = [...own, ...modules, ...image, ...tooling].map((file) =>
-    committedEntry(tree, file),
+    committedEntry(tree, file, unhashed),
   );
 
   entries.push(
@@ -197,12 +272,87 @@ function inputs(
   };
 }
 
-function serviceImages(tree: Tree, service: string, name: string): string[] {
-  const files = under(tree, `images/${service}`);
-  for (const file of files.filter(isBuildFile)) {
-    dockerContextInputs(tree, file, name);
+function packageName(roots: ReadonlyMap<string, string>, root: string): string {
+  const name = [...roots].find(([, directory]) => directory === root)?.[0];
+  if (name === undefined) {
+    throw new ImageInputError({
+      message: `Missing image package ${root}/package.json`,
+    });
   }
-  return files;
+  return name;
+}
+
+/** A host recipe builds from its own directory, so its key covers the Dockerfile, `.dockerignore` and the files that file admits. */
+function hostInputs(tree: Tree, directory: string): ImageInputs {
+  const image = [
+    ...new Set([
+      `${directory}/Dockerfile`,
+      ...[`${directory}/.dockerignore`].filter((file) => tree.files.has(file)),
+      ...admittedContext(tree, directory),
+    ]),
+  ];
+  return {
+    own: [],
+    modules: [],
+    tooling: [],
+    locked: [],
+    runtime: [],
+    image,
+    key: digestOf(
+      image.map((file) => committedEntry(tree, file, WHOLE_MANIFESTS)),
+    ),
+  };
+}
+
+/**
+ * The seed ships each runtime workspace dependency whole: what it packs from
+ * source, including bins and assets nothing imports, and what its compiler
+ * emits. Tests its compiler excludes stay out.
+ */
+function seedInputs(
+  tree: Tree,
+  root: string,
+  roots: ReadonlyMap<string, string>,
+) {
+  const found = new Set<string>();
+  const pending = [root];
+  for (
+    let directory = pending.pop();
+    directory !== undefined;
+    directory = pending.pop()
+  ) {
+    if (found.has(directory)) {
+      continue;
+    }
+    found.add(directory);
+    const manifest = readJson(tree, `${directory}/package.json`);
+    for (const name of ["dependencies", "optionalDependencies"].flatMap(
+      (section) => Object.keys(mapping(manifest[section])),
+    )) {
+      const dependency = roots.get(name);
+      if (dependency !== undefined) {
+        pending.push(dependency);
+      }
+    }
+  }
+  return {
+    modules: [...found]
+      .filter((directory) => directory !== root)
+      .flatMap((directory) => {
+        const compiled = new Set(compiledSources(tree, directory));
+        return under(tree, directory).filter(
+          (file) =>
+            compiled.has(file) ||
+            packedFile(tree, directory, path.posix.relative(directory, file)),
+        );
+      }),
+    runtime: [],
+    reached: new Set(
+      [...roots]
+        .filter(([, directory]) => found.has(directory))
+        .map(([name]) => name),
+    ),
+  };
 }
 
 /** Own files seed traversal; sibling manifests bind the exports used to reach their modules. */
@@ -324,7 +474,7 @@ function testInput(file: string): boolean {
 function buildInputs(
   tree: Tree,
   roots: readonly string[],
-  images: readonly string[],
+  copied: readonly string[],
 ): string[] {
   const buildTree: Tree = { ...tree, commandCwds: new Map() };
   const fixed = [
@@ -339,17 +489,10 @@ function buildInputs(
   const files = new Set([
     "pnpm-workspace.yaml",
     ...fixed,
-    ...images
-      .filter(isBuildFile)
-      .flatMap((file) =>
-        dockerContextInputs(buildTree, file, tree.service ?? "").filter(
-          (input) => includedCopy(buildTree, input, roots),
-        ),
-      ),
+    ...copied.filter((input) => includedCopy(buildTree, input, roots)),
   ]);
   const pending = [
     ...fixed,
-    ...images.filter(isBuildFile),
     ...roots.map((root) => path.posix.join(root, "package.json")),
     ...roots
       .map((root) => `${root}/tsconfig.json`)
@@ -370,10 +513,7 @@ function buildInputs(
   return [...files];
 }
 
-/**
- * Copied siblings bind only packed non-source content; executable inputs are discovered separately.
- * A copied sibling must declare `files`: without it pnpm packs whatever its ignore files allow.
- */
+/** Copied siblings bind only packed non-source content; executable inputs are discovered separately. */
 function includedCopy(
   tree: Tree,
   file: string,
@@ -387,35 +527,8 @@ function includedCopy(
     return true;
   }
   const relative = path.posix.relative(sibling, file);
-  if (/^(?:src|bin)\//u.test(relative)) {
-    return false;
-  }
-  const declared = readJson(tree, `${sibling}/package.json`).files;
-  if (!Array.isArray(declared)) {
-    throw new ImageInputError({
-      message: `Copied workspace package ${sibling}/package.json declares no files list; an image binds a copied sibling by what it packs`,
-    });
-  }
-  const patterns = asStrings(declared);
   return (
-    /^(?:package\.json|readme(?:\..*)?|licen[cs]e(?:\..*)?|notice(?:\..*)?)$/iu.test(
-      relative,
-    ) ||
-    (patterns.some(
-      (pattern) => !pattern.startsWith("!") && packedPath(relative, pattern),
-    ) &&
-      !patterns.some(
-        (pattern) =>
-          pattern.startsWith("!") && packedPath(relative, pattern.slice(1)),
-      ))
-  );
-}
-
-function packedPath(file: string, pattern: string): boolean {
-  const normalized = pattern.replace(/^\.\//u, "").replace(/\/$/u, "");
-  return (
-    path.posix.matchesGlob(file, normalized) ||
-    path.posix.matchesGlob(file, `${normalized}/**`)
+    !/^(?:src|bin)\//u.test(relative) && packedFile(tree, sibling, relative)
   );
 }
 
@@ -454,10 +567,13 @@ function buildCommandFiles(tree: Tree, root: string): string[] {
   ];
 }
 
+/** Builds run commands or nothing; `nx:noop` lets a package's build only order its dependencies' builds. */
 function unsupportedBuild(target: Record<string, unknown>): boolean {
   return (
     target.configurations !== undefined ||
-    (target.executor !== undefined && target.executor !== "nx:run-commands")
+    (target.executor !== undefined &&
+      target.executor !== "nx:run-commands" &&
+      target.executor !== "nx:noop")
   );
 }
 
@@ -748,7 +864,11 @@ function lockedId(
   };
 }
 
-function committedEntry(tree: Tree, file: string): string {
+function committedEntry(
+  tree: Tree,
+  file: string,
+  unhashed: ReadonlySet<string>,
+): string {
   const entry = tree.files.get(file);
   if (entry === undefined) {
     throw new ImageInputError({ message: `Missing committed input ${file}` });
@@ -758,7 +878,7 @@ function committedEntry(tree: Tree, file: string): string {
   }
   if (entry.mode === "120000") {
     return /\.[cm]?[jt]s$/u.test(file)
-      ? `${file}\0${entry.mode}\0${entry.blob}\0${committedEntry(tree, tree.resolve(file))}\n`
+      ? `${file}\0${entry.mode}\0${entry.blob}\0${committedEntry(tree, tree.resolve(file), unhashed)}\n`
       : `${file}\0${entry.mode}\0${entry.blob}\n`;
   }
   const blob =
@@ -768,7 +888,7 @@ function committedEntry(tree: Tree, file: string): string {
             sortedJson(
               Object.fromEntries(
                 Object.entries(readJson(tree, file)).filter(
-                  ([key]) => !IMAGE_UNHASHED_FIELDS.has(key),
+                  ([key]) => !unhashed.has(key),
                 ),
               ),
             ),
@@ -976,19 +1096,39 @@ function scriptToken(tokens: readonly string[], start: number): number {
 }
 
 if (import.meta.main) {
-  Effect.runSync(
-    imageInputs(process.cwd()).pipe(
-      Effect.match({
-        onFailure: (error) => {
-          process.stderr.write(`${error.message}\n`);
-          process.exitCode = 1;
-        },
-        onSuccess: (result) => {
-          process.stdout.write(
-            `${JSON.stringify(Object.fromEntries(Object.entries(result).map(([service, input]) => [service, input.key])))}\n`,
-          );
-        },
-      }),
+  // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- service names are bare positional words; the release scripts install no @effect/cli
+  const requested = process.argv.slice(2);
+  Either.match(
+    Schema.decodeUnknownEither(Schema.Array(Schema.Literal(...SERVICES)))(
+      requested,
     ),
+    {
+      onLeft: () => {
+        process.stderr.write(
+          `Unknown image service in "${requested.join(" ")}"; expected any of ${SERVICES.join(", ")}\n`,
+        );
+        process.exitCode = 1;
+      },
+      onRight: (services) => {
+        Effect.runSync(
+          imageInputs(
+            process.cwd(),
+            services.length === 0 ? SERVICES : services,
+          ).pipe(
+            Effect.match({
+              onFailure: (error) => {
+                process.stderr.write(`${error.message}\n`);
+                process.exitCode = 1;
+              },
+              onSuccess: (result) => {
+                process.stdout.write(
+                  `${JSON.stringify(Object.fromEntries(Object.entries(result).map(([service, input]) => [service, input.key])))}\n`,
+                );
+              },
+            }),
+          ),
+        );
+      },
+    },
   );
 }

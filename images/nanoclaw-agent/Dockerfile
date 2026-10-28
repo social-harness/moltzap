@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1.7
 # Stock NanoClaw plus the workspace's runtime closure, channel and skills.
 # build.ts supplies the verified upstream source and builds its stock base.
 ARG NANOCLAW_AGENT_IMAGE=nanoclaw-agent:unconfigured

@@ -33,12 +33,12 @@ import {
 
 const command = path.join(import.meta.dirname, "image-input-key.ts");
 /** Regular-file output also works where the sandbox denies subprocess pipe polling. */
-function run(repo: string) {
+function run(repo: string, services: readonly string[] = []) {
   const out = path.join(repo, ".git", "key.stdout");
   const err = path.join(repo, ".git", "key.stderr");
   const stdout = openSync(out, "w");
   const stderr = openSync(err, "w");
-  const result = spawnSync(process.execPath, [command], {
+  const result = spawnSync(process.execPath, [command, ...services], {
     cwd: repo,
     stdio: ["ignore", stdout, stderr],
     timeout: 30_000,
@@ -132,7 +132,6 @@ const changes = [
     true,
     false,
   ],
-  ["base-image pin", "images/router/base-digest", "sha256:other", true, false],
   [
     "runtime external bump",
     "pnpm-lock.yaml",
@@ -325,7 +324,7 @@ for (const [label, content, message] of [
   });
 }
 
-await test("CLI prints two successful image keys", (t) => {
+await test("CLI prints the published image keys", (t) => {
   const repo = fixture();
   t.after(() => {
     rmSync(repo, { recursive: true, force: true });
@@ -334,13 +333,44 @@ await test("CLI prints two successful image keys", (t) => {
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /"registry":"sha256:[0-9a-f]{64}"/u);
   assert.match(result.stdout, /"router":"sha256:[0-9a-f]{64}"/u);
+  assert.match(result.stdout, /"daemon":"sha256:[0-9a-f]{64}"/u);
+  assert.match(result.stdout, /"openclaw-agent":"sha256:[0-9a-f]{64}"/u);
 });
 
-await test("checkout produces two well-formed keys in process", () => {
+await test("CLI prints only the requested services, whatever another recipe holds", (t) => {
+  const repo = fixture();
+  t.after(() => {
+    rmSync(repo, { recursive: true, force: true });
+  });
+  write(repo, "images/daemon/Dockerfile", "FROM node:24-slim\n");
+  commit(repo);
+  const all = run(repo);
+  assert.match(
+    all.stderr,
+    /Unsupported Dockerfile form in images\/daemon\/Dockerfile/u,
+  );
+  const result = run(repo, ["registry", "router"]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(
+    result.stdout,
+    /^\{"registry":"sha256:[0-9a-f]{64}","router":"sha256:[0-9a-f]{64}"\}\n$/u,
+  );
+});
+
+await test("CLI refuses an unknown service", (t) => {
+  const repo = fixture();
+  t.after(() => {
+    rmSync(repo, { recursive: true, force: true });
+  });
+  const result = run(repo, ["registry", "nanoclaw-agent"]);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Unknown image service/u);
+});
+
+await test("checkout produces well-formed keys in process", () => {
   const keys = Effect.runSync(
     imageInputs(path.resolve(import.meta.dirname, "../..")),
   );
-  assert.equal(Object.keys(keys).length, 2);
   for (const input of Object.values(keys)) {
     assert.match(input.key, /^sha256:[0-9a-f]{64}$/u);
   }
@@ -351,7 +381,7 @@ await test("release-shaped metadata edits in own and sibling manifests preserve 
   t.after(() => {
     rmSync(repo, { recursive: true, force: true });
   });
-  const before = Effect.runSync(imageInputs(repo));
+  const before = Effect.runSync(imageInputs(repo, ["registry", "router"]));
   for (const service of ["router", "registry", "social-harness"]) {
     const file = `packages/${service}/package.json`;
     const manifest: unknown = JSON.parse(
@@ -371,7 +401,10 @@ await test("release-shaped metadata edits in own and sibling manifests preserve 
     );
   }
   commit(repo);
-  assert.deepEqual(Effect.runSync(imageInputs(repo)), before);
+  assert.deepEqual(
+    Effect.runSync(imageInputs(repo, ["registry", "router"])),
+    before,
+  );
 });
 
 await test("sibling manifest non-version fields bind both images", (t) => {
@@ -1003,3 +1036,5 @@ for (const [label, file, content, message] of [
 }
 
 await import("./image-input-key.regression.test.ts");
+
+await import("./image-input-key.agents.test.ts");

@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1.7
 # OpenClaw host loads the matched channel from the daemon launcher volume.
 ARG OPENCLAW_BASE_IMAGE=ghcr.io/openclaw/openclaw@sha256:70b8dbd23f8d27a206f43f9828fdebc87289e50d56dc55177354c9270d764026
 FROM ${OPENCLAW_BASE_IMAGE} AS agent
@@ -21,7 +20,10 @@ LABEL org.social-harness.claude-code-version="${CLAUDE_CODE_VERSION}"
 # ~/.local/bin, which the base image already keeps on PATH, and the installed
 # copy is checked against the same digest. The version probe runs under a
 # foreign HOME because the agent host's HOME is the bootstrap state
-# directory, not /home/node.
+# directory, not /home/node. The install leaves its own state under
+# /home/node (an install identity, session and backup directories, caches,
+# locks and npm's log), which the same layer removes so the image ships no
+# Claude Code state.
 USER node
 RUN case "${TARGETARCH}" in \
     amd64) platform=linux-x64; digest="${CLAUDE_CODE_SHA256_AMD64}" ;; \
@@ -35,7 +37,8 @@ RUN case "${TARGETARCH}" in \
   && rm -f /tmp/claude \
   && echo "${digest}  $(readlink -f /home/node/.local/bin/claude)" | sha256sum -c - \
   && HOME=/tmp/claude-version-probe /home/node/.local/bin/claude --version \
-  && rm -rf /tmp/claude-version-probe
+  && rm -rf /tmp/claude-version-probe /home/node/.claude /home/node/.claude.json \
+    /home/node/.cache/claude /home/node/.local/state/claude /home/node/.npm
 USER root
 
 

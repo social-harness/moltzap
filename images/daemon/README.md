@@ -6,19 +6,20 @@ release. The launcher selects their matched release at every start. See the
 [daemon specification](../../docs/spec/harness/daemon.md#process-and-configuration)
 for settings and [Upgrades](../../docs/guides/upgrades.mdx) for release selection.
 
-From the repository root, build the runtime closure and image:
+On main, `images.yml` publishes this image as
+`ghcr.io/social-harness/daemon:inputs-<daemon-key>`, a cosign-signed index for
+amd64 and arm64. `<daemon-key>` is the `daemon` value that `pnpm image:keys`
+prints at a release commit, or at a commit whose `images.yml` run published,
+without its `sha256:` prefix. Releases do not tag this image. The package
+starts private, so pulling it needs access until it is public. See
+[Publication and versions](../../docs/spec/layer-interfaces.md#publication-and-versions)
+for the verification identity.
 
-```bash
-pnpm build
-```
-
-```bash
-pnpm deploy --filter @social-harness/image-tests --prod --legacy images/.workspace
-```
+For local verification, build the image from the repository root:
 
 ```bash
 docker buildx build --load --tag social-harness-daemon:local \
-  --build-context social-harness-workspace=images/.workspace images/daemon
+  --file images/daemon/Dockerfile .
 ```
 
 Docker prints the local image tag when the build succeeds. Run the offline smoke:
@@ -48,7 +49,7 @@ docker run --detach --name agent-daemon \
   --mount type=bind,src="$PWD/daemon-secrets",dst=/run/sharness,readonly \
   --mount type=bind,src="$PWD/daemon-state",dst=/var/lib/sharness \
   --mount type=volume,dst=/opt/social-harness/launcher \
-  social-harness-daemon:local
+  "ghcr.io/social-harness/daemon:inputs-<daemon-key>"
 ```
 
 Wait for `sharnessd listening` in `docker logs agent-daemon`, then start the host
@@ -67,9 +68,11 @@ startup probe before starting the host.
 The following Pod template excerpt assumes a `daemon-settings` ConfigMap, a
 `daemon-secrets` Secret and a `daemon-state` PersistentVolumeClaim. The ConfigMap
 sets the paths and port used in the Docker example; `fsGroup` lets the daemon
-create its state directory on a new volume, whose root it does not own. Supply
-your locally built images to your cluster. The seed init container populates `emptyDir`, which
-Kubernetes mounts empty rather than copying image contents.
+create its state directory on a new volume, whose root it does not own. Take
+`<daemon-key>` and `<openclaw-agent-key>` from `pnpm image:keys` at one release
+commit, or at one commit whose `images.yml` run published. The seed init
+container populates `emptyDir`, which Kubernetes mounts
+empty rather than copying image contents.
 
 ```yaml
 spec:
@@ -77,12 +80,12 @@ spec:
     fsGroup: 1000
   initContainers:
     - name: launcher-seed
-      image: social-harness-daemon:local
+      image: ghcr.io/social-harness/daemon:inputs-<daemon-key>
       command: ["cp", "-R", "/opt/social-harness/launcher/seed", "/launcher/seed"]
       volumeMounts:
         - { name: launcher, mountPath: /launcher }
     - name: launcher-prepare
-      image: social-harness-daemon:local
+      image: ghcr.io/social-harness/daemon:inputs-<daemon-key>
       args: ["prepare"]
       envFrom:
         - configMapRef: { name: daemon-settings }
@@ -91,7 +94,7 @@ spec:
       volumeMounts:
         - { name: launcher, mountPath: /opt/social-harness/launcher }
     - name: daemon
-      image: social-harness-daemon:local
+      image: ghcr.io/social-harness/daemon:inputs-<daemon-key>
       restartPolicy: Always
       env:
         - { name: SHARNESS_LAUNCHER_UPGRADE, value: "off" }
@@ -112,7 +115,7 @@ spec:
         - { name: state, mountPath: /var/lib/sharness }
   containers:
     - name: host
-      image: social-harness-openclaw:local
+      image: ghcr.io/social-harness/openclaw-agent:inputs-<openclaw-agent-key>
       env:
         - { name: SHARNESS_MCP_URL, value: "http://127.0.0.1:4319/mcp" }
       volumeMounts:

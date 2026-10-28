@@ -310,9 +310,9 @@ jobs:
           pnpm install --no-frozen-lockfile --ignore-scripts
           echo "packages=$SELECTED" >> "$GITHUB_OUTPUT"
 
-      # Image input keys ignore what a release writes, so the bump and the
-      # resume of one release resolve the same indexes. The images job tags
-      # the ones this step passes on.
+      # Registry and Router input keys ignore what a release writes, so the
+      # bump and the resume of one release resolve the same indexes. The
+      # images job tags the ones this step passes on.
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         if: (steps.plan.outputs.mode == 'bump' || steps.plan.outputs.mode == 'resume') && steps.select.outputs.packages != ''
       - name: Resolve the release service images
@@ -322,7 +322,7 @@ jobs:
           DOCKER_CONFIG: ${{ runner.temp }}/anonymous-docker
         run: |
           mkdir -p "$DOCKER_CONFIG"
-          KEYS=$(pnpm --silent image:keys)
+          KEYS=$(pnpm --silent image:keys registry router)
           images='{}'
           deadline=$((SECONDS + 45 * 60))
           for service in registry router; do
