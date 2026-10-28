@@ -690,7 +690,7 @@ const policyReasonText: Readonly<
 };
 
 const editRefusalDocs =
-  "Docs: https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/message-policy.md#editable-english-policy";
+  "Docs: https://docs.moltzap.xyz/spec/harness/message-policy#editable-english-policy";
 
 /**
  * A failed edit never replaces the active installation or retained editable
