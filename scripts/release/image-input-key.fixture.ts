@@ -25,6 +25,16 @@ importers:
     dependencies:
       '@fixture/core':
         version: link:../social-harness
+  images/tests:
+    dependencies:
+      '@fixture/core':
+        version: link:../../packages/social-harness
+      '@fixture/channel':
+        version: link:../../packages/openclaw-channel
+  packages/openclaw-channel:
+    dependencies:
+      '@fixture/core':
+        version: link:../social-harness
   packages/social-harness:
     optionalDependencies:
       leaf:
@@ -156,6 +166,7 @@ export function fixtureFiles(
     "pnpm-workspace.yaml": "packages:\n  - packages/*\n",
     "pnpm-lock.yaml": lock,
     "scripts/build/image.ts": "export {};\n",
+    ...agentFiles(),
     "images/router/Dockerfile": dockerfile,
     "images/router/base-digest": "sha256:base\n",
     "packages/social-harness/package.json": clientManifest(),
@@ -174,6 +185,38 @@ export function fixtureFiles(
     "packages/social-harness/src/only-default.ts": "export {};",
     "packages/social-harness/src/test.ts": "export const testOnly = 1;\n",
     "packages/social-harness/src/daemon/run.ts": "export const daemon = 1;\n",
+  };
+}
+
+/** The daemon packs both runtime dependencies; the host builds from its own context. */
+function agentFiles(): Record<string, string> {
+  return {
+    "images/tests/package.json": JSON.stringify({
+      name: "@social-harness/image-tests",
+      private: true,
+      dependencies: {
+        "@fixture/core": "workspace:*",
+        "@fixture/channel": "workspace:*",
+      },
+      files: ["package.json"],
+    }),
+    "packages/openclaw-channel/package.json": JSON.stringify({
+      name: "@fixture/channel",
+      private: true,
+      dependencies: { "@fixture/core": "workspace:*" },
+      files: ["dist", "skills", "bin"],
+      exports: { ".": "./dist/index.js" },
+    }),
+    "packages/openclaw-channel/src/index.ts": 'import "@fixture/core";',
+    "packages/openclaw-channel/bin/loader":
+      "#!/usr/bin/env node\nconsole.log('load');",
+    "packages/openclaw-channel/skills/connect/SKILL.md":
+      "Connect to the daemon.",
+    "images/daemon/Dockerfile":
+      "FROM node:24@sha256:seed\nCOPY --from=social-harness-workspace . /seed/\n",
+    "images/openclaw-agent/Dockerfile":
+      "FROM upstream@sha256:host\nCOPY host.sh /host.sh\n",
+    "images/openclaw-agent/host.sh": "exec openclaw gateway\n",
   };
 }
 

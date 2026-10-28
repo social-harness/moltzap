@@ -338,7 +338,9 @@ alter message bytes, forge messages, or change Router state or order.
 
 ## Agent images
 
-Agent images are built locally and are not published from this repository.
+The daemon and OpenClaw agent images are published by input key, and the
+NanoClaw image is not published; see
+[Publication and versions](#publication-and-versions).
 Each agent runs its host and `sharnessd` in separate containers sharing a network
 namespace. Signing/admission state is mounted only in the daemon container.
 When startup registration is configured, registration and activation complete
@@ -394,10 +396,15 @@ topology and cross-address context.
 
 Two packages publish to npm at independent calendar versions:
 `@moltzap/social-harness` and `@moltzap/openclaw-channel`. Registry, Router and NanoClaw
-stay private. Registry and Router ship as images built from
-`images/<service>/Dockerfile` with the repository root as build context, keyed
-by `pnpm image:keys`. The Registry image carries `pglite-server` for run-scoped
-and development databases.
+stay private. Registry, Router, daemon and OpenClaw agent ship as signed images
+keyed by `pnpm image:keys`. Registry and Router build from `images/<service>/Dockerfile`
+with the repository root as build context. The daemon builds from `images/daemon`
+with the production `@social-harness/image-tests` closure deployed to
+`images/.workspace` as its named `social-harness-workspace` context. The
+OpenClaw agent builds from `images/openclaw-agent`, with the official OpenClaw
+base, pinned Claude Code binary, patch and channel loader. The NanoClaw image
+is built locally and not published. The Registry image carries `pglite-server`
+for run-scoped and development databases.
 The integration-test workspace stays outside the product graph and release set.
 Package manifests declare publication and dependency edges; the release
 workflow names the packages it publishes.
@@ -459,8 +466,7 @@ mismatches. The changelog marks each reset release with the phrase
   `.github/workflows/publish.yml`. A merge that lands while an earlier
   release is unfinished releases with the next merge or a manual dispatch.
 - Releases run from `main` through `.github/workflows/publish.yml` with npm
-  provenance and name the service images in each release. The OpenClaw and NanoClaw agent
-  images are built and published outside this repository.
+  provenance and name the Registry and Router images in each release.
 - Package manifests, pnpm's isolated `node_modules`, Node `exports`, Knip,
   and package-local safer-architecture-lsp configurations enforce boundaries.
   The harness may launch product executables by path and start child
@@ -473,16 +479,18 @@ mismatches. The changelog marks each reset release with the phrase
   no tarball installation gate because deployment copies its source.
 
 
-Registry and Router publish as `ghcr.io/social-harness/registry` and
-`ghcr.io/social-harness/router`. Each image is a multi-architecture OCI index
+The published images are `ghcr.io/social-harness/registry`,
+`ghcr.io/social-harness/router`, `ghcr.io/social-harness/daemon` and
+`ghcr.io/social-harness/openclaw-agent`. Each image is a multi-architecture OCI index
 for `linux/amd64` and `linux/arm64`, built on native runners. The committed
 input key `sha256:<hex>` from `pnpm image:keys` names the immutable tag
-`inputs-<hex>`. Release-version tags name those same indexes. The GitHub
-release is created only after both version tags exist, and its body lists both
-full digest references. `images/compose.yaml` runs a local network from the
-indexes a release-version tag names. The bump waits for
-missing input tags and fails with a rerun hint if the images workflow has not
-published them in time.
+`inputs-<hex>`. Releases tag only Registry and Router: their release-version
+tags name those same indexes. The daemon and OpenClaw agent images carry only
+input tags. The GitHub release is created only after both version tags exist,
+and its body lists both full digest references. `images/compose.yaml` runs a
+local network from the indexes a release-version tag names. The bump waits for
+missing Registry and Router input tags and fails with a rerun hint if the
+images workflow has not published them in time.
 After npm publication and release image tagging succeed, a separate job sends
 `repository_dispatch` event `social-harness-released` to `social-harness/deployment`.
 Its `client_payload` is
@@ -492,12 +500,13 @@ may repeat or arrive out of order. The receiver ignores a version not newer
 than the one it runs, ordering calendar versions by their numeric year,
 month/day and sequence components.
 
-Both GHCR packages must be public before a release: the bump checks that both
-indexes pull anonymously so that anyone can run `images/compose.yaml`.
-No `social-harness-images` dispatch happens until both packages are public. After making
-them public, run `images.yml` from main with `workflow_dispatch` to send the
-current images to deployment. Reverting to an already-published input key also
-requires that manual run, because no new index is published.
+Only the Registry and Router GHCR packages must be public before a release: the
+bump checks that both indexes pull anonymously so that anyone can run
+`images/compose.yaml`. No `social-harness-images` dispatch happens until both
+packages are public. After making them public, run `images.yml` from main with
+`workflow_dispatch` to send the current images to deployment. Reverting to an
+already-published input key also requires that manual run, because no new
+index is published.
 
 `.github/workflows/images.yml` pushes each index by digest, signs it with
 cosign keyless before creating its input tag. The certificate
@@ -507,7 +516,7 @@ and its OIDC issuer is `https://token.actions.githubusercontent.com`. Existing
 input tags are verified and skipped, never retagged; an unsigned index fails
 the run. Every index accepted for dispatch, pinning, release-commit push or
 release promotion is verified against that identity and issuer first.
-Once both of the current main tip's indexes are published and verified,
+Once the current main tip's Registry and Router indexes are published and verified,
 `images.yml` sends `repository_dispatch` event `social-harness-images` to
 `social-harness/deployment`. Its `client_payload` names both tip indexes and
 their revision:
@@ -520,15 +529,19 @@ head sends nothing and fails; run `images.yml` again from main with
 
 ### Unsupported Dockerfile form
 
-`pnpm image:keys` refuses unsupported Dockerfile instructions with the file,
-line and form. Keep image recipes in the explicit two-stage form used by
+For Registry and Router, `pnpm image:keys` refuses unsupported Dockerfile
+instructions with the file, line and form. Keep image recipes in the explicit
+two-stage form used by
 `images/registry/Dockerfile` and `images/router/Dockerfile`: pinned Node bases,
 named context paths, the exact Corepack setup and filtered pnpm install,
 Nx build and legacy production deploy commands, and the declared runtime
 metadata. Replace the reported instruction with that form. `ADD`, context-wide
 copies, globs, arbitrary shell commands and Docker parser directives are refused.
-Docker applies `.dockerignore` to the named context roots; both image keys hash
-the whole file as a fixed build input.
+Docker applies `.dockerignore` to the named context roots; their image keys hash
+the whole file as a fixed build input. The daemon key covers its local context,
+packed workspace runtime closure, lockfile resolutions and build tooling. The
+OpenClaw agent key covers its complete local context, including the Dockerfile
+that pins its upstream base and Claude Code binaries.
 
 ## Consumer migration boundary
 

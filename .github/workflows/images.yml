@@ -1,7 +1,8 @@
-name: Publish service images
+name: Publish images
 
-# Registry and Router publish as native amd64/arm64 indexes on main.
-# Each committed input key sha256:<hex> names inputs-<hex>. Platform images
+# Registry, Router, daemon and OpenClaw agent publish native amd64/arm64 indexes
+# on main. Each committed input key sha256:<hex> names inputs-<hex>; releases
+# tag only the Registry and Router indexes (publish.yml). Platform images
 # and indexes push by digest first. The index is signed with
 # https://github.com/social-harness/moltzap/.github/workflows/images.yml@refs/heads/main
 # and issuer https://token.actions.githubusercontent.com before its input tag
@@ -12,8 +13,9 @@ name: Publish service images
 # "router":"ghcr.io/social-harness/router@sha256:…","revision":"<tip sha>"}.
 # Deliveries may repeat or arrive out of order; the receiver ignores revisions
 # not newer than the one it runs, ordered by main ancestry.
-# A token-free tip job resolves and verifies the current main tip's own keys.
-# If either is unpublished, that tip's run dispatches them once available.
+# A token-free tip job resolves and verifies the current main tip's Registry
+# and Router keys. If either is unpublished, that tip's run dispatches them
+# once available.
 # The dispatch job holds the App token, checks out nothing and sends only
 # that prepared payload after checking its revision still names main's head.
 on:
@@ -61,7 +63,7 @@ jobs:
           printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           keys=$(pnpm --silent image:keys)
           missing='[]'
-          for service in registry router; do
+          for service in registry router daemon openclaw-agent; do
             key=$(jq -r --arg s "$service" '.[$s] | sub("^sha256:"; "")' <<<"$keys")
             image="ghcr.io/social-harness/$service"
             status=0
@@ -100,6 +102,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: ./.github/actions/setup-toolchain
+        if: matrix.service == 'daemon'
+      - name: Prepare daemon runtime closure
+        if: matrix.service == 'daemon'
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+          pnpm deploy --filter @social-harness/image-tests --prod --legacy images/.workspace
       - name: Push native platform by digest
         env:
           GH_TOKEN: ${{ github.token }}
@@ -109,10 +119,19 @@ jobs:
           printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           docker buildx create --use \
             --driver-opt image=moby/buildkit:v0.34.0@sha256:b059f8d7226d0b326bc871af489a5dddf65e36af4d20d14251b072974d9ee87c
-          docker buildx build --platform "linux/$PLATFORM" \
+          context=.
+          args=()
+          case "$SERVICE" in
+            daemon)
+              context=images/daemon
+              args+=(--build-context social-harness-workspace=images/.workspace)
+              ;;
+            openclaw-agent) context=images/openclaw-agent ;;
+          esac
+          docker buildx build --platform "linux/$PLATFORM" "${args[@]}" \
             --file "images/$SERVICE/Dockerfile" \
             --output "type=image,name=ghcr.io/social-harness/$SERVICE,push-by-digest=true,name-canonical=true,push=true" \
-            --metadata-file "$RUNNER_TEMP/metadata.json" .
+            --metadata-file "$RUNNER_TEMP/metadata.json" "$context"
           jq -r '."containerimage.digest"' "$RUNNER_TEMP/metadata.json" > "$RUNNER_TEMP/$PLATFORM"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

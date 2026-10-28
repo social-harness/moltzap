@@ -27,6 +27,7 @@ import {
   ImageInputError,
   imageInputs,
   runtimeVersionReads,
+  SERVICES,
 } from "./image-input-key.ts";
 
 // @agent-code-guard/regression-only: Git fixtures pin image rebuild and refusal behavior through the release API.
@@ -325,7 +326,7 @@ for (const [label, content, message] of [
   });
 }
 
-await test("CLI prints two successful image keys", (t) => {
+await test("CLI prints the published image keys", (t) => {
   const repo = fixture();
   t.after(() => {
     rmSync(repo, { recursive: true, force: true });
@@ -334,13 +335,15 @@ await test("CLI prints two successful image keys", (t) => {
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /"registry":"sha256:[0-9a-f]{64}"/u);
   assert.match(result.stdout, /"router":"sha256:[0-9a-f]{64}"/u);
+  assert.match(result.stdout, /"daemon":"sha256:[0-9a-f]{64}"/u);
+  assert.match(result.stdout, /"openclaw-agent":"sha256:[0-9a-f]{64}"/u);
 });
 
-await test("checkout produces two well-formed keys in process", () => {
+await test("checkout produces four well-formed keys in process", () => {
   const keys = Effect.runSync(
     imageInputs(path.resolve(import.meta.dirname, "../..")),
   );
-  assert.equal(Object.keys(keys).length, 2);
+  assert.deepEqual(Object.keys(keys), [...SERVICES]);
   for (const input of Object.values(keys)) {
     assert.match(input.key, /^sha256:[0-9a-f]{64}$/u);
   }
@@ -1003,3 +1006,5 @@ for (const [label, file, content, message] of [
 }
 
 await import("./image-input-key.regression.test.ts");
+
+await import("./image-input-key.agents.test.ts");

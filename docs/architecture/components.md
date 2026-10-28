@@ -58,9 +58,10 @@ bespoke CLI, Unix socket, stdio server, second MCP listener, or fallback bind.
 | `@moltzap/openclaw-channel` | OpenClaw consumer adapter | client |
 | `@moltzap/nanoclaw-channel` | NanoClaw consumer adapter | client |
 
-Agent images and deployment artifacts are assembled outside this repository
-from a core release. That artifact graph does not
-create runtime package imports.
+Agent image publication follows
+[Publication and versions](../spec/layer-interfaces.md#publication-and-versions).
+Deployment artifacts are assembled outside this repository from a core release.
+That artifact graph does not create runtime package imports.
 
 ## External fault injection
 

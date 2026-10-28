@@ -5,8 +5,16 @@ The pinned OpenClaw base with Claude Code and the bot-reply-optional patch.
 then runs the gateway. `configure-channel.ts` loads the channel from
 `SHARNESS_LAUNCHER_DIRECTORY/current` (default `/opt/social-harness/launcher`).
 
-Prepare the closure and daemon as described in the
-[daemon image](../daemon/README.md), then build from the repository root:
+On main, `images.yml` publishes this image as
+`ghcr.io/social-harness/openclaw-agent:inputs-<openclaw-agent-key>`, a
+cosign-signed index for amd64 and arm64. `<openclaw-agent-key>` is the
+`openclaw-agent` value that `pnpm image:keys` prints at that commit, without its
+`sha256:` prefix. Releases do not tag this image. Run it with the
+[daemon image](../daemon/README.md) published from the same commit. See
+[Publication and versions](../../docs/spec/layer-interfaces.md#publication-and-versions)
+for the verification identity.
+
+For local verification, build from the repository root:
 
 ```bash
 docker buildx build --load --tag social-harness-openclaw:local \
@@ -34,7 +42,7 @@ docker run --rm --network container:agent-daemon \
   --env OPENCLAW_CONFIG_PATH=/home/node/.openclaw/openclaw.json \
   --mount type=volume,src="$launcher_volume",dst=/opt/social-harness/launcher,readonly \
   --mount type=bind,src="$PWD/openclaw-state",dst=/home/node/.openclaw \
-  social-harness-openclaw:local
+  "ghcr.io/social-harness/openclaw-agent:inputs-<openclaw-agent-key>"
 ```
 
 OpenClaw starts its gateway after preparing the supplied configuration. For

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * @file Committed inputs of the Registry and Router images.
+ * @file Committed inputs of the published container images.
  * Run `node scripts/release/image-input-key.ts` at the repository root to
  * print {service: key}. Reads HEAD, never uncommitted files or build output.
  * Manifests omit release metadata; other files retain Git mode and blob id.
@@ -49,7 +49,12 @@ const IMAGE_UNHASHED_FIELDS: ReadonlySet<string> = new Set([
 ]);
 
 /** Image names are the only package layout choices the command fixes. */
-export const SERVICES = ["registry", "router"] as const;
+export const SERVICES = [
+  "registry",
+  "router",
+  "daemon",
+  "openclaw-agent",
+] as const;
 
 const IMAGE_CONDITIONS = [
   "node",
@@ -120,7 +125,12 @@ export function imageInputs(
 function imagesFromTree(tree: Tree): Readonly<Record<string, ImageInputs>> {
   const roots = workspaceRoots(tree);
   return Object.fromEntries(
-    SERVICES.map((service) => [service, inputs(service, roots, tree)]),
+    SERVICES.map((service) => [
+      service,
+      service === "openclaw-agent"
+        ? hostInputs(tree, service)
+        : inputs(service, roots, tree),
+    ]),
   );
 }
 
@@ -155,14 +165,15 @@ function inputs(
   roots: ReadonlyMap<string, string>,
   tree: Tree,
 ): ImageInputs {
-  const root = `packages/${service}`;
-  const name = [...roots].find(([, directory]) => directory === root)?.[0];
-  if (name === undefined) {
-    throw new ImageInputError({ message: `Missing service ${service}` });
-  }
-  const own = under(tree, root);
-  const { modules, reached, runtime } = siblingInputs(name, own, roots, tree);
-  const image = serviceImages(tree, service, name);
+  const { root, name, own, modules, reached, runtime } = packageInputs(
+    tree,
+    service,
+    roots,
+  );
+  const image =
+    service === "daemon"
+      ? under(tree, "images/daemon")
+      : serviceImages(tree, service, name);
   const directories = [...reached].map((sibling) => roots.get(sibling) ?? "");
   const locked = lockedClosure(tree.read("pnpm-lock.yaml"), root, {
     roots,
@@ -175,7 +186,7 @@ function inputs(
   const tooling = buildInputs(
     { ...tree, service: name },
     [...new Set([...directories, ...installed])],
-    image,
+    service === "daemon" ? [] : image,
   ).filter((file) => ![...own, ...modules, ...image].includes(file));
   const entries = [...own, ...modules, ...image, ...tooling].map((file) =>
     committedEntry(tree, file),
@@ -194,6 +205,78 @@ function inputs(
     tooling,
     locked: locked.map(([id]) => id),
     key: digestOf(entries),
+  };
+}
+
+function packageInputs(
+  tree: Tree,
+  service: string,
+  roots: ReadonlyMap<string, string>,
+) {
+  const root = service === "daemon" ? "images/tests" : `packages/${service}`;
+  const name = [...roots].find(([, directory]) => directory === root)?.[0];
+  if (name === undefined) {
+    throw new ImageInputError({ message: `Missing service ${service}` });
+  }
+  if (service === "daemon") {
+    return { root, name, ...closureInputs(tree, root, roots) };
+  }
+  const own = under(tree, root);
+  return { root, name, own, ...siblingInputs(name, own, roots, tree) };
+}
+
+/** Standalone host builds read only their local context, including pinned upstream artifacts. */
+function hostInputs(tree: Tree, service: string): ImageInputs {
+  const image = under(tree, `images/${service}`);
+  return {
+    own: [],
+    modules: [],
+    tooling: [],
+    locked: [],
+    runtime: [],
+    image,
+    key: digestOf(image.map((file) => committedEntry(tree, file))),
+  };
+}
+
+/** The daemon seed packs every runtime workspace dependency, including unimported bins and assets. */
+function closureInputs(
+  tree: Tree,
+  root: string,
+  roots: ReadonlyMap<string, string>,
+) {
+  const found = new Set<string>();
+  const pending = [root];
+  for (
+    let directory = pending.pop();
+    directory !== undefined;
+    directory = pending.pop()
+  ) {
+    if (found.has(directory)) {
+      continue;
+    }
+    found.add(directory);
+    const manifest = readJson(tree, `${directory}/package.json`);
+    for (const name of ["dependencies", "optionalDependencies"].flatMap(
+      (section) => Object.keys(mapping(manifest[section])),
+    )) {
+      const dependency = roots.get(name);
+      if (dependency !== undefined) {
+        pending.push(dependency);
+      }
+    }
+  }
+  return {
+    own: [...found].flatMap((directory) =>
+      directory === root ? [`${root}/package.json`] : under(tree, directory),
+    ),
+    modules: [],
+    runtime: [],
+    reached: new Set(
+      [...roots]
+        .filter(([, directory]) => found.has(directory))
+        .map(([name]) => name),
+    ),
   };
 }
 
