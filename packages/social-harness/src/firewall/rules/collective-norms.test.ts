@@ -7,7 +7,10 @@
  */
 
 import { effect as it } from "@effect/vitest";
-import { Effect, FastCheck as fc } from "effect";
+import { Effect, FastCheck as fc, Schema } from "effect";
+// eslint-disable-next-line agent-code-guard/prefer-effect-platform -- The test reads the shipped behavior files the bundle must assess.
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { expect } from "vitest";
 import {
   type DecisionProvider,
@@ -34,6 +37,30 @@ const LATER = NOW + 60_000;
 const SOONER = NOW - 1;
 const BUNDLE = "org.social-harness/collective-norms";
 const FORM = '{"type":"object","properties":{"day":{"type":"string"}}}';
+/** The shipped collective norms the incoming registration assesses, in order. */
+const SHIPPED_NORMS = [
+  "empty-acknowledgement",
+  "one-gather",
+  "announce-once",
+  "result-settles",
+];
+const SHIPPED = fileURLToPath(
+  new URL("../../../behaviors/collectives/", import.meta.url),
+);
+/** The rules a decision request's state lists for its policy. */
+const statedRules = Schema.parseJson(
+  Schema.Struct({
+    policy: Schema.Struct({
+      rules: Schema.Array(
+        Schema.Struct({
+          id: Schema.String,
+          kind: Schema.String,
+          text: Schema.String,
+        }),
+      ),
+    }),
+  }),
+);
 /** Generated cases build a firewall per case alongside the package suite's CI workers. */
 const propertyTimeoutMilliseconds = 15_000;
 
@@ -232,6 +259,38 @@ it("guides a received request with the bundle's English norms", () =>
       expect.arrayContaining([
         expect.objectContaining({ middlewareId: BUNDLE, ruleId: "one-gather" }),
       ]),
+    );
+  }));
+
+it("assesses a received message against exactly the shipped collective norms' text", () =>
+  Effect.gen(function* () {
+    const requests: DecisionRequest[] = [];
+    const recording: DecisionProvider = {
+      decide: (request) => {
+        requests.push(request);
+        return firstChoiceProvider().decide(request);
+      },
+    };
+    const firewall = yield* collectiveFirewall(false, recording);
+    yield* firewall.checkIncoming(
+      {
+        id: "post-thanks",
+        sender: BOB,
+        recipients: [ALICE, CAROL],
+        text: "Thanks, everyone.",
+      },
+      context([]),
+    );
+    const state = Schema.decodeUnknownSync(statedRules)(requests[0]?.state);
+    expect(state.policy.rules).toEqual(
+      SHIPPED_NORMS.map((id) => ({
+        id,
+        kind: "norm",
+        text: readFileSync(`${SHIPPED}${id}/BEHAVIOR.md`, "utf8")
+          .split(/^---\s*$/mu)
+          .at(-1)
+          ?.trim(),
+      })),
     );
   }));
 
