@@ -147,7 +147,7 @@ const defaultSettings = {
   maximumResultBytes: 2_000_000,
 };
 
-/** A behavior Client ships, named `<pack>/<name>` after its directory under `behaviors/`. */
+/** A behavior Client ships, named by its pack and name as its directory under `behaviors/` is, such as `policy/no-policy-changes`. */
 const builtinBehaviorName = Schema.String.pipe(
   Schema.pattern(/^[a-z0-9]+(?:-[a-z0-9]+)*\/[a-z0-9]+(?:-[a-z0-9]+)*$/u),
 );

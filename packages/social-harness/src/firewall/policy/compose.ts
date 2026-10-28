@@ -151,13 +151,17 @@ export function policyInstallationError(
   });
 }
 
-/** Only file loading resolves paths into rules before trusted composition. */
+/** Only file loading resolves behaviors into rules before trusted composition. */
 function hasBehaviorPaths(policy: MessagePolicy) {
-  return (
-    (policy.english?.fixedBehaviors?.length ?? 0) !== 0 ||
-    (policy.english?.builtinBehaviors?.length ?? 0) !== 0 ||
-    (policy.english?.initialBehaviors?.length ?? 0) !== 0
-  );
+  const english = policy.english;
+  if (english === undefined) {
+    return false;
+  }
+  return [
+    english.fixedBehaviors,
+    english.builtinBehaviors,
+    english.initialBehaviors,
+  ].some((entries) => entries !== undefined && entries.length !== 0);
 }
 
 /** File loading supplies byte digests after resolving behavior paths into rules. */

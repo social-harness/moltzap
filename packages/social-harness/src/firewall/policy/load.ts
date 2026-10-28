@@ -207,18 +207,7 @@ function resolveBehaviors(policy: MessagePolicy, root: string) {
       behaviorRulePaths,
       initialRuleCount: english.initialRules.length,
     };
-    const fixed = [
-      ...(yield* loadBehaviors(
-        english.fixedBehaviors ?? [],
-        "fixedBehaviors",
-        state,
-      )),
-      ...(yield* loadBehaviors(
-        english.builtinBehaviors ?? [],
-        "builtinBehaviors",
-        { ...state, root: BUILTIN_BEHAVIORS },
-      )),
-    ];
+    const fixed = yield* loadFixedBehaviors(english, state);
     const initial = yield* loadBehaviors(
       english.initialBehaviors ?? [],
       "initialBehaviors",
@@ -243,15 +232,31 @@ function resolveBehaviors(policy: MessagePolicy, root: string) {
   });
 }
 
+/** Fixed behaviors from the policy's directory, then built-in behaviors from Client's own. */
+function loadFixedBehaviors(
+  english: NonNullable<MessagePolicy["english"]>,
+  state: BehaviorState,
+) {
+  return Effect.all([
+    loadBehaviors(english.fixedBehaviors ?? [], "fixedBehaviors", state),
+    loadBehaviors(english.builtinBehaviors ?? [], "builtinBehaviors", {
+      ...state,
+      root: BUILTIN_BEHAVIORS,
+    }),
+  ]).pipe(Effect.map((loaded) => loaded.flat()));
+}
+
+interface BehaviorState {
+  readonly root: string;
+  readonly ids: Set<string>;
+  readonly behaviorRulePaths: Map<string, string>;
+  readonly initialRuleCount: number;
+}
+
 function loadBehaviors(
   directories: readonly string[],
   field: "fixedBehaviors" | "builtinBehaviors" | "initialBehaviors",
-  state: {
-    readonly root: string;
-    readonly ids: Set<string>;
-    readonly behaviorRulePaths: Map<string, string>;
-    readonly initialRuleCount: number;
-  },
+  state: BehaviorState,
 ) {
   let count = state.initialRuleCount;
   return Effect.forEach(

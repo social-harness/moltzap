@@ -37,7 +37,10 @@ it(
         const installed = yield* installEditableFirewall(options, store);
         const policy = yield* installed.policy.read();
         for (const { name, kind } of BEHAVIORS) {
-          const source = readFileSync(join(SOURCE, name, "BEHAVIOR.md"), "utf8");
+          const source = readFileSync(
+            join(SOURCE, name, "BEHAVIOR.md"),
+            "utf8",
+          );
           const text = source
             .split(/^---\s*$/mu)
             .at(-1)
