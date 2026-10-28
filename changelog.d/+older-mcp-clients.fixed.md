@@ -1,1 +1,1 @@
-The daemon accepts older MCP clients, including revision 2025-11-25, for tool discovery and calls.
+The daemon serves MCP clients on revision 2025-11-25 whose output validation reads JSON Schema 2020-12, such as OpenClaw's.

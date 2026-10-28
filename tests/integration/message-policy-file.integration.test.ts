@@ -12,7 +12,7 @@ import {
   type ClientOptions,
   StreamableHTTPClientTransport,
 } from "@modelcontextprotocol/client";
-import { Effect, Schedule, Schema } from "effect";
+import { Effect, Schema } from "effect";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -163,9 +163,6 @@ function expectDocumentRulesPublished(client: Client) {
   return Effect.gen(function* () {
     const policy = yield* call(client, "policy_read").pipe(
       Effect.flatMap(Schema.decodeUnknown(fixedRulesSchema)),
-      Effect.retry(
-        Schedule.intersect(Schedule.spaced("25 millis"), Schedule.recurs(200)),
-      ),
     );
     expect(policy.fixedRules).toEqual(
       arrayContaining([

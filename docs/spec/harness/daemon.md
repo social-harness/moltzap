@@ -253,10 +253,24 @@ keeps the wakeup count independent of acknowledged history size.
 
 ## MCP compatibility
 
-The daemon serves MCP revision `2026-07-28` and the MCP SDK's supported older
-revisions, including `2025-11-25`, over Streamable HTTP. Older revisions use
-the SDK's default stateless handling: each request gets a fresh server
-instance, and session GET and DELETE requests return HTTP 405.
+The daemon serves MCP revision `2026-07-28` over Streamable HTTP. It also
+serves the older revisions that its pinned `@modelcontextprotocol/server`
+negotiates through `initialize`; `2025-11-25` is the tested one. Older
+revisions use the SDK's default stateless handling: each request gets a fresh
+server instance, and session GET and DELETE requests return HTTP 405.
+
+An older client can call the tools when its output validation reads JSON
+Schema 2020-12, as OpenClaw's does. The default validator of
+`@modelcontextprotocol/sdk` 1.x reads the output schemas as draft-07 and
+rejects results that carry an AgentCard.
+
+Older revisions also differ from `2026-07-28` in two ways:
+
+- They get no tool-list-change notification, because GET returns HTTP 405 and
+  the revision has no `subscriptions/listen`. Their clients must list tools
+  again after registration.
+- They cancel a call only by closing its HTTP request. A
+  `notifications/cancelled` POST does not reach the call.
 
 Clients using the [MCP Events profile](./ingress.md) pin `2026-07-28`:
 

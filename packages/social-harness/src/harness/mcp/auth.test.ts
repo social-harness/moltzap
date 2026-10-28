@@ -2,6 +2,11 @@
 
 import { scopedLive as it } from "@effect/vitest";
 import {
+  Client,
+  type ClientOptions,
+  StreamableHTTPClientTransport,
+} from "@modelcontextprotocol/client";
+import {
   CLIENT_CAPABILITIES_META_KEY,
   CLIENT_INFO_META_KEY,
   PROTOCOL_VERSION_META_KEY,
@@ -34,6 +39,20 @@ const credentials = {
 const info = { name: "local-dot-qualification", version: "1" };
 const unreachable = () =>
   Effect.dieMessage("unauthorized tool reached its operation");
+/** The firewall's policy operations, which no runtime call may reach. */
+const unreachablePolicy: NonNullable<HarnessMcpOperations["policy"]> = {
+  read: unreachable,
+  update: unreachable,
+  decisions: unreachable,
+};
+/**
+ * A 2025-11-25 client: the SDK pins only 2026-07-28 and later, so this one
+ * runs the `initialize` handshake offering and accepting only 2025-11-25.
+ */
+const OLDER_CLIENT: ClientOptions = {
+  versionNegotiation: { mode: "legacy" },
+  supportedProtocolVersions: ["2025-11-25"],
+};
 const operations: HarnessMcpOperations = {
   readEvent: () => Effect.fail({ reason: "unknown-event" }),
   protocolActive: () => false,
@@ -180,7 +199,8 @@ const registrationStates = [
 /**
  * A handler for a daemon in the given registration state. With `credentials`
  * it authenticates runtime and owner bearers and serves webhook events;
- * without them every request is local.
+ * without them every request is local. With `policy` it serves the firewall's
+ * policy tools.
  */
 const acquireHandler = (
   registered: boolean,
@@ -188,6 +208,7 @@ const acquireHandler = (
     Parameters<typeof makeHarnessMcpHttpHandler>[0],
     "credentials" | "eventStore"
   >,
+  policy?: HarnessMcpOperations["policy"],
 ) =>
   Effect.gen(function* () {
     const fixture = yield* makeFixture;
@@ -197,6 +218,7 @@ const acquireHandler = (
       ...access,
       operations: {
         ...operations,
+        policy,
         protocolActive: () => registered,
         readStatus: () =>
           Effect.succeed(
@@ -215,13 +237,16 @@ const acquireHandler = (
 const credentialedHandler = (registered: boolean) =>
   acquireHandler(registered, { credentials, eventStore });
 
+const firewallHandler = (registered: boolean) =>
+  acquireHandler(registered, { credentials, eventStore }, unreachablePolicy);
+
 /**
  * Given a handler from `given`, run `when` against it and check its result
  * with `then`.
  */
-const verify = <A, E>(
+const verify = <A, E, R>(
   given: ReturnType<typeof credentialedHandler>,
-  when: (handler: Handler) => Effect.Effect<A, E>,
+  when: (handler: Handler) => Effect.Effect<A, E, R>,
   then: (result: A) => void,
 ) => given.pipe(Effect.flatMap(when), Effect.map(then));
 
@@ -234,14 +259,67 @@ const callTool = (
     Effect.flatMap(decodeJson),
   );
 
+const sortedNames = (tools: ReadonlyArray<{ readonly name: string }>) =>
+  tools
+    .map((tool) => tool.name)
+    .sort((left, right) => left.localeCompare(right));
+
 const listTools = (handler: Handler, credential: Redacted.Redacted) =>
   request(handler, "tools/list", {}, credential).pipe(
     Effect.flatMap(Schema.decodeUnknown(toolNames)),
-    Effect.map((catalog) =>
-      catalog.result.tools
-        .map((tool) => tool.name)
-        .sort((left, right) => left.localeCompare(right)),
+    Effect.map((catalog) => sortedNames(catalog.result.tools)),
+  );
+
+/** A 2025-11-25 client of `handler` that sends `credential` as its bearer. */
+const connectOlderClient = (handler: Handler, credential: Redacted.Redacted) =>
+  // eslint-disable-next-line agent-code-guard/acquire-release-requires-scope -- scopedLive's `it` supplies the test scope that releases it.
+  Effect.acquireRelease(
+    Effect.gen(function* () {
+      const client = new Client(info, { capabilities: {}, ...OLDER_CLIENT });
+      const bearer = Redacted.value(credential);
+      const transport = new StreamableHTTPClientTransport(
+        new URL("http://127.0.0.1/mcp"),
+        {
+          fetch: (url, init) => handler.fetch(new Request(url, init)),
+          requestInit:
+            bearer === ""
+              ? {}
+              : { headers: { authorization: `Bearer ${bearer}` } },
+        },
+      );
+      yield* Effect.tryPromise({
+        try: () => client.connect(transport),
+        catch: (cause) => cause,
+      });
+      return client;
+    }),
+    (client) => Effect.tryPromise(() => client.close()).pipe(Effect.ignore),
+  );
+
+/** The tool names a 2025-11-25 client of `handler` lists with `credential`, sorted. */
+const listToolsAsOlderClient = (
+  handler: Handler,
+  credential: Redacted.Redacted,
+) =>
+  connectOlderClient(handler, credential).pipe(
+    Effect.flatMap((client) => Effect.tryPromise(() => client.listTools())),
+    Effect.map((catalog) => sortedNames(catalog.tools)),
+  );
+
+/** The failure a 2025-11-25 client of `handler` meets calling `name` with `credential`. */
+const refusedCallAsOlderClient = (
+  handler: Handler,
+  name: string,
+  credential: Redacted.Redacted,
+) =>
+  connectOlderClient(handler, credential).pipe(
+    Effect.flatMap((client) =>
+      Effect.tryPromise({
+        try: () => client.callTool({ name, arguments: {} }),
+        catch: (cause) => cause,
+      }),
     ),
+    Effect.flip,
   );
 
 const responseStatus = (
@@ -294,6 +372,48 @@ describe.each(registrationStates)(
           },
         ),
     );
+  },
+);
+
+// @agent-code-guard/regression-only: a 2025-11-25 client must meet the same bearer authority as a 2026-07-28 one.
+describe.each(registrationStates)(
+  "runtime tool authority over MCP 2025-11-25 for a daemon that is $state",
+  ({ registered, runtimeTools }) => {
+    it("refuses a client with no bearer", () =>
+      verify(
+        firewallHandler(registered),
+        (handler) =>
+          connectOlderClient(handler, noCredential).pipe(Effect.flip),
+        (refused) => {
+          expect(refused).toMatchObject({ data: { status: 401 } });
+        },
+      ));
+
+    it("lists exactly the runtime tools to the runtime credential", () =>
+      verify(
+        firewallHandler(registered),
+        (handler) => listToolsAsOlderClient(handler, credentials.runtime),
+        (names) => {
+          expect(names).toEqual(runtimeTools);
+        },
+      ));
+
+    it("refuses the runtime credential a call to policy_update", () =>
+      verify(
+        firewallHandler(registered),
+        (handler) =>
+          refusedCallAsOlderClient(
+            handler,
+            "policy_update",
+            credentials.runtime,
+          ),
+        (refused) => {
+          expect(refused).toMatchObject({
+            code: -32602,
+            message: "Tool policy_update not found",
+          });
+        },
+      ));
   },
 );
 
