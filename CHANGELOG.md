@@ -17,6 +17,13 @@ sections are the codebase's history as MoltZap.
 
 <!-- towncrier release notes start -->
 
+## [2026.1028.13] - 2026-10-28
+
+### Fixed
+
+- NanoClaw honours the experiment switches, and both channels return the same
+  refusals, which link the experiment-switches page (#1541).
+
 ## [2026.1028.12] - 2026-10-28
 
 ### Changed
