@@ -1,4 +1,4 @@
-/** @file Pins the posts each collective send certifies and the refusals it returns. */
+/** @file Pins the posts each collective send certifies, what it returns, and the refusals it returns. */
 
 import { scoped as it } from "@effect/vitest";
 import { Duration, Effect, Fiber, TestClock } from "effect";
@@ -402,11 +402,6 @@ describe("collective sends", () => {
   );
 
   it(
-    "returns a multicast's post and its canonical conversation address",
-    returnsAMulticastSPostAndItsCanonicalConversationAddress,
-  );
-
-  it(
     "fails a multicast whose text and part exceed the content limit",
     failsAMulticastWhoseTextAndPartExceedTheContentLimit,
   );
@@ -471,4 +466,12 @@ describe("gather addressing", () => {
   );
 
   it("asks the one agent of an agent address", asksTheOneAgentOfAnAgentAddress);
+});
+
+// @agent-code-guard/regression-only: examples pin what a send that creates one post returns.
+describe("send results", () => {
+  it(
+    "returns a multicast's post and its canonical conversation address",
+    returnsAMulticastSPostAndItsCanonicalConversationAddress,
+  );
 });

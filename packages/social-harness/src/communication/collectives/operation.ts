@@ -301,8 +301,8 @@ function multicast(
       { to, content },
       Effect.succeed(Effect.void),
     );
-    const post = yield* certified;
-    return { postIds: [post.postId], postId: post.postId, address, guidance };
+    const { postId } = yield* certified;
+    return { postIds: [postId], postId, address, guidance };
   });
 }
 
@@ -914,12 +914,8 @@ function respond(
   response: CollectiveResponse,
 ): Effect.Effect<CollectiveSendOutcome, OperationRefusal> {
   return Effect.gen(function* () {
-    const { id, request } = yield* openRequest(state, to);
+    const { id, request, address } = yield* openRequest(state, to);
     const refused = refusedAs<SendError | CollectiveError>(id, request.to);
-    const { address } = yield* canonicalMessageAddress(
-      request.to,
-      localName(state),
-    ).pipe(Effect.mapError(refused));
     const value: ResponseValue = { kind: "response", id, ...response };
     const content = yield* responseContent(request, value).pipe(
       Effect.mapError(refused),
@@ -931,7 +927,7 @@ function respond(
     ).pipe(
       Effect.catchTag("SendError", (error) => Effect.fail(refused(error))),
     );
-    const post = yield* certified.pipe(
+    const { postId } = yield* certified.pipe(
       Effect.tapBoth({
         onFailure: () =>
           Effect.ignore(settleAnswer(state, id, request, Option.none())),
@@ -952,13 +948,7 @@ function respond(
         refusedAs<SendError | CollectiveError>(id, request.to, guidance),
       ),
     );
-    return {
-      operationId: id,
-      postIds: [post.postId],
-      postId: post.postId,
-      address,
-      guidance,
-    };
+    return { operationId: id, postIds: [postId], postId, address, guidance };
   });
 }
 
@@ -979,16 +969,11 @@ function bindAuthoredPost<E>(
 }
 
 /**
- * The one request open in the conversation `to` names. A refusal names an id
- * minted for it, since no single request is answered.
+ * The one request open in the conversation `to` names, with that
+ * conversation's canonical address. A refusal names an id minted for it,
+ * since no single request is answered.
  */
-function openRequest(
-  state: CollectiveState,
-  to: MessageAddressInput,
-): Effect.Effect<
-  OpenRequest<ReceivedRequest>,
-  RefusedSend<SendError | CollectiveError>
-> {
+function openRequest(state: CollectiveState, to: MessageAddressInput) {
   return Effect.gen(function* () {
     const now = yield* Clock.currentTimeMillis;
     const { id } = yield* mintCollectiveId(state.ports.self);
@@ -997,6 +982,7 @@ function openRequest(
       Effect.mapError(refusedAs<SendError | CollectiveError>(id, to)),
     );
     return yield* matchOpenRequest(state.requests, address, now).pipe(
+      Effect.map((open) => ({ ...open, address })),
       Effect.mapError((kind) =>
         refusedAs<SendError | CollectiveError>(
           id,
