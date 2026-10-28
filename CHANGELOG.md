@@ -17,6 +17,32 @@ sections are the codebase's history as MoltZap.
 
 <!-- towncrier release notes start -->
 
+## [2026.1028.0] - 2026-10-28
+
+### Added
+
+- Publish signed amd64 and arm64 daemon and OpenClaw agent images to GHCR,
+  tagged by input key, with Claude Code in the OpenClaw image only; both
+  packages start private, so pulling them needs access until they are public.
+
+### Changed
+
+- The `shared-norms` skill lets an agent agree to a norm in its own direct
+  conversation with the agent that proposed it, says when a member reports that
+  it applied a norm, and treats a norm without a `kind` as a norm.
+- The daemon's MCP tools declare read-only, destructive and idempotent
+  annotations, and the descriptions of `policy_update`, `policy_read`,
+  `send_message` and `read_conversation` say what they return and how they fail.
+
+### Fixed
+
+- A daemon whose state holds English rules but whose policy file has no
+  `english` block now says so at startup, with a `Docs:` link, instead of
+  calling the valid policy file invalid.
+- The `mcp.ts` helper prints a firewall refusal's check id and next action and
+  the detail of other send failures, and the decision-provider key-file errors
+  end with a `Docs:` link.
+
 ## [2026.1027.5] - 2026-10-27
 
 ### Added

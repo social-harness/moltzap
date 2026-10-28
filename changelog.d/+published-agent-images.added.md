@@ -1,1 +1,0 @@
-Publish signed amd64 and arm64 daemon and OpenClaw agent images to GHCR, tagged by input key, with Claude Code in the OpenClaw image only; both packages start private, so pulling them needs access until they are public.
