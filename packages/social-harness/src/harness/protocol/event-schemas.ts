@@ -1,11 +1,8 @@
 /** @file Shared schema and ports for the experimental MCP Events edge. */
 
-import {
-  fromJsonSchema,
-  type JsonSchemaType,
-  type ProtocolError,
-} from "@modelcontextprotocol/server";
-import { type Effect, JSONSchema, Schema } from "effect";
+import type { ProtocolError } from "@modelcontextprotocol/server";
+import { type Effect, Schema } from "effect";
+import { requestSchema, resultSchema } from "./catalog-schemas.js";
 /** Daemon event delivery uses the same host-safe wire values as polling receivers. */
 export {
   type ConsumerMetadata,
@@ -42,10 +39,8 @@ const webhookStatusSchema = Schema.Struct({
 /** Secret-free diagnostics shared with the owner-only MCP tool. */
 export type WebhookStatus = typeof webhookStatusSchema.Type;
 
-/** JSON Schema for the owner-only, secret-free event status tool. */
-export const webhookStatusJsonSchema = JSONSchema.make(webhookStatusSchema, {
-  target: "jsonSchema2020-12",
-});
+/** The result schema of the owner-only, secret-free event status tool. */
+export const webhookStatusResult = resultSchema(webhookStatusSchema);
 
 const emptyArguments = Schema.Record({
   key: Schema.String,
@@ -121,23 +116,17 @@ export interface HarnessWebhookEvents {
   readonly resume: Effect.Effect<void, ProtocolError>;
 }
 
-const standard = <A, I>(schema: Schema.Schema<A, I>) =>
-  fromJsonSchema<A>(
-    // eslint-disable-next-line agent-code-guard/require-assertion-rationale -- Effect emits the JSON Schema object consumed by the pinned official SDK.
-    JSONSchema.make(schema, { target: "jsonSchema2020-12" }) as JsonSchemaType,
-  );
-
 /** Native streaming uses the same event and replay grammar as callbacks. */
 export type EventStreamInput = typeof subscriptionSchema.Type;
 /** SDK boundary validation keeps schema constructors private. */
-export const eventStreamInput = standard(subscriptionSchema);
+export const eventStreamInput = requestSchema(subscriptionSchema);
 /** Polling adds a bounded occurrence count to the shared replay grammar. */
 export type EventPollInput = typeof pollSchema.Type;
 /** The official SDK validates poll requests before acquiring a consumer. */
-export const eventPollInput = standard(pollSchema);
+export const eventPollInput = requestSchema(pollSchema);
 /** The event catalog has its own pagination grammar. */
-export const eventListInput = standard(listSchema);
+export const eventListInput = requestSchema(listSchema);
 /** Callback registration includes the signing authority and lease request. */
-export const eventSubscribeInput = standard(subscribeSchema);
+export const eventSubscribeInput = requestSchema(subscribeSchema);
 /** Cleanup uses only the subscription's public key fields. */
-export const eventUnsubscribeInput = standard(unsubscribeSchema);
+export const eventUnsubscribeInput = requestSchema(unsubscribeSchema);

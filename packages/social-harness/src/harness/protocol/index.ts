@@ -19,9 +19,9 @@ export {
   maximumEventBytes,
   type PollResult,
   type WebhookStatus,
-  webhookStatusJsonSchema,
+  webhookStatusResult,
 } from "./event-schemas.js";
-/** Exact owner-authorized management request and result schemas. */
+/** Owner-authorized management request and result schemas. */
 export {
   type ManagementReadConversationRequest,
   managementReadConversationRequestSchema,
@@ -45,14 +45,9 @@ export {
 /** MCP projections keep semantic operations separate from transport framing. */
 export {
   decodeHarnessSendCall,
-  harnessAcknowledgeDeliveryRequestJsonSchema,
   type HarnessEmptyResult,
-  harnessEmptyResultJsonSchema,
+  harnessEmptyResultSchema,
   harnessFailureReasons,
-  harnessReadInboxRequestJsonSchema,
-  harnessReadInboxResultJsonSchema,
-  harnessSendArgumentsJsonSchema,
-  harnessSendResultJsonSchema,
   registrationAdmissionRefusalMessage,
   validationIssues,
 } from "./schemas.js";

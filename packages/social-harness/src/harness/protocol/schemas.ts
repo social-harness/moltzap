@@ -1,9 +1,8 @@
-/** @file MCP framing of the harness operations: send metadata and JSON Schema projections. */
+/** @file MCP framing of the harness operations: send metadata, the empty result and validation diagnostics. */
 
 import {
   Array,
   Effect,
-  JSONSchema,
   Option,
   type ParseResult,
   Schema,
@@ -12,13 +11,9 @@ import {
 import { exactParseOptions } from "../../encoding/exact.js";
 import { HARNESS_SEND_META_KEY } from "./names.js";
 import {
-  harnessAcknowledgeDeliveryRequestSchema,
   harnessSendArgumentsSchema,
   harnessSendOptionsSchema,
   type HarnessSendRequest,
-  harnessSendResultSchema,
-  inboxRequestSchema,
-  inboxResultSchema,
 } from "./operations.js";
 
 const exactEmptyObject = Schema.Record({
@@ -26,24 +21,14 @@ const exactEmptyObject = Schema.Record({
   value: Schema.Never,
 }).annotations({ parseOptions: exactParseOptions });
 
-const harnessEmptyResultSchema = exactEmptyObject;
+/** The empty result of an adapter operation. */
+export const harnessEmptyResultSchema = exactEmptyObject;
 
 const harnessSendMetadataSchema = Schema.Struct({
   [HARNESS_SEND_META_KEY]: Schema.optionalWith(harnessSendOptionsSchema, {
     exact: true,
   }),
 });
-
-/** JSON Schema for the runtime inbox pagination arguments. */
-export const harnessReadInboxRequestJsonSchema = JSONSchema.make(
-  inboxRequestSchema,
-  { target: "jsonSchema2020-12" },
-);
-/** JSON Schema for classified inbox pages. */
-export const harnessReadInboxResultJsonSchema = JSONSchema.make(
-  inboxResultSchema,
-  { target: "jsonSchema2020-12" },
-);
 
 /**
  * Validate semantic arguments separately from runtime-owned send options.
@@ -69,30 +54,6 @@ export function decodeHarnessSendCall(
 
 /** Decoded empty adapter-operation result. */
 export type HarnessEmptyResult = typeof harnessEmptyResultSchema.Type;
-
-/** JSON Schema advertised for the delivery acknowledgment operation. */
-export const harnessAcknowledgeDeliveryRequestJsonSchema = JSONSchema.make(
-  harnessAcknowledgeDeliveryRequestSchema,
-  { target: "jsonSchema2020-12" },
-);
-
-/** JSON Schema advertised for `send_message` arguments. */
-export const harnessSendArgumentsJsonSchema = JSONSchema.make(
-  harnessSendArgumentsSchema,
-  { target: "jsonSchema2020-12" },
-);
-
-/** JSON Schema advertised for `send_message` results. */
-export const harnessSendResultJsonSchema = JSONSchema.make(
-  harnessSendResultSchema,
-  { target: "jsonSchema2020-12" },
-);
-
-/** JSON Schema advertised for empty adapter-operation results. */
-export const harnessEmptyResultJsonSchema = JSONSchema.make(
-  harnessEmptyResultSchema,
-  { target: "jsonSchema2020-12" },
-);
 
 /** Admission refusal names the credential to replace without disclosing its value. */
 export const registrationAdmissionRefusalMessage =

@@ -336,7 +336,8 @@
       "entrypoints": [
         "src/harness/protocol/index.ts",
         "src/harness/protocol/operations.ts",
-        "src/harness/protocol/names.ts"
+        "src/harness/protocol/names.ts",
+        "src/harness/protocol/catalog-schemas.ts"
       ],
       "reason": "The loopback MCP tools, events and results both peers speak"
     },

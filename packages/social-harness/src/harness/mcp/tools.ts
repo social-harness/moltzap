@@ -2,9 +2,7 @@
 
 import {
   createMcpHandler,
-  fromJsonSchema,
   type Implementation,
-  type JsonSchemaType,
   type McpHttpHandler,
   McpServer,
   ProtocolError,
@@ -18,7 +16,6 @@ import {
   Effect,
   Either,
   Exit,
-  JSONSchema,
   Layer,
   Option,
   type ParseResult,
@@ -38,15 +35,15 @@ import {
   policyUpdateSchema,
 } from "../../firewall/index.js";
 import {
+  requestSchema,
+  type ResultSchema,
+  resultSchema,
+} from "../protocol/catalog-schemas.js";
+import {
   decodeHarnessSendCall,
-  harnessAcknowledgeDeliveryRequestJsonSchema,
   type HarnessEmptyResult,
-  harnessEmptyResultJsonSchema,
+  harnessEmptyResultSchema,
   harnessFailureReasons,
-  harnessReadInboxRequestJsonSchema,
-  harnessReadInboxResultJsonSchema,
-  harnessSendArgumentsJsonSchema,
-  harnessSendResultJsonSchema,
   type ManagementReadConversationRequest,
   managementReadConversationRequestSchema,
   type ManagementReadConversationResult,
@@ -67,6 +64,7 @@ import {
   managementStatusResultSchema,
   registrationAdmissionRefusalMessage,
   validationIssues,
+  webhookStatusResult,
 } from "../protocol/index.js";
 import {
   HARNESS_ACKNOWLEDGE_DELIVERY_TOOL,
@@ -79,14 +77,13 @@ import {
   checkHarnessSendResult,
   type DeliveryOperations,
   type EventStore,
-  type HarnessAcknowledgeDeliveryRequest,
   harnessAcknowledgeDeliveryRequestSchema,
-  type HarnessReadInboxRequest,
-  type HarnessReadInboxResult,
-  type HarnessSendArguments,
+  harnessSendArgumentsSchema,
   type HarnessSendErrorData,
   type HarnessSendResult,
+  harnessSendResultSchema,
   inboxRequestSchema,
+  inboxResultSchema,
   readEventRequestSchema,
   readEventResultSchema,
   sendErrorData,
@@ -104,7 +101,6 @@ import {
   runEventOperation,
   runRequest,
   webhookHttpClientLayer,
-  webhookStatusJsonSchema,
 } from "./events.js";
 
 /* eslint-disable agent-code-guard/async-keyword -- Official MCP factories and callbacks are Promise-native. */
@@ -174,93 +170,43 @@ interface RunOperationOptions<Value extends Readonly<Record<string, unknown>>> {
   readonly services: Runtime.Runtime<never>;
 }
 
-const makeStandardSchema = <Value>(jsonSchema: unknown) =>
-  fromJsonSchema<Value>(
-    // eslint-disable-next-line agent-code-guard/require-assertion-rationale -- JSONSchema.make emits the exact JsonSchemaType consumed by the pinned MCP SDK.
-    jsonSchema as JsonSchemaType,
-  );
-
-const makeJsonSchema = <A, I>(schema: Schema.Schema<A, I>) =>
-  JSONSchema.make(schema, { target: "jsonSchema2020-12" });
-
 const emptyRequestSchema = Schema.Record({
   key: Schema.String,
   value: Schema.Never,
 });
-const registerInput = makeStandardSchema<ManagementRegisterRequest>(
-  makeJsonSchema(managementRegisterRequestSchema),
+const registerInput = requestSchema(managementRegisterRequestSchema);
+const registerOutput = resultSchema(managementRegisterResultSchema);
+const emptyInput = requestSchema(emptyRequestSchema);
+const statusOutput = resultSchema(managementStatusResultSchema);
+const policyReadOutput = resultSchema(policyReadSchema);
+const policyUpdateInput = requestSchema(policyUpdateSchema);
+const policyUpdateOutput = resultSchema(policyUpdateResultSchema);
+const decisionsInput = requestSchema(firewallDecisionsRequestSchema);
+const decisionsOutput = resultSchema(firewallDecisionsSchema);
+const searchAgentsInput = requestSchema(managementSearchAgentsRequestSchema);
+const searchAgentsOutput = resultSchema(managementSearchAgentsResultSchema);
+const searchConversationsInput = requestSchema(
+  managementSearchConversationsRequestSchema,
 );
-const registerOutput = makeStandardSchema<ManagementRegisterResult>(
-  makeJsonSchema(managementRegisterResultSchema),
+const searchConversationsOutput = resultSchema(
+  managementSearchConversationsResultSchema,
 );
-const emptyInput = makeStandardSchema<Record<string, never>>(
-  makeJsonSchema(emptyRequestSchema),
+const readConversationInput = requestSchema(
+  managementReadConversationRequestSchema,
 );
-const statusOutput = makeStandardSchema<ManagementStatusResult>(
-  makeJsonSchema(managementStatusResultSchema),
+const readConversationOutput = resultSchema(
+  managementReadConversationResultSchema,
 );
-const policyReadOutput = makeStandardSchema<typeof policyReadSchema.Type>(
-  makeJsonSchema(policyReadSchema),
+const sendInput = requestSchema(harnessSendArgumentsSchema);
+const acknowledgeDeliveryInput = requestSchema(
+  harnessAcknowledgeDeliveryRequestSchema,
 );
-const policyUpdateInput = makeStandardSchema<typeof policyUpdateSchema.Type>(
-  makeJsonSchema(policyUpdateSchema),
-);
-const policyUpdateOutput = makeStandardSchema<
-  typeof policyUpdateResultSchema.Type
->(makeJsonSchema(policyUpdateResultSchema));
-const decisionsInput = makeStandardSchema<
-  typeof firewallDecisionsRequestSchema.Type
->(makeJsonSchema(firewallDecisionsRequestSchema));
-const decisionsOutput = makeStandardSchema<typeof firewallDecisionsSchema.Type>(
-  makeJsonSchema(firewallDecisionsSchema),
-);
-const searchAgentsInput = makeStandardSchema<ManagementSearchAgentsRequest>(
-  makeJsonSchema(managementSearchAgentsRequestSchema),
-);
-const searchAgentsOutput = makeStandardSchema<ManagementSearchAgentsResult>(
-  makeJsonSchema(managementSearchAgentsResultSchema),
-);
-const searchConversationsInput =
-  makeStandardSchema<ManagementSearchConversationsRequest>(
-    makeJsonSchema(managementSearchConversationsRequestSchema),
-  );
-const searchConversationsOutput =
-  makeStandardSchema<ManagementSearchConversationsResult>(
-    makeJsonSchema(managementSearchConversationsResultSchema),
-  );
-const readConversationInput =
-  makeStandardSchema<ManagementReadConversationRequest>(
-    makeJsonSchema(managementReadConversationRequestSchema),
-  );
-const readConversationOutput =
-  makeStandardSchema<ManagementReadConversationResult>(
-    makeJsonSchema(managementReadConversationResultSchema),
-  );
-const sendInput = makeStandardSchema<HarnessSendArguments>(
-  harnessSendArgumentsJsonSchema,
-);
-const acknowledgeDeliveryInput =
-  makeStandardSchema<HarnessAcknowledgeDeliveryRequest>(
-    harnessAcknowledgeDeliveryRequestJsonSchema,
-  );
-const emptyOutput = makeStandardSchema<HarnessEmptyResult>(
-  harnessEmptyResultJsonSchema,
-);
-const sendOutput = makeStandardSchema<HarnessSendResult>(
-  harnessSendResultJsonSchema,
-);
-const readEventInput = makeStandardSchema<typeof readEventRequestSchema.Type>(
-  makeJsonSchema(readEventRequestSchema),
-);
-const readEventOutput = makeStandardSchema<typeof readEventResultSchema.Type>(
-  makeJsonSchema(readEventResultSchema),
-);
-const readInboxInput = makeStandardSchema<HarnessReadInboxRequest>(
-  harnessReadInboxRequestJsonSchema,
-);
-const readInboxOutput = makeStandardSchema<HarnessReadInboxResult>(
-  harnessReadInboxResultJsonSchema,
-);
+const emptyOutput = resultSchema(harnessEmptyResultSchema);
+const sendOutput = resultSchema(harnessSendResultSchema);
+const readEventInput = requestSchema(readEventRequestSchema);
+const readEventOutput = resultSchema(readEventResultSchema);
+const readInboxInput = requestSchema(inboxRequestSchema);
+const readInboxOutput = resultSchema(inboxResultSchema);
 const {
   RUNTIME_READ_REASONS,
   REGISTER_REASONS,
@@ -439,7 +385,7 @@ type ToolHints = ToolAnnotations &
 interface ToolListing {
   readonly description: string;
   readonly inputSchema: StandardSchemaWithJSON;
-  readonly outputSchema?: StandardSchemaWithJSON;
+  readonly outputSchema?: ResultSchema;
   readonly annotations: ToolHints;
 }
 
@@ -496,19 +442,21 @@ const toolListings = {
     description:
       "Inspect the runtime consumer and stalled delivery without exposing callback credentials.",
     inputSchema: emptyInput,
-    outputSchema: makeStandardSchema(webhookStatusJsonSchema),
+    outputSchema: webhookStatusResult,
     annotations: localRead,
   },
   revoke_event_subscription: {
     description:
       "Release the active runtime consumer while leaving pending inbox items unread.",
     inputSchema: emptyInput,
+    outputSchema: emptyOutput,
     annotations: { readOnlyHint: false, openWorldHint: false },
   },
   resume_event_subscription: {
     description:
       "Resume transient callback retries after a recoverable delivery failure. A terminal rejection requires revocation and reconfiguration.",
     inputSchema: emptyInput,
+    outputSchema: emptyOutput,
     annotations: {
       readOnlyHint: false,
       destructiveHint: false,
@@ -718,8 +666,11 @@ interface ToolOperations extends HarnessMcpOperations {
   readonly services: Runtime.Runtime<never>;
 }
 
-const handleOwnerOperation = async (
-  operation: Effect.Effect<Readonly<Record<string, unknown>>, ProtocolError>,
+const handleOwnerOperation = async <
+  Value extends Readonly<Record<string, unknown>>,
+>(
+  operation: Effect.Effect<Value, ProtocolError>,
+  outputSchema: StandardSchemaV1<unknown, Value>,
   input: ToolCallInput,
 ) => {
   await decodeToolInput(
@@ -728,13 +679,17 @@ const handleOwnerOperation = async (
     input.toolArguments,
     input.name,
   );
-  return toolResult(
-    await runEventOperation(
-      operation,
-      input.signal,
-      input.requestScope,
-      input.services,
+  return await validateToolOutput(
+    outputSchema,
+    toolResult(
+      await runEventOperation(
+        operation,
+        input.signal,
+        input.requestScope,
+        input.services,
+      ),
     ),
+    input.name,
   );
 };
 
@@ -856,11 +811,19 @@ const toolHandlers = {
     },
   ),
   event_subscription_status: (input, operations) =>
-    handleOwnerOperation(operations.events.status, input),
+    handleOwnerOperation(operations.events.status, webhookStatusResult, input),
   revoke_event_subscription: (input, operations) =>
-    handleOwnerOperation(operations.events.revoke.pipe(Effect.as({})), input),
+    handleOwnerOperation(
+      operations.events.revoke.pipe(Effect.as({})),
+      emptyOutput,
+      input,
+    ),
   resume_event_subscription: (input, operations) =>
-    handleOwnerOperation(operations.events.resume.pipe(Effect.as({})), input),
+    handleOwnerOperation(
+      operations.events.resume.pipe(Effect.as({})),
+      emptyOutput,
+      input,
+    ),
   [SEARCH_AGENTS_TOOL]: makeToolHandler(
     searchAgentsInput,
     managementSearchAgentsRequestSchema,
