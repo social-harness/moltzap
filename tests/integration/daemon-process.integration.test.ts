@@ -854,12 +854,17 @@ function exchangeInitialPostsAndExpectDelivery(state: ProcessScenario) {
           nextDelivery(target.messages),
         );
 
-        yield* caller.send({ to: targetAddress, text: initialText });
+        const sent = yield* caller.send({
+          to: targetAddress,
+          text: initialText,
+        });
         const targetInbound = yield* Fiber.join(targetDelivery);
+        expect(sent).toMatchObject({ address: targetAddress });
         expect(targetInbound.item).toMatchObject({
           kind: "multicast",
           message: {
             kind: "direct",
+            postId: sent.postId,
             address: callerAddress,
             sender: callerAddress,
             content: [{ type: "text", text: initialText }],

@@ -13,9 +13,10 @@
  * answer can be `withheld` by the local firewall, and local guidance is
  * either one check's or one per checked text of a result; each of its
  * instructions names a settled expectation or an unsettled norm judgment's
- * choice and probability. A send returns a collecting operation's id and
- * its check's guidance, and fails with a closed send reason or a
- * collective failure. The exported send-result decoder yields that same
+ * choice and probability. A send returns a collecting operation's id, the
+ * post a multicast or response created with its conversation's canonical
+ * address, and its check's guidance, and fails with a closed send reason or
+ * a collective failure. The exported send-result decoder yields that same
  * result type. Adapters compile against this surface, so any change these
  * canaries catch is a breaking release. Client renders local guidance as text
  * for both adapters, keeping registered instructions apart from quoted peers.
@@ -88,6 +89,8 @@ type ExpectedSendInput =
     }>;
 type ExpectedSendResult = Readonly<{
   operationId?: CollectiveId;
+  postId?: PostId;
+  address?: AgentAddress | GroupAddress;
   guidance?: ExpectedCheckedGuidance;
 }>;
 type ExpectedDirectMessage = Readonly<{

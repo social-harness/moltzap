@@ -290,20 +290,25 @@ function multicast(
   to: MessageAddressInput,
   text: string,
 ): Effect.Effect<CollectiveSendOutcome, AuthoredPostError<never>> {
-  return encodeCollectiveContent(
-    { kind: "operation", op: "multicast" },
-    text,
-  ).pipe(
-    Effect.mapError(contentInvalid),
-    Effect.flatMap((content) =>
-      bindAuthoredPost(state, { to, content }, Effect.succeed(Effect.void)),
-    ),
-    Effect.flatMap(({ certified, guidance }) =>
-      certified.pipe(
-        Effect.map((post) => ({ postIds: [post.postId], guidance })),
-      ),
-    ),
-  );
+  return Effect.gen(function* () {
+    const content = yield* encodeCollectiveContent(
+      { kind: "operation", op: "multicast" },
+      text,
+    ).pipe(Effect.mapError(contentInvalid));
+    const { address } = yield* canonicalMessageAddress(to, localName(state));
+    const { certified, guidance } = yield* bindAuthoredPost(
+      state,
+      { to, content },
+      Effect.succeed(Effect.void),
+    );
+    const post = yield* certified;
+    return { postIds: [post.postId], postId: post.postId, address, guidance };
+  });
+}
+
+/** The local agent's Registry name, which canonical addresses spell it by. */
+function localName(state: CollectiveState): string {
+  return state.ports.self.slice("agent:".length);
 }
 
 /**
@@ -911,6 +916,10 @@ function respond(
   return Effect.gen(function* () {
     const { id, request } = yield* openRequest(state, to);
     const refused = refusedAs<SendError | CollectiveError>(id, request.to);
+    const { address } = yield* canonicalMessageAddress(
+      request.to,
+      localName(state),
+    ).pipe(Effect.mapError(refused));
     const value: ResponseValue = { kind: "response", id, ...response };
     const content = yield* responseContent(request, value).pipe(
       Effect.mapError(refused),
@@ -943,7 +952,13 @@ function respond(
         refusedAs<SendError | CollectiveError>(id, request.to, guidance),
       ),
     );
-    return { operationId: id, postIds: [post.postId], guidance };
+    return {
+      operationId: id,
+      postIds: [post.postId],
+      postId: post.postId,
+      address,
+      guidance,
+    };
   });
 }
 
@@ -977,7 +992,7 @@ function openRequest(
   return Effect.gen(function* () {
     const now = yield* Clock.currentTimeMillis;
     const { id } = yield* mintCollectiveId(state.ports.self);
-    const self = state.ports.self.slice("agent:".length);
+    const self = localName(state);
     const { address } = yield* canonicalMessageAddress(to, self).pipe(
       Effect.mapError(refusedAs<SendError | CollectiveError>(id, to)),
     );

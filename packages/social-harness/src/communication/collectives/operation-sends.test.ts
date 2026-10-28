@@ -47,6 +47,28 @@ function certifiesAMulticastAsItsTextAndAnExplicitMulticastPart() {
   });
 }
 
+function returnsAMulticastSPostAndItsCanonicalConversationAddress() {
+  const observed = newObserved();
+
+  return Effect.gen(function* () {
+    const layer = yield* makeLayer(observed);
+    const direct = yield* send(layer, { to: "agent:bob", text: "Hello" });
+    const group = yield* send(layer, {
+      to: "group:carol,bob",
+      text: "Hello both",
+    });
+
+    expect(direct).toMatchObject({
+      postId: postId(101),
+      address: "agent:bob",
+    });
+    expect(group).toMatchObject({
+      postId: postId(102),
+      address: "group:alice,bob,carol",
+    });
+  });
+}
+
 function failsAMulticastWhoseTextAndPartExceedTheContentLimit() {
   const observed = newObserved();
 
@@ -377,6 +399,11 @@ describe("collective sends", () => {
   it(
     "certifies a multicast as its text and an explicit multicast part",
     certifiesAMulticastAsItsTextAndAnExplicitMulticastPart,
+  );
+
+  it(
+    "returns a multicast's post and its canonical conversation address",
+    returnsAMulticastSPostAndItsCanonicalConversationAddress,
   );
 
   it(

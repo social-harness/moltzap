@@ -105,7 +105,12 @@ type SendInput =
     }
 
 interface SendResult {
+  /** A gather's or all_gather's id, or the id of the request a response answered. */
   readonly operationId?: CollectiveId
+  /** The post a multicast or response created. */
+  readonly postId?: PostId
+  /** That post's conversation, in canonical spelling. */
+  readonly address?: AgentAddress | GroupAddress
   /** The local firewall's advice on the admitted send. */
   readonly guidance?: CheckedGuidance
 }
@@ -430,8 +435,11 @@ one, a gather one per member, an all_gather one to the group. Client mints each 
 binding the immutable intent and reuses that identity only while recovering or
 completing that invocation. A later call receives a different `PostId`, even
 when destination and text are identical. The host owns that retry choice. A multicast or response succeeds only after local complete action
-and durability certification; a gather or all_gather succeeds as described
-under [operations](#operations) and returns its `operationId`.
+and durability certification, and returns the `PostId` of the post it created,
+the id the recipients' items and history records carry, with the canonical
+address of its conversation: the direct `agent:` address, or the complete
+`group:` address with the sender included. A gather or all_gather succeeds as
+described under [operations](#operations) and returns its `operationId`.
 
 A host whose tool returns before the send runs passes
 `failureDelivery: "inbound"`. A refused gather, all_gather or response then completes,
