@@ -14,6 +14,7 @@ import { constants } from "node:fs";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Configuration reads the configured policy file before the daemon composes its platform services.
 import { type FileHandle, lstat, open, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep, win32 } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   type DecisionProvider,
   DecisionProviderError,
@@ -36,6 +37,11 @@ import {
 
 /** Larger than any document of 256 editable rules and the fixed rules beside them. */
 const MAXIMUM_POLICY_BYTES = 1_048_576;
+
+/** The installed Client's own `behaviors/` directory, which `english.builtinBehaviors` names into. */
+const BUILTIN_BEHAVIORS = fileURLToPath(
+  new URL("../../../behaviors/", import.meta.url),
+);
 
 /** A key is one token; surrounding whitespace, such as a trailing newline, is ignored. */
 const decisionProviderKey = Schema.Trim.pipe(
@@ -201,11 +207,18 @@ function resolveBehaviors(policy: MessagePolicy, root: string) {
       behaviorRulePaths,
       initialRuleCount: english.initialRules.length,
     };
-    const fixed = yield* loadBehaviors(
-      english.fixedBehaviors ?? [],
-      "fixedBehaviors",
-      state,
-    );
+    const fixed = [
+      ...(yield* loadBehaviors(
+        english.fixedBehaviors ?? [],
+        "fixedBehaviors",
+        state,
+      )),
+      ...(yield* loadBehaviors(
+        english.builtinBehaviors ?? [],
+        "builtinBehaviors",
+        { ...state, root: BUILTIN_BEHAVIORS },
+      )),
+    ];
     const initial = yield* loadBehaviors(
       english.initialBehaviors ?? [],
       "initialBehaviors",
@@ -232,7 +245,7 @@ function resolveBehaviors(policy: MessagePolicy, root: string) {
 
 function loadBehaviors(
   directories: readonly string[],
-  field: "fixedBehaviors" | "initialBehaviors",
+  field: "fixedBehaviors" | "builtinBehaviors" | "initialBehaviors",
   state: {
     readonly root: string;
     readonly ids: Set<string>;

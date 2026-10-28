@@ -155,6 +155,7 @@ export function policyInstallationError(
 function hasBehaviorPaths(policy: MessagePolicy) {
   return (
     (policy.english?.fixedBehaviors?.length ?? 0) !== 0 ||
+    (policy.english?.builtinBehaviors?.length ?? 0) !== 0 ||
     (policy.english?.initialBehaviors?.length ?? 0) !== 0
   );
 }

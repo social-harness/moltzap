@@ -147,11 +147,17 @@ const defaultSettings = {
   maximumResultBytes: 2_000_000,
 };
 
+/** A behavior Client ships, named `<pack>/<name>` after its directory under `behaviors/`. */
+const builtinBehaviorName = Schema.String.pipe(
+  Schema.pattern(/^[a-z0-9]+(?:-[a-z0-9]+)*\/[a-z0-9]+(?:-[a-z0-9]+)*$/u),
+);
+
 const englishDocument = Schema.Struct({
   fixedRules: englishRules,
   initialRules: englishRules,
   fixedBehaviors: Schema.optional(Schema.Array(Schema.String)),
   initialBehaviors: Schema.optional(Schema.Array(Schema.String)),
+  builtinBehaviors: Schema.optional(Schema.Array(builtinBehaviorName)),
 });
 
 const document = Schema.Struct({

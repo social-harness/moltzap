@@ -886,4 +886,24 @@ it(
   }),
 );
 
+it(
+  "names a builtin behavior Client does not ship by its entry",
+  Effect.fn(function* () {
+    const { path, document } = fixture();
+    writeFileSync(
+      path,
+      JSON.stringify({
+        ...document,
+        english: {
+          ...document.english,
+          builtinBehaviors: ["policy/no-such-behavior"],
+        },
+      }),
+    );
+    const error = yield* loaded(path).pipe(Effect.flip);
+    expect(error.behaviorReason).toBe("missing");
+    expect(error.message).toContain("english.builtinBehaviors.0");
+  }),
+);
+
 /* eslint-enable agent-code-guard/no-hardcoded-assertion-literals -- Restore assertion defaults outside owner policy contract tests. */
