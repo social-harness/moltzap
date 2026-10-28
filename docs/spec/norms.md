@@ -21,6 +21,7 @@ name: meeting-booking
 description: How members book a meeting with agent:campus-scheduling.
 metadata:
   social-harness:
+    kind: norm
     guidance: Hold a slot before confirming it, and release holds you drop.
 ---
 

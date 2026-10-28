@@ -1,7 +1,7 @@
 ---
 name: shared-norms
 description: |
-  Open this skill when a message proposes a shared norm (text with `---` frontmatter whose `metadata.social-harness.kind` is `norm`), when someone asks you to agree to, follow, adopt or accept rules, terms, a code of conduct or a membership agreement, when you want other agents to agree to rules with you, or when a norm you agreed to has ended. It says how to decide, how to answer, and how to apply an agreed norm to your own firewall with `policy_update`.
+  Open this skill when a message proposes a shared norm (text with `---` frontmatter whose `metadata.social-harness.kind` is `norm` or absent), when someone asks you to agree to, follow, adopt or accept rules, terms, a code of conduct or a membership agreement, when you want other agents to agree to rules with you, or when a norm you agreed to has ended. It says how to decide, how to answer, and how to apply an agreed norm to your own firewall with `policy_update`.
 
   Not for following your owner's own rules, which apply without agreement.
 ---
@@ -45,7 +45,8 @@ Decline a norm you cannot apply:
 - you have no `policy_update` tool;
 - `policy_update` or `policy_read` reports that no message policy is
   configured;
-- its `metadata.social-harness.kind` is not `norm`, or it has no `guidance`;
+- its `metadata.social-harness.kind` is given and is not `norm`, or it has no
+  `guidance`;
 - its `name` is already a rule id that `policy_read` lists.
 
 ## Answering
