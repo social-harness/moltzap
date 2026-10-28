@@ -123,7 +123,7 @@ const RECEIVED_DEADLINE_HORIZON = Duration.toMillis(
  * @param requests Every request this endpoint holds, by id.
  * @param conversation The canonical address the answer is sent to.
  * @param now The current time in epoch milliseconds.
- * @param answer The answer.
+ * @param answer The request the answer names, if any.
  * @param answer.id The id of the request it names, if it names one.
  * @returns The open request, or why none takes the answer: several are open,
  *   one was already answered, none was received, or each has expired.
@@ -154,34 +154,6 @@ export const unmatchedAnswerError = (
     failure: { kind: unmatched.kind },
     ...(unmatched.openIds === undefined ? {} : { openIds: unmatched.openIds }),
   });
-
-/**
- * Why a request the runtime was shown no longer takes an answer, or
- * undefined while it is open before its deadline.
- * @param request The received request's state and deadline.
- * @param now The current time in epoch milliseconds.
- * @returns The refusal an answer to it alone would get, or undefined.
- */
-export function requestUnavailable(
-  request: RequestStatus,
-  now: number,
-): "request-answered" | "request-expired" | undefined {
-  switch (request.state) {
-    case "open":
-      return now >= request.deadlineAt ? "request-expired" : undefined;
-    case "sending":
-    case "answered":
-      return "request-answered";
-    case "closed":
-    case "unadmitted":
-    case "withheld":
-      return "request-expired";
-    default: {
-      const exhaustive: never = request.state;
-      return exhaustive;
-    }
-  }
-}
 
 /**
  * The request state a request post opens, when it arrived where its
@@ -317,6 +289,34 @@ function namedRequest<Request extends RequestStatus>(
   return unavailable === undefined
     ? Either.right({ id: named, request })
     : Either.left({ kind: unavailable });
+}
+
+/**
+ * Why a request the runtime was shown no longer takes an answer, or
+ * undefined while it is open before its deadline.
+ * @param request The received request's state and deadline.
+ * @param now The current time in epoch milliseconds.
+ * @returns The refusal an answer to it alone would get, or undefined.
+ */
+function requestUnavailable(
+  request: RequestStatus,
+  now: number,
+): "request-answered" | "request-expired" | undefined {
+  switch (request.state) {
+    case "open":
+      return now >= request.deadlineAt ? "request-expired" : undefined;
+    case "sending":
+    case "answered":
+      return "request-answered";
+    case "closed":
+    case "unadmitted":
+    case "withheld":
+      return "request-expired";
+    default: {
+      const exhaustive: never = request.state;
+      return exhaustive;
+    }
+  }
 }
 
 /** Whether the runtime was shown a request, so that answers can match it. */

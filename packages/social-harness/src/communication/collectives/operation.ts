@@ -1031,13 +1031,17 @@ function claimRequest(
   return Clock.currentTimeMillis.pipe(
     Effect.flatMap((now) =>
       Effect.suspend(() =>
-        Either.match(matchOpenRequest(state.requests, request.to, now, { id }), {
-          onLeft: (unmatched) => Effect.fail(unmatchedAnswerError(id, unmatched)),
-          onRight: () => {
-            request.state = "sending";
-            return Effect.succeed(reopenRequest(request));
+        Either.match(
+          matchOpenRequest(state.requests, request.to, now, { id }),
+          {
+            onLeft: (unmatched) =>
+              Effect.fail(unmatchedAnswerError(id, unmatched)),
+            onRight: () => {
+              request.state = "sending";
+              return Effect.succeed(reopenRequest(request));
+            },
           },
-        }),
+        ),
       ),
     ),
   );
