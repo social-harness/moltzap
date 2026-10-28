@@ -802,18 +802,22 @@ Registry response-card failures do not expose
 SQL detail, response body, or library error crosses the public error
 boundary.
 
-`StartupError` from `@moltzap/registry` is a
-`Data.TaggedError` named
-`RegistryServerStartupError` with `_tag`, `phase`, and an optional closed
-`reason`. Storage failures carry `pre-reset`, `newer-schema`, `signer-mismatch`, or
-`unavailable`, and the error message includes the reason so it reaches the
-process log. Its closed phases are `configuration`, `storage`, and `listener`.
-Configuration covers Effect Config validation, admission credential
-and signing-key loading, and representation or resource fit. Storage
-covers pool acquisition, migration, metadata, and readiness. Listener
-covers listener acquisition and serving startup. Raw configuration,
-filesystem, crypto, SQL, migrator, and Node causes remain private and
-redacted.
+`StartupError` from `@moltzap/registry` is a `Data.TaggedError` with
+`_tag: "RegistryServerStartupError"`, `phase`, optional diagnostic `detail`,
+and optional closed `reason`.
+
+| Phase | Failure |
+| --- | --- |
+| `configuration` | Invalid or missing settings, or an unreadable or invalid signing key |
+| `storage` | Pool acquisition, migration, signer metadata, or readiness |
+| `listener` | Listener acquisition or serving startup |
+
+Storage reasons are `pre-reset`, `newer-schema`, `signer-mismatch`, and
+`unavailable`. The process writes the failure message to stderr and exits
+unsuccessfully. The message includes the phase and any reason or detail;
+configuration details identify the setting and its constraint without echoing
+the supplied value. Raw configuration, key paths, filesystem, crypto, SQL,
+migrator, and Node causes remain private.
 
 Every private RPC member declares its own exact `Schema.Union(...)`.
 Identity exports no aggregate operation-error alias, class array,
@@ -903,18 +907,23 @@ process exit status, as in `sharness-registry`.
 
 ## Registry configuration
 
-Registry defines one private `Config.all` value. `Schema.Config`
-decodes and refines every declared environment value at the boundary,
-`Config.redacted` protects the PostgreSQL URL, admission credential,
-and signing-key path, and `Config.withDefault` owns defaults. The
-executable supplies `ConfigProvider.fromEnv`; tests use
-`ConfigProvider.fromMap`; embedded composition may supply another
-provider. Configuration failure remains
-`RegistryServerStartupError` with phase `configuration`.
+Registry validates the following settings at startup with Effect Config and
+Schema, applies their defaults, and ignores unrelated keys. The executable
+reads the environment through `ConfigProvider.fromEnv`; tests use
+`ConfigProvider.fromMap`, and embedded composition may supply another provider.
+There is no hot reload or public configuration type. Invalid settings fail
+with `RegistryServerStartupError` in the `configuration` phase. The validated
+PostgreSQL URL, admission credential, and signing-key path remain redacted in
+process configuration; diagnostics omit their supplied values.
 
-Effect Config reads the declared keys and ignores other
-unrelated or unused values. There is no custom environment parser, generic
-public configuration type, mutable singleton, or hot reload.
+`sharness-registry --help` prints the setting names, requiredness, and defaults
+to stdout and exits successfully without validating configuration or starting
+the service.
+
+After acquiring the listener, the process writes
+`sharness-registry listening on <origin> (WIRE_VERSION <version>)` to stdout.
+Process-test fixtures use that line to identify the child's listener before
+checking `/healthz`.
 
 The complete Registry process surface is:
 
