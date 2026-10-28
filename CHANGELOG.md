@@ -17,6 +17,14 @@ sections are the codebase's history as MoltZap.
 
 <!-- towncrier release notes start -->
 
+## [2026.1028.8] - 2026-10-28
+
+### Added
+
+- A collective response can name the request it answers with `id`, so a member
+  with several open questions in one conversation can answer each; a reply that
+  names none lists the open ids (#1125).
+
 ## [2026.1028.7] - 2026-10-28
 
 ### Changed
