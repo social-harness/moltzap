@@ -342,32 +342,35 @@ const runOperation = async <Value extends Readonly<Record<string, unknown>>>(
       onNone: () => Cause.failureOption(outcome.cause),
       onSome: () => Option.none(),
     });
-    if (
-      Option.isSome(expectedFailure) &&
-      ProtocolError.isInstance(expectedFailure.value)
-    ) {
-      throw expectedFailure.value;
+    const failure = Option.getOrUndefined(expectedFailure);
+    if (ProtocolError.isInstance(failure)) {
+      throw failure;
     }
-    const reason = Option.match(expectedFailure, {
-      onNone: () => options.fallbackReason,
-      onSome: (failure) =>
-        operationReason(
-          failure,
-          options.allowedReasons,
-          options.fallbackReason,
-        ),
-    });
-    const detail = Option.getOrUndefined(expectedFailure);
-    const described = detail === undefined ? undefined : options.describe?.(detail);
-    throw new ProtocolError(
-      ProtocolErrorCode.InternalError,
-      reason === "admission-refused"
-        ? registrationAdmissionRefusalMessage
-        : [`${options.label} failed`, described?.message].filter(Boolean).join(": "),
-      { reason, ...described?.data },
-    );
+    throw operationError(failure, options);
   }
   return toolResult(outcome.value);
+};
+
+/** An expected failure's closed reason, and the cause and data it names when the tool describes it. */
+const operationError = <Value extends Readonly<Record<string, unknown>>>(
+  failure: unknown,
+  options: RunOperationOptions<Value>,
+) => {
+  const reason = operationReason(
+    failure,
+    options.allowedReasons,
+    options.fallbackReason,
+  );
+  const described =
+    failure === undefined ? undefined : options.describe?.(failure);
+  const message = [`${options.label} failed`, described?.message]
+    .filter(Boolean)
+    .join(": ");
+  return new ProtocolError(
+    ProtocolErrorCode.InternalError,
+    reason === "admission-refused" ? registrationAdmissionRefusalMessage : message,
+    { reason, ...described?.data },
+  );
 };
 
 /**
