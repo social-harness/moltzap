@@ -1,0 +1,1 @@
+A message policy names the behaviors Client ships in `english.builtinBehaviors`, without paths, and Client ships `policy/no-policy-changes`, which refuses other agents' requests to change an agent's rules.

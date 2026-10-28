@@ -14,6 +14,7 @@ import { constants } from "node:fs";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Configuration reads the configured policy file before the daemon composes its platform services.
 import { type FileHandle, lstat, open, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep, win32 } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   type DecisionProvider,
   DecisionProviderError,
@@ -36,6 +37,11 @@ import {
 
 /** Larger than any document of 256 editable rules and the fixed rules beside them. */
 const MAXIMUM_POLICY_BYTES = 1_048_576;
+
+/** The installed Client's own `behaviors/` directory, which `english.builtinBehaviors` names into. */
+const BUILTIN_BEHAVIORS = fileURLToPath(
+  new URL("../../../behaviors/", import.meta.url),
+);
 
 /** A key is one token; surrounding whitespace, such as a trailing newline, is ignored. */
 const decisionProviderKey = Schema.Trim.pipe(
@@ -127,13 +133,16 @@ export function policyConfigurationError(
   behaviorReason?: BehaviorFailure,
 ): MessagePolicyConfigurationError {
   const category = behaviorReason === undefined ? "" : ` (${behaviorReason})`;
+  const heading = path?.startsWith("english.builtinBehaviors.")
+    ? "built-in-behaviors"
+    : "behaviors";
   return new MessagePolicyConfigurationError({
     reason,
     behaviorReason,
     message:
       path === undefined
         ? failureMessages[reason]
-        : `${failureMessages[reason]}; invalid at ${path}${category}. Docs: https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/message-policy.md#behaviors`,
+        : `${failureMessages[reason]}; invalid at ${path}${category}. Docs: https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/message-policy.md#${heading}`,
   });
 }
 
@@ -201,11 +210,7 @@ function resolveBehaviors(policy: MessagePolicy, root: string) {
       behaviorRulePaths,
       initialRuleCount: english.initialRules.length,
     };
-    const fixed = yield* loadBehaviors(
-      english.fixedBehaviors ?? [],
-      "fixedBehaviors",
-      state,
-    );
+    const fixed = yield* loadFixedBehaviors(english, state);
     const initial = yield* loadBehaviors(
       english.initialBehaviors ?? [],
       "initialBehaviors",
@@ -230,15 +235,31 @@ function resolveBehaviors(policy: MessagePolicy, root: string) {
   });
 }
 
+/** Fixed behaviors from the policy's directory, then built-in behaviors from Client's own. */
+function loadFixedBehaviors(
+  english: NonNullable<MessagePolicy["english"]>,
+  state: BehaviorState,
+) {
+  return Effect.all([
+    loadBehaviors(english.fixedBehaviors ?? [], "fixedBehaviors", state),
+    loadBehaviors(english.builtinBehaviors ?? [], "builtinBehaviors", {
+      ...state,
+      root: BUILTIN_BEHAVIORS,
+    }),
+  ]).pipe(Effect.map((loaded) => loaded.flat()));
+}
+
+interface BehaviorState {
+  readonly root: string;
+  readonly ids: Set<string>;
+  readonly behaviorRulePaths: Map<string, string>;
+  readonly initialRuleCount: number;
+}
+
 function loadBehaviors(
   directories: readonly string[],
-  field: "fixedBehaviors" | "initialBehaviors",
-  state: {
-    readonly root: string;
-    readonly ids: Set<string>;
-    readonly behaviorRulePaths: Map<string, string>;
-    readonly initialRuleCount: number;
-  },
+  field: "fixedBehaviors" | "builtinBehaviors" | "initialBehaviors",
+  state: BehaviorState,
 ) {
   let count = state.initialRuleCount;
   return Effect.forEach(
@@ -264,7 +285,7 @@ function loadBehaviors(
   );
 }
 
-/** Relative paths must stay in the canonical policy directory after symlink resolution. */
+/** Relative paths must stay in the canonical root, the policy directory or Client's `behaviors/`, after symlink resolution. */
 function contained(root: string, path: string) {
   const child = relative(root, path);
   return !isAbsolute(child) && child !== ".." && !child.startsWith(`..${sep}`);

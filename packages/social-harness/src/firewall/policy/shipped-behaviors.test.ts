@@ -1,9 +1,9 @@
-/** @file Shipped collective behaviors install through owner documents as readable English policy. */
+/** @file Behaviors Client ships install by name from the installed package as readable English policy. */
 
 import { live as it } from "@effect/vitest";
 import { Effect } from "effect";
-// eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Tests stage the published behavior directories beside an owner policy document.
-import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+// eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Tests read the published behavior files and write an owner policy document.
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect } from "vitest";
@@ -14,23 +14,16 @@ import {
 import { readCredential } from "../../daemon/credentials.js";
 import { firewallInstallation, installEditableFirewall } from "./index.js";
 
-const BEHAVIORS = [
-  "one-gather",
-  "announce-once",
-  "result-settles",
-  "empty-acknowledgement",
-  "facilitator",
-];
-const SOURCE = fileURLToPath(
-  new URL("../../../behaviors/collectives", import.meta.url),
+const SOURCE = fileURLToPath(new URL("../../../behaviors", import.meta.url));
+const BEHAVIORS = readdirSync(SOURCE).flatMap((pack) =>
+  readdirSync(join(SOURCE, pack)).map((name) => `${pack}/${name}`),
 );
 
 it(
-  "loads shipped behaviors from a document and lists their full text in policy_read",
+  "installs every shipped behavior named in builtinBehaviors and lists its full text in policy_read",
   Effect.fn(function* () {
-    const path = stagePolicy();
     const installation = yield* firewallInstallation(
-      { messagePolicyFile: path },
+      { messagePolicyFile: writePolicy() },
       readCredential,
     );
     const options = yield* Effect.fromNullable(installation.options);
@@ -38,8 +31,11 @@ it(
       Effect.gen(function* () {
         const installed = yield* installEditableFirewall(options, store);
         const policy = yield* installed.policy.read();
-        for (const id of BEHAVIORS) {
-          const source = readFileSync(join(SOURCE, id, "BEHAVIOR.md"), "utf8");
+        for (const name of BEHAVIORS) {
+          const source = readFileSync(
+            join(SOURCE, name, "BEHAVIOR.md"),
+            "utf8",
+          );
           const text = source
             .split(/^---\s*$/mu)
             .at(-1)
@@ -48,8 +44,8 @@ it(
           expect(policy.fixedRules).toContainEqual(
             expect.objectContaining({
               from: "english",
-              id,
-              kind: "norm",
+              id: name.split("/")[1],
+              kind: /kind: (\w+)/u.exec(source)?.[1],
               text,
             }),
           );
@@ -59,13 +55,8 @@ it(
   }),
 );
 
-function stagePolicy() {
-  const root = stateDirectory();
-  const directory =
-    "node_modules/@moltzap/social-harness/behaviors/collectives";
-  mkdirSync(join(root, directory), { recursive: true });
-  cpSync(SOURCE, join(root, directory), { recursive: true });
-  const path = join(root, "message-policy.json");
+function writePolicy() {
+  const path = join(stateDirectory(), "message-policy.json");
   writeFileSync(
     path,
     JSON.stringify({
@@ -75,7 +66,7 @@ function stagePolicy() {
       incoming: [{ use: "acknowledgements" }],
       decisionProvider: { kind: "unavailable" },
       english: {
-        fixedBehaviors: BEHAVIORS.map((id) => `${directory}/${id}`),
+        builtinBehaviors: BEHAVIORS,
       },
       facts: [
         {
