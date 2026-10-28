@@ -4,13 +4,16 @@ import { fromJsonSchema, type JsonSchemaType } from "@modelcontextprotocol/serve
 import { Schema } from "effect";
 import { expect, it } from "vitest";
 import { exactStruct } from "../../encoding/exact.js";
-import { resultSchema } from "./schemas.js";
+import { resultSchema } from "./catalog-schemas.js";
 
-const Entry = exactStruct({ name: Schema.String }).annotations({
+const entrySchema = exactStruct({ name: Schema.String }).annotations({
   identifier: "Entry",
 });
-const Page = Schema.Union(
-  exactStruct({ kind: Schema.Literal("page"), entries: Schema.Array(Entry) }),
+const pageSchema = Schema.Union(
+  exactStruct({
+    kind: Schema.Literal("page"),
+    entries: Schema.Array(entrySchema),
+  }),
   exactStruct({ kind: Schema.Literal("empty") }),
 );
 const laterPage = {
@@ -20,7 +23,7 @@ const laterPage = {
 };
 
 it("lists a result schema that accepts fields a later release adds, at every depth, and checks the daemon's result exactly", () => {
-  const schema = resultSchema(Page);
+  const schema = resultSchema(pageSchema);
   const listed = fromJsonSchema(
     // eslint-disable-next-line agent-code-guard/require-assertion-rationale -- The listed JSON Schema is the object a host hands the SDK.
     schema["~standard"].jsonSchema.output({

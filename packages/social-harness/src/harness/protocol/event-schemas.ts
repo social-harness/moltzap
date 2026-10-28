@@ -2,7 +2,7 @@
 
 import type { ProtocolError } from "@modelcontextprotocol/server";
 import { type Effect, Schema } from "effect";
-import { requestSchema, resultSchema } from "./schemas.js";
+import { requestSchema, resultSchema } from "./catalog-schemas.js";
 /** Daemon event delivery uses the same host-safe wire values as polling receivers. */
 export {
   type ConsumerMetadata,

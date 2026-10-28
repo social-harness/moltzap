@@ -97,6 +97,7 @@ export const managementRegisterRequestSchema = exactStruct({
 });
 
 /** Registry domain outcomes returned by daemon registration. */
+// eslint-disable-next-line agent-code-guard/no-exported-brand-constructor -- The MCP catalog projects this result to JSON Schema; readers decode it additively with this schema.
 export const managementRegisterResultSchema = Schema.Union(
   Schema.Struct({
     kind: Schema.Literal("registered"),
@@ -109,6 +110,7 @@ export const managementRegisterResultSchema = Schema.Union(
 );
 
 /** The daemon lifecycle visible to the loopback operator. */
+// eslint-disable-next-line agent-code-guard/no-exported-brand-constructor -- The MCP catalog projects this result to JSON Schema; readers decode it additively with this schema.
 export const managementStatusResultSchema = Schema.Union(
   Schema.Struct({ kind: Schema.Literal("unregistered") }),
   Schema.Struct({
@@ -124,6 +126,7 @@ export const managementSearchAgentsRequestSchema = Schema.Union(
 ).annotations({ parseOptions: exactParseOptions });
 
 /** Registry lookup result, with the found agent's view from the verified card. */
+// eslint-disable-next-line agent-code-guard/no-exported-brand-constructor -- The MCP catalog projects this result to JSON Schema; readers decode it additively with this schema.
 export const managementSearchAgentsResultSchema = Schema.Union(
   Schema.Struct({
     kind: Schema.Literal("found"),
@@ -175,6 +178,7 @@ export const managementReadConversationRequestSchema = Schema.Union(
 ).annotations({ parseOptions: exactParseOptions });
 
 /** Complete proof-bearing local certified-history page. */
+// eslint-disable-next-line agent-code-guard/no-exported-brand-constructor -- The MCP catalog projects this result to JSON Schema; readers decode it additively with this schema.
 export const managementReadConversationResultSchema = Schema.Struct({
   kind: Schema.Literal("page"),
   records: Schema.Array(historyRecord).pipe(Schema.maxItems(50)),

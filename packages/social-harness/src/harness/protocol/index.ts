@@ -49,8 +49,11 @@ export {
   harnessEmptyResultSchema,
   harnessFailureReasons,
   registrationAdmissionRefusalMessage,
+  validationIssues,
+} from "./schemas.js";
+/** The catalog lists closed request schemas and result schemas a later release can extend. */
+export {
   requestSchema,
   type ResultSchema,
   resultSchema,
-  validationIssues,
-} from "./schemas.js";
+} from "./catalog-schemas.js";
