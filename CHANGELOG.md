@@ -17,6 +17,31 @@ sections are the codebase's history as MoltZap.
 
 <!-- towncrier release notes start -->
 
+## [2026.1028.12] - 2026-10-28
+
+### Changed
+
+- The `inbox.pending` notification's `eventId` starts with `wake_`, so an `evt_`
+  id always names an inbox item `read_event` can return (#1523).
+- `no-acknowledgement-posts` has one implementation, shared by the
+  `acknowledgements` built-in and the collective norm bundle: an emoji, symbol,
+  digit, question mark or link makes a group post more than an acknowledgement,
+  and the built-in's outgoing check now uses the bundle's acknowledgement and
+  filler words (#1545).
+
+### Fixed
+
+- Every `sharnessd` and `sharnessd-launcher` configuration error with a fix, and
+  the launcher's `--help`, ends with a `Docs:` link to the entry that gives it
+  (#1479).
+- Refusals name what failed: `policy_update` names the failing rule, its place
+  in the update and the problem; invalid tool arguments name each field and its
+  rule in the message; and an answer sent where no question is open names where
+  questions are open (#1514).
+- The daemon's listed tool result schemas accept fields they do not name, so a
+  host that listed this release's tools accepts results from later releases
+  (#1532).
+
 ## [2026.1028.11] - 2026-10-28
 
 ### Changed
