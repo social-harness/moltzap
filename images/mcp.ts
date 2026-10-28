@@ -34,7 +34,6 @@ import {
 } from "effect";
 import { randomBytes } from "node:crypto";
 
-/** The one MCP revision `sharnessd` accepts. */
 const MCP_PROTOCOL_VERSION = "2026-07-28";
 /** JSON-RPC's invalid-params code: the daemon refused the arguments itself. */
 const INVALID_PARAMS = -32602;

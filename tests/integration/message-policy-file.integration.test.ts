@@ -9,9 +9,10 @@
 import { FileSystem } from "@effect/platform";
 import {
   Client,
+  type ClientOptions,
   StreamableHTTPClientTransport,
 } from "@modelcontextprotocol/client";
-import { Effect, Schedule, Schema } from "effect";
+import { Effect, Schema } from "effect";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -31,6 +32,18 @@ import {
 import { arrayContaining, objectContaining } from "./test-matchers.js";
 
 const FORMAT = "org.social-harness/message-policy/v1";
+
+const CURRENT_CLIENT: ClientOptions = {
+  versionNegotiation: { mode: { pin: "2026-07-28" } },
+};
+/**
+ * A 2025-11-25 client: the SDK pins only 2026-07-28 and later, so this one
+ * runs the `initialize` handshake offering and accepting only 2025-11-25.
+ */
+const OLDER_CLIENT: ClientOptions = {
+  versionNegotiation: { mode: "legacy" },
+  supportedProtocolVersions: ["2025-11-25"],
+};
 
 const acquirePolicyFileScenario = Effect.gen(function* () {
   const infrastructure = yield* acquireProcessInfrastructure;
@@ -60,7 +73,7 @@ const acquirePolicyFileScenario = Effect.gen(function* () {
   const management = yield* acquireDaemonManagementClient(alice.endpoint);
   yield* management.register(makeRegistrationRequest(alice));
   const client = yield* connect(alice.endpoint);
-  return { client };
+  return { client, endpoint: alice.endpoint };
 });
 
 const CREDENTIAL = "sk-proj-integrationCredential1234";
@@ -88,6 +101,25 @@ const enforcedCodeRules = Effect.gen(function* () {
   });
 });
 
+const olderMcpClient = Effect.gen(function* () {
+  const scenario = yield* acquirePolicyFileScenario;
+  const client = yield* connect(scenario.endpoint, OLDER_CLIENT);
+  const catalog = yield* Effect.tryPromise(() => client.listTools());
+  expect(catalog.tools).toEqual(
+    arrayContaining([objectContaining({ name: "policy_read" })]),
+  );
+
+  const policy = yield* call(client, "policy_read").pipe(
+    Effect.flatMap(Schema.decodeUnknown(fixedRulesSchema)),
+  );
+  expect(policy.fixedRules).toEqual(
+    arrayContaining([
+      objectContaining({ from: "code", id: "credentials" }),
+      objectContaining({ from: "code", id: "acknowledgement" }),
+    ]),
+  );
+});
+
 const invalidDocument = Effect.gen(function* () {
   const infrastructure = yield* acquireProcessInfrastructure;
   const stock = yield* makeDaemonProcessFixture(infrastructure, "carol");
@@ -109,6 +141,12 @@ const invalidDocument = Effect.gen(function* () {
 
 describe("stock sharnessd with a message-policy file", () => {
   it(
+    "lists tools and reads policy with an MCP 2025-11-25 client",
+    processTrace(olderMcpClient.pipe(Effect.scoped)),
+    60_000,
+  );
+
+  it(
     "enforces the document's code rules",
     processTrace(enforcedCodeRules.pipe(Effect.scoped)),
     60_000,
@@ -125,9 +163,6 @@ function expectDocumentRulesPublished(client: Client) {
   return Effect.gen(function* () {
     const policy = yield* call(client, "policy_read").pipe(
       Effect.flatMap(Schema.decodeUnknown(fixedRulesSchema)),
-      Effect.retry(
-        Schedule.intersect(Schedule.spaced("25 millis"), Schedule.recurs(200)),
-      ),
     );
     expect(policy.fixedRules).toEqual(
       arrayContaining([
@@ -161,15 +196,12 @@ function withPolicy(
   };
 }
 
-function connect(endpoint: URL) {
+function connect(endpoint: URL, negotiation = CURRENT_CLIENT) {
   return Effect.acquireRelease(
     Effect.gen(function* () {
       const client = new Client(
         { name: "message-policy-file", version: "1" },
-        {
-          capabilities: {},
-          versionNegotiation: { mode: { pin: "2026-07-28" } },
-        },
+        { capabilities: {}, ...negotiation },
       );
       yield* Effect.tryPromise(() =>
         client.connect(new StreamableHTTPClientTransport(endpoint)),

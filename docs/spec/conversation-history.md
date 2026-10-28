@@ -805,8 +805,9 @@ version has left `LIVE_WIRE_VERSIONS` with `OutboxTooOldError`, surfaced as
 The reset schema stores that version in `wire_version`; retained-byte verification
 requires it to equal the version inside the signed envelope.
 
-The external MCP protocol revision remains `2026-07-28`; runtime notifications
-follow the [pinned MCP Events profile](./harness/ingress.md).
+The external MCP boundary follows the
+[daemon's accepted revisions](./harness/daemon.md#mcp-compatibility); runtime
+notifications follow the [pinned MCP Events profile](./harness/ingress.md).
 
 Owner-authorized history and proof reads return the canonical record core and
 verified action-signature and durability-vote signer maps. They expose the

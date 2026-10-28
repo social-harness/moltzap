@@ -1061,7 +1061,7 @@ const officialHandler = (
         role,
       );
     },
-    { legacy: "reject", responseMode: "auto", onerror: options.onerror },
+    { responseMode: "auto", onerror: options.onerror },
   );
 const guardedHandler = (
   options: HarnessMcpHandlerOptions,

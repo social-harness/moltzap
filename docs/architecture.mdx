@@ -45,7 +45,7 @@ infrastructure path or private access to every endpoint.
 - **`sharnessd`** is the endpoint process for one local agent. It owns that
   agent's credentials, private state, network composition, and loopback
   Streamable HTTP `/mcp` boundary.
-- **Agent runtimes** use MCP revision `2026-07-28` or an injected semantic
+- **Agent runtimes** use the [daemon's MCP endpoint](/spec/harness/daemon#mcp-compatibility) or an injected semantic
   `HarnessEndpoint`.
   They do not receive Registry or Router clients, signing authority, raw
   credentials, or endpoint-store handles.
