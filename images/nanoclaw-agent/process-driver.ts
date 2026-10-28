@@ -61,6 +61,20 @@ export const AGENT_CREDENTIAL_VARIABLES = Object.freeze([
   "CLAUDE_CODE_OAUTH_TOKEN",
 ]);
 
+/**
+ * The HTTPS proxy a provider gateway serves Claude Code through and the
+ * authority that proxy signs the provider's host with, forwarded whenever
+ * the host's environment carries them. Both spellings are kept, because the
+ * tools Claude Code runs read the lowercase ones.
+ */
+export const AGENT_PROXY_VARIABLES = Object.freeze([
+  "HTTPS_PROXY",
+  "https_proxy",
+  "NO_PROXY",
+  "no_proxy",
+  "NODE_EXTRA_CA_CERTS",
+]);
+
 const CAPABILITIES: DriverCapabilities = Object.freeze({
   isolationTiers: Object.freeze(["container" as const]),
   admissionEnforced: false,
@@ -218,8 +232,8 @@ export type OnHostShutdown = (stop: () => Promise<undefined>) => void;
  * session's notional container to the outer container's file system,
  * `workingDirectory` is the agent's container working directory, and
  * `baseEnvironment` replaces the agent's inherited environment, which by
- * default carries only the host's Claude Code sign-in variables and
- * telemetry settings, `HOME`, `NODE_ENV`, `PATH` and `TMPDIR`.
+ * default carries only the host's Claude Code sign-in variables, telemetry
+ * settings and provider proxy, `HOME`, `NODE_ENV`, `PATH` and `TMPDIR`.
  */
 export interface ProcessDriverOptions {
   readonly policy: unknown;
@@ -379,7 +393,11 @@ function containerPathResolver(
 function defaultBaseEnvironment(): Readonly<Record<string, string>> {
   return {
     ...Object.fromEntries(
-      [...AGENT_CREDENTIAL_VARIABLES, ...AGENT_TELEMETRY_VARIABLES].flatMap(
+      [
+        ...AGENT_CREDENTIAL_VARIABLES,
+        ...AGENT_TELEMETRY_VARIABLES,
+        ...AGENT_PROXY_VARIABLES,
+      ].flatMap(
         (name) => {
           const value = process.env[name];
           return value === undefined ? [] : [[name, value]];
