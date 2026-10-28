@@ -134,7 +134,7 @@ it("preserves history through a synthetic next-version step and writes a private
         recovered,
         recovered.certifiedRecords,
       ),
-    ).toEqual([history.record]);
+    ).toEqual([expect.objectContaining({ record: history.record })]);
   }));
 
 it("rolls a failed step back and replaces both a prior backup and leftover temporary file on retry", () =>

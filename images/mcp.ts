@@ -61,18 +61,12 @@ class ToolFailure extends Data.TaggedError("ToolFailure")<{
   readonly entry: string;
 }> {}
 
-/** The agent name inside the encoded AgentCard's base64url JSON payload. */
-const cardPayload = Schema.compose(
-  Schema.StringFromBase64Url,
-  Schema.parseJson(Schema.Struct({ agentName: Schema.String })),
-);
-
 /** The `status` fields this script reads. */
 const statusResult = Schema.Union(
   Schema.Struct({ kind: Schema.Literal("unregistered") }),
   Schema.Struct({
     kind: Schema.Literal("active"),
-    agentCard: Schema.Struct({ payload: cardPayload }),
+    agent: Schema.Struct({ agentName: Schema.String }),
   }),
 );
 
@@ -151,7 +145,7 @@ function register(
     if (status.kind === "unregistered") {
       return yield* submit(client, name);
     }
-    const active = status.agentCard.payload.agentName;
+    const active = status.agent.agentName;
     if (active !== name) {
       return yield* Effect.fail(
         commandError(

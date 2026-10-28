@@ -16,13 +16,21 @@ import {
   isStrictlyAscending,
 } from "../../encoding/identifier.js";
 import { AgentId, AgentName, PrincipalId } from "../../identity/agents.js";
-import { AgentCard } from "../../identity/cards.js";
+import { AgentCard, AgentView } from "../../identity/cards.js";
 import {
   OperationId,
   RegistryLookupRequest,
 } from "../../identity/registry/contract.js";
 
 const encodedAgentCard = Schema.encodedSchema(AgentCard);
+
+/**
+ * The agent's view on a register or status result, or as a record's author.
+ * This daemon always sends it. The schema leaves it optional because the
+ * mixed-release gate decodes these results from an earlier daemon, which
+ * sends none.
+ */
+const agentView = Schema.optional(AgentView);
 
 const messageAddress = Schema.Union(AgentAddress, GroupAddress).annotations({
   identifier: "MessageAddress",
@@ -63,6 +71,8 @@ const orderedSignerEvidence = Schema.NonEmptyArray(signerEvidence).pipe(
 );
 
 const historyRecord = exactStruct({
+  /** The record's author, from its conversation's verified membership and outside the signed bytes. */
+  author: agentView,
   recordHash: RecordHash,
   recordCore: RecordCore,
   routerAnchor: RouterAnchor,
@@ -91,6 +101,7 @@ export const managementRegisterResultSchema = Schema.Union(
   exactStruct({
     kind: Schema.Literal("registered"),
     agentCard: encodedAgentCard,
+    agent: agentView,
   }),
   exactStruct({ kind: Schema.Literal("name_taken") }),
   exactStruct({ kind: Schema.Literal("key_already_registered") }),
@@ -103,6 +114,7 @@ export const managementStatusResultSchema = Schema.Union(
   exactStruct({
     kind: Schema.Literal("active"),
     agentCard: encodedAgentCard,
+    agent: agentView,
   }),
 ).annotations({ parseOptions: exactParseOptions });
 
@@ -111,13 +123,12 @@ export const managementSearchAgentsRequestSchema = Schema.Union(
   ...RegistryLookupRequest.members,
 ).annotations({ parseOptions: exactParseOptions });
 
-/** Exact Registry lookup with identity fields from the verified card. */
+/** Exact Registry lookup with the found agent's view from the verified card. */
 export const managementSearchAgentsResultSchema = Schema.Union(
   exactStruct({
     kind: Schema.Literal("found"),
-    agentId: AgentId,
-    agentName: AgentName,
     agentCard: encodedAgentCard,
+    agent: AgentView,
   }),
   exactStruct({ kind: Schema.Literal("not_found") }),
 ).annotations({ parseOptions: exactParseOptions });

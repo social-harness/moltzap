@@ -6,6 +6,7 @@
  */
 
 import { Effect, type ParseResult, Schema } from "effect";
+import type { VerifiedAgentCard } from "../../../identity/cards.js";
 import type { Ed25519PublicKey } from "../../../identity/keys.js";
 import type {
   EndpointEngineInput,
@@ -27,6 +28,7 @@ import {
   GenesisAnchorBody,
   type GenesisAnchorBody as GenesisAnchorBodyValue,
   hashAnchor,
+  memberCard,
   MembershipDescriptor,
   type RecordCore,
   RecordCore as RecordCoreSchema,
@@ -191,13 +193,20 @@ export function readStoredRecord(
  * @param recovery Store snapshot holding the memberships and anchors the
  *   records name.
  * @param records Durable record rows, in page order.
- * @returns The complete verified records, in page order.
+ * @returns The complete verified records, each with its author's verified
+ *   card from the record's membership, in page order.
  */
 export function readStoredHistory(
   registrySignerPublicKey: Ed25519PublicKey,
   recovery: EndpointRecovery,
   records: readonly StoredCertifiedRecord[],
-): Effect.Effect<readonly CertifiedRecord[], StoredRowError> {
+): Effect.Effect<
+  ReadonlyArray<{
+    readonly record: CertifiedRecord;
+    readonly author: VerifiedAgentCard;
+  }>,
+  StoredRowError
+> {
   const named = new Set(records.map((stored) => stored.conversationId));
   return Effect.forEach(
     recovery.memberships.filter((row) => named.has(row.conversationId)),
@@ -214,7 +223,9 @@ export function readStoredHistory(
           );
           return membership === undefined
             ? Effect.fail(persistenceFailure())
-            : readStoredRecord(membership, recovery, stored);
+            : readStoredRecord(membership, recovery, stored).pipe(
+                Effect.flatMap((record) => withAuthor(membership, record)),
+              );
         },
         { concurrency: 1 },
       ),
@@ -780,6 +791,21 @@ function chainContains(
     }
   }
   return false;
+}
+
+/**
+ * The record with its author's card. Record verification already requires the
+ * author to be a member; the lookup's type does not carry that, so a missing
+ * card is a corrupt row like any other.
+ */
+function withAuthor(membership: VerifiedMembership, record: CertifiedRecord) {
+  const author = memberCard(
+    membership,
+    record.actionCertifiedRecord.recordCore.action.postIntent.authorAgentId,
+  );
+  return author === undefined
+    ? Effect.fail(persistenceFailure())
+    : Effect.succeed({ record, author });
 }
 
 function persistenceFailure(): RouterWorkerPersistenceError {
