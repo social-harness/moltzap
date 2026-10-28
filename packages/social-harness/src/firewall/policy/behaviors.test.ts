@@ -614,12 +614,12 @@ it("composes and encodes a decoded inline policy without adding behavior paths",
   }));
 
 it.each([
-  ["fixedBehaviors", "fixed"],
-  ["initialBehaviors", "fixed"],
-  ["builtinBehaviors", "policy/no-policy-changes"],
+  { field: "fixedBehaviors", entry: "fixed" },
+  { field: "initialBehaviors", entry: "fixed" },
+  { field: "builtinBehaviors", entry: "policy/no-policy-changes" },
 ] as const)(
-  "refuses unresolved %s in trusted composition",
-  (field, entry) =>
+  "refuses unresolved $field in trusted composition",
+  ({ field, entry }) =>
     Effect.gen(function* () {
       const { document } = fixture();
       const policy = yield* decodeMessagePolicy(

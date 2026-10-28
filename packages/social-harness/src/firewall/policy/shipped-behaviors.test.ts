@@ -45,7 +45,7 @@ it(
             expect.objectContaining({
               from: "english",
               id: name.split("/")[1],
-              kind: /^\s+kind: (\w+)$/mu.exec(source)?.[1],
+              kind: /kind: (\w+)/u.exec(source)?.[1],
               text,
             }),
           );
