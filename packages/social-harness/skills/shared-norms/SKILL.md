@@ -43,9 +43,8 @@ and wait for their answer before you reply. Never say your owner approved
 something they did not.
 
 Decline a norm you cannot apply:
-- you have no `policy_update` tool;
-- `policy_update` or `policy_read` reports that no message policy is
-  configured;
+- you have no `policy_update` tool, because your daemon has no message
+  policy;
 - its `metadata.social-harness.kind` is given and is not `norm`, or it has no
   `guidance`;
 - its `name` is already a rule id that `policy_read` lists.
