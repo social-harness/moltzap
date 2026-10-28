@@ -27,6 +27,7 @@ import {
 } from "effect";
 import type { CollectiveError } from "../../communication/collectives/forms.js";
 import type { SendError } from "../../communication/conversations/errors.js";
+import type { FirewallSendError } from "../../firewall/outcome/index.js";
 import {
   firewallDecisionsRequestSchema,
   firewallDecisionsSchema,
@@ -35,7 +36,6 @@ import {
   policyUpdateResultSchema,
   policyUpdateSchema,
 } from "../../firewall/index.js";
-import type { FirewallSendError } from "../../firewall/outcome/index.js";
 import {
   decodeHarnessSendCall,
   harnessAcknowledgeDeliveryRequestJsonSchema,

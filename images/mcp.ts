@@ -399,12 +399,18 @@ function toolFailure(tool: string, cause: unknown): ToolFailure {
       entry: "tool-failed",
     });
   }
-  const { reason, detail, issues = [] } = Option.getOrElse(
+  const {
+    reason,
+    detail,
+    issues = [],
+  } = Option.getOrElse(
     Schema.decodeUnknownOption(failureData)(cause.data),
     (): typeof failureData.Type => ({}),
   );
   const said =
-    reason === undefined || MESSAGE_REASONS.has(reason) ? cause.message : reason;
+    reason === undefined || MESSAGE_REASONS.has(reason)
+      ? cause.message
+      : reason;
   return new ToolFailure({
     message: `${tool} failed: ${[
       said,
