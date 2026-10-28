@@ -10,10 +10,9 @@ On main, `images.yml` publishes this image as
 `ghcr.io/social-harness/daemon:inputs-<daemon-key>`, a cosign-signed index for
 amd64 and arm64. `<daemon-key>` is the `daemon` value that `pnpm image:keys`
 prints at a release commit, or at a commit whose `images.yml` run published,
-without its `sha256:` prefix. Releases do not tag this image. The package
-starts private, so pulling it needs access until it is public. See
+without its `sha256:` prefix. See
 [Publication and versions](../../docs/spec/layer-interfaces.md#publication-and-versions)
-for the verification identity.
+for release tags and the verification identity.
 
 For local verification, build the image from the repository root:
 

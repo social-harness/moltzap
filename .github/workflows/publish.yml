@@ -12,15 +12,30 @@ name: Publish to npm
 # code OpenClaw loads for it. The release commit records every manifest. The
 # trigger is release-on-merge.yml after CI passes on main, or manual dispatch
 # for resets, resumes and start_new_version. The bump and the resume each
-# resolve committed image input keys to signed indexes; the bump polls
-# for missing keys for up to 45 minutes, then fails before the release commit
-# with a rerun hint. After npm publication, `images` runs no repository install
-# or build: it tags the indexes the resume resolved with the release version,
-# then creates the GitHub release with the version's CHANGELOG.md section as
-# its notes and lists all four digests after it, so the latest release always
-# names published images. Existing version tags are
+# resolve the committed Registry and Router input keys to signed indexes; the
+# bump polls for missing keys for up to 45 minutes, then fails before the
+# release commit with a rerun hint. After npm publication, `images` runs no
+# repository install or build: it tags the indexes the resume resolved with the
+# release version, then creates the GitHub release with the version's
+# CHANGELOG.md section as its notes and lists both digests after it, so the
+# latest release always names published images. Existing version tags are
 # checked and skipped on reruns.
-# After image tagging, dispatch sends the release version and digests to deployment.
+# After that tagging, dispatch sends the release version and digests to deployment.
+#
+# The daemon and OpenClaw agent images never hold up a release: npm
+# publication, `images` and dispatch run without them, and a release is
+# complete without their tags. The daemon key hashes the manifests a release
+# writes, so only images.yml's run for the release commit publishes it, and a
+# later push to main can replace that run while it waits. After `images`,
+# `agent-images` waits up to 45 minutes for the release commit's daemon and
+# OpenClaw agent input tags, tags them with the release version and adds their
+# digests to the release notes; a key still missing fails it with what to
+# re-run. The daemon index must carry the signature of images.yml at the
+# release commit. The OpenClaw agent key, like the Registry and Router keys,
+# survives many commits, so its signature proves only that images.yml built it
+# on main: a dependency compromised in `build`, which passes the keys on, could
+# name an older signed OpenClaw agent index for the release to tag. That risk
+# is accepted.
 #
 # A release takes two runs, so npm's provenance names the commit whose tree
 # the tarballs were packed from. The dispatched run bumps: it writes the
@@ -102,7 +117,6 @@ defaults:
 # the selection checks.
 env:
   RELEASE_PACKAGES: packages/social-harness plugins/openclaw
-  RELEASE_IMAGES: registry router daemon openclaw-agent
   IMAGE_CERTIFICATE_IDENTITY: https://github.com/social-harness/moltzap/.github/workflows/images.yml@refs/heads/main
   IMAGE_CERTIFICATE_OIDC_ISSUER: https://token.actions.githubusercontent.com
 
@@ -121,6 +135,7 @@ jobs:
       packages: ${{ steps.select.outputs.packages }}
       release-commit: ${{ steps.plan.outputs.release-commit }}
       images: ${{ steps.resolve.outputs.images }}
+      agent-keys: ${{ steps.agent-keys.outputs.keys }}
     steps:
       # Full history: the plan step looks for the last release commit.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -169,8 +184,8 @@ jobs:
                 *) exit "$STATUS" ;;
               esac
             done
-            # A release is complete once all images carry its version tag and
-            # its release body lists the digest each tag names.
+            # A release is complete once Registry and Router carry its version
+            # tag and its release body lists the digest each tag names.
             if [ -z "$MISSING" ]; then
               BODY=""
               if BODY=$(gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" --json body --jq .body 2>"$RUNNER_TEMP/release-error"); then
@@ -182,7 +197,7 @@ jobs:
                 exit 1
               fi
               COMPLETE=true
-              for service in $RELEASE_IMAGES; do
+              for service in registry router; do
                 image="ghcr.io/social-harness/$service"
                 STATUS=0
                 digest=$(scripts/release/ghcr-digest.sh "$image:$VERSION") || STATUS=$?
@@ -313,32 +328,27 @@ jobs:
           pnpm install --no-frozen-lockfile --ignore-scripts
           echo "packages=$SELECTED" >> "$GITHUB_OUTPUT"
 
-      # Registry and Router keys survive the release commit. The daemon key
-      # includes released seed manifests, so only the resume resolves all
-      # images from the committed release tree that images.yml builds.
+      # Registry and Router input keys ignore what a release writes, so the
+      # bump and the resume of one release resolve the same indexes. The
+      # images job tags the ones this step passes on.
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         if: (steps.plan.outputs.mode == 'bump' || steps.plan.outputs.mode == 'resume') && steps.select.outputs.packages != ''
-      - name: Resolve the release images
+      - name: Resolve the release service images
         id: resolve
         if: (steps.plan.outputs.mode == 'bump' || steps.plan.outputs.mode == 'resume') && steps.select.outputs.packages != ''
         env:
           DOCKER_CONFIG: ${{ runner.temp }}/anonymous-docker
-          MODE: ${{ steps.plan.outputs.mode }}
         run: |
           mkdir -p "$DOCKER_CONFIG"
-          services="registry router"
-          if [ "$MODE" = resume ]; then
-            services=$RELEASE_IMAGES
-          fi
-          KEYS=$(pnpm --silent image:keys $services)
+          KEYS=$(pnpm --silent image:keys registry router)
           images='{}'
           deadline=$((SECONDS + 45 * 60))
-          for service in $services; do
+          for service in registry router; do
             key=$(jq -r --arg s "$service" '.[$s] | sub("^sha256:"; "")' <<<"$KEYS")
             image="ghcr.io/social-harness/$service"
             until digest=$(docker buildx imagetools inspect "$image:inputs-$key" --format '{{.Manifest.Digest}}'); do
               if (( SECONDS >= deadline )); then
-                echo "ERROR: the images workflow must publish $service key $key and the release image packages must be public and pull anonymously; rerun once both conditions hold. Docs: https://docs.moltzap.xyz/spec/layer-interfaces#publication-and-versions" >&2
+                echo "ERROR: the images workflow must publish $service key $key and the ghcr.io/social-harness/{registry,router} packages must be public and pull anonymously; rerun once both conditions hold. Docs: https://docs.moltzap.xyz/spec/layer-interfaces#publication-and-versions" >&2
                 exit 1
               fi
               remaining=$((deadline - SECONDS))
@@ -348,7 +358,7 @@ jobs:
             [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
             ref="$image@$digest"
             docker buildx imagetools inspect "$ref" >/dev/null || {
-              echo "ERROR: the release image packages must be public and pull anonymously before release. Docs: https://docs.moltzap.xyz/spec/layer-interfaces#publication-and-versions" >&2
+              echo "ERROR: the ghcr.io/social-harness/{registry,router} packages must be public and pull anonymously before release. Docs: https://docs.moltzap.xyz/spec/layer-interfaces#publication-and-versions" >&2
               exit 1
             }
             cosign verify \
@@ -357,6 +367,15 @@ jobs:
             images=$(jq -c --arg service "$service" --arg ref "$ref" '. + {($service): $ref}' <<<"$images")
           done
           echo "images=$images" >> "$GITHUB_OUTPUT"
+
+      # `image:keys` reads HEAD, which only the resume has at the release
+      # commit; `agent-images` waits for images.yml to publish these keys.
+      - name: Compute the agent image keys
+        id: agent-keys
+        if: steps.plan.outputs.mode == 'resume' && steps.select.outputs.packages != ''
+        run: |
+          KEYS=$(pnpm --silent image:keys daemon openclaw-agent)
+          echo "keys=$(jq -c . <<<"$KEYS")" >> "$GITHUB_OUTPUT"
 
       # Pack gates install the published closures in isolated consumers.
       # NanoClaw checks its Client ABI without packing the source-copied adapter.
@@ -655,10 +674,6 @@ jobs:
     outputs:
       payload: ${{ steps.tag.outputs.payload }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup-toolchain
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
       # `build` ran installed code, so the references it passes are checked
       # for shape and signature before anything is tagged.
@@ -670,23 +685,20 @@ jobs:
           IMAGES: ${{ needs.build.outputs.images }}
         run: |
           printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          refs=()
-          for service in $RELEASE_IMAGES; do
-            ref=$(jq -r --arg service "$service" '.[$service] // ""' <<<"$IMAGES")
-            image="ghcr.io/social-harness/$service"
-            digest=${ref#"$image@"}
-            [[ "$ref" == "$image@$digest" && "$digest" =~ ^sha256:[a-f0-9]{64}$ ]] || {
-              echo "ERROR: build passed no $service digest reference: $IMAGES. Docs: https://docs.moltzap.xyz/spec/layer-interfaces#publication-and-versions" >&2
-              exit 1
-            }
-            refs+=("$ref")
-          done
-          for ref in "${refs[@]}"; do
+          registry=$(jq -r '.registry // ""' <<<"$IMAGES")
+          router=$(jq -r '.router // ""' <<<"$IMAGES")
+          [[ "$registry" =~ ^ghcr\.io/social-harness/registry@sha256:[a-f0-9]{64}$ &&
+            "$router" =~ ^ghcr\.io/social-harness/router@sha256:[a-f0-9]{64}$ ]] || {
+            echo "ERROR: build passed no Registry and Router digest references: $IMAGES" >&2
+            exit 1
+          }
+          REFS=$(printf '%s\n%s' "$registry" "$router")
+          while read -r ref; do
             cosign verify \
               --certificate-identity "$IMAGE_CERTIFICATE_IDENTITY" \
               --certificate-oidc-issuer "$IMAGE_CERTIFICATE_OIDC_ISSUER" "$ref"
-          done
-          for ref in "${refs[@]}"; do
+          done <<<"$REFS"
+          while read -r ref; do
             image=${ref%@*}
             if digest=$(docker buildx imagetools inspect "$image:$VERSION" --format '{{.Manifest.Digest}}' 2>"$RUNNER_TEMP/inspect-error"); then
               [[ "$ref" == "$image@$digest" ]] || {
@@ -699,9 +711,8 @@ jobs:
               cat "$RUNNER_TEMP/inspect-error" >&2
               exit 1
             fi
-          done
+          done <<<"$REFS"
           notes="$RUNNER_TEMP/notes.md"
-          create=false
           if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" --json body --jq .body > "$notes" 2>"$RUNNER_TEMP/release-error"; then
             :
           elif grep -qxF 'release not found' "$RUNNER_TEMP/release-error"; then
@@ -710,18 +721,17 @@ jobs:
             awk -v heading="## [$VERSION]" \
               'index($0, heading) == 1 { keep = 1; next } keep && /^## / { exit } keep' \
               "$RUNNER_TEMP/CHANGELOG.md" > "$notes"
-            create=true
+            printf '\n### Images\n' >> "$notes"
+            gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --verify-tag --notes-file "$notes"
           else
             cat "$RUNNER_TEMP/release-error" >&2
             exit 1
           fi
-          node scripts/release/release-body.ts "$notes" "${refs[@]}"
-          if [ "$create" = true ]; then
-            gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --verify-tag --notes-file "$notes"
-          else
-            gh release edit "v$VERSION" --repo "$GITHUB_REPOSITORY" --notes-file "$notes"
-          fi
-          payload=$(jq -c --arg version "$VERSION" '{version: $version, registry, router}' <<<"$IMAGES")
+          while read -r ref; do
+            grep -qF "$ref" "$notes" || printf '\n- `%s`\n' "$ref" >> "$notes"
+          done <<<"$REFS"
+          gh release edit "v$VERSION" --repo "$GITHUB_REPOSITORY" --notes-file "$notes"
+          payload=$(jq -c --arg version "$VERSION" '. + {version: $version}' <<<"$IMAGES")
           echo "payload=$payload" >> "$GITHUB_OUTPUT"
 
   dispatch:
@@ -745,3 +755,69 @@ jobs:
         run: |
           jq -n --argjson payload "$PAYLOAD" '{event_type: "social-harness-released", client_payload: $payload}' \
             | gh api --method POST repos/social-harness/deployment/dispatches --input -
+
+  agent-images:
+    needs: [build, images]
+    environment: release
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      # `build` ran installed code, so the keys it passes are checked for
+      # shape before use. The OpenClaw agent, whose key is usually published
+      # long before, goes first and each image is recorded once tagged, so a
+      # missing daemon leaves it tagged.
+      - name: Tag the agent images and record their digests
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+          RELEASE_COMMIT: ${{ needs.build.outputs.release-commit }}
+          KEYS: ${{ needs.build.outputs.agent-keys }}
+        run: |
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          notes="$RUNNER_TEMP/notes.md"
+          body=$(gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" --json body --jq .body)
+          printf '%s\n' "$body" > "$notes"
+          deadline=$((SECONDS + 45 * 60))
+          for service in openclaw-agent daemon; do
+            key=$(jq -r --arg s "$service" '.[$s] // "" | sub("^sha256:"; "")' <<<"$KEYS")
+            [[ "$key" =~ ^[a-f0-9]{64}$ ]] || {
+              echo "ERROR: build passed no $service input key: $KEYS" >&2
+              exit 1
+            }
+            image="ghcr.io/social-harness/$service"
+            until digest=$(docker buildx imagetools inspect "$image:inputs-$key" --format '{{.Manifest.Digest}}'); do
+              if (( SECONDS >= deadline )); then
+                echo "ERROR: images.yml has not published $image:inputs-$key for release $VERSION. Re-run images.yml's run for the release commit $RELEASE_COMMIT, then re-run this job. Docs: https://docs.moltzap.xyz/spec/layer-interfaces#publication-and-versions" >&2
+                exit 1
+              fi
+              remaining=$((deadline - SECONDS))
+              echo "Waiting for $image:inputs-$key; $remaining seconds remain."
+              sleep "$((remaining < 30 ? remaining : 30))"
+            done
+            [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+            ref="$image@$digest"
+            commit=()
+            [ "$service" != daemon ] || commit=(--certificate-github-workflow-sha "$RELEASE_COMMIT")
+            cosign verify \
+              --certificate-identity "$IMAGE_CERTIFICATE_IDENTITY" \
+              --certificate-oidc-issuer "$IMAGE_CERTIFICATE_OIDC_ISSUER" "${commit[@]}" "$ref"
+            if tagged=$(docker buildx imagetools inspect "$image:$VERSION" --format '{{.Manifest.Digest}}' 2>"$RUNNER_TEMP/inspect-error"); then
+              [ "$tagged" = "$digest" ] || {
+                echo "ERROR: $image:$VERSION already names $tagged, not $ref" >&2
+                exit 1
+              }
+            elif grep -Eqi 'manifest unknown|not found' "$RUNNER_TEMP/inspect-error"; then
+              docker buildx imagetools create --tag "$image:$VERSION" "$ref"
+            else
+              cat "$RUNNER_TEMP/inspect-error" >&2
+              exit 1
+            fi
+            # shellcheck disable=SC2016 # The backticks are Markdown.
+            grep -qF "$ref" "$notes" || {
+              printf '\n- `%s`\n' "$ref" >> "$notes"
+              gh release edit "v$VERSION" --repo "$GITHUB_REPOSITORY" --notes-file "$notes"
+            }
+          done

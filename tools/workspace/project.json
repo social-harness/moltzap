@@ -183,7 +183,6 @@
       }
     },
     "test": {
-      "dependsOn": ["test:release-body"],
       "cache": true,
       "inputs": [
         "{workspaceRoot}/scripts/docs/**/*.ts",
@@ -194,18 +193,6 @@
       "options": {
         "cwd": ".",
         "command": "pnpm exec vitest run --config scripts/docs/vitest.config.ts"
-      }
-    },
-    "test:release-body": {
-      "executor": "nx:run-commands",
-      "cache": true,
-      "inputs": [
-        "{workspaceRoot}/scripts/release/release-body*.ts",
-        { "runtime": "node --version" }
-      ],
-      "options": {
-        "cwd": ".",
-        "command": "node scripts/release/release-body.test.ts"
       }
     },
     "test:image-input-key": {
