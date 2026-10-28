@@ -28,6 +28,7 @@ import {
   renderContent,
   renderLocalGuidance,
   type SendInput,
+  type SendResult,
 } from "@moltzap/social-harness";
 import {
   Config,
@@ -41,7 +42,6 @@ import {
   Stream,
 } from "effect";
 import { absurd } from "effect/Function";
-import { randomUUID } from "node:crypto";
 import { jsonResult } from "openclaw/plugin-sdk/channel-actions";
 import {
   type ChannelPlugin,
@@ -319,7 +319,7 @@ export function makeChannelConfigJsonSchema() {
  *   Host->>Plugin: message tool send or reply with target and text
  *   Plugin->>Plugin: parse the text as a multicast, gather, all_gather or answer
  *   Plugin->>Client: send the operation
- *   Plugin-->>Host: tool result with the operation id, or the error
+ *   Plugin-->>Host: tool result with the address and any guidance, or the error
  * ```
  * @param deps Optional process-local dependency overrides used by tests.
  * @returns The Social Harness channel plugin.
@@ -1052,7 +1052,7 @@ function sendOpenClawText(
     accountId: ctx.accountId,
     text: ctx.text,
     to: ctx.to,
-  }).pipe(Effect.as(makeMessageSendResult(randomUUID())));
+  }).pipe(Effect.map(({ result }) => makeMessageSendResult(result)));
 }
 
 /**
@@ -1093,7 +1093,7 @@ function sendText(
           onSuccess: (result) =>
             logOutbound(
               connectedAccount,
-              `${outboundLogPrefix(origin, params, outboundOperation(input))} operationId=${result.operationId ?? "-"} chars=${textLength(params)}: ${textPreview(params)}`,
+              `${outboundLogPrefix(origin, params, outboundOperation(input))} operationId=${result.operationId ?? "-"} postId=${result.postId ?? "-"} chars=${textLength(params)}: ${textPreview(params)}`,
             ),
         }),
         Effect.map((result) => ({ input, result })),
@@ -1235,11 +1235,31 @@ function refuseWhileHidden<E>(
   );
 }
 
-function makeMessageSendResult(messageId: string): ChannelMessageSendResult {
+/**
+ * OpenClaw's result for one Client send, identified by a Social Harness id so
+ * OpenClaw records the send as sent. A multicast or answer reports the post
+ * it created: a multicast's `postId` is the id recipients see as `MessageSid`,
+ * and `read_conversation` shows either post by it; its conversation is
+ * routing metadata. A gather or all_gather reports its `operationId`: a
+ * gather posts to each member, and the Client does not return the id of an
+ * all_gather's one group post.
+ * @param result The Client's send result.
+ * @returns The send result OpenClaw records.
+ */
+function makeMessageSendResult(result: SendResult): ChannelMessageSendResult {
+  const messageId = result.postId ?? result.operationId;
   return {
-    messageId,
+    ...(messageId === undefined ? {} : { messageId }),
     receipt: createMessageReceiptFromOutboundResults({
-      results: [{ channel: CHANNEL_ID, messageId }],
+      results: [
+        {
+          channel: CHANNEL_ID,
+          ...(messageId === undefined ? {} : { messageId }),
+          ...(result.address === undefined
+            ? {}
+            : { conversationId: result.address }),
+        },
+      ],
       kind: "text",
     }),
   };

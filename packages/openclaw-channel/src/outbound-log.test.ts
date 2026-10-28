@@ -12,15 +12,21 @@ import { live as it } from "@effect/vitest";
 import {
   CollectiveError,
   InboundItem,
+  type SendInput,
   type SendResult,
 } from "@moltzap/social-harness";
-import { Data, Effect, Encoding, Fiber, Schema, Stream } from "effect";
+import { Data, Effect, Fiber, Schema, Stream } from "effect";
 import {
   buildChannelInboundEventContext,
   runChannelInboundEvent,
 } from "openclaw/plugin-sdk/channel-inbound";
 import { describe, expect, vi } from "vitest";
 
+import {
+  endpointResult,
+  OPERATION_ID,
+  postId,
+} from "./__tests__/send-results.js";
 import { createChannelPlugin } from "./plugin.js";
 
 const ACCOUNT_ID = "primary";
@@ -33,7 +39,6 @@ const SLOT_SCHEMA = {
   properties: { slot: { type: "string", enum: ["mon", "tue"] } },
   required: ["slot"],
 };
-const OPERATION_ID = collectiveId();
 
 type Plugin = ReturnType<typeof createChannelPlugin>;
 
@@ -67,13 +72,12 @@ function messageToolSendLogsItsOrigin() {
     deadline: 300,
     requestedSchema: SLOT_SCHEMA,
   });
-  return sendThroughConnectedAccount(
-    (plugin) => runMessageAction(plugin, "send", GROUP, message),
-    Effect.succeed({ operationId: OPERATION_ID }),
+  return sendThroughConnectedAccount((plugin) =>
+    runMessageAction(plugin, "send", GROUP, message),
   ).pipe(
     Effect.tap(({ logLines }) => {
       expect(logLines).toContain(
-        `info: Social Harness: outbound via message-action:send to ${GROUP} op=gather operationId=${OPERATION_ID} chars=${message.length}: ${message.slice(0, 80)}`,
+        `info: Social Harness: outbound via message-action:send to ${GROUP} op=gather operationId=${OPERATION_ID} postId=- chars=${message.length}: ${message.slice(0, 80)}`,
       );
     }),
   );
@@ -82,13 +86,12 @@ function messageToolSendLogsItsOrigin() {
 function messageToolReplyLogsItsOrigin() {
   const to = "agent:alice";
   const message = '{"action":"accept","content":{"slot":"mon"}}';
-  return sendThroughConnectedAccount(
-    (plugin) => runMessageAction(plugin, "reply", to, message),
-    Effect.succeed({}),
+  return sendThroughConnectedAccount((plugin) =>
+    runMessageAction(plugin, "reply", to, message),
   ).pipe(
     Effect.tap(({ logLines }) => {
       expect(logLines).toContain(
-        `info: Social Harness: outbound via message-action:reply to ${to} op=answer operationId=- chars=${message.length}: ${message}`,
+        `info: Social Harness: outbound via message-action:reply to ${to} op=answer operationId=${OPERATION_ID} postId=${postId(100)} chars=${message.length}: ${message}`,
       );
     }),
   );
@@ -97,13 +100,12 @@ function messageToolReplyLogsItsOrigin() {
 function sendTextLogsItsOrigin() {
   const to = "agent:nova";
   const text = "Checking the calendar";
-  return sendThroughConnectedAccount(
-    (plugin) => runSendText(plugin, to, text),
-    Effect.succeed({}),
+  return sendThroughConnectedAccount((plugin) =>
+    runSendText(plugin, to, text),
   ).pipe(
     Effect.tap(({ logLines }) => {
       expect(logLines).toContain(
-        `info: Social Harness: outbound via send.text to ${to} op=plain operationId=- chars=${text.length}: ${text}`,
+        `info: Social Harness: outbound via send.text to ${to} op=plain operationId=- postId=${postId(100)} chars=${text.length}: ${text}`,
       );
     }),
   );
@@ -111,7 +113,7 @@ function sendTextLogsItsOrigin() {
 
 function refusedSendLogsTheFailure() {
   const refusal = new CollectiveError({
-    id: OPERATION_ID,
+    id: collectiveId(),
     failure: { kind: "schema-invalid", detail: "type must be object" },
   });
   const message = JSON.stringify({
@@ -122,7 +124,7 @@ function refusedSendLogsTheFailure() {
   return sendThroughConnectedAccount(
     (plugin) =>
       runMessageAction(plugin, "send", GROUP, message).pipe(Effect.flip),
-    Effect.fail(refusal),
+    () => Effect.fail(refusal),
   ).pipe(
     Effect.tap(({ logLines }) => {
       expect(logLines).toContain(
@@ -133,16 +135,20 @@ function refusedSendLogsTheFailure() {
 }
 
 /**
- * Connects an account whose endpoint answers every send with `result`, runs
- * `send`, and returns its outcome with the gateway log lines written so far.
+ * Connects an account whose endpoint answers its one send with `respond`, by
+ * default its own result, runs `send`, and returns its outcome with the
+ * gateway log lines written so far.
  */
 function sendThroughConnectedAccount<A, E>(
   send: (plugin: Plugin) => Effect.Effect<A, E | OutboundLogTestError>,
-  result: Effect.Effect<SendResult, CollectiveError>,
+  respond: (
+    input: SendInput,
+    index: number,
+  ) => Effect.Effect<SendResult, CollectiveError> = endpointResult,
 ) {
   const plugin = createChannelPlugin({
     harnessEndpointForAccount: () => ({
-      send: () => result,
+      send: (input) => respond(input, 0),
       messages: Stream.never,
     }),
   });
@@ -275,7 +281,7 @@ function runSendText(plugin: Plugin, to: string, text: string) {
 function collectiveId(): CollectiveError["id"] {
   const item = Schema.decodeUnknownSync(InboundItem)({
     kind: "operationFailed",
-    id: `col_${Encoding.encodeBase64Url(new Uint8Array(32).fill(5))}`,
+    id: OPERATION_ID,
     to: "agent:alice",
     error: "unused",
   });
