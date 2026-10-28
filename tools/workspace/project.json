@@ -104,6 +104,17 @@
         "command": "node scripts/repo/check-script-reachability.ts"
       }
     },
+    "lint:docs-links": {
+      "cache": true,
+      "inputs": [
+        "workspaceFiles"
+      ],
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": ".",
+        "command": "node scripts/docs/check-code-links.ts"
+      }
+    },
     "lint:root": {
       "cache": false,
       "dependsOn": [
@@ -123,6 +134,7 @@
         "lint:root",
         "lint:oxlint",
         "lint:script-reachability",
+        "lint:docs-links",
         "lint:agent-files",
         "lint:dependency-versions",
         {

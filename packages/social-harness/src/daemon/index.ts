@@ -118,10 +118,13 @@ export namespace Daemon {
         remedy = `. ${registrationAdmissionRefusalMessage}`;
       } else if (this.reason === "pre-reset") {
         remedy =
-          ". Start with a fresh state directory and register again; see https://github.com/social-harness/moltzap/blob/main/docs/guides/upgrades.mdx#apply-a-reset-release.";
+          ". Start with a fresh state directory and register again. Docs: https://docs.moltzap.xyz/guides/upgrades#apply-a-reset-release";
       } else if (this.reason === "outbox-too-old") {
         remedy =
-          ". Drain the outbox on the previous release before upgrading, or apply a reset release; see https://github.com/social-harness/moltzap/blob/main/docs/guides/upgrades.mdx#apply-a-reset-release.";
+          ". Drain the outbox on the previous release before upgrading, or apply a reset release. Docs: https://docs.moltzap.xyz/guides/upgrades#apply-a-reset-release";
+      } else if (this.reason === "newer-schema") {
+        remedy =
+          ". A newer release wrote this state directory; run that release or a later one. Docs: https://docs.moltzap.xyz/guides/upgrades#upgrade-daemons-on-restart";
       }
       return `sharnessd startup failed in phase ${this.phase}${reason}${detail}${remedy}`;
     }
