@@ -81,7 +81,7 @@ export function inputError(cause: unknown): ImageInputError {
 export function workspaceRoots(tree: Tree): ReadonlyMap<string, string> {
   const roots = new Map<string, string>();
   for (const file of [...tree.files.keys()].filter((file) =>
-    /^(?:packages\/[^/]+|images\/tests)\/package\.json$/u.test(file),
+    /^(?:packages\/[^/]+|images\/daemon)\/package\.json$/u.test(file),
   )) {
     const name = String(readJson(tree, file).name);
     if (roots.has(name)) {

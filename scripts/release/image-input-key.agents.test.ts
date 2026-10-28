@@ -4,7 +4,14 @@ import assert from "node:assert/strict";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Synchronous Git fixtures exercise committed image-key behavior.
 import { rmSync } from "node:fs";
 import { test } from "node:test";
-import { commit, fixture, lock, write } from "./image-input-key.fixture.ts";
+import {
+  clientManifest,
+  commit,
+  daemonDockerfile,
+  fixture,
+  lock,
+  write,
+} from "./image-input-key.fixture.ts";
 import { imageInputs } from "./image-input-key.ts";
 
 // @agent-code-guard/regression-only: Git fixtures pin rebuild behavior through the exported release API.
@@ -16,6 +23,14 @@ for (const [file, content, image] of [
     "daemon",
   ],
   ["packages/social-harness/assets/policy.txt", "runtime policy", "daemon"],
+  [
+    "packages/social-harness/package.json",
+    clientManifest().replace(
+      '"version":"1"',
+      '"version":"2","sharnessWireVersion":"2026.1026.5"',
+    ),
+    "daemon",
+  ],
   [
     "packages/openclaw-channel/src/index.ts",
     "export const channel = 42;",
@@ -31,13 +46,22 @@ for (const [file, content, image] of [
     "Updated skill instructions.",
     "daemon",
   ],
-  ["images/daemon/Dockerfile", "FROM node:changed", "daemon"],
   [
-    "images/tests/package.json",
+    "images/daemon/Dockerfile",
+    `${daemonDockerfile}\n# image configuration\n`,
+    "daemon",
+  ],
+  [
+    "images/daemon/package.json",
     JSON.stringify({
-      name: "@social-harness/image-tests",
-      dependencies: { "@fixture/core": "workspace:*" },
+      name: "@social-harness/daemon",
+      private: true,
+      dependencies: {
+        "@fixture/core": "workspace:*",
+        "@fixture/channel": "workspace:*",
+      },
       files: ["package.json"],
+      nx: { targets: { build: { executor: "nx:noop" } } },
       description: "seed",
     }),
     "daemon",
@@ -50,6 +74,11 @@ for (const [file, content, image] of [
   [
     "images/openclaw-agent/Dockerfile",
     "FROM upstream@sha256:changed",
+    "openclaw-agent",
+  ],
+  [
+    "images/openclaw-agent/.dockerignore",
+    "*\n!host.sh\n!patch-openclaw.ts\n",
     "openclaw-agent",
   ],
   [
@@ -75,6 +104,34 @@ for (const [file, content, image] of [
     assert.notEqual(after[image]?.key, before[image]?.key);
     assert.equal(after.router?.key, before.router?.key);
     assert.equal(after.registry?.key, before.registry?.key);
+  });
+}
+
+for (const [file, content, image] of [
+  [
+    "images/openclaw-agent/README.md",
+    "Run the host with care.\n",
+    "openclaw-agent",
+  ],
+  [
+    "packages/social-harness/src/index.test.ts",
+    'import { publicValue } from "./index.js";\n',
+    "daemon",
+  ],
+  ["images/daemon/README.md", "Run the daemon with care.\n", "daemon"],
+] as const) {
+  await test(`${image} key covers only what reaches its image, so ${file} keeps it`, (t) => {
+    const repo = fixture();
+    t.after(() => {
+      rmSync(repo, { recursive: true, force: true });
+    });
+    const before = Effect.runSync(imageInputs(repo));
+    write(repo, file, content);
+    commit(repo);
+    assert.equal(
+      Effect.runSync(imageInputs(repo))[image]?.key,
+      before[image]?.key,
+    );
   });
 }
 

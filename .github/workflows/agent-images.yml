@@ -27,17 +27,16 @@ jobs:
       - uses: ./.github/actions/setup-toolchain
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - name: Prepare this commit's runtime closure
-        run: pnpm deploy --filter @social-harness/image-tests --prod --legacy images/.workspace
       - name: Build daemon locally
         run: |
           docker buildx build --load --tag social-harness-daemon:local \
-            --build-context social-harness-workspace=images/.workspace \
-            images/daemon
+            --file images/daemon/Dockerfile .
       - name: Build OpenClaw locally
         run: |
           docker buildx build --load --tag social-harness-openclaw:local \
             images/openclaw-agent
+      - name: Prepare NanoClaw's runtime closure
+        run: pnpm deploy --filter @social-harness/image-tests --prod --legacy images/.workspace
       - name: Build NanoClaw locally
         run: node images/nanoclaw-agent/build.ts --tag social-harness-nanoclaw:local
       - name: Smoke all three images

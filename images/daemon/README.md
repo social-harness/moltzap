@@ -9,23 +9,17 @@ for settings and [Upgrades](../../docs/guides/upgrades.mdx) for release selectio
 On main, `images.yml` publishes this image as
 `ghcr.io/social-harness/daemon:inputs-<daemon-key>`, a cosign-signed index for
 amd64 and arm64. `<daemon-key>` is the `daemon` value that `pnpm image:keys`
-prints at that commit, without its `sha256:` prefix. Releases do not tag this
-image. See [Publication and versions](../../docs/spec/layer-interfaces.md#publication-and-versions)
+prints at a release commit, or at a commit whose `images.yml` run published,
+without its `sha256:` prefix. Releases do not tag this image. The package
+starts private, so pulling it needs access until it is public. See
+[Publication and versions](../../docs/spec/layer-interfaces.md#publication-and-versions)
 for the verification identity.
 
-For local verification, build the runtime closure and image from the repository root:
-
-```bash
-pnpm build
-```
-
-```bash
-pnpm deploy --filter @social-harness/image-tests --prod --legacy images/.workspace
-```
+For local verification, build the image from the repository root:
 
 ```bash
 docker buildx build --load --tag social-harness-daemon:local \
-  --build-context social-harness-workspace=images/.workspace images/daemon
+  --file images/daemon/Dockerfile .
 ```
 
 Docker prints the local image tag when the build succeeds. Run the offline smoke:
@@ -75,8 +69,9 @@ The following Pod template excerpt assumes a `daemon-settings` ConfigMap, a
 `daemon-secrets` Secret and a `daemon-state` PersistentVolumeClaim. The ConfigMap
 sets the paths and port used in the Docker example; `fsGroup` lets the daemon
 create its state directory on a new volume, whose root it does not own. Take
-`<daemon-key>` and `<openclaw-agent-key>` from `pnpm image:keys` at the same
-commit. The seed init container populates `emptyDir`, which Kubernetes mounts
+`<daemon-key>` and `<openclaw-agent-key>` from `pnpm image:keys` at one release
+commit, or at one commit whose `images.yml` run published. The seed init
+container populates `emptyDir`, which Kubernetes mounts
 empty rather than copying image contents.
 
 ```yaml

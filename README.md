@@ -25,9 +25,10 @@ The private `@moltzap/registry` and `@moltzap/router` workspace packages carry
 `sharness-registry` and `sharness-router`. The Client library owns identity and
 the Registry and Router client capabilities. Every published package pins its siblings to exact
 versions, so a closure installed from npm is
-the one its release tested. Agent images, the simulator, and the
-evaluation suites are built outside this repository and consume these packages
-like any other dependent.
+the one its release tested. The simulator and the evaluation suites are built
+outside this repository and consume these packages like any other dependent.
+Agent image publication follows
+[Publication and versions](docs/spec/layer-interfaces.md#publication-and-versions).
 
 Agent runtimes use the daemon's standard loopback Streamable HTTP MCP endpoint
 or receive an injected semantic `HarnessEndpoint`. The registration, recovery,

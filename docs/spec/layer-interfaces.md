@@ -397,14 +397,14 @@ topology and cross-address context.
 Two packages publish to npm at independent calendar versions:
 `@moltzap/social-harness` and `@moltzap/openclaw-channel`. Registry, Router and NanoClaw
 stay private. Registry, Router, daemon and OpenClaw agent ship as signed images
-keyed by `pnpm image:keys`. Registry and Router build from `images/<service>/Dockerfile`
-with the repository root as build context. The daemon builds from `images/daemon`
-with the production `@social-harness/image-tests` closure deployed to
-`images/.workspace` as its named `social-harness-workspace` context. The
-OpenClaw agent builds from `images/openclaw-agent`, with the official OpenClaw
-base, pinned Claude Code binary, patch and channel loader. The NanoClaw image
-is built locally and not published. The Registry image carries `pglite-server`
-for run-scoped and development databases.
+keyed by `pnpm image:keys`. Registry, Router and daemon build from
+`images/<service>/Dockerfile` with the repository root as build context; the
+daemon's build stage deploys `images/daemon/package.json`, the seed of Client
+and OpenClaw channel its launcher falls back to. The OpenClaw agent builds from
+`images/openclaw-agent`, with the official OpenClaw base, pinned Claude Code
+binary, patch and channel loader. The NanoClaw image is built locally and not
+published. The Registry image carries `pglite-server` for run-scoped and
+development databases.
 The integration-test workspace stays outside the product graph and release set.
 Package manifests declare publication and dependency edges; the release
 workflow names the packages it publishes.
@@ -502,11 +502,7 @@ month/day and sequence components.
 
 Only the Registry and Router GHCR packages must be public before a release: the
 bump checks that both indexes pull anonymously so that anyone can run
-`images/compose.yaml`. No `social-harness-images` dispatch happens until both
-packages are public. After making them public, run `images.yml` from main with
-`workflow_dispatch` to send the current images to deployment. Reverting to an
-already-published input key also requires that manual run, because no new
-index is published.
+`images/compose.yaml`.
 
 `.github/workflows/images.yml` pushes each index by digest, signs it with
 cosign keyless before creating its input tag. The certificate
@@ -514,34 +510,31 @@ identity is
 `https://github.com/social-harness/moltzap/.github/workflows/images.yml@refs/heads/main`
 and its OIDC issuer is `https://token.actions.githubusercontent.com`. Existing
 input tags are verified and skipped, never retagged; an unsigned index fails
-the run. Every index accepted for dispatch, pinning, release-commit push or
-release promotion is verified against that identity and issuer first.
-Once the current main tip's Registry and Router indexes are published and verified,
-`images.yml` sends `repository_dispatch` event `social-harness-images` to
-`social-harness/deployment`. Its `client_payload` names both tip indexes and
-their revision:
-`{"registry":"ghcr.io/social-harness/registry@sha256:<digest>","router":"ghcr.io/social-harness/router@sha256:<digest>","revision":"<tip sha>"}`.
-Deliveries may repeat or arrive out of order. The receiver ignores a revision
-that is equal to or older than the one it runs, ordering revisions by main
-ancestry rather than by the SHA text. A run whose revision is no longer main's
-head sends nothing and fails; run `images.yml` again from main with
-`workflow_dispatch`.
+the run. Every index accepted for pinning, release-commit push or release
+promotion is verified against that identity and issuer first.
 
 ### Unsupported Dockerfile form
 
-For Registry and Router, `pnpm image:keys` refuses unsupported Dockerfile
-instructions with the file, line and form. Keep image recipes in the explicit
-two-stage form used by
-`images/registry/Dockerfile` and `images/router/Dockerfile`: pinned Node bases,
+For Registry, Router and daemon, `pnpm image:keys` refuses unsupported
+Dockerfile instructions with the file, line and form. Keep image recipes in the
+explicit two-stage form used by `images/registry/Dockerfile`,
+`images/router/Dockerfile` and `images/daemon/Dockerfile`: pinned Node bases,
 named context paths, the exact Corepack setup and filtered pnpm install,
-Nx build and legacy production deploy commands, and the declared runtime
-metadata. Replace the reported instruction with that form. `ADD`, context-wide
-copies, globs, arbitrary shell commands and Docker parser directives are refused.
-Docker applies `.dockerignore` to the named context roots; their image keys hash
-the whole file as a fixed build input. The daemon key covers its local context,
-packed workspace runtime closure, lockfile resolutions and build tooling. The
-OpenClaw agent key covers its complete local context, including the Dockerfile
-that pins its upstream base and Claude Code binaries.
+Nx build and legacy production deploy commands, and the declared service or
+launcher runtime stage. Replace the reported instruction with that form. `ADD`,
+context-wide copies, globs, arbitrary shell commands and Docker parser
+directives are refused. Docker applies `.dockerignore` to the named context
+roots; their image keys hash the whole file as a fixed build input. Each key
+covers the recipe's Dockerfiles, not other files beside them. The daemon key
+also covers every file its seed packages pack or compile, but not the tests
+their compiler excludes. Registry and Router keys hash manifests without the
+fields a release writes, because neither process reads them. The daemon key
+hashes manifests whole, because its launcher reads those fields from the seed,
+so every release commit has its own daemon key. The OpenClaw agent key covers
+its Dockerfile, its `.dockerignore` and the files that file admits; the
+Dockerfile pins its upstream base and Claude Code binaries. Its `.dockerignore`
+patterns may use `*`, `**`, `?` and `!`; `pnpm image:keys` refuses character
+classes and escapes there.
 
 ## Consumer migration boundary
 

@@ -776,7 +776,7 @@ function checkCopyInventory(
   }
 }
 
-for (const service of ["registry", "router"]) {
+for (const service of ["registry", "router"] as const) {
   await test(`real ${service} Dockerfile inventories named COPY roots and changes only its key`, (t) => {
     const repo = realImageFixture();
     t.after(() => {

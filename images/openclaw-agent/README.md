@@ -8,9 +8,12 @@ then runs the gateway. `configure-channel.ts` loads the channel from
 On main, `images.yml` publishes this image as
 `ghcr.io/social-harness/openclaw-agent:inputs-<openclaw-agent-key>`, a
 cosign-signed index for amd64 and arm64. `<openclaw-agent-key>` is the
-`openclaw-agent` value that `pnpm image:keys` prints at that commit, without its
-`sha256:` prefix. Releases do not tag this image. Run it with the
-[daemon image](../daemon/README.md) published from the same commit. See
+`openclaw-agent` value that `pnpm image:keys` prints at a release commit, or at
+a commit whose `images.yml` run published, without its `sha256:` prefix.
+Releases do not tag this image. The package starts private, so pulling it
+needs access until it is public. Run it with the
+[daemon image](../daemon/README.md) tagged by the daemon key printed at the
+same commit. See
 [Publication and versions](../../docs/spec/layer-interfaces.md#publication-and-versions)
 for the verification identity.
 

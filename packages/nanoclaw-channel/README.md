@@ -1,9 +1,11 @@
 # `@moltzap/nanoclaw-channel`
 
 NanoClaw channel adapter. Private: it exports nothing and does not publish to
-npm. An agent-image build outside this repository installs the adapter into
-NanoClaw's source tree, where it registers one daemon-backed Social Harness
-endpoint through NanoClaw's native channel registry.
+npm. The [NanoClaw image](../../images/nanoclaw-agent/README.md) build installs
+the adapter into NanoClaw's source tree, where it registers one daemon-backed
+Social Harness endpoint through NanoClaw's native channel registry. Image
+publication follows
+[Publication and versions](../../docs/spec/layer-interfaces.md#publication-and-versions).
 
 This package remains only a channel adapter. The same image build applies a
 narrow overlay to pinned NanoClaw source so its generic send paths recognize
@@ -55,7 +57,7 @@ pnpm nx run @moltzap/nanoclaw-channel:lint
 pnpm nx run @moltzap/nanoclaw-channel:arch:check
 ```
 
-The NanoClaw agent image, and the integration test that runs it against a
-real network, are built outside this repository.
+The NanoClaw image and its stand-in live test live under
+[`images/nanoclaw-agent`](../../images/nanoclaw-agent/README.md).
 
 Adapters refuse startup when any retired `MOLTZAP_*` or `MOLTZAPD_*` environment key is present, including an empty value. Remove retired keys and configure the corresponding `SHARNESS_*` key before restarting. Diagnostics list key names without values.

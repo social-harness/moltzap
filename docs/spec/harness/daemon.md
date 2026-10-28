@@ -415,9 +415,10 @@ registration status.
 ## Agent images
 
 The generic OpenClaw and NanoClaw images under `images/` install Client and
-channels from the same workspace commit. Deployment builds private images
-from this repository's release tag and adds its product configuration there.
-This repository never pushes these agent images. Their live tests run after
+channels from the same workspace commit; private product overlays stay in
+deployment. Image publication follows
+[Publication and versions](../layer-interfaces.md#publication-and-versions).
+Their live tests run after
 main pushes, weekly and on manual dispatch on `ubuntu-24.04-arm`, with local
 stand-ins and no provider credentials.
 
