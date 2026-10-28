@@ -143,7 +143,8 @@ export function policyInstallationError(
     cause.ruleId === undefined
       ? undefined
       : behaviorRulePaths?.get(cause.ruleId);
-  const location = path === undefined ? "" : `; invalid at ${path} (duplicate-id)`;
+  const location =
+    path === undefined ? "" : `; invalid at ${path} (duplicate-id)`;
   return new MessagePolicyConfigurationError({
     reason: "message-policy",
     behaviorReason: path === undefined ? undefined : "duplicate-id",

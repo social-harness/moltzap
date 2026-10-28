@@ -66,11 +66,11 @@ const failureReason = <A>(effect: Effect.Effect<A, DaemonConfigurationError>) =>
   effect.pipe(
     Effect.flip,
     Effect.tap((error) =>
-      Effect.sync(() =>
+      Effect.sync(() => {
         expect(error.message).toMatch(
           /\. Docs: https:\/\/docs\.moltzap\.xyz\/guides\/run-sharnessd#[a-z-]+$/u,
-        ),
-      ),
+        );
+      }),
     ),
     Effect.map((error) => error.reason),
   );

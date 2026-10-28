@@ -155,11 +155,14 @@ export function policyConfigurationError(
   return new MessagePolicyConfigurationError({
     reason,
     behaviorReason,
-    message: policyFailureMessage(
-      reason,
-      path === undefined ? "" : `; invalid at ${path}${category}`,
-      path,
-    ),
+    message:
+      path === undefined
+        ? policyFailureMessage(reason)
+        : policyFailureMessage(
+            reason,
+            `; invalid at ${path}${category}`,
+            path,
+          ),
   });
 }
 
@@ -177,7 +180,9 @@ export function policyFailureMessage(
   detail = "",
   path?: string,
 ): string {
-  return `${failureMessages[reason].text}${detail}. Docs: ${failureDocs(reason, path)}`;
+  const docs =
+    path === undefined ? failureMessages[reason].docs : failureDocs(reason, path);
+  return `${failureMessages[reason].text}${detail}. Docs: ${docs}`;
 }
 
 /**
@@ -523,12 +528,12 @@ function isTransient(error: DecisionProviderError): boolean {
 
 function failureDocs(
   reason: MessagePolicyConfigurationFailure,
-  path?: string,
+  path: string,
 ): string {
-  if (path?.startsWith("english.builtinBehaviors.") === true) {
+  if (path.startsWith("english.builtinBehaviors.")) {
     return `${POLICY_SPEC}#built-in-behaviors`;
   }
-  if (/^english\.(?:fixed|initial)Behaviors\./u.test(path ?? "")) {
+  if (/^english\.(?:fixed|initial)Behaviors\./u.test(path)) {
     return `${POLICY_SPEC}#behaviors`;
   }
   return failureMessages[reason].docs;
