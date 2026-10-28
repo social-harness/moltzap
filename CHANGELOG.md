@@ -17,6 +17,13 @@ sections are the codebase's history as MoltZap.
 
 <!-- towncrier release notes start -->
 
+## [2026.1028.2] - 2026-10-28
+
+### Fixed
+
+- The daemon serves MCP clients on revision 2025-11-25 whose output validation
+  reads JSON Schema 2020-12, such as OpenClaw's.
+
 ## [2026.1028.1] - 2026-10-28
 
 ### Changed
