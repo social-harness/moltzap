@@ -805,67 +805,6 @@ it(
   }),
 );
 
-it(
-  "refuses a BEHAVIOR.md text of kind safety as an invalid rule",
-  Effect.fn(function* () {
-    const configuration = yield* options(fixture().path);
-    yield* withStore(stateDirectory(), (store) =>
-      Effect.gen(function* () {
-        const installed = yield* installEditableFirewall(configuration, store);
-        const before = yield* installed.policy.read();
-        const error = yield* installed.policy
-          .update({
-            add: [{ behavior: SHARED.replace("kind: norm", "kind: safety") }],
-          })
-          .pipe(Effect.flip);
-        expect(error).toMatchObject({
-          reason: "invalid-rule",
-          problem: "not-norm",
-          path: ["add", 0],
-          ruleId: "meeting-booking",
-        });
-        expect(yield* installed.policy.read()).toEqual(before);
-      }),
-    );
-  }),
-);
-
-it(
-  "refuses a BEHAVIOR.md text without frontmatter or over 64 KiB as an invalid rule",
-  Effect.fn(function* () {
-    const configuration = yield* options(fixture().path);
-    yield* withStore(stateDirectory(), (store) =>
-      Effect.gen(function* () {
-        const installed = yield* installEditableFirewall(configuration, store);
-        const before = yield* installed.policy.read();
-        const unframed = yield* installed.policy
-          .update({
-            add: [
-              { behavior: "Each member holds a slot before confirming it." },
-            ],
-          })
-          .pipe(Effect.flip);
-        const oversized = yield* installed.policy
-          .update({
-            add: [{ behavior: SHARED.padEnd(MAXIMUM_BEHAVIOR_BYTES + 1, " ") }],
-          })
-          .pipe(Effect.flip);
-        expect(unframed).toMatchObject({
-          reason: "invalid-rule",
-          problem: "frontmatter",
-          path: ["add", 0],
-        });
-        expect(oversized).toMatchObject({
-          reason: "invalid-rule",
-          problem: "too-large",
-          path: ["add", 0],
-        });
-        expect(yield* installed.policy.read()).toEqual(before);
-      }),
-    );
-  }),
-);
-
 /** Edits the fixture's editable rules (`inline-initial`, `ask-first`) cannot apply, and what each refusal names. */
 const REFUSED_EDITS = [
   {
@@ -913,30 +852,60 @@ const REFUSED_EDITS = [
     edit: { add: [{ ...INITIAL, id: FIXED.id }] },
     refusal: { reason: "fixed-rule", ruleId: FIXED.id, path: ["add", 0] },
   },
+  {
+    edit: {
+      add: [{ behavior: SHARED.replace("kind: norm", "kind: safety") }],
+    },
+    refusal: {
+      reason: "invalid-rule",
+      problem: "not-norm",
+      ruleId: "meeting-booking",
+      path: ["add", 0],
+    },
+  },
+  {
+    edit: {
+      add: [{ behavior: "Each member holds a slot before confirming it." }],
+    },
+    refusal: {
+      reason: "invalid-rule",
+      problem: "frontmatter",
+      path: ["add", 0],
+    },
+  },
+  {
+    edit: {
+      add: [{ behavior: SHARED.padEnd(MAXIMUM_BEHAVIOR_BYTES + 1, " ") }],
+    },
+    refusal: { reason: "invalid-rule", problem: "too-large", path: ["add", 0] },
+  },
 ] as const;
 
 it.each(REFUSED_EDITS)(
-  "names the failing rule and problem of a refused edit: $refusal",
+  "refuses an edit, naming its failing rule and problem, and keeps the policy: $refusal",
   ({ edit, refusal }) =>
     refusedEdit(edit).pipe(
-      Effect.tap((error) =>
+      Effect.tap(({ error, before, after }) =>
         Effect.sync(() => {
           expect(error).toMatchObject(refusal);
           expect(error.message).toContain("Docs: ");
+          expect(after).toEqual(before);
         }),
       ),
     ),
 );
 
-/** The refusal `policy_update` gives `edit` on the fixture's policy. */
+/** The refusal `policy_update` gives `edit` on the fixture's policy, with `policy_read` before and after it. */
 function refusedEdit(edit: (typeof REFUSED_EDITS)[number]["edit"]) {
   return Effect.gen(function* () {
     const configuration = yield* options(fixture().path);
     return yield* withStore(stateDirectory(), (store) =>
-      installEditableFirewall(configuration, store).pipe(
-        Effect.flatMap((installed) => installed.policy.update(edit)),
-        Effect.flip,
-      ),
+      Effect.gen(function* () {
+        const installed = yield* installEditableFirewall(configuration, store);
+        const before = yield* installed.policy.read();
+        const error = yield* installed.policy.update(edit).pipe(Effect.flip);
+        return { error, before, after: yield* installed.policy.read() };
+      }),
     );
   });
 }
