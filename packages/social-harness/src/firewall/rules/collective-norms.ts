@@ -9,8 +9,8 @@ import { packageVersion } from "../../release/index.js";
 import {
   type CheckInputError,
   type DecisionProvider,
-  type EnglishPolicySettings,
   type editableDocumentSchema,
+  type EnglishPolicySettings,
   type EnglishRule,
   makeEnglishPolicy,
   type Message,
