@@ -1,24 +1,76 @@
-/** @file The exact acknowledgement phrase and the one `no-acknowledgement-posts` rule both the `acknowledgements` built-in and the collective norm bundle register. */
+/**
+ * @file The one `no-acknowledgement-posts` rule both the `acknowledgements`
+ * built-in and the collective norm bundle register, and the bounded
+ * acknowledgement vocabulary it assesses with.
+ */
 
-import type { Message } from "../evaluator/index.js";
 import { type CodeRule, revisionOutcome } from "./outcome.js";
 
-/** An acknowledgement and nothing else, such as "Thanks" or "Got it". */
-const EXACT_ACKNOWLEDGEMENT =
-  /^(?:thanks|thank you|got it|noted|ack|acknowledged)[.!\s]*$/iu;
+/** Words that thank or acknowledge receipt; a message needs one to count as an acknowledgement. */
+const ACKNOWLEDGEMENT_WORDS: ReadonlySet<string> = new Set([
+  "ack",
+  "acknowledged",
+  "appreciate",
+  "appreciated",
+  "cheers",
+  "got",
+  "noted",
+  "received",
+  "roger",
+  "thank",
+  "thanks",
+  "thx",
+  "ty",
+  "understood",
+]);
 
 /**
- * Whether a message's whole text is one exact acknowledgement phrase, with
- * trailing punctuation. Anything else, such as an emoji, a name or a time,
- * keeps the message's ordinary meaning.
- * @param text The message text.
- * @returns Whether the text is only an acknowledgement.
+ * Words that may accompany an acknowledgement without adding information.
+ * Consent and approval words such as "ok", "sounds good", "great" or
+ * "perfect" answer a proposal, so a message carrying one is never an
+ * acknowledgement, even with a thanks.
  */
-export function isAcknowledgement(text: string): boolean {
-  return EXACT_ACKNOWLEDGEMENT.test(text);
-}
+const ACKNOWLEDGEMENT_FILLER: ReadonlySet<string> = new Set([
+  "a",
+  "again",
+  "all",
+  "and",
+  "both",
+  "confirmation",
+  "everybody",
+  "everyone",
+  "folks",
+  "for",
+  "heads",
+  "hey",
+  "hi",
+  "info",
+  "it",
+  "just",
+  "know",
+  "letting",
+  "lot",
+  "much",
+  "organizing",
+  "really",
+  "so",
+  "team",
+  "that",
+  "the",
+  "this",
+  "update",
+  "updates",
+  "us",
+  "very",
+  "you",
+]);
 
-/** A plain post to two or more members whose whole text is an exact acknowledgement asks for revision. */
+/**
+ * A plain post to two or more members that only thanks or acknowledges asks
+ * for revision. Its statement, which the collective norm bundle's edition
+ * records, names the whole vocabulary, so a vocabulary change moves the
+ * bundle's revision.
+ */
 export const noAcknowledgementPosts: CodeRule = {
   description: {
     id: "no-acknowledgement-posts",
@@ -28,10 +80,33 @@ export const noAcknowledgementPosts: CodeRule = {
       nextAction: "stop",
     },
   },
-  statement:
-    'An agent does not post to two or more members a plain message whose whole text is "thanks", "thank you", "got it", "noted", "ack" or "acknowledged".',
-  assess: (message: Message) =>
+  statement: `An agent does not post to two or more members a plain message with no question mark, digit, symbol or link whose every word, once addresses and mentions are removed, is an acknowledgement word (${[...ACKNOWLEDGEMENT_WORDS].join(", ")}) or a filler word (${[...ACKNOWLEDGEMENT_FILLER].join(", ")}), with at least one acknowledgement word.`,
+  assess: (message) =>
     message.operation === undefined && message.recipients.length > 1
-      ? revisionOutcome(isAcknowledgement(message.text))
+      ? revisionOutcome(isAcknowledgementOnly(message.text))
       : "not-applicable",
 };
+
+/**
+ * Whether a plain message only thanks or acknowledges: no question mark,
+ * digit, symbol or link, and, once addresses and mentions are removed, every
+ * word an acknowledgement or filler word, with at least one acknowledgement.
+ * An emoji may consent or object, and a name is not filler, so "👍",
+ * "Thanks 👎" and "Thanks, Bob" are not acknowledgement-only: the rule
+ * refuses only what certainly is.
+ */
+function isAcknowledgementOnly(text: string): boolean {
+  if (/[?\d\p{S}]|https?:\/\//u.test(text)) {
+    return false;
+  }
+  const remainder = text.replace(/(?:@|\b(?:agent|group):)\S+/gu, " ");
+  const words = remainder.toLowerCase().match(/\p{L}+(?:'\p{L}+)?/gu) ?? [];
+  return (
+    words.length > 0 &&
+    words.every(
+      (word) =>
+        ACKNOWLEDGEMENT_WORDS.has(word) || ACKNOWLEDGEMENT_FILLER.has(word),
+    ) &&
+    words.some((word) => ACKNOWLEDGEMENT_WORDS.has(word))
+  );
+}

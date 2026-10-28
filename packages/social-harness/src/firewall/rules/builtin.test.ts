@@ -290,22 +290,38 @@ it.each([
     }),
 );
 
-it.each(["Thanks!", "Thank you.", "Got it", "Noted."])(
-  "asks for revision of a group acknowledgement: %s",
-  (text) =>
+it.prop(
+  "asks for revision of a group post of acknowledgement and filler words, and sends it once it carries a number",
+  [
+    fc.array(fc.constantFrom("thanks", "got", "noted", "cheers", "ack"), {
+      minLength: 1,
+      maxLength: 4,
+    }),
+    fc.array(fc.constantFrom("all", "everyone", "so", "much", "for", "the"), {
+      maxLength: 4,
+    }),
+  ],
+  ([acknowledgements, filler]) =>
     Effect.gen(function* () {
       const firewall = yield* firewallFor({
         outgoing: [{ use: "acknowledgements" }],
       });
-      const result = yield* firewall.checkOutgoing(
-        { ...message(text), recipients: ["alice", "bob"] },
+      const text = [...acknowledgements, ...filler].join(" ");
+      const bare = yield* firewall.checkOutgoing(
+        { ...message(`${text}!`), recipients: ["alice", "bob"] },
         SENDING,
       );
-      expect(result.judgment).toBe("revise");
-      expect(result.feedback).toEqual([
+      const informative = yield* firewall.checkOutgoing(
+        { ...message(`${text}, room 2`), recipients: ["alice", "bob"] },
+        SENDING,
+      );
+      expect(bare.judgment).toBe("revise");
+      expect(bare.feedback).toEqual([
         expect.objectContaining({ nextAction: "stop" }),
       ]);
+      expect(informative.judgment).toBe("allow");
     }),
+  { timeout: propertyTimeoutMilliseconds },
 );
 
 it.each([
@@ -316,7 +332,9 @@ it.each([
   "Thanks, Bob.",
   "Thanks 👎",
   "Thanks, ❌",
+  "Thanks all 🙏",
   "👍",
+  "Perfect, thanks!",
 ])("sends group information and answers: %s", (text) =>
   Effect.gen(function* () {
     const firewall = yield* firewallFor({

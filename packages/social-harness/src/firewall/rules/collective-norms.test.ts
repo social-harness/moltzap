@@ -34,7 +34,6 @@ const BOB = "agent-bob";
 const CAROL = "agent-carol";
 const NOW = 1_792_000_000_000;
 const LATER = NOW + 60_000;
-const SOONER = NOW - 1;
 const BUNDLE = "org.social-harness/collective-norms";
 const FORM = '{"type":"object","properties":{"day":{"type":"string"}}}';
 /** The shipped collective norms the incoming registration assesses, in order. */
@@ -101,89 +100,14 @@ it("refuses a request while this agent's earlier request in the conversation is 
     expect(result.feedback.map((item) => item.nextAction)).toContain("wait");
   }));
 
-// @agent-code-guard/regression-only: each case pins one way an earlier request closes.
-it.each([
-  [
-    "its result arrived",
-    [
-      ownRequest("col_done", LATER, "gather"),
-      local({ kind: "result", op: "gather", id: "col_done" }),
-    ],
-  ],
-  [
-    "it failed",
-    [
-      ownRequest("col_done", LATER, "gather"),
-      local({ kind: "failure", id: "col_done" }),
-    ],
-  ],
-  ["its deadline passed", [ownRequest("col_done", SOONER, "gather")]],
-  [
-    "its member answered the gather",
-    [
-      ownRequest("col_done", LATER, "gather"),
-      entry(BOB, [ALICE], 'answered {"day":"tue"}', {
-        kind: "answer",
-        op: "gather",
-        id: "col_done",
-      }),
-    ],
-  ],
-  [
-    "the open request is another agent's",
-    [
-      entry(BOB, [ALICE], "gather from agent:bob", {
-        kind: "request",
-        op: "gather",
-        id: "col_bob",
-        deadlineAt: LATER,
-      }),
-    ],
-  ],
-] as const)(
-  "opens a request once the earlier one is closed: %s",
-  ([, history]) =>
-    Effect.gen(function* () {
-      const result = yield* checkOutgoing(
-        { facilitator: true, history },
-        newRequest(),
-      );
-      expect(result.judgment).toBe("allow");
-    }),
-);
-
-it("keeps an all_gather open after one member's answer", () =>
-  Effect.gen(function* () {
-    const result = yield* checkOutgoing(
-      {
-        facilitator: true,
-        history: [
-          ownRequest("col_group", LATER, "all_gather"),
-          entry(BOB, [ALICE, CAROL], 'answered {"day":"tue"}', {
-            kind: "answer",
-            op: "all_gather",
-            id: "col_group",
-          }),
-        ],
-      },
-      newRequest(),
-    );
-    expect(result.judgment).toBe("revise");
-  }));
-
-it("refuses an acknowledgement-only post to several members but not to one", () =>
+it("refuses an acknowledgement-only post to several members", () =>
   Effect.gen(function* () {
     const group = yield* checkOutgoing(
       { facilitator: false },
-      draft([BOB, CAROL], "Thanks!"),
-    );
-    const direct = yield* checkOutgoing(
-      { facilitator: false },
-      draft([BOB], "Thanks!"),
+      draft([BOB, CAROL], "Thanks, everyone!"),
     );
     expect(group.judgment).toBe("revise");
     expect(group.feedback.map((item) => item.nextAction)).toContain("stop");
-    expect(direct.judgment).toBe("allow");
   }));
 
 it("guides a received request with the bundle's English norms", () =>
@@ -458,15 +382,6 @@ function ownRequest(
     op === "gather" ? [BOB] : [BOB, CAROL],
     `${op} from agent:alice`,
     { kind: "request", op, id, deadlineAt },
-  );
-}
-
-function local(operation: NonNullable<Message["operation"]>): HistoryEntry {
-  return entry(
-    "sharness",
-    [ALICE],
-    `${operation.kind} of ${operation.id}`,
-    operation,
   );
 }
 

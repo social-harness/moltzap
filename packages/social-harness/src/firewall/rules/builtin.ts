@@ -8,10 +8,7 @@ import type {
   MiddlewareInput,
   MiddlewareResult,
 } from "../evaluator/index.js";
-import {
-  isAcknowledgement,
-  noAcknowledgementPosts,
-} from "./acknowledgements.js";
+import { noAcknowledgementPosts } from "./acknowledgements.js";
 import { oneOpenRequest } from "./open-requests.js";
 import { revisionOutcome, sha256 } from "./outcome.js";
 
@@ -40,6 +37,14 @@ const CREDENTIAL_STATUS =
 /** A tool name stands alone: not inside a word, a URL path, a scheme or a code. */
 const BEFORE_NAME = String.raw`(?<![\w$:/-])`;
 const AFTER_NAME = String.raw`(?![\w$:/-])`;
+
+/**
+ * An incoming acknowledgement and nothing else, such as "Thanks" or "Got it",
+ * which needs no response. The incoming rule keeps this exact list: a wrong
+ * match would leave a member's question unanswered.
+ */
+const EXACT_ACKNOWLEDGEMENT =
+  /^(?:thanks|thank you|got it|noted|ack|acknowledged)[.!\s]*$/iu;
 
 /**
  * Every send's text, a collective's rendered form and answer included, is
@@ -176,7 +181,7 @@ export function openRequestsPolicy(): MessageMiddleware {
 export function acknowledgementsPolicy(): MessageMiddleware {
   return {
     id: "org.social-harness/acknowledgements",
-    revision: sha256("org.social-harness/acknowledgements/v2"),
+    revision: sha256("org.social-harness/acknowledgements/v3"),
     rules: [
       {
         id: "acknowledgement",
@@ -238,7 +243,7 @@ function checkAcknowledgements({
   const empty =
     event.direction === "incoming" &&
     event.message.operation === undefined &&
-    isAcknowledgement(event.message.text) &&
+    EXACT_ACKNOWLEDGEMENT.test(event.message.text) &&
     !mayAnswerRequest(context, event.message.sender);
   return Effect.succeed({
     findings: [
