@@ -226,7 +226,9 @@ jobs:
               echo "mode=skip" >> "$GITHUB_OUTPUT"
               exit 0
             fi
-            if [ "$(GATE_COMMIT=$GATED_COMMIT scripts/release/push-gate.sh)" = skip ]; then
+            # Assigned first, so a failing gate fails the step instead of reading as a release.
+            DECISION=$(GATE_COMMIT=$GATED_COMMIT scripts/release/push-gate.sh)
+            if [ "$DECISION" = skip ]; then
               echo "::notice::The release gate skipped $GATED_COMMIT; no new version will be released."
               echo "mode=skip" >> "$GITHUB_OUTPUT"
               exit 0
@@ -422,7 +424,8 @@ jobs:
             [ "${#TARBALLS[@]}" -eq 1 ] && [ -f "${TARBALLS[0]}" ] || { echo "ERROR: pack of $pkg did not write exactly one tarball"; exit 1; }
             printf '%s\t%s\t%s\n' "$pkg" "$(jq -r .name "$pkg/package.json")" "$pkg/$(basename "${TARBALLS[0]}")" >> "$OUT/packages.tsv"
           done
-          (cd "$OUT" && sha256sum ./*/*/*.tgz packages.tsv > SHA256SUMS)
+          mapfile -t FILES < <(cut -f3 "$OUT/packages.tsv")
+          (cd "$OUT" && sha256sum "${FILES[@]}" packages.tsv > SHA256SUMS)
 
       - name: Keep the tarballs for the publish job
         if: steps.plan.outputs.mode == 'resume' && steps.select.outputs.packages != ''

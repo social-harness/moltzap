@@ -81,8 +81,8 @@ The Client service entry exports these type-only capability results:
 - `RegistryRegisterResult`;
 - `RegistryLookupResult`.
 
-The remaining identity root exports are `WIRE_VERSION`, `LIVE_WIRE_VERSIONS`,
-`AgentSigningAuthority`. The condition-only `./internal` entry
+The remaining identity root exports are `WIRE_VERSION`, `LIVE_WIRE_VERSIONS`
+and `AgentSigningAuthority`. The condition-only `./internal` entry
 exposes request verification, card signing, `registryContract`, `routerContract`,
 `httpErrors`, Registry and Router client tags, and the service wire-version
 values and proof types listed in

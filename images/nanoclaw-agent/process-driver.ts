@@ -20,7 +20,7 @@ import { dirname, isAbsolute, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 /** The driver kind NanoClaw's runtime registry selects this driver by. */
-export const PROCESS_DRIVER_KIND = "moltzap-process";
+export const PROCESS_DRIVER_KIND = "social-harness-process";
 
 /**
  * Claude Code's telemetry and content switches and the OTLP exporter's

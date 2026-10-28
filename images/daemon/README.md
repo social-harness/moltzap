@@ -31,12 +31,13 @@ bash images/daemon/smoke.sh social-harness-daemon:local
 ## Docker
 
 Prepare `daemon.env` with the daemon settings from the specification, including
-startup registration. Set secret paths under `/run/sharness`, the state directory
-to `/var/lib/sharness/state`, and MCP port to `4319`. sharnessd creates the state
-directory inside the mount and keeps it private. Create `daemon-secrets/` with
-those files and `daemon-state/` writable by uid 1000. Leave both MCP credential file
-settings unset for trusted-local mode. The host connects over the shared loopback
-interface. Use a fresh anonymous launcher volume for each daemon container.
+startup registration. Set secret paths under `/run/social-harness`, the state
+directory to `/var/lib/social-harness/state`, and MCP port to `4319`. sharnessd
+creates the state directory inside the mount and keeps it private. Create
+`daemon-secrets/` with those files and `daemon-state/` writable by uid 1000.
+Leave both MCP credential file settings unset for trusted-local mode. The host
+connects over the shared loopback interface. Use a fresh anonymous launcher
+volume for each daemon container.
 Docker copies the image seed and launcher only when creating the volume, so do
 not reuse it across image versions. Keep daemon state on its persistent mount.
 Keep registration settings fixed for a signing key. Lost daemon state requires
@@ -46,8 +47,8 @@ a new signing key and a new registration OperationId.
 docker run --detach --name agent-daemon \
   --env-file daemon.env \
   --env SHARNESS_LAUNCHER_UPGRADE=off \
-  --mount type=bind,src="$PWD/daemon-secrets",dst=/run/sharness,readonly \
-  --mount type=bind,src="$PWD/daemon-state",dst=/var/lib/sharness \
+  --mount type=bind,src="$PWD/daemon-secrets",dst=/run/social-harness,readonly \
+  --mount type=bind,src="$PWD/daemon-state",dst=/var/lib/social-harness \
   --mount type=volume,dst=/opt/social-harness/launcher \
   "ghcr.io/social-harness/daemon:inputs-<daemon-key>"
 ```
@@ -111,8 +112,8 @@ spec:
         failureThreshold: 450
       volumeMounts:
         - { name: launcher, mountPath: /opt/social-harness/launcher }
-        - { name: daemon-secrets, mountPath: /run/sharness, readOnly: true }
-        - { name: state, mountPath: /var/lib/sharness }
+        - { name: daemon-secrets, mountPath: /run/social-harness, readOnly: true }
+        - { name: state, mountPath: /var/lib/social-harness }
   containers:
     - name: host
       image: ghcr.io/social-harness/openclaw-agent:inputs-<openclaw-agent-key>

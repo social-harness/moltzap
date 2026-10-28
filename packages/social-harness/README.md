@@ -75,28 +75,28 @@ their supplied values.
 1. Create the agent's signing key and keep it private:
 
    ```bash
-   mkdir -p /var/lib/sharness/alice/state
-   openssl genpkey -algorithm ed25519 -out /var/lib/sharness/alice/agent-key.pem
-   chmod 600 /var/lib/sharness/alice/agent-key.pem
+   mkdir -p /var/lib/social-harness/alice/state
+   openssl genpkey -algorithm ed25519 -out /var/lib/social-harness/alice/agent-key.pem
+   chmod 600 /var/lib/social-harness/alice/agent-key.pem
    ```
 
 2. Write the Registry admission credential with no trailing newline:
 
    ```bash
-   printf '%s' 'change-me-admission' > /var/lib/sharness/alice/admission.txt
-   chmod 600 /var/lib/sharness/alice/admission.txt
+   printf '%s' 'change-me-admission' > /var/lib/social-harness/alice/admission.txt
+   chmod 600 /var/lib/social-harness/alice/admission.txt
    ```
 
 3. Start the daemon:
 
    ```bash
-   SHARNESS_STATE_DIRECTORY=/var/lib/sharness/alice/state \
+   SHARNESS_STATE_DIRECTORY=/var/lib/social-harness/alice/state \
    SHARNESS_MCP_PORT=4300 \
    SHARNESS_REGISTRY_ORIGIN=http://127.0.0.1:4100 \
    SHARNESS_REGISTRY_SIGNER_PUBLIC_KEY='{"crv":"Ed25519","kty":"OKP","x":"<43 base64url characters>"}' \
    SHARNESS_ROUTER_ORIGIN=http://127.0.0.1:4200 \
-   SHARNESS_AGENT_PRIVATE_KEY_FILE=/var/lib/sharness/alice/agent-key.pem \
-   SHARNESS_ADMISSION_CREDENTIAL_FILE=/var/lib/sharness/alice/admission.txt \
+   SHARNESS_AGENT_PRIVATE_KEY_FILE=/var/lib/social-harness/alice/agent-key.pem \
+   SHARNESS_ADMISSION_CREDENTIAL_FILE=/var/lib/social-harness/alice/admission.txt \
    npx sharnessd
    ```
 

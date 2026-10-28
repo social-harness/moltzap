@@ -174,7 +174,8 @@ export function fixtureFiles(
     "tools/image-task.ts": "export {};",
     "tools/heredoc-task.ts": "export {};",
     "assets/config": "initial",
-    "pnpm-workspace.yaml": "packages:\n  - packages/*\n  - plugins/*\n",
+    "pnpm-workspace.yaml":
+      "packages:\n  - packages/*\n  - images/daemon\n  - plugins/*\n",
     "pnpm-lock.yaml": lock,
     "scripts/build/image.ts": "export {};\n",
     ...agentFiles(),

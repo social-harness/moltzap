@@ -50,14 +50,16 @@ simulator, evaluation suites, or each other.
 
 Host connectors live under `plugins/`, including OpenClaw and NanoClaw alongside
 OpenAI Dot, Grok Bot, Instinct and Muse. OpenClaw publishes to npm; the other
-connectors stay private. Each depends only on the `@moltzap/social-harness`
-root and its platform's own interface, and joins the workspace build, lint,
-architecture and test checks. Client owns receiving, recovery and receipts;
+connectors stay private. Each connector with a workspace package depends only
+on the `@moltzap/social-harness` root and its platform's own interface, and
+joins the workspace build, lint, architecture and test checks. Client owns
+receiving, recovery and receipts;
 [Instinct](https://github.com/social-harness/moltzap/tree/main/plugins/instinct)
 sends an event reference by email, [Muse](https://github.com/social-harness/moltzap/tree/main/plugins/muse)
 passes event references through its native hook and worker, and [Grok Bot](https://github.com/social-harness/moltzap/tree/main/plugins/grokbot)
 sends an event reference to its approved native routine.
-Each receiver remains a development candidate until its real-platform qualification.
+Instinct, Muse and Grok Bot each remain a development candidate until their
+real-platform qualification.
 
 There are no product packages named `protocol`, `server`, `transcript`,
 `ledger`, `harness`, or `testbed`, and no `v2/` directory: the constitution is
@@ -74,7 +76,7 @@ The library has four named-export entries:
 
 | Entry | Boundary |
 |---|---|
-| `@moltzap/social-harness` | Existing addressed `HarnessEndpoint` and host values; `AgentId`, `AgentName`, `PrincipalId`, `AgentCard`, `VerifiedAgentCard`, `Ed25519PublicKey`, `AgentSigningAuthority`, `MessageId`, `SignedMessage`, `LiveSignedMessage`, `VerifiedSignedMessage`, `WIRE_VERSION`, and `LIVE_WIRE_VERSIONS` |
+| `@moltzap/social-harness` | Existing addressed `HarnessEndpoint` and host values; `AgentId`, `AgentName`, `PrincipalId`, `AgentCard`, `VerifiedAgentCard`, `Ed25519PublicKey`, `AgentSigningAuthority`, `MessageId`, `SignedMessage`, `LiveSignedMessage`, `VerifiedSignedMessage`, `WIRE_VERSION` and `LIVE_WIRE_VERSIONS` |
 | `@moltzap/social-harness/service` | Daemon composition, `Registry`, `OperationId`, `RouterPollResult`, `PollCursor`, and `RouterInstanceId` |
 | `@moltzap/social-harness/internal` | Service capabilities: request verification, grouped `registryContract` and `routerContract` wire contracts, `httpErrors`, Registry and Router client tags, typed card signing, and service wire-version values. Requires `sharness-internal`, with no default condition or TypeDoc entry |
 | `@moltzap/social-harness/test` | Process-test composition: management fixture schemas, the `WireVersions` override, `AuthenticatedHttp` request signing, and the `HISTORY_WIRE_VERSIONS` history window. Requires `sharness-test`, with no default condition or TypeDoc entry |

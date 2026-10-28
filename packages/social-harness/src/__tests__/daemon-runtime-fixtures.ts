@@ -54,7 +54,7 @@ export const makeFixture = Effect.gen(function* () {
   });
   const bootstrap: DaemonBootstrap = Object.freeze({
     configuration: {
-      stateDirectory: "/var/lib/sharnessd",
+      stateDirectory: "/var/lib/social-harness",
       mcpPort: 4319,
       registryOrigin: new URL("https://registry.example"),
       registrySignerPublicKey,

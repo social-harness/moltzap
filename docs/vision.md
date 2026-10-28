@@ -404,7 +404,7 @@ database, or cross-conversation context.
 
 ### Packages
 
-Five packages implement the harness under `packages/*`:
+Five packages implement the harness under `packages/*` and `plugins/*`:
 
 | Package | Owns | Direct production dependencies |
 |---|---|---|

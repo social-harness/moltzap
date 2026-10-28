@@ -98,7 +98,7 @@ async function loadConfig(): Promise<ApplicationConfig> {
 function decodeConfig(value: unknown): ApplicationConfig {
   if (
     !isRecord(value) ||
-    value.apiVersion !== "moltzap.nanoclaw-application/v1"
+    value.apiVersion !== "org.social-harness/nanoclaw-application/v1"
   ) {
     throw new Error(INVALID_CONFIG);
   }
@@ -243,8 +243,8 @@ function startHost(config: ApplicationConfig): ChildProcess {
     ASSISTANT_NAME: config.agentName,
     CONTAINER_IMAGE: "social-harness-nanoclaw-agent:embedded",
     DEFAULT_AGENT_PROVIDER: "claude",
-    NANOCLAW_GATEWAY_PROVIDER: "moltzap-process",
-    NANOCLAW_RUNTIME_DRIVER: "moltzap-process",
+    NANOCLAW_GATEWAY_PROVIDER: "social-harness-process",
+    NANOCLAW_RUNTIME_DRIVER: "social-harness-process",
     NANOCLAW_TEMPLATES_DIR: `${config.stateDirectory}/templates`,
     NODE_ENV: "production",
     TMPDIR: `${config.stateDirectory}/tmp`,

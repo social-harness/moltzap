@@ -143,6 +143,14 @@ main() {
   check 'manifest absent at last release is ignored by revert check' release
 
   new_case
+  mkdir -p plugins/receiver
+  printf '%s\n' '{"name":"@moltzap/receiver-plugin","private":true}' > plugins/receiver/package.json
+  commit_tip 'chore(release): moltzap@2026.1025.2'
+  touch changelog.d/new.Fixed.md
+  commit_tip 'fix: change beside a private connector'
+  check 'private manifest without a version is ignored by revert check' release
+
+  new_case
   mkdir -p packages/social-harness/fixture
   printf '%s\n' '{"name":"nested-fixture","version":"2026.1025.1"}' > packages/social-harness/fixture/package.json
   commit_tip 'chore(release): moltzap@2026.1025.2'

@@ -3,7 +3,8 @@
 # (GITHUB_SHA when GATE_COMMIT is unset).
 # Output: release or skip on stdout, the reason on stderr. Unreadable metadata
 # fails instead of silently suppressing a release. Resumption and retries belong
-# to the ordinary manual release dispatch.
+# to the ordinary manual release dispatch. Private manifests never publish, so
+# the revert check compares only the versions of the others.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 commit="${GATE_COMMIT:-${GITHUB_SHA:?GATE_COMMIT or GITHUB_SHA must name the commit to gate}}"
@@ -58,6 +59,7 @@ fi
 manifests=$(git ls-tree -r --name-only "$commit" -- 'packages/' 'plugins/')
 while IFS= read -r manifest; do
   [[ "$manifest" =~ ^(packages|plugins)/[^/]+/package\.json$ ]] || continue
+  [[ "$(git show "$commit:$manifest" | jq -r .private)" != true ]] || continue
   release_manifest=$manifest
   if [[ "$manifest" == packages/social-harness/package.json ]]; then
     release_manifest=$wire_path

@@ -26,7 +26,7 @@ const registrySigner =
   '{"crv":"Ed25519","kty":"OKP","x":"y1j1FUgbqjCPeQVEnllv-2euwn_s9DeDkfEh3gk_OJ0"}';
 const directories: string[] = [];
 const noOverrides = new Map<string, string>();
-const EXPORT_PATH = "/var/run/sharness/history.ndjson";
+const EXPORT_PATH = "/run/social-harness/history.ndjson";
 
 const temporaryDirectory = (): string => {
   const directory = mkdtempSync(join(tmpdir(), "sharness-daemon-config-"));

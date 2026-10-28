@@ -65,11 +65,7 @@ function selectChannel(config: unknown): boolean {
     return false;
   }
   const selected = [
-    ...paths.filter(
-      (path) =>
-        path !== "/opt/social-harness/node_modules/@moltzap/openclaw-channel" &&
-        path !== IMAGE_CHANNEL,
-    ),
+    ...paths.filter((path) => path !== IMAGE_CHANNEL),
     IMAGE_CHANNEL,
   ];
   if (JSON.stringify(selected) === JSON.stringify(paths)) {

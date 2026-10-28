@@ -1,4 +1,4 @@
-/** @file Which build identities a release's provenance may be signed for. */
+/** @file Which build identity a release's provenance must be signed for. */
 
 import { effect as it } from "@effect/vitest";
 import { Effect, Exit } from "effect";

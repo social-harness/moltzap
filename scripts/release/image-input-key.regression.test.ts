@@ -568,6 +568,15 @@ await test("refuses non-UTF-8 committed paths", (t) => {
   assert.match(error.message, /Non-UTF-8/u);
 });
 
+await test("host hash ignores untracked workspace directories", (t) => {
+  const repo = fixture();
+  t.after(() => {
+    rmSync(repo, { recursive: true, force: true });
+  });
+  write(repo, "packages/untracked/package.json", "invalid JSON");
+  assert.doesNotThrow(() => hostCodeHashOfPackage(repo, "packages/router"));
+});
+
 await test("host hash refuses duplicate tracked workspace names", (t) => {
   const repo = fixture();
   t.after(() => {

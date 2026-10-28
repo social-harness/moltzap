@@ -2,6 +2,7 @@
 import { Data, Effect, Either } from "effect";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
+import { parse } from "yaml";
 /** A failed read or an incomplete committed input graph. */
 export class ImageInputError extends Data.TaggedError("ImageInputError")<{
   readonly message: string;
@@ -77,11 +78,17 @@ export function inputError(cause: unknown): ImageInputError {
       });
 }
 
-/** Indexes committed package identities without working-tree directories. */
+/**
+ * Indexes committed package identities without working-tree directories: the
+ * packages in the directories the committed `pnpm-workspace.yaml` lists.
+ */
 export function workspaceRoots(tree: Tree): ReadonlyMap<string, string> {
+  const patterns = workspacePatterns(tree);
   const roots = new Map<string, string>();
-  for (const file of [...tree.files.keys()].filter((file) =>
-    /^(?:packages\/[^/]+|images\/daemon)\/package\.json$/u.test(file),
+  for (const file of [...tree.files.keys()].filter(
+    (file) =>
+      path.posix.basename(file) === "package.json" &&
+      inWorkspace(path.posix.dirname(file), patterns),
   )) {
     const name = String(readJson(tree, file).name);
     if (roots.has(name)) {
@@ -178,4 +185,25 @@ function treeTarget(
     });
   }
   return treeTarget(target, files, blob, new Set([...seen, file]));
+}
+
+/** The `packages` globs of the committed `pnpm-workspace.yaml`. */
+function workspacePatterns(tree: Tree): readonly string[] {
+  const workspace: unknown = parse(tree.read("pnpm-workspace.yaml"));
+  const listed: unknown = mapping(workspace).packages;
+  return Array.isArray(listed)
+    ? listed.filter((pattern): pattern is string => typeof pattern === "string")
+    : [];
+}
+
+/** Selects as pnpm does: a directory one glob includes and no `!` glob excludes. */
+function inWorkspace(directory: string, patterns: readonly string[]): boolean {
+  const matches = (pattern: string) =>
+    path.posix.matchesGlob(directory, pattern);
+  return (
+    patterns.some((pattern) => !pattern.startsWith("!") && matches(pattern)) &&
+    !patterns.some(
+      (pattern) => pattern.startsWith("!") && matches(pattern.slice(1)),
+    )
+  );
 }

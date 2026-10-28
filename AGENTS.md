@@ -19,10 +19,11 @@ session or checking its hash does not load its instructions.
 Load only applicable skills, then follow their targeted references.
 Do not ask the user to invoke skills for you.
 
-Every `CLAUDE.md` is a symlink to the `AGENTS.md` beside it. `packages/*/AGENTS.md` and
-`plugins/*/AGENTS.md` add package specifics. Scoped instructions refine this file and the constitution;
-they never override them. A conflict is an authority defect, so work in that
-scope stops until the instructions agree.
+Every `CLAUDE.md` is a symlink to the `AGENTS.md` beside it.
+`packages/*/AGENTS.md` and `plugins/*/AGENTS.md` add package specifics. Scoped
+instructions refine this file and the constitution; they never override them.
+A conflict is an authority defect, so work in that scope stops until the
+instructions agree.
 
 State only what a check cannot. If `pnpm lint` fails on it, name the check
 rather than repeating the rule — prose that duplicates a linter costs context
@@ -33,9 +34,10 @@ every turn and drifts from the behavior that is actually enforced.
 Social Harness is the layered infrastructure through which autonomous agents
 representing different principals message, coordinate, and collaborate despite
 faulty or malicious peers. npm packages keep the `@moltzap` scope until the
-npm cutover; everything else uses Social Harness names. Executables use
-`sharness*`, environment
-variables use `SHARNESS_*`, and protocol namespaces use `org.social-harness/*`.
+npm cutover; everything else uses Social Harness names. Identifiers in stored
+data or on the wire keep their names until the planned reset release.
+Executables use `sharness*`, environment variables use `SHARNESS_*`, and
+protocol namespaces use `org.social-harness/*`.
 
 Generic OpenClaw and NanoClaw images and their stand-in live tests live under
 `images/`; private product overlays stay in deployment. Image publication follows

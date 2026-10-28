@@ -183,7 +183,8 @@ export function runGate(
 /**
  * Derive the packages to pack from the source dependency graph.
  * @param workspaceRoot Source workspace root.
- * @param entry Product whose transitive closure is packed.
+ * @param entry Repository-relative directory of the product whose
+ * transitive closure is packed.
  * @param temporaryRoot Scratch directory owned by the caller.
  * @returns Package names mapped to tarball paths.
  */

@@ -115,7 +115,7 @@ function installConsumer(
   return Effect.gen(function* () {
     const { archives } = yield* packProductClosure(
       workspaceRoot,
-      "social-harness",
+      "packages/social-harness",
       temporaryRoot,
     );
     const manifest = yield* readJsonFile(

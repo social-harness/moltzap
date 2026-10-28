@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
  * listed here: a tree left out is not reported as skipped, it simply
  * contributes zero blocks and the gate passes without having looked.
  */
-export const MERMAID_ROOTS = ["docs", "packages"] as const;
+export const MERMAID_ROOTS = ["docs", "packages", "plugins"] as const;
 
 /**
  * Something the gate was asked to inspect but could not.
@@ -416,7 +416,9 @@ function visitEntry(
       StringOps.endsWith(".md")(name) ||
       StringOps.endsWith(".mdx")(name) ||
       (StringOps.endsWith(".ts")(name) &&
-        full.includes(`${ctx.path.sep}packages${ctx.path.sep}`))
+        ["packages", "plugins"].some((root) =>
+          full.includes(`${ctx.path.sep}${root}${ctx.path.sep}`),
+        ))
     ) {
       ctx.out.push(full);
     }

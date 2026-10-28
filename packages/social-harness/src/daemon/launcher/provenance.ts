@@ -18,18 +18,12 @@ import { integrityOf } from "./integrity.js";
 import { downloadJson, type PublishedPackage } from "./npm.js";
 import { type PackedManifest, readPackedManifest } from "./packed-manifest.js";
 
-/** The repository whose release workflow signs published packages. */
-const RELEASE_REPOSITORIES = ["social-harness/moltzap"] as const;
-
 /**
- * The build identities the launcher trusts: each certificate subject
- * alternative name for `.github/workflows/publish.yml` on `refs/heads/main`
- * of a {@link RELEASE_REPOSITORIES} repository.
+ * The certificate subject alternative name of the one release workflow the
+ * launcher trusts.
  */
-const RELEASE_IDENTITIES: readonly string[] = RELEASE_REPOSITORIES.map(
-  (repository) =>
-    `https://github.com/${repository}/.github/workflows/publish.yml@refs/heads/main`,
-);
+const RELEASE_IDENTITY =
+  "https://github.com/social-harness/moltzap/.github/workflows/publish.yml@refs/heads/main";
 
 /** The OIDC issuer of GitHub Actions workload certificates. */
 const RELEASE_ISSUER = "https://token.actions.githubusercontent.com";
@@ -58,7 +52,7 @@ interface ProvenanceOptions {
 
 /**
  * Checks that `bytes` are the tarball npm recorded for `published` and that
- * its SLSA provenance, signed for one of {@link RELEASE_IDENTITIES}, covers them;
+ * its SLSA provenance, signed for {@link RELEASE_IDENTITY}, covers them;
  * fails with `provenance` naming the package otherwise.
  */
 export const verifyProvenance = Effect.fn("Launcher.verifyProvenance")(
@@ -103,20 +97,15 @@ export const verifyProvenance = Effect.fn("Launcher.verifyProvenance")(
   },
 );
 
-/**
- * Succeeds when `verifyAs` accepts the bundle for any of
- * {@link RELEASE_IDENTITIES}; Sigstore matches one identity per call.
- */
+/** Succeeds when `verifyAs` accepts the bundle for {@link RELEASE_IDENTITY}. */
 export function signedByReleaseIdentity(
   verifyAs: (identity: string) => Effect.Effect<unknown, unknown>,
   refuse: (why: string) => LauncherError,
 ): Effect.Effect<void, LauncherError> {
-  return Effect.firstSuccessOf(RELEASE_IDENTITIES.map(verifyAs)).pipe(
+  return verifyAs(RELEASE_IDENTITY).pipe(
     Effect.asVoid,
     Effect.mapError(() =>
-      refuse(
-        `its provenance is not signed by ${RELEASE_IDENTITIES.join(" or ")}`,
-      ),
+      refuse(`its provenance is not signed by ${RELEASE_IDENTITY}`),
     ),
   );
 }

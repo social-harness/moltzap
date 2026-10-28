@@ -23,9 +23,9 @@
  */
 
 import { Either } from "effect";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { productManifests } from "../repo/packages.ts";
 import {
   digestOf,
   fileEntry,
@@ -102,7 +102,7 @@ export function hostCodeHashOfDirectories(
 function workspaceDirectories(repo: string): Map<string, string> | PackFailure {
   return Either.match(
     Either.try({
-      try: () => packageDirectories(repo),
+      try: () => trackedWorkspaceDirectories(repo),
       catch: (cause): PackFailure => ({
         kind: "pack-failed",
         message: String(cause),
@@ -112,13 +112,41 @@ function workspaceDirectories(repo: string): Map<string, string> | PackFailure {
   );
 }
 
-function packageDirectories(repo: string): Map<string, string> | PackFailure {
+function trackedWorkspaceDirectories(
+  repo: string,
+): Map<string, string> | PackFailure {
+  const result = spawnSync(
+    // eslint-disable-next-line sonarjs/no-os-command-from-path -- Git supplies the tracked workspace inventory.
+    "git",
+    [
+      "ls-files",
+      "-z",
+      "--",
+      "packages/*/package.json",
+      "plugins/*/package.json",
+    ],
+    { cwd: repo },
+  );
+  if (result.status !== 0) {
+    return {
+      kind: "pack-failed",
+      message: result.stderr?.toString("utf8") || String(result.error),
+    };
+  }
+  const files = new TextDecoder("utf-8", { fatal: true })
+    .decode(result.stdout)
+    .split("\0")
+    .filter((file) =>
+      /^(?:packages|plugins)\/[^/]+\/package\.json$/u.test(file),
+    );
   const directories = new Map<string, string>();
-  for (const { dir, name } of productManifests(repo)) {
+  for (const file of files) {
+    const dir = path.posix.dirname(file);
+    const name = manifestName(repo, dir);
     if (directories.has(name)) {
       return {
         kind: "pack-failed",
-        message: `Duplicate workspace package name ${name} in ${dir}`,
+        message: `Duplicate workspace package name ${name} in ${file}`,
       };
     }
     directories.set(name, dir);
