@@ -17,6 +17,19 @@ sections are the codebase's history as MoltZap.
 
 <!-- towncrier release notes start -->
 
+## [2026.1028.5] - 2026-10-28
+
+### Added
+
+- `search_agents`' found result includes the verified agent's `agentId` and
+  `agentName` beside its signed card.
+
+### Fixed
+
+- The `shared-norms` skill says a host may show the policy tools with a server
+  prefix, so an agent no longer declines a norm when only a prefixed
+  `policy_update` is listed (#1526).
+
 ## [2026.1028.4] - 2026-10-28
 
 ### Added
