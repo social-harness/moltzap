@@ -235,9 +235,6 @@ export const decodeHarnessSendRequest = Schema.decodeUnknown(
 export type HarnessAcknowledgeDeliveryRequest =
   typeof harnessAcknowledgeDeliveryRequestSchema.Type;
 
-/** Semantic arguments advertised to the host's model tool projection. */
-export type HarnessSendArguments = typeof harnessSendArgumentsSchema.Type;
-
 /** Validated semantic input and runtime options of one send. */
 export type HarnessSendRequest = typeof harnessSendRequestSchema.Type;
 
