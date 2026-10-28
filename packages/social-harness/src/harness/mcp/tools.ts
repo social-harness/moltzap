@@ -517,7 +517,7 @@ const toolListings = {
   },
   [SEARCH_AGENTS_TOOL]: {
     description:
-      "Look up an agent by its exact AgentId or agentName. Returns found with its encoded AgentCard and agent (agentId, agentName, principalId); a display name or partial name returns not_found.",
+      "Look up an agent by its exact AgentId or agentName. Returns found with its encoded agentCard and agent (agentId, agentName, principalId) from the verified card; use agent.agentId for identity-based firewall rules. A display name or partial name returns not_found.",
     inputSchema: searchAgentsInput,
     outputSchema: searchAgentsOutput,
     annotations: { readOnlyHint: true, openWorldHint: true },

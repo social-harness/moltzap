@@ -613,15 +613,19 @@ it("composes and encodes a decoded inline policy without adding behavior paths",
     expect(composed.english?.initialRules).toEqual([INITIAL]);
   }));
 
-it.each(["fixedBehaviors", "initialBehaviors"] as const)(
-  "refuses unresolved %s in trusted composition",
-  (field) =>
+it.each([
+  { field: "fixedBehaviors", entry: "fixed" },
+  { field: "initialBehaviors", entry: "fixed" },
+  { field: "builtinBehaviors", entry: "policy/no-policy-changes" },
+] as const)(
+  "refuses unresolved $field in trusted composition",
+  ({ field, entry }) =>
     Effect.gen(function* () {
       const { document } = fixture();
       const policy = yield* decodeMessagePolicy(
         JSON.stringify({
           ...document,
-          english: { [field]: ["fixed"] },
+          english: { [field]: [entry] },
         }),
       );
       const error = yield* messagePolicyFirewall(policy, {
@@ -883,6 +887,48 @@ it(
         expect(yield* installed.policy.read()).toEqual(before);
       }),
     );
+  }),
+);
+
+it(
+  "refuses a builtin behavior whose id repeats an inline fixed rule",
+  Effect.fn(function* () {
+    const { path, document } = fixture();
+    writeFileSync(
+      path,
+      JSON.stringify({
+        ...document,
+        english: {
+          ...document.english,
+          fixedRules: [{ ...FIXED, id: "no-policy-changes" }],
+          builtinBehaviors: ["policy/no-policy-changes"],
+        },
+      }),
+    );
+    const error = yield* loaded(path).pipe(Effect.flip);
+    expect(error.behaviorReason).toBe("duplicate-id");
+    expect(error.message).toContain("english.builtinBehaviors.0");
+    expect(error.message).toContain("#built-in-behaviors");
+  }),
+);
+
+it(
+  "names a builtin behavior Client does not ship by its entry",
+  Effect.fn(function* () {
+    const { path, document } = fixture();
+    writeFileSync(
+      path,
+      JSON.stringify({
+        ...document,
+        english: {
+          ...document.english,
+          builtinBehaviors: ["policy/no-such-behavior"],
+        },
+      }),
+    );
+    const error = yield* loaded(path).pipe(Effect.flip);
+    expect(error.behaviorReason).toBe("missing");
+    expect(error.message).toContain("english.builtinBehaviors.0");
   }),
 );
 

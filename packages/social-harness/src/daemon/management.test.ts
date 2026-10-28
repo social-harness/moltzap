@@ -29,6 +29,7 @@ import {
   buildCertifiedGenesis,
   storeCertifiedGenesis,
 } from "../__tests__/certified-history-fixtures.js";
+import { connectInProcessClient } from "../__tests__/mcp-http-fixtures.js";
 import { routerInstanceId } from "../__tests__/router-worker-fixtures.js";
 import { unusedEndpointStore } from "../__tests__/unused-endpoint-store.js";
 import { verifyStoredMembership } from "../communication/conversations/index.js";
@@ -45,6 +46,7 @@ import {
   openEndpointStore,
 } from "../communication/store/index.js";
 import { encodeCanonical } from "../encoding/canonical-json.js";
+import { makeHarnessMcpHttpHandler } from "../harness/mcp/tools.js";
 import {
   managementReadConversationRequestSchema,
   managementRegisterRequestSchema,
@@ -414,6 +416,47 @@ const failsReadOverMembershipRowNamingAnotherHash = () =>
     );
   });
 
+/** A `search_agents` tool result with its one text block parsed as JSON. */
+const lookupReply = Schema.Struct({
+  structuredContent: Schema.Unknown,
+  content: Schema.Tuple(
+    Schema.Struct({ type: Schema.Literal("text"), text: Schema.parseJson() }),
+  ),
+});
+
+/**
+ * Serve `operations` through the daemon's MCP handler and return a call of
+ * its `search_agents` tool from a connected client. The handler's delivery
+ * operations die if a lookup reaches them.
+ */
+const serveAgentLookup = (operations: DaemonManagementOperations) =>
+  Effect.gen(function* () {
+    const unused = () => Effect.dieMessage("lookup reached another operation");
+    const handler = yield* makeHarnessMcpHttpHandler({
+      implementation: { name: "agent-lookup-test", version: "1" },
+      operations: {
+        ...operations,
+        protocolActive: () => true,
+        readInboxSummary: () =>
+          Effect.succeed({ pendingCount: 0, newestSequence: 0 }),
+        readEvent: unused,
+        readInbox: unused,
+        send: unused,
+        acknowledgeDelivery: unused,
+      },
+    });
+    yield* Effect.addFinalizer(() =>
+      Effect.tryPromise(() => handler.close()).pipe(Effect.orDie),
+    );
+    const client = yield* connectInProcessClient(handler, {
+      versionNegotiation: { mode: { pin: "2026-07-28" } },
+    });
+    return (selector: Readonly<Record<string, string>>) =>
+      Effect.tryPromise(() =>
+        client.callTool({ name: "search_agents", arguments: selector }),
+      ).pipe(Effect.flatMap(Schema.decodeUnknown(lookupReply)));
+  });
+
 const checksExactAgentLookups = () =>
   Effect.gen(function* () {
     const fixture = yield* makeIdentityFixture;
@@ -422,6 +465,7 @@ const checksExactAgentLookups = () =>
       bootstrap: fixture.bootstrap,
       registration: activeRegistration(fixture.cards[0]),
     }).pipe(Effect.provide(makeRegistryLayer(fixture.cards)));
+    const lookup = yield* serveAgentLookup(operations);
     const remote = fixture.cards[1];
     const found = {
       kind: "found",
@@ -433,25 +477,24 @@ const checksExactAgentLookups = () =>
       },
     };
 
-    expect(
-      yield* operations.searchAgents({ agentName: remote.agentName }),
-    ).toEqual(found);
-    expect(yield* operations.searchAgents({ agentId: remote.agentId })).toEqual(
-      found,
-    );
-    expect(
-      yield* operations.searchAgents(
-        Schema.decodeUnknownSync(managementSearchAgentsRequestSchema)({
-          agentName: "unknown-agent",
-        }),
-      ),
-    ).toEqual({ kind: "not_found" });
+    expect(yield* lookup({ agentName: remote.agentName })).toEqual({
+      structuredContent: found,
+      content: [{ type: "text", text: found }],
+    });
+    expect(yield* lookup({ agentId: remote.agentId })).toEqual({
+      structuredContent: found,
+      content: [{ type: "text", text: found }],
+    });
+    expect(yield* lookup({ agentName: "unknown-agent" })).toEqual({
+      structuredContent: { kind: "not_found" },
+      content: [{ type: "text", text: { kind: "not_found" } }],
+    });
   });
 
 // @agent-code-guard/regression-only: these cases pin the addressed owner-management contract.
 describe("addressed daemon management", () => {
   it(
-    "returns encoded cards and their views for exact names and ids and not_found for unknown names",
+    "returns the agent's view and encoded card through MCP for exact names and ids and not_found for unknown names",
     checksExactAgentLookups,
   );
 

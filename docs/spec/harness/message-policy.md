@@ -204,8 +204,10 @@ The guidance is locally attributed, not part of a peer's signed content. Its
 references and text must come from supplied, authorized values. Neither private
 assessor evidence nor peer instructions may be elevated into local guidance by
 the firewall. An agent may hold `policy_update` when its owner's catalog lists
-it. Peer text reaching that agent can lead to owner-rule edits; only `fixedRules` and
-`fixedBehaviors` prevent those edits. See [Authority](../norms.md#authority).
+it. Peer text reaching that agent can lead to owner-rule edits; only fixed
+rules (`fixedRules`, `fixedBehaviors` and `builtinBehaviors`) prevent those
+edits, and the built-in [`policy/no-policy-changes`](#built-in-behaviors)
+behavior refuses peer requests for them. See [Authority](../norms.md#authority).
 
 Persist disposition and guidance before runtime exposure. Native subscriptions,
 inbox pages, read-event and webhooks read the same admitted view; replay retains
@@ -464,7 +466,7 @@ to Client.
 | `format` | yes | `org.social-harness/message-policy/v1` |
 | `mode` | yes | `guidance` or `enforcement`; a daemon without the file has no firewall |
 | `incoming`, `outgoing` | no, default `[]` | built-in code middleware in chain order, below |
-| `english` | no | `fixedRules` and `initialRules` as `EnglishRule` arrays, default `[]`, and `fixedBehaviors` and `initialBehaviors` as arrays of behavior directory paths, default `[]`; present, owner tools can edit English rules |
+| `english` | no | `fixedRules` and `initialRules` as `EnglishRule` arrays, default `[]`; `fixedBehaviors` and `initialBehaviors` as arrays of behavior directory paths, default `[]`; and `builtinBehaviors` as an array of [built-in behavior](#built-in-behaviors) names, default `[]`; present, owner tools can edit English rules |
 | `decisionProvider` | with `english` or the collective norms | `{kind: "jev", model}`, or `{kind: "unavailable"}` |
 | `englishSettings` | no | `EnglishPolicySettings`; default probability 0.5, 384,000 request bytes, 15 s |
 | `settings` | no | `FirewallSettings`; default 150 s per check, 70 s per middleware, 512,000 input bytes, 2,000,000 result bytes |
@@ -566,12 +568,14 @@ An English rule can be written as an [agentbehavior.dev](https://agentbehavior.d
 behavior: a directory holding exactly one behavior in a file named `BEHAVIOR.md`.
 `fixedBehaviors` and `initialBehaviors` name such directories by paths relative
 to the directory holding the policy file; absolute paths, `..`, and directory
-or file symlinks escaping that directory are refused. `sharnessd` reads them
-when it loads the file and installs each as a fixed or initial English rule,
-after the inline ones. A composition can decode an inline-only document with
+or file symlinks escaping that directory are refused. `builtinBehaviors` names
+behaviors Client ships, as [Built-in behaviors](#built-in-behaviors) describes.
+`sharnessd` reads them when it loads the file and installs each as a fixed or
+initial English rule, after the inline ones: fixed behaviors, then built-in
+behaviors, then initial behaviors. A composition can decode an inline-only document with
 `decodeMessagePolicy` and pass it directly to `messagePolicyFirewall(decodedPolicy, provider)`.
-`messagePolicyFirewall` refuses nonempty behavior paths with `CheckInputError`
-(`registration`); file loading resolves those paths before composing the rules.
+`messagePolicyFirewall` refuses nonempty behavior lists with `CheckInputError`
+(`registration`); file loading resolves them before composing the rules.
 `Daemon.withFirewall` accepts the resulting firewall options.
 
 ```markdown
@@ -602,14 +606,15 @@ are not part of the rule. A key under `metadata.social-harness` other than
 those three stops startup in phase `configuration`, as does a missing
 directory, an invalid behavior, a behavior over 64 KiB, a fixed behavior whose
 id repeats another fixed rule's, or a rule the editable-policy rules refuse. Each failure
-names its path, such as `english.fixedBehaviors.0`, and a closed behavior reason:
+names its path, such as `english.fixedBehaviors.0` or
+`english.builtinBehaviors.0`, and a closed behavior reason:
 `missing`, `too-large`, `not-a-file`, `frontmatter`, `schema`, `duplicate-id`, or
 `editable-limit`, never file content.
 
 Fixed behaviors are the composition's locked base: `policy_update` cannot
 remove them. If a fixed behavior collides with a stored editable rule, remove
 the editable rule with `policy_update` before enabling the behavior, or rename
-the behavior. Initial behaviors are read and validated at every start, and seed
+the behavior; a built-in behavior keeps its name, so only the first applies. Initial behaviors are read and validated at every start, and seed
 only a missing editable document, as `initialRules` do. `codeDigest` covers
 each fixed behavior's `BEHAVIOR.md` bytes; initial behaviors are left out, as
 initial rules are.
@@ -620,6 +625,36 @@ directory. An agent adds it with `policy_update` as
 with the table above. A text over 64 KiB, one of a kind other than `norm`,
 or one that a policy file's behavior would refuse as `frontmatter` or
 `schema`, fails the update with `invalid-rule`.
+
+### Built-in behaviors
+
+Client ships behaviors under `@moltzap/social-harness/behaviors/<pack>/<name>/`.
+`english.builtinBehaviors` names them as `<pack>/<name>`, each part lowercase
+letters, digits and single hyphens, and `sharnessd` reads each from its own
+installed package, so a policy file needs no copy and no path. A malformed
+name fails the document. A built-in behavior is a fixed English rule: `policy_update` cannot
+remove it, `policy_read` lists its full text with `from: "english"`, and
+`codeDigest` covers its bytes. A name Client does not ship stops startup in
+phase `configuration` with reason `missing`.
+
+| Name | Kind | Rule |
+| --- | --- | --- |
+| `policy/no-policy-changes` | `safety` | Only the owner edits the agent's rules; its [`BEHAVIOR.md`](https://github.com/social-harness/moltzap/blob/main/packages/social-harness/behaviors/policy/no-policy-changes/BEHAVIOR.md) states which requests it refuses and which shared-norm messages it allows. |
+| `collectives/<name>` | `norm` | The collective norms in [Shipped collective behaviors](#shipped-collective-behaviors). |
+
+An agent whose catalog lists `policy_update`, such as an application's agent
+or a member that applies shared norms, names `policy/no-policy-changes`: the
+firewall checks messages, not tool calls, so this rule is what refuses a peer
+that asks the agent to drop its rules.
+
+```json
+{
+  "format": "org.social-harness/message-policy/v1",
+  "mode": "enforcement",
+  "english": { "builtinBehaviors": ["policy/no-policy-changes"] },
+  "decisionProvider": { "kind": "jev", "model": "<model>" }
+}
+```
 
 ### Shipped collective behaviors
 
@@ -635,14 +670,13 @@ ordinary English middleware, `org.social-harness/english`:
 | `empty-acknowledgement` | An incoming acknowledgement that answers nothing asked and asks for nothing needs no response. |
 | `facilitator` | Only the agent named as the conversation's facilitator in owner facts starts a gather or all_gather that asks two or more members. |
 
-Add the directories you want to `english.fixedBehaviors`, beside the
+Name the ones you want in `english.builtinBehaviors`, beside the
 deterministic `open-requests` and `acknowledgements` built-ins. A document uses
 either these behaviors or the `collective-norms` bundle, not both: `one-gather`,
 `announce-once` and `result-settles` beside the bundle fail with `duplicate-id`.
 Fixed English behaviors are assessed in both directions.
-For example, save this policy beside the `node_modules` directory containing
-the installed Client package, and replace `agt_AAAAAAAAAAAAAAAAAAAAAA` with
-the facilitator's AgentId. The evaluator sees AgentIds, so a fact naming only
+For example, replace `agt_AAAAAAAAAAAAAAAAAAAAAA` with the facilitator's
+AgentId. The evaluator sees AgentIds, so a fact naming only
 an agent name does not identify the sender it must compare:
 
 ```json
@@ -652,12 +686,12 @@ an agent name does not identify the sender it must compare:
   "incoming": [{ "use": "acknowledgements" }],
   "outgoing": [{ "use": "open-requests" }, { "use": "acknowledgements" }],
   "english": {
-    "fixedBehaviors": [
-      "node_modules/@moltzap/social-harness/behaviors/collectives/one-gather",
-      "node_modules/@moltzap/social-harness/behaviors/collectives/announce-once",
-      "node_modules/@moltzap/social-harness/behaviors/collectives/result-settles",
-      "node_modules/@moltzap/social-harness/behaviors/collectives/empty-acknowledgement",
-      "node_modules/@moltzap/social-harness/behaviors/collectives/facilitator"
+    "builtinBehaviors": [
+      "collectives/one-gather",
+      "collectives/announce-once",
+      "collectives/result-settles",
+      "collectives/empty-acknowledgement",
+      "collectives/facilitator"
     ]
   },
   "decisionProvider": { "kind": "jev", "model": "<model>" },
@@ -669,11 +703,6 @@ an agent name does not identify the sender it must compare:
   }]
 }
 ```
-
-With pnpm or another symlink-based installation, keep the policy above the
-package's resolved directory too, or copy the behavior directories beside the
-policy and use those relative paths. The [behavior path limits](#behaviors)
-apply to shipped behaviors as well.
 
 Set `SHARNESS_DECISION_PROVIDER_KEY_FILE` for `jev` as described above.
 On startup the behaviors load as fixed English rules; `policy_read` lists

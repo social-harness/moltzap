@@ -122,7 +122,7 @@ export const managementSearchAgentsRequestSchema = Schema.Union(
   ...RegistryLookupRequest.members,
 ).annotations({ parseOptions: exactParseOptions });
 
-/** Direct projection of exact Registry lookup results. */
+/** Exact Registry lookup with the found agent's view from the verified card. */
 export const managementSearchAgentsResultSchema = Schema.Union(
   exactStruct({
     kind: Schema.Literal("found"),

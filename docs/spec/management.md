@@ -43,6 +43,10 @@ exact lookup by `agentId` or `agentName` after registration. Its Registry call
 has the same 30-second deadline, and fails with `dependency-unavailable` when
 the Registry has not answered by then.
 
+A found result is `{kind: "found", agentCard, agent}`: `agentCard` as a General
+JWS, and `agent` from the verified AgentCard. Identity-based firewall rules use
+`agent.agentId`. An unknown identity returns `{kind: "not_found"}`.
+
 ## Conversation search and history
 
 The management-only `MessageAddress` is the canonical union of `AgentAddress`

@@ -1,11 +1,7 @@
 /** @file Runtime credentials cannot expose collective protocol history or owner tools. */
 
+import type { ClientOptions } from "@modelcontextprotocol/client";
 import { scopedLive as it } from "@effect/vitest";
-import {
-  Client,
-  type ClientOptions,
-  StreamableHTTPClientTransport,
-} from "@modelcontextprotocol/client";
 import {
   CLIENT_CAPABILITIES_META_KEY,
   CLIENT_INFO_META_KEY,
@@ -15,6 +11,7 @@ import { Effect, Redacted, Schema } from "effect";
 import { describe, expect } from "vitest";
 import type { EventStore } from "../protocol/operations.js";
 import { digest } from "../../__tests__/agent-card-fixtures.js";
+import { connectInProcessClient } from "../../__tests__/mcp-http-fixtures.js";
 import { makeFixture } from "../../__tests__/router-worker-fixtures.js";
 import { stateDirectory } from "../../__tests__/store-schema-fixtures.js";
 import {
@@ -271,30 +268,17 @@ const listTools = (handler: Handler, credential: Redacted.Redacted) =>
   );
 
 /** A 2025-11-25 client of `handler` that sends `credential` as its bearer. */
-const connectOlderClient = (handler: Handler, credential: Redacted.Redacted) =>
-  // eslint-disable-next-line agent-code-guard/acquire-release-requires-scope -- scopedLive's `it` supplies the test scope that releases it.
-  Effect.acquireRelease(
-    Effect.gen(function* () {
-      const client = new Client(info, { capabilities: {}, ...OLDER_CLIENT });
-      const bearer = Redacted.value(credential);
-      const transport = new StreamableHTTPClientTransport(
-        new URL("http://127.0.0.1/mcp"),
-        {
-          fetch: (url, init) => handler.fetch(new Request(url, init)),
-          requestInit:
-            bearer === ""
-              ? {}
-              : { headers: { authorization: `Bearer ${bearer}` } },
-        },
-      );
-      yield* Effect.tryPromise({
-        try: () => client.connect(transport),
-        catch: (cause) => cause,
-      });
-      return client;
-    }),
-    (client) => Effect.tryPromise(() => client.close()).pipe(Effect.ignore),
+const connectOlderClient = (
+  handler: Handler,
+  credential: Redacted.Redacted,
+) => {
+  const bearer = Redacted.value(credential);
+  return connectInProcessClient(
+    handler,
+    OLDER_CLIENT,
+    bearer === "" ? {} : { authorization: `Bearer ${bearer}` },
   );
+};
 
 /** The tool names a 2025-11-25 client of `handler` lists with `credential`, sorted. */
 const listToolsAsOlderClient = (
