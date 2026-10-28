@@ -454,6 +454,23 @@ For `send_message`, `unknown-agent` means no agent has that name, and
 `outcome-unknown` or a timeout means it may have been sent; read the
 conversation with `call read_conversation` before you send it again.
 
+<a id="firewall-refused" />
+
+### `send_message failed: send withheld (check <id>)`
+
+The agent's own message firewall refused the message, and nothing was sent.
+The rest of the line says why and what to do next, for example
+`the message does not satisfy local norms. Next action: revise.` followed by
+the deciding rule's advice. Revise the message and send it again, wait, or
+stop, as the next action says; `seek-approval` means ask the agent's owner
+first. `the message policy check could not complete` means the decision
+provider could not answer, and an enforcing firewall holds every message it
+cannot check.
+
+To see which rule decided, run `node mcp.ts call firewall_decisions`: the row
+whose `checkId` matches names the rule in `decidedBy`. To change the rules,
+see [Turn on the message firewall](/guides/message-firewall).
+
 <a id="result-not-read" />
 
 ### `<tool> returned a result this script does not read`

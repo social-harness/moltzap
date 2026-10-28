@@ -52,10 +52,14 @@ class CommandError extends Data.TaggedError("CommandError")<{
   readonly entry: string;
 }> {}
 
-/** A tool call that failed; `refused` marks a final daemon refusal. */
+/**
+ * A tool call that failed. `refused` marks a final daemon refusal, and
+ * `entry` is the troubleshooting anchor that explains it.
+ */
 class ToolFailure extends Data.TaggedError("ToolFailure")<{
   readonly message: string;
   readonly refused: boolean;
+  readonly entry: string;
 }> {}
 
 /** The agent name inside the encoded AgentCard's base64url JSON payload. */
@@ -93,6 +97,7 @@ const savedRequest = Schema.Struct({
 /** The JSON-RPC error data the daemon attaches to a failed tool call. */
 const failureData = Schema.Struct({
   reason: Schema.optional(Schema.String),
+  detail: Schema.optional(Schema.String),
   issues: Schema.optional(
     Schema.Array(Schema.Struct({ message: Schema.String })),
   ),
@@ -140,7 +145,7 @@ function register(
     const client = yield* connect(url);
     const status = yield* callTool(client, "status", {}).pipe(
       Effect.mapError((failure) =>
-        commandError(failure.message, "tool-failed"),
+        commandError(failure.message, failure.entry),
       ),
       Effect.flatMap((result) => decode(statusResult, result, "status")),
     );
@@ -245,7 +250,7 @@ function call(
     const client = yield* connect(url);
     const result = yield* callTool(client, tool, parsed).pipe(
       Effect.mapError((failure) =>
-        commandError(failure.message, "tool-failed"),
+        commandError(failure.message, failure.entry),
       ),
     );
     yield* Console.log(JSON.stringify(result, null, 2));
@@ -341,7 +346,8 @@ function connect(url: URL): Effect.Effect<Client, CommandError, Scope.Scope> {
 
 /**
  * Calls `tool` once and answers its structured result. A JSON-RPC error
- * fails with the daemon's reason; a tool error fails with its text.
+ * fails with the daemon's reason; a tool error fails with its text. A send
+ * the agent's own firewall refused has its own troubleshooting entry.
  */
 function callTool(
   client: Client,
@@ -358,9 +364,15 @@ function callTool(
           ProtocolError.isInstance(cause) &&
           (cause.code === INVALID_PARAMS ||
             Option.exists(
-              Schema.decodeUnknownOption(failureData)(cause.data),
+              failureDataOf(cause),
               (data) => data.reason === "admission-refused",
             )),
+        entry: Option.exists(
+          failureDataOf(cause),
+          (data) => data.reason === "firewall-refused",
+        )
+          ? "firewall-refused"
+          : "tool-failed",
       }),
   }).pipe(
     Effect.flatMap((result) =>
@@ -371,6 +383,7 @@ function callTool(
                 .flatMap((part) => (part.type === "text" ? [part.text] : []))
                 .join("\n")}`,
               refused: false,
+              entry: "tool-failed",
             }),
           )
         : Effect.succeed(result.structuredContent),
@@ -378,18 +391,34 @@ function callTool(
   );
 }
 
-/** The daemon's reason and issues for a failed call, or the error's text. */
+/** The error data the daemon attached to a failed call, when it is readable. */
+function failureDataOf(
+  cause: unknown,
+): Option.Option<typeof failureData.Type> {
+  return ProtocolError.isInstance(cause)
+    ? Schema.decodeUnknownOption(failureData)(cause.data)
+    : Option.none();
+}
+
+/**
+ * The daemon's reason, detail and issues for a failed call, or the error's
+ * text. An admission or firewall refusal's own message already says why;
+ * a firewall refusal's names the check and the next action.
+ */
 function failureReason(cause: unknown): string {
   if (!ProtocolError.isInstance(cause)) {
     return String(cause);
   }
-  return Option.match(Schema.decodeUnknownOption(failureData)(cause.data), {
+  return Option.match(failureDataOf(cause), {
     onNone: () => cause.message,
-    onSome: ({ reason, issues = [] }) =>
+    onSome: ({ reason, detail, issues = [] }) =>
       [
-        reason === "admission-refused"
+        reason === undefined ||
+        reason === "admission-refused" ||
+        reason === "firewall-refused"
           ? cause.message
-          : (reason ?? cause.message),
+          : reason,
+        ...(detail === undefined ? [] : [detail]),
         ...issues.map((issue) => issue.message),
       ].join("; "),
   });
