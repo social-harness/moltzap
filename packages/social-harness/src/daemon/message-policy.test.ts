@@ -98,6 +98,57 @@ it("names the policy file when its rules cannot be installed", () =>
     expect(error.message).toContain("could not be installed");
   }));
 
+it("names stored English rules when the policy file drops its english block", () =>
+  Effect.gen(function* () {
+    const root = directory();
+    const { privateKey } = generateKeyPairSync("ed25519");
+    const key = join(root, "agent.pem");
+    const admission = join(root, "admission");
+    writeFileSync(key, privateKey.export({ type: "pkcs8", format: "pem" }), {
+      mode: 0o600,
+    });
+    writeFileSync(admission, "admission-credential", { mode: 0o600 });
+    const agent = {
+      SHARNESS_STATE_DIRECTORY: join(root, "state"),
+      SHARNESS_AGENT_PRIVATE_KEY_FILE: key,
+      SHARNESS_ADMISSION_CREDENTIAL_FILE: admission,
+    };
+    yield* Layer.build(Daemon.layer).pipe(
+      Effect.scoped,
+      Effect.withConfigProvider(
+        environment({
+          ...agent,
+          SHARNESS_MESSAGE_POLICY_FILE: file({
+            ...UNAVAILABLE_DOCUMENT,
+            english: {
+              initialRules: [
+                {
+                  id: "owner.weekday-meetings",
+                  kind: "norm",
+                  text: "Propose meetings only on weekdays.",
+                  guidance: "Offer a weekday time instead.",
+                },
+              ],
+            },
+          }),
+        }),
+      ),
+    );
+    const error = yield* Layer.build(Daemon.layer).pipe(
+      Effect.scoped,
+      Effect.withConfigProvider(
+        environment({
+          ...agent,
+          SHARNESS_MESSAGE_POLICY_FILE: file({ format: FORMAT, mode: "guidance" }),
+        }),
+      ),
+      Effect.flip,
+    );
+    expect(error.phase).toBe("configuration");
+    expect(error.message).toContain("holds English rules");
+    expect(error.message).toContain("message-firewall#stored-english-rules");
+  }));
+
 it("refuses a policy file beside a composition's own firewall", () =>
   Effect.gen(function* () {
     const error = yield* Layer.build(

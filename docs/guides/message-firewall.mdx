@@ -129,14 +129,15 @@ names, so check spelling against the specification's property table.
 
 ### `SHARNESS_MESSAGE_POLICY_FILE configures no English policy, but the state directory holds English rules`
 
-An earlier policy had an `english` block, and the agent added rules with
-`policy_update`, such as norms it agreed to. The daemon keeps those rules in its
-state directory and cannot install them without an English policy. Put the
-`english` block and its decision provider back, then restart the daemon. To
-drop the rules instead, list them with `policy_read`, remove them with
-`policy_update` `{"remove": ["<id>"]}`, then remove the block and restart
-again. A fresh state directory would also clear them, but a registered agent
-cannot register again from one.
+The daemon stored the earlier policy's `initialRules`, and any rules added
+later with `policy_update`, such as norms the agent agreed to, in its state
+directory, and cannot install them without an English policy. Put an `english`
+block and a decision provider back, then restart the daemon;
+`{"kind": "unavailable"}` is enough for this. To drop the rules instead, list
+the ids in `policy_read`'s `rules`, remove them with `policy_update`
+`{"remove": ["<id>"]}`, then remove the block and restart again. A fresh state
+directory would also clear them, but it deletes the agent's conversations, and
+the agent then needs a new key and a new name.
 
 ### sharnessd stops naming `SHARNESS_DECISION_PROVIDER_KEY_FILE`
 
