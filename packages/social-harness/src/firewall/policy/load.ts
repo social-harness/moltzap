@@ -146,11 +146,6 @@ export function policyConfigurationError(
   });
 }
 
-/** Reports only the policy entry; YAML diagnostics may contain private file content. */
-function invalidBehavior(path: string, reason: BehaviorFailure) {
-  return policyConfigurationError("message-policy", path, reason);
-}
-
 /**
  * A behavior Client ships, read by its pack and name, such as
  * `collectives/one-gather`, from the installed package's `behaviors/`.
@@ -162,6 +157,11 @@ export function readBuiltinBehavior(name: string) {
     Effect.map(({ rule }) => rule),
     Effect.withSpan("readBuiltinBehavior"),
   );
+}
+
+/** Reports only the policy entry; YAML diagnostics may contain private file content. */
+function invalidBehavior(path: string, reason: BehaviorFailure) {
+  return policyConfigurationError("message-policy", path, reason);
 }
 
 function readBehavior(root: string, directory: string, path: string) {

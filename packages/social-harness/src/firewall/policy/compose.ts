@@ -168,11 +168,13 @@ function listsBehaviors(policy: MessagePolicy) {
   ].some((entries) => entries !== undefined && entries.length !== 0);
 }
 
-/** A rule of Client's own shipped behaviors; one that cannot be read leaves the bundle unregistrable. */
+/**
+ * A rule of Client's own shipped behaviors. They are part of the installed
+ * package, so one that cannot be read is a broken installation: a defect,
+ * not a policy failure.
+ */
 function shippedRule(name: string) {
-  return readBuiltinBehavior(name).pipe(
-    Effect.mapError(() => new CheckInputError({ reason: "registration" })),
-  );
+  return readBuiltinBehavior(name).pipe(Effect.orDie);
 }
 
 /** File loading supplies byte digests after resolving behaviors into rules. */

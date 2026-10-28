@@ -1,7 +1,7 @@
 /** @file Behaviors Client ships install by name from the installed package as readable English policy, and are the collective-norms bundle's English norms. */
 
 import { live as it } from "@effect/vitest";
-import { Effect } from "effect";
+import { Effect, Struct } from "effect";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Tests read the published behavior files and write an owner policy document.
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -92,14 +92,13 @@ it(
       (middleware) => middleware.rules,
     );
     for (const [shippedId, bundleId] of BUNDLE_NORMS) {
-      const rule = shipped.find(({ id }) => id === shippedId);
-      expect(rule).toBeDefined();
+      const rule = yield* Effect.fromNullable(
+        shipped.find(({ id }) => id === shippedId),
+      );
       expect(registered).toContainEqual(
         expect.objectContaining({
+          ...Struct.omit(rule, "id", "text"),
           id: bundleId,
-          kind: rule?.kind,
-          guidance: rule?.guidance,
-          feedback: rule?.feedback,
         }),
       );
     }

@@ -10,6 +10,7 @@ import {
   type CheckInputError,
   type DecisionProvider,
   type EnglishPolicySettings,
+  type editableDocumentSchema,
   type EnglishRule,
   makeEnglishPolicy,
   type Message,
@@ -48,6 +49,9 @@ const OUTGOING_BEHAVIORS = [
  */
 const ACKNOWLEDGEMENT_BEHAVIOR = "collectives/empty-acknowledgement";
 const ACKNOWLEDGEMENT_ID = "acknowledgement";
+
+/** A shipped behavior's rule, as the policy document decodes it. */
+type ShippedRule = (typeof editableDocumentSchema.Type)[number];
 
 /**
  * One deterministic rule: its registration, the statement the edition
@@ -179,6 +183,102 @@ const ACKNOWLEDGEMENT_FILLER: ReadonlySet<string> = new Set([
   "you",
 ]);
 
+/** The bundle's registration for each direction. */
+export interface CollectiveNorms {
+  readonly incoming: MessageMiddleware;
+  readonly outgoing: (facilitator: boolean) => MessageMiddleware;
+}
+
+/**
+ * The bundle under its id and one revision. The incoming registration
+ * assesses the incoming English rules; the outgoing one runs the code rules
+ * first and asks the English assessor only when no code rule refused the
+ * send, so a deterministic refusal costs no decision provider call and keeps
+ * its own feedback whatever the provider's state. The revision is the SHA-256
+ * of the edition, both English middlewares' revisions, which hash the English
+ * settings and question semantics, the history window the checks read, and
+ * the decision provider's provenance.
+ * It excludes `facilitator`, which only the outgoing registration's
+ * provenance records, so every member of a run registers the same revision.
+ * @param provider The service that assesses the English rules.
+ * @param settings The English assessment bounds.
+ * @param readBehavior Reads a shipped behavior by its pack and name; policy
+ *     composition supplies it, since this layer reads no files.
+ * @param historyRecords The history window each check reads, if the policy
+ *     sets one.
+ * @returns The incoming registration and the outgoing one for a role.
+ */
+export function collectiveNorms<E>(
+  provider: DecisionProvider,
+  settings: EnglishPolicySettings,
+  readBehavior: (name: string) => Effect.Effect<ShippedRule, E>,
+  historyRecords?: number,
+): Effect.Effect<CollectiveNorms, CheckInputError | E> {
+  return Effect.gen(function* () {
+    const rules = yield* readEnglishRules(readBehavior);
+    const edition = editionOf(rules.incoming, rules.outgoing);
+    const incoming = yield* makeEnglishPolicy({
+      id: COLLECTIVE_NORMS_ID,
+      rules: rules.incoming,
+      settings,
+      provider,
+    });
+    const outgoing = yield* makeEnglishPolicy({
+      id: COLLECTIVE_NORMS_ID,
+      rules: rules.outgoing,
+      settings,
+      provider,
+    });
+    const revision = sha256(
+      JSON.stringify({
+        edition,
+        english: { incoming: incoming.revision, outgoing: outgoing.revision },
+        historyRecords: historyRecords ?? null,
+        provider: provider.provenance ?? null,
+      }),
+    );
+    const norms: CollectiveNorms = {
+      incoming: {
+        ...registration(incoming, revision, edition, {}),
+        check: (input) => incoming.check(input),
+      },
+      outgoing: (facilitator) => ({
+        ...registration(outgoing, revision, edition, { facilitator }),
+        rules: [
+          ...CODE_RULES.map((rule) => rule.description),
+          ...outgoing.rules,
+        ],
+        check: (input) => checkOutgoing(input, outgoing, facilitator),
+      }),
+    };
+    return norms;
+  }).pipe(Effect.withSpan("collectiveNorms"));
+}
+
+/**
+ * The bundle's English rules in each direction, read from the shipped
+ * behaviors; the acknowledgement norm takes the bundle's own id.
+ * @param readBehavior Reads a shipped behavior by its pack and name.
+ * @returns The incoming and outgoing English rules.
+ */
+function readEnglishRules<E>(
+  readBehavior: (name: string) => Effect.Effect<ShippedRule, E>,
+) {
+  return Effect.gen(function* () {
+    const outgoing: readonly EnglishRule[] = yield* Effect.forEach(
+      OUTGOING_BEHAVIORS,
+      (name) => readBehavior(name),
+      { concurrency: 1 },
+    );
+    const acknowledgement = yield* readBehavior(ACKNOWLEDGEMENT_BEHAVIOR);
+    const incoming: readonly EnglishRule[] = [
+      { ...acknowledgement, id: ACKNOWLEDGEMENT_ID },
+      ...outgoing,
+    ];
+    return { incoming, outgoing };
+  });
+}
+
 /**
  * Every rule of the bundle in each direction, with its full text and the
  * acknowledgement vocabulary its code rule assesses with, and the Client
@@ -215,86 +315,6 @@ function editionOf(
 }
 
 type Edition = ReturnType<typeof editionOf>;
-
-/** The bundle's registration for each direction. */
-export interface CollectiveNorms {
-  readonly incoming: MessageMiddleware;
-  readonly outgoing: (facilitator: boolean) => MessageMiddleware;
-}
-
-/**
- * The bundle under its id and one revision. The incoming registration
- * assesses the incoming English rules; the outgoing one runs the code rules
- * first and asks the English assessor only when no code rule refused the
- * send, so a deterministic refusal costs no decision provider call and keeps
- * its own feedback whatever the provider's state. The revision is the SHA-256
- * of the edition, both English middlewares' revisions, which hash the English
- * settings and question semantics, the history window the checks read, and
- * the decision provider's provenance.
- * It excludes `facilitator`, which only the outgoing registration's
- * provenance records, so every member of a run registers the same revision.
- * @param provider The service that assesses the English rules.
- * @param settings The English assessment bounds.
- * @param readBehavior Reads a shipped behavior by its pack and name; policy
- *     composition supplies it, since this layer reads no files.
- * @param historyRecords The history window each check reads, if the policy
- *     sets one.
- * @returns The incoming registration and the outgoing one for a role.
- */
-export function collectiveNorms<E>(
-  provider: DecisionProvider,
-  settings: EnglishPolicySettings,
-  readBehavior: (name: string) => Effect.Effect<EnglishRule, E>,
-  historyRecords?: number,
-): Effect.Effect<CollectiveNorms, CheckInputError | E> {
-  return Effect.gen(function* () {
-    const outgoingRules = yield* Effect.forEach(
-      OUTGOING_BEHAVIORS,
-      (name) => readBehavior(name),
-      { concurrency: 1 },
-    );
-    const acknowledgement = yield* readBehavior(ACKNOWLEDGEMENT_BEHAVIOR);
-    const incomingRules = [
-      { ...acknowledgement, id: ACKNOWLEDGEMENT_ID },
-      ...outgoingRules,
-    ];
-    const edition = editionOf(incomingRules, outgoingRules);
-    const incoming = yield* makeEnglishPolicy({
-      id: COLLECTIVE_NORMS_ID,
-      rules: incomingRules,
-      settings,
-      provider,
-    });
-    const outgoing = yield* makeEnglishPolicy({
-      id: COLLECTIVE_NORMS_ID,
-      rules: outgoingRules,
-      settings,
-      provider,
-    });
-    const revision = sha256(
-      JSON.stringify({
-        edition,
-        english: { incoming: incoming.revision, outgoing: outgoing.revision },
-        historyRecords: historyRecords ?? null,
-        provider: provider.provenance ?? null,
-      }),
-    );
-    return {
-      incoming: {
-        ...registration(incoming, revision, edition, {}),
-        check: (input) => incoming.check(input),
-      },
-      outgoing: (facilitator) => ({
-        ...registration(outgoing, revision, edition, { facilitator }),
-        rules: [
-          ...CODE_RULES.map((rule) => rule.description),
-          ...outgoing.rules,
-        ],
-        check: (input) => checkOutgoing(input, outgoing, facilitator),
-      }),
-    };
-  }).pipe(Effect.withSpan("collectiveNorms"));
-}
 
 /** A send's code findings, then the English findings unless a code rule refused it. */
 function checkOutgoing(
