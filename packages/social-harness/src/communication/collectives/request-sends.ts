@@ -19,7 +19,11 @@ import type { CollectiveOperation } from "./forms.js";
 import type { Members } from "./shared-answers.js";
 import { canonicalMessageAddress } from "../conversations/address.js";
 import { SendError } from "../conversations/errors.js";
-import { AgentAddress, type MessageAddressInput } from "../records/values.js";
+import {
+  AgentAddress,
+  agentNameOf,
+  type MessageAddressInput,
+} from "../records/values.js";
 
 /**
  * A member whose request post was refused, and why.
@@ -64,7 +68,7 @@ export function gatherAddress(
   self: AgentAddress,
   op: Extract<CollectiveOperation, { readonly deadline: number }>["op"],
 ): Effect.Effect<GatherAddress, SendError> {
-  const selfName = self.slice("agent:".length);
+  const selfName = agentNameOf(self);
   const membershipInvalid = new SendError({
     reason: "membership-invalid",
     detail: "an all_gather asks a group of two or more other agents",

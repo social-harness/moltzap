@@ -87,11 +87,6 @@ import {
   Schema,
 } from "effect";
 import type { InboundMessage } from "../conversations/message.js";
-import type {
-  AgentAddress,
-  MessageAddressInput,
-  RecordHash,
-} from "../records/index.js";
 import type { CollectiveMemberOutcome, InboundItem } from "./inbound.js";
 import type {
   AdmittedGather,
@@ -108,6 +103,12 @@ import type {
 } from "./ports.js";
 import { canonicalMessageAddress } from "../conversations/address.js";
 import { SendError } from "../conversations/errors.js";
+import {
+  type AgentAddress,
+  agentNameOf,
+  type MessageAddressInput,
+  type RecordHash,
+} from "../records/index.js";
 import {
   type OperationRefusal,
   refusedAs,
@@ -295,7 +296,8 @@ function multicast(
       { kind: "operation", op: "multicast" },
       text,
     ).pipe(Effect.mapError(contentInvalid));
-    const { address } = yield* canonicalMessageAddress(to, localName(state));
+    const self = agentNameOf(state.ports.self);
+    const { address } = yield* canonicalMessageAddress(to, self);
     const { certified, guidance } = yield* bindAuthoredPost(
       state,
       { to, content },
@@ -304,11 +306,6 @@ function multicast(
     const { postId } = yield* certified;
     return { postIds: [postId], postId, address, guidance };
   });
-}
-
-/** The local agent's Registry name, which canonical addresses spell it by. */
-function localName(state: CollectiveState): string {
-  return state.ports.self.slice("agent:".length);
 }
 
 /**
@@ -914,7 +911,7 @@ function respond(
   response: CollectiveResponse,
 ): Effect.Effect<CollectiveSendOutcome, OperationRefusal> {
   return Effect.gen(function* () {
-    const { id, request, address } = yield* openRequest(state, to);
+    const { id, request } = yield* openRequest(state, to);
     const refused = refusedAs<SendError | CollectiveError>(id, request.to);
     const value: ResponseValue = { kind: "response", id, ...response };
     const content = yield* responseContent(request, value).pipe(
@@ -948,6 +945,7 @@ function respond(
         refusedAs<SendError | CollectiveError>(id, request.to, guidance),
       ),
     );
+    const address = request.to;
     return { operationId: id, postIds: [postId], postId, address, guidance };
   });
 }
@@ -969,20 +967,24 @@ function bindAuthoredPost<E>(
 }
 
 /**
- * The one request open in the conversation `to` names, with that
- * conversation's canonical address. A refusal names an id minted for it,
- * since no single request is answered.
+ * The one request open in the conversation `to` names. A refusal names an id
+ * minted for it, since no single request is answered.
  */
-function openRequest(state: CollectiveState, to: MessageAddressInput) {
+function openRequest(
+  state: CollectiveState,
+  to: MessageAddressInput,
+): Effect.Effect<
+  OpenRequest<ReceivedRequest>,
+  RefusedSend<SendError | CollectiveError>
+> {
   return Effect.gen(function* () {
     const now = yield* Clock.currentTimeMillis;
     const { id } = yield* mintCollectiveId(state.ports.self);
-    const self = localName(state);
+    const self = agentNameOf(state.ports.self);
     const { address } = yield* canonicalMessageAddress(to, self).pipe(
       Effect.mapError(refusedAs<SendError | CollectiveError>(id, to)),
     );
     return yield* matchOpenRequest(state.requests, address, now).pipe(
-      Effect.map((open) => ({ ...open, address })),
       Effect.mapError((kind) =>
         refusedAs<SendError | CollectiveError>(
           id,

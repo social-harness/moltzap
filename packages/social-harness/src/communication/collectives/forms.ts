@@ -184,10 +184,11 @@ const unreachableMembers = Schema.NonEmptyArray(
 /**
  * What a completed send returns: a collecting operation names its id, and a
  * response the id of the request it answered. A plain message and a response
- * each create one post, and name it by `postId`, the id its recipients'
- * items and history carry, and by `address`, its conversation's canonical
- * address. `guidance` carries the local firewall's advice on the admitted
- * send, such as a norm judgment the decision provider left unsettled.
+ * each create one post, and name it by `postId`, the id `read_conversation`
+ * records carry and, for a plain message, the recipients' `multicast` items,
+ * and by `address`, its conversation's canonical address. `guidance` carries
+ * the local firewall's advice on the admitted send, such as a norm judgment
+ * the decision provider left unsettled.
  */
 export interface SendResult {
   readonly operationId?: CollectiveId;
