@@ -453,10 +453,11 @@ For `send_message`, `unknown-agent` means no agent has that name, and
 `delivery-pending` means the message will still be sent: do not send it again.
 `outcome-unknown` or a timeout means it may have been sent; read the
 conversation with `call read_conversation` before you send it again.
-For `policy_read`, `policy_update` or `firewall_decisions`, `not-configured`
-means the daemon has no message policy; for `policy_update` it can also mean
-the policy has no `english` block. Turn the firewall on with English rules as
-[Turn on the message firewall](/guides/message-firewall) describes.
+For `policy_update`, `not-configured` means the message policy has no
+`english` block: add one with a decision provider and restart the daemon, as
+[Turn on the message firewall](/guides/message-firewall) describes. A daemon
+without a message policy lists no `policy_read`, `policy_update` or
+`firewall_decisions` tool, and a call to one fails with `Tool <name> not found`.
 
 <a id="firewall-refused" />
 
