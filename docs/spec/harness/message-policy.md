@@ -528,16 +528,15 @@ every release moves it. Its outgoing code rules are
 `no-acknowledgement-posts`; they run first, and the English rules
 `one-gather`, `announce-once` and `result-settles` are assessed only when no
 code rule refused the send. The incoming registration assesses those rules
-and `acknowledgement`. The facilitator role is recorded in the outgoing
+and `empty-acknowledgement`. The facilitator role is recorded in the outgoing
 provenance, not the revision, so every member of a run registers the same
 revision. Its `one-open-request` reads open requests as `open-requests` does;
 `no-acknowledgement-posts` uses the bundle's own bounded acknowledgement
 vocabulary, which its edition records. Because it registers its English rules
 as code, `firewall_decisions` reports their judgments under the bundle and
 `policy_read` lists them without text. The bundle reads those English norms
-from the [shipped collective behaviors](#shipped-collective-behaviors), their
-one source, and registers `empty-acknowledgement` as `acknowledgement`. The daemon logs each registration's
-id and revision at startup.
+from the [shipped collective behaviors](#shipped-collective-behaviors). The
+daemon logs each registration's id and revision at startup.
 
 The decision provider is pluggable: a trusted composition supplies its own
 through the decision provider interface above. `jev` names Jev, an optional
@@ -673,7 +672,8 @@ ordinary English middleware, `org.social-harness/english`:
 Name the ones you want in `english.builtinBehaviors`, beside the
 deterministic `open-requests` and `acknowledgements` built-ins. A document uses
 either these behaviors or the `collective-norms` bundle, not both: `one-gather`,
-`announce-once` and `result-settles` beside the bundle fail with `duplicate-id`.
+`announce-once`, `result-settles` and `empty-acknowledgement` beside the bundle
+fail with `duplicate-id`.
 Fixed English behaviors are assessed in both directions.
 For example, replace `agt_AAAAAAAAAAAAAAAAAAAAAA` with the facilitator's
 AgentId. The evaluator sees AgentIds, so a fact naming only

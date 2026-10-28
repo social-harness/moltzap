@@ -59,7 +59,9 @@ export interface FirewallInstallation {
  * allowed-sender list and the initial editable rules, so every member
  * records the same digest.
  * A document that lists behaviors fails with `CheckInputError`
- * (`registration`); only file loading resolves behaviors.
+ * (`registration`); only file loading resolves behaviors. A document that
+ * installs the collective norms reads their English text from Client's
+ * installed `behaviors/`.
  * @param policy A decoded document with inline rules and no behaviors.
  * @param provider The service that assesses its English rules and the
  *     collective norms; unused when the document installs neither.
@@ -168,15 +170,6 @@ function listsBehaviors(policy: MessagePolicy) {
   ].some((entries) => entries !== undefined && entries.length !== 0);
 }
 
-/**
- * A rule of Client's own shipped behaviors. They are part of the installed
- * package, so one that cannot be read is a broken installation: a defect,
- * not a policy failure.
- */
-function shippedRule(name: string) {
-  return readBuiltinBehavior(name).pipe(Effect.orDie);
-}
-
 /** File loading supplies byte digests after resolving behaviors into rules. */
 function composeFirewall(
   policy: MessagePolicy,
@@ -188,7 +181,7 @@ function composeFirewall(
       collectiveNorms(
         provider,
         policy.englishSettings,
-        shippedRule,
+        readBuiltinBehavior,
         policy.maximumHistoryRecords,
       ),
     );
