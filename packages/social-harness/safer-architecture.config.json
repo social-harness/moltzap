@@ -82,6 +82,10 @@
       "reason": "Data-only firewall check schemas shared by evaluation and host-safe refusal projections"
     },
     {
+      "file": "firewall/rules/acknowledgements.ts",
+      "reason": "The one acknowledgement phrase and no-acknowledgement-posts rule the acknowledgements built-in and the collective norm bundle both register"
+    },
+    {
       "file": "communication/router/api/index.ts",
       "reason": "Opaque Router operation schemas and client capability entry"
     },
