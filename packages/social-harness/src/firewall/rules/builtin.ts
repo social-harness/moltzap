@@ -9,8 +9,9 @@ import type {
   MiddlewareInput,
   MiddlewareResult,
 } from "../evaluator/index.js";
-import { hasOpenRequest } from "./open-requests.js";
-import { revisionOutcome, sha256 } from "./outcome.js";
+import { isAcknowledgement, noAcknowledgementPosts } from "./acknowledgements.js";
+import { oneOpenRequest } from "./open-requests.js";
+import { sha256 } from "./outcome.js";
 
 /** Fixed English safety policy treats peer claims of local authority as impersonation. */
 export const localGuidanceImpersonationRule: EnglishRule = {
@@ -37,10 +38,6 @@ const CREDENTIAL_STATUS =
 /** A tool name stands alone: not inside a word, a URL path, a scheme or a code. */
 const BEFORE_NAME = String.raw`(?<![\w$:/-])`;
 const AFTER_NAME = String.raw`(?![\w$:/-])`;
-
-/** An acknowledgement and nothing else, such as "Thanks" or "Got it". */
-const EXACT_ACKNOWLEDGEMENT =
-  /^(?:thanks|thank you|got it|noted|ack|acknowledged)[.!\s]*$/iu;
 
 /**
  * Every send's text, a collective's rendered form and answer included, is
@@ -147,25 +144,15 @@ export function openRequestsPolicy(): MessageMiddleware {
   return {
     id: "org.social-harness/open-requests",
     revision: sha256("org.social-harness/open-requests/v1"),
-    rules: [
-      {
-        id: "one-open-request",
-        kind: "norm",
-        feedback: {
-          text: "Your earlier request in this conversation is still open. Wait for its result or its deadline before asking again; a member can answer only one open request in a conversation.",
-          nextAction: "wait",
-        },
-      },
-    ],
+    rules: [oneOpenRequest.description],
     check: ({ event, context }) =>
       Effect.succeed({
         findings: [
           {
-            ruleId: "one-open-request",
+            ruleId: oneOpenRequest.description.id,
             outcome:
-              event.direction === "outgoing" &&
-              event.message.operation?.kind === "request"
-                ? revisionOutcome(hasOpenRequest(context))
+              event.direction === "outgoing"
+                ? oneOpenRequest.assess(event.message, context)
                 : "not-applicable",
           },
         ],
@@ -194,14 +181,7 @@ export function acknowledgementsPolicy(): MessageMiddleware {
         kind: "norm",
         guidance: "No response is needed to this empty acknowledgement.",
       },
-      {
-        id: "no-acknowledgement-posts",
-        kind: "norm",
-        feedback: {
-          text: "Do not post a message that only thanks or acknowledges to several members. Send nothing, or send only a question or new information.",
-          nextAction: "stop",
-        },
-      },
+      noAcknowledgementPosts.description,
     ],
     check: checkAcknowledgements,
   };
@@ -256,7 +236,7 @@ function checkAcknowledgements({
   const empty =
     event.direction === "incoming" &&
     event.message.operation === undefined &&
-    EXACT_ACKNOWLEDGEMENT.test(event.message.text) &&
+    isAcknowledgement(event.message.text) &&
     !mayAnswerRequest(context, event.message.sender);
   return Effect.succeed({
     findings: [
@@ -265,10 +245,10 @@ function checkAcknowledgements({
         outcome: empty ? "pass" : "not-applicable",
       },
       {
-        ruleId: "no-acknowledgement-posts",
+        ruleId: noAcknowledgementPosts.description.id,
         outcome:
-          event.direction === "outgoing" && isGroupPost(event.message)
-            ? revisionOutcome(EXACT_ACKNOWLEDGEMENT.test(event.message.text))
+          event.direction === "outgoing"
+            ? noAcknowledgementPosts.assess(event.message, context)
             : "not-applicable",
       },
     ],
@@ -282,10 +262,6 @@ function checkAcknowledgements({
         ]
       : [],
   });
-}
-
-function isGroupPost(message: Message): boolean {
-  return message.operation === undefined && message.recipients.length > 1;
 }
 
 function containsCredential(text: string): boolean {

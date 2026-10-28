@@ -515,10 +515,11 @@ a gather answer also closes its request, while an all_gather answer does not.
 A group-addressed gather posts each request in a direct conversation, outside
 the group history window, so this check cannot see those requests.
 
-Both directions of `acknowledgements` recognize only an exact acknowledgement
-phrase ("thanks", "thank you", "got it", "noted", "ack" or "acknowledged",
-with trailing punctuation), so a message carrying anything else, such as an
-emoji, a name or a time, keeps its ordinary meaning.
+Both directions of `acknowledgements`, and the collective norm bundle's
+`no-acknowledgement-posts`, recognize only an exact acknowledgement phrase
+("thanks", "thank you", "got it", "noted", "ack" or "acknowledged", with
+trailing punctuation), so a message carrying anything else, such as an emoji,
+a name or a time, keeps its ordinary meaning.
 
 The collective norm bundle registers one middleware per direction under one
 revision, the SHA-256 of its edition, both directions' English revisions and
@@ -530,9 +531,8 @@ every release moves it. Its outgoing code rules are
 code rule refused the send. The incoming registration assesses those rules
 and `empty-acknowledgement`. The facilitator role is recorded in the outgoing
 provenance, not the revision, so every member of a run registers the same
-revision. Its `one-open-request` reads open requests as `open-requests` does;
-`no-acknowledgement-posts` uses the bundle's own bounded acknowledgement
-vocabulary, which its edition records. Because it registers its English rules
+revision. Its `one-open-request` and `no-acknowledgement-posts` are the
+`open-requests` and `acknowledgements` built-ins' own rules. Because it registers its English rules
 as code, `firewall_decisions` reports their judgments under the bundle and
 `policy_read` lists them without text. The bundle reads those English norms
 from the [shipped collective behaviors](#shipped-collective-behaviors). The

@@ -1,6 +1,25 @@
-/** @file Whether a conversation's history window holds an open request of the agent's own. */
+/** @file The one `one-open-request` rule both the `open-requests` built-in and the collective norm bundle register. */
 
 import type { Message, MessageContext } from "../evaluator/index.js";
+import { type CodeRule, revisionOutcome } from "./outcome.js";
+
+/** A request is refused while the agent's earlier request in this conversation is still open. */
+export const oneOpenRequest: CodeRule = {
+  description: {
+    id: "one-open-request",
+    kind: "norm",
+    feedback: {
+      text: "Your earlier request in this conversation is still open. Wait for its result or its deadline before asking again; a member can answer only one open request in a conversation.",
+      nextAction: "wait",
+    },
+  },
+  statement:
+    "An agent does not open a request in a conversation where an earlier request of its own is still open: no result or failure has arrived for it, its deadline has not passed, and, for a gather, its member has not answered it.",
+  assess: (message, context) =>
+    message.operation?.kind === "request"
+      ? revisionOutcome(hasOpenRequest(context))
+      : "not-applicable",
+};
 
 /**
  * Whether the window holds a request of the agent's own that is still open
@@ -10,7 +29,7 @@ import type { Message, MessageContext } from "../evaluator/index.js";
  * posts sit in each member's direct conversation, outside the window its
  * check reads, so this rule cannot see them.
  */
-export function hasOpenRequest(context: MessageContext): boolean {
+function hasOpenRequest(context: MessageContext): boolean {
   const closed = new Set(
     context.history.flatMap((entry) => closedRequest(entry.operation)),
   );
