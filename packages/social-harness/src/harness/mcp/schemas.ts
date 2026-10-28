@@ -1,10 +1,16 @@
 /** @file JSON Schemas the daemon's tool catalog lists: closed for requests, open for results. */
 
-import { fromJsonSchema, type JsonSchemaType } from "@modelcontextprotocol/server";
+import {
+  fromJsonSchema,
+  type JsonSchemaType,
+  type StandardSchemaWithJSON,
+} from "@modelcontextprotocol/server";
 import { Array, JSONSchema, Predicate, type Schema } from "effect";
 
 /** A Standard Schema the MCP SDK lists and validates, from a JSON Schema. */
-export const makeStandardSchema = <Value>(jsonSchema: unknown) =>
+export const makeStandardSchema = <Value>(
+  jsonSchema: unknown,
+): StandardSchemaWithJSON<Value, Value> =>
   fromJsonSchema<Value>(
     // eslint-disable-next-line agent-code-guard/require-assertion-rationale -- JSONSchema.make emits the exact JsonSchemaType consumed by the pinned MCP SDK.
     jsonSchema as JsonSchemaType,
@@ -37,7 +43,9 @@ function openObjects(jsonSchema: unknown): unknown {
  * older daemon's tools still accepts a newer daemon's results. The daemon
  * checks each result it returns against the exact schema.
  */
-export const makeResultSchema = <Value>(jsonSchema: unknown) => {
+export const makeResultSchema = <Value>(
+  jsonSchema: unknown,
+): StandardSchemaWithJSON<Value, Value> => {
   const exact = makeStandardSchema<Value>(jsonSchema);
   const listed = makeStandardSchema<Value>(openObjects(jsonSchema));
   return {
