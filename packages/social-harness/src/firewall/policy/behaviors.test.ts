@@ -613,15 +613,19 @@ it("composes and encodes a decoded inline policy without adding behavior paths",
     expect(composed.english?.initialRules).toEqual([INITIAL]);
   }));
 
-it.each(["fixedBehaviors", "initialBehaviors"] as const)(
+it.each([
+  ["fixedBehaviors", "fixed"],
+  ["initialBehaviors", "fixed"],
+  ["builtinBehaviors", "policy/no-policy-changes"],
+] as const)(
   "refuses unresolved %s in trusted composition",
-  (field) =>
+  (field, entry) =>
     Effect.gen(function* () {
       const { document } = fixture();
       const policy = yield* decodeMessagePolicy(
         JSON.stringify({
           ...document,
-          english: { [field]: ["fixed"] },
+          english: { [field]: [entry] },
         }),
       );
       const error = yield* messagePolicyFirewall(policy, {
@@ -883,6 +887,28 @@ it(
         expect(yield* installed.policy.read()).toEqual(before);
       }),
     );
+  }),
+);
+
+it(
+  "refuses a builtin behavior whose id repeats an inline fixed rule",
+  Effect.fn(function* () {
+    const { path, document } = fixture();
+    writeFileSync(
+      path,
+      JSON.stringify({
+        ...document,
+        english: {
+          ...document.english,
+          fixedRules: [{ ...FIXED, id: "no-policy-changes" }],
+          builtinBehaviors: ["policy/no-policy-changes"],
+        },
+      }),
+    );
+    const error = yield* loaded(path).pipe(Effect.flip);
+    expect(error.behaviorReason).toBe("duplicate-id");
+    expect(error.message).toContain("english.builtinBehaviors.0");
+    expect(error.message).toContain("#built-in-behaviors");
   }),
 );
 

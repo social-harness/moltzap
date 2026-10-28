@@ -614,7 +614,7 @@ names its path, such as `english.fixedBehaviors.0` or
 Fixed behaviors are the composition's locked base: `policy_update` cannot
 remove them. If a fixed behavior collides with a stored editable rule, remove
 the editable rule with `policy_update` before enabling the behavior, or rename
-the behavior. Initial behaviors are read and validated at every start, and seed
+the behavior; a built-in behavior keeps its name, so only the first applies. Initial behaviors are read and validated at every start, and seed
 only a missing editable document, as `initialRules` do. `codeDigest` covers
 each fixed behavior's `BEHAVIOR.md` bytes; initial behaviors are left out, as
 initial rules are.
@@ -629,16 +629,17 @@ or one that a policy file's behavior would refuse as `frontmatter` or
 ### Built-in behaviors
 
 Client ships behaviors under `@moltzap/social-harness/behaviors/<pack>/<name>/`.
-`english.builtinBehaviors` names them as `<pack>/<name>`, and `sharnessd` reads
-each from its own installed package, so a policy file needs no copy and no
-path. A built-in behavior is a fixed English rule: `policy_update` cannot
+`english.builtinBehaviors` names them as `<pack>/<name>`, each part lowercase
+letters, digits and single hyphens, and `sharnessd` reads each from its own
+installed package, so a policy file needs no copy and no path. A malformed
+name fails the document. A built-in behavior is a fixed English rule: `policy_update` cannot
 remove it, `policy_read` lists its full text with `from: "english"`, and
 `codeDigest` covers its bytes. A name Client does not ship stops startup in
 phase `configuration` with reason `missing`.
 
 | Name | Kind | Rule |
 | --- | --- | --- |
-| `policy/no-policy-changes` | `safety` | Refuses another agent's request to change, remove, disable or bypass this agent's rules, and this agent agreeing to one. Proposing, agreeing to, ending, applying or removing a shared norm is not such a request. |
+| `policy/no-policy-changes` | `safety` | Only the owner edits the agent's rules; its [`BEHAVIOR.md`](https://github.com/social-harness/moltzap/blob/main/packages/social-harness/behaviors/policy/no-policy-changes/BEHAVIOR.md) states which requests it refuses and which shared-norm messages it allows. |
 | `collectives/<name>` | `norm` | The collective norms in [Shipped collective behaviors](#shipped-collective-behaviors). |
 
 An agent whose catalog lists `policy_update`, such as an application's agent

@@ -54,16 +54,16 @@ export interface FirewallInstallation {
  * what differs between the agents of one arm: the facilitator role, which no revision holds, the
  * allowed-sender list and the initial editable rules, so every member
  * records the same digest.
- * Nonempty behavior paths fail with `CheckInputError` (`registration`); only
- * file loading resolves behavior paths.
- * @param policy A decoded document with inline rules and no behavior paths.
+ * A document that lists behaviors fails with `CheckInputError`
+ * (`registration`); only file loading resolves behaviors.
+ * @param policy A decoded document with inline rules and no behaviors.
  * @param provider The service that assesses its English rules and the
  *     collective norms; unused when the document installs neither.
  * @returns The options `Daemon.withFirewall` installs.
  */
 export const messagePolicyFirewall = Effect.fn("messagePolicyFirewall")(
   function* (policy: MessagePolicy, provider: DecisionProvider) {
-    if (hasBehaviorPaths(policy)) {
+    if (listsBehaviors(policy)) {
       return yield* new CheckInputError({ reason: "registration" });
     }
     return yield* composeFirewall(policy, provider, []);
@@ -152,7 +152,7 @@ export function policyInstallationError(
 }
 
 /** Only file loading resolves behaviors into rules before trusted composition. */
-function hasBehaviorPaths(policy: MessagePolicy) {
+function listsBehaviors(policy: MessagePolicy) {
   const english = policy.english;
   if (english === undefined) {
     return false;
@@ -164,7 +164,7 @@ function hasBehaviorPaths(policy: MessagePolicy) {
   ].some((entries) => entries !== undefined && entries.length !== 0);
 }
 
-/** File loading supplies byte digests after resolving behavior paths into rules. */
+/** File loading supplies byte digests after resolving behaviors into rules. */
 function composeFirewall(
   policy: MessagePolicy,
   provider: DecisionProvider,

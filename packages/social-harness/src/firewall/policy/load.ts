@@ -133,13 +133,16 @@ export function policyConfigurationError(
   behaviorReason?: BehaviorFailure,
 ): MessagePolicyConfigurationError {
   const category = behaviorReason === undefined ? "" : ` (${behaviorReason})`;
+  const heading = path?.startsWith("english.builtinBehaviors.")
+    ? "built-in-behaviors"
+    : "behaviors";
   return new MessagePolicyConfigurationError({
     reason,
     behaviorReason,
     message:
       path === undefined
         ? failureMessages[reason]
-        : `${failureMessages[reason]}; invalid at ${path}${category}. Docs: https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/message-policy.md#behaviors`,
+        : `${failureMessages[reason]}; invalid at ${path}${category}. Docs: https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/message-policy.md#${heading}`,
   });
 }
 
@@ -282,7 +285,7 @@ function loadBehaviors(
   );
 }
 
-/** Relative paths must stay in the canonical policy directory after symlink resolution. */
+/** Relative paths must stay in the canonical root, the policy directory or Client's `behaviors/`, after symlink resolution. */
 function contained(root: string, path: string) {
   const child = relative(root, path);
   return !isAbsolute(child) && child !== ".." && !child.startsWith(`..${sep}`);

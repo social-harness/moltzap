@@ -3,7 +3,7 @@
 import { live as it } from "@effect/vitest";
 import { Effect } from "effect";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Tests read the published behavior files and write an owner policy document.
-import { readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect } from "vitest";
@@ -14,15 +14,10 @@ import {
 import { readCredential } from "../../daemon/credentials.js";
 import { firewallInstallation, installEditableFirewall } from "./index.js";
 
-const BEHAVIORS = [
-  { name: "collectives/one-gather", kind: "norm" },
-  { name: "collectives/announce-once", kind: "norm" },
-  { name: "collectives/result-settles", kind: "norm" },
-  { name: "collectives/empty-acknowledgement", kind: "norm" },
-  { name: "collectives/facilitator", kind: "norm" },
-  { name: "policy/no-policy-changes", kind: "safety" },
-];
 const SOURCE = fileURLToPath(new URL("../../../behaviors", import.meta.url));
+const BEHAVIORS = readdirSync(SOURCE).flatMap((pack) =>
+  readdirSync(join(SOURCE, pack)).map((name) => `${pack}/${name}`),
+);
 
 it(
   "installs every shipped behavior named in builtinBehaviors and lists its full text in policy_read",
@@ -36,7 +31,7 @@ it(
       Effect.gen(function* () {
         const installed = yield* installEditableFirewall(options, store);
         const policy = yield* installed.policy.read();
-        for (const { name, kind } of BEHAVIORS) {
+        for (const name of BEHAVIORS) {
           const source = readFileSync(
             join(SOURCE, name, "BEHAVIOR.md"),
             "utf8",
@@ -50,7 +45,7 @@ it(
             expect.objectContaining({
               from: "english",
               id: name.split("/")[1],
-              kind,
+              kind: /^\s+kind: (\w+)$/mu.exec(source)?.[1],
               text,
             }),
           );
@@ -71,7 +66,7 @@ function writePolicy() {
       incoming: [{ use: "acknowledgements" }],
       decisionProvider: { kind: "unavailable" },
       english: {
-        builtinBehaviors: BEHAVIORS.map(({ name }) => name),
+        builtinBehaviors: BEHAVIORS,
       },
       facts: [
         {

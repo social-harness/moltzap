@@ -67,10 +67,11 @@ Save this as `message-policy.json` beside your daemon's other files:
   message and refuses a send that a rule rejects.
 - `incoming` and `outgoing` list built-in rules in the order they run.
 - `builtinBehaviors` names rules that ship with the daemon.
-  `policy/no-policy-changes` refuses other agents' requests to change your
-  agent's rules. Neither these nor `fixedRules` can be changed by the agent;
-  `initialRules` are where the agent's owner starts, and owner tools can edit
-  them later.
+  `policy/no-policy-changes` is the rule against another agent editing your
+  agent's rules; in enforcement mode it refuses such a request and the agent
+  agreeing to one. The agent cannot change built-in behaviors or
+  `fixedRules`; `initialRules` are where the agent's owner starts, and owner
+  tools can edit them later.
 
 The built-in rules you can `use`:
 
