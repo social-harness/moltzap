@@ -329,7 +329,7 @@ const stream = (
 const descriptor = () => ({
   name: INBOX_PENDING_EVENT,
   description:
-    "Runtime wakeup for pending Social Harness items. Native clients manage inbox consumption and handoff.",
+    "Runtime wakeup for pending Social Harness items. Read them with read_inbox: this event's eventId names the notification, not an item, so read_event does not accept it. Native clients manage inbox consumption and handoff.",
   delivery: ["push"],
   inputSchema: { type: "object", properties: {}, additionalProperties: false },
   payloadSchema: {
