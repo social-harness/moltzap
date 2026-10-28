@@ -534,9 +534,9 @@ revision. Its `one-open-request` reads open requests as `open-requests` does;
 `no-acknowledgement-posts` uses the bundle's own bounded acknowledgement
 vocabulary, which its edition records. Because it registers its English rules
 as code, `firewall_decisions` reports their judgments under the bundle and
-`policy_read` lists them without text; the
-[shipped collective behaviors](#shipped-collective-behaviors) carry the same
-English norms as ordinary English rules. The daemon logs each registration's
+`policy_read` lists them without text. The bundle reads those English norms
+from the [shipped collective behaviors](#shipped-collective-behaviors), their
+one source, and registers `empty-acknowledgement` as `acknowledgement`. The daemon logs each registration's
 id and revision at startup.
 
 The decision provider is pluggable: a trusted composition supplies its own

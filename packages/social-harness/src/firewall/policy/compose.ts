@@ -30,7 +30,11 @@ import {
   MessagePolicyConfigurationError,
   type PolicyConfiguration,
 } from "./configuration.js";
-import { loadMessagePolicy, policyConfigurationError } from "./load.js";
+import {
+  loadMessagePolicy,
+  policyConfigurationError,
+  readBuiltinBehavior,
+} from "./load.js";
 
 /**
  * The firewall a daemon installs, if any.
@@ -164,6 +168,13 @@ function listsBehaviors(policy: MessagePolicy) {
   ].some((entries) => entries !== undefined && entries.length !== 0);
 }
 
+/** A rule of Client's own shipped behaviors; one that cannot be read leaves the bundle unregistrable. */
+function shippedRule(name: string) {
+  return readBuiltinBehavior(name).pipe(
+    Effect.mapError(() => new CheckInputError({ reason: "registration" })),
+  );
+}
+
 /** File loading supplies byte digests after resolving behaviors into rules. */
 function composeFirewall(
   policy: MessagePolicy,
@@ -175,6 +186,7 @@ function composeFirewall(
       collectiveNorms(
         provider,
         policy.englishSettings,
+        shippedRule,
         policy.maximumHistoryRecords,
       ),
     );

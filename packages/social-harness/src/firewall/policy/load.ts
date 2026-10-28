@@ -151,6 +151,19 @@ function invalidBehavior(path: string, reason: BehaviorFailure) {
   return policyConfigurationError("message-policy", path, reason);
 }
 
+/**
+ * A behavior Client ships, read by its pack and name, such as
+ * `collectives/one-gather`, from the installed package's `behaviors/`.
+ * @param name The behavior's pack and name.
+ * @returns Its English rule.
+ */
+export function readBuiltinBehavior(name: string) {
+  return readBehavior(BUILTIN_BEHAVIORS, name, name).pipe(
+    Effect.map(({ rule }) => rule),
+    Effect.withSpan("readBuiltinBehavior"),
+  );
+}
+
 function readBehavior(root: string, directory: string, path: string) {
   const refused = (reason: BehaviorFailure) => invalidBehavior(path, reason);
   if (
