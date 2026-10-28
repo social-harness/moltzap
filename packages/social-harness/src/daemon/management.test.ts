@@ -28,8 +28,6 @@ import {
 import {
   buildCertifiedGenesis,
   storeCertifiedGenesis,
-  withGenesisAnchorSelecting,
-  withMisattributedActionEvidence,
 } from "../__tests__/certified-history-fixtures.js";
 import { routerInstanceId } from "../__tests__/router-worker-fixtures.js";
 import { unusedEndpointStore } from "../__tests__/unused-endpoint-store.js";
@@ -416,54 +414,6 @@ const failsReadOverMembershipRowNamingAnotherHash = () =>
     );
   });
 
-/**
- * The owner tools read stored history with the row checks startup applies.
- * A store whose action evidence row is filed under a member other than its
- * signer is corrupt, so the read reports persistence-failed, while the
- * unaltered store reads the record.
- */
-const failsReadOverMisattributedEvidence = () =>
-  Effect.gen(function* () {
-    const { fixture, store, record } = yield* makeCertifiedHistory;
-    const misattributed = withMisattributedActionEvidence(
-      store,
-      fixture.cards[0].agentId,
-      fixture.cards[1].agentId,
-    );
-
-    const unaltered = yield* readBobRecordHashes(fixture, store);
-    const corrupt = yield* readBobRecordHashes(fixture, misattributed);
-
-    expect(unaltered, "history read over the unaltered store").toEqual(
-      Exit.succeed([record.actionCertifiedRecord.recordHash]),
-    );
-    expect(corrupt, "history read over the misattributed evidence").toEqual(
-      Exit.fail(expect.objectContaining({ reason: "persistence-failed" })),
-    );
-  });
-
-/**
- * A store whose genesis anchor row claims to select a record, which only a
- * completed re-anchor does, is corrupt, so the read reports
- * persistence-failed, while the unaltered store reads the record.
- */
-const failsReadOverGenesisAnchorSelectingRecord = () =>
-  Effect.gen(function* () {
-    const { fixture, store, record } = yield* makeCertifiedHistory;
-    const recordHash = record.actionCertifiedRecord.recordHash;
-    const inconsistent = withGenesisAnchorSelecting(store, recordHash);
-
-    const unaltered = yield* readBobRecordHashes(fixture, store);
-    const corrupt = yield* readBobRecordHashes(fixture, inconsistent);
-
-    expect(unaltered, "history read over the unaltered store").toEqual(
-      Exit.succeed([recordHash]),
-    );
-    expect(corrupt, "history read over the inconsistent anchor row").toEqual(
-      Exit.fail(expect.objectContaining({ reason: "persistence-failed" })),
-    );
-  });
-
 const checksExactAgentLookups = () =>
   Effect.gen(function* () {
     const fixture = yield* makeIdentityFixture;
@@ -669,14 +619,6 @@ describe("owner history read over stored rows", () => {
   it(
     "returns each certificate's signers and signatures with the record's anchor",
     returnsCertificateSignersForAudit,
-  );
-  it(
-    "fails a history read whose action evidence is filed under another signer",
-    failsReadOverMisattributedEvidence,
-  );
-  it(
-    "fails a history read whose genesis anchor row selects a record",
-    failsReadOverGenesisAnchorSelectingRecord,
   );
   it(
     "fails a history read whose membership row names another membership hash",

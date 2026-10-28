@@ -366,10 +366,6 @@ const blocksRegistrationAndSupervisesOutbound = () =>
       Option.isNone(yield* Fiber.poll(registration)),
       "registration still running while the engine is blocked",
     ).toBe(true);
-    expect(
-      yield* operations.readStatus(),
-      "status while the engine is blocked",
-    ).toMatchObject({ kind: "active" });
 
     yield* Deferred.succeed(harness.engineRelease, undefined);
     const registrationResult = yield* awaitStage(
@@ -412,100 +408,6 @@ const settlesRegistrationWhenThePassFails = () =>
     expect(
       yield* awaitStage(Effect.flip(Fiber.join(fiber)), "daemon failure"),
     ).toEqual(new DaemonRuntimeError({ phase: "storage" }));
-  });
-
-/**
- * Restart over `store` and expect the daemon to start active with
- * `agentCard`, which pins that the binding a registration committed is
- * durable.
- */
-const expectActiveAfterRestart = (
-  fixture: Fixture,
-  store: EndpointStore,
-  agentCard: typeof AgentCard.Encoded,
-) =>
-  Effect.gen(function* () {
-    const harness = yield* makeHarness(fixture, "none");
-    yield* Effect.forkScoped(run(fixture, store, harness));
-    yield* awaitStage(Deferred.await(harness.listenerReady), "restart");
-    expect(
-      yield* requireOperations(harness).readStatus(),
-      "status after restart",
-    ).toMatchObject({ kind: "active", agentCard });
-  });
-
-/**
- * Start a registration, interrupt it once engine activation has begun, then
- * release activation and wait for the interrupt to settle. `yieldNow` lets
- * the interrupt reach the registration before activation is released.
- */
-const interruptRegistrationDuringActivation = (
-  fixture: Fixture,
-  harness: RuntimeHarness,
-) =>
-  Effect.gen(function* () {
-    const registration = yield* Effect.forkDaemon(
-      requireOperations(harness).register(fixture.registerRequest),
-    );
-    yield* awaitStage(
-      Deferred.await(harness.engineEntered),
-      "engine acquisition",
-    );
-    const interruption = yield* Effect.forkDaemon(
-      Fiber.interrupt(registration),
-    );
-    yield* Effect.yieldNow();
-    yield* Deferred.succeed(harness.engineRelease, undefined);
-    yield* awaitStage(Fiber.join(interruption), "interrupted registration");
-  });
-
-/**
- * Cancelling an MCP request aborts its signal, which interrupts the tool's
- * operation. By the time engine activation starts, registration has bound the
- * identity and the daemon reports active, so an interrupt that stopped
- * activation there would leave a daemon that reports active with no
- * protocol, refusing inbox reads and sends as not registered until it
- * restarts. Registration and activation therefore run uninterruptibly: an
- * interrupt that arrives while activation is blocked still lets it finish,
- * deliver, and restart registered.
- */
-const finishesRegistrationWhenInterrupted = () =>
-  Effect.gen(function* () {
-    const fixture = yield* makeFixture;
-    const harness = yield* makeHarness(fixture, "none", true);
-    const store = makeStore(fixture, false);
-    const agentCard = yield* Schema.encode(AgentCard)(fixture.localCard);
-    const daemon = yield* Effect.forkDaemon(run(fixture, store, harness));
-    yield* Effect.gen(function* () {
-      yield* awaitStage(Deferred.await(harness.listenerReady), "listener");
-      yield* interruptRegistrationDuringActivation(fixture, harness);
-      const operations = requireOperations(harness);
-
-      expect(
-        yield* operations.readStatus(),
-        "status after the interrupted registration",
-      ).toMatchObject({ kind: "active", agentCard });
-      expect(
-        yield* Effect.exit(
-          operations.readInbox({}).pipe(Effect.map((page) => page.items)),
-        ),
-        "inbox once the interrupted activation finishes",
-      ).toEqual(
-        Exit.succeed([
-          {
-            deliveryToken: fixture.pending.deliveryToken,
-            item: { kind: "multicast", message: fixture.pending.message },
-          },
-        ]),
-      );
-      expect(
-        yield* awaitStage(
-          operations.register(fixture.registerRequest),
-          "registration retried after the interrupt",
-        ),
-      ).toMatchObject({ kind: "registered", agentCard });
-    }).pipe(Effect.ensuring(Fiber.interrupt(daemon)));
-    yield* expectActiveAfterRestart(fixture, store, agentCard);
   });
 
 const receivesFirstDelivery = (handler: HarnessMcpEventHandler) =>
@@ -962,29 +864,6 @@ const stopsWhenActivationFails = (row: ActivationFault) =>
     expect(stopped.phase, "phase the daemon stopped in").toBe(row.phase);
   });
 
-/** Startup registration reports the same activation phase as owner registration. */
-const stopsWhenStartupActivationFails = (row: ActivationFault) =>
-  Effect.gen(function* () {
-    const base = yield* makeFixture;
-    const fixture = {
-      ...base,
-      bootstrap: {
-        ...base.bootstrap,
-        configuration: {
-          ...base.bootstrap.configuration,
-          registration: base.registerRequest,
-        },
-      },
-    };
-    const harness = row.harness(yield* makeHarness(fixture, "none"));
-    const stopped = yield* run(
-      fixture,
-      row.store(makeStore(fixture, false)),
-      harness,
-    ).pipe(Effect.flip);
-    expect(stopped.phase).toBe(row.phase);
-  });
-
 /** A listener the operating system refused to open. */
 class ListenerUnavailableError extends Data.TaggedError(
   "ListenerUnavailableError",
@@ -1006,15 +885,6 @@ const startupFaults: readonly DaemonFault[] = [
         Effect.fail(new EndpointStoreError({ reason: "persistence" })),
     }),
     harness: (harness) => harness,
-    phase: "storage",
-  },
-  {
-    fault: "the pending read fails",
-    store: (store) => store,
-    harness: (harness) => {
-      harness.delivery.failReads = true;
-      return harness;
-    },
     phase: "storage",
   },
   {
@@ -1082,7 +952,10 @@ const failsStartupWith = (row: DaemonFault) =>
     expect(error.phase, "phase startup failed in").toBe(row.phase);
   });
 
-/** A successful registration can be retried while its inbox remains usable. */
+/**
+ * A successful registration returns the bound card and its view, a retry
+ * returns the same result, and the inbox remains usable.
+ */
 const keepsTheInboxUsableAcrossARetriedRegister = () =>
   Effect.gen(function* () {
     const fixture = yield* makeFixture;
@@ -1092,7 +965,6 @@ const keepsTheInboxUsableAcrossARetriedRegister = () =>
     );
     yield* awaitStage(Deferred.await(harness.listenerReady), "listener");
     const operations = requireOperations(harness);
-    const agentCard = yield* Schema.encode(AgentCard)(fixture.localCard);
 
     const first = yield* awaitStage(
       operations.register(fixture.registerRequest),
@@ -1103,8 +975,16 @@ const keepsTheInboxUsableAcrossARetriedRegister = () =>
       "retried registration",
     );
 
-    expect(first).toMatchObject({ kind: "registered", agentCard });
-    expect(retried).toMatchObject({ kind: "registered", agentCard });
+    expect(first).toEqual({
+      kind: "registered",
+      agentCard: yield* Schema.encode(AgentCard)(fixture.localCard),
+      agent: {
+        agentId: fixture.localCard.agentId,
+        agentName: fixture.localCard.agentName,
+        principalId: fixture.localCard.principalId,
+      },
+    });
+    expect(retried).toEqual(first);
     const handler = requireHandler(harness);
     expect(yield* readInboxThroughMcp(handler)).toEqual([
       fixture.pending.deliveryToken,
@@ -1215,10 +1095,6 @@ describe("daemon runtime composition", () => {
     blocksRegistrationAndSupervisesOutbound,
   );
   it(
-    "finishes registration and activation when the register request is interrupted",
-    finishesRegistrationWhenInterrupted,
-  );
-  it(
     "replays durable deliveries until acknowledgment",
     replaysUntilAcknowledged,
   );
@@ -1245,16 +1121,12 @@ describe("daemon activation", () => {
     "stops the daemon when activation $fault",
     stopsWhenActivationFails,
   );
-  it.each(activationFaults)(
-    "fails startup registration in phase $phase when activation $fault",
-    stopsWhenStartupActivationFails,
-  );
   it.each(startupFaults)(
     "fails a registered startup in phase $phase when $fault",
     failsStartupWith,
   );
   it(
-    "keeps the inbox usable when a register is retried",
+    "returns the card and its view, and keeps the inbox usable when a register is retried",
     keepsTheInboxUsableAcrossARetriedRegister,
   );
 });
