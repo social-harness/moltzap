@@ -423,106 +423,155 @@ const runValidatedOperation = async <
   options: RunOperationOptions<Value>,
 ) => await validateToolOutput(schema, await runOperation(options), toolName);
 
-/** A tool's catalog entry: its description and schemas. */
+/**
+ * The MCP annotations a host reads to decide which calls need its user's
+ * approval. MCP defaults an unset `destructiveHint` to true and
+ * `openWorldHint` to true, so a write that changes nothing it cannot undo, and
+ * a tool that stays on this host, say so.
+ */
+interface ToolHints {
+  readonly readOnlyHint: boolean;
+  readonly destructiveHint?: boolean;
+  readonly idempotentHint?: boolean;
+  readonly openWorldHint: boolean;
+}
+
+/** A tool's catalog entry: its description, schemas and annotations. */
 interface ToolListing {
   readonly description: string;
   readonly inputSchema: StandardSchemaWithJSON;
   readonly outputSchema?: StandardSchemaWithJSON;
+  readonly annotations: ToolHints;
 }
+
+/** A tool that reads this daemon's own state. */
+const localRead: ToolHints = { readOnlyHint: true, openWorldHint: false };
 
 /**
  * Every tool the catalog can list. `installToolCallHandler` replaces the
  * SDK's tools/call dispatch, so `toolHandlers` serves every call and a listing
- * only names a tool and its schemas.
+ * only names a tool, its schemas and its annotations.
  */
 const toolListings = {
   policy_read: {
     description:
-      "Read the active editable English rules and the fixed rules, which cannot be edited.",
+      "Read the active editable English rules and the fixed rules, which cannot be edited. Read it before policy_update to see which rule ids exist.",
     inputSchema: emptyInput,
     outputSchema: policyReadOutput,
+    annotations: localRead,
   },
   policy_update: {
     description:
-      "Update editable English rules. Returns after activation. Changes are not retroactive: admitted guidance, held items and bound sends remain unchanged.",
+      "Add or remove editable English rules, such as a shared norm the agent agreed to: add takes whole rules, remove takes rule ids, and removing and adding one id replaces it. Fails with invalid-rule for an id that already exists or is missing, fixed-rule for a fixed rule, and not-configured when the daemon has no English policy. Returns the new activeRevision once the rules are active; changes are not retroactive: admitted guidance, held items and bound sends remain unchanged.",
     inputSchema: policyUpdateInput,
     outputSchema: policyUpdateOutput,
+    annotations: { readOnlyHint: false, openWorldHint: false },
   },
   firewall_decisions: {
     description:
       "Read metadata for the latest 100 completed checks since inclusive Unix milliseconds: each outcome's cause and deciding rules with their registered advice; no message text. Groups have one row per peer.",
     inputSchema: decisionsInput,
     outputSchema: decisionsOutput,
+    annotations: localRead,
   },
   [STATUS_TOOL]: {
     description:
       "Inspect whether this daemon is registered and read its bound AgentCard.",
     inputSchema: emptyInput,
     outputSchema: statusOutput,
+    annotations: localRead,
   },
   [REGISTER_TOOL]: {
     description:
       "Register this daemon's configured key under an immutable agent name for a principal, reusing operationId for retries.",
     inputSchema: registerInput,
     outputSchema: registerOutput,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
   },
   event_subscription_status: {
     description:
       "Inspect the runtime consumer and stalled delivery without exposing callback credentials.",
     inputSchema: emptyInput,
     outputSchema: makeStandardSchema(webhookStatusJsonSchema),
+    annotations: localRead,
   },
   revoke_event_subscription: {
     description:
       "Release the active runtime consumer while leaving pending inbox items unread.",
     inputSchema: emptyInput,
+    annotations: { readOnlyHint: false, openWorldHint: false },
   },
   resume_event_subscription: {
     description:
       "Resume transient callback retries after a recoverable delivery failure. A terminal rejection requires revocation and reconfiguration.",
     inputSchema: emptyInput,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      openWorldHint: false,
+    },
   },
   [SEARCH_AGENTS_TOOL]: {
     description:
       "Look up an agent by its exact AgentId or agentName; a display name or partial name returns not_found.",
     inputSchema: searchAgentsInput,
     outputSchema: searchAgentsOutput,
+    annotations: { readOnlyHint: true, openWorldHint: true },
   },
   [SEARCH_CONVERSATIONS_TOOL]: {
     description:
       "List canonical addresses of local conversations in order, optionally after an exclusive address cursor.",
     inputSchema: searchConversationsInput,
     outputSchema: searchConversationsOutput,
+    annotations: localRead,
   },
   [READ_CONVERSATION_TOOL]: {
     description:
-      "Read a frozen page of verified local conversation history by address or single-use continuation.",
+      "Read a frozen page of verified local conversation history by address or single-use continuation: signed records for verification and disclosure, not message text. Read message content with read_inbox or read_event.",
     inputSchema: readConversationInput,
     outputSchema: readConversationOutput,
+    annotations: localRead,
   },
   [HARNESS_READ_INBOX_TOOL]: {
     description:
       "Read a page of pending classified inbox items without acknowledging delivery.",
     inputSchema: readInboxInput,
     outputSchema: readInboxOutput,
+    annotations: localRead,
   },
   [HARNESS_SEND_TOOL]: {
     description:
-      "Send one multicast, gather, all_gather, or collective response to an agent or fixed-member group.",
+      "Send one multicast, gather, all_gather, or collective response to an agent or fixed-member group. The sender's own firewall checks it first; a refusal fails the call with the check id, the reason and the next action, and sends nothing.",
     inputSchema: sendInput,
     outputSchema: sendOutput,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      openWorldHint: true,
+    },
   },
   [HARNESS_READ_EVENT_TOOL]: {
     description:
       "Read the original full content of a Social Harness event by eventId without delivery or acknowledgment side effects.",
     inputSchema: readEventInput,
     outputSchema: readEventOutput,
+    annotations: localRead,
   },
   [HARNESS_ACKNOWLEDGE_DELIVERY_TOOL]: {
     description:
       "Acknowledge a delivery token after the host has accepted its item under the host-specific handoff contract.",
     inputSchema: acknowledgeDeliveryInput,
     outputSchema: emptyOutput,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      openWorldHint: false,
+    },
   },
 } as const satisfies Readonly<Record<string, ToolListing>>;
 
