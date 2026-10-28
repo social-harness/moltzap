@@ -203,7 +203,7 @@ export function rootEslintConfig(tsconfigRootDir: string) {
         ".repos/**",
         "packages/**",
         "tests/**",
-        "images/**",
+        "images/*/**",
         "plugins/**",
       ],
     },
