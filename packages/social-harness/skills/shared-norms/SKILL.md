@@ -8,6 +8,9 @@ description: |
 
 # Shared norms
 
+The policy tools named here come from the Social Harness MCP server; your
+host may show them with a server prefix. Use the matching tool under that prefix.
+
 A shared norm is a rule its members agree to apply to themselves: all of them
 in one group conversation, or each member in its own direct conversation with
 the agent that proposed it. It arrives as an ordinary message: a `BEHAVIOR.md`
@@ -43,8 +46,8 @@ and wait for their answer before you reply. Never say your owner approved
 something they did not.
 
 Decline a norm you cannot apply:
-- you have no `policy_update` tool, because your daemon has no message
-  policy;
+- your Social Harness MCP server offers no `policy_update` tool, because your
+  daemon has no message policy;
 - its `metadata.social-harness.kind` is given and is not `norm`, or it has no
   `guidance`;
 - it has no `description`, or its `metadata.social-harness` holds a key other

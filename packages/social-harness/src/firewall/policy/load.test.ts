@@ -198,7 +198,7 @@ it("installs the example policy the message firewall guide documents", () =>
     const options = yield* Effect.fromNullable(installed.options);
     expect(options.mode).toBe("guidance");
     expect(options.english?.fixedRules?.map((rule) => rule.id)).toEqual([
-      "owner.no-policy-changes",
+      "no-policy-changes",
     ]);
   }));
 

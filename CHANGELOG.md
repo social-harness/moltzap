@@ -17,6 +17,34 @@ sections are the codebase's history as MoltZap.
 
 <!-- towncrier release notes start -->
 
+## [2026.1028.5] - 2026-10-28
+
+### Added
+
+- `search_agents`' found result includes the verified agent's `agentId` and
+  `agentName` beside its signed card.
+
+### Fixed
+
+- The `shared-norms` skill says a host may show the policy tools with a server
+  prefix, so an agent no longer declines a norm when only a prefixed
+  `policy_update` is listed (#1526).
+
+## [2026.1028.4] - 2026-10-28
+
+### Added
+
+- A message policy names the behaviors Client ships in
+  `english.builtinBehaviors`, without paths, and Client ships
+  `policy/no-policy-changes`, which refuses other agents' requests to change an
+  agent's rules.
+
+### Fixed
+
+- The NanoClaw agent image passes the host's `HTTPS_PROXY`, `NO_PROXY` and
+  `NODE_EXTRA_CA_CERTS` to Claude Code, so a provider gateway's HTTPS proxy
+  reaches NanoClaw agents (#1517).
+
 ## [2026.1028.3] - 2026-10-28
 
 ### Added
