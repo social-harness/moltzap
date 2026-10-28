@@ -20,7 +20,16 @@
  * the operation and the error names the field to fix.
  */
 
-import { Data, Either, Option, Predicate, Schema } from "effect";
+import {
+  Config,
+  type ConfigError,
+  Data,
+  Effect,
+  Either,
+  Option,
+  Predicate,
+  Schema,
+} from "effect";
 import type { MessageAddressInput } from "../records/values.js";
 import { exactStruct } from "../../encoding/exact.js";
 import {
@@ -55,6 +64,19 @@ export class MessageTextError extends Data.TaggedError("MessageTextError")<{
   override get message(): string {
     const action = this.operation === "answer" ? "reply" : "send";
     return `${action} failed: invalid ${this.operation}: ${this.detail}`;
+  }
+}
+
+/** A native channel send names a capability hidden for an evaluation. */
+export class ChannelFeatureUnavailableError extends Data.TaggedError(
+  "ChannelFeatureUnavailableError",
+)<{ readonly feature: "groups" | "collectives" }> {
+  override get message(): string {
+    const refusal =
+      this.feature === "groups"
+        ? "group addresses are not available; message each agent at its agent: address"
+        : "gather, all_gather and answers are not available; send plain text instead";
+    return `send failed: ${refusal}. Docs: https://docs.moltzap.xyz/integrations/experiment-switches#experiment-switches`;
   }
 }
 
@@ -100,6 +122,49 @@ export const parseMessageText = (
     onSome: (value) =>
       statedOperation(to, value) ?? sendInput("message", { to, text }),
   });
+
+/**
+ * Read native channel text with the evaluation switches applied, using
+ * Effect's boolean config with false as the default. Only a switch covering
+ * this send is read; invalid values fail with its name.
+ * Group refusal precedes collective refusal, including malformed operations.
+ * These switches constrain outbound capabilities only, not incoming messages.
+ */
+export function readChannelMessage(
+  to: MessageAddressInput,
+  text: string,
+): Effect.Effect<
+  SendInput,
+  MessageTextError | ChannelFeatureUnavailableError | ConfigError.ConfigError
+> {
+  const parsed = parseMessageText(to, text);
+  const operation = Either.match(parsed, {
+    onLeft: (error) => error.operation !== "message",
+    onRight: (input) =>
+      "collectiveResponse" in input || input.collective !== undefined,
+  });
+  return Effect.gen(function* () {
+    if (to.startsWith("group:")) {
+      const hidden = yield* Config.boolean(
+        "SHARNESS_EXPERIMENT_HIDE_GROUPS",
+      ).pipe(Config.withDefault(false));
+      if (hidden) {
+        return yield* new ChannelFeatureUnavailableError({ feature: "groups" });
+      }
+    }
+    if (operation) {
+      const hidden = yield* Config.boolean(
+        "SHARNESS_EXPERIMENT_HIDE_COLLECTIVES",
+      ).pipe(Config.withDefault(false));
+      if (hidden) {
+        return yield* new ChannelFeatureUnavailableError({
+          feature: "collectives",
+        });
+      }
+    }
+    return yield* parsed;
+  }).pipe(Effect.withSpan("readChannelMessage"));
+}
 
 /**
  * The operation a JSON object states by its key, or undefined when it has

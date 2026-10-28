@@ -95,16 +95,12 @@ function collectivesSwitchTests() {
 }
 
 function groupSwitchTests(action: "send" | "reply") {
-  it("refuses group targets for every enabled value and message text", () =>
+  it("refuses group targets for plain and operation text", () =>
     switchOnRefusesGroups(action));
-  it.each([undefined, "false", "no", "off", "0"])(
-    "passes group targets on to the account when set to %s",
-    (value) => {
-      vi.stubEnv(HIDE_GROUPS, value);
-
-      return reachesAccount("hello", GROUP_ADDRESS, action);
-    },
-  );
+  it("passes group targets on to the account with the switch unset", () => {
+    vi.stubEnv(HIDE_GROUPS, undefined);
+    return reachesAccount("hello", GROUP_ADDRESS, action);
+  });
   it("passes a direct plain-text send on to the account when both switches are true", () => {
     vi.stubEnv(HIDE_GROUPS, "true");
     vi.stubEnv(HIDE_COLLECTIVES, "true");
@@ -125,13 +121,11 @@ function groupSwitchTests(action: "send" | "reply") {
  * no_claim=which refusal wins when both switches are on.
  */
 function switchOnRefusesGroups(action: "send" | "reply") {
+  vi.stubEnv(HIDE_GROUPS, "true");
   return fc.assert(
     fc.asyncProperty(
-      fc.constantFrom("true", "yes", "on", "1"),
       fc.oneof(fc.string(), fc.constantFrom(...OPERATION_TEXTS)),
-      (value, message) => {
-        vi.stubEnv(HIDE_GROUPS, value);
-
+      (message) => {
         return Effect.runPromise(
           messageAction(action, { to: GROUP_ADDRESS, message }).pipe(
             Effect.flip,

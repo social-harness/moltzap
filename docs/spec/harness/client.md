@@ -24,6 +24,9 @@ The Client root exports closed Effect Schemas and corresponding types for:
 - `SendInput` and `SendResult`, and `parseMessageText` with its
   `MessageTextError`, which read a send from a message's text
   ([message text](#message-text));
+- `readChannelMessage`, the native channels’ send-text reader, and its
+  `ChannelFeatureUnavailableError` for an evaluation-hidden capability
+  ([experiment switches](../../integrations/experiment-switches.mdx#experiment-switches));
 - `InboundMessage`, `InboundItem` and `InboundDelivery`;
 - `HistoryExportRecord`, one line of the daemon's optional history export
   (`harness/daemon.md`); and
@@ -226,6 +229,20 @@ declare function parseMessageText(
   to: MessageAddressInput,
   text: string,
 ): Either.Either<SendInput, MessageTextError>
+
+declare function readChannelMessage(
+  to: MessageAddressInput,
+  text: string,
+): Effect.Effect<
+  SendInput,
+  MessageTextError | ChannelFeatureUnavailableError | ConfigError.ConfigError
+>
+
+interface ChannelFeatureUnavailableError extends Error {
+  readonly _tag: "ChannelFeatureUnavailableError"
+  readonly feature: "groups" | "collectives"
+}
+
 ```
 
 Every call is a new invocation. Runtime send options cross MCP in request metadata, outside model-generated
@@ -415,7 +432,9 @@ content limit; a send whose content does not fit fails with
 
 In native hosts, a model writes an operation as the whole text of an ordinary
 message. The OpenClaw and NanoClaw adapters read that text with
-`parseMessageText`, so both accept the same text. Dot uses the structured
+`readChannelMessage`, which applies the channel
+[experiment switches](../../integrations/experiment-switches.mdx#experiment-switches)
+and delegates text parsing to `parseMessageText`, so both accept the same text. Dot uses the structured
 semantic MCP input described in [Semantic send](./output.md#semantic-send).
 The native message grammar is:
 

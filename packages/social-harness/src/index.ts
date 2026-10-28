@@ -50,8 +50,10 @@ export {
 } from "./communication/collectives/render.js";
 /** The operation a native host's message text states. */
 export {
+  ChannelFeatureUnavailableError,
   MessageTextError,
   parseMessageText,
+  readChannelMessage,
 } from "./communication/collectives/message-text.js";
 /** Explicit direct and group addresses. */
 export {

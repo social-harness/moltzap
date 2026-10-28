@@ -124,6 +124,8 @@ beforeEach(async () => {
   vi.resetModules();
   boundary.register.mockClear();
   boundary.acquire.mockReset();
+  vi.stubEnv("SHARNESS_EXPERIMENT_HIDE_COLLECTIVES", undefined);
+  vi.stubEnv("SHARNESS_EXPERIMENT_HIDE_GROUPS", undefined);
   vi.stubEnv("SHARNESS_MCP_URL", "http://127.0.0.1:8321/mcp");
   await import("./sharness.js");
   expect(boundary.register).toHaveBeenCalledWith("sharness", expect.anything());
@@ -486,6 +488,105 @@ it.each(["hello", { text: "hello" }])(
       { to: "agent:alice", text: "hello" },
       { failureDelivery: "inbound" },
     );
+  },
+);
+
+it.each([
+  {
+    variable: "SHARNESS_EXPERIMENT_HIDE_GROUPS",
+    to: GROUP,
+    text: "hello",
+    refusal:
+      "group addresses are not available; message each agent at its agent: address",
+  },
+  ...[
+    JSON.stringify({ gather: QUESTION, deadline: 60, requestedSchema: FORM }),
+    JSON.stringify({
+      all_gather: QUESTION,
+      deadline: 60,
+      requestedSchema: FORM,
+    }),
+    '{"action":"decline"}',
+    '{"action":"cancel"}',
+    '{"gather":"Which day?","deadline":0}',
+  ].map((text) => ({
+    variable: "SHARNESS_EXPERIMENT_HIDE_COLLECTIVES",
+    to: GROUP,
+    text,
+    refusal: "gather, all_gather and answers are not available",
+  })),
+])(
+  "reports a hidden feature for $variable and still sends direct text: $text",
+  async ({ variable, to, text, refusal }) => {
+    vi.stubEnv(variable, "true");
+    const fake = makeEndpoint();
+    const host = makeHost();
+    const channel = await createAdapter();
+    await channel.setup(host);
+
+    await expect(
+      channel.deliver(to, null, { kind: "chat", content: text }),
+    ).resolves.toBeUndefined();
+    expect(fake.send).not.toHaveBeenCalled();
+    const event = host.onInboundEvent.mock.calls[0]?.[0];
+    if (event === undefined) {
+      throw new Error("Host did not receive the refusal");
+    }
+    expect(eventContent(event).text).toContain(refusal);
+    await channel.deliver("agent:alice", null, {
+      kind: "chat",
+      content: "hello",
+    });
+    expect(fake.send).toHaveBeenCalledExactlyOnceWith(
+      { to: "agent:alice", text: "hello" },
+      { failureDelivery: "inbound" },
+    );
+  },
+);
+
+it.each([
+  { to: GROUP, text: "hello", input: { to: GROUP, text: "hello" } },
+  {
+    to: GROUP,
+    text: JSON.stringify({
+      gather: QUESTION,
+      deadline: 60,
+      requestedSchema: FORM,
+    }),
+    input: {
+      to: GROUP,
+      text: QUESTION,
+      collective: { op: "gather", deadline: 60, requestedSchema: FORM },
+    },
+  },
+  {
+    to: GROUP,
+    text: JSON.stringify({
+      all_gather: QUESTION,
+      deadline: 60,
+      requestedSchema: FORM,
+    }),
+    input: {
+      to: GROUP,
+      text: QUESTION,
+      collective: { op: "all_gather", deadline: 60, requestedSchema: FORM },
+    },
+  },
+  {
+    to: "agent:alice",
+    text: '{"action":"decline"}',
+    input: { to: "agent:alice", collectiveResponse: { action: "decline" } },
+  },
+])(
+  "sends the feature with switches unset: $text",
+  async ({ to, text, input }) => {
+    const fake = makeEndpoint();
+    const channel = await createAdapter();
+    await channel.setup(makeHost());
+    await channel.deliver(to, null, { kind: "chat", content: text });
+    expect(fake.send).toHaveBeenCalledExactlyOnceWith(input, {
+      failureDelivery: "inbound",
+    });
   },
 );
 

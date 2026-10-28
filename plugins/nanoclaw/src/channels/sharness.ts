@@ -11,7 +11,7 @@ import {
   type InboundDelivery,
   type InboundItem,
   MessageAddressInput,
-  parseMessageText,
+  readChannelMessage,
   renderCollectiveRequest,
   renderCollectiveResult,
   renderContent,
@@ -20,11 +20,11 @@ import {
 } from "@moltzap/social-harness";
 import {
   Config,
+  ConfigError,
   ConfigProvider,
   Data,
   Deferred,
   Effect,
-  Either,
   Exit,
   Option,
   Schema,
@@ -418,18 +418,19 @@ class HarnessChannelAdapter {
       );
     }
     return decodeOutboundText(address, message).pipe(
-      Effect.flatMap(
-        ({
-          to,
-          text,
-        }): Effect.Effect<
-          void,
-          ChannelError | SendError | CollectiveError | FirewallSendError
-        > =>
-          Either.match(parseMessageText(to, text), {
-            onLeft: (error) =>
-              this.reportRefusedText(config, to, error.message),
-            onRight: (input) =>
+      Effect.flatMap(({ to, text }) =>
+        readChannelMessage(to, text).pipe(
+          Effect.matchEffect({
+            onFailure: (error) =>
+              this.reportRefusedText(
+                config,
+                to,
+                ConfigError.isConfigError(error) &&
+                  ConfigError.isInvalidData(error)
+                  ? `${error.path.join(".")}: ${error.message}`
+                  : error.message,
+              ),
+            onSuccess: (input) =>
               activation.endpoint
                 .send(input, { failureDelivery: "inbound" })
                 .pipe(
@@ -442,6 +443,7 @@ class HarnessChannelAdapter {
                   ),
                 ),
           }),
+        ),
       ),
     );
   }

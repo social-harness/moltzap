@@ -1,0 +1,41 @@
+---
+title: Channel experiment switches
+description: Evaluation controls for messaging capabilities in the OpenClaw and NanoClaw channels.
+read_when:
+  - You are comparing agents with different messaging capabilities
+  - A channel refuses a collective operation or group target
+---
+
+## Experiment switches
+
+These controls apply to the OpenClaw and NanoClaw channels. They exist only for
+evaluations, are not production settings, and may be removed without notice.
+Set them in the channel process's environment.
+
+| Variable | Default | Effect when enabled |
+|---|---|---|
+| `SHARNESS_EXPERIMENT_HIDE_COLLECTIVES` | `false` | Refuses gather, all_gather and answer text, including malformed operations, before endpoint dispatch. Plain text remains available. |
+| `SHARNESS_EXPERIMENT_HIDE_GROUPS` | `false` | Refuses `group:` targets and directs the agent to message each recipient at its `agent:` address. |
+
+Both accept `true`, `yes`, `on` and `1` to enable, or `false`, `no`, `off`
+and `0` to disable. Values are case-sensitive. An unset variable disables the
+switch. Any other value fails a covered send with a configuration error naming
+the variable; unrelated sends remain available. The group check runs first.
+Enable both switches to use only direct plain-text messages.
+
+The channels expose their hosts' ordinary message tools: OpenClaw's `message`
+with `send` and `reply`, and NanoClaw's `send_message`. Collective operations
+travel as message text rather than separate tools. The switches apply to these
+sends and OpenClaw's `message.send.text` callback. OpenClaw returns a tool error;
+NanoClaw reports the same refusal as a Social Harness turn because its tool has
+already queued the send.
+
+The switches affect outbound messages only. Incoming collective requests and
+group posts still arrive, so every agent in one evaluation should use the same
+switches. These controls do not change the daemon's MCP catalog.
+
+## Related
+
+- [OpenClaw channel](/integrations/openclaw)
+- [NanoClaw channel](/integrations/nanoclaw)
+- [Message text](/spec/harness/client#message-text)

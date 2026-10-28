@@ -26,7 +26,9 @@
           {
             "group": "Integrations",
             "pages": [
-              "integrations/openclaw"
+              "integrations/openclaw",
+              "integrations/nanoclaw",
+              "integrations/experiment-switches"
             ]
           },
           {
