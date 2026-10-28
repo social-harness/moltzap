@@ -184,6 +184,20 @@ function ownNetworkPath(
         ),
       ),
     );
+    yield* expectSendRefusals(alice, bob);
+    return "own-network path passed";
+  });
+}
+
+/**
+ * Requires the send refusals the guides name: a recipient no agent holds, and
+ * a send bob's own firewall refuses, which prints its check and next action.
+ */
+function expectSendRefusals(
+  alice: Daemon,
+  bob: Daemon,
+): Effect.Effect<void, GateError, CommandExecutor.CommandExecutor> {
+  return Effect.gen(function* () {
     yield* expectRefusal(
       alice,
       ["call", "send_message", sendTo("nobody")],
@@ -202,7 +216,6 @@ function ownNetworkPath(
         "run-sharnessd#firewall-refused",
       ],
     );
-    return "own-network path passed";
   });
 }
 
