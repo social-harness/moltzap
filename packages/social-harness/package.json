@@ -1,6 +1,6 @@
 {
   "name": "@moltzap/social-harness",
-  "version": "2026.1028.10",
+  "version": "2026.1028.11",
   "description": "Social Harness endpoint runtime and harness boundary",
   "license": "Apache-2.0",
   "repository": {
@@ -146,6 +146,6 @@
     "vitest": "catalog:",
     "fast-check": "catalog:"
   },
-  "sharnessContentHash": "sha256:15329d05c54780c51dd3384480efb4ed9768e8c8b48c7f84675ee515b051842b",
+  "sharnessContentHash": "sha256:9ba91d44a6cdb24c7e13843b1fff531e882fd9d9cb76e9db4920cac1fcd8edeb",
   "sharnessWireVersion": "2026.1026.5"
 }

@@ -17,6 +17,18 @@ sections are the codebase's history as MoltZap.
 
 <!-- towncrier release notes start -->
 
+## [2026.1028.11] - 2026-10-28
+
+### Changed
+
+- Container paths use `/opt/social-harness`, `/var/lib/social-harness` and
+  `/run/social-harness`, and the OpenClaw plugin id is `social-harness`.
+
+### Removed
+
+- `MOLTZAP_*` and `MOLTZAPD_*` variables no longer stop startup, and the
+  launcher trusts only releases built by social-harness/moltzap.
+
 ## [2026.1028.10] - 2026-10-28
 
 ### Changed
