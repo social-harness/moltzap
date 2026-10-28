@@ -320,10 +320,10 @@ discover or call them; the baseline daemon does not list them.
 `Rule`, `FixedRule` and the atomic edit/failure contract are defined by
 [editable English policy](./message-policy.md#editable-english-policy).
 Invalid MCP shapes are invalid-argument errors; semantic update errors carry
-one closed policy failure reason, and name the failing rule as
-[editable English policy](./message-policy.md#editable-english-policy)
-describes. Fixed ids are refused in both `add` and `remove`. These management tools check owner authority, not peer/contact
-permissions; deployments express contact permissions through policy norms.
+one closed policy failure reason and name the failing rule, as that section
+describes. Fixed ids are refused in both `add` and `remove`. These management
+tools check owner authority, not peer/contact permissions; deployments express
+contact permissions through policy norms.
 
 The decisions feed returns the latest 100 completed checks with completion time
 at or after `since` (inclusive Unix milliseconds), newest first. Group outgoing

@@ -132,9 +132,9 @@ error whose data is `{reason, detail?}` with the `SendError` reason and
 detail, or
 `{reason: "collective-failed", id, failure, openIds?, openElsewhere?}` with
 the `CollectiveError` failure; for an answer that named no request while
-several were open, their ids; and for an answer whose conversation holds no
-open question, `[{id, to}]` for each question open in another conversation.
-The loopback Client rebuilds the same typed error from it. A send
+several were open, their ids; and for a `request-none`, `request-answered` or
+`request-expired` refusal, `[{id, to}]` for each question open in another
+conversation. The loopback Client rebuilds the same typed error from it. A send
 may also return `{reason: "firewall-refused", checkId, refusal, feedback}`,
 which reconstructs `FirewallSendError` without exposing private evidence. A send
 that ends without a typed failure, or whose completed result fails the tool's

@@ -5,6 +5,7 @@ import type { CheckedGuidance } from "../../firewall/outcome/index.js";
 import { exactStruct } from "../../encoding/exact.js";
 import { isCanonicalIdentifier } from "../../encoding/identifier.js";
 import {
+  issuesText,
   type SendError,
   sendFailureReasons,
   sendFailureText,
@@ -271,11 +272,7 @@ export function closeFailureText(error: SendError): string {
  * @returns The issues as text.
  */
 export const describeIssues = (error: ParseResult.ParseError): string =>
-  ParseResult.ArrayFormatter.formatErrorSync(error)
-    .map(({ path, message }) =>
-      path.length === 0 ? message : `${path.map(String).join(".")}: ${message}`,
-    )
-    .join("; ");
+  issuesText(ParseResult.ArrayFormatter.formatErrorSync(error));
 
 /** What each answer-field problem means. */
 const answerFieldText = {
@@ -373,10 +370,10 @@ export interface OpenElsewhere {
  * A gather, all_gather or answer was refused. The message is what a host
  * hands its model as the tool error: the failed action and its cause, naming
  * each unreachable member or failing field. For an answer that named no
- * request while several were open, it names each open request's id; for an
- * answer whose conversation holds no open question, the questions open in
- * other conversations and where each is answered. The operation id stays in
- * the error's data, not its message.
+ * request while several were open, it names each open request's id; for a
+ * `request-none`, `request-answered` or `request-expired` refusal, the
+ * questions open in other conversations and where each is answered. The
+ * operation id stays in the error's data, not its message.
  */
 export class CollectiveError extends Data.TaggedError("CollectiveError")<{
   readonly id: CollectiveId;

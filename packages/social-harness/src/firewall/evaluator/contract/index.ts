@@ -668,10 +668,9 @@ const policyProblemText: Readonly<Record<PolicyProblem, string>> = {
     "its id is already in the policy; remove that rule in the same update to replace it, or use another id",
   "unknown-id":
     "no editable rule has this id; policy_read lists the editable rules",
-  "editable-limit":
-    "the update would leave more than 256 editable rules; remove some rules first",
+  "editable-limit": `the update would leave more than ${String(MAXIMUM_EDITABLE_RULES)} editable rules; remove some rules first`,
   frontmatter:
-    "the BEHAVIOR.md must start with a --- line and YAML frontmatter that closes with ---; pass the document alone, without a code fence or other text",
+    "the BEHAVIOR.md needs valid YAML frontmatter between --- lines (no code fence or other text before it)",
   schema:
     "it does not map to an editable rule: a norm needs guidance, and a BEHAVIOR.md needs name, description and metadata.social-harness.guidance, with no metadata.social-harness keys other than kind, guidance and feedback",
   "too-large": "the BEHAVIOR.md is over 64 KiB",

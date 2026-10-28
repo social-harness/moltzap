@@ -43,12 +43,12 @@ export function decodeHarnessSendCall(
   metadata: unknown,
 ): Effect.Effect<HarnessSendRequest, ParseResult.ParseError> {
   return Effect.gen(function* () {
-    const args = yield* Schema.decodeUnknown(harnessSendArgumentsSchema)(
-      toolArguments,
-    );
-    const runtime = yield* Schema.decodeUnknown(harnessSendMetadataSchema)(
-      metadata === undefined ? {} : metadata,
-    );
+    const args = yield* Schema.decodeUnknown(harnessSendArgumentsSchema, {
+      errors: "all",
+    })(toolArguments);
+    const runtime = yield* Schema.decodeUnknown(harnessSendMetadataSchema, {
+      errors: "all",
+    })(metadata === undefined ? {} : metadata);
     return { ...args, ...runtime[HARNESS_SEND_META_KEY] };
   }).pipe(Effect.withSpan("decodeHarnessSendCall"));
 }
@@ -102,35 +102,16 @@ export const harnessFailureReasons = {
   ]),
 };
 
-/**
- * An operation failure's reason when it is one of `allowed`, so no internal
- * diagnostic crosses the boundary.
- * @param cause The operation's expected failure.
- * @param allowed The tool's closed failure reasons.
- * @param fallback The reason for any other failure.
- * @returns The reason the tool reports.
- */
-export function closedReason(
-  cause: unknown,
-  allowed: ReadonlySet<string>,
-  fallback: string,
-): string {
-  if (typeof cause !== "object" || cause === null || !("reason" in cause)) {
-    return fallback;
-  }
-  const reason: unknown = cause.reason;
-  return typeof reason === "string" && allowed.has(reason) ? reason : fallback;
-}
-
 const MAXIMUM_VALIDATION_ISSUES = 20;
 
 /**
  * Projects only schema expectations and field paths, keeping submitted values
  * and custom decoder messages out of errors and logs. At most 20 issues cross
- * the boundary even when a schema reports many failing fields or union arms.
- * A union reports only the arms the input selects (see `selectedArms`), and a
- * named value, such as an agent name, reports its own description rather
- * than the first of its checks that failed.
+ * the boundary even when a schema reports many failing fields or union arms,
+ * and an issue two union arms share crosses once. A union reports only the
+ * arms the input selects (see `selectedArms`), and a named value, such as an
+ * agent name, reports its own description rather than the first of its checks
+ * that failed.
  */
 export function validationIssues(error: ParseResult.ParseError) {
   const issues: ValidationIssue[] = [];
@@ -166,7 +147,7 @@ function appendIssues(
     appendRefined(issue, path, issues);
     return;
   }
-  issues.push({ path, message: expectedMessage(issue) });
+  addIssue(issues, { path, message: expectedMessage(issue) });
 }
 
 /** A named value reports its own rule; any other refinement or transformation reports what failed inside it. */
@@ -176,16 +157,17 @@ function appendRefined(
   issues: ValidationIssue[],
 ): void {
   if (issue._tag === "Refinement" && namedValue(issue)) {
-    issues.push({ path, message: expectedSchemaMessage(issue.ast) });
+    addIssue(issues, { path, message: expectedSchemaMessage(issue.ast) });
     return;
   }
   appendIssues(issue.issue, path, issues);
 }
 
 /**
- * A failed union reports the arms the input selects. When each of those
- * rejects the value as a whole, the union reports once, naming every type it
- * accepts; otherwise the arms that failed inside the value report.
+ * A failed union reports the arms the input selects. When several of those
+ * each reject the value as a whole, the union reports once, naming every
+ * type it accepts; one such arm reports its own expectation; otherwise the
+ * arms that failed inside the value report.
  */
 function appendUnion(
   issue: ParseResult.Composite,
@@ -194,11 +176,11 @@ function appendUnion(
 ): void {
   const arms = selectedArms(Array.ensure(issue.issues), issue.actual);
   const inside = arms.filter((arm) => !leafFailure(arm));
-  if (inside.length === 0) {
-    issues.push({ path, message: expectedSchemaMessage(issue.ast) });
+  if (inside.length === 0 && arms.length > 1) {
+    addIssue(issues, { path, message: expectedSchemaMessage(issue.ast) });
     return;
   }
-  appendChildren(inside, path, issues);
+  appendChildren(inside.length === 0 ? arms : inside, path, issues);
 }
 
 function appendChildren(
@@ -297,6 +279,17 @@ function leafFailure(issue: ParseResult.ParseIssue): boolean {
     return leafFailure(issue.issue);
   }
   return issue._tag !== "Composite" && issue._tag !== "Pointer";
+}
+
+function addIssue(issues: ValidationIssue[], issue: ValidationIssue): void {
+  const repeated = issues.some(
+    (other) =>
+      other.message === issue.message &&
+      other.path.join("\0") === issue.path.join("\0"),
+  );
+  if (!repeated) {
+    issues.push(issue);
+  }
 }
 
 function isRecord(

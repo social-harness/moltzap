@@ -171,7 +171,8 @@ export const matchOpenRequest = <Request extends RequestStatus>(
 
 /**
  * The refusal of an answer no request takes; it names the open requests' ids
- * when the answer named none and several are open.
+ * when the answer named none and several are open, and otherwise the
+ * questions open in other conversations.
  * @param id The id minted for the refusal.
  * @param unmatched Why no request takes the answer.
  * @returns The error the answer fails with.

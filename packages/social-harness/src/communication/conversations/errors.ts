@@ -57,10 +57,15 @@ export interface ValidationIssue {
  * @param issues The issues, in the order the schema reported them.
  * @returns The issues joined with semicolons.
  */
-export function issuesText(issues: readonly ValidationIssue[]): string {
+export function issuesText(
+  issues: ReadonlyArray<{
+    readonly path: readonly PropertyKey[];
+    readonly message: string;
+  }>,
+): string {
   return issues
     .map(({ path, message }) =>
-      path.length === 0 ? message : `${path.join(".")}: ${message}`,
+      path.length === 0 ? message : `${path.map(String).join(".")}: ${message}`,
     )
     .join("; ");
 }

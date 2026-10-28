@@ -766,14 +766,15 @@ why an `invalid-rule` edit failed:
 | --- | --- |
 | `duplicate-id` | adds an id the policy keeps, or adds one id twice |
 | `unknown-id` | removes an id the editable rules lack |
-| `editable-limit` | would leave more than 256 editable rules |
-| `frontmatter` | adds a `BEHAVIOR.md` that does not start with its frontmatter |
+| `editable-limit` | would leave more editable rules than the [document holds](#editable-english-policy) |
+| `frontmatter` | adds a `BEHAVIOR.md` without valid YAML frontmatter between `---` lines, or with a code fence or other text before it |
 | `schema` | adds a rule or `BEHAVIOR.md` that does not map to an editable rule |
-| `too-large` | adds a `BEHAVIOR.md` over 64 KiB |
+| `too-large` | adds a `BEHAVIOR.md` over the [behavior size limit](#behaviors) |
 | `not-norm` | adds a `BEHAVIOR.md` whose kind is not `norm` |
 
 The error's message names the same, never the rejected text, and ends with a
 link to this section.
+
 `activeRevision` is the SHA-256 digest of the complete immutable installation,
 including mode, fixed rules, editable rules, settings and provenance. Identical
 installations across restarts have the same revision; it is not an increasing

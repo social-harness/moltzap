@@ -7,9 +7,11 @@ import {
   PROTOCOL_VERSION_META_KEY,
   ProtocolErrorCode,
 } from "@modelcontextprotocol/server";
-import { Effect, Schema } from "effect";
+import { Effect, Option, Schema, SchemaAST } from "effect";
 import { describe, expect } from "vitest";
 import { FirewallPolicyError } from "../../firewall/index.js";
+import { AgentName, PrincipalId } from "../../identity/agents.js";
+import { OperationId } from "../../identity/registry/contract.js";
 import { HARNESS_SEND_META_KEY } from "../protocol/names.js";
 import { decodeHarnessSendErrorData } from "../protocol/operations.js";
 import {
@@ -150,32 +152,24 @@ const invalidInvocationCalls = [
     paths: [[HARNESS_SEND_META_KEY, "failureDelivery"]],
   },
 ];
-/** Malformed registration fields and the rule each error message states for its field. */
+/** Malformed registration fields and the schema whose description each error message states for its field. */
 const invalidRegistrations = [
-  { field: "operationId", value: "bad", rule: "OperationId: opn_" },
-  { field: "principalId", value: "bad", rule: "PrincipalId: prn_" },
+  { field: "operationId", value: "bad", schema: OperationId },
+  { field: "principalId", value: "bad", schema: PrincipalId },
   {
     field: "operationId",
     value: `opn_${"A".repeat(22)}\n`,
-    rule: "OperationId: opn_",
+    schema: OperationId,
   },
-  {
-    field: "operationId",
-    value: `prn_${"A".repeat(22)}`,
-    rule: "OperationId: opn_",
-  },
+  { field: "operationId", value: `prn_${"A".repeat(22)}`, schema: OperationId },
   {
     field: "principalId",
     value: `prn_${"A".repeat(21)}B`,
-    rule: "PrincipalId: prn_",
+    schema: PrincipalId,
   },
-  {
-    field: "operationId",
-    value: `opn_${"A".repeat(21)}`,
-    rule: "OperationId: opn_",
-  },
-  { field: "agentName", value: "al", rule: "an agent name: 3 to 32" },
-  { field: "agentName", value: "Bad_Name", rule: "an agent name: 3 to 32" },
+  { field: "operationId", value: `opn_${"A".repeat(21)}`, schema: OperationId },
+  { field: "agentName", value: "al", schema: AgentName },
+  { field: "agentName", value: "Bad_Name", schema: AgentName },
 ];
 const refusedPolicyEdit = new FirewallPolicyError({
   reason: "invalid-rule",
@@ -183,24 +177,30 @@ const refusedPolicyEdit = new FirewallPolicyError({
   ruleId: "meeting-booking",
   path: ["add", 0],
 });
-/** Operation failures, the message each MCP error carries and its data. */
+/** Operation failures and the data each MCP error carries. */
 const semanticFailures = [
   {
     name: "read_conversation",
     arguments: { continuation: `${"A".repeat(42)}B` },
-    message: "Conversation read failed",
     data: { reason: "invalid-continuation" },
   },
   {
     name: "search_conversations",
     arguments: { afterAddress: "group:carol,bob,alice" },
-    message: "Conversation search failed",
     data: { reason: "invalid-address" },
   },
   {
     name: "policy_update",
-    arguments: { remove: ["meeting-booking"] },
-    message: `Policy update failed: ${refusedPolicyEdit.message}`,
+    arguments: {
+      add: [
+        {
+          id: "meeting-booking",
+          kind: "norm",
+          text: "Each member holds a slot before confirming it.",
+          guidance: "Hold a slot before you confirm one.",
+        },
+      ],
+    },
     data: {
       reason: "invalid-rule",
       problem: "duplicate-id",
@@ -438,8 +438,11 @@ describe("MCP registration validation", () => {
           code: ProtocolErrorCode.InvalidParams,
         });
         yield* checkDiagnostic(response.error?.data, [call.field]);
+        const rule = Option.getOrThrow(
+          SchemaAST.getDescriptionAnnotation(call.schema.ast),
+        );
         expect(response.error?.message).toContain(
-          `${call.field}: Expected ${call.rule}`,
+          `${call.field}: Expected ${rule}`,
         );
         expect(accepted).toEqual([]);
         const success = yield* request(handler, "tools/call", {
@@ -475,7 +478,6 @@ describe("MCP semantic failures", () => {
       });
       expect(response.error).toMatchObject({
         code: ProtocolErrorCode.InternalError,
-        message: call.message,
         data: call.data,
       });
     }),

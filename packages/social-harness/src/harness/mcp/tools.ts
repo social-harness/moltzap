@@ -34,6 +34,7 @@ import {
   firewallDecisionsSchema,
   FirewallPolicyError,
   type FirewallPolicyOperations,
+  MAXIMUM_EDITABLE_RULES,
   policyReadSchema,
   policyUpdateResultSchema,
   policyUpdateSchema,
@@ -44,7 +45,6 @@ import {
   resultSchema,
 } from "../protocol/catalog-schemas.js";
 import {
-  closedReason,
   decodeHarnessSendCall,
   type HarnessEmptyResult,
   harnessEmptyResultSchema,
@@ -226,6 +226,18 @@ const {
   ACKNOWLEDGE_DELIVERY_REASONS,
 } = harnessFailureReasons;
 
+const operationReason = (
+  cause: unknown,
+  allowed: ReadonlySet<string>,
+  fallback: string,
+): string => {
+  if (typeof cause !== "object" || cause === null || !("reason" in cause)) {
+    return fallback;
+  }
+  const reason: unknown = cause.reason;
+  return typeof reason === "string" && allowed.has(reason) ? reason : fallback;
+};
+
 const toolResult = <Value extends Readonly<Record<string, unknown>>>(
   structuredContent: Value,
 ) => ({
@@ -268,7 +280,7 @@ const operationError = <Value extends Readonly<Record<string, unknown>>>(
   failure: unknown,
   options: RunOperationOptions<Value>,
 ) => {
-  const reason = closedReason(
+  const reason = operationReason(
     failure,
     options.allowedReasons,
     options.fallbackReason,
@@ -283,7 +295,7 @@ const operationError = <Value extends Readonly<Record<string, unknown>>>(
     reason === "admission-refused"
       ? registrationAdmissionRefusalMessage
       : message,
-    { reason, ...described?.data },
+    { ...described?.data, reason },
   );
 };
 
@@ -408,8 +420,7 @@ const toolListings = {
     annotations: localRead,
   },
   policy_update: {
-    description:
-      'Add or remove editable English rules, such as a shared norm the agent agreed to: add takes whole rules or {"behavior": "<BEHAVIOR.md text>"}, which adds a shared norm\'s BEHAVIOR.md exactly as proposed; remove takes rule ids, and removing and adding one id replaces it. Fails with invalid-rule for an added id that already exists, a BEHAVIOR.md that does not start with its --- frontmatter line, lacks name, description or guidance, is not kind norm, or is over 64 KiB, a removed id that does not exist, or more than 256 rules; fixed-rule for a fixed rule\'s id; and not-configured when the message policy has no english block. Returns the new activeRevision once the rules are active; changes are not retroactive: admitted guidance, held items and bound sends remain unchanged.',
+    description: `Add or remove editable English rules, such as a shared norm the agent agreed to: add takes whole rules or {"behavior": "<BEHAVIOR.md text>"}, which adds a shared norm's BEHAVIOR.md exactly as proposed; remove takes rule ids, and removing and adding one id replaces it. Fails with invalid-rule for an added id that already exists, a BEHAVIOR.md without valid YAML frontmatter between --- lines (no code fence or other text before it), or one that lacks name, description or guidance, is not kind norm, or is over 64 KiB, a removed id that does not exist, or more than ${String(MAXIMUM_EDITABLE_RULES)} rules; fixed-rule for a fixed rule's id; and not-configured when the message policy has no english block. Returns the new activeRevision once the rules are active; changes are not retroactive: admitted guidance, held items and bound sends remain unchanged.`,
     inputSchema: policyUpdateInput,
     outputSchema: policyUpdateOutput,
     annotations: { readOnlyHint: false, openWorldHint: false },

@@ -873,6 +873,19 @@ const REFUSED_EDITS = [
   },
   {
     edit: {
+      add: [
+        {
+          behavior: SHARED.replace(
+            "    guidance: Hold a slot before you confirm one.\n",
+            "",
+          ),
+        },
+      ],
+    },
+    refusal: { reason: "invalid-rule", problem: "schema", path: ["add", 0] },
+  },
+  {
+    edit: {
       add: [{ behavior: SHARED.padEnd(MAXIMUM_BEHAVIOR_BYTES + 1, " ") }],
     },
     refusal: { reason: "invalid-rule", problem: "too-large", path: ["add", 0] },

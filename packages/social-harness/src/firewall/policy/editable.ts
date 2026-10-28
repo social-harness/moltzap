@@ -29,6 +29,7 @@ import {
   type FirewallPolicyOperations,
   makeEnglishPolicy,
   MAXIMUM_EDITABLE_RULES,
+  type PolicyProblem,
   policyReadSchema,
   policyUpdateSchema,
   PrivateCheckTrace,
@@ -51,7 +52,6 @@ const invalidRule = (
   at: { readonly path?: PolicyEditPath; readonly ruleId?: string } = {},
 ) => new FirewallPolicyError({ reason: "invalid-rule", problem, ...at });
 
-type PolicyProblem = NonNullable<FirewallPolicyError["problem"]>;
 type PolicyEditPath = NonNullable<FirewallPolicyError["path"]>;
 
 /** Stored editable rules share the live exact members plus the historical safety mapping. */

@@ -27,6 +27,10 @@ export const PrincipalId = canonicalIdentifier(
 /** Validated nominal value decoded by {@link PrincipalId}. */
 export type PrincipalId = typeof PrincipalId.Type;
 
+/** The rule every agent name meets, as validation errors state it. */
+export const AGENT_NAME_RULE =
+  "3 to 32 lowercase letters, digits or single hyphens, starting and ending with a letter or digit";
+
 /** Immutable Registry-wide human-facing agent handle. */
 export const AgentName = Schema.String.pipe(
   Schema.minLength(3),
@@ -35,8 +39,7 @@ export const AgentName = Schema.String.pipe(
   Schema.brand("AgentName"),
   Schema.annotations({
     identifier: "AgentName",
-    description:
-      "an agent name: 3 to 32 lowercase letters, digits or single hyphens, starting and ending with a letter or digit",
+    description: `an agent name: ${AGENT_NAME_RULE}`,
   }),
 );
 /** Validated nominal value decoded by {@link AgentName}. */
