@@ -52,7 +52,11 @@ const statedRules = Schema.parseJson(
   Schema.Struct({
     policy: Schema.Struct({
       rules: Schema.Array(
-        Schema.Struct({ id: Schema.String, kind: Schema.String, text: Schema.String }),
+        Schema.Struct({
+          id: Schema.String,
+          kind: Schema.String,
+          text: Schema.String,
+        }),
       ),
     }),
   }),

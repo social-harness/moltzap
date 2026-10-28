@@ -212,9 +212,13 @@ export const collectiveNorms = Effect.fn("collectiveNorms")(function* (
   readBehavior: (name: string) => Effect.Effect<EnglishRule>,
   historyRecords?: number,
 ): Effect.fn.Return<CollectiveNorms, CheckInputError> {
-  const incomingRules = yield* Effect.forEach(INCOMING_BEHAVIORS, readBehavior, {
-    concurrency: 1,
-  });
+  const incomingRules = yield* Effect.forEach(
+    INCOMING_BEHAVIORS,
+    readBehavior,
+    {
+      concurrency: 1,
+    },
+  );
   const outgoingRules = incomingRules.slice(1);
   const edition = editionOf(incomingRules, outgoingRules);
   const incoming = yield* makeEnglishPolicy({
