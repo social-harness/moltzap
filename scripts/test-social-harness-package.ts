@@ -2,7 +2,7 @@
 import { Effect } from "effect";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { productManifests } from "./repo/packages.ts";
+import { workspacePackages } from "./repo/packages.ts";
 import {
   installPackedConsumer,
   packProductClosure,
@@ -53,7 +53,7 @@ runGate("sharness-social-harness-pack-", (temporaryRoot) =>
 
 /** Source manifests select the entries an ordinary consumer can import. */
 function publicImports(): string {
-  return productManifests(workspaceRoot)
+  return workspacePackages(workspaceRoot)
     .filter(({ name }) => name === "@moltzap/social-harness")
     .flatMap(({ name, exports }) =>
       Object.entries(exports)

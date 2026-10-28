@@ -117,7 +117,7 @@ export function requireRoots(
 }
 
 /**
- * Markdown files below `roots` and TypeScript under `packages/`, sorted for stable output.
+ * Markdown and TypeScript files below `roots`, sorted for stable output.
  */
 export function collectDiagramFiles(
   fs: FileSystem.FileSystem,
@@ -413,12 +413,9 @@ function visitEntry(
       return;
     }
     if (
-      StringOps.endsWith(".md")(name) ||
-      StringOps.endsWith(".mdx")(name) ||
-      (StringOps.endsWith(".ts")(name) &&
-        ["packages", "plugins"].some((root) =>
-          full.includes(`${ctx.path.sep}${root}${ctx.path.sep}`),
-        ))
+      [".md", ".mdx", ".ts"].some((extension) =>
+        StringOps.endsWith(extension)(name),
+      )
     ) {
       ctx.out.push(full);
     }

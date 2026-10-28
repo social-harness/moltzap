@@ -156,7 +156,8 @@ const resourceLimitMessages = {
     "SHARNESS_ROUTER_HELD_POLL_CAPACITY must be less than SHARNESS_ROUTER_REQUEST_CONCURRENCY_LIMIT",
 };
 
-const validatedConfiguration = configuredValues.pipe(
+/** Loads and cross-validates the complete private Router process configuration. */
+export const loadRouterConfiguration = configuredValues.pipe(
   Config.validate({
     message: resourceLimitMessages.retention,
     validation: retentionFits,
@@ -169,10 +170,6 @@ const validatedConfiguration = configuredValues.pipe(
     message: resourceLimitMessages.heldPolls,
     validation: heldPollsFit,
   }),
-);
-
-/** Loads and cross-validates the complete private Router process configuration. */
-export const loadRouterConfiguration = validatedConfiguration.pipe(
   Effect.withSpan("loadRouterConfiguration"),
 );
 

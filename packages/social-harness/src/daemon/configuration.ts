@@ -171,7 +171,11 @@ const configurationError = (
     message: configurationFailureMessages[reason],
   });
 
-const loadedConfiguration = configuredValues.pipe(
+/** Loads explicit daemon inputs with optional export and MCP authority separation. */
+export const loadDaemonProcessConfiguration: Effect.Effect<
+  DaemonProcessConfiguration,
+  DaemonConfigurationError
+> = configuredValues.pipe(
   Effect.flatMap((values) => {
     const {
       registrationAgentName,
@@ -289,12 +293,6 @@ function registrationRequest(
   }
   return Effect.succeed({ agentName, operationId, principalId });
 }
-
-/** Loads explicit daemon inputs with optional export and MCP authority separation. */
-export const loadDaemonProcessConfiguration: Effect.Effect<
-  DaemonProcessConfiguration,
-  DaemonConfigurationError
-> = loadedConfiguration;
 
 const credentialFailure =
   (
