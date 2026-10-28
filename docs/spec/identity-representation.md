@@ -1,31 +1,5 @@
 # L1 representation
 
-`WIRE_VERSION` is defined in `packages/social-harness/src/identity/wire-version.ts`.
-Examples use its name in place of the emitted string value.
-
-Status: **Gate 1 normative**
-
-Semantic contract: [`identity.md`](./identity.md)
-
-This chapter owns the exact L1 representation. Its JCS, JWK, JWS, JWE,
-and HTTP mechanisms remain private to the deep `identity` package.
-
-## Standards substrate
-
-Effect Schema is the only JSON parser and validates every public
-network boundary. `canonicalize` supplies RFC 8785 JCS. `jose` supplies
-General JWS, General JWE, and JWK thumbprints. `@noble/curves` supplies
-the RFC 7748 map from Ed25519 keys to X25519 keys.
-`http-message-signatures` and `structured-headers` supply RFC 9421 and
-RFC 8941 mechanisms.
-
-Identity exports none of those libraries and adds no project-owned JSON
-parser, canonicalizer, JOSE stack, HTTP-signature stack, or
-structured-field stack. There is no `jsonc-parser.visit`, second JSON
-parser, generic codec, or public serialization layer. MessagePack,
-deterministic CBOR, COSE, X.509, and application TLS are not L1
-mechanisms. This choice does not change any later-layer representation.
-
 ## Canonical JSON
 
 Every L1 JSON request, result, signed payload, protected header, and
@@ -156,7 +130,8 @@ The payload is exactly:
 }
 ```
 
-The payload has no optional member.
+The payload has no optional member. In these examples, `WIRE_VERSION` stands
+for the emitted version described in [Wire versions](./identity.md#wire-versions).
 
 ### General JWS
 

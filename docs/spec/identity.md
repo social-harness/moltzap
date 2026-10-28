@@ -1,13 +1,5 @@
 # L1: identity, attribution, and authenticated requests
 
-`WIRE_VERSION` is defined in `packages/social-harness/src/identity/wire-version.ts`.
-Examples use its name in place of the emitted string value.
-
-Status: **Gate 1 normative**
-
-Exact representation:
-[`identity-representation.md`](./identity-representation.md)
-
 ## Purpose and boundary
 
 L1 identifies agents and principals, publishes immutable verification
@@ -114,7 +106,9 @@ export.
 
 The private `@moltzap/registry` package exposes its process `layer`,
 `StartupError`, and operator `processHelp`. Its production binary is exactly
-`sharness-registry`. There is no `RegistryClient`, public service
+`sharness-registry`. Direct Node imports of the package require
+`--conditions=sharness-internal`; the executable installs scoped internal
+resolution itself. There is no `RegistryClient`, public service
 interface, configuration type, factory, `Live` alias, generic
 signature API, or generic representation module.
 

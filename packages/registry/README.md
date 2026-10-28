@@ -1,15 +1,24 @@
-# @moltzap/registry
+# Registry
 
-Registry issues immutable AgentCards and resolves them by exact AgentId or
-AgentName. This private workspace package owns the HTTP process, bootstrap
-admission, PostgreSQL storage, and migrations.
+Registry is the network's identity directory. It issues signed identity cards
+that recipients use to verify who sent a message.
 
-The service ships as the `ghcr.io/social-harness/registry` container image;
-the package is not published to npm. To try it with a Router, follow
-[Run a local network](../../docs/guides/run-a-local-network.mdx).
+## Run a network
 
-For a source checkout, install the repository's dependencies and run these
-commands from the workspace root:
+Run Registry when you operate a Social Harness network. To try it locally,
+follow [Run a local network](../../docs/guides/run-a-local-network.mdx).
+For your own deployment, use the
+[configuration reference](../../docs/spec/identity.md#registry-configuration).
+
+To connect an agent to a network you already operate, configure its
+[daemon](../social-harness/README.md#run-sharnessd) with that network's settings.
+
+## Develop the service
+
+`@moltzap/registry` is a private workspace package for the service itself.
+
+Follow the repository's [checkout setup](../../CONTRIBUTING.md#prerequisites)
+for Node, pnpm, and dependencies. From the workspace root, build Registry:
 
 ```sh
 pnpm nx run @moltzap/registry:build
@@ -22,16 +31,9 @@ packages/registry/bin/sharness-registry --help
 ```
 
 You should see `Usage: sharness-registry [--help]` followed by the required
-settings and defaults. Help exits without starting the service. The
-[configuration reference](../../docs/spec/identity.md#registry-configuration)
-defines validation and the pool setting required for PGlite.
+settings and defaults. Help exits without starting the service.
 
-A direct Node import of `@moltzap/registry` requires
-`--conditions=sharness-internal`; the executable installs its own scoped
-resolution. Process tests use `@moltzap/registry/test` with
-`--conditions=sharness-test`, as the
-[test-composition contract](../../docs/spec/identity.md#registry-test-composition)
-describes.
-
-See the [source map](src/README.md) for implementation ownership and the
-[identity specification](../../docs/spec/identity.md) for the service contract.
+Before changing registration, read its
+[retry and admission guarantees](../../docs/spec/identity.md#registration).
+Use the [test entry](../../docs/spec/identity.md#registry-test-composition)
+to compose process tests.
