@@ -897,7 +897,7 @@ const REFUSED_EDITS = [
   },
   {
     edit: {
-      add: Array.from({ length: 255 }, (_, index) => ({
+      add: [...Array.from({ length: 255 }).keys()].map((index) => ({
         ...INITIAL,
         id: `extra-${String(index)}`,
       })),
@@ -913,18 +913,28 @@ const REFUSED_EDITS = [
 it.each(REFUSED_EDITS)(
   "names the failing rule and problem of a refused edit: $refusal",
   ({ edit, refusal }) =>
-    Effect.gen(function* () {
-      const configuration = yield* options(fixture().path);
-      yield* withStore(stateDirectory(), (store) =>
-        Effect.gen(function* () {
-          const installed = yield* installEditableFirewall(configuration, store);
-          const error = yield* installed.policy.update(edit).pipe(Effect.flip);
+    refusedEdit(edit).pipe(
+      Effect.tap((error) =>
+        Effect.sync(() => {
           expect(error).toMatchObject(refusal);
           expect(error.message).toContain("Docs: ");
         }),
-      );
-    }),
+      ),
+    ),
 );
+
+/** The refusal `policy_update` gives `edit` on the fixture's policy. */
+function refusedEdit(edit: (typeof REFUSED_EDITS)[number]["edit"]) {
+  return Effect.gen(function* () {
+    const configuration = yield* options(fixture().path);
+    return yield* withStore(stateDirectory(), (store) =>
+      installEditableFirewall(configuration, store).pipe(
+        Effect.flatMap((installed) => installed.policy.update(edit)),
+        Effect.flip,
+      ),
+    );
+  });
+}
 
 it(
   "names a builtin behavior Client does not ship by its entry",

@@ -27,11 +27,11 @@ import {
   Scope,
 } from "effect";
 import type { CollectiveError } from "../../communication/collectives/forms.js";
+import type { FirewallSendError } from "../../firewall/outcome/index.js";
 import {
   issuesText,
   type SendError,
 } from "../../communication/conversations/errors.js";
-import type { FirewallSendError } from "../../firewall/outcome/index.js";
 import {
   firewallDecisionsRequestSchema,
   firewallDecisionsSchema,
@@ -361,52 +361,25 @@ const runOperation = async <Value extends Readonly<Record<string, unknown>>>(
           options.fallbackReason,
         ),
     });
-    const detail = Option.match(expectedFailure, {
-      onNone: () => undefined,
-      onSome: (failure) => options.describe?.(failure),
-    });
+    const detail = Option.getOrUndefined(
+      Option.flatMap(expectedFailure, (failure) =>
+        Option.fromNullable(options.describe?.(failure)),
+      ),
+    );
+    const failed =
+      detail === undefined
+        ? `${options.label} failed`
+        : `${options.label} failed: ${detail.message}`;
     throw new ProtocolError(
       ProtocolErrorCode.InternalError,
-      failureMessage(reason, options.label, detail),
+      reason === "admission-refused"
+        ? registrationAdmissionRefusalMessage
+        : failed,
       { reason, ...detail?.data },
     );
   }
   return toolResult(outcome.value);
 };
-
-function failureMessage(
-  reason: string,
-  label: string,
-  detail: FailureDetail | undefined,
-): string {
-  if (reason === "admission-refused") {
-    return registrationAdmissionRefusalMessage;
-  }
-  return detail === undefined
-    ? `${label} failed`
-    : `${label} failed: ${detail.message}`;
-}
-
-/**
- * A policy edit's refusal names its failing rule, that rule's place in the
- * update and the problem, in its message and as `ruleId`, `path` and
- * `problem` in the error data.
- * @param failure The operation's expected failure.
- * @returns The detail, or undefined for a failure that is not a policy error.
- */
-function describePolicyFailure(failure: unknown): FailureDetail | undefined {
-  if (!(failure instanceof FirewallPolicyError)) {
-    return undefined;
-  }
-  return {
-    message: failure.message,
-    data: {
-      ...(failure.ruleId === undefined ? {} : { ruleId: failure.ruleId }),
-      ...(failure.path === undefined ? {} : { path: failure.path }),
-      ...(failure.problem === undefined ? {} : { problem: failure.problem }),
-    },
-  };
-}
 
 /**
  * Run one send and answer its typed failure as JSON-RPC error data, with the
@@ -863,7 +836,10 @@ const toolHandlers = {
       label: "Policy update",
       allowedReasons: POLICY_REASONS,
       fallbackReason: "build-failed",
-      describe: describePolicyFailure,
+      describe: (failure) =>
+        failure instanceof FirewallPolicyError
+          ? { message: failure.message, data: failure.data }
+          : undefined,
     },
   ),
   firewall_decisions: makeToolHandler(

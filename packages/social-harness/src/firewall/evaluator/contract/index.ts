@@ -713,13 +713,7 @@ export class FirewallPolicyError extends Data.TaggedError(
     | "persistence-failed";
 }> {
   override get message(): string {
-    const place =
-      this.path === undefined ? undefined : `${this.path[0]}[${this.path[1]}]`;
-    const rule = this.ruleId === undefined ? undefined : `rule ${this.ruleId}`;
-    const subject =
-      place !== undefined && rule !== undefined
-        ? `${place} (${rule})`
-        : (place ?? rule);
+    const subject = editSubject(this.path, this.ruleId);
     const cause =
       this.problem === undefined
         ? policyReasonText[this.reason]
@@ -729,6 +723,31 @@ export class FirewallPolicyError extends Data.TaggedError(
       ? `${text}. ${editRefusalDocs}`
       : text;
   }
+
+  /** The fields a refusal's error data carries beside its reason. */
+  get data(): Readonly<{
+    ruleId?: string;
+    path?: readonly [field: "add" | "remove", index: number];
+    problem?: PolicyProblem;
+  }> {
+    return {
+      ...(this.ruleId === undefined ? {} : { ruleId: this.ruleId }),
+      ...(this.path === undefined ? {} : { path: this.path }),
+      ...(this.problem === undefined ? {} : { problem: this.problem }),
+    };
+  }
+}
+
+/** The failing rule as a refusal names it: its place in the update, then its id. */
+function editSubject(
+  path: FirewallPolicyError["path"],
+  ruleId: string | undefined,
+): string | undefined {
+  const place = path === undefined ? undefined : `${path[0]}[${path[1]}]`;
+  const rule = ruleId === undefined ? undefined : `rule ${ruleId}`;
+  return place !== undefined && rule !== undefined
+    ? `${place} (${rule})`
+    : (place ?? rule);
 }
 
 /** Owner capabilities are separate from runtime send and inbox authority. */

@@ -228,15 +228,15 @@ const issuePathsSchema = Schema.Struct({
 
 /** The diagnostics name exactly `paths`, and the error's message names each path too. */
 function checkDiagnostics(
-  error: { readonly message: string; readonly data?: unknown } | undefined,
   paths: ReadonlyArray<ReadonlyArray<string | number>>,
+  error?: { readonly message: string; readonly data?: unknown },
 ) {
   return Schema.decodeUnknown(issuePathsSchema)(error?.data).pipe(
     Effect.tap((diagnostics) =>
       Effect.sync(() => {
         expect(diagnostics.issues.map((issue) => issue.path)).toEqual(paths);
         for (const path of paths) {
-          expect(error?.message).toContain(`${path.join(".")}: Expected`);
+          expect(error?.message).toContain(`${path.join(".")}: `);
         }
       }),
     ),
@@ -372,7 +372,7 @@ describe("MCP tool argument diagnostics", () => {
         expect(response.error).toMatchObject({
           code: ProtocolErrorCode.InvalidParams,
         });
-        yield* checkDiagnostics(response.error, call.paths);
+        yield* checkDiagnostics(call.paths, response.error);
         const failure = yield* decodeHarnessSendErrorData(response.error?.data);
         expect(failure).toMatchObject({ reason: "content-invalid" });
       }),
@@ -407,7 +407,7 @@ describe("MCP structural argument diagnostics", () => {
       expect(response.error).toMatchObject({
         code: ProtocolErrorCode.InvalidParams,
       });
-      yield* checkDiagnostics(response.error, call.paths);
+      yield* checkDiagnostics(call.paths, response.error);
     }),
   );
 });

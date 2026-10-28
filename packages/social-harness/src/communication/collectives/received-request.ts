@@ -171,21 +171,6 @@ export const matchOpenRequest = <Request extends RequestStatus>(
   );
 };
 
-/** The requests the runtime was shown that are open outside `conversation`, where an answer meant for them belongs. */
-function openElsewhere(
-  requests: ReadonlyMap<CollectiveId, RequestStatus>,
-  conversation: MessageAddressInput,
-  now: number,
-): readonly OpenElsewhere[] {
-  return [...requests].flatMap(([id, request]) =>
-    request.to !== conversation &&
-    requestShown(request.state) &&
-    requestUnavailable(request, now) === undefined
-      ? [{ id, to: request.to }]
-      : [],
-  );
-}
-
 /**
  * The refusal of an answer no request takes; it names the open requests' ids
  * when the answer named none and several are open.
@@ -285,6 +270,21 @@ export function forgetExpiredRequests(
       requests.delete(id);
     }
   }
+}
+
+/** The requests the runtime was shown that are open outside `conversation`, where an answer meant for them belongs. */
+function openElsewhere(
+  requests: ReadonlyMap<CollectiveId, RequestStatus>,
+  conversation: MessageAddressInput,
+  now: number,
+): readonly OpenElsewhere[] {
+  return [...requests].flatMap(([id, request]) =>
+    request.to !== conversation &&
+    requestShown(request.state) &&
+    requestUnavailable(request, now) === undefined
+      ? [{ id, to: request.to }]
+      : [],
+  );
 }
 
 /** The one request open in `conversation`, or why no single request is. */

@@ -61,7 +61,7 @@ const NAMED_REFUSALS: ReadonlyArray<
     readonly HeldRequest[],
     number,
     string,
-    readonly { readonly id: CollectiveId; readonly to: GroupAddress }[],
+    ReadonlyArray<{ readonly id: CollectiveId; readonly to: GroupAddress }>,
   ]
 > = [
   [

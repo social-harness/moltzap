@@ -173,13 +173,12 @@ function appendIssues(
     );
     return;
   }
+  if (issue._tag === "Composite" && issue.ast._tag === "Union") {
+    appendUnion(issue, path, issues);
+    return;
+  }
   if (issue._tag === "Composite") {
-    const children = Array.ensure(issue.issues);
-    appendChildren(
-      issue.ast._tag === "Union" ? selectedArms(children, issue.actual) : children,
-      path,
-      issues,
-    );
+    appendChildren(Array.ensure(issue.issues), path, issues);
     return;
   }
   if (issue._tag === "Refinement" && namedValue(issue)) {
@@ -191,6 +190,25 @@ function appendIssues(
     return;
   }
   issues.push({ path, message: expectedMessage(issue) });
+}
+
+/**
+ * A failed union reports the arms the input selects. When each of those
+ * rejects the value as a whole, the union reports once, naming every type it
+ * accepts; otherwise the arms that failed inside the value report.
+ */
+function appendUnion(
+  issue: ParseResult.Composite,
+  path: ReadonlyArray<string | number>,
+  issues: ValidationIssue[],
+): void {
+  const arms = selectedArms(Array.ensure(issue.issues), issue.actual);
+  const inside = arms.filter((arm) => !leafFailure(arm));
+  if (inside.length === 0) {
+    issues.push({ path, message: expectedSchemaMessage(issue.ast) });
+    return;
+  }
+  appendChildren(inside, path, issues);
 }
 
 /**
