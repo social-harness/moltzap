@@ -2,7 +2,7 @@ name: Publish images
 
 # Registry, Router, daemon and OpenClaw agent publish native amd64/arm64 indexes
 # on main. Each committed input key sha256:<hex> names inputs-<hex>; releases
-# tag only the Registry and Router indexes (publish.yml). Every service builds
+# tag all four indexes (publish.yml). Every service builds
 # with docker buildx from its Dockerfile alone, so the build jobs, which hold
 # the publishing token, install and build nothing on the runner. Platform
 # images and indexes push by digest first. The index is signed with

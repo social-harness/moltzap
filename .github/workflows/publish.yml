@@ -12,12 +12,12 @@ name: Publish to npm
 # code OpenClaw loads for it. The release commit records every manifest. The
 # trigger is release-on-merge.yml after CI passes on main, or manual dispatch
 # for resets, resumes and start_new_version. The bump and the resume each
-# resolve both committed image input keys to signed indexes; the bump polls
+# resolve committed image input keys to signed indexes; the bump polls
 # for missing keys for up to 45 minutes, then fails before the release commit
 # with a rerun hint. After npm publication, `images` runs no repository install
 # or build: it tags the indexes the resume resolved with the release version,
 # then creates the GitHub release with the version's CHANGELOG.md section as
-# its notes and lists both digests after it, so the latest release always
+# its notes and lists all four digests after it, so the latest release always
 # names published images. Existing version tags are
 # checked and skipped on reruns.
 # After image tagging, dispatch sends the release version and digests to deployment.
@@ -102,6 +102,7 @@ defaults:
 # the selection checks.
 env:
   RELEASE_PACKAGES: packages/social-harness plugins/openclaw
+  RELEASE_IMAGES: registry router daemon openclaw-agent
   IMAGE_CERTIFICATE_IDENTITY: https://github.com/social-harness/moltzap/.github/workflows/images.yml@refs/heads/main
   IMAGE_CERTIFICATE_OIDC_ISSUER: https://token.actions.githubusercontent.com
 
@@ -168,7 +169,7 @@ jobs:
                 *) exit "$STATUS" ;;
               esac
             done
-            # A release is complete once both images carry its version tag and
+            # A release is complete once all images carry its version tag and
             # its release body lists the digest each tag names.
             if [ -z "$MISSING" ]; then
               BODY=""
@@ -181,7 +182,7 @@ jobs:
                 exit 1
               fi
               COMPLETE=true
-              for service in registry router; do
+              for service in $RELEASE_IMAGES; do
                 image="ghcr.io/social-harness/$service"
                 STATUS=0
                 digest=$(scripts/release/ghcr-digest.sh "$image:$VERSION") || STATUS=$?
@@ -312,27 +313,32 @@ jobs:
           pnpm install --no-frozen-lockfile --ignore-scripts
           echo "packages=$SELECTED" >> "$GITHUB_OUTPUT"
 
-      # Registry and Router input keys ignore what a release writes, so the
-      # bump and the resume of one release resolve the same indexes. The
-      # images job tags the ones this step passes on.
+      # Registry and Router keys survive the release commit. The daemon key
+      # includes released seed manifests, so only the resume resolves all
+      # images from the committed release tree that images.yml builds.
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         if: (steps.plan.outputs.mode == 'bump' || steps.plan.outputs.mode == 'resume') && steps.select.outputs.packages != ''
-      - name: Resolve the release service images
+      - name: Resolve the release images
         id: resolve
         if: (steps.plan.outputs.mode == 'bump' || steps.plan.outputs.mode == 'resume') && steps.select.outputs.packages != ''
         env:
           DOCKER_CONFIG: ${{ runner.temp }}/anonymous-docker
+          MODE: ${{ steps.plan.outputs.mode }}
         run: |
           mkdir -p "$DOCKER_CONFIG"
-          KEYS=$(pnpm --silent image:keys registry router)
+          services="registry router"
+          if [ "$MODE" = resume ]; then
+            services=$RELEASE_IMAGES
+          fi
+          KEYS=$(pnpm --silent image:keys $services)
           images='{}'
           deadline=$((SECONDS + 45 * 60))
-          for service in registry router; do
+          for service in $services; do
             key=$(jq -r --arg s "$service" '.[$s] | sub("^sha256:"; "")' <<<"$KEYS")
             image="ghcr.io/social-harness/$service"
             until digest=$(docker buildx imagetools inspect "$image:inputs-$key" --format '{{.Manifest.Digest}}'); do
               if (( SECONDS >= deadline )); then
-                echo "ERROR: the images workflow must publish $service key $key and the ghcr.io/social-harness/{registry,router} packages must be public and pull anonymously; rerun once both conditions hold. Docs: https://docs.moltzap.xyz/spec/layer-interfaces#publication-and-versions" >&2
+                echo "ERROR: the images workflow must publish $service key $key and the release image packages must be public and pull anonymously; rerun once both conditions hold. Docs: https://docs.moltzap.xyz/spec/layer-interfaces#publication-and-versions" >&2
                 exit 1
               fi
               remaining=$((deadline - SECONDS))
@@ -342,7 +348,7 @@ jobs:
             [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
             ref="$image@$digest"
             docker buildx imagetools inspect "$ref" >/dev/null || {
-              echo "ERROR: the ghcr.io/social-harness/{registry,router} packages must be public and pull anonymously before release. Docs: https://docs.moltzap.xyz/spec/layer-interfaces#publication-and-versions" >&2
+              echo "ERROR: the release image packages must be public and pull anonymously before release. Docs: https://docs.moltzap.xyz/spec/layer-interfaces#publication-and-versions" >&2
               exit 1
             }
             cosign verify \
@@ -649,6 +655,10 @@ jobs:
     outputs:
       payload: ${{ steps.tag.outputs.payload }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-toolchain
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
       # `build` ran installed code, so the references it passes are checked
       # for shape and signature before anything is tagged.
@@ -660,20 +670,23 @@ jobs:
           IMAGES: ${{ needs.build.outputs.images }}
         run: |
           printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          registry=$(jq -r '.registry // ""' <<<"$IMAGES")
-          router=$(jq -r '.router // ""' <<<"$IMAGES")
-          [[ "$registry" =~ ^ghcr\.io/social-harness/registry@sha256:[a-f0-9]{64}$ &&
-            "$router" =~ ^ghcr\.io/social-harness/router@sha256:[a-f0-9]{64}$ ]] || {
-            echo "ERROR: build passed no Registry and Router digest references: $IMAGES" >&2
-            exit 1
-          }
-          REFS=$(printf '%s\n%s' "$registry" "$router")
-          while read -r ref; do
+          refs=()
+          for service in $RELEASE_IMAGES; do
+            ref=$(jq -r --arg service "$service" '.[$service] // ""' <<<"$IMAGES")
+            image="ghcr.io/social-harness/$service"
+            digest=${ref#"$image@"}
+            [[ "$ref" == "$image@$digest" && "$digest" =~ ^sha256:[a-f0-9]{64}$ ]] || {
+              echo "ERROR: build passed no $service digest reference: $IMAGES. Docs: https://docs.moltzap.xyz/spec/layer-interfaces#publication-and-versions" >&2
+              exit 1
+            }
+            refs+=("$ref")
+          done
+          for ref in "${refs[@]}"; do
             cosign verify \
               --certificate-identity "$IMAGE_CERTIFICATE_IDENTITY" \
               --certificate-oidc-issuer "$IMAGE_CERTIFICATE_OIDC_ISSUER" "$ref"
-          done <<<"$REFS"
-          while read -r ref; do
+          done
+          for ref in "${refs[@]}"; do
             image=${ref%@*}
             if digest=$(docker buildx imagetools inspect "$image:$VERSION" --format '{{.Manifest.Digest}}' 2>"$RUNNER_TEMP/inspect-error"); then
               [[ "$ref" == "$image@$digest" ]] || {
@@ -686,8 +699,9 @@ jobs:
               cat "$RUNNER_TEMP/inspect-error" >&2
               exit 1
             fi
-          done <<<"$REFS"
+          done
           notes="$RUNNER_TEMP/notes.md"
+          create=false
           if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" --json body --jq .body > "$notes" 2>"$RUNNER_TEMP/release-error"; then
             :
           elif grep -qxF 'release not found' "$RUNNER_TEMP/release-error"; then
@@ -696,17 +710,18 @@ jobs:
             awk -v heading="## [$VERSION]" \
               'index($0, heading) == 1 { keep = 1; next } keep && /^## / { exit } keep' \
               "$RUNNER_TEMP/CHANGELOG.md" > "$notes"
-            printf '\n### Images\n' >> "$notes"
-            gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --verify-tag --notes-file "$notes"
+            create=true
           else
             cat "$RUNNER_TEMP/release-error" >&2
             exit 1
           fi
-          while read -r ref; do
-            grep -qF "$ref" "$notes" || printf '\n- `%s`\n' "$ref" >> "$notes"
-          done <<<"$REFS"
-          gh release edit "v$VERSION" --repo "$GITHUB_REPOSITORY" --notes-file "$notes"
-          payload=$(jq -c --arg version "$VERSION" '. + {version: $version}' <<<"$IMAGES")
+          node scripts/release/release-body.ts "$notes" "${refs[@]}"
+          if [ "$create" = true ]; then
+            gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --verify-tag --notes-file "$notes"
+          else
+            gh release edit "v$VERSION" --repo "$GITHUB_REPOSITORY" --notes-file "$notes"
+          fi
+          payload=$(jq -c --arg version "$VERSION" '{version: $version, registry, router}' <<<"$IMAGES")
           echo "payload=$payload" >> "$GITHUB_OUTPUT"
 
   dispatch:

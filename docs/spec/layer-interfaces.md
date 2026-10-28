@@ -341,8 +341,9 @@ alter message bytes, forge messages, or change Router state or order.
 
 ## Agent images
 
-The daemon and OpenClaw agent images are published by input key, and the
-NanoClaw image is not published; see
+The daemon and OpenClaw agent images are published by input key and tagged
+with each release version; their release digests are listed under "Images"
+in the GitHub release. The NanoClaw image is not published; see
 [Publication and versions](#publication-and-versions).
 Each agent runs its host and `sharnessd` in separate containers sharing a network
 namespace. Signing/admission state is mounted only in the daemon container.
@@ -469,7 +470,8 @@ mismatches. The changelog marks each reset release with the phrase
   `.github/workflows/publish.yml`. A merge that lands while an earlier
   release is unfinished releases with the next merge or a manual dispatch.
 - Releases run from `main` through `.github/workflows/publish.yml` with npm
-  provenance and name the Registry and Router images in each release.
+  provenance and name the Registry, Router, daemon and OpenClaw agent images
+  in each release.
 - Package manifests, pnpm's isolated `node_modules`, Node `exports`, Knip,
   and package-local safer-architecture-lsp configurations enforce boundaries.
   The harness may launch product executables by path and start child
@@ -487,13 +489,17 @@ The published images are `ghcr.io/social-harness/registry`,
 `ghcr.io/social-harness/openclaw-agent`. Each image is a multi-architecture OCI index
 for `linux/amd64` and `linux/arm64`, built on native runners. The committed
 input key `sha256:<hex>` from `pnpm image:keys` names the immutable tag
-`inputs-<hex>`. Releases tag only Registry and Router: their release-version
-tags name those same indexes. The daemon and OpenClaw agent images carry only
-input tags. The GitHub release is created only after both version tags exist,
-and its body lists both full digest references. `images/compose.yaml` runs a
+`inputs-<hex>`. Each release tags all four images with its calendar version,
+using the input keys of its committed release tree. Release-version tags name
+those same signed indexes and need no additional signatures. The GitHub release
+is created only after all four version tags exist, and its "Images" section
+lists all four full digest references. Consumers can pin
+`ghcr.io/social-harness/openclaw-agent:<version>@sha256:<digest>` as a Dockerfile
+base and let a dependency bot follow its version tag. `images/compose.yaml` runs a
 local network from the indexes a release-version tag names. The bump waits for
-missing Registry and Router input tags and fails with a rerun hint if the
-images workflow has not published them in time.
+missing Registry and Router input tags; the resume resolves all four from the
+release commit, including the daemon seed's released manifests. Each run fails
+with a rerun hint if the images workflow has not published its keys in time.
 After npm publication and release image tagging succeed, a separate job sends
 `repository_dispatch` event `social-harness-released` to `social-harness/deployment`.
 Its `client_payload` is
@@ -503,9 +509,9 @@ may repeat or arrive out of order. The receiver ignores a version not newer
 than the one it runs, ordering calendar versions by their numeric year,
 month/day and sequence components.
 
-Only the Registry and Router GHCR packages must be public before a release: the
-bump checks that both indexes pull anonymously so that anyone can run
-`images/compose.yaml`.
+All four GHCR packages must be public before release promotion: the resume
+checks that their indexes pull anonymously so consumers can use them without
+registry credentials.
 
 `.github/workflows/images.yml` pushes each index by digest, signs it with
 cosign keyless before creating its input tag. The certificate
