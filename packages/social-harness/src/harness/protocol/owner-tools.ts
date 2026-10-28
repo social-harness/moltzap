@@ -16,7 +16,7 @@ import {
   isStrictlyAscending,
 } from "../../encoding/identifier.js";
 import { AgentId, AgentName, PrincipalId } from "../../identity/agents.js";
-import { AgentCard } from "../../identity/cards.js";
+import { AgentCard, AgentView } from "../../identity/cards.js";
 import {
   OperationId,
   RegistryLookupRequest,
@@ -62,7 +62,9 @@ const orderedSignerEvidence = Schema.NonEmptyArray(signerEvidence).pipe(
   ),
 );
 
+/** `author` is the view of the record's author from its conversation's verified membership, outside the signed bytes. */
 const historyRecord = exactStruct({
+  author: AgentView,
   recordHash: RecordHash,
   recordCore: RecordCore,
   routerAnchor: RouterAnchor,
@@ -91,6 +93,7 @@ export const managementRegisterResultSchema = Schema.Union(
   exactStruct({
     kind: Schema.Literal("registered"),
     agentCard: encodedAgentCard,
+    agent: AgentView,
   }),
   exactStruct({ kind: Schema.Literal("name_taken") }),
   exactStruct({ kind: Schema.Literal("key_already_registered") }),
@@ -103,6 +106,7 @@ export const managementStatusResultSchema = Schema.Union(
   exactStruct({
     kind: Schema.Literal("active"),
     agentCard: encodedAgentCard,
+    agent: AgentView,
   }),
 ).annotations({ parseOptions: exactParseOptions });
 
@@ -116,6 +120,7 @@ export const managementSearchAgentsResultSchema = Schema.Union(
   exactStruct({
     kind: Schema.Literal("found"),
     agentCard: encodedAgentCard,
+    agent: AgentView,
   }),
   exactStruct({ kind: Schema.Literal("not_found") }),
 ).annotations({ parseOptions: exactParseOptions });

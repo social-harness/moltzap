@@ -348,9 +348,9 @@ function withMembershipRowsNaming(
 }
 
 /**
- * The owner read returns the record with the anchor it commits to and, for
- * each certificate, every signer's AgentId with the signature its JWS
- * representation carries, in AgentId order.
+ * The owner read returns the record with its author's view, the anchor it
+ * commits to and, for each certificate, every signer's AgentId with the
+ * signature its JWS representation carries, in AgentId order.
  */
 const returnsCertificateSignersForAudit = () =>
   Effect.gen(function* () {
@@ -366,8 +366,17 @@ const returnsCertificateSignersForAudit = () =>
       compareAgentIds(alice.agentId, bob.agentId),
       "alice precedes bob in AgentId order",
     ).toBeLessThan(0);
+    expect(
+      certified.recordCore.action.postIntent.authorAgentId,
+      "alice authored the genesis",
+    ).toBe(alice.agentId);
     expect(page.records, "alice's history with bob").toEqual([
       {
+        author: {
+          agentId: alice.agentId,
+          agentName: alice.agentName,
+          principalId: alice.principalId,
+        },
         recordHash: certified.recordHash,
         recordCore: certified.recordCore,
         routerAnchor: certified.routerAnchor,
@@ -467,6 +476,11 @@ const checksExactAgentLookups = () =>
     const found = {
       kind: "found",
       agentCard: yield* Schema.encode(AgentCard)(remote),
+      agent: {
+        agentId: remote.agentId,
+        agentName: remote.agentName,
+        principalId: remote.principalId,
+      },
     };
 
     expect(
@@ -487,7 +501,7 @@ const checksExactAgentLookups = () =>
 // @agent-code-guard/regression-only: these cases pin the addressed owner-management contract.
 describe("addressed daemon management", () => {
   it(
-    "returns encoded cards for exact names and ids and not_found for unknown names",
+    "returns encoded cards and their views for exact names and ids and not_found for unknown names",
     checksExactAgentLookups,
   );
 
@@ -886,6 +900,11 @@ const bindsWhenCancelledDuringTheRegistryCall = () =>
     expect(yield* operations.readStatus()).toEqual({
       kind: "active",
       agentCard: yield* Schema.encode(AgentCard)(fixture.cards[0]),
+      agent: {
+        agentId: fixture.cards[0].agentId,
+        agentName: fixture.cards[0].agentName,
+        principalId: fixture.cards[0].principalId,
+      },
     });
   });
 

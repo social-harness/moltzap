@@ -1,0 +1,1 @@
+`register`, `status` and `search_agents` return each agent's `agentId`, `agentName` and `principalId` as `agent` beside its encoded card, and `read_conversation` names each record's author the same way.

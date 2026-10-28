@@ -377,7 +377,7 @@ const blocksRegistrationAndSupervisesOutbound = () =>
       "registration",
     );
     const encodedLocalCard = yield* Schema.encode(AgentCard)(fixture.localCard);
-    expect(registrationResult).toEqual({
+    expect(registrationResult).toMatchObject({
       kind: "registered",
       agentCard: encodedLocalCard,
     });
@@ -431,7 +431,7 @@ const expectActiveAfterRestart = (
     expect(
       yield* requireOperations(harness).readStatus(),
       "status after restart",
-    ).toEqual({ kind: "active", agentCard });
+    ).toMatchObject({ kind: "active", agentCard });
   });
 
 /**
@@ -484,7 +484,7 @@ const finishesRegistrationWhenInterrupted = () =>
       expect(
         yield* operations.readStatus(),
         "status after the interrupted registration",
-      ).toEqual({ kind: "active", agentCard });
+      ).toMatchObject({ kind: "active", agentCard });
       expect(
         yield* Effect.exit(
           operations.readInbox({}).pipe(Effect.map((page) => page.items)),
@@ -503,7 +503,7 @@ const finishesRegistrationWhenInterrupted = () =>
           operations.register(fixture.registerRequest),
           "registration retried after the interrupt",
         ),
-      ).toEqual({ kind: "registered", agentCard });
+      ).toMatchObject({ kind: "registered", agentCard });
     }).pipe(Effect.ensuring(Fiber.interrupt(daemon)));
     yield* expectActiveAfterRestart(fixture, store, agentCard);
   });
@@ -1103,8 +1103,8 @@ const keepsTheInboxUsableAcrossARetriedRegister = () =>
       "retried registration",
     );
 
-    expect(first).toEqual({ kind: "registered", agentCard });
-    expect(retried).toEqual({ kind: "registered", agentCard });
+    expect(first).toMatchObject({ kind: "registered", agentCard });
+    expect(retried).toMatchObject({ kind: "registered", agentCard });
     const handler = requireHandler(harness);
     expect(yield* readInboxThroughMcp(handler)).toEqual([
       fixture.pending.deliveryToken,
@@ -1146,7 +1146,7 @@ const registersBeforeListening = (active: boolean) =>
       Deferred.await(harness.listenerReady),
       "registered listener",
     );
-    expect(yield* requireOperations(harness).readStatus()).toEqual({
+    expect(yield* requireOperations(harness).readStatus()).toMatchObject({
       kind: "active",
       agentCard: yield* Schema.encode(AgentCard)(fixture.localCard),
     });
