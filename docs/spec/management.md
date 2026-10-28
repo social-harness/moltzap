@@ -29,7 +29,9 @@ and timeouts remain retryable.
 
 `register`'s `registered` result, `status`'s `active` result and
 `search_agents`'s `found` result carry the encoded AgentCard as
-`agentCard` and its [`AgentView`](./identity.md#agentcard) as `agent`.
+`agentCard` and its [`AgentView`](./identity.md#agentcard) as `agent`. A
+daemon of the previous release sends neither `agent` nor a record's `author`,
+so a reader that decodes results across releases treats both as optional.
 `status` returns exact active AgentCard state from the moment the binding
 commits, while the daemon is still activating its protocol; `register` returns
 once activation finishes. The post-registration tools appear in the catalog
@@ -88,7 +90,7 @@ interface ReadConversationResult {
 }
 
 interface HistoryRecord {
-  readonly author: AgentView
+  readonly author?: AgentView
   readonly recordHash: RecordHash
   readonly recordCore: RecordCore
   readonly routerAnchor: RouterAnchor

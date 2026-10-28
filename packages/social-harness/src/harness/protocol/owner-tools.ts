@@ -24,6 +24,13 @@ import {
 
 const encodedAgentCard = Schema.encodedSchema(AgentCard);
 
+/**
+ * The agent's view beside an encoded card or as a record's author. This
+ * daemon always sends it; it is optional so that a reader also accepts a
+ * daemon of the previous release, which does not, as tool results grow.
+ */
+const agentView = Schema.optional(AgentView);
+
 const messageAddress = Schema.Union(AgentAddress, GroupAddress).annotations({
   identifier: "MessageAddress",
 });
@@ -64,7 +71,7 @@ const orderedSignerEvidence = Schema.NonEmptyArray(signerEvidence).pipe(
 
 /** `author` is the view of the record's author from its conversation's verified membership, outside the signed bytes. */
 const historyRecord = exactStruct({
-  author: AgentView,
+  author: agentView,
   recordHash: RecordHash,
   recordCore: RecordCore,
   routerAnchor: RouterAnchor,
@@ -93,7 +100,7 @@ export const managementRegisterResultSchema = Schema.Union(
   exactStruct({
     kind: Schema.Literal("registered"),
     agentCard: encodedAgentCard,
-    agent: AgentView,
+    agent: agentView,
   }),
   exactStruct({ kind: Schema.Literal("name_taken") }),
   exactStruct({ kind: Schema.Literal("key_already_registered") }),
@@ -106,7 +113,7 @@ export const managementStatusResultSchema = Schema.Union(
   exactStruct({
     kind: Schema.Literal("active"),
     agentCard: encodedAgentCard,
-    agent: AgentView,
+    agent: agentView,
   }),
 ).annotations({ parseOptions: exactParseOptions });
 
@@ -120,7 +127,7 @@ export const managementSearchAgentsResultSchema = Schema.Union(
   exactStruct({
     kind: Schema.Literal("found"),
     agentCard: encodedAgentCard,
-    agent: AgentView,
+    agent: agentView,
   }),
   exactStruct({ kind: Schema.Literal("not_found") }),
 ).annotations({ parseOptions: exactParseOptions });
