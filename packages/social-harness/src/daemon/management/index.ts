@@ -398,17 +398,14 @@ function mapHistoryStoreFailure(
  * Project one verified record to the MCP history record: its author's view,
  * its core, anchor, and each certificate's signers with their signatures, in
  * certificate order.
- * @param input Complete certified evidence verified by the history reader,
- *   with its author's verified card.
+ * @param record Complete certified evidence verified by the history reader.
+ * @param author The verified card of the record's author.
  * @returns The owner-visible history record with ordered signer evidence.
  */
-function projectHistoryRecord({
-  record,
-  author,
-}: {
-  readonly record: CertifiedRecord;
-  readonly author: VerifiedAgentCard;
-}): Effect.Effect<HistoryRecord, DaemonManagementError> {
+function projectHistoryRecord(
+  record: CertifiedRecord,
+  author: VerifiedAgentCard,
+): Effect.Effect<HistoryRecord, DaemonManagementError> {
   const certified = record.actionCertifiedRecord;
   return Effect.all({
     actionSignatures: projectSigners(certified.actionCertificate.signatures),
@@ -459,9 +456,11 @@ function readHistoryPage(input: {
   ).pipe(
     Effect.mapError(persistenceFailure),
     Effect.flatMap((records) =>
-      Effect.forEach(records, (record) => projectHistoryRecord(record), {
-        concurrency: 1,
-      }),
+      Effect.forEach(
+        records,
+        (entry) => projectHistoryRecord(entry.record, entry.author),
+        { concurrency: 1 },
+      ),
     ),
     Effect.map((records) =>
       Object.freeze({

@@ -888,9 +888,11 @@ const stopsStartupRegistrationInTheActivationPhase = () =>
       yield* makeHarness(fixture, "none"),
     );
 
-    const stopped = yield* run(fixture, makeStore(fixture, false), harness).pipe(
-      Effect.flip,
-    );
+    const stopped = yield* run(
+      fixture,
+      makeStore(fixture, false),
+      harness,
+    ).pipe(Effect.flip);
 
     expect(stopped.phase).toBe(routerUnreachable.phase);
   });

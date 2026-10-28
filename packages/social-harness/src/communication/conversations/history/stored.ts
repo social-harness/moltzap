@@ -201,10 +201,10 @@ export function readStoredHistory(
   recovery: EndpointRecovery,
   records: readonly StoredCertifiedRecord[],
 ): Effect.Effect<
-  readonly {
+  ReadonlyArray<{
     readonly record: CertifiedRecord;
     readonly author: VerifiedAgentCard;
-  }[],
+  }>,
   StoredRowError
 > {
   const named = new Set(records.map((stored) => stored.conversationId));
@@ -232,21 +232,6 @@ export function readStoredHistory(
     ),
     Effect.withSpan("readStoredHistory"),
   );
-}
-
-/**
- * The record with its author's card. Record verification already requires the
- * author to be a member; the lookup's type does not carry that, so a missing
- * card is a corrupt row like any other.
- */
-function withAuthor(membership: VerifiedMembership, record: CertifiedRecord) {
-  const author = memberCard(
-    membership,
-    record.actionCertifiedRecord.recordCore.action.postIntent.authorAgentId,
-  );
-  return author === undefined
-    ? Effect.fail(persistenceFailure())
-    : Effect.succeed({ record, author });
 }
 
 /**
@@ -806,6 +791,21 @@ function chainContains(
     }
   }
   return false;
+}
+
+/**
+ * The record with its author's card. Record verification already requires the
+ * author to be a member; the lookup's type does not carry that, so a missing
+ * card is a corrupt row like any other.
+ */
+function withAuthor(membership: VerifiedMembership, record: CertifiedRecord) {
+  const author = memberCard(
+    membership,
+    record.actionCertifiedRecord.recordCore.action.postIntent.authorAgentId,
+  );
+  return author === undefined
+    ? Effect.fail(persistenceFailure())
+    : Effect.succeed({ record, author });
 }
 
 function persistenceFailure(): RouterWorkerPersistenceError {
