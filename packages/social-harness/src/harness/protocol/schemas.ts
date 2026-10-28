@@ -141,6 +141,26 @@ export const harnessFailureReasons = {
   ]),
 };
 
+/**
+ * An operation failure's reason when it is one of `allowed`, so no internal
+ * diagnostic crosses the boundary.
+ * @param cause The operation's expected failure.
+ * @param allowed The tool's closed failure reasons.
+ * @param fallback The reason for any other failure.
+ * @returns The reason the tool reports.
+ */
+export function closedReason(
+  cause: unknown,
+  allowed: ReadonlySet<string>,
+  fallback: string,
+): string {
+  if (typeof cause !== "object" || cause === null || !("reason" in cause)) {
+    return fallback;
+  }
+  const reason: unknown = cause.reason;
+  return typeof reason === "string" && allowed.has(reason) ? reason : fallback;
+}
+
 const MAXIMUM_VALIDATION_ISSUES = 20;
 
 /**

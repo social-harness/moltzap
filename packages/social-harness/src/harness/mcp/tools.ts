@@ -42,6 +42,7 @@ import {
   policyUpdateSchema,
 } from "../../firewall/index.js";
 import {
+  closedReason,
   decodeHarnessSendCall,
   harnessAcknowledgeDeliveryRequestJsonSchema,
   type HarnessEmptyResult,
@@ -279,18 +280,6 @@ const {
   ACKNOWLEDGE_DELIVERY_REASONS,
 } = harnessFailureReasons;
 
-const operationReason = (
-  cause: unknown,
-  allowed: ReadonlySet<string>,
-  fallback: string,
-): string => {
-  if (typeof cause !== "object" || cause === null || !("reason" in cause)) {
-    return fallback;
-  }
-  const reason: unknown = cause.reason;
-  return typeof reason === "string" && allowed.has(reason) ? reason : fallback;
-};
-
 const toolResult = <Value extends Readonly<Record<string, unknown>>>(
   structuredContent: Value,
 ) => ({
@@ -328,6 +317,30 @@ const decodeToolInput = async <Value, A, I>(
   return decoded.value;
 };
 
+/** An expected failure's closed reason, and the cause and data it names when the tool describes it. */
+const operationError = <Value extends Readonly<Record<string, unknown>>>(
+  failure: unknown,
+  options: RunOperationOptions<Value>,
+) => {
+  const reason = closedReason(
+    failure,
+    options.allowedReasons,
+    options.fallbackReason,
+  );
+  const described =
+    failure === undefined ? undefined : options.describe?.(failure);
+  const message = [`${options.label} failed`, described?.message]
+    .filter(Boolean)
+    .join(": ");
+  return new ProtocolError(
+    ProtocolErrorCode.InternalError,
+    reason === "admission-refused"
+      ? registrationAdmissionRefusalMessage
+      : message,
+    { reason, ...described?.data },
+  );
+};
+
 const runOperation = async <Value extends Readonly<Record<string, unknown>>>(
   options: RunOperationOptions<Value>,
 ) => {
@@ -349,28 +362,6 @@ const runOperation = async <Value extends Readonly<Record<string, unknown>>>(
     throw operationError(failure, options);
   }
   return toolResult(outcome.value);
-};
-
-/** An expected failure's closed reason, and the cause and data it names when the tool describes it. */
-const operationError = <Value extends Readonly<Record<string, unknown>>>(
-  failure: unknown,
-  options: RunOperationOptions<Value>,
-) => {
-  const reason = operationReason(
-    failure,
-    options.allowedReasons,
-    options.fallbackReason,
-  );
-  const described =
-    failure === undefined ? undefined : options.describe?.(failure);
-  const message = [`${options.label} failed`, described?.message]
-    .filter(Boolean)
-    .join(": ");
-  return new ProtocolError(
-    ProtocolErrorCode.InternalError,
-    reason === "admission-refused" ? registrationAdmissionRefusalMessage : message,
-    { reason, ...described?.data },
-  );
 };
 
 /**

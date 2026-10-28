@@ -44,6 +44,7 @@ export {
 } from "./owner-tools.js";
 /** MCP projections keep semantic operations separate from transport framing. */
 export {
+  closedReason,
   decodeHarnessSendCall,
   harnessAcknowledgeDeliveryRequestJsonSchema,
   type HarnessEmptyResult,
