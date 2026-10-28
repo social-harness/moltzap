@@ -28,6 +28,7 @@ import {
 import {
   buildCertifiedGenesis,
   storeCertifiedGenesis,
+  withMisattributedActionEvidence,
 } from "../__tests__/certified-history-fixtures.js";
 import { connectInProcessClient } from "../__tests__/mcp-http-fixtures.js";
 import { routerInstanceId } from "../__tests__/router-worker-fixtures.js";
@@ -393,6 +394,32 @@ const returnsCertificateSignersForAudit = () =>
   });
 
 /**
+ * The owner read checks each evidence row's signer against the member it is
+ * filed under. A store whose action evidence row is filed under a member
+ * other than its signer is corrupt, so the read reports persistence-failed,
+ * while the unaltered store reads the record.
+ */
+const failsReadOverMisattributedEvidence = () =>
+  Effect.gen(function* () {
+    const { fixture, store, record } = yield* makeCertifiedHistory;
+    const misattributed = withMisattributedActionEvidence(
+      store,
+      fixture.cards[0].agentId,
+      fixture.cards[1].agentId,
+    );
+
+    const unaltered = yield* readBobRecordHashes(fixture, store);
+    const corrupt = yield* readBobRecordHashes(fixture, misattributed);
+
+    expect(unaltered, "history read over the unaltered store").toEqual(
+      Exit.succeed([record.actionCertifiedRecord.recordHash]),
+    );
+    expect(corrupt, "history read over the misattributed evidence").toEqual(
+      Exit.fail(expect.objectContaining({ reason: "persistence-failed" })),
+    );
+  });
+
+/**
  * A store whose membership row names a membership hash other than the one
  * its descriptor hashes to is corrupt, so the read reports
  * persistence-failed, while the unaltered store reads the record.
@@ -662,6 +689,10 @@ describe("owner history read over stored rows", () => {
   it(
     "returns each certificate's signers and signatures with the record's anchor",
     returnsCertificateSignersForAudit,
+  );
+  it(
+    "fails a history read whose action evidence is filed under another signer",
+    failsReadOverMisattributedEvidence,
   );
   it(
     "fails a history read whose membership row names another membership hash",

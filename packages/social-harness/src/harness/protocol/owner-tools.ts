@@ -25,9 +25,10 @@ import {
 const encodedAgentCard = Schema.encodedSchema(AgentCard);
 
 /**
- * The agent's view beside an encoded card or as a record's author. This
- * daemon always sends it; it is optional so that a reader also accepts a
- * daemon of the previous release, which does not, as tool results grow.
+ * The agent's view on a register or status result, or as a record's author.
+ * This daemon always sends it. The schema leaves it optional because the
+ * mixed-release gate decodes these results from an earlier daemon, which
+ * sends none.
  */
 const agentView = Schema.optional(AgentView);
 
@@ -69,8 +70,8 @@ const orderedSignerEvidence = Schema.NonEmptyArray(signerEvidence).pipe(
   ),
 );
 
-/** `author` is the view of the record's author from its conversation's verified membership, outside the signed bytes. */
 const historyRecord = exactStruct({
+  /** The record's author, from its conversation's verified membership and outside the signed bytes. */
   author: agentView,
   recordHash: RecordHash,
   recordCore: RecordCore,
@@ -127,7 +128,7 @@ export const managementSearchAgentsResultSchema = Schema.Union(
   exactStruct({
     kind: Schema.Literal("found"),
     agentCard: encodedAgentCard,
-    agent: agentView,
+    agent: AgentView,
   }),
   exactStruct({ kind: Schema.Literal("not_found") }),
 ).annotations({ parseOptions: exactParseOptions });

@@ -791,6 +791,20 @@ const engineDefect = new Error("engine construction defect");
  * copy, so the defect row matches the message. Each one stops the daemon, in
  * the phase its cause belongs to.
  */
+const routerUnreachable: ActivationFault = {
+  fault: "cannot reach the Router",
+  store: (store) => store,
+  harness: (harness) => ({
+    ...harness,
+    dependencies: {
+      ...harness.dependencies,
+      makeWorker: () => Effect.fail(new RouterWorkerTransportError()),
+    },
+  }),
+  registerFailure: { reason: "dependency-unavailable" },
+  phase: "listener",
+};
+
 const activationFaults: readonly ActivationFault[] = [
   {
     fault: "cannot recover its store",
@@ -803,19 +817,7 @@ const activationFaults: readonly ActivationFault[] = [
     registerFailure: { reason: "persistence-failed" },
     phase: "storage",
   },
-  {
-    fault: "cannot reach the Router",
-    store: (store) => store,
-    harness: (harness) => ({
-      ...harness,
-      dependencies: {
-        ...harness.dependencies,
-        makeWorker: () => Effect.fail(new RouterWorkerTransportError()),
-      },
-    }),
-    registerFailure: { reason: "dependency-unavailable" },
-    phase: "listener",
-  },
+  routerUnreachable,
   {
     fault: "dies constructing the engine",
     store: (store) => store,
@@ -862,6 +864,35 @@ const stopsWhenActivationFails = (row: ActivationFault) =>
 
     expect(registerFailure, "register failure").toEqual(row.registerFailure);
     expect(stopped.phase, "phase the daemon stopped in").toBe(row.phase);
+  });
+
+/**
+ * Startup registration whose activation cannot reach the Router, once the
+ * binding commits, stops startup in the activation's phase rather than the
+ * registration phase.
+ */
+const stopsStartupRegistrationInTheActivationPhase = () =>
+  Effect.gen(function* () {
+    const base = yield* makeFixture;
+    const fixture = {
+      ...base,
+      bootstrap: {
+        ...base.bootstrap,
+        configuration: {
+          ...base.bootstrap.configuration,
+          registration: base.registerRequest,
+        },
+      },
+    };
+    const harness = routerUnreachable.harness(
+      yield* makeHarness(fixture, "none"),
+    );
+
+    const stopped = yield* run(fixture, makeStore(fixture, false), harness).pipe(
+      Effect.flip,
+    );
+
+    expect(stopped.phase).toBe(routerUnreachable.phase);
   });
 
 /** A listener the operating system refused to open. */
@@ -952,20 +983,14 @@ const failsStartupWith = (row: DaemonFault) =>
     expect(error.phase, "phase startup failed in").toBe(row.phase);
   });
 
-/**
- * A successful registration returns the bound card and its view, a retry
- * returns the same result, and the inbox remains usable.
- */
-const keepsTheInboxUsableAcrossARetriedRegister = () =>
+/** A daemon started unregistered, registered once, then registered again. */
+const registerTwice = (fixture: Fixture, harness: RuntimeHarness) =>
   Effect.gen(function* () {
-    const fixture = yield* makeFixture;
-    const harness = yield* makeHarness(fixture, "none");
     yield* Effect.forkScoped(
       run(fixture, makeStore(fixture, false, harness.delivery), harness),
     );
     yield* awaitStage(Deferred.await(harness.listenerReady), "listener");
     const operations = requireOperations(harness);
-
     const first = yield* awaitStage(
       operations.register(fixture.registerRequest),
       "first registration",
@@ -974,6 +999,16 @@ const keepsTheInboxUsableAcrossARetriedRegister = () =>
       operations.register(fixture.registerRequest),
       "retried registration",
     );
+    return { first, retried };
+  });
+
+/** A registration returns the bound card and its view; a retry returns the same result. */
+const returnsTheCardAndItsViewToARegister = () =>
+  Effect.gen(function* () {
+    const fixture = yield* makeFixture;
+    const harness = yield* makeHarness(fixture, "none");
+
+    const { first, retried } = yield* registerTwice(fixture, harness);
 
     expect(first).toEqual({
       kind: "registered",
@@ -985,6 +1020,16 @@ const keepsTheInboxUsableAcrossARetriedRegister = () =>
       },
     });
     expect(retried).toEqual(first);
+  });
+
+/** A successful registration can be retried while its inbox remains usable. */
+const keepsTheInboxUsableAcrossARetriedRegister = () =>
+  Effect.gen(function* () {
+    const fixture = yield* makeFixture;
+    const harness = yield* makeHarness(fixture, "none");
+
+    yield* registerTwice(fixture, harness);
+
     const handler = requireHandler(harness);
     expect(yield* readInboxThroughMcp(handler)).toEqual([
       fixture.pending.deliveryToken,
@@ -1121,12 +1166,20 @@ describe("daemon activation", () => {
     "stops the daemon when activation $fault",
     stopsWhenActivationFails,
   );
+  it(
+    "fails startup registration in the listener phase when activation cannot reach the Router",
+    stopsStartupRegistrationInTheActivationPhase,
+  );
   it.each(startupFaults)(
     "fails a registered startup in phase $phase when $fault",
     failsStartupWith,
   );
   it(
-    "returns the card and its view, and keeps the inbox usable when a register is retried",
+    "returns the bound card and its view to a register, and the same result to its retry",
+    returnsTheCardAndItsViewToARegister,
+  );
+  it(
+    "keeps the inbox usable when a register is retried",
     keepsTheInboxUsableAcrossARetriedRegister,
   );
 });

@@ -40,7 +40,6 @@ import { AgentAddress } from "../../communication/records/values.js";
 import { compareAscii } from "../../encoding/identifier.js";
 import {
   AgentCard,
-  type AgentView,
   agentViewOf,
   type VerifiedAgentCard,
 } from "../../identity/cards.js";
@@ -399,27 +398,24 @@ function mapHistoryStoreFailure(
  * Project one verified record to the MCP history record: its author's view,
  * its core, anchor, and each certificate's signers with their signatures, in
  * certificate order.
- * @param record Complete certified evidence verified by the history reader.
- * @param authors Views of the members of the record's conversation, by AgentId.
+ * @param input Complete certified evidence verified by the history reader,
+ *   with its author's verified card.
  * @returns The owner-visible history record with ordered signer evidence.
  */
-function projectHistoryRecord(
-  record: CertifiedRecord,
-  authors: ReadonlyMap<string, AgentView>,
-): Effect.Effect<HistoryRecord, DaemonManagementError> {
+function projectHistoryRecord({
+  record,
+  author,
+}: {
+  readonly record: CertifiedRecord;
+  readonly author: VerifiedAgentCard;
+}): Effect.Effect<HistoryRecord, DaemonManagementError> {
   const certified = record.actionCertifiedRecord;
-  const author = authors.get(
-    certified.recordCore.action.postIntent.authorAgentId,
-  );
-  if (author === undefined) {
-    return Effect.fail(persistenceFailure());
-  }
   return Effect.all({
     actionSignatures: projectSigners(certified.actionCertificate.signatures),
     durabilityVotes: projectSigners(record.durabilityCertificate.votes),
   }).pipe(
     Effect.map(({ actionSignatures, durabilityVotes }) => ({
-      author,
+      author: agentViewOf(author),
       recordHash: certified.recordHash,
       recordCore: certified.recordCore,
       routerAnchor: certified.routerAnchor,
@@ -451,29 +447,21 @@ function projectSigners(
   ).pipe(Effect.mapError(persistenceFailure));
 }
 
-interface HistoryPageInput {
+function readHistoryPage(input: {
   readonly page: HistoryPage;
   readonly recovery: EndpointRecovery;
   readonly bootstrap: DaemonBootstrap;
-}
-
-function readHistoryPage(
-  input: HistoryPageInput,
-): Effect.Effect<ManagementReadConversationResult, DaemonManagementError> {
-  return Effect.all({
-    records: readStoredHistory(
-      input.bootstrap.configuration.registrySignerPublicKey,
-      input.recovery,
-      input.page.records,
-    ).pipe(Effect.mapError(persistenceFailure)),
-    authors: pageAuthors(input),
-  }).pipe(
-    Effect.flatMap(({ records, authors }) =>
-      Effect.forEach(
-        records,
-        (record) => projectHistoryRecord(record, authors),
-        { concurrency: 1 },
-      ),
+}): Effect.Effect<ManagementReadConversationResult, DaemonManagementError> {
+  return readStoredHistory(
+    input.bootstrap.configuration.registrySignerPublicKey,
+    input.recovery,
+    input.page.records,
+  ).pipe(
+    Effect.mapError(persistenceFailure),
+    Effect.flatMap((records) =>
+      Effect.forEach(records, (record) => projectHistoryRecord(record), {
+        concurrency: 1,
+      }),
     ),
     Effect.map((records) =>
       Object.freeze({
@@ -482,38 +470,6 @@ function readHistoryPage(
         continuation: input.page.continuation,
       }),
     ),
-  );
-}
-
-/**
- * The views of every member of the conversations a page names, from their
- * verified memberships; a record's author is one of them.
- * @param input The page, the store snapshot holding its memberships, and the
- *   Registry key the member cards verify under.
- * @returns Each member's view, by AgentId.
- */
-function pageAuthors(
-  input: HistoryPageInput,
-): Effect.Effect<ReadonlyMap<string, AgentView>, DaemonManagementError> {
-  const named = new Set(input.page.records.map((row) => row.conversationId));
-  return Effect.forEach(
-    input.recovery.memberships.filter((row) => named.has(row.conversationId)),
-    (row) =>
-      verifyStoredMembership(
-        row,
-        input.bootstrap.configuration.registrySignerPublicKey,
-      ),
-    { concurrency: 1 },
-  ).pipe(
-    Effect.map(
-      (memberships) =>
-        new Map(
-          memberships
-            .flatMap((membership) => membership.members)
-            .map((card) => [card.agentId, agentViewOf(card)]),
-        ),
-    ),
-    Effect.mapError(persistenceFailure),
   );
 }
 

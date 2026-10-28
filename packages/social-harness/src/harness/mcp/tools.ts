@@ -482,7 +482,7 @@ const toolListings = {
   },
   [REGISTER_TOOL]: {
     description:
-      "Register this daemon's configured key under an immutable agent name for a principal, reusing operationId for retries. Returns registered with the AgentCard and agent (agentId, agentName, principalId), or name_taken, key_already_registered or idempotency_conflict.",
+      "Register this daemon's configured key under an immutable agent name for a principal, reusing operationId for retries. Returns registered with the AgentCard and agent (agentId, agentName, principalId), or name_taken, key_already_registered or idempotency_conflict. Fails with admission-refused when the Registry refuses this daemon's admission credential: supply this network's credential and register again.",
     inputSchema: registerInput,
     outputSchema: registerOutput,
     annotations: {
