@@ -14,15 +14,11 @@ import { constants } from "node:fs";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Configuration reads the configured policy file before the daemon composes its platform services.
 import { type FileHandle, lstat, open, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep, win32 } from "node:path";
-import { parseDocument } from "yaml";
-import { exactStruct } from "../../encoding/exact.js";
 import {
   type DecisionProvider,
   DecisionProviderError,
   editableDocumentSchema,
-  EnglishRule,
   makeJevDecisionProvider,
-  policyReadSchema,
 } from "../evaluator/index.js";
 import {
   type BehaviorFailure,
@@ -31,13 +27,15 @@ import {
   type MessagePolicyConfigurationFailure,
   type PolicyConfiguration,
 } from "./configuration.js";
-import { decodeMessagePolicy, type MessagePolicy } from "./document/index.js";
+import {
+  decodeBehavior,
+  decodeMessagePolicy,
+  MAXIMUM_BEHAVIOR_BYTES,
+  type MessagePolicy,
+} from "./document/index.js";
 
 /** Larger than any document of 256 editable rules and the fixed rules beside them. */
 const MAXIMUM_POLICY_BYTES = 1_048_576;
-
-/** The Behaviors spec limits each BEHAVIOR.md to 64 KiB: docs/spec/harness/message-policy.md#behaviors. */
-export const MAXIMUM_BEHAVIOR_BYTES = 65_536;
 
 /** A key is one token; surrounding whitespace, such as a trailing newline, is ignored. */
 const decisionProviderKey = Schema.Trim.pipe(
@@ -139,21 +137,6 @@ export function policyConfigurationError(
   });
 }
 
-/** YAML owns frontmatter syntax; only Social Harness metadata is a closed namespace. */
-const behaviorFrontmatter = Schema.Struct({
-  name: Schema.NonEmptyTrimmedString,
-  description: Schema.NonEmptyString,
-  metadata: Schema.Struct({
-    "social-harness": exactStruct({
-      kind: Schema.optionalWith(EnglishRule.fields.kind, {
-        default: () => "norm" as const,
-      }),
-      guidance: EnglishRule.fields.guidance,
-      feedback: EnglishRule.fields.feedback,
-    }),
-  }),
-});
-
 /** Reports only the policy entry; YAML diagnostics may contain private file content. */
 function invalidBehavior(path: string, reason: BehaviorFailure) {
   return policyConfigurationError("message-policy", path, reason);
@@ -190,70 +173,8 @@ function readBehavior(root: string, directory: string, path: string) {
       MAXIMUM_BEHAVIOR_BYTES,
       refused,
     );
-    return yield* decodeBehavior(bytes, refused);
-  });
-}
-
-/** YAML parser diagnostics stay private; only a closed category crosses this boundary. */
-function decodeBehavior(
-  bytes: Buffer,
-  refused: (reason: BehaviorFailure) => MessagePolicyConfigurationError,
-) {
-  return Effect.gen(function* () {
-    const parts = /^---\r?\n([\s\S]*?)^---[ \t]*(?:\r?\n|$)([\s\S]*)/mu.exec(
-      bytes.toString("utf8").replace(/^\uFEFF/u, ""),
-    );
-    if (
-      parts?.[1] === undefined ||
-      parts[2] === undefined ||
-      parts.index !== 0
-    ) {
-      return yield* refused("frontmatter");
-    }
-    const frontmatter = yield* decodeFrontmatter(parts[1], refused);
-    const metadata = frontmatter.metadata["social-harness"];
-    const rules = yield* Schema.decodeUnknown(policyReadSchema.fields.rules)([
-      {
-        id: frontmatter.name,
-        text: parts[2].trim(),
-        ...metadata,
-      },
-    ]).pipe(Effect.mapError(() => refused("schema")));
-    const rule = yield* Effect.fromNullable(rules[0]).pipe(
-      Effect.mapError(() => refused("schema")),
-    );
+    const rule = yield* decodeBehavior(bytes, refused);
     return { rule, digest: createHash("sha256").update(bytes).digest("hex") };
-  });
-}
-
-/** YAML diagnostics stay inside the parser boundary, including unresolved tags. */
-function decodeFrontmatter(
-  text: string,
-  refused: (reason: BehaviorFailure) => MessagePolicyConfigurationError,
-) {
-  return Effect.gen(function* () {
-    const doc = yield* Effect.try({
-      try: () =>
-        parseDocument(text, {
-          schema: "core",
-          resolveKnownTags: false,
-          logLevel: "error",
-        }),
-      catch: () => refused("frontmatter"),
-    });
-    if (doc.errors.length !== 0 || doc.warnings.length !== 0) {
-      return yield* refused("frontmatter");
-    }
-    return yield* Effect.try({
-      try: (): unknown => doc.toJS(),
-      catch: () => refused("frontmatter"),
-    }).pipe(
-      Effect.flatMap((value) =>
-        Schema.decodeUnknown(behaviorFrontmatter)(value).pipe(
-          Effect.mapError(() => refused("schema")),
-        ),
-      ),
-    );
   });
 }
 

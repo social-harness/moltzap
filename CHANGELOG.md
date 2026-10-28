@@ -17,6 +17,20 @@ sections are the codebase's history as MoltZap.
 
 <!-- towncrier release notes start -->
 
+## [2026.1028.3] - 2026-10-28
+
+### Added
+
+- `policy_update` accepts a shared norm's `BEHAVIOR.md` text as `{"behavior":
+  "..."}` and maps it to its rule.
+
+## [2026.1028.2] - 2026-10-28
+
+### Fixed
+
+- The daemon serves MCP clients on revision 2025-11-25 whose output validation
+  reads JSON Schema 2020-12, such as OpenClaw's.
+
 ## [2026.1028.1] - 2026-10-28
 
 ### Changed

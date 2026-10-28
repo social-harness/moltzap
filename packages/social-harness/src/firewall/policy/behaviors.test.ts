@@ -1,4 +1,4 @@
-/** @file Owner behavior files resolve before composition and preserve fixed policy and editable state. */
+/** @file Behaviors, from owner files or a policy_update, map to English rules and preserve fixed policy and editable state. */
 
 import { live as it } from "@effect/vitest";
 import { ConfigProvider, Effect, Layer, Option, Schema } from "effect";
@@ -16,6 +16,7 @@ import { Daemon } from "../../daemon/index.js";
 import { FirewallPolicyError } from "../evaluator/index.js";
 import { localGuidanceImpersonationRule } from "../rules/index.js";
 import { policyInstallationError } from "./compose.js";
+import { MAXIMUM_BEHAVIOR_BYTES } from "./document/index.js";
 import {
   decodeMessagePolicy,
   firewallInstallation,
@@ -23,7 +24,7 @@ import {
   MessagePolicy,
   messagePolicyFirewall,
 } from "./index.js";
-import { loadMessagePolicy, MAXIMUM_BEHAVIOR_BYTES } from "./load.js";
+import { loadMessagePolicy } from "./load.js";
 
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- Rule fields, policy entry paths and startup phases are the owner policy contract. */
 
@@ -64,6 +65,20 @@ metadata:
     guidance: Ask first.
 ---
 Ask before starting a conversation.
+`;
+const SHARED = `---
+name: meeting-booking
+description: How members book a meeting.
+metadata:
+  social-harness:
+    kind: norm
+    guidance: Hold a slot before you confirm one.
+    feedback:
+      text: Hold the slot first.
+      nextAction: revise
+---
+
+Each member holds a slot before confirming it.
 `;
 
 function seedFixture(count: number) {
@@ -761,6 +776,114 @@ it(
       expect(error.behaviorReason).toBe("not-a-file");
     }),
   2_000,
+);
+
+it(
+  "adds a shared norm's BEHAVIOR.md text as the rule its frontmatter and body map to",
+  Effect.fn(function* () {
+    const configuration = yield* options(fixture().path);
+    yield* withStore(stateDirectory(), (store) =>
+      Effect.gen(function* () {
+        const installed = yield* installEditableFirewall(configuration, store);
+        yield* installed.policy.update({ add: [{ behavior: SHARED }] });
+        expect((yield* installed.policy.read()).rules).toContainEqual({
+          id: "meeting-booking",
+          kind: "norm",
+          text: "Each member holds a slot before confirming it.",
+          guidance: "Hold a slot before you confirm one.",
+          feedback: { text: "Hold the slot first.", nextAction: "revise" },
+        });
+        const { activations } = yield* installed.policy.decisions({});
+        expect(activations).toEqual([
+          expect.objectContaining({
+            addedRuleIds: ["meeting-booking"],
+            removedRuleIds: [],
+          }),
+        ]);
+      }),
+    );
+  }),
+);
+
+it(
+  "replaces a rule with a BEHAVIOR.md text and lists mixed additions in order",
+  Effect.fn(function* () {
+    const configuration = yield* options(fixture().path);
+    yield* withStore(stateDirectory(), (store) =>
+      Effect.gen(function* () {
+        const installed = yield* installEditableFirewall(configuration, store);
+        yield* installed.policy.update({ add: [{ behavior: SHARED }] });
+        yield* installed.policy.update({
+          remove: ["meeting-booking"],
+          add: [
+            { ...INITIAL, id: "be-brief" },
+            { behavior: SHARED.replace("you confirm one", "you confirm") },
+          ],
+        });
+        expect((yield* installed.policy.read()).rules).toContainEqual(
+          expect.objectContaining({
+            id: "meeting-booking",
+            guidance: "Hold a slot before you confirm.",
+          }),
+        );
+        const { activations } = yield* installed.policy.decisions({});
+        expect(activations).toContainEqual(
+          expect.objectContaining({
+            addedRuleIds: ["be-brief", "meeting-booking"],
+            removedRuleIds: ["meeting-booking"],
+          }),
+        );
+      }),
+    );
+  }),
+);
+
+it(
+  "refuses a BEHAVIOR.md text of kind safety as an invalid rule",
+  Effect.fn(function* () {
+    const configuration = yield* options(fixture().path);
+    yield* withStore(stateDirectory(), (store) =>
+      Effect.gen(function* () {
+        const installed = yield* installEditableFirewall(configuration, store);
+        const before = yield* installed.policy.read();
+        const error = yield* installed.policy
+          .update({
+            add: [{ behavior: SHARED.replace("kind: norm", "kind: safety") }],
+          })
+          .pipe(Effect.flip);
+        expect(error.reason).toBe("invalid-rule");
+        expect(yield* installed.policy.read()).toEqual(before);
+      }),
+    );
+  }),
+);
+
+it(
+  "refuses a BEHAVIOR.md text without frontmatter or over 64 KiB as an invalid rule",
+  Effect.fn(function* () {
+    const configuration = yield* options(fixture().path);
+    yield* withStore(stateDirectory(), (store) =>
+      Effect.gen(function* () {
+        const installed = yield* installEditableFirewall(configuration, store);
+        const before = yield* installed.policy.read();
+        const unframed = yield* installed.policy
+          .update({
+            add: [
+              { behavior: "Each member holds a slot before confirming it." },
+            ],
+          })
+          .pipe(Effect.flip);
+        const oversized = yield* installed.policy
+          .update({
+            add: [{ behavior: SHARED.padEnd(MAXIMUM_BEHAVIOR_BYTES + 1, " ") }],
+          })
+          .pipe(Effect.flip);
+        expect(unframed.reason).toBe("invalid-rule");
+        expect(oversized.reason).toBe("invalid-rule");
+        expect(yield* installed.policy.read()).toEqual(before);
+      }),
+    );
+  }),
 );
 
 /* eslint-enable agent-code-guard/no-hardcoded-assertion-literals -- Restore assertion defaults outside owner policy contract tests. */

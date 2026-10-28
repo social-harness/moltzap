@@ -91,7 +91,7 @@ test("runs one shared session and reports its terminal state", async (t) => {
   );
 });
 
-test("an agent inherits the host's Claude Code sign-in variables and telemetry settings", async (t) => {
+test("an agent inherits the host's Claude Code sign-in variables, telemetry settings and provider proxy", async (t) => {
   const root = await temporaryRoot(t);
   const workingDirectory = join(root, "container/workspace/agent");
   await mkdir(workingDirectory, { recursive: true });
@@ -101,6 +101,11 @@ test("an agent inherits the host's Claude Code sign-in variables and telemetry s
     CLAUDE_CODE_ENABLE_TELEMETRY: "1",
     OTEL_EXPORTER_OTLP_ENDPOINT: "https://receiver.invalid:4318",
     OTEL_TRACES_EXPORTER: "otlp",
+    HTTPS_PROXY: "https://gateway.invalid:3128",
+    https_proxy: "https://gateway.invalid:3128",
+    NO_PROXY: "localhost",
+    no_proxy: "localhost",
+    NODE_EXTRA_CA_CERTS: "/run/social-harness/bootstrap/provider-proxy-ca.pem",
   };
   setHostEnvironment(t, { ...forwarded, HOST_ONLY_VALUE: "host" });
   const driver = createProcessSessionDriver({

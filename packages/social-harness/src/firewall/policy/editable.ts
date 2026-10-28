@@ -34,7 +34,11 @@ import {
   type RuleDescription,
 } from "../evaluator/index.js";
 import { localGuidanceImpersonationRule } from "../rules/index.js";
-import { migrateAutonomyRule } from "./document/index.js";
+import {
+  decodeBehavior,
+  MAXIMUM_BEHAVIOR_BYTES,
+  migrateAutonomyRule,
+} from "./document/index.js";
 
 type FixedRules = typeof policyReadSchema.fields.fixedRules.Type;
 const englishId = "org.social-harness/english";
@@ -356,13 +360,43 @@ function persistRules(
   );
 }
 
+interface RuleChange {
+  readonly add: readonly EnglishRule[];
+  readonly remove: readonly string[];
+}
+
+/** Each `{behavior}` addition becomes its rule; a behavior the policy file would refuse is an invalid rule. */
+function resolvedChange(change: typeof policyUpdateSchema.Type) {
+  return Effect.forEach(
+    change.add ?? [],
+    (item) =>
+      "behavior" in item ? behaviorRule(item.behavior) : Effect.succeed(item),
+    { concurrency: 1 },
+  ).pipe(
+    Effect.map((add): RuleChange => ({ add, remove: change.remove ?? [] })),
+  );
+}
+
+/** A shared norm is kind `norm`, so a peer's text never adds a rule that holds uncertain messages. */
+function behaviorRule(text: string) {
+  const bytes = Buffer.from(text, "utf8");
+  if (bytes.length > MAXIMUM_BEHAVIOR_BYTES) {
+    return Effect.fail(invalidRule());
+  }
+  return decodeBehavior(bytes, () => invalidRule()).pipe(
+    Effect.filterOrFail(
+      (rule) => rule.kind === "norm",
+      () => invalidRule(),
+    ),
+  );
+}
+
 function editedRules(
   rules: readonly EnglishRule[],
   fixedRuleIds: readonly string[],
-  request: typeof policyUpdateSchema.Type,
+  { add, remove }: RuleChange,
 ) {
   return Effect.gen(function* () {
-    const remove = request.remove ?? [];
     if (remove.some((id) => fixedRuleIds.includes(id))) {
       return yield* new FirewallPolicyError({ reason: "fixed-rule" });
     }
@@ -371,7 +405,7 @@ function editedRules(
     }
     const next = yield* decodeFrozen(editableDocumentSchema, [
       ...rules.filter((rule) => !remove.includes(rule.id)),
-      ...(request.add ?? []),
+      ...add,
     ]).pipe(Effect.mapError(invalidRule));
     yield* validateIds(next, fixedRuleIds);
     return next;
@@ -387,6 +421,7 @@ function updatePolicy(
   return Effect.gen(function* () {
     const change = yield* decodeFrozen(policyUpdateSchema, request).pipe(
       Effect.mapError(invalidRule),
+      Effect.flatMap((decoded) => resolvedChange(decoded)),
     );
     const next = yield* editedRules(state.rules, state.fixedRuleIds, change);
     const replacement = yield* buildPolicy(captured, next);
@@ -394,8 +429,8 @@ function updatePolicy(
       persistRules(store, next, {
         time: yield* Clock.currentTimeMillis,
         activeRevision: replacement.configurationDigest,
-        addedRuleIds: (change.add ?? []).map((rule) => rule.id),
-        removedRuleIds: change.remove ?? [],
+        addedRuleIds: change.add.map((rule) => rule.id),
+        removedRuleIds: change.remove,
       }).pipe(
         Effect.zipRight(
           Effect.sync(() => {
