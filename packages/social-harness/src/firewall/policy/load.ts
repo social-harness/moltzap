@@ -61,9 +61,10 @@ const unavailableProvider: DecisionProvider = {
     Effect.fail(new DecisionProviderError({ reason: "configuration" })),
 };
 
-const POLICY_SPEC =
-  "https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/message-policy.md";
-const FIREWALL_GUIDE = "https://docs.moltzap.xyz/guides/message-firewall";
+const POLICY_SPEC = "https://docs.moltzap.xyz/spec/harness/message-policy";
+
+/** The message-firewall guide, whose troubleshooting entries policy failures link. */
+export const FIREWALL_GUIDE = "https://docs.moltzap.xyz/guides/message-firewall";
 
 /** Each failure's operator text and the troubleshooting entry that matches it. */
 const failureMessages: Readonly<
@@ -148,24 +149,17 @@ export const loadMessagePolicy = (
  */
 export function policyConfigurationError(
   reason: MessagePolicyConfigurationFailure,
-  path?: string,
+  path = "",
   behaviorReason?: BehaviorFailure,
 ): MessagePolicyConfigurationError {
-  if (path === undefined) {
-    return new MessagePolicyConfigurationError({
-      reason,
-      behaviorReason,
-      message: policyFailureMessage(reason),
-    });
-  }
   const category = behaviorReason === undefined ? "" : ` (${behaviorReason})`;
   return new MessagePolicyConfigurationError({
     reason,
     behaviorReason,
     message: policyFailureMessage(
       reason,
-      `; invalid at ${path}${category}`,
-      path,
+      path === "" ? "" : `; invalid at ${path}${category}`,
+      { path },
     ),
   });
 }
@@ -173,21 +167,22 @@ export function policyConfigurationError(
 /**
  * The operator message for a message-policy failure: its text, any detail,
  * and one `Docs:` link. An entry under a behavior list links the behavior
- * rules; every other failure links its own troubleshooting entry.
+ * rules, `docs` replaces the failure's own troubleshooting entry, and an
+ * empty `docs` leaves the link out for a failure with no fix to point at.
  * @param reason The closed failure.
  * @param detail Text after the failure's own, starting with `; `.
- * @param path The failing policy entry, if any.
+ * @param link The failing policy entry and any other entry to link.
  * @returns The message, naming no configured value.
  */
 export function policyFailureMessage(
   reason: MessagePolicyConfigurationFailure,
-  detail = "",
-  path?: string,
+  detail: string,
+  link: { readonly path?: string; readonly docs?: string } = {},
 ): string {
-  if (path === undefined) {
-    return `${failureMessages[reason].text}${detail}. Docs: ${failureMessages[reason].docs}`;
-  }
-  return `${failureMessages[reason].text}${detail}. Docs: ${failureDocs(reason, path)}`;
+  const docs = failureDocs(reason, link);
+  return docs === ""
+    ? `${failureMessages[reason].text}${detail}`
+    : `${failureMessages[reason].text}${detail}. Docs: ${docs}`;
 }
 
 /**
@@ -533,7 +528,10 @@ function isTransient(error: DecisionProviderError): boolean {
 
 function failureDocs(
   reason: MessagePolicyConfigurationFailure,
-  path: string,
+  { path = "", docs = failureMessages[reason].docs }: {
+    readonly path?: string;
+    readonly docs?: string;
+  },
 ): string {
   if (path.startsWith("english.builtinBehaviors.")) {
     return `${POLICY_SPEC}#built-in-behaviors`;
@@ -541,5 +539,5 @@ function failureDocs(
   if (/^english\.(?:fixed|initial)Behaviors\./u.test(path)) {
     return `${POLICY_SPEC}#behaviors`;
   }
-  return failureMessages[reason].docs;
+  return docs;
 }

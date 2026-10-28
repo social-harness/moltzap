@@ -145,59 +145,54 @@ type ProcessConfigurationFailure = Exclude<
 
 const RUN_SHARNESSD = "https://docs.moltzap.xyz/guides/run-sharnessd";
 
-/** Each process failure's operator text and its troubleshooting entry in Run sharnessd. */
-const configurationFailures: Readonly<
-  Record<
-    ProcessConfigurationFailure,
-    { readonly text: string; readonly entry: string }
-  >
+/** A secret-file failure of the process settings. */
+type SecretFileFailure = Exclude<ProcessConfigurationFailure, "environment">;
+
+/** Each secret-file failure's operator text and its troubleshooting entry in Run sharnessd. */
+const secretFileFailures: Readonly<
+  Record<SecretFileFailure, { readonly text: string; readonly docs: string }>
 > = {
-  environment: {
-    text: "environment configuration is invalid",
-    entry: "setting",
-  },
   "agent-private-key-file": {
     text: "SHARNESS_AGENT_PRIVATE_KEY_FILE must name a readable file",
-    entry: "agent-private-key-file",
+    docs: `${RUN_SHARNESSD}#agent-private-key-file`,
   },
   "agent-private-key": {
     text: "SHARNESS_AGENT_PRIVATE_KEY_FILE must contain an Ed25519 PKCS#8 private key",
-    entry: "agent-private-key",
+    docs: `${RUN_SHARNESSD}#agent-private-key`,
   },
   "admission-credential-file": {
     text: "SHARNESS_ADMISSION_CREDENTIAL_FILE is required for an unregistered daemon and must name a readable file",
-    entry: "admission-credential-file",
+    docs: `${RUN_SHARNESSD}#admission-credential-file`,
   },
   "admission-credential": {
     text: "SHARNESS_ADMISSION_CREDENTIAL_FILE must contain a valid admission credential",
-    entry: "admission-credential",
+    docs: `${RUN_SHARNESSD}#admission-credential`,
   },
   "mcp-runtime-credential-file": {
     text: "SHARNESS_MCP_RUNTIME_CREDENTIAL_FILE must name a readable file",
-    entry: "mcp-credential-file",
+    docs: `${RUN_SHARNESSD}#mcp-credential-file`,
   },
   "mcp-owner-credential-file": {
     text: "SHARNESS_MCP_OWNER_CREDENTIAL_FILE must name a readable file",
-    entry: "mcp-credential-file",
+    docs: `${RUN_SHARNESSD}#mcp-credential-file`,
   },
   "mcp-credential": {
     text: "SHARNESS_MCP_RUNTIME_CREDENTIAL_FILE and SHARNESS_MCP_OWNER_CREDENTIAL_FILE must both be supplied and contain distinct valid tokens of at least 32 characters",
-    entry: "mcp-credential",
+    docs: `${RUN_SHARNESSD}#mcp-credential`,
   },
 };
 
 /** An operator message followed by its one troubleshooting link. */
-const linked = (text: string, entry: string): string =>
-  `${text}. Docs: ${RUN_SHARNESSD}#${entry}`;
+const linked = (text: string, docs: string): string => `${text}. Docs: ${docs}`;
 
 const configurationError = (
-  reason: ProcessConfigurationFailure,
+  reason: SecretFileFailure,
 ): DaemonConfigurationError =>
   new DaemonConfigurationError({
     reason,
     message: linked(
-      configurationFailures[reason].text,
-      configurationFailures[reason].entry,
+      secretFileFailures[reason].text,
+      secretFileFailures[reason].docs,
     ),
   });
 
@@ -248,7 +243,10 @@ export const loadDaemonProcessConfiguration: Effect.Effect<
       ? cause
       : new DaemonConfigurationError({
           reason: "environment",
-          message: linked(configurationMessage(cause), "setting"),
+          message: linked(
+            configurationMessage(cause),
+            `${RUN_SHARNESSD}#setting`,
+          ),
         }),
   ),
   Effect.withSpan("loadDaemonProcessConfiguration"),
@@ -288,7 +286,7 @@ function registrationRequest(
         reason: "environment",
         message: linked(
           "SHARNESS_REGISTRATION_AGENT_NAME, SHARNESS_REGISTRATION_OPERATION_ID and SHARNESS_REGISTRATION_PRINCIPAL_ID must all be supplied",
-          "registration-settings",
+          `${RUN_SHARNESSD}#registration-settings`,
         ),
       }),
     );
@@ -297,10 +295,7 @@ function registrationRequest(
 }
 
 const credentialFailure =
-  (
-    fileReason: ProcessConfigurationFailure,
-    valueReason: ProcessConfigurationFailure,
-  ) =>
+  (fileReason: SecretFileFailure, valueReason: SecretFileFailure) =>
   (error: CredentialError): DaemonConfigurationError =>
     configurationError(error.stage === "file" ? fileReason : valueReason);
 

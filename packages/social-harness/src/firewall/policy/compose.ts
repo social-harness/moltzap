@@ -31,6 +31,7 @@ import {
   type PolicyConfiguration,
 } from "./configuration.js";
 import {
+  FIREWALL_GUIDE,
   loadMessagePolicy,
   policyConfigurationError,
   policyFailureMessage,
@@ -150,14 +151,28 @@ export function policyInstallationError(
     behaviorReason: path === undefined ? undefined : "duplicate-id",
     message:
       cause.reason === "not-configured"
-        ? "SHARNESS_MESSAGE_POLICY_FILE configures no English policy, but the state directory holds English rules an earlier policy added; restore the english block, remove those rules with policy_update, then remove the block. Docs: https://docs.moltzap.xyz/guides/message-firewall#stored-english-rules"
+        ? `SHARNESS_MESSAGE_POLICY_FILE configures no English policy, but the state directory holds English rules an earlier policy added; restore the english block, remove those rules with policy_update, then remove the block. Docs: ${FIREWALL_GUIDE}#stored-english-rules`
         : policyFailureMessage(
             "message-policy",
             `; its rules could not be installed (${cause.reason})${location}`,
-            path,
+            { path: path ?? "", docs: installationDocs[cause.reason] },
           ),
   });
 }
+
+/**
+ * Where a rule installation failure's fix is written: the rules-not-installed
+ * entry for a rule the file or the store holds, and nowhere for a build or
+ * storage failure, which has no operator fix to link.
+ */
+const installationDocs: Readonly<
+  Record<Exclude<FirewallPolicyError["reason"], "not-configured">, string>
+> = {
+  "invalid-rule": `${FIREWALL_GUIDE}#rules-not-installed`,
+  "fixed-rule": `${FIREWALL_GUIDE}#rules-not-installed`,
+  "build-failed": "",
+  "persistence-failed": "",
+};
 
 /** Only file loading resolves behaviors into rules before trusted composition. */
 function listsBehaviors(policy: MessagePolicy) {

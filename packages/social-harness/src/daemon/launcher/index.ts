@@ -9,7 +9,7 @@ import { Console, Effect } from "effect";
 import { fileURLToPath } from "node:url";
 import type { LauncherConfiguration } from "./selection.js";
 import { launcherHelp, loadConfiguration } from "./configuration.js";
-import { launcherError, type LauncherError } from "./errors.js";
+import { LAUNCHER_DOCS, launcherError, type LauncherError } from "./errors.js";
 import { prepare, type Prepared } from "./prepare.js";
 
 /**
@@ -29,7 +29,7 @@ export const main = Effect.fn("Launcher.main")(function* (
   if (command !== undefined && command !== "prepare") {
     return yield* launcherError(
       "configuration",
-      `unknown command ${command}; run sharnessd-launcher or sharnessd-launcher prepare. Docs: https://docs.moltzap.xyz/spec/harness/daemon#launcher`,
+      `unknown command ${command}; run sharnessd-launcher or sharnessd-launcher prepare. Docs: ${LAUNCHER_DOCS}`,
     );
   }
   const configuration = yield* absolute(yield* loadConfiguration);
@@ -94,7 +94,7 @@ function seedPrefix(
     if (path.basename(nodeModules) !== "node_modules") {
       return yield* launcherError(
         "seed",
-        `${packageRoot} is not installed under node_modules; set SHARNESS_LAUNCHER_SEED. Docs: https://docs.moltzap.xyz/spec/harness/daemon#launcher`,
+        `${packageRoot} is not installed under node_modules; set SHARNESS_LAUNCHER_SEED. Docs: ${LAUNCHER_DOCS}`,
       );
     }
     return path.dirname(nodeModules);

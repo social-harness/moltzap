@@ -13,7 +13,7 @@ import {
   Path,
 } from "@effect/platform";
 import { Console, Effect, Option } from "effect";
-import { launcherError, type LauncherError } from "./errors.js";
+import { LAUNCHER_DOCS, launcherError, type LauncherError, UPGRADES_GUIDE } from "./errors.js";
 import {
   checkIntegrity,
   daemonExecutable,
@@ -150,7 +150,7 @@ function recordedRelease(
               return yield* Effect.fail(
                 launcherError(
                   "configuration",
-                  `the recorded release follows ${record.releasePackage}, not ${configuration.releasePackage}`,
+                  `the recorded release follows ${record.releasePackage}, not ${configuration.releasePackage}; set SHARNESS_LAUNCHER_PACKAGE back to ${record.releasePackage}, or start with an empty launcher directory. Docs: ${UPGRADES_GUIDE}#launcher-package`,
                 ),
               );
             }
@@ -158,7 +158,7 @@ function recordedRelease(
             const path = yield* Path.Path;
             const failure = launcherError(
               "configuration",
-              `the recorded release in launcher directory ${configuration.directory} contains no daemon package (${DAEMON_PACKAGE}); start with an empty launcher directory. Docs: https://docs.moltzap.xyz/spec/harness/daemon#launcher`,
+              `the recorded release in launcher directory ${configuration.directory} contains no daemon package (${DAEMON_PACKAGE}); start with an empty launcher directory. Docs: ${LAUNCHER_DOCS}`,
             );
             const installed = yield* fs
               .exists(
@@ -200,7 +200,7 @@ function candidate(
     if (!closure.some((entry) => entry.name === DAEMON_PACKAGE)) {
       return yield* launcherError(
         "registry",
-        `release ${version} contains no daemon package (${DAEMON_PACKAGE}). Docs: https://docs.moltzap.xyz/guides/upgrades#release-contains-no-daemon-package`,
+        `release ${version} contains no daemon package (${DAEMON_PACKAGE}). Docs: ${UPGRADES_GUIDE}#release-contains-no-daemon-package`,
       );
     }
     const choice = choose(
@@ -242,7 +242,7 @@ function wireVersionOf(
     : Effect.fail(
         launcherError(
           "registry",
-          `release ${version} contains no wire version in its Client manifest. Docs: https://docs.moltzap.xyz/guides/upgrades#release-contains-no-wire-version`,
+          `release ${version} contains no wire version in its Client manifest. Docs: ${UPGRADES_GUIDE}#release-contains-no-wire-version`,
         ),
       );
 }

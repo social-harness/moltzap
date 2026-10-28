@@ -337,7 +337,8 @@ The agent keeps its key and name.
 
 ## If this does not work
 
-Every error the helper prints ends with a `Docs:` link to its entry below.
+Every error the helper prints, and every daemon setting error, ends with a
+`Docs:` link to its entry below.
 
 ### The service exits at once
 
@@ -406,20 +407,22 @@ over the agent's `admission-credential`, then restart its service.
 
 <a id="mcp-credential-file" />
 
-### `SHARNESS_MCP_RUNTIME_CREDENTIAL_FILE must name a readable file`
+### `SHARNESS_MCP_RUNTIME_CREDENTIAL_FILE must name a readable file` or `SHARNESS_MCP_OWNER_CREDENTIAL_FILE must name a readable file`
 
-The same applies to `SHARNESS_MCP_OWNER_CREDENTIAL_FILE`. These two settings
-switch the daemon to authenticated tunnel mode, which this guide does not use.
-Point each at a readable file, or remove both.
+These two settings switch the daemon to authenticated tunnel mode, which this
+guide does not use. Point each at a readable file, or remove both for the
+trusted-local mode this guide uses.
 
 <a id="mcp-credential" />
 
 ### `SHARNESS_MCP_RUNTIME_CREDENTIAL_FILE and SHARNESS_MCP_OWNER_CREDENTIAL_FILE must both be supplied and contain distinct valid tokens of at least 32 characters`
 
 Tunnel mode needs both files, each holding a different token of at least 32
-characters. Supply both, or remove both for the loopback mode this guide uses.
+characters and no trailing newline: `openssl rand -hex 32 > file` writes one,
+so write the token with `openssl rand -hex 32 | tr -d '\n' > file`. Supply
+both, or remove both for the trusted-local mode this guide uses.
 [Process and configuration](/spec/harness/daemon#process-and-configuration)
-describes the two authorities.
+owns the file format and describes the two authorities.
 
 <a id="the-registry-refused-the-admission-credential" />
 

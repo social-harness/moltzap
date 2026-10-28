@@ -129,12 +129,33 @@ daemon.
 
 ### `SHARNESS_MESSAGE_POLICY_FILE must contain a valid org.social-harness/message-policy/v1 document`
 
-The file is not a valid policy. The error lists the path of each invalid
-property, such as `mode`. The file accepts only the properties the format
-names, so check spelling against the specification's
-[property table](/spec/harness/message-policy#message-policy-file). An error
-naming a behavior entry, such as `english.fixedBehaviors.0`, links the
-behavior rules instead.
+The file is not a valid policy. The error lists the path of each invalid part:
+
+- A property path, such as `mode`, names a property the format does not
+  accept. The file takes only the properties the format names, so check
+  spelling against the specification's
+  [property table](/spec/harness/message-policy#message-policy-file).
+- `(document)` names a rule about the whole file. English rules and the
+  collective norms need a `decisionProvider`; the collective norms need one
+  other than `{"kind": "unavailable"}`; and an English rule id can appear only
+  once across `fixedRules` and `initialRules`. Add the provider, or rename the
+  repeated id.
+- `english.initialRules` names initial rules the daemon cannot install: a
+  `norm` rule without `guidance`, or more than 256 rules. Give each norm its
+  guidance, or trim the list.
+
+<a id="rules-not-installed" />
+
+### `…; its rules could not be installed (<reason>)`
+
+The file is valid, but the daemon could not install its rules beside the
+editable rules its state directory holds. `invalid-rule` means an initial or
+stored rule is invalid, such as one id given twice. `fixed-rule` means an
+initial or stored rule reuses the id of a built-in or fixed rule. Rename the
+initial rule in the file. A stored rule, such as a norm the agent added with
+`policy_update`, keeps its id: take the colliding fixed rule out of the file,
+start the daemon, remove the stored rule with `policy_update`
+`{"remove": ["<id>"]}`, then put the fixed rule back and restart.
 
 <a id="message-policy-composed" />
 
