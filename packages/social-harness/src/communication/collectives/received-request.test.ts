@@ -47,7 +47,7 @@ const isOpen = ({ inBob, state, expired }: HeldRequest) =>
 
 /** The refusal kind an answer to agent:bob gets over `held`, or `matched`. */
 const kindOf = (held: readonly HeldRequest[]) =>
-  Either.match(matchOpenRequest(requestsOf(held), bobConversation, NOW), {
+  Either.match(matchOpenRequest(requestsOf(held), bobConversation, NOW, {}), {
     onLeft: ({ kind }) => kind,
     onRight: () => "matched",
   });
@@ -61,7 +61,11 @@ const NAMED_REFUSALS: ReadonlyArray<[readonly HeldRequest[], number, string]> =
   [
     [[{ inBob: false, state: "open", expired: false }], 0, "request-none"],
     [[{ inBob: true, state: "open", expired: false }], 1, "request-none"],
-    [[{ inBob: true, state: "answered", expired: false }], 0, "request-answered"],
+    [
+      [{ inBob: true, state: "answered", expired: false }],
+      0,
+      "request-answered",
+    ],
     [[{ inBob: true, state: "open", expired: true }], 0, "request-expired"],
     [[{ inBob: true, state: "closed", expired: false }], 0, "request-expired"],
   ];
@@ -121,7 +125,9 @@ describe("matching an answer to the request it names", () => {
     "refuses an answer over %j naming request %i as %s",
     (held, index, expected) => {
       expect(
-        matchOpenRequest(requestsOf(held), bobConversation, NOW, idAt(index)),
+        matchOpenRequest(requestsOf(held), bobConversation, NOW, {
+          id: idAt(index),
+        }),
       ).toEqual(Either.left({ kind: expected }));
     },
   );
@@ -160,7 +166,7 @@ function returnsTheOpenRequest() {
   ]);
   const [, open] = [...requests];
 
-  expect(matchOpenRequest(requests, bobConversation, NOW)).toEqual(
+  expect(matchOpenRequest(requests, bobConversation, NOW, {})).toEqual(
     Either.right({ id: open?.[0], request: open?.[1] }),
   );
 }
@@ -172,7 +178,7 @@ function listsOpenIdsWhenAmbiguous() {
     { inBob: true, state: "open", expired: false },
   ]);
 
-  expect(matchOpenRequest(requests, bobConversation, NOW)).toEqual(
+  expect(matchOpenRequest(requests, bobConversation, NOW, {})).toEqual(
     Either.left({ kind: "request-ambiguous", openIds: [idAt(0), idAt(2)] }),
   );
 }
@@ -183,10 +189,10 @@ function answersEachOpenRequestById() {
     { inBob: true, state: "open", expired: false },
   ]);
 
-  expect(matchOpenRequest(requests, bobConversation, NOW, idAt(0))).toEqual(
-    Either.right({ id: idAt(0), request: requests.get(idAt(0)) }),
-  );
-  expect(matchOpenRequest(requests, bobConversation, NOW, idAt(1))).toEqual(
-    Either.right({ id: idAt(1), request: requests.get(idAt(1)) }),
-  );
+  expect(
+    matchOpenRequest(requests, bobConversation, NOW, { id: idAt(0) }),
+  ).toEqual(Either.right({ id: idAt(0), request: requests.get(idAt(0)) }));
+  expect(
+    matchOpenRequest(requests, bobConversation, NOW, { id: idAt(1) }),
+  ).toEqual(Either.right({ id: idAt(1), request: requests.get(idAt(1)) }));
 }

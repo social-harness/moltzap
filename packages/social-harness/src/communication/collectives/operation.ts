@@ -143,7 +143,7 @@ import {
   type ReceivedRequest,
   receivedRequest,
   requestUnavailable,
-  type UnmatchedAnswer,
+  unmatchedAnswerError,
 } from "./received-request.js";
 import {
   gatherAddress,
@@ -227,17 +227,6 @@ const contentInvalid = () => new SendError({ reason: "content-invalid" });
 
 const collectiveFailure = (id: CollectiveId, failure: CollectiveFailure) =>
   new CollectiveError({ id, failure });
-
-/** The refusal of an answer no single request takes, naming the open ids when several are open. */
-const unmatchedFailure = (
-  id: CollectiveId,
-  { kind, openIds }: UnmatchedAnswer,
-) =>
-  new CollectiveError({
-    id,
-    failure: { kind },
-    ...(openIds === undefined ? {} : { openIds }),
-  });
 
 /**
  * Build the collective layer for one active identity.
@@ -921,17 +910,18 @@ function respond(
   response: CollectiveResponse,
 ): Effect.Effect<CollectiveSendOutcome, OperationRefusal> {
   return Effect.gen(function* () {
-    const { id: named, ...answer } = response;
-    const { id, request } = yield* openRequest(state, to, named);
+    const { id, request } = yield* openRequest(state, to, response);
     const refused = refusedAs<SendError | CollectiveError>(id, request.to);
-    const value: ResponseValue = { kind: "response", id, ...answer };
+    const value: ResponseValue = { ...response, kind: "response", id };
     const content = yield* responseContent(request, value).pipe(
       Effect.mapError(refused),
     );
     const { certified, guidance } = yield* bindAuthoredPost(
       state,
       { to: request.to, content },
-      claimRequest(state, id, request, named).pipe(Effect.mapError(refused)),
+      claimRequest(state, id, request, response).pipe(
+        Effect.mapError(refused),
+      ),
     ).pipe(
       Effect.catchTag("SendError", (error) => Effect.fail(refused(error))),
     );
@@ -977,14 +967,13 @@ function bindAuthoredPost<E>(
 }
 
 /**
- * The request an answer answers in the conversation `to` names: the one with
- * id `named`, or without it the one request open there. A refusal names an
- * id minted for it, since no request is answered.
+ * The request `response` answers in the conversation `to` names. A refusal
+ * names an id minted for it, since no request is answered.
  */
 function openRequest(
   state: CollectiveState,
   to: MessageAddressInput,
-  named: CollectiveId | undefined,
+  response: CollectiveResponse,
 ): Effect.Effect<
   OpenRequest<ReceivedRequest>,
   RefusedSend<SendError | CollectiveError>
@@ -996,12 +985,12 @@ function openRequest(
     const { address } = yield* canonicalMessageAddress(to, self).pipe(
       Effect.mapError(refusedAs<SendError | CollectiveError>(id, to)),
     );
-    return yield* matchOpenRequest(state.requests, address, now, named).pipe(
+    return yield* matchOpenRequest(state.requests, address, now, response).pipe(
       Effect.mapError((unmatched) =>
         refusedAs<SendError | CollectiveError>(
           id,
           address,
-        )(unmatchedFailure(id, unmatched)),
+        )(unmatchedAnswerError(id, unmatched)),
       ),
     );
   });
@@ -1041,13 +1030,16 @@ function claimRequest(
   state: CollectiveState,
   id: CollectiveId,
   request: ReceivedRequest,
-  named: CollectiveId | undefined,
+  response: CollectiveResponse,
 ): BindHold<CollectiveError> {
   return Clock.currentTimeMillis.pipe(
     Effect.flatMap((now) =>
       Effect.suspend(() =>
-        Either.match(matchOpenRequest(state.requests, request.to, now, named), {
-          onLeft: (unmatched) => Effect.fail(unmatchedFailure(id, unmatched)),
+        Either.match(
+          matchOpenRequest(state.requests, request.to, now, response),
+          {
+            onLeft: (unmatched) =>
+              Effect.fail(unmatchedAnswerError(id, unmatched)),
           onRight: (matched) => {
             if (matched.id !== id) {
               return Effect.fail(

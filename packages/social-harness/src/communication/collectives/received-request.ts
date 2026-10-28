@@ -15,6 +15,7 @@ import type { AgentAddress, MessageAddressInput } from "../records/values.js";
 import type { CertifiedPost } from "./ports.js";
 import type { SharedAnswers } from "./shared-answers.js";
 import {
+  CollectiveError,
   type CollectiveFailure,
   type CollectiveId,
   MAXIMUM_DEADLINE_SECONDS,
@@ -56,7 +57,7 @@ export interface OpenRequest<Request extends RequestStatus> {
  * Why no single request takes an answer, with each open request's id when
  * the answer named none and several are open.
  */
-export interface UnmatchedAnswer {
+interface UnmatchedAnswer {
   readonly kind: Extract<
     CollectiveFailure["kind"],
     `request-${"none" | "ambiguous" | "answered" | "expired"}`
@@ -117,12 +118,12 @@ const RECEIVED_DEADLINE_HORIZON = Duration.toMillis(
 
 /**
  * Find the request an answer answers, open in its conversation: received,
- * not yet answered, and before its deadline and close. With `named`, that is
- * the request with that id; without it, the one request open there.
+ * not yet answered, and before its deadline and close. An answer with `id`
+ * answers the request with that id; one without, the one request open there.
  * @param requests Every request this endpoint holds, by id.
  * @param conversation The canonical address the answer is sent to.
  * @param now The current time in epoch milliseconds.
- * @param named The id of the request the answer names, if it names one.
+ * @param answer The answer, by the request id it names, if any.
  * @returns The open request, or why none takes the answer: several are open,
  *   one was already answered, none was received, or each has expired.
  */
@@ -130,64 +131,28 @@ export const matchOpenRequest = <Request extends RequestStatus>(
   requests: ReadonlyMap<CollectiveId, Request>,
   conversation: MessageAddressInput,
   now: number,
-  named?: CollectiveId,
-): Either.Either<OpenRequest<Request>, UnmatchedAnswer> => {
-  if (named !== undefined) {
-    return matchNamedRequest(requests, conversation, now, named);
-  }
-  const asked = [...requests]
-    .filter(
-      ([, request]) =>
-        request.to === conversation && requestShown(request.state),
-    )
-    .map(([id, request]) => ({
-      id,
-      request,
-      unavailable: requestUnavailable(request, now),
-    }));
-  const open = asked.filter(({ unavailable }) => unavailable === undefined);
-  const [only] = open;
-  if (only !== undefined && open.length === 1) {
-    return Either.right({ id: only.id, request: only.request });
-  }
-  if (open.length > 1) {
-    return Either.left({
-      kind: "request-ambiguous",
-      openIds: open.map(({ id }) => id),
-    });
-  }
-  if (asked.some(({ unavailable }) => unavailable === "request-answered")) {
-    return Either.left({ kind: "request-answered" });
-  }
-  return Either.left({
-    kind: asked.length === 0 ? "request-none" : "request-expired",
-  });
-};
+  answer: { readonly id?: CollectiveId },
+): Either.Either<OpenRequest<Request>, UnmatchedAnswer> =>
+  answer.id === undefined
+    ? onlyOpenRequest(requests, conversation, now)
+    : namedRequest(requests, conversation, now, answer.id);
 
 /**
- * The request with id `named`, when the runtime was shown it in
- * `conversation` and it is still open; otherwise why it takes no answer, as
- * `request-none` when no such request arrived there.
+ * The refusal of an answer no request takes; it names the open requests' ids
+ * when the answer named none and several are open.
+ * @param id The id minted for the refusal.
+ * @param unmatched Why no request takes the answer.
+ * @returns The error the answer fails with.
  */
-function matchNamedRequest<Request extends RequestStatus>(
-  requests: ReadonlyMap<CollectiveId, Request>,
-  conversation: MessageAddressInput,
-  now: number,
-  named: CollectiveId,
-): Either.Either<OpenRequest<Request>, UnmatchedAnswer> {
-  const request = requests.get(named);
-  if (
-    request === undefined ||
-    request.to !== conversation ||
-    !requestShown(request.state)
-  ) {
-    return Either.left({ kind: "request-none" });
-  }
-  const unavailable = requestUnavailable(request, now);
-  return unavailable === undefined
-    ? Either.right({ id: named, request })
-    : Either.left({ kind: unavailable });
-}
+export const unmatchedAnswerError = (
+  id: CollectiveId,
+  { kind, openIds }: UnmatchedAnswer,
+) =>
+  new CollectiveError({
+    id,
+    failure: { kind },
+    ...(openIds === undefined ? {} : { openIds }),
+  });
 
 /**
  * Why a request the runtime was shown no longer takes an answer, or
@@ -337,4 +302,64 @@ function retainedUntil(
     request.deadlineAt +
     (request.kind === "all_gather" ? Duration.toMillis(CLOSE_WAIT) : 0)
   );
+}
+
+/** The one request open in `conversation`, or why no single request is. */
+function onlyOpenRequest<Request extends RequestStatus>(
+  requests: ReadonlyMap<CollectiveId, Request>,
+  conversation: MessageAddressInput,
+  now: number,
+): Either.Either<OpenRequest<Request>, UnmatchedAnswer> {
+  const asked = [...requests]
+    .filter(
+      ([, request]) =>
+        request.to === conversation && requestShown(request.state),
+    )
+    .map(([id, request]) => ({
+      id,
+      request,
+      unavailable: requestUnavailable(request, now),
+    }));
+  const open = asked.filter(({ unavailable }) => unavailable === undefined);
+  const [only] = open;
+  if (only !== undefined && open.length === 1) {
+    return Either.right({ id: only.id, request: only.request });
+  }
+  if (open.length > 1) {
+    return Either.left({
+      kind: "request-ambiguous",
+      openIds: open.map(({ id }) => id),
+    });
+  }
+  if (asked.some(({ unavailable }) => unavailable === "request-answered")) {
+    return Either.left({ kind: "request-answered" });
+  }
+  return Either.left({
+    kind: asked.length === 0 ? "request-none" : "request-expired",
+  });
+}
+
+/**
+ * The request with id `named`, when the runtime was shown it in
+ * `conversation` and it is still open; otherwise why it takes no answer, as
+ * `request-none` when no such request arrived there.
+ */
+function namedRequest<Request extends RequestStatus>(
+  requests: ReadonlyMap<CollectiveId, Request>,
+  conversation: MessageAddressInput,
+  now: number,
+  named: CollectiveId,
+): Either.Either<OpenRequest<Request>, UnmatchedAnswer> {
+  const request = requests.get(named);
+  if (
+    request === undefined ||
+    request.to !== conversation ||
+    !requestShown(request.state)
+  ) {
+    return Either.left({ kind: "request-none" });
+  }
+  const unavailable = requestUnavailable(request, now);
+  return unavailable === undefined
+    ? Either.right({ id: named, request })
+    : Either.left({ kind: unavailable });
 }

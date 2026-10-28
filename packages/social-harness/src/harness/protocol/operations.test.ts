@@ -43,8 +43,8 @@ const collectiveId = Schema.decodeUnknownSync(CollectiveId)(
   `col_${"A".repeat(43)}`,
 );
 const openIds = [
-  Schema.decodeUnknownSync(CollectiveId)(`col_${"B".repeat(43)}`),
-  Schema.decodeUnknownSync(CollectiveId)(`col_${"C".repeat(43)}`),
+  Schema.decodeUnknownSync(CollectiveId)(`col_${"B".repeat(42)}A`),
+  Schema.decodeUnknownSync(CollectiveId)(`col_${"C".repeat(42)}A`),
 ];
 
 function decodesExactOperationRequests(): void {

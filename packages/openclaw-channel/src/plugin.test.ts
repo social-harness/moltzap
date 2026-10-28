@@ -745,9 +745,9 @@ function rendersCollectiveRequest() {
       From: "agent:alice",
       MessageSid: postId(4),
     });
-    expect(call.ctx.Body).toContain("Question: Which day?");
+    expect(call.ctx.Body).toContain(COLLECTIVE_REQUEST.question);
     expect(call.ctx.Body).toContain(`"id":"${COLLECTIVE_ID}"`);
-    expect(call.ctx.Body).toContain("reply action or send to agent:alice.");
+    expect(call.ctx.Body).toContain(`send to ${COLLECTIVE_REQUEST.from}.`);
   });
 }
 
