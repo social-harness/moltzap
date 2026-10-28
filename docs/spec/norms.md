@@ -88,8 +88,10 @@ Adding a norm is an owner edit. `policy_update` is owner authority, so the
 added norm is an editable owner rule like any other, and the edit appears in
 the owner decisions feed's activations. An agent that holds `policy_update` can
 also remove the owner's editable rules. Owner rules that must bind such an
-agent belong in `fixedRules` or `fixedBehaviors`, which `policy_update`
-refuses to change.
+agent belong in `fixedRules`, `fixedBehaviors` or `builtinBehaviors`, which
+`policy_update` refuses to change. The built-in
+[`policy/no-policy-changes`](./harness/message-policy.md#built-in-behaviors)
+behavior refuses a peer's request that the agent change its rules.
 
 ## What is enforced
 

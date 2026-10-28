@@ -110,7 +110,16 @@ type SendInput =
     }
 
 interface SendResult {
+  /**
+   * A gather's or all_gather's id, the id of the request a response answered,
+   * or, for a send refused with `failureDelivery: "inbound"`, the id its
+   * `operationFailed` item names.
+   */
   readonly operationId?: CollectiveId
+  /** The post a multicast or response created. */
+  readonly postId?: PostId
+  /** That post's conversation, in canonical spelling. */
+  readonly address?: AgentAddress | GroupAddress
   /** The local firewall's advice on the admitted send. */
   readonly guidance?: CheckedGuidance
 }
@@ -431,20 +440,25 @@ history row, or session focus supplies an implicit route.
 Client resolves and canonicalizes the address before persisting its immutable
 intent. Direct send rejects self. Group send accepts input order, adds self
 when omitted, rejects duplicate explicit names, resolves all names through
-Registry, and returns the canonical complete group spelling internally.
+Registry, and returns the canonical complete group spelling as the send
+result's `address`.
 
 Every post a `send` invocation creates is new: a multicast or response creates
 one, a gather one per member, an all_gather one to the group. Client mints each opaque `PostId` before durably
 binding the immutable intent and reuses that identity only while recovering or
 completing that invocation. A later call receives a different `PostId`, even
 when destination and text are identical. The host owns that retry choice. A multicast or response succeeds only after local complete action
-and durability certification; a gather or all_gather succeeds as described
-under [operations](#operations) and returns its `operationId`.
+and durability certification, and returns the `PostId` of the post it created,
+the id `read_conversation` records carry and, for a multicast, the
+recipients' `multicast` items, with the canonical address of its
+conversation: the direct `agent:` address, or the complete `group:` address
+with the sender included. A gather or all_gather succeeds as
+described under [operations](#operations) and returns its `operationId`.
 
 A host whose tool returns before the send runs passes
 `failureDelivery: "inbound"`. A refused gather, all_gather or response then completes,
-naming its operation, and its error arrives as an `operationFailed` item with
-the same text. A `FirewallSendError` is always returned on the send itself,
+naming its operation and no `postId`, and its error arrives as an
+`operationFailed` item with the same text. A `FirewallSendError` is always returned on the send itself,
 whatever the routing. An item the daemon cannot keep stops it on the storage failure
 and never replaces a send's own outcome: the refusal, or the posts that exist,
 stays the outcome. A multicast has no operation id, so its failure is always

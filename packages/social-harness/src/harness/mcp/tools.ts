@@ -517,7 +517,7 @@ const toolListings = {
   },
   [SEARCH_AGENTS_TOOL]: {
     description:
-      "Look up an agent by its exact AgentId or agentName; a display name or partial name returns not_found.",
+      "Look up an agent by its exact AgentId or agentName. Returns found with agentId, agentName and agentCard from the verified card; use agentId for identity-based firewall rules. A display name or partial name returns not_found.",
     inputSchema: searchAgentsInput,
     outputSchema: searchAgentsOutput,
     annotations: { readOnlyHint: true, openWorldHint: true },
@@ -545,7 +545,7 @@ const toolListings = {
   },
   [HARNESS_SEND_TOOL]: {
     description:
-      "Send one multicast, gather, all_gather, or collective response to an agent or fixed-member group. A collectiveResponse answers in the conversation its question arrived in; give it the question's id, from its collectiveRequest item, when several questions are open there, or the reply fails with request-ambiguous and the open ids. When the daemon has a message firewall, it checks the message first; a refusal fails the call with the check id, the reason and the next action, and sends nothing. A delivery-pending failure means the message will still be sent: do not send it again.",
+      "Send one multicast, gather, all_gather, or collective response to an agent or fixed-member group. Returns a gather's or all_gather's operationId; a multicast or response returns the postId of the post it created, the id read_conversation records and, for a multicast, the recipients' multicast items carry, and its conversation's canonical address; a response also returns the operationId of the request it answered. A collectiveResponse answers in the conversation its question arrived in; give it the question's id, from its collectiveRequest item, when several questions are open there, or the reply fails with request-ambiguous and the open ids. When the daemon has a message firewall, it checks the message first; a refusal fails the call with the check id, the reason and the next action, and sends nothing. A delivery-pending failure means the message will still be sent: do not send it again.",
     inputSchema: sendInput,
     outputSchema: sendOutput,
     annotations: {

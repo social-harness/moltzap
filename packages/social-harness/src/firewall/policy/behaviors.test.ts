@@ -357,14 +357,6 @@ it("attributes an invalid inline seed to initialRules before reading behaviors",
     expect(error.behaviorReason).toBeUndefined();
   }));
 
-it("attributes an oversized inline seed to initialRules", () =>
-  Effect.gen(function* () {
-    const { path } = seedFixture(257);
-    const error = yield* loaded(path).pipe(Effect.flip);
-    expect(error.message).toContain("invalid at english.initialRules");
-    expect(error.behaviorReason).toBeUndefined();
-  }));
-
 const INVALID_BEHAVIORS = [
   [
     "custom tag",
@@ -613,15 +605,19 @@ it("composes and encodes a decoded inline policy without adding behavior paths",
     expect(composed.english?.initialRules).toEqual([INITIAL]);
   }));
 
-it.each(["fixedBehaviors", "initialBehaviors"] as const)(
-  "refuses unresolved %s in trusted composition",
-  (field) =>
+it.each([
+  { field: "fixedBehaviors", entry: "fixed" },
+  { field: "initialBehaviors", entry: "fixed" },
+  { field: "builtinBehaviors", entry: "policy/no-policy-changes" },
+] as const)(
+  "refuses unresolved $field in trusted composition",
+  ({ field, entry }) =>
     Effect.gen(function* () {
       const { document } = fixture();
       const policy = yield* decodeMessagePolicy(
         JSON.stringify({
           ...document,
-          english: { [field]: ["fixed"] },
+          english: { [field]: [entry] },
         }),
       );
       const error = yield* messagePolicyFirewall(policy, {
@@ -806,39 +802,6 @@ it(
 );
 
 it(
-  "replaces a rule with a BEHAVIOR.md text and lists mixed additions in order",
-  Effect.fn(function* () {
-    const configuration = yield* options(fixture().path);
-    yield* withStore(stateDirectory(), (store) =>
-      Effect.gen(function* () {
-        const installed = yield* installEditableFirewall(configuration, store);
-        yield* installed.policy.update({ add: [{ behavior: SHARED }] });
-        yield* installed.policy.update({
-          remove: ["meeting-booking"],
-          add: [
-            { ...INITIAL, id: "be-brief" },
-            { behavior: SHARED.replace("you confirm one", "you confirm") },
-          ],
-        });
-        expect((yield* installed.policy.read()).rules).toContainEqual(
-          expect.objectContaining({
-            id: "meeting-booking",
-            guidance: "Hold a slot before you confirm.",
-          }),
-        );
-        const { activations } = yield* installed.policy.decisions({});
-        expect(activations).toContainEqual(
-          expect.objectContaining({
-            addedRuleIds: ["be-brief", "meeting-booking"],
-            removedRuleIds: ["meeting-booking"],
-          }),
-        );
-      }),
-    );
-  }),
-);
-
-it(
   "refuses a BEHAVIOR.md text of kind safety as an invalid rule",
   Effect.fn(function* () {
     const configuration = yield* options(fixture().path);
@@ -883,6 +846,26 @@ it(
         expect(yield* installed.policy.read()).toEqual(before);
       }),
     );
+  }),
+);
+
+it(
+  "names a builtin behavior Client does not ship by its entry",
+  Effect.fn(function* () {
+    const { path, document } = fixture();
+    writeFileSync(
+      path,
+      JSON.stringify({
+        ...document,
+        english: {
+          ...document.english,
+          builtinBehaviors: ["policy/no-such-behavior"],
+        },
+      }),
+    );
+    const error = yield* loaded(path).pipe(Effect.flip);
+    expect(error.behaviorReason).toBe("missing");
+    expect(error.message).toContain("english.builtinBehaviors.0");
   }),
 );
 

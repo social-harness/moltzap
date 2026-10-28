@@ -10,6 +10,7 @@ import {
   directPost,
   makeLayer,
   newObserved,
+  postId,
   questionText,
   requestId,
   requestPost,
@@ -77,6 +78,25 @@ function postsAValidAnswerToTheRequesterSDirectConversation() {
         ],
       },
     ]);
+  });
+}
+
+function returnsTheAnswerSPostAndTheRequestItAnswered() {
+  const observed = newObserved();
+
+  return Effect.gen(function* () {
+    const layer = yield* makeLayer(observed);
+    yield* classifyPost(layer, requestPost("agent:bob", 60_000));
+    const sent = yield* send(layer, {
+      to: "agent:bob",
+      collectiveResponse: { action: "decline" },
+    });
+
+    expect(sent).toMatchObject({
+      operationId: requestId,
+      postId: postId(101),
+      address: "agent:bob",
+    });
   });
 }
 
@@ -203,6 +223,11 @@ describe("collective responses", () => {
   it(
     "posts a valid answer to the request open in the requester's direct conversation",
     postsAValidAnswerToTheRequesterSDirectConversation,
+  );
+
+  it(
+    "returns the answer's post, its conversation and the request it answered",
+    returnsTheAnswerSPostAndTheRequestItAnswered,
   );
 
   it(

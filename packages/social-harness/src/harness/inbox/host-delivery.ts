@@ -165,8 +165,10 @@ const sendDecoded = (input: DeliveryContext, request: HarnessSendRequest) =>
               ...(operationId === undefined ? {} : { operationId }),
             }),
         }),
-        Effect.map(({ operationId, guidance }) => ({
+        Effect.map(({ operationId, postId, address, guidance }) => ({
           ...(operationId === undefined ? {} : { operationId }),
+          ...(postId === undefined ? {} : { postId }),
+          ...(address === undefined ? {} : { address }),
           ...(guidance === undefined ? {} : { guidance }),
         })),
       );

@@ -11,7 +11,11 @@
 import { Duration, Either, Option } from "effect";
 import type { InboundMessage } from "../conversations/message.js";
 import type { PostId, RecordHash } from "../records/index.js";
-import type { AgentAddress, MessageAddressInput } from "../records/values.js";
+import type {
+  AgentAddress,
+  GroupAddress,
+  MessageAddressInput,
+} from "../records/values.js";
 import type { CertifiedPost } from "./ports.js";
 import type { SharedAnswers } from "./shared-answers.js";
 import {
@@ -28,15 +32,16 @@ import {
 import { questionText } from "./render.js";
 
 /**
- * What matching reads of a received request: `to` is the conversation it
- * arrived in. `sending` holds the one answer in flight, so a member answers
- * at most once; an all_gather request becomes `closed` at its close. With a
- * firewall installed a request starts `unadmitted` and becomes `open` once
- * the runtime is shown it, or `withheld` when it is not; matching passes
- * over both, as though the request had not arrived.
+ * What matching reads of a received request: `to` is the canonical address
+ * of the conversation it arrived in. `sending` holds the one answer in
+ * flight, so a member answers at most once; an all_gather request becomes
+ * `closed` at its close. With a firewall installed a request starts
+ * `unadmitted` and becomes `open` once the runtime is shown it, or `withheld`
+ * when it is not; matching passes over both, as though the request had not
+ * arrived.
  */
 export interface RequestStatus {
-  readonly to: MessageAddressInput;
+  readonly to: AgentAddress | GroupAddress;
   readonly deadlineAt: number;
   readonly state:
     | "unadmitted"
