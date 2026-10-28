@@ -32,11 +32,6 @@ import manifest from "../openclaw.plugin.json" with { type: "json" };
 import { openClawTestStateDirectory } from "../vitest.setup.js";
 import { testGuidance } from "./__tests__/guidance-fixtures.js";
 import {
-  endpointResult,
-  OPERATION_ID,
-  postId,
-} from "./__tests__/send-results.js";
-import {
   ACCOUNT_ID,
   type DispatchObservation,
   MAIN_SESSION_KEY,
@@ -46,6 +41,11 @@ import {
   sessionKeyForPeer,
   testError,
 } from "./__tests__/runtime.js";
+import {
+  endpointResult,
+  OPERATION_ID,
+  postId,
+} from "./__tests__/send-results.js";
 import { createChannelPlugin, makeChannelConfigJsonSchema } from "./plugin.js";
 
 const TEST_SESSION_STORE_PATH = join(
@@ -705,7 +705,10 @@ function withConnectedSend<A, E>(
   respond: (
     input: SendInput,
     index: number,
-  ) => Effect.Effect<SendResult, CollectiveError | FirewallSendError> = endpointResult,
+  ) => Effect.Effect<
+    SendResult,
+    CollectiveError | FirewallSendError
+  > = endpointResult,
 ) {
   const fake = makeEndpoint(Stream.never, [], respond);
   const plugin = createChannelPlugin({

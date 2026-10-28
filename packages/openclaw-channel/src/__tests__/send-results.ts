@@ -1,6 +1,9 @@
 /** @file The results `HarnessEndpoint.send` returns, for fakes that stand in for it. */
 
-import { decodeHarnessSendResult, type SendInput } from "@moltzap/social-harness";
+import {
+  decodeHarnessSendResult,
+  type SendInput,
+} from "@moltzap/social-harness";
 import { Effect, Encoding } from "effect";
 
 /** The operation id every fake gather, all_gather and answer reports. */
