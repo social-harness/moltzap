@@ -3,7 +3,10 @@
 import type { Message, MessageContext } from "../evaluator/index.js";
 import { type CodeRule, revisionOutcome } from "./outcome.js";
 
-/** A request is refused while the agent's earlier request in this conversation is still open. */
+/**
+ * A request is refused while the agent's earlier request in this
+ * conversation is still open.
+ */
 export const oneOpenRequest: CodeRule = {
   description: {
     id: "one-open-request",

@@ -6,7 +6,10 @@
 
 import { type CodeRule, revisionOutcome } from "./outcome.js";
 
-/** Words that thank or acknowledge receipt; a message needs one to count as an acknowledgement. */
+/**
+ * Words that thank or acknowledge receipt; a message needs one to count as an
+ * acknowledgement.
+ */
 const ACKNOWLEDGEMENT_WORDS: ReadonlySet<string> = new Set([
   "ack",
   "acknowledged",

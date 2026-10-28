@@ -51,7 +51,10 @@ const INCOMING_BEHAVIORS: readonly string[] = [
   ...OUTGOING_BEHAVIORS,
 ];
 
-/** A code rule of the bundle, whose assessment may also read the agent's facilitator role. */
+/**
+ * A code rule of the bundle, whose assessment may also read the agent's
+ * facilitator role.
+ */
 interface BundleRule extends Omit<CodeRule, "assess"> {
   readonly assess: (
     message: Message,
@@ -171,10 +174,11 @@ export const collectiveNorms = Effect.fn("collectiveNorms")(function* (
 
 /**
  * Every rule of the bundle in each direction, with its full text or code
- * rule statement, and the Client release, which can change how the decision provider's answers compose
- * without changing the question edition. The facilitator role is an input to
- * the code rules' assessment, not part of the edition. A change to how a code
- * rule assesses that these fields do not show bumps `edition`.
+ * rule statement, and the Client release, which can change how the decision
+ * provider's answers compose without changing the question edition. The
+ * facilitator role is an input to the code rules' assessment, not part of
+ * the edition. A change to how a code rule assesses that these fields do not
+ * show bumps `edition`.
  * @param incoming The English rules assessed on what the agent receives.
  * @param outgoing The English rules assessed on what the agent sends.
  * @returns The edition the revision and provenance record.

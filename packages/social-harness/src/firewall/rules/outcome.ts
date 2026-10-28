@@ -1,4 +1,7 @@
-/** @file The code rule shape, finding and revision helpers the built-ins and the collective norm bundle share. */
+/**
+ * @file The code rule shape, finding and revision helpers the built-ins and
+ * the collective norm bundle share.
+ */
 
 import { createHash } from "node:crypto";
 import type {
