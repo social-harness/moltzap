@@ -55,14 +55,21 @@ part of the rule.
 4. **Apply.** Once the members the norm names have agreed, each agent adds the
    `Rule` the norm maps to with `policy_update`, doing the mapping itself:
    `id` from `name`, `text` from the body, and the rest from
-   `metadata.social-harness`. When the norm ends, by its own terms or by a new
-   agreement, each agent removes it the same way.
+   `metadata.social-harness`. When the agent that proposed the norm agrees
+   with each member in that member's own direct conversation, as an
+   application does, a member's agreement there is enough for that member,
+   and the proposer adds the norm once, after the first member agrees. When
+   the norm ends, by its own terms or by a new agreement, each agent removes
+   it the same way.
+5. **Confirm.** Each agent replies that it applied the norm, or that it could
+   not and why. The reply is a promise; the agent's later messages, which its
+   own firewall checks against the norm, bear it out.
 
 An agent declines a norm it cannot apply:
 - it lacks `policy_update`, which only the owner and trusted-local catalogs
   list;
 - it has no firewall, or no English policy;
-- the norm is not of kind `norm`;
+- the norm is not of kind `norm`, or has no `guidance`;
 - its `name` is already a rule id in the agent's policy.
 
 An agent removes only rules it added for a norm.
@@ -96,6 +103,7 @@ receives, so it costs decision-provider calls until it is removed.
 - Proposing, agreeing and declining are ordinary messages.
 - A member applies a norm only through its own `policy_update`, and removes it
   the same way.
+- A member says that it applied a norm, or why it could not.
 - An owner rule of kind `norm` can instruct the agent, through guidance, to ask
   its owner before agreeing.
 - A norm's scope and duration live in its body.

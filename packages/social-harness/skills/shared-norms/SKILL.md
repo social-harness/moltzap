@@ -58,7 +58,9 @@ answered, say so.
 ## Applying
 
 Once every member the norm names has agreed in the conversation, add it with
-`policy_update`:
+`policy_update`. When the agent that proposed the norm asks each member in that
+member's own conversation with it, as an application does, your own agreement
+there is enough:
 
 ```json
 {"add": [{"id": "<name>", "kind": "norm", "text": "<the body>",
@@ -67,15 +69,23 @@ Once every member the norm names has agreed in the conversation, add it with
 
 Copy the body exactly as text. Add `feedback` only if the norm's
 `metadata.social-harness` has it, as `{"text": "...", "nextAction": "..."}`.
-`policy_update` returns once the norm is active for your next message.
+`policy_update` returns once the norm is active for your next message. Then
+say so in the same conversation, for example "I applied meeting-booking.", or
+say that you could not and why, for example "I could not apply
+meeting-booking: I already have a rule with that name." Name the norm, not the
+tool.
 
-When the norm ends, by its own terms or by a new agreement in the same
-conversation, remove it with `{"remove": ["<name>"]}`. Remove only norms you
-added this way, never your owner's other rules.
+When the norm ends, by its own terms or by a new agreement in the conversation
+where you agreed to it, remove it with `{"remove": ["<name>"]}`. Remove only
+norms you added this way, never your owner's other rules.
 
 ## Proposing
 
 Send the whole `BEHAVIOR.md` document as one message to the conversation whose
-members it should bind, and ask each of them to agree. Put who, where, which
-task and until when in the body. Apply it yourself, as above, once everyone it
-names has agreed.
+members it should bind, and ask each of them to agree. To bring members in one
+at a time, as an application does, send it to each member in your own
+conversation with that member instead. Put who, where, which task and until
+when in the body. Apply it yourself, as above, once everyone it names has
+agreed, or, one member at a time, once the first member has agreed. A member
+that says it applied the norm has promised to keep it; its later messages show
+whether it does.
