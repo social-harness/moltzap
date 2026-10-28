@@ -8,6 +8,16 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect } from "vitest";
+import {
+  stateDirectory,
+  withStore,
+} from "../__tests__/store-schema-fixtures.js";
+import {
+  firewallInstallation,
+  installEditableFirewall,
+  policyInstallationError,
+} from "../firewall/policy/index.js";
+import { readCredential } from "./credentials.js";
 import { Daemon } from "./index.js";
 
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- Exact environment names and closed reasons are the configuration contract under test. */
@@ -98,6 +108,29 @@ it("names the policy file when its rules cannot be installed", () =>
     expect(error.message).toContain("could not be installed");
   }));
 
+it("names stored English rules when the policy file drops its english block", () =>
+  Effect.gen(function* () {
+    const withEnglish = file({
+      ...UNAVAILABLE_DOCUMENT,
+      english: {
+        initialRules: [
+          {
+            id: "owner.weekday-meetings",
+            kind: "norm",
+            text: "Propose meetings only on weekdays.",
+            guidance: "Offer a weekday time instead.",
+          },
+        ],
+      },
+    });
+    const withoutEnglish = file({ format: FORMAT, mode: "guidance" });
+    const error = yield* reinstall(withEnglish, withoutEnglish);
+    const startup = policyInstallationError(error);
+    expect(error.reason).toBe("not-configured");
+    expect(startup.message).toContain("holds English rules");
+    expect(startup.message).toContain("message-firewall#stored-english-rules");
+  }));
+
 it("refuses a policy file beside a composition's own firewall", () =>
   Effect.gen(function* () {
     const error = yield* Layer.build(
@@ -138,6 +171,30 @@ it.each([
     expect(Daemon.help).toContain(name);
   }),
 );
+
+/**
+ * Installs the policy at `first`, then the policy at `second` against the same
+ * store, as a restart with a changed policy file does, and answers the second
+ * installation's failure.
+ */
+function reinstall(first: string, second: string) {
+  return withStore(stateDirectory(), (store) =>
+    Effect.gen(function* () {
+      yield* installEditableFirewall(yield* installation(first), store);
+      return yield* installEditableFirewall(
+        yield* installation(second),
+        store,
+      ).pipe(Effect.flip);
+    }),
+  );
+}
+
+/** The firewall options the daemon installs from the policy file at `path`. */
+function installation(path: string) {
+  return firewallInstallation({ messagePolicyFile: path }, readCredential).pipe(
+    Effect.flatMap((installed) => Effect.fromNullable(installed.options)),
+  );
+}
 
 /** A file holding `content`, JSON-encoded unless it is already text. */
 function file(content: unknown): string {

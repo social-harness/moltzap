@@ -125,10 +125,19 @@ The file is unreadable or invalid. The error lists the path of each invalid
 property, such as `mode`. The file accepts only the properties the format
 names, so check spelling against the specification's property table.
 
-If the error ends `its rules could not be installed (not-configured)`, the
-state directory holds English rules from an earlier policy, but the file no
-longer configures `english`. Restore the `english` block, or start the daemon
-with a fresh state directory.
+<a id="stored-english-rules" />
+
+### `SHARNESS_MESSAGE_POLICY_FILE configures no English policy, but the state directory holds English rules`
+
+The daemon stored the earlier policy's `initialRules`, and any rules added
+later with `policy_update`, such as norms the agent agreed to, in its state
+directory, and cannot install them without an English policy. Put an `english`
+block and a decision provider back, then restart the daemon;
+`{"kind": "unavailable"}` is enough for this. To drop the rules instead, list
+the ids in `policy_read`'s `rules`, remove them with `policy_update`
+`{"remove": ["<id>"]}`, then remove the block and restart again. A fresh state
+directory would also clear them, but it deletes the agent's conversations, and
+the agent then needs a new key and a new name.
 
 <a id="decision-provider-key-file" />
 
