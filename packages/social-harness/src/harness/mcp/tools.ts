@@ -14,6 +14,7 @@ import {
   type ToolAnnotations,
 } from "@modelcontextprotocol/server";
 import {
+  Array,
   Cause,
   Effect,
   Either,
@@ -22,6 +23,7 @@ import {
   Layer,
   Option,
   type ParseResult,
+  Predicate,
   type Runtime,
   Schema,
   Scope,
@@ -183,6 +185,40 @@ const makeStandardSchema = <Value>(jsonSchema: unknown) =>
 const makeJsonSchema = <A, I>(schema: Schema.Schema<A, I>) =>
   JSONSchema.make(schema, { target: "jsonSchema2020-12" });
 
+/** The same JSON Schema with every object open to properties it does not name. */
+function openObjects(jsonSchema: unknown): unknown {
+  if (Array.isArray(jsonSchema)) {
+    return jsonSchema.map((entry) => openObjects(entry));
+  }
+  if (!Predicate.isRecord(jsonSchema)) {
+    return jsonSchema;
+  }
+  return Object.fromEntries(
+    Object.entries(jsonSchema).flatMap(([key, value]) =>
+      key === "additionalProperties" && value === false
+        ? []
+        : [[key, openObjects(value)]],
+    ),
+  );
+}
+
+/**
+ * A tool's result schema. A result may gain fields in any release, so the
+ * JSON Schema a host lists is open at every object, and a host that listed an
+ * older daemon's tools still accepts a newer daemon's results. The daemon
+ * checks each result it returns against the exact schema.
+ */
+const makeResultSchema = <Value>(jsonSchema: unknown) => {
+  const exact = makeStandardSchema<Value>(jsonSchema);
+  const listed = makeStandardSchema<Value>(openObjects(jsonSchema));
+  return {
+    "~standard": {
+      ...exact["~standard"],
+      jsonSchema: listed["~standard"].jsonSchema,
+    },
+  };
+};
+
 const emptyRequestSchema = Schema.Record({
   key: Schema.String,
   value: Schema.Never,
@@ -190,34 +226,34 @@ const emptyRequestSchema = Schema.Record({
 const registerInput = makeStandardSchema<ManagementRegisterRequest>(
   makeJsonSchema(managementRegisterRequestSchema),
 );
-const registerOutput = makeStandardSchema<ManagementRegisterResult>(
+const registerOutput = makeResultSchema<ManagementRegisterResult>(
   makeJsonSchema(managementRegisterResultSchema),
 );
 const emptyInput = makeStandardSchema<Record<string, never>>(
   makeJsonSchema(emptyRequestSchema),
 );
-const statusOutput = makeStandardSchema<ManagementStatusResult>(
+const statusOutput = makeResultSchema<ManagementStatusResult>(
   makeJsonSchema(managementStatusResultSchema),
 );
-const policyReadOutput = makeStandardSchema<typeof policyReadSchema.Type>(
+const policyReadOutput = makeResultSchema<typeof policyReadSchema.Type>(
   makeJsonSchema(policyReadSchema),
 );
 const policyUpdateInput = makeStandardSchema<typeof policyUpdateSchema.Type>(
   makeJsonSchema(policyUpdateSchema),
 );
-const policyUpdateOutput = makeStandardSchema<
+const policyUpdateOutput = makeResultSchema<
   typeof policyUpdateResultSchema.Type
 >(makeJsonSchema(policyUpdateResultSchema));
 const decisionsInput = makeStandardSchema<
   typeof firewallDecisionsRequestSchema.Type
 >(makeJsonSchema(firewallDecisionsRequestSchema));
-const decisionsOutput = makeStandardSchema<typeof firewallDecisionsSchema.Type>(
+const decisionsOutput = makeResultSchema<typeof firewallDecisionsSchema.Type>(
   makeJsonSchema(firewallDecisionsSchema),
 );
 const searchAgentsInput = makeStandardSchema<ManagementSearchAgentsRequest>(
   makeJsonSchema(managementSearchAgentsRequestSchema),
 );
-const searchAgentsOutput = makeStandardSchema<ManagementSearchAgentsResult>(
+const searchAgentsOutput = makeResultSchema<ManagementSearchAgentsResult>(
   makeJsonSchema(managementSearchAgentsResultSchema),
 );
 const searchConversationsInput =
@@ -225,7 +261,7 @@ const searchConversationsInput =
     makeJsonSchema(managementSearchConversationsRequestSchema),
   );
 const searchConversationsOutput =
-  makeStandardSchema<ManagementSearchConversationsResult>(
+  makeResultSchema<ManagementSearchConversationsResult>(
     makeJsonSchema(managementSearchConversationsResultSchema),
   );
 const readConversationInput =
@@ -233,7 +269,7 @@ const readConversationInput =
     makeJsonSchema(managementReadConversationRequestSchema),
   );
 const readConversationOutput =
-  makeStandardSchema<ManagementReadConversationResult>(
+  makeResultSchema<ManagementReadConversationResult>(
     makeJsonSchema(managementReadConversationResultSchema),
   );
 const sendInput = makeStandardSchema<HarnessSendArguments>(
@@ -243,22 +279,22 @@ const acknowledgeDeliveryInput =
   makeStandardSchema<HarnessAcknowledgeDeliveryRequest>(
     harnessAcknowledgeDeliveryRequestJsonSchema,
   );
-const emptyOutput = makeStandardSchema<HarnessEmptyResult>(
+const emptyOutput = makeResultSchema<HarnessEmptyResult>(
   harnessEmptyResultJsonSchema,
 );
-const sendOutput = makeStandardSchema<HarnessSendResult>(
+const sendOutput = makeResultSchema<HarnessSendResult>(
   harnessSendResultJsonSchema,
 );
 const readEventInput = makeStandardSchema<typeof readEventRequestSchema.Type>(
   makeJsonSchema(readEventRequestSchema),
 );
-const readEventOutput = makeStandardSchema<typeof readEventResultSchema.Type>(
+const readEventOutput = makeResultSchema<typeof readEventResultSchema.Type>(
   makeJsonSchema(readEventResultSchema),
 );
 const readInboxInput = makeStandardSchema<HarnessReadInboxRequest>(
   harnessReadInboxRequestJsonSchema,
 );
-const readInboxOutput = makeStandardSchema<HarnessReadInboxResult>(
+const readInboxOutput = makeResultSchema<HarnessReadInboxResult>(
   harnessReadInboxResultJsonSchema,
 );
 const {
@@ -496,7 +532,7 @@ const toolListings = {
     description:
       "Inspect the runtime consumer and stalled delivery without exposing callback credentials.",
     inputSchema: emptyInput,
-    outputSchema: makeStandardSchema(webhookStatusJsonSchema),
+    outputSchema: makeResultSchema(webhookStatusJsonSchema),
     annotations: localRead,
   },
   revoke_event_subscription: {

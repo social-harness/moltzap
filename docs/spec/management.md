@@ -51,7 +51,8 @@ The management-only `MessageAddress` is the canonical union of `AgentAddress`
 and `GroupAddress`. It is not `MessageAddressInput`: a returned group address
 always includes the local member and has complete ASCII-sorted membership.
 
-`search_conversations` has these exact closed schemas:
+`search_conversations` has these schemas. The request is exact; the result
+may gain fields, as every [tool result](./harness/daemon.md#mcp-catalog) may:
 
 ```ts
 interface SearchConversationsRequest {
@@ -73,7 +74,9 @@ address follows the returned page; a true value therefore requires a nonempty
 page. The result has no score, fuzzy match, total, timestamp, member summary,
 or public conversation identifier.
 
-`read_conversation` has these exact closed request and result schemas:
+`read_conversation` has these request and result schemas. The request is
+exact; the result may gain fields, as every
+[tool result](./harness/daemon.md#mcp-catalog) may:
 
 ```ts
 type ReadConversationRequest =

@@ -651,6 +651,35 @@ const checksSemanticSendSchema = (client: Client) =>
     }
   });
 
+/** A host that listed this daemon's tools accepts a result carrying a field a later release adds. */
+function listsResultSchemasThatAcceptLaterFields() {
+  return Effect.gen(function* () {
+    const { port } = yield* acquireBoundaryServer({
+      ...operations,
+      protocolActive: () => true,
+    });
+    const client = yield* acquireProtocolClient(port, "listed-result-client");
+    const catalog = yield* Effect.tryPromise(() => client.listTools());
+    const schema = catalog.tools.find(
+      (tool) => tool.name === "send_message",
+    )?.outputSchema;
+    if (schema === undefined) {
+      return yield* Effect.dieMessage("Expected the send result schema");
+    }
+    const validator = fromJsonSchema(
+      // eslint-disable-next-line agent-code-guard/require-assertion-rationale -- The real server emits JSONSchema.make output; the SDK catalog type widens its nested properties to JSON values.
+      schema as JsonSchemaType,
+    );
+    expect(
+      yield* Effect.tryPromise(() =>
+        Promise.resolve(
+          validator["~standard"].validate({ addedLater: { kind: "new" } }),
+        ),
+      ),
+    ).toHaveProperty("value");
+  });
+}
+
 /** Model arguments and malformed metadata must fail before any send reaches execution. */
 function rejectsSendBookkeepingArguments() {
   return Effect.gen(function* () {
@@ -747,6 +776,10 @@ describe("Harness MCP HTTP boundary", () => {
     "rejects bookkeeping in model arguments and validates runtime metadata",
     rejectsSendBookkeepingArguments,
     MCP_TRACE_TIMEOUT_MS,
+  );
+  it(
+    "lists result schemas that accept a field a later release adds",
+    listsResultSchemasThatAcceptLaterFields,
   );
   it(
     "advertises the event descriptor before registration",
