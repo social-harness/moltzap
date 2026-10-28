@@ -4,6 +4,10 @@ import { FileSystem, HttpClient } from "@effect/platform";
 import { NodeFileSystem } from "@effect/platform-node";
 import { scopedLive as it, scoped as itOnTestClock } from "@effect/vitest";
 import {
+  Client,
+  StreamableHTTPClientTransport,
+} from "@modelcontextprotocol/client";
+import {
   type Context,
   Deferred,
   Duration,
@@ -47,6 +51,7 @@ import {
   openEndpointStore,
 } from "../communication/store/index.js";
 import { encodeCanonical } from "../encoding/canonical-json.js";
+import { makeHarnessMcpHttpHandler } from "../harness/mcp/tools.js";
 import {
   managementReadConversationRequestSchema,
   managementRegisterRequestSchema,
@@ -466,28 +471,62 @@ const checksExactAgentLookups = () =>
     const remote = fixture.cards[1];
     const found = {
       kind: "found",
+      agentId: remote.agentId,
+      agentName: remote.agentName,
       agentCard: yield* Schema.encode(AgentCard)(remote),
     };
-
-    expect(
-      yield* operations.searchAgents({ agentName: remote.agentName }),
-    ).toEqual(found);
-    expect(yield* operations.searchAgents({ agentId: remote.agentId })).toEqual(
-      found,
+    const unused = () => Effect.dieMessage("lookup reached another operation");
+    const handler = yield* makeHarnessMcpHttpHandler({
+      implementation: { name: "agent-lookup-test", version: "1" },
+      operations: {
+        ...operations,
+        protocolActive: () => true,
+        readInboxSummary: () =>
+          Effect.succeed({ pendingCount: 0, newestSequence: 0 }),
+        readEvent: unused,
+        readInbox: unused,
+        send: unused,
+        acknowledgeDelivery: unused,
+      },
+    });
+    yield* Effect.addFinalizer(() =>
+      Effect.tryPromise(() => handler.close()).pipe(Effect.orDie),
     );
-    expect(
-      yield* operations.searchAgents(
-        Schema.decodeUnknownSync(managementSearchAgentsRequestSchema)({
-          agentName: "unknown-agent",
+    const client = new Client(
+      { name: "agent-lookup-test", version: "1" },
+      { versionNegotiation: { mode: { pin: "2026-07-28" } } },
+    );
+    yield* Effect.addFinalizer(() =>
+      Effect.tryPromise(() => client.close()).pipe(Effect.orDie),
+    );
+    yield* Effect.tryPromise(() =>
+      client.connect(
+        new StreamableHTTPClientTransport(new URL("http://127.0.0.1/mcp"), {
+          fetch: (url, init) => handler.fetch(new Request(url, init)),
         }),
       ),
-    ).toEqual({ kind: "not_found" });
+    );
+    const lookup = (selector: Readonly<Record<string, string>>) =>
+      Effect.tryPromise(() =>
+        client.callTool({ name: "search_agents", arguments: selector }),
+      );
+
+    expect(yield* lookup({ agentName: remote.agentName })).toMatchObject({
+      structuredContent: found,
+      content: [{ type: "text", text: JSON.stringify(found) }],
+    });
+    expect(yield* lookup({ agentId: remote.agentId })).toMatchObject({
+      structuredContent: found,
+    });
+    expect(yield* lookup({ agentName: "unknown-agent" })).toMatchObject({
+      structuredContent: { kind: "not_found" },
+    });
   });
 
 // @agent-code-guard/regression-only: these cases pin the addressed owner-management contract.
 describe("addressed daemon management", () => {
   it(
-    "returns encoded cards for exact names and ids and not_found for unknown names",
+    "returns verified identity and encoded cards through MCP for exact names and ids and not_found for unknown names",
     checksExactAgentLookups,
   );
 

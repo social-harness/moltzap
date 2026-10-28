@@ -285,7 +285,8 @@ retains the accepted Identity `OperationId` behavior.
 
 After registration, the trusted-local and owner catalogs include:
 
-- `status` and `search_agents`;
+- `status` and `search_agents`, whose [lookup result](../management.md#registration-state)
+  exposes the verified identity beside its encoded card;
 - `search_conversations` and `read_conversation` using canonical addresses;
 - adapter-only `send_message`, which performs one operation or one collective
   response;

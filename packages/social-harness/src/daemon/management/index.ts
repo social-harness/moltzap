@@ -170,7 +170,14 @@ function encodeLookupResult(
     return Effect.succeed(result);
   }
   return encodeAgentCard(result.agentCard).pipe(
-    Effect.map((agentCard) => Object.freeze({ kind: "found", agentCard })),
+    Effect.map((agentCard) =>
+      Object.freeze({
+        kind: "found",
+        agentId: result.agentCard.agentId,
+        agentName: result.agentCard.agentName,
+        agentCard,
+      }),
+    ),
   );
 }
 
