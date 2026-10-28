@@ -9,8 +9,8 @@
  * plain text                                                   multicast
  * {"gather": "Which day?", "deadline": 600, "requestedSchema": {...}}
  * {"all_gather": "Which day?", "deadline": 600, "requestedSchema": {...}}
- * {"action": "accept", "content": {...}}                        answer
- * {"action": "decline"}                                         answer
+ * {"action": "accept", "id": "col_...", "content": {...}}       answer
+ * {"action": "decline", "id": "col_..."}                        answer
  * ```
  *
  * Only a whole text that is a JSON object with a `gather`, `all_gather` or
@@ -24,10 +24,10 @@ import { Data, Either, Option, Predicate, Schema } from "effect";
 import type { MessageAddressInput } from "../records/values.js";
 import { exactStruct } from "../../encoding/exact.js";
 import {
-  AcceptResponse,
+  AcceptAnswer,
   type CollectiveResponse,
   DeadlineSeconds,
-  DeclineResponse,
+  DeclineAnswer,
   describeIssues,
   RequestedSchema,
   SendInput,
@@ -133,8 +133,8 @@ function answer(
     Either.flatMap(
       ({ action }): Either.Either<CollectiveResponse, MessageTextError> =>
         action === "accept"
-          ? decodeText("answer", AcceptResponse, value)
-          : decodeText("answer", DeclineResponse, value),
+          ? decodeText("answer", AcceptAnswer, value)
+          : decodeText("answer", DeclineAnswer, value),
     ),
     Either.flatMap((collectiveResponse) =>
       sendInput("answer", { to, collectiveResponse }),

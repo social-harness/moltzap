@@ -134,13 +134,31 @@ export const DeclineResponse = exactStruct({
   action: Schema.Literal("decline"),
 });
 
+/** The request an answer names: the `col_` id its `collectiveRequest` item carries. */
+const answeredRequest = {
+  id: Schema.optionalWith(CollectiveId, { exact: true }),
+};
+
+/** An `accept` answer as a member sends it. */
+export const AcceptAnswer = exactStruct({
+  ...AcceptResponse.fields,
+  ...answeredRequest,
+});
+
+/** A `decline` answer as a member sends it. */
+export const DeclineAnswer = exactStruct({
+  ...DeclineResponse.fields,
+  ...answeredRequest,
+});
+
 /**
- * A member's answer to the one request open in the conversation it is sent
- * to: the requester's direct conversation for a gather, the group for an
- * all_gather. It is MCP's `ElicitResult`; only `accept` carries content,
- * valid against the request's schema.
+ * A member's answer to a request open in the conversation it is sent to: the
+ * requester's direct conversation for a gather, the group for an all_gather.
+ * `id` names the request; without it the answer goes to the one request open
+ * there. It is MCP's `ElicitResult`; only `accept` carries content, valid
+ * against the request's schema.
  */
-const CollectiveResponse = Schema.Union(AcceptResponse, DeclineResponse);
+const CollectiveResponse = Schema.Union(AcceptAnswer, DeclineAnswer);
 /** A validated collective response. */
 export type CollectiveResponse = typeof CollectiveResponse.Type;
 
@@ -302,7 +320,7 @@ type FixedFailureKind = Exclude<
 const fixedFailureText: Record<FixedFailureKind, string> = {
   "request-none": "reply failed: no question is open in this conversation",
   "request-ambiguous":
-    "reply failed: more than one question is open in this conversation, and answering one of several is not supported",
+    "reply failed: more than one question is open in this conversation, so the reply must name the id of the one it answers",
   "request-answered": "reply failed: the question was already answered",
   "request-expired": "reply failed: the question's deadline has passed",
   "deadline-passed":
@@ -351,15 +369,20 @@ export class CollectiveEmitError extends Data.TaggedError(
 /**
  * A gather, all_gather or answer was refused. The message is what a host
  * hands its model as the tool error: the failed action and its cause, naming
- * each unreachable member or failing field. The operation id stays in the
- * error's data, not its message.
+ * each unreachable member or failing field, and for an answer that named no
+ * request while several were open, each open request's id. The operation id
+ * stays in the error's data, not its message.
  */
 export class CollectiveError extends Data.TaggedError("CollectiveError")<{
   readonly id: CollectiveId;
   readonly failure: CollectiveFailure;
+  readonly openIds?: readonly CollectiveId[];
 }> {
   override get message(): string {
-    return describeCollectiveFailure(this.failure);
+    const text = describeCollectiveFailure(this.failure);
+    return this.openIds === undefined
+      ? text
+      : `${text}: ${this.openIds.join(", ")}`;
   }
 }
 

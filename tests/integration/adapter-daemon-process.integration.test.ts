@@ -55,9 +55,8 @@ const gatherText = (operation: "gather" | "all_gather") =>
 const acceptText = (slot: string) =>
   JSON.stringify({ action: "accept", content: { slot } });
 
-/** The answer form line every rendered request carries. */
-const ANSWER_LINE =
-  'Answer with: {"action":"accept","content":{...}} where content matches the form, or {"action":"decline"}';
+/** The text a rendered request's answer instructions name its question by. */
+const namedRequest = (id: string) => `"id":${JSON.stringify(id)}`;
 
 interface AllGatherContext {
   readonly caller: Effect.Effect.Success<
@@ -146,7 +145,7 @@ function runOpenClawGatherScenario() {
         messageTool,
       });
 
-      yield* caller.send({
+      const { operationId } = yield* caller.send({
         to: targetAddress,
         text: GATHER_QUESTION,
         collective: {
@@ -157,7 +156,7 @@ function runOpenClawGatherScenario() {
       });
       const requestTurn = yield* nextTurn(turns);
       expect(requestTurn.From).toBe(callerAddress);
-      expect(requestTurn.Body).toContain(ANSWER_LINE);
+      expect(requestTurn.Body).toContain(namedRequest(operationId ?? ""));
       const answered = yield* messageTool("reply", {
         to: callerAddress,
         message: acceptText("tue"),
@@ -308,7 +307,7 @@ function receiveAllGather(context: AllGatherContext) {
   const { caller, peer, callerAddress, group, turns, messageTool, allGather } =
     context;
   return Effect.gen(function* () {
-    yield* caller.send({
+    const { operationId } = yield* caller.send({
       to: group,
       text: GATHER_QUESTION,
       collective: allGather,
@@ -321,7 +320,7 @@ function receiveAllGather(context: AllGatherContext) {
     const peerRequest = yield* nextItem(peer.messages).pipe(
       Effect.flatMap(requireRequest),
     );
-    expect(requestTurn.Body).toContain(ANSWER_LINE);
+    expect(requestTurn.Body).toContain(namedRequest(operationId ?? ""));
     yield* peer.send({
       to: group,
       collectiveResponse: { action: "decline" },

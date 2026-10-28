@@ -2,10 +2,10 @@
  * @file The requests a member endpoint received, and which one an answer
  * answers.
  *
- * An answer names no request: the model sends it to the conversation its
- * request arrived in, and the endpoint matches it to the one request open
- * there. Answering one of several open requests in a conversation is not
- * supported, so that answer is refused rather than guessed.
+ * The model sends an answer to the conversation its request arrived in. An
+ * answer that names its request's id answers that request; one that names
+ * none answers the one request open there, and is refused rather than
+ * guessed when several are open.
  */
 
 import { Duration, Either, Option } from "effect";
@@ -52,11 +52,17 @@ export interface OpenRequest<Request extends RequestStatus> {
   readonly request: Request;
 }
 
-/** Why no single request takes an answer. */
-type UnmatchedAnswer = Extract<
-  CollectiveFailure["kind"],
-  `request-${"none" | "ambiguous" | "answered" | "expired"}`
->;
+/**
+ * Why no single request takes an answer, with each open request's id when
+ * the answer named none and several are open.
+ */
+export interface UnmatchedAnswer {
+  readonly kind: Extract<
+    CollectiveFailure["kind"],
+    `request-${"none" | "ambiguous" | "answered" | "expired"}`
+  >;
+  readonly openIds?: readonly CollectiveId[];
+}
 
 /**
  * A request this endpoint received. `postId` is the request post it came in,
@@ -110,11 +116,13 @@ const RECEIVED_DEADLINE_HORIZON = Duration.toMillis(
 );
 
 /**
- * Find the one request open in a conversation: received, not yet answered,
- * and before its deadline and close.
+ * Find the request an answer answers, open in its conversation: received,
+ * not yet answered, and before its deadline and close. With `named`, that is
+ * the request with that id; without it, the one request open there.
  * @param requests Every request this endpoint holds, by id.
  * @param conversation The canonical address the answer is sent to.
  * @param now The current time in epoch milliseconds.
+ * @param named The id of the request the answer names, if it names one.
  * @returns The open request, or why none takes the answer: several are open,
  *   one was already answered, none was received, or each has expired.
  */
@@ -122,7 +130,11 @@ export const matchOpenRequest = <Request extends RequestStatus>(
   requests: ReadonlyMap<CollectiveId, Request>,
   conversation: MessageAddressInput,
   now: number,
+  named?: CollectiveId,
 ): Either.Either<OpenRequest<Request>, UnmatchedAnswer> => {
+  if (named !== undefined) {
+    return matchNamedRequest(requests, conversation, now, named);
+  }
   const asked = [...requests]
     .filter(
       ([, request]) =>
@@ -139,13 +151,43 @@ export const matchOpenRequest = <Request extends RequestStatus>(
     return Either.right({ id: only.id, request: only.request });
   }
   if (open.length > 1) {
-    return Either.left("request-ambiguous");
+    return Either.left({
+      kind: "request-ambiguous",
+      openIds: open.map(({ id }) => id),
+    });
   }
   if (asked.some(({ unavailable }) => unavailable === "request-answered")) {
-    return Either.left("request-answered");
+    return Either.left({ kind: "request-answered" });
   }
-  return Either.left(asked.length === 0 ? "request-none" : "request-expired");
+  return Either.left({
+    kind: asked.length === 0 ? "request-none" : "request-expired",
+  });
 };
+
+/**
+ * The request with id `named`, when the runtime was shown it in
+ * `conversation` and it is still open; otherwise why it takes no answer, as
+ * `request-none` when no such request arrived there.
+ */
+function matchNamedRequest<Request extends RequestStatus>(
+  requests: ReadonlyMap<CollectiveId, Request>,
+  conversation: MessageAddressInput,
+  now: number,
+  named: CollectiveId,
+): Either.Either<OpenRequest<Request>, UnmatchedAnswer> {
+  const request = requests.get(named);
+  if (
+    request === undefined ||
+    request.to !== conversation ||
+    !requestShown(request.state)
+  ) {
+    return Either.left({ kind: "request-none" });
+  }
+  const unavailable = requestUnavailable(request, now);
+  return unavailable === undefined
+    ? Either.right({ id: named, request })
+    : Either.left({ kind: unavailable });
+}
 
 /**
  * Why a request the runtime was shown no longer takes an answer, or

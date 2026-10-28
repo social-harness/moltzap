@@ -4,9 +4,9 @@
  * items. An operation carries an address, text and an optional collective
  * operation, multicast by default or a gather or all_gather with its deadline
  * and schema; a response names the conversation whose open request it
- * answers and no request id. One parser reads either from a message's text,
- * so the native channel adapters accept the same text. Each inbound
- * delivery carries one item plus transport-only acknowledgment: a multicast
+ * answers, and may name that request's id. One parser reads either from a
+ * message's text, so the native channel adapters accept the same text. Each
+ * inbound delivery carries one item plus transport-only acknowledgment: a multicast
  * with the certified direct or complete-group message, a collective request
  * naming the conversation it arrived in, a collective result, each naming
  * its operation, or an operation failure. A result's question or a member's
@@ -74,8 +74,12 @@ type ExpectedCollectiveOperation =
       requestedSchema: ExpectedRequestedSchema;
     }>;
 type ExpectedCollectiveResponse =
-  | Readonly<{ action: "accept"; content: ExpectedAnswerContent }>
-  | Readonly<{ action: "decline" }>;
+  | Readonly<{
+      action: "accept";
+      content: ExpectedAnswerContent;
+      id?: CollectiveId;
+    }>
+  | Readonly<{ action: "decline"; id?: CollectiveId }>;
 type ExpectedSendInput =
   | Readonly<{
       to: MessageAddressInput;

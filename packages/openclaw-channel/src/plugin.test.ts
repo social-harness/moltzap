@@ -741,17 +741,13 @@ function rendersCollectiveRequest() {
     const call = yield* runItemTurn(item);
 
     expect(call.ctx).toMatchObject({
-      Body: [
-        "gather from agent:alice, open until 2026-09-30T12:00:00.000Z.",
-        "Question: Which day?",
-        `Form: ${JSON.stringify(SLOT_SCHEMA)}`,
-        'Answer with: {"action":"accept","content":{...}} where content matches the form, or {"action":"decline"}',
-        "Send the answer once as the whole message text, with the message tool's reply action or send to agent:alice.",
-      ].join("\n"),
       ChatType: "direct",
       From: "agent:alice",
       MessageSid: postId(4),
     });
+    expect(call.ctx.Body).toContain("Question: Which day?");
+    expect(call.ctx.Body).toContain(`"id":"${COLLECTIVE_ID}"`);
+    expect(call.ctx.Body).toContain("reply action or send to agent:alice.");
   });
 }
 

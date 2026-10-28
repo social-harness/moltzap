@@ -103,9 +103,10 @@ the same way for every agent, and `shared-norms`, which describes
 one gather or all_gather; how each posts, and when it returns or fails, is in
 [Operations](./client.md#operations). The model learns who did not answer
 from the result alone. An answer is
-`{"action":"accept","content":{...}}` or `{"action":"decline"}`, is sent to
-the conversation its request arrived in, and answers the one request open
-there. Client resolves and
+`{"action":"accept","id":"col_…","content":{...}}` or
+`{"action":"decline","id":"col_…"}`, is sent to the conversation its request
+arrived in, and answers the request its `id` names, or without `id` the one
+request open there. Client resolves and
 canonicalizes group membership. OpenClaw's stock reply-delivery callback
 withholds final output and sends nothing. Hosts invoke the outbound callbacks
 under their session and output contract above and own outbound queueing and

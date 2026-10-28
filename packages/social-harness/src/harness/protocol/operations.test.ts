@@ -4,6 +4,7 @@ import { Effect, Exit, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import type { InboundMessage } from "../../communication/conversations/message.js";
 import {
+  CollectiveError,
   CollectiveId,
   SendInput,
 } from "../../communication/collectives/forms.js";
@@ -20,6 +21,7 @@ import {
   decodeHarnessReadInboxResult,
   decodeHarnessSendErrorData,
   decodeHarnessSendResult,
+  sendErrorData,
 } from "./operations.js";
 
 const deliveryToken = Schema.decodeUnknownSync(DeliveryToken)(
@@ -40,6 +42,10 @@ const content = Schema.decodeUnknownSync(Content)([
 const collectiveId = Schema.decodeUnknownSync(CollectiveId)(
   `col_${"A".repeat(43)}`,
 );
+const openIds = [
+  Schema.decodeUnknownSync(CollectiveId)(`col_${"B".repeat(43)}`),
+  Schema.decodeUnknownSync(CollectiveId)(`col_${"C".repeat(43)}`),
+];
 
 function decodesExactOperationRequests(): void {
   const operation = {
@@ -292,6 +298,18 @@ describe("Harness send refusal data", () => {
       ).toBe(true);
     },
   );
+  it("carries the open ids of an answer that named none of several open requests", () => {
+    const refused = new CollectiveError({
+      id: collectiveId,
+      failure: { kind: "request-ambiguous" },
+      openIds,
+    });
+    const data = sendErrorData(refused);
+
+    expect(Effect.runSync(decodeHarnessSendErrorData(data))).toEqual(data);
+    expect(data).toMatchObject({ openIds });
+    expect(refused.message).toContain(`${openIds[0]}, ${openIds[1]}`);
+  });
 });
 
 const directItem = {

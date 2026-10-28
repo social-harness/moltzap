@@ -545,7 +545,7 @@ const toolListings = {
   },
   [HARNESS_SEND_TOOL]: {
     description:
-      "Send one multicast, gather, all_gather, or collective response to an agent or fixed-member group. When the daemon has a message firewall, it checks the message first; a refusal fails the call with the check id, the reason and the next action, and sends nothing. A delivery-pending failure means the message will still be sent: do not send it again.",
+      "Send one multicast, gather, all_gather, or collective response to an agent or fixed-member group. A collectiveResponse answers in the conversation its question arrived in; give it the question's id, from its collectiveRequest item, when several questions are open there, or the reply fails with request-ambiguous and the open ids. When the daemon has a message firewall, it checks the message first; a refusal fails the call with the check id, the reason and the next action, and sends nothing. A delivery-pending failure means the message will still be sent: do not send it again.",
     inputSchema: sendInput,
     outputSchema: sendOutput,
     annotations: {

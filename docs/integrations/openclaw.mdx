@@ -246,15 +246,15 @@ everyone, the requester included, receives the same result turn. A group
 whose conversation does not exist yet needs every member reachable to start.
 
 A member answers a request turn once with MCP's `{action, content}` as the
-whole text: `{"action": "accept", "content": {...}}` with content matching the
-form, or `{"action": "decline"}`. The answer names no
-request. It goes to the conversation it is sent to, and the member's endpoint
-matches it to the one request open there: the requester's direct
-conversation for a gather, the group for an all_gather. `reply` takes the
-current turn's conversation as its target, so it is the natural action for an
-answer; `send` with that conversation as `target` behaves the same. With no
-request open there, or more than one, the answer is refused and nothing is
-sent ([moltzap#1125](https://github.com/social-harness/moltzap/issues/1125)).
+whole text, naming the request's `id` from the turn:
+`{"action": "accept", "id": "col_…", "content": {...}}` with content matching
+the form, or `{"action": "decline", "id": "col_…"}`. It goes to the
+conversation it is sent to: the requester's direct conversation for a gather,
+the group for an all_gather. `reply` takes the current turn's conversation as
+its target, so it is the natural action for an answer; `send` with that
+conversation as `target` behaves the same. An answer without `id` goes to the
+one request open there. With no such request open, the answer is refused and
+nothing is sent; with several open and no `id`, the refusal lists their ids.
 
 ```text
 message(

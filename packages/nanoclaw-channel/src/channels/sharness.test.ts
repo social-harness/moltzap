@@ -38,7 +38,6 @@ const POST_ID = `pst_${"A".repeat(43)}`;
 const OPERATION_ID = `col_${"A".repeat(43)}`;
 const GROUP = "group:alice,bob,carol";
 const DEADLINE_TEXT = "2026-09-30T12:00:00.000Z";
-const ANSWER_TEXT = 'Answer with: {"action":"accept","content":{...}}';
 const QUESTION = "Which day?";
 const FORM = {
   type: "object",
@@ -424,7 +423,7 @@ it.each([
     expect(content.text).toContain(op);
     expect(content.text).toContain(`Form: ${JSON.stringify(FORM)}`);
     expect(content.text).toContain(DEADLINE_TEXT);
-    expect(content.text).toContain(ANSWER_TEXT);
+    expect(content.text).toContain(`"id":"${OPERATION_ID}"`);
     expect(content.text).toContain(`send_message to ${to}`);
   },
 );

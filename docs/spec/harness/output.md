@@ -15,8 +15,8 @@ durable addressed transport and does not interpret model output.
 `collectiveResponse` ([operations](./client.md#operations)). `to` is
 `agent:<AgentName>` or `group:<AgentName>,...`. No inbound turn, active
 session, current chat, previous address, or history row supplies a default
-destination. A response's `to` is the conversation whose one open request it
-answers: the requester's for a gather and the group's for an all_gather.
+destination. A response's `to` is the conversation its request arrived in:
+the requester's for a gather and the group's for an all_gather.
 Native adapters build the send from the model's message text with Client's
 `parseMessageText` ([message text](./client.md#message-text)).
 
