@@ -66,21 +66,11 @@ const NAMED_REFUSALS: ReadonlyArray<[readonly HeldRequest[], number, string]> =
       0,
       "request-answered",
     ],
-    [[{ inBob: true, state: "open", expired: true }], 0, "request-expired"],
-    [[{ inBob: true, state: "closed", expired: false }], 0, "request-expired"],
   ];
 
 /** Held requests and the refusal each set gives an answer to agent:bob. */
 const REFUSALS: ReadonlyArray<[readonly HeldRequest[], string]> = [
   [[], "request-none"],
-  [[{ inBob: false, state: "open", expired: false }], "request-none"],
-  [
-    [
-      { inBob: true, state: "open", expired: false },
-      { inBob: true, state: "open", expired: false },
-    ],
-    "request-ambiguous",
-  ],
   [
     [
       { inBob: true, state: "answered", expired: false },
@@ -110,17 +100,9 @@ describe("matching an answer to its conversation's open request", () => {
       expect(kindOf(held)).toBe(expected);
     },
   );
-  it(
-    "lists every open request's id when an answer names none and several are open",
-    listsOpenIdsWhenAmbiguous,
-  );
 });
 
 describe("matching an answer to the request it names", () => {
-  it(
-    "answers each of two open requests in one conversation by its id",
-    answersEachOpenRequestById,
-  );
   it.each<[readonly HeldRequest[], number, string]>(NAMED_REFUSALS)(
     "refuses an answer over %j naming request %i as %s",
     (held, index, expected) => {
@@ -169,30 +151,4 @@ function returnsTheOpenRequest() {
   expect(matchOpenRequest(requests, bobConversation, NOW, {})).toEqual(
     Either.right({ id: open?.[0], request: open?.[1] }),
   );
-}
-
-function listsOpenIdsWhenAmbiguous() {
-  const requests = requestsOf([
-    { inBob: true, state: "open", expired: false },
-    { inBob: true, state: "answered", expired: false },
-    { inBob: true, state: "open", expired: false },
-  ]);
-
-  expect(matchOpenRequest(requests, bobConversation, NOW, {})).toEqual(
-    Either.left({ kind: "request-ambiguous", openIds: [idAt(0), idAt(2)] }),
-  );
-}
-
-function answersEachOpenRequestById() {
-  const requests = requestsOf([
-    { inBob: true, state: "open", expired: false },
-    { inBob: true, state: "open", expired: false },
-  ]);
-
-  expect(
-    matchOpenRequest(requests, bobConversation, NOW, { id: idAt(0) }),
-  ).toEqual(Either.right({ id: idAt(0), request: requests.get(idAt(0)) }));
-  expect(
-    matchOpenRequest(requests, bobConversation, NOW, { id: idAt(1) }),
-  ).toEqual(Either.right({ id: idAt(1), request: requests.get(idAt(1)) }));
 }

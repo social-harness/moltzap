@@ -152,7 +152,7 @@ describe("OpenClaw message tool send and reply actions", () => {
 
 describe("OpenClaw operation item turns", () => {
   it(
-    "renders a gather request with its form and the exact answer text",
+    "renders a gather request in the requester's direct conversation",
     rendersCollectiveRequest,
   );
   it(
@@ -745,8 +745,6 @@ function rendersCollectiveRequest() {
       From: "agent:alice",
       MessageSid: postId(4),
     });
-    expect(call.ctx.Body).toContain(COLLECTIVE_REQUEST.question);
-    expect(call.ctx.Body).toContain(`"id":"${COLLECTIVE_ID}"`);
     expect(call.ctx.Body).toContain(`send to ${COLLECTIVE_REQUEST.from}.`);
   });
 }

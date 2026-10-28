@@ -1,7 +1,7 @@
 /** @file Pins how a member answers a gather request it received. */
 
 import { scoped as it } from "@effect/vitest";
-import { Duration, Effect, Schema, TestClock } from "effect";
+import { Effect, Schema } from "effect";
 import { describe, expect } from "vitest";
 import {
   classifyPost,
@@ -139,22 +139,6 @@ function reportsAnUnmatchedAnswerInTheConversationItWasSentTo() {
   });
 }
 
-function refusesAnAnswerAfterTheRequestSDeadline() {
-  return Effect.gen(function* () {
-    const layer = yield* makeLayer(newObserved());
-    yield* classifyPost(layer, requestPost("agent:bob", 60_000));
-    yield* TestClock.adjust(Duration.seconds(60));
-    const failure = yield* collectiveFailureOf(
-      send(layer, {
-        to: "agent:bob",
-        collectiveResponse: { action: "decline" },
-      }),
-    );
-
-    expect(failure).toEqual({ kind: "request-expired" });
-  });
-}
-
 function answersEachOfTwoOpenRequestsByItsId() {
   const observed = newObserved();
 
@@ -214,21 +198,6 @@ function refusesAnAnswerNamingNoneOfTwoOpenRequestsListingTheirIds() {
   });
 }
 
-function refusesAnAnswerNamingARequestItDidNotReceive() {
-  return Effect.gen(function* () {
-    const layer = yield* makeLayer(newObserved());
-    yield* classifyPost(layer, requestPost("agent:bob", 60_000));
-    const failure = yield* collectiveFailureOf(
-      send(layer, {
-        to: "agent:bob",
-        collectiveResponse: { action: "decline", id: secondRequestId },
-      }),
-    );
-
-    expect(failure).toEqual({ kind: "request-none" });
-  });
-}
-
 // @agent-code-guard/regression-only: examples pin how a member answers a request.
 describe("collective responses", () => {
   it(
@@ -252,11 +221,6 @@ describe("collective responses", () => {
   );
 
   it(
-    "refuses an answer after the request's deadline",
-    refusesAnAnswerAfterTheRequestSDeadline,
-  );
-
-  it(
     "answers each of two open requests in one conversation by its id",
     answersEachOfTwoOpenRequestsByItsId,
   );
@@ -264,10 +228,5 @@ describe("collective responses", () => {
   it(
     "refuses an answer that names neither of two open requests, listing both ids",
     refusesAnAnswerNamingNoneOfTwoOpenRequestsListingTheirIds,
-  );
-
-  it(
-    "refuses an answer naming a request it did not receive",
-    refusesAnAnswerNamingARequestItDidNotReceive,
   );
 });

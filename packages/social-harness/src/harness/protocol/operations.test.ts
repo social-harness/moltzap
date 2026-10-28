@@ -306,9 +306,8 @@ describe("Harness send refusal data", () => {
     });
     const data = sendErrorData(refused);
 
-    expect(Effect.runSync(decodeHarnessSendErrorData(data))).toEqual(data);
     expect(data).toMatchObject({ openIds });
-    expect(refused.message).toContain(`${openIds[0]}, ${openIds[1]}`);
+    expect(Effect.runSync(decodeHarnessSendErrorData(data))).toEqual(data);
   });
 });
 

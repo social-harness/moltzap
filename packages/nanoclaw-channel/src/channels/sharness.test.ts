@@ -383,7 +383,7 @@ it.each([
   { op: "gather", to: "agent:alice", isGroup: false },
   { op: "all_gather", to: GROUP, isGroup: true },
 ])(
-  "renders a $op request with question, form, deadline and answer instructions",
+  "renders a $op request with question, form, deadline and reply address",
   async ({ op, to, isGroup }) => {
     const fake = makeEndpoint();
     const host = makeHost();
@@ -423,7 +423,6 @@ it.each([
     expect(content.text).toContain(op);
     expect(content.text).toContain(`Form: ${JSON.stringify(FORM)}`);
     expect(content.text).toContain(DEADLINE_TEXT);
-    expect(content.text).toContain(`"id":"${OPERATION_ID}"`);
     expect(content.text).toContain(`send_message to ${to}`);
   },
 );

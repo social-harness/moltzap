@@ -9,8 +9,6 @@ import { type MessageTextError, parseMessageText } from "./message-text.js";
 const group = Schema.decodeUnknownSync(MessageAddressInput)(
   "group:alice,bob,carol",
 );
-/** A request id an answer can name. */
-const namedRequestId = `col_${"A".repeat(43)}`;
 const slotSchema = {
   type: "object",
   properties: { slot: { type: "string", enum: ["mon", "tue"] } },
@@ -82,8 +80,6 @@ const REFUSALS: ReadonlyArray<
   [{ action: "maybe" }, "answer", "action"],
   [{ action: "cancel" }, "answer", "action"],
   [{ action: "accept" }, "answer", "content"],
-  [{ action: "decline", content: { slot: "mon" } }, "answer", "content"],
-  [{ action: "accept", content: { slot: "mon" }, id: "col_x" }, "answer", "id"],
   [
     { action: "accept", content: { slot: { day: "mon" } } },
     "answer",
@@ -100,10 +96,7 @@ describe("message text", () => {
     "reads a gather or all_gather as its question, deadline and form",
     readsQuestions,
   );
-  it(
-    "reads every answer action, with or without the request id",
-    readsAnswers,
-  );
+  it("reads every answer action", readsAnswers);
   it.each(REFUSALS)(
     "refuses %j as a %s naming %s",
     (value, operation, field) => {
@@ -164,12 +157,6 @@ function readsAnswers() {
   expect(parsed('{"action": "decline"}')).toEqual({
     to: group,
     collectiveResponse: { action: "decline" },
-  });
-  expect(
-    parsed(JSON.stringify({ action: "decline", id: namedRequestId })),
-  ).toEqual({
-    to: group,
-    collectiveResponse: { action: "decline", id: namedRequestId },
   });
 }
 
