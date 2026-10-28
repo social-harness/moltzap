@@ -2,9 +2,7 @@
 
 import {
   createMcpHandler,
-  fromJsonSchema,
   type Implementation,
-  type JsonSchemaType,
   type McpHttpHandler,
   McpServer,
   ProtocolError,
@@ -14,16 +12,13 @@ import {
   type ToolAnnotations,
 } from "@modelcontextprotocol/server";
 import {
-  Array,
   Cause,
   Effect,
   Either,
   Exit,
-  JSONSchema,
   Layer,
   Option,
   type ParseResult,
-  Predicate,
   type Runtime,
   Schema,
   Scope,
@@ -108,6 +103,11 @@ import {
   webhookHttpClientLayer,
   webhookStatusJsonSchema,
 } from "./events.js";
+import {
+  makeJsonSchema,
+  makeResultSchema,
+  makeStandardSchema,
+} from "./schemas.js";
 
 /* eslint-disable agent-code-guard/async-keyword -- Official MCP factories and callbacks are Promise-native. */
 
@@ -175,49 +175,6 @@ interface RunOperationOptions<Value extends Readonly<Record<string, unknown>>> {
   readonly requestScope: Scope.CloseableScope;
   readonly services: Runtime.Runtime<never>;
 }
-
-const makeStandardSchema = <Value>(jsonSchema: unknown) =>
-  fromJsonSchema<Value>(
-    // eslint-disable-next-line agent-code-guard/require-assertion-rationale -- JSONSchema.make emits the exact JsonSchemaType consumed by the pinned MCP SDK.
-    jsonSchema as JsonSchemaType,
-  );
-
-const makeJsonSchema = <A, I>(schema: Schema.Schema<A, I>) =>
-  JSONSchema.make(schema, { target: "jsonSchema2020-12" });
-
-/** The same JSON Schema with every object open to properties it does not name. */
-function openObjects(jsonSchema: unknown): unknown {
-  if (Array.isArray(jsonSchema)) {
-    return jsonSchema.map((entry) => openObjects(entry));
-  }
-  if (!Predicate.isRecord(jsonSchema)) {
-    return jsonSchema;
-  }
-  return Object.fromEntries(
-    Object.entries(jsonSchema).flatMap(([key, value]) =>
-      key === "additionalProperties" && value === false
-        ? []
-        : [[key, openObjects(value)]],
-    ),
-  );
-}
-
-/**
- * A tool's result schema. A result may gain fields in any release, so the
- * JSON Schema a host lists is open at every object, and a host that listed an
- * older daemon's tools still accepts a newer daemon's results. The daemon
- * checks each result it returns against the exact schema.
- */
-const makeResultSchema = <Value>(jsonSchema: unknown) => {
-  const exact = makeStandardSchema<Value>(jsonSchema);
-  const listed = makeStandardSchema<Value>(openObjects(jsonSchema));
-  return {
-    "~standard": {
-      ...exact["~standard"],
-      jsonSchema: listed["~standard"].jsonSchema,
-    },
-  };
-};
 
 const emptyRequestSchema = Schema.Record({
   key: Schema.String,
