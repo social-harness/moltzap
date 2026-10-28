@@ -27,7 +27,10 @@ export const main = Effect.fn("Launcher.main")(function* (
   }
   const [command] = argv;
   if (command !== undefined && command !== "prepare") {
-    return yield* launcherError("configuration", `unknown command ${command}`);
+    return yield* launcherError(
+      "configuration",
+      `unknown command ${command}; run sharnessd-launcher or sharnessd-launcher prepare. Docs: https://docs.moltzap.xyz/spec/harness/daemon#launcher`,
+    );
   }
   const configuration = yield* absolute(yield* loadConfiguration);
   const prepared = yield* Effect.scoped(
@@ -91,7 +94,7 @@ function seedPrefix(
     if (path.basename(nodeModules) !== "node_modules") {
       return yield* launcherError(
         "seed",
-        `${packageRoot} is not installed under node_modules; set SHARNESS_LAUNCHER_SEED`,
+        `${packageRoot} is not installed under node_modules; set SHARNESS_LAUNCHER_SEED. Docs: https://docs.moltzap.xyz/spec/harness/daemon#launcher`,
       );
     }
     return path.dirname(nodeModules);

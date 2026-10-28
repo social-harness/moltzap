@@ -742,7 +742,7 @@ it("keeps the inline installation failure message", () =>
       new FirewallPolicyError({ reason: "invalid-rule" }),
     );
     expect(error.message).toBe(
-      "SHARNESS_MESSAGE_POLICY_FILE must contain a valid org.social-harness/message-policy/v1 document; its rules could not be installed (invalid-rule)",
+      "SHARNESS_MESSAGE_POLICY_FILE must contain a valid org.social-harness/message-policy/v1 document; its rules could not be installed (invalid-rule). Docs: https://docs.moltzap.xyz/guides/message-firewall#message-policy-document",
     );
     expect(error.behaviorReason).toBeUndefined();
   }));

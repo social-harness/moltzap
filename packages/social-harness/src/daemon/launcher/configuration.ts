@@ -71,6 +71,8 @@ export const launcherHelp = [
   "  SHARNESS_LAUNCHER_DIST_TAG   the dist-tag followed; default latest",
   "  SHARNESS_LAUNCHER_REGISTRY   the npm registry origin; default https://registry.npmjs.org",
   "  SHARNESS_LAUNCHER_SEED       the prefix the image installed; default the launcher's own",
+  "",
+  "Docs: https://docs.moltzap.xyz/spec/harness/daemon#launcher",
 ].join("\n");
 
 /** The settings, or a `configuration` failure naming the invalid setting. */
@@ -88,7 +90,10 @@ export const loadConfiguration = Config.all(fields).pipe(
     }),
   ),
   Effect.mapError((error) =>
-    launcherError("configuration", configurationMessage(error)),
+    launcherError(
+      "configuration",
+      `${configurationMessage(error)}. Docs: https://docs.moltzap.xyz/guides/upgrades#launcher-setting`,
+    ),
   ),
 );
 

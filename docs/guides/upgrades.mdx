@@ -103,6 +103,15 @@ that has taken that reset. Its peers and the Registry refuse it with
 `version-mismatch`. Recover onto an image from the same side of the reset as
 the network.
 
+<a id="launcher-setting" />
+
+### `SHARNESS_LAUNCHER_<setting> is required` or `is invalid`
+
+A launcher setting is missing or malformed, and the error names it. Set it as
+the [launcher rules](/spec/harness/daemon#launcher) give it:
+`SHARNESS_LAUNCHER_DIRECTORY` is required, and the others take the values the
+launcher's `--help` lists.
+
 ### Release contains no daemon package
 
 The selected release closure has no `@moltzap/social-harness` daemon package. The

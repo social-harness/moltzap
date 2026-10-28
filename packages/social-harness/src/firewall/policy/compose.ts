@@ -33,6 +33,7 @@ import {
 import {
   loadMessagePolicy,
   policyConfigurationError,
+  policyFailureMessage,
   readBuiltinBehavior,
 } from "./load.js";
 
@@ -142,18 +143,18 @@ export function policyInstallationError(
     cause.ruleId === undefined
       ? undefined
       : behaviorRulePaths?.get(cause.ruleId);
-  const base = policyConfigurationError("message-policy");
-  const location =
-    path === undefined
-      ? ""
-      : `; invalid at ${path} (duplicate-id). Docs: https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/message-policy.md#behaviors`;
+  const location = path === undefined ? "" : `; invalid at ${path} (duplicate-id)`;
   return new MessagePolicyConfigurationError({
     reason: "message-policy",
     behaviorReason: path === undefined ? undefined : "duplicate-id",
     message:
       cause.reason === "not-configured"
         ? "SHARNESS_MESSAGE_POLICY_FILE configures no English policy, but the state directory holds English rules an earlier policy added; restore the english block, remove those rules with policy_update, then remove the block. Docs: https://docs.moltzap.xyz/guides/message-firewall#stored-english-rules"
-        : `${base.message}; its rules could not be installed (${cause.reason})${location}`,
+        : policyFailureMessage(
+            "message-policy",
+            `; its rules could not be installed (${cause.reason})${location}`,
+            path,
+          ),
   });
 }
 

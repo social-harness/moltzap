@@ -134,12 +134,15 @@ it.each([
     }),
     "message-policy",
   ],
-] as const)("refuses %s", ([, fields, reason]) =>
+] as const)("refuses %s, linking its troubleshooting entry", ([, fields, reason]) =>
   Effect.gen(function* () {
     const error = yield* firewallInstallation(fields(), readCredential).pipe(
       Effect.flip,
     );
     expect(error.reason).toBe(reason);
+    expect(error.message).toMatch(
+      /\. Docs: https:\/\/docs\.moltzap\.xyz\/guides\/message-firewall#[a-z-]+$/u,
+    );
     expect(error.message).not.toContain("two words");
   }),
 );

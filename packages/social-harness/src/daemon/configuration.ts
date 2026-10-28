@@ -143,24 +143,26 @@ type ProcessConfigurationFailure = Exclude<
   MessagePolicyConfigurationFailure
 >;
 
+/** Each process failure's message ends with its entry in Run sharnessd's troubleshooting. */
 const configurationFailureMessages: Readonly<
   Record<ProcessConfigurationFailure, string>
 > = {
-  environment: "environment configuration is invalid",
+  environment:
+    "environment configuration is invalid. Docs: https://docs.moltzap.xyz/guides/run-sharnessd#setting",
   "agent-private-key-file":
-    "SHARNESS_AGENT_PRIVATE_KEY_FILE must name a readable file",
+    "SHARNESS_AGENT_PRIVATE_KEY_FILE must name a readable file. Docs: https://docs.moltzap.xyz/guides/run-sharnessd#agent-private-key-file",
   "agent-private-key":
-    "SHARNESS_AGENT_PRIVATE_KEY_FILE must contain an Ed25519 PKCS#8 private key",
+    "SHARNESS_AGENT_PRIVATE_KEY_FILE must contain an Ed25519 PKCS#8 private key. Docs: https://docs.moltzap.xyz/guides/run-sharnessd#agent-private-key",
   "admission-credential-file":
-    "SHARNESS_ADMISSION_CREDENTIAL_FILE is required for an unregistered daemon and must name a readable file",
+    "SHARNESS_ADMISSION_CREDENTIAL_FILE is required for an unregistered daemon and must name a readable file. Docs: https://docs.moltzap.xyz/guides/run-sharnessd#admission-credential-file",
   "admission-credential":
-    "SHARNESS_ADMISSION_CREDENTIAL_FILE must contain a valid admission credential",
+    "SHARNESS_ADMISSION_CREDENTIAL_FILE must contain a valid admission credential. Docs: https://docs.moltzap.xyz/guides/run-sharnessd#admission-credential",
   "mcp-runtime-credential-file":
-    "SHARNESS_MCP_RUNTIME_CREDENTIAL_FILE must name a readable file",
+    "SHARNESS_MCP_RUNTIME_CREDENTIAL_FILE must name a readable file. Docs: https://docs.moltzap.xyz/guides/run-sharnessd#mcp-credential-file",
   "mcp-owner-credential-file":
-    "SHARNESS_MCP_OWNER_CREDENTIAL_FILE must name a readable file",
+    "SHARNESS_MCP_OWNER_CREDENTIAL_FILE must name a readable file. Docs: https://docs.moltzap.xyz/guides/run-sharnessd#mcp-credential-file",
   "mcp-credential":
-    "SHARNESS_MCP_RUNTIME_CREDENTIAL_FILE and SHARNESS_MCP_OWNER_CREDENTIAL_FILE must both be supplied and contain distinct valid tokens of at least 32 characters",
+    "SHARNESS_MCP_RUNTIME_CREDENTIAL_FILE and SHARNESS_MCP_OWNER_CREDENTIAL_FILE must both be supplied and contain distinct valid tokens of at least 32 characters. Docs: https://docs.moltzap.xyz/guides/run-sharnessd#mcp-credential",
 };
 
 const configurationError = (
@@ -216,40 +218,10 @@ export const loadDaemonProcessConfiguration: Effect.Effect<
   Effect.mapError((cause) =>
     cause instanceof DaemonConfigurationError
       ? cause
-      : Match.value(cause).pipe(
-          Match.discriminatorsExhaustive("_op")({
-            And: (error) =>
-              new DaemonConfigurationError({
-                reason: "environment",
-                message: configurationMessage(error),
-              }),
-            Or: (error) =>
-              new DaemonConfigurationError({
-                reason: "environment",
-                message: configurationMessage(error),
-              }),
-            InvalidData: (error) =>
-              new DaemonConfigurationError({
-                reason: "environment",
-                message: configurationMessage(error),
-              }),
-            MissingData: (error) =>
-              new DaemonConfigurationError({
-                reason: "environment",
-                message: configurationMessage(error),
-              }),
-            SourceUnavailable: (error) =>
-              new DaemonConfigurationError({
-                reason: "environment",
-                message: configurationMessage(error),
-              }),
-            Unsupported: (error) =>
-              new DaemonConfigurationError({
-                reason: "environment",
-                message: configurationMessage(error),
-              }),
-          }),
-        ),
+      : new DaemonConfigurationError({
+          reason: "environment",
+          message: `${configurationMessage(cause)}. Docs: https://docs.moltzap.xyz/guides/run-sharnessd#setting`,
+        }),
   ),
   Effect.withSpan("loadDaemonProcessConfiguration"),
 );
@@ -287,7 +259,7 @@ function registrationRequest(
       new DaemonConfigurationError({
         reason: "environment",
         message:
-          "SHARNESS_REGISTRATION_AGENT_NAME, SHARNESS_REGISTRATION_OPERATION_ID and SHARNESS_REGISTRATION_PRINCIPAL_ID must all be supplied. Docs: https://docs.moltzap.xyz/spec/harness/daemon#process-and-configuration",
+          "SHARNESS_REGISTRATION_AGENT_NAME, SHARNESS_REGISTRATION_OPERATION_ID and SHARNESS_REGISTRATION_PRINCIPAL_ID must all be supplied. Docs: https://docs.moltzap.xyz/guides/run-sharnessd#registration-settings",
       }),
     );
   }

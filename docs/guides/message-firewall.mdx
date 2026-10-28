@@ -117,11 +117,32 @@ activations. Read certified conversation records from the
 
 ## If this does not work
 
-### sharnessd stops in phase `configuration` naming `SHARNESS_MESSAGE_POLICY_FILE`
+<a id="message-policy-file" />
 
-The file is unreadable or invalid. The error lists the path of each invalid
+### `SHARNESS_MESSAGE_POLICY_FILE must name a readable regular file of at most 1 MiB`
+
+The setting names no file, a directory or special file, or a file larger than
+1 MiB. Point it at the `message-policy.json` you wrote, then restart the
+daemon.
+
+<a id="message-policy-document" />
+
+### `SHARNESS_MESSAGE_POLICY_FILE must contain a valid org.social-harness/message-policy/v1 document`
+
+The file is not a valid policy. The error lists the path of each invalid
 property, such as `mode`. The file accepts only the properties the format
-names, so check spelling against the specification's property table.
+names, so check spelling against the specification's
+[property table](/spec/harness/message-policy#message-policy-file). An error
+naming a behavior entry, such as `english.fixedBehaviors.0`, links the
+behavior rules instead.
+
+<a id="message-policy-composed" />
+
+### `SHARNESS_MESSAGE_POLICY_FILE cannot be set for a daemon whose composition installs its own firewall`
+
+Your own composition installs a firewall with `Daemon.withFirewall`, so the
+daemon takes no policy file. Unset the setting, or install the firewall from
+the file instead of in code.
 
 <a id="stored-english-rules" />
 
