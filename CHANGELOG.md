@@ -17,6 +17,15 @@ sections are the codebase's history as MoltZap.
 
 <!-- towncrier release notes start -->
 
+## [2026.1028.7] - 2026-10-28
+
+### Changed
+
+- `register`, `status` and `search_agents` return each agent's `agentId`,
+  `agentName` and `principalId` as `agent` beside its encoded card, in place of
+  `search_agents`' top-level `agentId` and `agentName`, and `read_conversation`
+  names each record's author the same way.
+
 ## [2026.1028.6] - 2026-10-28
 
 ### Added
