@@ -89,8 +89,13 @@ type CollectiveOperation =
     }
 
 type CollectiveResponse =
-  | { readonly action: "accept"; readonly content: AnswerContent }
-  | { readonly action: "decline" }
+  | {
+      readonly action: "accept"
+      readonly content: AnswerContent
+      /** The request answered, as its collectiveRequest item names it. */
+      readonly id?: CollectiveId
+    }
+  | { readonly action: "decline"; readonly id?: CollectiveId }
 
 type SendInput =
   | {
@@ -99,7 +104,7 @@ type SendInput =
       readonly collective?: CollectiveOperation
     }
   | {
-      /** The conversation whose one open request this answers. */
+      /** The conversation the answered request arrived in. */
       readonly to: MessageAddressInput
       readonly collectiveResponse: CollectiveResponse
     }
@@ -315,16 +320,19 @@ collective operation is one member.
 
 A member answers a request with a `collectiveResponse` sent to the
 conversation the request arrived in: the requester's `agent:` address for a
-gather, the group's `group:` address for an all_gather. The answer names no
-request. The member's endpoint matches it to the one request open in that
-conversation, received and not yet answered, before its deadline and close.
-With none open the answer is refused with `request-none`, or with
+gather, the group's `group:` address for an all_gather. An answer with `id`
+answers the request with that id, the one its `collectiveRequest` item
+names, when that request is open in that conversation: received and not yet
+answered, before its deadline and close. It is refused with `request-none`
+when no request with that id arrived in that conversation, and with
+`request-answered` or `request-expired` when that request was answered or has
+expired. An answer without `id` answers the one request open in that
+conversation. With none open it is refused with `request-none`, or with
 `request-answered` or `request-expired` when the conversation's requests were
-answered or have expired. With more than one open, answering is unsupported
-([moltzap#1125](https://github.com/social-harness/moltzap/issues/1125)): the
-answer is refused with `request-ambiguous` and nothing is sent. Each
-refusal names an id minted for it, so an inbound failure routes to the
-conversation the answer was sent to. The endpoint validates `accept` content
+answered or have expired; with more than one open it is refused with
+`request-ambiguous`, whose message lists each open request's id, and nothing
+is sent. Each refusal names an id minted for it, so an inbound failure routes
+to the conversation the answer was sent to. The endpoint validates `accept` content
 against the matched request's stored schema, refusing a failing answer with
 the fields named, and certifies the response post, which carries the
 request's id, in that conversation. Each request takes one answer.
@@ -377,9 +385,12 @@ checks each operation before it posts, and a refusal is a
 `FirewallSendError` with nothing posted. A gather is checked once, after
 its address and schema are validated and before any request post; an
 all_gather's group post and an answer are checked as the agent's posts. An
-answer is checked before its request is claimed and matched again just
-before it is sent, so a request that closed or expired during the check
-refuses it as `request-expired`. A refused answer leaves its request open.
+answer is checked before its request is claimed. The claim matches the request
+the answer was first matched to again, by its id, just before it is sent: a
+request that opens during the check does not change which request the answer
+answers, a request that closed or expired during the check refuses it as
+`request-expired`, and an answer another answer beat to the claim is refused
+as `request-answered`. A refused answer leaves its request open.
 The check's duration comes out of the operation's deadline: a gather or
 all_gather whose deadline passes during its check fails as `deadline-passed`
 and posts nothing.
@@ -529,9 +540,10 @@ and the form-mode shape it expects, `answer-invalid` with each failing field
 and whether it is missing, unexpected or invalid, `request-none`,
 `request-ambiguous`, `request-answered`, `request-expired`, or
 `deadline-passed` for a gather or all_gather whose deadline passed while a
-firewall checked it. Its message
-names the members, schema paths or fields, so a host hands it to its model as
-the tool error.
+firewall checked it. A `request-ambiguous` refusal of an answer without `id`
+also carries `openIds`, the ids of the requests open in its conversation, and
+no other refusal does. Its message names the members, schema paths, fields or
+open ids, so a host hands it to its model as the tool error.
 
 `SendError.reason` is exactly one of:
 
@@ -617,8 +629,10 @@ methods and cannot create a delivery or authorize output.
 - `parseMessageText` reads every operation shape, sends plain text and
   JSON-looking prose as a multicast, and refuses a malformed operation naming
   its fields.
-- An answer is matched to the one request open in its conversation; none
-  open and several open are refused, and nothing is sent.
+- An answer with `id` is matched to that request when it is open in its
+  conversation; one without `id` is matched to the one request open there.
+  Otherwise it is refused, a refusal for several open requests lists their
+  ids, and nothing is sent.
 - Multicast items carry the certified content without its collective part, and
   the endpoint consumes records it does not deliver.
 - A gather refuses an unknown member before any post, fans out one request

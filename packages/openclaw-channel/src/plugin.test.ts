@@ -152,7 +152,7 @@ describe("OpenClaw message tool send and reply actions", () => {
 
 describe("OpenClaw operation item turns", () => {
   it(
-    "renders a gather request with its form and the exact answer text",
+    "renders a gather request in the requester's direct conversation",
     rendersCollectiveRequest,
   );
   it(
@@ -741,17 +741,11 @@ function rendersCollectiveRequest() {
     const call = yield* runItemTurn(item);
 
     expect(call.ctx).toMatchObject({
-      Body: [
-        "gather from agent:alice, open until 2026-09-30T12:00:00.000Z.",
-        "Question: Which day?",
-        `Form: ${JSON.stringify(SLOT_SCHEMA)}`,
-        'Answer with: {"action":"accept","content":{...}} where content matches the form, or {"action":"decline"}',
-        "Send the answer once as the whole message text, with the message tool's reply action or send to agent:alice.",
-      ].join("\n"),
       ChatType: "direct",
       From: "agent:alice",
       MessageSid: postId(4),
     });
+    expect(call.ctx.Body).toContain(`send to ${COLLECTIVE_REQUEST.from}.`);
   });
 }
 

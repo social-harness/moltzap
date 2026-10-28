@@ -15,8 +15,8 @@ durable addressed transport and does not interpret model output.
 `collectiveResponse` ([operations](./client.md#operations)). `to` is
 `agent:<AgentName>` or `group:<AgentName>,...`. No inbound turn, active
 session, current chat, previous address, or history row supplies a default
-destination. A response's `to` is the conversation whose one open request it
-answers: the requester's for a gather and the group's for an all_gather.
+destination. A response's `to` is the conversation its request arrived in:
+the requester's for a gather and the group's for an all_gather.
 Native adapters build the send from the model's message text with Client's
 `parseMessageText` ([message text](./client.md#message-text)).
 
@@ -130,8 +130,10 @@ conversation `address`; a response also returns the `operationId` of the
 request it answered, and a gather or all_gather returns its own. A refused send is a JSON-RPC
 error whose data is `{reason, detail?}` with the `SendError` reason and
 detail, or
-`{reason: "collective-failed", id, failure}` with the `CollectiveError`
-failure, from which the loopback Client rebuilds the same typed error. A send
+`{reason: "collective-failed", id, failure, openIds?}` with the
+`CollectiveError` failure and, for an answer that named no request while
+several were open, their ids, from which the loopback Client rebuilds the same
+typed error. A send
 may also return `{reason: "firewall-refused", checkId, refusal, feedback}`,
 which reconstructs `FirewallSendError` without exposing private evidence. A send
 that ends without a typed failure, or whose completed result fails the tool's

@@ -143,7 +143,7 @@ import {
   type OpenRequest,
   type ReceivedRequest,
   receivedRequest,
-  requestUnavailable,
+  unmatchedAnswerError,
 } from "./received-request.js";
 import {
   gatherAddress,
@@ -897,13 +897,14 @@ function countedProvenance(open: GatherRequest): ResultProvenance {
 }
 
 /**
- * Answer the one request open in the conversation `to` names. The answer
- * carries no request id, so the conversation decides which request it
- * answers; with none open, or several, nothing is sent. An installed
- * firewall checks the answer before `claimRequest` claims the request, so a
- * close or the deadline landing during the check refuses the answer without
- * sending. When the item that settling the answer emits cannot be kept, the
- * answer keeps its own outcome, its post or its refusal.
+ * Answer a request open in the conversation `to` names: the one the answer's
+ * `id` names, or without one the one request open there; when no request is
+ * matched, nothing is sent. An installed firewall checks the answer before
+ * `claimRequest` claims the matched request by its id, so a close or the
+ * deadline landing during the check refuses the answer without sending, and a
+ * request opening during it does not change which one is answered. When the
+ * item that settling the answer emits cannot be kept, the answer keeps its own
+ * outcome, its post or its refusal.
  */
 function respond(
   state: CollectiveState,
@@ -911,9 +912,9 @@ function respond(
   response: CollectiveResponse,
 ): Effect.Effect<CollectiveSendOutcome, OperationRefusal> {
   return Effect.gen(function* () {
-    const { id, request } = yield* openRequest(state, to);
+    const { id, request } = yield* openRequest(state, to, response);
     const refused = refusedAs<SendError | CollectiveError>(id, request.to);
-    const value: ResponseValue = { kind: "response", id, ...response };
+    const value: ResponseValue = { ...response, kind: "response", id };
     const content = yield* responseContent(request, value).pipe(
       Effect.mapError(refused),
     );
@@ -967,12 +968,13 @@ function bindAuthoredPost<E>(
 }
 
 /**
- * The one request open in the conversation `to` names. A refusal names an id
- * minted for it, since no single request is answered.
+ * The request `response` answers in the conversation `to` names. A refusal
+ * names an id minted for it, since no request is answered.
  */
 function openRequest(
   state: CollectiveState,
   to: MessageAddressInput,
+  response: CollectiveResponse,
 ): Effect.Effect<
   OpenRequest<ReceivedRequest>,
   RefusedSend<SendError | CollectiveError>
@@ -984,12 +986,12 @@ function openRequest(
     const { address } = yield* canonicalMessageAddress(to, self).pipe(
       Effect.mapError(refusedAs<SendError | CollectiveError>(id, to)),
     );
-    return yield* matchOpenRequest(state.requests, address, now).pipe(
-      Effect.mapError((kind) =>
+    return yield* matchOpenRequest(state.requests, address, now, response).pipe(
+      Effect.mapError((unmatched) =>
         refusedAs<SendError | CollectiveError>(
           id,
           address,
-        )(collectiveFailure(id, { kind })),
+        )(unmatchedAnswerError(id, unmatched)),
       ),
     );
   });
@@ -1019,11 +1021,11 @@ function responseContent(
 }
 
 /**
- * Hold the request's one answer: match the request again, still open in its
- * conversation and before its deadline, and claim it. The match and the
- * claim run in one step, with no yield between them, so of two concurrent
- * answers only one is sent. The hold's release reopens a request whose
- * answer bound nothing.
+ * Hold the request's one answer: match the request `openRequest` matched
+ * again by its id, still open in its conversation and before its deadline,
+ * and claim it. The match and the claim run in one step, with no yield
+ * between them, so of two concurrent answers only one is sent. The hold's
+ * release reopens a request whose answer bound nothing.
  */
 function claimRequest(
   state: CollectiveState,
@@ -1033,20 +1035,17 @@ function claimRequest(
   return Clock.currentTimeMillis.pipe(
     Effect.flatMap((now) =>
       Effect.suspend(() =>
-        Either.match(matchOpenRequest(state.requests, request.to, now), {
-          onLeft: (kind) => Effect.fail(collectiveFailure(id, { kind })),
-          onRight: (matched) => {
-            if (matched.id !== id) {
-              return Effect.fail(
-                collectiveFailure(id, {
-                  kind: requestUnavailable(request, now) ?? "request-ambiguous",
-                }),
-              );
-            }
-            request.state = "sending";
-            return Effect.succeed(reopenRequest(request));
+        Either.match(
+          matchOpenRequest(state.requests, request.to, now, { id }),
+          {
+            onLeft: (unmatched) =>
+              Effect.fail(unmatchedAnswerError(id, unmatched)),
+            onRight: () => {
+              request.state = "sending";
+              return Effect.succeed(reopenRequest(request));
+            },
           },
-        }),
+        ),
       ),
     ),
   );

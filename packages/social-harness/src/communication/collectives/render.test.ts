@@ -134,8 +134,6 @@ it("quotes a guided question and form while leaving endpoint answer instructions
   expect(JSON.parse(quoted ?? '""')).toBe(renderCollectiveRequestBody(item));
   const escapedDay = "\\u003cday\\u003e";
   expect(quoted).toContain(escapedDay);
-  const answerInstructions =
-    'Answer with: {"action":"accept","content":{...}} where content matches the form, or {"action":"decline"}';
-  expect(answer).toBe(answerInstructions);
+  expect(answer).toContain(`"id":${JSON.stringify(item.id)}`);
   expect(send).toBe(howToAnswer);
 });

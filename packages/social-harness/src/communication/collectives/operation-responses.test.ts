@@ -1,19 +1,53 @@
 /** @file Pins how a member answers a gather request it received. */
 
 import { scoped as it } from "@effect/vitest";
-import { Duration, Effect, TestClock } from "effect";
+import { Effect, Schema } from "effect";
 import { describe, expect } from "vitest";
 import {
   classifyPost,
   collectiveFailureOf,
   collectiveKey,
+  directPost,
   makeLayer,
   newObserved,
   postId,
+  questionText,
   requestId,
   requestPost,
   send,
+  slotSchema,
 } from "../../__tests__/collective-operation-fixtures.js";
+import { AgentAddress } from "../records/values.js";
+import { CollectiveError } from "./forms.js";
+import { collectiveIdOf } from "./part/index.js";
+
+const bob = Schema.decodeUnknownSync(AgentAddress)("agent:bob");
+
+/** A second gather Bob asks in the same direct conversation, open for a minute. */
+const secondNonce = "S".repeat(43);
+const secondRequestId = collectiveIdOf(bob, secondNonce);
+const secondRequestPost = directPost("agent:bob", [
+  { type: "text", text: questionText },
+  {
+    type: "data",
+    value: {
+      [collectiveKey]: {
+        kind: "operation",
+        op: "gather",
+        id: secondRequestId,
+        nonce: secondNonce,
+        deadlineAt: 60_000,
+        requestedSchema: slotSchema,
+      },
+    },
+  },
+]);
+
+/** The data part of a response post answering `id`. */
+const responsePart = (id: string, answer: object) => ({
+  type: "data",
+  value: { [collectiveKey]: { kind: "response", id, ...answer } },
+});
 
 function postsAValidAnswerToTheRequesterSDirectConversation() {
   const observed = newObserved();
@@ -125,19 +159,62 @@ function reportsAnUnmatchedAnswerInTheConversationItWasSentTo() {
   });
 }
 
-function refusesAnAnswerAfterTheRequestSDeadline() {
+function answersEachOfTwoOpenRequestsByItsId() {
+  const observed = newObserved();
+
   return Effect.gen(function* () {
-    const layer = yield* makeLayer(newObserved());
+    const layer = yield* makeLayer(observed);
     yield* classifyPost(layer, requestPost("agent:bob", 60_000));
-    yield* TestClock.adjust(Duration.seconds(60));
-    const failure = yield* collectiveFailureOf(
+    yield* classifyPost(layer, secondRequestPost);
+    yield* send(layer, {
+      to: "agent:bob",
+      collectiveResponse: { action: "decline", id: secondRequestId },
+    });
+    yield* send(layer, {
+      to: "agent:bob",
+      collectiveResponse: {
+        action: "accept",
+        id: requestId,
+        content: { slot: "mon" },
+      },
+    });
+
+    expect(observed.sent).toEqual([
+      {
+        to: "agent:bob",
+        content: [responsePart(secondRequestId, { action: "decline" })],
+      },
+      {
+        to: "agent:bob",
+        content: [
+          responsePart(requestId, {
+            action: "accept",
+            content: { slot: "mon" },
+          }),
+        ],
+      },
+    ]);
+  });
+}
+
+function refusesAnAnswerNamingNoRequestWhileTwoAreOpen() {
+  const observed = newObserved();
+
+  return Effect.gen(function* () {
+    const layer = yield* makeLayer(observed);
+    yield* classifyPost(layer, requestPost("agent:bob", 60_000));
+    yield* classifyPost(layer, secondRequestPost);
+    const refused = yield* Effect.flip(
       send(layer, {
         to: "agent:bob",
         collectiveResponse: { action: "decline" },
       }),
     );
 
-    expect(failure).toEqual({ kind: "request-expired" });
+    expect(refused).toBeInstanceOf(CollectiveError);
+    expect(refused.message).toContain(requestId);
+    expect(refused.message).toContain(secondRequestId);
+    expect(observed.sent).toEqual([]);
   });
 }
 
@@ -169,7 +246,12 @@ describe("collective responses", () => {
   );
 
   it(
-    "refuses an answer after the request's deadline",
-    refusesAnAnswerAfterTheRequestSDeadline,
+    "answers each of two open requests in one conversation by its id",
+    answersEachOfTwoOpenRequestsByItsId,
+  );
+
+  it(
+    "refuses an answer that names no request while two are open, listing both ids",
+    refusesAnAnswerNamingNoRequestWhileTwoAreOpen,
   );
 });

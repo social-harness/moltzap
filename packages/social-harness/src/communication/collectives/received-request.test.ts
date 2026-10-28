@@ -1,4 +1,4 @@
-/** @file Pins which received request an answer sent to a conversation answers. */
+/** @file Pins which received request an answer sent to a conversation answers, by the id it names or as the one open there. */
 
 import { Either, FastCheck as fc, Schema } from "effect";
 import { describe, expect, it } from "vitest";
@@ -46,22 +46,30 @@ const isOpen = ({ inBob, state, expired }: HeldRequest) =>
 
 /** The refusal kind an answer to agent:bob gets over `held`, or `matched`. */
 const kindOf = (held: readonly HeldRequest[]) =>
-  Either.match(matchOpenRequest(requestsOf(held), bobConversation, NOW), {
-    onLeft: (kind) => kind,
+  Either.match(matchOpenRequest(requestsOf(held), bobConversation, NOW, {}), {
+    onLeft: ({ kind }) => kind,
     onRight: () => "matched",
   });
+
+/** The id `requestsOf` gives the held request at `index`. */
+const idAt = (index: number) =>
+  collectiveIdOf(bob, String(index).padStart(43, "n"));
+
+/** Held requests, the index of the one an answer to agent:bob names, and the refusal it gets. */
+const NAMED_REFUSALS: ReadonlyArray<[readonly HeldRequest[], number, string]> =
+  [
+    [[{ inBob: false, state: "open", expired: false }], 0, "request-none"],
+    [[{ inBob: true, state: "open", expired: false }], 1, "request-none"],
+    [
+      [{ inBob: true, state: "answered", expired: false }],
+      0,
+      "request-answered",
+    ],
+  ];
 
 /** Held requests and the refusal each set gives an answer to agent:bob. */
 const REFUSALS: ReadonlyArray<[readonly HeldRequest[], string]> = [
   [[], "request-none"],
-  [[{ inBob: false, state: "open", expired: false }], "request-none"],
-  [
-    [
-      { inBob: true, state: "open", expired: false },
-      { inBob: true, state: "open", expired: false },
-    ],
-    "request-ambiguous",
-  ],
   [
     [
       { inBob: true, state: "answered", expired: false },
@@ -89,6 +97,19 @@ describe("matching an answer to its conversation's open request", () => {
     "refuses %j as %s",
     (held, expected) => {
       expect(kindOf(held)).toBe(expected);
+    },
+  );
+});
+
+describe("matching an answer to the request it names", () => {
+  it.each<[readonly HeldRequest[], number, string]>(NAMED_REFUSALS)(
+    "refuses an answer over %j naming request %i as %s",
+    (held, index, expected) => {
+      expect(
+        matchOpenRequest(requestsOf(held), bobConversation, NOW, {
+          id: idAt(index),
+        }),
+      ).toEqual(Either.left({ kind: expected }));
     },
   );
 });
@@ -126,7 +147,7 @@ function returnsTheOpenRequest() {
   ]);
   const [, open] = [...requests];
 
-  expect(matchOpenRequest(requests, bobConversation, NOW)).toEqual(
+  expect(matchOpenRequest(requests, bobConversation, NOW, {})).toEqual(
     Either.right({ id: open?.[0], request: open?.[1] }),
   );
 }

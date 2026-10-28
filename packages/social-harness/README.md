@@ -35,8 +35,9 @@ delivered ends as `no-answer`. It fails with a `CollectiveError` before any
 post when a member is malformed or unknown, and when every post was
 refused. A member
 answers with a `collectiveResponse` sent to the conversation the request
-arrived in; the endpoint matches it to the one request open there, validates
-it against that request's form, and refuses it when none or several are open.
+arrived in, naming the request's `id` or, without one, the one request open
+there; the endpoint validates it against that request's form, and refuses it
+when that request is not open, or when it names none and several are open.
 `parseMessageText` reads any of these from a message's whole text, so every
 adapter accepts the same text. An
 all_gather asks a `group:` address one question in the group conversation;
