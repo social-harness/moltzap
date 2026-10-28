@@ -35,7 +35,7 @@ import {
   policyUpdateResultSchema,
   policyUpdateSchema,
 } from "../../firewall/index.js";
-import { FirewallSendError } from "../../firewall/outcome/index.js";
+import type { FirewallSendError } from "../../firewall/outcome/index.js";
 import {
   decodeHarnessSendCall,
   harnessAcknowledgeDeliveryRequestJsonSchema,
@@ -362,9 +362,10 @@ const runOperation = async <Value extends Readonly<Record<string, unknown>>>(
 };
 
 /**
- * Run one send and answer its typed failure as JSON-RPC error data. A send
- * that ends without one, interrupted or by a defect, may already have queued
- * its post, so it answers `outcome-unknown`.
+ * Run one send and answer its typed failure as JSON-RPC error data, with the
+ * typed error's own message, which names its cause for a host to hand its
+ * model. A send that ends without one, interrupted or by a defect, may
+ * already have queued its post, so it answers `outcome-unknown`.
  * @param operation A multicast, collective send or collective response.
  * @param signal The request's abort signal, which interrupts the send.
  * @param requestScope The handler lifetime that joins request finalizers before closing.
@@ -382,16 +383,17 @@ const runSendOperation = async (
 ) => {
   const outcome = await runRequest(operation, signal, requestScope, services);
   if (Exit.isFailure(outcome)) {
-    const data = Option.match(Cause.failureOption(outcome.cause), {
-      onNone: (): HarnessSendErrorData => ({ reason: "outcome-unknown" }),
-      onSome: sendErrorData,
-    });
+    const failure = Cause.failureOption(outcome.cause);
     throw new ProtocolError(
       ProtocolErrorCode.InternalError,
-      "refusal" in data
-        ? new FirewallSendError(data).message
-        : "Operation send failed",
-      data,
+      Option.match(failure, {
+        onNone: () => "Operation send failed",
+        onSome: (error) => error.message,
+      }),
+      Option.match(failure, {
+        onNone: (): HarnessSendErrorData => ({ reason: "outcome-unknown" }),
+        onSome: sendErrorData,
+      }),
     );
   }
   return toolResult(outcome.value);

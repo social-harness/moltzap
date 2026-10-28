@@ -346,8 +346,7 @@ function connect(url: URL): Effect.Effect<Client, CommandError, Scope.Scope> {
 
 /**
  * Calls `tool` once and answers its structured result. A JSON-RPC error
- * fails with the daemon's reason; a tool error fails with its text. A send
- * the agent's own firewall refused has its own troubleshooting entry.
+ * fails as {@link toolFailure} says; a tool error fails with its text.
  */
 function callTool(
   client: Client,
@@ -357,23 +356,7 @@ function callTool(
   return Effect.tryPromise({
     try: (signal) =>
       client.callTool({ name: tool, arguments: { ...args } }, { signal }),
-    catch: (cause) =>
-      new ToolFailure({
-        message: `${tool} failed: ${failureReason(cause)}`,
-        refused:
-          ProtocolError.isInstance(cause) &&
-          (cause.code === INVALID_PARAMS ||
-            Option.exists(
-              failureDataOf(cause),
-              (data) => data.reason === "admission-refused",
-            )),
-        entry: Option.exists(
-          failureDataOf(cause),
-          (data) => data.reason === "firewall-refused",
-        )
-          ? "firewall-refused"
-          : "tool-failed",
-      }),
+    catch: (cause) => toolFailure(tool, cause),
   }).pipe(
     Effect.flatMap((result) =>
       result.isError === true
@@ -391,36 +374,45 @@ function callTool(
   );
 }
 
-/** The error data the daemon attached to a failed call, when it is readable. */
-function failureDataOf(
-  cause: unknown,
-): Option.Option<typeof failureData.Type> {
-  return ProtocolError.isInstance(cause)
-    ? Schema.decodeUnknownOption(failureData)(cause.data)
-    : Option.none();
-}
+/**
+ * Reasons whose JSON-RPC message from the daemon already names the cause: an
+ * admission refusal, a send the agent's own firewall refused (its check and
+ * next action), and a refused collective (each unreachable member or failing
+ * field).
+ */
+const MESSAGE_REASONS: ReadonlySet<string> = new Set([
+  "admission-refused",
+  "firewall-refused",
+  "collective-failed",
+]);
 
 /**
- * The daemon's reason, detail and issues for a failed call, or the error's
- * text. An admission or firewall refusal's own message already says why;
- * a firewall refusal's names the check and the next action.
+ * The failure for a call the daemon or the transport rejected: the daemon's
+ * message for {@link MESSAGE_REASONS}, otherwise its reason, then any detail
+ * and field issues. A firewall refusal has its own troubleshooting entry.
  */
-function failureReason(cause: unknown): string {
+function toolFailure(tool: string, cause: unknown): ToolFailure {
   if (!ProtocolError.isInstance(cause)) {
-    return String(cause);
+    return new ToolFailure({
+      message: `${tool} failed: ${String(cause)}`,
+      refused: false,
+      entry: "tool-failed",
+    });
   }
-  return Option.match(failureDataOf(cause), {
-    onNone: () => cause.message,
-    onSome: ({ reason, detail, issues = [] }) =>
-      [
-        reason === undefined ||
-        reason === "admission-refused" ||
-        reason === "firewall-refused"
-          ? cause.message
-          : reason,
-        ...(detail === undefined ? [] : [detail]),
-        ...issues.map((issue) => issue.message),
-      ].join("; "),
+  const { reason, detail, issues = [] } = Option.getOrElse(
+    Schema.decodeUnknownOption(failureData)(cause.data),
+    (): typeof failureData.Type => ({}),
+  );
+  const said =
+    reason === undefined || MESSAGE_REASONS.has(reason) ? cause.message : reason;
+  return new ToolFailure({
+    message: `${tool} failed: ${[
+      said,
+      ...(detail === undefined ? [] : [detail]),
+      ...issues.map((issue) => issue.message),
+    ].join("; ")}`,
+    refused: cause.code === INVALID_PARAMS || reason === "admission-refused",
+    entry: reason === "firewall-refused" ? "firewall-refused" : "tool-failed",
   });
 }
 

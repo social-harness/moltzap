@@ -4,8 +4,8 @@
  * `images/compose.yaml` starts the images tagged `SHARNESS_NETWORK_VERSION`
  * from a `.env` written as Run a local network writes it, three `sharnessd`
  * daemons start unregistered, and `images/mcp.ts` registers them and sends a
- * message. Bob's daemon runs the policy Turn on the message firewall verifies
- * with, so a send its firewall refuses shows the check and the next action.
+ * message. Bob's daemon runs an enforcement policy with only the credentials
+ * rule, so a send its firewall refuses shows the check and the next action.
  * The gate passes when each step prints what the guides say it prints and
  * each refusal exits 1 with the reason the guides name.
  */
@@ -42,14 +42,14 @@ const imagesRoot = join(workspaceRoot, "images");
 const HOST = "127.0.0.1";
 const MESSAGE = "Hi Bob, this is Alice.";
 
-/** The policy Turn on the message firewall verifies with: credentials only. */
+/** An enforcement policy with only the credentials rule, needing no decision provider. */
 const FIREWALL_POLICY = JSON.stringify({
   format: "org.social-harness/message-policy/v1",
   mode: "enforcement",
   outgoing: [{ use: "credentials" }],
 });
 
-/** A send the credentials rule refuses, as that guide's verification sends. */
+/** A send the credentials rule refuses, as Turn on the message firewall's verification sends. */
 const CREDENTIAL_TEXT = "My key is sk-test-0000000000000000.";
 
 /** How long the path may take, including any image pull Compose makes. */
@@ -205,11 +205,7 @@ function expectSendRefusals(
     );
     yield* expectRefusal(
       bob,
-      [
-        "call",
-        "send_message",
-        JSON.stringify({ input: { to: "agent:alice", text: CREDENTIAL_TEXT } }),
-      ],
+      ["call", "send_message", sendTo("alice", CREDENTIAL_TEXT)],
       [
         "send_message failed: send withheld (check ",
         "Next action: revise",
@@ -219,9 +215,9 @@ function expectSendRefusals(
   });
 }
 
-/** The `send_message` arguments Run sharnessd passes, addressed to `name`. */
-function sendTo(name: string): string {
-  return JSON.stringify({ input: { to: `agent:${name}`, text: MESSAGE } });
+/** The `send_message` arguments Run sharnessd passes: `text` to `name`. */
+function sendTo(name: string, text = MESSAGE): string {
+  return JSON.stringify({ input: { to: `agent:${name}`, text } });
 }
 
 /**
