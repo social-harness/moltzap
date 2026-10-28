@@ -28,6 +28,7 @@ import {
   renderContent,
   renderLocalGuidance,
   type SendInput,
+  type SendResult,
 } from "@moltzap/social-harness";
 import {
   Config,
@@ -41,7 +42,6 @@ import {
   Stream,
 } from "effect";
 import { absurd } from "effect/Function";
-import { randomUUID } from "node:crypto";
 import { jsonResult } from "openclaw/plugin-sdk/channel-actions";
 import {
   type ChannelPlugin,
@@ -1052,7 +1052,7 @@ function sendOpenClawText(
     accountId: ctx.accountId,
     text: ctx.text,
     to: ctx.to,
-  }).pipe(Effect.as(makeMessageSendResult(randomUUID())));
+  }).pipe(Effect.map(({ result }) => makeMessageSendResult(result)));
 }
 
 /**
@@ -1235,11 +1235,35 @@ function refuseWhileHidden<E>(
   );
 }
 
-function makeMessageSendResult(messageId: string): ChannelMessageSendResult {
+/**
+ * OpenClaw's result for one Client send. A multicast or answer creates one
+ * post, whose `postId` is its platform message id, the same id recipients see
+ * as `MessageSid`; its conversation is routing metadata. A gather or
+ * all_gather creates no single post, so its receipt names no platform message.
+ * @param result The Client's send result.
+ * @returns The send result OpenClaw records.
+ */
+function makeMessageSendResult(result: SendResult): ChannelMessageSendResult {
+  if (result.postId === undefined) {
+    return {
+      receipt: createMessageReceiptFromOutboundResults({
+        results: [{ channel: CHANNEL_ID }],
+        kind: "text",
+      }),
+    };
+  }
   return {
-    messageId,
+    messageId: result.postId,
     receipt: createMessageReceiptFromOutboundResults({
-      results: [{ channel: CHANNEL_ID, messageId }],
+      results: [
+        {
+          channel: CHANNEL_ID,
+          messageId: result.postId,
+          ...(result.address === undefined
+            ? {}
+            : { conversationId: result.address }),
+        },
+      ],
       kind: "text",
     }),
   };
