@@ -528,10 +528,18 @@ export const editableDocumentSchema = Schema.Array(editableRuleSchema).pipe(
   Schema.maxItems(256),
 );
 
+/**
+ * A shared norm's `BEHAVIOR.md` exactly as proposed, mapped to its rule as a
+ * policy file's behaviors are: docs/spec/harness/message-policy.md#behaviors.
+ */
+const behaviorAddition = exactStruct({ behavior: Schema.String });
+
 /** Removing and adding the same editable id replaces it in one activation. */
 export const policyUpdateSchema = exactStruct({
   add: Schema.optional(
-    Schema.Array(editableRuleSchema).pipe(Schema.maxItems(256)),
+    Schema.Array(Schema.Union(editableRuleSchema, behaviorAddition)).pipe(
+      Schema.maxItems(256),
+    ),
   ),
   remove: Schema.optional(
     Schema.Array(EnglishRule.fields.id).pipe(Schema.maxItems(256)),

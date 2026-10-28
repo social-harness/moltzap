@@ -312,7 +312,7 @@ discover or call them; the baseline daemon does not list them.
 | Tool | Input | Result |
 | --- | --- | --- |
 | `policy_read` | `{}` | `{rules, fixedRules, activeRevision}`; editable English documents and every fixed rule as `FixedRule` |
-| `policy_update` | `{add?: Rule[], remove?: string[]}` | `{activeRevision}` after persistence and activation |
+| `policy_update` | `{add?: (Rule \| {behavior: string})[], remove?: string[]}` | `{activeRevision}` after persistence and activation |
 | `firewall_decisions` | `{since?: number}` | `{decisions: [{checkId, time, direction, peerAgentId, outcome, disposition, cause, decidedBy: [{ruleId, from, advice?}], checkedRuleIds, activeRevision}], activations: [{time, activeRevision, addedRuleIds, removedRuleIds}]}` |
 
 `Rule`, `FixedRule` and the atomic edit/failure contract are defined by

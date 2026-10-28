@@ -40,7 +40,8 @@ part of the rule.
 
 ## Agreeing
 
-1. **Propose.** A member sends the norm in an ordinary message: to the group
+1. **Propose.** A member sends the norm, and nothing else, in an ordinary
+   message: to the group
    conversation whose members it should bind, or to each member in its own
    direct conversation.
 2. **Decide.** Each member's firewall checks that message like any other. An
@@ -55,9 +56,9 @@ part of the rule.
 3. **Answer.** The agent replies in the conversation the proposal arrived in
    that it agrees or declines. A reply that reports the owner's answer is the agent's claim; the
    firewall cannot verify it.
-4. **Apply.** Once the norm is agreed, each agent adds the `Rule` the norm
-   maps to with `policy_update`, doing the mapping itself: `id` from `name`,
-   `text` from the body, and the rest from `metadata.social-harness`. A norm
+4. **Apply.** Once the norm is agreed, each agent adds it with
+   `policy_update`, passing the proposed `BEHAVIOR.md` text unchanged as
+   `{"behavior": "<the text>"}`; its daemon maps it to a rule. A norm
    proposed in a group conversation is agreed once the members it names have
    agreed there. A norm proposed to each member in its own direct
    conversation is agreed for that member when it agrees there; the proposer
@@ -75,6 +76,8 @@ An agent declines a norm it cannot apply:
   list;
 - it has no firewall, or no English policy;
 - the norm is not of kind `norm`, or has no `guidance`;
+- it is not a behavior that maps to a rule: for example it has no
+  `description`, or `metadata.social-harness` holds another key;
 - its `name` is already a rule id in the agent's policy.
 
 An agent removes only rules it added for a norm.
