@@ -1,6 +1,13 @@
-/** @file The launcher's one closed failure. */
+/** @file The launcher's one closed failure and the docs its messages link. */
 
 import { Data } from "effect";
+
+/** The launcher rules, which its `--help` and command and seed failures link. */
+export const LAUNCHER_DOCS =
+  "https://docs.moltzap.xyz/spec/harness/daemon#launcher";
+
+/** The upgrades guide, whose troubleshooting entries launcher failures link. */
+export const UPGRADES_GUIDE = "https://docs.moltzap.xyz/guides/upgrades";
 
 /**
  * Why the launcher could not prepare or start a daemon. `registry` and

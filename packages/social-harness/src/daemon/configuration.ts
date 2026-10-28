@@ -143,32 +143,57 @@ type ProcessConfigurationFailure = Exclude<
   MessagePolicyConfigurationFailure
 >;
 
-const configurationFailureMessages: Readonly<
-  Record<ProcessConfigurationFailure, string>
+const RUN_SHARNESSD = "https://docs.moltzap.xyz/guides/run-sharnessd";
+
+/** A secret-file failure of the process settings. */
+type SecretFileFailure = Exclude<ProcessConfigurationFailure, "environment">;
+
+/** Each secret-file failure's operator text and its troubleshooting entry in Run sharnessd. */
+const secretFileFailures: Readonly<
+  Record<SecretFileFailure, { readonly text: string; readonly docs: string }>
 > = {
-  environment: "environment configuration is invalid",
-  "agent-private-key-file":
-    "SHARNESS_AGENT_PRIVATE_KEY_FILE must name a readable file",
-  "agent-private-key":
-    "SHARNESS_AGENT_PRIVATE_KEY_FILE must contain an Ed25519 PKCS#8 private key",
-  "admission-credential-file":
-    "SHARNESS_ADMISSION_CREDENTIAL_FILE is required for an unregistered daemon and must name a readable file",
-  "admission-credential":
-    "SHARNESS_ADMISSION_CREDENTIAL_FILE must contain a valid admission credential",
-  "mcp-runtime-credential-file":
-    "SHARNESS_MCP_RUNTIME_CREDENTIAL_FILE must name a readable file",
-  "mcp-owner-credential-file":
-    "SHARNESS_MCP_OWNER_CREDENTIAL_FILE must name a readable file",
-  "mcp-credential":
-    "SHARNESS_MCP_RUNTIME_CREDENTIAL_FILE and SHARNESS_MCP_OWNER_CREDENTIAL_FILE must both be supplied and contain distinct valid tokens of at least 32 characters",
+  "agent-private-key-file": {
+    text: "SHARNESS_AGENT_PRIVATE_KEY_FILE must name a readable file",
+    docs: `${RUN_SHARNESSD}#agent-private-key-file`,
+  },
+  "agent-private-key": {
+    text: "SHARNESS_AGENT_PRIVATE_KEY_FILE must contain an Ed25519 PKCS#8 private key",
+    docs: `${RUN_SHARNESSD}#agent-private-key`,
+  },
+  "admission-credential-file": {
+    text: "SHARNESS_ADMISSION_CREDENTIAL_FILE is required for an unregistered daemon and must name a readable file",
+    docs: `${RUN_SHARNESSD}#admission-credential-file`,
+  },
+  "admission-credential": {
+    text: "SHARNESS_ADMISSION_CREDENTIAL_FILE must contain a valid admission credential",
+    docs: `${RUN_SHARNESSD}#admission-credential`,
+  },
+  "mcp-runtime-credential-file": {
+    text: "SHARNESS_MCP_RUNTIME_CREDENTIAL_FILE must name a readable file",
+    docs: `${RUN_SHARNESSD}#mcp-credential-file`,
+  },
+  "mcp-owner-credential-file": {
+    text: "SHARNESS_MCP_OWNER_CREDENTIAL_FILE must name a readable file",
+    docs: `${RUN_SHARNESSD}#mcp-credential-file`,
+  },
+  "mcp-credential": {
+    text: "SHARNESS_MCP_RUNTIME_CREDENTIAL_FILE and SHARNESS_MCP_OWNER_CREDENTIAL_FILE must both be supplied and contain distinct valid tokens of at least 32 characters",
+    docs: `${RUN_SHARNESSD}#mcp-credential`,
+  },
 };
 
+/** An operator message followed by its one troubleshooting link. */
+const linked = (text: string, docs: string): string => `${text}. Docs: ${docs}`;
+
 const configurationError = (
-  reason: ProcessConfigurationFailure,
+  reason: SecretFileFailure,
 ): DaemonConfigurationError =>
   new DaemonConfigurationError({
     reason,
-    message: configurationFailureMessages[reason],
+    message: linked(
+      secretFileFailures[reason].text,
+      secretFileFailures[reason].docs,
+    ),
   });
 
 /** Loads explicit daemon inputs with optional export and MCP authority separation. */
@@ -216,40 +241,13 @@ export const loadDaemonProcessConfiguration: Effect.Effect<
   Effect.mapError((cause) =>
     cause instanceof DaemonConfigurationError
       ? cause
-      : Match.value(cause).pipe(
-          Match.discriminatorsExhaustive("_op")({
-            And: (error) =>
-              new DaemonConfigurationError({
-                reason: "environment",
-                message: configurationMessage(error),
-              }),
-            Or: (error) =>
-              new DaemonConfigurationError({
-                reason: "environment",
-                message: configurationMessage(error),
-              }),
-            InvalidData: (error) =>
-              new DaemonConfigurationError({
-                reason: "environment",
-                message: configurationMessage(error),
-              }),
-            MissingData: (error) =>
-              new DaemonConfigurationError({
-                reason: "environment",
-                message: configurationMessage(error),
-              }),
-            SourceUnavailable: (error) =>
-              new DaemonConfigurationError({
-                reason: "environment",
-                message: configurationMessage(error),
-              }),
-            Unsupported: (error) =>
-              new DaemonConfigurationError({
-                reason: "environment",
-                message: configurationMessage(error),
-              }),
-          }),
-        ),
+      : new DaemonConfigurationError({
+          reason: "environment",
+          message: linked(
+            configurationMessage(cause),
+            `${RUN_SHARNESSD}#setting`,
+          ),
+        }),
   ),
   Effect.withSpan("loadDaemonProcessConfiguration"),
 );
@@ -286,8 +284,10 @@ function registrationRequest(
     return Effect.fail(
       new DaemonConfigurationError({
         reason: "environment",
-        message:
-          "SHARNESS_REGISTRATION_AGENT_NAME, SHARNESS_REGISTRATION_OPERATION_ID and SHARNESS_REGISTRATION_PRINCIPAL_ID must all be supplied. Docs: https://docs.moltzap.xyz/spec/harness/daemon#process-and-configuration",
+        message: linked(
+          "SHARNESS_REGISTRATION_AGENT_NAME, SHARNESS_REGISTRATION_OPERATION_ID and SHARNESS_REGISTRATION_PRINCIPAL_ID must all be supplied",
+          `${RUN_SHARNESSD}#registration-settings`,
+        ),
       }),
     );
   }
@@ -295,10 +295,7 @@ function registrationRequest(
 }
 
 const credentialFailure =
-  (
-    fileReason: ProcessConfigurationFailure,
-    valueReason: ProcessConfigurationFailure,
-  ) =>
+  (fileReason: SecretFileFailure, valueReason: SecretFileFailure) =>
   (error: CredentialError): DaemonConfigurationError =>
     configurationError(error.stage === "file" ? fileReason : valueReason);
 
