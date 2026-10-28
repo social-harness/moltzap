@@ -231,6 +231,7 @@ function appendChildren(
       break;
     }
   }
+}
 
 /**
  * The arms of a failed union the input selects. An `undefined` arm, which an
@@ -321,8 +322,6 @@ function isRecord(
   value: unknown,
 ): value is Readonly<Record<PropertyKey, unknown>> {
   return typeof value === "object" && value !== null;
-}
-
 }
 
 function pathSegment(key: PropertyKey): string | number {
