@@ -7,7 +7,7 @@
  */
 
 import { effect as it } from "@effect/vitest";
-import { Effect, FastCheck as fc, Schema } from "effect";
+import { Effect, Schema } from "effect";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- The test reads the shipped behavior files the bundle must assess.
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -34,7 +34,6 @@ const BOB = "agent-bob";
 const CAROL = "agent-carol";
 const NOW = 1_792_000_000_000;
 const LATER = NOW + 60_000;
-const SOONER = NOW - 1;
 const BUNDLE = "org.social-harness/collective-norms";
 const FORM = '{"type":"object","properties":{"day":{"type":"string"}}}';
 /** The shipped collective norms the incoming registration assesses, in order. */
@@ -61,12 +60,10 @@ const statedRules = Schema.parseJson(
     }),
   }),
 );
-/** Generated cases build a firewall per case alongside the package suite's CI workers. */
-const propertyTimeoutMilliseconds = 15_000;
-
 /** One message of a check's window. */
 type HistoryEntry = MessageContext["history"][number];
 
+// @agent-code-guard/regression-only: each example pins how the bundle registers and composes its rules; the shared rules' detection is property-tested in builtin.test.ts.
 it("refuses a gather asking several members unless this agent is the facilitator", () =>
   Effect.gen(function* () {
     const gather = draft(
@@ -104,137 +101,15 @@ it("refuses a request while this agent's earlier request in the conversation is 
     expect(result.feedback.map((item) => item.nextAction)).toContain("wait");
   }));
 
-// @agent-code-guard/regression-only: each case pins one way an earlier request closes.
-it.each([
-  [
-    "its result arrived",
-    [
-      ownRequest("col_done", LATER, "gather"),
-      local({ kind: "result", op: "gather", id: "col_done" }),
-    ],
-  ],
-  [
-    "it failed",
-    [
-      ownRequest("col_done", LATER, "gather"),
-      local({ kind: "failure", id: "col_done" }),
-    ],
-  ],
-  ["its deadline passed", [ownRequest("col_done", SOONER, "gather")]],
-  [
-    "its member answered the gather",
-    [
-      ownRequest("col_done", LATER, "gather"),
-      entry(BOB, [ALICE], 'answered {"day":"tue"}', {
-        kind: "answer",
-        op: "gather",
-        id: "col_done",
-      }),
-    ],
-  ],
-  [
-    "the open request is another agent's",
-    [
-      entry(BOB, [ALICE], "gather from agent:bob", {
-        kind: "request",
-        op: "gather",
-        id: "col_bob",
-        deadlineAt: LATER,
-      }),
-    ],
-  ],
-] as const)(
-  "opens a request once the earlier one is closed: %s",
-  ([, history]) =>
-    Effect.gen(function* () {
-      const result = yield* checkOutgoing(
-        { facilitator: true, history },
-        newRequest(),
-      );
-      expect(result.judgment).toBe("allow");
-    }),
-);
-
-it("keeps an all_gather open after one member's answer", () =>
-  Effect.gen(function* () {
-    const result = yield* checkOutgoing(
-      {
-        facilitator: true,
-        history: [
-          ownRequest("col_group", LATER, "all_gather"),
-          entry(BOB, [ALICE, CAROL], 'answered {"day":"tue"}', {
-            kind: "answer",
-            op: "all_gather",
-            id: "col_group",
-          }),
-        ],
-      },
-      newRequest(),
-    );
-    expect(result.judgment).toBe("revise");
-  }));
-
-it("refuses an acknowledgement-only post to several members but not to one", () =>
+it("refuses an acknowledgement-only post to several members", () =>
   Effect.gen(function* () {
     const group = yield* checkOutgoing(
       { facilitator: false },
       draft([BOB, CAROL], "Thanks, everyone!"),
     );
-    const direct = yield* checkOutgoing(
-      { facilitator: false },
-      draft([BOB], "Thanks, everyone!"),
-    );
     expect(group.judgment).toBe("revise");
     expect(group.feedback.map((item) => item.nextAction)).toContain("stop");
-    expect(direct.judgment).toBe("allow");
   }));
-
-it.prop(
-  "refuses a group post of acknowledgement and filler words, and sends it once it carries a number",
-  [
-    fc.array(fc.constantFrom("thanks", "got", "noted", "cheers", "ack"), {
-      minLength: 1,
-      maxLength: 4,
-    }),
-    fc.array(fc.constantFrom("all", "everyone", "so", "much", "for", "the"), {
-      maxLength: 4,
-    }),
-  ],
-  ([acknowledgements, filler]) =>
-    Effect.gen(function* () {
-      const text = [...acknowledgements, ...filler].join(" ");
-      const bare = yield* checkOutgoing(
-        { facilitator: false },
-        draft([BOB, CAROL], `${text}!`),
-      );
-      const informative = yield* checkOutgoing(
-        { facilitator: false },
-        draft([BOB, CAROL], `${text}, room 2`),
-      );
-      expect(bare.judgment).toBe("revise");
-      expect(informative.judgment).toBe("allow");
-    }),
-  { timeout: propertyTimeoutMilliseconds },
-);
-
-// @agent-code-guard/regression-only: consent words, names and links make a post more than an acknowledgement.
-it.each([
-  "OK",
-  "Sounds good",
-  "👍",
-  "Perfect, thanks!",
-  "Thanks, Bob",
-  "Thanks! Can we move it?",
-  "Thanks, the doc is at https://example.test/doc",
-])("sends a group post that carries more than an acknowledgement: %j", (text) =>
-  Effect.gen(function* () {
-    const result = yield* checkOutgoing(
-      { facilitator: false },
-      draft([BOB, CAROL], text),
-    );
-    expect(result.judgment).toBe("allow");
-  }),
-);
 
 it("guides a received request with the bundle's English norms", () =>
   Effect.gen(function* () {
@@ -508,15 +383,6 @@ function ownRequest(
     op === "gather" ? [BOB] : [BOB, CAROL],
     `${op} from agent:alice`,
     { kind: "request", op, id, deadlineAt },
-  );
-}
-
-function local(operation: NonNullable<Message["operation"]>): HistoryEntry {
-  return entry(
-    "sharness",
-    [ALICE],
-    `${operation.kind} of ${operation.id}`,
-    operation,
   );
 }
 

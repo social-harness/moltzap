@@ -478,7 +478,7 @@ parameterizes them and adds no code:
 
 | `use` | Direction | Middleware id | Rules |
 | --- | --- | --- | --- |
-| `acknowledgements` | both | `org.social-harness/acknowledgements` | `acknowledgement`: an exact empty incoming acknowledgement, such as "Thanks", needs no response unless the agent's own later message asked its sender something; `no-acknowledgement-posts`: asks for revision of a plain outgoing post to two or more members whose whole text is such an acknowledgement |
+| `acknowledgements` | both | `org.social-harness/acknowledgements` | `acknowledgement`: an exact empty incoming acknowledgement, such as "Thanks", needs no response unless the agent's own later message asked its sender something; `no-acknowledgement-posts`: asks for revision of a plain outgoing post to two or more members that only thanks or acknowledges |
 | `allowed-senders` | incoming | `org.social-harness/allowed-senders` | `allowed-sender` (safety): blocks any certified sender outside `agentIds`; an empty list admits none |
 | `credentials` | outgoing | `org.social-harness/credentials` | `credentials`: asks for revision of credential-shaped text or a labelled credential value other than a status word |
 | `plain-language` | outgoing | `org.social-harness/plain-language` | `plain-language`: asks for revision of a plain send that carries raw JSON, a name in `toolNames`, a name starting with one of `toolNamePrefixes`, or a name in `invocationToolNames` formatted or invoked as a tool |
@@ -515,10 +515,17 @@ a gather answer also closes its request, while an all_gather answer does not.
 A group-addressed gather posts each request in a direct conversation, outside
 the group history window, so this check cannot see those requests.
 
-Both directions of `acknowledgements` recognize only an exact acknowledgement
+The incoming `acknowledgement` rule recognizes only an exact acknowledgement
 phrase ("thanks", "thank you", "got it", "noted", "ack" or "acknowledged",
 with trailing punctuation), so a message carrying anything else, such as an
 emoji, a name or a time, keeps its ordinary meaning.
+`no-acknowledgement-posts`, which the collective norm bundle registers too,
+uses a bounded vocabulary: a post counts as an acknowledgement when it has no
+question mark, digit, symbol or link, and every word, once addresses and
+mentions are removed, is an acknowledgement word, such as "thanks", "got",
+"noted" or "cheers", or a filler word, such as "all", "everyone" or "for",
+with at least one acknowledgement word. Consent words such as "ok" or
+"perfect", names and emoji keep a post's meaning.
 
 The collective norm bundle registers one middleware per direction under one
 revision, the SHA-256 of its edition, both directions' English revisions and
@@ -530,9 +537,8 @@ every release moves it. Its outgoing code rules are
 code rule refused the send. The incoming registration assesses those rules
 and `empty-acknowledgement`. The facilitator role is recorded in the outgoing
 provenance, not the revision, so every member of a run registers the same
-revision. Its `one-open-request` reads open requests as `open-requests` does;
-`no-acknowledgement-posts` uses the bundle's own bounded acknowledgement
-vocabulary, which its edition records. Because it registers its English rules
+revision. Its `one-open-request` and `no-acknowledgement-posts` are the
+`open-requests` and `acknowledgements` built-ins' own rules. Because it registers its English rules
 as code, `firewall_decisions` reports their judgments under the bundle and
 `policy_read` lists them without text. The bundle reads those English norms
 from the [shipped collective behaviors](#shipped-collective-behaviors). The

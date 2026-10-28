@@ -1,6 +1,28 @@
-/** @file Shared finding and revision helpers of the built-in code middleware. */
+/**
+ * @file The code rule shape, finding and revision helpers the built-ins and
+ * the collective norm bundle share.
+ */
 
 import { createHash } from "node:crypto";
+import type {
+  Message,
+  MessageContext,
+  RuleDescription,
+} from "../evaluator/index.js";
+
+/**
+ * One deterministic rule a built-in and the collective norm bundle both
+ * register: its description, the statement the bundle's edition records in
+ * place of English text, and its finding on one send.
+ */
+export interface CodeRule {
+  readonly description: RuleDescription;
+  readonly statement: string;
+  readonly assess: (
+    message: Message,
+    context: MessageContext,
+  ) => "pass" | "not-applicable" | "revise";
+}
 
 /**
  * A code rule's finding for one candidate: a violation asks the agent to
