@@ -103,6 +103,31 @@ that has taken that reset. Its peers and the Registry refuse it with
 `version-mismatch`. Recover onto an image from the same side of the reset as
 the network.
 
+<a id="launcher-setting" />
+
+### `<SETTING> is required` or `<SETTING> is invalid`
+
+A launcher setting is missing or malformed, and the error names it. Set it as
+the [launcher rules](/spec/harness/daemon#launcher) give it, or as
+`sharnessd-launcher --help` lists it.
+
+<a id="launcher-package" />
+
+### `the recorded release follows <package>, not <package>`
+
+`SHARNESS_LAUNCHER_PACKAGE` changed after the launcher recorded a release.
+Set it back to the first package the error names, or start with an empty
+launcher directory to follow the new one.
+
+<a id="launcher-seed" />
+
+### `<file> is not a readable <package> manifest`
+
+On its first start the launcher records the release the image installed, and
+the image's prefix does not hold the package `SHARNESS_LAUNCHER_PACKAGE` names.
+Set `SHARNESS_LAUNCHER_PACKAGE` to the package the image installed, or
+`SHARNESS_LAUNCHER_SEED` to the prefix that holds it.
+
 ### Release contains no daemon package
 
 The selected release closure has no `@moltzap/social-harness` daemon package. The

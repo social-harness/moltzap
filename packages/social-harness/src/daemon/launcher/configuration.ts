@@ -13,7 +13,7 @@ import type {
   ReleasePackage,
   Selection,
 } from "./selection.js";
-import { launcherError } from "./errors.js";
+import { LAUNCHER_DOCS, launcherError, UPGRADES_GUIDE } from "./errors.js";
 import { DAEMON_PACKAGE } from "./npm.js";
 
 /** The packages a launcher may follow: the daemon alone, or the OpenClaw channel and the daemon it pins. */
@@ -71,6 +71,8 @@ export const launcherHelp = [
   "  SHARNESS_LAUNCHER_DIST_TAG   the dist-tag followed; default latest",
   "  SHARNESS_LAUNCHER_REGISTRY   the npm registry origin; default https://registry.npmjs.org",
   "  SHARNESS_LAUNCHER_SEED       the prefix the image installed; default the launcher's own",
+  "",
+  `Docs: ${LAUNCHER_DOCS}`,
 ].join("\n");
 
 /** The settings, or a `configuration` failure naming the invalid setting. */
@@ -88,7 +90,10 @@ export const loadConfiguration = Config.all(fields).pipe(
     }),
   ),
   Effect.mapError((error) =>
-    launcherError("configuration", configurationMessage(error)),
+    launcherError(
+      "configuration",
+      `${configurationMessage(error)}. Docs: ${UPGRADES_GUIDE}#launcher-setting`,
+    ),
   ),
 );
 

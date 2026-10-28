@@ -32,8 +32,7 @@ export const preResetRemedy =
   "Start with a fresh state directory and register again";
 
 /** Daemon startup links this upgrade heading when retained state requires a reset release. */
-export const resetReleaseDocsAnchor =
-  "docs/guides/upgrades.mdx#apply-a-reset-release";
+export const resetReleaseDocsAnchor = "guides/upgrades#apply-a-reset-release";
 
 /** Daemon startup names this setting when its message-policy document is invalid. */
 export const messagePolicyFileSetting = "SHARNESS_MESSAGE_POLICY_FILE";
