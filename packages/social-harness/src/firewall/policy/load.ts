@@ -151,18 +151,22 @@ export function policyConfigurationError(
   path?: string,
   behaviorReason?: BehaviorFailure,
 ): MessagePolicyConfigurationError {
+  if (path === undefined) {
+    return new MessagePolicyConfigurationError({
+      reason,
+      behaviorReason,
+      message: policyFailureMessage(reason),
+    });
+  }
   const category = behaviorReason === undefined ? "" : ` (${behaviorReason})`;
   return new MessagePolicyConfigurationError({
     reason,
     behaviorReason,
-    message:
-      path === undefined
-        ? policyFailureMessage(reason)
-        : policyFailureMessage(
-            reason,
-            `; invalid at ${path}${category}`,
-            path,
-          ),
+    message: policyFailureMessage(
+      reason,
+      `; invalid at ${path}${category}`,
+      path,
+    ),
   });
 }
 
@@ -180,9 +184,10 @@ export function policyFailureMessage(
   detail = "",
   path?: string,
 ): string {
-  const docs =
-    path === undefined ? failureMessages[reason].docs : failureDocs(reason, path);
-  return `${failureMessages[reason].text}${detail}. Docs: ${docs}`;
+  if (path === undefined) {
+    return `${failureMessages[reason].text}${detail}. Docs: ${failureMessages[reason].docs}`;
+  }
+  return `${failureMessages[reason].text}${detail}. Docs: ${failureDocs(reason, path)}`;
 }
 
 /**
