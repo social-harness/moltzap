@@ -17,6 +17,13 @@ sections are the codebase's history as MoltZap.
 
 <!-- towncrier release notes start -->
 
+## [2026.1028.9] - 2026-10-28
+
+### Fixed
+
+- The OpenClaw channel reports a sent post's `postId` as its message id, the id
+  recipients see as `MessageSid`, instead of a random local value (#1537).
+
 ## [2026.1028.8] - 2026-10-28
 
 ### Added
