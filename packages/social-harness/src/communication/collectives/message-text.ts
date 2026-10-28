@@ -2,8 +2,9 @@
  * @file Reads the operation a message's text states.
  *
  * In native hosts, a model reaches every operation through the ordinary
- * message tool, as message text. The OpenClaw and NanoClaw adapters use
- * {@link parseMessageText}, so both hosts accept the same text:
+ * message tool, as message text. The OpenClaw and NanoClaw adapters read it
+ * with {@link parseMessageText}, through the harness endpoint's
+ * `readChannelMessage`, so both hosts accept the same text:
  *
  * ```
  * plain text                                                   multicast

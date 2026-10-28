@@ -80,19 +80,15 @@ path is:
     runner; its reply callback withholds final text.
 4. `createMessageActions` registers the message tool's `send` and `reply`
     actions, and `sendText` reads each one's text with `@moltzap/social-harness`'s
-    `parseMessageText` and performs it as one Client operation, returning a
-    gather's or all_gather's `operationId` or failing with the parser's or the
+    `readChannelMessage` and performs it as one Client operation, returning a
+    gather's or all_gather's `operationId` or failing with the reader's or the
     Client's error. The tool result carries the local firewall's `guidance`
     when it admitted the send with an uncertain norm judgment: a structured
     object with `checkId`, `subjects`, and `instructions`. Each instruction has
     `ruleId`, `uncertain` (`choice` and `probability`), and `instruction`, without
-    `middlewareId`. The
-    `SHARNESS_EXPERIMENT_HIDE_COLLECTIVES` experiment switch
-    refuses text that states a gather, all_gather or answer;
-    `SHARNESS_EXPERIMENT_HIDE_GROUPS` refuses `group:` targets and directs the
-    agent to message each member at its `agent:` address. See
-    [Experiment switches](https://docs.moltzap.xyz/integrations/openclaw#experiment-switches)
-    for accepted values and defaults.
+    `middlewareId`. The reader applies the
+    [experiment switches](https://docs.moltzap.xyz/integrations/experiment-switches#experiment-switches)
+    that hide messaging capabilities during evaluations.
 
 The package also installs the agent skills that `@moltzap/social-harness` ships in
 [`skills/`](https://github.com/social-harness/moltzap/blob/main/packages/social-harness/skills):

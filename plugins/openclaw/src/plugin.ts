@@ -12,6 +12,8 @@ import type { OpenClawPluginDefinition } from "openclaw/plugin-sdk/plugin-entry"
 import type { ReplyPayload } from "openclaw/plugin-sdk/reply-payload";
 import {
   acquireHarnessEndpoint,
+  type ChannelFeatureUnavailableError,
+  type ExperimentSwitchInvalidError,
   groupMembers,
   type GuidanceBodyOrigin,
   type HarnessEndpoint,
@@ -21,7 +23,7 @@ import {
   MessageAddressInput,
   type MessageAddressInput as MessageAddressInputValue,
   type MessageTextError,
-  parseMessageText,
+  readChannelMessage,
   renderCollectiveRequest,
   renderCollectiveResult,
   renderContent,
@@ -34,7 +36,6 @@ import {
   ConfigError,
   Data,
   Effect,
-  Either,
   JSONSchema,
   Option,
   Schema,
@@ -64,24 +65,6 @@ const CHANNEL_ID = "sharness";
 const TARGET_HINT =
   'Use an explicit "agent:<name>" or "group:<member>,<member>,..." address';
 const LOG_PREVIEW_CHARS = 80;
-
-/**
- * Experiment control for evaluations that compare agents with and without
- * gather, all_gather and answers. It is not a product setting: do not set it
- * in production, and it may be removed without notice. When true, a message
- * whose text states one of those operations fails with
- * {@link OpenClawCollectivesUnavailableError}; plain text is sent as usual.
- */
-const HIDE_COLLECTIVES_VARIABLE = "SHARNESS_EXPERIMENT_HIDE_COLLECTIVES";
-
-/**
- * Experiment control for evaluations that compare agents with and without
- * group addresses. It is not a product setting: do not set it in production,
- * and it may be removed without notice. When true, a send to a `group:`
- * address fails with {@link OpenClawGroupsUnavailableError}; `agent:` sends go
- * out as usual.
- */
-const HIDE_GROUPS_VARIABLE = "SHARNESS_EXPERIMENT_HIDE_GROUPS";
 
 /**
  * The message tool actions Social Harness handles. Both take the same text and send
@@ -227,27 +210,6 @@ class OpenClawOutboundError extends Data.TaggedError("OpenClawOutboundError")<{
 }> {
   override get message(): string {
     return `send failed: ${outboundFailureText[this.reason]}`;
-  }
-}
-
-/**
- * A message whose text states a gather, all_gather or answer while
- * {@link HIDE_COLLECTIVES_VARIABLE} is true.
- */
-class OpenClawCollectivesUnavailableError extends Data.TaggedError(
-  "OpenClawCollectivesUnavailableError",
-) {
-  override get message(): string {
-    return "send failed: gather, all_gather and answers are not available";
-  }
-}
-
-/** A send to a `group:` address while {@link HIDE_GROUPS_VARIABLE} is true. */
-class OpenClawGroupsUnavailableError extends Data.TaggedError(
-  "OpenClawGroupsUnavailableError",
-) {
-  override get message(): string {
-    return "send failed: group addresses are not available; message each agent at its agent: address. Docs: https://docs.moltzap.xyz/integrations/openclaw#experiment-switches";
   }
 }
 
@@ -479,10 +441,6 @@ function refuseTargets(
   return carriesTargets(ctx.params.targets)
     ? Effect.fail(new OpenClawTargetsUnsupportedError())
     : Effect.void;
-}
-
-function statesOperation(input: SendInput): boolean {
-  return "collectiveResponse" in input || input.collective !== undefined;
 }
 
 function createMessageSection(connectedAccount: ConnectedAccountState) {
@@ -1125,7 +1083,7 @@ function textPreview(params: TextSend): string {
 function logOutboundFailure(
   connectedAccount: ConnectedAccountState,
   prefix: string,
-  error: Error | ConfigError.ConfigError,
+  error: Error,
 ): Effect.Effect<void> {
   return Effect.sync(() => {
     connectedAccount.current?.log?.warn?.(`${prefix} failed: ${error.message}`);
@@ -1158,10 +1116,8 @@ function requireEndpoint(
 }
 
 /**
- * Read one host send's target and text as a send input. While its experiment
- * switch is true, a send to a group address, or text that states a gather,
- * all_gather or answer (validly or not), is refused before the endpoint
- * receives it; the group refusal comes first.
+ * Validate OpenClaw's optional target and text fields before handing them to
+ * the shared native-channel reader.
  */
 function readSendInput({
   to,
@@ -1170,9 +1126,8 @@ function readSendInput({
   SendInput,
   | OpenClawOutboundError
   | MessageTextError
-  | OpenClawCollectivesUnavailableError
-  | OpenClawGroupsUnavailableError
-  | ConfigError.ConfigError
+  | ChannelFeatureUnavailableError
+  | ExperimentSwitchInvalidError
 > {
   if (!isMessageAddressInput(to)) {
     return Effect.fail(
@@ -1184,47 +1139,7 @@ function readSendInput({
       new OpenClawOutboundError({ reason: "invalid-operation" }),
     );
   }
-  const parsed = parseMessageText(to, text);
-  const operation = Either.match(parsed, {
-    onLeft: (error) => error.operation !== "message",
-    onRight: statesOperation,
-  });
-  return refuseWhileHidden(
-    to.startsWith("group:"),
-    HIDE_GROUPS_VARIABLE,
-    () => new OpenClawGroupsUnavailableError(),
-  ).pipe(
-    Effect.zipRight(
-      refuseWhileHidden(
-        operation,
-        HIDE_COLLECTIVES_VARIABLE,
-        () => new OpenClawCollectivesUnavailableError(),
-      ),
-    ),
-    Effect.zipRight(parsed),
-  );
-}
-
-/**
- * Fail with `refusal()` while the experiment switch `variable` is true. The
- * switch is read only when `covered` says it applies to the send, so an
- * unreadable value fails only those sends, with a configuration error naming
- * the variable.
- */
-function refuseWhileHidden<E>(
-  covered: boolean,
-  variable: string,
-  refusal: () => E,
-): Effect.Effect<void, E | ConfigError.ConfigError> {
-  if (!covered) {
-    return Effect.void;
-  }
-  return Config.boolean(variable).pipe(
-    Config.withDefault(false),
-    Effect.flatMap((hidden) =>
-      hidden ? Effect.failSync(refusal) : Effect.void,
-    ),
-  );
+  return readChannelMessage(to, text);
 }
 
 /**

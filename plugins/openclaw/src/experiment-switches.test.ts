@@ -95,26 +95,20 @@ function collectivesSwitchTests() {
 }
 
 function groupSwitchTests(action: "send" | "reply") {
-  it("refuses group targets for every enabled value and message text", () =>
+  it("refuses group targets for plain and operation text", () =>
     switchOnRefusesGroups(action));
-  it.each([undefined, "false", "no", "off", "0"])(
-    "passes group targets on to the account when set to %s",
-    (value) => {
-      vi.stubEnv(HIDE_GROUPS, value);
-
-      return reachesAccount("hello", GROUP_ADDRESS, action);
-    },
-  );
+  it("passes group targets on to the account with the switch unset", () => {
+    vi.stubEnv(HIDE_GROUPS, undefined);
+    return reachesAccount("hello", GROUP_ADDRESS, action);
+  });
   it("passes a direct plain-text send on to the account when both switches are true", () => {
     vi.stubEnv(HIDE_GROUPS, "true");
     vi.stubEnv(HIDE_COLLECTIVES, "true");
 
     return reachesAccount("hello", "agent:nova", action);
   });
-  it.each(["sometimes", "", "TRUE"])(
-    "fails a group target naming the switch, and passes a direct target, for invalid value %s",
-    (value) => invalidGroupSwitchFails(action, value),
-  );
+  it("fails a group target naming the switch, and passes a direct target, when its value is not a boolean", () =>
+    invalidGroupSwitchFails(action));
 }
 
 /**
@@ -125,13 +119,11 @@ function groupSwitchTests(action: "send" | "reply") {
  * no_claim=which refusal wins when both switches are on.
  */
 function switchOnRefusesGroups(action: "send" | "reply") {
+  vi.stubEnv(HIDE_GROUPS, "true");
   return fc.assert(
     fc.asyncProperty(
-      fc.constantFrom("true", "yes", "on", "1"),
       fc.oneof(fc.string(), fc.constantFrom(...OPERATION_TEXTS)),
-      (value, message) => {
-        vi.stubEnv(HIDE_GROUPS, value);
-
+      (message) => {
         return Effect.runPromise(
           messageAction(action, { to: GROUP_ADDRESS, message }).pipe(
             Effect.flip,
@@ -152,10 +144,10 @@ function switchOnRefusesGroups(action: "send" | "reply") {
  * variable while direct sends still reach the account; fails_when=the switch
  * is read for every target instead of only group targets; why_new=no test sent
  * a direct target with an invalid group switch value; seam=none;
- * no_claim=the configuration error's full wording.
+ * no_claim=the error's full wording, which the library's reader owns.
  */
-function invalidGroupSwitchFails(action: "send" | "reply", value: string) {
-  vi.stubEnv(HIDE_GROUPS, value);
+function invalidGroupSwitchFails(action: "send" | "reply") {
+  vi.stubEnv(HIDE_GROUPS, "sometimes");
 
   return Effect.runPromise(
     messageAction(action, { to: GROUP_ADDRESS, message: "hello" }).pipe(
