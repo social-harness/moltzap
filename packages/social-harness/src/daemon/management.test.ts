@@ -4,10 +4,6 @@ import { FileSystem, HttpClient } from "@effect/platform";
 import { NodeFileSystem } from "@effect/platform-node";
 import { scopedLive as it, scoped as itOnTestClock } from "@effect/vitest";
 import {
-  Client,
-  StreamableHTTPClientTransport,
-} from "@modelcontextprotocol/client";
-import {
   type Context,
   Deferred,
   Duration,
@@ -35,6 +31,7 @@ import {
   withGenesisAnchorSelecting,
   withMisattributedActionEvidence,
 } from "../__tests__/certified-history-fixtures.js";
+import { connectInProcessClient } from "../__tests__/mcp-http-fixtures.js";
 import { routerInstanceId } from "../__tests__/router-worker-fixtures.js";
 import { unusedEndpointStore } from "../__tests__/unused-endpoint-store.js";
 import { verifyStoredMembership } from "../communication/conversations/index.js";
@@ -460,21 +457,21 @@ const failsReadOverGenesisAnchorSelectingRecord = () =>
     );
   });
 
-const checksExactAgentLookups = () =>
+/** A `search_agents` tool result with its one text block parsed as JSON. */
+const lookupReply = Schema.Struct({
+  structuredContent: Schema.Unknown,
+  content: Schema.Tuple(
+    Schema.Struct({ type: Schema.Literal("text"), text: Schema.parseJson() }),
+  ),
+});
+
+/**
+ * Serve `operations` through the daemon's MCP handler and return a call of
+ * its `search_agents` tool from a connected client. The handler's delivery
+ * operations die if a lookup reaches them.
+ */
+const serveAgentLookup = (operations: DaemonManagementOperations) =>
   Effect.gen(function* () {
-    const fixture = yield* makeIdentityFixture;
-    const operations = yield* makeDaemonManagementOperations({
-      store: unusedEndpointStore("management lookup test"),
-      bootstrap: fixture.bootstrap,
-      registration: activeRegistration(fixture.cards[0]),
-    }).pipe(Effect.provide(makeRegistryLayer(fixture.cards)));
-    const remote = fixture.cards[1];
-    const found = {
-      kind: "found",
-      agentId: remote.agentId,
-      agentName: remote.agentName,
-      agentCard: yield* Schema.encode(AgentCard)(remote),
-    };
     const unused = () => Effect.dieMessage("lookup reached another operation");
     const handler = yield* makeHarnessMcpHttpHandler({
       implementation: { name: "agent-lookup-test", version: "1" },
@@ -492,34 +489,43 @@ const checksExactAgentLookups = () =>
     yield* Effect.addFinalizer(() =>
       Effect.tryPromise(() => handler.close()).pipe(Effect.orDie),
     );
-    const client = new Client(
-      { name: "agent-lookup-test", version: "1" },
-      { versionNegotiation: { mode: { pin: "2026-07-28" } } },
-    );
-    yield* Effect.addFinalizer(() =>
-      Effect.tryPromise(() => client.close()).pipe(Effect.orDie),
-    );
-    yield* Effect.tryPromise(() =>
-      client.connect(
-        new StreamableHTTPClientTransport(new URL("http://127.0.0.1/mcp"), {
-          fetch: (url, init) => handler.fetch(new Request(url, init)),
-        }),
-      ),
-    );
-    const lookup = (selector: Readonly<Record<string, string>>) =>
+    const client = yield* connectInProcessClient(handler, {
+      versionNegotiation: { mode: { pin: "2026-07-28" } },
+    });
+    return (selector: Readonly<Record<string, string>>) =>
       Effect.tryPromise(() =>
         client.callTool({ name: "search_agents", arguments: selector }),
-      );
+      ).pipe(Effect.flatMap(Schema.decodeUnknown(lookupReply)));
+  });
 
-    expect(yield* lookup({ agentName: remote.agentName })).toMatchObject({
+const checksExactAgentLookups = () =>
+  Effect.gen(function* () {
+    const fixture = yield* makeIdentityFixture;
+    const operations = yield* makeDaemonManagementOperations({
+      store: unusedEndpointStore("management lookup test"),
+      bootstrap: fixture.bootstrap,
+      registration: activeRegistration(fixture.cards[0]),
+    }).pipe(Effect.provide(makeRegistryLayer(fixture.cards)));
+    const lookup = yield* serveAgentLookup(operations);
+    const remote = fixture.cards[1];
+    const found = {
+      kind: "found",
+      agentId: remote.agentId,
+      agentName: remote.agentName,
+      agentCard: yield* Schema.encode(AgentCard)(remote),
+    };
+
+    expect(yield* lookup({ agentName: remote.agentName })).toEqual({
       structuredContent: found,
-      content: [{ type: "text", text: JSON.stringify(found) }],
+      content: [{ type: "text", text: found }],
     });
-    expect(yield* lookup({ agentId: remote.agentId })).toMatchObject({
+    expect(yield* lookup({ agentId: remote.agentId })).toEqual({
       structuredContent: found,
+      content: [{ type: "text", text: found }],
     });
-    expect(yield* lookup({ agentName: "unknown-agent" })).toMatchObject({
+    expect(yield* lookup({ agentName: "unknown-agent" })).toEqual({
       structuredContent: { kind: "not_found" },
+      content: [{ type: "text", text: { kind: "not_found" } }],
     });
   });
 

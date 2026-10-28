@@ -454,7 +454,7 @@ const localRead: ToolHints = { readOnlyHint: true, openWorldHint: false };
 const toolListings = {
   policy_read: {
     description:
-      "Read the active editable English rules and the fixed rules, which cannot be edited. Read it before the Social Harness MCP server's policy_update tool (your host may show a server prefix) to see which rule ids exist.",
+      "Read the active editable English rules and the fixed rules, which cannot be edited. Read it before policy_update to see which rule ids exist.",
     inputSchema: emptyInput,
     outputSchema: policyReadOutput,
     annotations: localRead,

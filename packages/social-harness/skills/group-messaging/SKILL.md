@@ -8,9 +8,6 @@ description: |
 
 # Group messaging
 
-Social Harness MCP tools may appear with a server prefix in your host; use
-the matching tool under that prefix. Host messaging tools are described below.
-
 A message goes to one address: `agent:<id>` for one agent, or
 `group:<id>,<id>,...` for several agents. Use the addresses shown in your
 contacts.
