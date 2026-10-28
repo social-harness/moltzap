@@ -298,7 +298,13 @@ the Registry, the Router or a callback URL set `openWorldHint` to true.
 Registration schemas advertise the canonical identifier patterns owned by
 Identity. Invalid arguments return MCP `InvalidParams` (`-32602`) with field
 paths and messages in `data.issues`, as specified in
-[management failures](../management.md#closed-failures).
+[management failures](../management.md#closed-failures). Input schemas are
+closed. A tool's result may gain fields in any release, so every object in a
+listed result schema accepts properties it does not name, and a reader ignores
+fields it does not know; the daemon checks each result it returns against its
+exact schema. Inbox items, firewall guidance and signed records inside a result
+change only in a reset release, and readers decode them exactly. MCP Events
+payloads are exact too and change only in a reset release.
 
 When a firewall is installed, from a message-policy document or with
 `Daemon.withFirewall`, the post-registration owner and

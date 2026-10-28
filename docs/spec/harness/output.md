@@ -138,12 +138,10 @@ The loopback Client rebuilds the same typed error from it. A send
 may also return `{reason: "firewall-refused", checkId, refusal, feedback}`,
 which reconstructs `FirewallSendError` without exposing private evidence. A send
 that ends without a typed failure, or whose completed result fails the tool's
-output schema, answers `outcome-unknown`. The daemon checks its own result
-exactly; a host reads results, refusal data and pending-delivery events
-additively, ignoring fields its release does not name, so a newer daemon can
-add an optional field without breaking a host on the previous release. The
-items and firewall guidance inside them keep their own exact forms, so one
-guidance form is never read as another. It is
+output schema, answers `outcome-unknown`. Refusal data, like the result, may
+gain fields as [tool results](./daemon.md#mcp-catalog) do; the firewall
+guidance inside them keeps its exact form, so one guidance form is never read
+as another. It is
 not exposed as a second model messaging tool when the host already supplies
 native messaging.
 
