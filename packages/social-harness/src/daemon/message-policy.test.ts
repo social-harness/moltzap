@@ -124,15 +124,7 @@ it("names stored English rules when the policy file drops its english block", ()
       },
     });
     const withoutEnglish = file({ format: FORMAT, mode: "guidance" });
-    const error = yield* withStore(stateDirectory(), (store) =>
-      Effect.gen(function* () {
-        yield* installEditableFirewall(yield* installation(withEnglish), store);
-        return yield* installEditableFirewall(
-          yield* installation(withoutEnglish),
-          store,
-        ).pipe(Effect.flip);
-      }),
-    );
+    const error = yield* reinstall(withEnglish, withoutEnglish);
     const startup = policyInstallationError(error);
     expect(error.reason).toBe("not-configured");
     expect(startup.message).toContain("holds English rules");
@@ -179,6 +171,23 @@ it.each([
     expect(Daemon.help).toContain(name);
   }),
 );
+
+/**
+ * Installs the policy at `first`, then the policy at `second` against the same
+ * store, as a restart with a changed policy file does, and answers the second
+ * installation's failure.
+ */
+function reinstall(first: string, second: string) {
+  return withStore(stateDirectory(), (store) =>
+    Effect.gen(function* () {
+      yield* installEditableFirewall(yield* installation(first), store);
+      return yield* installEditableFirewall(
+        yield* installation(second),
+        store,
+      ).pipe(Effect.flip);
+    }),
+  );
+}
 
 /** The firewall options the daemon installs from the policy file at `path`. */
 function installation(path: string) {
