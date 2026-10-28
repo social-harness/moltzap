@@ -17,6 +17,13 @@ sections are the codebase's history as MoltZap.
 
 <!-- towncrier release notes start -->
 
+## [2026.1028.6] - 2026-10-28
+
+### Added
+
+- A plain message or collective response returns the `postId` of the post it
+  created and its conversation's canonical `address`.
+
 ## [2026.1028.5] - 2026-10-28
 
 ### Added
