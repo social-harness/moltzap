@@ -364,9 +364,14 @@ interface RuleChange {
 
 /** Each `{behavior}` addition becomes its rule; a behavior the policy file would refuse is an invalid rule. */
 function resolvedChange(change: typeof policyUpdateSchema.Type) {
-  return Effect.forEach(change.add ?? [], (item) =>
-    "behavior" in item ? behaviorRule(item.behavior) : Effect.succeed(item),
-  ).pipe(Effect.map((add): RuleChange => ({ add, remove: change.remove ?? [] })));
+  return Effect.forEach(
+    change.add ?? [],
+    (item) =>
+      "behavior" in item ? behaviorRule(item.behavior) : Effect.succeed(item),
+    { concurrency: 1 },
+  ).pipe(
+    Effect.map((add): RuleChange => ({ add, remove: change.remove ?? [] })),
+  );
 }
 
 function behaviorRule(text: string) {

@@ -15,6 +15,7 @@ import { readCredential } from "../../daemon/credentials.js";
 import { Daemon } from "../../daemon/index.js";
 import { FirewallPolicyError } from "../evaluator/index.js";
 import { localGuidanceImpersonationRule } from "../rules/index.js";
+import { MAXIMUM_BEHAVIOR_BYTES } from "./behavior.js";
 import { policyInstallationError } from "./compose.js";
 import {
   decodeMessagePolicy,
@@ -23,7 +24,6 @@ import {
   MessagePolicy,
   messagePolicyFirewall,
 } from "./index.js";
-import { MAXIMUM_BEHAVIOR_BYTES } from "./behavior.js";
 import { loadMessagePolicy } from "./load.js";
 
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- Rule fields, policy entry paths and startup phases are the owner policy contract. */
@@ -778,8 +778,6 @@ it(
   2_000,
 );
 
-/* eslint-enable agent-code-guard/no-hardcoded-assertion-literals -- Restore assertion defaults outside owner policy contract tests. */
-
 it(
   "adds a shared norm's BEHAVIOR.md text as the rule its frontmatter and body map to",
   Effect.fn(function* () {
@@ -820,9 +818,7 @@ it(
           .pipe(Effect.flip);
         const oversized = yield* installed.policy
           .update({
-            add: [
-              { behavior: SHARED.padEnd(MAXIMUM_BEHAVIOR_BYTES + 1, " ") },
-            ],
+            add: [{ behavior: SHARED.padEnd(MAXIMUM_BEHAVIOR_BYTES + 1, " ") }],
           })
           .pipe(Effect.flip);
         expect(unframed.reason).toBe("invalid-rule");
@@ -832,3 +828,5 @@ it(
     );
   }),
 );
+
+/* eslint-enable agent-code-guard/no-hardcoded-assertion-literals -- Restore assertion defaults outside owner policy contract tests. */

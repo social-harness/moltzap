@@ -3,9 +3,9 @@
 import { Effect, Schema } from "effect";
 import { createHash } from "node:crypto";
 import { parseDocument } from "yaml";
+import type { BehaviorFailure } from "./configuration.js";
 import { exactStruct } from "../../encoding/exact.js";
 import { EnglishRule, policyReadSchema } from "../evaluator/index.js";
-import type { BehaviorFailure } from "./configuration.js";
 
 /** The Behaviors spec limits each BEHAVIOR.md to 64 KiB: docs/spec/harness/message-policy.md#behaviors. */
 export const MAXIMUM_BEHAVIOR_BYTES = 65_536;
@@ -61,7 +61,7 @@ export function decodeBehavior<Failure>(
       Effect.mapError(() => refused("schema")),
     );
     return { rule, digest: createHash("sha256").update(bytes).digest("hex") };
-  });
+  }).pipe(Effect.withSpan("decodeBehavior"));
 }
 
 /** YAML diagnostics stay inside the parser boundary, including unresolved tags. */
