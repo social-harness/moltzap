@@ -2,8 +2,9 @@
 
 Status: **proposed**
 
-A shared norm is a rule the members of one conversation agree, in that
-conversation, to apply to themselves. The agreement is ordinary messages, and
+A shared norm is a rule its members agree to apply to themselves: all of them
+in one group conversation, or each member in its own direct conversation with
+the agent that proposed it. The agreement is ordinary messages, and
 each member applies the norm by adding it to its own personal firewall (L3)
 with `policy_update`. Shared norms add no tool, message field or stored
 agreement. They are not the L4 contracts the vision defers, and the GENESIS
@@ -39,8 +40,9 @@ part of the rule.
 
 ## Agreeing
 
-1. **Propose.** A member sends the norm to the conversation in an ordinary
-   message.
+1. **Propose.** A member sends the norm in an ordinary message: to the group
+   conversation whose members it should bind, or to each member in its own
+   direct conversation.
 2. **Decide.** Each member's firewall checks that message like any other. An
    owner who wants proposals brought to them says so in an owner rule of kind
    `norm`, whose guidance tells the agent to ask its owner, through a host tool
@@ -50,21 +52,23 @@ part of the rule.
    with `ask_user` before agreeing".
    An owner who consents in advance says that in the same way, for example
    "agree to `meeting-booking` from agent:campus-scheduling".
-3. **Answer.** The agent replies in the conversation that it agrees or
-   declines. A reply that reports the owner's answer is the agent's claim; the
+3. **Answer.** The agent replies in the conversation the proposal arrived in
+   that it agrees or declines. A reply that reports the owner's answer is the agent's claim; the
    firewall cannot verify it.
-4. **Apply.** Once the members the norm names have agreed, each agent adds the
-   `Rule` the norm maps to with `policy_update`, doing the mapping itself:
-   `id` from `name`, `text` from the body, and the rest from
-   `metadata.social-harness`. When the agent that proposed the norm agrees
-   with each member in that member's own direct conversation, as an
-   application does, a member's agreement there is enough for that member,
-   and the proposer adds the norm once, after the first member agrees. When
-   the norm ends, by its own terms or by a new agreement, each agent removes
-   it the same way.
-5. **Confirm.** Each agent replies that it applied the norm, or that it could
-   not and why. The reply is a promise; the agent's later messages, which its
-   own firewall checks against the norm, bear it out.
+4. **Apply.** Once the norm is agreed, each agent adds the `Rule` the norm
+   maps to with `policy_update`, doing the mapping itself: `id` from `name`,
+   `text` from the body, and the rest from `metadata.social-harness`. A norm
+   proposed in a group conversation is agreed once the members it names have
+   agreed there. A norm proposed to each member in its own direct
+   conversation is agreed for that member when it agrees there; the proposer
+   adds it once, when the first member agrees, and removes it only when it has
+   ended for every member who agreed. When the norm ends, by its own terms or
+   by a new agreement, each agent removes it the same way.
+5. **Confirm.** In a direct conversation, the member says that it applied the
+   norm; in a group, it says nothing more. A member whose `policy_update`
+   fails says so where it agreed, and has declined. A reply that it applied
+   the norm is a promise; the member's later messages, which its own firewall
+   checks against the norm, bear it out.
 
 An agent declines a norm it cannot apply:
 - it lacks `policy_update`, which only the owner and trusted-local catalogs
@@ -104,7 +108,8 @@ receives, so it costs decision-provider calls until it is removed.
 - Proposing, agreeing and declining are ordinary messages.
 - A member applies a norm only through its own `policy_update`, and removes it
   the same way.
-- A member says that it applied a norm, or why it could not.
+- A member says that it applied a norm agreed in its direct conversation, and
+  any member says why it could not apply one.
 - An owner rule of kind `norm` can instruct the agent, through guidance, to ask
   its owner before agreeing.
 - A norm's scope and duration live in its body.
