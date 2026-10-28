@@ -222,7 +222,7 @@ const publishPush = (push: ActivePush, summary: InboxSummary) => {
     return Effect.void;
   }
   return notify(push, "notifications/events/event", {
-    eventId: `evt_${randomUUID()}`,
+    eventId: `wake_${randomUUID()}`,
     name: INBOX_PENDING_EVENT,
     timestamp: new Date().toISOString(),
     data: { pendingCount: summary.pendingCount },
@@ -327,7 +327,7 @@ const stream = (
 const descriptor = () => ({
   name: INBOX_PENDING_EVENT,
   description:
-    "Runtime wakeup for pending Social Harness items. Native clients manage inbox consumption and handoff.",
+    "Runtime wakeup for pending Social Harness items. Read pending items with read_inbox.",
   delivery: ["push"],
   inputSchema: { type: "object", properties: {}, additionalProperties: false },
   payloadSchema: {

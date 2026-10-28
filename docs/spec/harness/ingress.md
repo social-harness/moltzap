@@ -27,7 +27,10 @@ The daemon advertises `capabilities.events: {}` on MCP `2026-07-28` and a native
 `org.social-harness/inbox.pending` event. This implementation pins the experimental
 [Events draft](https://github.com/modelcontextprotocol/experimental-ext-triggers-events/blob/6682596d65eec778fe0b8b1f43b4e89d2fe2c546/docs/design-sketch-proposal.md).
 The native event contains only `{pendingCount}`. Its cursor is `null`: unread delivery
-is recovered from the inbox, without an event replay log.
+is recovered from the inbox, without an event replay log. Its `eventId`, `wake_`
+followed by a random UUID, identifies the notification, not an inbox item:
+`read_event` rejects it with InvalidParams, and a client reads the pending
+items with `read_inbox`.
 
 Native clients open `events/stream` before reading the inbox. The official MCP
 SDK supplies Streamable HTTP framing and cancellation. The server sends
