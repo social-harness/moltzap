@@ -55,7 +55,6 @@ const gatherText = (operation: "gather" | "all_gather") =>
 const acceptText = (slot: string) =>
   JSON.stringify({ action: "accept", content: { slot } });
 
-
 interface AllGatherContext {
   readonly caller: Effect.Effect.Success<
     ReturnType<typeof acquireHarnessEndpoint>
