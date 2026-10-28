@@ -13,6 +13,7 @@ import type { ReplyPayload } from "openclaw/plugin-sdk/reply-payload";
 import {
   acquireHarnessEndpoint,
   type ChannelFeatureUnavailableError,
+  type ExperimentSwitchInvalidError,
   groupMembers,
   type GuidanceBodyOrigin,
   type HarnessEndpoint,
@@ -1082,7 +1083,7 @@ function textPreview(params: TextSend): string {
 function logOutboundFailure(
   connectedAccount: ConnectedAccountState,
   prefix: string,
-  error: Error | ConfigError.ConfigError,
+  error: Error,
 ): Effect.Effect<void> {
   return Effect.sync(() => {
     connectedAccount.current?.log?.warn?.(`${prefix} failed: ${error.message}`);
@@ -1126,7 +1127,7 @@ function readSendInput({
   | OpenClawOutboundError
   | MessageTextError
   | ChannelFeatureUnavailableError
-  | ConfigError.ConfigError
+  | ExperimentSwitchInvalidError
 > {
   if (!isMessageAddressInput(to)) {
     return Effect.fail(

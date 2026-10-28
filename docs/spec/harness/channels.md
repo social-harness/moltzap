@@ -88,7 +88,7 @@ projection.
 
 A proactive outbound callback supplies one syntactically valid Client
 `MessageAddressInput` and one message text, and becomes one Client operation:
-the text read by Client's `parseMessageText`, multicast unless the whole text
+the text read by Client's `readChannelMessage`, multicast unless the whole text
 states a gather, all_gather or answer ([message text](./client.md#message-text)).
 OpenClaw's model reaches operations through its message tool's `send` and
 `reply` actions, which take the same `message` text and behave the same:

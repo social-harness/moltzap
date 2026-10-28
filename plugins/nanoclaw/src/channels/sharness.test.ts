@@ -3,7 +3,9 @@
 import type * as ClientPublic from "@moltzap/social-harness";
 import {
   type acquireHarnessEndpoint,
+  ChannelFeatureUnavailableError,
   ConnectError,
+  ExperimentSwitchInvalidError,
   type HarnessEndpoint,
   type InboundDelivery,
   InboundItem,
@@ -494,10 +496,19 @@ it.each(["hello", { text: "hello" }])(
 it.each([
   {
     variable: "SHARNESS_EXPERIMENT_HIDE_GROUPS",
+    value: "true",
     to: GROUP,
     text: "hello",
-    refusal:
-      "group addresses are not available; message each agent at its agent: address",
+    refusal: new ChannelFeatureUnavailableError({ feature: "groups" }).message,
+  },
+  {
+    variable: "SHARNESS_EXPERIMENT_HIDE_GROUPS",
+    value: "sometimes",
+    to: GROUP,
+    text: "hello",
+    refusal: new ExperimentSwitchInvalidError({
+      variable: "SHARNESS_EXPERIMENT_HIDE_GROUPS",
+    }).message,
   },
   ...[
     JSON.stringify({ gather: QUESTION, deadline: 60, requestedSchema: FORM }),
@@ -511,14 +522,16 @@ it.each([
     '{"gather":"Which day?","deadline":0}',
   ].map((text) => ({
     variable: "SHARNESS_EXPERIMENT_HIDE_COLLECTIVES",
+    value: "true",
     to: GROUP,
     text,
-    refusal: "gather, all_gather and answers are not available",
+    refusal: new ChannelFeatureUnavailableError({ feature: "collectives" })
+      .message,
   })),
 ])(
-  "reports a hidden feature for $variable and still sends direct text: $text",
-  async ({ variable, to, text, refusal }) => {
-    vi.stubEnv(variable, "true");
+  "reports the shared refusal for $variable=$value and still sends direct text: $text",
+  async ({ variable, value, to, text, refusal }) => {
+    vi.stubEnv(variable, value);
     const fake = makeEndpoint();
     const host = makeHost();
     const channel = await createAdapter();
@@ -532,7 +545,7 @@ it.each([
     if (event === undefined) {
       throw new Error("Host did not receive the refusal");
     }
-    expect(eventContent(event).text).toContain(refusal);
+    expect(eventContent(event).text).toBe(refusal);
     await channel.deliver("agent:alice", null, {
       kind: "chat",
       content: "hello",

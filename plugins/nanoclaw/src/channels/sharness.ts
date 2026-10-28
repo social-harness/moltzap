@@ -20,7 +20,6 @@ import {
 } from "@moltzap/social-harness";
 import {
   Config,
-  ConfigError,
   ConfigProvider,
   Data,
   Deferred,
@@ -422,14 +421,7 @@ class HarnessChannelAdapter {
         readChannelMessage(to, text).pipe(
           Effect.matchEffect({
             onFailure: (error) =>
-              this.reportRefusedText(
-                config,
-                to,
-                ConfigError.isConfigError(error) &&
-                  ConfigError.isInvalidData(error)
-                  ? `${error.path.join(".")}: ${error.message}`
-                  : error.message,
-              ),
+              this.reportRefusedText(config, to, error.message),
             onSuccess: (input) =>
               activation.endpoint
                 .send(input, { failureDelivery: "inbound" })

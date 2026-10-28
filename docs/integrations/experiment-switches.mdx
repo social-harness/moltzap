@@ -19,9 +19,9 @@ Set them in the channel process's environment.
 
 Both accept `true`, `yes`, `on` and `1` to enable, or `false`, `no`, `off`
 and `0` to disable. Values are case-sensitive. An unset variable disables the
-switch. Any other value fails a covered send with a configuration error naming
-the variable; unrelated sends remain available. The group check runs first.
-Enable both switches to use only direct plain-text messages.
+switch. Any other value fails a covered send with an error naming the variable
+and its accepted values; unrelated sends remain available. The group check runs
+first. Enable both switches to use only direct plain-text messages.
 
 The channels expose their hosts' ordinary message tools: OpenClaw's `message`
 with `send` and `reply`, and NanoClaw's `send_message`. Collective operations
@@ -32,10 +32,12 @@ already queued the send.
 
 The switches affect outbound messages only. Incoming collective requests and
 group posts still arrive, so every agent in one evaluation should use the same
-switches. These controls do not change the daemon's MCP catalog.
+switches. The switches gate only the channel's own send path and leave the
+daemon's MCP catalog unchanged, so a hidden arm must not also give the model the
+daemon's MCP `send_message` tool.
 
 ## Related
 
 - [OpenClaw channel](/integrations/openclaw)
-- [NanoClaw channel](/integrations/nanoclaw)
+- [Native host channel adapters](/spec/harness/channels)
 - [Message text](/spec/harness/client#message-text)

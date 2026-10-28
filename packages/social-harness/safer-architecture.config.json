@@ -130,6 +130,10 @@
       "reason": "Complete message rendering shared by hosts and policy evidence without loading collective operations"
     },
     {
+      "file": "harness/endpoint/channel-message.ts",
+      "reason": "The native channels' send-text reader and experiment-switch refusals, read without acquiring an endpoint"
+    },
+    {
       "file": "harness/protocol/operations.ts",
       "reason": "Harness operation values and decoders shared by the host and daemon"
     },
@@ -346,7 +350,8 @@
         "src/harness/endpoint"
       ],
       "entrypoints": [
-        "src/harness/endpoint/index.ts"
+        "src/harness/endpoint/index.ts",
+        "src/harness/endpoint/channel-message.ts"
       ],
       "reason": "The HarnessEndpoint library an agent host loads"
     },

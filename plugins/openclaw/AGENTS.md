@@ -42,8 +42,9 @@ release, so the channel needs a new release only when the plugin SDK breaks.
   explicit `agent:` or `group:` target through the `message` tool. The model's
   `send` and `reply` reach the plugin's actions, which add no tool parameter;
   `message.send.text` serves OpenClaw's core-forced sends. Every path reads
-  its text with `@moltzap/social-harness`'s `parseMessageText`. The host decides which
-  tools invoke those callbacks.
+  its text with `@moltzap/social-harness`'s `readChannelMessage`, which applies
+  the experiment switches before parsing. The host decides which tools invoke
+  those callbacks.
 - Install the skills `@moltzap/social-harness` ships unchanged; the build copies them
   into `dist/skills`.
 - Render each inbound item kind in one fixed form, switching on `kind`

@@ -50,11 +50,15 @@ export {
 } from "./communication/collectives/render.js";
 /** The operation a native host's message text states. */
 export {
-  ChannelFeatureUnavailableError,
   MessageTextError,
   parseMessageText,
-  readChannelMessage,
 } from "./communication/collectives/message-text.js";
+/** A native channel's send text read under the evaluation experiment switches. */
+export {
+  ChannelFeatureUnavailableError,
+  ExperimentSwitchInvalidError,
+  readChannelMessage,
+} from "./harness/endpoint/channel-message.js";
 /** Explicit direct and group addresses. */
 export {
   AgentAddress,
