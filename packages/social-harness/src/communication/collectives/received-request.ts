@@ -123,7 +123,8 @@ const RECEIVED_DEADLINE_HORIZON = Duration.toMillis(
  * @param requests Every request this endpoint holds, by id.
  * @param conversation The canonical address the answer is sent to.
  * @param now The current time in epoch milliseconds.
- * @param answer The answer, by the request id it names, if any.
+ * @param answer The answer.
+ * @param answer.id The id of the request it names, if it names one.
  * @returns The open request, or why none takes the answer: several are open,
  *   one was already answered, none was received, or each has expired.
  */
@@ -146,12 +147,12 @@ export const matchOpenRequest = <Request extends RequestStatus>(
  */
 export const unmatchedAnswerError = (
   id: CollectiveId,
-  { kind, openIds }: UnmatchedAnswer,
+  unmatched: UnmatchedAnswer,
 ) =>
   new CollectiveError({
     id,
-    failure: { kind },
-    ...(openIds === undefined ? {} : { openIds }),
+    failure: { kind: unmatched.kind },
+    ...(unmatched.openIds === undefined ? {} : { openIds: unmatched.openIds }),
   });
 
 /**
@@ -258,52 +259,6 @@ export function forgetExpiredRequests(
   }
 }
 
-/** Whether the runtime was shown a request, so that answers can match it. */
-function requestShown(state: RequestStatus["state"]): boolean {
-  switch (state) {
-    case "unadmitted":
-    case "withheld":
-      return false;
-    case "open":
-    case "sending":
-    case "answered":
-    case "closed":
-      return true;
-    default: {
-      const exhaustive: never = state;
-      return exhaustive;
-    }
-  }
-}
-
-/**
- * Whether a request's id derives from its sender and its deadline lies
- * within `RECEIVED_DEADLINE_HORIZON`.
- */
-function trustedRequest(
-  message: InboundMessage,
-  value: CollectingValue,
-  now: number,
-): boolean {
-  return (
-    value.deadlineAt <= now + RECEIVED_DEADLINE_HORIZON &&
-    collectiveIdOf(message.sender, value.nonce) === value.id
-  );
-}
-
-/**
- * When this endpoint drops a received request: at its deadline, or for an
- * all_gather `CLOSE_WAIT` later, since its close follows the deadline.
- */
-function retainedUntil(
-  request: Pick<ReceivedRequest, "deadlineAt" | "kind">,
-): number {
-  return (
-    request.deadlineAt +
-    (request.kind === "all_gather" ? Duration.toMillis(CLOSE_WAIT) : 0)
-  );
-}
-
 /** The one request open in `conversation`, or why no single request is. */
 function onlyOpenRequest<Request extends RequestStatus>(
   requests: ReadonlyMap<CollectiveId, Request>,
@@ -362,4 +317,50 @@ function namedRequest<Request extends RequestStatus>(
   return unavailable === undefined
     ? Either.right({ id: named, request })
     : Either.left({ kind: unavailable });
+}
+
+/** Whether the runtime was shown a request, so that answers can match it. */
+function requestShown(state: RequestStatus["state"]): boolean {
+  switch (state) {
+    case "unadmitted":
+    case "withheld":
+      return false;
+    case "open":
+    case "sending":
+    case "answered":
+    case "closed":
+      return true;
+    default: {
+      const exhaustive: never = state;
+      return exhaustive;
+    }
+  }
+}
+
+/**
+ * Whether a request's id derives from its sender and its deadline lies
+ * within `RECEIVED_DEADLINE_HORIZON`.
+ */
+function trustedRequest(
+  message: InboundMessage,
+  value: CollectingValue,
+  now: number,
+): boolean {
+  return (
+    value.deadlineAt <= now + RECEIVED_DEADLINE_HORIZON &&
+    collectiveIdOf(message.sender, value.nonce) === value.id
+  );
+}
+
+/**
+ * When this endpoint drops a received request: at its deadline, or for an
+ * all_gather `CLOSE_WAIT` later, since its close follows the deadline.
+ */
+function retainedUntil(
+  request: Pick<ReceivedRequest, "deadlineAt" | "kind">,
+): number {
+  return (
+    request.deadlineAt +
+    (request.kind === "all_gather" ? Duration.toMillis(CLOSE_WAIT) : 0)
+  );
 }

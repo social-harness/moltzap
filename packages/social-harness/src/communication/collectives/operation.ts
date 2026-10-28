@@ -142,7 +142,6 @@ import {
   type OpenRequest,
   type ReceivedRequest,
   receivedRequest,
-  requestUnavailable,
   unmatchedAnswerError,
 } from "./received-request.js";
 import {
@@ -919,9 +918,7 @@ function respond(
     const { certified, guidance } = yield* bindAuthoredPost(
       state,
       { to: request.to, content },
-      claimRequest(state, id, request, response).pipe(
-        Effect.mapError(refused),
-      ),
+      claimRequest(state, id, request).pipe(Effect.mapError(refused)),
     ).pipe(
       Effect.catchTag("SendError", (error) => Effect.fail(refused(error))),
     );
@@ -1020,34 +1017,23 @@ function responseContent(
 }
 
 /**
- * Hold the request's one answer: match the request again as the answer names
- * it, still open in its conversation and before its deadline, and claim it.
- * The match and the claim run in one step, with no yield between them, so of
- * two concurrent answers only one is sent. The hold's release reopens a
- * request whose answer bound nothing.
+ * Hold the request's one answer: match the request `openRequest` matched
+ * again by its id, still open in its conversation and before its deadline,
+ * and claim it. The match and the claim run in one step, with no yield
+ * between them, so of two concurrent answers only one is sent. The hold's
+ * release reopens a request whose answer bound nothing.
  */
 function claimRequest(
   state: CollectiveState,
   id: CollectiveId,
   request: ReceivedRequest,
-  response: CollectiveResponse,
 ): BindHold<CollectiveError> {
   return Clock.currentTimeMillis.pipe(
     Effect.flatMap((now) =>
       Effect.suspend(() =>
-        Either.match(
-          matchOpenRequest(state.requests, request.to, now, response),
-          {
-            onLeft: (unmatched) =>
-              Effect.fail(unmatchedAnswerError(id, unmatched)),
-          onRight: (matched) => {
-            if (matched.id !== id) {
-              return Effect.fail(
-                collectiveFailure(id, {
-                  kind: requestUnavailable(request, now) ?? "request-ambiguous",
-                }),
-              );
-            }
+        Either.match(matchOpenRequest(state.requests, request.to, now, { id }), {
+          onLeft: (unmatched) => Effect.fail(unmatchedAnswerError(id, unmatched)),
+          onRight: () => {
             request.state = "sending";
             return Effect.succeed(reopenRequest(request));
           },
