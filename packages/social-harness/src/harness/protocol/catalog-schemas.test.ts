@@ -1,6 +1,9 @@
 /** @file The catalog lists result schemas a later release can extend, while the daemon checks its own results exactly. */
 
-import { fromJsonSchema, type JsonSchemaType } from "@modelcontextprotocol/server";
+import {
+  fromJsonSchema,
+  type JsonSchemaType,
+} from "@modelcontextprotocol/server";
 import { Schema } from "effect";
 import { expect, it } from "vitest";
 import { exactStruct } from "../../encoding/exact.js";
