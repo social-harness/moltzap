@@ -134,16 +134,14 @@ it.each([
     }),
     "message-policy",
   ],
-] as const)(
-  "refuses %s",
-  ([, fields, reason]) =>
-    Effect.gen(function* () {
-      const error = yield* firewallInstallation(fields(), readCredential).pipe(
-        Effect.flip,
-      );
-      expect(error.reason).toBe(reason);
-      expect(error.message).not.toContain("two words");
-    }),
+] as const)("refuses %s", ([, fields, reason]) =>
+  Effect.gen(function* () {
+    const error = yield* firewallInstallation(fields(), readCredential).pipe(
+      Effect.flip,
+    );
+    expect(error.reason).toBe(reason);
+    expect(error.message).not.toContain("two words");
+  }),
 );
 
 it("names where a document is invalid, never what it holds", () =>

@@ -127,6 +127,20 @@ export const firewallInstallation = (
   );
 
 /**
+ * Where a rule installation failure's fix is written: the rules-not-installed
+ * entry for a rule the file or the store holds, and nowhere for a build or
+ * storage failure, which has no operator fix to link.
+ */
+const installationDocs: Readonly<
+  Record<Exclude<FirewallPolicyError["reason"], "not-configured">, string>
+> = {
+  "invalid-rule": `${FIREWALL_GUIDE}#rules-not-installed`,
+  "fixed-rule": `${FIREWALL_GUIDE}#rules-not-installed`,
+  "build-failed": "",
+  "persistence-failed": "",
+};
+
+/**
  * The configuration failure for a document whose rules the daemon could not
  * install against its store, such as an initial rule reusing a code rule's
  * id. `not-configured` here means the store holds editable English rules
@@ -159,20 +173,6 @@ export function policyInstallationError(
           ),
   });
 }
-
-/**
- * Where a rule installation failure's fix is written: the rules-not-installed
- * entry for a rule the file or the store holds, and nowhere for a build or
- * storage failure, which has no operator fix to link.
- */
-const installationDocs: Readonly<
-  Record<Exclude<FirewallPolicyError["reason"], "not-configured">, string>
-> = {
-  "invalid-rule": `${FIREWALL_GUIDE}#rules-not-installed`,
-  "fixed-rule": `${FIREWALL_GUIDE}#rules-not-installed`,
-  "build-failed": "",
-  "persistence-failed": "",
-};
 
 /** Only file loading resolves behaviors into rules before trusted composition. */
 function listsBehaviors(policy: MessagePolicy) {

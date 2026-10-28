@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * @file Code docs-link gate. Every `https://docs.moltzap.xyz/<page>#<anchor>`
- * that an error or help text in a package's `src` names must resolve to a
- * page under `docs/` and to a heading or `<a id>` on it.
+ * @file Code docs-link gate. Every docs-site link with an anchor that an
+ * error or help text in a package's `src` names must resolve to a page under
+ * `docs/` and to a heading or an explicit anchor element on that page.
  *
  * `mint broken-links` checks links between pages, not the strings code
  * prints, so an anchor renamed in a guide would leave every `Docs:` link to
@@ -99,9 +99,7 @@ function linksIn(
     ...text.matchAll(/\$\{([A-Z][A-Z0-9_]*)\}#([A-Za-z0-9_-]+)/gu),
   ].flatMap((match) => {
     const page = pages.get(match[1] ?? "");
-    return page === undefined
-      ? []
-      : [{ file, page, anchor: match[2] ?? "" }];
+    return page === undefined ? [] : [{ file, page, anchor: match[2] ?? "" }];
   });
   return [...literal, ...composed];
 }
@@ -113,7 +111,7 @@ function resolves(link: Link): boolean {
   return page !== undefined && anchors(page).has(link.anchor);
 }
 
-/** A page's explicit `<a id>` anchors and its headings' slugs, outside code fences. */
+/** A page's explicit anchor elements and its headings' slugs, outside code fences. */
 function anchors(page: string): ReadonlySet<string> {
   const found = new Set<string>();
   let fenced = false;
@@ -121,16 +119,22 @@ function anchors(page: string): ReadonlySet<string> {
     if (line.trimStart().startsWith("```")) {
       fenced = !fenced;
     } else if (!fenced) {
-      for (const match of line.matchAll(/<a\s+id="([^"]+)"/gu)) {
-        found.add(match[1] ?? "");
-      }
-      const heading = /^#{1,6}\s+(.+)$/u.exec(line);
-      if (heading !== null) {
-        found.add(slug(heading[1] ?? ""));
+      for (const anchor of lineAnchors(line)) {
+        found.add(anchor);
       }
     }
   }
   return found;
+}
+
+function lineAnchors(line: string): readonly string[] {
+  const explicit = [...line.matchAll(/<a id="([^"]+)"/gu)].map(
+    (match) => match[1] ?? "",
+  );
+  const level = /^#{1,6} /u.exec(line);
+  return level === null
+    ? explicit
+    : [...explicit, slug(line.slice(level[0].length))];
 }
 
 function slug(heading: string): string {

@@ -64,7 +64,8 @@ const unavailableProvider: DecisionProvider = {
 const POLICY_SPEC = "https://docs.moltzap.xyz/spec/harness/message-policy";
 
 /** The message-firewall guide, whose troubleshooting entries policy failures link. */
-export const FIREWALL_GUIDE = "https://docs.moltzap.xyz/guides/message-firewall";
+export const FIREWALL_GUIDE =
+  "https://docs.moltzap.xyz/guides/message-firewall";
 
 /** Each failure's operator text and the troubleshooting entry that matches it. */
 const failureMessages: Readonly<
@@ -171,7 +172,10 @@ export function policyConfigurationError(
  * empty `docs` leaves the link out for a failure with no fix to point at.
  * @param reason The closed failure.
  * @param detail Text after the failure's own, starting with `; `.
- * @param link The failing policy entry and any other entry to link.
+ * @param link The entry to link in place of the failure's own.
+ * @param link.path The failing policy entry, which links the behavior rules
+ *     when it names a behavior list.
+ * @param link.docs Another entry to link, or empty for none.
  * @returns The message, naming no configured value.
  */
 export function policyFailureMessage(
@@ -528,16 +532,14 @@ function isTransient(error: DecisionProviderError): boolean {
 
 function failureDocs(
   reason: MessagePolicyConfigurationFailure,
-  { path = "", docs = failureMessages[reason].docs }: {
-    readonly path?: string;
-    readonly docs?: string;
-  },
+  link: { readonly path?: string; readonly docs?: string },
 ): string {
+  const path = link.path ?? "";
   if (path.startsWith("english.builtinBehaviors.")) {
     return `${POLICY_SPEC}#built-in-behaviors`;
   }
   if (/^english\.(?:fixed|initial)Behaviors\./u.test(path)) {
     return `${POLICY_SPEC}#behaviors`;
   }
-  return docs;
+  return link.docs ?? failureMessages[reason].docs;
 }

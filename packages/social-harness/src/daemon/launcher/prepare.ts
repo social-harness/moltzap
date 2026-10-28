@@ -13,7 +13,12 @@ import {
   Path,
 } from "@effect/platform";
 import { Console, Effect, Option } from "effect";
-import { LAUNCHER_DOCS, launcherError, type LauncherError, UPGRADES_GUIDE } from "./errors.js";
+import {
+  LAUNCHER_DOCS,
+  launcherError,
+  type LauncherError,
+  UPGRADES_GUIDE,
+} from "./errors.js";
 import {
   checkIntegrity,
   daemonExecutable,
