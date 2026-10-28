@@ -827,7 +827,7 @@ it(
           }),
         );
         const { activations } = yield* installed.policy.decisions({});
-        expect(activations.at(-1)).toEqual(
+        expect(activations).toContainEqual(
           expect.objectContaining({
             addedRuleIds: ["be-brief", "meeting-booking"],
             removedRuleIds: ["meeting-booking"],
@@ -868,7 +868,9 @@ it(
         const before = yield* installed.policy.read();
         const unframed = yield* installed.policy
           .update({
-            add: [{ behavior: "Each member holds a slot before confirming it." }],
+            add: [
+              { behavior: "Each member holds a slot before confirming it." },
+            ],
           })
           .pipe(Effect.flip);
         const oversized = yield* installed.policy

@@ -247,24 +247,6 @@ export const decodeMessagePolicy = Schema.decodeUnknown(
   { onExcessProperty: "error" },
 );
 
-function needsDecisionProvider(policy: typeof document.Type): boolean {
-  return policy.english !== undefined || installsCollectiveNorms(policy);
-}
-
-function installsCollectiveNorms(policy: typeof document.Type): boolean {
-  return [...policy.incoming, ...policy.outgoing].some(
-    (entry) => entry.use === "collective-norms",
-  );
-}
-
-function uniqueEnglishRuleIds(policy: typeof document.Type): boolean {
-  const ids = [
-    ...(policy.english?.fixedRules ?? []),
-    ...(policy.english?.initialRules ?? []),
-  ].map((rule) => rule.id);
-  return new Set(ids).size === ids.length;
-}
-
 /** The Behaviors spec limits each BEHAVIOR.md to 64 KiB: docs/spec/harness/message-policy.md#behaviors. */
 export const MAXIMUM_BEHAVIOR_BYTES = 65_536;
 
@@ -318,14 +300,37 @@ export function decodeBehavior<Failure>(
         ...metadata,
       },
     ]).pipe(Effect.mapError(() => refused("schema")));
-    const rule = yield* Effect.fromNullable(rules[0]).pipe(
+    return yield* Effect.fromNullable(rules[0]).pipe(
       Effect.mapError(() => refused("schema")),
     );
-    return rule;
   }).pipe(Effect.withSpan("decodeBehavior"));
 }
 
-/** YAML diagnostics stay inside the parser boundary, including unresolved tags. */
+function needsDecisionProvider(policy: typeof document.Type): boolean {
+  return policy.english !== undefined || installsCollectiveNorms(policy);
+}
+
+function installsCollectiveNorms(policy: typeof document.Type): boolean {
+  return [...policy.incoming, ...policy.outgoing].some(
+    (entry) => entry.use === "collective-norms",
+  );
+}
+
+function uniqueEnglishRuleIds(policy: typeof document.Type): boolean {
+  const ids = [
+    ...(policy.english?.fixedRules ?? []),
+    ...(policy.english?.initialRules ?? []),
+  ].map((rule) => rule.id);
+  return new Set(ids).size === ids.length;
+}
+
+/**
+ * Decodes the YAML between a behavior's `---` lines. Parser diagnostics,
+ * including unresolved tags, stay inside this boundary.
+ * @param text The frontmatter YAML.
+ * @param refused The caller's failure for a closed category.
+ * @returns The frontmatter fields.
+ */
 function decodeFrontmatter<Failure>(
   text: string,
   refused: (reason: BehaviorRefusal) => Failure,
