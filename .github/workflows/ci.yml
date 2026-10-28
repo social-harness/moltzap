@@ -141,14 +141,19 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # Tagged with the published names so images/compose.yaml runs them
+      # Every image a release tags builds here before it merges. Tagged with
+      # the published names so images/compose.yaml runs Registry and Router
       # with SHARNESS_NETWORK_VERSION=ci and pulls nothing.
-      - name: Build service images for amd64
+      - name: Build release images for amd64
         run: |
-          for service in registry router; do
+          for service in registry router daemon openclaw-agent; do
+            context=.
+            if [[ "$service" == openclaw-agent ]]; then
+              context=images/openclaw-agent
+            fi
             docker buildx build --platform linux/amd64 --load \
               --file "images/${service}/Dockerfile" \
-              --tag "ghcr.io/social-harness/${service}:ci" .
+              --tag "ghcr.io/social-harness/${service}:ci" "$context"
           done
       - name: Smoke-test deployed executables
         run: |
