@@ -35,6 +35,11 @@ import {
   policyUpdateSchema,
 } from "../../firewall/index.js";
 import {
+  requestSchema,
+  type ResultSchema,
+  resultSchema,
+} from "../protocol/catalog-schemas.js";
+import {
   decodeHarnessSendCall,
   type HarnessEmptyResult,
   harnessEmptyResultSchema,
@@ -61,11 +66,6 @@ import {
   validationIssues,
   webhookStatusResult,
 } from "../protocol/index.js";
-import {
-  requestSchema,
-  type ResultSchema,
-  resultSchema,
-} from "../protocol/catalog-schemas.js";
 import {
   HARNESS_ACKNOWLEDGE_DELIVERY_TOOL,
   HARNESS_CONSUMER_META_KEY,
