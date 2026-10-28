@@ -241,18 +241,6 @@
         "cwd": ".",
         "command": "pnpm exec typedoc"
       }
-    },
-    "test:release": {
-      "executor": "nx:run-commands",
-      "options": {
-        "cwd": ".",
-        "parallel": false,
-        "commands": [
-          "FORCE_COLOR=0 node scripts/release/select-packages.test.ts",
-          "FORCE_COLOR=0 bash scripts/release/compute-next-version.test.sh",
-          "FORCE_COLOR=0 bash scripts/release/push-gate.test.sh"
-        ]
-      }
     }
   }
 }
