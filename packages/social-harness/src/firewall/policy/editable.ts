@@ -28,6 +28,8 @@ import {
   FirewallPolicyError,
   type FirewallPolicyOperations,
   makeEnglishPolicy,
+  MAXIMUM_EDITABLE_RULES,
+  type PolicyProblem,
   policyReadSchema,
   policyUpdateSchema,
   PrivateCheckTrace,
@@ -45,7 +47,12 @@ const englishId = "org.social-harness/english";
 
 const persistenceFailure = () =>
   new FirewallPolicyError({ reason: "persistence-failed" });
-const invalidRule = () => new FirewallPolicyError({ reason: "invalid-rule" });
+const invalidRule = (
+  problem: PolicyProblem,
+  at: { readonly path?: PolicyEditPath; readonly ruleId?: string } = {},
+) => new FirewallPolicyError({ reason: "invalid-rule", problem, ...at });
+
+type PolicyEditPath = NonNullable<FirewallPolicyError["path"]>;
 
 /** Stored editable rules share the live exact members plus the historical safety mapping. */
 function decodeStoredRules(bytes: Uint8Array) {
@@ -74,7 +81,9 @@ function decodeStoredRules(bytes: Uint8Array) {
   );
 
   return decodeRuntimeValue(
-    Schema.Array(retainedEditableRule).pipe(Schema.maxItems(256)),
+    Schema.Array(retainedEditableRule).pipe(
+      Schema.maxItems(MAXIMUM_EDITABLE_RULES),
+    ),
     bytes,
   ).pipe(
     Effect.tap((rules) =>
@@ -238,9 +247,12 @@ function validateIds(
       new FirewallPolicyError({ reason: "fixed-rule", ruleId: collision.id }),
     );
   }
-  return new Set(rules.map((rule) => rule.id)).size === rules.length
+  const repeated = rules.find(
+    (rule, index) => rules.findIndex(({ id }) => id === rule.id) !== index,
+  );
+  return repeated === undefined
     ? Effect.void
-    : Effect.fail(invalidRule());
+    : Effect.fail(invalidRule("duplicate-id", { ruleId: repeated.id }));
 }
 
 interface PolicyState {
@@ -365,12 +377,14 @@ interface RuleChange {
   readonly remove: readonly string[];
 }
 
-/** Each `{behavior}` addition becomes its rule; a behavior the policy file would refuse is an invalid rule. */
+/** Each `{behavior}` addition becomes its rule; a behavior the policy file would refuse is an invalid rule at its place in `add`. */
 function resolvedChange(change: typeof policyUpdateSchema.Type) {
   return Effect.forEach(
     change.add ?? [],
-    (item) =>
-      "behavior" in item ? behaviorRule(item.behavior) : Effect.succeed(item),
+    (item, index) =>
+      "behavior" in item
+        ? behaviorRule(item.behavior, ["add", index])
+        : Effect.succeed(item),
     { concurrency: 1 },
   ).pipe(
     Effect.map((add): RuleChange => ({ add, remove: change.remove ?? [] })),
@@ -378,38 +392,85 @@ function resolvedChange(change: typeof policyUpdateSchema.Type) {
 }
 
 /** A shared norm is kind `norm`, so a peer's text never adds a rule that holds uncertain messages. */
-function behaviorRule(text: string) {
+function behaviorRule(text: string, path: PolicyEditPath) {
   const bytes = Buffer.from(text, "utf8");
   if (bytes.length > MAXIMUM_BEHAVIOR_BYTES) {
-    return Effect.fail(invalidRule());
+    return Effect.fail(invalidRule("too-large", { path }));
   }
-  return decodeBehavior(bytes, () => invalidRule()).pipe(
+  return decodeBehavior(bytes, (problem) =>
+    invalidRule(problem, { path }),
+  ).pipe(
     Effect.filterOrFail(
       (rule) => rule.kind === "norm",
-      () => invalidRule(),
+      (rule) => invalidRule("not-norm", { path, ruleId: rule.id }),
     ),
   );
 }
 
+/**
+ * The editable document an edit leaves, or the first item it cannot apply:
+ * a fixed id, a removal of an id the document lacks, an addition whose id the
+ * document keeps or the edit adds twice, or more rules than the limit.
+ */
 function editedRules(
   rules: readonly EnglishRule[],
   fixedRuleIds: readonly string[],
   { add, remove }: RuleChange,
 ) {
   return Effect.gen(function* () {
-    if (remove.some((id) => fixedRuleIds.includes(id))) {
-      return yield* new FirewallPolicyError({ reason: "fixed-rule" });
+    yield* Effect.forEach(
+      remove,
+      (ruleId, index) => removable(rules, fixedRuleIds, ruleId, index),
+      { concurrency: 1, discard: true },
+    );
+    const kept = rules.filter((rule) => !remove.includes(rule.id));
+    yield* Effect.forEach(
+      add,
+      (rule, index) =>
+        addable([...kept, ...add.slice(0, index)], fixedRuleIds, rule, index),
+      { concurrency: 1, discard: true },
+    );
+    if (kept.length + add.length > MAXIMUM_EDITABLE_RULES) {
+      return yield* invalidRule("editable-limit");
     }
-    if (remove.some((id) => !rules.some((rule) => rule.id === id))) {
-      return yield* invalidRule();
-    }
-    const next = yield* decodeFrozen(editableDocumentSchema, [
-      ...rules.filter((rule) => !remove.includes(rule.id)),
-      ...add,
-    ]).pipe(Effect.mapError(invalidRule));
-    yield* validateIds(next, fixedRuleIds);
-    return next;
+    return yield* decodeFrozen(editableDocumentSchema, [...kept, ...add]).pipe(
+      Effect.mapError(() => invalidRule("schema")),
+    );
   });
+}
+
+function removable(
+  rules: readonly EnglishRule[],
+  fixedRuleIds: readonly string[],
+  ruleId: string,
+  index: number,
+) {
+  const path: PolicyEditPath = ["remove", index];
+  if (fixedRuleIds.includes(ruleId)) {
+    return Effect.fail(
+      new FirewallPolicyError({ reason: "fixed-rule", ruleId, path }),
+    );
+  }
+  return rules.some((rule) => rule.id === ruleId)
+    ? Effect.void
+    : Effect.fail(invalidRule("unknown-id", { path, ruleId }));
+}
+
+function addable(
+  before: readonly EnglishRule[],
+  fixedRuleIds: readonly string[],
+  rule: EnglishRule,
+  index: number,
+) {
+  const path: PolicyEditPath = ["add", index];
+  if (fixedRuleIds.includes(rule.id)) {
+    return Effect.fail(
+      new FirewallPolicyError({ reason: "fixed-rule", ruleId: rule.id, path }),
+    );
+  }
+  return before.some(({ id }) => id === rule.id)
+    ? Effect.fail(invalidRule("duplicate-id", { path, ruleId: rule.id }))
+    : Effect.void;
 }
 
 function updatePolicy(
@@ -420,7 +481,7 @@ function updatePolicy(
 ) {
   return Effect.gen(function* () {
     const change = yield* decodeFrozen(policyUpdateSchema, request).pipe(
-      Effect.mapError(invalidRule),
+      Effect.mapError(() => invalidRule("schema")),
       Effect.flatMap((decoded) => resolvedChange(decoded)),
     );
     const next = yield* editedRules(state.rules, state.fixedRuleIds, change);

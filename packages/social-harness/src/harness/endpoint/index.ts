@@ -43,6 +43,7 @@ import {
   decodeHarnessSendResult,
   type DeliveryToken,
   eventIdOf,
+  type HarnessSendErrorData,
 } from "../protocol/operations.js";
 import {
   ConnectError,
@@ -132,13 +133,7 @@ function sendFailure(
         return new FirewallSendError(decoded);
       }
       if ("failure" in decoded) {
-        return new CollectiveError({
-          id: decoded.id,
-          failure: decoded.failure,
-          ...(decoded.openIds === undefined
-            ? {}
-            : { openIds: decoded.openIds }),
-        });
+        return collectiveRefusal(decoded);
       }
       return new SendError({
         reason: isReason(decoded.reason, sendFailureReasons)
@@ -153,6 +148,27 @@ function sendFailure(
     ),
     Effect.runSync,
   );
+}
+
+/**
+ * A refused collective send rebuilt from its error data.
+ * @param decoded The `collective-failed` error data.
+ * @returns The error, with the open ids or the questions open elsewhere it names.
+ */
+function collectiveRefusal(
+  decoded: Extract<
+    HarnessSendErrorData,
+    { readonly reason: "collective-failed" }
+  >,
+): CollectiveError {
+  return new CollectiveError({
+    id: decoded.id,
+    failure: decoded.failure,
+    ...(decoded.openIds === undefined ? {} : { openIds: decoded.openIds }),
+    ...(decoded.openElsewhere === undefined
+      ? {}
+      : { openElsewhere: decoded.openElsewhere }),
+  });
 }
 
 /**

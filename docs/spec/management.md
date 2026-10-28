@@ -179,9 +179,14 @@ address with a continuation. A structurally malformed tool request uses MCP
 At most 20 diagnostics are returned. Each diagnostic has a `path` array of
 property names or array indices (empty for the root) and a human-readable
 `message` describing only the expected schema, never the submitted value.
-Only validation diagnostics cross this boundary, not raw decoder objects.
-Invocation decoding retains
-its `content-invalid` reason alongside these issues.
+The error's message repeats them as `path: message`, separated by
+semicolons, for hosts that show only the message. A union reports only the
+arm the input selects: the arm whose literal fields, such as `kind`, match,
+or else the arm with every field it requires and none it forbids. A named
+value, such as an agent name, reports its own rule rather than the first of
+its checks that failed. Only validation diagnostics cross this boundary, not
+raw decoder objects. Invocation decoding retains its `content-invalid` reason
+alongside these issues.
 
 Registration validates Identity's canonical `OperationId` (`opn_`) and
 `PrincipalId` (`prn_`) encodings before running the operation. A malformed

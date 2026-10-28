@@ -24,12 +24,17 @@ import {
   Scope,
 } from "effect";
 import type { CollectiveError } from "../../communication/collectives/forms.js";
-import type { SendError } from "../../communication/conversations/errors.js";
 import type { FirewallSendError } from "../../firewall/outcome/index.js";
+import {
+  issuesText,
+  type SendError,
+} from "../../communication/conversations/errors.js";
 import {
   firewallDecisionsRequestSchema,
   firewallDecisionsSchema,
+  FirewallPolicyError,
   type FirewallPolicyOperations,
+  MAXIMUM_EDITABLE_RULES,
   policyReadSchema,
   policyUpdateResultSchema,
   policyUpdateSchema,
@@ -165,6 +170,10 @@ interface RunOperationOptions<Value extends Readonly<Record<string, unknown>>> {
   readonly label: string;
   readonly allowedReasons: ReadonlySet<string>;
   readonly fallbackReason: string;
+  /** The cause and the error data fields a failure names beyond its reason, when it has them. */
+  readonly describe?: (
+    failure: unknown,
+  ) => { message: string; data: object } | undefined;
   readonly signal: AbortSignal;
   readonly requestScope: Scope.CloseableScope;
   readonly services: Runtime.Runtime<never>;
@@ -257,13 +266,37 @@ const decodeToolInput = async <Value, A, I>(
     });
     throw new ProtocolError(
       ProtocolErrorCode.InvalidParams,
-      `Invalid arguments for tool ${toolName}`,
+      `Invalid arguments for tool ${toolName}: ${issuesText(issues)}`,
       {
         issues,
       },
     );
   }
   return decoded.value;
+};
+
+/** An expected failure's closed reason, and the cause and data it names when the tool describes it. */
+const operationError = <Value extends Readonly<Record<string, unknown>>>(
+  failure: unknown,
+  options: RunOperationOptions<Value>,
+) => {
+  const reason = operationReason(
+    failure,
+    options.allowedReasons,
+    options.fallbackReason,
+  );
+  const described =
+    failure === undefined ? undefined : options.describe?.(failure);
+  const message = [`${options.label} failed`, described?.message]
+    .filter(Boolean)
+    .join(": ");
+  return new ProtocolError(
+    ProtocolErrorCode.InternalError,
+    reason === "admission-refused"
+      ? registrationAdmissionRefusalMessage
+      : message,
+    { ...described?.data, reason },
+  );
 };
 
 const runOperation = async <Value extends Readonly<Record<string, unknown>>>(
@@ -280,30 +313,11 @@ const runOperation = async <Value extends Readonly<Record<string, unknown>>>(
       onNone: () => Cause.failureOption(outcome.cause),
       onSome: () => Option.none(),
     });
-    if (
-      Option.isSome(expectedFailure) &&
-      ProtocolError.isInstance(expectedFailure.value)
-    ) {
-      throw expectedFailure.value;
+    const failure = Option.getOrUndefined(expectedFailure);
+    if (ProtocolError.isInstance(failure)) {
+      throw failure;
     }
-    const reason = Option.match(expectedFailure, {
-      onNone: () => options.fallbackReason,
-      onSome: (failure) =>
-        operationReason(
-          failure,
-          options.allowedReasons,
-          options.fallbackReason,
-        ),
-    });
-    throw new ProtocolError(
-      ProtocolErrorCode.InternalError,
-      reason === "admission-refused"
-        ? registrationAdmissionRefusalMessage
-        : `${options.label} failed`,
-      {
-        reason,
-      },
-    );
+    throw operationError(failure, options);
   }
   return toolResult(outcome.value);
 };
@@ -406,8 +420,7 @@ const toolListings = {
     annotations: localRead,
   },
   policy_update: {
-    description:
-      'Add or remove editable English rules, such as a shared norm the agent agreed to: add takes whole rules or {"behavior": "<BEHAVIOR.md text>"}, which adds a shared norm\'s BEHAVIOR.md exactly as proposed; remove takes rule ids, and removing and adding one id replaces it. Fails with invalid-rule for an added id that already exists, a BEHAVIOR.md that does not start with its --- frontmatter line, lacks name, description or guidance, is not kind norm, or is over 64 KiB, a removed id that does not exist, or more than 256 rules; fixed-rule for a fixed rule\'s id; and not-configured when the message policy has no english block. Returns the new activeRevision once the rules are active; changes are not retroactive: admitted guidance, held items and bound sends remain unchanged.',
+    description: `Add or remove editable English rules, such as a shared norm the agent agreed to: add takes whole rules or {"behavior": "<BEHAVIOR.md text>"}, which adds a shared norm's BEHAVIOR.md exactly as proposed; remove takes rule ids, and removing and adding one id replaces it. Fails with invalid-rule for an added id that already exists, a BEHAVIOR.md without valid YAML frontmatter between --- lines (no code fence or other text before it), or one that lacks name, description or guidance, is not kind norm, or is over 64 KiB, a removed id that does not exist, or more than ${String(MAXIMUM_EDITABLE_RULES)} rules; fixed-rule for a fixed rule's id; and not-configured when the message policy has no english block. Returns the new activeRevision once the rules are active; changes are not retroactive: admitted guidance, held items and bound sends remain unchanged.`,
     inputSchema: policyUpdateInput,
     outputSchema: policyUpdateOutput,
     annotations: { readOnlyHint: false, openWorldHint: false },
@@ -600,14 +613,16 @@ const decodeInvocationInput = <A>(
 ) =>
   runEventOperation(
     input.pipe(
-      Effect.catchTag("ParseError", (error) =>
-        Effect.fail(
-          new ProtocolError(-32602, "Invalid invocation arguments", {
-            reason: "content-invalid",
-            issues: validationIssues(error),
-          }),
-        ),
-      ),
+      Effect.catchTag("ParseError", (error) => {
+        const issues = validationIssues(error);
+        return Effect.fail(
+          new ProtocolError(
+            -32602,
+            `Invalid invocation arguments: ${issuesText(issues)}`,
+            { reason: "content-invalid", issues },
+          ),
+        );
+      }),
     ),
     signal,
     requestScope,
@@ -713,7 +728,7 @@ const makeToolHandler =
     outputSchema: StandardSchemaV1<unknown, Value>,
     options: Pick<
       RunOperationOptions<Value>,
-      "label" | "allowedReasons" | "fallbackReason"
+      "label" | "allowedReasons" | "fallbackReason" | "describe"
     > & {
       readonly consumesInbox?: boolean;
       readonly execute: (
@@ -770,6 +785,10 @@ const toolHandlers = {
       label: "Policy update",
       allowedReasons: POLICY_REASONS,
       fallbackReason: "build-failed",
+      describe: (failure) =>
+        failure instanceof FirewallPolicyError
+          ? { message: failure.message, data: failure.data }
+          : undefined,
     },
   ),
   firewall_decisions: makeToolHandler(

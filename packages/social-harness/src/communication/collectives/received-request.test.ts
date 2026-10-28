@@ -55,17 +55,29 @@ const kindOf = (held: readonly HeldRequest[]) =>
 const idAt = (index: number) =>
   collectiveIdOf(bob, String(index).padStart(43, "n"));
 
-/** Held requests, the index of the one an answer to agent:bob names, and the refusal it gets. */
-const NAMED_REFUSALS: ReadonlyArray<[readonly HeldRequest[], number, string]> =
+/** Held requests, the index of the one an answer to agent:bob names, the refusal it gets, and the requests it names as open elsewhere. */
+const NAMED_REFUSALS: ReadonlyArray<
   [
-    [[{ inBob: false, state: "open", expired: false }], 0, "request-none"],
-    [[{ inBob: true, state: "open", expired: false }], 1, "request-none"],
-    [
-      [{ inBob: true, state: "answered", expired: false }],
-      0,
-      "request-answered",
-    ],
-  ];
+    readonly HeldRequest[],
+    number,
+    string,
+    ReadonlyArray<{ readonly id: CollectiveId; readonly to: GroupAddress }>,
+  ]
+> = [
+  [
+    [{ inBob: false, state: "open", expired: false }],
+    0,
+    "request-none",
+    [{ id: idAt(0), to: groupConversation }],
+  ],
+  [[{ inBob: true, state: "open", expired: false }], 1, "request-none", []],
+  [
+    [{ inBob: true, state: "answered", expired: false }],
+    0,
+    "request-answered",
+    [],
+  ],
+];
 
 /** Held requests and the refusal each set gives an answer to agent:bob. */
 const REFUSALS: ReadonlyArray<[readonly HeldRequest[], string]> = [
@@ -102,14 +114,14 @@ describe("matching an answer to its conversation's open request", () => {
 });
 
 describe("matching an answer to the request it names", () => {
-  it.each<[readonly HeldRequest[], number, string]>(NAMED_REFUSALS)(
-    "refuses an answer over %j naming request %i as %s",
-    (held, index, expected) => {
+  it.each(NAMED_REFUSALS)(
+    "refuses an answer over %j naming request %i as %s, naming the requests open elsewhere",
+    (held, index, expected, openElsewhere) => {
       expect(
         matchOpenRequest(requestsOf(held), bobConversation, NOW, {
           id: idAt(index),
         }),
-      ).toEqual(Either.left({ kind: expected }));
+      ).toEqual(Either.left({ kind: expected, openElsewhere }));
     },
   );
 });

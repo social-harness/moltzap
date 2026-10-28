@@ -23,6 +23,7 @@ import {
   type CollectiveFailure,
   type CollectiveId,
   MAXIMUM_DEADLINE_SECONDS,
+  type OpenElsewhere,
 } from "./forms.js";
 import {
   collectiveIdOf,
@@ -61,19 +62,27 @@ export interface OpenRequest<Request extends RequestStatus> {
 /**
  * Why no single request takes an answer: several are open, with their ids,
  * when the answer named none; or none was received, it was answered, or it
- * has expired.
+ * has expired, with the requests open in other conversations.
  */
 type UnmatchedAnswer =
+  | AmbiguousAnswer
   | {
-      readonly kind: "request-ambiguous";
-      readonly openIds: readonly CollectiveId[];
-    }
-  | {
-      readonly kind: Extract<
-        CollectiveFailure["kind"],
-        `request-${"none" | "answered" | "expired"}`
-      >;
+      readonly kind: UnansweredKind;
+      readonly openElsewhere: readonly OpenElsewhere[];
     };
+
+/** Why an answer matches nothing in its own conversation. */
+type ConversationRefusal = AmbiguousAnswer | { readonly kind: UnansweredKind };
+
+interface AmbiguousAnswer {
+  readonly kind: "request-ambiguous";
+  readonly openIds: readonly CollectiveId[];
+}
+
+type UnansweredKind = Extract<
+  CollectiveFailure["kind"],
+  `request-${"none" | "answered" | "expired"}`
+>;
 
 /**
  * A request this endpoint received. `postId` is the request post it came in,
@@ -143,14 +152,27 @@ export const matchOpenRequest = <Request extends RequestStatus>(
   conversation: MessageAddressInput,
   now: number,
   answer: { readonly id?: CollectiveId },
-): Either.Either<OpenRequest<Request>, UnmatchedAnswer> =>
-  answer.id === undefined
-    ? onlyOpenRequest(requests, conversation, now)
-    : namedRequest(requests, conversation, now, answer.id);
+): Either.Either<OpenRequest<Request>, UnmatchedAnswer> => {
+  const matched =
+    answer.id === undefined
+      ? onlyOpenRequest(requests, conversation, now)
+      : namedRequest(requests, conversation, now, answer.id);
+  return Either.mapLeft(
+    matched,
+    (unmatched): UnmatchedAnswer =>
+      unmatched.kind === "request-ambiguous"
+        ? unmatched
+        : {
+            kind: unmatched.kind,
+            openElsewhere: openElsewhere(requests, conversation, now),
+          },
+  );
+};
 
 /**
  * The refusal of an answer no request takes; it names the open requests' ids
- * when the answer named none and several are open.
+ * when the answer named none and several are open, and otherwise the
+ * questions open in other conversations.
  * @param id The id minted for the refusal.
  * @param unmatched Why no request takes the answer.
  * @returns The error the answer fails with.
@@ -165,7 +187,13 @@ export const unmatchedAnswerError = (
         failure: { kind: unmatched.kind },
         openIds: unmatched.openIds,
       })
-    : new CollectiveError({ id, failure: { kind: unmatched.kind } });
+    : new CollectiveError({
+        id,
+        failure: { kind: unmatched.kind },
+        ...(unmatched.openElsewhere.length === 0
+          ? {}
+          : { openElsewhere: unmatched.openElsewhere }),
+      });
 
 /**
  * The request state a request post opens, when it arrived where its
@@ -243,12 +271,27 @@ export function forgetExpiredRequests(
   }
 }
 
+/** The requests the runtime was shown that are open outside `conversation`, where an answer meant for them belongs. */
+function openElsewhere(
+  requests: ReadonlyMap<CollectiveId, RequestStatus>,
+  conversation: MessageAddressInput,
+  now: number,
+): readonly OpenElsewhere[] {
+  return [...requests].flatMap(([id, request]) =>
+    request.to !== conversation &&
+    requestShown(request.state) &&
+    requestUnavailable(request, now) === undefined
+      ? [{ id, to: request.to }]
+      : [],
+  );
+}
+
 /** The one request open in `conversation`, or why no single request is. */
 function onlyOpenRequest<Request extends RequestStatus>(
   requests: ReadonlyMap<CollectiveId, Request>,
   conversation: MessageAddressInput,
   now: number,
-): Either.Either<OpenRequest<Request>, UnmatchedAnswer> {
+): Either.Either<OpenRequest<Request>, ConversationRefusal> {
   const asked = [...requests]
     .filter(
       ([, request]) =>
@@ -288,7 +331,7 @@ function namedRequest<Request extends RequestStatus>(
   conversation: MessageAddressInput,
   now: number,
   named: CollectiveId,
-): Either.Either<OpenRequest<Request>, UnmatchedAnswer> {
+): Either.Either<OpenRequest<Request>, ConversationRefusal> {
   const request = requests.get(named);
   if (
     request === undefined ||

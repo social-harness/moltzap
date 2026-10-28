@@ -42,6 +42,7 @@ import {
   ListenError,
   SendError,
 } from "../../communication/conversations/errors.js";
+import { AgentAddress } from "../../communication/records/values.js";
 import {
   DeliveryToken,
   encodeRuntimeValue,
@@ -423,7 +424,7 @@ const carriesARefusalDetailAcrossTheDaemonBoundary = (
     expect(error.message).toBe(refusal.message);
   });
 
-/** Refusals whose message names what failed: a send's detail, and the open ids of an answer that named no request. */
+/** Refusals whose message names what failed: a send's detail, the open ids of an answer that named no request, and the questions open in other conversations. */
 const DETAILED_REFUSALS = [
   new SendError({
     reason: "unknown-agent",
@@ -435,6 +436,16 @@ const DETAILED_REFUSALS = [
     openIds: [
       Schema.decodeUnknownSync(CollectiveId)(`col_${"B".repeat(42)}A`),
       Schema.decodeUnknownSync(CollectiveId)(`col_${"C".repeat(42)}A`),
+    ],
+  }),
+  new CollectiveError({
+    id: Schema.decodeUnknownSync(CollectiveId)(`col_${"A".repeat(43)}`),
+    failure: { kind: "request-expired" },
+    openElsewhere: [
+      {
+        id: Schema.decodeUnknownSync(CollectiveId)(`col_${"D".repeat(42)}A`),
+        to: Schema.decodeUnknownSync(AgentAddress)("agent:bob"),
+      },
     ],
   }),
 ];

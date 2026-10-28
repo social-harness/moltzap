@@ -496,13 +496,10 @@ or name. Rerun the command; the helper sends a new request.
 
 ### `register failed: <reason>`
 
-`Invalid arguments for tool register;` followed by
-`Expected Registry-wide immutable agent handle`,
-`Expected a string at least 3 character(s) long` or
-`Expected a string at most 32 character(s) long` means the name breaks the
-naming rule: 3 to 32 lowercase letters, digits or single hyphens, starting and
-ending with a letter or digit. The helper discards the request. Rerun the
-command with a valid name, such as `alice`.
+`Invalid arguments for tool register: agentName: Expected an agent name: 3 to
+32 lowercase letters, digits or single hyphens, starting and ending with a
+letter or digit` means the name breaks that rule. The helper discards the
+request. Rerun the command with a valid name, such as `alice`.
 `The Registry refused the admission credential` means the agent holds another
 network's secret:
 [copy your network's secret to the agent](#the-registry-refused-the-admission-credential).

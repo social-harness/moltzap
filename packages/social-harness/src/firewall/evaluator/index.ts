@@ -100,6 +100,8 @@ export {
   firewallDecisionsSchema,
   FirewallPolicyError,
   type FirewallPolicyOperations,
+  MAXIMUM_EDITABLE_RULES,
+  type PolicyProblem,
   policyReadSchema,
   policyUpdateResultSchema,
   policyUpdateSchema,

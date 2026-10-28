@@ -9,7 +9,11 @@ import {
   isCanonicalIdentifier,
   isStrictlyAscending,
 } from "../../encoding/identifier.js";
-import { type AgentId, AgentName } from "../../identity/agents.js";
+import {
+  AGENT_NAME_RULE,
+  type AgentId,
+  AgentName,
+} from "../../identity/agents.js";
 import { WIRE_VERSION } from "../../identity/wire-version.js";
 
 /** Order validated agent identities by their decoded key bytes. */
@@ -180,7 +184,7 @@ const addressInput = Schema.String.pipe(
       parseGroupAddress(value) !== undefined,
     {
       identifier: "MessageAddressInput",
-      description: "An agent address or syntactically valid group input",
+      description: `agent:<name>, or group: then agent names separated by commas, with no spaces and no agent: prefix; a name is ${AGENT_NAME_RULE}`,
     },
   ),
   Schema.brand("MessageAddressInput"),
