@@ -9,6 +9,7 @@ import {
   Schema,
   SchemaAST,
 } from "effect";
+import type { ValidationIssue } from "../../communication/conversations/errors.js";
 import { exactParseOptions } from "../../encoding/exact.js";
 import { HARNESS_SEND_META_KEY } from "./names.js";
 import {
@@ -142,15 +143,13 @@ export const harnessFailureReasons = {
 
 const MAXIMUM_VALIDATION_ISSUES = 20;
 
-interface ValidationIssue {
-  readonly path: ReadonlyArray<string | number>;
-  readonly message: string;
-}
-
 /**
  * Projects only schema expectations and field paths, keeping submitted values
  * and custom decoder messages out of errors and logs. At most 20 issues cross
  * the boundary even when a schema reports many failing fields or union arms.
+ * A union reports only the arms the input selects (see `selectedArms`), and a
+ * named value, such as an agent name, reports its own description rather
+ * than the first of its checks that failed.
  */
 export function validationIssues(error: ParseResult.ParseError) {
   const issues: ValidationIssue[] = [];
@@ -175,7 +174,16 @@ function appendIssues(
     return;
   }
   if (issue._tag === "Composite") {
-    appendChildren(Array.ensure(issue.issues), path, issues);
+    const children = Array.ensure(issue.issues);
+    appendChildren(
+      issue.ast._tag === "Union" ? selectedArms(children, issue.actual) : children,
+      path,
+      issues,
+    );
+    return;
+  }
+  if (issue._tag === "Refinement" && namedValue(issue)) {
+    issues.push({ path, message: expectedSchemaMessage(issue.ast) });
     return;
   }
   if (issue._tag === "Refinement" || issue._tag === "Transformation") {
@@ -183,6 +191,92 @@ function appendIssues(
     return;
   }
   issues.push({ path, message: expectedMessage(issue) });
+}
+
+/**
+ * The arms of a failed union the input selects. An `undefined` arm, which an
+ * optional field adds, never explains a value that is present. An arm whose
+ * literal fields, such as `kind`, all equal the input's is the one the input
+ * chose; otherwise an arm with every field it needs and none it forbids. With
+ * no such arm, every arm reports.
+ */
+function selectedArms(
+  arms: readonly ParseResult.ParseIssue[],
+  actual: unknown,
+): readonly ParseResult.ParseIssue[] {
+  const present = arms.filter(
+    (arm) => !(arm._tag === "Type" && arm.ast._tag === "UndefinedKeyword"),
+  );
+  const candidates = present.length === 0 ? arms : present;
+  const chosen = candidates.filter((arm) => literalsMatch(arm, actual));
+  if (chosen.length > 0) {
+    return chosen;
+  }
+  const fitting = candidates.filter((arm) => !fieldsMismatch(arm));
+  return fitting.length > 0 ? fitting : candidates;
+}
+
+function literalsMatch(issue: ParseResult.ParseIssue, actual: unknown): boolean {
+  if (issue._tag === "Refinement" || issue._tag === "Transformation") {
+    return literalsMatch(issue.issue, actual);
+  }
+  if (issue._tag !== "Composite") {
+    return false;
+  }
+  if (issue.ast._tag === "Union") {
+    return Array.ensure(issue.issues).some((arm) => literalsMatch(arm, actual));
+  }
+  if (issue.ast._tag !== "TypeLiteral" || !isRecord(actual)) {
+    return false;
+  }
+  const literals = issue.ast.propertySignatures.flatMap((signature) =>
+    signature.type._tag === "Literal"
+      ? [{ name: signature.name, literal: signature.type.literal }]
+      : [],
+  );
+  return (
+    literals.length > 0 &&
+    literals.every(({ name, literal }) => actual[name] === literal)
+  );
+}
+
+/** Whether an arm lacks a field it requires or holds one it forbids, in every way it can match. */
+function fieldsMismatch(issue: ParseResult.ParseIssue): boolean {
+  if (issue._tag === "Refinement" || issue._tag === "Transformation") {
+    return fieldsMismatch(issue.issue);
+  }
+  if (issue._tag !== "Composite") {
+    return false;
+  }
+  const children = Array.ensure(issue.issues);
+  if (issue.ast._tag === "Union") {
+    return children.every(fieldsMismatch);
+  }
+  return children.some(
+    (child) =>
+      child._tag === "Pointer" &&
+      (child.issue._tag === "Missing" || child.issue._tag === "Unexpected"),
+  );
+}
+
+/** A failed value of a named schema whose description states its whole rule. */
+function namedValue(issue: ParseResult.Refinement): boolean {
+  return (
+    Option.isSome(SchemaAST.getIdentifierAnnotation(issue.ast)) &&
+    Option.isSome(SchemaAST.getDescriptionAnnotation(issue.ast)) &&
+    leafFailure(issue)
+  );
+}
+
+function leafFailure(issue: ParseResult.ParseIssue): boolean {
+  if (issue._tag === "Refinement" || issue._tag === "Transformation") {
+    return leafFailure(issue.issue);
+  }
+  return issue._tag !== "Composite" && issue._tag !== "Pointer";
+}
+
+function isRecord(value: unknown): value is Readonly<Record<PropertyKey, unknown>> {
+  return typeof value === "object" && value !== null;
 }
 
 function appendChildren(

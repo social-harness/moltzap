@@ -542,8 +542,12 @@ and whether it is missing, unexpected or invalid, `request-none`,
 `deadline-passed` for a gather or all_gather whose deadline passed while a
 firewall checked it. A `request-ambiguous` refusal of an answer without `id`
 also carries `openIds`, the ids of the requests open in its conversation, and
-no other refusal does. Its message names the members, schema paths, fields or
-open ids, so a host hands it to its model as the tool error.
+no other refusal does. A `request-none`, `request-answered` or
+`request-expired` refusal carries `openElsewhere`, `[{id, to}]`, when
+questions are open in other conversations, such as a gather's question in the
+member's direct conversation with its asker. Its message names the members,
+schema paths, fields, open ids or where the open questions are answered, so a
+host hands it to its model as the tool error.
 
 `SendError.reason` is exactly one of:
 

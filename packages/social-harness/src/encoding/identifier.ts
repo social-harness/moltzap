@@ -135,13 +135,14 @@ export const canonicalIdentifier = <const Name extends string>(
     `^${prefix}[A-Za-z0-9_-]{${wholeCharacters}}${finalCharacter}$`,
     "u",
   );
+  const characters = Math.ceil((byteLength * 8) / 6);
   return Schema.String.pipe(
-    Schema.length(prefix.length + Math.ceil((byteLength * 8) / 6)),
+    Schema.length(prefix.length + characters),
     Schema.pattern(pattern),
     Schema.brand(name),
     Schema.annotations({
       identifier: name,
-      description: `${name} canonical representation`,
+      description: `${name}: ${prefix} then ${String(characters)} base64url characters`,
     }),
   );
 };

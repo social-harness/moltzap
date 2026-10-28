@@ -189,8 +189,10 @@ const invocationValidationErrorSchema = Schema.Struct({
  * The JSON-RPC error data of a refused `send_message`: a `SendError` reason
  * with the detail naming its specific cause, or a refused collective send with its id and the failure naming each
  * unreachable member or failing field, which `decodeCollectiveFailure`
- * validates, and for an answer that named no request while several were
- * open, `openIds`. Fields a newer daemon adds are ignored; a firewall or
+ * validates; for an answer that named no request while several were open,
+ * `openIds`; and for an answer whose conversation holds no open question,
+ * `openElsewhere`, the questions open in other conversations. Fields a newer
+ * daemon adds are ignored; a firewall or
  * collective refusal that misses its own fields never decodes as a plain
  * reason.
  */
@@ -205,6 +207,15 @@ const harnessSendErrorDataSchema = Schema.Union(
     id: CollectiveId,
     failure: Schema.Unknown,
     openIds: Schema.optionalWith(Schema.Array(CollectiveId), { exact: true }),
+    openElsewhere: Schema.optionalWith(
+      Schema.Array(
+        Schema.Struct({
+          id: CollectiveId,
+          to: Schema.Union(AgentAddress, GroupAddress),
+        }),
+      ),
+      { exact: true },
+    ),
   }),
   Schema.Struct({
     reason: Schema.String.pipe(
@@ -255,6 +266,7 @@ export type HarnessSendErrorData =
         ReturnType<typeof decodeCollectiveFailure>
       >;
       openIds?: readonly CollectiveId[];
+      openElsewhere?: CollectiveError["openElsewhere"];
     }>;
 
 /**
@@ -282,6 +294,9 @@ export function sendErrorData(
       id: error.id,
       failure: error.failure,
       ...(error.openIds === undefined ? {} : { openIds: error.openIds }),
+      ...(error.openElsewhere === undefined
+        ? {}
+        : { openElsewhere: error.openElsewhere }),
     };
   }
   if (error.detail === undefined) {

@@ -756,6 +756,24 @@ norm's `BEHAVIOR.md` text mapped as [Behaviors](#behaviors) describes. Remove an
 the same editable id to replace it atomically; adding an existing id without
 removing it, removing an unknown id, or leaving duplicate editable rule ids
 fails. A no-op edit may return the same revision.
+
+A refused edit names what failed. Its error data is `{reason, ruleId?, path?,
+problem?}`: `path` is the failing item's place, `["add", <index>]` or
+`["remove", <index>]`, and `ruleId` its id when it has one. `problem` says
+why an `invalid-rule` edit failed:
+
+| `problem` | The edit |
+| --- | --- |
+| `duplicate-id` | adds an id the policy keeps, or adds one id twice |
+| `unknown-id` | removes an id the editable rules lack |
+| `editable-limit` | would leave more than 256 editable rules |
+| `frontmatter` | adds a `BEHAVIOR.md` that does not start with its frontmatter |
+| `schema` | adds a rule or `BEHAVIOR.md` that does not map to an editable rule |
+| `too-large` | adds a `BEHAVIOR.md` over 64 KiB |
+| `not-norm` | adds a `BEHAVIOR.md` whose kind is not `norm` |
+
+The error's message names the same, never the rejected text, and ends with a
+link to this section.
 `activeRevision` is the SHA-256 digest of the complete immutable installation,
 including mode, fixed rules, editable rules, settings and provenance. Identical
 installations across restarts have the same revision; it is not an increasing

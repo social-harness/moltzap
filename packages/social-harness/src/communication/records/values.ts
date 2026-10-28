@@ -180,7 +180,8 @@ const addressInput = Schema.String.pipe(
       parseGroupAddress(value) !== undefined,
     {
       identifier: "MessageAddressInput",
-      description: "An agent address or syntactically valid group input",
+      description:
+        "agent:<name>, or group: then agent names separated by commas, with no spaces and no agent: prefix; a name is 3 to 32 lowercase letters, digits or single hyphens",
     },
   ),
   Schema.brand("MessageAddressInput"),

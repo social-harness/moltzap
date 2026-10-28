@@ -21,6 +21,7 @@ import {
   editableDocumentSchema,
   type EnglishRule,
   makeJevDecisionProvider,
+  MAXIMUM_EDITABLE_RULES,
 } from "../evaluator/index.js";
 import {
   type BehaviorFailure,
@@ -294,7 +295,7 @@ function loadBehaviors(
         }
         if (field === "initialBehaviors") {
           count += 1;
-          if (count > 256) {
+          if (count > MAXIMUM_EDITABLE_RULES) {
             return yield* invalidBehavior(path, "editable-limit");
           }
         }

@@ -523,9 +523,12 @@ const editableRuleSchema = Schema.Union(
   }),
 );
 
-/** The complete editable document shares one bound across seeding, persistence and updates. */
+/** The most editable English rules one daemon holds, across seeding, persistence and updates. */
+export const MAXIMUM_EDITABLE_RULES = 256;
+
+/** The complete editable document. */
 export const editableDocumentSchema = Schema.Array(editableRuleSchema).pipe(
-  Schema.maxItems(256),
+  Schema.maxItems(MAXIMUM_EDITABLE_RULES),
 );
 
 /**
@@ -538,11 +541,13 @@ const behaviorAddition = exactStruct({ behavior: Schema.String });
 export const policyUpdateSchema = exactStruct({
   add: Schema.optional(
     Schema.Array(Schema.Union(editableRuleSchema, behaviorAddition)).pipe(
-      Schema.maxItems(256),
+      Schema.maxItems(MAXIMUM_EDITABLE_RULES),
     ),
   ),
   remove: Schema.optional(
-    Schema.Array(EnglishRule.fields.id).pipe(Schema.maxItems(256)),
+    Schema.Array(EnglishRule.fields.id).pipe(
+      Schema.maxItems(MAXIMUM_EDITABLE_RULES),
+    ),
   ),
 });
 
@@ -644,18 +649,87 @@ export const firewallDecisionsSchema = exactStruct({
   ),
 });
 
-/** A failed edit never replaces the active installation or retained editable document. */
+/**
+ * What made an edit's rule invalid. A `BEHAVIOR.md` addition fails as
+ * `frontmatter`, `schema`, `too-large` or `not-norm`; an edit as
+ * `duplicate-id`, `unknown-id` or `editable-limit`.
+ */
+export type PolicyProblem =
+  | "duplicate-id"
+  | "unknown-id"
+  | "editable-limit"
+  | "frontmatter"
+  | "schema"
+  | "too-large"
+  | "not-norm";
+
+const policyProblemText: Readonly<Record<PolicyProblem, string>> = {
+  "duplicate-id":
+    "its id is already in the policy; remove that rule in the same update to replace it, or use another id",
+  "unknown-id":
+    "no editable rule has this id; policy_read lists the editable rules",
+  "editable-limit":
+    "the update would leave more than 256 editable rules; remove some rules first",
+  frontmatter:
+    "the BEHAVIOR.md must start with a --- line and YAML frontmatter that closes with ---; pass the document alone, without a code fence or other text",
+  schema:
+    "it does not map to an editable rule: a norm needs guidance, and a BEHAVIOR.md needs name, description and metadata.social-harness.guidance, with no metadata.social-harness keys other than kind, guidance and feedback",
+  "too-large": "the BEHAVIOR.md is over 64 KiB",
+  "not-norm": "the BEHAVIOR.md is not kind norm; a shared norm is kind norm",
+};
+
+const policyReasonText: Readonly<
+  Record<FirewallPolicyError["reason"], string>
+> = {
+  "not-configured": "the message policy has no english block",
+  "invalid-rule": "the update is invalid",
+  "fixed-rule":
+    "it is a fixed rule of the owner's policy, which policy_update cannot add, remove or replace",
+  "build-failed": "the new rules could not be installed",
+  "persistence-failed": "the rules could not be stored",
+};
+
+const editRefusalDocs =
+  "Docs: https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/message-policy.md#editable-english-policy";
+
+/**
+ * A failed edit never replaces the active installation or retained editable
+ * document. `ruleId` and `path` name the failing rule when the edit had one:
+ * `path` is its place in the update, such as `["add", 0]`. `problem` says why
+ * an `invalid-rule` edit failed. The message names all three, and never the
+ * text of a rejected `BEHAVIOR.md`.
+ */
 export class FirewallPolicyError extends Data.TaggedError(
   "FirewallPolicyError",
 )<{
   readonly ruleId?: string;
+  readonly problem?: PolicyProblem;
+  readonly path?: readonly [field: "add" | "remove", index: number];
   readonly reason:
     | "not-configured"
     | "invalid-rule"
     | "fixed-rule"
     | "build-failed"
     | "persistence-failed";
-}> {}
+}> {
+  override get message(): string {
+    const place =
+      this.path === undefined ? undefined : `${this.path[0]}[${this.path[1]}]`;
+    const rule = this.ruleId === undefined ? undefined : `rule ${this.ruleId}`;
+    const subject =
+      place !== undefined && rule !== undefined
+        ? `${place} (${rule})`
+        : (place ?? rule);
+    const cause =
+      this.problem === undefined
+        ? policyReasonText[this.reason]
+        : policyProblemText[this.problem];
+    const text = subject === undefined ? cause : `${subject}: ${cause}`;
+    return this.reason === "invalid-rule" || this.reason === "fixed-rule"
+      ? `${text}. ${editRefusalDocs}`
+      : text;
+  }
+}
 
 /** Owner capabilities are separate from runtime send and inbox authority. */
 export interface FirewallPolicyOperations {

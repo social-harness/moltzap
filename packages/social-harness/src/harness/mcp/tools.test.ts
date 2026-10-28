@@ -9,6 +9,7 @@ import {
 } from "@modelcontextprotocol/server";
 import { Effect, Schema } from "effect";
 import { describe, expect } from "vitest";
+import { FirewallPolicyError } from "../../firewall/index.js";
 import { HARNESS_SEND_META_KEY } from "../protocol/names.js";
 import { decodeHarnessSendErrorData } from "../protocol/operations.js";
 import {
@@ -102,22 +103,33 @@ function request(
   );
 }
 
+/** Malformed calls and every field their diagnostics name: only the union arm the input selects. */
 const invalidCalls = [
-  { name: "search_agents", arguments: {}, path: ["agentId"] },
+  { name: "search_agents", arguments: {}, paths: [["agentId"], ["agentName"]] },
   {
     name: "search_agents",
     arguments: { agentId: `agt_${"A".repeat(22)}`, agentName: "bob" },
-    path: ["agentName"],
+    paths: [["agentName"], ["agentId"]],
   },
-  { name: "status", arguments: { unexpected: true }, path: ["unexpected"] },
-  { name: "read_event", arguments: { eventId: "bad" }, path: ["eventId"] },
-  { name: "acknowledge_delivery", arguments: {}, path: ["deliveryToken"] },
+  { name: "status", arguments: { unexpected: true }, paths: [["unexpected"]] },
+  { name: "read_event", arguments: { eventId: "bad" }, paths: [["eventId"]] },
+  { name: "acknowledge_delivery", arguments: {}, paths: [["deliveryToken"]] },
+  {
+    name: "policy_update",
+    arguments: { add: [{ id: "no-guidance", kind: "norm", text: "Be brief." }] },
+    paths: [["add", 0, "guidance"]],
+  },
 ];
 const invalidInvocationCalls = [
   {
     name: "send_message",
     arguments: { input: { to: "agent:bob", text: 123 } },
-    path: ["input", "text"],
+    paths: [["input", "text"]],
+  },
+  {
+    name: "send_message",
+    arguments: { input: { to: "group:agent:a,agent:b,agent:c", text: "hi" } },
+    paths: [["input", "to"]],
   },
   {
     name: "send_message",
@@ -127,33 +139,72 @@ const invalidInvocationCalls = [
         collectiveResponse: { action: "accept", content: { choices: [1] } },
       },
     },
-    path: ["input", "collectiveResponse", "content", "choices", 0],
+    paths: [["input", "collectiveResponse", "content", "choices", 0]],
   },
   {
     name: "send_message",
     arguments: { input: { to: "agent:bob", text: "hello" } },
     metadata: { [HARNESS_SEND_META_KEY]: { failureDelivery: "other" } },
-    path: [HARNESS_SEND_META_KEY, "failureDelivery"],
+    paths: [[HARNESS_SEND_META_KEY, "failureDelivery"]],
   },
 ];
+/** Malformed registration fields and the rule each error message states for its field. */
 const invalidRegistrations = [
-  { field: "operationId", value: "bad" },
-  { field: "principalId", value: "bad" },
-  { field: "operationId", value: `opn_${"A".repeat(22)}\n` },
-  { field: "operationId", value: `prn_${"A".repeat(22)}` },
-  { field: "principalId", value: `prn_${"A".repeat(21)}B` },
-  { field: "operationId", value: `opn_${"A".repeat(21)}` },
+  { field: "operationId", value: "bad", rule: "OperationId: opn_" },
+  { field: "principalId", value: "bad", rule: "PrincipalId: prn_" },
+  {
+    field: "operationId",
+    value: `opn_${"A".repeat(22)}\n`,
+    rule: "OperationId: opn_",
+  },
+  {
+    field: "operationId",
+    value: `prn_${"A".repeat(22)}`,
+    rule: "OperationId: opn_",
+  },
+  {
+    field: "principalId",
+    value: `prn_${"A".repeat(21)}B`,
+    rule: "PrincipalId: prn_",
+  },
+  {
+    field: "operationId",
+    value: `opn_${"A".repeat(21)}`,
+    rule: "OperationId: opn_",
+  },
+  { field: "agentName", value: "al", rule: "an agent name: 3 to 32" },
+  { field: "agentName", value: "Bad_Name", rule: "an agent name: 3 to 32" },
 ];
+const refusedPolicyEdit = new FirewallPolicyError({
+  reason: "invalid-rule",
+  problem: "duplicate-id",
+  ruleId: "meeting-booking",
+  path: ["add", 0],
+});
+/** Operation failures, the message each MCP error carries and its data. */
 const semanticFailures = [
   {
     name: "read_conversation",
     arguments: { continuation: `${"A".repeat(42)}B` },
-    reason: "invalid-continuation",
+    message: "Conversation read failed",
+    data: { reason: "invalid-continuation" },
   },
   {
     name: "search_conversations",
     arguments: { afterAddress: "group:carol,bob,alice" },
-    reason: "invalid-address",
+    message: "Conversation search failed",
+    data: { reason: "invalid-address" },
+  },
+  {
+    name: "policy_update",
+    arguments: { remove: ["meeting-booking"] },
+    message: `Policy update failed: ${refusedPolicyEdit.message}`,
+    data: {
+      reason: "invalid-rule",
+      problem: "duplicate-id",
+      ruleId: "meeting-booking",
+      path: ["add", 0],
+    },
   },
 ];
 
@@ -166,6 +217,31 @@ const catalogSchema = Schema.Struct({
     }),
   ),
 });
+
+const issuePathsSchema = Schema.Struct({
+  issues: Schema.Array(
+    Schema.Struct({
+      path: Schema.Array(Schema.Union(Schema.String, Schema.Number)),
+    }),
+  ),
+});
+
+/** The diagnostics name exactly `paths`, and the error's message names each path too. */
+function checkDiagnostics(
+  error: { readonly message: string; readonly data?: unknown } | undefined,
+  paths: ReadonlyArray<ReadonlyArray<string | number>>,
+) {
+  return Schema.decodeUnknown(issuePathsSchema)(error?.data).pipe(
+    Effect.tap((diagnostics) =>
+      Effect.sync(() => {
+        expect(diagnostics.issues.map((issue) => issue.path)).toEqual(paths);
+        for (const path of paths) {
+          expect(error?.message).toContain(`${path.join(".")}: Expected`);
+        }
+      }),
+    ),
+  );
+}
 
 function checkDiagnostic(data: unknown, path: ReadonlyArray<string | number>) {
   return Schema.decodeUnknown(
@@ -296,7 +372,7 @@ describe("MCP tool argument diagnostics", () => {
         expect(response.error).toMatchObject({
           code: ProtocolErrorCode.InvalidParams,
         });
-        yield* checkDiagnostic(response.error?.data, call.path);
+        yield* checkDiagnostics(response.error, call.paths);
         const failure = yield* decodeHarnessSendErrorData(response.error?.data);
         expect(failure).toMatchObject({ reason: "content-invalid" });
       }),
@@ -322,6 +398,7 @@ describe("MCP structural argument diagnostics", () => {
       const handler = yield* acquireHandler({
         ...operations,
         protocolActive: () => true,
+        policy: { read: unused, update: unused, decisions: unused },
       });
       const response = yield* request(handler, "tools/call", {
         name: call.name,
@@ -330,7 +407,7 @@ describe("MCP structural argument diagnostics", () => {
       expect(response.error).toMatchObject({
         code: ProtocolErrorCode.InvalidParams,
       });
-      yield* checkDiagnostic(response.error?.data, call.path);
+      yield* checkDiagnostics(response.error, call.paths);
     }),
   );
 });
@@ -359,6 +436,9 @@ describe("MCP registration validation", () => {
           code: ProtocolErrorCode.InvalidParams,
         });
         yield* checkDiagnostic(response.error?.data, [call.field]);
+        expect(response.error?.message).toContain(
+          `${call.field}: Expected ${call.rule}`,
+        );
         expect(accepted).toEqual([]);
         const success = yield* request(handler, "tools/call", {
           name: "register",
@@ -374,13 +454,18 @@ describe("MCP registration validation", () => {
 
 // @agent-code-guard/regression-only: structural diagnostics must preserve semantic operation failure reasons.
 describe("MCP semantic failures", () => {
-  it.each(semanticFailures)("preserves the owner operation's $reason", (call) =>
+  it.each(semanticFailures)("names the failure of $name", (call) =>
     Effect.gen(function* () {
       const handler = yield* acquireHandler({
         ...operations,
         protocolActive: () => true,
         readConversation: () => Effect.fail({ reason: "invalid-continuation" }),
         searchConversations: () => Effect.fail({ reason: "invalid-address" }),
+        policy: {
+          read: unused,
+          update: () => Effect.fail(refusedPolicyEdit),
+          decisions: unused,
+        },
       });
       const response = yield* request(handler, "tools/call", {
         name: call.name,
@@ -388,7 +473,8 @@ describe("MCP semantic failures", () => {
       });
       expect(response.error).toMatchObject({
         code: ProtocolErrorCode.InternalError,
-        data: { reason: call.reason },
+        message: call.message,
+        data: call.data,
       });
     }),
   );

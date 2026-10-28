@@ -178,7 +178,11 @@ it(
         const error = yield* installed.policy
           .update({ remove: ["working-hours"] })
           .pipe(Effect.flip);
-        expect(error.reason).toBe("fixed-rule");
+        expect(error).toMatchObject({
+          reason: "fixed-rule",
+          ruleId: "working-hours",
+          path: ["remove", 0],
+        });
         expect(yield* installed.policy.read()).toEqual(read);
       }),
     );
@@ -814,7 +818,12 @@ it(
             add: [{ behavior: SHARED.replace("kind: norm", "kind: safety") }],
           })
           .pipe(Effect.flip);
-        expect(error.reason).toBe("invalid-rule");
+        expect(error).toMatchObject({
+          reason: "invalid-rule",
+          problem: "not-norm",
+          path: ["add", 0],
+          ruleId: "meeting-booking",
+        });
         expect(yield* installed.policy.read()).toEqual(before);
       }),
     );
@@ -841,12 +850,80 @@ it(
             add: [{ behavior: SHARED.padEnd(MAXIMUM_BEHAVIOR_BYTES + 1, " ") }],
           })
           .pipe(Effect.flip);
-        expect(unframed.reason).toBe("invalid-rule");
-        expect(oversized.reason).toBe("invalid-rule");
+        expect(unframed).toMatchObject({
+          reason: "invalid-rule",
+          problem: "frontmatter",
+          path: ["add", 0],
+        });
+        expect(oversized).toMatchObject({
+          reason: "invalid-rule",
+          problem: "too-large",
+          path: ["add", 0],
+        });
         expect(yield* installed.policy.read()).toEqual(before);
       }),
     );
   }),
+);
+
+/** Edits the fixture's editable rules (`inline-initial`, `ask-first`) cannot apply, and what each refusal names. */
+const REFUSED_EDITS = [
+  {
+    edit: { add: [INITIAL] },
+    refusal: {
+      reason: "invalid-rule",
+      problem: "duplicate-id",
+      ruleId: INITIAL.id,
+      path: ["add", 0],
+    },
+  },
+  {
+    edit: { add: [{ ...INITIAL, id: "twice" }, { ...INITIAL, id: "twice" }] },
+    refusal: {
+      reason: "invalid-rule",
+      problem: "duplicate-id",
+      ruleId: "twice",
+      path: ["add", 1],
+    },
+  },
+  {
+    edit: { remove: ["absent"] },
+    refusal: {
+      reason: "invalid-rule",
+      problem: "unknown-id",
+      ruleId: "absent",
+      path: ["remove", 0],
+    },
+  },
+  {
+    edit: {
+      add: Array.from({ length: 255 }, (_, index) => ({
+        ...INITIAL,
+        id: `extra-${String(index)}`,
+      })),
+    },
+    refusal: { reason: "invalid-rule", problem: "editable-limit" },
+  },
+  {
+    edit: { add: [{ ...INITIAL, id: FIXED.id }] },
+    refusal: { reason: "fixed-rule", ruleId: FIXED.id, path: ["add", 0] },
+  },
+] as const;
+
+it.each(REFUSED_EDITS)(
+  "names the failing rule and problem of a refused edit: $refusal",
+  ({ edit, refusal }) =>
+    Effect.gen(function* () {
+      const configuration = yield* options(fixture().path);
+      yield* withStore(stateDirectory(), (store) =>
+        Effect.gen(function* () {
+          const installed = yield* installEditableFirewall(configuration, store);
+          const error = yield* installed.policy.update(edit).pipe(Effect.flip);
+          expect(error).toMatchObject(refusal);
+          expect(error.message).toContain("Docs: ");
+        }),
+      );
+    }),
 );
 
 it(

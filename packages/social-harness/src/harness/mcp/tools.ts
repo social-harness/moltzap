@@ -27,11 +27,15 @@ import {
   Scope,
 } from "effect";
 import type { CollectiveError } from "../../communication/collectives/forms.js";
-import type { SendError } from "../../communication/conversations/errors.js";
+import {
+  issuesText,
+  type SendError,
+} from "../../communication/conversations/errors.js";
 import type { FirewallSendError } from "../../firewall/outcome/index.js";
 import {
   firewallDecisionsRequestSchema,
   firewallDecisionsSchema,
+  FirewallPolicyError,
   type FirewallPolicyOperations,
   policyReadSchema,
   policyUpdateResultSchema,
@@ -117,6 +121,12 @@ const READ_CONVERSATION_TOOL = "read_conversation";
 
 type ClosedOperationError = Readonly<{ readonly reason: string }>;
 
+/** What a failed operation's error names beyond its reason: the cause, and the fields a program reads. */
+interface FailureDetail {
+  readonly message: string;
+  readonly data: Readonly<Record<string, unknown>>;
+}
+
 /** Structural daemon operations projected onto the loopback MCP boundary. */
 export interface HarnessMcpOperations extends DeliveryOperations {
   readonly policy?: FirewallPolicyOperations;
@@ -169,6 +179,8 @@ interface RunOperationOptions<Value extends Readonly<Record<string, unknown>>> {
   readonly label: string;
   readonly allowedReasons: ReadonlySet<string>;
   readonly fallbackReason: string;
+  /** The cause and error data a failure names beyond its reason, when it has them. */
+  readonly describe?: (failure: unknown) => FailureDetail | undefined;
   readonly signal: AbortSignal;
   readonly requestScope: Scope.CloseableScope;
   readonly services: Runtime.Runtime<never>;
@@ -311,7 +323,7 @@ const decodeToolInput = async <Value, A, I>(
     });
     throw new ProtocolError(
       ProtocolErrorCode.InvalidParams,
-      `Invalid arguments for tool ${toolName}`,
+      `Invalid arguments for tool ${toolName}: ${issuesText(issues)}`,
       {
         issues,
       },
@@ -349,18 +361,52 @@ const runOperation = async <Value extends Readonly<Record<string, unknown>>>(
           options.fallbackReason,
         ),
     });
+    const detail = Option.match(expectedFailure, {
+      onNone: () => undefined,
+      onSome: (failure) => options.describe?.(failure),
+    });
     throw new ProtocolError(
       ProtocolErrorCode.InternalError,
-      reason === "admission-refused"
-        ? registrationAdmissionRefusalMessage
-        : `${options.label} failed`,
-      {
-        reason,
-      },
+      failureMessage(reason, options.label, detail),
+      { reason, ...detail?.data },
     );
   }
   return toolResult(outcome.value);
 };
+
+function failureMessage(
+  reason: string,
+  label: string,
+  detail: FailureDetail | undefined,
+): string {
+  if (reason === "admission-refused") {
+    return registrationAdmissionRefusalMessage;
+  }
+  return detail === undefined
+    ? `${label} failed`
+    : `${label} failed: ${detail.message}`;
+}
+
+/**
+ * A policy edit's refusal names its failing rule, that rule's place in the
+ * update and the problem, in its message and as `ruleId`, `path` and
+ * `problem` in the error data.
+ * @param failure The operation's expected failure.
+ * @returns The detail, or undefined for a failure that is not a policy error.
+ */
+function describePolicyFailure(failure: unknown): FailureDetail | undefined {
+  if (!(failure instanceof FirewallPolicyError)) {
+    return undefined;
+  }
+  return {
+    message: failure.message,
+    data: {
+      ...(failure.ruleId === undefined ? {} : { ruleId: failure.ruleId }),
+      ...(failure.path === undefined ? {} : { path: failure.path }),
+      ...(failure.problem === undefined ? {} : { problem: failure.problem }),
+    },
+  };
+}
 
 /**
  * Run one send and answer its typed failure as JSON-RPC error data, with the
@@ -652,14 +698,16 @@ const decodeInvocationInput = <A>(
 ) =>
   runEventOperation(
     input.pipe(
-      Effect.catchTag("ParseError", (error) =>
-        Effect.fail(
-          new ProtocolError(-32602, "Invalid invocation arguments", {
-            reason: "content-invalid",
-            issues: validationIssues(error),
-          }),
-        ),
-      ),
+      Effect.catchTag("ParseError", (error) => {
+        const issues = validationIssues(error);
+        return Effect.fail(
+          new ProtocolError(
+            -32602,
+            `Invalid invocation arguments: ${issuesText(issues)}`,
+            { reason: "content-invalid", issues },
+          ),
+        );
+      }),
     ),
     signal,
     requestScope,
@@ -758,7 +806,7 @@ const makeToolHandler =
     outputSchema: StandardSchemaV1<unknown, Value>,
     options: Pick<
       RunOperationOptions<Value>,
-      "label" | "allowedReasons" | "fallbackReason"
+      "label" | "allowedReasons" | "fallbackReason" | "describe"
     > & {
       readonly consumesInbox?: boolean;
       readonly execute: (
@@ -815,6 +863,7 @@ const toolHandlers = {
       label: "Policy update",
       allowedReasons: POLICY_REASONS,
       fallbackReason: "build-failed",
+      describe: describePolicyFailure,
     },
   ),
   firewall_decisions: makeToolHandler(

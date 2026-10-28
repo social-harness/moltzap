@@ -35,7 +35,8 @@ export const AgentName = Schema.String.pipe(
   Schema.brand("AgentName"),
   Schema.annotations({
     identifier: "AgentName",
-    description: "Registry-wide immutable agent handle",
+    description:
+      "an agent name: 3 to 32 lowercase letters, digits or single hyphens, starting and ending with a letter or digit",
   }),
 );
 /** Validated nominal value decoded by {@link AgentName}. */

@@ -138,6 +138,9 @@ function sendFailure(
           ...(decoded.openIds === undefined
             ? {}
             : { openIds: decoded.openIds }),
+          ...(decoded.openElsewhere === undefined
+            ? {}
+            : { openElsewhere: decoded.openElsewhere }),
         });
       }
       return new SendError({

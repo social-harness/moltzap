@@ -91,9 +91,6 @@ const savedRequest = Schema.Struct({
 const failureData = Schema.Struct({
   reason: Schema.optional(Schema.String),
   detail: Schema.optional(Schema.String),
-  issues: Schema.optional(
-    Schema.Array(Schema.Struct({ message: Schema.String })),
-  ),
 });
 
 /** Tool arguments given on the command line as one JSON object. */
@@ -370,19 +367,22 @@ function callTool(
 /**
  * Reasons whose JSON-RPC message from the daemon already names the cause: an
  * admission refusal, a send the agent's own firewall refused (its check and
- * next action), and a refused collective (each unreachable member or failing
- * field).
+ * next action), a refused collective (each unreachable member or failing
+ * field), and a refused policy edit (the failing rule and the problem).
  */
 const MESSAGE_REASONS: ReadonlySet<string> = new Set([
   "admission-refused",
   "firewall-refused",
   "collective-failed",
+  "invalid-rule",
+  "fixed-rule",
 ]);
 
 /**
  * The failure for a call the daemon or the transport rejected: the daemon's
- * message for {@link MESSAGE_REASONS}, otherwise its reason, then any detail
- * and field issues. A firewall refusal has its own troubleshooting entry.
+ * message for invalid arguments, whose message names each invalid field, and
+ * for {@link MESSAGE_REASONS}; otherwise its reason, then any detail. A
+ * firewall refusal has its own troubleshooting entry.
  */
 function toolFailure(tool: string, cause: unknown): ToolFailure {
   if (!ProtocolError.isInstance(cause)) {
@@ -392,24 +392,18 @@ function toolFailure(tool: string, cause: unknown): ToolFailure {
       entry: "tool-failed",
     });
   }
-  const {
-    reason,
-    detail,
-    issues = [],
-  } = Option.getOrElse(
+  const { reason, detail } = Option.getOrElse(
     Schema.decodeUnknownOption(failureData)(cause.data),
     (): typeof failureData.Type => ({}),
   );
   const said =
-    reason === undefined || MESSAGE_REASONS.has(reason)
+    cause.code === INVALID_PARAMS ||
+    reason === undefined ||
+    MESSAGE_REASONS.has(reason)
       ? cause.message
-      : reason;
+      : [reason, ...(detail === undefined ? [] : [detail])].join("; ");
   return new ToolFailure({
-    message: `${tool} failed: ${[
-      said,
-      ...(detail === undefined ? [] : [detail]),
-      ...issues.map((issue) => issue.message),
-    ].join("; ")}`,
+    message: `${tool} failed: ${said}`,
     refused: cause.code === INVALID_PARAMS || reason === "admission-refused",
     entry: reason === "firewall-refused" ? "firewall-refused" : "tool-failed",
   });

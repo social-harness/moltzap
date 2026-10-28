@@ -363,23 +363,37 @@ export class CollectiveEmitError extends Data.TaggedError(
   "CollectiveEmitError",
 ) {}
 
+/** A question open in a conversation other than the one an answer went to, and where to answer it. */
+export interface OpenElsewhere {
+  readonly id: CollectiveId;
+  readonly to: AgentAddress | GroupAddress;
+}
+
 /**
  * A gather, all_gather or answer was refused. The message is what a host
  * hands its model as the tool error: the failed action and its cause, naming
- * each unreachable member or failing field, and for an answer that named no
- * request while several were open, each open request's id. The operation id
- * stays in the error's data, not its message.
+ * each unreachable member or failing field. For an answer that named no
+ * request while several were open, it names each open request's id; for an
+ * answer whose conversation holds no open question, the questions open in
+ * other conversations and where each is answered. The operation id stays in
+ * the error's data, not its message.
  */
 export class CollectiveError extends Data.TaggedError("CollectiveError")<{
   readonly id: CollectiveId;
   readonly failure: CollectiveFailure;
   readonly openIds?: readonly CollectiveId[];
+  readonly openElsewhere?: readonly OpenElsewhere[];
 }> {
   override get message(): string {
     const text = describeCollectiveFailure(this.failure);
-    return this.openIds === undefined
+    if (this.openIds !== undefined) {
+      return `${text}: ${this.openIds.join(", ")}`;
+    }
+    return this.openElsewhere === undefined
       ? text
-      : `${text}: ${this.openIds.join(", ")}`;
+      : `${text}; open in other conversations: ${this.openElsewhere
+          .map(({ id, to }) => `${id} in ${to}`)
+          .join(", ")}`;
   }
 }
 
