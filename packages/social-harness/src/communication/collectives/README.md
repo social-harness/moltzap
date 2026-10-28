@@ -19,5 +19,6 @@ under the MCP form-mode grammar; `validation.ts` checks answers against a form
 keyword by keyword, with the string formats in `answer-formats.ts`,
 `request-sends.ts` resolves members, times a send's wait for request posts and
 settles a gather's request posts, `received-request.ts` matches an answer to
-the one request open in its conversation, and `shared-answers.ts` builds an
+the request its id names in its conversation, or to the one request open
+there, and `shared-answers.ts` builds an
 all_gather's agreed result.

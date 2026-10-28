@@ -24,10 +24,10 @@ import { Data, Either, Option, Predicate, Schema } from "effect";
 import type { MessageAddressInput } from "../records/values.js";
 import { exactStruct } from "../../encoding/exact.js";
 import {
-  AcceptAnswer,
+  AcceptResponse,
   type CollectiveResponse,
   DeadlineSeconds,
-  DeclineAnswer,
+  DeclineResponse,
   describeIssues,
   RequestedSchema,
   SendInput,
@@ -133,8 +133,8 @@ function answer(
     Either.flatMap(
       ({ action }): Either.Either<CollectiveResponse, MessageTextError> =>
         action === "accept"
-          ? decodeText("answer", AcceptAnswer, value)
-          : decodeText("answer", DeclineAnswer, value),
+          ? decodeText("answer", AcceptResponse, value)
+          : decodeText("answer", DeclineResponse, value),
     ),
     Either.flatMap((collectiveResponse) =>
       sendInput("answer", { to, collectiveResponse }),

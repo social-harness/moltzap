@@ -197,7 +197,7 @@ function answersEachOfTwoOpenRequestsByItsId() {
   });
 }
 
-function refusesAnAnswerNamingNoneOfTwoOpenRequestsListingTheirIds() {
+function refusesAnAnswerNamingNoRequestWhileTwoAreOpen() {
   const observed = newObserved();
 
   return Effect.gen(function* () {
@@ -251,7 +251,7 @@ describe("collective responses", () => {
   );
 
   it(
-    "refuses an answer that names neither of two open requests, listing both ids",
-    refusesAnAnswerNamingNoneOfTwoOpenRequestsListingTheirIds,
+    "refuses an answer that names no request while two are open, listing both ids",
+    refusesAnAnswerNamingNoRequestWhileTwoAreOpen,
   );
 });

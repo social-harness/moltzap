@@ -52,8 +52,8 @@ const gatherText = (operation: "gather" | "all_gather") =>
     requestedSchema: SLOT_SCHEMA,
   });
 
-const acceptText = (slot: string) =>
-  JSON.stringify({ action: "accept", content: { slot } });
+const acceptText = (slot: string, id?: string) =>
+  JSON.stringify({ action: "accept", id, content: { slot } });
 
 interface AllGatherContext {
   readonly caller: Effect.Effect.Success<
@@ -142,7 +142,7 @@ function runOpenClawGatherScenario() {
         messageTool,
       });
 
-      yield* caller.send({
+      const { operationId } = yield* caller.send({
         to: targetAddress,
         text: GATHER_QUESTION,
         collective: {
@@ -155,7 +155,7 @@ function runOpenClawGatherScenario() {
       expect(requestTurn.From).toBe(callerAddress);
       const answered = yield* messageTool("reply", {
         to: callerAddress,
-        message: acceptText("tue"),
+        message: acceptText("tue", operationId),
       });
       expect(answered.details).toMatchObject({ ok: true });
       expect(yield* nextItem(caller.messages)).toMatchObject({

@@ -59,16 +59,21 @@ export interface OpenRequest<Request extends RequestStatus> {
 }
 
 /**
- * Why no single request takes an answer, with each open request's id when
- * the answer named none and several are open.
+ * Why no single request takes an answer: several are open, with their ids,
+ * when the answer named none; or none was received, it was answered, or it
+ * has expired.
  */
-interface UnmatchedAnswer {
-  readonly kind: Extract<
-    CollectiveFailure["kind"],
-    `request-${"none" | "ambiguous" | "answered" | "expired"}`
-  >;
-  readonly openIds?: readonly CollectiveId[];
-}
+type UnmatchedAnswer =
+  | {
+      readonly kind: "request-ambiguous";
+      readonly openIds: readonly CollectiveId[];
+    }
+  | {
+      readonly kind: Extract<
+        CollectiveFailure["kind"],
+        `request-${"none" | "answered" | "expired"}`
+      >;
+    };
 
 /**
  * A request this endpoint received. `postId` is the request post it came in,
@@ -154,11 +159,13 @@ export const unmatchedAnswerError = (
   id: CollectiveId,
   unmatched: UnmatchedAnswer,
 ) =>
-  new CollectiveError({
-    id,
-    failure: { kind: unmatched.kind },
-    ...(unmatched.openIds === undefined ? {} : { openIds: unmatched.openIds }),
-  });
+  unmatched.kind === "request-ambiguous"
+    ? new CollectiveError({
+        id,
+        failure: { kind: unmatched.kind },
+        openIds: unmatched.openIds,
+      })
+    : new CollectiveError({ id, failure: { kind: unmatched.kind } });
 
 /**
  * The request state a request post opens, when it arrived where its

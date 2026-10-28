@@ -124,31 +124,21 @@ const CollectiveOperation = Schema.Union(
 /** A validated collective operation. */
 export type CollectiveOperation = typeof CollectiveOperation.Type;
 
-/** An `accept` answer, the only one that carries content. */
-export const AcceptResponse = exactStruct({
-  action: Schema.Literal("accept"),
-  content: AnswerContent,
-});
-
-/** A `decline` answer. */
-export const DeclineResponse = exactStruct({
-  action: Schema.Literal("decline"),
-});
-
 /** The request an answer names: the `col_` id its `collectiveRequest` item carries. */
 const answeredRequest = {
   id: Schema.optionalWith(CollectiveId, { exact: true }),
 };
 
-/** An `accept` answer as a member sends it. */
-export const AcceptAnswer = exactStruct({
-  ...AcceptResponse.fields,
+/** An `accept` answer, the only one that carries content. */
+export const AcceptResponse = exactStruct({
+  action: Schema.Literal("accept"),
+  content: AnswerContent,
   ...answeredRequest,
 });
 
-/** A `decline` answer as a member sends it. */
-export const DeclineAnswer = exactStruct({
-  ...DeclineResponse.fields,
+/** A `decline` answer. */
+export const DeclineResponse = exactStruct({
+  action: Schema.Literal("decline"),
   ...answeredRequest,
 });
 
@@ -159,7 +149,7 @@ export const DeclineAnswer = exactStruct({
  * there. It is MCP's `ElicitResult`; only `accept` carries content, valid
  * against the request's schema.
  */
-const CollectiveResponse = Schema.Union(AcceptAnswer, DeclineAnswer);
+const CollectiveResponse = Schema.Union(AcceptResponse, DeclineResponse);
 /** A validated collective response. */
 export type CollectiveResponse = typeof CollectiveResponse.Type;
 

@@ -897,13 +897,14 @@ function countedProvenance(open: GatherRequest): ResultProvenance {
 }
 
 /**
- * Answer the one request open in the conversation `to` names. The answer
- * carries no request id, so the conversation decides which request it
- * answers; with none open, or several, nothing is sent. An installed
- * firewall checks the answer before `claimRequest` claims the request, so a
- * close or the deadline landing during the check refuses the answer without
- * sending. When the item that settling the answer emits cannot be kept, the
- * answer keeps its own outcome, its post or its refusal.
+ * Answer a request open in the conversation `to` names: the one the answer's
+ * `id` names, or without one the one request open there; when no request is
+ * matched, nothing is sent. An installed firewall checks the answer before
+ * `claimRequest` claims the matched request by its id, so a close or the
+ * deadline landing during the check refuses the answer without sending, and a
+ * request opening during it does not change which one is answered. When the
+ * item that settling the answer emits cannot be kept, the answer keeps its own
+ * outcome, its post or its refusal.
  */
 function respond(
   state: CollectiveState,

@@ -385,9 +385,12 @@ checks each operation before it posts, and a refusal is a
 `FirewallSendError` with nothing posted. A gather is checked once, after
 its address and schema are validated and before any request post; an
 all_gather's group post and an answer are checked as the agent's posts. An
-answer is checked before its request is claimed and matched again just
-before it is sent, so a request that closed or expired during the check
-refuses it as `request-expired`. A refused answer leaves its request open.
+answer is checked before its request is claimed. The claim matches the request
+the answer was first matched to again, by its id, just before it is sent: a
+request that opens during the check does not change which request the answer
+answers, a request that closed or expired during the check refuses it as
+`request-expired`, and an answer another answer beat to the claim is refused
+as `request-answered`. A refused answer leaves its request open.
 The check's duration comes out of the operation's deadline: a gather or
 all_gather whose deadline passes during its check fails as `deadline-passed`
 and posts nothing.
@@ -537,9 +540,10 @@ and the form-mode shape it expects, `answer-invalid` with each failing field
 and whether it is missing, unexpected or invalid, `request-none`,
 `request-ambiguous`, `request-answered`, `request-expired`, or
 `deadline-passed` for a gather or all_gather whose deadline passed while a
-firewall checked it. Its message
-names the members, schema paths or fields, so a host hands it to its model as
-the tool error.
+firewall checked it. A `request-ambiguous` refusal of an answer without `id`
+also carries `openIds`, the ids of the requests open in its conversation, and
+no other refusal does. Its message names the members, schema paths, fields or
+open ids, so a host hands it to its model as the tool error.
 
 `SendError.reason` is exactly one of:
 
