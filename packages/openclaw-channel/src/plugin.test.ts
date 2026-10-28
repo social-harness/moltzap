@@ -1106,7 +1106,10 @@ function makeEndpoint(
   respond: (
     input: SendInput,
     index: number,
-  ) => Effect.Effect<SendResult, CollectiveError | FirewallSendError> = ownResult,
+  ) => Effect.Effect<
+    SendResult,
+    CollectiveError | FirewallSendError
+  > = ownResult,
 ): FakeHarnessEndpoint {
   const sends: SendInput[] = [];
   return {
