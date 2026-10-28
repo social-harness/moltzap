@@ -724,7 +724,10 @@ export class FirewallPolicyError extends Data.TaggedError(
       : text;
   }
 
-  /** The fields a refusal's error data carries beside its reason. */
+  /**
+   * The fields a refusal's error data carries beside its reason.
+   * @returns `ruleId`, `path` and `problem`, each when the refusal has it.
+   */
   get data(): Readonly<{
     ruleId?: string;
     path?: readonly [field: "add" | "remove", index: number];
@@ -738,10 +741,15 @@ export class FirewallPolicyError extends Data.TaggedError(
   }
 }
 
-/** The failing rule as a refusal names it: its place in the update, then its id. */
+/**
+ * The failing rule as a refusal names it: its place in the update, then its id.
+ * @param path The rule's place in the update, when the refusal has one.
+ * @param ruleId The rule's id, when the refusal has one.
+ * @returns The subject, or undefined when the refusal names neither.
+ */
 function editSubject(
-  path: FirewallPolicyError["path"],
-  ruleId: string | undefined,
+  path?: FirewallPolicyError["path"],
+  ruleId?: string,
 ): string | undefined {
   const place = path === undefined ? undefined : `${path[0]}[${path[1]}]`;
   const rule = ruleId === undefined ? undefined : `rule ${ruleId}`;

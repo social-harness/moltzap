@@ -397,7 +397,9 @@ function behaviorRule(text: string, path: PolicyEditPath) {
   if (bytes.length > MAXIMUM_BEHAVIOR_BYTES) {
     return Effect.fail(invalidRule("too-large", { path }));
   }
-  return decodeBehavior(bytes, (problem) => invalidRule(problem, { path })).pipe(
+  return decodeBehavior(bytes, (problem) =>
+    invalidRule(problem, { path }),
+  ).pipe(
     Effect.filterOrFail(
       (rule) => rule.kind === "norm",
       (rule) => invalidRule("not-norm", { path, ruleId: rule.id }),

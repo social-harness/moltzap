@@ -150,9 +150,16 @@ function sendFailure(
   );
 }
 
-/** A refused collective send rebuilt from its error data, with the open ids or the questions open elsewhere it names. */
+/**
+ * A refused collective send rebuilt from its error data.
+ * @param decoded The `collective-failed` error data.
+ * @returns The error, with the open ids or the questions open elsewhere it names.
+ */
 function collectiveRefusal(
-  decoded: Extract<HarnessSendErrorData, { readonly reason: "collective-failed" }>,
+  decoded: Extract<
+    HarnessSendErrorData,
+    { readonly reason: "collective-failed" }
+  >,
 ): CollectiveError {
   return new CollectiveError({
     id: decoded.id,

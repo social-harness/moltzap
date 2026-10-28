@@ -121,12 +121,6 @@ const READ_CONVERSATION_TOOL = "read_conversation";
 
 type ClosedOperationError = Readonly<{ readonly reason: string }>;
 
-/** What a failed operation's error names beyond its reason: the cause, and the fields a program reads. */
-interface FailureDetail {
-  readonly message: string;
-  readonly data: Readonly<Record<string, unknown>>;
-}
-
 /** Structural daemon operations projected onto the loopback MCP boundary. */
 export interface HarnessMcpOperations extends DeliveryOperations {
   readonly policy?: FirewallPolicyOperations;
@@ -179,8 +173,10 @@ interface RunOperationOptions<Value extends Readonly<Record<string, unknown>>> {
   readonly label: string;
   readonly allowedReasons: ReadonlySet<string>;
   readonly fallbackReason: string;
-  /** The cause and error data a failure names beyond its reason, when it has them. */
-  readonly describe?: (failure: unknown) => FailureDetail | undefined;
+  /** The cause and the error data fields a failure names beyond its reason, when it has them. */
+  readonly describe?: (
+    failure: unknown,
+  ) => { message: string; data: object } | undefined;
   readonly signal: AbortSignal;
   readonly requestScope: Scope.CloseableScope;
   readonly services: Runtime.Runtime<never>;
@@ -361,21 +357,14 @@ const runOperation = async <Value extends Readonly<Record<string, unknown>>>(
           options.fallbackReason,
         ),
     });
-    const detail = Option.getOrUndefined(
-      Option.flatMap(expectedFailure, (failure) =>
-        Option.fromNullable(options.describe?.(failure)),
-      ),
-    );
-    const failed =
-      detail === undefined
-        ? `${options.label} failed`
-        : `${options.label} failed: ${detail.message}`;
+    const detail = Option.getOrUndefined(expectedFailure);
+    const described = detail === undefined ? undefined : options.describe?.(detail);
     throw new ProtocolError(
       ProtocolErrorCode.InternalError,
       reason === "admission-refused"
         ? registrationAdmissionRefusalMessage
-        : failed,
-      { reason, ...detail?.data },
+        : [`${options.label} failed`, described?.message].filter(Boolean).join(": "),
+      { reason, ...described?.data },
     );
   }
   return toolResult(outcome.value);

@@ -878,7 +878,12 @@ const REFUSED_EDITS = [
     },
   },
   {
-    edit: { add: [{ ...INITIAL, id: "twice" }, { ...INITIAL, id: "twice" }] },
+    edit: {
+      add: [
+        { ...INITIAL, id: "twice" },
+        { ...INITIAL, id: "twice" },
+      ],
+    },
     refusal: {
       reason: "invalid-rule",
       problem: "duplicate-id",

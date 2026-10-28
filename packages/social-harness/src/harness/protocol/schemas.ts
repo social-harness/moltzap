@@ -181,15 +181,24 @@ function appendIssues(
     appendChildren(Array.ensure(issue.issues), path, issues);
     return;
   }
+  if (issue._tag === "Refinement" || issue._tag === "Transformation") {
+    appendRefined(issue, path, issues);
+    return;
+  }
+  issues.push({ path, message: expectedMessage(issue) });
+}
+
+/** A named value reports its own rule; any other refinement or transformation reports what failed inside it. */
+function appendRefined(
+  issue: ParseResult.Refinement | ParseResult.Transformation,
+  path: ReadonlyArray<string | number>,
+  issues: ValidationIssue[],
+): void {
   if (issue._tag === "Refinement" && namedValue(issue)) {
     issues.push({ path, message: expectedSchemaMessage(issue.ast) });
     return;
   }
-  if (issue._tag === "Refinement" || issue._tag === "Transformation") {
-    appendIssues(issue.issue, path, issues);
-    return;
-  }
-  issues.push({ path, message: expectedMessage(issue) });
+  appendIssues(issue.issue, path, issues);
 }
 
 /**
@@ -210,6 +219,18 @@ function appendUnion(
   }
   appendChildren(inside, path, issues);
 }
+
+function appendChildren(
+  children: readonly ParseResult.ParseIssue[],
+  path: ReadonlyArray<string | number>,
+  issues: ValidationIssue[],
+): void {
+  for (const child of children) {
+    appendIssues(child, path, issues);
+    if (issues.length >= MAXIMUM_VALIDATION_ISSUES) {
+      break;
+    }
+  }
 
 /**
  * The arms of a failed union the input selects. An `undefined` arm, which an
@@ -234,7 +255,10 @@ function selectedArms(
   return fitting.length > 0 ? fitting : candidates;
 }
 
-function literalsMatch(issue: ParseResult.ParseIssue, actual: unknown): boolean {
+function literalsMatch(
+  issue: ParseResult.ParseIssue,
+  actual: unknown,
+): boolean {
   if (issue._tag === "Refinement" || issue._tag === "Transformation") {
     return literalsMatch(issue.issue, actual);
   }
@@ -293,21 +317,12 @@ function leafFailure(issue: ParseResult.ParseIssue): boolean {
   return issue._tag !== "Composite" && issue._tag !== "Pointer";
 }
 
-function isRecord(value: unknown): value is Readonly<Record<PropertyKey, unknown>> {
+function isRecord(
+  value: unknown,
+): value is Readonly<Record<PropertyKey, unknown>> {
   return typeof value === "object" && value !== null;
 }
 
-function appendChildren(
-  children: readonly ParseResult.ParseIssue[],
-  path: ReadonlyArray<string | number>,
-  issues: ValidationIssue[],
-): void {
-  for (const child of children) {
-    appendIssues(child, path, issues);
-    if (issues.length >= MAXIMUM_VALIDATION_ISSUES) {
-      break;
-    }
-  }
 }
 
 function pathSegment(key: PropertyKey): string | number {

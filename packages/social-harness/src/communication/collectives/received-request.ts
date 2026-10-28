@@ -72,9 +72,7 @@ type UnmatchedAnswer =
     };
 
 /** Why an answer matches nothing in its own conversation. */
-type ConversationRefusal =
-  | AmbiguousAnswer
-  | { readonly kind: UnansweredKind };
+type ConversationRefusal = AmbiguousAnswer | { readonly kind: UnansweredKind };
 
 interface AmbiguousAnswer {
   readonly kind: "request-ambiguous";

@@ -116,7 +116,9 @@ const invalidCalls = [
   { name: "acknowledge_delivery", arguments: {}, paths: [["deliveryToken"]] },
   {
     name: "policy_update",
-    arguments: { add: [{ id: "no-guidance", kind: "norm", text: "Be brief." }] },
+    arguments: {
+      add: [{ id: "no-guidance", kind: "norm", text: "Be brief." }],
+    },
     paths: [["add", 0, "guidance"]],
   },
 ];
