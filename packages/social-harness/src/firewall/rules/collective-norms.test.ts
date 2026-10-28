@@ -63,6 +63,7 @@ const statedRules = Schema.parseJson(
 /** One message of a check's window. */
 type HistoryEntry = MessageContext["history"][number];
 
+// @agent-code-guard/regression-only: each example pins how the bundle registers and composes its rules; builtin.test.ts property-tests the shared rules' detection.
 it("refuses a gather asking several members unless this agent is the facilitator", () =>
   Effect.gen(function* () {
     const gather = draft(
