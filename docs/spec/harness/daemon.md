@@ -278,8 +278,12 @@ After registration, the trusted-local and owner catalogs include:
 - owner `event_subscription_status`, `revoke_event_subscription` and
   `resume_event_subscription`.
 
-Every listed tool carries a one-sentence description, and input schemas
-describe identifiers, retry keys, address selectors, and pagination tokens.
+Every listed tool carries a description and MCP annotations, and input
+schemas describe identifiers, retry keys, address selectors, and pagination
+tokens. Tools that change nothing set `readOnlyHint`; writes that remove
+nothing set `destructiveHint` to false; `register` is idempotent by its
+operation id and `acknowledge_delivery` by its token; and tools that can reach
+the Registry, the Router or a callback URL set `openWorldHint` to true.
 Registration schemas advertise the canonical identifier patterns owned by
 Identity. Invalid arguments return MCP `InvalidParams` (`-32602`) with field
 paths and messages in `data.issues`, as specified in
