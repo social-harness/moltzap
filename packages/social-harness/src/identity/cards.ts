@@ -243,6 +243,34 @@ export const verifiedAgentCardSchema = Schema.declare(
   { identifier: "VerifiedAgentCard" },
 );
 
+/**
+ * The public fields of an agent's verified AgentCard: the one shape daemon
+ * results name an agent with, so a reader matches an AgentId and a name
+ * without decoding a card.
+ */
+// eslint-disable-next-line @typescript-eslint/naming-convention -- Effect Schemas share the public domain name they decode.
+export const AgentView = exactStruct({
+  agentId: AgentId,
+  agentName: AgentName,
+  principalId: PrincipalId,
+}).annotations({ identifier: "AgentView" });
+/** One agent as a daemon result names it. */
+// eslint-disable-next-line @typescript-eslint/no-redeclare -- The same-named Schema and type form one boundary model.
+export type AgentView = typeof AgentView.Type;
+
+/**
+ * The view of a card the daemon verified; nothing else fills a view.
+ * @param agentCard A card verified against the pinned Registry signer.
+ * @returns The card's public fields.
+ */
+export function agentViewOf(agentCard: VerifiedAgentCard): AgentView {
+  return Object.freeze({
+    agentId: agentCard.agentId,
+    agentName: agentCard.agentName,
+    principalId: agentCard.principalId,
+  });
+}
+
 /** A parsed AgentCard does not verify against the pinned Registry signer. */
 export class AgentCardVerificationError extends Data.TaggedError(
   "AgentCardVerificationError",

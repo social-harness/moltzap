@@ -38,7 +38,11 @@ import {
 } from "../../communication/records/index.js";
 import { AgentAddress } from "../../communication/records/values.js";
 import { compareAscii } from "../../encoding/identifier.js";
-import { AgentCard, type VerifiedAgentCard } from "../../identity/cards.js";
+import {
+  AgentCard,
+  agentViewOf,
+  type VerifiedAgentCard,
+} from "../../identity/cards.js";
 import {
   RegistryInvalidResponseError,
   type RegistryLookupResult,
@@ -148,7 +152,13 @@ function encodeRegisterResult(
     return Effect.succeed(result);
   }
   return encodeAgentCard(result.agentCard).pipe(
-    Effect.map((agentCard) => Object.freeze({ kind: "registered", agentCard })),
+    Effect.map((agentCard) =>
+      Object.freeze({
+        kind: "registered",
+        agentCard,
+        agent: agentViewOf(result.agentCard),
+      }),
+    ),
   );
 }
 
@@ -159,7 +169,13 @@ function encodeStatus(
     return Effect.succeed(state);
   }
   return encodeAgentCard(state.agentCard).pipe(
-    Effect.map((agentCard) => Object.freeze({ kind: "active", agentCard })),
+    Effect.map((agentCard) =>
+      Object.freeze({
+        kind: "active",
+        agentCard,
+        agent: agentViewOf(state.agentCard),
+      }),
+    ),
   );
 }
 
@@ -173,9 +189,8 @@ function encodeLookupResult(
     Effect.map((agentCard) =>
       Object.freeze({
         kind: "found",
-        agentId: result.agentCard.agentId,
-        agentName: result.agentCard.agentName,
         agentCard,
+        agent: agentViewOf(result.agentCard),
       }),
     ),
   );
@@ -380,13 +395,16 @@ function mapHistoryStoreFailure(
 }
 
 /**
- * Project one verified record to the MCP history record: its core, anchor,
- * and each certificate's signers with their signatures, in certificate order.
+ * Project one verified record to the MCP history record: its author's view,
+ * its core, anchor, and each certificate's signers with their signatures, in
+ * certificate order.
  * @param record Complete certified evidence verified by the history reader.
+ * @param author The verified card of the record's author.
  * @returns The owner-visible history record with ordered signer evidence.
  */
 function projectHistoryRecord(
   record: CertifiedRecord,
+  author: VerifiedAgentCard,
 ): Effect.Effect<HistoryRecord, DaemonManagementError> {
   const certified = record.actionCertifiedRecord;
   return Effect.all({
@@ -394,6 +412,7 @@ function projectHistoryRecord(
     durabilityVotes: projectSigners(record.durabilityCertificate.votes),
   }).pipe(
     Effect.map(({ actionSignatures, durabilityVotes }) => ({
+      author: agentViewOf(author),
       recordHash: certified.recordHash,
       recordCore: certified.recordCore,
       routerAnchor: certified.routerAnchor,
@@ -437,9 +456,11 @@ function readHistoryPage(input: {
   ).pipe(
     Effect.mapError(persistenceFailure),
     Effect.flatMap((records) =>
-      Effect.forEach(records, (record) => projectHistoryRecord(record), {
-        concurrency: 1,
-      }),
+      Effect.forEach(
+        records,
+        (entry) => projectHistoryRecord(entry.record, entry.author),
+        { concurrency: 1 },
+      ),
     ),
     Effect.map((records) =>
       Object.freeze({

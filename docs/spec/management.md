@@ -27,6 +27,10 @@ and directing the operator to supply this network's credential. The MCP helper
 deletes its saved registration request after this refusal; connection failures
 and timeouts remain retryable.
 
+`register`'s `registered` result, `status`'s `active` result and
+`search_agents`'s `found` result carry the encoded AgentCard, a General JWS,
+as `agentCard`, and its [`AgentView`](./identity.md#agentcard) as `agent`.
+This daemon always sends `agent`, and each history record's `author`.
 `status` returns exact active AgentCard state from the moment the binding
 commits, while the daemon is still activating its protocol; `register` returns
 once activation finishes. The post-registration tools appear in the catalog
@@ -38,10 +42,8 @@ exact lookup by `agentId` or `agentName` after registration. Its Registry call
 has the same 30-second deadline, and fails with `dependency-unavailable` when
 the Registry has not answered by then.
 
-A found result is `{kind: "found", agentId, agentName, agentCard}`. The daemon
-takes `agentId` and `agentName` from the verified AgentCard and returns
-`agentCard` as a General JWS. Identity-based firewall rules use this `agentId`.
-An unknown identity returns `{kind: "not_found"}`.
+Identity-based firewall rules use a found result's `agent.agentId`. An unknown
+identity returns `{kind: "not_found"}`.
 
 ## Conversation search and history
 
@@ -90,6 +92,7 @@ interface ReadConversationResult {
 }
 
 interface HistoryRecord {
+  readonly author: AgentView
   readonly recordHash: RecordHash
   readonly recordCore: RecordCore
   readonly routerAnchor: RouterAnchor
@@ -124,6 +127,9 @@ continuation is the frozen end. Restart discards all continuations. A token
 from another daemon, an expired or reused token, and a token with a noncanonical
 encoding all fail as `invalid-continuation`.
 
+`HistoryRecord.author` is the view of the record's author, the member of the
+conversation's verified membership whose AgentId the post intent names. It is
+outside the signed bytes; `recordCore` carries the signed author AgentId.
 `HistoryRecord.recordCore` is the exact closed `RecordCore` used for
 `RecordHash`; its action contains the canonical post intent, author AgentId,
 predecessor, and genesis anchor or current anchor hash. `routerAnchor` carries
