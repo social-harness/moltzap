@@ -1,4 +1,5 @@
 {
+  "minFolderReadmeChildren": 9007199254740991,
   "packageRuntime": "node",
   "publicTypePackages": [
     {
@@ -15,10 +16,6 @@
       "subpath": "./test",
       "reason": "Router wire overrides require the explicit sharness-test resolution condition"
     }
-  ],
-  "folderReadmeFileNames": [
-    "README.md",
-    "../README.md"
   ],
   "folderChildCountOverrides": [
     {

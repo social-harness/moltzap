@@ -1,9 +1,6 @@
 {
+  "minFolderReadmeChildren": 9007199254740991,
   "maxFolderCycles": 1,
-  "folderReadmeFileNames": [
-    "README.md",
-    "../README.md"
-  ],
   "facadeFiles": [
     {
       "file": "encoding/exact.ts",
