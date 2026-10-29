@@ -553,6 +553,8 @@ function closesAWithheldAllGatherAtAMember() {
     });
     yield* classifyGroupPost(layer, "agent:alice", 14, {
       kind: "close",
+      closedAt: 60_000,
+      closedBy: "deadline",
       id: allGatherId,
       included: [recordHashOf(13)],
     });
@@ -597,6 +599,8 @@ function postsNothingWhenTheAllGatherClosesDuringTheCheck() {
     yield* Deferred.await(gate.entered);
     yield* classifyGroupPost(layer, "agent:alice", 14, {
       kind: "close",
+      closedAt: 60_000,
+      closedBy: "deadline",
       id: allGatherId,
       included: [],
     });
@@ -792,6 +796,8 @@ function leavesAMemberOwnAnswerOutOfItsProvenance() {
 
     yield* classifyGroupPost(layer, "agent:alice", 14, {
       kind: "close",
+      closedAt: 60_000,
+      closedBy: "deadline",
       id: allGatherId,
       included: [ownRecord],
     });

@@ -135,6 +135,8 @@ it("reads historical withheld results and encodes current refusal values", () =>
       at: DateTime.formatIso(AT),
       item: {
         kind: "collectiveResult",
+        closedAt: 0,
+        closedBy: "settled",
         op: "gather",
         id: digest("col_", 1),
         to: "agent:bob",

@@ -12,6 +12,7 @@ import {
 } from "../records/values.js";
 import {
   AnswerContent,
+  collectiveClosure,
   CollectiveId,
   EpochMillis,
   RequestedSchema,
@@ -80,6 +81,7 @@ const collectiveResultItem = exactStruct({
   kind: Schema.Literal("collectiveResult"),
   op: collectingOp,
   id: CollectiveId,
+  ...collectiveClosure.fields,
   to: MessageAddressInput,
   question: Schema.Union(wellFormedString, withheldText),
   outcomes: Schema.NonEmptyArray(

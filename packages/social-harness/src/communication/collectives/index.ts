@@ -33,6 +33,7 @@ import {
   recordPeerAnswer,
 } from "./all-gather.js";
 import {
+  type CollectiveClosure,
   type CollectiveEmitError,
   CollectiveError,
   type CollectiveFailure,
@@ -81,6 +82,7 @@ import {
   type GatherRequest,
   type OpenGather,
   type PreparedGather,
+  readCollectiveSelection,
 } from "./state.js";
 import { outcomeOfResponse } from "./validation.js";
 import {
@@ -424,9 +426,7 @@ function sendRequests(
   });
 }
 
-/**
- * Record a member whose request post was refused as `no-answer`.
- */
+/** A confirmed refusal and its no-answer outcome settle the member in one retained transition. */
 function recordRefusal(
   state: CollectiveState,
   id: CollectiveId,
@@ -438,27 +438,33 @@ function recordRefusal(
   ) {
     return Effect.void;
   }
-  return durableEmit(
-    state,
-    encodeRuntimeValue(refusal).pipe(
-      Effect.flatMap((canonicalRefusal) =>
-        state.ports.store.recordCollectiveRefusal({
-          operationId: id,
-          destination: refusal.member,
-          canonicalRefusal,
+  return state.transitions
+    .withPermits(1)(
+      Effect.uninterruptible(
+        Effect.gen(function* () {
+          const open = state.gathers.get(id);
+          if (open === undefined) {
+            return;
+          }
+          yield* durableEmit(
+            state,
+            encodeRuntimeValue(refusal).pipe(
+              Effect.flatMap((canonicalRefusal) =>
+                state.ports.store.recordCollectiveRefusal({
+                  operationId: id,
+                  destination: refusal.member,
+                  canonicalRefusal,
+                }),
+              ),
+            ),
+          );
+          if (!open.outcomes.has(refusal.member)) {
+            open.outcomes.set(refusal.member, { kind: "no-answer" });
+          }
         }),
       ),
-    ),
-  ).pipe(
-    Effect.zipRight(
-      updateGather(state, id, ({ outcomes }) => {
-        if (!outcomes.has(refusal.member)) {
-          outcomes.set(refusal.member, { kind: "no-answer" });
-        }
-      }),
-    ),
-    Effect.ignore,
-  );
+    )
+    .pipe(Effect.zipRight(completeAnsweredGather(state, id)), Effect.ignore);
 }
 
 /**
@@ -952,10 +958,10 @@ function takeGatherCompletion(state: CollectiveState, id: CollectiveId) {
     if (open === undefined) {
       return;
     }
-    yield* freezeResult(state, id, open);
+    const closure = yield* freezeResult(state, id, open);
     state.gathers.delete(id);
     const announced = state.announced.delete(id);
-    return { open, announced };
+    return { open, announced, closure };
   });
 }
 
@@ -965,7 +971,12 @@ function finishGather(
   {
     open,
     announced,
-  }: { readonly open: OpenGather; readonly announced: boolean },
+    closure,
+  }: {
+    readonly open: OpenGather;
+    readonly announced: boolean;
+    readonly closure: CollectiveClosure;
+  },
 ): Effect.Effect<void, CollectiveEmitError> {
   const close = (outcome: ClosedOutcome) =>
     announced ? closedSpan(id, outcome) : Effect.void;
@@ -973,6 +984,7 @@ function finishGather(
     kind: "collectiveResult",
     op: open.op,
     id,
+    ...closure,
     to: open.to,
     question: open.question,
     outcomes: memberOutcomes(open.members, open.outcomes),
@@ -1187,24 +1199,41 @@ function closedSpan(id: CollectiveId, outcome: ClosedOutcome) {
   });
 }
 
+/** The transition permit keeps counted answers and request refusals ahead of one frozen decision. */
 function freezeResult(
   state: CollectiveState,
   id: CollectiveId,
   open: OpenGather,
-) {
+): Effect.Effect<CollectiveClosure, CollectiveEmitError> {
   return durableEmit(
     state,
-    encodeRuntimeValue({
-      kind: "result",
-      answers: [...open.answerHashes].map(([member, recordHash]) => ({
-        member,
-        recordHash,
-      })),
-    }).pipe(
-      Effect.flatMap((selection) =>
-        state.ports.store.finalizeCollectiveOperation(id, selection),
-      ),
-    ),
+    Effect.gen(function* () {
+      const operation = yield* state.ports.store.readCollectiveOperation(id);
+      if (operation?.canonicalSelection !== undefined) {
+        const selection = yield* readCollectiveSelection(
+          operation.canonicalSelection,
+        );
+        if (selection.kind !== "result") {
+          return yield* new EndpointStoreError({ reason: "corrupt" });
+        }
+        return { closedAt: selection.closedAt, closedBy: selection.closedBy };
+      }
+      const closure: CollectiveClosure = {
+        closedAt: yield* Clock.currentTimeMillis,
+        closedBy:
+          open.outcomes.size === open.members.length ? "settled" : "deadline",
+      };
+      const selection = yield* encodeRuntimeValue({
+        kind: "result",
+        ...closure,
+        answers: [...open.answerHashes].map(([member, recordHash]) => ({
+          member,
+          recordHash,
+        })),
+      });
+      yield* state.ports.store.finalizeCollectiveOperation(id, selection);
+      return closure;
+    }),
   );
 }
 

@@ -1,4 +1,4 @@
-/** @file A retained answer remains in the deadline selection when its store response is delayed. */
+/** @file A retained answer survives delayed storage responses and endpoint restart. */
 
 import { scoped as it } from "@effect/vitest";
 import { Deferred, Effect, Fiber, Schema, Scope, TestClock } from "effect";
@@ -11,12 +11,15 @@ import {
   engineFixture,
   seedIncoming,
 } from "../../__tests__/firewall-runtime-fixtures.js";
+import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { InboundMessage } from "../conversations/message.js";
 import { AgentAddress, mintPostId } from "../records/index.js";
 import {
   decodeRuntimeValue,
   encodeRuntimeValue,
   type EndpointStore,
+  EndpointStoreError,
+  openEndpointStore,
 } from "../store/index.js";
 import {
   type CollectiveOperations,
@@ -39,8 +42,11 @@ it("includes the answer retained before the deadline even when its store respons
     yield* TestClock.adjust("2 minutes");
     yield* Deferred.succeed(fixture.release, undefined);
     yield* Fiber.join(classifying);
+    expect(fixture.faults).toEqual([]);
     expect(yield* Deferred.await(fixture.emitted)).toMatchObject({
       kind: "collectiveResult",
+      closedAt: 120_000,
+      closedBy: "settled",
       outcomes: [
         {
           member: "agent:bob",
@@ -50,22 +56,69 @@ it("includes the answer retained before the deadline even when its store respons
     });
   }));
 
-function delayedAnswerFixture() {
+it("restores a retained answer before choosing settled completion after an offline deadline", () =>
+  Effect.gen(function* () {
+    const interrupted = yield* Effect.scoped(
+      Effect.gen(function* () {
+        const fixture = yield* delayedAnswerFixture(true);
+        const id = yield* beginGather(fixture.collective);
+        const answer = yield* certifiedAnswer(fixture, id);
+        expect(
+          yield* Effect.flip(fixture.collective.classify(answer)),
+        ).toMatchObject({
+          _tag: "CollectiveEmitError",
+        });
+        expect(fixture.faults).toHaveLength(1);
+        expect(yield* fixture.store.readCollectiveOperations()).toMatchObject([
+          { phase: "collecting" },
+        ]);
+        return fixture;
+      }),
+    );
+    yield* TestClock.adjust("2 minutes");
+    const store = yield* openEndpointStore(interrupted.subject.directory, {
+      liveWireVersions: LIVE_WIRE_VERSIONS,
+    });
+    const emitted = yield* Deferred.make<InboundItem>();
+    yield* makeCollectiveOperations({
+      ...interrupted.ports,
+      store,
+      scope: yield* Scope.Scope,
+      emit: retainingEmitter(store, emitted),
+    });
+    expect(yield* Deferred.await(emitted)).toMatchObject({
+      closedAt: 120_000,
+      closedBy: "settled",
+      outcomes: [
+        {
+          member: "agent:bob",
+          outcome: { kind: "answered", content: { answer: "yes" } },
+        },
+      ],
+    });
+  }));
+
+function delayedAnswerFixture(failAfterRetain = false) {
   return Effect.gen(function* () {
     const subject = yield* engineFixture();
     const head = yield* seedIncoming(subject);
     const entered = yield* Deferred.make<undefined>();
     const release = yield* Deferred.make<undefined>();
     const emitted = yield* Deferred.make<InboundItem>();
+    const faults: EndpointStoreError[] = [];
     const store: EndpointStore = {
       ...subject.store,
       recordCollectiveAnswer: (answer) =>
         subject.store.recordCollectiveAnswer(answer).pipe(
           Effect.tap(() => Deferred.succeed(entered, undefined)),
-          Effect.tap(() => Deferred.await(release)),
+          Effect.tap(() =>
+            failAfterRetain
+              ? Effect.fail(new EndpointStoreError({ reason: "persistence" }))
+              : Deferred.await(release),
+          ),
         ),
     };
-    const collective = yield* makeCollectiveOperations({
+    const ports: CollectivePorts = {
       store,
       self: Schema.decodeUnknownSync(AgentAddress)("agent:alice"),
       scope: yield* Scope.Scope,
@@ -81,10 +134,24 @@ function delayedAnswerFixture() {
       bindPost: () => Effect.dieMessage("gather uses request fanout"),
       sendAdmitted: () => Effect.dieMessage("no firewall in this test"),
       observePost: () => Effect.dieMessage("gather owns no close"),
-      reportStorageFault: () => Effect.dieMessage("unexpected storage fault"),
+      reportStorageFault: (fault) =>
+        Effect.sync(() => {
+          faults.push(fault);
+        }),
       emit: retainingEmitter(store, emitted),
-    });
-    return { subject, head, store, collective, entered, release, emitted };
+    };
+    const collective = yield* makeCollectiveOperations(ports);
+    return {
+      subject,
+      head,
+      store,
+      ports,
+      collective,
+      entered,
+      release,
+      emitted,
+      faults,
+    };
   });
 }
 

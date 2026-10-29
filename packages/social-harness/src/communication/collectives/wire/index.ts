@@ -16,6 +16,7 @@ import { type AgentAddress, Content, RecordHash } from "../../records/index.js";
 import { wireProfiles } from "../../records/values.js";
 import {
   AcceptResponse,
+  collectiveClosure,
   CollectiveId,
   DeclineResponse,
   EpochMillis,
@@ -136,10 +137,11 @@ const CollectiveResponse = Schema.Union(
   exactStruct({ ...responseHead, action: DeclineResponse.fields.action }),
 );
 
-/** The requester's all_gather close: the included answers by certified record hash. */
+/** The requester's completion decision and counted answers, identified by certified record hash. */
 const CollectiveClose = exactStruct({
   kind: Schema.Literal("close"),
   id: CollectiveId,
+  ...collectiveClosure.fields,
   included: Schema.Array(RecordHash),
 });
 

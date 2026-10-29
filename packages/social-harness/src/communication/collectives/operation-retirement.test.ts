@@ -50,7 +50,12 @@ it("keeps the deadline result when all request refusals finish during finalizati
     expect(result).toMatchObject({ kind: "collective" });
     expect(fixture.faults).toEqual([]);
     expect(fixture.emitted).toMatchObject([
-      { kind: "collectiveResult", id: result.operationId },
+      {
+        kind: "collectiveResult",
+        id: result.operationId,
+        closedAt: 60_000,
+        closedBy: "settled",
+      },
     ]);
     expect(yield* fixture.store.readCollectiveOperations()).toMatchObject([
       { phase: "completed" },

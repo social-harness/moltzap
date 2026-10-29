@@ -151,6 +151,8 @@ function continuesAGatherPastMembersItCouldNotReach() {
     expect(observed.emitted).toEqual([
       {
         kind: "collectiveResult",
+        closedAt: 60_000,
+        closedBy: "deadline",
         op: "gather",
         id,
         to: "group:alice,bob,carol,dave",

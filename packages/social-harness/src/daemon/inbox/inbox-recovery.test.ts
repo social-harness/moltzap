@@ -289,6 +289,8 @@ function delayedCloseHistory() {
       postId: digest("pst_", 43),
       content: yield* encodeCollectiveContent({
         kind: "close",
+        closedAt: 60_000,
+        closedBy: "deadline",
         id,
         included: [Schema.decodeUnknownSync(RecordHash)(answerHash)],
       }),
@@ -425,6 +427,8 @@ function receiveDelayedClose(
       expect(emitted).toMatchObject([
         {
           kind: "collectiveResult",
+          closedAt: 60_000,
+          closedBy: "deadline",
           id,
           outcomes: [
             { member: self, outcome: { kind: "no-answer" } },
@@ -496,6 +500,8 @@ itOnClock(
         postId: record.postId,
         content: yield* encodeCollectiveContent({
           kind: "close",
+          closedAt: 60_000,
+          closedBy: "deadline",
           id,
           included: [],
         }),

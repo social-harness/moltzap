@@ -90,7 +90,13 @@ function consumesAPostThatCarriesTwoCollectiveParts() {
 }
 
 function consumesACloseForAnAllGatherThisEndpointWasNotAsked() {
-  const close = { kind: "close", id: requestId, included: [] };
+  const close = {
+    kind: "close",
+    id: requestId,
+    included: [],
+    closedAt: 60_000,
+    closedBy: "deadline",
+  };
 
   return Effect.gen(function* () {
     yield* decodeCollectiveValue(close);

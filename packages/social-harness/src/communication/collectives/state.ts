@@ -14,6 +14,7 @@ import {
   type StoredCollectiveOperation,
 } from "../store/index.js";
 import {
+  collectiveClosure,
   type CollectiveId,
   type CollectiveOperation,
   EpochMillis,
@@ -37,12 +38,14 @@ const localCollectiveDescriptor = exactStruct({
 const collectiveSelection = Schema.Union(
   exactStruct({
     kind: Schema.Literal("result"),
+    ...collectiveClosure.fields,
     answers: Schema.Array(
       exactStruct({ member: AgentAddress, recordHash: RecordHash }),
     ),
   }),
   exactStruct({
     kind: Schema.Literal("close"),
+    ...collectiveClosure.fields,
     postId: PostId,
     included: Schema.Array(RecordHash),
   }),

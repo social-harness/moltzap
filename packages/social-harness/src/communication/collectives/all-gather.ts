@@ -13,6 +13,7 @@ import {
 } from "../store/index.js";
 import {
   closeFailureText,
+  type CollectiveClosure,
   type CollectiveEmitError,
   type CollectiveId,
 } from "./contracts.js";
@@ -46,7 +47,7 @@ export function closeAllGather(
   result: CollectiveResultItem,
   close: (outcome: ClosedOutcome) => Effect.Effect<void>,
 ): Effect.Effect<void, CollectiveEmitError> {
-  return certifyClose(state, open, result.id).pipe(
+  return certifyClose(state, open, result).pipe(
     Effect.matchEffect({
       onFailure: (error) =>
         error._tag === "CollectiveEmitError"
@@ -131,7 +132,12 @@ export function receiveClose(
     return applyClose(
       state,
       { id: value.id, request },
-      { postId: message.postId, included: value.included },
+      {
+        postId: message.postId,
+        included: value.included,
+        closedAt: value.closedAt,
+        closedBy: value.closedBy,
+      },
     );
   });
 }
@@ -174,8 +180,9 @@ export function applyClose(
 function certifyClose(
   state: CollectiveState,
   open: OpenGather,
-  id: CollectiveId,
+  result: CollectiveResultItem,
 ) {
+  const { id } = result;
   return Effect.gen(function* () {
     const posts = yield* durableEmit(
       state,
@@ -187,12 +194,17 @@ function certifyClose(
     }
     const close = posts.find((post) => post.role === "close");
     return yield* close === undefined
-      ? sendClose(state, open, id)
+      ? sendClose(state, open, result)
       : observeBoundPost(state, close);
   });
 }
 
-function sendClose(state: CollectiveState, open: OpenGather, id: CollectiveId) {
+function sendClose(
+  state: CollectiveState,
+  open: OpenGather,
+  result: CollectiveResultItem,
+) {
+  const { id, closedAt, closedBy } = result;
   return Effect.gen(function* () {
     const included = open.members.flatMap((member) =>
       Option.toArray(Option.fromNullable(open.answerHashes.get(member))),
@@ -200,6 +212,8 @@ function sendClose(state: CollectiveState, open: OpenGather, id: CollectiveId) {
     const content = yield* encodeCollectiveContent({
       kind: "close",
       id,
+      closedAt,
+      closedBy,
       included,
     }).pipe(Effect.mapError(contentInvalid));
     yield* state.ports
@@ -285,7 +299,7 @@ function finishPeerClose(
         ),
       );
     }
-    return emitPeerResult(state, asked, answers);
+    return emitPeerResult(state, asked, answers, close);
   });
 }
 
@@ -293,6 +307,7 @@ function emitPeerResult(
   state: CollectiveState,
   asked: GroupRequest,
   answers: SelectedAnswers,
+  { closedAt, closedBy }: CollectiveClosure,
 ) {
   const { id, request } = asked;
   return Effect.forEach(
@@ -310,6 +325,8 @@ function emitPeerResult(
           kind: "collectiveResult",
           op: "all_gather",
           id,
+          closedAt,
+          closedBy,
           to: request.to,
           question: request.question,
           outcomes: memberOutcomes(request.shared.members, new Map(outcomes)),
@@ -328,6 +345,8 @@ function emitPeerResult(
 function closeSelection(close: HeldClose) {
   return encodeRuntimeValue({
     kind: "close",
+    closedAt: close.closedAt,
+    closedBy: close.closedBy,
     postId: close.postId,
     included: close.included,
   });

@@ -127,6 +127,8 @@ const answer = (id: string, slot: string) => ({
 
 const close = (id: string, included: readonly number[]) => ({
   kind: "close",
+  closedAt: 60_000,
+  closedBy: "deadline",
   id,
   included: included.map(recordHashOf),
 });
@@ -339,6 +341,8 @@ function closesWithTheRecordHashOfEachCountedAnswer() {
           value: {
             [collectiveKey]: {
               kind: "close",
+              closedAt: 0,
+              closedBy: "settled",
               id,
               included: [recordHashOf(11), recordHashOf(13)],
             },
@@ -363,6 +367,8 @@ function publishesTheRequesterResultOnceItsCloseIsCertified() {
     expect(observed.emitted).toEqual([
       {
         kind: "collectiveResult",
+        closedAt: 0,
+        closedBy: "settled",
         op: "all_gather",
         id,
         to: group,
@@ -395,6 +401,8 @@ function closesAtTheDeadlineWithoutTheSilentMember() {
 
     expect(observed.emitted).toMatchObject([
       {
+        closedAt: 60_000,
+        closedBy: "deadline",
         outcomes: [
           { member: "agent:bob", outcome: { kind: "answered" } },
           { member: "agent:carol", outcome: { kind: "no-answer" } },
@@ -402,7 +410,15 @@ function closesAtTheDeadlineWithoutTheSilentMember() {
       },
     ]);
     expect(observed.sent[1]?.content).toMatchObject([
-      { value: { [collectiveKey]: { included: [recordHashOf(11)] } } },
+      {
+        value: {
+          [collectiveKey]: {
+            included: [recordHashOf(11)],
+            closedAt: 60_000,
+            closedBy: "deadline",
+          },
+        },
+      },
     ]);
   });
 }
@@ -624,6 +640,8 @@ function buildsTheMemberResultFromExactlyTheListedAnswers() {
     expect(observed.emitted).toEqual([
       {
         kind: "collectiveResult",
+        closedAt: 60_000,
+        closedBy: "deadline",
         op: "all_gather",
         id: requestId,
         to: group,

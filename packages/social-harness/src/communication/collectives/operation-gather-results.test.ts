@@ -75,6 +75,8 @@ function emitsTheResultOnceEveryMemberHasAnswered() {
     expect(observed.emitted).toEqual([
       {
         kind: "collectiveResult",
+        closedAt: 0,
+        closedBy: "settled",
         op: "gather",
         id,
         to: gatherTo,
@@ -106,6 +108,8 @@ function reportsASilentMemberAsNoAnswerAtTheDeadline() {
     expect(observed.emitted).toEqual([
       {
         kind: "collectiveResult",
+        closedAt: 60_000,
+        closedBy: "deadline",
         op: "gather",
         id,
         to: gatherTo,
@@ -140,6 +144,8 @@ function recordsAnAnswerThatFailsTheSchemaAsInvalid() {
     expect(observed.emitted).toEqual([
       {
         kind: "collectiveResult",
+        closedAt: 0,
+        closedBy: "settled",
         op: "gather",
         id,
         to: gatherTo,
@@ -256,6 +262,8 @@ function endsAPendingGatherAtItsDeadlineInOneResult() {
     expect(observed.emitted).toEqual([
       {
         kind: "collectiveResult",
+        closedAt: 1_000,
+        closedBy: "deadline",
         op: "gather",
         id: outcome.operationId,
         to: gatherTo,
@@ -371,6 +379,34 @@ function keepsAGatherSendWhoseSettlingResultCannotBeKept() {
     expect(outcome.postIds).toHaveLength(1);
   });
 }
+
+it("settles when one member answers and another request is refused", () =>
+  Effect.gen(function* () {
+    const observed = newObserved();
+    const layer = yield* makeLayer(observed, {
+      sendPost: refuseCarolLater(observed),
+    });
+    const sending = yield* Effect.fork(send(layer, gatherInput()));
+    yield* TestClock.adjust(Duration.millis(100));
+    const { id } = yield* firstRequestOf(observed);
+    yield* classifyPost(
+      layer,
+      answerPost("agent:bob", id, { action: "decline" }),
+    );
+    yield* TestClock.adjust(Duration.millis(400));
+    yield* Fiber.join(sending);
+    expect(observed.emitted).toMatchObject([
+      {
+        id,
+        closedAt: 500,
+        closedBy: "settled",
+        outcomes: [
+          { member: "agent:bob", outcome: { kind: "declined" } },
+          { member: "agent:carol", outcome: { kind: "no-answer" } },
+        ],
+      },
+    ]);
+  }));
 
 // @agent-code-guard/regression-only: examples pin how the requester completes a gather.
 describe("gather results", () => {

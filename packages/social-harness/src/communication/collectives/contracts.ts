@@ -87,13 +87,23 @@ export const DeadlineSeconds = Schema.Number.pipe(
 /** The latest instant a `Date` represents, in epoch milliseconds. */
 const MAXIMUM_EPOCH_MILLIS = 8_640_000_000_000_000;
 
-/**
- * An absolute time in epoch milliseconds that a `Date` can represent, so
- * every peer-stated deadline renders. Endpoints assume zero clock skew.
- */
+/** Nonnegative Unix milliseconds within the range a `Date` can render. */
 export const EpochMillis = Schema.Int.pipe(
-  Schema.between(1, MAXIMUM_EPOCH_MILLIS),
+  Schema.between(0, MAXIMUM_EPOCH_MILLIS),
 );
+
+/** The requester's first completion decision, retained before closing or delivering a result. */
+export const collectiveClosure = exactStruct({
+  closedAt: EpochMillis.annotations({
+    description: "Unix milliseconds when the requester first froze completion",
+  }),
+  closedBy: Schema.Literal("settled", "deadline").annotations({
+    description:
+      "Whether every requested member had an outcome or the deadline left members unresolved",
+  }),
+});
+/** Completion metadata remains identical across recovery and all-gather participants. */
+export type CollectiveClosure = typeof collectiveClosure.Type;
 
 /**
  * Multicast: one post to the `to` address, complete when certified. `op`

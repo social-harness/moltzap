@@ -154,6 +154,8 @@ function gatherResult(
 ): ResultItem {
   return Schema.decodeUnknownSync(resultItem)({
     kind: "collectiveResult",
+    closedAt: 0,
+    closedBy: "settled",
     op: "gather",
     id: resultId,
     to,
@@ -722,6 +724,8 @@ function questionCheckedWithResult(
     yield* admitPending(runtime);
     const result = Schema.decodeUnknownSync(resultItem)({
       kind: "collectiveResult",
+      closedAt: 0,
+      closedBy: "settled",
       op: "all_gather",
       id: collectiveIdOf(bob, nonce),
       to: bob,

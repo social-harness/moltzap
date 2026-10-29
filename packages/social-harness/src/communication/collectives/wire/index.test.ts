@@ -90,7 +90,13 @@ describe("collective content round trip", () => {
   });
 
   it("round-trips an all_gather close record", () => {
-    const close = { kind: "close", id: collectiveId, included: [recordHash] };
+    const close = {
+      kind: "close",
+      id: collectiveId,
+      included: [recordHash],
+      closedAt: deadlineAt,
+      closedBy: "deadline",
+    };
 
     const content = Effect.runSync(encodeCollectiveContent(decodeValue(close)));
 

@@ -43,7 +43,7 @@ import {
 } from "../../__tests__/collective-operation-fixtures.js";
 import { collectivePersistencePorts } from "../../__tests__/collective-storage-stub.js";
 import { InboundMessage } from "../conversations/message.js";
-import { Content, type RecordHash } from "../records/index.js";
+import { Content } from "../records/index.js";
 import { AgentAddress } from "../records/values.js";
 import { SendInput } from "./contracts.js";
 import { makeCollectiveOperations } from "./index.js";
@@ -446,7 +446,13 @@ function daveSteps(harness: Harness, id: string): Step[] {
             return append(
               harness,
               dave,
-              collectivePart({ kind: "close", id, included: [] }),
+              collectivePart({
+                kind: "close",
+                id,
+                included: [],
+                closedAt: 60_000,
+                closedBy: "deadline",
+              }),
             );
           }),
         ],
@@ -469,7 +475,13 @@ function secondCloseSteps(harness: Harness, id: string): Step[] {
         return append(
           harness,
           alice,
-          collectivePart({ kind: "close", id, included: [] }),
+          collectivePart({
+            kind: "close",
+            id,
+            included: [],
+            closedAt: 60_000,
+            closedBy: "deadline",
+          }),
         );
       }),
     ],
@@ -509,18 +521,19 @@ const outcomeOf = (
 /** The result the first close describes: each member's listed answer, in member order. */
 const resultOfFirstClose = (harness: Harness, id: string) => {
   const close = harness.chain.find(isRequesterClose);
-  const included = Option.fromNullable(close).pipe(
+  const selection = Option.fromNullable(close).pipe(
     Option.flatMap((record) => record.value),
-    Option.flatMap((value) =>
-      value.kind === "close" ? Option.some(value.included) : Option.none(),
-    ),
-    Option.getOrElse((): readonly RecordHash[] => []),
+    Option.filter((value) => value.kind === "close"),
+    Option.getOrThrow,
   );
+  const { included, closedAt, closedBy } = selection;
   const listed = harness.chain.filter((record) =>
     included.includes(recordHashOf(record.byte)),
   );
   return {
     kind: "collectiveResult",
+    closedAt,
+    closedBy,
     op: "all_gather",
     id,
     to: group,

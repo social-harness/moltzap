@@ -11,7 +11,7 @@
 
 import type { PostId, RecordHash } from "../records/index.js";
 import type { AgentAddress } from "../records/values.js";
-import type { Members } from "./contracts.js";
+import type { CollectiveClosure, Members } from "./contracts.js";
 import type {
   CollectiveMemberOutcome,
   CollectiveResultItem,
@@ -27,7 +27,7 @@ export interface CertifiedAnswer {
 }
 
 /** A close whose listed answers wait for this member's own answer to certify. */
-export interface HeldClose {
+export interface HeldClose extends CollectiveClosure {
   readonly postId: PostId;
   readonly included: readonly RecordHash[];
 }

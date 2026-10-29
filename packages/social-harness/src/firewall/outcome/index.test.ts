@@ -179,6 +179,8 @@ it("keeps withheld result entries local while grouping answer and question advic
   const withheld = { kind: "withheld", checkId, reason: "prohibited" };
   const item = Schema.decodeUnknownSync(InboundItem)({
     kind: "collectiveResult",
+    closedAt: 0,
+    closedBy: "settled",
     op: "gather",
     id: `col_${"A".repeat(43)}`,
     to: "group:alice,bob,carol",

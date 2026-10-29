@@ -167,6 +167,8 @@ type ExpectedInboundItem =
     }>
   | Readonly<{
       kind: "collectiveResult";
+      closedAt: number;
+      closedBy: "settled" | "deadline";
       op: "gather" | "all_gather";
       id: CollectiveId;
       to: MessageAddressInput;
