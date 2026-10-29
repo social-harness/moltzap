@@ -49,7 +49,7 @@ const registryAdmissionTag: RpcMiddleware.TagClass<
 );
 
 /** Required private RPC admission boundary for Registry registration. */
-export class RegistryAdmission extends registryAdmissionTag {}
+class RegistryAdmission extends registryAdmissionTag {}
 
 const currentAdmission = FiberRef.unsafeMake<Option.Option<BootstrapAdmission>>(
   Option.none(),

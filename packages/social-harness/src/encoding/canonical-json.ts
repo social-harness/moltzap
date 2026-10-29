@@ -248,10 +248,12 @@ const hasIndexedPrototypeProperty = (prototype: object): boolean => {
   return false;
 };
 
+/**
+ * Checks ambient dependencies without using the iterators being checked.
+ * Inherited index properties could intercept the canonicalizer's array writes.
+ */
 const canonicalizeRuntimeIsIntact = (): boolean => {
   let index = 0;
-  // Index traversal cannot be bypassed by replacing the iterator that the
-  // canonicalizer itself uses.
   while (index < canonicalizerDependencies.length) {
     const dependency = canonicalizerDependencies[index];
     if (dependency === undefined || !hasExpectedDescriptor(dependency)) {
@@ -262,8 +264,6 @@ const canonicalizeRuntimeIsIntact = (): boolean => {
   if (!hasExpectedCanonicalizerPrototypeChain()) {
     return false;
   }
-  // The canonicalizer creates ordinary arrays through assignment and push,
-  // so inherited index properties could intercept its internal writes.
   if (hasIndexedPrototypeProperty(arrayPrototype)) {
     return false;
   }
@@ -281,6 +281,7 @@ const readArrayLength = (value: readonly unknown[]): number | undefined => {
   return typeof descriptor.value === "number" ? descriptor.value : undefined;
 };
 
+/** Accepts only dense arrays with their own enumerable data elements. */
 const snapshotJsonArray = (
   value: readonly unknown[],
   context: JsonSnapshotContext,
@@ -290,8 +291,6 @@ const snapshotJsonArray = (
   if (length === undefined) {
     return invalidJsonSnapshot();
   }
-  // Parsed JSON arrays own only length and one enumerable data property
-  // per index, so other shapes never reach the canonicalizer.
   if (ownKeys(value).length !== length + 1) {
     return invalidJsonSnapshot();
   }
@@ -319,6 +318,7 @@ const snapshotJsonArray = (
   return validJsonSnapshot(freezeObject(snapshot));
 };
 
+/** Copies data properties without relying on ambient array iteration. */
 const snapshotJsonRecord = (
   value: object,
   context: JsonSnapshotContext,
@@ -330,7 +330,6 @@ const snapshotJsonRecord = (
   };
   const keys = ownKeys(value);
   let index = 0;
-  // Index traversal keeps validation independent of ambient array iteration.
   while (index < keys.length) {
     const key = keys[index];
     if (typeof key !== "string" || !hasWellFormedUnicode(key)) {
@@ -359,14 +358,13 @@ const snapshotJsonRecord = (
   return validJsonSnapshot(freezeObject(snapshot));
 };
 
+/** Rejects proxies before reflection can invoke traps, and bounds depth and ancestry. */
 const snapshotJsonContainer = (
   value: object,
   context: JsonSnapshotContext,
   visit: JsonSnapshotVisitor,
 ): JsonSnapshot => {
   const nextDepth = context.containerDepth + 1;
-  // A Proxy can execute arbitrary code during reflection, so it is not a
-  // JSON data container and fails before any trap is consulted.
   if (
     nextDepth > MAXIMUM_CONTAINER_DEPTH ||
     context.ancestors.has(value) ||
@@ -407,9 +405,8 @@ const visitJsonValue: JsonSnapshotVisitor = (value, context) => {
     : invalidJsonSnapshot();
 };
 
+/** Converts caller-supplied objects into inert data or an ordinary validation failure. */
 const snapshotJsonValue = (root: unknown): JsonSnapshot => {
-  // Callers can supply hostile reflection traps. Snapshotting converts
-  // those inputs into either inert data or an ordinary validation failure.
   try {
     return visitJsonValue(root, {
       ancestors: new Set(),

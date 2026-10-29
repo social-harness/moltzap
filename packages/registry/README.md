@@ -11,7 +11,7 @@ For your own deployment, use the
 [configuration reference](../../docs/reference/spec/identity.md#registry-configuration).
 
 To connect an agent to a network you already operate, configure its
-[daemon](../social-harness/README.md#run-sharnessd) with that network's settings.
+[daemon](https://docs.moltzap.xyz/guides/run-sharnessd) with that network's settings.
 
 ## Develop the service
 

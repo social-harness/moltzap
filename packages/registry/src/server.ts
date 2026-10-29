@@ -36,6 +36,8 @@ import {
 } from "./storage.js";
 
 const MAXIMUM_PROCESS_INTEGER = 2_147_483_647;
+const CONFIGURATION_DOCS =
+  "https://docs.moltzap.xyz/reference/spec/identity#registry-configuration";
 const canonicalUnsignedDecimal = Schema.String.pipe(
   Schema.pattern(/^(?:0|[1-9]\d*)$/),
 );
@@ -111,20 +113,17 @@ const configurationFields = {
 
 const configuredValues = Config.all(configurationFields);
 
-/** Usage is generated from the same fields consumed by the process. */
+/** Lists required settings and defaults without reading configuration or starting Registry. */
 export const processHelp = [
   "Usage: sharness-registry [--help]",
   "",
   "Environment:",
   ...Object.values(configurationFields).map((field) => `  ${field.usage}`),
+  "",
+  `Docs: ${CONFIGURATION_DOCS}`,
 ].join("\n");
 
-/**
- * Complete validated configuration for one Registry process.
- *
- * @internal
- */
-export interface RegistryConfiguration {
+interface RegistryConfiguration {
   readonly host: string;
   readonly port: number;
   readonly postgresqlUrl: Redacted.Redacted;
@@ -136,7 +135,7 @@ export interface RegistryConfiguration {
   readonly sqlOperationTimeoutMs: number;
 }
 
-/** Closed Registry startup failure. */
+/** Identifies the failed startup phase while keeping credentials and infrastructure causes private. */
 export class StartupError extends Data.TaggedError(
   "RegistryServerStartupError",
 )<{
@@ -150,9 +149,13 @@ export class StartupError extends Data.TaggedError(
     const reason = this.reason === undefined ? "" : ` (${this.reason})`;
     const remedy =
       this.reason === "pre-reset"
-        ? ". Start with a fresh Registry database and register agents again; see https://github.com/social-harness/moltzap/blob/main/docs/guides/upgrades.mdx#apply-a-reset-release."
+        ? ". Start with a fresh Registry database and register agents again."
         : "";
-    return `sharness-registry startup failed in phase ${this.phase}${reason}${detail}${remedy}`;
+    const documentation =
+      this.reason === "pre-reset"
+        ? "https://docs.moltzap.xyz/guides/upgrades#apply-a-reset-release"
+        : CONFIGURATION_DOCS;
+    return `sharness-registry startup failed in phase ${this.phase}${reason}${detail}${remedy} Docs: ${documentation}`;
   }
 }
 
@@ -194,20 +197,14 @@ const runRegistryServer = Effect.gen(function* () {
 });
 
 /**
- * Complete production Registry process composition.
+ * Starts Registry and owns its listener and database pool for the layer's scope.
  *
- * ```mermaid
- * flowchart TD
- *   Binary["sharness-registry"] --> Server["runRegistryServer"]
- *   Server --> Configuration["loadRegistryConfiguration"]
- *   Server --> Storage["RegistryStorage"]
- *   Server --> Http["makeRegistryHttpApp"]
- *   Http --> Admission["verifyBootstrapRegistration"]
- *   Http --> Rpc["RegistryRpcClient"]
- *   Admission --> Storage
- *   Rpc --> Storage
- *   Http --> Response["HttpServerResponse"]
- * ```
+ * Reads the Registry settings from the current ConfigProvider. Acquisition
+ * validates configuration and the signing key, initializes durable storage,
+ * and binds the listener. A failure returns {@link StartupError} before the
+ * service reports ready. Closing the scope releases the listener and pool.
+ *
+ * Operators normally start this composition with `sharness-registry`.
  */
 // safer-arch-ignore require-boundary-owned-types: The declared Layer type is the public boundary; this composition root provides the Node adapter internally.
 export const layer: Layer.Layer<never, StartupError> = Layer.scopedDiscard(

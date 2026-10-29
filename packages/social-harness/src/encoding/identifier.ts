@@ -19,8 +19,8 @@ export const decodeCanonicalBase64Url = (
   });
 
 /**
- * Whether a value is the prefix followed by the canonical base64url of a
- * 32-byte hash, the shape of every minted Social Harness identifier.
+ * Tests a hash-derived identifier: the prefix followed by canonical base64url
+ * for a 32-byte hash. Registry-minted AgentIds use a separate 16-byte format.
  * @param prefix The identifier's kind prefix, such as `pst_`.
  * @param value The candidate identifier.
  * @returns Whether the value is canonical for that prefix.
@@ -36,8 +36,8 @@ export function isCanonicalIdentifier(prefix: string, value: string): boolean {
 }
 
 /**
- * Order agent ids by their decoded key bytes, the order membership
- * descriptors and group addresses use.
+ * Orders AgentIds by their decoded identifier bytes for canonical membership
+ * and message recipient lists. Group addresses order AgentNames instead.
  * @param left One agent id.
  * @param right The other agent id.
  * @returns A negative, zero, or positive comparison result.

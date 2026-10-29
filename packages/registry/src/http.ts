@@ -53,7 +53,7 @@ type RegistryHttpAppInput = Readonly<{
 export function makeRegistryHttpApp(input: RegistryHttpAppInput) {
   return HttpRouter.empty.pipe(
     HttpRouter.post(registryContract.REGISTER_ROUTE, registerHandler(input)),
-    lookupRoute(input),
+    HttpRouter.post(registryContract.LOOKUP_ROUTE, lookupHandler(input)),
     healthRoute(input.storage),
     fallbackRoute(),
   );
@@ -75,10 +75,6 @@ const SINGLE_VALUE_HEADERS = [
   "sharness-version",
   ...SIGNATURE_HEADERS,
 ] as const;
-
-function lookupRoute(input: RegistryHttpAppInput) {
-  return HttpRouter.post(registryContract.LOOKUP_ROUTE, lookupHandler(input));
-}
 
 function healthRoute(storage: RegistryStorage) {
   return HttpRouter.get(
@@ -117,15 +113,7 @@ function fallbackRoute() {
   );
 }
 
-function registerHandler(input: {
-  readonly client: RegistryRpcClient;
-  readonly storage: RegistryStorage;
-  readonly admissionCredential: Parameters<
-    typeof verifyBootstrapRegistration
-  >[0]["admissionCredential"];
-  readonly nonceCapacity: number;
-  readonly requestSemaphore: Effect.Semaphore;
-}) {
+function registerHandler(input: RegistryHttpAppInput) {
   return recoverHttpResponse(
     Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest;
@@ -406,10 +394,26 @@ function resultResponse<E>(
   );
 }
 
+const mappings = Object.freeze({
+  MalformedRequestError: { status: 400, code: "malformed" },
+  AuthenticationFailedError: { status: 401, code: "authentication_failed" },
+  RouteNotFoundError: { status: 404, code: "not_found" },
+  MethodNotAllowedError: { status: 405, code: "method_not_allowed" },
+  VersionMismatchError: { status: 412, code: "version_mismatch" },
+  PayloadTooLargeError: { status: 413, code: "payload_too_large" },
+  UnsupportedMediaTypeError: {
+    status: 415,
+    code: "unsupported_media_type",
+  },
+  OverloadedError: { status: 429, code: "overloaded" },
+  UnavailableError: { status: 503, code: "unavailable" },
+  InternalServerError: { status: 500, code: "internal" },
+} as const);
+
 function errorResponse(
   error: HttpEnvelopeError,
 ): HttpServerResponse.HttpServerResponse {
-  const envelope = httpEnvelope(error);
+  const envelope = mappings[error._tag];
   return jsonResponse(
     new TextEncoder().encode(
       JSON.stringify({
@@ -445,31 +449,3 @@ type HttpEnvelopeError =
   | InstanceType<typeof httpErrors.OverloadedError>
   | InstanceType<typeof httpErrors.UnavailableError>
   | InstanceType<typeof httpErrors.InternalServerError>;
-
-const mappings = Object.freeze({
-  MalformedRequestError: { status: 400, code: "malformed" },
-  AuthenticationFailedError: { status: 401, code: "authentication_failed" },
-  RouteNotFoundError: { status: 404, code: "not_found" },
-  MethodNotAllowedError: { status: 405, code: "method_not_allowed" },
-  VersionMismatchError: { status: 412, code: "version_mismatch" },
-  PayloadTooLargeError: { status: 413, code: "payload_too_large" },
-  UnsupportedMediaTypeError: {
-    status: 415,
-    code: "unsupported_media_type",
-  },
-  OverloadedError: { status: 429, code: "overloaded" },
-  UnavailableError: { status: 503, code: "unavailable" },
-  InternalServerError: { status: 500, code: "internal" },
-} as const);
-
-/**
- * Private HTTP status and body-code projection for a shared error.
- *
- * @param error Recognized closed HTTP failure.
- * @returns Its exact status and stable body code.
- */
-function httpEnvelope(
-  error: HttpEnvelopeError,
-): (typeof mappings)[keyof typeof mappings] {
-  return mappings[error._tag];
-}

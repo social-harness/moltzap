@@ -368,7 +368,7 @@ export const ed25519VerificationKey = (
 export const SEALED_BODY_KEY_MANAGEMENT_ALGORITHM = "ECDH-ES+A256KW";
 
 /** X25519 public JWK of one agent: the key a sealed body is encrypted to. */
-export interface X25519PublicJwk {
+interface X25519PublicJwk {
   readonly crv: "X25519";
   readonly kty: "OKP";
   readonly x: string;

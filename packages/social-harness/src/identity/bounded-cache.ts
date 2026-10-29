@@ -17,9 +17,7 @@ export interface BoundedCache<K, V> {
 }
 
 /**
- * Creates an empty cache that keeps at most `capacity` entries, at least one.
- * A `Map` iterates in insertion order, so re-inserting an entry moves it to
- * the end, and the first key is the least recently used.
+ * Creates an empty LRU cache. The caller supplies a positive integer capacity.
  */
 export const makeBoundedCache = <K, V>(
   capacity: number,

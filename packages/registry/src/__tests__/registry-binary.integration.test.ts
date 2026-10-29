@@ -933,9 +933,9 @@ const assertExternalResolutionDenied = `
 `;
 
 /**
- * A module under the Registry package root, outside its built modules and executable.
- *
- * Value: protects=after startRegistry installs internal resolution, a module in a nested node_modules under the Registry package root still cannot resolve `@moltzap/social-harness/internal`; fails_when=the hook's parent scope includes the package root rather than only dist/ and bin/; why_new=the external consumer lives in a temporary directory outside the package root, which both scopes deny; seam=none; no_claim=resolution for parents outside the package root.
+ * A dependency under the Registry package root must remain outside the
+ * executable's scoped internal resolution. This probe distinguishes that
+ * dependency from Registry's own built modules.
  */
 const makeNestedProbe = Effect.acquireRelease(
   Effect.gen(function* () {

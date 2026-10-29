@@ -112,13 +112,6 @@ it(
   15_000,
 );
 
-/**
- * Value: protects=startRegistry reports a startup failure and exits nonzero,
- * as the Registry test composition spec states; fails_when=its failure handler
- * stops setting the exit status or printing the error; why_new=registry-binary
- * starts the test entry only successfully; seam=none;
- * no_claim=which configuration errors exist.
- */
 it(
   "reports a test-composition startup failure and exits unsuccessfully",
   () =>

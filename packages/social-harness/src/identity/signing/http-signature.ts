@@ -63,7 +63,7 @@ const PARAMETERS = Object.freeze([
 ]);
 
 /** Closed request-signature profile selected by the owning HTTP route. */
-export type HttpSignatureProfile = "normal" | "registration";
+type HttpSignatureProfile = "normal" | "registration";
 
 const PROFILES = {
   normal: { fields: NORMAL_FIELDS, tag: "sharness-request-v1" },
@@ -86,10 +86,6 @@ const toMessageHeaders = (
   headers: Readonly<Record<string, string>>,
 ): Record<string, string> => Object.fromEntries(Object.entries(headers));
 
-/*
- * http-message-signatures requires a Promise-returning signing callback.
- * The Promise stays inside that standards-library adapter.
- */
 /* eslint-disable agent-code-guard/promise-type, agent-code-guard/then-chain -- http-message-signatures requires this Promise callback */
 const signBytes = (
   authority: AgentSigningAuthority,
@@ -499,6 +495,7 @@ const acceptSignatureParameters = (input: {
     return { keyid, signature: signature.value };
   });
 
+/** Effect Clock enforces the signature interval before the library checks its proof. */
 const verifyWithLibrary = (input: {
   readonly httpRequest: HttpServerRequest.HttpServerRequest;
   readonly profile: HttpSignatureProfile;
@@ -514,7 +511,6 @@ const verifyWithLibrary = (input: {
           all: true,
           requiredFields: [...PROFILES[input.profile].fields],
           requiredParams: [...PARAMETERS],
-          // Effect Clock applies the exact time law before this call.
           tolerance: Number.MAX_SAFE_INTEGER,
           keyLookup: () => Promise.resolve(key),
         },
