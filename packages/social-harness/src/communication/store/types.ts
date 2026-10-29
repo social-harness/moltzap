@@ -220,7 +220,9 @@ export interface PostIntent {
 }
 
 /** Atomic binding for a post in either retained or newly founded history. */
-export type PostIntentBinding =
+export type PostIntentBinding = {
+  readonly collective?: CollectivePostBinding;
+} & (
   | Readonly<{
       kind: "existing-conversation";
       intent: PostIntent;
@@ -229,7 +231,8 @@ export type PostIntentBinding =
       kind: "new-conversation";
       foundation: ConversationFoundation;
       intent: PostIntent;
-    }>;
+    }>
+);
 
 /** Immutable membership and genesis Router anchor for one conversation. */
 export interface ConversationFoundation {
@@ -406,6 +409,44 @@ export interface HistoryPage {
 
 /** Private durable operations owned by one daemon process. */
 export interface EndpointStore {
+  readonly recordCollectiveAnswer: (
+    answer: CollectiveAnswerReference,
+  ) => Effect.Effect<string | undefined, EndpointStoreError>;
+  readonly readCollectiveAnswers: () => Effect.Effect<
+    readonly CollectiveAnswerReference[],
+    EndpointStoreError
+  >;
+  readonly recordCollectiveRefusal: (
+    refusal: CollectiveRequestRefusal,
+  ) => Effect.Effect<void, EndpointStoreError>;
+  readonly readCollectiveRefusals: () => Effect.Effect<
+    readonly CollectiveRequestRefusal[],
+    EndpointStoreError
+  >;
+  readonly retireCollectiveOperation: (
+    operationId: string,
+    canonicalSelection: Uint8Array,
+  ) => Effect.Effect<void, EndpointStoreError>;
+
+  readonly putCollectiveOperation: (
+    input: CollectiveOperationInput,
+  ) => Effect.Effect<StoreMutation, EndpointStoreError>;
+  readonly readCollectiveOperations: () => Effect.Effect<
+    readonly StoredCollectiveOperation[],
+    EndpointStoreError
+  >;
+  readonly readCollectivePosts: () => Effect.Effect<
+    readonly StoredCollectivePost[],
+    EndpointStoreError
+  >;
+  readonly finalizeCollectiveOperation: (
+    operationId: string,
+    canonicalSelection: Uint8Array,
+  ) => Effect.Effect<StoreMutation, EndpointStoreError>;
+  readonly publishCollectiveItem: (
+    delivery: CollectiveDelivery,
+  ) => Effect.Effect<void, EndpointStoreError>;
+
   readonly queueFirewallItem: (
     item: Omit<FirewallInboxEntry, "sequence">,
   ) => Effect.Effect<void, EndpointStoreError>;
@@ -472,6 +513,7 @@ export interface EndpointStore {
   readonly admitFirewallOperation: (
     completion: FirewallCompletion,
     canonicalCandidate: Uint8Array,
+    collective?: CollectiveOperationInput,
   ) => Effect.Effect<FirewallCommit, EndpointStoreError>;
   readonly bindCheckedPostIntent: (
     binding: PostIntentBinding,
@@ -610,4 +652,72 @@ export interface EndpointStore {
   readonly recover: (
     conversationId?: string,
   ) => Effect.Effect<EndpointRecovery, EndpointStoreError>;
+}
+
+/** A remote request is identified by its authenticated certified record. */
+export type CollectiveOrigin =
+  | { readonly kind: "local" }
+  | {
+      readonly kind: "remote";
+      readonly recordHash: string;
+      readonly requiresAdmission: boolean;
+    };
+
+/** Immutable request identity and the descriptor its collective owner interprets. */
+export interface CollectiveOperationInput {
+  readonly operationId: string;
+  readonly origin: CollectiveOrigin;
+  readonly canonicalRequest: Uint8Array;
+  readonly canonicalDescriptor: Uint8Array;
+  readonly admittedCheckId?: string;
+}
+
+/** Selection freezes before a close binds; completion commits with its one terminal item. */
+export interface StoredCollectiveOperation extends CollectiveOperationInput {
+  readonly creatorAgentId: string;
+  readonly origin:
+    | Extract<CollectiveOrigin, { readonly kind: "local" }>
+    | (Extract<CollectiveOrigin, { readonly kind: "remote" }> & {
+        readonly conversationId: string;
+      });
+  readonly phase: "collecting" | "finalizing" | "completed";
+  readonly canonicalSelection?: Uint8Array;
+  readonly deliveryToken: DeliveryToken;
+}
+
+/** A collective owns one immutable post per role and destination. */
+export interface CollectivePostBinding {
+  readonly operationId: string;
+  readonly role: "request" | "response" | "close";
+  readonly destination: string;
+  readonly operation?: CollectiveOperationInput;
+}
+
+/** Existing post intents own retries and certified completion across restart. */
+export interface StoredCollectivePost extends CollectivePostBinding {
+  readonly intent: PostIntent;
+}
+
+/** The terminal payload and collective phase become durable in one transaction. */
+export interface CollectiveDelivery {
+  readonly operationId: string;
+  readonly deliveryToken: DeliveryToken;
+  readonly canonicalItem: Uint8Array;
+  readonly conversation: string;
+  readonly canonicalProvenance?: Uint8Array;
+  readonly firewall: boolean;
+}
+
+/** Counted answers retain certified references; their content remains in certified history. */
+export interface CollectiveAnswerReference {
+  readonly operationId: string;
+  readonly member: string;
+  readonly recordHash: string;
+}
+
+/** A request that bound no intent is terminal for that member of this invocation. */
+export interface CollectiveRequestRefusal {
+  readonly operationId: string;
+  readonly destination: string;
+  readonly canonicalRefusal: Uint8Array;
 }

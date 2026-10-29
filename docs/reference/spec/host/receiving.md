@@ -199,9 +199,9 @@ revocation or lease expiry. Owner status, revoke and resume expose delivery
 state without callback URLs or secrets. Expired registrations cannot deliver,
 but retain retry bytes and diagnostics for refresh. Changing the callback requires
 revoking the retained registration. Revocation preserves pending inbox items.
-Before delivery starts after restart, recovery retires requests whose response
-context was lost; a persisted occurrence for such a request is discarded.
-`read_event` still returns the original item under its original event id.
+Restart preserves retained request deliveries and their answer context.
+Acknowledgment dismisses a delivery without canceling its collective.
+`read_event` returns the original item under its original event id.
 
 ## Delivery projection
 

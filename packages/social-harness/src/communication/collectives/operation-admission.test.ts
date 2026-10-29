@@ -159,7 +159,7 @@ function admitGather(
 ) {
   double.gathers.push(candidate);
   const sender = (input: EngineSendInput) => {
-    double.admittedPosts.push(input);
+    double.admittedPosts.push({ to: input.to, content: input.content });
     return options.requestsHang === true
       ? Effect.never
       : certifyNext(observed, input);
@@ -299,9 +299,7 @@ function refusesAGatherOnTheToolCall() {
       admission: firewall.admission,
     });
 
-    const failure = yield* collectiveFailureOf(
-      send(layer, gatherInput(), "inbound"),
-    );
+    const failure = yield* collectiveFailureOf(send(layer, gatherInput()));
     yield* TestClock.adjust(Duration.minutes(2));
 
     expect(failure).toEqual(refusal);
@@ -356,7 +354,7 @@ function returnsTheAdmittingChecksAdvice() {
   });
 }
 
-function keepsAnAdmittedAnswersAdviceWhenItsFailureArrivesInbound() {
+function returnsAnAdmittedAnswersFailure() {
   return Effect.gen(function* () {
     const advice = localGuidance(6);
     const observed = newObserved();
@@ -369,24 +367,16 @@ function keepsAnAdmittedAnswersAdviceWhenItsFailureArrivesInbound() {
     });
     yield* receiveGatherRequest(layer, true);
 
-    const completed = yield* send(
-      layer,
-      { to: "agent:bob", collectiveResponse: answer },
-      "inbound",
+    const failure = yield* Effect.flip(
+      send(layer, { to: "agent:bob", collectiveResponse: answer }),
     );
 
-    expect(completed).toEqual({
-      operationId: requestId,
-      postIds: [],
-      guidance: advice,
-    });
-    expect(observed.emitted).toMatchObject([
-      { kind: "operationFailed", id: requestId },
-    ]);
+    expect(failure).toEqual(new SendError({ reason: "network-unavailable" }));
+    expect(observed.emitted).toEqual([]);
   });
 }
 
-function keepsAnAdmittedAllGathersAdviceWhenItsAbandonArrivesInbound() {
+function returnsAnAdmittedAllGathersFailure() {
   return Effect.gen(function* () {
     const advice = localGuidance(7);
     const observed = newObserved();
@@ -397,16 +387,15 @@ function keepsAnAdmittedAllGathersAdviceWhenItsAbandonArrivesInbound() {
       }).admission,
     });
 
-    const completed = yield* send(layer, allGatherInput, "inbound");
+    const failure = yield* collectiveFailureOf(send(layer, allGatherInput));
     yield* TestClock.adjust(Duration.minutes(2));
 
-    expect(completed).toMatchObject({ postIds: [], guidance: advice });
-    expect(observed.emitted).toMatchObject([{ kind: "operationFailed" }]);
-    expect(observed.emitted).toHaveLength(1);
+    expect(failure).toMatchObject({ kind: "members-unreachable" });
+    expect(observed.emitted).toEqual([]);
   });
 }
 
-function keepsAnAdmittedGathersAdviceWhenItsDeadlinePassesDuringTheCheck() {
+function refusesAGatherWhoseDeadlinePassesDuringTheCheck() {
   return Effect.gen(function* () {
     const advice = localGuidance(8);
     const observed = newObserved();
@@ -419,19 +408,16 @@ function keepsAnAdmittedGathersAdviceWhenItsDeadlinePassesDuringTheCheck() {
         .admission,
     });
 
-    const sending = yield* send(layer, gatherInput(), "inbound").pipe(
-      Effect.fork,
-    );
+    const sending = yield* send(layer, gatherInput()).pipe(Effect.fork);
     yield* Deferred.await(gatherGate.entered);
     yield* TestClock.adjust(Duration.seconds(61));
     yield* Deferred.succeed(gatherGate.open, undefined);
 
-    expect(yield* Fiber.join(sending)).toMatchObject({
-      postIds: [],
-      guidance: advice,
+    expect(yield* collectiveFailureOf(Fiber.join(sending))).toEqual({
+      kind: "deadline-passed",
     });
     expect(observed.sent).toEqual([]);
-    expect(observed.emitted).toMatchObject([{ kind: "operationFailed" }]);
+    expect(observed.emitted).toEqual([]);
   });
 }
 
@@ -466,9 +452,7 @@ function refusesAnAllGatherOnTheToolCall() {
       admission: firewall.admission,
     });
 
-    const failure = yield* collectiveFailureOf(
-      send(layer, allGatherInput, "inbound"),
-    );
+    const failure = yield* collectiveFailureOf(send(layer, allGatherInput));
     yield* TestClock.adjust(Duration.minutes(2));
 
     expect(failure).toEqual(refusal);
@@ -494,9 +478,7 @@ function keepsARequestOpenAfterARefusedAnswer() {
     yield* receiveGatherRequest(layer, true);
     const response = { to: "agent:bob", collectiveResponse: answer };
 
-    const refused = yield* collectiveFailureOf(
-      send(layer, response, "inbound"),
-    );
+    const refused = yield* collectiveFailureOf(send(layer, response));
     const answered = yield* send(layer, response);
 
     expect(refused).toEqual(refusal);
@@ -852,16 +834,16 @@ describe("collective sends under a firewall", () => {
     returnsTheAdmittingChecksAdvice,
   );
   it(
-    "keeps an admitted answer's advice when its failure is delivered inbound",
-    keepsAnAdmittedAnswersAdviceWhenItsFailureArrivesInbound,
+    "returns an admitted answer failure to its caller",
+    returnsAnAdmittedAnswersFailure,
   );
   it(
-    "keeps an admitted all_gather's advice when its abandon is delivered inbound",
-    keepsAnAdmittedAllGathersAdviceWhenItsAbandonArrivesInbound,
+    "returns an admitted all_gather failure to its caller",
+    returnsAnAdmittedAllGathersFailure,
   );
   it(
-    "keeps an admitted gather's advice when its deadline passes during the check",
-    keepsAnAdmittedGathersAdviceWhenItsDeadlinePassesDuringTheCheck,
+    "refuses a gather whose deadline passes during the check",
+    refusesAGatherWhoseDeadlinePassesDuringTheCheck,
   );
   it(
     "refuses an all_gather whose bind fails, naming every member",

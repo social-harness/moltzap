@@ -64,3 +64,15 @@ export { decodeRuntimeValue, encodeRuntimeValue } from "./runtime-codec.js";
 
 /** Pending envelopes cannot be re-signed when their live window expires. */
 export { OutboxTooOldError } from "./database/values.js";
+
+/** Immutable collective ownership, existing post claims, and terminal delivery. */
+export type {
+  CollectiveAnswerReference,
+  CollectiveDelivery,
+  CollectiveOperationInput,
+  CollectiveOrigin,
+  CollectivePostBinding,
+  CollectiveRequestRefusal,
+  StoredCollectiveOperation,
+  StoredCollectivePost,
+} from "./types.js";

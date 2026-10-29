@@ -41,6 +41,7 @@ import {
   recordHashOf,
   slotSchema,
 } from "../../__tests__/collective-operation-fixtures.js";
+import { collectivePersistencePorts } from "../../__tests__/collective-storage-stub.js";
 import { InboundMessage } from "../conversations/message.js";
 import { Content, type RecordHash } from "../records/index.js";
 import { AgentAddress } from "../records/values.js";
@@ -175,13 +176,14 @@ const makeEndpoint = (harness: Harness, self: AgentAddress) =>
     const emitted: InboundItem[] = [];
     const published = yield* Deferred.make<undefined>();
     const answerQueued = yield* Deferred.make<undefined>();
-    const layer = makeCollectiveOperations({
+    const layer = yield* makeCollectiveOperations({
       self,
       lookupMember: () => Effect.void,
-      sendPost: (input) =>
+      ...collectivePersistencePorts((input) =>
         self === alice
           ? append(harness, self, input.content).pipe(Effect.map(certified))
           : queueAnswer(harness, self, input.content, answerQueued),
+      ),
       emit: (item) =>
         Effect.sync(() => {
           emitted.push(item);
@@ -333,7 +335,6 @@ function answerSteps(
                 to: group,
                 collectiveResponse: response,
               }),
-              "result",
             )
             .pipe(Effect.either, Effect.forkIn(scope));
           yield* Effect.sync(() => {
@@ -562,10 +563,7 @@ const pickStep = (steps: readonly Step[], draw: number) => {
 const send = (endpoints: readonly Endpoint[], input: unknown) =>
   requesterOf(endpoints).pipe(
     Effect.flatMap((requester) =>
-      requester.layer.send(
-        Schema.decodeUnknownSync(SendInput)(input),
-        "result",
-      ),
+      requester.layer.send(Schema.decodeUnknownSync(SendInput)(input)),
     ),
   );
 

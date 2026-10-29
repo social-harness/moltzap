@@ -408,17 +408,18 @@ class HarnessChannelAdapter {
             onFailure: (error) =>
               this.reportRefusedText(config, to, error.message),
             onSuccess: (input) =>
-              activation.endpoint
-                .send(input, { failureDelivery: "inbound" })
-                .pipe(
-                  Effect.asVoid,
-                  Effect.catchTag("FirewallSendError", (error) =>
-                    this.reportRefusedText(config, to, error.message),
-                  ),
-                  Effect.catchIf(isFinalRefusal, (error) =>
-                    this.reportFinalRefusal(config, to, error),
-                  ),
+              activation.endpoint.send(input).pipe(
+                Effect.asVoid,
+                Effect.catchTag("CollectiveError", (error) =>
+                  this.reportRefusedText(config, to, error.message),
                 ),
+                Effect.catchTag("FirewallSendError", (error) =>
+                  this.reportRefusedText(config, to, error.message),
+                ),
+                Effect.catchIf(isFinalRefusal, (error) =>
+                  this.reportFinalRefusal(config, to, error),
+                ),
+              ),
           }),
         ),
       ),

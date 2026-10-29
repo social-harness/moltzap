@@ -342,13 +342,16 @@ function checkPrepared(
 /**
  * Check a gather, rechecking once on stale evidence, and return the sender
  * its request posts bind through with the advice its admitting check gave.
- * A store failure fails as `persistence-failed` before any post.
+ * A store failure preserves uncertainty about committed collective ownership.
  */
 function admitGather(
   environment: FirewallEnvironment,
   engine: Pick<EndpointEngine, "sendAdmitted" | "resolveConversation">,
   candidate: GatherCandidate,
-): Effect.Effect<AdmittedGather, SendError | FirewallSendError> {
+): Effect.Effect<
+  AdmittedGather,
+  SendError | FirewallSendError | EndpointStoreError
+> {
   return Effect.gen(function* () {
     const gather: GatherCheck = {
       candidate,
@@ -373,12 +376,7 @@ function admitGather(
       committed.value.checked,
       committed.value.disposition,
     );
-  }).pipe(
-    Effect.catchTag("EndpointStoreError", () =>
-      Effect.fail(new SendError({ reason: "persistence-failed" })),
-    ),
-    Effect.withSpan("admitGather"),
-  );
+  }).pipe(Effect.withSpan("admitGather"));
 }
 
 /** Check a gather and commit the check as its admitted operation. */
@@ -392,6 +390,7 @@ function commitGather(
     const disposition = yield* environment.store.admitFirewallOperation(
       checked.completion,
       gather.canonicalCandidate,
+      gather.candidate.operation,
     );
     return disposition === "stale" ? disposition : { checked, disposition };
   });

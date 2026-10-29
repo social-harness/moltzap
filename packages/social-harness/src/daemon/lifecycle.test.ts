@@ -63,7 +63,6 @@ import { HistoryExportRecord } from "../harness/inbox/history-export.js";
 import { INBOX_PENDING_EVENT } from "../harness/protocol/names.js";
 import { AgentName } from "../identity/agents.js";
 import { AgentCard } from "../identity/cards.js";
-import { SendInput } from "../index.js";
 import { DaemonRuntimeError } from "./lifecycle.js";
 
 /**
@@ -166,91 +165,6 @@ const blocksStartupAndSupervisesWorker = () =>
       "Router worker supervision",
     );
     expect(failure).toEqual(EXPECTED_LISTENER_FAILURE);
-  });
-
-/** A response to no open request, which the collective layer refuses. */
-const unmatchedResponse = Schema.decodeUnknownSync(SendInput)({
-  to: "agent:bob",
-  collectiveResponse: { action: "decline" },
-});
-
-/**
- * A pass holds the delivery gate while the collective layer emits, so an
- * emission that waited on the gate would deadlock the daemon. Here a pass is
- * held inside its pending read while a refused send routes its failure
- * inbound; the send returns and its item is readable once the pass ends.
- */
-const emitsWhileAPassHoldsTheDeliveryGate = () =>
-  Effect.gen(function* () {
-    const fixture = yield* makeFixture;
-    const harness = yield* makeHarness(fixture, "none");
-    yield* Effect.forkScoped(
-      run(fixture, makeStore(fixture, true, harness.delivery), harness),
-    );
-    yield* awaitStage(Deferred.await(harness.listenerReady), "listener");
-    const readBarrier = yield* holdNextRead(harness);
-    const reader = yield* openStream(
-      requireHandler(harness),
-      makeListenRequest("listener-1"),
-    );
-    yield* awaitFrame(reader, "subscription acknowledgment");
-    yield* awaitStage(Deferred.await(readBarrier.entered), "held pass");
-
-    const operations = requireOperations(harness);
-    const sent = yield* awaitStage(
-      operations.send({ input: unmatchedResponse, failureDelivery: "inbound" }),
-      "send while the pass holds the delivery gate",
-    );
-    yield* Deferred.succeed(readBarrier.release, undefined);
-    const inbox = yield* awaitStage(operations.readInbox({}), "inbox read");
-
-    expect(inbox.items.map(({ item }) => item)).toContainEqual(
-      expect.objectContaining({
-        kind: "operationFailed",
-        id: sent.operationId,
-      }),
-    );
-  });
-
-/**
- * An emitted item the store cannot persist fails the daemon in storage, and
- * its send fails with the refusal it would have carried, rather than waiting
- * or reporting the storage fault as the send's outcome. The store rejects
- * only items other than the fixture's startup delivery.
- */
-const failsWhenAnEmittedItemCannotPersist = () =>
-  Effect.gen(function* () {
-    const fixture = yield* makeFixture;
-    const harness = yield* makeHarness(fixture, "none");
-    const store = makeStore(fixture, true, harness.delivery);
-    const rejectingEmissions: EndpointStore = {
-      ...store,
-      putInboxItem: (item) =>
-        item.deliveryToken === fixture.pending.deliveryToken
-          ? store.putInboxItem(item)
-          : Effect.fail(new EndpointStoreError({ reason: "persistence" })),
-    };
-    const daemon = yield* Effect.forkDaemon(
-      run(fixture, rejectingEmissions, harness),
-    );
-    yield* awaitStage(Deferred.await(harness.listenerReady), "listener");
-    const sent = yield* awaitStage(
-      Effect.exit(
-        requireOperations(harness).send({
-          input: unmatchedResponse,
-          failureDelivery: "inbound",
-        }),
-      ),
-      "send whose refusal cannot be kept",
-    );
-    const error = yield* awaitStage(
-      Fiber.join(daemon).pipe(Effect.flip),
-      "daemon failure after the rejected emission",
-    );
-    expect(sent).toMatchObject(
-      Exit.fail({ _tag: "CollectiveError", failure: { kind: "request-none" } }),
-    );
-    expect(error).toEqual(new DaemonRuntimeError({ phase: "storage" }));
   });
 
 /**
@@ -1119,14 +1033,6 @@ describe("daemon runtime composition", () => {
   it(
     "closes after fatal persistence with a receipt waiting for the delivery gate",
     closesWhileReceiptWaitsOnFailedPersistence,
-  );
-  it(
-    "emits a local item while a pass holds the delivery gate",
-    emitsWhileAPassHoldsTheDeliveryGate,
-  );
-  it(
-    "fails the daemon when an emitted item cannot persist",
-    failsWhenAnEmittedItemCannotPersist,
   );
   it(
     "settles registration when its first delivery pass fails",

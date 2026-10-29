@@ -1,4 +1,4 @@
-/** @file Exercises classified delivery durability and loss of request context. */
+/** @file Classified delivery, stable token bindings, and acknowledgment durability. */
 
 import { scopedLive as it } from "@effect/vitest";
 import { Effect, Array as EffectArray, Schema, Scope } from "effect";
@@ -28,12 +28,7 @@ import {
 } from "../protocol/operations.js";
 import { noHistoryExport } from "./history-export.js";
 import { makeHostDelivery } from "./host-delivery.js";
-import {
-  persistInboxItem,
-  readRuntimeEvent,
-  readRuntimeInbox,
-  recoverRuntimeInbox,
-} from "./inbox.js";
+import { persistInboxItem, readRuntimeInbox } from "./inbox.js";
 
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- Durable tombstone and snapshot fixtures pin exact store outcomes. */
 
@@ -102,94 +97,6 @@ const preservesTokenBindings = () => {
         expect(changed.reason).toBe("conflict");
       }),
     );
-  });
-};
-
-const storeRequestAndFailure = (path: string) =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const store = yield* openEndpointStore(path, {
-        liveWireVersions: LIVE_WIRE_VERSIONS,
-      });
-      yield* persistInboxItem(store, {
-        deliveryToken: token(1),
-        item: failure,
-      });
-      yield* persistInboxItem(store, {
-        deliveryToken: token(2),
-        item: request,
-      });
-    }),
-  );
-
-const retiresLostRequests = () => {
-  const path = stateDirectory();
-  return Effect.gen(function* () {
-    yield* storeRequestAndFailure(path);
-    const recoveredToken = yield* Effect.scoped(
-      Effect.gen(function* () {
-        const store = yield* openEndpointStore(path, {
-          liveWireVersions: LIVE_WIRE_VERSIONS,
-        });
-        yield* recoverRuntimeInbox(store);
-        const page = yield* readRuntimeInbox(store, {});
-        expect(page.items).toHaveLength(2);
-        expect(page.items[0]).toEqual({
-          deliveryToken: token(1),
-          item: failure,
-        });
-        const lost = page.items[1];
-        expect(lost?.deliveryToken).not.toBe(token(2));
-        expect(lost?.item).toMatchObject({
-          kind: "operationFailed",
-          id: digest("col_", 2),
-          to: "group:alice,bob,carol",
-        });
-        yield* store.acknowledgeInboxItem(token(2));
-        return lost?.deliveryToken;
-      }),
-    );
-    yield* Effect.scoped(
-      Effect.gen(function* () {
-        const store = yield* openEndpointStore(path, {
-          liveWireVersions: LIVE_WIRE_VERSIONS,
-        });
-        yield* recoverRuntimeInbox(store);
-        const page = yield* readRuntimeInbox(store, {});
-        expect(page.items).toHaveLength(2);
-        expect(page.items[1]?.deliveryToken).toBe(recoveredToken);
-      }),
-    );
-  });
-};
-
-const holdsRestartReplacement = () => {
-  const path = stateDirectory();
-  return Effect.gen(function* () {
-    yield* storeRequestAndFailure(path);
-    const store = yield* openEndpointStore(path, {
-      liveWireVersions: LIVE_WIRE_VERSIONS,
-    });
-    yield* recoverRuntimeInbox(store, true);
-    expect((yield* readRuntimeInbox(store, {})).items).toEqual([
-      { deliveryToken: token(1), item: failure },
-    ]);
-    expect((yield* readRuntimeEvent(store, eventIdOf(token(2)))).item).toEqual(
-      request,
-    );
-    const pending = yield* store.readFirewallFrontiers();
-    expect(pending).toHaveLength(1);
-    const replacement = pending[0];
-    if (replacement === undefined) {
-      return yield* Effect.dieMessage("missing restart replacement");
-    }
-    expect(
-      yield* Effect.flip(
-        readRuntimeEvent(store, eventIdOf(replacement.deliveryToken)),
-      ),
-    ).toEqual({ reason: "unknown-event" });
-    yield* recoverRuntimeInbox(store, true);
-    expect(yield* store.readFirewallFrontiers()).toEqual(pending);
   });
 };
 
@@ -267,45 +174,6 @@ const commitsReceiptAtomically = () => {
   });
 };
 
-it(
-  "holds a restart replacement privately while preserving the original token",
-  holdsRestartReplacement,
-);
-
-it("retires unseen queued requests across pages and behind another conversation item", () => {
-  const path = stateDirectory();
-  return Effect.gen(function* () {
-    yield* Effect.scoped(
-      Effect.gen(function* () {
-        const store = yield* openEndpointStore(path, {
-          liveWireVersions: LIVE_WIRE_VERSIONS,
-        });
-        yield* store.queueFirewallItem({
-          deliveryToken: token(1),
-          conversation: requestConversation,
-          canonicalItem: yield* encodeRuntimeValue(failure),
-        });
-        for (const index of EffectArray.range(2, 36)) {
-          yield* store.queueFirewallItem({
-            deliveryToken: token(index),
-            conversation: requestConversation,
-            canonicalItem: yield* encodeRuntimeValue(request),
-          });
-        }
-      }),
-    );
-    const store = yield* openEndpointStore(path, {
-      liveWireVersions: LIVE_WIRE_VERSIONS,
-    });
-    yield* recoverRuntimeInbox(store, true);
-    const pending = yield* store.readPendingFirewallItems(0);
-    yield* recoverRuntimeInbox(store, true);
-    expect(pending.map((entry) => entry.deliveryToken)).toEqual([token(1)]);
-    expect((yield* readRuntimeInbox(store, {})).items).toEqual([]);
-    expect(yield* store.readPendingFirewallItems(0)).toEqual(pending);
-  });
-});
-
 it("replays the admitted envelope across restart and retains it after acknowledgment", () => {
   const path = stateDirectory();
   const guidance = localGuidance(1);
@@ -364,10 +232,6 @@ describe("durable runtime inbox", () => {
   it(
     "retains acknowledgment tombstones and rejects token payload collisions",
     preservesTokenBindings,
-  );
-  it(
-    "replaces a lost request with one stable, separately identified failure",
-    retiresLostRequests,
   );
   it(
     "bounds a snapshot while new arrivals and acknowledgments change unread state",

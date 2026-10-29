@@ -46,6 +46,7 @@ import {
 import { INBOX_PENDING_EVENT } from "../harness/protocol/names.js";
 import { Registry } from "../identity/registry/index.js";
 import { AuthenticationFailedError } from "../identity/signing/http-errors.js";
+import { collectiveStorageStub } from "./collective-storage-stub.js";
 import { unusedEndpointStore } from "./unused-endpoint-store.js";
 
 /** The MCP handler the daemon installed; throws before installation. */
@@ -218,6 +219,7 @@ export function makeStore(
     : undefined;
   return {
     ...unusedEndpointStore("daemon runtime test"),
+    ...collectiveStorageStub(),
     readInboxItem: () => Effect.succeed(undefined),
     completeWebhookDelivery: () => Effect.void,
     ...makeInboxStore(onAcknowledge),
@@ -377,6 +379,10 @@ function makeEngine(
     ),
   );
   return {
+    observePost: () =>
+      Effect.dieMessage(
+        "no retained post is observed in this lifecycle fixture",
+      ),
     send: () =>
       Effect.succeed({
         postId: delivery.pending.message.postId,

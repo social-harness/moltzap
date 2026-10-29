@@ -3,6 +3,7 @@
 import { scopedLive as it } from "@effect/vitest";
 import { Chunk, Effect, Schema, Scope, Stream } from "effect";
 import { describe, expect } from "vitest";
+import type { PostSender } from "../../communication/collectives/ports.js";
 import type { EndpointEngine } from "../../communication/conversations/index.js";
 import { digest } from "../../__tests__/agent-card-fixtures.js";
 import { makeToolCallRequest } from "../../__tests__/daemon-runtime-harness.js";
@@ -73,52 +74,77 @@ const callTool =
     );
 
 /** Real delivery, collective classification and storage behind the MCP boundary. */
-const fixture = Effect.gen(function* () {
-  const store = yield* openEndpointStore(stateDirectory(), {
-    liveWireVersions: LIVE_WIRE_VERSIONS,
-  });
-  const scope = yield* Scope.Scope;
-  const slot: { active?: CollectiveOperations } = {};
-  const delivery = yield* makeHostDelivery({
-    store,
-    scope,
-    historyExport: { record: () => Effect.void },
-    collectives: () => slot.active,
-  });
-  const collectives = makeCollectiveOperations({
-    self: Schema.decodeUnknownSync(AgentAddress)("agent:alice"),
-    lookupMember: () => Effect.void,
-    sendPost: unreachable,
-    emit: (item) =>
-      delivery
-        .queueLocalItem(item)
-        .pipe(
-          Effect.catchTag("EndpointStoreError", () =>
-            Effect.fail(new CollectiveEmitError()),
+const deliveryFixture = (sendPost: PostSender = unreachable) =>
+  Effect.gen(function* () {
+    const store = yield* openEndpointStore(stateDirectory(), {
+      liveWireVersions: LIVE_WIRE_VERSIONS,
+    });
+    const scope = yield* Scope.Scope;
+    const slot: { active?: CollectiveOperations } = {};
+    const delivery = yield* makeHostDelivery({
+      store,
+      scope,
+      historyExport: { record: () => Effect.void },
+      collectives: () => slot.active,
+    });
+    const collectives = yield* makeCollectiveOperations({
+      store,
+      observePost: unreachable,
+      sendAdmitted: unreachable,
+      reportStorageFault: () => Effect.void,
+      self: Schema.decodeUnknownSync(AgentAddress)("agent:alice"),
+      lookupMember: () => Effect.void,
+      sendPost,
+      emit: (item, provenance, terminal) =>
+        delivery
+          .queueLocalItem(item, provenance, terminal)
+          .pipe(
+            Effect.catchTag("EndpointStoreError", () =>
+              Effect.fail(new CollectiveEmitError()),
+            ),
           ),
-        ),
-    scope,
+      scope,
+    });
+    slot.active = collectives;
+    const handler = yield* deliveryHandler({
+      ...delivery.operations,
+      protocolActive: () => true,
+      readStatus: unreachable,
+      register: unreachable,
+      searchAgents: unreachable,
+      searchConversations: unreachable,
+      readConversation: unreachable,
+    });
+    const url = yield* loopbackMcpEndpoint(handler);
+    const call = callTool(handler);
+    const inbox = call("read_inbox").pipe(
+      Effect.flatMap((result) =>
+        decodeHarnessReadInboxResult(result.structuredContent),
+      ),
+    );
+    const deliver = deliverPending(delivery, collectives);
+    return { url, call, inbox, deliver };
   });
-  slot.active = collectives;
-  const handler = yield* deliveryHandler({
-    ...delivery.operations,
-    protocolActive: () => true,
-    readStatus: unreachable,
-    register: unreachable,
-    searchAgents: unreachable,
-    searchConversations: unreachable,
-    readConversation: unreachable,
-  });
-  const url = yield* loopbackMcpEndpoint(handler);
-  const call = callTool(handler);
-  const inbox = call("read_inbox").pipe(
-    Effect.flatMap((result) =>
-      decodeHarnessReadInboxResult(result.structuredContent),
-    ),
-  );
-  const deliver = deliverPending(delivery, collectives);
-  return { url, call, inbox, deliver };
-});
+
+const fixture = deliveryFixture();
+
+it("returns a collective layer success without advice through the MCP writer", () =>
+  Effect.gen(function* () {
+    const test = yield* deliveryFixture(() =>
+      Effect.succeed({
+        postId: pending.message.postId,
+        recordHash: pending.recordHash,
+      }),
+    );
+    const sent = yield* test.call("send_message", {
+      input: { to: "agent:bob", text: "Hello" },
+    });
+    expect(sent.structuredContent).toEqual({
+      kind: "multicast",
+      postId: pending.message.postId,
+      address: "agent:bob",
+    });
+  }));
 
 const consumesAnswers = () =>
   Effect.gen(function* () {
@@ -186,22 +212,21 @@ const replaysUntilAcknowledged = () =>
     expect((yield* test.inbox).items).toEqual([]);
   });
 
-const readsFailure = () =>
+const returnsACollectiveRefusal = () =>
   Effect.gen(function* () {
     const test = yield* fixture;
     const endpoint = yield* acquireHarnessEndpoint(test.url);
-    yield* endpoint.send(
-      {
+    const failure = yield* Effect.flip(
+      endpoint.send({
         to: Schema.decodeUnknownSync(AgentAddress)("agent:bob"),
         collectiveResponse: { action: "decline" },
-      },
-      { failureDelivery: "inbound" },
+      }),
     );
-    const page = yield* test.inbox;
-    expect(page.items.map((entry) => entry.item)).toEqual([
-      expect.objectContaining({ kind: "operationFailed", to: "agent:bob" }),
-    ]);
-    expect(yield* test.inbox).toEqual(page);
+    expect(failure).toMatchObject({
+      _tag: "CollectiveError",
+      failure: { kind: "request-none" },
+    });
+    expect((yield* test.inbox).items).toEqual([]);
   });
 
 const retainsEventReference = () =>
@@ -286,8 +311,8 @@ describe("MCP delivery contract", () => {
     replaysUntilAcknowledged,
   );
   it(
-    "makes an inbound operation failure readable without acknowledging it",
-    readsFailure,
+    "returns a collective refusal without creating an inbox outcome",
+    returnsACollectiveRefusal,
   );
   it(
     "replays a refused item before later deliveries when the native handoff fails",

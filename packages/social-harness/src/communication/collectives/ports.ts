@@ -3,7 +3,7 @@
  * daemon, what an installed firewall adds, and the operations it offers.
  */
 
-import { type Effect, type Option, Schema, type Scope } from "effect";
+import { Effect, type Option, Schema, type Scope } from "effect";
 import type {
   CheckedGuidance,
   FirewallSendError,
@@ -16,16 +16,21 @@ import type {
 } from "../conversations/index.js";
 import type { InboundMessage } from "../conversations/message.js";
 import type {
+  CollectiveOperationInput,
+  DeliveryToken,
+  EndpointStore,
+  EndpointStoreError,
+} from "../store/index.js";
+import type {
   CollectiveEmitError,
   CollectiveError,
   CollectiveId,
   CollectiveSendOutcome,
-  FailureDelivery,
   SendInput,
 } from "./forms.js";
 import type { InboundItem } from "./inbound.js";
 import { exactStruct } from "../../encoding/exact.js";
-import { RecordHash } from "../records/index.js";
+import { type PostId, RecordHash } from "../records/index.js";
 import { AgentAddress, type MessageAddressInput } from "../records/values.js";
 
 // safer-arch-ignore file-implicit-boundary-module: The operation layer and its received-request state run on these ports; communication/collectives/index.ts is the one boundary that exposes them.
@@ -62,6 +67,7 @@ export type ResultProvenance = typeof ResultProvenance.Type;
 export interface GatherCandidate {
   readonly to: MessageAddressInput;
   readonly content: InboundMessage["content"];
+  readonly operation?: CollectiveOperationInput;
 }
 
 /** Certify one post and complete once it is stored locally. */
@@ -107,11 +113,39 @@ export interface CollectiveAdmission {
    */
   readonly admitGather: (
     gather: GatherCandidate,
-  ) => Effect.Effect<AdmittedGather, SendError | FirewallSendError>;
+  ) => Effect.Effect<
+    AdmittedGather,
+    SendError | FirewallSendError | EndpointStoreError
+  >;
 }
 
 /** What the collective layer needs from the daemon around it. */
 export interface CollectivePorts {
+  readonly store: Pick<
+    EndpointStore,
+    | "putCollectiveOperation"
+    | "readCollectiveOperations"
+    | "readCollectivePosts"
+    | "recordCollectiveAnswer"
+    | "readCollectiveAnswers"
+    | "recordCollectiveRefusal"
+    | "readCollectiveRefusals"
+    | "finalizeCollectiveOperation"
+    | "retireCollectiveOperation"
+    | "readFirewallRequestAdmission"
+    | "recover"
+  >;
+  readonly observePost: (
+    postId: PostId,
+  ) => Effect.Effect<EngineSentPost, SendError>;
+  readonly sendAdmitted: (
+    input: EngineSendInput,
+    checkId: string,
+  ) => Effect.Effect<EngineSentPost, SendError>;
+  readonly reportStorageFault: (
+    error: EndpointStoreError,
+  ) => Effect.Effect<void>;
+
   /** The local agent: a group gather or all_gather asks every member but this one. */
   readonly self: AgentAddress;
   /**
@@ -136,6 +170,10 @@ export interface CollectivePorts {
   readonly emit: (
     item: InboundItem,
     provenance?: ResultProvenance,
+    terminal?: {
+      readonly operationId: string;
+      readonly deliveryToken: DeliveryToken;
+    },
   ) => Effect.Effect<void, CollectiveEmitError>;
   /** Owns deadline timers and request sends that outlive their send call. */
   readonly scope: Scope.Scope;
@@ -163,7 +201,6 @@ export interface CollectiveOperations {
    */
   readonly send: (
     input: SendInput,
-    failureDelivery: FailureDelivery,
   ) => Effect.Effect<CollectiveSendOutcome, CollectiveSendError>;
   /**
    * Classify one certified remote post. Answers are recorded and consumed,
@@ -186,4 +223,20 @@ export interface CollectiveOperations {
     id: CollectiveId,
     presented: boolean,
   ) => Effect.Effect<void>;
+}
+
+/**
+ * Bind one post the agent authored, holding `hold` across the bind: through
+ * the firewall's check when one is installed, otherwise by taking the hold
+ * and sending through `sendPost`.
+ */
+export function bindAuthoredPost<E>(
+  ports: CollectivePorts,
+  input: EngineSendInput,
+  hold: BindHold<E>,
+): Effect.Effect<AdmittedPost, AuthoredPostError<E>> {
+  const { admission } = ports;
+  return admission === undefined
+    ? hold.pipe(Effect.as({ certified: ports.sendPost(input) }))
+    : admission.bindPost(input, hold);
 }

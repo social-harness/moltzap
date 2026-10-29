@@ -112,14 +112,6 @@ type CollectingValue = Extract<
 >;
 
 /**
- * How long past its deadline a member keeps an all_gather request while it
- * waits for the requester's close. The requester closes at the deadline at
- * the latest, so the close normally follows within seconds; the bound frees
- * the request of a requester that never closes.
- */
-const CLOSE_WAIT = Duration.hours(1);
-
-/**
  * How far past the longest deadline a sender may state a received request's
  * deadline still lies. It absorbs clock skew between the two endpoints; a
  * request further out is consumed, which bounds how long its state is held
@@ -200,7 +192,7 @@ export const unmatchedAnswerError = (
  * operation sends it and its id derives from its sender: a gather's in the
  * member's direct conversation with the requester before its deadline, an
  * all_gather's in a group conversation, whose other members are the ones
- * asked, until `CLOSE_WAIT` past its deadline. A deadline beyond
+ * asked. The request remains available for close processing after its deadline. A deadline beyond
  * `RECEIVED_DEADLINE_HORIZON` opens nothing. Under a firewall the request
  * starts `unadmitted`.
  * @param post The certified request post and its record.
@@ -230,14 +222,11 @@ export function receivedRequest(
     state: initial,
   };
   if (value.op === "gather") {
-    return message.kind === "direct" && now < value.deadlineAt
+    return message.kind === "direct"
       ? Option.some({ ...request, kind: "gather" })
       : Option.none();
   }
-  if (
-    message.kind !== "group" ||
-    now >= retainedUntil({ ...request, kind: "all_gather" })
-  ) {
+  if (message.kind !== "group") {
     return Option.none();
   }
   const [first, ...rest] = message.members.filter(
@@ -253,22 +242,6 @@ export function receivedRequest(
           answers: new Map(),
         },
       });
-}
-
-/**
- * Forget every request past the time `retainedUntil` gives it.
- * @param requests Every request this endpoint holds, by id.
- * @param now The current time in epoch milliseconds.
- */
-export function forgetExpiredRequests(
-  requests: Map<CollectiveId, ReceivedRequest>,
-  now: number,
-): void {
-  for (const [id, request] of requests) {
-    if (now >= retainedUntil(request)) {
-      requests.delete(id);
-    }
-  }
 }
 
 /** The requests the runtime was shown that are open outside `conversation`, where an answer meant for them belongs. */
@@ -404,18 +377,5 @@ function trustedRequest(
   return (
     value.deadlineAt <= now + RECEIVED_DEADLINE_HORIZON &&
     collectiveIdOf(message.sender, value.nonce) === value.id
-  );
-}
-
-/**
- * When this endpoint drops a received request: at its deadline, or for an
- * all_gather `CLOSE_WAIT` later, since its close follows the deadline.
- */
-function retainedUntil(
-  request: Pick<ReceivedRequest, "deadlineAt" | "kind">,
-): number {
-  return (
-    request.deadlineAt +
-    (request.kind === "all_gather" ? Duration.toMillis(CLOSE_WAIT) : 0)
   );
 }

@@ -441,14 +441,17 @@ const applyPromotionState = (
       recordHash: record.actionCertifiedRecord.recordHash,
       record,
     };
+    if (
+      fold.action.postIntent.authorAgentId !==
+      runtime.input.localAgentCard.agentId
+    ) {
+      return undefined;
+    }
     runtime.completedPosts.set(
       fold.action.postIntent.postId,
       record.actionCertifiedRecord.recordHash,
     );
-    return fold.action.postIntent.authorAgentId ===
-      runtime.input.localAgentCard.agentId
-      ? runtime.intents.get(fold.action.postIntent.postId)
-      : undefined;
+    return runtime.intents.get(fold.action.postIntent.postId);
   });
 
 function completePromotion(

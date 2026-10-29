@@ -155,6 +155,8 @@ const routerFeeding = (input: {
 const recordingEngine = (
   accepted: Queue.Queue<DecodedOuterBody>,
 ): EndpointEngine => ({
+  observePost: () =>
+    Effect.dieMessage("no retained post is observed in this test"),
   send: () => Effect.dieMessage("the daemon sends nothing in this test"),
   bindChecked: () => Effect.dieMessage("the daemon sends nothing in this test"),
   sendAdmitted: () =>

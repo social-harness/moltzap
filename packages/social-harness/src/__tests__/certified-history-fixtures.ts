@@ -148,18 +148,44 @@ export function appendCertifiedPost(
   text: string | PostIntent["content"],
   authoredLocally = false,
 ): Effect.Effect<CertifiedRecord> {
+  return Effect.gen(function* () {
+    const postIntent: PostIntent = {
+      ...previous.actionCertifiedRecord.recordCore.action.postIntent,
+      authorAgentId: (authoredLocally ? endpoint.local : endpoint.remote).card
+        .agentId,
+      postId: yield* mintPostId(),
+      content: typeof text === "string" ? [{ type: "text", text }] : text,
+    };
+    return yield* appendCertifiedIntent(endpoint, previous, postIntent);
+  }).pipe(Effect.orDie, Effect.withSpan("appendCertifiedPost"));
+}
+
+/** Certify the exact retained intent so recovery tests never replace an uncertain post. */
+export function appendCertifiedIntent(
+  endpoint: HistoryEndpoint,
+  previous: CertifiedRecord,
+  intent: PostIntent,
+): Effect.Effect<CertifiedRecord> {
+  return Effect.gen(function* () {
+    const record = yield* buildCertifiedPost(endpoint, previous, intent);
+    yield* storeCertifiedPost(endpoint, previous.actionCertifiedRecord, record);
+    return record;
+  }).pipe(Effect.orDie, Effect.withSpan("appendCertifiedIntent"));
+}
+
+/** Build a genuine certificate without advancing the receiving engine's store. */
+export function buildCertifiedPost(
+  endpoint: Pick<HistoryEndpoint, "local" | "remote" | "membership">,
+  previous: CertifiedRecord,
+  intent: PostIntent,
+): Effect.Effect<CertifiedRecord> {
   const { local, remote, membership } = endpoint;
   return Effect.gen(function* () {
     const predecessor = previous.actionCertifiedRecord;
     if (predecessor.routerAnchor.kind !== "genesis_anchor_body") {
       return yield* Effect.dieMessage("expected a genesis-anchored history");
     }
-    const recordCore = yield* postRecordCore(
-      membership,
-      predecessor,
-      authoredLocally ? local : remote,
-      text,
-    );
+    const recordCore = yield* postRecordCore(membership, predecessor, intent);
     const actionHash = recordCore.actionHash;
     const recordHash = yield* hashRecord(recordCore);
     const record = certifiedRecord({
@@ -175,9 +201,8 @@ export function appendCertifiedPost(
         voteDurable(remote, membership, recordHash),
       ]),
     });
-    yield* storeCertifiedPost(endpoint, predecessor, record);
     return record;
-  }).pipe(Effect.orDie, Effect.withSpan("appendCertifiedPost"));
+  }).pipe(Effect.orDie, Effect.withSpan("buildCertifiedPost"));
 }
 
 /**
@@ -293,16 +318,9 @@ function storeCertifiedPost(
 function postRecordCore(
   membership: VerifiedMembership,
   predecessor: CertifiedRecord["actionCertifiedRecord"],
-  author: SigningIdentity,
-  text: string | PostIntent["content"],
+  postIntent: PostIntent,
 ) {
   return Effect.gen(function* () {
-    const postIntent: PostIntent = {
-      ...predecessor.recordCore.action.postIntent,
-      authorAgentId: author.card.agentId,
-      postId: yield* mintPostId(),
-      content: typeof text === "string" ? [{ type: "text", text }] : text,
-    };
     const action: PostActionCore = {
       sharnessVersion: WIRE_VERSION,
       kind: "POST",

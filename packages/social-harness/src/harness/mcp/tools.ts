@@ -23,8 +23,11 @@ import {
   Schema,
   Scope,
 } from "effect";
-import type { CollectiveError } from "../../communication/collectives/forms.js";
 import type { FirewallSendError } from "../../firewall/outcome/index.js";
+import {
+  type CollectiveError,
+  SendResult,
+} from "../../communication/collectives/forms.js";
 import {
   issuesText,
   type SendError,
@@ -85,7 +88,6 @@ import {
   harnessSendArgumentsSchema,
   type HarnessSendErrorData,
   type HarnessSendResult,
-  harnessSendResultSchema,
   inboxRequestSchema,
   inboxResultSchema,
   readEventRequestSchema,
@@ -210,7 +212,7 @@ const acknowledgeDeliveryInput = requestSchema(
   harnessAcknowledgeDeliveryRequestSchema,
 );
 const emptyOutput = resultSchema(harnessEmptyResultSchema);
-const sendOutput = resultSchema(harnessSendResultSchema);
+const sendOutput = resultSchema(SendResult);
 const readEventInput = requestSchema(readEventRequestSchema);
 const readEventOutput = resultSchema(readEventResultSchema);
 const readInboxInput = requestSchema(inboxRequestSchema);
@@ -647,7 +649,7 @@ const handleSendToolCall = async (
   operations: HarnessMcpOperations,
 ) => {
   const decoded = await decodeInvocationInput(
-    decodeHarnessSendCall(input.toolArguments, input.metadata),
+    decodeHarnessSendCall(input.toolArguments),
     input.signal,
     input.requestScope,
     input.services,

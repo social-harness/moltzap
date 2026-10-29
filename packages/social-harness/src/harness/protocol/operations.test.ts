@@ -330,11 +330,12 @@ describe("Harness MCP results from a newer daemon", () => {
     expect(
       Effect.runSync(
         decodeHarnessSendResult({
+          kind: "collective",
           operationId: collectiveId,
           addedLater: true,
         }),
       ),
-    ).toEqual({ operationId: collectiveId });
+    ).toEqual({ kind: "collective", operationId: collectiveId });
   });
   it("decodes an inbox page whose page and entries carry added fields", () => {
     expect(
@@ -378,6 +379,8 @@ describe("Harness MCP results keep what they name", () => {
     expect(
       fails(
         decodeHarnessSendResult({
+          kind: "collective",
+          operationId: collectiveId,
           guidance: {
             checkId,
             subjects: [],

@@ -31,6 +31,7 @@ import { wireVersions } from "../../identity/wire-version.js";
 import {
   type DecodedOuterBody,
   type MessageAddressInput,
+  type PostId,
   PostIntent,
   RecordHash,
 } from "../records/index.js";
@@ -120,6 +121,11 @@ export interface EnginePendingMessage {
 
 /** Stable private engine capability consumed by daemon composition. */
 export interface EndpointEngine {
+  /** Observe one durable local intent without rechecking, rebinding, or sending a replacement. */
+  readonly observePost: (
+    postId: PostId,
+  ) => Effect.Effect<EngineSentPost, SendError>;
+
   /**
    * Check and bind one application post. Inference completes outside
    * protocol locks, then `hold` is taken, then the intent binds atomically
@@ -610,6 +616,7 @@ const endpointEngine = (runtime: EngineRuntime): EndpointEngine =>
       prepareAdmittedSend(runtime, input, checkId).pipe(
         Effect.flatMap((prepared) => finishPreparedSend(runtime, prepared)),
       ),
+    observePost: (postId: PostId) => observePost(runtime, postId),
     send: (sendInput: Parameters<EndpointEngine["send"]>[0]) =>
       send(runtime, sendInput),
     resolveAddress: (to: Parameters<EndpointEngine["resolveAddress"]>[0]) =>
@@ -648,3 +655,23 @@ export const makeEndpointEngine = (
     yield* resumeRuntime(runtime);
     return endpointEngine(runtime);
   }).pipe(Effect.withSpan("makeEndpointEngine"));
+
+/**
+ * Observe the retained local intent without preparing or binding a replacement.
+ * @param runtime
+ * @param postId
+ */
+function observePost(runtime: EngineRuntime, postId: PostId) {
+  return Effect.suspend(() => {
+    const complete = runtime.completedPosts.get(postId);
+    if (complete !== undefined) {
+      return Effect.succeed({ postId, recordHash: complete });
+    }
+    const retained = runtime.intents.get(postId);
+    return retained === undefined
+      ? Effect.fail(new SendError({ reason: "certification-unavailable" }))
+      : Deferred.await(retained.completion).pipe(
+          Effect.map((recordHash) => ({ postId, recordHash })),
+        );
+  });
+}

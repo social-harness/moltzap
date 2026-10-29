@@ -11,6 +11,7 @@ import {
 } from "effect";
 import type { ListenError } from "../../communication/conversations/errors.js";
 import type {
+  DeliveryToken,
   EndpointStore,
   EndpointStoreError,
   StoredMembership,
@@ -104,6 +105,10 @@ export interface ProtocolHooks {
   readonly emit: (
     item: InboundItem,
     provenance?: ResultProvenance,
+    terminal?: {
+      readonly operationId: string;
+      readonly deliveryToken: DeliveryToken;
+    },
   ) => Effect.Effect<void, CollectiveEmitError>;
 }
 
@@ -336,9 +341,13 @@ const makeProtocolCollectives = (
   emit: ProtocolHooks["emit"],
   agentCard: VerifiedAgentCard,
   engine: EndpointEngine,
-): CollectiveOperations => {
+): Effect.Effect<CollectiveOperations, EndpointStoreError> => {
   const installed = environment.firewall;
   return makeCollectiveOperations({
+    store: environment.store,
+    observePost: (postId) => engine.observePost(postId),
+    sendAdmitted: (input, checkId) => engine.sendAdmitted(input, checkId),
+    reportStorageFault: (error) => reportStorageFault(environment, error),
     self: Schema.decodeUnknownSync(AgentAddress)(
       `agent:${agentCard.agentName}`,
     ),
@@ -389,12 +398,12 @@ export const acquireProtocol = (
       publishPending: hooks.publishPending,
     });
     const engine = yield* acquireProtocolEngine(environment, agentCard, worker);
-    const collectives = makeProtocolCollectives(
+    const collectives = yield* makeProtocolCollectives(
       environment,
       hooks.emit,
       agentCard,
       engine,
-    );
+    ).pipe(Effect.mapError(() => activationFailure("persistence")));
     hooks.retain({
       agentCard,
       worker,

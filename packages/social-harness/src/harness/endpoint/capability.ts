@@ -3,7 +3,6 @@
 import { Data, type Effect, type Redacted, type Stream } from "effect";
 import type {
   CollectiveError,
-  FailureDelivery,
   SendInput,
   SendResult,
 } from "../../communication/collectives/forms.js";
@@ -67,19 +66,13 @@ export interface HarnessEndpointOptions {
  * Connects one configured agent to a host for the connection's scope. Each send
  * creates a new invocation. Retrying an unknown outcome can create another post.
  *
- * A host whose tool returns before the send completes passes
- * `failureDelivery: "inbound"`: a refused gather, all_gather or response
- * then completes and its error arrives as an `operationFailed` item on the
- * stream. A multicast has no operation id, so its failure is always returned.
- * A firewall refusal always returns on the send call before creating an intent,
- * including when inbound failure delivery was requested.
+ * Every host receives the invocation's result or typed refusal. The host
+ * presents refusals through its supported tool or message callback. The daemon
+ * inbox retains received messages and outcomes of operations that started.
  */
 export interface HarnessEndpoint {
   readonly send: (
     input: SendInput,
-    options?: Readonly<{
-      failureDelivery?: FailureDelivery;
-    }>,
   ) => Effect.Effect<
     SendResult,
     SendError | CollectiveError | FirewallSendError

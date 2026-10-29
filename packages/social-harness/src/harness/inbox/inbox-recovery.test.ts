@@ -1,12 +1,18 @@
-/**
- * @file A pending collective request delivery stays answerable across a
- * restart of a current store, and one still waiting for firewall admission
- * retires unseen.
- */
+/** @file Request context and admission queues survive current-store restarts. */
 
-import { live as it } from "@effect/vitest";
-import { Effect, Encoding, Option, Schema, Scope } from "effect";
+import { live as it, scoped as itOnClock } from "@effect/vitest";
+import {
+  Clock,
+  Duration,
+  Effect,
+  Encoding,
+  Option,
+  Schema,
+  Scope,
+  TestClock,
+} from "effect";
 import { expect } from "vitest";
+import type { InboundItem } from "../../communication/collectives/inbound.js";
 import { digest } from "../../__tests__/agent-card-fixtures.js";
 import {
   bytes,
@@ -14,18 +20,22 @@ import {
   storedConversation,
 } from "../../__tests__/store-schema-fixtures.js";
 import { makeCollectiveOperations } from "../../communication/collectives/index.js";
-import { collectiveIdOf } from "../../communication/collectives/part/index.js";
+import {
+  collectiveIdOf,
+  encodeCollectiveContent,
+} from "../../communication/collectives/part/index.js";
+import { SendError } from "../../communication/conversations/errors.js";
 import { InboundMessage } from "../../communication/conversations/message.js";
-import { PostId, RecordHash } from "../../communication/records/index.js";
+import { RecordHash } from "../../communication/records/index.js";
 import { AgentAddress } from "../../communication/records/values.js";
 import {
-  decodeRuntimeValue,
   encodeRuntimeValue,
   type EndpointStore,
   openEndpointStore,
 } from "../../communication/store/index.js";
+import { encodeCanonical } from "../../encoding/canonical-json.js";
 import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
-import { readRuntimeInbox, recoverRuntimeInbox } from "./inbox.js";
+import { readRuntimeInbox } from "./inbox.js";
 
 const self = Schema.decodeUnknownSync(AgentAddress)("agent:alice");
 const sender = Schema.decodeUnknownSync(AgentAddress)("agent:bob");
@@ -60,34 +70,45 @@ const message = () =>
       },
     ],
   });
-
 const response = {
   to: sender,
   collectiveResponse: { action: "accept", content: { answer: "yes" } },
 } as const;
-const makeCollectives = (counter: { count: number }, scope: Scope.Scope) =>
-  makeCollectiveOperations({
+const unavailable = () =>
+  Effect.fail(new SendError({ reason: "network-unavailable" }));
+
+function makeCollectives(
+  store: EndpointStore,
+  scope: Scope.Scope,
+  firewall = false,
+) {
+  return makeCollectiveOperations({
+    store,
     self,
-    lookupMember: () => Effect.void,
-    sendPost: () =>
-      Effect.sync(() => {
-        counter.count += 1;
-        return {
-          postId: Schema.decodeUnknownSync(PostId)(
-            digest("pst_", counter.count + 10),
-          ),
-          recordHash,
-        };
-      }),
-    emit: () => Effect.void,
     scope,
+    lookupMember: () => Effect.void,
+    sendPost: unavailable,
+    sendAdmitted: unavailable,
+    observePost: unavailable,
+    reportStorageFault: () => Effect.dieMessage("unexpected storage fault"),
+    emit: () => Effect.dieMessage("a request emits no local result"),
+    ...(firewall
+      ? {
+          admission: {
+            bindPost: <E>(
+              _: unknown,
+              hold: Effect.Effect<Effect.Effect<void>, E>,
+            ) => hold.pipe(Effect.as({ certified: unavailable() })),
+            admitGather: () =>
+              Effect.dieMessage("the receiver starts no gather"),
+          },
+        }
+      : {}),
   });
-/**
- * Give the store alice's identity and Bob's gather request as a certified
- * record whose delivery is still pending.
- */
-const seedRequest = (store: EndpointStore, request: InboundMessage) =>
-  Effect.gen(function* () {
+}
+
+function seedRequest(store: EndpointStore, request: InboundMessage) {
+  return Effect.gen(function* () {
     yield* store.bindIdentity({
       agentId: "agent:alice",
       canonicalAgentCard: bytes("identity"),
@@ -95,114 +116,298 @@ const seedRequest = (store: EndpointStore, request: InboundMessage) =>
     yield* store.putConversationFoundation(foundation);
     yield* store.applyCertifiedRecord(record, {
       recipientAgentId: "agent:alice",
-      canonicalMessage: bytes(JSON.stringify(request)),
+      canonicalMessage: yield* encodeCanonical(InboundMessage, request),
     });
   });
+}
 
-/** Store Bob's request, still unanswered, and return what the store recovers. */
-const storeRequest = (path: string) =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const store = yield* openEndpointStore(path, {
-        liveWireVersions: LIVE_WIRE_VERSIONS,
-      });
-      yield* seedRequest(store, message());
-      return yield* store.recover();
-    }),
-  );
-
-const preservesUnprojectedRequest = () => {
+it("restores an acknowledged request's answer context with its original delivery identity", () => {
   const path = stateDirectory();
-  const counter = { count: 0 };
   return Effect.gen(function* () {
-    const before = yield* storeRequest(path);
-    yield* Effect.scoped(
+    const token = yield* Effect.scoped(
       Effect.gen(function* () {
         const store = yield* openEndpointStore(path, {
           liveWireVersions: LIVE_WIRE_VERSIONS,
         });
-        yield* recoverRuntimeInbox(store);
-        const pending = yield* store.readPendingDeliveries();
-        expect(pending).toEqual(before.pendingDeliveries);
-        expect((yield* readRuntimeInbox(store, {})).items).toEqual([]);
-        const entry = yield* Effect.fromNullable(pending[0]).pipe(
-          Effect.orElse(() =>
-            Effect.dieMessage(
-              "expected the unprojected request to remain pending",
-            ),
-          ),
-        );
-        const restarted = makeCollectives(counter, yield* Scope.Scope);
-        const item = yield* restarted.classify({
-          message: yield* decodeRuntimeValue(
-            InboundMessage,
-            entry.canonicalMessage,
-          ),
-          recordHash,
+        const request = message();
+        yield* seedRequest(store, request);
+        const layer = yield* makeCollectives(store, yield* Scope.Scope);
+        const item = yield* layer.classify({ message: request, recordHash });
+        if (Option.isNone(item)) {
+          return yield* Effect.dieMessage("missing classified request");
+        }
+        const [pending] = yield* store.readPendingDeliveries();
+        if (pending === undefined) {
+          return yield* Effect.dieMessage("missing delivery");
+        }
+        yield* store.putInboxItem({
+          deliveryToken: pending.deliveryToken,
+          canonicalItem: yield* encodeRuntimeValue(item.value),
         });
-        expect(Option.getOrNull(item)).toMatchObject({
-          kind: "collectiveRequest",
-          id,
-        });
-        yield* restarted.send(response, "result");
-        expect(counter.count).toBe(1);
+        yield* store.acknowledgeInboxItem(pending.deliveryToken);
+        yield* store.acknowledgeDelivery(pending.deliveryToken);
+        return pending.deliveryToken;
       }),
     );
-  });
-};
-
-it(
-  "keeps an unprojected request answerable after restart of a current store",
-  preservesUnprojectedRequest,
-);
-
-it("retires a request still waiting for admission, and its raw delivery, without a failure", () => {
-  const path = stateDirectory();
-  const counter = { count: 0 };
-  return Effect.gen(function* () {
-    yield* queueRequestBeforeRestart(path, counter);
     yield* Effect.scoped(
       Effect.gen(function* () {
         const store = yield* openEndpointStore(path, {
           liveWireVersions: LIVE_WIRE_VERSIONS,
         });
-        yield* recoverRuntimeInbox(store, true);
-        expect(yield* store.readPendingDeliveries()).toEqual([]);
+        const layer = yield* makeCollectives(store, yield* Scope.Scope);
+        expect(yield* Effect.flip(layer.send(response))).toEqual(
+          new SendError({ reason: "network-unavailable" }),
+        );
+        expect((yield* store.readInboxItem(token))?.acknowledged).toBe(true);
         expect((yield* readRuntimeInbox(store, {})).items).toEqual([]);
-        expect(yield* store.readFirewallFrontiers()).toEqual([]);
-        yield* recoverRuntimeInbox(store, true);
-        expect(yield* store.readFirewallFrontiers()).toEqual([]);
+        expect((yield* store.readCollectiveOperations())[0]).toMatchObject({
+          operationId: id,
+          origin: { kind: "remote", recordHash },
+        });
       }),
     );
   });
 });
 
-function queueRequestBeforeRestart(path: string, counter: { count: number }) {
-  return Effect.scoped(
+it("preserves a request awaiting admission and keeps it unanswerable after restart", () => {
+  const path = stateDirectory();
+  return Effect.gen(function* () {
+    const queued = yield* Effect.scoped(
+      Effect.gen(function* () {
+        const store = yield* openEndpointStore(path, {
+          liveWireVersions: LIVE_WIRE_VERSIONS,
+        });
+        const request = message();
+        yield* seedRequest(store, request);
+        const layer = yield* makeCollectives(store, yield* Scope.Scope, true);
+        const classified = yield* layer.classify({
+          message: request,
+          recordHash,
+        });
+        const [pending] = yield* store.readPendingDeliveries();
+        if (Option.isNone(classified) || pending === undefined) {
+          return yield* Effect.dieMessage("missing request");
+        }
+        const item = {
+          deliveryToken: pending.deliveryToken,
+          conversation: sender,
+          canonicalItem: yield* encodeRuntimeValue(classified.value),
+        };
+        yield* store.queueFirewallItem(item);
+        return item;
+      }),
+    );
+    yield* Effect.scoped(
+      Effect.gen(function* () {
+        const store = yield* openEndpointStore(path, {
+          liveWireVersions: LIVE_WIRE_VERSIONS,
+        });
+        const layer = yield* makeCollectives(store, yield* Scope.Scope, true);
+        expect(yield* Effect.flip(layer.send(response))).toMatchObject({
+          failure: { kind: "request-none" },
+        });
+        expect(yield* store.readFirewallFrontiers()).toEqual([
+          { ...queued, sequence: 1 },
+        ]);
+        expect((yield* store.readPendingDeliveries())[0]?.deliveryToken).toBe(
+          queued.deliveryToken,
+        );
+      }),
+    );
+  });
+});
+
+itOnClock(
+  "reconstructs acknowledged group context and publishes a delayed close once after restart",
+  () =>
     Effect.gen(function* () {
-      const store = yield* openEndpointStore(path, {
-        liveWireVersions: LIVE_WIRE_VERSIONS,
+      const path = stateDirectory();
+      const group = "group:alice,bob,carol";
+      const members = ["agent:alice", "agent:bob", "agent:carol"];
+      const content = yield* encodeCollectiveContent(
+        {
+          kind: "operation",
+          op: "all_gather",
+          id,
+          nonce,
+          deadlineAt: (yield* Clock.currentTimeMillis) + 60_000,
+          requestedSchema: {
+            type: "object",
+            properties: { answer: { type: "string" } },
+            required: ["answer"],
+          },
+        },
+        "Which day?",
+      );
+      const request = Schema.decodeUnknownSync(InboundMessage)({
+        kind: "group",
+        postId: record.postId,
+        sender,
+        address: group,
+        members,
+        content,
       });
-      const request = message();
-      yield* seedRequest(store, request);
-      const pending = yield* store.readPendingDeliveries();
-      const entry = pending[0];
-      if (entry === undefined) {
-        return yield* Effect.dieMessage("missing request delivery");
+      const answerHash = digest("rch_", 41);
+      const answer = Schema.decodeUnknownSync(InboundMessage)({
+        ...request,
+        postId: digest("pst_", 42),
+        sender: "agent:carol",
+        content: yield* encodeCollectiveContent({
+          kind: "response",
+          id,
+          action: "accept",
+          content: { answer: "Monday" },
+        }),
+      });
+      const close = Schema.decodeUnknownSync(InboundMessage)({
+        ...request,
+        postId: digest("pst_", 43),
+        content: yield* encodeCollectiveContent({
+          kind: "close",
+          id,
+          included: [Schema.decodeUnknownSync(RecordHash)(answerHash)],
+        }),
+      });
+      const emitted: InboundItem[] = [];
+      function layer(store: EndpointStore, scope: Scope.Scope) {
+        return makeCollectiveOperations({
+          store,
+          self,
+          scope,
+          lookupMember: () => Effect.void,
+          sendPost: unavailable,
+          sendAdmitted: unavailable,
+          observePost: unavailable,
+          reportStorageFault: () =>
+            Effect.dieMessage("unexpected storage fault"),
+          emit: (item, provenance, terminal) =>
+            Effect.gen(function* () {
+              if (terminal === undefined) {
+                return yield* Effect.dieMessage("missing terminal binding");
+              }
+              yield* store.publishCollectiveItem({
+                ...terminal,
+                conversation: group,
+                canonicalItem: yield* encodeRuntimeValue(item),
+                ...(provenance === undefined
+                  ? {}
+                  : {
+                      canonicalProvenance:
+                        yield* encodeRuntimeValue(provenance),
+                    }),
+                firewall: false,
+              });
+              emitted.push(item);
+            }).pipe(Effect.orDie),
+        });
       }
-      const collectives = makeCollectives(counter, yield* Scope.Scope);
-      const classified = yield* collectives.classify({
-        message: request,
-        recordHash,
-      });
-      if (Option.isNone(classified)) {
-        return yield* Effect.dieMessage("missing classified request");
+      function append(
+        store: EndpointStore,
+        message: InboundMessage,
+        hash: string,
+        previousRecordHash: string,
+      ) {
+        const actionHash = `action:${hash}`;
+        return encodeCanonical(InboundMessage, message).pipe(
+          Effect.flatMap((canonicalMessage) =>
+            store.applyCertifiedRecord(
+              {
+                ...record,
+                recordHash: hash,
+                previousRecordHash,
+                postId: message.postId,
+                authorAgentId: message.sender,
+                actionHash,
+                canonicalRecordCore: bytes(hash),
+                actionEvidence: record.actionEvidence.map((evidence) => ({
+                  ...evidence,
+                  subjectId: actionHash,
+                })),
+                durabilityEvidence: record.durabilityEvidence.map(
+                  (evidence) => ({ ...evidence, subjectId: hash }),
+                ),
+              },
+              { recipientAgentId: "agent:alice", canonicalMessage },
+            ),
+          ),
+        );
       }
-      yield* store.queueFirewallItem({
-        deliveryToken: entry.deliveryToken,
-        conversation: "agent:bob",
-        canonicalItem: yield* encodeRuntimeValue(classified.value),
-      });
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const store = yield* openEndpointStore(path, {
+            liveWireVersions: LIVE_WIRE_VERSIONS,
+          });
+          yield* seedRequest(store, request);
+          yield* append(store, answer, answerHash, record.recordHash);
+          const collective = yield* layer(store, yield* Scope.Scope);
+          const item = yield* collective.classify({
+            message: request,
+            recordHash,
+          });
+          const [pending] = yield* store.readPendingDeliveries();
+          if (Option.isNone(item) || pending === undefined) {
+            return yield* Effect.dieMessage("missing group request");
+          }
+          yield* store.putInboxItem({
+            deliveryToken: pending.deliveryToken,
+            canonicalItem: yield* encodeRuntimeValue(item.value),
+          });
+          yield* store.acknowledgeInboxItem(pending.deliveryToken);
+          yield* store.acknowledgeDelivery(pending.deliveryToken);
+        }),
+      );
+      yield* TestClock.adjust(Duration.hours(2));
+      const token = yield* Effect.scoped(
+        Effect.gen(function* () {
+          const store = yield* openEndpointStore(path, {
+            liveWireVersions: LIVE_WIRE_VERSIONS,
+          });
+          yield* append(store, close, digest("rch_", 44), answerHash);
+          yield* layer(store, yield* Scope.Scope);
+          expect(emitted).toMatchObject([
+            {
+              kind: "collectiveResult",
+              id,
+              outcomes: [
+                { member: self, outcome: { kind: "no-answer" } },
+                {
+                  member: "agent:carol",
+                  outcome: { kind: "answered", content: { answer: "Monday" } },
+                },
+              ],
+            },
+          ]);
+          const [item] = (yield* store.readInbox()).items;
+          if (item === undefined) {
+            return yield* Effect.dieMessage("missing delayed result");
+          }
+          return item.deliveryToken;
+        }),
+      );
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const store = yield* openEndpointStore(path, {
+            liveWireVersions: LIVE_WIRE_VERSIONS,
+          });
+          yield* layer(store, yield* Scope.Scope);
+          expect(emitted).toHaveLength(1);
+          expect(
+            (yield* store.readInbox()).items.map(
+              ({ deliveryToken }) => deliveryToken,
+            ),
+          ).toEqual([token]);
+          yield* store.acknowledgeInboxItem(token);
+        }),
+      );
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const store = yield* openEndpointStore(path, {
+            liveWireVersions: LIVE_WIRE_VERSIONS,
+          });
+          yield* layer(store, yield* Scope.Scope);
+          expect(emitted).toHaveLength(1);
+          expect((yield* store.readInbox()).items).toEqual([]);
+        }),
+      );
     }),
-  );
-}
+);

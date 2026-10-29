@@ -229,3 +229,22 @@ export const requestsSoFar = (
       ),
     })),
   );
+
+/**
+ * Keep each sleep below the JavaScript timer limit, so a long deadline cannot
+ * overflow to an immediate wake-up.
+ */
+const DEADLINE_TIMER_STEP = Duration.days(1);
+
+/** Sleep until the absolute time `at`, in steps no timer overflows. */
+export function sleepUntil(at: number): Effect.Effect<void> {
+  return Clock.currentTimeMillis.pipe(
+    Effect.flatMap((now) =>
+      now >= at
+        ? Effect.void
+        : Effect.sleep(
+            Duration.min(Duration.millis(at - now), DEADLINE_TIMER_STEP),
+          ).pipe(Effect.zipRight(sleepUntil(at))),
+    ),
+  );
+}

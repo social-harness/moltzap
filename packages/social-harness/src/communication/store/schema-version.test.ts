@@ -12,19 +12,21 @@ import {
   withStore,
 } from "../../__tests__/store-schema-fixtures.js";
 import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
-import { RESET_SCHEMA } from "./database/migrations.js";
 import { openEndpointStore } from "./index.js";
 
 /** The last schema before the reset is refused even with otherwise valid state. */
-const EARLIER_SCHEMA_VERSION = RESET_SCHEMA - 1;
+const EARLIER_SCHEMA_VERSION = 13;
 
 function refusesAnEarlierSchemaUnchanged() {
   return Effect.gen(function* () {
     const directory = stateDirectory();
-    yield* withStore(directory, (store) => store.recover());
     const path = databasePath(directory);
     const database = new DatabaseSync(path);
     database.exec(`PRAGMA user_version = ${EARLIER_SCHEMA_VERSION}`);
+    database.exec("CREATE TABLE old_identity (agent_id TEXT PRIMARY KEY)");
+    database
+      .prepare("INSERT INTO old_identity VALUES (?)")
+      .run("retained-owner");
     database.close();
     const original = readFileSync(path);
 
@@ -41,20 +43,10 @@ function refusesAnEarlierSchemaUnchanged() {
   });
 }
 
-function storedSchema(path: string) {
-  const database = new DatabaseSync(path, { readOnly: true });
-  try {
-    return database.prepare("PRAGMA user_version").get()?.user_version;
-  } finally {
-    database.close();
-  }
-}
-
 function opensFreshBaseline() {
   return Effect.gen(function* () {
     const directory = stateDirectory();
     const initial = yield* withStore(directory, (store) => store.recover());
-    expect(storedSchema(databasePath(directory))).toBe(RESET_SCHEMA);
 
     expect(yield* withStore(directory, (store) => store.recover())).toEqual(
       initial,

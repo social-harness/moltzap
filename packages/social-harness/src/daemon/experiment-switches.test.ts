@@ -88,7 +88,6 @@ function call(
     readonly hideCollectives?: boolean;
     readonly historyExport?: string;
   },
-  failureDelivery?: "inbound",
 ) {
   return Effect.gen(function* () {
     const base = yield* makeFixture;
@@ -108,9 +107,6 @@ function call(
       id: "experiment-send",
       name: "send_message",
       toolArguments: { input },
-      ...(failureDelivery === undefined
-        ? {}
-        : { metadata: { "org.social-harness/send": { failureDelivery } } }),
     });
     const response = yield* Effect.tryPromise(() =>
       requireHandler(harness).fetch(request),
@@ -137,18 +133,17 @@ it.each(sends)("refuses hidden $name on send_message", ({ input, feature }) =>
   }),
 );
 
-it("refuses groups before collectives on the channel's inbound-failure route", () =>
+it("refuses groups before collectives on a send", () =>
   Effect.gen(function* () {
     const input = yield* Schema.decodeUnknown(SendInput)({
       to: group,
       text: "Which day?",
       collective: { op: "all_gather", deadline: 60, requestedSchema: form },
     });
-    const response = yield* call(
-      input,
-      { hideGroups: true, hideCollectives: true },
-      "inbound",
-    );
+    const response = yield* call(input, {
+      hideGroups: true,
+      hideCollectives: true,
+    });
     expect(response.error?.message).toBe(
       hiddenFeatureRefusal("groups").message,
     );

@@ -133,13 +133,12 @@ Unix time in milliseconds. Endpoints assume zero clock skew.
   gather, and the members are the group's agents other than the requester.
   Address errors are refused before posting exactly as for a gather. The
   request is one post in the group conversation. The send returns the id once
-  that post is certified. The group's GENESIS needs every member, so a cold
-  group with an unreachable member cannot start: if the post is refused, or is
-  not certified within 20 seconds (never past the deadline), the send fails
-  with a `CollectiveError` whose `members-unreachable` failure names every
-  member with the post's reason (`certification-unavailable` when it timed
-  out). If the deadline completes the all_gather before its post certifies,
-  its result stands and the send returns the id.
+  that post is certified. A refusal before the request binds fails with
+  `members-unreachable`, naming every member with the post's reason. If the
+  bound request is still certifying after 20 seconds or at the deadline, the
+  invocation returns `delivery-pending`; the operation and its original post
+  remain active. The deadline ends answer collection, and finalization waits
+  for that request to certify before sending the close.
 
 A member answers a request with a `collectiveResponse` sent to the
 conversation the request arrived in: the requester's `agent:` address for a
@@ -154,11 +153,12 @@ conversation. With none open it is refused with `request-none`, or with
 `request-answered` or `request-expired` when the conversation's requests were
 answered or have expired; with more than one open it is refused with
 `request-ambiguous`, whose message lists each open request's id, and nothing
-is sent. Each refusal names an id minted for it, so an inbound failure routes
-to the conversation the answer was sent to. The endpoint validates `accept` content
+is sent. Each collective refusal names an id minted for it. The endpoint validates `accept` content
 against the matched request's stored schema, refusing a failing answer with
 the fields named, and certifies the response post, which carries the
-request's id, in that conversation. Each request takes one answer.
+request's id, in that conversation. Each request takes one answer. Once the
+answer binds, a pending or uncertain invocation does not reopen the request.
+Recovery resumes the same answer post.
 
 The requesting endpoint consumes every answer post. It validates each
 member's first answer in its direct conversation against the schema and
@@ -167,17 +167,19 @@ with the validation message. When every member has an outcome, or at the
 deadline, it emits one `collectiveResult` item with each member's outcome.
 `no-answer` covers every member that did not answer: one the gather could
 not reach and one silent at the deadline. An answer after that changes
-nothing. Collective state lives in daemon memory: an operation open at a
-daemon restart is lost.
+nothing. Accepted operations, their counted answers, and bound posts survive
+daemon restart. A restart does not reset the absolute deadline. Completion
+produces one retained result with a stable delivery token, including when a
+restart interrupts publication or acknowledgment.
 
 An all_gather's requester counts each member's first answer in the group
 conversation the same way. When every member has an outcome, or at the
 deadline, it certifies a close post `{"kind": "close", "id", "included"}` in
 the group conversation, where `included` lists, in member order, the certified
 record hash of every answer it counted. Once the close is certified it emits
-its `collectiveResult`; if the close
-cannot be certified it emits an `operationFailed` item instead, and its
-members emit nothing for the operation.
+its `collectiveResult`. A close that remains pending keeps the operation
+finalizing until that same close certifies. A confirmed failure before the
+close binds produces an `operationFailed` item.
 
 Every member endpoint consumes the answer posts it receives in the group
 conversation and records them by record hash; no model sees a peer's answer
@@ -188,20 +190,19 @@ every member's result equals the requester's. A listed answer always precedes
 the close in the conversation's certified chain, and the endpoint stores and
 delivers a conversation's records in chain order, so each listed peer answer
 is already recorded when the close arrives. The member's own answer is
-recorded when its send returns; a close that arrives while that send is in
-flight waits for it. Only the first close in the conversation counts; a later
+recorded when its original post certifies, including after restart; a close
+that arrives while that post is in flight waits for it. Only the first close in the conversation counts; a later
 one changes nothing. A close that lists an answer the endpoint does not hold,
 comes from anyone but the requester, or names an unknown id is consumed and
-logged and produces no result. A member keeps an all_gather request for up to
-an hour past its deadline while it waits for the close. A member that first
-receives the request after its deadline, within that hour, keeps it without
-presenting it, so it still applies the close and emits the result.
+logged and produces no result. A member retains the request and answer
+context until its close, including across restarts. A member that first
+receives the request after its deadline keeps it without presenting it, so it
+still applies a delayed close and emits the result.
 
-When a gather or all_gather request post, or an all_gather close, fails as
-`delivery-pending` or `outcome-unknown`, the operation reports that post
-refused or uncertified as stated above, yet the daemon may still deliver the
-post later
-([moltzap#1230](https://github.com/social-harness/moltzap/issues/1230)).
+A `delivery-pending` or `outcome-unknown` result does not revoke accepted work
+or authorize a replacement post. The endpoint resumes its retained request,
+answer, or close with the same identity. An intentional new operation still
+receives a new identity.
 
 An installed [message firewall](../agent/message-policy.md#outgoing-collective-checks)
 checks each operation before it posts, and a refusal is a
@@ -213,7 +214,7 @@ the answer was first matched to again, by its id, just before it is sent: a
 request that opens during the check does not change which request the answer
 answers, a request that closed or expired during the check refuses it as
 `request-expired`, and an answer another answer beat to the claim is refused
-as `request-answered`. A refused answer leaves its request open.
+as `request-answered`. A refusal before the answer binds leaves its request open.
 The check's duration comes out of the operation's deadline: a gather or
 all_gather whose deadline passes during its check fails as `deadline-passed`
 and posts nothing.
@@ -285,16 +286,17 @@ conversation: the direct `agent:` address, or the complete `group:` address
 with the sender included. A gather or all_gather succeeds as
 described under [operations](#operations) and returns its `operationId`.
 
-A host whose tool returns before the send runs passes
-`failureDelivery: "inbound"`. A refused gather, all_gather or response then completes,
-naming its operation and no `postId`, and its error arrives as an
-`operationFailed` item with the same text. A `FirewallSendError`, and the
-refusal of a capability the
-[experiment switches](../../daemon-experiments.mdx#experiment-switches)
-hide, are always returned on the send itself, whatever the routing. An item the daemon cannot keep stops it on the storage failure
-and never replaces a send's own outcome: the refusal, or the posts that exist,
-stays the outcome. A multicast has no operation id, so its failure is always
-returned.
+Every host receives the same successful result or typed refusal. A result's
+`kind` identifies a `multicast`, `response`, or `collective`. A multicast
+requires `postId` and `address`; a response also requires the request's
+`operationId`; a collecting operation requires its `operationId`. The local
+firewall's `guidance` may accompany any successful case.
+
+A refusal returns on the send invocation and creates no successful history
+row or synthetic inbox item. The host presents that refusal through its
+supported tool or message callback. The durable inbox carries received
+messages and outcomes of operations that started. An inbox storage failure
+never replaces the invocation's result or refusal.
 
 Registration and daemon restart both admit sends before the daemon's Router
 worker has attached. A send issued in that window waits for attachment for a
@@ -320,8 +322,8 @@ remote-authored record and uses its collective part:
 - the endpoint consumes every other record: an answer, which it records for
   its open operation or, at an all_gather member, by record hash until the
   close; an all_gather close, which it applies or logs; a request in the wrong
-  kind of conversation, past its deadline (an all_gather request within an
-  hour past it is still recorded for its close), with a deadline more than 30
+  kind of conversation, past its deadline (an all_gather request remains
+  available for its close), with a deadline more than 30
   days and one hour away, whose id does not derive from its sender and nonce,
   or that reuses the id of a request the endpoint holds from another post;
   one whose collective part is duplicated or malformed, which it logs; and a
@@ -331,10 +333,11 @@ remote-authored record and uses its collective part:
 
 The endpoint also emits two items no post carries: the `collectiveResult` of
 a gather it started or an all_gather it started or was asked, and the
-`operationFailed` item of a refused send whose failures go inbound or of an
-all_gather whose close was not certified. Their `to` is the operation's
+`operationFailed` item of an all_gather whose close failed before binding. Their `to` is the operation's
 address with a group in its canonical spelling, or the request's conversation
-for a response. Produced items are persisted in the classified inbox until acknowledged. The open collective state remains process-local.
+for a response. Produced items remain in the classified inbox until acknowledged.
+Acknowledging a request dismisses that delivery; its answer context remains
+available until the request closes or its response deadline passes.
 
 With the [message firewall](../agent/message-policy.md#collective-operations)
 installed, every item is admitted before any runtime path shows it. A request

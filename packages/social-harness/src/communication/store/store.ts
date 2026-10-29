@@ -21,6 +21,18 @@ import {
   stageReanchor,
 } from "./anchors.js";
 import {
+  finalizeCollectiveOperation,
+  publishCollectiveItem,
+  putCollectiveOperation,
+  readCollectiveAnswers,
+  readCollectiveOperations,
+  readCollectivePosts,
+  readCollectiveRefusals,
+  recordCollectiveAnswer,
+  recordCollectiveRefusal,
+  retireCollectiveOperation,
+} from "./collectives.js";
+import {
   closeStoreState,
   EndpointStoreError,
   inspectStoreState,
@@ -134,6 +146,33 @@ function makeEndpointStore(state: StoreState): EndpointStore {
   const run = <Value>(operation: () => Value) =>
     runStoreOperation(state, operation);
   const store: EndpointStore = {
+    recordCollectiveAnswer: (answer) =>
+      run(() => recordCollectiveAnswer(state.database, answer)),
+    readCollectiveAnswers: () =>
+      run(() => readCollectiveAnswers(state.database)),
+    recordCollectiveRefusal: (refusal) =>
+      run(() => {
+        recordCollectiveRefusal(state.database, refusal);
+      }),
+    readCollectiveRefusals: () =>
+      run(() => readCollectiveRefusals(state.database)),
+    retireCollectiveOperation: (operationId, selection) =>
+      run(() => {
+        retireCollectiveOperation(state.database, operationId, selection);
+      }),
+    putCollectiveOperation: (input) =>
+      run(() => putCollectiveOperation(state.database, input)),
+    readCollectiveOperations: () =>
+      run(() => readCollectiveOperations(state.database)),
+    readCollectivePosts: () => run(() => readCollectivePosts(state.database)),
+    finalizeCollectiveOperation: (operationId, selection) =>
+      run(() =>
+        finalizeCollectiveOperation(state.database, operationId, selection),
+      ),
+    publishCollectiveItem: (delivery) =>
+      run(() => {
+        publishCollectiveItem(state.database, delivery);
+      }),
     readIdentity: () => run(() => bindIdentity.read(state.database)),
     bindIdentity: (binding) =>
       run(() => bindIdentity.write(state.database, binding)),
@@ -264,8 +303,15 @@ function makeEndpointStore(state: StoreState): EndpointStore {
       run(() => {
         retireFirewallItem(state.database, token);
       }),
-    admitFirewallOperation: (completion, candidate) =>
-      run(() => admitFirewallOperation(state.database, completion, candidate)),
+    admitFirewallOperation: (completion, candidate, collective) =>
+      run(() =>
+        admitFirewallOperation(
+          state.database,
+          completion,
+          candidate,
+          collective,
+        ),
+      ),
     bindCheckedPostIntent: (binding, completion) =>
       run(() => bindCheckedPostIntent(state.database, binding, completion)),
     bindAdmittedPostIntent: (binding, operation) =>

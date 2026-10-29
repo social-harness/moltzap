@@ -4211,6 +4211,90 @@ const deliverN4SuccessorPastStagedCandidate = (
   });
 
 /**
+ * A three-of-four durability certificate advances the head after this
+ * endpoint stages a departure. A certificate may carry an earlier local
+ * signature; adopting that evidence must not cast a new local vote.
+ * @param priorLocalVote Whether the certificate includes an earlier local vote.
+ * @returns Completion after the adopted head and outbound evidence are checked.
+ */
+const adoptsCertifiedSuccessorWithoutVotingAfterDeparture = (
+  priorLocalVote: boolean,
+) =>
+  Effect.gen(function* () {
+    const fixture = yield* makeFixture;
+    const n4 = yield* addN4Foundation(fixture);
+    const history = yield* buildN4PartialHistory(fixture, n4);
+    const { recordHash } = history.stagedSuccessor;
+    const earlierVote = yield* signEvidence(fixture.local, {
+      sharnessVersion: WIRE_VERSION,
+      kind: "durability_vote",
+      signerAgentId: fixture.local.card.agentId,
+      conversationId: n4.membership.descriptor.conversationId,
+      membershipHash: n4.membership.hash,
+      recordHash,
+    });
+    const certificate = history.certifiedSuccessor.durabilityCertificate;
+    const completedHistory: N4PartialHistory = {
+      ...history,
+      certifiedSuccessor: {
+        ...history.certifiedSuccessor,
+        durabilityCertificate: {
+          ...certificate,
+          votes: priorLocalVote
+            ? [earlierVote, ...certificate.votes.slice(0, 2)]
+            : certificate.votes,
+        },
+      },
+    };
+    expect(n4.membership.descriptor.members).toHaveLength(4);
+    expect(
+      completedHistory.certifiedSuccessor.durabilityCertificate.votes,
+    ).toHaveLength(3);
+
+    const delivered = yield* deliverN4SuccessorPastStagedCandidate(
+      fixture,
+      n4,
+      completedHistory,
+    );
+    yield* n4.engine.drainOutbound;
+    const sent = yield* Effect.forEach(
+      yield* Queue.takeAll(fixture.normalOutbound),
+      (message) => carriedBy(message),
+      { concurrency: 1 },
+    );
+    const recovered = yield* fixture.store.recover();
+    const localVotes = recovered.evidence.filter(
+      (evidence) =>
+        evidence.kind === "durability" &&
+        evidence.subjectId === recordHash &&
+        evidence.evidenceKey === fixture.local.card.agentId,
+    );
+
+    expect(delivered.successor).toBe(acceptedDisposition);
+    expect(
+      recovered.positions.find(
+        (position) =>
+          position.conversationId === n4.membership.descriptor.conversationId,
+      )?.headRecordHash,
+    ).toBe(recordHash);
+    expect(localVotes).toHaveLength(priorLocalVote ? 1 : 0);
+    expect(
+      sent.filter(
+        (packet) =>
+          packet.kind === "durability_vote" && packet.recordHash === recordHash,
+      ),
+    ).toEqual([]);
+    yield* Fiber.interrupt(delivered.recovery);
+  });
+
+describe("certificate adoption after departure", () => {
+  it("adopts a three-of-four external certificate without casting a local vote", () =>
+    adoptsCertifiedSuccessorWithoutVotingAfterDeparture(false));
+  it("adopts a three-of-four certificate carrying an earlier local vote without signing again", () =>
+    adoptsCertifiedSuccessorWithoutVotingAfterDeparture(true));
+});
+
+/**
  * Delivers a certified successor past the endpoint's candidate at the N4
  * head, as `deliverN4SuccessorPastStagedCandidate` does. The successor moves
  * the head past the staged candidate, and the run asks for the history after

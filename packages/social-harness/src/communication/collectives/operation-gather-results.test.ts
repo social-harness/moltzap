@@ -229,6 +229,7 @@ function returnsTheGatherSIdWithTheRequestPostsItCertified() {
     const { id } = yield* firstRequestOf(observed);
 
     expect(outcome).toEqual({
+      kind: "collective",
       postIds: [postId(101), postId(102)],
       operationId: id,
     });
@@ -321,19 +322,16 @@ function failsTheCompletingAnswerWhenTheResultCannotBeKept() {
 }
 
 /**
- * A refusal routed inbound that cannot be kept fails the send with the
- * refusal itself, rather than with a storage reason that says nothing of the
- * operation.
+ * A refused send returns its own error even if the local inbox is unavailable.
  */
 function failsASendWithItsRefusalWhenTheInboundCopyCannotBeKept() {
   return Effect.gen(function* () {
     const layer = yield* makeLayer(newObserved(), { emit: unkeptEmit });
     const failure = yield* Effect.flip(
-      send(
-        layer,
-        { to: "agent:bob", collectiveResponse: { action: "decline" } },
-        "inbound",
-      ),
+      send(layer, {
+        to: "agent:bob",
+        collectiveResponse: { action: "decline" },
+      }),
     );
 
     expect(failure).toMatchObject({

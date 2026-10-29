@@ -21,6 +21,7 @@ import {
 import { stateDirectory } from "../../__tests__/store-schema-fixtures.js";
 import {
   CollectiveEmitError,
+  CollectiveError,
   CollectiveId,
   SendInput,
 } from "../../communication/collectives/forms.js";
@@ -110,9 +111,13 @@ const refusesUntilRegistered = () =>
     ).toBe("unknown-delivery");
     expect(records).toEqual([]);
     slot.collectives = {
-      send: () => Effect.succeed({ operationId, postIds: [postId] }),
+      send: () =>
+        Effect.succeed({ kind: "collective", operationId, postIds: [postId] }),
     };
-    expect(yield* operations.send({ input })).toEqual({ operationId });
+    expect(yield* operations.send({ input })).toEqual({
+      kind: "collective",
+      operationId,
+    });
   });
 
 /**
@@ -124,43 +129,86 @@ const exportsEachSend = () =>
   Effect.gen(function* () {
     const { delivery, records, slot } = yield* deliveryFixture;
     const { operations } = delivery;
-    const outcomes: Array<
-      Effect.Effect<
-        Effect.Effect.Success<ReturnType<Collectives["send"]>>,
-        SendError
-      >
-    > = [
-      Effect.succeed({ operationId, postIds: [postId] }),
-      Effect.succeed({ postIds: [postId], postId, address: bob }),
-      Effect.fail(new SendError({ reason: "content-invalid" })),
-    ];
+    const outcomes = sendOutcomes();
     slot.collectives = {
       send: () => outcomes.shift() ?? Effect.dieMessage("unexpected send"),
     };
-    expect(yield* operations.send({ input })).toEqual({ operationId });
-    expect(yield* operations.send({ input })).toEqual({ postId, address: bob });
+    expect(yield* operations.send({ input })).toEqual({
+      kind: "collective",
+      operationId,
+    });
+    expect(yield* operations.send({ input })).toEqual({
+      kind: "multicast",
+      postId,
+      address: bob,
+    });
     const refused = yield* Effect.exit(operations.send({ input }));
     expect(refused).toEqual(
       Exit.fail(new SendError({ reason: "content-invalid" })),
     );
-    expect(
-      records.map((record) =>
-        record.kind === "outbound"
-          ? { input: record.input, outcome: record.outcome }
-          : record,
-      ),
-    ).toEqual([
-      { input, outcome: { kind: "sent", operationId, postIds: [postId] } },
-      { input, outcome: { kind: "sent", postIds: [postId] } },
-      {
-        input,
-        outcome: {
-          kind: "failed",
-          error: new SendError({ reason: "content-invalid" }).message,
-        },
-      },
-    ]);
+    expect(yield* Effect.flip(operations.send({ input }))).toEqual(
+      new CollectiveError({
+        id: operationId,
+        failure: { kind: "request-none" },
+      }),
+    );
+    assertSendExports(records);
   });
+
+function sendOutcomes() {
+  const outcomes: Array<
+    Effect.Effect<
+      Effect.Effect.Success<ReturnType<Collectives["send"]>>,
+      SendError | CollectiveError
+    >
+  > = [
+    Effect.succeed({ kind: "collective", operationId, postIds: [postId] }),
+    Effect.succeed({
+      kind: "multicast",
+      postIds: [postId],
+      postId,
+      address: bob,
+    }),
+    Effect.fail(new SendError({ reason: "content-invalid" })),
+    Effect.fail(
+      new CollectiveError({
+        id: operationId,
+        failure: { kind: "request-none" },
+      }),
+    ),
+  ];
+  return outcomes;
+}
+
+function assertSendExports(records: readonly HistoryExportRecord[]) {
+  expect(
+    records.map((record) =>
+      record.kind === "outbound"
+        ? { input: record.input, outcome: record.outcome }
+        : record,
+    ),
+  ).toEqual([
+    { input, outcome: { kind: "sent", operationId, postIds: [postId] } },
+    { input, outcome: { kind: "sent", postIds: [postId] } },
+    {
+      input,
+      outcome: {
+        kind: "failed",
+        error: new SendError({ reason: "content-invalid" }).message,
+      },
+    },
+    {
+      input,
+      outcome: {
+        kind: "failed",
+        error: new CollectiveError({
+          id: operationId,
+          failure: { kind: "request-none" },
+        }).message,
+      },
+    },
+  ]);
+}
 
 /**
  * A queued local item is durable and readable, exported on its first read
@@ -260,7 +308,7 @@ const refusesInvalidSendInput = () =>
       send: () =>
         Effect.sync(() => {
           sent += 1;
-          return { operationId, postIds: [postId] };
+          return { kind: "collective", operationId, postIds: [postId] };
         }),
     };
     const malformed = Schema.decodeUnknownSync(Schema.Unknown)({

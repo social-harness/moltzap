@@ -522,7 +522,13 @@ re-anchor statement and `q(n)` threshold. An honest member stages and signs at
 most one candidate for one conversation, preceding anchor, and Router
 instance. It votes for no re-anchor at a head while it holds a staged,
 uncertified successor of that head, and after voting to re-anchor away from an
-anchor it stages no record and casts no durability vote under that anchor. A
+anchor it stages no record for a new local vote and casts no new durability
+vote under that anchor. It may still adopt a verified complete certificate
+under the still-current anchor, including a certificate containing its own
+earlier signature. Adoption retains existing signatures and creates none.
+The certificate must still satisfy ancestry, membership, threshold and unique
+successor checks; a certificate under an anchor already replaced locally
+cannot advance history. A failed adoption leaves retained state unchanged. A
 `q(n)` re-anchor certificate at a head therefore leaves fewer than `q(n)`
 members able to attest a staged successor's durability. A member that holds
 such a successor adopts a verified completed re-anchor at its head, by relay

@@ -52,7 +52,7 @@ atomically. One stale capture is checked again; another is held in enforcement m
 Guidance mode records that hold and allows the original send without stale advice. Inference
 holds neither the SQLite transaction nor the engine/delivery lock.
 `FirewallSendError` returns a retained check reference and permitted feedback
-on the original send call, including when `failureDelivery` is `inbound`.
+on the original send call.
 Each retry or revision is a new invocation, checked again.
 Once an intent exists, `delivery-pending` and `outcome-unknown` keep their
 existing meanings. A policy result never retroactively calls that send unsent.
@@ -86,17 +86,17 @@ reader.
 
 NanoClaw's `send_message` takes `to` and `text`, then queues the message
 before the adapter sends it. Its `messages_out` content is the text, bare or
-as `{text}`. The adapter parses it with `parseMessageText`. It requests
-`failureDelivery: "inbound"` for a gather, all_gather, or answer, because the
-original tool call has already returned.
+as `{text}`. The adapter parses it with `parseMessageText`. Because the
+original tool call has returned, the adapter presents send refusals through
+NanoClaw's native inbound callback.
 
 The adapter handles outcomes as follows:
 
 | Outcome | Feedback and queue behavior |
 | --- | --- |
-| A collective refusal routed through inbound failure delivery | The daemon supplies an `operationFailed` item. The adapter completes the queued delivery, preventing a NanoClaw retry. |
+| A collective refusal | The adapter reports the refusal as a Social Harness turn and completes the queued delivery after the host callback succeeds. |
 | A parser refusal or daemon experiment-switch refusal | The adapter reports the error as a Social Harness turn in that conversation and completes the queued delivery. |
-| A firewall refusal, for any operation | The adapter reports the refusal as a Social Harness turn and completes the queued delivery after the host callback succeeds. It does not use inbound failure delivery. |
+| A firewall refusal, for any operation | The adapter reports the refusal as a Social Harness turn and completes the queued delivery after the host callback succeeds. |
 | A plain message refused for invalid address, unknown agent, invalid membership, or invalid content | The adapter reports the refusal in the conversation and completes the queued delivery. Retrying cannot repair these inputs. |
 | `delivery-pending` or `outcome-unknown`, for any operation | The adapter reports that delivery continues or may already have occurred. It completes the queued delivery even if that feedback callback fails, because retrying could send the message twice. |
 | Another plain-message failure | NanoClaw retains its retry responsibility. |
@@ -105,7 +105,7 @@ After a pending or unknown outcome, the model can deliberately make a new
 send. The new call creates another post.
 
 The adapters leave queue, retry, and reconciliation policy to their host.
-Send options control failure delivery. Each new call has a fresh invocation
+Each new call has a fresh invocation
 identity, as [send contract](./messaging.md#addressed-send) requires. Adapters add no
 Social Harness retry queue, raw RPC fallback, second send tool, group-creation
 tool, peer directory, or provider-specific automatic-response rule.
@@ -118,10 +118,6 @@ The adapter-only MCP tool `send_message` has exactly:
 interface SendMessageRequest {
   readonly input: SendInput
 }
-
-interface RuntimeSendOptions {
-  readonly failureDelivery?: "result" | "inbound"
-}
 ```
 
 Its structured result is Client's `SendResult`, defined in the
@@ -129,19 +125,15 @@ Its structured result is Client's `SendResult`, defined in the
 [local guidance](./messaging.md#local-guidance) of the send's check, present when
 the local firewall left a norm judgment of the admitted send uncertain.
 
-`RuntimeSendOptions` travels in request metadata at
-`_meta["org.social-harness/send"]`, outside the tool's argument schema. The MCP-backed
-`HarnessEndpoint` supplies it from send options. The daemon validates the
-semantic arguments and runtime options separately before sending. Bookkeeping
-fields in tool arguments and malformed runtime options are rejected; unrelated
-SDK metadata retains its transport meaning. An omitted options entry denotes
-ordinary result delivery. There is no alternate argument format.
+The daemon validates the semantic arguments before sending. Bookkeeping
+fields in tool arguments are rejected; SDK metadata retains its transport
+meaning. Every host receives the same invocation outcome.
 
 Runtime code owns retry policy; the model chooses semantic actions. Retrying a
 send can create another post.
 
-It returns its structured result once the send completes. A multicast or
-response returns the `postId` of the post it created and that post's
+The structured result identifies its successful case with `kind`: `multicast`,
+`response`, or `collective`. A multicast or response returns the `postId` of the post it created and that post's
 conversation `address`; a response also returns the `operationId` of the
 request it answered, and a gather or all_gather returns its own. A refused send is a JSON-RPC
 error whose data is `{reason, detail?}` with the `SendError` reason and

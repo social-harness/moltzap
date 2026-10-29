@@ -1,9 +1,19 @@
 /** @file One service's delivery: the inbox writes, the gated delivery pass and detach, and the operations hosts call. */
 
-import { DateTime, Deferred, Effect, Option, Queue, type Scope } from "effect";
+import {
+  DateTime,
+  Deferred,
+  Effect,
+  Option,
+  Queue,
+  type Scope,
+  Struct,
+} from "effect";
 import type {
   CollectiveEmitError,
+  CollectiveSendOutcome,
   SendInput,
+  SendResult,
 } from "../../communication/collectives/forms.js";
 import type {
   CollectiveOperations,
@@ -46,7 +56,6 @@ import {
   persistInboxItem,
   readRuntimeEvent,
   readRuntimeInbox,
-  recoverRuntimeInbox,
 } from "./inbox.js";
 import {
   type DeliveryState,
@@ -106,6 +115,10 @@ export interface HostDelivery {
   readonly queueLocalItem: (
     item: InboundItem,
     provenance?: ResultProvenance,
+    terminal?: {
+      readonly operationId: string;
+      readonly deliveryToken: DeliveryToken;
+    },
   ) => Effect.Effect<void, EndpointStoreError>;
   /** Daemon-owned checks run outside the delivery pass and publish only committed admissions. */
   readonly runAdmission: (
@@ -146,30 +159,36 @@ const sendDecoded = (input: DeliveryContext, request: HarnessSendRequest) =>
     if (collectives === undefined) {
       return Effect.fail(new SendError({ reason: "not-registered" }));
     }
-    return collectives
-      .send(request.input, request.failureDelivery ?? "result")
-      .pipe(
-        Effect.tapBoth({
-          onFailure: (error) =>
-            exportSend(input.historyExport, request.input, {
-              kind: "failed",
-              error: error.message,
-            }),
-          onSuccess: ({ operationId, postIds }) =>
-            exportSend(input.historyExport, request.input, {
-              kind: "sent",
-              postIds,
-              ...(operationId === undefined ? {} : { operationId }),
-            }),
-        }),
-        Effect.map(({ operationId, postId, address, guidance }) => ({
-          ...(operationId === undefined ? {} : { operationId }),
-          ...(postId === undefined ? {} : { postId }),
-          ...(address === undefined ? {} : { address }),
-          ...(guidance === undefined ? {} : { guidance }),
-        })),
-      );
+    return collectives.send(request.input).pipe(
+      Effect.tapBoth({
+        onFailure: (error) =>
+          exportSend(input.historyExport, request.input, {
+            kind: "failed",
+            error: error.message,
+          }),
+        onSuccess: ({ operationId, postIds }) =>
+          exportSend(input.historyExport, request.input, {
+            kind: "sent",
+            postIds,
+            ...(operationId === undefined ? {} : { operationId }),
+          }),
+      }),
+      Effect.map(publicSendResult),
+    );
   });
+
+function publicSendResult(result: CollectiveSendOutcome): SendResult {
+  switch (result.kind) {
+    case "collective":
+      return Struct.omit(result, "postIds");
+    case "multicast":
+      return Struct.omit(result, "postIds");
+    case "response":
+      return Struct.omit(result, "postIds");
+    default:
+      return result satisfies never;
+  }
+}
 
 /**
  * Run one validated send: input that fails its schema is `content-invalid`
@@ -325,18 +344,27 @@ const readAdmitted = (
 
 const queueLocalItem =
   (input: DeliveryContext): HostDelivery["queueLocalItem"] =>
-  (item, provenance) =>
-    mintLocalDeliveryToken.pipe(
-      Effect.tap((deliveryToken) =>
-        persistItem(input, { deliveryToken, item }, provenance),
-      ),
-      Effect.tap((deliveryToken) =>
-        Effect.sync(() => {
-          input.state.localItems.set(deliveryToken, item);
-        }),
-      ),
-      Effect.asVoid,
-    );
+  (item, provenance, terminal) =>
+    Effect.gen(function* () {
+      const deliveryToken =
+        terminal?.deliveryToken ?? (yield* mintLocalDeliveryToken);
+      if (terminal === undefined) {
+        yield* persistItem(input, { deliveryToken, item }, provenance);
+      } else {
+        yield* input.store.publishCollectiveItem({
+          operationId: terminal.operationId,
+          deliveryToken,
+          canonicalItem: yield* encodeRuntimeValue(item),
+          conversation:
+            item.kind === "multicast" ? item.message.address : item.to,
+          ...(provenance === undefined
+            ? {}
+            : { canonicalProvenance: yield* encodeRuntimeValue(provenance) }),
+          firewall: input.firewall !== undefined,
+        });
+      }
+      input.state.localItems.set(deliveryToken, item);
+    });
 
 /**
  * The admission worker's view of delivery. It shows a committed disposition
@@ -418,7 +446,6 @@ export const makeHostDelivery = (
       admissionFailure: yield* Deferred.make<never, EndpointStoreError>(),
       activeConversations: new Set(),
     };
-    yield* recoverRuntimeInbox(input.store, input.firewall !== undefined);
     const eventStore: EventStore = {
       ...input.store,
       readInbox: (bounds) => readWebhookInbox(input, bounds),

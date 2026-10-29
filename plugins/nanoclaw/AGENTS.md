@@ -32,8 +32,8 @@ raw Router credential, network client, or local store.
 - Leave outbound queue and retry policy to NanoClaw. Every adapter call is one
   Client operation, decoded from the `messages_out` content's text; do not pass `messages_out.id` or
   add adapter deduplication. `send_message` has returned before the adapter
-  sends, so a gather, all_gather or response reports a refusal as an `operationFailed`
-  item and its delivery completes. A send whose call fails for a reason in the
+  sends, so the adapter presents a collective refusal through the native inbound
+  callback and completes delivery after that callback succeeds. A send whose call fails for a reason in the
   adapter's `FINAL_REFUSALS` reaches the model and its delivery completes; any
   other failed call fails the delivery.
   Project metadata before content, route through the bootstrap-owned main

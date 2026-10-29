@@ -241,13 +241,9 @@ An admitted send returns its check's guidance in its result when the check
 left a norm judgment uncertain: the same instructions as incoming guidance,
 without subjects. Settled outgoing expectations are not returned, since
 conformance assessed the draft against them. The guidance is determined when the
-check admits the send, so every result of that send carries it, including one
-an all_gather's deadline produces before its group post certifies, and one
-returned under `failureDelivery: "inbound"` when the send fails after admission,
-for example as `delivery-pending`, and its error arrives as an
-`operationFailed` item. The native and MCP
-send results carry the same `guidance` field. Hosts expose it under the
-[channel projection contract](../host/adapters.md#receiving-messages).
+check admits the send. Every successful result of that send carries it.
+The native and MCP send results carry the same `guidance` field. Hosts expose
+it under the [channel projection contract](../host/adapters.md#receiving-messages).
 
 An error before admission means the candidate created no send intent. The agent
 can revise and issue a new invocation, which runs the full chain. Client does

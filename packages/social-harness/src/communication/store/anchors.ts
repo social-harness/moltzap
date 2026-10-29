@@ -30,6 +30,7 @@ import {
 } from "./database/index.js";
 import { admittedOperation, compareFirewallCheck } from "./firewall.js";
 import {
+  bindCollectivePostInTransaction,
   findProposalLock,
   findStagedReanchor,
   lockProposalInTransaction,
@@ -300,6 +301,9 @@ function bindIntentWithFoundation(
       ? putConversationFoundationInTransaction(database, binding.foundation)
       : requireConversationFoundation(database, intent);
   const postIntent = bindPostIntentInTransaction(database, intent);
+  if (binding.collective !== undefined) {
+    bindCollectivePostInTransaction(database, binding.collective, intent);
+  }
   return foundation === "inserted" || postIntent === "inserted"
     ? "inserted"
     : "existing";

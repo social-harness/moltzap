@@ -32,7 +32,6 @@ import { packageVersion } from "../../release/index.js";
 import {
   HARNESS_ACKNOWLEDGE_DELIVERY_TOOL,
   HARNESS_READ_INBOX_TOOL,
-  HARNESS_SEND_META_KEY,
   HARNESS_SEND_TOOL,
   INBOX_ITEM_EVENT,
   INBOX_PENDING_EVENT,
@@ -203,7 +202,7 @@ function neverReachedDaemon(cause: unknown): boolean {
 
 function callSend(
   client: Client,
-  ...[input, options]: Parameters<HarnessEndpoint["send"]>
+  input: Parameters<HarnessEndpoint["send"]>[0],
 ): Effect.Effect<SendResult, SendError | CollectiveError | FirewallSendError> {
   return Effect.tryPromise({
     try: (signal) =>
@@ -211,15 +210,6 @@ function callSend(
         {
           name: HARNESS_SEND_TOOL,
           arguments: { input },
-          ...(options?.failureDelivery === undefined
-            ? {}
-            : {
-                _meta: {
-                  [HARNESS_SEND_META_KEY]: {
-                    failureDelivery: options.failureDelivery,
-                  },
-                },
-              }),
         },
         { signal },
       ),
@@ -537,7 +527,7 @@ function acquireEndpoint(
     yield* acquireConnection(client, endpoint, options);
     const listenerActive = yield* Ref.make(false);
     return {
-      send: (input, options) => callSend(client, input, options),
+      send: (input) => callSend(client, input),
       messages: messages(client, listenerActive, endpoint, options),
     } satisfies HarnessEndpoint;
   });

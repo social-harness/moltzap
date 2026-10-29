@@ -8,10 +8,7 @@ import type {
   MiddlewareResult,
 } from "../firewall/evaluator/contract/index.js";
 import type { HarnessMessageReadyEvent } from "../harness/protocol/operations.js";
-import {
-  makeCollectiveOperations,
-  type ResultProvenance,
-} from "../communication/collectives/index.js";
+import { makeCollectiveOperations } from "../communication/collectives/index.js";
 import { makeEndpointEngine } from "../communication/conversations/index.js";
 import { InboundMessage } from "../communication/conversations/message.js";
 import {
@@ -228,14 +225,24 @@ const firewallRuntime = (subject: Fixture, installed: InstalledFirewall) =>
     const slot: {
       delivery?: Effect.Effect.Success<ReturnType<typeof makeHostDelivery>>;
     } = {};
-    const emit = (item: InboundItem, provenance?: ResultProvenance) =>
+    const emit: Parameters<typeof makeCollectiveOperations>[0]["emit"] = (
+      item,
+      provenance,
+      terminal,
+    ) =>
       Effect.suspend(() => {
         emitted.push(item);
         return slot.delivery === undefined
           ? Effect.void
-          : slot.delivery.queueLocalItem(item, provenance).pipe(Effect.orDie);
+          : slot.delivery
+              .queueLocalItem(item, provenance, terminal)
+              .pipe(Effect.orDie);
       });
-    const collectives = makeCollectiveOperations({
+    const collectives = yield* makeCollectiveOperations({
+      store,
+      observePost: (postId) => engine.observePost(postId),
+      sendAdmitted: (input, checkId) => engine.sendAdmitted(input, checkId),
+      reportStorageFault: () => Effect.void,
       self: Schema.decodeUnknownSync(AgentAddress)("agent:alice"),
       scope,
       lookupMember: (member) => engine.resolveAddress(member),

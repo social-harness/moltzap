@@ -1,9 +1,9 @@
 /** @file Collective operations, answers and the closed errors of a refused collective send. */
 
 import { Data, ParseResult, Schema } from "effect";
-import type { CheckedGuidance } from "../../firewall/outcome/index.js";
 import { exactStruct } from "../../encoding/exact.js";
 import { isCanonicalIdentifier } from "../../encoding/identifier.js";
+import { checkedGuidanceSchema } from "../../firewall/outcome/index.js";
 import {
   issuesText,
   type SendError,
@@ -12,10 +12,10 @@ import {
 } from "../conversations/errors.js";
 import {
   AgentAddress,
-  type GroupAddress,
+  GroupAddress,
   JsonValue,
   MessageAddressInput,
-  type PostId,
+  PostId,
   wellFormedString,
 } from "../records/values.js";
 
@@ -177,14 +177,6 @@ export const SendInput = Schema.Union(
  */
 export type SendInput = typeof SendInput.Type;
 
-/**
- * Where a refused collecting operation or response reports its error:
- * returned to the caller, or emitted as an `operationFailed` item while the
- * send completes.
- * @inline
- */
-export type FailureDelivery = "result" | "inbound";
-
 /** Members a send could not reach. */
 const unreachableMembers = Schema.NonEmptyArray(
   exactStruct({
@@ -194,26 +186,54 @@ const unreachableMembers = Schema.NonEmptyArray(
   }),
 );
 
-/**
- * What a completed send returns: a collecting operation names its id, and a
- * response the id of the request it answered. A plain message and a response
- * each create one post, and name it by `postId`, the id `read_conversation`
- * records carry and, for a plain message, the recipients' `multicast` items,
- * and by `address`, its conversation's canonical address. `guidance` carries
- * the local firewall's advice on the admitted send, such as a norm judgment
- * the decision provider left unsettled.
- */
-export interface SendResult {
-  readonly operationId?: CollectiveId;
-  readonly postId?: PostId;
-  readonly address?: AgentAddress | GroupAddress;
-  readonly guidance?: CheckedGuidance;
-}
+/** The local firewall's advice accompanies any successful invocation it admitted. */
+const sendGuidance = {
+  guidance: Schema.optionalWith(checkedGuidanceSchema, { exact: true }),
+};
 
-/** Private send completion includes the posts certified before returning to delivery. */
-export interface CollectiveSendOutcome extends SendResult {
+/** Owned fields from a different result kind cannot accompany this result. */
+const absentResultField = Schema.Never.annotations({
+  identifier: "AbsentSendResultField",
+});
+
+/**
+ * A successful invocation identifies its operation explicitly. Multicasts
+ * and responses name their certified post and canonical conversation address.
+ * Collecting operations name the operation whose result arrives in the inbox.
+ * A response also names the request it answered. Refusals use the error channel.
+ * Readers may ignore future fields, but fields owned by another result kind
+ * cannot describe this result.
+ */
+export const SendResult = Schema.Union(
+  Schema.Struct({
+    kind: Schema.Literal("multicast"),
+    postId: PostId,
+    address: Schema.Union(AgentAddress, GroupAddress),
+    operationId: Schema.optionalWith(absentResultField, { exact: true }),
+    ...sendGuidance,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("response"),
+    operationId: CollectiveId,
+    postId: PostId,
+    address: Schema.Union(AgentAddress, GroupAddress),
+    ...sendGuidance,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("collective"),
+    operationId: CollectiveId,
+    postId: Schema.optionalWith(absentResultField, { exact: true }),
+    address: Schema.optionalWith(absentResultField, { exact: true }),
+    ...sendGuidance,
+  }),
+).annotations({ identifier: "SendResult" });
+/** The successful cases of one send, derived from their owning schema. */
+export type SendResult = typeof SendResult.Type;
+
+/** Private completion retains the posts certified before the invocation returned. */
+export type CollectiveSendOutcome = SendResult & {
   readonly postIds: readonly PostId[];
-}
+};
 
 /**
  * Why a collective send was refused, discriminated by `kind`: a gather or

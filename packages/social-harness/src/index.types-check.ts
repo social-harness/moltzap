@@ -91,12 +91,28 @@ type ExpectedSendInput =
       to: MessageAddressInput;
       collectiveResponse: ExpectedCollectiveResponse;
     }>;
-type ExpectedSendResult = Readonly<{
-  operationId?: CollectiveId;
-  postId?: PostId;
-  address?: AgentAddress | GroupAddress;
-  guidance?: ExpectedCheckedGuidance;
-}>;
+type ExpectedSendResult =
+  | Readonly<{
+      kind: "multicast";
+      postId: PostId;
+      address: AgentAddress | GroupAddress;
+      operationId?: never;
+      guidance?: ExpectedCheckedGuidance;
+    }>
+  | Readonly<{
+      kind: "response";
+      operationId: CollectiveId;
+      postId: PostId;
+      address: AgentAddress | GroupAddress;
+      guidance?: ExpectedCheckedGuidance;
+    }>
+  | Readonly<{
+      kind: "collective";
+      operationId: CollectiveId;
+      postId?: never;
+      address?: never;
+      guidance?: ExpectedCheckedGuidance;
+    }>;
 type ExpectedDirectMessage = Readonly<{
   kind: "direct";
   postId: PostId;
@@ -222,9 +238,6 @@ type ExpectedDelivery = Readonly<{
 type ExpectedEndpoint = Readonly<{
   send: (
     input: SendInput,
-    options?: Readonly<{
-      failureDelivery?: "result" | "inbound";
-    }>,
   ) => Effect.Effect<
     SendResult,
     SendError | CollectiveError | FirewallSendError

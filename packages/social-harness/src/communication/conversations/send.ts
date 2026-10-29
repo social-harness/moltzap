@@ -13,6 +13,7 @@ import type { FirewallSendError } from "../../firewall/outcome/index.js";
 import type { MessageAddressInput } from "../records/values.js";
 import type { RouterWorkerUnavailableError } from "../router/index.js";
 import type {
+  CollectivePostBinding,
   ConversationFoundation,
   EndpointStoreError,
   FirewallCompletion,
@@ -62,6 +63,7 @@ import { markRetries, type RetryOutcome } from "./retry-markers.js";
 export interface EngineSendInput {
   readonly to: MessageAddressInput;
   readonly content: Content;
+  readonly collective?: CollectivePostBinding;
 }
 
 /** A locally certified post: its minted identity and its stored record's hash. */
@@ -654,6 +656,7 @@ export interface PreparedSend {
   readonly membership: VerifiedMembership;
   readonly intent: PostIntent;
   readonly canonicalIntent: EnginePostIntent["canonicalIntent"];
+  readonly collective?: CollectivePostBinding;
 }
 
 /**
@@ -841,7 +844,14 @@ function prepareIntent(
       PostIntentSchema,
       intent,
     ).pipe(Effect.mapError(representationFailure));
-    return { membership, intent, canonicalIntent };
+    return {
+      membership,
+      intent,
+      canonicalIntent,
+      ...(input.collective === undefined
+        ? {}
+        : { collective: input.collective }),
+    };
   });
 }
 
@@ -871,6 +881,9 @@ function bindPreparedIntent(
       return yield* bind({
         kind: "existing-conversation",
         intent: storedIntent(prepared),
+        ...(prepared.collective === undefined
+          ? {}
+          : { collective: prepared.collective }),
       }).pipe(
         Effect.catchTag("EndpointStoreError", (error) =>
           failBind(runtime, error),
@@ -882,6 +895,9 @@ function bindPreparedIntent(
       kind: "new-conversation",
       foundation: created.foundation,
       intent: storedIntent(prepared),
+      ...(prepared.collective === undefined
+        ? {}
+        : { collective: prepared.collective }),
     }).pipe(
       Effect.catchTag("EndpointStoreError", (error) =>
         failBind(runtime, error),

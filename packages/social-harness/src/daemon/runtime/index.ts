@@ -282,11 +282,11 @@ const initializeProtocol = (
               environment.state.handler?.notify.toolsChanged();
             },
             publishPending: Effect.ignore(reconciler),
-            emit: (item, provenance) =>
+            emit: (item, provenance, terminal) =>
               emitLocalItem(
                 environment,
                 reconciler,
-                environment.delivery.queueLocalItem(item, provenance),
+                environment.delivery.queueLocalItem(item, provenance, terminal),
               ),
           },
           agentCard,
@@ -518,9 +518,9 @@ function daemonDelivery(
       const { collectives } = state.identity.protocol;
       return {
         ...collectives,
-        send: (request, failureDelivery) =>
+        send: (request) =>
           checkExperimentSend(input.bootstrap.configuration, request).pipe(
-            Effect.zipRight(collectives.send(request, failureDelivery)),
+            Effect.zipRight(collectives.send(request)),
           ),
       };
     },

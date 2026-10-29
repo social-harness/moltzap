@@ -36,6 +36,7 @@ import {
   CollectiveError,
   CollectiveId,
   SendInput,
+  SendResult,
 } from "../../communication/collectives/forms.js";
 import { InboundItem } from "../../communication/collectives/inbound.js";
 import {
@@ -52,11 +53,7 @@ import { FirewallSendError } from "../../firewall/outcome/index.js";
 import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { acquireHarnessEndpoint } from "../endpoint/index.js";
 import { readRuntimeEvent } from "../inbox/inbox.js";
-import {
-  HARNESS_SEND_META_KEY,
-  HARNESS_SEND_TOOL,
-  INBOX_PENDING_EVENT,
-} from "../protocol/names.js";
+import { HARNESS_SEND_TOOL, INBOX_PENDING_EVENT } from "../protocol/names.js";
 import { eventIdOf } from "../protocol/operations.js";
 import { acquireHarnessMcpHttpServer } from "./http.js";
 import {
@@ -364,7 +361,11 @@ const sendInput = Schema.decodeUnknownSync(SendInput)({
   to: "agent:bob",
   text: "one semantic action",
 });
-const sendResult = {};
+const sendResult = Schema.decodeUnknownSync(SendResult)({
+  kind: "multicast",
+  postId: digest("pst_", 8),
+  address: "agent:bob",
+});
 
 /**
  * Bounds a hang in a boundary trace that starts servers and endpoints and
@@ -396,6 +397,7 @@ const distinguishesSendValidationFailures = () =>
       protocolActive: () => true,
       send: () =>
         Effect.succeed({
+          kind: "collective",
           operationId: Schema.decodeUnknownSync(CollectiveId)(
             `col_${"A".repeat(43)}`,
           ),
@@ -611,13 +613,8 @@ function acquireSendEndpoint(
 }
 
 const invalidSendCalls = [
-  { arguments: { input: sendInput, failureDelivery: "inbound" } },
-  ...[null, [], "key", { failureDelivery: "other" }, { unexpected: true }].map(
-    (metadata) => ({
-      arguments: { input: sendInput },
-      _meta: { [HARNESS_SEND_META_KEY]: metadata },
-    }),
-  ),
+  { arguments: { input: sendInput, unexpected: true } },
+  { arguments: { input: { to: "agent:bob", text: 1 } } },
 ];
 
 const checksSemanticSendSchema = (client: Client) =>
@@ -662,7 +659,7 @@ const checksSemanticSendSchema = (client: Client) =>
     }
   });
 
-/** Model arguments and malformed metadata must fail before any send reaches execution. */
+/** Invalid model arguments fail before execution; unrelated SDK metadata remains transport-owned. */
 function rejectsSendBookkeepingArguments() {
   return Effect.gen(function* () {
     const executed: unknown[] = [];
@@ -692,13 +689,10 @@ function rejectsSendBookkeepingArguments() {
         arguments: { input: sendInput },
         _meta: {
           "another.example/trace": { id: "independent" },
-          [HARNESS_SEND_META_KEY]: { failureDelivery: "inbound" },
         },
       }),
     );
-    expect(executed).toEqual([
-      { input: sendInput, failureDelivery: "inbound" },
-    ]);
+    expect(executed).toEqual([{ input: sendInput }]);
   });
 }
 

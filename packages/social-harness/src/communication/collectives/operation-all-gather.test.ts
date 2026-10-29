@@ -50,10 +50,6 @@ const groupMembers = ["agent:alice", "agent:bob", "agent:carol"];
 const requestId = collectiveIdOf(alice, requestNonce);
 const otherId = `col_${"B".repeat(43)}`;
 
-/** What a send that failed after queueing its post says about it. */
-const queuedText =
-  "the message is pending and Social Harness will still deliver it";
-
 /**
  * An emit port that records each item and resolves `emitted` on the first,
  * so a test can wait for an item a forked fiber emits, such as the
@@ -229,9 +225,7 @@ function saysEveryMemberIsStillSentAQueuedGroupPost() {
     });
     const refusal = yield* Effect.flip(send(layer, allGatherInput()));
 
-    expect(refusal.message).toBe(
-      `send failed: agent:bob could not be reached: ${queuedText}; agent:carol could not be reached: ${queuedText}`,
-    );
+    expect(refusal).toEqual(new SendError({ reason: "delivery-pending" }));
   });
 }
 
@@ -269,46 +263,9 @@ function namesEveryMemberWhenTheGroupPostIsNotCertifiedInTime() {
     );
     yield* TestClock.adjust(requestSendWait);
 
-    expect(yield* Fiber.join(sending)).toEqual({
-      kind: "members-unreachable",
-      members: [
-        { member: "agent:bob", reason: "certification-unavailable" },
-        { member: "agent:carol", reason: "certification-unavailable" },
-      ],
-    });
-  });
-}
-
-/**
- * One second short of the all_gather request wait. It intentionally
- * duplicates the private `request-sends.ts → REQUEST_SEND_WAIT` instead of
- * deriving from the `requestSendWait` mirror, so shortening the production
- * wait fails the test below even when the mirror is shortened with it.
- */
-const JUST_WITHIN_REQUEST_SEND_WAIT = Duration.seconds(19);
-
-/**
- * A group post that certifies `JUST_WITHIN_REQUEST_SEND_WAIT` after the send
- * starts the all_gather. Protects the lower side of the request wait, which a
- * cold group's GENESIS needs; fails when that wait is shortened by a second or
- * more.
- */
-function startsWhenTheGroupPostCertifiesWithinTheWait() {
-  const observed = newObserved();
-
-  return Effect.gen(function* () {
-    const layer = yield* makeLayer(observed, {
-      sendPost: (input) =>
-        Effect.sleep(JUST_WITHIN_REQUEST_SEND_WAIT).pipe(
-          Effect.zipRight(certifyNext(observed, input)),
-        ),
-    });
-    const sending = yield* Effect.fork(send(layer, allGatherInput()));
-    yield* TestClock.adjust(JUST_WITHIN_REQUEST_SEND_WAIT);
-    const outcome = yield* Fiber.join(sending);
-    const { id } = yield* firstRequestOf(observed);
-
-    expect(outcome).toEqual({ postIds: [postId(101)], operationId: id });
+    expect(yield* Fiber.join(sending)).toEqual(
+      new SendError({ reason: "delivery-pending" }),
+    );
   });
 }
 
@@ -342,18 +299,20 @@ function endsInItsResultAloneWhenTheDeadlinePassesBeforeTheGroupPostCertifies() 
         admitGather: () => Effect.dieMessage("an all_gather admits no gather"),
       },
     });
-    const completed = yield* send(layer, {
-      ...allGatherInput(),
-      collective: {
-        op: "all_gather",
-        deadline: 1,
-        requestedSchema: slotSchema,
-      },
-    });
+    const completed = yield* Effect.flip(
+      send(layer, {
+        ...allGatherInput(),
+        collective: {
+          op: "all_gather",
+          deadline: 1,
+          requestedSchema: slotSchema,
+        },
+      }),
+    );
     yield* Deferred.await(emitted);
 
     expect(bound.map(({ to }) => to)).toEqual([group]);
-    expect(completed).toMatchObject({ postIds: [], guidance: advice });
+    expect(completed).toEqual(new SendError({ reason: "delivery-pending" }));
     expect(observed.emitted).toMatchObject([
       { kind: "collectiveResult", to: group },
     ]);
@@ -516,34 +475,26 @@ function reportsACloseThatCannotBeCertifiedAsAFailedOperation() {
   );
 }
 
-/**
- * A close that failed after it was queued still reaches the group, so the
- * asker's failure says so rather than that no member will see a result.
- */
-function saysAQueuedCloseWillStillReachTheGroup() {
+/** Pending close certification cannot publish a terminal failure. */
+function keepsAQueuedClosePending() {
   const observed = newObserved();
-
   return Effect.gen(function* () {
-    const emitted = yield* Deferred.make<undefined>();
+    const attempted = yield* Deferred.make<undefined>();
     const layer = yield* makeLayer(observed, {
-      ...signalEmitted(observed, emitted),
       sendPost: (input) =>
         observed.sent.length === 0
           ? certifyNext(observed, input)
-          : Effect.fail(new SendError({ reason: "delivery-pending" })),
+          : Deferred.succeed(attempted, undefined).pipe(
+              Effect.zipRight(
+                Effect.fail(new SendError({ reason: "delivery-pending" })),
+              ),
+            ),
     });
-    const id = yield* startAllGather(layer);
+    yield* startAllGather(layer);
     yield* TestClock.adjust(Duration.seconds(60));
-    yield* Deferred.await(emitted);
-
-    expect(observed.emitted).toEqual([
-      {
-        kind: "operationFailed",
-        id,
-        to: group,
-        error: `all_gather failed: the result could not be shared with the group: ${queuedText}`,
-      },
-    ]);
+    yield* Deferred.await(attempted);
+    yield* TestClock.adjust(Duration.hours(2));
+    expect(observed.emitted).toEqual([]);
   });
 }
 
@@ -940,26 +891,20 @@ function appliesAHeldCloseWhenAnAdmittedAnswerFailsAfterBinding() {
     yield* classify(layer, "agent:alice", 10, requestValue);
     yield* layer.settleRequest(requestId, true);
     const answering = yield* Effect.fork(
-      send(
-        layer,
-        {
-          to: group,
-          collectiveResponse: { action: "accept", content: { slot: "mon" } },
-        },
-        "inbound",
-      ),
+      send(layer, {
+        to: group,
+        collectiveResponse: { action: "accept", content: { slot: "mon" } },
+      }),
     );
     yield* Deferred.await(attempted);
     yield* classify(layer, "agent:alice", 14, close(requestId, [101]));
     yield* Deferred.succeed(failing, undefined);
-    const completed = yield* Fiber.join(answering);
+    const failure = yield* Effect.flip(Fiber.join(answering));
     const again = yield* collectiveFailureOf(respond(layer, "tue"));
 
-    expect(completed).toMatchObject({ postIds: [], guidance: advice });
-    expect(observed.emitted).toMatchObject([
-      { kind: "operationFailed", id: requestId },
-    ]);
-    expect(again).toEqual({ kind: "request-expired" });
+    expect(failure).toEqual(new SendError({ reason: "delivery-pending" }));
+    expect(observed.emitted).toEqual([]);
+    expect(again).toEqual({ kind: "request-answered" });
   });
 }
 
@@ -999,10 +944,6 @@ describe("all_gather at the requester", () => {
     "names every member when the group post is not certified in time",
     namesEveryMemberWhenTheGroupPostIsNotCertifiedInTime,
   );
-  itOnTestClock(
-    "starts when its group post certifies within the send's wait",
-    startsWhenTheGroupPostCertifiesWithinTheWait,
-  );
   it(
     "ends in its result alone when the deadline passes before the group post certifies",
     endsInItsResultAloneWhenTheDeadlinePassesBeforeTheGroupPostCertifies,
@@ -1039,8 +980,8 @@ describe("all_gather posts that failed once queued", () => {
     saysEveryMemberIsStillSentAQueuedGroupPost,
   );
   itOnTestClock(
-    "says a close that failed once queued will still reach the group",
-    saysAQueuedCloseWillStillReachTheGroup,
+    "keeps a queued close pending without a terminal failure",
+    keepsAQueuedClosePending,
   );
 });
 

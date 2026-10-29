@@ -7,12 +7,12 @@ import {
   CollectiveId,
   decodeCollectiveFailure,
   SendInput,
+  SendResult,
 } from "../../communication/collectives/forms.js";
 import { InboundItem } from "../../communication/collectives/inbound.js";
 import {
   AgentAddress,
   GroupAddress,
-  PostId,
 } from "../../communication/records/index.js";
 import {
   DeliveryToken,
@@ -21,7 +21,6 @@ import {
 } from "../../communication/store/types.js";
 import { exactParseOptions, exactStruct } from "../../encoding/exact.js";
 import {
-  checkedGuidanceSchema,
   firewallRefusalSchema,
   type FirewallSendError,
   localGuidanceSchema,
@@ -114,16 +113,6 @@ export const harnessAcknowledgeDeliveryRequestSchema = exactStruct({
   }),
 });
 
-/**
- * Routing of a refused gather or response. `inbound` is for a host whose
- * tool returns before the send: the call completes and the error arrives as
- * an `operationFailed` item. The default returns it as the tool error.
- */
-export const harnessSendOptionsSchema = exactStruct({
-  failureDelivery: Schema.optionalWith(Schema.Literal("result", "inbound"), {
-    exact: true,
-  }),
-});
 /** The model-visible arguments of one send. */
 export const harnessSendArgumentsSchema = exactStruct({
   input: Schema.propertySignature(SendInput).annotations({
@@ -131,26 +120,7 @@ export const harnessSendArgumentsSchema = exactStruct({
       "One send to agent:<name> or group:<members>: text with an optional collective operation, or a collectiveResponse to an open request.",
   }),
 });
-const harnessSendRequestSchema = exactStruct({
-  ...harnessSendArgumentsSchema.fields,
-  ...harnessSendOptionsSchema.fields,
-});
-/**
- * A completed operation. A collecting operation names the id its answers and
- * result carry, and a response the id of the request it answered; a
- * multicast has none. A multicast and a response name the one post they
- * created and its conversation's canonical address. `guidance` is the local
- * firewall's advice on the admitted send, absent when it gave none.
- */
-// eslint-disable-next-line agent-code-guard/no-exported-brand-constructor -- The MCP catalog projects the send result to JSON Schema; hosts decode it through this file's boundary functions.
-export const harnessSendResultSchema = Schema.Struct({
-  operationId: Schema.optionalWith(CollectiveId, { exact: true }),
-  postId: Schema.optionalWith(PostId, { exact: true }),
-  address: Schema.optionalWith(Schema.Union(AgentAddress, GroupAddress), {
-    exact: true,
-  }),
-  guidance: Schema.optionalWith(checkedGuidanceSchema, { exact: true }),
-});
+const harnessSendRequestSchema = harnessSendArgumentsSchema;
 const harnessMessageReadyEventSchema = Schema.Struct({
   deliveryToken: DeliveryToken,
   item: InboundItem,
@@ -237,7 +207,7 @@ export type HarnessReadInboxResult = typeof inboxResultSchema.Type;
 export const decodeHarnessReadInboxResult =
   Schema.decodeUnknown(inboxResultSchema);
 
-/** Validate one send's input and options before it runs. */
+/** Validate one send's input before it runs. */
 export const decodeHarnessSendRequest = Schema.decodeUnknown(
   harnessSendRequestSchema,
 );
@@ -246,7 +216,7 @@ export const decodeHarnessSendRequest = Schema.decodeUnknown(
 export type HarnessAcknowledgeDeliveryRequest =
   typeof harnessAcknowledgeDeliveryRequestSchema.Type;
 
-/** Validated semantic input and runtime options of one send. */
+/** Validated semantic input of one send. */
 export type HarnessSendRequest = typeof harnessSendRequestSchema.Type;
 
 /**
@@ -306,7 +276,7 @@ export function sendErrorData(
 }
 
 /** Decoded result of one `send_message` operation. */
-export type HarnessSendResult = typeof harnessSendResultSchema.Type;
+export type HarnessSendResult = SendResult;
 
 /** One stable pending inbound item emitted by the daemon. */
 export type HarnessMessageReadyEvent =
@@ -367,7 +337,7 @@ export function decodeHarnessSendErrorData(
 export function decodeHarnessSendResult(
   value: unknown,
 ): Effect.Effect<HarnessSendResult, ParseResult.ParseError> {
-  return Schema.decodeUnknown(harnessSendResultSchema)(value);
+  return Schema.decodeUnknown(SendResult)(value);
 }
 
 /**
@@ -379,10 +349,7 @@ export function decodeHarnessSendResult(
 export function checkHarnessSendResult(
   value: unknown,
 ): Effect.Effect<HarnessSendResult, ParseResult.ParseError> {
-  return Schema.decodeUnknown(harnessSendResultSchema)(
-    value,
-    exactParseOptions,
-  );
+  return Schema.decodeUnknown(SendResult)(value, exactParseOptions);
 }
 
 /** The existing endpoint store owns both callback progress and immutable inbox items. */

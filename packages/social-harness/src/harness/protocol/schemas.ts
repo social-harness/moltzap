@@ -1,4 +1,4 @@
-/** @file MCP framing of the harness operations: send metadata, the empty result and validation diagnostics. */
+/** @file MCP framing of the harness operations: send arguments, the empty result and validation diagnostics. */
 
 import {
   Array,
@@ -10,10 +10,8 @@ import {
 } from "effect";
 import type { ValidationIssue } from "../../communication/conversations/errors.js";
 import { exactParseOptions } from "../../encoding/exact.js";
-import { HARNESS_SEND_META_KEY } from "./names.js";
 import {
   harnessSendArgumentsSchema,
-  harnessSendOptionsSchema,
   type HarnessSendRequest,
 } from "./operations.js";
 
@@ -25,32 +23,17 @@ const exactEmptyObject = Schema.Record({
 /** The empty result of an adapter operation. */
 export const harnessEmptyResultSchema = exactEmptyObject;
 
-const harnessSendMetadataSchema = Schema.Struct({
-  [HARNESS_SEND_META_KEY]: Schema.optionalWith(harnessSendOptionsSchema, {
-    exact: true,
-  }),
-});
-
 /**
- * Validate semantic arguments separately from runtime-owned send options.
- * Unrelated SDK metadata belongs to the transport and is not interpreted here.
+ * Validate the model-visible arguments at the daemon boundary.
  * @param toolArguments Model-visible arguments.
- * @param metadata The SDK request metadata, if supplied.
  * @returns One validated send request.
  */
 export function decodeHarnessSendCall(
   toolArguments: unknown,
-  metadata: unknown,
 ): Effect.Effect<HarnessSendRequest, ParseResult.ParseError> {
-  return Effect.gen(function* () {
-    const args = yield* Schema.decodeUnknown(harnessSendArgumentsSchema, {
-      errors: "all",
-    })(toolArguments);
-    const runtime = yield* Schema.decodeUnknown(harnessSendMetadataSchema, {
-      errors: "all",
-    })(metadata === undefined ? {} : metadata);
-    return { ...args, ...runtime[HARNESS_SEND_META_KEY] };
-  }).pipe(Effect.withSpan("decodeHarnessSendCall"));
+  return Schema.decodeUnknown(harnessSendArgumentsSchema, {
+    errors: "all",
+  })(toolArguments).pipe(Effect.withSpan("decodeHarnessSendCall"));
 }
 
 /** Decoded empty adapter-operation result. */

@@ -11,7 +11,6 @@ import {
   collectiveKey,
   firstRequestOf,
   gatherInput,
-  gatherTo,
   latePostDelay,
   makeLayer,
   multicastPart,
@@ -137,7 +136,11 @@ function continuesAGatherPastMembersItCouldNotReach() {
     const outcome = yield* Fiber.join(sending);
     const { id } = yield* firstRequestOf(observed);
 
-    expect(outcome).toEqual({ postIds: [postId(101)], operationId: id });
+    expect(outcome).toEqual({
+      kind: "collective",
+      postIds: [postId(101)],
+      operationId: id,
+    });
     expect(observed.sent.map((post) => post.to)).toEqual(["agent:bob"]);
 
     yield* classifyPost(
@@ -241,15 +244,17 @@ function failsAGatherNoneOfWhosePostsWasDelivered() {
  */
 function saysEachMemberIsStillSentAQueuedRequestPost() {
   return Effect.gen(function* () {
-    const layer = yield* makeLayer(newObserved(), {
+    const observed = newObserved();
+    const layer = yield* makeLayer(observed, {
       sendPost: () =>
         Effect.fail(new SendError({ reason: "delivery-pending" })),
     });
-    const refusal = yield* Effect.flip(send(layer, gatherInput()));
-
-    expect(refusal.message).toBe(
-      `send failed: agent:bob could not be reached: ${queuedText}; agent:carol could not be reached: ${queuedText}`,
-    );
+    const outcome = yield* send(layer, gatherInput());
+    expect(outcome).toMatchObject({ kind: "collective" });
+    yield* TestClock.adjust(Duration.seconds(60));
+    expect(observed.emitted).toMatchObject([
+      { kind: "collectiveResult", id: outcome.operationId },
+    ]);
   });
 }
 
@@ -327,21 +332,18 @@ function namesTheUndeclaredRequiredField() {
   });
 }
 
-function emitsARefusedGatherAsAnOperationFailedItemWhenFailuresGoInbound() {
+function returnsAnInvalidGatherAsARefusal() {
   const observed = newObserved();
 
   return Effect.gen(function* () {
     const layer = yield* makeLayer(observed, { unknown: ["agent:carol"] });
-    const outcome = yield* send(layer, gatherInput(), "inbound");
+    const failure = yield* collectiveFailureOf(send(layer, gatherInput()));
 
-    expect(observed.emitted).toEqual([
-      {
-        kind: "operationFailed",
-        id: outcome.operationId,
-        to: gatherTo,
-        error: "send failed: agent:carol is not a known agent",
-      },
-    ]);
+    expect(failure).toMatchObject({
+      kind: "members-unreachable",
+      members: [{ member: "agent:carol", reason: "unknown-agent" }],
+    });
+    expect(observed.emitted).toEqual([]);
   });
 }
 
@@ -410,8 +412,8 @@ describe("collective sends", () => {
   );
 
   it(
-    "emits a refused gather as an operationFailed item when failures go inbound",
-    emitsARefusedGatherAsAnOperationFailedItemWhenFailuresGoInbound,
+    "returns an invalid gather as a refusal",
+    returnsAnInvalidGatherAsARefusal,
   );
 });
 

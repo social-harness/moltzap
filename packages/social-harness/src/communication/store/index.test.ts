@@ -345,15 +345,9 @@ function refusesAReanchorAwayFromAStagedSuccessor() {
 }
 
 /**
- * The endpoint locks a successor of its certified head, then stages a
- * re-anchor candidate away from the head's anchor, and then receives the
- * successor whole, which it stores without voting for it. The store refuses
- * this endpoint's durability vote for the successor, whether a whole record's
- * durability certificate carries it or the endpoint casts it, so its
- * signatures never land on both a re-anchor away from the head and a
- * durability certificate extending it, in this order as in the other. Fails
- * when the store checks only the proposal lock before it keeps the vote, or
- * checks the re-anchor only for a vote the endpoint casts.
+ * Certificate adoption retains verified signatures after departure without
+ * authorizing a new local durability vote. An identical retained signature
+ * remains replayable, and repeated adoption keeps one remote delivery.
  */
 function refusesALocalVoteUnderAnAnchorItReanchorsAwayFrom() {
   const directory = stateDirectory();
@@ -380,20 +374,22 @@ function refusesALocalVoteUnderAnAnchorItReanchorsAwayFrom() {
         previousRecordHash: head.recordHash,
       });
       yield* store.stageReanchor(reanchorAwayFrom(head));
-      yield* expectReason(
-        store.applyCertifiedRecord(
-          {
-            ...successor,
-            durabilityEvidence: [...successor.durabilityEvidence, localVote],
-          },
-          delivery,
-        ),
-        "conflict",
-      );
       yield* store.applyCertifiedRecord(successor, delivery);
-
       yield* expectReason(store.mergeEvidence(localVote), "conflict");
       expect((yield* store.recover()).evidence).not.toContainEqual(localVote);
+
+      yield* store.applyCertifiedRecord(
+        {
+          ...successor,
+          durabilityEvidence: [...successor.durabilityEvidence, localVote],
+        },
+        delivery,
+      );
+      expect(yield* store.mergeEvidence(localVote)).toBe(EXISTING_MUTATION);
+      const recovered = yield* store.recover();
+      expect(recovered.positions[0]?.headRecordHash).toBe(successor.recordHash);
+      expect(recovered.evidence).toContainEqual(localVote);
+      expect(recovered.pendingDeliveries).toHaveLength(1);
     }),
   );
 }
@@ -1064,7 +1060,7 @@ describe("endpoint re-anchor candidates", () => {
   );
 
   it(
-    "refuses its own durability vote under an anchor it staged a candidate away from",
+    "adopts verified certificates after departure while refusing new local votes",
     refusesALocalVoteUnderAnAnchorItReanchorsAwayFrom,
   );
 });

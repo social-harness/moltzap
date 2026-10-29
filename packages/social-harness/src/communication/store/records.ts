@@ -70,9 +70,16 @@ export function mergeEvidence(
   evidence: ProtocolEvidence,
 ): StoreMutation {
   validateEvidence(evidence);
-  return transaction(database, () =>
-    mergeEvidenceInTransaction(database, evidence),
-  );
+  return transaction(database, () => {
+    requireEvidenceSubject(database, evidence);
+    const existing = findEvidence(database, evidence);
+    if (existing !== undefined) {
+      requireSameBytes(existing, evidence.canonicalEvidence);
+      return "existing";
+    }
+    requireLocalEvidenceLock(database, evidence);
+    return mergeEvidenceInTransaction(database, evidence);
+  });
 }
 
 /**
@@ -151,8 +158,8 @@ export function promoteRecord(
  * certification, where a restart could not tell it from a record this
  * endpoint staged for its own durability vote. This endpoint casts no vote
  * for it, so its core is staged even under an anchor this endpoint has
- * staged a re-anchor candidate away from; a vote of this endpoint's own in
- * its certificate is held to the rules it would be cast under.
+ * staged a re-anchor candidate away from. Retaining an already verified
+ * signature, including this endpoint's earlier signature, casts no new vote.
  *
  * @param database Exclusively owned endpoint database.
  * @param record Verified complete certified record.
@@ -344,7 +351,6 @@ function requireEvidenceSubject(
   evidence: ProtocolEvidence,
 ): void {
   requireMembership(database, evidence.conversationId);
-  requireLocalEvidenceLock(database, evidence);
   if (evidence.kind === "action") {
     if (!hasActionSubject(database, evidence)) {
       throw new StoreSignal("not-found");

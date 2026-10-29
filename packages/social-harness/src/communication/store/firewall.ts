@@ -18,7 +18,9 @@ import {
   transaction,
 } from "./database/index.js";
 import { putInboxItem, retirePendingDelivery } from "./inbox.js";
+import { retainCollectiveInTransaction } from "./rows/index.js";
 import {
+  type CollectiveOperationInput,
   DeliveryToken,
   type FirewallActivation,
   type FirewallAttempt,
@@ -406,10 +408,24 @@ export function admitFirewallOperation(
   database: DatabaseSync,
   completion: FirewallCompletion,
   canonicalCandidate: Uint8Array,
+  collective?: CollectiveOperationInput,
 ): FirewallCommit {
-  return transaction(database, () =>
-    compareFirewallCheck(database, completion, "outgoing", canonicalCandidate),
-  );
+  return transaction(database, () => {
+    const disposition = compareFirewallCheck(
+      database,
+      completion,
+      "outgoing",
+      canonicalCandidate,
+    );
+    if (disposition === "admitted" && collective !== undefined) {
+      requireSameBytes(collective.canonicalRequest, canonicalCandidate);
+      retainCollectiveInTransaction(database, {
+        ...collective,
+        admittedCheckId: completion.checkId,
+      });
+    }
+    return disposition;
+  });
 }
 
 /**

@@ -12,7 +12,6 @@ import { describe, expect } from "vitest";
 import { FirewallPolicyError } from "../../firewall/index.js";
 import { AgentName, PrincipalId } from "../../identity/agents.js";
 import { OperationId } from "../../identity/registry/contract.js";
-import { HARNESS_SEND_META_KEY } from "../protocol/names.js";
 import { decodeHarnessSendErrorData } from "../protocol/operations.js";
 import {
   type HarnessMcpOperations,
@@ -144,12 +143,6 @@ const invalidInvocationCalls = [
       },
     },
     paths: [["input", "collectiveResponse", "content", "choices", 0]],
-  },
-  {
-    name: "send_message",
-    arguments: { input: { to: "agent:bob", text: "hello" } },
-    metadata: { [HARNESS_SEND_META_KEY]: { failureDelivery: "other" } },
-    paths: [[HARNESS_SEND_META_KEY, "failureDelivery"]],
   },
 ];
 /** Malformed registration fields and the schema whose description each error message states for its field. */
@@ -292,23 +285,6 @@ function checksInvocationPrivacy() {
     });
     yield* checkDiagnostic(malformedText.error?.data, ["input", "text"]);
     expect(JSON.stringify(malformedText.error)).not.toContain(sentinel);
-    const malformedToken = yield* request(
-      handler,
-      "tools/call",
-      {
-        name: "send_message",
-        arguments: { input: { to: "agent:bob", text: sentinel } },
-      },
-      { [HARNESS_SEND_META_KEY]: { failureDelivery: `${sentinel}\u0000` } },
-    );
-    expect(malformedToken.error).toMatchObject({
-      code: ProtocolErrorCode.InvalidParams,
-    });
-    yield* checkDiagnostic(malformedToken.error?.data, [
-      HARNESS_SEND_META_KEY,
-      "failureDelivery",
-    ]);
-    expect(JSON.stringify(malformedToken.error)).not.toContain(sentinel);
   });
 }
 
@@ -365,12 +341,10 @@ describe("MCP tool argument diagnostics", () => {
           ...operations,
           protocolActive: () => true,
         });
-        const response = yield* request(
-          handler,
-          "tools/call",
-          { name: call.name, arguments: call.arguments },
-          call.metadata,
-        );
+        const response = yield* request(handler, "tools/call", {
+          name: call.name,
+          arguments: call.arguments,
+        });
         expect(response.error).toMatchObject({
           code: ProtocolErrorCode.InvalidParams,
         });
