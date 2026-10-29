@@ -267,7 +267,10 @@ const collectiveFailure = Schema.Union(
     ),
   }),
   exactStruct({ kind: Schema.Literal("request-none") }),
-  exactStruct({ kind: Schema.Literal("request-ambiguous") }),
+  exactStruct({
+    kind: Schema.Literal("request-ambiguous"),
+    openIds: Schema.Array(CollectiveId),
+  }),
   exactStruct({ kind: Schema.Literal("request-answered") }),
   exactStruct({ kind: Schema.Literal("request-expired") }),
   exactStruct({ kind: Schema.Literal("deadline-passed") }),
@@ -337,14 +340,15 @@ export function answerFieldsText(fields: AnswerFieldFailures): string {
 /** A failure that carries nothing beyond its kind. */
 type FixedFailureKind = Exclude<
   CollectiveFailure["kind"],
-  "members-unreachable" | "schema-invalid" | "answer-invalid"
+  | "members-unreachable"
+  | "schema-invalid"
+  | "answer-invalid"
+  | "request-ambiguous"
 >;
 
 /** The text of each failure that carries nothing beyond its kind. */
 const fixedFailureText: Record<FixedFailureKind, string> = {
   "request-none": "reply failed: no question is open in this conversation",
-  "request-ambiguous":
-    "reply failed: more than one question is open in this conversation, so the reply must name the id of the one it answers",
   "request-answered": "reply failed: the question was already answered",
   "request-expired": "reply failed: the question's deadline has passed",
   "deadline-passed":
@@ -368,6 +372,8 @@ function describeCollectiveFailure(failure: CollectiveFailure): string {
       return `send failed: the form is invalid (${failure.detail})`;
     case "answer-invalid":
       return `reply failed: ${answerFieldsText(failure.fields)}`;
+    case "request-ambiguous":
+      return `reply failed: more than one question is open in this conversation, so the reply must name the id of the one it answers: ${failure.openIds.join(", ")}`;
     default: {
       const exhaustive: never = failure;
       return exhaustive;
@@ -412,14 +418,10 @@ export interface OpenElsewhere {
 export class CollectiveError extends Data.TaggedError("CollectiveError")<{
   readonly id: CollectiveId;
   readonly failure: CollectiveFailure;
-  readonly openIds?: readonly CollectiveId[];
   readonly openElsewhere?: readonly OpenElsewhere[];
 }> {
   override get message(): string {
     const text = describeCollectiveFailure(this.failure);
-    if (this.openIds !== undefined) {
-      return `${text}: ${this.openIds.join(", ")}`;
-    }
     return this.openElsewhere === undefined
       ? text
       : `${text}; open in other conversations: ${this.openElsewhere

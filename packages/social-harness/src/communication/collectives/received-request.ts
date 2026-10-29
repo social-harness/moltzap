@@ -176,8 +176,7 @@ export const unmatchedAnswerError = (
   unmatched.kind === "request-ambiguous"
     ? new CollectiveError({
         id,
-        failure: { kind: unmatched.kind },
-        openIds: unmatched.openIds,
+        failure: { kind: unmatched.kind, openIds: unmatched.openIds },
       })
     : new CollectiveError({
         id,

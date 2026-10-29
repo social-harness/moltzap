@@ -166,7 +166,6 @@ function collectiveRefusal(
   return new CollectiveError({
     id: decoded.id,
     failure: decoded.failure,
-    ...(decoded.openIds === undefined ? {} : { openIds: decoded.openIds }),
     ...(decoded.openElsewhere === undefined
       ? {}
       : { openElsewhere: decoded.openElsewhere }),

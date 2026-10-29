@@ -427,6 +427,7 @@ const carriesARefusalDetailAcrossTheDaemonBoundary = (
     const error = yield* endpoint.send(sendInput).pipe(Effect.flip);
 
     expect(error.message).toBe(refusal.message);
+    expect(error).toStrictEqual(refusal);
   });
 
 /** Refusals whose message names what failed: a send's detail, the open ids of an answer that named no request, and the questions open in other conversations. */
@@ -437,11 +438,13 @@ const DETAILED_REFUSALS = [
   }),
   new CollectiveError({
     id: Schema.decodeUnknownSync(CollectiveId)(`col_${"A".repeat(43)}`),
-    failure: { kind: "request-ambiguous" },
-    openIds: [
-      Schema.decodeUnknownSync(CollectiveId)(`col_${"B".repeat(42)}A`),
-      Schema.decodeUnknownSync(CollectiveId)(`col_${"C".repeat(42)}A`),
-    ],
+    failure: {
+      kind: "request-ambiguous",
+      openIds: [
+        Schema.decodeUnknownSync(CollectiveId)(`col_${"B".repeat(42)}A`),
+        Schema.decodeUnknownSync(CollectiveId)(`col_${"C".repeat(42)}A`),
+      ],
+    },
   }),
   new CollectiveError({
     id: Schema.decodeUnknownSync(CollectiveId)(`col_${"A".repeat(43)}`),

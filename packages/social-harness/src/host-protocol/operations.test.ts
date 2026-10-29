@@ -287,6 +287,11 @@ describe("Harness send refusal data", () => {
   it.each([
     { reason: "firewall-refused", checkId: "chk_x" },
     { reason: "collective-failed" },
+    {
+      reason: "collective-failed",
+      id: collectiveId,
+      failure: { kind: "request-ambiguous" },
+    },
   ])(
     "refuses a firewall or collective refusal missing its fields: %j",
     (data) => {
@@ -298,12 +303,15 @@ describe("Harness send refusal data", () => {
   it("carries the open ids of an answer that named none of several open requests", () => {
     const refused = new CollectiveError({
       id: collectiveId,
-      failure: { kind: "request-ambiguous" },
-      openIds,
+      failure: { kind: "request-ambiguous", openIds },
     });
     const data = sendErrorData(refused);
 
-    expect(data).toMatchObject({ openIds });
+    expect(data).toEqual({
+      reason: "collective-failed",
+      id: collectiveId,
+      failure: { kind: "request-ambiguous", openIds },
+    });
     expect(Effect.runSync(decodeHarnessSendErrorData(data))).toEqual(data);
   });
 });
