@@ -1,35 +1,25 @@
 /** @file Condition-only process composition for adjacent wire releases. */
 import { WireVersions } from "@moltzap/social-harness/test";
-import { Data, Effect, Layer } from "effect";
-import { installInternalResolution } from "./internal-resolution.js";
+import { Effect, Layer } from "effect";
 import { runRegistryMain } from "./main.js";
+import { layer } from "./server.js";
 
-/** A startup module that fails to load, with its cause in the reported message. */
-class RegistryModuleLoadError extends Data.TaggedError(
-  "RegistryModuleLoadError",
-)<{
-  readonly cause: unknown;
-  readonly message: string;
-}> {}
-
-/** Internal Identity capabilities stay within the Registry process boundary. */
+/**
+ * Starts Registry with explicit wire compatibility sets and its ordinary
+ * environment settings.
+ *
+ * Start Node with both `sharness-test` and `sharness-internal` conditions.
+ * The supplied history extends the library's built-in retained history.
+ * Startup failures print their message to stderr and produce a nonzero exit.
+ */
 export function startRegistry(versions: {
   readonly emitted: string;
   readonly live: readonly string[];
   readonly history: readonly string[];
 }): void {
-  installInternalResolution();
-  Effect.gen(function* () {
-    const { layer } = yield* Effect.tryPromise({
-      try: () => import("./server.js"),
-      catch: (cause) =>
-        new RegistryModuleLoadError({
-          cause,
-          message: `Could not load Registry startup module ./server.js: ${cause instanceof Error ? cause.message : String(cause)}`,
-        }),
-    });
-    return yield* Layer.launch(layer).pipe(
-      Effect.provideService(WireVersions, versions),
-    );
-  }).pipe(Effect.withSpan("startRegistry"), runRegistryMain);
+  Layer.launch(layer).pipe(
+    Effect.provideService(WireVersions, versions),
+    Effect.withSpan("startRegistry"),
+    runRegistryMain,
+  );
 }

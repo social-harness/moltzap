@@ -2,7 +2,7 @@
 
 import { Data } from "effect";
 
-/** Every reason one addressed send can fail, in a fixed order. */
+/** Closed reason codes carried by sends and per-member collective failures. */
 export const sendFailureReasons = [
   "invalid-address",
   "unknown-agent",
@@ -17,7 +17,7 @@ export const sendFailureReasons = [
   "outcome-unknown",
 ] as const;
 
-/** Why one addressed send failed. */
+/** Distinguishes a refusal from work that remains pending or uncertain. */
 export type SendFailure = (typeof sendFailureReasons)[number];
 
 /**
@@ -45,7 +45,10 @@ export const sendFailureText: Readonly<Record<SendFailure, string>> = {
     "the send did not complete; the message may or may not have been sent",
 };
 
-/** One field that failed validation: where it is and what it should be. */
+/**
+ * A field path and schema expectation, without the rejected value.
+ * @inline
+ */
 export interface ValidationIssue {
   readonly path: ReadonlyArray<string | number>;
   readonly message: string;
@@ -71,11 +74,11 @@ export function issuesText(
 }
 
 /**
- * An addressed send failed before local certification completed. `detail`
- * names the specific cause when the failing step knows it, such as which
- * agent is unknown; the message is what a host hands its model, and names
- * each invalid field. Validation issues expose only field paths and schema
- * expectations.
+ * A send was refused, remains pending, or has an uncertain outcome. Check
+ * `reason` before retrying: `delivery-pending` retains the original post,
+ * and `outcome-unknown` leaves its completion uncertain. Repeating either
+ * operation can create a second message. The host can present `message` to
+ * its agent. Validation issues identify fields without exposing their values.
  */
 export class SendError extends Data.TaggedError("SendError")<{
   readonly reason: SendFailure;
@@ -90,6 +93,7 @@ export class SendError extends Data.TaggedError("SendError")<{
   }
 }
 
+/** @inline */
 type ListenFailure =
   | "already-listening"
   | "consumer-revoked"
@@ -103,7 +107,7 @@ export class ListenError extends Data.TaggedError("ListenError")<{
 }> {
   override get message(): string {
     return this.reason === "consumer-revoked"
-      ? "listen failed: consumer-revoked. Reacquire the subscription. Docs: https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/ingress.md#polling-consumer"
+      ? "listen failed: consumer-revoked. Reacquire the subscription. Docs: https://github.com/social-harness/moltzap/blob/main/docs/reference/spec/host/receiving.md#polling-consumer"
       : `listen failed: ${this.reason}`;
   }
 }
@@ -129,7 +133,7 @@ export class DeliveryAcknowledgeError extends Data.TaggedError(
 }> {
   override get message(): string {
     return this.reason === "consumer-revoked"
-      ? "delivery acknowledgment failed: consumer-revoked. Recover unread work through a new subscription. Docs: https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/ingress.md#polling-consumer"
+      ? "delivery acknowledgment failed: consumer-revoked. Recover unread work through a new subscription. Docs: https://github.com/social-harness/moltzap/blob/main/docs/reference/spec/host/receiving.md#polling-consumer"
       : `delivery acknowledgment failed: ${this.reason}`;
   }
 }

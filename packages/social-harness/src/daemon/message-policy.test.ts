@@ -28,13 +28,13 @@ const REGISTRY_SIGNER = {
   kty: "OKP",
   x: "y1j1FUgbqjCPeQVEnllv-2euwn_s9DeDkfEh3gk_OJ0",
 };
-const FORMAT = "org.social-harness/message-policy/v1";
+const FORMAT = "org.social-harness/message-policy/v2";
 const DOCUMENT = {
   format: FORMAT,
   mode: "guidance",
   incoming: [{ use: "acknowledgements" }],
   outgoing: [{ use: "credentials" }],
-  english: {
+  text: {
     fixedRules: [
       {
         id: "builtin.policy-owner",
@@ -88,7 +88,7 @@ it("names the policy file when its rules cannot be installed", () =>
           SHARNESS_ADMISSION_CREDENTIAL_FILE: admission,
           SHARNESS_MESSAGE_POLICY_FILE: file({
             ...UNAVAILABLE_DOCUMENT,
-            english: {
+            text: {
               initialRules: [
                 {
                   id: "credentials",
@@ -108,11 +108,11 @@ it("names the policy file when its rules cannot be installed", () =>
     expect(error.message).toContain("could not be installed");
   }));
 
-it("names stored English rules when the policy file drops its english block", () =>
+it("names stored natural-language rules when the policy file drops its text block", () =>
   Effect.gen(function* () {
-    const withEnglish = file({
+    const withText = file({
       ...UNAVAILABLE_DOCUMENT,
-      english: {
+      text: {
         initialRules: [
           {
             id: "owner.weekday-meetings",
@@ -123,12 +123,12 @@ it("names stored English rules when the policy file drops its english block", ()
         ],
       },
     });
-    const withoutEnglish = file({ format: FORMAT, mode: "guidance" });
-    const error = yield* reinstall(withEnglish, withoutEnglish);
+    const withoutText = file({ format: FORMAT, mode: "guidance" });
+    const error = yield* reinstall(withText, withoutText);
     const startup = policyInstallationError(error);
     expect(error.reason).toBe("not-configured");
-    expect(startup.message).toContain("holds English rules");
-    expect(startup.message).toContain("message-firewall#stored-english-rules");
+    expect(startup.message).toContain("holds natural-language rules");
+    expect(startup.message).toContain("message-firewall#stored-text-rules");
   }));
 
 it("refuses a policy file beside a composition's own firewall", () =>

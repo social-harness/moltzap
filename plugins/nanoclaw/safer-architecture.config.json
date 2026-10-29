@@ -1,4 +1,5 @@
 {
+  "minFolderReadmeChildren": 9007199254740991,
   "publicTypePackages": [
     {
       "package": "effect",

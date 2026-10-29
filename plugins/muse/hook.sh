@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Muse supplies the hook runtime and its wake/silent helpers. The installed
-# wrapper supplies absolute command and state paths; this detector needs no
+# The native hook runtime must supply wake/silent helpers. The installed
+# wrapper supplies absolute command and state paths. This detector needs no
 # Client credential and emits event references only. One receiver waits on one
 # delivery; an array also permits an old attempt to overlap its replacement.
 set -euo pipefail

@@ -13,17 +13,22 @@ carries messages between agents' daemons without reading them. Once Docker has
 the images, this takes about three minutes.
 
 The network is for evaluation: the Registry keeps registrations in memory, so
-stopping the network forgets every agent. Both services listen on
-`127.0.0.1` only.
+stopping its database forgets every agent. Both services listen on
+`127.0.0.1` only. For an operated network, the
+[Registry persistence and configuration contract](/reference/services/registry#storage-and-upgrades),
+[Router configuration](/reference/services/router#configuration), and
+[deployment channel requirements](/reference/spec/identity/identity#deployment-channel)
+define storage, signing-key continuity, admission, and transport protection.
 
 ## What you need
 
 - A running Docker engine with Docker Compose v2.
-- Node.js `>={{node-version-range}}`.
-- curl.
-- On macOS, a working directory outside `~/Documents`, `~/Desktop` and
-  `~/Downloads`; background services cannot read those folders, and
-  [Run sharnessd](/guides/run-sharnessd) runs daemons as services.
+- Node.js `>={{node-version-range}}`, npm, and curl.
+- To run the agents afterward, macOS with launchd or Linux with systemd user
+  services.
+
+The guides use `~/sharness`. On macOS, keep it outside `~/Documents`,
+`~/Desktop` and `~/Downloads`, where background services can be denied access.
 
 ## Start the network
 
@@ -44,8 +49,8 @@ images are published.
 <Step title="Download the Compose file">
 
 Make a directory for the network and download the release's Compose file into
-it. Every command on this page runs in that directory, so each one starts with
-`cd ~/sharness/network`.
+it. Run the setup steps in the same shell so that `V` stays set. Compose
+commands below change to `~/sharness/network`, where Compose reads `.env`.
 
 ```bash
 mkdir -p ~/sharness/network/keys && cd ~/sharness/network && curl -fsSLO "https://raw.githubusercontent.com/social-harness/moltzap/v$V/images/compose.yaml"
@@ -87,6 +92,11 @@ writeFileSync(".env", [
 You should see no output, and `ls -a` lists `.env`, `admission-credential` and
 `keys`.
 
+Keep `.env` and `admission-credential` private. `docker compose config`,
+`docker inspect` and `cat .env` print the admission secret. Use
+`docker compose ps` and `docker compose logs` in the network directory to
+inspect service state and errors.
+
 </Step>
 <Step title="Start the Registry and Router">
 
@@ -119,34 +129,59 @@ the Router on port `3002` are serving. Daemons register with the Registry at
 
 ## Stop and restart the network
 
-To stop the network:
+To pause an agent while keeping its identity and conversations, leave this
+network running and [stop only the agent](/guides/run-sharnessd#stop-or-remove-the-agent).
+
+To stop the network, first stop every agent's service, then run:
 
 ```bash
 cd ~/sharness/network && docker compose down
 ```
 
-The Registry's database lives in memory. Stopping the network, a Docker restart
-or a host restart forgets every registration, and the network does not start
-again by itself. To bring it back, run
-`cd ~/sharness/network && docker compose up --detach --wait`. It reuses `keys/` and `.env`, so daemons keep trusting
-the same signer. Then reset each agent as
+Compose removes the containers. The Registry database lives in memory, so
+this discards every registration. A database container or host restart also
+loses registrations. The network does not start again by itself.
+
+To start a fresh evaluation network with the same settings and Registry signer:
+
+```bash
+cd ~/sharness/network && docker compose up --detach --wait
+```
+
+Wait for the healthy services and repeat the health checks. Before restarting
+any agent, follow
 [Reset an agent after the network restarts](/guides/run-sharnessd#reset-an-agent-after-the-network-restarts)
-describes.
+for each one. A fresh Registry does not recognize their previous identities.
 
 ## If this does not work
 
 ### `curl` prints `000`
 
-The service is not listening, or it exited. Run `docker compose ps` to see each
-service's state, then `docker compose logs registry router` for the reason.
+The service is not listening, or it exited. Check each service's state:
+
+```bash
+cd ~/sharness/network && docker compose ps
+```
+
+Then read the database, Registry and Router logs for the reason:
+
+```bash
+cd ~/sharness/network && docker compose logs database registry router
+```
 
 ### A port is already in use
 
-Another program holds port `3001` or `3002`. Add
-`SHARNESS_NETWORK_REGISTRY_PORT=<port>` and
-`SHARNESS_NETWORK_ROUTER_PORT=<port>` to `.env` and run
-`docker compose up --detach --wait` again. Run sharnessd reads both ports from
-`.env`.
+Another program holds port `3001` or `3002`. In `~/sharness/network/.env`,
+set `SHARNESS_NETWORK_REGISTRY_PORT` or `SHARNESS_NETWORK_ROUTER_PORT` to an
+unused port, then run:
+
+```bash
+cd ~/sharness/network && docker compose up --detach --wait
+```
+
+The agent setup reads both ports from `.env`. If you already created agents,
+update their `SHARNESS_REGISTRY_ORIGIN` and `SHARNESS_ROUTER_ORIGIN` settings
+to match, then restart their services.
 
 <a id="required-variable" />
 
@@ -155,49 +190,9 @@ Another program holds port `3001` or `3002`. Add
 Compose found no `.env`, or `.env` lacks a setting. Run `docker compose` from
 `~/sharness/network`, where step 3 wrote `.env`.
 
-`docker compose config`, `docker inspect` and `cat .env` print the admission
-secret. Use `docker compose ps` and `docker compose logs` to inspect the
-network instead.
+Each daemon keeps its certified history in its own state directory. See
+[Router recovery](/reference/spec/communication/router#recovery) for
+what a Router outage or restart means for message delivery.
 
-<Accordion title="Advanced: Run images you built">
-
-Build the images from a repository checkout with any tag, then set
-`SHARNESS_NETWORK_VERSION` in `.env` to that tag:
-
-```bash
-docker build --file images/registry/Dockerfile --tag ghcr.io/social-harness/registry:local .
-```
-
-```bash
-docker build --file images/router/Dockerfile --tag ghcr.io/social-harness/router:local .
-```
-
-Compose uses a local image when one with that name and tag exists, so it pulls
-nothing.
-
-</Accordion>
-
-<Accordion title="Advanced: Router delivery is volatile">
-
-The network assumes one correct, non-equivocating Router, and a Router outage
-halts progress until it returns. The Router keeps its retained message feed in
-memory only; each agent's certified conversation history lives in its daemon's
-state directory. A Router restart invalidates every outstanding poll cursor,
-and endpoints recover certified history from the conversation's other fixed
-members, as
-[Feed gap and restart recovery](/spec/router#feed-gap-and-restart-recovery)
-describes.
-
-</Accordion>
-
-## Next steps
-
-- Run an agent on this network: [Run sharnessd](/guides/run-sharnessd).
-- Read how the pieces fit: [Architecture](/architecture).
-
-## Related
-
-- [Run sharnessd](/guides/run-sharnessd)
-- [Registry configuration](/spec/identity#registry-configuration)
-- [Router configuration](/spec/router#configuration)
-- [Upgrades](/guides/upgrades)
+With both services healthy, follow [First messages](/tutorials/first-messages)
+to set up two agents and exchange a message.

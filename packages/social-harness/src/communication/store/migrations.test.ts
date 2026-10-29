@@ -14,8 +14,8 @@ import {
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, expect } from "vitest";
 import {
-  buildCertifiedGenesis,
-  storeCertifiedGenesis,
+  buildCertifiedFirstMessage,
+  storeCertifiedFirstMessage,
 } from "../../__tests__/certified-history-fixtures.js";
 import { fixture } from "../../__tests__/firewall-runtime-fixtures.js";
 import { routerInstanceId } from "../../__tests__/router-worker-fixtures.js";
@@ -89,13 +89,13 @@ it("preserves history through a synthetic next-version step and writes a private
     const history = yield* Effect.scoped(
       Effect.gen(function* () {
         const subject = yield* fixture;
-        const record = yield* buildCertifiedGenesis(
+        const record = yield* buildCertifiedFirstMessage(
           subject.local,
           subject.remote,
           subject.membership,
           routerInstanceId(8),
         );
-        yield* storeCertifiedGenesis(
+        yield* storeCertifiedFirstMessage(
           subject.store,
           subject.local.card,
           subject.membership,

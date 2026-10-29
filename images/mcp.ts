@@ -61,7 +61,6 @@ class ToolFailure extends Data.TaggedError("ToolFailure")<{
   readonly entry: string;
 }> {}
 
-/** The `status` fields this script reads. */
 const statusResult = Schema.Union(
   Schema.Struct({ kind: Schema.Literal("unregistered") }),
   Schema.Struct({
@@ -70,7 +69,6 @@ const statusResult = Schema.Union(
   }),
 );
 
-/** Every outcome `register` returns. */
 const registerResult = Schema.Struct({
   kind: Schema.Literal(
     "registered",
@@ -93,7 +91,6 @@ const failureData = Schema.Struct({
   detail: Schema.optional(Schema.String),
 });
 
-/** Tool arguments given on the command line as one JSON object. */
 const toolArguments = Schema.parseJson(
   Schema.Record({ key: Schema.String, value: Schema.Unknown }),
 );
@@ -187,7 +184,6 @@ function submit(
   });
 }
 
-/** Prints a registration or fails with the refusal `kind` names. */
 function outcome(
   kind: typeof registerResult.Type.kind,
   name: string,
@@ -222,7 +218,6 @@ function outcome(
   );
 }
 
-/** Calls `tool` at `url` with the JSON arguments `json` and prints its result. */
 function call(
   url: URL,
   tool: string,
@@ -295,7 +290,6 @@ function savedOrNewRequest(
   );
 }
 
-/** Deletes the saved request once the daemon has given a final answer. */
 function forgetRequest(): Effect.Effect<
   void,
   CommandError,
@@ -311,7 +305,6 @@ function forgetRequest(): Effect.Effect<
   );
 }
 
-/** Connects one MCP client to `url` for the enclosing scope. */
 function connect(url: URL): Effect.Effect<Client, CommandError, Scope.Scope> {
   const client = new Client(
     { name: "sharness-mcp", version: "1.0.0" },
@@ -334,10 +327,6 @@ function connect(url: URL): Effect.Effect<Client, CommandError, Scope.Scope> {
   );
 }
 
-/**
- * Calls `tool` once and answers its structured result. A JSON-RPC error
- * fails as {@link toolFailure} says; a tool error fails with its text.
- */
 function callTool(
   client: Client,
   tool: string,
@@ -409,7 +398,6 @@ function toolFailure(tool: string, cause: unknown): ToolFailure {
   });
 }
 
-/** Decodes the result of `tool`, which this script reads only through `schema`. */
 function decode<A, I>(
   schema: Schema.Schema<A, I>,
   value: unknown,

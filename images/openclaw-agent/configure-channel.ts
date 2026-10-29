@@ -12,7 +12,6 @@ import { basename, dirname, join } from "node:path";
 
 const IMAGE_CHANNEL = `${process.env.SHARNESS_LAUNCHER_DIRECTORY ?? "/opt/social-harness/launcher"}/current/node_modules/@moltzap/openclaw-channel`;
 
-/** OpenClaw reads its configuration after this process exits. */
 async function configureChannel(): Promise<undefined> {
   const path = process.env.OPENCLAW_CONFIG_PATH;
   if (path === undefined || path.length === 0) {
@@ -75,7 +74,6 @@ function selectChannel(config: unknown): boolean {
   return true;
 }
 
-/** Initialize OpenClaw's optional plugin loading objects before selecting our channel. */
 function pluginLoad(config: unknown): Record<string, unknown> | undefined {
   if (!isRecord(config)) {
     return undefined;
@@ -88,14 +86,12 @@ function pluginLoad(config: unknown): Record<string, unknown> | undefined {
   return isRecord(config.plugins.load) ? config.plugins.load : undefined;
 }
 
-/** Narrows all load paths before selecting the hosted channel among them. */
 function isStringArray(value: unknown): value is string[] {
   return (
     Array.isArray(value) && value.every((path) => typeof path === "string")
   );
 }
 
-/** Narrows parsed objects before their configuration keys are read. */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

@@ -3,6 +3,7 @@
 import { scoped as it } from "@effect/vitest";
 import { Duration, Effect, Option, TestClock } from "effect";
 import { describe, expect } from "vitest";
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import {
   classifyPost,
   collectiveKey,
@@ -17,7 +18,7 @@ import {
   requestPost,
   slotSchema,
 } from "../../__tests__/collective-operation-fixtures.js";
-import { decodeCollectiveValue } from "./part/index.js";
+import { decodeCollectiveValue } from "./wire/index.js";
 
 function deliversAMulticastWithoutItsCollectivePart() {
   return Effect.gen(function* () {
@@ -90,7 +91,13 @@ function consumesAPostThatCarriesTwoCollectiveParts() {
 }
 
 function consumesACloseForAnAllGatherThisEndpointWasNotAsked() {
-  const close = { kind: "close", id: requestId, included: [] };
+  const close = {
+    kind: "close",
+    id: requestId,
+    included: [],
+    closedAt: 60_000,
+    closedBy: "deadline",
+  };
 
   return Effect.gen(function* () {
     yield* decodeCollectiveValue(close);
@@ -142,7 +149,7 @@ function deliversARequestPostAsACollectiveRequestItem() {
         op: "gather",
         id: requestId,
         postId: postId(9),
-        from: "agent:bob",
+        from: testAgentView("agent:bob"),
         to: "agent:bob",
         question: questionText,
         requestedSchema: slotSchema,

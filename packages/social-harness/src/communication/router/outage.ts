@@ -17,7 +17,7 @@ import {
   type RouterWorkerServices,
   type RouterWorkerState,
   RouterWorkerTransportError,
-} from "./worker/index.js";
+} from "./worker-contracts.js";
 
 /** Every failure the Router client raises; poll and send share one union. */
 type RouterCallError = Effect.Effect.Error<

@@ -258,8 +258,8 @@ const requireJsonSuccess = (
  * One decoded copy of a caller's request record. Schema encoding reads members
  * directly and does not catch a throwing getter, so the record is read once
  * here under a try, and every later step reads only the copy. A record the
- * Schema refuses fails as `RegistryInvalidResponseError`, as an unencodable
- * request always has; a record whose members throw fails as `unreadable`.
+ * Schema refuses fails as `RegistryInvalidResponseError`. A record whose
+ * members throw fails as `unreadable`.
  */
 const snapshotRequest = <A, I, E>(
   schema: Schema.Schema<A, I>,

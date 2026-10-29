@@ -3,19 +3,20 @@
 import { Schema } from "effect";
 import { exactStruct } from "../../encoding/exact.js";
 import { withheldText } from "../../firewall/outcome/index.js";
+import { AgentView } from "../../identity/cards.js";
 import { InboundMessage } from "../conversations/message.js";
 import {
-  AgentAddress,
   MessageAddressInput,
   PostId,
   wellFormedString,
 } from "../records/values.js";
 import {
   AnswerContent,
+  collectiveClosure,
   CollectiveId,
   EpochMillis,
   RequestedSchema,
-} from "./forms.js";
+} from "./contracts.js";
 
 /* eslint-disable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Effect Schemas share their domain names with the nominal values they decode. */
 
@@ -42,7 +43,7 @@ const collectiveRequestItem = exactStruct({
   op: collectingOp,
   id: CollectiveId,
   postId: PostId,
-  from: AgentAddress,
+  from: AgentView,
   to: MessageAddressInput,
   question: wellFormedString,
   requestedSchema: RequestedSchema,
@@ -64,33 +65,37 @@ const memberOutcome = Schema.Union(
   exactStruct({ kind: Schema.Literal("no-answer") }),
   withheldText,
 );
-/** One member's recorded outcome. */
+/**
+ * One member's outcome after the local firewall limits the text the host may see.
+ * @useDeclaredType
+ */
 export type CollectiveMemberOutcome = typeof memberOutcome.Type;
 
 /**
  * The result of a gather this endpoint started, or of an all_gather this
  * endpoint started or was asked: exactly one outcome per member, in member
  * order. `to` is the address the operation named. Every member's all_gather
- * result is built from exactly the answers the requester's close lists, so
- * each endpoint's result is the same. The question is the requester's text,
- * or `withheld` where this endpoint's firewall withheld the request.
+ * result is built from exactly the answers the requester's close lists.
+ * Each endpoint derives the same shared result before its local firewall
+ * projection. The question is the requester's text, or `withheld` where
+ * this endpoint's firewall withheld the request.
  */
 const collectiveResultItem = exactStruct({
   kind: Schema.Literal("collectiveResult"),
   op: collectingOp,
   id: CollectiveId,
+  ...collectiveClosure.fields,
   to: MessageAddressInput,
   question: Schema.Union(wellFormedString, withheldText),
   outcomes: Schema.NonEmptyArray(
-    exactStruct({ member: AgentAddress, outcome: memberOutcome }),
+    exactStruct({ member: AgentView, outcome: memberOutcome }),
   ),
 });
 
 /**
- * A collective send that failed after the host's tool had returned, or an
- * all_gather whose close could not be certified. `to` is the operation's
- * address, or the request's conversation for a response; `error` is the text
- * a waiting host would have received as the tool error.
+ * An all_gather close refused before binding. The operation already started,
+ * so its failure arrives through the inbox. A bound close remains pending
+ * until certification and cannot produce this item.
  */
 const operationFailedItem = exactStruct({
   kind: Schema.Literal("operationFailed"),
@@ -114,8 +119,20 @@ export const InboundItem = Schema.Union(
 ).annotations({
   identifier: "InboundItem",
 });
-/** A validated inbound item. */
+/**
+ * Host-visible peer content or a result produced by the local daemon.
+ * @useDeclaredType
+ */
 export type InboundItem = typeof InboundItem.Type;
+
+/**
+ * The result delivered when a gather or all-gather completes.
+ * @useDeclaredType
+ */
+export type CollectiveResultItem = Extract<
+  InboundItem,
+  { readonly kind: "collectiveResult" }
+>;
 
 /** Archived run ledgers map approval refusals to the current evidence hold. */
 const archivedWithheldText = exactStruct({
@@ -149,7 +166,7 @@ export const historyExportItem = Schema.Union(
     question: Schema.Union(wellFormedString, archivedWithheldText),
     outcomes: Schema.NonEmptyArray(
       exactStruct({
-        member: AgentAddress,
+        member: AgentView,
         outcome: Schema.Union(memberOutcome, archivedWithheldText),
       }),
     ),

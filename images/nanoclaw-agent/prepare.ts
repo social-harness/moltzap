@@ -38,10 +38,6 @@ async function allowBetterSqliteBuild(workspacePath: string) {
   await writeFile(workspacePath, updated);
 }
 
-/**
- * The manifest object and its `scripts` object, refusing a `package.json`
- * that is not a JSON object or has no `scripts` object.
- */
 function decodeManifest(text: string): {
   readonly object: Record<string, unknown>;
   readonly scripts: Record<string, unknown>;
@@ -53,7 +49,6 @@ function decodeManifest(text: string): {
   return { object: parsed, scripts: parsed.scripts };
 }
 
-/** Whether `value` is a non-array object. */
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

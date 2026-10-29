@@ -52,6 +52,7 @@
     "oxfmt": "catalog:",
     "puppeteer": "catalog:",
     "typedoc": "catalog:",
+    "typedoc-plugin-missing-exports": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:",
     "yaml": "catalog:"

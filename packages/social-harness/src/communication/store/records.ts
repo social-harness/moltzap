@@ -29,7 +29,7 @@ import {
   findProposalLock,
   findStagedReanchor,
   findStagedRecord,
-  GENESIS_PREDECESSOR,
+  FIRST_MESSAGE_PREDECESSOR,
   lockProposalInTransaction,
   readStoredIdentity,
   readStoredPosition,
@@ -50,7 +50,13 @@ export function stageRecordForDissemination(
 ): StoreMutation {
   validateStagedRecord(record);
   return transaction(database, () => {
-    const staged = stageRecordInTransaction(database, record, "vote");
+    if (
+      findStagedRecord(database, record.conversationId, record.recordHash) ===
+      undefined
+    ) {
+      requireNoReanchorAwayFrom(database, record);
+    }
+    const staged = stageRecordInTransaction(database, record);
     const obligation = retainDisseminationInTransaction(database, record);
     return staged === "inserted" || obligation === "inserted"
       ? "inserted"
@@ -70,9 +76,16 @@ export function mergeEvidence(
   evidence: ProtocolEvidence,
 ): StoreMutation {
   validateEvidence(evidence);
-  return transaction(database, () =>
-    mergeEvidenceInTransaction(database, evidence),
-  );
+  return transaction(database, () => {
+    requireEvidenceSubject(database, evidence);
+    const existing = findEvidence(database, evidence);
+    if (existing !== undefined) {
+      requireSameBytes(existing, evidence.canonicalEvidence);
+      return "existing";
+    }
+    requireLocalEvidenceLock(database, evidence);
+    return mergeEvidenceInTransaction(database, evidence);
+  });
 }
 
 /**
@@ -108,7 +121,7 @@ export function supersedeProposalLock(
     const held = findProposalLock(
       database,
       lock.conversationId,
-      lock.previousRecordHash ?? GENESIS_PREDECESSOR,
+      lock.previousRecordHash ?? FIRST_MESSAGE_PREDECESSOR,
     );
     if (held !== undefined && held.actionHash !== lock.actionHash) {
       if (hasStagedAction(database, held)) {
@@ -151,8 +164,8 @@ export function promoteRecord(
  * certification, where a restart could not tell it from a record this
  * endpoint staged for its own durability vote. This endpoint casts no vote
  * for it, so its core is staged even under an anchor this endpoint has
- * staged a re-anchor candidate away from; a vote of this endpoint's own in
- * its certificate is held to the rules it would be cast under.
+ * staged a re-anchor candidate away from. Retaining an already verified
+ * signature, including this endpoint's earlier signature, casts no new vote.
  *
  * @param database Exclusively owned endpoint database.
  * @param record Verified complete certified record.
@@ -166,7 +179,7 @@ export function applyCertifiedRecord(
 ): StoreMutation {
   validateCertifiedRecord(record);
   return transaction(database, () => {
-    const staged = stageRecordInTransaction(database, record, "certified");
+    const staged = stageRecordInTransaction(database, record);
     const promoted = promoteRecordInTransaction(database, record, delivery);
     return staged === "inserted" || promoted === "inserted"
       ? "inserted"
@@ -175,19 +188,14 @@ export function applyCertifiedRecord(
 }
 
 /**
- * Stage one record core. A record staged for this endpoint's durability vote
- * is refused under an anchor it has staged a re-anchor candidate away from; a
- * certified record's core is staged regardless, since it takes no vote.
+ * Retain one verified record core without authorizing a local signature.
  * @param database Exclusively owned endpoint database.
  * @param record Verified record core and private bindings.
- * @param purpose Whether this endpoint votes for the record or holds its
- *     durability certificate.
  * @returns Whether the record was inserted or already staged.
  */
 function stageRecordInTransaction(
   database: DatabaseSync,
   record: StagedRecord,
-  purpose: "vote" | "certified",
 ): StoreMutation {
   const existing = findStagedRecord(
     database,
@@ -199,9 +207,6 @@ function stageRecordInTransaction(
     return "existing";
   }
   requireRecordPosition(database, record);
-  if (purpose === "vote") {
-    requireNoReanchorAwayFrom(database, record);
-  }
   database
     .prepare(
       `INSERT INTO staged_records
@@ -313,7 +318,7 @@ function requireRecordPosition(
   const proposalLock = findProposalLock(
     database,
     record.conversationId,
-    record.previousRecordHash ?? GENESIS_PREDECESSOR,
+    record.previousRecordHash ?? FIRST_MESSAGE_PREDECESSOR,
   );
   if (proposalLock !== undefined) {
     requireEqual(proposalLock.actionHash, record.actionHash);
@@ -344,7 +349,6 @@ function requireEvidenceSubject(
   evidence: ProtocolEvidence,
 ): void {
   requireMembership(database, evidence.conversationId);
-  requireLocalEvidenceLock(database, evidence);
   if (evidence.kind === "action") {
     if (!hasActionSubject(database, evidence)) {
       throw new StoreSignal("not-found");
@@ -403,7 +407,7 @@ function requireLocalDurabilityEvidenceLock(
   const proposalLock = findProposalLock(
     database,
     record.conversationId,
-    record.previousRecordHash ?? GENESIS_PREDECESSOR,
+    record.previousRecordHash ?? FIRST_MESSAGE_PREDECESSOR,
   );
   if (
     proposalLock === undefined ||

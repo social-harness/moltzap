@@ -1,4 +1,4 @@
-/** @file Behaviors, from owner files or a policy_update, map to English rules and preserve fixed policy and editable state. */
+/** @file Behaviors, from owner files or a policy_update, map to natural-language rules and preserve fixed policy and editable state. */
 
 import { live as it } from "@effect/vitest";
 import { ConfigProvider, Effect, Layer, Option, Schema } from "effect";
@@ -7,6 +7,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect } from "vitest";
+import type { EndpointStore } from "../../communication/store/index.js";
 import {
   stateDirectory,
   withStore,
@@ -28,7 +29,7 @@ import { loadMessagePolicy } from "./load.js";
 
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- Rule fields, policy entry paths and startup phases are the owner policy contract. */
 
-const FORMAT = "org.social-harness/message-policy/v1";
+const FORMAT = "org.social-harness/message-policy/v2";
 const BODY = "Start conversations during working hours.";
 const FIXED = {
   id: "inline-fixed",
@@ -81,14 +82,20 @@ metadata:
 Each member holds a slot before confirming it.
 `;
 
+/** Rule-count cases leave enough request budget to isolate the editable-document bound. */
 function seedFixture(count: number) {
   const subject = fixture();
   writeFileSync(
     subject.path,
     JSON.stringify({
       ...subject.document,
-      english: {
-        ...subject.document.english,
+      textSettings: {
+        minimumProbability: 0.5,
+        maximumRequestBytes: 1_000_000,
+        timeoutMilliseconds: 15_000,
+      },
+      text: {
+        ...subject.document.text,
         initialRules: Array.from({ length: count }, () => INITIAL).map(
           (rule, index) => ({
             ...rule,
@@ -112,7 +119,7 @@ function fixture(fixed = BEHAVIOR, initial = NORM) {
     format: FORMAT,
     mode: "guidance",
     decisionProvider: { kind: "unavailable" },
-    english: {
+    text: {
       fixedRules: [FIXED],
       initialRules: [INITIAL],
       fixedBehaviors: ["fixed"],
@@ -145,7 +152,7 @@ it(
   Effect.fn(function* () {
     const { path } = fixture();
     const { policy } = yield* loaded(path);
-    expect(policy.english?.fixedRules).toEqual([
+    expect(policy.text?.fixedRules).toEqual([
       FIXED,
       {
         id: "working-hours",
@@ -154,7 +161,7 @@ it(
         feedback: { text: "Wait until working hours.", nextAction: "wait" },
       },
     ]);
-    expect(policy.english?.initialRules).toEqual([
+    expect(policy.text?.initialRules).toEqual([
       INITIAL,
       {
         id: "ask-first",
@@ -174,9 +181,13 @@ it(
             expect.objectContaining({ id: "working-hours" }),
           ]),
         );
-        expect(read.rules).toEqual(policy.english?.initialRules);
+        expect(read.rules).toMatchObject(policy.text?.initialRules ?? []);
+        expect(read.rules).toMatchObject([
+          { owner: "owner" },
+          { owner: "owner" },
+        ]);
         const error = yield* installed.policy
-          .update({ remove: ["working-hours"] })
+          .update({ remove: ["working-hours"] }, "owner")
           .pipe(Effect.flip);
         expect(error).toMatchObject({
           reason: "fixed-rule",
@@ -194,7 +205,7 @@ it(
   Effect.fn(function* () {
     const { path } = fixture(BEHAVIOR.padEnd(MAXIMUM_BEHAVIOR_BYTES, " "));
     const { policy } = yield* loaded(path);
-    expect(policy.english?.fixedRules).toContainEqual(
+    expect(policy.text?.fixedRules).toContainEqual(
       expect.objectContaining({ id: "working-hours", text: BODY }),
     );
   }),
@@ -209,7 +220,7 @@ it(
     ).replaceAll("\n", "\r\n");
     const { path } = fixture(BEHAVIOR, text);
     const { policy } = yield* loaded(path);
-    expect(policy.english?.initialRules).toContainEqual(
+    expect(policy.text?.initialRules).toContainEqual(
       expect.objectContaining({
         id: "ask-first",
         guidance: "Ask first.\nWait for permission.\n",
@@ -227,7 +238,10 @@ it(
     yield* withStore(state, (store) =>
       Effect.gen(function* () {
         const installed = yield* installEditableFirewall(first, store);
-        yield* installed.policy.update({ remove: [INITIAL.id, "ask-first"] });
+        yield* installed.policy.update(
+          { remove: [INITIAL.id, "ask-first"] },
+          "owner",
+        );
       }),
     );
     writeFileSync(
@@ -246,7 +260,7 @@ it(
       "private-invalid-behavior",
     );
     const error = yield* loaded(path).pipe(Effect.flip);
-    expect(error.message).toContain("english.initialBehaviors.0");
+    expect(error.message).toContain("text.initialBehaviors.0");
   }),
 );
 
@@ -261,7 +275,7 @@ it(
     );
     const fixedChanged = yield* options(path);
     expect(fixedChanged.codeDigest).not.toBe(first.codeDigest);
-    expect(fixedChanged.english?.fixedRules).toEqual(first.english?.fixedRules);
+    expect(fixedChanged.text?.fixedRules).toEqual(first.text?.fixedRules);
     writeFileSync(
       join(root, "initial", "BEHAVIOR.md"),
       NORM.replace("Ask first.", "Consult the owner first."),
@@ -279,7 +293,7 @@ it(
       path,
       JSON.stringify({
         ...document,
-        english: { fixedRules: [FIXED], initialRules: [INITIAL] },
+        text: { fixedRules: [FIXED], initialRules: [INITIAL] },
       }),
     );
     const first = yield* options(path);
@@ -289,7 +303,7 @@ it(
         mode: "guidance",
         incoming: [],
         outgoing: [],
-        english: {
+        text: {
           fixedRules: [FIXED],
           initialRules: [INITIAL],
           fixedBehaviors: [],
@@ -302,7 +316,7 @@ it(
           maximumInputBytes: 512_000,
           maximumResultBytes: 2_000_000,
         },
-        englishSettings: {
+        textSettings: {
           minimumProbability: 0.5,
           maximumRequestBytes: 384_000,
           timeoutMilliseconds: 15_000,
@@ -335,10 +349,10 @@ it(
     const { path, root } = seedFixture(256);
     const error = yield* loaded(path).pipe(Effect.flip);
     expect(error.behaviorReason).toBe("editable-limit");
-    expect(error.message).toContain("english.initialBehaviors.0");
+    expect(error.message).toContain("text.initialBehaviors.0");
     const startup = yield* startupFailure(path, root);
     expect(startup.phase).toBe("configuration");
-    expect(startup.message).toContain("english.initialBehaviors.0");
+    expect(startup.message).toContain("text.initialBehaviors.0");
   }),
 );
 
@@ -349,15 +363,15 @@ it("attributes an invalid inline seed to initialRules before reading behaviors",
       path,
       JSON.stringify({
         ...document,
-        english: {
-          ...document.english,
+        text: {
+          ...document.text,
           initialRules: [{ id: INITIAL.id, kind: "norm", text: INITIAL.text }],
           fixedBehaviors: ["absent"],
         },
       }),
     );
     const error = yield* loaded(path).pipe(Effect.flip);
-    expect(error.message).toContain("invalid at english.initialRules");
+    expect(error.message).toContain("invalid at text.initialRules");
     expect(error.behaviorReason).toBeUndefined();
   }));
 
@@ -477,8 +491,8 @@ describe.each(["fixedBehaviors", "initialBehaviors"] as const)(
             path,
             JSON.stringify({
               ...document,
-              english: {
-                ...document.english,
+              text: {
+                ...document.text,
                 fixedBehaviors: [],
                 initialBehaviors: [],
                 [field]: [directory],
@@ -487,11 +501,11 @@ describe.each(["fixedBehaviors", "initialBehaviors"] as const)(
           );
           const error = yield* loaded(path).pipe(Effect.flip);
           expect(error.behaviorReason).toBe(reason);
-          expect(error.message).toContain(`english.${field}.0`);
+          expect(error.message).toContain(`text.${field}.0`);
           expect(error.message).not.toContain("private-invalid-behavior");
           const startup = yield* startupFailure(path, root);
           expect(startup.phase).toBe("configuration");
-          expect(startup.message).toContain(`english.${field}.0`);
+          expect(startup.message).toContain(`text.${field}.0`);
           expect(startup.message).not.toContain("private-invalid-behavior");
         }),
     );
@@ -537,8 +551,8 @@ it.each(["fixedBehaviors", "initialBehaviors"] as const)(
         JSON.stringify({
           ...document,
           outgoing: [{ use: "credentials" }],
-          english: {
-            ...document.english,
+          text: {
+            ...document.text,
             fixedBehaviors: [],
             initialBehaviors: [],
             [field]: ["fixed"],
@@ -549,10 +563,10 @@ it.each(["fixedBehaviors", "initialBehaviors"] as const)(
         { messagePolicyFile: path },
         readCredential,
       ).pipe(Effect.flip);
-      expect(error.message).toContain(`english.${field}.0`);
+      expect(error.message).toContain(`text.${field}.0`);
       const startup = yield* startupFailure(path, root);
       expect(startup.phase).toBe("configuration");
-      expect(startup.message).toContain(`english.${field}.0`);
+      expect(startup.message).toContain(`text.${field}.0`);
     }),
 );
 
@@ -564,14 +578,14 @@ it(
       path,
       JSON.stringify({
         ...document,
-        english: { ...document.english, fixedBehaviors: ["fixed", "fixed"] },
+        text: { ...document.text, fixedBehaviors: ["fixed", "fixed"] },
       }),
     );
     const error = yield* loaded(path).pipe(Effect.flip);
-    expect(error.message).toContain("english.fixedBehaviors.1");
+    expect(error.message).toContain("text.fixedBehaviors.1");
     const startup = yield* startupFailure(path, root);
     expect(startup.phase).toBe("configuration");
-    expect(startup.message).toContain("english.fixedBehaviors.1");
+    expect(startup.message).toContain("text.fixedBehaviors.1");
   }),
 );
 
@@ -581,7 +595,7 @@ it.each(["", "\uFEFF"])(
     Effect.gen(function* () {
       const { path } = fixture(prefix + BEHAVIOR);
       const { policy } = yield* loaded(path);
-      expect(policy.english?.fixedRules).toContainEqual(
+      expect(policy.text?.fixedRules).toContainEqual(
         expect.objectContaining({ id: "working-hours", text: BODY }),
       );
     }),
@@ -594,19 +608,19 @@ it("composes and encodes a decoded inline policy without adding behavior paths",
         format: FORMAT,
         mode: "guidance",
         decisionProvider: { kind: "unavailable" },
-        english: { fixedRules: [FIXED], initialRules: [INITIAL] },
+        text: { fixedRules: [FIXED], initialRules: [INITIAL] },
       }),
     );
     const encoded = yield* Schema.encode(MessagePolicy)(policy);
-    expect(encoded.english).toEqual({
+    expect(encoded.text).toEqual({
       fixedRules: [FIXED],
       initialRules: [INITIAL],
     });
     const composed = yield* messagePolicyFirewall(policy, {
       decide: () => Effect.die("no assessment requested"),
     });
-    expect(composed.english?.fixedRules).toEqual([FIXED]);
-    expect(composed.english?.initialRules).toEqual([INITIAL]);
+    expect(composed.text?.fixedRules).toEqual([FIXED]);
+    expect(composed.text?.initialRules).toEqual([INITIAL]);
   }));
 
 it.each([
@@ -621,7 +635,7 @@ it.each([
       const policy = yield* decodeMessagePolicy(
         JSON.stringify({
           ...document,
-          english: { [field]: [entry] },
+          text: { [field]: [entry] },
         }),
       );
       const error = yield* messagePolicyFirewall(policy, {
@@ -651,7 +665,7 @@ it.each(["directory", "file"] as const)(
       }
       const error = yield* loaded(path).pipe(Effect.flip);
       expect(error.behaviorReason).toBe("schema");
-      expect(error.message).toContain("english.fixedBehaviors.0");
+      expect(error.message).toContain("text.fixedBehaviors.0");
     }),
 );
 
@@ -662,7 +676,7 @@ it("refuses a BEHAVIOR.md that is a directory", () =>
     mkdirSync(join(root, "fixed", "BEHAVIOR.md"));
     const error = yield* loaded(path).pipe(Effect.flip);
     expect(error.behaviorReason).toBe("not-a-file");
-    expect(error.message).toContain("english.fixedBehaviors.0");
+    expect(error.message).toContain("text.fixedBehaviors.0");
   }));
 
 it("names the fixed behavior colliding with a stored editable rule", () =>
@@ -674,9 +688,12 @@ it("names the fixed behavior colliding with a stored editable rule", () =>
       state,
       Effect.fn(function* (store) {
         const installed = yield* installEditableFirewall(configuration, store);
-        yield* installed.policy.update({
-          add: [{ ...FIXED, id: "new-fixed" }],
-        });
+        yield* installed.policy.update(
+          {
+            add: [{ ...FIXED, id: "new-fixed" }],
+          },
+          "owner",
+        );
       }),
     );
     writeFileSync(
@@ -700,7 +717,7 @@ it("names the fixed behavior colliding with a stored editable rule", () =>
         );
         expect(error.reason).toBe("fixed-rule");
         expect(startup.message).toContain(
-          "invalid at english.fixedBehaviors.0 (duplicate-id)",
+          "invalid at text.fixedBehaviors.0 (duplicate-id)",
         );
         expect(startup.message).toContain("Docs:");
         expect(startup.behaviorReason).toBe("duplicate-id");
@@ -734,7 +751,7 @@ it(
           installation.behaviorRulePaths,
         );
         expect(startup.behaviorReason).toBe("duplicate-id");
-        expect(startup.message).toContain("english.fixedBehaviors.0");
+        expect(startup.message).toContain("text.fixedBehaviors.0");
       }),
     );
   }),
@@ -783,11 +800,15 @@ it(
     yield* withStore(stateDirectory(), (store) =>
       Effect.gen(function* () {
         const installed = yield* installEditableFirewall(configuration, store);
-        yield* installed.policy.update({ add: [{ behavior: SHARED }] });
+        yield* installed.policy.update(
+          { add: [{ behavior: SHARED }] },
+          "owner",
+        );
         expect((yield* installed.policy.read()).rules).toContainEqual({
           id: "meeting-booking",
           kind: "norm",
           text: "Each member holds a slot before confirming it.",
+          owner: "owner",
           guidance: "Hold a slot before you confirm one.",
           feedback: { text: "Hold the slot first.", nextAction: "revise" },
         });
@@ -914,7 +935,9 @@ function refusedEdit(edit: (typeof REFUSED_EDITS)[number]["edit"]) {
       Effect.gen(function* () {
         const installed = yield* installEditableFirewall(configuration, store);
         const before = yield* installed.policy.read();
-        const error = yield* installed.policy.update(edit).pipe(Effect.flip);
+        const error = yield* installed.policy
+          .update(edit, "owner")
+          .pipe(Effect.flip);
         return { error, before, after: yield* installed.policy.read() };
       }),
     );
@@ -929,16 +952,118 @@ it(
       path,
       JSON.stringify({
         ...document,
-        english: {
-          ...document.english,
+        text: {
+          ...document.text,
           builtinBehaviors: ["policy/no-such-behavior"],
         },
       }),
     );
     const error = yield* loaded(path).pipe(Effect.flip);
     expect(error.behaviorReason).toBe("missing");
-    expect(error.message).toContain("english.builtinBehaviors.0");
+    expect(error.message).toContain("text.builtinBehaviors.0");
   }),
 );
+
+it(
+  "limits runtime edits to its own norms and preserves ownership across restart",
+  Effect.fn(function* () {
+    const configuration = yield* options(fixture().path);
+    const path = stateDirectory();
+    const adopted = { ...INITIAL, id: "runtime-norm", text: "预约前确认。" };
+    const revision = yield* withStore(path, (store) =>
+      adoptNorm(store, configuration, adopted),
+    );
+    yield* withStore(path, (store) =>
+      Effect.gen(function* () {
+        const installed = yield* installEditableFirewall(configuration, store);
+        expect((yield* installed.policy.read()).activeRevision).toBe(revision);
+        yield* installed.policy.update(
+          { remove: [adopted.id], add: [{ ...adopted, text: "确认后预订。" }] },
+          "runtime",
+        );
+        yield* installed.policy.update(
+          { remove: [adopted.id], add: [adopted] },
+          "owner",
+        );
+        expect((yield* installed.policy.read()).rules).toContainEqual({
+          ...adopted,
+          owner: "owner",
+        });
+        expect(
+          (yield* installed.policy
+            .update({ remove: [adopted.id] }, "runtime")
+            .pipe(Effect.flip)).reason,
+        ).toBe("owner-rule");
+        yield* installed.policy.update({ remove: [adopted.id] }, "owner");
+      }),
+    );
+  }),
+);
+
+it(
+  "rejects supplied ownership metadata before applying any update",
+  Effect.fn(function* () {
+    const configuration = yield* options(fixture().path);
+    yield* withStore(stateDirectory(), (store) =>
+      Effect.gen(function* () {
+        const installed = yield* installEditableFirewall(configuration, store);
+        const before = yield* installed.policy.read();
+        const forged = { ...INITIAL, id: "forged", owner: "runtime" };
+        const error = yield* installed.policy
+          .update({ add: [forged] }, "runtime")
+          .pipe(Effect.flip);
+        expect(error).toMatchObject({
+          reason: "invalid-rule",
+          problem: "schema",
+        });
+        expect(yield* installed.policy.read()).toEqual(before);
+      }),
+    );
+  }),
+);
+
+function adoptNorm(
+  store: EndpointStore,
+  configuration: Effect.Effect.Success<ReturnType<typeof options>>,
+  adopted: Omit<typeof INITIAL, "id" | "text"> & {
+    readonly id: string;
+    readonly text: string;
+  },
+) {
+  return Effect.gen(function* () {
+    const installed = yield* installEditableFirewall(configuration, store);
+    const before = yield* installed.policy.read();
+    expect(before.rules).toMatchObject([
+      { owner: "owner" },
+      { owner: "owner" },
+    ]);
+    const changed = yield* installed.policy.update(
+      { add: [adopted] },
+      "runtime",
+    );
+    const own = yield* installed.policy.read();
+    expect(own.rules).toContainEqual({ ...adopted, owner: "runtime" });
+    const refused = yield* installed.policy
+      .update(
+        {
+          remove: [INITIAL.id, adopted.id],
+          add: [{ ...adopted, id: "replacement" }],
+        },
+        "runtime",
+      )
+      .pipe(Effect.flip);
+    expect(refused.reason).toBe("owner-rule");
+    expect(yield* installed.policy.read()).toEqual(own);
+    const safety = yield* installed.policy
+      .update({ add: [{ ...FIXED, id: "runtime-safety" }] }, "runtime")
+      .pipe(Effect.flip);
+    expect(safety).toMatchObject({
+      reason: "invalid-rule",
+      problem: "not-norm",
+    });
+    expect(yield* installed.policy.read()).toEqual(own);
+    return changed.activeRevision;
+  });
+}
 
 /* eslint-enable agent-code-guard/no-hardcoded-assertion-literals -- Restore assertion defaults outside owner policy contract tests. */

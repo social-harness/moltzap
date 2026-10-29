@@ -9,7 +9,7 @@ import {
   type MuseWork,
   readOptionalFile,
   readWork,
-} from "./work.js";
+} from "./handoff-files.js";
 
 /**
  * Returns newly announced work references, or an empty list on an idle tick.

@@ -9,6 +9,11 @@ import type {
   HistoryPage,
 } from "../../communication/store/index.js";
 import type {
+  DaemonBootstrap,
+  DaemonConfigurationError,
+} from "../bootstrap.js";
+import type { DaemonActivationError } from "../errors.js";
+import type {
   HarnessMcpOperations,
   ManagementReadConversationResult,
   ManagementRegisterResult,
@@ -16,12 +21,7 @@ import type {
   ManagementSearchConversationsRequest,
   ManagementSearchConversationsResult,
   ManagementStatusResult,
-} from "../../harness/mcp/index.js";
-import type {
-  DaemonBootstrap,
-  DaemonConfigurationError,
-} from "../bootstrap.js";
-import type { DaemonActivationError } from "../errors.js";
+} from "../mcp/index.js";
 import {
   renderGroupAddress,
   resolveMessageAddress,
@@ -30,7 +30,6 @@ import {
   readStoredHistory,
   verifyStoredMembership,
 } from "../../communication/conversations/index.js";
-import { SignedMessage } from "../../communication/envelope/signed-message.js";
 import {
   type CertifiedRecord,
   deriveConversationId,
@@ -43,6 +42,7 @@ import {
   agentViewOf,
   type VerifiedAgentCard,
 } from "../../identity/cards.js";
+import { SignedMessage } from "../../identity/envelope/signed-message.js";
 import {
   RegistryInvalidResponseError,
   type RegistryLookupResult,

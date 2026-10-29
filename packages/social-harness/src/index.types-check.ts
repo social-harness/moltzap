@@ -26,6 +26,7 @@ import type { DateTime, Effect, Either, Scope, Stream, Types } from "effect";
 import type {
   acquireHarnessEndpoint,
   AgentAddress,
+  AgentView,
   CollectiveError,
   ConnectError,
   Content,
@@ -91,30 +92,41 @@ type ExpectedSendInput =
       to: MessageAddressInput;
       collectiveResponse: ExpectedCollectiveResponse;
     }>;
-type ExpectedSendResult = Readonly<{
-  operationId?: CollectiveId;
-  postId?: PostId;
-  address?: AgentAddress | GroupAddress;
-  guidance?: ExpectedCheckedGuidance;
-}>;
+type ExpectedSendResult =
+  | Readonly<{
+      kind: "multicast";
+      postId: PostId;
+      address: AgentAddress | GroupAddress;
+      operationId?: never;
+      guidance?: ExpectedCheckedGuidance;
+    }>
+  | Readonly<{
+      kind: "response";
+      operationId: CollectiveId;
+      postId: PostId;
+      address: AgentAddress | GroupAddress;
+      guidance?: ExpectedCheckedGuidance;
+    }>
+  | Readonly<{
+      kind: "collective";
+      operationId: CollectiveId;
+      postId?: never;
+      address?: never;
+      guidance?: ExpectedCheckedGuidance;
+    }>;
 type ExpectedDirectMessage = Readonly<{
   kind: "direct";
   postId: PostId;
   address: AgentAddress;
-  sender: AgentAddress;
+  sender: AgentView;
   content: Content;
 }>;
 type ExpectedGroupMessage = Readonly<{
   kind: "group";
   postId: PostId;
   address: GroupAddress;
-  sender: AgentAddress;
-  members: readonly [
-    AgentAddress,
-    AgentAddress,
-    AgentAddress,
-    ...AgentAddress[],
-  ];
+  sender: AgentView;
+  members: readonly [AgentView, AgentView, AgentView, ...AgentView[]];
   content: Content;
 }>;
 type ExpectedWithheld = Readonly<{
@@ -133,7 +145,7 @@ type ExpectedMemberOutcome =
   | Readonly<{ kind: "no-answer" }>
   | ExpectedWithheld;
 type ExpectedOutcomeEntry = Readonly<{
-  member: AgentAddress;
+  member: AgentView;
   outcome: ExpectedMemberOutcome;
 }>;
 type ExpectedInboundItem =
@@ -143,7 +155,7 @@ type ExpectedInboundItem =
       op: "gather" | "all_gather";
       id: CollectiveId;
       postId: PostId;
-      from: AgentAddress;
+      from: AgentView;
       to: MessageAddressInput;
       question: string;
       requestedSchema: ExpectedRequestedSchema;
@@ -151,6 +163,8 @@ type ExpectedInboundItem =
     }>
   | Readonly<{
       kind: "collectiveResult";
+      closedAt: number;
+      closedBy: "settled" | "deadline";
       op: "gather" | "all_gather";
       id: CollectiveId;
       to: MessageAddressInput;
@@ -165,8 +179,8 @@ type ExpectedInboundItem =
     }>;
 type ExpectedGuidanceSubject = Readonly<{
   id: string;
-  sender: string;
-  recipients: readonly string[];
+  sender: AgentView | "sharness";
+  recipients: readonly AgentView[];
   text: string;
 }>;
 type ExpectedGuidanceInstruction =
@@ -194,7 +208,7 @@ type ExpectedLocalGuidance =
       question?: ExpectedCheckedGuidance;
       answers: ReadonlyArray<
         Readonly<{
-          member: string;
+          member: AgentView;
           checkId: string;
           subjects: readonly ExpectedGuidanceSubject[];
           instructions: readonly ExpectedGuidanceInstruction[];
@@ -222,9 +236,6 @@ type ExpectedDelivery = Readonly<{
 type ExpectedEndpoint = Readonly<{
   send: (
     input: SendInput,
-    options?: Readonly<{
-      failureDelivery?: "result" | "inbound";
-    }>,
   ) => Effect.Effect<
     SendResult,
     SendError | CollectiveError | FirewallSendError

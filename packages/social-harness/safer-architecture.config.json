@@ -1,10 +1,11 @@
 {
+  "minFolderReadmeChildren": 9007199254740991,
   "maxFolderCycles": 1,
-  "folderReadmeFileNames": [
-    "README.md",
-    "../README.md"
-  ],
   "facadeFiles": [
+    {
+      "file": "communication/store/collective-claims.ts",
+      "reason": "Atomic collective identity and post claims shared by store transactions"
+    },
     {
       "file": "encoding/exact.ts",
       "reason": "Closed struct decoding shared by host-loaded value schemas"
@@ -18,7 +19,7 @@
       "reason": "Canonical identifiers and ordering used by host-loaded values"
     },
     {
-      "file": "identity/agents.ts",
+      "file": "identity/identifiers.ts",
       "reason": "Canonical agent, principal and immutable name schemas"
     },
     {
@@ -38,7 +39,7 @@
       "reason": "Wire emission and live or retained compatibility policy"
     },
     {
-      "file": "identity/signing/registered/index.ts",
+      "file": "identity/request-authentication.ts",
       "reason": "Registered-request authentication capability with opaque verification proofs"
     },
     {
@@ -66,15 +67,15 @@
       "reason": "Exact Registry routes, operation grammar and canonical wire codecs"
     },
     {
-      "file": "communication/envelope/signed-message.ts",
+      "file": "identity/envelope/signed-message.ts",
       "reason": "Opaque attributed message representation, signing and verification"
     },
     {
-      "file": "communication/envelope/sealed-body.ts",
+      "file": "identity/envelope/sealed-body.ts",
       "reason": "End-to-end sealing and opening of attributed message bodies"
     },
     {
-      "file": "communication/envelope/wire-profile.ts",
+      "file": "identity/envelope/wire-profile.ts",
       "reason": "Attributed envelope representation parameters read by host-loaded SignedMessage schemas"
     },
     {
@@ -92,6 +93,10 @@
     {
       "file": "communication/router/api/client.ts",
       "reason": "Router class tag and authenticated send or poll HTTP client"
+    },
+    {
+      "file": "communication/router/worker-contracts.ts",
+      "reason": "Router worker interfaces, state and retry rules shared by orchestration and outage handling"
     },
     {
       "file": "communication/records/values.ts",
@@ -114,7 +119,7 @@
       "reason": "Inbound message schemas, read without loading the engine"
     },
     {
-      "file": "communication/collectives/forms.ts",
+      "file": "communication/collectives/contracts.ts",
       "reason": "Send forms and collective errors, read without loading the operation layer"
     },
     {
@@ -130,15 +135,15 @@
       "reason": "Complete message rendering shared by hosts and policy evidence without loading collective operations"
     },
     {
-      "file": "harness/protocol/operations.ts",
+      "file": "host-protocol/operations.ts",
       "reason": "Harness operation values and decoders shared by the host and daemon"
     },
     {
-      "file": "harness/protocol/names.ts",
+      "file": "host-protocol/names.ts",
       "reason": "Tool and event names shared by the host and daemon"
     },
     {
-      "file": "harness/inbox/history-export.ts",
+      "file": "daemon/inbox/host-traffic-log.ts",
       "reason": "History export values hosts decode without loading inbox state or SQLite"
     },
     {
@@ -156,6 +161,42 @@
     {
       "file": "daemon/bootstrap.ts",
       "reason": "Loaded daemon configuration and closed bootstrap failures shared by daemon composition modules"
+    },
+    {
+      "file": "communication/conversations/engine-context.ts",
+      "reason": "Private context and phase ports for one conversation engine; phase implementations share its acquired state"
+    },
+    {
+      "file": "communication/collectives/all-gather.ts",
+      "reason": "Request and close lifetime used by the collective sender and its recovery"
+    },
+    {
+      "file": "communication/collectives/persistence.ts",
+      "reason": "Collective transition writes and fault handling shared by live operations and recovery"
+    },
+    {
+      "file": "communication/collectives/received-request.ts",
+      "reason": "One request and response-claim contract shared by classification, answering and recovery"
+    },
+    {
+      "file": "communication/collectives/request-sends.ts",
+      "reason": "Retained request-post progress shared by gather sending and recovery"
+    },
+    {
+      "file": "communication/collectives/state.ts",
+      "reason": "Private collective state and injected runtime ports used by each operation phase"
+    },
+    {
+      "file": "communication/collectives/shared-answers.ts",
+      "reason": "First-answer selection and close state shared by receipt, response completion and replay"
+    },
+    {
+      "file": "communication/collectives/validation.ts",
+      "reason": "Answer-schema validation shared by outbound answers and inbound result construction"
+    },
+    {
+      "file": "communication/store/collectives.ts",
+      "reason": "Atomic collective ownership, answer selection and terminal publication in the endpoint store"
     }
   ],
   "compositionRoots": [
@@ -199,12 +240,12 @@
         "src/identity"
       ],
       "entrypoints": [
-        "src/identity/agents.ts",
+        "src/identity/identifiers.ts",
         "src/identity/keys.ts",
         "src/identity/cards.ts",
         "src/identity/card-signing.ts",
         "src/identity/wire-version.ts",
-        "src/identity/signing/registered/index.ts",
+        "src/identity/request-authentication.ts",
         "src/identity/index.ts",
         "src/identity/signing/http-signature.ts",
         "src/identity/signing/http-errors.ts",
@@ -217,12 +258,12 @@
     {
       "name": "envelope",
       "roots": [
-        "src/communication/envelope"
+        "src/identity/envelope"
       ],
       "entrypoints": [
-        "src/communication/envelope/signed-message.ts",
-        "src/communication/envelope/sealed-body.ts",
-        "src/communication/envelope/wire-profile.ts"
+        "src/identity/envelope/signed-message.ts",
+        "src/identity/envelope/sealed-body.ts",
+        "src/identity/envelope/wire-profile.ts"
       ],
       "reason": "Opaque attributed and sealed message bodies below endpoint protocols"
     },
@@ -245,7 +286,7 @@
         "src/firewall/evaluator/index.ts",
         "src/firewall/evaluator/contract/index.ts"
       ],
-      "reason": "Code and English evaluation and their shared evidence and check contracts"
+      "reason": "Code and Text evaluation and their shared evidence and check contracts"
     },
     {
       "name": "firewall-outcome",
@@ -312,7 +353,7 @@
         "src/communication/conversations/errors.ts",
         "src/communication/conversations/message.ts"
       ],
-      "reason": "Addressed send, GENESIS and POST certification, and recovery"
+      "reason": "Addressed send, FIRST_MESSAGE and MESSAGE certification, and recovery"
     },
     {
       "name": "collectives",
@@ -321,7 +362,7 @@
       ],
       "entrypoints": [
         "src/communication/collectives/index.ts",
-        "src/communication/collectives/forms.ts",
+        "src/communication/collectives/contracts.ts",
         "src/communication/collectives/inbound.ts",
         "src/communication/collectives/message-text.ts",
         "src/communication/collectives/render.ts"
@@ -329,25 +370,25 @@
       "reason": "Gather and all_gather carried in posts"
     },
     {
-      "name": "harness-protocol",
+      "name": "host-protocol",
       "roots": [
-        "src/harness/protocol"
+        "src/host-protocol"
       ],
       "entrypoints": [
-        "src/harness/protocol/index.ts",
-        "src/harness/protocol/operations.ts",
-        "src/harness/protocol/names.ts",
-        "src/harness/protocol/catalog-schemas.ts"
+        "src/host-protocol/index.ts",
+        "src/host-protocol/operations.ts",
+        "src/host-protocol/names.ts",
+        "src/host-protocol/catalog-schemas.ts"
       ],
       "reason": "The loopback MCP tools, events and results both peers speak"
     },
     {
-      "name": "harness-endpoint",
+      "name": "host-client",
       "roots": [
-        "src/harness/endpoint"
+        "src/host-client"
       ],
       "entrypoints": [
-        "src/harness/endpoint/index.ts"
+        "src/host-client/index.ts"
       ],
       "reason": "The HarnessEndpoint library an agent host loads"
     },
@@ -362,23 +403,23 @@
       "reason": "Personal firewall evaluation, rules, policy, admission and retained checks above communication collectives"
     },
     {
-      "name": "harness-inbox",
+      "name": "daemon-inbox",
       "roots": [
-        "src/harness/inbox"
+        "src/daemon/inbox"
       ],
       "entrypoints": [
-        "src/harness/inbox/index.ts",
-        "src/harness/inbox/history-export.ts"
+        "src/daemon/inbox/index.ts",
+        "src/daemon/inbox/host-traffic-log.ts"
       ],
-      "reason": "The classified host inbox, delivery pass and history export"
+      "reason": "The admitted host inbox, delivery handoff and host traffic log"
     },
     {
-      "name": "harness-mcp",
+      "name": "daemon-mcp",
       "roots": [
-        "src/harness/mcp"
+        "src/daemon/mcp"
       ],
       "entrypoints": [
-        "src/harness/mcp/index.ts"
+        "src/daemon/mcp/index.ts"
       ],
       "reason": "The daemon's loopback MCP server, authentication and event delivery"
     },
@@ -419,18 +460,18 @@
       "reason": "The always-on process: configuration, registration, supervision, and wiring"
     },
     {
-      "name": "harness-mcp",
+      "name": "daemon-mcp",
       "folders": [
-        "harness/mcp"
+        "daemon/mcp"
       ],
       "reason": "The daemon's loopback MCP server, authentication and event delivery"
     },
     {
-      "name": "harness-inbox",
+      "name": "daemon-inbox",
       "folders": [
-        "harness/inbox"
+        "daemon/inbox"
       ],
-      "reason": "The classified host inbox, delivery pass and history export"
+      "reason": "The admitted host inbox, delivery handoff and host traffic log"
     },
     {
       "name": "firewall",
@@ -440,16 +481,16 @@
       "reason": "Personal firewall evaluation, rules, policy, admission and retained checks above communication collectives"
     },
     {
-      "name": "harness-endpoint",
+      "name": "host-client",
       "folders": [
-        "harness/endpoint"
+        "host-client"
       ],
       "reason": "The HarnessEndpoint library an agent host loads"
     },
     {
-      "name": "harness-protocol",
+      "name": "host-protocol",
       "folders": [
-        "harness/protocol"
+        "host-protocol"
       ],
       "reason": "The loopback MCP tools, events and results both peers speak"
     },
@@ -465,7 +506,7 @@
       "folders": [
         "communication/conversations"
       ],
-      "reason": "Addressed send, GENESIS and POST certification, and recovery"
+      "reason": "Addressed send, FIRST_MESSAGE and MESSAGE certification, and recovery"
     },
     {
       "name": "router",
@@ -507,7 +548,7 @@
       "folders": [
         "firewall/evaluator"
       ],
-      "reason": "Code and English evaluation and their shared evidence and check contracts"
+      "reason": "Code and Text evaluation and their shared evidence and check contracts"
     },
     {
       "name": "release",
@@ -519,7 +560,7 @@
     {
       "name": "envelope",
       "folders": [
-        "communication/envelope"
+        "identity/envelope"
       ],
       "reason": "Opaque attributed and sealed message bodies below endpoint protocols"
     },
@@ -556,6 +597,14 @@
     {
       "subpath": "./test",
       "reason": "Management schemas and wire overrides require the explicit sharness-test resolution condition"
+    }
+  ],
+  "maxFolderImportDistance": 6,
+  "folderChildCountOverrides": [
+    {
+      "folder": "daemon",
+      "maxChildren": 11,
+      "reason": "Daemon composition owns configuration, registration, supervision, MCP serving and inbox handoff; host-facing client code lives outside this process."
     }
   ]
 }

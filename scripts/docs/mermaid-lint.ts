@@ -1,7 +1,5 @@
 /**
- * @file Collect workspace fenced ```mermaid blocks under the trees named by
- * `MERMAID_ROOTS` and validate each by piping it through `mmdc` (the
- * official Mermaid CLI). Returns the list of failures grouped by file.
+ * @file Discovers documented Mermaid diagrams and validates them with `mmdc`.
  */
 import {
   Command,
@@ -14,21 +12,14 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /**
- * Workspace-relative trees the gate walks. Every documented tree must be
- * listed here: a tree left out is not reported as skipped, it simply
- * contributes zero blocks and the gate passes without having looked.
+ * Workspace-relative trees covered by the gate. Add a new documentation
+ * location here so its diagrams are checked.
  */
 export const MERMAID_ROOTS = ["docs", "packages", "plugins"] as const;
 
 /**
- * Something the gate was asked to inspect but could not.
- *
- * Every filesystem step here answers "what am I checking?", so a failure
- * means some input went unchecked. Substituting an empty default — no
- * entries, no source text, no temp file — makes that indistinguishable
- * from a clean result, which is precisely the blind-gate failure this
- * gate exists to catch. The path travels with the error because a run
- * that cannot say which input it skipped has not reported anything.
+ * Identifies an input the gate could not inspect. Callers must report this
+ * failure separately from diagram errors so an incomplete check cannot pass.
  */
 export class MermaidGateError extends Data.TaggedError("MermaidGateError")<{
   readonly reason: string;
@@ -36,14 +27,14 @@ export class MermaidGateError extends Data.TaggedError("MermaidGateError")<{
   readonly cause: unknown;
 }> {}
 
-/** Describes mermaid block. */
+/** Diagram text with its source file and the opening fence's 1-based line. */
 export interface MermaidBlock {
   readonly file: string;
   readonly startLine: number;
   readonly body: string;
 }
 
-/** Describes mermaid failure. */
+/** A diagram's validation or renderer failure, tied to its source location. */
 export interface MermaidFailure {
   readonly block: MermaidBlock;
   readonly message: string;
@@ -86,10 +77,8 @@ interface MmdcRun {
 }
 
 /**
- * Reject any configured root that is not a usable directory. A root that
- * is missing, unreadable, or a plain file contributes no files, so without
- * this the run would report a clean pass over a tree it never opened.
- * Roots are checked sequentially so the first failure follows the declared input order.
+ * Requires each configured root to be a directory before traversal.
+ * The first inaccessible or invalid root fails in declared input order.
  */
 export function requireRoots(
   fs: FileSystem.FileSystem,
@@ -134,7 +123,8 @@ export function collectDiagramFiles(
 }
 
 /**
- * Extract every fenced block from `files`, labelled relative to the root.
+ * Extracts Mermaid blocks labelled relative to `workspaceRoot`.
+ * An unreadable file fails the collection instead of contributing no blocks.
  */
 export function collectBlocks(
   fs: FileSystem.FileSystem,
@@ -157,10 +147,9 @@ export function collectBlocks(
 }
 
 /**
- * Locate every fenced `mermaid` block in the given file. Returns the
- * block's 1-based start line (the opening fence) and raw body text.
- * Skips blocks whose fence is preceded by 4+ spaces (markdown
- * indented-code) and blocks fenced in a different language.
+ * Extracts fenced Mermaid text with original source line numbers.
+ * TypeScript inputs contribute only JSDoc blocks. Fences indented by four or
+ * more characters and fences for other languages contribute no diagrams.
  */
 export function extractMermaidBlocks(
   file: string,
@@ -177,9 +166,9 @@ export function extractMermaidBlocks(
 }
 
 /**
- * Validate `block.body` by writing it to a temp file and shelling out
- * to `mmdc`. Returns null on success or a `MermaidFailure` carrying
- * mmdc's exit context on failure.
+ * Validates one diagram, returning null on success or a source-linked failure.
+ * Failure to stage the input fails the Effect. Renderer and diagram errors
+ * return a `MermaidFailure` so callers can collect failures across diagrams.
  */
 export function lintBlock(
   block: MermaidBlock,
@@ -267,10 +256,8 @@ function handleFence(
 }
 
 /**
- * Stage one block for `mmdc`. The temp path is derived from the block's
- * file and line, so a discarded write error would leave whatever the last
- * run put there and `mmdc` would happily validate that instead — passing
- * the block that was never written.
+ * A failed write must stop validation because the reusable temp path may
+ * still contain a previous diagram.
  */
 function prepareInput(
   fs: FileSystem.FileSystem,
@@ -291,10 +278,9 @@ function prepareInput(
 }
 
 /**
- * Run one block through `mmdc`, keeping its stderr. Mmdc reports both
- * diagram syntax errors and browser launch failures there, and the exit
- * code alone cannot tell those apart.
- * Stdout remains inherited while stderr is drained; an undrained stdout pipe can block the renderer.
+ * Keeps stderr to distinguish diagram errors from browser launch failures.
+ * Inherited stdout and drained stderr prevent a full pipe from blocking the
+ * renderer.
  */
 function runMmdc(
   inputPath: string,
@@ -327,10 +313,8 @@ function runMmdc(
 }
 
 /**
- * Best-effort, unlike the write above: a block that fails to parse leaves
- * no SVG behind, so removing it is expected to fail and says nothing about
- * whether the block was checked. Leftovers cannot mask a bad block either,
- * since every run fails outright if it cannot overwrite its input.
+ * Cleanup is best-effort because failed diagrams may leave no SVG. Each
+ * validation requires a successful input write, so leftovers cannot mask it.
  */
 function cleanup(
   fs: FileSystem.FileSystem,
@@ -360,9 +344,7 @@ function interpretResult(
 }
 
 /**
- * Indent the leading lines of mmdc stderr under the failure's header.
- * Stack frames are dropped: a browser launch failure buries its one useful
- * line under a deep trace, and that trace repeats for every block.
+ * Keeps leading diagnostic lines while dropping repeated renderer stack frames.
  */
 function formatStderr(stderr: string): string {
   const lines = StringOps.split(stderr, "\n")

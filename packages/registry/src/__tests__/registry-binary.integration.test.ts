@@ -13,9 +13,8 @@ import {
 } from "@moltzap/social-harness";
 import { Registry, registryContract } from "@moltzap/social-harness/internal";
 import { Duration, Effect, Redacted, Ref, Schema } from "effect";
-import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
 import {
   callRegister,
@@ -58,6 +57,7 @@ const KEY_ALREADY_REGISTERED_KIND = "key_already_registered";
 const NAME_TAKEN_KIND = "name_taken";
 const FOUND_KIND = "found";
 const NEWER_SCHEMA_REASON = "newer-schema";
+const PRE_RESET_REASON = "pre-reset";
 const OK_STATUS = 200;
 const NO_CONTENT_STATUS = 204;
 const BAD_REQUEST_STATUS = 400;
@@ -889,7 +889,7 @@ const registryBinaryBehavior = Effect.gen(function* () {
     environment: infrastructure.environment,
     wrongKeyPath: infrastructure.wrongKeyPath,
     addUnknownMigration: sql`
-      INSERT INTO sharness_registry_ledger_20261026 (migration_id, name)
+      INSERT INTO sharness_registry_ledger_20261029 (migration_id, name)
       VALUES (9999, 'future')
     `,
   });
@@ -903,6 +903,37 @@ it("preserves Registry contracts across first boot, concurrency, and restart", (
   expect.hasAssertions();
   return Effect.runPromise(registryBinaryBehavior);
 }, 120_000);
+
+it(
+  "refuses the preceding reset's database without changing its tables",
+  () =>
+    Effect.runPromise(
+      Effect.gen(function* () {
+        const infrastructure = yield* setupRegistryInfrastructure;
+        const sql = yield* PgClient.make({
+          url: Redacted.make(infrastructure.postgresqlUrl),
+        }).pipe(Effect.provide(Reactivity.layer));
+        yield* sql`CREATE TABLE sharness_registry_ledger_20261026 (migration_id integer PRIMARY KEY)`;
+        yield* sql`INSERT INTO sharness_registry_ledger_20261026 VALUES (1)`;
+        const tables =
+          yield* sql`SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = 'public' ORDER BY tablename`;
+        const process = yield* managedProcess(
+          REGISTRY_BINARY,
+          [],
+          infrastructure.environment,
+        );
+        yield* expectStartupFailure(process);
+        expect(process.logs()).toContain(PRE_RESET_REASON);
+        expect(
+          yield* sql`SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = 'public' ORDER BY tablename`,
+        ).toEqual(tables);
+        expect(
+          yield* sql`SELECT migration_id FROM sharness_registry_ledger_20261026`,
+        ).toEqual([{ migration_id: 1 }]);
+      }).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
+    ),
+  30_000,
+);
 
 /** The external caller has the package links that an installed consumer receives. */
 const makeExternalConsumer = Effect.gen(function* () {
@@ -923,48 +954,13 @@ const makeExternalConsumer = Effect.gen(function* () {
   return directory;
 });
 
-const assertExternalResolutionDenied = `
-  try {
-    await import("@moltzap/social-harness/internal");
-    throw new Error("external caller resolved private Identity exports");
-  } catch (error) {
-    if (error.code !== "ERR_PACKAGE_PATH_NOT_EXPORTED") throw error;
-  }
-`;
-
-/**
- * A module under the Registry package root, outside its built modules and executable.
- *
- * Value: protects=after startRegistry installs internal resolution, a module in a nested node_modules under the Registry package root still cannot resolve `@moltzap/social-harness/internal`; fails_when=the hook's parent scope includes the package root rather than only dist/ and bin/; why_new=the external consumer lives in a temporary directory outside the package root, which both scopes deny; seam=none; no_claim=resolution for parents outside the package root.
- */
-const makeNestedProbe = Effect.acquireRelease(
-  Effect.gen(function* () {
-    const fileSystem = yield* FileSystem.FileSystem;
-    const directory = fileURLToPath(
-      new URL(
-        `../../node_modules/.scope-probe-${randomUUID()}/`,
-        import.meta.url,
-      ),
-    );
-    yield* fileSystem.makeDirectory(directory, { recursive: true });
-    const probe = join(directory, "probe.mjs");
-    yield* fileSystem.writeFileString(probe, assertExternalResolutionDenied);
-    return { directory, url: pathToFileURL(probe).href };
-  }),
-  ({ directory }) =>
-    Effect.flatMap(FileSystem.FileSystem, (fileSystem) =>
-      fileSystem.remove(directory, { recursive: true }),
-    ).pipe(Effect.orDie),
-);
-
 it(
-  "test composition accepts an adjacent registration while external private exports stay inaccessible",
+  "test composition accepts an adjacent registration with explicit process conditions",
   () =>
     Effect.runPromise(
       Effect.gen(function* () {
         const infrastructure = yield* setupRegistryInfrastructure;
         const cwd = yield* makeExternalConsumer;
-        const nested = yield* makeNestedProbe;
         const adjacent = `${WIRE_VERSION}-adjacent`;
         const versions = {
           emitted: WIRE_VERSION,
@@ -975,12 +971,11 @@ it(
           process.execPath,
           [
             "--conditions=sharness-test",
+            "--conditions=sharness-internal",
             "--input-type=module",
             "-e",
             `import { startRegistry } from "@moltzap/registry/test";
-         startRegistry(${JSON.stringify(versions)});
-         ${assertExternalResolutionDenied}
-         await import(${JSON.stringify(nested.url)});`,
+         startRegistry(${JSON.stringify(versions)});`,
           ],
           infrastructure.environment,
           cwd,

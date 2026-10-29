@@ -9,7 +9,7 @@ import {
   MessageContext,
 } from "../firewall/index.js";
 import { WIRE_VERSION } from "../identity/wire-version.js";
-import { digest, identifier } from "./agent-card-fixtures.js";
+import { digest, identifier, testAgentView } from "./agent-card-fixtures.js";
 import { stateDirectory, withStore } from "./store-schema-fixtures.js";
 
 const policy = {
@@ -75,6 +75,7 @@ export const makeRetainedCheckFixture = Effect.suspend(() =>
         configurationDigest: installed.configurationDigest,
         installation: installed.metadata,
         context,
+        agents: [testAgentView("alice"), testAgentView("bob")],
         message,
         terminal: false,
       };

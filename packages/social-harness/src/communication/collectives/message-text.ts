@@ -31,7 +31,7 @@ import {
   describeIssues,
   RequestedSchema,
   SendInput,
-} from "./forms.js";
+} from "./contracts.js";
 
 /* eslint-disable @typescript-eslint/naming-convention -- Effect Schemas are named for the text shapes they decode. */
 
@@ -40,7 +40,10 @@ const COLLECTING_OPERATIONS = ["gather", "all_gather"] as const;
 
 type CollectingOperation = (typeof COLLECTING_OPERATIONS)[number];
 
-/** Which operation a refused text stated. */
+/**
+ * Which operation a refused text stated.
+ * @inline
+ */
 type StatedOperation = "message" | CollectingOperation | "answer";
 
 /**

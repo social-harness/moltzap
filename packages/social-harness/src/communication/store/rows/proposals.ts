@@ -18,7 +18,7 @@ import {
 } from "../database/index.js";
 
 /** The predecessor key of a conversation's first record. */
-export const GENESIS_PREDECESSOR = "";
+export const FIRST_MESSAGE_PREDECESSOR = "";
 
 /**
  * Inserts one first-candidate lock inside a caller-owned transaction, or
@@ -31,7 +31,8 @@ export function lockProposalInTransaction(
   database: DatabaseSync,
   proposal: ProposalLock,
 ): StoreMutation {
-  const predecessorKey = proposal.previousRecordHash ?? GENESIS_PREDECESSOR;
+  const predecessorKey =
+    proposal.previousRecordHash ?? FIRST_MESSAGE_PREDECESSOR;
   const existing = findProposalLock(
     database,
     proposal.conversationId,
@@ -99,7 +100,7 @@ export function releaseProposalLock(
  *
  * @param database Exclusively owned endpoint database.
  * @param conversationId Opaque conversation identity.
- * @param predecessorKey Exact predecessor or the genesis sentinel.
+ * @param predecessorKey Exact predecessor or the first message sentinel.
  * @returns The detached proposal lock when present.
  */
 export function findProposalLock(

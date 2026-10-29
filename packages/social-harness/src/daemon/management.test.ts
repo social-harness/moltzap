@@ -13,6 +13,7 @@ import {
   Layer,
   Redacted,
   Schema,
+  Struct,
 } from "effect";
 import { generateKeyPairSync } from "node:crypto";
 import { describe, expect } from "vitest";
@@ -26,8 +27,8 @@ import {
   type RegistryKeyPair,
 } from "../__tests__/agent-card-fixtures.js";
 import {
-  buildCertifiedGenesis,
-  storeCertifiedGenesis,
+  buildCertifiedFirstMessage,
+  storeCertifiedFirstMessage,
   withMisattributedActionEvidence,
 } from "../__tests__/certified-history-fixtures.js";
 import { connectInProcessClient } from "../__tests__/mcp-http-fixtures.js";
@@ -47,12 +48,14 @@ import {
   openEndpointStore,
 } from "../communication/store/index.js";
 import { encodeCanonical } from "../encoding/canonical-json.js";
-import { makeHarnessMcpHttpHandler } from "../harness/mcp/tools.js";
 import {
   managementReadConversationRequestSchema,
+  managementReadConversationResultSchema,
   managementRegisterRequestSchema,
+  managementRegisterResultSchema,
   managementSearchAgentsRequestSchema,
-} from "../harness/protocol/index.js";
+  managementStatusResultSchema,
+} from "../host-protocol/index.js";
 import { AgentCard, type VerifiedAgentCard } from "../identity/cards.js";
 import { AgentSigningAuthority, Ed25519PublicKey } from "../identity/keys.js";
 import {
@@ -66,6 +69,7 @@ import {
   type DaemonManagementOperations,
   makeDaemonManagementOperations,
 } from "./management/index.js";
+import { makeHarnessMcpHttpHandler } from "./mcp/tools.js";
 
 interface IdentityFixture {
   readonly bootstrap: DaemonBootstrap;
@@ -267,7 +271,7 @@ const makeCertifiedHistory = Effect.gen(function* () {
     ),
     Effect.orDie,
   );
-  const record = yield* buildCertifiedGenesis(
+  const record = yield* buildCertifiedFirstMessage(
     { card: fixture.cards[0], authority: fixture.bootstrap.signingAuthority },
     { card: fixture.cards[1], authority: fixture.remoteAuthority },
     membership,
@@ -280,7 +284,12 @@ const makeCertifiedHistory = Effect.gen(function* () {
     }),
     { liveWireVersions: LIVE_WIRE_VERSIONS },
   ).pipe(Effect.orDie);
-  yield* storeCertifiedGenesis(store, fixture.cards[0], membership, record);
+  yield* storeCertifiedFirstMessage(
+    store,
+    fixture.cards[0],
+    membership,
+    record,
+  );
   return { fixture, store, record };
 }).pipe(Effect.provide(NodeFileSystem.layer));
 
@@ -364,6 +373,16 @@ const returnsCertificateSignersForAudit = () =>
     const votes = record.durabilityCertificate.votes;
 
     const page = yield* readBobHistory(fixture, store);
+    const historyResult = page;
+    expect(
+      Schema.is(managementReadConversationResultSchema)(historyResult),
+    ).toBe(true);
+    expect(
+      Schema.is(managementReadConversationResultSchema)({
+        ...historyResult,
+        records: page.records.map((entry) => Struct.omit(entry, "author")),
+      }),
+    ).toBe(false);
 
     expect(
       compareAgentIds(alice.agentId, bob.agentId),
@@ -371,7 +390,7 @@ const returnsCertificateSignersForAudit = () =>
     ).toBeLessThan(0);
     expect(
       certified.recordCore.action.postIntent.authorAgentId,
-      "bob authored the genesis",
+      "bob authored the first message",
     ).toBe(bob.agentId);
     expect(page.records, "alice's history with bob").toEqual([
       {
@@ -925,6 +944,36 @@ const bindsWhenCancelledDuringTheRegistryCall = () =>
       },
     });
   });
+
+it("requires verified identity views on registration and active status while accepting additive result fields", () =>
+  Effect.gen(function* () {
+    const fixture = yield* makeIdentityFixture;
+    const agentCard = yield* Schema.encode(AgentCard)(fixture.cards[0]);
+    const agent = {
+      agentId: fixture.cards[0].agentId,
+      agentName: fixture.cards[0].agentName,
+      principalId: fixture.cards[0].principalId,
+    };
+    const registered = { kind: "registered", agentCard, agent };
+    const active = { kind: "active", agentCard, agent };
+    expect(
+      Schema.is(managementRegisterResultSchema)({
+        ...registered,
+        additional: true,
+      }),
+    ).toBe(true);
+    expect(
+      Schema.is(managementStatusResultSchema)({ ...active, additional: true }),
+    ).toBe(true);
+    expect(
+      Schema.is(managementRegisterResultSchema)(
+        Struct.omit(registered, "agent"),
+      ),
+    ).toBe(false);
+    expect(
+      Schema.is(managementStatusResultSchema)(Struct.omit(active, "agent")),
+    ).toBe(false);
+  }));
 
 // @agent-code-guard/regression-only: these cases pin the register tool's cancellation and Registry deadline contract.
 describe("daemon registration through the register tool", () => {

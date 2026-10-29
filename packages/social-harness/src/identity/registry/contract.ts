@@ -9,12 +9,12 @@ import {
 } from "../../encoding/canonical-json.js";
 import { exactParseOptions, exactStruct } from "../../encoding/exact.js";
 import { canonicalIdentifier } from "../../encoding/identifier.js";
-import { AgentId, AgentName, PrincipalId } from "../agents.js";
 import {
   AgentCard,
   type VerifiedAgentCard,
   verifiedAgentCardSchema,
 } from "../cards.js";
+import { AgentId, AgentName, PrincipalId } from "../identifiers.js";
 import { type AgentSigningAuthority, Ed25519PublicKey } from "../keys.js";
 
 /** Idempotency identity for a registration operation. */
@@ -74,38 +74,38 @@ export const RegistryLookupRequest = Schema.Union(
 // eslint-disable-next-line @typescript-eslint/no-redeclare -- The same-named Schema and type form one boundary model.
 export type RegistryLookupRequest = typeof RegistryLookupRequest.Type;
 
-/** Closed domain outcome from one bootstrap registration attempt. */
+/** Name, key and idempotency conflicts are results; authentication and transport failures remain errors. */
 export type RegistryRegisterResult =
   | Readonly<{ kind: "registered"; agentCard: VerifiedAgentCard }>
   | Readonly<{ kind: "name_taken" }>
   | Readonly<{ kind: "key_already_registered" }>
   | Readonly<{ kind: "idempotency_conflict" }>;
 
-/** Closed domain outcome from one public identity lookup. */
+/** A found card is Registry-verified. A missing identity is a normal result. */
 export type RegistryLookupResult =
   | Readonly<{ kind: "found"; agentCard: VerifiedAgentCard }>
   | Readonly<{ kind: "not_found" }>;
 
-/** Complete bootstrap registration call made through the Registry client. */
+/** The admission credential authorizes registration, and the signing authority proves possession of the agent key. */
 export type RegistryRegisterCall = Readonly<{
   request: RegistryRegisterRequest;
   admissionCredential: Redacted.Redacted;
   signingAuthority: AgentSigningAuthority;
 }>;
 
-/** Closed Registry client implementation failures. */
+/** A request failed to complete or returned an invalid response. */
 type RegistryClientError =
   | RegistryConnectionError
   | RegistryRequestTimeoutError
   | RegistryInvalidResponseError;
 
-/** Shared envelopes accepted by public Registry reads. */
+/** Server failures from unauthenticated identity lookup. */
 export type RegistryPublicReadError = Exclude<
   HttpEnvelopeError,
   { readonly _tag: "AuthenticationFailedError" }
 >;
 
-/** Structural service installed behind the public Registry capability. */
+/** Registration and lookup return cards verified against the configured Registry signing key. */
 export interface RegistryClientService {
   readonly register: (
     input: RegistryRegisterCall,

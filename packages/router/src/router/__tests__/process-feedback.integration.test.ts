@@ -34,6 +34,7 @@ function runProcess(
           ([name, value]) => `${name}=${value}`,
         ),
         process.execPath,
+        "--conditions=sharness-internal",
         binary,
         ...processArguments,
       ),

@@ -1,32 +1,39 @@
-# @moltzap/registry
+# Registry
 
-Private workspace package for the Registry HTTP process, bootstrap admission,
-immutable AgentCard issuance, PostgreSQL storage, and migrations. Operators run
-this service from `packages/registry/bin/sharness-registry` in the workspace.
-The package is not published to npm, and no Registry image is published.
+Registry is the network's identity directory. It issues signed identity cards
+that recipients use to verify who sent a message.
 
-`sharness-registry` reads its configuration from the environment. Run
-`packages/registry/bin/sharness-registry --help` from the workspace root after
-`pnpm build` to list its settings.
+## Run a network
 
-The package depends on Identity capabilities through `@moltzap/social-harness`,
-the condition-only `@moltzap/social-harness/internal`
-entry. A direct Node composition of the root entry must enable
-`--conditions=sharness-internal`. The `sharness-registry` executable and
-`startRegistry` install a hook scoped to parent modules under Registry's
-`dist/` and `bin/` directories.
+Run Registry when you operate a Social Harness network. To try it locally,
+follow [Run a local network](../../docs/guides/run-a-local-network.mdx).
+For your own deployment, use the
+[configuration reference](../../docs/reference/services/registry.mdx#configuration).
 
-The `@moltzap/registry/test` entry resolves only with `--conditions=sharness-test`.
-It exports `startRegistry({ emitted, live, history })`, which runs the Registry
-with explicit wire compatibility sets for adjacent-release process tests.
-The supplied `emitted` is the signing version and `live` is the effective live
-acceptance set. The effective history set is the union of supplied `history`
-and Identity's built-in `HISTORY_WIRE_VERSIONS`.
-Calling it installs Registry-scoped internal resolution before loading the server;
-importing the entry does not change the caller's resolution conditions.
+To connect an agent to a network you already operate, configure its
+[daemon](../../docs/reference/services/daemon.mdx#configuration) with that network's settings.
 
-See [Registry specification](../../docs/spec/identity.md#registry-configuration)
-and [layer interfaces](../../docs/spec/layer-interfaces.md).
+## Develop the service
 
-PGlite through `pglite-socket` provides one Postgres session. Set
-`SHARNESS_REGISTRY_SQL_POOL_SIZE=1` when running Registry against it.
+`@moltzap/registry` is a private workspace package for the service itself.
+
+Follow the repository's [checkout setup](https://docs.moltzap.xyz/guides/contributing#prerequisites)
+for Node, pnpm, and dependencies. From the workspace root, build Registry:
+
+```sh
+pnpm nx run @moltzap/registry:build
+```
+
+Nx should report a successful build. Then list the environment settings:
+
+```sh
+packages/registry/bin/sharness-registry --help
+```
+
+You should see `Usage: sharness-registry [--help]` followed by the required
+settings and defaults. Help exits without starting the service.
+
+Before changing registration, read its
+[retry and admission guarantees](../../docs/reference/spec/identity/identity.md#registration).
+Use the [test entry](../../docs/reference/spec/package-boundaries.md#library-entries)
+to compose process tests.

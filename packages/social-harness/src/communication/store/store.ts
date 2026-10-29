@@ -1,4 +1,8 @@
-/** @file Store assembly behind the store's index.ts entrypoint. */
+/**
+ * @file Atomic persistence for one daemon. The store owns byte bindings,
+ * transaction boundaries, and durable ordering; callers verify signatures
+ * and interpret protocol and runtime values before storing them.
+ */
 
 import { Effect, type Scope } from "effect";
 import type { OutboxTooOldError } from "./database/values.js";
@@ -10,12 +14,25 @@ import {
   bindIdentity,
   bindPostIntent,
   completeReanchor,
-  lockGenesisProposal,
+  lockFirstMessageProposal,
   lockProposal,
   putConversationFoundation,
   restartEmptyConversation,
   stageReanchor,
 } from "./anchors.js";
+import {
+  finalizeCollectiveOperation,
+  publishCollectiveItem,
+  putCollectiveOperation,
+  readCollectiveAnswers,
+  readCollectiveOperation,
+  readCollectiveOperations,
+  readCollectivePosts,
+  readCollectiveRefusals,
+  recordCollectiveAnswer,
+  recordCollectiveRefusal,
+  retireCollectiveOperation,
+} from "./collectives.js";
 import {
   closeStoreState,
   EndpointStoreError,
@@ -54,7 +71,7 @@ import {
   readInboxSummary,
   replaceInboxItem,
   writeEventState,
-} from "./inbox.js";
+} from "./host-inbox.js";
 import {
   acknowledgeDelivery,
   beginOutbound,
@@ -64,6 +81,7 @@ import {
   enqueueOutbound,
   enqueueOutboundInTransaction,
   readPendingDeliveries,
+  readRetainedDeliveries,
 } from "./queues/index.js";
 import {
   readStoredConversation,
@@ -83,9 +101,9 @@ import {
 export { EndpointStoreError };
 
 /**
- * Reads, without writing, whether opening the store in a state directory
- * creates an empty store, which leaves the daemon unregistered, or reopens the
- * current one.
+ * Reports whether opening the state directory creates, reopens, or migrates
+ * its store without changing it. Creating a store leaves the daemon
+ * unregistered.
  *
  * @param stateDirectory Exclusive persistent state directory.
  * @returns How `openEndpointStore` will open the store.
@@ -130,6 +148,36 @@ function makeEndpointStore(state: StoreState): EndpointStore {
   const run = <Value>(operation: () => Value) =>
     runStoreOperation(state, operation);
   const store: EndpointStore = {
+    recordCollectiveAnswer: (answer) =>
+      run(() => recordCollectiveAnswer(state.database, answer)),
+    readCollectiveAnswers: () =>
+      run(() => readCollectiveAnswers(state.database)),
+    recordCollectiveRefusal: (refusal) =>
+      run(() => {
+        recordCollectiveRefusal(state.database, refusal);
+      }),
+    readCollectiveRefusals: () =>
+      run(() => readCollectiveRefusals(state.database)),
+    retireCollectiveOperation: (operationId, selection) =>
+      run(() => {
+        retireCollectiveOperation(state.database, operationId, selection);
+      }),
+    putCollectiveOperation: (input) =>
+      run(() => putCollectiveOperation(state.database, input)),
+    readCollectiveOperation: (id) =>
+      run(() => readCollectiveOperation(state.database, id)),
+    readCollectiveOperations: () =>
+      run(() => readCollectiveOperations(state.database)),
+    readCollectivePosts: (query) =>
+      run(() => readCollectivePosts(state.database, query)),
+    finalizeCollectiveOperation: (operationId, selection) =>
+      run(() =>
+        finalizeCollectiveOperation(state.database, operationId, selection),
+      ),
+    publishCollectiveItem: (delivery) =>
+      run(() => {
+        publishCollectiveItem(state.database, delivery);
+      }),
     readIdentity: () => run(() => bindIdentity.read(state.database)),
     bindIdentity: (binding) =>
       run(() => bindIdentity.write(state.database, binding)),
@@ -139,8 +187,8 @@ function makeEndpointStore(state: StoreState): EndpointStore {
       run(() => putConversationFoundation(state.database, foundation)),
     lockProposal: (proposal) =>
       run(() => lockProposal(state.database, proposal)),
-    lockGenesisProposal: (foundation, proposal) =>
-      run(() => lockGenesisProposal(state.database, foundation, proposal)),
+    lockFirstMessageProposal: (foundation, proposal) =>
+      run(() => lockFirstMessageProposal(state.database, foundation, proposal)),
     supersedeProposalLock: (lock, certificate) =>
       run(() => supersedeProposalLock(state.database, lock, certificate)),
     stageRecordForDissemination: (record) =>
@@ -157,6 +205,8 @@ function makeEndpointStore(state: StoreState): EndpointStore {
       run(() => completeReanchor(state.database, reanchor)),
     applyCatchUpReanchor: (reanchor) =>
       run(() => applyCatchUpReanchor(state.database, reanchor)),
+    readRetainedDeliveries: () =>
+      run(() => readRetainedDeliveries(state.database)),
     readPendingDeliveries: () =>
       run(() => readPendingDeliveries(state.database)),
     acknowledgeDelivery: (deliveryToken) =>
@@ -260,8 +310,15 @@ function makeEndpointStore(state: StoreState): EndpointStore {
       run(() => {
         retireFirewallItem(state.database, token);
       }),
-    admitFirewallOperation: (completion, candidate) =>
-      run(() => admitFirewallOperation(state.database, completion, candidate)),
+    admitFirewallOperation: (completion, candidate, collective) =>
+      run(() =>
+        admitFirewallOperation(
+          state.database,
+          completion,
+          candidate,
+          collective,
+        ),
+      ),
     bindCheckedPostIntent: (binding, completion) =>
       run(() => bindCheckedPostIntent(state.database, binding, completion)),
     bindAdmittedPostIntent: (binding, operation) =>

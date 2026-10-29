@@ -1,82 +1,31 @@
 name: Publish to npm
 
-# One release computes one calendar version and publishes, at that version,
-# only the packages whose packed content changed since the version their
-# manifest names: `scripts/release/select-packages.ts` compares each
-# package's content hash with the `sharnessContentHash` npm recorded for that
-# version. A dependent of a selected package is selected too, because its
-# packed manifest pins the sibling's new version, so every published package
-# pins its siblings to their newest published versions. Each published
-# manifest records its own content hash; the OpenClaw channel's also records
-# `sharnessHostCodeHash` (`scripts/release/host-code-hash.ts`), the hash of the
-# code OpenClaw loads for it. The release commit records every manifest. The
-# trigger is release-on-merge.yml after CI passes on main, or manual dispatch
-# for resets, resumes and start_new_version. The bump and the resume each
-# resolve the committed Registry and Router input keys to signed indexes; the
-# bump polls for missing keys for up to 45 minutes, then fails before the
-# release commit with a rerun hint. After npm publication, `images` runs no
-# repository install or build: it tags the indexes the resume resolved with the
-# release version, then creates the GitHub release with the version's
-# CHANGELOG.md section as its notes and lists both digests after it, so the
-# latest release always names published images. Existing version tags are
-# checked and skipped on reruns.
-# After that tagging, dispatch sends the release version and digests to deployment.
+# Publishes selected package tarballs and tags verified service images.
+# Release selection and recovery belong to docs/reference/spec/releases.md.
 #
-# The daemon and OpenClaw agent images never hold up a release: npm
-# publication, `images` and dispatch run without them, and a release is
-# complete without their tags. The daemon key hashes the manifests a release
-# writes, so only images.yml's run for the release commit publishes it, and a
-# later push to main can replace that run while it waits. After `images`,
-# `agent-images` waits up to 45 minutes for the release commit's daemon and
-# OpenClaw agent input tags, tags them with the release version and adds their
-# digests to the release notes; a key still missing fails it with what to
-# re-run. The daemon index must carry the signature of images.yml at the
-# release commit. The OpenClaw agent key, like the Registry and Router keys,
-# survives many commits, so its signature proves only that images.yml built it
-# on main: a dependency compromised in `build`, which passes the keys on, could
-# name an older signed OpenClaw agent index for the release to tag. That risk
-# is accepted.
+# Two runs bind npm provenance to the release commit. The first creates and
+# pushes that commit, then dispatches the publishing run on main. A resume
+# after main advances publishes the recorded tree, but its provenance names
+# the dispatched commit. The plan step warns about that distinction.
 #
-# A release takes two runs, so npm's provenance names the commit whose tree
-# the tarballs were packed from. The dispatched run bumps: it writes the
-# release commit and tag, pushes them, and dispatches this workflow again on
-# main. That second run finds the release commit at the tip, resumes it, and
-# publishes; its OIDC token, and so the SLSA provenance, carries the release
-# commit's sha, and its workflow identity stays this file on refs/heads/main,
-# the one `sharnessd-launcher` trusts.
+# Keep installed code away from publishing credentials. `build` installs and
+# packs without App or OIDC tokens. `push` validates the generated commit
+# before using the App token. `publish` validates the packed artifacts before
+# using OIDC. Neither privileged job installs or builds dependencies. This
+# separation protects credentials, but cannot detect a dependency compromised
+# in both builds that produces matching recorded hashes.
 #
-# Each run splits into jobs by what they may touch. `build` installs, builds,
-# runs the pack gates and packs, with no OIDC token and no App token, so
-# nothing a dependency runs there can publish or push. `push` holds the
-# release App token and runs no installed code: it checks the release
-# commit `build` made, pushes it with its tag, and dispatches the resume.
-# `publish` holds the OIDC token and runs no install or build: it checks the
-# tarballs `build` packed against the release commit's manifests and content
-# hashes and publishes them. A dependency compromised in both runs' builds
-# could still pack code the release commit's hashes describe; the split keeps
-# the tokens out of its reach.
+# Agent images complete independently of the required Registry and Router
+# release. The daemon signature must name the release commit. Other input
+# keys can survive many commits, so their signatures establish a build on
+# main rather than freshness. A compromised build can supply an older signed
+# OpenClaw index that still passes signature verification.
 #
-# A rerun after a partial failure converges rather than minting a second
-# release. Before the release commit exists, the version is recomputed from
-# npm and the release tags (unchanged while nothing is published at it and
-# the UTC day has not turned). Once the release commit is on main, any run
-# finds it, checks out its tree, and publishes whatever manifest version
-# there npm still lacks and finishes image tags and release notes, however
-# many commits landed since. A run on an
-# older commit while the release commit is still the tip, such as a rerun of
-# the bump run, dispatches a fresh run rather than publishing; once main has
-# moved past the release commit, the run publishes and its provenance names
-# the dispatched commit instead. A release that can never complete is left behind by
-# dispatching with `start_new_version`, which mints the next version from the
-# tip instead.
-#
-# Prerequisites: a release GitHub App installed on this repository with
-# contents write and allowed to push main, and on social-harness/deployment
-# with contents write for the release dispatches; its client ID in the Actions
-# variable RELEASE_APP_CLIENT_ID and its private key in the Actions secret
-# RELEASE_APP_PRIVATE_KEY. npm publishes without a token, so each published
-# package lists this repository's publish.yml in the `release` environment as
-# a trusted publisher; a newly published package needs that entry first.
+# Configure the release App with contents write on this repository and on
+# social-harness/deployment, and permission to push main. Set its Actions
+# variable RELEASE_APP_CLIENT_ID and secret RELEASE_APP_PRIVATE_KEY. Each npm
+# package must trust this repository's publish.yml in the release environment
+# before its first publication.
 on:
   workflow_dispatch:
     inputs:
@@ -95,11 +44,8 @@ on:
         type: boolean
         default: false
 
-# Two releases must never interleave: both would compute the same version from
-# the same npm state and race to push its release commit and tag. The resume
-# run that a bump dispatches waits here until the bump run ends. The group is
-# per ref, so a dispatch on another branch, which runs nothing, never replaces
-# a pending main run.
+# Serialize version selection and publication. The resume waits for its bump
+# run, while dispatches on other refs cannot replace a pending main run.
 concurrency:
   group: publish-${{ github.ref }}
   cancel-in-progress: false
@@ -107,14 +53,12 @@ concurrency:
 permissions:
   contents: read
 
-# `bash` here means `bash -eo pipefail`, so a command that fails inside a
-# pipeline fails its step instead of handing a partial result to the next.
+# Explicit Bash enables pipefail, preventing partial pipeline results.
 defaults:
   run:
     shell: bash
 
-# Dependency order: each package comes after the siblings it depends on, which
-# the selection checks.
+# Selection packs dependencies before their dependents.
 env:
   RELEASE_PACKAGES: packages/social-harness plugins/openclaw
   IMAGE_CERTIFICATE_IDENTITY: https://github.com/social-harness/moltzap/.github/workflows/images.yml@refs/heads/main
@@ -147,14 +91,8 @@ jobs:
         with:
           registry-url: https://registry.npmjs.org
 
-      # The last release commit on main decides whether this run resumes it:
-      # a manifest version there that npm still lacks is published from that
-      # commit's own tree. A run started on an older commit while the release
-      # commit is still the tip, such as a rerun of the bump run, only
-      # dispatches a fresh run, whose provenance then names the release
-      # commit. Otherwise the run releases the dispatched commit, which must
-      # still be the tip of main so that the release commit and npm's
-      # provenance describe one tree.
+      # An incomplete release resumes from its recorded tree. Redispatch
+      # while that commit is still main's tip to preserve its provenance.
       - name: Decide whether this run bumps or resumes a release
         id: plan
         env:
@@ -348,7 +286,7 @@ jobs:
             image="ghcr.io/social-harness/$service"
             until digest=$(docker buildx imagetools inspect "$image:inputs-$key" --format '{{.Manifest.Digest}}'); do
               if (( SECONDS >= deadline )); then
-                echo "ERROR: the images workflow must publish $service key $key and the ghcr.io/social-harness/{registry,router} packages must be public and pull anonymously; rerun once both conditions hold. Docs: https://docs.moltzap.xyz/spec/layer-interfaces#publication-and-versions" >&2
+                echo "ERROR: the images workflow must publish $service key $key and the ghcr.io/social-harness/{registry,router} packages must be public and pull anonymously; rerun once both conditions hold. Docs: https://docs.moltzap.xyz/reference/spec/releases#publication-and-versions" >&2
                 exit 1
               fi
               remaining=$((deadline - SECONDS))
@@ -358,7 +296,7 @@ jobs:
             [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
             ref="$image@$digest"
             docker buildx imagetools inspect "$ref" >/dev/null || {
-              echo "ERROR: the ghcr.io/social-harness/{registry,router} packages must be public and pull anonymously before release. Docs: https://docs.moltzap.xyz/spec/layer-interfaces#publication-and-versions" >&2
+              echo "ERROR: the ghcr.io/social-harness/{registry,router} packages must be public and pull anonymously before release. Docs: https://docs.moltzap.xyz/reference/spec/releases#publication-and-versions" >&2
               exit 1
             }
             cosign verify \
@@ -383,15 +321,10 @@ jobs:
         if: steps.select.outputs.packages != ''
         run: pnpm nx run-many -t test:pack,test:abi --parallel=4
 
-      # The runner's pnpm install wired the husky hooks; the release commit
-      # is made of generated output CI already gated, so the hooks stay out.
-      # towncrier writes the version's CHANGELOG.md section from the fragments
-      # in changelog.d/ and deletes them; with no fragments it writes nothing.
-      # A rerun whose section is already written skips it. Without its marker
-      # line towncrier would write above the file's title, so a missing marker
-      # fails the release. This job can push to main and mint the npm OIDC
-      # token, so towncrier and its dependencies install only from hash-pinned
-      # requirements.
+      # Generated release output bypasses local Husky hooks. The push job
+      # validates this commit before publishing it. Towncrier's marker keeps
+      # its output below the changelog title, and hash-pinned requirements bind
+      # the formatter and its dependencies.
       - name: Make the release commit
         if: steps.plan.outputs.mode == 'bump' && steps.select.outputs.packages != ''
         env:
@@ -790,7 +723,7 @@ jobs:
             image="ghcr.io/social-harness/$service"
             until digest=$(docker buildx imagetools inspect "$image:inputs-$key" --format '{{.Manifest.Digest}}'); do
               if (( SECONDS >= deadline )); then
-                echo "ERROR: images.yml has not published $image:inputs-$key for release $VERSION. Re-run images.yml's run for the release commit $RELEASE_COMMIT, then re-run this job. Docs: https://docs.moltzap.xyz/spec/layer-interfaces#publication-and-versions" >&2
+                echo "ERROR: images.yml has not published $image:inputs-$key for release $VERSION. Re-run images.yml's run for the release commit $RELEASE_COMMIT, then re-run this job. Docs: https://docs.moltzap.xyz/reference/spec/releases#publication-and-versions" >&2
                 exit 1
               fi
               remaining=$((deadline - SECONDS))

@@ -4,7 +4,7 @@
  */
 
 import { absurd, Deferred, Effect } from "effect";
-import type { SignedMessage } from "../../envelope/signed-message.js";
+import type { SignedMessage } from "../../../identity/envelope/signed-message.js";
 import type { SendError } from "../errors.js";
 import {
   ClientRepresentationError,
@@ -24,8 +24,8 @@ import {
   type DecodedOuterBody,
   EvidenceStatement,
   type EvidenceStatement as EvidenceStatementValue,
-  GenesisAnchorBody,
   hashAnchor,
+  InitialAnchorBody,
   MembershipDescriptor,
   quorumThreshold,
   signEvidenceMessage,
@@ -50,15 +50,6 @@ import {
   type ProposalLock,
 } from "../../store/index.js";
 import {
-  inboundDelivery,
-  makeActionCertifiedRecord,
-  makeCertifiedRecord,
-  protocolEvidence,
-  recordAnchorHash,
-  stagedRecord,
-  storedCertifiedRecord,
-} from "../history/index.js";
-import {
   type EngineActionFold,
   type EngineConversation,
   type EnginePostIntent,
@@ -67,7 +58,16 @@ import {
   type EvidenceRoute,
   evidenceTarget,
   makeActionFold,
-} from "../runtime/index.js";
+} from "../engine-context.js";
+import {
+  inboundDelivery,
+  makeActionCertifiedRecord,
+  makeCertifiedRecord,
+  protocolEvidence,
+  recordAnchorHash,
+  stagedRecord,
+  storedCertifiedRecord,
+} from "../history/index.js";
 
 /** Dissemination resume, bound as the `resumeDissemination` engine phase. */
 export { resumeDisseminationObligations } from "./dissemination.js";
@@ -80,7 +80,7 @@ const localRepresentationFailure = (): RouterWorkerPersistenceError =>
 const currentAnchorHash = (
   conversation: EngineConversation,
 ): Effect.Effect<AnchorHash, RouterWorkerPersistenceError> =>
-  conversation.currentAnchor.kind === "genesis_anchor_body"
+  conversation.currentAnchor.kind === "initial_anchor_body"
     ? hashAnchor(conversation.currentAnchor).pipe(
         Effect.mapError(localRepresentationFailure),
       )
@@ -91,12 +91,12 @@ const gapFree = (
   action: ActionCore,
 ): Effect.Effect<boolean, RouterWorkerPersistenceError> =>
   Effect.gen(function* () {
-    if (action.kind === "GENESIS") {
+    if (action.kind === "FIRST_MESSAGE") {
       return (
         conversation.head === undefined &&
-        conversation.currentAnchor.kind === "genesis_anchor_body" &&
+        conversation.currentAnchor.kind === "initial_anchor_body" &&
         (yield* equalCanonical(
-          GenesisAnchorBody,
+          InitialAnchorBody,
           conversation.currentAnchor,
           action.anchor,
         ).pipe(Effect.mapError(localRepresentationFailure)))
@@ -110,9 +110,9 @@ const gapFree = (
 
 /**
  * The membership an action's conversation has here: the one this endpoint
- * holds, or, for the GENESIS of a conversation it does not hold yet, the
- * descriptor GENESIS carries, verified against the Registry key. A POST names
- * its membership only by hash, so a POST for a conversation this endpoint
+ * holds, or, for the FIRST_MESSAGE of a conversation it does not hold yet, the
+ * descriptor FIRST_MESSAGE carries, verified against the Registry key. A MESSAGE names
+ * its membership only by hash, so a MESSAGE for a conversation this endpoint
  * does not hold does not verify.
  * @param runtime Engine whose held conversations are searched.
  * @param action The action whose conversation is resolved.
@@ -126,7 +126,7 @@ const ingressMembership = (
   if (retained !== undefined) {
     return Effect.succeed(retained.membership);
   }
-  return action.kind === "GENESIS"
+  return action.kind === "FIRST_MESSAGE"
     ? verifyMembershipDescriptor(
         action.membership,
         runtime.input.registrySignerPublicKey,
@@ -141,7 +141,7 @@ const conversationForAction = (
 ): Effect.Effect<EngineConversation | undefined, ClientRepresentationError> =>
   Effect.gen(function* () {
     const retained = runtime.conversations.get(action.conversationId);
-    if (retained !== undefined || action.kind === "POST") {
+    if (retained !== undefined || action.kind === "MESSAGE") {
       return retained;
     }
     const membership = yield* verifyMembershipDescriptor(
@@ -158,9 +158,9 @@ const conversationForAction = (
     };
   });
 
-const genesisFoundation = (
+const firstMessageFoundation = (
   conversation: EngineConversation,
-  action: Extract<ActionCore, { readonly kind: "GENESIS" }>,
+  action: Extract<ActionCore, { readonly kind: "FIRST_MESSAGE" }>,
 ): Effect.Effect<ConversationFoundation, RouterWorkerPersistenceError> =>
   Effect.gen(function* () {
     return {
@@ -174,7 +174,7 @@ const genesisFoundation = (
         Effect.mapError(localRepresentationFailure),
       ),
       canonicalAnchor: yield* encodeCanonical(
-        GenesisAnchorBody,
+        InitialAnchorBody,
         action.anchor,
       ).pipe(Effect.mapError(localRepresentationFailure)),
     };
@@ -206,11 +206,11 @@ const lockAction = (
   Effect.gen(function* () {
     const lock = yield* proposalLock(conversation, action, actionHash);
     if (
-      action.kind === "GENESIS" &&
+      action.kind === "FIRST_MESSAGE" &&
       !runtime.conversations.has(action.conversationId)
     ) {
-      const foundation = yield* genesisFoundation(conversation, action);
-      yield* runtime.input.store.lockGenesisProposal(foundation, lock);
+      const foundation = yield* firstMessageFoundation(conversation, action);
+      yield* runtime.input.store.lockFirstMessageProposal(foundation, lock);
       yield* Effect.sync(() => {
         runtime.conversations.set(action.conversationId, conversation);
       });
@@ -233,7 +233,9 @@ const foldFor = (
     conversation,
     action,
     actionHash,
-    action.kind === "GENESIS" ? action.anchor : conversation.currentAnchor,
+    action.kind === "FIRST_MESSAGE"
+      ? action.anchor
+      : conversation.currentAnchor,
   );
   runtime.actionFolds.set(actionHash, fold);
   return fold;
@@ -370,7 +372,7 @@ function hasActionThreshold(fold: EngineActionFold): boolean {
   const memberCount = fold.conversation.membership.members.length;
   const count = fold.actionEvidence.size;
   const thresholdReached =
-    fold.action.kind === "GENESIS"
+    fold.action.kind === "FIRST_MESSAGE"
       ? count === memberCount
       : count >= quorumThreshold(memberCount);
   return (
@@ -441,14 +443,17 @@ const applyPromotionState = (
       recordHash: record.actionCertifiedRecord.recordHash,
       record,
     };
+    if (
+      fold.action.postIntent.authorAgentId !==
+      runtime.input.localAgentCard.agentId
+    ) {
+      return undefined;
+    }
     runtime.completedPosts.set(
       fold.action.postIntent.postId,
       record.actionCertifiedRecord.recordHash,
     );
-    return fold.action.postIntent.authorAgentId ===
-      runtime.input.localAgentCard.agentId
-      ? runtime.intents.get(fold.action.postIntent.postId)
-      : undefined;
+    return runtime.intents.get(fold.action.postIntent.postId);
   });
 
 function completePromotion(
@@ -802,8 +807,8 @@ const ensureConversation = (
     return retained;
   }
   if (
-    action.kind !== "GENESIS" ||
-    record.routerAnchor.kind !== "genesis_anchor_body"
+    action.kind !== "FIRST_MESSAGE" ||
+    record.routerAnchor.kind !== "initial_anchor_body"
   ) {
     return undefined;
   }
@@ -840,7 +845,7 @@ const mergeActionCertificate = (
 
 /**
  * Lock the action a verified record certifies over the lock this endpoint
- * holds on another POST at the same predecessor. The record's `q(n)` action
+ * holds on another MESSAGE at the same predecessor. The record's `q(n)` action
  * certificate means that other action can never be certified, because any
  * two `q(n)` quorums share an honest member, who signs one action at a
  * predecessor under one anchor. The store replaces the lock and keeps the
@@ -940,7 +945,7 @@ const prepareRecordFold = (
       record.recordCore.actionHash,
     ).pipe(
       Effect.catchTag("EndpointStoreError", (error) =>
-        action.kind === "POST" && error.reason === "conflict"
+        action.kind === "MESSAGE" && error.reason === "conflict"
           ? supersedeLock(runtime, conversation, record)
           : Effect.fail(error),
       ),

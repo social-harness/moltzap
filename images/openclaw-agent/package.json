@@ -35,6 +35,22 @@
           "cwd": "images/openclaw-agent",
           "command": "eslint . --max-warnings=0"
         }
+      },
+      "image:build": {
+        "executor": "nx:run-commands",
+        "cache": false,
+        "options": {
+          "cwd": ".",
+          "command": "docker buildx build --load --tag social-harness-openclaw:local images/openclaw-agent"
+        }
+      },
+      "image:smoke": {
+        "executor": "nx:run-commands",
+        "cache": false,
+        "options": {
+          "cwd": ".",
+          "command": "bash images/openclaw-agent/smoke.sh social-harness-openclaw:local"
+        }
       }
     },
     "implicitDependencies": [

@@ -8,7 +8,7 @@ import type {
   LiveSignedMessage,
   SignedMessage,
   VerifiedSignedMessage,
-} from "../envelope/signed-message.js";
+} from "../../identity/envelope/signed-message.js";
 import type { verifyOuterMessage } from "../records/index.js";
 import type { RouterSendRequest } from "./api/contract.js";
 import type { RouterWorkerIngress } from "./index.js";

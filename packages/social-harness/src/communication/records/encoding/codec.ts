@@ -2,8 +2,8 @@
 
 import { Effect, Encoding, Schema } from "effect";
 import { createHash, randomBytes } from "node:crypto";
-import type { AgentId } from "../../../identity/agents.js";
 import type { VerifiedAgentCard } from "../../../identity/cards.js";
+import type { AgentId } from "../../../identity/identifiers.js";
 import type { AgentSigningAuthority } from "../../../identity/keys.js";
 import {
   type ClientRepresentationError,
@@ -15,8 +15,7 @@ import {
   decodeCanonicalBase64Url,
   isStrictlyAscending,
 } from "../../../encoding/identifier.js";
-import { WIRE_VERSION } from "../../../identity/wire-version.js";
-import { SealedBody } from "../../envelope/sealed-body.js";
+import { SealedBody } from "../../../identity/envelope/sealed-body.js";
 import {
   type LiveSignedMessage,
   MessageId,
@@ -24,7 +23,8 @@ import {
   SignedMessage,
   type SignedMessage as SignedMessageValue,
   type VerifiedSignedMessage,
-} from "../../envelope/signed-message.js";
+} from "../../../identity/envelope/signed-message.js";
+import { WIRE_VERSION } from "../../../identity/wire-version.js";
 import {
   ActionCore,
   ActionHash,
@@ -39,7 +39,7 @@ import {
   type DirectPacket as DirectPacketValue,
   EvidenceStatement,
   type EvidenceStatement as EvidenceStatementValue,
-  type GenesisAnchorBody,
+  type InitialAnchorBody,
   MembershipDescriptor,
   type MembershipDescriptor as MembershipDescriptorValue,
   MembershipHash,
@@ -157,7 +157,7 @@ export const hashPostIntent = (
   });
 
 export const hashAnchor = (
-  anchor: GenesisAnchorBody | ReanchorBody,
+  anchor: InitialAnchorBody | ReanchorBody,
 ): Effect.Effect<AnchorHashValue, ClientRepresentationError> =>
   domainHash({
     artifact: "anchor",

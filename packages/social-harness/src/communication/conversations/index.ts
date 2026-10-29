@@ -19,7 +19,7 @@ import type {
   EndpointEngineInput,
   EnginePhases,
   EngineRuntime,
-} from "./runtime/index.js";
+} from "./engine-context.js";
 import {
   type ClientRepresentationError,
   decodeCanonical,
@@ -31,6 +31,7 @@ import { wireVersions } from "../../identity/wire-version.js";
 import {
   type DecodedOuterBody,
   type MessageAddressInput,
+  type PostId,
   PostIntent,
   RecordHash,
 } from "../records/index.js";
@@ -43,6 +44,7 @@ import {
 import { DeliveryAcknowledgeError, ListenError, SendError } from "./errors.js";
 import { InboundMessage } from "./message.js";
 import { makeOutbox } from "./outbox.js";
+import { recoverEngineState } from "./restore.js";
 import {
   acceptEngineIngressWithRecovery,
   installRecoveryBarrier,
@@ -50,7 +52,7 @@ import {
   rearmPausedCatchUp,
   recoverCertifiedHistory,
   recoveryHeadAdvanced,
-} from "./recovery/index.js";
+} from "./router-recovery/index.js";
 import {
   type BindHold,
   type EngineSendInput,
@@ -64,10 +66,9 @@ import {
   resolveConversation,
   type ResolvedConversation,
 } from "./send.js";
-import { recoverEngineState } from "./startup.js";
 
 /** Private engine dependencies retained behind the daemon boundary. */
-export type { EndpointEngineInput } from "./runtime/index.js";
+export type { EndpointEngineInput } from "./engine-context.js";
 /** The send input and result the collective layer exchanges with the engine. */
 export type { EngineSendInput, EngineSentPost } from "./send.js";
 /** How a caller holds a precondition across a checked bind, and how a check is retried while stale. */
@@ -120,6 +121,19 @@ export interface EnginePendingMessage {
 
 /** Stable private engine capability consumed by daemon composition. */
 export interface EndpointEngine {
+  /** Return a certification wait only after the held intent is durably bound. */
+  readonly bind: <E>(
+    input: EngineSendInput,
+    hold: BindHold<E>,
+  ) => Effect.Effect<
+    { readonly certified: Effect.Effect<EngineSentPost, SendError> },
+    SendError | E
+  >;
+  /** Observe one durable local intent without rechecking, rebinding, or sending a replacement. */
+  readonly observePost: (
+    postId: PostId,
+  ) => Effect.Effect<EngineSentPost, SendError>;
+
   /**
    * Check and bind one application post. Inference completes outside
    * protocol locks, then `hold` is taken, then the intent binds atomically
@@ -595,6 +609,12 @@ const abandonVolatileFolds = (
 
 const endpointEngine = (runtime: EngineRuntime): EndpointEngine =>
   Object.freeze({
+    bind: <E>(input: EngineSendInput, hold: BindHold<E>) =>
+      prepareSend(runtime, input, hold).pipe(
+        Effect.map((prepared) => ({
+          certified: finishPreparedSend(runtime, prepared),
+        })),
+      ),
     bindChecked: <E, A>(
       input: EngineSendInput,
       check: PreparedSendCheck<A>,
@@ -610,6 +630,7 @@ const endpointEngine = (runtime: EngineRuntime): EndpointEngine =>
       prepareAdmittedSend(runtime, input, checkId).pipe(
         Effect.flatMap((prepared) => finishPreparedSend(runtime, prepared)),
       ),
+    observePost: (postId: PostId) => observePost(runtime, postId),
     send: (sendInput: Parameters<EndpointEngine["send"]>[0]) =>
       send(runtime, sendInput),
     resolveAddress: (to: Parameters<EndpointEngine["resolveAddress"]>[0]) =>
@@ -648,3 +669,24 @@ export const makeEndpointEngine = (
     yield* resumeRuntime(runtime);
     return endpointEngine(runtime);
   }).pipe(Effect.withSpan("makeEndpointEngine"));
+
+/**
+ * Observe the retained local intent without preparing or binding a replacement.
+ * @param runtime The active engine whose completion latches retain local ownership.
+ * @param postId The already-bound local post to observe.
+ * @returns The original post and its certificate, or its retained send failure.
+ */
+function observePost(runtime: EngineRuntime, postId: PostId) {
+  return Effect.suspend(() => {
+    const complete = runtime.completedPosts.get(postId);
+    if (complete !== undefined) {
+      return Effect.succeed({ postId, recordHash: complete });
+    }
+    const retained = runtime.intents.get(postId);
+    return retained === undefined
+      ? Effect.fail(new SendError({ reason: "certification-unavailable" }))
+      : Deferred.await(retained.completion).pipe(
+          Effect.map((recordHash) => ({ postId, recordHash })),
+        );
+  });
+}

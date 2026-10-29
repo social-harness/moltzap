@@ -1,7 +1,7 @@
 /** @file Cryptographic and cross-field verification for Client protocol values. */
 
 import { Effect, Schema } from "effect";
-import type { AgentId } from "../../identity/agents.js";
+import type { AgentId } from "../../identity/identifiers.js";
 import type { Ed25519PublicKey } from "../../identity/keys.js";
 import {
   type ClientRepresentationError,
@@ -19,7 +19,7 @@ import {
   SignedMessage,
   type SignedMessage as SignedMessageValue,
   type VerifiedSignedMessage,
-} from "../envelope/signed-message.js";
+} from "../../identity/envelope/signed-message.js";
 import {
   deriveConversationId,
   deriveEvidenceMessageId,
@@ -45,7 +45,7 @@ import {
   type CompletedReanchor,
   EvidenceStatement,
   type EvidenceStatement as EvidenceStatementValue,
-  GenesisAnchorBody,
+  InitialAnchorBody,
   MembershipDescriptor,
   type MembershipDescriptor as MembershipDescriptorValue,
   type MembershipHash,
@@ -330,7 +330,7 @@ export const verifyActionCore = (input: {
     if ((yield* hashPostIntent(intent)) !== action.postIntentHash) {
       return yield* representationFailure();
     }
-    if (action.kind === "GENESIS") {
+    if (action.kind === "FIRST_MESSAGE") {
       if (
         !(yield* equalCanonical(
           MembershipDescriptor,
@@ -374,8 +374,7 @@ export const verifyActionProposal = (input: {
   }).pipe(Effect.withSpan("verifyActionProposal"));
 
 /**
- * The caller has verified `actionHash` against `action`;
- * the verifyActionCertificate span name preserves trace continuity.
+ * The caller has already verified `actionHash` against `action`.
  */
 const verifyActionCertificateEvidence = (input: {
   readonly actionHash: ActionHash;
@@ -388,7 +387,7 @@ const verifyActionCertificateEvidence = (input: {
       return yield* representationFailure();
     }
     const requiredCount =
-      input.action.kind === "GENESIS"
+      input.action.kind === "FIRST_MESSAGE"
         ? input.membership.members.length
         : quorumThreshold(input.membership.members.length);
     const evidence = yield* verifyEvidenceSet({
@@ -447,8 +446,8 @@ export const verifyCompletedReanchor = (input: {
 
 /**
  * Check that a record core binds the membership this endpoint holds for its
- * conversation. A GENESIS core carries the descriptor, which must be the held
- * descriptor byte for byte; a POST core carries only the `MembershipHash`,
+ * conversation. A FIRST_MESSAGE core carries the descriptor, which must be the held
+ * descriptor byte for byte; a MESSAGE core carries only the `MembershipHash`,
  * which must be the held membership's hash. The caller verified the held
  * membership against the Registry when it first took it.
  * @param recordCore The record core to check.
@@ -498,7 +497,7 @@ const verifyRecordRouterAnchor = (input: {
   Effect.gen(function* () {
     const routerAnchor = input.record.routerAnchor;
     const anchorHash =
-      routerAnchor.kind === "genesis_anchor_body"
+      routerAnchor.kind === "initial_anchor_body"
         ? yield* hashAnchor(routerAnchor)
         : yield* verifyCompletedReanchor({
             completed: routerAnchor,
@@ -507,7 +506,7 @@ const verifyRecordRouterAnchor = (input: {
     if (anchorHash !== input.record.recordCore.anchorHash) {
       return yield* representationFailure();
     }
-    if (routerAnchor.kind !== "genesis_anchor_body") {
+    if (routerAnchor.kind !== "initial_anchor_body") {
       return;
     }
     if (
@@ -519,20 +518,20 @@ const verifyRecordRouterAnchor = (input: {
     }
   });
 
-const verifyGenesisRouterAnchor = (input: {
+const verifyFirstMessageRouterAnchor = (input: {
   readonly record: ActionCertifiedRecord;
 }): Effect.Effect<void, ClientRepresentationError> =>
   Effect.gen(function* () {
     const action = input.record.recordCore.action;
-    if (action.kind !== "GENESIS") {
+    if (action.kind !== "FIRST_MESSAGE") {
       return;
     }
     const routerAnchor = input.record.routerAnchor;
-    if (routerAnchor.kind !== "genesis_anchor_body") {
+    if (routerAnchor.kind !== "initial_anchor_body") {
       return yield* representationFailure();
     }
     if (
-      !(yield* equalCanonical(GenesisAnchorBody, routerAnchor, action.anchor))
+      !(yield* equalCanonical(InitialAnchorBody, routerAnchor, action.anchor))
     ) {
       return yield* representationFailure();
     }
@@ -560,7 +559,7 @@ export const verifyActionCertifiedRecord = (input: {
       record: input.record,
       membership: input.membership,
     });
-    yield* verifyGenesisRouterAnchor({ record: input.record });
+    yield* verifyFirstMessageRouterAnchor({ record: input.record });
     return recordHash;
   }).pipe(Effect.withSpan("verifyActionCertifiedRecord"));
 
@@ -657,13 +656,13 @@ const certifiedItemExtendsPosition = (input: {
   const action = input.record.actionCertifiedRecord.recordCore.action;
   if (input.request.knownRecordHash === null) {
     return (
-      action.kind === "GENESIS" &&
+      action.kind === "FIRST_MESSAGE" &&
       input.record.actionCertifiedRecord.routerAnchor.kind ===
-        "genesis_anchor_body"
+        "initial_anchor_body"
     );
   }
   return (
-    action.kind === "POST" &&
+    action.kind === "MESSAGE" &&
     action.previousRecordHash === input.request.knownRecordHash &&
     action.anchorHash === input.request.knownAnchorHash
   );

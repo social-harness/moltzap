@@ -13,14 +13,21 @@ import {
   Fiber,
   Option,
   Schema,
+  type Scope,
 } from "effect";
 import type { EngineSentPost } from "../conversations/index.js";
-import type { CollectiveOperation } from "./forms.js";
-import type { Members } from "./shared-answers.js";
+import type {
+  CollectiveFailure,
+  CollectiveOperation,
+  Members,
+} from "./contracts.js";
+import type { AdmittedPost, CollectivePorts, PostSender } from "./ports.js";
+import type { PreparedGather } from "./state.js";
 import { canonicalMessageAddress } from "../conversations/address.js";
 import { SendError } from "../conversations/errors.js";
 import {
   AgentAddress,
+  agentAddressOf,
   agentNameOf,
   type MessageAddressInput,
 } from "../records/values.js";
@@ -53,7 +60,7 @@ const decodeAgentAddress = Schema.decodeUnknownOption(AgentAddress);
 /** A collecting operation's canonical address and the members it asks. */
 interface GatherAddress {
   readonly to: MessageAddressInput;
-  readonly members: Members;
+  readonly members: readonly [AgentAddress, ...AgentAddress[]];
 }
 
 /**
@@ -97,11 +104,13 @@ export function gatherAddress(
  * How long a collecting operation's send waits for its request posts before
  * returning. A gather's request still uncertified then is left running: its
  * member answers or is reported as no-answer at the deadline. An all_gather's
- * one group post must be certified by then, or the all_gather cannot start:
- * a cold group's GENESIS needs every member. The bound stays under the MCP
+ * bound group post returns delivery-pending when it is still uncertified;
+ * that same post remains accepted work. The wait stays under the MCP
  * SDK's request timeout so a waiting host receives the result rather than a
  * transport timeout. It runs from the send's start, so a firewall's check of
- * the operation comes out of it.
+ * the operation comes out of it. Only certification of a durably bound
+ * all_gather post is timed; attachment and binding retain their own failure
+ * boundaries.
  */
 const REQUEST_SEND_WAIT = Duration.seconds(20);
 
@@ -130,6 +139,23 @@ export function operationTimes(deadlineSeconds: number): Effect.Effect<{
 }
 
 /**
+ * A request post, failing as uncertified when the send's wait ends first.
+ */
+export function withinRequestWait(
+  waitUntil: number,
+  certified: AdmittedPost["certified"],
+) {
+  return requestWait(waitUntil).pipe(
+    Effect.flatMap((duration) =>
+      Effect.timeoutFail(certified, {
+        duration,
+        onTimeout: () => new SendError({ reason: "delivery-pending" }),
+      }),
+    ),
+  );
+}
+
+/**
  * How long a send still waits for request posts: until its wait ends, never
  * past the deadline.
  * @param waitUntil When the send stops waiting, from {@link operationTimes}.
@@ -151,49 +177,32 @@ export type RequestSend = Fiber.RuntimeFiber<
 /** How many Registry lookups run at once; a group has at most 32 members. */
 const MEMBER_LOOKUP_CONCURRENCY = 8;
 
-/**
- * Failures that address resolution alone determines, so the send can refuse
- * them before any post.
- */
-const ADDRESS_FAILURES: ReadonlySet<SendError["reason"]> = new Set([
-  "invalid-address",
-  "unknown-agent",
-  "membership-invalid",
-]);
-
-/**
- * Whether a member's refusal is an address error rather than a delivery
- * failure.
- * @param refusal A member's lookup or post refusal.
- * @returns True for a malformed or unknown member or invalid membership.
- */
-export const isAddressRefusal = (refusal: RequestRefusal): boolean =>
-  ADDRESS_FAILURES.has(refusal.reason);
-
-/**
- * Look up every member and name each whose lookup fails, in member order.
- * @param members The members to resolve.
- * @param lookup The engine's address resolution for one member.
- * @returns Each failing member with its reason; empty when all resolve.
- */
-export const lookupRefusals = (
-  members: readonly AgentAddress[],
-  lookup: (member: AgentAddress) => Effect.Effect<void, SendError>,
-): Effect.Effect<RequestRefusal[]> =>
-  Effect.forEach(
+/** Resolve every identity before accepting work, retaining requested-member order. */
+export function resolveMembers(
+  members: readonly [AgentAddress, ...AgentAddress[]],
+  lookup: CollectivePorts["lookupMember"],
+): Effect.Effect<Members, CollectiveFailure> {
+  return Effect.validateAll(
     members,
     (member) =>
       lookup(member).pipe(
-        Effect.flip,
-        Effect.map(
-          (error): RequestRefusal => ({ member, reason: error.reason }),
-        ),
-        Effect.option,
+        Effect.mapError((error) => postRefusal(member, error)),
       ),
     { concurrency: MEMBER_LOOKUP_CONCURRENCY },
   ).pipe(
-    Effect.map((lookups) => lookups.flatMap((found) => Option.toArray(found))),
+    Effect.mapError(
+      (refusals): CollectiveFailure => ({
+        kind: "members-unreachable",
+        members: refusals,
+      }),
+    ),
+    Effect.flatMap(([first, ...rest]) =>
+      first === undefined
+        ? Effect.dieMessage("a collecting operation has no resolved members")
+        : Effect.succeed([first, ...rest] satisfies Members),
+    ),
   );
+}
 
 /**
  * Where a gather's request posts stand when the send stops waiting: each
@@ -229,3 +238,47 @@ export const requestsSoFar = (
       ),
     })),
   );
+
+/**
+ * Keep each sleep below the JavaScript timer limit, so a long deadline cannot
+ * overflow to an immediate wake-up.
+ */
+const DEADLINE_TIMER_STEP = Duration.days(1);
+
+/** Sleep until the absolute time `at`, in steps no timer overflows. */
+export function sleepUntil(at: number): Effect.Effect<void> {
+  return Clock.currentTimeMillis.pipe(
+    Effect.flatMap((now) =>
+      now >= at
+        ? Effect.void
+        : Effect.sleep(
+            Duration.min(Duration.millis(at - now), DEADLINE_TIMER_STEP),
+          ).pipe(Effect.zipRight(sleepUntil(at))),
+    ),
+  );
+}
+
+/** Each destination transfers to the endpoint scope before the caller waits on its outcome. */
+export function fanOutRequests(
+  prepared: PreparedGather,
+  sendRequest: PostSender,
+  scope: Scope.Scope,
+  refuse: (refusal: RequestRefusal) => Effect.Effect<void>,
+) {
+  const { id, open } = prepared;
+  return Effect.forEach(
+    open.members.map(agentAddressOf),
+    (member): Effect.Effect<RequestSend> =>
+      sendRequest({
+        to: member,
+        content: prepared.content,
+        collective: { operationId: id, role: "request", destination: member },
+      }).pipe(
+        Effect.mapError((error) => postRefusal(member, error)),
+        Effect.tapError(refuse),
+        Effect.either,
+        Effect.forkIn(scope),
+      ),
+    { concurrency: 1 },
+  );
+}

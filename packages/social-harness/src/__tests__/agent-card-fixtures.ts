@@ -8,8 +8,12 @@ import {
   type KeyObject,
   sign as signBytes,
 } from "node:crypto";
-import { AgentId, AgentName, PrincipalId } from "../identity/agents.js";
-import { AgentCard, type VerifiedAgentCard } from "../identity/cards.js";
+import {
+  AgentCard,
+  AgentView,
+  type VerifiedAgentCard,
+} from "../identity/cards.js";
+import { AgentId, AgentName, PrincipalId } from "../identity/identifiers.js";
 import { AgentSigningAuthority, Ed25519PublicKey } from "../identity/keys.js";
 import { WIRE_VERSION } from "../identity/wire-version.js";
 
@@ -37,6 +41,27 @@ interface TestCardInput {
  */
 export function identifier(prefix: string, byte: number): string {
   return `${prefix}${Encoding.encodeBase64Url(new Uint8Array(16).fill(byte))}`;
+}
+
+/** Host projection fixtures use the same immutable identities as the signed Alice, Bob and Carol fixtures. */
+export function testAgentView(address: string): AgentView {
+  const name = address.startsWith("agent:")
+    ? address.slice("agent:".length)
+    : address;
+  const index = ["alice", "bob", "carol", "dave"].indexOf(name);
+  const suffix =
+    index < 0
+      ? createHash("sha256")
+          .update(name)
+          .digest()
+          .subarray(0, 16)
+          .toString("base64url")
+      : Encoding.encodeBase64Url(new Uint8Array(16).fill(index + 1));
+  return Schema.decodeUnknownSync(AgentView)({
+    agentId: `agt_${suffix}`,
+    agentName: name,
+    principalId: `prn_${suffix}`,
+  });
 }
 
 /**

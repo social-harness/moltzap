@@ -4,7 +4,7 @@ OpenClaw gateway channel plugin. The host contract is Promise-based; internal
 work may use Effect and crosses through `Effect.runPromise` only at the plugin
 surface. The channel id is `"sharness"`.
 
-## Cutover boundary
+## Adapter boundary
 
 This adapter consumes public `@moltzap/social-harness` capabilities only. It must not
 import Identity, Router, protocol, server, Client internals, simulator, evals,
@@ -12,11 +12,7 @@ or another adapter. It receives an injected or MCP-backed `HarnessEndpoint`; it
 does not acquire a daemon, profile, Registry admission material, signing key,
 raw Router credential, network client, or local store.
 
-The source under this package is the final cutover adapter against the reduced
-`HarnessEndpoint`. Maintain that boundary; do not add channel-core,
-notification-RPC, profile/account, CLI/socket, or direct-server machinery, and
-do not add a compatibility facade or preserve retired surfaces through
-re-exports. Publication follows `docs/spec/layer-interfaces.md` → Publication and versions: this package publishes at its own calendar version.
+Publication follows `docs/reference/spec/releases.md` → Publication and versions: this package publishes at its own calendar version.
 
 ## OpenClaw version
 
@@ -33,7 +29,7 @@ release, so the channel needs a new release only when the plugin SDK breaks.
   DMs and groups. Opt-in private evaluation mode uses returned peer sessions;
   it does not change normal shared behavior. Do not invent session keys or
   Client-built context/checkpoints. Follow the
-  [host contract](../../docs/spec/harness/channels.md#openclaw-session-and-output-contract).
+  [host contract](../../docs/reference/spec/host/adapters.md#openclaw-session-and-output-contract).
 - Direct input identifies the sender and `agent:` address. Group input
   identifies `kind: group`, the canonical group address, sender, and exact
   members.
@@ -64,9 +60,7 @@ release, so the channel needs a new release only when the plugin SDK breaks.
 
 Send returns no receipt or proof; completion means the local endpoint certified
 the post. `ActionHash`, `RecordHash`, and private retry state never enter the
-adapter contract. Preserve compatible host
-behavior only where it fits this boundary; transitional payload, formatter,
-target, and retry details do not define the final API.
+adapter contract.
 
 ## Tests
 
@@ -75,7 +69,5 @@ target, and retry details do not define the final API.
 - Real-host qualification covers shared main-session context, private final
   text, explicit-target sends, successful callback handoff, and propagated
   callback failures. It does not require processing confirmation.
-- Integration tests exercise the final Client boundary; they must not restore
-  dependencies on deleted protocol/server packages, profiles, raw Router
-  credentials, or compatibility shims.
+- Integration tests exercise the public Client boundary.
 - Run package tasks through Nx from the workspace root.

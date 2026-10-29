@@ -4,7 +4,7 @@ import { scopedLive as it } from "@effect/vitest";
 import { Deferred, Effect, Fiber, Queue, Schema } from "effect";
 import { expect } from "vitest";
 import type { FirewallOptions } from "./firewall.js";
-import { digest } from "../../__tests__/agent-card-fixtures.js";
+import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { appendCertifiedPost } from "../../__tests__/certified-history-fixtures.js";
 import {
   group,
@@ -29,20 +29,16 @@ import {
   waitAction,
 } from "../../__tests__/firewall-runtime-fixtures.js";
 import { InboundItem } from "../../communication/collectives/inbound.js";
-import {
-  DeliveryToken,
-  encodeRuntimeValue,
-} from "../../communication/store/index.js";
-import { eventIdOf } from "../../harness/protocol/operations.js";
+import { eventIdOf } from "../../host-protocol/operations.js";
 import {
   type DecisionProvider,
   type DecisionRequest,
-  type EnglishRule,
   type MessageMiddleware,
   MiddlewareError,
   type MiddlewareInput,
+  type TextRule,
 } from "../evaluator/contract/index.js";
-import { makeEnglishPolicy } from "../evaluator/index.js";
+import { makeTextPolicy } from "../evaluator/index.js";
 import { type LocalGuidance, renderLocalGuidance } from "../outcome/index.js";
 
 // @agent-code-guard/regression-only: Exercises durable admission, replay, interruption and races through SQLite and the protocol engine.
@@ -165,7 +161,9 @@ function expectNamedSubjects(
   }
   expect(guidance).toMatchObject({
     instructions: [{ instruction: rule.guidance }],
-    subjects: [{ sender, recipients: [recipient] }],
+    subjects: [
+      { sender: testAgentView(sender), recipients: [testAgentView(recipient)] },
+    ],
   });
   const rendered = renderLocalGuidance(guidance);
   expect(rendered).toContain(`"sender":"${sender}"`);
@@ -223,7 +221,7 @@ const nearTie = {
   probabilities: { relevant: 0.49, irrelevant: 0.5, unresolved: 0.01 },
 };
 
-const announceOnce: EnglishRule = {
+const announceOnce: TextRule = {
   id: "announce-once",
   kind: "norm",
   text: "Announce the final meeting time once.",
@@ -289,9 +287,9 @@ function uncertainSafetyApplicability() {
   });
 }
 
-/** An English policy of one rule, decided by `nearTieProvider`. */
-function nearTiePolicy(rule: EnglishRule) {
-  return makeEnglishPolicy({
+/** A text policy of one rule, decided by `nearTieProvider`. */
+function nearTiePolicy(rule: TextRule) {
+  return makeTextPolicy({
     id: "owner",
     rules: [rule],
     provider: nearTieProvider(rule),
@@ -304,7 +302,7 @@ function nearTiePolicy(rule: EnglishRule) {
 }
 
 /** A decision provider certain of everything but `rule`'s applicability, which it answers with a near-tie. */
-function nearTieProvider(rule: EnglishRule): DecisionProvider {
+function nearTieProvider(rule: TextRule): DecisionProvider {
   return {
     decide: (request) =>
       Effect.succeed({
@@ -368,6 +366,7 @@ it(
 function recheckedSend() {
   return Effect.gen(function* () {
     const subject = yield* fixture;
+    yield* seedIncoming(subject, true);
     const entered = yield* Deferred.make<undefined>();
     const release = yield* Deferred.make<undefined>();
     const seen: MiddlewareInput[] = [];
@@ -389,11 +388,15 @@ function recheckedSend() {
       .send({ input: { to: destination, text: "Draft before new evidence" } })
       .pipe(Effect.forkScoped);
     yield* Deferred.await(entered);
-    yield* subject.store.putInboxItem({
-      deliveryToken: Schema.decodeUnknownSync(DeliveryToken)(
-        digest("dlv_", 90),
-      ),
-      canonicalItem: yield* encodeRuntimeValue({ kind: "local evidence" }),
+    yield* subject.store.bindPostIntent({
+      kind: "existing-conversation",
+      intent: {
+        conversationId: subject.membership.descriptor.conversationId,
+        membershipHash: subject.membership.hash,
+        authorAgentId: subject.local.card.agentId,
+        postId: "pst_concurrent",
+        canonicalIntent: new Uint8Array([1]),
+      },
     });
     yield* Deferred.succeed(release, undefined);
     expect(yield* Effect.flip(Fiber.join(sending))).toMatchObject({
@@ -401,7 +404,11 @@ function recheckedSend() {
     });
     expect(seen).toHaveLength(2);
     expect(seen[1]?.event).toEqual(seen[0]?.event);
-    expect((yield* subject.store.recover()).postIntents).toEqual([]);
+    expect(
+      (yield* subject.store.recover()).postIntents
+        .filter((intent) => intent.completedRecordHash === undefined)
+        .map((intent) => intent.postId),
+    ).toEqual(["pst_concurrent"]);
   });
 }
 
@@ -504,8 +511,8 @@ function concurrentSends() {
 function staleOutgoing(mode: FirewallOptions["mode"]) {
   return Effect.gen(function* () {
     const subject = yield* fixture;
-    const churn = churnPolicy(subject);
-    const delivery = yield* outgoingFixture(subject, churn.middleware, {
+    const churn = yield* churnPolicy(subject);
+    const delivery = yield* outgoingFixture(churn.subject, churn.middleware, {
       mode,
     });
     const sending = yield* delivery.operations
@@ -533,8 +540,10 @@ function staleOutgoing(mode: FirewallOptions["mode"]) {
 function staleIncoming(mode: FirewallOptions["mode"]) {
   return Effect.gen(function* () {
     const subject = yield* fixture;
-    const churn = churnPolicy(subject);
-    const runtime = yield* incomingFixture(subject, churn.middleware, { mode });
+    const churn = yield* churnPolicy(subject);
+    const runtime = yield* incomingFixture(churn.subject, churn.middleware, {
+      mode,
+    });
     yield* runtime.runPass;
     yield* Queue.take(runtime.completed);
     const event = yield* runtime.delivery.operations
@@ -690,7 +699,9 @@ function ownerHistoryStaysPrivate() {
     const guidance = (yield* runtime.delivery.operations.readInbox({})).items[0]
       ?.guidance;
     expect(guidance).toMatchObject({
-      subjects: [{ sender: `agent:${subject.remote.card.agentName}` }],
+      subjects: [
+        { sender: testAgentView(`agent:${subject.remote.card.agentName}`) },
+      ],
     });
   });
 }

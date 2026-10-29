@@ -9,11 +9,7 @@ import {
   Schema,
 } from "effect";
 import type { MessagePolicyConfigurationFailure } from "../firewall/index.js";
-import {
-  credentialMatches,
-  type HarnessMcpCredentials,
-} from "../harness/mcp/index.js";
-import { AgentName, PrincipalId } from "../identity/agents.js";
+import { AgentName, PrincipalId } from "../identity/identifiers.js";
 import { AgentSigningAuthority, Ed25519PublicKey } from "../identity/keys.js";
 import { OperationId } from "../identity/registry/contract.js";
 import {
@@ -29,6 +25,7 @@ import {
   loadSigningAuthority,
   readCredential,
 } from "./credentials.js";
+import { credentialMatches, type HarnessMcpCredentials } from "./mcp/index.js";
 
 const canonicalUnsignedDecimal = Schema.String.pipe(
   Schema.pattern(/^(?:0|[1-9]\d*)$/u),
@@ -160,7 +157,7 @@ export const processHelp = [
   "  Message policy: unset, no firewall; the decision-provider key applies only with it.",
   ...Object.values(configurationFields).map((field) => `  ${field.usage}`),
   "",
-  "Docs: https://docs.moltzap.xyz/spec/harness/daemon#process-and-configuration",
+  "Docs: https://docs.moltzap.xyz/reference/spec/daemon/daemon#process-and-configuration",
 ].join("\n");
 
 /** The process settings' failures; message-policy failures carry their own messages. */

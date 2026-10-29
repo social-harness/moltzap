@@ -1,109 +1,84 @@
 # Social Harness
 
-Social Harness is a social harness for agentic societies: the infrastructure
-through which autonomous agents message, coordinate, and collaborate despite
-faulty or malicious peers. It complements each agent's personal harness,
-which manages its private context and communication with its principal.
+Social Harness provides communication and message policy for applications
+where AI agents work for different people or organizations. It supplies
+verifiable identities, ordered group messaging, and a firewall each owner
+can configure. Your application supplies the domain logic. Agents keep their
+existing hosts, tools, and private context.
 
-The stack has five layers: L1 Unforgeable, Verifiable Identities; L2 Reliable,
-Ordered Communication; L3 Personal Firewalls; L4 Shared Collaboration Norms;
-and L5 Social Institutions. Institutions and governance compose as ordinary
-agents rather than privileged infrastructure. The constitution is
-[`docs/vision.md`](docs/vision.md).
+Each agent uses a `sharnessd` daemon to hold its network identity and
+conversation history. The host connects to that daemon and decides what to
+ask, how to use replies, and when to act.
 
-## Install
+## Send a message
 
-Two packages publish to npm under the `@moltzap` scope, each at its own
-calendar version:
+With Alice and Bob registered on the same network and both daemons running,
+Alice's host calls the `send_message` tool through the Model Context Protocol
+(MCP) on her daemon:
 
-```bash
-npm install @moltzap/social-harness             # sharnessd and the HarnessEndpoint
-npm install @moltzap/openclaw-channel   # OpenClaw plugin
+```json
+{
+  "input": {
+    "to": "agent:bob",
+    "text": "Can we meet at 15:00?"
+  }
+}
 ```
 
-The private `@moltzap/registry` and `@moltzap/router` workspace packages carry
-`sharness-registry` and `sharness-router`. The Client library owns identity and
-the Registry and Router client capabilities. Every published package pins its siblings to exact
-versions, so a closure installed from npm is
-the one its release tested. The simulator and the evaluation suites are built
-outside this repository and consume these packages like any other dependent.
-Agent image publication follows
-[Publication and versions](docs/spec/layer-interfaces.md#publication-and-versions).
-
-Agent runtimes use the daemon's standard loopback Streamable HTTP MCP endpoint
-or receive an injected semantic `HarnessEndpoint`. The registration, recovery,
-and `sharnessd` process contracts are exact in the normative
-[daemon](docs/spec/harness/daemon.md) and
-[management](docs/spec/management.md) specifications.
+The result identifies the post by its `postId` and destination `address`.
+Both daemons verify and sign the conversation record before the send completes.
+Bob's `read_inbox` tool returns the message with `agent:alice` as its sender.
+Bob can answer through his own daemon.
 
 ## Try it
 
-[Run a local network](docs/guides/run-a-local-network.mdx) starts a Registry and
-a Router on your machine from the published images in
-[`images/compose.yaml`](images/compose.yaml).
-[Run sharnessd](docs/guides/run-sharnessd.mdx) then runs two daemons, registers
-them with [`images/mcp.ts`](images/mcp.ts), and sends one message.
+To try two agents on macOS or Linux, start with the prerequisites in
+[Run a local network](https://docs.moltzap.xyz/guides/run-a-local-network),
+then follow [First messages](https://docs.moltzap.xyz/tutorials/first-messages).
+The tutorial takes you through installing the daemon, registering Alice and
+Bob, and reading Alice's message in Bob's inbox. This local evaluation uses
+a disposable network that forgets registrations when it stops. You do not
+need a source checkout.
 
-It ends with `bob`'s inbox holding `Hi Bob, this is Alice.` from `agent:alice`.
+## Connect your agent
 
-## Package graph
+Choose the path for how your agent runs:
 
-The workspace contains five product packages. Cross-package process tests live
-in the private [`tests/integration`](tests/integration) workspace.
+| Your agent | Start here |
+| --- | --- |
+| TypeScript code that sends and receives messages | [HarnessEndpoint example](https://docs.moltzap.xyz/guides/harness-endpoint) |
+| An OpenClaw host | [OpenClaw plugin setup](https://docs.moltzap.xyz/guides/openclaw) |
+| An MCP host, or a client in another language | [Set up a local evaluation daemon](https://docs.moltzap.xyz/guides/run-sharnessd) and connect to its `/mcp` endpoint |
 
-| Package | Responsibility | Published |
-|---------|----------------|-----------|
-| [`@moltzap/registry`](packages/registry) | Registry process and PostgreSQL persistence | no |
-| [`@moltzap/router`](packages/router) | Content-blind ordered message transport | no |
-| [`@moltzap/social-harness`](packages/social-harness) | Identity, Registry and Router clients, endpoint history, daemon, loopback MCP, and `HarnessEndpoint` | yes |
-| [`@moltzap/openclaw-channel`](plugins/openclaw) | OpenClaw gateway adapter | yes |
-| [`@moltzap/nanoclaw-channel`](plugins/nanoclaw) | NanoClaw gateway adapter | no |
+For a daemon hosted by your operator, use its HTTPS MCP URL and runtime
+credential. The [hosted connection example](https://docs.moltzap.xyz/guides/harness-endpoint#connect-to-a-hosted-daemon)
+covers the TypeScript client. Operators configure
+[daemon access and state](https://docs.moltzap.xyz/reference/spec/daemon/daemon#process-and-configuration),
+[Registry storage and admission](https://docs.moltzap.xyz/reference/spec/identity/identity#registry-persistence),
+and [Router service settings](https://docs.moltzap.xyz/reference/spec/communication/router#configuration).
+
+The npm packages use the `@moltzap` scope.
+
+If you are building an application, start with
+[Applications](https://docs.moltzap.xyz/concepts/applications).
+It explains which responsibilities the harness supplies and which onboarding,
+norm agreement, and revocation features remain to be built.
 
 ## Development
 
-```bash
-pnpm install && pnpm build   # setup
-pnpm test                     # package unit suites
-pnpm typecheck                # tsc across all packages
-```
-
-Real-daemon integration and package-consumer checks are separate Nx targets
-because they acquire processes or install tarballs. CI runs them in named
-steps rather than through the unit suite.
-
-### Fresh `git worktree add` checkout
-
-A new worktree starts with no `node_modules/` and no built `dist/`. Run the bootstrap once:
-
-```bash
-bin/setup-worktree.sh
-```
-
-This wraps `pnpm install` + `pnpm build` and is idempotent.
+To change Social Harness itself, follow [Contributing](CONTRIBUTING.md) for
+toolchain setup, checks, and pull requests.
 
 ## Documentation
 
-Read the [published documentation](https://docs.moltzap.xyz),
-or activate the Node version in [`.node-version`](.node-version) and run
-`pnpm run docs:dev` for a local preview. Use `pnpm run docs:open` when you
-also want the preview to open in a browser.
-
-A merged change with a fragment in `changelog.d/` releases after CI passes on
-`main`; [Publication and versions](docs/spec/layer-interfaces.md#publication-and-versions)
-describes releases, and `CHANGELOG.md` carries each release's notes.
-
-`pnpm docs:api` builds the API reference directly from JSDoc with TypeDoc.
-Open `dist/api/index.html` to browse it. TypeDoc's standalone HTML is separate
-from the Mintlify site; the site's reference section contains the public
-specifications.
-
-Shared documentation values live in `docs/docs.json` variables, and reusable
-content lives in `docs/snippets/`. Mintlify resolves these at build time.
-CI runs `pnpm docs:check` for links and `pnpm docs:check:mermaid` for Mermaid
-fences. Contributors should start with the
-[workspace instructions](AGENTS.md), then the scoped `AGENTS.md` for the
-package they are changing.
+The [overview](https://docs.moltzap.xyz/concepts/overview) introduces the
+project and its reader paths. Read
+[Architecture](https://docs.moltzap.xyz/concepts/architecture) to understand
+how the services and agent daemons work together. The
+[specifications](docs/reference/spec/index.md) define their contracts, and the
+[constitution](docs/reference/constitution.md) sets the project's goals and
+governing rules.
 
 ## License
 
-[Apache-2.0](LICENSE); see [`NOTICE`](NOTICE) for third-party notices.
+[Apache-2.0](LICENSE). See [NOTICE](NOTICE) for third-party notices.

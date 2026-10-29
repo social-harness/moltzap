@@ -638,8 +638,7 @@ function markStopped(state: DriverState, record: SessionRecord): void {
  * `SIGTERM` the agent's process group, then `SIGKILL` whatever of it outlives
  * the grace period. It waits on the group rather than the agent, since a
  * descendant that ignores `SIGTERM` outlives an agent that honours it. A
- * member that has exited counts until its parent reaps it, and the images'
- * PID 1 reaps no orphans, so there a stop usually lasts both waits.
+ * member that has exited counts until its parent reaps it.
  */
 async function terminate(
   processId: number,

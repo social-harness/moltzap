@@ -2,7 +2,7 @@
 
 import { Encoding } from "effect";
 import type { CheckedGuidance } from "../firewall/outcome/index.js";
-import { digest } from "./agent-card-fixtures.js";
+import { digest, testAgentView } from "./agent-card-fixtures.js";
 
 /** The peer text and registered instruction travel separately through every runtime view. */
 export function localGuidance(byte: number): CheckedGuidance {
@@ -12,8 +12,8 @@ export function localGuidance(byte: number): CheckedGuidance {
     subjects: [
       {
         id: subject,
-        sender: "agent:bob",
-        recipients: ["agent:alice"],
+        sender: testAgentView("agent:bob"),
+        recipients: [testAgentView("agent:alice")],
         text: "Can we meet?",
       },
     ],

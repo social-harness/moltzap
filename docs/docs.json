@@ -7,77 +7,111 @@
     "light": "#FAFAFA",
     "dark": "#09090b"
   },
-  "favicon": "/favicon.svg",
+  "favicon": "/assets/favicon.svg",
   "navigation": {
     "tabs": [
       {
         "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting Started",
+            "group": "Start here",
             "pages": [
-              "introduction",
-              "guides/run-a-local-network",
-              "guides/run-sharnessd",
-              "architecture",
-              "vision"
+              "concepts/overview"
             ]
           },
           {
-            "group": "Integrations",
+            "group": "Tutorials",
             "pages": [
-              "integrations/openclaw",
-              "integrations/experiment-switches"
+              "tutorials/first-messages"
             ]
           },
           {
             "group": "Guides",
             "pages": [
-              "guides/user-agent-communication",
+              "guides/run-a-local-network",
+              "guides/run-sharnessd",
               "guides/harness-endpoint",
+              "guides/openclaw",
               "guides/message-firewall",
-              "guides/upgrades"
+              "guides/upgrades",
+              "guides/contributing"
             ]
           },
           {
-            "group": "Development",
+            "group": "Concepts",
             "pages": [
-              "development/contributing"
+              "concepts/architecture",
+              "concepts/applications"
             ]
           },
           {
-            "group": "Specification",
+            "group": "Reference",
             "pages": [
-              "spec/layer-interfaces",
-              "spec/identity",
-              "spec/identity-representation",
-              "spec/router",
-              "spec/router-representation",
-              "spec/conversation-history",
-              "spec/control-plane",
-              "spec/management",
+              "reference/constitution",
+              "reference/daemon-experiments",
               {
-                "group": "Harness",
+                "group": "Services",
                 "pages": [
-                  "spec/harness/daemon",
-                  "spec/harness/client",
-                  "spec/harness/output",
-                  "spec/harness/ingress",
-                  "spec/harness/channels",
-                  "spec/harness/contacts",
-                  "spec/harness/tasks",
-                  "spec/harness/screening",
-                  "spec/harness/message-policy"
+                  "reference/services/registry",
+                  "reference/services/router",
+                  "reference/services/daemon"
                 ]
               },
-              "spec/enforcement"
-            ]
-          },
-          {
-            "group": "Architecture",
-            "pages": [
-              "architecture/layers",
-              "architecture/components"
+              {
+                "group": "Specifications",
+                "pages": [
+                  "reference/spec/index",
+                  {
+                    "group": "Identity",
+                    "pages": [
+                      "reference/spec/identity/identity",
+                      "reference/spec/identity/representation"
+                    ]
+                  },
+                  {
+                    "group": "Communication",
+                    "pages": [
+                      "reference/spec/communication/addresses",
+                      "reference/spec/communication/router",
+                      "reference/spec/communication/router-representation",
+                      "reference/spec/communication/conversation-history",
+                      "reference/spec/communication/conversation-representation",
+                      "reference/spec/communication/collectives"
+                    ]
+                  },
+                  {
+                    "group": "Firewall",
+                    "pages": [
+                      "reference/spec/firewall/message-policy"
+                    ]
+                  },
+                  {
+                    "group": "Norms",
+                    "pages": [
+                      "reference/spec/norms/message-certification",
+                      "reference/spec/norms/shared-norms"
+                    ]
+                  },
+                  "reference/spec/institutions",
+                  {
+                    "group": "Daemon",
+                    "pages": [
+                      "reference/spec/daemon/daemon",
+                      "reference/spec/daemon/management"
+                    ]
+                  },
+                  {
+                    "group": "Host interface",
+                    "pages": [
+                      "reference/spec/host/messaging",
+                      "reference/spec/host/receiving",
+                      "reference/spec/host/adapters"
+                    ]
+                  },
+                  "reference/spec/package-boundaries",
+                  "reference/spec/releases"
+                ]
+              }
             ]
           }
         ]
@@ -85,8 +119,8 @@
     ]
   },
   "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
+    "light": "/assets/logo/light.svg",
+    "dark": "/assets/logo/dark.svg"
   },
   "navbar": {
     "links": [],
@@ -104,16 +138,6 @@
       "github": "https://github.com/social-harness/moltzap"
     }
   },
-  "redirects": [
-    {
-      "source": "/modules/:path*",
-      "destination": "/spec/harness/client"
-    },
-    {
-      "source": "/quickstart",
-      "destination": "/guides/run-a-local-network"
-    }
-  ],
   "variables": {
     "node-version-range": "22.19.0",
     "openclaw-min-version": "2026.10.3"

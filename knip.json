@@ -21,8 +21,7 @@
       ],
       "ignoreDependencies": [
         "@mermaid-js/mermaid-cli",
-        "puppeteer",
-        "typedoc"
+        "puppeteer"
       ]
     },
     "packages/social-harness": {
@@ -111,6 +110,7 @@
     "images/nanoclaw-agent": {
       "entry": [
         "*.test.ts",
+        "build.ts",
         "entrypoint.ts",
         "prepare.ts",
         "preload.ts",

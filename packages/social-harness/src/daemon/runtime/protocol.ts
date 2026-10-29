@@ -9,13 +9,13 @@ import {
   Schema,
   Scope,
 } from "effect";
-import type { ListenError } from "../../communication/conversations/errors.js";
 import type {
+  DeliveryToken,
   EndpointStore,
   EndpointStoreError,
   StoredMembership,
 } from "../../communication/store/index.js";
-import type { AgentId } from "../../identity/agents.js";
+import type { AgentId } from "../../identity/identifiers.js";
 import type { DaemonBootstrap } from "../bootstrap.js";
 import {
   type CollectiveEmitError,
@@ -24,6 +24,10 @@ import {
   makeCollectiveOperations,
   type ResultProvenance,
 } from "../../communication/collectives/index.js";
+import {
+  type ListenError,
+  SendError,
+} from "../../communication/conversations/errors.js";
 import {
   type EndpointEngine,
   type EndpointEngineInput,
@@ -35,7 +39,10 @@ import {
   decodeOuterBody,
   type OuterBodyReader,
 } from "../../communication/records/index.js";
-import { AgentAddress } from "../../communication/records/values.js";
+import {
+  AgentAddress,
+  agentAddressOf,
+} from "../../communication/records/values.js";
 import {
   Router,
   type RouterWorker,
@@ -51,7 +58,11 @@ import {
   collectiveAdmission,
   type InstalledFirewall,
 } from "../../firewall/index.js";
-import { AgentCard, type VerifiedAgentCard } from "../../identity/cards.js";
+import {
+  AgentCard,
+  agentViewOf,
+  type VerifiedAgentCard,
+} from "../../identity/cards.js";
 import { Registry } from "../../identity/registry/index.js";
 import {
   activationFailure,
@@ -104,6 +115,10 @@ export interface ProtocolHooks {
   readonly emit: (
     item: InboundItem,
     provenance?: ResultProvenance,
+    terminal?: {
+      readonly operationId: string;
+      readonly deliveryToken: DeliveryToken;
+    },
   ) => Effect.Effect<void, CollectiveEmitError>;
 }
 
@@ -336,13 +351,28 @@ const makeProtocolCollectives = (
   emit: ProtocolHooks["emit"],
   agentCard: VerifiedAgentCard,
   engine: EndpointEngine,
-): CollectiveOperations => {
+): Effect.Effect<CollectiveOperations, EndpointStoreError> => {
   const installed = environment.firewall;
   return makeCollectiveOperations({
+    bindPost: (input, hold) => engine.bind(input, hold),
+    store: environment.store,
+    observePost: (postId) => engine.observePost(postId),
+    sendAdmitted: (input, checkId) => engine.sendAdmitted(input, checkId),
+    reportStorageFault: (error) => reportStorageFault(environment, error),
     self: Schema.decodeUnknownSync(AgentAddress)(
       `agent:${agentCard.agentName}`,
     ),
-    lookupMember: (member) => engine.resolveAddress(member),
+    lookupMember: (member) =>
+      engine.resolveConversation(member).pipe(
+        Effect.flatMap((resolved) => {
+          const card = resolved.memberCards.find(
+            (candidate) => agentAddressOf(candidate) === member,
+          );
+          return card === undefined
+            ? Effect.fail(new SendError({ reason: "unknown-agent" }))
+            : Effect.succeed(agentViewOf(card));
+        }),
+      ),
     sendPost: (input) => engine.send(input),
     emit,
     scope: environment.daemonScope,
@@ -389,12 +419,12 @@ export const acquireProtocol = (
       publishPending: hooks.publishPending,
     });
     const engine = yield* acquireProtocolEngine(environment, agentCard, worker);
-    const collectives = makeProtocolCollectives(
+    const collectives = yield* makeProtocolCollectives(
       environment,
       hooks.emit,
       agentCard,
       engine,
-    );
+    ).pipe(Effect.mapError(() => activationFailure("persistence")));
     hooks.retain({
       agentCard,
       worker,

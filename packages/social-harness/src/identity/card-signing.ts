@@ -1,7 +1,7 @@
 /** @file Registry-only immutable AgentCard issuance. */
 import { Effect, Schema } from "effect";
 import { GeneralSign } from "jose";
-import type { AgentId, AgentName, PrincipalId } from "./agents.js";
+import type { AgentId, AgentName, PrincipalId } from "./identifiers.js";
 import { encodeCanonicalJson } from "../encoding/canonical-json.js";
 import {
   AgentCard,

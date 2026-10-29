@@ -1,23 +1,18 @@
 #!/usr/bin/env node
 /**
- * @file Choose the packages one release publishes and write their manifests.
+ * @file Selects changed packages and writes their release versions and hashes.
  *
  * Usage: `node scripts/release/select-packages.ts VERSION DIR...`, where each
- * DIR names a repository-relative package directory. Prints the selected directories,
- * space-separated.
+ * DIR names a repository-relative package directory in dependency order.
+ * Run from the repository root after `pnpm build`. Prints selected directories
+ * separated by spaces.
  *
- * A package is selected when its content hash (`content-hash.ts`) differs
- * from the `sharnessContentHash` npm recorded for the version its manifest
- * names, or when npm has no such value. A selected manifest takes VERSION
- * and its new hash. The directories must come in dependency order: packing a
- * package pins each workspace sibling to the sibling's manifest version, so
- * a dependent packed after a selected sibling pins the new version, hashes
- * differently, and is selected too. Every published package therefore pins
- * its siblings to their newest published versions.
+ * A missing or changed published content hash selects a package. Updating its
+ * manifest before packing dependents lets their hashes include the new pin.
+ * The release rules are in `docs/reference/spec/releases.md`.
  *
- * Run from the repository root after `pnpm build`. Exits 1 when the order is
- * wrong or packing fails, and 2 when npm fails without a 404: an outage read
- * as "no recorded hash" would republish an unchanged package.
+ * Exits 1 for invalid dependency order or a packing failure, and 2 when npm
+ * fails without a 404. Registry failures must not select unchanged packages.
  */
 import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -30,9 +25,9 @@ import {
 
 /** One package manifest as the selection reads it. */
 export interface Manifest {
-  /** Production edges: `dependencies`, `optionalDependencies`, `peerDependencies`. */
   readonly name: string;
   readonly version: string;
+  /** Combined production, optional and peer dependency edges. */
   readonly dependencies: Readonly<Record<string, string>>;
 }
 
@@ -71,7 +66,9 @@ export type Selection =
   | { readonly kind: "unavailable"; readonly message: string };
 
 /**
- * Walk the packages in order and select every changed one.
+ * Selects changed packages in dependency order, updating each selected
+ * manifest before examining its dependents. A later failure leaves earlier
+ * selections applied.
  * @param workspace Workspace and registry operations.
  * @param version The calendar version selected packages take.
  * @param dirs Package directories, each after the siblings it depends on.

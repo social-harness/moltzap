@@ -15,7 +15,7 @@ import {
   messagePolicyFirewall,
 } from "../../daemon/index.js";
 
-const FORMAT = "org.social-harness/message-policy/v1";
+const FORMAT = "org.social-harness/message-policy/v2";
 
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- Closed judgments, next actions and expectations are the public contract under test. */
 
@@ -249,12 +249,28 @@ it.each([
   "Yes",
   "Tuesday",
   "Noted, please send it.",
+  "谢谢",
+  "Thanks，谢谢",
 ])("keeps response expectations for answers and requests: %s", (text) =>
   Effect.gen(function* () {
     const result = yield* received(message(text), CONTEXT);
     expect(result.guidance).toEqual([]);
   }),
 );
+
+it("keeps ASCII questions open across languages but does not classify other-language request punctuation", () =>
+  Effect.gen(function* () {
+    for (const [question, expected] of [
+      ["请确认?", []],
+      ["请确认。", [{ expectation: "none" }]],
+    ] as const) {
+      const result = yield* received(message("Thanks!"), {
+        ...CONTEXT,
+        history: [entry("prior-request", CONTEXT.agentId, MEMBER, question)],
+      });
+      expect(result.guidance).toMatchObject(expected);
+    }
+  }));
 
 it("asks for no response to an acknowledgement after the peer answered", () =>
   Effect.gen(function* () {
@@ -502,7 +518,7 @@ function firewallFor(fields: object) {
   ).pipe(
     Effect.flatMap((policy) =>
       messagePolicyFirewall(policy, {
-        decide: () => Effect.die("no English rules are installed"),
+        decide: () => Effect.die("no natural-language rules are installed"),
       }),
     ),
     Effect.flatMap((options) =>

@@ -35,7 +35,6 @@ import { randomUUID } from "node:crypto";
 import type { ChannelSetup, InboundMessage } from "./adapter.js";
 import { registerChannelAdapter } from "./channel-registry.js";
 
-/* eslint-disable jsdoc/text-escaping -- Mermaid sequenceDiagram blocks require literal HTML5 `<br>` separators. */
 /* eslint-disable agent-code-guard/promise-type, @typescript-eslint/no-invalid-void-type -- NanoClaw's mirrored ChannelAdapter lifecycle is Promise-based. */
 
 /** A NanoClaw host value cannot cross the addressed Client boundary. */
@@ -254,23 +253,9 @@ function endpointInbound(input: ProjectedItem): InboundMessage {
 }
 
 /**
- * NanoClaw adapter backed by exactly one scoped `HarnessEndpoint`.
- *
- * ```mermaid
- * sequenceDiagram
- *   participant Client as HarnessEndpoint
- *   participant Adapter as HarnessChannelAdapter
- *   participant Host as NanoClaw host
- *   Client->>Adapter: InboundDelivery<br>multicast, request, result or failure
- *   Adapter->>Host: onMetadata<br>address and group shape
- *   Adapter->>Host: await onInboundEvent<br>main session and Social Harness reply route
- *   Adapter->>Client: acknowledge delivery
- *   Host->>Adapter: deliver<br>address and text
- *   Adapter->>Adapter: parse the text as a multicast, gather, all_gather or answer
- *   Adapter->>Client: send, a gather, all_gather or answer reporting failures inbound
- * ```
- *
- * The stream acknowledges after the stock host callback completes.
+ * One endpoint scope lives from setup until the receive stream ends or
+ * teardown completes. Successful host callbacks permit acknowledgment of
+ * handoff. NanoClaw owns subsequent processing and retry policy.
  */
 class HarnessChannelAdapter {
   readonly name = CHANNEL_ID;
@@ -423,17 +408,18 @@ class HarnessChannelAdapter {
             onFailure: (error) =>
               this.reportRefusedText(config, to, error.message),
             onSuccess: (input) =>
-              activation.endpoint
-                .send(input, { failureDelivery: "inbound" })
-                .pipe(
-                  Effect.asVoid,
-                  Effect.catchTag("FirewallSendError", (error) =>
-                    this.reportRefusedText(config, to, error.message),
-                  ),
-                  Effect.catchIf(isFinalRefusal, (error) =>
-                    this.reportFinalRefusal(config, to, error),
-                  ),
+              activation.endpoint.send(input).pipe(
+                Effect.asVoid,
+                Effect.catchTag("CollectiveError", (error) =>
+                  this.reportRefusedText(config, to, error.message),
                 ),
+                Effect.catchTag("FirewallSendError", (error) =>
+                  this.reportRefusedText(config, to, error.message),
+                ),
+                Effect.catchIf(isFinalRefusal, (error) =>
+                  this.reportFinalRefusal(config, to, error),
+                ),
+              ),
           }),
         ),
       ),
@@ -584,7 +570,7 @@ function projectItem(item: InboundItem): ProjectedItem {
         origin: "peer",
         id: item.message.postId,
         address: item.message.address,
-        sender: item.message.sender,
+        sender: `agent:${item.message.sender.agentName}`,
         text: renderContent(item.message.content),
       };
     case "collectiveRequest":
@@ -592,7 +578,7 @@ function projectItem(item: InboundItem): ProjectedItem {
         origin: "peer",
         id: item.postId,
         address: item.to,
-        sender: item.from,
+        sender: `agent:${item.from.agentName}`,
         text: renderCollectiveRequest(
           item,
           `Send the answer once as the whole text of send_message to ${item.to}.`,
@@ -631,5 +617,4 @@ registerChannelAdapter(CHANNEL_ID, {
   factory: makeHarnessChannelAdapter,
 });
 
-/* eslint-enable jsdoc/text-escaping -- Restore strict defaults after the Mermaid block. */
 /* eslint-enable agent-code-guard/promise-type, @typescript-eslint/no-invalid-void-type -- Restore Effect-first defaults after the host boundary. */

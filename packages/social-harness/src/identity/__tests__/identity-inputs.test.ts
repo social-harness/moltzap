@@ -10,9 +10,9 @@ import {
   plaintext,
   sealFrom,
   signBody,
-} from "../../communication/envelope/__tests__/sealed-body-fixtures.js";
-import { SealedBody } from "../../communication/envelope/sealed-body.js";
-import { SignedMessage } from "../../communication/envelope/signed-message.js";
+} from "../envelope/__tests__/sealed-body-fixtures.js";
+import { SealedBody } from "../envelope/sealed-body.js";
+import { SignedMessage } from "../envelope/signed-message.js";
 import { AgentSigningAuthority } from "../keys.js";
 import { OperationId } from "../registry/contract.js";
 import { Registry } from "../registry/index.js";

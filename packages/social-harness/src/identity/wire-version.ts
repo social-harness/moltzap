@@ -6,11 +6,10 @@ import { Context, Effect, Option, Schema } from "effect";
 export const WIRE_VERSION_PATTERN = /^\d{4}\.\d{3,4}\.\d+$/;
 
 /**
- * Every newly signed artifact carries this wire value. Live admission accepts
- * no other value, so a peer that emits a different one fails with
- * `version-mismatch`; package publication never determines wire compatibility.
+ * The version emitted by new artifacts. The {@link LIVE_WIRE_VERSIONS} window
+ * determines which versions peers admit, independently of package publication versions.
  */
-export const WIRE_VERSION = "2026.1026.5";
+export const WIRE_VERSION = "2026.1029.2";
 
 /**
  * The emitted version, then at most one adjacent version. Holding two lets
@@ -36,7 +35,9 @@ const liveWindow = [WIRE_VERSION] as const satisfies LiveWindow;
  * Versions accepted at outer-envelope and authenticated HTTP admission by the
  * Registry, the Router, and the daemon.
  */
-export const LIVE_WIRE_VERSIONS: DistinctWindow<typeof liveWindow> = liveWindow;
+export const LIVE_WIRE_VERSIONS = liveWindow satisfies DistinctWindow<
+  typeof liveWindow
+>;
 
 /** Versions that left the live window since the last protocol reset. */
 const RETIRED_WIRE_VERSIONS = [] as const;

@@ -1,14 +1,14 @@
 /** @file Signed-request helpers shared by the AuthenticatedHttp tests. */
 import { HttpClientRequest, HttpServerRequest } from "@effect/platform";
 import { Clock, Effect, Layer, Match, Schema } from "effect";
-import type { AgentId as AgentIdValue } from "../../agents.js";
 import type { VerifiedAgentCard } from "../../cards.js";
+import type { AgentId as AgentIdValue } from "../../identifiers.js";
 import type {
   RegistryClientService,
   RegistryLookupResult,
 } from "../../registry/contract.js";
 import { Registry } from "../../registry/index.js";
-import { AuthenticatedHttp } from "../registered/index.js";
+import { AuthenticatedHttp } from "../../request-authentication.js";
 import {
   type IdentityFixture,
   makeIdentityFixture,

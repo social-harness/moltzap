@@ -24,7 +24,7 @@ import {
   type AgentName as AgentNameValue,
   PrincipalId,
   type PrincipalId as PrincipalIdValue,
-} from "./agents.js";
+} from "./identifiers.js";
 import {
   Ed25519PublicKey,
   ed25519PublicKeyThumbprintUri,
@@ -244,9 +244,9 @@ export const verifiedAgentCardSchema = Schema.declare(
 );
 
 /**
- * The public fields of an agent's verified AgentCard: the one shape daemon
- * results name an agent with, so a reader matches an AgentId and a name
- * without decoding a card.
+ * Identifies an agent and the principal it represents without exposing the
+ * signed card representation. Host messages, results and policy decisions
+ * retain this view from the verified AgentCard.
  */
 // eslint-disable-next-line @typescript-eslint/naming-convention -- Effect Schemas share the public domain name they decode.
 export const AgentView = Schema.Struct({
@@ -254,12 +254,16 @@ export const AgentView = Schema.Struct({
   agentName: AgentName,
   principalId: PrincipalId,
 }).annotations({ identifier: "AgentView" });
-/** One agent as a daemon result names it. */
+/**
+ * Identity captured from a verified AgentCard. The principal is the declaration
+ * recorded by Registry.
+ * @useDeclaredType
+ */
 // eslint-disable-next-line @typescript-eslint/no-redeclare -- The same-named Schema and type form one boundary model.
 export type AgentView = typeof AgentView.Type;
 
 /**
- * The view of a card the daemon verified; nothing else fills a view.
+ * Project an immutable Registry identity for host results.
  * @param agentCard A card verified against the pinned Registry signer.
  * @returns The card's public fields.
  */
@@ -349,7 +353,21 @@ export const digestAgentCard = (
 const wireVersion = (card: AgentCard): string =>
   cardState.get(card)?.wireVersion ?? "";
 
-/** Verifies immutable Registry attestation without exposing JOSE mechanics. */
+/**
+ * Parses immutable cards and verifies their Registry attestation.
+ *
+ * Use this Schema to decode and re-encode a card. Decoding retains its exact
+ * General JWS and exposes a frozen public-key snapshot. Parsing alone does
+ * not establish that the Registry signed the card.
+ *
+ * `verify` checks the signature and protected key identifier against the
+ * deployment-pinned `registrySignerPublicKey`. Only successful verification
+ * returns `VerifiedAgentCard`. A rejected card fails with
+ * `AgentCardVerificationError`.
+ *
+ * `wireVersion` reads the retained signed version, which members use to
+ * derive the same conversation foundation.
+ */
 export const AgentCard = Object.assign(agentCardSchema, {
   verify: verifyAgentCard,
   wireVersion,

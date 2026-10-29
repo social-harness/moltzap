@@ -37,7 +37,7 @@ export interface StoreState {
 
 const DATABASE_NAME = "sharnessd.sqlite3";
 
-/** An absent or empty database is created; the current schema reopens. */
+/** An empty database is created, the current schema reopens, and an admitted older schema migrates. */
 export type StoreOpening = "create" | "reopen" | "migrate";
 
 /**
@@ -382,6 +382,56 @@ function requireIntegerPragma(
   }
 }
 
+const collectiveSchemaSql = `
+  CREATE TABLE collective_answers (
+    operation_id TEXT NOT NULL REFERENCES collective_operations(operation_id),
+    member TEXT NOT NULL,
+    conversation_id TEXT NOT NULL,
+    record_hash TEXT NOT NULL,
+    PRIMARY KEY (operation_id, member),
+    FOREIGN KEY (conversation_id, record_hash) REFERENCES certified_records(conversation_id, record_hash)
+  ) STRICT;
+  CREATE TABLE collective_refusals (
+    operation_id TEXT NOT NULL REFERENCES collective_operations(operation_id),
+    destination TEXT NOT NULL,
+    canonical_refusal BLOB NOT NULL,
+    PRIMARY KEY (operation_id, destination)
+  ) STRICT;
+  CREATE TABLE collective_operations (
+    operation_id TEXT PRIMARY KEY,
+    creator_agent_id TEXT NOT NULL,
+    origin TEXT NOT NULL CHECK (origin IN ('local', 'remote')),
+    request_conversation_id TEXT,
+    request_record_hash TEXT,
+    requires_admission INTEGER NOT NULL CHECK (requires_admission IN (0, 1)),
+    canonical_request BLOB NOT NULL,
+    canonical_descriptor BLOB NOT NULL,
+    admitted_check_id TEXT,
+    phase TEXT NOT NULL DEFAULT 'collecting' CHECK (phase IN ('collecting', 'finalizing', 'completed')),
+    canonical_selection BLOB,
+    delivery_token TEXT NOT NULL UNIQUE,
+    FOREIGN KEY (request_conversation_id, request_record_hash)
+      REFERENCES certified_records(conversation_id, record_hash),
+    FOREIGN KEY (admitted_check_id) REFERENCES firewall_checks(check_id),
+    CHECK ((origin = 'local' AND request_conversation_id IS NULL AND request_record_hash IS NULL)
+      OR (origin = 'remote' AND request_conversation_id IS NOT NULL AND request_record_hash IS NOT NULL)),
+    CHECK ((phase = 'collecting' AND canonical_selection IS NULL)
+      OR (phase IN ('finalizing', 'completed') AND canonical_selection IS NOT NULL))
+  ) STRICT;
+  CREATE TABLE collective_posts (
+    operation_id TEXT NOT NULL REFERENCES collective_operations(operation_id),
+    role TEXT NOT NULL CHECK (role IN ('request', 'response', 'close')),
+    destination TEXT NOT NULL,
+    author_agent_id TEXT NOT NULL,
+    post_id TEXT NOT NULL,
+    PRIMARY KEY (operation_id, role, destination),
+    UNIQUE (author_agent_id, post_id),
+    FOREIGN KEY (author_agent_id, post_id) REFERENCES post_intents(author_agent_id, post_id)
+  ) STRICT;
+  CREATE UNIQUE INDEX collective_one_response ON collective_posts(operation_id) WHERE role = 'response';
+  CREATE UNIQUE INDEX collective_one_close ON collective_posts(operation_id) WHERE role = 'close';
+`;
+
 const runtimeSchemaSql = `
   CREATE TABLE runtime_inbox (
     sequence INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -398,11 +448,6 @@ const runtimeSchemaSql = `
 `;
 
 const firewallSchemaSql = `
-  CREATE TABLE firewall_evidence (
-    singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
-    revision INTEGER NOT NULL CHECK (revision >= 0)
-  ) STRICT;
-  INSERT INTO firewall_evidence (singleton, revision) VALUES (1, 0);
   CREATE TABLE firewall_incoming (
     sequence INTEGER PRIMARY KEY AUTOINCREMENT,
     delivery_token TEXT NOT NULL UNIQUE,
@@ -421,7 +466,7 @@ const firewallSchemaSql = `
   CREATE TABLE firewall_checks (
     check_id TEXT PRIMARY KEY,
     direction TEXT NOT NULL CHECK (direction IN ('incoming', 'outgoing')),
-    revision INTEGER NOT NULL,
+    canonical_snapshot BLOB NOT NULL,
     canonical_candidate BLOB NOT NULL,
     canonical_input BLOB NOT NULL,
     canonical_result BLOB,
@@ -444,21 +489,6 @@ const firewallSchemaSql = `
     FOREIGN KEY (conversation_id, record_hash)
       REFERENCES certified_records(conversation_id, record_hash)
   ) STRICT;
-  CREATE TRIGGER firewall_local_evidence_changed AFTER INSERT ON firewall_local_evidence BEGIN
-    UPDATE firewall_evidence SET revision = revision + 1 WHERE singleton = 1;
-  END;
-  CREATE TRIGGER firewall_answers_changed AFTER INSERT ON firewall_answers BEGIN
-    UPDATE firewall_evidence SET revision = revision + 1 WHERE singleton = 1;
-  END;
-  CREATE TRIGGER firewall_history_changed AFTER INSERT ON certified_records BEGIN
-    UPDATE firewall_evidence SET revision = revision + 1 WHERE singleton = 1;
-  END;
-  CREATE TRIGGER firewall_intent_changed AFTER INSERT ON post_intents BEGIN
-    UPDATE firewall_evidence SET revision = revision + 1 WHERE singleton = 1;
-  END;
-  CREATE TRIGGER firewall_visibility_changed AFTER INSERT ON runtime_inbox BEGIN
-    UPDATE firewall_evidence SET revision = revision + 1 WHERE singleton = 1;
-  END;
 `;
 
 const schemaSql = `
@@ -627,6 +657,7 @@ function createStore(database: DatabaseSync, steps: MigrationSteps): void {
       database.exec(runtimeSchemaSql);
       database.exec(firewallSchemaSql);
       database.exec(editablePolicySql);
+      database.exec(collectiveSchemaSql);
       database.exec(`PRAGMA user_version = ${schemaVersion(steps)}`);
     },
     "EXCLUSIVE",

@@ -3,7 +3,6 @@
 import { Effect, Schema } from "effect";
 import { expect, it } from "vitest";
 
-import golden from "../../communication/envelope/__tests__/wire-golden.json" with { type: "json" };
 import {
   decodeCanonicalJson,
   encodeCanonicalJson,
@@ -14,9 +13,10 @@ import {
   SignedMessage,
   WIRE_VERSION,
 } from "../../index.js";
+import golden from "../envelope/__tests__/wire-golden.json" with { type: "json" };
 import { WireVersions } from "../wire-version.js";
 
-/** Reproduce the fixed signed bytes with node scripts/generate-wire-golden.ts after pnpm build. */
+/** Reproduce the fixed signed bytes with pnpm nx run workspace:generate-wire-golden. */
 const retainedVersion = "2099.101.0";
 
 it.each([

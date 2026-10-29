@@ -27,12 +27,6 @@ import {
   registryLayer,
   routerInstanceId,
 } from "../../__tests__/router-worker-fixtures.js";
-import { SealedBody } from "../../communication/envelope/sealed-body.js";
-import {
-  type LiveSignedMessage,
-  MessageId,
-  SignedMessage,
-} from "../../communication/envelope/signed-message.js";
 import {
   type CatchUpRequest,
   ConversationId,
@@ -46,6 +40,12 @@ import {
   type RouterWorker,
 } from "../../communication/router/index.js";
 import { encodeCanonical } from "../../encoding/canonical-json.js";
+import { SealedBody } from "../../identity/envelope/sealed-body.js";
+import {
+  type LiveSignedMessage,
+  MessageId,
+  SignedMessage,
+} from "../../identity/envelope/signed-message.js";
 import { Registry } from "../../identity/registry/index.js";
 import { WIRE_VERSION } from "../../identity/wire-version.js";
 import { acquireProtocol } from "./protocol.js";
@@ -155,7 +155,10 @@ const routerFeeding = (input: {
 const recordingEngine = (
   accepted: Queue.Queue<DecodedOuterBody>,
 ): EndpointEngine => ({
+  observePost: () =>
+    Effect.dieMessage("no retained post is observed in this test"),
   send: () => Effect.dieMessage("the daemon sends nothing in this test"),
+  bind: () => Effect.dieMessage("the daemon sends nothing in this test"),
   bindChecked: () => Effect.dieMessage("the daemon sends nothing in this test"),
   sendAdmitted: () =>
     Effect.dieMessage("the daemon sends nothing in this test"),

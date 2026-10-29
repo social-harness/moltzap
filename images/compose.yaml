@@ -1,6 +1,6 @@
 # A local Social Harness network: an in-memory PGlite database, one Registry
 # and one Router, from the images tagged SHARNESS_NETWORK_VERSION. The Registry
-# image runs both the Registry and its database, so it is named once. Each
+# image supplies both executables in separate containers. Each
 # release tags both images with its version. Ports bind to 127.0.0.1 only.
 name: sharness-network
 

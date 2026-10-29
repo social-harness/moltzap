@@ -21,7 +21,7 @@ import {
   type MessagePolicyConfigurationError,
   policyInstallationError,
 } from "../firewall/index.js";
-import { registrationAdmissionRefusalMessage } from "../harness/protocol/index.js";
+import { registrationAdmissionRefusalMessage } from "../host-protocol/index.js";
 import { Registry } from "../identity/registry/index.js";
 import { wireVersions } from "../identity/wire-version.js";
 import {
@@ -60,13 +60,11 @@ export {
   type DecisionRequest,
   type DecisionResponse,
   decodeMessagePolicy,
-  type EnglishPolicySettings,
-  type EnglishRule,
   type Firewall,
   FirewallPolicyError,
   type FirewallSettings,
-  makeEnglishPolicy,
   makeFirewall,
+  makeTextPolicy,
   type Message,
   type MessageContext,
   type MessageMiddleware,
@@ -76,6 +74,8 @@ export {
   type MiddlewareInput,
   type MiddlewareResult,
   type RuleDescription,
+  type TextPolicySettings,
+  type TextRule,
 } from "../firewall/index.js";
 
 // eslint-disable-next-line @typescript-eslint/no-namespace -- The published service subpath intentionally merges its runtime values with the closed startup-error type.
@@ -83,7 +83,10 @@ export namespace Daemon {
   /** Usage text listing the daemon process's environment variables. */
   export const help = processHelp;
 
-  /** Trusted process composition fixes code and evidence while owner tools edit English rules. */
+  /**
+   * Trusted composition fixes code and evidence while owner tools edit natural-language rules.
+   * See {@link withFirewall} for the composition fields.
+   */
   export type FirewallOptions = InstalledFirewallOptions;
 
   /** Closed startup phase with sanitized configuration details. */
@@ -195,9 +198,9 @@ export namespace Daemon {
   ).pipe(Layer.provide(telemetry));
 
   /**
-   * Fixed middleware and persisted English rules are installed before the daemon accepts host calls.
+   * Fixed middleware and persisted natural-language rules are installed before the daemon accepts host calls.
    * The environment must not also name a message-policy document.
-   * @param options Fixed chains, provider settings and initial editable English documents.
+   * @param options Fixed chains, provider settings and initial editable natural-language documents.
    * @returns The complete daemon layer with both message boundaries checked.
    */
   export const withFirewall = (

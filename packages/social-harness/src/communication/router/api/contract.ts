@@ -1,7 +1,8 @@
 /** @file Closed Router wire values, requests, results, bounds, and client failures. */
 import canonicalize from "canonicalize";
 import { Data, Effect, Either, Encoding, Option, Schema } from "effect";
-import { AgentId } from "../../../identity/agents.js";
+import { SignedMessage } from "../../../identity/envelope/signed-message.js";
+import { AgentId } from "../../../identity/identifiers.js";
 import {
   type AgentSigningError,
   AuthenticationFailedError,
@@ -15,11 +16,7 @@ import {
   UnsupportedMediaTypeError,
   VersionMismatchError,
 } from "../../../identity/index.js";
-import {
-  LIVE_WIRE_VERSIONS,
-  WIRE_VERSION,
-} from "../../../identity/wire-version.js";
-import { SignedMessage } from "../../envelope/signed-message.js";
+import { LIVE_WIRE_VERSIONS } from "../../../identity/wire-version.js";
 
 /** Exact Router send target. */
 export const routerSendPath = "/v1/messages:send";
@@ -38,29 +35,19 @@ export const routerJsonContentType = "application/json";
 
 const INSTANCE_BYTE_LENGTH = 16;
 const DIGEST_BYTE_LENGTH = 32;
-/** Reset representations retain their own cursor type and encoded bound. */
-const wireProfiles = {
-  [WIRE_VERSION]: {
-    pollCursorType: "application/vnd.sharness.poll-cursor+jwe",
-  },
-} as const;
-
 /** Exact protected header carried by every PollCursor. */
 const pollCursorProtectedHeader = Object.freeze({
   alg: "dir" as const,
   enc: "A256GCM" as const,
-  typ: wireProfiles[WIRE_VERSION].pollCursorType,
+  typ: "application/vnd.sharness.poll-cursor+jwe",
 });
 
-/** Canonical protected-header JSON carried by every PollCursor. */
-const pollCursorProtectedHeaderJson = `{"alg":"dir","enc":"A256GCM","typ":"${wireProfiles[WIRE_VERSION].pollCursorType}"}`;
+/** The fixed string fields are declared in canonical key order. */
+const pollCursorProtectedHeaderJson = JSON.stringify(pollCursorProtectedHeader);
 
 /** Canonical encoded protected header carried by every PollCursor. */
 const encodedPollCursorProtectedHeader = Encoding.encodeBase64Url(
   new TextEncoder().encode(pollCursorProtectedHeaderJson),
-);
-const encodedPollCursorProtectedHeaderLength = Math.ceil(
-  (new TextEncoder().encode(pollCursorProtectedHeaderJson).byteLength * 8) / 6,
 );
 
 /** Prefix separating PollCursor values from unrefined compact JWE text. */
@@ -76,7 +63,10 @@ export const RouterInstanceId = canonicalValue(
   "rti_",
   INSTANCE_BYTE_LENGTH,
 );
-/** Validated Router process identity. */
+/**
+ * Validated Router process identity.
+ * @useDeclaredType
+ */
 export type RouterInstanceId = typeof RouterInstanceId.Type;
 
 /** Equality receipt for one complete retained SignedMessage. */
@@ -85,7 +75,10 @@ export const SignedMessageDigest = canonicalValue(
   "smd_",
   DIGEST_BYTE_LENGTH,
 );
-/** Validated SignedMessage equality receipt. */
+/**
+ * Validated SignedMessage equality receipt.
+ * @useDeclaredType
+ */
 export type SignedMessageDigest = typeof SignedMessageDigest.Type;
 
 /** Opaque, authenticated continuation for one caller and Router instance. */
@@ -100,7 +93,10 @@ export const PollCursor = Schema.String.pipe(
     description: "Canonical opaque Router poll continuation",
   }),
 );
-/** Validated opaque Router poll continuation. */
+/**
+ * Validated opaque Router poll continuation.
+ * @useDeclaredType
+ */
 export type PollCursor = typeof PollCursor.Type;
 
 const exact = {
@@ -132,8 +128,9 @@ export const RouterSendRequest: Schema.Schema<
   typeof sendRequest.Encoded
 > = sendRequest;
 /**
- * One authenticated request to accept or recover an opaque message, carrying
- * `expectedRouterInstanceId`, `mode` (`initial` or `retry`), and `signedMessage`.
+ * The observed Router instance fences a send across restarts. A retry retains
+ * the original SignedMessage bytes and never appends another feed entry.
+ * @useDeclaredType
  */
 export type RouterSendRequest = typeof sendRequest.Type;
 
@@ -170,10 +167,11 @@ export const RouterSendResult: Schema.Schema<
   typeof sendResult.Encoded
 > = sendResult;
 /**
- * Closed send outcome: `accepted` carries `routerInstanceId` and
- * `signedMessageDigest`; `router_restarted` carries `routerInstanceId`.
- * `message_invalid`, `idempotency_conflict`, and `retry_identity_unknown`
- * carry only their `kind` discriminator.
+ * `accepted` permits checking equality with the retained message, but proves
+ * no delivery or durability. `router_restarted` fences old-instance sends.
+ * A retained identity conflicts with `initial`; `retry` conflicts only when
+ * its bytes differ, and reports `retry_identity_unknown` after eviction.
+ * @useDeclaredType
  */
 export type RouterSendResult = typeof sendResult.Type;
 
@@ -186,7 +184,10 @@ export const RouterPollRequest: Schema.Schema<
   RouterPollRequest,
   typeof pollRequest.Encoded
 > = pollRequest;
-/** One authenticated endpoint-wide poll request with an optional `pollCursor`. */
+/**
+ * Omitting the cursor starts at the current tail without replaying retained messages.
+ * @useDeclaredType
+ */
 export type RouterPollRequest = typeof pollRequest.Type;
 
 const batch = closedStruct({
@@ -213,9 +214,11 @@ export const RouterPollResult: Schema.Schema<
   typeof pollResult.Encoded
 > = pollResult;
 /**
- * Closed poll outcome: `batch` carries `routerInstanceId`, `signedMessages`,
- * and `pollCursor`; `feed_gap` carries `routerInstanceId`.
- * `cursor_invalid` carries only its `kind` discriminator.
+ * A batch's messages remain unverified until the endpoint checks them all.
+ * Advance the cursor after verifying and durably accepting every message.
+ * `feed_gap` has no partial batch;
+ * `cursor_invalid` reveals no Router instance.
+ * @useDeclaredType
  */
 export type RouterPollResult = typeof pollResult.Type;
 
@@ -236,7 +239,10 @@ export class RouterInvalidResponseError extends Data.TaggedError(
   "RouterInvalidResponseError",
 ) {}
 
-/** Closed failures represented by Router HTTP error envelopes. */
+/**
+ * Closed failures represented by Router HTTP error envelopes.
+ * @inline
+ */
 export type RouterHttpEnvelopeError =
   | MalformedRequestError
   | AuthenticationFailedError
@@ -249,7 +255,10 @@ export type RouterHttpEnvelopeError =
   | UnavailableError
   | InternalServerError;
 
-/** Closed public Router client failure union. */
+/**
+ * Request failures are distinct from the closed send and poll result values.
+ * @inline
+ */
 export type RouterClientError =
   | RouterHttpEnvelopeError
   | RouterConnectionError
@@ -422,7 +431,7 @@ const pollCursorEncodedLength = (input: {
   const plaintextLength = utf8Encoder.encode(plaintext).byteLength;
   return (
     pollCursorPrefix.length +
-    encodedPollCursorProtectedHeaderLength +
+    encodedPollCursorProtectedHeader.length +
     1 +
     1 +
     16 +
@@ -441,7 +450,6 @@ const maximumPollCursorLength = pollCursorEncodedLength({
   ),
   lastScannedOrder: (1n << 128n) - 1n,
 });
-const MAXIMUM_CURSOR_LENGTH = maximumPollCursorLength;
 
 function base64UrlLength(byteLength: number): number {
   return Math.ceil((byteLength * 8) / 6);
@@ -486,12 +494,12 @@ const maximumSendBody = {
 const maximumPollBody = {
   callerAgentId: maximumAgentId,
   request: {
-    pollCursor: "A".repeat(MAXIMUM_CURSOR_LENGTH),
+    pollCursor: "A".repeat(maximumPollCursorLength),
   },
 };
 const maximumOneMessageBatch = {
   kind: "batch",
-  pollCursor: "A".repeat(MAXIMUM_CURSOR_LENGTH),
+  pollCursor: "A".repeat(maximumPollCursorLength),
   routerInstanceId: maximumRouterInstanceId,
   signedMessages: [signedMessagePlaceholder],
 };
@@ -534,9 +542,6 @@ const routerRepresentationLimits = Effect.runSync(
   calculateRouterRepresentationLimits(SignedMessage.maximumEncodedByteLength),
 );
 
-/** Encoded byte width of a RouterInstanceId payload. */
-const routerInstanceIdByteLength = INSTANCE_BYTE_LENGTH;
-
 interface CursorSegments {
   readonly encodedHeader: string;
   readonly encryptedKey: string;
@@ -546,7 +551,7 @@ interface CursorSegments {
 }
 
 const cursorSegmentsPattern = new RegExp(
-  `^(?=[\\s\\S]{0,${MAXIMUM_CURSOR_LENGTH}}$)${pollCursorPrefix}([^.]*?)\\.([^.]*?)\\.([^.]*?)\\.([^.]*?)\\.([^.]*?)$`,
+  `^(?=[\\s\\S]{0,${maximumPollCursorLength}}$)${pollCursorPrefix}([^.]*?)\\.([^.]*?)\\.([^.]*?)\\.([^.]*?)\\.([^.]*?)$`,
 );
 
 function hasCanonicalCursorShape(value: string): boolean {
@@ -614,14 +619,9 @@ function canonicalValue<const Name extends string>(
   return Schema.String.pipe(
     Schema.filter(
       (value) => {
-        const text = value;
-        const expectedPrefix = prefix;
         return (
-          text.startsWith(expectedPrefix) &&
-          hasCanonicalBase64UrlLength(
-            text.slice(expectedPrefix.length),
-            byteLength,
-          )
+          value.startsWith(prefix) &&
+          hasCanonicalBase64UrlLength(value.slice(prefix.length), byteLength)
         );
       },
       {
@@ -650,7 +650,7 @@ export const routerContract = Object.freeze({
   routerHealthPath,
   routerHttpErrorEnvelope,
   RouterInstanceId,
-  routerInstanceIdByteLength,
+  routerInstanceIdByteLength: INSTANCE_BYTE_LENGTH,
   routerJsonContentType,
   routerPollPath,
   RouterPollRequest,

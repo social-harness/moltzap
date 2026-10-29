@@ -19,7 +19,6 @@ import {
   type DecisionProvider,
   DecisionProviderError,
   editableDocumentSchema,
-  type EnglishRule,
   makeJevDecisionProvider,
   MAXIMUM_EDITABLE_RULES,
 } from "../evaluator/index.js";
@@ -40,7 +39,7 @@ import {
 /** Larger than any document of 256 editable rules and the fixed rules beside them. */
 const MAXIMUM_POLICY_BYTES = 1_048_576;
 
-/** The installed Client's own `behaviors/` directory, which `english.builtinBehaviors` names into. */
+/** The installed Client's own `behaviors/` directory, which `text.builtinBehaviors` names into. */
 const BUILTIN_BEHAVIORS = fileURLToPath(
   new URL("../../../behaviors/", import.meta.url),
 );
@@ -56,13 +55,14 @@ const decisionProviderKey = Schema.Trim.pipe(
   ),
 );
 
-/** Every English check this provider is asked for is unavailable. */
+/** Every natural-language check this provider is asked for is unavailable. */
 const unavailableProvider: DecisionProvider = {
   decide: () =>
     Effect.fail(new DecisionProviderError({ reason: "configuration" })),
 };
 
-const POLICY_SPEC = "https://docs.moltzap.xyz/spec/harness/message-policy";
+const POLICY_SPEC =
+  "https://docs.moltzap.xyz/reference/spec/firewall/message-policy";
 
 /** The message-firewall guide, whose troubleshooting entries policy failures link. */
 export const FIREWALL_GUIDE =
@@ -80,7 +80,7 @@ const failureMessages: Readonly<
     docs: `${FIREWALL_GUIDE}#message-policy-file`,
   },
   "message-policy": {
-    text: "SHARNESS_MESSAGE_POLICY_FILE must contain a valid org.social-harness/message-policy/v1 document",
+    text: "SHARNESS_MESSAGE_POLICY_FILE must contain a valid org.social-harness/message-policy/v2 document",
     docs: `${FIREWALL_GUIDE}#message-policy-document`,
   },
   "message-policy-composed": {
@@ -190,26 +190,6 @@ export function policyFailureMessage(
     : `${failureMessages[reason].text}${detail}. Docs: ${docs}`;
 }
 
-/**
- * A behavior Client ships, read by its pack and name, such as
- * `collectives/one-gather`, from the installed package's `behaviors/`. The
- * file is part of the installed package, so one that cannot be read is a
- * broken installation, a defect whose message says to reinstall.
- * @param name The behavior's pack and name.
- * @returns Its English rule.
- */
-export function readBuiltinBehavior(name: string): Effect.Effect<EnglishRule> {
-  return readBehavior(BUILTIN_BEHAVIORS, name, name).pipe(
-    Effect.map(({ rule }) => rule),
-    Effect.catchAll(() =>
-      Effect.dieMessage(
-        `Client's shipped behavior ${name} could not be read; reinstall @moltzap/social-harness. Docs: ${POLICY_SPEC}#built-in-behaviors`,
-      ),
-    ),
-    Effect.withSpan("readBuiltinBehavior"),
-  );
-}
-
 /** Reports only the policy entry; YAML diagnostics may contain private file content. */
 function invalidBehavior(path: string, reason: BehaviorFailure) {
   return policyConfigurationError("message-policy", path, reason);
@@ -255,37 +235,35 @@ function readBehavior(root: string, directory: string, path: string) {
 function resolveBehaviors(policy: MessagePolicy, root: string) {
   return Effect.gen(function* () {
     const behaviorRulePaths = new Map<string, string>();
-    const english = policy.english;
-    if (english === undefined) {
+    const text = policy.text;
+    if (text === undefined) {
       return { policy, behaviorRulePaths, fixedBehaviorDigests: undefined };
     }
-    yield* Schema.decodeUnknown(editableDocumentSchema)(
-      english.initialRules,
-    ).pipe(
+    yield* Schema.decodeUnknown(editableDocumentSchema)(text.initialRules).pipe(
       Effect.mapError(() =>
-        policyConfigurationError("message-policy", "english.initialRules"),
+        policyConfigurationError("message-policy", "text.initialRules"),
       ),
     );
     const state = {
       root,
       ids: new Set(
-        [...english.fixedRules, ...english.initialRules].map((rule) => rule.id),
+        [...text.fixedRules, ...text.initialRules].map((rule) => rule.id),
       ),
       behaviorRulePaths,
-      initialRuleCount: english.initialRules.length,
+      initialRuleCount: text.initialRules.length,
     };
-    const fixed = yield* loadFixedBehaviors(english, state);
+    const fixed = yield* loadFixedBehaviors(text, state);
     const initial = yield* loadBehaviors(
-      english.initialBehaviors ?? [],
+      text.initialBehaviors ?? [],
       "initialBehaviors",
       state,
     );
     const resolved: MessagePolicy = {
       ...policy,
-      english: {
-        fixedRules: [...english.fixedRules, ...fixed.map(({ rule }) => rule)],
+      text: {
+        fixedRules: [...text.fixedRules, ...fixed.map(({ rule }) => rule)],
         initialRules: [
-          ...english.initialRules,
+          ...text.initialRules,
           ...initial.map(({ rule }) => rule),
         ],
       },
@@ -301,12 +279,12 @@ function resolveBehaviors(policy: MessagePolicy, root: string) {
 
 /** Fixed behaviors from the policy's directory, then built-in behaviors from Client's own. */
 function loadFixedBehaviors(
-  english: NonNullable<MessagePolicy["english"]>,
+  text: NonNullable<MessagePolicy["text"]>,
   state: BehaviorState,
 ) {
   return Effect.all([
-    loadBehaviors(english.fixedBehaviors ?? [], "fixedBehaviors", state),
-    loadBehaviors(english.builtinBehaviors ?? [], "builtinBehaviors", {
+    loadBehaviors(text.fixedBehaviors ?? [], "fixedBehaviors", state),
+    loadBehaviors(text.builtinBehaviors ?? [], "builtinBehaviors", {
       ...state,
       root: BUILTIN_BEHAVIORS,
     }),
@@ -330,7 +308,7 @@ function loadBehaviors(
     directories,
     (directory, index) =>
       Effect.gen(function* () {
-        const path = `english.${field}.${index}`;
+        const path = `text.${field}.${index}`;
         const behavior = yield* readBehavior(state.root, directory, path);
         if (state.ids.has(behavior.rule.id)) {
           return yield* invalidBehavior(path, "duplicate-id");
@@ -465,7 +443,7 @@ function decisionProvider(
       return Effect.succeed(unavailableProvider);
     case "unavailable":
       return Effect.logWarning(
-        "The message policy names no decision provider service; every English check is unavailable, which holds the message in enforcement mode and admits it in guidance mode.",
+        "The message policy names no decision provider service; every natural-language check is unavailable, which holds the message in enforcement mode and admits it in guidance mode.",
       ).pipe(Effect.as(unavailableProvider));
     case "jev":
       return jevKey(configuration, readCredential).pipe(
@@ -501,7 +479,7 @@ function jevKey(
 /**
  * The provider with up to two more attempts, a quarter second and then half
  * a second apart, after a transient failure: an unreachable service, a rate
- * limit or a server error. Each English stage's timeout still bounds the
+ * limit or a server error. Each natural-language stage's timeout still bounds the
  * attempts together, so a service that stays down leaves the check
  * unavailable; a refusal such as an invalid key is not retried.
  */
@@ -536,10 +514,10 @@ function failureDocs(
   link: { readonly path?: string; readonly docs?: string },
 ): string {
   const path = link.path ?? "";
-  if (path.startsWith("english.builtinBehaviors.")) {
+  if (path.startsWith("text.builtinBehaviors.")) {
     return `${POLICY_SPEC}#built-in-behaviors`;
   }
-  if (/^english\.(?:fixed|initial)Behaviors\./u.test(path)) {
+  if (/^text\.(?:fixed|initial)Behaviors\./u.test(path)) {
     return `${POLICY_SPEC}#behaviors`;
   }
   return link.docs ?? failureMessages[reason].docs;

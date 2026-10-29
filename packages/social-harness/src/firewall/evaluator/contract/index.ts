@@ -1,8 +1,8 @@
-/** @file Validated evidence and shared code/English middleware contracts. */
+/** @file Validated evidence and contracts shared by code and natural-language checks. */
 
 import { Cause, Data, Effect, Either, Schema } from "effect";
 import { exactStruct } from "../../../encoding/exact.js";
-import { AgentId } from "../../../identity/agents.js";
+import { AgentView } from "../../../identity/cards.js";
 
 const identifier = Schema.NonEmptyTrimmedString;
 const visibility = Schema.Literal("runtime", "assessor");
@@ -61,7 +61,12 @@ export type HistoryEntry = typeof HistoryEntry.Type;
 
 /* eslint-enable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Restore naming after the Schema/type pair. */
 
-/** Trusted composition supplies authorized earlier evidence and distinct agent and principal identities. */
+/**
+ * Trusted composition supplies verified attribution and authorized evidence
+ * preceding the candidate. Exclude future messages, expected test labels and
+ * another endpoint's private state. Visibility determines which admitted
+ * messages may appear as subjects in runtime guidance.
+ */
 export class MessageContext extends Schema.Class<MessageContext>(
   "MessageContext",
 )({
@@ -113,8 +118,16 @@ export class RuleDescription extends Schema.Class<RuleDescription>(
   ),
 }) {}
 
-/** Text is interpreted by the provider; it is never compiled into executable code. */
-export class EnglishRule extends Schema.Class<EnglishRule>("EnglishRule")({
+/**
+ * The decision provider interprets the rule as natural-language text.
+ * Validation requires nonempty text and imposes no language restriction.
+ * Guidance is registered advice for the agent; feedback supplies refusal and
+ * repair text. Norms in `initialRules` or `policy_update` require nonempty
+ * guidance. Fixed rules and direct `makeTextPolicy` construction do not.
+ * See the [editable policy contract](https://docs.moltzap.xyz/reference/spec/firewall/message-policy#editable-text-policy)
+ * for installation identifiers, ownership and edit validation.
+ */
+export class TextRule extends Schema.Class<TextRule>("TextRule")({
   ...RuleDescription.fields,
   text: Schema.NonEmptyString,
 }) {}
@@ -145,7 +158,7 @@ const policyFinding = Schema.Union(
   }),
 );
 
-/** Rule findings accumulate independently of their English or code representation. */
+/** Rule findings accumulate independently of their text or code representation. */
 export type PolicyFinding = typeof policyFinding.Type;
 
 /** Subjects refer only to admitted runtime-visible messages or the incoming event. */
@@ -204,9 +217,15 @@ export class MiddlewareInput extends Schema.Class<MiddlewareInput>(
 }) {}
 
 /**
- * Code and English policies have the same contract. Registered code is trusted;
+ * Code and natural-language policies have the same contract. Registered code is trusted;
  * it receives no conversation or store capability and must not retain conversation
  * state or perform messaging side effects.
+ *
+ * Middleware ids must be unique within each direction. Change the revision
+ * whenever code policy behavior changes. Every declared rule must return a
+ * finding, and subject references must name admitted runtime-visible evidence.
+ * Registration copies and freezes metadata, but cannot isolate mutable closure
+ * state or interrupt blocking JavaScript.
  */
 export interface MessageMiddleware {
   readonly id: string;
@@ -316,7 +335,10 @@ export const firewallCheckSchema = exactStruct({
 /** The complete check keeps private traces distinct from runtime advice. */
 export type FirewallCheck = typeof firewallCheckSchema.Type;
 
-/** Incoming checks can guide the recipient but cannot ask the sender to revise. */
+/**
+ * Incoming checks can guide the recipient but cannot ask the sender to revise.
+ * @inline
+ */
 interface IncomingCheck extends FirewallCheck {
   readonly judgment: "allow" | "block" | "hold";
 }
@@ -334,15 +356,18 @@ export interface Firewall {
 }
 
 /** Bytes bound allocation, not tokenizer capacity; probability is a routing setting. */
-export class EnglishPolicySettings extends Schema.Class<EnglishPolicySettings>(
-  "EnglishPolicySettings",
+export class TextPolicySettings extends Schema.Class<TextPolicySettings>(
+  "TextPolicySettings",
 )({
   minimumProbability: Schema.Number.pipe(Schema.between(0.5, 1)),
   maximumRequestBytes: Schema.Positive.pipe(Schema.int()),
   timeoutMilliseconds: Schema.Positive.pipe(Schema.int()),
 }) {}
 
-/** Question semantics have a recorded edition independent of English wording. */
+/**
+ * Question semantics have a recorded edition independent of rule wording.
+ * @inline
+ */
 export type PolicyStage =
   | "applicability"
   | "safety"
@@ -435,12 +460,12 @@ export type PolicyStageTrace = {
   | { readonly status: "unavailable"; readonly dependency: "expectations" }
 );
 
-/** Internal English state adds frozen documents without a public snapshot/binding. */
-export interface EnglishCheck {
+/** Internal text-policy state adds frozen documents without a public snapshot/binding. */
+export interface TextCheck {
   readonly event: typeof messageEvent.Type;
   readonly context: MessageContext;
   readonly revision: string;
-  readonly rules: readonly EnglishRule[];
+  readonly rules: readonly TextRule[];
 }
 
 /**
@@ -504,26 +529,42 @@ function freezeData(value: unknown): void {
 }
 
 const ruleFields = {
-  id: EnglishRule.fields.id,
-  text: EnglishRule.fields.text,
-  feedback: EnglishRule.fields.feedback,
+  id: TextRule.fields.id,
+  text: TextRule.fields.text,
+  feedback: TextRule.fields.feedback,
 };
 
 /** Norm instructions must have a registered template before owners can activate them. */
+const editableNormSchema = exactStruct({
+  ...ruleFields,
+  kind: Schema.Literal("norm"),
+  guidance: Schema.NonEmptyString,
+});
+const editableSafetySchema = exactStruct({
+  ...ruleFields,
+  kind: Schema.Literal("safety"),
+  guidance: TextRule.fields.guidance,
+});
 const editableRuleSchema = Schema.Union(
+  editableNormSchema,
+  editableSafetySchema,
+);
+
+const policyAuthority = Schema.Literal("owner", "runtime");
+
+/** The daemon derives edit authority from its authenticated local caller. */
+export type PolicyAuthority = typeof policyAuthority.Type;
+
+/** Ownership is assigned by the daemon and never accepted in an edit request. */
+const ownedRuleSchema = Schema.Union(
+  exactStruct({ ...editableNormSchema.fields, owner: policyAuthority }),
   exactStruct({
-    ...ruleFields,
-    kind: Schema.Literal("norm"),
-    guidance: Schema.NonEmptyString,
-  }),
-  exactStruct({
-    ...ruleFields,
-    kind: Schema.Literal("safety"),
-    guidance: EnglishRule.fields.guidance,
+    ...editableSafetySchema.fields,
+    owner: Schema.Literal("owner"),
   }),
 );
 
-/** The most editable English rules one daemon holds, across seeding, persistence and updates. */
+/** The most editable natural-language rules one daemon holds, across seeding, persistence and updates. */
 export const MAXIMUM_EDITABLE_RULES = 256;
 
 /** The complete editable document. */
@@ -533,7 +574,7 @@ export const editableDocumentSchema = Schema.Array(editableRuleSchema).pipe(
 
 /**
  * A shared norm's `BEHAVIOR.md` exactly as proposed, mapped to its rule as a
- * policy file's behaviors are: docs/spec/harness/message-policy.md#behaviors.
+ * policy file's behaviors are: docs/reference/spec/firewall/message-policy.md#behaviors.
  */
 const behaviorAddition = exactStruct({ behavior: Schema.String });
 
@@ -545,7 +586,7 @@ export const policyUpdateSchema = exactStruct({
     ),
   ),
   remove: Schema.optional(
-    Schema.Array(EnglishRule.fields.id).pipe(
+    Schema.Array(TextRule.fields.id).pipe(
       Schema.maxItems(MAXIMUM_EDITABLE_RULES),
     ),
   ),
@@ -559,7 +600,7 @@ const describedFields = {
 };
 
 /**
- * A fixed rule as trusted composition installed it: English text, or the
+ * A fixed rule as trusted composition installed it: natural-language text, or the
  * description a code middleware declares for a rule it checks in code.
  */
 const fixedRuleSchema = Schema.Union(
@@ -569,15 +610,15 @@ const fixedRuleSchema = Schema.Union(
     ...describedFields,
   }),
   exactStruct({
-    from: Schema.Literal("english"),
+    from: Schema.Literal("text"),
     ...describedFields,
-    text: EnglishRule.fields.text,
+    text: TextRule.fields.text,
   }),
 );
 
 /** The digest identifies the entire active installation, including fixed policy. */
 export const policyReadSchema = exactStruct({
-  rules: Schema.Array(editableRuleSchema),
+  rules: Schema.Array(ownedRuleSchema),
   fixedRules: Schema.Array(fixedRuleSchema),
   activeRevision: Schema.NonEmptyString,
 });
@@ -601,7 +642,7 @@ const firewallActivationSchema = exactStruct({
 });
 
 /**
- * How a decision's outcome came about. `judgment` is a settled English
+ * How a decision's outcome came about. `judgment` is a settled natural-language
  * judgment and `uncertain` an unsettled one, admitted or held with guidance.
  * `unavailable` is a check that could not run: the decision provider failed
  * or was unreachable, or a middleware failed or timed out. `code` is a code
@@ -621,8 +662,8 @@ const decisionCause = Schema.Literal(
  * One row per peer contains no message content or provider traces. The only
  * text is `decidedBy[].advice`, the deciding rule's own registered feedback,
  * or its guidance for an admission. `decidedBy[].from` says where the rule is
- * defined, as `policy_read` lists it: a code middleware, a fixed English rule,
- * or an owner-editable English rule. `checkedRuleIds` lists every rule with a
+ * defined, as `policy_read` lists it: a code middleware, a fixed natural-language rule,
+ * or an owner-editable natural-language rule. `checkedRuleIds` lists every rule with a
  * finding in the completed chain.
  */
 export const firewallDecisionsSchema = exactStruct({
@@ -632,7 +673,7 @@ export const firewallDecisionsSchema = exactStruct({
       checkId: Schema.NonEmptyString,
       time: Schema.NonNegativeInt,
       direction: Schema.Literal("incoming", "outgoing"),
-      peerAgentId: Schema.NullOr(AgentId),
+      peer: Schema.NullOr(AgentView),
       outcome: Schema.Literal("allow", "block", "hold", "revise"),
       disposition: Schema.Literal("stale", "admitted", "withheld"),
       cause: decisionCause,
@@ -640,6 +681,7 @@ export const firewallDecisionsSchema = exactStruct({
         exactStruct({
           ruleId: Schema.NonEmptyString,
           from: Schema.Literal("code", "fixed", "editable"),
+          owner: Schema.optional(policyAuthority),
           advice: Schema.optional(Schema.NonEmptyString),
         }),
       ),
@@ -653,6 +695,7 @@ export const firewallDecisionsSchema = exactStruct({
  * What made an edit's rule invalid. A `BEHAVIOR.md` addition fails as
  * `frontmatter`, `schema`, `too-large` or `not-norm`; an edit as
  * `duplicate-id`, `unknown-id` or `editable-limit`.
+ * @inline
  */
 export type PolicyProblem =
   | "duplicate-id"
@@ -680,16 +723,18 @@ const policyProblemText: Readonly<Record<PolicyProblem, string>> = {
 const policyReasonText: Readonly<
   Record<FirewallPolicyError["reason"], string>
 > = {
-  "not-configured": "the message policy has no english block",
+  "not-configured": "the message policy has no text block",
   "invalid-rule": "the update is invalid",
   "fixed-rule":
     "it is a fixed rule of the owner's policy, which policy_update cannot add, remove or replace",
+  "owner-rule":
+    "it belongs to the owner; runtime policy_update can change only norms the runtime adopted",
   "build-failed": "the new rules could not be installed",
   "persistence-failed": "the rules could not be stored",
 };
 
 const editRefusalDocs =
-  "Docs: https://docs.moltzap.xyz/spec/harness/message-policy#editable-english-policy";
+  "Docs: https://docs.moltzap.xyz/reference/spec/firewall/message-policy#editable-text-policy";
 
 /**
  * A failed edit never replaces the active installation or retained editable
@@ -708,6 +753,7 @@ export class FirewallPolicyError extends Data.TaggedError(
     | "not-configured"
     | "invalid-rule"
     | "fixed-rule"
+    | "owner-rule"
     | "build-failed"
     | "persistence-failed";
 }> {
@@ -718,7 +764,12 @@ export class FirewallPolicyError extends Data.TaggedError(
         ? policyReasonText[this.reason]
         : policyProblemText[this.problem];
     const text = subject === undefined ? cause : `${subject}: ${cause}`;
-    return this.reason === "invalid-rule" || this.reason === "fixed-rule"
+    return [
+      "invalid-rule",
+      "fixed-rule",
+      "owner-rule",
+      "build-failed",
+    ].includes(this.reason)
       ? `${text}. ${editRefusalDocs}`
       : text;
   }
@@ -757,7 +808,7 @@ function editSubject(
     : (place ?? rule);
 }
 
-/** Owner capabilities are separate from runtime send and inbox authority. */
+/** The authenticated authority limits edits without delegating owner read access. */
 export interface FirewallPolicyOperations {
   readonly read: () => Effect.Effect<
     typeof policyReadSchema.Type,
@@ -765,6 +816,7 @@ export interface FirewallPolicyOperations {
   >;
   readonly update: (
     request: typeof policyUpdateSchema.Type,
+    authority: PolicyAuthority,
   ) => Effect.Effect<typeof policyUpdateResultSchema.Type, FirewallPolicyError>;
   readonly decisions: (
     request: typeof firewallDecisionsRequestSchema.Type,

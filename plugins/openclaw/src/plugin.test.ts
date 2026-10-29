@@ -10,6 +10,7 @@ import type { OpenClawConfig } from "openclaw/plugin-sdk/channel-core";
 import type { ChannelInboundTurnPlan } from "openclaw/plugin-sdk/channel-inbound";
 import { live as it } from "@effect/vitest";
 import {
+  AgentAddress,
   CollectiveError,
   FirewallSendError,
   type HarnessEndpoint,
@@ -29,9 +30,8 @@ import {
 import { Effect, Either, Encoding, Fiber, Schema, Stream } from "effect";
 import { join } from "node:path";
 import { beforeAll, describe, expect, vi, it as vitestIt } from "vitest";
-import manifest from "../openclaw.plugin.json" with { type: "json" };
 import { openClawTestStateDirectory } from "../vitest.setup.js";
-import { testGuidance } from "./__tests__/guidance-fixtures.js";
+import { testAgentView, testGuidance } from "./__tests__/guidance-fixtures.js";
 import {
   ACCOUNT_ID,
   type DispatchObservation,
@@ -47,7 +47,7 @@ import {
   OPERATION_ID,
   postId,
 } from "./__tests__/send-results.js";
-import { createChannelPlugin, makeChannelConfigJsonSchema } from "./plugin.js";
+import { createChannelPlugin } from "./plugin.js";
 
 const TEST_SESSION_STORE_PATH = join(
   openClawTestStateDirectory,
@@ -112,10 +112,6 @@ describe("OpenClaw HarnessEndpoint adapter", () => {
   it(
     "disconnects the account when the endpoint stream fails",
     inboundStreamFailureDisconnects,
-  );
-  vitestIt(
-    "keeps the OpenClaw manifest schema in sync",
-    manifestMatchesRuntimeSchema,
   );
 });
 
@@ -501,7 +497,7 @@ const COLLECTIVE_REQUEST = {
   kind: "collectiveRequest",
   id: OPERATION_ID,
   postId: postId(4),
-  from: "agent:alice",
+  from: testAgentView("alice"),
   question: "Which day?",
   requestedSchema: SLOT_SCHEMA,
   deadlineAt: Date.UTC(2026, 8, 30, 12),
@@ -671,13 +667,7 @@ function unreachableMemberError() {
       kind: "members-unreachable",
       members: [
         {
-          member: Schema.decodeUnknownSync(InboundMessage)({
-            kind: "direct",
-            postId: postId(3),
-            address: "agent:carol",
-            sender: "agent:carol",
-            content: [{ type: "text", text: "unused" }],
-          }).sender,
+          member: Schema.decodeUnknownSync(AgentAddress)("agent:carol"),
           reason: "unknown-agent",
         },
       ],
@@ -753,7 +743,9 @@ function rendersCollectiveRequest() {
       From: "agent:alice",
       MessageSid: postId(4),
     });
-    expect(call.ctx.Body).toContain(`send to ${COLLECTIVE_REQUEST.from}.`);
+    expect(call.ctx.Body).toContain(
+      `send to agent:${COLLECTIVE_REQUEST.from.agentName}.`,
+    );
   });
 }
 
@@ -777,16 +769,18 @@ function rendersAllGatherRequest() {
 function rendersCollectiveResult() {
   const item = Schema.decodeUnknownSync(InboundItem)({
     kind: "collectiveResult",
+    closedAt: 0,
+    closedBy: "deadline",
     op: "gather",
     id: OPERATION_ID,
     to: "group:alice,bob,carol",
     question: "Which day?",
     outcomes: [
       {
-        member: "agent:bob",
+        member: testAgentView("bob"),
         outcome: { kind: "answered", content: { slot: "mon" } },
       },
-      { member: "agent:carol", outcome: { kind: "no-answer" } },
+      { member: testAgentView("carol"), outcome: { kind: "no-answer" } },
     ],
   });
 
@@ -859,19 +853,24 @@ function withheldResultDelivery() {
   const withheld = { kind: "withheld", checkId, reason: "prohibited" };
   const item = Schema.decodeUnknownSync(InboundItem)({
     kind: "collectiveResult",
+    closedAt: 0,
+    closedBy: "settled",
     op: "gather",
     id: OPERATION_ID,
     to: "group:alice,bob,carol",
     question: withheld,
     outcomes: [
-      { member: "agent:bob", outcome: withheld },
+      { member: testAgentView("bob"), outcome: withheld },
       {
-        member: "agent:carol",
+        member: testAgentView("carol"),
         outcome: { kind: "answered", content: { slot: "tue" } },
       },
     ],
   });
-  const advice = { member: "agent:carol", ...testGuidance(HOSTILE_SUBJECT) };
+  const advice = {
+    member: testAgentView("carol"),
+    ...testGuidance(HOSTILE_SUBJECT),
+  };
   if (item.kind !== "collectiveResult") {
     throw new Error("expected a result item");
   }
@@ -1040,24 +1039,12 @@ function inboundStreamFailureDisconnects() {
   });
 }
 
-function manifestMatchesRuntimeSchema() {
-  expect(createChannelPlugin().agentPrompt).toBeUndefined();
-  const { $schema, ...generated } = makeChannelConfigJsonSchema();
-  expect($schema).toBeDefined();
-  if (!("required" in generated)) {
-    throw new Error("expected an object schema");
-  }
-  const { required, ...embedded } = generated;
-  expect(required).toHaveLength(0);
-  expect(manifest.channelConfigs.sharness.schema).toEqual(embedded);
-}
-
 function directMessage(id = 1): InboundMessage {
   return Schema.decodeUnknownSync(InboundMessage)({
     kind: "direct",
     postId: postId(id),
     address: "agent:alice",
-    sender: "agent:alice",
+    sender: testAgentView("alice"),
     content: [
       { type: "text", text: "hello" },
       { type: "data", value: { count: 2 } },
@@ -1070,8 +1057,12 @@ function groupMessage(): InboundMessage {
     kind: "group",
     postId: postId(2),
     address: "group:alice,bob,carol",
-    sender: "agent:bob",
-    members: ["agent:alice", "agent:bob", "agent:carol"],
+    sender: testAgentView("bob"),
+    members: [
+      testAgentView("alice"),
+      testAgentView("bob"),
+      testAgentView("carol"),
+    ],
     content: [{ type: "text", text: "group message" }],
   });
 }

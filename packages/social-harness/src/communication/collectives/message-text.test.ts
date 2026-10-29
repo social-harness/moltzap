@@ -3,7 +3,7 @@
 import { Either, FastCheck as fc, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { MessageAddressInput } from "../records/values.js";
-import { MAXIMUM_DEADLINE_SECONDS } from "./forms.js";
+import { MAXIMUM_DEADLINE_SECONDS } from "./contracts.js";
 import { type MessageTextError, parseMessageText } from "./message-text.js";
 
 const group = Schema.decodeUnknownSync(MessageAddressInput)(

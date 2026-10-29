@@ -8,7 +8,7 @@ import { InboundMessage } from "../communication/conversations/message.js";
 import { RecordHash } from "../communication/records/index.js";
 import { DeliveryToken } from "../communication/store/index.js";
 import { encodeCanonical } from "../encoding/canonical-json.js";
-import { managementRegisterRequestSchema } from "../harness/protocol/index.js";
+import { managementRegisterRequestSchema } from "../host-protocol/index.js";
 import { AgentCard, type VerifiedAgentCard } from "../identity/cards.js";
 import { AgentSigningAuthority, Ed25519PublicKey } from "../identity/keys.js";
 import {
@@ -16,12 +16,15 @@ import {
   identifier,
   issueTestCard,
   makeTestAuthority,
+  type RegistryKeyPair,
+  testAgentView,
 } from "./agent-card-fixtures.js";
 
 /** Binds the daemon bootstrap to the signed identity used by its pending message. */
 export interface Fixture {
   readonly bootstrap: DaemonBootstrap;
   readonly localCard: VerifiedAgentCard;
+  readonly peerCards: readonly VerifiedAgentCard[];
   readonly canonicalLocalCard: Uint8Array;
   readonly registerRequest: typeof managementRegisterRequestSchema.Type;
   readonly pending: EnginePendingMessage;
@@ -34,10 +37,25 @@ const makePendingMessage = Effect.all({
     kind: "direct",
     postId: digest("pst_", 5),
     address: "agent:bob",
-    sender: "agent:bob",
+    sender: testAgentView("agent:bob"),
     content: [{ type: "text", text: "certified" }],
   }),
 });
+
+const makePeerCards = (registryKeys: RegistryKeyPair) =>
+  Effect.forEach(
+    ["bob", "carol"],
+    (name, index) =>
+      Effect.gen(function* () {
+        return yield* issueTestCard({
+          byte: index + 2,
+          name,
+          authority: yield* makeTestAuthority(),
+          registryKeys,
+        });
+      }),
+    { concurrency: 1 },
+  );
 
 /** Supplies a verified local identity and one certified pending delivery. */
 export const makeFixture = Effect.gen(function* () {
@@ -78,6 +96,7 @@ export const makeFixture = Effect.gen(function* () {
   return {
     bootstrap,
     localCard,
+    peerCards: yield* makePeerCards(registryKeys),
     canonicalLocalCard: yield* encodeCanonical(AgentCard, localCard),
     registerRequest,
     pending: yield* makePendingMessage,

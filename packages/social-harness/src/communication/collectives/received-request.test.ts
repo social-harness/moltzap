@@ -2,10 +2,14 @@
 
 import { Either, FastCheck as fc, Schema } from "effect";
 import { describe, expect, it } from "vitest";
-import type { CollectiveId } from "./forms.js";
+import type { CollectiveId } from "./contracts.js";
 import { AgentAddress, GroupAddress } from "../records/values.js";
-import { collectiveIdOf } from "./part/index.js";
-import { matchOpenRequest, type RequestStatus } from "./received-request.js";
+import {
+  matchOpenRequest,
+  type RequestStatus,
+  unmatchedAnswerError,
+} from "./received-request.js";
+import { collectiveIdOf } from "./wire/index.js";
 
 const NOW = 1_000_000;
 const bob = Schema.decodeUnknownSync(AgentAddress)("agent:bob");
@@ -105,6 +109,25 @@ describe("matching an answer to its conversation's open request", () => {
   );
   it("ignores requests held in other conversations", ignoresOtherConversations);
   it("returns the open request's id and request", returnsTheOpenRequest);
+  it("names only this conversation's open requests in an ambiguous failure", () => {
+    const requests = requestsOf([
+      { inBob: true, state: "open", expired: false },
+      { inBob: false, state: "open", expired: false },
+      { inBob: true, state: "open", expired: true },
+      { inBob: true, state: "open", expired: false },
+    ]);
+    const refusal = Either.match(
+      matchOpenRequest(requests, bobConversation, NOW, {}),
+      {
+        onLeft: (unmatched) => unmatchedAnswerError(idAt(4), unmatched),
+        onRight: () => undefined,
+      },
+    );
+
+    expect(refusal).toMatchObject({
+      failure: { kind: "request-ambiguous", openIds: [idAt(0), idAt(3)] },
+    });
+  });
   it.each<[readonly HeldRequest[], string]>(REFUSALS)(
     "refuses %j as %s",
     (held, expected) => {

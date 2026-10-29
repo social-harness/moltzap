@@ -13,7 +13,7 @@ import {
   decodeRuntimeValue,
   encodeRuntimeValue,
 } from "../../communication/store/index.js";
-import { decodeFirewallAuditEntry } from "./firewall-values.js";
+import { decodeFirewallAuditEntry } from "./audit-records.js";
 
 it("retains a completed judgment without the provider trace", () =>
   Effect.gen(function* () {
@@ -56,7 +56,9 @@ it("decodes an older retained trace while projecting only the judgment", () =>
     yield* subject.store.beginFirewallAttempt({
       checkId,
       direction: "outgoing",
-      revision: 0,
+      snapshot: (yield* subject.store.readFirewallEvidence({
+        maximumRecords: 1,
+      })).snapshot,
       canonicalCandidate: retained.canonicalCandidate,
       canonicalInput: yield* encodeRuntimeValue(retained.input),
     });

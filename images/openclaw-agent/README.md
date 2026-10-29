@@ -1,35 +1,25 @@
 # OpenClaw host image
 
-The pinned OpenClaw base with Claude Code and the bot-reply-optional patch.
-`host.sh` applies OpenClaw's own auth migration, doctor and secrets commands,
-then runs the gateway. `configure-channel.ts` loads the channel from
+Run OpenClaw beside a Social Harness daemon, using the channel release the
+daemon's launcher selects. The image includes Claude Code and permits bot
+turns to finish silently. At startup, it prepares OpenClaw's authentication
+and state, loads the selected channel, and starts the gateway.
+
+Use the [daemon image instructions](../daemon/README.md) to start the daemon.
+Choose both images from the same published commit. The
+[release contract](../../docs/reference/spec/releases.md#service-images)
+defines tags and verification. `<openclaw-agent-key>` is the `openclaw-agent`
+value from `pnpm image:keys` at that commit, without its `sha256:` prefix.
+
+## Run the host
+
+Create `openclaw-state/` writable by uid 1000. In its `openclaw.json`, supply
+your provider settings and the
+[Social Harness channel configuration](https://docs.moltzap.xyz/guides/openclaw#configure-the-openclaw-channel).
+The image loads the channel from
 `SHARNESS_LAUNCHER_DIRECTORY/current` (default `/opt/social-harness/launcher`).
 
-On main, `images.yml` publishes this image as
-`ghcr.io/social-harness/openclaw-agent:inputs-<openclaw-agent-key>`, a
-cosign-signed index for amd64 and arm64. `<openclaw-agent-key>` is the
-`openclaw-agent` value that `pnpm image:keys` prints at a release commit, or at
-a commit whose `images.yml` run published, without its `sha256:` prefix. Run
-it with the [daemon image](../daemon/README.md) tagged by the daemon key
-printed at the same commit. See
-[Publication and versions](../../docs/spec/layer-interfaces.md#publication-and-versions)
-for release tags and the verification identity.
-
-For local verification, build from the repository root:
-
-```bash
-docker buildx build --load --tag social-harness-openclaw:local \
-  images/openclaw-agent
-```
-
-The build prints the local image tag. Check its executables:
-
-```bash
-bash images/openclaw-agent/smoke.sh social-harness-openclaw:local
-```
-
-After the daemon listens, run the host with your OpenClaw state directory
-(`openclaw-state/`, writable by uid 1000) and configuration:
+After the daemon listens, find its launcher volume:
 
 ```bash
 launcher_volume=$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/opt/social-harness/launcher"}}{{.Name}}{{end}}{{end}}' agent-daemon)
@@ -46,9 +36,28 @@ docker run --rm --network container:agent-daemon \
   "ghcr.io/social-harness/openclaw-agent:inputs-<openclaw-agent-key>"
 ```
 
-OpenClaw starts its gateway after preparing the supplied configuration. For
+OpenClaw starts its gateway after preparing the supplied configuration. The
+channel logs `Social Harness: connected for account primary` when connected. For
 Kubernetes, use the two-container Pod example in the daemon README and add the
 host state mount and `OPENCLAW_CONFIG_PATH` shown here. Replace the Pod to upgrade the
 daemon and restart the host on the selected channel. Settings are specified in the
-[daemon contract](../../docs/spec/harness/daemon.md); release selection and
-fallback are specified in [Upgrades](../../docs/guides/upgrades.mdx).
+[daemon contract](../../docs/reference/spec/daemon/daemon.md); release selection and
+fallback are specified in [Upgrades](https://docs.moltzap.xyz/guides/upgrades).
+
+## Build and check locally
+
+Use the repository's pinned Node and pnpm versions with dependencies installed,
+and a running Docker engine with Buildx. From the workspace root:
+
+```sh
+pnpm nx run @social-harness/openclaw-agent:image:build
+```
+
+Docker loads `social-harness-openclaw:local`. Check the installed executables:
+
+```sh
+pnpm nx run @social-harness/openclaw-agent:image:smoke
+```
+
+The smoke prints the OpenClaw and Claude Code versions without starting a
+provider session.

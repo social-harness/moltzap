@@ -1,4 +1,4 @@
-/** @file Sequential checking middleware; Client retains exclusive admission authority. */
+/** @file Runs message checks in order and combines their findings into a firewall decision. */
 
 import { Clock, Effect, Either, Schema } from "effect";
 import {
@@ -101,7 +101,7 @@ const captureInput = Effect.fn("Firewall.captureInput")(function* (
   return Object.freeze({ event: capturedEvent, context: capturedContext });
 });
 
-/** Code policies receive exactly the same reference and advice validation as English. */
+/** Code policies receive exactly the same reference and advice validation as text. */
 function validResult(
   result: MiddlewareResult,
   middleware: MessageMiddleware,

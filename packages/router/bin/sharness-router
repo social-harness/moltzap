@@ -1,10 +1,7 @@
-#!/usr/bin/env node
+#!/usr/bin/env -S node --conditions=sharness-internal
 import { Console, Layer } from "effect";
 import { runRouterMain } from "../dist/main.js";
-import { installInternalResolution } from "../dist/internal-resolution.js";
-
-installInternalResolution();
-const { RouterServer } = await import("../dist/server.js");
+import { RouterServer } from "../dist/server.js";
 
 const program = process.argv.includes("--help")
   ? Console.log(RouterServer.help)

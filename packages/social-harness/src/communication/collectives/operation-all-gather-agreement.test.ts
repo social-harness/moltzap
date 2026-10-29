@@ -32,6 +32,7 @@ import { describe, expect } from "vitest";
 import type { EngineSentPost } from "../conversations/index.js";
 import type { CollectiveMemberOutcome, InboundItem } from "./inbound.js";
 import type { CollectiveOperations } from "./ports.js";
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import {
   alice,
   collectiveKey,
@@ -41,12 +42,13 @@ import {
   recordHashOf,
   slotSchema,
 } from "../../__tests__/collective-operation-fixtures.js";
+import { collectivePersistencePorts } from "../../__tests__/collective-storage-stub.js";
 import { InboundMessage } from "../conversations/message.js";
-import { Content, type RecordHash } from "../records/index.js";
+import { Content } from "../records/index.js";
 import { AgentAddress } from "../records/values.js";
-import { SendInput } from "./forms.js";
-import { makeCollectiveOperations } from "./operation.js";
-import { type CollectiveValue, readCollectiveValue } from "./part/index.js";
+import { SendInput } from "./contracts.js";
+import { makeCollectiveOperations } from "./index.js";
+import { type CollectiveValue, readCollectiveValue } from "./wire/index.js";
 
 const group = "group:alice,bob,carol,dave";
 const groupMembers = ["agent:alice", "agent:bob", "agent:carol", "agent:dave"];
@@ -175,13 +177,14 @@ const makeEndpoint = (harness: Harness, self: AgentAddress) =>
     const emitted: InboundItem[] = [];
     const published = yield* Deferred.make<undefined>();
     const answerQueued = yield* Deferred.make<undefined>();
-    const layer = makeCollectiveOperations({
+    const layer = yield* makeCollectiveOperations({
       self,
-      lookupMember: () => Effect.void,
-      sendPost: (input) =>
+      lookupMember: (member) => Effect.succeed(testAgentView(member)),
+      ...collectivePersistencePorts((input) =>
         self === alice
           ? append(harness, self, input.content).pipe(Effect.map(certified))
           : queueAnswer(harness, self, input.content, answerQueued),
+      ),
       emit: (item) =>
         Effect.sync(() => {
           emitted.push(item);
@@ -228,8 +231,8 @@ const classifyRecord = (endpoint: Endpoint, record: ChainRecord) =>
         kind: "group",
         postId: postId(record.byte),
         address: group,
-        sender: record.sender,
-        members: groupMembers,
+        sender: testAgentView(record.sender),
+        members: groupMembers.map(testAgentView),
         content: record.content,
       }),
       recordHash: recordHashOf(record.byte),
@@ -333,7 +336,6 @@ function answerSteps(
                 to: group,
                 collectiveResponse: response,
               }),
-              "result",
             )
             .pipe(Effect.either, Effect.forkIn(scope));
           yield* Effect.sync(() => {
@@ -445,7 +447,13 @@ function daveSteps(harness: Harness, id: string): Step[] {
             return append(
               harness,
               dave,
-              collectivePart({ kind: "close", id, included: [] }),
+              collectivePart({
+                kind: "close",
+                id,
+                included: [],
+                closedAt: 60_000,
+                closedBy: "deadline",
+              }),
             );
           }),
         ],
@@ -468,7 +476,13 @@ function secondCloseSteps(harness: Harness, id: string): Step[] {
         return append(
           harness,
           alice,
-          collectivePart({ kind: "close", id, included: [] }),
+          collectivePart({
+            kind: "close",
+            id,
+            included: [],
+            closedAt: 60_000,
+            closedBy: "deadline",
+          }),
         );
       }),
     ],
@@ -508,24 +522,25 @@ const outcomeOf = (
 /** The result the first close describes: each member's listed answer, in member order. */
 const resultOfFirstClose = (harness: Harness, id: string) => {
   const close = harness.chain.find(isRequesterClose);
-  const included = Option.fromNullable(close).pipe(
+  const selection = Option.fromNullable(close).pipe(
     Option.flatMap((record) => record.value),
-    Option.flatMap((value) =>
-      value.kind === "close" ? Option.some(value.included) : Option.none(),
-    ),
-    Option.getOrElse((): readonly RecordHash[] => []),
+    Option.filter((value) => value.kind === "close"),
+    Option.getOrThrow,
   );
+  const { included, closedAt, closedBy } = selection;
   const listed = harness.chain.filter((record) =>
     included.includes(recordHashOf(record.byte)),
   );
   return {
     kind: "collectiveResult",
+    closedAt,
+    closedBy,
     op: "all_gather",
     id,
     to: group,
     question: questionText,
     outcomes: [bob, carol, dave].map((member) => ({
-      member,
+      member: testAgentView(member),
       outcome: outcomeOf(
         Option.fromNullable(
           listed.find((record) => record.sender === member),
@@ -562,10 +577,7 @@ const pickStep = (steps: readonly Step[], draw: number) => {
 const send = (endpoints: readonly Endpoint[], input: unknown) =>
   requesterOf(endpoints).pipe(
     Effect.flatMap((requester) =>
-      requester.layer.send(
-        Schema.decodeUnknownSync(SendInput)(input),
-        "result",
-      ),
+      requester.layer.send(Schema.decodeUnknownSync(SendInput)(input)),
     ),
   );
 

@@ -12,7 +12,8 @@
 
 import type { HttpClient } from "@effect/platform";
 import type { Duration, Effect, Layer, Types } from "effect";
-import type { AgentId } from "../../../identity/agents.js";
+import type { LiveSignedMessage } from "../../../identity/envelope/signed-message.js";
+import type { AgentId } from "../../../identity/identifiers.js";
 import type { AgentSigningAuthority } from "../../../identity/keys.js";
 import type {
   AuthenticationFailedError,
@@ -27,7 +28,6 @@ import type {
   VersionMismatchError,
 } from "../../../identity/signing/http-errors.js";
 import type { AgentSigningError } from "../../../identity/signing/http-signature.js";
-import type { LiveSignedMessage } from "../../envelope/signed-message.js";
 import type * as RouterPackage from "../api/index.js";
 
 type Expect<Value extends true> = Value;

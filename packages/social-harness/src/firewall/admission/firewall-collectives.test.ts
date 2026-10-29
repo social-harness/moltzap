@@ -3,7 +3,7 @@
 import { scopedLive as it } from "@effect/vitest";
 import { Deferred, Duration, Effect, Fiber, Queue, Schema } from "effect";
 import { describe, expect } from "vitest";
-import type { AnswerContent } from "../../communication/collectives/forms.js";
+import type { AnswerContent } from "../../communication/collectives/contracts.js";
 import type { ResultProvenance } from "../../communication/collectives/index.js";
 import type { CertifiedRecord } from "../../communication/records/index.js";
 import type { MessageAddressInput } from "../../communication/records/values.js";
@@ -12,7 +12,7 @@ import type {
   MiddlewareInput,
 } from "../evaluator/contract/index.js";
 import type { FirewallOptions } from "./firewall.js";
-import { digest } from "../../__tests__/agent-card-fixtures.js";
+import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { appendCertifiedPost } from "../../__tests__/certified-history-fixtures.js";
 import { collectiveKey } from "../../__tests__/collective-operation-fixtures.js";
 import {
@@ -49,17 +49,17 @@ import {
 } from "../../__tests__/firewall-runtime-fixtures.js";
 import { bytes } from "../../__tests__/store-schema-fixtures.js";
 import { InboundItem } from "../../communication/collectives/inbound.js";
-import { collectiveIdOf } from "../../communication/collectives/part/index.js";
 import {
   renderCollectiveRequest,
   renderCollectiveRequestBody,
   renderOutcome,
 } from "../../communication/collectives/render.js";
+import { collectiveIdOf } from "../../communication/collectives/wire/index.js";
 import {
   type DeliveryToken,
   encodeRuntimeValue,
 } from "../../communication/store/index.js";
-import { eventIdOf } from "../../harness/protocol/operations.js";
+import { eventIdOf } from "../../host-protocol/operations.js";
 import { installEditableFirewall } from "../policy/editable.js";
 
 // @agent-code-guard/regression-only: Exercises collective admission, refusal and evidence through SQLite and the protocol engine.
@@ -116,10 +116,10 @@ function answerContent(content: object) {
  */
 function seedAnswers(subject: Fixture, answers: PerMember<AnswerContent>) {
   return Effect.gen(function* () {
-    const bobGenesis = yield* seedIncoming(subject, true);
+    const bobFirstMessage = yield* seedIncoming(subject, true);
     const bobAnswer = yield* appendCertifiedPost(
       subject,
-      bobGenesis,
+      bobFirstMessage,
       yield* answerContent(answers.bob),
     );
     const other = yield* addConversation(subject, true);
@@ -154,13 +154,15 @@ function gatherResult(
 ): ResultItem {
   return Schema.decodeUnknownSync(resultItem)({
     kind: "collectiveResult",
+    closedAt: 0,
+    closedBy: "settled",
     op: "gather",
     id: resultId,
     to,
     question,
     outcomes: [
-      { member: bob, outcome: outcomes.bob },
-      { member: carol, outcome: outcomes.carol },
+      { member: testAgentView(bob), outcome: outcomes.bob },
+      { member: testAgentView(carol), outcome: outcomes.carol },
     ],
   });
 }
@@ -235,7 +237,7 @@ function showsAHeldRequestInGuidanceMode() {
     yield* Deferred.await(subject.outbound);
 
     expect(runtime.published.map((event) => event.item)).toMatchObject([
-      { kind: "collectiveRequest", from: bob, to: bob },
+      { kind: "collectiveRequest", from: testAgentView(bob), to: bob },
     ]);
     expect(yield* unfinishedIntents(subject)).toHaveLength(1);
     yield* Fiber.interrupt(answering);
@@ -254,8 +256,8 @@ function checksARequestAsItsQuestion() {
   return Effect.gen(function* () {
     const subject = yield* fixture;
     const deadlineAt = Date.now() + 60_000;
-    const genesis = yield* seedIncoming(subject, true);
-    yield* appendCertifiedPost(subject, genesis, [
+    const firstMessage = yield* seedIncoming(subject, true);
+    yield* appendCertifiedPost(subject, firstMessage, [
       ...(yield* gatherRequestContent(deadlineAt, question)),
       { type: "data", value: { agenda: ["mon", "tue"] } },
     ]);
@@ -327,7 +329,7 @@ function withholdsOneAnswerFromEveryRuntimeRead() {
       ...result,
       outcomes: [
         {
-          member: bob,
+          member: testAgentView(bob),
           outcome: {
             kind: "withheld",
             checkId: bobCheck?.checkId,
@@ -384,11 +386,11 @@ function scopesUnresolvedEvidenceToTheMembersAnswer() {
     ).toMatchObject({
       outcomes: [
         {
-          member: bob,
+          member: testAgentView(bob),
           outcome: { kind: "withheld", reason: "unresolved-evidence" },
         },
         {
-          member: carol,
+          member: testAgentView(carol),
           outcome: { kind: "answered", content: answers.carol },
         },
       ],
@@ -469,14 +471,14 @@ function showsEveryAnswerWithItsAdvice() {
     expect(delivered?.guidance).toMatchObject({
       answers: [
         {
-          member: bob,
+          member: testAgentView(bob),
           instructions: [{ instruction: rule.guidance }],
-          subjects: [{ sender: bob }],
+          subjects: [{ sender: testAgentView(bob) }],
         },
         {
-          member: carol,
+          member: testAgentView(carol),
           instructions: [{ instruction: rule.guidance }],
-          subjects: [{ sender: carol }],
+          subjects: [{ sender: testAgentView(carol) }],
         },
       ],
     });
@@ -487,10 +489,10 @@ function staleResult(mode: FirewallOptions["mode"]) {
   return Effect.gen(function* () {
     const subject = yield* fixture;
     const answers = { bob: { slot: "mon" }, carol: { slot: "tue" } };
+    const churn = yield* churnPolicy(subject);
     const provenance = yield* seedAnswers(subject, answers);
-    const churn = churnPolicy(subject);
     const runtime = yield* incomingFixture(
-      subject,
+      churn.subject,
       churn.middleware,
       { mode },
       false,
@@ -511,8 +513,8 @@ function staleResult(mode: FirewallOptions["mode"]) {
 function admitsAFailureWithoutInference() {
   return Effect.gen(function* () {
     const subject = yield* fixture;
-    const genesis = yield* seedIncoming(subject, true);
-    yield* appendCertifiedPost(subject, genesis, question);
+    const firstMessage = yield* seedIncoming(subject, true);
+    yield* appendCertifiedPost(subject, firstMessage, question);
     const runtime = yield* incomingFixture(
       subject,
       policy(() => Effect.dieMessage("a failure is never inferred")),
@@ -597,8 +599,8 @@ function leavesTheResultInLaterEvidence() {
  */
 function seedUnrenderableRequest(subject: Fixture) {
   return Effect.gen(function* () {
-    const genesis = yield* seedIncoming(subject, true);
-    const hostile = yield* appendCertifiedPost(subject, genesis, [
+    const firstMessage = yield* seedIncoming(subject, true);
+    const hostile = yield* appendCertifiedPost(subject, firstMessage, [
       { type: "text", text: question },
       {
         type: "data",
@@ -648,8 +650,12 @@ function retiresARequestThatExpiresBeforeItsCheck() {
   return Effect.gen(function* () {
     const subject = yield* fixture;
     const deadlineAt = Date.now() + 3_000;
-    const genesis = yield* seedIncoming(subject, true);
-    const earlier = yield* appendCertifiedPost(subject, genesis, "Earlier");
+    const firstMessage = yield* seedIncoming(subject, true);
+    const earlier = yield* appendCertifiedPost(
+      subject,
+      firstMessage,
+      "Earlier",
+    );
     yield* appendCertifiedPost(
       subject,
       earlier,
@@ -693,11 +699,8 @@ function questionCheckedWithResult(
   return Effect.gen(function* () {
     const subject = yield* fixture;
     const deadlineAt = Date.now() + 3_000;
-    const request = yield* seedRequest(
-      subject,
-      deadlineAt,
-      `${marker} ${question}`,
-    );
+    const text = `${marker} ${question}`;
+    const request = yield* seedRequest(subject, deadlineAt, text);
     const seen: MiddlewareInput[] = [];
     const checked = middleware(seen);
     const runtime = yield* incomingFixture(
@@ -718,11 +721,15 @@ function questionCheckedWithResult(
     yield* admitPending(runtime);
     const result = Schema.decodeUnknownSync(resultItem)({
       kind: "collectiveResult",
+      closedAt: 0,
+      closedBy: "settled",
       op: "all_gather",
       id: collectiveIdOf(bob, nonce),
       to: bob,
-      question: `${marker} ${question}`,
-      outcomes: [{ member: bob, outcome: { kind: "no-answer" } }],
+      question: text,
+      outcomes: [
+        { member: testAgentView(bob), outcome: { kind: "no-answer" } },
+      ],
     });
     yield* admitResult(runtime, result, {
       answers: [],
@@ -839,8 +846,8 @@ function keepsAnInvalidAnswerFromLaterRuntimeHistory() {
 /** Alice's direct conversation with Bob, ending in one plain message from Bob. */
 function seedEarlierMessage(subject: Fixture) {
   return seedIncoming(subject, true).pipe(
-    Effect.flatMap((genesis) =>
-      appendCertifiedPost(subject, genesis, "An earlier message"),
+    Effect.flatMap((firstMessage) =>
+      appendCertifiedPost(subject, firstMessage, "An earlier message"),
     ),
   );
 }
@@ -878,10 +885,10 @@ function namesNoPeerForAFailureInTheDecisionsFeed() {
     const feed = yield* editable.policy.decisions({});
 
     expect(feed.decisions).toMatchObject([
-      { direction: "incoming", peerAgentId: null, disposition: "admitted" },
+      { direction: "incoming", peer: null, disposition: "admitted" },
       {
         direction: "incoming",
-        peerAgentId: subject.remote.card.agentId,
+        peer: testAgentView("agent:bob"),
         disposition: "admitted",
       },
     ]);

@@ -23,15 +23,17 @@ import { hiddenFeatureRefusal } from "./runtime/index.js";
 const group = "group:alice,bob,carol";
 const direct = "agent:bob";
 const form = { type: "object", properties: {} };
-const sends = [
+const messages = [
   {
     name: "group message",
     feature: "groups",
+    resultField: "postId",
     input: { to: group, text: "hello" },
   },
   {
     name: "gather",
     feature: "collectives",
+    resultField: "operationId",
     input: {
       to: direct,
       text: "Which day?",
@@ -41,12 +43,15 @@ const sends = [
   {
     name: "all_gather",
     feature: "collectives",
+    resultField: "operationId",
     input: {
       to: group,
       text: "Which day?",
       collective: { op: "all_gather", deadline: 60, requestedSchema: form },
     },
   },
+] as const;
+const answers = [
   {
     name: "accept answer",
     feature: "collectives",
@@ -61,6 +66,7 @@ const sends = [
     input: { to: direct, collectiveResponse: { action: "decline" } },
   },
 ] as const;
+const sends = [...messages, ...answers];
 
 const reply = Schema.decodeUnknown(
   Schema.Struct({
@@ -88,7 +94,6 @@ function call(
     readonly hideCollectives?: boolean;
     readonly historyExport?: string;
   },
-  failureDelivery?: "inbound",
 ) {
   return Effect.gen(function* () {
     const base = yield* makeFixture;
@@ -108,9 +113,6 @@ function call(
       id: "experiment-send",
       name: "send_message",
       toolArguments: { input },
-      ...(failureDelivery === undefined
-        ? {}
-        : { metadata: { "org.social-harness/send": { failureDelivery } } }),
     });
     const response = yield* Effect.tryPromise(() =>
       requireHandler(harness).fetch(request),
@@ -137,43 +139,52 @@ it.each(sends)("refuses hidden $name on send_message", ({ input, feature }) =>
   }),
 );
 
-it("refuses groups before collectives on the channel's inbound-failure route", () =>
+it("refuses groups before collectives on a send", () =>
   Effect.gen(function* () {
     const input = yield* Schema.decodeUnknown(SendInput)({
       to: group,
       text: "Which day?",
       collective: { op: "all_gather", deadline: 60, requestedSchema: form },
     });
-    const response = yield* call(
-      input,
-      { hideGroups: true, hideCollectives: true },
-      "inbound",
-    );
+    const response = yield* call(input, {
+      hideGroups: true,
+      hideCollectives: true,
+    });
     expect(response.error?.message).toBe(
       hiddenFeatureRefusal("groups").message,
     );
   }));
 
-it.each(sends)(
+it.each(messages)(
   "preserves $name behavior with both switches off",
-  ({ input, name }) =>
+  ({ input, resultField }) =>
     Effect.gen(function* () {
       const response = yield* call(
         yield* Schema.decodeUnknown(SendInput)(input),
         {},
       );
-      if (name === "accept answer" || name === "decline answer") {
-        expect(response.error).toMatchObject({
-          data: {
-            reason: "collective-failed",
-            failure: { kind: "request-none" },
-          },
-        });
-      } else if (name === "group message") {
-        expect(response.result?.structuredContent.postId).toBeDefined();
-      } else {
-        expect(response.result?.structuredContent.operationId).toBeDefined();
-      }
+      expect(response).toHaveProperty([
+        "result",
+        "structuredContent",
+        resultField,
+      ]);
+    }),
+);
+
+it.each(answers)(
+  "preserves $name behavior with both switches off",
+  ({ input }) =>
+    Effect.gen(function* () {
+      const response = yield* call(
+        yield* Schema.decodeUnknown(SendInput)(input),
+        {},
+      );
+      expect(response.error).toMatchObject({
+        data: {
+          reason: "collective-failed",
+          failure: { kind: "request-none" },
+        },
+      });
     }),
 );
 

@@ -1,4 +1,4 @@
-/** @file Behaviors Client ships install by name from the installed package as readable English policy. */
+/** @file Behaviors Client ships install by name from the installed package as readable natural-language policy. */
 
 import { live as it } from "@effect/vitest";
 import { Effect } from "effect";
@@ -43,7 +43,7 @@ it(
           expect(text).toBeTruthy();
           expect(policy.fixedRules).toContainEqual(
             expect.objectContaining({
-              from: "english",
+              from: "text",
               id: name.split("/")[1],
               kind: /kind: (\w+)/u.exec(source)?.[1],
               text,
@@ -60,12 +60,12 @@ function writePolicy() {
   writeFileSync(
     path,
     JSON.stringify({
-      format: "org.social-harness/message-policy/v1",
+      format: "org.social-harness/message-policy/v2",
       mode: "guidance",
       outgoing: [{ use: "open-requests" }, { use: "acknowledgements" }],
       incoming: [{ use: "acknowledgements" }],
       decisionProvider: { kind: "unavailable" },
-      english: {
+      text: {
         builtinBehaviors: BEHAVIORS,
       },
       facts: [

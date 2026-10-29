@@ -19,8 +19,6 @@ import {
   acknowledgementsPolicy,
   ALLOWED_SENDERS_ID,
   allowedSendersPolicy,
-  type CollectiveNorms,
-  collectiveNorms,
   credentialsPolicy,
   openRequestsPolicy,
   plainLanguagePolicy,
@@ -35,7 +33,6 @@ import {
   loadMessagePolicy,
   policyConfigurationError,
   policyFailureMessage,
-  readBuiltinBehavior,
 } from "./load.js";
 
 /**
@@ -50,31 +47,20 @@ export interface FirewallInstallation {
 }
 
 /**
- * The firewall installation of one message-policy document: its built-in
- * middleware in chain order, its English rules assessed by `provider`, and
- * its settings. This is the trusted-composition hook: a composition that
- * brings its own decision provider installs the result with
- * `Daemon.withFirewall`. `codeDigest` is the SHA-256 of the Client release,
- * the mode, each registration's id and revision, the fixed English rules
- * and behavior bytes, the decision provider and the settings. It leaves out
- * what differs between the agents of one arm: the facilitator role, which no revision holds, the
- * allowed-sender list and the initial editable rules, so every member
- * records the same digest.
- * A document that lists behaviors fails with `CheckInputError`
- * (`registration`); only file loading resolves behaviors. A document that
- * installs the collective norms reads their English text from Client's
- * installed `behaviors/`.
- * @param policy A decoded document with inline rules and no behaviors.
- * @param provider The service that assesses its English rules and the
- *     collective norms; unused when the document installs neither.
- * @returns The options `Daemon.withFirewall` installs.
+ * Compose a decoded inline policy for `Daemon.withFirewall`, using the supplied
+ * provider for natural-language rules. A code-only policy does not
+ * use the provider.
+ *
+ * Nonempty behavior lists fail with `CheckInputError` (`registration`) because
+ * only file loading resolves them. The generated code digest follows the
+ * [policy contract](https://docs.moltzap.xyz/reference/spec/firewall/message-policy#message-policy-file).
  */
 export const messagePolicyFirewall = Effect.fn("messagePolicyFirewall")(
   function* (policy: MessagePolicy, provider: DecisionProvider) {
     if (listsBehaviors(policy)) {
       return yield* new CheckInputError({ reason: "registration" });
     }
-    return yield* composeFirewall(policy, provider, []);
+    return composeFirewall(policy, provider, []);
   },
 );
 
@@ -103,14 +89,9 @@ export const firewallInstallation = (
           fixedBehaviorDigests,
         }) =>
           composed === undefined
-            ? composeFirewall(
-                policy,
-                provider,
-                fixedBehaviorDigests ?? [],
+            ? Effect.succeed(
+                composeFirewall(policy, provider, fixedBehaviorDigests ?? []),
               ).pipe(
-                Effect.mapError(() =>
-                  policyConfigurationError("message-policy"),
-                ),
                 Effect.tap((options) =>
                   validateBehaviorIds(options, behaviorRulePaths),
                 ),
@@ -128,23 +109,24 @@ export const firewallInstallation = (
 
 /**
  * Where a rule installation failure's fix is written: the rules-not-installed
- * entry for a rule the file or the store holds, and nowhere for a build or
- * storage failure, which has no operator fix to link.
+ * entry covers invalid rules and catalogs that exceed the request budget.
+ * Storage failures have no policy-document fix to link.
  */
 const installationDocs: Readonly<
   Record<Exclude<FirewallPolicyError["reason"], "not-configured">, string>
 > = {
   "invalid-rule": `${FIREWALL_GUIDE}#rules-not-installed`,
   "fixed-rule": `${FIREWALL_GUIDE}#rules-not-installed`,
-  "build-failed": "",
+  "owner-rule": `${FIREWALL_GUIDE}#rules-not-installed`,
+  "build-failed": `${FIREWALL_GUIDE}#rules-not-installed`,
   "persistence-failed": "",
 };
 
 /**
  * The configuration failure for a document whose rules the daemon could not
  * install against its store, such as an initial rule reusing a code rule's
- * id. `not-configured` here means the store holds editable English rules
- * that a document without `english` cannot install; the document itself is
+ * id. `not-configured` here means the store holds editable natural-language rules
+ * that a document without `text` cannot install; the document itself is
  * valid, so that message names the stored rules instead.
  * @param cause The closed installation failure.
  * @param behaviorRulePaths The source entry for each file-loaded behavior.
@@ -165,7 +147,7 @@ export function policyInstallationError(
     behaviorReason: path === undefined ? undefined : "duplicate-id",
     message:
       cause.reason === "not-configured"
-        ? `SHARNESS_MESSAGE_POLICY_FILE configures no English policy, but the state directory holds English rules an earlier policy added; restore the english block, remove those rules with policy_update, then remove the block. Docs: ${FIREWALL_GUIDE}#stored-english-rules`
+        ? `SHARNESS_MESSAGE_POLICY_FILE configures no natural-language policy, but the state directory holds natural-language rules an earlier policy added; restore the text block, remove those rules with policy_update, then remove the block. Docs: ${FIREWALL_GUIDE}#stored-text-rules`
         : policyFailureMessage(
             "message-policy",
             `; its rules could not be installed (${cause.reason})${location}`,
@@ -176,14 +158,14 @@ export function policyInstallationError(
 
 /** Only file loading resolves behaviors into rules before trusted composition. */
 function listsBehaviors(policy: MessagePolicy) {
-  const english = policy.english;
-  if (english === undefined) {
+  const text = policy.text;
+  if (text === undefined) {
     return false;
   }
   return [
-    english.fixedBehaviors,
-    english.builtinBehaviors,
-    english.initialBehaviors,
+    text.fixedBehaviors,
+    text.builtinBehaviors,
+    text.initialBehaviors,
   ].some((entries) => entries !== undefined && entries.length !== 0);
 }
 
@@ -192,50 +174,32 @@ function composeFirewall(
   policy: MessagePolicy,
   provider: DecisionProvider,
   fixedBehaviorDigests: readonly string[],
-): Effect.Effect<FirewallOptions, CheckInputError> {
-  return Effect.gen(function* () {
-    const bundle = yield* Effect.cached(
-      collectiveNorms(
-        provider,
-        policy.englishSettings,
-        readBuiltinBehavior,
-        policy.maximumHistoryRecords,
-      ),
-    );
-    const incomingChain = yield* Effect.forEach(
-      policy.incoming,
-      (entry) => incoming(entry, bundle),
-      { concurrency: 1 },
-    );
-    const outgoingChain = yield* Effect.forEach(
-      policy.outgoing,
-      (entry) => outgoing(entry, bundle),
-      { concurrency: 1 },
-    );
-    return {
-      mode: policy.mode,
-      incoming: incomingChain,
-      outgoing: outgoingChain,
-      settings: policy.settings,
-      facts: policy.facts,
-      codeDigest: armDigest(
-        policy,
-        [...incomingChain, ...outgoingChain],
-        fixedBehaviorDigests,
-      ),
-      maximumHistoryRecords: policy.maximumHistoryRecords,
-      maximumConcurrentChecks: policy.maximumConcurrentChecks,
-      english:
-        policy.english === undefined
-          ? undefined
-          : {
-              fixedRules: policy.english.fixedRules,
-              initialRules: policy.english.initialRules,
-              provider,
-              settings: policy.englishSettings,
-            },
-    };
-  });
+): FirewallOptions {
+  const incomingChain = policy.incoming.map(incoming);
+  const outgoingChain = policy.outgoing.map(outgoing);
+  return {
+    mode: policy.mode,
+    incoming: incomingChain,
+    outgoing: outgoingChain,
+    settings: policy.settings,
+    facts: policy.facts,
+    codeDigest: armDigest(
+      policy,
+      [...incomingChain, ...outgoingChain],
+      fixedBehaviorDigests,
+    ),
+    maximumHistoryRecords: policy.maximumHistoryRecords,
+    maximumConcurrentChecks: policy.maximumConcurrentChecks,
+    text:
+      policy.text === undefined
+        ? undefined
+        : {
+            fixedRules: policy.text.fixedRules,
+            initialRules: policy.text.initialRules,
+            provider,
+            settings: policy.textSettings,
+          },
+  };
 }
 
 function validateBehaviorIds(
@@ -273,10 +237,10 @@ function armDigest(
         registrations: registrations.map(({ id, revision }) =>
           id === ALLOWED_SENDERS_ID ? { id } : { id, revision },
         ),
-        fixedRules: policy.english?.fixedRules ?? null,
+        fixedRules: policy.text?.fixedRules ?? null,
         ...(fixedBehaviorDigests.length === 0 ? {} : { fixedBehaviorDigests }),
         decisionProvider: policy.decisionProvider ?? null,
-        englishSettings: policy.englishSettings,
+        textSettings: policy.textSettings,
         settings: policy.settings,
         maximumHistoryRecords: policy.maximumHistoryRecords ?? null,
         maximumConcurrentChecks: policy.maximumConcurrentChecks ?? null,
@@ -295,46 +259,33 @@ function logInstalled(options: FirewallOptions) {
     registrations.size === 0
       ? "no code middleware"
       : [...registrations].join(", ");
-  const english = options.english === undefined ? "" : " and English rules";
+  const text = options.text === undefined ? "" : " and natural-language rules";
   return Effect.logInfo(
-    `Message policy installed in ${options.mode} mode with ${middleware}${english}.`,
+    `Message policy installed in ${options.mode} mode with ${middleware}${text}.`,
   );
 }
 
-/** The bundle, built once for the first entry that names it. */
-type Bundle = Effect.Effect<CollectiveNorms, CheckInputError>;
-
-function incoming(
-  entry: IncomingMiddlewareEntry,
-  bundle: Bundle,
-): Effect.Effect<MessageMiddleware, CheckInputError> {
+function incoming(entry: IncomingMiddlewareEntry): MessageMiddleware {
   switch (entry.use) {
     case "acknowledgements":
-      return Effect.succeed(acknowledgementsPolicy());
+      return acknowledgementsPolicy();
     case "allowed-senders":
-      return Effect.succeed(allowedSendersPolicy(entry.agentIds));
-    case "collective-norms":
-      return Effect.map(bundle, (norms) => norms.incoming);
+      return allowedSendersPolicy(entry.agentIds);
     default:
       return entry satisfies never;
   }
 }
 
-function outgoing(
-  entry: OutgoingMiddlewareEntry,
-  bundle: Bundle,
-): Effect.Effect<MessageMiddleware, CheckInputError> {
+function outgoing(entry: OutgoingMiddlewareEntry): MessageMiddleware {
   switch (entry.use) {
     case "credentials":
-      return Effect.succeed(credentialsPolicy());
+      return credentialsPolicy();
     case "plain-language":
-      return Effect.succeed(plainLanguagePolicy(entry));
-    case "collective-norms":
-      return Effect.map(bundle, (norms) => norms.outgoing(entry.facilitator));
+      return plainLanguagePolicy(entry);
     case "open-requests":
-      return Effect.succeed(openRequestsPolicy());
+      return openRequestsPolicy();
     case "acknowledgements":
-      return Effect.succeed(acknowledgementsPolicy());
+      return acknowledgementsPolicy();
     default:
       return entry satisfies never;
   }

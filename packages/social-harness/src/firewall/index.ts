@@ -1,23 +1,20 @@
 /** @file Personal firewall evaluation, policy, admission and owner decisions. */
 
-/** Code and English policies use one evaluator contract. */
+/** Code and natural-language policies use one evaluator contract. */
 export {
   CheckInputError,
   type DecisionProvider,
   DecisionProviderError,
   type DecisionRequest,
   type DecisionResponse,
-  EnglishPolicySettings,
-  EnglishRule,
   type Firewall,
   firewallDecisionsRequestSchema,
   firewallDecisionsSchema,
   FirewallPolicyError,
   type FirewallPolicyOperations,
   FirewallSettings,
-  makeEnglishPolicy,
   makeFirewall,
-  MAXIMUM_EDITABLE_RULES,
+  makeTextPolicy,
   Message,
   MessageContext,
   type MessageMiddleware,
@@ -28,6 +25,8 @@ export {
   policyUpdateResultSchema,
   policyUpdateSchema,
   RuleDescription,
+  TextPolicySettings,
+  TextRule,
 } from "./evaluator/index.js";
 /** Trusted composition installs policy before admitting application traffic. */
 export {

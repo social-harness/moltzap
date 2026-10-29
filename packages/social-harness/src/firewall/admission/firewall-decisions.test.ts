@@ -1,39 +1,39 @@
 /** @file The owner decisions feed explains each checked message through real Client storage. */
 
 import { scopedLive as it } from "@effect/vitest";
-import { Effect, Queue, Struct } from "effect";
+import { Effect, Queue, Schema, Struct } from "effect";
 import { expect } from "vitest";
 import type { FirewallOptions } from "./firewall.js";
 import { makeRetainedCheckFixture } from "../../__tests__/firewall-retained-fixtures.js";
 import {
   churnPolicy,
-  destination,
   fixture,
   type Fixture,
-  incomingFixture,
   incomingThrough,
   outgoingThrough,
   revise,
   rule,
   settings,
 } from "../../__tests__/firewall-runtime-fixtures.js";
+import { withStore } from "../../__tests__/store-schema-fixtures.js";
+import { MessageAddressInput } from "../../communication/records/values.js";
 import { encodeRuntimeValue } from "../../communication/store/index.js";
+import { agentViewOf } from "../../identity/cards.js";
 import {
   type DecisionProvider,
   DecisionProviderError,
   type DecisionRequest,
-  type EnglishRule,
   type MessageMiddleware,
   MiddlewareError,
   type MiddlewareInput,
   type MiddlewareResult,
+  type TextRule,
 } from "../evaluator/contract/index.js";
-import { makeEnglishPolicy } from "../evaluator/index.js";
 import { installEditableFirewall } from "../policy/editable.js";
 
 // @agent-code-guard/regression-only: Reads decisions retained by real admission through SQLite and the protocol engine.
 
-const englishSettings = {
+const textSettings = {
   minimumProbability: 0.5,
   maximumRequestBytes: 60_000,
   timeoutMilliseconds: 5_000,
@@ -49,7 +49,7 @@ const privacy = {
   },
 } as const;
 
-const review: EnglishRule = {
+const review: TextRule = {
   id: "review",
   kind: "safety",
   text: "Hold scheduling requests the owner has not seen.",
@@ -59,12 +59,12 @@ const review: EnglishRule = {
   },
 };
 
-const announce: EnglishRule = {
+const announce = {
   id: "announce-once",
   kind: "norm",
   text: "Announce the final meeting time once.",
   guidance: "Announce the final time once.",
-};
+} as const satisfies TextRule;
 
 const contacts = {
   id: "contacts",
@@ -179,10 +179,10 @@ function certain(
   };
 }
 
-/** Editable firewall options with `code` in both directions and an optional English policy. */
+/** Editable firewall options with `code` in both directions and an optional natural-language policy. */
 function options(
   code: readonly MessageMiddleware[],
-  english?: FirewallOptions["english"],
+  text?: FirewallOptions["text"],
 ): FirewallOptions {
   return {
     incoming: code,
@@ -191,19 +191,19 @@ function options(
     facts: [],
     codeDigest: "a".repeat(64),
     mode: "enforcement",
-    ...(english === undefined ? {} : { english }),
+    ...(text === undefined ? {} : { text }),
   };
 }
 
-function english(
+function text(
   provider: DecisionProvider,
-  rules: { fixed?: EnglishRule[]; initial?: EnglishRule[] },
-): FirewallOptions["english"] {
+  rules: { fixed?: TextRule[]; initial?: TextRule[] },
+): FirewallOptions["text"] {
   return {
     provider,
     fixedRules: rules.fixed ?? [],
     initialRules: rules.initial ?? [],
-    settings: englishSettings,
+    settings: textSettings,
   };
 }
 
@@ -222,12 +222,12 @@ function decideIncoming(configure: (subject: Fixture) => FirewallOptions) {
   });
 }
 
-it("names the fixed English rule whose settled judgment blocked a message", () =>
+it("names the fixed natural-language rule whose settled judgment blocked a message", () =>
   Effect.gen(function* () {
     const feed = yield* decideIncoming(() =>
       options(
         [],
-        english(decisionProvider([privacy], "prohibited"), {
+        text(decisionProvider([privacy], "prohibited"), {
           fixed: [privacy],
         }),
       ),
@@ -250,12 +250,12 @@ it("names the fixed English rule whose settled judgment blocked a message", () =
     ]);
   }));
 
-it("names the editable English rule an uncertain judgment held, with its feedback", () =>
+it("names the editable natural-language rule an uncertain judgment held, with its feedback", () =>
   Effect.gen(function* () {
     const feed = yield* decideIncoming(() =>
       options(
         [],
-        english(decisionProvider([review], "unresolved"), {
+        text(decisionProvider([review], "unresolved"), {
           initial: [review],
         }),
       ),
@@ -280,7 +280,7 @@ it("names the editable English rule an uncertain judgment held, with its feedbac
 it("names the norm an uncertain judgment admitted, with its guidance", () =>
   Effect.gen(function* () {
     const feed = yield* decideIncoming(() =>
-      options([], english(nearTieProvider, { initial: [announce] })),
+      options([], text(nearTieProvider, { initial: [announce] })),
     );
 
     expect(feed.decisions).toMatchObject([
@@ -302,7 +302,7 @@ it("names the norm an uncertain judgment admitted, with its guidance", () =>
 it("reports an unreachable decision provider as the cause of a hold", () =>
   Effect.gen(function* () {
     const feed = yield* decideIncoming(() =>
-      options([], english(unreachable, { fixed: [review] })),
+      options([], text(unreachable, { fixed: [review] })),
     );
 
     expect(feed.decisions).toMatchObject([
@@ -393,12 +393,12 @@ it("names both norms whose expectations conflict", () =>
     ]);
   }));
 
-it("names code and English rules that both blocked, reading the cause from the English one", () =>
+it("names code and natural-language rules that both blocked, reading the cause from the natural-language one", () =>
   Effect.gen(function* () {
     const feed = yield* decideIncoming(() =>
       options(
         [contactsPolicy("block")],
-        english(decisionProvider([privacy], "prohibited"), {
+        text(decisionProvider([privacy], "prohibited"), {
           fixed: [privacy],
         }),
       ),
@@ -434,9 +434,15 @@ it("reports an admission no rule qualified as the default, deciding by no rule",
 
 it("reports Client's own hold after repeatedly stale evidence as the endpoint's", () =>
   Effect.gen(function* () {
-    const feed = yield* decideIncoming((subject) =>
-      options([churnPolicy(subject).middleware]),
+    const churn = yield* churnPolicy(yield* fixture);
+    const editable = yield* installEditableFirewall(
+      options([churn.middleware]),
+      churn.subject.store,
     );
+    const runtime = yield* incomingThrough(churn.subject, editable);
+    yield* runtime.runPass;
+    yield* Queue.take(runtime.completed);
+    const feed = yield* editable.policy.decisions({});
 
     expect(feed.decisions).toContainEqual(
       expect.objectContaining({
@@ -448,35 +454,13 @@ it("reports Client's own hold after repeatedly stale evidence as the endpoint's"
     );
   }));
 
-it("names the norm that asked an outgoing draft for revision, naming the recipient", () =>
+it("retains refused first-message peers after restart without an admitted conversation", () =>
   Effect.gen(function* () {
-    const subject = yield* fixture;
     const reviser = codePolicy([rule], revise);
-    const editable = yield* installEditableFirewall(
-      options([reviser]),
-      subject.store,
-    );
-    const delivery = yield* outgoingThrough(subject, editable);
-
-    yield* Effect.flip(
-      delivery.operations.send({ input: { to: destination, text: "Hello" } }),
-    );
-
-    expect((yield* editable.policy.decisions({})).decisions).toMatchObject([
-      {
-        direction: "outgoing",
-        peerAgentId: subject.remote.card.agentId,
-        outcome: "revise",
-        cause: "code",
-        decidedBy: arrayContaining([
-          expect.objectContaining({
-            ruleId: rule.id,
-            from: "code",
-            advice: rule.feedback.text,
-          }),
-        ]),
-      },
-    ]);
+    const saved = yield* Effect.scoped(refuseFirstGroupMessage(reviser));
+    const recovered = yield* readRefusedDecisions(saved.directory, reviser);
+    expect(recovered.decisions).toEqual(saved.decisions);
+    expect(recovered.memberships).toEqual([]);
   }));
 
 it("refuses unknown stored editable properties as persistence failures", () =>
@@ -495,7 +479,7 @@ it("refuses unknown stored editable properties as persistence failures", () =>
     expect(
       yield* Effect.flip(
         installEditableFirewall(
-          options([], english(decisionProvider(), {})),
+          options([], text(decisionProvider(), {})),
           subject.store,
         ),
       ),
@@ -506,6 +490,12 @@ it.each([
   {
     name: "malformed input bytes",
     input: () => Effect.succeed(new TextEncoder().encode("{")),
+  },
+  {
+    name: "a missing retained peer identity",
+    input: (
+      input: Effect.Effect.Success<typeof makeRetainedCheckFixture>["input"],
+    ) => encodeRuntimeValue({ ...input, agents: [] }),
   },
   {
     name: "an extra context field",
@@ -527,7 +517,9 @@ it.each([
       yield* subject.store.beginFirewallAttempt({
         checkId,
         direction: "outgoing",
-        revision: 0,
+        snapshot: (yield* subject.store.readFirewallEvidence({
+          maximumRecords: 1,
+        })).snapshot,
         canonicalCandidate: retained.canonicalCandidate,
         canonicalInput: yield* input(retained.input),
       });
@@ -555,17 +547,17 @@ it("keeps the rules active at check time after the owner removes the deciding ru
     const subject = yield* fixture;
     const provider = decisionProvider([privacy], "prohibited");
     const editable = yield* installEditableFirewall(
-      options([], english(provider, {})),
+      options([], text(provider, {})),
       subject.store,
     );
     const runtime = yield* incomingThrough(subject, editable);
-    yield* editable.policy.update({ add: [privacy] });
+    yield* editable.policy.update({ add: [privacy] }, "owner");
     yield* runtime.runPass;
     yield* Queue.take(runtime.completed);
-    yield* editable.policy.update({ remove: [privacy.id] });
+    yield* editable.policy.update({ remove: [privacy.id] }, "owner");
 
     const restarted = yield* installEditableFirewall(
-      options([], english(provider, { fixed: [privacy] })),
+      options([], text(provider, { fixed: [privacy] })),
       subject.store,
     );
 
@@ -583,36 +575,94 @@ it("keeps the rules active at check time after the owner removes the deciding ru
     ]);
   }));
 
-it("reports an English rule as editable when its check recorded no fixed ids, though it is fixed now", () =>
+it("retains a runtime norm's ownership when the owner later replaces it", () =>
   Effect.gen(function* () {
     const subject = yield* fixture;
-    const provider = decisionProvider([privacy], "prohibited");
-    const unrecorded = yield* makeEnglishPolicy({
-      id: "org.social-harness/english",
-      rules: [privacy],
-      provider,
-      settings: englishSettings,
-    });
-    const runtime = yield* incomingFixture(subject, unrecorded);
-    yield* runtime.runPass;
-    yield* Queue.take(runtime.completed);
-
-    const current = yield* installEditableFirewall(
-      options([], english(provider, { fixed: [privacy] })),
+    const editable = yield* installEditableFirewall(
+      options([], text(nearTieProvider, {})),
       subject.store,
     );
-
-    expect((yield* current.policy.decisions({})).decisions).toMatchObject([
-      {
-        outcome: "block",
+    yield* editable.policy.update({ add: [announce] }, "runtime");
+    const runtime = yield* incomingThrough(subject, editable);
+    yield* runtime.runPass;
+    yield* Queue.take(runtime.completed);
+    yield* editable.policy.update(
+      { remove: [announce.id], add: [announce] },
+      "owner",
+    );
+    const restarted = yield* installEditableFirewall(
+      options([], text(nearTieProvider, {})),
+      subject.store,
+    );
+    expect((yield* restarted.policy.decisions({})).decisions).toContainEqual(
+      expect.objectContaining({
         decidedBy: arrayContaining([
-          expect.objectContaining({ ruleId: privacy.id, from: "editable" }),
+          expect.objectContaining({
+            ruleId: announce.id,
+            from: "editable",
+            owner: "runtime",
+          }),
         ]),
-      },
-    ]);
+      }),
+    );
   }));
 
 /** Containment matchers remain unknown rather than leaking Vitest's any into feed fields. */
 function arrayContaining(values: readonly unknown[]): unknown {
   return expect.arrayContaining([...values]);
+}
+
+function readRefusedDecisions(directory: string, reviser: MessageMiddleware) {
+  return withStore(directory, (store) =>
+    Effect.gen(function* () {
+      const editable = yield* installEditableFirewall(
+        options([reviser]),
+        store,
+      );
+      const { decisions } = yield* editable.policy.decisions({});
+      const { memberships } = yield* store.recover();
+      return { decisions, memberships };
+    }),
+  );
+}
+
+function refuseFirstGroupMessage(reviser: MessageMiddleware) {
+  return Effect.gen(function* () {
+    const subject = yield* fixture;
+    const editable = yield* installEditableFirewall(
+      options([reviser]),
+      subject.store,
+    );
+    const delivery = yield* outgoingThrough(subject, editable);
+    yield* Effect.flip(
+      delivery.operations.send({
+        input: {
+          to: Schema.decodeUnknownSync(MessageAddressInput)("group:carol,bob"),
+          text: "Hello",
+        },
+      }),
+    );
+    expect((yield* subject.store.recover()).memberships).toEqual([]);
+    const feed = yield* editable.policy.decisions({});
+    expect(feed.decisions.slice(0, 1)).toMatchObject([
+      {
+        direction: "outgoing",
+        peer: agentViewOf(subject.remote.card),
+        outcome: "revise",
+        cause: "code",
+        decidedBy: arrayContaining([
+          expect.objectContaining({
+            ruleId: rule.id,
+            from: "code",
+            advice: rule.feedback.text,
+          }),
+        ]),
+      },
+    ]);
+    expect(feed.decisions.map((decision) => decision.peer)).toEqual([
+      agentViewOf(subject.remote.card),
+      agentViewOf(subject.third.card),
+    ]);
+    return { directory: subject.directory, decisions: feed.decisions };
+  });
 }

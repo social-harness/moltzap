@@ -106,7 +106,7 @@ function startGatherAndExpectRequests({
       op: "gather",
       id: started.operationId,
       postId: anyString,
-      from: requester.address,
+      from: requester.agent,
       to: requester.address,
       question,
       requestedSchema: slotSchema,
@@ -149,10 +149,10 @@ const silentMemberBehavior = Effect.gen(function* () {
     id: started.operationId,
     outcomes: [
       {
-        member: first.address,
+        member: first.agent,
         outcome: { kind: "answered", content: { slot: "mon" } },
       },
-      { member: second.address, outcome: { kind: "no-answer" } },
+      { member: second.agent, outcome: { kind: "no-answer" } },
     ],
   });
   const late = yield* send(second, {
@@ -206,14 +206,16 @@ function answerGatherAndExpectResult(
       kind: "collectiveResult",
       op: "gather",
       id: operationId,
+      closedAt: anyNumber,
+      closedBy: "settled",
       to: "group:gather-member-a,gather-member-b,gather-requester",
       question,
       outcomes: [
         {
-          member: first.address,
+          member: first.agent,
           outcome: { kind: "answered", content: { slot: "tue" } },
         },
-        { member: second.address, outcome: { kind: "declined" } },
+        { member: second.agent, outcome: { kind: "declined" } },
       ],
     });
   });

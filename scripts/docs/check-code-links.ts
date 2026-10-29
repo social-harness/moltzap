@@ -1,20 +1,11 @@
 #!/usr/bin/env node
 /**
- * @file Code docs-link gate. Every docs-site link with an anchor that an
- * error or help text in a package's `src` names must resolve to a page under
- * `docs/` and to a heading or an explicit anchor element on that page.
+ * @file Checks anchored documentation links printed by package source code.
  *
- * `mint broken-links` checks links between pages, not the strings code
- * prints, so an anchor renamed in a guide would leave every `Docs:` link to
- * it dead without failing anything. Links are found in three spellings: a
- * whole literal, a constant holding a page (`const GUIDE = "https://…"`) used
- * as `${GUIDE}#anchor`, and a constant that already holds its anchor. A
- * heading resolves by its slug: lowercased, punctuation other than `-` and
- * `_` dropped, spaces turned into `-`.
- *
- * Exit codes: 0 every link resolves, 1 a page or anchor is missing.
- *
- * Wired into `pnpm lint` via the workspace `lint:docs-links` target.
+ * Mintlify checks page-to-page links. This gate covers tracked TypeScript
+ * in each package's `src/`, including complete URL literals and page constants
+ * used as `${GUIDE}#anchor`. Each target must match a heading or explicit
+ * anchor under `docs/`. Exits 0 when all targets resolve, otherwise 1.
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";

@@ -3,6 +3,7 @@
 import { scoped as it } from "@effect/vitest";
 import { Duration, Effect, Fiber, TestClock } from "effect";
 import { describe, expect } from "vitest";
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import {
   alice,
   answerPost,
@@ -11,7 +12,6 @@ import {
   collectiveKey,
   firstRequestOf,
   gatherInput,
-  gatherTo,
   latePostDelay,
   makeLayer,
   multicastPart,
@@ -25,11 +25,7 @@ import {
   startGather,
 } from "../../__tests__/collective-operation-fixtures.js";
 import { SendError } from "../conversations/errors.js";
-import { collectiveIdOf } from "./part/index.js";
-
-/** What a send that failed after queueing its post says about it. */
-const queuedText =
-  "the message is pending and Social Harness will still deliver it";
+import { collectiveIdOf } from "./wire/index.js";
 
 function certifiesAMulticastAsItsTextAndAnExplicitMulticastPart() {
   const observed = newObserved();
@@ -137,7 +133,11 @@ function continuesAGatherPastMembersItCouldNotReach() {
     const outcome = yield* Fiber.join(sending);
     const { id } = yield* firstRequestOf(observed);
 
-    expect(outcome).toEqual({ postIds: [postId(101)], operationId: id });
+    expect(outcome).toEqual({
+      kind: "collective",
+      postIds: [postId(101)],
+      operationId: id,
+    });
     expect(observed.sent.map((post) => post.to)).toEqual(["agent:bob"]);
 
     yield* classifyPost(
@@ -152,14 +152,22 @@ function continuesAGatherPastMembersItCouldNotReach() {
     expect(observed.emitted).toEqual([
       {
         kind: "collectiveResult",
+        closedAt: 60_000,
+        closedBy: "deadline",
         op: "gather",
         id,
         to: "group:alice,bob,carol,dave",
         question: questionText,
         outcomes: [
-          { member: "agent:bob", outcome: { kind: "declined" } },
-          { member: "agent:carol", outcome: { kind: "no-answer" } },
-          { member: "agent:dave", outcome: { kind: "no-answer" } },
+          { member: testAgentView("agent:bob"), outcome: { kind: "declined" } },
+          {
+            member: testAgentView("agent:carol"),
+            outcome: { kind: "no-answer" },
+          },
+          {
+            member: testAgentView("agent:dave"),
+            outcome: { kind: "no-answer" },
+          },
         ],
       },
     ]);
@@ -200,9 +208,9 @@ function countsAnAnswerToAPostCertifiedAfterTheWait() {
         kind: "collectiveResult",
         op: "gather",
         outcomes: [
-          { member: "agent:bob", outcome: { kind: "declined" } },
+          { member: testAgentView("agent:bob"), outcome: { kind: "declined" } },
           {
-            member: "agent:carol",
+            member: testAgentView("agent:carol"),
             outcome: { kind: "answered", content: { slot: "tue" } },
           },
         ],
@@ -241,15 +249,17 @@ function failsAGatherNoneOfWhosePostsWasDelivered() {
  */
 function saysEachMemberIsStillSentAQueuedRequestPost() {
   return Effect.gen(function* () {
-    const layer = yield* makeLayer(newObserved(), {
+    const observed = newObserved();
+    const layer = yield* makeLayer(observed, {
       sendPost: () =>
         Effect.fail(new SendError({ reason: "delivery-pending" })),
     });
-    const refusal = yield* Effect.flip(send(layer, gatherInput()));
-
-    expect(refusal.message).toBe(
-      `send failed: agent:bob could not be reached: ${queuedText}; agent:carol could not be reached: ${queuedText}`,
-    );
+    const outcome = yield* send(layer, gatherInput());
+    expect(outcome).toMatchObject({ kind: "collective" });
+    yield* TestClock.adjust(Duration.seconds(60));
+    expect(observed.emitted).toMatchObject([
+      { kind: "collectiveResult", id: outcome.operationId },
+    ]);
   });
 }
 
@@ -327,21 +337,18 @@ function namesTheUndeclaredRequiredField() {
   });
 }
 
-function emitsARefusedGatherAsAnOperationFailedItemWhenFailuresGoInbound() {
+function returnsAnInvalidGatherAsARefusal() {
   const observed = newObserved();
 
   return Effect.gen(function* () {
     const layer = yield* makeLayer(observed, { unknown: ["agent:carol"] });
-    const outcome = yield* send(layer, gatherInput(), "inbound");
+    const failure = yield* collectiveFailureOf(send(layer, gatherInput()));
 
-    expect(observed.emitted).toEqual([
-      {
-        kind: "operationFailed",
-        id: outcome.operationId,
-        to: gatherTo,
-        error: "send failed: agent:carol is not a known agent",
-      },
-    ]);
+    expect(failure).toMatchObject({
+      kind: "members-unreachable",
+      members: [{ member: "agent:carol", reason: "unknown-agent" }],
+    });
+    expect(observed.emitted).toEqual([]);
   });
 }
 
@@ -410,8 +417,8 @@ describe("collective sends", () => {
   );
 
   it(
-    "emits a refused gather as an operationFailed item when failures go inbound",
-    emitsARefusedGatherAsAnOperationFailedItemWhenFailuresGoInbound,
+    "returns an invalid gather as a refusal",
+    returnsAnInvalidGatherAsARefusal,
   );
 });
 

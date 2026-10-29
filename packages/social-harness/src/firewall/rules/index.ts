@@ -10,5 +10,3 @@ export {
   openRequestsPolicy,
   plainLanguagePolicy,
 } from "./builtin.js";
-/** Collective participation composes code and English norms under one shared revision. */
-export { type CollectiveNorms, collectiveNorms } from "./collective-norms.js";

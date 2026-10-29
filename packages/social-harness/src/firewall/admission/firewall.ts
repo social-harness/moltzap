@@ -2,7 +2,6 @@
 
 import { Effect, Option, Schema } from "effect";
 import { createHash } from "node:crypto";
-import type { AgentCard, VerifiedAgentCard } from "../../identity/cards.js";
 import type { FirewallSendError } from "../outcome/index.js";
 import { InboundItem } from "../../communication/collectives/inbound.js";
 import {
@@ -34,18 +33,30 @@ import {
 } from "../../communication/store/index.js";
 import { encodeCanonical } from "../../encoding/canonical-json.js";
 import {
+  type AgentCard,
+  AgentView,
+  agentViewOf,
+  type VerifiedAgentCard,
+} from "../../identity/cards.js";
+import {
   CheckInputError,
   type DecisionProvider,
-  type EnglishPolicySettings,
-  type EnglishRule,
   type FirewallSettings,
   makeFirewall,
   type Message,
   type MessageContext,
   type MessageMiddleware,
+  type TextPolicySettings,
+  type TextRule,
 } from "../evaluator/index.js";
 import {
-  agentAddressOf,
+  decodeFirewallConfiguration,
+  decodeFirewallInstallation,
+  decodeFirewallRegistration,
+  type FirewallConfiguration,
+  type FirewallInstallation,
+} from "./audit-records.js";
+import {
   assess,
   type CheckedMessage,
   conversationAddress,
@@ -58,13 +69,6 @@ import {
   refusedSend,
   requestText,
 } from "./firewall-checks.js";
-import {
-  decodeFirewallConfiguration,
-  decodeFirewallInstallation,
-  decodeFirewallRegistration,
-  type FirewallConfiguration,
-  type FirewallInstallation,
-} from "./firewall-values.js";
 
 // safer-arch-ignore file-implicit-boundary-module: Firewall composition and its admission worker share one immutable installation and evidence pipeline; this private implementation is exposed only through admission/index.ts.
 
@@ -76,21 +80,30 @@ const unpostedRequest = Schema.decodeUnknown(PostId)(
   `pst_${"A".repeat(43)}`,
 ).pipe(Effect.orDie);
 
-/** Code, facts and provider settings stay fixed; owner tools edit only English rules. */
+/**
+ * Code, facts and provider settings stay fixed for this process. Owner tools
+ * edit only natural-language rules, and initial rules seed only a missing editable document.
+ * @inline
+ */
 export interface FirewallOptions {
   readonly mode: "guidance" | "enforcement";
   readonly incoming: readonly MessageMiddleware[];
   readonly outgoing: readonly MessageMiddleware[];
   readonly settings: FirewallSettings;
   readonly facts: MessageContext["facts"];
+  /** Operator-supplied SHA-256 identifier for the code, recorded without attestation. */
   readonly codeDigest: string;
+  /** Recent certified records per candidate conversation. Defaults to 256, from 1 to 1024. */
   readonly maximumHistoryRecords?: number;
+  /** Shared limit on concurrent inference in both directions. Defaults to 4, from 1 to 32. */
   readonly maximumConcurrentChecks?: number;
-  readonly english?: {
-    readonly fixedRules?: readonly EnglishRule[];
-    readonly initialRules?: readonly EnglishRule[];
+  readonly text?: {
+    /** Additional rules fixed for this process. Defaults to an empty list. */
+    readonly fixedRules?: readonly TextRule[];
+    /** Seeds only a missing editable document. Defaults to an empty list. */
+    readonly initialRules?: readonly TextRule[];
     readonly provider: DecisionProvider;
-    readonly settings: EnglishPolicySettings;
+    readonly settings: TextPolicySettings;
   };
 }
 
@@ -333,13 +346,16 @@ function checkPrepared(
 /**
  * Check a gather, rechecking once on stale evidence, and return the sender
  * its request posts bind through with the advice its admitting check gave.
- * A store failure fails as `persistence-failed` before any post.
+ * A store failure preserves uncertainty about committed collective ownership.
  */
 function admitGather(
   environment: FirewallEnvironment,
   engine: Pick<EndpointEngine, "sendAdmitted" | "resolveConversation">,
   candidate: GatherCandidate,
-): Effect.Effect<AdmittedGather, SendError | FirewallSendError> {
+): Effect.Effect<
+  AdmittedGather,
+  SendError | FirewallSendError | EndpointStoreError
+> {
   return Effect.gen(function* () {
     const gather: GatherCheck = {
       candidate,
@@ -364,12 +380,7 @@ function admitGather(
       committed.value.checked,
       committed.value.disposition,
     );
-  }).pipe(
-    Effect.catchTag("EndpointStoreError", () =>
-      Effect.fail(new SendError({ reason: "persistence-failed" })),
-    ),
-    Effect.withSpan("admitGather"),
-  );
+  }).pipe(Effect.withSpan("admitGather"));
 }
 
 /** Check a gather and commit the check as its admitted operation. */
@@ -383,6 +394,7 @@ function commitGather(
     const disposition = yield* environment.store.admitFirewallOperation(
       checked.completion,
       gather.canonicalCandidate,
+      gather.candidate.operation,
     );
     return disposition === "stale" ? disposition : { checked, disposition };
   });
@@ -466,7 +478,7 @@ function gatherMessage(local: VerifiedAgentCard, gather: GatherCheck) {
         op: "gather",
         id: value.id,
         postId: yield* unpostedRequest,
-        from: yield* agentAddressOf(local),
+        from: agentViewOf(local),
         to: gather.conversation.address,
         question: questionText(gather.candidate.content),
         requestedSchema: value.requestedSchema,
@@ -529,11 +541,16 @@ function sameRequest(
 }
 
 function samePost(
-  post: { readonly postId: string; readonly sender: string },
+  post: { readonly postId: string; readonly sender: AgentView },
   candidate: DecodedRecord,
 ): boolean {
   return (
-    post.postId === candidate.intent.postId && post.sender === candidate.author
+    post.postId === candidate.intent.postId &&
+    candidate.cards.some(
+      (card) =>
+        card.agentId === candidate.intent.authorAgentId &&
+        Schema.equivalence(AgentView)(AgentView.make(card), post.sender),
+    )
   );
 }
 
@@ -544,9 +561,11 @@ function sameAudience(
   if (message.kind === "direct") {
     return cards.length === 2;
   }
-  const expected = cards.map((card) => `agent:${card.agentName}`);
+  const expected = cards.map((card) => AgentView.make(card));
   return (
     expected.length === message.members.length &&
-    message.members.every((member) => expected.includes(member))
+    message.members.every((member) =>
+      expected.some((card) => Schema.equivalence(AgentView)(card, member)),
+    )
   );
 }

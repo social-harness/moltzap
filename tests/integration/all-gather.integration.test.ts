@@ -116,7 +116,7 @@ function startAllGatherAndExpectRequests({
       op: "all_gather",
       id: started.operationId,
       postId: anyString,
-      from: requester.address,
+      from: requester.agent,
       to: group,
       question,
       requestedSchema: slotSchema,
@@ -165,9 +165,9 @@ const silentMemberBehavior = Effect.gen(function* () {
     op: "all_gather",
     id: started.operationId,
     outcomes: [
-      { member: first.address, outcome: { kind: "answered" } },
-      { member: second.address, outcome: { kind: "answered" } },
-      { member: third.address, outcome: { kind: "no-answer" } },
+      { member: first.agent, outcome: { kind: "answered" } },
+      { member: second.agent, outcome: { kind: "answered" } },
+      { member: third.agent, outcome: { kind: "no-answer" } },
     ],
   });
   expect(yield* nextItem(first)).toEqual(requesterResult);
@@ -203,18 +203,20 @@ function answerAllGatherAndExpectSharedResult(
       kind: "collectiveResult",
       op: "all_gather",
       id: operationId,
+      closedAt: anyNumber,
+      closedBy: "settled",
       to: group,
       question,
       outcomes: [
         {
-          member: first.address,
+          member: first.agent,
           outcome: { kind: "answered", content: { slot: "tue" } },
         },
         {
-          member: second.address,
+          member: second.agent,
           outcome: { kind: "answered", content: { slot: "mon" } },
         },
-        { member: third.address, outcome: { kind: "declined" } },
+        { member: third.agent, outcome: { kind: "declined" } },
       ],
     });
     expect(yield* nextItem(first)).toEqual(requesterResult);

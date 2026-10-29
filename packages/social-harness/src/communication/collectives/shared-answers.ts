@@ -10,26 +10,15 @@
  */
 
 import type { PostId, RecordHash } from "../records/index.js";
-import type { AgentAddress } from "../records/values.js";
-import type { CollectiveMemberOutcome, InboundItem } from "./inbound.js";
-import type { CollectiveValue } from "./part/index.js";
+import type { CollectiveClosure, Members } from "./contracts.js";
+import type {
+  CollectiveMemberOutcome,
+  CollectiveResultItem,
+} from "./inbound.js";
+import type { ResponseValue } from "./wire/index.js";
+import { type AgentAddress, agentAddressOf } from "../records/values.js";
 
 // safer-arch-ignore file-implicit-boundary-module: A received all_gather request keeps these answers and the operation layer selects them by its close; nothing outside communication/collectives reads them.
-
-/** The members a collecting operation asks, in member order. */
-export type Members = readonly [AgentAddress, ...AgentAddress[]];
-
-/** A member's response value, as its post carries it. */
-export type ResponseValue = Extract<
-  CollectiveValue,
-  { readonly kind: "response" }
->;
-
-/** The item a completed gather or all_gather publishes. */
-export type CollectiveResultItem = Extract<
-  InboundItem,
-  { readonly kind: "collectiveResult" }
->;
 
 /** One answer certified in an all_gather's group conversation. */
 export interface CertifiedAnswer {
@@ -38,7 +27,7 @@ export interface CertifiedAnswer {
 }
 
 /** A close whose listed answers wait for this member's own answer to certify. */
-export interface HeldClose {
+export interface HeldClose extends CollectiveClosure {
   readonly postId: PostId;
   readonly included: readonly RecordHash[];
 }
@@ -67,7 +56,10 @@ export function keepFirstAnswer(
   sender: AgentAddress,
   answer: CertifiedAnswer,
 ): void {
-  if (shared.members.includes(sender) && !shared.answers.has(sender)) {
+  if (
+    shared.members.some((member) => agentAddressOf(member) === sender) &&
+    !shared.answers.has(sender)
+  ) {
     shared.answers.set(sender, answer);
   }
 }
@@ -113,9 +105,11 @@ export function memberOutcomes(
   members: Members,
   outcomes: ReadonlyMap<AgentAddress, CollectiveMemberOutcome>,
 ): CollectiveResultItem["outcomes"] {
-  const outcome = (member: AgentAddress) => ({
+  const outcome = (member: Members[number]) => ({
     member,
-    outcome: outcomes.get(member) ?? { kind: "no-answer" as const },
+    outcome: outcomes.get(agentAddressOf(member)) ?? {
+      kind: "no-answer" as const,
+    },
   });
   const [first, ...rest] = members;
   return [outcome(first), ...rest.map(outcome)];

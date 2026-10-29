@@ -6,7 +6,7 @@ import { Clock, Duration, Effect, Schedule } from "effect";
 import { randomUUID } from "node:crypto";
 import { isAbsolute, join } from "node:path";
 import { MuseWakeError } from "./errors.js";
-import { type MuseWork, readOptionalFile, writeWork } from "./work.js";
+import { type MuseWork, readOptionalFile, writeWork } from "./handoff-files.js";
 
 /** Native commands access references only, never Client credentials or receipts. */
 export { acceptMuseWork, detectMuseWork } from "./worker.js";

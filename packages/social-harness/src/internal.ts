@@ -30,7 +30,7 @@ export {
 export {
   AuthenticatedHttp,
   type VerifiedAgentRequest,
-} from "./identity/signing/registered/index.js";
+} from "./identity/request-authentication.js";
 /** Service adapters construct and decode closed HTTP envelope failures. */
 export { httpErrors } from "./identity/signing/http-errors.js";
 /** Service compositions share the daemon's Registry client tag. */

@@ -4,6 +4,7 @@ import { scoped as it } from "@effect/vitest";
 import { Duration, Effect, Fiber, Option, Supervisor, TestClock } from "effect";
 import { describe, expect } from "vitest";
 import type { CollectivePorts } from "./ports.js";
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import {
   answerPost,
   certifyNext,
@@ -21,7 +22,7 @@ import {
   unkeptEmit,
 } from "../../__tests__/collective-operation-fixtures.js";
 import { SendError } from "../conversations/errors.js";
-import { CollectiveEmitError } from "./forms.js";
+import { CollectiveEmitError } from "./contracts.js";
 
 /**
  * Certify Bob's post at once and refuse Carol's after half a second, so
@@ -75,16 +76,21 @@ function emitsTheResultOnceEveryMemberHasAnswered() {
     expect(observed.emitted).toEqual([
       {
         kind: "collectiveResult",
+        closedAt: 0,
+        closedBy: "settled",
         op: "gather",
         id,
         to: gatherTo,
         question: questionText,
         outcomes: [
           {
-            member: "agent:bob",
+            member: testAgentView("agent:bob"),
             outcome: { kind: "answered", content: { slot: "mon" } },
           },
-          { member: "agent:carol", outcome: { kind: "declined" } },
+          {
+            member: testAgentView("agent:carol"),
+            outcome: { kind: "declined" },
+          },
         ],
       },
     ]);
@@ -106,13 +112,18 @@ function reportsASilentMemberAsNoAnswerAtTheDeadline() {
     expect(observed.emitted).toEqual([
       {
         kind: "collectiveResult",
+        closedAt: 60_000,
+        closedBy: "deadline",
         op: "gather",
         id,
         to: gatherTo,
         question: questionText,
         outcomes: [
-          { member: "agent:bob", outcome: { kind: "declined" } },
-          { member: "agent:carol", outcome: { kind: "no-answer" } },
+          { member: testAgentView("agent:bob"), outcome: { kind: "declined" } },
+          {
+            member: testAgentView("agent:carol"),
+            outcome: { kind: "no-answer" },
+          },
         ],
       },
     ]);
@@ -140,13 +151,15 @@ function recordsAnAnswerThatFailsTheSchemaAsInvalid() {
     expect(observed.emitted).toEqual([
       {
         kind: "collectiveResult",
+        closedAt: 0,
+        closedBy: "settled",
         op: "gather",
         id,
         to: gatherTo,
         question: questionText,
         outcomes: [
           {
-            member: "agent:bob",
+            member: testAgentView("agent:bob"),
             outcome: {
               kind: "invalid",
               reason:
@@ -154,7 +167,7 @@ function recordsAnAnswerThatFailsTheSchemaAsInvalid() {
             },
           },
           {
-            member: "agent:carol",
+            member: testAgentView("agent:carol"),
             outcome: { kind: "invalid", reason: 'field "slot" is missing' },
           },
         ],
@@ -183,7 +196,10 @@ function keepsAMemberSFirstAnswerAndIgnoresItsSecond() {
     yield* TestClock.adjust(Duration.seconds(60));
 
     expect(observed.emitted[0]).toMatchObject({
-      outcomes: [{ member: "agent:bob", outcome: { kind: "declined" } }, {}],
+      outcomes: [
+        { member: testAgentView("agent:bob"), outcome: { kind: "declined" } },
+        {},
+      ],
     });
   });
 }
@@ -229,6 +245,7 @@ function returnsTheGatherSIdWithTheRequestPostsItCertified() {
     const { id } = yield* firstRequestOf(observed);
 
     expect(outcome).toEqual({
+      kind: "collective",
       postIds: [postId(101), postId(102)],
       operationId: id,
     });
@@ -255,13 +272,21 @@ function endsAPendingGatherAtItsDeadlineInOneResult() {
     expect(observed.emitted).toEqual([
       {
         kind: "collectiveResult",
+        closedAt: 1_000,
+        closedBy: "deadline",
         op: "gather",
         id: outcome.operationId,
         to: gatherTo,
         question: questionText,
         outcomes: [
-          { member: "agent:bob", outcome: { kind: "no-answer" } },
-          { member: "agent:carol", outcome: { kind: "no-answer" } },
+          {
+            member: testAgentView("agent:bob"),
+            outcome: { kind: "no-answer" },
+          },
+          {
+            member: testAgentView("agent:carol"),
+            outcome: { kind: "no-answer" },
+          },
         ],
       },
     ]);
@@ -321,19 +346,16 @@ function failsTheCompletingAnswerWhenTheResultCannotBeKept() {
 }
 
 /**
- * A refusal routed inbound that cannot be kept fails the send with the
- * refusal itself, rather than with a storage reason that says nothing of the
- * operation.
+ * A refused send returns its own error even if the local inbox is unavailable.
  */
 function failsASendWithItsRefusalWhenTheInboundCopyCannotBeKept() {
   return Effect.gen(function* () {
     const layer = yield* makeLayer(newObserved(), { emit: unkeptEmit });
     const failure = yield* Effect.flip(
-      send(
-        layer,
-        { to: "agent:bob", collectiveResponse: { action: "decline" } },
-        "inbound",
-      ),
+      send(layer, {
+        to: "agent:bob",
+        collectiveResponse: { action: "decline" },
+      }),
     );
 
     expect(failure).toMatchObject({
@@ -373,6 +395,37 @@ function keepsAGatherSendWhoseSettlingResultCannotBeKept() {
     expect(outcome.postIds).toHaveLength(1);
   });
 }
+
+it("settles when one member answers and another request is refused", () =>
+  Effect.gen(function* () {
+    const observed = newObserved();
+    const layer = yield* makeLayer(observed, {
+      sendPost: refuseCarolLater(observed),
+    });
+    const sending = yield* Effect.fork(send(layer, gatherInput()));
+    yield* TestClock.adjust(Duration.millis(100));
+    const { id } = yield* firstRequestOf(observed);
+    yield* classifyPost(
+      layer,
+      answerPost("agent:bob", id, { action: "decline" }),
+    );
+    yield* TestClock.adjust(Duration.millis(400));
+    yield* Fiber.join(sending);
+    expect(observed.emitted).toMatchObject([
+      {
+        id,
+        closedAt: 500,
+        closedBy: "settled",
+        outcomes: [
+          { member: testAgentView("agent:bob"), outcome: { kind: "declined" } },
+          {
+            member: testAgentView("agent:carol"),
+            outcome: { kind: "no-answer" },
+          },
+        ],
+      },
+    ]);
+  }));
 
 // @agent-code-guard/regression-only: examples pin how the requester completes a gather.
 describe("gather results", () => {

@@ -1,6 +1,7 @@
 /** @file Exercises NanoClaw native inbox and sends against the disposable network. */
 import {
   type Network,
+  type Endpoint as NetworkEndpoint,
   startNetwork,
 } from "@moltzap/integration-tests/process-network";
 import assert from "node:assert/strict";
@@ -47,9 +48,7 @@ const SLOT_SCHEMA = {
 };
 
 /** The parts of a network endpoint the cases use. */
-interface Endpoint {
-  readonly address: string;
-  readonly mcp: URL;
+interface Endpoint extends Pick<NetworkEndpoint, "address" | "mcp" | "agent"> {
   send(input: object): Promise<{ readonly operationId?: string }>;
   next(count: number): Promise<readonly unknown[]>;
   history(address: string): Promise<readonly unknown[]>;
@@ -139,7 +138,7 @@ async function routesThroughNativeBoundaries({
     kind: "multicast",
     messageKind: "group",
     address: shared,
-    sender: target.address,
+    sender: target.agent,
     content: [{ type: "text", text: GROUP_REPLY }],
   };
   const callerItems = (await callerReceived).map(multicastSummary);
@@ -150,7 +149,7 @@ async function routesThroughNativeBoundaries({
       kind: "multicast",
       messageKind: "direct",
       address: target.address,
-      sender: target.address,
+      sender: target.agent,
       content: [{ type: "text", text: DIRECT_REPLY }],
     },
   );
@@ -208,25 +207,38 @@ async function answersAndStartsGather({
   );
 
   assert.match(id, /^col_/u);
-  assert.deepEqual(await received, [
+  const results = (await received).map(asRecord);
+  const [result] = results;
+  assert.ok(result);
+  assert.equal(typeof result.closedAt, "number");
+  assert.deepEqual(results, [
     {
       kind: "collectiveResult",
       op: "gather",
       id,
       to: target.address,
       question: GATHER_QUESTION,
+      closedAt: result.closedAt,
+      closedBy: "settled",
       outcomes: [
         {
-          member: target.address,
+          member: target.agent,
           outcome: { kind: "answered", content: { slot: "tue" } },
         },
       ],
     },
   ]);
   const request = asRecord((await caller.next(1))[0]);
+  assertGatherRequest(request, target);
+}
+
+function assertGatherRequest(
+  request: Record<string, unknown>,
+  target: Endpoint,
+) {
   assert.equal(request.kind, "collectiveRequest");
   assert.equal(request.op, "gather");
-  assert.equal(request.from, target.address);
+  assert.deepEqual(request.from, target.agent);
   assert.equal(request.to, target.address);
   assert.equal(request.question, GATHER_QUESTION);
   assert.deepEqual(request.requestedSchema, SLOT_SCHEMA);
@@ -294,6 +306,7 @@ async function assertAllGatherAnswered(
     ({ kind }) => kind === "collectiveRequest",
   );
   assert.ok(result, "the caller received no all_gather result");
+  assert.equal(typeof result.closedAt, "number");
   assert.ok(nanoClawRequest, "the caller received no NanoClaw request");
   assert.deepEqual(result, {
     kind: "collectiveResult",
@@ -301,10 +314,12 @@ async function assertAllGatherAnswered(
     id,
     to: group,
     question: GATHER_QUESTION,
+    closedAt: result.closedAt,
+    closedBy: "settled",
     outcomes: [
-      { member: peer.address, outcome: { kind: "declined" } },
+      { member: peer.agent, outcome: { kind: "declined" } },
       {
-        member: target.address,
+        member: target.agent,
         outcome: { kind: "answered", content: { slot: "tue" } },
       },
     ],
@@ -330,7 +345,7 @@ async function assertNanoClawAllGather(
   request: Readonly<Record<string, unknown>>,
 ): Promise<undefined> {
   assert.equal(request.op, "all_gather");
-  assert.equal(request.from, target.address);
+  assert.deepEqual(request.from, target.agent);
   assert.equal(request.to, group);
 
   await caller.send({
@@ -344,12 +359,14 @@ async function assertNanoClawAllGather(
   assert.equal(result.op, "all_gather");
   assert.equal(result.id, request.id);
   assert.equal(result.to, group);
+  assert.equal(typeof result.closedAt, "number");
+  assert.equal(result.closedBy, "settled");
   assert.deepEqual(result.outcomes, [
     {
-      member: caller.address,
+      member: caller.agent,
       outcome: { kind: "answered", content: { slot: "mon" } },
     },
-    { member: peer.address, outcome: { kind: "declined" } },
+    { member: peer.agent, outcome: { kind: "declined" } },
   ]);
   assert.deepEqual(await peer.next(1), [received]);
 }

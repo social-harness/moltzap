@@ -20,8 +20,7 @@ import {
   admittedContext,
   dockerContextInputs,
   type DockerRuntime,
-} from "./image-dockerfile.ts";
-import { compilerLayout, configInputs } from "./image-input-config.ts";
+} from "./dockerfile-inputs.ts";
 import {
   checkout,
   ImageInputError,
@@ -32,13 +31,14 @@ import {
   under,
   workspaceRoots,
 } from "./image-input-tree.ts";
-import { compiledSources, packedFile } from "./image-packed.ts";
-import { readsManifestVersion } from "./image-runtime-version.ts";
 import {
   moduleGraph,
   type ModuleReader,
   runtimeModule,
 } from "./module-graph.ts";
+import { compiledSources, packedFile } from "./packed-package-inputs.ts";
+import { readsManifestVersion } from "./runtime-version-reads.ts";
+import { compilerLayout, configInputs } from "./typescript-config.ts";
 /** Typed refusal shared by image key callers. */
 export { ImageInputError } from "./image-input-tree.ts";
 

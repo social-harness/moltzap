@@ -1,7 +1,7 @@
 /** @file Identity request authentication and immutable Registry resolution for communication. */
 
 /** Registered requests resolve immutable cards through the Registry capability. */
-export { AuthenticatedHttp } from "./signing/registered/index.js";
+export { AuthenticatedHttp } from "./request-authentication.js";
 /** Signature proofs remain typed inside authenticated service admission. */
 export { AgentSigningError } from "./signing/http-signature.js";
 /** Immutable resolution supplies pinned cards to communication workers. */

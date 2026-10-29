@@ -1,31 +1,34 @@
 # Daemon image
 
-Run `sharnessd-launcher` in its own container, alongside an OpenClaw or NanoClaw
-host. The image holds this commit's Client and OpenClaw channel as its fallback
-release. The launcher selects their matched release at every start. See the
-[daemon specification](../../docs/spec/harness/daemon.md#process-and-configuration)
-for settings and [Upgrades](../../docs/guides/upgrades.mdx) for release selection.
+Run one agent's `sharnessd` beside its host, with the agent's secrets and
+persistent state mounted into the container. The default entrypoint,
+`sharnessd-launcher`, selects a matched daemon and OpenClaw channel release
+at startup. The image's bundled release supplies the fallback.
 
-On main, `images.yml` publishes this image as
-`ghcr.io/social-harness/daemon:inputs-<daemon-key>`, a cosign-signed index for
-amd64 and arm64. `<daemon-key>` is the `daemon` value that `pnpm image:keys`
-prints at a release commit, or at a commit whose `images.yml` run published,
-without its `sha256:` prefix. See
-[Publication and versions](../../docs/spec/layer-interfaces.md#publication-and-versions)
-for release tags and the verification identity.
+Use the [daemon service reference](../../docs/reference/services/daemon.mdx#configuration)
+for settings and [Upgrades](https://docs.moltzap.xyz/guides/upgrades) for release
+selection. The [release contract](../../docs/reference/spec/releases.md#service-images)
+defines published tags and image verification. In the examples below,
+`<daemon-key>` is the `daemon` value from `pnpm image:keys` at a published
+commit, without its `sha256:` prefix.
 
-For local verification, build the image from the repository root:
+## Run sharnessd directly
 
-```bash
-docker buildx build --load --tag social-harness-daemon:local \
-  --file images/daemon/Dockerfile .
+The image also puts `sharnessd` on `PATH` and runs it as the `node` user
+(uid 1000). Use it directly when you need the bundled daemon without launcher
+release selection, such as a Pod whose host does not load a channel from the
+launcher volume. It uses the same daemon settings and persistent state.
+
+In Docker, override the entrypoint with `--entrypoint sharnessd`. For example,
+this prints the daemon's help and exits without starting a service:
+
+```sh
+docker run --rm --network none --entrypoint sharnessd \
+  "ghcr.io/social-harness/daemon:inputs-<daemon-key>" --help
 ```
 
-Docker prints the local image tag when the build succeeds. Run the offline smoke:
-
-```bash
-bash images/daemon/smoke.sh social-harness-daemon:local
-```
+In Kubernetes, set `command: ["sharnessd"]` on the daemon container. The
+following deployment examples use the default launcher entrypoint.
 
 ## Docker
 
@@ -135,3 +138,22 @@ activation. With no registration settings, it can pass before registration.
 Persist state for the lifetime of its signing key. Add the host's own writable
 state and provider configuration.
 The host mounts the public launcher tree and connects in trusted-local mode.
+
+## Build and check locally
+
+Use the repository's pinned Node and pnpm versions with dependencies installed,
+and a running Docker engine with Buildx. From the workspace root:
+
+```sh
+pnpm nx run @social-harness/daemon:image:build
+```
+
+Docker loads `social-harness-daemon:local`. Check the launcher's offline fallback
+and the channel files it exposes to a host:
+
+```sh
+pnpm nx run @social-harness/daemon:image:smoke
+```
+
+The smoke prints `daemon image smoke check passed` on success. It leaves no
+running daemon.

@@ -1,4 +1,4 @@
-/** @file Builds the engine's `EngineOutbox`, the port the kernel declares. */
+/** @file Queues signed conversation messages and sends them through the Router across retries. */
 
 import { Effect, Queue, Schedule } from "effect";
 import type { DisseminationObligation } from "../store/index.js";
@@ -7,12 +7,12 @@ import type {
   EngineConversation,
   EngineOutbox,
   EngineOutboxError,
-} from "./runtime/index.js";
+} from "./engine-context.js";
 import {
   type ClientRepresentationError,
   encodeCanonical,
 } from "../../encoding/canonical-json.js";
-import { SignedMessage } from "../envelope/signed-message.js";
+import { SignedMessage } from "../../identity/envelope/signed-message.js";
 import {
   type ConversationId,
   type DecodedOuterBody,

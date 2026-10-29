@@ -4,6 +4,31 @@ import type { DatabaseSync } from "node:sqlite";
 import type { IdentityBinding } from "../types.js";
 import { readBytes, readText } from "../database/index.js";
 
+/** First-candidate locks are selected against one durable predecessor. */
+export {
+  findProposalLock,
+  FIRST_MESSAGE_PREDECESSOR,
+  lockProposalInTransaction,
+  readConversationPosition,
+  readProposalLock,
+  readStoredPosition,
+  releaseProposalLock,
+} from "./proposals.js";
+/** Complete records retain distinct action and durability evidence maps. */
+export {
+  findStagedRecord,
+  readCertifiedRecord,
+  readProtocolEvidence,
+  readStagedRecord,
+  requireSameRecord,
+} from "./records.js";
+/** Re-anchor identity and completed bytes remain separate from certified records. */
+export {
+  findStagedReanchor,
+  readRecoveredReanchor,
+  requireSameReanchor,
+} from "./reanchors.js";
+
 /**
  * Reads the optional singleton identity binding.
  *
@@ -25,28 +50,3 @@ export function readStoredIdentity(
         canonicalAgentCard: readBytes(row, "canonical_agent_card"),
       });
 }
-
-/** First-candidate locks are selected against one durable predecessor. */
-export {
-  findProposalLock,
-  GENESIS_PREDECESSOR,
-  lockProposalInTransaction,
-  readConversationPosition,
-  readProposalLock,
-  readStoredPosition,
-  releaseProposalLock,
-} from "./proposals.js";
-/** Complete records retain distinct action and durability evidence maps. */
-export {
-  findStagedRecord,
-  readCertifiedRecord,
-  readProtocolEvidence,
-  readStagedRecord,
-  requireSameRecord,
-} from "./records.js";
-/** Re-anchor identity and completed bytes remain separate from certified records. */
-export {
-  findStagedReanchor,
-  readRecoveredReanchor,
-  requireSameReanchor,
-} from "./reanchors.js";

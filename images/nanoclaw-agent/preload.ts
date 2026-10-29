@@ -67,7 +67,6 @@ async function importModule(relativePath: string): Promise<ModuleRecord> {
   return loaded;
 }
 
-/** Call the function `module` exports as `name`, with `module` as `this`. */
 function call(module: ModuleRecord, name: string, ...args: unknown[]): unknown {
   const member = module[name];
   if (typeof member !== "function") {

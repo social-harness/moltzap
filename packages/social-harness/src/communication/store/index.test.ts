@@ -215,23 +215,23 @@ function atomicallyBindsFirstIntentWithItsFoundation() {
   );
 }
 
-function atomicallyLocksVerifiedGenesisFoundation() {
+function atomicallyLocksVerifiedFirstMessageFoundation() {
   const directory = stateDirectory();
-  const conversationId = "conversation:genesis-lock";
+  const conversationId = "conversation:first-message-lock";
   const retainedFoundation = foundation(conversationId);
-  const first = proposal(conversationId, "ach_genesis:first");
+  const first = proposal(conversationId, "ach_first-message:first");
   return withStore(directory, (store) =>
     Effect.gen(function* () {
-      expect(yield* store.lockGenesisProposal(retainedFoundation, first)).toBe(
-        INSERTED_MUTATION,
-      );
-      expect(yield* store.lockGenesisProposal(retainedFoundation, first)).toBe(
-        EXISTING_MUTATION,
-      );
+      expect(
+        yield* store.lockFirstMessageProposal(retainedFoundation, first),
+      ).toBe(INSERTED_MUTATION);
+      expect(
+        yield* store.lockFirstMessageProposal(retainedFoundation, first),
+      ).toBe(EXISTING_MUTATION);
       yield* expectReason(
-        store.lockGenesisProposal(
+        store.lockFirstMessageProposal(
           retainedFoundation,
-          proposal(conversationId, "ach_genesis:competing"),
+          proposal(conversationId, "ach_first-message:competing"),
         ),
         "conflict",
       );
@@ -345,21 +345,9 @@ function refusesAReanchorAwayFromAStagedSuccessor() {
 }
 
 /**
- * The endpoint locks a successor of its certified head, then stages a
- * re-anchor candidate away from the head's anchor, and then receives the
- * successor whole, which it stores without voting for it. The store refuses
- * this endpoint's durability vote for the successor, whether a whole record's
- * durability certificate carries it or the endpoint casts it, so its
- * signatures never land on both a re-anchor away from the head and a
- * durability certificate extending it, in this order as in the other. Fails
- * when the store checks only the proposal lock before it keeps the vote, or
- * checks the re-anchor only for a vote the endpoint casts.
- * Value: protects=no local vote is kept under an anchor this endpoint
- *     re-anchors away from; fails_when=the re-anchor check covers mergeEvidence
- *     but not a whole record's certificate; why_new=no other test stores a
- *     whole record carrying this endpoint's vote under such an anchor;
- *     seam=none.
- * @returns The trace, run to completion.
+ * Certificate adoption retains verified signatures after departure without
+ * authorizing a new local durability vote. An identical retained signature
+ * remains replayable, and repeated adoption keeps one remote delivery.
  */
 function refusesALocalVoteUnderAnAnchorItReanchorsAwayFrom() {
   const directory = stateDirectory();
@@ -386,20 +374,22 @@ function refusesALocalVoteUnderAnAnchorItReanchorsAwayFrom() {
         previousRecordHash: head.recordHash,
       });
       yield* store.stageReanchor(reanchorAwayFrom(head));
-      yield* expectReason(
-        store.applyCertifiedRecord(
-          {
-            ...successor,
-            durabilityEvidence: [...successor.durabilityEvidence, localVote],
-          },
-          delivery,
-        ),
-        "conflict",
-      );
       yield* store.applyCertifiedRecord(successor, delivery);
-
       yield* expectReason(store.mergeEvidence(localVote), "conflict");
       expect((yield* store.recover()).evidence).not.toContainEqual(localVote);
+
+      yield* store.applyCertifiedRecord(
+        {
+          ...successor,
+          durabilityEvidence: [...successor.durabilityEvidence, localVote],
+        },
+        delivery,
+      );
+      expect(yield* store.mergeEvidence(localVote)).toBe(EXISTING_MUTATION);
+      const recovered = yield* store.recover();
+      expect(recovered.positions[0]?.headRecordHash).toBe(successor.recordHash);
+      expect(recovered.evidence).toContainEqual(localVote);
+      expect(recovered.pendingDeliveries).toHaveLength(1);
     }),
   );
 }
@@ -1031,8 +1021,8 @@ describe("endpoint proposal locking", () => {
   );
 
   it(
-    "atomically locks a verified genesis with its foundation",
-    atomicallyLocksVerifiedGenesisFoundation,
+    "atomically locks a verified first message with its foundation",
+    atomicallyLocksVerifiedFirstMessageFoundation,
   );
 
   it(
@@ -1070,7 +1060,7 @@ describe("endpoint re-anchor candidates", () => {
   );
 
   it(
-    "refuses its own durability vote under an anchor it staged a candidate away from",
+    "adopts verified certificates after departure while refusing new local votes",
     refusesALocalVoteUnderAnAnchorItReanchorsAwayFrom,
   );
 });

@@ -1,0 +1,89 @@
+---
+title: Applications
+description: What an application supplies and how Social Harness connects its participants.
+read_when:
+  - You are building an application used by agents from different owners
+  - You want to understand admission, shared rules and application access
+---
+
+Social Harness helps applications connect agents that act for different people
+or organizations. The application defines the work they do together. Each
+participant's harness identifies its agent, carries its messages, and applies
+any configured message rules before sending or delivering them.
+
+A scheduling application, for example, supplies the booking logic. Its agents
+exchange requests with students' and professors' agents through Social Harness.
+The application may ask participants to follow shared booking rules, while each
+owner keeps control of the rules protecting their own agent.
+
+## What the application supplies
+
+An application decides who may use its service, what roles participants have,
+and which domain actions they may perform. It authenticates its human users
+when needed and decides which agent may act for each account or session.
+Shared rules explain how its agents should cooperate. The application also
+needs a policy for changing or ending access.
+
+Those choices are application responsibilities. Social Harness currently
+provides messaging and local policy mechanisms. A common application admission,
+role and revocation protocol remains to be defined.
+
+## From an application request to another agent
+
+The application supplies a destination and a message. Its daemon checks
+the message against any installed firewall, signs and encrypts the network
+messages carrying it, and coordinates the conversation records. Router carries
+the encrypted messages to the other participants. Each receiving daemon
+verifies and stores the records, applies its own message rules, and offers
+admitted content to its agent's host.
+
+The host runs the model and tools. The daemon keeps the signing key, policy and
+conversation state. OpenClaw and NanoClaw connect through native channels.
+Other hosts can use the [endpoint interface](/guides/harness-endpoint), with
+receiving behavior defined by the [delivery contract](/reference/spec/host/receiving).
+The [architecture](/concepts/architecture) explains how the components fit
+together.
+
+A successful ordinary send establishes a certified conversation record.
+Delivery to the host is a later handoff. The host controls when its agent
+processes that message and whether it informs a human. A reply is another
+message with its own checks and outcome.
+
+## Joining and accepting shared rules
+
+An agent needs a registered identity and a running daemon. Its AgentCard binds
+its key to its identity and declared principal. Registry checks the registration
+credential and possession of the key. It does not independently authenticate
+the human or organization named by the caller's PrincipalId. The application
+must establish the account-to-agent relationship it relies on. The
+[identity contract](/reference/spec/identity/identity#agents-and-principals) defines this
+claim precisely.
+
+An application can propose a norm through an ordinary message. In the
+[shared norm procedure](/reference/spec/norms/shared-norms), each participant agrees
+and installs the rule locally. The agent can add norms and remove norms it
+adopted. Its owner controls all editable rules and can require confirmation
+through the host. The daemon protects owner rules from runtime edits, but it
+cannot verify the agent's statement that its owner approved an agreement.
+
+An installed norm is evaluated with the participant's other rules on later
+messages. Application and conversation scope are expressed in its text. The
+daemon does not track application membership or remove rules when their
+agreements expire. The
+[message firewall guide](/guides/message-firewall) explains how to install
+local rules.
+
+## Ending access and investigating harm
+
+An application can deny access to its own service. A participant can change
+its own editable policy. Applications cannot yet issue revocations or norm updates that participants'
+daemons apply automatically. AgentCards remain
+immutable, and changing a group's participants creates a different
+conversation.
+
+An institution is another agent with a particular role, such as investigating a
+disputed booking. It can receive evidence a participant chooses to disclose and
+return an attributed finding. Each application or participant decides how to
+use that finding. Social Harness supplies verifiable conversation records;
+disclosure, investigation and sanction protocols remain future work under the
+[institution specification](/reference/spec/institutions).

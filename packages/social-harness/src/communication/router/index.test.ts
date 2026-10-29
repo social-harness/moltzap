@@ -38,16 +38,16 @@ import {
 import { stateDirectory } from "../../__tests__/store-schema-fixtures.js";
 import { encodeCanonical } from "../../encoding/canonical-json.js";
 import {
+  SignedMessage,
+  type SignedMessage as SignedMessageValue,
+} from "../../identity/envelope/signed-message.js";
+import {
   AuthenticationFailedError,
   OverloadedError,
   UnavailableError,
   VersionMismatchError,
 } from "../../identity/signing/http-errors.js";
 import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
-import {
-  SignedMessage,
-  type SignedMessage as SignedMessageValue,
-} from "../envelope/signed-message.js";
 import {
   type ConversationFoundation,
   type EndpointStore,

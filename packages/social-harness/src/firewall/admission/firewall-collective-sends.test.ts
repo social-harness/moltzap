@@ -40,7 +40,7 @@ import {
 } from "../../__tests__/firewall-runtime-fixtures.js";
 import { renderOutcome } from "../../communication/collectives/render.js";
 import { FirewallSendError } from "../outcome/index.js";
-import { decodeFirewallAuditEntry } from "./firewall-values.js";
+import { decodeFirewallAuditEntry } from "./audit-records.js";
 
 // @agent-code-guard/regression-only: Exercises collective refusal and binding through SQLite and the protocol engine.
 
@@ -52,7 +52,6 @@ function refusesAHeldGatherOnTheToolCall() {
     const refusal = yield* Effect.flip(
       delivery.operations.send({
         input: gatherSend(`${marker} ${question}`),
-        failureDelivery: "inbound",
       }),
     );
 
@@ -90,8 +89,8 @@ function bindsAShadowGatherInGuidanceMode() {
 function refusesAGatherAfterStaleCaptures() {
   return Effect.gen(function* () {
     const subject = yield* fixture;
-    const churn = churnPolicy(subject);
-    const delivery = yield* outgoingFixture(subject, churn.middleware);
+    const churn = yield* churnPolicy(subject, group);
+    const delivery = yield* outgoingFixture(churn.subject, churn.middleware);
 
     const refusal = yield* Effect.flip(
       delivery.operations.send({ input: gatherSend(question) }),
@@ -120,13 +119,13 @@ function opensAnAllGatherOnceAcrossAStaleCapture() {
   const exporter = new InMemorySpanExporter();
   return Effect.gen(function* () {
     const subject = yield* fixture;
-    const churn = churnPolicy(subject);
+    const churn = yield* churnPolicy(subject, group);
     const staleOnce = policy((input) =>
       churn.count() === 0
         ? churn.middleware.check(input)
         : Effect.succeed(pass),
     );
-    const delivery = yield* outgoingFixture(subject, staleOnce);
+    const delivery = yield* outgoingFixture(churn.subject, staleOnce);
 
     const sending = yield* delivery.operations
       .send({ input: gatherSend(question, "all_gather") })
@@ -157,8 +156,8 @@ function closesAnAllGatherRefusedAfterStaleCaptures() {
   const exporter = new InMemorySpanExporter();
   return Effect.gen(function* () {
     const subject = yield* fixture;
-    const churn = churnPolicy(subject);
-    const delivery = yield* outgoingFixture(subject, churn.middleware);
+    const churn = yield* churnPolicy(subject, group);
+    const delivery = yield* outgoingFixture(churn.subject, churn.middleware);
 
     const refusal = yield* Effect.flip(
       delivery.operations.send({ input: gatherSend(question, "all_gather") }),
@@ -415,22 +414,7 @@ const unsettled = policy(() =>
   }),
 );
 
-/** The advice `unsettled` gives a send it admits. */
-const unsettledAdvice = {
-  instructions: [
-    {
-      ruleId: rule.id,
-      uncertain: { choice: "none", probability: 0.33 },
-      instruction: rule.guidance,
-    },
-  ],
-};
-
-/** The text of a send that failed after its post was bound. */
-const queuedText =
-  "the message is pending and Social Harness will still deliver it";
-
-function keepsAnAnswersAdviceWhenItsBoundPostFailsActivation() {
+function returnsAnAnswersPendingDelivery() {
   return Effect.gen(function* () {
     const subject = yield* engineFixture(() => true);
     yield* seedRequest(subject, Date.now() + 60_000, question);
@@ -438,47 +422,43 @@ function keepsAnAnswersAdviceWhenItsBoundPostFailsActivation() {
     yield* admitPending(runtime);
     const answer = {
       input: answerBob({ slot: "mon" }),
-      failureDelivery: "inbound",
     } as const;
 
-    const completed = yield* runtime.delivery.operations.send(answer);
-
-    const failures = runtime.emitted.flatMap((item) =>
-      item.kind === "operationFailed" ? [item.error] : [],
+    const failure = yield* Effect.flip(
+      runtime.delivery.operations.send(answer),
     );
-    expect(completed).toMatchObject({ guidance: unsettledAdvice });
-    expect(failures).toHaveLength(1);
-    expect(failures[0]).toContain(queuedText);
+
+    expect(failure).toMatchObject({
+      _tag: "SendError",
+      reason: "delivery-pending",
+    });
+    expect(runtime.emitted).toEqual([]);
   });
 }
 
-function keepsAnAllGathersAdviceWhenItsBoundPostFailsActivation() {
+function returnsAnAllGathersPendingDelivery() {
   return Effect.gen(function* () {
     const subject = yield* engineFixture(() => true);
     const runtime = yield* incomingFixture(subject, unsettled);
 
-    const completed = yield* runtime.delivery.operations.send({
-      input: gatherSend(question, "all_gather"),
-      failureDelivery: "inbound",
-    });
-
-    const failures = runtime.emitted.flatMap((item) =>
-      item.kind === "operationFailed" && item.id === completed.operationId
-        ? [item.error]
-        : [],
+    const failure = yield* Effect.flip(
+      runtime.delivery.operations.send({
+        input: gatherSend(question, "all_gather"),
+      }),
     );
-    expect(completed).toMatchObject({ guidance: unsettledAdvice });
-    expect(runtime.emitted).toHaveLength(1);
-    expect(failures).toHaveLength(1);
-    expect(failures[0]).toContain(queuedText);
+
+    expect(failure).toMatchObject({
+      _tag: "SendError",
+      reason: "delivery-pending",
+    });
+    expect(runtime.emitted).toEqual([]);
   });
 }
 
 /**
- * Guidance mode admits the all_gather although the stalled post is an
- * unfinished intent, so its refused activation is what the send reports.
+ * A bound request remains pending when another send prevents activation.
  */
-function refusesAnAllGatherWhoseActivationFailsBehindAnotherPostsDrain() {
+function keepsAllGatherPendingBehindStalledSend() {
   return Effect.gen(function* () {
     const writes = { made: 0 };
     const subject = yield* engineFixture(() => writes.made++ > 0);
@@ -494,7 +474,7 @@ function refusesAnAllGatherWhoseActivationFailsBehindAnotherPostsDrain() {
       .pipe(Effect.forkScoped);
     yield* Deferred.await(subject.outbound);
 
-    const refusal = yield* Effect.flip(
+    const pending = yield* Effect.flip(
       runtime.delivery.operations.send({
         input: sendInput({
           to: group,
@@ -508,16 +488,18 @@ function refusesAnAllGatherWhoseActivationFailsBehindAnotherPostsDrain() {
       }),
     );
 
-    expect(refusal).toMatchObject({
-      failure: { kind: "members-unreachable" },
+    expect(pending).toMatchObject({
+      _tag: "SendError",
+      reason: "delivery-pending",
     });
+    expect(runtime.emitted).toEqual([]);
     yield* Fiber.interrupt(stalled);
   });
 }
 
 describe("collective sends under a firewall", () => {
   it(
-    "refuses a held gather on the tool call, even when failures go inbound, binding no request post",
+    "refuses a held gather on the tool call before binding a request",
     refusesAHeldGatherOnTheToolCall,
   );
   it(
@@ -568,15 +550,15 @@ describe("collective sends under a firewall", () => {
 
 describe("collective sends whose bound post fails activation", () => {
   it(
-    "keeps an admitted answer's advice",
-    keepsAnAnswersAdviceWhenItsBoundPostFailsActivation,
+    "returns pending delivery when an admitted answer cannot activate",
+    returnsAnAnswersPendingDelivery,
   );
   it(
-    "keeps an admitted all_gather's advice",
-    keepsAnAllGathersAdviceWhenItsBoundPostFailsActivation,
+    "returns pending delivery when an admitted all_gather cannot activate",
+    returnsAnAllGathersPendingDelivery,
   );
   it(
-    "refuses an all_gather at once, behind another post's stalled drain",
-    refusesAnAllGatherWhoseActivationFailsBehindAnotherPostsDrain,
+    "keeps a bound all_gather pending when another send stalls",
+    keepsAllGatherPendingBehindStalledSend,
   );
 });

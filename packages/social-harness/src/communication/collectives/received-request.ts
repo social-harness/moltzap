@@ -9,28 +9,30 @@
  */
 
 import { Duration, Either, Option } from "effect";
+import type { AgentView } from "../../identity/cards.js";
 import type { InboundMessage } from "../conversations/message.js";
 import type { PostId, RecordHash } from "../records/index.js";
-import type {
-  AgentAddress,
-  GroupAddress,
-  MessageAddressInput,
-} from "../records/values.js";
 import type { CertifiedPost } from "./ports.js";
 import type { SharedAnswers } from "./shared-answers.js";
+import {
+  type AgentAddress,
+  agentAddressOf,
+  type GroupAddress,
+  type MessageAddressInput,
+} from "../records/values.js";
 import {
   CollectiveError,
   type CollectiveFailure,
   type CollectiveId,
   MAXIMUM_DEADLINE_SECONDS,
   type OpenElsewhere,
-} from "./forms.js";
+} from "./contracts.js";
+import { questionText } from "./render.js";
 import {
   collectiveIdOf,
   type CollectiveValue,
   type FormModeSchema,
-} from "./part/index.js";
-import { questionText } from "./render.js";
+} from "./wire/index.js";
 
 /**
  * What matching reads of a received request: `to` is the canonical address
@@ -92,7 +94,7 @@ type UnansweredKind = Extract<
 interface ReceivedRequestFields extends RequestStatus {
   readonly postId: PostId;
   readonly recordHash: RecordHash;
-  readonly from: AgentAddress;
+  readonly from: AgentView;
   /** The question as every member's model reads it. */
   readonly question: string;
   readonly requestedSchema: FormModeSchema;
@@ -110,14 +112,6 @@ type CollectingValue = Extract<
   CollectiveValue,
   { readonly kind: "operation"; readonly op: "gather" | "all_gather" }
 >;
-
-/**
- * How long past its deadline a member keeps an all_gather request while it
- * waits for the requester's close. The requester closes at the deadline at
- * the latest, so the close normally follows within seconds; the bound frees
- * the request of a requester that never closes.
- */
-const CLOSE_WAIT = Duration.hours(1);
 
 /**
  * How far past the longest deadline a sender may state a received request's
@@ -184,8 +178,7 @@ export const unmatchedAnswerError = (
   unmatched.kind === "request-ambiguous"
     ? new CollectiveError({
         id,
-        failure: { kind: unmatched.kind },
-        openIds: unmatched.openIds,
+        failure: { kind: unmatched.kind, openIds: unmatched.openIds },
       })
     : new CollectiveError({
         id,
@@ -200,7 +193,7 @@ export const unmatchedAnswerError = (
  * operation sends it and its id derives from its sender: a gather's in the
  * member's direct conversation with the requester before its deadline, an
  * all_gather's in a group conversation, whose other members are the ones
- * asked, until `CLOSE_WAIT` past its deadline. A deadline beyond
+ * asked. The request remains available for close processing after its deadline. A deadline beyond
  * `RECEIVED_DEADLINE_HORIZON` opens nothing. Under a firewall the request
  * starts `unadmitted`.
  * @param post The certified request post and its record.
@@ -230,18 +223,15 @@ export function receivedRequest(
     state: initial,
   };
   if (value.op === "gather") {
-    return message.kind === "direct" && now < value.deadlineAt
+    return message.kind === "direct"
       ? Option.some({ ...request, kind: "gather" })
       : Option.none();
   }
-  if (
-    message.kind !== "group" ||
-    now >= retainedUntil({ ...request, kind: "all_gather" })
-  ) {
+  if (message.kind !== "group") {
     return Option.none();
   }
   const [first, ...rest] = message.members.filter(
-    (member) => member !== message.sender,
+    (member) => member.agentId !== message.sender.agentId,
   );
   return first === undefined
     ? Option.none()
@@ -253,22 +243,6 @@ export function receivedRequest(
           answers: new Map(),
         },
       });
-}
-
-/**
- * Forget every request past the time `retainedUntil` gives it.
- * @param requests Every request this endpoint holds, by id.
- * @param now The current time in epoch milliseconds.
- */
-export function forgetExpiredRequests(
-  requests: Map<CollectiveId, ReceivedRequest>,
-  now: number,
-): void {
-  for (const [id, request] of requests) {
-    if (now >= retainedUntil(request)) {
-      requests.delete(id);
-    }
-  }
 }
 
 /** The requests the runtime was shown that are open outside `conversation`, where an answer meant for them belongs. */
@@ -403,19 +377,6 @@ function trustedRequest(
 ): boolean {
   return (
     value.deadlineAt <= now + RECEIVED_DEADLINE_HORIZON &&
-    collectiveIdOf(message.sender, value.nonce) === value.id
-  );
-}
-
-/**
- * When this endpoint drops a received request: at its deadline, or for an
- * all_gather `CLOSE_WAIT` later, since its close follows the deadline.
- */
-function retainedUntil(
-  request: Pick<ReceivedRequest, "deadlineAt" | "kind">,
-): number {
-  return (
-    request.deadlineAt +
-    (request.kind === "all_gather" ? Duration.toMillis(CLOSE_WAIT) : 0)
+    collectiveIdOf(agentAddressOf(message.sender), value.nonce) === value.id
   );
 }

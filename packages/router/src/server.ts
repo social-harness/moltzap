@@ -30,7 +30,7 @@ import { makeRouterSend } from "./router/send.js";
 
 // eslint-disable-next-line @typescript-eslint/no-namespace -- The namespace keeps the process layer and its closed startup error under one RouterServer capability.
 export namespace RouterServer {
-  /** Usage text listing the Router process's environment variables. */
+  /** Lists required settings and defaults without reading configuration or starting a listener. */
   export const help = processHelp;
 
   /** Closed Router startup phase. */
@@ -67,19 +67,13 @@ export namespace RouterServer {
   }).pipe(Effect.withSpan("RouterServer.layer"));
 
   /**
-   * Complete production Router process composition.
+   * Acquires one HTTP listener and its bounded volatile feed for this scope.
+   * Every acquisition mints a fresh Router instance and cursor key, so a
+   * restart invalidates continuations and requires endpoint recovery.
    *
-   * ```mermaid
-   * flowchart LR
-   *   Binary["sharness-router"] --> Server["RouterServer.layer"]
-   *   Server --> App["buildRouterApp"]
-   *   App --> Http["makeRouterHttpApp"]
-   *   Http --> Authentication["AuthenticatedHttp"]
-   *   Authentication --> Rpc["private Router RPC"]
-   *   Rpc --> Operations["send or poll"]
-   *   Operations --> State["feed, cursor, and poll waiters"]
-   *   State --> Response["exact HTTP response"]
-   * ```
+   * Configuration is read from the active Effect ConfigProvider. Missing or
+   * invalid settings and listener acquisition fail with `StartupError`;
+   * releasing the layer closes the listener and discards its feed.
    */
   export const layer: Layer.Layer<never, StartupError> =
     Layer.scopedDiscard(runRouterServer);

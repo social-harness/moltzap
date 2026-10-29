@@ -4,6 +4,7 @@ import {
   acquireHarnessEndpoint,
   AgentAddress,
   type AgentName,
+  type AgentView,
   type HarnessEndpoint,
   type InboundDelivery,
   type InboundItem,
@@ -26,6 +27,7 @@ import { registrationResultKind } from "./expected-contracts.js";
 /** One endpoint and the items its subscription has delivered, in order. */
 export interface Participant {
   readonly address: AgentAddress;
+  readonly agent: AgentView;
   readonly endpoint: HarnessEndpoint;
   readonly inbox: Queue.Queue<InboundDelivery>;
 }
@@ -34,7 +36,7 @@ export interface Participant {
  * Acquires the endpoint of `fixture`'s running daemon and queues every
  * delivery its subscription receives.
  */
-const joinParticipant = (fixture: DaemonProcessFixture) =>
+const joinParticipant = (fixture: DaemonProcessFixture, agent: AgentView) =>
   Effect.gen(function* () {
     const endpoint = yield* acquireHarnessEndpoint(fixture.endpoint);
     const inbox = yield* Queue.unbounded<InboundDelivery>();
@@ -42,7 +44,12 @@ const joinParticipant = (fixture: DaemonProcessFixture) =>
       Stream.runForEach((delivery) => Queue.offer(inbox, delivery)),
       Effect.forkScoped,
     );
-    return { address: directAddress(fixture.agentName), endpoint, inbox };
+    return {
+      address: directAddress(fixture.agentName),
+      agent,
+      endpoint,
+      inbox,
+    };
   }).pipe(Effect.withSpan("joinParticipant"));
 
 /** Registers one running daemon through its management endpoint. */
@@ -77,11 +84,16 @@ export const startParticipants = (fixtures: readonly DaemonProcessFixture[]) =>
         discard: true,
       },
     );
-    yield* Effect.forEach(fixtures, registerFixture, {
-      discard: true,
-      concurrency: 1,
-    });
-    return yield* Effect.forEach(fixtures, joinParticipant, { concurrency: 1 });
+    return yield* Effect.forEach(
+      fixtures,
+      (fixture) =>
+        registerFixture(fixture).pipe(
+          Effect.flatMap((registered) =>
+            joinParticipant(fixture, registered.agent),
+          ),
+        ),
+      { concurrency: 1 },
+    );
   }).pipe(Effect.withSpan("startParticipants"));
 
 /**

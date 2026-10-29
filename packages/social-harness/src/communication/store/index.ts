@@ -21,6 +21,7 @@ export type {
   FirewallCompletion,
   FirewallEvidence,
   FirewallEvidenceSlices,
+  FirewallEvidenceSnapshot,
   FirewallHistoryEntry,
   FirewallInboxEntry,
   FirewallLocalAdmission,
@@ -54,3 +55,12 @@ export { decodeRuntimeValue, encodeRuntimeValue } from "./runtime-codec.js";
 
 /** Pending envelopes cannot be re-signed when their live window expires. */
 export { OutboxTooOldError } from "./database/values.js";
+
+/** Immutable collective ownership, existing post claims, and terminal delivery. */
+export type {
+  CollectiveOperationInput,
+  CollectivePostBinding,
+  CollectiveRequestRefusal,
+  StoredCollectiveOperation,
+  StoredCollectivePost,
+} from "./types.js";

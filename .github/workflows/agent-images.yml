@@ -28,21 +28,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - name: Build daemon locally
-        run: |
-          docker buildx build --load --tag social-harness-daemon:local \
-            --file images/daemon/Dockerfile .
+        run: pnpm nx run @social-harness/daemon:image:build
       - name: Build OpenClaw locally
-        run: |
-          docker buildx build --load --tag social-harness-openclaw:local \
-            images/openclaw-agent
-      - name: Prepare NanoClaw's runtime closure
-        run: pnpm deploy --filter @social-harness/image-tests --prod --legacy images/.workspace
+        run: pnpm nx run @social-harness/openclaw-agent:image:build
       - name: Build NanoClaw locally
-        run: node images/nanoclaw-agent/build.ts --tag social-harness-nanoclaw:local
+        run: pnpm nx run @social-harness/nanoclaw-agent:image:build
       - name: Smoke all three images
-        run: |
-          bash images/daemon/smoke.sh social-harness-daemon:local
-          bash images/openclaw-agent/smoke.sh social-harness-openclaw:local
-          bash images/nanoclaw-agent/smoke.sh social-harness-nanoclaw:local
+        run: pnpm nx run-many -t image:smoke --projects=@social-harness/daemon,@social-harness/openclaw-agent,@social-harness/nanoclaw-agent --parallel=1
       - name: Run stand-in live tests
         run: pnpm nx run-many -t test:live --projects=@social-harness/image-tests,@social-harness/openclaw-agent,@social-harness/nanoclaw-agent --parallel=1

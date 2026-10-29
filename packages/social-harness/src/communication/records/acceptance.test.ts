@@ -1,4 +1,4 @@
-/** @file Cryptographic acceptance tests for addressed GENESIS and POST records. */
+/** @file Cryptographic acceptance tests for addressed FIRST_MESSAGE and MESSAGE records. */
 
 import { live as it } from "@effect/vitest";
 import { Effect, Option, Schema } from "effect";
@@ -13,15 +13,15 @@ import {
   ClientRepresentationError,
   encodeCanonical,
 } from "../../encoding/canonical-json.js";
-import { AgentName } from "../../identity/agents.js";
 import { AgentCard, type VerifiedAgentCard } from "../../identity/cards.js";
+import { SealedBody } from "../../identity/envelope/sealed-body.js";
+import { SignedMessage } from "../../identity/envelope/signed-message.js";
+import { AgentName } from "../../identity/identifiers.js";
 import {
   type AgentSigningAuthority as AgentSigningAuthorityValue,
   Ed25519PublicKey,
 } from "../../identity/keys.js";
 import { WIRE_VERSION, WireVersions } from "../../identity/wire-version.js";
-import { SealedBody } from "../envelope/sealed-body.js";
-import { SignedMessage } from "../envelope/signed-message.js";
 import { RouterInstanceId } from "../router/api/contract.js";
 import {
   type ActionCertifiedRecord,
@@ -36,11 +36,11 @@ import {
   deriveEvidenceMessageId,
   DirectPacket,
   EvidenceStatement,
-  type GenesisAnchorBody,
   hashAction,
   hashAnchor,
   hashPostIntent,
   hashRecord,
+  type InitialAnchorBody,
   maximumContentBytes,
   maximumMembers,
   MembershipDescriptor as MembershipDescriptorSchema,
@@ -103,22 +103,13 @@ const maximumAgentName = (index: number) =>
 function asNonEmpty<Value>(
   values: readonly Value[],
 ): readonly [Value, ...Value[]] {
-  const first = values[0];
-  if (first === undefined) {
-    throw new Error("expected a nonempty fixture list");
-  }
-  return [first, ...values.slice(1)];
+  return [at(values, 0), ...values.slice(1)];
 }
 
 function asAtLeastTwo<Value>(
   values: readonly Value[],
 ): readonly [Value, Value, ...Value[]] {
-  const first = values[0];
-  const second = values[1];
-  if (first === undefined || second === undefined) {
-    throw new Error("expected at least two fixture items");
-  }
-  return [first, second, ...values.slice(2)];
+  return [at(values, 0), at(values, 1), ...values.slice(2)];
 }
 
 function at<Value>(values: readonly Value[], index: number): Value {
@@ -129,10 +120,6 @@ function at<Value>(values: readonly Value[], index: number): Value {
   return value;
 }
 
-function identityBytes(memberCount: number): readonly number[] {
-  return Array.from(Array(memberCount).keys(), (index) => index + 1);
-}
-
 const makeProtocolFixture = (memberCount: number) =>
   Effect.gen(function* () {
     const registryKeys = generateKeyPairSync("ed25519");
@@ -140,7 +127,7 @@ const makeProtocolFixture = (memberCount: number) =>
       Ed25519PublicKey,
     )(registryKeys.publicKey.export({ format: "jwk" }));
     const identities = yield* Effect.forEach(
-      identityBytes(memberCount),
+      Array.from(Array(memberCount).keys(), (index) => index + 1),
       (byte) =>
         Effect.gen(function* () {
           const authority = yield* makeTestAuthority();
@@ -231,11 +218,11 @@ const buildRecord = (input: {
     const actionMessages = yield* signActionEvidence(input.fixture, actionHash);
     const actionRepresentations = yield* encodeEvidence(actionMessages);
     const anchorHash =
-      input.action.kind === "GENESIS"
+      input.action.kind === "FIRST_MESSAGE"
         ? yield* hashAnchor(input.action.anchor)
         : input.action.anchorHash;
     const recordCore: ActionCertifiedRecord["recordCore"] =
-      input.action.kind === "GENESIS"
+      input.action.kind === "FIRST_MESSAGE"
         ? {
             sharnessVersion: WIRE_VERSION,
             kind: "record_core",
@@ -292,7 +279,7 @@ const buildRecord = (input: {
     } satisfies RecordFixture;
   });
 
-const buildGenesis = (fixture: ProtocolFixture, content: ContentValue) =>
+const buildFirstMessage = (fixture: ProtocolFixture, content: ContentValue) =>
   Effect.gen(function* () {
     const firstIdentity = at(fixture.identities, 0);
     const postIntent: PostIntent = {
@@ -304,16 +291,16 @@ const buildGenesis = (fixture: ProtocolFixture, content: ContentValue) =>
       postId: yield* mintPostId(),
       content,
     };
-    const anchor: GenesisAnchorBody = {
+    const anchor: InitialAnchorBody = {
       sharnessVersion: WIRE_VERSION,
-      kind: "genesis_anchor_body",
+      kind: "initial_anchor_body",
       conversationId: fixture.membership.descriptor.conversationId,
       membershipHash: fixture.membership.hash,
       routerInstanceId: firstRouterInstanceId,
     };
     const action: ActionCore = {
       sharnessVersion: WIRE_VERSION,
-      kind: "GENESIS",
+      kind: "FIRST_MESSAGE",
       conversationId: fixture.membership.descriptor.conversationId,
       membership: fixture.membership.descriptor,
       anchor,
@@ -325,12 +312,12 @@ const buildGenesis = (fixture: ProtocolFixture, content: ContentValue) =>
   });
 
 /**
- * A POST that succeeds `genesis`, under `reanchored` when the conversation
- * re-anchored after it and under the genesis anchor otherwise.
+ * A MESSAGE that succeeds `firstMessage`, under `reanchored` when the conversation
+ * re-anchored after it and under the initial anchor otherwise.
  */
-const buildPost = (
+const buildMessage = (
   fixture: ProtocolFixture,
-  genesis: RecordFixture,
+  firstMessage: RecordFixture,
   content: ContentValue,
   reanchored?: CompletedReanchor,
 ) =>
@@ -347,20 +334,21 @@ const buildPost = (
     };
     const action: ActionCore = {
       sharnessVersion: WIRE_VERSION,
-      kind: "POST",
+      kind: "MESSAGE",
       conversationId: fixture.membership.descriptor.conversationId,
       membershipHash: fixture.membership.hash,
       anchorHash:
         reanchored?.anchorHash ??
-        genesis.actionCertifiedRecord.recordCore.anchorHash,
-      previousRecordHash: genesis.actionCertifiedRecord.recordHash,
+        firstMessage.actionCertifiedRecord.recordCore.anchorHash,
+      previousRecordHash: firstMessage.actionCertifiedRecord.recordHash,
       postIntent,
       postIntentHash: yield* hashPostIntent(postIntent),
     };
     return yield* buildRecord({
       fixture,
       action,
-      routerAnchor: reanchored ?? genesis.actionCertifiedRecord.routerAnchor,
+      routerAnchor:
+        reanchored ?? firstMessage.actionCertifiedRecord.routerAnchor,
     });
   });
 
@@ -422,15 +410,15 @@ const expectRepresentationFailure = <Value>(
 const verifiesThreshold = (memberCount: number, expectedThreshold: number) =>
   Effect.gen(function* () {
     const fixture = yield* makeProtocolFixture(memberCount);
-    const genesis = yield* buildGenesis(fixture, [
+    const firstMessage = yield* buildFirstMessage(fixture, [
       { type: "text", text: `members-${memberCount}` },
     ]);
     const accepted: CertifiedRecord = {
-      ...genesis.certifiedRecord,
+      ...firstMessage.certifiedRecord,
       durabilityCertificate: {
-        ...genesis.certifiedRecord.durabilityCertificate,
+        ...firstMessage.certifiedRecord.durabilityCertificate,
         votes: asNonEmpty(
-          genesis.durabilityRepresentations.slice(0, expectedThreshold),
+          firstMessage.durabilityRepresentations.slice(0, expectedThreshold),
         ),
       },
     };
@@ -450,7 +438,10 @@ const verifiesThreshold = (memberCount: number, expectedThreshold: number) =>
       durabilityCertificate: {
         ...accepted.durabilityCertificate,
         votes: asNonEmpty(
-          genesis.durabilityRepresentations.slice(0, expectedThreshold - 1),
+          firstMessage.durabilityRepresentations.slice(
+            0,
+            expectedThreshold - 1,
+          ),
         ),
       },
     };
@@ -462,48 +453,48 @@ const verifiesThreshold = (memberCount: number, expectedThreshold: number) =>
     );
   });
 
-const enforcesGenesisAndPostEvidence = () =>
+const enforcesFirstMessageAndMessageEvidence = () =>
   Effect.gen(function* () {
     const fixture = yield* makeProtocolFixture(4);
-    const genesis = yield* buildGenesis(fixture, [
-      { type: "text", text: "genesis" },
+    const firstMessage = yield* buildFirstMessage(fixture, [
+      { type: "text", text: "first message" },
     ]);
-    const nonUnanimousGenesis: ActionCertifiedRecord = {
-      ...genesis.actionCertifiedRecord,
+    const nonUnanimousFirstMessage: ActionCertifiedRecord = {
+      ...firstMessage.actionCertifiedRecord,
       actionCertificate: {
-        ...genesis.actionCertifiedRecord.actionCertificate,
-        signatures: asNonEmpty(genesis.actionRepresentations.slice(0, 3)),
+        ...firstMessage.actionCertifiedRecord.actionCertificate,
+        signatures: asNonEmpty(firstMessage.actionRepresentations.slice(0, 3)),
       },
     };
     yield* expectRepresentationFailure(
       verifyActionCertifiedRecord({
-        record: nonUnanimousGenesis,
+        record: nonUnanimousFirstMessage,
         membership: fixture.membership,
       }),
     );
 
-    const post = yield* buildPost(fixture, genesis, [
+    const message = yield* buildMessage(fixture, firstMessage, [
       { type: "text", text: "ordinary post" },
     ]);
-    const thresholdPost: ActionCertifiedRecord = {
-      ...post.actionCertifiedRecord,
+    const thresholdMessage: ActionCertifiedRecord = {
+      ...message.actionCertifiedRecord,
       actionCertificate: {
-        ...post.actionCertifiedRecord.actionCertificate,
-        signatures: asNonEmpty(post.actionRepresentations.slice(0, 3)),
+        ...message.actionCertifiedRecord.actionCertificate,
+        signatures: asNonEmpty(message.actionRepresentations.slice(0, 3)),
       },
     };
     yield* verifyActionCertifiedRecord({
-      record: thresholdPost,
+      record: thresholdMessage,
       membership: fixture.membership,
     });
     const missingAuthor: ActionCertifiedRecord = {
-      ...thresholdPost,
+      ...thresholdMessage,
       actionCertificate: {
-        ...thresholdPost.actionCertificate,
+        ...thresholdMessage.actionCertificate,
         signatures: [
-          at(post.actionRepresentations, 1),
-          at(post.actionRepresentations, 2),
-          at(post.actionRepresentations, 3),
+          at(message.actionRepresentations, 1),
+          at(message.actionRepresentations, 2),
+          at(message.actionRepresentations, 3),
         ],
       },
     };
@@ -515,13 +506,13 @@ const enforcesGenesisAndPostEvidence = () =>
     );
 
     const wrongEvidenceKind: CertifiedRecord = {
-      ...post.certifiedRecord,
+      ...message.certifiedRecord,
       durabilityCertificate: {
-        ...post.certifiedRecord.durabilityCertificate,
+        ...message.certifiedRecord.durabilityCertificate,
         votes: [
-          at(post.actionRepresentations, 0),
-          at(post.durabilityRepresentations, 1),
-          at(post.durabilityRepresentations, 2),
+          at(message.actionRepresentations, 0),
+          at(message.durabilityRepresentations, 1),
+          at(message.durabilityRepresentations, 2),
         ],
       },
     };
@@ -534,11 +525,11 @@ const enforcesGenesisAndPostEvidence = () =>
   });
 
 /**
- * A POST record names its membership only by `MembershipHash`, so it verifies
- * against the membership an endpoint holds from the conversation's GENESIS and
- * not against another conversation's membership. A GENESIS record verifies
+ * A MESSAGE record names its membership only by `MembershipHash`, so it verifies
+ * against the membership an endpoint holds from the conversation's FIRST_MESSAGE and
+ * not against another conversation's membership. A FIRST_MESSAGE record verifies
  * only against the descriptor it carries. Fails when a record verifies against
- * a membership it does not name, when a GENESIS or POST core names another
+ * a membership it does not name, when a FIRST_MESSAGE or MESSAGE core names another
  * membership than the one its action and the endpoint hold, or when a core
  * whose membership field does not fit its action decodes.
  * @returns Completion after every case is checked.
@@ -547,46 +538,46 @@ const verifiesRecordsAgainstTheHeldMembership = () =>
   Effect.gen(function* () {
     const fixture = yield* makeProtocolFixture(4);
     const other = yield* makeProtocolFixture(4);
-    const genesis = yield* buildGenesis(fixture, [
-      { type: "text", text: "genesis" },
+    const firstMessage = yield* buildFirstMessage(fixture, [
+      { type: "text", text: "first message" },
     ]);
-    const post = yield* buildPost(fixture, genesis, [
+    const message = yield* buildMessage(fixture, firstMessage, [
       { type: "text", text: "ordinary post" },
     ]);
 
     yield* verifyCertifiedRecord({
-      record: genesis.certifiedRecord,
+      record: firstMessage.certifiedRecord,
       membership: fixture.membership,
     });
     yield* verifyCertifiedRecord({
-      record: post.certifiedRecord,
+      record: message.certifiedRecord,
       membership: fixture.membership,
     });
     yield* expectRepresentationFailure(
       verifyCertifiedRecord({
-        record: genesis.certifiedRecord,
+        record: firstMessage.certifiedRecord,
         membership: other.membership,
       }),
     );
     yield* expectRepresentationFailure(
       verifyCertifiedRecord({
-        record: post.certifiedRecord,
+        record: message.certifiedRecord,
         membership: other.membership,
       }),
     );
 
-    const postCore = post.actionCertifiedRecord.recordCore;
-    if (!("membershipHash" in postCore)) {
-      return yield* Effect.dieMessage("a POST core carries a MembershipHash");
+    const messageCore = message.actionCertifiedRecord.recordCore;
+    if (!("membershipHash" in messageCore)) {
+      return yield* Effect.dieMessage("core lacks membership hash");
     }
     const renamedCore = {
-      ...postCore,
+      ...messageCore,
       membershipHash: other.membership.hash,
     };
     yield* expectRepresentationFailure(
       verifyActionCertifiedRecord({
         record: {
-          ...post.actionCertifiedRecord,
+          ...message.actionCertifiedRecord,
           recordCore: renamedCore,
           recordHash: yield* hashRecord(renamedCore),
         },
@@ -594,18 +585,18 @@ const verifiesRecordsAgainstTheHeldMembership = () =>
       }),
     );
 
-    const genesisCore = genesis.actionCertifiedRecord.recordCore;
-    if (!("membership" in genesisCore)) {
-      return yield* Effect.dieMessage("a GENESIS core carries its descriptor");
+    const firstMessageCore = firstMessage.actionCertifiedRecord.recordCore;
+    if (!("membership" in firstMessageCore)) {
+      return yield* Effect.dieMessage("core lacks membership descriptor");
     }
     const foreignCore = {
-      ...genesisCore,
+      ...firstMessageCore,
       membership: other.membership.descriptor,
     };
     yield* expectRepresentationFailure(
       verifyActionCertifiedRecord({
         record: {
-          ...genesis.actionCertifiedRecord,
+          ...firstMessage.actionCertifiedRecord,
           recordCore: foreignCore,
           recordHash: yield* hashRecord(foreignCore),
         },
@@ -618,7 +609,7 @@ const verifiesRecordsAgainstTheHeldMembership = () =>
         Effect.as(true),
         Effect.orElseSucceed(() => false),
       );
-    const { sharnessVersion, ...unversionedCore } = postCore;
+    const { sharnessVersion, ...unversionedCore } = messageCore;
     expect(
       yield* decodesAsRecordCore({
         ...unversionedCore,
@@ -627,31 +618,32 @@ const verifiesRecordsAgainstTheHeldMembership = () =>
     ).toBe(false);
     expect(
       yield* decodesAsRecordCore({
-        ...postCore,
+        ...messageCore,
         moltzapVersion: sharnessVersion,
       }),
     ).toBe(false);
-    const { membershipHash, ...postCoreFields } = postCore;
+    const { membershipHash, ...messageCoreFields } = messageCore;
     expect(
       yield* decodesAsRecordCore({
-        ...postCoreFields,
+        ...messageCoreFields,
         membership: fixture.membership.descriptor,
       }),
     ).toBe(false);
-    const { membership: genesisDescriptor, ...genesisCoreFields } = genesisCore;
+    const { membership: firstMessageDescriptor, ...firstMessageCoreFields } =
+      firstMessageCore;
     expect(
       yield* decodesAsRecordCore({
-        ...genesisCoreFields,
+        ...firstMessageCoreFields,
         membershipHash: fixture.membership.hash,
       }),
     ).toBe(false);
     expect(
-      yield* decodesAsRecordCore({ ...postCoreFields, membershipHash }),
+      yield* decodesAsRecordCore({ ...messageCoreFields, membershipHash }),
     ).toBe(true);
     expect(
       yield* decodesAsRecordCore({
-        ...genesisCoreFields,
-        membership: genesisDescriptor,
+        ...firstMessageCoreFields,
+        membership: firstMessageDescriptor,
       }),
     ).toBe(true);
   });
@@ -659,14 +651,14 @@ const verifiesRecordsAgainstTheHeldMembership = () =>
 const verifiesProposalEnvelopeAttribution = () =>
   Effect.gen(function* () {
     const fixture = yield* makeProtocolFixture(4);
-    const genesis = yield* buildGenesis(fixture, [
+    const firstMessage = yield* buildFirstMessage(fixture, [
       { type: "text", text: "proposal" },
     ]);
     const author = at(fixture.identities, 0).card.agentId;
     const proposal: ActionProposal = {
       sharnessVersion: WIRE_VERSION,
       kind: "action_proposal",
-      action: genesis.action,
+      action: firstMessage.action,
     };
     yield* verifyActionProposal({
       proposal,
@@ -685,14 +677,14 @@ const verifiesProposalEnvelopeAttribution = () =>
 const verifiesReanchorCatchUpBindings = () =>
   Effect.gen(function* () {
     const fixture = yield* makeProtocolFixture(4);
-    const genesis = yield* buildGenesis(fixture, [
+    const firstMessage = yield* buildFirstMessage(fixture, [
       { type: "text", text: "catch up" },
     ]);
     const {
       reanchor,
       anchorHash,
       votes: reanchorRepresentations,
-    } = yield* voteReanchor(fixture, genesis);
+    } = yield* voteReanchor(fixture, firstMessage);
     const completed: CompletedReanchor = {
       sharnessVersion: WIRE_VERSION,
       kind: "completed_reanchor",
@@ -717,8 +709,8 @@ const verifiesReanchorCatchUpBindings = () =>
       conversationId: fixture.membership.descriptor.conversationId,
       membershipHash: fixture.membership.hash,
       requesterAgentId: at(fixture.identities, 1).card.agentId,
-      knownRecordHash: genesis.actionCertifiedRecord.recordHash,
-      knownAnchorHash: genesis.actionCertifiedRecord.recordCore.anchorHash,
+      knownRecordHash: firstMessage.actionCertifiedRecord.recordHash,
+      knownAnchorHash: firstMessage.actionCertifiedRecord.recordCore.anchorHash,
     };
     const attestation = yield* signEvidenceMessage({
       statement: {
@@ -756,22 +748,22 @@ const verifiesReanchorCatchUpBindings = () =>
   });
 
 /**
- * A member that holds no record catches up GENESIS first: a page for an empty
- * position must carry GENESIS, whose descriptor gives the member the
- * membership a later POST page names only by hash. A POST page then verifies
- * at the position GENESIS sets. Fails when an empty position accepts a POST
+ * A member that holds no record catches up FIRST_MESSAGE first: a page for an empty
+ * position must carry FIRST_MESSAGE, whose descriptor gives the member the
+ * membership a later MESSAGE page names only by hash. A MESSAGE page then verifies
+ * at the position FIRST_MESSAGE sets. Fails when an empty position accepts a MESSAGE
  * record, which the member could not resolve without the descriptor, or
- * another conversation's GENESIS.
+ * another conversation's FIRST_MESSAGE.
  * @returns Completion after every page is checked.
  */
-const catchesUpGenesisFirst = () =>
+const catchesUpFirstMessageFirst = () =>
   Effect.gen(function* () {
     const fixture = yield* makeProtocolFixture(4);
-    const genesis = yield* buildGenesis(fixture, [
-      { type: "text", text: "genesis" },
+    const firstMessage = yield* buildFirstMessage(fixture, [
+      { type: "text", text: "first message" },
     ]);
-    const post = yield* buildPost(fixture, genesis, [
-      { type: "text", text: "after genesis" },
+    const message = yield* buildMessage(fixture, firstMessage, [
+      { type: "text", text: "after first message" },
     ]);
     const responder = at(fixture.identities, 0);
     const request = (
@@ -819,27 +811,27 @@ const catchesUpGenesisFirst = () =>
         responseSenderAgentId: responder.card.agentId,
       });
     const empty = request({ knownRecordHash: null, knownAnchorHash: null });
-    const atGenesis = request({
-      knownRecordHash: genesis.actionCertifiedRecord.recordHash,
-      knownAnchorHash: genesis.actionCertifiedRecord.recordCore.anchorHash,
+    const atFirstMessage = request({
+      knownRecordHash: firstMessage.actionCertifiedRecord.recordHash,
+      knownAnchorHash: firstMessage.actionCertifiedRecord.recordCore.anchorHash,
     });
 
-    const elsewhere = yield* buildGenesis(yield* makeProtocolFixture(4), [
+    const elsewhere = yield* buildFirstMessage(yield* makeProtocolFixture(4), [
       { type: "text", text: "elsewhere" },
     ]);
 
-    yield* verify(yield* page(empty, genesis.certifiedRecord));
+    yield* verify(yield* page(empty, firstMessage.certifiedRecord));
     yield* expectRepresentationFailure(
-      verify(yield* page(empty, post.certifiedRecord)),
+      verify(yield* page(empty, message.certifiedRecord)),
     );
     yield* expectRepresentationFailure(
       verify(yield* page(empty, elsewhere.certifiedRecord)),
     );
-    yield* verify(yield* page(atGenesis, post.certifiedRecord));
+    yield* verify(yield* page(atFirstMessage, message.certifiedRecord));
   });
 
 /**
- * Builds the largest catch-up page: a POST of the largest content at the
+ * Builds the largest catch-up page: a MESSAGE of the largest content at the
  * maximum membership, certified by every member under a re-anchor every
  * member voted for.
  */
@@ -853,8 +845,11 @@ const buildMaximumArtifact = Effect.gen(function* () {
       text: "x".repeat(maximumContentBytes - fixedBytes.byteLength),
     },
   ]);
-  const genesis = yield* buildGenesis(fixture, content);
-  const { reanchor, anchorHash, votes } = yield* voteReanchor(fixture, genesis);
+  const firstMessage = yield* buildFirstMessage(fixture, content);
+  const { reanchor, anchorHash, votes } = yield* voteReanchor(
+    fixture,
+    firstMessage,
+  );
   const reanchored: CompletedReanchor = {
     sharnessVersion: WIRE_VERSION,
     kind: "completed_reanchor",
@@ -867,7 +862,12 @@ const buildMaximumArtifact = Effect.gen(function* () {
       votes: asNonEmpty(votes),
     },
   };
-  const post = yield* buildPost(fixture, genesis, content, reanchored);
+  const message = yield* buildMessage(
+    fixture,
+    firstMessage,
+    content,
+    reanchored,
+  );
   const responder = at(fixture.identities, 0);
   const request: CatchUpRequest = {
     sharnessVersion: WIRE_VERSION,
@@ -875,7 +875,7 @@ const buildMaximumArtifact = Effect.gen(function* () {
     conversationId: fixture.membership.descriptor.conversationId,
     membershipHash: fixture.membership.hash,
     requesterAgentId: at(fixture.identities, 1).card.agentId,
-    knownRecordHash: genesis.actionCertifiedRecord.recordHash,
+    knownRecordHash: firstMessage.actionCertifiedRecord.recordHash,
     knownAnchorHash: anchorHash,
   };
   const attestation = yield* signEvidenceMessage({
@@ -885,7 +885,7 @@ const buildMaximumArtifact = Effect.gen(function* () {
       signerAgentId: responder.card.agentId,
       request,
       itemKind: "certified_record",
-      itemHash: post.actionCertifiedRecord.recordHash,
+      itemHash: message.actionCertifiedRecord.recordHash,
       hasMore: false,
     },
     agentCard: responder.card,
@@ -895,7 +895,7 @@ const buildMaximumArtifact = Effect.gen(function* () {
     sharnessVersion: WIRE_VERSION,
     kind: "catch_up_page",
     request,
-    item: post.certifiedRecord,
+    item: message.certifiedRecord,
     hasMore: false,
     attestation: yield* Schema.encode(SignedMessage)(attestation),
   };
@@ -909,16 +909,10 @@ const buildMaximumArtifact = Effect.gen(function* () {
 const maximumArtifact = Effect.runSync(Effect.cached(buildMaximumArtifact));
 
 /**
- * Bounds a hang in building the largest catch-up page and in each case that
- * checks it; no assertion depends on it. The build issues one identity per
- * member and signs five certificates of one signature per member: GENESIS and
- * POST action and durability certificates, and a re-anchor certificate. The
- * cases verify the page or seal it to every member. Beside a looping client
- * unit suite on 8 cores, the case that pays for the build took 3.2 s to
- * 11.1 s per run; the 11.1 s run saw a 1-minute load average of 60 to 94. At
- * a load average of 51 to 60, the build once ran past 15 s. Every run saw a
- * load average of 50 or more; CI runs one suite, at far lower load. The bound
- * is twice 15 s.
+ * Bounds a hang while building or checking a maximum-membership page. The
+ * fixture issues every member's identity and signs five complete certificates;
+ * cases then verify the page or seal it to every member. This cryptographic
+ * work slows with machine load; no assertion depends on the timeout.
  */
 const MAXIMUM_PAGE_TIMEOUT_MS = 30_000;
 
@@ -1112,11 +1106,11 @@ describe("Client protocol acceptance", () => {
     ([memberCount, threshold]) => verifiesThreshold(memberCount, threshold),
   );
   it(
-    "requires unanimous GENESIS and author-inclusive POST evidence without hashing either certificate",
-    enforcesGenesisAndPostEvidence,
+    "requires unanimous FIRST_MESSAGE and author-inclusive MESSAGE evidence without hashing either certificate",
+    enforcesFirstMessageAndMessageEvidence,
   );
   it(
-    "verifies a record only against the membership it names, held from GENESIS",
+    "verifies a record only against the membership it names, held from FIRST_MESSAGE",
     verifiesRecordsAgainstTheHeldMembership,
   );
   it(
@@ -1128,11 +1122,11 @@ describe("Client protocol acceptance", () => {
     verifiesReanchorCatchUpBindings,
   );
   it(
-    "catches up GENESIS first, so a later POST page resolves its membership",
-    catchesUpGenesisFirst,
+    "catches up FIRST_MESSAGE first, so a later MESSAGE page resolves its membership",
+    catchesUpFirstMessageFirst,
   );
   describe(
-    "the largest catch-up page, a re-anchored POST at its maximum membership",
+    "the largest catch-up page, a re-anchored MESSAGE at its maximum membership",
     { timeout: MAXIMUM_PAGE_TIMEOUT_MS },
     () => {
       it("verifies from its responder", verifiesMaximumPage);

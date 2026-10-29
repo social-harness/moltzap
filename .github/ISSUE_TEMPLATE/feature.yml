@@ -13,7 +13,7 @@ body:
     id: proposal
     attributes:
       label: Proposal
-      description: The behaviour you want. Name the affected package, executable, or specification page under `docs/spec/` if you know it.
+      description: The behaviour you want. Name the affected package, executable, or specification page under `docs/reference/spec/` if you know it.
     validations:
       required: true
   - type: textarea

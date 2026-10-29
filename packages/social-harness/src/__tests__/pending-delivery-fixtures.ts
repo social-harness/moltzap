@@ -4,12 +4,12 @@ import { Effect, Schema } from "effect";
 import type { InboundItem } from "../communication/collectives/inbound.js";
 import type { CollectiveOperations } from "../communication/collectives/index.js";
 import type { EnginePendingMessage } from "../communication/conversations/index.js";
-import type { PendingOffer } from "../harness/inbox/pass.js";
-import type { HarnessMessageReadyEvent } from "../harness/protocol/operations.js";
+import type { PendingOffer } from "../daemon/inbox/deliver-pending.js";
+import type { HarnessMessageReadyEvent } from "../host-protocol/operations.js";
 import { InboundMessage } from "../communication/conversations/message.js";
 import { RecordHash } from "../communication/records/index.js";
 import { DeliveryToken } from "../communication/store/index.js";
-import { digest } from "./agent-card-fixtures.js";
+import { digest, testAgentView } from "./agent-card-fixtures.js";
 
 /**
  * A pending durable delivery of a direct post from Bob whose delivery token,
@@ -27,7 +27,7 @@ export function pendingMessage(byte: number): EnginePendingMessage {
       kind: "direct",
       postId: digest("pst_", byte),
       address: "agent:bob",
-      sender: "agent:bob",
+      sender: testAgentView("agent:bob"),
       content: [{ type: "text", text: `delivery ${String(byte)}` }],
     }),
   };

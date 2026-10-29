@@ -25,10 +25,11 @@ export function unusedEndpointStore(label: string): EndpointStore {
     writeEventState: unused,
     readIdentity: unused,
     bindIdentity: unused,
+    ...unusedCollectiveOperations(unused),
     bindPostIntent: unused,
     putConversationFoundation: unused,
     lockProposal: unused,
-    lockGenesisProposal: unused,
+    lockFirstMessageProposal: unused,
     supersedeProposalLock: unused,
     stageRecordForDissemination: unused,
     mergeEvidence: unused,
@@ -38,6 +39,7 @@ export function unusedEndpointStore(label: string): EndpointStore {
     completeReanchor: unused,
     applyCatchUpReanchor: unused,
     readPendingDeliveries: unused,
+    readRetainedDeliveries: unused,
     acknowledgeDelivery: unused,
     enqueueOutbound: unused,
     enqueueDisseminationOutbound: unused,
@@ -72,5 +74,21 @@ function unusedFirewallOperations(unused: () => Effect.Effect<never>) {
     admitFirewallOperation: unused,
     bindCheckedPostIntent: unused,
     bindAdmittedPostIntent: unused,
+  };
+}
+
+function unusedCollectiveOperations(unused: () => Effect.Effect<never>) {
+  return {
+    recordCollectiveAnswer: unused,
+    readCollectiveAnswers: unused,
+    recordCollectiveRefusal: unused,
+    readCollectiveRefusals: unused,
+    retireCollectiveOperation: unused,
+    putCollectiveOperation: unused,
+    readCollectiveOperations: unused,
+    readCollectiveOperation: unused,
+    readCollectivePosts: unused,
+    finalizeCollectiveOperation: unused,
+    publishCollectiveItem: unused,
   };
 }

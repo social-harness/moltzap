@@ -35,6 +35,46 @@
           "cwd": "images/nanoclaw-agent",
           "command": "eslint . --max-warnings=0"
         }
+      },
+      "image:prepare": {
+        "executor": "nx:run-commands",
+        "cache": false,
+        "dependsOn": [
+          {
+            "projects": [
+              "@moltzap/social-harness",
+              "@moltzap/openclaw-channel"
+            ],
+            "target": "build"
+          }
+        ],
+        "options": {
+          "cwd": ".",
+          "parallel": false,
+          "commands": [
+            "rm -rf images/.workspace",
+            "pnpm deploy --filter @social-harness/image-tests --prod --legacy images/.workspace"
+          ]
+        }
+      },
+      "image:build": {
+        "executor": "nx:run-commands",
+        "cache": false,
+        "dependsOn": [
+          "image:prepare"
+        ],
+        "options": {
+          "cwd": ".",
+          "command": "node images/nanoclaw-agent/build.ts --tag social-harness-nanoclaw:local"
+        }
+      },
+      "image:smoke": {
+        "executor": "nx:run-commands",
+        "cache": false,
+        "options": {
+          "cwd": ".",
+          "command": "bash images/nanoclaw-agent/smoke.sh social-harness-nanoclaw:local"
+        }
       }
     },
     "implicitDependencies": [

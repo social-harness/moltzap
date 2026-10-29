@@ -7,7 +7,7 @@ import {
   StreamableHTTPClientTransport,
 } from "@modelcontextprotocol/client";
 import { Effect, type Scope } from "effect";
-import { acquireHarnessMcpHttpServer } from "../harness/mcp/http.js";
+import { acquireHarnessMcpHttpServer } from "../daemon/mcp/http.js";
 
 /**
  * Serve `handler` on an ephemeral loopback port and return the server's `/mcp`

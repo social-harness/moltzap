@@ -6,7 +6,7 @@ import type {
   EndpointRecovery,
   PostIntent as StoredPostIntent,
 } from "../../store/index.js";
-import type { EngineRuntime } from "../runtime/index.js";
+import type { EngineRuntime } from "../engine-context.js";
 import {
   decodeCanonical,
   encodeCanonical,
@@ -14,24 +14,24 @@ import {
 } from "../../../encoding/canonical-json.js";
 import {
   type ConversationId as ConversationIdValue,
-  GenesisAnchorBody,
-  type GenesisAnchorBody as GenesisAnchorBodyValue,
   hashAnchor,
+  InitialAnchorBody,
+  type InitialAnchorBody as InitialAnchorBodyValue,
   type VerifiedMembership,
 } from "../../records/index.js";
 import { RouterWorkerPersistenceError } from "../../router/index.js";
 
 interface EmptyPositionRestartInput {
   readonly runtime: EngineRuntime;
-  /** The Router instance the replacement GENESIS anchor binds. */
-  readonly routerInstanceId: GenesisAnchorBodyValue["routerInstanceId"];
+  /** The Router instance the replacement initial anchor binds. */
+  readonly routerInstanceId: InitialAnchorBodyValue["routerInstanceId"];
   readonly membership: VerifiedMembership;
   readonly recovery: EndpointRecovery;
   readonly position: EndpointRecovery["positions"][number];
 }
 
 /**
- * Replace a genesis foundation only while its certified history is empty. The
+ * Replace an initial foundation only while its certified history is empty. The
  * caller marks the conversation recovered. The durable replacement and the
  * engine's adoption of its anchor are one uninterruptible step: a retry reads
  * the durable anchor as already restarted and never resets the engine, so an
@@ -127,30 +127,30 @@ function emptyConversationFoundation(
 }
 
 interface ReplacementEmptyFoundation {
-  readonly anchor: GenesisAnchorBodyValue;
+  readonly anchor: InitialAnchorBodyValue;
   readonly foundation: ConversationFoundation;
 }
 
 function replacementEmptyFoundation(
-  routerInstanceId: GenesisAnchorBodyValue["routerInstanceId"],
+  routerInstanceId: InitialAnchorBodyValue["routerInstanceId"],
   membership: VerifiedMembership,
   expected: ConversationFoundation,
 ): Effect.Effect<ReplacementEmptyFoundation, RouterWorkerPersistenceError> {
   return Effect.gen(function* () {
     const preceding = yield* decodeCanonical(
-      GenesisAnchorBody,
+      InitialAnchorBody,
       expected.canonicalAnchor,
     ).pipe(Effect.mapError(persistenceFailure));
-    const anchor: GenesisAnchorBodyValue = {
+    const anchor: InitialAnchorBodyValue = {
       sharnessVersion: preceding.sharnessVersion,
-      kind: "genesis_anchor_body",
+      kind: "initial_anchor_body",
       conversationId: membership.descriptor.conversationId,
       membershipHash: membership.hash,
       routerInstanceId,
     };
     return yield* Effect.all({
       anchorHash: hashAnchor(anchor),
-      canonicalAnchor: encodeCanonical(GenesisAnchorBody, anchor),
+      canonicalAnchor: encodeCanonical(InitialAnchorBody, anchor),
     }).pipe(
       Effect.mapError(persistenceFailure),
       Effect.map(({ anchorHash, canonicalAnchor }) => ({
@@ -222,7 +222,7 @@ function storedIntentMatches(
 function resetEmptyConversationRuntime(
   runtime: EngineRuntime,
   conversationId: ConversationIdValue,
-  anchor: GenesisAnchorBodyValue,
+  anchor: InitialAnchorBodyValue,
   postIntents: readonly StoredPostIntent[],
 ): Effect.Effect<void> {
   return Effect.sync(() => {
@@ -235,7 +235,7 @@ function resetEmptyConversationRuntime(
 function replaceRuntimeAnchor(
   runtime: EngineRuntime,
   conversationId: ConversationIdValue,
-  anchor: GenesisAnchorBodyValue,
+  anchor: InitialAnchorBodyValue,
 ): void {
   const conversation = runtime.conversations.get(conversationId);
   if (conversation !== undefined) {

@@ -3,17 +3,17 @@
 import { Effect, Schema } from "effect";
 import { parseDocument } from "yaml";
 import { exactStruct } from "../../../encoding/exact.js";
-import { AgentId } from "../../../identity/agents.js";
+import { AgentId } from "../../../identity/identifiers.js";
 import {
-  EnglishPolicySettings,
-  EnglishRule,
+  editableDocumentSchema,
   FirewallSettings,
   MessageContext,
-  policyReadSchema,
+  TextPolicySettings,
+  TextRule,
 } from "../../evaluator/index.js";
 
 /** The `format` every message-policy document names. */
-const messagePolicyFormat = "org.social-harness/message-policy/v1";
+const messagePolicyFormat = "org.social-harness/message-policy/v2";
 
 /** A tool name as hosts register it: letters, digits and underscores. */
 const toolName = Schema.String.pipe(Schema.pattern(/^\w+$/u));
@@ -28,7 +28,6 @@ const incomingMiddleware = Schema.Union(
     use: Schema.Literal("allowed-senders"),
     agentIds: Schema.Array(AgentId),
   }),
-  Schema.Struct({ use: Schema.Literal("collective-norms") }),
 );
 
 /**
@@ -46,10 +45,6 @@ const outgoingMiddleware = Schema.Union(
     toolNamePrefixes: toolNames,
     invocationToolNames: toolNames,
   }),
-  Schema.Struct({
-    use: Schema.Literal("collective-norms"),
-    facilitator: Schema.Boolean,
-  }),
   Schema.Struct({ use: Schema.Literal("open-requests") }),
   Schema.Struct({ use: Schema.Literal("acknowledgements") }),
 );
@@ -61,9 +56,9 @@ export type IncomingMiddlewareEntry = typeof incomingMiddleware.Type;
 export type OutgoingMiddlewareEntry = typeof outgoingMiddleware.Type;
 
 /**
- * The service that assesses English rules. `jev` needs the key file the
+ * The service that assesses natural-language rules. `jev` needs the key file the
  * daemon names in `SHARNESS_DECISION_PROVIDER_KEY_FILE`; `unavailable`
- * installs the rules with no service, so every English check is unavailable:
+ * installs the rules with no service, so every natural-language check is unavailable:
  * enforcement holds the message and guidance admits it.
  */
 const decisionProvider = Schema.Union(
@@ -74,17 +69,17 @@ const decisionProvider = Schema.Union(
   Schema.Struct({ kind: Schema.Literal("unavailable") }),
 );
 
-const englishRules = Schema.optionalWith(Schema.Array(EnglishRule), {
+const textRules = Schema.optionalWith(Schema.Array(TextRule), {
   default: () => [],
 });
-/** English assessment defaults: the lowest routing probability Client accepts, and the request bounds the collective norms are sized to. */
-const defaultEnglishSettings = {
+/** Natural-language assessment defaults: the lowest routing probability Client accepts, and request bounds for a full history window. */
+const defaultTextSettings = {
   minimumProbability: 0.5,
   maximumRequestBytes: 384_000,
   timeoutMilliseconds: 15_000,
 };
 
-/** Per-check bounds sized for English assessment of a full history window. */
+/** Per-check bounds sized for natural-language assessment of a full history window. */
 const defaultSettings = {
   timeoutMilliseconds: 150_000,
   middlewareTimeoutMilliseconds: 70_000,
@@ -97,9 +92,9 @@ const builtinBehaviorName = Schema.String.pipe(
   Schema.pattern(/^[a-z0-9]+(?:-[a-z0-9]+)*\/[a-z0-9]+(?:-[a-z0-9]+)*$/u),
 );
 
-const englishDocument = Schema.Struct({
-  fixedRules: englishRules,
-  initialRules: englishRules,
+const textDocument = Schema.Struct({
+  fixedRules: textRules,
+  initialRules: textRules,
   fixedBehaviors: Schema.optional(Schema.Array(Schema.String)),
   initialBehaviors: Schema.optional(Schema.Array(Schema.String)),
   builtinBehaviors: Schema.optional(Schema.Array(builtinBehaviorName)),
@@ -114,12 +109,11 @@ const document = Schema.Struct({
   outgoing: Schema.optionalWith(Schema.Array(outgoingMiddleware), {
     default: () => [],
   }),
-  english: Schema.optional(englishDocument),
+  text: Schema.optional(textDocument),
   decisionProvider: Schema.optional(decisionProvider),
-  englishSettings: Schema.optionalWith(
-    Schema.Struct(EnglishPolicySettings.fields),
-    { default: () => defaultEnglishSettings },
-  ),
+  textSettings: Schema.optionalWith(Schema.Struct(TextPolicySettings.fields), {
+    default: () => defaultTextSettings,
+  }),
   settings: Schema.optionalWith(Schema.Struct(FirewallSettings.fields), {
     default: () => defaultSettings,
   }),
@@ -137,35 +131,21 @@ const document = Schema.Struct({
 /* eslint-disable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- The document Schema shares its domain name with the value it decodes. */
 
 /**
- * The message policy of one daemon: its firewall mode, the built-in code
- * middleware of each direction in chain order, its fixed and initial
- * editable English rules, the decision provider those rules and the
- * collective norms need, and the check bounds. Absent settings take Client's
- * defaults. English rules or the collective norms without a decision
- * provider, the collective norms with the `unavailable` provider, which would
- * leave every one of their English checks unavailable, and an English rule
- * id given twice across the fixed and initial rules are refused.
+ * One daemon's fixed code chains, natural-language rules, provider and bounds.
+ * Missing settings take Client defaults. Text policy requires a provider and
+ * unique rule ids across fixed and initial rules.
  */
 export const MessagePolicy = document.pipe(
   Schema.filter(
     (policy) =>
-      policy.decisionProvider !== undefined || !needsDecisionProvider(policy),
+      policy.decisionProvider !== undefined || policy.text === undefined,
     {
-      message: () =>
-        "decisionProvider is required for English rules and the collective norms",
+      message: () => "decisionProvider is required for natural-language rules",
     },
   ),
-  Schema.filter(
-    (policy) =>
-      policy.decisionProvider?.kind !== "unavailable" ||
-      !installsCollectiveNorms(policy),
-    {
-      message: () => "the collective norms need an available decisionProvider",
-    },
-  ),
-  Schema.filter((policy) => uniqueEnglishRuleIds(policy), {
+  Schema.filter((policy) => uniqueTextRuleIds(policy), {
     message: () =>
-      "english rule ids must be unique across fixedRules and initialRules",
+      "text rule ids must be unique across fixedRules and initialRules",
   }),
 );
 
@@ -184,7 +164,7 @@ export const decodeMessagePolicy = Schema.decodeUnknown(
   { onExcessProperty: "error" },
 );
 
-/** The Behaviors spec limits each BEHAVIOR.md to 64 KiB: docs/spec/harness/message-policy.md#behaviors. */
+/** The Behaviors spec limits each BEHAVIOR.md to 64 KiB: docs/reference/spec/firewall/message-policy.md#behaviors. */
 export const MAXIMUM_BEHAVIOR_BYTES = 65_536;
 
 /** YAML owns frontmatter syntax; only Social Harness metadata is a closed namespace. */
@@ -193,11 +173,11 @@ const behaviorFrontmatter = Schema.Struct({
   description: Schema.NonEmptyString,
   metadata: Schema.Struct({
     "social-harness": exactStruct({
-      kind: Schema.optionalWith(EnglishRule.fields.kind, {
+      kind: Schema.optionalWith(TextRule.fields.kind, {
         default: () => "norm" as const,
       }),
-      guidance: EnglishRule.fields.guidance,
-      feedback: EnglishRule.fields.feedback,
+      guidance: TextRule.fields.guidance,
+      feedback: TextRule.fields.feedback,
     }),
   }),
 });
@@ -206,7 +186,7 @@ const behaviorFrontmatter = Schema.Struct({
 type BehaviorRefusal = "frontmatter" | "schema";
 
 /**
- * Maps one `BEHAVIOR.md` to its editable English rule. YAML parser
+ * Maps one `BEHAVIOR.md` to its editable natural-language rule. YAML parser
  * diagnostics stay private; only a closed category reaches `refused`, which
  * builds the caller's own failure.
  * @param bytes The behavior's bytes; callers bound them by {@link MAXIMUM_BEHAVIOR_BYTES}.
@@ -230,7 +210,7 @@ export function decodeBehavior<Failure>(
     }
     const frontmatter = yield* decodeFrontmatter(parts[1], refused);
     const metadata = frontmatter.metadata["social-harness"];
-    const rules = yield* Schema.decodeUnknown(policyReadSchema.fields.rules)([
+    const rules = yield* Schema.decodeUnknown(editableDocumentSchema)([
       {
         id: frontmatter.name,
         text: parts[2].trim(),
@@ -243,20 +223,10 @@ export function decodeBehavior<Failure>(
   }).pipe(Effect.withSpan("decodeBehavior"));
 }
 
-function needsDecisionProvider(policy: typeof document.Type): boolean {
-  return policy.english !== undefined || installsCollectiveNorms(policy);
-}
-
-function installsCollectiveNorms(policy: typeof document.Type): boolean {
-  return [...policy.incoming, ...policy.outgoing].some(
-    (entry) => entry.use === "collective-norms",
-  );
-}
-
-function uniqueEnglishRuleIds(policy: typeof document.Type): boolean {
+function uniqueTextRuleIds(policy: typeof document.Type): boolean {
   const ids = [
-    ...(policy.english?.fixedRules ?? []),
-    ...(policy.english?.initialRules ?? []),
+    ...(policy.text?.fixedRules ?? []),
+    ...(policy.text?.initialRules ?? []),
   ].map((rule) => rule.id);
   return new Set(ids).size === ids.length;
 }

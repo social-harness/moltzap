@@ -102,8 +102,8 @@ export function renderCollectiveRequestBody(
 ): string {
   const asked =
     item.op === "all_gather"
-      ? `all_gather from ${item.from} to ${item.to}`
-      : `gather from ${item.from}`;
+      ? `all_gather from agent:${item.from.agentName} to ${item.to}`
+      : `gather from agent:${item.from.agentName}`;
   return [
     `${asked}, open until ${new Date(item.deadlineAt).toISOString()}.`,
     `Question: ${item.question}`,
@@ -126,7 +126,8 @@ export function renderCollectiveResult(item: CollectiveResultItem): string {
   return [
     `${item.op} result for the question sent to ${item.to}: ${question}`,
     ...item.outcomes.map(
-      ({ member, outcome }) => `- ${member}: ${renderOutcome(outcome)}`,
+      ({ member, outcome }) =>
+        `- agent:${member.agentName}: ${renderOutcome(outcome)}`,
     ),
   ].join("\n");
 }

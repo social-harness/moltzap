@@ -5,8 +5,8 @@
  */
 
 import { Effect, Schema } from "effect";
-import type { SignedMessage as SignedMessageValue } from "../../envelope/signed-message.js";
-import type { EngineRuntime } from "../runtime/index.js";
+import type { SignedMessage as SignedMessageValue } from "../../../identity/envelope/signed-message.js";
+import type { EngineRuntime } from "../engine-context.js";
 import {
   type ClientRepresentationError,
   encodeCanonical,

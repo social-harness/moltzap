@@ -1,6 +1,8 @@
 {
   "$schema": "https://typedoc.org/schema.json",
+  "name": "Social Harness API",
   "entryPointStrategy": "packages",
+  "plugin": ["typedoc-plugin-missing-exports"],
   "entryPoints": [
     "packages/social-harness",
     "plugins/nanoclaw",
@@ -19,6 +21,9 @@
     }
   },
   "packageOptions": {
+    "excludeExternals": true,
+    "externalPattern": ["**/node_modules/**", "**/dist/**"],
+    "internalModule": "Referenced types",
     "entryPoints": [
       "src/index.ts"
     ],
@@ -46,6 +51,7 @@
     }
   ],
   "readme": "none",
+  "ignoredHighlightLanguages": ["mermaid"],
   "skipErrorChecking": true,
   "logLevel": "Warn"
 }

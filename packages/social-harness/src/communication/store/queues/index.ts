@@ -3,12 +3,6 @@
 /* eslint-disable jsdoc/require-jsdoc -- Re-exported private symbols retain their owning-module documentation. */
 
 export {
-  acknowledgeDelivery,
-  readPendingDeliveries,
-  readRetainedDeliveries,
-  retainDeliveryInTransaction,
-} from "./deliveries.js";
-export {
   enqueueDisseminationOutbound,
   readPendingDissemination,
   retainDisseminationInTransaction,
@@ -21,5 +15,11 @@ export {
   enqueueOutboundInTransaction,
   readPendingOutbound,
 } from "./outbound.js";
+export {
+  acknowledgeDelivery,
+  readPendingDeliveries,
+  readRetainedDeliveries,
+  retainDeliveryInTransaction,
+} from "./peer-deliveries.js";
 
 /* eslint-enable jsdoc/require-jsdoc -- Restore package documentation rules. */

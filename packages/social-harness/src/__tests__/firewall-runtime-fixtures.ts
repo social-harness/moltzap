@@ -7,11 +7,8 @@ import type {
   MessageMiddleware,
   MiddlewareResult,
 } from "../firewall/evaluator/contract/index.js";
-import type { HarnessMessageReadyEvent } from "../harness/protocol/operations.js";
-import {
-  makeCollectiveOperations,
-  type ResultProvenance,
-} from "../communication/collectives/index.js";
+import type { HarnessMessageReadyEvent } from "../host-protocol/operations.js";
+import { makeCollectiveOperations } from "../communication/collectives/index.js";
 import { makeEndpointEngine } from "../communication/conversations/index.js";
 import { InboundMessage } from "../communication/conversations/message.js";
 import {
@@ -30,6 +27,8 @@ import {
   EndpointStoreError,
   openEndpointStore,
 } from "../communication/store/index.js";
+import { makeHostDelivery } from "../daemon/inbox/host-delivery.js";
+import { noHistoryExport } from "../daemon/inbox/host-traffic-log.js";
 import { encodeCanonical } from "../encoding/canonical-json.js";
 import {
   collectiveAdmission,
@@ -38,9 +37,7 @@ import {
   type InstalledFirewall,
 } from "../firewall/admission/index.js";
 import { installEditableFirewall } from "../firewall/index.js";
-import { noHistoryExport } from "../harness/inbox/history-export.js";
-import { makeHostDelivery } from "../harness/inbox/host-delivery.js";
-import { AgentCard } from "../identity/cards.js";
+import { AgentCard, agentViewOf } from "../identity/cards.js";
 import { Ed25519PublicKey } from "../identity/keys.js";
 import { LIVE_WIRE_VERSIONS, WIRE_VERSION } from "../identity/wire-version.js";
 import {
@@ -50,8 +47,8 @@ import {
   makeTestAuthority,
 } from "./agent-card-fixtures.js";
 import {
-  buildCertifiedGenesis,
-  storeCertifiedGenesis,
+  buildCertifiedFirstMessage,
+  storeCertifiedFirstMessage,
 } from "./certified-history-fixtures.js";
 import { pollCursor } from "./router-worker-fixtures.js";
 import { stateDirectory } from "./store-schema-fixtures.js";
@@ -228,18 +225,29 @@ const firewallRuntime = (subject: Fixture, installed: InstalledFirewall) =>
     const slot: {
       delivery?: Effect.Effect.Success<ReturnType<typeof makeHostDelivery>>;
     } = {};
-    const emit = (item: InboundItem, provenance?: ResultProvenance) =>
+    const emit: Parameters<typeof makeCollectiveOperations>[0]["emit"] = (
+      item,
+      provenance,
+      terminal,
+    ) =>
       Effect.suspend(() => {
         emitted.push(item);
         return slot.delivery === undefined
           ? Effect.void
-          : slot.delivery.queueLocalItem(item, provenance).pipe(Effect.orDie);
+          : slot.delivery
+              .queueLocalItem(item, provenance, terminal)
+              .pipe(Effect.orDie);
       });
-    const collectives = makeCollectiveOperations({
+    const collectives = yield* makeCollectiveOperations({
+      store,
+      observePost: (postId) => engine.observePost(postId),
+      sendAdmitted: (input, checkId) => engine.sendAdmitted(input, checkId),
+      reportStorageFault: () => Effect.void,
       self: Schema.decodeUnknownSync(AgentAddress)("agent:alice"),
       scope,
-      lookupMember: (member) => engine.resolveAddress(member),
+      lookupMember: (member) => resolvedMemberView(engine, member),
       sendPost: (input) => engine.send(input),
+      bindPost: (input, hold) => engine.bind(input, hold),
       emit,
       admission: collectiveAdmission(environment, engine),
     });
@@ -344,13 +352,13 @@ export function addConversation(subject: Fixture, authoredLocally = false) {
     const authors = authoredLocally
       ? { local: { card, authority }, remote: subject.local }
       : { local: subject.local, remote: { card, authority } };
-    const record = yield* buildCertifiedGenesis(
+    const record = yield* buildCertifiedFirstMessage(
       authors.local,
       authors.remote,
       membership,
       anchor.routerInstanceId,
     );
-    yield* storeCertifiedGenesis(
+    yield* storeCertifiedFirstMessage(
       subject.store,
       subject.local.card,
       membership,
@@ -361,50 +369,140 @@ export function addConversation(subject: Fixture, authoredLocally = false) {
 }
 
 /**
- * A policy that changes the evidence on every call, so each capture it
- * checks is stale by its commit.
- * @param subject The fixture whose store the policy writes to.
- * @returns The middleware and the number of calls it has seen.
+ * Delayed local admissions change the captured conversation on every check.
+ * The writer owns its prequeued items; the admission worker sees only the
+ * subject under test. Queueing before certification keeps the new evidence
+ * inside incoming windows as well as outgoing windows.
  */
-export function churnPolicy(subject: Fixture) {
+export const churnPolicy = Effect.fn("churnPolicy")(function* (
+  subject: Fixture,
+  conversation?: string,
+) {
+  const target = conversation ?? "agent:bob";
+  const items = yield* delayedEvidence(subject, target);
+  const tokens = new Set(items.map((item) => item.deliveryToken));
   let calls = 0;
   return {
+    subject: {
+      ...subject,
+      store: {
+        ...subject.store,
+        readFirewallFrontiers: () =>
+          subject.store
+            .readFirewallFrontiers()
+            .pipe(
+              Effect.map((entries) =>
+                entries.filter((entry) => !tokens.has(entry.deliveryToken)),
+              ),
+            ),
+      },
+    },
     count: () => calls,
     middleware: policy(() =>
       Effect.gen(function* () {
+        const item = items[calls];
         calls += 1;
-        yield* subject.store.putInboxItem({
-          deliveryToken: Schema.decodeUnknownSync(DeliveryToken)(
-            digest("dlv_", 120 + calls),
-          ),
-          canonicalItem: yield* encodeRuntimeValue({
-            kind: "evidence changed",
-          }),
-        });
+        if (item === undefined) {
+          return yield* Effect.dieMessage("unexpected extra check");
+        }
+        yield* admitDelayedEvidence(subject, item, target);
         return pass;
       }).pipe(Effect.orDie, Effect.withSpan("churnPolicy")),
     ),
   };
-}
+});
 
 /** A complete registered norm delegates only its assessment to the test. */
 export function policy(check: MessageMiddleware["check"]): MessageMiddleware {
   return { id: "communication", revision: "test-v1", rules: [rule], check };
 }
 
-/** A signed GENESIS seeds the default conversation without network traffic. */
+/** A signed FIRST_MESSAGE seeds the default conversation without network traffic. */
 export function seedIncoming(subject: Fixture, authoredLocally = false) {
   return Effect.gen(function* () {
     const { local, remote, membership, store } = subject;
-    const record = yield* buildCertifiedGenesis(
+    const record = yield* buildCertifiedFirstMessage(
       authoredLocally ? remote : local,
       authoredLocally ? local : remote,
       membership,
       anchor.routerInstanceId,
     );
-    yield* storeCertifiedGenesis(store, local.card, membership, record);
+    yield* storeCertifiedFirstMessage(store, local.card, membership, record);
     return record;
   }).pipe(Effect.withSpan("seedIncoming"));
+}
+
+/** Resolve a member through the engine before a test accepts collective work. */
+export function resolvedMemberView(
+  engine: Effect.Effect.Success<ReturnType<typeof makeEndpointEngine>>,
+  member: typeof AgentAddress.Type,
+) {
+  return engine.resolveConversation(member).pipe(
+    Effect.flatMap((conversation) => {
+      const card = conversation.memberCards.find(
+        (candidate) => `agent:${candidate.agentName}` === member,
+      );
+      return card === undefined
+        ? Effect.dieMessage("resolved conversation lacks its requested member")
+        : Effect.succeed(agentViewOf(card));
+    }),
+  );
+}
+
+function delayedEvidence(subject: Fixture, conversation: string) {
+  return Effect.forEach(
+    [1, 2, 3, 4],
+    (index) =>
+      Effect.gen(function* () {
+        const item = {
+          deliveryToken: Schema.decodeUnknownSync(DeliveryToken)(
+            digest("dlv_", 120 + index),
+          ),
+          canonicalItem: yield* encodeRuntimeValue({
+            kind: "operationFailed",
+            id: digest("col_", index),
+            to: conversation,
+            error: "Prior local result",
+          }),
+        };
+        yield* subject.store.queueFirewallItem({
+          ...item,
+          conversation: "fixture:delayed-evidence",
+        });
+        return item;
+      }),
+    { concurrency: 1 },
+  );
+}
+
+function admitDelayedEvidence(
+  subject: Fixture,
+  item: {
+    readonly deliveryToken: DeliveryToken;
+    readonly canonicalItem: Uint8Array;
+  },
+  conversation: string,
+) {
+  return Effect.gen(function* () {
+    yield* subject.store.admitFirewallLocalItem({
+      queuedItem: item.canonicalItem,
+      item,
+      completions: [],
+      answers: [],
+      evidence: {
+        conversation,
+        canonicalEntry: yield* encodeRuntimeValue({
+          id: item.deliveryToken,
+          sender: subject.local.card.agentId,
+          recipients: [subject.remote.card.agentId],
+          text: "Prior local result",
+          visibility: "runtime",
+          admission: "admitted",
+        }),
+      },
+    });
+    yield* subject.store.acknowledgeInboxItem(item.deliveryToken);
+  });
 }
 
 function pendingMessages(store: EndpointStore) {

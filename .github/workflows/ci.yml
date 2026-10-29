@@ -37,8 +37,6 @@ jobs:
             echo "::error file=CHANGELOG.md::This pull request edits CHANGELOG.md; add a fragment under changelog.d/ instead (see towncrier.toml)"
             exit 1
           fi
-      # The release's own draft build rejects a misnamed fragment or a broken
-      # template here, before the next release would.
       - name: Render the changelog fragments
         if: github.event_name == 'pull_request'
         run: |
@@ -67,15 +65,12 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
-    # Bounds a hung test run.
     timeout-minutes: 20
     environment: *nx-cache-environment
     env: *nx-cache
     steps:
-      # A pull request runs only the projects its diff affects, against the PR
-      # base that nx-set-shas resolves; fetch-depth: 0 gives it that history.
-      # A push to main runs every project. Each target builds what it needs
-      # through dependsOn, so there is no separate build step.
+      # Full history lets nx-set-shas find the pull request's comparison base.
+      # Each test target builds its dependencies through Nx.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -93,7 +88,6 @@ jobs:
 
   integration:
     runs-on: ubuntu-latest
-    # Bounds a hung test run.
     timeout-minutes: 20
     environment: *nx-cache-environment
     env: *nx-cache

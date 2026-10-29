@@ -18,8 +18,8 @@ import {
   slotSchema,
 } from "../../__tests__/collective-operation-fixtures.js";
 import { AgentAddress } from "../records/values.js";
-import { CollectiveError } from "./forms.js";
-import { collectiveIdOf } from "./part/index.js";
+import { CollectiveError } from "./contracts.js";
+import { collectiveIdOf } from "./wire/index.js";
 
 const bob = Schema.decodeUnknownSync(AgentAddress)("agent:bob");
 
@@ -137,25 +137,21 @@ function refusesASecondAnswerToTheSameRequest() {
   });
 }
 
-function reportsAnUnmatchedAnswerInTheConversationItWasSentTo() {
+function refusesAnAnswerWithoutAnOpenRequest() {
   const observed = newObserved();
 
   return Effect.gen(function* () {
     const layer = yield* makeLayer(observed);
-    const outcome = yield* send(
-      layer,
-      { to: "agent:bob", collectiveResponse: { action: "decline" } },
-      "inbound",
+    const failure = yield* collectiveFailureOf(
+      send(layer, {
+        to: "agent:bob",
+        collectiveResponse: { action: "decline" },
+      }),
     );
 
+    expect(failure).toEqual({ kind: "request-none" });
     expect(observed.sent).toEqual([]);
-    expect(observed.emitted).toMatchObject([
-      {
-        kind: "operationFailed",
-        id: outcome.operationId,
-        to: "agent:bob",
-      },
-    ]);
+    expect(observed.emitted).toEqual([]);
   });
 }
 
@@ -242,7 +238,7 @@ describe("collective responses", () => {
 
   it(
     "reports an unmatched answer inbound in the conversation it was sent to",
-    reportsAnUnmatchedAnswerInTheConversationItWasSentTo,
+    refusesAnAnswerWithoutAnOpenRequest,
   );
 
   it(

@@ -13,19 +13,19 @@ import {
   CollectiveEmitError,
   CollectiveError,
   type CollectiveId,
-  type FailureDelivery,
   SendInput,
-} from "../communication/collectives/forms.js";
-import { makeCollectiveOperations } from "../communication/collectives/operation.js";
+} from "../communication/collectives/contracts.js";
+import { makeCollectiveOperations } from "../communication/collectives/index.js";
 import {
   collectiveIdOf,
   readCollectiveValue,
-} from "../communication/collectives/part/index.js";
+} from "../communication/collectives/wire/index.js";
 import { SendError } from "../communication/conversations/errors.js";
 import { InboundMessage } from "../communication/conversations/message.js";
 import { PostId, RecordHash } from "../communication/records/index.js";
 import { AgentAddress } from "../communication/records/values.js";
-import { digest } from "./agent-card-fixtures.js";
+import { digest, testAgentView } from "./agent-card-fixtures.js";
+import { collectivePersistencePorts } from "./collective-storage-stub.js";
 
 /** The agent a layer `makeLayer` builds runs as unless told otherwise. */
 export const alice = Schema.decodeUnknownSync(AgentAddress)("agent:alice");
@@ -107,7 +107,7 @@ export const unkeptEmit = () => Effect.fail(new CollectiveEmitError());
  */
 export const certifyNext = (observed: Observed, input: EngineSendInput) =>
   Effect.sync(() => {
-    observed.sent.push(input);
+    observed.sent.push({ to: input.to, content: input.content });
     const byte = 100 + observed.sent.length;
     return { postId: postId(byte), recordHash: recordHashOf(byte) };
   });
@@ -172,33 +172,35 @@ export const makeLayer = (
     admission,
   }: LayerOptions = {},
 ): Effect.Effect<CollectiveOperations, never, Scope.Scope> =>
-  Effect.map(Effect.scope, (scope) =>
-    makeCollectiveOperations({
-      ...(admission === undefined ? {} : { admission }),
+  Effect.flatMap(Effect.scope, (scope) => {
+    const persistence = collectivePersistencePorts((input) => {
+      const reason = refused[input.to];
+      if (reason === undefined) {
+        return sendPost(input);
+      }
+      if (reason === "slow") {
+        return Effect.never;
+      }
+      if (reason === "late") {
+        return Effect.sleep(Duration.sum(requestSendWait, latePostDelay)).pipe(
+          Effect.zipRight(sendPost(input)),
+        );
+      }
+      return Effect.fail(new SendError({ reason }));
+    });
+    const checked = recordingAdmission(persistence.store, admission);
+    return makeCollectiveOperations({
+      ...persistence,
+      ...(checked === undefined ? {} : { admission: checked }),
       self: Schema.decodeUnknownSync(AgentAddress)(self),
       lookupMember: (member) =>
         unknown.includes(member)
           ? Effect.fail(new SendError({ reason: "unknown-agent" }))
-          : Effect.void,
-      sendPost: (input) => {
-        const reason = refused[input.to];
-        if (reason === undefined) {
-          return sendPost(input);
-        }
-        if (reason === "slow") {
-          return Effect.never;
-        }
-        if (reason === "late") {
-          return Effect.sleep(
-            Duration.sum(requestSendWait, latePostDelay),
-          ).pipe(Effect.zipRight(sendPost(input)));
-        }
-        return Effect.fail(new SendError({ reason }));
-      },
+          : Effect.succeed(testAgentView(member)),
       emit,
       scope,
-    }),
-  );
+    });
+  }).pipe(Effect.orDie);
 
 /**
  * A post in the direct conversation with `sender`.
@@ -211,7 +213,7 @@ export const directPost = (sender: string, content: unknown) =>
     kind: "direct",
     postId: postId(9),
     address: sender,
-    sender,
+    sender: testAgentView(sender),
     content,
   });
 
@@ -270,14 +272,10 @@ export const classifyPost = (
  * Send an unvalidated input through the layer, decoding it first.
  * @param layer The layer that sends.
  * @param input The send input before decoding.
- * @param failureDelivery Where a refusal goes, the send's result by default.
  * @returns The send's outcome.
  */
-export const send = (
-  layer: CollectiveOperations,
-  input: unknown,
-  failureDelivery: FailureDelivery = "result",
-) => layer.send(Schema.decodeUnknownSync(SendInput)(input), failureDelivery);
+export const send = (layer: CollectiveOperations, input: unknown) =>
+  layer.send(Schema.decodeUnknownSync(SendInput)(input));
 
 /**
  * A gather to `gatherTo` asking `questionText`.
@@ -344,3 +342,37 @@ export const firstRequestOf = (observed: Observed) =>
     ),
     Effect.orElse(() => Effect.dieMessage("the first post carries no request")),
   );
+
+function recordingAdmission(
+  store: ReturnType<typeof collectivePersistencePorts>["store"],
+  admission?: CollectiveAdmission,
+): CollectiveAdmission | undefined {
+  return admission === undefined
+    ? undefined
+    : {
+        bindPost: (input, hold) =>
+          admission
+            .bindPost(input, hold)
+            .pipe(
+              Effect.tap(() =>
+                input.collective?.operation === undefined
+                  ? Effect.void
+                  : store
+                      .putCollectiveOperation(input.collective.operation)
+                      .pipe(Effect.orDie),
+              ),
+            ),
+        admitGather: (candidate) =>
+          admission
+            .admitGather(candidate)
+            .pipe(
+              Effect.tap(() =>
+                candidate.operation === undefined
+                  ? Effect.void
+                  : store
+                      .putCollectiveOperation(candidate.operation)
+                      .pipe(Effect.orDie),
+              ),
+            ),
+      };
+}

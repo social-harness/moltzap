@@ -12,9 +12,9 @@ import {
   encodeRuntimeValue,
   type EndpointStore,
 } from "../communication/store/index.js";
+import { makeWebhookEvents } from "../daemon/mcp/webhook.js";
 import { localGuidanceSchema } from "../firewall/outcome/index.js";
-import { makeWebhookEvents } from "../harness/mcp/webhook.js";
-import { INBOX_ITEM_EVENT } from "../harness/protocol/names.js";
+import { INBOX_ITEM_EVENT } from "../host-protocol/names.js";
 import { digest } from "./agent-card-fixtures.js";
 
 /** The signing secret of the scripted subscription. */

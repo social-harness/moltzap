@@ -21,12 +21,16 @@ export function endpointResult(input: SendInput, index: number) {
   const post = { postId: postId(100 + index), address: input.to };
   const operation = { operationId: OPERATION_ID };
   if ("collectiveResponse" in input) {
-    return decodeHarnessSendResult({ ...operation, ...post }).pipe(
-      Effect.orDie,
-    );
+    return decodeHarnessSendResult({
+      kind: "response",
+      ...operation,
+      ...post,
+    }).pipe(Effect.orDie);
   }
   return decodeHarnessSendResult(
-    input.collective === undefined ? post : operation,
+    input.collective === undefined
+      ? { kind: "multicast", ...post }
+      : { kind: "collective", ...operation },
   ).pipe(Effect.orDie);
 }
 

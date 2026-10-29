@@ -1,4 +1,4 @@
-/** @file Representation-neutral decisions and registered runtime advice. */
+/** @file Combines check results into a firewall judgment with feedback and guidance. */
 
 import type {
   FirewallCheck,
