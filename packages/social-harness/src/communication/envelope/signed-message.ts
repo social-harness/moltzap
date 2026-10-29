@@ -304,6 +304,7 @@ const signingFailure = (): SignedMessageSigningError =>
 const verificationFailure = (): SignedMessageVerificationError =>
   new SignedMessageVerificationError();
 
+/** @inline */
 interface SignInput {
   readonly agentCard: VerifiedAgentCard;
   readonly signingAuthority: AgentSigningAuthorityValue;
@@ -341,20 +342,15 @@ const snapshotBody = (candidate: Uint8Array) =>
     return body;
   });
 
-/**
- * `digestAgentCard` admits only a card this package parsed, which is frozen
- * data, so the card reads after it cannot throw.
- */
-/** A SignInput read once, with the card members signing uses. */
+/** Captured caller input keeps later signing steps independent of mutable getters. */
 interface SigningRecord extends SignInput {
   readonly senderAgentId: AgentIdValue;
   readonly publicKey: Ed25519PublicKey;
 }
 
 /**
- * Reads the caller's SignInput, and the card members signing uses, once under
- * a try, so an input whose members throw fails as a signing error and later
- * steps read only this copy.
+ * A throwing input getter becomes a signing failure. Later signing steps
+ * use the captured values so repeated getters cannot change the request.
  */
 const snapshotSignInput = (
   input: SignInput,
@@ -437,6 +433,7 @@ const sign = (
     return Brand.nominal<LiveSignedMessage & VerifiedSignedMessage>()(admitted);
   });
 
+/** @inline */
 interface VerifyInput {
   readonly signedMessage: SignedMessage;
   readonly agentCard: VerifiedAgentCard;
@@ -473,9 +470,8 @@ const verifySignature = (
   });
 
 /**
- * Reads the caller's VerifyInput, and the card members verification uses,
- * once under a try, so an input whose members throw fails as a verification
- * error and later steps read only this copy.
+ * A throwing input getter becomes a verification failure. Later checks use
+ * the captured values so repeated getters cannot change the claimed sender.
  */
 const snapshotVerifyInput = (input: VerifyInput) =>
   Effect.try({
@@ -537,7 +533,33 @@ const encodedByteLength = (signedMessage: SignedMessage): number =>
 /* eslint-disable @typescript-eslint/no-redeclare, @typescript-eslint/naming-convention, agent-code-guard/require-assertion-rationale --
  * The accepted same-name Schema/type API retains the exact private General JWS AST while erasing only its encoded TypeScript type.
  */
-/** Opaque attributed message operations and exact representation Schema. */
+/**
+ * Parses and signs attributed messages while retaining their complete General JWS.
+ *
+ * Decode and re-encode messages through this Schema. Recipients are an
+ * immutable snapshot, and each read of `body` returns a defensive copy.
+ * Changes to caller-owned values cannot change the retained signed bytes.
+ * Parsing admits retained-history versions but does not verify attribution.
+ * `live` additionally requires a version in the live acceptance window.
+ *
+ * `sign` requires a verified card carrying the authority's public key.
+ * Signing copies the body and recipient set, enforces their bounds, and
+ * orders recipients by decoded AgentId bytes. It derives the sender, card
+ * digest, and emitted version, then returns a verified live message.
+ * It signs the supplied body bytes, so callers seal them before signing
+ * when the message requires encryption. Failure is `SignedMessageSigningError`.
+ *
+ * `verify` checks the sender, complete card digest, protected key identifier,
+ * type, and signature against the supplied verified sender card.
+ * Success returns `VerifiedSignedMessage` and preserves any live-version brand.
+ * Failure is `SignedMessageVerificationError`. Only `sign` and `verify`
+ * establish the verified state.
+ *
+ * `encodedByteLength` is total for parsed messages and returns the exact UTF-8
+ * canonical-JSON length of the retained General JWS. Use
+ * `maximumEncodedByteLength` to bound an enclosing request. `wireVersion`
+ * reads the message's retained signed version.
+ */
 export const SignedMessage = Object.assign(signedMessageSchema, {
   live: live as Schema.Schema<LiveSignedMessage, unknown>,
   sign,

@@ -12,7 +12,16 @@ class RegistryModuleLoadError extends Data.TaggedError(
   readonly message: string;
 }> {}
 
-/** Internal Identity capabilities stay within the Registry process boundary. */
+/**
+ * Starts Registry with explicit wire compatibility sets and its ordinary
+ * environment settings.
+ *
+ * The supplied history extends the library's built-in retained history.
+ * Importing this module leaves export conditions unchanged. Calling
+ * `startRegistry` enables the scoped conditions described by
+ * `installInternalResolution`. Startup failures print their message to stderr
+ * and produce an unsuccessful process exit, as with `sharness-registry`.
+ */
 export function startRegistry(versions: {
   readonly emitted: string;
   readonly live: readonly string[];

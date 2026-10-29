@@ -349,7 +349,21 @@ export const digestAgentCard = (
 const wireVersion = (card: AgentCard): string =>
   cardState.get(card)?.wireVersion ?? "";
 
-/** Verifies immutable Registry attestation without exposing JOSE mechanics. */
+/**
+ * Parses immutable cards and verifies their Registry attestation.
+ *
+ * Use this Schema to decode and re-encode a card. Decoding retains its exact
+ * General JWS and exposes a frozen public-key snapshot. Parsing alone does
+ * not establish that the Registry signed the card.
+ *
+ * `verify` checks the signature and protected key identifier against the
+ * deployment-pinned `registrySignerPublicKey`. Only successful verification
+ * returns `VerifiedAgentCard`. A rejected card fails with
+ * `AgentCardVerificationError`.
+ *
+ * `wireVersion` reads the retained signed version, which members use to
+ * derive the same conversation foundation.
+ */
 export const AgentCard = Object.assign(agentCardSchema, {
   verify: verifyAgentCard,
   wireVersion,

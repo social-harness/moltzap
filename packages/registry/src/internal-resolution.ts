@@ -6,7 +6,12 @@ const REGISTRY_MODULE_ROOTS = [
   new URL("../bin/", import.meta.url).href,
 ];
 
-/** External consumers retain their original export conditions after Registry starts. */
+/**
+ * Enables `sharness-internal` for imports made by Registry's `dist/` and `bin/`
+ * modules.
+ * Imports made by dependencies in Registry's `node_modules/` directory or by
+ * unrelated modules retain their original export conditions.
+ */
 export function installInternalResolution(): void {
   registerHooks({
     resolve(specifier, context, nextResolve) {
