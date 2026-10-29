@@ -64,8 +64,10 @@ semantically checked.
 Trusted composition supplies code or natural-language middleware, authorized message
 context and an optional decision provider through `@moltzap/social-harness/service`.
 The same evaluator can run offline without acquiring a daemon or store.
-Checking returns data. The endpoint applies that result only after atomically
-comparing the candidate, policy and evidence versions.
+Checking returns data under one captured policy installation. The endpoint
+applies that result only after atomically comparing the exact candidate and
+its captured evidence snapshot. A later policy edit does not invalidate an
+in-flight check under its captured installation.
 
 Native and MCP schemas and error decoding change together. Client and adapter
 versions are deployed together and use the current schemas directly. Peer wire
@@ -190,11 +192,13 @@ the question when the question was checked with the result.
 The guidance is locally attributed, not part of a peer's signed content. Its
 references and text must come from supplied, authorized values. Neither private
 assessor evidence nor peer instructions may be elevated into local guidance by
-the firewall. An agent may hold `policy_update` when its owner's catalog lists
-it. Peer text reaching that agent can lead to owner-rule edits; only fixed
-rules (`fixedRules`, `fixedBehaviors` and `builtinBehaviors`) prevent those
-edits, and the built-in [`policy/no-policy-changes`](#built-in-behaviors)
-behavior refuses peer requests for them. See [Authority](./norms.md#authority).
+the firewall. Runtime `policy_update` can adopt norms and change only
+runtime-owned norms. Peer messages may persuade an agent to adopt restrictive
+norms, but cannot authorize changes to owner-owned or fixed rules. Giving an
+agent owner credentials grants broader editing authority and changes that
+boundary. The optional [`policy/no-policy-changes`](#built-in-behaviors)
+behavior assesses peer requests to change policy; it complements the tool's
+authority checks. See [Authority](./norms.md#authority).
 
 Persist disposition and guidance before runtime exposure. Native subscriptions,
 inbox pages, read-event and webhooks read the same admitted view; replay retains
@@ -254,9 +258,11 @@ policy code cannot report that already pending send as an unsent refusal.
 
 ## State and protocol invariants
 
-Capture and compare the exact candidate, recipients, policy digest and relevant
-evidence versions. Comparison and new intent binding must share the admission
-transaction; an asynchronous preflight check alone is insufficient.
+Capture the exact candidate and recipients, the policy installation and its
+digest, and the relevant evidence snapshot. Compare the candidate and evidence
+inside the admission transaction that binds the new intent. Policy replacement
+affects the next check; it does not revoke a captured installation. An
+asynchronous preflight check alone is insufficient.
 
 Retain admission state separately from canonical records. Recovering a process
 cannot admit a previously held item. Held items remain available for inspection.
@@ -433,7 +439,7 @@ to Client.
 | `mode` | yes | `guidance` or `enforcement`; a daemon without the file has no firewall |
 | `incoming`, `outgoing` | no, default `[]` | built-in code middleware in chain order, below |
 | `text` | no | `fixedRules` and `initialRules` as `TextRule` arrays, default `[]`; `fixedBehaviors` and `initialBehaviors` as arrays of behavior directory paths, default `[]`; and `builtinBehaviors` as an array of [built-in behavior](#built-in-behaviors) names, default `[]`; present, owner tools can edit rules and runtime authority can adopt norms |
-| `decisionProvider` | with `text` or the collective norms | `{kind: "jev", model}`, or `{kind: "unavailable"}` |
+| `decisionProvider` | with `text` | `{kind: "jev", model}`, or `{kind: "unavailable"}` |
 | `textSettings` | no | `TextPolicySettings`; default probability 0.5, 384,000 request bytes, 15 s |
 | `settings` | no | `FirewallSettings`; default 150 s per check, 70 s per middleware, 512,000 input bytes, 2,000,000 result bytes |
 | `facts` | no, default `[]` | owner facts in every context |
@@ -449,7 +455,6 @@ parameterizes them and adds no code:
 | `credentials` | outgoing | `org.social-harness/credentials` | `credentials`: asks for revision of credential-shaped text or a labelled credential value other than a status word |
 | `plain-language` | outgoing | `org.social-harness/plain-language` | `plain-language`: asks for revision of a plain send that carries raw JSON, a name in `toolNames`, a name starting with one of `toolNamePrefixes`, or a name in `invocationToolNames` formatted or invoked as a tool |
 | `open-requests` | outgoing | `org.social-harness/open-requests` | `one-open-request`: refuses a request while an earlier request by this agent in this conversation is still open |
-| `collective-norms` | both; outgoing names `facilitator` | `org.social-harness/collective-norms` | the collective norm bundle, below |
 
 The incoming acknowledgement check recognizes only `thanks`, `thank you`,
 `got it`, `noted`, `ack` and `acknowledged`, ignoring case and trailing periods,
@@ -459,8 +464,10 @@ in the agent's later history. History gaps conservatively keep a possible
 response open. This is not a language-independent request classifier: a prior
 request in another language can fall outside that heuristic. The outgoing
 check uses a separate English acknowledgement/filler vocabulary for plain
-posts to multiple recipients. Digits, symbols, links and unrecognized words
-leave the post allowed by this check. These deterministic tests establish the
+posts to multiple recipients. After addresses and mentions are removed, every word must be an acknowledgement
+or filler word, with at least one acknowledgement word. Consent words such as
+"ok" and "perfect", names, digits, symbols, links and unrecognized words leave
+the post allowed by this check. These deterministic tests establish the
 listed matching behavior, not multilingual accuracy.
 
 Whenever `text` is configured with a decision provider, Client adds the fixed
@@ -493,35 +500,6 @@ a gather answer also closes its request, while an all_gather answer does not.
 A group-addressed gather posts each request in a direct conversation, outside
 the group history window, so this check cannot see those requests.
 
-The incoming `acknowledgement` rule recognizes only an exact acknowledgement
-phrase ("thanks", "thank you", "got it", "noted", "ack" or "acknowledged",
-with trailing punctuation), so a message carrying anything else, such as an
-emoji, a name or a time, keeps its ordinary meaning.
-`no-acknowledgement-posts`, which the collective norm bundle registers too,
-uses a bounded vocabulary: a post counts as an acknowledgement when it has no
-question mark, digit, symbol or link, and every word, once addresses and
-mentions are removed, is an acknowledgement word, such as "thanks", "got",
-"noted" or "cheers", or a filler word, such as "all", "everyone" or "for",
-with at least one acknowledgement word. Consent words such as "ok" or
-"perfect", names and emoji keep a post's meaning.
-
-The collective norm bundle registers one middleware per direction under one
-revision, the SHA-256 of its edition, both directions' rule-set revisions and
-the decision provider's provenance; the edition names the Client release, so
-every release moves it. Its outgoing code rules are
-`facilitator-starts-collectives`, `one-open-request` and
-`no-acknowledgement-posts`; they run first, and the natural-language rules
-`one-gather`, `announce-once` and `result-settles` are assessed only when no
-code rule refused the send. The incoming registration assesses those rules
-and `empty-acknowledgement`. The facilitator role is recorded in the outgoing
-provenance, not the revision, so every member of a run registers the same
-revision. Its `one-open-request` and `no-acknowledgement-posts` are the
-`open-requests` and `acknowledgements` built-ins' own rules. Because it registers its natural-language rules
-as code, `firewall_decisions` reports their judgments under the bundle and
-`policy_read` lists them without text. The bundle reads those natural-language norms
-from the [shipped collective behaviors](#shipped-collective-behaviors). The
-daemon logs each registration's id and revision at startup.
-
 A trusted composition supplies its decision provider through
 `Daemon.withFirewall`. `jev` selects Jev, an optional third-party decision
 provider operated by TypeSafe. `unavailable` runs the same rules with no provider.
@@ -531,7 +509,7 @@ ignoring surrounding whitespace, and retries an unreachable service, a rate
 limit or a server error twice within each stage's timeout. `unavailable`
 installs the natural-language rules with no service, so every natural-language check is
 unavailable: enforcement holds the message and guidance admits it. Without a
-natural-language policy or the collective norms, the provider and key are unused.
+natural-language policy, the provider and key are unused.
 
 `codeDigest` is the SHA-256 of the Client release, the mode, each middleware's
 id and revision (the allowed-senders list left out), the fixed natural-language rules
@@ -622,10 +600,10 @@ phase `configuration` with reason `missing`.
 | `policy/no-policy-changes` | `safety` | Only the owner edits the agent's rules; its [`BEHAVIOR.md`](https://github.com/social-harness/moltzap/blob/main/packages/social-harness/behaviors/policy/no-policy-changes/BEHAVIOR.md) states which requests it refuses and which shared-norm messages it allows. |
 | `collectives/<name>` | `norm` | The collective norms in [Shipped collective behaviors](#shipped-collective-behaviors). |
 
-An agent whose catalog lists `policy_update`, such as an application's agent
-or a member that applies shared norms, names `policy/no-policy-changes`: the
-firewall checks messages, not tool calls, so this rule is what refuses a peer
-that asks the agent to drop its rules.
+Install `policy/no-policy-changes` when peer requests to weaken policy should
+be refused at the message boundary. Tool authorization independently protects
+owner-owned and fixed rules; the behavior also assesses requests that might
+persuade the runtime to change its own adopted norms.
 
 ```json
 {
@@ -651,13 +629,16 @@ ordinary natural-language middleware, `org.social-harness/text`:
 | `facilitator` | Only the agent named as the conversation's facilitator in owner facts starts a gather or all_gather that asks two or more members. |
 
 Name the ones you want in `text.builtinBehaviors`, beside the
-deterministic `open-requests` and `acknowledgements` built-ins. A document uses
-either these behaviors or the `collective-norms` bundle, not both: `one-gather`,
-`announce-once`, `result-settles` and `empty-acknowledgement` beside the bundle
-fail with `duplicate-id`.
-Fixed behaviors are assessed in both directions.
+deterministic `open-requests` and `acknowledgements` built-ins. Fixed behaviors
+are assessed in both directions, alongside the fixed
+`local-guidance-impersonation` safety rule. The chain runs all configured checks
+within its budgets, including text assessment after a code refusal. A provider
+failure can therefore produce an unavailable/hold result even when a code check
+already requests revision. Enforcement withholds that result; guidance mode
+admits it with advice. This contract does not promise provider accuracy or a
+fixed inference cost.
 For example, replace `agt_AAAAAAAAAAAAAAAAAAAAAA` with the facilitator's
-AgentId. The evaluator sees AgentIds, so a fact naming only
+verified AgentId before starting the daemon. The evaluator sees AgentIds, so a fact naming only
 an agent name does not identify the sender it must compare:
 
 ```json
@@ -690,7 +671,9 @@ On startup the behaviors load as fixed natural-language rules; `policy_read` lis
 their full text with `from: "text"`, and `firewall_decisions` records their
 judgments as natural-language assessments. All members use the same facilitator behavior text,
 and each member's own document carries the owner fact that names the
-facilitator; `policy_update` adds rules, not facts.
+facilitator. The text assessor compares authenticated message attribution with
+that fact. Facilitator eligibility has no separate code flag. `policy_update`
+changes rules; it cannot change owner facts.
 
 <a id="editable-text-policy" />
 

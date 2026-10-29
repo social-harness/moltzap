@@ -15,7 +15,6 @@ export {
   FirewallSettings,
   makeFirewall,
   makeTextPolicy,
-  MAXIMUM_EDITABLE_RULES,
   Message,
   MessageContext,
   type MessageMiddleware,

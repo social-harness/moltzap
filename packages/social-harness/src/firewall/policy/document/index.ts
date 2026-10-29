@@ -28,7 +28,6 @@ const incomingMiddleware = Schema.Union(
     use: Schema.Literal("allowed-senders"),
     agentIds: Schema.Array(AgentId),
   }),
-  Schema.Struct({ use: Schema.Literal("collective-norms") }),
 );
 
 /**
@@ -45,10 +44,6 @@ const outgoingMiddleware = Schema.Union(
     toolNames,
     toolNamePrefixes: toolNames,
     invocationToolNames: toolNames,
-  }),
-  Schema.Struct({
-    use: Schema.Literal("collective-norms"),
-    facilitator: Schema.Boolean,
   }),
   Schema.Struct({ use: Schema.Literal("open-requests") }),
   Schema.Struct({ use: Schema.Literal("acknowledgements") }),
@@ -77,7 +72,7 @@ const decisionProvider = Schema.Union(
 const textRules = Schema.optionalWith(Schema.Array(TextRule), {
   default: () => [],
 });
-/** Natural-language assessment defaults: the lowest routing probability Client accepts, and the request bounds the collective norms are sized to. */
+/** Natural-language assessment defaults: the lowest routing probability Client accepts, and request bounds for a full history window. */
 const defaultTextSettings = {
   minimumProbability: 0.5,
   maximumRequestBytes: 384_000,
@@ -136,30 +131,16 @@ const document = Schema.Struct({
 /* eslint-disable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- The document Schema shares its domain name with the value it decodes. */
 
 /**
- * The message policy of one daemon: its firewall mode, the built-in code
- * middleware of each direction in chain order, its fixed and initial
- * editable natural-language rules, the decision provider those rules and the
- * collective norms need, and the check bounds. Absent settings take Client's
- * defaults. Natural-language rules or the collective norms without a decision
- * provider, the collective norms with the `unavailable` provider, which would
- * leave every one of their natural-language checks unavailable, and a text rule
- * id given twice across the fixed and initial rules are refused.
+ * One daemon's fixed code chains, natural-language rules, provider and bounds.
+ * Missing settings take Client defaults. Text policy requires a provider and
+ * unique rule ids across fixed and initial rules.
  */
 export const MessagePolicy = document.pipe(
   Schema.filter(
     (policy) =>
-      policy.decisionProvider !== undefined || !needsDecisionProvider(policy),
+      policy.decisionProvider !== undefined || policy.text === undefined,
     {
-      message: () =>
-        "decisionProvider is required for natural-language rules and the collective norms",
-    },
-  ),
-  Schema.filter(
-    (policy) =>
-      policy.decisionProvider?.kind !== "unavailable" ||
-      !installsCollectiveNorms(policy),
-    {
-      message: () => "the collective norms need an available decisionProvider",
+      message: () => "decisionProvider is required for natural-language rules",
     },
   ),
   Schema.filter((policy) => uniqueTextRuleIds(policy), {
@@ -240,16 +221,6 @@ export function decodeBehavior<Failure>(
       Effect.mapError(() => refused("schema")),
     );
   }).pipe(Effect.withSpan("decodeBehavior"));
-}
-
-function needsDecisionProvider(policy: typeof document.Type): boolean {
-  return policy.text !== undefined || installsCollectiveNorms(policy);
-}
-
-function installsCollectiveNorms(policy: typeof document.Type): boolean {
-  return [...policy.incoming, ...policy.outgoing].some(
-    (entry) => entry.use === "collective-norms",
-  );
 }
 
 function uniqueTextRuleIds(policy: typeof document.Type): boolean {

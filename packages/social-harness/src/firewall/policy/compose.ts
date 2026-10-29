@@ -19,8 +19,6 @@ import {
   acknowledgementsPolicy,
   ALLOWED_SENDERS_ID,
   allowedSendersPolicy,
-  type CollectiveNorms,
-  collectiveNorms,
   credentialsPolicy,
   openRequestsPolicy,
   plainLanguagePolicy,
@@ -35,7 +33,6 @@ import {
   loadMessagePolicy,
   policyConfigurationError,
   policyFailureMessage,
-  readBuiltinBehavior,
 } from "./load.js";
 
 /**
@@ -51,12 +48,11 @@ export interface FirewallInstallation {
 
 /**
  * Compose a decoded inline policy for `Daemon.withFirewall`, using the supplied
- * provider for natural-language rules and collective norms. A code-only policy does not
+ * provider for natural-language rules. A code-only policy does not
  * use the provider.
  *
  * Nonempty behavior lists fail with `CheckInputError` (`registration`) because
- * only file loading resolves them. The collective-norms bundle reads its natural-language
- * rules from the installed package. The generated code digest follows the
+ * only file loading resolves them. The generated code digest follows the
  * [policy contract](https://docs.moltzap.xyz/reference/spec/agent/message-policy#message-policy-file).
  */
 export const messagePolicyFirewall = Effect.fn("messagePolicyFirewall")(
@@ -64,7 +60,7 @@ export const messagePolicyFirewall = Effect.fn("messagePolicyFirewall")(
     if (listsBehaviors(policy)) {
       return yield* new CheckInputError({ reason: "registration" });
     }
-    return yield* composeFirewall(policy, provider, []);
+    return composeFirewall(policy, provider, []);
   },
 );
 
@@ -93,14 +89,9 @@ export const firewallInstallation = (
           fixedBehaviorDigests,
         }) =>
           composed === undefined
-            ? composeFirewall(
-                policy,
-                provider,
-                fixedBehaviorDigests ?? [],
+            ? Effect.succeed(
+                composeFirewall(policy, provider, fixedBehaviorDigests ?? []),
               ).pipe(
-                Effect.mapError(() =>
-                  policyConfigurationError("message-policy"),
-                ),
                 Effect.tap((options) =>
                   validateBehaviorIds(options, behaviorRulePaths),
                 ),
@@ -183,50 +174,32 @@ function composeFirewall(
   policy: MessagePolicy,
   provider: DecisionProvider,
   fixedBehaviorDigests: readonly string[],
-): Effect.Effect<FirewallOptions, CheckInputError> {
-  return Effect.gen(function* () {
-    const bundle = yield* Effect.cached(
-      collectiveNorms(
-        provider,
-        policy.textSettings,
-        readBuiltinBehavior,
-        policy.maximumHistoryRecords,
-      ),
-    );
-    const incomingChain = yield* Effect.forEach(
-      policy.incoming,
-      (entry) => incoming(entry, bundle),
-      { concurrency: 1 },
-    );
-    const outgoingChain = yield* Effect.forEach(
-      policy.outgoing,
-      (entry) => outgoing(entry, bundle),
-      { concurrency: 1 },
-    );
-    return {
-      mode: policy.mode,
-      incoming: incomingChain,
-      outgoing: outgoingChain,
-      settings: policy.settings,
-      facts: policy.facts,
-      codeDigest: armDigest(
-        policy,
-        [...incomingChain, ...outgoingChain],
-        fixedBehaviorDigests,
-      ),
-      maximumHistoryRecords: policy.maximumHistoryRecords,
-      maximumConcurrentChecks: policy.maximumConcurrentChecks,
-      text:
-        policy.text === undefined
-          ? undefined
-          : {
-              fixedRules: policy.text.fixedRules,
-              initialRules: policy.text.initialRules,
-              provider,
-              settings: policy.textSettings,
-            },
-    };
-  });
+): FirewallOptions {
+  const incomingChain = policy.incoming.map(incoming);
+  const outgoingChain = policy.outgoing.map(outgoing);
+  return {
+    mode: policy.mode,
+    incoming: incomingChain,
+    outgoing: outgoingChain,
+    settings: policy.settings,
+    facts: policy.facts,
+    codeDigest: armDigest(
+      policy,
+      [...incomingChain, ...outgoingChain],
+      fixedBehaviorDigests,
+    ),
+    maximumHistoryRecords: policy.maximumHistoryRecords,
+    maximumConcurrentChecks: policy.maximumConcurrentChecks,
+    text:
+      policy.text === undefined
+        ? undefined
+        : {
+            fixedRules: policy.text.fixedRules,
+            initialRules: policy.text.initialRules,
+            provider,
+            settings: policy.textSettings,
+          },
+  };
 }
 
 function validateBehaviorIds(
@@ -292,40 +265,27 @@ function logInstalled(options: FirewallOptions) {
   );
 }
 
-/** The bundle, built once for the first entry that names it. */
-type Bundle = Effect.Effect<CollectiveNorms, CheckInputError>;
-
-function incoming(
-  entry: IncomingMiddlewareEntry,
-  bundle: Bundle,
-): Effect.Effect<MessageMiddleware, CheckInputError> {
+function incoming(entry: IncomingMiddlewareEntry): MessageMiddleware {
   switch (entry.use) {
     case "acknowledgements":
-      return Effect.succeed(acknowledgementsPolicy());
+      return acknowledgementsPolicy();
     case "allowed-senders":
-      return Effect.succeed(allowedSendersPolicy(entry.agentIds));
-    case "collective-norms":
-      return Effect.map(bundle, (norms) => norms.incoming);
+      return allowedSendersPolicy(entry.agentIds);
     default:
       return entry satisfies never;
   }
 }
 
-function outgoing(
-  entry: OutgoingMiddlewareEntry,
-  bundle: Bundle,
-): Effect.Effect<MessageMiddleware, CheckInputError> {
+function outgoing(entry: OutgoingMiddlewareEntry): MessageMiddleware {
   switch (entry.use) {
     case "credentials":
-      return Effect.succeed(credentialsPolicy());
+      return credentialsPolicy();
     case "plain-language":
-      return Effect.succeed(plainLanguagePolicy(entry));
-    case "collective-norms":
-      return Effect.map(bundle, (norms) => norms.outgoing(entry.facilitator));
+      return plainLanguagePolicy(entry);
     case "open-requests":
-      return Effect.succeed(openRequestsPolicy());
+      return openRequestsPolicy();
     case "acknowledgements":
-      return Effect.succeed(acknowledgementsPolicy());
+      return acknowledgementsPolicy();
     default:
       return entry satisfies never;
   }

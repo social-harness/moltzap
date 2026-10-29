@@ -24,13 +24,11 @@ decision provider's accuracy in that language.
 
 - A working `sharnessd` for your agent, configured as the
   [endpoint daemon](/reference/spec/agent/daemon) specification describes.
-- For natural-language rules or the collective norms, a decision provider. The
+- For natural-language rules, a decision provider. The
   provider is pluggable; `jev` names Jev, an optional third-party provider
   operated by TypeSafe, and needs its API key in a file. Ordinary
   natural-language policy also accepts `{"kind": "unavailable"}`. Every model
   assessment is then unavailable, and enforcement mode holds the message.
-  The `collective-norms` selector requires a configured provider and rejects
-  this fallback.
 
 ## Steps
 
@@ -137,11 +135,9 @@ The file is not a valid policy. The error lists the path of each invalid part:
   accept. The file takes only the properties the format names, so check
   spelling against the specification's
   [property table](/reference/spec/agent/message-policy#message-policy-file).
-- `(document)` names a rule about the whole file. Natural-language rules and the
-  collective norms need a `decisionProvider`; the collective norms need one
-  other than `{"kind": "unavailable"}`; and a text rule id can appear only
-  once across `fixedRules` and `initialRules`. Add the provider, or rename the
-  repeated id.
+- `(document)` names a rule about the whole file. Natural-language rules need
+  a `decisionProvider`, and a text rule id can appear only once across
+  `fixedRules` and `initialRules`. Add the provider or rename the repeated id.
 - `text.initialRules` names initial rules the daemon cannot install: a
   `norm` rule without `guidance`, or more than 256 rules. Give each norm its
   guidance, or trim the list.

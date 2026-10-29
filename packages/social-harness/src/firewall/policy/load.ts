@@ -21,7 +21,6 @@ import {
   editableDocumentSchema,
   makeJevDecisionProvider,
   MAXIMUM_EDITABLE_RULES,
-  type TextRule,
 } from "../evaluator/index.js";
 import {
   type BehaviorFailure,
@@ -189,26 +188,6 @@ export function policyFailureMessage(
   return docs === ""
     ? `${failureMessages[reason].text}${detail}`
     : `${failureMessages[reason].text}${detail}. Docs: ${docs}`;
-}
-
-/**
- * A behavior Client ships, read by its pack and name, such as
- * `collectives/one-gather`, from the installed package's `behaviors/`. The
- * file is part of the installed package, so one that cannot be read is a
- * broken installation, a defect whose message says to reinstall.
- * @param name The behavior's pack and name.
- * @returns Its natural-language rule.
- */
-export function readBuiltinBehavior(name: string): Effect.Effect<TextRule> {
-  return readBehavior(BUILTIN_BEHAVIORS, name, name).pipe(
-    Effect.map(({ rule }) => rule),
-    Effect.catchAll(() =>
-      Effect.dieMessage(
-        `Client's shipped behavior ${name} could not be read; reinstall @moltzap/social-harness. Docs: ${POLICY_SPEC}#built-in-behaviors`,
-      ),
-    ),
-    Effect.withSpan("readBuiltinBehavior"),
-  );
 }
 
 /** Reports only the policy entry; YAML diagnostics may contain private file content. */

@@ -122,18 +122,6 @@ it.each([
     }),
     "message-policy",
   ],
-  [
-    "the collective norms with an unavailable decision provider",
-    () => ({
-      messagePolicyFile: file({
-        format: FORMAT,
-        mode: "enforcement",
-        incoming: [{ use: "collective-norms" }],
-        decisionProvider: { kind: "unavailable" },
-      }),
-    }),
-    "message-policy",
-  ],
 ] as const)("refuses %s", ([, fields, reason]) =>
   Effect.gen(function* () {
     const error = yield* firewallInstallation(fields(), readCredential).pipe(
