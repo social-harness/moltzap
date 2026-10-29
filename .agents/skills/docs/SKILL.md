@@ -2,7 +2,7 @@
 name: docs
 description: |
   Write, review, and maintain Social Harness documentation. Covers reader
-  purpose, composition, prose, site conventions, and generated API reference.
+  purpose, system descriptions, organization, distillation, and generated API reference.
   Load before editing documentation or flow diagrams.
 ---
 
@@ -99,14 +99,35 @@ Useful examples have different scopes:
 
 Begin each document with a topic sentence that establishes its subject or
 practical outcome. Develop it at the level and in the order the reader's
-purpose requires. Introduce a card before its fields,
-authentication before its signature profile, and a task before its commands.
+purpose requires. Introduce a card before its fields, authentication before
+its signature profile, and a task before its commands.
 The [MCP introduction](https://modelcontextprotocol.io/docs/getting-started/intro)
 provides an example of moving from a definition to concrete uses and reader
 paths.
 
-Keep each page at its chosen level of abstraction and link to the detail a
-reader needs next.
+For a specification or system description, begin with the system's goal and
+scope. Then explain:
+
+1. Inputs: what the system receives and the starting conditions it requires.
+2. Outputs: what it produces, changes, or makes observable.
+3. Transformation: introduce each component's responsibility, then trace how
+   inputs become outputs through those components. Use a diagram when it makes
+   the flow or relationships easier to understand.
+4. Component detail: develop each component at the level the reader needs.
+   Apply the same goal, input, and output questions within a component when
+   further decomposition helps explain it.
+
+Choose headings and depth to suit the document. A short description can answer
+these questions in a paragraph. In a specification, the components describe
+contractual responsibilities and required behavior. Keep observable ordering,
+state changes, and failure conditions where they affect that contract.
+
+Apply this reasoning across technical writing. Tutorials and how-to guides
+connect a starting point to an observable result through actions. API prose
+explains the caller's obligations and effects beyond the generated signature.
+Explanations develop the relationships that account for the behavior. Keep
+each page at its chosen level of abstraction and link to deeper detail when
+the reader needs it.
 
 Develop one topic per paragraph. Let its opening sentence establish that
 topic and let the following sentences explain or support it. Keep related
@@ -115,6 +136,32 @@ composition principles come from
 [The Elements of Style](https://www.gutenberg.org/files/37134/37134-h/37134-h.htm).
 Use the installed `google-documentation-guide` for the broader documentation
 guidance.
+
+## Organize and distill
+
+Choose an organizing principle that helps the reader navigate the subject:
+tasks, input-to-output flow, a lifecycle, conceptual dependencies, or lookup
+keys. As the material evolves, change that principle when it no longer fits
+the reader's need. Split a section when it serves an independently useful
+purpose or needs a different level of detail. Merge sections that answer the
+same question. Reorder material to put prerequisites before dependent ideas.
+Settle the structure before polishing sentences.
+
+Apply DRY and distillation together in every document type. Give each fact one
+authoritative home, and link to it where readers need it. Keep material that
+helps an identifiable reader understand, act, decide, verify, or satisfy a
+contract. Delete material with no such use. Move it only when another document
+has a clear need for it. Preserve unique guarantees and the assumptions or
+failure conditions that make them meaningful. A rarely needed recovery rule
+can still be essential.
+
+Cut summaries and callouts that repeat information or add no reader value.
+Keep follow-up links that help readers continue a task or find a necessary
+explanation. Distill the existing text into the explanation the reader needs.
+Adding a simpler introduction above the same explanation creates another
+copy. Keep the necessary context beside an action or example so readers can
+use it. Repetition within an exercise can teach an important distinction, such
+as reading a message twice to show that reading does not acknowledge it.
 
 ## Revise the prose
 
@@ -143,26 +190,19 @@ Read the complete draft after editing it. Check that the opening establishes
 its purpose, each section serves that purpose, and each paragraph adds
 something the intended reader needs. Watch for changes of purpose within a
 page, such as a setup procedure turning into a catalogue of every setting.
-Rewrite awkward passages in place. Adding a simpler introduction above the
-same explanation creates another copy.
+Rewrite awkward passages in place.
 
-Read the affected documents together. Give each fact an owning page and link
-to it where the reader needs it. Remove repeated summaries, callouts, and
-closing link lists. A link should help a reader continue a task or find a
-necessary explanation. There is no required link count or closing section.
+Read the affected documents together. For each folder, follow the paths
+readers use to learn, complete tasks, look up facts, and understand concepts.
+Review the applicable guides, explanations, specifications, generated
+reference, and source comments together. Check that useful material has a
+clear home at the right level of detail and that links help readers continue.
+Regenerate the reference after source edits and read the result.
 
-For each affected folder, follow the paths readers use to learn, complete
-tasks, look up facts, and understand concepts. Review the applicable guides,
-explanations, specifications, generated reference, and source comments
-together. Keep protocol guarantees in the spec and API contract details in the
-owning JSDoc. Retain practical instructions and examples in the guide that uses
-them. Delete explanations that merely repeat the implementation. Regenerate the
-reference after source edits and read the result.
-
-Review correctness separately. Preserve unique guarantees and relevant
-failure conditions while removing repetition. Check implementation claims
-against source and public contracts. Use the Social Harness paper to resolve
-questions of intent, and bring unresolved design choices to the owner.
+Review correctness separately from readability. Check implementation claims
+against source and public contracts, including guarantees affected by cuts or
+moves. Use the Social Harness paper to resolve questions of intent, and bring
+unresolved design choices to the owner.
 
 Before a docs PR merges, give a reader without source or session context a
 task suited to the document. Have a learner complete a tutorial, a practitioner
@@ -191,7 +231,6 @@ and what remains unverified. Use context the owner already supplied.
   [`@inline` tag](https://typedoc.org/documents/Tags._inline.html) now renders
   their fields from the source types. Keep caller constraints in JSDoc and
   let the generator produce the field lists.
-
 - Daemon setup and first messages serve different needs. Keep installation,
   registration, recovery, and diagnostics in the how-to. Put the guided
   send-and-read exercise in a tutorial that links to that setup.
