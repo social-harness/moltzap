@@ -48,11 +48,7 @@ Published manifests carry metadata used to select artifacts and upgrades:
 | --- | --- |
 | `sharnessContentHash` | Hash of packed files, including executable bits, and the packed manifest without its version or recorded hashes. Equal hashes mean equal package code. A missing or changed recorded hash selects the package for publication. |
 | `sharnessHostCodeHash` | OpenClaw channel code hash used to decide whether the host must restart. It covers packed channel files and reachable sibling modules through their exports, excluding manifest versions, recorded hashes, and `@moltzap/*` pins. A daemon-only change leaves it unchanged. |
-| `sharnessWireVersion` | The library's emitted wire version, derived from `WIRE_VERSION` when packaging. Publication and resume use the metadata in the same release commit. |
-
-The source library manifest has no separate wire-version copy.
-`packages/social-harness/src/identity/wire-version.ts` → `WIRE_VERSION` owns
-that value. Local packing derives the same metadata for launcher checks.
+| `sharnessWireVersion` | The library's emitted wire version, derived from `packages/social-harness/src/identity/wire-version.ts` → `WIRE_VERSION`. The release records it in the manifest, and publication and resume use that metadata from the same release commit. Local packing derives the same metadata for launcher checks. |
 
 ## Wire compatibility window
 

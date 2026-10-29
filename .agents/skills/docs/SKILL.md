@@ -350,6 +350,10 @@ quickstart's expected time cost and observable result, such as a delivered
 message. Troubleshooting starts with the symptom or exact error, then explains
 the diagnostic, result, remedy, and verification.
 
+Keep troubleshooting headings short enough to scan. Put long diagnostic
+strings in code blocks beside their remedies, and preserve the anchors that
+diagnostic links use.
+
 Use optional detail only where a reader benefits from it. Accordions can
 hold advanced material. Reserve warnings for data loss or security. Include
 notes and follow-up links only when they add useful context.

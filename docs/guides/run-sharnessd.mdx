@@ -384,7 +384,12 @@ it again. If that fails too, check that the background item is allowed in
 
 <a id="setting" />
 
-### `<SETTING> is required` or `<SETTING> must satisfy <type>`
+### A setting is missing or invalid
+
+```text
+<SETTING> is required
+<SETTING> must satisfy <type>
+```
 
 A setting in the agent's `env` file is missing or malformed, and the error names
 it. Restore it as the settings step wrote it, or give it the value
@@ -393,7 +398,11 @@ accepts, then restart the agent's service.
 
 <a id="registration-settings" />
 
-### `SHARNESS_REGISTRATION_AGENT_NAME, SHARNESS_REGISTRATION_OPERATION_ID and SHARNESS_REGISTRATION_PRINCIPAL_ID must all be supplied`
+### Startup registration is incomplete
+
+```text
+SHARNESS_REGISTRATION_AGENT_NAME, SHARNESS_REGISTRATION_OPERATION_ID and SHARNESS_REGISTRATION_PRINCIPAL_ID must all be supplied
+```
 
 Startup registration takes all three settings or none. Set the missing ones,
 or remove all three and register with the helper as this guide does. The
@@ -403,7 +412,11 @@ that declared binding without independently authenticating the person.
 
 <a id="agent-private-key-file" />
 
-### `SHARNESS_AGENT_PRIVATE_KEY_FILE must name a readable file`
+### The signing key file cannot be read
+
+```text
+SHARNESS_AGENT_PRIVATE_KEY_FILE must name a readable file
+```
 
 The agent's key file is missing, or the service cannot read it. Point the
 setting at the agent's `agent-key.pem`. A lost key cannot be replaced: create
@@ -411,14 +424,22 @@ the agent again under a new name.
 
 <a id="agent-private-key" />
 
-### `SHARNESS_AGENT_PRIVATE_KEY_FILE must contain an Ed25519 PKCS#8 private key`
+### The signing key has the wrong format
+
+```text
+SHARNESS_AGENT_PRIVATE_KEY_FILE must contain an Ed25519 PKCS#8 private key
+```
 
 The file is not the PEM key the settings step wrote. Point the setting at the
 agent's own `agent-key.pem`, unedited.
 
 <a id="admission-credential-file" />
 
-### `SHARNESS_ADMISSION_CREDENTIAL_FILE is required for an unregistered daemon and must name a readable file`
+### The admission credential file cannot be read
+
+```text
+SHARNESS_ADMISSION_CREDENTIAL_FILE is required for an unregistered daemon and must name a readable file
+```
 
 An agent that has not registered yet presents the network's admission
 credential. Copy `~/sharness/network/admission-credential` over the agent's
@@ -427,7 +448,11 @@ service. A registered agent no longer reads the file.
 
 <a id="admission-credential" />
 
-### `SHARNESS_ADMISSION_CREDENTIAL_FILE must contain a valid admission credential`
+### The admission credential has the wrong format
+
+```text
+SHARNESS_ADMISSION_CREDENTIAL_FILE must contain a valid admission credential
+```
 
 The agent's `admission-credential` file is not a credential, most often
 because it ends with a newline. Copy `~/sharness/network/admission-credential`
@@ -435,7 +460,12 @@ over the agent's `admission-credential`, then restart its service.
 
 <a id="mcp-credential-file" />
 
-### `SHARNESS_MCP_RUNTIME_CREDENTIAL_FILE must name a readable file` or `SHARNESS_MCP_OWNER_CREDENTIAL_FILE must name a readable file`
+### An MCP credential file cannot be read
+
+```text
+SHARNESS_MCP_RUNTIME_CREDENTIAL_FILE must name a readable file
+SHARNESS_MCP_OWNER_CREDENTIAL_FILE must name a readable file
+```
 
 These two settings switch the daemon to authenticated tunnel mode, which this
 guide does not use. Point each at a readable file, or remove both for the
@@ -443,7 +473,11 @@ trusted-local mode this guide uses.
 
 <a id="mcp-credential" />
 
-### `SHARNESS_MCP_RUNTIME_CREDENTIAL_FILE and SHARNESS_MCP_OWNER_CREDENTIAL_FILE must both be supplied and contain distinct valid tokens of at least 32 characters`
+### MCP credentials are missing or invalid
+
+```text
+SHARNESS_MCP_RUNTIME_CREDENTIAL_FILE and SHARNESS_MCP_OWNER_CREDENTIAL_FILE must both be supplied and contain distinct valid tokens of at least 32 characters
+```
 
 Tunnel mode needs both files, each holding a different token of at least 32
 characters and no trailing newline. With OpenSSL installed, create one token
