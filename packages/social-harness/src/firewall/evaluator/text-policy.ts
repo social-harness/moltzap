@@ -21,7 +21,11 @@ import {
   TextPolicySettings,
   TextRule,
 } from "./contract/index.js";
-import { makeTextRequest, questionEdition } from "./questions.js";
+import {
+  makeTextRequest,
+  questionEdition,
+  textPolicyFitsBudget,
+} from "./questions.js";
 
 const decideWithinBudget = Effect.fn("TextPolicy.decideWithinBudget")(
   function* (
@@ -233,6 +237,8 @@ const checkText = Effect.fn("TextPolicy.check")(function* (
 /**
  * Freezes natural-language documents and provider settings for repeated checks in either
  * direction. Question semantics and documents determine the recorded revision.
+ * Registration fails if the catalog, required state structure and mandatory
+ * questions exceed the request budget at their schema minimums.
  * `fixedRuleIds` names the rules composition fixed against owner edits; it is
  * recorded in the provenance only, so a retained check keeps which of its
  * rules were fixed, and never changes checking.
@@ -278,6 +284,11 @@ export const makeTextPolicy = Effect.fn("makeTextPolicy")(function* (options: {
   }
   const descriptions = yield* ruleDescriptions(rules);
   const revision = textRevision(rules, settings);
+  if (
+    !textPolicyFitsBudget({ rules, revision }, settings.maximumRequestBytes)
+  ) {
+    return yield* new CheckInputError({ reason: "registration" });
+  }
   const provider = Object.freeze({
     decide: options.provider.decide.bind(options.provider),
   });

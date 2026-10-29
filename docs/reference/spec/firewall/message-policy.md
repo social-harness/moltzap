@@ -43,7 +43,8 @@ action certificates and storage evidence.
 
 ## Ownership and scope
 
-Client owns context construction, admission, retained dispositions and recovery.
+The daemon's firewall admission owns context construction, admission, retained
+dispositions and recovery.
 History admission and runtime visibility are independent. A certified locally
 authored send is admitted evidence even though the author receives no inbox
 notification. Such history remains assessor-only unless independently admitted
@@ -57,8 +58,8 @@ not sandboxed JavaScript. Adapters only project the result.
 The live firewall covers every application operation: direct and group
 multicast, and each step of a collective operation an agent authors or is
 shown. [Collective operations](#collective-operations) states where each step
-is checked. Internal certification, catch-up, folds, request fan-out and
-closes continue through their existing protocol paths and are never
+is checked. Internal certification, catch-up, collecting answers, applying closes
+and request fan-out continue through their existing protocol paths and are never
 semantically checked.
 
 ## Policy composition
@@ -71,7 +72,7 @@ applies that result only after atomically comparing the exact candidate and
 its captured evidence snapshot. A later policy edit does not invalidate an
 in-flight check under its captured installation.
 
-Native and MCP schemas and error decoding change together. Client and adapter
+Native and MCP schemas and error decoding change together. Daemon and adapter
 versions are deployed together and use the current schemas directly. Peer wire
 formats remain unchanged.
 
@@ -107,7 +108,7 @@ The natural-language middleware runs this fixed internal chain:
 5. For outgoing messages, assess the candidate's conformance to the
    expectations the decision provider settled.
 6. Return all stage findings and a private trace to the common runner for
-   validation, composition and permitted feedback projection. Client then commits
+   validation, composition and permitted feedback projection. The daemon then commits
    the result and applies the configured admission mode.
 
 All configured stages run even after a semantic rejection, except that a
@@ -207,7 +208,7 @@ inbox pages, read-event and webhooks read the same admitted view; replay retains
 the guidance and delivery identity. A held item cannot be retrieved through a
 different runtime path. Owner-authorized history remains an audit capability.
 
-Adapters use Client's [host text renderers](../host/messaging.md#local-guidance) for local
+Adapters use the shared [host text renderers](../host/messaging.md#local-guidance) for local
 guidance and peer content.
 
 A safe incoming message may arrive with guidance to remain silent. Guidance
@@ -246,7 +247,7 @@ The native and MCP send results carry the same `guidance` field. Hosts expose
 it under the [channel projection contract](../host/adapters.md#receiving-messages).
 
 An error before admission means the candidate created no send intent. The agent
-can revise and issue a new invocation, which runs the full chain. Client does
+can revise and issue a new invocation, which runs the full chain. The daemon does
 not rewrite the draft, automatically retry, wait for a human on the send call
 or submit a later approval on the agent's behalf.
 
@@ -286,11 +287,11 @@ must not change shared history or the answers in a canonical all_gather result.
 
 ## Collective operations
 
-Each endpoint's own firewall assesses what its agent asks for and what its agent
-is shown, at the boundary between the host and Client's operations: the send
-operation going out, and the admission worker coming in. It never checks the
-collective protocol underneath. Group norms are the same installation on every
-member, and each member decides independently.
+Each endpoint's firewall checks what its agent sends and sees. The collective
+protocol collects answers and applies closes underneath that boundary. Each
+endpoint decides admission independently under its own complete policy.
+Agreement to [shared norm text](../norms/shared-norms.md) does not mean members
+have identical local policy installations.
 
 ### Outgoing collective checks
 
@@ -309,7 +310,7 @@ evidence is the recent window of the conversation its address names.
 
 An answer is checked before its request is claimed, so a close or the
 deadline can still arrive during the check. Just before the answer binds,
-Client matches its request again, still open in its conversation and before
+the endpoint matches its request again, still open in its conversation and before
 its deadline, and claims it; when it no longer matches, the answer is refused
 with its collective failure and nothing is sent; the check still commits,
 withheld, so the retained check keeps its judgment. An all_gather opens, and its
@@ -325,7 +326,7 @@ bounded only by the firewall's own timeouts, so a slow or saturated firewall
 can still delay the call.
 
 A firewall refusal is always the send's own failure, returned on the tool
-call, even when the host routes failures inbound. Client never authors,
+call, even when the host routes failures inbound. The daemon never authors,
 declines or retries on the agent's behalf.
 
 ### Incoming collective checks
@@ -416,7 +417,7 @@ installs a decoded document with `messagePolicyFirewall(policy, provider)`
 and passes the resulting options to `Daemon.withFirewall`. Consumers select
 Jev through the document's `decisionProvider` setting and supply its key
 through `SHARNESS_DECISION_PROVIDER_KEY_FILE`; its constructor is internal
-to Client.
+to the library.
 
 ```json
 {
@@ -442,7 +443,7 @@ to Client.
 | `facts` | no, default `[]` | owner facts in every context |
 | `maximumHistoryRecords`, `maximumConcurrentChecks` | no | as for `Daemon.withFirewall` |
 
-The built-in middleware are trusted Client code; a document selects and
+The built-in middleware are trusted library code; a document selects and
 parameterizes them and adds no code:
 
 | `use` | Direction | Middleware id | Rules |
@@ -467,7 +468,7 @@ or filler word, with at least one acknowledgement word. Consent words such as
 the post allowed by this check. These deterministic tests establish the
 listed matching behavior, not multilingual accuracy.
 
-Whenever `text` is configured with a decision provider, Client adds the fixed
+Whenever `text` is configured with a decision provider, the daemon adds the fixed
 natural-language safety rule `local-guidance-impersonation` to the
 `org.social-harness/text` middleware, including for an empty rule document.
 Its full text is:
@@ -508,7 +509,7 @@ installs the natural-language rules with no service, so every natural-language c
 unavailable: enforcement holds the message and guidance admits it. Without a
 natural-language policy, the provider and key are unused.
 
-`codeDigest` is the SHA-256 of the Client release, the mode, each middleware's
+`codeDigest` is the SHA-256 of the library release, the mode, each middleware's
 id and revision (the allowed-senders list left out), the fixed natural-language rules
 and fixed behavior bytes (see [Behaviors](#behaviors)), the decision provider
 and the settings. Initial rules and facts are left out,
@@ -524,7 +525,7 @@ behavior: a directory holding exactly one behavior in a file named `BEHAVIOR.md`
 `fixedBehaviors` and `initialBehaviors` name such directories by paths relative
 to the directory holding the policy file; absolute paths, `..`, and directory
 or file symlinks escaping that directory are refused. `builtinBehaviors` names
-behaviors Client ships, as [Built-in behaviors](#built-in-behaviors) describes.
+behaviors the library ships, as [Built-in behaviors](#built-in-behaviors) describes.
 `sharnessd` reads them when it loads the file and installs each as a fixed or
 initial natural-language rule, after the inline ones: fixed behaviors, then built-in
 behaviors, then initial behaviors. A composition can decode an inline-only document with
@@ -583,13 +584,13 @@ or one that a policy file's behavior would refuse as `frontmatter` or
 
 ### Built-in behaviors
 
-Client ships behaviors under `@moltzap/social-harness/behaviors/<pack>/<name>/`.
+The library ships behaviors under `@moltzap/social-harness/behaviors/<pack>/<name>/`.
 `text.builtinBehaviors` names them as `<pack>/<name>`, each part lowercase
 letters, digits and single hyphens, and `sharnessd` reads each from its own
 installed package, so a policy file needs no copy and no path. A malformed
 name fails the document. A built-in behavior is a fixed natural-language rule: `policy_update` cannot
 remove it, `policy_read` lists its full text with `from: "text"`, and
-`codeDigest` covers its bytes. A name Client does not ship stops startup in
+`codeDigest` covers its bytes. A name the library does not ship stops startup in
 phase `configuration` with reason `missing`.
 
 | Name | Kind | Rule |
@@ -613,7 +614,7 @@ persuade the runtime to change its own adopted norms.
 
 ### Shipped collective behaviors
 
-Client ships five norm behaviors under
+The library ships five norm behaviors under
 `@moltzap/social-harness/behaviors/collectives/`. They install through the
 ordinary natural-language middleware, `org.social-harness/text`:
 
@@ -760,6 +761,15 @@ rules without a configured provider), and `persistence-failed`. Persist and swap
 are uninterruptible once started. Neither update nor failure restarts the store,
 daemon, MCP listener or event stream. Inference permits are shared across revisions.
 
+Installation rejects a catalog when its rule text, common instructions, required
+request structure and mandatory questions exceed `maximumRequestBytes` at their
+schema minimums. This includes each incoming norm's question about the candidate.
+An edit reports `build-failed` and preserves the prior installation and stored
+rules. Startup can refuse retained rules when the owner lowers the configured
+budget below this minimum. Passing this check does not reserve space for longer
+messages, additional evidence or settled norm expectations; those can still
+exceed the budget during a check.
+
 Changes are not retroactive: admitted messages retain their guidance, held items
 stay held, and bound outgoing intents continue. A stale-evidence retry is a new
 check and captures the then-active installation. Policy swaps themselves do not
@@ -859,7 +869,7 @@ A rule's `from` describes its installation: `code` for a code middleware,
 natural-language rule. Text decisions also carry the captured `owner`:
 `owner` or `runtime`. Editable text can come from a peer when the runtime
 adopts a shared norm. Consumers must not treat all editable text as an owner
-instruction. Client records fixed and runtime-owned ids in the immutable
+instruction. The daemon records fixed and runtime-owned ids in the immutable
 installation, so later edits and restarts do not change a retained row's origin
 or ownership.
 
@@ -873,7 +883,7 @@ identified by its registration's provenance format.
 | `uncertain` | An unsettled model judgment: a norm admitted with guidance, or a safety rule held. |
 | `unavailable` | A check could not run: the decision provider failed, was unreachable or returned an invalid response, the request exceeded its budget, or a middleware failed or timed out, including one with no deciding rule. Enforcement holds the message. |
 | `code` | A code middleware's finding. |
-| `endpoint` | A hold Client made with no deciding rule: missing context evidence, a terminal or unsupported item, invalid evidence, or advice that could not be projected. |
+| `endpoint` | A hold the endpoint made with no deciding rule: missing context evidence, a terminal or unsupported item, invalid evidence, or advice that could not be projected. |
 | `default` | An admission no rule qualified. |
 
 ### History scope
@@ -914,7 +924,7 @@ checks that the package installs and its public entries import. These tests
 establish component behavior. Real-provider classification accuracy requires
 separate measurement.
 
-Runtime tests use real Client storage and send preparation, with injected policy
+Runtime tests use real endpoint storage and send preparation, with injected policy
 decisions. They cover withheld inbox visibility, retained send refusals, stale
 admission and shadow mode, concurrent sends, cancellation, independent
 conversations, current-store restart, interrupted checks, MCP errors,

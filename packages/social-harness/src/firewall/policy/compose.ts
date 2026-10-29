@@ -109,8 +109,8 @@ export const firewallInstallation = (
 
 /**
  * Where a rule installation failure's fix is written: the rules-not-installed
- * entry for a rule the file or the store holds, and nowhere for a build or
- * storage failure, which has no operator fix to link.
+ * entry covers invalid rules and catalogs that exceed the request budget.
+ * Storage failures have no policy-document fix to link.
  */
 const installationDocs: Readonly<
   Record<Exclude<FirewallPolicyError["reason"], "not-configured">, string>
@@ -118,7 +118,7 @@ const installationDocs: Readonly<
   "invalid-rule": `${FIREWALL_GUIDE}#rules-not-installed`,
   "fixed-rule": `${FIREWALL_GUIDE}#rules-not-installed`,
   "owner-rule": `${FIREWALL_GUIDE}#rules-not-installed`,
-  "build-failed": "",
+  "build-failed": `${FIREWALL_GUIDE}#rules-not-installed`,
   "persistence-failed": "",
 };
 

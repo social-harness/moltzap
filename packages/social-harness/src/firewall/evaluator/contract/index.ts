@@ -121,6 +121,11 @@ export class RuleDescription extends Schema.Class<RuleDescription>(
 /**
  * The decision provider interprets the rule as natural-language text.
  * Validation requires nonempty text and imposes no language restriction.
+ * Guidance is registered advice for the agent; feedback supplies refusal and
+ * repair text. Norms in `initialRules` or `policy_update` require nonempty
+ * guidance. Fixed rules and direct `makeTextPolicy` construction do not.
+ * See the [editable policy contract](https://docs.moltzap.xyz/reference/spec/firewall/message-policy#editable-text-policy)
+ * for installation identifiers, ownership and edit validation.
  */
 export class TextRule extends Schema.Class<TextRule>("TextRule")({
   ...RuleDescription.fields,
@@ -759,9 +764,12 @@ export class FirewallPolicyError extends Data.TaggedError(
         ? policyReasonText[this.reason]
         : policyProblemText[this.problem];
     const text = subject === undefined ? cause : `${subject}: ${cause}`;
-    return this.reason === "invalid-rule" ||
-      this.reason === "fixed-rule" ||
-      this.reason === "owner-rule"
+    return [
+      "invalid-rule",
+      "fixed-rule",
+      "owner-rule",
+      "build-failed",
+    ].includes(this.reason)
       ? `${text}. ${editRefusalDocs}`
       : text;
   }

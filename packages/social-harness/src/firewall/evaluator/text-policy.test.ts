@@ -853,18 +853,14 @@ it("submits a complete request at its UTF-8 byte limit and holds one byte below 
       ...options,
       settings: { ...settings, maximumRequestBytes: Number.MAX_SAFE_INTEGER },
     });
-    const request = captured[0];
-    expect(request).toBeDefined();
-    const bytes = new TextEncoder().encode(JSON.stringify(request)).byteLength;
+    const bytes = Math.max(...captured.map(requestBytes));
     const submitted: DecisionRequest[] = [];
-    yield* check(provider({}, submitted), {
+    const accepted = yield* check(provider({}, submitted), {
       ...options,
       settings: { ...settings, maximumRequestBytes: bytes },
     });
-    expect(submitted).toHaveLength(1);
-    expect(
-      new TextEncoder().encode(JSON.stringify(submitted[0])).byteLength,
-    ).toBe(bytes);
+    expect(accepted.judgment).toBe("allow");
+    expect(Math.max(...submitted.map(requestBytes))).toBe(bytes);
 
     const rejected: DecisionRequest[] = [];
     const unavailable = yield* check(provider({}, rejected), {
@@ -872,7 +868,9 @@ it("submits a complete request at its UTF-8 byte limit and holds one byte below 
       settings: { ...settings, maximumRequestBytes: bytes - 1 },
     });
     expect(unavailable.reason).toBe("check-unavailable");
-    expect(rejected).toEqual([]);
+    expect(rejected.every((request) => requestBytes(request) < bytes)).toBe(
+      true,
+    );
   }));
 
 const accumulatedNorms: readonly TextRule[] = EffectArray.makeBy(
@@ -947,7 +945,7 @@ it("bounds large policy-history products without submitting partial requests", (
   Effect.gen(function* () {
     const requests: DecisionRequest[] = [];
     const result = yield* check(provider({}, requests), {
-      rules: EffectArray.makeBy(100, (index) => ({
+      rules: EffectArray.makeBy(20, (index) => ({
         id: `norm-${index}`,
         kind: "norm",
         text: "Speak only about open requests.",
@@ -957,6 +955,7 @@ it("bounds large policy-history products without submitting partial requests", (
         history: EffectArray.makeBy(100, (index) => ({
           ...draft,
           id: `visible-${index}`,
+          text: "Earlier conversation. ".repeat(100),
           visibility: "runtime",
           admission: "admitted",
         })),
@@ -973,10 +972,143 @@ it("holds oversized context without truncating it", () =>
   Effect.gen(function* () {
     const requests: DecisionRequest[] = [];
     const result = yield* check(provider({}, requests), {
-      settings: { ...settings, maximumRequestBytes: 1 },
+      context: {
+        ...context,
+        facts: [
+          {
+            id: "large-fact",
+            source: "owner",
+            text: "x".repeat(settings.maximumRequestBytes * 2),
+            visibility: "assessor",
+          },
+        ],
+      },
     });
     expect(result.reason).toBe("check-unavailable");
     expect(requests).toEqual([]);
   }));
+
+/** Schema-minimum message and context keep this boundary independent of variable evidence size. */
+const minimumInput = {
+  message: {
+    id: "m",
+    sender: "b",
+    recipients: ["a"],
+    text: "",
+  } satisfies Message,
+  context: {
+    agentId: "a",
+    principal: "p",
+    participants: [],
+    history: [],
+    facts: [],
+    gaps: [],
+  } satisfies MessageContext,
+};
+
+function checkMinimumRequests(
+  decisions: DecisionProvider,
+  maximumRequestBytes: number,
+) {
+  return Effect.forEach(
+    [true, false],
+    (incoming) =>
+      check(decisions, {
+        ...minimumInput,
+        message: incoming
+          ? minimumInput.message
+          : {
+              ...minimumInput.message,
+              sender: minimumInput.context.agentId,
+              recipients: [minimumInput.message.sender],
+            },
+        incoming,
+        settings: { ...settings, maximumRequestBytes },
+      }),
+    { concurrency: 1 },
+  );
+}
+
+function requestBytes(request: DecisionRequest): number {
+  return new TextEncoder().encode(JSON.stringify(request)).byteLength;
+}
+
+it("requires enough installation budget for reachable minimum requests in both directions", () =>
+  Effect.gen(function* () {
+    const choices = {
+      [`expectations:${proposalAcceptance.id}:assessment`]: "unresolved",
+    };
+    const captured: DecisionRequest[] = [];
+    yield* checkMinimumRequests(
+      provider(choices, captured),
+      Number.MAX_SAFE_INTEGER,
+    );
+    const minimumBytes = Math.max(...captured.map(requestBytes));
+    const results = yield* checkMinimumRequests(
+      provider(choices),
+      minimumBytes,
+    );
+    expect(results.map((result) => result.judgment)).toEqual([
+      "allow",
+      "allow",
+    ]);
+
+    const requests: DecisionRequest[] = [];
+    const rejected = yield* makeTextPolicy({
+      id: "owner",
+      rules,
+      provider: provider(choices, requests),
+      settings: { ...settings, maximumRequestBytes: minimumBytes - 1 },
+    }).pipe(Effect.flip);
+    expect(rejected.reason).toBe("registration");
+    expect(requests).toEqual([]);
+  }));
+
+it.each([
+  {
+    content: "documents",
+    documents: [
+      {
+        id: proposalAcceptance.id,
+        kind: proposalAcceptance.kind,
+        text: "x".repeat(60_000),
+      },
+    ],
+    fittingBudget: 70_000,
+  },
+  {
+    content: "mandatory questions",
+    documents: EffectArray.makeBy(100, (index) => ({
+      id: `norm-${index}`,
+      kind: proposalAcceptance.kind,
+      text: "Follow the timetable.",
+    })),
+    fittingBudget: 200_000,
+  },
+])(
+  "rejects oversized $content before calling the provider",
+  ({ documents, fittingBudget }) =>
+    Effect.gen(function* () {
+      const requests: DecisionRequest[] = [];
+      const registration = {
+        id: "owner",
+        rules: documents,
+        provider: provider({}, requests),
+      };
+      const accepted = yield* makeTextPolicy({
+        ...registration,
+        settings: { ...settings, maximumRequestBytes: fittingBudget },
+      });
+      expect(accepted.rules.map((rule) => rule.id)).toEqual(
+        documents.map((rule) => rule.id),
+      );
+      const rejected = yield* makeTextPolicy({
+        ...registration,
+        settings,
+      }).pipe(Effect.flip);
+      expect(rejected.reason).toBe("registration");
+      expect(requests).toEqual([]);
+    }),
+);
 
 /* eslint-enable agent-code-guard/no-hardcoded-assertion-literals -- Restore the default outside public contract assertions. */

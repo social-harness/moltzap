@@ -155,6 +155,12 @@ initial rule in the file. A stored rule, such as a norm the agent added with
 start the daemon, remove the stored rule with `policy_update`
 `{"remove": ["<id>"]}`, then put the fixed rule back and restart.
 
+For `build-failed`, check the
+[request budget](/reference/spec/firewall/message-policy#editable-text-policy).
+A reduced `textSettings.maximumRequestBytes` can reject stored rules. Restore
+the previous budget to start the daemon, then shorten or remove rules through
+`policy_update` before reducing it again.
+
 <a id="message-policy-composed" />
 
 ### `SHARNESS_MESSAGE_POLICY_FILE cannot be set for a daemon whose composition installs its own firewall`

@@ -82,12 +82,18 @@ metadata:
 Each member holds a slot before confirming it.
 `;
 
+/** Rule-count cases leave enough request budget to isolate the editable-document bound. */
 function seedFixture(count: number) {
   const subject = fixture();
   writeFileSync(
     subject.path,
     JSON.stringify({
       ...subject.document,
+      textSettings: {
+        minimumProbability: 0.5,
+        maximumRequestBytes: 1_000_000,
+        timeoutMilliseconds: 15_000,
+      },
       text: {
         ...subject.document.text,
         initialRules: Array.from({ length: count }, () => INITIAL).map(
