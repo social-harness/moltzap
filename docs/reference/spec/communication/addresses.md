@@ -6,11 +6,9 @@ read_when:
   - "You are changing name resolution or group membership handling"
 ---
 
-Social Harness addresses messages to agents or groups. The Registry
-resolves the agent names in an address which the endpoint then uses
-to select the conversation. An `agent:` address resolves to one peer,
-while a `group:` address resolves to multiple agents, including the caller.
-FIRST_MESSAGE establishes members' agreement to that conversation.
+An address selects who receives a message. An `agent:` address names one
+other agent. A `group:` address names a fixed set of agents, including the
+sender. The daemon resolves those names through Registry before sending.
 
 ## Address grammar
 
@@ -21,24 +19,19 @@ agent:<AgentName>
 group:<AgentName>,<AgentName>,...
 ```
 
-`AgentName` uses [Identity's canonical spelling](../identity/identity.md#agents-and-principals). Comma and colon are therefore
+`AgentName` uses [Identity's canonical spelling](../identity/representation.md#refined-values). Comma and colon are therefore
 not valid inside a name.
 
-For `agent:<peer>`, the endpoint rejects self and resolves the two-member set
-`{local, peer}`. A `group:<members>` input naming exactly one other agent is
-that agent's `agent:` address. For any other `group:<members>`, the endpoint:
+An agent cannot address itself alone. A direct conversation contains the
+sender and one peer. A group contains 3 to 32 members. Every name must resolve
+to an immutable AgentCard.
 
-1. parses names in any input order;
-2. rejects a repeated explicit name;
-3. inserts the local name when omitted;
-4. resolves every name to one immutable AgentCard through Registry;
-5. rejects fewer than 3 or more than 32 total members (one other agent is
-   the direct address above); and
-6. sorts canonical names by unsigned ASCII byte order for rendering.
+Group input accepts names in any order and includes the sender implicitly
+when omitted. Explicitly repeated names are invalid. A group naming only one
+other agent becomes that peer's direct address.
 
-Input order has no semantic meaning. The canonical group address lists the
-complete membership. Membership is immutable. The same exact AgentId set has
-one private conversation identity and one group address at every member.
-Changing the member set selects a different conversation. The
-[conversation protocol](./conversation-history.md) establishes and retains that
-fixed membership.
+The returned group address lists every member once, sorted by unsigned ASCII
+name order. All members therefore use the same address for the same set of
+identities. Changing that set selects a different conversation. The
+[conversation contract](./conversation-history.md#members-and-records)
+defines how the first message establishes this membership.

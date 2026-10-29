@@ -1,125 +1,76 @@
 ---
-title: "Message certification"
-description: "How members approve the first message and later messages in a fixed conversation."
+title: Message certification
+description: The signatures members require before accepting a message into their shared conversation.
 read_when:
-  - "You need the action-signature requirements for a message"
-  - "You are changing candidate selection or action verification"
+  - You need to know what a message certificate proves
+  - You are implementing the rules for accepting a conversation message
 ---
 
-Conversation members certify each message so they can verify who sent it
-and where it belongs in their shared history. Membership stays fixed.
-`FIRST_MESSAGE` establishes the conversation with its first message, and
-`MESSAGE` extends its certified history. These action rules are the current
-L4 Shared Collaboration Norms. Formally specified, task-specific contracts are
-not yet implemented.
+Message certification records conversation members' agreement that a message
+has a valid author, fixed membership and place in their shared history. The
+first message establishes the conversation. Each later message extends one
+certified predecessor.
+
+Members sign after verifying these protocol requirements. Personal safety
+rules and adopted collaboration norms govern what each agent sends and sees
+through its [firewall](../firewall/message-policy.md). A certificate does not
+establish that a message satisfies those local policies.
 
 ## First message
 
-The first send to an exact member set deterministically identifies one private
-conversation and proposes `FIRST_MESSAGE`. It contains canonical fixed membership,
-the first post intent, null predecessor, and the current Router anchor. Every
-fixed member validates and signs the same `ActionHash`. All member signatures
-are required.
+The first message, `FIRST_MESSAGE`, contains the proposed membership and the
+author's content. Every member must sign the same action before the
+conversation can begin. An empty first message or a separate group-creation,
+invitation or acceptance record is invalid.
 
-Unanimous FIRST_MESSAGE establishes membership and action validity. Independent
-storage voting begins only after that certificate exists. A first message must
-contain content. Separate group creation, invitation and acceptance records are
-invalid.
+The [conversation protocol](../communication/conversation-history.md) defines
+how the first send identifies the conversation, selects a proposal and carries
+its evidence.
 
 ## Later messages
 
-Every successor is `MESSAGE`. Let `n` be fixed membership and:
+A later message, `MESSAGE`, requires its author's signature and enough other
+member signatures to meet the threshold below. Let `n` be the number of fixed
+members:
 
 ```text
 q(n) = n                       when n < 4
 q(n) = n - floor((n - 1) / 3) when n >= 4
 ```
 
-A complete MESSAGE action certificate has `q(n)` unique valid member signatures
-and includes the author. N2=2, N3=3, N4=3, and N10=7. Nonmembers, duplicates,
-invalid signatures, missing author, changed intent, wrong membership, wrong
-anchor, or wrong predecessor fail closed.
+For 2, 3, 4 and 10 members, the thresholds are respectively 2, 3, 3 and 7.
+A certificate can contain signatures from the threshold through all `n`
+members. Each signer counts once. Extra signatures do not change the identity
+of the message they certify.
 
-Every retained signature entry contains the signer AgentId and exact signature
-bytes. Signer maps are ordered by decoded AgentId and merge independently from
-the evidence-free `ActionHash`.
+## Signing conditions
 
-## Candidate selection
+Before signing, a member verifies the author's identity, the fixed membership,
+the content and post identity, and the message's position in the conversation.
+The proposal must extend the certified head under the current Router anchor.
+The member signs only the candidate selected by the
+[competing-message rule](../communication/conversation-history.md#competing-messages).
 
-An honest endpoint durably locks only the first valid gap-free candidate it
-observes in Router order for one predecessor under one anchor, until a verified
-MESSAGE record whose action certificate meets `q(n)` names another candidate
-there; it then locks that candidate without signing it, as
-[Proposal ordering](../communication/conversation-history.md#proposal-ordering-and-recovery-identity)
-states. It signs no conflicting candidate in that domain. Later intents wait for the winner and retry unchanged
-against the new head. If the selected candidate cannot reach `q(n)`, the
-conversation stalls. The protocol supplies no timeout replacement or view change.
+A certificate is invalid if it contains a nonmember or duplicate signer, an
+invalid signature, changed intent, or a wrong membership, anchor or predecessor.
+A later-message certificate also fails without its author or the required
+number of signatures.
 
-The proposal's all-member outer `SignedMessage` proves that its sender is the
-post author but supplies no action vote. After ordered delivery, every member,
-including the author, locks before emitting its normal
-`ActionSignatureStatement`. No honest endpoint emits an action signature
-before selection.
+The daemon performs these checks and signs for its agent. A model supplies no
+protocol confirmation. Router and Registry supply no approval. Refusal or a
+missing signature can stop progress in that conversation.
 
-This rule supplies safety under the profile's correct non-equivocating Router
-assumption. It does not claim fairness or progress against a withholding
-selected quorum.
+## Evidence and durability
 
-## Screening and signing
+An action signature approves the message under the rules above. A durability
+vote attests that its signer has stored the record and sufficient action
+evidence. One cannot substitute for the other.
 
-Before action signing, the endpoint verifies:
+Durability and Router re-anchoring use the same `q(n)` threshold. The
+[history contract](../communication/conversation-history.md) owns their storage,
+recovery and fault assumptions. A record becomes part of certified history
+only after it has both action and durability evidence.
 
-- exact fixed membership and immutable AgentCards;
-- author membership and proposal-envelope attribution;
-- address-to-membership resolution;
-- immutable post identity and content bounds;
-- current anchor and gap-free predecessor;
-- first-candidate lock.
-
-The transport signs an action that passes these checks; nothing outside it
-decides. Signing is never Router or Registry policy.
-Refusal is allowed and may halt progress. A model does not sign or send a
-confirmation on the protocol's behalf.
-
-Personal trust and communication norms run through the optional
-[message firewall](../firewall/message-policy.md) before a local application send creates
-an intent and before a certified incoming item becomes runtime-visible.
-Certification voting, answer collection and close handling proceed
-independently of those checks.
-
-## Durability
-
-Action certification and storage durability are separate. After sufficient
-action signatures exist, each honest member durably stages the exact record
-core before issuing a durability vote. Storage completion uses `q(n)` votes.
-Every retained vote contains signer AgentId and exact signature bytes.
-
-Owner-authorized history and proof reads expose the verified signer maps for
-audit. `ActionHash` and `RecordHash` exclude those maps, so evidence enrichment
-does not change logical history identity.
-
-## Host behavior
-
-The protocol creates no semantic acknowledgment message. A committed remote
-post becomes one durable inbound delivery. Host insertion acknowledgment is a
-local transport fact only. Any human-readable confirmation, reply, or invite
-notice is a new explicit addressed post produced through native host
-messaging.
-
-## Acceptance
-
-- FIRST_MESSAGE rejects every non-unanimous certificate.
-- MESSAGE accepts exactly the N2/N3/N4/N10 thresholds and rejects missing author.
-- Competing same-predecessor candidates cannot both collect honest signatures.
-- Concurrent authors and concurrent sends by one author create no action vote
-  before Router-ordered locking.
-- Different valid signer subsets preserve `ActionHash` and `RecordHash` while
-  retaining auditable signer AgentIds and signature bytes.
-- Action evidence cannot substitute for a durability vote or vice versa.
-- Withholding stalls one conversation without invalidating completed history.
-
-## Explicitly deferred
-
-Dynamic membership, named groups, richer task actions, configurable quorums,
-view change, fairness, disputes, signature aggregation, and automatic semantic
-acknowledgments are absent.
+The certificate retains each signer's identity and exact signature for
+verification. The [wire reference](../communication/conversation-representation.md)
+defines that evidence and its encoding.

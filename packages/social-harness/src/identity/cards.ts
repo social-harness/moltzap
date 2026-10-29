@@ -254,7 +254,11 @@ export const AgentView = Schema.Struct({
   agentName: AgentName,
   principalId: PrincipalId,
 }).annotations({ identifier: "AgentView" });
-/** An agent identity retained with a host result. */
+/**
+ * Identity captured from a verified AgentCard. The principal is the declaration
+ * recorded by Registry.
+ * @useDeclaredType
+ */
 // eslint-disable-next-line @typescript-eslint/no-redeclare -- The same-named Schema and type form one boundary model.
 export type AgentView = typeof AgentView.Type;
 

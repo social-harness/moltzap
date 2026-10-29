@@ -50,6 +50,14 @@
               "reference/constitution",
               "reference/daemon-experiments",
               {
+                "group": "Services",
+                "pages": [
+                  "reference/services/registry",
+                  "reference/services/router",
+                  "reference/services/daemon"
+                ]
+              },
+              {
                 "group": "Specifications",
                 "pages": [
                   "reference/spec/index",
@@ -67,6 +75,7 @@
                       "reference/spec/communication/router",
                       "reference/spec/communication/router-representation",
                       "reference/spec/communication/conversation-history",
+                      "reference/spec/communication/conversation-representation",
                       "reference/spec/communication/collectives"
                     ]
                   },

@@ -65,7 +65,10 @@ const memberOutcome = Schema.Union(
   exactStruct({ kind: Schema.Literal("no-answer") }),
   withheldText,
 );
-/** One member's recorded outcome. */
+/**
+ * One member's outcome after the local firewall limits the text the host may see.
+ * @useDeclaredType
+ */
 export type CollectiveMemberOutcome = typeof memberOutcome.Type;
 
 /**
@@ -116,10 +119,16 @@ export const InboundItem = Schema.Union(
 ).annotations({
   identifier: "InboundItem",
 });
-/** A validated inbound item. */
+/**
+ * Host-visible peer content or a result produced by the local daemon.
+ * @useDeclaredType
+ */
 export type InboundItem = typeof InboundItem.Type;
 
-/** The result delivered when a gather or all-gather completes. */
+/**
+ * The result delivered when a gather or all-gather completes.
+ * @useDeclaredType
+ */
 export type CollectiveResultItem = Extract<
   InboundItem,
   { readonly kind: "collectiveResult" }

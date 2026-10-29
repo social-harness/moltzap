@@ -13,5 +13,5 @@ Keep interpretation with the caller. [History verification](../conversations/his
 checks protocol evidence, while the host inbox owns the meaning of its stored
 items. The [store capability](types.ts) describes the atomic operations and
 canonical byte bindings those callers use. The
-[persistence contract](../../../../../docs/reference/spec/communication/conversation-history.md#persistence-and-compatibility)
+[retained evidence contract](../../../../../docs/reference/spec/communication/conversation-history.md#retained-evidence)
 governs store compatibility and recovery.

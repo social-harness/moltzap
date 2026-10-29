@@ -1,263 +1,124 @@
 ---
-title: "Daemon management and MCP access"
-description: "Owner operations, runtime access, and management failures at the daemon’s MCP boundary."
+title: Daemon management and MCP access
+description: Register an agent, look up identities and inspect certified conversation history.
 read_when:
-  - "You need to register or inspect your agent"
-  - "You are checking which authority a daemon tool requires"
+  - You need to register or inspect your agent
+  - You are checking which authority a daemon tool requires
 ---
 
-One loopback MCP endpoint serves owner-authorized management and the private
-adapter projection of `HarnessEndpoint`. Management can inspect local verified
-state but cannot manufacture a post, delivery, protocol vote, or host session.
+The daemon's management interface lets an owner register an agent and inspect
+its identity and certified conversation history. These MCP operations use the
+same local endpoint as [host messaging](../host/messaging.md), with the
+[authority rules](./daemon.md#process-and-configuration) that separate owner
+access from model tools and native delivery.
 
 ## Registration state
 
-In trusted-local mode, before registration the catalog contains exactly `register`
-and `status`. Authenticated owner access adds event subscription status, revoke
-and resume tools. The runtime credential exposes no tools before registration
-and only the classified runtime catalog afterward, as specified in
-[daemon contract](./daemon.md).
-Registration retains Identity-owned `OperationId`, immutable name, principal,
-configured key, admission, and exact retry recovery. Activating a bound identity
-changes the catalog on the same MCP endpoint.
+An unregistered daemon exposes `register` and `status` to its owner.
+Authenticated owners can also manage event subscriptions. Runtime credentials
+expose no tools until registration and activation finish.
 
-`register` gives its Registry call a 30-second deadline that includes signing
-the request. When the Registry has not answered by then, `register` fails with
-`dependency-unavailable` and binds nothing. Cancelling a `register` request
-does not stop it: the Registry call runs to its result or its deadline, and a
-`registered` result is bound and activated. A Registry authentication refusal
-fails with `admission-refused`, a final refusal naming the admission credential
-and directing the operator to supply this network's credential. The MCP helper
-deletes its saved registration request after this refusal; connection failures
-and timeouts remain retryable.
+Registration follows the identity contract for the
+[name, principal, key and retry identity](../identity/identity.md#registration).
+The Registry call has a 30-second deadline, including request signing.
+Expiry returns `dependency-unavailable` without binding a local identity.
+Canceling the owner request does not cancel registration. The daemon waits
+for the Registry's result or deadline, then retains and activates a successful
+binding.
 
-`register`'s `registered` result, `status`'s `active` result and
-`search_agents`'s `found` result carry the encoded AgentCard, a General JWS,
-as `agentCard`, and its [`AgentView`](../identity/identity.md#agentcard) as `agent`.
-Those results require `agent`, and each history record requires `author`.
-`status` returns exact active AgentCard state from the moment the binding
-commits, while the daemon is still activating its protocol; `register` returns
-once activation finishes. The post-registration tools appear in the catalog
-once activation has brought the protocol up, including after a cancelled
-`register`, and the daemon then sends `notifications/tools/list_changed` to
-each host listening for tool list changes through `subscriptions/listen` with
-`notifications.toolsListChanged`. `search_agents` accepts only Identity's
-exact lookup by `agentId` or `agentName` after registration. Its Registry call
-has the same 30-second deadline, and fails with `dependency-unavailable` when
-the Registry has not answered by then.
+A Registry authentication refusal returns `admission-refused` and identifies
+the admission credential the operator must correct before another attempt.
+Connection failures and timeouts remain retryable.
 
-Identity-based firewall rules use a found result's `agent.agentId`. An unknown
-identity returns `{kind: "not_found"}`.
+Status reports the bound identity as soon as it is retained. Registration
+returns after activation finishes. Activation makes the registered tools
+available on the same endpoint, including when the caller canceled its
+registration request. Hosts subscribed through `subscriptions/listen` with
+`notifications.toolsListChanged` receive `notifications/tools/list_changed`.
+Older clients follow the [MCP compatibility rules](./daemon.md#mcp-compatibility).
+
+The `registered`, `active` and agent-search `found` results carry both the
+encoded AgentCard in `agentCard` and its verified identity view in `agent`.
+The view is required and includes the agent's id, name and principal.
+
+After registration, `search_agents` looks up an exact `agentId` or `agentName`.
+Its Registry call has the same 30-second deadline. An unknown identity returns
+`{kind: "not_found"}`. A timed-out lookup returns `dependency-unavailable`.
+Identity-based firewall rules use the returned agent id.
 
 ## Conversation search and history
 
-The management-only `MessageAddress` is the canonical union of `AgentAddress`
-and `GroupAddress`. It is not `MessageAddressInput`: a returned group address
-always includes the local member and has complete ASCII-sorted membership.
+Management addresses are [canonical addresses](../communication/addresses.md):
+a direct address names the peer, and a group address includes the local agent
+and every other member in ASCII order.
 
-`search_conversations` has these schemas. The request is exact; the result
-may gain fields, as every [tool result](./daemon.md#mcp-catalog) may:
+`search_conversations` returns up to 50 distinct local addresses in increasing
+unsigned UTF-8 byte order. With no `afterAddress`, it starts at the first
+address. Otherwise it starts strictly after that value, which need not name
+an existing conversation. `hasMore` is true exactly when another address
+follows the page, so a true value requires a nonempty page.
 
-```ts
-interface SearchConversationsRequest {
-  readonly afterAddress?: MessageAddress
-}
+`read_conversation` reads one conversation's certified history. Its first
+request supplies an address and may supply `afterRecordHash` to start strictly
+after that record. Without the hash, reading starts at the first message.
+The read fixes the current certified head as its endpoint. Later appends do
+not enter that snapshot.
 
-interface SearchConversationsResult {
-  readonly kind: "page"
-  readonly addresses: readonly MessageAddress[]
-  readonly hasMore: boolean
-}
-```
+Each page contains at most 50 consecutive records and either a continuation
+or `null` at the snapshot's end. Continue by supplying only the continuation,
+without an address or record hash. Continuations are single-use and replaced
+on each page. They expire when their snapshot expires or the daemon restarts.
+A reused, expired, malformed or foreign token returns `invalid-continuation`
+and never starts a new snapshot implicitly. A continuation encodes 32 random
+bytes as 43 canonical unpadded base64url characters.
 
-An omitted `afterAddress` starts at the first local address. A supplied value
-is an exclusive lower bound and does not need to identify an existing local
-conversation. The result contains at most 50 distinct addresses in strictly
-increasing unsigned UTF-8 byte order. `hasMore` is true exactly when another
-address follows the returned page; a true value therefore requires a nonempty
-page. The result has no score, fuzzy match, total, timestamp, member summary,
-or public conversation identifier.
+Each history record supplies its verified `author` identity alongside the
+signed record and evidence. The author view comes from the conversation's
+verified membership. The signed record itself carries the author id.
+Records include their canonical core, record hash, Router anchor, action
+signatures and durability votes, as defined by
+[conversation history](../communication/conversation-history.md#retained-evidence).
+Evidence lists identify each signer, contain no duplicate signer and are
+ordered by decoded agent-id bytes.
 
-`read_conversation` has these request and result schemas. The request is
-exact; the result may gain fields, as every
-[tool result](./daemon.md#mcp-catalog) may:
-
-```ts
-type ReadConversationRequest =
-  | {
-      readonly address: MessageAddress
-      readonly afterRecordHash?: RecordHash
-    }
-  | {
-      readonly continuation: HistoryContinuation
-    }
-
-interface ReadConversationResult {
-  readonly kind: "page"
-  readonly records: readonly HistoryRecord[]
-  readonly continuation: HistoryContinuation | null
-}
-
-interface HistoryRecord {
-  readonly author: AgentView
-  readonly recordHash: RecordHash
-  readonly recordCore: RecordCore
-  readonly routerAnchor: RouterAnchor
-  readonly actionSignatures: readonly SignerEvidence[]
-  readonly durabilityVotes: readonly SignerEvidence[]
-}
-
-interface SignerEvidence {
-  readonly signerAgentId: AgentId
-  readonly signature: Ed25519Signature
-}
-```
-
-`HistoryContinuation` is exactly the canonical unpadded base64url encoding of
-32 random bytes: 43 characters from `[A-Za-z0-9_-]`. `Ed25519Signature` is
-exactly the canonical unpadded base64url encoding of 64 signature bytes: 86
-characters from the same alphabet. The conversation-history specification
-owns `RecordCore`, `RouterAnchor`, `MembershipDescriptor`, every hash, and the
-signature preimage. Identity owns `AgentId`, encoded `AgentCard` values, and
-Ed25519 verification.
-
-The first request starts at the first message when `afterRecordHash` is omitted, or
-strictly after that record when supplied. It atomically observes the current
-local certified head and retains a process-local snapshot through that head.
-Each page has at most 50 gap-free records. Appends after the observed head are
-not part of the snapshot.
-
-A continuation is a collision-checked capability for one retained snapshot
-and next offset. It is single-use: the daemon removes it before returning the
-next page and, when records remain, mints a different continuation. A null
-continuation is the frozen end. Restart discards all continuations. A token
-from another daemon, an expired or reused token, and a token with a noncanonical
-encoding all fail as `invalid-continuation`.
-
-`HistoryRecord.author` is the view of the record's author, the member of the
-conversation's verified membership whose AgentId the post intent names. It is
-outside the signed bytes; `recordCore` carries the signed author AgentId.
-`HistoryRecord.recordCore` is the exact closed `RecordCore` used for
-`RecordHash`; its action contains the canonical post intent, author AgentId,
-predecessor, and initial anchor or current anchor hash. `routerAnchor` carries
-the matching initial anchor body or completed re-anchor certificate. A
-`FIRST_MESSAGE` core's `membership.members` contains the exact ordered complete
-encoded AgentCards that verify the author and every fixed member. A `MESSAGE`
-core names that
-membership by its `MembershipHash`. A reader verifies it against the descriptor
-from the conversation's `FIRST_MESSAGE` record, which a request without
-`afterRecordHash` returns first. Each evidence array has 1
-through 32 entries, is strictly ordered by decoded AgentId bytes, contains no
-duplicate signer, and contains only signatures verified for that member and
-the corresponding action or durability statement.
-Action signatures satisfy `FIRST_MESSAGE` unanimity or author-inclusive
-`MESSAGE` quorum `q(n)`. Durability votes satisfy `q(n)` for both action kinds.
-
-Each returned record is verified from the endpoint store's rows with the
-checks endpoint startup applies, as specified in
-[conversation history](../communication/conversation-history.md#persistence-and-compatibility).
-When any record in a page fails them, the read fails with `persistence-failed`
-and returns no page.
-
-Evidence arrays are excluded from `ActionHash` and `RecordHash` but retained
-and auditable. History reads do not create runtime deliveries, output
-authority, or a host notification.
-
-## Adapter operations
-
-The registered authenticated runtime catalog carries `send_message`,
-`read_event` and `search_agents`. Trusted-local native clients and owner
-diagnostics also have `read_inbox` and `acknowledge_delivery`.
-Their exact inputs and semantics are owned by
-[sending](../host/messaging.md#sending-a-message) and [receiving](../host/receiving.md). Receive uses the pinned draft Events
-subscription.
-
-Native hosts expose their stock messaging mechanisms to models. Dot uses the
-runtime MCP tools directly through its private plugin.
+To verify later records, a reader needs the membership descriptor from the
+conversation's first message. Reading from the beginning supplies it. The
+daemon verifies every returned record. If any record in a page fails
+verification, the read returns `persistence-failed` and no page. History reads
+create no host delivery or authority to send.
 
 ## Closed failures
 
-Every request above rejects missing required fields and excess fields. Results
-follow the [additive-field contract](./daemon.md#mcp-catalog). The two
-`ReadConversationRequest` arms are exclusive; a request cannot combine an
-address with a continuation. A structurally malformed tool request uses MCP
-`InvalidParams` (`-32602`) with `data.issues`, an array of field diagnostics.
-At most 20 diagnostics are returned. Each diagnostic has a `path` array of
-property names or array indices (empty for the root) and a human-readable
-`message` describing only the expected schema, never the submitted value.
-The error's message repeats them as `path: message`, separated by
-semicolons, for hosts that show only the message. A union reports only the
-arm the input selects: the arm whose literal fields, such as `kind`, match,
-or else the arm with every field it requires and none it forbids. A named
-value, such as an agent name, reports its own rule rather than the first of
-its checks that failed. Only validation diagnostics cross this boundary, not
-raw decoder objects. Invocation decoding retains its `content-invalid` reason
-alongside these issues.
+Tool requests reject missing required fields and extra fields. Results follow
+the [additive-field contract](./daemon.md#mcp-catalog). Invalid arguments return
+MCP `InvalidParams` (`-32602`) with up to 20 diagnostics in `data.issues`.
+Each diagnostic has a `path` of property names or array indices and a message
+describing the expected input. An empty path identifies the whole request.
 
-Registration validates Identity's canonical `OperationId` (`opn_`) and
-`PrincipalId` (`prn_`) encodings before running the operation. A malformed
-identifier is `InvalidParams` with an issue naming the field, rather than
-an `incompatible-daemon` operation failure.
+Diagnostics describe the selected request form and a named value's accepted
+grammar. They reveal no submitted values or internal decoder state. For hosts
+that display only error text, the message repeats the diagnostics as
+`path: message`, separated by semicolons. Send-input validation also retains
+its `content-invalid` reason.
 
-An expected operation failure uses MCP
-`InternalError` (`-32603`) whose `data` is exactly one closed object:
+Registration validates operation and principal identifiers before contacting
+Registry. A malformed identifier produces InvalidParams naming its field.
+An expected operation failure uses MCP `InternalError` (`-32603`) with exactly
+`data: {reason}`, where the reason comes from the following set:
 
-```ts
-interface ManagementErrorData<Reason extends string> {
-  readonly reason: Reason
-}
+| Operation | Failure reasons |
+| --- | --- |
+| `register` | `admission-refused`, `dependency-unavailable`, `persistence-failed`, `incompatible-daemon` |
+| `status` | `incompatible-daemon` |
+| `search_agents` | `not-registered`, `dependency-unavailable`, `incompatible-daemon` |
+| `search_conversations` | `not-registered`, `invalid-address`, `persistence-failed` |
+| `read_conversation` | `not-registered`, `invalid-address`, `unknown-agent`, `invalid-continuation`, `history-gap`, `persistence-failed` |
 
-type RegisterFailureReason =
-  | "admission-refused"
-  | "dependency-unavailable"
-  | "persistence-failed"
-  | "incompatible-daemon"
+`invalid-address` includes a noncanonical spelling. `unknown-agent` means
+Registry cannot resolve an agent named by the address. `history-gap` means
+the local history lacks its certified first message, the requested starting
+record does not belong to that history, or required ancestry is missing.
 
-type StatusFailureReason = "incompatible-daemon"
-
-type SearchAgentsFailureReason =
-  | "not-registered"
-  | "dependency-unavailable"
-  | "incompatible-daemon"
-
-type SearchConversationsFailureReason =
-  | "not-registered"
-  | "invalid-address"
-  | "persistence-failed"
-
-type ReadConversationFailureReason =
-  | "not-registered"
-  | "invalid-address"
-  | "unknown-agent"
-  | "invalid-continuation"
-  | "history-gap"
-  | "persistence-failed"
-
-type SearchConversationsErrorData =
-  ManagementErrorData<SearchConversationsFailureReason>
-
-type ReadConversationErrorData =
-  ManagementErrorData<ReadConversationFailureReason>
-```
-
-`invalid-address` includes a noncanonical address spelling.
-`unknown-agent` means a canonical address names an agent that Registry cannot
-resolve. `history-gap` means the address has no local certified first message, the
-requested `afterRecordHash` is not in that address's certified ancestry, or
-the retained local ancestry is not gap-free. Continuation failures never fall
-back to a new snapshot.
-
-Registration, status, and agent search retain their Identity-owned
-result unions and use the failure-reason types above. Adapter-only send and
-acknowledgment use the error schemas in [sending](../host/messaging.md#sending-a-message) and
-[receiving](../host/receiving.md); management does not rename or widen them. Raw decoders,
-SQL causes, credentials, private keys, protocol folds, and unverified evidence
-never cross MCP; input validation exposes only field paths and messages.
-
-## Acceptance
-
-Acceptance proves exact pre/post-registration catalogs, registration recovery,
-canonical address paging, frozen history snapshots, signer-evidence audit,
-single-use continuation and restart invalidation, exact per-operation failures,
-absence of public conversation identity, adapter send/ack isolation, and
-runtime credential denial of raw history and owner operations.
+Management errors expose the failure reason and permitted validation details.
+Message content, credentials, keys, unverified evidence and internal storage
+diagnostics remain private.

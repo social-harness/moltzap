@@ -78,9 +78,15 @@ const groupMessage = groupMessageStructure.pipe(
   ),
 );
 
-/** One certified remote-authored direct message. */
+/**
+ * A peer's certified message. Its address names that peer for replies.
+ * @useDeclaredType
+ */
 export type DirectMessage = typeof directMessage.Type;
-/** One certified remote-authored fixed-group message. */
+/**
+ * The members include the local agent and agree with the conversation address.
+ * @useDeclaredType
+ */
 export type GroupMessage = typeof groupMessage.Type;
 
 /** One certified remote-authored post, direct or to a fixed group. */
@@ -88,7 +94,10 @@ export const InboundMessage = Schema.Union(
   directMessage,
   groupMessage,
 ).annotations({ identifier: "InboundMessage" });
-/** A validated direct or group post. */
+/**
+ * A peer's certified post with verified sender and conversation membership.
+ * @useDeclaredType
+ */
 export type InboundMessage = typeof InboundMessage.Type;
 
 /* eslint-enable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Restore the package naming rules after the Schema/type pairs. */

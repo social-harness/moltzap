@@ -74,7 +74,11 @@ export const localGuidanceSchema = Schema.Union(
   resultGuidance,
 ).annotations({ identifier: "LocalGuidance" });
 
-/** Local advice accompanies the envelope and never changes a certified item. */
+/**
+ * Render this local advice separately from peer content. It does not alter
+ * the underlying certified record.
+ * @useDeclaredType
+ */
 export type LocalGuidance = typeof localGuidanceSchema.Type;
 
 /** Attribution of the body quoted alongside local instructions. */

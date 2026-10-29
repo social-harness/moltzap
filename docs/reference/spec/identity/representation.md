@@ -77,7 +77,7 @@ UTF-8 JCS bytes of the complete General JWS object.
 
 ### Payload
 
-The [SignedMessage](./identity.md#signedmessage) payload is exactly:
+The [SignedMessage](./identity.md#signed-messages) payload is exactly:
 
 ```json
 {
@@ -193,6 +193,10 @@ entry count differs from the SignedMessage recipient count.
 Each recipient's X25519 public key is the RFC 7748 birational image of the
 Ed25519 key in its verified card. The matching private opening key derives
 from the same Ed25519 seed.
+
+Before unwrapping a key, the opener verifies that its local card and private
+authority have the same Ed25519 public key. Unwrapping alone cannot establish
+this binding because distinct Ed25519 keys can map to the same X25519 key.
 
 The protected header uses compact UTF-8 JSON with members in the order
 shown and without whitespace or escapes. It is the sole exception to the
@@ -627,31 +631,15 @@ complete General JWS or General JWE object uses RFC 8785 JSON
 Canonicalization Scheme UTF-8 bytes. The one exception is the
 [SealedBody](#sealedbody) protected header.
 
-A complete decoder:
-
-1. reads within the owning artifact's fixed maximum or the HTTP
-   route's derived body cap.
-2. decodes fatal UTF-8.
-3. parses one unknown JSON value.
-4. rejects container depth over 16 and unpaired Unicode surrogates.
-5. canonicalizes that value with JCS and requires the input bytes to
-   match.
-6. decodes through the exact closed schema.
-
-No semantic value escapes before every step succeeds. Registered-agent
-`AuthenticatedHttp` and Registry bootstrap admission each perform steps
-1 through 4 as their parse prelude, perform step 5 before
-authentication, then perform the complete route-owned schema decode at
-the specified later stage.
-
-The byte comparison rejects duplicate object names even when a JSON
-parser collapses them. Re-encoding cannot reproduce input that contains
-a repeated member.
+Received bytes must fit the artifact or route's body limit, contain valid
+UTF-8, and equal the JCS encoding of exactly one value allowed by its closed
+grammar. HTTP authentication follows the validation order above: framing and
+canonical encoding precede authentication, and the service validates its
+complete request afterward.
 
 The maximum decoded JSON container depth is 16. A root object or array
 has depth 1, each nested object or array adds 1, and scalar values add
-no depth. A decoder rejects excess depth before constructing a semantic
-value. This bound is not deployment-configurable.
+no depth. This bound is fixed by the protocol.
 
 Unknown members, duplicate members, trailing data, byte-order marks,
 lone surrogate code points, and non-JCS number spellings are rejected.

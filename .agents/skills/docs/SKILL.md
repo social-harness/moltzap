@@ -63,14 +63,17 @@ wire specification and a generated API reference both serve reference needs.
 An explanation can discuss either one's concepts. Generation does not supply
 the tutorials, how-to guides, or explanations readers also need.
 
-Maintain specifications by hand. They define the concepts, responsibilities,
-guarantees, and observable behavior an implementation must satisfy. State
-assumptions and failure conditions where they limit a guarantee. Choose
-precision to suit the contract: a signed wire format needs exact bytes and
-validation rules, while an evolving architecture may establish responsibilities
-before selecting mechanisms. Record unresolved choices explicitly. Reading
-the code can reveal a discrepancy, but does not authorize rewriting the
-specification to match it.
+Maintain specifications by hand, one level above the implementation. Describe
+the participants, exchanges and guarantees so a reader can predict an
+interaction and judge a different implementation without opening code.
+Introduce concepts before identifiers. Cut function names, internal objects,
+storage layouts and execution steps that add no contract.
+
+Match precision to the contract. Signed wire formats need exact bytes and
+validation rules. An evolving architecture may establish responsibilities
+before mechanisms. Keep the assumptions and failure conditions that limit a
+guarantee, and state unresolved choices. A discrepancy in code requires a
+decision before the specification changes.
 
 Give each layer one coherent contract. Identify what it receives, what it
 guarantees, what it returns, and what its callers must handle. Assign each
@@ -167,21 +170,18 @@ purpose or needs a different level of detail. Merge sections that answer the
 same question. Reorder material to put prerequisites before dependent ideas.
 Settle the structure before polishing sentences.
 
-Apply DRY and distillation together in every document type. Give each fact one
-authoritative home, and link to it where readers need it. Keep material that
-helps an identifiable reader understand, act, decide, verify, or satisfy a
-contract. Delete material with no such use. Move it only when another document
-has a clear need for it. Preserve unique guarantees and the assumptions or
-failure conditions that make them meaningful. A rarely needed recovery rule
-can still be essential.
+Apply DRY and distillation together. Give each fact one authoritative home and
+link to it where readers need it. Keep material that helps the reader
+understand, act, decide, verify or satisfy a contract. Delete material with no
+such use. Move it only when another document needs it. A rarely needed
+recovery rule can still be essential.
 
-Cut summaries and callouts that repeat information or add no reader value.
-Keep follow-up links that help readers continue a task or find a necessary
-explanation. Distill the existing text into the explanation the reader needs.
-Adding a simpler introduction above the same explanation creates another
-copy. Keep the necessary context beside an action or example so readers can
-use it. Repetition within an exercise can teach an important distinction, such
-as reading a message twice to show that reading does not acknowledge it.
+Improve exposition by removing details and adjectives unnecessary for the
+reader's task. Replace an unclear passage instead of adding another
+explanation. Cut repeated summaries and callouts. Keep context beside the
+action or example that needs it, and links that help readers continue their
+task. Repetition within an exercise can teach a distinction, such as reading
+a message twice to show that reading does not acknowledge it.
 
 Treat a hard-to-explain boundary as a design question. Repeated exceptions,
 asides, and caveats can reveal duplicated ownership or an unnecessary layer.
@@ -255,6 +255,12 @@ its purpose, each section serves that purpose, and each paragraph adds
 something the intended reader needs. Watch for changes of purpose within a
 page, such as a setup procedure turning into a catalogue of every setting.
 Rewrite awkward passages in place.
+
+Review a specification with the source closed. Ask the reader to identify
+the actors, follow a concrete input through the system, explain the result,
+and predict what happens on failure or interruption. Mark every step that
+requires a code lookup, an unexplained internal term, or knowledge of this
+conversation. Repair the explanation where the gap occurs.
 
 Read the affected documents together. For each folder, follow the paths
 readers use to learn, complete tasks, look up facts, and understand concepts.

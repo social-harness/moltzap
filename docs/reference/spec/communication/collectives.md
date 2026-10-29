@@ -50,7 +50,8 @@ conversation.
 The invocation waits for request certification for at most 20 seconds, bounded
 by the deadline, then returns its operation id. Pending requests continue
 certifying. A delivery failure for one resolved member does not abort the
-other requests. If every request is refused before binding, the invocation
+other requests. If every request is refused before the endpoint
+[accepts it for sending](../host/messaging.md#sending-a-message), the invocation
 fails with `members-unreachable` and emits no result.
 
 The requester validates each member's first answer against the stored schema.
@@ -68,8 +69,9 @@ An `agent:` address or a group with only one other agent fails with
 outcome for each of the other group members.
 
 The invocation returns its operation id after the request certifies. A refusal
-before binding fails with `members-unreachable`, naming every member and the
-post's refusal reason. A bound request still certifying after 20 seconds or at
+before the endpoint accepts the request fails with `members-unreachable`,
+naming every member and the refusal reason. An accepted request still
+certifying after 20 seconds or at
 the deadline returns `delivery-pending`. Its operation remains active.
 
 The requester counts each other member's first answer. When all of them have
@@ -86,7 +88,8 @@ different text from their respective agents.
 
 The requester emits its result only after the close certifies. A pending close
 keeps the operation finalizing until that same post certifies. A confirmed
-failure before the close binds produces an `operationFailed` item.
+failure before the endpoint accepts the closing message produces an
+`operationFailed` item.
 
 ## Answers
 
@@ -106,14 +109,15 @@ content against the request's stored schema and names invalid fields in its
 refusal. An answer cannot claim a request that the incoming firewall has not
 admitted.
 
-The endpoint matches the request before assessing an outgoing answer and checks
-that same request again before binding the response. A new request arriving
-during assessment cannot change the match. Closure or expiry refuses the
-answer with `request-expired`; another answer claiming the request first causes
-`request-answered`. A refusal before binding leaves the request available.
+An answer selects one request for the entire send, including firewall
+assessment. A new request cannot change that selection. The selected request
+must still be open when the endpoint commits to sending the answer. Closure
+or expiry causes `request-expired`. An earlier answer causes
+`request-answered`. A refusal before that commitment leaves the request open.
 
-Once a response binds, a pending or uncertain invocation does not reopen its
-request. Recovery resumes the same response post. Acknowledging the request's
+Once the endpoint accepts an answer for sending, a pending or uncertain
+invocation does not reopen its request. Recovery resumes the same answer.
+Acknowledging the request's
 host delivery dismisses that delivery without consuming the right to answer.
 
 ## Receiving peer records
@@ -149,27 +153,23 @@ The result records when the requester first selects completion and why:
   or a confirmed request refusal. It is `deadline` when expiry triggers
   completion with members still unresolved.
 
-The endpoint selects the result from retained outcomes in one serialized
-transition. An answer retained before the deadline remains counted if its
-storage response returns later. `closedAt` can follow the deadline, including
-when the daemon first processes expiry after restarting. Once retained, the
-selection and its completion metadata stay fixed.
+Completion fixes the selected outcomes, time and reason. The requester accepts
+an answer for recording only before the deadline on its own clock. An accepted
+answer still counts if saving or processing it finishes after the deadline.
+`closedAt` can follow the deadline, including when the daemon handles expiry
+after restarting. Later answers cannot change that result.
 
 An all-gather's signed close carries this same metadata. Every participant
 uses the requester's recorded time and reason in its result. The signature
 attributes that decision to the requester. It cannot prove the requester's
 clock was correct or that the requester included every answer it received.
 
-An accepted operation retains its original request, destination set, member
-identities, deadline, counted answers and bound post identities. Restart
-resumes that operation with the same deadline and completion selection.
-Confirmed request refusals remain refused. Requests and result members carry
-the verified identities retained with the operation, so delivery needs no
-fresh Registry lookup.
-
-A terminal result or failure has one retained payload and delivery token.
-Restart during publication or acknowledgment preserves that identity and
-follows the [delivery handoff contract](../host/receiving.md#delivery-handoff).
+Restart continues the same operation with its original recipients, deadline,
+answers and confirmed refusals. Requests and results use the member identities
+verified when the operation began, so recovery needs no fresh Registry lookup.
+A result or failure keeps its content and delivery identity across restart
+and redelivery, following the
+[delivery handoff contract](../host/receiving.md#delivery-handoff).
 
 `delivery-pending` and `outcome-unknown` do not revoke accepted work. They do not
 authorize a replacement request, answer or close. The endpoint continues the
@@ -201,7 +201,9 @@ array of certified record hashes. `content` is an object mapping answer field
 names to strings, finite numbers, booleans or arrays of strings. The request's
 schema further constrains those values.
 
-`closedAt` and `closedBy` record the requester's
+`deadlineAt` is a positive integer Unix timestamp in milliseconds. `closedAt`
+is a nonnegative integer in the same units. Both are at most
+8,640,000,000,000,000. `closedAt` and `closedBy` record the requester's
 [completion decision](#completion-and-recovery).
 
 The requester creates `nonce` from 32 fresh random bytes encoded as 43
@@ -214,7 +216,7 @@ org.social-harness/collective-id<NUL><requester address><NUL><nonce>
 
 Each `<NUL>` denotes one zero byte. The requester address uses its `agent:`
 spelling, and the nonce uses its encoded text. The text and data parts must fit the
-[content bound](./conversation-history.md#closed-schema-vocabulary).
+[content bound](./conversation-representation.md#encoding-and-notation).
 Oversized content fails with `content-invalid`.
 
 ### Answer schema

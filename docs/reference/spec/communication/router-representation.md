@@ -9,29 +9,16 @@ read_when:
 This chapter defines the exact bytes and validation rules for Router requests,
 responses, and polling cursors. The [Router contract](./router.md) defines their
 ordering, retention, and recovery semantics. Router uses Identity's
-AuthenticatedHttp and SignedMessage representations.
+[authenticated requests](../identity/representation.md#http-message-signatures)
+and [signed messages](../identity/representation.md#signedmessage).
 
 ## Canonical JSON
 
-Every Router request and result body uses RFC 8785 JCS UTF-8 bytes.
-Effect Schema is the only JSON parser. The HTTP boundary enforces the
-route-specific received-body cap, then AuthenticatedHttp uses
-`Schema.parseJson()` plus the identity-owned depth and Unicode
-refinements and requires byte equality with the JCS encoding of the
-parsed value. It returns the authenticated caller, verified AgentCard,
-and inner `request` value. The Router-owned closed Effect Schema then
-decodes that inner value as the selected operation request. It does not
-parse the bytes again or repeat identity resolution.
-
-Unknown members, duplicate members, trailing data, byte-order marks,
-lone surrogate code points, and alternate number spellings are
-rejected. Objects shown below use readable key order; their bytes use
-JCS key order.
-
-The maximum decoded JSON container depth is 16. A root object or array
-has depth 1, each nested object or array adds 1, and scalar values add
-no depth. A decoder rejects excess depth before constructing a semantic
-value. This Gate 1 bound is not deployment-configurable.
+Router requests and results follow Identity's
+[canonical JSON rules](../identity/representation.md#canonical-json), including
+closed fields, Unicode validity and depth bounds. Router applies each route's
+body limit before authentication. Examples below use readable key order.
+Transmitted bytes use JCS key order.
 
 ## Refined values
 
@@ -41,9 +28,8 @@ value. This Gate 1 bound is not deployment-configurable.
 | `SignedMessageDigest` | `smd_` plus the 43-character canonical unpadded base64url encoding of 32 bytes |
 | `PollCursor` | `plc_` plus the exact Compact JWE below |
 
-The base64url rejection rules in `identity-representation.md` apply at
-the L2 boundary and are repeated by Router-owned decoders. The three
-values are nominally distinct.
+Identity's [base64url rules](../identity/representation.md#base64url) apply.
+The three values are distinct and cannot substitute for one another.
 
 `SignedMessageDigest` is SHA-256 over the UTF-8 JCS bytes of the
 complete SignedMessage General JWS object, prefixed as specified above.
@@ -101,8 +87,9 @@ become `cursor_invalid`.
 
 ## Authenticated request envelope
 
-Send and poll use the exact normal AuthenticatedHttp profile from
-`identity-representation.md`. Their outer body is:
+Send and poll use Identity's
+[normal HTTP signature profile](../identity/representation.md#normal-profile).
+Their outer body is:
 
 ```json
 {
@@ -121,21 +108,15 @@ Requests use `Content-Type: application/json`,
 `sharness-request-v1` HTTP message-signature profile. Application code
 imposes no URL scheme or TLS requirement.
 
-The `kind` field is the common closed-union discriminator already used
-by L1. Every well-formed, authenticated, version-matched request that
-reaches a Router domain outcome without owner overload or an
-infrastructure failure returns status 200 with one closed result.
-Envelope, overload, and infrastructure failures use the status and
-exact `{"error":"..."}` bodies in
-`identity-representation.md`.
+The `kind` field identifies the result. A valid authenticated request returns
+status 200 for an operation result. Request validation, overload and
+infrastructure failures use the [failure mapping](#envelope-failure-mapping).
 
 ## Representation limits
 
 Identity fixes the decoded opaque-body maximum at 262,144 bytes and
-the SignedMessage recipient maximum at 128. Its closed SignedMessage
-representation derives a maximum complete General JWS JCS encoding of
-471,676 bytes. Router consumes that identity-owned maximum; it does not
-reproduce the General JWS size calculation.
+the SignedMessage recipient maximum at 128. A complete SignedMessage General
+JWS has a maximum JCS encoding of 471,676 bytes.
 
 Router derives one received-body cap from each closed authenticated
 request representation:
@@ -153,13 +134,9 @@ These bounds follow from the closed representations and are independent of
 operator configuration.
 
 The HTTP reader rejects a route body above its own cap before parsing.
-SignedMessage validation independently enforces the identity-owned
-artifact maximum after the request Schema decodes. Poll-result
-construction counts UTF-8 JCS bytes of the complete result, including
-its PollCursor, and stops before the first addressed SignedMessage that
-would exceed the configured result-byte limit. Overflow-checked
-calculators are tested against the actual Schema, JCS, and JWE
-encodings owned by Router.
+The SignedMessage must also satisfy Identity's artifact limits. A poll result
+counts its complete UTF-8 JCS bytes, including the cursor, and stops before
+the first message that would exceed the configured response limit.
 
 ## Send
 
@@ -179,7 +156,7 @@ The exact body is:
 ```
 
 `mode` is exactly `initial` or `retry`. `signedMessage` is the complete
-General JWS object specified by `identity-representation.md`.
+General JWS object defined by [Identity](../identity/representation.md#signedmessage).
 
 The exact results are:
 

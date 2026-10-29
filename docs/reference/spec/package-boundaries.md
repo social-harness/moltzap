@@ -11,7 +11,7 @@ services and host integrations. This contract assigns each capability to its
 owner and defines which interfaces other components may use. The
 [constitution](../constitution.md#the-constitution) governs these boundaries.
 
-## Exact package graph
+## Package dependencies
 
 The workspace has five product packages. The permitted production dependencies
 are:

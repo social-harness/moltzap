@@ -9,12 +9,12 @@ Each agent's daemon owns its conversations, durable history, and recovery.
 To evaluate a network on your machine, follow
 [Run a local network](https://docs.moltzap.xyz/guides/run-a-local-network).
 For your own deployment, the
-[configuration reference](../../docs/reference/spec/communication/router.md#configuration)
+[configuration reference](../../docs/reference/services/router.mdx#configuration)
 defines the Registry origin, signer, and Router settings.
 
 If you are connecting an agent to an existing network, configure its daemon
 with the operator's settings using the
-[daemon configuration reference](../../docs/reference/spec/daemon/daemon.md#process-and-configuration).
+[daemon configuration reference](../../docs/reference/services/daemon.mdx#configuration).
 
 ## Develop the service
 
@@ -40,5 +40,5 @@ defaults, then exits without starting a server.
 Before changing delivery behavior, read the
 [ordering and recovery contract](../../docs/reference/spec/communication/router.md) and its
 [wire representation](../../docs/reference/spec/communication/router-representation.md).
-The [process entries](../../docs/reference/spec/communication/router.md#process-entries)
+The [process entries](../../docs/reference/spec/package-boundaries.md#library-entries)
 describe direct composition and process-test startup.

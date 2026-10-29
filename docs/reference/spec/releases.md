@@ -48,7 +48,7 @@ Published manifests carry metadata used to select artifacts and upgrades:
 | --- | --- |
 | `sharnessContentHash` | Hash of packed files, including executable bits, and the packed manifest without its version or recorded hashes. Equal hashes mean equal package code. A missing or changed recorded hash selects the package for publication. |
 | `sharnessHostCodeHash` | OpenClaw channel code hash used to decide whether the host must restart. It covers packed channel files and reachable sibling modules through their exports, excluding manifest versions, recorded hashes, and `@moltzap/*` pins. A daemon-only change leaves it unchanged. |
-| `sharnessWireVersion` | The library's emitted wire version, derived from `packages/social-harness/src/identity/wire-version.ts` → `WIRE_VERSION`. The release records it in the manifest, and publication and resume use that metadata from the same release commit. Local packing derives the same metadata for launcher checks. |
+| `sharnessWireVersion` | The library's emitted wire version. Publication, resumed publication and launcher compatibility checks use the value recorded with that artifact. |
 
 ## Wire compatibility window
 
@@ -57,10 +57,10 @@ stable between resets. An incompatible change to any of them requires a
 reset release. The live window lets a daemon upgrade before or after its
 network services.
 
-Each release emits exactly `WIRE_VERSION`. `LIVE_WIRE_VERSIONS` contains the
-emitted version and at most one adjacent version. Registry, Router, and the
-daemon admit every version in that set. Production callers can inspect
-compatibility but cannot configure the live window through the public API.
+Each release emits one wire version. Its live set contains that version and
+at most one adjacent version. Registry, Router and the daemon admit every
+version in that set. Production callers can inspect compatibility but cannot
+configure the live window through the public API.
 
 A compatible wire bump changes only the version value. Type strings, headers,
 hash domains, and representation bounds remain unchanged. Changing any of
@@ -68,7 +68,7 @@ those values changes the wire envelope and requires a reset.
 
 A compatible bump proceeds as follows:
 
-1. The announcing release adds the successor to `LIVE_WIRE_VERSIONS` and
+1. The announcing release adds the successor to its live set and
    continues emitting the current version.
 2. The bumping release emits the successor and retains its predecessor.
 3. The following release removes that predecessor. It may also announce the
@@ -77,7 +77,7 @@ A compatible bump proceeds as follows:
 Any two adjacent releases admit each other's emitted version. After a bump,
 a daemon more than one release behind its network is outside the live
 window. A version that leaves the live window stays in
-`HISTORY_WIRE_VERSIONS` until the next reset, so retained history can still be
+the history set until the next reset, so retained history can still be
 verified. An endpoint that misses the live window requires a reset.
 
 Every signed and canonical representation uses `sharnessVersion`. Readers
@@ -87,17 +87,17 @@ reject the retired `moltzapVersion` field, including a value that also carries
 ## Reset releases
 
 A reset establishes fresh wire and storage baselines. It selects a
-`WIRE_VERSION` that no earlier release emitted, initializes the live and
+wire version that no earlier release emitted, initializes the live and
 history sets with only that version, raises the endpoint store's reset
-schema, and starts a new Registry migration ledger. `FIRST_POST_RESET_RELEASE` records the release boundary
-for compatibility checks.
+schema, and starts a new Registry migration ledger. Compatibility checks use
+the first release under that baseline as their reset boundary.
 
 Peers across the reset reject each other with `version-mismatch`. Older
 state fails with `pre-reset`. Operators must use a fresh Registry database
 and fresh endpoint state directories, and register every agent again.
 Certified history does not migrate across a reset. The
 [daemon format rules](./daemon/daemon.md#current-formats) and
-[Registry persistence rules](./identity/identity.md#registry-persistence) define the
+[Registry persistence rules](../services/registry.mdx#storage-and-upgrades) define the
 format checks. The changelog identifies each reset with the phrase
 “Reset release”.
 
