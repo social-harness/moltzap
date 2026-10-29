@@ -9,10 +9,6 @@ import {
   Schema,
   Scope,
 } from "effect";
-import {
-  type ListenError,
-  SendError,
-} from "../../communication/conversations/errors.js";
 import type {
   DeliveryToken,
   EndpointStore,
@@ -28,6 +24,10 @@ import {
   makeCollectiveOperations,
   type ResultProvenance,
 } from "../../communication/collectives/index.js";
+import {
+  type ListenError,
+  SendError,
+} from "../../communication/conversations/errors.js";
 import {
   type EndpointEngine,
   type EndpointEngineInput,

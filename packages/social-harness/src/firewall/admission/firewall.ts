@@ -2,12 +2,6 @@
 
 import { Effect, Option, Schema } from "effect";
 import { createHash } from "node:crypto";
-import {
-  type AgentCard,
-  AgentView,
-  agentViewOf,
-  type VerifiedAgentCard,
-} from "../../identity/cards.js";
 import type { FirewallSendError } from "../outcome/index.js";
 import { InboundItem } from "../../communication/collectives/inbound.js";
 import {
@@ -38,6 +32,12 @@ import {
   type FirewallInboxEntry,
 } from "../../communication/store/index.js";
 import { encodeCanonical } from "../../encoding/canonical-json.js";
+import {
+  type AgentCard,
+  AgentView,
+  agentViewOf,
+  type VerifiedAgentCard,
+} from "../../identity/cards.js";
 import {
   CheckInputError,
   type DecisionProvider,

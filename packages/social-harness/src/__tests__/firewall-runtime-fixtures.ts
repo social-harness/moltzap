@@ -432,6 +432,23 @@ export function seedIncoming(subject: Fixture, authoredLocally = false) {
   }).pipe(Effect.withSpan("seedIncoming"));
 }
 
+/** Resolve a member through the engine before a test accepts collective work. */
+export function resolvedMemberView(
+  engine: Effect.Effect.Success<ReturnType<typeof makeEndpointEngine>>,
+  member: typeof AgentAddress.Type,
+) {
+  return engine.resolveConversation(member).pipe(
+    Effect.flatMap((conversation) => {
+      const card = conversation.memberCards.find(
+        (candidate) => `agent:${candidate.agentName}` === member,
+      );
+      return card === undefined
+        ? Effect.dieMessage("resolved conversation lacks its requested member")
+        : Effect.succeed(agentViewOf(card));
+    }),
+  );
+}
+
 function delayedEvidence(subject: Fixture, conversation: string) {
   return Effect.forEach(
     [1, 2, 3, 4],
@@ -571,21 +588,4 @@ function startAdmission(
       .pipe(Effect.forkScoped);
     return completed;
   });
-}
-
-/** Resolve a member through the engine before a test accepts collective work. */
-export function resolvedMemberView(
-  engine: Effect.Effect.Success<ReturnType<typeof makeEndpointEngine>>,
-  member: typeof AgentAddress.Type,
-) {
-  return engine.resolveConversation(member).pipe(
-    Effect.flatMap((conversation) => {
-      const card = conversation.memberCards.find(
-        (candidate) => `agent:${candidate.agentName}` === member,
-      );
-      return card === undefined
-        ? Effect.dieMessage("resolved conversation lacks its requested member")
-        : Effect.succeed(agentViewOf(card));
-    }),
-  );
 }

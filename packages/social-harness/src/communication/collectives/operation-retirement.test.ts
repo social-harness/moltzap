@@ -1,6 +1,5 @@
 /** @file A deadline and confirmed request refusals choose one durable terminal outcome. */
 
-import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { scoped as it } from "@effect/vitest";
 import {
   Clock,
@@ -16,6 +15,7 @@ import {
 import { expect } from "vitest";
 import type { InboundItem } from "./inbound.js";
 import type { CollectivePorts } from "./ports.js";
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { engineFixture } from "../../__tests__/firewall-runtime-fixtures.js";
 import { SendError } from "../conversations/errors.js";
 import { AgentAddress, MessageAddressInput } from "../records/index.js";

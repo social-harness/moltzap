@@ -1,6 +1,5 @@
 /** @file Pins how the collective layer runs an all_gather at its requester and members. */
 
-import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import * as NodeSdk from "@effect/opentelemetry/NodeSdk";
 import { live as it, scoped as itOnTestClock } from "@effect/vitest";
 import {
@@ -21,6 +20,7 @@ import { describe, expect } from "vitest";
 import type { EngineSendInput } from "../conversations/index.js";
 import type { InboundItem } from "./inbound.js";
 import type { CollectiveOperations } from "./ports.js";
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import {
   alice,
   certifyNext,

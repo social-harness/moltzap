@@ -1,8 +1,8 @@
 /** @file Hosts receive actionable local advice with peer text kept quoted and attributed. */
 
-import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { Encoding, Schema } from "effect";
 import { expect, it } from "vitest";
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import {
   type CheckedGuidance,
   FirewallSendError,

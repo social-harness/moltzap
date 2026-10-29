@@ -1,9 +1,8 @@
 /** @file Pins how a result reads to a model: withheld parts, and peer text that cannot add lines. */
 
-import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
-import { digest } from "../../__tests__/agent-card-fixtures.js";
+import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { answerFieldsText } from "./contracts.js";
 import { InboundItem } from "./inbound.js";
 import {

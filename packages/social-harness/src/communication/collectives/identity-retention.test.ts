@@ -3,15 +3,17 @@
 import { scoped as it } from "@effect/vitest";
 import { Effect, Schema, Scope, TestClock } from "effect";
 import { expect } from "vitest";
-import {
-  engineFixture,
-  resolvedMemberView,
-} from "../../__tests__/firewall-runtime-fixtures.js";
+import type { InboundItem } from "./inbound.js";
+import type { CollectivePorts } from "./ports.js";
 import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import {
   postId,
   recordHashOf,
 } from "../../__tests__/collective-operation-fixtures.js";
+import {
+  engineFixture,
+  resolvedMemberView,
+} from "../../__tests__/firewall-runtime-fixtures.js";
 import {
   stateDirectory,
   withStore,
@@ -20,9 +22,7 @@ import { SendError } from "../conversations/errors.js";
 import { AgentAddress } from "../records/values.js";
 import { encodeRuntimeValue, type EndpointStore } from "../store/index.js";
 import { SendInput } from "./contracts.js";
-import { type InboundItem } from "./inbound.js";
 import { makeCollectiveOperations } from "./index.js";
-import type { CollectivePorts } from "./ports.js";
 
 const input = Schema.decodeUnknownSync(SendInput)({
   to: "group:carol,bob",

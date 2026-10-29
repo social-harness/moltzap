@@ -23,6 +23,7 @@ import {
   send,
 } from "./participants.js";
 import { processTrace } from "./process-trace.js";
+import { anyNumber } from "./test-matchers.js";
 
 const requireAll = (participants: readonly Participant[], count: 3 | 4) =>
   participants.length === count
@@ -398,6 +399,8 @@ function expectAllGatherQuestionWithheld({
       kind: "collectiveResult",
       op: "all_gather",
       id: withheld.operationId,
+      closedAt: anyNumber,
+      closedBy: "deadline",
       to: group,
       question: "[in] Which day works?",
       outcomes,
@@ -469,6 +472,8 @@ function expectAllGatherAnswerVisibility(
       kind: "collectiveResult",
       op: "all_gather",
       id: operationId,
+      closedAt: anyNumber,
+      closedBy: "settled",
       to: group,
       question: "Which day works for the review?",
     };

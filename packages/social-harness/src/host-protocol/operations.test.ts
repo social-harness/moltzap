@@ -1,9 +1,9 @@
 /** @file The inbox and operation MCP representation: exact requests, and results a newer daemon can extend. */
 
-import { testAgentView } from "../__tests__/agent-card-fixtures.js";
 import { Effect, Exit, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import type { InboundMessage } from "../communication/conversations/message.js";
+import { testAgentView } from "../__tests__/agent-card-fixtures.js";
 import {
   CollectiveError,
   CollectiveId,

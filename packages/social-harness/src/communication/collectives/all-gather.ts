@@ -1,5 +1,4 @@
 /** @file Shared group results wait for one certified close and its exact answer records. */
-import { agentAddressOf } from "../records/values.js";
 import { Effect, Exit, Option, Schema } from "effect";
 import type { InboundMessage } from "../conversations/message.js";
 import type { CollectiveResultItem } from "./inbound.js";
@@ -8,6 +7,7 @@ import type { OpenRequest, ReceivedRequest } from "./received-request.js";
 import type { CollectiveState, GatherRequest, OpenGather } from "./state.js";
 import { SendError } from "../conversations/errors.js";
 import { PostId } from "../records/index.js";
+import { agentAddressOf } from "../records/values.js";
 import {
   encodeRuntimeValue,
   type StoredCollectivePost,

@@ -1,9 +1,9 @@
 /** @file Pins the posts each collective send certifies, what it returns, and how it is refused. */
 
-import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { scoped as it } from "@effect/vitest";
 import { Duration, Effect, Fiber, TestClock } from "effect";
 import { describe, expect } from "vitest";
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import {
   alice,
   answerPost,

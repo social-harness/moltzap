@@ -431,6 +431,8 @@ it("attributes a result to Social Harness and lists every member outcome in the 
   await channel.setup(host);
   const item = Schema.decodeUnknownSync(InboundItem)({
     kind: "collectiveResult",
+    closedAt: 0,
+    closedBy: "deadline",
     op: "gather",
     id: OPERATION_ID,
     to: GROUP,
@@ -803,6 +805,8 @@ function collectiveGuidanceItem(
     kind === "collectiveResult"
       ? {
           kind,
+          closedAt: 0,
+          closedBy: "settled",
           op: "gather",
           id: OPERATION_ID,
           to: GROUP,

@@ -1,11 +1,10 @@
 /** @file Message admission through real Client storage and send preparation. */
 
-import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { scopedLive as it } from "@effect/vitest";
 import { Deferred, Effect, Fiber, Queue, Schema } from "effect";
 import { expect } from "vitest";
 import type { FirewallOptions } from "./firewall.js";
-import { digest } from "../../__tests__/agent-card-fixtures.js";
+import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { appendCertifiedPost } from "../../__tests__/certified-history-fixtures.js";
 import {
   group,

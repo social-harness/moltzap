@@ -14,7 +14,6 @@
  * test fail when the draw stops reaching the interleavings it exists for.
  */
 
-import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { live as it } from "@effect/vitest";
 import {
   Deferred,
@@ -33,6 +32,7 @@ import { describe, expect } from "vitest";
 import type { EngineSentPost } from "../conversations/index.js";
 import type { CollectiveMemberOutcome, InboundItem } from "./inbound.js";
 import type { CollectiveOperations } from "./ports.js";
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import {
   alice,
   collectiveKey,

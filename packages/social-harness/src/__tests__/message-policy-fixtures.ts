@@ -1,9 +1,8 @@
 /** @file Local advice with explicit subject attribution for host transport checks. */
 
-import { testAgentView } from "./agent-card-fixtures.js";
 import { Encoding } from "effect";
 import type { CheckedGuidance } from "../firewall/outcome/index.js";
-import { digest } from "./agent-card-fixtures.js";
+import { digest, testAgentView } from "./agent-card-fixtures.js";
 
 /** The peer text and registered instruction travel separately through every runtime view. */
 export function localGuidance(byte: number): CheckedGuidance {

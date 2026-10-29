@@ -9,7 +9,6 @@
  * a close; each endpoint builds its result from exactly the listed records.
  */
 
-import { agentAddressOf } from "../records/values.js";
 import {
   Clock,
   Effect,
@@ -25,6 +24,7 @@ import { canonicalMessageAddress } from "../conversations/address.js";
 import { SendError } from "../conversations/errors.js";
 import { InboundMessage } from "../conversations/message.js";
 import { agentNameOf, type MessageAddressInput } from "../records/index.js";
+import { agentAddressOf } from "../records/values.js";
 import { encodeRuntimeValue, EndpointStoreError } from "../store/index.js";
 import {
   applyClose,
@@ -48,6 +48,7 @@ import {
   durableEmit,
   durableSend,
   emitTerminal,
+  freezeResult,
   refreshRetained,
   refreshRetainedSend,
 } from "./persistence.js";
@@ -68,10 +69,10 @@ import {
   gatherAddress,
   operationTimes,
   postRefusal,
-  resolveMembers,
   type RequestRefusal,
   requestsSoFar,
   requestWait,
+  resolveMembers,
   sleepUntil,
   withinRequestWait,
 } from "./request-sends.js";
@@ -80,10 +81,8 @@ import { memberOutcomes } from "./shared-answers.js";
 import {
   type CollectiveState,
   encodeLocalCollective,
-  type GatherRequest,
   type OpenGather,
   type PreparedGather,
-  readCollectiveSelection,
 } from "./state.js";
 import { outcomeOfResponse } from "./validation.js";
 import {
@@ -261,14 +260,14 @@ function prepareGather(
       addresses,
       state.ports.lookupMember,
     ).pipe(Effect.mapError((failure) => collectiveFailure(id, failure)));
-    const { deadlineAt, waitUntil } = yield* operationTimes(input.deadline);
+    const times = yield* operationTimes(input.deadline);
     const content = yield* encodeCollectiveContent(
       {
         kind: "operation",
         op: input.op,
         id,
         nonce,
-        deadlineAt,
+        deadlineAt: times.deadlineAt,
         requestedSchema,
       },
       question,
@@ -280,18 +279,17 @@ function prepareGather(
       members,
       requestedSchema,
       content,
-      deadlineAt,
-      waitUntil,
+      ...times,
     };
-    const open: GatherRequest = {
-      ...descriptor,
-      outcomes: new Map(),
-      answerHashes: new Map(),
+    return {
+      id,
+      content,
+      ...times,
+      durable: yield* encodeLocalCollective(id, descriptor).pipe(
+        Effect.mapError(contentInvalid),
+      ),
+      open: { ...descriptor, outcomes: new Map(), answerHashes: new Map() },
     };
-    const durable = yield* encodeLocalCollective(id, descriptor).pipe(
-      Effect.mapError(contentInvalid),
-    );
-    return { id, open, content, deadlineAt, waitUntil, durable };
   });
 }
 
@@ -1205,44 +1203,6 @@ function closedSpan(id: CollectiveId, outcome: ClosedOutcome) {
     captureStackTrace: false,
     attributes: { operationId: id, outcome },
   });
-}
-
-/** The transition permit keeps counted answers and request refusals ahead of one frozen decision. */
-function freezeResult(
-  state: CollectiveState,
-  id: CollectiveId,
-  open: OpenGather,
-): Effect.Effect<CollectiveClosure, CollectiveEmitError> {
-  return durableEmit(
-    state,
-    Effect.gen(function* () {
-      const operation = yield* state.ports.store.readCollectiveOperation(id);
-      if (operation?.canonicalSelection !== undefined) {
-        const selection = yield* readCollectiveSelection(
-          operation.canonicalSelection,
-        );
-        if (selection.kind !== "result") {
-          return yield* new EndpointStoreError({ reason: "corrupt" });
-        }
-        return { closedAt: selection.closedAt, closedBy: selection.closedBy };
-      }
-      const closure: CollectiveClosure = {
-        closedAt: yield* Clock.currentTimeMillis,
-        closedBy:
-          open.outcomes.size === open.members.length ? "settled" : "deadline",
-      };
-      const selection = yield* encodeRuntimeValue({
-        kind: "result",
-        ...closure,
-        answers: [...open.answerHashes].map(([member, recordHash]) => ({
-          member,
-          recordHash,
-        })),
-      });
-      yield* state.ports.store.finalizeCollectiveOperation(id, selection);
-      return closure;
-    }),
-  );
 }
 
 /** The ports the layer runs on, what a firewall adds, and the operations it offers. */

@@ -1,6 +1,5 @@
 /** @file Pending durable deliveries and the classify, engine and subscriber ports a delivery pass runs over. */
 
-import { testAgentView } from "./agent-card-fixtures.js";
 import { Effect, Schema } from "effect";
 import type { InboundItem } from "../communication/collectives/inbound.js";
 import type { CollectiveOperations } from "../communication/collectives/index.js";
@@ -10,7 +9,7 @@ import type { HarnessMessageReadyEvent } from "../host-protocol/operations.js";
 import { InboundMessage } from "../communication/conversations/message.js";
 import { RecordHash } from "../communication/records/index.js";
 import { DeliveryToken } from "../communication/store/index.js";
-import { digest } from "./agent-card-fixtures.js";
+import { digest, testAgentView } from "./agent-card-fixtures.js";
 
 /**
  * A pending durable delivery of a direct post from Bob whose delivery token,

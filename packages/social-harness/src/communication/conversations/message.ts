@@ -52,8 +52,10 @@ const groupMessage = groupMessageStructure.pipe(
   Schema.filter(
     (message) => {
       const addressNames = parseGroupAddress(message.address);
+      if (addressNames === undefined) {
+        return false;
+      }
       return (
-        addressNames !== undefined &&
         addressNames.length === message.members.length &&
         message.members.every(
           (member, index) => member.agentName === addressNames[index],

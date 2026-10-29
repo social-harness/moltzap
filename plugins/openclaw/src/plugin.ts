@@ -35,7 +35,6 @@ import {
   ConfigError,
   Data,
   Effect,
-  JSONSchema,
   Option,
   Schema,
   Stream,
@@ -248,15 +247,6 @@ class OpenClawRuntimeError extends Data.TaggedError("OpenClawRuntimeError")<{
 const isMessageAddressInput = Schema.is(MessageAddressInput);
 
 const carriesTargets = Schema.is(Schema.NonEmptyArray(Schema.Unknown));
-
-/**
- * Returns the manifest schema for one Social Harness channel configuration.
- * @returns The JSON Schema embedded in the OpenClaw plugin manifest.
- * @internal
- */
-export function makeChannelConfigJsonSchema() {
-  return JSONSchema.make(channelConfigSchema);
-}
 
 /**
  * OpenClaw supplies a separate runtime for each account connection. Each

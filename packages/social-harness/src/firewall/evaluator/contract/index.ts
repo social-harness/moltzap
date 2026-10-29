@@ -1,9 +1,8 @@
 /** @file Validated evidence and contracts shared by code and natural-language checks. */
 
-import { AgentView } from "../../../identity/cards.js";
 import { Cause, Data, Effect, Either, Schema } from "effect";
 import { exactStruct } from "../../../encoding/exact.js";
-import { AgentId } from "../../../identity/agents.js";
+import { AgentView } from "../../../identity/cards.js";
 
 const identifier = Schema.NonEmptyTrimmedString;
 const visibility = Schema.Literal("runtime", "assessor");

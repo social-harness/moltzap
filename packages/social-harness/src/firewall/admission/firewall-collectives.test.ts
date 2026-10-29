@@ -1,6 +1,5 @@
 /** @file Collective operations through real Client storage, admission and send preparation. */
 
-import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { scopedLive as it } from "@effect/vitest";
 import { Deferred, Duration, Effect, Fiber, Queue, Schema } from "effect";
 import { describe, expect } from "vitest";
@@ -13,7 +12,7 @@ import type {
   MiddlewareInput,
 } from "../evaluator/contract/index.js";
 import type { FirewallOptions } from "./firewall.js";
-import { digest } from "../../__tests__/agent-card-fixtures.js";
+import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { appendCertifiedPost } from "../../__tests__/certified-history-fixtures.js";
 import { collectiveKey } from "../../__tests__/collective-operation-fixtures.js";
 import {
@@ -700,11 +699,8 @@ function questionCheckedWithResult(
   return Effect.gen(function* () {
     const subject = yield* fixture;
     const deadlineAt = Date.now() + 3_000;
-    const request = yield* seedRequest(
-      subject,
-      deadlineAt,
-      `${marker} ${question}`,
-    );
+    const text = `${marker} ${question}`;
+    const request = yield* seedRequest(subject, deadlineAt, text);
     const seen: MiddlewareInput[] = [];
     const checked = middleware(seen);
     const runtime = yield* incomingFixture(
@@ -730,7 +726,7 @@ function questionCheckedWithResult(
       op: "all_gather",
       id: collectiveIdOf(bob, nonce),
       to: bob,
-      question: `${marker} ${question}`,
+      question: text,
       outcomes: [
         { member: testAgentView(bob), outcome: { kind: "no-answer" } },
       ],

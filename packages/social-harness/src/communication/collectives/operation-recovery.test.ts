@@ -1,6 +1,4 @@
 /** @file Signed collective posts and completion decisions survive endpoint restarts. */
-
-import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { live as it, scoped as itOnClock } from "@effect/vitest";
 import {
   Clock,
@@ -15,7 +13,7 @@ import {
   TestClock,
 } from "effect";
 import { expect } from "vitest";
-import { InboundItem } from "./inbound.js";
+import type { InboundItem } from "./inbound.js";
 import type {
   BindHold,
   CollectiveAdmission,
@@ -23,15 +21,22 @@ import type {
   EngineSendInput,
 } from "./ports.js";
 import { untilLive } from "../../__tests__/advance-clock.js";
-import { identifier } from "../../__tests__/agent-card-fixtures.js";
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import {
   appendCertifiedIntent,
   appendCertifiedPost,
   buildCertifiedFirstMessage,
-  buildCertifiedPost,
-  signEvidence,
   storeCertifiedFirstMessage,
 } from "../../__tests__/certified-history-fixtures.js";
+import {
+  anchor,
+  boundIntent,
+  certifyBoundIntent,
+  groupSubject,
+  resumeEngine,
+  seedGroupFirstMessage,
+  waitForClose,
+} from "../../__tests__/collective-recovery-fixtures.js";
 import {
   engineFixture,
   type Fixture,
@@ -39,54 +44,30 @@ import {
   pass,
   policy,
 } from "../../__tests__/firewall-runtime-fixtures.js";
-import { pollCursor } from "../../__tests__/router-worker-fixtures.js";
 import { withStore } from "../../__tests__/store-schema-fixtures.js";
 import { collectiveAdmission } from "../../firewall/admission/index.js";
-import { AgentCard } from "../../identity/cards.js";
-import {
-  LIVE_WIRE_VERSIONS,
-  WIRE_VERSION,
-} from "../../identity/wire-version.js";
+import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { SendError } from "../conversations/errors.js";
-import {
-  type EndpointEngine,
-  makeEndpointEngine,
-} from "../conversations/index.js";
 import {
   AgentAddress,
   type CertifiedRecord,
-  deriveConversationId,
-  MembershipDescriptor,
   MessageAddressInput,
   mintPostId,
   PostIntent,
-  signOuterPacket,
-  verifyMembershipDescriptor,
 } from "../records/index.js";
-import { RouterInstanceId } from "../router/api/contract.js";
 import {
   decodeRuntimeValue,
   encodeRuntimeValue,
   type EndpointStore,
-  EndpointStoreError,
+  type EndpointStoreError,
   openEndpointStore,
   type PostIntent as StoredPostIntent,
 } from "../store/index.js";
 import { makeCollectiveOperations } from "./index.js";
-import {
-  encodeCollectiveContent,
-  mintCollectiveId,
-  readCollectiveValue,
-} from "./wire/index.js";
+import { encodeCollectiveContent, mintCollectiveId } from "./wire/index.js";
 
 const self = Schema.decodeUnknownSync(AgentAddress)("agent:alice");
 const sender = Schema.decodeUnknownSync(AgentAddress)("agent:bob");
-const anchor = {
-  routerInstanceId: Schema.decodeUnknownSync(RouterInstanceId)(
-    identifier("rti_", 33),
-  ),
-  pollCursor: pollCursor(34),
-};
 const response = {
   to: sender,
   collectiveResponse: { action: "accept", content: { answer: "yes" } },
@@ -114,47 +95,6 @@ function resume(subject: Fixture, store: EndpointStore, failOutbound = false) {
       discard: true,
     });
     return collective;
-  });
-}
-
-function resumeEngine(
-  subject: Fixture,
-  store: EndpointStore,
-  failOutbound = false,
-) {
-  return Effect.gen(function* () {
-    const writes = { fail: false };
-    const engine = yield* makeEndpointEngine({
-      localAgentCard: subject.local.card,
-      signingAuthority: subject.local.authority,
-      registrySignerPublicKey: subject.signer,
-      registry: {
-        lookup: (request) =>
-          Effect.succeed({
-            kind: "found",
-            agentCard:
-              "agentName" in request &&
-              request.agentName === subject.third.card.agentName
-                ? subject.third.card
-                : subject.remote.card,
-          }),
-      },
-      store: {
-        ...store,
-        enqueueOutbound: (message) =>
-          writes.fail
-            ? Effect.fail(new EndpointStoreError({ reason: "persistence" }))
-            : store.enqueueOutbound(message),
-      },
-      reportStorageFault: () => Effect.void,
-      routerWorker: {
-        currentAnchor: Effect.succeed(anchor),
-        awaitAnchor: Effect.succeed(anchor),
-        send: () => Effect.void,
-      },
-    });
-    writes.fail = failOutbound;
-    return engine;
   });
 }
 
@@ -210,28 +150,6 @@ function seedRemoteRequest(subject: Fixture) {
       );
     }),
   );
-}
-
-function deliverRecord(
-  subject: Fixture,
-  engine: EndpointEngine,
-  record: CertifiedRecord,
-) {
-  return Effect.gen(function* () {
-    const message = yield* signOuterPacket({
-      packet: record,
-      membership: subject.membership,
-      agentCard: subject.remote.card,
-      signingAuthority: subject.remote.authority,
-    });
-    const accepted = yield* engine.acceptRouterIngress({
-      routerInstanceId: anchor.routerInstanceId,
-      message,
-      senderCard: subject.remote.card,
-      payload: { kind: "direct", packet: record },
-    });
-    expect({ accepted }).toEqual({ accepted: "accepted" });
-  });
 }
 
 function claimPendingResponse(subject: Fixture) {
@@ -540,109 +458,6 @@ function interruptedBindFixture(pause: "before" | "after" = "after") {
   });
 }
 
-function groupSubject(subject: Fixture) {
-  return Effect.gen(function* () {
-    const cards = [
-      subject.local.card,
-      subject.remote.card,
-      subject.third.card,
-    ] as const;
-    const descriptor = yield* Schema.decodeUnknown(MembershipDescriptor)({
-      sharnessVersion: WIRE_VERSION,
-      kind: "membership_descriptor",
-      conversationId: yield* deriveConversationId([
-        subject.local.card.agentId,
-        subject.remote.card.agentId,
-        subject.third.card.agentId,
-      ]),
-      members: yield* Effect.forEach(
-        cards,
-        (card) => Schema.encode(AgentCard)(card),
-        {
-          concurrency: 1,
-        },
-      ),
-    });
-    return {
-      ...subject,
-      membership: yield* verifyMembershipDescriptor(descriptor, subject.signer),
-    };
-  });
-}
-
-function seedGroupFirstMessage(subject: Fixture) {
-  return withStore(subject.directory, (store) =>
-    Effect.gen(function* () {
-      const partial = yield* buildCertifiedFirstMessage(
-        subject.local,
-        subject.remote,
-        subject.membership,
-        anchor.routerInstanceId,
-      );
-      const record = yield* completeGroupCertificate(subject, partial);
-      yield* storeCertifiedFirstMessage(
-        store,
-        subject.local.card,
-        subject.membership,
-        record,
-      );
-      return record;
-    }),
-  );
-}
-
-function completeGroupCertificate(subject: Fixture, record: CertifiedRecord) {
-  if (subject.membership.members.length === 2) {
-    return Effect.succeed(record);
-  }
-  return Effect.gen(function* () {
-    const certified = record.actionCertifiedRecord;
-    const action = yield* signEvidence(subject.third, {
-      sharnessVersion: WIRE_VERSION,
-      kind: "action_signature",
-      signerAgentId: subject.third.card.agentId,
-      actionHash: certified.recordCore.actionHash,
-    });
-    const vote = yield* signEvidence(subject.third, {
-      sharnessVersion: WIRE_VERSION,
-      kind: "durability_vote",
-      signerAgentId: subject.third.card.agentId,
-      conversationId: subject.membership.descriptor.conversationId,
-      membershipHash: subject.membership.hash,
-      recordHash: certified.recordHash,
-    });
-    const completed: CertifiedRecord = {
-      ...record,
-      actionCertifiedRecord: {
-        ...certified,
-        actionCertificate: {
-          ...certified.actionCertificate,
-          signatures: [...certified.actionCertificate.signatures, action],
-        },
-      },
-      durabilityCertificate: {
-        ...record.durabilityCertificate,
-        votes: [...record.durabilityCertificate.votes, vote],
-      },
-    };
-    return completed;
-  });
-}
-
-function boundIntent(
-  store: EndpointStore,
-  role: "request" | "response" | "close",
-) {
-  return store.readCollectivePosts().pipe(
-    Effect.flatMap((posts) =>
-      Effect.fromNullable(posts.find((post) => post.role === role)),
-    ),
-    Effect.flatMap((post) =>
-      decodeRuntimeValue(PostIntent, post.intent.canonicalIntent),
-    ),
-  );
-}
-
 itOnClock(
   "keeps an interrupted bound answer claimed and includes it in the group close",
   () =>
@@ -750,21 +565,6 @@ function classifyCertified(
   );
 }
 
-function certifyBoundIntent(
-  fixture: { readonly subject: Fixture; readonly engine: EndpointEngine },
-  previous: CertifiedRecord,
-  intent: PostIntent,
-) {
-  return buildCertifiedPost(fixture.subject, previous, intent).pipe(
-    Effect.flatMap((record) =>
-      completeGroupCertificate(fixture.subject, record),
-    ),
-    Effect.tap((record) =>
-      deliverRecord(fixture.subject, fixture.engine, record),
-    ),
-  );
-}
-
 itOnClock(
   "keeps a local post pending when a peer certifies the same post ID",
   () =>
@@ -833,263 +633,6 @@ function certifyRecoveredResponse(
       yield* appendCertifiedIntent({ ...subject, store }, request, intent);
     }),
   );
-}
-
-function waitForClose(store: EndpointStore) {
-  return untilLive(
-    store.readCollectivePosts().pipe(
-      Effect.map((posts) => posts.some((post) => post.role === "close")),
-      Effect.orDie,
-    ),
-  );
-}
-
-const closureCheckpoints = [
-  "before-deadline",
-  "before-bind",
-  "after-bind",
-  "before-publish",
-] as const;
-type ClosureCheckpoint = (typeof closureCheckpoints)[number];
-
-itOnClock.each(closureCheckpoints)(
-  "recovers the selected close and terminal identity after interruption %s",
-  (checkpoint) =>
-    Effect.gen(function* () {
-      const subject = yield* groupSubject(
-        yield* Effect.scoped(engineFixture()),
-      );
-      const head = yield* seedGroupFirstMessage(subject);
-      const interrupted = yield* Effect.scoped(
-        interruptClosure(subject, head, checkpoint),
-      );
-      yield* TestClock.adjust("2 hours");
-      const recovered = yield* Effect.scoped(
-        recoverClosure(subject, interrupted),
-      );
-      yield* withStore(subject.directory, (store) =>
-        Effect.gen(function* () {
-          const engine = yield* resumeEngine(subject, store);
-          yield* makeCollectiveOperations({
-            ...closurePorts(store, engine, yield* Scope.Scope),
-            emit: () =>
-              Effect.dieMessage("a completed result cannot be emitted twice"),
-          });
-          const [operation] = yield* store.readCollectiveOperations();
-          expect(operation?.deliveryToken).toBe(
-            interrupted.operation.deliveryToken,
-          );
-          expect(operation?.canonicalSelection).toEqual(recovered.selection);
-          expect(operation?.phase).toBe("completed");
-          expect(yield* boundIntent(store, "close")).toEqual(recovered.close);
-          expect(
-            yield* store.readCollectivePosts({
-              operationId: interrupted.operation.operationId,
-              role: "close",
-            }),
-          ).toHaveLength(1);
-          const { items: inbox } = yield* store.readInbox();
-          expect(inbox).toHaveLength(1);
-          const item = yield* Effect.fromNullable(inbox[0]);
-          expect(item.deliveryToken).toBe(interrupted.operation.deliveryToken);
-          expect(
-            yield* decodeRuntimeValue(InboundItem, item.canonicalItem),
-          ).toEqual(recovered.result);
-        }).pipe(Effect.scoped),
-      );
-    }),
-);
-
-function closurePorts(
-  store: EndpointStore,
-  engine: EndpointEngine,
-  scope: Scope.Scope,
-): Omit<CollectivePorts, "emit"> {
-  return {
-    store,
-    self,
-    scope,
-    lookupMember: (member) => Effect.succeed(testAgentView(member)),
-    sendPost: engine.send,
-    bindPost: engine.bind,
-    sendAdmitted: engine.sendAdmitted,
-    observePost: engine.observePost,
-    reportStorageFault: () => Effect.dieMessage("unexpected persistence fault"),
-  };
-}
-
-function interruptClosure(
-  subject: Fixture,
-  head: CertifiedRecord,
-  checkpoint: ClosureCheckpoint,
-) {
-  return Effect.gen(function* () {
-    const store = yield* openEndpointStore(subject.directory, {
-      liveWireVersions: LIVE_WIRE_VERSIONS,
-    });
-    const engine = yield* resumeEngine(subject, store);
-    const paused = yield* Deferred.make<void>();
-    const barrier = Deferred.succeed(paused, undefined).pipe(
-      Effect.zipRight(Effect.never),
-    );
-    const layer = yield* makeCollectiveOperations({
-      ...closurePorts(store, engine, yield* Scope.Scope),
-      sendPost: (input) =>
-        checkpoint === "before-bind" && input.collective?.role === "close"
-          ? barrier
-          : engine.send(input),
-      emit: () => barrier,
-    });
-    const sending = yield* layer
-      .send({
-        to: Schema.decodeUnknownSync(MessageAddressInput)(
-          "group:alice,bob,carol",
-        ),
-        text: "Choose a time",
-        collective: {
-          op: "all_gather",
-          deadline: 60,
-          requestedSchema: { type: "object", properties: {} },
-        },
-      })
-      .pipe(Effect.fork);
-    yield* untilLive(
-      store.readCollectivePosts().pipe(
-        Effect.map((posts) => posts.some((post) => post.role === "request")),
-        Effect.orDie,
-      ),
-    );
-    const requestIntent = yield* boundIntent(store, "request");
-    const request = yield* certifyBoundIntent(
-      { subject, engine },
-      head,
-      requestIntent,
-    );
-    const sent = yield* Fiber.join(sending);
-    if (sent.kind !== "collective") {
-      return yield* Effect.dieMessage("expected all-gather");
-    }
-    const answer = yield* certifyBoundIntent({ subject, engine }, request, {
-      ...requestIntent,
-      authorAgentId: subject.remote.card.agentId,
-      postId: yield* mintPostId(),
-      content: yield* encodeCollectiveContent({
-        kind: "response",
-        id: sent.operationId,
-        action: "decline",
-      }),
-    });
-    const pending = yield* engine.readPendingMessages();
-    const delivered = yield* Effect.fromNullable(
-      pending.find(
-        (entry) => entry.recordHash === answer.actionCertifiedRecord.recordHash,
-      ),
-    );
-    yield* layer.classify(delivered);
-    if (checkpoint !== "before-deadline") {
-      yield* TestClock.adjust("1 minute");
-    }
-    if (checkpoint === "before-bind") {
-      yield* Deferred.await(paused);
-    } else if (checkpoint !== "before-deadline") {
-      yield* waitForClose(store);
-      if (checkpoint === "before-publish") {
-        yield* certifyBoundIntent(
-          { subject, engine },
-          answer,
-          yield* boundIntent(store, "close"),
-        );
-        yield* Deferred.await(paused);
-      }
-    }
-    const operation = yield* Effect.fromNullable(
-      yield* store.readCollectiveOperation(sent.operationId),
-    );
-    const close = (yield* store.readCollectivePosts({
-      operationId: sent.operationId,
-      role: "close",
-    }))[0];
-    expect(operation.phase).toBe(
-      checkpoint === "before-deadline" ? "collecting" : "finalizing",
-    );
-    return { operation, answer, close };
-  });
-}
-
-function recoverClosure(
-  subject: Fixture,
-  interrupted: Effect.Effect.Success<ReturnType<typeof interruptClosure>>,
-) {
-  return Effect.gen(function* () {
-    const store = yield* openEndpointStore(subject.directory, {
-      liveWireVersions: LIVE_WIRE_VERSIONS,
-    });
-    const engine = yield* resumeEngine(subject, store);
-    const emitted = yield* Deferred.make<InboundItem>();
-    yield* makeCollectiveOperations({
-      ...closurePorts(store, engine, yield* Scope.Scope),
-      emit: (item, ...[, terminal]) =>
-        Effect.gen(function* () {
-          if (terminal === undefined || item.kind !== "collectiveResult") {
-            return yield* Effect.dieMessage(
-              "expected retained collective result",
-            );
-          }
-          yield* store.publishCollectiveItem({
-            ...terminal,
-            canonicalItem: yield* encodeRuntimeValue(item),
-            conversation: item.to,
-            firewall: false,
-          });
-          yield* Deferred.succeed(emitted, item);
-        }).pipe(Effect.orDie),
-    });
-    yield* waitForClose(store);
-    const close = yield* boundIntent(store, "close");
-    const original = interrupted.close?.intent;
-    if (original !== undefined) {
-      expect(close.postId).toBe(original.postId);
-      expect(close).toEqual(
-        yield* decodeRuntimeValue(PostIntent, original.canonicalIntent),
-      );
-    }
-    const metadata = {
-      closedAt:
-        interrupted.operation.phase === "collecting" ? 7_200_000 : 60_000,
-      closedBy: "deadline",
-    };
-    expect(yield* readCollectiveValue(close.content)).toEqual(
-      Option.some({
-        kind: "close",
-        id: interrupted.operation.operationId,
-        ...metadata,
-        included: [interrupted.answer.actionCertifiedRecord.recordHash],
-      }),
-    );
-    if (original?.completedRecordHash === undefined) {
-      yield* certifyBoundIntent({ subject, engine }, interrupted.answer, close);
-    }
-    const result = yield* Deferred.await(emitted);
-    expect(result).toMatchObject({
-      ...metadata,
-      outcomes: [
-        { member: testAgentView("agent:bob"), outcome: { kind: "declined" } },
-        {
-          member: testAgentView("agent:carol"),
-          outcome: { kind: "no-answer" },
-        },
-      ],
-    });
-    const operation = yield* Effect.fromNullable(
-      yield* store.readCollectiveOperation(interrupted.operation.operationId),
-    );
-    if (interrupted.operation.canonicalSelection !== undefined) {
-      expect(operation.canonicalSelection).toEqual(
-        interrupted.operation.canonicalSelection,
-      );
-    }
-    return { result, close, selection: operation.canonicalSelection };
-  });
 }
 
 function assertOwnAnswer(item: InboundItem) {

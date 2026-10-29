@@ -1,13 +1,12 @@
 /** @file The history export appends decodable lines and stops explicitly. */
 
-import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { FileSystem, Error as PlatformError } from "@effect/platform";
 import { NodeFileSystem } from "@effect/platform-node";
 import { live as it } from "@effect/vitest";
 import { DateTime, Effect, Schema } from "effect";
 import { join } from "node:path";
 import { describe, expect } from "vitest";
-import { digest } from "../../__tests__/agent-card-fixtures.js";
+import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { SendInput } from "../../communication/collectives/contracts.js";
 import { InboundItem } from "../../communication/collectives/inbound.js";
 import { PostId } from "../../communication/records/index.js";

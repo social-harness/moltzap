@@ -1,6 +1,5 @@
 /** @file Request context and admission queues survive current-store restarts. */
 
-import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { live as it, scoped as itOnClock } from "@effect/vitest";
 import {
   Clock,
@@ -14,7 +13,7 @@ import {
 } from "effect";
 import { expect } from "vitest";
 import type { InboundItem } from "../../communication/collectives/inbound.js";
-import { digest } from "../../__tests__/agent-card-fixtures.js";
+import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import {
   bytes,
   stateDirectory,

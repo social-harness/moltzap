@@ -1,6 +1,5 @@
 /** @file Plain sends distinguish Router attachment from ownership of a bound collective post. */
 
-import { resolvedMemberView } from "../../__tests__/firewall-runtime-fixtures.js";
 import { scoped as it } from "@effect/vitest";
 import {
   Deferred,
@@ -14,7 +13,10 @@ import {
 import { expect } from "vitest";
 import { identifier } from "../../__tests__/agent-card-fixtures.js";
 import { signEvidence } from "../../__tests__/certified-history-fixtures.js";
-import { engineFixture } from "../../__tests__/firewall-runtime-fixtures.js";
+import {
+  engineFixture,
+  resolvedMemberView,
+} from "../../__tests__/firewall-runtime-fixtures.js";
 import { pollCursor } from "../../__tests__/router-worker-fixtures.js";
 import { makeHostDelivery } from "../../daemon/inbox/host-delivery.js";
 import { WIRE_VERSION } from "../../identity/wire-version.js";

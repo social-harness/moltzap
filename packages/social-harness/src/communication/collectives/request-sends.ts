@@ -182,33 +182,25 @@ export function resolveMembers(
   members: readonly [AgentAddress, ...AgentAddress[]],
   lookup: CollectivePorts["lookupMember"],
 ): Effect.Effect<Members, CollectiveFailure> {
-  return Effect.forEach(
+  return Effect.validateAll(
     members,
     (member) =>
       lookup(member).pipe(
         Effect.mapError((error) => postRefusal(member, error)),
-        Effect.either,
       ),
     { concurrency: MEMBER_LOOKUP_CONCURRENCY },
   ).pipe(
-    Effect.flatMap((lookups) => {
-      const refusals = lookups.flatMap((found) =>
-        Either.isLeft(found) ? [found.left] : [],
-      );
-      const [firstRefusal, ...otherRefusals] = refusals;
-      if (firstRefusal !== undefined) {
-        return Effect.fail<CollectiveFailure>({
-          kind: "members-unreachable",
-          members: [firstRefusal, ...otherRefusals],
-        });
-      }
-      const [first, ...rest] = lookups.flatMap((found) =>
-        Either.isRight(found) ? [found.right] : [],
-      );
-      return first === undefined
+    Effect.mapError(
+      (refusals): CollectiveFailure => ({
+        kind: "members-unreachable",
+        members: refusals,
+      }),
+    ),
+    Effect.flatMap(([first, ...rest]) =>
+      first === undefined
         ? Effect.dieMessage("a collecting operation has no resolved members")
-        : Effect.succeed([first, ...rest] satisfies Members);
-    }),
+        : Effect.succeed([first, ...rest] satisfies Members),
+    ),
   );
 }
 

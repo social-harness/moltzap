@@ -7,16 +7,15 @@
 import { Effect, Array as EffectArray, Schema, Struct } from "effect";
 import type { InboundItem } from "../../communication/collectives/inbound.js";
 import type { RecordHash } from "../../communication/records/index.js";
-import {
-  agentAddressOf,
-  type MessageAddressInput,
-} from "../../communication/records/values.js";
-import { AgentView, agentViewOf } from "../../identity/cards.js";
 import { ResultProvenance } from "../../communication/collectives/index.js";
 import {
   renderCollectiveResult,
   renderOutcome,
 } from "../../communication/collectives/render.js";
+import {
+  agentAddressOf,
+  type MessageAddressInput,
+} from "../../communication/records/values.js";
 import {
   decodeRuntimeValue,
   encodeRuntimeValue,
@@ -28,6 +27,7 @@ import {
   type FirewallRequestAdmission,
   MAXIMUM_RUNTIME_ITEM_BYTES,
 } from "../../communication/store/index.js";
+import { AgentView, agentViewOf } from "../../identity/cards.js";
 import {
   type FirewallCheck,
   firewallCheckSchema,

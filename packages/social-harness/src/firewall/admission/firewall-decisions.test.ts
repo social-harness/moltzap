@@ -1,8 +1,5 @@
 /** @file The owner decisions feed explains each checked message through real Client storage. */
 
-import { MessageAddressInput } from "../../communication/records/values.js";
-import { withStore } from "../../__tests__/store-schema-fixtures.js";
-import { agentViewOf } from "../../identity/cards.js";
 import { scopedLive as it } from "@effect/vitest";
 import { Effect, Queue, Schema, Struct } from "effect";
 import { expect } from "vitest";
@@ -10,7 +7,6 @@ import type { FirewallOptions } from "./firewall.js";
 import { makeRetainedCheckFixture } from "../../__tests__/firewall-retained-fixtures.js";
 import {
   churnPolicy,
-  destination,
   fixture,
   type Fixture,
   incomingThrough,
@@ -19,7 +15,10 @@ import {
   rule,
   settings,
 } from "../../__tests__/firewall-runtime-fixtures.js";
+import { withStore } from "../../__tests__/store-schema-fixtures.js";
+import { MessageAddressInput } from "../../communication/records/values.js";
 import { encodeRuntimeValue } from "../../communication/store/index.js";
+import { agentViewOf } from "../../identity/cards.js";
 import {
   type DecisionProvider,
   DecisionProviderError,
@@ -458,60 +457,10 @@ it("reports Client's own hold after repeatedly stale evidence as the endpoint's"
 it("retains refused first-message peers after restart without an admitted conversation", () =>
   Effect.gen(function* () {
     const reviser = codePolicy([rule], revise);
-    const saved = yield* Effect.scoped(
-      Effect.gen(function* () {
-        const subject = yield* fixture;
-        const editable = yield* installEditableFirewall(
-          options([reviser]),
-          subject.store,
-        );
-        const delivery = yield* outgoingThrough(subject, editable);
-        yield* Effect.flip(
-          delivery.operations.send({
-            input: {
-              to: Schema.decodeUnknownSync(MessageAddressInput)(
-                "group:carol,bob",
-              ),
-              text: "Hello",
-            },
-          }),
-        );
-        expect((yield* subject.store.recover()).memberships).toEqual([]);
-        const feed = yield* editable.policy.decisions({});
-        expect(feed.decisions.slice(0, 1)).toMatchObject([
-          {
-            direction: "outgoing",
-            peer: agentViewOf(subject.remote.card),
-            outcome: "revise",
-            cause: "code",
-            decidedBy: arrayContaining([
-              expect.objectContaining({
-                ruleId: rule.id,
-                from: "code",
-                advice: rule.feedback.text,
-              }),
-            ]),
-          },
-        ]);
-        expect(feed.decisions.map((decision) => decision.peer)).toEqual([
-          agentViewOf(subject.remote.card),
-          agentViewOf(subject.third.card),
-        ]);
-        return { directory: subject.directory, decisions: feed.decisions };
-      }),
-    );
-    yield* withStore(saved.directory, (store) =>
-      Effect.gen(function* () {
-        const editable = yield* installEditableFirewall(
-          options([reviser]),
-          store,
-        );
-        expect((yield* editable.policy.decisions({})).decisions).toEqual(
-          saved.decisions,
-        );
-        expect((yield* store.recover()).memberships).toEqual([]);
-      }),
-    );
+    const saved = yield* Effect.scoped(refuseFirstGroupMessage(reviser));
+    const recovered = yield* readRefusedDecisions(saved.directory, reviser);
+    expect(recovered.decisions).toEqual(saved.decisions);
+    expect(recovered.memberships).toEqual([]);
   }));
 
 it("refuses unknown stored editable properties as persistence failures", () =>
@@ -655,4 +604,59 @@ it("retains a runtime norm's ownership when the owner later replaces it", () =>
 /** Containment matchers remain unknown rather than leaking Vitest's any into feed fields. */
 function arrayContaining(values: readonly unknown[]): unknown {
   return expect.arrayContaining([...values]);
+}
+
+function readRefusedDecisions(directory: string, reviser: MessageMiddleware) {
+  return withStore(directory, (store) =>
+    Effect.gen(function* () {
+      const editable = yield* installEditableFirewall(
+        options([reviser]),
+        store,
+      );
+      const { decisions } = yield* editable.policy.decisions({});
+      const { memberships } = yield* store.recover();
+      return { decisions, memberships };
+    }),
+  );
+}
+
+function refuseFirstGroupMessage(reviser: MessageMiddleware) {
+  return Effect.gen(function* () {
+    const subject = yield* fixture;
+    const editable = yield* installEditableFirewall(
+      options([reviser]),
+      subject.store,
+    );
+    const delivery = yield* outgoingThrough(subject, editable);
+    yield* Effect.flip(
+      delivery.operations.send({
+        input: {
+          to: Schema.decodeUnknownSync(MessageAddressInput)("group:carol,bob"),
+          text: "Hello",
+        },
+      }),
+    );
+    expect((yield* subject.store.recover()).memberships).toEqual([]);
+    const feed = yield* editable.policy.decisions({});
+    expect(feed.decisions.slice(0, 1)).toMatchObject([
+      {
+        direction: "outgoing",
+        peer: agentViewOf(subject.remote.card),
+        outcome: "revise",
+        cause: "code",
+        decidedBy: arrayContaining([
+          expect.objectContaining({
+            ruleId: rule.id,
+            from: "code",
+            advice: rule.feedback.text,
+          }),
+        ]),
+      },
+    ]);
+    expect(feed.decisions.map((decision) => decision.peer)).toEqual([
+      agentViewOf(subject.remote.card),
+      agentViewOf(subject.third.card),
+    ]);
+    return { directory: subject.directory, decisions: feed.decisions };
+  });
 }

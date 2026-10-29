@@ -1,1 +1,0 @@
-Messages, collective results, guidance and firewall decisions carry each agent's verified identity. Collective operations retain member identities before acceptance and reuse them after restart. Registration, active status and history results require their agent or author view.

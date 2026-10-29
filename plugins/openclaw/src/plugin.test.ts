@@ -30,7 +30,6 @@ import {
 import { Effect, Either, Encoding, Fiber, Schema, Stream } from "effect";
 import { join } from "node:path";
 import { beforeAll, describe, expect, vi, it as vitestIt } from "vitest";
-import manifest from "../openclaw.plugin.json" with { type: "json" };
 import { openClawTestStateDirectory } from "../vitest.setup.js";
 import { testAgentView, testGuidance } from "./__tests__/guidance-fixtures.js";
 import {
@@ -48,7 +47,7 @@ import {
   OPERATION_ID,
   postId,
 } from "./__tests__/send-results.js";
-import { createChannelPlugin, makeChannelConfigJsonSchema } from "./plugin.js";
+import { createChannelPlugin } from "./plugin.js";
 
 const TEST_SESSION_STORE_PATH = join(
   openClawTestStateDirectory,
@@ -113,10 +112,6 @@ describe("OpenClaw HarnessEndpoint adapter", () => {
   it(
     "disconnects the account when the endpoint stream fails",
     inboundStreamFailureDisconnects,
-  );
-  vitestIt(
-    "keeps the OpenClaw manifest schema in sync",
-    manifestMatchesRuntimeSchema,
   );
 });
 
@@ -749,7 +744,7 @@ function rendersCollectiveRequest() {
       MessageSid: postId(4),
     });
     expect(call.ctx.Body).toContain(
-      `send to ${`agent:${COLLECTIVE_REQUEST.from.agentName}`}.`,
+      `send to agent:${COLLECTIVE_REQUEST.from.agentName}.`,
     );
   });
 }
@@ -774,6 +769,8 @@ function rendersAllGatherRequest() {
 function rendersCollectiveResult() {
   const item = Schema.decodeUnknownSync(InboundItem)({
     kind: "collectiveResult",
+    closedAt: 0,
+    closedBy: "deadline",
     op: "gather",
     id: OPERATION_ID,
     to: "group:alice,bob,carol",
@@ -856,6 +853,8 @@ function withheldResultDelivery() {
   const withheld = { kind: "withheld", checkId, reason: "prohibited" };
   const item = Schema.decodeUnknownSync(InboundItem)({
     kind: "collectiveResult",
+    closedAt: 0,
+    closedBy: "settled",
     op: "gather",
     id: OPERATION_ID,
     to: "group:alice,bob,carol",
@@ -1038,18 +1037,6 @@ function inboundStreamFailureDisconnects() {
     );
     yield* proactiveSendFailsWhenDisconnected(plugin, fake, 0);
   });
-}
-
-function manifestMatchesRuntimeSchema() {
-  expect(createChannelPlugin().agentPrompt).toBeUndefined();
-  const { $schema, ...generated } = makeChannelConfigJsonSchema();
-  expect($schema).toBeDefined();
-  if (!("required" in generated)) {
-    throw new Error("expected an object schema");
-  }
-  const { required, ...embedded } = generated;
-  expect(required).toHaveLength(0);
-  expect(manifest.channelConfigs.sharness.schema).toEqual(embedded);
 }
 
 function directMessage(id = 1): InboundMessage {

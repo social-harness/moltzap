@@ -1,9 +1,9 @@
 /** @file Pins which certified posts reach the subscriber, in what form, and which received requests a member keeps. */
 
-import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { scoped as it } from "@effect/vitest";
 import { Duration, Effect, Option, TestClock } from "effect";
 import { describe, expect } from "vitest";
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import {
   classifyPost,
   collectiveKey,

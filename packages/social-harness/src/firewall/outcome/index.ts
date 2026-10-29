@@ -1,8 +1,8 @@
 /** @file Runtime-safe projections of local message policy, separate from peer content. */
 
 import { Data, Schema } from "effect";
-import { AgentView } from "../../identity/cards.js";
 import { exactStruct } from "../../encoding/exact.js";
+import { AgentView } from "../../identity/cards.js";
 import { firewallCheckSchema } from "../evaluator/contract/index.js";
 
 /** Endpoint-authored evidence uses one sender identity across producers and rendering. */

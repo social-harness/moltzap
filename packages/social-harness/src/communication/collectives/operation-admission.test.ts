@@ -1,6 +1,5 @@
 /** @file Pins how the collective layer runs under an installed firewall's admission. */
 
-import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { scoped as it } from "@effect/vitest";
 import {
   Deferred,
@@ -22,6 +21,7 @@ import type {
   GatherCandidate,
   ResultProvenance,
 } from "./ports.js";
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import {
   alice,
   certifyNext,

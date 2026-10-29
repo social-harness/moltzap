@@ -10,13 +10,13 @@
  */
 
 import type { PostId, RecordHash } from "../records/index.js";
-import { agentAddressOf, type AgentAddress } from "../records/values.js";
 import type { CollectiveClosure, Members } from "./contracts.js";
 import type {
   CollectiveMemberOutcome,
   CollectiveResultItem,
 } from "./inbound.js";
 import type { ResponseValue } from "./wire/index.js";
+import { type AgentAddress, agentAddressOf } from "../records/values.js";
 
 // safer-arch-ignore file-implicit-boundary-module: A received all_gather request keeps these answers and the operation layer selects them by its close; nothing outside communication/collectives reads them.
 

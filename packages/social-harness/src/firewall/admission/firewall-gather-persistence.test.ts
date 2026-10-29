@@ -1,6 +1,5 @@
 /** @file A committed gather admission remains ambiguous to its caller when the store response fails. */
 
-import { resolvedMemberView } from "../../__tests__/firewall-runtime-fixtures.js";
 import { live as it } from "@effect/vitest";
 import { Effect, Schema, Scope } from "effect";
 import { expect } from "vitest";
@@ -14,6 +13,7 @@ import {
   installation,
   pass,
   policy,
+  resolvedMemberView,
 } from "../../__tests__/firewall-runtime-fixtures.js";
 import { withStore } from "../../__tests__/store-schema-fixtures.js";
 import { makeCollectiveOperations } from "../../communication/collectives/index.js";

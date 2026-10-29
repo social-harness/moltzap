@@ -280,9 +280,25 @@ function answerAllGather({ requester, member, held, group }: MarkerScenario) {
       to: group,
       collectiveResponse: { id: allGatherRequest.id, action: "decline" },
     });
-    yield* Effect.forEach([requester, member, held], nextItem, {
-      concurrency: 1,
+    const result = yield* nextItem(requester);
+    expect(result).toEqual({
+      kind: "collectiveResult",
+      op: "all_gather",
+      id: allGatherRequest.id,
+      closedAt: anyNumber,
+      closedBy: "settled",
+      to: allGatherRequest.to,
+      question,
+      outcomes: [
+        {
+          member: member.agent,
+          outcome: { kind: "answered", content: { slot: "tue" } },
+        },
+        { member: held.agent, outcome: { kind: "declined" } },
+      ],
     });
+    expect(yield* nextItem(member)).toEqual(result);
+    expect(yield* nextItem(held)).toEqual(result);
     return allGatherRequest;
   });
 }

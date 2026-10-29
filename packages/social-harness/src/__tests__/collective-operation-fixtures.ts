@@ -1,6 +1,5 @@
 /** @file Recording ports, post builders and send helpers shared by the collective operation tests. */
 
-import { testAgentView } from "./agent-card-fixtures.js";
 import { Duration, Effect, Schema, type Scope } from "effect";
 import type { InboundItem } from "../communication/collectives/inbound.js";
 import type {
@@ -25,7 +24,7 @@ import { SendError } from "../communication/conversations/errors.js";
 import { InboundMessage } from "../communication/conversations/message.js";
 import { PostId, RecordHash } from "../communication/records/index.js";
 import { AgentAddress } from "../communication/records/values.js";
-import { digest } from "./agent-card-fixtures.js";
+import { digest, testAgentView } from "./agent-card-fixtures.js";
 import { collectivePersistencePorts } from "./collective-storage-stub.js";
 
 /** The agent a layer `makeLayer` builds runs as unless told otherwise. */

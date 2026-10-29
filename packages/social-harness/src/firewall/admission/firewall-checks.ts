@@ -30,8 +30,8 @@ import {
   RecordCore,
 } from "../../communication/records/index.js";
 import {
-  agentAddressOf,
   type AgentAddress,
+  agentAddressOf,
   type MessageAddressInput,
 } from "../../communication/records/values.js";
 import {

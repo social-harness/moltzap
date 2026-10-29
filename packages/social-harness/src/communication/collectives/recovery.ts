@@ -1,11 +1,11 @@
 /** @file Rebuild collective working state from retained decisions and certified history. */
-import { agentAddressOf } from "../records/values.js";
 import { Clock, Effect, Fiber, Schema } from "effect";
 import type { CollectiveOperations, PostSender } from "./ports.js";
 import type { OpenRequest, ReceivedRequest } from "./received-request.js";
 import type { HeldClose } from "./shared-answers.js";
 import { InboundMessage } from "../conversations/message.js";
 import { AgentAddress, RecordHash } from "../records/index.js";
+import { agentAddressOf } from "../records/values.js";
 import {
   type CollectiveRequestRefusal,
   decodeRuntimeValue,

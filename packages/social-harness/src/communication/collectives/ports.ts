@@ -8,6 +8,7 @@ import type {
   CheckedGuidance,
   FirewallSendError,
 } from "../../firewall/outcome/index.js";
+import type { AgentView } from "../../identity/cards.js";
 import type { SendError } from "../conversations/errors.js";
 import type {
   BindHold,
@@ -31,7 +32,6 @@ import type {
 } from "./contracts.js";
 import type { InboundItem } from "./inbound.js";
 import { exactStruct } from "../../encoding/exact.js";
-import type { AgentView } from "../../identity/cards.js";
 import { type PostId, RecordHash } from "../records/index.js";
 import { AgentAddress, type MessageAddressInput } from "../records/values.js";
 

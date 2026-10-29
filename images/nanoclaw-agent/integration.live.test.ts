@@ -1,7 +1,7 @@
 /** @file Exercises NanoClaw native inbox and sends against the disposable network. */
 import {
-  type Endpoint as NetworkEndpoint,
   type Network,
+  type Endpoint as NetworkEndpoint,
   startNetwork,
 } from "@moltzap/integration-tests/process-network";
 import assert from "node:assert/strict";
@@ -229,6 +229,13 @@ async function answersAndStartsGather({
     },
   ]);
   const request = asRecord((await caller.next(1))[0]);
+  assertGatherRequest(request, target);
+}
+
+function assertGatherRequest(
+  request: Record<string, unknown>,
+  target: Endpoint,
+) {
   assert.equal(request.kind, "collectiveRequest");
   assert.equal(request.op, "gather");
   assert.deepEqual(request.from, target.agent);

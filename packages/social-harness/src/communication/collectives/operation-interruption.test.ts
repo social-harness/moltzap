@@ -1,6 +1,5 @@
 /** @file Accepted gather admission and fanout keep their owner after caller interruption. */
 
-import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { scoped as it } from "@effect/vitest";
 import {
   Deferred,
@@ -15,6 +14,7 @@ import { expect } from "vitest";
 import type { EndpointStore, EndpointStoreError } from "../store/index.js";
 import type { InboundItem } from "./inbound.js";
 import { untilLive } from "../../__tests__/advance-clock.js";
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import {
   engineFixture,
   type Fixture,

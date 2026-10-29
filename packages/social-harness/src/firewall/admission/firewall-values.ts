@@ -5,8 +5,8 @@ import {
   decodeRuntimeValue,
   type FirewallAuditEntry,
 } from "../../communication/store/index.js";
-import { AgentView } from "../../identity/cards.js";
 import { exactStruct } from "../../encoding/exact.js";
+import { AgentView } from "../../identity/cards.js";
 import {
   decodeFrozen,
   type FirewallCheck,

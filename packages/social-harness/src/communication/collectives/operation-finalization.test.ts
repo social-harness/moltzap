@@ -1,13 +1,13 @@
 /** @file A retained answer survives delayed storage responses and endpoint restart. */
-
-import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { scoped as it } from "@effect/vitest";
 import { Deferred, Effect, Fiber, Schema, Scope, TestClock } from "effect";
 import { expect } from "vitest";
 import type { CollectiveId } from "./contracts.js";
 import type { InboundItem } from "./inbound.js";
 import type { CollectivePorts } from "./ports.js";
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { appendCertifiedPost } from "../../__tests__/certified-history-fixtures.js";
+import { retainingEmitter } from "../../__tests__/collective-recovery-fixtures.js";
 import {
   engineFixture,
   seedIncoming,
@@ -17,7 +17,6 @@ import { InboundMessage } from "../conversations/message.js";
 import { AgentAddress, mintPostId } from "../records/index.js";
 import {
   decodeRuntimeValue,
-  encodeRuntimeValue,
   type EndpointStore,
   EndpointStoreError,
   openEndpointStore,
@@ -107,18 +106,12 @@ function delayedAnswerFixture(failAfterRetain = false) {
     const release = yield* Deferred.make<undefined>();
     const emitted = yield* Deferred.make<InboundItem>();
     const faults: EndpointStoreError[] = [];
-    const store: EndpointStore = {
-      ...subject.store,
-      recordCollectiveAnswer: (answer) =>
-        subject.store.recordCollectiveAnswer(answer).pipe(
-          Effect.tap(() => Deferred.succeed(entered, undefined)),
-          Effect.tap(() =>
-            failAfterRetain
-              ? Effect.fail(new EndpointStoreError({ reason: "persistence" }))
-              : Deferred.await(release),
-          ),
-        ),
-    };
+    const store = delayedAnswerStore(
+      subject.store,
+      entered,
+      release,
+      failAfterRetain,
+    );
     const ports: CollectivePorts = {
       store,
       self: Schema.decodeUnknownSync(AgentAddress)("agent:alice"),
@@ -154,25 +147,6 @@ function delayedAnswerFixture(failAfterRetain = false) {
       faults,
     };
   });
-}
-
-function retainingEmitter(
-  store: EndpointStore,
-  emitted: Deferred.Deferred<InboundItem>,
-): CollectivePorts["emit"] {
-  return (item, ...[, terminal]) =>
-    Effect.gen(function* () {
-      if (terminal === undefined || item.kind !== "collectiveResult") {
-        return yield* Effect.dieMessage("expected one retained gather result");
-      }
-      yield* store.publishCollectiveItem({
-        ...terminal,
-        canonicalItem: yield* encodeRuntimeValue(item),
-        conversation: item.to,
-        firewall: false,
-      });
-      yield* Deferred.succeed(emitted, item);
-    }).pipe(Effect.orDie);
 }
 
 function beginGather(collective: CollectiveOperations) {
@@ -224,4 +198,24 @@ function certifiedAnswer(
     );
     return { message, recordHash };
   });
+}
+
+function delayedAnswerStore(
+  store: EndpointStore,
+  entered: Deferred.Deferred<undefined>,
+  release: Deferred.Deferred<undefined>,
+  failAfterRetain: boolean,
+): EndpointStore {
+  return {
+    ...store,
+    recordCollectiveAnswer: (answer) =>
+      store.recordCollectiveAnswer(answer).pipe(
+        Effect.tap(() => Deferred.succeed(entered, undefined)),
+        Effect.tap(() =>
+          failAfterRetain
+            ? Effect.fail(new EndpointStoreError({ reason: "persistence" }))
+            : Deferred.await(release),
+        ),
+      ),
+  };
 }

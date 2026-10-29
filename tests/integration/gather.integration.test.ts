@@ -206,6 +206,8 @@ function answerGatherAndExpectResult(
       kind: "collectiveResult",
       op: "gather",
       id: operationId,
+      closedAt: anyNumber,
+      closedBy: "settled",
       to: "group:gather-member-a,gather-member-b,gather-requester",
       question,
       outcomes: [

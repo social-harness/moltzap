@@ -1,10 +1,10 @@
 /** @file Pins how a requester completes a gather, and what happens when the service cannot keep what the layer emits. */
 
-import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { scoped as it } from "@effect/vitest";
 import { Duration, Effect, Fiber, Option, Supervisor, TestClock } from "effect";
 import { describe, expect } from "vitest";
 import type { CollectivePorts } from "./ports.js";
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import {
   answerPost,
   certifyNext,
@@ -417,8 +417,11 @@ it("settles when one member answers and another request is refused", () =>
         closedAt: 500,
         closedBy: "settled",
         outcomes: [
-          { member: "agent:bob", outcome: { kind: "declined" } },
-          { member: "agent:carol", outcome: { kind: "no-answer" } },
+          { member: testAgentView("agent:bob"), outcome: { kind: "declined" } },
+          {
+            member: testAgentView("agent:carol"),
+            outcome: { kind: "no-answer" },
+          },
         ],
       },
     ]);

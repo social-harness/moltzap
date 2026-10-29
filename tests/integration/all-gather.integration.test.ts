@@ -203,6 +203,8 @@ function answerAllGatherAndExpectSharedResult(
       kind: "collectiveResult",
       op: "all_gather",
       id: operationId,
+      closedAt: anyNumber,
+      closedBy: "settled",
       to: group,
       question,
       outcomes: [

@@ -102,8 +102,8 @@ export function renderCollectiveRequestBody(
 ): string {
   const asked =
     item.op === "all_gather"
-      ? `all_gather from ${`agent:${item.from.agentName}`} to ${item.to}`
-      : `gather from ${`agent:${item.from.agentName}`}`;
+      ? `all_gather from agent:${item.from.agentName} to ${item.to}`
+      : `gather from agent:${item.from.agentName}`;
   return [
     `${asked}, open until ${new Date(item.deadlineAt).toISOString()}.`,
     `Question: ${item.question}`,

@@ -51,10 +51,10 @@ import { encodeCanonical } from "../encoding/canonical-json.js";
 import {
   managementReadConversationRequestSchema,
   managementReadConversationResultSchema,
-  managementRegisterResultSchema,
-  managementStatusResultSchema,
   managementRegisterRequestSchema,
+  managementRegisterResultSchema,
   managementSearchAgentsRequestSchema,
+  managementStatusResultSchema,
 } from "../host-protocol/index.js";
 import { AgentCard, type VerifiedAgentCard } from "../identity/cards.js";
 import { AgentSigningAuthority, Ed25519PublicKey } from "../identity/keys.js";

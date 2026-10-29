@@ -1,6 +1,5 @@
 /** @file Exercises draft discovery and native inbox delivery through real HTTP. */
 
-import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { HttpClient, HttpClientRequest } from "@effect/platform";
 import { NodeHttpClient } from "@effect/platform-node";
 import { scopedLive as it } from "@effect/vitest";
@@ -15,7 +14,7 @@ import {
 import { Chunk, Deferred, Effect, Fiber, Schema, Stream } from "effect";
 import { describe, expect } from "vitest";
 import type { HarnessMessageReadyEvent } from "../../host-protocol/operations.js";
-import { digest } from "../../__tests__/agent-card-fixtures.js";
+import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { loopbackMcpEndpoint } from "../../__tests__/mcp-http-fixtures.js";
 import { localGuidance } from "../../__tests__/message-policy-fixtures.js";
 import { InboundItem } from "../../communication/collectives/inbound.js";

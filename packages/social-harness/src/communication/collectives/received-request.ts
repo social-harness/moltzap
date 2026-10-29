@@ -8,18 +8,18 @@
  * guessed when several are open.
  */
 
-import type { AgentView } from "../../identity/cards.js";
-import { agentAddressOf } from "../records/values.js";
 import { Duration, Either, Option } from "effect";
+import type { AgentView } from "../../identity/cards.js";
 import type { InboundMessage } from "../conversations/message.js";
 import type { PostId, RecordHash } from "../records/index.js";
-import type {
-  AgentAddress,
-  GroupAddress,
-  MessageAddressInput,
-} from "../records/values.js";
 import type { CertifiedPost } from "./ports.js";
 import type { SharedAnswers } from "./shared-answers.js";
+import {
+  type AgentAddress,
+  agentAddressOf,
+  type GroupAddress,
+  type MessageAddressInput,
+} from "../records/values.js";
 import {
   CollectiveError,
   type CollectiveFailure,

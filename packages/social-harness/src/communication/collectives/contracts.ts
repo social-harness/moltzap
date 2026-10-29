@@ -1,10 +1,10 @@
 /** @file Collective operations, answers and the closed errors of a refused collective send. */
 
 import { Data, ParseResult, Schema } from "effect";
+import type { AgentView } from "../../identity/cards.js";
 import { exactStruct } from "../../encoding/exact.js";
 import { isCanonicalIdentifier } from "../../encoding/identifier.js";
 import { checkedGuidanceSchema } from "../../firewall/outcome/index.js";
-import type { AgentView } from "../../identity/cards.js";
 import {
   issuesText,
   type SendError,

@@ -544,26 +544,11 @@ function projectDecision(
   const message = check.input.message;
   const peers =
     message === null ? [null] : decisionPeers(message, check.direction);
-  const checkedRuleIds = [
-    ...new Set(
-      result.checks.flatMap((middleware) =>
-        middleware.findings.map((finding) => finding.ruleId),
-      ),
-    ),
-  ];
-  const registrations = check.input.installation[check.direction];
-  const deciding = decidingRules(result.reason, registrations, result.checks);
-  const text = new Set(
-    registrations
-      .filter((entry) => entry.provenance.format === textPolicyFormat)
-      .map((entry) => entry.id),
+  const rules = decisionRules(
+    result,
+    check.input.installation[check.direction],
+    origin,
   );
-  const cause = decisionCause(result, deciding, text);
-  const decidedBy = deciding.map((rule) => ({
-    ruleId: rule.ruleId,
-    ...origin(rule),
-    ...(rule.advice === undefined ? {} : { advice: rule.advice }),
-  }));
   return Effect.forEach(
     peers,
     (peerAgentId) => {
@@ -580,14 +565,39 @@ function projectDecision(
             peer,
             outcome: result.judgment,
             disposition: check.disposition,
-            cause,
-            decidedBy,
-            checkedRuleIds,
+            ...rules,
             activeRevision: check.input.configurationDigest,
           });
     },
     { concurrency: 1 },
   );
+}
+
+function decisionRules(
+  result: DecodedResult,
+  registrations: readonly Registration[],
+  origin: RuleOrigin,
+) {
+  const checkedRuleIds = [
+    ...new Set(
+      result.checks.flatMap((middleware) =>
+        middleware.findings.map((finding) => finding.ruleId),
+      ),
+    ),
+  ];
+  const deciding = decidingRules(result.reason, registrations, result.checks);
+  const text = new Set(
+    registrations
+      .filter((entry) => entry.provenance.format === textPolicyFormat)
+      .map((entry) => entry.id),
+  );
+  const cause = decisionCause(result, deciding, text);
+  const decidedBy = deciding.map((rule) => ({
+    ruleId: rule.ruleId,
+    ...origin(rule),
+    ...(rule.advice === undefined ? {} : { advice: rule.advice }),
+  }));
+  return { cause, decidedBy, checkedRuleIds };
 }
 
 /**

@@ -23,8 +23,8 @@ import {
   representationFailure,
 } from "../../../encoding/canonical-json.js";
 import { compareAscii } from "../../../encoding/identifier.js";
+import { type AgentView, agentViewOf } from "../../../identity/cards.js";
 import { SignedMessage } from "../../../identity/envelope/signed-message.js";
-import { agentViewOf, type AgentView } from "../../../identity/cards.js";
 import {
   type ActionCertifiedRecord,
   type AnchorHash,
