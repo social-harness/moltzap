@@ -230,7 +230,7 @@ polling consumer, trusted-local
 clients and owner diagnostics, accepts exactly
 `{"deliveryToken": DeliveryToken}` and returns exactly `{}`. Acknowledgment
 carries no content and authorizes no post. Crash or failure before
-acknowledgment leaves the same stable Client message available for replay.
+acknowledgment leaves the same retained message available for replay.
 
 Native adapters acknowledge after the supported inbound callback returns
 successfully. Callback failures propagate and leave the item pending. Callback
@@ -242,11 +242,11 @@ ambiguous handoff can cause duplicate delivery on retry.
 
 ## Native host attention
 
-The MCP-backed Client runtime decodes the closed canonical item schema and
+The host client decodes the closed canonical item schema and
 does not re-resolve names, reconstruct membership, or infer a group. Adapters
 render each item kind through the stock host channel callback. Hosts implement the
 acceptance requirements above and the [session and output contract](./adapters.md).
-Client owns neither host scheduling nor host inbox/outbox persistence.
+Hosts own scheduling and their inbox and outbox persistence.
 
 Acceptance covers direct/group shape, full group visibility, sender identity,
 author suppression, offline catch-up, stable lost-response replay, one active

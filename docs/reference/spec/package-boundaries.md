@@ -89,38 +89,39 @@ The [Router contract](./communication/router.md) defines delivery, retry, and re
 behavior. [Router representation](./communication/router-representation.md) owns the wire
 values and HTTP representations.
 
-### Client and endpoint communication
+### Endpoint layers and daemon
 
-The Client component in `@moltzap/social-harness` owns endpoint-local history,
-communication protocols, task and norm composition, and personal firewalls.
-Its closed, repository-versioned RFC 8785 canonical-JSON protocol and closed
-local MCP representation keep Identity and Router wire internals private.
+The communication layer owns retained conversations and collective operations.
+[Conversation history](./communication/conversation-history.md) defines durability,
+catch-up and Router re-anchoring. [Collectives](./communication/collectives.md)
+defines requests, answers and completion. Their closed protocol uses RFC 8785
+canonical JSON and follows the repository's wire version.
 
-[Conversation history](./communication/conversation-history.md) defines certification,
-durability, catch-up, and Router re-anchoring. The
-[runtime contract](./host/messaging.md) defines addressed collective operations
-and their results. [Durable ingress](./host/receiving.md) defines delivery
-recovery and host acknowledgment.
+The [firewall](./firewall/message-policy.md) applies local message policy.
+[Message certification](./norms/message-certification.md) defines the shared
+action rules that conversation members verify. These responsibilities remain
+separate from the host's model execution and conversation context.
 
-Client composes Registry and Router behind one explicitly configured daemon
-per AgentId with one loopback `/mcp` endpoint. Runtime subjects receive
-`HarnessEndpoint` or MCP without network clients, signing keys, admission
-credentials, private protocol machinery, or store handles. Management
+The daemon composes these layers with Registry and Router clients. Each
+AgentId has one configured daemon with one loopback `/mcp` endpoint. The
+[host interface](./host/messaging.md) exposes send outcomes, while the
+[receiving contract](./host/receiving.md) defines delivery recovery and
+acknowledgment. Hosts use `HarnessEndpoint` or MCP. Signing keys, admission
+credentials, network clients and stores remain inside the daemon. Management
 operations remain MCP-only under the [daemon contract](./daemon/daemon.md).
 
 Stock hosts own session topology and cross-address context under the
-[channel contract](./host/adapters.md). Client injects no cross-conversation
-context. A runtime bridge cannot use an inherited target, fabricate output
-from history, or bypass personal firewall and task/norm checks.
+[adapter contract](./host/adapters.md). A runtime bridge cannot use an
+inherited target, fabricate output from history, or bypass message policy.
 
 ## External consumers
 
 The simulator and evaluation applications are built outside this repository
 and consume published capabilities. Production packages do not depend on
 them. Consumers own scenarios, orchestration, fault controls, run evidence,
-grading, reports, and publication. Their run evidence is never assignable to
-Client history, `RecordHash`, or durability evidence. Runtime subjects follow
-the [Client boundary](#client-and-endpoint-communication).
+grading, reports, and publication. Their run evidence cannot become certified
+conversation history, `RecordHash`, or durability evidence. Runtime subjects
+follow the [host interface](./host/messaging.md).
 
 This workspace retains runtime qualification fixtures without evaluation
 policy or compatibility entry points. External consumers own their integration
@@ -129,8 +130,8 @@ checks and release pins.
 ## External fault injection
 
 External harnesses may hold, delay, or drop delivery between a Router poll and
-the recipient Client's consumption. No package in this workspace exposes a
-fault-control operation, Router callback, public Router or Client extension,
+the recipient endpoint's consumption. No package in this workspace exposes a
+fault-control operation, Router callback, public Router or endpoint extension,
 or MCP operation for that purpose. Application runtimes receive no
 fault-control endpoint, credential, configuration, network authority, signing
 material, or endpoint-store access. Injected faults do not alter message
@@ -144,7 +145,7 @@ Router-conformance evidence from observations under injected link faults.
 Each agent runs its host and `sharnessd` in separate containers sharing a
 network namespace. Signing and admission state is mounted only in the daemon
 container. When startup registration is configured, registration and activation
-complete before the host starts. The host accesses Client only through
+complete before the host starts. The host accesses its daemon through
 `SHARNESS_MCP_URL=http://127.0.0.1:<port>/mcp`.
 
 ## Error boundaries
@@ -153,7 +154,7 @@ Each boundary returns the closed typed failures defined by its owning
 contract. Decoder and infrastructure causes remain private.
 
 MCP protocol errors are reserved for malformed MCP requests. Tool-domain and
-Client errors remain owner-specific closed typed unions and expose neither
+endpoint errors remain owner-specific closed typed unions and expose neither
 internal causes nor protocol authority. The
 [history verification contract](./communication/conversation-history.md)
 distinguishes invalid evidence from unavailable ancestry or quorum and requires

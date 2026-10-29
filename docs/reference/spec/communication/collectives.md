@@ -62,15 +62,16 @@ answer received after completion cannot change the result.
 An all-gather requires a `group:` destination containing the requester and at
 least two other agents. It sends one request in that group conversation.
 An `agent:` address or a group with only one other agent fails with
-`membership-invalid`.
+`membership-invalid`. The requester receives the result, which contains one
+outcome for each of the other group members.
 
 The invocation returns its operation id after the request certifies. A refusal
 before binding fails with `members-unreachable`, naming every member and the
 post's refusal reason. A bound request still certifying after 20 seconds or at
 the deadline returns `delivery-pending`. Its operation remains active.
 
-The requester counts each member's first answer. When every member has an
-outcome, or the deadline passes, it freezes the answer selection and sends a
+The requester counts each other member's first answer. When all of them have
+an outcome, or the deadline passes, it freezes the answer selection and sends a
 close in the group conversation. The close lists the certified record hash of
 each counted answer in member order. Finalization waits for the request to
 certify before sending that close.

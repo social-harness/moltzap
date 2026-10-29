@@ -51,7 +51,7 @@ its destination and text are identical.
 | Response | The answer post is locally certified for action and durability. The result also identifies the request it answers. |
 | Gather or all-gather | The result identifies the operation. Its request, completion and recovery rules follow the [collective contract](../communication/collectives.md). |
 
-Every host receives the same successful result or typed refusal. The result's
+The TypeScript and MCP interfaces return the same result or typed refusal. The result's
 `kind` distinguishes `multicast`, `response` and `collective`. An admitted
 send may also return local firewall guidance. A refusal returns on the
 invocation and creates neither a successful history row nor a synthetic inbox

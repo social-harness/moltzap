@@ -2,7 +2,7 @@
 
 import { Data } from "effect";
 
-/** Every reason one addressed send can fail, in a fixed order. */
+/** Closed reason codes carried by sends and per-member collective failures. */
 export const sendFailureReasons = [
   "invalid-address",
   "unknown-agent",
@@ -17,7 +17,7 @@ export const sendFailureReasons = [
   "outcome-unknown",
 ] as const;
 
-/** Why one addressed send failed. */
+/** Distinguishes a refusal from work that remains pending or uncertain. */
 export type SendFailure = (typeof sendFailureReasons)[number];
 
 /**
@@ -74,11 +74,11 @@ export function issuesText(
 }
 
 /**
- * An addressed send failed before local certification completed. `detail`
- * names the specific cause when the failing step knows it, such as which
- * agent is unknown; the message is what a host hands its model, and names
- * each invalid field. Validation issues expose only field paths and schema
- * expectations.
+ * A send was refused, remains pending, or has an uncertain outcome. Check
+ * `reason` before retrying: `delivery-pending` retains the original post,
+ * and `outcome-unknown` leaves its completion uncertain. Repeating either
+ * operation can create a second message. The host can present `message` to
+ * its agent. Validation issues identify fields without exposing their values.
  */
 export class SendError extends Data.TaggedError("SendError")<{
   readonly reason: SendFailure;

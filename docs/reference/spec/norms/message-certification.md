@@ -83,8 +83,9 @@ confirmation on the protocol's behalf.
 
 Personal trust and communication norms run through the optional
 [message firewall](../firewall/message-policy.md) before a local application send creates
-an intent and before a certified incoming item becomes runtime-visible. Those
-checks do not withhold certification votes or delay collective protocol folds.
+an intent and before a certified incoming item becomes runtime-visible.
+Certification voting, answer collection and close handling proceed
+independently of those checks.
 
 ## Durability
 
