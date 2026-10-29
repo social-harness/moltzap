@@ -9,15 +9,21 @@ import {
 import { type Context, Deferred, Duration, Effect } from "effect";
 import type { EventStore } from "../host-protocol/operations.js";
 import type { Fixture } from "./daemon-runtime-fixtures.js";
+import { resolveMessageAddress } from "../communication/conversations/address.js";
 import {
   DeliveryAcknowledgeError,
   ListenError,
 } from "../communication/conversations/errors.js";
 import {
   type EndpointEngine,
+  type EndpointEngineInput,
   EngineOutboundError,
   type EnginePendingMessage,
 } from "../communication/conversations/index.js";
+import {
+  deriveConversationId,
+  type MessageAddressInput,
+} from "../communication/records/index.js";
 import { Router } from "../communication/router/api/client.js";
 import {
   type RouterWorker,
@@ -268,7 +274,19 @@ function registration(
 function makeServices(fixture: Fixture, result: Registration) {
   const registry: Context.Tag.Service<typeof Registry> = {
     register: () => registration(fixture, result),
-    lookup: () => Effect.succeed({ kind: "not_found" }),
+    lookup: (selector) => {
+      const agentCard = [fixture.localCard, ...fixture.peerCards].find(
+        (card) =>
+          "agentId" in selector
+            ? card.agentId === selector.agentId
+            : card.agentName === selector.agentName,
+      );
+      return Effect.succeed(
+        agentCard === undefined
+          ? { kind: "not_found" as const }
+          : { kind: "found" as const, agentCard },
+      );
+    },
   };
   const router: Context.Tag.Service<typeof Router> = {
     send: () => outsideRuntimeTest(),
@@ -298,16 +316,15 @@ function makeRuntimeDependencies(
   input: RuntimeDependenciesInput,
 ): DaemonRuntimeDependencies {
   const worker = makeWorker(input.background, input.signals);
-  const engine = makeEngine(input.background, input.signals, input.delivery);
   return {
     makeWorker: () => Effect.succeed(worker),
-    makeEngine: () =>
+    makeEngine: (engineInput) =>
       Effect.gen(function* () {
         yield* Deferred.succeed(input.signals.engineEntered, undefined);
         if (input.blockEngine) {
           yield* Deferred.await(input.signals.engineRelease);
         }
-        return engine;
+        return makeEngine(input, engineInput);
       }),
     makeHandler: (options) =>
       Effect.sync(() => {
@@ -369,11 +386,11 @@ const readPending = (delivery: DeliveryState) =>
   });
 
 function makeEngine(
-  background: BackgroundFailure,
-  signals: HarnessSignals,
-  delivery: DeliveryState,
+  input: RuntimeDependenciesInput,
+  engineInput: EndpointEngineInput,
 ): EndpointEngine {
-  const failure = Deferred.await(signals.failure).pipe(
+  const { delivery } = input;
+  const failure = Deferred.await(input.signals.failure).pipe(
     Effect.zipRight(
       Effect.fail(new EngineOutboundError({ reason: "persistence" })),
     ),
@@ -393,9 +410,9 @@ function makeEngine(
       Effect.dieMessage("this lifecycle fixture installs no firewall"),
     sendAdmitted: () =>
       Effect.dieMessage("this lifecycle fixture installs no firewall"),
-    resolveAddress: () => Effect.void,
-    resolveConversation: () =>
-      Effect.dieMessage("this lifecycle fixture installs no firewall"),
+    resolveAddress: (to) =>
+      resolveHarnessConversation(engineInput, to).pipe(Effect.asVoid),
+    resolveConversation: (to) => resolveHarnessConversation(engineInput, to),
     readPendingMessages: () => readPending(delivery),
     acknowledgeMessage: (deliveryToken) =>
       deliveryToken !== delivery.pending.deliveryToken
@@ -408,10 +425,35 @@ function makeEngine(
     acceptRouterIngress: () => Effect.succeed("ignored"),
     recoverCertifiedHistory: () => Effect.void,
     drainOutbound: Effect.void,
-    runOutbound: background === "outbound" ? failure : Effect.never,
+    runOutbound: input.background === "outbound" ? failure : Effect.never,
     abandonVolatileFolds: () => Effect.void,
     rearmCatchUp: Effect.void,
   };
+}
+
+/** Uses signed fixture cards and the ordinary address rules without sending. */
+function resolveHarnessConversation(
+  input: EndpointEngineInput,
+  to: MessageAddressInput,
+) {
+  return Effect.gen(function* () {
+    const resolved = yield* resolveMessageAddress({
+      localAgentCard: input.localAgentCard,
+      registry: input.registry,
+      to,
+    });
+    const [first, second, ...rest] = resolved.memberCards;
+    const conversationId = yield* deriveConversationId([
+      first.agentId,
+      second.agentId,
+      ...rest.map((card) => card.agentId),
+    ]).pipe(Effect.orDie);
+    return {
+      address: resolved.address,
+      conversationId,
+      memberCards: resolved.memberCards,
+    };
+  });
 }
 
 /** A harness whose fake engine and worker fail in the named background. */

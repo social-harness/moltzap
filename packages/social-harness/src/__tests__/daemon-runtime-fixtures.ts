@@ -16,6 +16,7 @@ import {
   identifier,
   issueTestCard,
   makeTestAuthority,
+  type RegistryKeyPair,
   testAgentView,
 } from "./agent-card-fixtures.js";
 
@@ -23,6 +24,7 @@ import {
 export interface Fixture {
   readonly bootstrap: DaemonBootstrap;
   readonly localCard: VerifiedAgentCard;
+  readonly peerCards: readonly VerifiedAgentCard[];
   readonly canonicalLocalCard: Uint8Array;
   readonly registerRequest: typeof managementRegisterRequestSchema.Type;
   readonly pending: EnginePendingMessage;
@@ -39,6 +41,21 @@ const makePendingMessage = Effect.all({
     content: [{ type: "text", text: "certified" }],
   }),
 });
+
+const makePeerCards = (registryKeys: RegistryKeyPair) =>
+  Effect.forEach(
+    ["bob", "carol"],
+    (name, index) =>
+      Effect.gen(function* () {
+        return yield* issueTestCard({
+          byte: index + 2,
+          name,
+          authority: yield* makeTestAuthority(),
+          registryKeys,
+        });
+      }),
+    { concurrency: 1 },
+  );
 
 /** Supplies a verified local identity and one certified pending delivery. */
 export const makeFixture = Effect.gen(function* () {
@@ -79,6 +96,7 @@ export const makeFixture = Effect.gen(function* () {
   return {
     bootstrap,
     localCard,
+    peerCards: yield* makePeerCards(registryKeys),
     canonicalLocalCard: yield* encodeCanonical(AgentCard, localCard),
     registerRequest,
     pending: yield* makePendingMessage,
