@@ -197,6 +197,20 @@
         "command": "node scripts/release/image-input-key.test.ts"
       }
     },
+    "test:release": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "parallel": false,
+        "commands": [
+          "bash scripts/release/compute-next-version.test.sh",
+          "bash scripts/release/push-gate.test.sh",
+          "bash scripts/release/npm-version-exists.test.sh",
+          "bash scripts/release/ghcr-digest.test.sh",
+          "node scripts/release/select-packages.test.ts"
+        ]
+      }
+    },
     "docs:api": {
       "cache": true,
       "dependsOn": [

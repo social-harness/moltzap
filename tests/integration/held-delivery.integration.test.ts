@@ -27,9 +27,8 @@ import {
   type DaemonProcessFixture,
   type FirewallMode,
   makeDaemonProcessFixture,
-  makeRegistrationRequest,
 } from "./daemon-process-harness.js";
-import { registrationResultKind } from "./expected-contracts.js";
+import { registerFixture } from "./participants.js";
 import { processTrace } from "./process-trace.js";
 import {
   acquireRouterHoldProxy,
@@ -58,17 +57,6 @@ const heldText = "posted while the target link is held";
 const replyText = "reply after the held delivery is released";
 
 const followUpText = "follow-up in the recovered conversation";
-
-const registerFixture = (fixture: DaemonProcessFixture) =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const management = yield* acquireDaemonManagementClient(fixture.endpoint);
-      const registered = yield* management.register(
-        makeRegistrationRequest(fixture),
-      );
-      expect(registered.kind).toBe(registrationResultKind);
-    }),
-  );
 
 /** Collects the endpoint's single inbound subscription for the whole scope. */
 const collectDeliveries = <E>(messages: Stream.Stream<InboundDelivery, E>) =>

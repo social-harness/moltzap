@@ -108,6 +108,7 @@ export interface DaemonProcessFixture {
   readonly environment: Readonly<Record<string, string>>;
   readonly stateDirectory: string;
   readonly agentPrivateKeyFile: string;
+  readonly admissionCredentialFile: string;
   readonly firewall?: FirewallMode;
   readonly wireVersions?: ProcessWireVersions;
 }
@@ -666,6 +667,7 @@ export const makeDaemonProcessFixture = (
       endpoint: new URL(`http://${LOOPBACK_HOST}:${port}/mcp`),
       stateDirectory,
       agentPrivateKeyFile: keyPath,
+      admissionCredentialFile: credentialPath,
       environment: {
         SHARNESS_STATE_DIRECTORY: stateDirectory,
         SHARNESS_MCP_PORT: String(port),

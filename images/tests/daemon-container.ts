@@ -15,7 +15,11 @@ import { promisify } from "node:util";
 
 const docker = promisify(execFile);
 
-/** Docker initializes the home volume with the image user's ownership. */
+/**
+ * Runs the fixture's daemon in the `DAEMON_INTEGRATION_IMAGE` container, or as
+ * a local process when that variable is unset. Docker initializes the home
+ * volume with the image user's ownership.
+ */
 export const startDaemonContainer = (fixture: DaemonProcessFixture) => {
   const image = process.env.DAEMON_INTEGRATION_IMAGE;
   if (image === undefined) {
@@ -66,10 +70,7 @@ function prepareDaemonMount(fixture: DaemonProcessFixture) {
       await chmod(dirname(directory), 0o755);
       await chmod(directory, 0o755);
       await chmod(fixture.agentPrivateKeyFile, 0o644);
-      await chmod(
-        fixture.environment.SHARNESS_ADMISSION_CREDENTIAL_FILE ?? "",
-        0o644,
-      );
+      await chmod(fixture.admissionCredentialFile, 0o644);
     },
     catch: (cause) => processTestError("could not prepare daemon mount", cause),
   });

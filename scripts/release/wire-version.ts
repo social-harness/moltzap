@@ -34,8 +34,11 @@ export const readCompatibilityVersion = (
   return parseCompatibilityVersion(source);
 };
 
-/** Read the emitted wire value from source text, including a committed tree. */
-function parseCompatibilityVersion(
+/**
+ * Read the emitted wire value from source text, including a committed tree.
+ * `push-gate.sh` imports it to read the tree being gated.
+ */
+export function parseCompatibilityVersion(
   source: string,
 ): { readonly value: string } | { readonly error: string } {
   const match = WIRE_VERSION_LITERAL.exec(source);

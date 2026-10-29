@@ -25,13 +25,7 @@
     "docs:open": "cd docs && mint dev",
     "docs:check": "cd docs && mint broken-links",
     "docs:check:mermaid": "pnpm nx run workspace:docs:check:mermaid",
-    "test:push-gate": "bash scripts/release/push-gate.test.sh",
-    "test:compute-next-version": "bash scripts/release/compute-next-version.test.sh",
-    "test:npm-version-exists": "bash scripts/release/npm-version-exists.test.sh",
-    "test:ghcr-digest": "bash scripts/release/ghcr-digest.test.sh",
     "image:keys": "node scripts/release/image-input-key.ts",
-    "test:image-input-key": "pnpm nx run workspace:test:image-input-key",
-    "test:select-packages": "node scripts/release/select-packages.test.ts",
     "prepare": "husky",
     "test:affected": "nx affected -t test",
     "docs:api": "pnpm nx run workspace:docs:api"

@@ -35,10 +35,7 @@
           "command": "eslint . --max-warnings=0"
         }
       }
-    },
-    "implicitDependencies": [
-      "@moltzap/integration-tests"
-    ]
+    }
   },
   "devDependencies": {
     "@moltzap/integration-tests": "workspace:*",

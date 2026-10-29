@@ -7,7 +7,6 @@ import {
 import { Effect, Exit, Schema, Scope } from "effect";
 import {
   acquireDaemonManagementClient,
-  acquireDaemonProcess,
   acquireProcessInfrastructure,
   type DaemonProcessFixture,
   makeDaemonProcessFixture,
@@ -49,9 +48,7 @@ type StartDaemon = (
 ) => Effect.Effect<unknown, ProcessTestError, Scope.Scope>;
 
 /** Acquires the shared process network, closing partial startup on failure. */
-export async function startNetwork(
-  startDaemon: StartDaemon = acquireDaemonProcess,
-): Promise<Network> {
+export async function startNetwork(startDaemon: StartDaemon): Promise<Network> {
   const scope = Effect.runSync(Scope.make());
   const close = () =>
     Effect.runPromise(Scope.close(scope, Exit.void).pipe(Effect.as(undefined)));
