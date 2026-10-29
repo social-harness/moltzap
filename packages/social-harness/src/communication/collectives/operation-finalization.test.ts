@@ -3,7 +3,7 @@
 import { scoped as it } from "@effect/vitest";
 import { Deferred, Effect, Fiber, Schema, Scope, TestClock } from "effect";
 import { expect } from "vitest";
-import type { CollectiveId } from "./forms.js";
+import type { CollectiveId } from "./contracts.js";
 import type { InboundItem } from "./inbound.js";
 import type { CollectivePorts } from "./ports.js";
 import { appendCertifiedPost } from "../../__tests__/certified-history-fixtures.js";
@@ -22,7 +22,7 @@ import {
   type CollectiveOperations,
   makeCollectiveOperations,
 } from "./index.js";
-import { encodeCollectiveContent } from "./part/index.js";
+import { encodeCollectiveContent } from "./wire/index.js";
 
 it("includes the answer retained before the deadline even when its store response is delayed", () =>
   Effect.gen(function* () {

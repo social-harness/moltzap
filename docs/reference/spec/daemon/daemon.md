@@ -226,7 +226,7 @@ Every retained action signature and durability vote includes signer AgentId
 and signature bytes. Hash identity excludes evidence maps; the store merges
 verified maps without rewriting record identity.
 
-An absent or empty database initializes at schema 13. A version-0 database is
+An absent or empty database initializes at the current schema. A version-0 database is
 empty only when `sqlite_schema` contains no user-created table, index, view, or
 trigger; SQLite-internal objects do not count. The current schema reopens.
 A newer schema fails with `newer-schema`; a schema below the migration baseline
@@ -251,7 +251,7 @@ A backup restored immediately after that migration fails is safe because the
 daemon has not signed. Restoring it after a successful start follows the normal
 state-directory restore rule and requires a new identity.
 
-The reset baseline is schema 13. Per-conversation evidence reads do not scan
+The reset baseline is schema 14. Per-conversation evidence reads do not scan
 completed intents. All earlier populated stores and any state directory
 containing `moltzapd.sqlite3` fail with `pre-reset`.
 An empty database initializes normally.
@@ -265,8 +265,9 @@ migrating, then verifies that it equals the version in the signed bytes.
 The daemon reads `SHARNESS_ADMISSION_CREDENTIAL_FILE` before creating an empty
 store, so a missing credential fails during configuration before storage is
 created. Registered stores do not need that admission credential to restart.
-Before normal classification, startup retires raw pending collective requests
-whose response state was lost. Each becomes a failure with a fresh token.
+Before accepting host operations, startup restores collective operations and
+request context under the
+[recovery contract](../communication/collectives.md#completion-and-recovery).
 
 Acknowledged inbox rows retain their payload binding for the lifetime of this
 state directory. There is no automatic retention expiry or compaction. An index over unread rows
@@ -385,9 +386,8 @@ authorize a send or create a delivery.
 Certification or catch-up atomically creates missing remote-authored pending
 rows. One active subscriber receives stable tokens. The daemon classifies
 pending rows with or without a subscriber, consuming collective answers as
-they arrive ([ingress](../host/receiving.md#mcp-events-and-inbox)). Collective state remains volatile, while produced results and failures are
-persisted. Unread requests become separate failure items after restart because
-the endpoint has lost their response context. Adapters acknowledge only
+they arrive ([ingress](../host/receiving.md#mcp-events-and-inbox)). Accepted
+collectives and their produced results survive restart. Adapters acknowledge only
 after satisfying the [host-specific acceptance contract](../host/receiving.md#delivery-handoff).
 Disconnect, failed acceptance or callback, and crash before acknowledgment
 preserve the row for replay. The daemon's stable delivery identity supports
@@ -396,8 +396,8 @@ webhook HTTP 2xx receipt; ambiguous retries may duplicate delivery.
 
 ## Current formats
 
-The daemon emits `WIRE_VERSION`, uses hash domain v2, database schema 13,
-and the pinned draft MCP Events profile. The
+The daemon emits `WIRE_VERSION`, uses hash domain v2, and persists state under
+the [current database schema](#persistence). It serves the pinned draft MCP Events profile. The
 [wire-version window](../releases.md#wire-compatibility-window)
 applies: outer envelopes and authenticated HTTP headers use
 `LIVE_WIRE_VERSIONS`; retained and nested artifacts, including immutable
@@ -415,15 +415,12 @@ daemon stops:
 - At startup, the daemon fails before it starts the MCP listener.
 - `register` returns `persistence-failed` when the first delivery pass after
   activation fails.
-- `send_message` keeps its own outcome when the item its operation produces
-  cannot be kept: a gather whose request posts exist, or a certified answer,
-  returns as sent, and a refused send whose failure goes inbound fails with
-  that refusal.
-- An item that could not be kept is not delivered. When classifying a pending
-  row produced it, that row stays unacknowledged and is classified again after
-  restart, under the volatile collective state described in
-  [Delivery ownership](#delivery-ownership); an item a send produced is lost
-  with that state.
+- `send_message` retains its own [send outcome](../host/messaging.md#failed-or-uncertain-sends).
+  A failure to publish an inbox item cannot revoke accepted work or turn a
+  refusal into a successful send.
+- An item is published only after it is durable. Recovery resumes pending
+  classification and terminal publication from retained state. Once an item
+  has a payload and token, retries preserve both.
 
 A store failure that may leave a post's intent bound but not proposed also
 stops the daemon in `storage`, and recovery proposes the intent after the

@@ -46,7 +46,7 @@ import { InboundMessage } from "../conversations/message.js";
 import { Content, type RecordHash } from "../records/index.js";
 import { AgentAddress } from "../records/values.js";
 import { SendInput } from "./contracts.js";
-import { makeCollectiveOperations } from "./operation.js";
+import { makeCollectiveOperations } from "./index.js";
 import { type CollectiveValue, readCollectiveValue } from "./wire/index.js";
 
 const group = "group:alice,bob,carol,dave";

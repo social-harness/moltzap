@@ -75,8 +75,8 @@ request is refused. Ordinary assistant output is not a Social Harness send.
 ## Results and failures
 
 A gather or all_gather send returns `operationId`. Its answers arrive later as
-a `collectiveResult` item. An `operationFailed` item describing lost restart
-context cannot be answered as a request.
+a `collectiveResult` item. An `operationFailed` item reports a refusal to send
+an all-gather close. It requires no answer.
 
 If a send has an uncertain outcome, do not repeat it just to recover a missing
 result: another send can create another message.

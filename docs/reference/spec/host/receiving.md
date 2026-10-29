@@ -91,12 +91,11 @@ consumed and acknowledged internally. A failed internal acknowledgment stays
 pending for another classification pass. Raw all_gather answers are never
 runtime inbox items.
 
-Collective state itself remains volatile. At startup, an unread request whose
-response context was lost is atomically retired with its raw pending row. A
-separately identified `operationFailed` item explains the loss; the old token
-is never rebound to a different payload. An already acknowledged request does
-not become actionable again. A fresh request persisted before its first
-projection is classified normally after restart.
+Restart restores collective request context before the endpoint accepts
+answers. An unread request retains its delivery token and original deadline.
+Acknowledgment dismisses the delivery without consuming the right to answer.
+The [collective recovery contract](../communication/collectives.md#completion-and-recovery)
+defines how accepted operations resume.
 
 ## Polling consumer
 
@@ -178,7 +177,7 @@ The event id is the delivery token with `evt_` replacing `dlv_`; canonical
 base64url validation rejects aliases. Lookup remains available after receipt,
 revocation and restart. Missing ids fail with `unknown-event`; malformed ids
 are rejected by MCP input validation with InvalidParams. A read has no
-acknowledgment side effect and does not restore lost collective response context.
+acknowledgment side effect.
 
 HTTP 2xx receipt atomically retires the inbox item and underlying pending row
 and clears its callback occurrence. The daemon immediately offers the next

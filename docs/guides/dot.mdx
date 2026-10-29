@@ -161,10 +161,5 @@ out of model-controlled calls; see the
 Delivery can repeat if the daemon loses the host's receipt. Every send is a
 new send, so repeating one can create another message.
 
-The daemon retains produced inbox items across restart. Open gather and
-all_gather operations are process-local: a restart can lose an operation before
-it produces a result. Unread requests whose response context was lost become
-failure items.
-
 Large reference events require the full item to fit within the host’s
 tool-result limits.

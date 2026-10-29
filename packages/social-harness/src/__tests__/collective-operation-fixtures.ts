@@ -15,7 +15,7 @@ import {
   type CollectiveId,
   SendInput,
 } from "../communication/collectives/contracts.js";
-import { makeCollectiveOperations } from "../communication/collectives/operation.js";
+import { makeCollectiveOperations } from "../communication/collectives/index.js";
 import {
   collectiveIdOf,
   readCollectiveValue,

@@ -386,12 +386,11 @@ each context carries the time it was captured.
 
 ### Collective restart
 
-Collective state is process-local, so restart loses it. A queued request the
-runtime was never shown retires without a trace the agent can see; an
-admitted request the agent has not acknowledged becomes an `operationFailed`
-item, admitted as any failure is. A gather's request posts already bound may
-still be proposed; members whose posts never bound are never posted. A check
-interrupted by restart binds nothing.
+Restart restores accepted operations and request context under the
+[collective recovery contract](../communication/collectives.md#completion-and-recovery).
+Incoming requests still require firewall admission before the host can answer.
+Recovery preserves their admission state, delivery identity and original
+deadline.
 
 ## Runtime composition and persistence
 
@@ -825,11 +824,9 @@ exact input, candidate, immutable installation and result. Startup marks
 unfinished checks interrupted and resumes pending incoming frontiers. A held
 item stays held. Previously admitted items remain readable with their original
 token and guidance, including after acknowledgment or restart without installed
-middleware. [Collective restart](#collective-restart) states what restart
-does to requests; a lost request's replacement failure enters the same
-admission queue before exposure, and recovery visits queued requests,
-including successors behind a conversation frontier, atomically retiring each
-original raw delivery.
+middleware. Pending collective requests resume through the same admission
+queue, including requests waiting behind another message in their conversation.
+[Collective restart](#collective-restart) defines their retained context.
 
 Native adapters consume the current runtime schemas and follow the
 [channel projection contract](../host/adapters.md#receiving-messages).
