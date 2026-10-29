@@ -21,7 +21,7 @@ import {
   MessageAddressInput,
   type MessageAddressInput as MessageAddressInputValue,
   type MessageTextError,
-  readChannelMessage,
+  parseMessageText,
   renderCollectiveRequest,
   renderCollectiveResult,
   renderContent,
@@ -1115,7 +1115,7 @@ function requireEndpoint(
 
 /**
  * Validate OpenClaw's optional target and text fields before handing them to
- * the shared native-channel reader.
+ * the shared message-text parser.
  */
 function readSendInput({
   to,
@@ -1134,7 +1134,7 @@ function readSendInput({
       new OpenClawOutboundError({ reason: "invalid-operation" }),
     );
   }
-  return readChannelMessage(to, text);
+  return parseMessageText(to, text);
 }
 
 /**

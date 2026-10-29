@@ -5,8 +5,7 @@
  * operation, multicast by default or a gather or all_gather with its deadline
  * and schema; a response names the conversation whose open request it
  * answers, and may name that request's id. One parser reads either from a
- * message's text, so native channel adapters accept the same grammar. The
- * daemon's experiment diagnostics name closed capabilities and settings. Each
+ * message's text, so native channel adapters accept the same grammar. Each
  * inbound delivery carries one item plus transport-only acknowledgment: a multicast
  * with the certified direct or complete-group message, a collective request
  * naming the conversation it arrived in, a collective result, each naming
@@ -27,7 +26,6 @@ import type { DateTime, Effect, Either, Scope, Stream, Types } from "effect";
 import type {
   acquireHarnessEndpoint,
   AgentAddress,
-  ChannelFeatureUnavailableError,
   CollectiveError,
   ConnectError,
   Content,
@@ -35,7 +33,6 @@ import type {
   decodeHarnessSendResult,
   DeliveryAcknowledgeError,
   DirectMessage,
-  ExperimentSwitchInvalidError,
   FirewallSendError,
   GroupAddress,
   GroupMessage,
@@ -52,7 +49,6 @@ import type {
   MessageTextError,
   parseMessageText,
   PostId,
-  readChannelMessage,
   renderLocalGuidance,
   SendError,
   SendInput,
@@ -246,27 +242,6 @@ type MessageTextParserIsExact = Expect<
     ) => Either.Either<SendInput, MessageTextError>
   >
 >;
-type ChannelMessageReaderIsExact = Expect<
-  Types.Equals<
-    typeof readChannelMessage,
-    (
-      to: MessageAddressInput,
-      text: string,
-    ) => Effect.Effect<SendInput, MessageTextError>
-  >
->;
-type ChannelFeaturesAreExact = Expect<
-  Types.Equals<
-    ChannelFeatureUnavailableError["feature"],
-    "groups" | "collectives"
-  >
->;
-type ExperimentSwitchesAreExact = Expect<
-  Types.Equals<
-    ExperimentSwitchInvalidError["variable"],
-    "SHARNESS_EXPERIMENT_HIDE_GROUPS" | "SHARNESS_EXPERIMENT_HIDE_COLLECTIVES"
-  >
->;
 type SendResultIsExact = Expect<Types.Equals<SendResult, ExpectedSendResult>>;
 type SendResultDecoderIsExact = Expect<
   Types.Equals<
@@ -390,9 +365,6 @@ type AcquisitionResultIsExact = Expect<
 export type HarnessEndpointCanaries = [
   SendInputIsExact,
   MessageTextParserIsExact,
-  ChannelMessageReaderIsExact,
-  ChannelFeaturesAreExact,
-  ExperimentSwitchesAreExact,
   SendResultIsExact,
   SendResultDecoderIsExact,
   InboundItemIsExact,

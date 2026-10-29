@@ -1,1 +1,1 @@
-The daemon enforces experiment switches on every send and rejects invalid switch values at startup.
+The daemon reads the experiment switches from its own environment, enforces them on every send, and rejects invalid values at startup.

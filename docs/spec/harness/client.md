@@ -24,10 +24,6 @@ The Client root exports closed Effect Schemas and corresponding types for:
 - `SendInput` and `SendResult`, and `parseMessageText` with its
   `MessageTextError`, which read a send from a message's text
   ([message text](#message-text));
-- `readChannelMessage`, the native channels’ send-text parser;
-- `ChannelFeatureUnavailableError`, the daemon's evaluation refusal diagnostic,
-  and `ExperimentSwitchInvalidError`, its invalid startup switch diagnostic
-  ([experiment switches](../../integrations/experiment-switches.mdx#experiment-switches));
 - `InboundMessage`, `InboundItem` and `InboundDelivery`;
 - `HistoryExportRecord`, one line of the daemon's optional history export
   (`harness/daemon.md`); and
@@ -230,23 +226,6 @@ declare function parseMessageText(
   to: MessageAddressInput,
   text: string,
 ): Either.Either<SendInput, MessageTextError>
-
-declare function readChannelMessage(
-  to: MessageAddressInput,
-  text: string,
-): Effect.Effect<SendInput, MessageTextError>
-
-interface ChannelFeatureUnavailableError extends Error {
-  readonly _tag: "ChannelFeatureUnavailableError"
-  readonly feature: "groups" | "collectives"
-}
-
-interface ExperimentSwitchInvalidError extends Error {
-  readonly _tag: "ExperimentSwitchInvalidError"
-  readonly variable:
-    | "SHARNESS_EXPERIMENT_HIDE_GROUPS"
-    | "SHARNESS_EXPERIMENT_HIDE_COLLECTIVES"
-}
 ```
 
 Every call is a new invocation. Runtime send options cross MCP in request metadata, outside model-generated
@@ -436,8 +415,7 @@ content limit; a send whose content does not fit fails with
 
 In native hosts, a model writes an operation as the whole text of an ordinary
 message. The OpenClaw and NanoClaw adapters read that text with
-`readChannelMessage`, which delegates to `parseMessageText`, so both accept the
-same text. The daemon enforces the
+`parseMessageText`, so both accept the same text. The daemon enforces the
 [experiment switches](../../integrations/experiment-switches.mdx#experiment-switches)
 on every send. Dot uses the structured
 semantic MCP input described in [Semantic send](./output.md#semantic-send).
@@ -485,8 +463,10 @@ described under [operations](#operations) and returns its `operationId`.
 A host whose tool returns before the send runs passes
 `failureDelivery: "inbound"`. A refused gather, all_gather or response then completes,
 naming its operation and no `postId`, and its error arrives as an
-`operationFailed` item with the same text. A `FirewallSendError` is always returned on the send itself,
-whatever the routing. An item the daemon cannot keep stops it on the storage failure
+`operationFailed` item with the same text. A `FirewallSendError`, and the
+refusal of a capability the
+[experiment switches](../../integrations/experiment-switches.mdx#experiment-switches)
+hide, are always returned on the send itself, whatever the routing. An item the daemon cannot keep stops it on the storage failure
 and never replaces a send's own outcome: the refusal, or the posts that exist,
 stays the outcome. A multicast has no operation id, so its failure is always
 returned.

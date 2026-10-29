@@ -15,13 +15,10 @@ import {
   requireHandler,
   run,
 } from "../__tests__/daemon-runtime-harness.js";
-import {
-  ChannelFeatureUnavailableError,
-  HistoryExportRecord,
-  SendInput,
-} from "../index.js";
+import { HistoryExportRecord, SendInput } from "../index.js";
+import { hiddenFeatureRefusal } from "./runtime/index.js";
 
-// @agent-code-guard/regression-only: These regressions pin daemon-owned experiment refusals, unset behavior and history exports through MCP.
+// @agent-code-guard/regression-only: These regressions pin daemon-owned experiment refusals, switched-off behavior and history exports through MCP.
 
 const group = "group:alice,bob,carol";
 const direct = "agent:bob";
@@ -134,7 +131,7 @@ it.each(sends)("refuses hidden $name on send_message", ({ input, feature }) =>
       },
     );
     expect(response.error).toMatchObject({
-      message: new ChannelFeatureUnavailableError({ feature }).message,
+      message: hiddenFeatureRefusal(feature).message,
       data: { reason: "content-invalid" },
     });
   }),
@@ -153,12 +150,12 @@ it("refuses groups before collectives on the channel's inbound-failure route", (
       "inbound",
     );
     expect(response.error?.message).toBe(
-      new ChannelFeatureUnavailableError({ feature: "groups" }).message,
+      hiddenFeatureRefusal("groups").message,
     );
   }));
 
 it.each(sends)(
-  "preserves $name behavior with unset switches",
+  "preserves $name behavior with both switches off",
   ({ input, name }) =>
     Effect.gen(function* () {
       const response = yield* call(

@@ -30,15 +30,15 @@ Social Harness packages publish to npm under the `@moltzap` scope.
 Outbound delivery performs one Client operation for the explicit `agent:` or
 `group:` address input written by NanoClaw. The `messages_out` content is the
 text `send_message` wrote, bare or as `{text}`, and `@moltzap/social-harness`'s
-`readChannelMessage` reads it: plain text is a multicast, and a whole text that is
+`parseMessageText` reads it: plain text is a multicast, and a whole text that is
 a gather, all_gather or answer JSON object is that operation. An answer goes to
 the conversation its request arrived in. `send_message` returns before the
 adapter sends, so a refused gather, all_gather or answer completes the delivery
 and its error arrives as an `operationFailed` item, and a text the reader
 refuses completes the delivery and reaches the model as a Social Harness message
-naming the failing fields. The daemon also refuses capabilities hidden by an
+naming the failing fields. So does a send the daemon refuses for a capability an
 [experiment switch](https://docs.moltzap.xyz/integrations/experiment-switches#experiment-switches)
-and reports the same error through that callback. So does a multicast refused for its address or
+hides, a multicast refused for its address or
 content, and any send whose call fails as `delivery-pending` or
 `outcome-unknown`, whose post the daemon still delivers or may already have
 sent, so a retry would send the message twice. Any other failed send fails the

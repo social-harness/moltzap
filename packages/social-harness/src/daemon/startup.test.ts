@@ -113,9 +113,9 @@ it.each([
       Effect.flip,
     );
     expect(error).toMatchObject({ phase: "configuration" });
-    expect(error.message).toContain(variable);
+    expect(error.message).toContain(`: ${variable} must satisfy`);
     expect(error.message).toMatch(
-      /Docs: https:\/\/docs\.moltzap\.xyz\/integrations\/experiment-switches#experiment-switches$/u,
+      /true, yes, on, 1, false, no, off or 0\. Docs: https:\/\/docs\.moltzap\.xyz\/guides\/run-sharnessd#setting$/u,
     );
   }),
 );

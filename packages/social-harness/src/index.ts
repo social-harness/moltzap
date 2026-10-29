@@ -53,12 +53,6 @@ export {
   MessageTextError,
   parseMessageText,
 } from "./communication/collectives/message-text.js";
-/** Native-channel text parsing and daemon experiment diagnostics. */
-export {
-  ChannelFeatureUnavailableError,
-  ExperimentSwitchInvalidError,
-  readChannelMessage,
-} from "./harness/endpoint/channel-message.js";
 /** Explicit direct and group addresses. */
 export {
   AgentAddress,

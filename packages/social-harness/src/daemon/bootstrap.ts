@@ -34,9 +34,6 @@ export class DaemonConfigurationError extends Data.TaggedError(
 /** Exact non-secret values and redacted secret-file locations for one daemon. */
 export interface DaemonProcessConfiguration {
   readonly registration?: ManagementRegisterRequest;
-  /** Evaluation controls captured before the daemon accepts sends. */
-  readonly hideGroups?: boolean;
-  readonly hideCollectives?: boolean;
   readonly stateDirectory: string;
   readonly mcpPort: number;
   readonly registryOrigin: URL;
@@ -60,6 +57,10 @@ export interface DaemonProcessConfiguration {
   readonly messagePolicyFile?: string;
   /** The key of the decision provider a message policy names. */
   readonly decisionProviderKeyFile?: Redacted.Redacted;
+  /** An evaluation hides `group:` addresses from every send. */
+  readonly hideGroups: boolean;
+  /** An evaluation hides gather, all_gather and answers from every send. */
+  readonly hideCollectives: boolean;
 }
 
 /** Loaded private authority required by daemon registration and network calls. */

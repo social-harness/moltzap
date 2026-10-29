@@ -9,7 +9,6 @@ import {
   Schema,
 } from "effect";
 import type { MessagePolicyConfigurationFailure } from "../firewall/index.js";
-import { ExperimentSwitchInvalidError } from "../harness/endpoint/channel-message.js";
 import {
   credentialMatches,
   type HarnessMcpCredentials,
@@ -30,29 +29,6 @@ import {
   loadSigningAuthority,
   readCredential,
 } from "./credentials.js";
-
-/** Read a switch once during daemon configuration with Effect's boolean spellings. */
-function switchSetting(variable: ExperimentSwitchInvalidError["variable"]) {
-  return Object.assign(
-    Config.boolean(variable).pipe(
-      Config.withDefault(false),
-      Effect.catchTag("ConfigError", () =>
-        Effect.fail(new ExperimentSwitchInvalidError({ variable })),
-      ),
-    ),
-    { usage: `${variable}: optional; default: false` },
-  );
-}
-
-const settings = {
-  hideGroups: switchSetting("SHARNESS_EXPERIMENT_HIDE_GROUPS"),
-  hideCollectives: switchSetting("SHARNESS_EXPERIMENT_HIDE_COLLECTIVES"),
-};
-
-/** Unset controls leave every outbound capability available. */
-const readExperimentSwitches = Object.assign(Effect.all(settings), {
-  usage: Object.values(settings).map((setting) => setting.usage),
-});
 
 const canonicalUnsignedDecimal = Schema.String.pipe(
   Schema.pattern(/^(?:0|[1-9]\d*)$/u),
@@ -89,6 +65,22 @@ const origin = Schema.String.pipe(
 const compactPublicKeyJson = Schema.String.pipe(
   Schema.pattern(/^\{"crv":"Ed25519","kty":"OKP","x":"[A-Za-z0-9_-]{43}"\}$/u),
   Schema.compose(Schema.parseJson(Ed25519PublicKey)),
+);
+/** `Config.boolean`'s spellings, read case-sensitively. */
+const experimentSwitch = Schema.String.pipe(
+  Schema.compose(
+    Schema.transformLiterals(
+      ["true", true],
+      ["yes", true],
+      ["on", true],
+      ["1", true],
+      ["false", false],
+      ["no", false],
+      ["off", false],
+      ["0", false],
+    ),
+  ),
+  Schema.annotations({ identifier: "true, yes, on, 1, false, no, off or 0" }),
 );
 
 const configurationFields = {
@@ -145,6 +137,16 @@ const configurationFields = {
     configuredPath,
     undefined,
   ),
+  hideGroups: setting(
+    "SHARNESS_EXPERIMENT_HIDE_GROUPS",
+    experimentSwitch,
+    false,
+  ),
+  hideCollectives: setting(
+    "SHARNESS_EXPERIMENT_HIDE_COLLECTIVES",
+    experimentSwitch,
+    false,
+  ),
 };
 
 const configuredValues = Config.all(configurationFields);
@@ -156,7 +158,6 @@ export const processHelp = [
   "Environment:",
   "  Admission credential: required only before registration; MCP credential files: supply both or neither.",
   "  Message policy: unset, no firewall; the decision-provider key applies only with it.",
-  ...readExperimentSwitches.usage.map((usage) => `  ${usage}`),
   ...Object.values(configurationFields).map((field) => `  ${field.usage}`),
   "",
   "Docs: https://docs.moltzap.xyz/spec/harness/daemon#process-and-configuration",
@@ -225,19 +226,7 @@ const configurationError = (
 export const loadDaemonProcessConfiguration: Effect.Effect<
   DaemonProcessConfiguration,
   DaemonConfigurationError
-> = Effect.all({
-  values: configuredValues,
-  switches: readExperimentSwitches,
-}).pipe(
-  Effect.catchTag("ExperimentSwitchInvalidError", (cause) =>
-    Effect.fail(
-      new DaemonConfigurationError({
-        reason: "environment",
-        message: cause.message,
-      }),
-    ),
-  ),
-  Effect.map(({ values, switches }) => ({ ...values, ...switches })),
+> = configuredValues.pipe(
   Effect.flatMap((values) => {
     const {
       registrationAgentName,

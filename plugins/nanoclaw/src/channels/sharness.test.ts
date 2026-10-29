@@ -3,7 +3,6 @@
 import type * as ClientPublic from "@moltzap/social-harness";
 import {
   type acquireHarnessEndpoint,
-  ChannelFeatureUnavailableError,
   ConnectError,
   type HarnessEndpoint,
   type InboundDelivery,
@@ -490,26 +489,6 @@ it.each(["hello", { text: "hello" }])(
   },
 );
 
-it("reports the daemon's experiment refusal unchanged to the agent", async () => {
-  const refusal = new SendError({
-    reason: "content-invalid",
-    detail: new ChannelFeatureUnavailableError({ feature: "groups" }).detail,
-  });
-  const fake = makeEndpoint();
-  fake.send.mockReturnValue(Effect.fail(refusal));
-  const host = makeHost();
-  const channel = await createAdapter();
-  await channel.setup(host);
-  await expect(
-    channel.deliver(GROUP, null, { kind: "chat", content: "hello" }),
-  ).resolves.toBeUndefined();
-  const event = host.onInboundEvent.mock.calls[0]?.[0];
-  if (event === undefined) {
-    throw new Error("Host did not receive the refusal");
-  }
-  expect(eventContent(event).text).toBe(refusal.message);
-});
-
 it.each([
   { to: GROUP, text: "hello", input: { to: GROUP, text: "hello" } },
   {
@@ -544,7 +523,7 @@ it.each([
     input: { to: "agent:alice", collectiveResponse: { action: "decline" } },
   },
 ])(
-  "sends the feature with switches unset: $text",
+  "sends the operation its text states: $text",
   async ({ to, text, input }) => {
     const fake = makeEndpoint();
     const channel = await createAdapter();

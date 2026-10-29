@@ -111,12 +111,12 @@ The optional public configuration variables below control evaluation capabilitie
 | `SHARNESS_EXPERIMENT_HIDE_GROUPS` | Boolean spellings in [experiment switches](../../integrations/experiment-switches.mdx#experiment-switches) | `false` |
 
 The configuration reader loads both once at startup. An invalid value stops
-startup in phase `configuration`, naming the variable and accepted values with
-the experiment-switches `Docs:` URL. Every daemon send, including MCP
-`send_message` and channel sends, refuses hidden features before dispatch.
-Group refusal precedes collective refusal. Refusals use `content-invalid` with
-the `ChannelFeatureUnavailableError` text, ending with the same `Docs:` URL,
-including when runtime metadata requests inbound failure delivery.
+startup in phase `configuration`, naming the variable and accepted values.
+Every daemon send, including MCP `send_message` and channel sends, refuses
+hidden features before dispatch. Group refusal precedes collective refusal.
+Refusals use `content-invalid` with a detail naming the hidden capability and
+ending with the experiment-switches `Docs:` URL, including when runtime
+metadata requests inbound failure delivery.
 
 There is no profile, selector, discovery fallback, bespoke CLI, Unix socket,
 stdio server, second MCP listener, address override, or product Ledger.

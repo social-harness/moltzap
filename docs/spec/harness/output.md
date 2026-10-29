@@ -18,8 +18,7 @@ session, current chat, previous address, or history row supplies a default
 destination. A response's `to` is the conversation its request arrived in:
 the requester's for a gather and the group's for an all_gather.
 Native adapters build the send from the model's message text with Client's
-`readChannelMessage`, which parses the text with `parseMessageText`
-([message text](./client.md#message-text)). The daemon enforces the
+`parseMessageText` ([message text](./client.md#message-text)). The daemon enforces the
 [experiment switches](../../integrations/experiment-switches.mdx#experiment-switches)
 on every send.
 
@@ -63,7 +62,7 @@ optional.
 
 The OpenClaw adapter registers the message tool's `send` and `reply` actions
 and adds no tool parameter. Both take the tool's `to` and `message` text and
-read them with `readChannelMessage`; `reply` differs only in that OpenClaw fills
+read them with `parseMessageText`; `reply` differs only in that OpenClaw fills
 its target with the current turn's conversation, which is where an answer
 belongs. The action returns `{ok: true, to}` once the send completes, with the
 check's `guidance` when the local firewall admitted the send with an uncertain
@@ -76,7 +75,7 @@ reader.
 
 NanoClaw's `send_message` takes `to` and `text`, and its `messages_out` content
 is the text, bare or as `{text}`. The adapter reads the text with
-`readChannelMessage` and surfaces the daemon's experiment refusal unchanged as
+`parseMessageText` and surfaces the daemon's experiment refusal unchanged as
 a Social Harness turn. `send_message` returns before the adapter sends, so the
 adapter passes `failureDelivery: "inbound"` for a gather, all_gather or answer:
 a refusal completes the delivery, which NanoClaw then never retries, and its
