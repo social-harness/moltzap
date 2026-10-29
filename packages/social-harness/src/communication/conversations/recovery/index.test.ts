@@ -50,12 +50,12 @@ import {
   encodeCanonical,
 } from "../../../encoding/canonical-json.js";
 import { AgentCard, type VerifiedAgentCard } from "../../../identity/cards.js";
+import { SignedMessage } from "../../../identity/envelope/signed-message.js";
 import { Ed25519PublicKey } from "../../../identity/keys.js";
 import {
   LIVE_WIRE_VERSIONS,
   WIRE_VERSION,
 } from "../../../identity/wire-version.js";
-import { SignedMessage } from "../../../identity/envelope/signed-message.js";
 import {
   type ActionCertifiedRecord as ActionCertifiedRecordValue,
   type ActionProposal,

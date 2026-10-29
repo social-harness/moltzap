@@ -16,7 +16,6 @@ import {
   protocolEvidence,
   stagedRecord,
 } from "../communication/conversations/history/index.js";
-import { SignedMessage } from "../identity/envelope/signed-message.js";
 import {
   ActionCore,
   type ActionHash,
@@ -40,6 +39,7 @@ import {
 } from "../communication/records/index.js";
 import { encodeCanonical } from "../encoding/canonical-json.js";
 import { AgentCard, type VerifiedAgentCard } from "../identity/cards.js";
+import { SignedMessage } from "../identity/envelope/signed-message.js";
 import { WIRE_VERSION } from "../identity/wire-version.js";
 
 /** One member's verified card and the authority that signs as it. */

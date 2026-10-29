@@ -26,7 +26,7 @@ import {
 import type { FirewallSendError } from "../../firewall/outcome/index.js";
 import {
   type CollectiveError,
-  SendResult,
+  SendResultSchema,
 } from "../../communication/collectives/contracts.js";
 import {
   issuesText,
@@ -212,7 +212,7 @@ const acknowledgeDeliveryInput = requestSchema(
   harnessAcknowledgeDeliveryRequestSchema,
 );
 const emptyOutput = resultSchema(harnessEmptyResultSchema);
-const sendOutput = resultSchema(SendResult);
+const sendOutput = resultSchema(SendResultSchema);
 const readEventInput = requestSchema(readEventRequestSchema);
 const readEventOutput = resultSchema(readEventResultSchema);
 const readInboxInput = requestSchema(inboxRequestSchema);

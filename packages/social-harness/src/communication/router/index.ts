@@ -15,11 +15,11 @@ import type { AgentId } from "../../identity/agents.js";
 import type { StoredOutboundMessage } from "../store/index.js";
 import { decodeCanonical } from "../../encoding/canonical-json.js";
 import { AgentCard, type VerifiedAgentCard } from "../../identity/cards.js";
-import { Registry } from "../../identity/registry/index.js";
 import {
   type LiveSignedMessage,
   SignedMessage,
 } from "../../identity/envelope/signed-message.js";
+import { Registry } from "../../identity/registry/index.js";
 import { Router } from "./api/client.js";
 import {
   type RouterInstanceId,

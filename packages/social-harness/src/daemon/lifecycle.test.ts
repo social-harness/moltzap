@@ -23,8 +23,8 @@ import {
 import { join } from "node:path";
 import { describe, expect, vi } from "vitest";
 import type { EnginePendingMessage } from "../communication/conversations/index.js";
-import type { HarnessMcpEventHandler } from "./mcp/tools.js";
 import type { EventStore } from "../host-protocol/operations.js";
+import type { HarnessMcpEventHandler } from "./mcp/tools.js";
 import { digest } from "../__tests__/agent-card-fixtures.js";
 import {
   type Fixture,
@@ -59,10 +59,10 @@ import {
   type EndpointStore,
   EndpointStoreError,
 } from "../communication/store/index.js";
-import { HistoryExportRecord } from "./inbox/host-traffic-log.js";
 import { INBOX_PENDING_EVENT } from "../host-protocol/names.js";
 import { AgentName } from "../identity/agents.js";
 import { AgentCard } from "../identity/cards.js";
+import { HistoryExportRecord } from "./inbox/host-traffic-log.js";
 import { DaemonRuntimeError } from "./lifecycle.js";
 
 /**

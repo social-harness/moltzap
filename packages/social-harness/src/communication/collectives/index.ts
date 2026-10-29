@@ -43,14 +43,6 @@ import {
   type SendInput,
 } from "./contracts.js";
 import {
-  type CollectiveValue,
-  encodeCollectiveContent,
-  FormModeSchema,
-  mintCollectiveId,
-  readCollectiveValue,
-  withoutCollectivePart,
-} from "./wire/index.js";
-import {
   durableEmit,
   durableSend,
   emitTerminal,
@@ -97,6 +89,14 @@ import {
   type PreparedGather,
 } from "./state.js";
 import { outcomeOfResponse } from "./validation.js";
+import {
+  type CollectiveValue,
+  encodeCollectiveContent,
+  FormModeSchema,
+  mintCollectiveId,
+  readCollectiveValue,
+  withoutCollectivePart,
+} from "./wire/index.js";
 
 type PostContent = InboundMessage["content"];
 

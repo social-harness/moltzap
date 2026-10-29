@@ -655,7 +655,7 @@ export interface EndpointStore {
 }
 
 /** A remote request is identified by its authenticated certified record. */
-export type CollectiveOrigin =
+type CollectiveOrigin =
   | { readonly kind: "local" }
   | {
       readonly kind: "remote";

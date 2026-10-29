@@ -436,7 +436,7 @@ function returnsAnAnswersPendingDelivery() {
   });
 }
 
-function returnsAnAllGathersPendingFailure() {
+function returnsAnAllGathersPendingDelivery() {
   return Effect.gen(function* () {
     const subject = yield* engineFixture(() => true);
     const runtime = yield* incomingFixture(subject, unsettled);
@@ -448,18 +448,17 @@ function returnsAnAllGathersPendingFailure() {
     );
 
     expect(failure).toMatchObject({
-      _tag: "CollectiveError",
-      failure: { kind: "members-unreachable" },
+      _tag: "SendError",
+      reason: "delivery-pending",
     });
     expect(runtime.emitted).toEqual([]);
   });
 }
 
 /**
- * Guidance mode admits the all_gather although the stalled post is an
- * unfinished intent, so its refused activation is what the send reports.
+ * A bound request remains pending when another send prevents activation.
  */
-function refusesAnAllGatherWhoseActivationFailsBehindAnotherPostsDrain() {
+function keepsAllGatherPendingBehindStalledSend() {
   return Effect.gen(function* () {
     const writes = { made: 0 };
     const subject = yield* engineFixture(() => writes.made++ > 0);
@@ -475,7 +474,7 @@ function refusesAnAllGatherWhoseActivationFailsBehindAnotherPostsDrain() {
       .pipe(Effect.forkScoped);
     yield* Deferred.await(subject.outbound);
 
-    const refusal = yield* Effect.flip(
+    const pending = yield* Effect.flip(
       runtime.delivery.operations.send({
         input: sendInput({
           to: group,
@@ -489,9 +488,11 @@ function refusesAnAllGatherWhoseActivationFailsBehindAnotherPostsDrain() {
       }),
     );
 
-    expect(refusal).toMatchObject({
-      failure: { kind: "members-unreachable" },
+    expect(pending).toMatchObject({
+      _tag: "SendError",
+      reason: "delivery-pending",
     });
+    expect(runtime.emitted).toEqual([]);
     yield* Fiber.interrupt(stalled);
   });
 }
@@ -553,11 +554,11 @@ describe("collective sends whose bound post fails activation", () => {
     returnsAnAnswersPendingDelivery,
   );
   it(
-    "returns the failure of an admitted all_gather",
-    returnsAnAllGathersPendingFailure,
+    "returns pending delivery when an admitted all_gather cannot activate",
+    returnsAnAllGathersPendingDelivery,
   );
   it(
-    "refuses an all_gather at once, behind another post's stalled drain",
-    refusesAnAllGatherWhoseActivationFailsBehindAnotherPostsDrain,
+    "keeps a bound all_gather pending when another send stalls",
+    keepsAllGatherPendingBehindStalledSend,
   );
 });

@@ -10,18 +10,17 @@ import type {
   EndpointStoreError,
 } from "../../communication/store/index.js";
 import type { InstalledFirewall } from "../../firewall/index.js";
-import type { HistoryExportPort } from "../inbox/host-traffic-log.js";
-import type { HarnessMcpEventHandler } from "../mcp/index.js";
 import type { VerifiedAgentCard } from "../../identity/cards.js";
 import type {
   DaemonBootstrap,
   DaemonProcessConfiguration,
 } from "../bootstrap.js";
+import type { HistoryExportPort } from "../inbox/host-traffic-log.js";
+import type { HarnessMcpEventHandler } from "../mcp/index.js";
 import type { DaemonRegistrationState } from "../registration/index.js";
 import { CollectiveEmitError } from "../../communication/collectives/index.js";
 import { SendError } from "../../communication/conversations/errors.js";
 import { Router } from "../../communication/router/index.js";
-import { type HostDelivery, makeHostDelivery } from "../inbox/index.js";
 import { Registry } from "../../identity/registry/index.js";
 import {
   activationFailure,
@@ -29,6 +28,7 @@ import {
   DaemonRuntimeError,
   runtimeFailure,
 } from "../errors.js";
+import { type HostDelivery, makeHostDelivery } from "../inbox/index.js";
 import {
   acquireProtocol,
   type ActiveProtocol,

@@ -36,7 +36,7 @@ import {
   CollectiveError,
   CollectiveId,
   SendInput,
-  SendResult,
+  SendResultSchema,
 } from "../../communication/collectives/contracts.js";
 import { InboundItem } from "../../communication/collectives/inbound.js";
 import {
@@ -50,14 +50,14 @@ import {
   openEndpointStore,
 } from "../../communication/store/index.js";
 import { FirewallSendError } from "../../firewall/outcome/index.js";
-import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { acquireHarnessEndpoint } from "../../host-client/index.js";
-import { readRuntimeEvent } from "../inbox/inbox.js";
 import {
   HARNESS_SEND_TOOL,
   INBOX_PENDING_EVENT,
 } from "../../host-protocol/names.js";
 import { eventIdOf } from "../../host-protocol/operations.js";
+import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
+import { readRuntimeEvent } from "../inbox/inbox.js";
 import { acquireHarnessMcpHttpServer } from "./http.js";
 import {
   type HarnessMcpOperations,
@@ -364,7 +364,7 @@ const sendInput = Schema.decodeUnknownSync(SendInput)({
   to: "agent:bob",
   text: "one semantic action",
 });
-const sendResult = Schema.decodeUnknownSync(SendResult)({
+const sendResult = Schema.decodeUnknownSync(SendResultSchema)({
   kind: "multicast",
   postId: digest("pst_", 8),
   address: "agent:bob",

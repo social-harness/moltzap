@@ -25,12 +25,12 @@ import {
   MAXIMUM_DEADLINE_SECONDS,
   type OpenElsewhere,
 } from "./contracts.js";
+import { questionText } from "./render.js";
 import {
   collectiveIdOf,
   type CollectiveValue,
   type FormModeSchema,
 } from "./wire/index.js";
-import { questionText } from "./render.js";
 
 /**
  * What matching reads of a received request: `to` is the canonical address

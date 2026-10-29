@@ -10,12 +10,12 @@ import {
 } from "effect";
 import type { AgentId } from "../../../identity/agents.js";
 import type { VerifiedAgentCard } from "../../../identity/cards.js";
-import type { Registry } from "../../../identity/index.js";
-import type { AgentSigningAuthority } from "../../../identity/keys.js";
 import type {
   LiveSignedMessage,
   VerifiedSignedMessage,
 } from "../../../identity/envelope/signed-message.js";
+import type { Registry } from "../../../identity/index.js";
+import type { AgentSigningAuthority } from "../../../identity/keys.js";
 import type { EndpointStore } from "../../store/index.js";
 import type { Router } from "../api/client.js";
 import type { PollCursor, RouterInstanceId } from "../api/contract.js";

@@ -21,12 +21,12 @@ import {
   EndpointStoreError,
   openEndpointStore,
 } from "../../communication/store/index.js";
-import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import {
   HARNESS_CONSUMER_META_KEY,
   INBOX_ITEM_EVENT,
 } from "../../host-protocol/names.js";
 import { eventIdOf } from "../../host-protocol/operations.js";
+import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { makeHarnessPollEvents } from "./poll.js";
 
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- External protocol codes, closed lifecycle errors and retained inbox counts are conformance expectations. */

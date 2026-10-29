@@ -25,10 +25,10 @@ import {
   encodeRuntimeValue,
   openEndpointStore,
 } from "../../communication/store/index.js";
-import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
-import { readRuntimeEvent } from "../inbox/inbox.js";
 import { maximumEventBytes } from "../../host-protocol/index.js";
 import { eventIdOf } from "../../host-protocol/operations.js";
+import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
+import { readRuntimeEvent } from "../inbox/inbox.js";
 import {
   isPublicWebhookAddress,
   sendWebhook,

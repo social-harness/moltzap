@@ -4,8 +4,8 @@ import { Either, FastCheck as fc, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import type { CollectiveId } from "./contracts.js";
 import { AgentAddress, GroupAddress } from "../records/values.js";
-import { collectiveIdOf } from "./wire/index.js";
 import { matchOpenRequest, type RequestStatus } from "./received-request.js";
+import { collectiveIdOf } from "./wire/index.js";
 
 const NOW = 1_000_000;
 const bob = Schema.decodeUnknownSync(AgentAddress)("agent:bob");

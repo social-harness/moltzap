@@ -40,6 +40,7 @@ import {
   type RouterWorkerRecovery,
   RouterWorkerRecoveryError,
 } from "../../router/index.js";
+import { type EngineRuntime, evidenceTarget } from "../engine-context.js";
 import {
   durableRouterInstanceId,
   verifyRecoveredHistory,
@@ -60,7 +61,6 @@ import {
   retryPending,
   retrySettled,
 } from "../retry-markers.js";
-import { type EngineRuntime, evidenceTarget } from "../engine-context.js";
 import {
   completeRecoveryBarrier,
   currentRecoveryBarrier,

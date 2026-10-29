@@ -47,7 +47,6 @@ import {
   openEndpointStore,
 } from "../communication/store/index.js";
 import { encodeCanonical } from "../encoding/canonical-json.js";
-import { makeHarnessMcpHttpHandler } from "./mcp/tools.js";
 import {
   managementReadConversationRequestSchema,
   managementRegisterRequestSchema,
@@ -66,6 +65,7 @@ import {
   type DaemonManagementOperations,
   makeDaemonManagementOperations,
 } from "./management/index.js";
+import { makeHarnessMcpHttpHandler } from "./mcp/tools.js";
 
 interface IdentityFixture {
   readonly bootstrap: DaemonBootstrap;

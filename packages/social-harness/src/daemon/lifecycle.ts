@@ -7,11 +7,18 @@ import type { Router } from "../communication/router/api/client.js";
 import type { Registry } from "../identity/registry/index.js";
 import { makeEndpointEngine } from "../communication/conversations/index.js";
 import { makeRouterWorker } from "../communication/router/index.js";
+import { WIRE_VERSION } from "../identity/wire-version.js";
+import { packageVersion } from "../release/index.js";
+import { DaemonRuntimeError, runtimeFailure } from "./errors.js";
 import {
   type HistoryExportPort,
   makeHistoryExport,
   noHistoryExport,
 } from "./inbox/host-traffic-log.js";
+import {
+  type DaemonManagementOperations,
+  makeDaemonManagementOperations,
+} from "./management/index.js";
 import {
   acquireHarnessMcpHttpServer,
   type HarnessMcpEventHandler,
@@ -19,13 +26,6 @@ import {
   makeHarnessMcpHttpHandler,
   type ManagementRegisterRequest,
 } from "./mcp/index.js";
-import { WIRE_VERSION } from "../identity/wire-version.js";
-import { packageVersion } from "../release/index.js";
-import { DaemonRuntimeError, runtimeFailure } from "./errors.js";
-import {
-  type DaemonManagementOperations,
-  makeDaemonManagementOperations,
-} from "./management/index.js";
 import {
   type DaemonStartup,
   makeDaemon,

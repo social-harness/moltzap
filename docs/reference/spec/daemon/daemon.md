@@ -209,7 +209,7 @@ at gateway start.
 
 ## Persistence
 
-The one SQLite database uses WAL and schema version 13. It stores identity
+The daemon keeps its local state in one SQLite database using WAL. It stores identity
 binding, address/member resolution, durable post intents, proposal locks,
 membership, cards, anchors, record cores, retained signature evidence,
 durability votes, certified heads, catch-up/re-anchor state, and pending

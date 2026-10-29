@@ -2,6 +2,7 @@
 import canonicalize from "canonicalize";
 import { Data, Effect, Either, Encoding, Option, Schema } from "effect";
 import { AgentId } from "../../../identity/agents.js";
+import { SignedMessage } from "../../../identity/envelope/signed-message.js";
 import {
   type AgentSigningError,
   AuthenticationFailedError,
@@ -16,7 +17,6 @@ import {
   VersionMismatchError,
 } from "../../../identity/index.js";
 import { LIVE_WIRE_VERSIONS } from "../../../identity/wire-version.js";
-import { SignedMessage } from "../../../identity/envelope/signed-message.js";
 
 /** Exact Router send target. */
 export const routerSendPath = "/v1/messages:send";

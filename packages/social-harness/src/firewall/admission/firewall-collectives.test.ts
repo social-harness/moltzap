@@ -49,12 +49,12 @@ import {
 } from "../../__tests__/firewall-runtime-fixtures.js";
 import { bytes } from "../../__tests__/store-schema-fixtures.js";
 import { InboundItem } from "../../communication/collectives/inbound.js";
-import { collectiveIdOf } from "../../communication/collectives/wire/index.js";
 import {
   renderCollectiveRequest,
   renderCollectiveRequestBody,
   renderOutcome,
 } from "../../communication/collectives/render.js";
+import { collectiveIdOf } from "../../communication/collectives/wire/index.js";
 import {
   type DeliveryToken,
   encodeRuntimeValue,

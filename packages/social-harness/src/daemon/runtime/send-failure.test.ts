@@ -26,11 +26,11 @@ import {
   openEndpointStore,
 } from "../../communication/store/index.js";
 import { encodeCanonical } from "../../encoding/canonical-json.js";
-import { acquireHarnessMcpHttpServer } from "../mcp/index.js";
 import { AgentCard } from "../../identity/cards.js";
 import { Ed25519PublicKey } from "../../identity/keys.js";
 import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { SendInput } from "../../index.js";
+import { acquireHarnessMcpHttpServer } from "../mcp/index.js";
 
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- Exact HTTP statuses and closed diagnostic reasons are boundary contracts; secret sentinels verify redaction. */
 // @agent-code-guard/regression-only: failure injection pins send replies and secret-safe storage diagnostics during daemon shutdown.

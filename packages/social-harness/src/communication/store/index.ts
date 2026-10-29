@@ -70,7 +70,6 @@ export type {
   CollectiveAnswerReference,
   CollectiveDelivery,
   CollectiveOperationInput,
-  CollectiveOrigin,
   CollectivePostBinding,
   CollectiveRequestRefusal,
   StoredCollectiveOperation,

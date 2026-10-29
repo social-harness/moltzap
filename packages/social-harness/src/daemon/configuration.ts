@@ -9,7 +9,6 @@ import {
   Schema,
 } from "effect";
 import type { MessagePolicyConfigurationFailure } from "../firewall/index.js";
-import { credentialMatches, type HarnessMcpCredentials } from "./mcp/index.js";
 import { AgentName, PrincipalId } from "../identity/agents.js";
 import { AgentSigningAuthority, Ed25519PublicKey } from "../identity/keys.js";
 import { OperationId } from "../identity/registry/contract.js";
@@ -26,6 +25,7 @@ import {
   loadSigningAuthority,
   readCredential,
 } from "./credentials.js";
+import { credentialMatches, type HarnessMcpCredentials } from "./mcp/index.js";
 
 const canonicalUnsignedDecimal = Schema.String.pipe(
   Schema.pattern(/^(?:0|[1-9]\d*)$/u),

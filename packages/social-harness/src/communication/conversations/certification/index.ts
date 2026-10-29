@@ -50,15 +50,6 @@ import {
   type ProposalLock,
 } from "../../store/index.js";
 import {
-  inboundDelivery,
-  makeActionCertifiedRecord,
-  makeCertifiedRecord,
-  protocolEvidence,
-  recordAnchorHash,
-  stagedRecord,
-  storedCertifiedRecord,
-} from "../history/index.js";
-import {
   type EngineActionFold,
   type EngineConversation,
   type EnginePostIntent,
@@ -68,6 +59,15 @@ import {
   evidenceTarget,
   makeActionFold,
 } from "../engine-context.js";
+import {
+  inboundDelivery,
+  makeActionCertifiedRecord,
+  makeCertifiedRecord,
+  protocolEvidence,
+  recordAnchorHash,
+  stagedRecord,
+  storedCertifiedRecord,
+} from "../history/index.js";
 
 /** Dissemination resume, bound as the `resumeDissemination` engine phase. */
 export { resumeDisseminationObligations } from "./dissemination.js";

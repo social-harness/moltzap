@@ -27,6 +27,8 @@ import {
   EndpointStoreError,
   openEndpointStore,
 } from "../communication/store/index.js";
+import { makeHostDelivery } from "../daemon/inbox/host-delivery.js";
+import { noHistoryExport } from "../daemon/inbox/host-traffic-log.js";
 import { encodeCanonical } from "../encoding/canonical-json.js";
 import {
   collectiveAdmission,
@@ -35,8 +37,6 @@ import {
   type InstalledFirewall,
 } from "../firewall/admission/index.js";
 import { installEditableFirewall } from "../firewall/index.js";
-import { noHistoryExport } from "../daemon/inbox/host-traffic-log.js";
-import { makeHostDelivery } from "../daemon/inbox/host-delivery.js";
 import { AgentCard } from "../identity/cards.js";
 import { Ed25519PublicKey } from "../identity/keys.js";
 import { LIVE_WIRE_VERSIONS, WIRE_VERSION } from "../identity/wire-version.js";

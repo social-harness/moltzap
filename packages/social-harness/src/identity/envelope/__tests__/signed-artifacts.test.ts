@@ -12,13 +12,13 @@ import * as fc from "fast-check";
 import { generateKeyPairSync } from "node:crypto";
 import { expect, it } from "vitest";
 import {
-  decodeCanonicalJson,
-  encodeCanonicalJson,
-} from "../../../encoding/canonical-json.js";
-import {
   AgentCardIssuedAt,
   makeVerifiedCard,
 } from "../../__tests__/agent-card-fixtures.js";
+import {
+  decodeCanonicalJson,
+  encodeCanonicalJson,
+} from "../../../encoding/canonical-json.js";
 import {
   AgentId,
   type AgentId as AgentIdValue,

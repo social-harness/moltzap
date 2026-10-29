@@ -8,11 +8,11 @@ import type { Deferred, Effect, Scope } from "effect";
 import type { ClientRepresentationError } from "../../encoding/canonical-json.js";
 import type { AgentId } from "../../identity/agents.js";
 import type { VerifiedAgentCard } from "../../identity/cards.js";
+import type { SignedMessage } from "../../identity/envelope/signed-message.js";
 import type {
   AgentSigningAuthority,
   Ed25519PublicKey,
 } from "../../identity/keys.js";
-import type { SignedMessage } from "../../identity/envelope/signed-message.js";
 import type {
   ActionCertifiedRecord,
   ActionCore,

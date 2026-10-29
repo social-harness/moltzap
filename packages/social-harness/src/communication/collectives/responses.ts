@@ -26,11 +26,6 @@ import {
   type CollectiveResponse,
   type CollectiveSendOutcome,
 } from "./contracts.js";
-import {
-  encodeCollectiveContent,
-  mintCollectiveId,
-  readCollectiveValue,
-} from "./wire/index.js";
 import { durableEmit } from "./persistence.js";
 import {
   bindAuthoredPost,
@@ -44,6 +39,11 @@ import {
   unmatchedAnswerError,
 } from "./received-request.js";
 import { validateAnswer } from "./validation.js";
+import {
+  encodeCollectiveContent,
+  mintCollectiveId,
+  readCollectiveValue,
+} from "./wire/index.js";
 type PostContent = Content;
 const contentInvalid = () => new SendError({ reason: "content-invalid" });
 const collectiveFailure = (id: CollectiveId, failure: CollectiveFailure) =>

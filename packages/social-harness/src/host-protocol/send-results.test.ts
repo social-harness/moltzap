@@ -11,7 +11,7 @@ import {
   newObserved,
   requestPost,
   send,
-} from "../../__tests__/collective-operation-fixtures.js";
+} from "../__tests__/collective-operation-fixtures.js";
 import {
   checkHarnessSendResult,
   decodeHarnessSendResult,

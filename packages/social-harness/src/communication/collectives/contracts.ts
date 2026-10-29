@@ -204,7 +204,7 @@ const absentResultField = Schema.Never.annotations({
  * Readers may ignore future fields, but fields owned by another result kind
  * cannot describe this result.
  */
-export const SendResult = Schema.Union(
+export const SendResultSchema = Schema.Union(
   Schema.Struct({
     kind: Schema.Literal("multicast"),
     postId: PostId,
@@ -227,8 +227,11 @@ export const SendResult = Schema.Union(
     ...sendGuidance,
   }),
 ).annotations({ identifier: "SendResult" });
-/** The successful cases of one send, derived from their owning schema. */
-export type SendResult = typeof SendResult.Type;
+/**
+ * A certified message, a certified answer or an accepted collective operation.
+ * @useDeclaredType
+ */
+export type SendResult = typeof SendResultSchema.Type;
 
 /** Private completion retains the posts certified before the invocation returned. */
 export type CollectiveSendOutcome = SendResult & {

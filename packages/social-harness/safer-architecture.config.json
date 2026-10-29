@@ -3,6 +3,10 @@
   "maxFolderCycles": 1,
   "facadeFiles": [
     {
+      "file": "communication/store/rows/collectives.ts",
+      "reason": "Atomic collective identity and post claims shared by store transactions"
+    },
+    {
       "file": "encoding/exact.ts",
       "reason": "Closed struct decoding shared by host-loaded value schemas"
     },

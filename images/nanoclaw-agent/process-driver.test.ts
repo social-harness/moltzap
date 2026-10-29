@@ -70,7 +70,7 @@ test("runs one shared session and reports its terminal state", async (t) => {
   assert.deepEqual(await handle.status(), { phase: "running" });
   await ended;
 
-  assert.deepEqual(
+  assert.partialDeepStrictEqual(
     JSON.parse(await readFile(join(workingDirectory, "observed.json"), "utf8")),
     {
       cwd: await realpath(workingDirectory),

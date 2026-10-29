@@ -10,9 +10,9 @@ import {
 import { Effect, Option, Schema, SchemaAST } from "effect";
 import { describe, expect } from "vitest";
 import { FirewallPolicyError } from "../../firewall/index.js";
+import { decodeHarnessSendErrorData } from "../../host-protocol/operations.js";
 import { AgentName, PrincipalId } from "../../identity/agents.js";
 import { OperationId } from "../../identity/registry/contract.js";
-import { decodeHarnessSendErrorData } from "../../host-protocol/operations.js";
 import {
   type HarnessMcpOperations,
   makeHarnessMcpHttpHandler,

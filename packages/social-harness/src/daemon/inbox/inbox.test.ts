@@ -21,13 +21,13 @@ import {
   encodeRuntimeValue,
   openEndpointStore,
 } from "../../communication/store/index.js";
-import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import {
   eventIdOf,
   type HarnessMessageReadyEvent,
 } from "../../host-protocol/operations.js";
-import { noHistoryExport } from "./host-traffic-log.js";
+import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { makeHostDelivery } from "./host-delivery.js";
+import { noHistoryExport } from "./host-traffic-log.js";
 import { persistInboxItem, readRuntimeInbox } from "./inbox.js";
 
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- Durable tombstone and snapshot fixtures pin exact store outcomes. */

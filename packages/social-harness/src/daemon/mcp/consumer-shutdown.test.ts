@@ -16,11 +16,11 @@ import type { PollResult } from "../../host-protocol/index.js";
 import { loopbackMcpEndpoint } from "../../__tests__/mcp-http-fixtures.js";
 import { stateDirectory } from "../../__tests__/store-schema-fixtures.js";
 import { openEndpointStore } from "../../communication/store/index.js";
-import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import {
   INBOX_ITEM_EVENT,
   INBOX_PENDING_EVENT,
 } from "../../host-protocol/names.js";
+import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import {
   type HarnessEvents,
   makeHarnessEvents,

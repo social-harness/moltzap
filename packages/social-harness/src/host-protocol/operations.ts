@@ -7,7 +7,8 @@ import {
   CollectiveId,
   decodeCollectiveFailure,
   SendInput,
-  SendResult,
+  type SendResult,
+  SendResultSchema,
 } from "../communication/collectives/contracts.js";
 import { InboundItem } from "../communication/collectives/inbound.js";
 import { AgentAddress, GroupAddress } from "../communication/records/index.js";
@@ -331,7 +332,7 @@ export function decodeHarnessSendErrorData(
 export function decodeHarnessSendResult(
   value: unknown,
 ): Effect.Effect<HarnessSendResult, ParseResult.ParseError> {
-  return Schema.decodeUnknown(SendResult)(value);
+  return Schema.decodeUnknown(SendResultSchema)(value);
 }
 
 /**
@@ -341,7 +342,7 @@ export function decodeHarnessSendResult(
 export function checkHarnessSendResult(
   value: unknown,
 ): Effect.Effect<HarnessSendResult, ParseResult.ParseError> {
-  return Schema.decodeUnknown(SendResult)(value, exactParseOptions);
+  return Schema.decodeUnknown(SendResultSchema)(value, exactParseOptions);
 }
 
 /** The existing endpoint store owns both callback progress and immutable inbox items. */

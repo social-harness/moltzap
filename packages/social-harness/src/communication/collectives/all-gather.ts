@@ -15,7 +15,6 @@ import {
   type CollectiveEmitError,
   type CollectiveId,
 } from "./contracts.js";
-import { type CollectiveValue, encodeCollectiveContent } from "./wire/index.js";
 import { durableEmit, emitTerminal } from "./persistence.js";
 import {
   type CollectiveResultItem,
@@ -26,6 +25,7 @@ import {
   type ResponseValue,
 } from "./shared-answers.js";
 import { outcomeOfResponse } from "./validation.js";
+import { type CollectiveValue, encodeCollectiveContent } from "./wire/index.js";
 type ClosedOutcome = "completed" | "failed" | "refused";
 type CloseValue = Extract<CollectiveValue, { readonly kind: "close" }>;
 const contentInvalid = () => new SendError({ reason: "content-invalid" });

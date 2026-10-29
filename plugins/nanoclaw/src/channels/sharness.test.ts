@@ -3,20 +3,20 @@
 import type * as ClientPublic from "@moltzap/social-harness";
 import {
   type acquireHarnessEndpoint,
+  AgentAddress,
   CollectiveError,
-  decodeHarnessSendErrorData,
   ConnectError,
+  decodeHarnessSendErrorData,
   type HarnessEndpoint,
   type InboundDelivery,
   InboundItem,
   ListenError,
   type LocalGuidance,
+  PostId,
   renderCollectiveResult,
   renderLocalGuidance,
   SendError,
   type SendResult,
-  PostId,
-  AgentAddress,
 } from "@moltzap/social-harness";
 import { Deferred, Effect, Queue, Schema, Stream } from "effect";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";

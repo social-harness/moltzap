@@ -3,8 +3,8 @@
 import { Effect, Exit, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import type { AnswerContent } from "./contracts.js";
-import { FormModeSchema } from "./wire/index.js";
 import { validateAnswer } from "./validation.js";
+import { FormModeSchema } from "./wire/index.js";
 
 const requestedSchema = Schema.decodeUnknownSync(FormModeSchema)({
   type: "object",

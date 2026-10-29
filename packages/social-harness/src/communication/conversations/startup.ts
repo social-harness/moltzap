@@ -38,14 +38,6 @@ import {
 } from "../records/index.js";
 import { RouterWorkerPersistenceError } from "../router/index.js";
 import {
-  decodeStoredAnchor,
-  recordFromStore,
-  type StoredRowError,
-  storedRowMatchesCore,
-  verifyStoredMemberships,
-  verifyStoredOutbounds,
-} from "./history/index.js";
-import {
   type EndpointEngineInput,
   type EngineActionFold,
   type EngineConversation,
@@ -53,6 +45,14 @@ import {
   type EvidenceRoute,
   makeActionFold,
 } from "./engine-context.js";
+import {
+  decodeStoredAnchor,
+  recordFromStore,
+  type StoredRowError,
+  storedRowMatchesCore,
+  verifyStoredMemberships,
+  verifyStoredOutbounds,
+} from "./history/index.js";
 
 /** Complete process-local projections recovered before protocol work resumes. */
 interface RecoveredEngineState {

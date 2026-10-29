@@ -67,6 +67,12 @@ const TEST_SUPPORT_FILES = [
  */
 const DEFAULT_CUSTOM_JSDOC_TAGS = ["failure"];
 
+/** Signatures describe parameters and returns; prose adds caller obligations. */
+const documentationRules = {
+  "jsdoc/require-param": "off",
+  "jsdoc/require-returns": "off",
+};
+
 /**
  * The `max-non-trivial-classes-per-file` default exemption list covers
  * Effect's own tag-class factories (`Context.Tag`, `Data.TaggedError`, ...) but
@@ -177,11 +183,14 @@ export function packageEslintConfig(options: PackageEslintOptions) {
       languageOptions,
       guard.configs.integrationTests,
     ),
-    makePresetBlock(
-      ["src/**/index.ts"],
-      languageOptions,
-      guard.configs.documentation,
-    ),
+    {
+      ...makePresetBlock(
+        ["src/**/index.ts"],
+        languageOptions,
+        guard.configs.documentation,
+      ),
+      rules: { ...guard.configs.documentation.rules, ...documentationRules },
+    },
     makeEslintDisableCommentRules(languageOptions),
     configModuleRules,
   ];
@@ -306,14 +315,7 @@ function makeStrictRules(maxLines = 1050) {
   return {
     ...guard.configs.strict.rules,
     "agent-code-guard/no-vacuous-jsdoc": "error",
-    // The requirements preset demands a `@param` for every parameter and a
-    // `@returns` on every documented function. Types live in the signature here,
-    // so those tags carry only prose, and on a well-named parameter the only
-    // prose available restates the name — the litter `no-vacuous-jsdoc` and
-    // `require-description` exist to keep out. Write either tag where it says
-    // what the name cannot: units, format, preconditions, ordering.
-    "jsdoc/require-param": "off",
-    "jsdoc/require-returns": "off",
+    ...documentationRules,
     "agent-code-guard/prefer-stepdown-function-order": "error",
     "agent-code-guard/require-stable-file-shell": "error",
     // The architecture analyzer owns deterministic file, folder, domain, and

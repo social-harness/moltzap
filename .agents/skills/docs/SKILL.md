@@ -442,6 +442,13 @@ documents locally defined types referenced by public methods under `Referenced
 types`. Check their links and descriptions without broadening package exports
 to satisfy the generator. Exclude dependency build outputs so each package's
 source owns its reference.
+Inspect derived type pages as well as their links. A page that exposes schema
+construction types can hide the value callers receive. TypeDoc's
+[`@useDeclaredType`](https://typedoc.org/documents/Tags._useDeclaredType.html)
+can render a derived value type from the compiler. Check the output before
+keeping it. When only the value type is public, give its internal schema a
+distinct name so the generator does not publish two misleading pages for one
+type. Keep the type derived from its schema.
 Shared site values live in `docs/docs.json` variables, and reusable content
 lives in `docs/snippets/`. Check site links with `pnpm -s docs:check`.
 

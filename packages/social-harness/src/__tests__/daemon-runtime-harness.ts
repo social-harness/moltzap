@@ -30,19 +30,19 @@ import {
   EndpointStoreError,
   type IdentityBinding,
 } from "../communication/store/index.js";
+import { makeHistoryExport } from "../daemon/inbox/host-traffic-log.js";
 import {
   type DaemonRuntimeDependencies,
   DaemonRuntimeError,
   runDaemonRuntime,
 } from "../daemon/lifecycle.js";
-import { readDaemonRegistrationState } from "../daemon/registration/index.js";
-import { sameBytes } from "../encoding/canonical-json.js";
-import { makeHistoryExport } from "../daemon/inbox/host-traffic-log.js";
 import {
   type HarnessMcpEventHandler,
   type HarnessMcpOperations,
   makeHarnessMcpHttpHandler,
 } from "../daemon/mcp/tools.js";
+import { readDaemonRegistrationState } from "../daemon/registration/index.js";
+import { sameBytes } from "../encoding/canonical-json.js";
 import { INBOX_PENDING_EVENT } from "../host-protocol/names.js";
 import { Registry } from "../identity/registry/index.js";
 import { AuthenticationFailedError } from "../identity/signing/http-errors.js";

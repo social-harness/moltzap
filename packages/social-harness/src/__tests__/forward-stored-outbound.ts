@@ -2,8 +2,8 @@
 
 import { type Duration, Effect, Queue } from "effect";
 import type { EndpointStore } from "../communication/store/index.js";
-import { SignedMessage } from "../identity/envelope/signed-message.js";
 import { decodeCanonical } from "../encoding/canonical-json.js";
+import { SignedMessage } from "../identity/envelope/signed-message.js";
 
 /**
  * Transmit one outbox row the way the Router worker does: begin it, complete
