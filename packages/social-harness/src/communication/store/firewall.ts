@@ -4,6 +4,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { Schema } from "effect";
 import { createHash } from "node:crypto";
 import { sameBytes } from "../../encoding/canonical-json.js";
+import { retainCollectiveInTransaction } from "./collective-claims.js";
 import {
   readBytes,
   readInteger,
@@ -17,8 +18,7 @@ import {
   StoreSignal,
   transaction,
 } from "./database/index.js";
-import { putInboxItem, retirePendingDelivery } from "./inbox.js";
-import { retainCollectiveInTransaction } from "./rows/collectives.js";
+import { putInboxItem, retirePendingDelivery } from "./host-inbox.js";
 import {
   type CollectiveOperationInput,
   DeliveryToken,

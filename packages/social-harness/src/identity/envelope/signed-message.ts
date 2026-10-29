@@ -20,13 +20,13 @@ import {
   compareAgentIds,
   decodeCanonicalBase64Url,
 } from "../../encoding/identifier.js";
-import { AgentId, type AgentId as AgentIdValue } from "../agents.js";
 import {
   AgentCardDigest,
   type AgentCardDigest as AgentCardDigestValue,
   digestAgentCard,
   type VerifiedAgentCard,
 } from "../cards.js";
+import { AgentId, type AgentId as AgentIdValue } from "../identifiers.js";
 import {
   AgentSigningAuthority,
   type AgentSigningAuthority as AgentSigningAuthorityValue,

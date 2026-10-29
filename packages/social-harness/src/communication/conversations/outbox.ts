@@ -1,4 +1,4 @@
-/** @file Builds the engine's `EngineOutbox`, the port the kernel declares. */
+/** @file Queues signed conversation messages and sends them through the Router across retries. */
 
 import { Effect, Queue, Schedule } from "effect";
 import type { DisseminationObligation } from "../store/index.js";

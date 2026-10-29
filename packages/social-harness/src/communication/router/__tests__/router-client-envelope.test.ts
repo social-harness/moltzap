@@ -3,7 +3,7 @@ import { HttpClient, HttpClientResponse } from "@effect/platform";
 import { Duration, Effect, Either, Layer, Redacted, Schema } from "effect";
 import { generateKeyPairSync } from "node:crypto";
 import { expect, it } from "vitest";
-import { AgentId } from "../../../identity/agents.js";
+import { AgentId } from "../../../identity/identifiers.js";
 import { AgentSigningAuthority } from "../../../identity/keys.js";
 import { VersionMismatchError } from "../../../identity/signing/http-errors.js";
 import { Router } from "../api/client.js";

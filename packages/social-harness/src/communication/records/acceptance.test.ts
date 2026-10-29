@@ -13,10 +13,10 @@ import {
   ClientRepresentationError,
   encodeCanonical,
 } from "../../encoding/canonical-json.js";
-import { AgentName } from "../../identity/agents.js";
 import { AgentCard, type VerifiedAgentCard } from "../../identity/cards.js";
 import { SealedBody } from "../../identity/envelope/sealed-body.js";
 import { SignedMessage } from "../../identity/envelope/signed-message.js";
+import { AgentName } from "../../identity/identifiers.js";
 import {
   type AgentSigningAuthority as AgentSigningAuthorityValue,
   Ed25519PublicKey,

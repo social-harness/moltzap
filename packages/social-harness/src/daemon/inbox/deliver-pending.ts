@@ -1,9 +1,4 @@
-/**
- * @file The delivery state one service keeps, and one pass over pending
- * deliveries: the collective layer classifies each durable delivery, consumed
- * ones are acknowledged, and the remaining items and the layer's own are
- * published in order while a subscriber takes them.
- */
+/** @file Classifies pending messages and offers their items and collective results to the host in order. */
 
 import { DateTime, Effect, Option } from "effect";
 import type { CollectiveEmitError } from "../../communication/collectives/contracts.js";

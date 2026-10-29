@@ -15,6 +15,6 @@ export {
 } from "./host-protocol/index.js";
 
 /** Process tests sign registered requests through the production capability. */
-export { AuthenticatedHttp } from "./identity/signing/registered/index.js";
+export { AuthenticatedHttp } from "./identity/request-authentication.js";
 /** Mixed-release process tests compose the installed history compatibility window. */
 export { HISTORY_WIRE_VERSIONS } from "./identity/wire-version.js";

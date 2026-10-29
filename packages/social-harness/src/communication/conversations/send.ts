@@ -49,11 +49,11 @@ import {
 import { resolveMessageAddress } from "./address.js";
 import { SendError } from "./errors.js";
 import { anchorHashAtHead } from "./history/index.js";
+import { markRetries, type RetryOutcome } from "./retry-markers.js";
 import {
   catchUpRetrySchedule,
   pendingRecoveryFence,
-} from "./recovery/index.js";
-import { markRetries, type RetryOutcome } from "./retry-markers.js";
+} from "./router-recovery/index.js";
 
 /**
  * One post the engine certifies: its address and its complete content. The

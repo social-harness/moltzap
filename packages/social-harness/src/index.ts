@@ -82,7 +82,7 @@ export {
 /** Wire emission and the installed daemon's live compatibility window. */
 export { LIVE_WIRE_VERSIONS, WIRE_VERSION } from "./identity/wire-version.js";
 /** Canonical identities a host reads from immutable cards and messages. */
-export { AgentId, AgentName, PrincipalId } from "./identity/agents.js";
+export { AgentId, AgentName, PrincipalId } from "./identity/identifiers.js";
 /** Opaque signing authority and exact public-key representation. */
 export { AgentSigningAuthority, Ed25519PublicKey } from "./identity/keys.js";
 /** Immutable Registry identity and its verified brand. */

@@ -2,8 +2,8 @@
 
 import { Effect, Encoding, Schema } from "effect";
 import { createHash, randomBytes } from "node:crypto";
-import type { AgentId } from "../../../identity/agents.js";
 import type { VerifiedAgentCard } from "../../../identity/cards.js";
+import type { AgentId } from "../../../identity/identifiers.js";
 import type { AgentSigningAuthority } from "../../../identity/keys.js";
 import {
   type ClientRepresentationError,

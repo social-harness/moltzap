@@ -1,4 +1,4 @@
-/** @file Syntax-based detection of release metadata consumed by runtime modules. */
+/** @file Finds code that may read release metadata omitted from image keys. */
 import ts from "typescript";
 import { erasedImport, runtimeCall } from "./module-graph.ts";
 

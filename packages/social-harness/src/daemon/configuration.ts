@@ -9,7 +9,7 @@ import {
   Schema,
 } from "effect";
 import type { MessagePolicyConfigurationFailure } from "../firewall/index.js";
-import { AgentName, PrincipalId } from "../identity/agents.js";
+import { AgentName, PrincipalId } from "../identity/identifiers.js";
 import { AgentSigningAuthority, Ed25519PublicKey } from "../identity/keys.js";
 import { OperationId } from "../identity/registry/contract.js";
 import {

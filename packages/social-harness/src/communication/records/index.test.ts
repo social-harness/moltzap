@@ -15,12 +15,12 @@ import {
   decodeCanonical,
   encodeCanonical,
 } from "../../encoding/canonical-json.js";
-import { AgentId } from "../../identity/agents.js";
 import { SealedBody } from "../../identity/envelope/sealed-body.js";
 import {
   MessageId,
   SignedMessage,
 } from "../../identity/envelope/signed-message.js";
+import { AgentId } from "../../identity/identifiers.js";
 import { WIRE_VERSION } from "../../identity/wire-version.js";
 import {
   ActionHash,

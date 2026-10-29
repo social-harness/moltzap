@@ -24,7 +24,7 @@ import {
   type AgentName as AgentNameValue,
   PrincipalId,
   type PrincipalId as PrincipalIdValue,
-} from "./agents.js";
+} from "./identifiers.js";
 import {
   Ed25519PublicKey,
   ed25519PublicKeyThumbprintUri,

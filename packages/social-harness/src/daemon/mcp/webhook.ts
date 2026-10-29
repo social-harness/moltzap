@@ -29,7 +29,7 @@ import {
   type WebhookFailureReason,
   webhookUrl,
 } from "./event-signing.js";
-import { makeItemEvent } from "./item.js";
+import { makeItemEvent } from "./inbox-event.js";
 
 const maximumRetryDelay = 5 * 60_000;
 const maximumLease = 24 * 60 * 60_000;

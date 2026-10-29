@@ -8,12 +8,12 @@ import {
   type KeyObject,
   sign as signBytes,
 } from "node:crypto";
-import { AgentId, AgentName, PrincipalId } from "../identity/agents.js";
 import {
   AgentCard,
   AgentView,
   type VerifiedAgentCard,
 } from "../identity/cards.js";
+import { AgentId, AgentName, PrincipalId } from "../identity/identifiers.js";
 import { AgentSigningAuthority, Ed25519PublicKey } from "../identity/keys.js";
 import { WIRE_VERSION } from "../identity/wire-version.js";
 

@@ -3,8 +3,8 @@
 import { type Context, Effect, Encoding, Layer, Ref, Schema } from "effect";
 import { generateKeyPairSync } from "node:crypto";
 import type { RouterWorkerInput } from "../communication/router/index.js";
-import type { AgentId as AgentIdValue } from "../identity/agents.js";
 import type { VerifiedAgentCard } from "../identity/cards.js";
+import type { AgentId as AgentIdValue } from "../identity/identifiers.js";
 import type { AgentSigningAuthority as AgentSigningAuthorityValue } from "../identity/keys.js";
 import type { RegistryLookupResult } from "../identity/registry/contract.js";
 import { Router } from "../communication/router/api/client.js";

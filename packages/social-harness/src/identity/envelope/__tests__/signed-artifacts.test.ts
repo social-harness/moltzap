@@ -20,17 +20,17 @@ import {
   encodeCanonicalJson,
 } from "../../../encoding/canonical-json.js";
 import {
-  AgentId,
-  type AgentId as AgentIdValue,
-  AgentName,
-  PrincipalId,
-} from "../../agents.js";
-import {
   AgentCard,
   AgentCardVerificationError,
   digestAgentCard,
   type VerifiedAgentCard,
 } from "../../cards.js";
+import {
+  AgentId,
+  type AgentId as AgentIdValue,
+  AgentName,
+  PrincipalId,
+} from "../../identifiers.js";
 import {
   AgentSigningAuthority,
   type AgentSigningAuthority as AgentSigningAuthorityValue,

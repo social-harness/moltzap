@@ -10,7 +10,7 @@ import {
   AgentCardIssuedAt,
   makeVerifiedCard,
 } from "../../__tests__/agent-card-fixtures.js";
-import { AgentId, AgentName, PrincipalId } from "../../agents.js";
+import { AgentId, AgentName, PrincipalId } from "../../identifiers.js";
 import {
   AgentSigningAuthority,
   type AgentSigningAuthority as AgentSigningAuthorityValue,

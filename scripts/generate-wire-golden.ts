@@ -14,11 +14,6 @@ import {
 } from "../packages/registry/dist/issuance.js";
 import { encodeCanonicalJson } from "../packages/social-harness/dist/encoding/canonical-json.js";
 import {
-  AgentId,
-  AgentName,
-  PrincipalId,
-} from "../packages/social-harness/dist/identity/agents.js";
-import {
   AgentCard,
   digestAgentCard,
 } from "../packages/social-harness/dist/identity/cards.js";
@@ -26,6 +21,11 @@ import {
   MessageId,
   SignedMessage,
 } from "../packages/social-harness/dist/identity/envelope/signed-message.js";
+import {
+  AgentId,
+  AgentName,
+  PrincipalId,
+} from "../packages/social-harness/dist/identity/identifiers.js";
 import {
   AgentSigningAuthority,
   Ed25519PublicKey,

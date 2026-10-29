@@ -2,7 +2,7 @@
 
 A requested form crosses two validation boundaries. [The host contracts](./contracts.ts)
 retain the caller's property descriptions for diagnostics. The
-[collective wire grammar](./wire/grammar.ts) admits the supported keywords before
+[answer field parser](./wire/answer-fields.ts) admits the supported keywords before
 they travel in a post, and [answer validation](validation.ts) checks against
 that admitted form. When changing a form keyword, follow it through admission,
 encoding, and answer checking so the request and its answers agree.

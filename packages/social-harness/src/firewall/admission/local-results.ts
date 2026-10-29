@@ -1,8 +1,4 @@
-/**
- * @file How the firewall admits an item the endpoint emitted itself: a
- * collective result, whose answers it checks one by one into a local
- * projection, and an operation failure, admitted without inference.
- */
+/** @file Checks collective result text and admits operation failures for host delivery. */
 
 import { Effect, Array as EffectArray, Schema, Struct } from "effect";
 import type { InboundItem } from "../../communication/collectives/inbound.js";

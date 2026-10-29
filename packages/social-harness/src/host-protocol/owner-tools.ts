@@ -15,8 +15,8 @@ import {
   decodeCanonicalBase64Url,
   isStrictlyAscending,
 } from "../encoding/identifier.js";
-import { AgentId, AgentName, PrincipalId } from "../identity/agents.js";
 import { AgentCard, AgentView } from "../identity/cards.js";
+import { AgentId, AgentName, PrincipalId } from "../identity/identifiers.js";
 import {
   OperationId,
   RegistryLookupRequest,

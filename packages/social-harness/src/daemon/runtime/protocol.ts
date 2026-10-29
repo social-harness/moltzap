@@ -15,7 +15,7 @@ import type {
   EndpointStoreError,
   StoredMembership,
 } from "../../communication/store/index.js";
-import type { AgentId } from "../../identity/agents.js";
+import type { AgentId } from "../../identity/identifiers.js";
 import type { DaemonBootstrap } from "../bootstrap.js";
 import {
   type CollectiveEmitError,

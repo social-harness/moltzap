@@ -16,7 +16,7 @@ import {
   decodeCanonicalBase64Url,
   hasCanonicalBase64UrlLength,
 } from "../../encoding/identifier.js";
-import { AgentId, type AgentId as AgentIdValue } from "../agents.js";
+import { AgentId, type AgentId as AgentIdValue } from "../identifiers.js";
 import {
   agentOpeningPrivateKey,
   AgentSigningAuthority,

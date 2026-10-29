@@ -1,8 +1,4 @@
-/**
- * @file Recovery run lifecycle: one authenticated catch-up and re-anchor run
- * per Router discontinuity, its ingress dispatch, the per-conversation fences
- * and catch-up retries it holds, and the ports its catch-up and re-anchor use.
- */
+/** @file Recovers conversation history and ordering when starting or replacing the Router message feed. */
 
 import {
   Duration,

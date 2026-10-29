@@ -5,7 +5,7 @@
  */
 
 import { Effect, Schema } from "effect";
-import type { AgentId } from "../../../identity/agents.js";
+import type { AgentId } from "../../../identity/identifiers.js";
 import type { EngineActionFold, EngineRuntime } from "../engine-context.js";
 import {
   decodeCanonical,

@@ -124,7 +124,7 @@ import {
   makeEndpointEngine,
 } from "../index.js";
 import { makeOutbox } from "../outbox.js";
-import { recoverEngineState } from "../startup.js";
+import { recoverEngineState } from "../restore.js";
 import {
   acceptCatchUpPage,
   type CatchUpRun,

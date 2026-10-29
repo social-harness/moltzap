@@ -1,4 +1,4 @@
-/** @file Registered-agent HTTP signing, resolution, replay defense, and verification. */
+/** @file Signs and authenticates HTTP requests made by registered agents. */
 
 import type { HttpClientRequest, HttpServerRequest } from "@effect/platform";
 import {
@@ -12,33 +12,30 @@ import {
   Ref,
   Schema,
 } from "effect";
-import type { AgentSigningAuthority } from "../../keys.js";
-import type { RegistryLookupResult } from "../../registry/contract.js";
+import type { AgentSigningAuthority } from "./keys.js";
+import type { RegistryLookupResult } from "./registry/contract.js";
 import {
   decodeCanonicalJson,
   encodeCanonicalJson,
-} from "../../../encoding/canonical-json.js";
-import { exactStruct } from "../../../encoding/exact.js";
-import { AgentId, type AgentId as AgentIdValue } from "../../agents.js";
-import { type BoundedCache, makeBoundedCache } from "../../bounded-cache.js";
-import {
-  type VerifiedAgentCard,
-  verifiedAgentCardSchema,
-} from "../../cards.js";
-import { Registry } from "../../registry/index.js";
-import { WireVersions } from "../../wire-version.js";
+} from "../encoding/canonical-json.js";
+import { exactStruct } from "../encoding/exact.js";
+import { type BoundedCache, makeBoundedCache } from "./bounded-cache.js";
+import { type VerifiedAgentCard, verifiedAgentCardSchema } from "./cards.js";
+import { AgentId, type AgentId as AgentIdValue } from "./identifiers.js";
+import { Registry } from "./registry/index.js";
 import {
   AuthenticationFailedError,
   MalformedRequestError,
   OverloadedError,
   UnavailableError,
   VersionMismatchError,
-} from "../http-errors.js";
+} from "./signing/http-errors.js";
 import {
   AgentSigningError,
   signHttpRequest,
   verifyHttpRequestSignature,
-} from "../http-signature.js";
+} from "./signing/http-signature.js";
+import { WireVersions } from "./wire-version.js";
 
 /** Request body and caller identity established by AuthenticatedHttp. */
 export type VerifiedAgentRequest = Readonly<{

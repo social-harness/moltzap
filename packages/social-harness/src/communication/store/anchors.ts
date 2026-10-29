@@ -16,6 +16,7 @@ import type {
   StagedReanchor,
   StoreMutation,
 } from "./types.js";
+import { bindCollectivePostInTransaction } from "./collective-claims.js";
 import {
   copyBytes,
   readBytes,
@@ -29,7 +30,6 @@ import {
   transaction,
 } from "./database/index.js";
 import { admittedOperation, compareFirewallCheck } from "./firewall.js";
-import { bindCollectivePostInTransaction } from "./rows/collectives.js";
 import {
   findProposalLock,
   findStagedReanchor,

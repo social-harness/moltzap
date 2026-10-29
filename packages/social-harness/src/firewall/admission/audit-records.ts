@@ -1,4 +1,4 @@
-/** @file Immutable policy metadata and retained check decoding. */
+/** @file Defines policy installations and check records used by the firewall and its audit. */
 
 import { Effect, Schema, Struct } from "effect";
 import {

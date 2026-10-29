@@ -1,4 +1,4 @@
-/** @file One service's delivery: the inbox writes, the gated delivery pass and detach, and the operations hosts call. */
+/** @file Connects host sends, inbox reads and acknowledgments to the daemon. */
 
 import {
   DateTime,
@@ -51,20 +51,20 @@ import {
   type HarnessSendRequest,
 } from "../../host-protocol/operations.js";
 import {
-  decodeInboxEntry,
-  mintLocalDeliveryToken,
-  persistInboxItem,
-  readRuntimeEvent,
-  readRuntimeInbox,
-} from "./inbox.js";
-import {
   type DeliveryState,
   exportOnce,
   forgetDelivery,
   makeDeliveryState,
   offerPendingMessages,
   type PendingOffer,
-} from "./pass.js";
+} from "./deliver-pending.js";
+import {
+  decodeInboxEntry,
+  mintLocalDeliveryToken,
+  persistInboxItem,
+  readRuntimeEvent,
+  readRuntimeInbox,
+} from "./inbox.js";
 
 /**
  * The collective layer as delivery uses it: the application send, which

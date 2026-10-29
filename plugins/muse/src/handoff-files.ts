@@ -1,4 +1,4 @@
-/** @file Local wake references carry no message content, credential or Client receipt. */
+/** @file Stores event references so Muse can wake its worker without copying messages. */
 
 import type { FileSystem } from "@effect/platform";
 import { Effect, Schema } from "effect";

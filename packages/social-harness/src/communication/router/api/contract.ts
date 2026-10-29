@@ -1,8 +1,8 @@
 /** @file Closed Router wire values, requests, results, bounds, and client failures. */
 import canonicalize from "canonicalize";
 import { Data, Effect, Either, Encoding, Option, Schema } from "effect";
-import { AgentId } from "../../../identity/agents.js";
 import { SignedMessage } from "../../../identity/envelope/signed-message.js";
+import { AgentId } from "../../../identity/identifiers.js";
 import {
   type AgentSigningError,
   AuthenticationFailedError,

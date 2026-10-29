@@ -7,7 +7,7 @@ import {
   AgentCardIssuedAt,
   makeVerifiedCard,
 } from "../../__tests__/agent-card-fixtures.js";
-import { AgentId, AgentName } from "../../agents.js";
+import { AgentId, AgentName } from "../../identifiers.js";
 import {
   type IdentityFixture,
   makeIdentityFixture,

@@ -40,7 +40,7 @@ import {
 } from "../../__tests__/firewall-runtime-fixtures.js";
 import { renderOutcome } from "../../communication/collectives/render.js";
 import { FirewallSendError } from "../outcome/index.js";
-import { decodeFirewallAuditEntry } from "./firewall-values.js";
+import { decodeFirewallAuditEntry } from "./audit-records.js";
 
 // @agent-code-guard/regression-only: Exercises collective refusal and binding through SQLite and the protocol engine.
 

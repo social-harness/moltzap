@@ -1,7 +1,7 @@
 /** @file Cryptographic and cross-field verification for Client protocol values. */
 
 import { Effect, Schema } from "effect";
-import type { AgentId } from "../../identity/agents.js";
+import type { AgentId } from "../../identity/identifiers.js";
 import type { Ed25519PublicKey } from "../../identity/keys.js";
 import {
   type ClientRepresentationError,

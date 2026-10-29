@@ -68,7 +68,7 @@ import {
   type FirewallConfiguration,
   type FirewallInstallation,
   withoutTraces,
-} from "./firewall-values.js";
+} from "./audit-records.js";
 
 // safer-arch-ignore file-implicit-boundary-module: Outgoing and incoming admission share this one projection and assessment pipeline; admission/index.ts exposes only the installation and its admission ports.
 

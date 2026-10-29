@@ -44,6 +44,7 @@ import {
 import { DeliveryAcknowledgeError, ListenError, SendError } from "./errors.js";
 import { InboundMessage } from "./message.js";
 import { makeOutbox } from "./outbox.js";
+import { recoverEngineState } from "./restore.js";
 import {
   acceptEngineIngressWithRecovery,
   installRecoveryBarrier,
@@ -51,7 +52,7 @@ import {
   rearmPausedCatchUp,
   recoverCertifiedHistory,
   recoveryHeadAdvanced,
-} from "./recovery/index.js";
+} from "./router-recovery/index.js";
 import {
   type BindHold,
   type EngineSendInput,
@@ -65,7 +66,6 @@ import {
   resolveConversation,
   type ResolvedConversation,
 } from "./send.js";
-import { recoverEngineState } from "./startup.js";
 
 /** Private engine dependencies retained behind the daemon boundary. */
 export type { EndpointEngineInput } from "./engine-context.js";

@@ -22,10 +22,10 @@ import {
   EpochMillis,
   RequestedSchema,
 } from "../contracts.js";
-import { FormFieldSchema } from "./grammar.js";
+import { FormFieldSchema } from "./answer-fields.js";
 
 /** One admitted form field, the shape answer checks read. */
-export type { FormField } from "./grammar.js";
+export type { FormField } from "./answer-fields.js";
 
 /* eslint-disable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Effect Schemas share their domain names with the values they decode. */
 

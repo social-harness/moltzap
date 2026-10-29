@@ -1,8 +1,4 @@
-/**
- * @file Engine startup: rebuild the engine's in-memory state from one store
- * snapshot, keeping only state whose hashes, signatures and cross-fields
- * verify.
- */
+/** @file Restores the conversation engine from verified local history when the daemon starts. */
 
 import { Effect, type ParseResult, Schema } from "effect";
 import type {

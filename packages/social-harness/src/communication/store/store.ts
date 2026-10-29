@@ -71,7 +71,7 @@ import {
   readInboxSummary,
   replaceInboxItem,
   writeEventState,
-} from "./inbox.js";
+} from "./host-inbox.js";
 import {
   acknowledgeDelivery,
   beginOutbound,

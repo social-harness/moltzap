@@ -1,4 +1,4 @@
-/** @file Atomic collective identity retention and author-scoped post claims. */
+/** @file Retains a collective operation’s identity and reserves its request, answer and closing messages. */
 
 import type { DatabaseSync } from "node:sqlite";
 import { Schema } from "effect";
@@ -15,7 +15,8 @@ import {
   requireSameBytes,
   requireText,
   StoreSignal,
-} from "../database/index.js";
+} from "./database/index.js";
+import { readStoredIdentity } from "./rows/index.js";
 import {
   type CollectiveOperationInput,
   type CollectivePostBinding,
@@ -23,8 +24,7 @@ import {
   type PostIntent,
   type StoredCollectiveOperation,
   type StoreMutation,
-} from "../types.js";
-import { readStoredIdentity } from "./index.js";
+} from "./types.js";
 
 interface OriginIdentity {
   readonly creatorAgentId: string;

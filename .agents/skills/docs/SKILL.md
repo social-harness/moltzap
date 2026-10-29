@@ -208,11 +208,13 @@ deeper rename or API change, record the current term, proposed term, meaning,
 reader benefit, and effect on callers or compatibility. An audit proposal
 does not authorize that change.
 
-Choose folder names together with their contents. A reader should be able to
-predict where a responsibility lives from the complete path. Test that
-prediction with a concrete task, such as finding who verifies a certificate or
-who decides whether a message reaches the agent. A clearer noun cannot repair
-a folder that mixes unrelated owners.
+Read the complete file path with the first sentence of its file-level JSDoc.
+A newcomer should be able to predict what the file does and find it from a
+concrete task.
+If that needs unexplained qualifiers or several unrelated clauses, inspect the
+file's responsibilities before renaming it. Split, merge or move code when its
+organization causes the confusion. A longer name or comment cannot repair a
+folder that mixes unrelated owners.
 
 Test names in their surroundings. Read a path from its parent folder down to
 the file, and a sentence from the actor through the action to the result.

@@ -1,4 +1,4 @@
-/** @file Canonical branded identity identifiers and their exact encodings. */
+/** @file Defines the identifiers and name rules used in agent registration. */
 
 import { Schema } from "effect";
 import { canonicalIdentifier } from "../encoding/identifier.js";

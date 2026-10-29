@@ -1,4 +1,4 @@
-/** @file Sequential checking middleware; Client retains exclusive admission authority. */
+/** @file Runs message checks in order and combines their findings into a firewall decision. */
 
 import { Clock, Effect, Either, Schema } from "effect";
 import {

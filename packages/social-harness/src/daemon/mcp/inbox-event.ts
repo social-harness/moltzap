@@ -1,4 +1,4 @@
-/** @file Classified inbox events shared by native delivery transports. */
+/** @file Builds host events from retained inbox items, using references for oversized payloads. */
 
 import { Effect } from "effect";
 import { InboundItem } from "../../communication/collectives/inbound.js";

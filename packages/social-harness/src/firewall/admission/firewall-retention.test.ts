@@ -13,7 +13,7 @@ import {
   decodeRuntimeValue,
   encodeRuntimeValue,
 } from "../../communication/store/index.js";
-import { decodeFirewallAuditEntry } from "./firewall-values.js";
+import { decodeFirewallAuditEntry } from "./audit-records.js";
 
 it("retains a completed judgment without the provider trace", () =>
   Effect.gen(function* () {

@@ -11,7 +11,7 @@ import {
   SubscriptionRef,
 } from "effect";
 import { createHash } from "node:crypto";
-import type { AgentId } from "../../identity/agents.js";
+import type { AgentId } from "../../identity/identifiers.js";
 import type { StoredOutboundMessage } from "../store/index.js";
 import { decodeCanonical } from "../../encoding/canonical-json.js";
 import { AgentCard, type VerifiedAgentCard } from "../../identity/cards.js";
@@ -64,7 +64,7 @@ import {
   RouterWorkerTransportError,
   RouterWorkerUnavailableError,
   type RouterWorkerVerifiedIngress,
-} from "./worker/index.js";
+} from "./worker-contracts.js";
 
 /** Router-worker errors used by endpoint composition. */
 export {
@@ -77,14 +77,14 @@ export {
   RouterWorkerRejectedError,
   RouterWorkerTransportError,
   RouterWorkerUnavailableError,
-} from "./worker/index.js";
+} from "./worker-contracts.js";
 /** Why the worker or the outbound drain failed, for logs. */
 export { describeRouterWorkerFailure } from "./outage.js";
 /** Transient-failure policy shared with the endpoint's outbound drain. */
 export {
   isTransientRouterWorkerError,
   routerWorkerReconnectSchedule,
-} from "./worker/index.js";
+} from "./worker-contracts.js";
 /** Router-worker protocol and capability types used by endpoint composition. */
 export type {
   RouterDiscontinuityReason,
@@ -96,7 +96,7 @@ export type {
   RouterWorkerInput,
   RouterWorkerRecovery,
   RouterWorkerSendError,
-} from "./worker/index.js";
+} from "./worker-contracts.js";
 
 const mapAuthenticationError = () => new RouterWorkerAuthenticationError();
 const mapProtocolError = () => new RouterWorkerProtocolError();

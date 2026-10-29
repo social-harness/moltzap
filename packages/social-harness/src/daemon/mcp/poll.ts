@@ -15,7 +15,7 @@ import {
   HARNESS_CONSUMER_META_KEY,
   INBOX_ITEM_EVENT,
 } from "../../host-protocol/names.js";
-import { makeItemEvent } from "./item.js";
+import { makeItemEvent } from "./inbox-event.js";
 
 const POLL_INTERVAL_MILLIS = 1000;
 const POLL_LEASE_MILLIS = 60_000;

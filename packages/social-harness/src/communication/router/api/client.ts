@@ -5,7 +5,7 @@ import {
   type HttpClientResponse,
 } from "@effect/platform";
 import { Context, Duration, Effect, Layer, Option, Schema } from "effect";
-import type { AgentId } from "../../../identity/agents.js";
+import type { AgentId } from "../../../identity/identifiers.js";
 import type { AgentSigningAuthority } from "../../../identity/keys.js";
 import {
   AgentSigningError,

@@ -1,4 +1,4 @@
-/** @file Durable remote-message delivery, replay, and acknowledgment. */
+/** @file Stores messages from peers and tracks whether the daemon has consumed them. */
 
 import type { DatabaseSync } from "node:sqlite";
 import { Either, Schema } from "effect";

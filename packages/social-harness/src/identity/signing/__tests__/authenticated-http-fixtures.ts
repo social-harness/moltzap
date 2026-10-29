@@ -10,8 +10,8 @@ import {
   decodeCanonicalJson,
   encodeCanonicalJson,
 } from "../../../encoding/canonical-json.js";
-import { AgentId, AgentName, PrincipalId } from "../../agents.js";
 import { AgentCard, type VerifiedAgentCard } from "../../cards.js";
+import { AgentId, AgentName, PrincipalId } from "../../identifiers.js";
 import {
   AgentSigningAuthority,
   type AgentSigningAuthority as AgentSigningAuthorityValue,

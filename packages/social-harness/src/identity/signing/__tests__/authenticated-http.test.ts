@@ -16,7 +16,7 @@ import { importJWK } from "jose";
 import { webcrypto } from "node:crypto";
 import { expect, it } from "vitest";
 import type { VerifiedAgentCard } from "../../cards.js";
-import { AgentId, type AgentId as AgentIdValue } from "../../agents.js";
+import { AgentId, type AgentId as AgentIdValue } from "../../identifiers.js";
 import {
   AgentSigningAuthority,
   ed25519PublicKeyThumbprintUri,

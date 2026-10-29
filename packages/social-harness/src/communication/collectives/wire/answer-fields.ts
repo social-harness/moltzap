@@ -1,14 +1,4 @@
-/**
- * @file The MCP form-mode grammar for one property of a `requestedSchema`.
- *
- * Each shape is the MCP specification's primitive schema definition for one
- * kind of form field. Decoding tries the shapes in the specification's union
- * order and keeps the first that admits the property, without the keywords
- * that shape does not declare, so keywords outside the grammar never travel
- * or reach answer validation. A property no shape admits fails with the
- * failing keywords of the shape it most plausibly meant, so a requester can
- * repair the property it meant to write.
- */
+/** @file Parses the supported fields in a requested answer schema. */
 
 import type { ParseOptions } from "effect/SchemaAST";
 import {

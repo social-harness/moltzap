@@ -1,4 +1,4 @@
-/** @file The daemon-owned admission worker: checks each conversation's queued frontier outside the delivery pass and commits its disposition. */
+/** @file Checks queued incoming items and records whether the host may receive them. */
 
 import {
   Cause,
@@ -21,8 +21,8 @@ import {
   type EndpointStoreError,
   type FirewallInboxEntry,
 } from "../../communication/store/index.js";
-import { checkLocalItem } from "./firewall-results.js";
 import { checkIncoming } from "./firewall.js";
+import { checkLocalItem } from "./local-results.js";
 
 /** What the admission worker reads and changes in one service's delivery. */
 export interface AdmissionContext {

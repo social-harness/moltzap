@@ -13,7 +13,7 @@ import {
   AGENT_NAME_RULE,
   type AgentId,
   AgentName,
-} from "../../identity/agents.js";
+} from "../../identity/identifiers.js";
 import { WIRE_VERSION } from "../../identity/wire-version.js";
 
 /** Order validated agent identities by their decoded identifier bytes. */

@@ -50,6 +50,13 @@ import {
   type TextRule,
 } from "../evaluator/index.js";
 import {
+  decodeFirewallConfiguration,
+  decodeFirewallInstallation,
+  decodeFirewallRegistration,
+  type FirewallConfiguration,
+  type FirewallInstallation,
+} from "./audit-records.js";
+import {
   assess,
   type CheckedMessage,
   conversationAddress,
@@ -62,13 +69,6 @@ import {
   refusedSend,
   requestText,
 } from "./firewall-checks.js";
-import {
-  decodeFirewallConfiguration,
-  decodeFirewallInstallation,
-  decodeFirewallRegistration,
-  type FirewallConfiguration,
-  type FirewallInstallation,
-} from "./firewall-values.js";
 
 // safer-arch-ignore file-implicit-boundary-module: Firewall composition and its admission worker share one immutable installation and evidence pipeline; this private implementation is exposed only through admission/index.ts.
 

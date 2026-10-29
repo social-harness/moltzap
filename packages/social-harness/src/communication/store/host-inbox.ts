@@ -1,4 +1,4 @@
-/** @file Durable host projection and event transport state. */
+/** @file Stores host inbox items and tracks delivery and acknowledgment. */
 
 import type { DatabaseSync } from "node:sqlite";
 import { Schema } from "effect";

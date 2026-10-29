@@ -4,7 +4,7 @@ import { Effect, Schema } from "effect";
 import type { InboundItem } from "../communication/collectives/inbound.js";
 import type { CollectiveOperations } from "../communication/collectives/index.js";
 import type { EnginePendingMessage } from "../communication/conversations/index.js";
-import type { PendingOffer } from "../daemon/inbox/pass.js";
+import type { PendingOffer } from "../daemon/inbox/deliver-pending.js";
 import type { HarnessMessageReadyEvent } from "../host-protocol/operations.js";
 import { InboundMessage } from "../communication/conversations/message.js";
 import { RecordHash } from "../communication/records/index.js";

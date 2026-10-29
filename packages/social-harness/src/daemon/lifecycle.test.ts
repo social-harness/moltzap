@@ -60,8 +60,8 @@ import {
   EndpointStoreError,
 } from "../communication/store/index.js";
 import { INBOX_PENDING_EVENT } from "../host-protocol/names.js";
-import { AgentName } from "../identity/agents.js";
 import { AgentCard } from "../identity/cards.js";
+import { AgentName } from "../identity/identifiers.js";
 import { HistoryExportRecord } from "./inbox/host-traffic-log.js";
 import { DaemonRuntimeError } from "./lifecycle.js";
 

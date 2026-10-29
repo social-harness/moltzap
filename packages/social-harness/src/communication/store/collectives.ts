@@ -12,6 +12,11 @@ import type {
   StoreMutation,
 } from "./types.js";
 import {
+  findCollective,
+  readCollective,
+  retainCollectiveInTransaction,
+} from "./collective-claims.js";
+import {
   copyBytes,
   readBytes,
   readOptionalText,
@@ -24,12 +29,7 @@ import {
   transaction,
 } from "./database/index.js";
 import { queueFirewallItem } from "./firewall.js";
-import { putInboxItem } from "./inbox.js";
-import {
-  findCollective,
-  readCollective,
-  retainCollectiveInTransaction,
-} from "./rows/collectives.js";
+import { putInboxItem } from "./host-inbox.js";
 
 /** Unchecked local operations and verified remote requests retain their exact descriptor. */
 export function putCollectiveOperation(

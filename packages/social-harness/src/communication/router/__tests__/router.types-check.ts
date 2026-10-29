@@ -12,8 +12,8 @@
 
 import type { HttpClient } from "@effect/platform";
 import type { Duration, Effect, Layer, Types } from "effect";
-import type { AgentId } from "../../../identity/agents.js";
 import type { LiveSignedMessage } from "../../../identity/envelope/signed-message.js";
+import type { AgentId } from "../../../identity/identifiers.js";
 import type { AgentSigningAuthority } from "../../../identity/keys.js";
 import type {
   AuthenticationFailedError,

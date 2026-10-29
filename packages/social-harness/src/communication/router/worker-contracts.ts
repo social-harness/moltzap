@@ -1,4 +1,4 @@
-/** @file Private Router worker contracts shared by orchestration and transport. */
+/** @file Defines the endpoint's Router connection interfaces, state and retry rules. */
 
 import {
   type Context,
@@ -8,17 +8,17 @@ import {
   Schedule,
   type SubscriptionRef,
 } from "effect";
-import type { AgentId } from "../../../identity/agents.js";
-import type { VerifiedAgentCard } from "../../../identity/cards.js";
+import type { VerifiedAgentCard } from "../../identity/cards.js";
 import type {
   LiveSignedMessage,
   VerifiedSignedMessage,
-} from "../../../identity/envelope/signed-message.js";
-import type { Registry } from "../../../identity/index.js";
-import type { AgentSigningAuthority } from "../../../identity/keys.js";
-import type { EndpointStore } from "../../store/index.js";
-import type { Router } from "../api/client.js";
-import type { PollCursor, RouterInstanceId } from "../api/contract.js";
+} from "../../identity/envelope/signed-message.js";
+import type { AgentId } from "../../identity/identifiers.js";
+import type { Registry } from "../../identity/index.js";
+import type { AgentSigningAuthority } from "../../identity/keys.js";
+import type { EndpointStore } from "../store/index.js";
+import type { Router } from "./api/client.js";
+import type { PollCursor, RouterInstanceId } from "./api/contract.js";
 
 /** An outer sender card could not be resolved, pinned, or authenticated. */
 export class RouterWorkerAuthenticationError extends Data.TaggedError(

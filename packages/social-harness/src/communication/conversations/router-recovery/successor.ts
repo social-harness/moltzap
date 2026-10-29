@@ -8,8 +8,8 @@
  */
 
 import { Effect } from "effect";
-import type { AgentId } from "../../../identity/agents.js";
 import type { SignedMessage } from "../../../identity/envelope/signed-message.js";
+import type { AgentId } from "../../../identity/identifiers.js";
 import type {
   RouterIngressDisposition,
   RouterWorkerIngress,

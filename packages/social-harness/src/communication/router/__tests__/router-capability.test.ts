@@ -21,7 +21,7 @@ import { describe, expect, it } from "vitest";
 import {
   AgentId,
   type AgentId as AgentIdValue,
-} from "../../../identity/agents.js";
+} from "../../../identity/identifiers.js";
 import {
   AgentSigningAuthority,
   type AgentSigningAuthority as AgentSigningAuthorityValue,

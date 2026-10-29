@@ -1,4 +1,4 @@
-/** @file The deliberately small Dockerfile and `.dockerignore` forms image keys support. */
+/** @file Lists Docker build inputs and rejects unsupported Dockerfile and .dockerignore syntax. */
 import { absurd } from "effect";
 import path from "node:path";
 import {

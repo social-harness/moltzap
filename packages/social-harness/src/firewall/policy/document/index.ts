@@ -3,7 +3,7 @@
 import { Effect, Schema } from "effect";
 import { parseDocument } from "yaml";
 import { exactStruct } from "../../../encoding/exact.js";
-import { AgentId } from "../../../identity/agents.js";
+import { AgentId } from "../../../identity/identifiers.js";
 import {
   editableDocumentSchema,
   FirewallSettings,

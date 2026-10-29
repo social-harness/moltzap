@@ -9,12 +9,12 @@ import {
 } from "../../encoding/canonical-json.js";
 import { exactParseOptions, exactStruct } from "../../encoding/exact.js";
 import { canonicalIdentifier } from "../../encoding/identifier.js";
-import { AgentId, AgentName, PrincipalId } from "../agents.js";
 import {
   AgentCard,
   type VerifiedAgentCard,
   verifiedAgentCardSchema,
 } from "../cards.js";
+import { AgentId, AgentName, PrincipalId } from "../identifiers.js";
 import { type AgentSigningAuthority, Ed25519PublicKey } from "../keys.js";
 
 /** Idempotency identity for a registration operation. */

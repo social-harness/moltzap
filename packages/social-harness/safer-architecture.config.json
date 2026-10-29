@@ -3,7 +3,7 @@
   "maxFolderCycles": 1,
   "facadeFiles": [
     {
-      "file": "communication/store/rows/collectives.ts",
+      "file": "communication/store/collective-claims.ts",
       "reason": "Atomic collective identity and post claims shared by store transactions"
     },
     {
@@ -19,7 +19,7 @@
       "reason": "Canonical identifiers and ordering used by host-loaded values"
     },
     {
-      "file": "identity/agents.ts",
+      "file": "identity/identifiers.ts",
       "reason": "Canonical agent, principal and immutable name schemas"
     },
     {
@@ -39,7 +39,7 @@
       "reason": "Wire emission and live or retained compatibility policy"
     },
     {
-      "file": "identity/signing/registered/index.ts",
+      "file": "identity/request-authentication.ts",
       "reason": "Registered-request authentication capability with opaque verification proofs"
     },
     {
@@ -93,6 +93,10 @@
     {
       "file": "communication/router/api/client.ts",
       "reason": "Router class tag and authenticated send or poll HTTP client"
+    },
+    {
+      "file": "communication/router/worker-contracts.ts",
+      "reason": "Router worker interfaces, state and retry rules shared by orchestration and outage handling"
     },
     {
       "file": "communication/records/values.ts",
@@ -236,12 +240,12 @@
         "src/identity"
       ],
       "entrypoints": [
-        "src/identity/agents.ts",
+        "src/identity/identifiers.ts",
         "src/identity/keys.ts",
         "src/identity/cards.ts",
         "src/identity/card-signing.ts",
         "src/identity/wire-version.ts",
-        "src/identity/signing/registered/index.ts",
+        "src/identity/request-authentication.ts",
         "src/identity/index.ts",
         "src/identity/signing/http-signature.ts",
         "src/identity/signing/http-errors.ts",

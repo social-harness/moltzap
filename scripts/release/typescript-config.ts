@@ -1,4 +1,4 @@
-/** @file Committed TypeScript config parsing and compiler path resolution. */
+/** @file Resolves TypeScript configuration and source paths for build input analysis. */
 import path from "node:path";
 import ts from "typescript";
 import { ImageInputError, mapping, type Tree } from "./image-input-tree.ts";

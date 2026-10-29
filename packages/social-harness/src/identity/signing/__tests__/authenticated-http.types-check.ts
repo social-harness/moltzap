@@ -9,6 +9,10 @@ import type { Effect, Layer, Types } from "effect";
 import type { AgentId, AgentSigningAuthority } from "../../../index.js";
 import type { Registry } from "../../registry/index.js";
 import type {
+  AuthenticatedHttp,
+  VerifiedAgentRequest,
+} from "../../request-authentication.js";
+import type {
   AuthenticationFailedError,
   MalformedRequestError,
   OverloadedError,
@@ -16,10 +20,6 @@ import type {
   VersionMismatchError,
 } from "../http-errors.js";
 import type { AgentSigningError } from "../http-signature.js";
-import type {
-  AuthenticatedHttp,
-  VerifiedAgentRequest,
-} from "../registered/index.js";
 
 type Expect<Value extends true> = Value;
 

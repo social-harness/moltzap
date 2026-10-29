@@ -1,12 +1,12 @@
-/** @file The committed files that reach a workspace package's packed contents. */
+/** @file Finds committed files and TypeScript sources that contribute to a packed package. */
 import path from "node:path";
-import { asStrings, sourceGlobs } from "./image-input-config.ts";
 import {
   ImageInputError,
   readJson,
   type Tree,
   under,
 } from "./image-input-tree.ts";
+import { asStrings, sourceGlobs } from "./typescript-config.ts";
 
 /**
  * Whether pnpm packs a source file of a workspace package.
