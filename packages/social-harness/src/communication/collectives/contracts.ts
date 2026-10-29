@@ -373,7 +373,7 @@ function describeCollectiveFailure(failure: CollectiveFailure): string {
     case "answer-invalid":
       return `reply failed: ${answerFieldsText(failure.fields)}`;
     case "request-ambiguous":
-      return `reply failed: more than one question is open in this conversation, so the reply must name the id of the one it answers: ${failure.openIds.join(", ")}`;
+      return `reply failed: several questions are open in this conversation. Set collectiveResponse.id to one of: ${failure.openIds.join(", ")}. Docs: https://github.com/social-harness/moltzap/blob/main/docs/reference/spec/communication/collectives.md#answers`;
     default: {
       const exhaustive: never = failure;
       return exhaustive;
