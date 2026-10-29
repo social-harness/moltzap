@@ -199,7 +199,7 @@ export const decodeRecord = Effect.fn("decodeFirewallRecord")(function* (
 /** Certified local sends are admitted evidence without granting host visibility to owner history. */
 export const contextFrom = Effect.fn("firewallContext")(function* (
   environment: FirewallEnvironment,
-  evidence: FirewallEvidence,
+  evidence: Omit<FirewallEvidence, "snapshot">,
   candidateCards: readonly AgentCard[],
 ) {
   const localAgentId = environment.localAgentCard.agentId;
@@ -248,7 +248,7 @@ export const assess = Effect.fn("assessMessage")(function* (
   yield* environment.store.beginFirewallAttempt({
     checkId,
     direction: input.direction,
-    revision: input.evidence.revision,
+    snapshot: input.evidence.snapshot,
     canonicalCandidate: input.canonicalCandidate,
     canonicalInput: yield* attemptInput(environment, {
       context,
@@ -621,7 +621,7 @@ function decodeHistory(
   }).pipe(Effect.withSpan("decodeFirewallHistory"));
 }
 
-function evidenceGaps(evidence: FirewallEvidence): string[] {
+function evidenceGaps(evidence: Omit<FirewallEvidence, "snapshot">): string[] {
   return [
     ...(evidence.overflow
       ? ["Authorized earlier history exceeds the 2 MiB evidence byte bound."]

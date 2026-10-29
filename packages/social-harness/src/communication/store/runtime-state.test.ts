@@ -15,6 +15,7 @@ import {
   type CertifiedRecord,
   DeliveryToken,
   type EndpointStore,
+  type FirewallEvidenceSnapshot,
   type FirewallHistoryEntry,
   type FirewallLocalEntry,
   inspectEndpointStore,
@@ -176,7 +177,7 @@ function invalidatesInterruptedChecks() {
         yield* store.beginFirewallAttempt({
           checkId,
           direction: "outgoing",
-          revision: evidence.revision,
+          snapshot: evidence.snapshot,
           canonicalCandidate: bytes("draft"),
           canonicalInput: bytes("fixed policy and evidence"),
         });
@@ -426,5 +427,169 @@ describe("endpoint runtime state", () => {
     anchorsLocalEvidenceInItsConversation,
   );
 });
+
+/** A retained operation check exercises the same transaction comparison as post admission. */
+function startedCheck(
+  store: EndpointStore,
+  snapshot: FirewallEvidenceSnapshot,
+  checkId: string,
+) {
+  return store.beginFirewallAttempt({
+    checkId,
+    direction: "outgoing",
+    snapshot,
+    canonicalCandidate: bytes("draft"),
+    canonicalInput: bytes("captured input"),
+  });
+}
+
+it("keeps a capture fresh during unrelated certification, inbox and intent activity", () =>
+  withStore(stateDirectory(), (store) =>
+    Effect.gen(function* () {
+      const elsewhere = storedConversation("unrelated");
+      yield* store.bindIdentity(identity);
+      const captured = yield* store.readFirewallEvidence({
+        conversationId: foundation.conversationId,
+        conversation: "agent:bob",
+        maximumRecords: 2,
+      });
+      yield* startedCheck(store, captured.snapshot, "unrelated");
+      yield* store.putConversationFoundation(elsewhere.foundation);
+      yield* store.applyCertifiedRecord(elsewhere.record, historyDelivery);
+      yield* store.bindPostIntent({
+        kind: "existing-conversation",
+        intent: {
+          conversationId: elsewhere.foundation.conversationId,
+          membershipHash: elsewhere.foundation.membershipHash,
+          authorAgentId: identity.agentId,
+          postId: "pst_unrelated",
+          canonicalIntent: bytes("pending"),
+        },
+      });
+      yield* store.putInboxItem({ deliveryToken: token, canonicalItem: local });
+      expect(
+        yield* store.admitFirewallOperation(
+          {
+            checkId: "unrelated",
+            admit: true,
+            canonicalResult: bytes("allow"),
+          },
+          bytes("draft"),
+        ),
+      ).toBe("admitted");
+    }),
+  ));
+
+it("stales a capture when its absent record candidate becomes present", () =>
+  withStore(stateDirectory(), (store) =>
+    Effect.gen(function* () {
+      yield* store.bindIdentity(identity);
+      const captured = yield* store.readFirewallEvidence({
+        beforeRecord: record.recordHash,
+        maximumRecords: 2,
+      });
+      expect(captured.candidate).toBeUndefined();
+      yield* startedCheck(store, captured.snapshot, "absent");
+      yield* store.putConversationFoundation(foundation);
+      yield* store.applyCertifiedRecord(record, historyDelivery);
+      expect(
+        yield* store.admitFirewallOperation(
+          { checkId: "absent", admit: true, canonicalResult: bytes("allow") },
+          bytes("draft"),
+        ),
+      ).toBe("stale");
+    }),
+  ));
+
+it.each(["visibility", "pending", "answer", "local"] as const)(
+  "stales every range of a result when captured %s evidence changes",
+  (change) =>
+    withStore(stateDirectory(), (store) =>
+      Effect.gen(function* () {
+        yield* store.bindIdentity(identity);
+        yield* store.putConversationFoundation(foundation);
+        yield* store.applyCertifiedRecord(record, historyDelivery);
+        const captured = yield* store.readFirewallEvidenceSlices({
+          ranges: [
+            { conversation: "agent:unrelated" },
+            {
+              conversationId: foundation.conversationId,
+              conversation: "agent:bob",
+            },
+          ],
+          maximumRecords: 2,
+        });
+        yield* startedCheck(store, captured.snapshot, change);
+        yield* changeEvidence(store, change);
+        expect(
+          yield* store.admitFirewallOperation(
+            { checkId: change, admit: true, canonicalResult: bytes("allow") },
+            bytes("draft"),
+          ),
+        ).toBe("stale");
+      }),
+    ),
+);
+
+function changeEvidence(
+  store: EndpointStore,
+  change: "visibility" | "pending" | "answer" | "local",
+) {
+  return Effect.gen(function* () {
+    switch (change) {
+      case "visibility": {
+        const delivery = (yield* store.readPendingDeliveries())[0];
+        const deliveryToken = yield* Effect.fromNullable(
+          delivery?.deliveryToken,
+        ).pipe(Effect.orDie);
+        yield* store.putInboxItem({ deliveryToken, canonicalItem: local });
+        break;
+      }
+      case "pending":
+        yield* store.bindPostIntent({
+          kind: "existing-conversation",
+          intent: {
+            conversationId: foundation.conversationId,
+            membershipHash: foundation.membershipHash,
+            authorAgentId: identity.agentId,
+            postId: "pst_later",
+            canonicalIntent: bytes("pending"),
+          },
+        });
+        break;
+      case "answer":
+      case "local":
+        yield* changeLocalEvidence(store, change);
+        break;
+      default: {
+        const exhaustive: never = change;
+        return exhaustive;
+      }
+    }
+  });
+}
+
+function changeLocalEvidence(store: EndpointStore, change: "answer" | "local") {
+  return Effect.gen(function* () {
+    yield* store.queueFirewallItem({
+      deliveryToken: token,
+      conversation: "agent:bob",
+      canonicalItem: local,
+    });
+    yield* store.admitFirewallLocalItem({
+      queuedItem: local,
+      item: { deliveryToken: token, canonicalItem: local },
+      completions: [],
+      answers:
+        change === "answer"
+          ? [{ recordHash: record.recordHash, admitted: false }]
+          : [],
+      evidence: {
+        conversation: change === "local" ? "agent:bob" : "agent:unrelated",
+        canonicalEntry: bytes("new evidence"),
+      },
+    });
+  });
+}
 
 /* eslint-enable agent-code-guard/no-hardcoded-assertion-literals -- Restore repository defaults. */

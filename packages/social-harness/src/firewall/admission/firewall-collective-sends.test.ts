@@ -90,8 +90,8 @@ function bindsAShadowGatherInGuidanceMode() {
 function refusesAGatherAfterStaleCaptures() {
   return Effect.gen(function* () {
     const subject = yield* fixture;
-    const churn = churnPolicy(subject);
-    const delivery = yield* outgoingFixture(subject, churn.middleware);
+    const churn = yield* churnPolicy(subject, group);
+    const delivery = yield* outgoingFixture(churn.subject, churn.middleware);
 
     const refusal = yield* Effect.flip(
       delivery.operations.send({ input: gatherSend(question) }),
@@ -120,13 +120,13 @@ function opensAnAllGatherOnceAcrossAStaleCapture() {
   const exporter = new InMemorySpanExporter();
   return Effect.gen(function* () {
     const subject = yield* fixture;
-    const churn = churnPolicy(subject);
+    const churn = yield* churnPolicy(subject, group);
     const staleOnce = policy((input) =>
       churn.count() === 0
         ? churn.middleware.check(input)
         : Effect.succeed(pass),
     );
-    const delivery = yield* outgoingFixture(subject, staleOnce);
+    const delivery = yield* outgoingFixture(churn.subject, staleOnce);
 
     const sending = yield* delivery.operations
       .send({ input: gatherSend(question, "all_gather") })
@@ -157,8 +157,8 @@ function closesAnAllGatherRefusedAfterStaleCaptures() {
   const exporter = new InMemorySpanExporter();
   return Effect.gen(function* () {
     const subject = yield* fixture;
-    const churn = churnPolicy(subject);
-    const delivery = yield* outgoingFixture(subject, churn.middleware);
+    const churn = yield* churnPolicy(subject, group);
+    const delivery = yield* outgoingFixture(churn.subject, churn.middleware);
 
     const refusal = yield* Effect.flip(
       delivery.operations.send({ input: gatherSend(question, "all_gather") }),

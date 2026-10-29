@@ -34,7 +34,6 @@ import {
   firewallDecisionsSchema,
   FirewallPolicyError,
   type FirewallPolicyOperations,
-  MAXIMUM_EDITABLE_RULES,
   policyReadSchema,
   policyUpdateResultSchema,
   policyUpdateSchema,
@@ -414,13 +413,14 @@ const localRead: ToolHints = { readOnlyHint: true, openWorldHint: false };
 const toolListings = {
   policy_read: {
     description:
-      "Read the active editable English rules and the fixed rules, which cannot be edited. Read it before policy_update to see which rule ids exist.",
+      "Read editable natural-language rules, their ownership, and fixed rules. Available to the owner and trusted local caller. The runtime can adopt norms through policy_update but cannot read this catalog.",
     inputSchema: emptyInput,
     outputSchema: policyReadOutput,
     annotations: localRead,
   },
   policy_update: {
-    description: `Add or remove editable English rules, such as a shared norm the agent agreed to: add takes whole rules or {"behavior": "<BEHAVIOR.md text>"}, which adds a shared norm's BEHAVIOR.md exactly as proposed; remove takes rule ids, and removing and adding one id replaces it. Fails with invalid-rule for an added id that already exists, a BEHAVIOR.md without valid YAML frontmatter between --- lines (no code fence or other text before it), or one that lacks name, description or guidance, is not kind norm, or is over 64 KiB, a removed id that does not exist, or more than ${String(MAXIMUM_EDITABLE_RULES)} rules; fixed-rule for a fixed rule's id; and not-configured when the message policy has no english block. Returns the new activeRevision once the rules are active; changes are not retroactive: admitted guidance, held items and bound sends remain unchanged.`,
+    description:
+      "Add, remove or replace natural-language rules. The runtime may add norms and change only runtime-owned norms. The owner may change any editable rule. Add a whole rule or a shared norm's BEHAVIOR.md text; remove and add the same id to replace it. Returns activeRevision after the complete edit is active. Existing admissions remain unchanged. An invalid-rule error identifies invalid text, conflicting or missing ids, or a rule limit. Fixed rules reject edits with fixed-rule, and owner rules reject runtime edits with owner-rule. A not-configured error means the owner must install a text policy first.",
     inputSchema: policyUpdateInput,
     outputSchema: policyUpdateOutput,
     annotations: { readOnlyHint: false, openWorldHint: false },
@@ -578,7 +578,12 @@ const roleCatalogs = {
   },
   runtime: {
     inactive: [],
-    active: [SEARCH_AGENTS_TOOL, HARNESS_SEND_TOOL, HARNESS_READ_EVENT_TOOL],
+    active: [
+      SEARCH_AGENTS_TOOL,
+      HARNESS_SEND_TOOL,
+      HARNESS_READ_EVENT_TOOL,
+      "policy_update",
+    ],
   },
 } as const satisfies Readonly<Record<HarnessMcpRole, RoleCatalog>>;
 
@@ -670,6 +675,7 @@ const POLICY_REASONS = new Set([
   "not-configured",
   "invalid-rule",
   "fixed-rule",
+  "owner-rule",
   "build-failed",
   "persistence-failed",
 ]);
@@ -734,6 +740,7 @@ const makeToolHandler =
       readonly execute: (
         operations: HarnessMcpOperations,
         request: Request,
+        role: HarnessMcpRole,
       ) => Effect.Effect<Value, ClosedOperationError>;
     },
   ): ToolHandler =>
@@ -749,10 +756,10 @@ const makeToolHandler =
       operation: options.consumesInbox
         ? operations.events.nativeOperation(
             input.metadata,
-            options.execute(operations, request),
+            options.execute(operations, request, input.role),
             input.role === "runtime",
           )
-        : options.execute(operations, request),
+        : options.execute(operations, request, input.role),
       ...requestRuntime(input),
     });
   };
@@ -779,9 +786,11 @@ const toolHandlers = {
     policyUpdateSchema,
     policyUpdateOutput,
     {
-      execute: (operations, request) =>
-        operations.policy?.update(request) ??
-        Effect.fail({ reason: "not-configured" }),
+      execute: (operations, request, role) =>
+        operations.policy?.update(
+          request,
+          role === "runtime" ? "runtime" : "owner",
+        ) ?? Effect.fail({ reason: "not-configured" }),
       label: "Policy update",
       allowedReasons: POLICY_REASONS,
       fallbackReason: "build-failed",

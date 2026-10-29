@@ -31,7 +31,7 @@ import {
 } from "./expected-contracts.js";
 import { arrayContaining, objectContaining } from "./test-matchers.js";
 
-const FORMAT = "org.social-harness/message-policy/v1";
+const FORMAT = "org.social-harness/message-policy/v2";
 
 const CURRENT_CLIENT: ClientOptions = {
   versionNegotiation: { mode: { pin: "2026-07-28" } },

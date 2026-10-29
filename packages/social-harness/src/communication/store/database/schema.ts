@@ -398,11 +398,6 @@ const runtimeSchemaSql = `
 `;
 
 const firewallSchemaSql = `
-  CREATE TABLE firewall_evidence (
-    singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
-    revision INTEGER NOT NULL CHECK (revision >= 0)
-  ) STRICT;
-  INSERT INTO firewall_evidence (singleton, revision) VALUES (1, 0);
   CREATE TABLE firewall_incoming (
     sequence INTEGER PRIMARY KEY AUTOINCREMENT,
     delivery_token TEXT NOT NULL UNIQUE,
@@ -421,7 +416,7 @@ const firewallSchemaSql = `
   CREATE TABLE firewall_checks (
     check_id TEXT PRIMARY KEY,
     direction TEXT NOT NULL CHECK (direction IN ('incoming', 'outgoing')),
-    revision INTEGER NOT NULL,
+    canonical_snapshot BLOB NOT NULL,
     canonical_candidate BLOB NOT NULL,
     canonical_input BLOB NOT NULL,
     canonical_result BLOB,
@@ -444,21 +439,6 @@ const firewallSchemaSql = `
     FOREIGN KEY (conversation_id, record_hash)
       REFERENCES certified_records(conversation_id, record_hash)
   ) STRICT;
-  CREATE TRIGGER firewall_local_evidence_changed AFTER INSERT ON firewall_local_evidence BEGIN
-    UPDATE firewall_evidence SET revision = revision + 1 WHERE singleton = 1;
-  END;
-  CREATE TRIGGER firewall_answers_changed AFTER INSERT ON firewall_answers BEGIN
-    UPDATE firewall_evidence SET revision = revision + 1 WHERE singleton = 1;
-  END;
-  CREATE TRIGGER firewall_history_changed AFTER INSERT ON certified_records BEGIN
-    UPDATE firewall_evidence SET revision = revision + 1 WHERE singleton = 1;
-  END;
-  CREATE TRIGGER firewall_intent_changed AFTER INSERT ON post_intents BEGIN
-    UPDATE firewall_evidence SET revision = revision + 1 WHERE singleton = 1;
-  END;
-  CREATE TRIGGER firewall_visibility_changed AFTER INSERT ON runtime_inbox BEGIN
-    UPDATE firewall_evidence SET revision = revision + 1 WHERE singleton = 1;
-  END;
 `;
 
 const schemaSql = `

@@ -1,4 +1,4 @@
-/** @file English middleware behavior through the public firewall API. */
+/** @file Natural-language middleware behavior through the public firewall API. */
 
 import { effect as it } from "@effect/vitest";
 import {
@@ -19,12 +19,12 @@ import {
   type DecisionRequest,
   type DecisionResponse,
   decodeMessagePolicy,
-  type EnglishPolicySettings,
-  type EnglishRule,
-  makeEnglishPolicy,
   makeFirewall,
+  makeTextPolicy,
   type Message,
   type MessageContext,
+  type TextPolicySettings,
+  type TextRule,
 } from "../../daemon/index.js";
 
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- Closed judgments, stages and next actions are the public contract under test. */
@@ -64,14 +64,14 @@ const context: typeof MessageContext.Encoded = {
   ],
   gaps: [],
 };
-const proposalAcceptance: EnglishRule = {
+const proposalAcceptance: TextRule = {
   id: "proposal-acceptance",
   kind: "norm",
   text: "Availability is not acceptance. Everyone must accept the same concrete proposal before it is finalized.",
   guidance: reminder,
   feedback: { text: repair, nextAction: "revise" },
 };
-const rules: readonly EnglishRule[] = [
+const rules: readonly TextRule[] = [
   {
     id: "privacy",
     kind: "safety",
@@ -82,7 +82,7 @@ const rules: readonly EnglishRule[] = [
 /** One answer exactly as a provider reports it. */
 type Answer = DecisionResponse["answers"][string];
 
-const settings: typeof EnglishPolicySettings.Encoded = {
+const settings: typeof TextPolicySettings.Encoded = {
   minimumProbability: 0.5,
   maximumRequestBytes: 60_000,
   timeoutMilliseconds: 100,
@@ -169,21 +169,21 @@ const check = (
   options: {
     readonly message?: Message;
     readonly context?: MessageContext;
-    readonly rules?: readonly EnglishRule[];
-    readonly settings?: EnglishPolicySettings;
+    readonly rules?: readonly TextRule[];
+    readonly settings?: TextPolicySettings;
     readonly incoming?: boolean;
   } = {},
 ) =>
   Effect.gen(function* () {
-    const english = yield* makeEnglishPolicy({
+    const text = yield* makeTextPolicy({
       id: "owner",
       rules: options.rules ?? rules,
       provider: decisions,
       settings: options.settings ?? settings,
     });
     const firewall = yield* makeFirewall({
-      incoming: [english],
-      outgoing: [english],
+      incoming: [text],
+      outgoing: [text],
       settings: firewallSettings,
     });
     const message = options.message ?? draft;
@@ -482,7 +482,7 @@ it("admits a confidently unresolved norm expectation as guidance", () =>
     });
   }));
 
-const replyRule: EnglishRule = {
+const replyRule: TextRule = {
   id: "reply-once",
   kind: "norm",
   text: "Reply once to a direct question.",
@@ -875,7 +875,7 @@ it("submits a complete request at its UTF-8 byte limit and holds one byte below 
     expect(rejected).toEqual([]);
   }));
 
-const accumulatedNorms: readonly EnglishRule[] = EffectArray.makeBy(
+const accumulatedNorms: readonly TextRule[] = EffectArray.makeBy(
   8,
   (index) => ({
     id: `norm-${index}`,
@@ -898,13 +898,13 @@ it.each([false, true])(
   (incoming) =>
     Effect.gen(function* () {
       const requests: DecisionRequest[] = [];
-      const { englishSettings } = yield* decodeMessagePolicy(
+      const { textSettings } = yield* decodeMessagePolicy(
         JSON.stringify({
-          format: "org.social-harness/message-policy/v1",
+          format: "org.social-harness/message-policy/v2",
           mode: "enforcement",
         }),
       );
-      const { maximumRequestBytes } = englishSettings;
+      const { maximumRequestBytes } = textSettings;
       const result = yield* check(provider({}, requests), {
         incoming,
         message: incoming

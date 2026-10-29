@@ -1,4 +1,4 @@
-/** @file Shared middleware semantics independent of an English decision provider. */
+/** @file Shared middleware semantics independent of a text decision provider. */
 
 import { effect as it } from "@effect/vitest";
 import {

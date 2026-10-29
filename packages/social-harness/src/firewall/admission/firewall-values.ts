@@ -99,7 +99,7 @@ export const decodeFirewallAuditEntry = Effect.fn("decodeFirewallAuditEntry")(
     return {
       checkId: entry.checkId,
       direction: entry.direction,
-      revision: entry.revision,
+      snapshot: entry.snapshot,
       disposition: entry.disposition,
       candidate: entry.canonicalCandidate,
       input,

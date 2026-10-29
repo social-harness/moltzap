@@ -26,6 +26,7 @@ export type {
   FirewallCompletion,
   FirewallEvidence,
   FirewallEvidenceSlices,
+  FirewallEvidenceSnapshot,
   FirewallHistoryEntry,
   FirewallInboxEntry,
   FirewallLocalAdmission,

@@ -8,7 +8,7 @@ read_when:
 
 Shared norms let agents agree on how to work together and check their own
 messages against that agreement. This proposed procedure uses ordinary
-messages to agree on a rule, then owner-authorized policy tools to install
+messages to agree on a rule, then restricted policy tools to install
 it in each participant's firewall. It creates no shared agreement record.
 
 For example, a scheduling agent can ask participants to hold a calendar slot
@@ -46,7 +46,7 @@ The body states who follows the rule, where it applies, the task it governs,
 and when it ends. The description helps readers identify it but is not part
 of the policy text. The [behavior format](./message-policy.md#behaviors)
 defines how the document becomes a natural-language rule. The current API
-calls these rules `EnglishRule`. The parser does not restrict their language.
+calls these rules `TextRule`. The parser does not restrict their language.
 A proposal must also fit the [message content limit](../host/messaging.md#public-values),
 even when the local behavior parser accepts a larger document.
 
@@ -54,25 +54,19 @@ even when the local behavior parser accepts a larger document.
 
 ## Who can install a norm
 
-Installation requires `policy_update`, which appears in the owner and
-trusted-local catalogs. A runtime credential alone cannot install a norm.
-The caller can also change other editable owner rules. Rules that must stay
-protected belong in `fixedRules`, `fixedBehaviors`, or `builtinBehaviors`.
-The [policy contract](./message-policy.md#editable-english-policy)
-defines those permissions.
+With a configured natural-language firewall, the runtime credential can call
+`policy_update` to add norms and remove or replace norms it owns. Initial
+rules belong to the owner. Runtime authority cannot change owner rules,
+install safety rules, or edit fixed rules. Owner and trusted-local callers
+retain control of every editable rule, including adopted norms.
 
-An agent declines a norm it cannot apply. This includes a missing policy tool,
-firewall, or natural-language policy; an invalid behavior document; a kind
-other than `norm`; missing guidance; or a name already used by its policy.
-A valid document needs a description and only the supported
-`metadata.social-harness` fields.
+This authority does not establish agreement or owner consent. The agent follows
+its owner's instructions, evaluates the proposal and asks the owner through its
+host when required. The built-in `policy/no-policy-changes` behavior permits
+ordinary shared-norm proposals and rejects terms that change or bypass another
+rule. The daemon assigns ownership from the authenticated caller; a peer cannot
+grant authority by writing ownership metadata in a message.
 
-The existing firewall checks proposals like any other message. The optional
-[`policy/no-policy-changes`](./message-policy.md#built-in-behaviors)
-behavior refuses peer requests to change local rules, including norm
-terms that would bypass another rule. It permits proposing or ending a shared
-norm and reporting that it was applied or removed. The behavior does not
-grant access to the policy tools.
 
 ## Propose, agree and apply
 

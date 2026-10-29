@@ -59,10 +59,10 @@ type LayerIsExact = Expect<
 type PolicyModeIsExact = Expect<
   Types.Equals<MessagePolicy["mode"], "guidance" | "enforcement">
 >;
-type EncodedEnglish = NonNullable<(typeof MessagePolicy.Encoded)["english"]>;
+type EncodedText = NonNullable<(typeof MessagePolicy.Encoded)["text"]>;
 type PolicyWriterKindsAreExact = Expect<
   Types.Equals<
-    NonNullable<EncodedEnglish["fixedRules"]>[number]["kind"],
+    NonNullable<EncodedText["fixedRules"]>[number]["kind"],
     "safety" | "norm"
   >
 >;
@@ -82,12 +82,12 @@ type DecodedPolicyComposes = Expect<
   >
 >;
 
-/** Inline-only English blocks remain valid trusted composition inputs. */
-type InlineEnglishIsAssignable = Expect<
+/** Inline-only Text blocks remain valid trusted composition inputs. */
+type InlineTextIsAssignable = Expect<
   {
     readonly fixedRules: readonly [];
     readonly initialRules: readonly [];
-  } extends MessagePolicy["english"]
+  } extends MessagePolicy["text"]
     ? true
     : false
 >;
@@ -105,5 +105,5 @@ export type DaemonCanaries = [
   PolicyWriterKindsAreExact,
   PolicyInstallsAsFirewall,
   DecodedPolicyComposes,
-  InlineEnglishIsAssignable,
+  InlineTextIsAssignable,
 ];

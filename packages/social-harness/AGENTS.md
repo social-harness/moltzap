@@ -20,7 +20,7 @@ Keep `src/daemon/launcher` independent of other Client domains.
 `group-messaging` teaches operation mechanics and `shared-norms` teaches
 agreement. Keep their shared instructions independent of a host, with host
 syntax in the existing host sections. Review changes to `behaviors/` as policy
-changes: their text determines what the English evaluator checks.
+changes: their text determines what the text evaluator checks.
 
 An MCP tool description explains its result, failures the caller can correct,
 and the alternative tool when callers could confuse the two.

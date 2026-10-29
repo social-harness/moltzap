@@ -1,4 +1,4 @@
-/** @file English policies implement the same atomic middleware contract as code. */
+/** @file Natural-language policies implement the same atomic middleware contract as code. */
 
 import { Clock, Effect, Either, Schema } from "effect";
 import { createHash } from "node:crypto";
@@ -10,9 +10,6 @@ import {
   type DecisionRequest,
   DecisionResponse,
   decodeFrozen,
-  type EnglishCheck,
-  EnglishPolicySettings,
-  EnglishRule,
   type MessageMiddleware,
   type MiddlewareInput,
   type MiddlewareResult,
@@ -20,14 +17,17 @@ import {
   type PolicyFinding,
   type PolicyStageTrace,
   RuleDescription,
+  type TextCheck,
+  TextPolicySettings,
+  TextRule,
 } from "./contract/index.js";
-import { makeEnglishRequest, questionEdition } from "./questions.js";
+import { makeTextRequest, questionEdition } from "./questions.js";
 
-const decideWithinBudget = Effect.fn("EnglishPolicy.decideWithinBudget")(
+const decideWithinBudget = Effect.fn("TextPolicy.decideWithinBudget")(
   function* (
     request: DecisionRequest,
     provider: DecisionProvider,
-    settings: EnglishPolicySettings,
+    settings: TextPolicySettings,
   ) {
     const received = yield* provider.decide(request).pipe(
       Effect.timeoutFail({
@@ -98,10 +98,10 @@ function validAnswers(
   });
 }
 
-const runStage = Effect.fn("EnglishPolicy.runStage")(function* (
-  preparation: ReturnType<typeof makeEnglishRequest>,
+const runStage = Effect.fn("TextPolicy.runStage")(function* (
+  preparation: ReturnType<typeof makeTextRequest>,
   provider: DecisionProvider,
-  settings: EnglishPolicySettings,
+  settings: TextPolicySettings,
 ): Effect.fn.Return<PolicyStageTrace> {
   if ("status" in preparation) {
     return preparation;
@@ -161,11 +161,11 @@ function unsettled(
  * the unsettled ones reach the agent as guidance instead. Only a failed
  * expectations stage leaves conformance unavailable.
  */
-const evaluateConformance = Effect.fn("EnglishPolicy.conformance")(function* (
-  snapshot: EnglishCheck,
+const evaluateConformance = Effect.fn("TextPolicy.conformance")(function* (
+  snapshot: TextCheck,
   expectations: PolicyStageTrace,
   provider: DecisionProvider,
-  settings: EnglishPolicySettings,
+  settings: TextPolicySettings,
 ): Effect.fn.Return<PolicyStageTrace> {
   if (expectations.status !== "empty" && expectations.status !== "answered") {
     return {
@@ -176,7 +176,7 @@ const evaluateConformance = Effect.fn("EnglishPolicy.conformance")(function* (
     };
   }
   return yield* runStage(
-    makeEnglishRequest(
+    makeTextRequest(
       "conformance",
       snapshot,
       settings.maximumRequestBytes,
@@ -191,13 +191,13 @@ const evaluateConformance = Effect.fn("EnglishPolicy.conformance")(function* (
  * Outgoing expectations use authorized history and facts before conformance
  * assesses the draft against those independently established expectations.
  */
-const checkEnglish = Effect.fn("EnglishPolicy.check")(function* (
+const checkText = Effect.fn("TextPolicy.check")(function* (
   input: MiddlewareInput,
-  policy: Pick<EnglishCheck, "rules" | "revision">,
+  policy: Pick<TextCheck, "rules" | "revision">,
   provider: DecisionProvider,
-  settings: EnglishPolicySettings,
+  settings: TextPolicySettings,
 ): Effect.fn.Return<MiddlewareResult> {
-  const check: EnglishCheck = {
+  const check: TextCheck = {
     event: input.event,
     context: input.context,
     rules: policy.rules,
@@ -207,7 +207,7 @@ const checkEnglish = Effect.fn("EnglishPolicy.check")(function* (
   for (const stage of ["applicability", "safety", "expectations"] as const) {
     trace.push(
       yield* runStage(
-        makeEnglishRequest(stage, check, settings.maximumRequestBytes),
+        makeTextRequest(stage, check, settings.maximumRequestBytes),
         provider,
         settings,
       ),
@@ -224,14 +224,14 @@ const checkEnglish = Effect.fn("EnglishPolicy.check")(function* (
     findings: trace.flatMap((stage) => stageFindings(stage, policy.rules)),
     expectations: norms,
     trace: {
-      format: "english-policy/v1",
+      format: "text-policy/v1",
       data: JSON.stringify({ questionEdition, settings, stages: trace }),
     },
   };
 });
 
 /**
- * Freezes English documents and provider settings for repeated checks in either
+ * Freezes natural-language documents and provider settings for repeated checks in either
  * direction. Question semantics and documents determine the recorded revision.
  * `fixedRuleIds` names the rules composition fixed against owner edits; it is
  * recorded in the provenance only, so a retained check keeps which of its
@@ -246,58 +246,52 @@ const checkEnglish = Effect.fn("EnglishPolicy.check")(function* (
  *   C --> R[Return all findings and private stage trace]
  * ```
  */
-export const makeEnglishPolicy = Effect.fn("makeEnglishPolicy")(
-  function* (options: {
-    readonly id: string;
-    readonly rules: readonly EnglishRule[];
-    readonly provider: DecisionProvider;
-    readonly settings: unknown;
-    readonly fixedRuleIds?: readonly string[];
-  }): Effect.fn.Return<MessageMiddleware, CheckInputError> {
-    const settings = yield* decodeFrozen(
-      EnglishPolicySettings,
-      options.settings,
-    ).pipe(
-      Effect.catchTag("ParseError", () =>
-        Effect.fail(new CheckInputError({ reason: "settings" })),
-      ),
-    );
-    const { id, rules } = yield* decodeFrozen(
-      Schema.Struct({
-        id: Schema.NonEmptyTrimmedString,
-        rules: Schema.NonEmptyArray(EnglishRule),
-      }),
-      { id: options.id, rules: options.rules },
-    ).pipe(
-      Effect.catchTag("ParseError", () =>
-        Effect.fail(new CheckInputError({ reason: "registration" })),
-      ),
-    );
-    if (new Set(rules.map((rule) => rule.id)).size !== rules.length) {
-      return yield* new CheckInputError({ reason: "registration" });
-    }
-    const descriptions = yield* ruleDescriptions(rules);
-    const revision = englishRevision(rules, settings);
-    const provider = Object.freeze({
-      decide: options.provider.decide.bind(options.provider),
-    });
-    return Object.freeze({
-      id,
-      revision,
-      rules: descriptions,
-      provenance: englishProvenance(
-        rules,
-        settings,
-        options.provider,
-        options.fixedRuleIds,
-      ),
-      check: (input: MiddlewareInput) =>
-        checkEnglish(input, { rules, revision }, provider, settings),
-    });
-  },
-);
+export const makeTextPolicy = Effect.fn("makeTextPolicy")(function* (options: {
+  readonly id: string;
+  readonly rules: readonly TextRule[];
+  readonly provider: DecisionProvider;
+  readonly settings: unknown;
+  readonly fixedRuleIds?: readonly string[];
+  readonly runtimeRuleIds?: readonly string[];
+}): Effect.fn.Return<MessageMiddleware, CheckInputError> {
+  const settings = yield* decodeFrozen(
+    TextPolicySettings,
+    options.settings,
+  ).pipe(
+    Effect.catchTag("ParseError", () =>
+      Effect.fail(new CheckInputError({ reason: "settings" })),
+    ),
+  );
+  const { id, rules } = yield* decodeFrozen(
+    Schema.Struct({
+      id: Schema.NonEmptyTrimmedString,
+      rules: Schema.NonEmptyArray(TextRule),
+    }),
+    { id: options.id, rules: options.rules },
+  ).pipe(
+    Effect.catchTag("ParseError", () =>
+      Effect.fail(new CheckInputError({ reason: "registration" })),
+    ),
+  );
+  if (new Set(rules.map((rule) => rule.id)).size !== rules.length) {
+    return yield* new CheckInputError({ reason: "registration" });
+  }
+  const descriptions = yield* ruleDescriptions(rules);
+  const revision = textRevision(rules, settings);
+  const provider = Object.freeze({
+    decide: options.provider.decide.bind(options.provider),
+  });
+  return Object.freeze({
+    id,
+    revision,
+    rules: descriptions,
+    provenance: textProvenance(rules, settings, options.provider, options),
+    check: (input: MiddlewareInput) =>
+      checkText(input, { rules, revision }, provider, settings),
+  });
+});
 
-function ruleDescriptions(rules: readonly EnglishRule[]) {
+function ruleDescriptions(rules: readonly TextRule[]) {
   return Schema.decodeUnknown(Schema.Array(RuleDescription))(rules).pipe(
     Effect.flatMap((value) =>
       decodeFrozen(Schema.Array(RuleDescription), value),
@@ -308,32 +302,34 @@ function ruleDescriptions(rules: readonly EnglishRule[]) {
   );
 }
 
-/** The provenance format every English policy registers, naming its checks as English judgments. */
-export const englishPolicyFormat = "org.social-harness/english-policy.v1";
+/** The provenance format every natural-language policy registers, naming its checks as natural-language judgments. */
+export const textPolicyFormat = "org.social-harness/text-policy.v1";
 
-function englishProvenance(
-  rules: readonly EnglishRule[],
-  settings: EnglishPolicySettings,
+function textProvenance(
+  rules: readonly TextRule[],
+  settings: TextPolicySettings,
   provider: DecisionProvider,
-  fixedRuleIds?: readonly string[],
+  ownership: {
+    readonly fixedRuleIds?: readonly string[];
+    readonly runtimeRuleIds?: readonly string[];
+  },
 ) {
   return Object.freeze({
-    format: englishPolicyFormat,
+    format: textPolicyFormat,
     data: JSON.stringify({
       questionEdition,
       rules,
       settings,
       provider: provider.provenance ?? null,
-      ...(fixedRuleIds === undefined
-        ? {}
-        : { fixedRuleIds: [...fixedRuleIds] }),
+      fixedRuleIds: [...(ownership.fixedRuleIds ?? [])],
+      runtimeRuleIds: [...(ownership.runtimeRuleIds ?? [])],
     }),
   });
 }
 
-function englishRevision(
-  rules: readonly EnglishRule[],
-  settings: EnglishPolicySettings,
+function textRevision(
+  rules: readonly TextRule[],
+  settings: TextPolicySettings,
 ): string {
   return createHash("sha256")
     .update(JSON.stringify({ questionEdition, rules, settings }))
@@ -384,7 +380,7 @@ function readNorms(trace: PolicyStageTrace): readonly NormExpectation[] {
 }
 
 function stageIncludes(
-  rule: EnglishRule,
+  rule: TextRule,
   stage: PolicyStageTrace["stage"],
 ): boolean {
   if (stage === "applicability" || rule.kind === stage) {
@@ -398,7 +394,7 @@ function stageIncludes(
 
 function stageFindings(
   trace: PolicyStageTrace,
-  rules: readonly EnglishRule[],
+  rules: readonly TextRule[],
 ): PolicyFinding[] {
   switch (trace.status) {
     case "empty":

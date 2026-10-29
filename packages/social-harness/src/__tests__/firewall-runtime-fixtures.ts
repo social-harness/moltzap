@@ -361,31 +361,48 @@ export function addConversation(subject: Fixture, authoredLocally = false) {
 }
 
 /**
- * A policy that changes the evidence on every call, so each capture it
- * checks is stale by its commit.
- * @param subject The fixture whose store the policy writes to.
- * @returns The middleware and the number of calls it has seen.
+ * Delayed local admissions change the captured conversation on every check.
+ * The writer owns its prequeued items; the admission worker sees only the
+ * subject under test. Queueing before certification keeps the new evidence
+ * inside incoming windows as well as outgoing windows.
  */
-export function churnPolicy(subject: Fixture) {
+export const churnPolicy = Effect.fn("churnPolicy")(function* (
+  subject: Fixture,
+  conversation?: string,
+) {
+  const target = conversation ?? "agent:bob";
+  const items = yield* delayedEvidence(subject, target);
+  const tokens = new Set(items.map((item) => item.deliveryToken));
   let calls = 0;
   return {
+    subject: {
+      ...subject,
+      store: {
+        ...subject.store,
+        readFirewallFrontiers: () =>
+          subject.store
+            .readFirewallFrontiers()
+            .pipe(
+              Effect.map((entries) =>
+                entries.filter((entry) => !tokens.has(entry.deliveryToken)),
+              ),
+            ),
+      },
+    },
     count: () => calls,
     middleware: policy(() =>
       Effect.gen(function* () {
+        const item = items[calls];
         calls += 1;
-        yield* subject.store.putInboxItem({
-          deliveryToken: Schema.decodeUnknownSync(DeliveryToken)(
-            digest("dlv_", 120 + calls),
-          ),
-          canonicalItem: yield* encodeRuntimeValue({
-            kind: "evidence changed",
-          }),
-        });
+        if (item === undefined) {
+          return yield* Effect.dieMessage("unexpected extra check");
+        }
+        yield* admitDelayedEvidence(subject, item, target);
         return pass;
       }).pipe(Effect.orDie, Effect.withSpan("churnPolicy")),
     ),
   };
-}
+});
 
 /** A complete registered norm delegates only its assessment to the test. */
 export function policy(check: MessageMiddleware["check"]): MessageMiddleware {
@@ -405,6 +422,62 @@ export function seedIncoming(subject: Fixture, authoredLocally = false) {
     yield* storeCertifiedGenesis(store, local.card, membership, record);
     return record;
   }).pipe(Effect.withSpan("seedIncoming"));
+}
+
+function delayedEvidence(subject: Fixture, conversation: string) {
+  return Effect.forEach(
+    [1, 2, 3, 4],
+    (index) =>
+      Effect.gen(function* () {
+        const item = {
+          deliveryToken: Schema.decodeUnknownSync(DeliveryToken)(
+            digest("dlv_", 120 + index),
+          ),
+          canonicalItem: yield* encodeRuntimeValue({
+            kind: "operationFailed",
+            id: digest("col_", index),
+            to: conversation,
+            error: "Prior local result",
+          }),
+        };
+        yield* subject.store.queueFirewallItem({
+          ...item,
+          conversation: "fixture:delayed-evidence",
+        });
+        return item;
+      }),
+    { concurrency: 1 },
+  );
+}
+
+function admitDelayedEvidence(
+  subject: Fixture,
+  item: {
+    readonly deliveryToken: DeliveryToken;
+    readonly canonicalItem: Uint8Array;
+  },
+  conversation: string,
+) {
+  return Effect.gen(function* () {
+    yield* subject.store.admitFirewallLocalItem({
+      queuedItem: item.canonicalItem,
+      item,
+      completions: [],
+      answers: [],
+      evidence: {
+        conversation,
+        canonicalEntry: yield* encodeRuntimeValue({
+          id: item.deliveryToken,
+          sender: subject.local.card.agentId,
+          recipients: [subject.remote.card.agentId],
+          text: "Prior local result",
+          visibility: "runtime",
+          admission: "admitted",
+        }),
+      },
+    });
+    yield* subject.store.acknowledgeInboxItem(item.deliveryToken);
+  });
 }
 
 function pendingMessages(store: EndpointStore) {

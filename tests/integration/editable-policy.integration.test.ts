@@ -67,7 +67,7 @@ const options: Daemon.FirewallOptions = {
   settings,
   facts: [],
   codeDigest: "a".repeat(64),
-  english: {
+  text: {
     provider,
     settings: {
       minimumProbability: 0.5,
@@ -179,7 +179,7 @@ const acquireFixedPolicyScenario = Effect.gen(function* () {
     ...options,
     incoming: [middleware],
     outgoing: [middleware],
-    english: {
+    text: {
       provider,
       settings: {
         minimumProbability: 0.5,
@@ -237,8 +237,8 @@ const persistAndValidate = Effect.gen(function* () {
   const { alice } = yield* pair;
   const fixedOptions = {
     ...options,
-    english: {
-      ...options.english,
+    text: {
+      ...options.text,
       provider,
       settings: {
         minimumProbability: 0.5,
@@ -267,7 +267,7 @@ const persistAndValidate = Effect.gen(function* () {
   ).toBe(true);
   expect(yield* read(client)).toMatchObject({
     activeRevision: changed.activeRevision,
-    fixedRules: arrayContaining([{ from: "english", ...fixedRule }]),
+    fixedRules: arrayContaining([{ from: "text", ...fixedRule }]),
     rules: [{ id: blockedRule.id }],
   });
   expect(yield* send(client).pipe(Effect.isFailure)).toBe(true);
@@ -367,7 +367,7 @@ const tunnelAuthority = Effect.gen(function* () {
   expect(catalog.tools).not.toContainEqual(
     objectContaining({ name: "policy_read" }),
   );
-  expect(catalog.tools).not.toContainEqual(
+  expect(catalog.tools).toContainEqual(
     objectContaining({ name: "policy_update" }),
   );
   expect(catalog.tools).not.toContainEqual(
@@ -382,9 +382,33 @@ const tunnelAuthority = Effect.gen(function* () {
   expect(
     yield* call(runtime, "firewall_decisions").pipe(Effect.isFailure),
   ).toBe(true);
-  yield* update(owner, { add: [blockedRule] });
-  expect((yield* read(owner)).rules).toEqual([{ id: blockedRule.id }]);
+  yield* runtimeNormEdits(owner, runtime);
 });
+
+function runtimeNormEdits(owner: Client, runtime: Client) {
+  return Effect.gen(function* () {
+    yield* update(owner, { add: [blockedRule] });
+    expect((yield* read(owner)).rules).toEqual([{ id: blockedRule.id }]);
+    const adopted = {
+      id: "shared-norm",
+      kind: "norm",
+      text: "Confirm before booking.",
+      guidance: "Confirm first.",
+    };
+    yield* update(runtime, { add: [adopted] });
+    expect((yield* read(owner)).rules).toEqual([
+      { id: blockedRule.id },
+      { id: adopted.id },
+    ]);
+    expect(
+      yield* update(runtime, { remove: [blockedRule.id, adopted.id] }).pipe(
+        Effect.isFailure,
+      ),
+    ).toBe(true);
+    yield* update(runtime, { remove: [adopted.id] });
+    expect((yield* read(owner)).rules).toEqual([{ id: blockedRule.id }]);
+  });
+}
 
 describe("editable firewall through the daemon public API", () => {
   it(
@@ -400,7 +424,7 @@ describe("editable firewall through the daemon public API", () => {
     60000,
   );
   it(
-    "returns fixed English text and code rule descriptions and refuses to edit them",
+    "returns fixed natural-language text and code rule descriptions and refuses to edit them",
     processTrace(readFixed.pipe(Effect.provide(NodeContext.layer))),
     60000,
   );
@@ -417,7 +441,7 @@ describe("editable firewall through the daemon public API", () => {
     60000,
   );
   it(
-    "exposes policy management only to owner authority in tunnel mode",
+    "restricts runtime adoption while retaining owner policy authority in tunnel mode",
     processTrace(tunnelAuthority.pipe(Effect.provide(NodeContext.layer))),
     60000,
   );
@@ -468,7 +492,7 @@ function expectFixedPolicyCannotBeEdited(state: FixedPolicyScenario) {
     const removeCode = yield* call(client, "policy_update", {
       remove: [codeRule.id],
     }).pipe(Effect.flip);
-    const replaceEnglish = yield* call(client, "policy_update", {
+    const replaceText = yield* call(client, "policy_update", {
       add: [{ ...blockedRule, id: fixedRule.id }],
     }).pipe(Effect.flip);
     expect(policy).toEqual({
@@ -479,12 +503,12 @@ function expectFixedPolicyCannotBeEdited(state: FixedPolicyScenario) {
           middleware: middleware.id,
           ...codeRule,
         }),
-        objectContaining({ from: "english", ...fixedRule }),
+        objectContaining({ from: "text", ...fixedRule }),
       ]),
       activeRevision: anyString,
     });
     expect(removeCode.cause).toMatchObject({ data: { reason: "fixed-rule" } });
-    expect(replaceEnglish.cause).toMatchObject({
+    expect(replaceText.cause).toMatchObject({
       data: { reason: "fixed-rule" },
     });
     expect(yield* call(client, "policy_read")).toEqual(policy);

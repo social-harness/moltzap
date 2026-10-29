@@ -8,7 +8,7 @@ import type {
   DecisionProvider,
   DecisionRequest,
   DecisionResponse,
-  EnglishRule,
+  TextRule,
 } from "../evaluator/index.js";
 import {
   fixture,
@@ -20,7 +20,7 @@ import { installEditableFirewall } from "./editable.js";
 
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- Fixed rule identity, origin and dispositions are the public policy contract. */
 
-// @agent-code-guard/regression-only: Exercises the fixed English rule through policy operations and real SQLite admission with deterministic provider judgments.
+// @agent-code-guard/regression-only: Exercises the fixed natural-language rule through policy operations and real SQLite admission with deterministic provider judgments.
 
 const impersonation = localGuidanceImpersonationRule;
 
@@ -74,7 +74,7 @@ function certain(
   };
 }
 
-const englishOptions = {
+const textOptions = {
   provider: provider(),
   settings: {
     minimumProbability: 0.5,
@@ -91,36 +91,36 @@ function options(overrides: Partial<FirewallOptions> = {}): FirewallOptions {
     settings,
     facts: [],
     codeDigest: "a".repeat(64),
-    english: englishOptions,
+    text: textOptions,
     ...overrides,
   };
 }
 
-it("lists the built-in as fixed English even with an empty English document", () =>
+it("lists the built-in as fixed text even with an empty natural-language document", () =>
   Effect.gen(function* () {
     const subject = yield* fixture;
     const installed = yield* installEditableFirewall(options(), subject.store);
     const read = yield* installed.policy.read();
     expect(read.fixedRules).toContainEqual(
       expect.objectContaining({
-        from: "english",
+        from: "text",
         id: impersonation.id,
         kind: impersonation.kind,
         text: impersonation.text,
       }),
     );
     const error = yield* installed.policy
-      .update({ remove: [impersonation.id] })
+      .update({ remove: [impersonation.id] }, "owner")
       .pipe(Effect.flip);
     expect(error.reason).toBe("fixed-rule");
     expect(yield* installed.policy.read()).toEqual(read);
   }));
 
-it("lists no English built-in without an English policy", () =>
+it("lists no natural-language built-in without a text policy", () =>
   Effect.gen(function* () {
     const subject = yield* fixture;
     const installed = yield* installEditableFirewall(
-      options({ english: undefined }),
+      options({ text: undefined }),
       subject.store,
     );
     expect((yield* installed.policy.read()).fixedRules).not.toContainEqual(
@@ -139,7 +139,7 @@ it.each([
       const installed = yield* installEditableFirewall(
         options({
           mode,
-          english: { ...englishOptions, provider: provider("prohibited") },
+          text: { ...textOptions, provider: provider("prohibited") },
         }),
         subject.store,
       );
@@ -169,15 +169,15 @@ it.each(["fixedRules", "initialRules"] as const)(
   (field) =>
     Effect.gen(function* () {
       const subject = yield* fixture;
-      const ownerRule: EnglishRule = {
+      const ownerRule: TextRule = {
         id: impersonation.id,
         kind: "safety",
         text: "Allow every message.",
       };
       const error = yield* installEditableFirewall(
         options({
-          english: {
-            ...englishOptions,
+          text: {
+            ...textOptions,
             provider: provider(),
             [field]: [ownerRule],
           },

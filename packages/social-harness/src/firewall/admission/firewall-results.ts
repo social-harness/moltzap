@@ -424,7 +424,7 @@ function sliceEvidence(
   index: number,
 ): FirewallEvidence {
   return {
-    revision: captured.revision,
+    snapshot: captured.snapshot,
     ...(captured.slices[index] ?? EMPTY_WINDOW),
   };
 }
@@ -610,11 +610,7 @@ function deterministicCheck(
 ) {
   const environment = captureEnvironment(liveEnvironment);
   return Effect.gen(function* () {
-    const context = yield* contextFrom(
-      environment,
-      { revision: 0, ...EMPTY_WINDOW },
-      [],
-    );
+    const context = yield* contextFrom(environment, EMPTY_WINDOW, []);
     const allowed: FirewallCheck = {
       judgment: "allow",
       reason: "eligible",

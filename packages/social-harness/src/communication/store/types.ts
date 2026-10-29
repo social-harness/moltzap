@@ -91,7 +91,7 @@ export interface FirewallEvidenceSlice {
 
 /** Older records outside the window are distinct from a byte-bound evidence gap. */
 export interface FirewallEvidence extends FirewallEvidenceSlice {
-  readonly revision: number;
+  readonly snapshot: FirewallEvidenceSnapshot;
 }
 
 /**
@@ -107,9 +107,16 @@ export interface FirewallEvidenceRange {
   readonly conversation?: string;
 }
 
-/** Several windows read at one evidence revision, one per checked text of a result. */
+/** Bounded conversation queries and their observed facts are compared atomically at admission. */
+export interface FirewallEvidenceSnapshot {
+  readonly ranges: readonly FirewallEvidenceRange[];
+  readonly maximumRecords: number;
+  readonly digest: string;
+}
+
+/** Several windows read in one synchronous capture, one per checked text of a result. */
 export interface FirewallEvidenceSlices {
-  readonly revision: number;
+  readonly snapshot: FirewallEvidenceSnapshot;
   readonly slices: readonly FirewallEvidenceSlice[];
 }
 
@@ -145,7 +152,7 @@ export interface FirewallLocalAdmission {
   readonly queuedItem: Uint8Array;
   readonly item: Omit<InboxEntry, "sequence">;
   readonly completions: readonly FirewallCompletion[];
-  readonly deterministic?: Omit<FirewallAttempt, "revision"> & {
+  readonly deterministic?: Omit<FirewallAttempt, "snapshot"> & {
     readonly canonicalResult: Uint8Array;
   };
   readonly answers: ReadonlyArray<{
@@ -159,7 +166,7 @@ export interface FirewallLocalAdmission {
 export interface FirewallAttempt {
   readonly checkId: string;
   readonly direction: "incoming" | "outgoing";
-  readonly revision: number;
+  readonly snapshot: FirewallEvidenceSnapshot;
   readonly canonicalCandidate: Uint8Array;
   readonly canonicalInput: Uint8Array;
 }

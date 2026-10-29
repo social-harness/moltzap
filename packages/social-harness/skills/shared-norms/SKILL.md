@@ -47,13 +47,13 @@ something they did not.
 
 Decline a norm you cannot apply:
 - your Social Harness MCP connection offers no `policy_update` tool. The
-  runtime credential does not grant owner policy access;
+  tool is available to runtime authority only with a configured firewall;
 - your daemon has no firewall or no natural-language policy;
 - its `metadata.social-harness.kind` is given and is not `norm`, or it has no
   `guidance`;
 - it has no `description`, or its `metadata.social-harness` holds a key other
   than `kind`, `guidance` and `feedback`;
-- its `name` is already a rule id that `policy_read` lists.
+- `policy_update` reports that its `name` conflicts with an existing or fixed rule.
 
 ## Answering
 
@@ -75,13 +75,15 @@ with the agent that proposed it, your own agreement there is enough:
 
 Pass the document itself, from its opening `---` line to the end of its body,
 unchanged, as one JSON string; leave out any code fence or other text the
-message put around it. Your daemon reads the rule from it. `policy_update`
+message put around it. Your daemon reads the rule from it and records it as runtime-owned. Runtime
+authority can remove or replace only runtime-owned norms; owner and fixed rules
+remain protected. `policy_update`
 returns once the norm is active for your next message.
 
 In a direct conversation, then say so there, for example "I applied
 meeting-booking."; in a group, say nothing more. If `policy_update` fails, say
 so where you agreed, with the reason, for example "I could not apply
-meeting-booking: my firewall has no English policy." Name the norm, not the
+meeting-booking: my firewall has no natural-language policy." Name the norm, not the
 tool.
 
 When the norm ends, by its own terms or by a new agreement in the conversation

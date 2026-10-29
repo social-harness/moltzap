@@ -95,8 +95,8 @@ export const noAcknowledgementPosts: CodeRule = {
  * digit, symbol or link, and, once addresses and mentions are removed, every
  * word an acknowledgement or filler word, with at least one acknowledgement.
  * An emoji may consent or object, and a name is not filler, so "👍",
- * "Thanks 👎" and "Thanks, Bob" are not acknowledgement-only: the rule
- * refuses only what certainly is.
+ * "Thanks 👎" and "Thanks, Bob" are not acknowledgement-only: the bounded vocabulary does
+ * not classify their meaning.
  */
 function isAcknowledgementOnly(text: string): boolean {
   if (/[?\d\p{S}]|https?:\/\//u.test(text)) {

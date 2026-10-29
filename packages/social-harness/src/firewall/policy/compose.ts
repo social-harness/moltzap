@@ -51,12 +51,12 @@ export interface FirewallInstallation {
 
 /**
  * Compose a decoded inline policy for `Daemon.withFirewall`, using the supplied
- * provider for English rules and collective norms. A code-only policy does not
+ * provider for natural-language rules and collective norms. A code-only policy does not
  * use the provider.
  *
  * Nonempty behavior lists fail with `CheckInputError` (`registration`) because
- * only file loading resolves them. The collective-norms bundle reads its English
- * text from the installed package. The generated code digest follows the
+ * only file loading resolves them. The collective-norms bundle reads its natural-language
+ * rules from the installed package. The generated code digest follows the
  * [policy contract](https://docs.moltzap.xyz/reference/spec/agent/message-policy#message-policy-file).
  */
 export const messagePolicyFirewall = Effect.fn("messagePolicyFirewall")(
@@ -126,6 +126,7 @@ const installationDocs: Readonly<
 > = {
   "invalid-rule": `${FIREWALL_GUIDE}#rules-not-installed`,
   "fixed-rule": `${FIREWALL_GUIDE}#rules-not-installed`,
+  "owner-rule": `${FIREWALL_GUIDE}#rules-not-installed`,
   "build-failed": "",
   "persistence-failed": "",
 };
@@ -133,8 +134,8 @@ const installationDocs: Readonly<
 /**
  * The configuration failure for a document whose rules the daemon could not
  * install against its store, such as an initial rule reusing a code rule's
- * id. `not-configured` here means the store holds editable English rules
- * that a document without `english` cannot install; the document itself is
+ * id. `not-configured` here means the store holds editable natural-language rules
+ * that a document without `text` cannot install; the document itself is
  * valid, so that message names the stored rules instead.
  * @param cause The closed installation failure.
  * @param behaviorRulePaths The source entry for each file-loaded behavior.
@@ -155,7 +156,7 @@ export function policyInstallationError(
     behaviorReason: path === undefined ? undefined : "duplicate-id",
     message:
       cause.reason === "not-configured"
-        ? `SHARNESS_MESSAGE_POLICY_FILE configures no English policy, but the state directory holds English rules an earlier policy added; restore the english block, remove those rules with policy_update, then remove the block. Docs: ${FIREWALL_GUIDE}#stored-english-rules`
+        ? `SHARNESS_MESSAGE_POLICY_FILE configures no natural-language policy, but the state directory holds natural-language rules an earlier policy added; restore the text block, remove those rules with policy_update, then remove the block. Docs: ${FIREWALL_GUIDE}#stored-text-rules`
         : policyFailureMessage(
             "message-policy",
             `; its rules could not be installed (${cause.reason})${location}`,
@@ -166,14 +167,14 @@ export function policyInstallationError(
 
 /** Only file loading resolves behaviors into rules before trusted composition. */
 function listsBehaviors(policy: MessagePolicy) {
-  const english = policy.english;
-  if (english === undefined) {
+  const text = policy.text;
+  if (text === undefined) {
     return false;
   }
   return [
-    english.fixedBehaviors,
-    english.builtinBehaviors,
-    english.initialBehaviors,
+    text.fixedBehaviors,
+    text.builtinBehaviors,
+    text.initialBehaviors,
   ].some((entries) => entries !== undefined && entries.length !== 0);
 }
 
@@ -187,7 +188,7 @@ function composeFirewall(
     const bundle = yield* Effect.cached(
       collectiveNorms(
         provider,
-        policy.englishSettings,
+        policy.textSettings,
         readBuiltinBehavior,
         policy.maximumHistoryRecords,
       ),
@@ -215,14 +216,14 @@ function composeFirewall(
       ),
       maximumHistoryRecords: policy.maximumHistoryRecords,
       maximumConcurrentChecks: policy.maximumConcurrentChecks,
-      english:
-        policy.english === undefined
+      text:
+        policy.text === undefined
           ? undefined
           : {
-              fixedRules: policy.english.fixedRules,
-              initialRules: policy.english.initialRules,
+              fixedRules: policy.text.fixedRules,
+              initialRules: policy.text.initialRules,
               provider,
-              settings: policy.englishSettings,
+              settings: policy.textSettings,
             },
     };
   });
@@ -263,10 +264,10 @@ function armDigest(
         registrations: registrations.map(({ id, revision }) =>
           id === ALLOWED_SENDERS_ID ? { id } : { id, revision },
         ),
-        fixedRules: policy.english?.fixedRules ?? null,
+        fixedRules: policy.text?.fixedRules ?? null,
         ...(fixedBehaviorDigests.length === 0 ? {} : { fixedBehaviorDigests }),
         decisionProvider: policy.decisionProvider ?? null,
-        englishSettings: policy.englishSettings,
+        textSettings: policy.textSettings,
         settings: policy.settings,
         maximumHistoryRecords: policy.maximumHistoryRecords ?? null,
         maximumConcurrentChecks: policy.maximumConcurrentChecks ?? null,
@@ -285,9 +286,9 @@ function logInstalled(options: FirewallOptions) {
     registrations.size === 0
       ? "no code middleware"
       : [...registrations].join(", ");
-  const english = options.english === undefined ? "" : " and English rules";
+  const text = options.text === undefined ? "" : " and natural-language rules";
   return Effect.logInfo(
-    `Message policy installed in ${options.mode} mode with ${middleware}${english}.`,
+    `Message policy installed in ${options.mode} mode with ${middleware}${text}.`,
   );
 }
 

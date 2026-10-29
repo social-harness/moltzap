@@ -101,7 +101,7 @@ const captureInput = Effect.fn("Firewall.captureInput")(function* (
   return Object.freeze({ event: capturedEvent, context: capturedContext });
 });
 
-/** Code policies receive exactly the same reference and advice validation as English. */
+/** Code policies receive exactly the same reference and advice validation as text. */
 function validResult(
   result: MiddlewareResult,
   middleware: MessageMiddleware,

@@ -487,10 +487,10 @@ function staleResult(mode: FirewallOptions["mode"]) {
   return Effect.gen(function* () {
     const subject = yield* fixture;
     const answers = { bob: { slot: "mon" }, carol: { slot: "tue" } };
+    const churn = yield* churnPolicy(subject);
     const provenance = yield* seedAnswers(subject, answers);
-    const churn = churnPolicy(subject);
     const runtime = yield* incomingFixture(
-      subject,
+      churn.subject,
       churn.middleware,
       { mode },
       false,

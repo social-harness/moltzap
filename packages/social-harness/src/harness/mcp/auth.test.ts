@@ -36,7 +36,7 @@ const credentials = {
 const info = { name: "local-dot-qualification", version: "1" };
 const unreachable = () =>
   Effect.dieMessage("unauthorized tool reached its operation");
-/** The firewall's policy operations, which no runtime call may reach. */
+/** Policy operations fail when a test unexpectedly reaches the implementation. */
 const unreachablePolicy: NonNullable<HarnessMcpOperations["policy"]> = {
   read: unreachable,
   update: unreachable,
@@ -378,23 +378,21 @@ describe.each(registrationStates)(
         firewallHandler(registered),
         (handler) => listToolsAsOlderClient(handler, credentials.runtime),
         (names) => {
-          expect(names).toEqual(runtimeTools);
+          expect(names).toEqual(
+            registered ? ["policy_update", ...runtimeTools] : runtimeTools,
+          );
         },
       ));
 
-    it("refuses the runtime credential a call to policy_update", () =>
+    it("refuses the runtime credential a call to policy_read", () =>
       verify(
         firewallHandler(registered),
         (handler) =>
-          refusedCallAsOlderClient(
-            handler,
-            "policy_update",
-            credentials.runtime,
-          ),
+          refusedCallAsOlderClient(handler, "policy_read", credentials.runtime),
         (refused) => {
           expect(refused).toMatchObject({
             code: -32602,
-            message: "Tool policy_update not found",
+            message: "Tool policy_read not found",
           });
         },
       ));
@@ -677,3 +675,74 @@ describe("tunneled MCP event reads for a registered daemon", () => {
 });
 
 /* eslint-enable agent-code-guard/no-hardcoded-assertion-literals -- Restore repository defaults. */
+
+const normEdit = {
+  name: "policy_update",
+  arguments: {
+    add: [
+      {
+        id: "shared",
+        kind: "norm",
+        text: "Confirm before booking.",
+        guidance: "Confirm first.",
+      },
+    ],
+  },
+};
+
+it.each(["modern", "legacy"] as const)(
+  "assigns norm-edit authority from the bearer over %s MCP",
+  (version) =>
+    Effect.gen(function* () {
+      const authorities: string[] = [];
+      const handler = yield* acquireHandler(
+        true,
+        { credentials, eventStore },
+        {
+          ...unreachablePolicy,
+          update: (change, authority) =>
+            Effect.sync(() => {
+              authorities.push(`${authority}:${change.add?.length ?? 0}`);
+              return { activeRevision: "a".repeat(64) };
+            }),
+        },
+      );
+      const params = normEdit;
+      for (const credential of [credentials.runtime, credentials.owner]) {
+        if (version === "modern") {
+          const response = yield* callTool(handler, params, credential);
+          expect(response).toHaveProperty(
+            "result.structuredContent.activeRevision",
+          );
+        } else {
+          const client = yield* connectOlderClient(handler, credential);
+          yield* Effect.tryPromise(() => client.callTool(params));
+        }
+      }
+      expect(authorities).toEqual(["runtime:1", "owner:1"]);
+      yield* refusedPolicyReads(handler);
+      expect(
+        yield* callTool(
+          handler,
+          { ...params, arguments: { ...params.arguments, authority: "owner" } },
+          credentials.runtime,
+        ),
+      ).toMatchObject({ error: { code: -32602 } });
+      expect(authorities).toHaveLength(2);
+    }),
+);
+
+function refusedPolicyReads(handler: Handler) {
+  return Effect.gen(function* () {
+    for (const name of [
+      "policy_read",
+      "firewall_decisions",
+      "read_conversation",
+      "search_conversations",
+    ]) {
+      expect(
+        yield* callTool(handler, { name, arguments: {} }, credentials.runtime),
+      ).toMatchObject({ error: { code: -32602 } });
+    }
+  });
+}

@@ -36,13 +36,13 @@ import { encodeCanonical } from "../../encoding/canonical-json.js";
 import {
   CheckInputError,
   type DecisionProvider,
-  type EnglishPolicySettings,
-  type EnglishRule,
   type FirewallSettings,
   makeFirewall,
   type Message,
   type MessageContext,
   type MessageMiddleware,
+  type TextPolicySettings,
+  type TextRule,
 } from "../evaluator/index.js";
 import {
   agentAddressOf,
@@ -78,7 +78,7 @@ const unpostedRequest = Schema.decodeUnknown(PostId)(
 
 /**
  * Code, facts and provider settings stay fixed for this process. Owner tools
- * edit only English rules, and initial rules seed only a missing editable document.
+ * edit only natural-language rules, and initial rules seed only a missing editable document.
  * @inline
  */
 export interface FirewallOptions {
@@ -93,13 +93,13 @@ export interface FirewallOptions {
   readonly maximumHistoryRecords?: number;
   /** Shared limit on concurrent inference in both directions. Defaults to 4, from 1 to 32. */
   readonly maximumConcurrentChecks?: number;
-  readonly english?: {
+  readonly text?: {
     /** Additional rules fixed for this process. Defaults to an empty list. */
-    readonly fixedRules?: readonly EnglishRule[];
+    readonly fixedRules?: readonly TextRule[];
     /** Seeds only a missing editable document. Defaults to an empty list. */
-    readonly initialRules?: readonly EnglishRule[];
+    readonly initialRules?: readonly TextRule[];
     readonly provider: DecisionProvider;
-    readonly settings: EnglishPolicySettings;
+    readonly settings: TextPolicySettings;
   };
 }
 

@@ -606,7 +606,7 @@ later. The [send contract](/reference/spec/host/messaging#closed-failures)
 defines these outcomes.
 
 For `policy_update`, `not-configured` means the message policy has no
-`english` block: add one with a decision provider and restart the daemon, as
+`text` block: add one with a decision provider and restart the daemon, as
 [Turn on the message firewall](/guides/message-firewall) describes. A daemon
 without a message policy lists no `policy_read`, `policy_update` or
 `firewall_decisions` tool, and a call to one fails with `Tool <name> not found`.

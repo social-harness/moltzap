@@ -2,6 +2,7 @@
 
 import type { DatabaseSync } from "node:sqlite";
 import { Schema } from "effect";
+import { createHash } from "node:crypto";
 import { sameBytes } from "../../encoding/canonical-json.js";
 import {
   readBytes,
@@ -28,6 +29,7 @@ import {
   type FirewallEvidenceRange,
   type FirewallEvidenceSlice,
   type FirewallEvidenceSlices,
+  type FirewallEvidenceSnapshot,
   type FirewallHistoryEntry,
   type FirewallInboxEntry,
   type FirewallLocalAdmission,
@@ -61,6 +63,24 @@ const auditDisposition = Schema.Literal(
   "withheld",
 );
 
+const evidenceSnapshotSchema = Schema.Struct({
+  ranges: Schema.Array(
+    Schema.Struct({
+      beforeDelivery: Schema.optional(DeliveryToken),
+      beforeRecord: Schema.optional(Schema.NonEmptyString),
+      conversationId: Schema.optional(Schema.NonEmptyString),
+      conversation: Schema.optional(Schema.NonEmptyString),
+    }),
+  ),
+  maximumRecords: Schema.Int.pipe(Schema.between(1, 1024)),
+  digest: Schema.String.pipe(Schema.pattern(/^[a-f0-9]{64}$/u)),
+});
+const snapshotJson = Schema.parseJson(evidenceSnapshotSchema);
+const snapshotEncoder = Schema.encodeSync(snapshotJson);
+const snapshotDecoder = Schema.decodeUnknownSync(snapshotJson, {
+  onExcessProperty: "error",
+});
+
 /** Store test seam for attempts in insertion order, including checks in progress. */
 export function readFirewallAuditPage(
   database: DatabaseSync,
@@ -71,7 +91,7 @@ export function readFirewallAuditPage(
   }
   return database
     .prepare(`
-    SELECT rowid AS sequence, check_id, direction, revision,
+    SELECT rowid AS sequence, check_id, direction, canonical_snapshot,
       canonical_candidate, canonical_input, canonical_result, disposition
     FROM firewall_checks WHERE rowid > ? ORDER BY rowid LIMIT 32
   `)
@@ -173,7 +193,14 @@ export function readFirewallEvidence(
   input: FirewallEvidenceRange & { readonly maximumRecords: number },
 ): FirewallEvidence {
   const { slices, ...captured } = readFirewallEvidenceSlices(database, {
-    ranges: [input],
+    ranges: [
+      {
+        beforeDelivery: input.beforeDelivery,
+        beforeRecord: input.beforeRecord,
+        conversationId: input.conversationId,
+        conversation: input.conversation,
+      },
+    ],
     maximumRecords: input.maximumRecords,
   });
   const [slice] = slices;
@@ -184,7 +211,7 @@ export function readFirewallEvidence(
 }
 
 /**
- * Several windows read at one revision, so the checks of one result's texts
+ * Several windows read in one synchronous capture, so the checks of one result's texts
  * compare against one capture and commit together.
  */
 export function readFirewallEvidenceSlices(
@@ -201,11 +228,16 @@ export function readFirewallEvidenceSlices(
   ) {
     throw new StoreSignal("invalid-input");
   }
+  const slices = input.ranges.map((range) =>
+    readSlice(database, range, input.maximumRecords),
+  );
   return {
-    revision: firewallRevision(database),
-    slices: input.ranges.map((range) =>
-      readSlice(database, range, input.maximumRecords),
-    ),
+    snapshot: {
+      ranges: input.ranges.map((range) => ({ ...range })),
+      maximumRecords: input.maximumRecords,
+      digest: evidenceDigest(input, slices),
+    },
+    slices,
   };
 }
 
@@ -251,13 +283,13 @@ export function beginFirewallAttempt(
   requireBytes(attempt.canonicalInput);
   database
     .prepare(`
-    INSERT INTO firewall_checks (check_id, direction, revision, canonical_candidate, canonical_input)
+    INSERT INTO firewall_checks (check_id, direction, canonical_snapshot, canonical_candidate, canonical_input)
     VALUES (?, ?, ?, ?, ?)
   `)
     .run(
       attempt.checkId,
       attempt.direction,
-      attempt.revision,
+      Buffer.from(snapshotEncoder(attempt.snapshot), "utf8"),
       attempt.canonicalCandidate,
       attempt.canonicalInput,
     );
@@ -315,7 +347,10 @@ export function admitFirewallLocalItem(
     if (admission.deterministic !== undefined) {
       beginFirewallAttempt(database, {
         ...admission.deterministic,
-        revision: firewallRevision(database),
+        snapshot: readFirewallEvidenceSlices(database, {
+          ranges: [],
+          maximumRecords: 1,
+        }).snapshot,
       });
       completeFirewallCheck(database, admission.deterministic, "admitted");
     }
@@ -418,7 +453,7 @@ export function compareFirewallCheck(
     canonicalCandidate,
   );
   const disposition = checkDisposition(
-    staysFresh(completion, checked.revision, firewallRevision(database)),
+    staysFresh(completion, () => snapshotIsCurrent(database, checked.snapshot)),
     completion,
   );
   completeFirewallCheck(database, completion, disposition);
@@ -497,7 +532,7 @@ export function readFirewallDecisions(database: DatabaseSync, since = 0) {
     throw new StoreSignal("invalid-input");
   }
   return database
-    .prepare(`SELECT rowid AS sequence, check_id, direction, revision,
+    .prepare(`SELECT rowid AS sequence, check_id, direction, canonical_snapshot,
     canonical_candidate, canonical_input, canonical_result, disposition, decided_at
     FROM firewall_checks WHERE decided_at >= ?
     ORDER BY decided_at DESC, rowid DESC LIMIT 100`)
@@ -509,7 +544,7 @@ export function readFirewallDecisions(database: DatabaseSync, since = 0) {
 }
 
 /**
- * Complete a local item's checks at the current revision, all stale when any
+ * Complete a local item's checks against current evidence, all stale when any
  * admitting one is.
  * @returns Whether the checks were fresh.
  */
@@ -517,18 +552,27 @@ function completeLocalChecks(
   database: DatabaseSync,
   admission: FirewallLocalAdmission,
 ): boolean {
-  const revision = firewallRevision(database);
+  const compared = new Map<string, boolean>();
   const started = admission.completions.map((completion) => ({
     completion,
-    revision: checkingRow(
+    snapshot: checkingRow(
       database,
       completion,
       "incoming",
       admission.queuedItem,
-    ).revision,
+    ).snapshot,
   }));
   const fresh = started.every((check) =>
-    staysFresh(check.completion, check.revision, revision),
+    staysFresh(check.completion, () => {
+      const key = snapshotEncoder(check.snapshot);
+      const known = compared.get(key);
+      if (known !== undefined) {
+        return known;
+      }
+      const current = snapshotIsCurrent(database, check.snapshot);
+      compared.set(key, current);
+      return current;
+    }),
   );
   for (const { completion } of started) {
     completeFirewallCheck(
@@ -566,10 +610,10 @@ function checkingRow(
   completion: FirewallCompletion,
   direction: FirewallAttempt["direction"],
   canonicalCandidate: Uint8Array,
-): { readonly revision: number } {
+): { readonly snapshot: FirewallEvidenceSnapshot } {
   const row = database
     .prepare(
-      "SELECT direction, revision, canonical_candidate, disposition FROM firewall_checks WHERE check_id = ?",
+      "SELECT direction, canonical_snapshot, canonical_candidate, disposition FROM firewall_checks WHERE check_id = ?",
     )
     .get(completion.checkId);
   if (
@@ -580,7 +624,7 @@ function checkingRow(
     throw new StoreSignal("conflict");
   }
   requireSameBytes(readBytes(row, "canonical_candidate"), canonicalCandidate);
-  return { revision: readInteger(row, "revision") };
+  return { snapshot: readSnapshot(row) };
 }
 
 function settleQueuedItem(
@@ -606,7 +650,7 @@ function auditEntry(
     direction: Schema.decodeUnknownSync(Schema.Literal("incoming", "outgoing"))(
       readText(row, "direction"),
     ),
-    revision: readInteger(row, "revision"),
+    snapshot: readSnapshot(row),
     canonicalCandidate: readBytes(row, "canonical_candidate"),
     canonicalInput: readBytes(row, "canonical_input"),
     disposition: Schema.decodeUnknownSync(auditDisposition)(
@@ -619,18 +663,13 @@ function auditEntry(
 /**
  * Whether a check still holds at commit: a withholding check always does,
  * as does a shadow check, and an admitting one only while the evidence
- * revision it began at is current.
+ * snapshot it began with still matches.
  */
 function staysFresh(
   completion: FirewallCompletion,
-  startedRevision: number,
-  currentRevision: number,
+  current: () => boolean,
 ): boolean {
-  return (
-    !completion.admit ||
-    completion.shadow === true ||
-    startedRevision === currentRevision
-  );
+  return !completion.admit || completion.shadow === true || current();
 }
 
 function checkDisposition(
@@ -943,15 +982,62 @@ function queuedEntry(
   };
 }
 
-/** Revisions cover range membership and visibility, including known absences. */
-function firewallRevision(database: DatabaseSync): number {
-  const row = database
-    .prepare("SELECT revision FROM firewall_evidence WHERE singleton = 1")
-    .get();
-  if (row === undefined) {
-    throw new StoreSignal("corrupt");
-  }
-  return readInteger(row, "revision");
+/** The snapshot's tuple encoding fixes field order and keeps missing candidates as explicit nulls. */
+function evidenceDigest(
+  input: Pick<FirewallEvidenceSnapshot, "ranges" | "maximumRecords">,
+  slices: readonly FirewallEvidenceSlice[],
+): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify([
+        input.maximumRecords,
+        input.ranges.map((range) => [
+          range.beforeDelivery ?? null,
+          range.beforeRecord ?? null,
+          range.conversationId ?? null,
+          range.conversation ?? null,
+        ]),
+        slices.map((slice) => [
+          slice.pendingOutgoing,
+          slice.overflow,
+          slice.earlierHistoryOmitted,
+          slice.candidate === undefined ? null : evidenceEntry(slice.candidate),
+          slice.history.map(evidenceEntry),
+        ]),
+      ]),
+    )
+    .digest("hex");
+}
+
+function evidenceEntry(entry: FirewallHistoryEntry | FirewallLocalEntry) {
+  return "canonicalEntry" in entry
+    ? ["local", Buffer.from(entry.canonicalEntry).toString("base64")]
+    : [
+        "record",
+        Buffer.from(entry.canonicalRecordCore).toString("base64"),
+        Buffer.from(entry.canonicalMembership).toString("base64"),
+        entry.visible,
+        entry.answer ?? null,
+      ];
+}
+
+/** Reading is synchronous inside the caller's transaction, so comparison and admission cannot interleave. */
+function snapshotIsCurrent(
+  database: DatabaseSync,
+  snapshot: FirewallEvidenceSnapshot,
+): boolean {
+  return (
+    readFirewallEvidenceSlices(database, snapshot).snapshot.digest ===
+    snapshot.digest
+  );
+}
+
+function readSnapshot(
+  row: Readonly<Record<string, unknown>>,
+): FirewallEvidenceSnapshot {
+  return snapshotDecoder(
+    Buffer.from(readBytes(row, "canonical_snapshot")).toString("utf8"),
+  );
 }
 
 function requireQueueFrontier(

@@ -13,7 +13,7 @@ import type {
 /**
  * One deterministic rule a built-in and the collective norm bundle both
  * register: its description, the statement the bundle's edition records in
- * place of English text, and its finding on one send.
+ * place of natural-language text, and its finding on one send.
  */
 export interface CodeRule {
   readonly description: RuleDescription;

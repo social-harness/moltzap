@@ -216,7 +216,7 @@ durability votes, certified heads, catch-up/re-anchor state, and pending
 delivery acknowledgment, classified runtime inbox items and tombstones, and the
 webhook subscription and pending callback.
 Message-policy installations also use a private incoming queue with each
-result's provenance, an evidence revision, retained check inputs/results,
+result's provenance, evidence snapshots, retained check inputs/results,
 editable natural-language rules, activation records, the local evidence admitted
 results and failures leave, which answer records a result showed, and
 optional local guidance beside the inbox payload, which for a result is its
@@ -333,22 +333,26 @@ payloads are exact too and change only in a reset release.
 
 When a firewall is installed, from a message-policy document or with
 `Daemon.withFirewall`, the post-registration owner and
-trusted-local catalogs also include these tools. Tunnel runtime authority cannot
-discover or call them; the baseline daemon does not list them.
+trusted-local catalogs also include these tools. Runtime authority can discover
+and call `policy_update` with the restricted norm-edit authority below. It
+cannot read policy documents, decisions or conversation history. The baseline
+daemon does not list policy tools.
 
 | Tool | Input | Result |
 | --- | --- | --- |
 | `policy_read` | `{}` | `{rules, fixedRules, activeRevision}`; editable rule documents and every fixed rule as `FixedRule` |
 | `policy_update` | `{add?: (Rule \| {behavior: string})[], remove?: string[]}` | `{activeRevision}` after persistence and activation |
-| `firewall_decisions` | `{since?: number}` | `{decisions: [{checkId, time, direction, peerAgentId, outcome, disposition, cause, decidedBy: [{ruleId, from, advice?}], checkedRuleIds, activeRevision}], activations: [{time, activeRevision, addedRuleIds, removedRuleIds}]}` |
+| `firewall_decisions` | `{since?: number}` | `{decisions: [{checkId, time, direction, peerAgentId, outcome, disposition, cause, decidedBy: [{ruleId, from, owner?, advice?}], checkedRuleIds, activeRevision}], activations: [{time, activeRevision, addedRuleIds, removedRuleIds}]}` |
 
 `Rule`, `FixedRule` and the atomic edit/failure contract are defined by
-[editable natural-language policy](./message-policy.md#editable-english-policy).
+[editable natural-language policy](./message-policy.md#editable-text-policy).
 Invalid MCP shapes are invalid-argument errors; semantic update errors carry
 one closed policy failure reason and name the failing rule, as that section
-describes. Fixed ids are refused in both `add` and `remove`. These management
-tools check owner authority, not peer/contact permissions; deployments express
-contact permissions through policy norms.
+describes. Fixed ids are refused in both `add` and `remove`. The daemon assigns update authority from the authenticated MCP role. Runtime
+authority can add norms and remove or replace only runtime-owned norms. Owner
+and trusted-local authority can edit any editable rule. A forbidden batch
+changes neither active nor persisted rules. Peer text cannot select authority;
+deployments express contact permissions through policy norms.
 
 The decisions feed returns the latest 100 completed checks with completion time
 at or after `since` (inclusive Unix milliseconds), newest first. Group outgoing
@@ -360,7 +364,7 @@ reports admission, withholding or staleness. `cause` says how the outcome
 came about (`judgment`, `uncertain`, `unavailable`, `code`, `endpoint` or
 `default`), and `decidedBy` names the rules that produced it, each with
 where it is defined (`from`: `code`, `fixed` or `editable`, as `policy_read`
-lists it) and its registered `advice` when it has one, as specified by
+lists it), its captured `owner` for text rules, and its registered `advice` when it has one, as specified by
 [decision reasons](./message-policy.md#decision-reasons).
 `checkedRuleIds` lists every rule with a finding in the completed chain.
 The feed contains no message text, owner facts or provider traces; its only

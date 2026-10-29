@@ -242,7 +242,7 @@
         "src/firewall/evaluator/index.ts",
         "src/firewall/evaluator/contract/index.ts"
       ],
-      "reason": "Code and English evaluation and their shared evidence and check contracts"
+      "reason": "Code and Text evaluation and their shared evidence and check contracts"
     },
     {
       "name": "firewall-outcome",
@@ -504,7 +504,7 @@
       "folders": [
         "firewall/evaluator"
       ],
-      "reason": "Code and English evaluation and their shared evidence and check contracts"
+      "reason": "Code and Text evaluation and their shared evidence and check contracts"
     },
     {
       "name": "release",

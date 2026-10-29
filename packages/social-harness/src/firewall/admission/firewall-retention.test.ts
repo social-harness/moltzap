@@ -56,7 +56,9 @@ it("decodes an older retained trace while projecting only the judgment", () =>
     yield* subject.store.beginFirewallAttempt({
       checkId,
       direction: "outgoing",
-      revision: 0,
+      snapshot: (yield* subject.store.readFirewallEvidence({
+        maximumRecords: 1,
+      })).snapshot,
       canonicalCandidate: retained.canonicalCandidate,
       canonicalInput: yield* encodeRuntimeValue(retained.input),
     });

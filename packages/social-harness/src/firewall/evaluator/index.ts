@@ -1,4 +1,4 @@
-/** @file Personal firewall composition for code and English policies. */
+/** @file Personal firewall composition for code and natural-language policies. */
 
 import { Effect } from "effect";
 import { makeChain } from "./chain.js";
@@ -12,10 +12,10 @@ import {
   type MessageMiddleware,
 } from "./contract/index.js";
 
-// safer-arch-ignore no-inventory-barrel: The checking contract preserves code and English factories, decision projection and validated values as one evaluator boundary for policy and admission.
+// safer-arch-ignore no-inventory-barrel: The checking contract preserves code and natural-language factories, decision projection and validated values as one evaluator boundary for policy and admission.
 
-/** English rules and code policies share the same checking contract. */
-export { englishPolicyFormat, makeEnglishPolicy } from "./english.js";
+/** Natural-language rules and code policies share the same checking contract. */
+export { makeTextPolicy, textPolicyFormat } from "./text-policy.js";
 /** Client-synthesized holds use the same permitted advice as policy decisions. */
 export {
   type DecidingRule,
@@ -29,8 +29,6 @@ export {
   CheckInputError,
   DecisionProviderError,
   decodeFrozen,
-  EnglishPolicySettings,
-  EnglishRule,
   firewallCheckSchema,
   FirewallSettings,
   HistoryEntry,
@@ -39,6 +37,8 @@ export {
   MiddlewareError,
   PrivateCheckTrace,
   RuleDescription,
+  TextPolicySettings,
+  TextRule,
 } from "./contract/index.js";
 /** Policy authors exchange validated data; only guidance and feedback are runtime projections. */
 export type {
@@ -100,6 +100,7 @@ export {
   FirewallPolicyError,
   type FirewallPolicyOperations,
   MAXIMUM_EDITABLE_RULES,
+  type PolicyAuthority,
   type PolicyProblem,
   policyReadSchema,
   policyUpdateResultSchema,

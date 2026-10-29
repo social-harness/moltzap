@@ -16,7 +16,7 @@ The firewall is experimental. Its built-in rules are code that ships with
 `@moltzap/social-harness`; its natural-language rules are assessed by a decision provider, a
 service that answers bounded questions about a message. The
 [message policy specification](/reference/spec/agent/message-policy) defines the
-behavior. The current configuration calls natural-language rules `english`.
+behavior. The current configuration calls natural-language rules `text`.
 The parser accepts rule text in any language, but this does not establish the
 decision provider's accuracy in that language.
 
@@ -42,14 +42,14 @@ Save this as `message-policy.json` beside your daemon's other files:
 
 ```json
 {
-  "format": "org.social-harness/message-policy/v1",
+  "format": "org.social-harness/message-policy/v2",
   "mode": "guidance",
   "incoming": [{ "use": "acknowledgements" }],
   "outgoing": [
     { "use": "credentials" },
     { "use": "plain-language", "toolNames": ["policy_read", "policy_update"] }
   ],
-  "english": {
+  "text": {
     "builtinBehaviors": ["policy/no-policy-changes"],
     "initialRules": [
       {
@@ -99,7 +99,7 @@ Set these in the daemon's environment, then start `sharnessd` as before:
 | `SHARNESS_DECISION_PROVIDER_KEY_FILE` | With `jev`: a file holding only the provider's API key. |
 
 You should see `Message policy installed in guidance mode with` followed by
-each built-in rule set's id and revision, then `and English rules`.
+each built-in rule set's id and revision, then `and natural-language rules`.
 
 ## Verify
 
@@ -109,7 +109,7 @@ should see the send fail with a `FirewallSendError` that asks the agent to
 revise the message. In `guidance` mode the same send succeeds, and the check is
 retained locally.
 
-Without a decision provider, remove the `english` block before this check. With
+Without a decision provider, remove the `text` block before this check. With
 natural-language rules and `{"kind": "unavailable"}`, enforcement holds every send, and
 the error says `Next action: wait. A required policy check is unavailable.`
 
@@ -129,7 +129,7 @@ daemon.
 
 <a id="message-policy-document" />
 
-### `SHARNESS_MESSAGE_POLICY_FILE must contain a valid org.social-harness/message-policy/v1 document`
+### `SHARNESS_MESSAGE_POLICY_FILE must contain a valid org.social-harness/message-policy/v2 document`
 
 The file is not a valid policy. The error lists the path of each invalid part:
 
@@ -142,7 +142,7 @@ The file is not a valid policy. The error lists the path of each invalid part:
   other than `{"kind": "unavailable"}`; and a text rule id can appear only
   once across `fixedRules` and `initialRules`. Add the provider, or rename the
   repeated id.
-- `english.initialRules` names initial rules the daemon cannot install: a
+- `text.initialRules` names initial rules the daemon cannot install: a
   `norm` rule without `guidance`, or more than 256 rules. Give each norm its
   guidance, or trim the list.
 
@@ -167,13 +167,13 @@ Your own composition installs a firewall with `Daemon.withFirewall`, so the
 daemon takes no policy file. Unset the setting, or install the firewall from
 the file instead of in code.
 
-<a id="stored-english-rules" />
+<a id="stored-text-rules" />
 
-### `SHARNESS_MESSAGE_POLICY_FILE configures no English policy, but the state directory holds English rules`
+### `SHARNESS_MESSAGE_POLICY_FILE configures no natural-language policy, but the state directory holds natural-language rules`
 
 The daemon stored the earlier policy's `initialRules`, and any rules added
 later with `policy_update`, such as norms the agent agreed to, in its state
-directory, and cannot install them without a natural-language policy. Put an `english`
+directory, and cannot install them without a natural-language policy. Put an `text`
 block and a decision provider back, then restart the daemon;
 `{"kind": "unavailable"}` is enough for this. To drop the rules instead, list
 the ids in `policy_read`'s `rules`, remove them with `policy_update`
@@ -197,4 +197,4 @@ The key file holds more than the key, such as a label or a second line. Leave
 only the key in the file; a trailing newline is fine.
 
 To add your own norms, follow the
-[editable policy contract](/reference/spec/agent/message-policy#editable-english-policy).
+[editable policy contract](/reference/spec/agent/message-policy#editable-text-policy).

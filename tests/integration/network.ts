@@ -44,7 +44,7 @@ const MESSAGE = "Hi Bob, this is Alice.";
 
 /** An enforcement policy with only the credentials rule, needing no decision provider. */
 const FIREWALL_POLICY = JSON.stringify({
-  format: "org.social-harness/message-policy/v1",
+  format: "org.social-harness/message-policy/v2",
   mode: "enforcement",
   outgoing: [{ use: "credentials" }],
 });

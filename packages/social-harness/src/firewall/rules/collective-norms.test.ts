@@ -2,7 +2,7 @@
  * @file The collective norm bundle installed from a message-policy document:
  * the code rules refuse a non-facilitator's group collective, a second open
  * request in one conversation and acknowledgement-only group posts; the
- * English rules guide received items; and every member registers the same
+ * natural-language rules guide received items; and every member registers the same
  * id and revision.
  */
 
@@ -25,7 +25,7 @@ import {
 } from "../../daemon/index.js";
 import { packageVersion } from "../../release/index.js";
 
-const FORMAT = "org.social-harness/message-policy/v1";
+const FORMAT = "org.social-harness/message-policy/v2";
 
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- Closed judgments, next actions, rule ids and the bundle id are the public contract under test. */
 
@@ -111,7 +111,7 @@ it("refuses an acknowledgement-only post to several members", () =>
     expect(group.feedback.map((item) => item.nextAction)).toContain("stop");
   }));
 
-it("guides a received request with the bundle's English norms", () =>
+it("guides a received request with the bundle's natural-language norms", () =>
   Effect.gen(function* () {
     const firewall = yield* collectiveFirewall(false, firstChoiceProvider());
     const received = yield* firewall.checkIncoming(
@@ -195,9 +195,9 @@ it("records the same code digest for both facilitator roles", () =>
 
 it.each([
   [
-    "the English settings",
+    "the text settings",
     {
-      englishSettings: {
+      textSettings: {
         minimumProbability: 0.6,
         maximumRequestBytes: 384_000,
         timeoutMilliseconds: 15_000,
@@ -231,10 +231,10 @@ it("moves the code digest with a fixed rule's text", () =>
   Effect.gen(function* () {
     const rule = { id: "fixed", kind: "norm", guidance: "Be brief." } as const;
     const first = yield* chains(true, firstChoiceProvider(), {
-      english: { fixedRules: [{ ...rule, text: "Keep it short." }] },
+      text: { fixedRules: [{ ...rule, text: "Keep it short." }] },
     });
     const second = yield* chains(true, firstChoiceProvider(), {
-      english: { fixedRules: [{ ...rule, text: "Keep it shorter." }] },
+      text: { fixedRules: [{ ...rule, text: "Keep it shorter." }] },
     });
     expect(second.codeDigest).not.toBe(first.codeDigest);
   }));
@@ -417,7 +417,7 @@ function unsettledProvider(stage: DecisionRequest["stage"]): DecisionProvider {
 /**
  * Answers each question with the first of these choices it offers:
  * relevant, compliant, a permitted response. It exercises
- * composition, not English judgment.
+ * composition, not linguistic judgment.
  */
 function firstChoiceProvider(): DecisionProvider {
   return {

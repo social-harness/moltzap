@@ -1,6 +1,6 @@
-/** @file Serialized owner edits replace immutable chains without replacing daemon resources. */
+/** @file Serialized policy edits replace immutable chains without replacing daemon resources. */
 
-import { Clock, Effect, Option, Schema } from "effect";
+import { Clock, Effect, Schema, Struct } from "effect";
 import {
   decodeRuntimeValue,
   encodeRuntimeValue,
@@ -8,6 +8,7 @@ import {
   type FirewallActivation,
   type FirewallAuditEntry,
 } from "../../communication/store/index.js";
+import { exactStruct } from "../../encoding/exact.js";
 import {
   buildFirewall,
   captureRegistration,
@@ -20,25 +21,35 @@ import {
   decidingRules,
   decodeFrozen,
   editableDocumentSchema,
-  englishPolicyFormat,
-  EnglishPolicySettings,
-  EnglishRule,
   firewallDecisionsSchema,
   FirewallPolicyError,
   type FirewallPolicyOperations,
-  makeEnglishPolicy,
+  makeTextPolicy,
   MAXIMUM_EDITABLE_RULES,
+  type PolicyAuthority,
   type PolicyProblem,
-  type policyReadSchema,
+  policyReadSchema,
   policyUpdateSchema,
   PrivateCheckTrace,
   type RuleDescription,
+  textPolicyFormat,
+  TextPolicySettings,
+  TextRule,
 } from "../evaluator/index.js";
 import { localGuidanceImpersonationRule } from "../rules/index.js";
 import { decodeBehavior, MAXIMUM_BEHAVIOR_BYTES } from "./document/index.js";
 
 type FixedRules = typeof policyReadSchema.fields.fixedRules.Type;
-const englishId = "org.social-harness/english";
+const textId = "org.social-harness/text";
+const storedPolicyFormat = "org.social-harness/text-rules/v1";
+const ownedRulesSchema = policyReadSchema.fields.rules.pipe(
+  Schema.maxItems(MAXIMUM_EDITABLE_RULES),
+);
+const storedPolicySchema = exactStruct({
+  format: Schema.Literal(storedPolicyFormat),
+  rules: ownedRulesSchema,
+});
+type OwnedRule = (typeof ownedRulesSchema.Type)[number];
 
 const persistenceFailure = () =>
   new FirewallPolicyError({ reason: "persistence-failed" });
@@ -49,49 +60,49 @@ const invalidRule = (
 
 type PolicyEditPath = NonNullable<FirewallPolicyError["path"]>;
 
-/** Stored editable rules use the same exact document as owner edits. */
+/** The reset store accepts only daemon-assigned rule ownership. */
 function decodeStoredRules(bytes: Uint8Array) {
-  return decodeRuntimeValue(Schema.Unknown, bytes).pipe(
-    Effect.flatMap((stored) => decodeFrozen(editableDocumentSchema, stored)),
+  return decodeRuntimeValue(storedPolicySchema, bytes).pipe(
+    Effect.map(({ rules }) => rules),
     Effect.mapError(persistenceFailure),
   );
 }
 
-const captureEnglish = Effect.fn("captureEnglishOptions")(function* (
-  english: FirewallOptions["english"],
+const captureText = Effect.fn("captureTextOptions")(function* (
+  text: FirewallOptions["text"],
 ) {
-  if (english === undefined) {
+  if (text === undefined) {
     return undefined;
   }
   const fixedRules = yield* decodeFrozen(
-    Schema.Array(EnglishRule),
-    english.fixedRules ?? [],
+    Schema.Array(TextRule),
+    text.fixedRules ?? [],
   );
   yield* validateIds(fixedRules, [localGuidanceImpersonationRule.id]);
   const initialRules = yield* decodeFrozen(
     editableDocumentSchema,
-    english.initialRules ?? [],
+    text.initialRules ?? [],
   );
-  const settings = yield* decodeFrozen(EnglishPolicySettings, english.settings);
+  const settings = yield* decodeFrozen(TextPolicySettings, text.settings);
   const provenance =
-    english.provider.provenance === undefined
+    text.provider.provenance === undefined
       ? undefined
-      : yield* decodeFrozen(PrivateCheckTrace, english.provider.provenance);
+      : yield* decodeFrozen(PrivateCheckTrace, text.provider.provenance);
   return {
-    fixedRules: yield* decodeFrozen(Schema.Array(EnglishRule), [
+    fixedRules: yield* decodeFrozen(Schema.Array(TextRule), [
       ...fixedRules,
       localGuidanceImpersonationRule,
     ]),
     initialRules,
     settings,
     provider: {
-      decide: english.provider.decide.bind(english.provider),
+      decide: text.provider.decide.bind(text.provider),
       ...(provenance === undefined ? {} : { provenance }),
     },
   };
 });
 
-/** Fixed code and provider identity are captured once, before any owner operation can run. */
+/** Fixed code and provider identity are captured once, before any policy operation can run. */
 const captureOptions = Effect.fn("capturePolicyOptions")(function* (
   options: FirewallOptions,
 ) {
@@ -114,33 +125,39 @@ const captureOptions = Effect.fn("capturePolicyOptions")(function* (
       incoming,
       outgoing,
     },
-    english: yield* captureEnglish(options.english),
+    text: yield* captureText(options.text),
   };
 });
 
 type CapturedOptions = Effect.Effect.Success<ReturnType<typeof captureOptions>>;
 
 /** Build failures, including trusted factory defects, leave the active reference untouched. */
-function buildPolicy(options: CapturedOptions, rules: readonly EnglishRule[]) {
+function buildPolicy(options: CapturedOptions, rules: readonly OwnedRule[]) {
   return Effect.gen(function* () {
-    const documents = [...(options.english?.fixedRules ?? []), ...rules];
+    const documents = [
+      ...(options.text?.fixedRules ?? []),
+      ...rules.map(Struct.omit("owner")),
+    ];
     if (documents.length === 0) {
       return options.base;
     }
-    if (options.english === undefined) {
+    if (options.text === undefined) {
       return yield* new FirewallPolicyError({ reason: "not-configured" });
     }
-    const english = yield* makeEnglishPolicy({
-      id: englishId,
+    const text = yield* makeTextPolicy({
+      id: textId,
       rules: documents,
-      provider: options.english.provider,
-      settings: options.english.settings,
-      fixedRuleIds: options.english.fixedRules.map((rule) => rule.id),
+      provider: options.text.provider,
+      settings: options.text.settings,
+      fixedRuleIds: options.text.fixedRules.map((rule) => rule.id),
+      runtimeRuleIds: rules
+        .filter((rule) => rule.owner === "runtime")
+        .map((rule) => rule.id),
     });
     return yield* buildFirewall({
       ...options.fixed,
-      incoming: [...options.fixed.incoming, english],
-      outgoing: [...options.fixed.outgoing, english],
+      incoming: [...options.fixed.incoming, text],
+      outgoing: [...options.fixed.outgoing, text],
     });
   }).pipe(
     Effect.catchTag("CheckInputError", () =>
@@ -163,7 +180,7 @@ function described(rule: RuleDescription) {
 
 /**
  * Fixed rules in installation order, code incoming then code outgoing then
- * fixed English; an id declared more than once is listed at its first
+ * fixed text; an id declared more than once is listed at its first
  * declaration, as one middleware registered in both directions declares its
  * rules twice.
  */
@@ -177,8 +194,8 @@ function fixedRules(options: CapturedOptions): FixedRules {
           ...described(rule),
         })),
     ),
-    ...(options.english?.fixedRules ?? []).map((rule) => ({
-      from: "english" as const,
+    ...(options.text?.fixedRules ?? []).map((rule) => ({
+      from: "text" as const,
       ...described(rule),
       text: rule.text,
     })),
@@ -193,7 +210,7 @@ function fixedRules(options: CapturedOptions): FixedRules {
 }
 
 function validateIds(
-  rules: readonly EnglishRule[],
+  rules: readonly TextRule[],
   fixedRuleIds: readonly string[],
 ) {
   const collision = rules.find((rule) => fixedRuleIds.includes(rule.id));
@@ -211,7 +228,7 @@ function validateIds(
 }
 
 interface PolicyState {
-  rules: typeof editableDocumentSchema.Type;
+  rules: readonly OwnedRule[];
   readonly fixedRuleIds: readonly string[];
   active: Omit<InstalledFirewall, "current" | "policy">;
 }
@@ -234,7 +251,10 @@ export const installEditableFirewall = Effect.fn("installEditableFirewall")(
       .pipe(Effect.mapError(persistenceFailure));
     const rules =
       stored === undefined
-        ? (captured.english?.initialRules ?? [])
+        ? (captured.text?.initialRules ?? []).map((rule) => ({
+            ...rule,
+            owner: "owner" as const,
+          }))
         : yield* decodeStoredRules(stored);
     yield* validateIds(rules, fixedRuleIds);
     const active = yield* buildPolicy(captured, rules);
@@ -250,15 +270,17 @@ export const installEditableFirewall = Effect.fn("installEditableFirewall")(
           fixedRules: fixed,
           activeRevision: state.active.configurationDigest,
         })),
-      update: (request) =>
-        gate.withPermits(1)(updatePolicy(captured, store, state, request)),
+      update: (request, authority) =>
+        gate.withPermits(1)(
+          updatePolicy(captured, store, state, { request, authority }),
+        ),
       decisions: (request) => readDecisions(store, request),
     };
     return liveInstallation(state, captured.base.permits, policy);
   },
 );
 
-/** Live handles follow owner edits; captured handles keep one installation throughout a check. */
+/** Live handles follow policy edits; captured handles keep one installation throughout a check. */
 function liveInstallation(
   state: PolicyState,
   permits: Effect.Semaphore,
@@ -278,17 +300,17 @@ function liveInstallation(
 
 function persistRules(
   store: EndpointStore,
-  rules: readonly EnglishRule[],
+  rules: readonly OwnedRule[],
   activation?: FirewallActivation,
 ) {
-  return encodeRuntimeValue(rules).pipe(
+  return encodeRuntimeValue({ format: storedPolicyFormat, rules }).pipe(
     Effect.flatMap((bytes) => store.writeFirewallPolicy(bytes, activation)),
     Effect.mapError(persistenceFailure),
   );
 }
 
 interface RuleChange {
-  readonly add: readonly EnglishRule[];
+  readonly add: typeof editableDocumentSchema.Type;
   readonly remove: readonly string[];
 }
 
@@ -328,14 +350,16 @@ function behaviorRule(text: string, path: PolicyEditPath) {
  * document keeps or the edit adds twice, or more rules than the limit.
  */
 function editedRules(
-  rules: readonly EnglishRule[],
+  rules: readonly OwnedRule[],
   fixedRuleIds: readonly string[],
   { add, remove }: RuleChange,
+  authority: PolicyAuthority,
 ) {
   return Effect.gen(function* () {
     yield* Effect.forEach(
       remove,
-      (ruleId, index) => removable(rules, fixedRuleIds, ruleId, index),
+      (ruleId, index) =>
+        removable(rules, fixedRuleIds, { ruleId, index, authority }),
       { concurrency: 1, discard: true },
     );
     const kept = rules.filter((rule) => !remove.includes(rule.id));
@@ -348,17 +372,35 @@ function editedRules(
     if (kept.length + add.length > MAXIMUM_EDITABLE_RULES) {
       return yield* invalidRule("editable-limit");
     }
-    return yield* decodeFrozen(editableDocumentSchema, [...kept, ...add]).pipe(
-      Effect.mapError(() => invalidRule("schema")),
-    );
+    if (authority === "runtime") {
+      const invalidIndex = add.findIndex((rule) => rule.kind !== "norm");
+      const invalid = add[invalidIndex];
+      if (invalid !== undefined) {
+        return yield* invalidRule("not-norm", {
+          path: ["add", invalidIndex],
+          ruleId: invalid.id,
+        });
+      }
+    }
+    return yield* decodeFrozen(ownedRulesSchema, [
+      ...kept,
+      ...add.map((rule) => ({ ...rule, owner: authority })),
+    ]).pipe(Effect.mapError(() => invalidRule("schema")));
   });
 }
 
 function removable(
-  rules: readonly EnglishRule[],
+  rules: readonly OwnedRule[],
   fixedRuleIds: readonly string[],
-  ruleId: string,
-  index: number,
+  {
+    ruleId,
+    index,
+    authority,
+  }: {
+    readonly ruleId: string;
+    readonly index: number;
+    readonly authority: PolicyAuthority;
+  },
 ) {
   const path: PolicyEditPath = ["remove", index];
   if (fixedRuleIds.includes(ruleId)) {
@@ -366,15 +408,21 @@ function removable(
       new FirewallPolicyError({ reason: "fixed-rule", ruleId, path }),
     );
   }
-  return rules.some((rule) => rule.id === ruleId)
+  const rule = rules.find((entry) => entry.id === ruleId);
+  if (rule?.owner === "owner" && authority === "runtime") {
+    return Effect.fail(
+      new FirewallPolicyError({ reason: "owner-rule", ruleId, path }),
+    );
+  }
+  return rule !== undefined
     ? Effect.void
     : Effect.fail(invalidRule("unknown-id", { path, ruleId }));
 }
 
 function addable(
-  before: readonly EnglishRule[],
+  before: readonly TextRule[],
   fixedRuleIds: readonly string[],
-  rule: EnglishRule,
+  rule: TextRule,
   index: number,
 ) {
   const path: PolicyEditPath = ["add", index];
@@ -392,14 +440,25 @@ function updatePolicy(
   captured: CapturedOptions,
   store: EndpointStore,
   state: PolicyState,
-  request: typeof policyUpdateSchema.Type,
+  {
+    request,
+    authority,
+  }: {
+    readonly request: typeof policyUpdateSchema.Type;
+    readonly authority: PolicyAuthority;
+  },
 ) {
   return Effect.gen(function* () {
     const change = yield* decodeFrozen(policyUpdateSchema, request).pipe(
       Effect.mapError(() => invalidRule("schema")),
       Effect.flatMap((decoded) => resolvedChange(decoded)),
     );
-    const next = yield* editedRules(state.rules, state.fixedRuleIds, change);
+    const next = yield* editedRules(
+      state.rules,
+      state.fixedRuleIds,
+      change,
+      authority,
+    );
     const replacement = yield* buildPolicy(captured, next);
     return yield* Effect.uninterruptible(
       persistRules(store, next, {
@@ -441,7 +500,11 @@ function readDecisions(
 
 function decisionRows(entry: FirewallAuditEntry & { readonly time: number }) {
   return decodeFirewallAuditEntry(entry).pipe(
-    Effect.map((check) => projectDecision(check, entry.time)),
+    Effect.flatMap((check) =>
+      ruleOrigin(check.input.installation[check.direction]).pipe(
+        Effect.map((origin) => projectDecision(check, entry.time, origin)),
+      ),
+    ),
   );
 }
 
@@ -453,11 +516,22 @@ type DecodedResult = NonNullable<DecodedCheck["result"]>;
 type DecisionRow = (typeof firewallDecisionsSchema.Type.decisions)[number];
 type Registration = DecodedCheck["input"]["installation"]["incoming"][number];
 
-const englishProvenance = Schema.parseJson(
-  Schema.Struct({ fixedRuleIds: Schema.optional(Schema.Array(Schema.String)) }),
+const textProvenance = Schema.parseJson(
+  Schema.Struct({
+    fixedRuleIds: Schema.Array(Schema.String),
+    runtimeRuleIds: Schema.Array(Schema.String),
+  }),
 );
 
-function projectDecision(check: DecodedCheck, time: number) {
+type RuleOrigin = (
+  rule: DecidingRule,
+) => Pick<DecisionRow["decidedBy"][number], "from" | "owner">;
+
+function projectDecision(
+  check: DecodedCheck,
+  time: number,
+  origin: RuleOrigin,
+) {
   const result = check.result;
   if (
     result === null ||
@@ -478,16 +552,15 @@ function projectDecision(check: DecodedCheck, time: number) {
   ];
   const registrations = check.input.installation[check.direction];
   const deciding = decidingRules(result.reason, registrations, result.checks);
-  const english = new Set(
+  const text = new Set(
     registrations
-      .filter((entry) => entry.provenance.format === englishPolicyFormat)
+      .filter((entry) => entry.provenance.format === textPolicyFormat)
       .map((entry) => entry.id),
   );
-  const cause = decisionCause(result, deciding, english);
-  const origin = ruleOrigin(registrations);
+  const cause = decisionCause(result, deciding, text);
   const decidedBy = deciding.map((rule) => ({
     ruleId: rule.ruleId,
-    from: origin(rule),
+    ...origin(rule),
     ...(rule.advice === undefined ? {} : { advice: rule.advice }),
   }));
   return peers.map((peerAgentId) => ({
@@ -506,54 +579,50 @@ function projectDecision(check: DecodedCheck, time: number) {
 
 /**
  * Where a deciding rule is defined, as `policy_read` lists it: a rule of the
- * editable English middleware is `fixed` or `editable`, and any other is
- * `code`. The fixed ids come from the installation the check retained. A
- * check retained before installations recorded them reports every English
- * rule as `editable`, so owner text is never presented as built-in text.
+ * editable text middleware is `fixed` or `editable`, and any other is
+ * `code`. The fixed ids come from the installation the check retained. Runtime ownership is
+ * also captured there, so later edits cannot rewrite an earlier decision.
  */
-function ruleOrigin(
-  registrations: readonly Registration[],
-): (rule: DecidingRule) => DecisionRow["decidedBy"][number]["from"] {
-  const english = registrations.find((entry) => entry.id === englishId);
-  const recorded =
-    english === undefined
-      ? undefined
-      : Option.getOrUndefined(
-          Schema.decodeUnknownOption(englishProvenance)(
-            english.provenance.data,
-          ),
-        )?.fixedRuleIds;
-  const fixed = new Set(recorded ?? []);
-  return (rule) => {
-    if (rule.middlewareId !== englishId) {
-      return "code";
-    }
-    return fixed.has(rule.ruleId) ? "fixed" : "editable";
-  };
+function ruleOrigin(registrations: readonly Registration[]) {
+  return Effect.gen(function* () {
+    const text = registrations.find(
+      (entry) =>
+        entry.id === textId && entry.provenance.format === textPolicyFormat,
+    );
+    const recorded =
+      text === undefined
+        ? { fixedRuleIds: [], runtimeRuleIds: [] }
+        : yield* Schema.decodeUnknown(textProvenance)(text.provenance.data);
+    const fixed = new Set(recorded.fixedRuleIds);
+    const runtime = new Set(recorded.runtimeRuleIds);
+    return (rule: DecidingRule): ReturnType<RuleOrigin> => {
+      if (rule.middlewareId !== text?.id) {
+        return { from: "code" };
+      }
+      return fixed.has(rule.ruleId)
+        ? { from: "fixed", owner: "owner" }
+        : {
+            from: "editable",
+            owner: runtime.has(rule.ruleId) ? "runtime" : "owner",
+          };
+    };
+  });
 }
 
-/**
- * The cause of a decision, read from its first English deciding rule, or
- * from its first deciding rule when no English rule decided it. A check
- * that could not run is `unavailable` from either kind of middleware,
- * including one that registers no rule; any other code finding is `code`.
- * Otherwise, with no deciding rule, an admission is the `default` and any
- * other outcome is the endpoint's own hold.
- */
 function decisionCause(
   result: DecodedResult,
   deciding: readonly DecidingRule[],
-  english: ReadonlySet<string>,
+  text: ReadonlySet<string>,
 ): DecisionRow["cause"] {
   const first =
-    deciding.find((rule) => english.has(rule.middlewareId)) ?? deciding[0];
+    deciding.find((rule) => text.has(rule.middlewareId)) ?? deciding[0];
   if (first === undefined) {
     return emptyCause(result);
   }
   if (first.finding === "unavailable") {
     return "unavailable";
   }
-  if (!english.has(first.middlewareId)) {
+  if (!text.has(first.middlewareId)) {
     return "code";
   }
   return first.finding === "uncertain" ? "uncertain" : "judgment";

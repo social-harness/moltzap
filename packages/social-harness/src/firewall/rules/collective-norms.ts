@@ -1,6 +1,6 @@
 /**
  * @file The collective norm bundle: code rules on how an agent opens and
- * posts to collectives, and English norms on gathering, announcing and
+ * posts to collectives, and natural-language norms on gathering, announcing and
  * settling, one registration per direction.
  */
 
@@ -9,15 +9,15 @@ import { packageVersion } from "../../release/index.js";
 import {
   type CheckInputError,
   type DecisionProvider,
-  type EnglishPolicySettings,
-  type EnglishRule,
-  makeEnglishPolicy,
+  makeTextPolicy,
   type Message,
   type MessageContext,
   type MessageMiddleware,
   type MiddlewareError,
   type MiddlewareInput,
   type MiddlewareResult,
+  type TextPolicySettings,
+  type TextRule,
 } from "../evaluator/index.js";
 import { noAcknowledgementPosts } from "./acknowledgements.js";
 import { oneOpenRequest } from "./open-requests.js";
@@ -31,7 +31,7 @@ import { type CodeRule, revisionOutcome, sha256 } from "./outcome.js";
 const COLLECTIVE_NORMS_ID = "org.social-harness/collective-norms";
 
 /**
- * The shipped behaviors in `behaviors/collectives/` the bundle's English norms
+ * The shipped behaviors in `behaviors/collectives/` the bundle's natural-language norms
  * are read from, each under its behavior name; the text has no other copy.
  * These are assessed on what the agent sends and on what it receives.
  */
@@ -107,17 +107,17 @@ export interface CollectiveNorms {
 
 /**
  * The bundle under its id and one revision. The incoming registration
- * assesses the incoming English rules; the outgoing one runs the code rules
- * first and asks the English assessor only when no code rule refused the
+ * assesses the incoming natural-language rules; the outgoing one runs the code rules
+ * first and asks the natural-language assessor only when no code rule refused the
  * send, so a deterministic refusal costs no decision provider call and keeps
  * its own feedback whatever the provider's state. The revision is the SHA-256
- * of the edition, both English middlewares' revisions, which hash the English
+ * of the edition, both natural-language middlewares' revisions, which hash the text
  * settings and question semantics, the history window the checks read, and
  * the decision provider's provenance.
  * It excludes `facilitator`, which only the outgoing registration's
  * provenance records, so every member of a run registers the same revision.
- * @param provider The service that assesses the English rules.
- * @param settings The English assessment bounds.
+ * @param provider The service that assesses the natural-language rules.
+ * @param settings The natural-language assessment bounds.
  * @param readBehavior Reads a shipped behavior by its pack and name. Policy
  *     composition passes it in, because this folder reads no files.
  * @param historyRecords The history window each check reads, if the policy
@@ -126,8 +126,8 @@ export interface CollectiveNorms {
  */
 export const collectiveNorms = Effect.fn("collectiveNorms")(function* (
   provider: DecisionProvider,
-  settings: EnglishPolicySettings,
-  readBehavior: (name: string) => Effect.Effect<EnglishRule>,
+  settings: TextPolicySettings,
+  readBehavior: (name: string) => Effect.Effect<TextRule>,
   historyRecords?: number,
 ): Effect.fn.Return<CollectiveNorms, CheckInputError> {
   const incomingRules = yield* Effect.forEach(
@@ -139,13 +139,13 @@ export const collectiveNorms = Effect.fn("collectiveNorms")(function* (
   );
   const outgoingRules = incomingRules.slice(1);
   const edition = editionOf(incomingRules, outgoingRules);
-  const incoming = yield* makeEnglishPolicy({
+  const incoming = yield* makeTextPolicy({
     id: COLLECTIVE_NORMS_ID,
     rules: incomingRules,
     settings,
     provider,
   });
-  const outgoing = yield* makeEnglishPolicy({
+  const outgoing = yield* makeTextPolicy({
     id: COLLECTIVE_NORMS_ID,
     rules: outgoingRules,
     settings,
@@ -154,7 +154,7 @@ export const collectiveNorms = Effect.fn("collectiveNorms")(function* (
   const revision = sha256(
     JSON.stringify({
       edition,
-      english: { incoming: incoming.revision, outgoing: outgoing.revision },
+      text: { incoming: incoming.revision, outgoing: outgoing.revision },
       historyRecords: historyRecords ?? null,
       provider: provider.provenance ?? null,
     }),
@@ -179,13 +179,13 @@ export const collectiveNorms = Effect.fn("collectiveNorms")(function* (
  * facilitator role is an input to the code rules' assessment, not part of
  * the edition. A change to how a code rule assesses that these fields do not
  * show bumps `edition`.
- * @param incoming The English rules assessed on what the agent receives.
- * @param outgoing The English rules assessed on what the agent sends.
+ * @param incoming The natural-language rules assessed on what the agent receives.
+ * @param outgoing The natural-language rules assessed on what the agent sends.
  * @returns The edition the revision and provenance record.
  */
 function editionOf(
-  incoming: readonly EnglishRule[],
-  outgoing: readonly EnglishRule[],
+  incoming: readonly TextRule[],
+  outgoing: readonly TextRule[],
 ) {
   return {
     edition: "org.social-harness/collective-norms/v1",
@@ -205,10 +205,10 @@ function editionOf(
 
 type Edition = ReturnType<typeof editionOf>;
 
-/** A send's code findings, then the English findings unless a code rule refused it. */
+/** A send's code findings, then the natural-language findings unless a code rule refused it. */
 function checkOutgoing(
   input: MiddlewareInput,
-  english: MessageMiddleware,
+  text: MessageMiddleware,
   facilitator: boolean,
 ): Effect.Effect<MiddlewareResult, MiddlewareError> {
   const code = CODE_RULES.map((rule) => ({
@@ -222,7 +222,7 @@ function checkOutgoing(
     return Effect.succeed({
       findings: [
         ...code,
-        ...english.rules.map((rule) => ({
+        ...text.rules.map((rule) => ({
           ruleId: rule.id,
           outcome: "not-applicable" as const,
         })),
@@ -230,7 +230,7 @@ function checkOutgoing(
       expectations: [],
     });
   }
-  return english.check(input).pipe(
+  return text.check(input).pipe(
     Effect.map(
       (result): MiddlewareResult => ({
         findings: [...code, ...result.findings],
@@ -243,11 +243,11 @@ function checkOutgoing(
 
 /**
  * The fields both directions' registrations share: the bundle's id and
- * revision, the English rules, and provenance holding the edition, the
- * role, if any, and the English middleware's own provenance.
+ * revision, the natural-language rules, and provenance holding the edition, the
+ * role, if any, and the natural-language middleware's own provenance.
  */
 function registration(
-  english: MessageMiddleware,
+  text: MessageMiddleware,
   revision: string,
   edition: Edition,
   role: Readonly<Record<string, boolean>>,
@@ -255,13 +255,13 @@ function registration(
   return {
     id: COLLECTIVE_NORMS_ID,
     revision,
-    rules: english.rules,
+    rules: text.rules,
     provenance: {
       format: "org.social-harness/collective-norms.v1",
       data: JSON.stringify({
         edition,
         ...role,
-        english: english.provenance ?? null,
+        text: text.provenance ?? null,
       }),
     },
   };

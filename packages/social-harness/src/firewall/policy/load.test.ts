@@ -9,18 +9,18 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, expect } from "vitest";
 import { readCredential } from "../../daemon/credentials.js";
-import { firewallInstallation } from "./index.js";
+import { decodeMessagePolicy, firewallInstallation } from "./index.js";
 
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- Exact environment names and closed reasons are the configuration contract under test. */
 
 const directories: string[] = [];
-const FORMAT = "org.social-harness/message-policy/v1";
+const FORMAT = "org.social-harness/message-policy/v2";
 const DOCUMENT = {
   format: FORMAT,
   mode: "guidance",
   incoming: [{ use: "acknowledgements" }],
   outgoing: [{ use: "credentials" }],
-  english: {
+  text: {
     fixedRules: [
       {
         id: "builtin.policy-owner",
@@ -67,7 +67,7 @@ it.each([
     "message-policy",
   ],
   [
-    "English rules without a decision provider",
+    "natural-language rules without a decision provider",
     () => ({ messagePolicyFile: file(DOCUMENT) }),
     "message-policy",
   ],
@@ -103,15 +103,15 @@ it.each([
     "message-policy-file",
   ],
   [
-    "an English rule id given as both fixed and initial",
+    "a text rule id given as both fixed and initial",
     () => ({
       messagePolicyFile: file({
         ...JEV_DOCUMENT,
-        english: {
-          fixedRules: DOCUMENT.english.fixedRules,
+        text: {
+          fixedRules: DOCUMENT.text.fixedRules,
           initialRules: [
             {
-              ...DOCUMENT.english.fixedRules[0],
+              ...DOCUMENT.text.fixedRules[0],
               kind: "norm",
               guidance: "Ask.",
             },
@@ -180,10 +180,10 @@ it("installs the document with its key and Client's default settings", () =>
     expect(options.maximumHistoryRecords).toBeUndefined();
     expect(options.settings.timeoutMilliseconds).toBeGreaterThan(0);
     expect(options.codeDigest).toMatch(/^[a-f0-9]{64}$/u);
-    expect(options.english?.fixedRules?.map((rule) => rule.id)).toEqual([
+    expect(options.text?.fixedRules?.map((rule) => rule.id)).toEqual([
       "builtin.policy-owner",
     ]);
-    expect(options.english?.provider.provenance?.data).toContain("jev-1.13.0");
+    expect(options.text?.provider.provenance?.data).toContain("jev-1.13.0");
   }));
 
 it("installs the example policy the message firewall guide documents", () =>
@@ -197,12 +197,12 @@ it("installs the example policy the message firewall guide documents", () =>
     );
     const options = yield* Effect.fromNullable(installed.options);
     expect(options.mode).toBe("guidance");
-    expect(options.english?.fixedRules?.map((rule) => rule.id)).toEqual([
+    expect(options.text?.fixedRules?.map((rule) => rule.id)).toEqual([
       "no-policy-changes",
     ]);
   }));
 
-it("installs English rules with an unavailable provider without reading a key file", () =>
+it("installs natural-language rules with an unavailable provider without reading a key file", () =>
   Effect.gen(function* () {
     const installed = yield* firewallInstallation(
       {
@@ -211,7 +211,7 @@ it("installs English rules with an unavailable provider without reading a key fi
       },
       readCredential,
     );
-    expect(installed.options?.english?.fixedRules).toHaveLength(1);
+    expect(installed.options?.text?.fixedRules).toHaveLength(1);
   }));
 
 /** The JSON policy between the example markers of the message firewall guide. */
@@ -249,5 +249,35 @@ function directory(): string {
   directories.push(created);
   return created;
 }
+
+it("accepts non-English text under the strict current document and rejects mixed keys", () =>
+  Effect.gen(function* () {
+    const document = {
+      ...UNAVAILABLE_DOCUMENT,
+      text: {
+        initialRules: [
+          {
+            id: "confirm",
+            kind: "norm",
+            text: "请先确认。",
+            guidance: "确认后再继续。",
+          },
+        ],
+      },
+    };
+    const decoded = yield* decodeMessagePolicy(JSON.stringify(document));
+    expect(decoded.text?.initialRules[0]?.text).toBe("请先确认。");
+    for (const invalid of [
+      { ...document, format: "org.social-harness/message-policy/v1" },
+      { ...document, english: document.text },
+      { ...document, englishSettings: {} },
+    ]) {
+      expect(
+        (yield* decodeMessagePolicy(JSON.stringify(invalid)).pipe(
+          Effect.either,
+        ))._tag,
+      ).toBe("Left");
+    }
+  }));
 
 /* eslint-enable agent-code-guard/no-hardcoded-assertion-literals -- Restore default assertion rules outside the configuration contract tests. */
