@@ -1,4 +1,8 @@
 /** @file Exercises NanoClaw native inbox and sends against the disposable network. */
+import {
+  type Network,
+  startNetwork,
+} from "@moltzap/integration-tests/process-network";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -7,7 +11,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { inspect, isDeepStrictEqual, promisify } from "node:util";
 
-import { type Network, startNetwork } from "../tests/network-fixture.ts";
+import { startDaemonContainer } from "../tests/daemon-container.ts";
 import { isRecord } from "../tests/test-support.ts";
 
 const IMAGE = process.env.NANOCLAW_INTEGRATION_IMAGE ?? "";
@@ -393,7 +397,7 @@ async function whileRouterHeld<Result>(
   network: Network,
   body: () => Promise<Result>,
 ): Promise<Result> {
-  const release = network.holdRouter();
+  const release = await network.holdRouter();
   try {
     return await body();
   } finally {
@@ -609,7 +613,7 @@ async function withNetwork(
     network: Network,
   ) => Promise<undefined>,
 ): Promise<undefined> {
-  const network = await startNetwork();
+  const network = await startNetwork(startDaemonContainer);
   try {
     const run = randomBytes(4).toString("hex");
     await body((role) => network.endpoint(`nanoclaw-${run}-${role}`), network);

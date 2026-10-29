@@ -35,7 +35,7 @@ for PKG in "$@"; do
   fi
 done
 
-MAX_N=$(node -e '
+node -e '
   const [prefix, ...responses] = process.argv.slice(1);
   // A package with exactly one published version comes back as a bare string.
   const counters = responses
@@ -43,7 +43,5 @@ MAX_N=$(node -e '
     .filter((version) => version.startsWith(prefix))
     .map((version) => Number.parseInt(version.slice(prefix.length), 10))
     .filter(Number.isInteger);
-  console.log(counters.length === 0 ? -1 : Math.max(...counters));
-' "$PREFIX" "${RESPONSES[@]}")
-
-echo "${PREFIX}$((MAX_N + 1))"
+  console.log(`${prefix}${counters.length === 0 ? 0 : Math.max(...counters) + 1}`);
+' "$PREFIX" "${RESPONSES[@]}"

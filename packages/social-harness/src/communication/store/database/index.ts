@@ -3,7 +3,6 @@
 /** SQLite ownership, transaction, and lifecycle primitives. */
 export {
   closeStoreState,
-  type HistorySnapshot,
   inspectStoreState,
   openStoreState,
   runStoreOperation,
@@ -15,8 +14,6 @@ export {
 export {
   copyBytes,
   EndpointStoreError,
-  type EndpointStoreFailure,
-  mapStoreFailure,
   mintContinuation,
   mintDeliveryToken,
   readBytes,

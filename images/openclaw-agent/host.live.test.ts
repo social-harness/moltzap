@@ -1,4 +1,8 @@
 /** @file Real OpenClaw and daemon containers deliver peer messages to local model stand-ins. */
+import {
+  type Network,
+  startNetwork,
+} from "@moltzap/integration-tests/process-network";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { once } from "node:events";
@@ -21,7 +25,7 @@ import { test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 import { fakeClaude } from "../tests/claude-fixture.ts";
-import { type Network, startNetwork } from "../tests/network-fixture.ts";
+import { startDaemonContainer } from "../tests/daemon-container.ts";
 
 const docker = promisify(execFile);
 /** Fixture state is copied before the normal host entrypoint secures its directories. */
@@ -289,7 +293,7 @@ for (const runtime of ["provider", "claude-cli"]) {
     { skip, timeout: 300_000 },
     async () => {
       const directory = await mkdtemp(join(tmpdir(), "openclaw-container-"));
-      const network = await startNetwork();
+      const network = await startNetwork(startDaemonContainer);
       const provider = await startProvider();
       const container = `openclaw-host-${runtime}-${Date.now()}`;
       try {

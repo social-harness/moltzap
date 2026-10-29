@@ -19,9 +19,7 @@
   "files": [
     "dist",
     "!dist/tsconfig.tsbuildinfo",
-    "bin",
-    "LICENSE",
-    "NOTICE"
+    "bin"
   ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -43,15 +41,6 @@
   },
   "bin": {
     "sharness-router": "./bin/sharness-router"
-  },
-  "scripts": {
-    "build": "nx run @moltzap/router:build",
-    "typecheck": "nx run @moltzap/router:typecheck",
-    "typecheck:tests": "nx run @moltzap/router:typecheck:tests",
-    "test": "nx run @moltzap/router:test",
-    "test:integration": "nx run @moltzap/router:test:integration",
-    "lint": "nx run @moltzap/router:lint",
-    "arch:check": "nx run @moltzap/router:arch:check"
   },
   "nx": {
     "targets": {
@@ -140,6 +129,5 @@
     "typescript": "catalog:",
     "vitest": "catalog:"
   },
-  "sharnessContentHash": "sha256:1d08edc115acab64bc85bb78675c57469c2416eec118a8685e04a2cad546f67f",
   "private": true
 }

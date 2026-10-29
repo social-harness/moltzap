@@ -1,17 +1,5 @@
 {
-  "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "composite": false,
-    "declaration": false,
-    "noEmit": true,
-    "allowImportingTsExtensions": true,
-    "erasableSyntaxOnly": true,
-    "module": "nodenext",
-    "moduleResolution": "nodenext",
-    "lib": [
-      "ES2024"
-    ]
-  },
+  "extends": "../tests/tsconfig.json",
   "include": [
     "*.ts"
   ]

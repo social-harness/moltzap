@@ -23,7 +23,7 @@ import {
 } from "./values.js";
 
 /** One process-local frozen management read. */
-export interface HistorySnapshot {
+interface HistorySnapshot {
   readonly records: readonly CertifiedRecord[];
   readonly offset: number;
 }

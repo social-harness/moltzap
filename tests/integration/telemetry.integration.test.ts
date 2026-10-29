@@ -8,7 +8,6 @@ import {
   type DaemonProcessFixture,
   makeDaemonProcessFixture,
   type ProcessInfrastructure,
-  processTrace,
 } from "./daemon-process-harness.js";
 import {
   acquireOtlpReceiver,
@@ -23,6 +22,7 @@ import {
   send,
   startParticipants,
 } from "./participants.js";
+import { processTrace } from "./process-trace.js";
 import {
   acquireRouterHoldProxy,
   type RouterHoldProxy,

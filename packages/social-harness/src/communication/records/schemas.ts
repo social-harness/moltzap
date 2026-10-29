@@ -163,14 +163,13 @@ export const ActionSignatureStatement = exactStruct({
 });
 export type ActionSignatureStatement = typeof ActionSignatureStatement.Type;
 
-export const DurabilityVoteStatement = exactStruct({
+const DurabilityVoteStatement = exactStruct({
   ...versionAndKind("durability_vote"),
   signerAgentId: AgentId,
   conversationId: ConversationId,
   membershipHash: MembershipHash,
   recordHash: RecordHash,
 });
-export type DurabilityVoteStatement = typeof DurabilityVoteStatement.Type;
 
 export const ReanchorVoteStatement = exactStruct({
   ...versionAndKind("reanchor_vote"),
@@ -180,26 +179,23 @@ export const ReanchorVoteStatement = exactStruct({
 });
 export type ReanchorVoteStatement = typeof ReanchorVoteStatement.Type;
 
-export const ActionCertificate = exactStruct({
+const ActionCertificate = exactStruct({
   ...versionAndKind("action_certificate"),
   actionHash: ActionHash,
   signatures: EvidenceMessages,
 });
-export type ActionCertificate = typeof ActionCertificate.Type;
 
-export const DurabilityCertificate = exactStruct({
+const DurabilityCertificate = exactStruct({
   ...versionAndKind("durability_certificate"),
   recordHash: RecordHash,
   votes: EvidenceMessages,
 });
-export type DurabilityCertificate = typeof DurabilityCertificate.Type;
 
-export const ReanchorCertificate = exactStruct({
+const ReanchorCertificate = exactStruct({
   ...versionAndKind("reanchor_certificate"),
   anchorHash: AnchorHash,
   votes: EvidenceMessages,
 });
-export type ReanchorCertificate = typeof ReanchorCertificate.Type;
 
 export const CompletedReanchor = exactStruct({
   ...versionAndKind("completed_reanchor"),
@@ -244,9 +240,7 @@ export const CatchUpRequest = exactStruct({
 );
 export type CatchUpRequest = typeof CatchUpRequest.Type;
 
-// eslint-disable-next-line agent-code-guard/no-exported-brand-constructor -- Private catch-up code composes the complete closed item union.
-export const CatchUpItem = Schema.Union(CertifiedRecord, CompletedReanchor);
-export type CatchUpItem = typeof CatchUpItem.Type;
+const CatchUpItem = Schema.Union(CertifiedRecord, CompletedReanchor);
 
 export const CatchUpAttestationStatement = exactStruct({
   ...versionAndKind("catch_up_attestation"),

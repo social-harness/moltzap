@@ -23,12 +23,12 @@ import {
   type DaemonProcessFixture,
   makeDaemonProcessFixture,
   makeRegistrationRequest,
-  processTrace,
 } from "./daemon-process-harness.js";
 import {
   credentialRefusalRemedy,
   messagePolicyFileSetting,
 } from "./expected-contracts.js";
+import { processTrace } from "./process-trace.js";
 import { arrayContaining, objectContaining } from "./test-matchers.js";
 
 const FORMAT = "org.social-harness/message-policy/v2";

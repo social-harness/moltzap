@@ -30,8 +30,8 @@ import {
   type DaemonProcessFixture,
   makeDaemonProcessFixture,
   makeRegistrationRequest,
-  processTrace,
 } from "./daemon-process-harness.js";
+import { processTrace } from "./process-trace.js";
 import {
   anyNumber,
   anyString,

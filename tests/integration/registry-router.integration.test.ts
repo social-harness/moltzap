@@ -48,7 +48,6 @@ import {
   makeSigningAuthority,
   managedProcess,
   processTestError,
-  processTrace,
   reservePort,
   ROUTER_BINARY,
   type RunningProcess,
@@ -57,6 +56,7 @@ import {
   stopProcess,
 } from "./daemon-process-harness.js";
 import { acquireLoopbackServer } from "./loopback-server.js";
+import { processTrace } from "./process-trace.js";
 const ADMISSION_CREDENTIAL = "registry-router-e2e-admission";
 const REGISTERED_KIND = "registered";
 const FOUND_KIND = "found";

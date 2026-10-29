@@ -43,9 +43,10 @@ const joinParticipant = (fixture: DaemonProcessFixture) =>
       Effect.forkScoped,
     );
     return { address: directAddress(fixture.agentName), endpoint, inbox };
-  });
+  }).pipe(Effect.withSpan("joinParticipant"));
 
-const registerFixture = (fixture: DaemonProcessFixture) =>
+/** Registers one running daemon through its management endpoint. */
+export const registerFixture = (fixture: DaemonProcessFixture) =>
   Effect.scoped(
     acquireDaemonManagementClient(fixture.endpoint).pipe(
       Effect.flatMap((management) =>

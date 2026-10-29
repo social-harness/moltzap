@@ -3,7 +3,7 @@
  * @file Tests for the release's package selection, content hash, and
  * host-code hash.
  *
- * Invoked via `pnpm test:select-packages`. The selection runs over an
+ * Run by `pnpm nx run workspace:test:release`. The selection runs over an
  * in-memory workspace whose content hash includes each sibling pin, as a
  * packed manifest does; the hashes run over real temporary directories.
  */

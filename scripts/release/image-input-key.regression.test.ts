@@ -729,9 +729,11 @@ for (const instruction of [
   });
 }
 
-/** Real build recipes exercise the exported key API against committed fixture inputs. */
+/** Real build recipes exercise the exported key API against committed fixture inputs, including the root licence they copy. */
 function realImageFixture(): string {
   const repo = fixture();
+  write(repo, "LICENSE", "license\n");
+  write(repo, "NOTICE", "notice\n");
   for (const service of ["registry", "router"]) {
     const docker = readFileSync(
       path.join(import.meta.dirname, `../../images/${service}/Dockerfile`),

@@ -56,26 +56,6 @@ export function moduleGraph(
   return [...seen.values()];
 }
 
-/** TypeScript's syntax tree distinguishes erased imports from imports executed by Node. */
-export function runtimeImports(text: string): readonly string[] {
-  const source = ts.createSourceFile(
-    "module.ts",
-    text,
-    ts.ScriptTarget.Latest,
-    true,
-  );
-  const found = new Set<string>();
-  function visit(node: ts.Node): void {
-    const specifier = runtimeSpecifier(node);
-    if (specifier !== undefined) {
-      found.add(specifier);
-    }
-    ts.forEachChild(node, visit);
-  }
-  visit(source);
-  return [...found];
-}
-
 /** Runtime import calls include CommonJS require as well as dynamic import. */
 export function runtimeCall(node: ts.CallExpression): boolean {
   return (
@@ -99,6 +79,26 @@ export function runtimeModule(
     !/\.d\.[cm]?ts$/u.test(relative) &&
     (/\.[cm]?[jt]s$/u.test(relative) || bin || /^#![^\n]*\bnode\b/u.test(text))
   );
+}
+
+/** TypeScript's syntax tree distinguishes erased imports from imports executed by Node. */
+function runtimeImports(text: string): readonly string[] {
+  const source = ts.createSourceFile(
+    "module.ts",
+    text,
+    ts.ScriptTarget.Latest,
+    true,
+  );
+  const found = new Set<string>();
+  function visit(node: ts.Node): void {
+    const specifier = runtimeSpecifier(node);
+    if (specifier !== undefined) {
+      found.add(specifier);
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(source);
+  return [...found];
 }
 
 function isRuntimeModule(

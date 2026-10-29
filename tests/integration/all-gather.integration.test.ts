@@ -3,7 +3,6 @@
 import { CollectiveError } from "@moltzap/social-harness";
 import { Effect } from "effect";
 import { expect, it } from "vitest";
-import { processTrace } from "./daemon-process-harness.js";
 import {
   acquireParticipants,
   groupRound,
@@ -12,6 +11,7 @@ import {
   type Participant,
   send,
 } from "./participants.js";
+import { processTrace } from "./process-trace.js";
 import { anyNumber, anyString } from "./test-matchers.js";
 
 /** The requester and the three members every all_gather trace starts. */
