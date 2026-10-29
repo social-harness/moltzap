@@ -8,15 +8,14 @@ import {
 import { exactStruct } from "../../encoding/exact.js";
 import {
   decodeFrozen,
+  type FirewallCheck,
   firewallCheckSchema,
   FirewallSettings,
   Message,
   MessageContext,
-  MiddlewareObservation,
   PrivateCheckTrace,
   RuleDescription,
 } from "../evaluator/index.js";
-import { retainedFirewallRefusal } from "../outcome/index.js";
 
 // safer-arch-ignore file-implicit-boundary-module: Checking and audit projection share exact retained value schemas; only admission/index.ts exposes these private implementations to service composition.
 
@@ -28,85 +27,6 @@ const firewallConfiguration = Schema.Struct({
   maximumHistoryRecords: Schema.Int.pipe(Schema.between(1, 1024)),
   maximumConcurrentChecks: Schema.Int.pipe(Schema.between(1, 32)),
 });
-
-const retainedFirewallReason = Schema.Union(
-  Schema.Literal("eligible"),
-  retainedFirewallRefusal,
-);
-
-/** Historical descriptions discard inert metadata and decode autonomy as safety. */
-const retainedRule = Schema.transform(
-  Schema.Struct({
-    ...RuleDescription.fields,
-    source: Schema.optional(Schema.Unknown),
-    kind: Schema.transform(
-      Schema.Literal("safety", "norm", "autonomy"),
-      RuleDescription.fields.kind,
-      {
-        strict: true,
-        decode: (kind) => (kind === "autonomy" ? ("safety" as const) : kind),
-        encode: (kind) => kind,
-      },
-    ),
-  }),
-  Schema.Struct(RuleDescription.fields),
-  {
-    strict: true,
-    decode: (rule) => Struct.omit(rule, "source"),
-    encode: (rule) => rule,
-  },
-);
-
-/** The optional historical context field is discarded before projection or encoding. */
-const retainedContext = Schema.transform(
-  exactStruct({
-    ...MessageContext.fields,
-    authorization: Schema.optional(Schema.Unknown),
-  }),
-  MessageContext,
-  {
-    strict: true,
-    decode: (context) => Struct.omit(context, "authorization"),
-    encode: (context) => context,
-  },
-);
-
-/** A retained approval finding is settled even though its current reason holds the message. */
-const settledHold = Schema.Struct({
-  ruleId: Schema.NonEmptyTrimmedString,
-  outcome: Schema.Literal("hold"),
-  reason: Schema.Literal("unresolved-evidence"),
-  settled: Schema.Literal(true),
-});
-const currentFinding = Schema.Union(
-  settledHold,
-  MiddlewareObservation.fields.findings.value,
-);
-
-const retainedFinding = Schema.Union(
-  currentFinding,
-  Schema.Struct({
-    ruleId: Schema.NonEmptyTrimmedString,
-    outcome: Schema.Literal("approval-required"),
-  }),
-);
-
-function migrateApprovalFinding(
-  finding: typeof retainedFinding.Type,
-  approvalDecided: boolean,
-): typeof currentFinding.Type {
-  if (finding.outcome !== "approval-required") {
-    return finding;
-  }
-  return approvalDecided
-    ? {
-        ruleId: finding.ruleId,
-        outcome: "hold",
-        reason: "unresolved-evidence",
-        settled: true,
-      }
-    : { ruleId: finding.ruleId, outcome: "not-applicable" };
-}
 
 /** Registration provenance is retained without giving it execution authority. */
 const firewallRegistration = Schema.Struct({
@@ -124,76 +44,23 @@ const firewallInstallation = Schema.Struct({
   outgoing: Schema.Array(firewallRegistration),
 });
 
-const retainedRegistration = Schema.Struct({
-  ...firewallRegistration.fields,
-  rules: Schema.Array(retainedRule),
-});
-const retainedInstallation = Schema.Struct({
-  ...firewallInstallation.fields,
-  incoming: Schema.Array(retainedRegistration),
-  outgoing: Schema.Array(retainedRegistration),
-});
-
 /** A missing projected message records an unsupported candidate without inventing attribution. */
 const firewallAuditInput = exactStruct({
   configurationDigest: Schema.String.pipe(Schema.pattern(/^[a-f0-9]{64}$/u)),
-  installation: retainedInstallation,
-  context: retainedContext,
+  installation: firewallInstallation,
+  context: MessageContext,
   message: Schema.NullOr(Message),
   terminal: Schema.Boolean,
 });
 
-/** Retained judgments exclude provider traces and preserve settled approval findings. */
-const currentAuditResult = exactStruct({
-  ...firewallCheckSchema.fields,
-  checks: Schema.Array(
-    Schema.Struct({
-      ...Struct.omit(firewallCheckSchema.fields.checks.value.fields, "trace"),
-      findings: Schema.Array(currentFinding),
-    }),
-  ),
+/**
+ * A check as the store retains it: every field except the decision-provider
+ * traces, which stay in memory with the code that produced the check.
+ */
+export const withoutTraces = (check: FirewallCheck) => ({
+  ...check,
+  checks: check.checks.map((middleware) => Struct.omit(middleware, "trace")),
 });
-
-/** Only the historical deciding approval reason gives an approval finding a settled hold. */
-const firewallAuditResult = Schema.transform(
-  Schema.encodedSchema(
-    exactStruct({
-      ...currentAuditResult.fields,
-      reason: Schema.Union(
-        Schema.Literal("approval-required"),
-        retainedFirewallReason,
-      ),
-      checks: Schema.Array(
-        Schema.Struct({
-          ...currentAuditResult.fields.checks.value.fields,
-          trace: Schema.optional(Schema.Unknown),
-          findings: Schema.Array(retainedFinding),
-        }),
-      ),
-    }),
-  ),
-  currentAuditResult,
-  {
-    strict: true,
-    decode: (result) => ({
-      ...result,
-      reason:
-        result.reason === "approval-required"
-          ? ("unresolved-evidence" as const)
-          : result.reason,
-      checks: result.checks.map((check) => ({
-        ...Struct.omit(check, "trace"),
-        findings: check.findings.map((finding) =>
-          migrateApprovalFinding(
-            finding,
-            result.reason === "approval-required",
-          ),
-        ),
-      })),
-    }),
-    encode: (result) => result,
-  },
-);
 
 /** Evidence limits and fixed facts captured before checking starts. */
 export type FirewallConfiguration = typeof firewallConfiguration.Type;
@@ -210,7 +77,10 @@ export const decodeFirewallRegistration = (value: unknown) =>
 export const decodeFirewallInstallation = (value: unknown) =>
   decodeFrozen(firewallInstallation, value);
 
-/** Opaque retained bytes are interpreted only by their Client delivery owner. */
+/**
+ * Opaque retained bytes are interpreted only by their Client delivery owner.
+ * A retained result that holds provider traces decodes without them.
+ */
 export const decodeFirewallAuditEntry = Effect.fn("decodeFirewallAuditEntry")(
   function* (entry: FirewallAuditEntry) {
     const input = yield* decodeRuntimeValue(
@@ -220,7 +90,12 @@ export const decodeFirewallAuditEntry = Effect.fn("decodeFirewallAuditEntry")(
     const result =
       entry.canonicalResult === undefined
         ? null
-        : yield* decodeRuntimeValue(firewallAuditResult, entry.canonicalResult);
+        : withoutTraces(
+            yield* decodeRuntimeValue(
+              firewallCheckSchema,
+              entry.canonicalResult,
+            ),
+          );
     return {
       checkId: entry.checkId,
       direction: entry.direction,

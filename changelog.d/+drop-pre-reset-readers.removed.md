@@ -1,0 +1,1 @@
+The daemon refuses message-policy files with `autonomy` rules and no longer reads values that only endpoint stores from before the 2026.1026.5 reset held; every store that 2026.1026.5 or a later release wrote still decodes.

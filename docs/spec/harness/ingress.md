@@ -152,10 +152,7 @@ in-memory ownership commit together despite request cancellation. Each
 connection validates DNS destinations, retains the original TLS identity and
 never follows redirects. Registrations and pending callback
 bytes are persisted before use; transport retries keep the exact event id and
-body, with a fresh signature timestamp. A pending callback written before the
-autonomy removal upgrade keeps its event id, and its body is re-encoded once
-with current values, using a reference event if the full envelope exceeds the
-size bound.
+body, with a fresh signature timestamp.
 
 Dot subscribes to `org.social-harness/inbox.item`. Each event contains one classified
 item as `data: {kind: "item", item}`. The full UTF-8 envelope is bounded to

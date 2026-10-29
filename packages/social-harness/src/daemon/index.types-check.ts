@@ -1,7 +1,7 @@
 /**
  * @file Process factories expose discard Layers and a closed startup error,
  * keeping private daemon services outside the trusted composition boundary.
- * Message-policy writers use current rule kinds so migration cannot broaden authored policy.
+ * Message-policy writers share the rule kinds the installed firewall evaluates.
  */
 
 import type { Effect, Layer, Types } from "effect";
