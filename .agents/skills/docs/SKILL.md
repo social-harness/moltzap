@@ -243,10 +243,23 @@ Load the installed Google guides that address the area under review:
   to assess context, alternatives, consequences, and rationale. The records
   skill governs location, evidence, status, and approval.
 
-For a design finding, describe the reader or caller's problem, supporting
-evidence, proposed improvement, and tradeoff. Separate current behavior,
-contract requirements, and future intent. Keep proposals and investigation
-results in the owning issue, PR, or decision record.
+An audit should make decisions easier. Trace a concrete reader or caller
+problem through the owning contract, implementation, and consumers. Challenge
+whether each responsibility, abstraction, state, and configuration choice is
+needed. Look for competing owners, repeated transformations, and special cases
+that disappear when the boundary changes. Naming follows that analysis.
+
+Recommend a specific change and explain why it beats a credible alternative.
+Show the resulting input-to-output flow, identify what is removed or
+consolidated, and state the compatibility and safety costs. Give observable
+acceptance criteria. Separate verified behavior from inference and identify
+the evidence that could change the recommendation. An unresolved question
+should name the missing evidence and how to obtain it.
+
+Rank findings by their effect on users, correctness, and system complexity.
+Keep routine repairs separate from architectural decisions. Separate current
+behavior, contract requirements, and future intent. Keep proposals and
+investigation results in the owning issue, PR, or decision record.
 
 Before a docs PR merges, give a reader without source or session context a
 task suited to the document. Have a learner complete a tutorial, a practitioner
