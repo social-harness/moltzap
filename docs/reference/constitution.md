@@ -89,7 +89,7 @@ stack.
 
 6. **Records are hash-linked and self-verifying.** `RecordHash` commits to one
    canonical record core: the fixed-membership descriptor (its MembershipHash in
-   a POST record), current Router
+   a MESSAGE record), current Router
    anchor hash, action core, and `ActionHash`. Action signatures, re-anchor
    votes, and durability votes remain separately retained evidence and are not
    part of `RecordHash`. A complete certified record carries the core and the
@@ -145,7 +145,7 @@ stack.
 ### L4 Shared Collaboration Norms
 
 13. **Norms build on certified communication.** Gate 1 uses unanimous
-    fixed-member GENESIS and author-inclusive threshold-certified POST.
+    fixed-member FIRST_MESSAGE and author-inclusive threshold-certified MESSAGE.
     Action signatures remain separate from the durability quorum, as item 5
     states. Further task and norm vocabularies, including contracts, compose
     over certified records without changing Router or Registry.

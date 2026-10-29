@@ -325,7 +325,7 @@ function isSupersededProposal(
   const body = completed.reanchor;
   if (
     fold.conversation.conversationId !== body.conversationId ||
-    fold.action.kind !== "POST"
+    fold.action.kind !== "MESSAGE"
   ) {
     return false;
   }

@@ -47,8 +47,8 @@ import {
   makeTestAuthority,
 } from "./agent-card-fixtures.js";
 import {
-  buildCertifiedGenesis,
-  storeCertifiedGenesis,
+  buildCertifiedFirstMessage,
+  storeCertifiedFirstMessage,
 } from "./certified-history-fixtures.js";
 import { pollCursor } from "./router-worker-fixtures.js";
 import { stateDirectory } from "./store-schema-fixtures.js";
@@ -351,13 +351,13 @@ export function addConversation(subject: Fixture, authoredLocally = false) {
     const authors = authoredLocally
       ? { local: { card, authority }, remote: subject.local }
       : { local: subject.local, remote: { card, authority } };
-    const record = yield* buildCertifiedGenesis(
+    const record = yield* buildCertifiedFirstMessage(
       authors.local,
       authors.remote,
       membership,
       anchor.routerInstanceId,
     );
-    yield* storeCertifiedGenesis(
+    yield* storeCertifiedFirstMessage(
       subject.store,
       subject.local.card,
       membership,
@@ -416,17 +416,17 @@ export function policy(check: MessageMiddleware["check"]): MessageMiddleware {
   return { id: "communication", revision: "test-v1", rules: [rule], check };
 }
 
-/** A signed GENESIS seeds the default conversation without network traffic. */
+/** A signed FIRST_MESSAGE seeds the default conversation without network traffic. */
 export function seedIncoming(subject: Fixture, authoredLocally = false) {
   return Effect.gen(function* () {
     const { local, remote, membership, store } = subject;
-    const record = yield* buildCertifiedGenesis(
+    const record = yield* buildCertifiedFirstMessage(
       authoredLocally ? remote : local,
       authoredLocally ? local : remote,
       membership,
       anchor.routerInstanceId,
     );
-    yield* storeCertifiedGenesis(store, local.card, membership, record);
+    yield* storeCertifiedFirstMessage(store, local.card, membership, record);
     return record;
   }).pipe(Effect.withSpan("seedIncoming"));
 }

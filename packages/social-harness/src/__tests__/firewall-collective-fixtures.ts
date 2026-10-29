@@ -102,10 +102,10 @@ export function seedRequest(
   text: string,
 ) {
   return Effect.gen(function* () {
-    const genesis = yield* seedIncoming(subject, true);
+    const firstMessage = yield* seedIncoming(subject, true);
     return yield* appendCertifiedPost(
       subject,
-      genesis,
+      firstMessage,
       yield* gatherRequestContent(deadlineAt, text),
     );
   }).pipe(Effect.withSpan("seedRequest"));

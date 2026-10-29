@@ -98,7 +98,7 @@ export function gatherAddress(
  * returning. A gather's request still uncertified then is left running: its
  * member answers or is reported as no-answer at the deadline. An all_gather's
  * one group post must be certified by then, or the all_gather cannot start:
- * a cold group's GENESIS needs every member. The bound stays under the MCP
+ * a cold group's FIRST_MESSAGE needs every member. The bound stays under the MCP
  * SDK's request timeout so a waiting host receives the result rather than a
  * transport timeout. It runs from the send's start, so a firewall's check of
  * the operation comes out of it.

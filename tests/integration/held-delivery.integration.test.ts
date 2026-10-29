@@ -335,7 +335,7 @@ function readHeldHistory(pair: HeldPair) {
       expect(history.continuation).toBeNull();
       expect(
         history.records.map(({ recordCore }) => recordCore.action.kind),
-      ).toEqual(["GENESIS", "POST", "POST"]);
+      ).toEqual(["FIRST_MESSAGE", "MESSAGE", "MESSAGE"]);
       expect(
         history.records.map(
           ({ recordCore }) => recordCore.action.postIntent.content,

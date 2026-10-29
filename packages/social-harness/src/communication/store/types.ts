@@ -234,7 +234,7 @@ export type PostIntentBinding = {
     }>
 );
 
-/** Immutable membership and genesis Router anchor for one conversation. */
+/** Immutable membership and initial Router anchor for one conversation. */
 export interface ConversationFoundation {
   readonly conversationId: string;
   readonly membershipHash: string;
@@ -250,7 +250,7 @@ export interface StoredMembership {
   readonly canonicalMembership: Uint8Array;
 }
 
-/** One genesis or completed Router-epoch anchor in the retained chain. */
+/** One initial or completed Router-epoch anchor in the retained chain. */
 export interface StoredAnchor {
   readonly conversationId: string;
   readonly anchorHash: string;
@@ -576,7 +576,7 @@ export interface EndpointStore {
   readonly lockProposal: (
     proposal: ProposalLock,
   ) => Effect.Effect<StoreMutation, EndpointStoreError>;
-  readonly lockGenesisProposal: (
+  readonly lockFirstMessageProposal: (
     foundation: ConversationFoundation,
     proposal: ProposalLock,
   ) => Effect.Effect<StoreMutation, EndpointStoreError>;

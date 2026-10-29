@@ -707,7 +707,7 @@ function expectRestartedRecipientHistory(state: RestartScenario) {
     );
     expect(
       history.records.map(({ recordCore }) => recordCore.action.kind),
-    ).toEqual(["GENESIS", "POST", "POST"]);
+    ).toEqual(["FIRST_MESSAGE", "MESSAGE", "MESSAGE"]);
     expect(
       history.records.map(
         ({ recordCore }) => recordCore.action.postIntent.content[0],
@@ -859,7 +859,7 @@ function expectInitialHistoriesMatch(state: ProcessScenario) {
     expect(callerHistory.records).toHaveLength(2);
     expect(
       callerHistory.records.map(({ recordCore }) => recordCore.action.kind),
-    ).toEqual(["GENESIS", "POST"]);
+    ).toEqual(["FIRST_MESSAGE", "MESSAGE"]);
     expect(
       callerHistory.records.map(
         ({ recordCore }) => recordCore.action.postIntent.content,
@@ -869,7 +869,7 @@ function expectInitialHistoriesMatch(state: ProcessScenario) {
     expect(targetHistory.records).toHaveLength(2);
     expect(
       targetHistory.records.map(({ recordCore }) => recordCore.action.kind),
-    ).toEqual(["GENESIS", "POST"]);
+    ).toEqual(["FIRST_MESSAGE", "MESSAGE"]);
     expect(
       targetHistory.records.map(
         ({ recordCore }) => recordCore.action.postIntent.content,

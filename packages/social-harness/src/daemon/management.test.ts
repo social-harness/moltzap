@@ -26,8 +26,8 @@ import {
   type RegistryKeyPair,
 } from "../__tests__/agent-card-fixtures.js";
 import {
-  buildCertifiedGenesis,
-  storeCertifiedGenesis,
+  buildCertifiedFirstMessage,
+  storeCertifiedFirstMessage,
   withMisattributedActionEvidence,
 } from "../__tests__/certified-history-fixtures.js";
 import { connectInProcessClient } from "../__tests__/mcp-http-fixtures.js";
@@ -267,7 +267,7 @@ const makeCertifiedHistory = Effect.gen(function* () {
     ),
     Effect.orDie,
   );
-  const record = yield* buildCertifiedGenesis(
+  const record = yield* buildCertifiedFirstMessage(
     { card: fixture.cards[0], authority: fixture.bootstrap.signingAuthority },
     { card: fixture.cards[1], authority: fixture.remoteAuthority },
     membership,
@@ -280,7 +280,12 @@ const makeCertifiedHistory = Effect.gen(function* () {
     }),
     { liveWireVersions: LIVE_WIRE_VERSIONS },
   ).pipe(Effect.orDie);
-  yield* storeCertifiedGenesis(store, fixture.cards[0], membership, record);
+  yield* storeCertifiedFirstMessage(
+    store,
+    fixture.cards[0],
+    membership,
+    record,
+  );
   return { fixture, store, record };
 }).pipe(Effect.provide(NodeFileSystem.layer));
 
@@ -371,7 +376,7 @@ const returnsCertificateSignersForAudit = () =>
     ).toBeLessThan(0);
     expect(
       certified.recordCore.action.postIntent.authorAgentId,
-      "bob authored the genesis",
+      "bob authored the first message",
     ).toBe(bob.agentId);
     expect(page.records, "alice's history with bob").toEqual([
       {

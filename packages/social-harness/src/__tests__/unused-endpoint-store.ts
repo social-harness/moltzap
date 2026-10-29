@@ -29,7 +29,7 @@ export function unusedEndpointStore(label: string): EndpointStore {
     bindPostIntent: unused,
     putConversationFoundation: unused,
     lockProposal: unused,
-    lockGenesisProposal: unused,
+    lockFirstMessageProposal: unused,
     supersedeProposalLock: unused,
     stageRecordForDissemination: unused,
     mergeEvidence: unused,

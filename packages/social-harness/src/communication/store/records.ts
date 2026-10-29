@@ -29,7 +29,7 @@ import {
   findProposalLock,
   findStagedReanchor,
   findStagedRecord,
-  GENESIS_PREDECESSOR,
+  FIRST_MESSAGE_PREDECESSOR,
   lockProposalInTransaction,
   readStoredIdentity,
   readStoredPosition,
@@ -121,7 +121,7 @@ export function supersedeProposalLock(
     const held = findProposalLock(
       database,
       lock.conversationId,
-      lock.previousRecordHash ?? GENESIS_PREDECESSOR,
+      lock.previousRecordHash ?? FIRST_MESSAGE_PREDECESSOR,
     );
     if (held !== undefined && held.actionHash !== lock.actionHash) {
       if (hasStagedAction(database, held)) {
@@ -318,7 +318,7 @@ function requireRecordPosition(
   const proposalLock = findProposalLock(
     database,
     record.conversationId,
-    record.previousRecordHash ?? GENESIS_PREDECESSOR,
+    record.previousRecordHash ?? FIRST_MESSAGE_PREDECESSOR,
   );
   if (proposalLock !== undefined) {
     requireEqual(proposalLock.actionHash, record.actionHash);
@@ -407,7 +407,7 @@ function requireLocalDurabilityEvidenceLock(
   const proposalLock = findProposalLock(
     database,
     record.conversationId,
-    record.previousRecordHash ?? GENESIS_PREDECESSOR,
+    record.previousRecordHash ?? FIRST_MESSAGE_PREDECESSOR,
   );
   if (
     proposalLock === undefined ||

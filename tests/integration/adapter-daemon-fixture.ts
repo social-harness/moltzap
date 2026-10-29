@@ -739,7 +739,7 @@ function assertFixtureHistory(
       expect(history.records).toHaveLength(1 + replies.length);
       expect(
         history.records.map(({ recordCore }) => recordCore.action.kind),
-      ).toEqual(["GENESIS", ...replies.map(() => "POST" as const)]);
+      ).toEqual(["FIRST_MESSAGE", ...replies.map(() => "MESSAGE" as const)]);
       expect(
         history.records.map(
           ({ recordCore }) => recordCore.action.postIntent.content,

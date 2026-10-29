@@ -25,9 +25,9 @@ import {
   type CompletedReanchor as CompletedReanchorValue,
   ConversationId,
   type ConversationId as ConversationIdValue,
-  GenesisAnchorBody,
-  type GenesisAnchorBody as GenesisAnchorBodyValue,
   hashAnchor,
+  InitialAnchorBody,
+  type InitialAnchorBody as InitialAnchorBodyValue,
   memberCard,
   MembershipDescriptor,
   type RecordCore,
@@ -132,7 +132,7 @@ export function verifyStoredMemberships(
  * and subject its certificate covers, and its own signer; the signatures are
  * verified once, with the record as a whole.
  * @param membership Verified membership of the record's conversation, which a
- *     POST record names only by its hash.
+ *     MESSAGE record names only by its hash.
  * @param stored Durable record core and signer-attributed evidence rows.
  * @param routerAnchor Verified anchor named by the durable record core.
  * @returns The complete record after all hashes and store projections match.
@@ -238,13 +238,13 @@ export function readStoredHistory(
  * Resolve the Router instance named by one conversation's durable current anchor.
  * @param membership Fixed membership that owns the conversation.
  * @param recovery Complete verified store snapshot.
- * @returns The instance bound by the genesis or completed re-anchor at the position.
+ * @returns The instance bound by the initial or completed re-anchor at the position.
  */
 export function durableRouterInstanceId(
   membership: VerifiedMembership,
   recovery: EndpointRecovery,
 ): Effect.Effect<
-  GenesisAnchorBodyValue["routerInstanceId"],
+  InitialAnchorBodyValue["routerInstanceId"],
   RouterWorkerRecoveryError
 > {
   const conversationId = membership.descriptor.conversationId;
@@ -266,21 +266,21 @@ export function durableRouterInstanceId(
 }
 
 /**
- * Name the Router instance an anchor binds: the GENESIS anchor's instance, or
+ * Name the Router instance an anchor binds: the initial anchor's instance, or
  * the instance a completed re-anchor moved the conversation to.
- * @param anchor Verified genesis or completed re-anchor.
+ * @param anchor Verified initial or completed re-anchor.
  * @returns The bound Router instance.
  */
 export function anchorRouterInstanceId(
   anchor: RouterAnchor,
-): GenesisAnchorBodyValue["routerInstanceId"] {
-  return anchor.kind === "genesis_anchor_body"
+): InitialAnchorBodyValue["routerInstanceId"] {
+  return anchor.kind === "initial_anchor_body"
     ? anchor.routerInstanceId
     : anchor.reanchor.routerInstanceId;
 }
 
 /**
- * Decode and verify one durable genesis or completed re-anchor row.
+ * Decode and verify one durable initial or completed re-anchor row.
  * @param membership Fixed membership that owns the anchor.
  * @param stored Durable anchor row and canonical representation.
  * @returns A verified anchor usable for record reconstruction.
@@ -294,7 +294,7 @@ export function decodeStoredAnchor(
 > {
   const decoded =
     stored.previousAnchorHash === undefined
-      ? decodeStoredGenesis(membership, stored)
+      ? decodeStoredInitialAnchor(membership, stored)
       : decodeStoredReanchor(membership, stored);
   return decoded.pipe(Effect.withSpan("decodeStoredAnchor"));
 }
@@ -708,18 +708,18 @@ function restoreEvidence(
   );
 }
 
-function decodeStoredGenesis(
+function decodeStoredInitialAnchor(
   membership: VerifiedMembership,
   stored: EndpointRecovery["anchors"][number],
 ): Effect.Effect<
   EngineConversation["currentAnchor"],
   RouterWorkerPersistenceError
 > {
-  return decodeCanonical(GenesisAnchorBody, stored.canonicalAnchor).pipe(
+  return decodeCanonical(InitialAnchorBody, stored.canonicalAnchor).pipe(
     Effect.flatMap((anchor) =>
       hashAnchor(anchor).pipe(
         Effect.flatMap((anchorHash) =>
-          storedGenesisMatches(membership, stored, anchor, anchorHash)
+          storedInitialAnchorMatches(membership, stored, anchor, anchorHash)
             ? Effect.succeed(anchor)
             : Effect.fail(persistenceFailure()),
         ),
@@ -729,10 +729,10 @@ function decodeStoredGenesis(
   );
 }
 
-function storedGenesisMatches(
+function storedInitialAnchorMatches(
   membership: VerifiedMembership,
   stored: EndpointRecovery["anchors"][number],
-  anchor: GenesisAnchorBodyValue,
+  anchor: InitialAnchorBodyValue,
   anchorHash: AnchorHashValue,
 ): boolean {
   return [

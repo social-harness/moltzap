@@ -22,16 +22,16 @@ import {
   type ActionHash,
   type CertifiedRecord,
   type EvidenceStatement,
-  type GenesisActionCore,
-  type GenesisAnchorBody,
-  GenesisAnchorBody as GenesisAnchorBodySchema,
+  type FirstMessageActionCore,
   hashAction,
   hashAnchor,
   hashPostIntent,
   hashRecord,
+  type InitialAnchorBody,
+  InitialAnchorBody as InitialAnchorBodySchema,
   MembershipDescriptor,
+  type MessageActionCore,
   mintPostId,
-  type PostActionCore,
   PostIntent,
   type RecordCore,
   type RecordHash,
@@ -48,33 +48,37 @@ export interface SigningIdentity {
   readonly authority: AgentSigningAuthority;
 }
 
-/** A GENESIS record core with its anchor and both certificates' signers. */
+/** A FIRST_MESSAGE record core with its anchor and both certificates' signers. */
 interface CertifiedRecordParts {
   readonly recordCore: RecordCore;
   readonly recordHash: RecordHash;
-  readonly anchor: GenesisAnchorBody;
+  readonly anchor: InitialAnchorBody;
   readonly signatures: readonly [unknown, unknown];
   readonly votes: readonly [unknown, unknown];
 }
 
 /**
- * A GENESIS record authored by `remote` and certified by both members, on a
- * genesis anchor at `routerInstanceId`. Each certificate lists `local`'s
+ * A FIRST_MESSAGE record authored by `remote` and certified by both members, on a
+ * initial anchor at `routerInstanceId`. Each certificate lists `local`'s
  * signature first, whatever the members' AgentId order.
  * @param local One member of the two-member conversation.
  * @param remote The other member, who authors the post.
  * @param membership The verified two-member membership.
- * @param routerInstanceId The Router instance the genesis anchor binds.
+ * @param routerInstanceId The Router instance the initial anchor binds.
  * @returns The complete certified record.
  */
-export const buildCertifiedGenesis = (
+export const buildCertifiedFirstMessage = (
   local: SigningIdentity,
   remote: SigningIdentity,
   membership: VerifiedMembership,
-  routerInstanceId: GenesisAnchorBody["routerInstanceId"],
+  routerInstanceId: InitialAnchorBody["routerInstanceId"],
 ): Effect.Effect<CertifiedRecord> =>
   Effect.gen(function* () {
-    const action = yield* genesisAction(remote, membership, routerInstanceId);
+    const action = yield* firstMessageAction(
+      remote,
+      membership,
+      routerInstanceId,
+    );
     const actionHash = yield* hashAction(action);
     const recordCore: RecordCore = {
       sharnessVersion: WIRE_VERSION,
@@ -98,20 +102,20 @@ export const buildCertifiedGenesis = (
         voteDurable(remote, membership, recordHash),
       ]),
     });
-  }).pipe(Effect.orDie, Effect.withSpan("buildCertifiedGenesis"));
+  }).pipe(Effect.orDie, Effect.withSpan("buildCertifiedFirstMessage"));
 
 /**
- * Keep a certified GENESIS record in `local`'s store as its endpoint does:
- * bind the local identity, lock the GENESIS proposal with the conversation's
- * membership and genesis anchor, then keep the record row, with one evidence
+ * Keep a certified FIRST_MESSAGE record in `local`'s store as its endpoint does:
+ * bind the local identity, lock the FIRST_MESSAGE proposal with the conversation's
+ * membership and initial anchor, then keep the record row, with one evidence
  * row per signer. A remote author's post also becomes a local delivery.
  * @param store The endpoint store to write.
  * @param local The card of the agent whose store this is.
  * @param membership The record's verified membership.
- * @param record A record from `buildCertifiedGenesis`.
+ * @param record A record from `buildCertifiedFirstMessage`.
  * @returns Completion once every write is durable.
  */
-export const storeCertifiedGenesis = (
+export const storeCertifiedFirstMessage = (
   store: EndpointStore,
   local: VerifiedAgentCard,
   membership: VerifiedMembership,
@@ -122,13 +126,13 @@ export const storeCertifiedGenesis = (
       agentId: local.agentId,
       canonicalAgentCard: yield* encodeCanonical(AgentCard, local),
     });
-    yield* lockGenesis(store, membership, record);
+    yield* lockFirstMessage(store, membership, record);
     yield* bindLocalIntent(store, local, membership, record);
     yield* store.applyCertifiedRecord(
       yield* storedRecordRow(record),
       yield* remotePost(local, membership, record),
     );
-  }).pipe(Effect.orDie, Effect.withSpan("storeCertifiedGenesis"));
+  }).pipe(Effect.orDie, Effect.withSpan("storeCertifiedFirstMessage"));
 
 /** The real endpoint store and the two members that certify each history extension. */
 export interface HistoryEndpoint {
@@ -182,8 +186,8 @@ export function buildCertifiedPost(
   const { local, remote, membership } = endpoint;
   return Effect.gen(function* () {
     const predecessor = previous.actionCertifiedRecord;
-    if (predecessor.routerAnchor.kind !== "genesis_anchor_body") {
-      return yield* Effect.dieMessage("expected a genesis-anchored history");
+    if (predecessor.routerAnchor.kind !== "initial_anchor_body") {
+      return yield* Effect.dieMessage("expected a initially anchored history");
     }
     const recordCore = yield* postRecordCore(membership, predecessor, intent);
     const actionHash = recordCore.actionHash;
@@ -247,14 +251,14 @@ export function withMisattributedActionEvidence(
 }
 
 /**
- * `store` as it reads once its genesis anchor rows claim to select
+ * `store` as it reads once its initial anchor rows claim to select
  * `recordHash`, which only a completed re-anchor row does, so the rows'
- * columns no longer match the genesis bodies they hold.
- * @param store The store holding the genesis anchor rows.
- * @param recordHash The record each genesis row claims to select.
- * @returns The store with every genesis anchor row selecting `recordHash`.
+ * columns no longer match the initial anchor bodies they hold.
+ * @param store The store holding the initial anchor rows.
+ * @param recordHash The record each initial anchor row claims to select.
+ * @returns The store with every initial anchor row selecting `recordHash`.
  */
-export function withGenesisAnchorSelecting(
+export function withInitialAnchorSelecting(
   store: EndpointStore,
   recordHash: string,
 ): EndpointStore {
@@ -321,9 +325,9 @@ function postRecordCore(
   postIntent: PostIntent,
 ) {
   return Effect.gen(function* () {
-    const action: PostActionCore = {
+    const action: MessageActionCore = {
       sharnessVersion: WIRE_VERSION,
-      kind: "POST",
+      kind: "MESSAGE",
       conversationId: membership.descriptor.conversationId,
       membershipHash: membership.hash,
       anchorHash: predecessor.recordCore.anchorHash,
@@ -343,10 +347,10 @@ function postRecordCore(
   }).pipe(Effect.orDie);
 }
 
-function genesisAction(
+function firstMessageAction(
   author: SigningIdentity,
   membership: VerifiedMembership,
-  routerInstanceId: GenesisAnchorBody["routerInstanceId"],
+  routerInstanceId: InitialAnchorBody["routerInstanceId"],
 ) {
   return Effect.gen(function* () {
     const postIntent: PostIntent = {
@@ -358,14 +362,14 @@ function genesisAction(
       postId: yield* mintPostId(),
       content: [{ type: "text", text: "certified before restart" }],
     };
-    const action: GenesisActionCore = {
+    const action: FirstMessageActionCore = {
       sharnessVersion: WIRE_VERSION,
-      kind: "GENESIS",
+      kind: "FIRST_MESSAGE",
       conversationId: membership.descriptor.conversationId,
       membership: membership.descriptor,
       anchor: {
         sharnessVersion: WIRE_VERSION,
-        kind: "genesis_anchor_body",
+        kind: "initial_anchor_body",
         conversationId: membership.descriptor.conversationId,
         membershipHash: membership.hash,
         routerInstanceId,
@@ -428,7 +432,7 @@ function certifiedRecord(parts: CertifiedRecordParts): CertifiedRecord {
   };
 }
 
-function lockGenesis(
+function lockFirstMessage(
   store: EndpointStore,
   membership: VerifiedMembership,
   record: CertifiedRecord,
@@ -436,10 +440,10 @@ function lockGenesis(
   return Effect.gen(function* () {
     const certified = record.actionCertifiedRecord;
     const conversationId = membership.descriptor.conversationId;
-    if (certified.routerAnchor.kind !== "genesis_anchor_body") {
-      return yield* Effect.dieMessage("expected a genesis-anchored record");
+    if (certified.routerAnchor.kind !== "initial_anchor_body") {
+      return yield* Effect.dieMessage("expected a initially anchored record");
     }
-    return yield* store.lockGenesisProposal(
+    return yield* store.lockFirstMessageProposal(
       {
         conversationId,
         membershipHash: membership.hash,
@@ -449,7 +453,7 @@ function lockGenesis(
         ),
         anchorHash: certified.recordCore.anchorHash,
         canonicalAnchor: yield* encodeCanonical(
-          GenesisAnchorBodySchema,
+          InitialAnchorBodySchema,
           certified.routerAnchor,
         ),
       },

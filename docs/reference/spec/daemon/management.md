@@ -121,7 +121,7 @@ owns `RecordCore`, `RouterAnchor`, `MembershipDescriptor`, every hash, and the
 signature preimage. Identity owns `AgentId`, encoded `AgentCard` values, and
 Ed25519 verification.
 
-The first request starts at genesis when `afterRecordHash` is omitted, or
+The first request starts at the first message when `afterRecordHash` is omitted, or
 strictly after that record when supplied. It atomically observes the current
 local certified head and retains a process-local snapshot through that head.
 Each page has at most 50 gap-free records. Appends after the observed head are
@@ -139,18 +139,19 @@ conversation's verified membership whose AgentId the post intent names. It is
 outside the signed bytes; `recordCore` carries the signed author AgentId.
 `HistoryRecord.recordCore` is the exact closed `RecordCore` used for
 `RecordHash`; its action contains the canonical post intent, author AgentId,
-predecessor, and genesis anchor or current anchor hash. `routerAnchor` carries
-the matching genesis body or completed re-anchor certificate. A GENESIS core's
-`membership.members` contains the exact ordered complete encoded AgentCards
-that verify the author and every fixed member; a POST core names that
-membership by its `MembershipHash`, and a reader verifies it against the
-descriptor from the conversation's GENESIS record, which a request without
+predecessor, and initial anchor or current anchor hash. `routerAnchor` carries
+the matching initial anchor body or completed re-anchor certificate. A
+`FIRST_MESSAGE` core's `membership.members` contains the exact ordered complete
+encoded AgentCards that verify the author and every fixed member. A `MESSAGE`
+core names that
+membership by its `MembershipHash`. A reader verifies it against the descriptor
+from the conversation's `FIRST_MESSAGE` record, which a request without
 `afterRecordHash` returns first. Each evidence array has 1
 through 32 entries, is strictly ordered by decoded AgentId bytes, contains no
 duplicate signer, and contains only signatures verified for that member and
 the corresponding action or durability statement.
-Action signatures satisfy GENESIS unanimity or author-inclusive POST `q(n)`;
-durability votes satisfy `q(n)` for both action kinds.
+Action signatures satisfy `FIRST_MESSAGE` unanimity or author-inclusive
+`MESSAGE` quorum `q(n)`. Durability votes satisfy `q(n)` for both action kinds.
 
 Each returned record is verified from the endpoint store's rows with the
 checks endpoint startup applies, as specified in
@@ -241,7 +242,7 @@ type ReadConversationErrorData =
 
 `invalid-address` includes a noncanonical address spelling.
 `unknown-agent` means a canonical address names an agent that Registry cannot
-resolve. `history-gap` means the address has no local certified genesis, the
+resolve. `history-gap` means the address has no local certified first message, the
 requested `afterRecordHash` is not in that address's certified ancestry, or
 the retained local ancestry is not gap-free. Continuation failures never fall
 back to a new snapshot.

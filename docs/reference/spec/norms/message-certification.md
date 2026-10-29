@@ -7,33 +7,35 @@ read_when:
 ---
 
 Conversation members certify each message so they can verify who sent it
-and where it belongs in their shared history. Membership stays fixed. `GENESIS` establishes the conversation with its first post, and
-`POST` extends its certified history. These action rules are the current L4
-Shared Collaboration Norms. Formally specified, task-specific contracts are
+and where it belongs in their shared history. Membership stays fixed.
+`FIRST_MESSAGE` establishes the conversation with its first message, and
+`MESSAGE` extends its certified history. These action rules are the current
+L4 Shared Collaboration Norms. Formally specified, task-specific contracts are
 not yet implemented.
 
-## GENESIS
+## First message
 
 The first send to an exact member set deterministically identifies one private
-conversation and proposes `GENESIS`. It contains canonical fixed membership,
+conversation and proposes `FIRST_MESSAGE`. It contains canonical fixed membership,
 the first post intent, null predecessor, and the current Router anchor. Every
 fixed member validates and signs the same `ActionHash`. All member signatures
 are required.
 
-Unanimous GENESIS establishes membership and action validity. Independent
-storage voting begins only after that certificate exists. A separate group
-creation, invitation, acceptance, or empty genesis is invalid.
+Unanimous FIRST_MESSAGE establishes membership and action validity. Independent
+storage voting begins only after that certificate exists. A first message must
+contain content. Separate group creation, invitation and acceptance records are
+invalid.
 
-## POST
+## Later messages
 
-Every successor is `POST`. Let `n` be fixed membership and:
+Every successor is `MESSAGE`. Let `n` be fixed membership and:
 
 ```text
 q(n) = n                       when n < 4
 q(n) = n - floor((n - 1) / 3) when n >= 4
 ```
 
-A complete POST action certificate has `q(n)` unique valid member signatures
+A complete MESSAGE action certificate has `q(n)` unique valid member signatures
 and includes the author. N2=2, N3=3, N4=3, and N10=7. Nonmembers, duplicates,
 invalid signatures, missing author, changed intent, wrong membership, wrong
 anchor, or wrong predecessor fail closed.
@@ -46,7 +48,7 @@ the evidence-free `ActionHash`.
 
 An honest endpoint durably locks only the first valid gap-free candidate it
 observes in Router order for one predecessor under one anchor, until a verified
-POST record whose action certificate meets `q(n)` names another candidate
+MESSAGE record whose action certificate meets `q(n)` names another candidate
 there; it then locks that candidate without signing it, as
 [Proposal ordering](../communication/conversation-history.md#proposal-ordering-and-recovery-identity)
 states. It signs no conflicting candidate in that domain. Later intents wait for the winner and retry unchanged
@@ -105,8 +107,8 @@ messaging.
 
 ## Acceptance
 
-- GENESIS rejects every non-unanimous certificate.
-- POST accepts exactly the N2/N3/N4/N10 thresholds and rejects missing author.
+- FIRST_MESSAGE rejects every non-unanimous certificate.
+- MESSAGE accepts exactly the N2/N3/N4/N10 thresholds and rejects missing author.
 - Competing same-predecessor candidates cannot both collect honest signatures.
 - Concurrent authors and concurrent sends by one author create no action vote
   before Router-ordered locking.

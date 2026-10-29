@@ -84,13 +84,13 @@ export const PostIntent = exactStruct({
 });
 export type PostIntent = typeof PostIntent.Type;
 
-export const GenesisAnchorBody = exactStruct({
-  ...versionAndKind("genesis_anchor_body"),
+export const InitialAnchorBody = exactStruct({
+  ...versionAndKind("initial_anchor_body"),
   conversationId: ConversationId,
   membershipHash: MembershipHash,
   routerInstanceId: RouterInstanceId,
 });
-export type GenesisAnchorBody = typeof GenesisAnchorBody.Type;
+export type InitialAnchorBody = typeof InitialAnchorBody.Type;
 
 export const ReanchorBody = exactStruct({
   ...versionAndKind("reanchor_body"),
@@ -103,22 +103,22 @@ export const ReanchorBody = exactStruct({
 export type ReanchorBody = typeof ReanchorBody.Type;
 
 // eslint-disable-next-line agent-code-guard/no-exported-brand-constructor -- Private hash code composes the complete closed anchor union.
-export const AnchorBody = Schema.Union(GenesisAnchorBody, ReanchorBody);
+export const AnchorBody = Schema.Union(InitialAnchorBody, ReanchorBody);
 export type AnchorBody = typeof AnchorBody.Type;
 
-export const GenesisActionCore = exactStruct({
-  ...versionAndKind("GENESIS"),
+export const FirstMessageActionCore = exactStruct({
+  ...versionAndKind("FIRST_MESSAGE"),
   conversationId: ConversationId,
   membership: MembershipDescriptor,
-  anchor: GenesisAnchorBody,
+  anchor: InitialAnchorBody,
   previousRecordHash: Schema.Null,
   postIntent: PostIntent,
   postIntentHash: PostIntentHash,
 });
-export type GenesisActionCore = typeof GenesisActionCore.Type;
+export type FirstMessageActionCore = typeof FirstMessageActionCore.Type;
 
-export const PostActionCore = exactStruct({
-  ...versionAndKind("POST"),
+export const MessageActionCore = exactStruct({
+  ...versionAndKind("MESSAGE"),
   conversationId: ConversationId,
   membershipHash: MembershipHash,
   anchorHash: AnchorHash,
@@ -126,28 +126,34 @@ export const PostActionCore = exactStruct({
   postIntent: PostIntent,
   postIntentHash: PostIntentHash,
 });
-export type PostActionCore = typeof PostActionCore.Type;
+export type MessageActionCore = typeof MessageActionCore.Type;
 
 // eslint-disable-next-line agent-code-guard/no-exported-brand-constructor -- Private protocol code composes the complete closed action union.
-export const ActionCore = Schema.Union(GenesisActionCore, PostActionCore);
+export const ActionCore = Schema.Union(
+  FirstMessageActionCore,
+  MessageActionCore,
+);
 export type ActionCore = typeof ActionCore.Type;
 
-const GenesisRecordCore = exactStruct({
+const FirstMessageRecordCore = exactStruct({
   ...versionAndKind("record_core"),
   membership: MembershipDescriptor,
   anchorHash: AnchorHash,
-  action: GenesisActionCore,
+  action: FirstMessageActionCore,
   actionHash: ActionHash,
 });
-const PostRecordCore = exactStruct({
+const MessageRecordCore = exactStruct({
   ...versionAndKind("record_core"),
   membershipHash: MembershipHash,
   anchorHash: AnchorHash,
-  action: PostActionCore,
+  action: MessageActionCore,
   actionHash: ActionHash,
 });
 // eslint-disable-next-line agent-code-guard/no-exported-brand-constructor -- Private record decoding and hashing compose the complete closed record-core union.
-export const RecordCore = Schema.Union(GenesisRecordCore, PostRecordCore);
+export const RecordCore = Schema.Union(
+  FirstMessageRecordCore,
+  MessageRecordCore,
+);
 export type RecordCore = typeof RecordCore.Type;
 
 export const ActionSignatureStatement = exactStruct({
@@ -204,7 +210,7 @@ export const CompletedReanchor = exactStruct({
 export type CompletedReanchor = typeof CompletedReanchor.Type;
 
 // eslint-disable-next-line agent-code-guard/no-exported-brand-constructor -- Private record verification composes the complete closed anchor union.
-export const RouterAnchor = Schema.Union(GenesisAnchorBody, CompletedReanchor);
+export const RouterAnchor = Schema.Union(InitialAnchorBody, CompletedReanchor);
 export type RouterAnchor = typeof RouterAnchor.Type;
 
 export const ActionCertifiedRecord = exactStruct({

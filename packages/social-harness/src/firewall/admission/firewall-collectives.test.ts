@@ -116,10 +116,10 @@ function answerContent(content: object) {
  */
 function seedAnswers(subject: Fixture, answers: PerMember<AnswerContent>) {
   return Effect.gen(function* () {
-    const bobGenesis = yield* seedIncoming(subject, true);
+    const bobFirstMessage = yield* seedIncoming(subject, true);
     const bobAnswer = yield* appendCertifiedPost(
       subject,
-      bobGenesis,
+      bobFirstMessage,
       yield* answerContent(answers.bob),
     );
     const other = yield* addConversation(subject, true);
@@ -254,8 +254,8 @@ function checksARequestAsItsQuestion() {
   return Effect.gen(function* () {
     const subject = yield* fixture;
     const deadlineAt = Date.now() + 60_000;
-    const genesis = yield* seedIncoming(subject, true);
-    yield* appendCertifiedPost(subject, genesis, [
+    const firstMessage = yield* seedIncoming(subject, true);
+    yield* appendCertifiedPost(subject, firstMessage, [
       ...(yield* gatherRequestContent(deadlineAt, question)),
       { type: "data", value: { agenda: ["mon", "tue"] } },
     ]);
@@ -511,8 +511,8 @@ function staleResult(mode: FirewallOptions["mode"]) {
 function admitsAFailureWithoutInference() {
   return Effect.gen(function* () {
     const subject = yield* fixture;
-    const genesis = yield* seedIncoming(subject, true);
-    yield* appendCertifiedPost(subject, genesis, question);
+    const firstMessage = yield* seedIncoming(subject, true);
+    yield* appendCertifiedPost(subject, firstMessage, question);
     const runtime = yield* incomingFixture(
       subject,
       policy(() => Effect.dieMessage("a failure is never inferred")),
@@ -597,8 +597,8 @@ function leavesTheResultInLaterEvidence() {
  */
 function seedUnrenderableRequest(subject: Fixture) {
   return Effect.gen(function* () {
-    const genesis = yield* seedIncoming(subject, true);
-    const hostile = yield* appendCertifiedPost(subject, genesis, [
+    const firstMessage = yield* seedIncoming(subject, true);
+    const hostile = yield* appendCertifiedPost(subject, firstMessage, [
       { type: "text", text: question },
       {
         type: "data",
@@ -648,8 +648,12 @@ function retiresARequestThatExpiresBeforeItsCheck() {
   return Effect.gen(function* () {
     const subject = yield* fixture;
     const deadlineAt = Date.now() + 3_000;
-    const genesis = yield* seedIncoming(subject, true);
-    const earlier = yield* appendCertifiedPost(subject, genesis, "Earlier");
+    const firstMessage = yield* seedIncoming(subject, true);
+    const earlier = yield* appendCertifiedPost(
+      subject,
+      firstMessage,
+      "Earlier",
+    );
     yield* appendCertifiedPost(
       subject,
       earlier,
@@ -839,8 +843,8 @@ function keepsAnInvalidAnswerFromLaterRuntimeHistory() {
 /** Alice's direct conversation with Bob, ending in one plain message from Bob. */
 function seedEarlierMessage(subject: Fixture) {
   return seedIncoming(subject, true).pipe(
-    Effect.flatMap((genesis) =>
-      appendCertifiedPost(subject, genesis, "An earlier message"),
+    Effect.flatMap((firstMessage) =>
+      appendCertifiedPost(subject, firstMessage, "An earlier message"),
     ),
   );
 }

@@ -26,10 +26,10 @@ import { identifier } from "../../__tests__/agent-card-fixtures.js";
 import {
   appendCertifiedIntent,
   appendCertifiedPost,
-  buildCertifiedGenesis,
+  buildCertifiedFirstMessage,
   buildCertifiedPost,
   signEvidence,
-  storeCertifiedGenesis,
+  storeCertifiedFirstMessage,
 } from "../../__tests__/certified-history-fixtures.js";
 import {
   engineFixture,
@@ -163,17 +163,17 @@ it(
 function seedRemoteRequest(subject: Fixture) {
   return withStore(subject.directory, (store) =>
     Effect.gen(function* () {
-      const genesis = yield* buildCertifiedGenesis(
+      const firstMessage = yield* buildCertifiedFirstMessage(
         subject.local,
         subject.remote,
         subject.membership,
         anchor.routerInstanceId,
       );
-      yield* storeCertifiedGenesis(
+      yield* storeCertifiedFirstMessage(
         store,
         subject.local.card,
         subject.membership,
-        genesis,
+        firstMessage,
       );
       const { id, nonce } = yield* mintCollectiveId(sender);
       const content = yield* encodeCollectiveContent(
@@ -193,7 +193,7 @@ function seedRemoteRequest(subject: Fixture) {
       );
       return yield* appendCertifiedPost(
         { ...subject, store },
-        genesis,
+        firstMessage,
         content,
       );
     }),
@@ -482,7 +482,7 @@ itOnClock(
 function interruptedBindFixture() {
   return Effect.gen(function* () {
     const subject = yield* groupSubject(yield* Effect.scoped(engineFixture()));
-    const head = yield* seedGroupGenesis(subject);
+    const head = yield* seedGroupFirstMessage(subject);
     const originalStore = yield* openEndpointStore(subject.directory, {
       liveWireVersions: LIVE_WIRE_VERSIONS,
     });
@@ -552,17 +552,17 @@ function groupSubject(subject: Fixture) {
   });
 }
 
-function seedGroupGenesis(subject: Fixture) {
+function seedGroupFirstMessage(subject: Fixture) {
   return withStore(subject.directory, (store) =>
     Effect.gen(function* () {
-      const partial = yield* buildCertifiedGenesis(
+      const partial = yield* buildCertifiedFirstMessage(
         subject.local,
         subject.remote,
         subject.membership,
         anchor.routerInstanceId,
       );
       const record = yield* completeGroupCertificate(subject, partial);
-      yield* storeCertifiedGenesis(
+      yield* storeCertifiedFirstMessage(
         store,
         subject.local.card,
         subject.membership,

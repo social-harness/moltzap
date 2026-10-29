@@ -341,7 +341,7 @@
         "src/communication/conversations/errors.ts",
         "src/communication/conversations/message.ts"
       ],
-      "reason": "Addressed send, GENESIS and POST certification, and recovery"
+      "reason": "Addressed send, FIRST_MESSAGE and MESSAGE certification, and recovery"
     },
     {
       "name": "collectives",
@@ -494,7 +494,7 @@
       "folders": [
         "communication/conversations"
       ],
-      "reason": "Addressed send, GENESIS and POST certification, and recovery"
+      "reason": "Addressed send, FIRST_MESSAGE and MESSAGE certification, and recovery"
     },
     {
       "name": "router",

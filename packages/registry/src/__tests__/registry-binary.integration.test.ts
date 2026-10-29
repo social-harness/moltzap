@@ -57,6 +57,7 @@ const KEY_ALREADY_REGISTERED_KIND = "key_already_registered";
 const NAME_TAKEN_KIND = "name_taken";
 const FOUND_KIND = "found";
 const NEWER_SCHEMA_REASON = "newer-schema";
+const PRE_RESET_REASON = "pre-reset";
 const OK_STATUS = 200;
 const NO_CONTENT_STATUS = 204;
 const BAD_REQUEST_STATUS = 400;
@@ -888,7 +889,7 @@ const registryBinaryBehavior = Effect.gen(function* () {
     environment: infrastructure.environment,
     wrongKeyPath: infrastructure.wrongKeyPath,
     addUnknownMigration: sql`
-      INSERT INTO sharness_registry_ledger_20261026 (migration_id, name)
+      INSERT INTO sharness_registry_ledger_20261029 (migration_id, name)
       VALUES (9999, 'future')
     `,
   });
@@ -902,6 +903,37 @@ it("preserves Registry contracts across first boot, concurrency, and restart", (
   expect.hasAssertions();
   return Effect.runPromise(registryBinaryBehavior);
 }, 120_000);
+
+it(
+  "refuses the preceding reset's database without changing its tables",
+  () =>
+    Effect.runPromise(
+      Effect.gen(function* () {
+        const infrastructure = yield* setupRegistryInfrastructure;
+        const sql = yield* PgClient.make({
+          url: Redacted.make(infrastructure.postgresqlUrl),
+        }).pipe(Effect.provide(Reactivity.layer));
+        yield* sql`CREATE TABLE sharness_registry_ledger_20261026 (migration_id integer PRIMARY KEY)`;
+        yield* sql`INSERT INTO sharness_registry_ledger_20261026 VALUES (1)`;
+        const tables =
+          yield* sql`SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = 'public' ORDER BY tablename`;
+        const process = yield* managedProcess(
+          REGISTRY_BINARY,
+          [],
+          infrastructure.environment,
+        );
+        yield* expectStartupFailure(process);
+        expect(process.logs()).toContain(PRE_RESET_REASON);
+        expect(
+          yield* sql`SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = 'public' ORDER BY tablename`,
+        ).toEqual(tables);
+        expect(
+          yield* sql`SELECT migration_id FROM sharness_registry_ledger_20261026`,
+        ).toEqual([{ migration_id: 1 }]);
+      }).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
+    ),
+  30_000,
+);
 
 /** The external caller has the package links that an installed consumer receives. */
 const makeExternalConsumer = Effect.gen(function* () {

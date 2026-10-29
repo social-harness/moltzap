@@ -60,8 +60,8 @@ import {
 /* eslint-disable agent-code-guard/no-example-only-tests -- regression-only suite: each case exercises a distinct HTTP proof, replay-ordering, cache, or cancellation contract. The concurrency timelines are not an input domain to generate over. */
 
 const WRONG_VERSION = "wrong-version";
-/** Fictional history-only version, never emitted by a release. */
-const PRIOR_WIRE_VERSION = "2099.101.0";
+/** The preceding reset's emitted version must fail live HTTP admission. */
+const PRIOR_WIRE_VERSION = "2026.1026.5";
 const CONCURRENT_REQUEST_COUNT = 4;
 const REGISTRY_LOOKUP_DEADLINE = Duration.millis(20);
 const RESOLVER_REGRESSION_DEADLINE = Duration.seconds(2);

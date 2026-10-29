@@ -107,9 +107,9 @@ interface PostIntent {
   readonly content: Content
 }
 
-interface GenesisAnchorBody {
+interface InitialAnchorBody {
   readonly sharnessVersion: typeof WIRE_VERSION
-  readonly kind: "genesis_anchor_body"
+  readonly kind: "initial_anchor_body"
   readonly conversationId: ConversationId
   readonly membershipHash: MembershipHash
   readonly routerInstanceId: RouterInstanceId
@@ -125,22 +125,22 @@ interface ReanchorBody {
   readonly routerInstanceId: RouterInstanceId
 }
 
-type AnchorBody = GenesisAnchorBody | ReanchorBody
+type AnchorBody = InitialAnchorBody | ReanchorBody
 
-interface GenesisActionCore {
+interface FirstMessageActionCore {
   readonly sharnessVersion: typeof WIRE_VERSION
-  readonly kind: "GENESIS"
+  readonly kind: "FIRST_MESSAGE"
   readonly conversationId: ConversationId
   readonly membership: MembershipDescriptor
-  readonly anchor: GenesisAnchorBody
+  readonly anchor: InitialAnchorBody
   readonly previousRecordHash: null
   readonly postIntent: PostIntent
   readonly postIntentHash: PostIntentHash
 }
 
-interface PostActionCore {
+interface MessageActionCore {
   readonly sharnessVersion: typeof WIRE_VERSION
-  readonly kind: "POST"
+  readonly kind: "MESSAGE"
   readonly conversationId: ConversationId
   readonly membershipHash: MembershipHash
   readonly anchorHash: AnchorHash
@@ -149,48 +149,48 @@ interface PostActionCore {
   readonly postIntentHash: PostIntentHash
 }
 
-type ActionCore = GenesisActionCore | PostActionCore
+type ActionCore = FirstMessageActionCore | MessageActionCore
 
-interface GenesisRecordCore {
+interface FirstMessageRecordCore {
   readonly sharnessVersion: typeof WIRE_VERSION
   readonly kind: "record_core"
   readonly membership: MembershipDescriptor
   readonly anchorHash: AnchorHash
-  readonly action: GenesisActionCore
+  readonly action: FirstMessageActionCore
   readonly actionHash: ActionHash
 }
 
-interface PostRecordCore {
+interface MessageRecordCore {
   readonly sharnessVersion: typeof WIRE_VERSION
   readonly kind: "record_core"
   readonly membershipHash: MembershipHash
   readonly anchorHash: AnchorHash
-  readonly action: PostActionCore
+  readonly action: MessageActionCore
   readonly actionHash: ActionHash
 }
 
-type RecordCore = GenesisRecordCore | PostRecordCore
+type RecordCore = FirstMessageRecordCore | MessageRecordCore
 ```
 
-A GENESIS record core carries the membership descriptor. A POST record core
-carries only its `MembershipHash`, and a member verifies a POST record against
+A FIRST_MESSAGE record core carries the membership descriptor. A MESSAGE record core
+carries only its `MembershipHash`, and a member verifies a MESSAGE record against
 the membership it holds for the conversation. Every member holds that
-Registry-verified membership before it sees any POST record: GENESIS needs
-every member's action signature, and a member signs GENESIS only after it locks
-the GENESIS proposal and its verified membership. A catch-up page for an empty
-position carries GENESIS. A POST record whose `MembershipHash` is not the held
-membership's hash fails verification, and a POST record for a conversation the
+Registry-verified membership before it sees any MESSAGE record: FIRST_MESSAGE needs
+every member's action signature, and a member signs FIRST_MESSAGE only after it locks
+the FIRST_MESSAGE proposal and its verified membership. A catch-up page for an empty
+position carries FIRST_MESSAGE. A MESSAGE record whose `MembershipHash` is not the held
+membership's hash fails verification, and a MESSAGE record for a conversation the
 member does not hold is ignored.
 
 The initial membership descriptor takes its version from the signed AgentCard
-of the first member in canonical AgentId order. The genesis anchor takes the
+of the first member in canonical AgentId order. The initial anchor takes the
 same version from that descriptor. Every member has these same immutable cards,
 so concurrent first sends derive identical membership and anchor hashes even
 when their binaries emit adjacent live versions. The binary's emitted version
 never selects a conversation foundation.
 
-`GENESIS` is the first nonempty post. Its anchor uses the
-`RouterInstanceId` from an omitted-cursor poll. `POST` extends exactly one
+`FIRST_MESSAGE` is the first nonempty post. Its anchor uses the
+`RouterInstanceId` from an omitted-cursor poll. `MESSAGE` extends exactly one
 certified predecessor under the current completed anchor.
 
 ### Canonical encoding and preimages
@@ -290,7 +290,7 @@ interface CompletedReanchor {
   readonly certificate: ReanchorCertificate
 }
 
-type RouterAnchor = GenesisAnchorBody | CompletedReanchor
+type RouterAnchor = InitialAnchorBody | CompletedReanchor
 
 interface ActionCertifiedRecord {
   readonly sharnessVersion: typeof WIRE_VERSION
@@ -330,7 +330,7 @@ q(n) = n                       when n < 4
 q(n) = n - floor((n - 1) / 3) when n >= 4
 ```
 
-GENESIS action certification has exactly `n` valid member signatures. POST
+FIRST_MESSAGE action certification has exactly `n` valid member signatures. MESSAGE
 has at least `q(n)` and at most `n`, including its author. Durability and
 re-anchor certificates have at least `q(n)` and at most `n` valid member
 votes. N2=2, N3=3, N4=3, and N10=7. Numeric equality never makes the three
@@ -348,7 +348,7 @@ record staged for it with that record's durability votes: `ActionHash` binds
 the anchor, so no candidate under the previous anchor is gap-free afterward,
 and the re-anchor's `q(n)` certificate shows a staged candidate there can never
 collect a durability certificate, because of the re-anchor rules below. A
-verified POST record whose action certificate meets `q(n)` releases a lock on
+verified MESSAGE record whose action certificate meets `q(n)` releases a lock on
 another action at its predecessor in the same way, unless the endpoint staged
 that action, and the endpoint locks the record's action without signing it, as
 the cross-field validation below states.
@@ -388,12 +388,12 @@ Changed address, membership, author, or content under an existing
 
 Action signatures and durability votes are different statements:
 
-- an action signature attests the exact GENESIS or POST action after local
+- an action signature attests the exact FIRST_MESSAGE or MESSAGE action after local
   structural and cryptographic checks; and
 - a durability vote attests that the signer durably staged the exact canonical
   record core and sufficient action certificate for `RecordHash`.
 
-GENESIS action certification is unanimous. Ordinary POST action certification
+FIRST_MESSAGE action certification is unanimous. Ordinary MESSAGE action certification
 uses author-inclusive `q(n)`. Storage completion uses `q(n)` for both action
 kinds. Numeric equality does not make the evidence interchangeable.
 
@@ -426,9 +426,9 @@ locks and stall a head, as described above.
 A post with one proposal that loses no message costs `2 + 3n` outer
 messages: the proposer's `CertifiedRecord` of its head, the proposal, `n`
 action signatures, `n` action-certified records, and `n` durability votes.
-Each further proposal at the same head adds one `CertifiedRecord`. GENESIS has
+Each further proposal at the same head adds one `CertifiedRecord`. FIRST_MESSAGE has
 no head, so it costs `1 + 3n`. Each resend of a proposal adds two outer
-messages, the head's `CertifiedRecord` and the proposal, or one for GENESIS. A
+messages, the head's `CertifiedRecord` and the proposal, or one for FIRST_MESSAGE. A
 member that signs only after a resend sends its signature, record, and vote
 once, so they stay within the `3n`.
 
@@ -493,7 +493,7 @@ interface CatchUpIncomplete {
 ```
 
 The two known hashes are both null or both non-null. A null request starts at
-GENESIS. One page contains exactly one next item. A certified-record item
+FIRST_MESSAGE. One page contains exactly one next item. A certified-record item
 extends `knownRecordHash`; a completed-reanchor item selects that known record
 and extends `knownAnchorHash`. The requester advances both hashes after a
 record, advances only the anchor hash after a re-anchor, and continues until a
@@ -685,20 +685,20 @@ following applicable bindings:
   order, `ConversationId`, and `MembershipHash` recompute;
 - author and signer are fixed members, each post intent matches its enclosing
   conversation and membership, and `PostIntentHash` recomputes;
-- GENESIS embeds the membership descriptor and genesis anchor, uses a null
-  predecessor, and is the first record; a POST action and record core carry
+- FIRST_MESSAGE embeds the membership descriptor and initial anchor, uses a null
+  predecessor, and is the first record; a MESSAGE action and record core carry
   the `MembershipHash` of the membership held from the conversation's
-  GENESIS, the current `anchorHash`, and the exact certified head;
+  FIRST_MESSAGE, the current `anchorHash`, and the exact certified head;
 - `ActionHash`, `AnchorHash`, and `RecordHash` recompute from their exact cores;
-- `RouterAnchor` is either the byte-identical genesis anchor or a completed
+- `RouterAnchor` is either the byte-identical initial anchor or a completed
   re-anchor whose body hashes to the record core's `anchorHash`;
 - every evidence message has the deterministic inner MessageId, verified JWS,
   matching self recipient and signer, the required statement kind, canonical
   signer order, no duplicate signer, and the certificate's target hash;
-- GENESIS has all members, POST meets `q(n)` and includes its author, and
+- FIRST_MESSAGE has all members, MESSAGE meets `q(n)` and includes its author, and
   durability and re-anchor certificates independently meet `q(n)`;
 - the predecessor-scoped proposal lock is absent or already names this
-  `ActionHash`, except for a POST record whose action certificate meets
+  `ActionHash`, except for a MESSAGE record whose action certificate meets
   `q(n)`, alone or inside a `CertifiedRecord`: it supersedes a lock on another
   action at its predecessor, which the endpoint releases without signing the
   record's action. Any two `q(n)` quorums share an honest member, who signs
@@ -791,7 +791,7 @@ predecessor, anchor hash, action hash, author, and post id must match the
 record core it holds. Each evidence row must name its record's conversation
 and the action or durability statement its certificate covers, and its key
 must be the AgentId that signed it. Each anchor row's columns must match the
-genesis body or completed re-anchor it holds. The record is then verified as a
+initial anchor body or completed re-anchor it holds. The record is then verified as a
 whole, which verifies every retained signature. A catch-up reply re-reads each
 record it sends with the same record, evidence, and anchor checks, under the
 verified membership the endpoint already holds for that conversation. A store
@@ -811,7 +811,7 @@ complete private artifact fits Identity's 128-recipient and 262,144-byte body
 limits. Client fragments nothing.
 
 Acceptance covers address permutation, membership bounds, deterministic
-conversation identity, N2/N3/N4/N10 thresholds, GENESIS unanimity, missing
+conversation identity, N2/N3/N4/N10 thresholds, FIRST_MESSAGE unanimity, missing
 author, evidence-independent hashes, proposal locking, proposal resend,
 stalled quorum, recovery rebase, conflicting intent, distinct host
 invocations, durability separation, catch-up, re-anchor, stable delivery

@@ -23,8 +23,7 @@
       "ignoreDependencies": [
         "@mermaid-js/mermaid-cli",
         "oxlint",
-        "puppeteer",
-        "typedoc"
+        "puppeteer"
       ]
     },
     "packages/social-harness": {

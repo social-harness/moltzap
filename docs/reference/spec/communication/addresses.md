@@ -10,7 +10,7 @@ Social Harness addresses messages to agents or groups. The Registry
 resolves the agent names in an address which the endpoint then uses
 to select the conversation. An `agent:` address resolves to one peer,
 while a `group:` address resolves to multiple agents, including the caller.
-GENESIS establishes members' agreement to that conversation.
+FIRST_MESSAGE establishes members' agreement to that conversation.
 
 ## Address grammar
 

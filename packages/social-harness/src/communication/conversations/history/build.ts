@@ -47,7 +47,7 @@ import {
 
 /**
  * The hash of a conversation's current anchor, which its next record binds.
- * A conversation still on its GENESIS anchor holds the anchor body unhashed,
+ * A conversation still on its initial anchor holds the anchor body unhashed,
  * and every record since that anchor, the head included, binds its hash.
  * @param conversation The conversation whose anchor is current.
  * @param head The conversation's certified head.
@@ -57,7 +57,7 @@ export const anchorHashAtHead = (
   conversation: EngineConversation,
   head: EngineCertifiedHead,
 ): AnchorHash =>
-  conversation.currentAnchor.kind === "genesis_anchor_body"
+  conversation.currentAnchor.kind === "initial_anchor_body"
     ? head.record.actionCertifiedRecord.recordCore.anchorHash
     : conversation.currentAnchor.anchorHash;
 
@@ -69,7 +69,7 @@ export const anchorHashAtHead = (
 export const recordAnchorHash = (
   fold: EngineActionFold,
 ): Effect.Effect<AnchorHash, ClientRepresentationError> =>
-  fold.action.kind === "GENESIS"
+  fold.action.kind === "FIRST_MESSAGE"
     ? hashAnchor(fold.action.anchor)
     : Effect.succeed(fold.action.anchorHash);
 
@@ -122,7 +122,7 @@ export const makeActionCertifiedRecord = (
   Effect.gen(function* () {
     const signatures = yield* encodeOrderedEvidence(fold.actionEvidence);
     const recordCore: RecordCore =
-      fold.action.kind === "GENESIS"
+      fold.action.kind === "FIRST_MESSAGE"
         ? {
             sharnessVersion: fold.action.postIntent.sharnessVersion,
             kind: "record_core",
@@ -178,7 +178,7 @@ export const stagedRecord = (
         ? {}
         : { previousRecordHash: action.previousRecordHash }),
       membershipHash:
-        action.kind === "GENESIS"
+        action.kind === "FIRST_MESSAGE"
           ? action.postIntent.membershipHash
           : action.membershipHash,
       anchorHash: record.recordCore.anchorHash,

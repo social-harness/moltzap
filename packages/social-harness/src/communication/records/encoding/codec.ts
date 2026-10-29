@@ -39,7 +39,7 @@ import {
   type DirectPacket as DirectPacketValue,
   EvidenceStatement,
   type EvidenceStatement as EvidenceStatementValue,
-  type GenesisAnchorBody,
+  type InitialAnchorBody,
   MembershipDescriptor,
   type MembershipDescriptor as MembershipDescriptorValue,
   MembershipHash,
@@ -157,7 +157,7 @@ export const hashPostIntent = (
   });
 
 export const hashAnchor = (
-  anchor: GenesisAnchorBody | ReanchorBody,
+  anchor: InitialAnchorBody | ReanchorBody,
 ): Effect.Effect<AnchorHashValue, ClientRepresentationError> =>
   domainHash({
     artifact: "anchor",

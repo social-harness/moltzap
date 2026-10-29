@@ -7,7 +7,7 @@ import { readBytes, readText } from "../database/index.js";
 /** First-candidate locks are selected against one durable predecessor. */
 export {
   findProposalLock,
-  GENESIS_PREDECESSOR,
+  FIRST_MESSAGE_PREDECESSOR,
   lockProposalInTransaction,
   readConversationPosition,
   readProposalLock,

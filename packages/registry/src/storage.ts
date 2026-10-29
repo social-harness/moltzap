@@ -37,7 +37,7 @@ export class RegistryStorageInitializationError extends Data.TaggedError(
     | "unavailable";
 }> {}
 
-const LEDGER_TABLE = "sharness_registry_ledger_20261026";
+const LEDGER_TABLE = "sharness_registry_ledger_20261029";
 
 /**
  * Ledgers written by releases before the current reset. Their databases hold
@@ -48,6 +48,7 @@ const PRE_RESET_LEDGERS = [
   "moltzap_registry_migrations",
   "sharness_registry_migrations",
   "sharness_registry_ledger",
+  "sharness_registry_ledger_20261026",
 ] as const;
 
 type StorageError =

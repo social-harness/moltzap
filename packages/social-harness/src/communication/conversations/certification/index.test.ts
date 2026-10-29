@@ -723,16 +723,22 @@ function pump(
   });
 }
 
-function certifyGenesisOf(
+function certifyFirstMessageOf(
   harness: ProtocolHarness,
   sending: Fiber.RuntimeFiber<EngineSentPost, SendError>,
 ): Effect.Effect<RecordHash> {
   return Effect.gen(function* () {
     const initial = yield* takeReadyBatch(harness);
-    const proposalMessage = yield* requireAt(initial, 0, "genesis proposal");
+    const proposalMessage = yield* requireAt(
+      initial,
+      0,
+      "first message proposal",
+    );
     const proposal = yield* decodeActionProposal(harness, proposalMessage);
-    if (proposal.action.kind !== "GENESIS") {
-      return yield* Effect.dieMessage("first addressed send was not GENESIS");
+    if (proposal.action.kind !== "FIRST_MESSAGE") {
+      return yield* Effect.dieMessage(
+        "first addressed send was not FIRST_MESSAGE",
+      );
     }
     yield* pump(harness, initial);
     expect(yield* certifiedRecordCounts(harness)).toEqual([1, 1, 1, 1]);
@@ -741,13 +747,15 @@ function certifyGenesisOf(
   });
 }
 
-function certifyGenesis(harness: ProtocolHarness): Effect.Effect<RecordHash> {
+function certifyFirstMessage(
+  harness: ProtocolHarness,
+): Effect.Effect<RecordHash> {
   return Effect.gen(function* () {
     const author = yield* requireAt(harness.engines, 0, "endpoint engine");
     const sending = yield* Effect.fork(
       author.send(yield* sendInput(harness, "open group")),
     );
-    return yield* certifyGenesisOf(harness, sending);
+    return yield* certifyFirstMessageOf(harness, sending);
   });
 }
 
@@ -820,7 +828,7 @@ interface DurabilityBinding {
 }
 
 /**
- * Stages the author's successor POST up to its action certificate, persists
+ * Stages the author's successor MESSAGE up to its action certificate, persists
  * a durability vote from member 3 under `bind`'s binding in the author's
  * store, and restarts the author's engine over that store. The vote belongs
  * to no certified record, so only the staged fold's evidence recovery reads
@@ -836,7 +844,7 @@ function restartOverPersistedDurabilityVote(
 ): Effect.Effect<"started" | EngineInitializationError, never, Scope.Scope> {
   return Effect.gen(function* () {
     const harness = yield* makeProtocolHarness();
-    yield* certifyGenesis(harness);
+    yield* certifyFirstMessage(harness);
     const author = yield* requireAt(harness.identities, 0, "identity");
     const voter = yield* requireAt(harness.identities, 3, "durability voter");
     const keyMember = yield* requireAt(
@@ -910,7 +918,7 @@ function restartOverPersistedDurabilityVote(
 }
 
 /**
- * Member 2 misses member 1's proposal at the genesis head and locks its own
+ * Member 2 misses member 1's proposal at the first message head and locks its own
  * there, while members 1, 3 and 4 lock and sign member 1's. Member 4 then
  * falls silent, so member 1's post certifies only if member 2 adopts its
  * action certificate over its own lock and votes for it. Member 2's own post
@@ -922,7 +930,7 @@ function restartOverPersistedDurabilityVote(
 function adoptsAnActionCertificateOverItsOwnLock() {
   return Effect.gen(function* () {
     const harness = yield* makeProtocolHarness();
-    yield* certifyGenesis(harness);
+    yield* certifyFirstMessage(harness);
     const winnerAuthor = yield* requireAt(
       harness.engines,
       0,
@@ -1000,7 +1008,7 @@ function adoptsAnActionCertificateOverItsOwnLock() {
 }
 
 /**
- * The latest POST record `author`'s store certified, sent whole by `author`.
+ * The latest MESSAGE record `author`'s store certified, sent whole by `author`.
  * @param harness Engines and the stores they persist to.
  * @param author The member whose store and identity send the record.
  * @returns The outer message carrying the `CertifiedRecord`.
@@ -1017,7 +1025,7 @@ function certifiedRecordPacket(
       .filter(({ previousRecordHash }) => previousRecordHash !== undefined)
       .at(-1);
     if (stored === undefined) {
-      return yield* Effect.dieMessage("no POST record is certified");
+      return yield* Effect.dieMessage("no MESSAGE record is certified");
     }
     const record = yield* readStoredRecord(
       harness.membership,
@@ -1034,7 +1042,7 @@ function certifiedRecordPacket(
 }
 
 /**
- * Member 2 misses member 1's proposal at the genesis head and locks its own
+ * Member 2 misses member 1's proposal at the first message head and locks its own
  * there, while members 1, 3 and 4 lock, sign and vote for member 1's. Member
  * 2 also misses that post's action-certified copies, so the post first reaches
  * it as member 1's whole CertifiedRecord in a direct packet, which members
@@ -1045,7 +1053,7 @@ function certifiedRecordPacket(
 function adoptsACertifiedRecordOverItsOwnLock() {
   return Effect.gen(function* () {
     const harness = yield* makeProtocolHarness();
-    yield* certifyGenesis(harness);
+    yield* certifyFirstMessage(harness);
     const winnerAuthor = yield* requireAt(
       harness.engines,
       0,
@@ -1103,14 +1111,14 @@ function adoptsACertifiedRecordOverItsOwnLock() {
 /**
  * Members 1, 2 and 3 certify a post that member 4 misses, so the post first
  * reaches member 4 as member 1's whole CertifiedRecord and member 4 never
- * votes for it. Restarted over its store, member 4 resends the genesis vote
+ * votes for it. Restarted over its store, member 4 resends the first message vote
  * it signed and signs no vote for the post.
  * @returns Completion once member 4's restart traffic is checked.
  */
 function restartSignsNoVoteForARecordAcceptedWhole() {
   return Effect.gen(function* () {
     const harness = yield* makeProtocolHarness();
-    const genesisRecordHash = yield* certifyGenesis(harness);
+    const firstMessageRecordHash = yield* certifyFirstMessage(harness);
     const authorIdentity = yield* requireAt(harness.identities, 0, "identity");
     yield* certifyAPostMember4Misses(harness, "certified without member 4");
     const accepted = yield* harness.deliver(
@@ -1128,7 +1136,7 @@ function restartSignsNoVoteForARecordAcceptedWhole() {
     );
 
     expect(accepted).toEqual(["accepted"]);
-    expect(votes).toMatchObject([{ recordHash: genesisRecordHash }]);
+    expect(votes).toMatchObject([{ recordHash: firstMessageRecordHash }]);
   });
 }
 
@@ -1138,7 +1146,7 @@ function restartSignsNoVoteForARecordAcceptedWhole() {
  * commits the record leaves it. Every store refuses records received whole,
  * and member 4's is the only one that receives one. Member 4 keeps the post's
  * action certificate it verified on the way, so once restarted over its store
- * it resends its genesis signature and vote, then stages the post from that
+ * it resends its first message signature and vote, then stages the post from that
  * certificate and sends its own action-certified copy of the post before its
  * vote. Fails when the record's core is stored apart from its durability
  * certificate: a restart cannot tell that core from one staged for this
@@ -1150,7 +1158,7 @@ function restartSendsItsCopyBeforeVotingForARecordItsStoreRefused() {
     const harness = yield* makeProtocolHarness({
       wrapStore: (store) => refusingWholeRecords(store),
     });
-    yield* certifyGenesis(harness);
+    yield* certifyFirstMessage(harness);
     const authorIdentity = yield* requireAt(harness.identities, 0, "identity");
     yield* certifyAPostMember4Misses(harness, "refused by member 4's store");
     const refused = yield* harness.deliver(
@@ -1191,7 +1199,7 @@ function stagesFromALaterCopyARecordItsStoreRefusedWhole() {
     const harness = yield* makeProtocolHarness({
       wrapStore: (store) => refusingWholeRecords(store),
     });
-    yield* certifyGenesis(harness);
+    yield* certifyFirstMessage(harness);
     const authorIdentity = yield* requireAt(harness.identities, 0, "identity");
     const absentIdentity = yield* requireAt(harness.identities, 3, "identity");
     const authorCopy = yield* certifyAPostMember4Misses(
@@ -1236,7 +1244,7 @@ function refusingWholeRecords(store: EndpointStore): EndpointStore {
 
 /**
  * Members 1, 2 and 3 certify member 1's post, which member 4 misses.
- * @param harness Four members whose genesis is certified.
+ * @param harness Four members whose first message is certified.
  * @param text The post's text.
  * @returns Member 1's action-certified copy of the post.
  */
@@ -1307,7 +1315,7 @@ function finishesAnInterruptedAcceptanceOfARecordReceivedWhole() {
     const harness = yield* makeProtocolHarness({
       wrapStore: (store) => holdingWholeRecordCommit(store, hold),
     });
-    yield* certifyGenesis(harness);
+    yield* certifyFirstMessage(harness);
     const authorIdentity = yield* requireAt(harness.identities, 0, "identity");
     const absentIdentity = yield* requireAt(harness.identities, 3, "identity");
     const authorCopy = yield* certifyAPostMember4Misses(
@@ -1383,7 +1391,7 @@ function holdingWholeRecordCommit(
 }
 
 /**
- * Member 2 locks its own post at the genesis head while members 1, 3 and 4
+ * Member 2 locks its own post at the first message head while members 1, 3 and 4
  * lock and sign member 1's. Member 2's store then starts refusing every other
  * member's action signature, so its acceptance of member 1's action-certified
  * record stops right after the lock is superseded, as an interruption there
@@ -1400,7 +1408,7 @@ function signsNothingForAnAdoptedActionWhenAcceptanceStops() {
           ? refusingPeerActionEvidence(store, identity.card.agentId, refusing)
           : store,
     });
-    yield* certifyGenesis(harness);
+    yield* certifyFirstMessage(harness);
     const winnerAuthor = yield* requireAt(
       harness.engines,
       0,
@@ -1508,7 +1516,7 @@ function refusingPeerActionEvidence(
 function refusesASecondCertificateOverAStagedAction() {
   return Effect.gen(function* () {
     const harness = yield* makeProtocolHarness();
-    yield* certifyGenesis(harness);
+    yield* certifyFirstMessage(harness);
     const [first, staging, equivocating, fourth] = yield* Effect.all([
       requireAt(harness.identities, 0, "identity"),
       requireAt(harness.identities, 1, "identity"),
@@ -1618,7 +1626,7 @@ function refusesASecondCertificateOverAStagedAction() {
 function certifiesFromActionCertifiedCopiesAfterMissingTheSignatures() {
   return Effect.gen(function* () {
     const harness = yield* makeProtocolHarness();
-    yield* certifyGenesis(harness);
+    yield* certifyFirstMessage(harness);
     const author = yield* requireAt(harness.engines, 0, "endpoint engine");
     const returning = yield* requireAt(harness.engines, 1, "endpoint engine");
     const present = [0, 2, 3];
@@ -1672,7 +1680,7 @@ function certifiesFromActionCertifiedCopiesAfterMissingTheSignatures() {
 function certifiesPastAVoteSealedAwayFromOneMember() {
   return Effect.gen(function* () {
     const harness = yield* makeProtocolHarness();
-    yield* certifyGenesis(harness);
+    yield* certifyFirstMessage(harness);
     const author = yield* requireAt(harness.engines, 0, "endpoint engine");
     const [first, second, lagging, faulty] = harness.identities;
     if (
@@ -1742,7 +1750,7 @@ function certifiesPastAVoteSealedAwayFromOneMember() {
 function certifiesOrdinaryN4Post() {
   return Effect.gen(function* () {
     const harness = yield* makeProtocolHarness();
-    yield* certifyGenesis(harness);
+    yield* certifyFirstMessage(harness);
     const author = yield* requireAt(harness.identities, 0, "identity");
     const authorEngine = yield* requireAt(
       harness.engines,
@@ -1760,10 +1768,10 @@ function certifiesOrdinaryN4Post() {
       proposalBatch,
       "action_proposal",
     );
-    const proposalMessage = yield* requireAt(proposals, 0, "POST proposal");
+    const proposalMessage = yield* requireAt(proposals, 0, "MESSAGE proposal");
     const proposal = yield* decodeActionProposal(harness, proposalMessage);
-    if (proposal.action.kind !== "POST") {
-      return yield* Effect.dieMessage("ordinary send did not propose POST");
+    if (proposal.action.kind !== "MESSAGE") {
+      return yield* Effect.dieMessage("ordinary send did not propose MESSAGE");
     }
 
     yield* harness.deliver(proposalBatch);
@@ -1797,7 +1805,7 @@ function certifiesOrdinaryN4Post() {
     );
     if (authorActionRecordMessage === undefined) {
       return yield* Effect.dieMessage(
-        "author did not assemble the POST action certificate",
+        "author did not assemble the MESSAGE action certificate",
       );
     }
     const actionRecord = yield* decodeActionCertifiedRecord(
@@ -1902,17 +1910,17 @@ function certifiesOrdinaryN4Post() {
     ]);
     yield* Fiber.join(sending).pipe(Effect.orDie);
     const certified = yield* authorStore.recover().pipe(Effect.orDie);
-    const storedPost = certified.certifiedRecords.find(
+    const storedMessage = certified.certifiedRecords.find(
       ({ recordHash }) => recordHash === actionRecord.recordHash,
     );
-    if (storedPost === undefined) {
-      return yield* Effect.dieMessage("POST did not complete durably");
+    if (storedMessage === undefined) {
+      return yield* Effect.dieMessage("MESSAGE did not complete durably");
     }
-    expect(storedPost.actionEvidence).toHaveLength(3);
-    expect(storedPost.durabilityEvidence).toHaveLength(3);
+    expect(storedMessage.actionEvidence).toHaveLength(3);
+    expect(storedMessage.durabilityEvidence).toHaveLength(3);
     const storedCore = yield* decodeCanonical(
       RecordCore,
-      storedPost.canonicalRecordCore,
+      storedMessage.canonicalRecordCore,
     ).pipe(Effect.orDie);
     expect(storedCore.action.kind).toBe(actionRecord.recordCore.action.kind);
     expect(storedCore.actionHash).toBe(actionRecord.recordCore.actionHash);
@@ -1925,7 +1933,7 @@ function ordersCompetingProposalsBeforeActionVotes(input: {
 }) {
   return Effect.gen(function* () {
     const harness = yield* makeProtocolHarness();
-    yield* certifyGenesis(harness);
+    yield* certifyFirstMessage(harness);
     const firstAuthor = yield* requireAt(
       harness.engines,
       input.firstAuthorIndex,
@@ -1955,11 +1963,11 @@ function ordersCompetingProposalsBeforeActionVotes(input: {
     const secondMessage = yield* requireAt(secondBatch, 1, "second proposal");
     const secondProposal = yield* decodeActionProposal(harness, secondMessage);
     if (
-      firstProposal.action.kind !== "POST" ||
-      secondProposal.action.kind !== "POST"
+      firstProposal.action.kind !== "MESSAGE" ||
+      secondProposal.action.kind !== "MESSAGE"
     ) {
       return yield* Effect.dieMessage(
-        "same-predecessor fixture requires two POST proposals",
+        "same-predecessor fixture requires two MESSAGE proposals",
       );
     }
     expect(firstProposal.action.previousRecordHash).toBe(
@@ -2015,8 +2023,8 @@ function ordersCompetingProposalsBeforeActionVotes(input: {
 
 /**
  * A host repeats a send with identical input once the first has certified.
- * The first invocation opens the conversation with its GENESIS and the second
- * proposes a POST at that head, and each proposal carries its own PostId.
+ * The first invocation opens the conversation with its FIRST_MESSAGE and the second
+ * proposes a MESSAGE at that head, and each proposal carries its own PostId.
  * Fails when identical input reuses a PostId.
  */
 function givesIdenticalHostInvocationsDistinctPostIds() {
@@ -2125,7 +2133,7 @@ function sealsEveryOuterBodyOfAPost(memberCount: number) {
 function sendReturnsTheStoredCertifiedRecordHash() {
   return Effect.gen(function* () {
     const harness = yield* makeProtocolHarness();
-    const recordHash = yield* certifyGenesis(harness);
+    const recordHash = yield* certifyFirstMessage(harness);
     const authorStore = yield* requireAt(harness.stores, 0, "store");
 
     const recovery = yield* authorStore.recover().pipe(Effect.orDie);
@@ -2139,7 +2147,7 @@ function sendReturnsTheStoredCertifiedRecordHash() {
 function pendingDeliveryCarriesTheCertifiedRecordHash() {
   return Effect.gen(function* () {
     const harness = yield* makeProtocolHarness();
-    const recordHash = yield* certifyGenesis(harness);
+    const recordHash = yield* certifyFirstMessage(harness);
     const member = yield* requireAt(harness.engines, 1, "endpoint engine");
 
     const pending = yield* member.readPendingMessages().pipe(Effect.orDie);
@@ -2157,7 +2165,7 @@ function pendingDeliveryCarriesTheCertifiedRecordHash() {
 function reappendedOuterMessagesYieldOnePost() {
   return Effect.gen(function* () {
     const harness = yield* makeProtocolHarness();
-    const genesisHash = yield* certifyGenesis(harness);
+    const firstMessageHash = yield* certifyFirstMessage(harness);
     const author = yield* requireAt(harness.engines, 0, "endpoint engine");
     const sending = yield* Effect.fork(
       author.send(yield* sendInput(harness, "appended twice")),
@@ -2182,18 +2190,18 @@ function reappendedOuterMessagesYieldOnePost() {
     expect(
       pending.map((messages) => messages.map((message) => message.recordHash)),
     ).toEqual([
-      [genesisHash, sent.recordHash],
-      [genesisHash, sent.recordHash],
-      [genesisHash, sent.recordHash],
+      [firstMessageHash, sent.recordHash],
+      [firstMessageHash, sent.recordHash],
+      [firstMessageHash, sent.recordHash],
     ]);
   });
 }
 
-/** A lossless N4 POST spends the specified traffic budget without sending its completed record. */
+/** A lossless N4 MESSAGE spends the specified traffic budget without sending its completed record. */
 function postTrafficMatchesTheSpec() {
   return Effect.gen(function* () {
     const harness = yield* makeProtocolHarness();
-    const predecessor = yield* certifyGenesis(harness);
+    const predecessor = yield* certifyFirstMessage(harness);
     const author = yield* requireAt(harness.engines, 0, "endpoint engine");
     const sending = yield* Effect.fork(
       author.send(yield* sendInput(harness, "counted post")),
@@ -2248,7 +2256,7 @@ function postTrafficMatchesTheSpec() {
 
 describe("fixed-post endpoint protocol", () => {
   itOnTestClock(
-    "spends 2 + 3n outer messages on an N4 POST, with only its predecessor certified record",
+    "spends 2 + 3n outer messages on an N4 MESSAGE, with only its predecessor certified record",
     postTrafficMatchesTheSpec,
     TEST_TIMEOUT_MS,
   );
@@ -2323,7 +2331,7 @@ describe("fixed-post endpoint protocol", () => {
     TEST_TIMEOUT_MS,
   );
   it(
-    "certifies an author-inclusive N4 POST only after an independent durability quorum",
+    "certifies an author-inclusive N4 MESSAGE only after an independent durability quorum",
     certifiesOrdinaryN4Post,
     TEST_TIMEOUT_MS,
   );
@@ -2412,7 +2420,7 @@ describe("fixed-post endpoint protocol", () => {
   );
 });
 
-/** Both foundations exist before either peer observes the other's GENESIS. */
+/** Both foundations exist before either peer observes the other's FIRST_MESSAGE. */
 function concurrentFirstSends(firstVersion: string, secondVersion: string) {
   return Effect.gen(function* () {
     const harness = yield* makeProtocolHarness({
@@ -2426,14 +2434,19 @@ function concurrentFirstSends(firstVersion: string, secondVersion: string) {
     const firstBatch = yield* takeReadyBatch(harness);
     const secondSend = yield* Effect.fork(second.send(input));
     const secondBatch = yield* takeReadyBatch(harness);
-    const left = yield* requireAt(firstBatch, 0, "first GENESIS").pipe(
+    const left = yield* requireAt(firstBatch, 0, "first FIRST_MESSAGE").pipe(
       Effect.flatMap((message) => decodeActionProposal(harness, message)),
     );
-    const right = yield* requireAt(secondBatch, 0, "second GENESIS").pipe(
+    const right = yield* requireAt(secondBatch, 0, "second FIRST_MESSAGE").pipe(
       Effect.flatMap((message) => decodeActionProposal(harness, message)),
     );
-    if (left.action.kind !== "GENESIS" || right.action.kind !== "GENESIS") {
-      return yield* Effect.dieMessage("both first sends must propose GENESIS");
+    if (
+      left.action.kind !== "FIRST_MESSAGE" ||
+      right.action.kind !== "FIRST_MESSAGE"
+    ) {
+      return yield* Effect.dieMessage(
+        "both first sends must propose FIRST_MESSAGE",
+      );
     }
     expect(left.action.membership).toEqual(right.action.membership);
     expect(left.action.anchor).toEqual(right.action.anchor);
@@ -2494,7 +2507,7 @@ function sendHeldUntilAttached(): Effect.Effect<void, never, Scope.Scope> {
     expect(yield* Queue.size(harness.outbound)).toBe(0);
 
     yield* Deferred.succeed(attached, { routerInstanceId, pollCursor });
-    yield* certifyGenesisOf(harness, sending);
+    yield* certifyFirstMessageOf(harness, sending);
   });
 }
 
@@ -3105,12 +3118,12 @@ function holdingDisseminationEnqueue(
 }
 
 /**
- * Member 1 sends a GENESIS post, every member signs its proposal, and member
+ * Member 1 sends a FIRST_MESSAGE post, every member signs its proposal, and member
  * 2 receives every action signature but member 4's.
  * @param harness Engines of the four members.
  * @returns Every member's action signature, and member 4's on its own.
  */
-function signGenesisShortOfMember4(harness: ProtocolHarness) {
+function signFirstMessageShortOfMember4(harness: ProtocolHarness) {
   return Effect.gen(function* () {
     const author = yield* requireAt(harness.engines, 0, "endpoint engine");
     const fourth = yield* requireAt(harness.identities, 3, "identity");
@@ -3136,7 +3149,7 @@ function signGenesisShortOfMember4(harness: ProtocolHarness) {
 }
 
 /**
- * Members 1, 3 and 4 receive every action signature of the GENESIS post, so
+ * Members 1, 3 and 4 receive every action signature of the FIRST_MESSAGE post, so
  * each stages its record and votes for it.
  * @param harness Engines of the four members.
  * @param signatures Every member's action signature.
@@ -3160,7 +3173,7 @@ function voteOfMember3(
 }
 
 /**
- * Member 2 holds three of the four GENESIS action signatures, and member 4's
+ * Member 2 holds three of the four FIRST_MESSAGE action signatures, and member 4's
  * completes the action certificate, so member 2 stages the record and queues
  * its action-certified copy. Its acceptance of that signature is interrupted
  * while the store writes the copy's outbox row, the first dissemination row
@@ -3179,7 +3192,8 @@ function takesAVoteAfterItsStagingWasInterrupted() {
       wrapStore: (store) =>
         holdingDisseminationEnqueue(store, entered, release),
     });
-    const { signatures, fourths } = yield* signGenesisShortOfMember4(harness);
+    const { signatures, fourths } =
+      yield* signFirstMessageShortOfMember4(harness);
     const accepting = yield* Effect.fork(harness.deliver(fourths, [1]));
     yield* Deferred.await(entered);
 
@@ -3218,7 +3232,7 @@ const outboundPersistence: EngineOutboundError["reason"] = "persistence";
 
 /**
  * Every member's store refuses plain outbox rows, and the first one any
- * member needs is the author's GENESIS proposal. The author bound the post's
+ * member needs is the author's FIRST_MESSAGE proposal. The author bound the post's
  * intent before that refusal, so the intent is proposed again later and the
  * send fails as `delivery-pending` and the author's engine reports one
  * storage fault. Fails when the refusal reports the post as not sent, escapes
@@ -3410,7 +3424,7 @@ it.each([
   { firstVersion: WIRE_VERSION, secondVersion: "2099.101.1" },
   { firstVersion: "2099.101.1", secondVersion: WIRE_VERSION },
 ])(
-  "converges concurrent first sends when $firstVersion authors the first ordered GENESIS",
+  "converges concurrent first sends when $firstVersion authors the first ordered FIRST_MESSAGE",
   ({ firstVersion, secondVersion }) =>
     concurrentFirstSends(firstVersion, secondVersion),
   TEST_TIMEOUT_MS,

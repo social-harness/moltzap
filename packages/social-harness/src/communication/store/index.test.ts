@@ -215,23 +215,23 @@ function atomicallyBindsFirstIntentWithItsFoundation() {
   );
 }
 
-function atomicallyLocksVerifiedGenesisFoundation() {
+function atomicallyLocksVerifiedFirstMessageFoundation() {
   const directory = stateDirectory();
-  const conversationId = "conversation:genesis-lock";
+  const conversationId = "conversation:first-message-lock";
   const retainedFoundation = foundation(conversationId);
-  const first = proposal(conversationId, "ach_genesis:first");
+  const first = proposal(conversationId, "ach_first-message:first");
   return withStore(directory, (store) =>
     Effect.gen(function* () {
-      expect(yield* store.lockGenesisProposal(retainedFoundation, first)).toBe(
-        INSERTED_MUTATION,
-      );
-      expect(yield* store.lockGenesisProposal(retainedFoundation, first)).toBe(
-        EXISTING_MUTATION,
-      );
+      expect(
+        yield* store.lockFirstMessageProposal(retainedFoundation, first),
+      ).toBe(INSERTED_MUTATION);
+      expect(
+        yield* store.lockFirstMessageProposal(retainedFoundation, first),
+      ).toBe(EXISTING_MUTATION);
       yield* expectReason(
-        store.lockGenesisProposal(
+        store.lockFirstMessageProposal(
           retainedFoundation,
-          proposal(conversationId, "ach_genesis:competing"),
+          proposal(conversationId, "ach_first-message:competing"),
         ),
         "conflict",
       );
@@ -1021,8 +1021,8 @@ describe("endpoint proposal locking", () => {
   );
 
   it(
-    "atomically locks a verified genesis with its foundation",
-    atomicallyLocksVerifiedGenesisFoundation,
+    "atomically locks a verified first message with its foundation",
+    atomicallyLocksVerifiedFirstMessageFoundation,
   );
 
   it(

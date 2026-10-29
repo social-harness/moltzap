@@ -368,7 +368,7 @@ function headPosition(
 }
 
 /**
- * Whether an action is the next POST at a position. A record that names the
+ * Whether an action is the next MESSAGE at a position. A record that names the
  * head from an anchor the conversation has left can never be staged.
  * @param position The conversation's head and current anchor.
  * @param action The action a record carries.
@@ -376,7 +376,7 @@ function headPosition(
  */
 function extendsHead(position: HeadPosition, action: ActionCore): boolean {
   return (
-    action.kind === "POST" &&
+    action.kind === "MESSAGE" &&
     action.previousRecordHash === position.head &&
     action.anchorHash === position.anchorHash
   );

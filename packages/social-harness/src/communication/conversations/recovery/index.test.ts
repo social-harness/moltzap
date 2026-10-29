@@ -33,10 +33,10 @@ import {
   type RegistryKeyPair,
 } from "../../../__tests__/agent-card-fixtures.js";
 import {
-  buildCertifiedGenesis,
+  buildCertifiedFirstMessage,
   signEvidence,
   type SigningIdentity,
-  withGenesisAnchorSelecting,
+  withInitialAnchorSelecting,
   withMisattributedActionEvidence,
 } from "../../../__tests__/certified-history-fixtures.js";
 import { forwardStoredOutbound } from "../../../__tests__/forward-stored-outbound.js";
@@ -71,17 +71,17 @@ import {
   type DirectPacket,
   EvidenceStatement,
   type EvidenceStatement as EvidenceStatementValue,
-  type GenesisActionCore,
-  GenesisAnchorBody,
+  type FirstMessageActionCore,
   hashAction,
   hashAnchor,
   hashMembershipDescriptor,
   hashPostIntent,
   hashRecord,
+  InitialAnchorBody,
   MembershipDescriptor,
   MembershipHash,
+  type MessageActionCore,
   mintPostId,
-  type PostActionCore,
   PostIntent,
   quorumThreshold,
   type ReanchorBody,
@@ -175,7 +175,7 @@ interface GroupFoundation {
 }
 
 /**
- * A group conversation's certified GENESIS head, and a POST at that head the
+ * A group conversation's certified FIRST_MESSAGE head, and a MESSAGE at that head the
  * remote member authors, action-certified by every member, whose durability
  * no member has certified.
  */
@@ -384,22 +384,22 @@ function makeHeldRouter(input: HeldRouterInput) {
 
 /**
  * Opens an endpoint store in a scoped temporary directory holding the
- * conversation foundation of a certified GENESIS record: its membership and
- * its genesis Router anchor.
+ * conversation foundation of a certified FIRST_MESSAGE record: its membership and
+ * its initial Router anchor.
  * @param membership Verified membership of the conversation.
- * @param certifiedRecord Certified GENESIS record whose anchor is stored.
+ * @param certifiedRecord Certified FIRST_MESSAGE record whose anchor is stored.
  * @param prefix Temporary directory name prefix.
  * @returns The opened store.
  */
-const openGenesisStore = (
+const openFirstMessageStore = (
   membership: VerifiedMembership,
   certifiedRecord: CertifiedRecord,
   prefix: string,
 ) =>
   Effect.gen(function* () {
     const anchor = certifiedRecord.actionCertifiedRecord.routerAnchor;
-    if (anchor.kind !== "genesis_anchor_body") {
-      return yield* Effect.dieMessage("genesis fixture lost its anchor");
+    if (anchor.kind !== "initial_anchor_body") {
+      return yield* Effect.dieMessage("first message fixture lost its anchor");
     }
     const fileSystem = yield* FileSystem.FileSystem;
     const store = yield* openEndpointStore(
@@ -414,7 +414,7 @@ const openGenesisStore = (
         membership.descriptor,
       ),
       anchorHash: yield* hashAnchor(anchor),
-      canonicalAnchor: yield* encodeCanonical(GenesisAnchorBody, anchor),
+      canonicalAnchor: yield* encodeCanonical(InitialAnchorBody, anchor),
     });
     return store;
   });
@@ -467,13 +467,13 @@ const makeFixtureWithRouter = (
       descriptor,
       registrySignerPublicKey,
     );
-    const certifiedRecord = yield* buildCertifiedGenesis(
+    const certifiedRecord = yield* buildCertifiedFirstMessage(
       local,
       remote,
       membership,
       oldRouterInstanceId,
     );
-    const store = yield* openGenesisStore(
+    const store = yield* openFirstMessageStore(
       membership,
       certifiedRecord,
       "sharness-recovery-",
@@ -609,14 +609,14 @@ const deliverRecovery = (
  * engine it returns sends through the fixture's Router queues.
  * @param fixture Endpoint and store the conversation is added to.
  * @param size Number of members, at least three.
- * @param genesisRouterInstanceId Router instance the GENESIS anchor binds.
+ * @param initialRouterInstanceId Router instance the initial anchor binds.
  * @returns The engine, the verified membership, and every member but the
  *     local endpoint, the remote member first.
  */
 const addGroupFoundation = (
   fixture: RecoveryFixture,
   size: number,
-  genesisRouterInstanceId: typeof RouterInstanceId.Type = oldRouterInstanceId,
+  initialRouterInstanceId: typeof RouterInstanceId.Type = oldRouterInstanceId,
 ) =>
   Effect.gen(function* () {
     const further = yield* Effect.forEach(
@@ -657,12 +657,12 @@ const addGroupFoundation = (
       descriptor,
       fixture.registrySignerPublicKey,
     );
-    const anchor: GenesisAnchorBody = {
+    const anchor: InitialAnchorBody = {
       sharnessVersion: WIRE_VERSION,
-      kind: "genesis_anchor_body",
+      kind: "initial_anchor_body",
       conversationId,
       membershipHash: membership.hash,
-      routerInstanceId: genesisRouterInstanceId,
+      routerInstanceId: initialRouterInstanceId,
     };
     yield* fixture.store.putConversationFoundation({
       conversationId,
@@ -672,7 +672,7 @@ const addGroupFoundation = (
         membership.descriptor,
       ),
       anchorHash: yield* hashAnchor(anchor),
-      canonicalAnchor: yield* encodeCanonical(GenesisAnchorBody, anchor),
+      canonicalAnchor: yield* encodeCanonical(InitialAnchorBody, anchor),
     });
     const cards = members.map((member) => member.card);
     const registry: AddressRegistryPort = {
@@ -717,9 +717,9 @@ const addGroupFoundation = (
 
 const addN4Foundation = (
   fixture: RecoveryFixture,
-  genesisRouterInstanceId: typeof RouterInstanceId.Type = oldRouterInstanceId,
+  initialRouterInstanceId: typeof RouterInstanceId.Type = oldRouterInstanceId,
 ) =>
-  addGroupFoundation(fixture, 4, genesisRouterInstanceId).pipe(
+  addGroupFoundation(fixture, 4, initialRouterInstanceId).pipe(
     Effect.flatMap(({ engine, membership, others }) => {
       const [, third, fourth] = others;
       return third === undefined || fourth === undefined
@@ -746,8 +746,8 @@ const nonEmpty = <A>(items: readonly A[]) => {
 };
 
 /**
- * Builds a group conversation's certified GENESIS head and an uncertified
- * POST the remote member authors at it, action-signed by every member in
+ * Builds a group conversation's certified FIRST_MESSAGE head and an uncertified
+ * MESSAGE the remote member authors at it, action-signed by every member in
  * decoded AgentId order.
  * @param fixture Endpoint whose local and remote members sign.
  * @param group The group conversation and its other members.
@@ -762,9 +762,9 @@ const buildGroupHistory = (
     const members = [fixture.local, ...group.others].sort((left, right) =>
       compareAgentIds(left.card.agentId, right.card.agentId),
     );
-    const anchor: GenesisAnchorBody = {
+    const anchor: InitialAnchorBody = {
       sharnessVersion: WIRE_VERSION,
-      kind: "genesis_anchor_body",
+      kind: "initial_anchor_body",
       conversationId,
       membershipHash: group.membership.hash,
       routerInstanceId: oldRouterInstanceId,
@@ -798,9 +798,9 @@ const buildGroupHistory = (
         }),
       );
     const headIntent = yield* intent("certified group head");
-    const headAction: GenesisActionCore = {
+    const headAction: FirstMessageActionCore = {
       sharnessVersion: WIRE_VERSION,
-      kind: "GENESIS",
+      kind: "FIRST_MESSAGE",
       conversationId,
       membership: group.membership.descriptor,
       anchor,
@@ -854,9 +854,9 @@ const buildGroupHistory = (
       },
     };
     const successorIntent = yield* intent("staged group successor");
-    const successorAction: PostActionCore = {
+    const successorAction: MessageActionCore = {
       sharnessVersion: WIRE_VERSION,
-      kind: "POST",
+      kind: "MESSAGE",
       conversationId,
       membershipHash: group.membership.hash,
       anchorHash,
@@ -903,16 +903,16 @@ const buildN4PartialHistory = (
       postId: yield* mintPostId(),
       content: [{ type: "text", text: "certified N4 head" }],
     };
-    const headAnchor: GenesisAnchorBody = {
+    const headAnchor: InitialAnchorBody = {
       sharnessVersion: WIRE_VERSION,
-      kind: "genesis_anchor_body",
+      kind: "initial_anchor_body",
       conversationId: n4.membership.descriptor.conversationId,
       membershipHash: n4.membership.hash,
       routerInstanceId: oldRouterInstanceId,
     };
-    const headAction: GenesisActionCore = {
+    const headAction: FirstMessageActionCore = {
       sharnessVersion: WIRE_VERSION,
-      kind: "GENESIS",
+      kind: "FIRST_MESSAGE",
       conversationId: n4.membership.descriptor.conversationId,
       membership: n4.membership.descriptor,
       anchor: headAnchor,
@@ -1021,9 +1021,9 @@ const buildN4PartialHistory = (
       postId: yield* mintPostId(),
       content: [{ type: "text", text: "partially disseminated successor" }],
     };
-    const successorAction: PostActionCore = {
+    const successorAction: MessageActionCore = {
       sharnessVersion: WIRE_VERSION,
-      kind: "POST",
+      kind: "MESSAGE",
       conversationId: n4.membership.descriptor.conversationId,
       membershipHash: n4.membership.hash,
       anchorHash: headAnchorHash,
@@ -1119,7 +1119,7 @@ const buildN4PartialHistory = (
   }).pipe(Effect.orDie);
 
 /**
- * A certified POST in the N4 conversation that the fourth member authors at
+ * A certified MESSAGE in the N4 conversation that the fourth member authors at
  * `previousRecordHash` under a completed re-anchor, certified by the remote,
  * third and fourth members' action signatures and durability votes.
  * @param fixture Endpoint whose remote member signs.
@@ -1150,9 +1150,9 @@ const certifiedN4PostAt = (
       postId: yield* mintPostId(),
       content: [{ type: "text", text: "post under the new anchor" }],
     };
-    const action: PostActionCore = {
+    const action: MessageActionCore = {
       sharnessVersion: WIRE_VERSION,
-      kind: "POST",
+      kind: "MESSAGE",
       conversationId: n4.membership.descriptor.conversationId,
       membershipHash: n4.membership.hash,
       anchorHash: position.routerAnchor.anchorHash,
@@ -1477,15 +1477,15 @@ const refusesMisattributedEvidenceAtStartup = () =>
   });
 
 /**
- * A store whose genesis anchor row claims to select a record, which only a
+ * A store whose initial anchor row claims to select a record, which only a
  * completed re-anchor does, is corrupt, so the engine refuses to start over
  * it, while the unaltered store restarts.
  */
-const refusesGenesisAnchorSelectingRecordAtStartup = () =>
+const refusesInitialAnchorSelectingRecordAtStartup = () =>
   Effect.gen(function* () {
     const fixture = yield* makeFixture;
     yield* retainCertifiedRecord(fixture);
-    const inconsistent = withGenesisAnchorSelecting(
+    const inconsistent = withInitialAnchorSelecting(
       fixture.store,
       fixture.certifiedRecord.actionCertifiedRecord.recordHash,
     );
@@ -2050,7 +2050,7 @@ const completeRestartRecovery = () =>
     const { proposal: resumedProposal } =
       yield* takeActionProposalAfterEvidence(fixture.normalOutbound);
     expect(resumedProposal.action).toMatchObject({
-      kind: "POST",
+      kind: "MESSAGE",
       anchorHash: proposal.anchorHash,
     });
     yield* Fiber.interrupt(sending);
@@ -2087,7 +2087,7 @@ const reproposesPendingPostAfterRestart = () =>
     ]);
     const staleOutbound = before.outboundMessages[1];
     if (staleOutbound === undefined) {
-      return yield* Effect.dieMessage("pending POST was not retained");
+      return yield* Effect.dieMessage("pending MESSAGE was not retained");
     }
     expect(staleOutbound.messageId).toBe(staleOutboundId);
     const staleProposal = yield* decodeCanonical(
@@ -2099,8 +2099,8 @@ const reproposesPendingPostAfterRestart = () =>
         actionProposalIn(body, "old-instance action proposal"),
       ),
     );
-    if (staleProposal.action.kind !== "POST") {
-      return yield* Effect.dieMessage("expected an old-instance POST");
+    if (staleProposal.action.kind !== "MESSAGE") {
+      return yield* Effect.dieMessage("expected an old-instance MESSAGE");
     }
     const postId = staleProposal.action.postIntent.postId;
     expect(staleProposal.action.anchorHash).toBe(
@@ -2128,8 +2128,8 @@ const reproposesPendingPostAfterRestart = () =>
 
     const { message: reproposedMessage, proposal: reproposed } =
       yield* takeActionProposalAfterEvidence(resumedOutbound);
-    if (reproposed.action.kind !== "POST") {
-      return yield* Effect.dieMessage("expected a re-anchored POST");
+    if (reproposed.action.kind !== "MESSAGE") {
+      return yield* Effect.dieMessage("expected a re-anchored MESSAGE");
     }
     expect(reproposedMessage.messageId).not.toBe(staleOutbound.messageId);
     expect(reproposed.action.postIntent.postId).toBe(postId);
@@ -2312,7 +2312,7 @@ const recoverMixedRouterInstances = () =>
       return yield* Effect.dieMessage("changed conversation lost its anchor");
     }
     expect(
-      (yield* decodeCanonical(GenesisAnchorBody, changedAnchor.canonicalAnchor))
+      (yield* decodeCanonical(InitialAnchorBody, changedAnchor.canonicalAnchor))
         .routerInstanceId,
     ).toBe(oldRouterInstanceId);
     const sentIds = [
@@ -2353,7 +2353,7 @@ const releaseHeldSend = (held: HeldSend) =>
 /**
  * The catch-up request the fixture's remote member sends for its position.
  * @param fixture Endpoint the request is addressed to.
- * @param known The requester's position; GENESIS when omitted.
+ * @param known The requester's position; FIRST_MESSAGE when omitted.
  * @param membership The conversation asked about, by default the fixture's
  *     direct conversation.
  * @returns The remote member's catch-up request.
@@ -2416,10 +2416,10 @@ const queuePeerCatchUpResponse = (
   }).pipe(Effect.orDie);
 
 /**
- * A peer that asks from genesis is answered with a page holding the
+ * A peer that asks from first message is answered with a page holding the
  * certified record the endpoint retains, read back from its stored rows.
  */
-const answersGenesisCatchUpWithRetainedRecord = () =>
+const answersFirstMessageCatchUpWithRetainedRecord = () =>
   Effect.gen(function* () {
     const fixture = yield* makeFixture;
     yield* retainCertifiedRecord(fixture);
@@ -2429,7 +2429,7 @@ const answersGenesisCatchUpWithRetainedRecord = () =>
       Effect.exit,
     );
 
-    expect(answer, "answer to a catch-up request from genesis").toEqual(
+    expect(answer, "answer to a catch-up request from first message").toEqual(
       Exit.succeed(
         expect.objectContaining({
           hasMore: false,
@@ -2603,7 +2603,7 @@ const drainRecoversRouterRestartOnItsOwnFiber = () =>
       return yield* Effect.dieMessage("restarted anchor was not stored");
     }
     const restartedAnchor = yield* decodeCanonical(
-      GenesisAnchorBody,
+      InitialAnchorBody,
       storedAnchor.canonicalAnchor,
     );
     expect(restartedAnchor.routerInstanceId).toBe(newRouterInstanceId);
@@ -2712,7 +2712,7 @@ const restartEmptyConversation = () =>
       return yield* Effect.dieMessage("replacement anchor was not stored");
     }
     const restartedAnchor = yield* decodeCanonical(
-      GenesisAnchorBody,
+      InitialAnchorBody,
       storedAnchor.canonicalAnchor,
     );
     expect(restartedAnchor.routerInstanceId).toBe(newRouterInstanceId);
@@ -3874,12 +3874,12 @@ describe("endpoint restart recovery", () => {
     refusesMisattributedEvidenceAtStartup,
   );
   it(
-    "refuses to start when the genesis anchor row selects a record",
-    refusesGenesisAnchorSelectingRecordAtStartup,
+    "refuses to start when the initial anchor row selects a record",
+    refusesInitialAnchorSelectingRecordAtStartup,
   );
   it(
-    "answers a peer's catch-up request from genesis with its retained record",
-    answersGenesisCatchUpWithRetainedRecord,
+    "answers a peer's catch-up request from first message with its retained record",
+    answersFirstMessageCatchUpWithRetainedRecord,
   );
   it(
     "re-anchors with a certificate in canonical order when encoded and canonical AgentId orders differ",
@@ -3970,7 +3970,7 @@ describe("endpoint restart recovery", () => {
     completeRestartRecovery,
   );
   it(
-    "discards an old-instance POST and reproposes the same PostId at the new anchor",
+    "discards an old-instance MESSAGE and reproposes the same PostId at the new anchor",
     reproposesPendingPostAfterRestart,
   );
   it("certifies a post at a head a proposal locked before the conversation re-anchored there", () =>
@@ -4122,15 +4122,15 @@ const answerN4Incomplete = (
   );
 
 /**
- * The hash of the GENESIS anchor a restart gives the fixture's direct
+ * The hash of the initial anchor a restart gives the fixture's direct
  * conversation when it restarts it empty at the new Router instance.
  * @param fixture Endpoint whose direct conversation restarts.
  * @returns The replacement anchor's hash.
  */
 const restartedDirectAnchorHash = (fixture: RecoveryFixture) => {
-  const anchor: GenesisAnchorBody = {
+  const anchor: InitialAnchorBody = {
     sharnessVersion: WIRE_VERSION,
-    kind: "genesis_anchor_body",
+    kind: "initial_anchor_body",
     conversationId: fixture.membership.descriptor.conversationId,
     membershipHash: fixture.membership.hash,
     routerInstanceId: newRouterInstanceId,
@@ -4364,7 +4364,7 @@ const ignoresReanchorVoteForUnknownHeadOnceStaged = () =>
   Effect.gen(function* () {
     const fixture = yield* makeFixture;
     const { recovery, proposal } = yield* proposeAtRestart(fixture);
-    const unknown = yield* buildCertifiedGenesis(
+    const unknown = yield* buildCertifiedFirstMessage(
       fixture.local,
       fixture.remote,
       fixture.membership,
@@ -4404,7 +4404,7 @@ const reanchorsPastHeldVoteForUnsuppliedHead = () =>
     yield* retainCertifiedRecord(fixture);
     const { recordCore, recordHash } =
       fixture.certifiedRecord.actionCertifiedRecord;
-    const unknown = yield* buildCertifiedGenesis(
+    const unknown = yield* buildCertifiedFirstMessage(
       fixture.local,
       fixture.remote,
       fixture.membership,
@@ -4551,7 +4551,7 @@ const ignoresRelayedCompletionForRestartedEmptyConversation = () =>
 const ignoresCatchUpPageWithConflictingSuccessor = () =>
   Effect.gen(function* () {
     const fixture = yield* makeFixture;
-    const conflicting = yield* buildCertifiedGenesis(
+    const conflicting = yield* buildCertifiedFirstMessage(
       fixture.local,
       fixture.remote,
       fixture.membership,
@@ -4605,7 +4605,7 @@ const ignoresCatchUpPageWithConflictingSuccessor = () =>
   });
 
 /**
- * A catch-up page whose verified GENESIS record binds another Router
+ * A catch-up page whose verified FIRST_MESSAGE record binds another Router
  * instance's anchor does not extend the conversation, so it is reported
  * ignored and catch-up completes at the empty position. Fails when the page
  * ends recovery with a persistence failure.
@@ -4613,7 +4613,7 @@ const ignoresCatchUpPageWithConflictingSuccessor = () =>
 const ignoresCatchUpPageWhoseRecordDoesNotExtendTheConversation = () =>
   Effect.gen(function* () {
     const fixture = yield* makeFixture;
-    const elsewhere = yield* buildCertifiedGenesis(
+    const elsewhere = yield* buildCertifiedFirstMessage(
       fixture.local,
       fixture.remote,
       fixture.membership,
@@ -4817,7 +4817,7 @@ const ignoresReanchorVoteConflictingWithAStoredCopy = () =>
 
 /**
  * A two-member conversation between the fixture's endpoint and a new member,
- * which the endpoint's store does not hold yet, and its certified GENESIS
+ * which the endpoint's store does not hold yet, and its certified FIRST_MESSAGE
  * record.
  * @param fixture Endpoint the conversation includes.
  * @returns The new member, the conversation's membership, and its record.
@@ -4852,13 +4852,13 @@ const unstoredConversationWith = (fixture: RecoveryFixture) =>
       descriptor,
       fixture.registrySignerPublicKey,
     );
-    const genesis = yield* buildCertifiedGenesis(
+    const firstMessage = yield* buildCertifiedFirstMessage(
       fixture.local,
       member,
       membership,
       oldRouterInstanceId,
     );
-    return { member, membership, genesis };
+    return { member, membership, firstMessage };
   }).pipe(Effect.orDie);
 
 /**
@@ -4945,7 +4945,7 @@ const adoptsCompletionSupersedingTheStagedCandidate = (
 /**
  * A two-member conversation between the fixture's endpoint and a member whose
  * card a Registry other than the endpoint's issued, which the endpoint's
- * store does not hold, and its certified GENESIS record. Its membership is
+ * store does not hold, and its certified FIRST_MESSAGE record. Its membership is
  * assembled from the cards without checking them against any Registry.
  * @param fixture Endpoint the conversation includes.
  * @returns The foreign member, the conversation's membership, and its record.
@@ -4981,35 +4981,35 @@ const conversationWithForeignCard = (fixture: RecoveryFixture) =>
       hash: yield* hashMembershipDescriptor(descriptor),
       members: [fixture.local.card, member.card],
     };
-    const genesis = yield* buildCertifiedGenesis(
+    const firstMessage = yield* buildCertifiedFirstMessage(
       fixture.local,
       member,
       membership,
       oldRouterInstanceId,
     );
-    return { member, membership, genesis };
+    return { member, membership, firstMessage };
   }).pipe(Effect.orDie);
 
 /**
- * A certified POST the member of a two-member conversation authors directly
- * after its GENESIS, signed and voted by both members.
- * @param conversation The conversation's member, membership and GENESIS.
+ * A certified MESSAGE the member of a two-member conversation authors directly
+ * after its FIRST_MESSAGE, signed and voted by both members.
+ * @param conversation The conversation's member, membership and FIRST_MESSAGE.
  * @param conversation.member Author of the post, and one of its two signers.
  * @param conversation.membership Membership the post names by hash.
- * @param conversation.genesis Record the post extends, under its anchor.
+ * @param conversation.firstMessage Record the post extends, under its anchor.
  * @param local The fixture's endpoint, which also signs and votes.
  * @returns The certified record.
  */
-const certifiedPostAfterGenesis = (
+const certifiedMessageAfterFirstMessage = (
   conversation: {
     readonly member: SigningIdentity;
     readonly membership: VerifiedMembership;
-    readonly genesis: CertifiedRecord;
+    readonly firstMessage: CertifiedRecord;
   },
   local: SigningIdentity,
 ): Effect.Effect<CertifiedRecord> =>
   Effect.gen(function* () {
-    const { member, membership, genesis } = conversation;
+    const { member, membership, firstMessage } = conversation;
     const signers = [local, member].sort((left, right) =>
       compareAgentIds(left.card.agentId, right.card.agentId),
     );
@@ -5020,16 +5020,16 @@ const certifiedPostAfterGenesis = (
       membershipHash: membership.hash,
       authorAgentId: member.card.agentId,
       postId: yield* mintPostId(),
-      content: [{ type: "text", text: "post after genesis" }],
+      content: [{ type: "text", text: "post after first message" }],
     };
-    const anchorHash = genesis.actionCertifiedRecord.recordCore.anchorHash;
-    const action: PostActionCore = {
+    const anchorHash = firstMessage.actionCertifiedRecord.recordCore.anchorHash;
+    const action: MessageActionCore = {
       sharnessVersion: WIRE_VERSION,
-      kind: "POST",
+      kind: "MESSAGE",
       conversationId: membership.descriptor.conversationId,
       membershipHash: membership.hash,
       anchorHash,
-      previousRecordHash: genesis.actionCertifiedRecord.recordHash,
+      previousRecordHash: firstMessage.actionCertifiedRecord.recordHash,
       postIntent: intent,
       postIntentHash: yield* hashPostIntent(intent),
     };
@@ -5078,7 +5078,7 @@ const certifiedPostAfterGenesis = (
         kind: "action_certified_record",
         recordHash,
         recordCore,
-        routerAnchor: genesis.actionCertifiedRecord.routerAnchor,
+        routerAnchor: firstMessage.actionCertifiedRecord.routerAnchor,
         actionCertificate: {
           sharnessVersion: WIRE_VERSION,
           kind: "action_certificate",
@@ -5098,13 +5098,13 @@ const certifiedPostAfterGenesis = (
 
 /**
  * A member offers a conversation whose descriptor holds a card a Registry
- * other than this endpoint's issued. Its GENESIS, as an action-certified copy
+ * other than this endpoint's issued. Its FIRST_MESSAGE, as an action-certified copy
  * or as a certified record, is ignored and stores no conversation, while a
  * conversation whose cards this endpoint's Registry issued is accepted. Fails
- * when an endpoint takes a conversation's membership from a GENESIS without
+ * when an endpoint takes a conversation's membership from a FIRST_MESSAGE without
  * verifying its cards against the Registry key.
  */
-const ignoresGenesisWithACardAnotherRegistryIssued = () =>
+const ignoresFirstMessageWithACardAnotherRegistryIssued = () =>
   Effect.gen(function* () {
     const fixture = yield* makeFixture;
     const foreign = yield* conversationWithForeignCard(fixture);
@@ -5122,11 +5122,11 @@ const ignoresGenesisWithACardAnotherRegistryIssued = () =>
       );
 
     const foreignDispositions = [
-      yield* deliver(foreign, foreign.genesis.actionCertifiedRecord),
-      yield* deliver(foreign, foreign.genesis),
+      yield* deliver(foreign, foreign.firstMessage.actionCertifiedRecord),
+      yield* deliver(foreign, foreign.firstMessage),
     ];
     const afterForeign = yield* fixture.store.recover();
-    const issuedDisposition = yield* deliver(issued, issued.genesis);
+    const issuedDisposition = yield* deliver(issued, issued.firstMessage);
 
     expect(foreignDispositions).toEqual([
       ignoredDisposition,
@@ -5142,17 +5142,20 @@ const ignoresGenesisWithACardAnotherRegistryIssued = () =>
   });
 
 /**
- * A POST record names its membership only by hash, so an endpoint that does
+ * A MESSAGE record names its membership only by hash, so an endpoint that does
  * not hold the conversation ignores it and stores nothing. Once the
- * conversation's GENESIS arrives, the same POST certifies. Fails when an
- * unheld conversation's POST is accepted, or is treated as a fault instead of
+ * conversation's FIRST_MESSAGE arrives, the same MESSAGE certifies. Fails when an
+ * unheld conversation's MESSAGE is accepted, or is treated as a fault instead of
  * being ignored.
  */
 const ignoresAPostForAConversationItDoesNotHold = () =>
   Effect.gen(function* () {
     const fixture = yield* makeFixture;
     const created = yield* unstoredConversationWith(fixture);
-    const post = yield* certifiedPostAfterGenesis(created, fixture.local);
+    const post = yield* certifiedMessageAfterFirstMessage(
+      created,
+      fixture.local,
+    );
     const deliver = (packet: DirectPacket) =>
       directPacketIngressFrom({
         membership: created.membership,
@@ -5167,21 +5170,21 @@ const ignoresAPostForAConversationItDoesNotHold = () =>
     const { conversationId } = created.membership.descriptor;
 
     const early = yield* deliver(post);
-    const beforeGenesis = (yield* fixture.store.recover()).positions.find(
+    const beforeFirstMessage = (yield* fixture.store.recover()).positions.find(
       (held) => held.conversationId === conversationId,
     );
-    const genesis = yield* deliver(created.genesis);
+    const firstMessage = yield* deliver(created.firstMessage);
     const later = yield* deliver(post);
     const afterPost = (yield* fixture.store.recover()).positions.find(
       (held) => held.conversationId === conversationId,
     );
 
-    expect([early, genesis, later]).toEqual([
+    expect([early, firstMessage, later]).toEqual([
       ignoredDisposition,
       acceptedDisposition,
       acceptedDisposition,
     ]);
-    expect(beforeGenesis).toBeUndefined();
+    expect(beforeFirstMessage).toBeUndefined();
     expect(afterPost?.headRecordHash).toBe(
       post.actionCertifiedRecord.recordHash,
     );
@@ -5189,13 +5192,13 @@ const ignoresAPostForAConversationItDoesNotHold = () =>
 
 /**
  * A member creates a new conversation with this endpoint while it recovers,
- * and the conversation's certified GENESIS record arrives as recovery
+ * and the conversation's certified FIRST_MESSAGE record arrives as recovery
  * traffic. The run holds no membership for that conversation, so it applies
  * the record without asking for its history and keeps running. Fails when
  * asking for that conversation's history ends recovery with a persistence
  * failure.
  */
-const acceptsGenesisOfAConversationCreatedDuringRecovery = () =>
+const acceptsFirstMessageOfAConversationCreatedDuringRecovery = () =>
   Effect.gen(function* () {
     const fixture = yield* makeFixture;
     const created = yield* unstoredConversationWith(fixture);
@@ -5206,12 +5209,12 @@ const acceptsGenesisOfAConversationCreatedDuringRecovery = () =>
     );
     yield* takeCatchUpRequest(outbound);
 
-    const genesis = yield* deliverRecovery(
+    const firstMessage = yield* deliverRecovery(
       fixture.engine,
       directPacketIngressFrom({
         membership: created.membership,
         sender: created.member,
-        packet: created.genesis,
+        packet: created.firstMessage,
         routerInstanceId: oldRouterInstanceId,
       }),
     ).pipe(Effect.exit);
@@ -5220,9 +5223,9 @@ const acceptsGenesisOfAConversationCreatedDuringRecovery = () =>
         conversationId === created.membership.descriptor.conversationId,
     );
 
-    expect(genesis).toStrictEqual(Exit.succeed(acceptedDisposition));
+    expect(firstMessage).toStrictEqual(Exit.succeed(acceptedDisposition));
     expect(position?.headRecordHash).toBe(
-      created.genesis.actionCertifiedRecord.recordHash,
+      created.firstMessage.actionCertifiedRecord.recordHash,
     );
     expect(yield* Fiber.await(recovery)).toStrictEqual(Exit.void);
     yield* Fiber.interrupt(recovery);
@@ -5287,11 +5290,11 @@ const ignoresReanchorVoteAfterTheConversationReanchored = () =>
 // @agent-code-guard/regression-only: these traces pin that input from a peer never ends a recovery run.
 describe("peer input during recovery", () => {
   it(
-    "ignores a GENESIS whose membership holds a card another Registry issued",
-    ignoresGenesisWithACardAnotherRegistryIssued,
+    "ignores a FIRST_MESSAGE whose membership holds a card another Registry issued",
+    ignoresFirstMessageWithACardAnotherRegistryIssued,
   );
   it(
-    "ignores a POST for a conversation it does not hold, and certifies it after its GENESIS",
+    "ignores a MESSAGE for a conversation it does not hold, and certifies it after its FIRST_MESSAGE",
     ignoresAPostForAConversationItDoesNotHold,
   );
   it(
@@ -5343,8 +5346,8 @@ describe("peer input during recovery", () => {
   it("adopts a relayed re-anchor that supersedes its staged candidate", () =>
     adoptsCompletionSupersedingTheStagedCandidate("relay"));
   it(
-    "accepts the GENESIS of a conversation created during recovery",
-    acceptsGenesisOfAConversationCreatedDuringRecovery,
+    "accepts the FIRST_MESSAGE of a conversation created during recovery",
+    acceptsFirstMessageOfAConversationCreatedDuringRecovery,
   );
   it(
     "ignores a re-anchor vote once its conversation has re-anchored",
@@ -5875,7 +5878,7 @@ const answersCatchUpRequestBeforeItsRunStarts = () =>
 
 /**
  * Opens the fixture's remote member as a second endpoint with its own store,
- * holding the conversation foundation and the certified genesis record the
+ * holding the conversation foundation and the certified first message record the
  * fixture endpoint holds once it retains that record. The remote member
  * authored that record, so its store also binds the record's post intent,
  * as an author's store does before its post certifies.
@@ -5884,7 +5887,7 @@ const answersCatchUpRequestBeforeItsRunStarts = () =>
  */
 const openPeerEngine = (fixture: RecoveryFixture) =>
   Effect.gen(function* () {
-    const store = yield* openGenesisStore(
+    const store = yield* openFirstMessageStore(
       fixture.membership,
       fixture.certifiedRecord,
       "sharness-recovery-peer-",
@@ -7873,7 +7876,7 @@ const openN4Holder = (
   history: N4PartialHistory,
 ) =>
   Effect.gen(function* () {
-    const store = yield* openGenesisStore(
+    const store = yield* openFirstMessageStore(
       n4.membership,
       history.certifiedHead,
       "sharness-recovery-holder-",
@@ -8907,8 +8910,8 @@ describe("held catch-up pages", () => {
 /* eslint-enable max-lines, max-lines-per-function, max-statements, sonarjs/max-lines-per-function -- Restore repository defaults. */
 
 /**
- * The remote member's POST proposal at the fixture's retained head.
- * @param fixture Endpoint whose retained GENESIS record is the head.
+ * The remote member's MESSAGE proposal at the fixture's retained head.
+ * @param fixture Endpoint whose retained FIRST_MESSAGE record is the head.
  * @returns A proposal the remote member authors, extending that head.
  */
 const remoteProposalAtTheHead = (
@@ -8926,9 +8929,9 @@ const remoteProposalAtTheHead = (
       postId: yield* mintPostId(),
       content: [{ type: "text", text: "proposed before the discontinuity" }],
     };
-    const action: PostActionCore = {
+    const action: MessageActionCore = {
       sharnessVersion: WIRE_VERSION,
-      kind: "POST",
+      kind: "MESSAGE",
       conversationId: postIntent.conversationId,
       membershipHash: fixture.membership.hash,
       anchorHash: recordCore.anchorHash,
@@ -8974,7 +8977,7 @@ const takeSignedActionHashes = (outbound: Queue.Queue<SignedMessage>) =>
   );
 
 /**
- * Retains the fixture's GENESIS record, has the local endpoint lock and sign
+ * Retains the fixture's FIRST_MESSAGE record, has the local endpoint lock and sign
  * the remote member's proposal at it, and sends that signature.
  * @param fixture Endpoint that signs.
  * @returns The proposal's action hash, and the action hashes the endpoint's
@@ -9000,7 +9003,7 @@ const signARemoteProposal = (fixture: RecoveryFixture) =>
   }).pipe(Effect.orDie);
 
 /**
- * The remote member asks for catch-up from genesis, and the local endpoint's
+ * The remote member asks for catch-up from first message, and the local endpoint's
  * answer is sent. The answer queues behind every envelope the endpoint queued
  * before it and one outbound loop sends them in order, so once the answer is
  * sent, so are they.
@@ -9243,13 +9246,13 @@ const failsToStartWhenTheStoreFailsToStageASuccessorBehindItsCandidate = () =>
   });
 
 /**
- * The remote member's GENESIS proposal for the fixture's direct conversation,
+ * The remote member's FIRST_MESSAGE proposal for the fixture's direct conversation,
  * at the empty foundation a restart recovery gave that conversation at the
  * new Router instance.
  * @param fixture Endpoint whose direct conversation the proposal opens.
  * @returns The proposal.
  */
-const remoteGenesisAtTheRestartedFoundation = (
+const remoteFirstMessageAtTheRestartedFoundation = (
   fixture: RecoveryFixture,
 ): Effect.Effect<ActionProposal> =>
   Effect.gen(function* () {
@@ -9263,14 +9266,14 @@ const remoteGenesisAtTheRestartedFoundation = (
       postId: yield* mintPostId(),
       content: [{ type: "text", text: "proposed after the restart" }],
     };
-    const action: GenesisActionCore = {
+    const action: FirstMessageActionCore = {
       sharnessVersion: WIRE_VERSION,
-      kind: "GENESIS",
+      kind: "FIRST_MESSAGE",
       conversationId,
       membership: fixture.membership.descriptor,
       anchor: {
         sharnessVersion: WIRE_VERSION,
-        kind: "genesis_anchor_body",
+        kind: "initial_anchor_body",
         conversationId,
         membershipHash: fixture.membership.hash,
         routerInstanceId: newRouterInstanceId,
@@ -9288,7 +9291,7 @@ const remoteGenesisAtTheRestartedFoundation = (
 
 /**
  * The store refused the N4 successor behind the endpoint's candidate. The
- * endpoint then started again and signed the remote member's GENESIS
+ * endpoint then started again and signed the remote member's FIRST_MESSAGE
  * proposal for its direct conversation, whose id sorts after the N4
  * conversation's, so a start resumes that fold after the refused one. An
  * engine that starts over the store once more sends the signature again: the
@@ -9300,7 +9303,7 @@ const resumesALaterConversationPastARefusedFold = () =>
   Effect.gen(function* () {
     const fixture = yield* makeFixture;
     const refused = yield* refuseSuccessorBehindStagedCandidate(fixture);
-    const proposal = yield* remoteGenesisAtTheRestartedFoundation(fixture);
+    const proposal = yield* remoteFirstMessageAtTheRestartedFoundation(fixture);
     const actionHash = yield* hashAction(proposal.action);
     const started = yield* makeEndpointEngine(fixture.input);
     yield* directPacketIngressFrom({

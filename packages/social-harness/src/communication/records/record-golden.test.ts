@@ -1,6 +1,6 @@
 /**
- * @file Fixed GENESIS and POST records keep canonical bytes and hashes and verify
- * under their synthetic retained wire policy, independently of the live reset.
+ * @file Fixed FIRST_MESSAGE and MESSAGE records keep canonical bytes and hashes and verify
+ * under the current wire policy with deterministic synthetic test keys.
  * Reproduce with pnpm nx run workspace:generate-client-record-golden.
  */
 
@@ -12,7 +12,6 @@ import {
   encodeCanonical,
 } from "../../encoding/canonical-json.js";
 import { Ed25519PublicKey } from "../../identity/keys.js";
-import { WireVersions } from "../../identity/wire-version.js";
 import {
   ActionCertifiedRecord,
   CertifiedRecord,
@@ -55,12 +54,7 @@ describe("canonical record golden bytes", () => {
         record,
         membership: yield* membershipOf(form),
       });
-    }).pipe(
-      Effect.provideService(WireVersions, {
-        live: [],
-        history: [form.membership.sharnessVersion],
-      }),
-    ),
+    }),
   );
   it.each(golden.forms.filter((form) => form.kind === "certified_record"))(
     "preserves $name",
@@ -79,11 +73,6 @@ describe("canonical record golden bytes", () => {
           record,
           membership: yield* membershipOf(form),
         });
-      }).pipe(
-        Effect.provideService(WireVersions, {
-          live: [],
-          history: [form.membership.sharnessVersion],
-        }),
-      ),
+      }),
   );
 });

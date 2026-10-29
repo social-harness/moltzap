@@ -33,10 +33,10 @@ import {
   type ActionHash,
   Content,
   deriveConversationId,
-  GenesisAnchorBody,
   hashAction,
   hashAnchor,
   hashPostIntent,
+  InitialAnchorBody,
   MembershipDescriptor as MembershipDescriptorSchema,
   mintPostId,
   type PostId,
@@ -244,12 +244,12 @@ const proposalAction = (
     const head = conversation.head;
     if (head === undefined) {
       const anchor = conversation.currentAnchor;
-      if (anchor.kind !== "genesis_anchor_body") {
+      if (anchor.kind !== "initial_anchor_body") {
         return yield* Effect.fail(representationFailure());
       }
       const action: ActionCore = {
         sharnessVersion: intent.sharnessVersion,
-        kind: "GENESIS",
+        kind: "FIRST_MESSAGE",
         conversationId: conversation.conversationId,
         membership: conversation.membership.descriptor,
         anchor,
@@ -261,7 +261,7 @@ const proposalAction = (
     }
     const action: ActionCore = {
       sharnessVersion: intent.sharnessVersion,
-      kind: "POST",
+      kind: "MESSAGE",
       conversationId: conversation.conversationId,
       membershipHash: conversation.membership.hash,
       anchorHash: anchorHashAtHead(conversation, head),
@@ -396,7 +396,7 @@ function resendOutcome(
 }
 
 /**
- * Queue a proposal and, for a POST, the certified record of the head it
+ * Queue a proposal and, for a MESSAGE, the certified record of the head it
  * extends ahead of it. A faulty member can seal its durability vote so that
  * only some members open it, so a member may not have certified the head the
  * proposer certified when the proposal arrives, and it would drop the
@@ -521,9 +521,9 @@ const createConversation = (
     const routerAnchor = yield* runtime.input.routerWorker.currentAnchor.pipe(
       Effect.mapError(currentAnchorFailure),
     );
-    const anchor = yield* Schema.decodeUnknown(GenesisAnchorBody)({
+    const anchor = yield* Schema.decodeUnknown(InitialAnchorBody)({
       sharnessVersion: membership.descriptor.sharnessVersion,
-      kind: "genesis_anchor_body",
+      kind: "initial_anchor_body",
       conversationId: membership.descriptor.conversationId,
       membershipHash: membership.hash,
       routerInstanceId: routerAnchor.routerInstanceId,
@@ -539,7 +539,7 @@ const createConversation = (
         membership.descriptor,
       ).pipe(Effect.mapError(representationFailure)),
       anchorHash,
-      canonicalAnchor: yield* encodeCanonical(GenesisAnchorBody, anchor).pipe(
+      canonicalAnchor: yield* encodeCanonical(InitialAnchorBody, anchor).pipe(
         Effect.mapError(representationFailure),
       ),
     };

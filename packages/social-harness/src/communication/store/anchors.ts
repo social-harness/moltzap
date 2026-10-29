@@ -113,7 +113,7 @@ export function bindAdmittedPostIntent(
 }
 
 /**
- * Atomically persists the immutable membership and genesis Router anchor.
+ * Atomically persists the immutable membership and initial Router anchor.
  *
  * @param database Exclusively owned endpoint database.
  * @param foundation Verified immutable conversation foundation.
@@ -149,14 +149,14 @@ export function lockProposal(
 }
 
 /**
- * Atomically retains a verified GENESIS foundation and its first-candidate lock.
+ * Atomically retains a verified FIRST_MESSAGE foundation and its first-candidate lock.
  *
  * @param database Exclusively owned endpoint database.
  * @param foundation Verified immutable membership and Router anchor.
- * @param proposal Verified gap-free GENESIS action selected in Router order.
+ * @param proposal Verified gap-free FIRST_MESSAGE action selected in Router order.
  * @returns Whether either exact durable component was inserted.
  */
-export function lockGenesisProposal(
+export function lockFirstMessageProposal(
   database: DatabaseSync,
   foundation: ConversationFoundation,
   proposal: ProposalLock,
@@ -187,7 +187,7 @@ export function lockGenesisProposal(
  * erasing committed history or a concurrently advanced anchor.
  *
  * @param database Exclusively owned endpoint database.
- * @param restart Expected old and verified replacement genesis foundations.
+ * @param restart Expected old and verified replacement initial foundations.
  * @returns The replacement foundation and immutable retained post intents.
  */
 export function restartEmptyConversation(
@@ -383,7 +383,7 @@ function bindPostIntentInTransaction(
 }
 
 /**
- * Inserts or validates one complete membership and genesis anchor in an
+ * Inserts or validates one complete membership and initial anchor in an
  * existing transaction.
  *
  * @param database Exclusively owned endpoint database.

@@ -166,7 +166,7 @@ export const managementReadConversationRequestSchema = Schema.Union(
     }),
     afterRecordHash: Schema.optional(RecordHash).annotations({
       description:
-        "Read strictly after this certified record hash; omit to start at genesis.",
+        "Read strictly after this certified record hash; omit to start at first message.",
     }),
   }),
   exactStruct({

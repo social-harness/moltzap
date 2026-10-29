@@ -14,7 +14,7 @@ import {
   bindIdentity,
   bindPostIntent,
   completeReanchor,
-  lockGenesisProposal,
+  lockFirstMessageProposal,
   lockProposal,
   putConversationFoundation,
   restartEmptyConversation,
@@ -182,8 +182,8 @@ function makeEndpointStore(state: StoreState): EndpointStore {
       run(() => putConversationFoundation(state.database, foundation)),
     lockProposal: (proposal) =>
       run(() => lockProposal(state.database, proposal)),
-    lockGenesisProposal: (foundation, proposal) =>
-      run(() => lockGenesisProposal(state.database, foundation, proposal)),
+    lockFirstMessageProposal: (foundation, proposal) =>
+      run(() => lockFirstMessageProposal(state.database, foundation, proposal)),
     supersedeProposalLock: (lock, certificate) =>
       run(() => supersedeProposalLock(state.database, lock, certificate)),
     stageRecordForDissemination: (record) =>

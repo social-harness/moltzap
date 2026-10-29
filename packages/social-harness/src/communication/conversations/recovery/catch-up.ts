@@ -539,7 +539,7 @@ function requestMatchesCurrentPosition(
       );
     }
     const anchorHash =
-      anchor.kind === "genesis_anchor_body"
+      anchor.kind === "initial_anchor_body"
         ? yield* hashAnchor(anchor).pipe(Effect.mapError(persistenceFailure))
         : anchor.anchorHash;
     return (

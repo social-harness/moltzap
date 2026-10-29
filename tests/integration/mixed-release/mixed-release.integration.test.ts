@@ -47,9 +47,8 @@ const packages = {
  * moves it above the release it drops, so the gate skips that release rather
  * than failing on it.
  */
-const FIRST_POST_RESET_RELEASE = Option.some("2026.1026.5");
+const FIRST_POST_RESET_RELEASE = Option.some("2026.1029.2");
 const PRE_RESET_WIRE_VERSION = "pre-reset";
-const retiredIdentityPackage = ["@moltzap", "identity"].join("/");
 
 function preResetRelease(
   version: string,
@@ -85,33 +84,17 @@ function releaseWireVersion(
   view = npmView,
   firstPostResetRelease = FIRST_POST_RESET_RELEASE,
 ) {
-  return releaseClosure(version, view).pipe(
-    Effect.map((closure) => ({
-      name:
-        closure[retiredIdentityPackage] === undefined
-          ? "@moltzap/social-harness"
-          : retiredIdentityPackage,
-      version:
-        closure[retiredIdentityPackage] ?? closure["@moltzap/social-harness"],
-    })),
-    Effect.flatMap((identity) =>
-      view([`${identity.name}@${identity.version}`]).pipe(
-        Effect.flatMap(
-          Schema.decodeUnknown(
-            Schema.parseJson(
-              Schema.Struct({
-                sharnessWireVersion: Schema.optional(Schema.String),
-              }),
-            ),
-          ),
+  return view([`@moltzap/social-harness@${version}`]).pipe(
+    Effect.flatMap(
+      Schema.decodeUnknown(
+        Schema.parseJson(
+          Schema.Struct({
+            sharnessWireVersion: Schema.optional(Schema.String),
+          }),
         ),
-        Effect.map(({ sharnessWireVersion }) => ({
-          identity: `${identity.name}@${identity.version}`,
-          sharnessWireVersion,
-        })),
       ),
     ),
-    Effect.flatMap(({ identity, sharnessWireVersion }) => {
+    Effect.flatMap(({ sharnessWireVersion }) => {
       if (sharnessWireVersion !== undefined) {
         return Effect.succeed(sharnessWireVersion);
       }
@@ -122,18 +105,14 @@ function releaseWireVersion(
         ? Effect.succeed(PRE_RESET_WIRE_VERSION)
         : Effect.fail(
             new ProcessTestError({
-              message: `${identity}, pinned by @moltzap/social-harness@${version}, is missing published sharnessWireVersion metadata`,
+              message: `@moltzap/social-harness@${version} is missing published sharnessWireVersion metadata`,
             }),
           );
     }),
   );
 }
 
-/**
- * Pre-fold releases pin Identity and Router; post-fold releases keep those
- * capabilities inside Client. Only `@moltzap/*` dependencies join the installed
- * product closure, each at the exact version its Client release pins.
- */
+/** Peer installation includes exact library-owned package pins from its published manifest. */
 function releaseClosure(version: string, view = npmView) {
   return view([`@moltzap/social-harness@${version}`, "dependencies"]).pipe(
     Effect.flatMap(
@@ -576,57 +555,6 @@ it(
   600_000,
 );
 
-/** The older Identity version every fake Client release pins. */
-const PINNED_IDENTITY = "2099.1.0";
-const PINNED_WIRE_VERSION = "2099.1.1";
-
-/**
- * An npm view whose Client releases pin Identity and Router at their own,
- * older versions, and whose Identity versions all report `identity`.
- */
-function publishedMetadata(identity: string) {
-  return (args: readonly string[]) =>
-    Effect.succeed(
-      args[0]?.startsWith("@moltzap/social-harness@") === true
-        ? JSON.stringify({
-            [retiredIdentityPackage]: PINNED_IDENTITY,
-            "@moltzap/router": "2099.2.0",
-          })
-        : identity,
-    );
-}
-
-it("reads a Client release's wire version from the Identity version it pins", () =>
-  Effect.runPromise(
-    releaseWireVersion(
-      "2099.101.0",
-      (args) =>
-        Effect.succeed(
-          JSON.stringify(
-            args[0] === "@moltzap/social-harness@2099.101.0"
-              ? {
-                  [retiredIdentityPackage]: PINNED_IDENTITY,
-                  "@moltzap/router": "2099.2.0",
-                }
-              : {
-                  sharnessWireVersion:
-                    args[0] === `${retiredIdentityPackage}@${PINNED_IDENTITY}`
-                      ? PINNED_WIRE_VERSION
-                      : WIRE_VERSION,
-                },
-          ),
-        ),
-      Option.some("2099.101.0"),
-    ).pipe(
-      Effect.tap((wireVersion) =>
-        Effect.sync(() => {
-          expect(wireVersion).toBe(PINNED_WIRE_VERSION);
-        }),
-      ),
-      Effect.provide(NodeContext.layer),
-    ),
-  ));
-
 it("selects the oldest live peer rather than an older retained peer", () =>
   Effect.runPromise(
     selectReleases(
@@ -766,7 +694,7 @@ it.each(["2099.101.0", "2099.102.0"])(
     Effect.runPromise(
       releaseWireVersion(
         version,
-        publishedMetadata("{}"),
+        () => Effect.succeed("{}"),
         Option.some("2099.101.0"),
       ).pipe(
         Effect.flip,
@@ -774,7 +702,7 @@ it.each(["2099.101.0", "2099.102.0"])(
           Effect.sync(() => {
             expect(error).toMatchObject({
               _tag: "ProcessTestError",
-              message: `${retiredIdentityPackage}@${PINNED_IDENTITY}, pinned by @moltzap/social-harness@${version}, is missing published sharnessWireVersion metadata`,
+              message: `@moltzap/social-harness@${version} is missing published sharnessWireVersion metadata`,
             });
           }),
         ),
@@ -792,7 +720,7 @@ it.each([
   "treats metadata-free %s as pre-reset before boundary %s",
   (version, boundary) =>
     Effect.runPromise(
-      releaseWireVersion(version, publishedMetadata("{}"), boundary).pipe(
+      releaseWireVersion(version, () => Effect.succeed("{}"), boundary).pipe(
         Effect.tap((wireVersion) =>
           Effect.sync(() => {
             expect(wireVersion).toBe(PRE_RESET_WIRE_VERSION);
@@ -808,7 +736,8 @@ it("reads published wire metadata at the reset boundary", () =>
   Effect.runPromise(
     releaseWireVersion(
       "2099.101.0",
-      publishedMetadata(JSON.stringify({ sharnessWireVersion: WIRE_VERSION })),
+      () =>
+        Effect.succeed(JSON.stringify({ sharnessWireVersion: WIRE_VERSION })),
       Option.some("2099.101.0"),
     ).pipe(
       Effect.tap((wireVersion) =>
