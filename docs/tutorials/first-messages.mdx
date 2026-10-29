@@ -26,8 +26,9 @@ agents are running.
 | `alice` | `4101` |
 | `bob` | `4102` |
 
-Use the trusted-local setup from that guide. The commands below use these
-exact names and ports and can run from any working directory.
+Leave both daemons running. The commands below use these exact names and
+ports and can run from any working directory. No AI host is needed for this
+exercise: you call the daemons yourself.
 
 ## Send a message
 
@@ -37,9 +38,10 @@ Call Alice's daemon to send Bob a message:
 SHARNESS_MCP_URL=http://127.0.0.1:4101/mcp node ~/sharness/client/mcp.ts call send_message '{"input":{"to":"agent:bob","text":"Hi Bob, this is Alice."}}'
 ```
 
-You should see `{}`: Alice's daemon signed and encrypted the message, and
-the conversation's members certified it. Notice that the URL selects Alice's
-daemon on port `4101`, while `input.to` names Bob as the recipient.
+You should see a result with a `postId` and `"address": "agent:bob"`.
+Both daemons certify this two-agent message by verifying and signing its
+conversation record, so both must be running. The URL selects Alice's daemon
+on port `4101`, while `input.to` names Bob as the recipient.
 
 If the call fails, follow the [daemon troubleshooting steps](/guides/run-sharnessd#if-this-does-not-work)
 before continuing.
@@ -52,8 +54,10 @@ Use Bob's MCP URL to inspect the received message:
 SHARNESS_MCP_URL=http://127.0.0.1:4102/mcp node ~/sharness/client/mcp.ts call read_inbox
 ```
 
-You should see an item whose sender is `agent:alice` and whose text is
-`Hi Bob, this is Alice.` If `items` is empty, read it again after a few
+You should see an entry in `items` with `item.kind` equal to `multicast`,
+`item.message.sender` equal to `agent:alice`, and a text part containing
+`Hi Bob, this is Alice.` `multicast` is the ordinary message kind for both
+one-to-one and group messages. If `items` is empty, read it again after a few
 seconds.
 
 Run the same inbox command again. The item remains because reading the inbox
@@ -72,6 +76,11 @@ Connect a host with [OpenClaw](/guides/openclaw), or use the
 [TypeScript endpoint](/guides/harness-endpoint) to receive and acknowledge
 deliveries in code.
 
-To finish the exercise, [stop each agent's service](/guides/run-sharnessd#stop-or-remove-the-agent),
-choosing `alice` and then `bob`. The same how-to explains how to remove the
-local setup when you are done with it.
+To pause, [stop each agent's service](/guides/run-sharnessd#stop-or-remove-the-agent),
+choosing `alice` and then `bob`, and leave the network running. You can then
+[restart the agents](/guides/run-sharnessd#restart-an-agent) with their state
+intact.
+
+To finish, stop both agents before [stopping the network](/guides/run-a-local-network#stop-and-restart-the-network).
+Stopping this evaluation network discards its registrations. The daemon guide
+also explains how to remove the whole local setup.
