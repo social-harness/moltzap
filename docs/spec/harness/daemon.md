@@ -103,6 +103,21 @@ Trusted process code can instead install a firewall of its own with
 `SHARNESS_MESSAGE_POLICY_FILE` in phase `configuration`.
 The fixed and editable installation is described in [message policy](./message-policy.md).
 
+The optional public configuration variables below control evaluation capabilities:
+
+| Setting | Accepted value | Omitted behavior |
+| --- | --- | --- |
+| `SHARNESS_EXPERIMENT_HIDE_COLLECTIVES` | Boolean spellings in [experiment switches](../../integrations/experiment-switches.mdx#experiment-switches) | `false` |
+| `SHARNESS_EXPERIMENT_HIDE_GROUPS` | Boolean spellings in [experiment switches](../../integrations/experiment-switches.mdx#experiment-switches) | `false` |
+
+The configuration reader loads both once at startup. An invalid value stops
+startup in phase `configuration`, naming the variable and accepted values.
+Every daemon send, including MCP `send_message` and channel sends, refuses
+hidden features before dispatch. Group refusal precedes collective refusal.
+Refusals use `content-invalid` with a detail naming the hidden capability and
+ending with the experiment-switches `Docs:` URL, including when runtime
+metadata requests inbound failure delivery.
+
 There is no profile, selector, discovery fallback, bespoke CLI, Unix socket,
 stdio server, second MCP listener, address override, or product Ledger.
 

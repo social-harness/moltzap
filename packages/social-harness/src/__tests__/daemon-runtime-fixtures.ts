@@ -61,6 +61,8 @@ export const makeFixture = Effect.gen(function* () {
       routerOrigin: new URL("https://router.example"),
       agentPrivateKeyFile: Redacted.make("/run/secrets/agent.pem"),
       admissionCredentialFile: Redacted.make("/run/secrets/admission"),
+      hideGroups: false,
+      hideCollectives: false,
     },
     signingAuthority,
     agentPublicKey: AgentSigningAuthority.publicKey(signingAuthority),
