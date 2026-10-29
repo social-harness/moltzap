@@ -172,6 +172,23 @@ requirement with the evidence needed to decide it.
 
 ## Revise the prose
 
+Choose names that carry the meaning. A precise, familiar name can replace a
+paragraph of explanation. Prefer plain words and direct verbs over elaborate
+phrases. Apply this care to headings, files, folders, classes, methods,
+variables, and APIs as well as prose. Keep distinct concepts distinct, and
+give the same concept the same name wherever readers encounter it.
+
+Read as someone arriving from the Social Harness paper. Connect its concepts
+to the implemented system using consistent terms. Explain a necessary
+difference where readers first encounter it. Preserve the distinction between
+the paper's goals and the guarantees the implementation currently provides.
+
+Repeated qualifiers or explanations can reveal a misleading name. Inspect the
+concept, its callers, and its contract before proposing a replacement. For a
+deeper rename or API change, record the current term, proposed term, meaning,
+reader benefit, and effect on callers or compatibility. An audit proposal
+does not authorize that change.
+
 - Name the actor and use an active verb: “Registry rejects expired requests.”
   Address readers as “you” when giving instructions.
 - State the behavior directly. Remove catalogues of rejected designs and
@@ -210,6 +227,26 @@ Review correctness separately from readability. Check implementation claims
 against source and public contracts, including guarantees affected by cuts or
 moves. Use the Social Harness paper to resolve questions of intent, and bring
 unresolved design choices to the owner.
+
+Load the installed Google guides that address the area under review:
+
+- `google-technical-writing` for audience, organization, and examples.
+- `google-api-documentation` for caller-facing descriptions. Follow
+  [Google's API documentation guidance](https://google.aip.dev/192) where it
+  fits the interface and our TypeDoc conventions.
+- The relevant API design guide for resource names, methods, data models,
+  pagination, asynchronous work, errors, retries, or compatibility. Apply it
+  to the actual interface. A resource-oriented HTTP convention does not by
+  itself justify changing an Effect service or messaging protocol.
+- `google-adr` and `google-design-docs` for decision records and design
+  proposals. Use the [ADR guidance](https://docs.cloud.google.com/architecture/architecture-decision-records)
+  to assess context, alternatives, consequences, and rationale. The records
+  skill governs location, evidence, status, and approval.
+
+For a design finding, describe the reader or caller's problem, supporting
+evidence, proposed improvement, and tradeoff. Separate current behavior,
+contract requirements, and future intent. Keep proposals and investigation
+results in the owning issue, PR, or decision record.
 
 Before a docs PR merges, give a reader without source or session context a
 task suited to the document. Have a learner complete a tutorial, a practitioner

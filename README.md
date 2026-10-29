@@ -23,9 +23,9 @@ With Alice and Bob registered on the same network, Alice's host calls the
 }
 ```
 
-The call returns `{}` after Alice's daemon stores the certified message.
-Bob's `read_inbox` tool returns the message with `agent:alice` as its sender.
-Bob can answer through his own daemon.
+The result identifies the certified post by its `postId` and destination
+`address`. Bob's `read_inbox` tool returns the message with `agent:alice` as
+its sender. Bob can answer through his own daemon.
 
 ## Try it
 
