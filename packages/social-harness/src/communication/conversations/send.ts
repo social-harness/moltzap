@@ -771,19 +771,19 @@ function commitCheck<E, A>(
 > {
   return Effect.gen(function* () {
     const { completion } = checked;
-    const withhold = activateIntent(
-      runtime,
-      prepared,
-      bindChecked(runtime, { ...completion, admit: false }),
-    );
+    const withhold = bindChecked(runtime, { ...completion, admit: false });
     const activation = completion.admit
       ? yield* activateHeld(
           runtime,
           prepared,
           bindChecked(runtime, completion),
-          hold.pipe(Effect.tapError(() => withhold)),
+          hold.pipe(
+            Effect.tapError(() =>
+              bindPreparedIntent(runtime, prepared, withhold, Effect.void),
+            ),
+          ),
         )
-      : yield* withhold;
+      : yield* activateIntent(runtime, prepared, withhold, Effect.void);
     if (activation.kind === "ready") {
       return {
         postId: prepared.intent.postId,
@@ -806,9 +806,9 @@ function bindChecked(
 }
 
 /**
- * Take `hold`, then activate the prepared intent through `bind`, giving the
- * hold up unless the intent is ready. The hold is taken uninterruptibly, so
- * an interruption after it is taken still gives it up.
+ * Take the hold at the durable bind after gate and recovery waits. The outer
+ * release survives interruption after the bind commits, allowing a collective
+ * to recover custody of that same intent before the caller exits.
  */
 function activateHeld<E>(
   runtime: EngineRuntime,
@@ -819,19 +819,24 @@ function activateHeld<E>(
   Exclude<IntentActivation, { kind: "waiting" }>,
   SendError | E
 > {
-  return Effect.uninterruptibleMask((restore) =>
-    hold.pipe(
-      Effect.flatMap((release) =>
-        restore(activateIntent(runtime, prepared, bind)).pipe(
-          Effect.onExit((exit) =>
-            Exit.isSuccess(exit) && exit.value.kind === "ready"
-              ? Effect.void
-              : release,
-          ),
-        ),
+  return Effect.uninterruptibleMask((restore) => {
+    let release = Effect.void;
+    const acquire = hold.pipe(
+      Effect.tap((held) =>
+        Effect.sync(() => {
+          release = held;
+        }),
       ),
-    ),
-  );
+      Effect.asVoid,
+    );
+    return restore(activateIntent(runtime, prepared, bind, acquire)).pipe(
+      Effect.onExit((exit) =>
+        Exit.isSuccess(exit) && exit.value.kind === "ready"
+          ? Effect.void
+          : release,
+      ),
+    );
+  });
 }
 
 function prepareIntent(
@@ -877,25 +882,28 @@ function storedIntent(prepared: PreparedSend): StoredPostIntent {
   };
 }
 
-function bindPreparedIntent(
+function bindPreparedIntent<E>(
   runtime: EngineRuntime,
   prepared: PreparedSend,
   bind: IntentAdmission,
-): Effect.Effect<"admitted" | "withheld" | "stale", SendError> {
+  acquire: Effect.Effect<void, E>,
+): Effect.Effect<"admitted" | "withheld" | "stale", SendError | E> {
   return Effect.gen(function* () {
+    const post = {
+      intent: storedIntent(prepared),
+      ...(prepared.collective === undefined
+        ? {}
+        : { collective: prepared.collective }),
+    };
     const retained = runtime.conversations.get(prepared.intent.conversationId);
     if (retained !== undefined) {
       if (retained.membership.hash !== prepared.membership.hash) {
-        return yield* Effect.fail(
-          new SendError({ reason: "certification-unavailable" }),
-        );
+        return yield* new SendError({ reason: "certification-unavailable" });
       }
+      yield* acquire;
       return yield* bind({
         kind: "existing-conversation",
-        intent: storedIntent(prepared),
-        ...(prepared.collective === undefined
-          ? {}
-          : { collective: prepared.collective }),
+        ...post,
       }).pipe(
         Effect.catchTag("EndpointStoreError", (error) =>
           failBind(runtime, error),
@@ -903,13 +911,11 @@ function bindPreparedIntent(
       );
     }
     const created = yield* createConversation(runtime, prepared.membership);
+    yield* acquire;
     const disposition = yield* bind({
       kind: "new-conversation",
       foundation: created.foundation,
-      intent: storedIntent(prepared),
-      ...(prepared.collective === undefined
-        ? {}
-        : { collective: prepared.collective }),
+      ...post,
     }).pipe(
       Effect.catchTag("EndpointStoreError", (error) =>
         failBind(runtime, error),
@@ -918,12 +924,10 @@ function bindPreparedIntent(
     if (disposition !== "admitted") {
       return disposition;
     }
-    yield* Effect.sync(() => {
-      runtime.conversations.set(
-        created.conversation.conversationId,
-        created.conversation,
-      );
-    });
+    runtime.conversations.set(
+      created.conversation.conversationId,
+      created.conversation,
+    );
     return disposition;
   });
 }
@@ -943,14 +947,20 @@ type IntentActivation =
       barrier: Deferred.Deferred<undefined>;
     }>;
 
-function activateIntent(
+function activateIntent<E>(
   runtime: EngineRuntime,
   prepared: PreparedSend,
   bind: IntentAdmission,
-): Effect.Effect<Exclude<IntentActivation, { kind: "waiting" }>, SendError> {
+  acquire: Effect.Effect<void, E>,
+): Effect.Effect<
+  Exclude<IntentActivation, { kind: "waiting" }>,
+  SendError | E
+> {
   return runtime.gate
     .withPermits(1)(
-      Effect.uninterruptible(activateIntentOnce(runtime, prepared, bind)),
+      Effect.uninterruptible(
+        activateIntentOnce(runtime, prepared, bind, acquire),
+      ),
     )
     .pipe(
       Effect.flatMap((activation) => {
@@ -963,7 +973,9 @@ function activateIntent(
               .rearmCatchUp(runtime, prepared.intent.conversationId)
               .pipe(
                 Effect.zipRight(Deferred.await(activation.barrier)),
-                Effect.zipRight(activateIntent(runtime, prepared, bind)),
+                Effect.zipRight(
+                  activateIntent(runtime, prepared, bind, acquire),
+                ),
               );
           default: {
             const exhaustive: never = activation;
@@ -974,18 +986,24 @@ function activateIntent(
     );
 }
 
-function activateIntentOnce(
+function activateIntentOnce<E>(
   runtime: EngineRuntime,
   prepared: PreparedSend,
   bind: IntentAdmission,
-): Effect.Effect<IntentActivation, SendError> {
+  acquire: Effect.Effect<void, E>,
+): Effect.Effect<IntentActivation, SendError | E> {
   const { intent } = prepared;
   return Effect.gen(function* () {
     const barrier = pendingRecoveryFence(runtime, intent.conversationId);
     if (barrier !== undefined) {
       return { kind: "waiting", barrier } satisfies IntentActivation;
     }
-    const disposition = yield* bindPreparedIntent(runtime, prepared, bind);
+    const disposition = yield* bindPreparedIntent(
+      runtime,
+      prepared,
+      bind,
+      acquire,
+    );
     if (disposition !== "admitted") {
       return { kind: "refused", disposition } satisfies IntentActivation;
     }

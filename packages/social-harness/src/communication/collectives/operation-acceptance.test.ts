@@ -36,7 +36,7 @@ import {
 } from "../records/index.js";
 import { RouterInstanceId } from "../router/api/contract.js";
 import { RouterWorkerUnavailableError } from "../router/index.js";
-import { decodeRuntimeValue } from "../store/index.js";
+import { decodeRuntimeValue, type EndpointStore } from "../store/index.js";
 import { makeCollectiveOperations } from "./index.js";
 
 it("waits for Router attachment before reporting a bound all-gather as pending", () =>
@@ -88,7 +88,41 @@ it("refuses an all-gather whose deadline passes before Router attachment without
     expect(yield* fixture.store.readCollectivePosts()).toEqual([]);
   }));
 
-function attachingEndpoint() {
+it("refuses an all-gather whose deadline passes while another send owns the engine gate", () =>
+  Effect.gen(function* () {
+    const binding = yield* Deferred.make<undefined>();
+    const bound = yield* Deferred.make<undefined>();
+    const fixture = yield* attachingEndpoint(
+      Deferred.succeed(binding, undefined).pipe(
+        Effect.zipRight(Deferred.await(bound)),
+      ),
+    );
+    yield* Deferred.succeed(fixture.attached, undefined);
+    const first = yield* fixture.engine
+      .bind(
+        {
+          to: Schema.decodeUnknownSync(MessageAddressInput)("agent:bob"),
+          content: [{ type: "text", text: "Earlier message" }],
+        },
+        Effect.succeed(Effect.void),
+      )
+      .pipe(Effect.fork);
+    yield* Deferred.await(binding);
+
+    const sending = yield* fixture.send(5).pipe(Effect.fork);
+    yield* TestClock.adjust("10 seconds");
+    yield* Deferred.succeed(bound, undefined);
+    yield* Fiber.join(first);
+
+    expect(yield* Effect.flip(Fiber.join(sending))).toMatchObject({
+      failure: { kind: "deadline-passed" },
+    });
+    expect(yield* fixture.store.readCollectiveOperations()).toEqual([]);
+    expect(yield* fixture.store.readCollectivePosts()).toEqual([]);
+    expect((yield* fixture.store.recover()).postIntents).toHaveLength(1);
+  }));
+
+function attachingEndpoint(pausePlainBind?: Effect.Effect<unknown>) {
   return Effect.gen(function* () {
     const subject = yield* engineFixture();
     const attaching = yield* Deferred.make<undefined>();
@@ -97,6 +131,7 @@ function attachingEndpoint() {
       subject,
       attaching,
       attached,
+      pausePlainBind ?? Effect.void,
     );
     const scope = yield* Scope.Scope;
     const collectives = yield* makeCollectiveOperations({
@@ -134,6 +169,7 @@ function attachingEngine(
   subject: Effect.Effect.Success<ReturnType<typeof engineFixture>>,
   attaching: Deferred.Deferred<undefined>,
   attached: Deferred.Deferred<undefined>,
+  pausePlainBind: Effect.Effect<unknown>,
 ) {
   return Effect.gen(function* () {
     const anchor = {
@@ -157,7 +193,7 @@ function attachingEngine(
                 : subject.remote.card,
           }),
       },
-      store: subject.store,
+      store: pauseUnrelatedBinds(subject.store, pausePlainBind),
       reportStorageFault: () => Effect.dieMessage("unexpected storage fault"),
       routerWorker: {
         currentAnchor: Deferred.isDone(attached).pipe(
@@ -336,4 +372,17 @@ function certificationEvidence(
     );
     return { core, recordHash, signatures, votes };
   });
+}
+
+function pauseUnrelatedBinds(
+  store: EndpointStore,
+  pause: Effect.Effect<unknown>,
+): EndpointStore {
+  return {
+    ...store,
+    bindPostIntent: (binding) =>
+      (binding.collective === undefined ? pause : Effect.void).pipe(
+        Effect.zipRight(store.bindPostIntent(binding)),
+      ),
+  };
 }
