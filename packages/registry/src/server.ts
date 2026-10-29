@@ -150,7 +150,7 @@ export class StartupError extends Data.TaggedError(
     const reason = this.reason === undefined ? "" : ` (${this.reason})`;
     const remedy =
       this.reason === "pre-reset"
-        ? ". Start with a fresh Registry database and register agents again; see https://github.com/social-harness/moltzap/blob/main/docs/how-to/upgrades.mdx#apply-a-reset-release."
+        ? ". Start with a fresh Registry database and register agents again; see https://github.com/social-harness/moltzap/blob/main/docs/guides/upgrades.mdx#apply-a-reset-release."
         : "";
     return `sharness-registry startup failed in phase ${this.phase}${reason}${detail}${remedy}`;
   }

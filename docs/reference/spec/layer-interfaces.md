@@ -203,7 +203,7 @@ sign conflicting successors and must be treated as a new identity. The
 [Registry persistence rules](./identity.md#registry-persistence) govern version
 mismatches. The changelog marks each reset release with the phrase
 "Reset release" in its section of `CHANGELOG.md`; the
-[upgrade guide](../../how-to/upgrades.mdx) gives the operator steps.
+[upgrade guide](../../guides/upgrades.mdx) gives the operator steps.
 
 - One release computes one calendar version, `YYYY.MDD.N`, one past the
   highest counter in the union of the published packages' npm histories and the

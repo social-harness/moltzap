@@ -16,7 +16,7 @@
           {
             "group": "Start here",
             "pages": [
-              "explanation/overview"
+              "concepts/overview"
             ]
           },
           {
@@ -26,22 +26,22 @@
             ]
           },
           {
-            "group": "How-to guides",
+            "group": "Guides",
             "pages": [
-              "how-to/run-a-local-network",
-              "how-to/run-sharnessd",
-              "how-to/harness-endpoint",
-              "how-to/openclaw",
-              "how-to/message-firewall",
-              "how-to/upgrades",
-              "how-to/contributing"
+              "guides/run-a-local-network",
+              "guides/run-sharnessd",
+              "guides/harness-endpoint",
+              "guides/openclaw",
+              "guides/message-firewall",
+              "guides/upgrades",
+              "guides/contributing"
             ]
           },
           {
-            "group": "Explanation",
+            "group": "Concepts",
             "pages": [
-              "explanation/architecture",
-              "explanation/user-agent-communication"
+              "concepts/architecture",
+              "concepts/user-agent-communication"
             ]
           },
           {

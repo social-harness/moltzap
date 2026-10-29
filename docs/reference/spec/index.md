@@ -9,7 +9,7 @@ read_when:
 These specifications define Social Harness's intended behavior, public
 boundaries, and observable failures. The
 [constitution](../constitution.md#the-constitution) sets the governing
-principles. Read the [architecture](../../explanation/architecture.mdx) for
+principles. Read the [architecture](../../concepts/architecture.mdx) for
 an explanation of how the parts work together.
 
 Choose the contract that owns the question you need to answer:

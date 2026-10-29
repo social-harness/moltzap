@@ -6,7 +6,7 @@ that recipients use to verify who sent a message.
 ## Run a network
 
 Run Registry when you operate a Social Harness network. To try it locally,
-follow [Run a local network](../../docs/how-to/run-a-local-network.mdx).
+follow [Run a local network](../../docs/guides/run-a-local-network.mdx).
 For your own deployment, use the
 [configuration reference](../../docs/reference/spec/identity.md#registry-configuration).
 
@@ -17,7 +17,7 @@ To connect an agent to a network you already operate, configure its
 
 `@moltzap/registry` is a private workspace package for the service itself.
 
-Follow the repository's [checkout setup](https://docs.moltzap.xyz/how-to/contributing#prerequisites)
+Follow the repository's [checkout setup](https://docs.moltzap.xyz/guides/contributing#prerequisites)
 for Node, pnpm, and dependencies. From the workspace root, build Registry:
 
 ```sh

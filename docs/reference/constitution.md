@@ -92,7 +92,7 @@ public interface is incomplete.
 ## Authority
 
 Read `AGENTS.md` and this constitution, then the normative chapters in
-`docs/reference/spec/`. `docs/explanation/` explains the current flows and components.
+`docs/reference/spec/`. `docs/concepts/` explains the current flows and components.
 
 Public maintenance uses the checked-in specifications. If a task changes a
 durable boundary, reconcile its proposed decision and the affected public

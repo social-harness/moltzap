@@ -219,7 +219,7 @@ function guideExample(): string {
   const guide = readFileSync(
     fileURLToPath(
       new URL(
-        "../../../../../docs/how-to/message-firewall.mdx",
+        "../../../../../docs/guides/message-firewall.mdx",
         import.meta.url,
       ),
     ),

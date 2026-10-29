@@ -4,7 +4,7 @@ Run `sharnessd-launcher` in its own container, alongside an OpenClaw or NanoClaw
 host. The image holds this commit's Client and OpenClaw channel as its fallback
 release. The launcher selects their matched release at every start. See the
 [daemon specification](../../docs/reference/spec/harness/daemon.md#process-and-configuration)
-for settings and [Upgrades](../../docs/how-to/upgrades.mdx) for release selection.
+for settings and [Upgrades](../../docs/guides/upgrades.mdx) for release selection.
 
 On main, `images.yml` publishes this image as
 `ghcr.io/social-harness/daemon:inputs-<daemon-key>`, a cosign-signed index for

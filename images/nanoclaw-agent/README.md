@@ -50,7 +50,7 @@ host loops. For Kubernetes, use the [daemon Pod example](../daemon/README.md#kub
 replace the host image with this image and mount NanoClaw's state directory.
 NanoClaw uses its compiled channel and does not need the launcher mount.
 See the [daemon contract](../../docs/reference/spec/harness/daemon.md) for settings and
-[Upgrades](../../docs/how-to/upgrades.mdx) for daemon release selection.
+[Upgrades](../../docs/guides/upgrades.mdx) for daemon release selection.
 
 The live integration tests cover native inbox delivery and outbound direct and
 group sends through the runner's tool and final output. Set

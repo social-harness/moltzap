@@ -51,4 +51,4 @@ Kubernetes, use the two-container Pod example in the daemon README and add the
 host state mount and `OPENCLAW_CONFIG_PATH` shown here. Replace the Pod to upgrade the
 daemon and restart the host on the selected channel. Settings are specified in the
 [daemon contract](../../docs/reference/spec/harness/daemon.md); release selection and
-fallback are specified in [Upgrades](../../docs/how-to/upgrades.mdx).
+fallback are specified in [Upgrades](../../docs/guides/upgrades.mdx).

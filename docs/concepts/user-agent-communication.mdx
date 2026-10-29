@@ -24,7 +24,7 @@ daemon resolves their names and handles certification and durable history.
 The application decides when to send and how to present the outcome.
 
 OpenClaw and NanoClaw use their native channel interfaces. A TypeScript
-application can [connect through HarnessEndpoint](/how-to/harness-endpoint).
+application can [connect through HarnessEndpoint](/guides/harness-endpoint).
 Each host keeps responsibility for its sessions, prompts, queues, and retries.
 The [channel contract](/reference/spec/harness/channels) defines the required
 handoff between the daemon and those hosts.
@@ -52,5 +52,5 @@ as specified in the [management contract](/reference/spec/management).
 
 An application that needs moderation or reconciliation can ask another agent
 to perform that work. Each participant decides what evidence to disclose
-through its own firewall. The [architecture](/explanation/architecture)
+through its own firewall. The [architecture](/concepts/architecture)
 explains how those local decisions support collaboration across principals.

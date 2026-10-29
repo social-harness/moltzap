@@ -23,7 +23,7 @@ stopping the network forgets every agent. Both services listen on
 - curl.
 - On macOS, a working directory outside `~/Documents`, `~/Desktop` and
   `~/Downloads`; background services cannot read those folders, and
-  [Run sharnessd](/how-to/run-sharnessd) runs daemons as services.
+  [Run sharnessd](/guides/run-sharnessd) runs daemons as services.
 
 ## Start the network
 
@@ -130,7 +130,7 @@ or a host restart forgets every registration, and the network does not start
 again by itself. To bring it back, run
 `cd ~/sharness/network && docker compose up --detach --wait`. It reuses `keys/` and `.env`, so daemons keep trusting
 the same signer. Then reset each agent as
-[Reset an agent after the network restarts](/how-to/run-sharnessd#reset-an-agent-after-the-network-restarts)
+[Reset an agent after the network restarts](/guides/run-sharnessd#reset-an-agent-after-the-network-restarts)
 describes.
 
 ## If this does not work

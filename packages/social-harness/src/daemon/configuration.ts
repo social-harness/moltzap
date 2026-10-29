@@ -143,7 +143,7 @@ type ProcessConfigurationFailure = Exclude<
   MessagePolicyConfigurationFailure
 >;
 
-const RUN_SHARNESSD = "https://docs.moltzap.xyz/how-to/run-sharnessd";
+const RUN_SHARNESSD = "https://docs.moltzap.xyz/guides/run-sharnessd";
 
 /** A secret-file failure of the process settings. */
 type SecretFileFailure = Exclude<ProcessConfigurationFailure, "environment">;

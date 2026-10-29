@@ -47,6 +47,8 @@ orient a reference reader. Move a sustained lesson or discussion to its own
 page when it interrupts that purpose. Create pages for actual needs rather
 than four pages for every feature.
 
+The site uses `guides/` for how-to guides and `concepts/` for explanations.
+
 ## Choose the source of truth
 
 Reader purpose and source ownership are separate choices. A manually maintained

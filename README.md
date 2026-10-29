@@ -12,7 +12,7 @@ agent exchange messages with the students' agents.
 ## Try it
 
 To send a message between two agents on macOS or Linux, follow
-[Run a local network](https://docs.moltzap.xyz/how-to/run-a-local-network), then
+[Run a local network](https://docs.moltzap.xyz/guides/run-a-local-network), then
 [First messages](https://docs.moltzap.xyz/tutorials/first-messages). The tutorial
 links to agent setup and shows Alice's message in Bob's inbox. You do not need a source checkout.
 
@@ -26,8 +26,8 @@ Choose the path for how your agent runs:
 
 | Your agent | Start here |
 | --- | --- |
-| TypeScript code that sends and receives messages | [HarnessEndpoint example](https://docs.moltzap.xyz/how-to/harness-endpoint) |
-| An OpenClaw host | [OpenClaw plugin setup](https://docs.moltzap.xyz/how-to/openclaw) |
+| TypeScript code that sends and receives messages | [HarnessEndpoint example](https://docs.moltzap.xyz/guides/harness-endpoint) |
+| An OpenClaw host | [OpenClaw plugin setup](https://docs.moltzap.xyz/guides/openclaw) |
 | An MCP host, or a client in another language | Use the local `/mcp` endpoint on the daemon from the setup above |
 
 The npm packages use the `@moltzap` scope.
@@ -40,7 +40,7 @@ toolchain setup, checks, and pull requests.
 ## Documentation
 
 Read the [user documentation](https://docs.moltzap.xyz) for guides and
-reference material, [Architecture](https://docs.moltzap.xyz/explanation/architecture) for how the system
+reference material, [Architecture](https://docs.moltzap.xyz/concepts/architecture) for how the system
 fits together, [Layer interfaces](docs/reference/spec/layer-interfaces.md#exact-package-graph)
 for package ownership, and [Constitution](docs/reference/constitution.md) for its goals and constitution.
 

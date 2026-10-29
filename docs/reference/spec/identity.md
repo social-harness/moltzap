@@ -422,7 +422,7 @@ Identity values and Registry clients live in `@moltzap/social-harness`. The
 private `@moltzap/registry` package owns the Registry process.
 [Library entries](./layer-interfaces.md#library-entries) defines allowed
 consumers and resolution conditions. The
-[API reference instructions](../../how-to/contributing.mdx#documentation)
+[API reference instructions](../../guides/contributing.mdx#documentation)
 explain how to build the TypeScript reference and read caller guidance.
 
 Run the service through `sharness-registry`. Direct Node imports of the

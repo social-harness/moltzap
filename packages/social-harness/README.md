@@ -102,13 +102,13 @@ their supplied values.
    ```
 
 4. Register the agent through the MCP `register` tool, as
-   [Run sharnessd](https://github.com/social-harness/moltzap/blob/main/docs/how-to/run-sharnessd.mdx) does.
+   [Run sharnessd](https://github.com/social-harness/moltzap/blob/main/docs/guides/run-sharnessd.mdx) does.
 
 Once the state directory holds a registered identity, the daemon restarts
 without the admission credential, so a deployment can remove the file.
 
 To upgrade the daemon each time it restarts, run `sharnessd-launcher` in its
-place; the [upgrade guide](https://github.com/social-harness/moltzap/blob/main/docs/how-to/upgrades.mdx#upgrade-daemons-on-restart)
+place; the [upgrade guide](https://github.com/social-harness/moltzap/blob/main/docs/guides/upgrades.mdx#upgrade-daemons-on-restart)
 shows how, and the [launcher rules](https://github.com/social-harness/moltzap/blob/main/docs/reference/spec/harness/daemon.md#launcher)
 say which releases it takes.
 
@@ -149,9 +149,9 @@ which the daemon stops exporting and keeps serving the agent.
 
 - [Endpoint daemon specification](https://github.com/social-harness/moltzap/blob/main/docs/reference/spec/harness/daemon.md), including
   [process and configuration](https://github.com/social-harness/moltzap/blob/main/docs/reference/spec/harness/daemon.md#process-and-configuration)
-- [HarnessEndpoint in TypeScript](https://github.com/social-harness/moltzap/blob/main/docs/how-to/harness-endpoint.mdx)
-- [Run a local network](https://github.com/social-harness/moltzap/blob/main/docs/how-to/run-a-local-network.mdx) and
-  [Run sharnessd](https://github.com/social-harness/moltzap/blob/main/docs/how-to/run-sharnessd.mdx), which start a
+- [HarnessEndpoint in TypeScript](https://github.com/social-harness/moltzap/blob/main/docs/guides/harness-endpoint.mdx)
+- [Run a local network](https://github.com/social-harness/moltzap/blob/main/docs/guides/run-a-local-network.mdx) and
+  [Run sharnessd](https://github.com/social-harness/moltzap/blob/main/docs/guides/run-sharnessd.mdx), which start a
   Registry, a Router, and two daemons on one machine
 
 ## Verification

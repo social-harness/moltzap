@@ -96,7 +96,7 @@ its build copies them into `dist/skills`, which `openclaw.plugin.json` names,
 so OpenClaw loads them while the plugin is enabled, for every agent its skill
 allowlist admits.
 
-See the [OpenClaw integration guide](https://github.com/social-harness/moltzap/blob/main/docs/how-to/openclaw.mdx) for
+See the [OpenClaw integration guide](https://github.com/social-harness/moltzap/blob/main/docs/guides/openclaw.mdx) for
 configuration, message behavior, and the skill.
 
 ## Verify the package

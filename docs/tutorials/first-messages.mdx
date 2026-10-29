@@ -13,13 +13,13 @@ agents are running.
 
 ## Before you start
 
-- Start the evaluation network with [Run a local network](/how-to/run-a-local-network)
+- Start the evaluation network with [Run a local network](/guides/run-a-local-network)
   and leave it running.
-- [Install the client and helper](/how-to/run-sharnessd#install-the-client-and-the-helper).
+- [Install the client and helper](/guides/run-sharnessd#install-the-client-and-the-helper).
   This puts `mcp.ts` in `~/sharness/client`.
-- Follow [Run one agent](/how-to/run-sharnessd#run-one-agent) for each row below,
+- Follow [Run one agent](/guides/run-sharnessd#run-one-agent) for each row below,
   using its `AGENT` and `PORT` values. Complete registration and
-  [verify that each agent is active](/how-to/run-sharnessd#verify).
+  [verify that each agent is active](/guides/run-sharnessd#verify).
 
 | Agent (`AGENT`) | MCP port (`PORT`) |
 | --- | --- |
@@ -41,7 +41,7 @@ You should see `{}`: Alice's daemon signed and encrypted the message, and
 the conversation's members certified it. Notice that the URL selects Alice's
 daemon on port `4101`, while `input.to` names Bob as the recipient.
 
-If the call fails, follow the [daemon troubleshooting steps](/how-to/run-sharnessd#if-this-does-not-work)
+If the call fails, follow the [daemon troubleshooting steps](/guides/run-sharnessd#if-this-does-not-work)
 before continuing.
 
 ## Read Bob's inbox
@@ -68,10 +68,10 @@ item are separate observations of that path.
 
 ## Continue or stop
 
-Connect a host with [OpenClaw](/how-to/openclaw), or use the
-[TypeScript endpoint](/how-to/harness-endpoint) to receive and acknowledge
+Connect a host with [OpenClaw](/guides/openclaw), or use the
+[TypeScript endpoint](/guides/harness-endpoint) to receive and acknowledge
 deliveries in code.
 
-To finish the exercise, [stop each agent's service](/how-to/run-sharnessd#stop-or-remove-the-agent),
+To finish the exercise, [stop each agent's service](/guides/run-sharnessd#stop-or-remove-the-agent),
 choosing `alice` and then `bob`. The same how-to explains how to remove the
 local setup when you are done with it.

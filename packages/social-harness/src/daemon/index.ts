@@ -113,18 +113,18 @@ export namespace Daemon {
       let remedy = "";
       if (this.reason === "agent-not-admitted") {
         remedy =
-          ". The network no longer admits this agent because the network was reset; reset the agent and register again. Docs: https://docs.moltzap.xyz/how-to/run-sharnessd#reset-an-agent-after-the-network-restarts";
+          ". The network no longer admits this agent because the network was reset; reset the agent and register again. Docs: https://docs.moltzap.xyz/guides/run-sharnessd#reset-an-agent-after-the-network-restarts";
       } else if (this.reason === "admission-refused") {
         remedy = `. ${registrationAdmissionRefusalMessage}`;
       } else if (this.reason === "pre-reset") {
         remedy =
-          ". Start with a fresh state directory and register again. Docs: https://docs.moltzap.xyz/how-to/upgrades#apply-a-reset-release";
+          ". Start with a fresh state directory and register again. Docs: https://docs.moltzap.xyz/guides/upgrades#apply-a-reset-release";
       } else if (this.reason === "outbox-too-old") {
         remedy =
-          ". Drain the outbox on the previous release before upgrading, or apply a reset release. Docs: https://docs.moltzap.xyz/how-to/upgrades#apply-a-reset-release";
+          ". Drain the outbox on the previous release before upgrading, or apply a reset release. Docs: https://docs.moltzap.xyz/guides/upgrades#apply-a-reset-release";
       } else if (this.reason === "newer-schema") {
         remedy =
-          ". A newer release wrote this state directory; run that release or a later one. Docs: https://docs.moltzap.xyz/how-to/upgrades#upgrade-daemons-on-restart";
+          ". A newer release wrote this state directory; run that release or a later one. Docs: https://docs.moltzap.xyz/guides/upgrades#upgrade-daemons-on-restart";
       }
       return `sharnessd startup failed in phase ${this.phase}${reason}${detail}${remedy}`;
     }

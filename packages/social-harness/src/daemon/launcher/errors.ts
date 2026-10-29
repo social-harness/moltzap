@@ -7,7 +7,7 @@ export const LAUNCHER_DOCS =
   "https://docs.moltzap.xyz/reference/spec/harness/daemon#launcher";
 
 /** The upgrades guide, whose troubleshooting entries launcher failures link. */
-export const UPGRADES_GUIDE = "https://docs.moltzap.xyz/how-to/upgrades";
+export const UPGRADES_GUIDE = "https://docs.moltzap.xyz/guides/upgrades";
 
 /**
  * Why the launcher could not prepare or start a daemon. `registry` and

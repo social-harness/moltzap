@@ -67,7 +67,7 @@ const POLICY_SPEC =
 
 /** The message-firewall guide, whose troubleshooting entries policy failures link. */
 export const FIREWALL_GUIDE =
-  "https://docs.moltzap.xyz/how-to/message-firewall";
+  "https://docs.moltzap.xyz/guides/message-firewall";
 
 /** Each failure's operator text and the troubleshooting entry that matches it. */
 const failureMessages: Readonly<
