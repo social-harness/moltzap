@@ -1,10 +1,7 @@
 /** @file Classified inbox events shared by native delivery transports. */
 
 import { Effect } from "effect";
-import {
-  type InboundItem,
-  retainedInboundItem,
-} from "../../communication/collectives/inbound.js";
+import { InboundItem } from "../../communication/collectives/inbound.js";
 import {
   decodeRuntimeValue,
   type InboxEntry,
@@ -41,8 +38,7 @@ export const boundItemEvent = <
       };
 
 /**
- * Keeps the original item and separate local guidance together. A retained
- * historical item decodes to its current form.
+ * Keeps the original item and separate local guidance together.
  * @param entry The admitted, immutable inbox row.
  * @param timestamp The occurrence's Unix time in milliseconds.
  * @returns A bounded event whose identity remains stable across retries.
@@ -51,10 +47,7 @@ export const makeItemEvent = Effect.fn("makeItemEvent")(function* (
   entry: InboxEntry,
   timestamp: number,
 ) {
-  const item = yield* decodeRuntimeValue(
-    retainedInboundItem,
-    entry.canonicalItem,
-  );
+  const item = yield* decodeRuntimeValue(InboundItem, entry.canonicalItem);
   const guidance =
     entry.canonicalGuidance === undefined
       ? undefined

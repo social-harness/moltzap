@@ -32,11 +32,7 @@ import {
   firewallCheckSchema,
   type Message,
 } from "../evaluator/index.js";
-import {
-  ENDPOINT_SENDER,
-  type LocalGuidance,
-  retainedFirewallRefusal,
-} from "../outcome/index.js";
+import { ENDPOINT_SENDER, type LocalGuidance } from "../outcome/index.js";
 import {
   assess,
   attemptInput,
@@ -52,11 +48,6 @@ import {
   mintCheckId,
   refusalReason,
 } from "./firewall-checks.js";
-const retainedFirewallReason = Schema.Union(
-  Schema.Literal("eligible"),
-  retainedFirewallRefusal,
-).pipe(Schema.compose(firewallCheckSchema.fields.reason));
-
 /** The window of a check with no history: a result's missing record, or a failure. */
 const EMPTY_WINDOW = {
   pendingOutgoing: false,
@@ -110,13 +101,11 @@ export const checkLocalItem = (
 };
 
 /**
- * The judgment and reason of a retained check result; the rest is not read
- * here. Historical approval requirements decode under the unresolved-evidence
- * reason for holds.
+ * Only judgment and reason are needed to project a stored check's withheld text.
  */
 const retainedJudgment = Schema.Struct({
   judgment: firewallCheckSchema.fields.judgment,
-  reason: retainedFirewallReason,
+  reason: firewallCheckSchema.fields.reason,
 });
 
 /** One result being admitted, and whether its stale budget is spent. */

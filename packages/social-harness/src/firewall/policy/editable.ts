@@ -8,7 +8,6 @@ import {
   type FirewallActivation,
   type FirewallAuditEntry,
 } from "../../communication/store/index.js";
-import { exactStruct } from "../../encoding/exact.js";
 import {
   buildFirewall,
   captureRegistration,
@@ -36,11 +35,7 @@ import {
   type RuleDescription,
 } from "../evaluator/index.js";
 import { localGuidanceImpersonationRule } from "../rules/index.js";
-import {
-  decodeBehavior,
-  MAXIMUM_BEHAVIOR_BYTES,
-  migrateAutonomyRule,
-} from "./document/index.js";
+import { decodeBehavior, MAXIMUM_BEHAVIOR_BYTES } from "./document/index.js";
 
 type FixedRules = typeof policyReadSchema.fields.fixedRules.Type;
 const englishId = "org.social-harness/english";
@@ -54,38 +49,9 @@ const invalidRule = (
 
 type PolicyEditPath = NonNullable<FirewallPolicyError["path"]>;
 
-/** Stored editable rules share the live exact members plus the historical safety mapping. */
+/** Stored editable rules use the same exact document as owner edits. */
 function decodeStoredRules(bytes: Uint8Array) {
-  const migratedRuleIds: string[] = [];
-  const retainedEditableRule = Schema.Union(
-    policyReadSchema.fields.rules.value,
-    Schema.transformOrFail(
-      exactStruct({
-        id: EnglishRule.fields.id,
-        text: EnglishRule.fields.text,
-        kind: Schema.Literal("autonomy"),
-        guidance: EnglishRule.fields.guidance,
-        feedback: EnglishRule.fields.feedback,
-      }),
-      policyReadSchema.fields.rules.value.members[1],
-      {
-        strict: true,
-        decode: (rule) => {
-          migratedRuleIds.push(rule.id);
-          return migrateAutonomyRule(rule);
-        },
-        encode: (rule) =>
-          Effect.succeed({ ...rule, kind: "autonomy" as const }),
-      },
-    ),
-  );
-
-  return decodeRuntimeValue(
-    Schema.Array(retainedEditableRule).pipe(
-      Schema.maxItems(MAXIMUM_EDITABLE_RULES),
-    ),
-    bytes,
-  ).pipe(
+  return decodeRuntimeValue(editableDocumentSchema, bytes).pipe(
     Effect.tap((rules) =>
       Effect.sync(() => {
         for (const rule of rules) {
@@ -97,7 +63,6 @@ function decodeStoredRules(bytes: Uint8Array) {
         Object.freeze(rules);
       }),
     ),
-    Effect.map((rules) => ({ rules, migratedRuleIds })),
     Effect.mapError(persistenceFailure),
   );
 }
@@ -277,20 +242,16 @@ export const installEditableFirewall = Effect.fn("installEditableFirewall")(
     const stored = yield* store
       .readFirewallPolicy()
       .pipe(Effect.mapError(persistenceFailure));
-    const retained =
+    const rules =
       stored === undefined
-        ? { rules: captured.english?.initialRules ?? [], migratedRuleIds: [] }
+        ? (captured.english?.initialRules ?? [])
         : yield* decodeStoredRules(stored);
-    const rules = retained.rules;
     yield* validateIds(rules, fixedRuleIds);
     const active = yield* buildPolicy(captured, rules);
     const state: PolicyState = { rules, active, fixedRuleIds };
-    yield* persistStartupRules(
-      store,
-      retained,
-      active.configurationDigest,
-      stored,
-    );
+    if (stored === undefined) {
+      yield* persistRules(store, rules);
+    }
     const gate = yield* Effect.makeSemaphore(1);
     const policy: FirewallPolicyOperations = {
       read: () =>
@@ -323,42 +284,6 @@ function liveInstallation(
     return snapshot;
   };
   return Object.freeze({ ...current(), current });
-}
-
-/** Startup writes only a new or changed document and records the migrated ids atomically. */
-function persistStartupRules(
-  store: EndpointStore,
-  retained: {
-    readonly rules: readonly EnglishRule[];
-    readonly migratedRuleIds: readonly string[];
-  },
-  activeRevision: string,
-  stored?: Uint8Array,
-) {
-  return Effect.gen(function* () {
-    const { rules, migratedRuleIds } = retained;
-    const encoded = yield* encodeRuntimeValue(rules).pipe(
-      Effect.mapError(persistenceFailure),
-    );
-    if (
-      stored !== undefined &&
-      Buffer.from(stored).equals(Buffer.from(encoded))
-    ) {
-      return;
-    }
-    const activation =
-      migratedRuleIds.length === 0
-        ? undefined
-        : {
-            time: yield* Clock.currentTimeMillis,
-            activeRevision,
-            addedRuleIds: migratedRuleIds,
-            removedRuleIds: migratedRuleIds,
-          };
-    yield* store
-      .writeFirewallPolicy(encoded, activation)
-      .pipe(Effect.mapError(persistenceFailure));
-  });
 }
 
 function persistRules(

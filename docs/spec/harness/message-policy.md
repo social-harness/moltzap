@@ -276,8 +276,7 @@ cannot admit a previously held item. Held items remain available for inspection.
 
 Retained checks keep their judgment, decision reasons and immutable installation,
 but no decision-provider trace. Traces remain available only in memory to the
-code producing the check and are never written to the store. Older retained
-rows with traces still decode; decoding discards those traces before projection.
+code producing the check and are never written to the store.
 
 Preserve incoming order with a retained per-conversation admission frontier.
 Assess a successor after its predecessor's disposition settles, including a
@@ -722,15 +721,7 @@ facilitator; `policy_update` adds rules, not facts.
 The daemon owns a durable editable document of at most 256 rules. Each rule has
 `{id, kind: "norm" | "safety", text, guidance?, feedback?}`;
 `feedback` is `{text, nextAction}` as in `EnglishRule`. A norm requires a nonempty
-`guidance` template. On load, persisted `autonomy` rules and message-policy
-`english.fixedRules` and `initialRules` of that kind become `safety` rules,
-keeping their ids, text and guidance. Feedback is retained only when its next
-action is allowed for safety findings. Missing or incompatible feedback becomes
-registered `stop` feedback: "This message needs your owner's review under rule
-`<id>` and stays held. Revise it or stop." The text uses the rule id.
-The daemon records an activation listing migrated editable rule ids in both
-`addedRuleIds` and `removedRuleIds`. At load, editable and message-policy file
-migrations log migrated ids and ids whose incompatible feedback was dropped. New edits accept only `norm` and `safety`. Rule ids must be unique in the editable document and cannot
+`guidance` template. Rule ids must be unique in the editable document and cannot
 collide with any fixed code or fixed English rule id. Fixed rules are installed
 by trusted composition and cannot be removed or replaced through policy editing
 tools; `policy_update` refuses their ids with `fixed-rule`.
@@ -870,14 +861,6 @@ and how. Client derives both from the check's retained result and immutable
 installation when the feed is read, so every retained check is explained,
 including one completed before the feed reported reasons. Nothing new is
 stored and the store schema is unchanged.
-
-When decoding retained checks for `firewall_decisions`,
-`decodeFirewallAuditEntry` drops `authorization` from retained contexts and
-maps retained `autonomy` registrations to `safety`. A retained
-`approval-required` finding becomes a settled `hold` with reason
-`unresolved-evidence` only when the retained result reason was
-`approval-required`; otherwise it becomes a non-deciding `not-applicable`
-finding.
 
 `decidedBy` lists the deciding rules once each, in chain order, chosen by the
 reason that [decision composition](#outgoing-projection) selected:

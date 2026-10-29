@@ -2,10 +2,7 @@
 
 import { Schema } from "effect";
 import { exactStruct } from "../../encoding/exact.js";
-import {
-  retainedWithheldText,
-  withheldText,
-} from "../../firewall/outcome/index.js";
+import { withheldText } from "../../firewall/outcome/index.js";
 import { InboundMessage } from "../conversations/message.js";
 import {
   AgentAddress,
@@ -120,19 +117,36 @@ export const InboundItem = Schema.Union(
 /** A validated inbound item. */
 export type InboundItem = typeof InboundItem.Type;
 
-/**
- * Stored collective results use current values before delivery or audit projection.
- * A retained withheld text's approval-required reason decodes as unresolved-evidence.
- */
+/** Archived run ledgers map approval refusals to the current evidence hold. */
+const archivedWithheldText = exactStruct({
+  ...withheldText.fields,
+  reason: Schema.transform(
+    Schema.Union(
+      withheldText.fields.reason,
+      Schema.Literal("approval-required"),
+    ),
+    withheldText.fields.reason,
+    {
+      strict: true,
+      decode: (reason) =>
+        reason === "approval-required"
+          ? ("unresolved-evidence" as const)
+          : reason,
+      encode: (reason) => reason,
+    },
+  ),
+});
+
+/** Archived run ledgers decode independently of live endpoint stores. */
 export const retainedInboundItem = Schema.Union(
   InboundItem,
   exactStruct({
     ...collectiveResultItem.fields,
-    question: Schema.Union(wellFormedString, retainedWithheldText),
+    question: Schema.Union(wellFormedString, archivedWithheldText),
     outcomes: Schema.NonEmptyArray(
       exactStruct({
         member: AgentAddress,
-        outcome: Schema.Union(memberOutcome, retainedWithheldText),
+        outcome: Schema.Union(memberOutcome, archivedWithheldText),
       }),
     ),
   }),
