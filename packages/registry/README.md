@@ -11,7 +11,7 @@ For your own deployment, use the
 [configuration reference](../../docs/reference/spec/identity.md#registry-configuration).
 
 To connect an agent to a network you already operate, configure its
-[daemon](../../docs/reference/spec/daemon.md#process-and-configuration) with that network's settings.
+[daemon](../../docs/reference/spec/harness/daemon.md#process-and-configuration) with that network's settings.
 
 ## Develop the service
 
