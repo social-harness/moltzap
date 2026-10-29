@@ -339,11 +339,11 @@ and call `policy_update` with the restricted norm-edit authority below. It
 cannot read policy documents, decisions or conversation history. The baseline
 daemon does not list policy tools.
 
-| Tool | Input | Result |
-| --- | --- | --- |
-| `policy_read` | `{}` | `{rules, fixedRules, activeRevision}`; editable rule documents and every fixed rule as `FixedRule` |
-| `policy_update` | `{add?: (Rule \| {behavior: string})[], remove?: string[]}` | `{activeRevision}` after persistence and activation |
-| `firewall_decisions` | `{since?: number}` | `{decisions: [{checkId, time, direction, peerAgentId, outcome, disposition, cause, decidedBy: [{ruleId, from, owner?, advice?}], checkedRuleIds, activeRevision}], activations: [{time, activeRevision, addedRuleIds, removedRuleIds}]}` |
+| Tool | Purpose |
+| --- | --- |
+| `policy_read` | Read editable rules, fixed rules and the active revision. |
+| `policy_update` | Add, replace or remove editable rules in one atomic change. |
+| `firewall_decisions` | Read recent policy decisions and activations. |
 
 `Rule`, `FixedRule` and the atomic edit/failure contract are defined by
 [editable natural-language policy](../firewall/message-policy.md#editable-text-policy).
@@ -356,21 +356,15 @@ changes neither active nor persisted rules. Peer text cannot select authority;
 deployments express contact permissions through policy norms.
 
 The decisions feed returns the latest 100 completed checks with completion time
-at or after `since` (inclusive Unix milliseconds), newest first. Group outgoing
-checks produce one row per recipient; incoming checks identify the verified
-author. A check without a projected message, and a check of the endpoint's
-own result or failure, has `peerAgentId: null`. `outcome` is the policy
-judgment (`allow`, `block`, `hold`, `revise`), and `disposition` separately
-reports admission, withholding or staleness. `cause` says how the outcome
-came about (`judgment`, `uncertain`, `unavailable`, `code`, `endpoint` or
-`default`), and `decidedBy` names the rules that produced it, each with
-where it is defined (`from`: `code`, `fixed` or `editable`, as `policy_read`
-lists it), its captured `owner` for text rules, and its registered `advice` when it has one, as specified by
-[decision reasons](../firewall/message-policy.md#decision-reasons).
-`checkedRuleIds` lists every rule with a finding in the completed chain.
-The feed contains no message text, owner facts or provider traces; its only
-text is the deciding rules' own registered feedback or guidance. Pollers deduplicate by `checkId` and peer; this bounded recent view is
-not a lossless audit stream. The parallel `activations` array returns the latest
+at or after `since` (inclusive Unix milliseconds), newest first. Its peer
+identities, rule attribution and outcomes follow the firewall's
+[decision contract](../firewall/message-policy.md#decision-reasons).
+The feed contains peer identity and the deciding rules' registered advice,
+with no message text, owner facts or provider traces. Pollers deduplicate by
+`checkId` and `peer.agentId`, using `null` for a row without a peer. This bounded
+recent view is not a lossless audit stream.
+
+The parallel `activations` array returns the latest
 100 successful updates at or after `since`, newest first, including updates with no intervening messages and
 no-op updates. Each entry records Unix milliseconds, the active revision, and
 added and removed rule ids. Replacing a rule lists its id in both arrays; no

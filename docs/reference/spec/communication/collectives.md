@@ -22,10 +22,12 @@ controls which requests and result text the local agent may see.
 
 ## Request validation
 
-The endpoint resolves the [destination](./addresses.md) before sending any
-request. A malformed address fails with `invalid-address` or
+The endpoint resolves the [destination](./addresses.md) and retains every
+member's verified identity before accepting an operation or sending a request.
+A malformed address fails with `invalid-address` or
 `membership-invalid`. If a member cannot be resolved, `members-unreachable`
-names each failing member and its reason. These failures create no post.
+names each failing member and its reason, including a Registry failure. These
+failures create no operation or post.
 
 `requestedSchema` defines the [answer fields](#answer-schema).
 An invalid schema is refused before sending. `deadline` is a whole number of
@@ -94,8 +96,8 @@ It may accept with schema-valid content or decline.
 
 An explicit answer id selects that request in that conversation. Without an
 id, the endpoint selects its one open request. With several open requests it
-returns `request-ambiguous` and their ids. With none open it returns
-`request-none`, `request-answered` or `request-expired`, according to the
+returns a `request-ambiguous` failure containing their ids. With none open it
+returns `request-none`, `request-answered` or `request-expired`, according to the
 retained request state. Those refusals also identify open requests in other
 conversations when present.
 
@@ -140,10 +142,30 @@ itself after consumption, whether or not a host subscriber is attached.
 
 ## Completion and recovery
 
-An accepted operation retains its original request, destination set, deadline,
-counted answers and bound post identities. Restart resumes that operation.
-It neither extends the deadline nor recounts later answers into a frozen
-result. Confirmed request refusals remain refused after restart.
+The result records when the requester first selects completion and why:
+
+- `closedAt` is that instant in Unix milliseconds.
+- `closedBy` is `settled` when every requested member has a retained answer
+  or a confirmed request refusal. It is `deadline` when expiry triggers
+  completion with members still unresolved.
+
+The endpoint selects the result from retained outcomes in one serialized
+transition. An answer retained before the deadline remains counted if its
+storage response returns later. `closedAt` can follow the deadline, including
+when the daemon first processes expiry after restarting. Once retained, the
+selection and its completion metadata stay fixed.
+
+An all-gather's signed close carries this same metadata. Every participant
+uses the requester's recorded time and reason in its result. The signature
+attributes that decision to the requester. It cannot prove the requester's
+clock was correct or that the requester included every answer it received.
+
+An accepted operation retains its original request, destination set, member
+identities, deadline, counted answers and bound post identities. Restart
+resumes that operation with the same deadline and completion selection.
+Confirmed request refusals remain refused. Requests and result members carry
+the verified identities retained with the operation, so delivery needs no
+fresh Registry lookup.
 
 A terminal result or failure has one retained payload and delivery token.
 Restart during publication or acknowledgment preserves that identity and
@@ -172,12 +194,15 @@ are rejected.
 | Request | `kind: "operation"`, `op: "gather"` or `"all_gather"`, `id`, `nonce`, `deadlineAt`, `requestedSchema` |
 | Accepted answer | `kind: "response"`, `id`, `action: "accept"`, `content` |
 | Declined answer | `kind: "response"`, `id`, `action: "decline"` |
-| Close | `kind: "close"`, `id`, `included` |
+| Close | `kind: "close"`, `id`, `included`, `closedAt`, `closedBy` |
 
 `id` identifies the request in all its answers and its close. `included` is an
 array of certified record hashes. `content` is an object mapping answer field
 names to strings, finite numbers, booleans or arrays of strings. The request's
 schema further constrains those values.
+
+`closedAt` and `closedBy` record the requester's
+[completion decision](#completion-and-recovery).
 
 The requester creates `nonce` from 32 fresh random bytes encoded as 43
 unpadded base64url characters. The operation id is `col_` followed by the

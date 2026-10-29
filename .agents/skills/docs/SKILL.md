@@ -89,6 +89,11 @@ specification for protocol guarantees. Keep export inventories and copied
 signatures out of hand-written specs. Verify that a generated page exists
 before removing its only useful explanation elsewhere.
 
+Explain the actor, event and evidence behind a value when its type leaves
+those unclear. A timestamp needs the event and clock it records. A signed
+decision needs a clear distinction between what its author asserts and what
+the signature proves.
+
 Document implementation only when the explanation adds something a reader
 cannot obtain from clear code. Implementation comments explain what the code
 leaves unclear, such as a non-obvious invariant, in present tense.

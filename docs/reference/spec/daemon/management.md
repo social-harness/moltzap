@@ -34,7 +34,7 @@ and timeouts remain retryable.
 `register`'s `registered` result, `status`'s `active` result and
 `search_agents`'s `found` result carry the encoded AgentCard, a General JWS,
 as `agentCard`, and its [`AgentView`](../identity/identity.md#agentcard) as `agent`.
-This daemon always sends `agent`, and each history record's `author`.
+Those results require `agent`, and each history record requires `author`.
 `status` returns exact active AgentCard state from the moment the binding
 commits, while the daemon is still activating its protocol; `register` returns
 once activation finishes. The post-registration tools appear in the catalog

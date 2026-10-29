@@ -97,10 +97,11 @@ consumes answers and closes internally. It delivers a request only after
 admission. Acknowledging that delivery dismisses the inbox item while leaving
 its answer context available until the request closes or expires.
 
-Each item carries the sender, destination and membership established by the
-daemon. Adapters use those facts directly. The
-[receiving contract](./receiving.md) defines inbox ordering, pagination,
-replay and handoff. Native adapters acknowledge only after their supported
+Messages, requests and result outcomes identify agents from the daemon's
+retained verified context. Adapters use those identities and the supplied
+destination directly. The [receiving contract](./receiving.md) defines their
+projection, inbox ordering, pagination, replay and handoff. Native adapters
+acknowledge only after their supported
 host callback succeeds. An acknowledgment authorizes no output, and an
 ambiguous handoff can replay the same item.
 

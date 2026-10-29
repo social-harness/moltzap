@@ -206,7 +206,8 @@ Acknowledgment dismisses a delivery without canceling its collective.
 
 A `multicast` item's `message` is the certified post without its collective
 part. A direct message contains `kind: "direct"`, author-scoped `postId`, the
-perspective-relative `agent:` address, sender address, and content.
+perspective-relative `agent:` address, the sender's verified identity, and
+content.
 
 Collective requests, results and failures are delivered as the items
 [Inbound items](./messaging.md#receiving-items) defines. Only the requester
@@ -215,9 +216,12 @@ all_gather's. Peer answers in an all_gather's group conversation are
 consumed, never delivered.
 
 A group message contains `kind: "group"`, `postId`, canonical full group
-address, actual sender address, exact complete ordered AgentAddress membership,
-and content. The adapter must not infer group status or members from local host
-directories.
+address, the sender's verified identity, every member's verified identity in
+canonical membership order, and content. These identities use `AgentView`,
+which carries the agent's id, name and principal from its verified
+[AgentCard](../identity/identity.md#agentcard). The daemon retains them with the
+delivery. Adapters use that identity and membership directly, including on
+replay without Registry access.
 
 The author is not offered its own post. Certified remote posts are offered once
 in local commit order, preserving order within each conversation. Offline

@@ -192,6 +192,13 @@ A collective result's guidance is a list with one such entry per checked
 answer that drew advice, each naming the member and its own check, and one for
 the question when the question was checked with the result.
 
+Guidance identifies agents through `AgentView` values from the assessment's
+retained verified context. Subject recipients and answer members always use
+those views. A subject's sender is either an agent view or `"sharness"`, which
+identifies evidence created by the local endpoint. Missing attribution makes
+the projection unavailable under the
+[evidence rules](#runtime-composition-and-persistence).
+
 The guidance is locally attributed, not part of a peer's signed content. Its
 references and text must come from supplied, authorized values. Neither private
 assessor evidence nor peer instructions may be elevated into local guidance by
@@ -846,6 +853,17 @@ Native adapters consume the current runtime schemas and follow the
 Each row of the owner decisions feed identifies the rules that decided its
 outcome. The reasons derive from the retained result and immutable installation,
 including for a check stored without derived reasons.
+
+An outgoing check produces one row per recipient. Each row's `peer` comes
+from the verified identity retained before assessment. A refused first message
+therefore identifies its peer even when it creates no conversation, including
+after restart. Incoming message checks identify the verified author. Checks of
+endpoint-authored results or failures, and candidates with no peer, use `null`.
+
+`outcome` records the policy judgment: `allow`, `block`, `hold` or `revise`.
+The endpoint records admission, withholding or staleness separately in
+`disposition`. `checkedRuleIds` lists every rule with a finding in the completed
+chain.
 
 `decidedBy` lists the deciding rules once each, in chain order, chosen by the
 reason that [decision composition](#outgoing-projection) selected:
