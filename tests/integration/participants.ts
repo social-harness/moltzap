@@ -34,7 +34,7 @@ export interface Participant {
  * Acquires the endpoint of `fixture`'s running daemon and queues every
  * delivery its subscription receives.
  */
-export const joinParticipant = (fixture: DaemonProcessFixture) =>
+const joinParticipant = (fixture: DaemonProcessFixture) =>
   Effect.gen(function* () {
     const endpoint = yield* acquireHarnessEndpoint(fixture.endpoint);
     const inbox = yield* Queue.unbounded<InboundDelivery>();

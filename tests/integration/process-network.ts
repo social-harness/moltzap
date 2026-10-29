@@ -1,19 +1,22 @@
 /** @file Promise-native access to scoped process fixtures for node:test consumers. */
 import {
+  acquireHarnessEndpoint,
+  type HarnessEndpoint,
   type InboundItem,
   MessageAddressInput,
+  SendInput,
   type SendResult,
 } from "@moltzap/social-harness";
-import { Effect, Exit, Schema, Scope } from "effect";
+import { Chunk, Effect, Exit, Option, Schema, Scope, Stream } from "effect";
 import {
   acquireDaemonManagementClient,
   acquireProcessInfrastructure,
   type DaemonProcessFixture,
   makeDaemonProcessFixture,
   makeRegistrationRequest,
+  processTestError,
   type ProcessTestError,
 } from "./daemon-process-harness.ts";
-import { joinParticipant, nextItem, send } from "./participants.ts";
 
 /* eslint-disable agent-code-guard/async-keyword, agent-code-guard/promise-type -- node:test consumes promises at the fixture boundary. */
 
@@ -23,7 +26,11 @@ interface Daemon {
   readonly mcp: URL;
 }
 
-/** A participant with acknowledged inbound delivery and management history. */
+/**
+ * A test's own harness endpoint on a daemon, with management history. It
+ * subscribes to inbound deliveries only while `next` waits, so a host that
+ * shares the daemon receives every delivery the test does not ask for.
+ */
 export interface Endpoint extends Daemon {
   readonly send: (input: unknown) => Promise<SendResult>;
   readonly next: (count: number) => Promise<readonly InboundItem[]>;
@@ -100,22 +107,51 @@ async function networkEndpoint(
   scope: Scope.CloseableScope,
   fixture: DaemonProcessFixture,
 ): Promise<Endpoint> {
-  const participant = await runInScope(scope, joinParticipant(fixture));
+  const harness = await runInScope(
+    scope,
+    acquireHarnessEndpoint(fixture.endpoint),
+  );
   return {
-    address: participant.address,
+    address: `agent:${fixture.agentName}`,
     mcp: fixture.endpoint,
-    send: (input) => runInScope(scope, send(participant, input)),
-    next: (count) =>
-      runInScope(
-        scope,
-        Effect.forEach(
-          Array.from({ length: count }),
-          () => nextItem(participant),
-          { concurrency: 1 },
-        ).pipe(Effect.timeout("60 seconds")),
+    send: (input) =>
+      Effect.runPromise(
+        Schema.decodeUnknown(SendInput)(input).pipe(
+          Effect.flatMap((decoded) => harness.send(decoded)),
+        ),
       ),
+    next: (count) => Effect.runPromise(nextItems(harness, count)),
     history: (address) => runInScope(scope, readContents(fixture, address)),
   };
+}
+
+/**
+ * Awaits the next `count` deliveries on a subscription opened for this call,
+ * acknowledging them before it closes, since a closed subscription's receipts
+ * are stale.
+ */
+function nextItems(harness: HarnessEndpoint, count: number) {
+  return harness.messages.pipe(
+    Stream.grouped(count),
+    Stream.tap((batch) =>
+      Effect.forEach(batch, ({ acknowledge }) => acknowledge, {
+        concurrency: 1,
+        discard: true,
+      }),
+    ),
+    Stream.runHead,
+    Effect.map(
+      Option.match({
+        onNone: (): readonly InboundItem[] => [],
+        onSome: (batch) => Chunk.toReadonlyArray(batch).map(({ item }) => item),
+      }),
+    ),
+    Effect.timeoutFail({
+      duration: "60 seconds",
+      onTimeout: () =>
+        processTestError(`timed out awaiting ${String(count)} deliveries`),
+    }),
+  );
 }
 
 function readContents(fixture: DaemonProcessFixture, address: string) {
