@@ -8,12 +8,52 @@ description: |
 
 # Documentation
 
-Write Social Harness documentation to help readers understand a concept,
-complete a task, or make a decision. This guide records the owner's writing
+Write documentation that helps readers learn, complete tasks, find precise
+answers, or understand the system. This guide records the owner's writing
 preferences and the repository's publishing conventions. Refine it as we
 review documents together. `AGENTS.md` defines documentation authority.
 
-## Separate specifications, APIs, and implementation
+## Choose the reader's purpose
+
+[Diátaxis](https://diataxis.fr/compass/) distinguishes two dimensions: learning
+or working, and action or knowledge. Choose the reader's need before choosing
+the document's structure.
+
+| Reader needs | While learning | While working |
+| --- | --- | --- |
+| Practical action | Tutorial: learn through a guided exercise | How-to guide: accomplish a real task |
+| Knowledge | Explanation: understand concepts and relationships | Reference: find precise facts |
+
+- A [tutorial](https://diataxis.fr/tutorials/) guides a learner through a
+  concrete exercise. Choose a reliable path, show useful results along the
+  way, and introduce concepts as the learner encounters them. Defer optional
+  alternatives so the learner can follow without prior expertise.
+- A [how-to guide](https://diataxis.fr/how-to-guides/) helps someone who knows
+  their goal complete a task in their own environment. State prerequisites,
+  necessary choices, steps, and verification. Include branches when the task
+  requires judgment, and link to background explanations.
+- [Reference](https://diataxis.fr/reference/) supports lookup during work.
+  Organize facts by the contract or interface they describe. Use consistent
+  names and structures so readers can find exact behavior, bounds, defaults,
+  and failures without reading the page from the beginning.
+- [Explanation](https://diataxis.fr/explanation/) develops understanding of a
+  bounded subject. Connect concepts, assumptions, constraints, and
+  consequences. Explain why a property matters or a design works. Link to
+  decision evidence where it helps, while keeping investigation history in
+  its owning record.
+
+Use these forms where readers need them. A README helps readers choose a
+path and may link to all four. A short definition or example can orient a
+reference reader. Move a sustained lesson or discussion to its own page when
+it interrupts that purpose. Create pages for actual needs rather than four
+pages for every feature.
+
+## Choose the source of truth
+
+Reader purpose and source ownership are separate choices. A manually maintained
+wire specification and a generated API reference both serve reference needs.
+An explanation can discuss either one's concepts. Generation does not supply
+the tutorials, how-to guides, or explanations readers also need.
 
 Maintain specifications by hand. They define the concepts, responsibilities,
 guarantees, and observable behavior an implementation must satisfy. State
@@ -38,8 +78,8 @@ Document implementation only when the explanation adds something a reader
 cannot obtain from clear code. Implementation comments explain what the code
 leaves unclear, such as a non-obvious invariant, in present tense.
 Bugfix rationale, investigation outcomes, failed approaches, and change
-history belong in issues, PR descriptions, and commit
-messages. Durable architecture decisions belong in ADRs. Remove file tours,
+history belong in issues, PR descriptions, and commit messages. Durable
+architecture decisions belong in ADRs. Remove file tours,
 dependency inventories, and narration of control flow during simplification.
 
 Useful examples have different scopes:
@@ -57,18 +97,16 @@ Useful examples have different scopes:
 
 ## Compose for the reader
 
-Begin each document with a topic sentence that explains its subject. Develop
-that subject from the reader's purpose through the concepts and their
-relationships to the necessary detail. Introduce a card before its fields,
+Begin each document with a topic sentence that establishes its subject or
+practical outcome. Develop it at the level and in the order the reader's
+purpose requires. Introduce a card before its fields,
 authentication before its signature profile, and a task before its commands.
 The [MCP introduction](https://modelcontextprotocol.io/docs/getting-started/intro)
 provides an example of moving from a definition to concrete uses and reader
 paths.
 
-Choose the level of abstraction before drafting. A README helps readers
-choose a starting point. A concept page explains how something works and why
-it matters. A guide helps them complete a task. Keep each page at its chosen
-level and link to the detail a reader needs next.
+Keep each page at its chosen level of abstraction and link to the detail a
+reader needs next.
 
 Develop one topic per paragraph. Let its opening sentence establish that
 topic and let the following sentences explain or support it. Keep related
@@ -102,21 +140,24 @@ guidance.
 ## Review each document and the set
 
 Read the complete draft after editing it. Check that the opening establishes
-its subject, each section advances that subject, and each paragraph adds
-something the reader needs. Rewrite awkward passages in place. Adding a
-simpler introduction above the same explanation creates another copy.
+its purpose, each section serves that purpose, and each paragraph adds
+something the intended reader needs. Watch for changes of purpose within a
+page, such as a setup procedure turning into a catalogue of every setting.
+Rewrite awkward passages in place. Adding a simpler introduction above the
+same explanation creates another copy.
 
 Read the affected documents together. Give each fact an owning page and link
 to it where the reader needs it. Remove repeated summaries, callouts, and
 closing link lists. A link should help a reader continue a task or find a
-necessary explanation. There is no required link count or
-closing section.
+necessary explanation. There is no required link count or closing section.
 
-For each affected folder, review the applicable specification, generated API
-reference, and source comments together. Classify misplaced text before
-editing it. Keep unique guarantees in the spec, move caller guidance to the owning JSDoc,
-and delete explanations that merely repeat the implementation. Regenerate
-the reference after source edits and read the result.
+For each affected folder, follow the paths readers use to learn, complete
+tasks, look up facts, and understand concepts. Review the applicable guides,
+explanations, specifications, generated reference, and source comments
+together. Keep protocol guarantees in the spec and API contract details in the
+owning JSDoc. Retain practical instructions and examples in the guide that uses
+them. Delete explanations that merely repeat the implementation. Regenerate the
+reference after source edits and read the result.
 
 Review correctness separately. Preserve unique guarantees and relevant
 failure conditions while removing repetition. Check implementation claims
@@ -124,7 +165,9 @@ against source and public contracts. Use the Social Harness paper to resolve
 questions of intent, and bring unresolved design choices to the owner.
 
 Before a docs PR merges, give a reader without source or session context a
-concrete task. Use
+task suited to the document. Have a learner complete a tutorial, a practitioner
+apply a how-to guide, a reference reader find an exact answer, or an explanation
+reader reason through an example. Use
 [doc-coauthoring's reader test](https://github.com/anthropics/skills/blob/main/skills/doc-coauthoring/SKILL.md#stage-3-reader-testing)
 to find where the draft makes them guess. Have them follow the changed paths,
 including their commands and links. Fix blockers or record them as issues
@@ -165,11 +208,10 @@ read_when:
 ---
 ```
 
-Guides complete one task. Put prerequisites before dependent actions and
-number steps by dependency. Keep each command with its explanation, expected
-result, and likely failures. A quickstart takes the shortest supported path
-to an observable result, such as a delivered message. State its expected time
-cost. Troubleshooting starts with the symptom or exact error, then explains
+Put prerequisites before dependent actions and number steps by dependency.
+Keep commands with their expected results and likely failures. State a
+quickstart's expected time cost and observable result, such as a delivered
+message. Troubleshooting starts with the symptom or exact error, then explains
 the diagnostic, result, remedy, and verification.
 
 Use optional detail only where a reader benefits from it. Accordions can
