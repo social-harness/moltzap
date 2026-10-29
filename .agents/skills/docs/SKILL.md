@@ -72,6 +72,13 @@ before selecting mechanisms. Record unresolved choices explicitly. Reading
 the code can reveal a discrepancy, but does not authorize rewriting the
 specification to match it.
 
+Give each layer one coherent contract. Identify what it receives, what it
+guarantees, what it returns, and what its callers must handle. Assign each
+guarantee to one layer and link to that owner from other specifications. Use
+the same responsibility boundaries in specifications and code. A disagreement
+between them needs a design decision, not another explanation. Organize around
+those responsibilities rather than reproducing the current file tree.
+
 Generate API reference from the declarations and schemas that own the API.
 Derive types, validators, and language bindings from those definitions wherever
 they would otherwise repeat the same contract. TypeDoc generates documentation
@@ -195,6 +202,12 @@ concept, its callers, and its contract before proposing a replacement. For a
 deeper rename or API change, record the current term, proposed term, meaning,
 reader benefit, and effect on callers or compatibility. An audit proposal
 does not authorize that change.
+
+Choose folder names together with their contents. A reader should be able to
+predict where a responsibility lives from the complete path. Test that
+prediction with a concrete task, such as finding who verifies a certificate or
+who decides whether a message reaches the agent. A clearer noun cannot repair
+a folder that mixes unrelated owners.
 
 Test names in their surroundings. Read a path from its parent folder down to
 the file, and a sentence from the actor through the action to the result.
