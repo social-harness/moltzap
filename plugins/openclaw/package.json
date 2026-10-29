@@ -1,6 +1,6 @@
 {
   "name": "@moltzap/openclaw-channel",
-  "version": "2026.1028.13",
+  "version": "2026.1029.0",
   "description": "OpenClaw channel plugin for Social Harness messaging",
   "license": "Apache-2.0",
   "repository": {
@@ -112,6 +112,6 @@
       "./dist/plugin.js"
     ]
   },
-  "sharnessContentHash": "sha256:a117aa8fb1bc3e877121770895ba1e9c2ba99a0f3a643dad15e8328b7ef5373d",
-  "sharnessHostCodeHash": "sha256:7803bce7606b9f452c8be106f814c236e9d60ac882c7d530e0c6cdee092ad612"
+  "sharnessContentHash": "sha256:e93022be40a1c8f9d9f8cefed495e459983a149553e2095850a860ebeb5b9b79",
+  "sharnessHostCodeHash": "sha256:2a3862849e8256fd8087fb87c6aea2fcf9d60a994a2b98a2a8bdbc31b5d6f9da"
 }
