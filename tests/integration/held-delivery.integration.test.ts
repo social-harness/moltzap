@@ -4,6 +4,7 @@ import {
   acquireHarnessEndpoint,
   AgentAddress,
   type AgentName,
+  type AgentView,
   type Content,
   type HarnessEndpoint,
   type InboundDelivery,
@@ -105,6 +106,8 @@ interface HeldPair {
   readonly proxy: RouterHoldProxy;
   readonly senderFixture: DaemonProcessFixture;
   readonly targetFixture: DaemonProcessFixture;
+  readonly senderAgent: AgentView;
+  readonly targetAgent: AgentView;
 }
 
 interface HeldDelivery {
@@ -115,6 +118,8 @@ interface HeldDelivery {
   readonly targetInbox: Queue.Queue<InboundDelivery>;
   readonly senderAddress: AgentAddress;
   readonly targetAddress: AgentAddress;
+  readonly senderAgent: AgentView;
+  readonly targetAgent: AgentView;
   readonly heldSend: Fiber.RuntimeFiber<SendResult, unknown>;
 }
 
@@ -163,9 +168,14 @@ const heldDeliveryBehavior = (
   } = {},
 ) =>
   Effect.gen(function* () {
-    const pair = yield* acquireHeldPair(firewalls);
-    yield* registerFixture(pair.senderFixture);
-    yield* registerFixture(pair.targetFixture);
+    const started = yield* acquireHeldPair(firewalls);
+    const sender = yield* registerFixture(started.senderFixture);
+    const target = yield* registerFixture(started.targetFixture);
+    const pair = {
+      ...started,
+      senderAgent: sender.agent,
+      targetAgent: target.agent,
+    };
     yield* Effect.scoped(
       waitForHeldDelivery(pair).pipe(
         Effect.flatMap(releaseHeldDelivery),
@@ -206,7 +216,8 @@ function throughProxy(
 
 function waitForHeldDelivery(pair: HeldPair) {
   return Effect.gen(function* () {
-    const { proxy, senderFixture, targetFixture } = pair;
+    const { proxy, senderFixture, targetFixture, senderAgent, targetAgent } =
+      pair;
     const senderAddress = directAddress(senderFixture.agentName);
     const targetAddress = directAddress(targetFixture.agentName);
     const sender = yield* acquireHarnessEndpoint(senderFixture.endpoint);
@@ -231,6 +242,8 @@ function waitForHeldDelivery(pair: HeldPair) {
       targetInbox,
       senderAddress,
       targetAddress,
+      senderAgent,
+      targetAgent,
       heldSend,
     };
   });
@@ -238,7 +251,7 @@ function waitForHeldDelivery(pair: HeldPair) {
 
 function releaseHeldDelivery(state: HeldDelivery) {
   return Effect.gen(function* () {
-    const { proxy, targetInbox, heldSend, senderAddress } = state;
+    const { proxy, targetInbox, heldSend, senderAddress, senderAgent } = state;
     yield* proxy.release;
     const released = yield* Queue.take(targetInbox);
     expect(released.item).toMatchObject({
@@ -246,7 +259,7 @@ function releaseHeldDelivery(state: HeldDelivery) {
       message: {
         kind: "direct",
         address: senderAddress,
-        sender: senderAddress,
+        sender: senderAgent,
         content: [{ type: "text", text: heldText }],
       },
     });
@@ -259,7 +272,8 @@ function releaseHeldDelivery(state: HeldDelivery) {
 
 function replyToReleasedDelivery(state: HeldDelivery) {
   return Effect.gen(function* () {
-    const { target, senderAddress, targetAddress, senderInbox } = state;
+    const { target, senderAddress, targetAddress, targetAgent, senderInbox } =
+      state;
     yield* target.send({ to: senderAddress, text: replyText });
     const reply = yield* Queue.take(senderInbox);
     expect(reply.item).toMatchObject({
@@ -267,7 +281,7 @@ function replyToReleasedDelivery(state: HeldDelivery) {
       message: {
         kind: "direct",
         address: targetAddress,
-        sender: targetAddress,
+        sender: targetAgent,
         content: [{ type: "text", text: replyText }],
       },
     });
@@ -285,6 +299,7 @@ function followUpHeldDelivery(state: HeldDelivery) {
       targetAddress,
       targetInbox,
       senderAddress,
+      senderAgent,
       senderInbox,
     } = state;
     yield* sender.send({ to: targetAddress, text: followUpText });
@@ -294,7 +309,7 @@ function followUpHeldDelivery(state: HeldDelivery) {
       message: {
         kind: "direct",
         address: senderAddress,
-        sender: senderAddress,
+        sender: senderAgent,
         content: [{ type: "text", text: followUpText }],
       },
     });

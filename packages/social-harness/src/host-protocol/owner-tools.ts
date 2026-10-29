@@ -24,14 +24,6 @@ import {
 
 const encodedAgentCard = Schema.encodedSchema(AgentCard);
 
-/**
- * The agent's view on a register or status result, or as a record's author.
- * This daemon always sends it. The schema leaves it optional because the
- * mixed-release gate decodes these results from an earlier daemon, which
- * sends none.
- */
-const agentView = Schema.optional(AgentView);
-
 const messageAddress = Schema.Union(AgentAddress, GroupAddress).annotations({
   identifier: "MessageAddress",
 });
@@ -72,7 +64,7 @@ const orderedSignerEvidence = Schema.NonEmptyArray(signerEvidence).pipe(
 
 const historyRecord = Schema.Struct({
   /** The record's author, from its conversation's verified membership and outside the signed bytes. */
-  author: agentView,
+  author: AgentView,
   recordHash: RecordHash,
   recordCore: RecordCore,
   routerAnchor: RouterAnchor,
@@ -102,7 +94,7 @@ export const managementRegisterResultSchema = Schema.Union(
   Schema.Struct({
     kind: Schema.Literal("registered"),
     agentCard: encodedAgentCard,
-    agent: agentView,
+    agent: AgentView,
   }),
   Schema.Struct({ kind: Schema.Literal("name_taken") }),
   Schema.Struct({ kind: Schema.Literal("key_already_registered") }),
@@ -116,7 +108,7 @@ export const managementStatusResultSchema = Schema.Union(
   Schema.Struct({
     kind: Schema.Literal("active"),
     agentCard: encodedAgentCard,
-    agent: agentView,
+    agent: AgentView,
   }),
 );
 

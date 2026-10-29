@@ -1,5 +1,6 @@
 /** @file Pins how a requester completes a gather, and what happens when the service cannot keep what the layer emits. */
 
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { scoped as it } from "@effect/vitest";
 import { Duration, Effect, Fiber, Option, Supervisor, TestClock } from "effect";
 import { describe, expect } from "vitest";
@@ -83,10 +84,13 @@ function emitsTheResultOnceEveryMemberHasAnswered() {
         question: questionText,
         outcomes: [
           {
-            member: "agent:bob",
+            member: testAgentView("agent:bob"),
             outcome: { kind: "answered", content: { slot: "mon" } },
           },
-          { member: "agent:carol", outcome: { kind: "declined" } },
+          {
+            member: testAgentView("agent:carol"),
+            outcome: { kind: "declined" },
+          },
         ],
       },
     ]);
@@ -115,8 +119,11 @@ function reportsASilentMemberAsNoAnswerAtTheDeadline() {
         to: gatherTo,
         question: questionText,
         outcomes: [
-          { member: "agent:bob", outcome: { kind: "declined" } },
-          { member: "agent:carol", outcome: { kind: "no-answer" } },
+          { member: testAgentView("agent:bob"), outcome: { kind: "declined" } },
+          {
+            member: testAgentView("agent:carol"),
+            outcome: { kind: "no-answer" },
+          },
         ],
       },
     ]);
@@ -152,7 +159,7 @@ function recordsAnAnswerThatFailsTheSchemaAsInvalid() {
         question: questionText,
         outcomes: [
           {
-            member: "agent:bob",
+            member: testAgentView("agent:bob"),
             outcome: {
               kind: "invalid",
               reason:
@@ -160,7 +167,7 @@ function recordsAnAnswerThatFailsTheSchemaAsInvalid() {
             },
           },
           {
-            member: "agent:carol",
+            member: testAgentView("agent:carol"),
             outcome: { kind: "invalid", reason: 'field "slot" is missing' },
           },
         ],
@@ -189,7 +196,10 @@ function keepsAMemberSFirstAnswerAndIgnoresItsSecond() {
     yield* TestClock.adjust(Duration.seconds(60));
 
     expect(observed.emitted[0]).toMatchObject({
-      outcomes: [{ member: "agent:bob", outcome: { kind: "declined" } }, {}],
+      outcomes: [
+        { member: testAgentView("agent:bob"), outcome: { kind: "declined" } },
+        {},
+      ],
     });
   });
 }
@@ -269,8 +279,14 @@ function endsAPendingGatherAtItsDeadlineInOneResult() {
         to: gatherTo,
         question: questionText,
         outcomes: [
-          { member: "agent:bob", outcome: { kind: "no-answer" } },
-          { member: "agent:carol", outcome: { kind: "no-answer" } },
+          {
+            member: testAgentView("agent:bob"),
+            outcome: { kind: "no-answer" },
+          },
+          {
+            member: testAgentView("agent:carol"),
+            outcome: { kind: "no-answer" },
+          },
         ],
       },
     ]);

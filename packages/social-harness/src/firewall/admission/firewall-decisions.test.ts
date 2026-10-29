@@ -1,7 +1,10 @@
 /** @file The owner decisions feed explains each checked message through real Client storage. */
 
+import { MessageAddressInput } from "../../communication/records/values.js";
+import { withStore } from "../../__tests__/store-schema-fixtures.js";
+import { agentViewOf } from "../../identity/cards.js";
 import { scopedLive as it } from "@effect/vitest";
-import { Effect, Queue, Struct } from "effect";
+import { Effect, Queue, Schema, Struct } from "effect";
 import { expect } from "vitest";
 import type { FirewallOptions } from "./firewall.js";
 import { makeRetainedCheckFixture } from "../../__tests__/firewall-retained-fixtures.js";
@@ -452,35 +455,63 @@ it("reports Client's own hold after repeatedly stale evidence as the endpoint's"
     );
   }));
 
-it("names the norm that asked an outgoing draft for revision, naming the recipient", () =>
+it("retains refused first-message peers after restart without an admitted conversation", () =>
   Effect.gen(function* () {
-    const subject = yield* fixture;
     const reviser = codePolicy([rule], revise);
-    const editable = yield* installEditableFirewall(
-      options([reviser]),
-      subject.store,
-    );
-    const delivery = yield* outgoingThrough(subject, editable);
-
-    yield* Effect.flip(
-      delivery.operations.send({ input: { to: destination, text: "Hello" } }),
-    );
-
-    expect((yield* editable.policy.decisions({})).decisions).toMatchObject([
-      {
-        direction: "outgoing",
-        peerAgentId: subject.remote.card.agentId,
-        outcome: "revise",
-        cause: "code",
-        decidedBy: arrayContaining([
-          expect.objectContaining({
-            ruleId: rule.id,
-            from: "code",
-            advice: rule.feedback.text,
+    const saved = yield* Effect.scoped(
+      Effect.gen(function* () {
+        const subject = yield* fixture;
+        const editable = yield* installEditableFirewall(
+          options([reviser]),
+          subject.store,
+        );
+        const delivery = yield* outgoingThrough(subject, editable);
+        yield* Effect.flip(
+          delivery.operations.send({
+            input: {
+              to: Schema.decodeUnknownSync(MessageAddressInput)(
+                "group:carol,bob",
+              ),
+              text: "Hello",
+            },
           }),
-        ]),
-      },
-    ]);
+        );
+        expect((yield* subject.store.recover()).memberships).toEqual([]);
+        const feed = yield* editable.policy.decisions({});
+        expect(feed.decisions.slice(0, 1)).toMatchObject([
+          {
+            direction: "outgoing",
+            peer: agentViewOf(subject.remote.card),
+            outcome: "revise",
+            cause: "code",
+            decidedBy: arrayContaining([
+              expect.objectContaining({
+                ruleId: rule.id,
+                from: "code",
+                advice: rule.feedback.text,
+              }),
+            ]),
+          },
+        ]);
+        expect(feed.decisions.map((decision) => decision.peer)).toEqual([
+          agentViewOf(subject.remote.card),
+          agentViewOf(subject.third.card),
+        ]);
+        return { directory: subject.directory, decisions: feed.decisions };
+      }),
+    );
+    yield* withStore(saved.directory, (store) =>
+      Effect.gen(function* () {
+        const editable = yield* installEditableFirewall(
+          options([reviser]),
+          store,
+        );
+        expect((yield* editable.policy.decisions({})).decisions).toEqual(
+          saved.decisions,
+        );
+        expect((yield* store.recover()).memberships).toEqual([]);
+      }),
+    );
   }));
 
 it("refuses unknown stored editable properties as persistence failures", () =>

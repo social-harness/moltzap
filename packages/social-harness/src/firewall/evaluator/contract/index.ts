@@ -1,5 +1,6 @@
 /** @file Validated evidence and contracts shared by code and natural-language checks. */
 
+import { AgentView } from "../../../identity/cards.js";
 import { Cause, Data, Effect, Either, Schema } from "effect";
 import { exactStruct } from "../../../encoding/exact.js";
 import { AgentId } from "../../../identity/agents.js";
@@ -673,7 +674,7 @@ export const firewallDecisionsSchema = exactStruct({
       checkId: Schema.NonEmptyString,
       time: Schema.NonNegativeInt,
       direction: Schema.Literal("incoming", "outgoing"),
-      peerAgentId: Schema.NullOr(AgentId),
+      peer: Schema.NullOr(AgentView),
       outcome: Schema.Literal("allow", "block", "hold", "revise"),
       disposition: Schema.Literal("stale", "admitted", "withheld"),
       cause: decisionCause,

@@ -9,7 +9,10 @@ import {
   Schema,
   Scope,
 } from "effect";
-import type { ListenError } from "../../communication/conversations/errors.js";
+import {
+  type ListenError,
+  SendError,
+} from "../../communication/conversations/errors.js";
 import type {
   DeliveryToken,
   EndpointStore,
@@ -36,7 +39,10 @@ import {
   decodeOuterBody,
   type OuterBodyReader,
 } from "../../communication/records/index.js";
-import { AgentAddress } from "../../communication/records/values.js";
+import {
+  AgentAddress,
+  agentAddressOf,
+} from "../../communication/records/values.js";
 import {
   Router,
   type RouterWorker,
@@ -52,7 +58,11 @@ import {
   collectiveAdmission,
   type InstalledFirewall,
 } from "../../firewall/index.js";
-import { AgentCard, type VerifiedAgentCard } from "../../identity/cards.js";
+import {
+  AgentCard,
+  agentViewOf,
+  type VerifiedAgentCard,
+} from "../../identity/cards.js";
 import { Registry } from "../../identity/registry/index.js";
 import {
   activationFailure,
@@ -352,7 +362,17 @@ const makeProtocolCollectives = (
     self: Schema.decodeUnknownSync(AgentAddress)(
       `agent:${agentCard.agentName}`,
     ),
-    lookupMember: (member) => engine.resolveAddress(member),
+    lookupMember: (member) =>
+      engine.resolveConversation(member).pipe(
+        Effect.flatMap((resolved) => {
+          const card = resolved.memberCards.find(
+            (candidate) => agentAddressOf(candidate) === member,
+          );
+          return card === undefined
+            ? Effect.fail(new SendError({ reason: "unknown-agent" }))
+            : Effect.succeed(agentViewOf(card));
+        }),
+      ),
     sendPost: (input) => engine.send(input),
     emit,
     scope: environment.daemonScope,

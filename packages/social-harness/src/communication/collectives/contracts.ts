@@ -4,6 +4,7 @@ import { Data, ParseResult, Schema } from "effect";
 import { exactStruct } from "../../encoding/exact.js";
 import { isCanonicalIdentifier } from "../../encoding/identifier.js";
 import { checkedGuidanceSchema } from "../../firewall/outcome/index.js";
+import type { AgentView } from "../../identity/cards.js";
 import {
   issuesText,
   type SendError,
@@ -22,7 +23,7 @@ import {
 /* eslint-disable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Effect Schemas share their domain names with the nominal values they decode. */
 
 /** The agents a collecting operation asks, in result order. */
-export type Members = readonly [AgentAddress, ...AgentAddress[]];
+export type Members = readonly [AgentView, ...AgentView[]];
 
 /**
  * Identity of one gather or all_gather, minted by the requesting endpoint.

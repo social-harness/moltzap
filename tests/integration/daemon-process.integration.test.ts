@@ -7,6 +7,7 @@ import {
   AgentAddress,
   AgentCard,
   type AgentName,
+  type AgentView,
   type Content,
   type HarnessEndpoint,
   type InboundDelivery,
@@ -54,30 +55,45 @@ import {
 import { processTrace } from "./process-trace.js";
 import { arrayContaining } from "./test-matchers.js";
 
+interface RegisteredFixture extends DaemonProcessFixture {
+  readonly agent: AgentView;
+}
+
 const registerFixture = (fixture: DaemonProcessFixture) =>
   Effect.scoped(
     Effect.gen(function* () {
       const management = yield* acquireDaemonManagementClient(fixture.endpoint);
       expect(yield* management.status()).toEqual({ kind: "unregistered" });
 
-      const registered = yield* management.register(
-        makeRegistrationRequest(fixture),
-      );
-      expect(registered.kind).toBe(registrationResultKind);
-      if (registered.kind === registrationResultKind) {
-        const agentCard = yield* Schema.decodeUnknown(AgentCard)(
-          registered.agentCard,
+      const registered = yield* management
+        .register(makeRegistrationRequest(fixture))
+        .pipe(
+          Effect.filterOrFail(
+            (result) => result.kind === registrationResultKind,
+            (result) =>
+              new ProcessTestError({
+                message: `fixture registration returned ${result.kind}`,
+              }),
+          ),
         );
-        expect(agentCard).toMatchObject({
-          agentName: fixture.agentName,
-        });
-      }
+      const agentCard = yield* Schema.decodeUnknown(AgentCard)(
+        registered.agentCard,
+      );
+      expect(agentCard).toMatchObject({
+        agentName: fixture.agentName,
+      });
+      expect(registered.agent).toEqual({
+        agentId: agentCard.agentId,
+        agentName: agentCard.agentName,
+        principalId: agentCard.principalId,
+      });
+      return { ...fixture, agent: registered.agent };
     }),
   );
 
 /** Sends one addressed post with `send` and waits for the peer to receive it. */
 const deliverDirect = (input: {
-  readonly from: DaemonProcessFixture;
+  readonly from: RegisteredFixture;
   readonly to: DaemonProcessFixture;
   readonly text: string;
   readonly send: typeof sendOrQueue;
@@ -98,7 +114,7 @@ const deliverDirect = (input: {
         kind: "multicast",
         message: {
           kind: "direct",
-          sender: directAddress(input.from.agentName),
+          sender: input.from.agent,
           content: [{ type: "text", text: input.text }],
         },
       });
@@ -114,20 +130,20 @@ const certifiedSend = (endpoint: HarnessEndpoint, input: SendInput) =>
 const fromRestartedText = "sent by the restarted daemon";
 
 interface RestartScenario {
-  readonly restartedFixture: DaemonProcessFixture;
-  readonly peerFixture: DaemonProcessFixture;
+  readonly restartedFixture: RegisteredFixture;
+  readonly peerFixture: RegisteredFixture;
   readonly restartedDaemon: RunningProcess;
 }
 
 interface RouterRestartScenario {
   readonly infrastructure: ProcessInfrastructure;
-  readonly memberFixture: DaemonProcessFixture;
-  readonly conciergeFixture: DaemonProcessFixture;
+  readonly memberFixture: RegisteredFixture;
+  readonly conciergeFixture: RegisteredFixture;
 }
 
 interface ProcessScenario {
-  readonly callerFixture: DaemonProcessFixture;
-  readonly targetFixture: DaemonProcessFixture;
+  readonly callerFixture: RegisteredFixture;
+  readonly targetFixture: RegisteredFixture;
   readonly targetDaemon: RunningProcess;
   readonly callerAddress: AgentAddress;
   readonly targetAddress: AgentAddress;
@@ -154,7 +170,11 @@ const acquireRestartPair = Effect.gen(function* () {
     ] as const,
     { concurrency: 2 },
   );
-  return { restartedFixture, peerFixture, restartedDaemon };
+  return {
+    restartedFixture: yield* registerFixture(restartedFixture),
+    peerFixture: yield* registerFixture(peerFixture),
+    restartedDaemon,
+  };
 });
 
 const acquireRouterRestartPair = Effect.gen(function* () {
@@ -187,7 +207,11 @@ const acquireRouterRestartPair = Effect.gen(function* () {
     ] as const,
     { concurrency: 2 },
   );
-  return { infrastructure, memberFixture, conciergeFixture };
+  return {
+    infrastructure,
+    memberFixture: yield* registerFixture(memberFixture),
+    conciergeFixture: yield* registerFixture(conciergeFixture),
+  };
 });
 
 const acquireProcessPair = Effect.gen(function* () {
@@ -204,8 +228,8 @@ const acquireProcessPair = Effect.gen(function* () {
     { concurrency: 2 },
   );
   return {
-    callerFixture,
-    targetFixture,
+    callerFixture: yield* registerFixture(callerFixture),
+    targetFixture: yield* registerFixture(targetFixture),
     targetDaemon,
     callerAddress: directAddress(callerFixture.agentName),
     targetAddress: directAddress(targetFixture.agentName),
@@ -352,8 +376,6 @@ const toRestartedText = "sent to the restarted daemon";
  */
 const singleRestartBehavior = Effect.gen(function* () {
   const scenario = yield* acquireRestartPair;
-  yield* registerFixture(scenario.restartedFixture);
-  yield* registerFixture(scenario.peerFixture);
   yield* restartSenderAndExpectDelivery(scenario);
   yield* expectRestartedRecipientHistory(scenario);
 }).pipe(Effect.scoped);
@@ -394,16 +416,12 @@ const replyAfterRouterRestartText = "reply after the Router restarts";
  */
 const routerRestartBehavior = Effect.gen(function* () {
   const scenario = yield* acquireRouterRestartPair;
-  yield* registerFixture(scenario.memberFixture);
-  yield* registerFixture(scenario.conciergeFixture);
   yield* restartRouterAndExpectBidirectionalDelivery(scenario);
   yield* expectRecoveredRouterHistory(scenario);
 }).pipe(Effect.scoped);
 
 const processBehavior = Effect.gen(function* () {
   const scenario = yield* acquireProcessPair;
-  yield* registerFixture(scenario.callerFixture);
-  yield* registerFixture(scenario.targetFixture);
   yield* expectRetiredConversationIdentifierRefused(scenario.callerFixture);
   yield* exchangeInitialPostsAndExpectDelivery(scenario);
   yield* expectInitialHistoriesMatch(scenario);
@@ -537,10 +555,10 @@ const refusesStaleOutbox = Effect.scoped(
     const peer = yield* makeDaemonProcessFixture(infrastructure, "stale-peer");
     const daemonProcess = yield* acquireDaemonProcess(local);
     yield* acquireDaemonProcess(peer);
-    yield* registerFixture(local);
+    const registeredLocal = yield* registerFixture(local);
     yield* registerFixture(peer);
     yield* deliverDirect({
-      from: local,
+      from: registeredLocal,
       to: peer,
       text: "outbox baseline",
       send: sendOrQueue,
@@ -822,7 +840,7 @@ function exchangeInitialPostsAndExpectDelivery(state: ProcessScenario) {
             kind: "direct",
             postId: sent.postId,
             address: callerAddress,
-            sender: callerAddress,
+            sender: callerFixture.agent,
             content: [{ type: "text", text: initialText }],
           },
         });
@@ -834,7 +852,7 @@ function exchangeInitialPostsAndExpectDelivery(state: ProcessScenario) {
           message: {
             kind: "direct",
             address: targetAddress,
-            sender: targetAddress,
+            sender: targetFixture.agent,
             content: [{ type: "text", text: responseText }],
           },
         });

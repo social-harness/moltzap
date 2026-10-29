@@ -570,7 +570,7 @@ function projectItem(item: InboundItem): ProjectedItem {
         origin: "peer",
         id: item.message.postId,
         address: item.message.address,
-        sender: item.message.sender,
+        sender: `agent:${item.message.sender.agentName}`,
         text: renderContent(item.message.content),
       };
     case "collectiveRequest":
@@ -578,7 +578,7 @@ function projectItem(item: InboundItem): ProjectedItem {
         origin: "peer",
         id: item.postId,
         address: item.to,
-        sender: item.from,
+        sender: `agent:${item.from.agentName}`,
         text: renderCollectiveRequest(
           item,
           `Send the answer once as the whole text of send_message to ${item.to}.`,

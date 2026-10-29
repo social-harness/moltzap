@@ -1,5 +1,6 @@
 /** @file Local advice with explicit subject attribution for host transport checks. */
 
+import { testAgentView } from "./agent-card-fixtures.js";
 import { Encoding } from "effect";
 import type { CheckedGuidance } from "../firewall/outcome/index.js";
 import { digest } from "./agent-card-fixtures.js";
@@ -12,8 +13,8 @@ export function localGuidance(byte: number): CheckedGuidance {
     subjects: [
       {
         id: subject,
-        sender: "agent:bob",
-        recipients: ["agent:alice"],
+        sender: testAgentView("agent:bob"),
+        recipients: [testAgentView("agent:alice")],
         text: "Can we meet?",
       },
     ],

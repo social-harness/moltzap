@@ -3,9 +3,9 @@
 import { Schema } from "effect";
 import { exactStruct } from "../../encoding/exact.js";
 import { withheldText } from "../../firewall/outcome/index.js";
+import { AgentView } from "../../identity/cards.js";
 import { InboundMessage } from "../conversations/message.js";
 import {
-  AgentAddress,
   MessageAddressInput,
   PostId,
   wellFormedString,
@@ -43,7 +43,7 @@ const collectiveRequestItem = exactStruct({
   op: collectingOp,
   id: CollectiveId,
   postId: PostId,
-  from: AgentAddress,
+  from: AgentView,
   to: MessageAddressInput,
   question: wellFormedString,
   requestedSchema: RequestedSchema,
@@ -85,7 +85,7 @@ const collectiveResultItem = exactStruct({
   to: MessageAddressInput,
   question: Schema.Union(wellFormedString, withheldText),
   outcomes: Schema.NonEmptyArray(
-    exactStruct({ member: AgentAddress, outcome: memberOutcome }),
+    exactStruct({ member: AgentView, outcome: memberOutcome }),
   ),
 });
 
@@ -157,7 +157,7 @@ export const historyExportItem = Schema.Union(
     question: Schema.Union(wellFormedString, archivedWithheldText),
     outcomes: Schema.NonEmptyArray(
       exactStruct({
-        member: AgentAddress,
+        member: AgentView,
         outcome: Schema.Union(memberOutcome, archivedWithheldText),
       }),
     ),

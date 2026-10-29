@@ -244,9 +244,9 @@ export const verifiedAgentCardSchema = Schema.declare(
 );
 
 /**
- * The public fields of an agent's verified AgentCard: the one shape daemon
- * results name an agent with, so a reader matches an AgentId and a name
- * without decoding a card.
+ * Identifies an agent and the principal it represents without exposing the
+ * signed card representation. Host messages, results and policy decisions
+ * retain this view from the verified AgentCard.
  */
 // eslint-disable-next-line @typescript-eslint/naming-convention -- Effect Schemas share the public domain name they decode.
 export const AgentView = Schema.Struct({
@@ -254,12 +254,12 @@ export const AgentView = Schema.Struct({
   agentName: AgentName,
   principalId: PrincipalId,
 }).annotations({ identifier: "AgentView" });
-/** One agent as a daemon result names it. */
+/** An agent identity retained with a host result. */
 // eslint-disable-next-line @typescript-eslint/no-redeclare -- The same-named Schema and type form one boundary model.
 export type AgentView = typeof AgentView.Type;
 
 /**
- * The view of a card the daemon verified; nothing else fills a view.
+ * Project an immutable Registry identity for host results.
  * @param agentCard A card verified against the pinned Registry signer.
  * @returns The card's public fields.
  */

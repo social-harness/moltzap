@@ -1,5 +1,6 @@
 /** @file The history export appends decodable lines and stops explicitly. */
 
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { FileSystem, Error as PlatformError } from "@effect/platform";
 import { NodeFileSystem } from "@effect/platform-node";
 import { live as it } from "@effect/vitest";
@@ -28,7 +29,7 @@ function inbound(): HistoryExportRecord {
         kind: "direct",
         postId: POST_ID,
         address: "agent:bob",
-        sender: "agent:bob",
+        sender: testAgentView("agent:bob"),
         content: [{ type: "text", text: "hello" }],
       },
     }),
@@ -145,7 +146,9 @@ it("reads historical withheld results and encodes current refusal values", () =>
           checkId: `chk_${"a".repeat(64)}`,
           reason: "approval-required",
         },
-        outcomes: [{ member: "agent:bob", outcome: { kind: "declined" } }],
+        outcomes: [
+          { member: testAgentView("agent:bob"), outcome: { kind: "declined" } },
+        ],
       },
     };
     const decoded = decodeLine(JSON.stringify(historical));

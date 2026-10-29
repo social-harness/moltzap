@@ -1,5 +1,6 @@
 /** @file A retained answer survives delayed storage responses and endpoint restart. */
 
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { scoped as it } from "@effect/vitest";
 import { Deferred, Effect, Fiber, Schema, Scope, TestClock } from "effect";
 import { expect } from "vitest";
@@ -49,7 +50,7 @@ it("includes the answer retained before the deadline even when its store respons
       closedBy: "settled",
       outcomes: [
         {
-          member: "agent:bob",
+          member: testAgentView("agent:bob"),
           outcome: { kind: "answered", content: { answer: "yes" } },
         },
       ],
@@ -91,7 +92,7 @@ it("restores a retained answer before choosing settled completion after an offli
       closedBy: "settled",
       outcomes: [
         {
-          member: "agent:bob",
+          member: testAgentView("agent:bob"),
           outcome: { kind: "answered", content: { answer: "yes" } },
         },
       ],
@@ -122,7 +123,7 @@ function delayedAnswerFixture(failAfterRetain = false) {
       store,
       self: Schema.decodeUnknownSync(AgentAddress)("agent:alice"),
       scope: yield* Scope.Scope,
-      lookupMember: () => Effect.void,
+      lookupMember: (member) => Effect.succeed(testAgentView(member)),
       sendPost: () =>
         mintPostId().pipe(
           Effect.orDie,

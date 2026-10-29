@@ -6,6 +6,7 @@ import {
   Client,
   StreamableHTTPClientTransport,
 } from "@modelcontextprotocol/client";
+import { AgentView } from "@moltzap/social-harness";
 import {
   Daemon,
   type DecisionProvider,
@@ -200,7 +201,7 @@ const decisionsSchema = Schema.Struct({
       checkId: Schema.String,
       time: Schema.Number,
       direction: Schema.String,
-      peerAgentId: Schema.NullOr(Schema.String),
+      peer: Schema.NullOr(AgentView),
       outcome: Schema.String,
       cause: Schema.String,
       decidedBy: Schema.Array(
@@ -479,7 +480,7 @@ function expectPolicyRevisionsInDecisionFeed(
     );
     expect(
       feed.decisions.every((decision) =>
-        decision.peerAgentId?.startsWith("agt_"),
+        decision.peer?.agentId.startsWith("agt_"),
       ),
     ).toBe(true);
   });

@@ -1,5 +1,6 @@
 /** @file Pins how the collective layer runs under an installed firewall's admission. */
 
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { scoped as it } from "@effect/vitest";
 import {
   Deferred,
@@ -216,7 +217,7 @@ function receiveSecondGatherRequest(layer: CollectiveOperations) {
         kind: "direct",
         postId: postId(2),
         address: "agent:bob",
-        sender: "agent:bob",
+        sender: testAgentView("agent:bob"),
         content: [
           { type: "text", text: questionText },
           {
@@ -259,8 +260,8 @@ function classifyGroupPost(
       kind: "group",
       postId: postId(byte),
       address: group,
-      sender,
-      members: groupMembers,
+      sender: testAgentView(sender),
+      members: groupMembers.map(testAgentView),
       content: [
         ...(value === allGatherRequest
           ? [{ type: "text", text: questionText }]
@@ -565,8 +566,14 @@ function closesAWithheldAllGatherAtAMember() {
         id: allGatherId,
         question: questionText,
         outcomes: [
-          { member: "agent:bob", outcome: { kind: "no-answer" } },
-          { member: "agent:carol", outcome: { kind: "answered" } },
+          {
+            member: testAgentView("agent:bob"),
+            outcome: { kind: "no-answer" },
+          },
+          {
+            member: testAgentView("agent:carol"),
+            outcome: { kind: "answered" },
+          },
         ],
       },
     ]);
@@ -615,8 +622,14 @@ function postsNothingWhenTheAllGatherClosesDuringTheCheck() {
       {
         kind: "collectiveResult",
         outcomes: [
-          { member: "agent:bob", outcome: { kind: "no-answer" } },
-          { member: "agent:carol", outcome: { kind: "no-answer" } },
+          {
+            member: testAgentView("agent:bob"),
+            outcome: { kind: "no-answer" },
+          },
+          {
+            member: testAgentView("agent:carol"),
+            outcome: { kind: "no-answer" },
+          },
         ],
       },
     ]);
@@ -754,7 +767,7 @@ function carriesCountedAnswersWithAGatherResult() {
         kind: "direct",
         postId: postId(21),
         address: "agent:carol",
-        sender: "agent:carol",
+        sender: testAgentView("agent:carol"),
         content: [
           {
             type: "data",
@@ -770,8 +783,14 @@ function carriesCountedAnswersWithAGatherResult() {
       {
         kind: "collectiveResult",
         outcomes: [
-          { member: "agent:bob", outcome: { kind: "no-answer" } },
-          { member: "agent:carol", outcome: { kind: "answered" } },
+          {
+            member: testAgentView("agent:bob"),
+            outcome: { kind: "no-answer" },
+          },
+          {
+            member: testAgentView("agent:carol"),
+            outcome: { kind: "answered" },
+          },
         ],
       },
     ]);
@@ -805,8 +824,11 @@ function leavesAMemberOwnAnswerOutOfItsProvenance() {
     expect(observed.emitted).toMatchObject([
       {
         outcomes: [
-          { member: "agent:bob", outcome: { kind: "answered" } },
-          { member: "agent:carol", outcome: { kind: "no-answer" } },
+          { member: testAgentView("agent:bob"), outcome: { kind: "answered" } },
+          {
+            member: testAgentView("agent:carol"),
+            outcome: { kind: "no-answer" },
+          },
         ],
       },
     ]);

@@ -1,5 +1,6 @@
 /** @file A committed gather admission remains ambiguous to its caller when the store response fails. */
 
+import { resolvedMemberView } from "../../__tests__/firewall-runtime-fixtures.js";
 import { live as it } from "@effect/vitest";
 import { Effect, Schema, Scope } from "effect";
 import { expect } from "vitest";
@@ -86,7 +87,7 @@ function admittingCollectives(
       store,
       self: yield* Schema.decodeUnknown(AgentAddress)("agent:alice"),
       scope: yield* Scope.Scope,
-      lookupMember: (member) => engine.resolveAddress(member),
+      lookupMember: (member) => resolvedMemberView(engine, member),
       sendPost: (input) => engine.send(input),
       bindPost: (input, hold) => engine.bind(input, hold),
       sendAdmitted: (input, checkId) => engine.sendAdmitted(input, checkId),

@@ -1,5 +1,6 @@
 /** @file Classified delivery, stable token bindings, and acknowledgment durability. */
 
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { scopedLive as it } from "@effect/vitest";
 import { Effect, Array as EffectArray, Schema, Scope } from "effect";
 import { describe, expect } from "vitest";
@@ -46,7 +47,7 @@ const request = Schema.decodeUnknownSync(InboundItem)({
   op: "all_gather",
   id: digest("col_", 2),
   postId: digest("pst_", 2),
-  from: "agent:bob",
+  from: testAgentView("agent:bob"),
   to: requestConversation,
   question: "Answer independently",
   requestedSchema: {

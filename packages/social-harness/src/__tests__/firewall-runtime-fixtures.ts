@@ -37,7 +37,7 @@ import {
   type InstalledFirewall,
 } from "../firewall/admission/index.js";
 import { installEditableFirewall } from "../firewall/index.js";
-import { AgentCard } from "../identity/cards.js";
+import { AgentCard, agentViewOf } from "../identity/cards.js";
 import { Ed25519PublicKey } from "../identity/keys.js";
 import { LIVE_WIRE_VERSIONS, WIRE_VERSION } from "../identity/wire-version.js";
 import {
@@ -245,7 +245,7 @@ const firewallRuntime = (subject: Fixture, installed: InstalledFirewall) =>
       reportStorageFault: () => Effect.void,
       self: Schema.decodeUnknownSync(AgentAddress)("agent:alice"),
       scope,
-      lookupMember: (member) => engine.resolveAddress(member),
+      lookupMember: (member) => resolvedMemberView(engine, member),
       sendPost: (input) => engine.send(input),
       bindPost: (input, hold) => engine.bind(input, hold),
       emit,
@@ -571,4 +571,21 @@ function startAdmission(
       .pipe(Effect.forkScoped);
     return completed;
   });
+}
+
+/** Resolve a member through the engine before a test accepts collective work. */
+export function resolvedMemberView(
+  engine: Effect.Effect.Success<ReturnType<typeof makeEndpointEngine>>,
+  member: typeof AgentAddress.Type,
+) {
+  return engine.resolveConversation(member).pipe(
+    Effect.flatMap((conversation) => {
+      const card = conversation.memberCards.find(
+        (candidate) => `agent:${candidate.agentName}` === member,
+      );
+      return card === undefined
+        ? Effect.dieMessage("resolved conversation lacks its requested member")
+        : Effect.succeed(agentViewOf(card));
+    }),
+  );
 }

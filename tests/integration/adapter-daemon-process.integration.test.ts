@@ -2,6 +2,7 @@
 
 import {
   acquireHarnessEndpoint,
+  type AgentView,
   type InboundDelivery,
 } from "@moltzap/social-harness";
 import { Deferred, Effect, Fiber, Queue } from "effect";
@@ -66,6 +67,9 @@ interface AllGatherContext {
   readonly callerAddress: ReturnType<typeof directAddress>;
   readonly peerAddress: ReturnType<typeof directAddress>;
   readonly targetAddress: ReturnType<typeof directAddress>;
+  readonly callerAgent: AgentView;
+  readonly peerAgent: AgentView;
+  readonly targetAgent: AgentView;
   readonly group: ReturnType<typeof groupAddress>;
   readonly turns: Queue.Queue<OpenClawInboundContext>;
   readonly messageTool: ReturnType<typeof makeMessageTool>;
@@ -110,7 +114,7 @@ function runOpenClawScenario() {
         ),
       );
       const returned = yield* Fiber.join(callerDelivery);
-      assertReply(returned, targetAddress);
+      assertReply(returned, targetAddress, scenario.target.agent);
 
       yield* stopGateway(abortController, runningGateway);
 
@@ -139,6 +143,7 @@ function runOpenClawGatherScenario() {
         caller,
         callerAddress,
         targetAddress,
+        targetAgent: scenario.target.agent,
         turns,
         messageTool,
       });
@@ -163,7 +168,7 @@ function runOpenClawGatherScenario() {
         kind: "collectiveResult",
         outcomes: [
           {
-            member: targetAddress,
+            member: scenario.target.agent,
             outcome: { kind: "answered", content: { slot: "tue" } },
           },
         ],
@@ -205,6 +210,9 @@ function runOpenClawAllGatherScenario() {
         callerAddress,
         peerAddress,
         targetAddress,
+        callerAgent: scenario.caller.agent,
+        peerAgent: scenario.peer.agent,
+        targetAgent: scenario.target.agent,
         group,
         turns,
         messageTool,
@@ -336,6 +344,8 @@ function sendAllGather(context: AllGatherContext) {
     peer,
     peerAddress,
     callerAddress,
+    callerAgent,
+    peerAgent,
     group,
     turns,
     messageTool,
@@ -365,10 +375,10 @@ function sendAllGather(context: AllGatherContext) {
       to: group,
       outcomes: [
         {
-          member: callerAddress,
+          member: callerAgent,
           outcome: { kind: "answered", content: { slot: "mon" } },
         },
-        { member: peerAddress, outcome: { kind: "declined" } },
+        { member: peerAgent, outcome: { kind: "declined" } },
       ],
     });
     expect(yield* nextItem(peer.messages)).toEqual(memberResult);
@@ -378,10 +388,22 @@ function sendAllGather(context: AllGatherContext) {
 function sendGather(
   context: Pick<
     AllGatherContext,
-    "caller" | "callerAddress" | "targetAddress" | "turns" | "messageTool"
+    | "caller"
+    | "callerAddress"
+    | "targetAddress"
+    | "targetAgent"
+    | "turns"
+    | "messageTool"
   >,
 ) {
-  const { caller, callerAddress, targetAddress, turns, messageTool } = context;
+  const {
+    caller,
+    callerAddress,
+    targetAddress,
+    targetAgent,
+    turns,
+    messageTool,
+  } = context;
   return Effect.gen(function* () {
     const started = yield* messageTool("send", {
       to: callerAddress,
@@ -396,7 +418,7 @@ function sendGather(
     });
     expect(request).toMatchObject({
       kind: "collectiveRequest",
-      from: targetAddress,
+      from: targetAgent,
       question: GATHER_QUESTION,
       requestedSchema: SLOT_SCHEMA,
     });
@@ -415,13 +437,14 @@ function sendGather(
 function assertReply(
   returned: InboundDelivery,
   targetAddress: ReturnType<typeof directAddress>,
+  targetAgent: AgentView,
 ): void {
   expect(returned.item).toMatchObject({
     kind: "multicast",
     message: {
       kind: "direct",
       address: targetAddress,
-      sender: targetAddress,
+      sender: targetAgent,
       content: [{ type: "text", text: OPENCLAW_REPLY }],
     },
   });
@@ -445,7 +468,16 @@ function startQueuedGateway(
 }
 
 function assertReceivedAllGather(context: AllGatherContext, requestId: string) {
-  const { caller, peer, peerAddress, targetAddress, group, turns } = context;
+  const {
+    caller,
+    peer,
+    peerAddress,
+    targetAddress,
+    peerAgent,
+    targetAgent,
+    group,
+    turns,
+  } = context;
   return Effect.gen(function* () {
     const callerResult = yield* nextItem(caller.messages);
     expect(callerResult).toMatchObject({
@@ -453,9 +485,9 @@ function assertReceivedAllGather(context: AllGatherContext, requestId: string) {
       id: requestId,
       to: group,
       outcomes: [
-        { member: peerAddress, outcome: { kind: "declined" } },
+        { member: peerAgent, outcome: { kind: "declined" } },
         {
-          member: targetAddress,
+          member: targetAgent,
           outcome: { kind: "answered", content: { slot: "tue" } },
         },
       ],

@@ -31,6 +31,7 @@ import type {
 } from "./contracts.js";
 import type { InboundItem } from "./inbound.js";
 import { exactStruct } from "../../encoding/exact.js";
+import type { AgentView } from "../../identity/cards.js";
 import { type PostId, RecordHash } from "../records/index.js";
 import { AgentAddress, type MessageAddressInput } from "../records/values.js";
 
@@ -153,12 +154,12 @@ export interface CollectivePorts {
   /** The local agent: a group gather or all_gather asks every member but this one. */
   readonly self: AgentAddress;
   /**
-   * Resolve one member's Registry card without sending, so a collecting
-   * operation refuses an address error before any post.
+   * Resolve and retain one verified identity before accepting a collecting
+   * operation. Results use this view even when later delivery fails.
    */
   readonly lookupMember: (
     member: AgentAddress,
-  ) => Effect.Effect<void, SendError>;
+  ) => Effect.Effect<AgentView, SendError>;
   /**
    * Protocol closes and unchecked gather fanout certify through this port.
    * Authored posts use `bindPost` or the installed admission boundary.

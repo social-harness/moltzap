@@ -221,8 +221,8 @@ function expectIncomingGatherWithheld({
       kind: "collectiveResult",
       id: withheld.operationId,
       outcomes: [
-        { member: guided.address, outcome: { kind: "answered" } },
-        { member: strict.address, outcome: { kind: "no-answer" } },
+        { member: guided.agent, outcome: { kind: "answered" } },
+        { member: strict.agent, outcome: { kind: "no-answer" } },
       ],
     });
   });
@@ -254,11 +254,11 @@ function expectGatherAnswerWithheld({
       id: answered.operationId,
       outcomes: [
         {
-          member: guided.address,
+          member: guided.agent,
           outcome: { kind: "withheld", reason: "prohibited" },
         },
         {
-          member: strict.address,
+          member: strict.agent,
           outcome: { kind: "answered", content: { slot: "tue" } },
         },
       ],
@@ -292,19 +292,19 @@ function expectGuidedGatherAdvice({
       id: advised.operationId,
       outcomes: [
         {
-          member: requester.address,
+          member: requester.agent,
           outcome: {
             kind: "answered",
             content: { note: "[guide] reply to me" },
           },
         },
-        { member: strict.address, outcome: { kind: "answered" } },
+        { member: strict.agent, outcome: { kind: "answered" } },
       ],
     });
     expect(result.guidance).toMatchObject({
       answers: [
         {
-          member: requester.address,
+          member: requester.agent,
           instructions: [{ instruction: "Respond to the marked message." }],
         },
       ],
@@ -350,15 +350,15 @@ function expectUnsettledGatherAdvice({
       kind: "collectiveResult",
       id: unsettled.operationId,
       outcomes: [
-        { member: guided.address, outcome: { kind: "answered" } },
+        { member: guided.agent, outcome: { kind: "answered" } },
         {
-          member: strict.address,
+          member: strict.agent,
           outcome: { kind: "answered", content: { note: "[unsure] maybe" } },
         },
       ],
     });
     expect(unsureResult.guidance).toMatchObject({
-      answers: [{ member: strict.address, instructions: [uncertainAdvice] }],
+      answers: [{ member: strict.agent, instructions: [uncertainAdvice] }],
     });
   });
 }
@@ -388,11 +388,11 @@ function expectAllGatherQuestionWithheld({
     ).toMatchObject({ failure: { kind: "request-none" } });
     const outcomes = [
       {
-        member: guided.address,
+        member: guided.agent,
         outcome: { kind: "answered", content: { slot: "mon" } },
       },
-      { member: strictA.address, outcome: { kind: "no-answer" } },
-      { member: strictB.address, outcome: { kind: "no-answer" } },
+      { member: strictA.agent, outcome: { kind: "no-answer" } },
+      { member: strictB.agent, outcome: { kind: "no-answer" } },
     ];
     const shown = {
       kind: "collectiveResult",
@@ -448,22 +448,22 @@ function expectAllGatherAnswerVisibility(
 ) {
   return Effect.gen(function* () {
     const guidedAnswer = {
-      member: guided.address,
+      member: guided.agent,
       outcome: {
         kind: "answered",
         content: { slot: "mon", note: "[in] private" },
       },
     };
     const withheldAnswer = {
-      member: guided.address,
+      member: guided.agent,
       outcome: { kind: "withheld", reason: "prohibited" },
     };
     const others = [
       {
-        member: strictA.address,
+        member: strictA.agent,
         outcome: { kind: "answered", content: { slot: "tue" } },
       },
-      { member: strictB.address, outcome: { kind: "declined" } },
+      { member: strictB.agent, outcome: { kind: "declined" } },
     ];
     const result = {
       kind: "collectiveResult",

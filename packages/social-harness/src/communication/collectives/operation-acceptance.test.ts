@@ -1,5 +1,6 @@
 /** @file Plain sends distinguish Router attachment from ownership of a bound collective post. */
 
+import { resolvedMemberView } from "../../__tests__/firewall-runtime-fixtures.js";
 import { scoped as it } from "@effect/vitest";
 import {
   Deferred,
@@ -137,7 +138,7 @@ function attachingEndpoint(pausePlainBind?: Effect.Effect<unknown>) {
     const collectives = yield* makeCollectiveOperations({
       store: subject.store,
       self: Schema.decodeUnknownSync(AgentAddress)("agent:alice"),
-      lookupMember: engine.resolveAddress,
+      lookupMember: (member) => resolvedMemberView(engine, member),
       sendPost: engine.send,
       bindPost: engine.bind,
       sendAdmitted: engine.sendAdmitted,

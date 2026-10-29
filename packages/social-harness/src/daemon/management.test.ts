@@ -13,6 +13,7 @@ import {
   Layer,
   Redacted,
   Schema,
+  Struct,
 } from "effect";
 import { generateKeyPairSync } from "node:crypto";
 import { describe, expect } from "vitest";
@@ -49,6 +50,9 @@ import {
 import { encodeCanonical } from "../encoding/canonical-json.js";
 import {
   managementReadConversationRequestSchema,
+  managementReadConversationResultSchema,
+  managementRegisterResultSchema,
+  managementStatusResultSchema,
   managementRegisterRequestSchema,
   managementSearchAgentsRequestSchema,
 } from "../host-protocol/index.js";
@@ -369,6 +373,16 @@ const returnsCertificateSignersForAudit = () =>
     const votes = record.durabilityCertificate.votes;
 
     const page = yield* readBobHistory(fixture, store);
+    const historyResult = page;
+    expect(
+      Schema.is(managementReadConversationResultSchema)(historyResult),
+    ).toBe(true);
+    expect(
+      Schema.is(managementReadConversationResultSchema)({
+        ...historyResult,
+        records: page.records.map((entry) => Struct.omit(entry, "author")),
+      }),
+    ).toBe(false);
 
     expect(
       compareAgentIds(alice.agentId, bob.agentId),
@@ -930,6 +944,36 @@ const bindsWhenCancelledDuringTheRegistryCall = () =>
       },
     });
   });
+
+it("requires verified identity views on registration and active status while accepting additive result fields", () =>
+  Effect.gen(function* () {
+    const fixture = yield* makeIdentityFixture;
+    const agentCard = yield* Schema.encode(AgentCard)(fixture.cards[0]);
+    const agent = {
+      agentId: fixture.cards[0].agentId,
+      agentName: fixture.cards[0].agentName,
+      principalId: fixture.cards[0].principalId,
+    };
+    const registered = { kind: "registered", agentCard, agent };
+    const active = { kind: "active", agentCard, agent };
+    expect(
+      Schema.is(managementRegisterResultSchema)({
+        ...registered,
+        additional: true,
+      }),
+    ).toBe(true);
+    expect(
+      Schema.is(managementStatusResultSchema)({ ...active, additional: true }),
+    ).toBe(true);
+    expect(
+      Schema.is(managementRegisterResultSchema)(
+        Struct.omit(registered, "agent"),
+      ),
+    ).toBe(false);
+    expect(
+      Schema.is(managementStatusResultSchema)(Struct.omit(active, "agent")),
+    ).toBe(false);
+  }));
 
 // @agent-code-guard/regression-only: these cases pin the register tool's cancellation and Registry deadline contract.
 describe("daemon registration through the register tool", () => {

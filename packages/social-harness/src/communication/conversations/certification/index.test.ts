@@ -37,7 +37,11 @@ import {
   decodeCanonical,
   encodeCanonical,
 } from "../../../encoding/canonical-json.js";
-import { AgentCard, type VerifiedAgentCard } from "../../../identity/cards.js";
+import {
+  AgentCard,
+  agentViewOf,
+  type VerifiedAgentCard,
+} from "../../../identity/cards.js";
 import { SignedMessage } from "../../../identity/envelope/signed-message.js";
 import {
   type AgentSigningAuthority,
@@ -2153,6 +2157,13 @@ function pendingDeliveryCarriesTheCertifiedRecordHash() {
     const pending = yield* member.readPendingMessages().pipe(Effect.orDie);
 
     expect(pending.map((message) => message.recordHash)).toEqual([recordHash]);
+    const author = yield* requireAt(harness.identities, 0, "author identity");
+    expect(pending[0]?.message).toMatchObject({
+      sender: agentViewOf(author.card),
+      members: harness.identities
+        .map(({ card }) => agentViewOf(card))
+        .sort((left, right) => left.agentName.localeCompare(right.agentName)),
+    });
   });
 }
 

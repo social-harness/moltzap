@@ -1,5 +1,6 @@
 /** @file The inbox and operation MCP representation: exact requests, and results a newer daemon can extend. */
 
+import { testAgentView } from "../__tests__/agent-card-fixtures.js";
 import { Effect, Exit, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import type { InboundMessage } from "../communication/conversations/message.js";
@@ -74,7 +75,7 @@ function decodesCanonicalDirectDelivery(): void {
     kind: "direct",
     postId,
     address: senderAddress,
-    sender: senderAddress,
+    sender: testAgentView(senderAddress),
     content,
   };
 
@@ -111,7 +112,7 @@ function rejectsAnUntaggedMessage(): void {
     kind: "direct",
     postId,
     address: senderAddress,
-    sender: senderAddress,
+    sender: testAgentView(senderAddress),
     content,
   };
 
@@ -130,8 +131,12 @@ function decodesCanonicalGroupDelivery(): void {
     kind: "group",
     postId,
     address: groupAddress,
-    sender: peerAddress,
-    members: [senderAddress, peerAddress, thirdAddress],
+    sender: testAgentView(peerAddress),
+    members: [
+      testAgentView(senderAddress),
+      testAgentView(peerAddress),
+      testAgentView(thirdAddress),
+    ],
     content,
   };
   const item = { kind: "multicast", message };
@@ -143,12 +148,30 @@ function decodesCanonicalGroupDelivery(): void {
 
 const inconsistentDeliveries = [
   {
+    case: "a sender whose principal differs from its member identity",
+    message: {
+      kind: "group",
+      postId,
+      address: groupAddress,
+      sender: {
+        ...testAgentView(peerAddress),
+        principalId: testAgentView(senderAddress).principalId,
+      },
+      members: [
+        testAgentView(senderAddress),
+        testAgentView(peerAddress),
+        testAgentView(thirdAddress),
+      ],
+      content,
+    },
+  },
+  {
     case: "a direct address that is not the sender",
     message: {
       kind: "direct",
       postId,
       address: peerAddress,
-      sender: senderAddress,
+      sender: testAgentView(senderAddress),
       content,
     },
   },
@@ -158,8 +181,8 @@ const inconsistentDeliveries = [
       kind: "group",
       postId,
       address: groupAddress,
-      sender: peerAddress,
-      members: [peerAddress, senderAddress, thirdAddress],
+      sender: testAgentView(peerAddress),
+      members: [peerAddress, senderAddress, thirdAddress].map(testAgentView),
       content,
     },
   },
@@ -169,8 +192,8 @@ const inconsistentDeliveries = [
       kind: "group",
       postId,
       address: groupAddress,
-      sender: peerAddress,
-      members: [senderAddress, peerAddress, peerAddress],
+      sender: testAgentView(peerAddress),
+      members: [senderAddress, peerAddress, peerAddress].map(testAgentView),
       content,
     },
   },
@@ -180,8 +203,12 @@ const inconsistentDeliveries = [
       kind: "group",
       postId,
       address: groupAddress,
-      sender: outsiderAddress,
-      members: [senderAddress, peerAddress, thirdAddress],
+      sender: testAgentView(outsiderAddress),
+      members: [
+        testAgentView(senderAddress),
+        testAgentView(peerAddress),
+        testAgentView(thirdAddress),
+      ],
       content,
     },
   },
@@ -322,7 +349,7 @@ const directItem = {
     kind: "direct",
     postId,
     address: senderAddress,
-    sender: senderAddress,
+    sender: testAgentView(senderAddress),
     content,
   },
 };

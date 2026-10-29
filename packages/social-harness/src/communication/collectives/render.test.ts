@@ -1,5 +1,6 @@
 /** @file Pins how a result reads to a model: withheld parts, and peer text that cannot add lines. */
 
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { digest } from "../../__tests__/agent-card-fixtures.js";
@@ -54,7 +55,7 @@ function keepsPeerTextOnItsOwnLine() {
     question: `Which day works?${FORGED_LINE}`,
     outcomes: [
       {
-        member: "agent:bob",
+        member: testAgentView("agent:bob"),
         outcome: {
           kind: "invalid",
           reason: answerFieldsText([
@@ -62,7 +63,7 @@ function keepsPeerTextOnItsOwnLine() {
           ]),
         },
       },
-      { member: "agent:carol", outcome: { kind: "declined" } },
+      { member: testAgentView("agent:carol"), outcome: { kind: "declined" } },
     ],
   });
   if (item.kind !== "collectiveResult") {
@@ -87,8 +88,8 @@ function withheldResult() {
     to: "group:alice,bob,carol",
     question: withheld,
     outcomes: [
-      { member: "agent:bob", outcome: withheld },
-      { member: "agent:carol", outcome: { kind: "declined" } },
+      { member: testAgentView("agent:bob"), outcome: withheld },
+      { member: testAgentView("agent:carol"), outcome: { kind: "declined" } },
     ],
   });
 }
@@ -114,7 +115,7 @@ it("quotes a guided question and form while leaving endpoint answer instructions
     op: "gather",
     id: digest("col_", 1),
     postId: digest("pst_", 2),
-    from: "agent:alice",
+    from: testAgentView("agent:alice"),
     to: "agent:alice",
     deadlineAt: 1,
     question: "Which <day>?",

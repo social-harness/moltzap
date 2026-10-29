@@ -1,5 +1,6 @@
 /** @file Pins the posts each collective send certifies, what it returns, and how it is refused. */
 
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { scoped as it } from "@effect/vitest";
 import { Duration, Effect, Fiber, TestClock } from "effect";
 import { describe, expect } from "vitest";
@@ -158,9 +159,15 @@ function continuesAGatherPastMembersItCouldNotReach() {
         to: "group:alice,bob,carol,dave",
         question: questionText,
         outcomes: [
-          { member: "agent:bob", outcome: { kind: "declined" } },
-          { member: "agent:carol", outcome: { kind: "no-answer" } },
-          { member: "agent:dave", outcome: { kind: "no-answer" } },
+          { member: testAgentView("agent:bob"), outcome: { kind: "declined" } },
+          {
+            member: testAgentView("agent:carol"),
+            outcome: { kind: "no-answer" },
+          },
+          {
+            member: testAgentView("agent:dave"),
+            outcome: { kind: "no-answer" },
+          },
         ],
       },
     ]);
@@ -201,9 +208,9 @@ function countsAnAnswerToAPostCertifiedAfterTheWait() {
         kind: "collectiveResult",
         op: "gather",
         outcomes: [
-          { member: "agent:bob", outcome: { kind: "declined" } },
+          { member: testAgentView("agent:bob"), outcome: { kind: "declined" } },
           {
-            member: "agent:carol",
+            member: testAgentView("agent:carol"),
             outcome: { kind: "answered", content: { slot: "tue" } },
           },
         ],

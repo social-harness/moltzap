@@ -1,8 +1,12 @@
 /** @file Runtime-safe projections of local message policy, separate from peer content. */
 
 import { Data, Schema } from "effect";
+import { AgentView } from "../../identity/cards.js";
 import { exactStruct } from "../../encoding/exact.js";
 import { firewallCheckSchema } from "../evaluator/contract/index.js";
+
+/** Endpoint-authored evidence uses one sender identity across producers and rendering. */
+export const ENDPOINT_SENDER = "sharness";
 
 /** An opaque local assessment reference conveys no approval or lookup authority. */
 const checkIdSchema = Schema.String.pipe(Schema.pattern(/^chk_[a-f0-9]{64}$/u));
@@ -18,8 +22,8 @@ const checkedGuidance = {
   subjects: Schema.Array(
     exactStruct({
       id: Schema.NonEmptyTrimmedString,
-      sender: Schema.NonEmptyTrimmedString,
-      recipients: Schema.Array(Schema.NonEmptyTrimmedString),
+      sender: Schema.Union(AgentView, Schema.Literal(ENDPOINT_SENDER)),
+      recipients: Schema.Array(AgentView),
       text: Schema.String,
     }),
   ),
@@ -53,14 +57,12 @@ export type CheckedGuidance = typeof checkedGuidanceSchema.Type;
 
 /**
  * A result's guidance: one entry per answer whose check produced advice,
- * keyed by the member's `agent:` address, and one for the question when the
+ * keyed by the member's verified identity, and one for the question when the
  * question was checked with the result. Each entry carries its own check.
  */
 const resultGuidance = exactStruct({
   question: Schema.optionalWith(checkedGuidanceSchema, { exact: true }),
-  answers: Schema.Array(
-    exactStruct({ member: Schema.NonEmptyTrimmedString, ...checkedGuidance }),
-  ),
+  answers: Schema.Array(exactStruct({ member: AgentView, ...checkedGuidance })),
 });
 
 /**
@@ -74,9 +76,6 @@ export const localGuidanceSchema = Schema.Union(
 
 /** Local advice accompanies the envelope and never changes a certified item. */
 export type LocalGuidance = typeof localGuidanceSchema.Type;
-
-/** Endpoint-authored evidence uses one sender identity across producers and rendering. */
-export const ENDPOINT_SENDER = "sharness";
 
 /** Attribution of the body quoted alongside local instructions. */
 export type GuidanceBodyOrigin = "peer" | "endpoint";
@@ -97,7 +96,7 @@ export function renderLocalGuidance(
     "answers" in guidance
       ? [
           ...guidance.answers.map(({ member, ...checked }) => ({
-            for: member,
+            for: `agent:${member.agentName}`,
             ...checked,
           })),
           ...(guidance.question === undefined
@@ -151,13 +150,10 @@ function renderInstructions(guidance: CheckedGuidance) {
   }));
 }
 
-function subjectAddress(identity: string): string {
-  if (identity.startsWith("agent:")) {
-    return identity;
-  }
+function subjectAddress(identity: AgentView | typeof ENDPOINT_SENDER): string {
   return identity === ENDPOINT_SENDER
     ? "Social Harness"
-    : `agent ${identity} (name not recorded)`;
+    : `agent:${identity.agentName}`;
 }
 
 /**

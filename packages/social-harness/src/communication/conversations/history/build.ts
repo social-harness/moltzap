@@ -4,7 +4,7 @@
  * projects to.
  */
 
-import { Effect, Schema } from "effect";
+import { Effect } from "effect";
 import type { AgentId } from "../../../identity/agents.js";
 import type {
   InboundDeliveryInput,
@@ -22,7 +22,9 @@ import {
   encodeCanonical,
   representationFailure,
 } from "../../../encoding/canonical-json.js";
+import { compareAscii } from "../../../encoding/identifier.js";
 import { SignedMessage } from "../../../identity/envelope/signed-message.js";
+import { agentViewOf, type AgentView } from "../../../identity/cards.js";
 import {
   type ActionCertifiedRecord,
   type AnchorHash,
@@ -32,7 +34,7 @@ import {
   type RecordCore,
   RecordCore as RecordCoreSchema,
 } from "../../records/index.js";
-import { AgentAddress } from "../../records/values.js";
+import { agentAddressOf } from "../../records/values.js";
 import { renderGroupAddress } from "../address.js";
 import {
   InboundMessage,
@@ -229,23 +231,18 @@ export const storedCertifiedRecord = (
     return { ...staged, actionEvidence, durabilityEvidence };
   }).pipe(Effect.withSpan("storedCertifiedRecord"));
 
-const addressFor = (agentName: string) =>
-  Schema.decodeUnknown(AgentAddress)(`agent:${agentName}`).pipe(
-    Effect.mapError(representationFailure),
-  );
-
 const projectGroupMessage = (
   conversation: EngineConversation,
   intent: RecordCore["action"]["postIntent"],
-  sender: Effect.Effect.Success<ReturnType<typeof addressFor>>,
+  sender: AgentView,
 ): Effect.Effect<InboundMessageValue, ClientRepresentationError> =>
   Effect.gen(function* () {
     const group = yield* renderGroupAddress(
       conversation.membership.members.map((member) => member.agentName),
     ).pipe(Effect.mapError(representationFailure));
-    const members = yield* Effect.forEach(group.names, addressFor, {
-      concurrency: 1,
-    });
+    const members = conversation.membership.members
+      .map(agentViewOf)
+      .sort((left, right) => compareAscii(left.agentName, right.agentName));
     const first = members[0];
     const second = members[1];
     const third = members[2];
@@ -280,12 +277,12 @@ const projectInboundMessage = (
     if (author === undefined) {
       return yield* Effect.fail(representationFailure());
     }
-    const sender = yield* addressFor(author.agentName);
+    const sender = agentViewOf(author);
     if (conversation.membership.members.length === 2) {
       const directMessage: InboundMessageValue = {
         kind: "direct",
         postId: intent.postId,
-        address: sender,
+        address: agentAddressOf(sender),
         sender,
         content: intent.content,
       };

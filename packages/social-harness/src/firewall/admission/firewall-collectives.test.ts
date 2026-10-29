@@ -1,5 +1,6 @@
 /** @file Collective operations through real Client storage, admission and send preparation. */
 
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { scopedLive as it } from "@effect/vitest";
 import { Deferred, Duration, Effect, Fiber, Queue, Schema } from "effect";
 import { describe, expect } from "vitest";
@@ -161,8 +162,8 @@ function gatherResult(
     to,
     question,
     outcomes: [
-      { member: bob, outcome: outcomes.bob },
-      { member: carol, outcome: outcomes.carol },
+      { member: testAgentView(bob), outcome: outcomes.bob },
+      { member: testAgentView(carol), outcome: outcomes.carol },
     ],
   });
 }
@@ -237,7 +238,7 @@ function showsAHeldRequestInGuidanceMode() {
     yield* Deferred.await(subject.outbound);
 
     expect(runtime.published.map((event) => event.item)).toMatchObject([
-      { kind: "collectiveRequest", from: bob, to: bob },
+      { kind: "collectiveRequest", from: testAgentView(bob), to: bob },
     ]);
     expect(yield* unfinishedIntents(subject)).toHaveLength(1);
     yield* Fiber.interrupt(answering);
@@ -329,7 +330,7 @@ function withholdsOneAnswerFromEveryRuntimeRead() {
       ...result,
       outcomes: [
         {
-          member: bob,
+          member: testAgentView(bob),
           outcome: {
             kind: "withheld",
             checkId: bobCheck?.checkId,
@@ -386,11 +387,11 @@ function scopesUnresolvedEvidenceToTheMembersAnswer() {
     ).toMatchObject({
       outcomes: [
         {
-          member: bob,
+          member: testAgentView(bob),
           outcome: { kind: "withheld", reason: "unresolved-evidence" },
         },
         {
-          member: carol,
+          member: testAgentView(carol),
           outcome: { kind: "answered", content: answers.carol },
         },
       ],
@@ -471,14 +472,14 @@ function showsEveryAnswerWithItsAdvice() {
     expect(delivered?.guidance).toMatchObject({
       answers: [
         {
-          member: bob,
+          member: testAgentView(bob),
           instructions: [{ instruction: rule.guidance }],
-          subjects: [{ sender: bob }],
+          subjects: [{ sender: testAgentView(bob) }],
         },
         {
-          member: carol,
+          member: testAgentView(carol),
           instructions: [{ instruction: rule.guidance }],
-          subjects: [{ sender: carol }],
+          subjects: [{ sender: testAgentView(carol) }],
         },
       ],
     });
@@ -730,7 +731,9 @@ function questionCheckedWithResult(
       id: collectiveIdOf(bob, nonce),
       to: bob,
       question: `${marker} ${question}`,
-      outcomes: [{ member: bob, outcome: { kind: "no-answer" } }],
+      outcomes: [
+        { member: testAgentView(bob), outcome: { kind: "no-answer" } },
+      ],
     });
     yield* admitResult(runtime, result, {
       answers: [],
@@ -886,10 +889,10 @@ function namesNoPeerForAFailureInTheDecisionsFeed() {
     const feed = yield* editable.policy.decisions({});
 
     expect(feed.decisions).toMatchObject([
-      { direction: "incoming", peerAgentId: null, disposition: "admitted" },
+      { direction: "incoming", peer: null, disposition: "admitted" },
       {
         direction: "incoming",
-        peerAgentId: subject.remote.card.agentId,
+        peer: testAgentView("agent:bob"),
         disposition: "admitted",
       },
     ]);

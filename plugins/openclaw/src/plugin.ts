@@ -12,6 +12,7 @@ import type { OpenClawPluginDefinition } from "openclaw/plugin-sdk/plugin-entry"
 import type { ReplyPayload } from "openclaw/plugin-sdk/reply-payload";
 import {
   acquireHarnessEndpoint,
+  type AgentView,
   groupMembers,
   type GuidanceBodyOrigin,
   type HarnessEndpoint,
@@ -701,7 +702,11 @@ function inboundItemTurn(item: InboundItem): HostTurn {
       return multicastTurn(item.message);
     case "collectiveRequest":
       return addressedTurn(
-        { id: item.postId, origin: "peer", sender: agentSender(item.from) },
+        {
+          id: item.postId,
+          origin: "peer",
+          sender: agentSender(item.from),
+        },
         item.to,
         renderCollectiveRequest(item, requestAnswerInstructions(item.to)),
       );
@@ -732,7 +737,11 @@ function multicastTurn(message: InboundMessage): HostTurn {
     body: renderContent(message.content),
   };
   return message.kind === "group"
-    ? { ...base, kind: "group", members: message.members }
+    ? {
+        ...base,
+        kind: "group",
+        members: message.members.map((member) => `agent:${member.agentName}`),
+      }
     : { ...base, kind: "direct" };
 }
 
@@ -767,8 +776,8 @@ function addressedTurn(
     : { ...author, kind: "group", address, members, body };
 }
 
-function agentSender(address: string): TurnSender {
-  return { id: address, name: address.slice("agent:".length) };
+function agentSender(agent: AgentView): TurnSender {
+  return { id: `agent:${agent.agentName}`, name: agent.agentName };
 }
 
 function logInbound(

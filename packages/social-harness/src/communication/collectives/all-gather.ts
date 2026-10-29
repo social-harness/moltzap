@@ -1,4 +1,5 @@
 /** @file Shared group results wait for one certified close and its exact answer records. */
+import { agentAddressOf } from "../records/values.js";
 import { Effect, Exit, Option, Schema } from "effect";
 import type { InboundMessage } from "../conversations/message.js";
 import type { CollectiveResultItem } from "./inbound.js";
@@ -73,7 +74,7 @@ export function closeAllGather(
 /** The record of every answer an operation this endpoint started counted, in member order. */
 export function countedProvenance(open: GatherRequest): ResultProvenance {
   return {
-    answers: open.members.flatMap((member) => {
+    answers: open.members.map(agentAddressOf).flatMap((member) => {
       const recordHash = open.answerHashes.get(member);
       return recordHash === undefined ? [] : [{ member, recordHash }];
     }),
@@ -94,7 +95,7 @@ export function recordPeerAnswer(
   ) {
     return;
   }
-  keepFirstAnswer(request.shared, message.sender, {
+  keepFirstAnswer(request.shared, agentAddressOf(message.sender), {
     recordHash: post.recordHash,
     response: value,
   });
@@ -120,10 +121,10 @@ export function receiveClose(
       request?.kind !== "all_gather" ||
       message.kind !== "group" ||
       message.address !== request.to ||
-      message.sender !== request.from
+      message.sender.agentId !== request.from.agentId
     ) {
       return Effect.logWarning(
-        `consumed close ${message.postId} from ${message.sender}: it closes no all_gather this endpoint was asked by its sender`,
+        `consumed close ${message.postId} from ${agentAddressOf(message.sender)}: it closes no all_gather this endpoint was asked by its sender`,
       );
     }
     if (request.state === "closed" || request.shared.heldClose !== undefined) {
@@ -206,9 +207,11 @@ function sendClose(
 ) {
   const { id, closedAt, closedBy } = result;
   return Effect.gen(function* () {
-    const included = open.members.flatMap((member) =>
-      Option.toArray(Option.fromNullable(open.answerHashes.get(member))),
-    );
+    const included = open.members
+      .map(agentAddressOf)
+      .flatMap((member) =>
+        Option.toArray(Option.fromNullable(open.answerHashes.get(member))),
+      );
     const content = yield* encodeCollectiveContent({
       kind: "close",
       id,

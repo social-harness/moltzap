@@ -86,7 +86,11 @@ export { AgentId, AgentName, PrincipalId } from "./identity/agents.js";
 /** Opaque signing authority and exact public-key representation. */
 export { AgentSigningAuthority, Ed25519PublicKey } from "./identity/keys.js";
 /** Immutable Registry identity and its verified brand. */
-export { AgentCard, type VerifiedAgentCard } from "./identity/cards.js";
+export {
+  AgentCard,
+  AgentView,
+  type VerifiedAgentCard,
+} from "./identity/cards.js";
 /** Attributed envelope values a host reads without service composition. */
 export {
   type LiveSignedMessage,

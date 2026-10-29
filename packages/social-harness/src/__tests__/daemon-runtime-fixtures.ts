@@ -1,5 +1,6 @@
 /** @file Verified identity and durable-message fixtures for daemon runtime tests. */
 
+import { testAgentView } from "./agent-card-fixtures.js";
 import { Effect, Redacted, Schema } from "effect";
 import { generateKeyPairSync } from "node:crypto";
 import type { EnginePendingMessage } from "../communication/conversations/index.js";
@@ -34,7 +35,7 @@ const makePendingMessage = Effect.all({
     kind: "direct",
     postId: digest("pst_", 5),
     address: "agent:bob",
-    sender: "agent:bob",
+    sender: testAgentView("agent:bob"),
     content: [{ type: "text", text: "certified" }],
   }),
 });

@@ -1,5 +1,6 @@
 /** @file Exercises draft discovery and native inbox delivery through real HTTP. */
 
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { HttpClient, HttpClientRequest } from "@effect/platform";
 import { NodeHttpClient } from "@effect/platform-node";
 import { scopedLive as it } from "@effect/vitest";
@@ -38,7 +39,7 @@ const delivery = (byte: number): HarnessMessageReadyEvent => ({
       kind: "direct",
       postId: digest("pst_", byte),
       address: "agent:bob",
-      sender: "agent:bob",
+      sender: testAgentView("agent:bob"),
       content: [{ type: "text", text: `item ${String(byte)}` }],
     },
   }),

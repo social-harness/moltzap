@@ -9,6 +9,7 @@
  * a close; each endpoint builds its result from exactly the listed records.
  */
 
+import { agentAddressOf } from "../records/values.js";
 import {
   Clock,
   Effect,
@@ -67,7 +68,7 @@ import {
   gatherAddress,
   operationTimes,
   postRefusal,
-  refuseAddressErrors,
+  resolveMembers,
   type RequestRefusal,
   requestsSoFar,
   requestWait,
@@ -250,15 +251,16 @@ function prepareGather(
 ): Effect.Effect<PreparedGather, SendError | CollectiveError> {
   return Effect.gen(function* () {
     const { id, nonce } = yield* mintCollectiveId(state.ports.self);
-    const { to, members } = yield* gatherAddress(
+    const { to, members: addresses } = yield* gatherAddress(
       requestedTo,
       state.ports.self,
       input.op,
     );
     const requestedSchema = yield* formModeSchema(id, input.requestedSchema);
-    yield* refuseAddressErrors(members, state.ports.lookupMember).pipe(
-      Effect.mapError((failure) => collectiveFailure(id, failure)),
-    );
+    const members = yield* resolveMembers(
+      addresses,
+      state.ports.lookupMember,
+    ).pipe(Effect.mapError((failure) => collectiveFailure(id, failure)));
     const { deadlineAt, waitUntil } = yield* operationTimes(input.deadline);
     const content = yield* encodeCollectiveContent(
       {
@@ -656,7 +658,7 @@ function classify(
     ),
     Effect.catchTag("CollectivePartInvalidError", (error) =>
       Effect.logWarning(
-        `consumed post ${message.postId} from ${message.sender}: its collective part is ${error.reason}`,
+        `consumed post ${message.postId} from ${agentAddressOf(message.sender)}: its collective part is ${error.reason}`,
       ).pipe(Effect.as(Option.none())),
     ),
   );
@@ -803,7 +805,7 @@ function sameRequestPost(held: ReceivedRequest, post: CertifiedPost): boolean {
   return (
     held.postId === post.message.postId &&
     held.recordHash === post.recordHash &&
-    held.from === post.message.sender
+    held.from.agentId === post.message.sender.agentId
   );
 }
 
@@ -877,8 +879,10 @@ function recordCountedAnswer(
           if (
             state.gathers.get(value.id) !== open ||
             !answeredInConversation(open, message) ||
-            !open.members.includes(message.sender) ||
-            open.outcomes.has(message.sender)
+            !open.members.some(
+              (member) => member.agentId === message.sender.agentId,
+            ) ||
+            open.outcomes.has(agentAddressOf(message.sender))
           ) {
             return;
           }
@@ -886,8 +890,11 @@ function recordCountedAnswer(
             return;
           }
           const outcome = yield* outcomeOfResponse(open.requestedSchema, value);
-          open.outcomes.set(message.sender, outcome);
-          open.answerHashes.set(message.sender, post.recordHash);
+          open.outcomes.set(agentAddressOf(message.sender), outcome);
+          open.answerHashes.set(
+            agentAddressOf(message.sender),
+            post.recordHash,
+          );
         }),
       ),
     )
@@ -1014,7 +1021,8 @@ function retainCountedAnswer(
   return Effect.gen(function* () {
     if (state.recovering) {
       return (
-        state.counted.get(id)?.get(post.message.sender) === post.recordHash
+        state.counted.get(id)?.get(agentAddressOf(post.message.sender)) ===
+        post.recordHash
       );
     }
     if ((yield* Clock.currentTimeMillis) >= open.deadlineAt) {
@@ -1025,7 +1033,7 @@ function retainCountedAnswer(
         state,
         state.ports.store.recordCollectiveAnswer({
           operationId: id,
-          member: post.message.sender,
+          member: agentAddressOf(post.message.sender),
           recordHash: post.recordHash,
         }),
       )) === post.recordHash
@@ -1097,7 +1105,7 @@ function abandonGroupRequest(
         collectiveFailure(prepared.id, {
           kind: "members-unreachable",
           members: EffectArray.map(prepared.open.members, (member) =>
-            postRefusal(member, error),
+            postRefusal(agentAddressOf(member), error),
           ),
         }),
       ),

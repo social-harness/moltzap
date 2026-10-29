@@ -1,5 +1,6 @@
 /** @file Durable delivery behaviour through the loopback MCP tools and native endpoint. */
 
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { scopedLive as it } from "@effect/vitest";
 import { Chunk, Effect, Schema, Scope, Stream } from "effect";
 import { describe, expect } from "vitest";
@@ -93,7 +94,7 @@ const deliveryFixture = (sendPost: PostSender = unreachable) =>
       sendAdmitted: unreachable,
       reportStorageFault: () => Effect.void,
       self: Schema.decodeUnknownSync(AgentAddress)("agent:alice"),
-      lookupMember: () => Effect.void,
+      lookupMember: (member) => Effect.succeed(testAgentView(member)),
       sendPost,
       bindPost: (input, hold) =>
         hold.pipe(Effect.as({ certified: sendPost(input) })),

@@ -4,6 +4,7 @@ import type * as ClientPublic from "@moltzap/social-harness";
 import {
   type acquireHarnessEndpoint,
   AgentAddress,
+  AgentView,
   CollectiveError,
   ConnectError,
   decodeHarnessSendErrorData,
@@ -18,7 +19,7 @@ import {
   SendError,
   type SendResult,
 } from "@moltzap/social-harness";
-import { Deferred, Effect, Queue, Schema, Stream } from "effect";
+import { Deferred, Effect, Encoding, Queue, Schema, Stream } from "effect";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ChannelRegistration, ChannelSetup } from "./adapter.js";
 import type { registerChannelAdapter } from "./channel-registry.js";
@@ -89,7 +90,7 @@ function directItem() {
       kind: "direct",
       postId: POST_ID,
       address: "agent:alice",
-      sender: "agent:alice",
+      sender: testAgentView("alice"),
       content: [{ type: "text", text: "hello" }],
     },
   });
@@ -344,8 +345,12 @@ it("preserves canonical group address, sender, exact membership and native group
         kind: "group",
         postId: POST_ID,
         address: GROUP,
-        sender: "agent:bob",
-        members: ["agent:alice", "agent:bob", "agent:carol"],
+        sender: testAgentView("bob"),
+        members: [
+          testAgentView("alice"),
+          testAgentView("bob"),
+          testAgentView("carol"),
+        ],
         content: [{ type: "text", text: "group hello" }],
       },
     }),
@@ -389,7 +394,7 @@ it.each([
         to,
         id: OPERATION_ID,
         postId: POST_ID,
-        from: "agent:alice",
+        from: testAgentView("alice"),
         question: QUESTION,
         requestedSchema: FORM,
         deadlineAt: Date.UTC(2026, 8, 30, 12),
@@ -432,10 +437,10 @@ it("attributes a result to Social Harness and lists every member outcome in the 
     question: QUESTION,
     outcomes: [
       {
-        member: "agent:bob",
+        member: testAgentView("bob"),
         outcome: { kind: "answered", content: { slot: "mon" } },
       },
-      { member: "agent:carol", outcome: { kind: "no-answer" } },
+      { member: testAgentView("carol"), outcome: { kind: "no-answer" } },
     ],
   });
   if (item.kind !== "collectiveResult") {
@@ -705,8 +710,8 @@ it("hands guidance and quoted peer text to the agent before acknowledging", asyn
     subjects: [
       {
         id: "hello",
-        sender: "agent:alice",
-        recipients: ["agent:bob"],
+        sender: testAgentView("alice"),
+        recipients: [testAgentView("bob")],
         text: "hello",
       },
     ],
@@ -804,7 +809,7 @@ function collectiveGuidanceItem(
           question: QUESTION,
           outcomes: [
             {
-              member: "agent:alice",
+              member: testAgentView("alice"),
               outcome: { kind: "answered", content: { slot: "mon" } },
             },
           ],
@@ -814,7 +819,7 @@ function collectiveGuidanceItem(
           op: "gather",
           id: OPERATION_ID,
           postId: POST_ID,
-          from: "agent:alice",
+          from: testAgentView("alice"),
           to: "agent:alice",
           question: QUESTION,
           requestedSchema: FORM,
@@ -825,3 +830,13 @@ function collectiveGuidanceItem(
 
 /* eslint-enable agent-code-guard/async-keyword -- Restore Effect-first defaults after the Promise-native host boundary tests. */
 /* eslint-enable agent-code-guard/acquire-release-requires-scope -- Restore the scope guard after the adapter-owned acquisition fake. */
+
+function testAgentView(name: string): AgentView {
+  const byte = ["alice", "bob", "carol"].indexOf(name) + 1;
+  const suffix = Encoding.encodeBase64Url(new Uint8Array(16).fill(byte));
+  return Schema.decodeUnknownSync(AgentView)({
+    agentId: `agt_${suffix}`,
+    agentName: name,
+    principalId: `prn_${suffix}`,
+  });
+}

@@ -1,5 +1,6 @@
 /** @file Accepted gather admission and fanout keep their owner after caller interruption. */
 
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { scoped as it } from "@effect/vitest";
 import {
   Deferred,
@@ -55,7 +56,12 @@ it.each(["plain", "firewall"] as const)(
       expect(fixture.emitted).toMatchObject([
         {
           kind: "collectiveResult",
-          outcomes: [{ member: "agent:bob", outcome: { kind: "no-answer" } }],
+          outcomes: [
+            {
+              member: testAgentView("agent:bob"),
+              outcome: { kind: "no-answer" },
+            },
+          ],
         },
       ]);
     }),
@@ -92,7 +98,7 @@ function admissionFixture(mode: "plain" | "firewall") {
       store,
       self: Schema.decodeUnknownSync(AgentAddress)("agent:alice"),
       scope: yield* Scope.Scope,
-      lookupMember: () => Effect.void,
+      lookupMember: (member) => Effect.succeed(testAgentView(member)),
       sendPost: () =>
         Deferred.succeed(started, undefined).pipe(
           Effect.zipRight(Effect.never),

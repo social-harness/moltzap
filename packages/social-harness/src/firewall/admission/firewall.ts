@@ -2,7 +2,12 @@
 
 import { Effect, Option, Schema } from "effect";
 import { createHash } from "node:crypto";
-import type { AgentCard, VerifiedAgentCard } from "../../identity/cards.js";
+import {
+  type AgentCard,
+  AgentView,
+  agentViewOf,
+  type VerifiedAgentCard,
+} from "../../identity/cards.js";
 import type { FirewallSendError } from "../outcome/index.js";
 import { InboundItem } from "../../communication/collectives/inbound.js";
 import {
@@ -45,7 +50,6 @@ import {
   type TextRule,
 } from "../evaluator/index.js";
 import {
-  agentAddressOf,
   assess,
   type CheckedMessage,
   conversationAddress,
@@ -474,7 +478,7 @@ function gatherMessage(local: VerifiedAgentCard, gather: GatherCheck) {
         op: "gather",
         id: value.id,
         postId: yield* unpostedRequest,
-        from: yield* agentAddressOf(local),
+        from: agentViewOf(local),
         to: gather.conversation.address,
         question: questionText(gather.candidate.content),
         requestedSchema: value.requestedSchema,
@@ -537,11 +541,16 @@ function sameRequest(
 }
 
 function samePost(
-  post: { readonly postId: string; readonly sender: string },
+  post: { readonly postId: string; readonly sender: AgentView },
   candidate: DecodedRecord,
 ): boolean {
   return (
-    post.postId === candidate.intent.postId && post.sender === candidate.author
+    post.postId === candidate.intent.postId &&
+    candidate.cards.some(
+      (card) =>
+        card.agentId === candidate.intent.authorAgentId &&
+        Schema.equivalence(AgentView)(AgentView.make(card), post.sender),
+    )
   );
 }
 
@@ -552,9 +561,11 @@ function sameAudience(
   if (message.kind === "direct") {
     return cards.length === 2;
   }
-  const expected = cards.map((card) => `agent:${card.agentName}`);
+  const expected = cards.map((card) => AgentView.make(card));
   return (
     expected.length === message.members.length &&
-    message.members.every((member) => expected.includes(member))
+    message.members.every((member) =>
+      expected.some((card) => Schema.equivalence(AgentView)(card, member)),
+    )
   );
 }

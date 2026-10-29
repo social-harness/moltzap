@@ -1,5 +1,6 @@
 /** @file Signed collective posts and completion decisions survive endpoint restarts. */
 
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { live as it, scoped as itOnClock } from "@effect/vitest";
 import {
   Clock,
@@ -98,7 +99,7 @@ function resume(subject: Fixture, store: EndpointStore, failOutbound = false) {
       store,
       self,
       scope: yield* Scope.Scope,
-      lookupMember: () => Effect.void,
+      lookupMember: (member) => Effect.succeed(testAgentView(member)),
       sendPost: engine.send,
       bindPost: engine.bind,
       sendAdmitted: engine.sendAdmitted,
@@ -379,7 +380,7 @@ function pausedAdmission(mode: "bind" | "gather") {
       store: subject.store,
       self,
       scope: yield* Scope.Scope,
-      lookupMember: () => Effect.void,
+      lookupMember: (member) => Effect.succeed(testAgentView(member)),
       sendPost: () => Effect.never,
       bindPost: () => Effect.dieMessage("checked sends use the admission port"),
       sendAdmitted: () => Effect.never,
@@ -522,7 +523,7 @@ function interruptedBindFixture(pause: "before" | "after" = "after") {
       store,
       self,
       scope: yield* Scope.Scope,
-      lookupMember: () => Effect.void,
+      lookupMember: (member) => Effect.succeed(testAgentView(member)),
       sendPost: engine.send,
       bindPost: engine.bind,
       sendAdmitted: engine.sendAdmitted,
@@ -908,7 +909,7 @@ function closurePorts(
     store,
     self,
     scope,
-    lookupMember: () => Effect.void,
+    lookupMember: (member) => Effect.succeed(testAgentView(member)),
     sendPost: engine.send,
     bindPost: engine.bind,
     sendAdmitted: engine.sendAdmitted,
@@ -1072,8 +1073,11 @@ function recoverClosure(
     expect(result).toMatchObject({
       ...metadata,
       outcomes: [
-        { member: "agent:bob", outcome: { kind: "declined" } },
-        { member: "agent:carol", outcome: { kind: "no-answer" } },
+        { member: testAgentView("agent:bob"), outcome: { kind: "declined" } },
+        {
+          member: testAgentView("agent:carol"),
+          outcome: { kind: "no-answer" },
+        },
       ],
     });
     const operation = yield* Effect.fromNullable(
@@ -1091,8 +1095,10 @@ function recoverClosure(
 function assertOwnAnswer(item: InboundItem) {
   expect(item).toMatchObject({ kind: "collectiveResult", op: "all_gather" });
   const outcomes = item.kind === "collectiveResult" ? item.outcomes : [];
-  expect(outcomes.find((outcome) => outcome.member === self)).toEqual({
-    member: self,
+  expect(
+    outcomes.find((outcome) => outcome.member.agentName === "alice"),
+  ).toEqual({
+    member: testAgentView(self),
     outcome: { kind: "answered", content: { answer: "Monday" } },
   });
 }

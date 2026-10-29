@@ -3,6 +3,7 @@
 import openClawPlugin from "@moltzap/openclaw-channel";
 import {
   AgentAddress,
+  type AgentView,
   type Content,
   GroupAddress,
   type InboundDelivery,
@@ -31,13 +32,17 @@ import {
 } from "./daemon-process-harness.js";
 import { registrationResultKind } from "./expected-contracts.js";
 
+interface RegisteredFixture extends DaemonProcessFixture {
+  readonly agent: AgentView;
+}
+
 interface Scenario {
-  readonly caller: DaemonProcessFixture;
-  readonly target: DaemonProcessFixture;
+  readonly caller: RegisteredFixture;
+  readonly target: RegisteredFixture;
 }
 
 interface GroupScenario extends Scenario {
-  readonly peer: DaemonProcessFixture;
+  readonly peer: RegisteredFixture;
 }
 
 interface RecordedSessionSnapshot {
@@ -364,11 +369,11 @@ export function acquireScenario(
       [acquireDaemonProcess(caller), acquireDaemonProcess(target)] as const,
       { concurrency: 2 },
     );
-    yield* Effect.all(
+    const [registeredCaller, registeredTarget] = yield* Effect.all(
       [registerFixture(caller), registerFixture(target)] as const,
-      { concurrency: 2, discard: true },
+      { concurrency: 2 },
     );
-    return { caller, target };
+    return { caller: registeredCaller, target: registeredTarget };
   }).pipe(Effect.withSpan("acquireScenario"));
 }
 
@@ -394,11 +399,20 @@ export function acquireGroupScenario(
       ] as const,
       { concurrency: 3 },
     );
-    yield* Effect.all(
-      [registerFixture(caller), registerFixture(target), registerFixture(peer)],
-      { concurrency: 3, discard: true },
-    );
-    return { caller, target, peer };
+    const [registeredCaller, registeredTarget, registeredPeer] =
+      yield* Effect.all(
+        [
+          registerFixture(caller),
+          registerFixture(target),
+          registerFixture(peer),
+        ] as const,
+        { concurrency: 3 },
+      );
+    return {
+      caller: registeredCaller,
+      target: registeredTarget,
+      peer: registeredPeer,
+    };
   }).pipe(Effect.withSpan("acquireGroupScenario"));
 }
 
@@ -708,9 +722,18 @@ function registerFixture(fixture: DaemonProcessFixture) {
     Effect.gen(function* () {
       const management = yield* acquireDaemonManagementClient(fixture.endpoint);
       expect(yield* management.status()).toEqual({ kind: "unregistered" });
-      expect(
-        (yield* management.register(makeRegistrationRequest(fixture))).kind,
-      ).toBe(registrationResultKind);
+      const registered = yield* management
+        .register(makeRegistrationRequest(fixture))
+        .pipe(
+          Effect.filterOrFail(
+            (result) => result.kind === registrationResultKind,
+            (result) =>
+              new ProcessTestError({
+                message: `fixture registration returned ${result.kind}`,
+              }),
+          ),
+        );
+      return { ...fixture, agent: registered.agent };
     }),
   );
 }

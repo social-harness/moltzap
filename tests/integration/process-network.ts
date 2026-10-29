@@ -1,6 +1,7 @@
 /** @file Promise-native access to scoped process fixtures for node:test consumers. */
 import {
   acquireHarnessEndpoint,
+  type AgentView,
   type HarnessEndpoint,
   type InboundItem,
   MessageAddressInput,
@@ -32,6 +33,7 @@ interface Daemon {
  * shares the daemon receives every delivery the test does not ask for.
  */
 export interface Endpoint extends Daemon {
+  readonly agent: AgentView;
   readonly send: (input: unknown) => Promise<SendResult>;
   readonly next: (count: number) => Promise<readonly InboundItem[]>;
   readonly history: (address: string) => Promise<readonly unknown[]>;
@@ -111,7 +113,9 @@ async function networkEndpoint(
     scope,
     acquireHarnessEndpoint(fixture.endpoint),
   );
+  const agent = await runInScope(scope, readAgent(fixture));
   return {
+    agent,
     address: `agent:${fixture.agentName}`,
     mcp: fixture.endpoint,
     send: (input) =>
@@ -123,6 +127,18 @@ async function networkEndpoint(
     next: (count) => Effect.runPromise(nextItems(harness, count)),
     history: (address) => runInScope(scope, readContents(fixture, address)),
   };
+}
+
+function readAgent(fixture: DaemonProcessFixture) {
+  return Effect.scoped(
+    Effect.gen(function* () {
+      const management = yield* acquireDaemonManagementClient(fixture.endpoint);
+      const status = yield* management.status();
+      return status.kind === "active"
+        ? status.agent
+        : yield* processTestError("started daemon is not registered");
+    }),
+  );
 }
 
 /**

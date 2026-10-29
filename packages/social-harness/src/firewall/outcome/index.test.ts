@@ -1,5 +1,6 @@
 /** @file Hosts receive actionable local advice with peer text kept quoted and attributed. */
 
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { Encoding, Schema } from "effect";
 import { expect, it } from "vitest";
 import {
@@ -50,8 +51,8 @@ const normGuidance: CheckedGuidance = {
   subjects: [
     {
       id: "proposal",
-      sender: "agent:alice",
-      recipients: ["agent:bob"],
+      sender: testAgentView("agent:alice"),
+      recipients: [testAgentView("agent:bob")],
       text: "Which day?",
     },
   ],
@@ -85,9 +86,14 @@ it("renders a norm's expectation, instruction and subject reference", () => {
       ],
     },
   ]);
-  expect(JSON.parse(rendered.split("\n")[4] ?? "[]")).toEqual(
-    normGuidance.subjects,
-  );
+  expect(JSON.parse(rendered.split("\n")[4] ?? "[]")).toEqual([
+    {
+      id: "proposal",
+      sender: "agent:alice",
+      recipients: ["agent:bob"],
+      text: "Which day?",
+    },
+  ]);
   expect(rendered.endsWith(JSON.stringify("Which day?"))).toBe(true);
 });
 
@@ -130,8 +136,8 @@ it("keeps hostile peer subjects quoted and attributed apart from local instructi
       subjects: [
         {
           id: "proposal",
-          sender: "agent:alice",
-          recipients: ["agent:bob"],
+          sender: testAgentView("agent:alice"),
+          recipients: [testAgentView("agent:bob")],
           text,
         },
       ],
@@ -146,30 +152,23 @@ it("keeps hostile peer subjects quoted and attributed apart from local instructi
   expect(rendered).toContain(`Peer message (quoted content):\n${quoted}`);
 });
 
-it("labels retained AgentIds neutrally and names endpoint evidence", () => {
+it("names endpoint evidence and its verified agent recipients", () => {
   const rendered = renderLocalGuidance({
     ...normGuidance,
     subjects: [
       {
         id: "proposal",
-        sender: "agt_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        recipients: [
-          "agt_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-          "sharness",
-        ],
+        sender: "sharness",
+        recipients: [testAgentView("agent:bob")],
         text: "Which day?",
       },
     ],
   });
-  const expectedSender =
-    "agent agt_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa (name not recorded)";
-  const expectedRecipient =
-    "agent agt_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb (name not recorded)";
   expect(JSON.parse(rendered.split("\n")[4] ?? "[]")).toEqual([
     {
       id: "proposal",
-      sender: expectedSender,
-      recipients: [expectedRecipient, "Social Harness"],
+      sender: "Social Harness",
+      recipients: ["agent:bob"],
       text: "Which day?",
     },
   ]);
@@ -186,9 +185,9 @@ it("keeps withheld result entries local while grouping answer and question advic
     to: "group:alice,bob,carol",
     question: withheld,
     outcomes: [
-      { member: "agent:bob", outcome: withheld },
+      { member: testAgentView("agent:bob"), outcome: withheld },
       {
-        member: "agent:carol",
+        member: testAgentView("agent:carol"),
         outcome: { kind: "answered", content: { slot: "mon" } },
       },
     ],
@@ -198,7 +197,7 @@ it("keeps withheld result entries local while grouping answer and question advic
   }
   const rendered = renderLocalGuidance(
     {
-      answers: [{ member: "agent:carol", ...normGuidance }],
+      answers: [{ member: testAgentView("agent:carol"), ...normGuidance }],
       question: normGuidance,
     },
     { text: renderCollectiveResult(item), origin: "endpoint" },
@@ -211,7 +210,7 @@ it("keeps withheld result entries local while grouping answer and question advic
     ),
   )(rendered.split("\n")[1]);
   expect(entries).toEqual([
-    { for: item.outcomes[1]?.member, checkId },
+    { for: "agent:carol", checkId },
     { for: "question", checkId },
   ]);
   const endpointLabel =

@@ -14,6 +14,7 @@
  * test fail when the draw stops reaching the interleavings it exists for.
  */
 
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { live as it } from "@effect/vitest";
 import {
   Deferred,
@@ -178,7 +179,7 @@ const makeEndpoint = (harness: Harness, self: AgentAddress) =>
     const answerQueued = yield* Deferred.make<undefined>();
     const layer = yield* makeCollectiveOperations({
       self,
-      lookupMember: () => Effect.void,
+      lookupMember: (member) => Effect.succeed(testAgentView(member)),
       ...collectivePersistencePorts((input) =>
         self === alice
           ? append(harness, self, input.content).pipe(Effect.map(certified))
@@ -230,8 +231,8 @@ const classifyRecord = (endpoint: Endpoint, record: ChainRecord) =>
         kind: "group",
         postId: postId(record.byte),
         address: group,
-        sender: record.sender,
-        members: groupMembers,
+        sender: testAgentView(record.sender),
+        members: groupMembers.map(testAgentView),
         content: record.content,
       }),
       recordHash: recordHashOf(record.byte),
@@ -539,7 +540,7 @@ const resultOfFirstClose = (harness: Harness, id: string) => {
     to: group,
     question: questionText,
     outcomes: [bob, carol, dave].map((member) => ({
-      member,
+      member: testAgentView(member),
       outcome: outcomeOf(
         Option.fromNullable(
           listed.find((record) => record.sender === member),

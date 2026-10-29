@@ -1,7 +1,7 @@
 /** @file Local guidance shared by adapter projection tests. */
 
-import type { CheckedGuidance } from "@moltzap/social-harness";
-import { Encoding } from "effect";
+import { AgentView, type CheckedGuidance } from "@moltzap/social-harness";
+import { Encoding, Schema } from "effect";
 
 /** A registered instruction and its runtime-visible peer subject. */
 export function testGuidance(text: string): CheckedGuidance {
@@ -10,8 +10,8 @@ export function testGuidance(text: string): CheckedGuidance {
     subjects: [
       {
         id: "candidate",
-        sender: "agent:alice",
-        recipients: ["agent:bob"],
+        sender: testAgentView("alice"),
+        recipients: [testAgentView("bob")],
         text,
       },
     ],
@@ -25,4 +25,15 @@ export function testGuidance(text: string): CheckedGuidance {
       },
     ],
   };
+}
+
+/** Stable agent identities for the adapter's host projections. */
+export function testAgentView(name: string): AgentView {
+  const byte = ["alice", "bob", "carol"].indexOf(name) + 1;
+  const suffix = Encoding.encodeBase64Url(new Uint8Array(16).fill(byte));
+  return Schema.decodeUnknownSync(AgentView)({
+    agentId: `agt_${suffix}`,
+    agentName: name,
+    principalId: `prn_${suffix}`,
+  });
 }

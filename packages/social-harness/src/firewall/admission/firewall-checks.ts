@@ -30,7 +30,8 @@ import {
   RecordCore,
 } from "../../communication/records/index.js";
 import {
-  AgentAddress,
+  agentAddressOf,
+  type AgentAddress,
   type MessageAddressInput,
 } from "../../communication/records/values.js";
 import {
@@ -44,7 +45,11 @@ import {
   type FirewallLocalEntry,
   MAXIMUM_RUNTIME_ITEM_BYTES,
 } from "../../communication/store/index.js";
-import { AgentCard, type VerifiedAgentCard } from "../../identity/cards.js";
+import {
+  AgentCard,
+  AgentView,
+  type VerifiedAgentCard,
+} from "../../identity/cards.js";
 import {
   type Firewall,
   type FirewallCheck,
@@ -54,7 +59,11 @@ import {
   MessageContext,
   projectFeedback,
 } from "../evaluator/index.js";
-import { type CheckedGuidance, FirewallSendError } from "../outcome/index.js";
+import {
+  type CheckedGuidance,
+  ENDPOINT_SENDER,
+  FirewallSendError,
+} from "../outcome/index.js";
 import {
   type FirewallConfiguration,
   type FirewallInstallation,
@@ -115,6 +124,7 @@ export interface AssessmentInput {
 /** What an attempt's audit input records beside the installation. */
 interface AttemptFacts {
   readonly context: MessageContext;
+  readonly agents: readonly AgentView[];
   readonly message: Message | null;
   readonly terminal: boolean;
 }
@@ -192,7 +202,7 @@ export const decodeRecord = Effect.fn("decodeFirewallRecord")(function* (
     ...projection,
     intent,
     cards,
-    author: yield* agentAddressOf(authorCard),
+    author: agentAddressOf(authorCard),
   } satisfies DecodedRecord;
 });
 
@@ -252,6 +262,9 @@ export const assess = Effect.fn("assessMessage")(function* (
     canonicalCandidate: input.canonicalCandidate,
     canonicalInput: yield* attemptInput(environment, {
       context,
+      agents: [environment.localAgentCard, ...input.cards].map((card) =>
+        AgentView.make(card),
+      ),
       message: input.message ?? null,
       terminal: input.terminal,
     }),
@@ -354,25 +367,10 @@ export function conversationAddress(
     const other = cards.find((card) => card.agentId !== localAgentId);
     return other === undefined
       ? Effect.fail(new EndpointStoreError({ reason: "corrupt" }))
-      : agentAddressOf(other);
+      : Effect.succeed(agentAddressOf(other));
   }
   return renderGroupAddress(cards.map((card) => card.agentName)).pipe(
     Effect.map(({ address }): MessageAddressInput => address),
-    Effect.catchTag("ParseError", () =>
-      Effect.fail(new EndpointStoreError({ reason: "corrupt" })),
-    ),
-  );
-}
-
-/**
- * A card's `agent:` address.
- * @param card The card whose Registry name the address carries.
- * @returns The address hosts name the agent by.
- */
-export function agentAddressOf(
-  card: Pick<AgentCard, "agentName">,
-): Effect.Effect<AgentAddress, EndpointStoreError> {
-  return Schema.decodeUnknown(AgentAddress)(`agent:${card.agentName}`).pipe(
     Effect.catchTag("ParseError", () =>
       Effect.fail(new EndpointStoreError({ reason: "corrupt" })),
     ),
@@ -543,7 +541,7 @@ function projectRequest(
     return Effect.fail(new EndpointStoreError({ reason: "corrupt" }));
   }
   return Effect.all([
-    agentAddressOf(author),
+    Effect.succeed(AgentView.make(author)),
     conversationAddress(cards, localAgentId),
   ]).pipe(
     Effect.flatMap(([from, to]) =>
@@ -719,10 +717,9 @@ function guidanceSubjects(
   context: MessageContext,
   cards: readonly AgentCard[],
 ): CheckedGuidance["subjects"] {
-  const addresses = new Map<string, string>(
-    cards.map((card) => [card.agentId, `agent:${card.agentName}`]),
+  const agents = new Map<string, AgentView>(
+    cards.map((card) => [card.agentId, AgentView.make(card)]),
   );
-  const address = (identity: string) => addresses.get(identity) ?? identity;
   const available = context.history.filter(
     (entry) => entry.visibility === "runtime" && entry.admission === "admitted",
   );
@@ -732,12 +729,20 @@ function guidanceSubjects(
   );
   return [...subjects.values()]
     .filter((entry) => selected.has(entry.id))
-    .map((entry) => ({
-      id: entry.id,
-      sender: address(entry.sender),
-      recipients: entry.recipients.map(address),
-      text: entry.text,
-    }));
+    .flatMap((entry) => {
+      const sender =
+        entry.sender === ENDPOINT_SENDER
+          ? ENDPOINT_SENDER
+          : agents.get(entry.sender);
+      const recipients = entry.recipients.flatMap((identity) => {
+        const agent = agents.get(identity);
+        return agent === undefined ? [] : [agent];
+      });
+      return sender === undefined ||
+        recipients.length !== entry.recipients.length
+        ? []
+        : [{ id: entry.id, sender, recipients, text: entry.text }];
+    });
 }
 
 /**

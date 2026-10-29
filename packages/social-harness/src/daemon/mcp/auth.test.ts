@@ -20,7 +20,7 @@ import {
   scriptedWebhook,
 } from "../../__tests__/webhook-fixtures.js";
 import { openEndpointStore } from "../../communication/store/index.js";
-import { AgentCard } from "../../identity/cards.js";
+import { AgentCard, agentViewOf } from "../../identity/cards.js";
 import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import {
   type HarnessMcpOperations,
@@ -220,7 +220,11 @@ const acquireHandler = (
         readStatus: () =>
           Effect.succeed(
             registered
-              ? { kind: "active", agentCard }
+              ? {
+                  kind: "active",
+                  agentCard,
+                  agent: agentViewOf(fixture.localCard),
+                }
               : { kind: "unregistered" },
           ),
       },

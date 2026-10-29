@@ -1,5 +1,6 @@
 /** @file Pins how the collective layer runs an all_gather at its requester and members. */
 
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import * as NodeSdk from "@effect/opentelemetry/NodeSdk";
 import { live as it, scoped as itOnTestClock } from "@effect/vitest";
 import {
@@ -99,8 +100,8 @@ const groupPost = (sender: string, byte: number, value: object) =>
     kind: "group",
     postId: postId(byte),
     address: group,
-    sender,
-    members: groupMembers,
+    sender: testAgentView(sender),
+    members: groupMembers.map(testAgentView),
     content: [
       ...(value === requestValue ? [{ type: "text", text: questionText }] : []),
       { type: "data", value: { [collectiveKey]: value } },
@@ -375,11 +376,11 @@ function publishesTheRequesterResultOnceItsCloseIsCertified() {
         question: questionText,
         outcomes: [
           {
-            member: "agent:bob",
+            member: testAgentView("agent:bob"),
             outcome: { kind: "answered", content: { slot: "mon" } },
           },
           {
-            member: "agent:carol",
+            member: testAgentView("agent:carol"),
             outcome: { kind: "answered", content: { slot: "tue" } },
           },
         ],
@@ -404,8 +405,11 @@ function closesAtTheDeadlineWithoutTheSilentMember() {
         closedAt: 60_000,
         closedBy: "deadline",
         outcomes: [
-          { member: "agent:bob", outcome: { kind: "answered" } },
-          { member: "agent:carol", outcome: { kind: "no-answer" } },
+          { member: testAgentView("agent:bob"), outcome: { kind: "answered" } },
+          {
+            member: testAgentView("agent:carol"),
+            outcome: { kind: "no-answer" },
+          },
         ],
       },
     ]);
@@ -525,7 +529,7 @@ function deliversAGroupRequestAsAnItemAddressedToTheGroup() {
         op: "all_gather",
         id: requestId,
         postId: postId(10),
-        from: "agent:alice",
+        from: testAgentView("agent:alice"),
         to: group,
         question: questionText,
         requestedSchema: slotSchema,
@@ -555,7 +559,7 @@ function consumesASecondRequestPostThatReusesAHeldId() {
         kind: "direct",
         postId: postId(20),
         address: "agent:alice",
-        sender: "agent:alice",
+        sender: testAgentView("agent:alice"),
         content: [
           { type: "text", text: "Private question?" },
           {
@@ -589,8 +593,14 @@ function keepsARequestFirstSeenAfterItsDeadlineForTheClose() {
     expect(observed.emitted).toMatchObject([
       {
         outcomes: [
-          { member: "agent:bob", outcome: { kind: "no-answer" } },
-          { member: "agent:carol", outcome: { kind: "answered" } },
+          {
+            member: testAgentView("agent:bob"),
+            outcome: { kind: "no-answer" },
+          },
+          {
+            member: testAgentView("agent:carol"),
+            outcome: { kind: "answered" },
+          },
         ],
       },
     ]);
@@ -648,10 +658,13 @@ function buildsTheMemberResultFromExactlyTheListedAnswers() {
         question: questionText,
         outcomes: [
           {
-            member: "agent:bob",
+            member: testAgentView("agent:bob"),
             outcome: { kind: "answered", content: { slot: "mon" } },
           },
-          { member: "agent:carol", outcome: { kind: "no-answer" } },
+          {
+            member: testAgentView("agent:carol"),
+            outcome: { kind: "no-answer" },
+          },
         ],
       },
     ]);
@@ -670,9 +683,12 @@ function includesAListedPeerAnswerInTheMemberResult() {
     expect(observed.emitted).toMatchObject([
       {
         outcomes: [
-          { member: "agent:bob", outcome: { kind: "no-answer" } },
           {
-            member: "agent:carol",
+            member: testAgentView("agent:bob"),
+            outcome: { kind: "no-answer" },
+          },
+          {
+            member: testAgentView("agent:carol"),
             outcome: { kind: "answered", content: { slot: "tue" } },
           },
         ],
@@ -703,8 +719,11 @@ function holdsACloseUntilTheMemberOwnAnswerIsCertified() {
     expect(observed.emitted).toMatchObject([
       {
         outcomes: [
-          { member: "agent:bob", outcome: { kind: "answered" } },
-          { member: "agent:carol", outcome: { kind: "no-answer" } },
+          { member: testAgentView("agent:bob"), outcome: { kind: "answered" } },
+          {
+            member: testAgentView("agent:carol"),
+            outcome: { kind: "no-answer" },
+          },
         ],
       },
     ]);
@@ -771,8 +790,14 @@ function excludesAPeerAnswerThatArrivesAfterTheClose() {
     expect(observed.emitted).toMatchObject([
       {
         outcomes: [
-          { member: "agent:bob", outcome: { kind: "no-answer" } },
-          { member: "agent:carol", outcome: { kind: "no-answer" } },
+          {
+            member: testAgentView("agent:bob"),
+            outcome: { kind: "no-answer" },
+          },
+          {
+            member: testAgentView("agent:carol"),
+            outcome: { kind: "no-answer" },
+          },
         ],
       },
     ]);
@@ -853,8 +878,11 @@ function appliesOnlyTheFirstCloseWhileItsOwnAnswerIsInFlight() {
     expect(observed.emitted).toMatchObject([
       {
         outcomes: [
-          { member: "agent:bob", outcome: { kind: "answered" } },
-          { member: "agent:carol", outcome: { kind: "no-answer" } },
+          { member: testAgentView("agent:bob"), outcome: { kind: "answered" } },
+          {
+            member: testAgentView("agent:carol"),
+            outcome: { kind: "no-answer" },
+          },
         ],
       },
     ]);

@@ -5,6 +5,7 @@ import {
   decodeRuntimeValue,
   encodeRuntimeValue,
   type EndpointStore,
+  EndpointStoreError,
   type FirewallActivation,
   type FirewallAuditEntry,
 } from "../../communication/store/index.js";
@@ -502,7 +503,7 @@ function decisionRows(entry: FirewallAuditEntry & { readonly time: number }) {
   return decodeFirewallAuditEntry(entry).pipe(
     Effect.flatMap((check) =>
       ruleOrigin(check.input.installation[check.direction]).pipe(
-        Effect.map((origin) => projectDecision(check, entry.time, origin)),
+        Effect.flatMap((origin) => projectDecision(check, entry.time, origin)),
       ),
     ),
   );
@@ -538,7 +539,7 @@ function projectDecision(
     check.disposition === "checking" ||
     check.disposition === "interrupted"
   ) {
-    return [];
+    return Effect.succeed([]);
   }
   const message = check.input.message;
   const peers =
@@ -563,18 +564,30 @@ function projectDecision(
     ...origin(rule),
     ...(rule.advice === undefined ? {} : { advice: rule.advice }),
   }));
-  return peers.map((peerAgentId) => ({
-    checkId: check.checkId,
-    time,
-    direction: check.direction,
-    peerAgentId,
-    outcome: result.judgment,
-    disposition: check.disposition,
-    cause,
-    decidedBy,
-    checkedRuleIds,
-    activeRevision: check.input.configurationDigest,
-  }));
+  return Effect.forEach(
+    peers,
+    (peerAgentId) => {
+      const peer =
+        peerAgentId === null
+          ? null
+          : check.input.agents.find((agent) => agent.agentId === peerAgentId);
+      return peer === undefined
+        ? Effect.fail(new EndpointStoreError({ reason: "corrupt" }))
+        : Effect.succeed({
+            checkId: check.checkId,
+            time,
+            direction: check.direction,
+            peer,
+            outcome: result.judgment,
+            disposition: check.disposition,
+            cause,
+            decidedBy,
+            checkedRuleIds,
+            activeRevision: check.input.configurationDigest,
+          });
+    },
+    { concurrency: 1 },
+  );
 }
 
 /**

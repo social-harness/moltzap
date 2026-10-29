@@ -218,6 +218,12 @@ export type AgentAddress = typeof AgentAddress.Type;
 export const agentNameOf = (address: AgentAddress): string =>
   address.slice(AGENT_ADDRESS_PREFIX.length);
 
+/** The direct destination of an agent with a validated immutable Registry name. */
+export const agentAddressOf = (agent: {
+  readonly agentName: AgentName;
+}): AgentAddress =>
+  AgentAddress.make(`${AGENT_ADDRESS_PREFIX}${agent.agentName}`);
+
 /** A complete fixed-member group address in unsigned ASCII name order. */
 export const GroupAddress = addressInput.pipe(
   Schema.filter(isCanonicalGroupAddress),

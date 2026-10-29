@@ -1,5 +1,6 @@
 /** @file Pending durable deliveries and the classify, engine and subscriber ports a delivery pass runs over. */
 
+import { testAgentView } from "./agent-card-fixtures.js";
 import { Effect, Schema } from "effect";
 import type { InboundItem } from "../communication/collectives/inbound.js";
 import type { CollectiveOperations } from "../communication/collectives/index.js";
@@ -27,7 +28,7 @@ export function pendingMessage(byte: number): EnginePendingMessage {
       kind: "direct",
       postId: digest("pst_", byte),
       address: "agent:bob",
-      sender: "agent:bob",
+      sender: testAgentView("agent:bob"),
       content: [{ type: "text", text: `delivery ${String(byte)}` }],
     }),
   };

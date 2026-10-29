@@ -5,6 +5,7 @@ import {
   decodeRuntimeValue,
   type FirewallAuditEntry,
 } from "../../communication/store/index.js";
+import { AgentView } from "../../identity/cards.js";
 import { exactStruct } from "../../encoding/exact.js";
 import {
   decodeFrozen,
@@ -49,6 +50,7 @@ const firewallAuditInput = exactStruct({
   configurationDigest: Schema.String.pipe(Schema.pattern(/^[a-f0-9]{64}$/u)),
   installation: firewallInstallation,
   context: MessageContext,
+  agents: Schema.Array(AgentView),
   message: Schema.NullOr(Message),
   terminal: Schema.Boolean,
 });

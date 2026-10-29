@@ -7,10 +7,11 @@
 import { Effect, Array as EffectArray, Schema, Struct } from "effect";
 import type { InboundItem } from "../../communication/collectives/inbound.js";
 import type { RecordHash } from "../../communication/records/index.js";
-import type {
-  AgentAddress,
-  MessageAddressInput,
+import {
+  agentAddressOf,
+  type MessageAddressInput,
 } from "../../communication/records/values.js";
+import { AgentView, agentViewOf } from "../../identity/cards.js";
 import { ResultProvenance } from "../../communication/collectives/index.js";
 import {
   renderCollectiveResult,
@@ -114,7 +115,7 @@ interface ResultCheck {
 
 /** One answer of a result the firewall checks: its member, its record and its outcome. */
 interface CountedAnswer {
-  readonly member: AgentAddress;
+  readonly member: AgentView;
   readonly recordHash: RecordHash;
   readonly outcome: ResultItem["outcomes"][number]["outcome"];
 }
@@ -127,7 +128,7 @@ interface CheckedText {
 
 /** One counted answer of a result, checked on its own. */
 interface CheckedAnswer extends CheckedText {
-  readonly member: AgentAddress;
+  readonly member: AgentView;
 }
 
 /** The texts of a result its firewall checks: the counted answers, and maybe the question. */
@@ -291,10 +292,10 @@ function resultCommit(
  * outcome's line is the validation message instead, so that post's content
  * stays assessor evidence: the runtime was never shown it.
  */
-function quotesRecord(item: ResultItem, member: AgentAddress): boolean {
+function quotesRecord(item: ResultItem, member: AgentView): boolean {
   return (
-    item.outcomes.find((outcome) => outcome.member === member)?.outcome.kind !==
-    "invalid"
+    item.outcomes.find((outcome) => outcome.member.agentId === member.agentId)
+      ?.outcome.kind !== "invalid"
   );
 }
 
@@ -334,7 +335,8 @@ function resultRanges(item: ResultItem, texts: ResultTexts) {
   return [
     ...texts.answers.map((answer) => ({
       beforeRecord: answer.recordHash,
-      conversation: item.op === "gather" ? answer.member : item.to,
+      conversation:
+        item.op === "gather" ? agentAddressOf(answer.member) : item.to,
     })),
     ...(texts.question.kind === "check"
       ? [{ beforeRecord: texts.question.recordHash, conversation: item.to }]
@@ -412,9 +414,9 @@ function countedAnswers(
 ): readonly CountedAnswer[] {
   return answers.flatMap((answer) => {
     const outcome = item.outcomes.find(
-      (candidate) => candidate.member === answer.member,
-    )?.outcome;
-    return outcome === undefined ? [] : [{ ...answer, outcome }];
+      (candidate) => agentAddressOf(candidate.member) === answer.member,
+    );
+    return outcome === undefined ? [] : [{ ...answer, ...outcome }];
   });
 }
 
@@ -476,7 +478,11 @@ function answerMessage(
   const operation = candidate.message.operation;
   return operation?.kind === "answer" &&
     operation.id === item.id &&
-    candidate.author === answer.member
+    candidate.cards.some(
+      (card) =>
+        card.agentId === candidate.intent.authorAgentId &&
+        Schema.equivalence(AgentView)(AgentView.make(card), answer.member),
+    )
     ? decodeMessage({
         ...messageFields(candidate.message),
         text: renderOutcome(answer.outcome),
@@ -536,7 +542,9 @@ function projectedOutcome(
   outcome: ResultItem["outcomes"][number],
   checked: readonly CheckedAnswer[],
 ): ResultItem["outcomes"][number] {
-  const check = checked.find((answer) => answer.member === outcome.member);
+  const check = checked.find(
+    (answer) => answer.member.agentId === outcome.member.agentId,
+  );
   return check === undefined || check.checked.completion.admit
     ? outcome
     : { member: outcome.member, outcome: withheldBecause(check.checked) };
@@ -624,6 +632,7 @@ function deterministicCheck(
       canonicalCandidate: entry.canonicalItem,
       canonicalInput: yield* attemptInput(environment, {
         context,
+        agents: [agentViewOf(environment.localAgentCard)],
         message,
         terminal: false,
       }),

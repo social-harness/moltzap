@@ -1,5 +1,6 @@
 /** @file A deadline and confirmed request refusals choose one durable terminal outcome. */
 
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { scoped as it } from "@effect/vitest";
 import {
   Clock,
@@ -78,7 +79,7 @@ function refusalRace() {
     const collective = yield* makeCollectiveOperations({
       store,
       self: Schema.decodeUnknownSync(AgentAddress)("agent:alice"),
-      lookupMember: () => Effect.void,
+      lookupMember: (member) => Effect.succeed(testAgentView(member)),
       sendPost: () => {
         controls.time.requestsStarted = true;
         return Effect.fail(new SendError({ reason: "network-unavailable" }));

@@ -1,5 +1,6 @@
 /** @file Recording ports, post builders and send helpers shared by the collective operation tests. */
 
+import { testAgentView } from "./agent-card-fixtures.js";
 import { Duration, Effect, Schema, type Scope } from "effect";
 import type { InboundItem } from "../communication/collectives/inbound.js";
 import type {
@@ -196,7 +197,7 @@ export const makeLayer = (
       lookupMember: (member) =>
         unknown.includes(member)
           ? Effect.fail(new SendError({ reason: "unknown-agent" }))
-          : Effect.void,
+          : Effect.succeed(testAgentView(member)),
       emit,
       scope,
     });
@@ -213,7 +214,7 @@ export const directPost = (sender: string, content: unknown) =>
     kind: "direct",
     postId: postId(9),
     address: sender,
-    sender,
+    sender: testAgentView(sender),
     content,
   });
 

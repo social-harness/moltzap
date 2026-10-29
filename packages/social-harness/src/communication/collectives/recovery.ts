@@ -1,4 +1,5 @@
 /** @file Rebuild collective working state from retained decisions and certified history. */
+import { agentAddressOf } from "../records/values.js";
 import { Clock, Effect, Fiber, Schema } from "effect";
 import type { CollectiveOperations, PostSender } from "./ports.js";
 import type { OpenRequest, ReceivedRequest } from "./received-request.js";
@@ -339,9 +340,9 @@ function resumeFanout(
     checkId === undefined
       ? state.ports.sendPost
       : (input) => state.ports.sendAdmitted(input, checkId);
-  const pending = operation.open.members.filter(
-    (member) => !claimed.has(member),
-  );
+  const pending = operation.open.members
+    .map(agentAddressOf)
+    .filter((member) => !claimed.has(member));
   return Effect.forEach(
     pending,
     (member) =>

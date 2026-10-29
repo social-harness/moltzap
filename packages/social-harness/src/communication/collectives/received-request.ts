@@ -8,6 +8,8 @@
  * guessed when several are open.
  */
 
+import type { AgentView } from "../../identity/cards.js";
+import { agentAddressOf } from "../records/values.js";
 import { Duration, Either, Option } from "effect";
 import type { InboundMessage } from "../conversations/message.js";
 import type { PostId, RecordHash } from "../records/index.js";
@@ -92,7 +94,7 @@ type UnansweredKind = Extract<
 interface ReceivedRequestFields extends RequestStatus {
   readonly postId: PostId;
   readonly recordHash: RecordHash;
-  readonly from: AgentAddress;
+  readonly from: AgentView;
   /** The question as every member's model reads it. */
   readonly question: string;
   readonly requestedSchema: FormModeSchema;
@@ -229,7 +231,7 @@ export function receivedRequest(
     return Option.none();
   }
   const [first, ...rest] = message.members.filter(
-    (member) => member !== message.sender,
+    (member) => member.agentId !== message.sender.agentId,
   );
   return first === undefined
     ? Option.none()
@@ -375,6 +377,6 @@ function trustedRequest(
 ): boolean {
   return (
     value.deadlineAt <= now + RECEIVED_DEADLINE_HORIZON &&
-    collectiveIdOf(message.sender, value.nonce) === value.id
+    collectiveIdOf(agentAddressOf(message.sender), value.nonce) === value.id
   );
 }

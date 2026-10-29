@@ -1,5 +1,6 @@
 /** @file Message admission through real Client storage and send preparation. */
 
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { scopedLive as it } from "@effect/vitest";
 import { Deferred, Effect, Fiber, Queue, Schema } from "effect";
 import { expect } from "vitest";
@@ -161,7 +162,9 @@ function expectNamedSubjects(
   }
   expect(guidance).toMatchObject({
     instructions: [{ instruction: rule.guidance }],
-    subjects: [{ sender, recipients: [recipient] }],
+    subjects: [
+      { sender: testAgentView(sender), recipients: [testAgentView(recipient)] },
+    ],
   });
   const rendered = renderLocalGuidance(guidance);
   expect(rendered).toContain(`"sender":"${sender}"`);
@@ -697,7 +700,9 @@ function ownerHistoryStaysPrivate() {
     const guidance = (yield* runtime.delivery.operations.readInbox({})).items[0]
       ?.guidance;
     expect(guidance).toMatchObject({
-      subjects: [{ sender: `agent:${subject.remote.card.agentName}` }],
+      subjects: [
+        { sender: testAgentView(`agent:${subject.remote.card.agentName}`) },
+      ],
     });
   });
 }

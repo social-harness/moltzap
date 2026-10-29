@@ -5,6 +5,7 @@ import type { CollectivePorts } from "./ports.js";
 import type { ReceivedRequest } from "./received-request.js";
 import { encodeCanonical } from "../../encoding/canonical-json.js";
 import { exactStruct } from "../../encoding/exact.js";
+import { AgentView } from "../../identity/cards.js";
 import { Content, PostId, RecordHash } from "../records/index.js";
 import { AgentAddress, MessageAddressInput } from "../records/values.js";
 import {
@@ -27,7 +28,7 @@ const localCollectiveDescriptor = exactStruct({
   op: Schema.Literal("gather", "all_gather"),
   to: MessageAddressInput,
   question: Schema.String,
-  members: Schema.NonEmptyArray(AgentAddress),
+  members: Schema.NonEmptyArray(AgentView),
   requestedSchema: FormModeSchema,
   content: Content,
   deadlineAt: EpochMillis,

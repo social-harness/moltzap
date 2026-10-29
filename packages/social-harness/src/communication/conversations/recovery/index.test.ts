@@ -49,7 +49,11 @@ import {
   decodeCanonical,
   encodeCanonical,
 } from "../../../encoding/canonical-json.js";
-import { AgentCard, type VerifiedAgentCard } from "../../../identity/cards.js";
+import {
+  AgentCard,
+  agentViewOf,
+  type VerifiedAgentCard,
+} from "../../../identity/cards.js";
 import { SignedMessage } from "../../../identity/envelope/signed-message.js";
 import { Ed25519PublicKey } from "../../../identity/keys.js";
 import {
@@ -1440,6 +1444,9 @@ const restartWithNonLexicalAgentOrder = () =>
 
     yield* retainCertifiedRecord(fixture);
     const restarted = yield* makeEndpointEngine(fixture.input);
+    expect((yield* restarted.readPendingMessages())[0]?.message.sender).toEqual(
+      agentViewOf(fixture.remote.card),
+    );
 
     expect(
       (yield* restarted.readPendingMessages()).map(

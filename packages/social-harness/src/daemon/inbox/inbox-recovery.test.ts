@@ -1,5 +1,6 @@
 /** @file Request context and admission queues survive current-store restarts. */
 
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { live as it, scoped as itOnClock } from "@effect/vitest";
 import {
   Clock,
@@ -49,7 +50,7 @@ const message = () =>
     kind: "direct",
     postId: record.postId,
     address: sender,
-    sender,
+    sender: testAgentView(sender),
     content: [
       { type: "text", text: "Please answer" },
       {
@@ -87,7 +88,7 @@ function makeCollectives(
     store,
     self,
     scope,
-    lookupMember: () => Effect.void,
+    lookupMember: (member) => Effect.succeed(testAgentView(member)),
     sendPost: unavailable,
     bindPost: (...[, hold]) =>
       hold.pipe(Effect.as({ certified: unavailable() })),
@@ -262,9 +263,9 @@ function groupRequest() {
     return Schema.decodeUnknownSync(InboundMessage)({
       kind: "group",
       postId: record.postId,
-      sender,
+      sender: testAgentView(sender),
       address: group,
-      members: ["agent:alice", "agent:bob", "agent:carol"],
+      members: ["agent:alice", "agent:bob", "agent:carol"].map(testAgentView),
       content,
     });
   });
@@ -276,7 +277,7 @@ function delayedCloseHistory() {
     const answer = Schema.decodeUnknownSync(InboundMessage)({
       ...request,
       postId: digest("pst_", 42),
-      sender: "agent:carol",
+      sender: testAgentView("agent:carol"),
       content: yield* encodeCollectiveContent({
         kind: "response",
         id,
@@ -308,7 +309,7 @@ function restoringLayer(
     store,
     self,
     scope,
-    lookupMember: () => Effect.void,
+    lookupMember: (member) => Effect.succeed(testAgentView(member)),
     sendPost: unavailable,
     bindPost: (...[, hold]) =>
       hold.pipe(Effect.as({ certified: unavailable() })),
@@ -349,7 +350,7 @@ function appendMessage(
           recordHash: hash,
           previousRecordHash,
           postId: message.postId,
-          authorAgentId: message.sender,
+          authorAgentId: message.sender.agentId,
           actionHash,
           canonicalRecordCore: bytes(hash),
           actionEvidence: record.actionEvidence.map((evidence) => ({
@@ -431,9 +432,9 @@ function receiveDelayedClose(
           closedBy: "deadline",
           id,
           outcomes: [
-            { member: self, outcome: { kind: "no-answer" } },
+            { member: testAgentView(self), outcome: { kind: "no-answer" } },
             {
-              member: "agent:carol",
+              member: testAgentView("agent:carol"),
               outcome: { kind: "answered", content: { answer: "Monday" } },
             },
           ],
