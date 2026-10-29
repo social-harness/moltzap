@@ -1,6 +1,5 @@
 /** @file Collective working state and its retained canonical descriptors. */
-import type { Fiber } from "effect";
-import { Effect, Schema } from "effect";
+import { Effect, type Fiber, Schema } from "effect";
 import type { CollectiveMemberOutcome } from "./inbound.js";
 import type { CollectivePorts } from "./ports.js";
 import type { ReceivedRequest } from "./received-request.js";
@@ -74,13 +73,15 @@ export interface GatherRequest {
  */
 export interface OpenGather extends GatherRequest {
   readonly deadlineAt: number;
-  readonly timer?: Fiber.RuntimeFiber<void>;
+  timer?: Fiber.RuntimeFiber<void>;
   requestsSettled: boolean;
 }
 
 /** Working projections rebuild from durable operations before host activation. */
 export interface CollectiveState {
   readonly ports: CollectivePorts;
+  /** Local answer admission and finalization cannot observe half a retained transition. */
+  readonly transitions: Effect.Semaphore;
   readonly gathers: Map<CollectiveId, OpenGather>;
   readonly requests: Map<CollectiveId, ReceivedRequest>;
   /**

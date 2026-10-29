@@ -31,11 +31,9 @@ it("retains the admitted gather when its store response fails and reports outcom
     const { directory, retained } = yield* Effect.scoped(
       committedGatherFailure(),
     );
-    yield* withStore(directory, (store) =>
-      Effect.gen(function* () {
-        expect(yield* store.readCollectiveOperations()).toEqual(retained);
-      }),
-    );
+    expect(
+      yield* withStore(directory, (store) => store.readCollectiveOperations()),
+    ).toEqual(retained);
   }));
 
 function committedGatherFailure() {

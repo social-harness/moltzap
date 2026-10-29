@@ -28,7 +28,7 @@ import {
   findCollective,
   readCollective,
   retainCollectiveInTransaction,
-} from "./rows/index.js";
+} from "./rows/collectives.js";
 
 /** Unchecked local operations and verified remote requests retain their exact descriptor. */
 export function putCollectiveOperation(

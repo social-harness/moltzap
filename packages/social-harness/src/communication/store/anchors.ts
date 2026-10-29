@@ -29,8 +29,8 @@ import {
   transaction,
 } from "./database/index.js";
 import { admittedOperation, compareFirewallCheck } from "./firewall.js";
+import { bindCollectivePostInTransaction } from "./rows/collectives.js";
 import {
-  bindCollectivePostInTransaction,
   findProposalLock,
   findStagedReanchor,
   lockProposalInTransaction,

@@ -479,7 +479,7 @@ const deliver = (runtime: WebhookRuntime, registration: Registration) => {
   );
 };
 
-/** Restart recovery can retire a request whose volatile response context was lost. */
+/** An acknowledged or retired inbox item no longer owns an outgoing occurrence. */
 const removeRetiredOccurrence = (
   runtime: WebhookRuntime,
   registration: Registration,

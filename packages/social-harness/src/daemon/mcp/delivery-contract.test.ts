@@ -117,11 +117,7 @@ const deliveryFixture = (sendPost: PostSender = unreachable) =>
     });
     const url = yield* loopbackMcpEndpoint(handler);
     const call = callTool(handler);
-    const inbox = call("read_inbox").pipe(
-      Effect.flatMap((result) =>
-        decodeHarnessReadInboxResult(result.structuredContent),
-      ),
-    );
+    const inbox = readInbox(call);
     const deliver = deliverPending(delivery, collectives);
     return { url, call, inbox, deliver };
   });
@@ -319,3 +315,11 @@ describe("MCP delivery contract", () => {
     retainsFailedHandoff,
   );
 });
+
+function readInbox(call: ReturnType<typeof callTool>) {
+  return call("read_inbox").pipe(
+    Effect.flatMap((result) =>
+      decodeHarnessReadInboxResult(result.structuredContent),
+    ),
+  );
+}

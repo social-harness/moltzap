@@ -24,7 +24,7 @@ import {
   type StoredCollectiveOperation,
   type StoreMutation,
 } from "../types.js";
-import { readStoredIdentity } from "./identity.js";
+import { readStoredIdentity } from "./index.js";
 
 interface OriginIdentity {
   readonly creatorAgentId: string;

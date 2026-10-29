@@ -26,10 +26,6 @@ import {
 import { SendError } from "../conversations/errors.js";
 import { collectiveIdOf } from "./wire/index.js";
 
-/** What a send that failed after queueing its post says about it. */
-const queuedText =
-  "the message is pending and Social Harness will still deliver it";
-
 function certifiesAMulticastAsItsTextAndAnExplicitMulticastPart() {
   const observed = newObserved();
 

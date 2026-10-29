@@ -658,8 +658,9 @@ export const makeEndpointEngine = (
 
 /**
  * Observe the retained local intent without preparing or binding a replacement.
- * @param runtime
- * @param postId
+ * @param runtime The active engine whose completion latches retain local ownership.
+ * @param postId The already-bound local post to observe.
+ * @returns The original post and its certificate, or its retained send failure.
  */
 function observePost(runtime: EngineRuntime, postId: PostId) {
   return Effect.suspend(() => {

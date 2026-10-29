@@ -2,6 +2,7 @@
 
 import { live as it, scoped as itOnClock } from "@effect/vitest";
 import {
+  Clock,
   Deferred,
   Duration,
   Effect,
@@ -56,6 +57,7 @@ import {
   deriveConversationId,
   MembershipDescriptor,
   MessageAddressInput,
+  mintPostId,
   PostIntent,
   signOuterPacket,
   verifyMembershipDescriptor,
@@ -63,6 +65,7 @@ import {
 import { RouterInstanceId } from "../router/api/contract.js";
 import {
   decodeRuntimeValue,
+  encodeRuntimeValue,
   type EndpointStore,
   EndpointStoreError,
   openEndpointStore,
@@ -151,15 +154,7 @@ it(
       const request = yield* seedRemoteRequest(subject);
       const original = yield* claimPendingResponse(subject);
       yield* assertRecoveredResponse(subject, original, false);
-      yield* withStore(subject.directory, (store) =>
-        Effect.gen(function* () {
-          const intent = yield* decodeRuntimeValue(
-            PostIntent,
-            original.canonicalIntent,
-          );
-          yield* appendCertifiedIntent({ ...subject, store }, request, intent);
-        }),
-      );
+      yield* certifyRecoveredResponse(subject, request, original);
       yield* assertRecoveredResponse(subject, original, true);
     }),
   20_000,
@@ -217,14 +212,13 @@ function deliverRecord(
       agentCard: subject.remote.card,
       signingAuthority: subject.remote.authority,
     });
-    expect(
-      yield* engine.acceptRouterIngress({
-        routerInstanceId: anchor.routerInstanceId,
-        message,
-        senderCard: subject.remote.card,
-        payload: { kind: "direct", packet: record },
-      }),
-    ).toBe("accepted");
+    const accepted = yield* engine.acceptRouterIngress({
+      routerInstanceId: anchor.routerInstanceId,
+      message,
+      senderCard: subject.remote.card,
+      payload: { kind: "direct", packet: record },
+    });
+    expect({ accepted }).toEqual({ accepted: "accepted" });
   });
 }
 
@@ -313,31 +307,49 @@ itOnClock(
   "retires a gather refused after delayed admission so restart cannot publish it",
   () =>
     Effect.gen(function* () {
-      const fixture = yield* pausedAdmission("gather");
-      const sending = yield* fixture.layer
-        .send({
-          to: sender,
-          text: "Choose a time",
-          collective: {
-            op: "gather",
-            deadline: 60,
-            requestedSchema: fixture.schema,
-          },
-        })
-        .pipe(Effect.fork);
-      yield* Deferred.await(fixture.entered);
-      yield* TestClock.adjust(Duration.minutes(2));
-      yield* Deferred.succeed(fixture.release, undefined);
-      expect(yield* Effect.flip(Fiber.join(sending))).toMatchObject({
-        failure: { kind: "deadline-passed" },
+      const fixture = yield* Effect.scoped(retireDelayedGather());
+      const store = yield* openEndpointStore(fixture.directory, {
+        liveWireVersions: LIVE_WIRE_VERSIONS,
       });
-      expect(
-        yield* fixture.subject.store.readCollectiveOperations(),
-      ).toMatchObject([{ phase: "completed" }]);
-      yield* makeCollectiveOperations(fixture.ports);
+      yield* makeCollectiveOperations({
+        ...fixture.ports,
+        store,
+        scope: yield* Scope.Scope,
+      });
       expect(fixture.emitted).toEqual([]);
     }),
 );
+
+function retireDelayedGather() {
+  return Effect.gen(function* () {
+    const fixture = yield* pausedAdmission("gather");
+    const sending = yield* fixture.layer
+      .send({
+        to: sender,
+        text: "Choose a time",
+        collective: {
+          op: "gather",
+          deadline: 60,
+          requestedSchema: fixture.schema,
+        },
+      })
+      .pipe(Effect.fork);
+    yield* Deferred.await(fixture.entered);
+    yield* TestClock.adjust(Duration.minutes(2));
+    yield* Deferred.succeed(fixture.release, undefined);
+    expect(yield* Effect.flip(Fiber.join(sending))).toMatchObject({
+      failure: { kind: "deadline-passed" },
+    });
+    expect(
+      yield* fixture.subject.store.readCollectiveOperations(),
+    ).toMatchObject([{ phase: "completed" }]);
+    return {
+      directory: fixture.subject.directory,
+      ports: fixture.ports,
+      emitted: fixture.emitted,
+    };
+  });
+}
 
 function pausedAdmission(mode: "bind" | "gather") {
   return Effect.gen(function* () {
@@ -453,12 +465,7 @@ itOnClock(
         original,
       );
       yield* TestClock.adjust(Duration.minutes(2));
-      yield* untilLive(
-        fixture.store.readCollectivePosts().pipe(
-          Effect.map((posts) => posts.some((post) => post.role === "close")),
-          Effect.orDie,
-        ),
-      );
+      yield* waitForClose(fixture.store);
       const close = yield* boundIntent(fixture.store, "close");
       yield* certifyBoundIntent(fixture, request, close);
       expect(yield* Deferred.await(fixture.emitted)).toMatchObject({
@@ -604,13 +611,121 @@ function completeGroupCertificate(subject: Fixture, record: CertifiedRecord) {
   });
 }
 
-function boundIntent(store: EndpointStore, role: "request" | "close") {
+function boundIntent(
+  store: EndpointStore,
+  role: "request" | "response" | "close",
+) {
   return store.readCollectivePosts().pipe(
     Effect.flatMap((posts) =>
       Effect.fromNullable(posts.find((post) => post.role === role)),
     ),
     Effect.flatMap((post) =>
       decodeRuntimeValue(PostIntent, post.intent.canonicalIntent),
+    ),
+  );
+}
+
+itOnClock(
+  "keeps an interrupted bound answer claimed and includes it in the group close",
+  () =>
+    Effect.gen(function* () {
+      const fixture = yield* interruptedBindFixture();
+      const request = yield* admittedGroupRequest(fixture);
+      const input = {
+        to: Schema.decodeUnknownSync(MessageAddressInput)(
+          "group:alice,bob,carol",
+        ),
+        collectiveResponse: { action: "accept", content: { answer: "Monday" } },
+      } as const;
+      const sending = yield* fixture.layer.send(input).pipe(Effect.fork);
+      yield* Deferred.await(fixture.bound);
+      const original = yield* boundIntent(fixture.store, "response");
+      yield* Fiber.interruptFork(sending);
+      yield* Deferred.succeed(fixture.release, undefined);
+      expect(Exit.isInterrupted(yield* Fiber.await(sending))).toBe(true);
+      expect(yield* Effect.flip(fixture.layer.send(input))).toMatchObject({
+        failure: { kind: "request-answered" },
+      });
+      const answer = yield* certifyBoundIntent(
+        fixture,
+        request.record,
+        original,
+      );
+      const close = yield* certifyBoundIntent(fixture, answer, {
+        ...request.record.actionCertifiedRecord.recordCore.action.postIntent,
+        postId: yield* mintPostId(),
+        content: yield* encodeCollectiveContent({
+          kind: "close",
+          id: request.id,
+          included: [answer.actionCertifiedRecord.recordHash],
+        }),
+      });
+      yield* classifyCertified(fixture, close);
+      assertOwnAnswer(yield* Deferred.await(fixture.emitted));
+      expect(yield* fixture.store.readCollectivePosts()).toMatchObject([
+        { role: "response", intent: { postId: original.postId } },
+      ]);
+    }),
+);
+
+function admittedGroupRequest(
+  fixture: Effect.Effect.Success<ReturnType<typeof interruptedBindFixture>>,
+) {
+  return Effect.gen(function* () {
+    const { id, nonce } = yield* mintCollectiveId(sender);
+    const content = yield* encodeCollectiveContent(
+      {
+        kind: "operation",
+        op: "all_gather",
+        id,
+        nonce,
+        deadlineAt: (yield* Clock.currentTimeMillis) + 60_000,
+        requestedSchema: {
+          type: "object",
+          properties: { answer: { type: "string" } },
+          required: ["answer"],
+        },
+      },
+      "Choose a day",
+    );
+    const record = yield* certifyBoundIntent(fixture, fixture.head, {
+      ...fixture.head.actionCertifiedRecord.recordCore.action.postIntent,
+      postId: yield* mintPostId(),
+      content,
+    });
+    const { item, deliveryToken } = yield* classifyCertified(fixture, record);
+    if (Option.isNone(item)) {
+      return yield* Effect.dieMessage("missing group request");
+    }
+    yield* fixture.store.putInboxItem({
+      deliveryToken,
+      canonicalItem: yield* encodeRuntimeValue(item.value),
+    });
+    yield* fixture.layer.settleRequest(id, true);
+    return { id, record };
+  });
+}
+
+function classifyCertified(
+  fixture: Effect.Effect.Success<ReturnType<typeof interruptedBindFixture>>,
+  record: CertifiedRecord,
+) {
+  return fixture.engine.readPendingMessages().pipe(
+    Effect.flatMap((pending) =>
+      Effect.fromNullable(
+        pending.find(
+          (entry) =>
+            entry.recordHash === record.actionCertifiedRecord.recordHash,
+        ),
+      ),
+    ),
+    Effect.flatMap((pending) =>
+      fixture.layer.classify(pending).pipe(
+        Effect.map((item) => ({
+          item,
+          deliveryToken: pending.deliveryToken,
+        })),
+      ),
     ),
   );
 }
@@ -683,3 +798,37 @@ itOnClock(
       yield* Fiber.interrupt(sending);
     }),
 );
+
+function certifyRecoveredResponse(
+  subject: Fixture,
+  request: CertifiedRecord,
+  original: StoredPostIntent,
+) {
+  return withStore(subject.directory, (store) =>
+    Effect.gen(function* () {
+      const intent = yield* decodeRuntimeValue(
+        PostIntent,
+        original.canonicalIntent,
+      );
+      yield* appendCertifiedIntent({ ...subject, store }, request, intent);
+    }),
+  );
+}
+
+function waitForClose(store: EndpointStore) {
+  return untilLive(
+    store.readCollectivePosts().pipe(
+      Effect.map((posts) => posts.some((post) => post.role === "close")),
+      Effect.orDie,
+    ),
+  );
+}
+
+function assertOwnAnswer(item: InboundItem) {
+  expect(item).toMatchObject({ kind: "collectiveResult", op: "all_gather" });
+  const outcomes = item.kind === "collectiveResult" ? item.outcomes : [];
+  expect(outcomes.find((outcome) => outcome.member === self)).toEqual({
+    member: self,
+    outcome: { kind: "answered", content: { answer: "Monday" } },
+  });
+}

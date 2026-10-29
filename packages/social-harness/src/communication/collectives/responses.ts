@@ -79,7 +79,7 @@ export function respond(
           destination: request.to,
         },
       },
-      claimRequest(state, id, request),
+      claimRequest(state, request, value),
     );
     const { postId } = yield* certified.pipe(
       Effect.tapBoth({
@@ -208,9 +208,10 @@ function responseContent(
  */
 function claimRequest(
   state: CollectiveState,
-  id: CollectiveId,
   request: ReceivedRequest,
+  response: ResponseValue,
 ): BindHold<CollectiveError> {
+  const { id } = response;
   return Clock.currentTimeMillis.pipe(
     Effect.flatMap((now) =>
       Effect.suspend(() =>
@@ -221,22 +222,15 @@ function claimRequest(
               Effect.fail(unmatchedAnswerError(id, unmatched)),
             onRight: () => {
               request.state = "sending";
-              return Effect.succeed(reopenRequest(request));
+              return Effect.succeed(
+                settleUncertifiedAnswer(state, request, response),
+              );
             },
           },
         ),
       ),
     ),
   );
-}
-
-/** Reopen a request whose answer is still being sent, so another answer can claim it. */
-function reopenRequest(request: ReceivedRequest): Effect.Effect<void> {
-  return Effect.sync(() => {
-    if (request.state === "sending") {
-      request.state = "open";
-    }
-  });
 }
 
 /** An uncertain invocation keeps its durable answer claim and observes that same post. */
@@ -285,6 +279,7 @@ function observeResponse(
       ),
     ),
     Effect.ignore,
+    Effect.interruptible,
     Effect.forkIn(state.ports.scope),
     Effect.asVoid,
   );

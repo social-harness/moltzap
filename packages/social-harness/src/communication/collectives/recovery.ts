@@ -270,9 +270,10 @@ function resumeRequester(
     }
     const timer = yield* sleepUntil(operation.deadlineAt).pipe(
       Effect.zipRight(Effect.ignore(actions.complete(id))),
+      Effect.interruptible,
       Effect.forkIn(state.ports.scope),
     );
-    state.gathers.set(id, { ...open, timer });
+    open.timer = timer;
     if (open.op === "gather") {
       yield* resumeFanout(state, actions, recovered);
     }

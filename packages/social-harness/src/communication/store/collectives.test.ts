@@ -65,23 +65,20 @@ it("binds a collective id to one authenticated origin and exact request bytes ac
   Effect.gen(function* () {
     const path = stateDirectory();
     yield* withStore(path, rejectChangedOrigin);
-    yield* withStore(path, assertRetainedOrigins);
+    const retained = yield* withStore(path, assertRetainedOrigins);
+    expect(retained).toHaveLength(2);
   }));
 
 it("requires an accepted request and admission before atomically claiming one response intent", () =>
   Effect.gen(function* () {
     const path = stateDirectory();
     yield* withStore(path, claimAdmittedAnswer);
-    yield* withStore(path, (store) =>
-      Effect.gen(function* () {
-        expect(
-          (yield* store.readCollectivePosts()).map((post) => ({
-            role: post.role,
-            postId: post.intent.postId,
-          })),
-        ).toEqual([{ role: "response", postId: "first-answer" }]);
-      }),
+    const posts = yield* withStore(path, (store) =>
+      store.readCollectivePosts(),
     );
+    expect(
+      posts.map((post) => ({ role: post.role, postId: post.intent.postId })),
+    ).toEqual([{ role: "response", postId: "first-answer" }]);
   }));
 
 it("freezes answer references and commits one close and terminal token without resurrection after acknowledgment", () =>
@@ -135,6 +132,7 @@ function assertRetainedOrigins(store: EndpointStore) {
       { operationId: local.operationId, creatorAgentId: "agent:alice" },
       { operationId: remote.operationId, creatorAgentId: record.authorAgentId },
     ]);
+    return yield* store.readCollectiveOperations();
   });
 }
 

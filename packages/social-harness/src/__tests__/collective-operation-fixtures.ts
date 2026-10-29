@@ -188,7 +188,7 @@ export const makeLayer = (
       }
       return Effect.fail(new SendError({ reason }));
     });
-    const checked = recordingAdmission(admission, persistence.store);
+    const checked = recordingAdmission(persistence.store, admission);
     return makeCollectiveOperations({
       ...persistence,
       ...(checked === undefined ? {} : { admission: checked }),
@@ -344,8 +344,8 @@ export const firstRequestOf = (observed: Observed) =>
   );
 
 function recordingAdmission(
-  admission: CollectiveAdmission | undefined,
   store: ReturnType<typeof collectivePersistencePorts>["store"],
+  admission?: CollectiveAdmission,
 ): CollectiveAdmission | undefined {
   return admission === undefined
     ? undefined

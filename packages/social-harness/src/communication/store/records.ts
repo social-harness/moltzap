@@ -50,7 +50,13 @@ export function stageRecordForDissemination(
 ): StoreMutation {
   validateStagedRecord(record);
   return transaction(database, () => {
-    const staged = stageRecordInTransaction(database, record, "vote");
+    if (
+      findStagedRecord(database, record.conversationId, record.recordHash) ===
+      undefined
+    ) {
+      requireNoReanchorAwayFrom(database, record);
+    }
+    const staged = stageRecordInTransaction(database, record);
     const obligation = retainDisseminationInTransaction(database, record);
     return staged === "inserted" || obligation === "inserted"
       ? "inserted"
@@ -173,7 +179,7 @@ export function applyCertifiedRecord(
 ): StoreMutation {
   validateCertifiedRecord(record);
   return transaction(database, () => {
-    const staged = stageRecordInTransaction(database, record, "certified");
+    const staged = stageRecordInTransaction(database, record);
     const promoted = promoteRecordInTransaction(database, record, delivery);
     return staged === "inserted" || promoted === "inserted"
       ? "inserted"
@@ -182,19 +188,14 @@ export function applyCertifiedRecord(
 }
 
 /**
- * Stage one record core. A record staged for this endpoint's durability vote
- * is refused under an anchor it has staged a re-anchor candidate away from; a
- * certified record's core is staged regardless, since it takes no vote.
+ * Retain one verified record core without authorizing a local signature.
  * @param database Exclusively owned endpoint database.
  * @param record Verified record core and private bindings.
- * @param purpose Whether this endpoint votes for the record or holds its
- *     durability certificate.
  * @returns Whether the record was inserted or already staged.
  */
 function stageRecordInTransaction(
   database: DatabaseSync,
   record: StagedRecord,
-  purpose: "vote" | "certified",
 ): StoreMutation {
   const existing = findStagedRecord(
     database,
@@ -206,9 +207,6 @@ function stageRecordInTransaction(
     return "existing";
   }
   requireRecordPosition(database, record);
-  if (purpose === "vote") {
-    requireNoReanchorAwayFrom(database, record);
-  }
   database
     .prepare(
       `INSERT INTO staged_records

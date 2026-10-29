@@ -18,7 +18,7 @@ import {
   transaction,
 } from "./database/index.js";
 import { putInboxItem, retirePendingDelivery } from "./inbox.js";
-import { retainCollectiveInTransaction } from "./rows/index.js";
+import { retainCollectiveInTransaction } from "./rows/collectives.js";
 import {
   type CollectiveOperationInput,
   DeliveryToken,
@@ -377,9 +377,8 @@ export function admitFirewallLocalItem(
 }
 
 /**
- * Retire a queued item the runtime was never shown, without a check: a
- * request whose context restart lost, or whose deadline passed before its
- * check began. Its raw delivery retires with it.
+ * Retire a queued item the runtime was never shown when its request deadline
+ * passes before a check begins. Its raw delivery retires with it.
  */
 export function retireFirewallItem(
   database: DatabaseSync,

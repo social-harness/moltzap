@@ -43,19 +43,8 @@ export function collectiveStorageStub(): CollectivePorts["store"] {
     readCollectiveAnswers: () => Effect.succeed([]),
     recordCollectiveRefusal: () => Effect.void,
     readCollectiveRefusals: () => Effect.succeed([]),
-    finalizeCollectiveOperation: (id, canonicalSelection) =>
-      Effect.suspend(() => {
-        const operation = operations.get(id);
-        if (operation === undefined) {
-          return Effect.fail(new EndpointStoreError({ reason: "not-found" }));
-        }
-        operations.set(id, {
-          ...operation,
-          canonicalSelection,
-          phase: "finalizing",
-        });
-        return Effect.succeed("inserted" as const);
-      }),
+    finalizeCollectiveOperation: (id, selection) =>
+      finalizeOperation(operations, id, selection),
     retireCollectiveOperation: (id, canonicalSelection) =>
       Effect.sync(() => {
         const operation = operations.get(id);
@@ -107,5 +96,24 @@ function recordOperation(
       ),
     });
     return "inserted" as const;
+  });
+}
+
+function finalizeOperation(
+  operations: Map<string, StoredCollectiveOperation>,
+  id: string,
+  canonicalSelection: Uint8Array,
+) {
+  return Effect.suspend(() => {
+    const operation = operations.get(id);
+    if (operation === undefined) {
+      return Effect.fail(new EndpointStoreError({ reason: "not-found" }));
+    }
+    operations.set(id, {
+      ...operation,
+      canonicalSelection,
+      phase: "finalizing",
+    });
+    return Effect.succeed("inserted" as const);
   });
 }
