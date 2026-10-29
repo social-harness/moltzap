@@ -137,8 +137,12 @@ const archivedWithheldText = exactStruct({
   ),
 });
 
-/** Archived run ledgers decode independently of live endpoint stores. */
-export const retainedInboundItem = Schema.Union(
+/**
+ * An inbound item as a history export holds it. Archived run ledgers decode
+ * independently of live endpoint stores, so a collective result's withheld
+ * text may also carry an `approval-required` refusal.
+ */
+export const historyExportItem = Schema.Union(
   InboundItem,
   exactStruct({
     ...collectiveResultItem.fields,
@@ -150,6 +154,6 @@ export const retainedInboundItem = Schema.Union(
       }),
     ),
   }),
-).annotations({ identifier: "RetainedInboundItem" });
+).annotations({ identifier: "HistoryExportItem" });
 
 /* eslint-enable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Restore the package naming rules after the Schema/type pairs. */

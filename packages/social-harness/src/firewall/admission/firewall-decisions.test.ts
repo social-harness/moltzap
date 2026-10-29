@@ -3,6 +3,7 @@
 import { scopedLive as it } from "@effect/vitest";
 import { Effect, Queue, Struct } from "effect";
 import { expect } from "vitest";
+import type { FirewallOptions } from "./firewall.js";
 import { makeRetainedCheckFixture } from "../../__tests__/firewall-retained-fixtures.js";
 import {
   churnPolicy,
@@ -29,7 +30,6 @@ import {
 } from "../evaluator/contract/index.js";
 import { makeEnglishPolicy } from "../evaluator/index.js";
 import { installEditableFirewall } from "../policy/editable.js";
-import type { FirewallOptions } from "./firewall.js";
 
 // @agent-code-guard/regression-only: Reads decisions retained by real admission through SQLite and the protocol engine.
 

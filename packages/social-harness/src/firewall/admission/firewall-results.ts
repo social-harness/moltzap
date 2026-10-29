@@ -4,7 +4,7 @@
  * projection, and an operation failure, admitted without inference.
  */
 
-import { Effect, Array as EffectArray, Schema } from "effect";
+import { Effect, Array as EffectArray, Schema, Struct } from "effect";
 import type { InboundItem } from "../../communication/collectives/inbound.js";
 import type { RecordHash } from "../../communication/records/index.js";
 import type {
@@ -100,13 +100,10 @@ export const checkLocalItem = (
   }
 };
 
-/**
- * Only judgment and reason are needed to project a stored check's withheld text.
- */
-const retainedJudgment = Schema.Struct({
-  judgment: firewallCheckSchema.fields.judgment,
-  reason: firewallCheckSchema.fields.reason,
-});
+/** Only judgment and reason are needed to project a stored check's withheld text. */
+const retainedJudgment = Schema.Struct(
+  Struct.pick(firewallCheckSchema.fields, "judgment", "reason"),
+);
 
 /** One result being admitted, and whether its stale budget is spent. */
 interface ResultCheck {

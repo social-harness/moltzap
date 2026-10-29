@@ -8,6 +8,7 @@ import {
 import { exactStruct } from "../../encoding/exact.js";
 import {
   decodeFrozen,
+  type FirewallCheck,
   firewallCheckSchema,
   FirewallSettings,
   Message,
@@ -52,14 +53,13 @@ const firewallAuditInput = exactStruct({
   terminal: Schema.Boolean,
 });
 
-/** Stored judgments exclude decision-provider traces. */
-const firewallAuditResult = exactStruct({
-  ...firewallCheckSchema.fields,
-  checks: Schema.Array(
-    Schema.Struct(
-      Struct.omit(firewallCheckSchema.fields.checks.value.fields, "trace"),
-    ),
-  ),
+/**
+ * A check as the store retains it: every field except the decision-provider
+ * traces, which stay in memory with the code that produced the check.
+ */
+export const withoutTraces = (check: FirewallCheck) => ({
+  ...check,
+  checks: check.checks.map((middleware) => Struct.omit(middleware, "trace")),
 });
 
 /** Evidence limits and fixed facts captured before checking starts. */
@@ -77,7 +77,10 @@ export const decodeFirewallRegistration = (value: unknown) =>
 export const decodeFirewallInstallation = (value: unknown) =>
   decodeFrozen(firewallInstallation, value);
 
-/** Opaque retained bytes are interpreted only by their Client delivery owner. */
+/**
+ * Opaque retained bytes are interpreted only by their Client delivery owner.
+ * A retained result that holds provider traces decodes without them.
+ */
 export const decodeFirewallAuditEntry = Effect.fn("decodeFirewallAuditEntry")(
   function* (entry: FirewallAuditEntry) {
     const input = yield* decodeRuntimeValue(
@@ -87,7 +90,12 @@ export const decodeFirewallAuditEntry = Effect.fn("decodeFirewallAuditEntry")(
     const result =
       entry.canonicalResult === undefined
         ? null
-        : yield* decodeRuntimeValue(firewallAuditResult, entry.canonicalResult);
+        : withoutTraces(
+            yield* decodeRuntimeValue(
+              firewallCheckSchema,
+              entry.canonicalResult,
+            ),
+          );
     return {
       checkId: entry.checkId,
       direction: entry.direction,

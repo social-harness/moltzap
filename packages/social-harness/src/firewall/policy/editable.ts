@@ -29,7 +29,7 @@ import {
   makeEnglishPolicy,
   MAXIMUM_EDITABLE_RULES,
   type PolicyProblem,
-  policyReadSchema,
+  type policyReadSchema,
   policyUpdateSchema,
   PrivateCheckTrace,
   type RuleDescription,
@@ -51,18 +51,8 @@ type PolicyEditPath = NonNullable<FirewallPolicyError["path"]>;
 
 /** Stored editable rules use the same exact document as owner edits. */
 function decodeStoredRules(bytes: Uint8Array) {
-  return decodeRuntimeValue(editableDocumentSchema, bytes).pipe(
-    Effect.tap((rules) =>
-      Effect.sync(() => {
-        for (const rule of rules) {
-          if (rule.feedback !== undefined) {
-            Object.freeze(rule.feedback);
-          }
-          Object.freeze(rule);
-        }
-        Object.freeze(rules);
-      }),
-    ),
+  return decodeRuntimeValue(Schema.Unknown, bytes).pipe(
+    Effect.flatMap((stored) => decodeFrozen(editableDocumentSchema, stored)),
     Effect.mapError(persistenceFailure),
   );
 }

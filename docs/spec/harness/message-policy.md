@@ -276,7 +276,8 @@ cannot admit a previously held item. Held items remain available for inspection.
 
 Retained checks keep their judgment, decision reasons and immutable installation,
 but no decision-provider trace. Traces remain available only in memory to the
-code producing the check and are never written to the store.
+code producing the check and are never written to the store. Older retained
+rows with traces still decode; decoding discards those traces before projection.
 
 Preserve incoming order with a retained per-conversation admission frontier.
 Assess a successor after its predecessor's disposition settles, including a
