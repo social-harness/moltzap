@@ -1,398 +1,176 @@
-# Layer interfaces and package capabilities
+---
+title: Layer interfaces and package capabilities
+description: This specification defines Social Harness package boundaries and release compatibility.
+read_when:
+  - You need to know which package may depend on another
+  - You are choosing an entry point for a service or host adapter
+  - You are checking release or wire compatibility
+---
 
-Status: **Gate 1 normative**
+<a id="layer-interfaces-and-package-capabilities"></a>
+<a id="purpose"></a>
 
-## Purpose
+This specification defines Social Harness's package dependencies, library
+entry points, capability boundaries, and release compatibility guarantees.
 
-This chapter assigns each public type and capability to one final package. It
-keeps Identity and Router representation contracts deep, makes conversation
-history endpoint-owned, and prevents test-harness or trust-policy mechanisms
-from becoming production network services.
+<a id="personal-firewalls-and-social-institutions"></a>
 
-The five conceptual layers of the social harness are L1 Unforgeable,
-Verifiable Identities; L2 Reliable, Ordered Communication; L3 Personal
-Firewalls; L4 Shared Collaboration Norms; and L5 Social Institutions.
-Social Harness packages publish to npm under the `@moltzap` scope.
-`@moltzap/social-harness` is the library for L1 identities, L2 delivery clients and
-endpoint communication, L3 firewalls, L4 norms, and the certified records L5
-relies on. The private Registry and Router packages own the network processes.
-Numbered layer notation is documentation vocabulary only.
+The [constitution](../vision.md#the-constitution) defines the layers and their
+authority. The package graph assigns their implementation and public
+capabilities to the packages below.
 
-L2 communication has two parts. The post envelope is the certified post:
-routing address, author, Router anchor, signatures and an opaque content body.
-It travels sealed inside an Identity `SignedMessage`, so only members read it
-and the Router sees only that message's addressing, sizes, and ciphertext.
-Collective operations sit above the envelope and below L4 norms: Client
-carries each operation as one `data` part of a post's content under the key
-`org.social-harness/collective`, defines and validates that part's schema, and only
-endpoints read it. `Content` stays a generic
-container. L4 norm contracts build on collectives and are not yet
-implemented.
+<a id="acceptance-criteria"></a>
 
 ## Exact package graph
 
-The workspace has five product packages:
+The workspace has five product packages. The permitted production dependencies
+are:
 
 | Package | May depend on | Owns |
 |---|---|---|
-| `@moltzap/social-harness` | none | identity representation, Registry and Router clients, communication, endpoint history, tasks/norms, personal firewalls, daemon MCP, `HarnessEndpoint`, and `sharnessd` |
-| `@moltzap/registry` | `@moltzap/social-harness` | private Registry process, admission, issuance, PostgreSQL storage, migrations, and `sharness-registry` |
-| `@moltzap/router` | `@moltzap/social-harness` | private Router process, HTTP, RPC, send, poll, cursors, waiters, feed, and `sharness-router` |
+| `@moltzap/social-harness` | none | Identity and network clients, endpoint communication and history, firewalls, norms, daemon MCP, and `sharnessd` |
+| `@moltzap/registry` | `@moltzap/social-harness` | Registry admission, issuance, PostgreSQL storage, migrations, and `sharness-registry` |
+| `@moltzap/router` | `@moltzap/social-harness` | Opaque Router process, volatile delivery state, and `sharness-router` |
 | `@moltzap/openclaw-channel` | `@moltzap/social-harness` | OpenClaw host integration |
 | `@moltzap/nanoclaw-channel` | `@moltzap/social-harness` | NanoClaw host integration |
 
-The private `@moltzap/integration-tests` workspace in `tests/integration` consumes the products it launches as development dependencies. It sits outside this graph and the release set, and no product depends on it.
+The private `@moltzap/integration-tests` workspace in `tests/integration`
+consumes the products it launches as development dependencies. It sits outside
+the product graph and release set. No product depends on it, a private
+receiver, or an Nx tool project.
 
-The simulator and evaluation applications are built outside this repository
-and consume the published packages. Production packages do not depend on them.
-Runtime adapters do not import Identity, Router, Client internals, the
-simulator, evaluation suites, or each other.
+Host connectors live under `plugins/`. Each connector with a workspace package
+depends only on the library root and its platform's own interface, and joins
+the workspace build, lint, architecture, and test checks. Instinct, Muse, and
+Grok Bot remain development candidates until their real-platform qualification.
 
-Host connectors live under `plugins/`, including OpenClaw and NanoClaw alongside
-OpenAI Dot, Grok Bot, Instinct and Muse. OpenClaw publishes to npm; the other
-connectors stay private. Each connector with a workspace package depends only
-on the `@moltzap/social-harness` root and its platform's own interface, and
-joins the workspace build, lint, architecture and test checks. Client owns
-receiving, recovery and receipts;
-[Instinct](https://github.com/social-harness/moltzap/tree/main/plugins/instinct)
-sends an event reference by email, [Muse](https://github.com/social-harness/moltzap/tree/main/plugins/muse)
-passes event references through its native hook and worker, and [Grok Bot](https://github.com/social-harness/moltzap/tree/main/plugins/grokbot)
-sends an event reference to its approved native routine.
-Instinct, Muse and Grok Bot each remain a development candidate until their
-real-platform qualification.
-
-There are no product packages named `protocol`, `server`, `transcript`,
-`ledger`, `harness`, or `testbed`, and no `v2/` directory: the constitution is
-`docs/vision.md`.
-
-Root-owned build orchestration and the generic agent-image builds under `images/`
-may consume several package artifacts without
-creating package-runtime dependencies. Copying an adapter source or
-packing application fixtures into an image cannot create an undeclared package dependency.
+Root build orchestration and the generic agent-image builds under `images/`
+may consume several package artifacts without creating package-runtime
+dependencies. Copying adapter source or packing application fixtures into an
+image cannot create an undeclared dependency.
 
 ## Library entries
 
-The library has four named-export entries:
+The library exposes four named-export entries with distinct audiences:
 
-| Entry | Boundary |
+| Entry | Audience and boundary |
 |---|---|
-| `@moltzap/social-harness` | Existing addressed `HarnessEndpoint` and host values; `AgentId`, `AgentName`, `PrincipalId`, `AgentCard`, `VerifiedAgentCard`, `Ed25519PublicKey`, `AgentSigningAuthority`, `MessageId`, `SignedMessage`, `LiveSignedMessage`, `VerifiedSignedMessage`, `WIRE_VERSION` and `LIVE_WIRE_VERSIONS` |
-| `@moltzap/social-harness/service` | Daemon composition, `Registry`, `OperationId`, `RouterPollResult`, `PollCursor`, and `RouterInstanceId` |
-| `@moltzap/social-harness/internal` | Service capabilities: request verification, grouped `registryContract` and `routerContract` wire contracts, `httpErrors`, Registry and Router client tags, typed card signing, and service wire-version values. Requires `sharness-internal`, with no default condition or TypeDoc entry |
-| `@moltzap/social-harness/test` | Process-test composition: management fixture schemas, the `WireVersions` override, `AuthenticatedHttp` request signing, and the `HISTORY_WIRE_VERSIONS` history window. Requires `sharness-test`, with no default condition or TypeDoc entry |
+| `@moltzap/social-harness` | Host-facing `HarnessEndpoint`, host values, and public identity capabilities |
+| `@moltzap/social-harness/service` | Daemon composition and Registry client operations |
+| `@moltzap/social-harness/internal` | Capabilities and wire contracts for network-service composition. Requires `sharness-internal`, with no default resolution or TypeDoc entry |
+| `@moltzap/social-harness/test` | Process-test composition and wire-version overrides. Requires `sharness-test`, with no default resolution or TypeDoc entry |
 
-Identity's host values map to the library root. Service request verification, card signing, and HTTP errors map to the
-condition-only internal entry. Its
-Registry entry maps to the service entry; its internal and test entries map to
-the library's corresponding condition-only entries. Registry and Router processes
-import only the library root and internal entry. Runtime adapters import only
-the root and receive `HarnessEndpoint` or MCP.
+Registry and Router processes import only the library root and internal entry.
+Runtime adapters import only the root and receive `HarnessEndpoint` or MCP.
+They do not import each other or the simulator and evaluation suites.
 
-The private Registry and Router packages expose condition-only `./test` startup
-entries under `sharness-test`. Registry and Router executables install scoped internal
-resolution before loading their process compositions.
+The private Registry and Router packages expose condition-only `./test`
+startup entries under `sharness-test`. Their executables install scoped
+internal resolution before loading their process compositions.
+
+<a id="cross-layer-laws"></a>
+<a id="identity-and-router-capability-behavior"></a>
 
 ## Representation ownership
 
-`identity-representation.md` remains the sole owner of AgentCard,
-SignedMessage, SealedBody, Registry, and authenticated-request
-representations.
-`router-representation.md` remains the sole owner of Router send/poll values,
-PollCursor, and Router HTTP representations.
+Each component validates its exact, closed representation at its boundary.
+Private RPC stays within each process and outside the network protocol and
+package export maps.
 
-There is no shared wire package or cross-layer representation catalog. Client
-defines one closed, repository-versioned RFC 8785 canonical-JSON protocol and
-its closed local MCP representation without re-exporting Identity or Router
-wire internals. A package decodes data crossing its boundary with its own
-strict Effect Schemas.
+<a id="trust-safety-and-progress"></a>
+<a id="identity-attribution-and-opaque-router-order"></a>
 
 ### Identity
 
-Identity continues to own:
-
-- `AgentId`, `PrincipalId`, `AgentName`, `OperationId`, and `MessageId` where
-  used by its admitted representation;
-- immutable `AgentCard`, `AgentCardDigest`, and Ed25519 public-key identity;
-- SignedMessage attribution and verification;
-- sealing a SignedMessage body to its recipients' AgentCard keys and
-  opening a verified sealed body;
-- normal registered-agent AuthenticatedHttp and Registry bootstrap
-  proof-of-possession authentication profiles; and
-- Registry operation contracts.
-
-Removing product profiles or institutional credentials does not remove these
-cryptographic authentication profiles, agent signing keys, Registry admission
-credentials, RFC 9421 request authentication, or deployment credentials.
+Identity owns agent identity bindings, message attribution, sealed bodies,
+Registry operations, and request authentication. The [Identity contract](./identity.md)
+defines their guarantees, trust assumptions, and failures.
+[Identity representation](./identity-representation.md) owns their exact wire
+formats and validation rules.
 
 ### Router
 
-Router continues to own:
+Router owns opaque send and poll operations, volatile ordering, and cursors.
+The [Router contract](./router.md) defines delivery, retry, and restart
+behavior. [Router representation](./router-representation.md) owns the wire
+values and HTTP representations.
 
-- `RouterInstanceId` and `SignedMessageDigest`;
-- opaque `PollCursor`; and
-- send and poll results, including `feed_gap`, `router_restarted`, and
-  `retry_identity_unknown`.
-
-Router owns no `ConversationId`, membership, task, norm, history, durability
-vote, public sequence, or delivery-status wrapper.
+<a id="client-and-daemon-behavior"></a>
+<a id="conversation-certification-and-durability"></a>
+<a id="recovery"></a>
 
 ### Client and endpoint communication
 
-Client owns:
+The Client component in `@moltzap/social-harness` owns endpoint-local history,
+communication protocols, task and norm composition, and personal firewalls.
+Its closed, repository-versioned RFC 8785 canonical-JSON protocol and closed
+local MCP representation keep Identity and Router wire internals private.
 
-- public address and PostId values plus private `ConversationId`,
-  `PostIntentHash`, `ActionHash`, `RecordHash`, fixed-membership descriptors,
-  and Router-epoch-anchor values;
-- record bodies, action certificates, durability votes/evidence, certified
-  records, and local histories;
-- endpoint stores, catch-up, re-anchor, protocol folds, and partial evidence;
-- collectives: operations carried in post content and the inbound
-  items they become;
-- task/norm and personal firewall composition;
-- one explicitly configured per-AgentId daemon and one loopback `/mcp`;
-- the adapter-facing capability named `HarnessEndpoint`; and
-- closed Client and MCP representations.
+[Conversation history](./conversation-history.md) defines certification,
+durability, catch-up, and Router re-anchoring. The
+[runtime contract](./harness/client.md) defines addressed collective operations
+and their results. [Durable ingress](./harness/ingress.md) defines delivery
+recovery and host acknowledgment.
 
-Action signatures, durability votes, catch-up attestations, and re-anchor
-votes are stable self-addressed Identity `SignedMessage` values.
-Their Router envelope is a separate all-member `SignedMessage`. Client seals
-the body of every Router envelope to its members with Identity's `SealedBody`
-before signing it and refuses an envelope whose body does not open; the
-evidence inside stays readable. Every resend
-of that envelope, including the `initial` resend after
-`retry_identity_unknown`, carries its stored bytes unchanged. Gate 1 admits at most 32 total fixed members and 32,768
-canonical content bytes per action, with no fragmentation.
+Client composes Registry and Router behind one explicitly configured daemon
+per AgentId with one loopback `/mcp` endpoint. Runtime subjects receive
+`HarnessEndpoint` or MCP without network clients, signing keys, admission
+credentials, private protocol machinery, or store handles. Management
+operations remain MCP-only under the [daemon contract](./harness/daemon.md).
 
-`LedgerOffset` has no final owner and does not survive. Conversation order is
-the `previousRecordHash`/`RecordHash` chain. Protocol folds and vote collectors
-remain private. `PostIntentHash` identifies immutable addressed intent,
-`ActionHash` identifies its predecessor-bound action, and `RecordHash`
-identifies logical durable history while excluding mergeable signer evidence.
+Stock hosts own session topology and cross-address context under the
+[channel contract](./harness/channels.md). Client injects no cross-conversation
+context. A runtime bridge cannot use an inherited target, fabricate output
+from history, or bypass personal firewall and task/norm checks.
 
-### External consumers
+<a id="consumer-migration-boundary"></a>
 
-The simulator and evaluation applications compose public Identity, Router, and
-Client capabilities and own scenarios, orchestration, fault controls, run
-evidence, grading, reports, and publication. Their run evidence is never
-assignable to Client history, `RecordHash`, or durability evidence. Runtime
-subjects they launch receive only `HarnessEndpoint` or MCP, never raw Router,
-Registry credentials, endpoint keys, daemon internals, or local store access.
-This workspace retains runtime qualification fixtures without evaluation policy
-or compatibility entry points.
+## External consumers
 
-## Identity and Router capability behavior
+The simulator and evaluation applications are built outside this repository
+and consume published capabilities. Production packages do not depend on
+them. Consumers own scenarios, orchestration, fault controls, run evidence,
+grading, reports, and publication. Their run evidence is never assignable to
+Client history, `RecordHash`, or durability evidence. Runtime subjects follow
+the [Client boundary](#client-and-endpoint-communication).
 
-Registry and Router retain the exact deep Effect capability contracts in their
-semantic chapters:
-
-- Registry, Router, and AuthenticatedHttp remain `Context.Tag` capabilities
-  with named static Effect accessors;
-- Registry and Router client Layers require Effect's HTTP capability and
-  expose no mechanism-shaped public client class or options DTO;
-- AuthenticatedHttp requires Registry so Router can resolve and cache verified
-  immutable AgentCards without importing Registry internals;
-- Registry bootstrap does not require AuthenticatedHttp;
-- each private service composition and the library `service` entry exposes the admitted discard Layer that reads private
-  Effect Config and owns process composition; and
-- private Effect RPC remains in-process, typed, and absent from the network and
-  export maps.
-
-Every network boundary continues to decode its exact layer-owned
-representation. A package rename cannot weaken authentication, signature
-verification, version checks, limits, or typed error channels.
-
-## Client and daemon behavior
-
-Client composes public Registry and Router capabilities with endpoint-local
-history and interpretive protocols behind the daemon. It does not compose a
-Ledger client or Transcript service. A runtime receives neither network client,
-private protocol machinery, signing key, nor store handle.
-
-The stable Client invariants are:
-
-- every send is one collective operation, multicast by default, that names an
-  explicit `agent:` or `group:` address, or one response to a collective
-  request, and every post it creates has a new Client-minted identity;
-- internal recovery resumes a persisted intent, and a new call starts another
-  invocation;
-- GENESIS is unanimous and ordinary POST uses author-inclusive `q(n)` action
-  certification;
-- a multicast or response returns only after local certified durability, and
-  a gather or all_gather under the
-  [operation-specific rules](./harness/client.md#operations);
-- inbound delivery yields items tagged by kind; a multicast item identifies
-  canonical address and author, with exact members for groups and no reply
-  authority, and collective requests, results and failures are items;
-- delivery acknowledgment follows the
-  [host-specific acceptance contract](./harness/ingress.md#delivery-handoff);
-- complete action validity and durability evidence remain distinct and retain
-  auditable signer AgentIds/signature bytes; and
-- fixed-member catch-up and Router re-anchor follow
-  [`conversation-history.md`](./conversation-history.md).
-
-GENESIS's anchor binds its private conversation, canonical membership, and the
-`RouterInstanceId` obtained from an omitted-cursor poll. Unanimous GENESIS
-signatures attest that anchor; there is no separate genesis vote.
-
-The public Client exposes no conversation identity, local identity, receipt,
-proof, hash, protocol
-message, registration, status, search, or history method. Those management
-operations remain MCP-only. Its three operation-specific error channels are
-closed typed unions.
-
-## Cross-layer laws
-
-### Trust, safety, and progress
-
-1. Gate 1 assumes one correct non-equivocating Registry and one correct
-   non-equivocating Router. Endpoints may be Byzantine under the bounds stated
-   by `conversation-history.md`.
-2. Registry outage blocks registration and uncached lookup but not verification
-   from pinned cards or self-contained membership descriptors.
-3. Router outage may stop new actions, evidence dissemination, catch-up, and
-   re-anchor without changing already certified local history.
-4. GENESIS action validity is unanimous. Ordinary POST uses the fixed
-   author-inclusive threshold. Every member, including the author, emits its
-   action signature only after the first-Router-ordered candidate lock from
-   `conversation-history.md`; proposal-envelope authentication is not a vote.
-5. Durability evidence is a storage-attestation threshold only. Under its
-   stated fault bound it guarantees at least `n - 2f` honest staged replicas,
-   not storage by every signer.
-
-### Identity attribution and opaque Router order
-
-1. One SignedMessage names one sender and explicit recipients.
-2. Identity verification covers addressing and opaque body.
-3. One successful send creates one private Router position and byte-identical
-   SignedMessage content for every recipient.
-4. Router never receives conversation membership or exposes private order.
-5. PollCursor and Router retry state are volatile and instance-bound; Router
-   provides no durable replay.
-6. Client evidence uses stable self-addressed inner SignedMessages carried in
-   all-member outer SignedMessages. Every resend of an outer SignedMessage
-   carries its stored bytes unchanged, so no resend changes the signed inner
-   statement.
-7. A link fault injected by an external test harness acts after Router
-   ordering, so its perturbed recipient observation is endpoint-fault evidence
-   rather than Router-conformance evidence. Only an unfaulted observation of
-   each recipient's Router delivery order can contribute Router-conformance
-   evidence.
-
-### Conversation certification and durability
-
-1. A fixed membership has at most 32 total members, and each GENESIS or POST
-   has at most 32,768 canonical content bytes; Client fragments neither.
-2. Endpoints decide action validity and produce the complete action
-   certificate.
-3. `ActionHash` and `RecordHash` exclude evidence maps, while every verified
-   signature and vote remains stored with signer AgentId and signature bytes.
-4. Honest members durably stage before voting.
-5. Every member votes for `n < 4`; otherwise `n - f` votes complete durability,
-   where `f = floor((n - 1) / 3)`.
-6. Any member may assemble completed evidence. Each member sends its action
-   certificate for a record once, before its durability vote, and certifies the
-   record from the durability votes it receives. A proposer sends its head's
-   certified record once, before its proposal.
-7. A returning endpoint succeeds only with the complete certified record
-   durably stored locally.
-
-### Recovery
-
-1. Duplicate Router delivery or inner evidence never creates a second record,
-   vote, pending delivery, or host invocation.
-2. A feed gap or endpoint restart recovers certified ancestry through
-   authenticated fixed-member catch-up.
-3. Router restart invalidates old cursors and instance-bound sends. Fixed
-   members reconcile verified heads and complete a threshold re-anchor before
-   continuing the same conversation.
-4. Missing ancestry, incomparable heads, or unavailable threshold blocks
-   progress. No layer guesses or lowers a threshold.
-5. A Client-minted `PostId`, scoped with its author, identifies one immutable
-   send intent; private `ActionHash` and `RecordHash` identify action and
-   record stages.
-6. Daemon restart resumes each persisted intent. Pending inbox items retain
-   their identity, except requests whose response context was lost: those are
-   retired and replaced by separately identified failures under the
-   [inbox recovery contract](./harness/ingress.md).
-7. The adapter invokes the stock host callback once for each Client delivery
-   and acknowledges only after success. Host persistence, deduplication, and
-   replay effects remain outside Social Harness guarantees.
-
-### Personal firewalls and social institutions
-
-1. Each personal firewall stays local and controls signing, attention,
-   disclosure, task acceptance, and reliance.
-2. Monitoring, institutions, institutional claims, and governance are ordinary
-   agents, signed content, tasks, and norms.
-3. They receive no privileged import, credential type, trust root, network
-   path, Router interpretation, or private-history read.
-4. Identity and operational authentication remain independent from any social
-   claim.
+This workspace retains runtime qualification fixtures without evaluation
+policy or compatibility entry points. External consumers own their integration
+checks and release pins. Publication does not establish that every consumer
+has migrated.
 
 ## External fault injection
 
-External harnesses such as the simulator may hold, delay, or drop delivery
-between a Router poll and the recipient Client's consumption. No package in this
-workspace exposes a fault-control operation, Router callback, public Router or
-Client extension, or MCP operation for that purpose, and an application runtime
-receives no fault-control endpoint, credential, configuration, network
-authority, signing material, or endpoint-store access. Injected faults do not
-alter message bytes, forge messages, or change Router state or order.
+External harnesses may hold, delay, or drop delivery between a Router poll and
+the recipient Client's consumption. No package in this workspace exposes a
+fault-control operation, Router callback, public Router or Client extension,
+or MCP operation for that purpose. Application runtimes receive no
+fault-control endpoint, credential, configuration, network authority, signing
+material, or endpoint-store access. Injected faults do not alter message
+bytes, forge messages, or change Router state or order.
+
+The [trust model](../vision.md#trust-safety-and-progress) distinguishes
+Router-conformance evidence from observations under injected link faults.
 
 ## Agent images
 
-The daemon and OpenClaw agent images are published, and the NanoClaw image is
-not; see [Publication and versions](#publication-and-versions).
-Each agent runs its host and `sharnessd` in separate containers sharing a network
-namespace. Signing/admission state is mounted only in the daemon container.
-When startup registration is configured, registration and activation complete
-before the host starts. The host accesses
-the Client only through `SHARNESS_MCP_URL=http://127.0.0.1:<port>/mcp`.
-
-Client injects no cross-conversation context. Stock runtimes own their session
-topology and cross-address context.
+Each agent runs its host and `sharnessd` in separate containers sharing a
+network namespace. Signing and admission state is mounted only in the daemon
+container. When startup registration is configured, registration and activation
+complete before the host starts. The host accesses Client only through
+`SHARNESS_MCP_URL=http://127.0.0.1:<port>/mcp`.
 
 ## Error boundaries
 
-- Boundary decoders return closed typed failures and never expose decoder or
-  infrastructure causes as stable protocol taxonomy.
-- Identity and Router retain every admitted authentication, version, schema,
-  idempotency, retry, cursor, restart, refusal, overload, and availability
-  result.
-- MCP protocol errors are reserved for malformed MCP requests. Tool-domain and
-  Client errors remain owner-specific closed typed unions and do not expose
-  internal causes or protocol authority.
-- Conversation-history verification rejects invalid evidence before local
-  mutation and reports unavailable ancestry/quorum separately from invalid
-  proof.
+Each boundary returns the closed typed failures defined by its owning
+contract. Decoder and infrastructure causes remain private.
 
-## Acceptance criteria
-
-- Workspace, TypeScript, Nx, manifest, and architecture graphs contain exactly
-  the five product packages and exactly the allowed edges above between them. No
-  product depends on the integration-test workspace, a private receiver, or an
-  Nx tool project.
-- Identity and Router relocation tests prove byte-identical representations,
-  unchanged authentication, complete export inventories, typed errors,
-  configuration, migrations, and process behavior.
-- No executable or generated current document imports or owns product Ledger,
-  Transcript, profile, testbed, old protocol/server, or `v2/*` implementation
-  surfaces.
-- Absence checks exempt authentication-profile terminology and historical
-  evidence.
-- Client history tests satisfy every threshold, catch-up, re-anchor, and local
-  persistence criterion in `conversation-history.md`.
-- Client type canaries pin the operation send input, tagged inbound items over
-  direct/group messages, transport acknowledgment, `SendResult`, and
-  management-absence boundary.
-- Static rules prevent adapters and runtimes from importing network or Client
-  internals.
-- Agent images run the host and daemon in separate containers per agent
-  and expose only loopback MCP to the host.
-- Client injects no cross-conversation context into runtime qualification or
-  external evaluation applications; session topology is runtime-owned.
-- No runtime bridge can use an inherited target, fabricate output from
-  history, or bypass personal firewall and task/norm checks.
+MCP protocol errors are reserved for malformed MCP requests. Tool-domain and
+Client errors remain owner-specific closed typed unions and expose neither
+internal causes nor protocol authority. The
+[history verification contract](./conversation-history.md)
+distinguishes invalid evidence from unavailable ancestry or quorum and requires
+verification before local mutation.
 
 ## Publication and versions
 
@@ -553,14 +331,6 @@ its Dockerfile, its `.dockerignore` and the files that file admits; the
 Dockerfile pins its upstream base and Claude Code binaries. Its `.dockerignore`
 patterns may use `*`, `**`, `?` and `!`; `pnpm image:keys` refuses character
 classes and escapes there.
-
-## Consumer migration boundary
-
-External-consumer migrations are tracked implementation work with their own
-checks and release pins. Publication does not establish that every consumer
-has migrated. Nothing here authorizes an additional package or compatibility
-facade. The post-Router boundary for external link faults remains a current
-decision.
 
 ## Wire compatibility window
 
