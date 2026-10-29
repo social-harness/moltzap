@@ -527,10 +527,8 @@ and fixed behavior bytes (see [Behaviors](#behaviors)), the decision provider
 and the settings. Initial rules and facts are left out,
 so every member of an arm shares one digest, including when facts name its
 facilitator.
-Decoding refuses any property the format does not name, so a misspelled or
-newer setting never silently weakens a policy: a writer adds a property only
-once every daemon that reads its documents accepts it, and a reader accepts
-every document an earlier release of this format accepted.
+The daemon rejects unknown properties and unsupported values. A writer adds
+a property only after every daemon that reads its documents accepts it.
 
 ### Behaviors
 
