@@ -54,6 +54,7 @@
                 "pages": [
                   "reference/spec/index",
                   "reference/spec/layer-interfaces",
+                  "reference/spec/releases",
                   "reference/spec/identity",
                   "reference/spec/identity-representation",
                   "reference/spec/router",

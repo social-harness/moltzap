@@ -86,6 +86,27 @@ cannot analyze a project. Each package's hand-maintained
 Explain changes to those constraints or `safer-arch-ignore` directives in the
 PR description so reviewers can assess them.
 
+## Container images
+
+After changing an image recipe or its inputs, calculate its input key:
+
+```bash
+pnpm image:keys
+```
+
+The command prints the keys used for immutable image tags. See the
+[image contract](/reference/spec/releases#service-images) for published names,
+architectures, and signature requirements.
+
+### Unsupported Dockerfile form
+
+If the command reports an unsupported instruction, it names the file, line,
+and form it cannot interpret. Follow the existing two-stage recipes in
+`images/registry/Dockerfile`, `images/router/Dockerfile`, or
+`images/daemon/Dockerfile`. A new form needs support in the input-key
+calculator and its behavior checks in the same change. For an unsupported
+`.dockerignore` pattern, use the supported `*`, `**`, `?`, and `!` forms.
+
 ## Documentation
 
 Choose a document's home using the
@@ -123,4 +144,4 @@ resolve material findings before merging.
 For a vulnerability, use the
 [security reporting procedure](https://github.com/social-harness/moltzap/blob/main/SECURITY.md).
 Maintainer release behavior is defined in
-[Publication and versions](/reference/spec/layer-interfaces#publication-and-versions).
+[Publication and versions](/reference/spec/releases#publication-and-versions).

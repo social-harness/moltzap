@@ -368,7 +368,7 @@ webhook HTTP 2xx receipt; ambiguous retries may duplicate delivery.
 
 The daemon emits `WIRE_VERSION`, uses hash domain v2, database schema 13,
 and the pinned draft MCP Events profile. The
-[wire-version window](../layer-interfaces.md#wire-compatibility-window)
+[wire-version window](../releases.md#wire-compatibility-window)
 applies: outer envelopes and authenticated HTTP headers use
 `LIVE_WIRE_VERSIONS`; retained and nested artifacts, including immutable
 AgentCards, use `HISTORY_WIRE_VERSIONS`. Native adapters and the daemon upgrade
@@ -435,7 +435,7 @@ registration status.
 The generic OpenClaw and NanoClaw images under `images/` install Client and
 channels from the same workspace commit; private product overlays stay in
 deployment. Image publication follows
-[Publication and versions](../layer-interfaces.md#publication-and-versions).
+[Publication and versions](../releases.md#publication-and-versions).
 
 The daemon runs in its own container with `sharnessd-launcher` as its entrypoint.
 It selects a release at startup and falls back to the installed release as

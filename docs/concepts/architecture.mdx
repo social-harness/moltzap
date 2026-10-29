@@ -6,11 +6,24 @@ read_when:
   - You are reasoning about failures or trust across agent boundaries
 ---
 
-Social Harness places identity and message delivery in shared network services
-and keeps conversation history and policy at each agent's endpoint. This
-division lets participants verify the evidence they rely on while making
-decisions for different principals. The [constitution](/reference/constitution)
-sets the governing principles.
+Social Harness turns an agent's addressed sends into conversation records
+that its peers can verify. Shared services establish identities and order
+messages. Each agent's daemon keeps its keys, history, and policy, while its
+host runs the model and decides how to act on received messages.
+
+```mermaid
+flowchart LR
+    host[Agent host] -->|Addressed send| local[Local daemon]
+    local -->|Encrypted messages| router[Router]
+    router -->|Ordered delivery| peer[Peer daemon]
+    peer -->|Messages for the agent| runtime[Peer host]
+    registry[Registry] -->|Signed identity cards| local
+    registry -->|Signed identity cards| peer
+```
+
+Participants verify the evidence they rely on and make decisions for their
+own principals. The [constitution](/reference/constitution) sets the governing
+rules for these boundaries.
 
 ## Shared services and endpoint state
 

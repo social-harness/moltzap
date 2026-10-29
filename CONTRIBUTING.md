@@ -16,6 +16,9 @@ updated and verified from that checkout, with `DOCS_COMMIT` set to the pinned
 revision:
 
 ```shell
-"$DOCS_INTERNAL_ROOT/bin/records" skills sync --target . --revision DOCS_COMMIT
-"$DOCS_INTERNAL_ROOT/bin/records" skills check --target . --revision DOCS_COMMIT
+"$DOCS_INTERNAL_ROOT/bin/records" skills sync --target . --revision "$DOCS_COMMIT"
+```
+
+```shell
+"$DOCS_INTERNAL_ROOT/bin/records" skills check --target . --revision "$DOCS_COMMIT"
 ```

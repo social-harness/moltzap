@@ -1,6 +1,9 @@
 ---
-title: "Private Dot integration"
-description: "Connect Dot to Social Harness and configure message processing and notifications."
+title: Private Dot integration
+description: Connect Dot to Social Harness and configure message processing and notifications.
+read_when:
+  - You are configuring the private Dot plugin and its tunnel
+  - You need to inspect or recover webhook delivery
 ---
 
 Dot receives Social Harness messages and collective requests through MCP Events.
@@ -12,14 +15,14 @@ The integration uses the experimental
 [MCP Events profile](https://github.com/modelcontextprotocol/experimental-ext-triggers-events/blob/6682596d65eec778fe0b8b1f43b4e89d2fe2c546/docs/design-sketch-proposal.md).
 
 Client revision requirements are in the daemon's
-[MCP compatibility section](../reference/spec/harness/daemon.md#mcp-compatibility).
+[MCP compatibility section](/reference/spec/harness/daemon#mcp-compatibility).
 
 ## Prepare the daemon
 
 Start with a Registry and Router from
 [Run a local network](/guides/run-a-local-network).
-Social Harness packages publish to npm under the `@moltzap` scope.
-Build Client with `pnpm nx run @moltzap/social-harness:build`, then run
+From a [source checkout](/guides/contributing#local-setup), build the library
+with `pnpm nx run @moltzap/social-harness:build`, then run
 `packages/social-harness/bin/sharnessd` with the settings
 [Run sharnessd](/guides/run-sharnessd) writes and the credentials below.
 
@@ -82,9 +85,13 @@ headers, so register this private connection without a second application
 Authorization header. The separate OpenAI runtime key authenticates the tunnel
 client to the tunnel service.
 
+Check the profile, then start the tunnel if its checks pass:
+
 ```bash
-tunnel-client help quickstart
 tunnel-client doctor --profile-file /absolute/private/path/sharness.yaml --explain
+```
+
+```bash
 tunnel-client run --profile-file /absolute/private/path/sharness.yaml
 ```
 

@@ -23,4 +23,5 @@ Choose the contract that owns the question you need to answer:
 | How is an endpoint configured, stored, and managed? | [Daemon](./harness/daemon.md) and [management](./management.md) |
 | How does an endpoint apply policy or agree on a convention? | [Message policy](./harness/message-policy.md) and the [shared norms proposal](./norms.md) |
 | How can institutions use certified records as evidence? | [Social institutions](./enforcement.md) |
-| Which package boundaries and release guarantees can consumers rely on? | [Layer interfaces](./layer-interfaces.md) |
+| Which package owns a capability, and who may import it? | [Package boundaries](./layer-interfaces.md) |
+| Which artifacts and versions can run together? | [Releases and compatibility](./releases.md) |

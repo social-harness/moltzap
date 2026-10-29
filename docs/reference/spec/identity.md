@@ -38,7 +38,7 @@ has exactly one card and one signing key. The
 signed representation.
 
 Registering a different key creates a new identity. The registered card and
-key stay fixed until a [protocol reset](./layer-interfaces.md#publication-and-versions).
+key stay fixed until a [protocol reset](./releases.md#publication-and-versions).
 Service origins and channel protection belong to deployment configuration.
 
 Parsing a card validates its representation. Verification checks its signature
@@ -298,7 +298,7 @@ The emitted, live, and history version sets distinguish new traffic from
 retained evidence. Every new artifact emits `WIRE_VERSION`.
 `LIVE_WIRE_VERSIONS` admits outer messages and HTTP version headers.
 `HISTORY_WIRE_VERSIONS` decodes retained and nested artifacts. The
-[wire compatibility window](./layer-interfaces.md#wire-compatibility-window)
+[wire compatibility window](./releases.md#wire-compatibility-window)
 defines their evolution.
 
 AgentCards use the history set even during live authentication and remain

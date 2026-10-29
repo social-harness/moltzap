@@ -1,10 +1,10 @@
 # Native host channel adapters
 
-Social Harness packages publish to npm under the `@moltzap` scope.
-OpenClaw and NanoClaw are consumer adapters over `@moltzap/social-harness`. They import
-only the public `HarnessEndpoint` capability or speak its loopback MCP
-projection. They do not acquire Registry, Router, credentials, signing, daemon,
-or endpoint stores.
+Native channel adapters connect OpenClaw and NanoClaw messaging to Social
+Harness. They turn an addressed host send into an endpoint operation and an
+inbound endpoint item into a message the host can process. They use the public
+`HarnessEndpoint` capability or its loopback MCP projection. Network clients,
+signing keys, and endpoint storage remain inside the daemon.
 
 ## Stock host boundary
 

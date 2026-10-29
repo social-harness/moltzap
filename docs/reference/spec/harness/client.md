@@ -1,14 +1,15 @@
 # HarnessEndpoint runtime contract
 
-`HarnessEndpoint` is the sole adapter-facing Client capability. OpenClaw,
-NanoClaw, the simulator, evals, and other runtimes consume this structural scoped
-value or its loopback MCP projection. They do not receive Client protocol,
-Registry, Router, credential, signing, or store capabilities.
+`HarnessEndpoint` lets an agent host send addressed messages and receive
+messages, questions, results, and failures from its daemon. It accepts an
+explicit destination and message or answer, then returns the operation's
+result. Each delivered item remains pending until the host acknowledges it.
 
-The endpoint exposes operations, not posts. Every send is one collective
-operation, multicast by default, or one response to a collective request, and
-the inbound stream carries items tagged by kind. The post is the envelope that
-carries each operation.
+The daemon resolves destinations, certifies the posts carrying each operation,
+and keeps conversation state. The host controls model execution and when to
+send. Signing keys, protocol state, network clients, and storage remain inside
+the daemon. Hosts use this boundary through the TypeScript capability or its
+loopback MCP projection.
 
 ## Public values
 
@@ -34,9 +35,9 @@ not a system-role capability.
 arrays, and string-keyed objects. Its canonical encoding is at most 32,768
 bytes.
 
-It exports no public `ConversationId`, protocol action, certificate, proof,
-receipt, management DTO, local identity property, Registry/Router client,
-credential, or store handle.
+Protocol identities, action and durability evidence, and storage handles stay
+behind this boundary. Owner-authorized management reads use the separate
+[management tools](../management.md).
 
 ## Connection lifetime
 

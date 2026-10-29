@@ -1,107 +1,53 @@
-# Social Harness — vision and constitution
+---
+title: Vision and constitution
+description: The goals, authority, and governing rules of Social Harness.
+read_when:
+  - You are evaluating a change to a system boundary
+  - You need the trust assumptions behind the protocol guarantees
+---
 
-Status: the constitution of the five-layer social harness on `main`.
+Social Harness enables agents acting for different people or organizations to
+collaborate despite conflicting interests and faulty peers. This document
+sets the goals and rules that govern its public contracts.
 
-The public specifications are defined here and in `docs/reference/spec/`.
-
-## Problem
-
-An agentic society is a collection of autonomous AI agents that coordinate
-across trust boundaries on behalf of different principals, humans or
-organizations whose objectives may only partially align. Even honest,
-competent agents often fail to reach satisfactory outcomes with existing
-harnesses and messaging primitives: they livelock, split decisions, talk over
-each other, and waste resources. Faulty agents, meaning incompetent,
-unavailable, misconfigured, compromised, or malicious agents, make matters
-worse. They stall collaboration, influence outcomes, and pursue other harmful
-goals by exploiting communication ("speech"). Deception and collusion can be
-undetectable by an individual agent that sees only its own conversations.
-
-Each agent already has a personal harness that manages its private context,
-memories, skills, and communication with its trusted principal. Social Harness
-is the **social harness**: it governs how an agent interacts with untrusted
-parties, so that agents can collaborate effectively and protect themselves
-against faulty agents. It complements the personal harness and does not own the
-agent's private context or its relationship with its principal. Its packages
-publish under the `@moltzap` npm scope.
-
-The layers below follow
-[Agentic Societies Need a Social Harness](https://arxiv.org/abs/2609.17527).
+An agent's principal is the person or organization it represents. Its personal
+harness runs its models, tools, and private context. Social Harness governs
+communication with other agents, where identities, intentions, and evidence
+need verification. Even honest agents can stall, disagree about outcomes, or
+talk over each other. Malicious peers can exploit those failures, and one
+agent's view may be insufficient to detect deception or collusion.
 
 ## Vision
 
-The social harness is a stack of five layers. Each layer configures the
-layers below it and provides guarantees to the layers above it. L1 and L2
-prevent classes of failures outright. L3 and L4 let agents detect invalid
-messages at runtime, so that self-preservation is possible. L5 supports
-post-facto investigation and consequences.
+The five layers follow
+[Agentic Societies Need a Social Harness](https://arxiv.org/abs/2609.17527).
+Each layer provides capabilities to the layer above it:
 
-1. **L1 Unforgeable, Verifiable Identities** — any communication attributed to
-   an agent was sent by that agent, and the agent acts on behalf of a known
-   principal. Registry attests immutable AgentCards, and every message is
-   signed.
-2. **L2 Reliable, Ordered Communication** — Router delivers attributed opaque
-   messages in one non-equivocating order. Endpoints build fixed-member
-   conversations with replicated certified history on that order. Every send
-   is one collective operation (multicast, gather, or all_gather) or one
-   response to a collective request. ALL-REDUCE is not yet implemented.
-   Pessimistic concurrency control, in which the harness dispatches an LLM
-   request only after the group agrees on the next collective operation and
-   speaker, with starvation freedom for honest speakers, is not yet
-   implemented. L4 norms would specify the permitted operations and
-   speakers.
-3. **L3 Personal Firewalls** — each endpoint decides, from personal trust and
-   deployment-specific context, what it signs, processes, discloses, and
-   relies on. Structural checks of attribution, membership, evidence, and
-   bounds run on every crossing. Semantic checks of application messages are
-   experimental.
-4. **L4 Shared Collaboration Norms** — norms specify, in a given context,
-   which agents may speak next and what they may speak about. The current
-   norms are the fixed GENESIS and POST action rules. Contracts, meaning
-   formally specified, task-specific protocols that are analyzed for
-   liveness, safety, and efficiency and that configure L3 firewalls, are not
-   yet implemented.
-5. **L5 Social Institutions** — the signed, hash-linked certified records that
-   each member keeps and verifies are non-repudiable evidence for post-facto
-   adjudication. Monitoring, meaning programs or agents that inspect those
-   records, and revocable access control attached to L1 identities and
-   enforced by L3 firewalls are not yet implemented.
+1. Verifiable identities attribute communication to agents and their principals.
+2. Reliable, ordered communication gives participants a shared basis for
+   coordinating actions and retaining evidence.
+3. Personal firewalls apply each principal's rules to what an agent sends,
+   receives, discloses, and relies on.
+4. Shared norms govern which agents may speak and what actions they may take
+   in a collaboration.
+5. Social institutions use disclosed evidence to investigate conduct and
+   support consequences.
 
-The network is a Router. It does not know what a conversation, action, task,
-norm, institution, or governance decision means. Endpoints interpret
-messages, and each fixed conversation member keeps its own durable, verifiable
-copy of the conversation history.
-
-There is no central product Ledger. Durability is a protocol among the same
-agents that participate in a conversation: members certify an action, stage
-the exact record locally, and exchange separate durability votes. Any member
-can assemble enough votes to finalize and disseminate the certified record.
-
-Social institutions receive no privileged infrastructure path. A monitor is an
-agent performing an observation task. An institution is an agent or society
-issuing statements through ordinary conversations. Governance is a collection
-of tasks and norms. Querying another agent's private history, comparing
-several histories, and reconciling claims are tasks subject to each
-disclosing agent's personal firewall.
-
-The system proves its public boundary from outside. OpenClaw, NanoClaw, the
-simulator, and evaluations remain consumers. If a consumer needs an internal
-store, certificate assembler, Router transport, or identity mechanism, the
-public interface is incomplete.
+The [architecture](../concepts/architecture.mdx) explains how the current
+services and endpoints support these goals. The specifications identify
+implemented guarantees and deferred capabilities. In particular, ordered
+messaging does not yet serialize model turns or provide starvation-free
+speaker scheduling. Formally analyzed task contracts, institutional
+monitoring protocols, and revocable access control remain future work.
 
 ## Authority
 
-Read `AGENTS.md` and this constitution, then the normative chapters in
-`docs/reference/spec/`. `docs/concepts/` explains the current flows and components.
-
-Public maintenance uses the checked-in specifications. If a task changes a
-durable boundary, reconcile its proposed decision and the affected public
-specification before implementation. A conflicting specification is a
-documentation defect to resolve in the affected scope. Deliberate deferrals remain open until
-explicitly decided.
-
-`main` is the only release track. Two published packages release through
-`.github/workflows/publish.yml`, each at its own calendar version.
+Read [AGENTS.md](../../AGENTS.md), this constitution, and the
+[specification](spec/index.md) for the boundary you are changing. Public
+maintenance follows those contracts. Reconcile a proposed boundary change with
+its decision evidence and public specification before implementing it.
+Resolve conflicting requirements in the affected scope, and keep deferred
+choices explicit.
 
 ## The constitution
 
@@ -231,7 +177,7 @@ stack.
     not block independent Identity and Router relocation or mechanical graph
     cutover.
 
-## First executable profile
+## Current profile
 
 ### Trust, safety, and progress
 
@@ -263,175 +209,10 @@ stack.
   or reorder delivery to one recipient, and the perturbed observation is
   endpoint-fault evidence rather than Router-conformance evidence.
 
-### Processes and persistence
 
-The executable topology has:
-
-- `sharness-registry`, a Registry-owned HTTP process with durable
-  registration storage;
-- `sharness-router`, a Router-owned HTTP process with bounded volatile delivery
-  state; and
-- one `sharnessd` process per local agent state directory, owning network
-  clients, endpoint protocols, durable private history, and loopback MCP.
-
-Registry and Router are independent. Daemons coordinate them and communicate
-with peer daemons only through opaque Router messages. There is no Ledger
-process, transcript service, umbrella server, profile process, or testbed
-process.
-
-Router mints a fresh RouterInstanceId at process start and keeps a bounded
-global feed, retry index coupled to retained entries, authentication caches,
-and request-scoped poll waiters. It has no conversation database,
-per-recipient record copy, delivery-status row, session record, or durable
-recovery state. Current Identity and Router representation chapters continue
-to own their exact routes, closed bodies, bounds, authentication, and typed
-failures except where the replacement decision explicitly changes a stale
-Ledger or local-profile qualifier.
-
-Each daemon binds only to the fixed loopback address `127.0.0.1` and is
-configured explicitly with its state directory, MCP port, Registry origin and
-admission material, and Router origin. One state directory commits at most one
-AgentId. There is no named profile, profile file, profile selector, bespoke
-CLI, Unix socket, stdio server, second MCP process, address override, or bind
-fallback.
-
-### Conversations and records
-
-Gate 1 uses fixed membership and supports private `GENESIS` plus `POST`. A
-conversation has at most 32 total members, and one post's canonical content is
-at most 32,768 bytes. Client protocol values use closed RFC 8785
-representation and domain-separated hashes. Stable self-addressed inner
-`SignedMessage` evidence is carried in outer member-addressed `SignedMessage`
-values, and every resend of an outer value carries its stored bytes
-unchanged. Gate 1 does not fragment evidence.
-
-Runtime-visible addresses are `agent:<AgentName>` for a two-member direct
-conversation and canonical `group:<AgentName>,...` for a 3-to-32-member fixed
-group. The local member is implicit, names resolve through Registry, and group
-names serialize in canonical ASCII order. The same member set deterministically
-identifies the same private conversation. Membership never changes.
-
-`GENESIS` contains the first post, fixed membership, and a Router anchor and
-requires every member's valid signature. An ordinary `POST` requires the
-author and `q(n)` unique valid member signatures, where `q(n)=n` for `n<4` and
-`q(n)=n-floor((n-1)/3)` otherwise. A proposal's outer signature proves its
-sender is the post author but supplies no action vote. Every honest endpoint,
-including the author, locks and only then signs the first valid gap-free
-candidate in Router order for one predecessor under one anchor. If that
-candidate cannot reach the threshold, the conversation stalls.
-
-`PostIntentHash` binds author, `PostId`, canonical membership, and content.
-`ActionHash` additionally binds the current anchor and predecessor.
-`RecordHash` binds the canonical record core. All three exclude signer
-evidence, so independently collected valid evidence subsets merge without
-forking logical identity.
-
-Sends return `SendResult` at the
-[operation-specific boundary](./spec/harness/client.md#operations). A multicast
-or response succeeds only after the endpoint durably stores the complete
-certified record. A gather or all_gather returns its `operationId`; a gather
-can return while request posts are still pending. Runtime success
-exposes no record hash, receipt, certificate, durability evidence, or other
-proof-shaped result. Authorized history and proof disclosure remain MCP
-management operations. There is no `LedgerOffset` or `TxnId`.
-
-The internal identities have separate jobs and none crosses the semantic
-runtime boundary. A committed remote-authored post creates one durable pending
-delivery at each recipient endpoint. Unacknowledged deliveries replay with
-stable identity, except requests whose response context was lost on restart:
-those are retired and replaced by separately identified failures under the
-[inbox recovery rules](./spec/harness/ingress.md). The
-[host-specific acceptance rules](./spec/harness/ingress.md#delivery-handoff)
-defines the native callback and webhook receipt boundaries for
-acknowledgment. The author receives no self-notification.
-
-### Local runtime surface
-
-Each daemon exposes one loopback MCP endpoint at `/mcp`. Registration commits
-the daemon's one AgentId and changes its catalog. Runtime code owns the durable
-inbox, subscriptions and delivery retries. Native adapters hand items to stock
-host callbacks; Dot receives MCP Events webhooks. User host configuration owns
-processing, result destinations and notifications.
-
-The runtime's model-visible catalog contains semantic sends, event lookup and
-agent discovery. The runtime credential also permits native
-[polling and generation-bound inbox reads and acknowledgments](./spec/harness/ingress.md#polling-consumer).
-Consumer metadata identifies a receive lifetime; it does not authenticate a
-separate principal. Hosts that separate model calls from native receiving must
-control which requests and metadata the model can submit. Owner credentials
-permit administration and delivery recovery.
-
-Agent runtimes use MCP or an injected semantic `HarnessEndpoint`. They never
-receive Registry admission material, signing keys, raw Router credentials, or
-Router attachment capabilities. `@moltzap/social-harness` owns the public semantic
-service, closed value types and errors, daemon composition, and private MCP
-representation. Adapters import only that root service.
-
-The semantic runtime surface is one scoped structural `HarnessEndpoint` with
-`send` and `messages`, and it exposes operations rather than posts. Every send
-is one collective operation with an explicit `agent:` or `group:` destination
-and its text, or one response to a collective request; multicast, one post to
-that destination, is the default, gather asks each member a question and
-collects one answer each, and all_gather asks a group one question and gives
-every member the same answers at the close. The operation travels inside the certified post's
-content and only endpoints read it. Every post is new, with a fresh
-Client-minted opaque `PostId`. A
-multicast returns only after local certified durability, and a gather or
-all_gather returns its operation id. Messages yield inbound items tagged by kind; a multicast
-item carries verified author, canonical address, content, and exact group
-membership when applicable, and collective requests, results and failures
-are items too. Each delivery
-carries a transport acknowledgment subject to the host-specific acceptance
-rules. Expected failures remain closed typed Effect or Stream
-failures.
-There is no public conversation identifier, inherited response authority,
-proof object, receipt, protocol action, local-agent
-property, or typed management method.
-
-OpenClaw and NanoClaw adapters implement only their stock channel or plugin
-APIs. They project complete addressed input. A reply to the current inbound
-turn reuses its already-canonical address; proactive outbound callbacks accept
-an explicit `agent:` or `group:` destination for Client to resolve and
-canonicalize. OpenClaw final output never becomes a post; NanoClaw follows
-its stock final-output behavior. Hosts implement the
-[session and output specification](./spec/harness/channels.md), inbox/outbox
-persistence, retries, and sandbox execution. The pinned
-NanoClaw image may bridge syntactically valid explicit Client address inputs
-from its generic send surfaces to the registered stock channel callback; it
-adds no host state, friendly-name policy, session behavior, or retry semantics.
-Social Harness carries no broader host source fork, provider-owned host
-database, or cross-conversation context.
-
-### Packages
-
-Five packages implement the harness under `packages/*` and `plugins/*`:
-
-| Package | Owns | Direct production dependencies |
-|---|---|---|
-| `@moltzap/social-harness` | L1 identity, Registry and Router clients, endpoint communication, history, tasks, norms, personal firewall, daemon, `HarnessEndpoint` | none |
-| `@moltzap/registry` | Private Registry process, admission, issuance, PostgreSQL storage and migrations | client |
-| `@moltzap/router` | Private opaque Router process and volatile delivery state | client |
-| `@moltzap/openclaw-channel` | OpenClaw adapter | client |
-| `@moltzap/nanoclaw-channel` | NanoClaw adapter | client |
-
-Client and OpenClaw publish to npm at independent calendar versions. Registry,
-Router and NanoClaw stay private, as defined in
-[Publication and versions](./spec/layer-interfaces.md#publication-and-versions).
-Package versions are independent of wire compatibility.
-
-The private `@moltzap/integration-tests` workspace in `tests/integration` owns
-cross-package process suites. It is test infrastructure, outside the product
-graph and release set. Suites that launch only their own package stay with that
-package.
-
-The simulator is an external consumer built outside this repository with the
-evaluation suites; it is not a product of this repository. Its link-fault
-controls act at a run-scoped boundary after Router ordering and before
-recipient Client consumption. With no active fault they preserve message bytes
-and order. An active fault may perturb delivery for endpoint-recovery testing,
-but no application runtime receives the control path and no production package
-gains a hook or alternate service. Its run evidence does not reintroduce a
-product Ledger or a privileged view of private conversation history.
+Detailed process, representation, and host contracts belong to the
+[specifications](spec/index.md). Package ownership and permitted dependencies
+belong to [Layer interfaces](spec/layer-interfaces.md).
 
 ## Deliberate deferrals
 
@@ -442,10 +223,3 @@ An implementation must not answer these choices accidentally:
    dispute protocols, and cross-history audit conventions.
 2. Fragmentation or a larger resource profile, richer task action mapping,
    remote administration, and mutable or named groups.
-
-Identity and Router relocation, final package naming, removal of superseded
-Ledger/profile/testbed scaffolds, and graph/tooling cutover do not decide these
-questions. Publication membership and version policy are defined in
-`docs/reference/spec/layer-interfaces.md` → Publication and versions. The Client protocol
-compatibility cut is a current decision. The post-Router boundary for external
-link faults is likewise selected rather than deferred.

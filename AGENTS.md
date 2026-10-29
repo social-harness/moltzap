@@ -41,10 +41,10 @@ protocol namespaces use `org.social-harness/*`.
 
 Generic OpenClaw and NanoClaw images and their stand-in live tests live under
 `images/`; private product overlays stay in deployment. Image publication follows
-[Publication and versions](docs/reference/spec/layer-interfaces.md#publication-and-versions).
+[Publication and versions](docs/reference/spec/releases.md#publication-and-versions).
 
 `main` is the only track; npm publication membership and versioning follow
-[Publication and versions](docs/reference/spec/layer-interfaces.md#publication-and-versions).
+[Publication and versions](docs/reference/spec/releases.md#publication-and-versions).
 Releases follow the same section: a merge releases after CI passes, and resets
 release by hand. A user-visible change adds a fragment under `changelog.d/`
 (see `towncrier.toml`).
@@ -187,8 +187,7 @@ Package-local `safer-architecture.config.json` files are hand-maintained.
 ## Docs
 
 Read this file and `docs/reference/constitution.md`, then the applicable public specification
-under `docs/reference/spec/` and package instructions. Architecture pages explain the
-current implementation. Reconcile a boundary change with its public
+under `docs/reference/spec/` and package instructions. Reconcile a boundary change with its public
 specification; do not leave a binding interface specification only in chat,
 agent state, or records outside this repository.
 

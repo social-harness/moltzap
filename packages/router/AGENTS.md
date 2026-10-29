@@ -16,7 +16,7 @@ It never queries a product Ledger or privileged governance service.
 
 Preserve the admitted wire bytes, routes, bounds, authentication, ordering,
 typed failures, and process behavior unless their governing authority changes.
-Publication follows `docs/reference/spec/layer-interfaces.md` → Publication and versions: this package stays private.
+Publication follows `docs/reference/spec/releases.md` → Publication and versions: this package stays private.
 
 Run build, typecheck, test, integration, lint, and architecture checks through
 Nx:

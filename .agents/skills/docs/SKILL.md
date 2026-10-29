@@ -164,6 +164,12 @@ copy. Keep the necessary context beside an action or example so readers can
 use it. Repetition within an exercise can teach an important distinction, such
 as reading a message twice to show that reading does not acknowledge it.
 
+Treat a hard-to-explain boundary as a design question. Repeated exceptions,
+asides, and caveats can reveal duplicated ownership or an unnecessary layer.
+Inspect the callers and the contract before adding more explanation. Simplify
+the implementation when its guarantees permit it, and surface a conflicting
+requirement with the evidence needed to decide it.
+
 ## Revise the prose
 
 - Name the actor and use an active verb: “Registry rejects expired requests.”

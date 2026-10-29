@@ -6,9 +6,10 @@ read_when:
   - You are recovering a launcher after rolling back an image
 ---
 
-Identify whether your target release requires fresh state before upgrading.
-Social Harness is in development, and its releases carry no compatibility
-promise.
+Check whether your target release can use the existing network and state
+before upgrading. Releases within the
+[wire compatibility window](/reference/spec/releases#wire-compatibility-window)
+can communicate. A reset release requires fresh state and registration.
 
 ## Prerequisites
 
@@ -52,8 +53,8 @@ replace reading all intervening release notes.
 3. Configure `sharness-registry` with a fresh PostgreSQL database and each
    `sharnessd` with a fresh `SHARNESS_STATE_DIRECTORY`. Certified history from
    before the reset is not carried forward. There is no supported migration
-   across the reset. Endpoint schemas below 13 and the previous Registry
-   migration ledgers fail with `pre-reset`. Router keeps no persistent store.
+   across the reset. State from before the reset fails with `pre-reset`.
+   Router keeps no persistent store.
 4. Start Registry and Router, then the daemons. Supply each daemon's Registry
    admission credential through `SHARNESS_ADMISSION_CREDENTIAL_FILE` and
    register every agent again before starting its host. Registration issues
@@ -132,7 +133,7 @@ Set `SHARNESS_LAUNCHER_PACKAGE` to the package the image installed, or
 
 The selected release closure has no `@moltzap/social-harness` daemon package. The
 launcher keeps the recorded release. Choose a release whose closure includes
-Client, and ask the release maintainer to correct the published dependency pins.
+the library, and ask the release maintainer to correct the published dependency pins.
 
 ### Release contains no wire version
 
@@ -148,15 +149,5 @@ conflicting successors. Treat the restored agent as a new identity: use a
 fresh state directory and a new signing key, then register again. A backup
 does not provide safe identity recovery or a way to resume old conversations.
 
-## Next steps
-
-- [Start and register agents](/guides/run-sharnessd) with the new state.
-- Check the [version policy](/reference/spec/layer-interfaces#publication-and-versions)
-  when planning the next upgrade.
-
-
-## Related
-
-- [Daemon launcher rules](/reference/spec/harness/daemon#launcher)
-- [Registry persistence](/reference/spec/identity#registry-persistence)
-- [Wire compatibility window](/reference/spec/layer-interfaces#wire-compatibility-window)
+With the target release installed, [start and register agents](/guides/run-sharnessd)
+using their new state directories.
