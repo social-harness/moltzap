@@ -66,6 +66,22 @@ const compactPublicKeyJson = Schema.String.pipe(
   Schema.pattern(/^\{"crv":"Ed25519","kty":"OKP","x":"[A-Za-z0-9_-]{43}"\}$/u),
   Schema.compose(Schema.parseJson(Ed25519PublicKey)),
 );
+/** `Config.boolean`'s spellings, read case-sensitively. */
+const experimentSwitch = Schema.String.pipe(
+  Schema.compose(
+    Schema.transformLiterals(
+      ["true", true],
+      ["yes", true],
+      ["on", true],
+      ["1", true],
+      ["false", false],
+      ["no", false],
+      ["off", false],
+      ["0", false],
+    ),
+  ),
+  Schema.annotations({ identifier: "true, yes, on, 1, false, no, off or 0" }),
+);
 
 const configurationFields = {
   registrationAgentName: setting(
@@ -120,6 +136,16 @@ const configurationFields = {
     "SHARNESS_DECISION_PROVIDER_KEY_FILE",
     configuredPath,
     undefined,
+  ),
+  hideGroups: setting(
+    "SHARNESS_EXPERIMENT_HIDE_GROUPS",
+    experimentSwitch,
+    false,
+  ),
+  hideCollectives: setting(
+    "SHARNESS_EXPERIMENT_HIDE_COLLECTIVES",
+    experimentSwitch,
+    false,
   ),
 };
 

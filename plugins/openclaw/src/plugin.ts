@@ -12,8 +12,6 @@ import type { OpenClawPluginDefinition } from "openclaw/plugin-sdk/plugin-entry"
 import type { ReplyPayload } from "openclaw/plugin-sdk/reply-payload";
 import {
   acquireHarnessEndpoint,
-  type ChannelFeatureUnavailableError,
-  type ExperimentSwitchInvalidError,
   groupMembers,
   type GuidanceBodyOrigin,
   type HarnessEndpoint,
@@ -23,7 +21,7 @@ import {
   MessageAddressInput,
   type MessageAddressInput as MessageAddressInputValue,
   type MessageTextError,
-  readChannelMessage,
+  parseMessageText,
   renderCollectiveRequest,
   renderCollectiveResult,
   renderContent,
@@ -1100,17 +1098,14 @@ function requireEndpoint(
 
 /**
  * Validate OpenClaw's optional target and text fields before handing them to
- * the shared native-channel reader.
+ * the shared message-text parser.
  */
 function readSendInput({
   to,
   text,
 }: TextSend): Effect.Effect<
   SendInput,
-  | OpenClawOutboundError
-  | MessageTextError
-  | ChannelFeatureUnavailableError
-  | ExperimentSwitchInvalidError
+  OpenClawOutboundError | MessageTextError
 > {
   if (!isMessageAddressInput(to)) {
     return Effect.fail(
@@ -1122,7 +1117,7 @@ function readSendInput({
       new OpenClawOutboundError({ reason: "invalid-operation" }),
     );
   }
-  return readChannelMessage(to, text);
+  return parseMessageText(to, text);
 }
 
 /**

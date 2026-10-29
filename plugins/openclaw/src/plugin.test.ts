@@ -22,6 +22,7 @@ import {
   renderCollectiveResult,
   renderContent,
   renderLocalGuidance,
+  SendError,
   type SendInput,
   type SendResult,
 } from "@moltzap/social-harness";
@@ -151,10 +152,16 @@ describe("OpenClaw message tool send and reply actions", () => {
     "rejects a message tool send carrying targets instead of reaching only its target",
     messageToolSendRejectsTargets,
   );
-  it(
-    "fails the tool with the Client error naming each unreachable member",
-    messageToolSendSurfacesCollectiveError,
-  );
+  it.each([
+    {
+      name: "the Client error naming each unreachable member",
+      refusal: unreachableMemberError(),
+    },
+    {
+      name: "the daemon's send refusal",
+      refusal: new SendError({ reason: "content-invalid", detail: "hidden" }),
+    },
+  ])("fails the tool with $name unchanged", messageToolSendSurfacesError);
 });
 
 describe("OpenClaw operation item turns", () => {
@@ -657,8 +664,8 @@ function messageToolSendRejectsInvalidAddress() {
   );
 }
 
-function messageToolSendSurfacesCollectiveError() {
-  const refusal = new CollectiveError({
+function unreachableMemberError() {
+  return new CollectiveError({
     id: collectiveId(),
     failure: {
       kind: "members-unreachable",
@@ -676,6 +683,13 @@ function messageToolSendSurfacesCollectiveError() {
       ],
     },
   });
+}
+
+function messageToolSendSurfacesError({
+  refusal,
+}: {
+  readonly refusal: CollectiveError | SendError;
+}) {
   return withConnectedSend(
     (plugin) =>
       handleSendAction(plugin, {
@@ -707,7 +721,7 @@ function withConnectedSend<A, E>(
     index: number,
   ) => Effect.Effect<
     SendResult,
-    CollectiveError | FirewallSendError
+    SendError | CollectiveError | FirewallSendError
   > = endpointResult,
 ) {
   const fake = makeEndpoint(Stream.never, [], respond);
@@ -1114,7 +1128,7 @@ function makeEndpoint(
     index: number,
   ) => Effect.Effect<
     SendResult,
-    CollectiveError | FirewallSendError
+    SendError | CollectiveError | FirewallSendError
   > = endpointResult,
 ): FakeHarnessEndpoint {
   const sends: SendInput[] = [];

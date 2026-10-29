@@ -232,9 +232,9 @@ content limit; a send whose content does not fit fails with
 
 In native hosts, a model writes an operation as the whole text of an ordinary
 message. The OpenClaw and NanoClaw adapters read that text with
-`readChannelMessage`, which applies the channel
-[experiment switches](../../experiment-switches.mdx)
-and delegates text parsing to `parseMessageText`, so both accept the same text. Dot uses the structured
+`parseMessageText`, so both accept the same text. The daemon enforces the
+[experiment switches](../../experiment-switches.mdx#experiment-switches)
+on every send. Dot uses the structured
 semantic MCP input described in [Semantic send](./output.md#semantic-send).
 The native message grammar is:
 
@@ -280,8 +280,10 @@ described under [operations](#operations) and returns its `operationId`.
 A host whose tool returns before the send runs passes
 `failureDelivery: "inbound"`. A refused gather, all_gather or response then completes,
 naming its operation and no `postId`, and its error arrives as an
-`operationFailed` item with the same text. A `FirewallSendError` is always returned on the send itself,
-whatever the routing. An item the daemon cannot keep stops it on the storage failure
+`operationFailed` item with the same text. A `FirewallSendError`, and the
+refusal of a capability the
+[experiment switches](../../experiment-switches.mdx#experiment-switches)
+hide, are always returned on the send itself, whatever the routing. An item the daemon cannot keep stops it on the storage failure
 and never replaces a send's own outcome: the refusal, or the posts that exist,
 stays the outcome. A multicast has no operation id, so its failure is always
 returned.

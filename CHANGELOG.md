@@ -17,6 +17,22 @@ sections are the codebase's history as MoltZap.
 
 <!-- towncrier release notes start -->
 
+## [2026.1029.0] - 2026-10-29
+
+### Changed
+
+- Releases tag the daemon and OpenClaw agent images with the release version and
+  list their digests alongside Registry and Router.
+- The OpenClaw agent image's Claude Code binary moves from 2.1.276, which
+  refuses claude-opus-5-5 with "version 2.1.280 or newer is required", to
+  2.1.292, the release a production gateway relay ran end-to-end against
+  claude-opus-5-5; both per-architecture digests are repinned.
+
+### Fixed
+
+- The daemon reads the experiment switches from its own environment, enforces
+  them on every send, and rejects invalid values at startup.
+
 ## [2026.1028.13] - 2026-10-28
 
 ### Fixed

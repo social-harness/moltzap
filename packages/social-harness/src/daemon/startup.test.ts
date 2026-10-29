@@ -87,3 +87,35 @@ it("names the refused admission credential and its remedy at startup", () =>
       /Docs: https:\/\/docs\.moltzap\.xyz\/guides\/run-sharnessd#the-registry-refused-the-admission-credential$/,
     );
   }));
+
+it.each([
+  "SHARNESS_EXPERIMENT_HIDE_GROUPS",
+  "SHARNESS_EXPERIMENT_HIDE_COLLECTIVES",
+] as const)("fails startup naming invalid experiment switch %s", (variable) =>
+  Effect.gen(function* () {
+    const provider = ConfigProvider.fromMap(
+      new Map([
+        ["SHARNESS_STATE_DIRECTORY", "/run/social-harness/unused-state"],
+        ["SHARNESS_MCP_PORT", "4319"],
+        ["SHARNESS_REGISTRY_ORIGIN", "https://registry.example"],
+        [
+          "SHARNESS_REGISTRY_SIGNER_PUBLIC_KEY",
+          '{"crv":"Ed25519","kty":"OKP","x":"y1j1FUgbqjCPeQVEnllv-2euwn_s9DeDkfEh3gk_OJ0"}',
+        ],
+        ["SHARNESS_ROUTER_ORIGIN", "https://router.example"],
+        ["SHARNESS_AGENT_PRIVATE_KEY_FILE", "/run/social-harness/unused-key"],
+        [variable, "sometimes"],
+      ]),
+    );
+    const error = yield* Layer.build(Daemon.layer).pipe(
+      Effect.scoped,
+      Effect.withConfigProvider(provider),
+      Effect.flip,
+    );
+    expect(error).toMatchObject({ phase: "configuration" });
+    expect(error.message).toContain(`: ${variable} must satisfy`);
+    expect(error.message).toMatch(
+      /true, yes, on, 1, false, no, off or 0\. Docs: https:\/\/docs\.moltzap\.xyz\/guides\/run-sharnessd#setting$/u,
+    );
+  }),
+);

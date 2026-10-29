@@ -11,7 +11,7 @@ import {
   type InboundDelivery,
   type InboundItem,
   MessageAddressInput,
-  readChannelMessage,
+  parseMessageText,
   renderCollectiveRequest,
   renderCollectiveResult,
   renderContent,
@@ -403,7 +403,7 @@ class HarnessChannelAdapter {
     }
     return decodeOutboundText(address, message).pipe(
       Effect.flatMap(({ to, text }) =>
-        readChannelMessage(to, text).pipe(
+        parseMessageText(to, text).pipe(
           Effect.matchEffect({
             onFailure: (error) =>
               this.reportRefusedText(config, to, error.message),

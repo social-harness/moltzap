@@ -57,6 +57,10 @@ export interface DaemonProcessConfiguration {
   readonly messagePolicyFile?: string;
   /** The key of the decision provider a message policy names. */
   readonly decisionProviderKeyFile?: Redacted.Redacted;
+  /** An evaluation hides `group:` addresses from every send. */
+  readonly hideGroups: boolean;
+  /** An evaluation hides gather, all_gather and answers from every send. */
+  readonly hideCollectives: boolean;
 }
 
 /** Loaded private authority required by daemon registration and network calls. */
