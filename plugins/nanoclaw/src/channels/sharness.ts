@@ -66,7 +66,7 @@ const CHANNEL_DEFAULTS = Object.freeze({
 });
 
 /**
- * Client exposes no post time, so a fixed placeholder keeps replay payloads
+ * Client exposes no message time, so a fixed placeholder keeps replay payloads
  * identical.
  */
 const INBOUND_TIMESTAMP = "1970-01-01T00:00:00.000Z";
@@ -183,9 +183,9 @@ function extractOutboundText(message: OutboundMessage): string | null {
 }
 
 /**
- * Send failures whose post the daemon still delivers, `delivery-pending`, or
+ * Send failures whose message the daemon still delivers, `delivery-pending`, or
  * may already have sent, `outcome-unknown`. NanoClaw's retry is a new send
- * and would post the message a second time, so such a row completes even
+ * and would send the message a second time, so such a row completes even
  * when the host callback that reports it fails; the model, told the message
  * may have been sent, can resend it deliberately.
  */
@@ -434,7 +434,7 @@ class HarnessChannelAdapter {
    * @param to The conversation the text was sent to.
    * @param error The send's refusal.
    * @returns Completion once the report is handed to the host or, for a
-   *     posted refusal, logged as unreported.
+   *     sent refusal, logged as unreported.
    */
   private reportFinalRefusal(
     config: ChannelSetup,
@@ -568,7 +568,7 @@ function projectItem(item: InboundItem): ProjectedItem {
     case "multicast":
       return {
         origin: "peer",
-        id: item.message.postId,
+        id: item.message.msgId,
         address: item.message.address,
         sender: `agent:${item.message.sender.agentName}`,
         text: renderContent(item.message.content),
@@ -576,7 +576,7 @@ function projectItem(item: InboundItem): ProjectedItem {
     case "collectiveRequest":
       return {
         origin: "peer",
-        id: item.postId,
+        id: item.msgId,
         address: item.to,
         sender: `agent:${item.from.agentName}`,
         text: renderCollectiveRequest(

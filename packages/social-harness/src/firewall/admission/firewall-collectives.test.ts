@@ -13,7 +13,7 @@ import type {
 } from "../evaluator/contract/index.js";
 import type { FirewallOptions } from "./firewall.js";
 import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
-import { appendCertifiedPost } from "../../__tests__/certified-history-fixtures.js";
+import { appendCertifiedMessage } from "../../__tests__/certified-history-fixtures.js";
 import { collectiveKey } from "../../__tests__/collective-operation-fixtures.js";
 import {
   admitPending,
@@ -117,13 +117,13 @@ function answerContent(content: object) {
 function seedAnswers(subject: Fixture, answers: PerMember<AnswerContent>) {
   return Effect.gen(function* () {
     const bobFirstMessage = yield* seedIncoming(subject, true);
-    const bobAnswer = yield* appendCertifiedPost(
+    const bobAnswer = yield* appendCertifiedMessage(
       subject,
       bobFirstMessage,
       yield* answerContent(answers.bob),
     );
     const other = yield* addConversation(subject, true);
-    const carolAnswer = yield* appendCertifiedPost(
+    const carolAnswer = yield* appendCertifiedMessage(
       { ...subject, ...other },
       other.record,
       yield* answerContent(answers.carol),
@@ -257,7 +257,7 @@ function checksARequestAsItsQuestion() {
     const subject = yield* fixture;
     const deadlineAt = Date.now() + 60_000;
     const firstMessage = yield* seedIncoming(subject, true);
-    yield* appendCertifiedPost(subject, firstMessage, [
+    yield* appendCertifiedMessage(subject, firstMessage, [
       ...(yield* gatherRequestContent(deadlineAt, question)),
       { type: "data", value: { agenda: ["mon", "tue"] } },
     ]);
@@ -362,13 +362,13 @@ function scopesUnresolvedEvidenceToTheMembersAnswer() {
     const subject = yield* fixture;
     const answers = { bob: { slot: "mon" }, carol: { slot: "tue" } };
     const provenance = yield* seedAnswers(subject, answers);
-    yield* subject.store.bindPostIntent({
+    yield* subject.store.bindMessageIntent({
       kind: "existing-conversation",
       intent: {
         conversationId: subject.membership.descriptor.conversationId,
         membershipHash: subject.membership.hash,
         authorAgentId: subject.local.card.agentId,
-        postId: "pst_unresolved",
+        msgId: "msg_unresolved",
         canonicalIntent: bytes("pending send to Bob"),
       },
     });
@@ -514,7 +514,7 @@ function admitsAFailureWithoutInference() {
   return Effect.gen(function* () {
     const subject = yield* fixture;
     const firstMessage = yield* seedIncoming(subject, true);
-    yield* appendCertifiedPost(subject, firstMessage, question);
+    yield* appendCertifiedMessage(subject, firstMessage, question);
     const runtime = yield* incomingFixture(
       subject,
       policy(() => Effect.dieMessage("a failure is never inferred")),
@@ -595,12 +595,12 @@ function leavesTheResultInLaterEvidence() {
 
 /**
  * A request whose deadline lies past the last instant a date can represent,
- * as a hostile peer could post it, then a plain message after it.
+ * as a hostile peer could message it, then a plain message after it.
  */
 function seedUnrenderableRequest(subject: Fixture) {
   return Effect.gen(function* () {
     const firstMessage = yield* seedIncoming(subject, true);
-    const hostile = yield* appendCertifiedPost(subject, firstMessage, [
+    const hostile = yield* appendCertifiedMessage(subject, firstMessage, [
       { type: "text", text: question },
       {
         type: "data",
@@ -616,7 +616,7 @@ function seedUnrenderableRequest(subject: Fixture) {
         },
       },
     ]);
-    return yield* appendCertifiedPost(subject, hostile, "A later message");
+    return yield* appendCertifiedMessage(subject, hostile, "A later message");
   }).pipe(Effect.withSpan("seedUnrenderableRequest"));
 }
 
@@ -651,12 +651,12 @@ function retiresARequestThatExpiresBeforeItsCheck() {
     const subject = yield* fixture;
     const deadlineAt = Date.now() + 3_000;
     const firstMessage = yield* seedIncoming(subject, true);
-    const earlier = yield* appendCertifiedPost(
+    const earlier = yield* appendCertifiedMessage(
       subject,
       firstMessage,
       "Earlier",
     );
-    yield* appendCertifiedPost(
+    yield* appendCertifiedMessage(
       subject,
       earlier,
       yield* gatherRequestContent(deadlineAt, question),
@@ -847,7 +847,7 @@ function keepsAnInvalidAnswerFromLaterRuntimeHistory() {
 function seedEarlierMessage(subject: Fixture) {
   return seedIncoming(subject, true).pipe(
     Effect.flatMap((firstMessage) =>
-      appendCertifiedPost(subject, firstMessage, "An earlier message"),
+      appendCertifiedMessage(subject, firstMessage, "An earlier message"),
     ),
   );
 }
@@ -994,7 +994,7 @@ describe("collective results under a firewall", () => {
     admitsAResultWithNoAnswerWithoutInference,
   );
   it(
-    "keeps an invalid answer's post content out of later runtime-visible history",
+    "keeps an invalid answer's message content out of later runtime-visible history",
     keepsAnInvalidAnswerFromLaterRuntimeHistory,
   );
 });

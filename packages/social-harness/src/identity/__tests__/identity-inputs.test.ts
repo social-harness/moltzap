@@ -6,7 +6,7 @@ import { expect, it } from "vitest";
 import {
   type Group,
   makeGroup,
-  messageIdOf,
+  envelopeIdOf,
   plaintext,
   sealFrom,
   signBody,
@@ -79,7 +79,7 @@ it.each<EntryPointCase>([
           {
             senderAgentId: group.sender.agentCard.agentId,
             recipientAgentCards: group.recipients.map((r) => r.agentCard),
-            messageId: messageIdOf(1),
+            envelopeId: envelopeIdOf(1),
             plaintext,
           },
           member,
@@ -125,7 +125,7 @@ it.each<EntryPointCase>([
             agentCard: group.sender.agentCard,
             signingAuthority: group.sender.authority,
             recipientAgentIds: new Set([group.peer.agentCard.agentId]),
-            messageId: messageIdOf(1),
+            envelopeId: envelopeIdOf(1),
             body: plaintext,
           },
           member,

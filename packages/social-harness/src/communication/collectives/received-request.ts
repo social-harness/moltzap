@@ -11,8 +11,8 @@
 import { Duration, Either, Option } from "effect";
 import type { AgentView } from "../../identity/cards.js";
 import type { InboundMessage } from "../conversations/message.js";
-import type { PostId, RecordHash } from "../records/index.js";
-import type { CertifiedPost } from "./ports.js";
+import type { MsgId, RecordHash } from "../records/index.js";
+import type { CertifiedMessage } from "./ports.js";
 import type { SharedAnswers } from "./shared-answers.js";
 import {
   type AgentAddress,
@@ -87,12 +87,12 @@ type UnansweredKind = Extract<
 >;
 
 /**
- * A request this endpoint received. `postId` is the request post it came in,
+ * A request this endpoint received. `msgId` is the request message it came in,
  * `recordHash` its certified record, and every answer goes to `to`. A refused
  * answer reopens the request.
  */
 interface ReceivedRequestFields extends RequestStatus {
-  readonly postId: PostId;
+  readonly msgId: MsgId;
   readonly recordHash: RecordHash;
   readonly from: AgentView;
   /** The question as every member's model reads it. */
@@ -189,32 +189,32 @@ export const unmatchedAnswerError = (
       });
 
 /**
- * The request state a request post opens, when it arrived where its
+ * The request state a request message opens, when it arrived where its
  * operation sends it and its id derives from its sender: a gather's in the
  * member's direct conversation with the requester before its deadline, an
  * all_gather's in a group conversation, whose other members are the ones
  * asked. The request remains available for close processing after its deadline. A deadline beyond
  * `RECEIVED_DEADLINE_HORIZON` opens nothing. Under a firewall the request
  * starts `unadmitted`.
- * @param post The certified request post and its record.
+ * @param certified The request message and its certified record.
  * @param value The request's collective part.
  * @param now The current time in epoch milliseconds.
  * @param initial The state the request starts in.
- * @returns The request to hold, or none when the post opens nothing.
+ * @returns The request to hold, or none when the message opens nothing.
  */
 export function receivedRequest(
-  post: CertifiedPost,
+  certified: CertifiedMessage,
   value: CollectingValue,
   now: number,
   initial: "open" | "unadmitted",
 ): Option.Option<ReceivedRequest> {
-  const { message } = post;
+  const { message } = certified;
   if (!trustedRequest(message, value, now)) {
     return Option.none();
   }
   const request: ReceivedRequestFields = {
-    postId: message.postId,
-    recordHash: post.recordHash,
+    msgId: message.msgId,
+    recordHash: certified.recordHash,
     from: message.sender,
     to: message.address,
     question: questionText(message.content),

@@ -1,4 +1,4 @@
-/** @file Plain sends distinguish Router attachment from ownership of a bound collective post. */
+/** @file Plain sends distinguish Router attachment from ownership of a bound collective message. */
 
 import { scoped as it } from "@effect/vitest";
 import {
@@ -27,12 +27,12 @@ import {
   CertifiedRecord,
   hashAction,
   hashAnchor,
-  hashPostIntent,
+  hashMessageIntent,
   hashRecord,
   InitialAnchorBody,
   MembershipDescriptor,
   MessageAddressInput,
-  PostIntent,
+  MessageIntent,
   type RecordCore,
   signOuterPacket,
   verifyMembershipDescriptor,
@@ -51,29 +51,29 @@ it("waits for Router attachment before reporting a bound all-gather as pending",
 
     expect(Option.isNone(yield* Fiber.poll(sending))).toBe(true);
     expect(yield* fixture.store.readCollectiveOperations()).toEqual([]);
-    expect(yield* fixture.store.readCollectivePosts()).toEqual([]);
+    expect(yield* fixture.store.readCollectiveMessages()).toEqual([]);
 
     yield* Deferred.succeed(fixture.attached, undefined);
     expect(yield* Effect.flip(Fiber.join(sending))).toMatchObject({
       reason: "delivery-pending",
     });
     const operations = yield* fixture.store.readCollectiveOperations();
-    const posts = yield* fixture.store.readCollectivePosts();
+    const messages = yield* fixture.store.readCollectiveMessages();
     expect(operations).toHaveLength(1);
-    expect(posts).toHaveLength(1);
-    expect(posts[0]).toMatchObject({
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({
       operationId: operations[0]?.operationId,
       role: "request",
     });
     const certified = yield* certifyPendingRequest(fixture);
-    expect(yield* fixture.engine.observePost(certified.postId)).toEqual(
+    expect(yield* fixture.engine.observeMessage(certified.msgId)).toEqual(
       certified,
     );
     expect(
-      (yield* fixture.store.readCollectivePosts()).map(
-        (post) => post.intent.postId,
+      (yield* fixture.store.readCollectiveMessages()).map(
+        (message) => message.intent.msgId,
       ),
-    ).toEqual([certified.postId]);
+    ).toEqual([certified.msgId]);
   }));
 
 it("refuses an all-gather whose deadline passes before Router attachment without binding it", () =>
@@ -88,7 +88,7 @@ it("refuses an all-gather whose deadline passes before Router attachment without
       failure: { kind: "deadline-passed" },
     });
     expect(yield* fixture.store.readCollectiveOperations()).toEqual([]);
-    expect(yield* fixture.store.readCollectivePosts()).toEqual([]);
+    expect(yield* fixture.store.readCollectiveMessages()).toEqual([]);
   }));
 
 it("refuses an all-gather whose deadline passes while another send owns the engine gate", () =>
@@ -121,8 +121,8 @@ it("refuses an all-gather whose deadline passes while another send owns the engi
       failure: { kind: "deadline-passed" },
     });
     expect(yield* fixture.store.readCollectiveOperations()).toEqual([]);
-    expect(yield* fixture.store.readCollectivePosts()).toEqual([]);
-    expect((yield* fixture.store.recover()).postIntents).toHaveLength(1);
+    expect(yield* fixture.store.readCollectiveMessages()).toEqual([]);
+    expect((yield* fixture.store.recover()).messageIntents).toHaveLength(1);
   }));
 
 function attachingEndpoint(pausePlainBind?: Effect.Effect<unknown>) {
@@ -141,10 +141,10 @@ function attachingEndpoint(pausePlainBind?: Effect.Effect<unknown>) {
       store: subject.store,
       self: Schema.decodeUnknownSync(AgentAddress)("agent:alice"),
       lookupMember: (member) => resolvedMemberView(engine, member),
-      sendPost: engine.send,
-      bindPost: engine.bind,
+      sendMessage: engine.send,
+      bindMessage: engine.bind,
       sendAdmitted: engine.sendAdmitted,
-      observePost: engine.observePost,
+      observeMessage: engine.observeMessage,
       reportStorageFault: () => Effect.dieMessage("unexpected storage fault"),
       emit: () => Effect.void,
       scope,
@@ -240,7 +240,7 @@ function certifyPendingRequest(
       payload: { kind: "direct", packet: record },
     });
     return {
-      postId: action.postIntent.postId,
+      msgId: action.messageIntent.msgId,
       recordHash: record.actionCertifiedRecord.recordHash,
     };
   });
@@ -251,12 +251,15 @@ function pendingAction(
 ) {
   return Effect.gen(function* () {
     const recovery = yield* fixture.store.recover();
-    const bound = yield* Effect.fromNullable(recovery.postIntents[0]);
+    const bound = yield* Effect.fromNullable(recovery.messageIntents[0]);
     const storedMembership = yield* Effect.fromNullable(
       recovery.memberships[0],
     );
     const storedAnchor = yield* Effect.fromNullable(recovery.anchors[0]);
-    const intent = yield* decodeRuntimeValue(PostIntent, bound.canonicalIntent);
+    const intent = yield* decodeRuntimeValue(
+      MessageIntent,
+      bound.canonicalIntent,
+    );
     const action = yield* Schema.decodeUnknown(ActionCore)({
       sharnessVersion: WIRE_VERSION,
       kind: "FIRST_MESSAGE",
@@ -270,8 +273,8 @@ function pendingAction(
         storedAnchor.canonicalAnchor,
       ),
       previousRecordHash: null,
-      postIntent: intent,
-      postIntentHash: yield* hashPostIntent(intent),
+      messageIntent: intent,
+      messageIntentHash: yield* hashMessageIntent(intent),
     });
     if (action.kind !== "FIRST_MESSAGE") {
       return yield* Effect.dieMessage("expected the first group request");
@@ -383,9 +386,9 @@ function pauseUnrelatedBinds(
 ): EndpointStore {
   return {
     ...store,
-    bindPostIntent: (binding) =>
+    bindMessageIntent: (binding) =>
       (binding.collective === undefined ? pause : Effect.void).pipe(
-        Effect.zipRight(store.bindPostIntent(binding)),
+        Effect.zipRight(store.bindMessageIntent(binding)),
       ),
   };
 }

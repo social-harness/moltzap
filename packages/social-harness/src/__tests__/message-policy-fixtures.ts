@@ -6,7 +6,7 @@ import { digest, testAgentView } from "./agent-card-fixtures.js";
 
 /** The peer text and registered instruction travel separately through every runtime view. */
 export function localGuidance(byte: number): CheckedGuidance {
-  const subject = digest("pst_", byte);
+  const subject = digest("msg_", byte);
   return {
     checkId: `chk_${Encoding.encodeHex(new Uint8Array(32).fill(byte))}`,
     subjects: [

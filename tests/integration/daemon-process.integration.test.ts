@@ -91,7 +91,7 @@ const registerFixture = (fixture: DaemonProcessFixture) =>
     }),
   );
 
-/** Sends one addressed post with `send` and waits for the peer to receive it. */
+/** Sends one addressed message with `send` and waits for the peer to receive it. */
 const deliverDirect = (input: {
   readonly from: RegisteredFixture;
   readonly to: DaemonProcessFixture;
@@ -123,7 +123,7 @@ const deliverDirect = (input: {
 
 const beforeRestartText = "sent before the daemon restarts";
 
-/** Sends one post as a host does, failing on any send failure. */
+/** Sends one message as a host does, failing on any send failure. */
 const certifiedSend = (endpoint: HarnessEndpoint, input: SendInput) =>
   endpoint.send(input).pipe(Effect.asVoid);
 
@@ -370,9 +370,9 @@ const toRestartedText = "sent to the restarted daemon";
 
 /**
  * Either send after the restart may fail as queued, so each is confirmed by
- * its delivery. The restarted daemon's delivery of the peer's post shows it
+ * its delivery. The restarted daemon's delivery of the peer's message shows it
  * stored that record, and an endpoint stores a record only after the one it
- * extends, so its durable history then holds all three posts.
+ * extends, so its durable history then holds all three messages.
  */
 const singleRestartBehavior = Effect.gen(function* () {
   const scenario = yield* acquireRestartPair;
@@ -423,7 +423,7 @@ const routerRestartBehavior = Effect.gen(function* () {
 const processBehavior = Effect.gen(function* () {
   const scenario = yield* acquireProcessPair;
   yield* expectRetiredConversationIdentifierRefused(scenario.callerFixture);
-  yield* exchangeInitialPostsAndExpectDelivery(scenario);
+  yield* exchangeInitialMessagesAndExpectDelivery(scenario);
   yield* expectInitialHistoriesMatch(scenario);
   yield* restartRecipientAndExpectRetainedHistory(scenario);
   yield* deliverDirect({
@@ -611,7 +611,7 @@ it(
 );
 
 it(
-  "certifies fresh posts in both directions after one daemon restarts",
+  "certifies fresh messages in both directions after one daemon restarts",
   processTrace(processBehavior),
   PROCESS_TEST_TIMEOUT_MS,
 );
@@ -728,7 +728,7 @@ function expectRestartedRecipientHistory(state: RestartScenario) {
     ).toEqual(["FIRST_MESSAGE", "MESSAGE", "MESSAGE"]);
     expect(
       history.records.map(
-        ({ recordCore }) => recordCore.action.postIntent.content[0],
+        ({ recordCore }) => recordCore.action.messageIntent.content[0],
       ),
     ).toEqual([
       { type: "text", text: beforeRestartText },
@@ -784,7 +784,7 @@ function expectRecoveredRouterHistory(state: RouterRestartScenario) {
       directAddress(conciergeFixture.agentName),
     );
     const texts = history.records.map(
-      ({ recordCore }) => recordCore.action.postIntent.content[0],
+      ({ recordCore }) => recordCore.action.messageIntent.content[0],
     );
     expect(texts.slice(0, 2)).toEqual(
       arrayContaining([
@@ -813,7 +813,7 @@ function expectRecoveredRouterHistory(state: RouterRestartScenario) {
   });
 }
 
-function exchangeInitialPostsAndExpectDelivery(state: ProcessScenario) {
+function exchangeInitialMessagesAndExpectDelivery(state: ProcessScenario) {
   return Effect.gen(function* () {
     const { callerFixture, targetFixture, callerAddress, targetAddress } =
       state;
@@ -838,7 +838,7 @@ function exchangeInitialPostsAndExpectDelivery(state: ProcessScenario) {
           kind: "multicast",
           message: {
             kind: "direct",
-            postId: sent.postId,
+            msgId: sent.msgId,
             address: callerAddress,
             sender: callerFixture.agent,
             content: [{ type: "text", text: initialText }],
@@ -880,7 +880,7 @@ function expectInitialHistoriesMatch(state: ProcessScenario) {
     ).toEqual(["FIRST_MESSAGE", "MESSAGE"]);
     expect(
       callerHistory.records.map(
-        ({ recordCore }) => recordCore.action.postIntent.content,
+        ({ recordCore }) => recordCore.action.messageIntent.content,
       ),
     ).toEqual([initialContent, responseContent]);
     expect(targetHistory.continuation).toBeNull();
@@ -890,7 +890,7 @@ function expectInitialHistoriesMatch(state: ProcessScenario) {
     ).toEqual(["FIRST_MESSAGE", "MESSAGE"]);
     expect(
       targetHistory.records.map(
-        ({ recordCore }) => recordCore.action.postIntent.content,
+        ({ recordCore }) => recordCore.action.messageIntent.content,
       ),
     ).toEqual([initialContent, responseContent]);
   });
@@ -951,16 +951,16 @@ function requireDelivery(
 }
 
 /**
- * Sends one post from `endpoint` after a daemon restart. A send whose own
+ * Sends one message from `endpoint` after a daemon restart. A send whose own
  * outbox drain outlasts its bound or loses the Router fails with
- * `delivery-pending`: the post is durably queued, and the daemon delivers it
+ * `delivery-pending`: the message is durably queued, and the daemon delivers it
  * once its Router worker answers. Under load that happens while the restarted
  * daemon and its peer exchange recovery traffic, so the trace takes that
- * failure as queued and confirms the post by the peer's delivery. Any other
+ * failure as queued and confirms the message by the peer's delivery. Any other
  * failure fails the trace.
  * @param endpoint Endpoint that sends.
- * @param input The post.
- * @returns Completion once the post is certified or queued.
+ * @param input The message.
+ * @returns Completion once the message is certified or queued.
  */
 function sendOrQueue(endpoint: HarnessEndpoint, input: SendInput) {
   return endpoint.send(input).pipe(
@@ -981,7 +981,7 @@ function markStoredOutboundPending(directory: string) {
       try {
         const result = database
           .prepare(
-            "UPDATE outbound_messages SET disposition = 'pending' WHERE message_id = (SELECT message_id FROM outbound_messages LIMIT 1)",
+            "UPDATE outbound_messages SET disposition = 'pending' WHERE envelope_id = (SELECT envelope_id FROM outbound_messages LIMIT 1)",
           )
           .run();
         if (result.changes !== 1) {

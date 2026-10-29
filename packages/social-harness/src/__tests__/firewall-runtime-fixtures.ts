@@ -130,7 +130,7 @@ const identities = Effect.gen(function* () {
 /**
  * Real storage and send preparation run with a suspended Router send. Before
  * each outbound write the engine asks `failWrite`: a write it fails fails the
- * bound post's activation, and the storage fault it reports is ignored.
+ * bound message's activation, and the storage fault it reports is ignored.
  * @param failWrite Whether the next outbound write fails; none fails by default.
  * @returns The fixture's identities, storage, engine and Router barrier.
  */
@@ -240,14 +240,14 @@ const firewallRuntime = (subject: Fixture, installed: InstalledFirewall) =>
       });
     const collectives = yield* makeCollectiveOperations({
       store,
-      observePost: (postId) => engine.observePost(postId),
+      observeMessage: (msgId) => engine.observeMessage(msgId),
       sendAdmitted: (input, checkId) => engine.sendAdmitted(input, checkId),
       reportStorageFault: () => Effect.void,
       self: Schema.decodeUnknownSync(AgentAddress)("agent:alice"),
       scope,
       lookupMember: (member) => resolvedMemberView(engine, member),
-      sendPost: (input) => engine.send(input),
-      bindPost: (input, hold) => engine.bind(input, hold),
+      sendMessage: (input) => engine.send(input),
+      bindMessage: (input, hold) => engine.bind(input, hold),
       emit,
       admission: collectiveAdmission(environment, engine),
     });

@@ -4,8 +4,8 @@ import {
   AgentId,
   type AgentId as AgentIdValue,
   type LiveSignedMessage,
-  MessageId,
-  type MessageId as MessageIdValue,
+  EnvelopeId,
+  type EnvelopeId as EnvelopeIdValue,
   SignedMessage,
   WIRE_VERSION,
 } from "@moltzap/social-harness";
@@ -41,8 +41,8 @@ const identifierPayload = (seed: number): string =>
 const makeAgentId = (seed: number): AgentIdValue =>
   Schema.decodeUnknownSync(AgentId)(`agt_${identifierPayload(seed)}`);
 
-const makeMessageId = (seed: number): MessageIdValue =>
-  Schema.decodeUnknownSync(MessageId)(`msg_${identifierPayload(seed)}`);
+const makeEnvelopeId = (seed: number): EnvelopeIdValue =>
+  Schema.decodeUnknownSync(EnvelopeId)(`env_${identifierPayload(seed)}`);
 
 const makeRouterInstanceId = (
   seed: number,
@@ -70,7 +70,7 @@ const encodedCanonicalJson = (value: unknown): string =>
 const makeSignedMessage = (input: {
   readonly senderAgentId: AgentIdValue;
   readonly recipientAgentIds: readonly AgentIdValue[];
-  readonly messageId: MessageIdValue;
+  readonly envelopeId: EnvelopeIdValue;
   readonly body: string;
 }): LiveSignedMessage => {
   const agentCardDigest = Schema.decodeUnknownSync(AgentCardDigest)(
@@ -83,7 +83,7 @@ const makeSignedMessage = (input: {
       senderAgentId: input.senderAgentId,
       agentCardDigest,
       recipientAgentIds: input.recipientAgentIds,
-      messageId: input.messageId,
+      envelopeId: input.envelopeId,
       body: Encoding.encodeBase64Url(utf8Encoder.encode(input.body)),
     }),
     signatures: [
@@ -111,7 +111,7 @@ const makeMaximumSignedMessage = (): LiveSignedMessage =>
       recipientAgentIds: Array.from(Array(128).keys(), (index) =>
         makeAgentId(index),
       ),
-      messageId: makeMessageId(248),
+      envelopeId: makeEnvelopeId(248),
       body: Encoding.encodeBase64Url(new Uint8Array(262_144)),
     }),
     signatures: [
@@ -141,8 +141,8 @@ const acceptMessage = (
     encodedByteLength: SignedMessage.encodedByteLength(message),
     recipients: new Set(message.recipientAgentIds),
     senderAgentId: message.senderAgentId,
-    messageId: message.messageId,
-    signedMessageDigest: makeDigest(message.messageId.charCodeAt(4)),
+    envelopeId: message.envelopeId,
+    signedMessageDigest: makeDigest(message.envelopeId.charCodeAt(4)),
   });
 
 const effectFails = <A, E, R>(
@@ -320,7 +320,7 @@ describe("global feed behavior", () => {
       const message = makeSignedMessage({
         senderAgentId: sender,
         recipientAgentIds: [firstRecipient, secondRecipient],
-        messageId: makeMessageId(1),
+        envelopeId: makeEnvelopeId(1),
         body: "one-copy",
       });
       yield* acceptMessage(feed, message);
@@ -345,19 +345,19 @@ describe("global feed behavior", () => {
       const firstMessage = makeSignedMessage({
         senderAgentId: sender,
         recipientAgentIds: [firstRecipient],
-        messageId: makeMessageId(1),
+        envelopeId: makeEnvelopeId(1),
         body: "message-1",
       });
       const secondMessage = makeSignedMessage({
         senderAgentId: sender,
         recipientAgentIds: [firstRecipient],
-        messageId: makeMessageId(2),
+        envelopeId: makeEnvelopeId(2),
         body: "message-2",
       });
       const thirdMessage = makeSignedMessage({
         senderAgentId: sender,
         recipientAgentIds: [firstRecipient],
-        messageId: makeMessageId(3),
+        envelopeId: makeEnvelopeId(3),
         body: "message-3",
       });
       yield* acceptMessage(feed, firstMessage);
@@ -399,13 +399,13 @@ describe("global feed behavior", () => {
       const resent = makeSignedMessage({
         senderAgentId: sender,
         recipientAgentIds: [firstRecipient],
-        messageId: makeMessageId(1),
+        envelopeId: makeEnvelopeId(1),
         body: "resent",
       });
       const evictor = makeSignedMessage({
         senderAgentId: sender,
         recipientAgentIds: [firstRecipient],
-        messageId: makeMessageId(2),
+        envelopeId: makeEnvelopeId(2),
         body: "evictor",
       });
       yield* acceptMessage(feed, resent);
@@ -417,8 +417,8 @@ describe("global feed behavior", () => {
       });
       const snapshot = yield* feed.snapshot;
       expect(
-        snapshot.entries.map((entry) => [entry.order, entry.messageId]),
-      ).toEqual([[3n, resent.messageId]]);
+        snapshot.entries.map((entry) => [entry.order, entry.envelopeId]),
+      ).toEqual([[3n, resent.envelopeId]]);
     }),
   );
 
@@ -429,17 +429,17 @@ describe("global feed behavior", () => {
         retainedMessageCapacity: 2,
         retainedMessageByteCapacity: 2_000_000,
       });
-      const messageId = makeMessageId(8);
+      const envelopeId = makeEnvelopeId(8);
       const original = makeSignedMessage({
         senderAgentId: sender,
         recipientAgentIds: [firstRecipient],
-        messageId,
+        envelopeId,
         body: "original",
       });
       const changed = makeSignedMessage({
         senderAgentId: sender,
         recipientAgentIds: [firstRecipient],
-        messageId,
+        envelopeId,
         body: "changed",
       });
       yield* acceptMessage(feed, original);
@@ -469,7 +469,7 @@ describe("global feed behavior", () => {
                 makeSignedMessage({
                   senderAgentId: sender,
                   recipientAgentIds: [firstRecipient, secondRecipient],
-                  messageId: makeMessageId(seed),
+                  envelopeId: makeEnvelopeId(seed),
                   body: `concurrent-${seed}`,
                 }),
               );
@@ -547,7 +547,7 @@ describe("global feed behavior", () => {
         const finalMessage = makeSignedMessage({
           senderAgentId: sender,
           recipientAgentIds: [firstRecipient],
-          messageId: makeMessageId(1),
+          envelopeId: makeEnvelopeId(1),
           body: "final-position",
         });
         const accepted = yield* acceptMessage(feed, finalMessage);
@@ -569,7 +569,7 @@ describe("global feed behavior", () => {
           makeSignedMessage({
             senderAgentId: sender,
             recipientAgentIds: [firstRecipient],
-            messageId: makeMessageId(2),
+            envelopeId: makeEnvelopeId(2),
             body: "past-final-position",
           }),
         );
@@ -680,7 +680,7 @@ describe("poll behavior", () => {
         const historical = makeSignedMessage({
           senderAgentId: sender,
           recipientAgentIds: [firstRecipient],
-          messageId: makeMessageId(1),
+          envelopeId: makeEnvelopeId(1),
           body: "historical",
         });
         yield* acceptMessage(feed, historical);
@@ -700,7 +700,7 @@ describe("poll behavior", () => {
         const live = makeSignedMessage({
           senderAgentId: sender,
           recipientAgentIds: [firstRecipient],
-          messageId: makeMessageId(2),
+          envelopeId: makeEnvelopeId(2),
           body: "live",
         });
         yield* acceptMessage(feed, live);
@@ -746,7 +746,7 @@ describe("poll behavior", () => {
           makeSignedMessage({
             senderAgentId: sender,
             recipientAgentIds: [firstRecipient],
-            messageId: makeMessageId(seed),
+            envelopeId: makeEnvelopeId(seed),
             body: `message-${seed}`,
           }),
         );
@@ -793,7 +793,7 @@ describe("poll behavior", () => {
               makeSignedMessage({
                 senderAgentId: sender,
                 recipientAgentIds: [nonRecipient],
-                messageId: makeMessageId(2),
+                envelopeId: makeEnvelopeId(2),
                 body: "second-unrelated",
               }),
             );
@@ -818,7 +818,7 @@ describe("poll behavior", () => {
         makeSignedMessage({
           senderAgentId: sender,
           recipientAgentIds: [nonRecipient],
-          messageId: makeMessageId(1),
+          envelopeId: makeEnvelopeId(1),
           body: "first-unrelated",
         }),
       );
@@ -872,13 +872,13 @@ describe("poll behavior", () => {
         const first = makeSignedMessage({
           senderAgentId: sender,
           recipientAgentIds: [firstRecipient],
-          messageId: makeMessageId(1),
+          envelopeId: makeEnvelopeId(1),
           body: "first",
         });
         const second = makeSignedMessage({
           senderAgentId: sender,
           recipientAgentIds: [firstRecipient],
-          messageId: makeMessageId(2),
+          envelopeId: makeEnvelopeId(2),
           body: "second",
         });
         yield* acceptMessage(feed, first);
@@ -931,13 +931,13 @@ describe("poll behavior", () => {
       const unrelated = makeSignedMessage({
         senderAgentId: sender,
         recipientAgentIds: [nonRecipient],
-        messageId: makeMessageId(1),
+        envelopeId: makeEnvelopeId(1),
         body: "unrelated",
       });
       const addressed = makeSignedMessage({
         senderAgentId: sender,
         recipientAgentIds: [firstRecipient],
-        messageId: makeMessageId(2),
+        envelopeId: makeEnvelopeId(2),
         body: "addressed",
       });
       yield* acceptMessage(feed, unrelated);

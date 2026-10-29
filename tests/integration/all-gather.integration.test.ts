@@ -52,7 +52,7 @@ const group =
 
 /**
  * Each test starts PGlite, the Registry, the Router and four daemons, and the
- * silent member's test waits out a deadline of several measured post rounds.
+ * silent member's test waits out a deadline of several measured message rounds.
  * Beside a second full Client suite (load average 30 to 42 on 8 cores) that
  * test has taken 113 to 127 seconds, most of it process startup. Apart from
  * that measured deadline, the limit is the only wall-clock bound these traces
@@ -79,7 +79,7 @@ interface AllGatherParticipants {
   readonly third: Participant;
 }
 
-/** A refused operation posts nothing before the valid all_gather requests arrive. */
+/** A refused operation sends nothing before the valid all_gather requests arrive. */
 function expectUnreachableAllGatherRefused(requester: Participant) {
   return Effect.gen(function* () {
     const unreachable = yield* allGather(
@@ -115,7 +115,7 @@ function startAllGatherAndExpectRequests({
       kind: "collectiveRequest",
       op: "all_gather",
       id: started.operationId,
-      postId: anyString,
+      msgId: anyString,
       from: requester.agent,
       to: group,
       question,

@@ -1,4 +1,4 @@
-/** @file Pins the collective values carried in a post's data part. */
+/** @file Pins the collective values carried in a message's data part. */
 
 import { Effect, Either, Exit, Option, ParseResult, Schema } from "effect";
 import { describe, expect, it } from "vitest";
@@ -68,7 +68,7 @@ const decodeValue = (value: unknown) =>
 
 // @agent-code-guard/regression-only: examples pin the closed collective content round trip.
 describe("collective content round trip", () => {
-  it("round-trips a gather request through post content", () => {
+  it("round-trips a gather request through message content", () => {
     const content = Effect.runSync(
       encodeCollectiveContent(decodeValue(gather), "Which day?"),
     );

@@ -211,7 +211,7 @@ it("refuses a retired pending envelope before creating a backup or running a ste
     );
     database
       .prepare(
-        `INSERT INTO outbound_messages (conversation_id, message_id, canonical_signed_message, wire_version, attempted, disposition) VALUES (?, 'message', ?, 'retired', 0, 'pending')`,
+        `INSERT INTO outbound_messages (conversation_id, envelope_id, canonical_signed_message, wire_version, attempted, disposition) VALUES (?, 'message', ?, 'retired', 0, 'pending')`,
       )
       .run(foundation.conversationId, bytes);
     database.close();

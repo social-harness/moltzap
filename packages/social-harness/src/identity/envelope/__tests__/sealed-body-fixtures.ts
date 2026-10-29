@@ -18,7 +18,7 @@ import {
 } from "../../keys.js";
 import { SealedBody } from "../sealed-body.js";
 import {
-  MessageId,
+  EnvelopeId,
   SignedMessage,
   type VerifiedSignedMessage,
 } from "../signed-message.js";
@@ -130,12 +130,12 @@ export const makeGroup = (recipientCount: number) =>
 export type Group = Effect.Effect.Success<ReturnType<typeof makeGroup>>;
 
 /**
- * The MessageId whose 16 bytes all repeat `byte`. `sealFrom` and `signBody`
- * both default to byte 1, so a test that names no MessageId seals and signs
+ * The EnvelopeId whose 16 bytes all repeat `byte`. `sealFrom` and `signBody`
+ * both default to byte 1, so a test that names no EnvelopeId seals and signs
  * under the same one.
  */
-export const messageIdOf = (byte: number) =>
-  Schema.decodeUnknownSync(MessageId)(identifier("msg_", byte));
+export const envelopeIdOf = (byte: number) =>
+  Schema.decodeUnknownSync(EnvelopeId)(identifier("env_", byte));
 
 /**
  * Seals `bytes` from `sender` to the recipients' AgentCards.
@@ -143,19 +143,19 @@ export const messageIdOf = (byte: number) =>
  * @param sender Sender whose AgentId the header binds.
  * @param recipients Recipients in the order the sender lists their cards.
  * @param bytes Plaintext to seal.
- * @param messageIdByte Byte repeated through the MessageId the header binds.
+ * @param envelopeIdByte Byte repeated through the EnvelopeId the header binds.
  * @returns The sealed body.
  */
 export const sealFrom = (
   sender: Member,
   recipients: readonly Member[],
   bytes: Uint8Array,
-  messageIdByte = 1,
+  envelopeIdByte = 1,
 ) =>
   SealedBody.seal({
     senderAgentId: sender.agentCard.agentId,
     recipientAgentCards: recipients.map((member) => member.agentCard),
-    messageId: messageIdOf(messageIdByte),
+    envelopeId: envelopeIdOf(envelopeIdByte),
     plaintext: bytes,
   });
 
@@ -165,14 +165,14 @@ export const sealFrom = (
  * @param signer Member that signs.
  * @param recipients Recipients the SignedMessage names.
  * @param body Body bytes, sealed or not.
- * @param messageIdByte Byte repeated through the MessageId.
+ * @param envelopeIdByte Byte repeated through the EnvelopeId.
  * @returns The verified SignedMessage.
  */
 export const signBody = (
   signer: Member,
   recipients: readonly Member[],
   body: Uint8Array,
-  messageIdByte = 1,
+  envelopeIdByte = 1,
 ) =>
   SignedMessage.sign({
     agentCard: signer.agentCard,
@@ -180,7 +180,7 @@ export const signBody = (
     recipientAgentIds: new Set(
       recipients.map((member) => member.agentCard.agentId),
     ),
-    messageId: messageIdOf(messageIdByte),
+    envelopeId: envelopeIdOf(envelopeIdByte),
     body,
   });
 

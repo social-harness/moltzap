@@ -9,10 +9,10 @@ import type { OutboxTooOldError } from "./database/values.js";
 import type { EndpointStore } from "./types.js";
 import {
   applyCatchUpReanchor,
-  bindAdmittedPostIntent,
-  bindCheckedPostIntent,
+  bindAdmittedMessageIntent,
+  bindCheckedMessageIntent,
   bindIdentity,
-  bindPostIntent,
+  bindMessageIntent,
   completeReanchor,
   lockFirstMessageProposal,
   lockProposal,
@@ -27,7 +27,7 @@ import {
   readCollectiveAnswers,
   readCollectiveOperation,
   readCollectiveOperations,
-  readCollectivePosts,
+  readCollectiveMessages,
   readCollectiveRefusals,
   recordCollectiveAnswer,
   recordCollectiveRefusal,
@@ -168,8 +168,8 @@ function makeEndpointStore(state: StoreState): EndpointStore {
       run(() => readCollectiveOperation(state.database, id)),
     readCollectiveOperations: () =>
       run(() => readCollectiveOperations(state.database)),
-    readCollectivePosts: (query) =>
-      run(() => readCollectivePosts(state.database, query)),
+    readCollectiveMessages: (query) =>
+      run(() => readCollectiveMessages(state.database, query)),
     finalizeCollectiveOperation: (operationId, selection) =>
       run(() =>
         finalizeCollectiveOperation(state.database, operationId, selection),
@@ -181,8 +181,8 @@ function makeEndpointStore(state: StoreState): EndpointStore {
     readIdentity: () => run(() => bindIdentity.read(state.database)),
     bindIdentity: (binding) =>
       run(() => bindIdentity.write(state.database, binding)),
-    bindPostIntent: (binding) =>
-      run(() => bindPostIntent(state.database, binding)),
+    bindMessageIntent: (binding) =>
+      run(() => bindMessageIntent(state.database, binding)),
     putConversationFoundation: (foundation) =>
       run(() => putConversationFoundation(state.database, foundation)),
     lockProposal: (proposal) =>
@@ -222,8 +222,8 @@ function makeEndpointStore(state: StoreState): EndpointStore {
           enqueueOutboundInTransaction,
         ),
       ),
-    beginOutbound: (messageId) =>
-      run(() => beginOutbound(state.database, messageId)),
+    beginOutbound: (envelopeId) =>
+      run(() => beginOutbound(state.database, envelopeId)),
     completeOutbound: (outbound) =>
       run(() => completeOutbound(state.database, outbound)),
     discardOutbound: (outbounds) =>
@@ -319,10 +319,10 @@ function makeEndpointStore(state: StoreState): EndpointStore {
           collective,
         ),
       ),
-    bindCheckedPostIntent: (binding, completion) =>
-      run(() => bindCheckedPostIntent(state.database, binding, completion)),
-    bindAdmittedPostIntent: (binding, operation) =>
-      run(() => bindAdmittedPostIntent(state.database, binding, operation)),
+    bindCheckedMessageIntent: (binding, completion) =>
+      run(() => bindCheckedMessageIntent(state.database, binding, completion)),
+    bindAdmittedMessageIntent: (binding, operation) =>
+      run(() => bindAdmittedMessageIntent(state.database, binding, operation)),
   };
   return Object.freeze(store);
 }

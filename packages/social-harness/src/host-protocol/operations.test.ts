@@ -9,7 +9,7 @@ import {
   CollectiveId,
   SendInput,
 } from "../communication/collectives/contracts.js";
-import { Content, PostId } from "../communication/records/index.js";
+import { Content, MsgId } from "../communication/records/index.js";
 import { AgentAddress, GroupAddress } from "../communication/records/values.js";
 import { DeliveryToken } from "../communication/store/index.js";
 import { exactParseOptions } from "../encoding/exact.js";
@@ -32,7 +32,7 @@ const outsiderAddress = Schema.decodeUnknownSync(AgentAddress)("agent:dave");
 const groupAddress = Schema.decodeUnknownSync(GroupAddress)(
   "group:alice,bob,carol",
 );
-const postId = Schema.decodeUnknownSync(PostId)(`pst_${"A".repeat(43)}`);
+const msgId = Schema.decodeUnknownSync(MsgId)(`msg_${"A".repeat(43)}`);
 const content = Schema.decodeUnknownSync(Content)([
   { type: "text", text: "meeting invite sent" },
 ]);
@@ -73,7 +73,7 @@ function decodesExactOperationRequests(): void {
 function decodesCanonicalDirectDelivery(): void {
   const message: InboundMessage = {
     kind: "direct",
-    postId,
+    msgId,
     address: senderAddress,
     sender: testAgentView(senderAddress),
     content,
@@ -110,7 +110,7 @@ function unreachableFailure(reason: string) {
 function rejectsAnUntaggedMessage(): void {
   const message: InboundMessage = {
     kind: "direct",
-    postId,
+    msgId,
     address: senderAddress,
     sender: testAgentView(senderAddress),
     content,
@@ -129,7 +129,7 @@ function rejectsAnUntaggedMessage(): void {
 function decodesCanonicalGroupDelivery(): void {
   const message: InboundMessage = {
     kind: "group",
-    postId,
+    msgId,
     address: groupAddress,
     sender: testAgentView(peerAddress),
     members: [
@@ -151,7 +151,7 @@ const inconsistentDeliveries = [
     case: "a sender whose principal differs from its member identity",
     message: {
       kind: "group",
-      postId,
+      msgId,
       address: groupAddress,
       sender: {
         ...testAgentView(peerAddress),
@@ -169,7 +169,7 @@ const inconsistentDeliveries = [
     case: "one agent id repeated under different member names",
     message: {
       kind: "group",
-      postId,
+      msgId,
       address: groupAddress,
       sender: testAgentView(peerAddress),
       members: [
@@ -187,7 +187,7 @@ const inconsistentDeliveries = [
     case: "a direct address that is not the sender",
     message: {
       kind: "direct",
-      postId,
+      msgId,
       address: peerAddress,
       sender: testAgentView(senderAddress),
       content,
@@ -197,7 +197,7 @@ const inconsistentDeliveries = [
     case: "group members out of canonical order",
     message: {
       kind: "group",
-      postId,
+      msgId,
       address: groupAddress,
       sender: testAgentView(peerAddress),
       members: [peerAddress, senderAddress, thirdAddress].map(testAgentView),
@@ -208,7 +208,7 @@ const inconsistentDeliveries = [
     case: "a repeated group member",
     message: {
       kind: "group",
-      postId,
+      msgId,
       address: groupAddress,
       sender: testAgentView(peerAddress),
       members: [senderAddress, peerAddress, peerAddress].map(testAgentView),
@@ -219,7 +219,7 @@ const inconsistentDeliveries = [
     case: "a sender outside the group",
     message: {
       kind: "group",
-      postId,
+      msgId,
       address: groupAddress,
       sender: testAgentView(outsiderAddress),
       members: [
@@ -381,7 +381,7 @@ const directItem = {
   kind: "multicast",
   message: {
     kind: "direct",
-    postId,
+    msgId,
     address: senderAddress,
     sender: testAgentView(senderAddress),
     content,

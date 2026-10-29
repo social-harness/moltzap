@@ -209,28 +209,28 @@ export interface IdentityBinding {
   readonly canonicalAgentCard: Uint8Array;
 }
 
-/** One locally authored immutable post intent and its completion. */
-export interface PostIntent {
+/** One locally authored immutable message intent and its completion. */
+export interface MessageIntent {
   readonly conversationId: string;
   readonly membershipHash: string;
   readonly authorAgentId: string;
-  readonly postId: string;
+  readonly msgId: string;
   readonly canonicalIntent: Uint8Array;
   readonly completedRecordHash?: string;
 }
 
-/** Atomic binding for a post in either retained or newly founded history. */
-export type PostIntentBinding = {
-  readonly collective?: CollectivePostBinding;
+/** Atomic binding for a message in either retained or newly founded history. */
+export type MessageIntentBinding = {
+  readonly collective?: CollectiveMessageBinding;
 } & (
   | Readonly<{
       kind: "existing-conversation";
-      intent: PostIntent;
+      intent: MessageIntent;
     }>
   | Readonly<{
       kind: "new-conversation";
       foundation: ConversationFoundation;
-      intent: PostIntent;
+      intent: MessageIntent;
     }>
 );
 
@@ -276,7 +276,7 @@ export interface StagedRecord {
   readonly anchorHash: string;
   readonly actionHash: string;
   readonly authorAgentId: string;
-  readonly postId: string;
+  readonly msgId: string;
   readonly canonicalRecordCore: Uint8Array;
 }
 
@@ -313,11 +313,11 @@ export interface PendingDelivery extends InboundDeliveryInput {
 export interface OutboundMessageInput {
   readonly wireVersion: string;
   readonly conversationId: string;
-  readonly messageId: string;
+  readonly envelopeId: string;
   readonly canonicalSignedMessage: Uint8Array;
 }
 
-/** One immutable signed envelope retained under its message identity. */
+/** One immutable signed envelope retained across transport retries. */
 export type StoredOutboundMessage = OutboundMessageInput;
 
 /**
@@ -347,7 +347,7 @@ export interface EmptyConversationRestart {
 /** Durable state retained after an empty conversation changes Router instance. */
 export interface RestartedEmptyConversation {
   readonly foundation: ConversationFoundation;
-  readonly postIntents: readonly PostIntent[];
+  readonly messageIntents: readonly MessageIntent[];
 }
 
 /** One staged Router-epoch proposal. */
@@ -381,7 +381,7 @@ export interface ConversationPosition {
 /** Complete private state recovered after opening the endpoint database. */
 export interface EndpointRecovery {
   readonly identity?: IdentityBinding;
-  readonly postIntents: readonly PostIntent[];
+  readonly messageIntents: readonly MessageIntent[];
   readonly memberships: readonly StoredMembership[];
   readonly anchors: readonly StoredAnchor[];
   readonly positions: readonly ConversationPosition[];
@@ -438,10 +438,10 @@ export interface EndpointStore {
     readonly StoredCollectiveOperation[],
     EndpointStoreError
   >;
-  readonly readCollectivePosts: (query?: {
+  readonly readCollectiveMessages: (query?: {
     readonly operationId: string;
-    readonly role?: StoredCollectivePost["role"];
-  }) => Effect.Effect<readonly StoredCollectivePost[], EndpointStoreError>;
+    readonly role?: StoredCollectiveMessage["role"];
+  }) => Effect.Effect<readonly StoredCollectiveMessage[], EndpointStoreError>;
   readonly finalizeCollectiveOperation: (
     operationId: string,
     canonicalSelection: Uint8Array,
@@ -518,12 +518,12 @@ export interface EndpointStore {
     canonicalCandidate: Uint8Array,
     collective?: CollectiveOperationInput,
   ) => Effect.Effect<FirewallCommit, EndpointStoreError>;
-  readonly bindCheckedPostIntent: (
-    binding: PostIntentBinding,
+  readonly bindCheckedMessageIntent: (
+    binding: MessageIntentBinding,
     completion: FirewallCompletion,
   ) => Effect.Effect<FirewallCommit, EndpointStoreError>;
-  readonly bindAdmittedPostIntent: (
-    binding: PostIntentBinding,
+  readonly bindAdmittedMessageIntent: (
+    binding: MessageIntentBinding,
     operation: Pick<FirewallAttempt, "checkId" | "canonicalCandidate">,
   ) => Effect.Effect<FirewallCommit, EndpointStoreError>;
   readonly readInboxItem: (
@@ -570,8 +570,8 @@ export interface EndpointStore {
   readonly bindIdentity: (
     binding: IdentityBinding,
   ) => Effect.Effect<StoreMutation, EndpointStoreError>;
-  readonly bindPostIntent: (
-    binding: PostIntentBinding,
+  readonly bindMessageIntent: (
+    binding: MessageIntentBinding,
   ) => Effect.Effect<StoreMutation, EndpointStoreError>;
   readonly putConversationFoundation: (
     foundation: ConversationFoundation,
@@ -631,7 +631,7 @@ export interface EndpointStore {
     message: OutboundMessageInput,
   ) => Effect.Effect<StoredOutboundMessage, EndpointStoreError>;
   readonly beginOutbound: (
-    messageId: string,
+    envelopeId: string,
   ) => Effect.Effect<OutboundAttempt, EndpointStoreError>;
   readonly completeOutbound: (
     outbound: StoredOutboundMessage,
@@ -693,17 +693,17 @@ export interface StoredCollectiveOperation extends CollectiveOperationInput {
   readonly deliveryToken: DeliveryToken;
 }
 
-/** A collective owns one immutable post per role and destination. */
-export interface CollectivePostBinding {
+/** A collective owns one immutable message per role and destination. */
+export interface CollectiveMessageBinding {
   readonly operationId: string;
   readonly role: "request" | "response" | "close";
   readonly destination: string;
   readonly operation?: CollectiveOperationInput;
 }
 
-/** Existing post intents own retries and certified completion across restart. */
-export interface StoredCollectivePost extends CollectivePostBinding {
-  readonly intent: PostIntent;
+/** Existing message intents own retries and certified completion across restart. */
+export interface StoredCollectiveMessage extends CollectiveMessageBinding {
+  readonly intent: MessageIntent;
 }
 
 /** The terminal payload and collective phase become durable in one transaction. */

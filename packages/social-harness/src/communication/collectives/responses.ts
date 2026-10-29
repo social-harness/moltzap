@@ -1,4 +1,4 @@
-/** @file One retained response claim stays attached to its original certified post. */
+/** @file One retained response claim stays attached to its original certified message. */
 import { Clock, Effect, Either, Option, Schema } from "effect";
 import type { CertifiedAnswer } from "./shared-answers.js";
 import type { CollectiveState } from "./state.js";
@@ -8,14 +8,14 @@ import {
   agentNameOf,
   type Content,
   type MessageAddressInput,
-  PostId,
-  PostIntent,
+  MsgId,
+  MessageIntent,
   RecordHash,
 } from "../records/index.js";
 import {
   decodeRuntimeValue,
   EndpointStoreError,
-  type StoredCollectivePost,
+  type StoredCollectiveMessage,
 } from "../store/index.js";
 import { applyClose } from "./all-gather.js";
 import {
@@ -28,7 +28,7 @@ import {
 } from "./contracts.js";
 import { durableEmit, durableSend } from "./persistence.js";
 import {
-  bindAuthoredPost,
+  bindAuthoredMessage,
   type BindHold,
   type CollectiveSendError,
 } from "./ports.js";
@@ -45,7 +45,7 @@ import {
   readCollectiveValue,
   type ResponseValue,
 } from "./wire/index.js";
-type PostContent = Content;
+type MessageContent = Content;
 const contentInvalid = () => new SendError({ reason: "content-invalid" });
 const collectiveFailure = (id: CollectiveId, failure: CollectiveFailure) =>
   new CollectiveError({ id, failure });
@@ -58,7 +58,7 @@ const collectiveFailure = (id: CollectiveId, failure: CollectiveFailure) =>
  * deadline landing during the check refuses the answer without sending, and a
  * request opening during it does not change which one is answered. When the
  * item that settling the answer emits cannot be kept, the answer keeps its own
- * outcome, its post or its refusal.
+ * outcome, its message or its refusal.
  */
 export function respond(
   state: CollectiveState,
@@ -69,7 +69,7 @@ export function respond(
     const { id, request } = yield* openRequest(state, to, response);
     const value: ResponseValue = { ...response, kind: "response", id };
     const { certified, guidance } = yield* bindResponse(state, request, value);
-    const { postId } = yield* certified.pipe(
+    const { msgId } = yield* certified.pipe(
       Effect.tapBoth({
         onFailure: (error) =>
           settleUncertifiedAnswer(state, request, value, error),
@@ -88,8 +88,8 @@ export function respond(
     return {
       kind: "response",
       operationId: id,
-      postIds: [postId],
-      postId,
+      msgIds: [msgId],
+      msgId,
       address: request.to,
       ...(guidance === undefined ? {} : { guidance }),
     } satisfies CollectiveSendOutcome;
@@ -99,12 +99,12 @@ export function respond(
 /** A retained response claim stays unavailable while its original intent certifies. */
 export function restoreResponse(
   state: CollectiveState,
-  post: StoredCollectivePost,
+  message: StoredCollectiveMessage,
 ): Effect.Effect<void, EndpointStoreError> {
   return Effect.gen(function* () {
     const intent = yield* decodeRuntimeValue(
-      PostIntent,
-      post.intent.canonicalIntent,
+      MessageIntent,
+      message.intent.canonicalIntent,
     );
     const value = yield* readCollectiveValue(intent.content).pipe(
       Effect.catchTag("CollectivePartInvalidError", () =>
@@ -120,9 +120,9 @@ export function restoreResponse(
       return;
     }
     request.state = "sending";
-    if (post.intent.completedRecordHash !== undefined) {
+    if (message.intent.completedRecordHash !== undefined) {
       const recordHash = yield* Schema.decodeUnknown(RecordHash)(
-        post.intent.completedRecordHash,
+        message.intent.completedRecordHash,
       ).pipe(
         Effect.catchTag("ParseError", () =>
           Effect.fail(new EndpointStoreError({ reason: "corrupt" })),
@@ -139,7 +139,7 @@ export function restoreResponse(
         ),
       );
     } else {
-      yield* observeResponse(state, request, response, intent.postId);
+      yield* observeResponse(state, request, response, intent.msgId);
     }
   }).pipe(Effect.withSpan("restoreResponse"));
 }
@@ -153,7 +153,7 @@ function bindResponse(
   return Effect.gen(function* () {
     const id = value.id;
     const content = yield* responseContent(request, value);
-    return yield* bindAuthoredPost(
+    return yield* bindAuthoredMessage(
       state.ports,
       {
         to: request.to,
@@ -195,12 +195,12 @@ function openRequest(
 
 /**
  * Validate an `accept` answer against the request's stored schema and build
- * the response post's content, which carries no text.
+ * the response message's content, which carries no text.
  */
 function responseContent(
   request: ReceivedRequest,
   response: ResponseValue,
-): Effect.Effect<PostContent, SendError | CollectiveError> {
+): Effect.Effect<MessageContent, SendError | CollectiveError> {
   const validated =
     response.action === "accept"
       ? validateAnswer(request.requestedSchema, response.content).pipe(
@@ -250,7 +250,7 @@ function claimRequest(
   );
 }
 
-/** An uncertain invocation keeps its durable answer claim and observes that same post. */
+/** An uncertain invocation keeps its durable answer claim and observes that same message. */
 function settleUncertifiedAnswer(
   state: CollectiveState,
   request: ReceivedRequest,
@@ -260,13 +260,13 @@ function settleUncertifiedAnswer(
   const id = response.id;
   return durableEmit(
     state,
-    state.ports.store.readCollectivePosts({
+    state.ports.store.readCollectiveMessages({
       operationId: id,
       role: "response",
     }),
   ).pipe(
-    Effect.flatMap((posts) => {
-      const [bound] = posts;
+    Effect.flatMap((messages) => {
+      const [bound] = messages;
       if (bound === undefined) {
         return failure?.reason === "delivery-pending" ||
           failure?.reason === "outcome-unknown"
@@ -277,7 +277,7 @@ function settleUncertifiedAnswer(
         state,
         request,
         response,
-        Schema.decodeUnknownSync(PostId)(bound.intent.postId),
+        Schema.decodeUnknownSync(MsgId)(bound.intent.msgId),
       );
     }),
     Effect.ignore,
@@ -288,9 +288,9 @@ function observeResponse(
   state: CollectiveState,
   request: ReceivedRequest,
   response: ResponseValue,
-  postId: PostId,
+  msgId: MsgId,
 ): Effect.Effect<void> {
-  return state.ports.observePost(postId).pipe(
+  return state.ports.observeMessage(msgId).pipe(
     Effect.flatMap((sent) =>
       settleAnswer(
         state,
@@ -353,14 +353,14 @@ function closedResponseFailure(
   }
   return durableSend(
     state,
-    state.ports.store.readCollectivePosts({
+    state.ports.store.readCollectiveMessages({
       operationId: id,
       role: "response",
     }),
   ).pipe(
-    Effect.flatMap((posts) =>
+    Effect.flatMap((messages) =>
       Effect.fail(
-        posts.length === 0
+        messages.length === 0
           ? collectiveFailure(id, { kind: "request-expired" })
           : error,
       ),

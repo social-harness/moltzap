@@ -313,7 +313,7 @@ it("refuses an unknown applied migration with newer-schema through storage and p
         sql,
         registrySignerPublicKey: setup.registrySignerPublicKey,
       });
-      yield* sql`INSERT INTO sharness_registry_ledger_20261029 (migration_id, name) VALUES (9999, 'future')`;
+      yield* sql`INSERT INTO sharness_registry_ledger_20261029_3 (migration_id, name) VALUES (9999, 'future')`;
 
       const initialized = yield* initializeRegistryStorage({
         sql,
@@ -347,21 +347,19 @@ it("refuses an unknown applied migration with newer-schema through storage and p
   );
 }, 180_000);
 
-it.each([
-  "moltzap_registry_migrations",
-  "sharness_registry_migrations",
-  "sharness_registry_ledger",
-  "sharness_registry_ledger_20261026",
-])(
-  "refuses a pre-reset %s ledger before creating the reset ledger",
-  (preResetLedger) =>
+it(
+  "refuses an occupied schema without the current ledger before changing any table",
+  () =>
     Effect.runPromise(
       Effect.gen(function* () {
         const setup = yield* makePostgreSqlRegistrySetup;
         const sql = yield* PgClient.make({
           url: Redacted.make(setup.container.getConnectionUri()),
         }).pipe(Effect.provide(Reactivity.layer));
-        yield* sql`CREATE TABLE ${sql(preResetLedger)} (migration_id integer PRIMARY KEY)`;
+        yield* sql`CREATE TABLE unrecognized_state (retained text PRIMARY KEY)`;
+        yield* sql`INSERT INTO unrecognized_state VALUES ('unchanged')`;
+        const tables =
+          yield* sql`SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = current_schema() ORDER BY tablename`;
         const initialized = yield* initializeRegistryStorage({
           sql,
           registrySignerPublicKey: setup.registrySignerPublicKey,
@@ -373,9 +371,12 @@ it.each([
             onRight: () => undefined,
           }),
         ).toBe(preResetReason);
-        const ledger =
-          yield* sql`SELECT to_regclass('sharness_registry_ledger_20261029')::text AS ledger`;
-        expect(ledger[0]?.ledger).toBeNull();
+        expect(
+          yield* sql`SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = current_schema() ORDER BY tablename`,
+        ).toEqual(tables);
+        expect(yield* sql`SELECT retained FROM unrecognized_state`).toEqual([
+          { retained: "unchanged" },
+        ]);
         const process = yield* managedProcess(
           REGISTRY_BINARY,
           [],

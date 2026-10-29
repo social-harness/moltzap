@@ -327,7 +327,7 @@ const runOperation = async <Value extends Readonly<Record<string, unknown>>>(
  * Run one send and answer its typed failure as JSON-RPC error data, with the
  * typed error's own message, which names its cause for a host to hand its
  * model. A send that ends without one, interrupted or by a defect, may
- * already have queued its post, so it answers `outcome-unknown`.
+ * already have queued its message, so it answers `outcome-unknown`.
  * @param operation A multicast, collective send or collective response.
  * @param signal The request's abort signal, which interrupts the send.
  * @param requestScope The handler lifetime that joins request finalizers before closing.
@@ -494,7 +494,7 @@ const toolListings = {
   },
   [READ_CONVERSATION_TOOL]: {
     description:
-      "Read a frozen page of verified local conversation history by address or single-use continuation; each record names its author as author (agentId, agentName, principalId), and its message text is at recordCore.action.postIntent.content, beside the signatures that verify it. For new messages not yet handled, use read_inbox.",
+      "Read a frozen page of verified local conversation history by address or single-use continuation; each record names its author as author (agentId, agentName, principalId), and its message text is at recordCore.action.messageIntent.content, beside the signatures that verify it. For new messages not yet handled, use read_inbox.",
     inputSchema: readConversationInput,
     outputSchema: readConversationOutput,
     annotations: { readOnlyHint: true, openWorldHint: true },
@@ -508,7 +508,7 @@ const toolListings = {
   },
   [HARNESS_SEND_TOOL]: {
     description:
-      "Send one multicast, gather, all_gather, or collective response to an agent or fixed-member group. Returns a gather's or all_gather's operationId; a multicast or response returns the postId of the post it created, the id read_conversation records and, for a multicast, the recipients' multicast items carry, and its conversation's canonical address; a response also returns the operationId of the request it answered. A collectiveResponse answers in the conversation its question arrived in; always give it the question's id, from its collectiveRequest item: without it the reply goes to whichever question is the one open there, and fails with request-ambiguous and the open ids when several are. When the daemon has a message firewall, it checks the message first; a refusal fails the call with the check id, the reason and the next action, and sends nothing. A delivery-pending failure means the message will still be sent: do not send it again.",
+      "Send one multicast, gather, all_gather, or collective response to an agent or fixed-member group. Returns a gather's or all_gather's operationId; a multicast or response returns the msgId of the message it created, the id read_conversation records and, for a multicast, the recipients' multicast items carry, and its conversation's canonical address; a response also returns the operationId of the request it answered. A collectiveResponse answers in the conversation its question arrived in; always give it the question's id, from its collectiveRequest item: without it the reply goes to whichever question is the one open there, and fails with request-ambiguous and the open ids when several are. When the daemon has a message firewall, it checks the message first; a refusal fails the call with the check id, the reason and the next action, and sends nothing. A delivery-pending failure means the message will still be sent: do not send it again.",
     inputSchema: sendInput,
     outputSchema: sendOutput,
     annotations: {

@@ -120,7 +120,7 @@ const acquireAllGatherScenario = Effect.gen(function* () {
 /**
  * Each test starts PGlite, the Registry, the Router and three or four
  * daemons under `tsx`, and one step of each waits out a deadline of several
- * measured post rounds. The limit is the only wall-clock bound these traces
+ * measured message rounds. The limit is the only wall-clock bound these traces
  * set themselves apart from that measured deadline.
  */
 const FIREWALL_TEST_TIMEOUT_MS = 300_000;
@@ -136,7 +136,7 @@ const accept = (member: Participant, to: string, content: object) =>
 
 /**
  * A requester and a member in enforcement mode, and one member in guidance
- * mode. A refused question posts nothing; a question the strict member's
+ * mode. A refused question sends nothing; a question the strict member's
  * firewall withholds never reaches it, and the requester records it as
  * no-answer at the deadline; an answer the requester's firewall withholds is
  * marked withheld in its result; and a guidance-mode requester sees every
@@ -178,7 +178,7 @@ it(
   FIREWALL_TEST_TIMEOUT_MS,
 );
 
-/** A refused question posts nothing; the next incoming request must belong to the subsequent operation. */
+/** A refused question sends nothing; the next incoming request must belong to the subsequent operation. */
 function expectOutgoingGatherRefused(
   requester: Participant,
   members: readonly Participant[],

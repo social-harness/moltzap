@@ -14,7 +14,7 @@ import type { HistoryExportRecord } from "./host-traffic-log.js";
 import { digest } from "../../__tests__/agent-card-fixtures.js";
 import {
   pendingMessage,
-  publishEveryPost,
+  publishEveryMessage,
   recordAcknowledgments,
   takeEvery,
 } from "../../__tests__/pending-delivery-fixtures.js";
@@ -27,7 +27,7 @@ import {
 } from "../../communication/collectives/contracts.js";
 import { InboundItem } from "../../communication/collectives/inbound.js";
 import { SendError } from "../../communication/conversations/errors.js";
-import { AgentAddress, PostId } from "../../communication/records/index.js";
+import { AgentAddress, MsgId } from "../../communication/records/index.js";
 import {
   DeliveryToken,
   type EndpointStore,
@@ -46,7 +46,7 @@ const input = Schema.decodeUnknownSync(SendInput)({
   text: "one operation",
 });
 const operationId = Schema.decodeUnknownSync(CollectiveId)(digest("col_", 3));
-const postId = Schema.decodeUnknownSync(PostId)(digest("pst_", 4));
+const msgId = Schema.decodeUnknownSync(MsgId)(digest("msg_", 4));
 const bob = Schema.decodeUnknownSync(AgentAddress)("agent:bob");
 const failure = Schema.decodeUnknownSync(InboundItem)({
   kind: "operationFailed",
@@ -112,7 +112,7 @@ const refusesUntilRegistered = () =>
     expect(records).toEqual([]);
     slot.collectives = {
       send: () =>
-        Effect.succeed({ kind: "collective", operationId, postIds: [postId] }),
+        Effect.succeed({ kind: "collective", operationId, msgIds: [msgId] }),
     };
     expect(yield* operations.send({ input })).toEqual({
       kind: "collective",
@@ -122,8 +122,8 @@ const refusesUntilRegistered = () =>
 
 /**
  * Each completed send lands in the history export with how it ended: the
- * certified posts and operation id, or the returned error's message. A
- * multicast returns the post it created and its conversation's address.
+ * certified messages and operation id, or the returned error's message. A
+ * multicast returns the message it created and its conversation's address.
  */
 const exportsEachSend = () =>
   Effect.gen(function* () {
@@ -139,7 +139,7 @@ const exportsEachSend = () =>
     });
     expect(yield* operations.send({ input })).toEqual({
       kind: "multicast",
-      postId,
+      msgId,
       address: bob,
     });
     const refused = yield* Effect.exit(operations.send({ input }));
@@ -162,11 +162,11 @@ function sendOutcomes() {
       SendError | CollectiveError
     >
   > = [
-    Effect.succeed({ kind: "collective", operationId, postIds: [postId] }),
+    Effect.succeed({ kind: "collective", operationId, msgIds: [msgId] }),
     Effect.succeed({
       kind: "multicast",
-      postIds: [postId],
-      postId,
+      msgIds: [msgId],
+      msgId,
       address: bob,
     }),
     Effect.fail(new SendError({ reason: "content-invalid" })),
@@ -188,8 +188,8 @@ function assertSendExports(records: readonly HistoryExportRecord[]) {
         : record,
     ),
   ).toEqual([
-    { input, outcome: { kind: "sent", operationId, postIds: [postId] } },
-    { input, outcome: { kind: "sent", postIds: [postId] } },
+    { input, outcome: { kind: "sent", operationId, msgIds: [msgId] } },
+    { input, outcome: { kind: "sent", msgIds: [msgId] } },
     {
       input,
       outcome: {
@@ -308,7 +308,7 @@ const refusesInvalidSendInput = () =>
       send: () =>
         Effect.sync(() => {
           sent += 1;
-          return { kind: "collective", operationId, postIds: [postId] };
+          return { kind: "collective", operationId, msgIds: [msgId] };
         }),
     };
     const malformed = Schema.decodeUnknownSync(Schema.Unknown)({
@@ -439,7 +439,7 @@ const publishesTheCollectiveLayerSOwnItemsAfterDurableDeliveries = () =>
     yield* delivery.runPass(() => ({
       readPending: Effect.succeed([firstFromBob]),
       engine: recordAcknowledgments([]),
-      classify: publishEveryPost,
+      classify: publishEveryMessage,
       handler: takeEvery(taken),
     }));
 
@@ -461,7 +461,7 @@ const recordsEachPublishedItemInTheHistoryExportOnce = () =>
     const pass = () => ({
       readPending: Effect.succeed([firstFromBob]),
       engine: recordAcknowledgments([]),
-      classify: publishEveryPost,
+      classify: publishEveryMessage,
       handler: takeEvery(taken),
     });
     yield* delivery.runPass(pass);

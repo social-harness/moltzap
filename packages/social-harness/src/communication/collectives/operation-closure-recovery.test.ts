@@ -33,8 +33,8 @@ import {
   AgentAddress,
   type CertifiedRecord,
   MessageAddressInput,
-  mintPostId,
-  PostIntent,
+  mintMsgId,
+  MessageIntent,
 } from "../records/index.js";
 import {
   decodeRuntimeValue,
@@ -82,10 +82,10 @@ function closurePorts(
     self,
     scope,
     lookupMember: (member) => Effect.succeed(testAgentView(member)),
-    sendPost: engine.send,
-    bindPost: engine.bind,
+    sendMessage: engine.send,
+    bindMessage: engine.bind,
     sendAdmitted: engine.sendAdmitted,
-    observePost: engine.observePost,
+    observeMessage: engine.observeMessage,
     reportStorageFault: () => Effect.dieMessage("unexpected persistence fault"),
   };
 }
@@ -106,7 +106,7 @@ function interruptClosure(
     );
     const layer = yield* makeCollectiveOperations({
       ...closurePorts(store, engine, yield* Scope.Scope),
-      sendPost: (input) =>
+      sendMessage: (input) =>
         checkpoint === "before-bind" && input.collective?.role === "close"
           ? barrier
           : engine.send(input),
@@ -118,7 +118,7 @@ function interruptClosure(
     const operation = yield* Effect.fromNullable(
       yield* store.readCollectiveOperation(id),
     );
-    const [close] = yield* store.readCollectivePosts({
+    const [close] = yield* store.readCollectiveMessages({
       operationId: id,
       role: "close",
     });
@@ -156,8 +156,10 @@ function requestWithOneDecline(fixture: ClosureFixture, head: CertifiedRecord) {
       })
       .pipe(Effect.fork);
     yield* untilLive(
-      store.readCollectivePosts().pipe(
-        Effect.map((posts) => posts.some((post) => post.role === "request")),
+      store.readCollectiveMessages().pipe(
+        Effect.map((messages) =>
+          messages.some((message) => message.role === "request"),
+        ),
         Effect.orDie,
       ),
     );
@@ -170,7 +172,7 @@ function requestWithOneDecline(fixture: ClosureFixture, head: CertifiedRecord) {
     const answer = yield* certifyBoundIntent(fixture, request, {
       ...intent,
       authorAgentId: subject.remote.card.agentId,
-      postId: yield* mintPostId(),
+      msgId: yield* mintMsgId(),
       content: yield* encodeCollectiveContent({
         kind: "response",
         id: sent.operationId,
@@ -256,15 +258,15 @@ function recoverClosure(subject: Fixture, interrupted: InterruptedClosure) {
 }
 
 function verifyRecoveredClose(
-  close: PostIntent,
+  close: MessageIntent,
   interrupted: InterruptedClosure,
 ) {
   return Effect.gen(function* () {
     const original = interrupted.close?.intent;
     if (original !== undefined) {
-      expect(close.postId).toBe(original.postId);
+      expect(close.msgId).toBe(original.msgId);
       expect(close).toEqual(
-        yield* decodeRuntimeValue(PostIntent, original.canonicalIntent),
+        yield* decodeRuntimeValue(MessageIntent, original.canonicalIntent),
       );
     }
     const metadata = {
@@ -305,7 +307,7 @@ function verifyCompletedRestart(
       expect(operation).toMatchObject({ phase: "completed" });
       expect(yield* boundIntent(store, "close")).toEqual(recovered.close);
       expect(
-        yield* store.readCollectivePosts({
+        yield* store.readCollectiveMessages({
           operationId: interrupted.operation.operationId,
           role: "close",
         }),

@@ -35,7 +35,7 @@ const makePendingMessage = Effect.all({
   recordHash: Schema.decodeUnknown(RecordHash)(digest("rch_", 6)),
   message: Schema.decodeUnknown(InboundMessage)({
     kind: "direct",
-    postId: digest("pst_", 5),
+    msgId: digest("msg_", 5),
     address: "agent:bob",
     sender: testAgentView("agent:bob"),
     content: [{ type: "text", text: "certified" }],

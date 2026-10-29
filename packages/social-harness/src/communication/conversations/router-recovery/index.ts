@@ -101,7 +101,7 @@ const catchUpRetryBase = Duration.seconds(1);
  * Catch-up retries after a conversation's first request. With the doubling
  * delay, eight retries span about four minutes (1 s + 2 s + ... + 128 s,
  * each jittered). After the last one the conversation stays paused until a
- * member's traffic for it, a local post into it, the Router worker
+ * member's traffic for it, a local message into it, the Router worker
  * reattaching, or the next recovery run arms it again.
  */
 export const catchUpRetryAttempts = 8;
@@ -843,9 +843,9 @@ function groupByConversation(
   outbounds: readonly StoredOutboundMessage[],
 ): Map<string, readonly string[]> {
   const grouped = new Map<string, string[]>();
-  for (const { conversationId, messageId } of outbounds) {
+  for (const { conversationId, envelopeId } of outbounds) {
     const held = grouped.get(conversationId) ?? [];
-    held.push(messageId);
+    held.push(envelopeId);
     grouped.set(conversationId, held);
   }
   return grouped;
@@ -1084,7 +1084,7 @@ function awaitReanchor(
 
 /**
  * Mark one conversation recovered: stop its catch-up retries, resume its
- * retained envelopes, dissemination, folds and pending posts, and then
+ * retained envelopes, dissemination, folds and pending messages, and then
  * release the sends waiting on its fence. The run ends once every
  * conversation it holds has recovered. The steps run uninterruptibly: the
  * conversation counts as recovered from the first of them, so nothing would
@@ -1120,7 +1120,7 @@ function markRecovered(
 /**
  * Resume one recovered conversation's held work: its retained envelopes in
  * durable order, its dissemination obligations, its folds' evidence, and its
- * posts not yet certified, which a re-anchor sends again at the new anchor.
+ * messages not yet certified, which a re-anchor sends again at the new anchor.
  * @param run Recovery run that recovered the conversation.
  * @param conversationId Conversation that recovered.
  * @returns Completion after its held work is queued.
@@ -1146,12 +1146,12 @@ function resumeConversation(
 }
 
 /**
- * Propose a recovered conversation's posts that have not certified. A post
+ * Propose a recovered conversation's messages that have not certified. A message
  * proposed under a replaced anchor forgets that proposal first, so it
  * proposes again at the new one.
  * @param run Recovery run that recovered the conversation.
- * @param conversationId Conversation whose posts resume.
- * @returns Completion after each pending post is proposed.
+ * @param conversationId Conversation whose messages resume.
+ * @returns Completion after each pending message is proposed.
  */
 function resumeIntents(
   run: RecoveryRun,
@@ -1162,7 +1162,7 @@ function resumeIntents(
     [...runtime.intents.values()].filter(
       (intent) =>
         intent.intent.conversationId === conversationId &&
-        !runtime.completedPosts.has(intent.intent.postId),
+        !runtime.completedMessages.has(intent.intent.msgId),
     ),
     (intent) =>
       Effect.suspend(() => {
@@ -1212,7 +1212,7 @@ function endRun(runtime: EngineRuntime): Effect.Effect<void> {
 /**
  * Sign one outer envelope and queue it in the durable outbox. The Router
  * worker sends the outbox once it is active, which is as soon as the run has
- * started, so recovery traffic and the posts of recovered conversations go
+ * started, so recovery traffic and the messages of recovered conversations go
  * out in one durable order.
  * @param runtime Engine whose outbox signs and retains the envelope.
  * @param membership Verified fixed membership for the outer envelope.

@@ -66,7 +66,7 @@ export function findStagedRecord(
     .prepare(
       `SELECT conversation_id, record_hash, previous_record_hash,
               membership_hash, anchor_hash, action_hash, author_agent_id,
-              post_id, canonical_record_core
+              msg_id, canonical_record_core
        FROM staged_records WHERE conversation_id = ? AND record_hash = ?`,
     )
     .get(conversationId, recordHash);
@@ -91,7 +91,7 @@ export function readStagedRecord(
     anchorHash: readText(row, "anchor_hash"),
     actionHash: readText(row, "action_hash"),
     authorAgentId: readText(row, "author_agent_id"),
-    postId: readText(row, "post_id"),
+    msgId: readText(row, "msg_id"),
     canonicalRecordCore: readBytes(row, "canonical_record_core"),
   });
 }
@@ -113,7 +113,7 @@ export function requireSameRecord(
   requireEqual(left.anchorHash, right.anchorHash);
   requireEqual(left.actionHash, right.actionHash);
   requireEqual(left.authorAgentId, right.authorAgentId);
-  requireEqual(left.postId, right.postId);
+  requireEqual(left.msgId, right.msgId);
   requireSameBytes(left.canonicalRecordCore, right.canonicalRecordCore);
 }
 

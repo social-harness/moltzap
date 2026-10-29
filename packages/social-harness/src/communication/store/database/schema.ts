@@ -418,18 +418,18 @@ const collectiveSchemaSql = `
     CHECK ((phase = 'collecting' AND canonical_selection IS NULL)
       OR (phase IN ('finalizing', 'completed') AND canonical_selection IS NOT NULL))
   ) STRICT;
-  CREATE TABLE collective_posts (
+  CREATE TABLE collective_messages (
     operation_id TEXT NOT NULL REFERENCES collective_operations(operation_id),
     role TEXT NOT NULL CHECK (role IN ('request', 'response', 'close')),
     destination TEXT NOT NULL,
     author_agent_id TEXT NOT NULL,
-    post_id TEXT NOT NULL,
+    msg_id TEXT NOT NULL,
     PRIMARY KEY (operation_id, role, destination),
-    UNIQUE (author_agent_id, post_id),
-    FOREIGN KEY (author_agent_id, post_id) REFERENCES post_intents(author_agent_id, post_id)
+    UNIQUE (author_agent_id, msg_id),
+    FOREIGN KEY (author_agent_id, msg_id) REFERENCES message_intents(author_agent_id, msg_id)
   ) STRICT;
-  CREATE UNIQUE INDEX collective_one_response ON collective_posts(operation_id) WHERE role = 'response';
-  CREATE UNIQUE INDEX collective_one_close ON collective_posts(operation_id) WHERE role = 'close';
+  CREATE UNIQUE INDEX collective_one_response ON collective_messages(operation_id) WHERE role = 'response';
+  CREATE UNIQUE INDEX collective_one_close ON collective_messages(operation_id) WHERE role = 'close';
 `;
 
 const runtimeSchemaSql = `
@@ -497,18 +497,18 @@ const schemaSql = `
     agent_id TEXT NOT NULL,
     canonical_agent_card BLOB NOT NULL
   ) STRICT;
-  CREATE TABLE post_intents (
+  CREATE TABLE message_intents (
     author_agent_id TEXT NOT NULL,
-    post_id TEXT NOT NULL,
+    msg_id TEXT NOT NULL,
     conversation_id TEXT NOT NULL,
     membership_hash TEXT NOT NULL,
     canonical_intent BLOB NOT NULL,
     completed_record_hash TEXT,
-    PRIMARY KEY (author_agent_id, post_id),
+    PRIMARY KEY (author_agent_id, msg_id),
     FOREIGN KEY (conversation_id, membership_hash)
       REFERENCES memberships(conversation_id, membership_hash)
   ) STRICT;
-  CREATE INDEX post_intents_unresolved ON post_intents(conversation_id)
+  CREATE INDEX message_intents_unresolved ON message_intents(conversation_id)
     WHERE completed_record_hash IS NULL;
   CREATE TABLE memberships (
     conversation_id TEXT PRIMARY KEY,
@@ -553,7 +553,7 @@ const schemaSql = `
     anchor_hash TEXT NOT NULL,
     action_hash TEXT NOT NULL,
     author_agent_id TEXT NOT NULL,
-    post_id TEXT NOT NULL,
+    msg_id TEXT NOT NULL,
     canonical_record_core BLOB NOT NULL,
     PRIMARY KEY (conversation_id, record_hash),
     FOREIGN KEY (conversation_id, anchor_hash)
@@ -610,7 +610,7 @@ const schemaSql = `
   CREATE TABLE outbound_messages (
     outbound_sequence INTEGER PRIMARY KEY,
     conversation_id TEXT NOT NULL REFERENCES memberships(conversation_id),
-    message_id TEXT NOT NULL UNIQUE,
+    envelope_id TEXT NOT NULL UNIQUE,
     canonical_signed_message BLOB NOT NULL,
     wire_version TEXT NOT NULL,
     attempted INTEGER NOT NULL CHECK (attempted IN (0, 1)),
@@ -622,11 +622,11 @@ const schemaSql = `
     obligation_sequence INTEGER PRIMARY KEY,
     conversation_id TEXT NOT NULL,
     record_hash TEXT NOT NULL,
-    message_id TEXT UNIQUE,
+    envelope_id TEXT UNIQUE,
     UNIQUE (conversation_id, record_hash),
     FOREIGN KEY (conversation_id, record_hash)
       REFERENCES staged_records(conversation_id, record_hash),
-    FOREIGN KEY (message_id) REFERENCES outbound_messages(message_id)
+    FOREIGN KEY (envelope_id) REFERENCES outbound_messages(envelope_id)
   ) STRICT;
 `;
 

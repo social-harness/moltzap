@@ -171,7 +171,7 @@ const exportBehavior = Effect.gen(function* () {
  * so it runs `Daemon.withFirewall` and the firewall's checks admit its
  * collectives. It names its service through `OTEL_RESOURCE_ATTRIBUTES`. The
  * third daemon reaches the Router through a hold proxy. In a three-member
- * group every post needs every member, so holding that member keeps the
+ * group every message needs every member, so holding that member keeps the
  * requester's proposals uncertified. A restarted Router is a new instance, so
  * afterwards every conversation catches up.
  */
@@ -431,7 +431,7 @@ function withEnvironment(
 
 /**
  * Every `retry.pending` span still unsettled. Each settled span settles one
- * pending span with its kind and id, from the same daemon: a re-proposed post
+ * pending span with its kind and id, from the same daemon: a re-proposed message
  * starts a second schedule under the same id, and every daemon's outbox
  * drains under one id.
  */

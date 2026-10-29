@@ -13,7 +13,7 @@ import { dirname } from "node:path";
 import { StoreSignal } from "./values.js";
 
 /** Lowest schema admitted to forward upgrades; raising it establishes a reset boundary. */
-export const RESET_SCHEMA = 14;
+export const RESET_SCHEMA = 15;
 
 /** Destination schema numbers map to the one step from their immediate predecessor. */
 export type MigrationSteps = Readonly<

@@ -80,13 +80,13 @@ function refusalRace() {
       store,
       self: Schema.decodeUnknownSync(AgentAddress)("agent:alice"),
       lookupMember: (member) => Effect.succeed(testAgentView(member)),
-      sendPost: () => {
+      sendMessage: () => {
         controls.time.requestsStarted = true;
         return Effect.fail(new SendError({ reason: "network-unavailable" }));
       },
-      bindPost: () => Effect.dieMessage("gather uses request fanout"),
+      bindMessage: () => Effect.dieMessage("gather uses request fanout"),
       sendAdmitted: () => Effect.never,
-      observePost: () => Effect.never,
+      observeMessage: () => Effect.never,
       reportStorageFault: (fault) =>
         Effect.sync(() => {
           faults.push(fault);

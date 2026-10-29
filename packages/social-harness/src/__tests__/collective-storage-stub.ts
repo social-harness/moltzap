@@ -12,38 +12,38 @@ import {
 
 /** The test engine certifies synchronously and records the operation attached at binding. */
 export function collectivePersistencePorts(
-  sendPost: CollectivePorts["sendPost"],
+  sendMessage: CollectivePorts["sendMessage"],
 ) {
   const store = collectiveStorageStub();
-  const send: CollectivePorts["sendPost"] = (input) =>
+  const send: CollectivePorts["sendMessage"] = (input) =>
     (input.collective?.operation === undefined
       ? Effect.void
       : store
           .putCollectiveOperation(input.collective.operation)
           .pipe(Effect.orDie)
-    ).pipe(Effect.zipRight(sendPost(input)));
+    ).pipe(Effect.zipRight(sendMessage(input)));
   return {
     store,
-    bindPost: <E>(
-      input: Parameters<CollectivePorts["sendPost"]>[0],
+    bindMessage: <E>(
+      input: Parameters<CollectivePorts["sendMessage"]>[0],
       hold: Effect.Effect<Effect.Effect<void>, E>,
     ) => hold.pipe(Effect.as({ certified: send(input) })),
-    sendPost: send,
+    sendMessage: send,
     sendAdmitted: (input: Parameters<CollectivePorts["sendAdmitted"]>[0]) =>
       send(input),
-    observePost: () => Effect.never,
+    observeMessage: () => Effect.never,
     reportStorageFault: () => Effect.void,
   };
 }
 
-/** A recording store for classifier-only fixtures whose posts bypass the real certification engine. */
+/** A recording store for classifier-only fixtures whose messages bypass the real certification engine. */
 export function collectiveStorageStub(): CollectivePorts["store"] {
   const operations = new Map<string, StoredCollectiveOperation>();
   return {
     putCollectiveOperation: (input) => recordOperation(operations, input),
     readCollectiveOperation: (id) => Effect.sync(() => operations.get(id)),
     readCollectiveOperations: () => Effect.sync(() => [...operations.values()]),
-    readCollectivePosts: () => Effect.succeed([]),
+    readCollectiveMessages: () => Effect.succeed([]),
     recordCollectiveAnswer: (answer) => Effect.succeed(answer.recordHash),
     readCollectiveAnswers: () => Effect.succeed([]),
     recordCollectiveRefusal: () => Effect.void,

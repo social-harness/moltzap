@@ -8,7 +8,7 @@
  * them. A schedule interleaves at random: each endpoint's deliveries, a
  * member's answer being started, certified into the chain and returned to the
  * member as three separate steps, the deadline, a redelivery of the record
- * an endpoint last classified (a failed acknowledgment), and the posts of a
+ * an endpoint last classified (a failed acknowledgment), and the messages of a
  * dishonest member `dave` (two answers and a close of his own) and of a
  * dishonest requester (a second close). The coverage counters make the
  * test fail when the draw stops reaching the interleavings it exists for.
@@ -29,7 +29,7 @@ import {
   TestContext,
 } from "effect";
 import { describe, expect } from "vitest";
-import type { EngineSentPost } from "../conversations/index.js";
+import type { EngineSentMessage } from "../conversations/index.js";
 import type { CollectiveMemberOutcome, InboundItem } from "./inbound.js";
 import type { CollectiveOperations } from "./ports.js";
 import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
@@ -37,7 +37,7 @@ import {
   alice,
   collectiveKey,
   operationIdOf,
-  postId,
+  msgId,
   questionText,
   recordHashOf,
   slotSchema,
@@ -87,7 +87,7 @@ interface ChainRecord {
 interface PendingAnswer {
   readonly member: AgentAddress;
   readonly content: Content;
-  readonly returned: Deferred.Deferred<EngineSentPost>;
+  readonly returned: Deferred.Deferred<EngineSentMessage>;
   certifiedAt?: number;
 }
 
@@ -117,8 +117,8 @@ interface Coverage {
   redeliveredClose: number;
 }
 
-/** The dishonest posts a schedule has made so far. */
-interface DishonestPosts {
+/** The dishonest messages a schedule has made so far. */
+interface DishonestMessages {
   daveAnswers: number;
   daveClosed: boolean;
   aliceClosedTwice: boolean;
@@ -129,7 +129,7 @@ interface Harness {
   readonly pending: PendingAnswer[];
   readonly endpoints: Endpoint[];
   readonly coverage: Coverage;
-  readonly posts: DishonestPosts;
+  readonly messages: DishonestMessages;
   readonly redeliveries: { left: number };
   deadlinePassed: boolean;
 }
@@ -149,8 +149,8 @@ const append = (harness: Harness, sender: AgentAddress, content: Content) =>
     }),
   );
 
-const certified = (record: ChainRecord): EngineSentPost => ({
-  postId: postId(record.byte),
+const certified = (record: ChainRecord): EngineSentMessage => ({
+  msgId: msgId(record.byte),
   recordHash: recordHashOf(record.byte),
 });
 
@@ -165,7 +165,7 @@ const queueAnswer = (
   queued: Deferred.Deferred<undefined>,
 ) =>
   Effect.gen(function* () {
-    const returned = yield* Deferred.make<EngineSentPost>();
+    const returned = yield* Deferred.make<EngineSentMessage>();
     harness.pending.push({ member, content, returned });
     yield* Deferred.succeed(queued, undefined);
     return yield* Deferred.await(returned);
@@ -199,7 +199,7 @@ const makeEndpoint = (harness: Harness, self: AgentAddress) =>
 
 /**
  * Run `step` and wait for every fiber it forks, such as the requester's
- * close, so the next draw sees the posts they make.
+ * close, so the next draw sees the messages they make.
  */
 const withForkedWork = <A, E>(step: Effect.Effect<A, E>) =>
   Effect.gen(function* () {
@@ -229,7 +229,7 @@ const classifyRecord = (endpoint: Endpoint, record: ChainRecord) =>
     endpoint.layer.classify({
       message: Schema.decodeUnknownSync(InboundMessage)({
         kind: "group",
-        postId: postId(record.byte),
+        msgId: msgId(record.byte),
         address: group,
         sender: testAgentView(record.sender),
         members: groupMembers.map(testAgentView),
@@ -389,7 +389,7 @@ const returnAnswer = (
     harness.pending.splice(harness.pending.indexOf(answer), 1);
     recordReturnCoverage(harness, answer, certifiedAt);
     yield* Deferred.succeed(answer.returned, {
-      postId: postId(certifiedAt),
+      msgId: msgId(certifiedAt),
       recordHash: recordHashOf(certifiedAt),
     });
     const answering = yield* Effect.fromNullable(
@@ -411,17 +411,17 @@ function pendingSteps(harness: Harness): Step[] {
   );
 }
 
-/** Posts by dave, who bypasses an endpoint: two answers and a close of his own. */
+/** Messages by dave, who bypasses an endpoint: two answers and a close of his own. */
 function daveSteps(harness: Harness, id: string): Step[] {
-  const { posts } = harness;
+  const { messages } = harness;
   const answering: Step[] =
-    posts.daveAnswers < 2
+    messages.daveAnswers < 2
       ? [
           [
             "dave answers",
             Effect.suspend(() => {
-              posts.daveAnswers += 1;
-              harness.coverage.duplicateAnswer += posts.daveAnswers - 1;
+              messages.daveAnswers += 1;
+              harness.coverage.duplicateAnswer += messages.daveAnswers - 1;
               return append(
                 harness,
                 dave,
@@ -429,20 +429,20 @@ function daveSteps(harness: Harness, id: string): Step[] {
                   kind: "response",
                   id,
                   action: "accept",
-                  content: { slot: posts.daveAnswers === 1 ? "mon" : "tue" },
+                  content: { slot: messages.daveAnswers === 1 ? "mon" : "tue" },
                 }),
               );
             }),
           ],
         ]
       : [];
-  const closing: Step[] = posts.daveClosed
+  const closing: Step[] = messages.daveClosed
     ? []
     : [
         [
           "dave closes",
           Effect.suspend(() => {
-            posts.daveClosed = true;
+            messages.daveClosed = true;
             harness.coverage.forgedClose += 1;
             return append(
               harness,
@@ -463,15 +463,15 @@ function daveSteps(harness: Harness, id: string): Step[] {
 
 /** A second close from the requester, listing nothing, once it has closed. */
 function secondCloseSteps(harness: Harness, id: string): Step[] {
-  const { posts } = harness;
-  if (posts.aliceClosedTwice || firstCloseIndex(harness) === -1) {
+  const { messages } = harness;
+  if (messages.aliceClosedTwice || firstCloseIndex(harness) === -1) {
     return [];
   }
   return [
     [
       "alice closes again",
       Effect.suspend(() => {
-        posts.aliceClosedTwice = true;
+        messages.aliceClosedTwice = true;
         harness.coverage.secondClose += 1;
         return append(
           harness,
@@ -589,7 +589,7 @@ const startSchedule = (coverage: Coverage) =>
       pending: [],
       endpoints: [],
       coverage,
-      posts: { daveAnswers: 0, daveClosed: false, aliceClosedTwice: false },
+      messages: { daveAnswers: 0, daveClosed: false, aliceClosedTwice: false },
       redeliveries: { left: 3 },
       deadlinePassed: false,
     };

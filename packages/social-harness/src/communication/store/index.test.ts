@@ -27,7 +27,7 @@ import {
   type InboundDeliveryInput,
   openEndpointStore,
   type OutboundMessageInput,
-  type PostIntent,
+  type MessageIntent,
   type ProposalLock,
   type ProtocolEvidence,
   type RestartedEmptyConversation,
@@ -179,27 +179,27 @@ function atomicallyBindsFirstIntentWithItsFoundation() {
   const directory = stateDirectory();
   const firstConversationId = "conversation:intent:first";
   const competingConversationId = "conversation:intent:competing";
-  const firstIntent = postIntent(firstConversationId, "pst_atomic");
-  const competingIntent = postIntent(competingConversationId, "pst_atomic");
+  const firstIntent = messageIntent(firstConversationId, "msg_atomic");
+  const competingIntent = messageIntent(competingConversationId, "msg_atomic");
   return withStore(directory, (store) =>
     Effect.gen(function* () {
       yield* bindLocalIdentity(store);
       expect(
-        yield* store.bindPostIntent({
+        yield* store.bindMessageIntent({
           kind: "new-conversation",
           foundation: foundation(firstConversationId),
           intent: firstIntent,
         }),
       ).toBe(INSERTED_MUTATION);
       expect(
-        yield* store.bindPostIntent({
+        yield* store.bindMessageIntent({
           kind: "new-conversation",
           foundation: foundation(firstConversationId),
           intent: firstIntent,
         }),
       ).toBe(EXISTING_MUTATION);
       yield* expectReason(
-        store.bindPostIntent({
+        store.bindMessageIntent({
           kind: "new-conversation",
           foundation: foundation(competingConversationId),
           intent: competingIntent,
@@ -207,7 +207,7 @@ function atomicallyBindsFirstIntentWithItsFoundation() {
         "conflict",
       );
       const recovery = yield* store.recover();
-      expect(recovery.postIntents).toEqual([firstIntent]);
+      expect(recovery.messageIntents).toEqual([firstIntent]);
       expect(recovery.memberships.map((item) => item.conversationId)).toEqual([
         firstConversationId,
       ]);
@@ -282,21 +282,21 @@ function rollsBackRemoteRecordWithoutDelivery() {
 }
 
 /**
- * The endpoint stages its own post for its vote and stores that vote, then
- * receives the post whole, with its own vote in the durability certificate.
+ * The endpoint stages its own message for its vote and stores that vote, then
+ * receives the message whole, with its own vote in the durability certificate.
  * The store applies it over the staged record and the stored vote, completes
- * the local post intent and retains no delivery to this endpoint itself.
+ * the local message intent and retains no delivery to this endpoint itself.
  * Fails when applying a whole record refuses a vote of this endpoint's own
- * that it already holds, or delivers a local post to its author.
+ * that it already holds, or delivers a local message to its author.
  * @returns The trace, run to completion.
  */
-function completesLocalPostWithoutSelfDelivery() {
+function completesLocalMessageWithoutSelfDelivery() {
   const directory = stateDirectory();
   const conversationId = "conversation:local";
   const record = certifiedRecord(conversationId, LOCAL_AGENT_ID);
   return withStore(directory, (store) =>
     Effect.gen(function* () {
-      yield* lockLocalPost(store, record);
+      yield* lockLocalMessage(store, record);
       yield* store.stageRecordForDissemination(stagedRecord(record));
       yield* Effect.forEach(
         record.durabilityEvidence,
@@ -305,7 +305,7 @@ function completesLocalPostWithoutSelfDelivery() {
       );
       yield* store.applyCertifiedRecord(record);
       const recovery = yield* store.recover();
-      expect(recovery.postIntents[0]?.completedRecordHash).toBe(
+      expect(recovery.messageIntents[0]?.completedRecordHash).toBe(
         record.recordHash,
       );
       expect(recovery.pendingDeliveries).toEqual([]);
@@ -331,7 +331,7 @@ function refusesAReanchorAwayFromAStagedSuccessor() {
   );
   return withStore(directory, (store) =>
     Effect.gen(function* () {
-      yield* lockLocalPost(store, head);
+      yield* lockLocalMessage(store, head);
       yield* store.applyCertifiedRecord(head);
       yield* store.stageRecordForDissemination(successor);
 
@@ -367,7 +367,7 @@ function refusesALocalVoteUnderAnAnchorItReanchorsAwayFrom() {
   };
   return withStore(directory, (store) =>
     Effect.gen(function* () {
-      yield* lockLocalPost(store, head);
+      yield* lockLocalMessage(store, head);
       yield* store.applyCertifiedRecord(head);
       yield* store.lockProposal({
         ...proposal(conversationId, successor.actionHash),
@@ -402,7 +402,7 @@ interface OutboundLifecycleFixture {
 function persistsExactOutboundLifecycleAcrossRestart() {
   const fixture: OutboundLifecycleFixture = {
     directory: stateDirectory(),
-    message: outboundMessage("conversation:outbound", "msg_outbound", "outer"),
+    message: outboundMessage("conversation:outbound", "env_outbound", "outer"),
   };
   return stageInitialOutbound(fixture).pipe(
     Effect.zipRight(completeRetriedOutbound(fixture)),
@@ -417,8 +417,8 @@ function stageInitialOutbound(fixture: OutboundLifecycleFixture) {
         foundation(fixture.message.conversationId),
       );
       const staged = yield* store.enqueueOutbound(fixture.message);
-      expect(staged.messageId).toBe(fixture.message.messageId);
-      expect(yield* store.beginOutbound(staged.messageId)).toEqual({
+      expect(staged.envelopeId).toBe(fixture.message.envelopeId);
+      expect(yield* store.beginOutbound(staged.envelopeId)).toEqual({
         kind: "pending",
         mode: "initial",
         outbound: staged,
@@ -434,7 +434,7 @@ function completeRetriedOutbound(fixture: OutboundLifecycleFixture) {
       expect(replay).toEqual({
         ...fixture.message,
       });
-      expect(yield* store.beginOutbound(replay.messageId)).toEqual({
+      expect(yield* store.beginOutbound(replay.envelopeId)).toEqual({
         kind: "pending",
         mode: "retry",
         outbound: replay,
@@ -491,7 +491,7 @@ function retainsRecordDisseminationAcrossCrashWindows() {
     },
     actionEnvelope: outboundMessage(
       conversationId,
-      "msg_action_certified",
+      "env_action_certified",
       "outer:action-certified",
     ),
   };
@@ -503,7 +503,7 @@ function retainsRecordDisseminationAcrossCrashWindows() {
 function stageDisseminationObligation(fixture: DisseminationLifecycleFixture) {
   return withStore(fixture.directory, (store) =>
     Effect.gen(function* () {
-      yield* lockLocalPost(store, fixture.record);
+      yield* lockLocalMessage(store, fixture.record);
       yield* expectReason(
         store.enqueueDisseminationOutbound(
           fixture.actionObligation,
@@ -553,7 +553,7 @@ interface EmptyRestartFixture {
   readonly directory: string;
   readonly conversationId: string;
   readonly newFoundation: ConversationFoundation;
-  readonly intent: PostIntent;
+  readonly intent: MessageIntent;
   readonly staged: StagedRecord;
   readonly lock: ProposalLock;
   readonly restart: EmptyConversationRestart;
@@ -568,7 +568,7 @@ function restartsOnlyAnEmptyConversationAtomically() {
     anchorHash: `anc_${conversationId}:1`,
     canonicalAnchor: bytes(`anchor:${conversationId}:1`),
   };
-  const intent = postIntent(conversationId, "pst_restart");
+  const intent = messageIntent(conversationId, "msg_restart");
   const staged = stagedRecord(certifiedRecord(conversationId, LOCAL_AGENT_ID));
   const fixture: EmptyRestartFixture = {
     directory,
@@ -610,7 +610,7 @@ function prepareEmptyRestartState(
 ) {
   return Effect.gen(function* () {
     yield* bindLocalIdentity(store);
-    yield* store.bindPostIntent({
+    yield* store.bindMessageIntent({
       kind: "new-conversation",
       foundation: fixture.restart.expectedFoundation,
       intent: fixture.intent,
@@ -632,7 +632,7 @@ function prepareEmptyRestartState(
       canonicalEvidence: bytes("durability:stale"),
     });
     yield* store.enqueueOutbound(
-      outboundMessage(fixture.conversationId, "msg_stale", "outer:stale"),
+      outboundMessage(fixture.conversationId, "env_stale", "outer:stale"),
     );
   });
 }
@@ -643,7 +643,7 @@ function assertRestartedEmptyConversation(
 ): void {
   expect(restarted).toEqual({
     foundation: fixture.newFoundation,
-    postIntents: [fixture.intent],
+    messageIntents: [fixture.intent],
   });
 }
 
@@ -665,7 +665,7 @@ function assertEmptyRestartRecovery(
       currentAnchorHash: fixture.newFoundation.anchorHash,
     },
   ]);
-  expect(recovery.postIntents).toEqual([fixture.intent]);
+  expect(recovery.messageIntents).toEqual([fixture.intent]);
   expect(recovery.proposalLocks).toEqual([]);
   expect(recovery.stagedRecords).toEqual([]);
   expect(recovery.evidence).toEqual([]);
@@ -685,7 +685,7 @@ function refusesEmptyRestartAfterCertification() {
   };
   return withStore(directory, (store) =>
     Effect.gen(function* () {
-      yield* lockLocalPost(store, record);
+      yield* lockLocalMessage(store, record);
       yield* store.applyCertifiedRecord(record);
       yield* expectReason(
         store.restartEmptyConversation({
@@ -706,8 +706,8 @@ function refusesEmptyRestartAfterCertification() {
 function discardsOnlyAnExactCurrentOutboundSet() {
   const directory = stateDirectory();
   const conversationId = "conversation:discard-outbound";
-  const first = outboundMessage(conversationId, "msg_discard_a", "outer:a");
-  const second = outboundMessage(conversationId, "msg_discard_b", "outer:b");
+  const first = outboundMessage(conversationId, "env_discard_a", "outer:a");
+  const second = outboundMessage(conversationId, "env_discard_b", "outer:b");
   return withStore(directory, (store) =>
     Effect.gen(function* () {
       yield* store.putConversationFoundation(foundation(conversationId));
@@ -838,7 +838,7 @@ function certifiedRecord(
     anchorHash: conversationFoundation.anchorHash,
     actionHash,
     authorAgentId,
-    postId: `pst_${authorAgentId}:${ordinal}`,
+    msgId: `msg_${authorAgentId}:${ordinal}`,
     canonicalRecordCore: bytes(`record:${conversationId}:${ordinal}`),
     actionEvidence: [
       {
@@ -862,20 +862,20 @@ function certifiedRecord(
 }
 
 /**
- * Bind this endpoint's identity and its post intent for `record`, with the
+ * Bind this endpoint's identity and its message intent for `record`, with the
  * conversation's first foundation, and lock `record`'s action: the state in
- * which this endpoint proposes its own post.
+ * which this endpoint proposes its own message.
  * @param store Store that takes the identity, the intent and the lock.
- * @param record Record whose post intent is bound and whose action is locked.
+ * @param record Record whose message intent is bound and whose action is locked.
  * @returns Completion once all three are durable.
  */
-function lockLocalPost(store: EndpointStore, record: StagedRecord) {
+function lockLocalMessage(store: EndpointStore, record: StagedRecord) {
   return Effect.gen(function* () {
     yield* bindLocalIdentity(store);
-    yield* store.bindPostIntent({
+    yield* store.bindMessageIntent({
       kind: "new-conversation",
       foundation: foundation(record.conversationId),
-      intent: postIntent(record.conversationId, record.postId),
+      intent: messageIntent(record.conversationId, record.msgId),
     });
     yield* store.lockProposal(
       proposal(record.conversationId, record.actionHash),
@@ -905,18 +905,18 @@ function stagedRecord(record: CertifiedRecord): StagedRecord {
     anchorHash: record.anchorHash,
     actionHash: record.actionHash,
     authorAgentId: record.authorAgentId,
-    postId: record.postId,
+    msgId: record.msgId,
     canonicalRecordCore: record.canonicalRecordCore,
   };
 }
 
-function postIntent(conversationId: string, postId: string): PostIntent {
+function messageIntent(conversationId: string, msgId: string): MessageIntent {
   return {
     conversationId,
     membershipHash: foundation(conversationId).membershipHash,
     authorAgentId: LOCAL_AGENT_ID,
-    postId,
-    canonicalIntent: bytes(`intent:${conversationId}:${postId}`),
+    msgId,
+    canonicalIntent: bytes(`intent:${conversationId}:${msgId}`),
   };
 }
 
@@ -940,12 +940,12 @@ function proposal(conversationId: string, actionHash: string): ProposalLock {
 
 function outboundMessage(
   conversationId: string,
-  messageId: string,
+  envelopeId: string,
   canonical: string,
 ): OutboundMessageInput {
   return {
     conversationId,
-    messageId,
+    envelopeId,
     wireVersion: WIRE_VERSION,
     canonicalSignedMessage: bytes(canonical),
   };
@@ -1016,7 +1016,7 @@ describe("endpoint SQLite preflight", () => {
 // @agent-code-guard/regression-only: these cases pin the proposal-lock store contract.
 describe("endpoint proposal locking", () => {
   it(
-    "atomically binds the first post intent with its foundation",
+    "atomically binds the first message intent with its foundation",
     atomicallyBindsFirstIntentWithItsFoundation,
   );
 
@@ -1048,8 +1048,8 @@ describe("endpoint record certification and delivery", () => {
   );
 
   it(
-    "completes a local post intent without creating self-delivery",
-    completesLocalPostWithoutSelfDelivery,
+    "completes a local message intent without creating self-delivery",
+    completesLocalMessageWithoutSelfDelivery,
   );
 });
 

@@ -22,7 +22,7 @@ import type {
   DecodedOuterBody,
   DirectPacket,
   EvidenceStatement,
-  PostIntent,
+  MessageIntent,
   RecordHash,
   RouterAnchor,
   VerifiedEvidence,
@@ -54,7 +54,7 @@ export interface EndpointEngineInput {
   readonly store: EndpointStore;
   readonly routerWorker: EngineRouterPort;
   /**
-   * Report a store failure that may leave a post's intent bound but not
+   * Report a store failure that may leave a message's intent bound but not
    * proposed: an uncertain persistence failure while binding it, or any store failure
    * while queueing its proposal. The host must stop, so recovery after the
    * restart proposes the intent; a host that kept running would leave it
@@ -65,9 +65,9 @@ export interface EndpointEngineInput {
   ) => Effect.Effect<void>;
 }
 
-/** One locally authored immutable post intent awaiting certification. */
-export interface EnginePostIntent {
-  readonly intent: PostIntent;
+/** One locally authored immutable message intent awaiting certification. */
+export interface EngineMessageIntent {
+  readonly intent: MessageIntent;
   readonly canonicalIntent: Uint8Array;
   readonly completion: Deferred.Deferred<RecordHash, SendError>;
   proposedActionHash?: ActionHash;
@@ -134,9 +134,9 @@ export interface EngineRuntime {
   readonly wireVersion: string;
   readonly input: EndpointEngineInput;
   readonly conversations: Map<ConversationId, EngineConversation>;
-  readonly intents: Map<string, EnginePostIntent>;
-  /** Locally complete post ids and the hash of each one's certified record. */
-  readonly completedPosts: Map<string, RecordHash>;
+  readonly intents: Map<string, EngineMessageIntent>;
+  /** Locally complete message ids and the hash of each one's certified record. */
+  readonly completedMessages: Map<string, RecordHash>;
   readonly actionFolds: Map<ActionHash, EngineActionFold>;
   readonly recordFolds: Map<RecordHash, EngineActionFold>;
   readonly gate: Effect.Semaphore;
@@ -195,7 +195,7 @@ export interface EngineOutbox {
     conversationId: ConversationId,
     message: SignedMessage,
   ) => Effect.Effect<void, EngineOutboxError>;
-  readonly resume: (messageIds: readonly string[]) => Effect.Effect<void>;
+  readonly resume: (envelopeIds: readonly string[]) => Effect.Effect<void>;
   /** Forget every queued identity; the store keeps the envelopes. */
   readonly clear: () => void;
   /** Run `effect` while no drain reads or removes the queue head. */
@@ -215,7 +215,7 @@ export interface EngineOutbox {
 export interface EnginePhases {
   readonly proposeIntent: (
     runtime: EngineRuntime,
-    intent: EnginePostIntent,
+    intent: EngineMessageIntent,
   ) => Effect.Effect<ActionHash, SendError>;
   readonly acceptIngress: (
     runtime: EngineRuntime,

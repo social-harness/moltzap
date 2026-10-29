@@ -889,7 +889,7 @@ const registryBinaryBehavior = Effect.gen(function* () {
     environment: infrastructure.environment,
     wrongKeyPath: infrastructure.wrongKeyPath,
     addUnknownMigration: sql`
-      INSERT INTO sharness_registry_ledger_20261029 (migration_id, name)
+      INSERT INTO sharness_registry_ledger_20261029_3 (migration_id, name)
       VALUES (9999, 'future')
     `,
   });
@@ -904,17 +904,20 @@ it("preserves Registry contracts across first boot, concurrency, and restart", (
   return Effect.runPromise(registryBinaryBehavior);
 }, 120_000);
 
-it(
-  "refuses the preceding reset's database without changing its tables",
-  () =>
+it.each([
+  { state: "preceding reset", table: "sharness_registry_ledger_20261029" },
+  { state: "unrecognized", table: "unrecognized_state" },
+])(
+  "refuses $state storage without changing its tables",
+  ({ table }) =>
     Effect.runPromise(
       Effect.gen(function* () {
         const infrastructure = yield* setupRegistryInfrastructure;
         const sql = yield* PgClient.make({
           url: Redacted.make(infrastructure.postgresqlUrl),
         }).pipe(Effect.provide(Reactivity.layer));
-        yield* sql`CREATE TABLE sharness_registry_ledger_20261026 (migration_id integer PRIMARY KEY)`;
-        yield* sql`INSERT INTO sharness_registry_ledger_20261026 VALUES (1)`;
+        yield* sql`CREATE TABLE ${sql(table)} (retained integer PRIMARY KEY)`;
+        yield* sql`INSERT INTO ${sql(table)} VALUES (1)`;
         const tables =
           yield* sql`SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = 'public' ORDER BY tablename`;
         const process = yield* managedProcess(
@@ -927,9 +930,9 @@ it(
         expect(
           yield* sql`SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = 'public' ORDER BY tablename`,
         ).toEqual(tables);
-        expect(
-          yield* sql`SELECT migration_id FROM sharness_registry_ledger_20261026`,
-        ).toEqual([{ migration_id: 1 }]);
+        expect(yield* sql`SELECT retained FROM ${sql(table)}`).toEqual([
+          { retained: 1 },
+        ]);
       }).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
     ),
   30_000,

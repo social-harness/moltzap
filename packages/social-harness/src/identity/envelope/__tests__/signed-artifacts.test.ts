@@ -39,7 +39,7 @@ import {
   ed25519PublicKeyThumbprintUri,
 } from "../../keys.js";
 import {
-  MessageId,
+  EnvelopeId,
   SignedMessage,
   SignedMessageSigningError,
   type SignedMessage as SignedMessageValue,
@@ -81,7 +81,7 @@ const rawPayload = Schema.Struct({
   senderAgentId: Schema.String,
   agentCardDigest: Schema.String,
   recipientAgentIds: Schema.Array(Schema.String),
-  messageId: Schema.String,
+  envelopeId: Schema.String,
   body: Schema.String,
 });
 const rawProtectedHeader = Schema.Struct({
@@ -139,8 +139,8 @@ const makeIdentityFixture = Effect.gen(function* () {
 const makeAgentId = (byte: number) =>
   Schema.decodeUnknownSync(AgentId)(identifier("agt_", byte));
 
-const makeMessageId = (byte: number) =>
-  Schema.decodeUnknownSync(MessageId)(identifier("msg_", byte));
+const makeEnvelopeId = (byte: number) =>
+  Schema.decodeUnknownSync(EnvelopeId)(identifier("env_", byte));
 
 const recipientSet = (count: number): ReadonlySet<AgentIdValue> => {
   const recipients = new Set<AgentIdValue>();
@@ -154,13 +154,13 @@ const signMessage = (
   fixture: IdentityFixture,
   body: Uint8Array,
   recipients: ReadonlySet<AgentIdValue>,
-  messageIdByte: number,
+  envelopeIdByte: number,
 ) =>
   SignedMessage.sign({
     agentCard: fixture.agentCard,
     signingAuthority: fixture.agentSigningAuthority,
     recipientAgentIds: recipients,
-    messageId: makeMessageId(messageIdByte),
+    envelopeId: makeEnvelopeId(envelopeIdByte),
     body,
   });
 
@@ -330,14 +330,14 @@ const assertLengthInvariant = (
   fixture: IdentityFixture,
   body: Uint8Array,
   recipientCount: number,
-  messageIdByte: number,
+  envelopeIdByte: number,
 ) =>
   Effect.gen(function* () {
     const signedMessage = yield* signMessage(
       fixture,
       body,
       recipientSet(recipientCount),
-      messageIdByte,
+      envelopeIdByte,
     );
     const representation = yield* messageRepresentation(signedMessage);
     const parsed = yield* Schema.decodeUnknown(SignedMessage)(representation);
@@ -375,7 +375,7 @@ const payloadMutations = (representation: RawRepresentation) =>
       "message ID",
       mutatePayload(representation, (value) => ({
         ...value,
-        messageId: makeMessageId(202),
+        envelopeId: makeEnvelopeId(202),
       })),
     ),
     namedMutation(
@@ -446,9 +446,9 @@ const parsedLengthProperty = (fixture: IdentityFixture) =>
     fc.uint8Array({ maxLength: 4096 }),
     fc.integer({ min: 1, max: MAXIMUM_RECIPIENTS }),
     fc.integer({ min: 0, max: 247 }),
-    (body, recipientCount, messageIdByte) =>
+    (body, recipientCount, envelopeIdByte) =>
       Effect.runPromise(
-        assertLengthInvariant(fixture, body, recipientCount, messageIdByte),
+        assertLengthInvariant(fixture, body, recipientCount, envelopeIdByte),
       ),
   );
 
@@ -617,7 +617,7 @@ it("fails signing with its typed error when the sender's AgentCard cannot be rea
         agentCard,
         signingAuthority: fixture.agentSigningAuthority,
         recipientAgentIds: recipientSet(1),
-        messageId: makeMessageId(1),
+        envelopeId: makeEnvelopeId(1),
         body: Uint8Array.from([1]),
       }).pipe(Effect.either);
 

@@ -38,7 +38,7 @@ import {
 
 /**
  * The test starts PGlite, the Registry, the Router, a hold proxy and two
- * daemons, and certifies three posts between them. Beside a second full
+ * daemons, and certifies three messages between them. Beside a second full
  * Client suite (load average 30 to 47 on 8 cores) it has taken 114 to 127
  * seconds, most of it process startup. The limit is the only wall-clock bound
  * the trace sets itself, apart from its quiet windows.
@@ -53,7 +53,7 @@ const PARK_POLL_INTERVAL = Duration.millis(25);
  */
 const QUIET_WINDOW = Duration.seconds(2);
 
-const heldText = "posted while the target link is held";
+const heldText = "sent while the target link is held";
 
 const replyText = "reply after the held delivery is released";
 
@@ -341,7 +341,7 @@ function readHeldHistory(pair: HeldPair) {
       ).toEqual(["FIRST_MESSAGE", "MESSAGE", "MESSAGE"]);
       expect(
         history.records.map(
-          ({ recordCore }) => recordCore.action.postIntent.content,
+          ({ recordCore }) => recordCore.action.messageIntent.content,
         ),
       ).toEqual(expectedContents);
     }

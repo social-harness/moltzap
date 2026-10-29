@@ -245,7 +245,7 @@ const publishInOrder = (
 
 /**
  * Offer pending deliveries in order, then the collective layer's own items.
- * Every durable delivery is classified: the layer consumes protocol posts,
+ * Every durable delivery is classified: the layer consumes protocol messages,
  * which are acknowledged here whether or not a subscriber is attached, so
  * answers are recorded and deadlines complete with nobody listening. Items
  * are published while a subscriber accepts them; after the first refusal,

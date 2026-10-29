@@ -35,7 +35,7 @@ const inboxItem = bytes('{"kind":"operationFailed"}');
 
 /**
  * Give the store Alice's identity, one certified conversation with a pending
- * delivery, a proposal lock, a post intent and a queued envelope, plus the
+ * delivery, a proposal lock, a message intent and a queued envelope, plus the
  * host's inbox and event state, and return the queued envelope's
  * outbox identity.
  */
@@ -43,13 +43,13 @@ const seedState = (store: EndpointStore) =>
   Effect.gen(function* () {
     yield* store.bindIdentity(identity);
     yield* store.putConversationFoundation(foundation);
-    yield* store.bindPostIntent({
+    yield* store.bindMessageIntent({
       kind: "existing-conversation",
       intent: {
         conversationId: foundation.conversationId,
         membershipHash: foundation.membershipHash,
         authorAgentId: identity.agentId,
-        postId: digest("pst_", 2),
+        msgId: digest("msg_", 2),
         canonicalIntent: bytes("intent"),
       },
     });
@@ -64,7 +64,7 @@ const seedState = (store: EndpointStore) =>
     });
     const outbound = yield* store.enqueueOutbound({
       conversationId: foundation.conversationId,
-      messageId: "msg_restart",
+      envelopeId: "env_restart",
       wireVersion: WIRE_VERSION,
       canonicalSignedMessage: bytes("plaintext outer envelope"),
     });
@@ -73,7 +73,7 @@ const seedState = (store: EndpointStore) =>
       deliveryToken: token,
       canonicalItem: inboxItem,
     });
-    return outbound.messageId;
+    return outbound.envelopeId;
   });
 
 function reportsHowCurrentStoreOpens() {
@@ -196,7 +196,7 @@ function invalidatesInterruptedChecks() {
             store.admitFirewallOperation(completion, bytes("draft")),
           ),
         ).toMatchObject({ reason: "conflict" });
-        expect((yield* store.recover()).postIntents).toHaveLength(1);
+        expect((yield* store.recover()).messageIntents).toHaveLength(1);
       }),
     );
   });
@@ -216,7 +216,7 @@ function historyRecord(ordinal: number): CertifiedRecord {
     ...record,
     recordHash,
     actionHash,
-    postId: `pst_history:${ordinal}`,
+    msgId: `msg_history:${ordinal}`,
     canonicalRecordCore: bytes(`history:${ordinal}`),
     ...(ordinal === 0
       ? {}
@@ -428,7 +428,7 @@ describe("endpoint runtime state", () => {
   );
 });
 
-/** A retained operation check exercises the same transaction comparison as post admission. */
+/** A retained operation check exercises the same transaction comparison as message admission. */
 function startedCheck(
   store: EndpointStore,
   snapshot: FirewallEvidenceSnapshot,
@@ -456,13 +456,13 @@ it("keeps a capture fresh during unrelated certification, inbox and intent activ
       yield* startedCheck(store, captured.snapshot, "unrelated");
       yield* store.putConversationFoundation(elsewhere.foundation);
       yield* store.applyCertifiedRecord(elsewhere.record, historyDelivery);
-      yield* store.bindPostIntent({
+      yield* store.bindMessageIntent({
         kind: "existing-conversation",
         intent: {
           conversationId: elsewhere.foundation.conversationId,
           membershipHash: elsewhere.foundation.membershipHash,
           authorAgentId: identity.agentId,
-          postId: "pst_unrelated",
+          msgId: "msg_unrelated",
           canonicalIntent: bytes("pending"),
         },
       });
@@ -546,13 +546,13 @@ function changeEvidence(
         break;
       }
       case "pending":
-        yield* store.bindPostIntent({
+        yield* store.bindMessageIntent({
           kind: "existing-conversation",
           intent: {
             conversationId: foundation.conversationId,
             membershipHash: foundation.membershipHash,
             authorAgentId: identity.agentId,
-            postId: "pst_later",
+            msgId: "msg_later",
             canonicalIntent: bytes("pending"),
           },
         });

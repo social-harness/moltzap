@@ -4,7 +4,7 @@ import type { SendError } from "../conversations/errors.js";
 import type { InboundMessage } from "../conversations/message.js";
 import type { RecordHash } from "../records/index.js";
 import type { CollectiveResultItem } from "./inbound.js";
-import type { CertifiedPost } from "./ports.js";
+import type { CertifiedMessage } from "./ports.js";
 import type { ResponseValue } from "./wire/index.js";
 import { type AgentAddress, agentAddressOf } from "../records/values.js";
 import { encodeRuntimeValue, EndpointStoreError } from "../store/index.js";
@@ -199,14 +199,14 @@ export function armRetainedGather(
 export function recordCountedAnswer(
   state: CollectiveState,
   open: OpenGather,
-  post: CertifiedPost,
+  certified: CertifiedMessage,
   value: ResponseValue,
 ): Effect.Effect<void, CollectiveEmitError> {
   return state.transitions
     .withPermits(1)(
       Effect.uninterruptible(
         Effect.gen(function* () {
-          const { message } = post;
+          const { message } = certified;
           const member = open.members.find(
             (candidate) => candidate.agentId === message.sender.agentId,
           );
@@ -221,7 +221,7 @@ export function recordCountedAnswer(
           const answer = {
             operationId: value.id,
             member: agentAddressOf(member),
-            recordHash: post.recordHash,
+            recordHash: certified.recordHash,
           };
           if (!(yield* retainCountedAnswer(state, open, answer))) {
             return;
@@ -240,7 +240,7 @@ export function recordCountedAnswer(
 
 /**
  * Completes an operation at most once and owns its closing span until
- * publication finishes. Waits for a gather's result. All-gather posts its close
+ * publication finishes. Waits for a gather's result. All-gather sends its close
  * in the endpoint scope because certification may depend on the calling
  * publication pass. The caller remains responsible for stopping the deadline
  * timer.

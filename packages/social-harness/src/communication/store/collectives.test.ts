@@ -1,5 +1,5 @@
 /**
- * @file Collective ownership and publication stay atomic with their durable post intents.
+ * @file Collective ownership and publication stay atomic with their durable message intents.
  */
 
 import { live as it } from "@effect/vitest";
@@ -9,7 +9,7 @@ import type {
   CollectiveOperationInput,
   DeliveryToken,
   EndpointStore,
-  PostIntent,
+  MessageIntent,
 } from "./index.js";
 import {
   bytes,
@@ -36,12 +36,12 @@ const local: CollectiveOperationInput = {
   canonicalRequest: bytes("authored request"),
   canonicalDescriptor: bytes("complete local descriptor"),
 };
-const intent = (postId: string): PostIntent => ({
+const intent = (msgId: string): MessageIntent => ({
   authorAgentId: "agent:alice",
-  postId,
+  msgId,
   conversationId: foundation.conversationId,
   membershipHash: foundation.membershipHash,
-  canonicalIntent: bytes(postId),
+  canonicalIntent: bytes(msgId),
 });
 
 function seed(store: EndpointStore) {
@@ -76,12 +76,15 @@ it("requires an accepted request and admission before atomically claiming one re
   Effect.gen(function* () {
     const path = stateDirectory();
     yield* withStore(path, claimAdmittedAnswer);
-    const posts = yield* withStore(path, (store) =>
-      store.readCollectivePosts(),
+    const messages = yield* withStore(path, (store) =>
+      store.readCollectiveMessages(),
     );
     expect(
-      posts.map((post) => ({ role: post.role, postId: post.intent.postId })),
-    ).toEqual([{ role: "response", postId: "first-answer" }]);
+      messages.map((message) => ({
+        role: message.role,
+        msgId: message.intent.msgId,
+      })),
+    ).toEqual([{ role: "response", msgId: "first-answer" }]);
   }));
 
 it("freezes answer references and commits one close and terminal token without resurrection after acknowledgment", () =>
@@ -91,14 +94,14 @@ it("freezes answer references and commits one close and terminal token without r
     yield* withStore(path, (store) => assertCompleted(store, token));
   }));
 
-it("reads one retained operation and only the post roles requested for that operation", () =>
+it("reads one retained operation and only the message roles requested for that operation", () =>
   Effect.gen(function* () {
     const found = yield* withStore(stateDirectory(), readOperationQueries);
     expect(found).toMatchObject({
       local: { ...local, phase: "finalizing" },
       remote: { operationId: remote.operationId, phase: "collecting" },
       requests: ["local-request"],
-      localPosts: ["local-request", "first-close"],
+      localMessages: ["local-request", "first-close"],
       responses: ["remote-response"],
     });
   }));
@@ -112,7 +115,7 @@ function readOperationQueries(store: EndpointStore) {
       deliveryToken: delivery.deliveryToken,
       canonicalItem: bytes("admitted request"),
     });
-    yield* store.bindPostIntent({
+    yield* store.bindMessageIntent({
       kind: "existing-conversation",
       intent: intent("local-request"),
       collective: {
@@ -121,7 +124,7 @@ function readOperationQueries(store: EndpointStore) {
         destination: "agent:bob",
       },
     });
-    yield* store.bindPostIntent({
+    yield* store.bindMessageIntent({
       kind: "existing-conversation",
       intent: intent("remote-response"),
       collective: {
@@ -134,17 +137,17 @@ function readOperationQueries(store: EndpointStore) {
     return {
       local: yield* store.readCollectiveOperation(local.operationId),
       remote: yield* store.readCollectiveOperation(remote.operationId),
-      requests: (yield* store.readCollectivePosts({
+      requests: (yield* store.readCollectiveMessages({
         operationId: local.operationId,
         role: "request",
-      })).map((post) => post.intent.postId),
-      localPosts: (yield* store.readCollectivePosts({
+      })).map((message) => message.intent.msgId),
+      localMessages: (yield* store.readCollectiveMessages({
         operationId: local.operationId,
-      })).map((post) => post.intent.postId),
-      responses: (yield* store.readCollectivePosts({
+      })).map((message) => message.intent.msgId),
+      responses: (yield* store.readCollectiveMessages({
         operationId: remote.operationId,
         role: "response",
-      })).map((post) => post.intent.postId),
+      })).map((message) => message.intent.msgId),
     };
   });
 }
@@ -209,22 +212,22 @@ function claimAdmittedAnswer(store: EndpointStore) {
         destination: "agent:bob",
       },
     } as const;
-    expect(yield* Effect.flip(store.bindPostIntent(binding))).toMatchObject({
+    expect(yield* Effect.flip(store.bindMessageIntent(binding))).toMatchObject({
       reason: "not-found",
     });
     yield* store.putCollectiveOperation(remote);
-    expect(yield* Effect.flip(store.bindPostIntent(binding))).toMatchObject({
+    expect(yield* Effect.flip(store.bindMessageIntent(binding))).toMatchObject({
       reason: "conflict",
     });
-    expect((yield* store.recover()).postIntents).toEqual([]);
+    expect((yield* store.recover()).messageIntents).toEqual([]);
     yield* store.putInboxItem({
       deliveryToken: delivery.deliveryToken,
       canonicalItem: bytes("admitted request"),
     });
-    yield* store.bindPostIntent(binding);
+    yield* store.bindMessageIntent(binding);
     expect(
       yield* Effect.flip(
-        store.bindPostIntent({
+        store.bindMessageIntent({
           ...binding,
           intent: intent("second-answer"),
           collective: {
@@ -235,7 +238,7 @@ function claimAdmittedAnswer(store: EndpointStore) {
       ),
     ).toMatchObject({ reason: "conflict" });
     expect(
-      (yield* store.recover()).postIntents.map(({ postId }) => postId),
+      (yield* store.recover()).messageIntents.map(({ msgId }) => msgId),
     ).toEqual(["first-answer"]);
   });
 }
@@ -285,17 +288,17 @@ function bindFrozenClose(store: EndpointStore) {
         destination: "group:alice,bob,carol",
       },
     } as const;
-    expect(yield* Effect.flip(store.bindPostIntent(close))).toMatchObject({
+    expect(yield* Effect.flip(store.bindMessageIntent(close))).toMatchObject({
       reason: "conflict",
     });
     yield* store.finalizeCollectiveOperation(
       local.operationId,
       bytes("frozen answer references"),
     );
-    yield* store.bindPostIntent(close);
+    yield* store.bindMessageIntent(close);
     expect(
       yield* Effect.flip(
-        store.bindPostIntent({ ...close, intent: intent("second-close") }),
+        store.bindMessageIntent({ ...close, intent: intent("second-close") }),
       ),
     ).toMatchObject({ reason: "conflict" });
   });
@@ -311,7 +314,9 @@ function assertCompleted(store: EndpointStore, token: DeliveryToken) {
     expect((yield* store.readInboxItem(token))?.acknowledged).toBe(true);
     expect((yield* store.readInbox()).items).toEqual([]);
     expect(
-      (yield* store.readCollectivePosts()).map((post) => post.intent.postId),
+      (yield* store.readCollectiveMessages()).map(
+        (message) => message.intent.msgId,
+      ),
     ).toEqual(["first-close"]);
   });
 }

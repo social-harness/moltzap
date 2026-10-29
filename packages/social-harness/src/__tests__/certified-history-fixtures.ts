@@ -24,14 +24,14 @@ import {
   type FirstMessageActionCore,
   hashAction,
   hashAnchor,
-  hashPostIntent,
+  hashMessageIntent,
   hashRecord,
   type InitialAnchorBody,
   InitialAnchorBody as InitialAnchorBodySchema,
   MembershipDescriptor,
   type MessageActionCore,
-  mintPostId,
-  PostIntent,
+  mintMsgId,
+  MessageIntent,
   type RecordCore,
   type RecordHash,
   signEvidenceMessage,
@@ -62,7 +62,7 @@ interface CertifiedRecordParts {
  * initial anchor at `routerInstanceId`. Each certificate lists `local`'s
  * signature first, whatever the members' AgentId order.
  * @param local One member of the two-member conversation.
- * @param remote The other member, who authors the post.
+ * @param remote The other member, who authors the message.
  * @param membership The verified two-member membership.
  * @param routerInstanceId The Router instance the initial anchor binds.
  * @returns The complete certified record.
@@ -108,7 +108,7 @@ export const buildCertifiedFirstMessage = (
  * Keep a certified FIRST_MESSAGE record in `local`'s store as its endpoint does:
  * bind the local identity, lock the FIRST_MESSAGE proposal with the conversation's
  * membership and initial anchor, then keep the record row, with one evidence
- * row per signer. A remote author's post also becomes a local delivery.
+ * row per signer. A remote author's message also becomes a local delivery.
  * @param store The endpoint store to write.
  * @param local The card of the agent whose store this is.
  * @param membership The record's verified membership.
@@ -130,7 +130,7 @@ export const storeCertifiedFirstMessage = (
     yield* bindLocalIntent(store, local, membership, record);
     yield* store.applyCertifiedRecord(
       yield* storedRecordRow(record),
-      yield* remotePost(local, membership, record),
+      yield* remoteMessage(local, membership, record),
     );
   }).pipe(Effect.orDie, Effect.withSpan("storeCertifiedFirstMessage"));
 
@@ -143,45 +143,49 @@ export interface HistoryEndpoint {
 }
 
 /**
- * Extend a two-member certified history with a signed remote or local post
+ * Extend a two-member certified history with a signed remote or local message
  * carrying `text` as its one part, or exactly the given content.
  */
-export function appendCertifiedPost(
+export function appendCertifiedMessage(
   endpoint: HistoryEndpoint,
   previous: CertifiedRecord,
-  text: string | PostIntent["content"],
+  text: string | MessageIntent["content"],
   authoredLocally = false,
 ): Effect.Effect<CertifiedRecord> {
   return Effect.gen(function* () {
-    const postIntent: PostIntent = {
-      ...previous.actionCertifiedRecord.recordCore.action.postIntent,
+    const messageIntent: MessageIntent = {
+      ...previous.actionCertifiedRecord.recordCore.action.messageIntent,
       authorAgentId: (authoredLocally ? endpoint.local : endpoint.remote).card
         .agentId,
-      postId: yield* mintPostId(),
+      msgId: yield* mintMsgId(),
       content: typeof text === "string" ? [{ type: "text", text }] : text,
     };
-    return yield* appendCertifiedIntent(endpoint, previous, postIntent);
-  }).pipe(Effect.orDie, Effect.withSpan("appendCertifiedPost"));
+    return yield* appendCertifiedIntent(endpoint, previous, messageIntent);
+  }).pipe(Effect.orDie, Effect.withSpan("appendCertifiedMessage"));
 }
 
-/** Certify the exact retained intent so recovery tests never replace an uncertain post. */
+/** Certify the exact retained intent so recovery tests never replace an uncertain message. */
 export function appendCertifiedIntent(
   endpoint: HistoryEndpoint,
   previous: CertifiedRecord,
-  intent: PostIntent,
+  intent: MessageIntent,
 ): Effect.Effect<CertifiedRecord> {
   return Effect.gen(function* () {
-    const record = yield* buildCertifiedPost(endpoint, previous, intent);
-    yield* storeCertifiedPost(endpoint, previous.actionCertifiedRecord, record);
+    const record = yield* buildCertifiedMessage(endpoint, previous, intent);
+    yield* storeCertifiedMessage(
+      endpoint,
+      previous.actionCertifiedRecord,
+      record,
+    );
     return record;
   }).pipe(Effect.orDie, Effect.withSpan("appendCertifiedIntent"));
 }
 
 /** Build a genuine certificate without advancing the receiving engine's store. */
-export function buildCertifiedPost(
+export function buildCertifiedMessage(
   endpoint: Pick<HistoryEndpoint, "local" | "remote" | "membership">,
   previous: CertifiedRecord,
-  intent: PostIntent,
+  intent: MessageIntent,
 ): Effect.Effect<CertifiedRecord> {
   const { local, remote, membership } = endpoint;
   return Effect.gen(function* () {
@@ -189,7 +193,11 @@ export function buildCertifiedPost(
     if (predecessor.routerAnchor.kind !== "initial_anchor_body") {
       return yield* Effect.dieMessage("expected a initially anchored history");
     }
-    const recordCore = yield* postRecordCore(membership, predecessor, intent);
+    const recordCore = yield* messageRecordCore(
+      membership,
+      predecessor,
+      intent,
+    );
     const actionHash = recordCore.actionHash;
     const recordHash = yield* hashRecord(recordCore);
     const record = certifiedRecord({
@@ -206,7 +214,7 @@ export function buildCertifiedPost(
       ]),
     });
     return record;
-  }).pipe(Effect.orDie, Effect.withSpan("buildCertifiedPost"));
+  }).pipe(Effect.orDie, Effect.withSpan("buildCertifiedMessage"));
 }
 
 /**
@@ -297,7 +305,7 @@ export function signEvidence(
   }).pipe(Effect.flatMap((message) => Schema.encode(SignedMessage)(message)));
 }
 
-function storeCertifiedPost(
+function storeCertifiedMessage(
   endpoint: HistoryEndpoint,
   predecessor: CertifiedRecord["actionCertifiedRecord"],
   record: CertifiedRecord,
@@ -314,15 +322,15 @@ function storeCertifiedPost(
     });
     yield* store.applyCertifiedRecord(
       yield* storedRecordRow(record),
-      yield* remotePost(local.card, membership, record),
+      yield* remoteMessage(local.card, membership, record),
     );
   });
 }
 
-function postRecordCore(
+function messageRecordCore(
   membership: VerifiedMembership,
   predecessor: CertifiedRecord["actionCertifiedRecord"],
-  postIntent: PostIntent,
+  messageIntent: MessageIntent,
 ) {
   return Effect.gen(function* () {
     const action: MessageActionCore = {
@@ -332,8 +340,8 @@ function postRecordCore(
       membershipHash: membership.hash,
       anchorHash: predecessor.recordCore.anchorHash,
       previousRecordHash: predecessor.recordHash,
-      postIntent,
-      postIntentHash: yield* hashPostIntent(postIntent),
+      messageIntent,
+      messageIntentHash: yield* hashMessageIntent(messageIntent),
     };
     const recordCore: RecordCore = {
       sharnessVersion: WIRE_VERSION,
@@ -353,13 +361,13 @@ function firstMessageAction(
   routerInstanceId: InitialAnchorBody["routerInstanceId"],
 ) {
   return Effect.gen(function* () {
-    const postIntent: PostIntent = {
+    const messageIntent: MessageIntent = {
       sharnessVersion: WIRE_VERSION,
-      kind: "post_intent",
+      kind: "message_intent",
       conversationId: membership.descriptor.conversationId,
       membershipHash: membership.hash,
       authorAgentId: author.card.agentId,
-      postId: yield* mintPostId(),
+      msgId: yield* mintMsgId(),
       content: [{ type: "text", text: "certified before restart" }],
     };
     const action: FirstMessageActionCore = {
@@ -375,8 +383,8 @@ function firstMessageAction(
         routerInstanceId,
       },
       previousRecordHash: null,
-      postIntent,
-      postIntentHash: yield* hashPostIntent(postIntent),
+      messageIntent,
+      messageIntentHash: yield* hashMessageIntent(messageIntent),
     };
     return action;
   });
@@ -510,13 +518,15 @@ function evidenceRows(
   );
 }
 
-function remotePost(
+function remoteMessage(
   local: VerifiedAgentCard,
   membership: VerifiedMembership,
   record: CertifiedRecord,
 ) {
   const certified = record.actionCertifiedRecord;
-  if (certified.recordCore.action.postIntent.authorAgentId === local.agentId) {
+  if (
+    certified.recordCore.action.messageIntent.authorAgentId === local.agentId
+  ) {
     return Effect.succeed(undefined);
   }
   return inboundDelivery(
@@ -553,7 +563,7 @@ function misattributeRecordEvidence(
   };
 }
 
-/** Locally certified posts must first have an immutable intent, as the engine requires. */
+/** Locally certified messages must first have an immutable intent, as the engine requires. */
 function bindLocalIntent(
   store: EndpointStore,
   local: VerifiedAgentCard,
@@ -561,18 +571,18 @@ function bindLocalIntent(
   record: CertifiedRecord,
 ) {
   return Effect.gen(function* () {
-    const intent = record.actionCertifiedRecord.recordCore.action.postIntent;
+    const intent = record.actionCertifiedRecord.recordCore.action.messageIntent;
     if (intent.authorAgentId !== local.agentId) {
       return;
     }
-    yield* store.bindPostIntent({
+    yield* store.bindMessageIntent({
       kind: "existing-conversation",
       intent: {
         conversationId: membership.descriptor.conversationId,
         membershipHash: membership.hash,
         authorAgentId: intent.authorAgentId,
-        postId: intent.postId,
-        canonicalIntent: yield* encodeCanonical(PostIntent, intent),
+        msgId: intent.msgId,
+        canonicalIntent: yield* encodeCanonical(MessageIntent, intent),
       },
     });
   });

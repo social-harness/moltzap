@@ -1,7 +1,7 @@
 /** @file Real checker outputs for retained-check decoding tests. */
 
 import { Effect, Schema } from "effect";
-import { PostIntent } from "../communication/records/index.js";
+import { MessageIntent } from "../communication/records/index.js";
 import { encodeRuntimeValue } from "../communication/store/index.js";
 import {
   installEditableFirewall,
@@ -41,13 +41,13 @@ const policyOptions = {
   },
 } as const;
 
-const candidate = Schema.decodeUnknown(PostIntent)({
+const candidate = Schema.decodeUnknown(MessageIntent)({
   sharnessVersion: WIRE_VERSION,
-  kind: "post_intent",
+  kind: "message_intent",
   conversationId: digest("cnv_", 1),
   membershipHash: digest("mbr_", 2),
   authorAgentId: identifier("agt_", 1),
-  postId: digest("pst_", 3),
+  msgId: digest("msg_", 3),
   content: [{ type: "text", text: "private meeting" }],
 });
 

@@ -47,7 +47,7 @@ const recordHash = Schema.decodeUnknownSync(RecordHash)(record.recordHash);
 const message = () =>
   Schema.decodeUnknownSync(InboundMessage)({
     kind: "direct",
-    postId: record.postId,
+    msgId: record.msgId,
     address: sender,
     sender: testAgentView(sender),
     content: [
@@ -88,17 +88,17 @@ function makeCollectives(
     self,
     scope,
     lookupMember: (member) => Effect.succeed(testAgentView(member)),
-    sendPost: unavailable,
-    bindPost: (...[, hold]) =>
+    sendMessage: unavailable,
+    bindMessage: (...[, hold]) =>
       hold.pipe(Effect.as({ certified: unavailable() })),
     sendAdmitted: unavailable,
-    observePost: unavailable,
+    observeMessage: unavailable,
     reportStorageFault: () => Effect.dieMessage("unexpected storage fault"),
     emit: () => Effect.dieMessage("a request emits no local result"),
     ...(firewall
       ? {
           admission: {
-            bindPost: <E>(
+            bindMessage: <E>(
               ...[, hold]: [unknown, Effect.Effect<Effect.Effect<void>, E>]
             ) => hold.pipe(Effect.as({ certified: unavailable() })),
             admitGather: () =>
@@ -261,7 +261,7 @@ function groupRequest() {
     );
     return Schema.decodeUnknownSync(InboundMessage)({
       kind: "group",
-      postId: record.postId,
+      msgId: record.msgId,
       sender: testAgentView(sender),
       address: group,
       members: ["agent:alice", "agent:bob", "agent:carol"].map(testAgentView),
@@ -275,7 +275,7 @@ function delayedCloseHistory() {
     const request = yield* groupRequest();
     const answer = Schema.decodeUnknownSync(InboundMessage)({
       ...request,
-      postId: digest("pst_", 42),
+      msgId: digest("msg_", 42),
       sender: testAgentView("agent:carol"),
       content: yield* encodeCollectiveContent({
         kind: "response",
@@ -286,7 +286,7 @@ function delayedCloseHistory() {
     });
     const close = Schema.decodeUnknownSync(InboundMessage)({
       ...request,
-      postId: digest("pst_", 43),
+      msgId: digest("msg_", 43),
       content: yield* encodeCollectiveContent({
         kind: "close",
         closedAt: 60_000,
@@ -309,11 +309,11 @@ function restoringLayer(
     self,
     scope,
     lookupMember: (member) => Effect.succeed(testAgentView(member)),
-    sendPost: unavailable,
-    bindPost: (...[, hold]) =>
+    sendMessage: unavailable,
+    bindMessage: (...[, hold]) =>
       hold.pipe(Effect.as({ certified: unavailable() })),
     sendAdmitted: unavailable,
-    observePost: unavailable,
+    observeMessage: unavailable,
     reportStorageFault: () => Effect.dieMessage("unexpected storage fault"),
     emit: (item, provenance, terminal) =>
       Effect.gen(function* () {
@@ -348,7 +348,7 @@ function appendMessage(
           ...record,
           recordHash: hash,
           previousRecordHash,
-          postId: message.postId,
+          msgId: message.msgId,
           authorAgentId: message.sender.agentId,
           actionHash,
           canonicalRecordCore: bytes(hash),
@@ -490,14 +490,14 @@ itOnClock(
       const emitted: InboundItem[] = [];
       const request = Schema.decodeUnknownSync(InboundMessage)({
         ...(yield* groupRequest()),
-        postId: digest("pst_", 81),
+        msgId: digest("msg_", 81),
       });
       const requestHash = Schema.decodeUnknownSync(RecordHash)(
         digest("rch_", 82),
       );
       const earlyClose = Schema.decodeUnknownSync(InboundMessage)({
         ...request,
-        postId: record.postId,
+        msgId: record.msgId,
         content: yield* encodeCollectiveContent({
           kind: "close",
           closedAt: 60_000,
@@ -567,7 +567,7 @@ function assertUnknownCloseAfterReopen(context: OrderedRequest) {
     ).toMatchObject({ reason: "network-unavailable" });
     const close = Schema.decodeUnknownSync(InboundMessage)({
       ...earlyClose,
-      postId: digest("pst_", 83),
+      msgId: digest("msg_", 83),
     });
     const closeHash = Schema.decodeUnknownSync(RecordHash)(digest("rch_", 84));
     yield* appendMessage(store, close, closeHash, requestHash);

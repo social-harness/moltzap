@@ -75,7 +75,7 @@ function tracesUnder(endpoint: string): string {
 }
 
 /**
- * The URL spans are posted to, or why the settings cannot start an exporter.
+ * The URL spans are sent to, or why the settings cannot start an exporter.
  * The URL is `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, else `v1/traces` under
  * `OTEL_EXPORTER_OTLP_ENDPOINT`; the caller passes it to the exporter, so the
  * URL checked is the URL used. A URL

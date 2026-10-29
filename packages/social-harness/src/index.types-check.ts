@@ -14,7 +14,7 @@
  * either one check's or one per checked text of a result; each of its
  * instructions names a settled expectation or an unsettled norm judgment's
  * choice and probability. A send returns a collecting operation's id or the
- * id of the request a response answered, the post a multicast or response
+ * id of the request a response answered, the message a multicast or response
  * created with its conversation's canonical address, and its check's
  * guidance, and fails with a closed send reason or a collective failure. The exported send-result decoder yields that same
  * result type. Adapters compile against this surface, so any change these
@@ -49,7 +49,7 @@ import type {
   MessageAddressInput,
   MessageTextError,
   parseMessageText,
-  PostId,
+  MsgId,
   renderLocalGuidance,
   SendError,
   SendInput,
@@ -95,7 +95,7 @@ type ExpectedSendInput =
 type ExpectedSendResult =
   | Readonly<{
       kind: "multicast";
-      postId: PostId;
+      msgId: MsgId;
       address: AgentAddress | GroupAddress;
       operationId?: never;
       guidance?: ExpectedCheckedGuidance;
@@ -103,27 +103,27 @@ type ExpectedSendResult =
   | Readonly<{
       kind: "response";
       operationId: CollectiveId;
-      postId: PostId;
+      msgId: MsgId;
       address: AgentAddress | GroupAddress;
       guidance?: ExpectedCheckedGuidance;
     }>
   | Readonly<{
       kind: "collective";
       operationId: CollectiveId;
-      postId?: never;
+      msgId?: never;
       address?: never;
       guidance?: ExpectedCheckedGuidance;
     }>;
 type ExpectedDirectMessage = Readonly<{
   kind: "direct";
-  postId: PostId;
+  msgId: MsgId;
   address: AgentAddress;
   sender: AgentView;
   content: Content;
 }>;
 type ExpectedGroupMessage = Readonly<{
   kind: "group";
-  postId: PostId;
+  msgId: MsgId;
   address: GroupAddress;
   sender: AgentView;
   members: readonly [AgentView, AgentView, AgentView, ...AgentView[]];
@@ -154,7 +154,7 @@ type ExpectedInboundItem =
       kind: "collectiveRequest";
       op: "gather" | "all_gather";
       id: CollectiveId;
-      postId: PostId;
+      msgId: MsgId;
       from: AgentView;
       to: MessageAddressInput;
       question: string;
@@ -283,7 +283,7 @@ type ExpectedHistoryExportRecord =
         | Readonly<{
             kind: "sent";
             operationId?: CollectiveId;
-            postIds: readonly PostId[];
+            msgIds: readonly MsgId[];
           }>
         | Readonly<{ kind: "failed"; error: string }>;
       at: DateTime.Utc;

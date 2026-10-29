@@ -6,7 +6,7 @@ import type { CollectiveId } from "./contracts.js";
 import type { InboundItem } from "./inbound.js";
 import type { CollectivePorts } from "./ports.js";
 import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
-import { appendCertifiedPost } from "../../__tests__/certified-history-fixtures.js";
+import { appendCertifiedMessage } from "../../__tests__/certified-history-fixtures.js";
 import { retainingEmitter } from "../../__tests__/collective-recovery-fixtures.js";
 import {
   engineFixture,
@@ -14,7 +14,7 @@ import {
 } from "../../__tests__/firewall-runtime-fixtures.js";
 import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { InboundMessage } from "../conversations/message.js";
-import { AgentAddress, mintPostId } from "../records/index.js";
+import { AgentAddress, mintMsgId } from "../records/index.js";
 import {
   decodeRuntimeValue,
   type EndpointStore,
@@ -117,17 +117,17 @@ function delayedAnswerFixture(failAfterRetain = false) {
       self: Schema.decodeUnknownSync(AgentAddress)("agent:alice"),
       scope: yield* Scope.Scope,
       lookupMember: (member) => Effect.succeed(testAgentView(member)),
-      sendPost: () =>
-        mintPostId().pipe(
+      sendMessage: () =>
+        mintMsgId().pipe(
           Effect.orDie,
-          Effect.map((postId) => ({
-            postId,
+          Effect.map((msgId) => ({
+            msgId,
             recordHash: head.actionCertifiedRecord.recordHash,
           })),
         ),
-      bindPost: () => Effect.dieMessage("gather uses request fanout"),
+      bindMessage: () => Effect.dieMessage("gather uses request fanout"),
       sendAdmitted: () => Effect.dieMessage("no firewall in this test"),
-      observePost: () => Effect.dieMessage("gather owns no close"),
+      observeMessage: () => Effect.dieMessage("gather owns no close"),
       reportStorageFault: (fault) =>
         Effect.sync(() => {
           faults.push(fault);
@@ -182,7 +182,7 @@ function certifiedAnswer(
       action: "accept",
       content: { answer: "yes" },
     });
-    const answer = yield* appendCertifiedPost(
+    const answer = yield* appendCertifiedMessage(
       fixture.subject,
       fixture.head,
       content,

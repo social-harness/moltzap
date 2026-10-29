@@ -79,14 +79,14 @@ import {
   hashAction,
   hashAnchor,
   hashMembershipDescriptor,
-  hashPostIntent,
+  hashMessageIntent,
   hashRecord,
   InitialAnchorBody,
   MembershipDescriptor,
   MembershipHash,
   type MessageActionCore,
-  mintPostId,
-  PostIntent,
+  mintMsgId,
+  MessageIntent,
   quorumThreshold,
   type ReanchorBody,
   type RecordCore,
@@ -255,16 +255,16 @@ const forwardedBy = new WeakMap<SignedMessage, SigningIdentity>();
  * context's recovery queue when it carries catch-up or re-anchor traffic,
  * otherwise to its normal queue.
  * @param context Store and queues the fixture worker delivers through.
- * @param messageId Outbox identity the endpoint sends.
+ * @param envelopeId Outbox identity the endpoint sends.
  * @returns Completion once the envelope is delivered or found inactive.
  */
 function forwardSorted(
   context: FixtureRouterContext,
-  messageId: string,
+  envelopeId: string,
 ): Effect.Effect<void> {
   return Effect.gen(function* () {
     const staging = yield* Queue.unbounded<SignedMessage>();
-    yield* forwardStoredOutbound(context.store, staging, messageId);
+    yield* forwardStoredOutbound(context.store, staging, envelopeId);
     const sent = yield* Queue.takeAll(staging);
     for (const message of sent) {
       forwardedBy.set(message, context.local);
@@ -373,14 +373,14 @@ function makeHeldRouter(input: HeldRouterInput) {
       routerInstanceId: oldRouterInstanceId,
       pollCursor,
     }),
-    send: (messageId) =>
+    send: (envelopeId) =>
       Ref.get(input.holdOutbound).pipe(
         Effect.flatMap((hold) =>
           hold
-            ? Queue.offer(input.pendingOutboundIds, messageId).pipe(
+            ? Queue.offer(input.pendingOutboundIds, envelopeId).pipe(
                 Effect.asVoid,
               )
-            : forwardSorted(context, messageId),
+            : forwardSorted(context, envelopeId),
         ),
       ),
   });
@@ -543,7 +543,7 @@ const fixtureRouterAt =
   (context: FixtureRouterContext): EngineRouterPort => ({
     currentAnchor: Effect.succeed({ routerInstanceId, pollCursor }),
     awaitAnchor: Effect.succeed({ routerInstanceId, pollCursor }),
-    send: (messageId) => forwardSorted(context, messageId),
+    send: (envelopeId) => forwardSorted(context, envelopeId),
   });
 
 const makeFixtureRouter = fixtureRouterAt(newRouterInstanceId);
@@ -709,7 +709,7 @@ const addGroupFoundation = (
           routerInstanceId: newRouterInstanceId,
           pollCursor,
         }),
-        send: (messageId) => forwardSorted(fixture, messageId),
+        send: (envelopeId) => forwardSorted(fixture, envelopeId),
       },
     }).pipe(Effect.orDie);
     return {
@@ -790,14 +790,14 @@ const buildGroupHistory = (
       ).pipe(Effect.flatMap(nonEmpty));
     const intent = (text: string) =>
       Effect.map(
-        mintPostId(),
-        (postId): PostIntent => ({
+        mintMsgId(),
+        (msgId): MessageIntent => ({
           sharnessVersion: WIRE_VERSION,
-          kind: "post_intent",
+          kind: "message_intent",
           conversationId,
           membershipHash: group.membership.hash,
           authorAgentId: fixture.remote.card.agentId,
-          postId,
+          msgId,
           content: [{ type: "text", text }],
         }),
       );
@@ -809,8 +809,8 @@ const buildGroupHistory = (
       membership: group.membership.descriptor,
       anchor,
       previousRecordHash: null,
-      postIntent: headIntent,
-      postIntentHash: yield* hashPostIntent(headIntent),
+      messageIntent: headIntent,
+      messageIntentHash: yield* hashMessageIntent(headIntent),
     };
     const headActionHash = yield* hashAction(headAction);
     const headCore: RecordCore = {
@@ -865,8 +865,8 @@ const buildGroupHistory = (
       membershipHash: group.membership.hash,
       anchorHash,
       previousRecordHash: headRecordHash,
-      postIntent: successorIntent,
-      postIntentHash: yield* hashPostIntent(successorIntent),
+      messageIntent: successorIntent,
+      messageIntentHash: yield* hashMessageIntent(successorIntent),
     };
     const successorActionHash = yield* hashAction(successorAction);
     const successorCore: RecordCore = {
@@ -898,13 +898,13 @@ const buildN4PartialHistory = (
   n4: N4Foundation,
 ): Effect.Effect<N4PartialHistory> =>
   Effect.gen(function* () {
-    const headIntent: PostIntent = {
+    const headIntent: MessageIntent = {
       sharnessVersion: WIRE_VERSION,
-      kind: "post_intent",
+      kind: "message_intent",
       conversationId: n4.membership.descriptor.conversationId,
       membershipHash: n4.membership.hash,
       authorAgentId: fixture.remote.card.agentId,
-      postId: yield* mintPostId(),
+      msgId: yield* mintMsgId(),
       content: [{ type: "text", text: "certified N4 head" }],
     };
     const headAnchor: InitialAnchorBody = {
@@ -921,8 +921,8 @@ const buildN4PartialHistory = (
       membership: n4.membership.descriptor,
       anchor: headAnchor,
       previousRecordHash: null,
-      postIntent: headIntent,
-      postIntentHash: yield* hashPostIntent(headIntent),
+      messageIntent: headIntent,
+      messageIntentHash: yield* hashMessageIntent(headIntent),
     };
     const headActionHash = yield* hashAction(headAction);
     const headLocalAction = yield* signEvidence(fixture.local, {
@@ -1016,13 +1016,13 @@ const buildN4PartialHistory = (
       },
     };
 
-    const successorIntent: PostIntent = {
+    const successorIntent: MessageIntent = {
       sharnessVersion: WIRE_VERSION,
-      kind: "post_intent",
+      kind: "message_intent",
       conversationId: n4.membership.descriptor.conversationId,
       membershipHash: n4.membership.hash,
       authorAgentId: n4.fourth.card.agentId,
-      postId: yield* mintPostId(),
+      msgId: yield* mintMsgId(),
       content: [{ type: "text", text: "partially disseminated successor" }],
     };
     const successorAction: MessageActionCore = {
@@ -1032,8 +1032,8 @@ const buildN4PartialHistory = (
       membershipHash: n4.membership.hash,
       anchorHash: headAnchorHash,
       previousRecordHash: headRecordHash,
-      postIntent: successorIntent,
-      postIntentHash: yield* hashPostIntent(successorIntent),
+      messageIntent: successorIntent,
+      messageIntentHash: yield* hashMessageIntent(successorIntent),
     };
     const successorActionHash = yield* hashAction(successorAction);
     const successorRemoteAction = yield* signEvidence(fixture.remote, {
@@ -1128,12 +1128,12 @@ const buildN4PartialHistory = (
  * third and fourth members' action signatures and durability votes.
  * @param fixture Endpoint whose remote member signs.
  * @param n4 N4 conversation and its third and fourth members.
- * @param position Where the post sits.
- * @param position.routerAnchor Completed re-anchor the post binds.
- * @param position.previousRecordHash Record the post extends.
+ * @param position Where the message sits.
+ * @param position.routerAnchor Completed re-anchor the message binds.
+ * @param position.previousRecordHash Record the message extends.
  * @returns The certified record.
  */
-const certifiedN4PostAt = (
+const certifiedN4MessageAt = (
   fixture: RecoveryFixture,
   n4: N4Foundation,
   position: {
@@ -1145,14 +1145,14 @@ const certifiedN4PostAt = (
     const signers = [fixture.remote, n4.third, n4.fourth].sort((left, right) =>
       compareAgentIds(left.card.agentId, right.card.agentId),
     );
-    const intent: PostIntent = {
+    const intent: MessageIntent = {
       sharnessVersion: WIRE_VERSION,
-      kind: "post_intent",
+      kind: "message_intent",
       conversationId: n4.membership.descriptor.conversationId,
       membershipHash: n4.membership.hash,
       authorAgentId: n4.fourth.card.agentId,
-      postId: yield* mintPostId(),
-      content: [{ type: "text", text: "post under the new anchor" }],
+      msgId: yield* mintMsgId(),
+      content: [{ type: "text", text: "message under the new anchor" }],
     };
     const action: MessageActionCore = {
       sharnessVersion: WIRE_VERSION,
@@ -1161,8 +1161,8 @@ const certifiedN4PostAt = (
       membershipHash: n4.membership.hash,
       anchorHash: position.routerAnchor.anchorHash,
       previousRecordHash: position.previousRecordHash,
-      postIntent: intent,
-      postIntentHash: yield* hashPostIntent(intent),
+      messageIntent: intent,
+      messageIntentHash: yield* hashMessageIntent(intent),
     };
     const actionHash = yield* hashAction(action);
     const recordCore: RecordCore = {
@@ -1379,7 +1379,7 @@ const stageCatchUpOutbound = (fixture: RecoveryFixture) =>
     );
     return yield* fixture.store.enqueueOutbound({
       conversationId: request.conversationId,
-      messageId: message.messageId,
+      envelopeId: message.envelopeId,
       canonicalSignedMessage,
       wireVersion: SignedMessage.wireVersion(message),
     });
@@ -1609,7 +1609,7 @@ const stageAttachedDissemination = (fixture: RecoveryFixture) =>
       },
       {
         conversationId: record.conversationId,
-        messageId: message.messageId,
+        envelopeId: message.envelopeId,
         wireVersion: WIRE_VERSION,
         canonicalSignedMessage: yield* encodeCanonical(SignedMessage, message),
       },
@@ -1997,7 +1997,7 @@ const completeRestartRecovery = () =>
     const { recovery: recovering, outbound: recoveryOutbound } =
       yield* forkRecovery(fixture, "router_restarted", newRouterInstanceId);
     const firstOutbound = yield* Queue.take(recoveryOutbound);
-    expect(firstOutbound.messageId).not.toBe(staleOutbound.messageId);
+    expect(firstOutbound.envelopeId).not.toBe(staleOutbound.envelopeId);
     const firstRequest = yield* decodeCatchUpRequest(firstOutbound);
     yield* catchUpPageIngress(fixture, firstRequest).pipe(
       Effect.flatMap((ingress) => fixture.engine.acceptRouterIngress(ingress)),
@@ -2063,7 +2063,7 @@ const completeRestartRecovery = () =>
     yield* Fiber.interrupt(sending);
   });
 
-const reproposesPendingPostAfterRestart = () =>
+const reproposesPendingMessageAfterRestart = () =>
   Effect.gen(function* () {
     const pendingOutboundIds = yield* Queue.unbounded<string>();
     const holdOutbound = yield* Ref.make(false);
@@ -2088,15 +2088,14 @@ const reproposesPendingPostAfterRestart = () =>
     const headRecordOutboundId = yield* Queue.take(pendingOutboundIds);
     const staleOutboundId = yield* Queue.take(pendingOutboundIds);
     const before = yield* fixture.store.recover();
-    expect(before.outboundMessages.map(({ messageId }) => messageId)).toEqual([
-      headRecordOutboundId,
-      staleOutboundId,
-    ]);
+    expect(before.outboundMessages.map(({ envelopeId }) => envelopeId)).toEqual(
+      [headRecordOutboundId, staleOutboundId],
+    );
     const staleOutbound = before.outboundMessages[1];
     if (staleOutbound === undefined) {
       return yield* Effect.dieMessage("pending MESSAGE was not retained");
     }
-    expect(staleOutbound.messageId).toBe(staleOutboundId);
+    expect(staleOutbound.envelopeId).toBe(staleOutboundId);
     const staleProposal = yield* decodeCanonical(
       SignedMessage,
       staleOutbound.canonicalSignedMessage,
@@ -2109,7 +2108,7 @@ const reproposesPendingPostAfterRestart = () =>
     if (staleProposal.action.kind !== "MESSAGE") {
       return yield* Effect.dieMessage("expected an old-instance MESSAGE");
     }
-    const postId = staleProposal.action.postIntent.postId;
+    const msgId = staleProposal.action.messageIntent.msgId;
     expect(staleProposal.action.anchorHash).toBe(
       fixture.certifiedRecord.actionCertifiedRecord.recordCore.anchorHash,
     );
@@ -2138,10 +2137,10 @@ const reproposesPendingPostAfterRestart = () =>
     if (reproposed.action.kind !== "MESSAGE") {
       return yield* Effect.dieMessage("expected a re-anchored MESSAGE");
     }
-    expect(reproposedMessage.messageId).not.toBe(staleOutbound.messageId);
-    expect(reproposed.action.postIntent.postId).toBe(postId);
-    expect(reproposed.action.postIntentHash).toBe(
-      staleProposal.action.postIntentHash,
+    expect(reproposedMessage.envelopeId).not.toBe(staleOutbound.envelopeId);
+    expect(reproposed.action.messageIntent.msgId).toBe(msgId);
+    expect(reproposed.action.messageIntentHash).toBe(
+      staleProposal.action.messageIntentHash,
     );
     expect(reproposed.action.previousRecordHash).toBe(
       staleProposal.action.previousRecordHash,
@@ -2206,14 +2205,14 @@ const recoverColdStartAtUnchangedInstance = () =>
     expect(recovered.positions[0]?.currentAnchorHash).toBe(
       fixture.certifiedRecord.actionCertifiedRecord.recordCore.anchorHash,
     );
-    expect(resumed.messageId).toBe(retained.messageId);
+    expect(resumed.envelopeId).toBe(retained.envelopeId);
   });
 
-const takeAllMessageIds = (queue: Queue.Queue<SignedMessage>) =>
+const takeAllEnvelopeIds = (queue: Queue.Queue<SignedMessage>) =>
   Queue.takeAll(queue).pipe(
     Effect.map((messages) =>
       Chunk.toReadonlyArray(
-        Chunk.map(messages, (message) => message.messageId),
+        Chunk.map(messages, (message) => message.envelopeId),
       ),
     ),
   );
@@ -2285,7 +2284,7 @@ const recoverMixedRouterInstances = () =>
       Effect.flatMap((ingress) => n4.engine.acceptRouterIngress(ingress)),
     );
     const resumedUnchanged = yield* Queue.take(recoveryOutbound);
-    expect(resumedUnchanged.messageId).toBe(retainedUnchanged.messageId);
+    expect(resumedUnchanged.envelopeId).toBe(retainedUnchanged.envelopeId);
     expect(yield* Queue.size(recoveryOutbound)).toBe(0);
 
     yield* Effect.forEach(
@@ -2323,16 +2322,16 @@ const recoverMixedRouterInstances = () =>
         .routerInstanceId,
     ).toBe(oldRouterInstanceId);
     const sentIds = [
-      ...(yield* takeAllMessageIds(resumedOutbound)),
-      ...(yield* takeAllMessageIds(recoveryOutbound)),
+      ...(yield* takeAllEnvelopeIds(resumedOutbound)),
+      ...(yield* takeAllEnvelopeIds(recoveryOutbound)),
     ];
-    expect(sentIds).not.toContain(staleChanged.messageId);
+    expect(sentIds).not.toContain(staleChanged.envelopeId);
     expect(after.outboundMessages).toEqual([]);
   });
 
 /** One Router send held until the test releases it. */
 interface HeldSend {
-  readonly messageId: string;
+  readonly envelopeId: string;
   readonly release: Deferred.Deferred<undefined>;
 }
 
@@ -2344,12 +2343,12 @@ interface HeldSend {
 function makeGatedRouter(sends: Queue.Queue<HeldSend>) {
   return (context: FixtureRouterContext): EngineRouterPort => ({
     ...makeFixtureRouter(context),
-    send: (messageId) =>
+    send: (envelopeId) =>
       Effect.gen(function* () {
         const release = yield* Deferred.make<undefined>();
-        yield* Queue.offer(sends, { messageId, release });
+        yield* Queue.offer(sends, { envelopeId, release });
         yield* Deferred.await(release);
-        yield* forwardSorted(context, messageId);
+        yield* forwardSorted(context, envelopeId);
       }),
   });
 }
@@ -2412,7 +2411,7 @@ const queuePeerCatchUpResponse = (
     const queued = after.outboundMessages.filter(
       (row) =>
         !before.outboundMessages.some(
-          (prior) => prior.messageId === row.messageId,
+          (prior) => prior.envelopeId === row.envelopeId,
         ),
     );
     const row = queued[0];
@@ -2453,7 +2452,7 @@ const recoverWhileDrainAwaitsWorker = () =>
     const queued = yield* queuePeerCatchUpResponse(fixture);
     const draining = yield* Effect.fork(fixture.engine.drainOutbound);
     const held = yield* Queue.take(sends);
-    expect(held.messageId).toBe(queued.messageId);
+    expect(held.envelopeId).toBe(queued.envelopeId);
 
     yield* fixture.engine.abandonVolatileFolds("feed_gap");
     yield* fixture.engine.recoverCertifiedHistory({
@@ -2488,25 +2487,25 @@ const concurrentDrainsSendOnceInOrder = () =>
     const leadingFirst = yield* Queue.take(sends);
     const trailing = yield* Effect.fork(fixture.engine.drainOutbound);
     const trailingFirst = yield* Queue.take(sends);
-    expect([leadingFirst.messageId, trailingFirst.messageId]).toEqual([
-      first.messageId,
-      first.messageId,
+    expect([leadingFirst.envelopeId, trailingFirst.envelopeId]).toEqual([
+      first.envelopeId,
+      first.envelopeId,
     ]);
 
     yield* releaseHeldSend(trailingFirst);
     const trailingSecond = yield* Queue.take(sends);
-    expect(trailingSecond.messageId).toBe(second.messageId);
+    expect(trailingSecond.envelopeId).toBe(second.envelopeId);
     yield* releaseHeldSend(leadingFirst);
     const leadingSecond = yield* Queue.take(sends);
-    expect(leadingSecond.messageId).toBe(second.messageId);
+    expect(leadingSecond.envelopeId).toBe(second.envelopeId);
     yield* releaseHeldSend(trailingSecond);
     yield* releaseHeldSend(leadingSecond);
     yield* Fiber.join(leading);
     yield* Fiber.join(trailing);
 
-    expect(yield* takeAllMessageIds(fixture.recoveryOutbound)).toEqual([
-      first.messageId,
-      second.messageId,
+    expect(yield* takeAllEnvelopeIds(fixture.recoveryOutbound)).toEqual([
+      first.envelopeId,
+      second.envelopeId,
     ]);
     expect((yield* fixture.store.recover()).outboundMessages).toEqual([]);
     yield* fixture.engine.drainOutbound;
@@ -2529,13 +2528,13 @@ const staleDrainKeepsLaterHead = () =>
     const second = yield* queuePeerCatchUpResponse(fixture);
     yield* releaseHeldSend(staleFirst);
     const staleSecond = yield* Queue.take(sends);
-    expect(staleSecond.messageId).toBe(second.messageId);
+    expect(staleSecond.envelopeId).toBe(second.envelopeId);
     yield* releaseHeldSend(staleSecond);
     yield* Fiber.join(stale);
 
-    expect(yield* takeAllMessageIds(fixture.recoveryOutbound)).toEqual([
-      first.messageId,
-      second.messageId,
+    expect(yield* takeAllEnvelopeIds(fixture.recoveryOutbound)).toEqual([
+      first.envelopeId,
+      second.envelopeId,
     ]);
     expect((yield* fixture.store.recover()).outboundMessages).toEqual([]);
   });
@@ -2568,12 +2567,12 @@ function makeRestartingRouter(input: RestartingRouterInput) {
       );
     return {
       ...makeFixtureRouter(context),
-      send: (messageId) =>
+      send: (envelopeId) =>
         Ref.getAndSet(input.restartPending, false).pipe(
           Effect.flatMap((restarted) =>
             restarted
               ? Deferred.await(input.engineReady).pipe(Effect.flatMap(recover))
-              : forwardSorted(context, messageId),
+              : forwardSorted(context, envelopeId),
           ),
         ),
     };
@@ -2640,7 +2639,7 @@ const recoverDisseminationObligations = () =>
     yield* Fiber.join(recovering);
     yield* fixture.engine.drainOutbound;
     const rebuilt = yield* Queue.take(resumedOutbound);
-    expect(rebuilt.messageId).not.toBe(stale.messageId);
+    expect(rebuilt.envelopeId).not.toBe(stale.envelopeId);
     expect(yield* openForwarded(rebuilt)).toMatchObject({
       kind: "direct",
       packet: { kind: "action_certified_record" },
@@ -2669,10 +2668,10 @@ const recoverWhileNormalSendIsHeld = () =>
       const router = makeFixtureRouter(context);
       return {
         ...router,
-        send: (messageId) =>
+        send: (envelopeId) =>
           Deferred.succeed(sendEntered, undefined).pipe(
             Effect.zipRight(Deferred.await(releaseSend)),
-            Effect.zipRight(router.send(messageId)),
+            Effect.zipRight(router.send(envelopeId)),
           ),
       };
     });
@@ -2688,7 +2687,7 @@ const recoverWhileNormalSendIsHeld = () =>
     const { recovery: recovering, outbound: recoveryOutbound } =
       yield* forkRecovery(fixture, "router_restarted", oldRouterInstanceId);
     yield* Fiber.join(recovering);
-    expect((yield* fixture.store.recover()).postIntents).toHaveLength(1);
+    expect((yield* fixture.store.recover()).messageIntents).toHaveLength(1);
     yield* Deferred.succeed(releaseSend, undefined);
     const request = yield* takeCatchUpRequest(recoveryOutbound);
     yield* deliverRecovery(
@@ -2888,7 +2887,7 @@ const proposeAtRestart = (fixture: RecoveryFixture) =>
  * A peer that reached the threshold first relays the completed re-anchor; the
  * endpoint still re-anchoring reports it accepted, adopts its anchor, and
  * then catches up from that anchor before it recovers, since members may
- * already have certified posts under it. Protects the receiving side of a
+ * already have certified messages under it. Protects the receiving side of a
  * relayed completion; fails when a completion the run adopts is reported
  * ignored, or the run recovers on the relay alone and never fetches what
  * follows the new anchor.
@@ -3518,9 +3517,9 @@ const reanchorByCatchUp: ReanchorRoute = (fixture, run) =>
   }).pipe(Effect.orDie);
 
 /**
- * The Router orders a post's proposal at head R, so the endpoint locks R for
+ * The Router orders a message's proposal at head R, so the endpoint locks R for
  * that proposal, and the Router restarts before it certifies. The
- * conversation re-anchors at R, and the post's proposal at the new anchor,
+ * conversation re-anchors at R, and the message's proposal at the new anchor,
  * once the new Router orders it, certifies with the peer's signature and
  * vote, and the endpoint starts again over the same store. Fails when the
  * lock taken under the old anchor still holds R, so every proposal at R
@@ -3741,7 +3740,7 @@ const retiresAStagedSuccessorWhenAReanchorSelectsItsHead = (
       },
       [fixture.remote, n4.third, n4.fourth],
     );
-    const extension = yield* certifiedN4PostAt(fixture, n4, {
+    const extension = yield* certifiedN4MessageAt(fixture, n4, {
       routerAnchor: completed,
       previousRecordHash: recordHash,
     });
@@ -3928,11 +3927,11 @@ describe("endpoint restart recovery", () => {
     },
     {
       outcome: "fails to restart as persistence",
-      rows: "a certified record row whose PostId is not its core's",
+      rows: "a certified record row whose MsgId is not its core's",
       tamper: tamperCertifiedRecords((row) =>
-        mintPostId().pipe(
+        mintMsgId().pipe(
           Effect.orDie,
-          Effect.map((postId) => ({ ...row, postId })),
+          Effect.map((msgId) => ({ ...row, msgId })),
         ),
       ),
       restart: new EngineInitializationError({ reason: "persistence" }),
@@ -3977,14 +3976,14 @@ describe("endpoint restart recovery", () => {
     completeRestartRecovery,
   );
   it(
-    "discards an old-instance MESSAGE and reproposes the same PostId at the new anchor",
-    reproposesPendingPostAfterRestart,
+    "discards an old-instance MESSAGE and reproposes the same MsgId at the new anchor",
+    reproposesPendingMessageAfterRestart,
   );
-  it("certifies a post at a head a proposal locked before the conversation re-anchored there", () =>
+  it("certifies a message at a head a proposal locked before the conversation re-anchored there", () =>
     certifiesAtALockedHeadAfterReanchoring(reanchorByVote));
-  it("certifies a post at a head a proposal locked before a caught-up re-anchor there", () =>
+  it("certifies a message at a head a proposal locked before a caught-up re-anchor there", () =>
     certifiesAtALockedHeadAfterReanchoring(reanchorByCatchUp));
-  it("certifies a post at a head where it staged a record before a caught-up re-anchor there", () =>
+  it("certifies a message at a head where it staged a record before a caught-up re-anchor there", () =>
     certifiesAtALockedHeadAfterReanchoring(reanchorByCatchUp, "staged"));
   it(
     "restarts an empty foundation at the new Router instance",
@@ -5001,9 +5000,9 @@ const conversationWithForeignCard = (fixture: RecoveryFixture) =>
  * A certified MESSAGE the member of a two-member conversation authors directly
  * after its FIRST_MESSAGE, signed and voted by both members.
  * @param conversation The conversation's member, membership and FIRST_MESSAGE.
- * @param conversation.member Author of the post, and one of its two signers.
- * @param conversation.membership Membership the post names by hash.
- * @param conversation.firstMessage Record the post extends, under its anchor.
+ * @param conversation.member Author of the message, and one of its two signers.
+ * @param conversation.membership Membership the message names by hash.
+ * @param conversation.firstMessage Record the message extends, under its anchor.
  * @param local The fixture's endpoint, which also signs and votes.
  * @returns The certified record.
  */
@@ -5020,14 +5019,14 @@ const certifiedMessageAfterFirstMessage = (
     const signers = [local, member].sort((left, right) =>
       compareAgentIds(left.card.agentId, right.card.agentId),
     );
-    const intent: PostIntent = {
+    const intent: MessageIntent = {
       sharnessVersion: WIRE_VERSION,
-      kind: "post_intent",
+      kind: "message_intent",
       conversationId: membership.descriptor.conversationId,
       membershipHash: membership.hash,
       authorAgentId: member.card.agentId,
-      postId: yield* mintPostId(),
-      content: [{ type: "text", text: "post after first message" }],
+      msgId: yield* mintMsgId(),
+      content: [{ type: "text", text: "message after first message" }],
     };
     const anchorHash = firstMessage.actionCertifiedRecord.recordCore.anchorHash;
     const action: MessageActionCore = {
@@ -5037,8 +5036,8 @@ const certifiedMessageAfterFirstMessage = (
       membershipHash: membership.hash,
       anchorHash,
       previousRecordHash: firstMessage.actionCertifiedRecord.recordHash,
-      postIntent: intent,
-      postIntentHash: yield* hashPostIntent(intent),
+      messageIntent: intent,
+      messageIntentHash: yield* hashMessageIntent(intent),
     };
     const actionHash = yield* hashAction(action);
     const recordCore: RecordCore = {
@@ -5155,11 +5154,11 @@ const ignoresFirstMessageWithACardAnotherRegistryIssued = () =>
  * unheld conversation's MESSAGE is accepted, or is treated as a fault instead of
  * being ignored.
  */
-const ignoresAPostForAConversationItDoesNotHold = () =>
+const ignoresAMessageForAConversationItDoesNotHold = () =>
   Effect.gen(function* () {
     const fixture = yield* makeFixture;
     const created = yield* unstoredConversationWith(fixture);
-    const post = yield* certifiedMessageAfterFirstMessage(
+    const message = yield* certifiedMessageAfterFirstMessage(
       created,
       fixture.local,
     );
@@ -5176,13 +5175,13 @@ const ignoresAPostForAConversationItDoesNotHold = () =>
       );
     const { conversationId } = created.membership.descriptor;
 
-    const early = yield* deliver(post);
+    const early = yield* deliver(message);
     const beforeFirstMessage = (yield* fixture.store.recover()).positions.find(
       (held) => held.conversationId === conversationId,
     );
     const firstMessage = yield* deliver(created.firstMessage);
-    const later = yield* deliver(post);
-    const afterPost = (yield* fixture.store.recover()).positions.find(
+    const later = yield* deliver(message);
+    const afterMessage = (yield* fixture.store.recover()).positions.find(
       (held) => held.conversationId === conversationId,
     );
 
@@ -5192,8 +5191,8 @@ const ignoresAPostForAConversationItDoesNotHold = () =>
       acceptedDisposition,
     ]);
     expect(beforeFirstMessage).toBeUndefined();
-    expect(afterPost?.headRecordHash).toBe(
-      post.actionCertifiedRecord.recordHash,
+    expect(afterMessage?.headRecordHash).toBe(
+      message.actionCertifiedRecord.recordHash,
     );
   });
 
@@ -5302,7 +5301,7 @@ describe("peer input during recovery", () => {
   );
   it(
     "ignores a MESSAGE for a conversation it does not hold, and certifies it after its FIRST_MESSAGE",
-    ignoresAPostForAConversationItDoesNotHold,
+    ignoresAMessageForAConversationItDoesNotHold,
   );
   it(
     "ignores a re-anchor vote whose previous anchor this endpoint cannot resolve",
@@ -5887,8 +5886,8 @@ const answersCatchUpRequestBeforeItsRunStarts = () =>
  * Opens the fixture's remote member as a second endpoint with its own store,
  * holding the conversation foundation and the certified first message record the
  * fixture endpoint holds once it retains that record. The remote member
- * authored that record, so its store also binds the record's post intent,
- * as an author's store does before its post certifies.
+ * authored that record, so its store also binds the record's message intent,
+ * as an author's store does before its message certifies.
  * @param fixture Endpoint whose remote member the peer runs as.
  * @returns The peer engine and its store.
  */
@@ -5913,16 +5912,16 @@ const openPeerEngine = (fixture: RecoveryFixture) =>
         recoveryOutbound,
       }),
     });
-    const { postIntent } =
+    const { messageIntent } =
       fixture.certifiedRecord.actionCertifiedRecord.recordCore.action;
-    yield* store.bindPostIntent({
+    yield* store.bindMessageIntent({
       kind: "existing-conversation",
       intent: {
-        conversationId: postIntent.conversationId,
-        membershipHash: postIntent.membershipHash,
-        authorAgentId: postIntent.authorAgentId,
-        postId: postIntent.postId,
-        canonicalIntent: yield* encodeCanonical(PostIntent, postIntent),
+        conversationId: messageIntent.conversationId,
+        membershipHash: messageIntent.membershipHash,
+        authorAgentId: messageIntent.authorAgentId,
+        msgId: messageIntent.msgId,
+        canonicalIntent: yield* encodeCanonical(MessageIntent, messageIntent),
       },
     });
     yield* directPacketIngressFrom({
@@ -6208,7 +6207,7 @@ const takeRetriedCatchUpRequest = (outbound: Queue.Queue<SignedMessage>) =>
  * A send to a conversation, as the host makes one.
  * @param engine Endpoint that sends.
  * @param to The address the send names.
- * @param text Text the post carries.
+ * @param text Text the message carries.
  * @returns The running send.
  */
 const forkSend = (engine: EndpointEngine, to: string, text: string) =>
@@ -6225,13 +6224,13 @@ const forkSend = (engine: EndpointEngine, to: string, text: string) =>
  * direct one's only other member is silent, and the N4 conversation's members
  * answer its catch-up. One answer is short of a quorum even when it arrives
  * twice, as an outer message Router appended again after eviction would, so
- * the N4 post still waits; with a second member's answer, the N4 conversation
- * recovers, its post reaches the Router, and its Router-ordered proposal and a
+ * the N4 message still waits; with a second member's answer, the N4 conversation
+ * recovers, its message reaches the Router, and its Router-ordered proposal and a
  * member's signature are accepted. Meanwhile the direct conversation stays
- * fenced and the Router receives nothing of its post. Once the direct member
- * answers, that conversation recovers and its held post reaches the Router.
+ * fenced and the Router receives nothing of its message. Once the direct member
+ * answers, that conversation recovers and its held message reaches the Router.
  * Fails when the silent member's conversation holds the N4 conversation's
- * post, as an engine-wide fence does, or when a fenced conversation's post
+ * message, as an engine-wide fence does, or when a fenced conversation's message
  * reaches the Router before that conversation recovers.
  */
 const recoversOneConversationWhileAnotherWaitsOnASilentMember = () =>
@@ -6477,16 +6476,16 @@ const rearmsCatchUpAfterRetriesRunOut = () =>
   });
 
 /**
- * The endpoint's post in the N4 conversation is proposed at the certified
+ * The endpoint's message in the N4 conversation is proposed at the certified
  * head and sent, but the Router never orders it before a feed gap. Catch-up
  * then brings a member's certified successor of that head. The endpoint
  * proposes nothing while the conversation is still fenced, because it would
  * ignore the Router's echo of its own proposal; once the conversation
- * recovers it proposes the post at the new head. Fails when catching up a
- * record re-proposes a pending post while its conversation is fenced, so
+ * recovers it proposes the message at the new head. Fails when catching up a
+ * record re-proposes a pending message while its conversation is fenced, so
  * members sign a proposal its author never signs.
  */
-const proposesPendingPostsOnlyOnceItsConversationRecovers = () =>
+const proposesPendingMessagesOnlyOnceItsConversationRecovers = () =>
   Effect.gen(function* () {
     const fixture = yield* makeFixture;
     const n4 = yield* addN4Foundation(fixture);
@@ -6566,7 +6565,7 @@ const proposesPendingPostsOnlyOnceItsConversationRecovers = () =>
  * that carries it is interrupted while the conversation's held work resumes,
  * as the Router worker interrupts its recovery poll once recovery returns.
  * The conversation still finishes recovering: its fence is released and the
- * owner's post reaches the Router. The test holds the store read the resume
+ * owner's message reaches the Router. The test holds the store read the resume
  * takes until the interruption is pending. Fails when an interruption between
  * counting the conversation recovered and releasing its fence leaves the
  * fence held with nothing left to release it.
@@ -6715,9 +6714,9 @@ const rearmsCatchUpOnTheNextRecoveryRun = () =>
 
 /**
  * A conversation's catch-up retries run out while its member is silent, and
- * the owner then posts into it. The post arms catch-up again with a fresh
+ * the owner then sends a message into it. The message arms catch-up again with a fresh
  * request and waits; once the member answers, the conversation recovers and
- * the post goes out. Fails when a post into a paused conversation waits for
+ * the message goes out. Fails when a message into a paused conversation waits for
  * a recovery nothing will start, or is dropped.
  */
 const rearmsCatchUpOnALocalSend = () =>
@@ -6738,11 +6737,11 @@ const rearmsCatchUpOnALocalSend = () =>
     const sending = yield* forkSend(
       fixture.engine,
       `agent:${fixture.remote.card.agentName}`,
-      "posted into a paused conversation",
+      "sent into a paused conversation",
     );
     const fresh = yield* takeCatchUpRequest(outbound);
     yield* settle;
-    const heldPosts = yield* Queue.size(fixture.normalOutbound);
+    const heldMessages = yield* Queue.size(fixture.normalOutbound);
     yield* deliverRecovery(
       fixture.engine,
       catchUpIncompleteIngressFrom({
@@ -6759,7 +6758,7 @@ const rearmsCatchUpOnALocalSend = () =>
     expect(fresh.conversationId).toBe(
       fixture.membership.descriptor.conversationId,
     );
-    expect(heldPosts).toBe(0);
+    expect(heldMessages).toBe(0);
     expect(proposal.proposal.action.conversationId).toBe(
       fixture.membership.descriptor.conversationId,
     );
@@ -6770,7 +6769,7 @@ const rearmsCatchUpOnALocalSend = () =>
  * Both of the endpoint's conversations exhaust their catch-up retries while
  * every member is silent, and the Router worker then reattaches after an
  * outage. Catch-up starts again for both paused conversations, even though
- * nobody posted. Fails when a paused conversation waits for traffic that may
+ * nobody sent. Fails when a paused conversation waits for traffic that may
  * never come.
  */
 const rearmsEveryPausedConversationOnReattach = () =>
@@ -6821,13 +6820,13 @@ const FIRST_RESEND_DUE = "1300 millis";
 const RESEND_WAIT = "20 seconds";
 
 /**
- * The author re-anchors at a Router restart, recovers, and posts while the
+ * The author re-anchors at a Router restart, recovers, and sends while the
  * other member still catches up from the new anchor, so that member ignores
  * the proposal as traffic for a fenced conversation and never signs it. After
  * the catch-up retry delay the author sends its head's certified record and
  * the identical proposal again, in new outer messages; the member signs that
- * copy, and the post certifies. Fails when the author sends an unchanged
- * proposal only once, so the post waits for a signature that never comes.
+ * copy, and the message certifies. Fails when the author sends an unchanged
+ * proposal only once, so the message waits for a signature that never comes.
  */
 const resendsAProposalAMemberDroppedWhileRecovering = () =>
   Effect.gen(function* () {
@@ -6917,7 +6916,7 @@ const resendsAProposalAMemberDroppedWhileRecovering = () =>
       },
       { kind: "direct", packet: first.proposal },
     ]);
-    expect(resent[1]?.messageId).not.toBe(first.message.messageId);
+    expect(resent[1]?.envelopeId).not.toBe(first.message.envelopeId);
     expect(sent.recordHash).toBe(recordHash);
   });
 
@@ -7125,11 +7124,11 @@ describe("catch-up and re-anchor inside a recovery run", () => {
     preservesResendAttemptsWhileFenced,
   );
   itOnTestClock(
-    "sends its proposal again to a member that dropped it while recovering, and the post certifies",
+    "sends its proposal again to a member that dropped it while recovering, and the message certifies",
     resendsAProposalAMemberDroppedWhileRecovering,
   );
   it(
-    "sends a recovered conversation's post while another waits on a silent member, and the held post once that one recovers",
+    "sends a recovered conversation's message while another waits on a silent member, and the held message once that one recovers",
     recoversOneConversationWhileAnotherWaitsOnASilentMember,
   );
   itOnTestClock(
@@ -7153,8 +7152,8 @@ describe("catch-up and re-anchor inside a recovery run", () => {
     rearmsEveryPausedConversationOnReattach,
   );
   itOnTestClock(
-    "proposes a pending post only once its conversation recovers, at the head it settles on",
-    proposesPendingPostsOnlyOnceItsConversationRecovers,
+    "proposes a pending message only once its conversation recovers, at the head it settles on",
+    proposesPendingMessagesOnlyOnceItsConversationRecovers,
   );
   it(
     "finishes recovering a conversation whose completing delivery is interrupted",
@@ -7215,15 +7214,15 @@ describe("catch-up and re-anchor inside a recovery run", () => {
 });
 
 /**
- * The local endpoint posts into its direct conversation, the Router orders
+ * The local endpoint sends into its direct conversation, the Router orders
  * the proposal back to it and to `orderedAt`, the remote member signs it,
  * and the local endpoint stages the record and votes it durable. Nothing the
  * local endpoint sends after its proposal reaches the remote member.
- * @param fixture Endpoint that authors the post, holding a certified head.
+ * @param fixture Endpoint that authors the message, holding a certified head.
  * @param orderedAt Other engines the Router orders the proposal to.
  * @returns The running send, and the record the author staged.
  */
-const stagePostAtTheAuthor = (
+const stageMessageAtTheAuthor = (
   fixture: RecoveryFixture,
   orderedAt: readonly EndpointEngine[] = [],
 ) =>
@@ -7322,11 +7321,11 @@ function takeUntilQuiet(
 }
 
 /**
- * Both members of a direct conversation staged the local endpoint's post
+ * Both members of a direct conversation staged the local endpoint's message
  * and voted it durable, and each lost the other's vote when the Router
  * restarted. During recovery the local endpoint answers the member's
  * catch-up with the record and its own vote, not `incomplete`, and the
- * member's vote then certifies the post and moves its catch-up to the new
+ * member's vote then certifies the message and moves its catch-up to the new
  * head. Fails when a holder answers `incomplete`, or when recovery ignores a
  * durability vote for a staged successor of its head.
  * @returns The trace, run to completion.
@@ -7338,7 +7337,7 @@ const certifiesAStagedSuccessorOnAVoteAMemberSendsAgain = () =>
     const head = fixture.certifiedRecord.actionCertifiedRecord.recordHash;
     const anchor =
       fixture.certifiedRecord.actionCertifiedRecord.recordCore.anchorHash;
-    const { recordHash } = yield* stagePostAtTheAuthor(fixture);
+    const { recordHash } = yield* stageMessageAtTheAuthor(fixture);
     const { outbound } = yield* forkRecovery(
       {
         engine: fixture.engine,
@@ -7392,7 +7391,7 @@ const certifiesAStagedSuccessorOnAVoteAMemberSendsAgain = () =>
   });
 
 /**
- * The local endpoint holds its post staged when the Router restarts, and the
+ * The local endpoint holds its message staged when the Router restarts, and the
  * member answers its catch-up as `incomplete`, which makes its position
  * ready. A holder votes for no re-anchor behind its staged successor: it
  * sends the record and its durability vote again instead. Fails when a
@@ -7404,7 +7403,7 @@ const resendsItsStagedSuccessorInsteadOfVotingAtItsHead = () =>
   Effect.gen(function* () {
     const fixture = yield* makeFixture;
     yield* retainCertifiedRecord(fixture);
-    const { recordHash } = yield* stagePostAtTheAuthor(fixture);
+    const { recordHash } = yield* stageMessageAtTheAuthor(fixture);
     const { outbound, request } = yield* startRestartRecovery(fixture);
 
     yield* deliverRecovery(
@@ -7426,18 +7425,18 @@ const resendsItsStagedSuccessorInsteadOfVotingAtItsHead = () =>
   });
 
 /**
- * The local endpoint authors a post in its direct conversation, both members
+ * The local endpoint authors a message in its direct conversation, both members
  * sign it, and the author stages the record and votes it durable; the Router
  * restarts before the member receives the record. Both members recover: the
  * author answers the member's catch-up with the record and its vote instead
  * of `incomplete`, the member converts to it on that one vote, both certify
- * it, and both re-anchor at it. The post completes, and neither member stages
+ * it, and both re-anchor at it. The message completes, and neither member stages
  * a re-anchor candidate at the head the record extends. Fails when the
  * author's `incomplete` makes the member ready at that head, or when recovery
  * ignores the record and its votes, so the conversation never recovers.
  * @returns The trace, run to completion.
  */
-const certifiesAPostOneDirectMemberStagedBeforeTheRestart = () =>
+const certifiesAMessageOneDirectMemberStagedBeforeTheRestart = () =>
   Effect.gen(function* () {
     const fixture = yield* makeFixture;
     yield* retainCertifiedRecord(fixture);
@@ -7445,7 +7444,7 @@ const certifiesAPostOneDirectMemberStagedBeforeTheRestart = () =>
     const head = fixture.certifiedRecord.actionCertifiedRecord.recordHash;
     const oldAnchor =
       fixture.certifiedRecord.actionCertifiedRecord.recordCore.anchorHash;
-    const { sending, staged } = yield* stagePostAtTheAuthor(fixture, [
+    const { sending, staged } = yield* stageMessageAtTheAuthor(fixture, [
       peer.engine,
     ]);
     yield* Queue.takeAll(fixture.normalOutbound);
@@ -7615,10 +7614,10 @@ const groupState = (
   );
 
 /**
- * In a three-member conversation one member staged the remote member's post
+ * In a three-member conversation one member staged the remote member's message
  * and voted it durable before the Router restarted. The local endpoint
  * converts on that one vote, since a three-member conversation can have no
- * faulty member, stages the post and votes for it, and the third member's
+ * faulty member, stages the message and votes for it, and the third member's
  * converted vote then certifies it and moves the catch-up to it. Fails when a
  * re-anchoring member never converts, so a lone holder blocks the
  * conversation.
@@ -7660,11 +7659,11 @@ const convertsToAThreeMemberSuccessorOnOneVote = () =>
   });
 
 /**
- * In the N4 conversation only the post's author staged it before the Router
+ * In the N4 conversation only the message's author staged it before the Router
  * restarted, which `n − q(n)` members can be. Its record and one vote do not
  * make the local endpoint convert, and the other two members' `incomplete`
  * answers make its position ready at the head: it votes to re-anchor there
- * without the author, and stages nothing for the post. Fails when a member
+ * without the author, and stages nothing for the message. Fails when a member
  * converts on no more votes than the members that can be faulty.
  * @returns The trace, run to completion.
  */
@@ -7690,11 +7689,11 @@ const votesAtTheHeadOverASuccessorOnlyItsAuthorStaged = () =>
   });
 
 /**
- * In the N4 conversation two members staged the post and voted it durable
+ * In the N4 conversation two members staged the message and voted it durable
  * before the Router restarted, more than can be faulty, and a faulty member
  * answers the local endpoint's catch-up as `incomplete`. One answer does not
  * make the position ready; the two holders' votes make the endpoint convert,
- * and its own vote completes the post's durability certificate. With an
+ * and its own vote completes the message's durability certificate. With an
  * earlier re-anchor candidate at the head, the store refuses the record
  * instead. Fails when a member converts after voting to leave the anchor, or
  * when two holders' votes do not move a member to their successor.
@@ -7729,11 +7728,11 @@ const convertsOnTwoN4HoldersUnlessItLeftTheAnchor = (
   });
 
 /**
- * In a seven-member conversation three members staged the post and voted it
+ * In a seven-member conversation three members staged the message and voted it
  * durable before the Router restarted, and two others voted to re-anchor at
  * the head. Two holders' votes, as many as can be faulty, do not make the
  * local endpoint convert; the third does. With its vote and the last
- * member's, five votes certify the post. Fails when a member converts on as
+ * member's, five votes certify the message. Fails when a member converts on as
  * many votes as can be faulty, or never converts above that.
  * @returns The trace, run to completion.
  */
@@ -7801,11 +7800,11 @@ const stagesASuccessorOnItsRecordAloneAfterAFeedGap = () =>
   });
 
 /**
- * The local endpoint staged an N4 member's post and voted it durable before
+ * The local endpoint staged an N4 member's message and voted it durable before
  * the Router restarted, but holds no certificate for it. A member's catch-up
  * request at the head gets that record and its vote, not `incomplete`, so no
  * member can count it among the answers that settle the position at the head
- * while another member holds the post certified. Fails when a holder of a
+ * while another member holds the message certified. Fails when a holder of a
  * staged successor answers `incomplete` during a re-anchor.
  * @returns The trace, run to completion.
  */
@@ -8009,7 +8008,7 @@ const waitsBehindASuccessorAHolderAnswersWith = () =>
  * holds it certified and stays silent past the retry window; the faulty
  * third member answers `incomplete`. The holder answers with the record and
  * its vote, so the local endpoint stages the record on it alone and never
- * settles at the head: a post into the conversation stays held after the
+ * settles at the head: a message into the conversation stays held after the
  * retries run out, and the remote member's vote then certifies the
  * successor. The recovery's two conversations, the direct one with the silent
  * remote member and the N4 group, each retry until their attempts run out, so
@@ -8396,7 +8395,7 @@ const convertsUnderTheNewAnchorPastASuccessorFromTheOldOne = () =>
       n4,
       history,
     );
-    const current = yield* certifiedN4PostAt(fixture, n4, {
+    const current = yield* certifiedN4MessageAt(fixture, n4, {
       routerAnchor: completed,
       previousRecordHash:
         history.certifiedHead.actionCertifiedRecord.recordHash,
@@ -8447,12 +8446,12 @@ const convertsAtAHeadCatchUpMovedPastItsHold = () =>
       n4,
       history,
     );
-    const next = yield* certifiedN4PostAt(fixture, n4, {
+    const next = yield* certifiedN4MessageAt(fixture, n4, {
       routerAnchor: completed,
       previousRecordHash:
         history.certifiedHead.actionCertifiedRecord.recordHash,
     });
-    const after = yield* certifiedN4PostAt(fixture, n4, {
+    const after = yield* certifiedN4MessageAt(fixture, n4, {
       routerAnchor: completed,
       previousRecordHash: next.actionCertifiedRecord.recordHash,
     });
@@ -8515,7 +8514,7 @@ const convertsUnderAnAdoptedAnchorAfterARefusedConversion = () =>
       },
       [fixture.remote, n4.third, n4.fourth],
     );
-    const current = yield* certifiedN4PostAt(fixture, n4, {
+    const current = yield* certifiedN4MessageAt(fixture, n4, {
       routerAnchor: completed,
       previousRecordHash: recordHash,
     });
@@ -8703,8 +8702,8 @@ const answersIncompleteWithoutItsVoteForTheDeliveringInstance = () =>
 
 describe("staged successors in recovery", () => {
   it(
-    "certifies a post one direct member staged before the restart, and re-anchors at it",
-    certifiesAPostOneDirectMemberStagedBeforeTheRestart,
+    "certifies a message one direct member staged before the restart, and re-anchors at it",
+    certifiesAMessageOneDirectMemberStagedBeforeTheRestart,
   );
   it(
     "certifies a staged successor on the vote a member sends again, after answering with it",
@@ -8818,7 +8817,7 @@ const retriesWhileARecordPageAwaitsPromotion = () =>
       input: fixture.input,
       conversations: recovered.conversations,
       intents: new Map(),
-      completedPosts: recovered.completedPosts,
+      completedMessages: recovered.completedMessages,
       actionFolds: recovered.actionFolds,
       recordFolds: recovered.recordFolds,
       gate: yield* Effect.makeSemaphore(1),
@@ -8927,24 +8926,24 @@ const remoteProposalAtTheHead = (
   Effect.gen(function* () {
     const { recordCore, recordHash } =
       fixture.certifiedRecord.actionCertifiedRecord;
-    const postIntent: PostIntent = {
+    const messageIntent: MessageIntent = {
       sharnessVersion: WIRE_VERSION,
-      kind: "post_intent",
+      kind: "message_intent",
       conversationId: fixture.membership.descriptor.conversationId,
       membershipHash: fixture.membership.hash,
       authorAgentId: fixture.remote.card.agentId,
-      postId: yield* mintPostId(),
+      msgId: yield* mintMsgId(),
       content: [{ type: "text", text: "proposed before the discontinuity" }],
     };
     const action: MessageActionCore = {
       sharnessVersion: WIRE_VERSION,
       kind: "MESSAGE",
-      conversationId: postIntent.conversationId,
+      conversationId: messageIntent.conversationId,
       membershipHash: fixture.membership.hash,
       anchorHash: recordCore.anchorHash,
       previousRecordHash: recordHash,
-      postIntent,
-      postIntentHash: yield* hashPostIntent(postIntent),
+      messageIntent,
+      messageIntentHash: yield* hashMessageIntent(messageIntent),
     };
     return {
       sharnessVersion: WIRE_VERSION,
@@ -9081,7 +9080,7 @@ const sendsARetainedOutboxRowAfterAColdStart = () =>
     yield* restarted.runOutbound.pipe(Effect.orDie, Effect.forkScoped);
     const sent = yield* Queue.take(fixture.recoveryOutbound);
 
-    expect(sent.messageId).toBe(retained.messageId);
+    expect(sent.envelopeId).toBe(retained.envelopeId);
     expect((yield* fixture.store.recover()).outboundMessages).toEqual([]);
   });
 
@@ -9264,13 +9263,13 @@ const remoteFirstMessageAtTheRestartedFoundation = (
 ): Effect.Effect<ActionProposal> =>
   Effect.gen(function* () {
     const conversationId = fixture.membership.descriptor.conversationId;
-    const postIntent: PostIntent = {
+    const messageIntent: MessageIntent = {
       sharnessVersion: WIRE_VERSION,
-      kind: "post_intent",
+      kind: "message_intent",
       conversationId,
       membershipHash: fixture.membership.hash,
       authorAgentId: fixture.remote.card.agentId,
-      postId: yield* mintPostId(),
+      msgId: yield* mintMsgId(),
       content: [{ type: "text", text: "proposed after the restart" }],
     };
     const action: FirstMessageActionCore = {
@@ -9286,8 +9285,8 @@ const remoteFirstMessageAtTheRestartedFoundation = (
         routerInstanceId: newRouterInstanceId,
       },
       previousRecordHash: null,
-      postIntent,
-      postIntentHash: yield* hashPostIntent(postIntent),
+      messageIntent,
+      messageIntentHash: yield* hashMessageIntent(messageIntent),
     };
     return {
       sharnessVersion: WIRE_VERSION,

@@ -41,15 +41,15 @@ import {
 import { WIRE_VERSION, WireVersions } from "../wire-version.js";
 import { WIRE_PROFILES } from "./wire-profile.js";
 
-/** Sender-scoped identity of one attributed message. */
+/** Identifies one signed envelope across transport retries. */
 // eslint-disable-next-line @typescript-eslint/naming-convention -- Effect Schemas share the public domain name they decode.
-export const MessageId = canonicalIdentifier("MessageId", "msg_", 16);
+export const EnvelopeId = canonicalIdentifier("EnvelopeId", "env_", 16);
 /**
- * Validated nominal value decoded by MessageId.
+ * An envelope identifier validated by its public schema.
  * @useDeclaredType
  */
 // eslint-disable-next-line @typescript-eslint/no-redeclare -- The same-named Schema and type form one boundary model.
-export type MessageId = typeof MessageId.Type;
+export type EnvelopeId = typeof EnvelopeId.Type;
 
 const SIGNED_MESSAGE_TYPE = WIRE_PROFILES[WIRE_VERSION].signedMessageType;
 /** Largest opaque body, in bytes, that one SignedMessage carries. */
@@ -72,7 +72,7 @@ const MAXIMUM_ENCODED_BYTES = Effect.runSync(
         { length: MAXIMUM_RECIPIENTS },
         () => `agt_${encoded(16)}`,
       ),
-      messageId: `msg_${encoded(16)}`,
+      envelopeId: `env_${encoded(16)}`,
       body: encoded(MAXIMUM_BODY_BYTES),
     });
     const headerBytes = yield* encodeCanonicalJson({
@@ -135,7 +135,7 @@ const payload = exactStruct({
   senderAgentId: AgentId,
   agentCardDigest: AgentCardDigest,
   recipientAgentIds,
-  messageId: MessageId,
+  envelopeId: EnvelopeId,
   body: opaqueBody,
 });
 
@@ -144,7 +144,7 @@ export interface SignedMessage {
   readonly senderAgentId: AgentIdValue;
   readonly agentCardDigest: AgentCardDigestValue;
   readonly recipientAgentIds: readonly AgentIdValue[];
-  readonly messageId: MessageId;
+  readonly envelopeId: EnvelopeId;
   readonly body: Uint8Array;
 }
 
@@ -200,7 +200,7 @@ const makeView = (
     senderAgentId: decodedPayload.senderAgentId,
     agentCardDigest: decodedPayload.agentCardDigest,
     recipientAgentIds: recipients,
-    messageId: decodedPayload.messageId,
+    envelopeId: decodedPayload.envelopeId,
     get body() {
       return new Uint8Array(bodySnapshot);
     },
@@ -309,7 +309,7 @@ interface SignInput {
   readonly agentCard: VerifiedAgentCard;
   readonly signingAuthority: AgentSigningAuthorityValue;
   readonly recipientAgentIds: ReadonlySet<AgentIdValue>;
-  readonly messageId: MessageId;
+  readonly envelopeId: EnvelopeId;
   readonly body: Uint8Array;
 }
 
@@ -361,14 +361,14 @@ const snapshotSignInput = (
         agentCard,
         signingAuthority,
         recipientAgentIds,
-        messageId,
+        envelopeId,
         body,
       } = input;
       return {
         agentCard,
         signingAuthority,
         recipientAgentIds,
-        messageId,
+        envelopeId,
         body,
         senderAgentId: agentCard.agentId,
         publicKey: agentCard.publicKey,
@@ -400,7 +400,7 @@ const prepareSigningMaterial = (input: SigningRecord) =>
       senderAgentId: input.senderAgentId,
       agentCardDigest,
       recipientAgentIds: recipients,
-      messageId: input.messageId,
+      envelopeId: input.envelopeId,
       body: Encoding.encodeBase64Url(body),
     }).pipe(Effect.mapError(signingFailure));
     return { kid, payloadBytes };

@@ -22,11 +22,11 @@ import {
 } from "../../identity/envelope/signed-message.js";
 import {
   deriveConversationId,
-  deriveEvidenceMessageId,
+  deriveEvidenceEnvelopeId,
   hashAction,
   hashAnchor,
   hashMembershipDescriptor,
-  hashPostIntent,
+  hashMessageIntent,
   hashRecord,
   type OuterMembership,
 } from "./encoding/index.js";
@@ -190,10 +190,10 @@ export const verifyStableEvidence = (input: {
     ) {
       return yield* representationFailure();
     }
-    const expectedMessageId = yield* deriveEvidenceMessageId(statement);
+    const expectedEnvelopeId = yield* deriveEvidenceEnvelopeId(statement);
     if (
       statement.signerAgentId !== message.senderAgentId ||
-      expectedMessageId !== message.messageId
+      expectedEnvelopeId !== message.envelopeId
     ) {
       return yield* representationFailure();
     }
@@ -300,7 +300,7 @@ const actionReferencesMembership = (input: {
   readonly action: ActionCore;
   readonly membership: VerifiedMembership;
 }): boolean => {
-  const intent = input.action.postIntent;
+  const intent = input.action.messageIntent;
   if (
     input.action.conversationId !==
       input.membership.descriptor.conversationId ||
@@ -323,11 +323,11 @@ export const verifyActionCore = (input: {
 }): Effect.Effect<VerifiedActionCore, ClientRepresentationError> =>
   Effect.gen(function* () {
     const action = input.action;
-    const intent = action.postIntent;
+    const intent = action.messageIntent;
     if (!actionReferencesMembership(input)) {
       return yield* representationFailure();
     }
-    if ((yield* hashPostIntent(intent)) !== action.postIntentHash) {
+    if ((yield* hashMessageIntent(intent)) !== action.messageIntentHash) {
       return yield* representationFailure();
     }
     if (action.kind === "FIRST_MESSAGE") {
@@ -366,7 +366,7 @@ export const verifyActionProposal = (input: {
       action: input.proposal.action,
       membership: input.membership,
     });
-    const authorAgentId = input.proposal.action.postIntent.authorAgentId;
+    const authorAgentId = input.proposal.action.messageIntent.authorAgentId;
     if (input.outerSenderAgentId !== authorAgentId) {
       return yield* representationFailure();
     }
@@ -398,7 +398,7 @@ const verifyActionCertificateEvidence = (input: {
       statementMatches: (statement) =>
         Effect.succeed(statement.actionHash === input.actionHash),
     });
-    const authorAgentId = input.action.postIntent.authorAgentId;
+    const authorAgentId = input.action.messageIntent.authorAgentId;
     if (
       !evidence.some(
         ({ statement }) => statement.signerAgentId === authorAgentId,

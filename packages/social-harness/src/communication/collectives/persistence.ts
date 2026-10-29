@@ -15,7 +15,7 @@ export function refreshRetainedSend(
   return durableSend(state, refreshRetained(state, id));
 }
 
-/** An uncertain persistence outcome cannot authorize a second post. */
+/** An uncertain persistence outcome cannot authorize a second message. */
 export function durableSend<A>(
   state: CollectiveState,
   effect: Effect.Effect<A, EndpointStoreError>,

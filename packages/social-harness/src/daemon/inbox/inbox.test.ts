@@ -7,7 +7,7 @@ import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { localGuidance } from "../../__tests__/message-policy-fixtures.js";
 import {
   pendingMessage,
-  publishEveryPost,
+  publishEveryMessage,
   recordAcknowledgments,
   takeEvery,
 } from "../../__tests__/pending-delivery-fixtures.js";
@@ -45,7 +45,7 @@ const request = Schema.decodeUnknownSync(InboundItem)({
   kind: "collectiveRequest",
   op: "all_gather",
   id: digest("col_", 2),
-  postId: digest("pst_", 2),
+  msgId: digest("msg_", 2),
   from: testAgentView("agent:bob"),
   to: requestConversation,
   question: "Answer independently",
@@ -203,7 +203,7 @@ it("replays the admitted envelope across restart and retains it after acknowledg
     const pass = () => ({
       readPending: Effect.succeed([pending]),
       engine: recordAcknowledgments([]),
-      classify: publishEveryPost,
+      classify: publishEveryMessage,
       handler: takeEvery(published),
     });
     yield* delivery.runPass(pass);

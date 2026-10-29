@@ -1,5 +1,5 @@
 /**
- * @file Collective-layer values carried inside a certified post's content.
+ * @file Collective-layer values carried inside a certified message's content.
  *
  * A collective value travels as one `data` part whose value is an object with
  * the key `COLLECTIVE_DATA_KEY`. `Content` stays a generic container; only
@@ -29,7 +29,7 @@ export type { FormField } from "./answer-fields.js";
 
 /* eslint-disable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Effect Schemas share their domain names with the values they decode. */
 
-type PostContent = typeof Content.Type;
+type MessageContent = typeof Content.Type;
 
 /** The `data` part key under which the collective layer carries its value. */
 export const COLLECTIVE_DATA_KEY = wireProfiles[WIRE_VERSION].collectiveDataKey;
@@ -103,7 +103,7 @@ export const mintCollectiveId = (requester: AgentAddress) =>
     return { id: collectiveIdOf(requester, nonce), nonce };
   });
 
-/** A plain post: multicast carries neither a deadline nor a schema. */
+/** A plain message: multicast carries neither a deadline nor a schema. */
 const MulticastOperation = exactStruct({
   kind: Schema.Literal("operation"),
   op: Schema.Literal("multicast"),
@@ -155,7 +155,7 @@ const CollectiveValue = Schema.Union(
 /** A validated collective value. */
 export type CollectiveValue = typeof CollectiveValue.Type;
 
-/** An accepted or declined answer carried in a certified post. */
+/** An accepted or declined answer carried in a certified message. */
 export type ResponseValue = Extract<
   CollectiveValue,
   { readonly kind: "response" }
@@ -182,7 +182,7 @@ const CollectiveCarrier = Schema.Struct({
 }).annotations({ parseOptions: { exact: true } });
 
 function collectivePartValue(
-  part: PostContent[number],
+  part: MessageContent[number],
 ): Option.Option<unknown> {
   return part.type === "data"
     ? Schema.decodeUnknownOption(CollectiveCarrier)(part.value).pipe(
@@ -192,14 +192,14 @@ function collectivePartValue(
 }
 
 /**
- * Remove the collective part from post content, keeping every other part in
+ * Remove the collective part from message content, keeping every other part in
  * order.
- * @param content Certified post content.
+ * @param content Certified message content.
  * @returns The remaining parts, empty when the collective part was the only one.
  */
 export const withoutCollectivePart = (
-  content: PostContent,
-): ReadonlyArray<PostContent[number]> =>
+  content: MessageContent,
+): ReadonlyArray<MessageContent[number]> =>
   content.filter((part) => Option.isNone(collectivePartValue(part)));
 
 /**
@@ -210,12 +210,12 @@ export const withoutCollectivePart = (
 export const decodeCollectiveValue = Schema.decodeUnknown(CollectiveValue);
 
 /**
- * Find and decode the collective value in one post's content.
- * @param content Certified post content.
+ * Find and decode the collective value in one message's content.
+ * @param content Certified message content.
  * @returns The decoded value, or none when the content carries no collective part.
  */
 export const readCollectiveValue = (
-  content: PostContent,
+  content: MessageContent,
 ): Effect.Effect<
   Option.Option<CollectiveValue>,
   CollectivePartInvalidError
@@ -238,7 +238,7 @@ export const readCollectiveValue = (
 };
 
 /**
- * Build post content from a collective value and optional message text. The
+ * Build message content from a collective value and optional message text. The
  * public `Content` schema applies the one canonical size limit.
  * @param value The collective value to carry in the data part.
  * @param text The message body; for gather and all_gather, the question.
@@ -247,7 +247,7 @@ export const readCollectiveValue = (
 export const encodeCollectiveContent = (
   value: CollectiveValue,
   text?: string,
-): Effect.Effect<PostContent, CollectiveContentError> =>
+): Effect.Effect<MessageContent, CollectiveContentError> =>
   Schema.encode(CollectiveValue)(value).pipe(
     Effect.flatMap((encoded) =>
       Schema.decodeUnknown(Content)([

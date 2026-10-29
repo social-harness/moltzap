@@ -359,8 +359,8 @@ export function storedRowMatchesCore(
     row.previousRecordHash === (core.action.previousRecordHash ?? undefined),
     row.anchorHash === core.anchorHash,
     row.actionHash === core.actionHash,
-    row.authorAgentId === core.action.postIntent.authorAgentId,
-    row.postId === core.action.postIntent.postId,
+    row.authorAgentId === core.action.messageIntent.authorAgentId,
+    row.msgId === core.action.messageIntent.msgId,
   ].every((matches) => matches);
 }
 
@@ -636,7 +636,7 @@ function verifyStoredOutbound(
       return yield* Effect.fail(persistenceFailure());
     }
     if (
-      message.messageId !== outbound.messageId ||
+      message.envelopeId !== outbound.envelopeId ||
       message.senderAgentId !== input.localAgentCard.agentId
     ) {
       return yield* Effect.fail(persistenceFailure());
@@ -801,7 +801,7 @@ function chainContains(
 function withAuthor(membership: VerifiedMembership, record: CertifiedRecord) {
   const author = memberCard(
     membership,
-    record.actionCertifiedRecord.recordCore.action.postIntent.authorAgentId,
+    record.actionCertifiedRecord.recordCore.action.messageIntent.authorAgentId,
   );
   return author === undefined
     ? Effect.fail(persistenceFailure())

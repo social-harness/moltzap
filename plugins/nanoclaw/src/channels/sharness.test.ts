@@ -13,7 +13,7 @@ import {
   InboundItem,
   ListenError,
   type LocalGuidance,
-  PostId,
+  MsgId,
   renderCollectiveResult,
   renderLocalGuidance,
   SendError,
@@ -40,7 +40,7 @@ vi.mock("@moltzap/social-harness", async (importOriginal) => ({
   acquireHarnessEndpoint: boundary.acquire,
 }));
 
-const POST_ID = `pst_${"A".repeat(43)}`;
+const POST_ID = `msg_${"A".repeat(43)}`;
 const OPERATION_ID = `col_${"A".repeat(43)}`;
 const GROUP = "group:alice,bob,carol";
 const DEADLINE_TEXT = "2026-09-30T12:00:00.000Z";
@@ -68,7 +68,7 @@ function makeEndpoint() {
   const send = vi.fn<HarnessEndpoint["send"]>(() =>
     Effect.succeed({
       kind: "multicast",
-      postId: Schema.decodeUnknownSync(PostId)(POST_ID),
+      msgId: Schema.decodeUnknownSync(MsgId)(POST_ID),
       address: Schema.decodeUnknownSync(AgentAddress)("agent:alice"),
     } satisfies SendResult),
   );
@@ -88,7 +88,7 @@ function directItem() {
     kind: "multicast",
     message: {
       kind: "direct",
-      postId: POST_ID,
+      msgId: POST_ID,
       address: "agent:alice",
       sender: testAgentView("alice"),
       content: [{ type: "text", text: "hello" }],
@@ -343,7 +343,7 @@ it("preserves canonical group address, sender, exact membership and native group
       kind: "multicast",
       message: {
         kind: "group",
-        postId: POST_ID,
+        msgId: POST_ID,
         address: GROUP,
         sender: testAgentView("bob"),
         members: [
@@ -393,7 +393,7 @@ it.each([
         op,
         to,
         id: OPERATION_ID,
-        postId: POST_ID,
+        msgId: POST_ID,
         from: testAgentView("alice"),
         question: QUESTION,
         requestedSchema: FORM,
@@ -822,7 +822,7 @@ function collectiveGuidanceItem(
           kind,
           op: "gather",
           id: OPERATION_ID,
-          postId: POST_ID,
+          msgId: POST_ID,
           from: testAgentView("alice"),
           to: "agent:alice",
           question: QUESTION,

@@ -1,4 +1,4 @@
-/** @file Signed collective posts and completion decisions survive endpoint restarts. */
+/** @file Signed collective messages and completion decisions survive endpoint restarts. */
 import { live as it, scoped as itOnClock } from "@effect/vitest";
 import {
   Clock,
@@ -24,7 +24,7 @@ import { untilLive } from "../../__tests__/advance-clock.js";
 import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import {
   appendCertifiedIntent,
-  appendCertifiedPost,
+  appendCertifiedMessage,
   buildCertifiedFirstMessage,
   storeCertifiedFirstMessage,
 } from "../../__tests__/certified-history-fixtures.js";
@@ -52,8 +52,8 @@ import {
   AgentAddress,
   type CertifiedRecord,
   MessageAddressInput,
-  mintPostId,
-  PostIntent,
+  mintMsgId,
+  MessageIntent,
 } from "../records/index.js";
 import {
   decodeRuntimeValue,
@@ -61,7 +61,7 @@ import {
   type EndpointStore,
   type EndpointStoreError,
   openEndpointStore,
-  type PostIntent as StoredPostIntent,
+  type MessageIntent as StoredMessageIntent,
 } from "../store/index.js";
 import { makeCollectiveOperations } from "./index.js";
 import { encodeCollectiveContent, mintCollectiveId } from "./wire/index.js";
@@ -81,10 +81,10 @@ function resume(subject: Fixture, store: EndpointStore, failOutbound = false) {
       self,
       scope: yield* Scope.Scope,
       lookupMember: (member) => Effect.succeed(testAgentView(member)),
-      sendPost: engine.send,
-      bindPost: engine.bind,
+      sendMessage: engine.send,
+      bindMessage: engine.bind,
       sendAdmitted: engine.sendAdmitted,
-      observePost: engine.observePost,
+      observeMessage: engine.observeMessage,
       reportStorageFault: () =>
         Effect.dieMessage("unexpected collective storage failure"),
       emit: () => Effect.dieMessage("a gather receiver emits no local result"),
@@ -143,7 +143,7 @@ function seedRemoteRequest(subject: Fixture) {
         },
         "Can you attend?",
       );
-      return yield* appendCertifiedPost(
+      return yield* appendCertifiedMessage(
         { ...subject, store },
         firstMessage,
         content,
@@ -165,20 +165,20 @@ function claimPendingResponse(subject: Fixture) {
       expect(yield* Effect.flip(collective.send(response))).toMatchObject({
         failure: { kind: "request-answered" },
       });
-      const posts = yield* store.readCollectivePosts();
-      expect(posts).toHaveLength(1);
-      const [post] = posts;
-      if (post === undefined) {
+      const messages = yield* store.readCollectiveMessages();
+      expect(messages).toHaveLength(1);
+      const [message] = messages;
+      if (message === undefined) {
         return yield* Effect.dieMessage("missing response intent");
       }
-      return post.intent;
+      return message.intent;
     }),
   );
 }
 
 function assertRecoveredResponse(
   subject: Fixture,
-  original: StoredPostIntent,
+  original: StoredMessageIntent,
   completed: boolean,
 ) {
   return Effect.scoped(
@@ -190,13 +190,13 @@ function assertRecoveredResponse(
       expect(yield* Effect.flip(collective.send(response))).toMatchObject({
         failure: { kind: "request-answered" },
       });
-      const posts = yield* store.readCollectivePosts();
-      expect(posts).toHaveLength(1);
-      expect(posts[0]?.intent).toMatchObject({
-        postId: original.postId,
+      const messages = yield* store.readCollectiveMessages();
+      expect(messages).toHaveLength(1);
+      expect(messages[0]?.intent).toMatchObject({
+        msgId: original.msgId,
         canonicalIntent: original.canonicalIntent,
       });
-      expect(posts[0]?.intent.completedRecordHash !== undefined).toBe(
+      expect(messages[0]?.intent.completedRecordHash !== undefined).toBe(
         completed,
       );
     }),
@@ -299,10 +299,11 @@ function pausedAdmission(mode: "bind" | "gather") {
       self,
       scope: yield* Scope.Scope,
       lookupMember: (member) => Effect.succeed(testAgentView(member)),
-      sendPost: () => Effect.never,
-      bindPost: () => Effect.dieMessage("checked sends use the admission port"),
+      sendMessage: () => Effect.never,
+      bindMessage: () =>
+        Effect.dieMessage("checked sends use the admission port"),
       sendAdmitted: () => Effect.never,
-      observePost: () => Effect.never,
+      observeMessage: () => Effect.never,
       reportStorageFault: (error) =>
         Effect.sync(() => {
           faults.push(error);
@@ -339,7 +340,7 @@ function pausedAdmissionPorts(
     Effect.zipRight(Deferred.await(release)),
   );
   return {
-    bindPost: <E>(...args: [EngineSendInput, BindHold<E>]) =>
+    bindMessage: <E>(...args: [EngineSendInput, BindHold<E>]) =>
       Effect.gen(function* () {
         const giveUp = yield* args[1];
         yield* barrier;
@@ -403,9 +404,9 @@ itOnClock(
         kind: "collectiveResult",
         op: "all_gather",
       });
-      expect(yield* fixture.store.readCollectivePosts()).toMatchObject([
-        { role: "request", intent: { postId: original.postId } },
-        { role: "close", intent: { postId: close.postId } },
+      expect(yield* fixture.store.readCollectiveMessages()).toMatchObject([
+        { role: "request", intent: { msgId: original.msgId } },
+        { role: "close", intent: { msgId: close.msgId } },
       ]);
     }),
 );
@@ -422,8 +423,11 @@ function interruptedBindFixture(pause: "before" | "after" = "after") {
     const emitted = yield* Deferred.make<InboundItem>();
     const store: EndpointStore = {
       ...originalStore,
-      bindCheckedPostIntent: (binding, completion) => {
-        const bind = originalStore.bindCheckedPostIntent(binding, completion);
+      bindCheckedMessageIntent: (binding, completion) => {
+        const bind = originalStore.bindCheckedMessageIntent(
+          binding,
+          completion,
+        );
         const barrier = Deferred.succeed(bound, undefined).pipe(
           Effect.zipRight(Deferred.await(release)),
         );
@@ -442,10 +446,10 @@ function interruptedBindFixture(pause: "before" | "after" = "after") {
       self,
       scope: yield* Scope.Scope,
       lookupMember: (member) => Effect.succeed(testAgentView(member)),
-      sendPost: engine.send,
-      bindPost: engine.bind,
+      sendMessage: engine.send,
+      bindMessage: engine.bind,
       sendAdmitted: engine.sendAdmitted,
-      observePost: engine.observePost,
+      observeMessage: engine.observeMessage,
       reportStorageFault: () =>
         Effect.dieMessage("unexpected persistence fault"),
       emit: (item) => Deferred.succeed(emitted, item).pipe(Effect.asVoid),
@@ -485,8 +489,8 @@ itOnClock(
         original,
       );
       const close = yield* certifyBoundIntent(fixture, answer, {
-        ...request.record.actionCertifiedRecord.recordCore.action.postIntent,
-        postId: yield* mintPostId(),
+        ...request.record.actionCertifiedRecord.recordCore.action.messageIntent,
+        msgId: yield* mintMsgId(),
         content: yield* encodeCollectiveContent({
           kind: "close",
           closedAt: 60_000,
@@ -497,8 +501,8 @@ itOnClock(
       });
       yield* classifyCertified(fixture, close);
       assertOwnAnswer(yield* Deferred.await(fixture.emitted));
-      expect(yield* fixture.store.readCollectivePosts()).toMatchObject([
-        { role: "response", intent: { postId: original.postId } },
+      expect(yield* fixture.store.readCollectiveMessages()).toMatchObject([
+        { role: "response", intent: { msgId: original.msgId } },
       ]);
     }),
 );
@@ -524,8 +528,8 @@ function admittedGroupRequest(
       "Choose a day",
     );
     const record = yield* certifyBoundIntent(fixture, fixture.head, {
-      ...fixture.head.actionCertifiedRecord.recordCore.action.postIntent,
-      postId: yield* mintPostId(),
+      ...fixture.head.actionCertifiedRecord.recordCore.action.messageIntent,
+      msgId: yield* mintMsgId(),
       content,
     });
     const { item, deliveryToken } = yield* classifyCertified(fixture, record);
@@ -566,7 +570,7 @@ function classifyCertified(
 }
 
 itOnClock(
-  "keeps a local post pending when a peer certifies the same post ID",
+  "keeps a local message pending when a peer certifies the same message ID",
   () =>
     Effect.gen(function* () {
       const subject = yield* Effect.scoped(engineFixture());
@@ -583,14 +587,14 @@ itOnClock(
         .pipe(Effect.fork);
       yield* untilLive(
         store.recover().pipe(
-          Effect.map((recovery) => recovery.postIntents.length === 1),
+          Effect.map((recovery) => recovery.messageIntents.length === 1),
           Effect.orDie,
         ),
       );
       const recovery = yield* store.recover();
-      const retained = yield* Effect.fromNullable(recovery.postIntents[0]);
+      const retained = yield* Effect.fromNullable(recovery.messageIntents[0]);
       const intent = yield* decodeRuntimeValue(
-        PostIntent,
+        MessageIntent,
         retained.canonicalIntent,
       );
       const peer = yield* certifyBoundIntent({ subject, engine }, head, {
@@ -599,7 +603,7 @@ itOnClock(
         content: [{ type: "text", text: "Peer request" }],
       });
       const observing = yield* engine
-        .observePost(intent.postId)
+        .observeMessage(intent.msgId)
         .pipe(Effect.timeoutOption("10 millis"), Effect.fork);
       yield* TestClock.adjust("10 millis");
       expect(Option.isNone(yield* Fiber.join(observing))).toBe(true);
@@ -608,13 +612,13 @@ itOnClock(
         peer,
         intent,
       );
-      expect(yield* engine.observePost(intent.postId)).toEqual({
-        postId: intent.postId,
+      expect(yield* engine.observeMessage(intent.msgId)).toEqual({
+        msgId: intent.msgId,
         recordHash: local.actionCertifiedRecord.recordHash,
       });
-      expect((yield* store.recover()).postIntents[0]?.completedRecordHash).toBe(
-        local.actionCertifiedRecord.recordHash,
-      );
+      expect(
+        (yield* store.recover()).messageIntents[0]?.completedRecordHash,
+      ).toBe(local.actionCertifiedRecord.recordHash);
       yield* Fiber.interrupt(sending);
     }),
 );
@@ -622,12 +626,12 @@ itOnClock(
 function certifyRecoveredResponse(
   subject: Fixture,
   request: CertifiedRecord,
-  original: StoredPostIntent,
+  original: StoredMessageIntent,
 ) {
   return withStore(subject.directory, (store) =>
     Effect.gen(function* () {
       const intent = yield* decodeRuntimeValue(
-        PostIntent,
+        MessageIntent,
         original.canonicalIntent,
       );
       yield* appendCertifiedIntent({ ...subject, store }, request, intent);
@@ -653,8 +657,8 @@ itOnClock(
       const fixture = yield* interruptedBindFixture("before");
       const request = yield* admittedGroupRequest(fixture);
       const close = yield* certifyBoundIntent(fixture, request.record, {
-        ...request.record.actionCertifiedRecord.recordCore.action.postIntent,
-        postId: yield* mintPostId(),
+        ...request.record.actionCertifiedRecord.recordCore.action.messageIntent,
+        msgId: yield* mintMsgId(),
         content: yield* encodeCollectiveContent({
           kind: "close",
           closedAt: 60_000,
@@ -685,7 +689,7 @@ itOnClock(
           : { kind: failure._tag, message: failure.message },
       ).toEqual({ kind: "request-expired" });
       expect(
-        yield* fixture.store.readCollectivePosts({
+        yield* fixture.store.readCollectiveMessages({
           operationId: request.id,
           role: "response",
         }),

@@ -251,7 +251,7 @@ const interpretSendResult = <Payload>(
 };
 
 /**
- * Send one stored envelope, resending its exact bytes and MessageId on every
+ * Send one stored envelope, resending its exact bytes and EnvelopeId on every
  * ambiguous outcome.
  * @param runtime Worker capabilities and endpoint identity.
  * @param input Exact envelope, Router fence, mode, and remaining attempts.
@@ -301,7 +301,7 @@ function decodeStoredOutbound(
   ).pipe(
     Effect.mapError(mapProtocolError),
     Effect.flatMap((message) =>
-      message.messageId === outbound.messageId
+      message.envelopeId === outbound.envelopeId
         ? Effect.succeed(message)
         : Effect.fail(new RouterWorkerProtocolError()),
     ),
@@ -312,16 +312,16 @@ function decodeStoredOutbound(
  * Sends one durable current envelope selected by its stable outbox identity.
  *
  * @param runtime Worker capabilities and durable outbox.
- * @param messageId Stable identity of the signed envelope.
+ * @param envelopeId Stable identity of the signed envelope.
  * @param instance Router instance fence for this attempt.
  * @returns Whether the stored envelope completed or observed a Router restart.
  */
 function transmitOutbound<Payload>(
   runtime: RouterWorkerRuntime<Payload>,
-  messageId: string,
+  envelopeId: string,
   instance: RouterInstanceId,
 ): Effect.Effect<RouterWorkerSendOutcome, OutboundTransportError> {
-  return runtime.input.outbox.beginOutbound(messageId).pipe(
+  return runtime.input.outbox.beginOutbound(envelopeId).pipe(
     Effect.mapError(mapPersistenceError),
     Effect.flatMap((attempt) => {
       switch (attempt.kind) {
@@ -762,7 +762,7 @@ const makePollOnce = <Payload>(
 
 const makeSend = <Payload>(
   runtime: RouterWorkerRuntime<Payload>,
-  messageId: string,
+  envelopeId: string,
 ): Effect.Effect<void, RouterWorkerSendError> =>
   Effect.gen(function* () {
     const result = yield* runtime.recoveryGate.withPermits(1)(
@@ -773,7 +773,7 @@ const makeSend = <Payload>(
         }
         const outcome = yield* transmitOutbound(
           runtime,
-          messageId,
+          envelopeId,
           state.anchor.routerInstanceId,
         );
         return { outcome, generation: state.generation };
@@ -829,7 +829,7 @@ const makeWorker = <Payload>(
       ),
       { concurrent: true },
     ).pipe(Effect.interruptible),
-    send: (messageId: string) => makeSend(runtime, messageId),
+    send: (envelopeId: string) => makeSend(runtime, envelopeId),
   });
 };
 

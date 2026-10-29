@@ -2,15 +2,15 @@
 import { Effect, Exit, Option, Schema } from "effect";
 import type { InboundMessage } from "../conversations/message.js";
 import type { CollectiveResultItem } from "./inbound.js";
-import type { CertifiedPost, ResultProvenance } from "./ports.js";
+import type { CertifiedMessage, ResultProvenance } from "./ports.js";
 import type { OpenRequest, ReceivedRequest } from "./received-request.js";
 import type { CollectiveState, GatherRequest, OpenGather } from "./state.js";
 import { SendError } from "../conversations/errors.js";
-import { PostId } from "../records/index.js";
+import { MsgId } from "../records/index.js";
 import { agentAddressOf } from "../records/values.js";
 import {
   encodeRuntimeValue,
-  type StoredCollectivePost,
+  type StoredCollectiveMessage,
 } from "../store/index.js";
 import {
   closeFailureText,
@@ -36,9 +36,9 @@ type CloseValue = Extract<CollectiveValue, { readonly kind: "close" }>;
 const contentInvalid = () => new SendError({ reason: "content-invalid" });
 
 /**
- * Post an all_gather's close, listing the certified record of every answer
+ * Message an all_gather's close, listing the certified record of every answer
  * its result counts, and emit the result once the close is certified. A close
- * already bound stays pending on its original post until certification.
+ * already bound stays pending on its original message until certification.
  * `close` records the operation's `collective.closed` span once
  * the result or failure is emitted, or could not be.
  */
@@ -84,10 +84,10 @@ export function countedProvenance(open: GatherRequest): ResultProvenance {
 /** Only first member answers in this request's group can enter its close selection. */
 export function recordPeerAnswer(
   request: Extract<ReceivedRequest, { readonly kind: "all_gather" }>,
-  post: CertifiedPost,
+  certified: CertifiedMessage,
   value: ResponseValue,
 ): void {
-  const { message } = post;
+  const { message } = certified;
   if (
     request.state === "closed" ||
     message.kind !== "group" ||
@@ -96,7 +96,7 @@ export function recordPeerAnswer(
     return;
   }
   keepFirstAnswer(request.shared, agentAddressOf(message.sender), {
-    recordHash: post.recordHash,
+    recordHash: certified.recordHash,
     response: value,
   });
 }
@@ -124,7 +124,7 @@ export function receiveClose(
       message.sender.agentId !== request.from.agentId
     ) {
       return Effect.logWarning(
-        `consumed close ${message.postId} from ${agentAddressOf(message.sender)}: it closes no all_gather this endpoint was asked by its sender`,
+        `consumed close ${message.msgId} from ${agentAddressOf(message.sender)}: it closes no all_gather this endpoint was asked by its sender`,
       );
     }
     if (request.state === "closed" || request.shared.heldClose !== undefined) {
@@ -134,7 +134,7 @@ export function receiveClose(
       state,
       { id: value.id, request },
       {
-        postId: message.postId,
+        msgId: message.msgId,
         included: value.included,
         closedAt: value.closedAt,
         closedBy: value.closedBy,
@@ -185,18 +185,18 @@ function certifyClose(
 ) {
   const { id } = result;
   return Effect.gen(function* () {
-    const posts = yield* durableEmit(
+    const messages = yield* durableEmit(
       state,
-      state.ports.store.readCollectivePosts({ operationId: id }),
+      state.ports.store.readCollectiveMessages({ operationId: id }),
     );
-    const request = posts.find((post) => post.role === "request");
+    const request = messages.find((message) => message.role === "request");
     if (request !== undefined) {
-      yield* observeBoundPost(state, request);
+      yield* observeBoundMessage(state, request);
     }
-    const close = posts.find((post) => post.role === "close");
+    const close = messages.find((message) => message.role === "close");
     return yield* close === undefined
       ? sendClose(state, open, result)
-      : observeBoundPost(state, close);
+      : observeBoundMessage(state, close);
   });
 }
 
@@ -220,7 +220,7 @@ function sendClose(
       included,
     }).pipe(Effect.mapError(contentInvalid));
     yield* state.ports
-      .sendPost({
+      .sendMessage({
         to: open.to,
         content,
         collective: { operationId: id, role: "close", destination: open.to },
@@ -239,13 +239,16 @@ function continueBoundClose(
   error: SendError,
 ): Effect.Effect<void, SendError | CollectiveEmitError> {
   return Effect.gen(function* () {
-    const posts = yield* durableEmit(
+    const messages = yield* durableEmit(
       state,
-      state.ports.store.readCollectivePosts({ operationId: id, role: "close" }),
+      state.ports.store.readCollectiveMessages({
+        operationId: id,
+        role: "close",
+      }),
     );
-    const [bound] = posts;
+    const [bound] = messages;
     if (bound !== undefined) {
-      return yield* observeBoundPost(state, bound).pipe(Effect.asVoid);
+      return yield* observeBoundMessage(state, bound).pipe(Effect.asVoid);
     }
     if (
       error.reason === "delivery-pending" ||
@@ -257,10 +260,13 @@ function continueBoundClose(
   });
 }
 
-function observeBoundPost(state: CollectiveState, post: StoredCollectivePost) {
-  return Schema.decodeUnknown(PostId)(post.intent.postId).pipe(
+function observeBoundMessage(
+  state: CollectiveState,
+  message: StoredCollectiveMessage,
+) {
+  return Schema.decodeUnknown(MsgId)(message.intent.msgId).pipe(
     Effect.mapError(contentInvalid),
-    Effect.flatMap(state.ports.observePost),
+    Effect.flatMap(state.ports.observeMessage),
   );
 }
 
@@ -297,7 +303,7 @@ function finishPeerClose(
       ).pipe(
         Effect.zipRight(
           Effect.logWarning(
-            `consumed close ${close.postId} of ${id}: it lists answers this endpoint does not hold`,
+            `consumed close ${close.msgId} of ${id}: it lists answers this endpoint does not hold`,
           ),
         ),
       );
@@ -350,7 +356,7 @@ function closeSelection(close: HeldClose) {
     kind: "close",
     closedAt: close.closedAt,
     closedBy: close.closedBy,
-    postId: close.postId,
+    msgId: close.msgId,
     included: close.included,
   });
 }

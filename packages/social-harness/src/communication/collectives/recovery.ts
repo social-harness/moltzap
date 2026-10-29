@@ -1,6 +1,6 @@
 /** @file Rebuild collective working state from retained decisions and certified history. */
 import { Clock, Effect, Fiber, Schema } from "effect";
-import type { CollectiveOperations, PostSender } from "./ports.js";
+import type { CollectiveOperations, MessageSender } from "./ports.js";
 import type { OpenRequest, ReceivedRequest } from "./received-request.js";
 import type { HeldClose } from "./shared-answers.js";
 import { InboundMessage } from "../conversations/message.js";
@@ -11,7 +11,7 @@ import {
   decodeRuntimeValue,
   EndpointStoreError,
   type StoredCollectiveOperation,
-  type StoredCollectivePost,
+  type StoredCollectiveMessage,
 } from "../store/index.js";
 import {
   type CollectiveEmitError,
@@ -19,7 +19,7 @@ import {
   CollectiveId,
 } from "./contracts.js";
 import {
-  postRefusal,
+  messageRefusal,
   type RequestRefusal,
   sleepUntil,
 } from "./request-sends.js";
@@ -37,7 +37,7 @@ export interface RecoveryActions {
   ) => Effect.Effect<void, CollectiveError>;
   readonly classify: CollectiveOperations["classify"];
   readonly restoreResponse: (
-    post: StoredCollectivePost,
+    message: StoredCollectiveMessage,
   ) => Effect.Effect<void, EndpointStoreError>;
   readonly close: (
     asked: OpenRequest<
@@ -67,10 +67,10 @@ export function recoverCollectives(
     }
     yield* restoreCountedAnswers(state);
     const prepared = yield* restoreOperations(state, actions);
-    const posts = yield* state.ports.store.readCollectivePosts();
+    const messages = yield* state.ports.store.readCollectiveMessages();
     const refusals = yield* state.ports.store.readCollectiveRefusals();
-    const claims = claimedRequestDestinations(posts, refusals);
-    yield* replayDeliveries(state, actions, posts);
+    const claims = claimedRequestDestinations(messages, refusals);
+    yield* replayDeliveries(state, actions, messages);
     yield* restoreRefusals(state, refusals);
     yield* Effect.sync(() => {
       state.recovering = false;
@@ -93,7 +93,7 @@ export function recoverCollectives(
 function replayDeliveries(
   state: CollectiveState,
   actions: RecoveryActions,
-  posts: readonly StoredCollectivePost[],
+  messages: readonly StoredCollectiveMessage[],
 ) {
   const requests = new Map(
     [...state.retained.values()].flatMap((operation) =>
@@ -103,9 +103,9 @@ function replayDeliveries(
     ),
   );
   const responses = new Map(
-    posts
-      .filter((post) => post.role === "response")
-      .map((post) => [post.operationId, post]),
+    messages
+      .filter((message) => message.role === "response")
+      .map((message) => [message.operationId, message]),
   );
   return state.ports.store.readRetainedDeliveries().pipe(
     Effect.flatMap((deliveries) =>
@@ -136,11 +136,11 @@ function replayDeliveries(
 
 /** One recovery pass indexes bound and refused destinations before active fanouts resume. */
 function claimedRequestDestinations(
-  posts: readonly StoredCollectivePost[],
+  messages: readonly StoredCollectiveMessage[],
   refusals: readonly CollectiveRequestRefusal[],
 ): ReadonlyMap<string, ReadonlySet<string>> {
   const claims = new Map<string, Set<string>>();
-  const requests = posts.filter((post) => post.role === "request");
+  const requests = messages.filter((message) => message.role === "request");
   for (const claim of [...requests, ...refusals]) {
     const destinations = claims.get(claim.operationId) ?? new Set<string>();
     destinations.add(claim.destination);
@@ -336,9 +336,9 @@ function resumeFanout(
 ) {
   const { id, operation, claimed } = recovered;
   const checkId = state.retained.get(id)?.admittedCheckId;
-  const send: PostSender =
+  const send: MessageSender =
     checkId === undefined
-      ? state.ports.sendPost
+      ? state.ports.sendMessage
       : (input) => state.ports.sendAdmitted(input, checkId);
   const pending = operation.open.members
     .map(agentAddressOf)
@@ -352,7 +352,7 @@ function resumeFanout(
         collective: { operationId: id, role: "request", destination: member },
       }).pipe(
         Effect.catchAll((error) =>
-          actions.refuse(id, postRefusal(member, error)),
+          actions.refuse(id, messageRefusal(member, error)),
         ),
         Effect.forkIn(state.ports.scope),
       ),

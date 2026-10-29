@@ -307,7 +307,7 @@ it.each([
 );
 
 it.prop(
-  "asks for revision of a group post of acknowledgement and filler words, and sends it once it carries a number",
+  "asks for revision of a group message of acknowledgement and filler words, and sends it once it carries a number",
   [
     fc.array(fc.constantFrom("thanks", "got", "noted", "cheers", "ack"), {
       minLength: 1,

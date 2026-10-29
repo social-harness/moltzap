@@ -310,7 +310,7 @@ interface OpenClawReplyFixture {
   readonly callerId: string;
   readonly responseSent: Deferred.Deferred<undefined>;
   readonly sessions: RecordedSessionStore;
-  /** The plugin's `message` tool path, the only way a reply becomes a post. */
+  /** The plugin's `message` tool path, the only way a reply becomes a message. */
   // eslint-disable-next-line agent-code-guard/promise-type -- OpenClaw host callbacks require promises at this boundary.
   readonly sendReply: () => Promise<OpenClawMessageActionResult>;
 }
@@ -416,7 +416,7 @@ export function acquireGroupScenario(
   }).pipe(Effect.withSpan("acquireGroupScenario"));
 }
 
-/** Checks that both daemons retain the same unique certified posts after the exchange. */
+/** Checks that both daemons retain the same unique certified messages after the exchange. */
 export function assertDurableExchange(
   scenario: Scenario,
   initial: Content,
@@ -765,13 +765,13 @@ function assertFixtureHistory(
       ).toEqual(["FIRST_MESSAGE", ...replies.map(() => "MESSAGE" as const)]);
       expect(
         history.records.map(
-          ({ recordCore }) => recordCore.action.postIntent.content,
+          ({ recordCore }) => recordCore.action.messageIntent.content,
         ),
       ).toEqual([initial, ...replies]);
       expect(
         new Set(
           history.records.map(
-            ({ recordCore }) => recordCore.action.postIntent.postId,
+            ({ recordCore }) => recordCore.action.messageIntent.msgId,
           ),
         ).size,
       ).toBe(history.records.length);

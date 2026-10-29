@@ -32,10 +32,10 @@ export function renderContent(content: Content): string {
 }
 
 /**
- * A request post's question as every member's model reads it: its text
+ * A request message's question as every member's model reads it: its text
  * parts, one per line. The collective part is a data part, so it is never
  * among them.
- * @param content The request post's content.
+ * @param content The request message's content.
  * @returns The text parts, joined by newlines.
  */
 export function questionText(content: Content): string {

@@ -114,7 +114,7 @@ function safeCredentialEndpoint(endpoint: URL): boolean {
  * Rebuild the typed error of a refused send from its JSON-RPC error data: a
  * collective failure with its id and detail, or a closed send reason. A
  * rejection that is not the daemon's answer, such as a timeout or a dropped
- * connection, can follow the daemon queueing the post, so it is
+ * connection, can follow the daemon queueing the message, so it is
  * `outcome-unknown` unless the request never reached the daemon.
  * @param cause Upstream rejection at the MCP tool boundary.
  * @returns A closed send failure without transport details.

@@ -284,8 +284,8 @@ function resultCommit(
 }
 
 /**
- * Whether a member's line of a result quotes its answer post. An `invalid`
- * outcome's line is the validation message instead, so that post's content
+ * Whether a member's line of a result quotes its answer message. An `invalid`
+ * outcome's line is the validation message instead, so that message's content
  * stays assessor evidence: the runtime was never shown it.
  */
 function quotesRecord(item: ResultItem, member: AgentView): boolean {

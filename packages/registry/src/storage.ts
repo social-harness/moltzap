@@ -37,19 +37,7 @@ export class RegistryStorageInitializationError extends Data.TaggedError(
     | "unavailable";
 }> {}
 
-const LEDGER_TABLE = "sharness_registry_ledger_20261029";
-
-/**
- * Ledgers written by releases before the current reset. Their databases hold
- * AgentCards signed under a wire version outside the retained history, so
- * startup refuses them instead of serving those cards.
- */
-const PRE_RESET_LEDGERS = [
-  "moltzap_registry_migrations",
-  "sharness_registry_migrations",
-  "sharness_registry_ledger",
-  "sharness_registry_ledger_20261026",
-] as const;
+const LEDGER_TABLE = "sharness_registry_ledger_20261029_3";
 
 type StorageError =
   | InstanceType<typeof httpErrors.UnavailableError>
@@ -169,6 +157,10 @@ const metadataRow = exactStruct({
 });
 const ledgerRow = exactStruct({
   migrationId: Schema.Int,
+});
+const schemaStateRow = exactStruct({
+  currentLedger: Schema.Boolean,
+  occupied: Schema.Boolean,
 });
 const cardRow = exactStruct({
   agentCardBytes: Schema.Uint8ArrayFromSelf,
@@ -400,19 +392,23 @@ const bindStorageMetadata = (input: {
     }),
   );
 
-/** The ledger lock covers preflight and Migrator's transactional batch together. */
+/** Initializes an empty schema or reopens this reset's ledger before running migrations. */
 function runStorageInitialization(input: {
   readonly sql: SqlClient;
   readonly registrySignerPublicKey: Ed25519PublicKey;
 }) {
   return Effect.gen(function* () {
-    const legacy = yield* Effect.forEach(
-      PRE_RESET_LEDGERS,
-      (ledger) =>
-        input.sql`SELECT to_regclass(${ledger}::text)::text AS legacy`,
-      { concurrency: 1 },
+    const rows = yield* input.sql`
+      SELECT
+        COALESCE(bool_or(relname = ${LEDGER_TABLE} AND relkind = 'r'), false) AS "currentLedger",
+        count(*) > 0 AS occupied
+      FROM pg_catalog.pg_class
+      WHERE relnamespace = current_schema()::regnamespace
+    `;
+    const [schema] = yield* Schema.decodeUnknown(Schema.Tuple(schemaStateRow))(
+      rows,
     );
-    if (legacy.flat().some((row) => row.legacy !== null)) {
+    if (schema.occupied && !schema.currentLedger) {
       return yield* new RegistryStorageInitializationError({
         reason: "pre-reset",
       });

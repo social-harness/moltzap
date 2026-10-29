@@ -4,16 +4,16 @@ import { scoped as it } from "@effect/vitest";
 import { Effect, Schema } from "effect";
 import { describe, expect } from "vitest";
 import {
-  classifyPost,
+  classifyMessage,
   collectiveFailureOf,
   collectiveKey,
-  directPost,
+  directMessage,
   makeLayer,
   newObserved,
-  postId,
+  msgId,
   questionText,
   requestId,
-  requestPost,
+  requestMessage,
   send,
   slotSchema,
 } from "../../__tests__/collective-operation-fixtures.js";
@@ -26,7 +26,7 @@ const bob = Schema.decodeUnknownSync(AgentAddress)("agent:bob");
 /** A second gather Bob asks in the same direct conversation, open for a minute. */
 const secondNonce = "S".repeat(43);
 const secondRequestId = collectiveIdOf(bob, secondNonce);
-const secondRequestPost = directPost("agent:bob", [
+const secondRequestMessage = directMessage("agent:bob", [
   { type: "text", text: questionText },
   {
     type: "data",
@@ -43,18 +43,18 @@ const secondRequestPost = directPost("agent:bob", [
   },
 ]);
 
-/** The data part of a response post answering `id`. */
+/** The data part of a response message answering `id`. */
 const responsePart = (id: string, answer: object) => ({
   type: "data",
   value: { [collectiveKey]: { kind: "response", id, ...answer } },
 });
 
-function postsAValidAnswerToTheRequesterSDirectConversation() {
+function sendsAValidAnswerToTheRequesterSDirectConversation() {
   const observed = newObserved();
 
   return Effect.gen(function* () {
     const layer = yield* makeLayer(observed);
-    yield* classifyPost(layer, requestPost("agent:bob", 60_000));
+    yield* classifyMessage(layer, requestMessage("agent:bob", 60_000));
     yield* send(layer, {
       to: "agent:bob",
       collectiveResponse: { action: "accept", content: { slot: "mon" } },
@@ -81,12 +81,12 @@ function postsAValidAnswerToTheRequesterSDirectConversation() {
   });
 }
 
-function returnsTheAnswerSPostAndTheRequestItAnswered() {
+function returnsTheAnswerSMessageAndTheRequestItAnswered() {
   const observed = newObserved();
 
   return Effect.gen(function* () {
     const layer = yield* makeLayer(observed);
-    yield* classifyPost(layer, requestPost("agent:bob", 60_000));
+    yield* classifyMessage(layer, requestMessage("agent:bob", 60_000));
     const sent = yield* send(layer, {
       to: "agent:bob",
       collectiveResponse: { action: "decline" },
@@ -94,7 +94,7 @@ function returnsTheAnswerSPostAndTheRequestItAnswered() {
 
     expect(sent).toMatchObject({
       operationId: requestId,
-      postId: postId(101),
+      msgId: msgId(101),
       address: "agent:bob",
     });
   });
@@ -105,7 +105,7 @@ function refusesAnAnswerThatFailsTheRequestSSchemaNamingTheField() {
 
   return Effect.gen(function* () {
     const layer = yield* makeLayer(observed);
-    yield* classifyPost(layer, requestPost("agent:bob", 60_000));
+    yield* classifyMessage(layer, requestMessage("agent:bob", 60_000));
     const failure = yield* collectiveFailureOf(
       send(layer, {
         to: "agent:bob",
@@ -124,7 +124,7 @@ function refusesAnAnswerThatFailsTheRequestSSchemaNamingTheField() {
 function refusesASecondAnswerToTheSameRequest() {
   return Effect.gen(function* () {
     const layer = yield* makeLayer(newObserved());
-    yield* classifyPost(layer, requestPost("agent:bob", 60_000));
+    yield* classifyMessage(layer, requestMessage("agent:bob", 60_000));
     const decline = {
       to: "agent:bob",
       collectiveResponse: { action: "decline" },
@@ -160,8 +160,8 @@ function answersEachOfTwoOpenRequestsByItsId() {
 
   return Effect.gen(function* () {
     const layer = yield* makeLayer(observed);
-    yield* classifyPost(layer, requestPost("agent:bob", 60_000));
-    yield* classifyPost(layer, secondRequestPost);
+    yield* classifyMessage(layer, requestMessage("agent:bob", 60_000));
+    yield* classifyMessage(layer, secondRequestMessage);
     yield* send(layer, {
       to: "agent:bob",
       collectiveResponse: { action: "decline", id: secondRequestId },
@@ -198,8 +198,8 @@ function refusesAnAnswerNamingNoRequestWhileTwoAreOpen() {
 
   return Effect.gen(function* () {
     const layer = yield* makeLayer(observed);
-    yield* classifyPost(layer, requestPost("agent:bob", 60_000));
-    yield* classifyPost(layer, secondRequestPost);
+    yield* classifyMessage(layer, requestMessage("agent:bob", 60_000));
+    yield* classifyMessage(layer, secondRequestMessage);
     const refused = yield* Effect.flip(
       send(layer, {
         to: "agent:bob",
@@ -217,13 +217,13 @@ function refusesAnAnswerNamingNoRequestWhileTwoAreOpen() {
 // @agent-code-guard/regression-only: examples pin how a member answers a request.
 describe("collective responses", () => {
   it(
-    "posts a valid answer to the request open in the requester's direct conversation",
-    postsAValidAnswerToTheRequesterSDirectConversation,
+    "sends a valid answer to the request open in the requester's direct conversation",
+    sendsAValidAnswerToTheRequesterSDirectConversation,
   );
 
   it(
-    "returns the answer's post, its conversation and the request it answered",
-    returnsTheAnswerSPostAndTheRequestItAnswered,
+    "returns the answer's message, its conversation and the request it answered",
+    returnsTheAnswerSMessageAndTheRequestItAnswered,
   );
 
   it(

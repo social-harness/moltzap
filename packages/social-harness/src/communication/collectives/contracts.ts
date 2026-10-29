@@ -16,7 +16,7 @@ import {
   GroupAddress,
   JsonValue,
   MessageAddressInput,
-  PostId,
+  MsgId,
   wellFormedString,
 } from "../records/values.js";
 
@@ -27,7 +27,7 @@ export type Members = readonly [AgentView, ...AgentView[]];
 
 /**
  * Identity of one gather or all_gather, minted by the requesting endpoint.
- * The request, each member's answer post, an all_gather's close, the result
+ * The request, each member's answer message, an all_gather's close, the result
  * and any failure carry it. An answer that matches no single open request is
  * refused under an id minted for the refusal, so its failure is named too.
  */
@@ -47,7 +47,7 @@ const formProperty = Schema.Record({ key: Schema.String, value: JsonValue });
 /**
  * The MCP form-mode `requestedSchema` of a collecting operation: a flat object
  * of primitive properties. This schema fixes its outline; the sending endpoint
- * checks each property against the MCP form-mode grammar before any post.
+ * checks each property against the MCP form-mode grammar before any message.
  */
 export const RequestedSchema = exactStruct({
   $schema: Schema.optionalWith(Schema.String, { exact: true }),
@@ -109,7 +109,7 @@ export const collectiveClosure = exactStruct({
 export type CollectiveClosure = typeof collectiveClosure.Type;
 
 /**
- * Multicast: one post to the `to` address, complete when certified. `op`
+ * Multicast: one message to the `to` address, complete when certified. `op`
  * defaults to multicast, so an omitted `op` and an omitted `collective` mean
  * the same operation.
  */
@@ -119,9 +119,9 @@ const multicastOperation = exactStruct({
 
 /**
  * A collecting operation: the text is a question to every member of `to`.
- * A gather sends one request post to each member, in that member's direct
+ * A gather sends one request message to each member, in that member's direct
  * conversation with the requester, and only the requester receives the
- * result. An all_gather sends one request post to the `group:` conversation
+ * result. An all_gather sends one request message to the `group:` conversation
  * `to` names; members answer there, no model sees a peer's answer before the
  * requester's close, and every member receives the same result. The deadline
  * is relative, in whole seconds; the sending endpoint converts it to an
@@ -214,7 +214,7 @@ const absentResultField = Schema.Never.annotations({
 
 /**
  * A successful invocation identifies its operation explicitly. Multicasts
- * and responses name their certified post and canonical conversation address.
+ * and responses name their certified message and canonical conversation address.
  * Collecting operations name the operation whose result arrives in the inbox.
  * A response also names the request it answered. Refusals use the error channel.
  * Readers may ignore future fields, but fields owned by another result kind
@@ -223,7 +223,7 @@ const absentResultField = Schema.Never.annotations({
 export const SendResultSchema = Schema.Union(
   Schema.Struct({
     kind: Schema.Literal("multicast"),
-    postId: PostId,
+    msgId: MsgId,
     address: Schema.Union(AgentAddress, GroupAddress),
     operationId: Schema.optionalWith(absentResultField, { exact: true }),
     ...sendGuidance,
@@ -231,14 +231,14 @@ export const SendResultSchema = Schema.Union(
   Schema.Struct({
     kind: Schema.Literal("response"),
     operationId: CollectiveId,
-    postId: PostId,
+    msgId: MsgId,
     address: Schema.Union(AgentAddress, GroupAddress),
     ...sendGuidance,
   }),
   Schema.Struct({
     kind: Schema.Literal("collective"),
     operationId: CollectiveId,
-    postId: Schema.optionalWith(absentResultField, { exact: true }),
+    msgId: Schema.optionalWith(absentResultField, { exact: true }),
     address: Schema.optionalWith(absentResultField, { exact: true }),
     ...sendGuidance,
   }),
@@ -249,15 +249,15 @@ export const SendResultSchema = Schema.Union(
  */
 export type SendResult = typeof SendResultSchema.Type;
 
-/** Private completion retains the posts certified before the invocation returned. */
+/** Private completion retains the messages certified before the invocation returned. */
 export type CollectiveSendOutcome = SendResult & {
-  readonly postIds: readonly PostId[];
+  readonly msgIds: readonly MsgId[];
 };
 
 /**
  * Why a collective send was refused, discriminated by `kind`: a gather or
  * all_gather whose schema is outside the form-mode grammar, whose request
- * post some member could not receive, or whose deadline passed while its
+ * message some member could not receive, or whose deadline passed while its
  * check ran; or a response the member's endpoint cannot send.
  */
 const collectiveFailure = Schema.Union(
@@ -303,7 +303,7 @@ export const decodeCollectiveFailure = Schema.decodeUnknown(collectiveFailure);
  * no result. A close refused before it was queued reaches no member; a
  * `delivery-pending` close reaches them once Social Harness is reachable, and its
  * text says so.
- * @param error Why the close post failed.
+ * @param error Why the close message failed.
  * @returns The `operationFailed` text the asker's model reads.
  */
 export function closeFailureText(error: SendError): string {
@@ -365,7 +365,7 @@ const fixedFailureText: Record<FixedFailureKind, string> = {
   "request-answered": "reply failed: the question was already answered",
   "request-expired": "reply failed: the question's deadline has passed",
   "deadline-passed":
-    "send failed: the deadline passed before the question was posted",
+    "send failed: the deadline passed before the question was sent",
 };
 
 function describeCollectiveFailure(failure: CollectiveFailure): string {

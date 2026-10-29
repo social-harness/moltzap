@@ -5,7 +5,7 @@ import { Deferred, Effect, Fiber, Queue } from "effect";
 import { expect } from "vitest";
 import type { CertifiedRecord } from "../../communication/records/index.js";
 import type { MiddlewareInput } from "../../daemon/index.js";
-import { appendCertifiedPost } from "../../__tests__/certified-history-fixtures.js";
+import { appendCertifiedMessage } from "../../__tests__/certified-history-fixtures.js";
 import {
   addConversation,
   auditChecks,
@@ -29,7 +29,7 @@ function extendHistory(
   texts: readonly string[],
 ) {
   return Effect.reduce(texts, previous, (record, text) =>
-    appendCertifiedPost(subject, record, text, true),
+    appendCertifiedMessage(subject, record, text, true),
   );
 }
 
@@ -55,13 +55,13 @@ function unrelatedHistory(subject: Fixture) {
 const windowOptions = { maximumHistoryRecords: 2 };
 
 function bindUnresolvedSend(subject: Fixture) {
-  return subject.store.bindPostIntent({
+  return subject.store.bindMessageIntent({
     kind: "existing-conversation",
     intent: {
       conversationId: subject.membership.descriptor.conversationId,
       membershipHash: subject.membership.hash,
       authorAgentId: subject.local.card.agentId,
-      postId: "pst_unresolved",
+      msgId: "msg_unresolved",
       canonicalIntent: bytes("pending send"),
     },
   });
@@ -207,7 +207,7 @@ it("assesses incoming messages with the recent conversation window strictly befo
       yield* seedIncoming(subject, true),
       ["Older than the window", "Recent first", "Recent second"],
     );
-    const candidate = yield* appendCertifiedPost(
+    const candidate = yield* appendCertifiedMessage(
       subject,
       previous,
       "Incoming candidate",
@@ -282,7 +282,8 @@ it(
         maximumHistoryRecords: 100,
         settings: { ...settings, maximumInputBytes: 4 * 1024 * 1024 },
       });
-      const intentCount = (yield* subject.store.recover()).postIntents.length;
+      const intentCount = (yield* subject.store.recover()).messageIntents
+        .length;
       const refusal = yield* Effect.flip(
         runtime.operations.send({
           input: { to: destination, text: "Candidate after large history" },
@@ -291,7 +292,7 @@ it(
 
       expect(refusal).toMatchObject({ refusal: "unresolved-evidence" });
       expect(seen[0]?.context.gaps).not.toEqual([]);
-      expect((yield* subject.store.recover()).postIntents).toHaveLength(
+      expect((yield* subject.store.recover()).messageIntents).toHaveLength(
         intentCount,
       );
     }),

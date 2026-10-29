@@ -71,12 +71,12 @@ export {
   type GroupMessage,
   InboundMessage,
 } from "./communication/conversations/message.js";
-/** Post ids and the closed semantic content of a message. */
+/** Message ids and the closed semantic content of a message. */
 export {
   Content,
   ContentPart,
   JsonValue,
-  PostId,
+  MsgId,
 } from "./communication/records/values.js";
 
 /** Wire emission and the installed daemon's live compatibility window. */
@@ -94,7 +94,7 @@ export {
 /** Attributed envelope values a host reads without service composition. */
 export {
   type LiveSignedMessage,
-  MessageId,
+  EnvelopeId,
   SignedMessage,
   type VerifiedSignedMessage,
 } from "./identity/envelope/signed-message.js";

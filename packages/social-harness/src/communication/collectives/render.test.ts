@@ -113,7 +113,7 @@ it("quotes a guided question and form while leaving endpoint answer instructions
     kind: "collectiveRequest",
     op: "gather",
     id: digest("col_", 1),
-    postId: digest("pst_", 2),
+    msgId: digest("msg_", 2),
     from: testAgentView("agent:alice"),
     to: "agent:alice",
     deadlineAt: 1,

@@ -151,7 +151,7 @@ type BackgroundFailure = "none" | "outbound" | "worker";
 
 const emptyRecovery = (identity?: IdentityBinding): EndpointRecovery => ({
   identity,
-  postIntents: [],
+  messageIntents: [],
   memberships: [],
   anchors: [],
   positions: [],
@@ -396,13 +396,13 @@ function makeEngine(
     ),
   );
   const certified = Effect.succeed({
-    postId: delivery.pending.message.postId,
+    msgId: delivery.pending.message.msgId,
     recordHash: delivery.pending.recordHash,
   });
   return {
-    observePost: () =>
+    observeMessage: () =>
       Effect.dieMessage(
-        "no retained post is observed in this lifecycle fixture",
+        "no retained message is observed in this lifecycle fixture",
       ),
     send: () => certified,
     bind: (...[, hold]) => hold.pipe(Effect.as({ certified })),

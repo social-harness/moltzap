@@ -13,17 +13,17 @@ import type { FirewallSendError } from "../../firewall/outcome/index.js";
 import type { MessageAddressInput } from "../records/values.js";
 import type { RouterWorkerUnavailableError } from "../router/index.js";
 import type {
-  CollectivePostBinding,
+  CollectiveMessageBinding,
   ConversationFoundation,
   EndpointStoreError,
   FirewallCompletion,
-  PostIntentBinding,
-  PostIntent as StoredPostIntent,
+  MessageIntentBinding,
+  MessageIntent as StoredMessageIntent,
 } from "../store/index.js";
 import type {
   EngineConversation,
   EngineOutboxError,
-  EnginePostIntent,
+  EngineMessageIntent,
   EngineRuntime,
 } from "./engine-context.js";
 import { encodeCanonical } from "../../encoding/canonical-json.js";
@@ -35,13 +35,13 @@ import {
   deriveConversationId,
   hashAction,
   hashAnchor,
-  hashPostIntent,
+  hashMessageIntent,
   InitialAnchorBody,
   MembershipDescriptor as MembershipDescriptorSchema,
-  mintPostId,
-  type PostId,
-  type PostIntent,
-  PostIntent as PostIntentSchema,
+  mintMsgId,
+  type MsgId,
+  type MessageIntent,
+  MessageIntent as MessageIntentSchema,
   type RecordHash,
   type VerifiedMembership,
   verifyMembershipDescriptor,
@@ -56,19 +56,19 @@ import {
 } from "./router-recovery/index.js";
 
 /**
- * One post the engine certifies: its address and its complete content. The
+ * One message the engine certifies: its address and its complete content. The
  * collective layer above the engine builds the content, so the engine never
  * reads the collective part.
  */
 export interface EngineSendInput {
   readonly to: MessageAddressInput;
   readonly content: Content;
-  readonly collective?: CollectivePostBinding;
+  readonly collective?: CollectiveMessageBinding;
 }
 
-/** A locally certified post: its minted identity and its stored record's hash. */
-export interface EngineSentPost {
-  readonly postId: PostId;
+/** A locally certified message: its minted identity and its stored record's hash. */
+export interface EngineSentMessage {
+  readonly msgId: MsgId;
   readonly recordHash: RecordHash;
 }
 
@@ -202,7 +202,7 @@ export const resolveAddress = (
 
 /**
  * An address resolved without sending: its canonical spelling, its members'
- * verified cards in AgentId order, and the conversation a send to it posts
+ * verified cards in AgentId order, and the conversation a send uses
  * in, which need not exist yet.
  */
 export interface ResolvedConversation {
@@ -212,7 +212,7 @@ export interface ResolvedConversation {
 }
 
 /**
- * Resolve an address to the conversation a send to it posts in, failing as
+ * Resolve an address to the conversation a send uses, failing as
  * that send would fail.
  */
 export const resolveConversation = (
@@ -235,10 +235,10 @@ const resolveMembership = (runtime: EngineRuntime, input: EngineSendInput) =>
 
 const proposalAction = (
   conversation: EngineConversation,
-  intent: PostIntent,
+  intent: MessageIntent,
 ): Effect.Effect<ActionCore, SendError> =>
   Effect.gen(function* () {
-    const postIntentHash = yield* hashPostIntent(intent).pipe(
+    const messageIntentHash = yield* hashMessageIntent(intent).pipe(
       Effect.mapError(representationFailure),
     );
     const head = conversation.head;
@@ -254,8 +254,8 @@ const proposalAction = (
         membership: conversation.membership.descriptor,
         anchor,
         previousRecordHash: null,
-        postIntent: intent,
-        postIntentHash,
+        messageIntent: intent,
+        messageIntentHash,
       };
       return action;
     }
@@ -266,8 +266,8 @@ const proposalAction = (
       membershipHash: conversation.membership.hash,
       anchorHash: anchorHashAtHead(conversation, head),
       previousRecordHash: head.recordHash,
-      postIntent: intent,
-      postIntentHash,
+      messageIntent: intent,
+      messageIntentHash,
     };
     return action;
   });
@@ -275,12 +275,12 @@ const proposalAction = (
 /**
  * Rebase one unchanged local intent against the conversation's current head.
  * @param runtime Current engine state and protocol dependencies.
- * @param localIntent Durable immutable post intent awaiting certification.
+ * @param localIntent Durable immutable message intent awaiting certification.
  * @returns The predecessor-bound action hash proposed for this attempt.
  */
 export const proposeIntent = (
   runtime: EngineRuntime,
-  localIntent: EnginePostIntent,
+  localIntent: EngineMessageIntent,
 ): Effect.Effect<ActionHash, SendError> =>
   Effect.gen(function* () {
     const conversation = runtime.conversations.get(
@@ -307,7 +307,7 @@ export const proposeIntent = (
 
 interface LocalProposal {
   readonly conversation: EngineConversation;
-  readonly localIntent: EnginePostIntent;
+  readonly localIntent: EngineMessageIntent;
   readonly action: ActionCore;
   readonly actionHash: ActionHash;
 }
@@ -358,7 +358,7 @@ function queueLocalProposal(
       true,
       proposalResendSchedule,
     ).pipe(
-      markRetries("proposal", proposal.action.postIntent.postId, (exit) =>
+      markRetries("proposal", proposal.action.messageIntent.msgId, (exit) =>
         resendOutcome(runtime, proposal, exit),
       ),
       Effect.interruptible,
@@ -369,7 +369,7 @@ function queueLocalProposal(
 
 /**
  * How a proposal's resends ended: the engine ended them; a defect did; they
- * ran out while the proposal still awaited its action certificate; its post
+ * ran out while the proposal still awaited its action certificate; its message
  * was certified; or a later proposal of the intent, or a moved head,
  * replaced it.
  */
@@ -383,7 +383,7 @@ function resendOutcome(
     return Exit.isInterrupted(exit) ? "interrupted" : "failed";
   }
   if (
-    runtime.completedPosts.has(action.postIntent.postId) ||
+    runtime.completedMessages.has(action.messageIntent.msgId) ||
     runtime.actionFolds.get(actionHash)?.recordHash !== undefined
   ) {
     return "certified";
@@ -485,7 +485,7 @@ function resendProposal(
 
 /**
  * Whether a proposal still awaits its action certificate: it is still its
- * intent's proposal, its post has not completed, no record certifies it, and
+ * intent's proposal, its message has not completed, no record certifies it, and
  * the conversation's head is still the one it extends.
  * @param runtime Engine that sent the proposal.
  * @param proposal The proposal and the intent it proposes.
@@ -501,7 +501,7 @@ function proposalIsOpen(
   const head = conversation.head?.recordHash ?? null;
   return (
     localIntent.proposedActionHash === actionHash &&
-    !runtime.completedPosts.has(action.postIntent.postId) &&
+    !runtime.completedMessages.has(action.messageIntent.msgId) &&
     runtime.actionFolds.get(actionHash)?.recordHash === undefined &&
     head === action.previousRecordHash
   );
@@ -583,10 +583,10 @@ const awaitRouterAttachment = (
 
 /**
  * One durably bound send: its minted identity and its completion latch, which
- * yields the hash of the post's locally stored certified record.
+ * yields the hash of the message's locally stored certified record.
  */
 export interface PreparedSendHandle {
-  readonly postId: PostId;
+  readonly msgId: MsgId;
   readonly completion: Deferred.Deferred<RecordHash, SendError>;
 }
 
@@ -594,7 +594,7 @@ const noBindHold = Effect.succeed(Effect.void);
 
 /**
  * Persist an addressed intent and return its durable completion latch.
- * The latch completes when the minted post becomes locally certified.
+ * The latch completes when the minted message becomes locally certified.
  */
 export const prepareSend = <E = never>(
   runtime: EngineRuntime,
@@ -606,15 +606,15 @@ export const prepareSend = <E = never>(
     input,
     (binding) =>
       runtime.input.store
-        .bindPostIntent(binding)
+        .bindMessageIntent(binding)
         .pipe(Effect.as("admitted" as const)),
     hold,
   ).pipe(Effect.withSpan("prepareSend"));
 
 /**
- * Persist a gather request post's intent only against its operation's
- * admitted check, whose candidate is the canonical request content this post
- * carries. A post whose content the check did not admit binds nothing and
+ * Persist a gather request message's intent only against its operation's
+ * admitted check, whose candidate is the canonical request content this message
+ * carries. A message whose content the check did not admit binds nothing and
  * fails as `certification-unavailable`.
  */
 export const prepareAdmittedSend = (
@@ -629,7 +629,7 @@ export const prepareAdmittedSend = (
         runtime,
         input,
         (binding) =>
-          runtime.input.store.bindAdmittedPostIntent(binding, {
+          runtime.input.store.bindAdmittedMessageIntent(binding, {
             checkId,
             canonicalCandidate,
           }),
@@ -654,7 +654,7 @@ function prepareBoundSend<E>(
           activation.kind === "refused"
             ? Effect.fail(representationFailure())
             : Effect.succeed({
-                postId: prepared.intent.postId,
+                msgId: prepared.intent.msgId,
                 completion: activation.completion,
               }),
         ),
@@ -666,15 +666,15 @@ function prepareBoundSend<E>(
 /** Prepared data has no execution authority until the atomic store transition succeeds. */
 export interface PreparedSend {
   readonly membership: VerifiedMembership;
-  readonly intent: PostIntent;
-  readonly canonicalIntent: EnginePostIntent["canonicalIntent"];
-  readonly collective?: CollectivePostBinding;
+  readonly intent: MessageIntent;
+  readonly canonicalIntent: EngineMessageIntent["canonicalIntent"];
+  readonly collective?: CollectiveMessageBinding;
 }
 
 /**
  * The application boundary supplies checking without gaining engine
  * capabilities. `admitted` is opaque to the engine: the value of the check
- * that admits the post returns with it.
+ * that admits the message returns with it.
  */
 export type PreparedSendCheck<A> = (
   prepared: PreparedSend,
@@ -694,7 +694,7 @@ export type PreparedSendCheck<A> = (
  * the effect that gives it up. The engine gives it up when the attempt binds
  * nothing. A bound intent keeps it, including one whose activation fails:
  * that intent reports `delivery-pending` through its completion latch, since
- * its post may still certify later. A failure refuses the send before
+ * its message may still certify later. A failure refuses the send before
  * anything binds. Only a check that admits takes it, so a refused send never
  * establishes it.
  */
@@ -755,7 +755,7 @@ export const prepareCheckedSend = <E, A>(
   }).pipe(Effect.withSpan("prepareCheckedSend"));
 
 /**
- * Commit one check of a prepared post. A withholding check binds nothing and
+ * Commit one check of a prepared message. A withholding check binds nothing and
  * takes no hold. An admitting check takes `hold` just before the intent
  * binds; when the hold refuses, the check commits withheld, so its judgment
  * is retained, and the send fails with the hold's refusal.
@@ -786,7 +786,7 @@ function commitCheck<E, A>(
       : yield* activateIntent(runtime, prepared, withhold, Effect.void);
     if (activation.kind === "ready") {
       return {
-        postId: prepared.intent.postId,
+        msgId: prepared.intent.msgId,
         completion: activation.completion,
         admitted: checked.admitted,
       };
@@ -802,7 +802,7 @@ function bindChecked(
   completion: FirewallCompletion,
 ): IntentAdmission {
   return (binding) =>
-    runtime.input.store.bindCheckedPostIntent(binding, completion);
+    runtime.input.store.bindCheckedMessageIntent(binding, completion);
 }
 
 /**
@@ -845,20 +845,20 @@ function prepareIntent(
 ): Effect.Effect<PreparedSend, SendError> {
   return Effect.gen(function* () {
     const membership = yield* resolveMembership(runtime, input);
-    const postId = yield* mintPostId().pipe(
+    const msgId = yield* mintMsgId().pipe(
       Effect.mapError(representationFailure),
     );
-    const intent = yield* Schema.decodeUnknown(PostIntentSchema)({
+    const intent = yield* Schema.decodeUnknown(MessageIntentSchema)({
       sharnessVersion: runtime.wireVersion,
-      kind: "post_intent",
+      kind: "message_intent",
       conversationId: membership.descriptor.conversationId,
       membershipHash: membership.hash,
       authorAgentId: runtime.input.localAgentCard.agentId,
-      postId,
+      msgId,
       content: input.content,
     }).pipe(Effect.mapError(representationFailure));
     const canonicalIntent = yield* encodeCanonical(
-      PostIntentSchema,
+      MessageIntentSchema,
       intent,
     ).pipe(Effect.mapError(representationFailure));
     return {
@@ -872,12 +872,12 @@ function prepareIntent(
   });
 }
 
-function storedIntent(prepared: PreparedSend): StoredPostIntent {
+function storedIntent(prepared: PreparedSend): StoredMessageIntent {
   return {
     conversationId: prepared.intent.conversationId,
     membershipHash: prepared.intent.membershipHash,
     authorAgentId: prepared.intent.authorAgentId,
-    postId: prepared.intent.postId,
+    msgId: prepared.intent.msgId,
     canonicalIntent: prepared.canonicalIntent,
   };
 }
@@ -889,7 +889,7 @@ function bindPreparedIntent<E>(
   acquire: Effect.Effect<void, E>,
 ): Effect.Effect<"admitted" | "withheld" | "stale", SendError | E> {
   return Effect.gen(function* () {
-    const post = {
+    const message = {
       intent: storedIntent(prepared),
       ...(prepared.collective === undefined
         ? {}
@@ -903,7 +903,7 @@ function bindPreparedIntent<E>(
       yield* acquire;
       return yield* bind({
         kind: "existing-conversation",
-        ...post,
+        ...message,
       }).pipe(
         Effect.catchTag("EndpointStoreError", (error) =>
           failBind(runtime, error),
@@ -915,7 +915,7 @@ function bindPreparedIntent<E>(
     const disposition = yield* bind({
       kind: "new-conversation",
       foundation: created.foundation,
-      ...post,
+      ...message,
     }).pipe(
       Effect.catchTag("EndpointStoreError", (error) =>
         failBind(runtime, error),
@@ -933,7 +933,7 @@ function bindPreparedIntent<E>(
 }
 
 type IntentAdmission = (
-  binding: PostIntentBinding,
+  binding: MessageIntentBinding,
 ) => Effect.Effect<"admitted" | "withheld" | "stale", EndpointStoreError>;
 
 type IntentActivation =
@@ -1012,10 +1012,10 @@ function activateIntentOnce<E>(
 }
 
 /**
- * Propose a post whose intent `bindPreparedIntent` durably stored, or complete
+ * Propose a message whose intent `bindPreparedIntent` durably stored, or complete
  * it when it already certified. The intent is in the store and
  * `runtime.intents` before any proposal, so a failure here does not mean the
- * post was not sent: `rebasePendingIntents` proposes it again when the
+ * message was not sent: `rebasePendingIntents` proposes it again when the
  * conversation's head moves, and recovery proposes it after a restart. So
  * the activation stays ready after any failure here, and its completion
  * latch fails the send as `delivery-pending`.
@@ -1029,9 +1029,9 @@ function activateBoundIntent(
 ): Effect.Effect<IntentActivation, SendError> {
   const { canonicalIntent, intent } = prepared;
   return Effect.gen(function* () {
-    const retained = runtime.intents.get(intent.postId);
+    const retained = runtime.intents.get(intent.msgId);
     if (retained !== undefined) {
-      const completedRecordHash = runtime.completedPosts.get(intent.postId);
+      const completedRecordHash = runtime.completedMessages.get(intent.msgId);
       if (completedRecordHash !== undefined) {
         yield* Deferred.succeed(retained.completion, completedRecordHash);
       } else {
@@ -1043,14 +1043,14 @@ function activateBoundIntent(
       } satisfies IntentActivation;
     }
     const completion = yield* Deferred.make<RecordHash, SendError>();
-    const localIntent: EnginePostIntent = {
+    const localIntent: EngineMessageIntent = {
       intent,
       canonicalIntent,
       completion,
     };
-    const completedRecordHash = runtime.completedPosts.get(intent.postId);
+    const completedRecordHash = runtime.completedMessages.get(intent.msgId);
     yield* Effect.sync(() => {
-      runtime.intents.set(intent.postId, localIntent);
+      runtime.intents.set(intent.msgId, localIntent);
     });
     if (completedRecordHash !== undefined) {
       yield* Deferred.succeed(completion, completedRecordHash);

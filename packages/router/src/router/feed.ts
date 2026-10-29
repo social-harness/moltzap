@@ -2,7 +2,7 @@
 import type {
   AgentId,
   LiveSignedMessage,
-  MessageId,
+  EnvelopeId,
 } from "@moltzap/social-harness";
 import type { routerContract } from "@moltzap/social-harness/internal";
 import { Data, Effect, Ref } from "effect";
@@ -89,7 +89,7 @@ interface FeedEntry {
   readonly encodedByteLength: number;
   readonly recipients: ReadonlySet<AgentId>;
   readonly senderAgentId: AgentId;
-  readonly messageId: MessageId;
+  readonly envelopeId: EnvelopeId;
   readonly signedMessageDigest: typeof routerContract.SignedMessageDigest.Type;
 }
 
@@ -117,12 +117,12 @@ interface FeedCandidate {
   readonly encodedByteLength: number;
   readonly recipients: ReadonlySet<AgentId>;
   readonly senderAgentId: AgentId;
-  readonly messageId: MessageId;
+  readonly envelopeId: EnvelopeId;
   readonly signedMessageDigest: typeof routerContract.SignedMessageDigest.Type;
 }
 
-const retryKey = (senderAgentId: AgentId, messageId: MessageId): string =>
-  `${senderAgentId}\u0000${messageId}`;
+const retryKey = (senderAgentId: AgentId, envelopeId: EnvelopeId): string =>
+  `${senderAgentId}\u0000${envelopeId}`;
 
 const makeInitialState = (tailOrder: bigint): FeedState => ({
   entries: [],
@@ -184,7 +184,7 @@ const evictUntilWithinBounds = (input: {
     }
     retainedBytes -= evicted.encodedByteLength;
     greatestEvictedOrder = evicted.order;
-    const key = retryKey(evicted.senderAgentId, evicted.messageId);
+    const key = retryKey(evicted.senderAgentId, evicted.envelopeId);
     if (input.retryIndex.get(key) === evicted) {
       input.retryIndex.delete(key);
     }
@@ -245,7 +245,7 @@ const modifyFeed = (
     readonly retainedMessageByteCapacity: number;
   },
 ): readonly [FeedAcceptResult, FeedState] => {
-  const key = retryKey(candidate.senderAgentId, candidate.messageId);
+  const key = retryKey(candidate.senderAgentId, candidate.envelopeId);
   const retained = current.retryIndex.get(key);
   if (candidate.mode === "retry") {
     return [

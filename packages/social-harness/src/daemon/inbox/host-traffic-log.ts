@@ -7,13 +7,13 @@ import {
   SendInput,
 } from "../../communication/collectives/contracts.js";
 import { historyExportItem } from "../../communication/collectives/inbound.js";
-import { PostId } from "../../communication/records/values.js";
+import { MsgId } from "../../communication/records/values.js";
 import { exactStruct } from "../../encoding/exact.js";
 
 /* eslint-disable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Effect Schemas share their domain names with the nominal values they decode. */
 
 /**
- * How one send ended in the history export: the posts certified by the time
+ * How one send ended in the history export: the messages certified by the time
  * it returned, with the operation id of a gather or all_gather, or the
  * error it returned.
  */
@@ -21,7 +21,7 @@ const historyExportSendOutcome = Schema.Union(
   exactStruct({
     kind: Schema.Literal("sent"),
     operationId: Schema.optionalWith(CollectiveId, { exact: true }),
-    postIds: Schema.Array(PostId),
+    msgIds: Schema.Array(MsgId),
   }),
   exactStruct({ kind: Schema.Literal("failed"), error: Schema.String }),
 );

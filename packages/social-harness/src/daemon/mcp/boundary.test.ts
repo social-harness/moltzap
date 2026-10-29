@@ -366,7 +366,7 @@ const sendInput = Schema.decodeUnknownSync(SendInput)({
 });
 const sendResult = Schema.decodeUnknownSync(SendResultSchema)({
   kind: "multicast",
-  postId: digest("pst_", 8),
+  msgId: digest("msg_", 8),
   address: "agent:bob",
 });
 

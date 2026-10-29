@@ -9,13 +9,13 @@ import { describe, expect } from "vitest";
 import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { SendInput } from "../../communication/collectives/contracts.js";
 import { InboundItem } from "../../communication/collectives/inbound.js";
-import { PostId } from "../../communication/records/index.js";
+import { MsgId } from "../../communication/records/index.js";
 import { HistoryExportRecord, makeHistoryExport } from "./host-traffic-log.js";
 
 const decodeLine = Schema.decodeUnknownSync(
   Schema.parseJson(HistoryExportRecord),
 );
-const POST_ID = Schema.decodeUnknownSync(PostId)(digest("pst_", 5));
+const POST_ID = Schema.decodeUnknownSync(MsgId)(digest("msg_", 5));
 const AT = DateTime.unsafeMake("2026-09-01T12:00:00.000Z");
 const NO_SPACE = "ENOSPC: no space left on device";
 
@@ -26,7 +26,7 @@ function inbound(): HistoryExportRecord {
       kind: "multicast",
       message: {
         kind: "direct",
-        postId: POST_ID,
+        msgId: POST_ID,
         address: "agent:bob",
         sender: testAgentView("agent:bob"),
         content: [{ type: "text", text: "hello" }],
@@ -45,7 +45,7 @@ function outbound(): HistoryExportRecord {
   return {
     kind: "outbound",
     input,
-    outcome: { kind: "sent", postIds: [POST_ID] },
+    outcome: { kind: "sent", msgIds: [POST_ID] },
     at: AT,
   };
 }

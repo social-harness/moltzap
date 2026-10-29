@@ -15,7 +15,7 @@ import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { openEndpointStore } from "./index.js";
 
 /** The last schema before the reset is refused even with otherwise valid state. */
-const EARLIER_SCHEMA_VERSION = 13;
+const EARLIER_SCHEMA_VERSION = 14;
 
 function refusesAnEarlierSchemaUnchanged() {
   return Effect.gen(function* () {

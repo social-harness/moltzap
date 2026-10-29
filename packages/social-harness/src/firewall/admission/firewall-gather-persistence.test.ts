@@ -67,7 +67,7 @@ function committedGatherFailure() {
       phase: "collecting",
       origin: { kind: "local" },
     });
-    expect(yield* store.readCollectivePosts()).toEqual([]);
+    expect(yield* store.readCollectiveMessages()).toEqual([]);
     return { directory: subject.directory, retained };
   });
 }
@@ -88,10 +88,10 @@ function admittingCollectives(
       self: yield* Schema.decodeUnknown(AgentAddress)("agent:alice"),
       scope: yield* Scope.Scope,
       lookupMember: (member) => resolvedMemberView(engine, member),
-      sendPost: (input) => engine.send(input),
-      bindPost: (input, hold) => engine.bind(input, hold),
+      sendMessage: (input) => engine.send(input),
+      bindMessage: (input, hold) => engine.bind(input, hold),
       sendAdmitted: (input, checkId) => engine.sendAdmitted(input, checkId),
-      observePost: (postId) => engine.observePost(postId),
+      observeMessage: (msgId) => engine.observeMessage(msgId),
       reportStorageFault: (error) =>
         Effect.sync(() => {
           reported.push(error);

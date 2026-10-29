@@ -115,7 +115,7 @@ export function acknowledgeDelivery(
  * Creates or validates the delivery coupled to one certified record.
  *
  * This function runs inside the record-promotion transaction after the
- * certified marker exists. It suppresses the local author's own post.
+ * certified marker exists. It suppresses the local author's own message.
  *
  * @param database Exclusively owned endpoint database.
  * @param record Complete record whose certification is already durable.

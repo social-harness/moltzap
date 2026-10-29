@@ -137,7 +137,7 @@ const notRegistered = Effect.fail({ reason: "not-registered" });
 
 /**
  * Record one completed `send` in the history export with its input and how it
- * ended: the posts certified by its return, or the error it returned.
+ * ended: the messages certified by its return, or the error it returned.
  */
 const exportSend = (
   historyExport: HistoryExportPort,
@@ -166,10 +166,10 @@ const sendDecoded = (input: DeliveryContext, request: HarnessSendRequest) =>
             kind: "failed",
             error: error.message,
           }),
-        onSuccess: ({ operationId, postIds }) =>
+        onSuccess: ({ operationId, msgIds }) =>
           exportSend(input.historyExport, request.input, {
             kind: "sent",
-            postIds,
+            msgIds,
             ...(operationId === undefined ? {} : { operationId }),
           }),
       }),
@@ -180,11 +180,11 @@ const sendDecoded = (input: DeliveryContext, request: HarnessSendRequest) =>
 function publicSendResult(result: CollectiveSendOutcome): SendResult {
   switch (result.kind) {
     case "collective":
-      return Struct.omit(result, "postIds");
+      return Struct.omit(result, "msgIds");
     case "multicast":
-      return Struct.omit(result, "postIds");
+      return Struct.omit(result, "msgIds");
     case "response":
-      return Struct.omit(result, "postIds");
+      return Struct.omit(result, "msgIds");
     default:
       return result satisfies never;
   }

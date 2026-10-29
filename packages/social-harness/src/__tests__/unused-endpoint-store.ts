@@ -26,7 +26,7 @@ export function unusedEndpointStore(label: string): EndpointStore {
     readIdentity: unused,
     bindIdentity: unused,
     ...unusedCollectiveOperations(unused),
-    bindPostIntent: unused,
+    bindMessageIntent: unused,
     putConversationFoundation: unused,
     lockProposal: unused,
     lockFirstMessageProposal: unused,
@@ -72,8 +72,8 @@ function unusedFirewallOperations(unused: () => Effect.Effect<never>) {
     admitFirewallLocalItem: unused,
     retireFirewallItem: unused,
     admitFirewallOperation: unused,
-    bindCheckedPostIntent: unused,
-    bindAdmittedPostIntent: unused,
+    bindCheckedMessageIntent: unused,
+    bindAdmittedMessageIntent: unused,
   };
 }
 
@@ -87,7 +87,7 @@ function unusedCollectiveOperations(unused: () => Effect.Effect<never>) {
     putCollectiveOperation: unused,
     readCollectiveOperations: unused,
     readCollectiveOperation: unused,
-    readCollectivePosts: unused,
+    readCollectiveMessages: unused,
     finalizeCollectiveOperation: unused,
     publishCollectiveItem: unused,
   };

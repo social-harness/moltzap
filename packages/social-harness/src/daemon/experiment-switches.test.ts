@@ -27,7 +27,7 @@ const messages = [
   {
     name: "group message",
     feature: "groups",
-    resultField: "postId",
+    resultField: "msgId",
     input: { to: group, text: "hello" },
   },
   {
@@ -79,7 +79,7 @@ const reply = Schema.decodeUnknown(
     result: Schema.optional(
       Schema.Struct({
         structuredContent: Schema.Struct({
-          postId: Schema.optional(Schema.String),
+          msgId: Schema.optional(Schema.String),
           operationId: Schema.optional(Schema.String),
         }),
       }),
@@ -199,7 +199,7 @@ it("keeps explicit multicast available while collectives are hidden", () =>
       hideGroups: true,
       hideCollectives: true,
     });
-    expect(response.result?.structuredContent.postId).toBeDefined();
+    expect(response.result?.structuredContent.msgId).toBeDefined();
   }));
 
 it("exports a hidden send's refusal in the configured history file", () =>

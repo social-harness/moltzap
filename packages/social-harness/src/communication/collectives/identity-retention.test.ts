@@ -7,7 +7,7 @@ import type { InboundItem } from "./inbound.js";
 import type { CollectivePorts } from "./ports.js";
 import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import {
-  postId,
+  msgId,
   recordHashOf,
 } from "../../__tests__/collective-operation-fixtures.js";
 import {
@@ -37,7 +37,7 @@ const input = Schema.decodeUnknownSync(SendInput)({
   },
 });
 
-it("refuses every initial lookup failure in member order before accepting or posting", () =>
+it("refuses every initial lookup failure in member order before accepting or sending", () =>
   withStore(stateDirectory(), (store) =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -53,7 +53,8 @@ it("refuses every initial lookup failure in member order before accepting or pos
                     : "version-mismatch",
               }),
             ),
-          sendPost: () => Effect.dieMessage("unresolved work cannot post"),
+          sendMessage: () =>
+            Effect.dieMessage("unresolved work cannot message"),
         });
         expect(yield* Effect.flip(operations.send(input))).toMatchObject({
           failure: {
@@ -65,7 +66,7 @@ it("refuses every initial lookup failure in member order before accepting or pos
           },
         });
         expect(yield* store.readCollectiveOperations()).toEqual([]);
-        expect(yield* store.readCollectivePosts()).toEqual([]);
+        expect(yield* store.readCollectiveMessages()).toEqual([]);
       }),
     ),
   ));
@@ -79,11 +80,11 @@ it("retains every resolved identity in an unanswered result after restart withou
           ...ports(subject.store, []),
           scope: yield* Scope.Scope,
           lookupMember: (member) => resolvedMemberView(subject.engine, member),
-          sendPost: (request) =>
+          sendMessage: (request) =>
             request.to === "agent:carol"
               ? Effect.fail(new SendError({ reason: "network-unavailable" }))
               : Effect.succeed({
-                  postId: postId(1),
+                  msgId: msgId(1),
                   recordHash: recordHashOf(1),
                 }),
         });
@@ -125,12 +126,12 @@ function ports(
   return {
     store,
     self: Schema.decodeUnknownSync(AgentAddress)("agent:alice"),
-    bindPost: () => Effect.dieMessage("gather uses request fanout"),
-    observePost: () => Effect.dieMessage("gather owns no close"),
+    bindMessage: () => Effect.dieMessage("gather uses request fanout"),
+    observeMessage: () => Effect.dieMessage("gather owns no close"),
     sendAdmitted: () => Effect.dieMessage("no firewall in this test"),
     reportStorageFault: (error) => Effect.die(error),
-    sendPost: () =>
-      Effect.succeed({ postId: postId(1), recordHash: recordHashOf(1) }),
+    sendMessage: () =>
+      Effect.succeed({ msgId: msgId(1), recordHash: recordHashOf(1) }),
     emit: (item, ...[, terminal]) =>
       Effect.gen(function* () {
         if (terminal === undefined || item.kind !== "collectiveResult") {

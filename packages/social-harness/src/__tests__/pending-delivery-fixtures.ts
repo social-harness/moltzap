@@ -12,8 +12,8 @@ import { DeliveryToken } from "../communication/store/index.js";
 import { digest, testAgentView } from "./agent-card-fixtures.js";
 
 /**
- * A pending durable delivery of a direct post from Bob whose delivery token,
- * record hash and PostId are all filled with `byte`, and whose text names it.
+ * A pending durable delivery of a direct message from Bob whose delivery token,
+ * record hash and MsgId are all filled with `byte`, and whose text names it.
  * @param byte Value repeated across each 32-byte identifier.
  * @returns The delivery as the engine lists it.
  */
@@ -25,7 +25,7 @@ export function pendingMessage(byte: number): EnginePendingMessage {
     recordHash: Schema.decodeUnknownSync(RecordHash)(digest("rch_", byte)),
     message: Schema.decodeUnknownSync(InboundMessage)({
       kind: "direct",
-      postId: digest("pst_", byte),
+      msgId: digest("msg_", byte),
       address: "agent:bob",
       sender: testAgentView("agent:bob"),
       content: [{ type: "text", text: `delivery ${String(byte)}` }],
@@ -33,8 +33,8 @@ export function pendingMessage(byte: number): EnginePendingMessage {
   };
 }
 
-/** Classifies every post as a multicast, so the pass publishes it. */
-export const publishEveryPost: CollectiveOperations["classify"] = ({
+/** Classifies every message as a multicast, so the pass publishes it. */
+export const publishEveryMessage: CollectiveOperations["classify"] = ({
   message,
 }) => Effect.succeedSome<InboundItem>({ kind: "multicast", message });
 

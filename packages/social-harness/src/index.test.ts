@@ -8,7 +8,7 @@ import {
   Content,
   GroupAddress,
   MessageAddressInput,
-  PostId,
+  MsgId,
   SendInput,
 } from "./index.js";
 
@@ -66,30 +66,30 @@ describe("public address schemas", () => {
   });
 });
 
-const postHash = (byteLength: number) =>
+const messageHash = (byteLength: number) =>
   Encoding.encodeBase64Url(new Uint8Array(byteLength).fill(7));
 
 // @agent-code-guard/regression-only: Identifier schemas pin the closed durable send grammar.
-describe("public post identifiers", () => {
-  it("accepts the exact post identifier grammar", () => {
-    const postId = digest("pst_", 7);
+describe("public message identifiers", () => {
+  it("accepts the exact message identifier grammar", () => {
+    const msgId = digest("msg_", 7);
 
-    expect(Schema.decodeUnknownSync(PostId)(postId)).toBe(postId);
+    expect(Schema.decodeUnknownSync(MsgId)(msgId)).toBe(msgId);
   });
 
-  // A PostId is `pst_` plus the canonical base64url of exactly 32 bytes, so
+  // A MsgId is `msg_` plus the canonical base64url of exactly 32 bytes, so
   // each case breaks one of the prefix, the length, or the round trip.
   it.each([
-    { case: "another prefix", candidate: `cnv_${postHash(32)}` },
-    { case: "31 bytes", candidate: `pst_${postHash(31)}` },
-    { case: "33 bytes", candidate: `pst_${postHash(33)}` },
+    { case: "another prefix", candidate: `cnv_${messageHash(32)}` },
+    { case: "31 bytes", candidate: `msg_${messageHash(31)}` },
+    { case: "33 bytes", candidate: `msg_${messageHash(33)}` },
     {
       case: "a noncanonical final character",
-      candidate: `pst_${postHash(32).slice(0, -1)}d`,
+      candidate: `msg_${messageHash(32).slice(0, -1)}d`,
     },
-    { case: "padding", candidate: `pst_${postHash(32)}=` },
-  ])("rejects a post identifier with $case", ({ candidate }) => {
-    expect(decodingFails(PostId, candidate)).toBe(true);
+    { case: "padding", candidate: `msg_${messageHash(32)}=` },
+  ])("rejects a message identifier with $case", ({ candidate }) => {
+    expect(decodingFails(MsgId, candidate)).toBe(true);
   });
 });
 

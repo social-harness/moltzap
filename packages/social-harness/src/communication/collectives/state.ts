@@ -6,7 +6,7 @@ import type { ReceivedRequest } from "./received-request.js";
 import { encodeCanonical } from "../../encoding/canonical-json.js";
 import { exactStruct } from "../../encoding/exact.js";
 import { AgentView } from "../../identity/cards.js";
-import { Content, PostId, RecordHash } from "../records/index.js";
+import { Content, MsgId, RecordHash } from "../records/index.js";
 import { AgentAddress, MessageAddressInput } from "../records/values.js";
 import {
   type CollectiveOperationInput,
@@ -47,7 +47,7 @@ const collectiveSelection = Schema.Union(
   exactStruct({
     kind: Schema.Literal("close"),
     ...collectiveClosure.fields,
-    postId: PostId,
+    msgId: MsgId,
     included: Schema.Array(RecordHash),
   }),
   exactStruct({ kind: Schema.Literal("refused", "invalid-close") }),
@@ -101,7 +101,7 @@ export interface CollectiveState {
 /**
  * A validated gather ready to fan out: its state, the request content every
  * member receives, its absolute deadline, and the time its send stops
- * waiting for request posts.
+ * waiting for request messages.
  */
 export interface PreparedGather {
   readonly id: CollectiveId;

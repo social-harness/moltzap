@@ -92,7 +92,7 @@ const retainMessage = (
       encodedByteLength: SignedMessage.encodedByteLength(message),
       recipients,
       senderAgentId: message.senderAgentId,
-      messageId: message.messageId,
+      envelopeId: message.envelopeId,
       signedMessageDigest,
     });
     if (accepted.kind === "overloaded") {

@@ -117,13 +117,13 @@ const ACKNOWLEDGEMENT_FILLER: ReadonlySet<string> = new Set([
   "you",
 ]);
 
-/** Plain posts to multiple recipients that contain only acknowledgements need revision. */
-const noAcknowledgementPosts: CodeRule = {
+/** Plain messages to multiple recipients that contain only acknowledgements need revision. */
+const noAcknowledgementMessages: CodeRule = {
   description: {
-    id: "no-acknowledgement-posts",
+    id: "no-acknowledgement-messages",
     kind: "norm",
     feedback: {
-      text: "Do not post a message that only thanks or acknowledges to several members. Send nothing, or send only a question or new information.",
+      text: "Do not message a message that only thanks or acknowledges to several members. Send nothing, or send only a question or new information.",
       nextAction: "stop",
     },
   },
@@ -193,7 +193,7 @@ export function openRequestsPolicy(): MessageMiddleware {
  * reply unless the agent's own later message to its sender asked for one.
  * Questions, requests, collective operations and paraphrases keep their
  * ordinary response expectations: this bounded check does not classify
- * arbitrary prose. A plain outgoing post to two or more members whose whole
+ * arbitrary prose. A plain outgoing message to two or more members whose whole
  * text matches the separate English acknowledgement/filler vocabulary asks
  * for revision with registered stop feedback.
  * @returns The `org.social-harness/acknowledgements` middleware.
@@ -208,7 +208,7 @@ export function acknowledgementsPolicy(): MessageMiddleware {
         kind: "norm",
         guidance: "No response is needed to this empty acknowledgement.",
       },
-      noAcknowledgementPosts.description,
+      noAcknowledgementMessages.description,
     ],
     check: checkAcknowledgements,
   };
@@ -358,10 +358,10 @@ function checkAcknowledgements({
         outcome: empty ? "pass" : "not-applicable",
       },
       {
-        ruleId: noAcknowledgementPosts.description.id,
+        ruleId: noAcknowledgementMessages.description.id,
         outcome:
           event.direction === "outgoing"
-            ? noAcknowledgementPosts.assess(event.message, context)
+            ? noAcknowledgementMessages.assess(event.message, context)
             : "not-applicable",
       },
     ],
@@ -529,7 +529,7 @@ function isAcknowledgementOnly(text: string): boolean {
  * in this conversation, assessed at the context's capture time. A gather's
  * answer closes its request, since its conversation has one member; an
  * all_gather stays open until its result. A group-addressed gather's request
- * posts sit in each member's direct conversation, outside the window its
+ * messages sit in each member's direct conversation, outside the window its
  * check reads, so this rule cannot see them.
  */
 function hasOpenRequest(context: MessageContext): boolean {

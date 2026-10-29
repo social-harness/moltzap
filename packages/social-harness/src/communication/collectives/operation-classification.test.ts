@@ -1,21 +1,21 @@
-/** @file Pins which certified posts reach the subscriber, in what form, and which received requests a member keeps. */
+/** @file Pins which certified messages reach the subscriber, in what form, and which received requests a member keeps. */
 
 import { scoped as it } from "@effect/vitest";
 import { Duration, Effect, Option, TestClock } from "effect";
 import { describe, expect } from "vitest";
 import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import {
-  classifyPost,
+  classifyMessage,
   collectiveKey,
-  directPost,
+  directMessage,
   makeLayer,
   multicastPart,
   newObserved,
-  postId,
+  msgId,
   questionText,
   requestId,
   requestNonce,
-  requestPost,
+  requestMessage,
   slotSchema,
 } from "../../__tests__/collective-operation-fixtures.js";
 import { decodeCollectiveValue } from "./wire/index.js";
@@ -23,38 +23,41 @@ import { decodeCollectiveValue } from "./wire/index.js";
 function deliversAMulticastWithoutItsCollectivePart() {
   return Effect.gen(function* () {
     const layer = yield* makeLayer(newObserved());
-    const item = yield* classifyPost(
+    const item = yield* classifyMessage(
       layer,
-      directPost("agent:bob", [{ type: "text", text: "Hello" }, multicastPart]),
+      directMessage("agent:bob", [
+        { type: "text", text: "Hello" },
+        multicastPart,
+      ]),
     );
 
     expect(item).toEqual(
       Option.some({
         kind: "multicast",
-        message: directPost("agent:bob", [{ type: "text", text: "Hello" }]),
+        message: directMessage("agent:bob", [{ type: "text", text: "Hello" }]),
       }),
     );
   });
 }
 
-function deliversAPostWithoutACollectivePartAsAMulticast() {
-  const post = directPost("agent:bob", [{ type: "text", text: "Hello" }]);
+function deliversAMessageWithoutACollectivePartAsAMulticast() {
+  const message = directMessage("agent:bob", [{ type: "text", text: "Hello" }]);
 
   return Effect.gen(function* () {
     const layer = yield* makeLayer(newObserved());
 
-    expect(yield* classifyPost(layer, post)).toEqual(
-      Option.some({ kind: "multicast", message: post }),
+    expect(yield* classifyMessage(layer, message)).toEqual(
+      Option.some({ kind: "multicast", message: message }),
     );
   });
 }
 
-function consumesAPostWhoseCollectivePartIsMalformed() {
+function consumesAMessageWhoseCollectivePartIsMalformed() {
   return Effect.gen(function* () {
     const layer = yield* makeLayer(newObserved());
-    const item = yield* classifyPost(
+    const item = yield* classifyMessage(
       layer,
-      directPost("agent:bob", [
+      directMessage("agent:bob", [
         { type: "text", text: "Hello" },
         { type: "data", value: { [collectiveKey]: { kind: "operation" } } },
       ]),
@@ -69,17 +72,20 @@ function consumesAMulticastWhoseOnlyPartIsTheCollectivePart() {
     const layer = yield* makeLayer(newObserved());
 
     expect(
-      yield* classifyPost(layer, directPost("agent:bob", [multicastPart])),
+      yield* classifyMessage(
+        layer,
+        directMessage("agent:bob", [multicastPart]),
+      ),
     ).toEqual(Option.none());
   });
 }
 
-function consumesAPostThatCarriesTwoCollectiveParts() {
+function consumesAMessageThatCarriesTwoCollectiveParts() {
   return Effect.gen(function* () {
     const layer = yield* makeLayer(newObserved());
-    const item = yield* classifyPost(
+    const item = yield* classifyMessage(
       layer,
-      directPost("agent:bob", [
+      directMessage("agent:bob", [
         { type: "text", text: "Hello" },
         multicastPart,
         multicastPart,
@@ -102,9 +108,9 @@ function consumesACloseForAnAllGatherThisEndpointWasNotAsked() {
   return Effect.gen(function* () {
     yield* decodeCollectiveValue(close);
     const layer = yield* makeLayer(newObserved());
-    const item = yield* classifyPost(
+    const item = yield* classifyMessage(
       layer,
-      directPost("agent:bob", [
+      directMessage("agent:bob", [
         { type: "data", value: { [collectiveKey]: close } },
       ]),
     );
@@ -126,9 +132,9 @@ function consumesAnAllGatherRequestInADirectConversation() {
   return Effect.gen(function* () {
     yield* decodeCollectiveValue(request);
     const layer = yield* makeLayer(newObserved());
-    const item = yield* classifyPost(
+    const item = yield* classifyMessage(
       layer,
-      directPost("agent:bob", [
+      directMessage("agent:bob", [
         { type: "text", text: questionText },
         { type: "data", value: { [collectiveKey]: request } },
       ]),
@@ -138,17 +144,20 @@ function consumesAnAllGatherRequestInADirectConversation() {
   });
 }
 
-function deliversARequestPostAsACollectiveRequestItem() {
+function deliversARequestMessageAsACollectiveRequestItem() {
   return Effect.gen(function* () {
     const layer = yield* makeLayer(newObserved());
-    const item = yield* classifyPost(layer, requestPost("agent:bob", 60_000));
+    const item = yield* classifyMessage(
+      layer,
+      requestMessage("agent:bob", 60_000),
+    );
 
     expect(item).toEqual(
       Option.some({
         kind: "collectiveRequest",
         op: "gather",
         id: requestId,
-        postId: postId(9),
+        msgId: msgId(9),
         from: testAgentView("agent:bob"),
         to: "agent:bob",
         question: questionText,
@@ -159,13 +168,13 @@ function deliversARequestPostAsACollectiveRequestItem() {
   });
 }
 
-function consumesARequestPostWhoseDeadlineHasPassed() {
+function consumesARequestMessageWhoseDeadlineHasPassed() {
   return Effect.gen(function* () {
     const layer = yield* makeLayer(newObserved());
     yield* TestClock.adjust(Duration.seconds(61));
 
     expect(
-      yield* classifyPost(layer, requestPost("agent:bob", 60_000)),
+      yield* classifyMessage(layer, requestMessage("agent:bob", 60_000)),
     ).toEqual(Option.none());
   });
 }
@@ -173,11 +182,14 @@ function consumesARequestPostWhoseDeadlineHasPassed() {
 function consumesARequestWhoseIdDoesNotDeriveFromItsSender() {
   return Effect.gen(function* () {
     const layer = yield* makeLayer(newObserved());
-    const takenOver = yield* classifyPost(
+    const takenOver = yield* classifyMessage(
       layer,
-      requestPost("agent:mallory", 60_000),
+      requestMessage("agent:mallory", 60_000),
     );
-    const honest = yield* classifyPost(layer, requestPost("agent:bob", 60_000));
+    const honest = yield* classifyMessage(
+      layer,
+      requestMessage("agent:bob", 60_000),
+    );
 
     expect(takenOver).toEqual(Option.none());
     expect(Option.isSome(honest)).toBe(true);
@@ -187,16 +199,16 @@ function consumesARequestWhoseIdDoesNotDeriveFromItsSender() {
 function consumesARequestWhoseDeadlineLiesBeyondTheLongestAGatherStates() {
   return Effect.gen(function* () {
     const layer = yield* makeLayer(newObserved());
-    const item = yield* classifyPost(
+    const item = yield* classifyMessage(
       layer,
-      requestPost("agent:bob", Duration.toMillis(Duration.days(31)) + 1),
+      requestMessage("agent:bob", Duration.toMillis(Duration.days(31)) + 1),
     );
 
     expect(item).toEqual(Option.none());
   });
 }
 
-// @agent-code-guard/regression-only: examples pin which certified posts reach the subscriber and in what form.
+// @agent-code-guard/regression-only: examples pin which certified messages reach the subscriber and in what form.
 describe("inbound classification", () => {
   it(
     "delivers a multicast without its collective part",
@@ -204,13 +216,13 @@ describe("inbound classification", () => {
   );
 
   it(
-    "delivers a post without a collective part as a multicast",
-    deliversAPostWithoutACollectivePartAsAMulticast,
+    "delivers a message without a collective part as a multicast",
+    deliversAMessageWithoutACollectivePartAsAMulticast,
   );
 
   it(
-    "consumes a post whose collective part is malformed",
-    consumesAPostWhoseCollectivePartIsMalformed,
+    "consumes a message whose collective part is malformed",
+    consumesAMessageWhoseCollectivePartIsMalformed,
   );
 
   it(
@@ -219,8 +231,8 @@ describe("inbound classification", () => {
   );
 
   it(
-    "consumes a post that carries two collective parts",
-    consumesAPostThatCarriesTwoCollectiveParts,
+    "consumes a message that carries two collective parts",
+    consumesAMessageThatCarriesTwoCollectiveParts,
   );
 
   it(
@@ -234,13 +246,13 @@ describe("inbound classification", () => {
   );
 
   it(
-    "delivers a request post as a collectiveRequest item",
-    deliversARequestPostAsACollectiveRequestItem,
+    "delivers a request message as a collectiveRequest item",
+    deliversARequestMessageAsACollectiveRequestItem,
   );
 
   it(
-    "consumes a request post whose deadline has passed",
-    consumesARequestPostWhoseDeadlineHasPassed,
+    "consumes a request message whose deadline has passed",
+    consumesARequestMessageWhoseDeadlineHasPassed,
   );
 });
 
