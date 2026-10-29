@@ -200,6 +200,7 @@ export function rootEslintConfig(tsconfigRootDir: string) {
     {
       ignores: [
         ".claude/**",
+        ".repos/**",
         "packages/**",
         "tests/**",
         "images/*/**",

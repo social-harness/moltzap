@@ -366,7 +366,7 @@ const pgliteListening = (running: RunningProcess, port: number) =>
   announced(running, `PGLiteSocketServer listening on {"port":${port},`);
 
 /** The daemon announces its MCP endpoint once its loopback listener is bound. */
-const daemonListening = (running: RunningProcess, endpoint: URL) =>
+export const daemonListening = (running: RunningProcess, endpoint: URL) =>
   announced(running, `sharnessd listening on ${endpoint.href} (`);
 
 /** Whether `origin` answers its health check as ready. */
@@ -397,12 +397,14 @@ export const serviceReady = (
  * @param running Child that must become ready.
  * @param probe One readiness check of the child.
  * @param phase What the child had yet to do, for the failure message.
+ * @param timeout How long the child has to become ready.
  * @returns Completion once `probe` reads true.
  */
 export const awaitReady = (
   running: RunningProcess,
   probe: Effect.Effect<boolean>,
   phase: string,
+  timeout: Duration.DurationInput = READINESS_TIMEOUT,
 ) =>
   Effect.gen(function* () {
     while (!hasExited(running.child)) {
@@ -416,7 +418,7 @@ export const awaitReady = (
     );
   }).pipe(
     Effect.timeoutFail({
-      duration: READINESS_TIMEOUT,
+      duration: timeout,
       onTimeout: () =>
         processTestError(
           `process timed out before ${phase}\n${running.logs()}`,

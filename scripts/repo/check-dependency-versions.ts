@@ -2,7 +2,8 @@
 /**
  * @file Checks version copies that package managers cannot reconcile: the
  * `images/` helper dependencies readers install outside the workspace,
- * published Node engine ranges, the development Node pin, and peer support floors.
+ * published Node engine ranges, the development Node pin, peer support floors,
+ * and the Effect source tag.
  */
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -22,6 +23,7 @@ const INSTALLED_SECTIONS = [
   "optionalDependencies",
 ];
 
+const EFFECT_SCRIPT = "scripts/setup/prepare-effect.sh";
 const HELPERS_MANIFEST = "images/package.json";
 
 const repo = process.cwd();
@@ -66,6 +68,7 @@ interface Comparator {
 function main(): void {
   const workspace = readWorkspace();
   const catalog = stringRecord(workspace, "catalog");
+  const overrides = stringRecord(workspace, "overrides");
   const root = manifestAt("package.json");
   const workspaceManifests = [
     root,
@@ -76,6 +79,7 @@ function main(): void {
   checkInstalledSpecifiers(workspaceManifests);
   checkPeerFloors(workspaceManifests, catalog);
   checkHelperCopies(helpers, catalog);
+  checkEffectCheckout(overrides);
   checkNodeRange(root, helpers);
 
   if (failures.length > 0) {
@@ -201,6 +205,19 @@ function declarationsOf(
       ([name, value]) => ({ where: manifest.where, section, name, value }),
     ),
   );
+}
+
+function checkEffectCheckout(
+  overrides: Readonly<Record<string, string>>,
+): void {
+  const tag = /^tag="effect@([^"]+)"$/m.exec(
+    readFileSync(path.join(repo, EFFECT_SCRIPT), "utf8"),
+  )?.[1];
+  if (tag !== overrides.effect) {
+    failures.push(
+      `${EFFECT_SCRIPT}: clones effect@${tag ?? "missing"}, expected the pnpm-workspace.yaml override effect@${overrides.effect ?? "missing"}; update tag and expected together`,
+    );
+  }
 }
 
 function checkNodeRange(root: Manifest, helpers: Manifest): void {

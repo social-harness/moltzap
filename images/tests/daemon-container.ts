@@ -2,11 +2,12 @@
 import {
   acquireDaemonProcess,
   awaitReady,
+  daemonListening,
   type DaemonProcessFixture,
   managedProcess,
   processTestError,
 } from "@moltzap/integration-tests/daemon-process-harness";
-import { Effect } from "effect";
+import { Duration, Effect } from "effect";
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { chmod } from "node:fs/promises";
@@ -14,6 +15,12 @@ import { dirname } from "node:path";
 import { promisify } from "node:util";
 
 const docker = promisify(execFile);
+
+/**
+ * A cohort starts all its daemon containers at once on a runner other builds
+ * share, so each container gets sixty seconds to listen.
+ */
+const CONTAINER_READINESS_TIMEOUT = Duration.seconds(60);
 
 /**
  * Runs the fixture's daemon in the `DAEMON_INTEGRATION_IMAGE` container, or as
@@ -52,12 +59,9 @@ export const startDaemonContainer = (fixture: DaemonProcessFixture) => {
     );
     yield* awaitReady(
       daemon,
-      Effect.sync(() =>
-        daemon
-          .logs()
-          .includes(`sharnessd listening on ${fixture.endpoint.href} (`),
-      ),
+      daemonListening(daemon, fixture.endpoint),
       "listening",
+      CONTAINER_READINESS_TIMEOUT,
     );
     return daemon;
   }).pipe(Effect.withSpan("startDaemonContainer"));

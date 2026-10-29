@@ -10,14 +10,10 @@ import {
   acquireProcessInfrastructure,
   type DaemonProcessFixture,
   makeDaemonProcessFixture,
+  makeRegistrationRequest,
   type ProcessTestError,
 } from "./daemon-process-harness.ts";
-import {
-  joinParticipant,
-  nextItem,
-  registerFixture,
-  send,
-} from "./participants.ts";
+import { joinParticipant, nextItem, send } from "./participants.ts";
 
 /* eslint-disable agent-code-guard/async-keyword, agent-code-guard/promise-type -- node:test consumes promises at the fixture boundary. */
 
@@ -42,7 +38,7 @@ export interface Network {
   readonly close: () => Promise<undefined>;
 }
 
-/** A consumer may run a fixture in its own container while sharing registration and participants. */
+/** Starts one fixture's daemon, which a consumer may run in its own container; the fixture's environment carries its startup registration. */
 type StartDaemon = (
   fixture: DaemonProcessFixture,
 ) => Effect.Effect<unknown, ProcessTestError, Scope.Scope>;
@@ -61,8 +57,8 @@ export async function startNetwork(startDaemon: StartDaemon): Promise<Network> {
       runInScope(
         scope,
         makeDaemonProcessFixture(infrastructure, name).pipe(
+          Effect.map(withStartupRegistration),
           Effect.tap(startDaemon),
-          Effect.tap(registerFixture),
         ),
       );
     return {
@@ -79,6 +75,25 @@ export async function startNetwork(startDaemon: StartDaemon): Promise<Network> {
     await close();
     throw cause;
   }
+}
+
+/**
+ * Hosting starts a daemon with its registration in the environment, and the
+ * daemon registers before it listens, so a started fixture is registered.
+ */
+function withStartupRegistration(
+  fixture: DaemonProcessFixture,
+): DaemonProcessFixture {
+  const registration = makeRegistrationRequest(fixture);
+  return {
+    ...fixture,
+    environment: {
+      ...fixture.environment,
+      SHARNESS_REGISTRATION_AGENT_NAME: registration.agentName,
+      SHARNESS_REGISTRATION_OPERATION_ID: registration.operationId,
+      SHARNESS_REGISTRATION_PRINCIPAL_ID: registration.principalId,
+    },
+  };
 }
 
 async function networkEndpoint(

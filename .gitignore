@@ -153,6 +153,7 @@ vite.config.ts.timestamp-*
 .nx/cache
 .nx/workspace-data
 .nx/polygraph
+/.repos/effect/
 /eval-results/
 recordings/
 

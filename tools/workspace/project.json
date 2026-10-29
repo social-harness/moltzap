@@ -180,6 +180,7 @@
         "{workspaceRoot}/plugins/**/*",
         "{workspaceRoot}/images/**/*",
         "{workspaceRoot}/scripts/build/**/*",
+        "{workspaceRoot}/scripts/setup/**/*",
         "{workspaceRoot}/.node-version",
         "{workspaceRoot}/.npmrc",
         "{workspaceRoot}/.dockerignore",
