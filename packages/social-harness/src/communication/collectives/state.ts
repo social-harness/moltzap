@@ -3,7 +3,6 @@ import { Effect, type Fiber, Schema } from "effect";
 import type { CollectiveMemberOutcome } from "./inbound.js";
 import type { CollectivePorts } from "./ports.js";
 import type { ReceivedRequest } from "./received-request.js";
-import type { Members } from "./shared-answers.js";
 import { encodeCanonical } from "../../encoding/canonical-json.js";
 import { exactStruct } from "../../encoding/exact.js";
 import { Content, PostId, RecordHash } from "../records/index.js";
@@ -18,6 +17,7 @@ import {
   type CollectiveId,
   type CollectiveOperation,
   EpochMillis,
+  type Members,
 } from "./contracts.js";
 import { FormModeSchema } from "./wire/index.js";
 

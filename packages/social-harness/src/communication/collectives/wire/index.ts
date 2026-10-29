@@ -153,6 +153,12 @@ const CollectiveValue = Schema.Union(
 /** A validated collective value. */
 export type CollectiveValue = typeof CollectiveValue.Type;
 
+/** An accepted or declined answer carried in a certified post. */
+export type ResponseValue = Extract<
+  CollectiveValue,
+  { readonly kind: "response" }
+>;
+
 /** Content carries a collective part that is duplicated or does not decode. */
 export class CollectivePartInvalidError extends Data.TaggedError(
   "CollectivePartInvalidError",

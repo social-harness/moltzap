@@ -183,6 +183,10 @@
       "reason": "Private collective state and injected runtime ports used by each operation phase"
     },
     {
+      "file": "communication/collectives/shared-answers.ts",
+      "reason": "First-answer selection and close state shared by receipt, response completion and replay"
+    },
+    {
       "file": "communication/collectives/validation.ts",
       "reason": "Answer-schema validation shared by outbound answers and inbound result construction"
     },

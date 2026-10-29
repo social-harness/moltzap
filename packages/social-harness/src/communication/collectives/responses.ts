@@ -1,6 +1,6 @@
 /** @file One retained response claim stays attached to its original certified post. */
 import { Clock, Effect, Either, Option, Schema } from "effect";
-import type { CertifiedAnswer, ResponseValue } from "./shared-answers.js";
+import type { CertifiedAnswer } from "./shared-answers.js";
 import type { CollectiveState } from "./state.js";
 import { canonicalMessageAddress } from "../conversations/address.js";
 import { SendError } from "../conversations/errors.js";
@@ -43,6 +43,7 @@ import {
   encodeCollectiveContent,
   mintCollectiveId,
   readCollectiveValue,
+  type ResponseValue,
 } from "./wire/index.js";
 type PostContent = Content;
 const contentInvalid = () => new SendError({ reason: "content-invalid" });

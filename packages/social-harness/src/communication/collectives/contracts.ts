@@ -21,6 +21,9 @@ import {
 
 /* eslint-disable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Effect Schemas share their domain names with the nominal values they decode. */
 
+/** The agents a collecting operation asks, in result order. */
+export type Members = readonly [AgentAddress, ...AgentAddress[]];
+
 /**
  * Identity of one gather or all_gather, minted by the requesting endpoint.
  * The request, each member's answer post, an all_gather's close, the result

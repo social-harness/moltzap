@@ -18,7 +18,7 @@ import {
   Option,
   Schema,
 } from "effect";
-import type { InboundItem } from "./inbound.js";
+import type { CollectiveResultItem, InboundItem } from "./inbound.js";
 import { encodeCanonical } from "../../encoding/canonical-json.js";
 import { canonicalMessageAddress } from "../conversations/address.js";
 import { SendError } from "../conversations/errors.js";
@@ -74,11 +74,7 @@ import {
   withinRequestWait,
 } from "./request-sends.js";
 import { respond, restoreResponse } from "./responses.js";
-import {
-  type CollectiveResultItem,
-  memberOutcomes,
-  type ResponseValue,
-} from "./shared-answers.js";
+import { memberOutcomes } from "./shared-answers.js";
 import {
   type CollectiveState,
   encodeLocalCollective,
@@ -93,6 +89,7 @@ import {
   FormModeSchema,
   mintCollectiveId,
   readCollectiveValue,
+  type ResponseValue,
   withoutCollectivePart,
 } from "./wire/index.js";
 

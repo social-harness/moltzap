@@ -1,6 +1,7 @@
 /** @file Shared group results wait for one certified close and its exact answer records. */
 import { Effect, Exit, Option, Schema } from "effect";
 import type { InboundMessage } from "../conversations/message.js";
+import type { CollectiveResultItem } from "./inbound.js";
 import type { CertifiedPost, ResultProvenance } from "./ports.js";
 import type { OpenRequest, ReceivedRequest } from "./received-request.js";
 import type { CollectiveState, GatherRequest, OpenGather } from "./state.js";
@@ -17,15 +18,17 @@ import {
 } from "./contracts.js";
 import { durableEmit, emitTerminal } from "./persistence.js";
 import {
-  type CollectiveResultItem,
   type HeldClose,
   keepFirstAnswer,
   listedAnswers,
   memberOutcomes,
-  type ResponseValue,
 } from "./shared-answers.js";
 import { outcomeOfResponse } from "./validation.js";
-import { type CollectiveValue, encodeCollectiveContent } from "./wire/index.js";
+import {
+  type CollectiveValue,
+  encodeCollectiveContent,
+  type ResponseValue,
+} from "./wire/index.js";
 type ClosedOutcome = "completed" | "failed" | "refused";
 type CloseValue = Extract<CollectiveValue, { readonly kind: "close" }>;
 const contentInvalid = () => new SendError({ reason: "content-invalid" });

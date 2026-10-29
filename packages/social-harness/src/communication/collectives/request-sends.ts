@@ -16,9 +16,12 @@ import {
   type Scope,
 } from "effect";
 import type { EngineSentPost } from "../conversations/index.js";
-import type { CollectiveFailure, CollectiveOperation } from "./contracts.js";
+import type {
+  CollectiveFailure,
+  CollectiveOperation,
+  Members,
+} from "./contracts.js";
 import type { AdmittedPost, CollectivePorts, PostSender } from "./ports.js";
-import type { Members } from "./shared-answers.js";
 import type { PreparedGather } from "./state.js";
 import { canonicalMessageAddress } from "../conversations/address.js";
 import { SendError } from "../conversations/errors.js";
@@ -189,7 +192,7 @@ const ADDRESS_FAILURES: ReadonlySet<SendError["reason"]> = new Set([
  * @param refusal A member's lookup or post refusal.
  * @returns True for a malformed or unknown member or invalid membership.
  */
-export const isAddressRefusal = (refusal: RequestRefusal): boolean =>
+const isAddressRefusal = (refusal: RequestRefusal): boolean =>
   ADDRESS_FAILURES.has(refusal.reason);
 
 /**
@@ -212,32 +215,6 @@ export function refuseAddressErrors(
             members: [first, ...rest],
           }),
     ),
-  );
-}
-
-/**
- * Look up every member and name each whose lookup fails, in member order.
- * @param members The members to resolve.
- * @param lookup The engine's address resolution for one member.
- * @returns Each failing member with its reason; empty when all resolve.
- */
-export function lookupRefusals(
-  members: readonly AgentAddress[],
-  lookup: (member: AgentAddress) => Effect.Effect<void, SendError>,
-): Effect.Effect<RequestRefusal[]> {
-  return Effect.forEach(
-    members,
-    (member) =>
-      lookup(member).pipe(
-        Effect.flip,
-        Effect.map(
-          (error): RequestRefusal => ({ member, reason: error.reason }),
-        ),
-        Effect.option,
-      ),
-    { concurrency: MEMBER_LOOKUP_CONCURRENCY },
-  ).pipe(
-    Effect.map((lookups) => lookups.flatMap((found) => Option.toArray(found))),
   );
 }
 
@@ -317,5 +294,26 @@ export function fanOutRequests(
         Effect.forkIn(scope),
       ),
     { concurrency: 1 },
+  );
+}
+
+/** Lookup failures retain the requested member order. */
+function lookupRefusals(
+  members: readonly AgentAddress[],
+  lookup: (member: AgentAddress) => Effect.Effect<void, SendError>,
+): Effect.Effect<RequestRefusal[]> {
+  return Effect.forEach(
+    members,
+    (member) =>
+      lookup(member).pipe(
+        Effect.flip,
+        Effect.map(
+          (error): RequestRefusal => ({ member, reason: error.reason }),
+        ),
+        Effect.option,
+      ),
+    { concurrency: MEMBER_LOOKUP_CONCURRENCY },
+  ).pipe(
+    Effect.map((lookups) => lookups.flatMap((found) => Option.toArray(found))),
   );
 }

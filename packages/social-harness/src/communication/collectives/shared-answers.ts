@@ -11,25 +11,14 @@
 
 import type { PostId, RecordHash } from "../records/index.js";
 import type { AgentAddress } from "../records/values.js";
-import type { CollectiveMemberOutcome, InboundItem } from "./inbound.js";
-import type { CollectiveValue } from "./wire/index.js";
+import type { Members } from "./contracts.js";
+import type {
+  CollectiveMemberOutcome,
+  CollectiveResultItem,
+} from "./inbound.js";
+import type { ResponseValue } from "./wire/index.js";
 
 // safer-arch-ignore file-implicit-boundary-module: A received all_gather request keeps these answers and the operation layer selects them by its close; nothing outside communication/collectives reads them.
-
-/** The members a collecting operation asks, in member order. */
-export type Members = readonly [AgentAddress, ...AgentAddress[]];
-
-/** A member's response value, as its post carries it. */
-export type ResponseValue = Extract<
-  CollectiveValue,
-  { readonly kind: "response" }
->;
-
-/** The item a completed gather or all_gather publishes. */
-export type CollectiveResultItem = Extract<
-  InboundItem,
-  { readonly kind: "collectiveResult" }
->;
 
 /** One answer certified in an all_gather's group conversation. */
 export interface CertifiedAnswer {

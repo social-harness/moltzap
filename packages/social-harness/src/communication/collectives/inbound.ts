@@ -117,6 +117,12 @@ export const InboundItem = Schema.Union(
 /** A validated inbound item. */
 export type InboundItem = typeof InboundItem.Type;
 
+/** The result delivered when a gather or all-gather completes. */
+export type CollectiveResultItem = Extract<
+  InboundItem,
+  { readonly kind: "collectiveResult" }
+>;
+
 /** Archived run ledgers map approval refusals to the current evidence hold. */
 const archivedWithheldText = exactStruct({
   ...withheldText.fields,
