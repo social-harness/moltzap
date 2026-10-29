@@ -189,26 +189,6 @@ export const withheldText = exactStruct({
   reason: firewallRefusal,
 });
 
-/** Stored approval requirements decode as unresolved evidence at read boundaries. */
-export const retainedFirewallRefusal = Schema.transform(
-  Schema.Union(firewallRefusal, Schema.Literal("approval-required")),
-  firewallRefusal,
-  {
-    strict: true,
-    decode: (reason) =>
-      reason === "approval-required"
-        ? ("unresolved-evidence" as const)
-        : reason,
-    encode: (reason) => reason,
-  },
-);
-
-/** Retained withheld text uses the same refusal mapping as retained check results. */
-export const retainedWithheldText = exactStruct({
-  ...withheldText.fields,
-  reason: retainedFirewallRefusal,
-});
-
 /** Closed refusal data exposes registered feedback without private assessment evidence. */
 export const firewallRefusalSchema = exactStruct({
   checkId: checkIdSchema,

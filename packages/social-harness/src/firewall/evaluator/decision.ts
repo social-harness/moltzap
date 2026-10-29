@@ -229,10 +229,7 @@ function decidingFinding(
   if (reason === "check-unavailable") {
     return "unavailable";
   }
-  return finding.outcome === "hold" &&
-    !("settled" in finding && finding.settled === true)
-    ? "uncertain"
-    : "settled";
+  return finding.outcome === "hold" ? "uncertain" : "settled";
 }
 
 function registeredAdvice(

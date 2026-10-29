@@ -4,7 +4,7 @@
  * projection, and an operation failure, admitted without inference.
  */
 
-import { Effect, Array as EffectArray, Schema } from "effect";
+import { Effect, Array as EffectArray, Schema, Struct } from "effect";
 import type { InboundItem } from "../../communication/collectives/inbound.js";
 import type { RecordHash } from "../../communication/records/index.js";
 import type {
@@ -32,11 +32,7 @@ import {
   firewallCheckSchema,
   type Message,
 } from "../evaluator/index.js";
-import {
-  ENDPOINT_SENDER,
-  type LocalGuidance,
-  retainedFirewallRefusal,
-} from "../outcome/index.js";
+import { ENDPOINT_SENDER, type LocalGuidance } from "../outcome/index.js";
 import {
   assess,
   attemptInput,
@@ -52,11 +48,6 @@ import {
   mintCheckId,
   refusalReason,
 } from "./firewall-checks.js";
-const retainedFirewallReason = Schema.Union(
-  Schema.Literal("eligible"),
-  retainedFirewallRefusal,
-).pipe(Schema.compose(firewallCheckSchema.fields.reason));
-
 /** The window of a check with no history: a result's missing record, or a failure. */
 const EMPTY_WINDOW = {
   pendingOutgoing: false,
@@ -109,15 +100,10 @@ export const checkLocalItem = (
   }
 };
 
-/**
- * The judgment and reason of a retained check result; the rest is not read
- * here. Historical approval requirements decode under the unresolved-evidence
- * reason for holds.
- */
-const retainedJudgment = Schema.Struct({
-  judgment: firewallCheckSchema.fields.judgment,
-  reason: retainedFirewallReason,
-});
+/** Only judgment and reason are needed to project a stored check's withheld text. */
+const retainedJudgment = Schema.Struct(
+  Struct.pick(firewallCheckSchema.fields, "judgment", "reason"),
+);
 
 /** One result being admitted, and whether its stale budget is spent. */
 interface ResultCheck {

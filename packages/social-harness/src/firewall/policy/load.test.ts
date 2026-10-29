@@ -1,7 +1,7 @@
 /** @file The message policy and decision-provider key a daemon's environment names, and the configuration failures they produce. */
 
 import { live as it } from "@effect/vitest";
-import { Effect, Logger, Redacted } from "effect";
+import { Effect, Redacted } from "effect";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Tests create and remove exact temporary policy and key files around the configuration boundary.
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -251,107 +251,3 @@ function directory(): string {
 }
 
 /* eslint-enable agent-code-guard/no-hardcoded-assertion-literals -- Restore default assertion rules outside the configuration contract tests. */
-
-function expectMigrationLogs(
-  messages: readonly unknown[],
-  fixed: { readonly id: string },
-  rule: { readonly id: string },
-  nextAction?: string,
-) {
-  expect(messages.flat()).toEqual(
-    expect.arrayContaining([
-      `Message policy migrated autonomy rules to safety: ${fixed.id}`,
-      `Message policy migrated autonomy rules to safety: ${rule.id}`,
-    ]),
-  );
-  if (nextAction === "revise" || nextAction === "seek-approval") {
-    expect(messages.flat()).toEqual(
-      expect.arrayContaining([
-        `Message policy dropped incompatible autonomy feedback: ${fixed.id}`,
-        `Message policy dropped incompatible autonomy feedback: ${rule.id}`,
-      ]),
-    );
-  }
-}
-
-function ownerReviewFeedback(id: string) {
-  return {
-    feedback: {
-      nextAction: "stop",
-      text: `This message needs your owner's review under rule ${id} and stays held. Revise it or stop.`,
-    },
-  };
-}
-
-function legacyFileRule(nextAction?: string) {
-  return {
-    id: "spending",
-    kind: "autonomy",
-    text: "Ask before spending.",
-    ...(nextAction === undefined
-      ? {}
-      : { feedback: { nextAction, text: "Review the budget." } }),
-  };
-}
-
-it.each([
-  {
-    nextAction: "wait",
-    retained: { feedback: { nextAction: "wait", text: "Review the budget." } },
-  },
-  {
-    nextAction: "stop",
-    retained: { feedback: { nextAction: "stop", text: "Review the budget." } },
-  },
-  { nextAction: "revise", retained: undefined },
-  { nextAction: "seek-approval", retained: undefined },
-  { nextAction: undefined, retained: undefined },
-])(
-  "migrates file autonomy rules to safety with $nextAction feedback",
-  ({ nextAction, retained }) =>
-    Effect.gen(function* () {
-      const rule = legacyFileRule(nextAction);
-      const fixed = {
-        ...rule,
-        id: "fixed-spending",
-        guidance: "Check the budget.",
-      };
-      const messages: unknown[] = [];
-      const installed = yield* firewallInstallation(
-        {
-          messagePolicyFile: file({
-            ...UNAVAILABLE_DOCUMENT,
-            english: { fixedRules: [fixed], initialRules: [rule] },
-          }),
-        },
-        readCredential,
-      ).pipe(
-        Effect.provide(
-          Logger.replace(
-            Logger.defaultLogger,
-            Logger.make(({ message }) => {
-              messages.push(message);
-            }),
-          ),
-        ),
-      );
-      expectMigrationLogs(messages, fixed, rule, nextAction);
-      expect(installed.options?.english?.fixedRules).toEqual([
-        {
-          id: fixed.id,
-          kind: "safety",
-          text: fixed.text,
-          guidance: fixed.guidance,
-          ...(retained ?? ownerReviewFeedback(fixed.id)),
-        },
-      ]);
-      expect(installed.options?.english?.initialRules).toEqual([
-        {
-          id: rule.id,
-          kind: "safety",
-          text: rule.text,
-          ...(retained ?? ownerReviewFeedback(rule.id)),
-        },
-      ]);
-    }),
-);

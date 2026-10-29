@@ -6,7 +6,7 @@ import {
   CollectiveId,
   SendInput,
 } from "../../communication/collectives/forms.js";
-import { retainedInboundItem } from "../../communication/collectives/inbound.js";
+import { historyExportItem } from "../../communication/collectives/inbound.js";
 import { PostId } from "../../communication/records/values.js";
 import { exactStruct } from "../../encoding/exact.js";
 
@@ -35,7 +35,7 @@ const historyExportSendOutcome = Schema.Union(
 export const HistoryExportRecord = Schema.Union(
   exactStruct({
     kind: Schema.Literal("inbound"),
-    item: retainedInboundItem,
+    item: historyExportItem,
     at: Schema.DateTimeUtc,
   }),
   exactStruct({

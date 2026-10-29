@@ -37,7 +37,6 @@ export {
   Message,
   MessageContext,
   MiddlewareError,
-  MiddlewareObservation,
   PrivateCheckTrace,
   RuleDescription,
 } from "./contract/index.js";

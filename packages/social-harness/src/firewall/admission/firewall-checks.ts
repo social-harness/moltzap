@@ -4,12 +4,8 @@
  * admission share these; neither holds a protocol or delivery lock.
  */
 
-import { Clock, Effect, Option, Schema, Struct } from "effect";
+import { Clock, Effect, Option, Schema } from "effect";
 import { createHash, randomBytes } from "node:crypto";
-import type {
-  FirewallConfiguration,
-  FirewallInstallation,
-} from "./firewall-values.js";
 import { InboundItem } from "../../communication/collectives/inbound.js";
 import {
   type CollectiveValue,
@@ -59,6 +55,11 @@ import {
   projectFeedback,
 } from "../evaluator/index.js";
 import { type CheckedGuidance, FirewallSendError } from "../outcome/index.js";
+import {
+  type FirewallConfiguration,
+  type FirewallInstallation,
+  withoutTraces,
+} from "./firewall-values.js";
 
 // safer-arch-ignore file-implicit-boundary-module: Outgoing and incoming admission share this one projection and assessment pipeline; admission/index.ts exposes only the installation and its admission ports.
 
@@ -271,12 +272,9 @@ export const assess = Effect.fn("assessMessage")(function* (
     completion: {
       checkId,
       admit,
-      canonicalResult: yield* encodeRuntimeValue({
-        ...projection.result,
-        checks: projection.result.checks.map((check) =>
-          Struct.omit(check, "trace"),
-        ),
-      }),
+      canonicalResult: yield* encodeRuntimeValue(
+        withoutTraces(projection.result),
+      ),
       ...(input.terminal && mode === "guidance"
         ? ({ shadow: true } as const)
         : {}),

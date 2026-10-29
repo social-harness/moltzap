@@ -5,10 +5,6 @@ import { ProtocolError } from "@modelcontextprotocol/server";
 import { type Clock, Effect, Schema, type Scope } from "effect";
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import {
-  InboundItem,
-  retainedInboundItem,
-} from "../../communication/collectives/inbound.js";
-import {
   retryPending,
   retrySettled,
 } from "../../communication/conversations/index.js";
@@ -17,7 +13,6 @@ import {
   DeliveryToken,
   encodeRuntimeValue,
 } from "../../communication/store/index.js";
-import { localGuidanceSchema } from "../../firewall/outcome/index.js";
 import {
   callbackReasons,
   type EventSubscribeInput,
@@ -34,7 +29,7 @@ import {
   type WebhookFailureReason,
   webhookUrl,
 } from "./event-signing.js";
-import { boundItemEvent, makeItemEvent } from "./item.js";
+import { makeItemEvent } from "./item.js";
 
 const maximumRetryDelay = 5 * 60_000;
 const maximumLease = 24 * 60 * 60_000;
@@ -60,53 +55,6 @@ const registrationSchema = Schema.Struct({
 const stateSchema = Schema.Struct({
   registration: Schema.NullOr(registrationSchema),
 });
-const eventEnvelope = {
-  eventId: Schema.String,
-  name: Schema.Literal(INBOX_ITEM_EVENT),
-  timestamp: Schema.String,
-  cursor: Schema.Null,
-};
-const eventData = {
-  kind: Schema.Literal("item"),
-  guidance: Schema.optional(localGuidanceSchema),
-};
-const retainedItemEvent = Schema.parseJson(
-  Schema.Struct({
-    ...eventEnvelope,
-    data: Schema.Struct({ ...eventData, item: retainedInboundItem }),
-  }),
-);
-const currentItemEvent = Schema.parseJson(
-  Schema.Struct({
-    ...eventEnvelope,
-    data: Schema.Struct({ ...eventData, item: InboundItem }),
-  }),
-);
-
-/** Only historical withheld refusals require new durable callback bytes. */
-const retainedOccurrenceBody = (body: string) =>
-  Schema.decodeUnknown(currentItemEvent)(body).pipe(
-    Effect.as(body),
-    Effect.orElse(() =>
-      Schema.decodeUnknown(retainedItemEvent)(body).pipe(
-        Effect.map((event) =>
-          JSON.stringify(
-            boundItemEvent(
-              event,
-              Buffer.byteLength(JSON.stringify(event.data.item), "utf8") +
-                (event.data.guidance === undefined
-                  ? 0
-                  : Buffer.byteLength(
-                      JSON.stringify(event.data.guidance),
-                      "utf8",
-                    )),
-            ),
-          ),
-        ),
-      ),
-    ),
-    Effect.orElseSucceed(() => body),
-  );
 const challengeSchema = Schema.parseJson(
   Schema.Struct({ challenge: Schema.String }),
 );
@@ -560,16 +508,7 @@ const prepareOccurrence = (runtime: WebhookRuntime) =>
       }
       const registration = yield* removeRetiredOccurrence(runtime, current);
       if (registration.outbox !== null) {
-        const body = yield* retainedOccurrenceBody(registration.outbox.body);
-        if (body === registration.outbox.body) {
-          return registration;
-        }
-        const next = {
-          ...registration,
-          outbox: { ...registration.outbox, body },
-        };
-        yield* save(runtime, next);
-        return next;
+        return registration;
       }
       const page = yield* runtime.store
         .readInbox({ limit: 1 })
