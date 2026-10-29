@@ -42,11 +42,10 @@ the document's structure.
   decision evidence where it helps, while keeping investigation history in
   its owning record.
 
-Use these forms where readers need them. A README helps readers choose a
-path and may link to all four. A short definition or example can orient a
-reference reader. Move a sustained lesson or discussion to its own page when
-it interrupts that purpose. Create pages for actual needs rather than four
-pages for every feature.
+Use these forms where readers need them. A short definition or example can
+orient a reference reader. Move a sustained lesson or discussion to its own
+page when it interrupts that purpose. Create pages for actual needs rather
+than four pages for every feature.
 
 ## Choose the source of truth
 
@@ -234,6 +233,55 @@ and what remains unverified. Use context the owner already supplied.
 - Daemon setup and first messages serve different needs. Keep installation,
   registration, recovery, and diagnostics in the how-to. Put the guided
   send-and-read exercise in a tutorial that links to that setup.
+
+## Write a README
+
+A README helps someone understand what they have found, decide whether it
+fits their task, and begin using or changing it. Identify who arrives at this
+page and what they already know. A package reader may arrive directly from
+npm without seeing the repository's introduction.
+
+For software users, establish the purpose and a concrete use before presenting
+detailed choices. Show an ordinary supported interaction early, including its
+result. A short example, transcript, or diagram can make the contribution of
+the software clear. State the prerequisites an example assumes and link to
+their setup. Call it a quickstart only when it gives a complete path to the
+promised result.
+
+Choose a recommended starting path and explain alternatives by the needs
+they serve. Put status or limits that affect adoption beside that choice.
+
+Scope the README to its audience:
+
+| Location | Reader needs |
+| --- | --- |
+| Project root | Understand the problem, see the project in use, and choose a starting path. |
+| Library or adapter package | Understand what this package adds, install it, and use its public interface in the required host or environment. |
+| Service or image | Understand what runs, supply its prerequisites, start it, and recognize a healthy result. |
+| Source directory | Find context needed to change this area that clear code and existing documentation do not supply. Remove a README that only inventories files or repeats enforced rules. |
+
+Use headings that promise what their sections deliver. An installation section
+provides installation instructions or clearly identified routes to them. Keep
+contributor setup distinct from using a published artifact. Link to the owning
+guides and reference for complete procedures and contracts. Keep enough
+context on the page for its intended reader to understand the purpose and
+next step.
+
+Read successful examples selectively. [Zod](https://github.com/colinhacks/zod/blob/main/packages/zod/README.md#what-is-zod)
+connects schema, input, and validated result. [Flask](https://github.com/pallets/flask/blob/main/README.md#a-simple-example)
+shows a small application and how it starts. [uv](https://github.com/astral-sh/uv/blob/main/README.md#features)
+shows commands and results for named tasks. The
+[MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/README.md)
+separates client and server starting paths. Borrow the technique that serves
+our reader and apply the existing prose and distillation principles.
+
+For reader review, ask someone arriving directly at the README to explain its
+subject and choose the next action. When the README includes a usage example,
+have them identify its starting conditions and result. For a promised
+quickstart, follow through to that result. A source-directory reader should
+be able to use the context to guide a code change. Check links and examples
+in the places the README appears, including GitHub and package registries.
+Verify that published links work as well as local paths.
 
 ## Site pages
 
