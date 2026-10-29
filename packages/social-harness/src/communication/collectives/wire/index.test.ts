@@ -106,6 +106,30 @@ describe("collective content round trip", () => {
   });
 });
 
+describe("collective timestamps", () => {
+  it.each([0, -1, 8_640_000_000_000_001])(
+    "rejects the invalid request deadline %s",
+    (deadlineAt) => {
+      expect(decodes({ ...gather, deadlineAt })).toBe(false);
+    },
+  );
+
+  it.each([0, 8_640_000_000_000_000])(
+    "accepts the completion timestamp %s",
+    (closedAt) => {
+      expect(
+        decodes({
+          kind: "close",
+          id: collectiveId,
+          included: [],
+          closedAt,
+          closedBy: "settled",
+        }),
+      ).toBe(true);
+    },
+  );
+});
+
 // @agent-code-guard/regression-only: examples pin the closed operation and response wire grammar.
 describe("collective value grammar", () => {
   it("accepts a multicast operation with only its discriminants", () => {

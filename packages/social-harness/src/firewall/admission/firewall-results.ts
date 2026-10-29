@@ -416,7 +416,15 @@ function countedAnswers(
     const outcome = item.outcomes.find(
       (candidate) => agentAddressOf(candidate.member) === answer.member,
     );
-    return outcome === undefined ? [] : [{ ...answer, ...outcome }];
+    return outcome === undefined
+      ? []
+      : [
+          {
+            member: outcome.member,
+            recordHash: answer.recordHash,
+            outcome: outcome.outcome,
+          },
+        ];
   });
 }
 

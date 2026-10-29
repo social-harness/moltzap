@@ -23,8 +23,12 @@ import { encodeCanonical } from "../../encoding/canonical-json.js";
 import { canonicalMessageAddress } from "../conversations/address.js";
 import { SendError } from "../conversations/errors.js";
 import { InboundMessage } from "../conversations/message.js";
-import { agentNameOf, type MessageAddressInput } from "../records/index.js";
-import { agentAddressOf } from "../records/values.js";
+import {
+  agentNameOf,
+  type MessageAddressInput,
+  type RecordHash,
+} from "../records/index.js";
+import { type AgentAddress, agentAddressOf } from "../records/values.js";
 import { encodeRuntimeValue, EndpointStoreError } from "../store/index.js";
 import {
   applyClose,
@@ -874,25 +878,28 @@ function recordCountedAnswer(
       Effect.uninterruptible(
         Effect.gen(function* () {
           const { message } = post;
+          const member = open.members.find(
+            (candidate) => candidate.agentId === message.sender.agentId,
+          );
           if (
             state.gathers.get(value.id) !== open ||
             !answeredInConversation(open, message) ||
-            !open.members.some(
-              (member) => member.agentId === message.sender.agentId,
-            ) ||
-            open.outcomes.has(agentAddressOf(message.sender))
+            member === undefined ||
+            open.outcomes.has(agentAddressOf(member))
           ) {
             return;
           }
-          if (!(yield* retainCountedAnswer(state, open, post, value.id))) {
+          const answer = {
+            operationId: value.id,
+            member: agentAddressOf(member),
+            recordHash: post.recordHash,
+          };
+          if (!(yield* retainCountedAnswer(state, open, answer))) {
             return;
           }
           const outcome = yield* outcomeOfResponse(open.requestedSchema, value);
-          open.outcomes.set(agentAddressOf(message.sender), outcome);
-          open.answerHashes.set(
-            agentAddressOf(message.sender),
-            post.recordHash,
-          );
+          open.outcomes.set(answer.member, outcome);
+          open.answerHashes.set(answer.member, answer.recordHash);
         }),
       ),
     )
@@ -1013,14 +1020,17 @@ function finishGather(
 function retainCountedAnswer(
   state: CollectiveState,
   open: OpenGather,
-  post: CertifiedPost,
-  id: CollectiveId,
+  answer: {
+    readonly operationId: CollectiveId;
+    readonly member: AgentAddress;
+    readonly recordHash: RecordHash;
+  },
 ) {
   return Effect.gen(function* () {
     if (state.recovering) {
       return (
-        state.counted.get(id)?.get(agentAddressOf(post.message.sender)) ===
-        post.recordHash
+        state.counted.get(answer.operationId)?.get(answer.member) ===
+        answer.recordHash
       );
     }
     if ((yield* Clock.currentTimeMillis) >= open.deadlineAt) {
@@ -1029,12 +1039,8 @@ function retainCountedAnswer(
     return (
       (yield* durableEmit(
         state,
-        state.ports.store.recordCollectiveAnswer({
-          operationId: id,
-          member: agentAddressOf(post.message.sender),
-          recordHash: post.recordHash,
-        }),
-      )) === post.recordHash
+        state.ports.store.recordCollectiveAnswer(answer),
+      )) === answer.recordHash
     );
   });
 }

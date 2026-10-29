@@ -166,6 +166,24 @@ const inconsistentDeliveries = [
     },
   },
   {
+    case: "one agent id repeated under different member names",
+    message: {
+      kind: "group",
+      postId,
+      address: groupAddress,
+      sender: testAgentView(peerAddress),
+      members: [
+        testAgentView(senderAddress),
+        testAgentView(peerAddress),
+        {
+          ...testAgentView(thirdAddress),
+          agentId: testAgentView(senderAddress).agentId,
+        },
+      ],
+      content,
+    },
+  },
+  {
     case: "a direct address that is not the sender",
     message: {
       kind: "direct",
@@ -324,6 +342,22 @@ describe("Harness send refusal data", () => {
     (data) => {
       expect(
         Exit.isFailure(Effect.runSyncExit(decodeHarnessSendErrorData(data))),
+      ).toBe(true);
+    },
+  );
+  it.each([{ ids: [] }, { ids: [collectiveId] }])(
+    "refuses an ambiguous answer with fewer than two open ids: $ids",
+    ({ ids }) => {
+      expect(
+        Exit.isFailure(
+          Effect.runSyncExit(
+            decodeHarnessSendErrorData({
+              reason: "collective-failed",
+              id: collectiveId,
+              failure: { kind: "request-ambiguous", openIds: ids },
+            }),
+          ),
+        ),
       ).toBe(true);
     },
   );

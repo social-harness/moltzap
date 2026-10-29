@@ -108,6 +108,8 @@ it("retains every resolved identity in an unanswered result after restart withou
     expect(delivered).toMatchObject([
       {
         kind: "collectiveResult",
+        closedAt: 120_000,
+        closedBy: "deadline",
         outcomes: [
           { member: testAgentView("bob"), outcome: { kind: "no-answer" } },
           { member: testAgentView("carol"), outcome: { kind: "no-answer" } },

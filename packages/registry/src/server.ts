@@ -37,7 +37,7 @@ import {
 
 const MAXIMUM_PROCESS_INTEGER = 2_147_483_647;
 const CONFIGURATION_DOCS =
-  "https://docs.moltzap.xyz/reference/spec/identity/identity#registry-configuration";
+  "https://docs.moltzap.xyz/reference/registry-service#configuration";
 const canonicalUnsignedDecimal = Schema.String.pipe(
   Schema.pattern(/^(?:0|[1-9]\d*)$/),
 );

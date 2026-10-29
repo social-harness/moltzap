@@ -492,6 +492,12 @@ it.each([
     input: () => Effect.succeed(new TextEncoder().encode("{")),
   },
   {
+    name: "a missing retained peer identity",
+    input: (
+      input: Effect.Effect.Success<typeof makeRetainedCheckFixture>["input"],
+    ) => encodeRuntimeValue({ ...input, agents: [] }),
+  },
+  {
     name: "an extra context field",
     input: (
       input: Effect.Effect.Success<typeof makeRetainedCheckFixture>["input"],

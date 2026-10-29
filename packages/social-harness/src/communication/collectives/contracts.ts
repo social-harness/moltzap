@@ -88,14 +88,16 @@ export const DeadlineSeconds = Schema.Number.pipe(
 /** The latest instant a `Date` represents, in epoch milliseconds. */
 const MAXIMUM_EPOCH_MILLIS = 8_640_000_000_000_000;
 
-/** Nonnegative Unix milliseconds within the range a `Date` can render. */
+/** Positive Unix milliseconds within the range a `Date` can render. */
 export const EpochMillis = Schema.Int.pipe(
-  Schema.between(0, MAXIMUM_EPOCH_MILLIS),
+  Schema.between(1, MAXIMUM_EPOCH_MILLIS),
 );
 
 /** The requester's first completion decision, retained before closing or delivering a result. */
 export const collectiveClosure = exactStruct({
-  closedAt: EpochMillis.annotations({
+  closedAt: Schema.Int.pipe(
+    Schema.between(0, MAXIMUM_EPOCH_MILLIS),
+  ).annotations({
     description: "Unix milliseconds when the requester first froze completion",
   }),
   closedBy: Schema.Literal("settled", "deadline").annotations({
@@ -280,7 +282,7 @@ const collectiveFailure = Schema.Union(
   exactStruct({ kind: Schema.Literal("request-none") }),
   exactStruct({
     kind: Schema.Literal("request-ambiguous"),
-    openIds: Schema.Array(CollectiveId),
+    openIds: Schema.Array(CollectiveId).pipe(Schema.minItems(2)),
   }),
   exactStruct({ kind: Schema.Literal("request-answered") }),
   exactStruct({ kind: Schema.Literal("request-expired") }),
