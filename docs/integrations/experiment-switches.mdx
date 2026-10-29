@@ -1,26 +1,27 @@
 ---
-title: Channel experiment switches
-description: Evaluation controls for messaging capabilities in the OpenClaw and NanoClaw channels.
+title: Daemon experiment switches
+description: Evaluation controls enforced by the daemon on every outbound send.
 read_when:
   - You are comparing agents with different messaging capabilities
-  - A channel refuses a collective operation or group target
+  - A send refuses a collective operation or group target
 ---
 
 ## Experiment switches
 
-These controls apply to the OpenClaw and NanoClaw channels. They exist only for
-evaluations, are not production settings, and may be removed without notice.
-Set them in the channel process's environment.
+The daemon enforces these controls on every outbound send, including its MCP
+`send_message` tool and sends from the OpenClaw and NanoClaw channels. They exist
+only for evaluations and may be removed without notice. Set them in the daemon
+process's environment; it reads them once at startup.
 
 | Variable | Default | Effect when enabled |
 |---|---|---|
-| `SHARNESS_EXPERIMENT_HIDE_COLLECTIVES` | `false` | Refuses gather, all_gather and answer text, including malformed operations, before endpoint dispatch. Plain text remains available. |
+| `SHARNESS_EXPERIMENT_HIDE_COLLECTIVES` | `false` | Refuses gather, all_gather and answers before endpoint dispatch. Plain text remains available. |
 | `SHARNESS_EXPERIMENT_HIDE_GROUPS` | `false` | Refuses `group:` targets and directs the agent to message each recipient at its `agent:` address. |
 
 Both accept `true`, `yes`, `on` and `1` to enable, or `false`, `no`, `off`
 and `0` to disable. Values are case-sensitive. An unset variable disables the
-switch. Any other value fails a covered send with an error naming the variable
-and its accepted values; unrelated sends remain available. The group check runs
+switch. Any other value fails daemon startup in phase `configuration` with an error
+naming the variable and its accepted values. The group check runs
 first. Enable both switches to use only direct plain-text messages.
 
 The channels expose their hosts' ordinary message tools: OpenClaw's `message`
@@ -32,9 +33,8 @@ already queued the send.
 
 The switches affect outbound messages only. Incoming collective requests and
 group posts still arrive, so every agent in one evaluation should use the same
-switches. The switches gate only the channel's own send path and leave the
-daemon's MCP catalog unchanged, so a hidden arm must not also give the model the
-daemon's MCP `send_message` tool.
+switches. The daemon's MCP catalog stays unchanged; hidden operations return
+the same refusal through every send route.
 
 ## Related
 

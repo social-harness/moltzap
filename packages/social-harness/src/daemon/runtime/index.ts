@@ -4,6 +4,7 @@
  */
 
 import { Cause, Deferred, Effect, Option, Queue, Scope } from "effect";
+import type { SendInput } from "../../communication/collectives/forms.js";
 import type {
   EndpointStore,
   EndpointStoreError,
@@ -12,10 +13,15 @@ import type { InstalledFirewall } from "../../firewall/index.js";
 import type { HistoryExportPort } from "../../harness/inbox/history-export.js";
 import type { HarnessMcpEventHandler } from "../../harness/mcp/index.js";
 import type { VerifiedAgentCard } from "../../identity/cards.js";
-import type { DaemonBootstrap } from "../bootstrap.js";
+import type {
+  DaemonBootstrap,
+  DaemonProcessConfiguration,
+} from "../bootstrap.js";
 import type { DaemonRegistrationState } from "../registration/index.js";
 import { CollectiveEmitError } from "../../communication/collectives/index.js";
+import { SendError } from "../../communication/conversations/errors.js";
 import { Router } from "../../communication/router/index.js";
+import { ChannelFeatureUnavailableError } from "../../harness/endpoint/channel-message.js";
 import {
   type HostDelivery,
   makeHostDelivery,
@@ -447,6 +453,40 @@ export const makeDaemon = (
     });
   }).pipe(Effect.withSpan("makeDaemon"));
 
+/**
+ * Refuse hidden capabilities before any send dispatch, with groups taking precedence.
+ * @param configuration The switches captured at daemon startup.
+ * @param input The semantic send supplied by any daemon caller.
+ * @returns Admission or the ordinary send refusal preserving the experiment diagnostic.
+ */
+function checkExperimentSend(
+  configuration: DaemonProcessConfiguration,
+  input: SendInput,
+): Effect.Effect<void, SendError> {
+  let feature: ChannelFeatureUnavailableError["feature"] | undefined;
+  if (configuration.hideGroups && input.to.startsWith("group:")) {
+    feature = "groups";
+  } else if (configuration.hideCollectives && isCollectiveSend(input)) {
+    feature = "collectives";
+  }
+  return feature === undefined
+    ? Effect.void
+    : Effect.fail(
+        new SendError({
+          reason: "content-invalid",
+          detail: new ChannelFeatureUnavailableError({ feature }).detail,
+        }),
+      );
+}
+
+function isCollectiveSend(input: SendInput): boolean {
+  return (
+    "collectiveResponse" in input ||
+    input.collective?.op === "gather" ||
+    input.collective?.op === "all_gather"
+  );
+}
+
 function daemonDelivery(
   input: DaemonInput,
   state: DaemonState,
@@ -455,10 +495,19 @@ function daemonDelivery(
   return makeHostDelivery({
     store: input.store,
     historyExport: input.historyExport,
-    collectives: () =>
-      state.identity.kind === "running"
-        ? state.identity.protocol.collectives
-        : undefined,
+    collectives: () => {
+      if (state.identity.kind !== "running") {
+        return undefined;
+      }
+      const { collectives } = state.identity.protocol;
+      return {
+        ...collectives,
+        send: (request, failureDelivery) =>
+          checkExperimentSend(input.bootstrap.configuration, request).pipe(
+            Effect.zipRight(collectives.send(request, failureDelivery)),
+          ),
+      };
+    },
     ...(input.firewall === undefined
       ? {}
       : {

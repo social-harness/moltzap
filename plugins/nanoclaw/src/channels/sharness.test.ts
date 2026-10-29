@@ -5,7 +5,6 @@ import {
   type acquireHarnessEndpoint,
   ChannelFeatureUnavailableError,
   ConnectError,
-  ExperimentSwitchInvalidError,
   type HarnessEndpoint,
   type InboundDelivery,
   InboundItem,
@@ -126,8 +125,6 @@ beforeEach(async () => {
   vi.resetModules();
   boundary.register.mockClear();
   boundary.acquire.mockReset();
-  vi.stubEnv("SHARNESS_EXPERIMENT_HIDE_COLLECTIVES", undefined);
-  vi.stubEnv("SHARNESS_EXPERIMENT_HIDE_GROUPS", undefined);
   vi.stubEnv("SHARNESS_MCP_URL", "http://127.0.0.1:8321/mcp");
   await import("./sharness.js");
   expect(boundary.register).toHaveBeenCalledWith("sharness", expect.anything());
@@ -493,69 +490,25 @@ it.each(["hello", { text: "hello" }])(
   },
 );
 
-it.each([
-  {
-    variable: "SHARNESS_EXPERIMENT_HIDE_GROUPS",
-    value: "true",
-    to: GROUP,
-    text: "hello",
-    refusal: new ChannelFeatureUnavailableError({ feature: "groups" }).message,
-  },
-  {
-    variable: "SHARNESS_EXPERIMENT_HIDE_GROUPS",
-    value: "sometimes",
-    to: GROUP,
-    text: "hello",
-    refusal: new ExperimentSwitchInvalidError({
-      variable: "SHARNESS_EXPERIMENT_HIDE_GROUPS",
-    }).message,
-  },
-  ...[
-    JSON.stringify({ gather: QUESTION, deadline: 60, requestedSchema: FORM }),
-    JSON.stringify({
-      all_gather: QUESTION,
-      deadline: 60,
-      requestedSchema: FORM,
-    }),
-    '{"action":"decline"}',
-    '{"action":"cancel"}',
-    '{"gather":"Which day?","deadline":0}',
-  ].map((text) => ({
-    variable: "SHARNESS_EXPERIMENT_HIDE_COLLECTIVES",
-    value: "true",
-    to: GROUP,
-    text,
-    refusal: new ChannelFeatureUnavailableError({ feature: "collectives" })
-      .message,
-  })),
-])(
-  "reports the shared refusal for $variable=$value and still sends direct text: $text",
-  async ({ variable, value, to, text, refusal }) => {
-    vi.stubEnv(variable, value);
-    const fake = makeEndpoint();
-    const host = makeHost();
-    const channel = await createAdapter();
-    await channel.setup(host);
-
-    await expect(
-      channel.deliver(to, null, { kind: "chat", content: text }),
-    ).resolves.toBeUndefined();
-    expect(fake.send).not.toHaveBeenCalled();
-    const event = host.onInboundEvent.mock.calls[0]?.[0];
-    if (event === undefined) {
-      throw new Error("Host did not receive the refusal");
-    }
-    expect(eventContent(event).text).toBe(refusal);
-    await channel.deliver("agent:alice", null, {
-      kind: "chat",
-      content: "hello",
-    });
-    expect(fake.send).toHaveBeenCalledExactlyOnceWith(
-      { to: "agent:alice", text: "hello" },
-      { failureDelivery: "inbound" },
-    );
-  },
-);
+it("reports the daemon's experiment refusal unchanged to the agent", async () => {
+  const refusal = new SendError({
+    reason: "content-invalid",
+    detail: new ChannelFeatureUnavailableError({ feature: "groups" }).detail,
+  });
+  const fake = makeEndpoint();
+  fake.send.mockReturnValue(Effect.fail(refusal));
+  const host = makeHost();
+  const channel = await createAdapter();
+  await channel.setup(host);
+  await expect(
+    channel.deliver(GROUP, null, { kind: "chat", content: "hello" }),
+  ).resolves.toBeUndefined();
+  const event = host.onInboundEvent.mock.calls[0]?.[0];
+  if (event === undefined) {
+    throw new Error("Host did not receive the refusal");
+  }
+  expect(eventContent(event).text).toBe(refusal.message);
+});
 
 it.each([
   { to: GROUP, text: "hello", input: { to: GROUP, text: "hello" } },

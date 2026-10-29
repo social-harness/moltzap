@@ -86,9 +86,9 @@ path is:
     when it admitted the send with an uncertain norm judgment: a structured
     object with `checkId`, `subjects`, and `instructions`. Each instruction has
     `ruleId`, `uncertain` (`choice` and `probability`), and `instruction`, without
-    `middlewareId`. The reader applies the
+    `middlewareId`. The daemon enforces the
     [experiment switches](https://docs.moltzap.xyz/integrations/experiment-switches#experiment-switches)
-    that hide messaging capabilities during evaluations.
+    on every send to hide messaging capabilities during evaluations.
 
 The package also installs the agent skills that `@moltzap/social-harness` ships in
 [`skills/`](https://github.com/social-harness/moltzap/blob/main/packages/social-harness/skills):

@@ -5,9 +5,8 @@
  * operation, multicast by default or a gather or all_gather with its deadline
  * and schema; a response names the conversation whose open request it
  * answers, and may name that request's id. One parser reads either from a
- * message's text, and one reader applies the evaluation experiment switches
- * before it, so the native channel adapters accept the same text and refuse
- * hidden capabilities alike. Each
+ * message's text, so native channel adapters accept the same grammar. The
+ * daemon's experiment diagnostics name closed capabilities and settings. Each
  * inbound delivery carries one item plus transport-only acknowledgment: a multicast
  * with the certified direct or complete-group message, a collective request
  * naming the conversation it arrived in, a collective result, each naming
@@ -253,12 +252,7 @@ type ChannelMessageReaderIsExact = Expect<
     (
       to: MessageAddressInput,
       text: string,
-    ) => Effect.Effect<
-      SendInput,
-      | MessageTextError
-      | ChannelFeatureUnavailableError
-      | ExperimentSwitchInvalidError
-    >
+    ) => Effect.Effect<SendInput, MessageTextError>
   >
 >;
 type ChannelFeaturesAreExact = Expect<

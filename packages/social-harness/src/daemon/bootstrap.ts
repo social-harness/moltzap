@@ -34,6 +34,9 @@ export class DaemonConfigurationError extends Data.TaggedError(
 /** Exact non-secret values and redacted secret-file locations for one daemon. */
 export interface DaemonProcessConfiguration {
   readonly registration?: ManagementRegisterRequest;
+  /** Evaluation controls captured before the daemon accepts sends. */
+  readonly hideGroups?: boolean;
+  readonly hideCollectives?: boolean;
   readonly stateDirectory: string;
   readonly mcpPort: number;
   readonly registryOrigin: URL;

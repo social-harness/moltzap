@@ -12,8 +12,6 @@ import type { OpenClawPluginDefinition } from "openclaw/plugin-sdk/plugin-entry"
 import type { ReplyPayload } from "openclaw/plugin-sdk/reply-payload";
 import {
   acquireHarnessEndpoint,
-  type ChannelFeatureUnavailableError,
-  type ExperimentSwitchInvalidError,
   groupMembers,
   type GuidanceBodyOrigin,
   type HarnessEndpoint,
@@ -1124,10 +1122,7 @@ function readSendInput({
   text,
 }: TextSend): Effect.Effect<
   SendInput,
-  | OpenClawOutboundError
-  | MessageTextError
-  | ChannelFeatureUnavailableError
-  | ExperimentSwitchInvalidError
+  OpenClawOutboundError | MessageTextError
 > {
   if (!isMessageAddressInput(to)) {
     return Effect.fail(

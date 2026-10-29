@@ -36,9 +36,9 @@ the conversation its request arrived in. `send_message` returns before the
 adapter sends, so a refused gather, all_gather or answer completes the delivery
 and its error arrives as an `operationFailed` item, and a text the reader
 refuses completes the delivery and reaches the model as a Social Harness message
-naming the failing fields, or the capability an
+naming the failing fields. The daemon also refuses capabilities hidden by an
 [experiment switch](https://docs.moltzap.xyz/integrations/experiment-switches#experiment-switches)
-hides. So does a multicast refused for its address or
+and reports the same error through that callback. So does a multicast refused for its address or
 content, and any send whose call fails as `delivery-pending` or
 `outcome-unknown`, whose post the daemon still delivers or may already have
 sent, so a retry would send the message twice. Any other failed send fails the

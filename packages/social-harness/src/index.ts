@@ -53,7 +53,7 @@ export {
   MessageTextError,
   parseMessageText,
 } from "./communication/collectives/message-text.js";
-/** A native channel's send text read under the evaluation experiment switches. */
+/** Native-channel text parsing and daemon experiment diagnostics. */
 export {
   ChannelFeatureUnavailableError,
   ExperimentSwitchInvalidError,

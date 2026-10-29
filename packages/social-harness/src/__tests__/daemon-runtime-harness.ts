@@ -537,12 +537,17 @@ export const makeToolCallRequest = (
   input: Pick<McpRequestInput, "id" | "signal"> & {
     readonly name: string;
     readonly toolArguments: Readonly<Record<string, unknown>>;
+    readonly metadata?: Readonly<Record<string, unknown>>;
   },
 ): Request =>
   makeMcpRequest({
     id: input.id,
     method: "tools/call",
-    params: { name: input.name, arguments: input.toolArguments },
+    params: {
+      name: input.name,
+      arguments: input.toolArguments,
+      ...(input.metadata === undefined ? {} : { _meta: input.metadata }),
+    },
     headers: { "mcp-name": input.name },
     signal: input.signal,
   });

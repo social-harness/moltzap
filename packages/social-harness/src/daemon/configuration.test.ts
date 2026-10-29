@@ -409,3 +409,38 @@ describe("MCP credential configuration", () => {
 });
 
 /* eslint-enable agent-code-guard/no-hardcoded-assertion-literals -- Restore repository defaults. */
+
+/** Both settings share the same accepted-value table. */
+const experimentValues = [
+  { value: undefined, hidden: false },
+  { value: "false", hidden: false },
+  { value: "no", hidden: false },
+  { value: "off", hidden: false },
+  { value: "0", hidden: false },
+  { value: "true", hidden: true },
+  { value: "yes", hidden: true },
+  { value: "on", hidden: true },
+  { value: "1", hidden: true },
+];
+
+it.each(experimentValues)(
+  "loads both daemon experiment switches as $hidden for $value",
+  ({ value, hidden }) =>
+    Effect.gen(function* () {
+      const overrides =
+        value === undefined
+          ? new Map<string, string>()
+          : new Map([
+              ["SHARNESS_EXPERIMENT_HIDE_GROUPS", value],
+              ["SHARNESS_EXPERIMENT_HIDE_COLLECTIVES", value],
+            ]);
+      const configuration = yield* loadConfiguration(
+        temporaryDirectory(),
+        overrides,
+      );
+      expect(configuration).toMatchObject({
+        hideGroups: hidden,
+        hideCollectives: hidden,
+      });
+    }),
+);

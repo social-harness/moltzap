@@ -18,9 +18,10 @@ session, current chat, previous address, or history row supplies a default
 destination. A response's `to` is the conversation its request arrived in:
 the requester's for a gather and the group's for an all_gather.
 Native adapters build the send from the model's message text with Client's
-`readChannelMessage`, which applies the channel
+`readChannelMessage`, which parses the text with `parseMessageText`
+([message text](./client.md#message-text)). The daemon enforces the
 [experiment switches](../../integrations/experiment-switches.mdx#experiment-switches)
-and parses the text with `parseMessageText` ([message text](./client.md#message-text)).
+on every send.
 
 Address parsing and canonicalization follow `conversation-history.md`. Every
 new invocation creates new posts with fresh Client-minted opaque `PostId`s: one for a
@@ -68,16 +69,15 @@ belongs. The action returns `{ok: true, to}` once the send completes, with the
 check's `guidance` when the local firewall admitted the send with an uncertain
 norm judgment; the operation id stays with the endpoint, since the model has
 no use for it. A refusal reaches the model as the tool's error: the reader's
-message naming each failing field or the hidden capability, or the Client
-error's naming each unreachable member or failing field. `message.send.text`,
+message naming each failing field, or the daemon's error naming a hidden
+capability, each unreachable member or failing field. `message.send.text`,
 which serves sends OpenClaw's core makes itself, reads its text with the same
 reader.
 
 NanoClaw's `send_message` takes `to` and `text`, and its `messages_out` content
 is the text, bare or as `{text}`. The adapter reads the text with
-`readChannelMessage`, so the
-[experiment switches](../../integrations/experiment-switches.mdx#experiment-switches)
-apply to NanoClaw as they do to OpenClaw. `send_message` returns before the adapter sends, so the
+`readChannelMessage` and surfaces the daemon's experiment refusal unchanged as
+a Social Harness turn. `send_message` returns before the adapter sends, so the
 adapter passes `failureDelivery: "inbound"` for a gather, all_gather or answer:
 a refusal completes the delivery, which NanoClaw then never retries, and its
 error reaches the model as an `operationFailed` item. A text the reader refuses
