@@ -144,6 +144,10 @@ and what remains unverified. Use context the owner already supplied.
   registration still consumes its replay nonce belongs with that guarantee.
 - The Registry README summarized a linked guide's setup, health checks, and
   storage caveat. Keep the task link and let the guide carry the procedure.
+- TypeDoc showed signing inputs as unlinked type names. Its native
+  [`@inline` tag](https://typedoc.org/documents/Tags._inline.html) now renders
+  their fields from the source types. Keep caller constraints in JSDoc and
+  let the generator produce the field lists.
 
 ## Site pages
 
