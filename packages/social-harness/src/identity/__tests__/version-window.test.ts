@@ -16,7 +16,7 @@ import {
 } from "../../index.js";
 import { WireVersions } from "../wire-version.js";
 
-/** Reproduce the fixed signed bytes with node scripts/generate-wire-golden.ts after pnpm build. */
+/** Reproduce the fixed signed bytes with pnpm nx run workspace:generate-wire-golden. */
 const retainedVersion = "2099.101.0";
 
 it.each([

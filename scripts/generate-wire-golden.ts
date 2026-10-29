@@ -1,14 +1,17 @@
 /**
  * @file Rebuild synthetic retained-wire fixtures with deterministic test-only keys.
- * Run with Node after pnpm build: node scripts/generate-wire-golden.ts.
+ * Regenerate with pnpm nx run workspace:generate-wire-golden.
  */
 
 import { FileSystem } from "@effect/platform";
 import { NodeFileSystem } from "@effect/platform-node";
 import { Effect, Encoding, Redacted, Schema } from "effect";
 import { createHash } from "node:crypto";
-import { registerHooks } from "node:module";
 import { fileURLToPath } from "node:url";
+import {
+  AgentCardIssuedAt as agentCardIssuedAt,
+  issueAgentCard,
+} from "../packages/registry/dist/issuance.js";
 import {
   MessageId,
   SignedMessage,
@@ -31,18 +34,6 @@ import {
   WIRE_VERSION,
   WireVersions,
 } from "../packages/social-harness/dist/identity/wire-version.js";
-registerHooks({
-  resolve(specifier, context, nextResolve) {
-    return nextResolve(specifier, {
-      ...context,
-      conditions: [...context.conditions, "sharness-internal"],
-    });
-  },
-});
-
-const { AgentCardIssuedAt: agentCardIssuedAt, issueAgentCard } = await import(
-  "../packages/registry/dist/issuance.js"
-);
 
 /** Public deterministic seeds belong only to synthetic golden fixtures. */
 function testAuthority(byte: number) {
@@ -157,7 +148,7 @@ const generateCofactored = Effect.gen(function* () {
   );
   return {
     provenance:
-      "Synthetic cofactored-only Ed25519 evidence. Regenerate: node scripts/generate-wire-golden.ts after pnpm build.",
+      "Synthetic cofactored-only Ed25519 evidence. Regenerate: pnpm nx run workspace:generate-wire-golden.",
     registryKey: yield* Schema.encode(Ed25519PublicKey)(
       AgentSigningAuthority.publicKey(registryAuthority),
     ),
@@ -190,7 +181,7 @@ const generate = Effect.gen(function* () {
   });
   return {
     provenance:
-      "Synthetic signed retained-version fixture using fictional 2099.101.0; not captured from a published release. Regenerate: node scripts/generate-wire-golden.ts after pnpm build.",
+      "Synthetic signed retained-version fixture using fictional 2099.101.0; not captured from a published release. Regenerate: pnpm nx run workspace:generate-wire-golden.",
     registryKey: yield* Schema.encode(Ed25519PublicKey)(
       AgentSigningAuthority.publicKey(registryAuthority),
     ),

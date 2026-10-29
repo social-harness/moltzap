@@ -1,7 +1,7 @@
 /**
  * @file Fixed GENESIS and POST records keep canonical bytes and hashes and verify
  * under their synthetic retained wire policy, independently of the live reset.
- * Reproduce with node scripts/generate-client-record-golden.ts after pnpm build.
+ * Reproduce with pnpm nx run workspace:generate-client-record-golden.
  */
 
 import { live as it } from "@effect/vitest";

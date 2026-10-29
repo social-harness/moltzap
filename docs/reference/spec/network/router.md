@@ -544,12 +544,9 @@ negotiated resource limits, and network push transports.
 ## Process entries
 
 Direct composition through `@moltzap/router` or `@moltzap/router/server` requires
-`--conditions=sharness-internal`. The `sharness-router` executable installs a
-scoped internal-resolution hook before loading its process composition.
+the process conditions defined by
+[Library entries](../package-boundaries.md#library-entries).
+The `sharness-router` executable supplies its required condition at startup.
 
 `@moltzap/router/test` exports `startRouter` only under `sharness-test`. It accepts
-explicit emitted, live and history wire versions for process fixtures and installs
-the same hook. Only parents under the Router's built `dist/` and executable
-`bin/` directories receive `sharness-internal`; callers outside those directories,
-including nested dependencies under the package root, retain their original
-conditions and cannot resolve `@moltzap/social-harness/internal`.
+explicit emitted, live and history wire versions for process fixtures.

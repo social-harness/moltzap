@@ -287,7 +287,7 @@ function startRouter(
   authority: NetworkAuthority,
   routerPort: number,
 ): RunningProcess {
-  return startScript(
+  return startProgram(
     packageFile("@moltzap/router", "bin/sharness-router"),
     [],
     {
@@ -309,7 +309,7 @@ function startRegistry(
   postgresqlPort: number,
   keyFile: string,
 ): RunningProcess {
-  return startScript(
+  return startProgram(
     packageFile("@moltzap/registry", "bin/sharness-registry"),
     [],
     {

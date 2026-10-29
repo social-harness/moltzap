@@ -1,11 +1,7 @@
-#!/usr/bin/env node
+#!/usr/bin/env -S node --conditions=sharness-internal
 import { Console, Layer } from "effect";
-import { installInternalResolution } from "../dist/internal-resolution.js";
 import { runRegistryMain } from "../dist/main.js";
-
-installInternalResolution();
-
-const { layer, processHelp } = await import("../dist/server.js");
+import { layer, processHelp } from "../dist/server.js";
 
 const program = process.argv.includes("--help")
   ? Console.log(processHelp)

@@ -425,6 +425,5 @@ consumers and resolution conditions. The
 [API reference instructions](../../../guides/contributing.mdx#documentation)
 explain how to build the TypeScript reference and read caller guidance.
 
-Run the service through `sharness-registry`. Direct Node imports of the
-private Registry package require `--conditions=sharness-internal` to resolve
-its internal library dependencies.
+Run the service through `sharness-registry`. It supplies the process condition
+defined by [Library entries](../package-boundaries.md#library-entries).

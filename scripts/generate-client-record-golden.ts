@@ -1,6 +1,6 @@
 /**
- * @file Rebuild retained Client records after pnpm build:
- * node scripts/generate-client-record-golden.ts.
+ * @file Rebuild retained Client records:
+ * pnpm nx run workspace:generate-client-record-golden.
  * Two-member forms rebuild from retained signed inputs whose keys were not kept;
  * N4 forms sign under public deterministic test seeds. Neither fixture contains
  * production key material.
@@ -9,8 +9,11 @@
 import { FileSystem } from "@effect/platform";
 import { NodeFileSystem } from "@effect/platform-node";
 import { Effect, Redacted, Schema } from "effect";
-import { registerHooks } from "node:module";
 import { fileURLToPath } from "node:url";
+import {
+  AgentCardIssuedAt as agentCardIssuedAt,
+  issueAgentCard,
+} from "../packages/registry/dist/issuance.js";
 import {
   ActionCertifiedRecord,
   ActionCore,
@@ -47,19 +50,6 @@ import {
   SignedMessage,
 } from "../packages/social-harness/dist/index.js";
 import captured from "./client-record-golden-inputs.json" with { type: "json" };
-
-registerHooks({
-  resolve(specifier, context, nextResolve) {
-    return nextResolve(specifier, {
-      ...context,
-      conditions: [...context.conditions, "sharness-internal"],
-    });
-  },
-});
-
-const { AgentCardIssuedAt: agentCardIssuedAt, issueAgentCard } = await import(
-  "../packages/registry/dist/issuance.js"
-);
 
 const sharnessVersion = "2026.1021.3";
 const utf8 = new TextDecoder();

@@ -1009,7 +1009,7 @@ function managementOperations(client: Client): DaemonManagementClient {
   return management;
 }
 
-/** Child compositions receive wire sets through plain JavaScript under the test condition. */
+/** Child compositions select wire versions before their service imports resolve. */
 function launchCommand(
   service: "Registry" | "RouterServer" | "Daemon",
   versions: ProcessWireVersions,
@@ -1024,7 +1024,13 @@ function launchCommand(
   }
   return [
     process.execPath,
-    ["--conditions=sharness-test", "--input-type=module", "-e", script],
+    [
+      "--conditions=sharness-test",
+      ...(service === "Daemon" ? [] : ["--conditions=sharness-internal"]),
+      "--input-type=module",
+      "-e",
+      script,
+    ],
   ];
 }
 

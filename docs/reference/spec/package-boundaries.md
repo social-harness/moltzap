@@ -55,8 +55,18 @@ Runtime adapters import only the root and receive `HarnessEndpoint` or MCP.
 They do not import each other or the simulator and evaluation suites.
 
 The private Registry and Router packages expose condition-only `./test`
-startup entries under `sharness-test`. Their executables install scoped
-internal resolution before loading their process compositions.
+startup entries under `sharness-test`. Their executables start Node with
+`sharness-internal`. Direct Node launches must supply that condition too:
+
+```sh
+node --conditions=sharness-internal packages/router/bin/sharness-router --help
+```
+
+Test compositions require both `--conditions=sharness-test` and
+`--conditions=sharness-internal`. These conditions apply to every import in the
+process. Registry and Router run trusted service code and dependencies. Host
+processes start without the internal condition. An export condition controls
+module resolution; it does not isolate untrusted code within a process.
 
 ## Representation ownership
 

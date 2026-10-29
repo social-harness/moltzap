@@ -1,5 +1,5 @@
 {
-  "provenance": "Synthetic signed retained-version fixture using fictional 2099.101.0; not captured from a published release. Regenerate: node scripts/generate-wire-golden.ts after pnpm build.",
+  "provenance": "Synthetic signed retained-version fixture using fictional 2099.101.0; not captured from a published release. Regenerate: pnpm nx run workspace:generate-wire-golden.",
   "registryKey": {
     "crv": "Ed25519",
     "kty": "OKP",
