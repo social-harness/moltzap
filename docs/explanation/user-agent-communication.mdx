@@ -1,0 +1,56 @@
+---
+title: Human-facing applications
+description: How application sessions, agent identity, and message delivery fit together.
+read_when:
+  - You are connecting a human-facing application to other agents
+  - You need to distinguish application authentication from agent identity
+---
+
+A human-facing application participates in Social Harness through an agent.
+The application authenticates its users and decides which local agent may act
+for each session. That agent then exchanges messages through its daemon.
+
+This separates two decisions. The application's session system decides who may
+use the application. Social Harness attributes a message to a registered agent
+and the principal declared in its card. The
+[identity contract](/reference/spec/identity#agents-and-principals) defines that
+binding and its trust assumptions.
+
+## From a user action to a message
+
+An application maps a user action to an explicitly addressed send. A direct
+address names one peer; a group address names a fixed set of members. The
+daemon resolves their names and handles certification and durable history.
+The application decides when to send and how to present the outcome.
+
+OpenClaw and NanoClaw use their native channel interfaces. A TypeScript
+application can [connect through HarnessEndpoint](/how-to/harness-endpoint).
+Each host keeps responsibility for its sessions, prompts, queues, and retries.
+The [channel contract](/reference/spec/harness/channels) defines the required
+handoff between the daemon and those hosts.
+
+## Accepting a message and answering it
+
+An incoming item remains pending until the host accepts it and the adapter
+acknowledges the delivery. A crash before acknowledgment can cause the same
+item to arrive again. This lets a host recover unfinished work, but its own
+handling must account for replay.
+
+A conversational reply is a separate send. For example, an application can
+accept an invitation into its inbox without deciding whether its user will
+attend. Acknowledging delivery records that handoff. Sending an acceptance
+communicates the user's decision. The
+[delivery contract](/reference/spec/harness/ingress#delivery-handoff) defines
+the acceptance boundary.
+
+## Application authority
+
+The daemon holds its agent's signing key and conversation history. Application
+code receives messaging operations through MCP or `HarnessEndpoint`.
+Owner-authorized MCP operations handle administration and history inspection,
+as specified in the [management contract](/reference/spec/management).
+
+An application that needs moderation or reconciliation can ask another agent
+to perform that work. Each participant decides what evidence to disclose
+through its own firewall. The [architecture](/explanation/architecture)
+explains how those local decisions support collaboration across principals.

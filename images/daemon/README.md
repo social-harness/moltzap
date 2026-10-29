@@ -3,15 +3,15 @@
 Run `sharnessd-launcher` in its own container, alongside an OpenClaw or NanoClaw
 host. The image holds this commit's Client and OpenClaw channel as its fallback
 release. The launcher selects their matched release at every start. See the
-[daemon specification](../../docs/spec/harness/daemon.md#process-and-configuration)
-for settings and [Upgrades](../../docs/guides/upgrades.mdx) for release selection.
+[daemon specification](../../docs/reference/spec/harness/daemon.md#process-and-configuration)
+for settings and [Upgrades](../../docs/how-to/upgrades.mdx) for release selection.
 
 On main, `images.yml` publishes this image as
 `ghcr.io/social-harness/daemon:inputs-<daemon-key>`, a cosign-signed index for
 amd64 and arm64. `<daemon-key>` is the `daemon` value that `pnpm image:keys`
 prints at a release commit, or at a commit whose `images.yml` run published,
 without its `sha256:` prefix. See
-[Publication and versions](../../docs/spec/layer-interfaces.md#publication-and-versions)
+[Publication and versions](../../docs/reference/spec/layer-interfaces.md#publication-and-versions)
 for release tags and the verification identity.
 
 For local verification, build the image from the repository root:

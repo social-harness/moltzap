@@ -117,7 +117,7 @@ Each page is exactly one type. Guides and quickstarts are how-tos.
   no artificial procedure or empty prerequisites section.
 - Every hand-written `.mdx` page ends with `## Related`: 3–6 root-relative
   links. These pages link to site pages, never to GitHub blob or tree URLs for
-  content the site has. The `docs/spec/*.md` pages,
+  content the site has. The `docs/reference/spec/*.md` pages,
   which readers also open on GitHub, are exempt from both rules.
 - Each step that runs a command says what success looks like: "You should see
   `<literal>`." Paste output only when the reader compares it line by line.
@@ -126,13 +126,8 @@ Each page is exactly one type. Guides and quickstarts are how-tos.
   delivered message, not a passing build.
 - `<Accordion title="Advanced: …">` holds optional detail. `<Warning>` is only
   for data loss or security. `<Note>` is for cross-links.
-- When a page splits, its old anchors keep working: keep each moved heading
-  on the original page with a link to its new home. A moved page path gets a
-  `docs.json` redirect.
-- The target `docs.json` layout is tabs that follow the reader's journey:
-  Get started → Guides → Concepts → Reference (specs, API) → Help. A PR
-  that changes navigation moves toward it; one that leaves navigation alone
-  is not held to it.
+- Choose a page's folder from [the documentation map](../../../docs/README.md).
+  Site navigation follows the same reader purposes.
 
 ### Voice and terminology
 

@@ -27,7 +27,7 @@ The Client root exports closed Effect Schemas and corresponding types for:
 - `readChannelMessage`, the native channels’ send-text reader, with its
   `ChannelFeatureUnavailableError` for an evaluation-hidden capability and
   `ExperimentSwitchInvalidError` for a switch value that is not a boolean
-  ([experiment switches](../../integrations/experiment-switches.mdx#experiment-switches));
+  ([experiment switches](../../experiment-switches.mdx#experiment-switches));
 - `InboundMessage`, `InboundItem` and `InboundDelivery`;
 - `HistoryExportRecord`, one line of the daemon's optional history export
   (`harness/daemon.md`); and
@@ -440,7 +440,7 @@ content limit; a send whose content does not fit fails with
 In native hosts, a model writes an operation as the whole text of an ordinary
 message. The OpenClaw and NanoClaw adapters read that text with
 `readChannelMessage`, which applies the channel
-[experiment switches](../../integrations/experiment-switches.mdx#experiment-switches)
+[experiment switches](../../experiment-switches.mdx#experiment-switches)
 and delegates text parsing to `parseMessageText`, so both accept the same text. Dot uses the structured
 semantic MCP input described in [Semantic send](./output.md#semantic-send).
 The native message grammar is:

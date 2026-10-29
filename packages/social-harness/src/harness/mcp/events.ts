@@ -399,7 +399,7 @@ const poll = (
     Effect.fail(
       new ProtocolError(
         -32014,
-        "Polling requires an authenticated daemon with an admitted inbox. Docs: https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/ingress.md#polling-consumer",
+        "Polling requires an authenticated daemon with an admitted inbox. Docs: https://github.com/social-harness/moltzap/blob/main/docs/reference/spec/harness/ingress.md#polling-consumer",
         { feature: "poll" },
       ),
     )

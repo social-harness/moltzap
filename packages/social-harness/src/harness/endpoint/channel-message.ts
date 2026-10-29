@@ -18,7 +18,7 @@ import {
 } from "../../communication/collectives/message-text.js";
 
 const DOCS =
-  "Docs: https://docs.moltzap.xyz/integrations/experiment-switches#experiment-switches";
+  "Docs: https://docs.moltzap.xyz/reference/experiment-switches#experiment-switches";
 
 /** A native channel send names a capability hidden for an evaluation. */
 export class ChannelFeatureUnavailableError extends Data.TaggedError(

@@ -1,7 +1,7 @@
 # Router package
 
 Extends the workspace-root `AGENTS.md`. The five-layer constitution in
-`docs/vision.md`, and `docs/spec/router.md` plus
+`docs/reference/constitution.md`, and `docs/reference/spec/router.md` plus
 the Router representation chapters govern this package.
 
 `@moltzap/router` owns opaque message delivery, the volatile global feed,
@@ -16,7 +16,7 @@ It never queries a product Ledger or privileged governance service.
 
 Preserve the admitted wire bytes, routes, bounds, authentication, ordering,
 typed failures, and process behavior unless their governing authority changes.
-Publication follows `docs/spec/layer-interfaces.md` → Publication and versions: this package stays private.
+Publication follows `docs/reference/spec/layer-interfaces.md` → Publication and versions: this package stays private.
 
 Run build, typecheck, test, integration, lint, and architecture checks through
 Nx:

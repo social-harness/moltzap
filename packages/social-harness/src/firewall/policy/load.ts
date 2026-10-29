@@ -62,11 +62,12 @@ const unavailableProvider: DecisionProvider = {
     Effect.fail(new DecisionProviderError({ reason: "configuration" })),
 };
 
-const POLICY_SPEC = "https://docs.moltzap.xyz/spec/harness/message-policy";
+const POLICY_SPEC =
+  "https://docs.moltzap.xyz/reference/spec/harness/message-policy";
 
 /** The message-firewall guide, whose troubleshooting entries policy failures link. */
 export const FIREWALL_GUIDE =
-  "https://docs.moltzap.xyz/guides/message-firewall";
+  "https://docs.moltzap.xyz/how-to/message-firewall";
 
 /** Each failure's operator text and the troubleshooting entry that matches it. */
 const failureMessages: Readonly<

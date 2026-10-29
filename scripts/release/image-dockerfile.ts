@@ -259,7 +259,7 @@ function serviceStage(line: string, service: string): boolean {
 
 function refuse(line: DockerLine): never {
   throw new ImageInputError({
-    message: `Unsupported Dockerfile form in ${line.file} line ${line.number}: ${line.text}. Docs: https://github.com/social-harness/moltzap/blob/main/docs/spec/layer-interfaces.md#unsupported-dockerfile-form`,
+    message: `Unsupported Dockerfile form in ${line.file} line ${line.number}: ${line.text}. Docs: https://github.com/social-harness/moltzap/blob/main/docs/reference/spec/layer-interfaces.md#unsupported-dockerfile-form`,
   });
 }
 
@@ -273,7 +273,7 @@ function ignorePattern(
     .replace(/\/$/u, "");
   if (/[[\]\\]/u.test(pattern)) {
     throw new ImageInputError({
-      message: `Unsupported .dockerignore pattern in ${file}: ${line}. Docs: https://github.com/social-harness/moltzap/blob/main/docs/spec/layer-interfaces.md#unsupported-dockerfile-form`,
+      message: `Unsupported .dockerignore pattern in ${file}: ${line}. Docs: https://github.com/social-harness/moltzap/blob/main/docs/reference/spec/layer-interfaces.md#unsupported-dockerfile-form`,
     });
   }
   const source = pattern

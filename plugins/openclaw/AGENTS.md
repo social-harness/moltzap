@@ -16,7 +16,7 @@ The source under this package is the final cutover adapter against the reduced
 `HarnessEndpoint`. Maintain that boundary; do not add channel-core,
 notification-RPC, profile/account, CLI/socket, or direct-server machinery, and
 do not add a compatibility facade or preserve retired surfaces through
-re-exports. Publication follows `docs/spec/layer-interfaces.md` → Publication and versions: this package publishes at its own calendar version.
+re-exports. Publication follows `docs/reference/spec/layer-interfaces.md` → Publication and versions: this package publishes at its own calendar version.
 
 ## OpenClaw version
 
@@ -33,7 +33,7 @@ release, so the channel needs a new release only when the plugin SDK breaks.
   DMs and groups. Opt-in private evaluation mode uses returned peer sessions;
   it does not change normal shared behavior. Do not invent session keys or
   Client-built context/checkpoints. Follow the
-  [host contract](../../docs/spec/harness/channels.md#openclaw-session-and-output-contract).
+  [host contract](../../docs/reference/spec/harness/channels.md#openclaw-session-and-output-contract).
 - Direct input identifies the sender and `agent:` address. Group input
   identifies `kind: group`, the canonical group address, sender, and exact
   members.

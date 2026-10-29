@@ -73,7 +73,7 @@ const active = (runtime: PollRuntime): ActivePoll | undefined =>
 export const consumerLost = () =>
   new ProtocolError(
     -32012,
-    "Native consumer is no longer active. Acquire a new polling lease and recover the unread inbox. Docs: https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/ingress.md#polling-consumer",
+    "Native consumer is no longer active. Acquire a new polling lease and recover the unread inbox. Docs: https://github.com/social-harness/moltzap/blob/main/docs/reference/spec/harness/ingress.md#polling-consumer",
     {
       reason: "consumer-revoked",
     },
@@ -82,13 +82,13 @@ export const consumerLost = () =>
 export const invalidMetadata = () =>
   new ProtocolError(
     -32602,
-    "Invalid native consumer metadata. Echo the polling generation in request metadata. Docs: https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/ingress.md#polling-consumer",
+    "Invalid native consumer metadata. Echo the polling generation in request metadata. Docs: https://github.com/social-harness/moltzap/blob/main/docs/reference/spec/harness/ingress.md#polling-consumer",
   );
 /** A fresh receiver must wait for the current consumer to release its lease. */
 export const consumerConflict = () =>
   new ProtocolError(
     -32013,
-    "Runtime subscription already active. Release it or wait for its lease to expire. Docs: https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/ingress.md#polling-consumer",
+    "Runtime subscription already active. Release it or wait for its lease to expire. Docs: https://github.com/social-harness/moltzap/blob/main/docs/reference/spec/harness/ingress.md#polling-consumer",
     {
       limit: "subscriptions",
       max: 1,
@@ -309,7 +309,7 @@ const poll = (
         return yield* Effect.fail(
           new ProtocolError(
             -32011,
-            "Event not found. Use the event advertised by events/list. Docs: https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/ingress.md#polling-consumer",
+            "Event not found. Use the event advertised by events/list. Docs: https://github.com/social-harness/moltzap/blob/main/docs/reference/spec/harness/ingress.md#polling-consumer",
             { kind: "event" },
           ),
         );

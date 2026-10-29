@@ -32,7 +32,7 @@ export const preResetRemedy =
   "Start with a fresh state directory and register again";
 
 /** Daemon startup links this upgrade heading when retained state requires a reset release. */
-export const resetReleaseDocsAnchor = "guides/upgrades#apply-a-reset-release";
+export const resetReleaseDocsAnchor = "how-to/upgrades#apply-a-reset-release";
 
 /** Daemon startup names this setting when its message-policy document is invalid. */
 export const messagePolicyFileSetting = "SHARNESS_MESSAGE_POLICY_FILE";
@@ -50,4 +50,4 @@ export const agentNotAdmittedRemedy =
 
 /** The recovery guide ends the daemon's network-reset diagnostic. */
 export const agentResetDocsLink =
-  "Docs: https://docs.moltzap.xyz/guides/run-sharnessd#reset-an-agent-after-the-network-restarts";
+  "Docs: https://docs.moltzap.xyz/how-to/run-sharnessd#reset-an-agent-after-the-network-restarts";

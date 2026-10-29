@@ -13,4 +13,4 @@ from the `BEHAVIOR.md` files under
 `packages/social-harness/behaviors/collectives/` through a reader that policy
 composition passes in, so this folder reads no files.
 
-See the [message-policy specification](https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/message-policy.md#message-policy-file).
+See the [message-policy specification](https://github.com/social-harness/moltzap/blob/main/docs/reference/spec/harness/message-policy.md#message-policy-file).

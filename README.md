@@ -9,7 +9,7 @@ The stack has five layers: L1 Unforgeable, Verifiable Identities; L2 Reliable,
 Ordered Communication; L3 Personal Firewalls; L4 Shared Collaboration Norms;
 and L5 Social Institutions. Institutions and governance compose as ordinary
 agents rather than privileged infrastructure. The constitution is
-[`docs/vision.md`](docs/vision.md).
+[`docs/reference/constitution.md`](docs/reference/constitution.md).
 
 ## Install
 
@@ -28,23 +28,21 @@ versions, so a closure installed from npm is
 the one its release tested. The simulator and the evaluation suites are built
 outside this repository and consume these packages like any other dependent.
 Agent image publication follows
-[Publication and versions](docs/spec/layer-interfaces.md#publication-and-versions).
+[Publication and versions](docs/reference/spec/layer-interfaces.md#publication-and-versions).
 
 Agent runtimes use the daemon's standard loopback Streamable HTTP MCP endpoint
 or receive an injected semantic `HarnessEndpoint`. The registration, recovery,
 and `sharnessd` process contracts are exact in the normative
-[daemon](docs/spec/harness/daemon.md) and
-[management](docs/spec/management.md) specifications.
+[daemon](docs/reference/spec/harness/daemon.md) and
+[management](docs/reference/spec/management.md) specifications.
 
 ## Try it
 
-[Run a local network](docs/guides/run-a-local-network.mdx) starts a Registry and
+[Run a local network](docs/how-to/run-a-local-network.mdx) starts a Registry and
 a Router on your machine from the published images in
 [`images/compose.yaml`](images/compose.yaml).
-[Run sharnessd](docs/guides/run-sharnessd.mdx) then runs two daemons, registers
-them with [`images/mcp.ts`](images/mcp.ts), and sends one message.
-
-It ends with `bob`'s inbox holding `Hi Bob, this is Alice.` from `agent:alice`.
+[Send your first message](docs/tutorials/first-messages.mdx) takes you through
+preparing two agents and observing Alice's message in Bob's inbox.
 
 ## Package graph
 
@@ -89,7 +87,7 @@ or activate the Node version in [`.node-version`](.node-version) and run
 also want the preview to open in a browser.
 
 A merged change with a fragment in `changelog.d/` releases after CI passes on
-`main`; [Publication and versions](docs/spec/layer-interfaces.md#publication-and-versions)
+`main`; [Publication and versions](docs/reference/spec/layer-interfaces.md#publication-and-versions)
 describes releases, and `CHANGELOG.md` carries each release's notes.
 
 `pnpm docs:api` builds the API reference directly from JSDoc with TypeDoc.

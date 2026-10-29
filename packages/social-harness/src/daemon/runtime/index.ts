@@ -92,7 +92,7 @@ interface DaemonInput extends DaemonStartup {
 
 /**
  * Binding is visible to management before protocol resources are ready.
- * See docs/spec/management.md and docs/spec/harness/daemon.md.
+ * See docs/reference/spec/management.md and docs/reference/spec/harness/daemon.md.
  */
 type DaemonIdentity =
   | { readonly kind: "unregistered" }

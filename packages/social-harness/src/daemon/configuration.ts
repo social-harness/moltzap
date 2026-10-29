@@ -134,7 +134,7 @@ export const processHelp = [
   "  Message policy: unset, no firewall; the decision-provider key applies only with it.",
   ...Object.values(configurationFields).map((field) => `  ${field.usage}`),
   "",
-  "Docs: https://docs.moltzap.xyz/spec/harness/daemon#process-and-configuration",
+  "Docs: https://docs.moltzap.xyz/reference/spec/harness/daemon#process-and-configuration",
 ].join("\n");
 
 /** The process settings' failures; message-policy failures carry their own messages. */
@@ -143,7 +143,7 @@ type ProcessConfigurationFailure = Exclude<
   MessagePolicyConfigurationFailure
 >;
 
-const RUN_SHARNESSD = "https://docs.moltzap.xyz/guides/run-sharnessd";
+const RUN_SHARNESSD = "https://docs.moltzap.xyz/how-to/run-sharnessd";
 
 /** A secret-file failure of the process settings. */
 type SecretFileFailure = Exclude<ProcessConfigurationFailure, "environment">;

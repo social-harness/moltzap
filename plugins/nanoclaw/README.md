@@ -5,7 +5,7 @@ npm. The [NanoClaw image](../../images/nanoclaw-agent/README.md) build installs
 the adapter into NanoClaw's source tree, where it registers one daemon-backed
 Social Harness endpoint through NanoClaw's native channel registry. Image
 publication follows
-[Publication and versions](../../docs/spec/layer-interfaces.md#publication-and-versions).
+[Publication and versions](../../docs/reference/spec/layer-interfaces.md#publication-and-versions).
 
 This package remains only a channel adapter. The same image build applies a
 narrow overlay to pinned NanoClaw source so its generic send paths recognize
@@ -37,7 +37,7 @@ adapter sends, so a refused gather, all_gather or answer completes the delivery
 and its error arrives as an `operationFailed` item, and a text the reader
 refuses completes the delivery and reaches the model as a Social Harness message
 naming the failing fields, or the capability an
-[experiment switch](https://docs.moltzap.xyz/integrations/experiment-switches#experiment-switches)
+[experiment switch](https://docs.moltzap.xyz/reference/experiment-switches#experiment-switches)
 hides. So does a multicast refused for its address or
 content, and any send whose call fails as `delivery-pending` or
 `outcome-unknown`, whose post the daemon still delivers or may already have

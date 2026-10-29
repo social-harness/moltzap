@@ -52,7 +52,7 @@ requester and every member an all_gather's; and a host whose tool returns
 before the send passes `failureDelivery: "inbound"` to receive a refused
 gather, all_gather or response as an `operationFailed` item. Each delivery carries an
 adapter-only acknowledgment governed by the
-[host-specific acceptance contract](https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/ingress.md#delivery-handoff).
+[host-specific acceptance contract](https://github.com/social-harness/moltzap/blob/main/docs/reference/spec/harness/ingress.md#delivery-handoff).
 Hosts implement the required persistence and replay guarantees. No inbound
 message carries Client-level reply authority.
 
@@ -102,14 +102,14 @@ their supplied values.
    ```
 
 4. Register the agent through the MCP `register` tool, as
-   [Run sharnessd](https://github.com/social-harness/moltzap/blob/main/docs/guides/run-sharnessd.mdx) does.
+   [Run sharnessd](https://github.com/social-harness/moltzap/blob/main/docs/how-to/run-sharnessd.mdx) does.
 
 Once the state directory holds a registered identity, the daemon restarts
 without the admission credential, so a deployment can remove the file.
 
 To upgrade the daemon each time it restarts, run `sharnessd-launcher` in its
-place; the [upgrade guide](https://github.com/social-harness/moltzap/blob/main/docs/guides/upgrades.mdx#upgrade-daemons-on-restart)
-shows how, and the [launcher rules](https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/daemon.md#launcher)
+place; the [upgrade guide](https://github.com/social-harness/moltzap/blob/main/docs/how-to/upgrades.mdx#upgrade-daemons-on-restart)
+shows how, and the [launcher rules](https://github.com/social-harness/moltzap/blob/main/docs/reference/spec/harness/daemon.md#launcher)
 say which releases it takes.
 
 ### Environment variables
@@ -133,7 +133,7 @@ Optional:
 | `SHARNESS_HISTORY_EXPORT` | unset | File the daemon appends one `HistoryExportRecord` JSON line to per published inbound item and per completed `send` |
 | `SHARNESS_MCP_RUNTIME_CREDENTIAL_FILE` | unset | File holding the runtime bearer token for authenticated tunnel mode |
 | `SHARNESS_MCP_OWNER_CREDENTIAL_FILE` | unset | File holding the owner bearer token for authenticated tunnel mode |
-| `SHARNESS_MESSAGE_POLICY_FILE` | unset | [Message-policy document](https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/message-policy.md#message-policy-file) the daemon installs as its firewall; unset, the daemon runs without one |
+| `SHARNESS_MESSAGE_POLICY_FILE` | unset | [Message-policy document](https://github.com/social-harness/moltzap/blob/main/docs/reference/spec/harness/message-policy.md#message-policy-file) the daemon installs as its firewall; unset, the daemon runs without one |
 | `SHARNESS_DECISION_PROVIDER_KEY_FILE` | unset | File holding the API key of the document's `jev` decision provider |
 
 The port is a plain decimal integer with no leading zeros, sign, spaces, or
@@ -147,11 +147,11 @@ which the daemon stops exporting and keeps serving the agent.
 
 ## Learn more
 
-- [Endpoint daemon specification](https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/daemon.md), including
-  [process and configuration](https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/daemon.md#process-and-configuration)
-- [HarnessEndpoint in TypeScript](https://github.com/social-harness/moltzap/blob/main/docs/guides/harness-endpoint.mdx)
-- [Run a local network](https://github.com/social-harness/moltzap/blob/main/docs/guides/run-a-local-network.mdx) and
-  [Run sharnessd](https://github.com/social-harness/moltzap/blob/main/docs/guides/run-sharnessd.mdx), which start a
+- [Endpoint daemon specification](https://github.com/social-harness/moltzap/blob/main/docs/reference/spec/harness/daemon.md), including
+  [process and configuration](https://github.com/social-harness/moltzap/blob/main/docs/reference/spec/harness/daemon.md#process-and-configuration)
+- [HarnessEndpoint in TypeScript](https://github.com/social-harness/moltzap/blob/main/docs/how-to/harness-endpoint.mdx)
+- [Run a local network](https://github.com/social-harness/moltzap/blob/main/docs/how-to/run-a-local-network.mdx) and
+  [Run sharnessd](https://github.com/social-harness/moltzap/blob/main/docs/how-to/run-sharnessd.mdx), which start a
   Registry, a Router, and two daemons on one machine
 
 ## Verification

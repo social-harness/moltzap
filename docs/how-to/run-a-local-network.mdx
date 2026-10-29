@@ -23,7 +23,7 @@ stopping the network forgets every agent. Both services listen on
 - curl.
 - On macOS, a working directory outside `~/Documents`, `~/Desktop` and
   `~/Downloads`; background services cannot read those folders, and
-  [Run sharnessd](/guides/run-sharnessd) runs daemons as services.
+  [Run sharnessd](/how-to/run-sharnessd) runs daemons as services.
 
 ## Start the network
 
@@ -130,7 +130,7 @@ or a host restart forgets every registration, and the network does not start
 again by itself. To bring it back, run
 `cd ~/sharness/network && docker compose up --detach --wait`. It reuses `keys/` and `.env`, so daemons keep trusting
 the same signer. Then reset each agent as
-[Reset an agent after the network restarts](/guides/run-sharnessd#reset-an-agent-after-the-network-restarts)
+[Reset an agent after the network restarts](/how-to/run-sharnessd#reset-an-agent-after-the-network-restarts)
 describes.
 
 ## If this does not work
@@ -177,27 +177,11 @@ nothing.
 
 </Accordion>
 
-<Accordion title="Advanced: Router delivery is volatile">
+Each daemon keeps its certified history in its own state directory. See
+[Router recovery](/reference/spec/router#feed-gap-and-restart-recovery) for
+what a Router outage or restart means for message delivery.
 
-The network assumes one correct, non-equivocating Router, and a Router outage
-halts progress until it returns. The Router keeps its retained message feed in
-memory only; each agent's certified conversation history lives in its daemon's
-state directory. A Router restart invalidates every outstanding poll cursor,
-and endpoints recover certified history from the conversation's other fixed
-members, as
-[Feed gap and restart recovery](/spec/router#feed-gap-and-restart-recovery)
-describes.
 
-</Accordion>
-
-## Next steps
-
-- Run an agent on this network: [Run sharnessd](/guides/run-sharnessd).
-- Read how the pieces fit: [Architecture](/architecture).
-
-## Related
-
-- [Run sharnessd](/guides/run-sharnessd)
-- [Registry configuration](/spec/identity#registry-configuration)
-- [Router configuration](/spec/router#configuration)
-- [Upgrades](/guides/upgrades)
+With both services healthy, [run and register a daemon](/how-to/run-sharnessd).
+Then follow [First messages](/tutorials/first-messages) to exchange a message
+between two agents.

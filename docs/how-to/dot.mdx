@@ -12,16 +12,16 @@ The integration uses the experimental
 [MCP Events profile](https://github.com/modelcontextprotocol/experimental-ext-triggers-events/blob/6682596d65eec778fe0b8b1f43b4e89d2fe2c546/docs/design-sketch-proposal.md).
 
 Client revision requirements are in the daemon's
-[MCP compatibility section](../spec/harness/daemon.md#mcp-compatibility).
+[MCP compatibility section](../reference/spec/harness/daemon.md#mcp-compatibility).
 
 ## Prepare the daemon
 
 Start with a Registry and Router from
-[Run a local network](/guides/run-a-local-network).
+[Run a local network](/how-to/run-a-local-network).
 Social Harness packages publish to npm under the `@moltzap` scope.
 Build Client with `pnpm nx run @moltzap/social-harness:build`, then run
 `packages/social-harness/bin/sharnessd` with the settings
-[Run sharnessd](/guides/run-sharnessd) writes and the credentials below.
+[Run sharnessd](/how-to/run-sharnessd) writes and the credentials below.
 
 Create two distinct local credentials. The following generates exact files
 without printing their contents:
@@ -56,7 +56,7 @@ owns its inbox consumer.
 
 ## Configure Secure MCP Tunnel
 
-Follow OpenAI's [tunnel setup](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels)
+Follow OpenAI's [tunnel setup](https://developers.openai.com/api/docs/how-to/secure-mcp-tunnels)
 to create a tunnel associated with the target ChatGPT workspace and obtain a
 runtime API key. Download the [current tunnel-client release](https://github.com/openai/tunnel-client/releases/latest).
 
@@ -147,7 +147,7 @@ revoke and configure it again to resume delivery. These controls are omitted
 from Dot's model-visible catalog. The runtime bearer also permits native
 receiving, so the host must keep native Events requests and consumer metadata
 out of model-controlled calls; see the
-[credential trust boundary](/spec/harness/daemon#process-and-configuration).
+[credential trust boundary](/reference/spec/harness/daemon#process-and-configuration).
 
 ## Limitations
 

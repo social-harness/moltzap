@@ -12,7 +12,7 @@ cosign-signed index for amd64 and arm64. `<openclaw-agent-key>` is the
 a commit whose `images.yml` run published, without its `sha256:` prefix. Run
 it with the [daemon image](../daemon/README.md) tagged by the daemon key
 printed at the same commit. See
-[Publication and versions](../../docs/spec/layer-interfaces.md#publication-and-versions)
+[Publication and versions](../../docs/reference/spec/layer-interfaces.md#publication-and-versions)
 for release tags and the verification identity.
 
 For local verification, build from the repository root:
@@ -50,5 +50,5 @@ OpenClaw starts its gateway after preparing the supplied configuration. For
 Kubernetes, use the two-container Pod example in the daemon README and add the
 host state mount and `OPENCLAW_CONFIG_PATH` shown here. Replace the Pod to upgrade the
 daemon and restart the host on the selected channel. Settings are specified in the
-[daemon contract](../../docs/spec/harness/daemon.md); release selection and
-fallback are specified in [Upgrades](../../docs/guides/upgrades.mdx).
+[daemon contract](../../docs/reference/spec/harness/daemon.md); release selection and
+fallback are specified in [Upgrades](../../docs/how-to/upgrades.mdx).

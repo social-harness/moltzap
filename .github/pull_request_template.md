@@ -15,5 +15,5 @@ Resolves #
 
 ## Contracts and changelog
 
-- [ ] A change to a public contract updates its page under `docs/spec/`.
+- [ ] A change to a public contract updates its page under `docs/reference/spec/`.
 - [ ] A user-visible change adds a fragment under `changelog.d/` (see `towncrier.toml`).

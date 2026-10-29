@@ -2,7 +2,7 @@
 
 Status: the constitution of the five-layer social harness on `main`.
 
-The public specifications are defined here and in `docs/spec/`.
+The public specifications are defined here and in `docs/reference/spec/`.
 
 ## Problem
 
@@ -92,7 +92,7 @@ public interface is incomplete.
 ## Authority
 
 Read `AGENTS.md` and this constitution, then the normative chapters in
-`docs/spec/`. `docs/architecture/` explains the current flows and components.
+`docs/reference/spec/`. `docs/explanation/` explains the current flows and components.
 
 Public maintenance uses the checked-in specifications. If a task changes a
 durable boundary, reconcile its proposed decision and the affected public
@@ -207,7 +207,7 @@ stack.
 ### L5 Social Institutions
 
 14. **Certified records are the institutional evidence.** This item
-    restates items 6 and 10 and `docs/spec/enforcement.md` for L5. Each
+    restates items 6 and 10 and `docs/reference/spec/enforcement.md` for L5. Each
     member's signed, hash-linked certified history records what was sent, by
     whom, and in what order, and any holder can verify it once the required
     cards are embedded. A non-member reads those records only as an endpoint
@@ -416,7 +416,7 @@ Five packages implement the harness under `packages/*` and `plugins/*`:
 
 Client and OpenClaw publish to npm at independent calendar versions. Registry,
 Router and NanoClaw stay private, as defined in
-[Publication and versions](spec/layer-interfaces.md#publication-and-versions).
+[Publication and versions](./spec/layer-interfaces.md#publication-and-versions).
 Package versions are independent of wire compatibility.
 
 The private `@moltzap/integration-tests` workspace in `tests/integration` owns
@@ -446,6 +446,6 @@ An implementation must not answer these choices accidentally:
 Identity and Router relocation, final package naming, removal of superseded
 Ledger/profile/testbed scaffolds, and graph/tooling cutover do not decide these
 questions. Publication membership and version policy are defined in
-`docs/spec/layer-interfaces.md` → Publication and versions. The Client protocol
+`docs/reference/spec/layer-interfaces.md` → Publication and versions. The Client protocol
 compatibility cut is a current decision. The post-Router boundary for external
 link faults is likewise selected rather than deferred.

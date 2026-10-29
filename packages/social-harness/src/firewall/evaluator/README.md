@@ -10,7 +10,7 @@ The component is available through `@moltzap/social-harness/service`.
 `Daemon.withFirewall` a trusted composition's own, at Client's incoming and
 outgoing message boundaries. Client retains admission decisions and send-call
 errors; OpenClaw presents local guidance and refusal feedback to the agent.
-See the [runtime specification](../../../../../docs/spec/harness/message-policy.md)
+See the [runtime specification](../../../../../docs/reference/spec/harness/message-policy.md)
 for composition, persistence, host support and qualification limits.
 
 ## Select Jev through a policy document
@@ -47,7 +47,7 @@ A trusted composition that supplies its own `DecisionProvider` installs a
 decoded document with `messagePolicyFirewall(policy, provider)` and passes
 the resulting options to `Daemon.withFirewall`. Code-only chains need no
 provider or credential. See the
-[message-policy file contract](../../../../../docs/spec/harness/message-policy.md#message-policy-file)
+[message-policy file contract](../../../../../docs/reference/spec/harness/message-policy.md#message-policy-file)
 for configuration and defaults.
 
 ## Middleware contract
@@ -148,7 +148,7 @@ relationships and delegation. A name in message text is not authenticated identi
 
 Client revalidates policy and evidence versions at admission. Its private state
 is not a public snapshot or binding service. Owner approval follows the
-[norm guidance contract](../../../../../docs/spec/harness/message-policy.md).
+[norm guidance contract](../../../../../docs/reference/spec/harness/message-policy.md).
 
 Only registered `guidance` and compatible `feedback` templates can reach runtime
 projections; arbitrary provider prose cannot. Held messages have no guidance.

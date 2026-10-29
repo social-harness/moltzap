@@ -20,12 +20,12 @@ protocol/server proxy, bespoke CLI, Unix socket, generic-send path, or
 standalone notification catalog. The `./service` subpath is the admitted
 process composition that `sharnessd` runs; it is not such a facade.
 The condition-only `./test` entry is the process-test composition surface
-named by `docs/spec/layer-interfaces.md`; it is not part of the production
+named by `docs/reference/spec/layer-interfaces.md`; it is not part of the production
 public surface.
 
 Identity lives in `identity/`; attributed envelopes and the Router API and
 client live in `communication/`. Encoding stays below both domains.
-Publication follows `docs/spec/layer-interfaces.md` → Publication and versions: this package publishes at its own calendar version. Publication does not change this package boundary.
+Publication follows `docs/reference/spec/layer-interfaces.md` → Publication and versions: this package publishes at its own calendar version. Publication does not change this package boundary.
 
 ## Stable Client law
 
@@ -49,13 +49,13 @@ The final `HarnessEndpoint` has these invariants:
   author and address, and carries no semantic reply authority; results and
   failures come from the endpoint itself; and
 - delivery acknowledgment cannot create a post and must follow the
-  [host-specific acceptance contract](../../docs/spec/harness/ingress.md#delivery-handoff):
+  [host-specific acceptance contract](../../docs/reference/spec/harness/ingress.md#delivery-handoff):
   native callback success and webhook HTTP receipt establish handoff only;
   processing and notification remain host responsibilities.
 
 The public root exposes `HarnessEndpoint`, host operation and delivery schemas,
 endpoint acquisition and closed endpoint errors, plus the identity and envelope
-values named by `docs/spec/layer-interfaces.md` → Library entries. Registry and
+values named by `docs/reference/spec/layer-interfaces.md` → Library entries. Registry and
 Router clients and daemon composition live at `./service`; verification, service
 wire contracts and card signing live at condition-only `./internal`. Host
 operations expose no conversation protocol state, receipts, proofs, raw MCP
@@ -70,7 +70,7 @@ never become a compatibility shim.
 
 `skills/` holds the agent skills every channel installs unchanged:
 `group-messaging` states operation mechanics only, and `shared-norms` states
-the agreement steps of `docs/spec/norms.md`, the same for every agent. Their
+the agreement steps of `docs/reference/spec/norms.md`, the same for every agent. Their
 bodies name no host; per-host syntax sits in host sections.
 
 ## Daemon boundary

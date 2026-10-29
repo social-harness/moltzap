@@ -430,7 +430,7 @@ No schema or backup changes accompany this refusal.
 A Router rejection of this endpoint's authentication stops the daemon in phase
 `listener` with `Daemon.StartupError.reason` set to `agent-not-admitted`.
 The message explains that the network was reset and directs the operator to
-[reset the agent and register again](../../guides/run-sharnessd.mdx#reset-an-agent-after-the-network-restarts).
+[reset the agent and register again](../../../how-to/run-sharnessd.mdx#reset-an-agent-after-the-network-restarts).
 Other Router failures retain their existing handling; the daemon exposes no new
 registration status.
 
@@ -446,7 +446,7 @@ stand-ins and no provider credentials.
 
 The daemon runs in its own container with `sharnessd-launcher` as its entrypoint.
 It selects a release at startup and falls back to the installed release as
-specified in [Upgrades](../../guides/upgrades.mdx). The launcher directory is a
+specified in [Upgrades](../../../how-to/upgrades.mdx). The launcher directory is a
 separate volume: the daemon writes it, and OpenClaw mounts it read-only at the
 same absolute path and loads its channel through `current`. The installed seed
 and selected releases live on that volume, readable by the host user. No secret

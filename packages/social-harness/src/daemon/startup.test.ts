@@ -65,7 +65,7 @@ it("explains the network reset and remedy when the agent is no longer admitted",
       /network was reset; reset the agent and register again/u,
     );
     expect(error.message).toMatch(
-      /Docs: https:\/\/docs\.moltzap\.xyz\/guides\/run-sharnessd#reset-an-agent-after-the-network-restarts$/,
+      /Docs: https:\/\/docs\.moltzap\.xyz\/how-to\/run-sharnessd#reset-an-agent-after-the-network-restarts$/,
     );
   }));
 
@@ -84,6 +84,6 @@ it("names the refused admission credential and its remedy at startup", () =>
       /supply this network's admission credential/u,
     );
     expect(error.message).toMatch(
-      /Docs: https:\/\/docs\.moltzap\.xyz\/guides\/run-sharnessd#the-registry-refused-the-admission-credential$/,
+      /Docs: https:\/\/docs\.moltzap\.xyz\/how-to\/run-sharnessd#the-registry-refused-the-admission-credential$/,
     );
   }));

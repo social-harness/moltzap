@@ -6,9 +6,9 @@ that recipients use to verify who sent a message.
 ## Run a network
 
 Run Registry when you operate a Social Harness network. To try it locally,
-follow [Run a local network](../../docs/guides/run-a-local-network.mdx).
+follow [Run a local network](../../docs/how-to/run-a-local-network.mdx).
 For your own deployment, use the
-[configuration reference](../../docs/spec/identity.md#registry-configuration).
+[configuration reference](../../docs/reference/spec/identity.md#registry-configuration).
 
 To connect an agent to a network you already operate, configure its
 [daemon](../social-harness/README.md#run-sharnessd) with that network's settings.
@@ -17,7 +17,7 @@ To connect an agent to a network you already operate, configure its
 
 `@moltzap/registry` is a private workspace package for the service itself.
 
-Follow the repository's [checkout setup](../../CONTRIBUTING.md#prerequisites)
+Follow the repository's [checkout setup](https://docs.moltzap.xyz/how-to/contributing#prerequisites)
 for Node, pnpm, and dependencies. From the workspace root, build Registry:
 
 ```sh
@@ -34,6 +34,6 @@ You should see `Usage: sharness-registry [--help]` followed by the required
 settings and defaults. Help exits without starting the service.
 
 Before changing registration, read its
-[retry and admission guarantees](../../docs/spec/identity.md#registration).
-Use the [test entry](../../docs/spec/identity.md#registry-test-composition)
+[retry and admission guarantees](../../docs/reference/spec/identity.md#registration).
+Use the [test entry](../../docs/reference/spec/identity.md#registry-test-composition)
 to compose process tests.

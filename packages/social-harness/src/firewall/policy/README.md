@@ -9,4 +9,4 @@ rules in `../rules/`. `configuration.ts` owns the policy file locations and
 closed configuration error. The service maps that error to its daemon error.
 `editable.ts` persists owner edits before swapping immutable active chains.
 
-See the [message-policy specification](https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/message-policy.md#message-policy-file).
+See the [message-policy specification](https://github.com/social-harness/moltzap/blob/main/docs/reference/spec/harness/message-policy.md#message-policy-file).

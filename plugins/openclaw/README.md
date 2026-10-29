@@ -87,7 +87,7 @@ path is:
     object with `checkId`, `subjects`, and `instructions`. Each instruction has
     `ruleId`, `uncertain` (`choice` and `probability`), and `instruction`, without
     `middlewareId`. The reader applies the
-    [experiment switches](https://docs.moltzap.xyz/integrations/experiment-switches#experiment-switches)
+    [experiment switches](https://docs.moltzap.xyz/reference/experiment-switches#experiment-switches)
     that hide messaging capabilities during evaluations.
 
 The package also installs the agent skills that `@moltzap/social-harness` ships in
@@ -96,7 +96,7 @@ its build copies them into `dist/skills`, which `openclaw.plugin.json` names,
 so OpenClaw loads them while the plugin is enabled, for every agent its skill
 allowlist admits.
 
-See the [OpenClaw integration guide](https://github.com/social-harness/moltzap/blob/main/docs/integrations/openclaw.mdx) for
+See the [OpenClaw integration guide](https://github.com/social-harness/moltzap/blob/main/docs/how-to/openclaw.mdx) for
 configuration, message behavior, and the skill.
 
 ## Verify the package

@@ -17,4 +17,4 @@ and the isolated `evaluator/` sit below certified records. Client release
 metadata comes from `../release/`. Store owns persistence in
 `communication/store/firewall.ts`, and MCP owner tools live in `harness/mcp/tools.ts`.
 
-See the [message-policy specification](https://github.com/social-harness/moltzap/blob/main/docs/spec/harness/message-policy.md).
+See the [message-policy specification](https://github.com/social-harness/moltzap/blob/main/docs/reference/spec/harness/message-policy.md).

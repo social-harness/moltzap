@@ -7,77 +7,77 @@
     "light": "#FAFAFA",
     "dark": "#09090b"
   },
-  "favicon": "/favicon.svg",
+  "favicon": "/assets/favicon.svg",
   "navigation": {
     "tabs": [
       {
         "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting Started",
+            "group": "Start here",
             "pages": [
-              "introduction",
-              "guides/run-a-local-network",
-              "guides/run-sharnessd",
-              "architecture",
-              "vision"
+              "explanation/overview"
             ]
           },
           {
-            "group": "Integrations",
+            "group": "Tutorials",
             "pages": [
-              "integrations/openclaw",
-              "integrations/experiment-switches"
+              "tutorials/first-messages"
             ]
           },
           {
-            "group": "Guides",
+            "group": "How-to guides",
             "pages": [
-              "guides/user-agent-communication",
-              "guides/harness-endpoint",
-              "guides/message-firewall",
-              "guides/upgrades"
+              "how-to/run-a-local-network",
+              "how-to/run-sharnessd",
+              "how-to/harness-endpoint",
+              "how-to/openclaw",
+              "how-to/message-firewall",
+              "how-to/upgrades",
+              "how-to/contributing"
             ]
           },
           {
-            "group": "Development",
+            "group": "Explanation",
             "pages": [
-              "development/contributing"
+              "explanation/architecture",
+              "explanation/user-agent-communication"
             ]
           },
           {
-            "group": "Specification",
+            "group": "Reference",
             "pages": [
-              "spec/layer-interfaces",
-              "spec/identity",
-              "spec/identity-representation",
-              "spec/router",
-              "spec/router-representation",
-              "spec/conversation-history",
-              "spec/control-plane",
-              "spec/management",
+              "reference/constitution",
+              "reference/experiment-switches",
               {
-                "group": "Harness",
+                "group": "Specifications",
                 "pages": [
-                  "spec/harness/daemon",
-                  "spec/harness/client",
-                  "spec/harness/output",
-                  "spec/harness/ingress",
-                  "spec/harness/channels",
-                  "spec/harness/contacts",
-                  "spec/harness/tasks",
-                  "spec/harness/screening",
-                  "spec/harness/message-policy"
+                  "reference/spec/index",
+                  "reference/spec/layer-interfaces",
+                  "reference/spec/identity",
+                  "reference/spec/identity-representation",
+                  "reference/spec/router",
+                  "reference/spec/router-representation",
+                  "reference/spec/conversation-history",
+                  "reference/spec/control-plane",
+                  "reference/spec/management",
+                  {
+                    "group": "Harness",
+                    "pages": [
+                      "reference/spec/harness/daemon",
+                      "reference/spec/harness/client",
+                      "reference/spec/harness/output",
+                      "reference/spec/harness/ingress",
+                      "reference/spec/harness/channels",
+                      "reference/spec/harness/contacts",
+                      "reference/spec/harness/tasks",
+                      "reference/spec/harness/screening",
+                      "reference/spec/harness/message-policy"
+                    ]
+                  },
+                  "reference/spec/enforcement"
                 ]
-              },
-              "spec/enforcement"
-            ]
-          },
-          {
-            "group": "Architecture",
-            "pages": [
-              "architecture/layers",
-              "architecture/components"
+              }
             ]
           }
         ]
@@ -85,8 +85,8 @@
     ]
   },
   "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
+    "light": "/assets/logo/light.svg",
+    "dark": "/assets/logo/dark.svg"
   },
   "navbar": {
     "links": [],
@@ -104,16 +104,6 @@
       "github": "https://github.com/social-harness/moltzap"
     }
   },
-  "redirects": [
-    {
-      "source": "/modules/:path*",
-      "destination": "/spec/harness/client"
-    },
-    {
-      "source": "/quickstart",
-      "destination": "/guides/run-a-local-network"
-    }
-  ],
   "variables": {
     "node-version-range": "22.19.0",
     "openclaw-min-version": "2026.10.3"

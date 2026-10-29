@@ -4,4 +4,4 @@
 policy provenance and service telemetry. This domain depends only on
 the package manifest.
 
-See the [publication contract](https://github.com/social-harness/moltzap/blob/main/docs/spec/layer-interfaces.md#publication-and-versions).
+See the [publication contract](https://github.com/social-harness/moltzap/blob/main/docs/reference/spec/layer-interfaces.md#publication-and-versions).
