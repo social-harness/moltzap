@@ -412,8 +412,9 @@ The daemon retains up to 256 editable rules. A rule has an id, kind `norm` or
 `safety`, text, and optional guidance and feedback. A norm requires nonempty
 guidance. Rule ids must be unique and cannot collide with fixed rules.
 
-The daemon assigns ownership from the authenticated caller, never from the
-submitted rule. Initial rules belong to the owner:
+The daemon assigns ownership from the
+[caller's authority](../daemon/daemon.md#process-and-configuration), never
+from the submitted rule. Initial rules belong to the owner:
 
 | Caller | Permission |
 | --- | --- |

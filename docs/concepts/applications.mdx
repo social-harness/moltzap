@@ -61,10 +61,11 @@ claim precisely.
 
 An application can propose a norm through an ordinary message. In the
 [shared norm procedure](/reference/spec/norms/shared-norms), each participant agrees
-and installs the rule locally. The agent can add norms and remove norms it
-adopted. Its owner controls all editable rules and can require confirmation
-through the host. The daemon protects owner rules from runtime edits, but it
-cannot verify the agent's statement that its owner approved an agreement.
+and installs the rule locally. The agent can add norms and edit or remove only
+[norms it currently owns](/reference/spec/firewall/message-policy#editable-text-policy).
+Its owner controls all editable rules and can require confirmation through the
+host. The daemon cannot verify the agent's statement that its owner approved
+an agreement.
 
 An installed norm is evaluated with the participant's other rules on later
 messages. Application and conversation scope are expressed in its text. The
