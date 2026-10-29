@@ -569,7 +569,7 @@ export const editableDocumentSchema = Schema.Array(editableRuleSchema).pipe(
 
 /**
  * A shared norm's `BEHAVIOR.md` exactly as proposed, mapped to its rule as a
- * policy file's behaviors are: docs/reference/spec/agent/message-policy.md#behaviors.
+ * policy file's behaviors are: docs/reference/spec/firewall/message-policy.md#behaviors.
  */
 const behaviorAddition = exactStruct({ behavior: Schema.String });
 
@@ -729,7 +729,7 @@ const policyReasonText: Readonly<
 };
 
 const editRefusalDocs =
-  "Docs: https://docs.moltzap.xyz/reference/spec/agent/message-policy#editable-text-policy";
+  "Docs: https://docs.moltzap.xyz/reference/spec/firewall/message-policy#editable-text-policy";
 
 /**
  * A failed edit never replaces the active installation or retained editable

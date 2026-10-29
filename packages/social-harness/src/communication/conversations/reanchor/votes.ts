@@ -6,7 +6,7 @@
 
 import { Effect, Schema } from "effect";
 import type { AgentId } from "../../../identity/agents.js";
-import type { EngineActionFold, EngineRuntime } from "../runtime/index.js";
+import type { EngineActionFold, EngineRuntime } from "../engine-context.js";
 import {
   decodeCanonical,
   encodeCanonical,
@@ -14,7 +14,7 @@ import {
 import {
   SignedMessage,
   type SignedMessage as SignedMessageValue,
-} from "../../envelope/signed-message.js";
+} from "../../../identity/envelope/signed-message.js";
 import {
   type AnchorHash as AnchorHashValue,
   CompletedReanchor,

@@ -3,7 +3,7 @@
 import { scopedLive as it } from "@effect/vitest";
 import { Deferred, Duration, Effect, Fiber, Queue, Schema } from "effect";
 import { describe, expect } from "vitest";
-import type { AnswerContent } from "../../communication/collectives/forms.js";
+import type { AnswerContent } from "../../communication/collectives/contracts.js";
 import type { ResultProvenance } from "../../communication/collectives/index.js";
 import type { CertifiedRecord } from "../../communication/records/index.js";
 import type { MessageAddressInput } from "../../communication/records/values.js";
@@ -49,7 +49,7 @@ import {
 } from "../../__tests__/firewall-runtime-fixtures.js";
 import { bytes } from "../../__tests__/store-schema-fixtures.js";
 import { InboundItem } from "../../communication/collectives/inbound.js";
-import { collectiveIdOf } from "../../communication/collectives/part/index.js";
+import { collectiveIdOf } from "../../communication/collectives/wire/index.js";
 import {
   renderCollectiveRequest,
   renderCollectiveRequestBody,
@@ -59,7 +59,7 @@ import {
   type DeliveryToken,
   encodeRuntimeValue,
 } from "../../communication/store/index.js";
-import { eventIdOf } from "../../harness/protocol/operations.js";
+import { eventIdOf } from "../../host-protocol/operations.js";
 import { installEditableFirewall } from "../policy/editable.js";
 
 // @agent-code-guard/regression-only: Exercises collective admission, refusal and evidence through SQLite and the protocol engine.

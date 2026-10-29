@@ -13,7 +13,7 @@ import {
   Schedule,
   Scope,
 } from "effect";
-import type { SignedMessage } from "../../envelope/signed-message.js";
+import type { SignedMessage } from "../../../identity/envelope/signed-message.js";
 import type {
   EndpointRecovery,
   StoredOutboundMessage,
@@ -60,7 +60,7 @@ import {
   retryPending,
   retrySettled,
 } from "../retry-markers.js";
-import { type EngineRuntime, evidenceTarget } from "../runtime/index.js";
+import { type EngineRuntime, evidenceTarget } from "../engine-context.js";
 import {
   completeRecoveryBarrier,
   currentRecoveryBarrier,

@@ -2,14 +2,14 @@
 
 import { Data, Effect, Fiber, Schema } from "effect";
 import type { StoreOpening } from "../../communication/store/index.js";
-import type { HarnessMcpOperations } from "../../harness/mcp/index.js";
+import type { HarnessMcpOperations } from "../mcp/index.js";
 import type { VerifiedAgentCard } from "../../identity/cards.js";
 import type {
   DaemonBootstrap,
   DaemonConfigurationError,
 } from "../bootstrap.js";
 import { exactParseOptions } from "../../encoding/exact.js";
-import { registrationAdmissionRefusalMessage } from "../../harness/protocol/index.js";
+import { registrationAdmissionRefusalMessage } from "../../host-protocol/index.js";
 import {
   RegistryRegisterRequest,
   type RegistryRegisterResult,

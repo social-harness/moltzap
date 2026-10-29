@@ -41,7 +41,7 @@ import {
   type CollectiveSendOutcome,
   describeIssues,
   type SendInput,
-} from "./forms.js";
+} from "./contracts.js";
 import {
   type CollectiveValue,
   encodeCollectiveContent,
@@ -49,7 +49,7 @@ import {
   mintCollectiveId,
   readCollectiveValue,
   withoutCollectivePart,
-} from "./part/index.js";
+} from "./wire/index.js";
 import {
   durableEmit,
   durableSend,

@@ -49,7 +49,7 @@ import {
 import { SendError } from "../conversations/errors.js";
 import { InboundMessage } from "../conversations/message.js";
 import { AgentAddress } from "../records/values.js";
-import { collectiveIdOf } from "./part/index.js";
+import { collectiveIdOf } from "./wire/index.js";
 
 // @agent-code-guard/regression-only: Each case drives one ordering of check, claim, close and deadline that the admission ports allow.
 

@@ -24,7 +24,7 @@ import {
   startGather,
 } from "../../__tests__/collective-operation-fixtures.js";
 import { SendError } from "../conversations/errors.js";
-import { collectiveIdOf } from "./part/index.js";
+import { collectiveIdOf } from "./wire/index.js";
 
 /** What a send that failed after queueing its post says about it. */
 const queuedText =

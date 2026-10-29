@@ -19,7 +19,7 @@ import { Registry } from "../../identity/registry/index.js";
 import {
   type LiveSignedMessage,
   SignedMessage,
-} from "../envelope/signed-message.js";
+} from "../../identity/envelope/signed-message.js";
 import { Router } from "./api/client.js";
 import {
   type RouterInstanceId,

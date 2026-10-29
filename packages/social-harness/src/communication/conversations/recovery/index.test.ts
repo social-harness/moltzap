@@ -24,7 +24,7 @@ import { generateKeyPairSync } from "node:crypto";
 import { describe, expect, vi } from "vitest";
 import type { RegistryLookupResult } from "../../../identity/registry/contract.js";
 import type { AddressRegistryPort } from "../address.js";
-import type { EngineRuntime } from "../runtime/index.js";
+import type { EngineRuntime } from "../engine-context.js";
 import {
   digest,
   identifier,
@@ -55,7 +55,7 @@ import {
   LIVE_WIRE_VERSIONS,
   WIRE_VERSION,
 } from "../../../identity/wire-version.js";
-import { SignedMessage } from "../../envelope/signed-message.js";
+import { SignedMessage } from "../../../identity/envelope/signed-message.js";
 import {
   type ActionCertifiedRecord as ActionCertifiedRecordValue,
   type ActionProposal,

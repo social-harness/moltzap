@@ -29,7 +29,7 @@ import {
   waitAction,
 } from "../../__tests__/firewall-runtime-fixtures.js";
 import { InboundItem } from "../../communication/collectives/inbound.js";
-import { eventIdOf } from "../../harness/protocol/operations.js";
+import { eventIdOf } from "../../host-protocol/operations.js";
 import {
   type DecisionProvider,
   type DecisionRequest,

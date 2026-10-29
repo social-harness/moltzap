@@ -7,12 +7,12 @@ import type {
   EngineConversation,
   EngineOutbox,
   EngineOutboxError,
-} from "./runtime/index.js";
+} from "./engine-context.js";
 import {
   type ClientRepresentationError,
   encodeCanonical,
 } from "../../encoding/canonical-json.js";
-import { SignedMessage } from "../envelope/signed-message.js";
+import { SignedMessage } from "../../identity/envelope/signed-message.js";
 import {
   type ConversationId,
   type DecodedOuterBody,

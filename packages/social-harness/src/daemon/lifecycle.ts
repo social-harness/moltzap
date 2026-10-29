@@ -11,14 +11,14 @@ import {
   type HistoryExportPort,
   makeHistoryExport,
   noHistoryExport,
-} from "../harness/inbox/history-export.js";
+} from "./inbox/host-traffic-log.js";
 import {
   acquireHarnessMcpHttpServer,
   type HarnessMcpEventHandler,
   LOOPBACK_HOST,
   makeHarnessMcpHttpHandler,
   type ManagementRegisterRequest,
-} from "../harness/mcp/index.js";
+} from "./mcp/index.js";
 import { WIRE_VERSION } from "../identity/wire-version.js";
 import { packageVersion } from "../release/index.js";
 import { DaemonRuntimeError, runtimeFailure } from "./errors.js";

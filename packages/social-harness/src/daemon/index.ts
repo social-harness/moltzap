@@ -21,7 +21,7 @@ import {
   type MessagePolicyConfigurationError,
   policyInstallationError,
 } from "../firewall/index.js";
-import { registrationAdmissionRefusalMessage } from "../harness/protocol/index.js";
+import { registrationAdmissionRefusalMessage } from "../host-protocol/index.js";
 import { Registry } from "../identity/registry/index.js";
 import { wireVersions } from "../identity/wire-version.js";
 import {

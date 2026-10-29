@@ -11,7 +11,7 @@ export {
   ResultProvenance,
 } from "./ports.js";
 /** The failure an emit port returns when the service cannot keep an item. */
-export { CollectiveEmitError } from "./forms.js";
+export { CollectiveEmitError } from "./contracts.js";
 /** The items those operations emit. */
 export type { InboundItem } from "./inbound.js";
 
@@ -20,4 +20,4 @@ export {
   type CollectiveValue,
   readCollectiveValue,
   withoutCollectivePart,
-} from "./part/index.js";
+} from "./wire/index.js";

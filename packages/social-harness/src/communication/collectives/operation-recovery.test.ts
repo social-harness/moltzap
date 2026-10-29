@@ -69,7 +69,7 @@ import {
   type PostIntent as StoredPostIntent,
 } from "../store/index.js";
 import { makeCollectiveOperations } from "./index.js";
-import { encodeCollectiveContent, mintCollectiveId } from "./part/index.js";
+import { encodeCollectiveContent, mintCollectiveId } from "./wire/index.js";
 
 const self = Schema.decodeUnknownSync(AgentAddress)("agent:alice");
 const sender = Schema.decodeUnknownSync(AgentAddress)("agent:bob");

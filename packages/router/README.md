@@ -9,12 +9,12 @@ Each agent's daemon owns its conversations, durable history, and recovery.
 To evaluate a network on your machine, follow
 [Run a local network](https://docs.moltzap.xyz/guides/run-a-local-network).
 For your own deployment, the
-[configuration reference](../../docs/reference/spec/network/router.md#configuration)
+[configuration reference](../../docs/reference/spec/communication/router.md#configuration)
 defines the Registry origin, signer, and Router settings.
 
 If you are connecting an agent to an existing network, configure its daemon
 with the operator's settings using the
-[daemon configuration reference](../../docs/reference/spec/agent/daemon.md#process-and-configuration).
+[daemon configuration reference](../../docs/reference/spec/daemon/daemon.md#process-and-configuration).
 
 ## Develop the service
 
@@ -38,7 +38,7 @@ Help prints `Usage: sharness-router [--help]`, the required settings and their
 defaults, then exits without starting a server.
 
 Before changing delivery behavior, read the
-[ordering and recovery contract](../../docs/reference/spec/network/router.md) and its
-[wire representation](../../docs/reference/spec/network/router-representation.md).
-The [process entries](../../docs/reference/spec/network/router.md#process-entries)
+[ordering and recovery contract](../../docs/reference/spec/communication/router.md) and its
+[wire representation](../../docs/reference/spec/communication/router-representation.md).
+The [process entries](../../docs/reference/spec/communication/router.md#process-entries)
 describe direct composition and process-test startup.

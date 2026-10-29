@@ -15,7 +15,7 @@ import {
 import {
   MessageId,
   SignedMessage,
-} from "../packages/social-harness/dist/communication/envelope/signed-message.js";
+} from "../packages/social-harness/dist/identity/envelope/signed-message.js";
 import { encodeCanonicalJson } from "../packages/social-harness/dist/encoding/canonical-json.js";
 import {
   AgentId,
@@ -205,7 +205,7 @@ await Effect.runPromise(
             fileSystem.writeFileString(
               fileURLToPath(
                 new URL(
-                  "../packages/social-harness/src/communication/envelope/__tests__/wire-golden.json",
+                  "../packages/social-harness/src/identity/envelope/__tests__/wire-golden.json",
                   import.meta.url,
                 ),
               ),
@@ -214,7 +214,7 @@ await Effect.runPromise(
             fileSystem.writeFileString(
               fileURLToPath(
                 new URL(
-                  "../packages/social-harness/src/communication/envelope/__tests__/wire-cofactored-golden.json",
+                  "../packages/social-harness/src/identity/envelope/__tests__/wire-cofactored-golden.json",
                   import.meta.url,
                 ),
               ),

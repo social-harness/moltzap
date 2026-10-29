@@ -15,7 +15,7 @@ import type { AgentSigningAuthority } from "../../../identity/keys.js";
 import type {
   LiveSignedMessage,
   VerifiedSignedMessage,
-} from "../../envelope/signed-message.js";
+} from "../../../identity/envelope/signed-message.js";
 import type { EndpointStore } from "../../store/index.js";
 import type { Router } from "../api/client.js";
 import type { PollCursor, RouterInstanceId } from "../api/contract.js";

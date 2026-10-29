@@ -18,8 +18,8 @@ import {
   slotSchema,
 } from "../../__tests__/collective-operation-fixtures.js";
 import { AgentAddress } from "../records/values.js";
-import { CollectiveError } from "./forms.js";
-import { collectiveIdOf } from "./part/index.js";
+import { CollectiveError } from "./contracts.js";
+import { collectiveIdOf } from "./wire/index.js";
 
 const bob = Schema.decodeUnknownSync(AgentAddress)("agent:bob");
 

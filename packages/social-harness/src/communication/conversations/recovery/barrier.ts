@@ -6,7 +6,7 @@
 
 import { Deferred, Effect } from "effect";
 import type { ConversationId } from "../../records/index.js";
-import type { EngineRuntime } from "../runtime/index.js";
+import type { EngineRuntime } from "../engine-context.js";
 
 /**
  * An engine's recovery fences. The engine fence holds every send from a

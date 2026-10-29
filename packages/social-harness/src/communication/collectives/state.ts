@@ -19,8 +19,8 @@ import {
   type CollectiveId,
   type CollectiveOperation,
   EpochMillis,
-} from "./forms.js";
-import { FormModeSchema } from "./part/index.js";
+} from "./contracts.js";
+import { FormModeSchema } from "./wire/index.js";
 
 /** The requester retains its full fanout before any destination can bind. */
 const localCollectiveDescriptor = exactStruct({

@@ -15,7 +15,7 @@ import {
   Schema,
 } from "effect";
 import type { EngineSentPost } from "../conversations/index.js";
-import type { CollectiveOperation } from "./forms.js";
+import type { CollectiveOperation } from "./contracts.js";
 import type { Members } from "./shared-answers.js";
 import { canonicalMessageAddress } from "../conversations/address.js";
 import { SendError } from "../conversations/errors.js";

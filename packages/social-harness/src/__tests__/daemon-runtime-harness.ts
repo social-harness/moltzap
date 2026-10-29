@@ -7,7 +7,7 @@ import {
   PROTOCOL_VERSION_META_KEY,
 } from "@modelcontextprotocol/server";
 import { type Context, Deferred, Duration, Effect } from "effect";
-import type { EventStore } from "../harness/protocol/operations.js";
+import type { EventStore } from "../host-protocol/operations.js";
 import type { Fixture } from "./daemon-runtime-fixtures.js";
 import {
   DeliveryAcknowledgeError,
@@ -37,13 +37,13 @@ import {
 } from "../daemon/lifecycle.js";
 import { readDaemonRegistrationState } from "../daemon/registration/index.js";
 import { sameBytes } from "../encoding/canonical-json.js";
-import { makeHistoryExport } from "../harness/inbox/history-export.js";
+import { makeHistoryExport } from "../daemon/inbox/host-traffic-log.js";
 import {
   type HarnessMcpEventHandler,
   type HarnessMcpOperations,
   makeHarnessMcpHttpHandler,
-} from "../harness/mcp/tools.js";
-import { INBOX_PENDING_EVENT } from "../harness/protocol/names.js";
+} from "../daemon/mcp/tools.js";
+import { INBOX_PENDING_EVENT } from "../host-protocol/names.js";
 import { Registry } from "../identity/registry/index.js";
 import { AuthenticationFailedError } from "../identity/signing/http-errors.js";
 import { collectiveStorageStub } from "./collective-storage-stub.js";

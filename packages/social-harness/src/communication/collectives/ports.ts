@@ -27,7 +27,7 @@ import type {
   CollectiveId,
   CollectiveSendOutcome,
   SendInput,
-} from "./forms.js";
+} from "./contracts.js";
 import type { InboundItem } from "./inbound.js";
 import { exactStruct } from "../../encoding/exact.js";
 import { type PostId, RecordHash } from "../records/index.js";

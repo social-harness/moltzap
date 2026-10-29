@@ -4,7 +4,7 @@ import { Data } from "effect";
 
 /** The launcher rules, which its `--help` and command and seed failures link. */
 export const LAUNCHER_DOCS =
-  "https://docs.moltzap.xyz/reference/spec/agent/daemon#launcher";
+  "https://docs.moltzap.xyz/reference/spec/daemon/daemon#launcher";
 
 /** The upgrades guide, whose troubleshooting entries launcher failures link. */
 export const UPGRADES_GUIDE = "https://docs.moltzap.xyz/guides/upgrades";

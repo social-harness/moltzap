@@ -164,7 +164,7 @@ export const decodeMessagePolicy = Schema.decodeUnknown(
   { onExcessProperty: "error" },
 );
 
-/** The Behaviors spec limits each BEHAVIOR.md to 64 KiB: docs/reference/spec/agent/message-policy.md#behaviors. */
+/** The Behaviors spec limits each BEHAVIOR.md to 64 KiB: docs/reference/spec/firewall/message-policy.md#behaviors. */
 export const MAXIMUM_BEHAVIOR_BYTES = 65_536;
 
 /** YAML owns frontmatter syntax; only Social Harness metadata is a closed namespace. */

@@ -15,7 +15,7 @@ import {
   CollectiveId,
   EpochMillis,
   RequestedSchema,
-} from "./forms.js";
+} from "./contracts.js";
 
 /* eslint-disable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Effect Schemas share their domain names with the nominal values they decode. */
 

@@ -53,7 +53,7 @@ export interface FirewallInstallation {
  *
  * Nonempty behavior lists fail with `CheckInputError` (`registration`) because
  * only file loading resolves them. The generated code digest follows the
- * [policy contract](https://docs.moltzap.xyz/reference/spec/agent/message-policy#message-policy-file).
+ * [policy contract](https://docs.moltzap.xyz/reference/spec/firewall/message-policy#message-policy-file).
  */
 export const messagePolicyFirewall = Effect.fn("messagePolicyFirewall")(
   function* (policy: MessagePolicy, provider: DecisionProvider) {

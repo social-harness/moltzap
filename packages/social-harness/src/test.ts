@@ -12,7 +12,7 @@ export {
   managementRegisterResultSchema,
   managementSearchConversationsResultSchema,
   managementStatusResultSchema,
-} from "./harness/protocol/index.js";
+} from "./host-protocol/index.js";
 
 /** Process tests sign registered requests through the production capability. */
 export { AuthenticatedHttp } from "./identity/signing/registered/index.js";

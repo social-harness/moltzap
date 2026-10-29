@@ -47,12 +47,12 @@ import {
   openEndpointStore,
 } from "../communication/store/index.js";
 import { encodeCanonical } from "../encoding/canonical-json.js";
-import { makeHarnessMcpHttpHandler } from "../harness/mcp/tools.js";
+import { makeHarnessMcpHttpHandler } from "./mcp/tools.js";
 import {
   managementReadConversationRequestSchema,
   managementRegisterRequestSchema,
   managementSearchAgentsRequestSchema,
-} from "../harness/protocol/index.js";
+} from "../host-protocol/index.js";
 import { AgentCard, type VerifiedAgentCard } from "../identity/cards.js";
 import { AgentSigningAuthority, Ed25519PublicKey } from "../identity/keys.js";
 import {

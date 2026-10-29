@@ -11,5 +11,5 @@ and preserve the registration path that connects them. Trace a new failure
 through `Daemon.StartupError` before exposing it in process output, where
 private configuration must remain redacted.
 
-The [daemon contract](../../../../docs/reference/spec/agent/daemon.md) owns
+The [daemon contract](../../../../docs/reference/spec/daemon/daemon.md) owns
 startup, registration, persistence and shutdown behavior.

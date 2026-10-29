@@ -16,7 +16,7 @@ import {
   type CollectiveEmitError,
   type CollectiveError,
   CollectiveId,
-} from "./forms.js";
+} from "./contracts.js";
 import { refreshRetained } from "./persistence.js";
 import {
   postRefusal,

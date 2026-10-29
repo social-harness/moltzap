@@ -25,7 +25,7 @@ import type {
   EngineOutboxError,
   EnginePostIntent,
   EngineRuntime,
-} from "./runtime/index.js";
+} from "./engine-context.js";
 import { encodeCanonical } from "../../encoding/canonical-json.js";
 import { AgentCard, type VerifiedAgentCard } from "../../identity/cards.js";
 import {

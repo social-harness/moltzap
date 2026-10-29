@@ -5,7 +5,7 @@ import type { MessagePolicyConfigurationFailure } from "../firewall/index.js";
 import type {
   HarnessMcpCredentials,
   ManagementRegisterRequest,
-} from "../harness/mcp/index.js";
+} from "./mcp/index.js";
 import type {
   AgentSigningAuthority,
   Ed25519PublicKey as Ed25519PublicKeyValue,

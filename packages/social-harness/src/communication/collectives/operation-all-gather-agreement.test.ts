@@ -45,9 +45,9 @@ import { collectivePersistencePorts } from "../../__tests__/collective-storage-s
 import { InboundMessage } from "../conversations/message.js";
 import { Content, type RecordHash } from "../records/index.js";
 import { AgentAddress } from "../records/values.js";
-import { SendInput } from "./forms.js";
+import { SendInput } from "./contracts.js";
 import { makeCollectiveOperations } from "./operation.js";
-import { type CollectiveValue, readCollectiveValue } from "./part/index.js";
+import { type CollectiveValue, readCollectiveValue } from "./wire/index.js";
 
 const group = "group:alice,bob,carol,dave";
 const groupMembers = ["agent:alice", "agent:bob", "agent:carol", "agent:dave"];

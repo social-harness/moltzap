@@ -11,7 +11,7 @@ import {
   type LiveSignedMessage,
   MessageId,
   SignedMessage,
-} from "../communication/envelope/signed-message.js";
+} from "../identity/envelope/signed-message.js";
 import { Router } from "../communication/router/api/client.js";
 import {
   PollCursor,

@@ -31,7 +31,7 @@ import {
   describeIssues,
   RequestedSchema,
   SendInput,
-} from "./forms.js";
+} from "./contracts.js";
 
 /* eslint-disable @typescript-eslint/naming-convention -- Effect Schemas are named for the text shapes they decode. */
 

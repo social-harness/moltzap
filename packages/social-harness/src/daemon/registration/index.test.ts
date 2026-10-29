@@ -17,7 +17,7 @@ import {
   EndpointStoreError,
   type IdentityBinding,
 } from "../../communication/store/index.js";
-import { managementRegisterRequestSchema } from "../../harness/protocol/index.js";
+import { managementRegisterRequestSchema } from "../../host-protocol/index.js";
 import {
   RegistryConnectionError,
   type RegistryRegisterRequest,

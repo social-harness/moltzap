@@ -2,7 +2,7 @@
 
 import { Effect, Schema } from "effect";
 import type { DisseminationObligation } from "../../store/index.js";
-import type { EngineActionFold, EngineRuntime } from "../runtime/index.js";
+import type { EngineActionFold, EngineRuntime } from "../engine-context.js";
 import { type ActionCertifiedRecord, RecordHash } from "../../records/index.js";
 import { RouterWorkerPersistenceError } from "../../router/index.js";
 import {

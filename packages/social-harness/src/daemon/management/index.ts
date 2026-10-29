@@ -16,7 +16,7 @@ import type {
   ManagementSearchConversationsRequest,
   ManagementSearchConversationsResult,
   ManagementStatusResult,
-} from "../../harness/mcp/index.js";
+} from "../mcp/index.js";
 import type {
   DaemonBootstrap,
   DaemonConfigurationError,
@@ -30,7 +30,7 @@ import {
   readStoredHistory,
   verifyStoredMembership,
 } from "../../communication/conversations/index.js";
-import { SignedMessage } from "../../communication/envelope/signed-message.js";
+import { SignedMessage } from "../../identity/envelope/signed-message.js";
 import {
   type CertifiedRecord,
   deriveConversationId,

@@ -16,13 +16,13 @@ import type {
   EngineActionFold,
   EngineCertifiedHead,
   EngineConversation,
-} from "../runtime/index.js";
+} from "../engine-context.js";
 import {
   type ClientRepresentationError,
   encodeCanonical,
   representationFailure,
 } from "../../../encoding/canonical-json.js";
-import { SignedMessage } from "../../envelope/signed-message.js";
+import { SignedMessage } from "../../../identity/envelope/signed-message.js";
 import {
   type ActionCertifiedRecord,
   type AnchorHash,

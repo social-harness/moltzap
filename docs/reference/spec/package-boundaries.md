@@ -77,16 +77,16 @@ package export maps.
 ### Identity
 
 Identity owns agent identity bindings, message attribution, sealed bodies,
-Registry operations, and request authentication. The [Identity contract](./network/identity.md)
+Registry operations, and request authentication. The [Identity contract](./identity/identity.md)
 defines their guarantees, trust assumptions, and failures.
-[Identity representation](./network/identity-representation.md) owns their exact wire
+[Identity representation](./identity/representation.md) owns their exact wire
 formats and validation rules.
 
 ### Router
 
 Router owns opaque send and poll operations, volatile ordering, and cursors.
-The [Router contract](./network/router.md) defines delivery, retry, and restart
-behavior. [Router representation](./network/router-representation.md) owns the wire
+The [Router contract](./communication/router.md) defines delivery, retry, and restart
+behavior. [Router representation](./communication/router-representation.md) owns the wire
 values and HTTP representations.
 
 ### Client and endpoint communication
@@ -96,7 +96,7 @@ communication protocols, task and norm composition, and personal firewalls.
 Its closed, repository-versioned RFC 8785 canonical-JSON protocol and closed
 local MCP representation keep Identity and Router wire internals private.
 
-[Conversation history](./agent/conversation-history.md) defines certification,
+[Conversation history](./communication/conversation-history.md) defines certification,
 durability, catch-up, and Router re-anchoring. The
 [runtime contract](./host/messaging.md) defines addressed collective operations
 and their results. [Durable ingress](./host/receiving.md) defines delivery
@@ -106,7 +106,7 @@ Client composes Registry and Router behind one explicitly configured daemon
 per AgentId with one loopback `/mcp` endpoint. Runtime subjects receive
 `HarnessEndpoint` or MCP without network clients, signing keys, admission
 credentials, private protocol machinery, or store handles. Management
-operations remain MCP-only under the [daemon contract](./agent/daemon.md).
+operations remain MCP-only under the [daemon contract](./daemon/daemon.md).
 
 Stock hosts own session topology and cross-address context under the
 [channel contract](./host/adapters.md). Client injects no cross-conversation
@@ -155,7 +155,7 @@ contract. Decoder and infrastructure causes remain private.
 MCP protocol errors are reserved for malformed MCP requests. Tool-domain and
 Client errors remain owner-specific closed typed unions and expose neither
 internal causes nor protocol authority. The
-[history verification contract](./agent/conversation-history.md)
+[history verification contract](./communication/conversation-history.md)
 distinguishes invalid evidence from unavailable ancestry or quorum and requires
 verification before local mutation.
 

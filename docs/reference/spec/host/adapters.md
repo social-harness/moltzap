@@ -19,17 +19,42 @@ select a supported host setting to meet the contracts below.
 
 Each outbound callback supplies an explicit `agent:` or `group:` destination
 and message text. Both adapters use the shared
-[message grammar](./messaging.md#message-text) and install the library's
+[message grammar](#message-text) and install the library's
 `group-messaging` and `shared-norms` skills unchanged. The daemon resolves the
 address and runs one operation per callback. Each new invocation creates new
 posts, so the host's retry decision can have an observable effect.
+
+## Message text
+
+A model writes one operation as the whole message text. Ordinary text sends a
+multicast. A whole JSON object containing `gather`, `all_gather` or `action`
+selects a collective request or answer:
+
+```text
+plain text                                                      multicast
+{"gather": <question>, "deadline": <seconds>, "requestedSchema": <form>}
+{"all_gather": <question>, "deadline": <seconds>, "requestedSchema": <form>}
+{"action": "accept", "content": {...}}                           answer
+{"action": "decline"}                                            answer
+```
+
+This is a grammar sketch. The [collective contract](../communication/collectives.md)
+defines the deadline, form and answer rules. An answer may also name its
+request with `id`. The host tool supplies the destination separately.
+
+JSON without one of those operation keys, or JSON embedded in prose, remains
+ordinary message text. An object that selects an operation but has missing,
+unexpected or invalid fields is refused with a `MessageTextError` naming the
+fields. Nothing is sent. Both native adapters use `parseMessageText` for this
+interpretation. MCP clients supply the structured
+[send input](./messaging.md#mcp-projection) directly.
 
 ## OpenClaw session and output contract
 
 In normal shared mode, Social Harness direct and group conversations use the
 configured agent's native main session. Private mode is an opt-in evaluation
 setting that isolates direct and group sessions. The
-[history-scope contract](../agent/message-policy.md#history-scope) explains how
+[history-scope contract](../firewall/message-policy.md#history-scope) explains how
 host context can exceed the firewall's conversation evidence.
 
 OpenClaw sends through a deliberate `message` tool call. Its `send` action
@@ -79,7 +104,7 @@ ACL, conversation or session row.
 
 NanoClaw follows its stock session and final-output behavior. The pinned
 single-agent image shares main-session context across conversations, so the
-[history-scope limits](../agent/message-policy.md#history-scope) apply. Its
+[history-scope limits](../firewall/message-policy.md#history-scope) apply. Its
 outbound queue callback does not expose an admitted send's guidance to the
 model. Incoming guidance appears in the ordinary message text.
 
@@ -89,7 +114,7 @@ Both adapters project the daemon's complete metadata before handing content to
 the host. Direct metadata identifies the sender and conversation address.
 Group metadata includes the canonical group address, sender and complete member
 list. The adapters use those facts as supplied and follow the
-[host message rendering contract](./messaging.md#public-values).
+[host message rendering contract](./messaging.md#local-guidance).
 
 A result or operation failure appears as a Social Harness message in the
 operation's conversation. OpenClaw keys that turn by the operation id because

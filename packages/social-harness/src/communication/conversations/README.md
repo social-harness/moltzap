@@ -2,7 +2,7 @@
 
 The [engine composition](index.ts) verifies stored state before starting
 protocol work. Its phases share the state and dependency contracts in
-[runtime/index.ts](runtime/index.ts). Composition supplies cross-phase
+[runtime/index.ts](./engine-context.ts). Composition supplies cross-phase
 operations so sending, certification, and recovery can cooperate without
 importing each other's implementation details.
 
@@ -12,5 +12,5 @@ restart and enter recovery on the same fiber. `outbox.ts` → `drain` explains
 why its queue gate ends before transmission. The
 [recovery barriers](recovery/barrier.ts) separate the run-wide fence from each
 conversation's wait for a usable position. The
-[history contract](../../../../../docs/reference/spec/agent/conversation-history.md)
+[history contract](../../../../../docs/reference/spec/communication/conversation-history.md)
 owns quorum, certification, and recovery ordering.

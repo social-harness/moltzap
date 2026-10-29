@@ -14,8 +14,8 @@ import {
   closeFailureText,
   type CollectiveEmitError,
   type CollectiveId,
-} from "./forms.js";
-import { type CollectiveValue, encodeCollectiveContent } from "./part/index.js";
+} from "./contracts.js";
+import { type CollectiveValue, encodeCollectiveContent } from "./wire/index.js";
 import { durableEmit, emitTerminal } from "./persistence.js";
 import {
   type CollectiveResultItem,

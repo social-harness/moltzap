@@ -47,7 +47,7 @@ import {
   WIRE_VERSION,
   WireVersions,
 } from "../../../identity/wire-version.js";
-import { SignedMessage } from "../../envelope/signed-message.js";
+import { SignedMessage } from "../../../identity/envelope/signed-message.js";
 import {
   type ActionCertifiedRecord as ActionCertifiedRecordValue,
   type ActionProposal,

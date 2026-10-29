@@ -6,10 +6,10 @@ and the contract for the area you change:
 
 - [Endpoint operations](../../docs/reference/spec/host/messaging.md) and
   [host delivery](../../docs/reference/spec/host/receiving.md).
-- [Daemon lifecycle](../../docs/reference/spec/agent/daemon.md) and
-  [owner management](../../docs/reference/spec/agent/management.md).
-- [Message policy](../../docs/reference/spec/agent/message-policy.md) and
-  [shared norms](../../docs/reference/spec/agent/norms.md).
+- [Daemon lifecycle](../../docs/reference/spec/daemon/daemon.md) and
+  [owner management](../../docs/reference/spec/daemon/management.md).
+- [Message policy](../../docs/reference/spec/firewall/message-policy.md) and
+  [shared norms](../../docs/reference/spec/norms/shared-norms.md).
 
 Keep public type canaries on the supported package surface. A private
 implementation type must not become a compatibility facade.

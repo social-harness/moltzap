@@ -6,7 +6,7 @@ import type { SigningIdentity } from "./certified-history-fixtures.js";
 import {
   SignedMessage,
   type SignedMessageVerificationError,
-} from "../communication/envelope/signed-message.js";
+} from "../identity/envelope/signed-message.js";
 import {
   type DecodedOuterBody,
   decodeOuterBody,

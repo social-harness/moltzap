@@ -5,7 +5,7 @@
  */
 
 import { Effect, type ParseResult, Schema } from "effect";
-import { SignedMessage } from "../../../envelope/signed-message.js";
+import { SignedMessage } from "../../../../identity/envelope/signed-message.js";
 import {
   type ActionCertifiedRecord,
   type CertifiedRecord,

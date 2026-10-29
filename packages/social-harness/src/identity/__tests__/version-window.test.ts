@@ -3,7 +3,7 @@
 import { Effect, Schema } from "effect";
 import { expect, it } from "vitest";
 
-import golden from "../../communication/envelope/__tests__/wire-golden.json" with { type: "json" };
+import golden from "../envelope/__tests__/wire-golden.json" with { type: "json" };
 import {
   decodeCanonicalJson,
   encodeCanonicalJson,

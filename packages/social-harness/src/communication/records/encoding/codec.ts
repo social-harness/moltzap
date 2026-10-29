@@ -16,7 +16,7 @@ import {
   isStrictlyAscending,
 } from "../../../encoding/identifier.js";
 import { WIRE_VERSION } from "../../../identity/wire-version.js";
-import { SealedBody } from "../../envelope/sealed-body.js";
+import { SealedBody } from "../../../identity/envelope/sealed-body.js";
 import {
   type LiveSignedMessage,
   MessageId,
@@ -24,7 +24,7 @@ import {
   SignedMessage,
   type SignedMessage as SignedMessageValue,
   type VerifiedSignedMessage,
-} from "../../envelope/signed-message.js";
+} from "../../../identity/envelope/signed-message.js";
 import {
   ActionCore,
   ActionHash,

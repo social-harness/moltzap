@@ -180,7 +180,7 @@
     }
   },
   "ignoreIssues": {
-    "packages/social-harness/src/communication/conversations/runtime/index.ts": [
+    "packages/social-harness/src/communication/conversations/engine-context.ts": [
       "types"
     ],
     "packages/social-harness/src/communication/conversations/index.ts": [
@@ -207,7 +207,7 @@
     "packages/social-harness/src/communication/store/database/schema.ts": [
       "types"
     ],
-    "packages/social-harness/src/harness/protocol/owner-tools.ts": [
+    "packages/social-harness/src/host-protocol/owner-tools.ts": [
       "exports"
     ],
     "packages/social-harness/src/communication/store/rows/index.ts": [

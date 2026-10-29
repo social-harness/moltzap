@@ -6,7 +6,7 @@ import type {
   EndpointRecovery,
   PostIntent as StoredPostIntent,
 } from "../../store/index.js";
-import type { EngineRuntime } from "../runtime/index.js";
+import type { EngineRuntime } from "../engine-context.js";
 import {
   decodeCanonical,
   encodeCanonical,

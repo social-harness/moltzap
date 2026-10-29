@@ -54,32 +54,47 @@
                 "pages": [
                   "reference/spec/index",
                   {
-                    "group": "Network services",
+                    "group": "Identity",
                     "pages": [
-                      "reference/spec/network/identity",
-                      "reference/spec/network/identity-representation",
-                      "reference/spec/network/router",
-                      "reference/spec/network/router-representation"
+                      "reference/spec/identity/identity",
+                      "reference/spec/identity/representation"
                     ]
                   },
                   {
-                    "group": "Agent daemon",
+                    "group": "Communication",
                     "pages": [
-                      "reference/spec/agent/daemon",
-                      "reference/spec/agent/management",
-                      "reference/spec/agent/addresses",
-                      "reference/spec/agent/conversation-history",
-                      "reference/spec/agent/message-certification",
-                      "reference/spec/agent/message-policy",
-                      "reference/spec/agent/norms",
-                      "reference/spec/agent/institutions"
+                      "reference/spec/communication/addresses",
+                      "reference/spec/communication/router",
+                      "reference/spec/communication/router-representation",
+                      "reference/spec/communication/conversation-history",
+                      "reference/spec/communication/collectives"
+                    ]
+                  },
+                  {
+                    "group": "Firewall",
+                    "pages": [
+                      "reference/spec/firewall/message-policy"
+                    ]
+                  },
+                  {
+                    "group": "Norms",
+                    "pages": [
+                      "reference/spec/norms/message-certification",
+                      "reference/spec/norms/shared-norms"
+                    ]
+                  },
+                  "reference/spec/institutions",
+                  {
+                    "group": "Daemon",
+                    "pages": [
+                      "reference/spec/daemon/daemon",
+                      "reference/spec/daemon/management"
                     ]
                   },
                   {
                     "group": "Host interface",
                     "pages": [
                       "reference/spec/host/messaging",
-                      "reference/spec/host/sending",
                       "reference/spec/host/receiving",
                       "reference/spec/host/adapters"
                     ]

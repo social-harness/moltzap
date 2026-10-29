@@ -42,8 +42,8 @@ import {
 import { localGuidance } from "../../__tests__/message-policy-fixtures.js";
 import { SendError } from "../conversations/errors.js";
 import { InboundMessage } from "../conversations/message.js";
-import { CollectiveEmitError } from "./forms.js";
-import { collectiveIdOf } from "./part/index.js";
+import { CollectiveEmitError } from "./contracts.js";
+import { collectiveIdOf } from "./wire/index.js";
 
 const group = "group:alice,bob,carol";
 const groupMembers = ["agent:alice", "agent:bob", "agent:carol"];

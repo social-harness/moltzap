@@ -26,7 +26,7 @@ import {
   openEndpointStore,
 } from "../../communication/store/index.js";
 import { encodeCanonical } from "../../encoding/canonical-json.js";
-import { acquireHarnessMcpHttpServer } from "../../harness/mcp/index.js";
+import { acquireHarnessMcpHttpServer } from "../mcp/index.js";
 import { AgentCard } from "../../identity/cards.js";
 import { Ed25519PublicKey } from "../../identity/keys.js";
 import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";

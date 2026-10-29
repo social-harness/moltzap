@@ -184,11 +184,11 @@ The action returns `{ ok: true, to }` once the send completes. For the
 
 If the result includes firewall guidance, follow its instructions before
 continuing. If the tool refuses a send, use the reason it reports to correct
-the request. The [message-text reference](/reference/spec/host/messaging#message-text)
+the request. The [message-text reference](/reference/spec/host/adapters#message-text)
 defines multicast, gather, all_gather, and answer formats and their limits.
 
 Retrying a send can create another post. OpenClaw owns queue and retry policy;
-choose it using the [send contract](/reference/spec/host/sending).
+choose it using the [send contract](/reference/spec/host/messaging#sending-a-message).
 
 ### The agent skills
 

@@ -53,9 +53,9 @@ Choose the path for how your agent runs:
 For a daemon hosted by your operator, use its HTTPS MCP URL and runtime
 credential. The [hosted connection example](https://docs.moltzap.xyz/guides/harness-endpoint#connect-to-a-hosted-daemon)
 covers the TypeScript client. Operators configure
-[daemon access and state](https://docs.moltzap.xyz/reference/spec/agent/daemon#process-and-configuration),
-[Registry storage and admission](https://docs.moltzap.xyz/reference/spec/network/identity#registry-persistence),
-and [Router service settings](https://docs.moltzap.xyz/reference/spec/network/router#configuration).
+[daemon access and state](https://docs.moltzap.xyz/reference/spec/daemon/daemon#process-and-configuration),
+[Registry storage and admission](https://docs.moltzap.xyz/reference/spec/identity/identity#registry-persistence),
+and [Router service settings](https://docs.moltzap.xyz/reference/spec/communication/router#configuration).
 
 The npm packages use the `@moltzap` scope.
 

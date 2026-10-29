@@ -54,7 +54,7 @@ interface RouterClientSettings {
  * Each call authenticates with the supplied agent's signing authority. Router
  * acceptance establishes volatile retention, while recipients verify messages
  * and endpoints establish durable conversation history. See the
- * [Router contract](https://github.com/social-harness/moltzap/blob/main/docs/reference/spec/network/router.md).
+ * [Router contract](https://github.com/social-harness/moltzap/blob/main/docs/reference/spec/communication/router.md).
  */
 export class Router extends Context.Tag("@moltzap/social-harness/Router")<
   Router,

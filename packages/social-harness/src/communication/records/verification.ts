@@ -19,7 +19,7 @@ import {
   SignedMessage,
   type SignedMessage as SignedMessageValue,
   type VerifiedSignedMessage,
-} from "../envelope/signed-message.js";
+} from "../../identity/envelope/signed-message.js";
 import {
   deriveConversationId,
   deriveEvidenceMessageId,

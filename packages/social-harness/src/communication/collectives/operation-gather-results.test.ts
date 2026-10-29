@@ -21,7 +21,7 @@ import {
   unkeptEmit,
 } from "../../__tests__/collective-operation-fixtures.js";
 import { SendError } from "../conversations/errors.js";
-import { CollectiveEmitError } from "./forms.js";
+import { CollectiveEmitError } from "./contracts.js";
 
 /**
  * Certify Bob's post at once and refuse Carol's after half a second, so

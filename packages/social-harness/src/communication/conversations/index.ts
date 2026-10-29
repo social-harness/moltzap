@@ -19,7 +19,7 @@ import type {
   EndpointEngineInput,
   EnginePhases,
   EngineRuntime,
-} from "./runtime/index.js";
+} from "./engine-context.js";
 import {
   type ClientRepresentationError,
   decodeCanonical,
@@ -68,7 +68,7 @@ import {
 import { recoverEngineState } from "./startup.js";
 
 /** Private engine dependencies retained behind the daemon boundary. */
-export type { EndpointEngineInput } from "./runtime/index.js";
+export type { EndpointEngineInput } from "./engine-context.js";
 /** The send input and result the collective layer exchanges with the engine. */
 export type { EngineSendInput, EngineSentPost } from "./send.js";
 /** How a caller holds a precondition across a checked bind, and how a check is retried while stale. */

@@ -8,7 +8,7 @@ import { InboundMessage } from "../communication/conversations/message.js";
 import { RecordHash } from "../communication/records/index.js";
 import { DeliveryToken } from "../communication/store/index.js";
 import { encodeCanonical } from "../encoding/canonical-json.js";
-import { managementRegisterRequestSchema } from "../harness/protocol/index.js";
+import { managementRegisterRequestSchema } from "../host-protocol/index.js";
 import { AgentCard, type VerifiedAgentCard } from "../identity/cards.js";
 import { AgentSigningAuthority, Ed25519PublicKey } from "../identity/keys.js";
 import {

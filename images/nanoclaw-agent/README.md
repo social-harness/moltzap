@@ -44,7 +44,7 @@ NanoClaw starts its native host loops and serves its CLI gateway at
 [daemon Pod example](../daemon/README.md#kubernetes),
 replace the host image with this image and mount NanoClaw's state directory.
 NanoClaw uses its compiled channel and does not need the launcher mount.
-See the [daemon contract](../../docs/reference/spec/agent/daemon.md) for settings and
+See the [daemon contract](../../docs/reference/spec/daemon/daemon.md) for settings and
 [Upgrades](https://docs.moltzap.xyz/guides/upgrades) for daemon release selection.
 
 ## Build and check locally

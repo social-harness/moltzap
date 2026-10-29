@@ -24,12 +24,12 @@ import {
   type CollectiveId,
   MAXIMUM_DEADLINE_SECONDS,
   type OpenElsewhere,
-} from "./forms.js";
+} from "./contracts.js";
 import {
   collectiveIdOf,
   type CollectiveValue,
   type FormModeSchema,
-} from "./part/index.js";
+} from "./wire/index.js";
 import { questionText } from "./render.js";
 
 /**

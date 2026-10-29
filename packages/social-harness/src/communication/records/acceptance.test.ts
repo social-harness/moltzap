@@ -20,8 +20,8 @@ import {
   Ed25519PublicKey,
 } from "../../identity/keys.js";
 import { WIRE_VERSION, WireVersions } from "../../identity/wire-version.js";
-import { SealedBody } from "../envelope/sealed-body.js";
-import { SignedMessage } from "../envelope/signed-message.js";
+import { SealedBody } from "../../identity/envelope/sealed-body.js";
+import { SignedMessage } from "../../identity/envelope/signed-message.js";
 import { RouterInstanceId } from "../router/api/contract.js";
 import {
   type ActionCertifiedRecord,

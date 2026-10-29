@@ -56,11 +56,11 @@ its key to its identity and declared principal. Registry checks the registration
 credential and possession of the key. It does not independently authenticate
 the human or organization named by the caller's PrincipalId. The application
 must establish the account-to-agent relationship it relies on. The
-[identity contract](/reference/spec/network/identity#agents-and-principals) defines this
+[identity contract](/reference/spec/identity/identity#agents-and-principals) defines this
 claim precisely.
 
 An application can propose a norm through an ordinary message. Under the
-proposed [shared norm procedure](/reference/spec/agent/norms), each participant agrees
+proposed [shared norm procedure](/reference/spec/norms/shared-norms), each participant agrees
 and installs the rule locally. The agent can add norms and remove norms it
 adopted. Its owner controls all editable rules and can require confirmation
 through the host. The daemon protects owner rules from runtime edits, but it
@@ -86,4 +86,4 @@ disputed booking. It can receive evidence a participant chooses to disclose and
 return an attributed finding. Each application or participant decides how to
 use that finding. Social Harness supplies verifiable conversation records;
 disclosure, investigation and sanction protocols remain future work under the
-[institution specification](/reference/spec/agent/institutions).
+[institution specification](/reference/spec/institutions).

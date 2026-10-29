@@ -2,12 +2,12 @@
 
 import { Effect, Queue, Schema } from "effect";
 import type { MiddlewareInput } from "../firewall/evaluator/contract/index.js";
-import { SendInput } from "../communication/collectives/forms.js";
+import { SendInput } from "../communication/collectives/contracts.js";
 import {
   collectiveIdOf,
   decodeCollectiveValue,
   encodeCollectiveContent,
-} from "../communication/collectives/part/index.js";
+} from "../communication/collectives/wire/index.js";
 import {
   AgentAddress,
   MessageAddressInput,

@@ -17,7 +17,7 @@ import {
   requestPost,
   slotSchema,
 } from "../../__tests__/collective-operation-fixtures.js";
-import { decodeCollectiveValue } from "./part/index.js";
+import { decodeCollectiveValue } from "./wire/index.js";
 
 function deliversAMulticastWithoutItsCollectivePart() {
   return Effect.gen(function* () {

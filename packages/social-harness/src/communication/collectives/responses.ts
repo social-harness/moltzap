@@ -25,12 +25,12 @@ import {
   type CollectiveId,
   type CollectiveResponse,
   type CollectiveSendOutcome,
-} from "./forms.js";
+} from "./contracts.js";
 import {
   encodeCollectiveContent,
   mintCollectiveId,
   readCollectiveValue,
-} from "./part/index.js";
+} from "./wire/index.js";
 import { durableEmit } from "./persistence.js";
 import {
   bindAuthoredPost,

@@ -15,7 +15,7 @@ import { decodeCanonical } from "../../encoding/canonical-json.js";
 import {
   SignedMessage,
   type SignedMessage as SignedMessageValue,
-} from "../envelope/signed-message.js";
+} from "../../identity/envelope/signed-message.js";
 import {
   ActionCore,
   type ActionHash,
@@ -52,7 +52,7 @@ import {
   evidenceMatchesFold,
   type EvidenceRoute,
   makeActionFold,
-} from "./runtime/index.js";
+} from "./engine-context.js";
 
 /** Complete process-local projections recovered before protocol work resumes. */
 interface RecoveredEngineState {

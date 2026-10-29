@@ -6,7 +6,7 @@ import { isCanonicalIdentifier } from "../../encoding/identifier.js";
 import { AgentId } from "../../identity/agents.js";
 import { AgentCard } from "../../identity/cards.js";
 import { wireVersions } from "../../identity/wire-version.js";
-import { SignedMessage } from "../envelope/signed-message.js";
+import { SignedMessage } from "../../identity/envelope/signed-message.js";
 import { RouterInstanceId } from "../router/api/contract.js";
 import { Content, maximumMembers, PostId } from "./values.js";
 

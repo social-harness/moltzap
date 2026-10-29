@@ -2,7 +2,7 @@
 
 import { type Duration, Effect, Queue } from "effect";
 import type { EndpointStore } from "../communication/store/index.js";
-import { SignedMessage } from "../communication/envelope/signed-message.js";
+import { SignedMessage } from "../identity/envelope/signed-message.js";
 import { decodeCanonical } from "../encoding/canonical-json.js";
 
 /**

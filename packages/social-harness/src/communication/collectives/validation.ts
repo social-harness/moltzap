@@ -12,14 +12,14 @@
 
 import { Effect } from "effect";
 import type { CollectiveMemberOutcome } from "./inbound.js";
-import type { FormField, FormModeSchema } from "./part/index.js";
+import type { FormField, FormModeSchema } from "./wire/index.js";
 import { matchesFormat } from "./answer-formats.js";
 import {
   type AnswerContent,
   type AnswerFieldFailures,
   answerFieldsText,
   type CollectiveResponse,
-} from "./forms.js";
+} from "./contracts.js";
 
 type AnswerValue = AnswerContent[string];
 

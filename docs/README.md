@@ -10,9 +10,9 @@ Choose a folder by what the reader needs from the document.
 | [reference](./reference/) | Look up exact contracts, settings, bounds, and failures. |
 
 The [specifications](./reference/spec/index.md) are manually maintained
-contracts. Their `network/`, `agent/`, and `host/` folders separate shared
-services, each participant's daemon, and the interface to the agent host.
-The [specification index](./reference/spec/index.md) maps questions to their owner.
+contracts, organized by the responsibility that owns each guarantee.
+The [specification index](./reference/spec/index.md) maps reader questions to
+the layer, daemon or host contract that answers them.
 API reference is generated from TypeScript and JSDoc into
 `dist/api`. Follow the [documentation instructions](./guides/contributing.mdx#documentation)
 to build it. Keep bugfix rationale and investigation history in issues, pull

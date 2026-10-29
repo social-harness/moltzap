@@ -14,12 +14,12 @@ import {
   CollectiveError,
   type CollectiveId,
   SendInput,
-} from "../communication/collectives/forms.js";
+} from "../communication/collectives/contracts.js";
 import { makeCollectiveOperations } from "../communication/collectives/operation.js";
 import {
   collectiveIdOf,
   readCollectiveValue,
-} from "../communication/collectives/part/index.js";
+} from "../communication/collectives/wire/index.js";
 import { SendError } from "../communication/conversations/errors.js";
 import { InboundMessage } from "../communication/conversations/message.js";
 import { PostId, RecordHash } from "../communication/records/index.js";

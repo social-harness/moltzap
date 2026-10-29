@@ -4,14 +4,14 @@
  */
 
 import { Cause, Deferred, Effect, Option, Queue, Scope } from "effect";
-import type { SendInput } from "../../communication/collectives/forms.js";
+import type { SendInput } from "../../communication/collectives/contracts.js";
 import type {
   EndpointStore,
   EndpointStoreError,
 } from "../../communication/store/index.js";
 import type { InstalledFirewall } from "../../firewall/index.js";
-import type { HistoryExportPort } from "../../harness/inbox/history-export.js";
-import type { HarnessMcpEventHandler } from "../../harness/mcp/index.js";
+import type { HistoryExportPort } from "../inbox/host-traffic-log.js";
+import type { HarnessMcpEventHandler } from "../mcp/index.js";
 import type { VerifiedAgentCard } from "../../identity/cards.js";
 import type {
   DaemonBootstrap,
@@ -21,10 +21,7 @@ import type { DaemonRegistrationState } from "../registration/index.js";
 import { CollectiveEmitError } from "../../communication/collectives/index.js";
 import { SendError } from "../../communication/conversations/errors.js";
 import { Router } from "../../communication/router/index.js";
-import {
-  type HostDelivery,
-  makeHostDelivery,
-} from "../../harness/inbox/index.js";
+import { type HostDelivery, makeHostDelivery } from "../inbox/index.js";
 import { Registry } from "../../identity/registry/index.js";
 import {
   activationFailure,
@@ -97,7 +94,7 @@ interface DaemonInput extends DaemonStartup {
 
 /**
  * Binding is visible to management before protocol resources are ready.
- * See docs/reference/spec/agent/management.md and docs/reference/spec/agent/daemon.md.
+ * See docs/reference/spec/daemon/management.md and docs/reference/spec/daemon/daemon.md.
  */
 type DaemonIdentity =
   | { readonly kind: "unregistered" }

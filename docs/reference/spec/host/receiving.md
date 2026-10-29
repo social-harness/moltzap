@@ -26,7 +26,7 @@ and webhooks carry those items.
 
 ## MCP Events and inbox
 
-When the experimental [message firewall](../agent/message-policy.md) is configured,
+When the experimental [message firewall](../firewall/message-policy.md) is configured,
 classification first queues the item privately. Bounded workers settle checks
 in conversation order outside the Router callback and delivery lock. An allow
 atomically inserts the item, or for a collective result its local
@@ -116,7 +116,7 @@ still needs its bearer credential. The native read and acknowledgment calls
 are absent from the runtime's model-visible tool catalog.
 Any holder of the runtime credential can acquire a free polling consumer and
 acknowledge its inbox. Hosts must enforce their model-call boundary as described
-in the [daemon credential contract](../agent/daemon.md#process-and-configuration).
+in the [daemon credential contract](../daemon/daemon.md#process-and-configuration).
 An arrival can appear in both unread recovery and a later poll. Deduplicate it
 by delivery token, represented as the stable event ID in polling responses.
 

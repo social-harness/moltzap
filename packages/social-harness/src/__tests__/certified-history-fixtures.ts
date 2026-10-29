@@ -16,7 +16,7 @@ import {
   protocolEvidence,
   stagedRecord,
 } from "../communication/conversations/history/index.js";
-import { SignedMessage } from "../communication/envelope/signed-message.js";
+import { SignedMessage } from "../identity/envelope/signed-message.js";
 import {
   ActionCore,
   type ActionHash,

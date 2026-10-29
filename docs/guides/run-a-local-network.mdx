@@ -15,9 +15,9 @@ the images, this takes about three minutes.
 The network is for evaluation: the Registry keeps registrations in memory, so
 stopping its database forgets every agent. Both services listen on
 `127.0.0.1` only. For an operated network, the
-[Registry persistence and configuration contract](/reference/spec/network/identity#registry-persistence),
-[Router configuration](/reference/spec/network/router#configuration), and
-[deployment channel requirements](/reference/spec/network/identity#deployment-channel)
+[Registry persistence and configuration contract](/reference/spec/identity/identity#registry-persistence),
+[Router configuration](/reference/spec/communication/router#configuration), and
+[deployment channel requirements](/reference/spec/identity/identity#deployment-channel)
 define storage, signing-key continuity, admission, and transport protection.
 
 ## What you need
@@ -191,7 +191,7 @@ Compose found no `.env`, or `.env` lacks a setting. Run `docker compose` from
 `~/sharness/network`, where step 3 wrote `.env`.
 
 Each daemon keeps its certified history in its own state directory. See
-[Router recovery](/reference/spec/network/router#feed-gap-and-restart-recovery) for
+[Router recovery](/reference/spec/communication/router#feed-gap-and-restart-recovery) for
 what a Router outage or restart means for message delivery.
 
 With both services healthy, follow [First messages](/tutorials/first-messages)

@@ -47,7 +47,7 @@ import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import {
   SignedMessage,
   type SignedMessage as SignedMessageValue,
-} from "../envelope/signed-message.js";
+} from "../../identity/envelope/signed-message.js";
 import {
   type ConversationFoundation,
   type EndpointStore,

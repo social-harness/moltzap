@@ -4,7 +4,7 @@
  */
 
 import { absurd, Deferred, Effect } from "effect";
-import type { SignedMessage } from "../../envelope/signed-message.js";
+import type { SignedMessage } from "../../../identity/envelope/signed-message.js";
 import type { SendError } from "../errors.js";
 import {
   ClientRepresentationError,
@@ -67,7 +67,7 @@ import {
   type EvidenceRoute,
   evidenceTarget,
   makeActionFold,
-} from "../runtime/index.js";
+} from "../engine-context.js";
 
 /** Dissemination resume, bound as the `resumeDissemination` engine phase. */
 export { resumeDisseminationObligations } from "./dissemination.js";

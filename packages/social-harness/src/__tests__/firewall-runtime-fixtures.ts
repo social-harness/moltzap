@@ -7,7 +7,7 @@ import type {
   MessageMiddleware,
   MiddlewareResult,
 } from "../firewall/evaluator/contract/index.js";
-import type { HarnessMessageReadyEvent } from "../harness/protocol/operations.js";
+import type { HarnessMessageReadyEvent } from "../host-protocol/operations.js";
 import { makeCollectiveOperations } from "../communication/collectives/index.js";
 import { makeEndpointEngine } from "../communication/conversations/index.js";
 import { InboundMessage } from "../communication/conversations/message.js";
@@ -35,8 +35,8 @@ import {
   type InstalledFirewall,
 } from "../firewall/admission/index.js";
 import { installEditableFirewall } from "../firewall/index.js";
-import { noHistoryExport } from "../harness/inbox/history-export.js";
-import { makeHostDelivery } from "../harness/inbox/host-delivery.js";
+import { noHistoryExport } from "../daemon/inbox/host-traffic-log.js";
+import { makeHostDelivery } from "../daemon/inbox/host-delivery.js";
 import { AgentCard } from "../identity/cards.js";
 import { Ed25519PublicKey } from "../identity/keys.js";
 import { LIVE_WIRE_VERSIONS, WIRE_VERSION } from "../identity/wire-version.js";

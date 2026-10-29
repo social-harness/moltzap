@@ -5,7 +5,7 @@ import type { InboundItem } from "./inbound.js";
 import type { ResultProvenance } from "./ports.js";
 import type { CollectiveState } from "./state.js";
 import { SendError } from "../conversations/errors.js";
-import { CollectiveEmitError, CollectiveId } from "./forms.js";
+import { CollectiveEmitError, CollectiveId } from "./contracts.js";
 
 /** Refresh the same retained state on a caller-facing send boundary. */
 export function refreshRetainedSend(

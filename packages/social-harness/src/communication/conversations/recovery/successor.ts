@@ -9,7 +9,7 @@
 
 import { Effect } from "effect";
 import type { AgentId } from "../../../identity/agents.js";
-import type { SignedMessage } from "../../envelope/signed-message.js";
+import type { SignedMessage } from "../../../identity/envelope/signed-message.js";
 import type {
   RouterIngressDisposition,
   RouterWorkerIngress,
@@ -19,7 +19,7 @@ import type {
   EngineActionFold,
   EngineConversation,
   EngineRuntime,
-} from "../runtime/index.js";
+} from "../engine-context.js";
 import {
   type ActionCertifiedRecord,
   type ActionCore,

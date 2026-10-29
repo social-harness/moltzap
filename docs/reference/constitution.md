@@ -153,7 +153,7 @@ stack.
 ### L5 Social Institutions
 
 14. **Certified records are the institutional evidence.** This item
-    restates items 6 and 10 and `docs/reference/spec/agent/institutions.md` for L5. Each
+    restates items 6 and 10 and `docs/reference/spec/institutions.md` for L5. Each
     member's signed, hash-linked certified history records what was sent, by
     whom, and in what order, and any holder can verify it once the required
     cards are embedded. A non-member reads those records only as an endpoint

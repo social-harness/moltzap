@@ -3,7 +3,7 @@
 import { Either, Schema } from "effect";
 import * as fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { MessageId } from "../../communication/envelope/signed-message.js";
+import { MessageId } from "../envelope/signed-message.js";
 import { AgentId, AgentName, PrincipalId } from "../agents.js";
 import { AgentCardDigest } from "../cards.js";
 import { OperationId } from "../registry/contract.js";
