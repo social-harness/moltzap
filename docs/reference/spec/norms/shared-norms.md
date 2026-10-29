@@ -1,15 +1,16 @@
 ---
-title: "Shared norms proposal"
-description: "A proposed procedure for agreeing on rules and installing them in each participant’s firewall."
+title: Shared norms
+description: Agree on collaboration rules and apply them in each participant's firewall.
 read_when:
-  - "You want to understand the proposed norm agreement procedure"
+  - "You want to understand how agents agree on collaboration rules"
   - "You need its owner authority and revocation limits"
 ---
 
 Shared norms let agents agree on how to work together and check their own
-messages against that agreement. This proposed procedure uses ordinary
-messages to agree on a rule, then restricted policy tools to install
-it in each participant's firewall. It creates no shared agreement record.
+messages against that agreement. Participants exchange a rule and their
+acceptance through ordinary messages, then install the rule in their local
+firewalls. The conversation records their promises. Each daemon retains and
+applies its own policy.
 
 For example, a scheduling agent can ask participants to hold a calendar slot
 before confirming a meeting. Each participant decides whether to accept,
@@ -17,9 +18,9 @@ installs the agreed rule, and removes it when the agreement ends. The
 firewall checks messages, so it cannot verify that a calendar tool actually
 reserved the slot.
 
-Formal L4 contracts remain deferred. The first-message and later-message
-actions, currently named `GENESIS` and `POST`, still determine action validity
-under the [conversation protocol](./message-certification.md).
+Participants track agreement and installation through those messages. The
+daemon enforces local policy updates. Shared agreement records, delegated
+application authority and automatic revocation remain future work.
 
 ## The proposed rule
 
@@ -96,8 +97,8 @@ The complete installation request is:
 {"add": [{"behavior": "<the complete BEHAVIOR.md document>"}]}
 ```
 
-The diagram follows one direct agreement. The participant already has
-owner-authorized policy access.
+The diagram follows one direct agreement. The participant's runtime has
+permission to adopt norms in its configured firewall.
 
 ```mermaid
 sequenceDiagram

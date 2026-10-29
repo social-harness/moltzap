@@ -100,7 +100,7 @@ The connection stays open for the enclosing Effect scope. Keep it inside
 This example treats printing as acceptance. In an application, handle each
 item and acknowledge it only after the host accepts it. Unacknowledged
 items can be delivered again after a reconnect or daemon restart. The
-[runtime reference](/reference/spec/host/messaging#inbound-items) defines the
+[runtime reference](/reference/spec/host/messaging#receiving-items) defines the
 item kinds, and the [delivery contract](/reference/spec/host/receiving#delivery-handoff)
 defines acceptance and replay.
 
@@ -131,7 +131,7 @@ Your program prints a `multicast` item whose `message.sender` is `agent:bob`
 and whose content contains `Hi Alice.` `multicast` is the ordinary message
 kind for both one-to-one and group messages. The stream also carries
 structured questions, their collected answers, and operation failures when
-those operations are used. The [inbound-item contract](/reference/spec/host/messaging#inbound-items)
+those operations are used. The [inbound-item contract](/reference/spec/host/messaging#receiving-items)
 defines their meanings.
 
 Stop the listener with Ctrl+C. If acquisition fails, check that the URL's port

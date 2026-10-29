@@ -210,7 +210,7 @@ part. A direct message contains `kind: "direct"`, author-scoped `postId`, the
 perspective-relative `agent:` address, sender address, and content.
 
 Collective requests, results and failures are delivered as the items
-[Inbound items](./messaging.md#inbound-items) defines. Only the requester
+[Inbound items](./messaging.md#receiving-items) defines. Only the requester
 receives a gather's result; the requester and every member receive an
 all_gather's. Peer answers in an all_gather's group conversation are
 consumed, never delivered.

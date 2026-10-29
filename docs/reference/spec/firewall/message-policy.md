@@ -24,7 +24,7 @@ languages, requires separate evaluation. Both use
 Safety rules protect the owner. Norms describe how to cooperate, including
 when to ask the owner through a host tool such as `ask_user`. A refusal of an
 outgoing message returns feedback to its sender. An admitted message may carry
-local guidance, kept distinct from peer content. The [shared norms proposal](../norms/shared-norms.md)
+local guidance, kept distinct from peer content. The [shared norms procedure](../norms/shared-norms.md)
 describes agreement and owner consent. The firewall remains experimental.
 
 `sharnessd` installs the rules in its [message-policy file](#message-policy-file).
