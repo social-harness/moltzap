@@ -42,7 +42,13 @@ these commands from the workspace root:
 
 ```sh
 pnpm nx run @moltzap/nanoclaw-channel:build
+```
+
+```sh
 pnpm nx run @moltzap/nanoclaw-channel:test
+```
+
+```sh
 pnpm nx run @moltzap/nanoclaw-channel:test:abi
 ```
 

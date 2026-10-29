@@ -112,9 +112,6 @@ Trusted process code can instead install a firewall of its own with
 `SHARNESS_MESSAGE_POLICY_FILE` in phase `configuration`.
 The fixed and editable installation is described in [message policy](./message-policy.md).
 
-There is no profile, selector, discovery fallback, bespoke CLI, Unix socket,
-stdio server, second MCP listener, address override, or product Ledger.
-
 ## Launcher
 
 `sharnessd-launcher`, in `@moltzap/social-harness`, is the process an agent image runs

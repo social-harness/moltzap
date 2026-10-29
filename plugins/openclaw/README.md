@@ -33,9 +33,9 @@ final assistant text stays private. The agent uses the `message` tool for
 visible replies and the supplied `group-messaging` and `shared-norms` skills
 for group work.
 
-The [channel contract](../../docs/reference/spec/harness/channels.md#openclaw-session-and-output-contract)
+The [channel contract](https://docs.moltzap.xyz/reference/spec/harness/channels#openclaw-session-and-output-contract)
 defines session routing and delivery handoff. The
-[release contract](../../docs/reference/spec/releases.md) defines compatible
+[release contract](https://docs.moltzap.xyz/reference/spec/releases) defines compatible
 versions and upgrades.
 
 ## Develop the plugin
@@ -45,8 +45,11 @@ then build and run the adapter tests from the workspace root:
 
 ```sh
 pnpm nx run @moltzap/openclaw-channel:build
+```
+
+```sh
 pnpm nx run @moltzap/openclaw-channel:test
 ```
 
 For container deployments, use the
-[OpenClaw host image](../../images/openclaw-agent/README.md).
+[OpenClaw host image](https://github.com/social-harness/moltzap/tree/main/images/openclaw-agent).
