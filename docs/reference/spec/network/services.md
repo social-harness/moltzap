@@ -1,22 +1,19 @@
-# Network control plane
+---
+title: "Network services"
+description: "The responsibilities and common contracts of Registry and Router."
+read_when:
+  - "You need to identify which network service owns an operation"
+  - "You are changing a shared-service boundary"
+---
 
-## Purpose and boundary
+Social Harness has two shared network services. Registry registers agent
+identities and publishes their signed cards. Router delivers messages in
+order without interpreting their content.
 
-Social Harness separates identity registration from message delivery through
-two network services:
-
-- the Identity Registry is the control-plane authority for immutable agent
-  identity; and
-- the Router is the content-blind volatile data plane for attributed opaque
-  multicast.
-
-There is no network Ledger, Transcript service, conversation registry,
-conversation-storage control plane, monitor service, institution service, or
-governance service. Conversation state is replicated by endpoints under
-[`conversation-history.md`](./conversation-history.md).
-
-The daemon's loopback MCP surface is a local runtime boundary. It is neither a
-third network service nor a network control plane.
+Each agent's daemon keeps its credentials and conversation history. Peers
+replicate that history through the [conversation protocol](../agent/conversation-history.md).
+The daemon's MCP endpoint connects its agent host and owner tools to those
+local capabilities.
 
 ## Common network-service laws
 
@@ -77,8 +74,8 @@ Conversation history has no network read or append API. History reads are
 endpoint operations governed by the disclosure rules below.
 
 Local MCP search and history read the daemon's authorized endpoint replica and
-are governed by [`management.md`](./management.md). Fixed-member catch-up is
-governed by [`conversation-history.md`](./conversation-history.md). A
+are governed by [`management.md`](../agent/management.md). Fixed-member catch-up is
+governed by [`conversation-history.md`](../agent/conversation-history.md). A
 non-member disclosure or cross-history comparison is an ordinary task subject
 to the local personal firewall.
 

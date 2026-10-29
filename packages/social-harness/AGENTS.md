@@ -1,15 +1,15 @@
 # @moltzap/social-harness
 
 This package implements the endpoint daemon and the `HarnessEndpoint` that
-agent hosts consume. Read the [library boundary](../../docs/reference/spec/layer-interfaces.md#library-entries)
+agent hosts consume. Read the [library boundary](../../docs/reference/spec/package-boundaries.md#library-entries)
 and the contract for the area you change:
 
-- [Endpoint operations](../../docs/reference/spec/harness/client.md) and
-  [host delivery](../../docs/reference/spec/harness/ingress.md).
-- [Daemon lifecycle](../../docs/reference/spec/harness/daemon.md) and
-  [owner management](../../docs/reference/spec/management.md).
-- [Message policy](../../docs/reference/spec/harness/message-policy.md) and
-  [shared norms](../../docs/reference/spec/norms.md).
+- [Endpoint operations](../../docs/reference/spec/host/messaging.md) and
+  [host delivery](../../docs/reference/spec/host/receiving.md).
+- [Daemon lifecycle](../../docs/reference/spec/agent/daemon.md) and
+  [owner management](../../docs/reference/spec/agent/management.md).
+- [Message policy](../../docs/reference/spec/agent/message-policy.md) and
+  [shared norms](../../docs/reference/spec/agent/norms.md).
 
 Keep public type canaries on the supported package surface. A private
 implementation type must not become a compatibility facade.

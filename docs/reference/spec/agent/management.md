@@ -1,4 +1,10 @@
-# Endpoint management and adapter MCP
+---
+title: "Daemon management and MCP access"
+description: "Owner operations, runtime access, and management failures at the daemon’s MCP boundary."
+read_when:
+  - "You need to register or inspect your agent"
+  - "You are checking which authority a daemon tool requires"
+---
 
 One loopback MCP endpoint serves owner-authorized management and the private
 adapter projection of `HarnessEndpoint`. Management can inspect local verified
@@ -10,7 +16,7 @@ In trusted-local mode, before registration the catalog contains exactly `registe
 and `status`. Authenticated owner access adds event subscription status, revoke
 and resume tools. The runtime credential exposes no tools before registration
 and only the classified runtime catalog afterward, as specified in
-[harness/daemon.md](./harness/daemon.md).
+[daemon contract](./daemon.md).
 Registration retains Identity-owned `OperationId`, immutable name, principal,
 configured key, admission, and exact retry recovery. Activating a bound identity
 changes the catalog on the same MCP endpoint.
@@ -27,7 +33,7 @@ and timeouts remain retryable.
 
 `register`'s `registered` result, `status`'s `active` result and
 `search_agents`'s `found` result carry the encoded AgentCard, a General JWS,
-as `agentCard`, and its [`AgentView`](./identity.md#agentcard) as `agent`.
+as `agentCard`, and its [`AgentView`](../network/identity.md#agentcard) as `agent`.
 This daemon always sends `agent`, and each history record's `author`.
 `status` returns exact active AgentCard state from the moment the binding
 commits, while the daemon is still activating its protocol; `register` returns
@@ -50,7 +56,7 @@ and `GroupAddress`. It is not `MessageAddressInput`: a returned group address
 always includes the local member and has complete ASCII-sorted membership.
 
 `search_conversations` has these schemas. The request is exact; the result
-may gain fields, as every [tool result](./harness/daemon.md#mcp-catalog) may:
+may gain fields, as every [tool result](./daemon.md#mcp-catalog) may:
 
 ```ts
 interface SearchConversationsRequest {
@@ -74,7 +80,7 @@ or public conversation identifier.
 
 `read_conversation` has these request and result schemas. The request is
 exact; the result may gain fields, as every
-[tool result](./harness/daemon.md#mcp-catalog) may:
+[tool result](./daemon.md#mcp-catalog) may:
 
 ```ts
 type ReadConversationRequest =
@@ -162,7 +168,7 @@ The registered authenticated runtime catalog carries `send_message`,
 `read_event` and `search_agents`. Trusted-local native clients and owner
 diagnostics also have `read_inbox` and `acknowledge_delivery`.
 Their exact inputs and semantics are owned by
-`harness/output.md` and `harness/ingress.md`. Receive uses the pinned draft Events
+[sending](../host/sending.md) and [receiving](../host/receiving.md). Receive uses the pinned draft Events
 subscription.
 
 Native hosts expose their stock messaging mechanisms to models. Dot uses the
@@ -171,7 +177,7 @@ runtime MCP tools directly through its private plugin.
 ## Closed failures
 
 Every request above rejects missing required fields and excess fields. Results
-follow the [additive-field contract](./harness/daemon.md#mcp-catalog). The two
+follow the [additive-field contract](./daemon.md#mcp-catalog). The two
 `ReadConversationRequest` arms are exclusive; a request cannot combine an
 address with a continuation. A structurally malformed tool request uses MCP
 `InvalidParams` (`-32602`) with `data.issues`, an array of field diagnostics.
@@ -242,8 +248,8 @@ back to a new snapshot.
 
 Registration, status, and agent search retain their Identity-owned
 result unions and use the failure-reason types above. Adapter-only send and
-acknowledgment use the error schemas in `harness/output.md` and
-`harness/ingress.md`; management does not rename or widen them. Raw decoders,
+acknowledgment use the error schemas in [sending](../host/sending.md) and
+[receiving](../host/receiving.md); management does not rename or widen them. Raw decoders,
 SQL causes, credentials, private keys, protocol folds, and unverified evidence
 never cross MCP; input validation exposes only field paths and messages.
 

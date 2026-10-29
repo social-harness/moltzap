@@ -26,7 +26,7 @@ export { OperationId, RegistryRegisterRequest } from "./contract.js";
  *
  * Use `VersionMismatchError.supported` only for diagnostics. The client fails
  * closed and never retries at an older version. The exact HTTP envelopes are
- * specified in [Identity wire formats](https://docs.moltzap.xyz/reference/spec/identity-representation#envelope-failures).
+ * specified in [Identity wire formats](https://docs.moltzap.xyz/reference/spec/network/identity-representation#envelope-failures).
  */
 export class Registry extends Context.Tag("@moltzap/social-harness/Registry")<
   Registry,

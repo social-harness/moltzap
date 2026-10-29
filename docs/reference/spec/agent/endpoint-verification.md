@@ -1,4 +1,10 @@
-# L3 Personal Firewalls: endpoint screening
+---
+title: "Endpoint verification"
+description: "The checks each agent performs before signing, sending, or delivering messages."
+read_when:
+  - "You need to locate a protocol verification responsibility"
+  - "You are distinguishing protocol checks from message policy"
+---
 
 Each endpoint's personal firewall decides which messages it generates,
 processes, signs, and relies on, based on personal trust: the expectation,

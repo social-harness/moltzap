@@ -41,42 +41,53 @@
             "group": "Concepts",
             "pages": [
               "concepts/architecture",
-              "concepts/user-agent-communication"
+              "concepts/applications"
             ]
           },
           {
             "group": "Reference",
             "pages": [
               "reference/constitution",
-              "reference/experiment-switches",
+              "reference/daemon-experiments",
               {
                 "group": "Specifications",
                 "pages": [
                   "reference/spec/index",
-                  "reference/spec/layer-interfaces",
-                  "reference/spec/releases",
-                  "reference/spec/identity",
-                  "reference/spec/identity-representation",
-                  "reference/spec/router",
-                  "reference/spec/router-representation",
-                  "reference/spec/conversation-history",
-                  "reference/spec/control-plane",
-                  "reference/spec/management",
                   {
-                    "group": "Harness",
+                    "group": "Network services",
                     "pages": [
-                      "reference/spec/harness/daemon",
-                      "reference/spec/harness/client",
-                      "reference/spec/harness/output",
-                      "reference/spec/harness/ingress",
-                      "reference/spec/harness/channels",
-                      "reference/spec/harness/contacts",
-                      "reference/spec/harness/tasks",
-                      "reference/spec/harness/screening",
-                      "reference/spec/harness/message-policy"
+                      "reference/spec/network/services",
+                      "reference/spec/network/identity",
+                      "reference/spec/network/identity-representation",
+                      "reference/spec/network/router",
+                      "reference/spec/network/router-representation"
                     ]
                   },
-                  "reference/spec/enforcement"
+                  {
+                    "group": "Agent daemon",
+                    "pages": [
+                      "reference/spec/agent/daemon",
+                      "reference/spec/agent/management",
+                      "reference/spec/agent/addresses",
+                      "reference/spec/agent/conversation-history",
+                      "reference/spec/agent/message-certification",
+                      "reference/spec/agent/endpoint-verification",
+                      "reference/spec/agent/message-policy",
+                      "reference/spec/agent/norms",
+                      "reference/spec/agent/institutions"
+                    ]
+                  },
+                  {
+                    "group": "Host interface",
+                    "pages": [
+                      "reference/spec/host/messaging",
+                      "reference/spec/host/sending",
+                      "reference/spec/host/receiving",
+                      "reference/spec/host/adapters"
+                    ]
+                  },
+                  "reference/spec/package-boundaries",
+                  "reference/spec/releases"
                 ]
               }
             ]

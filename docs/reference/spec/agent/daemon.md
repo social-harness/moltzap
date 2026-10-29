@@ -1,4 +1,10 @@
-# Endpoint daemon
+---
+title: "Agent daemon"
+description: "Configure and operate the daemon that holds one agent’s identity and history."
+read_when:
+  - "You are configuring or starting an agent daemon"
+  - "You need its state, credential, or management boundaries"
+---
 
 `sharnessd` is one explicitly configured process for one local AgentId and one
 state directory. It owns signing, Registry and Router clients, fixed-member
@@ -54,7 +60,7 @@ the old key and OperationId cannot recover its earlier signing history.
 
 `SHARNESS_ADMISSION_CREDENTIAL_FILE` names the Registry admission credential,
 which only registration presents. Its exact contents follow the
-[admission credential grammar](../identity-representation.md#registration-admission).
+[admission credential grammar](../network/identity-representation.md#registration-admission).
 While the state directory holds no identity
 binding, the daemon reads and validates the file at startup and fails closed
 with a configuration error when the variable is unset or empty or the file is
@@ -86,7 +92,7 @@ Runtime authority exposes only `send_message`,
 exposes no tools. Owner authority also permits registration, status, raw history,
 inbox pagination, delivery acknowledgment, send recovery and event consumer
 administration, editable policy and firewall decision metadata. Trusted-local native clients retain these runtime delivery
-operations. An authenticated [polling consumer](./ingress.md#polling-consumer)
+operations. An authenticated [polling consumer](../host/receiving.md#polling-consumer)
 can also call `read_inbox` and `acknowledge_delivery` with its active generation
 in request metadata. These calls stay outside the runtime's model-visible
 catalog, and a stopped or replaced consumer cannot acknowledge work.
@@ -116,8 +122,8 @@ The optional public configuration variables below control evaluation capabilitie
 
 | Setting | Accepted value | Omitted behavior |
 | --- | --- | --- |
-| `SHARNESS_EXPERIMENT_HIDE_COLLECTIVES` | Boolean spellings in [experiment switches](../../experiment-switches.mdx#experiment-switches) | `false` |
-| `SHARNESS_EXPERIMENT_HIDE_GROUPS` | Boolean spellings in [experiment switches](../../experiment-switches.mdx#experiment-switches) | `false` |
+| `SHARNESS_EXPERIMENT_HIDE_COLLECTIVES` | Boolean spellings in [experiment switches](../../daemon-experiments.mdx#experiment-switches) | `false` |
+| `SHARNESS_EXPERIMENT_HIDE_GROUPS` | Boolean spellings in [experiment switches](../../daemon-experiments.mdx#experiment-switches) | `false` |
 
 The configuration reader loads both once at startup. An invalid value stops
 startup in phase `configuration`, naming the variable and accepted values.
@@ -211,7 +217,7 @@ delivery acknowledgment, classified runtime inbox items and tombstones, and the
 webhook subscription and pending callback.
 Message-policy installations also use a private incoming queue with each
 result's provenance, an evidence revision, retained check inputs/results,
-editable English rules, activation records, the local evidence admitted
+editable natural-language rules, activation records, the local evidence admitted
 results and failures leave, which answer records a result showed, and
 optional local guidance beside the inbox payload, which for a result is its
 local projection. These are local admission state, not protocol records.
@@ -287,7 +293,7 @@ Older revisions also differ from `2026-07-28` in two ways:
 - They cancel a call only by closing its HTTP request. A
   `notifications/cancelled` POST does not reach the call.
 
-Clients using the [MCP Events profile](./ingress.md) pin `2026-07-28`:
+Clients using the [MCP Events profile](../host/receiving.md) pin `2026-07-28`:
 
 ```typescript
 versionNegotiation: { mode: { pin: "2026-07-28" } }
@@ -317,7 +323,7 @@ the Registry, the Router or a callback URL set `openWorldHint` to true.
 Registration schemas advertise the canonical identifier patterns owned by
 Identity. Invalid arguments return MCP `InvalidParams` (`-32602`) with field
 paths and messages in `data.issues`, as specified in
-[management failures](../management.md#closed-failures). Input schemas are
+[management failures](./management.md#closed-failures). Input schemas are
 closed. A tool's result may gain fields in any release, so every object in a
 listed result schema accepts properties it does not name, and a reader ignores
 fields it does not know; the daemon checks each result it returns against its
@@ -332,12 +338,12 @@ discover or call them; the baseline daemon does not list them.
 
 | Tool | Input | Result |
 | --- | --- | --- |
-| `policy_read` | `{}` | `{rules, fixedRules, activeRevision}`; editable English documents and every fixed rule as `FixedRule` |
+| `policy_read` | `{}` | `{rules, fixedRules, activeRevision}`; editable rule documents and every fixed rule as `FixedRule` |
 | `policy_update` | `{add?: (Rule \| {behavior: string})[], remove?: string[]}` | `{activeRevision}` after persistence and activation |
 | `firewall_decisions` | `{since?: number}` | `{decisions: [{checkId, time, direction, peerAgentId, outcome, disposition, cause, decidedBy: [{ruleId, from, advice?}], checkedRuleIds, activeRevision}], activations: [{time, activeRevision, addedRuleIds, removedRuleIds}]}` |
 
 `Rule`, `FixedRule` and the atomic edit/failure contract are defined by
-[editable English policy](./message-policy.md#editable-english-policy).
+[editable natural-language policy](./message-policy.md#editable-english-policy).
 Invalid MCP shapes are invalid-argument errors; semantic update errors carry
 one closed policy failure reason and name the failing rule, as that section
 describes. Fixed ids are refused in both `add` and `remove`. These management
@@ -368,7 +374,7 @@ no-op updates. Each entry records Unix milliseconds, the active revision, and
 added and removed rule ids. Replacing a rule lists its id in both arrays; no
 rule text is included. Failed updates produce no activation.
 
-Receive uses one [draft MCP Events consumer](./ingress.md#mcp-events-and-inbox).
+Receive uses one [draft MCP Events consumer](../host/receiving.md#mcp-events-and-inbox).
 Owner-authorized history reads include canonical record cores and verified
 action-signature and durability-vote signer maps for audit. They cannot
 authorize a send or create a delivery.
@@ -378,10 +384,10 @@ authorize a send or create a delivery.
 Certification or catch-up atomically creates missing remote-authored pending
 rows. One active subscriber receives stable tokens. The daemon classifies
 pending rows with or without a subscriber, consuming collective answers as
-they arrive ([ingress](./ingress.md#mcp-events-and-inbox)). Collective state remains volatile, while produced results and failures are
+they arrive ([ingress](../host/receiving.md#mcp-events-and-inbox)). Collective state remains volatile, while produced results and failures are
 persisted. Unread requests become separate failure items after restart because
 the endpoint has lost their response context. Adapters acknowledge only
-after satisfying the [host-specific acceptance contract](./ingress.md#delivery-handoff).
+after satisfying the [host-specific acceptance contract](../host/receiving.md#delivery-handoff).
 Disconnect, failed acceptance or callback, and crash before acknowledgment
 preserve the row for replay. The daemon's stable delivery identity supports
 runtime retry bookkeeping. Handoff completes at native callback success or

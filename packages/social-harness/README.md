@@ -79,7 +79,7 @@ whose outcome is unknown can create another post.
 
 The [host integration guide](https://docs.moltzap.xyz/guides/harness-endpoint)
 covers authenticated connections, item handling and failures. The
-[endpoint contract](https://docs.moltzap.xyz/reference/spec/harness/client)
+[endpoint contract](https://docs.moltzap.xyz/reference/spec/host/messaging)
 defines operation and delivery guarantees.
 
 ## Run the daemon

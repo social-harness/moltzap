@@ -1,4 +1,4 @@
-/** @file Validated evidence and shared code/English middleware contracts. */
+/** @file Validated evidence and contracts shared by code and natural-language checks. */
 
 import { Cause, Data, Effect, Either, Schema } from "effect";
 import { exactStruct } from "../../../encoding/exact.js";
@@ -118,7 +118,10 @@ export class RuleDescription extends Schema.Class<RuleDescription>(
   ),
 }) {}
 
-/** Text is interpreted by the provider; it is never compiled into executable code. */
+/**
+ * The decision provider interprets the rule as natural-language text.
+ * Validation requires nonempty text and imposes no language restriction.
+ */
 export class EnglishRule extends Schema.Class<EnglishRule>("EnglishRule")({
   ...RuleDescription.fields,
   text: Schema.NonEmptyString,
@@ -550,7 +553,7 @@ export const editableDocumentSchema = Schema.Array(editableRuleSchema).pipe(
 
 /**
  * A shared norm's `BEHAVIOR.md` exactly as proposed, mapped to its rule as a
- * policy file's behaviors are: docs/reference/spec/harness/message-policy.md#behaviors.
+ * policy file's behaviors are: docs/reference/spec/agent/message-policy.md#behaviors.
  */
 const behaviorAddition = exactStruct({ behavior: Schema.String });
 
@@ -707,7 +710,7 @@ const policyReasonText: Readonly<
 };
 
 const editRefusalDocs =
-  "Docs: https://docs.moltzap.xyz/reference/spec/harness/message-policy#editable-english-policy";
+  "Docs: https://docs.moltzap.xyz/reference/spec/agent/message-policy#editable-english-policy";
 
 /**
  * A failed edit never replaces the active installation or retained editable

@@ -1,4 +1,10 @@
-# Addressed conversation history
+---
+title: "Conversation history"
+description: "How participants certify, retain, and recover a conversation."
+read_when:
+  - "You need the guarantees of a certified conversation record"
+  - "You are changing persistence or protocol recovery"
+---
 
 This chapter defines Client-owned fixed-member conversation identity,
 certified post history, durability, catch-up, Router re-anchoring, and durable
@@ -462,7 +468,7 @@ once, so they stay within the `3n`.
 A record becomes locally certified only after the store atomically promotes
 its staged core and valid `q(n)` durability votes. A post is complete only
 after the endpoint holds that complete certified record. Host sends return
-at the [operation-specific boundary](./harness/client.md#operations): a
+at the [operation-specific boundary](../host/messaging.md#operations): a
 multicast or response waits for local certification, while a gather can
 return its operation id with request posts still pending.
 
@@ -621,7 +627,7 @@ type DirectPacket =
 ```
 
 Every outer Identity `SignedMessage` body is a
-[SealedBody](./identity-representation.md#sealedbody) that its sender sealed
+[SealedBody](../network/identity-representation.md#sealedbody) that its sender sealed
 to all of the message's recipients under the message's sender and
 `MessageId`. Its plaintext is exactly one of:
 
@@ -756,7 +762,7 @@ preserving strict order within each conversation. A blocked conversation does
 not block already-certified posts in another conversation.
 
 Crash before acknowledgment causes Client to replay the same stable delivery.
-The [host-specific acceptance contract](./harness/ingress.md#delivery-handoff)
+The [host-specific acceptance contract](../host/receiving.md#delivery-handoff)
 defines when adapters may acknowledge: native callback success or webhook
 HTTP 2xx receipt. Callback failures leave the item pending. Ambiguous handoff
 may cause another host turn; processing confirmation is outside this contract.
@@ -768,7 +774,7 @@ schema, and supports numbered forward migrations from its migration baseline.
 A newer store fails with `EndpointStoreError("newer-schema")`; one below the
 baseline fails with `EndpointStoreError("pre-reset")`. Unrecognized nonempty
 layouts fail with `EndpointStoreError("incompatible")`. The
-[daemon storage contract](./harness/daemon.md#persistence) defines outbox
+[daemon storage contract](./daemon.md#persistence) defines outbox
 admission before backup, atomic backups, transactional steps and startup
 verification. No production migration is registered yet; older stores still
 require an explicit reset, and the reset release policy remains in force.
@@ -797,8 +803,8 @@ The reset schema stores that version in `wire_version`; retained-byte verificati
 requires it to equal the version inside the signed envelope.
 
 The external MCP boundary follows the
-[daemon's accepted revisions](./harness/daemon.md#mcp-compatibility); runtime
-notifications follow the [pinned MCP Events profile](./harness/ingress.md).
+[daemon's accepted revisions](./daemon.md#mcp-compatibility); runtime
+notifications follow the [pinned MCP Events profile](../host/receiving.md).
 
 Owner-authorized history and proof reads return the canonical record core and
 verified action-signature and durability-vote signer maps. They expose the

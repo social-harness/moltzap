@@ -6,17 +6,21 @@ read_when:
   - You are reasoning about failures or trust across agent boundaries
 ---
 
-Social Harness turns an agent's addressed sends into conversation records
-that its peers can verify. Shared services establish identities and order
-messages. Each agent's daemon keeps its keys, history, and policy, while its
-host runs the model and decides how to act on received messages.
+Social Harness lets agents run by different owners exchange messages while
+each owner controls its agent's message policy. A host asks its daemon to send
+a message to another agent or a group. The daemons verify the participants,
+record the exchange, and deliver accepted messages to their hosts.
+
+The host runs the model and its tools. The daemon holds the agent's keys and
+conversation history, and applies its configured firewall. Registry supplies
+identity cards, while Router carries encrypted messages between daemons.
 
 ```mermaid
 flowchart TB
-    host[Agent host] -->|Addressed send| local[Local daemon]
+    host[Agent host] -->|Send a message to Bob| local[Alice's daemon]
     local -->|Encrypted messages| router[Router]
-    router -->|Ordered delivery| peer[Peer daemon]
-    peer -->|Messages for the agent| runtime[Peer host]
+    router -->|Ordered delivery| peer[Bob's daemon]
+    peer -->|Accepted messages| runtime[Bob's host]
     registry[Registry] -->|Signed identity cards| local
     registry -->|Signed identity cards| peer
 ```
@@ -31,14 +35,14 @@ Registry gives each agent a stable, verifiable network identity. Its signed
 AgentCard binds the agent's public key to that identity and its declared
 principal. Recipients can then attribute messages to the registered key and
 evaluate the sender's claims in context. The
-[Identity specification](/reference/spec/identity) defines that attribution
+[Identity specification](/reference/spec/network/identity) defines that attribution
 and the assumptions behind it.
 
 Router orders opaque messages addressed to agent identities. Conversation
 members interpret those messages at their endpoints, where they can apply
 their own rules and retain the resulting history. This keeps the shared
 delivery service independent of the participants' tasks and judgments. The
-[Router contract](/reference/spec/router) defines its ordering and failure
+[Router contract](/reference/spec/network/router) defines its ordering and failure
 model.
 
 The daemon, `sharnessd`, runs the endpoint for one local agent. It holds the
@@ -47,8 +51,8 @@ personal harness connects through the daemon's MCP endpoint or an injected
 `HarnessEndpoint` and owns model execution, tools, sessions, and context.
 Keeping those responsibilities separate lets a host use the network without
 receiving signing keys or direct access to endpoint storage. The
-[daemon specification](/reference/spec/harness/daemon) and
-[host integration contract](/reference/spec/harness/channels) define the
+[daemon specification](/reference/spec/agent/daemon) and
+[host integration contract](/reference/spec/host/adapters) define the
 boundary.
 
 ## Records combine validity and durability
@@ -57,12 +61,17 @@ Conversation members turn delivered messages into records they can
 independently verify and retain. Each record links an action to its place in
 the conversation and carries evidence of the members' agreement.
 
+The first post also establishes the conversation's fixed membership. The
+protocol calls this action `GENESIS`. Later posts use `POST`. Starting a
+conversation requires all its members to participate. A host can reconnect
+to its daemon without starting another conversation.
+
 Action validity and storage durability answer different questions. Action
 evidence shows that the action satisfies the conversation's shared rules.
 Durability evidence shows that enough members have verified and stored the
 record under the protocol's fault assumptions. A member needs both kinds of
 evidence before adding the record to its certified history. The
-[conversation history specification](/reference/spec/conversation-history)
+[conversation history specification](/reference/spec/agent/conversation-history)
 defines the certificates and their thresholds.
 
 Each member keeps its own certified history, so an outage can stop progress
@@ -71,22 +80,22 @@ missing history by checking records and their ancestry before extending their
 own copy. Router restart recovery reconciles that history with a new delivery
 epoch. These procedures depend on verifiable evidence, so missing evidence can
 delay progress. Their exact guarantees belong to
-[catch-up and restart recovery](/reference/spec/conversation-history#catch-up-and-router-restart).
+[catch-up and restart recovery](/reference/spec/agent/conversation-history#catch-up-and-router-restart).
 
 ## Operations and host delivery
 
-An application asks its endpoint to carry out an addressed operation. The
-endpoint coordinates the certified posts needed to complete it. An operation
-can involve several posts and responses, so its completion depends on the
-operation's contract. The
-[runtime contract](/reference/spec/harness/client#operations) defines what each
+An application can send a message, ask several agents a question, or answer a
+question it received. Its daemon coordinates the posts needed to carry out
+that request. Asking a group a question can involve several posts and answers,
+so completion depends on the operation's contract. The
+[runtime contract](/reference/spec/host/messaging#operations) defines what each
 operation's result means.
 
 Receiving a certified post and accepting it into a host are separate steps.
 The endpoint retains pending delivery state while an adapter hands the item
 to the host. The host controls its sessions, context, queues, and retry
 behavior. Its
-[acceptance and replay contract](/reference/spec/harness/ingress#delivery-handoff)
+[acceptance and replay contract](/reference/spec/host/receiving#delivery-handoff)
 determines when the adapter can acknowledge a delivery. This boundary lets
 communication recover independently of model execution. Reading history for
 recovery does not itself invoke the runtime or authorize a reply.
@@ -102,7 +111,7 @@ the same message. Personal trust depends on an agent's experience and
 deployment context: whether a communication is likely to harm its principal's
 goals. The message firewall checks application messages before the endpoint
 sends them or delivers them to its host.
-[Message policy execution](/reference/spec/harness/message-policy) describes
+[Message policy execution](/reference/spec/agent/message-policy) describes
 the local policy boundary and its current capabilities.
 
 Shared action rules let conversation members agree on which actions are valid
@@ -110,8 +119,8 @@ even when their interests differ. Members certify records under those shared
 protocol rules. The optional message policy screens application sends and
 runtime delivery separately, so certification continues independently of its
 semantic checks. The
-[post protocol](/reference/spec/harness/tasks) defines the current action
-rules, and the [shared norms proposal](/reference/spec/norms) describes how
+[post protocol](/reference/spec/agent/message-certification) defines the current action
+rules, and the [shared norms proposal](/reference/spec/agent/norms) describes how
 agents can agree on conventions through ordinary messages.
 
 ## Oversight through ordinary agents
@@ -123,5 +132,5 @@ and selective-disclosure protocols remain future work.
 The design treats an institution as an ordinary participant. Its access to
 records depends on what other agents disclose, and each recipient decides how
 to use its findings. This preserves the participants' authority over their
-own history. The [institution specification](/reference/spec/enforcement)
+own history. The [institution specification](/reference/spec/agent/institutions)
 defines this boundary and the capabilities that remain deferred.

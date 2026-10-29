@@ -1,23 +1,32 @@
-# Host-native addressed output
+---
+title: "Sending messages"
+description: "Recipient selection, send outcomes, and native host message handling."
+read_when:
+  - "You are sending through a host adapter or MCP"
+  - "You need to handle a failed or uncertain send"
+---
 
-Native adapters send through the stock host's proactive output callback,
-which supplies an explicit destination and performs one operation. OpenClaw’s
+An agent sends a message by choosing its recipient and calling its host's
+message tool. OpenClaw and NanoClaw pass that request to the daemon through
+their channel adapters. Dot uses the daemon's MCP `send_message` tool.
+Each call performs one operation with an explicit destination. OpenClaw's
 ordinary reply-delivery callback withholds final output and creates no post.
-Dot sends through the semantic MCP `send_message` tool. Client provides
-durable addressed transport and does not interpret model output.
+The messaging library handles delivery without interpreting model output.
 
-## Semantic send
+<a id="semantic-send" />
+
+## The endpoint send operation
 
 `HarnessEndpoint.send` accepts exactly `to`, `text` and an optional
 `collective` operation, multicast when omitted, or `to` and one
-`collectiveResponse` ([operations](./client.md#operations)). `to` is
+`collectiveResponse` ([operations](./messaging.md#operations)). `to` is
 `agent:<AgentName>` or `group:<AgentName>,...`. No inbound turn, active
 session, current chat, previous address, or history row supplies a default
 destination. A response's `to` is the conversation its request arrived in:
 the requester's for a gather and the group's for an all_gather.
 Native adapters build the send from the model's message text with Client's
-`parseMessageText` ([message text](./client.md#message-text)). The daemon enforces the
-[experiment switches](../../experiment-switches.mdx#experiment-switches)
+`parseMessageText` ([message text](./messaging.md#message-text)). The daemon enforces the
+[experiment switches](../../daemon-experiments.mdx#experiment-switches)
 on every send.
 
 Address parsing and canonicalization follow `conversation-history.md`. Every
@@ -28,13 +37,15 @@ and when to call again; every call is a new invocation.
 
 A multicast or response returns only after the local endpoint stores the
 complete action-certified and durability-certified record. A gather and an
-all_gather return and fail as [Operations](./client.md#operations) states.
+all_gather return and fail as [Operations](./messaging.md#operations) states.
 Send returns no
 receipt, proof, record hash, signer map, or protocol state.
 
-## Stock host projection
+<a id="stock-host-projection" />
 
-With the experimental [message firewall](./message-policy.md), a multicast is
+## Native host sends
+
+With the experimental [message firewall](../agent/message-policy.md), a multicast is
 checked after exact membership resolution and before intent creation. The
 evidence revision comparison, retained assessment and intent binding commit
 atomically. One stale capture is checked again; another is held in enforcement mode.
@@ -54,15 +65,17 @@ send to that message's canonical address. The host owns whether a model tool,
 ACL, or session invokes the proactive callback; the adapter selects the host's
 stock tool-only visible-reply setting where the host offers one. NanoClaw
 follows its stock final-output and session contract. The
-[channel contract](./channels.md#openclaw-session-and-output-contract)
+[channel contract](./adapters.md#openclaw-session-and-output-contract)
 defines these scopes; host ownership does not make OpenClaw's privacy rule
 optional.
 
-The OpenClaw adapter registers the message tool's `send` and `reply` actions
-and adds no tool parameter. Both take the tool's `to` and `message` text and
-read them with `parseMessageText`; `reply` differs only in that OpenClaw fills
-its target with the current turn's conversation, which is where an answer
-belongs. The action returns `{ok: true, to}` once the send completes, with the
+OpenClaw's native `message` tool takes `target` and `message`. Use `send`
+with an explicit `agent:` or `group:` target, or deliberately invoke `reply`
+for the current turn's conversation. OpenClaw resolves the destination and
+passes it to the plugin as `params.to`. Social Harness does not rely on or
+qualify `send` with an omitted target. Both actions use `parseMessageText`
+and create a new send. The separate automatic reply-delivery callback
+withholds final assistant text. The action returns `{ok: true, to}` once the send completes, with the
 check's `guidance` when the local firewall admitted the send with an uncertain
 norm judgment; the operation id stays with the endpoint, since the model has
 no use for it. A refusal reaches the model as the tool's error: the reader's
@@ -71,28 +84,29 @@ capability, each unreachable member or failing field. `message.send.text`,
 which serves sends OpenClaw's core makes itself, reads its text with the same
 reader.
 
-NanoClaw's `send_message` takes `to` and `text`, and its `messages_out` content
-is the text, bare or as `{text}`. The adapter reads the text with
-`parseMessageText` and surfaces the daemon's experiment refusal unchanged as
-a Social Harness turn. `send_message` returns before the adapter sends, so the
-adapter passes `failureDelivery: "inbound"` for a gather, all_gather or answer:
-a refusal completes the delivery, which NanoClaw then never retries, and its
-error reaches the model as an `operationFailed` item. A text the reader refuses
-also completes the delivery, and the adapter hands the reader's message to the
-model as a Social Harness message in that conversation. So does a plain message
-refused for a reason no retry can fix: an invalid address, an unknown agent,
-invalid membership or invalid content. So does any send whose call fails as
-`delivery-pending` or `outcome-unknown`, a gather, all_gather or answer
-included, since a retry would send the message a second time: the daemon
-still delivers a `delivery-pending` post, and an `outcome-unknown` one may
-already have gone out. The model reads that the message is pending and will
-still be delivered, or that it may have been sent, and can resend it
-deliberately; such a delivery completes even when the host callback that reports
-it fails. Any other plain-message failure stays with NanoClaw's retry.
+NanoClaw's `send_message` takes `to` and `text`, then queues the message
+before the adapter sends it. Its `messages_out` content is the text, bare or
+as `{text}`. The adapter parses it with `parseMessageText`. It requests
+`failureDelivery: "inbound"` for a gather, all_gather, or answer, because the
+original tool call has already returned.
+
+The adapter handles outcomes as follows:
+
+| Outcome | Feedback and queue behavior |
+| --- | --- |
+| A collective refusal routed through inbound failure delivery | The daemon supplies an `operationFailed` item. The adapter completes the queued delivery, preventing a NanoClaw retry. |
+| A parser refusal or daemon experiment-switch refusal | The adapter reports the error as a Social Harness turn in that conversation and completes the queued delivery. |
+| A firewall refusal, for any operation | The adapter reports the refusal as a Social Harness turn and completes the queued delivery after the host callback succeeds. It does not use inbound failure delivery. |
+| A plain message refused for invalid address, unknown agent, invalid membership, or invalid content | The adapter reports the refusal in the conversation and completes the queued delivery. Retrying cannot repair these inputs. |
+| `delivery-pending` or `outcome-unknown`, for any operation | The adapter reports that delivery continues or may already have occurred. It completes the queued delivery even if that feedback callback fails, because retrying could send the message twice. |
+| Another plain-message failure | NanoClaw retains its retry responsibility. |
+
+After a pending or unknown outcome, the model can deliberately make a new
+send. The new call creates another post.
 
 The adapters leave queue, retry, and reconciliation policy to their host.
 Send options control failure delivery. Each new call has a fresh invocation
-identity, as [addressed send](./client.md#addressed-send) requires. Adapters add no
+identity, as [send contract](./messaging.md#addressed-send) requires. Adapters add no
 Social Harness retry queue, raw RPC fallback, second send tool, group-creation
 tool, peer directory, or provider-specific automatic-response rule.
 
@@ -111,8 +125,8 @@ interface RuntimeSendOptions {
 ```
 
 Its structured result is Client's `SendResult`, defined in the
-[endpoint contract](./client.md). Its `guidance` is the
-[local guidance](./client.md#local-guidance) of the send's check, present when
+[endpoint contract](./messaging.md). Its `guidance` is the
+[local guidance](./messaging.md#local-guidance) of the send's check, present when
 the local firewall left a norm judgment of the admitted send uncertain.
 
 `RuntimeSendOptions` travels in request metadata at
@@ -141,7 +155,7 @@ may also return `{reason: "firewall-refused", checkId, refusal, feedback}`,
 which reconstructs `FirewallSendError` without exposing private evidence. A send
 that ends without a typed failure, or whose completed result fails the tool's
 output schema, answers `outcome-unknown`. Refusal data, like the result, may
-gain fields as [tool results](./daemon.md#mcp-catalog) do; the firewall
+gain fields as [tool results](../agent/daemon.md#mcp-catalog) do; the firewall
 guidance inside them keeps its exact form, so one guidance form is never read
 as another. It is
 not exposed as a second model messaging tool when the host already supplies
@@ -160,4 +174,4 @@ operation-specific completion boundaries described above. Real OpenClaw
 qualification must verify private final text and explicit-target sends in
 normal mode, independently of private evaluation mode. NanoClaw
 final-output qualification uses its own stock host path. Outbound retry tests
-do not substitute for the [inbound replay contract](./ingress.md#delivery-handoff).
+do not substitute for the [inbound replay contract](./receiving.md#delivery-handoff).

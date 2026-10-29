@@ -10,5 +10,5 @@ may have reached the daemon has a different resend risk from one rejected
 before dispatch. Preserve that distinction when changing the SDK boundary or
 failure mapping in `index.ts` → `sendFailure`.
 
-The [endpoint contract](../../../../../docs/reference/spec/harness/client.md)
+The [endpoint contract](../../../../../docs/reference/spec/host/messaging.md)
 defines connection lifetime, delivery acceptance and send outcomes.

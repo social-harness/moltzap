@@ -1,4 +1,10 @@
-# Router: opaque globally ordered multicast
+---
+title: "Router"
+description: "The shared service that orders and delivers opaque messages."
+read_when:
+  - "You are operating a Router or implementing its client"
+  - "You need routing, ordering, or failure guarantees"
+---
 
 ## Purpose and boundary
 
@@ -47,10 +53,10 @@ Router application.
 The library exposes the Router client through
 `@moltzap/social-harness/service`. The private `@moltzap/router/server` entry
 owns process composition. The
-[library entry contract](./layer-interfaces.md#library-entries) defines their
+[library entry contract](../package-boundaries.md#library-entries) defines their
 consumers and resolution conditions. Build the generated
 TypeScript reference using the
-[API reference instructions](../../guides/contributing.mdx#documentation)
+[API reference instructions](../../../guides/contributing.mdx#documentation)
 for signatures, request and result types, and caller obligations.
 
 Router consumes identity values, signed artifacts, signing authority, and
@@ -178,7 +184,7 @@ Because eviction frees an identity, one SignedMessage may occupy more than one
 private order and reach a recipient more than once. An `initial` also
 conflicts when a slower `initial` with the same identity appended first.
 Client's resend rule and duplicate handling are in
-[`conversation-history.md`](./conversation-history.md).
+[`conversation-history.md`](../agent/conversation-history.md).
 
 The accepted SignedMessageDigest is an immediate equality receipt for
 the retained live entry. It proves no position, delivery, durability,
@@ -279,7 +285,7 @@ as cursor advancement.
 An omitted PollCursor atomically snapshots the current tail and returns an
 immediate empty batch anchored at that tail. Endpoints coordinate this anchor
 with recovery under the
-[conversation-history contract](./conversation-history.md#catch-up-and-router-restart).
+[conversation-history contract](../agent/conversation-history.md#catch-up-and-router-restart).
 
 The empty batch reveals the current RouterInstanceId and gives the endpoint
 the instance it binds into new communication evidence and subsequent
@@ -324,7 +330,7 @@ After `feed_gap`, an endpoint must abandon incomplete volatile protocol folds,
 verify its local certified heads, and catch up missing ancestry from
 authenticated fixed-member peers. It resumes eligible protocol work only
 from a verified certified head. The
-[conversation-history contract](./conversation-history.md#catch-up-and-router-restart)
+[conversation-history contract](../agent/conversation-history.md#catch-up-and-router-restart)
 owns the recovery sequence, including how polling anchors relate to catch-up.
 Router performs none of that recovery.
 
@@ -333,7 +339,7 @@ instance from an omitted-cursor batch or a `router_restarted` send result.
 Router continues to reject old-instance sends, but existing conversations are
 not permanently fenced. Fixed members compare certified ancestry and complete
 the quorum re-anchor protocol in
-[`conversation-history.md`](./conversation-history.md) before creating new
+[`conversation-history.md`](../agent/conversation-history.md) before creating new
 actions in the new Router instance. Missing ancestry or quorum blocks
 progress; endpoints never guess a head or lower the threshold.
 

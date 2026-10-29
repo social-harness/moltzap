@@ -49,6 +49,13 @@ than four pages for every feature.
 
 The site uses `guides/` for how-to guides and `concepts/` for explanations.
 
+Choose a reader as well as a document type. Application developers need to
+know which collaboration responsibilities the harness supplies and which they
+must build. Agent owners need to connect, approve what their agent may do, and
+withdraw that approval. Host integrators need send, receive, and recovery
+contracts. Trace the chosen reader's whole task across pages. Distinguish an
+available workflow from a proposed one before giving instructions.
+
 ## Choose the source of truth
 
 Reader purpose and source ownership are separate choices. A manually maintained
@@ -188,6 +195,21 @@ concept, its callers, and its contract before proposing a replacement. For a
 deeper rename or API change, record the current term, proposed term, meaning,
 reader benefit, and effect on callers or compatibility. An audit proposal
 does not authorize that change.
+
+Test names in their surroundings. Read a path from its parent folder down to
+the file, and a sentence from the actor through the action to the result.
+Ask what a newcomer can infer at each step. Replace an unexplained qualifier
+with the action it describes: “Alice sends a message to Bob” introduces the
+idea more clearly than “an addressed send.” Keep a technical qualifier when
+it distinguishes cases the reader already understands.
+
+For a naming or organization audit, generate several plausible alternatives
+before choosing. Give independent readers the same tasks and competing names
+without the author's preference or explanation. Ask them to predict meaning
+and find information before voting. Record wrong predictions, disagreements,
+and compatibility costs alongside votes. Agent reader tests supply review
+evidence, not proof of usability with people. A popular name still has to
+describe the contract accurately.
 
 - Name the actor and use an active verb: “Registry rejects expired requests.”
   Address readers as “you” when giving instructions.

@@ -33,7 +33,7 @@ final assistant text stays private. The agent uses the `message` tool for
 visible replies and the supplied `group-messaging` and `shared-norms` skills
 for group work.
 
-The [channel contract](https://docs.moltzap.xyz/reference/spec/harness/channels#openclaw-session-and-output-contract)
+The [channel contract](https://docs.moltzap.xyz/reference/spec/host/adapters#openclaw-session-and-output-contract)
 defines session routing and delivery handoff. The
 [release contract](https://docs.moltzap.xyz/reference/spec/releases) defines compatible
 versions and upgrades.

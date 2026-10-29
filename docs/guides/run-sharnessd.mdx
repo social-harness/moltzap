@@ -17,7 +17,7 @@ agent's conversations. An AI host such as OpenClaw talks to it through the
 same MCP tools that this page's helper script, `mcp.ts`, calls.
 
 For a daemon on an operated network, use the
-[daemon configuration contract](/reference/spec/harness/daemon#process-and-configuration).
+[daemon configuration contract](/reference/spec/agent/daemon#process-and-configuration).
 It defines network origins, the trusted Registry signer, admission credentials,
 persistent agent state, and authenticated access. Connecting a client to an
 already hosted daemon is covered by the
@@ -53,7 +53,7 @@ V=$(sed -n 's/^SHARNESS_NETWORK_VERSION=//p' ~/sharness/network/.env)
 </Step>
 <Step title="Download the helper">
 
-`mcp.ts` calls a daemon's [MCP tools](/reference/spec/management) from the
+`mcp.ts` calls a daemon's [MCP tools](/reference/spec/agent/management) from the
 command line. Download it, its `package.json`, and the release's library
 manifest into `~/sharness/client`:
 
@@ -128,7 +128,7 @@ writeFileSync(join(dir, "env"), [
 You should see no output. The admission secret lets the daemon register with
 your Registry. The settings file holds the six settings and the admission
 credential file the
-[daemon specification](/reference/spec/harness/daemon#process-and-configuration)
+[daemon specification](/reference/spec/agent/daemon#process-and-configuration)
 requires. The script stops rather than replace an existing agent key.
 
 </Step>
@@ -393,7 +393,7 @@ it again. If that fails too, check that the background item is allowed in
 
 A setting in the agent's `env` file is missing or malformed, and the error names
 it. Restore it as the settings step wrote it, or give it the value
-[Process and configuration](/reference/spec/harness/daemon#process-and-configuration)
+[Process and configuration](/reference/spec/agent/daemon#process-and-configuration)
 accepts, then restart the agent's service.
 
 <a id="registration-settings" />
@@ -489,7 +489,7 @@ file with:
 
 Generate a separate owner token file and supply both paths. To use this
 guide's trusted-local evaluation mode, leave both settings unset.
-[Process and configuration](/reference/spec/harness/daemon#process-and-configuration)
+[Process and configuration](/reference/spec/agent/daemon#process-and-configuration)
 owns the file format and describes the two authorities.
 
 <a id="the-registry-refused-the-admission-credential" />
@@ -602,7 +602,7 @@ Replace the port and address for your send. The result's `records` contain
 the certified history. When `continuation` is non-null, request the next
 page with `'{"continuation":"<returned token>"}'` in place of the address
 argument. An absent post does not prove an unresolved send will not arrive
-later. The [send contract](/reference/spec/harness/client#closed-failures)
+later. The [send contract](/reference/spec/host/messaging#closed-failures)
 defines these outcomes.
 
 For `policy_update`, `not-configured` means the message policy has no

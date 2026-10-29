@@ -160,7 +160,7 @@ export const processHelp = [
   "  Message policy: unset, no firewall; the decision-provider key applies only with it.",
   ...Object.values(configurationFields).map((field) => `  ${field.usage}`),
   "",
-  "Docs: https://docs.moltzap.xyz/reference/spec/harness/daemon#process-and-configuration",
+  "Docs: https://docs.moltzap.xyz/reference/spec/agent/daemon#process-and-configuration",
 ].join("\n");
 
 /** The process settings' failures; message-policy failures carry their own messages. */

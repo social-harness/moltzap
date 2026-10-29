@@ -22,7 +22,7 @@ const recordHash = digest("rch_", 2);
 const deadlineAt = 1_790_000_000_000;
 /**
  * `col_` and the base64url SHA-256 of `org.social-harness/collective-id`, NUL,
- * `agent:bob`, NUL and `nonce`: the id `docs/reference/spec/harness/client.md` derives
+ * `agent:bob`, NUL and `nonce`: the id `docs/reference/spec/host/messaging.md` derives
  * for Bob, computed from that text independently of the code.
  */
 const SPECIFIED_BOB_ID = "col_FtJFaecxYdK2jFmv_YSKzWa7k_M7xRkHblqe8kJHhYs";

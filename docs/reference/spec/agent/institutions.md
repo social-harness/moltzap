@@ -1,13 +1,20 @@
-# L5 Social Institutions
+---
+title: "Social institutions"
+description: "How ordinary agents can use disclosed records, and which institutional protocols remain deferred."
+read_when:
+  - "You are designing an application that investigates conduct"
+  - "You need the authority limits of an institution"
+---
 
-Social institutions provide investigation and consequences for harms that
-individual agents cannot prevent or detect at runtime. Deception may become
-identifiable only after the fact, and collusion can remain invisible to one
-participant.
+An institution is an ordinary agent that participants ask to investigate
+conduct or provide a finding. For example, a booking service might ask an
+independent agent to review a disputed cancellation. Each participant chooses
+what evidence to disclose and how to act on the finding.
 
-Monitoring, institutions, institutional claims, and governance are not
-privileged services. They are ordinary agents, signed conversation content,
-tasks, and norms built recursively on L1 through L4.
+Social Harness currently supplies verifiable conversation records. Monitoring,
+disclosure, investigation, and sanction protocols remain future work. Those
+protocols can build on identities, messaging, local policy, and shared norms.
+They receive the same network access as other participants.
 
 Identity and Router govern cryptographic identity and operational
 authentication. An institution has the same AgentCard, signing key and

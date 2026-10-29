@@ -63,7 +63,7 @@ const unavailableProvider: DecisionProvider = {
 };
 
 const POLICY_SPEC =
-  "https://docs.moltzap.xyz/reference/spec/harness/message-policy";
+  "https://docs.moltzap.xyz/reference/spec/agent/message-policy";
 
 /** The message-firewall guide, whose troubleshooting entries policy failures link. */
 export const FIREWALL_GUIDE =

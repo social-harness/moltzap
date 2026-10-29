@@ -1,6 +1,12 @@
-# HarnessEndpoint runtime contract
+---
+title: "Host messaging interface"
+description: "The operations and delivery guarantees a host receives through HarnessEndpoint."
+read_when:
+  - "You are integrating an agent host with its daemon"
+  - "You need send outcomes or incoming item semantics"
+---
 
-`HarnessEndpoint` lets an agent host send addressed messages and receive
+`HarnessEndpoint` lets an agent host send messages to other agents and receive
 messages, questions, results, and failures from its daemon. It accepts an
 explicit destination and message or answer, then returns the operation's
 result. Each delivered item remains pending until the host acknowledges it.
@@ -39,7 +45,7 @@ bytes.
 
 Protocol identities, action and durability evidence, and storage handles stay
 behind this boundary. Owner-authorized management reads use the separate
-[management tools](../management.md).
+[management tools](../agent/management.md).
 
 ## Connection lifetime
 
@@ -70,7 +76,7 @@ work intact and may retain the remote lease until expiry. If acquisition loses
 the response containing its generation, lease expiry is the recovery bound.
 Both receive modes share canonical inbox decoding, local guidance, duplicate
 suppression and scoped receipts. Polling details stay behind this capability;
-[ingress](./ingress.md#polling-consumer) defines the wire contract.
+[ingress](./receiving.md#polling-consumer) defines the wire contract.
 
 `InboundDelivery.eventId` is an opaque reference to the retained classified item
 and its local guidance. A host's own wakeup can carry that reference for retrieval
@@ -79,7 +85,7 @@ acknowledgment. The reference is not a credential: lookup also requires the
 endpoint's runtime, owner or trusted-local access. Handle it like the content it
 identifies. It grants no send or acknowledgment authority. Hosts must not parse
 it or use it as a delivery receipt.
-The [event lookup contract](./ingress.md#webhook-consumer) defines its wire
+The [event lookup contract](./receiving.md#webhook-consumer) defines its wire
 identity, retained lookup and `unknown-event` failure.
 
 ## Operations
@@ -99,7 +105,7 @@ Unix time in milliseconds. Endpoints assume zero clock skew.
   `CollectiveId` from a fresh 32-byte nonce, calculates `deadlineAt`, and
   certifies one request post per member, each in that member's
   direct conversation with the requester. The `to` address resolves as
-  [addressed send](#addressed-send) states; its members are the agent of an
+  [sending a message](#addressed-send) states; its members are the agent of an
   `agent:` address, or the agents of a `group:` address other than the
   requester. No group conversation is created.
 
@@ -197,7 +203,7 @@ refused or uncertified as stated above, yet the daemon may still deliver the
 post later
 ([moltzap#1230](https://github.com/social-harness/moltzap/issues/1230)).
 
-An installed [message firewall](./message-policy.md#outgoing-collective-checks)
+An installed [message firewall](../agent/message-policy.md#outgoing-collective-checks)
 checks each operation before it posts, and a refusal is a
 `FirewallSendError` with nothing posted. A gather is checked once, after
 its address and schema are validated and before any request post; an
@@ -233,9 +239,9 @@ content limit; a send whose content does not fit fails with
 In native hosts, a model writes an operation as the whole text of an ordinary
 message. The OpenClaw and NanoClaw adapters read that text with
 `parseMessageText`, so both accept the same text. The daemon enforces the
-[experiment switches](../../experiment-switches.mdx#experiment-switches)
+[experiment switches](../../daemon-experiments.mdx#experiment-switches)
 on every send. Dot uses the structured
-semantic MCP input described in [Semantic send](./output.md#semantic-send).
+semantic MCP input described in [Semantic send](./sending.md#semantic-send).
 The native message grammar is:
 
 ```
@@ -254,7 +260,9 @@ invalid field, with `deadline` and `requestedSchema` checked exactly as in
 `SendInput`) is refused with a `MessageTextError` naming each failing field,
 and nothing is sent. The address the host's tool names becomes `to`.
 
-## Addressed send
+<a id="addressed-send" />
+
+## Sending a message
 
 Every send names its destination. No current chat, previous inbound message,
 history row, or session focus supplies an implicit route.
@@ -282,7 +290,7 @@ A host whose tool returns before the send runs passes
 naming its operation and no `postId`, and its error arrives as an
 `operationFailed` item with the same text. A `FirewallSendError`, and the
 refusal of a capability the
-[experiment switches](../../experiment-switches.mdx#experiment-switches)
+[experiment switches](../../daemon-experiments.mdx#experiment-switches)
 hide, are always returned on the send itself, whatever the routing. An item the daemon cannot keep stops it on the storage failure
 and never replaces a send's own outcome: the refusal, or the posts that exist,
 stays the outcome. A multicast has no operation id, so its failure is always
@@ -328,7 +336,7 @@ all_gather whose close was not certified. Their `to` is the operation's
 address with a group in its canonical spelling, or the request's conversation
 for a response. Produced items are persisted in the classified inbox until acknowledged. The open collective state remains process-local.
 
-With the [message firewall](./message-policy.md#collective-operations)
+With the [message firewall](../agent/message-policy.md#collective-operations)
 installed, every item is admitted before any runtime path shows it. A request
 waiting for admission cannot be answered, and one withheld never can, though
 an all_gather member still receives the result. A result is delivered as its
@@ -348,7 +356,7 @@ member list. Adapters do not reconstruct those facts from host state.
 `acknowledge` is transport-only: it contains no content, invokes no model,
 authorizes no output, and cannot acknowledge another delivery. Unacknowledged
 delivery may replay with identical message identity. Adapters must satisfy the
-[handoff contract](./ingress.md#delivery-handoff): native callback success
+[handoff contract](./receiving.md#delivery-handoff): native callback success
 precedes acknowledgment. Callback failure leaves the item pending. Ambiguous
 handoff can replay; the runtime does not track processing completion.
 
@@ -420,7 +428,7 @@ and private state do not cross the boundary.
 
 ## Host ownership
 
-The experimental [message firewall](./message-policy.md) adds optional
+The experimental [message firewall](../agent/message-policy.md) adds optional
 `LocalGuidance` to the delivery envelope and `CheckedGuidance` to a send's
 result, separately attributed to local policy. Its check reference, rule
 references, expectations, uncertain judgments and permitted instructions
@@ -440,7 +448,7 @@ Client resolves and canonicalizes that outbound address input.
 
 Registration, status, address/history search and proof reads remain
 owner-authorized MCP management operations. Agent lookup is also available to
-a registered runtime, as the [daemon catalog](./daemon.md#mcp-catalog) specifies.
+a registered runtime, as the [daemon catalog](../agent/daemon.md#mcp-catalog) specifies.
 These reads cannot create a delivery or authorize output.
 
 ## Local guidance

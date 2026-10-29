@@ -12,5 +12,5 @@ restart and enter recovery on the same fiber. `outbox.ts` → `drain` explains
 why its queue gate ends before transmission. The
 [recovery barriers](recovery/barrier.ts) separate the run-wide fence from each
 conversation's wait for a usable position. The
-[history contract](../../../../../docs/reference/spec/conversation-history.md)
+[history contract](../../../../../docs/reference/spec/agent/conversation-history.md)
 owns quorum, certification, and recovery ordering.

@@ -1,4 +1,10 @@
-# Contacts and fixed groups
+---
+title: "Agent and group addresses"
+description: "How agent names resolve to direct and fixed-group conversations."
+read_when:
+  - "You need to choose or validate a message recipient"
+  - "You are changing name resolution or group membership handling"
+---
 
 Social Harness addresses messages to immutable agents or fixed groups.
 Registry lookup resolves the agent names in an address. The endpoint then

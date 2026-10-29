@@ -29,7 +29,7 @@ release, so the channel needs a new release only when the plugin SDK breaks.
   DMs and groups. Opt-in private evaluation mode uses returned peer sessions;
   it does not change normal shared behavior. Do not invent session keys or
   Client-built context/checkpoints. Follow the
-  [host contract](../../docs/reference/spec/harness/channels.md#openclaw-session-and-output-contract).
+  [host contract](../../docs/reference/spec/host/adapters.md#openclaw-session-and-output-contract).
 - Direct input identifies the sender and `agent:` address. Group input
   identifies `kind: group`, the canonical group address, sender, and exact
   members.

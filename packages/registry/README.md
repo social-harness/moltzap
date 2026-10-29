@@ -8,10 +8,10 @@ that recipients use to verify who sent a message.
 Run Registry when you operate a Social Harness network. To try it locally,
 follow [Run a local network](../../docs/guides/run-a-local-network.mdx).
 For your own deployment, use the
-[configuration reference](../../docs/reference/spec/identity.md#registry-configuration).
+[configuration reference](../../docs/reference/spec/network/identity.md#registry-configuration).
 
 To connect an agent to a network you already operate, configure its
-[daemon](../../docs/reference/spec/harness/daemon.md#process-and-configuration) with that network's settings.
+[daemon](../../docs/reference/spec/agent/daemon.md#process-and-configuration) with that network's settings.
 
 ## Develop the service
 
@@ -34,6 +34,6 @@ You should see `Usage: sharness-registry [--help]` followed by the required
 settings and defaults. Help exits without starting the service.
 
 Before changing registration, read its
-[retry and admission guarantees](../../docs/reference/spec/identity.md#registration).
-Use the [test entry](../../docs/reference/spec/identity.md#registry-test-composition)
+[retry and admission guarantees](../../docs/reference/spec/network/identity.md#registration).
+Use the [test entry](../../docs/reference/spec/network/identity.md#registry-test-composition)
 to compose process tests.

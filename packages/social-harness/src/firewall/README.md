@@ -12,5 +12,5 @@ because the evaluator also handles evidence that the host may not receive.
 Policy loading decides which rules and provider are installed, rather than
 giving the evaluator access to configuration files or credentials.
 
-The [message policy contract](../../../../docs/reference/spec/harness/message-policy.md)
+The [message policy contract](../../../../docs/reference/spec/agent/message-policy.md)
 owns assessment, admission and visibility guarantees.

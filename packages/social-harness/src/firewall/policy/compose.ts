@@ -57,7 +57,7 @@ export interface FirewallInstallation {
  * Nonempty behavior lists fail with `CheckInputError` (`registration`) because
  * only file loading resolves them. The collective-norms bundle reads its English
  * text from the installed package. The generated code digest follows the
- * [policy contract](https://docs.moltzap.xyz/reference/spec/harness/message-policy#message-policy-file).
+ * [policy contract](https://docs.moltzap.xyz/reference/spec/agent/message-policy#message-policy-file).
  */
 export const messagePolicyFirewall = Effect.fn("messagePolicyFirewall")(
   function* (policy: MessagePolicy, provider: DecisionProvider) {

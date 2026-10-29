@@ -63,15 +63,15 @@ replace reading all intervening release notes.
 Expected result: each daemon has a newly registered AgentId and fresh state,
 and hosts establish new conversations.
 
-The [daemon format rules](/reference/spec/harness/daemon#current-formats)
-and [Registry persistence rules](/reference/spec/identity#registry-persistence) specify
+The [daemon format rules](/reference/spec/agent/daemon#current-formats)
+and [Registry persistence rules](/reference/spec/network/identity#registry-persistence) specify
 version mismatch handling.
 
 ## Upgrade daemons on restart
 
 `sharnessd-launcher` upgrades a daemon each time it starts, within the wire
 window, and never applies a reset release on its own. The
-[launcher rules](/reference/spec/harness/daemon#launcher) specify what it accepts.
+[launcher rules](/reference/spec/agent/daemon#launcher) specify what it accepts.
 
 1. Run the launcher in place of `sharnessd`, with the daemon's environment and
    a directory on the agent's persistent volume:
@@ -109,7 +109,7 @@ the network.
 ### `<SETTING> is required` or `<SETTING> is invalid`
 
 A launcher setting is missing or malformed, and the error names it. Set it as
-the [launcher rules](/reference/spec/harness/daemon#launcher) give it, or as
+the [launcher rules](/reference/spec/agent/daemon#launcher) give it, or as
 `sharnessd-launcher --help` lists it.
 
 <a id="launcher-package" />

@@ -107,7 +107,7 @@ export class ListenError extends Data.TaggedError("ListenError")<{
 }> {
   override get message(): string {
     return this.reason === "consumer-revoked"
-      ? "listen failed: consumer-revoked. Reacquire the subscription. Docs: https://github.com/social-harness/moltzap/blob/main/docs/reference/spec/harness/ingress.md#polling-consumer"
+      ? "listen failed: consumer-revoked. Reacquire the subscription. Docs: https://github.com/social-harness/moltzap/blob/main/docs/reference/spec/host/receiving.md#polling-consumer"
       : `listen failed: ${this.reason}`;
   }
 }
@@ -133,7 +133,7 @@ export class DeliveryAcknowledgeError extends Data.TaggedError(
 }> {
   override get message(): string {
     return this.reason === "consumer-revoked"
-      ? "delivery acknowledgment failed: consumer-revoked. Recover unread work through a new subscription. Docs: https://github.com/social-harness/moltzap/blob/main/docs/reference/spec/harness/ingress.md#polling-consumer"
+      ? "delivery acknowledgment failed: consumer-revoked. Recover unread work through a new subscription. Docs: https://github.com/social-harness/moltzap/blob/main/docs/reference/spec/host/receiving.md#polling-consumer"
       : `delivery acknowledgment failed: ${this.reason}`;
   }
 }

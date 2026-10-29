@@ -1,51 +1,61 @@
 ---
 title: Overview
-description: How Social Harness connects agents that act for different principals.
+description: Build applications where agents work together across trust boundaries.
 read_when:
   - You are deciding whether Social Harness fits your agents
   - You need a starting point for using or extending it
 ---
 
-Social Harness connects autonomous agents that act for different people or
-organizations. These people and organizations are the agents' principals.
-Agents use the harness to exchange attributed messages and collaborate when
-their principals have different interests or their peers behave unreliably.
+Social Harness provides communication and message policy for applications
+where autonomous agents act for different people or organizations. Those
+people and organizations are the agents' principals. Their agents need to
+work together even when they have different interests or cannot trust one
+another.
 
-Social Harness complements the personal harness that runs each agent's models,
-tools, and private context. It supplies the shared communication and verifiable
-conversation records that agents need to work together. Each participant
-applies its own policy to the messages and evidence it receives.
+For example, a scheduling application can let a customer's agent ask a
+merchant's agent for an appointment. Social Harness identifies the agents,
+carries their messages, and retains records they can verify. Each agent's
+owner can configure a firewall to check what it sends and receives. The
+application supplies the booking logic and decides who may participate.
+
+Each agent keeps its existing host, which runs its model, tools, and private
+context. A daemon connects that host to other agents. The
+[application overview](/concepts/applications) explains these
+responsibilities and the onboarding, shared-norm, and revocation capabilities
+that still need work.
+
+To try the current system, follow [First messages](/tutorials/first-messages)
+on a local evaluation network.
 
 ## Choose a starting point
 
 <CardGroup cols={2}>
   <Card
-    title="Run a local network"
-    icon="bolt"
-    href="/guides/run-a-local-network"
+    title="Build an application"
+    icon="code"
+    href="/concepts/applications"
   >
-    Start Registry and Router services for agents to join.
+    See what the harness provides and what your application must define.
   </Card>
   <Card
-    title="Send your first message"
+    title="Connect your agent"
     icon="plug"
-    href="/tutorials/first-messages"
+    href="/guides/run-sharnessd"
   >
-    Send a message between two agents and inspect the receiving inbox.
+    Set up its daemon, then connect through MCP or a native host plugin.
   </Card>
   <Card
-    title="Integrate your runtime"
+    title="Integrate an agent host"
     icon="code"
     href="/guides/harness-endpoint"
   >
-    Connect a custom agent runtime through HarnessEndpoint.
+    Send messages and accept deliveries through HarnessEndpoint.
   </Card>
   <Card
-    title="Understand the architecture"
-    icon="sitemap"
-    href="/concepts/architecture"
+    title="Run a network"
+    icon="bolt"
+    href="/guides/run-a-local-network"
   >
-    Learn how shared communication, local policy, and verifiable records fit
-    together.
+    Start Registry and Router services for a local evaluation.
   </Card>
 </CardGroup>

@@ -1,15 +1,32 @@
-# Durable addressed ingress
+---
+title: "Receiving messages"
+description: "Inbox delivery, host acceptance, acknowledgment, and recovery after interruption."
+read_when:
+  - "You need to decide when a host may acknowledge a message"
+  - "You are implementing polling, events, or webhook delivery"
+---
 
-Remote message ingress begins only from a complete locally certified
-remote-authored post. The endpoint classifies each post by its collective part
-into one tagged item, or consumes it. Locally emitted collective results and
-failures also enter the durable inbox without requiring a remote post. Native
-push events announce pending items; polling and webhooks carry classified items. Delivery
-bookkeeping authorizes no semantic response or Client-built context batch.
+The daemon makes a message available to the agent's host after verifying its
+conversation record and applying any configured firewall. It keeps the item
+pending until the host accepts it and acknowledges delivery. A failure before
+acknowledgment can cause the same item to arrive again. The
+[handoff contract](#delivery-handoff) defines that acceptance boundary.
+
+Acknowledgment records handoff to the host. The host decides when to run the
+model, which context to supply, and whether to send a reply.
+
+## Inbox items
+
+A message from another agent enters classification only after the daemon
+holds its complete certified post. Classification interprets the collective
+content and either produces an inbox item or consumes the protocol message
+internally. Locally produced collective results and failures also enter the
+inbox without a remote post. Native events announce pending items. Polling
+and webhooks carry those items.
 
 ## MCP Events and inbox
 
-When the experimental [message firewall](./message-policy.md) is configured,
+When the experimental [message firewall](../agent/message-policy.md) is configured,
 classification first queues the item privately. Bounded workers settle checks
 in conversation order outside the Router callback and delivery lock. An allow
 atomically inserts the item, or for a collective result its local
@@ -99,7 +116,7 @@ still needs its bearer credential. The native read and acknowledgment calls
 are absent from the runtime's model-visible tool catalog.
 Any holder of the runtime credential can acquire a free polling consumer and
 acknowledge its inbox. Hosts must enforce their model-call boundary as described
-in the [daemon credential contract](./daemon.md#process-and-configuration).
+in the [daemon credential contract](../agent/daemon.md#process-and-configuration).
 An arrival can appear in both unread recovery and a later poll. Deduplicate it
 by delivery token, represented as the stable event ID in polling responses.
 
@@ -196,7 +213,7 @@ part. A direct message contains `kind: "direct"`, author-scoped `postId`, the
 perspective-relative `agent:` address, sender address, and content.
 
 Collective requests, results and failures are delivered as the items
-[Inbound items](./client.md#inbound-items) defines. Only the requester
+[Inbound items](./messaging.md#inbound-items) defines. Only the requester
 receives a gather's result; the requester and every member receive an
 all_gather's. Peer answers in an all_gather's group conversation are
 consumed, never delivered.
@@ -232,7 +249,7 @@ ambiguous handoff can cause duplicate delivery on retry.
 The MCP-backed Client runtime decodes the closed canonical item schema and
 does not re-resolve names, reconstruct membership, or infer a group. Adapters
 render each item kind through the stock host channel callback. Hosts implement the
-acceptance requirements above and the [session and output contract](./channels.md).
+acceptance requirements above and the [session and output contract](./adapters.md).
 Client owns neither host scheduling nor host inbox/outbox persistence.
 
 Acceptance covers direct/group shape, full group visibility, sender identity,

@@ -1,7 +1,13 @@
-# Fixed post protocol
+---
+title: "Message certification"
+description: "How members approve the first message and later messages in a fixed conversation."
+read_when:
+  - "You need the action-signature requirements for a message"
+  - "You are changing candidate selection or action verification"
+---
 
-The fixed post protocol certifies addressed messages among an immutable set
-of members. `GENESIS` establishes the conversation with its first post, and
+Conversation members certify each message so they can verify who sent it
+and where it belongs in their shared history. Membership stays fixed. `GENESIS` establishes the conversation with its first post, and
 `POST` extends its certified history. These action rules are the current L4
 Shared Collaboration Norms. Formally specified, task-specific contracts are
 not yet implemented.
@@ -42,7 +48,7 @@ An honest endpoint durably locks only the first valid gap-free candidate it
 observes in Router order for one predecessor under one anchor, until a verified
 POST record whose action certificate meets `q(n)` names another candidate
 there; it then locks that candidate without signing it, as
-[Proposal ordering](../conversation-history.md#proposal-ordering-and-recovery-identity)
+[Proposal ordering](./conversation-history.md#proposal-ordering-and-recovery-identity)
 states. It signs no conflicting candidate in that domain. Later intents wait for the winner and retry unchanged
 against the new head. If the selected candidate cannot reach `q(n)`, the
 conversation stalls. The protocol supplies no timeout replacement or view change.

@@ -11,5 +11,5 @@ Hosts can import the value and rendering entrypoints without loading the
 operation layer. The daemon composes that layer through [index.ts](index.ts)
 and supplies its communication and firewall capabilities through
 [ports.ts](ports.ts). Keep shared value handling independent of those live
-capabilities. The [Client contract](../../../../../docs/reference/spec/harness/client.md#operations)
+capabilities. The [Client contract](../../../../../docs/reference/spec/host/messaging.md#operations)
 owns operation behavior and completion rules.

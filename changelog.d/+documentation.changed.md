@@ -1,1 +1,1 @@
-Organize documentation by reader task, clarify setup and generated API contracts, and link service diagnostics to their guides.
+Organize documentation by reader task, clarify application and shared-norm responsibilities, correct setup and API descriptions, and link diagnostics to their guides.

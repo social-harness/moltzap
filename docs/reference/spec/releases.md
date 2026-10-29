@@ -96,8 +96,8 @@ Peers across the reset reject each other with `version-mismatch`. Older
 state fails with `pre-reset`. Operators must use a fresh Registry database
 and fresh endpoint state directories, and register every agent again.
 Certified history does not migrate across a reset. The
-[daemon format rules](./harness/daemon.md#current-formats) and
-[Registry persistence rules](./identity.md#registry-persistence) define the
+[daemon format rules](./agent/daemon.md#current-formats) and
+[Registry persistence rules](./network/identity.md#registry-persistence) define the
 format checks. The changelog identifies each reset with the phrase
 “Reset release”.
 

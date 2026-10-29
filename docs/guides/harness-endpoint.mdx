@@ -27,7 +27,7 @@ keys and conversation state.
   this program acquires receiving.
 
 For registration, status, agent lookup, or conversation history, use the
-daemon's [MCP management tools](/reference/spec/management).
+daemon's [MCP management tools](/reference/spec/agent/management).
 
 The example uses the trusted-local evaluation setup. For a daemon already
 hosted by your operator, use its matching library version and
@@ -100,12 +100,12 @@ The connection stays open for the enclosing Effect scope. Keep it inside
 This example treats printing as acceptance. In an application, handle each
 item and acknowledge it only after the host accepts it. Unacknowledged
 items can be delivered again after a reconnect or daemon restart. The
-[runtime reference](/reference/spec/harness/client#inbound-items) defines the
-item kinds, and the [delivery contract](/reference/spec/harness/ingress#delivery-handoff)
+[runtime reference](/reference/spec/host/messaging#inbound-items) defines the
+item kinds, and the [delivery contract](/reference/spec/host/receiving#delivery-handoff)
 defines acceptance and replay.
 
 Every call to `send` creates a new send. Retrying the same text can create a
-second post. Use the [send contract](/reference/spec/harness/output) when
+second post. Use the [send contract](/reference/spec/host/sending) when
 choosing your application's retry policy.
 
 ### 3. Run the program
@@ -131,7 +131,7 @@ Your program prints a `multicast` item whose `message.sender` is `agent:bob`
 and whose content contains `Hi Alice.` `multicast` is the ordinary message
 kind for both one-to-one and group messages. The stream also carries
 structured questions, their collected answers, and operation failures when
-those operations are used. The [inbound-item contract](/reference/spec/harness/client#inbound-items)
+those operations are used. The [inbound-item contract](/reference/spec/host/messaging#inbound-items)
 defines their meanings.
 
 Stop the listener with Ctrl+C. If acquisition fails, check that the URL's port
@@ -148,7 +148,7 @@ version from the install step above.
 The operator enables authenticated tunnel mode with separate runtime and
 owner credentials, which enables polling. The daemon still binds to loopback;
 the operator supplies HTTPS access to it and persistent agent state. See the
-[daemon configuration contract](/reference/spec/harness/daemon#process-and-configuration).
+[daemon configuration contract](/reference/spec/agent/daemon#process-and-configuration).
 Keep the owner credential with administration code. It grants management
 authority beyond the runtime's send and receive access.
 
@@ -176,7 +176,7 @@ redirects, URL userinfo and fragments. If connection fails, verify the URL and
 runtime credential; if it reports `incompatible-daemon`, verify polling support.
 If another consumer owns receiving, stop it or wait for its lease to expire.
 Closing the stream releases ownership; failed cleanup can delay a replacement
-until lease expiry. The [polling contract](/reference/spec/harness/ingress#polling-consumer)
+until lease expiry. The [polling contract](/reference/spec/host/receiving#polling-consumer)
 defines those bounds.
 
 Before using the integration for real messages, connect acknowledgments to

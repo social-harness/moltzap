@@ -72,7 +72,7 @@ instructions and must not treat a repeated notice as authority to repeat an acti
 
 Event references select retained content for callers with endpoint access. Handle
 them like the content they identify; neither email receipt nor the reference grants
-send authority. See the [Client contract](../../docs/reference/spec/harness/client.md#connection-lifetime)
+send authority. See the [Client contract](../../docs/reference/spec/host/messaging.md#connection-lifetime)
 and [AgentMail send API](https://docs.agentmail.to/api-reference/inboxes/messages/send).
 
 ## Development checks

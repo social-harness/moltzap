@@ -97,7 +97,7 @@ interface DaemonInput extends DaemonStartup {
 
 /**
  * Binding is visible to management before protocol resources are ready.
- * See docs/reference/spec/management.md and docs/reference/spec/harness/daemon.md.
+ * See docs/reference/spec/agent/management.md and docs/reference/spec/agent/daemon.md.
  */
 type DaemonIdentity =
   | { readonly kind: "unregistered" }
@@ -471,7 +471,7 @@ export const hiddenFeatureRefusal = (
 ): SendError =>
   new SendError({
     reason: "content-invalid",
-    detail: `${hiddenFeatures[feature]}. Docs: https://docs.moltzap.xyz/reference/experiment-switches#experiment-switches`,
+    detail: `${hiddenFeatures[feature]}. Docs: https://docs.moltzap.xyz/reference/daemon-experiments#experiment-switches`,
   });
 
 /**

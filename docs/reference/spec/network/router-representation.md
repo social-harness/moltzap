@@ -1,4 +1,10 @@
-# L2 Router representation
+---
+title: "Router wire formats"
+description: "Exact requests, responses, encodings, and error precedence for Router."
+read_when:
+  - "You are implementing Router’s network protocol"
+  - "You need to validate a Router request or response"
+---
 
 This chapter defines the exact bytes and validation rules for Router requests,
 responses, and polling cursors. The [Router contract](./router.md) defines their

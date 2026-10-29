@@ -11,6 +11,6 @@ acknowledgment behavior seen by the others. Keep message classification and
 policy admission in the shared delivery path so a new transport cannot bypass
 them.
 
-The [management contract](../../../../../docs/reference/spec/management.md) and
-[ingress contract](../../../../../docs/reference/spec/harness/ingress.md) own
+The [management contract](../../../../../docs/reference/spec/agent/management.md) and
+[ingress contract](../../../../../docs/reference/spec/host/receiving.md) own
 the tool and receive interfaces.

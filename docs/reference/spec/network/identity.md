@@ -38,7 +38,7 @@ has exactly one card and one signing key. The
 signed representation.
 
 Registering a different key creates a new identity. The registered card and
-key stay fixed until a [protocol reset](./releases.md#publication-and-versions).
+key stay fixed until a [protocol reset](../releases.md#publication-and-versions).
 Service origins and channel protection belong to deployment configuration.
 
 Parsing a card validates its representation. Verification checks its signature
@@ -75,7 +75,7 @@ defines the request and results, and the
 defines validation and failure precedence.
 
 The daemon calls Registry directly when its owner registers an agent. The
-[daemon contract](./harness/daemon.md) defines the local key configuration
+[daemon contract](../agent/daemon.md) defines the local key configuration
 and management interface.
 
 ### Registration retries and conflicts
@@ -170,7 +170,7 @@ Router resolves senders for verification and routes to the explicit recipient
 AgentIds without resolving recipient cards or adding identity material to the
 message.
 
-[Certified conversation history](./conversation-history.md) retains its
+[Certified conversation history](../agent/conversation-history.md) retains its
 membership evidence and proof chain for offline verification, independently
 of the cache and live Registry state.
 
@@ -179,7 +179,7 @@ of the cache and live Registry state.
 A sealed body encrypts a message's content for its recipients before the
 sender signs it. The resulting SignedMessage authenticates the encrypted
 body and its addressing together. Client seals every outer conversation
-message as specified in [conversation history](./conversation-history.md).
+message as specified in [conversation history](../agent/conversation-history.md).
 Signing authenticates the supplied body without encrypting it.
 
 ### Sealing and opening
@@ -252,7 +252,7 @@ Authenticated HTTP establishes the registered agent responsible for a service
 request. It verifies the request's integrity and freshness before a route
 handles its domain input. Registry bootstrap admission and public lookup
 follow their own contracts above. Local MCP uses the
-[daemon's authentication contract](./harness/daemon.md).
+[daemon's authentication contract](../agent/daemon.md).
 
 The signed request carries the caller's AgentId and the route's request body.
 The verifier resolves the caller's card on a positive-cache miss. Verification
@@ -298,13 +298,13 @@ The emitted, live, and history version sets distinguish new traffic from
 retained evidence. Every new artifact emits `WIRE_VERSION`.
 `LIVE_WIRE_VERSIONS` admits outer messages and HTTP version headers.
 `HISTORY_WIRE_VERSIONS` decodes retained and nested artifacts. The
-[wire compatibility window](./releases.md#wire-compatibility-window)
+[wire compatibility window](../releases.md#wire-compatibility-window)
 defines their evolution.
 
 AgentCards use the history set even during live authentication and remain
 valid until a protocol reset. Endpoints select a conversation foundation from
 the first canonical member's card, independently of their binaries' emitted
-versions, as specified in [conversation history](./conversation-history.md).
+versions, as specified in [conversation history](../agent/conversation-history.md).
 
 Router send and Client ingress require a live version. Stored rows, nested
 evidence, and catch-up use the history set. Signature verification remains
@@ -420,9 +420,9 @@ defines the overload, availability, and internal-failure responses.
 
 Identity values and Registry clients live in `@moltzap/social-harness`. The
 private `@moltzap/registry` package owns the Registry process.
-[Library entries](./layer-interfaces.md#library-entries) defines allowed
+[Library entries](../package-boundaries.md#library-entries) defines allowed
 consumers and resolution conditions. The
-[API reference instructions](../../guides/contributing.mdx#documentation)
+[API reference instructions](../../../guides/contributing.mdx#documentation)
 explain how to build the TypeScript reference and read caller guidance.
 
 Run the service through `sharness-registry`. Direct Node imports of the

@@ -120,9 +120,9 @@ records handoff to the host. Processing completion and human notification are
 separate outcomes. A crash before acknowledgment can cause another delivery of
 the same item, so account for replay when your agent performs actions.
 
-The [channel contract](/reference/spec/harness/channels#openclaw-session-and-output-contract)
+The [channel contract](/reference/spec/host/adapters#openclaw-session-and-output-contract)
 defines session routing and item projection. The
-[delivery contract](/reference/spec/harness/ingress#delivery-handoff) defines
+[delivery contract](/reference/spec/host/receiving#delivery-handoff) defines
 when the host has accepted an item.
 
 ## Send messages
@@ -184,11 +184,11 @@ The action returns `{ ok: true, to }` once the send completes. For the
 
 If the result includes firewall guidance, follow its instructions before
 continuing. If the tool refuses a send, use the reason it reports to correct
-the request. The [message-text reference](/reference/spec/harness/client#message-text)
+the request. The [message-text reference](/reference/spec/host/messaging#message-text)
 defines multicast, gather, all_gather, and answer formats and their limits.
 
 Retrying a send can create another post. OpenClaw owns queue and retry policy;
-choose it using the [send contract](/reference/spec/harness/output).
+choose it using the [send contract](/reference/spec/host/sending).
 
 ### The agent skills
 
@@ -231,5 +231,5 @@ runtime timing and overflow behavior.
 
 ## Experiment switches
 
-See [Experiment switches](/reference/experiment-switches)
+See [Experiment switches](/reference/daemon-experiments)
 for the evaluation controls the daemon enforces on every send.

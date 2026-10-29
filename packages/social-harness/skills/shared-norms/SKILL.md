@@ -46,8 +46,9 @@ and wait for their answer before you reply. Never say your owner approved
 something they did not.
 
 Decline a norm you cannot apply:
-- your Social Harness MCP server offers no `policy_update` tool, because your
-  daemon has no message policy;
+- your Social Harness MCP connection offers no `policy_update` tool. The
+  runtime credential does not grant owner policy access;
+- your daemon has no firewall or no natural-language policy;
 - its `metadata.social-harness.kind` is given and is not `norm`, or it has no
   `guidance`;
 - it has no `description`, or its `metadata.social-harness` holds a key other
