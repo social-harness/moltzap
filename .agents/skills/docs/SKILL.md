@@ -13,6 +13,48 @@ complete a task, or make a decision. This guide records the owner's writing
 preferences and the repository's publishing conventions. Refine it as we
 review documents together. `AGENTS.md` defines documentation authority.
 
+## Separate specifications, APIs, and implementation
+
+Maintain specifications by hand. They define the concepts, responsibilities,
+guarantees, and observable behavior an implementation must satisfy. State
+assumptions and failure conditions where they limit a guarantee. Choose
+precision to suit the contract: a signed wire format needs exact bytes and
+validation rules, while an evolving architecture may establish responsibilities
+before selecting mechanisms. Record unresolved choices explicitly. Reading
+the code can reveal a discrepancy, but does not authorize rewriting the
+specification to match it.
+
+Generate API reference from the declarations and schemas that own the API.
+Derive types, validators, and language bindings from those definitions wherever
+they would otherwise repeat the same contract. TypeDoc generates documentation
+from TypeScript and JSDoc. Polish that source prose with the same care as a
+hand-written page. Explain what callers need beyond the signature, such as
+preconditions, ownership, lifetime, effects, and failures. Link to the owning
+specification for protocol guarantees. Keep export inventories and copied
+signatures out of hand-written specs. Verify that a generated page exists
+before removing its only useful explanation elsewhere.
+
+Document implementation only when the explanation adds something a reader
+cannot obtain from clear code. Implementation comments explain what the code
+leaves unclear, such as a non-obvious invariant, in present tense.
+Bugfix rationale, investigation outcomes, failed approaches, and change
+history belong in issues, PR descriptions, and commit
+messages. Durable architecture decisions belong in ADRs. Remove file tours,
+dependency inventories, and narration of control flow during simplification.
+
+Useful examples have different scopes:
+
+- [MCP's protocol specification](https://modelcontextprotocol.io/specification/2025-11-25/basic)
+  defines interoperability rules separately from its SDK reference.
+- [ACP's protocol overview](https://agentclientprotocol.com/protocol/v1/overview)
+  explains participants and message flow. Its
+  [TypeDoc reference](https://agentclientprotocol.github.io/typescript-sdk/)
+  documents the TypeScript library.
+- [Exoharness's specification](https://github.com/exoharness/exo/blob/main/exoharness/docs/spec.md)
+  develops concepts and responsibilities at an architectural level.
+- [OpenClaw's schema workflow](https://docs.openclaw.ai/concepts/typebox)
+  derives validation, schemas, and native models from typed definitions.
+
 ## Compose for the reader
 
 Begin each document with a topic sentence that explains its subject. Develop
@@ -25,10 +67,8 @@ paths.
 
 Choose the level of abstraction before drafting. A README helps readers
 choose a starting point. A concept page explains how something works and why
-it matters. A specification defines guarantees, assumptions, and observable
-behavior. A wire reference defines accepted representations and validation.
-Keep package internals out of those explanations unless they explain a
-consequence the reader needs to understand.
+it matters. A guide helps them complete a task. Keep each page at its chosen
+level and link to the detail a reader needs next.
 
 Develop one topic per paragraph. Let its opening sentence establish that
 topic and let the following sentences explain or support it. Keep related
@@ -67,10 +107,16 @@ something the reader needs. Rewrite awkward passages in place. Adding a
 simpler introduction above the same explanation creates another copy.
 
 Read the affected documents together. Give each fact an owning page and link
-to it where the reader needs it. Remove repeated summaries, callouts, code
-inventories, and closing link lists. A link should help a reader continue a
-task or find a necessary explanation. There is no required link count or
+to it where the reader needs it. Remove repeated summaries, callouts, and
+closing link lists. A link should help a reader continue a task or find a
+necessary explanation. There is no required link count or
 closing section.
+
+For each affected folder, review the applicable specification, generated API
+reference, and source comments together. Classify misplaced text before
+editing it. Keep unique guarantees in the spec, move caller guidance to the owning JSDoc,
+and delete explanations that merely repeat the implementation. Regenerate
+the reference after source edits and read the result.
 
 Review correctness separately. Preserve unique guarantees and relevant
 failure conditions while removing repetition. Check implementation claims
@@ -156,11 +202,10 @@ only in PRs, issues, and reviews, which describe a fixed revision.
 ## Source ownership and checks
 
 Build the API reference with `pnpm docs:api`. TypeDoc writes `dist/api`.
-Edit its source JSDoc rather than generated output. Shared site values live
-in `docs/docs.json` variables, and reusable content lives in `docs/snippets/`.
-Check site links with `pnpm -s docs:check`.
+Shared site values live in `docs/docs.json` variables, and reusable content
+lives in `docs/snippets/`. Check site links with `pnpm -s docs:check`.
 
-Keep flow diagrams in JSDoc above their owning symbol and update them when
-the flow changes. A cross-package flow has one owner. Link to that owner
-from other pages. `pnpm docs:check:mermaid` checks the Mermaid dialect GitHub
-accepts. TypeDoc displays these diagrams as code blocks.
+Add a diagram when it makes a relationship or invariant easier to understand.
+Keep it with the explanation that owns that fact. API diagrams belong in the
+owning symbol's JSDoc. `pnpm docs:check:mermaid` checks the Mermaid dialect
+GitHub accepts. TypeDoc displays these diagrams as code blocks.
