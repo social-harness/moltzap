@@ -105,7 +105,6 @@
         "{workspaceRoot}/eslint.config.ts",
         "{workspaceRoot}/eslint.shared.ts",
         "{workspaceRoot}/knip.json",
-        "{workspaceRoot}/oxlint.json",
         "{workspaceRoot}/tsconfig.eslint.json"
       ],
       "cache": true

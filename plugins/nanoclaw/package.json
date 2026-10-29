@@ -11,9 +11,7 @@
   "type": "module",
   "files": [
     "dist",
-    "!dist/tsconfig.tsbuildinfo",
-    "LICENSE",
-    "NOTICE"
+    "!dist/tsconfig.tsbuildinfo"
   ],
   "main": "./dist/channels/sharness.js",
   "types": "./dist/channels/sharness.d.ts",
@@ -24,8 +22,6 @@
     }
   },
   "scripts": {
-    "build": "nx run @moltzap/nanoclaw-channel:build",
-    "lint": "nx run @moltzap/nanoclaw-channel:lint",
     "typecheck:tests": "tsc -p tsconfig.test.json",
     "test": "vitest run"
   },

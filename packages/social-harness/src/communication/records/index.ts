@@ -1,5 +1,5 @@
-/** @file Package-private facade for the complete Client protocol representation. */
-// safer-arch-ignore no-inventory-barrel: This is the complete protocol-representation facade; its sibling modules are the parts of one closed representation.
+/** @file Package-private vocabulary used by Client protocol consumers. */
+// safer-arch-ignore no-inventory-barrel: Sibling modules implement one closed protocol representation.
 
 /* eslint-disable jsdoc/require-jsdoc -- Re-exported private symbols retain their owning-module documentation. */
 
@@ -15,33 +15,24 @@ export {
   hashRecord,
   mintPostId,
   type OuterBodyReader,
-  type OuterMembership,
   signEvidenceMessage,
   signOuterEvidence,
   signOuterPacket,
 } from "./encoding/index.js";
 export {
-  ActionCertificate,
   ActionCertifiedRecord,
   ActionCore,
   ActionHash,
   ActionProposal,
   ActionSignatureStatement,
-  AnchorBody,
   AnchorHash,
-  canonicalIdentifier,
-  CatchUpAttestationStatement,
   CatchUpIncomplete,
-  CatchUpItem,
   CatchUpPage,
   CatchUpRequest,
   CertifiedRecord,
   CompletedReanchor,
   ConversationId,
-  ConversationIdentityInput,
   DirectPacket,
-  DurabilityCertificate,
-  DurabilityVoteStatement,
   EvidenceStatement,
   GenesisActionCore,
   GenesisAnchorBody,
@@ -49,9 +40,7 @@ export {
   MembershipHash,
   PostActionCore,
   PostIntent,
-  PostIntentHash,
   ReanchorBody,
-  ReanchorCertificate,
   ReanchorVoteStatement,
   RecordCore,
   RecordHash,
@@ -62,20 +51,16 @@ export {
   agentNameOf,
   compareAgentIds,
   Content,
-  ContentPart,
   GroupAddress,
-  JsonValue,
   maximumContentBytes,
   maximumMembers,
   MessageAddressInput,
   PostId,
-  wellFormedString,
 } from "./values.js";
 
 export {
   memberCard,
   quorumThreshold,
-  type VerifiedActionCore,
   type VerifiedEvidence,
   type VerifiedMembership,
   verifyActionCertifiedRecord,

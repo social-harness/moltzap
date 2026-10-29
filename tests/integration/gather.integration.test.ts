@@ -3,7 +3,6 @@
 import { CollectiveError } from "@moltzap/social-harness";
 import { Effect } from "effect";
 import { expect, it } from "vitest";
-import { processTrace } from "./daemon-process-harness.js";
 import {
   acquireParticipants,
   groupAddress,
@@ -13,6 +12,7 @@ import {
   type Participant,
   send,
 } from "./participants.js";
+import { processTrace } from "./process-trace.js";
 import { anyNumber, anyString } from "./test-matchers.js";
 
 const requireThree = (participants: readonly Participant[]) => {

@@ -12,7 +12,7 @@ import { WireVersions } from "@moltzap/social-harness/test";
 import { Duration, Effect, Layer, Redacted, Schema, type Scope } from "effect";
 import { generateKeyPairSync } from "node:crypto";
 import { expect, it } from "vitest";
-import { processTrace } from "./daemon-process-harness.js";
+import { processTrace } from "./process-trace.js";
 
 /** Registry setup shared by the independent process round trips. */
 export interface RegistryInfrastructure {

@@ -10,7 +10,7 @@ export class ImageInputError extends Data.TaggedError("ImageInputError")<{
 }> {}
 
 /** Git identity of one committed input. */
-export interface File {
+interface File {
   readonly mode: string;
   readonly blob: string;
 }
@@ -105,8 +105,20 @@ export function readJson(tree: Tree, file: string): Record<string, unknown> {
   return mapping(jsonValue(tree.read(file), file));
 }
 
+/** Narrows unknown values to object entries. */
+export function mapping(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? Object.fromEntries(Object.entries(value))
+    : {};
+}
+
+/** Lists committed inputs below a directory. */
+export function under(tree: Tree, root: string): string[] {
+  return [...tree.files.keys()].filter((file) => file.startsWith(`${root}/`));
+}
+
 /** Parses strict JSON with a file-specific error. */
-export function jsonValue(text: string, file: string): unknown {
+function jsonValue(text: string, file: string): unknown {
   return Either.match(
     Effect.runSync(
       Effect.either(
@@ -124,18 +136,6 @@ export function jsonValue(text: string, file: string): unknown {
       onRight: (value) => value,
     },
   );
-}
-
-/** Narrows unknown values to object entries. */
-export function mapping(value: unknown): Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? Object.fromEntries(Object.entries(value))
-    : {};
-}
-
-/** Lists committed inputs below a directory. */
-export function under(tree: Tree, root: string): string[] {
-  return [...tree.files.keys()].filter((file) => file.startsWith(`${root}/`));
 }
 
 function git(repo: string, args: readonly string[]): string {

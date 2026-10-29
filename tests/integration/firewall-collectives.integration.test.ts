@@ -13,7 +13,6 @@
 import { FirewallSendError } from "@moltzap/social-harness";
 import { Effect, Queue } from "effect";
 import { expect, it } from "vitest";
-import { processTrace } from "./daemon-process-harness.js";
 import {
   acquireParticipants,
   groupAddress,
@@ -23,6 +22,7 @@ import {
   type Participant,
   send,
 } from "./participants.js";
+import { processTrace } from "./process-trace.js";
 
 const requireAll = (participants: readonly Participant[], count: 3 | 4) =>
   participants.length === count

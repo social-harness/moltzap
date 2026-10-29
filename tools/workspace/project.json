@@ -82,28 +82,6 @@
         "command": "eslint '*.ts' 'images/**/*.ts' 'scripts/**/*.ts' --no-error-on-unmatched-pattern --cache --max-warnings=0"
       }
     },
-    "lint:oxlint": {
-      "cache": true,
-      "inputs": [
-        "workspaceFiles"
-      ],
-      "executor": "nx:run-commands",
-      "options": {
-        "cwd": ".",
-        "command": "oxlint . --deny-warnings"
-      }
-    },
-    "lint:script-reachability": {
-      "cache": true,
-      "inputs": [
-        "workspaceFiles"
-      ],
-      "executor": "nx:run-commands",
-      "options": {
-        "cwd": ".",
-        "command": "node scripts/repo/check-script-reachability.ts"
-      }
-    },
     "lint:docs-links": {
       "cache": true,
       "inputs": [
@@ -132,8 +110,6 @@
       "cache": false,
       "dependsOn": [
         "lint:root",
-        "lint:oxlint",
-        "lint:script-reachability",
         "lint:docs-links",
         "lint:agent-files",
         "lint:dependency-versions",
@@ -220,6 +196,20 @@
       ],
       "options": {
         "command": "node scripts/release/image-input-key.test.ts"
+      }
+    },
+    "test:release": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "parallel": false,
+        "commands": [
+          "bash scripts/release/compute-next-version.test.sh",
+          "bash scripts/release/push-gate.test.sh",
+          "bash scripts/release/npm-version-exists.test.sh",
+          "bash scripts/release/ghcr-digest.test.sh",
+          "node scripts/release/select-packages.test.ts"
+        ]
       }
     },
     "docs:api": {

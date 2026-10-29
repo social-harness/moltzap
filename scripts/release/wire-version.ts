@@ -7,11 +7,11 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 /** Workspace-relative source of `WIRE_VERSION`. */
-export const WIRE_VERSION_SOURCE =
+const WIRE_VERSION_SOURCE =
   "packages/social-harness/src/identity/wire-version.ts";
 
 /** Matches the literal export; group 1 is the value. */
-export const WIRE_VERSION_LITERAL =
+const WIRE_VERSION_LITERAL =
   /export\s+const\s+WIRE_VERSION\s*=\s*["']([^"']*)["']/;
 
 /**
@@ -34,7 +34,10 @@ export const readCompatibilityVersion = (
   return parseCompatibilityVersion(source);
 };
 
-/** Read the emitted wire value from source text, including a committed tree. */
+/**
+ * Read the emitted wire value from source text, including a committed tree.
+ * `push-gate.sh` imports it to read the tree being gated.
+ */
 export function parseCompatibilityVersion(
   source: string,
 ): { readonly value: string } | { readonly error: string } {

@@ -5,10 +5,10 @@ on:
     branches: [main]
   pull_request:
 
-# Optional self-hosted Nx remote cache: jobs read with NX_CACHE_TOKEN; main
-# (nx-cache-write environment) and same-repository pull requests
-# (NX_CACHE_WRITE_TOKEN) write. Forks and Dependabot run without it;
-# NX_CACHE_DISABLED=true turns it off everywhere.
+# Optional self-hosted Nx remote cache for the ci, test and integration jobs:
+# they read with NX_CACHE_TOKEN; main (nx-cache-write environment) and
+# same-repository pull requests (NX_CACHE_WRITE_TOKEN) write. Forks and
+# Dependabot run without it; NX_CACHE_DISABLED=true turns it off everywhere.
 
 permissions:
   contents: read
@@ -16,8 +16,8 @@ permissions:
 jobs:
   ci:
     runs-on: ubuntu-latest
-    environment: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') && 'nx-cache-write' || '' }}
-    env:
+    environment: &nx-cache-environment ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') && 'nx-cache-write' || '' }}
+    env: &nx-cache
       NX_SELF_HOSTED_REMOTE_CACHE_SERVER: ${{ vars.NX_CACHE_URL }}
       NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) && secrets.NX_CACHE_WRITE_TOKEN || secrets.NX_CACHE_TOKEN }}
       NX_SKIP_REMOTE_CACHE: ${{ (vars.NX_CACHE_DISABLED == 'true' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) || github.actor == 'dependabot[bot]') && 'true' || 'false' }}
@@ -29,12 +29,11 @@ jobs:
       # The release commit writes CHANGELOG.md from the fragments in
       # changelog.d/, so a pull request adds a fragment instead of editing it.
       # HEAD is the pull request's merge commit, whose first parent is its
-      # base; a base without towncrier.toml still takes hand-written entries.
+      # base.
       - name: Refuse CHANGELOG.md edits
         if: github.event_name == 'pull_request'
         run: |
-          if git cat-file -e HEAD^1:towncrier.toml 2>/dev/null \
-            && ! git diff --quiet HEAD^1 HEAD -- CHANGELOG.md; then
+          if ! git diff --quiet HEAD^1 HEAD -- CHANGELOG.md; then
             echo "::error file=CHANGELOG.md::This pull request edits CHANGELOG.md; add a fragment under changelog.d/ instead (see towncrier.toml)"
             exit 1
           fi
@@ -64,23 +63,14 @@ jobs:
       - run: pnpm docs:api
       - run: pnpm docs:check
       - run: pnpm docs:check:mermaid
-      - run: pnpm test:repo-gates
-      - run: pnpm test:compute-next-version
-      - run: pnpm test:push-gate
-      - run: pnpm test:npm-version-exists
-      - run: pnpm test:ghcr-digest
-      - run: pnpm test:select-packages
-      - run: pnpm nx run workspace:test:image-input-key
+      - run: pnpm nx run-many -t test:release,test:image-input-key -p workspace
 
   test:
     runs-on: ubuntu-latest
     # Bounds a hung test run.
     timeout-minutes: 20
-    environment: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') && 'nx-cache-write' || '' }}
-    env:
-      NX_SELF_HOSTED_REMOTE_CACHE_SERVER: ${{ vars.NX_CACHE_URL }}
-      NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) && secrets.NX_CACHE_WRITE_TOKEN || secrets.NX_CACHE_TOKEN }}
-      NX_SKIP_REMOTE_CACHE: ${{ (vars.NX_CACHE_DISABLED == 'true' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) || github.actor == 'dependabot[bot]') && 'true' || 'false' }}
+    environment: *nx-cache-environment
+    env: *nx-cache
     steps:
       # A pull request runs only the projects its diff affects, against the PR
       # base that nx-set-shas resolves; fetch-depth: 0 gives it that history.
@@ -105,11 +95,8 @@ jobs:
     runs-on: ubuntu-latest
     # Bounds a hung test run.
     timeout-minutes: 20
-    environment: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') && 'nx-cache-write' || '' }}
-    env:
-      NX_SELF_HOSTED_REMOTE_CACHE_SERVER: ${{ vars.NX_CACHE_URL }}
-      NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) && secrets.NX_CACHE_WRITE_TOKEN || secrets.NX_CACHE_TOKEN }}
-      NX_SKIP_REMOTE_CACHE: ${{ (vars.NX_CACHE_DISABLED == 'true' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) || github.actor == 'dependabot[bot]') && 'true' || 'false' }}
+    environment: *nx-cache-environment
+    env: *nx-cache
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

@@ -31,7 +31,6 @@ import {
   makeRegistrationRequest,
   type ProcessInfrastructure,
   ProcessTestError,
-  processTrace,
   type RunningProcess,
   stopProcess,
   waitForExit,
@@ -52,6 +51,7 @@ import {
   resetReleaseDocsAnchor,
   storageStartupPhase,
 } from "./expected-contracts.js";
+import { processTrace } from "./process-trace.js";
 import { arrayContaining } from "./test-matchers.js";
 
 const registerFixture = (fixture: DaemonProcessFixture) =>

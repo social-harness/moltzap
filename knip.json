@@ -10,19 +10,17 @@
         "scripts/docs/check-code-links.ts",
         "scripts/docs/vitest.config.ts",
         "scripts/docs/__tests__/*.test.ts",
-        "scripts/__tests__/integration-lint-profile.ts"
+        "scripts/generate-*-golden.ts",
+        "scripts/repo/check-agent-files.ts",
+        "scripts/repo/check-dependency-versions.ts",
+        "scripts/release/wire-version.ts"
       ],
       "project": [
         "*.ts",
-        "scripts/docs/**/*.ts",
-        "scripts/build/**/*.ts",
-        "scripts/test/packed-workspace.ts",
-        "scripts/test-*-package.ts",
-        "scripts/__tests__/**/*.ts"
+        "scripts/**/*.ts"
       ],
       "ignoreDependencies": [
         "@mermaid-js/mermaid-cli",
-        "oxlint",
         "puppeteer",
         "typedoc"
       ]
@@ -138,10 +136,8 @@
       ],
       "ignoreDependencies": [
         "@moltzap/openclaw-channel",
-        "@moltzap/registry",
-        "@moltzap/router",
-        "@electric-sql/pglite",
-        "@electric-sql/pglite-socket"
+        "@moltzap/social-harness",
+        "@modelcontextprotocol/client"
       ]
     },
     "plugins/instinct": {
@@ -177,40 +173,5 @@
         "*.ts"
       ]
     }
-  },
-  "ignoreIssues": {
-    "packages/social-harness/src/communication/conversations/runtime/index.ts": [
-      "types"
-    ],
-    "packages/social-harness/src/communication/conversations/index.ts": [
-      "exports",
-      "types"
-    ],
-    "packages/social-harness/src/communication/records/schemas.ts": [
-      "exports"
-    ],
-    "packages/social-harness/src/communication/records/verification.ts": [
-      "exports"
-    ],
-    "packages/social-harness/src/communication/records/index.ts": [
-      "exports",
-      "types"
-    ],
-    "packages/social-harness/src/communication/store/index.ts": [
-      "types"
-    ],
-    "packages/social-harness/src/communication/store/database/index.ts": [
-      "exports",
-      "types"
-    ],
-    "packages/social-harness/src/communication/store/database/schema.ts": [
-      "types"
-    ],
-    "packages/social-harness/src/harness/protocol/owner-tools.ts": [
-      "exports"
-    ],
-    "packages/social-harness/src/communication/store/rows/index.ts": [
-      "exports"
-    ]
   }
 }

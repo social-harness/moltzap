@@ -54,11 +54,8 @@
     "sharnessd-launcher": "./bin/sharnessd-launcher"
   },
   "scripts": {
-    "build": "nx run @moltzap/social-harness:build",
-    "lint": "nx run @moltzap/social-harness:lint",
     "test": "vitest run",
-    "typecheck:tests": "tsc -p tsconfig.test.json",
-    "test:integration": "nx run @moltzap/social-harness:test:integration"
+    "typecheck:tests": "tsc -p tsconfig.test.json"
   },
   "nx": {
     "targets": {

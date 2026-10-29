@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 export type JsonObject = Readonly<Record<string, unknown>>;
 
 /** Malformed manifests cannot supply dependency-version evidence. */
-export class MalformedJsonInput extends Data.TaggedError("MalformedJsonInput")<{
+class MalformedJsonInput extends Data.TaggedError("MalformedJsonInput")<{
   readonly message: string;
 }> {}
 

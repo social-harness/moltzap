@@ -56,7 +56,6 @@ catalog:
   nx: ^22.7.5
   openclaw: 2026.10.3
   oxfmt: ^0.7.0
-  oxlint: ^0.16.0
   protobufjs: 7.6.5
   puppeteer: 24.43.1
   sigstore: 4.1.1

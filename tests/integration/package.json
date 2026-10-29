@@ -3,12 +3,6 @@
   "private": true,
   "description": "Cross-package process acceptance suites",
   "type": "module",
-  "scripts": {
-    "test:integration": "nx run @moltzap/integration-tests:test:integration",
-    "test:mixed-release": "nx run @moltzap/integration-tests:test:mixed-release",
-    "typecheck:tests": "nx run @moltzap/integration-tests:typecheck:tests",
-    "lint": "nx run @moltzap/integration-tests:lint"
-  },
   "nx": {
     "targets": {
       "test:integration": {
@@ -82,7 +76,6 @@
           "{workspaceRoot}/eslint.config.ts",
           "{workspaceRoot}/eslint.shared.ts",
           "{workspaceRoot}/knip.json",
-          "{workspaceRoot}/oxlint.json",
           "{workspaceRoot}/tsconfig.eslint.json",
           "{workspaceRoot}/scripts/**/*.ts",
           "{workspaceRoot}/scripts/tsconfig.json",
@@ -119,5 +112,9 @@
     "protobufjs": "catalog:",
     "tsx": "catalog:",
     "vitest": "catalog:"
+  },
+  "exports": {
+    "./process-network": "./process-network.ts",
+    "./daemon-process-harness": "./daemon-process-harness.ts"
   }
 }
