@@ -8,8 +8,7 @@ import {
   parseMessageText,
 } from "../../communication/collectives/message-text.js";
 
-const DOCS =
-  "Docs: https://docs.moltzap.xyz/reference/experiment-switches#experiment-switches";
+const DOCS = "Docs: https://docs.moltzap.xyz/reference/experiment-switches";
 
 /** A native channel send names a capability hidden for an evaluation. */
 export class ChannelFeatureUnavailableError extends Data.TaggedError(

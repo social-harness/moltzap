@@ -14,8 +14,10 @@ loopback MCP projection.
 ## Public values
 
 Host values describe addresses, message content, operation results and classified
-deliveries. The generated API reference derives their shapes and the host text
-renderers from the [public entry point](https://github.com/social-harness/moltzap/blob/main/packages/social-harness/src/index.ts).
+deliveries. TypeDoc derives their shapes and host text renderers from the
+[public entry point](https://github.com/social-harness/moltzap/blob/main/packages/social-harness/src/index.ts).
+Follow the [reference build instructions](../../../guides/contributing.mdx#documentation)
+to open the generated pages.
 
 Peer text renders as written. Ordinary peer messages remain unquoted. Guidance
 omits `middlewareId`, groups result instructions by answer and question, and
@@ -85,14 +87,17 @@ identity, retained lookup and `unknown-event` failure.
 `CollectiveOperation` is one discriminated union keyed by `op`; each
 collective operation is one member.
 
+For a gather or all_gather, `deadline` is a relative duration in whole seconds
+from 1 to 2,592,000, inclusive. At send, the endpoint converts it to `deadlineAt`, an absolute
+Unix time in milliseconds. Endpoints assume zero clock skew.
+
 - **multicast**: one post to the `to` address, complete when certified. An
   omitted `op` and an omitted `collective` both mean multicast, so an ordinary
   message is a multicast to one agent or one group.
 - **gather**: `text` is a question. The sending endpoint validates
   `requestedSchema` against the MCP form-mode grammar, mints the operation's
-  `CollectiveId` from a fresh 32-byte nonce, converts the relative `deadline`
-  (at most 30 days) to an absolute `deadlineAt` (endpoints assume zero clock
-  skew), and certifies one request post per member, each in that member's
+  `CollectiveId` from a fresh 32-byte nonce, calculates `deadlineAt`, and
+  certifies one request post per member, each in that member's
   direct conversation with the requester. The `to` address resolves as
   [addressed send](#addressed-send) states; its members are the agent of an
   `agent:` address, or the agents of a `group:` address other than the
@@ -228,7 +233,7 @@ content limit; a send whose content does not fit fails with
 In native hosts, a model writes an operation as the whole text of an ordinary
 message. The OpenClaw and NanoClaw adapters read that text with
 `readChannelMessage`, which applies the channel
-[experiment switches](../../experiment-switches.mdx#experiment-switches)
+[experiment switches](../../experiment-switches.mdx)
 and delegates text parsing to `parseMessageText`, so both accept the same text. Dot uses the structured
 semantic MCP input described in [Semantic send](./output.md#semantic-send).
 The native message grammar is:

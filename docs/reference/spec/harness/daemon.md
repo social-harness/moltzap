@@ -6,6 +6,24 @@ protocols, certified history, delivery backlog, and one loopback MCP endpoint.
 
 ## Process and configuration
 
+The daemon reads its settings from the environment. These six are required:
+
+| Setting | Accepted value |
+| --- | --- |
+| `SHARNESS_STATE_DIRECTORY` | Directory holding the agent's identity, history, and delivery state |
+| `SHARNESS_MCP_PORT` | Decimal integer from 1 to 65535, with no leading zeros, sign, whitespace, or exponent |
+| `SHARNESS_REGISTRY_ORIGIN` | Serialized HTTP(S) origin, such as `https://registry.example.com` |
+| `SHARNESS_REGISTRY_SIGNER_PUBLIC_KEY` | Compact Ed25519 public JWK, exactly `{"crv":"Ed25519","kty":"OKP","x":"..."}` in that key order |
+| `SHARNESS_ROUTER_ORIGIN` | Serialized HTTP(S) origin in the same form as the Registry origin |
+| `SHARNESS_AGENT_PRIVATE_KEY_FILE` | Readable file containing the agent's unencrypted Ed25519 PKCS#8 PEM private key |
+
+An origin must equal its serialized URL origin, with no path, trailing slash,
+query, fragment, or credentials. The signer's `x` value is the canonical
+43-character base64url encoding of its public key. A missing or invalid
+setting stops startup in phase `configuration`. Diagnostics name the setting
+without printing its supplied value. The daemon binds
+`127.0.0.1:<SHARNESS_MCP_PORT>/mcp`.
+
 Optional startup registration uses these settings, validated with the daemon's
 other process inputs:
 
@@ -34,18 +52,10 @@ for a signing key. Persist daemon state for that key's lifetime. Lost state
 requires a new signing key and a new OperationId; replaying registration with
 the old key and OperationId cannot recover its earlier signing history.
 
-
-The daemon binds only `127.0.0.1:<SHARNESS_MCP_PORT>/mcp`. Its remaining exact
-configuration stays:
-
-- `SHARNESS_STATE_DIRECTORY`;
-- `SHARNESS_REGISTRY_ORIGIN`;
-- `SHARNESS_REGISTRY_SIGNER_PUBLIC_KEY`;
-- `SHARNESS_ROUTER_ORIGIN`; and
-- `SHARNESS_AGENT_PRIVATE_KEY_FILE`.
-
 `SHARNESS_ADMISSION_CREDENTIAL_FILE` names the Registry admission credential,
-which only registration presents. While the state directory holds no identity
+which only registration presents. Its exact contents follow the
+[admission credential grammar](../identity-representation.md#registration-admission).
+While the state directory holds no identity
 binding, the daemon reads and validates the file at startup and fails closed
 with a configuration error when the variable is unset or empty or the file is
 missing or invalid. Once the state directory holds a registered identity in a
@@ -69,8 +79,9 @@ serving the agent.
 
 Two optional paths, `SHARNESS_MCP_RUNTIME_CREDENTIAL_FILE` and
 `SHARNESS_MCP_OWNER_CREDENTIAL_FILE`, enable authenticated tunnel mode. Supply
-both or neither. Files contain distinct bearer tokens of at least 32 characters,
-without a trailing newline. Runtime authority exposes only `send_message`,
+both or neither. Files contain distinct bearer tokens of 32 to 512 token68
+characters, without surrounding whitespace or a trailing newline.
+Runtime authority exposes only `send_message`,
 `read_event` and `search_agents` after registration. Before registration it
 exposes no tools. Owner authority also permits registration, status, raw history,
 inbox pagination, delivery acknowledgment, send recovery and event consumer

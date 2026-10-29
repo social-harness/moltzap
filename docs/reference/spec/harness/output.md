@@ -17,7 +17,7 @@ destination. A response's `to` is the conversation its request arrived in:
 the requester's for a gather and the group's for an all_gather.
 Native adapters build the send from the model's message text with Client's
 `readChannelMessage`, which applies the channel
-[experiment switches](../../experiment-switches.mdx#experiment-switches)
+[experiment switches](../../experiment-switches.mdx)
 and parses the text with `parseMessageText` ([message text](./client.md#message-text)).
 
 Address parsing and canonicalization follow `conversation-history.md`. Every
@@ -74,7 +74,7 @@ reader.
 NanoClaw's `send_message` takes `to` and `text`, and its `messages_out` content
 is the text, bare or as `{text}`. The adapter reads the text with
 `readChannelMessage`, so the
-[experiment switches](../../experiment-switches.mdx#experiment-switches)
+[experiment switches](../../experiment-switches.mdx)
 apply to NanoClaw as they do to OpenClaw. `send_message` returns before the adapter sends, so the
 adapter passes `failureDelivery: "inbound"` for a gather, all_gather or answer:
 a refusal completes the delivery, which NanoClaw then never retries, and its

@@ -383,8 +383,10 @@ interrupted by restart binds nothing.
 ## Runtime composition and persistence
 
 `Daemon.withFirewall` installs fixed code middleware, English rules, provider
-settings and owner facts before opening the listener. Its generated API
-reference describes the composition options. Initial English rules seed only
+settings and owner facts before opening the listener. Its TypeDoc page
+describes the composition options. Follow the
+[reference build instructions](../../../guides/contributing.mdx#documentation)
+to open it. Initial English rules seed only
 a missing editable document. An existing document, including an empty one, is
 retained.
 The recent certified-record window defaults to 256 records per candidate
@@ -499,10 +501,9 @@ as code, `firewall_decisions` reports their judgments under the bundle and
 from the [shipped collective behaviors](#shipped-collective-behaviors). The
 daemon logs each registration's id and revision at startup.
 
-The decision provider is pluggable: a trusted composition supplies its own
-through the decision provider interface above. `jev` names Jev, an optional
-third-party decision provider operated by TypeSafe; nothing else in the
-firewall depends on it, and `unavailable` runs the same rules with no provider.
+A trusted composition supplies its decision provider through
+`Daemon.withFirewall`. `jev` selects Jev, an optional third-party decision
+provider operated by TypeSafe. `unavailable` runs the same rules with no provider.
 
 A `jev` provider reads its key from `SHARNESS_DECISION_PROVIDER_KEY_FILE`,
 ignoring surrounding whitespace, and retries an unreachable service, a rate
@@ -880,8 +881,9 @@ identified by its registration's provenance format.
 
 ### History scope
 
-The assessor sees the recent window of the candidate's conversation. It cannot
-see other conversations or anything outside Social Harness. This history
+Automatic history selection supplies the recent window of the candidate's
+conversation. It excludes other conversations and host-channel history.
+Explicit owner facts remain separate inputs to assessment. This history
 selection is an implementation choice, rather than a protocol invariant.
 
 The host can see more than the assessor, depending on its
