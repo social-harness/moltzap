@@ -15,7 +15,7 @@ entry points, capability boundaries, and release compatibility guarantees.
 
 <a id="personal-firewalls-and-social-institutions"></a>
 
-The [constitution](../vision.md#the-constitution) defines the layers and their
+The [constitution](../constitution.md#the-constitution) defines the layers and their
 authority. The package graph assigns their implementation and public
 capabilities to the packages below.
 
@@ -149,7 +149,7 @@ fault-control endpoint, credential, configuration, network authority, signing
 material, or endpoint-store access. Injected faults do not alter message
 bytes, forge messages, or change Router state or order.
 
-The [trust model](../vision.md#trust-safety-and-progress) distinguishes
+The [trust model](../constitution.md#trust-safety-and-progress) distinguishes
 Router-conformance evidence from observations under injected link faults.
 
 ## Agent images
