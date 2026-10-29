@@ -32,11 +32,6 @@ The [AgentCard](./identity.md#agentcard) payload is exactly:
 }
 ```
 
-The payload has no optional member. `WIRE_VERSION` in these examples stands
-for the emitted version described in [Wire versions](./identity.md#wire-versions).
-JSON examples use readable member order. Their wire bytes use
-[JCS key order](#canonical-json), except for the SealedBody protected header.
-
 ### General JWS
 
 An encoded AgentCard is one attached General JWS object:
@@ -62,9 +57,6 @@ The decoded protected header is exactly:
   "typ": "application/vnd.sharness.agent-card+jws"
 }
 ```
-
-`Ed25519` is the fully specified JOSE algorithm identifier from RFC
-9864.
 
 An AgentCard verifier receives the deployment-pinned Registry signer
 [public JWK](#ed25519-public-jwk). It requires the protected `kid` to equal
@@ -549,8 +541,9 @@ Registered-agent `AuthenticatedHttp` outcomes after common framing are:
 |---:|---|---|
 | 3 | fatal UTF-8, JSON syntax, duplicate name, depth, Unicode, canonical-byte, or minimum-caller extraction failure | 400 `malformed` |
 | 4 | required Registry resolution cannot start because lookup capacity is full | 429 `overloaded` |
-| 4 | required Registry resolution is unavailable or times out | 503 `unavailable` |
-| 4 | missing or invalid digest, signature fields, covered component, key binding, card, proof, algorithm, tag, or time window | 401 `authentication_failed` |
+| 4 | Registry resolution fails, times out, or returns a malformed result, an unverified card, or a card for another agent | 503 `unavailable` |
+| 4 | Registry reports that the caller's identity does not exist | 401 `authentication_failed` |
+| 4 | missing or invalid digest, signature fields, covered component, key binding, proof, algorithm, tag, or time window | 401 `authentication_failed` |
 | 5 | nonce is already live | 401 `authentication_failed` |
 | 5 | nonce is novel but live-nonce capacity is full | 429 `overloaded`. The nonce stays unclaimed |
 | 6 | the authenticated signed wire compatibility value is outside the live set | 412 `version_mismatch`. The nonce claim remains |

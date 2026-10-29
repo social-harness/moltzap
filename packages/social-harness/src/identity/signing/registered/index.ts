@@ -378,39 +378,41 @@ function lookupCard(
 const isVerifiedAgentCard = Schema.is(verifiedAgentCardSchema);
 
 /**
- * Any layer can provide the `Registry`, so a `found` result's card is read once
- * under a try, must be one this package verified, and must belong to the
- * requested `agentId`; the request's signature key alone does not bind the
- * AgentId. A result or card that throws on read, a card this package did not
- * verify, or another agent's card fails authentication.
+ * A Registry provider must return a card verified by this package for the
+ * requested identity. Its failure to supply that evidence leaves authentication
+ * unavailable. Only an explicit missing identity refuses the caller here.
+ * Provider-owned properties are read under a try because injected providers can
+ * return objects whose getters throw.
  * @param attempted Registry outcome, absent when no lookup permit was available.
  * @param agentId Requested identity that the returned card must bind.
- * @returns The authenticated card or an overload/authentication failure.
+ * @returns The verified card or a closed resolution failure.
  */
 function resolveLookupAttempt(
   attempted: Option.Option<RegistryLookupResult>,
   agentId: AgentIdValue,
-): Effect.Effect<
-  VerifiedAgentCard,
-  OverloadedError | AuthenticationFailedError
-> {
+): Effect.Effect<VerifiedAgentCard, CardResolutionError> {
   if (Option.isNone(attempted)) {
     return Effect.fail(new OverloadedError());
   }
   const result = attempted.value;
   return Effect.try({
-    try: () =>
-      result.kind === "found" ? Option.some(result.agentCard) : Option.none(),
-    catch: () => new AuthenticationFailedError(),
-  }).pipe(
-    Effect.flatMap((agentCard) =>
-      Option.isSome(agentCard) &&
-      isVerifiedAgentCard(agentCard.value) &&
-      agentCard.value.agentId === agentId
-        ? Effect.succeed(agentCard.value)
-        : Effect.fail(new AuthenticationFailedError()),
-    ),
-  );
+    try: (): Effect.Effect<
+      VerifiedAgentCard,
+      AuthenticationFailedError | UnavailableError
+    > => {
+      const kind = result.kind;
+      if (kind === "not_found") {
+        return Effect.fail(new AuthenticationFailedError());
+      }
+      const agentCard = result.agentCard;
+      return kind === "found" &&
+        isVerifiedAgentCard(agentCard) &&
+        agentCard.agentId === agentId
+        ? Effect.succeed(agentCard)
+        : Effect.fail(new UnavailableError());
+    },
+    catch: () => new UnavailableError(),
+  }).pipe(Effect.flatten);
 }
 
 /**

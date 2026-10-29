@@ -576,12 +576,44 @@ it("returns version mismatch to a peer still on the prior Social Harness version
     }),
   ));
 
-/**
- * A Registry result whose card this package did not verify is an invalid card,
- * whether the result or its card throws on read or the card is a readable
- * copy, which would pass the signature check because it carries the signer's
- * key.
- */
+const verifyInvalidLookupRecovery = (
+  lookupResult: (agentCard: VerifiedAgentCard) => RegistryLookupResult,
+) =>
+  Effect.gen(function* () {
+    const fixture = yield* makeIdentityFixture;
+    const prepared = yield* prepareRequest({ fixture });
+    const result = yield* Ref.make(lookupResult(fixture.agentCard));
+    yield* Effect.gen(function* () {
+      const failures = yield* Effect.all(
+        [
+          verifyAgentRequest(prepared).pipe(Effect.flip),
+          verifyAgentRequest(prepared).pipe(Effect.flip),
+        ],
+        { concurrency: 2 },
+      );
+      expect(failures).toStrictEqual([
+        new UnavailableError(),
+        new UnavailableError(),
+      ]);
+
+      yield* Ref.set(result, { kind: "found", agentCard: fixture.agentCard });
+      const verified = yield* verifyAgentRequest(prepared);
+      expect(verified.agentCard).toBe(fixture.agentCard);
+    }).pipe(
+      Effect.provide(
+        authenticatedHttpLayerWithRegistry(
+          registryWithLookup(() => Ref.get(result)),
+          { registryLookupConcurrencyLimit: 1 },
+        ),
+      ),
+      Effect.timeoutFail({
+        duration: RESOLVER_REGRESSION_DEADLINE,
+        onTimeout: () => new Error("Registry recovery did not settle"),
+      }),
+    );
+  });
+
+/** A readable card copy has the caller's key but lacks package verification. */
 it.each([
   {
     result: "a lookup result that cannot be read",
@@ -602,21 +634,20 @@ it.each([
       agentCard: Object.freeze({ ...agentCard }),
     }),
   },
-])(
-  "fails authentication when the Registry returns $result",
-  ({ lookupResult }) =>
-    Effect.runPromise(
-      Effect.gen(function* () {
-        const refusal = yield* Effect.flip(
-          verifyThroughLookupResult(lookupResult),
-        );
-
-        expect(refusal).toStrictEqual(new AuthenticationFailedError());
+  {
+    result: "an unknown result kind",
+    lookupResult: (agentCard: VerifiedAgentCard): RegistryLookupResult =>
+      Object.defineProperty({ kind: "found", agentCard }, "kind", {
+        value: "unexpected",
       }),
-    ),
+  },
+])(
+  "reports unavailable and recovers after the Registry returns $result",
+  ({ lookupResult }) =>
+    Effect.runPromise(verifyInvalidLookupRecovery(lookupResult)),
 );
 
-it("fails authentication when the Registry answers with another agent's verified card", () =>
+it("reports unavailable when the Registry answers with another agent's verified card", () =>
   Effect.runPromise(
     Effect.gen(function* () {
       const other = yield* makeIdentityFixture;
@@ -637,7 +668,7 @@ it("fails authentication when the Registry answers with another agent's verified
         ),
       );
 
-      expect(refusal).toStrictEqual(new AuthenticationFailedError());
+      expect(refusal).toStrictEqual(new UnavailableError());
     }),
   ));
 
