@@ -65,7 +65,10 @@ const CLIENT_IMPLEMENTATION = {
 class CloseError extends Data.TaggedError("CloseError") {}
 
 /**
- * Acquire one real MCP-backed endpoint and its scoped connection.
+ * Connect to one registered daemon for the caller's scope. A credential-bearing
+ * URL must use HTTPS or HTTP on literal `127.0.0.1` or `[::1]`, without userinfo
+ * or a fragment. The URL is copied before execution, and authenticated requests
+ * refuse redirects. Acquisition verifies support for the selected receive mode.
  * @param endpoint Explicit MCP URL for the configured endpoint daemon.
  * @param options Runtime credential selects polling; omission preserves trusted-local push.
  * @returns An endpoint whose resources remain live for the caller's scope.

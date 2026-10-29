@@ -1,10 +1,8 @@
 # Message policy execution
 
-Status: **experimental runtime implementation; broader real-agent qualification
-pending**
-
-This chapter defines the experimental semantic checks of the endpoint's
-personal firewall (L3 Personal Firewalls).
+The personal message firewall checks application messages against an endpoint's
+safety rules and contextual norms before sending or runtime delivery. Its
+implementation is experimental, with broader real-agent qualification pending.
 [Endpoint screening](./screening.md) owns its structural checks. Client
 assesses application messages before outgoing intent publication and
 incoming runtime admission. The evaluator separates safety
@@ -30,14 +28,6 @@ are restored from the daemon store.
 Without a message-policy file, `Daemon.layer`, which `sharnessd` runs, is the
 baseline composition without message checks.
 
-See [firewall/admission/firewall.ts](https://github.com/social-harness/moltzap/blob/main/packages/social-harness/src/firewall/admission/firewall.ts) →
-`collectiveAdmission` and
-[harness/inbox/host-delivery.ts](https://github.com/social-harness/moltzap/blob/main/packages/social-harness/src/harness/inbox/host-delivery.ts) →
-`makeHostDelivery` with
-[firewall/admission/admission.ts](https://github.com/social-harness/moltzap/blob/main/packages/social-harness/src/firewall/admission/admission.ts) →
-`runAdmission` for the outgoing and incoming flows. The standalone runner
-remains usable by offline experiments without acquiring a daemon or store.
-
 ## Ownership and scope
 
 Client owns context construction, admission, retained dispositions and recovery.
@@ -62,22 +52,13 @@ The threat model is adversarial peers communicating with an endpoint whose
 composition is controlled by its operator. It does not claim isolation from a
 compromised privileged host.
 
-## Composition interfaces
+## Policy composition
 
-These values belong to service composition, not the agent-facing endpoint.
-
-| Capability | Contract |
-| --- | --- |
-| Message middleware | Stable id, revision, declared rule descriptions, and `check(input)` returning an Effect of per-rule findings, norm expectations and optional private trace. Code and English policies share this contract. |
-| English policy | `makeEnglishPolicy` freezes English documents, templates and settings and returns middleware. It interprets text through a provider; it does not generate executable policy code. |
-| Message and context | Exact candidate and direction, and the collective operation it belongs to; local agent and principal identity; verified participant attribution; authorized earlier history, owner facts, evidence gaps and the capture time. Context is data, not another service. |
-| Decision provider | State and named bounded-choice questions to validated distributions, provider/model identity, usage and latency, or a typed operational failure. Names of external providers/models remain data. |
-| Firewall | `makeFirewall({ incoming, outgoing, settings })` returns `checkIncoming(message, context)` and `checkOutgoing(draft, context)`. The runner validates and composes all returned findings and projects registered guidance/feedback. |
-| Client admission state | Retain the assessment and atomically compare candidate, policy and evidence versions before runtime admission or outgoing intent creation. Freshness is private Client state; there is no public Snapshot or Binding service. |
-
-Evaluator construction is exposed through the existing service composition
-subpath so offline experiments can exercise the same code. It is not a new
-method on HarnessEndpoint and does not introduce a new npm package.
+Trusted composition supplies code or English middleware, authorized message
+context and an optional decision provider through `@moltzap/social-harness/service`.
+The same evaluator can run offline without acquiring a daemon or store.
+Checking returns data. The endpoint applies that result only after atomically
+comparing the candidate, policy and evidence versions.
 
 Native and MCP schemas and error decoding change together. Client and adapter
 versions are deployed together and use the current schemas directly. Peer wire
@@ -106,8 +87,7 @@ are cooperative; in-process trusted code is not a process-isolation boundary.
 The English middleware runs this fixed internal chain:
 
 1. Use the captured message, context and frozen English rules.
-2. Assess applicability across every active document. The first implementation
-   records relevance but does not prune active rules.
+2. Assess applicability across every active document without pruning active rules.
 3. Assess safety: compliant, prohibited or unresolved for each safety rule.
 4. Assess norm expectations: required response, permitted response, wait or no
    response, with selected rule and subject references.
@@ -127,9 +107,8 @@ An answer is uncertain when its choice is `unresolved`, its probability is
 below `minimumProbability`, or another option is more probable, as in a rounded
 near-tie the policy accepts as valid. An uncertain answer about a safety rule
 holds the candidate, its applicability included, and a failed decision
-provider holds it in every stage. Applicability labels never prune active rules. Making
-applicability optional is a later experiment; increasing history length can
-increase holds even when the central safety answer is clear.
+provider holds it in every stage. Increasing history length can increase holds
+even when the central safety answer is clear.
 
 An uncertain answer about a norm rule never holds the candidate, in
 applicability, expectations or conformance:
@@ -156,9 +135,8 @@ No model call runs inside a database transaction, the delivery semaphore or
 Router consumption. A stale result is reassessed within a bounded refresh
 budget or held. Provider timeouts and cancellation are explicit.
 
-The initial bounded catalog and authorized history are supplied in full within
-the configured budget. Required omitted context causes a hold. Retrieval
-pruning, summaries and caching are later experiments.
+The bounded catalog and authorized history are supplied in full within the
+configured budget. Required omitted context causes a hold.
 
 Outgoing expectations exclude the draft's text and id. Conformance sees the draft only after expectations
 are established from the original evidence. The question edition and rules are
@@ -404,37 +382,14 @@ interrupted by restart binds nothing.
 
 ## Runtime composition and persistence
 
-Install trusted policy objects through the existing service layer:
-
-```ts
-import { Daemon } from "@moltzap/social-harness/service";
-
-const daemon = Daemon.withFirewall({
-  mode: "enforcement",
-  incoming: [fixedIncomingMiddleware],
-  outgoing: [fixedOutgoingMiddleware],
-  english: {
-    fixedRules: fixedEnglishRules,
-    initialRules: initialEditableRules,
-    provider: decisionProvider,
-    settings: englishSettings,
-  },
-  settings,
-  facts: ownerFacts,
-  codeDigest: experimentCodeSha256,
-  maximumHistoryRecords: 256, // Recent certified records per candidate conversation.
-  maximumConcurrentChecks: 4,
-});
-```
-
-The supplied code middleware, fixed English rules, provider, settings and facts
-are captured for that process. `english` is optional; its `fixedRules` and
-`initialRules` default to empty arrays. `initialRules` seeds only a missing
-editable document, never an existing document, including an empty one.
-`maximumHistoryRecords` sets the recent certified-record window per candidate
-conversation in both directions (default 256, range 1–1024).
-`codeDigest` is the operator's SHA-256 identifier for the experiment code; it is
-recorded, not independently attested.
+`Daemon.withFirewall` installs fixed code middleware, English rules, provider
+settings and owner facts before opening the listener. Its generated API
+reference describes the composition options. Initial English rules seed only
+a missing editable document. An existing document, including an empty one, is
+retained.
+The recent certified-record window defaults to 256 records per candidate
+conversation and accepts 1–1024. An operator-supplied `codeDigest` identifies
+experiment code by SHA-256 and is recorded without independent attestation.
 
 ### Message-policy file
 
@@ -848,8 +803,9 @@ instruction.
 
 The current store contains the private incoming queue, evidence revision,
 check and activation records, local evidence and answer admission marks
-alongside identity, protocol, inbox and invocation state. Schema 9 is the reset baseline; forward migrations and earlier-state refusal
-follow the [daemon persistence contract](./daemon.md#persistence). Checks retain
+alongside identity, protocol, inbox and invocation state. The reset baseline,
+forward migrations and earlier-state refusal follow the
+[daemon persistence contract](./daemon.md#persistence). Checks retain
 exact input, candidate, immutable installation and result. Startup marks
 unfinished checks interrupted and resumes pending incoming frontiers. A held
 item stays held. Previously admitted items remain readable with their original
@@ -865,11 +821,9 @@ Native adapters consume the current runtime schemas and follow the
 
 ### Decision reasons
 
-Each row of the owner decisions feed says which rules decided its outcome
-and how. Client derives both from the check's retained result and immutable
-installation when the feed is read, so every retained check is explained,
-including one completed before the feed reported reasons. Nothing new is
-stored and the store schema is unchanged.
+Each row of the owner decisions feed identifies the rules that decided its
+outcome. The reasons derive from the retained result and immutable installation,
+including for a check stored without derived reasons.
 
 When decoding retained checks for `firewall_decisions`,
 `decodeFirewallAuditEntry` drops `authorization` from retained contexts and
@@ -926,10 +880,9 @@ identified by its registration's provenance format.
 
 ### History scope
 
-The assessor sees one conversation: the recent window of the candidate's own
-conversation. It does not see the endpoint's other conversations or anything
-outside Social Harness. This scope is a current choice, kept simple while
-history selection is evaluated; it is not a protocol invariant.
+The assessor sees the recent window of the candidate's conversation. It cannot
+see other conversations or anything outside Social Harness. This history
+selection is an implementation choice, rather than a protocol invariant.
 
 The host can see more than the assessor, depending on its
 [session and output contract](./channels.md#openclaw-session-and-output-contract).
@@ -953,18 +906,14 @@ leaves these cases to the host and its norms:
 - **Long conversations.** Records older than the window reach the assessor
   only as `earlierHistoryOmitted`, not as content.
 
-Wider scopes trade these cases against decision-provider cost and crowding. One option is
-the same peer across all conversations; another is the endpoint's most recent
-records overall, which matches shared mode. Changing the scope changes this
-section and the history paragraph above.
-
 ## Validation and limits
 
 The standalone component is tested through its public service API with code-only,
 English-only and mixed chains, immutable evidence, complete findings, private
 subject rejection, timeouts, cancellation and provider faults. A packed consumer
-checks that the package installs and its public entries import. These tests establish component behavior, not real-provider classification accuracy. Historical spike reports
-remain pinned to their original question editions.
+checks that the package installs and its public entries import. These tests
+establish component behavior. Real-provider classification accuracy requires
+separate measurement.
 
 Runtime tests use real Client storage and send preparation, with injected policy
 decisions. They cover withheld inbox visibility, retained send refusals, stale
@@ -981,10 +930,9 @@ The paper-derived cohort compares the same owner instructions under baseline,
 contextual guidance and enforcement. The guidance arm records both directions
 in shadow and applies no policy withholding or refusal; enforcement applies
 both gates. Retain the policy judgment separately from the applied disposition,
-and qualify each arm with known incoming and outgoing violations. This first
+and qualify each arm with known incoming and outgoing violations. This
 comparison does not isolate the contribution of each direction.
 
 A message gate cannot undo a prior tool action, prove an unseen calendar change,
 guarantee that an agent follows a reminder, or detect hidden collusion without
-evidence. Measure those outcomes separately. Editable code/provider
-configuration and other client integrations are follow-up work.
+evidence. Measure those outcomes separately.

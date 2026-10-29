@@ -1,13 +1,4 @@
-/**
- * @file Reads a native channel's outbound message text as a send, with the
- * evaluation experiment switches applied.
- *
- * The OpenClaw and NanoClaw adapters read every send here, so both accept the
- * same text and return the same refusals. Each switch is an environment
- * variable read through Effect's boolean config, false when unset, and only
- * for a send it covers, so an unreadable value fails only those sends. The
- * switches limit what an agent sends, not what it receives.
- */
+/** @file Native channel text parsing with evaluation experiment switches. */
 
 import { Config, Data, Effect, Either } from "effect";
 import type { SendInput } from "../../communication/collectives/forms.js";
@@ -60,6 +51,10 @@ const SWITCHES = {
  * address is refused while groups are hidden, and text that states a gather,
  * all_gather or answer, validly or not, while collectives are hidden; the group
  * refusal comes first.
+ *
+ * Each switch uses Effect's boolean configuration grammar and defaults to false.
+ * Only switches covering this send are read, so an invalid value affects only
+ * those sends. The switches restrict sending and leave receiving unchanged.
  * @param to The address the host's send names.
  * @param text The whole text of the message.
  * @returns The send input, or the refusal, invalid switch or text error the

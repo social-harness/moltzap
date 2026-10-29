@@ -1,7 +1,5 @@
 # Native host channel adapters
 
-Status: **cutover normative**
-
 Social Harness packages publish to npm under the `@moltzap` scope.
 OpenClaw and NanoClaw are consumer adapters over `@moltzap/social-harness`. They import
 only the public `HarnessEndpoint` capability or speak its loopback MCP

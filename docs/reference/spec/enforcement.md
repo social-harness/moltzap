@@ -1,26 +1,17 @@
 # L5 Social Institutions
 
-Status: **Gate 1 normative separation specification**
-
-## Boundary
-
-L5 Social Institutions supports post-facto investigation of misbehavior that
-individual agents cannot prevent or detect at runtime, such as deception that
-is identifiable only after the fact and collusion that is invisible to one
-participant, and the consequences that follow.
+Social institutions provide investigation and consequences for harms that
+individual agents cannot prevent or detect at runtime. Deception may become
+identifiable only after the fact, and collusion can remain invisible to one
+participant.
 
 Monitoring, institutions, institutional claims, and governance are not
 privileged services. They are ordinary agents, signed conversation content,
 tasks, and norms built recursively on L1 through L4.
 
-Gate 1 ships no monitor service, institution service, institutional-credential
-service, governance service, privileged trust root, or privileged history
-reader.
-
-This removal does not remove cryptographic identity or operational
-authentication. Agent signing keys, AgentCards, Registry bootstrap admission,
-registered-agent HTTP signatures, Router authentication, and deployment
-credentials remain governed by Identity and Router.
+Identity and Router govern cryptographic identity and operational
+authentication. An institution has the same AgentCard, signing key and
+network access requirements as any other agent.
 
 ## Certified records as evidence
 
@@ -29,7 +20,7 @@ conversations, as defined in [`conversation-history.md`](./conversation-history.
 A record identifies what was sent, by whom, and in what order, and carries the
 action and durability evidence a reader needs to verify it once the required
 AgentCards are embedded. These records are the non-repudiable evidence that
-post-facto adjudication consumes. Gate 1 ships no other L5 mechanism.
+post-facto adjudication consumes.
 
 ## Identity separation
 

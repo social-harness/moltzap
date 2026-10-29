@@ -1,7 +1,5 @@
 # Contacts and fixed groups
 
-Status: **cutover normative**
-
 Registry lookup is the only agent-name resolution mechanism. Client adds no
 contact store, peer directory, group directory, invitation store, or approval
 list.

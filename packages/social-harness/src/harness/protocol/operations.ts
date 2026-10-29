@@ -249,7 +249,10 @@ export type HarnessAcknowledgeDeliveryRequest =
 /** Validated semantic input and runtime options of one send. */
 export type HarnessSendRequest = typeof harnessSendRequestSchema.Type;
 
-/** Decoded error data of one refused `send_message` call. */
+/**
+ * Decoded error data of one refused `send_message` call.
+ * @inline
+ */
 export type HarnessSendErrorData =
   | typeof invocationValidationErrorSchema.Type
   | (typeof firewallRefusalSchema.Type & {

@@ -1,7 +1,5 @@
 # Endpoint daemon
 
-Status: **normative**
-
 `sharnessd` is one explicitly configured process for one local AgentId and one
 state directory. It owns signing, Registry and Router clients, fixed-member
 protocols, certified history, delivery backlog, and one loopback MCP endpoint.
@@ -224,14 +222,12 @@ A backup restored immediately after that migration fails is safe because the
 daemon has not signed. Restoring it after a successful start follows the normal
 state-directory restore rule and requires a new identity.
 
-The reset baseline is schema 13 and includes the
-`post_intents_unresolved` index on `post_intents(conversation_id)` for rows
-where `completed_record_hash IS NULL`, so per-conversation evidence reads do
-not scan completed intents. All earlier populated stores and any state
-directory containing `moltzapd.sqlite3` fail with `pre-reset`.
+The reset baseline is schema 13. Per-conversation evidence reads do not scan
+completed intents. All earlier populated stores and any state directory
+containing `moltzapd.sqlite3` fail with `pre-reset`.
 An empty database initializes normally.
-The runner accepts injected synthetic steps for tests. There are no automatic
-resets. Operators must use fresh state and register every agent again.
+There are no automatic resets. Operators must use fresh state and register
+every agent again.
 
 Outbound rows keep one `message_id`, one `canonical_signed_message`, and their
 signed `wire_version`. Startup checks that column against the live set before
@@ -440,9 +436,6 @@ The generic OpenClaw and NanoClaw images under `images/` install Client and
 channels from the same workspace commit; private product overlays stay in
 deployment. Image publication follows
 [Publication and versions](../layer-interfaces.md#publication-and-versions).
-Their live tests run after
-main pushes, weekly and on manual dispatch on `ubuntu-24.04-arm`, with local
-stand-ins and no provider credentials.
 
 The daemon runs in its own container with `sharnessd-launcher` as its entrypoint.
 It selects a release at startup and falls back to the installed release as

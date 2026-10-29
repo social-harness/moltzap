@@ -72,21 +72,10 @@ export const noHistoryExport: HistoryExportPort = Object.freeze({
 });
 
 /**
- * Open the daemon's history export against one file.
- *
- * Recording completes only once the line is on disk: an inbound record lands
- * before its message becomes visible to the agent and an outbound record
- * before the send returns, so a transcript harvested the moment a program
- * ends holds every delivery and send that program could have observed. That
- * costs one append inside the delivery path, accepted for an opt-in evidence
- * file whose worth is its completeness. Lines are appended one at a time
- * under a gate, so two records never interleave. The first append that fails
- * ends the export: one `export-failed` line is written on a best-effort
- * basis, every later record is dropped, and the daemon goes on serving the
- * agent. An experiment must not die because its transcript file did, and the
- * truncation is explicit in the file rather than silent.
- *
- * The file is created on the first write.
+ * Append complete JSON lines before exposing incoming items or returning sends.
+ * The first write creates the file, and serialized appends cannot interleave.
+ * The first failed append disables export for this process and attempts one
+ * `export-failed` line. Export failure does not stop message delivery.
  */
 export function makeHistoryExport(
   path: string,

@@ -1,7 +1,5 @@
 # Endpoint management and adapter MCP
 
-Status: **normative**
-
 One loopback MCP endpoint serves owner-authorized management and the private
 adapter projection of `HarnessEndpoint`. Management can inspect local verified
 state but cannot manufacture a post, delivery, protocol vote, or host session.
@@ -172,7 +170,8 @@ runtime MCP tools directly through its private plugin.
 
 ## Closed failures
 
-Every object above rejects missing required fields and excess fields. The two
+Every request above rejects missing required fields and excess fields. Results
+follow the [additive-field contract](./harness/daemon.md#mcp-catalog). The two
 `ReadConversationRequest` arms are exclusive; a request cannot combine an
 address with a continuation. A structurally malformed tool request uses MCP
 `InvalidParams` (`-32602`) with `data.issues`, an array of field diagnostics.

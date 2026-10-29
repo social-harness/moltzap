@@ -209,7 +209,7 @@ export const retainedWithheldText = exactStruct({
   reason: retainedFirewallRefusal,
 });
 
-/** Closed refusal data is retained verbatim for idempotent send retries. */
+/** Closed refusal data exposes registered feedback without private assessment evidence. */
 export const firewallRefusalSchema = exactStruct({
   checkId: checkIdSchema,
   refusal: firewallRefusal,

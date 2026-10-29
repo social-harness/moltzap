@@ -1,12 +1,10 @@
 # Fixed post protocol
 
-Status: **cutover normative**
-
-Gate 1 ships one built-in endpoint protocol for fixed-member addressed posts.
-It has `GENESIS` and `POST`; there is no turn-grant, contention TTL, pass,
-takeover, or dispute protocol. These action rules are the current L4 Shared
-Collaboration Norms. Contracts, meaning formally specified, task-specific
-protocols, are not yet implemented.
+The fixed post protocol certifies addressed messages among an immutable set
+of members. `GENESIS` establishes the conversation with its first post, and
+`POST` extends its certified history. These action rules are the current L4
+Shared Collaboration Norms. Formally specified, task-specific contracts are
+not yet implemented.
 
 ## GENESIS
 
@@ -47,7 +45,7 @@ there; it then locks that candidate without signing it, as
 [Proposal ordering](../conversation-history.md#proposal-ordering-and-recovery-identity)
 states. It signs no conflicting candidate in that domain. Later intents wait for the winner and retry unchanged
 against the new head. If the selected candidate cannot reach `q(n)`, the
-conversation stalls. Gate 1 supplies no timeout replacement or view change.
+conversation stalls. The protocol supplies no timeout replacement or view change.
 
 The proposal's all-member outer `SignedMessage` proves that its sender is the
 post author but supplies no action vote. After ordered delivery, every member,

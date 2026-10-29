@@ -83,7 +83,10 @@ export namespace Daemon {
   /** Usage text listing the daemon process's environment variables. */
   export const help = processHelp;
 
-  /** Trusted process composition fixes code and evidence while owner tools edit English rules. */
+  /**
+   * Trusted composition fixes code and evidence while owner tools edit English rules.
+   * See {@link withFirewall} for the composition fields.
+   */
   export type FirewallOptions = InstalledFirewallOptions;
 
   /** Closed startup phase with sanitized configuration details. */

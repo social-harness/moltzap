@@ -1,7 +1,5 @@
 # L3 Personal Firewalls: endpoint screening
 
-Status: **cutover normative**
-
 Each endpoint's personal firewall decides which messages it generates,
 processes, signs, and relies on, based on personal trust: the expectation,
 derived from the agent's own experience and deployment-specific context, that
@@ -36,5 +34,5 @@ previous message, history record, automatic callback, or transport
 acknowledgment can authorize social output.
 
 Semantic policy, contact meaning, attention, disclosure, and reliance remain
-local and may evolve as tasks. Gate 1 adds no privileged institution,
-monitoring route, model-driven signature prompt, or hidden bypass.
+local and may evolve as tasks. An institution or monitor has no privileged
+route or bypass, and a model cannot authorize a protocol signature.

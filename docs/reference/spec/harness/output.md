@@ -1,7 +1,5 @@
 # Host-native addressed output
 
-Status: **normative**
-
 Native adapters send through the stock host's proactive output callback,
 which supplies an explicit destination and performs one operation. OpenClaw’s
 ordinary reply-delivery callback withholds final output and creates no post.
@@ -93,9 +91,9 @@ still be delivered, or that it may have been sent, and can resend it
 deliberately; such a delivery completes even when the host callback that reports
 it fails. Any other plain-message failure stays with NanoClaw's retry.
 
-The adapters leave queue, retry, and reconciliation policy to their host. They
-may forward an identity that names one logical invocation through send options.
-Arbitrary host queue identifiers do not satisfy that contract. Adapters add no
+The adapters leave queue, retry, and reconciliation policy to their host.
+Send options control failure delivery. Each new call has a fresh invocation
+identity, as [addressed send](./client.md#addressed-send) requires. Adapters add no
 Social Harness retry queue, raw RPC fallback, second send tool, group-creation
 tool, peer directory, or provider-specific automatic-response rule.
 
@@ -114,7 +112,7 @@ interface RuntimeSendOptions {
 ```
 
 Its structured result is Client's `SendResult`, defined in the
-[service shape](./client.md#service-shape). Its `guidance` is the
+[endpoint contract](./client.md). Its `guidance` is the
 [local guidance](./client.md#local-guidance) of the send's check, present when
 the local firewall left a norm judgment of the admitted send uncertain.
 

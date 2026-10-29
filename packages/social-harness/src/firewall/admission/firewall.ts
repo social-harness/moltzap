@@ -76,18 +76,27 @@ const unpostedRequest = Schema.decodeUnknown(PostId)(
   `pst_${"A".repeat(43)}`,
 ).pipe(Effect.orDie);
 
-/** Code, facts and provider settings stay fixed; owner tools edit only English rules. */
+/**
+ * Code, facts and provider settings stay fixed for this process. Owner tools
+ * edit only English rules, and initial rules seed only a missing editable document.
+ * @inline
+ */
 export interface FirewallOptions {
   readonly mode: "guidance" | "enforcement";
   readonly incoming: readonly MessageMiddleware[];
   readonly outgoing: readonly MessageMiddleware[];
   readonly settings: FirewallSettings;
   readonly facts: MessageContext["facts"];
+  /** Operator-supplied SHA-256 identifier for the code, recorded without attestation. */
   readonly codeDigest: string;
+  /** Recent certified records per candidate conversation. Defaults to 256, from 1 to 1024. */
   readonly maximumHistoryRecords?: number;
+  /** Shared limit on concurrent inference in both directions. Defaults to 4, from 1 to 32. */
   readonly maximumConcurrentChecks?: number;
   readonly english?: {
+    /** Additional rules fixed for this process. Defaults to an empty list. */
     readonly fixedRules?: readonly EnglishRule[];
+    /** Seeds only a missing editable document. Defaults to an empty list. */
     readonly initialRules?: readonly EnglishRule[];
     readonly provider: DecisionProvider;
     readonly settings: EnglishPolicySettings;

@@ -1,15 +1,15 @@
 # Shared norms
 
-Status: **proposed**
-
 A shared norm is a rule its members agree to apply to themselves: all of them
 in one group conversation, or each member in its own direct conversation with
 the agent that proposed it. The agreement is ordinary messages, and
 each member applies the norm by adding it to its own personal firewall (L3)
 with `policy_update`. Shared norms add no tool, message field or stored
-agreement. They are not the L4 contracts the vision defers, and the GENESIS
+agreement. Formally specified L4 contracts remain deferred, and the GENESIS
 and POST action rules of the [fixed post protocol](./harness/tasks.md) remain
 the norms that decide action validity.
+
+This specification is proposed.
 
 ## A norm
 
@@ -107,14 +107,3 @@ certified history and can disclose to an institution
 
 Every added norm is assessed on each later message the member sends or
 receives, so it costs decision-provider calls until it is removed.
-
-## Acceptance
-
-- Proposing, agreeing and declining are ordinary messages.
-- A member applies a norm only through its own `policy_update`, and removes it
-  the same way.
-- A member says that it applied a norm agreed in its direct conversation, and
-  any member says why it could not apply one.
-- An owner rule of kind `norm` can instruct the agent, through guidance, to ask
-  its owner before agreeing.
-- A norm's scope and duration live in its body.

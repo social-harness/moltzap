@@ -61,7 +61,12 @@ export type HistoryEntry = typeof HistoryEntry.Type;
 
 /* eslint-enable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Restore naming after the Schema/type pair. */
 
-/** Trusted composition supplies authorized earlier evidence and distinct agent and principal identities. */
+/**
+ * Trusted composition supplies verified attribution and authorized evidence
+ * preceding the candidate. Exclude future messages, expected test labels and
+ * another endpoint's private state. Visibility determines which admitted
+ * messages may appear as subjects in runtime guidance.
+ */
 export class MessageContext extends Schema.Class<MessageContext>(
   "MessageContext",
 )({
@@ -207,6 +212,12 @@ export class MiddlewareInput extends Schema.Class<MiddlewareInput>(
  * Code and English policies have the same contract. Registered code is trusted;
  * it receives no conversation or store capability and must not retain conversation
  * state or perform messaging side effects.
+ *
+ * Middleware ids must be unique within each direction. Change the revision
+ * whenever code policy behavior changes. Every declared rule must return a
+ * finding, and subject references must name admitted runtime-visible evidence.
+ * Registration copies and freezes metadata, but cannot isolate mutable closure
+ * state or interrupt blocking JavaScript.
  */
 export interface MessageMiddleware {
   readonly id: string;
@@ -316,7 +327,10 @@ export const firewallCheckSchema = exactStruct({
 /** The complete check keeps private traces distinct from runtime advice. */
 export type FirewallCheck = typeof firewallCheckSchema.Type;
 
-/** Incoming checks can guide the recipient but cannot ask the sender to revise. */
+/**
+ * Incoming checks can guide the recipient but cannot ask the sender to revise.
+ * @inline
+ */
 interface IncomingCheck extends FirewallCheck {
   readonly judgment: "allow" | "block" | "hold";
 }
@@ -342,7 +356,10 @@ export class EnglishPolicySettings extends Schema.Class<EnglishPolicySettings>(
   timeoutMilliseconds: Schema.Positive.pipe(Schema.int()),
 }) {}
 
-/** Question semantics have a recorded edition independent of English wording. */
+/**
+ * Question semantics have a recorded edition independent of English wording.
+ * @inline
+ */
 export type PolicyStage =
   | "applicability"
   | "safety"
@@ -653,6 +670,7 @@ export const firewallDecisionsSchema = exactStruct({
  * What made an edit's rule invalid. A `BEHAVIOR.md` addition fails as
  * `frontmatter`, `schema`, `too-large` or `not-norm`; an edit as
  * `duplicate-id`, `unknown-id` or `editable-limit`.
+ * @inline
  */
 export type PolicyProblem =
   | "duplicate-id"

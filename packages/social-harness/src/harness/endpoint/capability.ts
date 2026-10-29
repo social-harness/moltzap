@@ -18,6 +18,7 @@ import type {
   LocalGuidance,
 } from "../../firewall/outcome/index.js";
 
+/** @inline */
 type ConnectFailure =
   | "transport-failed"
   | "decode-failed"
@@ -32,27 +33,39 @@ export class ConnectError extends Data.TaggedError("ConnectError")<{
   }
 }
 
-/** One inbound item plus its transport-only acknowledgment. */
+/**
+ * A classified item retained until its host acknowledges it. A delivery may
+ * replay after an ambiguous handoff, so host acceptance must tolerate replay.
+ */
 export interface InboundDelivery {
-  /** Opaque, stable reference a host's own wakeup can carry for authenticated `read_event`. */
+  /**
+   * Opaque reference for authenticated `read_event`, stable across redelivery
+   * and readable after acknowledgement. It grants no delivery or send authority.
+   */
   readonly eventId: string;
   readonly item: InboundItem;
   readonly guidance?: LocalGuidance;
-  /** Valid only while this subscription owns receiving, including after cleanup fails. */
+  /**
+   * Run after the host accepts the item. A failed host callback leaves it pending.
+   * Closing this subscription invalidates the receipt even if remote cleanup fails.
+   */
   readonly acknowledge: Effect.Effect<void, DeliveryAcknowledgeError>;
 }
 
-/** Authenticated polling uses the runtime credential without exposing MCP details. */
+/** A runtime credential selects authenticated polling instead of trusted-local push. */
 export interface HarnessEndpointOptions {
   readonly credential: Redacted.Redacted;
-  /** Runs after consumer acquisition and renewal start, even when the inbox is empty. */
+  /**
+   * Runs after consumer acquisition and renewal start, including for an empty
+   * inbox. Recovery and processing may still be pending. Failure or interruption
+   * closes the consumer, and renewal continues independently of host callbacks.
+   */
   readonly onReady?: Effect.Effect<void>;
 }
 
 /**
- * Structural runtime capability owned by one scoped endpoint connection.
- * Every send is one operation or one collective response; the stream yields
- * inbound items.
+ * Connects one configured agent to a host for the connection's scope. Each send
+ * creates a new invocation. Retrying an unknown outcome can create another post.
  *
  * A host whose tool returns before the send completes passes
  * `failureDelivery: "inbound"`: a refused gather, all_gather or response
@@ -71,5 +84,9 @@ export interface HarnessEndpoint {
     SendResult,
     SendError | CollectiveError | FirewallSendError
   >;
+  /**
+   * One active subscription per endpoint. Closing it leaves unacknowledged
+   * items available to the next subscription and invalidates its receipts.
+   */
   readonly messages: Stream.Stream<InboundDelivery, ListenError>;
 }

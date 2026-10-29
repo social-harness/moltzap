@@ -50,24 +50,14 @@ export interface FirewallInstallation {
 }
 
 /**
- * The firewall installation of one message-policy document: its built-in
- * middleware in chain order, its English rules assessed by `provider`, and
- * its settings. This is the trusted-composition hook: a composition that
- * brings its own decision provider installs the result with
- * `Daemon.withFirewall`. `codeDigest` is the SHA-256 of the Client release,
- * the mode, each registration's id and revision, the fixed English rules
- * and behavior bytes, the decision provider and the settings. It leaves out
- * what differs between the agents of one arm: the facilitator role, which no revision holds, the
- * allowed-sender list and the initial editable rules, so every member
- * records the same digest.
- * A document that lists behaviors fails with `CheckInputError`
- * (`registration`); only file loading resolves behaviors. A document that
- * installs the collective norms reads their English text from Client's
- * installed `behaviors/`.
- * @param policy A decoded document with inline rules and no behaviors.
- * @param provider The service that assesses its English rules and the
- *     collective norms; unused when the document installs neither.
- * @returns The options `Daemon.withFirewall` installs.
+ * Compose a decoded inline policy for `Daemon.withFirewall`, using the supplied
+ * provider for English rules and collective norms. A code-only policy does not
+ * use the provider.
+ *
+ * Nonempty behavior lists fail with `CheckInputError` (`registration`) because
+ * only file loading resolves them. The collective-norms bundle reads its English
+ * text from the installed package. The generated code digest follows the
+ * [policy contract](https://docs.moltzap.xyz/reference/spec/harness/message-policy#message-policy-file).
  */
 export const messagePolicyFirewall = Effect.fn("messagePolicyFirewall")(
   function* (policy: MessagePolicy, provider: DecisionProvider) {
