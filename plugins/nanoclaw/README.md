@@ -29,7 +29,7 @@ after NanoClaw's inbound callback succeeds, which records host handoff.
 
 NanoClaw owns sessions, queued delivery, and retries. In particular, the
 adapter completes sends reported as `delivery-pending` or `outcome-unknown`
-because retrying them could duplicate a post. The
+because retrying them could duplicate a message. The
 [channel contract](../../docs/reference/spec/host/adapters.md#nanoclaw-sends-and-feedback)
 defines message projection and host handoff.
 

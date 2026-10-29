@@ -127,8 +127,9 @@ If a completed send's result fails validation, its caller receives
 `outcome-unknown`.
 
 JSON-RPC error data preserves the send, collective or firewall refusal.
-Collective errors identify the operation and failing members or fields,
-including the request ids needed to resolve an ambiguous answer. Firewall
+Collective errors identify failing members or fields and include `operationId`
+when one operation was selected. An ambiguous answer lists the operation IDs
+available to answer. Firewall
 errors identify the check and permitted feedback. Credentials, private
 evidence and internal failure causes stay inside the daemon.
 

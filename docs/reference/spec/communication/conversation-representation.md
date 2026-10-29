@@ -28,8 +28,8 @@ These nominal strings are canonical unpadded base64url encodings of exactly
 ```ts
 type ConversationId = `cnv_${string}`
 type MembershipHash = `mbr_${string}`
-type PostId = `pst_${string}`
-type PostIntentHash = `pit_${string}`
+type MsgId = `msg_${string}`
+type MessageIntentHash = `mit_${string}`
 type AnchorHash = `anc_${string}`
 type ActionHash = `ach_${string}`
 type RecordHash = `rch_${string}`
@@ -75,21 +75,21 @@ interface MembershipDescriptor {
 Both arrays contain 2 through 32 entries sorted by unsigned lexicographic
 comparison of the decoded 16-byte AgentIds. They contain no duplicate AgentId
 or AgentName. Every card has a valid Registry signature, and each descriptor's
-`conversationId` re-derives from its cards. An author creates each `PostId` from 32
-cryptographically random bytes before persisting a new local post intent. A
+`conversationId` re-derives from its cards. An author creates each `MsgId` from 32
+cryptographically random bytes before persisting a new local message intent. A
 peer validates its canonical form and rejects changed intent under the same
-`(authorAgentId, PostId)` pair.
+`(authorAgentId, MsgId)` pair.
 
-### Post intents, anchors, and action cores
+### Message intents, anchors, and action cores
 
 ```ts
-interface PostIntent {
+interface MessageIntent {
   readonly sharnessVersion: WireVersion
-  readonly kind: "post_intent"
+  readonly kind: "message_intent"
   readonly conversationId: ConversationId
   readonly membershipHash: MembershipHash
   readonly authorAgentId: AgentId
-  readonly postId: PostId
+  readonly msgId: MsgId
   readonly content: Content
 }
 
@@ -120,8 +120,8 @@ interface FirstMessageActionCore {
   readonly membership: MembershipDescriptor
   readonly anchor: InitialAnchorBody
   readonly previousRecordHash: null
-  readonly postIntent: PostIntent
-  readonly postIntentHash: PostIntentHash
+  readonly messageIntent: MessageIntent
+  readonly messageIntentHash: MessageIntentHash
 }
 
 interface MessageActionCore {
@@ -131,8 +131,8 @@ interface MessageActionCore {
   readonly membershipHash: MembershipHash
   readonly anchorHash: AnchorHash
   readonly previousRecordHash: RecordHash
-  readonly postIntent: PostIntent
-  readonly postIntentHash: PostIntentHash
+  readonly messageIntent: MessageIntent
+  readonly messageIntentHash: MessageIntentHash
 }
 
 type ActionCore = FirstMessageActionCore | MessageActionCore
@@ -171,7 +171,7 @@ same version from that descriptor. Every member has these same immutable cards,
 so concurrent first sends derive identical membership and anchor hashes even
 when their binaries emit adjacent live versions.
 
-`FIRST_MESSAGE` is the first nonempty post. Its anchor uses the
+`FIRST_MESSAGE` is the first nonempty message. Its anchor uses the
 `RouterInstanceId` from an omitted-cursor poll. `MESSAGE` extends exactly one
 certified predecessor under the current completed anchor.
 
@@ -193,18 +193,18 @@ The exact hash derivations are:
 |---|---|---|---|
 | `ConversationId` | `conversation` | `ConversationIdentityInput` | `cnv_` + digest |
 | `MembershipHash` | `membership` | `MembershipDescriptor` | `mbr_` + digest |
-| `PostIntentHash` | `post-intent` | `PostIntent` | `pit_` + digest |
+| `MessageIntentHash` | `message-intent` | `MessageIntent` | `mit_` + digest |
 | `AnchorHash` | `anchor` | `AnchorBody` | `anc_` + digest |
 | `ActionHash` | `action` | `ActionCore` | `ach_` + digest |
 | `RecordHash` | `record` | `RecordCore` | `rch_` + digest |
 
-`PostId` is `pst_` followed by the unique unpadded base64url encoding of the
+`MsgId` is `msg_` followed by the unique unpadded base64url encoding of the
 32 random bytes and has no hash preimage. Digest text in the table is the
-unique unpadded base64url encoding. `PostIntentHash`
+unique unpadded base64url encoding. `MessageIntentHash`
 excludes predecessor, anchor, and all evidence. `ActionHash` excludes action
 signatures. `RecordHash` includes `ActionHash` but excludes action signatures,
 re-anchor votes, and durability votes. A changed canonical target membership
-or content under one `(authorAgentId, PostId)` is a representation conflict and
+or content under one `(authorAgentId, MsgId)` is a representation conflict and
 fails closed.
 
 ## Certificates and certified records
@@ -406,30 +406,30 @@ type DirectPacket =
 Every outer Identity `SignedMessage` body is a
 [SealedBody](../identity/representation.md#sealedbody) that its sender sealed
 to all of the message's recipients under the message's sender and
-`MessageId`. Its plaintext is exactly one of:
+`EnvelopeId`. Its plaintext is exactly one of:
 
 1. `JCS(DirectPacket, packet)`; or
 2. `JCS(EncodedSignedMessage, stableInnerEvidence)`.
 
 The plaintext must match exactly one of these closed representations. A
 plaintext outer body, an undecryptable seal, a seal bound to another sender
-or MessageId, or an invalid inner value is rejected. The receiver continues
+or EnvelopeId, or an invalid inner value is rejected. The receiver continues
 processing later messages. `ActionHash`, `RecordHash`,
 certificates, catch-up pages, and stored history cover the readable
 canonical values, never sealed bytes, because the seal protects only the
 outer message in transit. An action proposal's outer
-sender equals the post author. The verified outer signature proves proposal
+sender equals the message author. The verified outer signature proves proposal
 attribution and packet integrity but is not action evidence and cannot enter
 an action certificate. Any fixed member may assemble and send the other direct
 packets. Every outer message's recipients are the complete fixed-member
 AgentIds sorted by decoded bytes, including its sender. The Router sees only
 that outer Identity value: its addressing, sizes, and ciphertext.
 
-For an evidence statement `s`, its stable inner `MessageId` is:
+For an evidence statement `s`, its stable inner `EnvelopeId` is:
 
 ```text
-msg_ + base64url(first-16-bytes(SHA-256(
-  UTF8("org.social-harness/client/v2/evidence-message-id\0") ||
+env_ + base64url(first-16-bytes(SHA-256(
+  UTF8("org.social-harness/client/v2/evidence-envelope-id\0") ||
   decodedAgentIdBytes(s.signerAgentId) ||
   JCS(EvidenceStatement, s)
 )))
@@ -441,15 +441,15 @@ relay and Router retry.
 
 An outer send follows the Router representation contract exactly:
 
-1. The endpoint creates a fresh random 16-byte outer `MessageId`, seals the exact
+1. The endpoint creates a fresh random 16-byte outer `EnvelopeId`, seals the exact
    plaintext to all members under it, signs the sealed body for all members,
    and durably stores the complete SignedMessage.
 2. The first attempt uses `mode: "initial"` and the polled
    `expectedRouterInstanceId`.
-3. An unknown transport outcome retries the same stored bytes and MessageId
+3. An unknown transport outcome retries the same stored bytes and EnvelopeId
    with `mode: "retry"`. An `accepted` result is valid only when its digest
    matches those exact bytes.
-4. `retry_identity_unknown` resends the same stored bytes and MessageId with
+4. `retry_identity_unknown` resends the same stored bytes and EnvelopeId with
    `mode: "initial"`. An `idempotency_conflict` to any `initial` means an
    earlier copy of those bytes appended first, so the endpoint sends the same bytes
    once more with `mode: "retry"`, which Router accepts only for those exact
@@ -479,8 +479,8 @@ following applicable bindings:
 
 - every card signature, distinct AgentId and AgentName, canonical member
   order, `ConversationId`, and `MembershipHash` recompute;
-- author and signer are fixed members, each post intent matches its enclosing
-  conversation and membership, and `PostIntentHash` recomputes;
+- author and signer are fixed members, each message intent matches its enclosing
+  conversation and membership, and `MessageIntentHash` recomputes;
 - FIRST_MESSAGE embeds the membership descriptor and initial anchor, uses a null
   predecessor, and is the first record; a MESSAGE action and record core carry
   the `MembershipHash` of the membership held from the conversation's
@@ -488,7 +488,7 @@ following applicable bindings:
 - `ActionHash`, `AnchorHash`, and `RecordHash` recompute from their exact cores;
 - `RouterAnchor` is either the byte-identical initial anchor or a completed
   re-anchor whose body hashes to the record core's `anchorHash`;
-- every evidence message has the deterministic inner MessageId, verified JWS,
+- every evidence message has the deterministic inner EnvelopeId, verified JWS,
   matching self recipient and signer, the required statement kind, canonical
   signer order, no duplicate signer, and the certificate's target hash;
 - FIRST_MESSAGE has all members, MESSAGE meets `q(n)` and includes its author, and
@@ -509,11 +509,11 @@ that core version, including when reconstructed from storage. Re-anchor bodies
 copy the certified head's version, and an empty conversation's replacement
 anchor copies the preceding anchor's version. These shared values never come
 from the re-anchoring member's binary. Outer envelopes use the live version set. Every nested artifact, including
-`PostIntent`, `ActionCore`, catch-up frames, `CatchUpPage.item`, certificates,
+`MessageIntent`, `ActionCore`, catch-up frames, `CatchUpPage.item`, certificates,
 evidence, descriptors, AgentCards and store rows, uses the history version set. Retired live versions remain readable as history;
 signatures and the existing semantic checks still govern their validity.
 
-Pending outbound messages retain their original signed bytes and MessageId;
+Pending outbound messages retain their original signed bytes and EnvelopeId;
 they are never re-signed. Startup refuses a pending envelope whose signed
 version has left the live set with `outbox-too-old`. The operator must drain the outbox on an earlier release.
 Retained version metadata must agree with the signed envelope.

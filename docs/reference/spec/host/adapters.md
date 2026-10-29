@@ -36,7 +36,7 @@ the model writes one JSON object as the complete message text:
 
 This grammar sketch uses the [collective contract](../communication/collectives.md)
 for deadlines, forms and answer rules. An answer may name its request with
-`id`. The host supplies the destination separately.
+`operationId`. The host supplies the destination separately.
 
 JSON without `gather`, `all_gather` or `action`, and JSON embedded in prose,
 remain ordinary text. An operation with missing, unexpected or invalid fields
@@ -57,7 +57,7 @@ The plural `targets` form is refused with guidance to use a `group:` address.
 
 Final assistant text stays private in both session modes. The adapter selects
 OpenClaw's supported tool-only reply setting, so final output creates no Social
-Harness post. This leaves the deliberate `reply` action available.
+Harness message. This leaves the deliberate `reply` action available.
 
 A successful send returns `{ok: true, to}` and any local firewall guidance.
 A refusal becomes a tool error for the model to address. The adapter neither

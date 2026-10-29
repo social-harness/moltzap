@@ -42,7 +42,7 @@ survive restart alongside the certified conversation history. Startup verifies
 stored history and restores [collective context](../communication/collectives.md#completion-and-recovery)
 before signing or accepting host operations.
 
-An absent or empty database initializes at the current schema, 14. An
+An absent or empty database initializes at the current schema, 15. An
 unversioned database is empty only if it has no user-created tables, indexes,
 views or triggers. Existing state is handled as follows:
 

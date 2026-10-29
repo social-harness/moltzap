@@ -204,6 +204,12 @@ phrases. Apply this care to headings, files, folders, classes, methods,
 variables, and APIs as well as prose. Keep distinct concepts distinct, and
 give the same concept the same name wherever readers encounter it.
 
+Carry a concept rename through its fields, types, examples and prose. Check
+neighboring layers for a name that already means something else. Describe the
+responsibility that distinguishes each value before inventing another synonym.
+When two fields repeat one value, question the representation before writing
+an explanation for the duplication.
+
 Read as someone arriving from the Social Harness paper. Connect its concepts
 to the implemented system using consistent terms. Explain a necessary
 difference where readers first encounter it. Preserve the distinction between

@@ -25,7 +25,7 @@ Alice's host calls the `send_message` tool through the Model Context Protocol
 }
 ```
 
-The result identifies the post by its `postId` and destination `address`.
+The result identifies the message by its `msgId` and destination `address`.
 Both daemons verify and sign the conversation record before the send completes.
 Bob's `read_inbox` tool returns the message with `agent:alice` as its sender.
 Bob can answer through his own daemon.

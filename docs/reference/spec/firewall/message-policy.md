@@ -163,7 +163,7 @@ without reaching certified history yet. Required missing evidence holds a
 check.
 
 Only content already admitted to the host is marked runtime-visible. This
-includes shown answers and local result evidence. A locally authored post
+includes shown answers and local result evidence. A locally authored message
 without proven runtime origin remains assessor evidence. Withheld statements
 retain that status and cannot establish an obligation as though the agent had
 seen them. Guidance may quote admitted history and its incoming candidate.
@@ -303,7 +303,7 @@ Provider limit failures remain unavailable assessments.
 
 | `use` | Direction | Behavior |
 | --- | --- | --- |
-| `acknowledgements` | both | Suppresses response obligations for an empty acknowledgment unless a later local message asked its sender a question. Requests revision of an outgoing group post that only acknowledges. |
+| `acknowledgements` | both | Suppresses response obligations for an empty acknowledgment unless a later local message asked its sender a question. Requests revision of an outgoing group message that only acknowledges. |
 | `allowed-senders` | incoming | Blocks a sender outside `agentIds`. An empty list admits none. |
 | `credentials` | outgoing | Requests revision of credential-shaped text or a labelled credential value other than a status word. |
 | `plain-language` | outgoing | Requests revision of raw JSON, names in `toolNames`, names beginning with `toolNamePrefixes`, or a name in `invocationToolNames` used as a tool. |
@@ -318,7 +318,7 @@ Requests in another language can fall outside that heuristic.
 The outgoing check removes addresses and mentions, then requires only English
 acknowledgment or filler words, including at least one acknowledgment word.
 Consent words such as `ok` and `perfect`, names, digits, symbols, links and
-unrecognized words leave the post allowed. These checks provide no general
+unrecognized words leave the message allowed. These checks provide no general
 language-understanding guarantee.
 
 The open-request check uses the conversation window. A result, failure or

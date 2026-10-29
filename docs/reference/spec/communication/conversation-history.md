@@ -22,11 +22,10 @@ A conversation has a fixed set of 2 to 32 members. The same set of agent
 identities always identifies the same conversation. Adding or removing a
 member selects a different conversation.
 
-Each message begins as a post: its author, destination membership, content,
-and a unique post identifier. These stay fixed even if the post must wait for
-another message to complete first. A proposal places that post after a
-particular predecessor in the conversation. A certified record contains the
-proposal and the signatures that establish its acceptance and storage.
+A message keeps its unique identifier, author, membership and content while
+waiting for a place in the conversation. A proposal places it after a
+particular predecessor. A certified record contains the proposal and the
+signatures that establish its acceptance and storage.
 
 The first proposal, `FIRST_MESSAGE`, establishes membership and carries the
 first message. Every member must approve it. Later proposals, `MESSAGE`,
@@ -92,7 +91,7 @@ violate the assumed fault bound, so the member refuses the conflicting record.
 A completed replacement anchor also ends the old proposal choice at its
 selected head.
 
-An author's losing post keeps its identity and content when proposed after
+An author's losing message keeps its identity and content when proposed after
 the new head. If a selected proposal cannot obtain the required signatures,
 the conversation stalls. A timeout does not authorize another candidate at
 the same position. The protocol relies on a correct Router and does not
@@ -158,7 +157,7 @@ threshold.
 
 A recovering endpoint continues answering catch-up requests and exchanging
 anchor votes and evidence for successors already awaiting durability. It
-pauses its own posts and queued ordinary traffic for that conversation, and
+pauses its own messages and queued ordinary traffic for that conversation, and
 ignores ordinary action traffic until recovery finishes. Recovery traffic
 alone creates no delivery to the agent.
 
@@ -170,13 +169,13 @@ Evidence that cannot be connected to known history leaves that conversation
 unrecovered without stopping the endpoint or its other conversations.
 
 Catch-up retries use bounded exponential backoff with jitter. Verified peer
-traffic, a new local post, another recovery attempt, or Router reconnection
+traffic, a new local message, another recovery attempt, or Router reconnection
 starts a fresh schedule after those retries run out.
 
 ## Interrupted sends and duplicates
 
-The endpoint retains a post before sending its proposal. Recovery continues
-that same post. A new host invocation creates a new post even when its
+The endpoint retains a message before sending its proposal. Recovery continues
+that same message. A new host invocation creates a new message even when its
 destination and content match an earlier call. The
 [host send contract](../host/messaging.md#failed-or-uncertain-sends)
 explains the caller's retry decision.
@@ -185,12 +184,12 @@ While waiting for action signatures, an author resends the same proposal with
 its predecessor's certificate using the bounded catch-up retry schedule.
 Recovery pauses this schedule without consuming attempts. A completed action
 certificate, a competing certified successor, or a completed replacement
-anchor ends it. Exhausting retries leaves the post pending until history
-advances, an anchor replaces the proposal, or restart resumes the post.
+anchor ends it. Exhausting retries leaves the message pending until history
+advances, an anchor replaces the proposal, or restart resumes the message.
 
 Recipients count a proposal once per action hash, a record once per record
 hash, and a signature once per signer and statement. They answer repeated
-catch-up requests but count each reply once. Reusing a post identity for
+catch-up requests but count each reply once. Reusing a message identity for
 changed authorship, membership, or content is a conflict.
 
 The [envelope and retry rules](./conversation-representation.md#router-envelopes-and-retries)

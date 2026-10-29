@@ -27,7 +27,7 @@ member's verified identity before accepting an operation or sending a request.
 A malformed address fails with `invalid-address` or
 `membership-invalid`. If a member cannot be resolved, `members-unreachable`
 names each failing member and its reason, including a Registry failure. These
-failures create no operation or post.
+failures create no operation or message.
 
 `requestedSchema` defines the [answer fields](#answer-schema).
 An invalid schema is refused before sending. `deadline` is a whole number of
@@ -35,10 +35,11 @@ seconds from 1 through 2,592,000. After address and schema validation, the
 endpoint converts it to an absolute `deadlineAt` in Unix milliseconds. The
 protocol assumes zero clock skew between participants.
 
-Each invocation receives a fresh operation identity. Its deadline and identity
-remain fixed throughout certification and recovery. Firewall assessment
-consumes time from that deadline. An operation whose deadline passes
-before it can start is refused with `deadline-passed` and creates no post.
+Each invocation receives a fresh `operationId` connecting its requests,
+answers and result. Its deadline and identity remain fixed throughout
+certification and recovery. Firewall assessment consumes time from that
+deadline. An operation whose deadline passes
+before it can start is refused with `deadline-passed` and creates no message.
 
 ## Gather
 
@@ -86,7 +87,7 @@ member the same canonical result. Local firewall projections may withhold
 different text from their respective agents.
 
 The requester emits its result only after the close certifies. A pending close
-keeps the operation finalizing until that same post certifies. A confirmed
+keeps the operation finalizing until that same message certifies. A confirmed
 failure before the endpoint accepts the closing message produces an
 `operationFailed` item.
 
@@ -96,8 +97,8 @@ A member sends its answer to the conversation where it received the request:
 the requester's direct address for a gather, or the group for an all-gather.
 It may accept with schema-valid content or decline.
 
-An explicit answer id selects that request in that conversation. Without an
-id, the endpoint selects its one open request. With several open requests it
+An answer's `operationId` selects the request in that conversation. Without
+it, the endpoint selects its one open request. With several open requests it
 returns a `request-ambiguous` failure containing their ids. With none open it
 returns `request-none`, `request-answered` or `request-expired`, according to the
 retained request state. Those refusals also identify open requests in other
@@ -123,9 +124,10 @@ consuming the right to answer or canceling the operation.
 
 The endpoint classifies only complete certified records. A gather request must
 arrive in the requester's direct conversation and an all-gather request in a
-group conversation. A request must have a valid sender-derived id, an admitted
-schema and a deadline no more than 30 days and one hour ahead. Reusing a
-retained request id from another post is invalid. A duplicated or malformed
+group conversation. Its operation id must name the certified sender as its
+requester. It must have an admitted schema and a deadline no more than 30 days
+and one hour ahead. Reusing a retained operation id from another request
+message is invalid. A duplicated or malformed
 collective part is consumed and logged without delivery. A multicast with no
 content besides its collective part is also consumed without delivery.
 
@@ -135,9 +137,9 @@ answer context across restarts until that close arrives.
 
 Only the requester's first accepted close counts. A listed answer precedes the
 close in the certified chain, and members process that chain in order. A
-member's own answer is recorded when its post certifies. If the close reaches
-the local operation while that post remains in flight, completion waits for
-it. A close from another sender, for an unknown request, or naming an answer
+member's own answer is recorded when its message certifies. If the close
+reaches the local operation while that message remains in flight, completion
+waits for it. A close from another sender, for an unknown request, or naming an answer
 the endpoint does not hold is consumed and logged without a result.
 
 Answers and closes are protocol input. The endpoint acknowledges their records
@@ -178,12 +180,12 @@ and redelivery, following the
 
 `delivery-pending` and `outcome-unknown` do not revoke accepted work. They do not
 authorize a replacement request, answer or close. The endpoint continues the
-retained post with its original identity. A deliberate new invocation creates
+retained message with its original identity. A deliberate new invocation creates
 a new operation.
 
 ## Representation
 
-The operation travels in the certified post's content, inside the encrypted
+The operation travels in the certified message's content, inside the encrypted
 body sent to its conversation members. Router sees the outer addressing,
 lengths and ciphertext.
 
@@ -196,14 +198,13 @@ are rejected.
 | Message | Fields and values |
 | --- | --- |
 | Multicast | `kind: "operation"`, `op: "multicast"` |
-| Request | `kind: "operation"`, `op: "gather"` or `"all_gather"`, `id`, `nonce`, `deadlineAt`, `requestedSchema` |
-| Accepted answer | `kind: "response"`, `id`, `action: "accept"`, `content` |
-| Declined answer | `kind: "response"`, `id`, `action: "decline"` |
-| Close | `kind: "close"`, `id`, `included`, `closedAt`, `closedBy` |
+| Request | `kind: "operation"`, `op: "gather"` or `"all_gather"`, `operationId`, `deadlineAt`, `requestedSchema` |
+| Accepted answer | `kind: "response"`, `operationId`, `action: "accept"`, `content` |
+| Declined answer | `kind: "response"`, `operationId`, `action: "decline"` |
+| Close | `kind: "close"`, `operationId`, `included`, `closedAt`, `closedBy` |
 
-`id` identifies the request in all its answers and its close. `included` is an
-array of certified record hashes. `content` is an object mapping answer field
-names to strings, finite numbers, booleans or arrays of strings. The request's
+`included` is an array of certified record hashes. `content` maps answer
+field names to strings, finite numbers, booleans or arrays of strings. The request's
 schema further constrains those values.
 
 `deadlineAt` is a positive integer Unix timestamp in milliseconds. `closedAt`
@@ -211,17 +212,12 @@ is a nonnegative integer in the same units. Both are at most
 8,640,000,000,000,000. `closedAt` and `closedBy` record the requester's
 [completion decision](#completion-and-recovery).
 
-The requester creates `nonce` from 32 fresh random bytes encoded as 43
-unpadded base64url characters. The operation id is `col_` followed by the
-unpadded base64url SHA-256 of this UTF-8 string:
+`operationId` is `col_` followed by the canonical unpadded base64url encoding
+of the requester's 16 AgentId bytes and 32 fresh random bytes, in that order.
+Its 48-byte payload encodes as 64 characters. A requester chooses it once for
+the operation. Answers and closes carry the same value.
 
-```text
-org.social-harness/collective-id<NUL><requester address><NUL><nonce>
-```
-
-Each `<NUL>` denotes one zero byte. The requester address uses its `agent:`
-spelling, and the nonce uses its encoded text. The text and data parts must fit the
-[content bound](./conversation-representation.md#encoding-and-notation).
+The text and data parts must fit the [content bound](./conversation-representation.md#encoding-and-notation).
 Oversized content fails with `content-invalid`.
 
 ### Answer schema

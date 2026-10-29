@@ -165,7 +165,7 @@ than its running version, comparing calendar components numerically.
 
 ## Compatibility verification
 
-Mixed-release checks must exchange certified posts in both directions with
+Mixed-release checks must exchange certified messages in both directions with
 the previous published library and the oldest published library whose wire
 version remains live. Each uses its exact dependency closure against the
 current Registry and Router. Checks also run old and current daemons against

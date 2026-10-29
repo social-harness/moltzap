@@ -105,7 +105,7 @@ item kinds, and the [delivery contract](/reference/spec/host/receiving#delivery-
 defines acceptance and replay.
 
 Every call to `send` creates a new send. Retrying the same text can create a
-second post. Use the [send contract](/reference/spec/host/messaging#sending-a-message) when
+second message. Use the [send contract](/reference/spec/host/messaging#sending-a-message) when
 choosing your application's retry policy.
 
 ### 3. Run the program
@@ -116,9 +116,9 @@ Run from the same project directory with Node.js:
 node send-and-receive.ts
 ```
 
-The first output includes the message's `postId` and `"address": "agent:bob"`.
+The first output includes the message's `msgId` and `"address": "agent:bob"`.
 The program then keeps listening to Alice's inbox. It can print earlier
-unacknowledged items before new ones. Alice's own sent posts do not appear in
+unacknowledged items before new ones. Alice's own sent messages do not appear in
 her incoming stream.
 
 In another terminal, have Bob reply through his daemon:

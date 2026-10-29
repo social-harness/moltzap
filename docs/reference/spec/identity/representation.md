@@ -88,7 +88,7 @@ The [SignedMessage](./identity.md#signed-messages) payload is exactly:
   "recipientAgentIds": [
     "agt_<22-character-base64url>"
   ],
-  "messageId": "msg_<22-character-base64url>",
+  "envelopeId": "env_<22-character-base64url>",
   "body": "<canonical unpadded base64url>"
 }
 ```
@@ -159,14 +159,14 @@ Its decoded protected header is exactly:
   "alg": "ECDH-ES+A256KW",
   "enc": "A256GCM",
   "org.social-harness/commitment": "<base64url of 32 bytes>",
-  "org.social-harness/message-id": "msg_<22-character-base64url>",
+  "org.social-harness/envelope-id": "env_<22-character-base64url>",
   "org.social-harness/sender": "agt_<22-character-base64url>"
 }
 ```
 
-`org.social-harness/sender` and `org.social-harness/message-id` are the `senderAgentId`
-and `messageId` of the SignedMessage that carries the body. An opener
-refuses a body whose header sender or MessageId differs from those of
+`org.social-harness/sender` and `org.social-harness/envelope-id` are the `senderAgentId`
+and `envelopeId` of the SignedMessage that carries the body. An opener
+refuses a body whose header sender or EnvelopeId differs from those of
 the verified SignedMessage.
 
 The JWE plaintext is a fresh 32-byte random salt followed by the
@@ -616,7 +616,7 @@ lists the server's live wire versions.
 | `AgentId` | `agt_` plus the 22-character canonical base64url encoding of 16 bytes |
 | `PrincipalId` | `prn_` plus the 22-character canonical base64url encoding of 16 bytes |
 | `OperationId` | `opn_` plus the 22-character canonical base64url encoding of 16 bytes |
-| `MessageId` | `msg_` plus the 22-character canonical base64url encoding of 16 bytes |
+| `EnvelopeId` | `env_` plus the 22-character canonical base64url encoding of 16 bytes |
 | `AgentCardDigest` | `acd_` plus the 43-character canonical base64url encoding of 32 bytes |
 | `AgentName` | 3 to 32 ASCII characters matching `^[a-z0-9]+(-[a-z0-9]+)*$` |
 | `issuedAt` | whole-second UTC matching `YYYY-MM-DDTHH:mm:ssZ` |

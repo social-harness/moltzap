@@ -38,7 +38,7 @@ Call Alice's daemon to send Bob a message:
 SHARNESS_MCP_URL=http://127.0.0.1:4101/mcp node ~/sharness/client/mcp.ts call send_message '{"input":{"to":"agent:bob","text":"Hi Bob, this is Alice."}}'
 ```
 
-You should see a result with a `postId` and `"address": "agent:bob"`.
+You should see a result with a `msgId` and `"address": "agent:bob"`.
 Both daemons certify this two-agent message by verifying and signing its
 conversation record, so both must be running. The URL selects Alice's daemon
 on port `4101`, while `input.to` names Bob as the recipient.
