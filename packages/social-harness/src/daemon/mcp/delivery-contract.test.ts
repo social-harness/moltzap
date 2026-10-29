@@ -5,7 +5,8 @@ import { Chunk, Effect, Schema, Scope, Stream } from "effect";
 import { describe, expect } from "vitest";
 import type { MessageSender } from "../../communication/collectives/ports.js";
 import type { EndpointEngine } from "../../communication/conversations/index.js";
-import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
+import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
 import { makeToolCallRequest } from "../../__tests__/daemon-runtime-harness.js";
 import { loopbackMcpEndpoint } from "../../__tests__/mcp-http-fixtures.js";
 import { pendingMessage } from "../../__tests__/pending-delivery-fixtures.js";
@@ -92,7 +93,7 @@ const deliveryFixture = (sendMessage: MessageSender = unreachable) =>
       observeMessage: unreachable,
       sendAdmitted: unreachable,
       reportStorageFault: () => Effect.void,
-      self: Schema.decodeUnknownSync(AgentAddress)("agent:alice"),
+      self: testAgentView("agent:alice"),
       lookupMember: (member) => Effect.succeed(testAgentView(member)),
       sendMessage,
       bindMessage: (input, hold) =>
@@ -150,7 +151,9 @@ const consumesAnswers = () =>
     const answer = pendingMessage(2);
     const content = yield* encodeCollectiveContent({
       kind: "response",
-      id: Schema.decodeUnknownSync(CollectiveId)(digest("col_", 2)),
+      operationId: Schema.decodeUnknownSync(CollectiveId)(
+        collectiveOperationId(testAgentView("agent:alice").agentId, 2),
+      ),
       action: "decline",
     });
     yield* test.deliver([
@@ -172,7 +175,9 @@ const continuesAfterAnswerAcknowledgmentFails = () =>
     const answer = pendingMessage(2);
     const content = yield* encodeCollectiveContent({
       kind: "response",
-      id: Schema.decodeUnknownSync(CollectiveId)(digest("col_", 2)),
+      operationId: Schema.decodeUnknownSync(CollectiveId)(
+        collectiveOperationId(testAgentView("agent:alice").agentId, 2),
+      ),
       action: "decline",
     });
     yield* test.deliver(

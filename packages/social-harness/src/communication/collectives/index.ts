@@ -9,12 +9,12 @@ import {
   Option,
   Schema,
 } from "effect";
+import type { MessageAddressInput } from "../records/index.js";
 import type { InboundItem } from "./inbound.js";
 import { encodeCanonical } from "../../encoding/canonical-json.js";
 import { canonicalMessageAddress } from "../conversations/address.js";
 import { SendError } from "../conversations/errors.js";
 import { InboundMessage } from "../conversations/message.js";
-import { agentNameOf, type MessageAddressInput } from "../records/index.js";
 import { agentAddressOf } from "../records/values.js";
 import { encodeRuntimeValue, EndpointStoreError } from "../store/index.js";
 import { applyClose, receiveClose, recordPeerAnswer } from "./all-gather.js";
@@ -60,8 +60,8 @@ import { recoverCollectives } from "./recovery.js";
 import {
   fanOutRequests,
   gatherAddress,
-  operationTimes,
   messageRefusal,
+  operationTimes,
   requestsSoFar,
   requestWait,
   resolveMembers,
@@ -100,8 +100,10 @@ type CollectingValue = Extract<
 
 const contentInvalid = () => new SendError({ reason: "content-invalid" });
 
-const collectiveFailure = (id: CollectiveId, failure: CollectiveFailure) =>
-  new CollectiveError({ id, failure });
+const collectiveFailure = (
+  operationId: CollectiveId,
+  failure: CollectiveFailure,
+) => new CollectiveError({ operationId, failure });
 
 /**
  * Build the collective layer for one active identity.
@@ -127,8 +129,9 @@ export const makeCollectiveOperations = (
       classify: (message) => classify(state, message),
       restoreResponse: (message) => restoreResponse(state, message),
       close: (asked, close) => applyClose(state, asked, close),
-      complete: (id) => completeGather(state, id),
-      refuse: (id, refusal) => recordRefusal(state, id, refusal),
+      complete: (operationId) => completeGather(state, operationId),
+      refuse: (operationId, refusal) =>
+        recordRefusal(state, operationId, refusal),
     });
     return {
       send: (input) =>
@@ -136,9 +139,9 @@ export const makeCollectiveOperations = (
           ? respond(state, input.to, input.collectiveResponse)
           : sendOperation(state, input),
       classify: (message) => classify(state, message),
-      settleRequest: (id, presented) =>
+      settleRequest: (operationId, presented) =>
         Effect.sync(() => {
-          const request = state.requests.get(id);
+          const request = state.requests.get(operationId);
           if (request?.state === "unadmitted") {
             request.state = presented ? "open" : "withheld";
           }
@@ -175,7 +178,7 @@ function multicast(
       { kind: "operation", op: "multicast" },
       text,
     ).pipe(Effect.mapError(contentInvalid));
-    const self = agentNameOf(state.ports.self);
+    const self = state.ports.self.agentName;
     const { address } = yield* canonicalMessageAddress(to, self);
     const { certified, guidance } = yield* bindAuthoredMessage(
       state.ports,
@@ -218,12 +221,12 @@ function gather(
     const sent = yield* prepared.open.op === "gather"
       ? gatherRequests(state, prepared)
       : sendGroupRequest(state, prepared);
-    return { ...sent, kind: "collective", operationId: prepared.id };
+    return { ...sent, kind: "collective", operationId: prepared.operationId };
   });
 }
 
 /**
- * Validate a gather or all_gather before any message: mint its id, check its
+ * Validate a gather or all_gather before any message: mint its operationId, check its
  * schema against the form-mode grammar, name and resolve its members, fix
  * its absolute deadline, and build the request content within the content
  * limit.
@@ -235,31 +238,31 @@ function prepareGather(
   input: CollectingOperation,
 ): Effect.Effect<PreparedGather, SendError | CollectiveError> {
   return Effect.gen(function* () {
-    const { id, nonce } = yield* mintCollectiveId(state.ports.self);
+    const { self, lookupMember } = state.ports;
+    const { op, deadline, requestedSchema: schema } = input;
+    const operationId = yield* mintCollectiveId(self.agentId);
     const { to, members: addresses } = yield* gatherAddress(
       requestedTo,
-      state.ports.self,
-      input.op,
+      agentAddressOf(self),
+      op,
     );
-    const requestedSchema = yield* formModeSchema(id, input.requestedSchema);
-    const members = yield* resolveMembers(
-      addresses,
-      state.ports.lookupMember,
-    ).pipe(Effect.mapError((failure) => collectiveFailure(id, failure)));
-    const times = yield* operationTimes(input.deadline);
+    const requestedSchema = yield* formModeSchema(operationId, schema);
+    const members = yield* resolveMembers(addresses, lookupMember).pipe(
+      Effect.mapError((failure) => collectiveFailure(operationId, failure)),
+    );
+    const times = yield* operationTimes(deadline);
     const content = yield* encodeCollectiveContent(
       {
         kind: "operation",
-        op: input.op,
-        id,
-        nonce,
+        op,
+        operationId,
         deadlineAt: times.deadlineAt,
         requestedSchema,
       },
       question,
     ).pipe(Effect.mapError(contentInvalid));
     const descriptor = {
-      op: input.op,
+      op,
       to,
       question,
       members,
@@ -268,10 +271,10 @@ function prepareGather(
       ...times,
     };
     return {
-      id,
+      operationId,
       content,
       ...times,
-      durable: yield* encodeLocalCollective(id, descriptor).pipe(
+      durable: yield* encodeLocalCollective(operationId, descriptor).pipe(
         Effect.mapError(contentInvalid),
       ),
       open: { ...descriptor, outcomes: new Map(), answerHashes: new Map() },
@@ -286,12 +289,12 @@ function prepareGather(
  * requester's model repairs the form from this text alone.
  */
 function formModeSchema(
-  id: CollectiveId,
+  operationId: CollectiveId,
   requestedSchema: CollectingOperation["requestedSchema"],
 ): Effect.Effect<FormModeSchema, CollectiveError> {
   return Schema.decodeUnknown(FormModeSchema)(requestedSchema).pipe(
     Effect.mapError((error) =>
-      collectiveFailure(id, {
+      collectiveFailure(operationId, {
         kind: "schema-invalid",
         detail: describeIssues(error),
       }),
@@ -313,11 +316,11 @@ function gatherRequests(
     Effect.flatMap(({ sendRequest, guidance }) =>
       openGather(state, prepared, false).pipe(
         Effect.catchTag("CollectiveError", (error) =>
-          forgetGather(state, prepared.id).pipe(
+          forgetGather(state, prepared.operationId).pipe(
             Effect.zipRight(Effect.fail(error)),
           ),
         ),
-        Effect.tap(() => armRetainedGather(state, prepared.id)),
+        Effect.tap(() => armRetainedGather(state, prepared.operationId)),
         Effect.zipRight(sendRequests(state, prepared, sendRequest)),
         Effect.map((sent) => ({
           ...sent,
@@ -359,7 +362,7 @@ function admitGather(
     Effect.catchTag("EndpointStoreError", (error) =>
       durableSend(state, Effect.fail(error)),
     ),
-    Effect.tap(() => refreshRetainedSend(state, prepared.id)),
+    Effect.tap(() => refreshRetainedSend(state, prepared.operationId)),
   );
 }
 
@@ -378,12 +381,12 @@ function sendRequests(
   sendRequest: MessageSender,
 ): Effect.Effect<RequestSendOutcome, CollectiveError | SendError> {
   return Effect.gen(function* () {
-    const { id, open } = prepared;
+    const { operationId, open } = prepared;
     const sends = yield* fanOutRequests(
       prepared,
       sendRequest,
       state.ports.scope,
-      (refusal) => recordRefusal(state, id, refusal),
+      (refusal) => recordRefusal(state, operationId, refusal),
     );
     yield* Fiber.awaitAll(sends).pipe(
       Effect.timeoutOption(yield* requestWait(prepared.waitUntil)),
@@ -396,15 +399,15 @@ function sendRequests(
     if (
       refusal !== undefined &&
       refusals.length + 1 === open.members.length &&
-      (yield* forgetGather(state, id))
+      (yield* forgetGather(state, operationId))
     ) {
-      return yield* collectiveFailure(id, {
+      return yield* collectiveFailure(operationId, {
         kind: "members-unreachable",
         members: [refusal, ...refusals],
       });
     }
     yield* Effect.ignore(
-      updateGather(state, id, (settled) => {
+      updateGather(state, operationId, (settled) => {
         settled.requestsSettled = true;
       }),
     );
@@ -421,9 +424,9 @@ function sendGroupRequest(
   state: CollectiveState,
   prepared: PreparedGather,
 ): Effect.Effect<RequestSendOutcome, CollectiveSendError> {
-  const { id, open } = prepared;
+  const { operationId, open } = prepared;
   const hold = openGather(state, prepared, true).pipe(
-    Effect.as(releaseUnboundGather(state, id)),
+    Effect.as(releaseUnboundGather(state, operationId)),
   );
   return bindAuthoredMessage(
     state.ports,
@@ -431,7 +434,7 @@ function sendGroupRequest(
       to: open.to,
       content: prepared.content,
       collective: {
-        operationId: id,
+        operationId,
         role: "request",
         destination: open.to,
         operation: prepared.durable,
@@ -440,9 +443,9 @@ function sendGroupRequest(
     hold,
   ).pipe(
     Effect.onExit((exit) =>
-      Exit.isSuccess(exit) || state.gathers.has(id)
+      Exit.isSuccess(exit) || state.gathers.has(operationId)
         ? Effect.void
-        : markRefused(state, id),
+        : markRefused(state, operationId),
     ),
     Effect.catchTag(
       "SendError",
@@ -452,7 +455,7 @@ function sendGroupRequest(
           ? Effect.fail(error)
           : abandonGroupRequest(state, prepared, error),
     ),
-    Effect.tap(() => refreshRetainedSend(state, prepared.id)),
+    Effect.tap(() => refreshRetainedSend(state, prepared.operationId)),
     Effect.flatMap(({ certified, guidance }) =>
       withinRequestWait(prepared.waitUntil, certified).pipe(
         Effect.map((message) => ({
@@ -464,7 +467,7 @@ function sendGroupRequest(
         ),
       ),
     ),
-    Effect.onExit(() => armRetainedGather(state, id)),
+    Effect.onExit(() => armRetainedGather(state, operationId)),
   );
 }
 
@@ -547,7 +550,7 @@ function multicastItem(
 /**
  * Record a received gather or all_gather request and present it as an item.
  * A request `receivedRequest` opens nothing for is consumed. So is a second
- * request message reusing an id this endpoint holds: the answer goes to the
+ * request message reusing an operationId this endpoint holds: the answer goes to the
  * conversation of the first, so presenting the second would show the host a
  * different audience. An all_gather request past its deadline is kept
  * without being presented, so a member that catches up late still applies
@@ -558,7 +561,10 @@ function requestItem(
   message: CertifiedMessage,
   value: CollectingValue,
 ): Effect.Effect<Option.Option<InboundItem>, CollectiveEmitError> {
-  if (state.recovering && !retainedRequestMatches(state, message, value.id)) {
+  if (
+    state.recovering &&
+    !retainedRequestMatches(state, message, value.operationId)
+  ) {
     return Effect.succeed(Option.none());
   }
   return Effect.gen(function* () {
@@ -571,22 +577,22 @@ function requestItem(
     );
     if (
       Option.isNone(received) ||
-      conflictsWithRequest(state, message, value.id)
+      conflictsWithRequest(state, message, value.operationId)
     ) {
       return Option.none();
     }
-    const held = state.requests.get(value.id);
-    if (!state.retained.has(value.id)) {
-      yield* retainRequest(state, message, value.id);
+    const held = state.requests.get(value.operationId);
+    if (!state.retained.has(value.operationId)) {
+      yield* retainRequest(state, message, value.operationId);
     }
     if (held === undefined) {
-      state.requests.set(value.id, received.value);
+      state.requests.set(value.operationId, received.value);
     }
     return now < value.deadlineAt
       ? Option.some<InboundItem>({
           kind: "collectiveRequest",
           op: value.op,
-          id: value.id,
+          operationId: value.operationId,
           msgId: message.message.msgId,
           from: message.message.sender,
           to: received.value.to,
@@ -602,9 +608,9 @@ function requestItem(
 function retainedRequestMatches(
   state: CollectiveState,
   message: CertifiedMessage,
-  id: CollectiveId,
+  operationId: CollectiveId,
 ): boolean {
-  const retained = state.retained.get(id);
+  const retained = state.retained.get(operationId);
   return (
     retained?.origin.kind === "remote" &&
     retained.origin.recordHash === message.recordHash
@@ -614,17 +620,17 @@ function retainedRequestMatches(
 function conflictsWithRequest(
   state: CollectiveState,
   message: CertifiedMessage,
-  id: CollectiveId,
+  operationId: CollectiveId,
 ): boolean {
-  const retained = state.retained.get(id);
+  const retained = state.retained.get(operationId);
   if (
-    state.gathers.has(id) ||
+    state.gathers.has(operationId) ||
     retained?.origin.kind === "local" ||
     retained?.phase === "completed"
   ) {
     return true;
   }
-  const held = state.requests.get(id);
+  const held = state.requests.get(operationId);
   return held !== undefined && !sameRequestMessage(held, message);
 }
 
@@ -642,7 +648,7 @@ function sameRequestMessage(
 function retainRequest(
   state: CollectiveState,
   message: CertifiedMessage,
-  id: CollectiveId,
+  operationId: CollectiveId,
 ) {
   return durableEmit(
     state,
@@ -656,7 +662,7 @@ function retainRequest(
         ),
       );
       yield* state.ports.store.putCollectiveOperation({
-        operationId: id,
+        operationId,
         origin: {
           kind: "remote",
           recordHash: message.recordHash,
@@ -665,7 +671,7 @@ function retainRequest(
         canonicalRequest,
         canonicalDescriptor: yield* encodeRuntimeValue({}),
       });
-      yield* refreshRetained(state, id);
+      yield* refreshRetained(state, operationId);
     }),
   );
 }
@@ -683,11 +689,11 @@ function recordAnswer(
   value: ResponseValue,
 ): Effect.Effect<void, CollectiveEmitError> {
   return Effect.suspend(() => {
-    const open = state.gathers.get(value.id);
+    const open = state.gathers.get(value.operationId);
     if (open !== undefined) {
       return recordCountedAnswer(state, open, message, value);
     }
-    const request = state.requests.get(value.id);
+    const request = state.requests.get(value.operationId);
     if (request?.kind === "all_gather") {
       recordPeerAnswer(request, message, value);
     }
@@ -712,7 +718,7 @@ function groupRequestFailure(
   return durableSend(
     state,
     state.ports.store.readCollectiveMessages({
-      operationId: prepared.id,
+      operationId: prepared.operationId,
       role: "request",
     }),
   ).pipe(
@@ -734,10 +740,10 @@ function abandonGroupRequest(
   prepared: PreparedGather,
   error: SendError,
 ): Effect.Effect<never, CollectiveError | SendError> {
-  return forgetGather(state, prepared.id).pipe(
+  return forgetGather(state, prepared.operationId).pipe(
     Effect.zipRight(
       Effect.fail(
-        collectiveFailure(prepared.id, {
+        collectiveFailure(prepared.operationId, {
           kind: "members-unreachable",
           members: EffectArray.map(prepared.open.members, (member) =>
             messageRefusal(agentAddressOf(member), error),

@@ -506,7 +506,7 @@ function projectPart(
         operation: {
           kind: "answer",
           op: cards.length === 2 ? "gather" : "all_gather",
-          id: value.id,
+          operationId: value.operationId,
         },
         supported: true,
       });
@@ -553,7 +553,7 @@ function projectRequest(
       requestText({
         kind: "collectiveRequest",
         op: value.op,
-        id: value.id,
+        operationId: value.operationId,
         msgId: intent.msgId,
         from,
         to,
@@ -568,7 +568,7 @@ function projectRequest(
         operation: {
           kind: "request",
           op: value.op,
-          id: value.id,
+          operationId: value.operationId,
           deadlineAt: value.deadlineAt,
         },
         supported: true,

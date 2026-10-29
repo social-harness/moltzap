@@ -48,8 +48,8 @@ import type {
   LocalGuidance,
   MessageAddressInput,
   MessageTextError,
-  parseMessageText,
   MsgId,
+  parseMessageText,
   renderLocalGuidance,
   SendError,
   SendInput,
@@ -58,7 +58,7 @@ import type {
 
 type Expect<Value extends true> = Value;
 
-type CollectiveId = CollectiveError["id"];
+type CollectiveId = NonNullable<CollectiveError["operationId"]>;
 type ExpectedRequestedSchema = Readonly<{
   $schema?: string;
   type: "object";
@@ -79,9 +79,9 @@ type ExpectedCollectiveResponse =
   | Readonly<{
       action: "accept";
       content: ExpectedAnswerContent;
-      id?: CollectiveId;
+      operationId?: CollectiveId;
     }>
-  | Readonly<{ action: "decline"; id?: CollectiveId }>;
+  | Readonly<{ action: "decline"; operationId?: CollectiveId }>;
 type ExpectedSendInput =
   | Readonly<{
       to: MessageAddressInput;
@@ -153,7 +153,7 @@ type ExpectedInboundItem =
   | Readonly<{
       kind: "collectiveRequest";
       op: "gather" | "all_gather";
-      id: CollectiveId;
+      operationId: CollectiveId;
       msgId: MsgId;
       from: AgentView;
       to: MessageAddressInput;
@@ -166,14 +166,14 @@ type ExpectedInboundItem =
       closedAt: number;
       closedBy: "settled" | "deadline";
       op: "gather" | "all_gather";
-      id: CollectiveId;
+      operationId: CollectiveId;
       to: MessageAddressInput;
       question: string | ExpectedWithheld;
       outcomes: readonly [ExpectedOutcomeEntry, ...ExpectedOutcomeEntry[]];
     }>
   | Readonly<{
       kind: "operationFailed";
-      id: CollectiveId;
+      operationId: CollectiveId;
       to: MessageAddressInput;
       error: string;
     }>;

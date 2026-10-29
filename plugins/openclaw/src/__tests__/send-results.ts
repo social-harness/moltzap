@@ -7,7 +7,7 @@ import {
 import { Effect, Encoding } from "effect";
 
 /** The operation id every fake gather, all_gather and answer reports. */
-export const OPERATION_ID = `col_${Encoding.encodeBase64Url(new Uint8Array(32).fill(5))}`;
+export const OPERATION_ID = `col_${Encoding.encodeBase64Url(new Uint8Array(48).fill(5))}`;
 
 /**
  * The endpoint's own result for the nth send, from 0: a multicast returns message

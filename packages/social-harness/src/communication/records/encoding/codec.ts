@@ -17,9 +17,9 @@ import {
 } from "../../../encoding/identifier.js";
 import { SealedBody } from "../../../identity/envelope/sealed-body.js";
 import {
-  type LiveSignedMessage,
   EnvelopeId,
   type EnvelopeId as EnvelopeIdValue,
+  type LiveSignedMessage,
   SignedMessage,
   type SignedMessage as SignedMessageValue,
   type VerifiedSignedMessage,

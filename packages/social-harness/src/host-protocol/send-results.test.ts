@@ -3,7 +3,8 @@
 import { scoped as it } from "@effect/vitest";
 import { Effect, Exit, Struct } from "effect";
 import { describe, expect } from "vitest";
-import { digest } from "../__tests__/agent-card-fixtures.js";
+import { digest, testAgentView } from "../__tests__/agent-card-fixtures.js";
+import { collectiveOperationId } from "../__tests__/collective-id-fixtures.js";
 import {
   classifyMessage,
   gatherInput,
@@ -18,7 +19,10 @@ import {
 } from "./operations.js";
 
 const msgId = digest("msg_", 11);
-const operationId = digest("col_", 12);
+const operationId = collectiveOperationId(
+  testAgentView("agent:alice").agentId,
+  12,
+);
 const address = "agent:bob";
 
 const results = [

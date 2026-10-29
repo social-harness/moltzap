@@ -26,10 +26,10 @@ import {
 } from "../keys.js";
 import { WIRE_VERSION } from "../wire-version.js";
 import {
+  EnvelopeId,
   isParsedSignedMessage,
   MAXIMUM_BODY_BYTES,
   MAXIMUM_RECIPIENTS,
-  EnvelopeId,
   type VerifiedSignedMessage,
 } from "./signed-message.js";
 import { WIRE_PROFILES } from "./wire-profile.js";

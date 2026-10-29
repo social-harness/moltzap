@@ -11,7 +11,10 @@ import {
   TestClock,
 } from "effect";
 import { expect } from "vitest";
-import { identifier } from "../../__tests__/agent-card-fixtures.js";
+import {
+  identifier,
+  testAgentView,
+} from "../../__tests__/agent-card-fixtures.js";
 import { signEvidence } from "../../__tests__/certified-history-fixtures.js";
 import {
   engineFixture,
@@ -23,7 +26,6 @@ import { WIRE_VERSION } from "../../identity/wire-version.js";
 import { makeEndpointEngine } from "../conversations/index.js";
 import {
   ActionCore,
-  AgentAddress,
   CertifiedRecord,
   hashAction,
   hashAnchor,
@@ -139,7 +141,7 @@ function attachingEndpoint(pausePlainBind?: Effect.Effect<unknown>) {
     const scope = yield* Scope.Scope;
     const collectives = yield* makeCollectiveOperations({
       store: subject.store,
-      self: Schema.decodeUnknownSync(AgentAddress)("agent:alice"),
+      self: testAgentView("agent:alice"),
       lookupMember: (member) => resolvedMemberView(engine, member),
       sendMessage: engine.send,
       bindMessage: engine.bind,

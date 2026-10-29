@@ -10,9 +10,9 @@ import { CollectiveEmitError, type CollectiveId } from "./contracts.js";
 /** Refresh the same retained state on a caller-facing send boundary. */
 export function refreshRetainedSend(
   state: CollectiveState,
-  id: CollectiveId,
+  operationId: CollectiveId,
 ): Effect.Effect<void, SendError> {
-  return durableSend(state, refreshRetained(state, id));
+  return durableSend(state, refreshRetained(state, operationId));
 }
 
 /** An uncertain persistence outcome cannot authorize a second message. */
@@ -42,13 +42,13 @@ export function emitTerminal(
   >,
   provenance?: ResultProvenance,
 ): Effect.Effect<void, CollectiveEmitError> {
-  return durableEmit(state, refreshRetained(state, item.id)).pipe(
+  return durableEmit(state, refreshRetained(state, item.operationId)).pipe(
     Effect.flatMap(() => {
-      const operation = state.retained.get(item.id);
+      const operation = state.retained.get(item.operationId);
       return operation === undefined
         ? Effect.fail(new CollectiveEmitError())
         : state.ports.emit(item, provenance, {
-            operationId: item.id,
+            operationId: item.operationId,
             deliveryToken: operation.deliveryToken,
           });
     }),
@@ -72,15 +72,15 @@ export function durableEmit<A>(
 /** Reload phase and terminal identity after their atomic store transitions. */
 export function refreshRetained(
   state: CollectiveState,
-  id: CollectiveId,
+  operationId: CollectiveId,
 ): Effect.Effect<void, EndpointStoreError> {
-  return state.ports.store.readCollectiveOperation(id).pipe(
+  return state.ports.store.readCollectiveOperation(operationId).pipe(
     Effect.tap((operation) =>
       Effect.sync(() => {
         if (operation === undefined) {
-          state.retained.delete(id);
+          state.retained.delete(operationId);
         } else {
-          state.retained.set(id, operation);
+          state.retained.set(operationId, operation);
         }
       }),
     ),

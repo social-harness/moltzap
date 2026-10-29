@@ -4,8 +4,9 @@ import { scopedLive as it } from "@effect/vitest";
 import { Deferred, Effect, Fiber, Queue, Schema } from "effect";
 import { expect } from "vitest";
 import type { FirewallOptions } from "./firewall.js";
-import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { appendCertifiedMessage } from "../../__tests__/certified-history-fixtures.js";
+import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
 import {
   group,
   sendInput,
@@ -599,7 +600,10 @@ function independentConversations() {
     yield* Queue.take(runtime.completed);
     const later = Schema.decodeUnknownSync(InboundItem)({
       kind: "operationFailed",
-      id: digest("col_", 84),
+      operationId: collectiveOperationId(
+        testAgentView("agent:alice").agentId,
+        84,
+      ),
       to: "agent:carol",
       error: "Another operation completed.",
     });

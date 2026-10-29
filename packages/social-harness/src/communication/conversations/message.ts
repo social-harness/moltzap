@@ -8,9 +8,9 @@ import {
   Content,
   GroupAddress,
   maximumMembers,
+  MsgId,
   parseAgentAddress,
   parseGroupAddress,
-  MsgId,
 } from "../records/values.js";
 
 /* eslint-disable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Effect Schemas share their domain names with the nominal values they decode. */

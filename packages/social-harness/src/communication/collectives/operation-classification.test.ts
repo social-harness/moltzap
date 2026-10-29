@@ -9,12 +9,11 @@ import {
   collectiveKey,
   directMessage,
   makeLayer,
+  msgId,
   multicastPart,
   newObserved,
-  msgId,
   questionText,
   requestId,
-  requestNonce,
   requestMessage,
   slotSchema,
 } from "../../__tests__/collective-operation-fixtures.js";
@@ -99,7 +98,7 @@ function consumesAMessageThatCarriesTwoCollectiveParts() {
 function consumesACloseForAnAllGatherThisEndpointWasNotAsked() {
   const close = {
     kind: "close",
-    id: requestId,
+    operationId: requestId,
     included: [],
     closedAt: 60_000,
     closedBy: "deadline",
@@ -123,8 +122,7 @@ function consumesAnAllGatherRequestInADirectConversation() {
   const request = {
     kind: "operation",
     op: "all_gather",
-    id: requestId,
-    nonce: requestNonce,
+    operationId: requestId,
     deadlineAt: 60_000,
     requestedSchema: slotSchema,
   };
@@ -156,7 +154,7 @@ function deliversARequestMessageAsACollectiveRequestItem() {
       Option.some({
         kind: "collectiveRequest",
         op: "gather",
-        id: requestId,
+        operationId: requestId,
         msgId: msgId(9),
         from: testAgentView("agent:bob"),
         to: "agent:bob",
@@ -179,7 +177,7 @@ function consumesARequestMessageWhoseDeadlineHasPassed() {
   });
 }
 
-function consumesARequestWhoseIdDoesNotDeriveFromItsSender() {
+function rejectsAnOperationClaimedByAnotherRequester() {
   return Effect.gen(function* () {
     const layer = yield* makeLayer(newObserved());
     const takenOver = yield* classifyMessage(
@@ -259,8 +257,8 @@ describe("inbound classification", () => {
 // @agent-code-guard/regression-only: examples pin which received requests a member keeps.
 describe("received request checks", () => {
   it(
-    "consumes a request whose id does not derive from its sender",
-    consumesARequestWhoseIdDoesNotDeriveFromItsSender,
+    "rejects an operation claimed by another requester",
+    rejectsAnOperationClaimedByAnotherRequester,
   );
 
   it(

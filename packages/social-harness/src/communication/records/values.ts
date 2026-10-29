@@ -26,7 +26,6 @@ export const compareAgentIds: (left: AgentId, right: AgentId) => number =
 export const wireProfiles = {
   [WIRE_VERSION]: {
     clientHashDomain: "org.social-harness/client/v2/",
-    collectiveIdDomain: "org.social-harness/collective-id",
     collectiveDataKey: "org.social-harness/collective",
     maximumContentBytes: 32_768,
     maximumMembers: 32,

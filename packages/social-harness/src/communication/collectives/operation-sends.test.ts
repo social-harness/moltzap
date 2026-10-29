@@ -14,10 +14,10 @@ import {
   gatherInput,
   lateMessageDelay,
   makeLayer,
+  msgId,
   multicastPart,
   newObserved,
   operationIdOf,
-  msgId,
   questionText,
   requestSendWait,
   send,
@@ -25,7 +25,7 @@ import {
   startGather,
 } from "../../__tests__/collective-operation-fixtures.js";
 import { SendError } from "../conversations/errors.js";
-import { collectiveIdOf } from "./wire/index.js";
+import { collectiveRequesterOf } from "./wire/index.js";
 
 function certifiesAMulticastAsItsTextAndAnExplicitMulticastPart() {
   const observed = newObserved();
@@ -70,10 +70,13 @@ function fansAGatherOutAsOneRequestMessagePerMemberButTheRequester() {
 
   return Effect.gen(function* () {
     const layer = yield* makeLayer(observed);
-    const id = yield* startGather(layer);
-    const { nonce } = yield* firstRequestOf(observed);
+    const operationId = yield* startGather(layer);
+    const request = yield* firstRequestOf(observed);
 
-    expect(collectiveIdOf(alice, nonce)).toBe(id);
+    expect(request.operationId).toBe(operationId);
+    expect(collectiveRequesterOf(operationId)).toBe(
+      testAgentView(alice).agentId,
+    );
     expect(observed.sent.map((message) => message.to)).toEqual([
       "agent:bob",
       "agent:carol",
@@ -86,8 +89,7 @@ function fansAGatherOutAsOneRequestMessagePerMemberButTheRequester() {
           [collectiveKey]: {
             kind: "operation",
             op: "gather",
-            id,
-            nonce,
+            operationId,
             deadlineAt: 60_000,
             requestedSchema: slotSchema,
           },
@@ -131,18 +133,18 @@ function continuesAGatherPastMembersItCouldNotReach() {
     );
     yield* TestClock.adjust(requestSendWait);
     const outcome = yield* Fiber.join(sending);
-    const { id } = yield* firstRequestOf(observed);
+    const { operationId } = yield* firstRequestOf(observed);
 
     expect(outcome).toEqual({
       kind: "collective",
       msgIds: [msgId(101)],
-      operationId: id,
+      operationId,
     });
     expect(observed.sent.map((message) => message.to)).toEqual(["agent:bob"]);
 
     yield* classifyMessage(
       layer,
-      answerMessage("agent:bob", id, { action: "decline" }),
+      answerMessage("agent:bob", operationId, { action: "decline" }),
     );
 
     expect(observed.emitted).toEqual([]);
@@ -155,7 +157,7 @@ function continuesAGatherPastMembersItCouldNotReach() {
         closedAt: 60_000,
         closedBy: "deadline",
         op: "gather",
-        id,
+        operationId,
         to: "group:alice,bob,carol,dave",
         question: questionText,
         outcomes: [
@@ -186,14 +188,14 @@ function countsAnAnswerToAMessageCertifiedAfterTheWait() {
     yield* TestClock.adjust(requestSendWait);
     const outcome = yield* Fiber.join(sending);
     yield* TestClock.adjust(lateMessageDelay);
-    const id = yield* operationIdOf(outcome);
+    const operationId = yield* operationIdOf(outcome);
     yield* classifyMessage(
       layer,
-      answerMessage("agent:bob", id, { action: "decline" }),
+      answerMessage("agent:bob", operationId, { action: "decline" }),
     );
     yield* classifyMessage(
       layer,
-      answerMessage("agent:carol", id, {
+      answerMessage("agent:carol", operationId, {
         action: "accept",
         content: { slot: "tue" },
       }),
@@ -258,7 +260,7 @@ function saysEachMemberIsStillSentAQueuedRequestMessage() {
     expect(outcome).toMatchObject({ kind: "collective" });
     yield* TestClock.adjust(Duration.seconds(60));
     expect(observed.emitted).toMatchObject([
-      { kind: "collectiveResult", id: outcome.operationId },
+      { kind: "collectiveResult", operationId: outcome.operationId },
     ]);
   });
 }

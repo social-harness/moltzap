@@ -55,7 +55,7 @@ export function closeAllGather(
           ? Effect.fail(error)
           : emitTerminal(state, {
               kind: "operationFailed",
-              id: result.id,
+              operationId: result.operationId,
               to: open.to,
               error: closeFailureText(error),
             }).pipe(Effect.as<ClosedOutcome>("failed")),
@@ -101,22 +101,14 @@ export function recordPeerAnswer(
   });
 }
 
-/**
- * Receive an all_gather's close. Only the requester's close in the group
- * conversation of a request this endpoint holds counts. The held request's id
- * derives from its requester, so a close from any other sender names an id
- * that does not derive from that sender; it, and a close for an id this
- * endpoint does not hold, is consumed and logged. Only the first close in the
- * conversation counts, as at every other member: a later one, including one
- * that arrives while the first is held, changes nothing.
- */
+/** Only the requester's first close in the original group selects the result. */
 export function receiveClose(
   state: CollectiveState,
   message: InboundMessage,
   value: CloseValue,
 ): Effect.Effect<void, CollectiveEmitError> {
   return Effect.suspend(() => {
-    const request = state.requests.get(value.id);
+    const request = state.requests.get(value.operationId);
     if (
       request?.kind !== "all_gather" ||
       message.kind !== "group" ||
@@ -132,7 +124,7 @@ export function receiveClose(
     }
     return applyClose(
       state,
-      { id: value.id, request },
+      { operationId: value.operationId, request },
       {
         msgId: message.msgId,
         included: value.included,
@@ -163,7 +155,7 @@ export function applyClose(
   asked: OpenRequest<Extract<ReceivedRequest, { readonly kind: "all_gather" }>>,
   close: HeldClose,
 ): Effect.Effect<void, CollectiveEmitError> {
-  const { id, request } = asked;
+  const { operationId, request } = asked;
   if (state.recovering) {
     request.shared.heldClose ??= close;
     return Effect.void;
@@ -172,7 +164,7 @@ export function applyClose(
     state,
     closeSelection(close).pipe(
       Effect.flatMap((selection) =>
-        state.ports.store.finalizeCollectiveOperation(id, selection),
+        state.ports.store.finalizeCollectiveOperation(operationId, selection),
       ),
     ),
   ).pipe(Effect.zipRight(finishPeerClose(state, asked, close)));
@@ -183,11 +175,11 @@ function certifyClose(
   open: OpenGather,
   result: CollectiveResultItem,
 ) {
-  const { id } = result;
+  const { operationId } = result;
   return Effect.gen(function* () {
     const messages = yield* durableEmit(
       state,
-      state.ports.store.readCollectiveMessages({ operationId: id }),
+      state.ports.store.readCollectiveMessages({ operationId }),
     );
     const request = messages.find((message) => message.role === "request");
     if (request !== undefined) {
@@ -205,7 +197,7 @@ function sendClose(
   open: OpenGather,
   result: CollectiveResultItem,
 ) {
-  const { id, closedAt, closedBy } = result;
+  const { operationId, closedAt, closedBy } = result;
   return Effect.gen(function* () {
     const included = open.members
       .map(agentAddressOf)
@@ -214,7 +206,7 @@ function sendClose(
       );
     const content = yield* encodeCollectiveContent({
       kind: "close",
-      id,
+      operationId,
       closedAt,
       closedBy,
       included,
@@ -223,11 +215,11 @@ function sendClose(
       .sendMessage({
         to: open.to,
         content,
-        collective: { operationId: id, role: "close", destination: open.to },
+        collective: { operationId, role: "close", destination: open.to },
       })
       .pipe(
         Effect.catchTag("SendError", (error) =>
-          continueBoundClose(state, id, error),
+          continueBoundClose(state, operationId, error),
         ),
       );
   });
@@ -235,14 +227,14 @@ function sendClose(
 
 function continueBoundClose(
   state: CollectiveState,
-  id: CollectiveId,
+  operationId: CollectiveId,
   error: SendError,
 ): Effect.Effect<void, SendError | CollectiveEmitError> {
   return Effect.gen(function* () {
     const messages = yield* durableEmit(
       state,
       state.ports.store.readCollectiveMessages({
-        operationId: id,
+        operationId,
         role: "close",
       }),
     );
@@ -281,7 +273,7 @@ function finishPeerClose(
   close: HeldClose,
 ): Effect.Effect<void, CollectiveEmitError> {
   return Effect.suspend(() => {
-    const { id, request } = asked;
+    const { operationId, request } = asked;
     const { answers, missing, repeated } = listedAnswers(
       request.shared,
       close.included,
@@ -297,13 +289,13 @@ function finishPeerClose(
         state,
         closeSelection(close).pipe(
           Effect.flatMap((selection) =>
-            state.ports.store.retireCollectiveOperation(id, selection),
+            state.ports.store.retireCollectiveOperation(operationId, selection),
           ),
         ),
       ).pipe(
         Effect.zipRight(
           Effect.logWarning(
-            `consumed close ${close.msgId} of ${id}: it lists answers this endpoint does not hold`,
+            `consumed close ${close.msgId} of ${operationId}: it lists answers this endpoint does not hold`,
           ),
         ),
       );
@@ -318,7 +310,7 @@ function emitPeerResult(
   answers: SelectedAnswers,
   { closedAt, closedBy }: CollectiveClosure,
 ) {
-  const { id, request } = asked;
+  const { operationId, request } = asked;
   return Effect.forEach(
     answers,
     (answer) =>
@@ -333,7 +325,7 @@ function emitPeerResult(
         {
           kind: "collectiveResult",
           op: "all_gather",
-          id,
+          operationId,
           closedAt,
           closedBy,
           to: request.to,
@@ -342,7 +334,9 @@ function emitPeerResult(
         },
         {
           answers: answers
-            .filter((answer) => answer.member !== state.ports.self)
+            .filter(
+              (answer) => answer.member !== agentAddressOf(state.ports.self),
+            )
             .map(({ member, recordHash }) => ({ member, recordHash })),
           request: request.recordHash,
         },

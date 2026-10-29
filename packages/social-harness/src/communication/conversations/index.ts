@@ -31,8 +31,8 @@ import { wireVersions } from "../../identity/wire-version.js";
 import {
   type DecodedOuterBody,
   type MessageAddressInput,
-  type MsgId,
   MessageIntent,
+  type MsgId,
   RecordHash,
 } from "../records/index.js";
 import {

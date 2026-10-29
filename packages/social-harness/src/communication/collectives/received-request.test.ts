@@ -1,15 +1,16 @@
-/** @file Pins which received request an answer sent to a conversation answers, by the id it names or as the one open there. */
+/** @file Pins which received request an answer sent to a conversation answers, by the operationId it names or as the one open there. */
 
 import { Either, FastCheck as fc, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import type { CollectiveId } from "./contracts.js";
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
+import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
 import { AgentAddress, GroupAddress } from "../records/values.js";
 import {
   matchOpenRequest,
   type RequestStatus,
   unmatchedAnswerError,
 } from "./received-request.js";
-import { collectiveIdOf } from "./wire/index.js";
 
 const NOW = 1_000_000;
 const bob = Schema.decodeUnknownSync(AgentAddress)("agent:bob");
@@ -36,7 +37,7 @@ const heldRequest: fc.Arbitrary<HeldRequest> = fc.record({
 const requestsOf = (held: readonly HeldRequest[]) =>
   new Map<CollectiveId, RequestStatus>(
     held.map(({ inBob, state, expired }, index) => [
-      collectiveIdOf(bob, String(index).padStart(43, "n")),
+      collectiveOperationId(testAgentView(bob).agentId, index),
       {
         to: inBob ? bobConversation : groupConversation,
         deadlineAt: expired ? NOW : NOW + 1,
@@ -55,33 +56,44 @@ const kindOf = (held: readonly HeldRequest[]) =>
     onRight: () => "matched",
   });
 
-/** The id `requestsOf` gives the held request at `index`. */
+/** The operationId `requestsOf` gives the held request at `index`. */
 const idAt = (index: number) =>
-  collectiveIdOf(bob, String(index).padStart(43, "n"));
+  collectiveOperationId(testAgentView(bob).agentId, index);
 
-/** Held requests, the index of the one an answer to agent:bob names, the refusal it gets, and the requests it names as open elsewhere. */
-const NAMED_REFUSALS: ReadonlyArray<
-  [
-    readonly HeldRequest[],
-    number,
-    string,
-    ReadonlyArray<{ readonly id: CollectiveId; readonly to: GroupAddress }>,
-  ]
-> = [
-  [
-    [{ inBob: false, state: "open", expired: false }],
-    0,
-    "request-none",
-    [{ id: idAt(0), to: groupConversation }],
-  ],
-  [[{ inBob: true, state: "open", expired: false }], 1, "request-none", []],
-  [
-    [{ inBob: true, state: "answered", expired: false }],
-    0,
-    "request-answered",
-    [],
-  ],
-];
+/** Each named refusal keeps only a request selected in the target conversation. */
+const NAMED_REFUSALS = [
+  {
+    held: [{ inBob: false, state: "open", expired: false }],
+    named: 0,
+    expected: {
+      kind: "request-none",
+      openElsewhere: [{ operationId: idAt(0), to: groupConversation }],
+    },
+  },
+  {
+    held: [{ inBob: true, state: "open", expired: false }],
+    named: 1,
+    expected: { kind: "request-none", openElsewhere: [] },
+  },
+  {
+    held: [{ inBob: true, state: "answered", expired: false }],
+    named: 0,
+    expected: {
+      kind: "request-answered",
+      operationId: idAt(0),
+      openElsewhere: [],
+    },
+  },
+  {
+    held: [{ inBob: true, state: "open", expired: true }],
+    named: 0,
+    expected: {
+      kind: "request-expired",
+      operationId: idAt(0),
+      openElsewhere: [],
+    },
+  },
+] as const;
 
 /** Held requests and the refusal each set gives an answer to agent:bob. */
 const REFUSALS: ReadonlyArray<[readonly HeldRequest[], string]> = [
@@ -108,7 +120,10 @@ describe("matching an answer to its conversation's open request", () => {
     matchesExactlyOneOpenRequest,
   );
   it("ignores requests held in other conversations", ignoresOtherConversations);
-  it("returns the open request's id and request", returnsTheOpenRequest);
+  it(
+    "returns the open request's operationId and request",
+    returnsTheOpenRequest,
+  );
   it("names only this conversation's open requests in an ambiguous failure", () => {
     const requests = requestsOf([
       { inBob: true, state: "open", expired: false },
@@ -119,32 +134,44 @@ describe("matching an answer to its conversation's open request", () => {
     const refusal = Either.match(
       matchOpenRequest(requests, bobConversation, NOW, {}),
       {
-        onLeft: (unmatched) => unmatchedAnswerError(idAt(4), unmatched),
+        onLeft: (unmatched) => unmatchedAnswerError(unmatched),
         onRight: () => undefined,
       },
     );
 
     expect(refusal).toMatchObject({
-      failure: { kind: "request-ambiguous", openIds: [idAt(0), idAt(3)] },
+      failure: {
+        kind: "request-ambiguous",
+        openOperationIds: [idAt(0), idAt(3)],
+      },
     });
+    expect(refusal?.operationId).toBeUndefined();
   });
   it.each<[readonly HeldRequest[], string]>(REFUSALS)(
     "refuses %j as %s",
     (held, expected) => {
-      expect(kindOf(held)).toBe(expected);
+      const result = matchOpenRequest(
+        requestsOf(held),
+        bobConversation,
+        NOW,
+        {},
+      );
+      expect(result).toEqual(
+        Either.left({ kind: expected, openElsewhere: [] }),
+      );
     },
   );
 });
 
 describe("matching an answer to the request it names", () => {
   it.each(NAMED_REFUSALS)(
-    "refuses an answer over %j naming request %i as %s, naming the requests open elsewhere",
-    (held, index, expected, openElsewhere) => {
+    "refuses request $named over $held as $expected.kind",
+    ({ held, named, expected }) => {
       expect(
         matchOpenRequest(requestsOf(held), bobConversation, NOW, {
-          id: idAt(index),
+          operationId: idAt(named),
         }),
-      ).toEqual(Either.left({ kind: expected, openElsewhere }));
+      ).toEqual(Either.left(expected));
     },
   );
 });
@@ -183,6 +210,18 @@ function returnsTheOpenRequest() {
   const [, open] = [...requests];
 
   expect(matchOpenRequest(requests, bobConversation, NOW, {})).toEqual(
-    Either.right({ id: open?.[0], request: open?.[1] }),
+    Either.right({ operationId: open?.[0], request: open?.[1] }),
   );
 }
+
+it.each(["answered", "closed", "open"] as const)(
+  "identifies the one unavailable request when its state is %s",
+  (state) => {
+    const requests = requestsOf([{ inBob: true, state, expired: true }]);
+    const expected =
+      state === "answered" ? "request-answered" : "request-expired";
+    expect(matchOpenRequest(requests, bobConversation, NOW, {})).toEqual(
+      Either.left({ kind: expected, operationId: idAt(0), openElsewhere: [] }),
+    );
+  },
+);

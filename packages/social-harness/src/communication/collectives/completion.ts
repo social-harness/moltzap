@@ -36,7 +36,7 @@ type ClosedOutcome = "completed" | "failed" | "refused";
 /** A confirmed refusal and its no-answer outcome settle the member in one retained transition. */
 export function recordRefusal(
   state: CollectiveState,
-  id: CollectiveId,
+  operationId: CollectiveId,
   refusal: RequestRefusal,
 ): Effect.Effect<void> {
   if (
@@ -49,7 +49,7 @@ export function recordRefusal(
     .withPermits(1)(
       Effect.uninterruptible(
         Effect.gen(function* () {
-          const open = state.gathers.get(id);
+          const open = state.gathers.get(operationId);
           if (open === undefined) {
             return;
           }
@@ -58,7 +58,7 @@ export function recordRefusal(
             encodeRuntimeValue(refusal).pipe(
               Effect.flatMap((canonicalRefusal) =>
                 state.ports.store.recordCollectiveRefusal({
-                  operationId: id,
+                  operationId,
                   destination: refusal.member,
                   canonicalRefusal,
                 }),
@@ -72,7 +72,7 @@ export function recordRefusal(
       ),
     )
     .pipe(
-      Effect.zipRight(completeAnsweredGather(state, id)),
+      Effect.zipRight(completeAnsweredGather(state, operationId)),
       Effect.ignore,
       Effect.withSpan("recordRefusal"),
     );
@@ -86,19 +86,19 @@ export function recordRefusal(
  */
 export function updateGather(
   state: CollectiveState,
-  id: CollectiveId,
+  operationId: CollectiveId,
   change: (open: OpenGather) => void,
 ): Effect.Effect<void, CollectiveEmitError> {
   return state.transitions
     .withPermits(1)(
       Effect.sync(() => {
-        const open = state.gathers.get(id);
+        const open = state.gathers.get(operationId);
         if (open !== undefined) {
           change(open);
         }
       }),
     )
-    .pipe(Effect.zipRight(completeAnsweredGather(state, id)));
+    .pipe(Effect.zipRight(completeAnsweredGather(state, operationId)));
 }
 
 /**
@@ -116,18 +116,18 @@ export function openGather(
       (yield* Clock.currentTimeMillis) >= prepared.deadlineAt
     ) {
       return yield* new CollectiveError({
-        id: prepared.id,
+        operationId: prepared.operationId,
         failure: { kind: "deadline-passed" },
       });
     }
     const firstOpening = yield* Effect.sync(() => {
-      state.gathers.set(prepared.id, {
+      state.gathers.set(prepared.operationId, {
         ...prepared.open,
         deadlineAt: prepared.deadlineAt,
         requestsSettled,
       });
-      const first = !state.announced.has(prepared.id);
-      state.announced.add(prepared.id);
+      const first = !state.announced.has(prepared.operationId);
+      state.announced.add(prepared.operationId);
       return first;
     });
     if (!firstOpening) {
@@ -136,7 +136,7 @@ export function openGather(
     yield* Effect.withSpan(Effect.void, "collective.opened", {
       captureStackTrace: false,
       attributes: {
-        operationId: prepared.id,
+        operationId: prepared.operationId,
         op: prepared.open.op,
         deadlineAt: prepared.deadlineAt,
       },
@@ -150,13 +150,13 @@ export function openGather(
  */
 export function releaseUnboundGather(
   state: CollectiveState,
-  id: CollectiveId,
+  operationId: CollectiveId,
 ): Effect.Effect<void> {
-  return durableEmit(state, refreshRetained(state, id)).pipe(
+  return durableEmit(state, refreshRetained(state, operationId)).pipe(
     Effect.flatMap(() =>
-      state.retained.has(id)
-        ? armRetainedGather(state, id)
-        : releaseGather(state, id),
+      state.retained.has(operationId)
+        ? armRetainedGather(state, operationId)
+        : releaseGather(state, operationId),
     ),
     Effect.ignore,
   );
@@ -167,22 +167,22 @@ export function releaseUnboundGather(
  */
 export function armRetainedGather(
   state: CollectiveState,
-  id: CollectiveId,
+  operationId: CollectiveId,
 ): Effect.Effect<void> {
-  return durableEmit(state, refreshRetained(state, id)).pipe(
+  return durableEmit(state, refreshRetained(state, operationId)).pipe(
     Effect.flatMap(() =>
       state.transitions.withPermits(1)(
         Effect.gen(function* () {
-          const open = state.gathers.get(id);
+          const open = state.gathers.get(operationId);
           if (
             open === undefined ||
             open.timer !== undefined ||
-            state.retained.get(id)?.phase !== "collecting"
+            state.retained.get(operationId)?.phase !== "collecting"
           ) {
             return;
           }
           const timer = yield* sleepUntil(open.deadlineAt).pipe(
-            Effect.zipRight(Effect.ignore(completeGather(state, id))),
+            Effect.zipRight(Effect.ignore(completeGather(state, operationId))),
             Effect.interruptible,
             Effect.forkIn(state.ports.scope),
           );
@@ -211,7 +211,7 @@ export function recordCountedAnswer(
             (candidate) => candidate.agentId === message.sender.agentId,
           );
           if (
-            state.gathers.get(value.id) !== open ||
+            state.gathers.get(value.operationId) !== open ||
             !answeredInConversation(open, message) ||
             member === undefined ||
             open.outcomes.has(agentAddressOf(member))
@@ -219,7 +219,7 @@ export function recordCountedAnswer(
             return;
           }
           const answer = {
-            operationId: value.id,
+            operationId: value.operationId,
             member: agentAddressOf(member),
             recordHash: certified.recordHash,
           };
@@ -233,7 +233,7 @@ export function recordCountedAnswer(
       ),
     )
     .pipe(
-      Effect.zipRight(completeAnsweredGather(state, value.id)),
+      Effect.zipRight(completeAnsweredGather(state, value.operationId)),
       Effect.withSpan("recordCountedAnswer"),
     );
 }
@@ -247,16 +247,16 @@ export function recordCountedAnswer(
  */
 export function completeGather(
   state: CollectiveState,
-  id: CollectiveId,
+  operationId: CollectiveId,
 ): Effect.Effect<void, CollectiveEmitError> {
   return Effect.uninterruptibleMask((restore) =>
     state.transitions
-      .withPermits(1)(takeGatherCompletion(state, id))
+      .withPermits(1)(takeGatherCompletion(state, operationId))
       .pipe(
         Effect.flatMap((completion) =>
           completion === undefined
             ? Effect.void
-            : finishGather(state, id, completion).pipe(
+            : finishGather(state, operationId, completion).pipe(
                 Effect.interruptible,
                 Effect.forkIn(state.ports.scope),
                 Effect.flatMap((fiber) =>
@@ -275,32 +275,33 @@ export function completeGather(
  */
 export function forgetGather(
   state: CollectiveState,
-  id: CollectiveId,
+  operationId: CollectiveId,
 ): Effect.Effect<boolean, SendError> {
+  const { store } = state.ports;
   return state.transitions
     .withPermits(1)(
       Effect.uninterruptible(
         Effect.gen(function* () {
           const operation = yield* durableSend(
             state,
-            state.ports.store.readCollectiveOperation(id),
+            store.readCollectiveOperation(operationId),
           );
           if (operation !== undefined && operation.phase !== "collecting") {
             return;
           }
           if (operation !== undefined) {
+            const selection = yield* durableSend(
+              state,
+              encodeRuntimeValue({ kind: "refused" }),
+            );
             yield* durableSend(
               state,
-              encodeRuntimeValue({ kind: "refused" }).pipe(
-                Effect.flatMap((selection) =>
-                  state.ports.store.retireCollectiveOperation(id, selection),
-                ),
-              ),
+              store.retireCollectiveOperation(operationId, selection),
             );
           }
-          const open = state.gathers.get(id);
-          state.gathers.delete(id);
-          const announced = state.announced.delete(id);
+          const open = state.gathers.get(operationId);
+          state.gathers.delete(operationId);
+          const announced = state.announced.delete(operationId);
           return { timer: open?.timer, announced };
         }).pipe(Effect.withSpan("forgetGather")),
       ),
@@ -310,16 +311,14 @@ export function forgetGather(
         if (retired === undefined) {
           return Effect.succeed(false);
         }
-        return (
+        const stopped =
           retired.timer === undefined
             ? Effect.void
-            : Fiber.interrupt(retired.timer)
-        ).pipe(
-          Effect.zipRight(
-            retired.announced ? closedSpan(id, "refused") : Effect.void,
-          ),
-          Effect.as(true),
-        );
+            : Fiber.interrupt(retired.timer);
+        const closed = retired.announced
+          ? closedSpan(operationId, "refused")
+          : Effect.void;
+        return stopped.pipe(Effect.zipRight(closed), Effect.as(true));
       }),
     );
 }
@@ -331,19 +330,21 @@ export function forgetGather(
  */
 export function markRefused(
   state: CollectiveState,
-  id: CollectiveId,
+  operationId: CollectiveId,
 ): Effect.Effect<void> {
   return Effect.suspend(() =>
-    state.announced.delete(id) ? closedSpan(id, "refused") : Effect.void,
+    state.announced.delete(operationId)
+      ? closedSpan(operationId, "refused")
+      : Effect.void,
   );
 }
 
 function completeAnsweredGather(
   state: CollectiveState,
-  id: CollectiveId,
+  operationId: CollectiveId,
 ): Effect.Effect<void, CollectiveEmitError> {
   return Effect.suspend(() => {
-    const open = state.gathers.get(id);
+    const open = state.gathers.get(operationId);
     if (open === undefined) {
       return Effect.void;
     }
@@ -354,7 +355,7 @@ function completeAnsweredGather(
     ) {
       return Effect.void;
     }
-    return completeGather(state, id).pipe(
+    return completeGather(state, operationId).pipe(
       Effect.zipRight(
         open.timer === undefined ? Effect.void : Fiber.interrupt(open.timer),
       ),
@@ -362,15 +363,18 @@ function completeAnsweredGather(
   });
 }
 
-function takeGatherCompletion(state: CollectiveState, id: CollectiveId) {
+function takeGatherCompletion(
+  state: CollectiveState,
+  operationId: CollectiveId,
+) {
   return Effect.gen(function* () {
-    const open = state.gathers.get(id);
+    const open = state.gathers.get(operationId);
     if (open === undefined) {
       return;
     }
-    const closure = yield* freezeResult(state, id, open);
-    state.gathers.delete(id);
-    const announced = state.announced.delete(id);
+    const closure = yield* freezeResult(state, operationId, open);
+    state.gathers.delete(operationId);
+    const announced = state.announced.delete(operationId);
     return { open, announced, closure };
   });
 }
@@ -378,13 +382,14 @@ function takeGatherCompletion(state: CollectiveState, id: CollectiveId) {
 /** Retains the first completion decision. The caller holds the transition permit through selection. */
 function freezeResult(
   state: CollectiveState,
-  id: CollectiveId,
+  operationId: CollectiveId,
   open: OpenGather,
 ): Effect.Effect<CollectiveClosure, CollectiveEmitError> {
   return durableEmit(
     state,
     Effect.gen(function* () {
-      const operation = yield* state.ports.store.readCollectiveOperation(id);
+      const operation =
+        yield* state.ports.store.readCollectiveOperation(operationId);
       if (operation?.canonicalSelection !== undefined) {
         const selection = yield* readCollectiveSelection(
           operation.canonicalSelection,
@@ -407,7 +412,10 @@ function freezeResult(
           recordHash,
         })),
       });
-      yield* state.ports.store.finalizeCollectiveOperation(id, selection);
+      yield* state.ports.store.finalizeCollectiveOperation(
+        operationId,
+        selection,
+      );
       return closure;
     }),
   ).pipe(Effect.withSpan("freezeResult"));
@@ -415,7 +423,7 @@ function freezeResult(
 
 function finishGather(
   state: CollectiveState,
-  id: CollectiveId,
+  operationId: CollectiveId,
   {
     open,
     announced,
@@ -427,11 +435,11 @@ function finishGather(
   },
 ): Effect.Effect<void, CollectiveEmitError> {
   const close = (outcome: ClosedOutcome) =>
-    announced ? closedSpan(id, outcome) : Effect.void;
+    announced ? closedSpan(operationId, outcome) : Effect.void;
   const result: CollectiveResultItem = {
     kind: "collectiveResult",
     op: open.op,
-    id,
+    operationId,
     ...closure,
     to: open.to,
     question: open.question,
@@ -499,20 +507,20 @@ function answeredInConversation(
 
 function releaseGather(
   state: CollectiveState,
-  id: CollectiveId,
+  operationId: CollectiveId,
 ): Effect.Effect<void> {
   return Effect.suspend(() => {
-    const open = state.gathers.get(id);
-    state.gathers.delete(id);
+    const open = state.gathers.get(operationId);
+    state.gathers.delete(operationId);
     return open?.timer === undefined
       ? Effect.void
       : Fiber.interrupt(open.timer);
   });
 }
 
-function closedSpan(id: CollectiveId, outcome: ClosedOutcome) {
+function closedSpan(operationId: CollectiveId, outcome: ClosedOutcome) {
   return Effect.withSpan(Effect.void, "collective.closed", {
     captureStackTrace: false,
-    attributes: { operationId: id, outcome },
+    attributes: { operationId, outcome },
   });
 }

@@ -702,12 +702,12 @@ function inboundItemTurn(item: InboundItem): HostTurn {
       );
     case "collectiveResult":
       return endpointTurn(
-        `${item.id}:result`,
+        `${item.operationId}:result`,
         item.to,
         renderCollectiveResult(item),
       );
     case "operationFailed":
-      return endpointTurn(`${item.id}:failed`, item.to, item.error);
+      return endpointTurn(`${item.operationId}:failed`, item.to, item.error);
     default:
       return absurd(item);
   }

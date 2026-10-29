@@ -468,7 +468,7 @@ function gatherMessage(local: VerifiedAgentCard, gather: GatherCheck) {
       return yield* new EndpointStoreError({ reason: "invalid-input" });
     }
     return yield* decodeMessage({
-      id: hashedId(`${local.agentId}:${value.id}`),
+      id: hashedId(`${local.agentId}:${value.operationId}`),
       sender: local.agentId,
       recipients: gather.conversation.memberCards
         .map((card) => card.agentId)
@@ -476,7 +476,7 @@ function gatherMessage(local: VerifiedAgentCard, gather: GatherCheck) {
       text: yield* requestText({
         kind: "collectiveRequest",
         op: "gather",
-        id: value.id,
+        operationId: value.operationId,
         msgId: yield* unsentRequest,
         from: agentViewOf(local),
         to: gather.conversation.address,
@@ -487,7 +487,7 @@ function gatherMessage(local: VerifiedAgentCard, gather: GatherCheck) {
       operation: {
         kind: "request",
         op: "gather",
-        id: value.id,
+        operationId: value.operationId,
         deadlineAt: value.deadlineAt,
       },
     });
@@ -532,7 +532,7 @@ function sameRequest(
   const operation = candidate.message.operation;
   const sameOperation =
     operation?.kind === "request" &&
-    operation.id === item.id &&
+    operation.operationId === item.operationId &&
     operation.op === item.op;
   return (
     sameOperation &&

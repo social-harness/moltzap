@@ -12,8 +12,9 @@ import type {
   MiddlewareInput,
 } from "../evaluator/contract/index.js";
 import type { FirewallOptions } from "./firewall.js";
-import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { appendCertifiedMessage } from "../../__tests__/certified-history-fixtures.js";
+import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
 import { collectiveKey } from "../../__tests__/collective-operation-fixtures.js";
 import {
   admitPending,
@@ -27,7 +28,6 @@ import {
   holdMarked,
   type IncomingRuntime,
   marker,
-  nonce,
   question,
   seedRequest,
   sendInput,
@@ -54,7 +54,6 @@ import {
   renderCollectiveRequestBody,
   renderOutcome,
 } from "../../communication/collectives/render.js";
-import { collectiveIdOf } from "../../communication/collectives/wire/index.js";
 import {
   type DeliveryToken,
   encodeRuntimeValue,
@@ -64,7 +63,10 @@ import { installEditableFirewall } from "../policy/editable.js";
 
 // @agent-code-guard/regression-only: Exercises collective admission, refusal and evidence through SQLite and the protocol engine.
 
-const resultId = digest("col_", 30);
+const resultId = collectiveOperationId(
+  testAgentView("agent:alice").agentId,
+  30,
+);
 
 type ResultItem = Extract<InboundItem, { readonly kind: "collectiveResult" }>;
 type FailureItem = Extract<InboundItem, { readonly kind: "operationFailed" }>;
@@ -104,7 +106,7 @@ interface PerMember<Value> {
 function answerContent(content: object) {
   return collectiveContent({
     kind: "response",
-    id: resultId,
+    operationId: resultId,
     action: "accept",
     content,
   });
@@ -157,7 +159,7 @@ function gatherResult(
     closedAt: 0,
     closedBy: "settled",
     op: "gather",
-    id: resultId,
+    operationId: resultId,
     to,
     question,
     outcomes: [
@@ -278,7 +280,7 @@ function checksARequestAsItsQuestion() {
     expect(message.operation).toEqual({
       kind: "request",
       op: "gather",
-      id: collectiveIdOf(bob, nonce),
+      operationId: collectiveOperationId(testAgentView(bob).agentId),
       deadlineAt,
     });
     expect(seen[0]?.context.now).toEqual(expect.any(Number));
@@ -437,8 +439,8 @@ function checksAnInvalidAnswerAsItsLine() {
       ]),
     );
     expect(seen.map((input) => input.event.message.operation)).toEqual([
-      { kind: "answer", op: "gather", id: resultId },
-      { kind: "answer", op: "gather", id: resultId },
+      { kind: "answer", op: "gather", operationId: resultId },
+      { kind: "answer", op: "gather", operationId: resultId },
     ]);
     expect(
       (yield* runtime.delivery.operations.readInbox({})).items[0]?.item,
@@ -524,7 +526,7 @@ function admitsAFailureWithoutInference() {
     yield* admitPending(runtime);
     const failure = Schema.decodeUnknownSync(failureItem)({
       kind: "operationFailed",
-      id: resultId,
+      operationId: resultId,
       to: group,
       error: "all_gather failed: the result could not be shared",
     });
@@ -578,13 +580,13 @@ function leavesTheResultInLaterEvidence() {
     const history = seen.at(-1)?.context.history ?? [];
     expect(history.at(-2)).toMatchObject({
       sender: subject.remote.card.agentId,
-      operation: { kind: "answer", id: resultId },
+      operation: { kind: "answer", operationId: resultId },
       visibility: "assessor",
       admission: "withheld",
     });
     expect(history.at(-1)).toMatchObject({
       sender: "sharness",
-      operation: { kind: "result", op: "gather", id: resultId },
+      operation: { kind: "result", op: "gather", operationId: resultId },
       visibility: "runtime",
       admission: "admitted",
     });
@@ -608,8 +610,7 @@ function seedUnrenderableRequest(subject: Fixture) {
           [collectiveKey]: {
             kind: "operation",
             op: "gather",
-            id: collectiveIdOf(bob, nonce),
-            nonce,
+            operationId: collectiveOperationId(testAgentView(bob).agentId),
             deadlineAt: 9_000_000_000_000_000,
             requestedSchema: formSchema,
           },
@@ -724,7 +725,7 @@ function questionCheckedWithResult(
       closedAt: 0,
       closedBy: "settled",
       op: "all_gather",
-      id: collectiveIdOf(bob, nonce),
+      operationId: collectiveOperationId(testAgentView(bob).agentId),
       to: bob,
       question: text,
       outcomes: [
@@ -837,7 +838,7 @@ function keepsAnInvalidAnswerFromLaterRuntimeHistory() {
     yield* Fiber.interrupt(sending);
 
     expect(seen.at(-1)?.context.history.at(-2)).toMatchObject({
-      operation: { kind: "answer", id: resultId },
+      operation: { kind: "answer", operationId: resultId },
       visibility: "assessor",
     });
   });
@@ -856,7 +857,7 @@ function seedEarlierMessage(subject: Fixture) {
 function allGatherFailure(error: string) {
   return Schema.decodeUnknownSync(failureItem)({
     kind: "operationFailed",
-    id: resultId,
+    operationId: resultId,
     to: bob,
     error,
   });

@@ -15,7 +15,8 @@ import {
 import { makeWebhookEvents } from "../daemon/mcp/webhook.js";
 import { localGuidanceSchema } from "../firewall/outcome/index.js";
 import { INBOX_ITEM_EVENT } from "../host-protocol/names.js";
-import { digest } from "./agent-card-fixtures.js";
+import { digest, testAgentView } from "./agent-card-fixtures.js";
+import { collectiveOperationId } from "./collective-id-fixtures.js";
 
 /** The signing secret of the scripted subscription. */
 export const secret = `whsec_${Buffer.alloc(32, 1).toString("base64")}`;
@@ -112,7 +113,7 @@ export const token = (byte: number) =>
 export const item = (text = "failed request") =>
   Schema.decodeUnknownSync(InboundItem)({
     kind: "operationFailed",
-    id: digest("col_", 1),
+    operationId: collectiveOperationId(testAgentView("agent:alice").agentId, 1),
     to: "agent:bob",
     error: text,
   });

@@ -13,9 +13,9 @@ import {
   gatherInput,
   gatherTo,
   makeLayer,
+  msgId,
   newObserved,
   type Observed,
-  msgId,
   questionText,
   send,
   startGather,
@@ -42,10 +42,10 @@ const refuseCarolLater =
 function consumesAMemberSAnswerRatherThanDeliveringIt() {
   return Effect.gen(function* () {
     const layer = yield* makeLayer(newObserved());
-    const id = yield* startGather(layer);
+    const operationId = yield* startGather(layer);
     const item = yield* classifyMessage(
       layer,
-      answerMessage("agent:bob", id, {
+      answerMessage("agent:bob", operationId, {
         action: "accept",
         content: { slot: "mon" },
       }),
@@ -60,17 +60,17 @@ function emitsTheResultOnceEveryMemberHasAnswered() {
 
   return Effect.gen(function* () {
     const layer = yield* makeLayer(observed);
-    const id = yield* startGather(layer);
+    const operationId = yield* startGather(layer);
     yield* classifyMessage(
       layer,
-      answerMessage("agent:bob", id, {
+      answerMessage("agent:bob", operationId, {
         action: "accept",
         content: { slot: "mon" },
       }),
     );
     yield* classifyMessage(
       layer,
-      answerMessage("agent:carol", id, { action: "decline" }),
+      answerMessage("agent:carol", operationId, { action: "decline" }),
     );
 
     expect(observed.emitted).toEqual([
@@ -79,7 +79,7 @@ function emitsTheResultOnceEveryMemberHasAnswered() {
         closedAt: 0,
         closedBy: "settled",
         op: "gather",
-        id,
+        operationId,
         to: gatherTo,
         question: questionText,
         outcomes: [
@@ -102,10 +102,10 @@ function reportsASilentMemberAsNoAnswerAtTheDeadline() {
 
   return Effect.gen(function* () {
     const layer = yield* makeLayer(observed);
-    const id = yield* startGather(layer);
+    const operationId = yield* startGather(layer);
     yield* classifyMessage(
       layer,
-      answerMessage("agent:bob", id, { action: "decline" }),
+      answerMessage("agent:bob", operationId, { action: "decline" }),
     );
     yield* TestClock.adjust(Duration.seconds(60));
 
@@ -115,7 +115,7 @@ function reportsASilentMemberAsNoAnswerAtTheDeadline() {
         closedAt: 60_000,
         closedBy: "deadline",
         op: "gather",
-        id,
+        operationId,
         to: gatherTo,
         question: questionText,
         outcomes: [
@@ -135,17 +135,20 @@ function recordsAnAnswerThatFailsTheSchemaAsInvalid() {
 
   return Effect.gen(function* () {
     const layer = yield* makeLayer(observed);
-    const id = yield* startGather(layer);
+    const operationId = yield* startGather(layer);
     yield* classifyMessage(
       layer,
-      answerMessage("agent:bob", id, {
+      answerMessage("agent:bob", operationId, {
         action: "accept",
         content: { slot: "sun" },
       }),
     );
     yield* classifyMessage(
       layer,
-      answerMessage("agent:carol", id, { action: "accept", content: {} }),
+      answerMessage("agent:carol", operationId, {
+        action: "accept",
+        content: {},
+      }),
     );
 
     expect(observed.emitted).toEqual([
@@ -154,7 +157,7 @@ function recordsAnAnswerThatFailsTheSchemaAsInvalid() {
         closedAt: 0,
         closedBy: "settled",
         op: "gather",
-        id,
+        operationId,
         to: gatherTo,
         question: questionText,
         outcomes: [
@@ -181,14 +184,14 @@ function keepsAMemberSFirstAnswerAndIgnoresItsSecond() {
 
   return Effect.gen(function* () {
     const layer = yield* makeLayer(observed);
-    const id = yield* startGather(layer);
+    const operationId = yield* startGather(layer);
     yield* classifyMessage(
       layer,
-      answerMessage("agent:bob", id, { action: "decline" }),
+      answerMessage("agent:bob", operationId, { action: "decline" }),
     );
     yield* classifyMessage(
       layer,
-      answerMessage("agent:bob", id, {
+      answerMessage("agent:bob", operationId, {
         action: "accept",
         content: { slot: "mon" },
       }),
@@ -209,11 +212,11 @@ function changesNothingForAnAnswerThatArrivesAfterTheDeadline() {
 
   return Effect.gen(function* () {
     const layer = yield* makeLayer(observed);
-    const id = yield* startGather(layer);
+    const operationId = yield* startGather(layer);
     yield* TestClock.adjust(Duration.seconds(60));
     const late = yield* classifyMessage(
       layer,
-      answerMessage("agent:bob", id, {
+      answerMessage("agent:bob", operationId, {
         action: "accept",
         content: { slot: "mon" },
       }),
@@ -242,12 +245,12 @@ function returnsTheGatherSIdWithTheRequestMessagesItCertified() {
   return Effect.gen(function* () {
     const layer = yield* makeLayer(observed);
     const outcome = yield* send(layer, gatherInput());
-    const { id } = yield* firstRequestOf(observed);
+    const { operationId } = yield* firstRequestOf(observed);
 
     expect(outcome).toEqual({
       kind: "collective",
       msgIds: [msgId(101), msgId(102)],
-      operationId: id,
+      operationId,
     });
   });
 }
@@ -275,7 +278,7 @@ function endsAPendingGatherAtItsDeadlineInOneResult() {
         closedAt: 1_000,
         closedBy: "deadline",
         op: "gather",
-        id: outcome.operationId,
+        operationId: outcome.operationId,
         to: gatherTo,
         question: questionText,
         outcomes: [
@@ -299,14 +302,16 @@ function stopsTheDeadlineTimerOfAGatherEveryMemberAnswered() {
   return Effect.gen(function* () {
     const supervisor = yield* Supervisor.track;
     const layer = yield* makeLayer(observed);
-    const id = yield* startGather(layer).pipe(Effect.supervised(supervisor));
-    yield* classifyMessage(
-      layer,
-      answerMessage("agent:bob", id, { action: "decline" }),
+    const operationId = yield* startGather(layer).pipe(
+      Effect.supervised(supervisor),
     );
     yield* classifyMessage(
       layer,
-      answerMessage("agent:carol", id, { action: "decline" }),
+      answerMessage("agent:bob", operationId, { action: "decline" }),
+    );
+    yield* classifyMessage(
+      layer,
+      answerMessage("agent:carol", operationId, { action: "decline" }),
     );
 
     expect(yield* supervisor.value).toEqual([]);
@@ -332,15 +337,15 @@ function completesAGatherWhoseDeadlineIsThirtyDaysAway() {
 function failsTheCompletingAnswerWhenTheResultCannotBeKept() {
   return Effect.gen(function* () {
     const layer = yield* makeLayer(newObserved(), { emit: unkeptEmit });
-    const id = yield* startGather(layer);
+    const operationId = yield* startGather(layer);
     yield* classifyMessage(
       layer,
-      answerMessage("agent:bob", id, { action: "decline" }),
+      answerMessage("agent:bob", operationId, { action: "decline" }),
     );
     const failure = yield* Effect.flip(
       classifyMessage(
         layer,
-        answerMessage("agent:carol", id, { action: "decline" }),
+        answerMessage("agent:carol", operationId, { action: "decline" }),
       ),
     );
 
@@ -385,16 +390,16 @@ function keepsAGatherSendWhoseSettlingResultCannotBeKept() {
     });
     const sending = yield* Effect.fork(send(layer, gatherInput()));
     yield* TestClock.adjust(Duration.millis(100));
-    const { id } = yield* firstRequestOf(observed);
+    const { operationId } = yield* firstRequestOf(observed);
     yield* classifyMessage(
       layer,
-      answerMessage("agent:bob", id, { action: "decline" }),
+      answerMessage("agent:bob", operationId, { action: "decline" }),
     );
     yield* TestClock.adjust(Duration.millis(500));
 
     const outcome = yield* Fiber.join(sending);
 
-    expect(outcome.operationId).toBe(id);
+    expect(outcome.operationId).toBe(operationId);
     expect(outcome.msgIds).toHaveLength(1);
   });
 }
@@ -407,16 +412,16 @@ it("settles when one member answers and another request is refused", () =>
     });
     const sending = yield* Effect.fork(send(layer, gatherInput()));
     yield* TestClock.adjust(Duration.millis(100));
-    const { id } = yield* firstRequestOf(observed);
+    const { operationId } = yield* firstRequestOf(observed);
     yield* classifyMessage(
       layer,
-      answerMessage("agent:bob", id, { action: "decline" }),
+      answerMessage("agent:bob", operationId, { action: "decline" }),
     );
     yield* TestClock.adjust(Duration.millis(400));
     yield* Fiber.join(sending);
     expect(observed.emitted).toMatchObject([
       {
-        id,
+        operationId,
         closedAt: 500,
         closedBy: "settled",
         outcomes: [
@@ -468,7 +473,7 @@ describe("gather results", () => {
   );
 
   it(
-    "returns the gather's id with the request messages it certified",
+    "returns the gather's operationId with the request messages it certified",
     returnsTheGatherSIdWithTheRequestMessagesItCertified,
   );
 

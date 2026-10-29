@@ -9,10 +9,11 @@
  */
 
 import { Data, Effect, Option, Schema } from "effect";
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { exactStruct } from "../../../encoding/exact.js";
+import { AgentId } from "../../../identity/identifiers.js";
 import { WIRE_VERSION } from "../../../identity/wire-version.js";
-import { type AgentAddress, Content, RecordHash } from "../../records/index.js";
+import { Content, RecordHash } from "../../records/index.js";
 import { wireProfiles } from "../../records/values.js";
 import {
   AcceptResponse,
@@ -64,44 +65,30 @@ export const FormModeSchema = exactStruct({
 /** A validated form-mode schema for one collective question. */
 export type FormModeSchema = typeof FormModeSchema.Type;
 
-/** 32 random bytes in base64url, which a requester binds its collective id to. */
-const CollectiveNonce = Schema.String.pipe(
-  Schema.pattern(/^[A-Za-z0-9_-]{43}$/),
-);
-
 const decodeCollectiveId = Schema.decodeUnknownSync(CollectiveId);
+const decodeAgentId = Schema.decodeUnknownSync(AgentId);
 
 /**
- * The collective id a requester's nonce names: `col_` and the base64url
- * SHA-256 of a domain tag, the requester's address and the nonce. A member
- * accepts a request only when its id derives from the request's certified
- * sender, so no agent can reuse an id another requester minted.
- * @param requester The agent that minted the id.
- * @param nonce The request's nonce.
- * @returns The id the pair names.
+ * Read the requester embedded in an operation ID. Request admission compares
+ * this identity with the certified author before accepting the operation.
  */
-export const collectiveIdOf = (
-  requester: AgentAddress,
-  nonce: string,
-): CollectiveId =>
-  decodeCollectiveId(
-    `col_${createHash("sha256")
-      .update(
-        `${wireProfiles[WIRE_VERSION].collectiveIdDomain}\0${requester}\0${nonce}`,
-      )
-      .digest("base64url")}`,
+export const collectiveRequesterOf = (operationId: CollectiveId): AgentId =>
+  decodeAgentId(
+    `agt_${Buffer.from(operationId.slice(4), "base64url")
+      .subarray(0, 16)
+      .toString("base64url")}`,
   );
 
-/**
- * A fresh nonce and the id it binds to the requester.
- * @param requester The address the id names as the operation's requester.
- * @returns The nonce and the collective id derived from it.
- */
-export const mintCollectiveId = (requester: AgentAddress) =>
-  Effect.sync(() => {
-    const nonce = randomBytes(32).toString("base64url");
-    return { id: collectiveIdOf(requester, nonce), nonce };
-  });
+/** Distinct requesters retain distinct operation IDs even when their random bytes match. */
+export const mintCollectiveId = (requester: AgentId) =>
+  Effect.sync(() =>
+    decodeCollectiveId(
+      `col_${Buffer.concat([
+        Buffer.from(requester.slice(4), "base64url"),
+        randomBytes(32),
+      ]).toString("base64url")}`,
+    ),
+  );
 
 /** A plain message: multicast carries neither a deadline nor a schema. */
 const MulticastOperation = exactStruct({
@@ -110,22 +97,24 @@ const MulticastOperation = exactStruct({
 });
 
 /**
- * A question to every member. `id` derives from the requester and `nonce`
- * through `collectiveIdOf`. `deadlineAt` is absolute epoch milliseconds: the
+ * A question to every member. `operationId` embeds the requester's immutable
+ * identity. `deadlineAt` is absolute epoch milliseconds: the
  * sending endpoint converts the model's relative duration at send, and
  * endpoints assume zero clock skew.
  */
 const CollectingOperation = exactStruct({
   kind: Schema.Literal("operation"),
   op: Schema.Literal("gather", "all_gather"),
-  id: CollectiveId,
-  nonce: CollectiveNonce,
+  operationId: CollectiveId,
   deadlineAt: EpochMillis,
   requestedSchema: FormModeSchema,
 });
 
 /** The request a member's reply answers. */
-const responseHead = { kind: Schema.Literal("response"), id: CollectiveId };
+const responseHead = {
+  kind: Schema.Literal("response"),
+  operationId: CollectiveId,
+};
 
 /** A member's reply to one request; only `accept` carries content. */
 const CollectiveResponse = Schema.Union(
@@ -140,7 +129,7 @@ const CollectiveResponse = Schema.Union(
 /** The requester's completion decision and counted answers, identified by certified record hash. */
 const CollectiveClose = exactStruct({
   kind: Schema.Literal("close"),
-  id: CollectiveId,
+  operationId: CollectiveId,
   ...collectiveClosure.fields,
   included: Schema.Array(RecordHash),
 });

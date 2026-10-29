@@ -4,7 +4,6 @@ import { Effect, Queue, Schema } from "effect";
 import type { MiddlewareInput } from "../firewall/evaluator/contract/index.js";
 import { SendInput } from "../communication/collectives/contracts.js";
 import {
-  collectiveIdOf,
   decodeCollectiveValue,
   encodeCollectiveContent,
 } from "../communication/collectives/wire/index.js";
@@ -12,7 +11,9 @@ import {
   AgentAddress,
   MessageAddressInput,
 } from "../communication/records/values.js";
+import { testAgentView } from "./agent-card-fixtures.js";
 import { appendCertifiedMessage } from "./certified-history-fixtures.js";
+import { collectiveOperationId } from "./collective-id-fixtures.js";
 import {
   block,
   type Fixture,
@@ -30,8 +31,6 @@ export const carol = Schema.decodeUnknownSync(AgentAddress)("agent:carol");
 export const group = Schema.decodeUnknownSync(MessageAddressInput)(
   "group:alice,bob,carol",
 );
-/** The nonce Bob's requests use, so their id is `collectiveIdOf(bob, nonce)`. */
-export const nonce = "N".repeat(43);
 /** Text a `holdMarked` policy holds. */
 export const marker = "[hold]";
 /** The question the suites ask. */
@@ -79,8 +78,7 @@ export function gatherRequestContent(deadlineAt: number, text: string) {
     {
       kind: "operation",
       op: "gather",
-      id: collectiveIdOf(bob, nonce),
-      nonce,
+      operationId: collectiveOperationId(testAgentView(bob).agentId),
       deadlineAt,
       requestedSchema: formSchema,
     },

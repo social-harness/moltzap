@@ -2,7 +2,8 @@
 
 import { Either, Encoding, Schema } from "effect";
 import { describe, expect, it } from "vitest";
-import { digest } from "./__tests__/agent-card-fixtures.js";
+import { digest, testAgentView } from "./__tests__/agent-card-fixtures.js";
+import { collectiveOperationId } from "./__tests__/collective-id-fixtures.js";
 import {
   AgentAddress,
   Content,
@@ -184,7 +185,10 @@ describe("public send input", () => {
   });
 });
 
-const collectiveId = digest("col_", 3);
+const collectiveId = collectiveOperationId(
+  testAgentView("agent:alice").agentId,
+  3,
+);
 const slotSchema = {
   type: "object",
   properties: { slot: { type: "string", enum: ["mon", "tue"] } },
@@ -287,7 +291,7 @@ describe("public collective response input", () => {
   it("decodes a response that names the request it answers", () => {
     const input = {
       to: "agent:bob-agent",
-      collectiveResponse: { id: collectiveId, action: "decline" },
+      collectiveResponse: { operationId: collectiveId, action: "decline" },
     };
 
     expect(Schema.decodeUnknownSync(SendInput)(input)).toEqual(input);

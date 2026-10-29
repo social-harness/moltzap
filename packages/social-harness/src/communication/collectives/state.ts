@@ -104,7 +104,7 @@ export interface CollectiveState {
  * waiting for request messages.
  */
 export interface PreparedGather {
-  readonly id: CollectiveId;
+  readonly operationId: CollectiveId;
   readonly open: GatherRequest;
   readonly content: typeof Content.Type;
   readonly deadlineAt: number;

@@ -45,11 +45,13 @@ import {
   identifier,
   issueTestCard,
   makeTestAuthority,
+  testAgentView,
 } from "./agent-card-fixtures.js";
 import {
   buildCertifiedFirstMessage,
   storeCertifiedFirstMessage,
 } from "./certified-history-fixtures.js";
+import { collectiveOperationId } from "./collective-id-fixtures.js";
 import { pollCursor } from "./router-worker-fixtures.js";
 import { stateDirectory } from "./store-schema-fixtures.js";
 
@@ -243,7 +245,7 @@ const firewallRuntime = (subject: Fixture, installed: InstalledFirewall) =>
       observeMessage: (msgId) => engine.observeMessage(msgId),
       sendAdmitted: (input, checkId) => engine.sendAdmitted(input, checkId),
       reportStorageFault: () => Effect.void,
-      self: Schema.decodeUnknownSync(AgentAddress)("agent:alice"),
+      self: agentViewOf(local.card),
       scope,
       lookupMember: (member) => resolvedMemberView(engine, member),
       sendMessage: (input) => engine.send(input),
@@ -460,7 +462,10 @@ function delayedEvidence(subject: Fixture, conversation: string) {
           ),
           canonicalItem: yield* encodeRuntimeValue({
             kind: "operationFailed",
-            id: digest("col_", index),
+            operationId: collectiveOperationId(
+              testAgentView("agent:alice").agentId,
+              index,
+            ),
             to: conversation,
             error: "Prior local result",
           }),

@@ -19,7 +19,6 @@ import {
   withStore,
 } from "../../__tests__/store-schema-fixtures.js";
 import { SendError } from "../conversations/errors.js";
-import { AgentAddress } from "../records/values.js";
 import { encodeRuntimeValue, type EndpointStore } from "../store/index.js";
 import { SendInput } from "./contracts.js";
 import { makeCollectiveOperations } from "./index.js";
@@ -125,7 +124,7 @@ function ports(
 ): Omit<CollectivePorts, "scope" | "lookupMember"> {
   return {
     store,
-    self: Schema.decodeUnknownSync(AgentAddress)("agent:alice"),
+    self: testAgentView("agent:alice"),
     bindMessage: () => Effect.dieMessage("gather uses request fanout"),
     observeMessage: () => Effect.dieMessage("gather owns no close"),
     sendAdmitted: () => Effect.dieMessage("no firewall in this test"),
@@ -147,5 +146,58 @@ function ports(
         });
         delivered.push(item);
       }).pipe(Effect.orDie),
+  };
+}
+
+it.each(["identity", "creator"] as const)(
+  "refuses retained operations belonging to another %s",
+  (changed) =>
+    Effect.gen(function* () {
+      const directory = yield* retainedGatherDirectory();
+      const scope = yield* Scope.Scope;
+      const failure = yield* withStore(directory, (store) =>
+        Effect.flip(
+          makeCollectiveOperations({
+            ...ports(store, []),
+            scope,
+            self: testAgentView(changed === "identity" ? "bob" : "alice"),
+            store:
+              changed === "creator" ? misattributedOperations(store) : store,
+            lookupMember: () =>
+              Effect.dieMessage("recovery uses retained identities"),
+          }),
+        ),
+      );
+      expect(failure).toMatchObject({ reason: "corrupt" });
+    }),
+);
+
+function retainedGatherDirectory() {
+  return Effect.scoped(
+    Effect.gen(function* () {
+      const subject = yield* engineFixture();
+      const operations = yield* makeCollectiveOperations({
+        ...ports(subject.store, []),
+        scope: yield* Scope.Scope,
+        lookupMember: (member) => resolvedMemberView(subject.engine, member),
+      });
+      yield* operations.send(input);
+      return subject.directory;
+    }),
+  );
+}
+
+function misattributedOperations(store: EndpointStore): EndpointStore {
+  return {
+    ...store,
+    readCollectiveOperations: () =>
+      store.readCollectiveOperations().pipe(
+        Effect.map((operations) =>
+          operations.map((operation) => ({
+            ...operation,
+            creatorAgentId: testAgentView("bob").agentId,
+          })),
+        ),
+      ),
   };
 }

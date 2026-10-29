@@ -230,7 +230,8 @@ function publishDisposition(
       yield* (
         input
           .collectives()
-          ?.settleRequest(item.id, disposition === "admitted") ?? Effect.void
+          ?.settleRequest(item.operationId, disposition === "admitted") ??
+          Effect.void
       );
     }
     yield* input.showDisposition(entry.deliveryToken, item, disposition);

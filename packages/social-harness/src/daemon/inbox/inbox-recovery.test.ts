@@ -5,7 +5,6 @@ import {
   Clock,
   Duration,
   Effect,
-  Encoding,
   Option,
   Schema,
   Scope,
@@ -14,16 +13,14 @@ import {
 import { expect } from "vitest";
 import type { InboundItem } from "../../communication/collectives/inbound.js";
 import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
+import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
 import {
   bytes,
   stateDirectory,
   storedConversation,
 } from "../../__tests__/store-schema-fixtures.js";
 import { makeCollectiveOperations } from "../../communication/collectives/index.js";
-import {
-  collectiveIdOf,
-  encodeCollectiveContent,
-} from "../../communication/collectives/wire/index.js";
+import { encodeCollectiveContent } from "../../communication/collectives/wire/index.js";
 import { SendError } from "../../communication/conversations/errors.js";
 import { InboundMessage } from "../../communication/conversations/message.js";
 import { RecordHash } from "../../communication/records/index.js";
@@ -40,8 +37,7 @@ import { readRuntimeInbox } from "./inbox.js";
 
 const self = Schema.decodeUnknownSync(AgentAddress)("agent:alice");
 const sender = Schema.decodeUnknownSync(AgentAddress)("agent:bob");
-const nonce = Encoding.encodeBase64Url(new Uint8Array(32).fill(8));
-const id = collectiveIdOf(sender, nonce);
+const operationId = collectiveOperationId(testAgentView(sender).agentId, 8);
 const { foundation, record } = storedConversation("pending-request");
 const recordHash = Schema.decodeUnknownSync(RecordHash)(record.recordHash);
 const message = () =>
@@ -58,8 +54,7 @@ const message = () =>
           "org.social-harness/collective": {
             kind: "operation",
             op: "gather",
-            id,
-            nonce,
+            operationId,
             deadlineAt: Date.now() + 60_000,
             requestedSchema: {
               type: "object",
@@ -85,7 +80,7 @@ function makeCollectives(
 ) {
   return makeCollectiveOperations({
     store,
-    self,
+    self: testAgentView(self),
     scope,
     lookupMember: (member) => Effect.succeed(testAgentView(member)),
     sendMessage: unavailable,
@@ -112,14 +107,17 @@ function makeCollectives(
 function seedRequest(store: EndpointStore, request: InboundMessage) {
   return Effect.gen(function* () {
     yield* store.bindIdentity({
-      agentId: "agent:alice",
+      agentId: testAgentView(self).agentId,
       canonicalAgentCard: bytes("identity"),
     });
     yield* store.putConversationFoundation(foundation);
-    yield* store.applyCertifiedRecord(record, {
-      recipientAgentId: "agent:alice",
-      canonicalMessage: yield* encodeCanonical(InboundMessage, request),
-    });
+    yield* store.applyCertifiedRecord(
+      { ...record, authorAgentId: request.sender.agentId },
+      {
+        recipientAgentId: testAgentView(self).agentId,
+        canonicalMessage: yield* encodeCanonical(InboundMessage, request),
+      },
+    );
   });
 }
 
@@ -163,7 +161,7 @@ it("restores an acknowledged request's answer context with its original delivery
         expect((yield* store.readInboxItem(token))?.acknowledged).toBe(true);
         expect((yield* readRuntimeInbox(store, {})).items).toEqual([]);
         expect((yield* store.readCollectiveOperations())[0]).toMatchObject({
-          operationId: id,
+          operationId,
           origin: { kind: "remote", recordHash },
         });
       }),
@@ -248,8 +246,7 @@ function groupRequest() {
       {
         kind: "operation",
         op: "all_gather",
-        id,
-        nonce,
+        operationId,
         deadlineAt: (yield* Clock.currentTimeMillis) + 60_000,
         requestedSchema: {
           type: "object",
@@ -279,7 +276,7 @@ function delayedCloseHistory() {
       sender: testAgentView("agent:carol"),
       content: yield* encodeCollectiveContent({
         kind: "response",
-        id,
+        operationId,
         action: "accept",
         content: { answer: "Monday" },
       }),
@@ -291,7 +288,7 @@ function delayedCloseHistory() {
         kind: "close",
         closedAt: 60_000,
         closedBy: "deadline",
-        id,
+        operationId,
         included: [Schema.decodeUnknownSync(RecordHash)(answerHash)],
       }),
     });
@@ -306,7 +303,7 @@ function restoringLayer(
 ) {
   return makeCollectiveOperations({
     store,
-    self,
+    self: testAgentView(self),
     scope,
     lookupMember: (member) => Effect.succeed(testAgentView(member)),
     sendMessage: unavailable,
@@ -361,7 +358,7 @@ function appendMessage(
             subjectId: hash,
           })),
         },
-        { recipientAgentId: "agent:alice", canonicalMessage },
+        { recipientAgentId: testAgentView(self).agentId, canonicalMessage },
       ),
     ),
   );
@@ -429,7 +426,7 @@ function receiveDelayedClose(
           kind: "collectiveResult",
           closedAt: 60_000,
           closedBy: "deadline",
-          id,
+          operationId,
           outcomes: [
             { member: testAgentView(self), outcome: { kind: "no-answer" } },
             {
@@ -502,14 +499,16 @@ itOnClock(
           kind: "close",
           closedAt: 60_000,
           closedBy: "deadline",
-          id,
+          operationId,
           included: [],
         }),
       });
       const context = { path, emitted, request, requestHash, earlyClose };
       yield* Effect.scoped(retainCloseBeforeRequest(context));
       yield* Effect.scoped(assertUnknownCloseAfterReopen(context));
-      expect(emitted).toMatchObject([{ kind: "collectiveResult", id }]);
+      expect(emitted).toMatchObject([
+        { kind: "collectiveResult", operationId },
+      ]);
     }),
 );
 
@@ -561,7 +560,7 @@ function assertUnknownCloseAfterReopen(context: OrderedRequest) {
         layer.send({
           ...response,
           to: request.address,
-          collectiveResponse: { ...response.collectiveResponse, id },
+          collectiveResponse: { ...response.collectiveResponse, operationId },
         }),
       ),
     ).toMatchObject({ reason: "network-unavailable" });
@@ -586,8 +585,7 @@ itOnClock(
           {
             kind: "operation",
             op: "all_gather",
-            id,
-            nonce,
+            operationId,
             deadlineAt:
               (yield* Clock.currentTimeMillis) +
               Duration.toMillis(Duration.days(32)),
@@ -633,7 +631,7 @@ function reopenRejectedRequest(path: string, request: InboundMessage) {
       yield* Effect.flip(
         layer.send({
           to: request.address,
-          collectiveResponse: { id, action: "decline" },
+          collectiveResponse: { operationId, action: "decline" },
         }),
       ),
     ).toMatchObject({ failure: { kind: "request-none" } });

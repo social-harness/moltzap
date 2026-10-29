@@ -41,7 +41,7 @@ const collectingOp = Schema.Literal("gather", "all_gather");
 const collectiveRequestItem = exactStruct({
   kind: Schema.Literal("collectiveRequest"),
   op: collectingOp,
-  id: CollectiveId,
+  operationId: CollectiveId,
   msgId: MsgId,
   from: AgentView,
   to: MessageAddressInput,
@@ -83,7 +83,7 @@ export type CollectiveMemberOutcome = typeof memberOutcome.Type;
 const collectiveResultItem = exactStruct({
   kind: Schema.Literal("collectiveResult"),
   op: collectingOp,
-  id: CollectiveId,
+  operationId: CollectiveId,
   ...collectiveClosure.fields,
   to: MessageAddressInput,
   question: Schema.Union(wellFormedString, withheldText),
@@ -99,7 +99,7 @@ const collectiveResultItem = exactStruct({
  */
 const operationFailedItem = exactStruct({
   kind: Schema.Literal("operationFailed"),
-  id: CollectiveId,
+  operationId: CollectiveId,
   to: MessageAddressInput,
   error: Schema.String,
 });

@@ -12,7 +12,8 @@ import {
   TestContext,
 } from "effect";
 import { describe, expect, it } from "vitest";
-import { digest } from "../../__tests__/agent-card-fixtures.js";
+import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
+import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
 import { stateDirectory } from "../../__tests__/store-schema-fixtures.js";
 import { InboundItem } from "../../communication/collectives/inbound.js";
 import {
@@ -37,7 +38,7 @@ const token = (byte: number) =>
 const item = (text: string) =>
   Schema.decodeUnknownSync(InboundItem)({
     kind: "operationFailed",
-    id: digest("col_", 1),
+    operationId: collectiveOperationId(testAgentView("agent:alice").agentId, 1),
     to: "agent:bob",
     error: text,
   });

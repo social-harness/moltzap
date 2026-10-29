@@ -22,8 +22,8 @@ import type {
 } from "../store/index.js";
 import type {
   EngineConversation,
-  EngineOutboxError,
   EngineMessageIntent,
+  EngineOutboxError,
   EngineRuntime,
 } from "./engine-context.js";
 import { encodeCanonical } from "../../encoding/canonical-json.js";
@@ -38,10 +38,10 @@ import {
   hashMessageIntent,
   InitialAnchorBody,
   MembershipDescriptor as MembershipDescriptorSchema,
-  mintMsgId,
-  type MsgId,
   type MessageIntent,
   MessageIntent as MessageIntentSchema,
+  mintMsgId,
+  type MsgId,
   type RecordHash,
   type VerifiedMembership,
   verifyMembershipDescriptor,

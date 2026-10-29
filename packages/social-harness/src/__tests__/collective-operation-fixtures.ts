@@ -16,15 +16,13 @@ import {
   SendInput,
 } from "../communication/collectives/contracts.js";
 import { makeCollectiveOperations } from "../communication/collectives/index.js";
-import {
-  collectiveIdOf,
-  readCollectiveValue,
-} from "../communication/collectives/wire/index.js";
+import { readCollectiveValue } from "../communication/collectives/wire/index.js";
 import { SendError } from "../communication/conversations/errors.js";
 import { InboundMessage } from "../communication/conversations/message.js";
 import { MsgId, RecordHash } from "../communication/records/index.js";
 import { AgentAddress } from "../communication/records/values.js";
 import { digest, testAgentView } from "./agent-card-fixtures.js";
+import { collectiveOperationId } from "./collective-id-fixtures.js";
 import { collectivePersistencePorts } from "./collective-storage-stub.js";
 
 /** The agent a layer `makeLayer` builds runs as unless told otherwise. */
@@ -48,11 +46,8 @@ export const slotSchema = {
   required: ["slot"],
 };
 
-/** The nonce Bob's gather request carries. */
-export const requestNonce = "N".repeat(43);
-
-/** The id Bob's gather request derives from `requestNonce`, so it names Bob as its requester. */
-export const requestId = collectiveIdOf(bob, requestNonce);
+/** Bob's gather request identity. */
+export const requestId = collectiveOperationId(testAgentView(bob).agentId);
 
 /** The question every gather and all_gather in these tests asks. */
 export const questionText = "Which day works?";
@@ -192,7 +187,7 @@ export const makeLayer = (
     return makeCollectiveOperations({
       ...persistence,
       ...(checked === undefined ? {} : { admission: checked }),
-      self: Schema.decodeUnknownSync(AgentAddress)(self),
+      self: testAgentView(self),
       lookupMember: (member) =>
         unknown.includes(member)
           ? Effect.fail(new SendError({ reason: "unknown-agent" }))
@@ -219,7 +214,7 @@ export const directMessage = (sender: string, content: unknown) =>
 
 /**
  * A gather request message naming Bob's `requestId` and asking `questionText`
- * with `slotSchema` under `requestNonce`.
+ * with `slotSchema`.
  * @param sender The agent that authored the request.
  * @param deadlineAt The absolute deadline it states, in epoch milliseconds.
  * @returns The decoded inbound message.
@@ -233,8 +228,7 @@ export const requestMessage = (sender: string, deadlineAt: number) =>
         [collectiveKey]: {
           kind: "operation",
           op: "gather",
-          id: requestId,
-          nonce: requestNonce,
+          operationId: requestId,
           deadlineAt,
           requestedSchema: slotSchema,
         },
@@ -243,17 +237,23 @@ export const requestMessage = (sender: string, deadlineAt: number) =>
   ]);
 
 /**
- * A response message answering the operation `id`.
+ * A response message answering the operation `operationId`.
  * @param sender The member that answers.
- * @param id The operation the response names.
+ * @param operationId The operation the response names.
  * @param response The action and any content.
  * @returns The decoded inbound message.
  */
-export const answerMessage = (sender: string, id: string, response: object) =>
+export const answerMessage = (
+  sender: string,
+  operationId: string,
+  response: object,
+) =>
   directMessage(sender, [
     {
       type: "data",
-      value: { [collectiveKey]: { kind: "response", id, ...response } },
+      value: {
+        [collectiveKey]: { kind: "response", operationId, ...response },
+      },
     },
   ]);
 
@@ -307,10 +307,10 @@ export const collectiveFailureOf = <A>(
   );
 
 /**
- * The operation id a completed send names; dies when it names none.
+ * The operation operationId a completed send names; dies when it names none.
  * @param outcome What the send returned.
- * @param outcome.operationId The collective id, absent for a multicast.
- * @returns The id, for a test that goes on to answer or complete the operation.
+ * @param outcome.operationId The collective operationId, absent for a multicast.
+ * @returns The operationId, for a test that goes on to answer or complete the operation.
  */
 export const operationIdOf = (outcome: {
   readonly operationId?: CollectiveId;
@@ -320,9 +320,9 @@ export const operationIdOf = (outcome: {
   );
 
 /**
- * Start the gather `gatherInput` describes; dies when the send names no id.
+ * Start the gather `gatherInput` describes; dies when the send names no operationId.
  * @param layer The requester's layer.
- * @returns The gather's id.
+ * @returns The gather's operationId.
  */
 export const startGather = (layer: CollectiveOperations) =>
   send(layer, gatherInput()).pipe(Effect.flatMap(operationIdOf));
@@ -331,14 +331,18 @@ export const startGather = (layer: CollectiveOperations) =>
  * The request the first recorded message carries; dies when that message carries
  * no gather or all_gather request.
  * @param observed What the layer's ports recorded.
- * @returns The request's collective value, with its id and nonce.
+ * @returns The request's collective value, with its operationId.
  */
 export const firstRequestOf = (observed: Observed) =>
   Effect.fromNullable(observed.sent[0]).pipe(
     Effect.flatMap((message) => readCollectiveValue(message.content)),
     Effect.flatten,
     Effect.flatMap((value) =>
-      Effect.fromNullable("nonce" in value ? value : undefined),
+      Effect.fromNullable(
+        value.kind === "operation" && value.op !== "multicast"
+          ? value
+          : undefined,
+      ),
     ),
     Effect.orElse(() =>
       Effect.dieMessage("the first message carries no request"),

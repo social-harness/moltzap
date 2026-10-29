@@ -164,7 +164,9 @@ function collectiveRefusal(
   >,
 ): CollectiveError {
   return new CollectiveError({
-    id: decoded.id,
+    ...(decoded.operationId === undefined
+      ? {}
+      : { operationId: decoded.operationId }),
     failure: decoded.failure,
     ...(decoded.openElsewhere === undefined
       ? {}

@@ -7,6 +7,7 @@ import { DateTime, Effect, Schema } from "effect";
 import { join } from "node:path";
 import { describe, expect } from "vitest";
 import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
+import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
 import { SendInput } from "../../communication/collectives/contracts.js";
 import { InboundItem } from "../../communication/collectives/inbound.js";
 import { MsgId } from "../../communication/records/index.js";
@@ -138,7 +139,10 @@ it("reads historical withheld results and encodes current refusal values", () =>
         closedAt: 0,
         closedBy: "settled",
         op: "gather",
-        id: digest("col_", 1),
+        operationId: collectiveOperationId(
+          testAgentView("agent:alice").agentId,
+          1,
+        ),
         to: "agent:bob",
         question: {
           kind: "withheld",

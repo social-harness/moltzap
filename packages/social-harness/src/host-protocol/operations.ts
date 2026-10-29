@@ -155,7 +155,8 @@ const invocationValidationErrorSchema = Schema.Struct({
 
 /**
  * The JSON-RPC error data of a refused `send_message`: a `SendError` reason
- * with the detail naming its specific cause, or a refused collective send with its id and the failure naming each
+ * with the detail naming its specific cause, or a refused collective send
+ * with its selected operationId and the failure naming each
  * unreachable member or failing field, which `decodeCollectiveFailure`
  * validates. An ambiguous answer's failure names its open request IDs. For
  * a `request-none`, `request-answered` or
@@ -172,12 +173,12 @@ const harnessSendErrorDataSchema = Schema.Union(
   }),
   Schema.Struct({
     reason: Schema.Literal("collective-failed"),
-    id: CollectiveId,
+    operationId: Schema.optionalWith(CollectiveId, { exact: true }),
     failure: Schema.Unknown,
     openElsewhere: Schema.optionalWith(
       Schema.Array(
         Schema.Struct({
-          id: CollectiveId,
+          operationId: CollectiveId,
           to: Schema.Union(AgentAddress, GroupAddress),
         }),
       ),
@@ -228,7 +229,7 @@ export type HarnessSendErrorData =
   | Readonly<{ reason: string; detail?: string }>
   | Readonly<{
       reason: "collective-failed";
-      id: CollectiveId;
+      operationId?: CollectiveId;
       failure: Effect.Effect.Success<
         ReturnType<typeof decodeCollectiveFailure>
       >;
@@ -237,7 +238,7 @@ export type HarnessSendErrorData =
 
 /**
  * The error data a refused send carries across the daemon boundary: a
- * collective failure keeps its id and the members or fields it names, and a
+ * collective failure keeps its operationId and the members or fields it names, and a
  * send failure keeps the detail naming its cause, so the receiving side
  * rebuilds the same typed error and message.
  * @param error The refused send's typed error.
@@ -257,7 +258,9 @@ export function sendErrorData(
   if (error._tag === "CollectiveError") {
     return {
       reason: "collective-failed",
-      id: error.id,
+      ...(error.operationId === undefined
+        ? {}
+        : { operationId: error.operationId }),
       failure: error.failure,
       ...(error.openElsewhere === undefined
         ? {}

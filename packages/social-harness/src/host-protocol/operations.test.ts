@@ -38,11 +38,11 @@ const content = Schema.decodeUnknownSync(Content)([
 ]);
 
 const collectiveId = Schema.decodeUnknownSync(CollectiveId)(
-  `col_${"A".repeat(43)}`,
+  `col_${"A".repeat(64)}`,
 );
-const openIds = [
-  Schema.decodeUnknownSync(CollectiveId)(`col_${"B".repeat(42)}A`),
-  Schema.decodeUnknownSync(CollectiveId)(`col_${"C".repeat(42)}A`),
+const openOperationIds = [
+  Schema.decodeUnknownSync(CollectiveId)(`col_${"B".repeat(64)}`),
+  Schema.decodeUnknownSync(CollectiveId)(`col_${"C".repeat(64)}`),
 ];
 
 function decodesExactOperationRequests(): void {
@@ -99,7 +99,7 @@ function decodesCanonicalDirectDelivery(): void {
 function unreachableFailure(reason: string) {
   return {
     reason: "collective-failed",
-    id: collectiveId,
+    operationId: collectiveId,
     failure: {
       kind: "members-unreachable",
       members: [{ member: peerAddress, reason }],
@@ -166,7 +166,7 @@ const inconsistentDeliveries = [
     },
   },
   {
-    case: "one agent id repeated under different member names",
+    case: "one agent operationId repeated under different member names",
     message: {
       kind: "group",
       msgId,
@@ -334,7 +334,7 @@ describe("Harness send refusal data", () => {
     { reason: "collective-failed" },
     {
       reason: "collective-failed",
-      id: collectiveId,
+      operationId: collectiveId,
       failure: { kind: "request-ambiguous" },
     },
   ])(
@@ -353,8 +353,8 @@ describe("Harness send refusal data", () => {
           Effect.runSyncExit(
             decodeHarnessSendErrorData({
               reason: "collective-failed",
-              id: collectiveId,
-              failure: { kind: "request-ambiguous", openIds: ids },
+              operationId: collectiveId,
+              failure: { kind: "request-ambiguous", openOperationIds: ids },
             }),
           ),
         ),
@@ -363,15 +363,13 @@ describe("Harness send refusal data", () => {
   );
   it("carries the open ids of an answer that named none of several open requests", () => {
     const refused = new CollectiveError({
-      id: collectiveId,
-      failure: { kind: "request-ambiguous", openIds },
+      failure: { kind: "request-ambiguous", openOperationIds },
     });
     const data = sendErrorData(refused);
 
     expect(data).toEqual({
       reason: "collective-failed",
-      id: collectiveId,
-      failure: { kind: "request-ambiguous", openIds },
+      failure: { kind: "request-ambiguous", openOperationIds },
     });
     expect(Effect.runSync(decodeHarnessSendErrorData(data))).toEqual(data);
   });

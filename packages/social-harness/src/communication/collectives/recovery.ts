@@ -1,5 +1,5 @@
 /** @file Rebuild collective working state from retained decisions and certified history. */
-import { Clock, Effect, Fiber, Schema } from "effect";
+import { Clock, Effect, Fiber, Option, Schema } from "effect";
 import type { CollectiveOperations, MessageSender } from "./ports.js";
 import type { OpenRequest, ReceivedRequest } from "./received-request.js";
 import type { HeldClose } from "./shared-answers.js";
@@ -10,8 +10,8 @@ import {
   type CollectiveRequestRefusal,
   decodeRuntimeValue,
   EndpointStoreError,
-  type StoredCollectiveOperation,
   type StoredCollectiveMessage,
+  type StoredCollectiveOperation,
 } from "../store/index.js";
 import {
   type CollectiveEmitError,
@@ -29,6 +29,7 @@ import {
   readCollectiveSelection,
   readLocalCollective,
 } from "./state.js";
+import { collectiveRequesterOf, readCollectiveValue } from "./wire/index.js";
 
 /** Recovery invokes the same transitions used by live delivery and certification. */
 export interface RecoveryActions {
@@ -46,10 +47,10 @@ export interface RecoveryActions {
     close: HeldClose,
   ) => Effect.Effect<void, CollectiveEmitError>;
   readonly complete: (
-    id: CollectiveId,
+    operationId: CollectiveId,
   ) => Effect.Effect<void, CollectiveEmitError>;
   readonly refuse: (
-    id: CollectiveId,
+    operationId: CollectiveId,
     refusal: RequestRefusal,
   ) => Effect.Effect<void>;
 }
@@ -62,8 +63,19 @@ export function recoverCollectives(
   return Effect.gen(function* () {
     const operations = yield* state.ports.store.readCollectiveOperations();
     for (const operation of operations) {
-      const id = yield* storedValue(CollectiveId, operation.operationId);
-      state.retained.set(id, operation);
+      const operationId = yield* storedValue(
+        CollectiveId,
+        operation.operationId,
+      );
+      const requester = collectiveRequesterOf(operationId);
+      if (
+        requester !== operation.creatorAgentId ||
+        (operation.origin.kind === "local" &&
+          requester !== state.ports.self.agentId)
+      ) {
+        return yield* corruptState();
+      }
+      state.retained.set(operationId, operation);
     }
     yield* restoreCountedAnswers(state);
     const prepared = yield* restoreOperations(state, actions);
@@ -78,11 +90,11 @@ export function recoverCollectives(
     yield* resumeHeldCloses(state, actions);
     yield* Effect.forEach(
       [...prepared],
-      ([id, operation]) =>
+      ([operationId, operation]) =>
         resumeRequester(state, actions, {
-          id,
+          operationId,
           operation,
-          claimed: claims.get(id) ?? new Set(),
+          claimed: claims.get(operationId) ?? new Set(),
         }),
       { concurrency: 1, discard: true },
     );
@@ -153,12 +165,15 @@ function restoreCountedAnswers(state: CollectiveState) {
   return Effect.gen(function* () {
     const answers = yield* state.ports.store.readCollectiveAnswers();
     for (const reference of answers) {
-      const id = yield* storedValue(CollectiveId, reference.operationId);
+      const operationId = yield* storedValue(
+        CollectiveId,
+        reference.operationId,
+      );
       const member = yield* storedValue(AgentAddress, reference.member);
       const hash = yield* storedValue(RecordHash, reference.recordHash);
       state.counted.set(
-        id,
-        new Map([...(state.counted.get(id) ?? []), [member, hash]]),
+        operationId,
+        new Map([...(state.counted.get(operationId) ?? []), [member, hash]]),
       );
     }
   });
@@ -167,13 +182,13 @@ function restoreCountedAnswers(state: CollectiveState) {
 function restoreOperations(state: CollectiveState, actions: RecoveryActions) {
   return Effect.gen(function* () {
     const prepared = new Map<CollectiveId, PreparedGather>();
-    for (const [id, retained] of state.retained) {
+    for (const [operationId, retained] of state.retained) {
       if (retained.phase === "completed") {
         continue;
       }
       if (retained.origin.kind === "local") {
-        const operation = yield* restoreLocal(state, id, retained);
-        prepared.set(id, operation);
+        const operation = yield* restoreLocal(state, operationId, retained);
+        prepared.set(operationId, operation);
         yield* actions
           .open(operation)
           .pipe(Effect.catchTag("CollectiveError", corruptState));
@@ -185,7 +200,7 @@ function restoreOperations(state: CollectiveState, actions: RecoveryActions) {
 
 function restoreLocal(
   state: CollectiveState,
-  id: CollectiveId,
+  operationId: CollectiveId,
   retained: StoredCollectiveOperation,
 ) {
   return Effect.gen(function* () {
@@ -197,7 +212,7 @@ function restoreLocal(
         return yield* new EndpointStoreError({ reason: "corrupt" });
       }
       state.counted.set(
-        id,
+        operationId,
         new Map(
           selection.answers.map(({ member, recordHash }) => [
             member,
@@ -207,8 +222,19 @@ function restoreLocal(
       );
     }
     const descriptor = yield* readLocalCollective(retained.canonicalDescriptor);
+    const value = yield* readCollectiveValue(descriptor.content).pipe(
+      Effect.catchTag("CollectivePartInvalidError", corruptState),
+    );
+    if (
+      Option.isNone(value) ||
+      value.value.kind !== "operation" ||
+      value.value.op === "multicast" ||
+      value.value.operationId !== operationId
+    ) {
+      return yield* corruptState();
+    }
     return {
-      id,
+      operationId,
       open: { ...descriptor, outcomes: new Map(), answerHashes: new Map() },
       content: descriptor.content,
       deadlineAt: descriptor.deadlineAt,
@@ -226,8 +252,8 @@ function restoreRemote(
     if (retained.origin.kind !== "remote") {
       return;
     }
-    const id = yield* storedValue(CollectiveId, retained.operationId);
-    const request = state.requests.get(id);
+    const operationId = yield* storedValue(CollectiveId, retained.operationId);
+    const request = state.requests.get(operationId);
     if (request === undefined || !retained.origin.requiresAdmission) {
       return;
     }
@@ -263,16 +289,18 @@ function restoreRefusals(
 ) {
   return Effect.gen(function* () {
     for (const refusal of refusals) {
-      const id = yield* storedValue(CollectiveId, refusal.operationId);
+      const operationId = yield* storedValue(CollectiveId, refusal.operationId);
       const member = yield* storedValue(AgentAddress, refusal.destination);
-      state.gathers.get(id)?.outcomes.set(member, { kind: "no-answer" });
+      state.gathers
+        .get(operationId)
+        ?.outcomes.set(member, { kind: "no-answer" });
     }
   });
 }
 
 function resumeHeldCloses(state: CollectiveState, actions: RecoveryActions) {
   return Effect.gen(function* () {
-    for (const [id, request] of state.requests) {
+    for (const [operationId, request] of state.requests) {
       if (
         request.kind !== "all_gather" ||
         request.shared.heldClose === undefined
@@ -282,14 +310,14 @@ function resumeHeldCloses(state: CollectiveState, actions: RecoveryActions) {
       const close = request.shared.heldClose;
       request.shared.heldClose = undefined;
       yield* actions
-        .close({ id, request }, close)
+        .close({ operationId, request }, close)
         .pipe(Effect.catchTag("CollectiveEmitError", persistenceFailure));
     }
   });
 }
 
 interface RecoveredRequester {
-  readonly id: CollectiveId;
+  readonly operationId: CollectiveId;
   readonly operation: PreparedGather;
   readonly claimed: ReadonlySet<string>;
 }
@@ -300,25 +328,25 @@ function resumeRequester(
   recovered: RecoveredRequester,
 ) {
   return Effect.gen(function* () {
-    const { id, operation } = recovered;
-    const open = state.gathers.get(id);
+    const { operationId, operation } = recovered;
+    const open = state.gathers.get(operationId);
     if (open === undefined) {
       return;
     }
     if (open.timer !== undefined) {
       yield* Fiber.interrupt(open.timer);
     }
-    const retained = state.retained.get(id);
+    const retained = state.retained.get(operationId);
     const ready =
       open.outcomes.size === open.members.length ||
       (yield* Clock.currentTimeMillis) >= operation.deadlineAt;
     if (retained?.phase === "finalizing" || ready) {
       return yield* actions
-        .complete(id)
+        .complete(operationId)
         .pipe(Effect.catchTag("CollectiveEmitError", persistenceFailure));
     }
     const timer = yield* sleepUntil(operation.deadlineAt).pipe(
-      Effect.zipRight(Effect.ignore(actions.complete(id))),
+      Effect.zipRight(Effect.ignore(actions.complete(operationId))),
       Effect.interruptible,
       Effect.forkIn(state.ports.scope),
     );
@@ -334,8 +362,8 @@ function resumeFanout(
   actions: RecoveryActions,
   recovered: RecoveredRequester,
 ) {
-  const { id, operation, claimed } = recovered;
-  const checkId = state.retained.get(id)?.admittedCheckId;
+  const { operationId, operation, claimed } = recovered;
+  const checkId = state.retained.get(operationId)?.admittedCheckId;
   const send: MessageSender =
     checkId === undefined
       ? state.ports.sendMessage
@@ -349,10 +377,10 @@ function resumeFanout(
       send({
         to: member,
         content: operation.content,
-        collective: { operationId: id, role: "request", destination: member },
+        collective: { operationId, role: "request", destination: member },
       }).pipe(
         Effect.catchAll((error) =>
-          actions.refuse(id, messageRefusal(member, error)),
+          actions.refuse(operationId, messageRefusal(member, error)),
         ),
         Effect.forkIn(state.ports.scope),
       ),

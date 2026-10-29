@@ -30,14 +30,14 @@ import { encodeCollectiveContent } from "./wire/index.js";
 it("includes the answer retained before the deadline even when its store response is delayed", () =>
   Effect.gen(function* () {
     const fixture = yield* delayedAnswerFixture();
-    const id = yield* beginGather(fixture.collective);
-    const answer = yield* certifiedAnswer(fixture, id);
+    const operationId = yield* beginGather(fixture.collective);
+    const answer = yield* certifiedAnswer(fixture, operationId);
     const classifying = yield* fixture.collective
       .classify(answer)
       .pipe(Effect.fork);
     yield* Deferred.await(fixture.entered);
     expect(yield* fixture.store.readCollectiveAnswers()).toMatchObject([
-      { operationId: id, recordHash: answer.recordHash },
+      { operationId, recordHash: answer.recordHash },
     ]);
     yield* TestClock.adjust("2 minutes");
     yield* Deferred.succeed(fixture.release, undefined);
@@ -61,8 +61,8 @@ it("restores a retained answer before choosing settled completion after an offli
     const interrupted = yield* Effect.scoped(
       Effect.gen(function* () {
         const fixture = yield* delayedAnswerFixture(true);
-        const id = yield* beginGather(fixture.collective);
-        const answer = yield* certifiedAnswer(fixture, id);
+        const operationId = yield* beginGather(fixture.collective);
+        const answer = yield* certifiedAnswer(fixture, operationId);
         expect(
           yield* Effect.flip(fixture.collective.classify(answer)),
         ).toMatchObject({
@@ -114,7 +114,7 @@ function delayedAnswerFixture(failAfterRetain = false) {
     );
     const ports: CollectivePorts = {
       store,
-      self: Schema.decodeUnknownSync(AgentAddress)("agent:alice"),
+      self: testAgentView("agent:alice"),
       scope: yield* Scope.Scope,
       lookupMember: (member) => Effect.succeed(testAgentView(member)),
       sendMessage: () =>
@@ -173,12 +173,12 @@ function beginGather(collective: CollectiveOperations) {
 
 function certifiedAnswer(
   fixture: Effect.Effect.Success<ReturnType<typeof delayedAnswerFixture>>,
-  id: CollectiveId,
+  operationId: CollectiveId,
 ) {
   return Effect.gen(function* () {
     const content = yield* encodeCollectiveContent({
       kind: "response",
-      id,
+      operationId,
       action: "accept",
       content: { answer: "yes" },
     });

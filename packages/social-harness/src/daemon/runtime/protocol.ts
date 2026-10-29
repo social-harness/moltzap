@@ -1,14 +1,6 @@
 /** @file Acquisition and supervision of the protocol one daemon identity runs. */
 
-import {
-  Cause,
-  type Context,
-  Deferred,
-  Effect,
-  Option,
-  Schema,
-  Scope,
-} from "effect";
+import { Cause, type Context, Deferred, Effect, Option, Scope } from "effect";
 import type {
   DeliveryToken,
   EndpointStore,
@@ -39,10 +31,7 @@ import {
   decodeOuterBody,
   type OuterBodyReader,
 } from "../../communication/records/index.js";
-import {
-  AgentAddress,
-  agentAddressOf,
-} from "../../communication/records/values.js";
+import { agentAddressOf } from "../../communication/records/values.js";
 import {
   Router,
   type RouterWorker,
@@ -359,9 +348,7 @@ const makeProtocolCollectives = (
     observeMessage: (msgId) => engine.observeMessage(msgId),
     sendAdmitted: (input, checkId) => engine.sendAdmitted(input, checkId),
     reportStorageFault: (error) => reportStorageFault(environment, error),
-    self: Schema.decodeUnknownSync(AgentAddress)(
-      `agent:${agentCard.agentName}`,
-    ),
+    self: agentViewOf(agentCard),
     lookupMember: (member) =>
       engine.resolveConversation(member).pipe(
         Effect.flatMap((resolved) => {

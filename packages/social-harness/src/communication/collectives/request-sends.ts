@@ -269,14 +269,14 @@ export function fanOutRequests(
   scope: Scope.Scope,
   refuse: (refusal: RequestRefusal) => Effect.Effect<void>,
 ) {
-  const { id, open } = prepared;
+  const { operationId, open } = prepared;
   return Effect.forEach(
     open.members.map(agentAddressOf),
     (member): Effect.Effect<RequestSend> =>
       sendRequest({
         to: member,
         content: prepared.content,
-        collective: { operationId: id, role: "request", destination: member },
+        collective: { operationId, role: "request", destination: member },
       }).pipe(
         Effect.mapError((error) => messageRefusal(member, error)),
         Effect.tapError(refuse),

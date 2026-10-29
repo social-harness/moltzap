@@ -32,9 +32,9 @@ export type {
   InboundDeliveryInput,
   InboxEntry,
   InboxPage,
-  OutboundMessageInput,
   MessageIntent,
   MessageIntentBinding,
+  OutboundMessageInput,
   ProposalLock,
   ProtocolEvidence,
   RestartedEmptyConversation,
@@ -58,9 +58,9 @@ export { OutboxTooOldError } from "./database/values.js";
 
 /** Immutable collective ownership, existing message claims, and terminal delivery. */
 export type {
-  CollectiveOperationInput,
   CollectiveMessageBinding,
+  CollectiveOperationInput,
   CollectiveRequestRefusal,
-  StoredCollectiveOperation,
   StoredCollectiveMessage,
+  StoredCollectiveOperation,
 } from "./types.js";

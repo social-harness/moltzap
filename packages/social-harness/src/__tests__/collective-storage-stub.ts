@@ -3,6 +3,8 @@
 import { Effect, Schema } from "effect";
 import { randomBytes } from "node:crypto";
 import type { CollectivePorts } from "../communication/collectives/ports.js";
+import { CollectiveId } from "../communication/collectives/contracts.js";
+import { collectiveRequesterOf } from "../communication/collectives/wire/index.js";
 import {
   type CollectiveOperationInput,
   DeliveryToken,
@@ -41,20 +43,21 @@ export function collectiveStorageStub(): CollectivePorts["store"] {
   const operations = new Map<string, StoredCollectiveOperation>();
   return {
     putCollectiveOperation: (input) => recordOperation(operations, input),
-    readCollectiveOperation: (id) => Effect.sync(() => operations.get(id)),
+    readCollectiveOperation: (operationId) =>
+      Effect.sync(() => operations.get(operationId)),
     readCollectiveOperations: () => Effect.sync(() => [...operations.values()]),
     readCollectiveMessages: () => Effect.succeed([]),
     recordCollectiveAnswer: (answer) => Effect.succeed(answer.recordHash),
     readCollectiveAnswers: () => Effect.succeed([]),
     recordCollectiveRefusal: () => Effect.void,
     readCollectiveRefusals: () => Effect.succeed([]),
-    finalizeCollectiveOperation: (id, selection) =>
-      finalizeOperation(operations, id, selection),
-    retireCollectiveOperation: (id, canonicalSelection) =>
+    finalizeCollectiveOperation: (operationId, selection) =>
+      finalizeOperation(operations, operationId, selection),
+    retireCollectiveOperation: (operationId, canonicalSelection) =>
       Effect.sync(() => {
-        const operation = operations.get(id);
+        const operation = operations.get(operationId);
         if (operation !== undefined) {
-          operations.set(id, {
+          operations.set(operationId, {
             ...operation,
             canonicalSelection,
             phase: "completed",
@@ -76,7 +79,9 @@ function recordOperation(
     }
     operations.set(input.operationId, {
       ...input,
-      creatorAgentId: "fixture-author",
+      creatorAgentId: collectiveRequesterOf(
+        Schema.decodeUnknownSync(CollectiveId)(input.operationId),
+      ),
       origin:
         input.origin.kind === "local"
           ? input.origin
@@ -92,15 +97,15 @@ function recordOperation(
 
 function finalizeOperation(
   operations: Map<string, StoredCollectiveOperation>,
-  id: string,
+  operationId: string,
   canonicalSelection: Uint8Array,
 ) {
   return Effect.suspend(() => {
-    const operation = operations.get(id);
+    const operation = operations.get(operationId);
     if (operation === undefined) {
       return Effect.fail(new EndpointStoreError({ reason: "not-found" }));
     }
-    operations.set(id, {
+    operations.set(operationId, {
       ...operation,
       canonicalSelection,
       phase: "finalizing",

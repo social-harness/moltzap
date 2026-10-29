@@ -157,7 +157,7 @@ function failureAdmission(
   return Effect.gen(function* () {
     const message = yield* localMessage(environment, entry, item.error, {
       kind: "failure",
-      id: item.id,
+      operationId: item.operationId,
     });
     return {
       queuedItem: entry.canonicalItem,
@@ -258,7 +258,7 @@ function resultCommit(
       environment,
       entry,
       renderCollectiveResult(projected),
-      { kind: "result", op: item.op, id: item.id },
+      { kind: "result", op: item.op, operationId: item.operationId },
     );
     return {
       queuedItem: entry.canonicalItem,
@@ -481,7 +481,7 @@ function answerMessage(
 ): Effect.Effect<Message, EndpointStoreError> {
   const operation = candidate.message.operation;
   return operation?.kind === "answer" &&
-    operation.id === item.id &&
+    operation.operationId === item.operationId &&
     candidate.cards.some(
       (card) =>
         card.agentId === candidate.intent.authorAgentId &&
@@ -490,7 +490,11 @@ function answerMessage(
     ? decodeMessage({
         ...messageFields(candidate.message),
         text: renderOutcome(answer.outcome),
-        operation: { kind: "answer", op: item.op, id: item.id },
+        operation: {
+          kind: "answer",
+          op: item.op,
+          operationId: item.operationId,
+        },
       })
     : Effect.fail(new EndpointStoreError({ reason: "corrupt" }));
 }
@@ -501,7 +505,8 @@ function requestMessage(
   item: ResultItem,
 ): Effect.Effect<Message, EndpointStoreError> {
   const operation = candidate.message.operation;
-  return operation?.kind === "request" && operation.id === item.id
+  return operation?.kind === "request" &&
+    operation.operationId === item.operationId
     ? Effect.succeed(candidate.message)
     : Effect.fail(new EndpointStoreError({ reason: "corrupt" }));
 }

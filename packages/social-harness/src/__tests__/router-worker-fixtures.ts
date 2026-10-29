@@ -17,8 +17,8 @@ import {
   type RouterSendResult,
 } from "../communication/router/api/contract.js";
 import {
-  type LiveSignedMessage,
   EnvelopeId,
+  type LiveSignedMessage,
   SignedMessage,
 } from "../identity/envelope/signed-message.js";
 import { Registry } from "../identity/registry/index.js";

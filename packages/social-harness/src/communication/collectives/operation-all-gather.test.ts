@@ -21,6 +21,7 @@ import type { EngineSendInput } from "../conversations/index.js";
 import type { InboundItem } from "./inbound.js";
 import type { CollectiveOperations } from "./ports.js";
 import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
+import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
 import {
   alice,
   certifyNext,
@@ -28,13 +29,12 @@ import {
   collectiveKey,
   firstRequestOf,
   makeLayer,
+  msgId,
   newObserved,
   type Observed,
   operationIdOf,
-  msgId,
   questionText,
   recordHashOf,
-  requestNonce,
   requestSendWait,
   send,
   slotSchema,
@@ -44,12 +44,12 @@ import { localGuidance } from "../../__tests__/message-policy-fixtures.js";
 import { SendError } from "../conversations/errors.js";
 import { InboundMessage } from "../conversations/message.js";
 import { CollectiveEmitError } from "./contracts.js";
-import { collectiveIdOf } from "./wire/index.js";
+import { collectiveRequesterOf } from "./wire/index.js";
 
 const group = "group:alice,bob,carol";
 const groupMembers = ["agent:alice", "agent:bob", "agent:carol"];
-const requestId = collectiveIdOf(alice, requestNonce);
-const otherId = `col_${"B".repeat(43)}`;
+const requestId = collectiveOperationId(testAgentView(alice).agentId);
+const otherId = collectiveOperationId(testAgentView(alice).agentId, 1);
 
 /**
  * An emit port that records each item and resolves `emitted` on the first,
@@ -89,8 +89,7 @@ const holdMessages = (
 const requestValue = {
   kind: "operation",
   op: "all_gather",
-  id: requestId,
-  nonce: requestNonce,
+  operationId: requestId,
   deadlineAt: 60_000,
   requestedSchema: slotSchema,
 };
@@ -103,7 +102,9 @@ const groupMessage = (sender: string, byte: number, value: object) =>
     sender: testAgentView(sender),
     members: groupMembers.map(testAgentView),
     content: [
-      ...(value === requestValue ? [{ type: "text", text: questionText }] : []),
+      ...("op" in value && value.op === "all_gather"
+        ? [{ type: "text", text: questionText }]
+        : []),
       { type: "data", value: { [collectiveKey]: value } },
     ],
   });
@@ -119,18 +120,18 @@ const classify = (
     recordHash: recordHashOf(byte),
   });
 
-const answer = (id: string, slot: string) => ({
+const answer = (operationId: string, slot: string) => ({
   kind: "response",
-  id,
+  operationId,
   action: "accept",
   content: { slot },
 });
 
-const close = (id: string, included: readonly number[]) => ({
+const close = (operationId: string, included: readonly number[]) => ({
   kind: "close",
   closedAt: 60_000,
   closedBy: "deadline",
-  id,
+  operationId,
   included: included.map(recordHashOf),
 });
 
@@ -140,7 +141,7 @@ const allGatherInput = (to = group) => ({
   collective: { op: "all_gather", deadline: 60, requestedSchema: slotSchema },
 });
 
-/** Start the all_gather `allGatherInput` describes and return its id; dies when the send names none. */
+/** Start the all_gather `allGatherInput` describes and return its operationId; dies when the send names none. */
 const startAllGather = (layer: CollectiveOperations) =>
   send(layer, allGatherInput()).pipe(Effect.flatMap(operationIdOf));
 
@@ -155,10 +156,13 @@ function sendsOneRequestMessageToTheGroup() {
 
   return Effect.gen(function* () {
     const layer = yield* makeLayer(observed);
-    const id = yield* startAllGather(layer);
-    const { nonce } = yield* firstRequestOf(observed);
+    const operationId = yield* startAllGather(layer);
+    const request = yield* firstRequestOf(observed);
 
-    expect(collectiveIdOf(alice, nonce)).toBe(id);
+    expect(request.operationId).toBe(operationId);
+    expect(collectiveRequesterOf(operationId)).toBe(
+      testAgentView(alice).agentId,
+    );
     expect(observed.sent).toEqual([
       {
         to: group,
@@ -170,8 +174,7 @@ function sendsOneRequestMessageToTheGroup() {
               [collectiveKey]: {
                 kind: "operation",
                 op: "all_gather",
-                id,
-                nonce,
+                operationId,
                 deadlineAt: 60_000,
                 requestedSchema: slotSchema,
               },
@@ -328,10 +331,10 @@ function closesWithTheRecordHashOfEachCountedAnswer() {
   return Effect.gen(function* () {
     const emitted = yield* Deferred.make<undefined>();
     const layer = yield* makeLayer(observed, signalEmitted(observed, emitted));
-    const id = yield* startAllGather(layer);
-    yield* classify(layer, "agent:bob", 11, answer(id, "mon"));
-    yield* classify(layer, "agent:bob", 12, answer(id, "tue"));
-    yield* classify(layer, "agent:carol", 13, answer(id, "tue"));
+    const operationId = yield* startAllGather(layer);
+    yield* classify(layer, "agent:bob", 11, answer(operationId, "mon"));
+    yield* classify(layer, "agent:bob", 12, answer(operationId, "tue"));
+    yield* classify(layer, "agent:carol", 13, answer(operationId, "tue"));
     yield* Deferred.await(emitted);
 
     expect(observed.sent[1]).toEqual({
@@ -344,7 +347,7 @@ function closesWithTheRecordHashOfEachCountedAnswer() {
               kind: "close",
               closedAt: 0,
               closedBy: "settled",
-              id,
+              operationId,
               included: [recordHashOf(11), recordHashOf(13)],
             },
           },
@@ -360,9 +363,9 @@ function publishesTheRequesterResultOnceItsCloseIsCertified() {
   return Effect.gen(function* () {
     const emitted = yield* Deferred.make<undefined>();
     const layer = yield* makeLayer(observed, signalEmitted(observed, emitted));
-    const id = yield* startAllGather(layer);
-    yield* classify(layer, "agent:bob", 11, answer(id, "mon"));
-    yield* classify(layer, "agent:carol", 13, answer(id, "tue"));
+    const operationId = yield* startAllGather(layer);
+    yield* classify(layer, "agent:bob", 11, answer(operationId, "mon"));
+    yield* classify(layer, "agent:carol", 13, answer(operationId, "tue"));
     yield* Deferred.await(emitted);
 
     expect(observed.emitted).toEqual([
@@ -371,7 +374,7 @@ function publishesTheRequesterResultOnceItsCloseIsCertified() {
         closedAt: 0,
         closedBy: "settled",
         op: "all_gather",
-        id,
+        operationId,
         to: group,
         question: questionText,
         outcomes: [
@@ -395,8 +398,8 @@ function closesAtTheDeadlineWithoutTheSilentMember() {
   return Effect.gen(function* () {
     const emitted = yield* Deferred.make<undefined>();
     const layer = yield* makeLayer(observed, signalEmitted(observed, emitted));
-    const id = yield* startAllGather(layer);
-    yield* classify(layer, "agent:bob", 11, answer(id, "mon"));
+    const operationId = yield* startAllGather(layer);
+    yield* classify(layer, "agent:bob", 11, answer(operationId, "mon"));
     yield* TestClock.adjust(Duration.seconds(60));
     yield* Deferred.await(emitted);
 
@@ -434,14 +437,14 @@ function ignoresAnAnswerThatArrivesAfterTheClose() {
     const emitted = yield* Deferred.make<undefined>();
     const supervisor = yield* Supervisor.track;
     const layer = yield* makeLayer(observed, signalEmitted(observed, emitted));
-    const id = yield* startAllGather(layer);
+    const operationId = yield* startAllGather(layer);
     yield* TestClock.adjust(Duration.seconds(60));
     yield* Deferred.await(emitted);
     const late = yield* classify(
       layer,
       "agent:carol",
       13,
-      answer(id, "tue"),
+      answer(operationId, "tue"),
     ).pipe(Effect.supervised(supervisor));
 
     expect(late).toEqual(Option.none());
@@ -469,14 +472,14 @@ function reportsACloseThatCannotBeCertifiedAsAFailedOperation() {
           ? certifyNext(observed, input)
           : Effect.fail(new SendError({ reason: "network-unavailable" })),
     });
-    const id = yield* startAllGather(layer);
+    const operationId = yield* startAllGather(layer);
     yield* TestClock.adjust(Duration.seconds(60));
     yield* Deferred.await(emitted);
 
     expect(observed.emitted).toEqual([
       {
         kind: "operationFailed",
-        id,
+        operationId,
         to: group,
         error:
           "all_gather failed: the result could not be shared with the group: Social Harness is unavailable (network unavailable)",
@@ -485,7 +488,7 @@ function reportsACloseThatCannotBeCertifiedAsAFailedOperation() {
     yield* Effect.repeat(Effect.yieldNow(), {
       until: () => closed().length > 0,
     });
-    expect(closed()).toMatchObject([{ operationId: id, outcome: "failed" }]);
+    expect(closed()).toMatchObject([{ operationId, outcome: "failed" }]);
   }).pipe(
     Effect.provide(
       NodeSdk.layer(() => ({
@@ -527,7 +530,7 @@ function deliversAGroupRequestAsAnItemAddressedToTheGroup() {
       Option.some({
         kind: "collectiveRequest",
         op: "all_gather",
-        id: requestId,
+        operationId: requestId,
         msgId: msgId(10),
         from: testAgentView("agent:alice"),
         to: group,
@@ -653,7 +656,7 @@ function buildsTheMemberResultFromExactlyTheListedAnswers() {
         closedAt: 60_000,
         closedBy: "deadline",
         op: "all_gather",
-        id: requestId,
+        operationId: requestId,
         to: group,
         question: questionText,
         outcomes: [
@@ -1037,11 +1040,11 @@ describe("all_gather at a member", () => {
     deliversAGroupRequestAsAnItemAddressedToTheGroup,
   );
   itOnTestClock(
-    "consumes a group request whose id does not derive from its sender",
+    "consumes a group request whose operationId identifies another sender",
     consumesAGroupRequestWhoseIdDoesNotDeriveFromItsSender,
   );
   itOnTestClock(
-    "consumes a second request message that reuses a held id",
+    "consumes a second request message that reuses a held operationId",
     consumesASecondRequestMessageThatReusesAHeldId,
   );
   itOnTestClock(
@@ -1089,7 +1092,7 @@ describe("all_gather close at a member", () => {
     appliesOnlyTheFirstCloseWhileItsOwnAnswerIsInFlight,
   );
   itOnTestClock(
-    "ignores a close for an unknown id",
+    "ignores a close for an unknown operationId",
     ignoresACloseForAnUnknownId,
   );
   itOnTestClock(
@@ -1108,3 +1111,76 @@ describe("all_gather member results the service cannot keep", () => {
     keepsAnAnswerThatReleasesAnUnkeptClose,
   );
 });
+
+itOnTestClock(
+  "keeps concurrent requesters separate when their random operation bytes match",
+  () =>
+    Effect.gen(function* () {
+      const observed = newObserved();
+      const layer = yield* makeLayer(observed, { self: "agent:carol" });
+      const bobOperationId = collectiveOperationId(
+        testAgentView("bob").agentId,
+      );
+      yield* classify(layer, "agent:alice", 10, requestValue);
+      yield* classify(layer, "agent:bob", 11, {
+        ...requestValue,
+        operationId: bobOperationId,
+      });
+
+      const ambiguous = yield* Effect.flip(respond(layer, "mon"));
+      expect(ambiguous).toMatchObject({
+        failure: {
+          kind: "request-ambiguous",
+          openOperationIds: [requestId, bobOperationId],
+        },
+      });
+      expect("operationId" in ambiguous).toBe(false);
+
+      yield* send(layer, {
+        to: group,
+        collectiveResponse: { operationId: requestId, action: "decline" },
+      });
+      yield* send(layer, {
+        to: group,
+        collectiveResponse: { operationId: bobOperationId, action: "decline" },
+      });
+      yield* classify(layer, "agent:bob", 12, answer(requestId, "mon"));
+      yield* classify(layer, "agent:alice", 13, answer(bobOperationId, "tue"));
+      yield* classify(layer, "agent:bob", 14, close(requestId, [12, 101]));
+      expect(observed.emitted).toEqual([]);
+
+      yield* classify(layer, "agent:alice", 15, close(requestId, [12, 101]));
+      yield* classify(layer, "agent:bob", 16, close(bobOperationId, [13, 102]));
+      assertIndependentResults(observed.emitted, bobOperationId);
+    }),
+);
+
+function assertIndependentResults(
+  items: readonly InboundItem[],
+  bobOperationId: string,
+) {
+  expect(items).toMatchObject([
+    {
+      kind: "collectiveResult",
+      operationId: requestId,
+      outcomes: [
+        {
+          member: testAgentView("bob"),
+          outcome: { kind: "answered", content: { slot: "mon" } },
+        },
+        { member: testAgentView("carol"), outcome: { kind: "declined" } },
+      ],
+    },
+    {
+      kind: "collectiveResult",
+      operationId: bobOperationId,
+      outcomes: [
+        {
+          member: testAgentView("alice"),
+          outcome: { kind: "answered", content: { slot: "tue" } },
+        },
+        { member: testAgentView("carol"), outcome: { kind: "declined" } },
+      ],
+    },
+  ]);
+}

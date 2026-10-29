@@ -113,7 +113,7 @@ function sendTextLogsItsOrigin() {
 
 function refusedSendLogsTheFailure() {
   const refusal = new CollectiveError({
-    id: collectiveId(),
+    operationId: collectiveId(),
     failure: { kind: "schema-invalid", detail: "type must be object" },
   });
   const message = JSON.stringify({
@@ -278,17 +278,17 @@ function runSendText(plugin: Plugin, to: string, text: string) {
 }
 
 /** A collective id as the Client brands it, read from an item that carries one. */
-function collectiveId(): CollectiveError["id"] {
+function collectiveId(): NonNullable<CollectiveError["operationId"]> {
   const item = Schema.decodeUnknownSync(InboundItem)({
     kind: "operationFailed",
-    id: OPERATION_ID,
+    operationId: OPERATION_ID,
     to: "agent:alice",
     error: "unused",
   });
   if (item.kind !== "operationFailed") {
     throw new Error("expected an operationFailed item");
   }
-  return item.id;
+  return item.operationId;
 }
 
 function testError(operation: string, cause: unknown): OutboundLogTestError {

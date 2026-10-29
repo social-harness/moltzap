@@ -33,8 +33,8 @@ import {
   AgentAddress,
   type CertifiedRecord,
   MessageAddressInput,
-  mintMsgId,
   MessageIntent,
+  mintMsgId,
 } from "../records/index.js";
 import {
   decodeRuntimeValue,
@@ -79,7 +79,7 @@ function closurePorts(
 ): Omit<CollectivePorts, "emit"> {
   return {
     store,
-    self,
+    self: testAgentView(self),
     scope,
     lookupMember: (member) => Effect.succeed(testAgentView(member)),
     sendMessage: engine.send,
@@ -113,13 +113,13 @@ function interruptClosure(
       emit: () => barrier,
     });
     const fixture = { subject, store, engine, layer };
-    const { id, answer } = yield* requestWithOneDecline(fixture, head);
+    const { operationId, answer } = yield* requestWithOneDecline(fixture, head);
     yield* reachClosureCheckpoint(fixture, checkpoint, paused, answer);
     const operation = yield* Effect.fromNullable(
-      yield* store.readCollectiveOperation(id),
+      yield* store.readCollectiveOperation(operationId),
     );
     const [close] = yield* store.readCollectiveMessages({
-      operationId: id,
+      operationId,
       role: "close",
     });
     expect(operation.phase).toBe(
@@ -175,7 +175,7 @@ function requestWithOneDecline(fixture: ClosureFixture, head: CertifiedRecord) {
       msgId: yield* mintMsgId(),
       content: yield* encodeCollectiveContent({
         kind: "response",
-        id: sent.operationId,
+        operationId: sent.operationId,
         action: "decline",
       }),
     });
@@ -186,7 +186,7 @@ function requestWithOneDecline(fixture: ClosureFixture, head: CertifiedRecord) {
       ),
     );
     yield* layer.classify(delivered);
-    return { id: sent.operationId, answer };
+    return { operationId: sent.operationId, answer };
   });
 }
 
@@ -277,7 +277,7 @@ function verifyRecoveredClose(
     expect(yield* readCollectiveValue(close.content)).toEqual(
       Option.some({
         kind: "close",
-        id: interrupted.operation.operationId,
+        operationId: interrupted.operation.operationId,
         ...metadata,
         included: [interrupted.answer.actionCertifiedRecord.recordHash],
       }),

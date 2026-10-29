@@ -13,6 +13,8 @@ import {
   TestClock,
 } from "effect";
 import { expect } from "vitest";
+import type { AgentId } from "../../identity/identifiers.js";
+import type { CollectiveId } from "./contracts.js";
 import type { InboundItem } from "./inbound.js";
 import type {
   BindHold,
@@ -52,8 +54,8 @@ import {
   AgentAddress,
   type CertifiedRecord,
   MessageAddressInput,
-  mintMsgId,
   MessageIntent,
+  mintMsgId,
 } from "../records/index.js";
 import {
   decodeRuntimeValue,
@@ -61,10 +63,15 @@ import {
   type EndpointStore,
   type EndpointStoreError,
   openEndpointStore,
+  type StoredCollectiveMessage,
   type MessageIntent as StoredMessageIntent,
 } from "../store/index.js";
 import { makeCollectiveOperations } from "./index.js";
-import { encodeCollectiveContent, mintCollectiveId } from "./wire/index.js";
+import {
+  encodeCollectiveContent,
+  mintCollectiveId,
+  readCollectiveValue,
+} from "./wire/index.js";
 
 const self = Schema.decodeUnknownSync(AgentAddress)("agent:alice");
 const sender = Schema.decodeUnknownSync(AgentAddress)("agent:bob");
@@ -78,7 +85,7 @@ function resume(subject: Fixture, store: EndpointStore, failOutbound = false) {
     const engine = yield* resumeEngine(subject, store, failOutbound);
     const collective = yield* makeCollectiveOperations({
       store,
-      self,
+      self: testAgentView(self),
       scope: yield* Scope.Scope,
       lookupMember: (member) => Effect.succeed(testAgentView(member)),
       sendMessage: engine.send,
@@ -127,13 +134,14 @@ function seedRemoteRequest(subject: Fixture) {
         subject.membership,
         firstMessage,
       );
-      const { id, nonce } = yield* mintCollectiveId(sender);
+      const operationId = yield* mintCollectiveId(
+        testAgentView(sender).agentId,
+      );
       const content = yield* encodeCollectiveContent(
         {
           kind: "operation",
           op: "gather",
-          id,
-          nonce,
+          operationId,
           deadlineAt: Date.now() + 60_000,
           requestedSchema: {
             type: "object",
@@ -296,7 +304,7 @@ function pausedAdmission(mode: "bind" | "gather") {
     );
     const ports: CollectivePorts = {
       store: subject.store,
-      self,
+      self: testAgentView(self),
       scope: yield* Scope.Scope,
       lookupMember: (member) => Effect.succeed(testAgentView(member)),
       sendMessage: () => Effect.never,
@@ -443,7 +451,7 @@ function interruptedBindFixture(pause: "before" | "after" = "after") {
     );
     const layer = yield* makeCollectiveOperations({
       store,
-      self,
+      self: testAgentView(self),
       scope: yield* Scope.Scope,
       lookupMember: (member) => Effect.succeed(testAgentView(member)),
       sendMessage: engine.send,
@@ -495,7 +503,7 @@ itOnClock(
           kind: "close",
           closedAt: 60_000,
           closedBy: "deadline",
-          id: request.id,
+          operationId: request.operationId,
           included: [answer.actionCertifiedRecord.recordHash],
         }),
       });
@@ -511,13 +519,12 @@ function admittedGroupRequest(
   fixture: Effect.Effect.Success<ReturnType<typeof interruptedBindFixture>>,
 ) {
   return Effect.gen(function* () {
-    const { id, nonce } = yield* mintCollectiveId(sender);
+    const operationId = yield* mintCollectiveId(testAgentView(sender).agentId);
     const content = yield* encodeCollectiveContent(
       {
         kind: "operation",
         op: "all_gather",
-        id,
-        nonce,
+        operationId,
         deadlineAt: (yield* Clock.currentTimeMillis) + 60_000,
         requestedSchema: {
           type: "object",
@@ -540,8 +547,8 @@ function admittedGroupRequest(
       deliveryToken,
       canonicalItem: yield* encodeRuntimeValue(item.value),
     });
-    yield* fixture.layer.settleRequest(id, true);
-    return { id, record };
+    yield* fixture.layer.settleRequest(operationId, true);
+    return { operationId, record };
   });
 }
 
@@ -663,7 +670,7 @@ itOnClock(
           kind: "close",
           closedAt: 60_000,
           closedBy: "deadline",
-          id: request.id,
+          operationId: request.operationId,
           included: [],
         }),
       });
@@ -673,7 +680,7 @@ itOnClock(
             "group:alice,bob,carol",
           ),
           collectiveResponse: {
-            id: request.id,
+            operationId: request.operationId,
             action: "accept",
             content: { answer: "Monday" },
           },
@@ -690,13 +697,98 @@ itOnClock(
       ).toEqual({ kind: "request-expired" });
       expect(
         yield* fixture.store.readCollectiveMessages({
-          operationId: request.id,
+          operationId: request.operationId,
           role: "response",
         }),
       ).toEqual([]);
       expect(yield* Deferred.await(fixture.emitted)).toMatchObject({
         kind: "collectiveResult",
-        id: request.id,
+        operationId: request.operationId,
       });
     }),
 );
+
+it.each(["operation", "author"] as const)(
+  "refuses a retained response whose %s disagrees with its accepted claim",
+  (changed) =>
+    Effect.gen(function* () {
+      const subject = yield* Effect.scoped(engineFixture());
+      yield* seedRemoteRequest(subject);
+      yield* claimPendingResponse(subject);
+      const otherOperationId = yield* mintCollectiveId(
+        subject.remote.card.agentId,
+      );
+      const changes = {
+        ...(changed === "operation" ? { operationId: otherOperationId } : {}),
+        ...(changed === "author"
+          ? { authorAgentId: subject.remote.card.agentId }
+          : {}),
+      };
+      const failure = yield* withStore(subject.directory, (store) =>
+        Effect.scoped(
+          Effect.flip(resume(subject, corruptResponses(store, changes))),
+        ),
+      );
+      expect(failure).toMatchObject({ reason: "corrupt" });
+    }),
+);
+
+interface ResponseChanges {
+  readonly operationId?: CollectiveId;
+  readonly authorAgentId?: AgentId;
+}
+
+function corruptResponses(
+  store: EndpointStore,
+  changes: ResponseChanges,
+): EndpointStore {
+  return {
+    ...store,
+    readCollectiveMessages: (filter) =>
+      store
+        .readCollectiveMessages(filter)
+        .pipe(
+          Effect.flatMap((messages) =>
+            Effect.forEach(
+              messages,
+              (message) => changedResponse(message, changes),
+              { concurrency: 1 },
+            ),
+          ),
+        ),
+  };
+}
+
+function changedResponse(
+  message: StoredCollectiveMessage,
+  changes: ResponseChanges,
+) {
+  return Effect.gen(function* () {
+    const intent = yield* decodeRuntimeValue(
+      MessageIntent,
+      message.intent.canonicalIntent,
+    );
+    const value = yield* readCollectiveValue(intent.content).pipe(Effect.orDie);
+    if (Option.isNone(value) || value.value.kind !== "response") {
+      return yield* Effect.dieMessage("expected a retained response");
+    }
+    const content =
+      changes.operationId === undefined
+        ? intent.content
+        : yield* encodeCollectiveContent({
+            ...value.value,
+            operationId: changes.operationId,
+          }).pipe(Effect.orDie);
+    return {
+      ...message,
+      intent: {
+        ...message.intent,
+        canonicalIntent: yield* encodeRuntimeValue({
+          ...intent,
+          content,
+          authorAgentId: changes.authorAgentId ?? intent.authorAgentId,
+        }),
+      },
+    };
+  });
+}

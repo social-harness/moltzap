@@ -250,7 +250,7 @@ it("states the capture time and each message's collective operation to the provi
     const operation = {
       kind: "request",
       op: "gather",
-      id: "col_question",
+      operationId: "col_question",
       deadlineAt: 2_000,
     } as const;
     yield* check(provider({}, requests), {
@@ -264,7 +264,9 @@ it("states the capture time and each message's collective operation to the provi
     expect(states.length).toBeGreaterThan(0);
     expect(states.every((state) => state.now === 1_000)).toBe(true);
     expect(
-      states.some((state) => state.candidate.operation?.id === operation.id),
+      states.some(
+        (state) => state.candidate.operation?.id === operation.operationId,
+      ),
     ).toBe(true);
   }));
 

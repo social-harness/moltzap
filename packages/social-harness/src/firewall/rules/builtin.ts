@@ -550,7 +550,7 @@ function isOpenRequest(
 ): boolean {
   return (
     operation?.kind === "request" &&
-    !closed.has(operation.id) &&
+    !closed.has(operation.operationId) &&
     (now === undefined || operation.deadlineAt > now)
   );
 }
@@ -559,9 +559,9 @@ function closedRequest(operation: Message["operation"]): readonly string[] {
   switch (operation?.kind) {
     case "result":
     case "failure":
-      return [operation.id];
+      return [operation.operationId];
     case "answer":
-      return operation.op === "gather" ? [operation.id] : [];
+      return operation.op === "gather" ? [operation.operationId] : [];
     case "request":
     case undefined:
       return [];

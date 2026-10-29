@@ -1,8 +1,9 @@
 /** @file A committed gather admission remains ambiguous to its caller when the store response fails. */
 
 import { live as it } from "@effect/vitest";
-import { Effect, Schema, Scope } from "effect";
+import { Effect, Scope } from "effect";
 import { expect } from "vitest";
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import {
   gatherSend,
   question,
@@ -17,7 +18,6 @@ import {
 } from "../../__tests__/firewall-runtime-fixtures.js";
 import { withStore } from "../../__tests__/store-schema-fixtures.js";
 import { makeCollectiveOperations } from "../../communication/collectives/index.js";
-import { AgentAddress } from "../../communication/records/index.js";
 import {
   type CollectiveOperationInput,
   type EndpointStore,
@@ -85,7 +85,7 @@ function admittingCollectives(
     const { engine } = subject;
     return yield* makeCollectiveOperations({
       store,
-      self: yield* Schema.decodeUnknown(AgentAddress)("agent:alice"),
+      self: testAgentView("agent:alice"),
       scope: yield* Scope.Scope,
       lookupMember: (member) => resolvedMemberView(engine, member),
       sendMessage: (input) => engine.send(input),

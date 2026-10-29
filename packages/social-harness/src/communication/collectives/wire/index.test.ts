@@ -2,30 +2,27 @@
 
 import { Effect, Either, Exit, Option, ParseResult, Schema } from "effect";
 import { describe, expect, it } from "vitest";
-import { digest } from "../../../__tests__/agent-card-fixtures.js";
+import {
+  digest,
+  testAgentView,
+} from "../../../__tests__/agent-card-fixtures.js";
+import { collectiveOperationId } from "../../../__tests__/collective-id-fixtures.js";
 import { Content } from "../../records/index.js";
-import { AgentAddress } from "../../records/values.js";
 import {
   COLLECTIVE_DATA_KEY,
   CollectiveContentError,
-  collectiveIdOf,
   CollectivePartInvalidError,
+  collectiveRequesterOf,
   decodeCollectiveValue,
   encodeCollectiveContent,
   FormModeSchema,
+  mintCollectiveId,
   readCollectiveValue,
 } from "./index.js";
 
-const collectiveId = `col_${"A".repeat(43)}`;
-const nonce = "B".repeat(43);
+const collectiveId = collectiveOperationId(testAgentView("agent:bob").agentId);
 const recordHash = digest("rch_", 2);
 const deadlineAt = 1_790_000_000_000;
-/**
- * `col_` and the base64url SHA-256 of `org.social-harness/collective-id`, NUL,
- * `agent:bob`, NUL and `nonce`: the id `docs/reference/spec/host/messaging.md` derives
- * for Bob, computed from that text independently of the code.
- */
-const SPECIFIED_BOB_ID = "col_FtJFaecxYdK2jFmv_YSKzWa7k_M7xRkHblqe8kJHhYs";
 const flatSchema = {
   type: "object",
   properties: {
@@ -39,8 +36,7 @@ const flatSchema = {
 const gather = {
   kind: "operation",
   op: "gather",
-  id: collectiveId,
-  nonce,
+  operationId: collectiveId,
   deadlineAt,
   requestedSchema: flatSchema,
 };
@@ -92,7 +88,7 @@ describe("collective content round trip", () => {
   it("round-trips an all_gather close record", () => {
     const close = {
       kind: "close",
-      id: collectiveId,
+      operationId: collectiveId,
       included: [recordHash],
       closedAt: deadlineAt,
       closedBy: "deadline",
@@ -120,7 +116,7 @@ describe("collective timestamps", () => {
       expect(
         decodes({
           kind: "close",
-          id: collectiveId,
+          operationId: collectiveId,
           included: [],
           closedAt,
           closedBy: "settled",
@@ -157,8 +153,7 @@ describe("collective value grammar", () => {
       decodes({
         kind: "operation",
         op: "gather",
-        id: collectiveId,
-        nonce,
+        operationId: collectiveId,
         requestedSchema: flatSchema,
       }),
     ).toBe(false);
@@ -169,8 +164,7 @@ describe("collective value grammar", () => {
       decodes({
         kind: "operation",
         op: "all_gather",
-        id: collectiveId,
-        nonce,
+        operationId: collectiveId,
         deadlineAt,
       }),
     ).toBe(false);
@@ -183,7 +177,7 @@ describe("collective response grammar", () => {
     expect(
       decodes({
         kind: "response",
-        id: collectiveId,
+        operationId: collectiveId,
         action: "accept",
         content: { slot: "mon" },
       }),
@@ -194,7 +188,7 @@ describe("collective response grammar", () => {
     expect(
       decodes({
         kind: "response",
-        id: collectiveId,
+        operationId: collectiveId,
         action: "decline",
         content: { slot: "mon" },
       }),
@@ -203,13 +197,21 @@ describe("collective response grammar", () => {
 
   it("rejects an accept response without content", () => {
     expect(
-      decodes({ kind: "response", id: collectiveId, action: "accept" }),
+      decodes({
+        kind: "response",
+        operationId: collectiveId,
+        action: "accept",
+      }),
     ).toBe(false);
   });
 
   it("rejects a cancel, which is not an answer", () => {
     expect(
-      decodes({ kind: "response", id: collectiveId, action: "cancel" }),
+      decodes({
+        kind: "response",
+        operationId: collectiveId,
+        action: "cancel",
+      }),
     ).toBe(false);
   });
 });
@@ -335,28 +337,37 @@ describe("collective content", () => {
   });
 });
 
-// @agent-code-guard/regression-only: examples pin that a collective id names its requester.
-describe("collective id derivation", () => {
-  const bob = Schema.decodeUnknownSync(AgentAddress)("agent:bob");
-  const mallory = Schema.decodeUnknownSync(AgentAddress)("agent:mallory");
+describe("collective operation identity", () => {
+  it("mints distinct operations for one requester", () => {
+    const requester = testAgentView("agent:bob").agentId;
+    const first = Effect.runSync(mintCollectiveId(requester));
+    const second = Effect.runSync(mintCollectiveId(requester));
 
-  it("derives the id the specification states from the requester and nonce", () => {
-    expect(collectiveIdOf(bob, nonce)).toBe(SPECIFIED_BOB_ID);
+    expect(collectiveRequesterOf(first)).toBe(requester);
+    expect(collectiveRequesterOf(second)).toBe(requester);
+    expect(first).not.toBe(second);
+    expect(decodeValue({ ...gather, operationId: first })).toMatchObject({
+      operationId: first,
+    });
   });
 
-  it("rejects a gather request without the nonce its id derives from", () => {
-    expect(
-      decodes({
-        kind: "operation",
-        op: "gather",
-        id: collectiveId,
-        deadlineAt,
-        requestedSchema: flatSchema,
-      }),
-    ).toBe(false);
-  });
+  it("identifies different requesters with the same random bytes", () => {
+    const bob = testAgentView("agent:bob").agentId;
+    const mallory = testAgentView("agent:mallory").agentId;
+    const bobOperation = collectiveOperationId(bob, 7);
+    const malloryOperation = collectiveOperationId(mallory, 7);
 
-  it("derives a different id for another requester with the same nonce", () => {
-    expect(collectiveIdOf(mallory, nonce)).not.toBe(collectiveIdOf(bob, nonce));
+    expect(collectiveRequesterOf(bobOperation)).toBe(bob);
+    expect(collectiveRequesterOf(malloryOperation)).toBe(mallory);
+    expect(bobOperation).not.toBe(malloryOperation);
   });
+});
+
+it.each([
+  { ...gather, operationId: digest("col_", 1) },
+  { ...gather, operationId: `${collectiveId}=` },
+  { ...gather, nonce: "A".repeat(43) },
+])("rejects a noncanonical request identity: %j", (request) => {
+  expect(decodes(request)).toBe(false);
+  expect(decodes(gather)).toBe(true);
 });

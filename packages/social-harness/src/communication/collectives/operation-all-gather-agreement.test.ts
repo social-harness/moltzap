@@ -36,8 +36,8 @@ import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import {
   alice,
   collectiveKey,
-  operationIdOf,
   msgId,
+  operationIdOf,
   questionText,
   recordHashOf,
   slotSchema,
@@ -178,7 +178,7 @@ const makeEndpoint = (harness: Harness, self: AgentAddress) =>
     const published = yield* Deferred.make<undefined>();
     const answerQueued = yield* Deferred.make<undefined>();
     const layer = yield* makeCollectiveOperations({
-      self,
+      self: testAgentView(self),
       lookupMember: (member) => Effect.succeed(testAgentView(member)),
       ...collectivePersistencePorts((input) =>
         self === alice
@@ -412,7 +412,7 @@ function pendingSteps(harness: Harness): Step[] {
 }
 
 /** Messages by dave, who bypasses an endpoint: two answers and a close of his own. */
-function daveSteps(harness: Harness, id: string): Step[] {
+function daveSteps(harness: Harness, operationId: string): Step[] {
   const { messages } = harness;
   const answering: Step[] =
     messages.daveAnswers < 2
@@ -427,7 +427,7 @@ function daveSteps(harness: Harness, id: string): Step[] {
                 dave,
                 collectivePart({
                   kind: "response",
-                  id,
+                  operationId,
                   action: "accept",
                   content: { slot: messages.daveAnswers === 1 ? "mon" : "tue" },
                 }),
@@ -449,7 +449,7 @@ function daveSteps(harness: Harness, id: string): Step[] {
               dave,
               collectivePart({
                 kind: "close",
-                id,
+                operationId,
                 included: [],
                 closedAt: 60_000,
                 closedBy: "deadline",
@@ -462,7 +462,7 @@ function daveSteps(harness: Harness, id: string): Step[] {
 }
 
 /** A second close from the requester, listing nothing, once it has closed. */
-function secondCloseSteps(harness: Harness, id: string): Step[] {
+function secondCloseSteps(harness: Harness, operationId: string): Step[] {
   const { messages } = harness;
   if (messages.aliceClosedTwice || firstCloseIndex(harness) === -1) {
     return [];
@@ -478,7 +478,7 @@ function secondCloseSteps(harness: Harness, id: string): Step[] {
           alice,
           collectivePart({
             kind: "close",
-            id,
+            operationId,
             included: [],
             closedAt: 60_000,
             closedBy: "deadline",
@@ -520,7 +520,7 @@ const outcomeOf = (
 };
 
 /** The result the first close describes: each member's listed answer, in member order. */
-const resultOfFirstClose = (harness: Harness, id: string) => {
+const resultOfFirstClose = (harness: Harness, operationId: string) => {
   const close = harness.chain.find(isRequesterClose);
   const selection = Option.fromNullable(close).pipe(
     Option.flatMap((record) => record.value),
@@ -536,7 +536,7 @@ const resultOfFirstClose = (harness: Harness, id: string) => {
     closedAt,
     closedBy,
     op: "all_gather",
-    id,
+    operationId,
     to: group,
     question: questionText,
     outcomes: [bob, carol, dave].map((member) => ({
@@ -608,8 +608,8 @@ const startSchedule = (coverage: Coverage) =>
         requestedSchema: slotSchema,
       },
     });
-    const id = yield* operationIdOf(outcome);
-    return { harness, id };
+    const operationId = yield* operationIdOf(outcome);
+    return { harness, operationId };
   });
 
 /** Run one seeded schedule until no step is left, and return the harness. */
@@ -617,30 +617,34 @@ const runSchedule = (seed: number, coverage: Coverage) =>
   Effect.gen(function* () {
     const random = seededRandom(seed);
     const scope = yield* Effect.scope;
-    const { harness, id } = yield* startSchedule(coverage);
+    const { harness, operationId } = yield* startSchedule(coverage);
     for (;;) {
       const step = pickStep(
         [
           ...deliverySteps(harness),
           ...answerSteps(harness, random, scope),
           ...pendingSteps(harness),
-          ...daveSteps(harness, id),
-          ...secondCloseSteps(harness, id),
+          ...daveSteps(harness, operationId),
+          ...secondCloseSteps(harness, operationId),
           ...redeliverySteps(harness),
           ...deadlineSteps(harness),
         ],
         random(),
       );
       if (step === undefined) {
-        return { harness, id };
+        return { harness, operationId };
       }
       yield* step[1];
     }
   }).pipe(Effect.scoped, Effect.provide(TestContext.TestContext));
 
 /** Every honest endpoint published exactly the result the first close lists. */
-function expectAgreement(seed: number, harness: Harness, id: string): void {
-  const expected = resultOfFirstClose(harness, id);
+function expectAgreement(
+  seed: number,
+  harness: Harness,
+  operationId: string,
+): void {
+  const expected = resultOfFirstClose(harness, operationId);
   for (const endpoint of harness.endpoints) {
     expect(endpoint.emitted, `seed ${seed}, ${endpoint.self}`).toEqual([
       expected,
@@ -668,8 +672,8 @@ function everyEndpointPublishesTheFirstCloseResult() {
     EffectArray.range(1, SCHEDULES),
     (seed) =>
       runSchedule(seed, coverage).pipe(
-        Effect.andThen(({ harness, id }) => {
-          expectAgreement(seed, harness, id);
+        Effect.andThen(({ harness, operationId }) => {
+          expectAgreement(seed, harness, operationId);
         }),
       ),
     { concurrency: 1, discard: true },

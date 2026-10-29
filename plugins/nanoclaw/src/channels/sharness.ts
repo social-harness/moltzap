@@ -587,7 +587,7 @@ function projectItem(item: InboundItem): ProjectedItem {
     case "collectiveResult":
       return {
         origin: "endpoint",
-        id: `${item.id}:result`,
+        id: `${item.operationId}:result`,
         address: item.to,
         sender: ENDPOINT_SENDER,
         text: renderCollectiveResult(item),
@@ -595,7 +595,7 @@ function projectItem(item: InboundItem): ProjectedItem {
     case "operationFailed":
       return {
         origin: "endpoint",
-        id: `${item.id}:failed`,
+        id: `${item.operationId}:failed`,
         address: item.to,
         sender: ENDPOINT_SENDER,
         text: item.error,

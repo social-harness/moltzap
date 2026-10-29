@@ -152,7 +152,7 @@ export interface CollectivePorts {
   ) => Effect.Effect<void>;
 
   /** The local agent: a group gather or all_gather asks every member but this one. */
-  readonly self: AgentAddress;
+  readonly self: AgentView;
   /**
    * Resolve and retain one verified identity before accepting a collecting
    * operation. Results use this view even when later delivery fails.
@@ -198,7 +198,7 @@ export interface CertifiedMessage {
 /** The daemon's collective layer for one active identity. */
 export interface CollectiveOperations {
   /**
-   * Return a gather's id after the bounded request wait; pending messages keep
+   * Return a gather's operationId after the bounded request wait; pending messages keep
    * certifying. An all_gather waits for its group message to certify unless
    * its deadline already completed the operation. Multicasts and responses
    * wait for their message's certification. A response must match an open
@@ -225,7 +225,7 @@ export interface CollectiveOperations {
    * changes.
    */
   readonly settleRequest: (
-    id: CollectiveId,
+    operationId: CollectiveId,
     presented: boolean,
   ) => Effect.Effect<void>;
 }

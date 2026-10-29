@@ -66,7 +66,7 @@ export function testAgentView(address: string): AgentView {
 
 /**
  * A prefixed identifier over 32 repeated bytes, the form of MsgId,
- * RecordHash, DeliveryToken, CollectiveId and the other digest-shaped
+ * RecordHash, DeliveryToken and the other digest-shaped
  * identifiers.
  * @param prefix Identifier prefix, such as `msg_`.
  * @param byte Value repeated across all 32 bytes.

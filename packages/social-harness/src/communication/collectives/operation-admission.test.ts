@@ -22,6 +22,7 @@ import type {
   ResultProvenance,
 } from "./ports.js";
 import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
+import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
 import {
   alice,
   certifyNext,
@@ -29,14 +30,13 @@ import {
   collectiveKey,
   gatherInput,
   makeLayer,
+  msgId,
   newObserved,
   type Observed,
   operationIdOf,
-  msgId,
   questionText,
   recordHashOf,
   requestId,
-  requestNonce,
   requestMessage,
   requestSendWait,
   send,
@@ -49,14 +49,12 @@ import {
 } from "../../firewall/outcome/index.js";
 import { SendError } from "../conversations/errors.js";
 import { InboundMessage } from "../conversations/message.js";
-import { AgentAddress } from "../records/values.js";
-import { collectiveIdOf } from "./wire/index.js";
 
 // @agent-code-guard/regression-only: Each case drives one ordering of check, claim, close and deadline that the admission ports allow.
 
 const group = "group:alice,bob,carol";
 const groupMembers = ["agent:alice", "agent:bob", "agent:carol"];
-const allGatherId = collectiveIdOf(alice, requestNonce);
+const allGatherId = collectiveOperationId(testAgentView(alice).agentId);
 const answer = { action: "accept", content: { slot: "mon" } } as const;
 
 /** The refusal every refusing check in these tests returns. */
@@ -188,8 +186,7 @@ function admitGather(
 const allGatherRequest = {
   kind: "operation",
   op: "all_gather",
-  id: allGatherId,
-  nonce: requestNonce,
+  operationId: allGatherId,
   deadlineAt: 60_000,
   requestedSchema: slotSchema,
 };
@@ -206,10 +203,9 @@ function receiveGatherRequest(layer: CollectiveOperations, presented: boolean) {
 
 /** Classify a second gather request from Bob to alice, open for a minute, and show it. */
 function receiveSecondGatherRequest(layer: CollectiveOperations) {
-  const nonce = "S".repeat(43);
-  const id = collectiveIdOf(
-    Schema.decodeUnknownSync(AgentAddress)("agent:bob"),
-    nonce,
+  const operationId = collectiveOperationId(
+    testAgentView("agent:bob").agentId,
+    1,
   );
   return layer
     .classify({
@@ -226,8 +222,7 @@ function receiveSecondGatherRequest(layer: CollectiveOperations) {
               [collectiveKey]: {
                 ...allGatherRequest,
                 op: "gather",
-                id,
-                nonce,
+                operationId,
               },
             },
           },
@@ -235,7 +230,7 @@ function receiveSecondGatherRequest(layer: CollectiveOperations) {
       }),
       recordHash: recordHashOf(2),
     })
-    .pipe(Effect.tap(() => layer.settleRequest(id, true)));
+    .pipe(Effect.tap(() => layer.settleRequest(operationId, true)));
 }
 
 /** Classify alice's all_gather request at Bob and settle its admission. */
@@ -509,7 +504,7 @@ function takesNoAnswerUntilShown() {
 
     expect(Option.getOrNull(item)).toMatchObject({
       kind: "collectiveRequest",
-      id: requestId,
+      operationId: requestId,
     });
     expect(beforeAdmission).toEqual({ kind: "request-none" });
     expect(afterWithholding).toEqual({ kind: "request-none" });
@@ -549,21 +544,21 @@ function closesAWithheldAllGatherAtAMember() {
 
     yield* classifyGroupMessage(layer, "agent:carol", 13, {
       kind: "response",
-      id: allGatherId,
+      operationId: allGatherId,
       ...answer,
     });
     yield* classifyGroupMessage(layer, "agent:alice", 14, {
       kind: "close",
       closedAt: 60_000,
       closedBy: "deadline",
-      id: allGatherId,
+      operationId: allGatherId,
       included: [recordHashOf(13)],
     });
 
     expect(observed.emitted).toMatchObject([
       {
         kind: "collectiveResult",
-        id: allGatherId,
+        operationId: allGatherId,
         question: questionText,
         outcomes: [
           {
@@ -608,7 +603,7 @@ function sendsNothingWhenTheAllGatherClosesDuringTheCheck() {
       kind: "close",
       closedAt: 60_000,
       closedBy: "deadline",
-      id: allGatherId,
+      operationId: allGatherId,
       included: [],
     });
     yield* Deferred.succeed(gate.open, undefined);
@@ -689,7 +684,11 @@ function answersTheMatchedRequestWhenAnotherOpensDuringTheCheck() {
       {
         to: "agent:bob",
         content: [
-          { value: { [collectiveKey]: { kind: "response", id: requestId } } },
+          {
+            value: {
+              [collectiveKey]: { kind: "response", operationId: requestId },
+            },
+          },
         ],
       },
     ]);
@@ -758,7 +757,7 @@ function carriesCountedAnswersWithAGatherResult() {
       admission: firewallDouble(observed).admission,
       ...recordProvenance(observed, provenance),
     });
-    const id = yield* send(layer, gatherInput()).pipe(
+    const operationId = yield* send(layer, gatherInput()).pipe(
       Effect.flatMap(operationIdOf),
     );
 
@@ -771,7 +770,9 @@ function carriesCountedAnswersWithAGatherResult() {
         content: [
           {
             type: "data",
-            value: { [collectiveKey]: { kind: "response", id, ...answer } },
+            value: {
+              [collectiveKey]: { kind: "response", operationId, ...answer },
+            },
           },
         ],
       }),
@@ -817,7 +818,7 @@ function leavesAMemberOwnAnswerOutOfItsProvenance() {
       kind: "close",
       closedAt: 60_000,
       closedBy: "deadline",
-      id: allGatherId,
+      operationId: allGatherId,
       included: [ownRecord],
     });
 

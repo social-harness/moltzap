@@ -34,6 +34,7 @@ import {
   sealTwoKeyCollision,
 } from "./forged-sealed-bodies.js";
 import {
+  envelopeIdOf,
   FIXTURE_CONCURRENCY,
   type Group,
   issueCard,
@@ -41,7 +42,6 @@ import {
   makeGroup,
   makeMember,
   type Member,
-  envelopeIdOf,
   openAs,
   plaintext,
   sealFrom,

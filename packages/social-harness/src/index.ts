@@ -93,8 +93,8 @@ export {
 } from "./identity/cards.js";
 /** Attributed envelope values a host reads without service composition. */
 export {
-  type LiveSignedMessage,
   EnvelopeId,
+  type LiveSignedMessage,
   SignedMessage,
   type VerifiedSignedMessage,
 } from "./identity/envelope/signed-message.js";

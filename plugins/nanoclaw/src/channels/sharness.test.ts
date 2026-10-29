@@ -41,7 +41,7 @@ vi.mock("@moltzap/social-harness", async (importOriginal) => ({
 }));
 
 const POST_ID = `msg_${"A".repeat(43)}`;
-const OPERATION_ID = `col_${"A".repeat(43)}`;
+const OPERATION_ID = `col_${"A".repeat(64)}`;
 const GROUP = "group:alice,bob,carol";
 const DEADLINE_TEXT = "2026-09-30T12:00:00.000Z";
 const QUESTION = "Which day?";
@@ -392,7 +392,7 @@ it.each([
         kind: "collectiveRequest",
         op,
         to,
-        id: OPERATION_ID,
+        operationId: OPERATION_ID,
         msgId: POST_ID,
         from: testAgentView("alice"),
         question: QUESTION,
@@ -434,7 +434,7 @@ it("attributes a result to Social Harness and lists every member outcome in the 
     closedAt: 0,
     closedBy: "deadline",
     op: "gather",
-    id: OPERATION_ID,
+    operationId: OPERATION_ID,
     to: GROUP,
     question: QUESTION,
     outcomes: [
@@ -471,7 +471,7 @@ it("delivers an operation failure as a Social Harness turn and acknowledges host
     fake,
     Schema.decodeUnknownSync(InboundItem)({
       kind: "operationFailed",
-      id: OPERATION_ID,
+      operationId: OPERATION_ID,
       to: "agent:alice",
       error: "reply failed: no question is open in this conversation",
     }),
@@ -566,7 +566,7 @@ it("hands a collective refusal to the model through NanoClaw's native callback",
   const data = Effect.runSync(
     decodeHarnessSendErrorData({
       reason: "collective-failed",
-      id: OPERATION_ID,
+      operationId: OPERATION_ID,
       failure: {
         kind: "schema-invalid",
         detail: "The requested form is invalid",
@@ -808,7 +808,7 @@ function collectiveGuidanceItem(
           closedAt: 0,
           closedBy: "settled",
           op: "gather",
-          id: OPERATION_ID,
+          operationId: OPERATION_ID,
           to: GROUP,
           question: QUESTION,
           outcomes: [
@@ -821,7 +821,7 @@ function collectiveGuidanceItem(
       : {
           kind,
           op: "gather",
-          id: OPERATION_ID,
+          operationId: OPERATION_ID,
           msgId: POST_ID,
           from: testAgentView("alice"),
           to: "agent:alice",

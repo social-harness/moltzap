@@ -42,8 +42,8 @@ import {
 import { encodeCanonical } from "../../encoding/canonical-json.js";
 import { SealedBody } from "../../identity/envelope/sealed-body.js";
 import {
-  type LiveSignedMessage,
   EnvelopeId,
+  type LiveSignedMessage,
   SignedMessage,
 } from "../../identity/envelope/signed-message.js";
 import { Registry } from "../../identity/registry/index.js";

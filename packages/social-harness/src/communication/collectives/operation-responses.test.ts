@@ -3,14 +3,16 @@
 import { scoped as it } from "@effect/vitest";
 import { Effect, Schema } from "effect";
 import { describe, expect } from "vitest";
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
+import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
 import {
   classifyMessage,
   collectiveFailureOf,
   collectiveKey,
   directMessage,
   makeLayer,
-  newObserved,
   msgId,
+  newObserved,
   questionText,
   requestId,
   requestMessage,
@@ -19,13 +21,11 @@ import {
 } from "../../__tests__/collective-operation-fixtures.js";
 import { AgentAddress } from "../records/values.js";
 import { CollectiveError } from "./contracts.js";
-import { collectiveIdOf } from "./wire/index.js";
 
 const bob = Schema.decodeUnknownSync(AgentAddress)("agent:bob");
 
 /** A second gather Bob asks in the same direct conversation, open for a minute. */
-const secondNonce = "S".repeat(43);
-const secondRequestId = collectiveIdOf(bob, secondNonce);
+const secondRequestId = collectiveOperationId(testAgentView(bob).agentId, 1);
 const secondRequestMessage = directMessage("agent:bob", [
   { type: "text", text: questionText },
   {
@@ -34,8 +34,7 @@ const secondRequestMessage = directMessage("agent:bob", [
       [collectiveKey]: {
         kind: "operation",
         op: "gather",
-        id: secondRequestId,
-        nonce: secondNonce,
+        operationId: secondRequestId,
         deadlineAt: 60_000,
         requestedSchema: slotSchema,
       },
@@ -43,10 +42,10 @@ const secondRequestMessage = directMessage("agent:bob", [
   },
 ]);
 
-/** The data part of a response message answering `id`. */
-const responsePart = (id: string, answer: object) => ({
+/** The data part of a response message answering `operationId`. */
+const responsePart = (operationId: string, answer: object) => ({
   type: "data",
-  value: { [collectiveKey]: { kind: "response", id, ...answer } },
+  value: { [collectiveKey]: { kind: "response", operationId, ...answer } },
 });
 
 function sendsAValidAnswerToTheRequesterSDirectConversation() {
@@ -69,7 +68,7 @@ function sendsAValidAnswerToTheRequesterSDirectConversation() {
             value: {
               [collectiveKey]: {
                 kind: "response",
-                id: requestId,
+                operationId: requestId,
                 action: "accept",
                 content: { slot: "mon" },
               },
@@ -164,13 +163,13 @@ function answersEachOfTwoOpenRequestsByItsId() {
     yield* classifyMessage(layer, secondRequestMessage);
     yield* send(layer, {
       to: "agent:bob",
-      collectiveResponse: { action: "decline", id: secondRequestId },
+      collectiveResponse: { action: "decline", operationId: secondRequestId },
     });
     yield* send(layer, {
       to: "agent:bob",
       collectiveResponse: {
         action: "accept",
-        id: requestId,
+        operationId: requestId,
         content: { slot: "mon" },
       },
     });
@@ -242,7 +241,7 @@ describe("collective responses", () => {
   );
 
   it(
-    "answers each of two open requests in one conversation by its id",
+    "answers each of two open requests in one conversation by its operationId",
     answersEachOfTwoOpenRequestsByItsId,
   );
 

@@ -4,9 +4,9 @@ import { HttpClient } from "@effect/platform";
 import { Duration, Effect, Either, Layer, Redacted, Schema } from "effect";
 import { expect, it } from "vitest";
 import {
+  envelopeIdOf,
   type Group,
   makeGroup,
-  envelopeIdOf,
   plaintext,
   sealFrom,
   signBody,

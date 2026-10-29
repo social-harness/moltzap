@@ -7,8 +7,8 @@ import type {
   CollectiveOperationInput,
   CollectiveRequestRefusal,
   EndpointStore,
-  StoredCollectiveOperation,
   StoredCollectiveMessage,
+  StoredCollectiveOperation,
   StoreMutation,
 } from "./types.js";
 import {

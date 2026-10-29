@@ -198,7 +198,7 @@ it("reads a collective request as Client renders it, so only its credentials are
       operation: {
         kind: "request",
         op: "gather",
-        id: "col_day",
+        operationId: "col_day",
         deadlineAt: 1_792_000_000_000,
       },
     };
@@ -374,7 +374,11 @@ it("sends a direct acknowledgement and a collective answer", () =>
       {
         ...message("Thanks!"),
         recipients: ["alice", "bob"],
-        operation: { kind: "answer", op: "all_gather", id: "col_open" },
+        operation: {
+          kind: "answer",
+          op: "all_gather",
+          operationId: "col_open",
+        },
       },
       SENDING,
     );
@@ -388,7 +392,7 @@ const OPEN_REQUEST = {
   operation: {
     kind: "request",
     op: "all_gather",
-    id: "col_open",
+    operationId: "col_open",
     deadlineAt: NOW + 60_000,
   },
 } as const;
@@ -397,7 +401,7 @@ const NEXT_REQUEST = {
   operation: {
     kind: "request",
     op: "gather",
-    id: "col_next",
+    operationId: "col_next",
     deadlineAt: NOW + 120_000,
   },
 } as const;
@@ -419,8 +423,8 @@ it("refuses a second request while its first is open in the conversation", () =>
   }));
 
 it.each([
-  { kind: "result", op: "all_gather", id: "col_open" },
-  { kind: "failure", id: "col_open" },
+  { kind: "result", op: "all_gather", operationId: "col_open" },
+  { kind: "failure", operationId: "col_open" },
 ] as const)("opens another request after a $kind", (operation) =>
   Effect.gen(function* () {
     const firewall = yield* firewallFor({
@@ -464,7 +468,7 @@ function afterAnswer(op: "gather" | "all_gather") {
           { ...OPEN_REQUEST, operation: { ...OPEN_REQUEST.operation, op } },
           {
             ...entry("answer", "concierge-id", MEMBER, "Tuesday"),
-            operation: { kind: "answer", op, id: "col_open" },
+            operation: { kind: "answer", op, operationId: "col_open" },
           },
         ],
       }),

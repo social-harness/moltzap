@@ -11,7 +11,8 @@ import { describe, expect } from "vitest";
 import type { CollectiveOperations } from "../../communication/collectives/index.js";
 import type { HarnessMessageReadyEvent } from "../../host-protocol/operations.js";
 import type { HistoryExportRecord } from "./host-traffic-log.js";
-import { digest } from "../../__tests__/agent-card-fixtures.js";
+import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
+import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
 import {
   pendingMessage,
   publishEveryMessage,
@@ -45,12 +46,14 @@ const input = Schema.decodeUnknownSync(SendInput)({
   to: "agent:bob",
   text: "one operation",
 });
-const operationId = Schema.decodeUnknownSync(CollectiveId)(digest("col_", 3));
+const operationId = Schema.decodeUnknownSync(CollectiveId)(
+  collectiveOperationId(testAgentView("agent:alice").agentId, 3),
+);
 const msgId = Schema.decodeUnknownSync(MsgId)(digest("msg_", 4));
 const bob = Schema.decodeUnknownSync(AgentAddress)("agent:bob");
 const failure = Schema.decodeUnknownSync(InboundItem)({
   kind: "operationFailed",
-  id: digest("col_", 1),
+  operationId: collectiveOperationId(testAgentView("agent:alice").agentId, 1),
   to: "agent:bob",
   error: "request unavailable",
 });
@@ -148,7 +151,6 @@ const exportsEachSend = () =>
     );
     expect(yield* Effect.flip(operations.send({ input }))).toEqual(
       new CollectiveError({
-        id: operationId,
         failure: { kind: "request-none" },
       }),
     );
@@ -172,7 +174,6 @@ function sendOutcomes() {
     Effect.fail(new SendError({ reason: "content-invalid" })),
     Effect.fail(
       new CollectiveError({
-        id: operationId,
         failure: { kind: "request-none" },
       }),
     ),
@@ -202,7 +203,6 @@ function assertSendExports(records: readonly HistoryExportRecord[]) {
       outcome: {
         kind: "failed",
         error: new CollectiveError({
-          id: operationId,
           failure: { kind: "request-none" },
         }).message,
       },
@@ -421,7 +421,7 @@ describe("host delivery webhook view", () => {
 const firstFromBob = pendingMessage(21);
 const emittedFailure = Schema.decodeUnknownSync(InboundItem)({
   kind: "operationFailed",
-  id: digest("col_", 24),
+  operationId: collectiveOperationId(testAgentView("agent:alice").agentId, 24),
   to: "agent:bob",
   error: "collective failed",
 });

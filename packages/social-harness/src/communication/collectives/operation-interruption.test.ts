@@ -96,7 +96,7 @@ function admissionFixture(mode: "plain" | "firewall") {
     const admission = yield* installedAdmission(subject, store, mode);
     const collective = yield* makeCollectiveOperations({
       store,
-      self: Schema.decodeUnknownSync(AgentAddress)("agent:alice"),
+      self: testAgentView("agent:alice"),
       scope: yield* Scope.Scope,
       lookupMember: (member) => Effect.succeed(testAgentView(member)),
       sendMessage: () =>

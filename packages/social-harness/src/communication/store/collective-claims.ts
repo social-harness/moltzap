@@ -18,8 +18,8 @@ import {
 } from "./database/index.js";
 import { readStoredIdentity } from "./rows/index.js";
 import {
-  type CollectiveOperationInput,
   type CollectiveMessageBinding,
+  type CollectiveOperationInput,
   DeliveryToken,
   type MessageIntent,
   type StoredCollectiveOperation,

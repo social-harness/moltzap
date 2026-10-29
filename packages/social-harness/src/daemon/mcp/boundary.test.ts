@@ -30,7 +30,8 @@ import {
   setGlobalDispatcher,
 } from "undici";
 import { describe, expect } from "vitest";
-import { digest } from "../../__tests__/agent-card-fixtures.js";
+import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
+import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
 import { localGuidance } from "../../__tests__/message-policy-fixtures.js";
 import {
   CollectiveError,
@@ -402,7 +403,7 @@ const distinguishesSendValidationFailures = () =>
         Effect.succeed({
           kind: "collective",
           operationId: Schema.decodeUnknownSync(CollectiveId)(
-            `col_${"A".repeat(43)}`,
+            `col_${"A".repeat(64)}`,
           ),
           unexpected: true,
         }),
@@ -437,21 +438,24 @@ const DETAILED_REFUSALS = [
     detail: "agent:dana is not a known agent",
   }),
   new CollectiveError({
-    id: Schema.decodeUnknownSync(CollectiveId)(`col_${"A".repeat(43)}`),
     failure: {
       kind: "request-ambiguous",
-      openIds: [
-        Schema.decodeUnknownSync(CollectiveId)(`col_${"B".repeat(42)}A`),
-        Schema.decodeUnknownSync(CollectiveId)(`col_${"C".repeat(42)}A`),
+      openOperationIds: [
+        Schema.decodeUnknownSync(CollectiveId)(`col_${"B".repeat(64)}`),
+        Schema.decodeUnknownSync(CollectiveId)(`col_${"C".repeat(64)}`),
       ],
     },
   }),
   new CollectiveError({
-    id: Schema.decodeUnknownSync(CollectiveId)(`col_${"A".repeat(43)}`),
+    operationId: Schema.decodeUnknownSync(CollectiveId)(
+      `col_${"A".repeat(64)}`,
+    ),
     failure: { kind: "request-expired" },
     openElsewhere: [
       {
-        id: Schema.decodeUnknownSync(CollectiveId)(`col_${"D".repeat(42)}A`),
+        operationId: Schema.decodeUnknownSync(CollectiveId)(
+          `col_${"D".repeat(64)}`,
+        ),
         to: Schema.decodeUnknownSync(AgentAddress)("agent:bob"),
       },
     ],
@@ -714,7 +718,10 @@ function readsRetainedEventThroughSdk() {
     );
     const item = Schema.decodeUnknownSync(InboundItem)({
       kind: "operationFailed",
-      id: digest("col_", 7),
+      operationId: collectiveOperationId(
+        testAgentView("agent:alice").agentId,
+        7,
+      ),
       to: "agent:bob",
       error: "retained result",
     });
