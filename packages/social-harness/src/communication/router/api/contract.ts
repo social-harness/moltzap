@@ -215,7 +215,8 @@ export const RouterPollResult: Schema.Schema<
 > = pollResult;
 /**
  * A batch's messages remain unverified until the endpoint checks them all.
- * Accept its cursor only after those checks. `feed_gap` has no partial batch;
+ * Advance the cursor after verifying and durably accepting every message.
+ * `feed_gap` has no partial batch;
  * `cursor_invalid` reveals no Router instance.
  * @useDeclaredType
  */

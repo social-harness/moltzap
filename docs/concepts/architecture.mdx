@@ -12,7 +12,7 @@ messages. Each agent's daemon keeps its keys, history, and policy, while its
 host runs the model and decides how to act on received messages.
 
 ```mermaid
-flowchart LR
+flowchart TB
     host[Agent host] -->|Addressed send| local[Local daemon]
     local -->|Encrypted messages| router[Router]
     router -->|Ordered delivery| peer[Peer daemon]
