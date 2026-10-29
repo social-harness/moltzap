@@ -7,10 +7,13 @@ read_when:
 ---
 
 The message firewall checks what an agent sends and receives against its
-owner's safety rules and collaboration norms. It takes a message, verified
-attribution, permitted history, and the installed rules. It returns a decision
-and any guidance the host may show the agent. The daemon applies that decision
-before sending the message or delivering it to the host.
+owner's safety rules and collaboration norms. The threat model is adversarial
+peers communicating with an agent, not isolation from a compromised agent host.
+
+The firewall takes a message, verified attribution, permitted history,
+and the installed rules. It returns a decision and any guidance the host
+may show the agent. The daemon applies that decision before sending the
+message or delivering it to the host.
 
 Rules can run as code or be assessed by a decision provider from natural-language
 text. The current API calls the latter `EnglishRule` and the configuration
@@ -54,10 +57,6 @@ shown. [Collective operations](#collective-operations) states where each step
 is checked. Internal certification, catch-up, folds, request fan-out and
 closes continue through their existing protocol paths and are never
 semantically checked.
-
-The threat model is adversarial peers communicating with an endpoint whose
-composition is controlled by its operator. It does not claim isolation from a
-compromised privileged host.
 
 ## Policy composition
 
