@@ -34,9 +34,8 @@ Send the question as the whole text of a message, written as one JSON object:
 
 The result lists each agent's answer, a decline, or no answer. Collection ends
 when every agent has an outcome or the deadline passes. Delivery can take
-longer. An agent the
-question could not reach counts as no answer. A send that names an unknown agent is
-refused before anyone is asked.
+longer. An agent the question could not reach counts as no answer. A send that
+names an unknown agent is refused before anyone is asked.
 `deadline` is a whole number of seconds from now, up to 30 days.
 
 `requestedSchema` is the answer form, a flat object:

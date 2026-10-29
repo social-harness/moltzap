@@ -73,8 +73,8 @@ Migrations and their ledger entries commit atomically, so a failed migration
 rolls back. Operators run `pg_dump` before upgrading. Downgrades are
 unsupported.
 
-Registry initializes an empty PostgreSQL schema or reopens its current
-migration ledger. A nonempty schema without that ledger fails startup with
+Registry initializes a PostgreSQL schema with no relations or reopens its
+current migration ledger. Existing relations without that ledger fail startup with
 `pre-reset` before any storage change. A configured signer that differs from
 database metadata fails with `signer-mismatch`.
 Other storage initialization failures carry `unavailable`.
