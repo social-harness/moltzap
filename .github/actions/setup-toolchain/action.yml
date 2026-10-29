@@ -1,8 +1,7 @@
 name: Set up the toolchain
 description: >-
   Install pnpm at the package.json `packageManager` version and Node.js at the
-  `.node-version` version, with the pnpm store cached. Every workflow job sets
-  up the toolchain here, so each action version is written once.
+  `.node-version` version, with the pnpm store cached.
 inputs:
   registry-url:
     description: Registry that setup-node writes an .npmrc for; empty writes none.

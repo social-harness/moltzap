@@ -1,8 +1,7 @@
 /**
- * @file Copies the agent skills `@moltzap/social-harness` ships into the calling
- * channel package's `dist/skills`, so every host channel installs the same
- * skill text from its own package. A channel build runs it from the package
- * directory after `tsc -b`; Client lives under `packages/social-harness`.
+ * @file Ships the same Social Harness skills with every host channel.
+ * Run from the channel package directory after `tsc -b` so its published
+ * `dist/skills` contains the library's instructions unchanged.
  */
 import { cpSync } from "node:fs";
 import { resolve } from "node:path";

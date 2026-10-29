@@ -1,45 +1,24 @@
 #!/usr/bin/env node
 /**
- * @file Script-reachability gate. Every file under `scripts/` must be
- * reachable from something a person or a machine actually runs: a
- * `package.json` script, an Nx target, a git hook, a CI workflow, a
- * sibling script, a test, or prose that documents how to invoke it.
+ * @file Finds scripts with no reference in the tracked repository.
  *
- * Grouping `scripts/` by function is a one-time tidy; without a
- * reachability rule the directory silently refills. Five scripts had no
- * live caller when this gate was written, and one of them — an RPC
- * method-string check — had been a total no-op for long enough that the
- * directories it scanned no longer existed.
- *
- * A reference is any mention of the script's repo-relative path anywhere
- * else in the tracked tree, or a relative import of it from a sibling in
- * the same directory. Prose counts on purpose: a regeneration tool
- * cited by the test that consumes its fixtures is reachable, because a
- * reader can find their way to it.
- *
- * Exit codes:
- *   0 — every script is reachable, and every allowlist entry is still
- *       both present and genuinely unreferenced.
- *   1 — at least one unreachable script, or a stale allowlist entry.
- *
- * Wired into `pnpm lint` via the workspace `lint:script-reachability`
- * target.
+ * Repository-relative paths and sibling relative imports count as references.
+ * Prose counts because it can lead a reader to a manually invoked tool.
+ * The gate's own fixtures and allowlist do not count as references.
+ * Exits 1 for an unreferenced script or a stale allowlist entry, otherwise 0.
  */
 import { execFileSync } from "node:child_process";
 import { basename, dirname } from "node:path";
 
 /**
- * Scripts that are entry points rather than callees. Each needs a reason
- * that says who runs it and when; "it might be useful" is not a reason.
- * The gate fails on a stale entry, so this list cannot rot quietly.
+ * Manual entry points without a repository reference need a reason naming
+ * who runs them and when. Entries fail once referenced or removed.
  */
 const ALLOWLIST: ReadonlyMap<string, string> = new Map();
 
 /**
- * Every git call is rooted at the repo, never at the caller's cwd: the Nx
- * target invokes this through `pnpm --filter`, which runs it from inside a
- * package. A cwd-relative `ls-files scripts` silently scans that package's
- * own `scripts/` directory instead of the workspace one.
+ * Resolve Git paths from the repository root even when invoked inside a
+ * package, where a relative `scripts/` path would inspect the wrong directory.
  */
 // eslint-disable-next-line sonarjs/no-os-command-from-path -- Developer tooling intentionally resolves installed commands through the caller’s PATH.
 const repoRoot = execFileSync("git", ["rev-parse", "--show-toplevel"], {

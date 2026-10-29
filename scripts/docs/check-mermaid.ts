@@ -1,9 +1,6 @@
 /**
- * @file Entry point for `pnpm docs:check:mermaid`. Walks every tree in
- * `MERMAID_ROOTS` for fenced ```mermaid blocks, pipes each through
- * `mmdc`, exits non-zero if any block fails to parse — or if any of them
- * could not be read in the first place.
- * Collection and command execution live in `scripts/docs/mermaid-lint.ts`.
+ * @file Checks documented Mermaid diagrams with the Mermaid CLI.
+ * `pnpm docs:check:mermaid` fails on invalid diagrams or unreadable inputs.
  */
 import { type CommandExecutor, FileSystem, Path } from "@effect/platform";
 import { NodeContext, NodeRuntime } from "@effect/platform-node";

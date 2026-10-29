@@ -1,17 +1,9 @@
 name: Publish images
 
-# Registry, Router, daemon and OpenClaw agent publish native amd64/arm64 indexes
-# on main. Each committed input key sha256:<hex> names inputs-<hex>; releases
-# tag all four indexes (publish.yml). Every service builds with docker buildx
-# from its Dockerfile alone, so the build jobs, which hold the publishing
-# token, install and build nothing on the runner. Platform
-# images and indexes push by digest first. The index is signed with
-# https://github.com/social-harness/moltzap/.github/workflows/images.yml@refs/heads/main
-# and issuer https://token.actions.githubusercontent.com before its input tag
-# is created. Existing input tags are skipped, never retagged; partial reruns
-# converge by building only missing services. Each service publishes from its
-# own two platform digests, so a service whose build fails leaves the others
-# publishing.
+# Publishes signed multi-platform indexes keyed by committed build inputs.
+# Build jobs hold registry credentials, so all installs and compilation stay
+# inside Docker. Sign each digest before exposing its input tag. Existing tags
+# remain immutable, and each service can finish independently on a partial run.
 on:
   push:
     branches: [main]

@@ -1,18 +1,10 @@
 #!/usr/bin/env node
 /**
- * @file Agent-instruction file gate. Every `AGENTS.md` has a sibling
- * `CLAUDE.md`, and that sibling is a symlink to it — never a copy, never an
- * import stub.
+ * @file Checks that each tracked `AGENTS.md` has a sibling `CLAUDE.md` symlink.
  *
- * This exists because the decision it enforces argues that prose drifts and
- * checks do not, and then left its own central claim as prose. A new package
- * with a hand-written `CLAUDE.md` would diverge from its `AGENTS.md` silently,
- * which is the exact failure the symlink was chosen to prevent.
- *
- * Symlinks are compared by their stored target rather than by resolved
- * content, so a copy whose bytes happen to match today still fails.
- *
- * Exit codes: 0 clean, 1 violations (each printed with its remedy).
+ * The stored target must be `AGENTS.md`. Comparing link targets keeps both
+ * hosts on one instruction source even after its contents change.
+ * Exits 0 when all links conform, or 1 with each violation and its remedy.
  */
 import { execFileSync } from "node:child_process";
 import { lstatSync, readlinkSync } from "node:fs";
