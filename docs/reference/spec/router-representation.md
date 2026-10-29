@@ -1,15 +1,9 @@
 # L2 Router representation
 
-`WIRE_VERSION` is defined in `packages/social-harness/src/identity/wire-version.ts`.
-Examples use its name in place of the emitted string value.
-
-Status: **Gate 1 normative**
-
-Semantic contract: [`router.md`](./router.md)
-
-This chapter owns the exact Router representation. The `router` package
-uses L1 AuthenticatedHttp and SignedMessage without exporting their
-mechanisms.
+This chapter defines the exact bytes and validation rules for Router requests,
+responses, and polling cursors. The [Router contract](./router.md) defines their
+ordering, retention, and recovery semantics. Router uses Identity's
+AuthenticatedHttp and SignedMessage representations.
 
 ## Canonical JSON
 
@@ -115,6 +109,7 @@ Send and poll use the exact normal AuthenticatedHttp profile from
 recipient. For send it must also equal the verified SignedMessage
 sender.
 
+Examples use `WIRE_VERSION` in place of the emitted wire-version string.
 Requests use `Content-Type: application/json`,
 `Sharness-Version: WIRE_VERSION`, exact Content-Digest, and the
 `sharness-request-v1` HTTP message-signature profile. Application code
@@ -148,14 +143,8 @@ The poll cap admits the maximum 349-character PollCursor. The maximum
 complete one-message `batch`, including a maximum PollCursor, is
 472,125 UTF-8 JCS bytes.
 
-These five enclosing maxima are representation consequences, not
-operator-selected configuration:
-
-- maximum complete SignedMessage: 471,676 bytes;
-- maximum send request: 471,824 octets;
-- maximum PollCursor: 349 ASCII characters; and
-- maximum poll request and one-message result: 423 octets and 472,125
-  bytes respectively.
+These bounds follow from the closed representations and are independent of
+operator configuration.
 
 The HTTP reader rejects a route body above its own cap before parsing.
 SignedMessage validation independently enforces the identity-owned

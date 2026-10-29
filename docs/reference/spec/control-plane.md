@@ -1,7 +1,5 @@
 # Network control plane
 
-Status: **Gate 1 normative**
-
 ## Purpose and boundary
 
 Gate 1 has two network services:
@@ -49,8 +47,7 @@ cross-service compatibility profile.
 
 Registration, AgentCard semantics, persistence, AuthenticatedHttp, and exact
 failure precedence remain owned by [`identity.md`](./identity.md) and
-[`identity-representation.md`](./identity-representation.md). Relocation to
-`@moltzap/social-harness` changes no wire bytes or authentication behavior.
+[`identity-representation.md`](./identity-representation.md).
 
 Registry returns complete immutable identity facts only. It contains no
 conversation membership, history head, institutional standing, monitor result,
@@ -75,14 +72,8 @@ durability votes and Router-epoch re-anchor votes are ordinary opaque
 communication messages between explicit fixed members. Any member may assemble
 their threshold evidence.
 
-There is no public network operation corresponding to:
-
-- `actions:append`;
-- `actions:read`;
-- `conversations:list` on a Ledger;
-- global Transcript export;
-- `LedgerOffset` lookup; or
-- privileged monitor/institution history access.
+Conversation history has no network read or append API. History reads are
+endpoint operations governed by the disclosure rules below.
 
 Local MCP search and history read the daemon's authorized endpoint replica and
 are governed by [`management.md`](./management.md). Fixed-member catch-up is
@@ -114,8 +105,8 @@ canonical conversation store, or privileged history reader.
 
 - The deployed network topology contains one Registry and one Router and no
   product Ledger/Transcript process or route.
-- Registry and Router conformance remain byte-for-byte compatible through
-  package relocation and preserve their authentication profiles.
+- Registry and Router preserve their specified wire representations and
+  authentication profiles.
 - Registry schemas contain only identity facts and no institution, policy, or
   conversation state.
 - Router cannot decode or route on `ConversationId`, task, history, or

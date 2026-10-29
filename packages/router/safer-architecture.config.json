@@ -24,7 +24,7 @@
     {
       "folder": "router",
       "maxChildren": 9,
-      "reason": "The Router implementation keeps contract, RPC, HTTP, send, poll, feed, cursor, waiters, and process as the cohesive boundaries of one independently runnable service"
+      "reason": "The feed state, authenticated operations, continuation handling, and listener configuration form one independently runnable service"
     }
   ],
   "facadeFiles": [

@@ -10,7 +10,12 @@ class RouterModuleLoadError extends Data.TaggedError("RouterModuleLoadError")<{
   readonly message: string;
 }> {}
 
-/** Internal Identity capabilities stay within the Router process boundary. */
+/**
+ * Starts a fixture process with explicit emitted, live and history versions
+ * and the ordinary Router environment settings. The `sharness-test` condition
+ * is required. Startup failure is reported to stderr with a nonzero exit code.
+ * Internal resolution remains scoped to Router-owned modules.
+ */
 export function startRouter(versions: {
   readonly emitted: string;
   readonly live: readonly string[];

@@ -17,7 +17,7 @@ const versionAndKind = <const Kind extends string>(kind: Kind) => ({
   kind: Schema.Literal(kind),
 });
 
-export const canonicalIdentifier = <const Name extends string>(
+const canonicalIdentifier = <const Name extends string>(
   name: Name,
   prefix: string,
 ) =>

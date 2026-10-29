@@ -1,4 +1,8 @@
-/** @file Store assembly behind the store's index.ts entrypoint. */
+/**
+ * @file Atomic persistence for one daemon. The store owns byte bindings,
+ * transaction boundaries, and durable ordering; callers verify signatures
+ * and interpret protocol and runtime values before storing them.
+ */
 
 import { Effect, type Scope } from "effect";
 import type { OutboxTooOldError } from "./database/values.js";
@@ -83,9 +87,9 @@ import {
 export { EndpointStoreError };
 
 /**
- * Reads, without writing, whether opening the store in a state directory
- * creates an empty store, which leaves the daemon unregistered, or reopens the
- * current one.
+ * Reports whether opening the state directory creates, reopens, or migrates
+ * its store without changing it. Creating a store leaves the daemon
+ * unregistered.
  *
  * @param stateDirectory Exclusive persistent state directory.
  * @returns How `openEndpointStore` will open the store.

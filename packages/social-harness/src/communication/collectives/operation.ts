@@ -1,78 +1,12 @@
 /**
- * @file Collective operations over the post envelope.
+ * @file Collective operations over certified posts, one instance per active
+ * identity. The daemon classifies each remote post into a host item or consumes
+ * it as protocol traffic. A post without a collective part is a multicast.
  *
- * The daemon holds one `CollectiveOperations` per active identity. It turns
- * each send into the posts its operation certifies and each certified remote
- * post into the item the subscriber receives, or consumes it. Every post an
- * endpoint authors carries its operation as an explicit collective part, so
- * each certified post says which operation it belongs to; a post without a
- * collective part reads as multicast, the operation an omitted `op` names.
- *
- * Collective state lives in daemon memory: an operation open at a daemon
- * restart is lost, and a request whose delivery the member already
- * acknowledged can no longer be answered after one.
- *
- * ```mermaid
- * sequenceDiagram
- *   participant RM as Requester host
- *   participant RE as Requester endpoint
- *   participant ME as Member endpoint
- *   participant MM as Member host
- *   RM->>RE: send gather to, question, deadline, schema
- *   RE->>RE: validate schema, resolve every member, refuse an address error before any post
- *   RE->>RE: mint id, deadline = now + duration
- *   RE->>ME: one request post in each member's direct conversation
- *   alt every request post is refused
- *     RE-->>RM: error naming each member and its reason
- *   else otherwise, after at most 20 s
- *     RE-->>RM: operation id
- *     RE->>RE: a refused member is no-answer, a pending one settles later, no-answer at the deadline
- *   end
- *   ME->>MM: collectiveRequest item
- *   MM->>ME: send collectiveResponse to the requester, action, content
- *   ME->>ME: match the request open in that conversation, validate content against its schema
- *   ME->>RE: response post in the direct conversation
- *   RE->>RE: consume, validate and record the answer
- *   Note over RE: complete when every member has an outcome, or at the deadline
- *   RE->>RM: collectiveResult item
- * ```
- *
- * An all_gather asks a group in its own conversation. Every member endpoint
- * consumes the answers it sees there, so no model sees a peer's answer before
- * the close, and builds its result from exactly the answers the requester's
- * close lists.
- *
- * ```mermaid
- * sequenceDiagram
- *   participant RM as Requester host
- *   participant RE as Requester endpoint
- *   participant ME as Member endpoints
- *   participant MM as Member hosts
- *   RM->>RE: send all_gather to group, question, deadline, schema
- *   RE->>RE: validate schema, resolve every member, refuse an address error before any post
- *   RE->>ME: one request post in the group conversation
- *   alt the group post is refused or not certified in time
- *     RE-->>RM: error naming every member with the post's reason
- *   else the deadline completes it before its post certifies
- *     RE-->>RM: operation id, its result stands
- *   else request post certified
- *     RE-->>RM: operation id
- *   end
- *   ME->>MM: collectiveRequest item
- *   MM->>ME: send collectiveResponse to the group, action, content
- *   ME->>ME: match the request open in the group, validate content against its schema
- *   ME->>RE: response post to the group
- *   ME->>ME: peer response posts, consumed and recorded by record hash
- *   Note over RE: complete when every member has an outcome, or at the deadline
- *   RE->>ME: close post listing the counted answers' record hashes
- *   alt the close is not certified
- *     RE->>RM: operationFailed item, and members get no result
- *   else close certified
- *     RE->>RM: collectiveResult item
- *     ME->>ME: build the result from exactly the listed answers
- *     ME->>MM: collectiveResult item, the same outcomes
- *   end
- * ```
+ * Collective state lives in daemon memory. A restart loses open operations
+ * and the answer context of requests whose delivery was already acknowledged.
+ * An all_gather keeps peer answers from the model until the requester certifies
+ * a close; each endpoint builds its result from exactly the listed records.
  */
 
 import {
@@ -183,8 +117,8 @@ type CollectingValue = Extract<
 type CloseValue = Extract<CollectiveValue, { readonly kind: "close" }>;
 
 /**
- * The longest single sleep a deadline timer takes. A JavaScript timer longer
- * than about 24.8 days never fires, so a longer deadline is reached in steps.
+ * Keep each sleep below the JavaScript timer limit, so a long deadline cannot
+ * overflow to an immediate wake-up.
  */
 const DEADLINE_TIMER_STEP = Duration.days(1);
 

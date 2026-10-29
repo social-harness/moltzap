@@ -155,12 +155,11 @@ export interface CertifiedPost {
 /** The daemon's collective layer for one active identity. */
 export interface CollectiveOperations {
   /**
-   * Perform one send. A gather completes once its request posts are
-   * settled, recording each member it did not reach as no-answer, and
-   * fails naming every member only when it reached none; an all_gather
-   * completes once its group post is certified. A response answers the one
-   * request open in the conversation its address names, validated against
-   * that request's schema.
+   * Return a gather's id after the bounded request wait; pending posts keep
+   * certifying. An all_gather waits for its group post to certify unless
+   * its deadline already completed the operation. Multicasts and responses
+   * wait for their post's certification. A response must match an open
+   * request in its conversation and satisfy that request's schema.
    */
   readonly send: (
     input: SendInput,

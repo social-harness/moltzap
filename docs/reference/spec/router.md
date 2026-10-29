@@ -1,10 +1,5 @@
 # Router: opaque globally ordered multicast
 
-Status: **Gate 1 normative**
-
-Exact representation:
-[`router-representation.md`](./router-representation.md)
-
 ## Purpose and boundary
 
 Router accepts one attributed SignedMessage, places it in one global Router
@@ -49,27 +44,20 @@ Router application.
 
 ## Public package boundary
 
-Social Harness packages publish to npm under the `@moltzap` scope.
-`@moltzap/social-harness/service` exports these Router values:
+The library exposes the Router client through
+`@moltzap/social-harness/service`. The private `@moltzap/router/server` entry
+owns process composition. The
+[library entry contract](./layer-interfaces.md#library-entries) defines their
+consumers and resolution conditions. Build the generated
+TypeScript reference using the
+[API reference instructions](../../guides/contributing.mdx#documentation)
+for signatures, request and result types, and caller obligations.
 
-- the same-named Effect Schema values and TypeScript types
-  `RouterInstanceId`, `SignedMessageDigest`, `PollCursor`,
-  `RouterSendRequest`, `RouterSendResult`, `RouterPollRequest`, and
-  `RouterPollResult`;
-- the `Router` deep capability; and
-- `RouterConnectionError`, `RouterRequestTimeoutError`, and
-  `RouterInvalidResponseError`.
+Router consumes identity values, signed artifacts, signing authority, and
+shared HTTP errors from the library. Its client exposes no private order,
+server state, cursor plaintext, or transport implementation.
 
-The private `@moltzap/router/server` entry exports only `RouterServer`, including its
-nested `StartupError`. Router consumes identity values, signed
-artifacts, signing authority, and shared HTTP errors from
-`@moltzap/social-harness`; it does not redeclare or re-export aliases for
-them.
-
-There is no public Router order, delivery wrapper, client class,
-server class, configuration type, options type, RPC group, middleware
-tag, HTTP adapter, cache, nonce store, waiter, ring entry, or cursor
-plaintext type.
+### Client failures
 
 Each Router client-only error is an empty `Data.TaggedError` whose
 `_tag` is exactly its class name. It declares no `message`, code,
@@ -109,72 +97,13 @@ The Router exposes:
 All JSON and HTTP representation details are owned by
 `router-representation.md` and L1 AuthenticatedHttp.
 
-## Effect capability and private RPC
+<a id="effect-capability-and-private-rpc"></a>
 
-`Router` is the package-root `Context.Tag` deep capability. Its static
-accessors have these exact public signatures:
+## Authenticated operation boundary
 
-```ts
-Router.send(input: {
-  readonly request: RouterSendRequest
-  readonly callerAgentId: AgentId
-  readonly signingAuthority: AgentSigningAuthority
-}): Effect.Effect<
-  RouterSendResult,
-  MalformedRequestError
-    | AuthenticationFailedError
-    | RouteNotFoundError
-    | MethodNotAllowedError
-    | VersionMismatchError
-    | PayloadTooLargeError
-    | UnsupportedMediaTypeError
-    | OverloadedError
-    | UnavailableError
-    | InternalServerError
-    | RouterConnectionError
-    | RouterRequestTimeoutError
-    | RouterInvalidResponseError
-    | AgentSigningError,
-  Router
->
-
-Router.poll(input: {
-  readonly request: RouterPollRequest
-  readonly callerAgentId: AgentId
-  readonly signingAuthority: AgentSigningAuthority
-}): Effect.Effect<
-  RouterPollResult,
-  MalformedRequestError
-    | AuthenticationFailedError
-    | RouteNotFoundError
-    | MethodNotAllowedError
-    | VersionMismatchError
-    | PayloadTooLargeError
-    | UnsupportedMediaTypeError
-    | OverloadedError
-    | UnavailableError
-    | InternalServerError
-    | RouterConnectionError
-    | RouterRequestTimeoutError
-    | RouterInvalidResponseError
-    | AgentSigningError,
-  Router
->
-```
-
-The production client construction member is exactly:
-
-```ts
-Router.layer(input: {
-  readonly origin: URL
-  readonly sendTimeout: Duration.Duration
-  readonly pollTimeout: Duration.Duration
-}): Layer.Layer<Router, never, HttpClient.HttpClient>
-```
-
-The layer snapshots its URL and durations. There is no public
-`RouterClient`, client-options type, configuration type, service
-interface, signer key, AgentCard, or cursor-key input.
+The Router client snapshots its origin and call deadlines when constructed.
+Every send and poll authenticates independently with the caller's signing
+identity. Endpoints own retransmission and recovery.
 
 The server subpath exports `RouterServer.layer` as a constant
 `Layer.Layer<never, RouterServer.StartupError>`. The startup error is
@@ -190,12 +119,9 @@ and AgentCard reach the handler without a second lookup, and middleware
 or handler failures remain in the typed `E` channel through the HTTP
 adapter. Closed Router refusals remain values in `A`.
 
-The private adapter uses `RpcServer.makeNoSerialization` and
-`RpcClient.makeNoSerialization` for correlation and typed exits.
-Effect Schema still validates every network request and result.
-Production exposes only the named HTTP routes: it has no `/rpc`,
-JSON-RPC, NDJSON, `RpcSerialization`, exported RPC group, or exported
-middleware tag. Health remains a direct route outside RPC.
+The process exposes only the named HTTP routes. Health remains outside the
+required registered-agent middleware. There is no public RPC group,
+middleware tag, or alternate RPC endpoint.
 
 ## Send
 
@@ -353,9 +279,9 @@ as cursor advancement.
 ### Omitted cursor
 
 An omitted PollCursor atomically snapshots the current tail and returns an
-immediate empty batch anchored at that tail. A newly started endpoint uses
-this only after reconciling its local certified heads and any required
-fixed-member catch-up.
+immediate empty batch anchored at that tail. Endpoints coordinate this anchor
+with recovery under the
+[conversation-history contract](./conversation-history.md#catch-up-and-router-restart).
 
 The empty batch reveals the current RouterInstanceId and gives the endpoint
 the instance it binds into new communication evidence and subsequent
@@ -396,15 +322,13 @@ keeps no per-recipient retention index.
 
 ## Feed gap and restart recovery
 
-After `feed_gap`, an endpoint:
-
-1. abandons incomplete volatile protocol folds;
-2. verifies its local certified heads and automatically catches up missing
-   ancestry from authenticated fixed-member peers;
-3. resumes eligible protocol work only from a verified certified head; and
-4. anchors polling with an omitted PollCursor.
-
-Router performs none of those endpoint steps.
+After `feed_gap`, an endpoint must abandon incomplete volatile protocol folds,
+verify its local certified heads, and catch up missing ancestry from
+authenticated fixed-member peers. It resumes eligible protocol work only
+from a verified certified head. The
+[conversation-history contract](./conversation-history.md#catch-up-and-router-restart)
+owns the recovery sequence, including how polling anchors relate to catch-up.
+Router performs none of that recovery.
 
 Router restart invalidates every old PollCursor. An endpoint learns the new
 instance from an omitted-cursor batch or a `router_restarted` send result.
@@ -435,15 +359,11 @@ network planes and is not a Router push channel.
 
 ## Configuration
 
-The Router process defines one private `Config.all` value.
-`Schema.Config` decodes and refines every declared value,
-`Config.withDefault` owns defaults, and configuration failure becomes
-`RouterServerStartupError` with phase `configuration`. The executable
-supplies `ConfigProvider.fromEnv`; tests use
-`ConfigProvider.fromMap`; embedded composition may supply another
-provider. Other unrelated and unused entries are ignored. There is
-no custom environment parser, mutable singleton, hot reload, or public
-configuration type.
+Router validates its settings at startup, applies defaults, and ignores
+unrelated entries. Settings remain fixed for the process lifetime. Invalid
+settings fail with `RouterServerStartupError` in phase `configuration`.
+The executable reads the environment; embedded composition and tests may
+supply another Effect ConfigProvider.
 
 The exact Router server environment is:
 
@@ -560,22 +480,6 @@ conversation data and never probes Registry.
 Successfully assigning the maximum private unsigned 128-bit order makes
 health return 503 until process replacement creates a new
 RouterInstanceId and order.
-
-## Invariants
-
-1. Every accepted send has one private global position and identical
-   SignedMessage bytes for every explicit recipient.
-2. Router cannot route on or learn ConversationId.
-3. Each recipient batch is the restriction of one global Router order.
-4. No public Router value exposes that order.
-5. A successful batch reveals the current RouterInstanceId without
-   cursor decoding or a send.
-6. Cursor advancement is entirely client-held.
-7. Router provides no durable recovery guarantee.
-8. Router restart is observable and rejects old-instance sends; an existing
-   conversation resumes only after endpoint quorum re-anchor.
-9. Re-reading a retained batch is permitted and does not create a
-   second communication fact.
 
 ## Acceptance criteria
 

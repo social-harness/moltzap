@@ -129,11 +129,9 @@ interface ProtocolHarness {
 
 const MEMBER_COUNT = 4;
 /**
- * Bounds a hang in one protocol trace; no assertion depends on it. A trace
- * certifies up to three N4 posts, each about 1,230 WebCrypto calls of
- * signing, sealing and verifying, and these slow with machine load: the
- * slowest traces took up to 11.5 s at a load average of 21 to 29 on 8 cores
- * and 15.3 s at 50 to 58. The bound is about four times the slowest.
+ * Bounds a hang while several N4 posts are signed, sealed, and verified.
+ * Cryptographic work slows with machine load; no assertion depends on this
+ * timeout.
  */
 const TEST_TIMEOUT_MS = 60_000;
 
@@ -1187,11 +1185,6 @@ function restartSendsItsCopyBeforeVotingForARecordItsStoreRefused() {
  * member 4's fold takes the refused record or its promotion ahead of the
  * store's commit, so the copy finds the post staged or certified only in
  * memory and draws no copy or no vote from member 4.
- * Value: protects=a refused whole record installs neither its record nor its
- *     promotion in the live fold;
- *     fails_when=the fold install runs before applyCertifiedRecord commits;
- *     why_new=refusal test checks only restart state; seam=none.
- * @returns Completion once member 4's answer to the copy is checked.
  */
 function stagesFromALaterCopyARecordItsStoreRefusedWhole() {
   return Effect.gen(function* () {

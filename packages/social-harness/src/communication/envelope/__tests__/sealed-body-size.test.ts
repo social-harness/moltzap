@@ -73,14 +73,6 @@ it(
   KEY_AGREEMENT_HEAVY_TIMEOUT_MS,
 );
 
-/**
- * Value: protects=the reported largest plaintext seals within the body cap,
- * one more byte exceeds it, and the largest body signs and opens at 1, 2,
- * and 128 recipients; fails_when=open's recipient-entry bound or body
- * decoding refuses a body seal produces at the size or recipient limit;
- * why_new=no other test opens a body sealed to 128 recipients or a body at
- * the size limit; seam=none.
- */
 it.each([1, 2, 32, 128])(
   "seals and opens the reported largest plaintext for %i recipients within the body cap, and one more byte exceeds it",
   (recipientCount) =>

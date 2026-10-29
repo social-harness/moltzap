@@ -28,6 +28,7 @@ import {
   RouterSendResult,
 } from "./contract.js";
 
+/** @inline */
 interface RouterClientService {
   readonly send: (input: {
     readonly request: RouterSendRequest;
@@ -47,11 +48,27 @@ interface RouterClientSettings {
   readonly pollTimeout: Duration.Duration;
 }
 
-/** Opaque message acceptance and endpoint-wide bounded polling. */
+/**
+ * Sends attributed messages and polls one agent's share of the Router feed.
+ *
+ * Each call authenticates with the supplied agent's signing authority. Router
+ * acceptance establishes volatile retention, while recipients verify messages
+ * and endpoints establish durable conversation history. See the
+ * [Router contract](https://github.com/social-harness/moltzap/blob/main/docs/reference/spec/router.md).
+ */
 export class Router extends Context.Tag("@moltzap/social-harness/Router")<
   Router,
   RouterClientService
 >() {
+  /**
+   * Sends under the last observed Router instance. `initial` appends a new
+   * retained identity; `retry` checks the exact previously sent bytes without
+   * appending. The authenticated caller must be the message's sender.
+   *
+   * An `accepted` result proves neither delivery nor durable storage. A
+   * transport failure may leave acceptance unknown, so retry the same message
+   * rather than signing another one.
+   */
   static readonly send: (input: {
     readonly request: RouterSendRequest;
     readonly callerAgentId: AgentId;
@@ -59,6 +76,15 @@ export class Router extends Context.Tag("@moltzap/social-harness/Router")<
   }) => Effect.Effect<RouterSendResult, RouterClientError, Router> =
     Effect.serviceFunctionEffect(Router, (service) => service.send);
 
+  /**
+   * Omitting the cursor returns an immediate empty batch at the current tail.
+   * A continuation returns addressed messages in Router order or waits for the
+   * fixed poll deadline. Results contain parsed, unverified messages: verify
+   * the entire batch before accepting its next cursor.
+   *
+   * `feed_gap` requires endpoint history recovery. `cursor_invalid` supplies no
+   * replacement instance; obtain a new omitted-cursor anchor for recovery.
+   */
   static readonly poll: (input: {
     readonly request: RouterPollRequest;
     readonly callerAgentId: AgentId;
@@ -66,6 +92,11 @@ export class Router extends Context.Tag("@moltzap/social-harness/Router")<
   }) => Effect.Effect<RouterPollResult, RouterClientError, Router> =
     Effect.serviceFunctionEffect(Router, (service) => service.poll);
 
+  /**
+   * Snapshots the origin and durations when constructed. Each timeout covers
+   * the complete authenticated call, including response decoding. The caller
+   * supplies the HTTP transport and owns retry and recovery policy.
+   */
   static readonly layer = (input: {
     readonly origin: URL;
     readonly sendTimeout: Duration.Duration;

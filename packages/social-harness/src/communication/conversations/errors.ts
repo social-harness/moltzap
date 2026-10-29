@@ -45,7 +45,10 @@ export const sendFailureText: Readonly<Record<SendFailure, string>> = {
     "the send did not complete; the message may or may not have been sent",
 };
 
-/** One field that failed validation: where it is and what it should be. */
+/**
+ * A field path and schema expectation, without the rejected value.
+ * @inline
+ */
 export interface ValidationIssue {
   readonly path: ReadonlyArray<string | number>;
   readonly message: string;
@@ -90,6 +93,7 @@ export class SendError extends Data.TaggedError("SendError")<{
   }
 }
 
+/** @inline */
 type ListenFailure =
   | "already-listening"
   | "consumer-revoked"

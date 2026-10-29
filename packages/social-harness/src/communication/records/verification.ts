@@ -374,8 +374,7 @@ export const verifyActionProposal = (input: {
   }).pipe(Effect.withSpan("verifyActionProposal"));
 
 /**
- * The caller has verified `actionHash` against `action`;
- * the verifyActionCertificate span name preserves trace continuity.
+ * The caller has already verified `actionHash` against `action`.
  */
 const verifyActionCertificateEvidence = (input: {
   readonly actionHash: ActionHash;

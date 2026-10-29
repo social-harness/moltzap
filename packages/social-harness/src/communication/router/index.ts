@@ -521,6 +521,17 @@ const stateMatches = (
   state.generation === generation &&
   state.anchor.routerInstanceId === routerInstanceId;
 
+/**
+ * Accept each verified input durably before advancing the cursor. Callbacks
+ * queue network work for the worker; they do not transmit while this ordered
+ * batch holds the state gate.
+ * @param runtime The worker's state gate and durable acceptance callbacks.
+ * @param snapshot The active generation when polling began.
+ * @param result The batch whose cursor follows the verified inputs.
+ * @param verified Authenticated inputs in batch order, with none left unchecked.
+ * @returns Completion after acceptance and cursor advancement, or no change if
+ * the generation became obsolete.
+ */
 const commitBatch = <Payload>(
   runtime: RouterWorkerRuntime<Payload>,
   snapshot: RouterWorkerActiveState,
@@ -535,8 +546,6 @@ const commitBatch = <Payload>(
       ) {
         return;
       }
-      // Accept callbacks are durable state transitions. Network consequences
-      // are queued for the worker after this ordered batch commit.
       yield* Effect.forEach(
         verified,
         (ingress) => acceptVerified(runtime, ingress, result.routerInstanceId),
@@ -797,9 +806,10 @@ const makeWorker = <Payload>(
           : Effect.fail(new RouterWorkerUnavailableError()),
       ),
     ),
-    // `changes` replays the current state, so a worker that attaches between
-    // a caller's probe and this wait still answers immediately; the stream
-    // never ends, so an empty head is a defect rather than a failure.
+    /**
+     * State replay covers attachment between a caller's probe and this wait.
+     * The stream never ends, so an empty head is a defect.
+     */
     awaitAnchor: runtime.state.changes.pipe(
       Stream.filterMap(activeAnchor),
       Stream.runHead,

@@ -1,10 +1,5 @@
 # Addressed conversation history
 
-`WIRE_VERSION` is defined in `packages/social-harness/src/identity/wire-version.ts`.
-Examples use its name in place of the emitted string value.
-
-Status: **cutover normative**
-
 This chapter defines Client-owned fixed-member conversation identity,
 certified post history, durability, catch-up, Router re-anchoring, and durable
 host delivery. Registry and Router remain unaware of every value in this
@@ -16,7 +11,7 @@ chapter except the outer signed Router message.
 fixed member stores and verifies its own copy. There is no product Ledger,
 central conversation index, or per-recipient Router record.
 
-The semantic Client surface exposes addresses and posts. Private
+The semantic Client surface exposes addresses and collective operations. Private
 `ConversationId`, membership hashes, anchors, action hashes, record hashes,
 signatures, durability votes, and delivery tokens never cross
 `HarnessEndpoint`.
@@ -51,16 +46,11 @@ one private conversation identity and one group address at every member.
 There is no group name, directory, invitation, duplicate instance, add,
 remove, rename, or leave operation.
 
-## Exact closed values
-
-The historical START, BEGIN, ACK, and MULTICAST values formerly referenced by
-this stable anchor are superseded and intentionally absent from the current
-protocol. The current [closed schema vocabulary](#closed-schema-vocabulary)
-owns their replacements: GENESIS and POST actions, signed proposal and action
-statements, certified records, dissemination evidence, and recovery values.
+<a id="exact-closed-values"></a>
 
 ## Closed schema vocabulary
 
+Examples use `WIRE_VERSION` in place of the emitted wire-version string.
 Every Client protocol value is decoded by a closed Effect Schema with
 `exact: true` and `onExcessProperty: "error"`. Every object below has exactly
 the listed required fields. Each versioned object carries a retained-history
@@ -472,8 +462,11 @@ member that signs only after a resend sends its signature, record, and vote
 once, so they stay within the `3n`.
 
 A record becomes locally certified only after the store atomically promotes
-its staged core and valid `q(n)` durability votes. Semantic send succeeds only
-after the returning endpoint holds that complete certified record.
+its staged core and valid `q(n)` durability votes. A post is complete only
+after the endpoint holds that complete certified record. Host sends return
+at the [operation-specific boundary](harness/client.md#operations): a
+multicast or response waits for local certification, while a gather can
+return its operation id with request posts still pending.
 
 For `n>=4`, assume at most `f=floor((n-1)/3)` Byzantine members and honest
 stage-before-sign. A complete durability certificate then proves at least

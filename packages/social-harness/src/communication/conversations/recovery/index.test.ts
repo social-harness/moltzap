@@ -137,14 +137,9 @@ import { catchUpRetryAttempts } from "./index.js";
 type EngineRouterPort = EndpointEngineInput["routerWorker"];
 
 /**
- * Bounds a hang in one recovery trace; no assertion depends on it. A trace
- * signs, seals to every member and verifies each envelope it exchanges, from
- * about 50 WebCrypto calls for a restart to about 1,500 for an N4 trace with a
- * holder, and these slow with machine load. Beside a looping client unit
- * suite on 8 cores, the slowest trace per run took 7.6 s to 20.4 s; the
- * 20.4 s run saw a 1-minute load average of 34 to 40. At a load average of 67
- * to 83, one trace ran past 30 s. CI runs one suite, at far lower load. The
- * bound is twice 30 s.
+ * Bounds a hang while recovery signs, seals, and verifies traffic for every
+ * fixed member. Cryptographic work slows with machine load; no assertion
+ * depends on this timeout.
  */
 const TRACE_TIMEOUT_MS = 60_000;
 
@@ -3478,14 +3473,8 @@ const reanchorByVote: ReanchorRoute = (fixture, run) =>
 /**
  * Both members completed the re-anchor at the endpoint's head while it was
  * down, and the member's catch-up page carries the completion.
- * Value: protects=the superseded proposal's fold is dropped when catch-up,
- * not a vote, completes the re-anchor; fails_when=catch-up adoption sets the
- * anchor without dropping the fold, so the endpoint resends a signature for
- * an action no lock selects; why_new=the locked-head trace otherwise
- * re-anchors only by vote; seam=none.
- * @param fixture Endpoint under restart recovery.
- * @param run The run's queue and its first catch-up request.
- * @returns The hash of the anchor the conversation re-anchored at.
+ * Catch-up adoption must retire the superseded proposal's fold just as vote
+ * completion does, so no signature survives for an action without a lock.
  */
 const reanchorByCatchUp: ReanchorRoute = (fixture, run) =>
   Effect.gen(function* () {
@@ -3707,13 +3696,6 @@ type CompletionArrival = "catch-up" | "relay";
  * a relayed completion is held behind the staged successor; when the retired
  * successor's fold still takes evidence; or when retired rows leave startup a
  * record no lock selects.
- * Value: protects=a conversation re-anchored behind a staged successor can
- * extend its head under the new anchor; fails_when=the staged successor's
- * lock, signatures, record or fold survive the re-anchor; why_new=the
- * locked-head trace has no staged successor, and this endpoint never votes
- * behind one; seam=none.
- * @param arrival How the completed re-anchor reaches the endpoint.
- * @returns The trace, run to completion.
  */
 const retiresAStagedSuccessorWhenAReanchorSelectsItsHead = (
   arrival: CompletionArrival,
@@ -6849,8 +6831,6 @@ const resendsAProposalAMemberDroppedWhileRecovering = () =>
  * A proposal stays open through catch-up on the same Router instance. Time
  * spent fenced exceeds every resend delay without consuming its attempts,
  * so recovery without a re-anchor still releases an identical proposal.
- * `Queue.size(...) === 0` checks the spec rule that nothing is resent during
- * recovery.
  */
 const preservesResendAttemptsWhileFenced = () =>
   Effect.gen(function* () {

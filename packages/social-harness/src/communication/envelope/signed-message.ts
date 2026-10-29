@@ -47,7 +47,10 @@ import { WIRE_PROFILES } from "./wire-profile.js";
 /** Sender-scoped identity of one attributed message. */
 // eslint-disable-next-line @typescript-eslint/naming-convention -- Effect Schemas share the public domain name they decode.
 export const MessageId = canonicalIdentifier("MessageId", "msg_", 16);
-/** Validated nominal value decoded by MessageId. */
+/**
+ * Validated nominal value decoded by MessageId.
+ * @useDeclaredType
+ */
 // eslint-disable-next-line @typescript-eslint/no-redeclare -- The same-named Schema and type form one boundary model.
 export type MessageId = typeof MessageId.Type;
 

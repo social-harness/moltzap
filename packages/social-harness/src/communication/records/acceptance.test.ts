@@ -909,16 +909,10 @@ const buildMaximumArtifact = Effect.gen(function* () {
 const maximumArtifact = Effect.runSync(Effect.cached(buildMaximumArtifact));
 
 /**
- * Bounds a hang in building the largest catch-up page and in each case that
- * checks it; no assertion depends on it. The build issues one identity per
- * member and signs five certificates of one signature per member: GENESIS and
- * POST action and durability certificates, and a re-anchor certificate. The
- * cases verify the page or seal it to every member. Beside a looping client
- * unit suite on 8 cores, the case that pays for the build took 3.2 s to
- * 11.1 s per run; the 11.1 s run saw a 1-minute load average of 60 to 94. At
- * a load average of 51 to 60, the build once ran past 15 s. Every run saw a
- * load average of 50 or more; CI runs one suite, at far lower load. The bound
- * is twice 15 s.
+ * Bounds a hang while building or checking a maximum-membership page. The
+ * fixture issues every member's identity and signs five complete certificates;
+ * cases then verify the page or seal it to every member. This cryptographic
+ * work slows with machine load; no assertion depends on the timeout.
  */
 const MAXIMUM_PAGE_TIMEOUT_MS = 30_000;
 

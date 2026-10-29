@@ -1,7 +1,7 @@
 {
   "name": "@moltzap/router",
   "version": "2026.1022.0",
-  "description": "Router contracts and representation, Router client and in-memory server",
+  "description": "In-memory Router service for Social Harness",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",

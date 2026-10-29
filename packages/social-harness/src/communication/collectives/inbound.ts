@@ -74,9 +74,10 @@ export type CollectiveMemberOutcome = typeof memberOutcome.Type;
  * The result of a gather this endpoint started, or of an all_gather this
  * endpoint started or was asked: exactly one outcome per member, in member
  * order. `to` is the address the operation named. Every member's all_gather
- * result is built from exactly the answers the requester's close lists, so
- * each endpoint's result is the same. The question is the requester's text,
- * or `withheld` where this endpoint's firewall withheld the request.
+ * result is built from exactly the answers the requester's close lists.
+ * Each endpoint derives the same shared result before its local firewall
+ * projection. The question is the requester's text, or `withheld` where
+ * this endpoint's firewall withheld the request.
  */
 const collectiveResultItem = exactStruct({
   kind: Schema.Literal("collectiveResult"),

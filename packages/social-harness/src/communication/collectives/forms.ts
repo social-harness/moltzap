@@ -171,13 +171,17 @@ export const SendInput = Schema.Union(
     collectiveResponse: CollectiveResponse,
   }),
 ).annotations({ identifier: "SendInput" });
-/** Validated input for one send. */
+/**
+ * Validated input for one send.
+ * @useDeclaredType
+ */
 export type SendInput = typeof SendInput.Type;
 
 /**
  * Where a refused collecting operation or response reports its error:
  * returned to the caller, or emitted as an `operationFailed` item while the
  * send completes.
+ * @inline
  */
 export type FailureDelivery = "result" | "inbound";
 
@@ -360,7 +364,11 @@ export class CollectiveEmitError extends Data.TaggedError(
   "CollectiveEmitError",
 ) {}
 
-/** A question open in a conversation other than the one an answer went to, and where to answer it. */
+/**
+ * A question open in a conversation other than the one an answer went to,
+ * and where to answer it.
+ * @inline
+ */
 export interface OpenElsewhere {
   readonly id: CollectiveId;
   readonly to: AgentAddress | GroupAddress;

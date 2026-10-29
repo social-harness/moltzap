@@ -37,7 +37,7 @@ export interface StoreState {
 
 const DATABASE_NAME = "sharnessd.sqlite3";
 
-/** An absent or empty database is created; the current schema reopens. */
+/** An empty database is created, the current schema reopens, and an admitted older schema migrates. */
 export type StoreOpening = "create" | "reopen" | "migrate";
 
 /**

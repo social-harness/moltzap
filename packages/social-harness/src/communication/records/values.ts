@@ -16,7 +16,7 @@ import {
 } from "../../identity/agents.js";
 import { WIRE_VERSION } from "../../identity/wire-version.js";
 
-/** Order validated agent identities by their decoded key bytes. */
+/** Order validated agent identities by their decoded identifier bytes. */
 export const compareAgentIds: (left: AgentId, right: AgentId) => number =
   compareAgentIdBytes;
 
@@ -38,7 +38,10 @@ export const maximumContentBytes =
   wireProfiles[WIRE_VERSION].maximumContentBytes;
 const utf8Encoder = new TextEncoder();
 
-/** Opaque identity minted for one addressed-send invocation. */
+/**
+ * One author-scoped post identity. Retrying a persisted post reuses it;
+ * a new post receives a fresh identity.
+ */
 export const PostId = Schema.String.pipe(
   Schema.filter((value) => isCanonicalIdentifier("pst_", value), {
     identifier: "PostId",
@@ -47,7 +50,10 @@ export const PostId = Schema.String.pipe(
   Schema.brand("PostId"),
   Schema.annotations({ identifier: "PostId" }),
 );
-/** A validated author-scoped post identity. */
+/**
+ * A validated author-scoped post identity.
+ * @useDeclaredType
+ */
 export type PostId = typeof PostId.Type;
 
 /** A string without lone surrogates, so it survives canonical JSON. */
@@ -85,7 +91,10 @@ export const ContentPart = Schema.Union(
   exactStruct({ type: Schema.Literal("text"), text: wellFormedString }),
   exactStruct({ type: Schema.Literal("data"), value: JsonValue }),
 ).annotations({ identifier: "ContentPart" });
-/** A validated semantic message part. */
+/**
+ * A validated semantic message part.
+ * @useDeclaredType
+ */
 export type ContentPart = typeof ContentPart.Type;
 
 const contentStructure = Schema.NonEmptyArray(ContentPart);
@@ -196,7 +205,10 @@ export const AgentAddress = addressInput.pipe(
   Schema.brand("AgentAddress"),
   Schema.annotations({ identifier: "AgentAddress" }),
 );
-/** A validated direct destination. */
+/**
+ * A validated direct destination.
+ * @useDeclaredType
+ */
 export type AgentAddress = typeof AgentAddress.Type;
 
 /**
@@ -212,12 +224,18 @@ export const GroupAddress = addressInput.pipe(
   Schema.brand("GroupAddress"),
   Schema.annotations({ identifier: "GroupAddress" }),
 );
-/** A validated canonical complete group destination. */
+/**
+ * A validated canonical complete group destination.
+ * @useDeclaredType
+ */
 export type GroupAddress = typeof GroupAddress.Type;
 
 /** Either accepted destination input, including noncanonical group order. */
 export const MessageAddressInput = addressInput;
-/** A validated explicit destination input. */
+/**
+ * A validated explicit destination input.
+ * @useDeclaredType
+ */
 export type MessageAddressInput = typeof MessageAddressInput.Type;
 
 function isCanonicalGroupAddress(value: string): boolean {

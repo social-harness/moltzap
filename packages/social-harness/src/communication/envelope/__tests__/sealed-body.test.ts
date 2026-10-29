@@ -333,11 +333,8 @@ const everyRecipientCardOrderOpens = (
   );
 
 /**
- * Value: protects=seal orders entries by the canonical bytewise AgentId order
- * whatever order the caller lists the cards in; fails_when=seal keeps the
- * caller's order or sorts AgentIds as text; why_new=every other test lists
- * recipients already in canonical order, with AgentIds whose text and byte
- * orders agree; seam=none.
+ * Canonical recipient order is bytewise. These identities reverse their order
+ * when sorted as text, and the caller supplies them in generated orders.
  */
 it(
   "opens for every recipient whatever order the sender lists the recipient cards in",
@@ -365,10 +362,8 @@ it(
 );
 
 /**
- * Value: protects=seal draws a fresh salt per call, so equal plaintexts
- * carry unequal commitments and the digest confirms no guessed plaintext;
- * fails_when=the salt becomes constant or zero; why_new=every round trip and
- * commitment row passes with a constant salt; seam=none.
+ * A fresh salt prevents the commitment from confirming a guessed plaintext;
+ * ordinary round trips also pass with a constant salt.
  */
 it("commits two seals of the same plaintext under different salts", () =>
   Effect.runPromise(
@@ -444,10 +439,8 @@ it.each([
     }),
   },
   /**
-   * Value: protects=open refuses a noncanonical base64url spelling of the
-   * same ciphertext bytes; fails_when=the ciphertext member accepts any
-   * base64url text; why_new=the other ciphertext row changes the decoded
-   * bytes, which content authentication refuses anyway; seam=none.
+   * The ciphertext bytes are unchanged, so content authentication alone cannot
+   * refuse this noncanonical spelling.
    */
   {
     part: "ciphertext spelling",
@@ -457,9 +450,7 @@ it.each([
     }),
   },
   /**
-   * Value: protects=open refuses a noncanonical spelling of the same tag
-   * bytes; fails_when=the tag member checks only its decoded length;
-   * why_new=the other tag row changes the decoded bytes; seam=none.
+   * The tag bytes are unchanged; decoding to the expected length is insufficient.
    */
   {
     part: "authentication tag spelling",
@@ -469,10 +460,8 @@ it.each([
     }),
   },
   /**
-   * Value: protects=open refuses a noncanonical spelling of the same wrapped
-   * key bytes; fails_when=the encrypted_key member checks only its decoded
-   * length; why_new=the other encrypted_key row changes the wrapped key, which
-   * key unwrap refuses anyway; seam=none.
+   * The wrapped key bytes are unchanged, so key unwrapping alone cannot refuse
+   * this noncanonical spelling.
    */
   {
     part: "encrypted_key spelling of the opening recipient",
@@ -489,10 +478,8 @@ it.each([
     }),
   },
   /**
-   * Value: protects=open refuses a noncanonical spelling of the opener's
-   * ephemeral key; fails_when=the epk.x member checks only its decoded length;
-   * why_new=the entry header is outside the authenticated data, so jose opens
-   * the respelled body; seam=none.
+   * The entry header is outside authenticated data. The jose opener accepts
+   * this respelling, so the representation check must refuse it.
    */
   {
     part: "ephemeral-key spelling of the opening recipient",
@@ -514,10 +501,8 @@ it.each([
     }),
   },
   /**
-   * Value: protects=a multi-recipient body opens only when every entry
-   * carries its own ephemeral key; fails_when=the placement check inspects
-   * only the opener's entry, which jose then opens; why_new=the existing
-   * placement tests move every ephemeral key at once; seam=none.
+   * The opener can decrypt its own entry. The representation check must also
+   * require an ephemeral key in every other entry.
    */
   {
     part: "ephemeral-key placement of another recipient's entry",
@@ -695,11 +680,8 @@ it("refuses to open with an AgentCard that does not belong to the authority", ()
   ));
 
 /**
- * Value: protects=open refuses an AgentCard that is not the authority's key
- * even when the entry at that card's position unwraps under the authority;
- * fails_when=open relies on unwrap failure instead of comparing keys;
- * why_new=the other foreign-card test uses an honest body, whose entry the
- * foreign authority cannot unwrap anyway; seam=none.
+ * The foreign card names an entry that decrypts under the supplied authority.
+ * Opening must compare the card and authority keys independently of unwrapping.
  */
 it("refuses a foreign AgentCard whose entry the sender wrapped to the opening authority", () =>
   Effect.runPromise(
@@ -876,12 +858,8 @@ interface ProtectedMembersCase {
 }
 
 /**
- * Value: protects=open refuses a protected header with a member beyond alg,
- * enc, commitment, MessageId, and sender, or a weaker key-wrap algorithm,
- * which jose itself opens; fails_when=the protected-header Schema stops
- * refusing excess members or other algorithms; why_new=the aad row of the
- * body table adds an outer member, and rewriting a sealed header fails
- * content authentication before header exactness is reached; seam=none.
+ * Hand sealing authenticates the altered header. The positive control opens
+ * it with jose, isolating the closed header grammar from content authentication.
  */
 it.each<ProtectedMembersCase>([
   {
@@ -937,12 +915,8 @@ interface HeaderSpellingCase {
 }
 
 /**
- * Value: protects=open accepts only the one header spelling seal produces,
- * which jose opens in every spelling; fails_when=open compares header members
- * or decoded text instead of header bytes; why_new=jose serializes members in
- * object order, so only a hand-built header can carry reordered, spaced,
- * escaped, or repeated members or a byte-order mark, and A256GCM authenticates
- * whatever bytes the sender chose; seam=none.
+ * A256GCM authenticates any header bytes the sender chooses. Hand-built
+ * headers exercise exact spelling separately from successful decryption.
  */
 it.each<HeaderSpellingCase>([
   {
@@ -1043,11 +1017,8 @@ const firstSalt = new Uint8Array(SALT_BYTES).fill(1);
 const secondSalt = new Uint8Array(SALT_BYTES).fill(2);
 
 /**
- * Value: protects=open returns only a plaintext whose salted SHA-256 equals
- * the header commitment, on bodies that jose opens; fails_when=open skips or
- * weakens the commitment check or accepts a salted plaintext shorter than
- * the salt; why_new=every body seal produces commits correctly, so only a
- * hand-built body reaches this check; seam=none.
+ * Hand sealing permits a valid ciphertext with a mismatched commitment or a
+ * truncated salt. Successful jose decryption must not bypass either check.
  */
 it.each<CommitmentCase>([
   {
@@ -1119,11 +1090,8 @@ it.each<CommitmentCase>([
 );
 
 /**
- * Value: protects=no two recipients of one signed sealed body open it to
- * different plaintexts; fails_when=open stops checking the commitment, so a
- * sender's per-entry content keys over a GCM multi-key collision open to two
- * plaintexts; why_new=A256GCM alone accepts this body, as the jose control
- * shows; seam=none.
+ * A256GCM alone accepts this body under two keys and yields different
+ * plaintexts. The commitment must prevent either recipient from accepting it.
  */
 it("refuses a two-key body whose entries wrap different content keys over one colliding ciphertext", () =>
   Effect.runPromise(
@@ -1168,11 +1136,8 @@ interface OuterMessageIdCase {
 }
 
 /**
- * Value: protects=sealed bytes open only inside a SignedMessage that carries
- * the MessageId they were sealed for, so their sender cannot send them again
- * as another message; fails_when=open stops comparing the protected-header
- * MessageId with the verified SignedMessage MessageId; why_new=every other
- * test seals and signs under one MessageId; seam=none.
+ * The sender can sign unchanged sealed bytes under another MessageId. Opening
+ * must bind the protected-header id to the verified outer message.
  */
 it.each<OuterMessageIdCase>([
   {

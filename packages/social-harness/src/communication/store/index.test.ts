@@ -354,12 +354,6 @@ function refusesAReanchorAwayFromAStagedSuccessor() {
  * durability certificate extending it, in this order as in the other. Fails
  * when the store checks only the proposal lock before it keeps the vote, or
  * checks the re-anchor only for a vote the endpoint casts.
- * Value: protects=no local vote is kept under an anchor this endpoint
- *     re-anchors away from; fails_when=the re-anchor check covers mergeEvidence
- *     but not a whole record's certificate; why_new=no other test stores a
- *     whole record carrying this endpoint's vote under such an anchor;
- *     seam=none.
- * @returns The trace, run to completion.
  */
 function refusesALocalVoteUnderAnAnchorItReanchorsAwayFrom() {
   const directory = stateDirectory();

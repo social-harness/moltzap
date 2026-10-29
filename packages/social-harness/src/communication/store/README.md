@@ -1,12 +1,17 @@
-# Store
+# Changing endpoint persistence
 
-This private folder owns the daemon's one SQLite replica: schema
-compatibility, transactions, and every SQL statement. Conversations keep verified
-protocol history, pending deliveries, outbound Router envelopes, and recovery
-snapshots here. The host inbox and event state are stored as opaque
-canonical bytes, whose meaning `harness/inbox/` owns. The pending-delivery,
-dissemination and outbox queues live in `queues/`.
+A durable operation can join several kinds of state. Record certification can
+also retain a delivery, and an inbox replacement can retain firewall work.
+[Store composition](store.ts) connects these SQL owners through callbacks that
+run in the same transaction. Trace those callback sites when changing an
+operation: its related rows must commit together even when separate modules
+own them. [Dissemination attachment](queues/dissemination.ts) shows how an
+obligation and its outbox envelope share a transaction without either queue
+importing the other.
 
-Conversations, delivery, and the service use `index.ts`. Hosts read only the value
-schemas in `types.ts`, so they never load the SQLite store. Storage modules do
-not cross the public Client boundary.
+Keep interpretation with the caller. [History verification](../conversations/history/stored.ts)
+checks protocol evidence, while the host inbox owns the meaning of its stored
+items. The [store capability](types.ts) describes the atomic operations and
+canonical byte bindings those callers use. The
+[persistence contract](../../../../../docs/reference/spec/conversation-history.md#persistence-and-compatibility)
+governs store compatibility and recovery.

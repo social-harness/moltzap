@@ -29,7 +29,6 @@ export {
   ActionSignatureStatement,
   AnchorBody,
   AnchorHash,
-  canonicalIdentifier,
   CatchUpAttestationStatement,
   CatchUpIncomplete,
   CatchUpItem,
@@ -69,7 +68,6 @@ export {
   maximumMembers,
   MessageAddressInput,
   PostId,
-  wellFormedString,
 } from "./values.js";
 
 export {
