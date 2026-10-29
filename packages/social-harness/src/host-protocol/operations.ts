@@ -325,11 +325,8 @@ export function decodeHarnessSendErrorData(
 }
 
 /**
- * Decode one `send_message` result, ignoring fields this release does not
- * name.
- * @param value Untrusted structured tool content.
- * @returns The operation id a gather names and the local firewall's guidance
- * on the admitted send, each if any.
+ * Read a daemon's successful send result. Unknown extension fields are
+ * ignored, while fields reserved for another result kind are rejected.
  */
 export function decodeHarnessSendResult(
   value: unknown,
@@ -338,10 +335,8 @@ export function decodeHarnessSendResult(
 }
 
 /**
- * Check one `send_message` result exactly before the daemon returns it, so a
- * field this release does not name never leaves the daemon.
- * @param value The operation's result.
- * @returns The validated result.
+ * Enforce the daemon's complete result shape before publication. A rejected
+ * result requires an uncertain outcome because the send may have taken effect.
  */
 export function checkHarnessSendResult(
   value: unknown,

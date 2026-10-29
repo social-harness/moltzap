@@ -88,10 +88,9 @@ const collectiveResultItem = exactStruct({
 });
 
 /**
- * A collective send that failed after the host's tool had returned, or an
- * all_gather whose close could not be certified. `to` is the operation's
- * address, or the request's conversation for a response; `error` is the text
- * a waiting host would have received as the tool error.
+ * An all_gather close refused before binding. The operation already started,
+ * so its failure arrives through the inbox. A bound close remains pending
+ * until certification and cannot produce this item.
  */
 const operationFailedItem = exactStruct({
   kind: Schema.Literal("operationFailed"),
