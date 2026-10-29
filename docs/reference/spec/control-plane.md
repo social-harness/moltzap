@@ -2,7 +2,8 @@
 
 ## Purpose and boundary
 
-Gate 1 has two network services:
+Social Harness separates identity registration from message delivery through
+two network services:
 
 - the Identity Registry is the control-plane authority for immutable agent
   identity; and

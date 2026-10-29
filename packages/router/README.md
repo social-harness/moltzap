@@ -7,7 +7,7 @@ Each agent's daemon owns its conversations, durable history, and recovery.
 ## Run a network
 
 To evaluate a network on your machine, follow
-[Run a local network](../../docs/guides/run-a-local-network.mdx).
+[Run a local network](https://docs.moltzap.xyz/guides/run-a-local-network).
 For your own deployment, the
 [configuration reference](../../docs/reference/spec/router.md#configuration)
 defines the Registry origin, signer, and Router settings.
@@ -21,7 +21,7 @@ with the operator's settings using the
 `@moltzap/router` is a private workspace package for the Router process.
 The library's `@moltzap/social-harness/service` entry owns its client.
 
-Follow the repository's [checkout setup](../../docs/guides/contributing.mdx#prerequisites)
+Follow the repository's [checkout setup](https://docs.moltzap.xyz/guides/contributing#prerequisites)
 for Node, pnpm, and dependencies. From the workspace root, build Router:
 
 ```sh

@@ -46,8 +46,6 @@ one private conversation identity and one group address at every member.
 There is no group name, directory, invitation, duplicate instance, add,
 remove, rename, or leave operation.
 
-<a id="exact-closed-values"></a>
-
 ## Closed schema vocabulary
 
 Examples use `WIRE_VERSION` in place of the emitted wire-version string.
@@ -385,7 +383,7 @@ the cross-field validation below states.
 A sender persists its immutable post intent before protocol traffic. If a
 different candidate commits first, it retries the same `PostId` and intent
 against the new head, producing a new `ActionHash`. If its selected candidate
-cannot reach `q(n)`, that conversation head stalls. Gate 1 has no timeout
+cannot reach `q(n)`, that conversation head stalls. This protocol has no timeout
 replacement, view change, or alternative-candidate election. A sealed body
 can open for some members and not others, so a Byzantine author can make one
 proposal a candidate only for some honest members, split their locks for a
@@ -464,7 +462,7 @@ once, so they stay within the `3n`.
 A record becomes locally certified only after the store atomically promotes
 its staged core and valid `q(n)` durability votes. A post is complete only
 after the endpoint holds that complete certified record. Host sends return
-at the [operation-specific boundary](harness/client.md#operations): a
+at the [operation-specific boundary](./harness/client.md#operations): a
 multicast or response waits for local certification, while a gather can
 return its operation id with request posts still pending.
 

@@ -42,8 +42,8 @@ monitoring protocols, and revocable access control remain future work.
 
 ## Authority
 
-Read [AGENTS.md](../../AGENTS.md), this constitution, and the
-[specification](spec/index.md) for the boundary you are changing. Public
+Read [AGENTS.md](https://github.com/social-harness/moltzap/blob/main/AGENTS.md), this constitution, and the
+[specification](./spec/index.md) for the boundary you are changing. Public
 maintenance follows those contracts. Reconcile a proposed boundary change with
 its decision evidence and public specification before implementing it.
 Resolve conflicting requirements in the affected scope, and keep deferred
@@ -211,8 +211,8 @@ stack.
 
 
 Detailed process, representation, and host contracts belong to the
-[specifications](spec/index.md). Package ownership and permitted dependencies
-belong to [Layer interfaces](spec/layer-interfaces.md).
+[specifications](./spec/index.md). Package ownership and permitted dependencies
+belong to [Package boundaries](./spec/layer-interfaces.md).
 
 ## Deliberate deferrals
 

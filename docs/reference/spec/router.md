@@ -97,8 +97,6 @@ The Router exposes:
 All JSON and HTTP representation details are owned by
 `router-representation.md` and L1 AuthenticatedHttp.
 
-<a id="effect-capability-and-private-rpc"></a>
-
 ## Authenticated operation boundary
 
 The Router client snapshots its origin and call deadlines when constructed.

@@ -79,8 +79,8 @@ export class Router extends Context.Tag("@moltzap/social-harness/Router")<
   /**
    * Omitting the cursor returns an immediate empty batch at the current tail.
    * A continuation returns addressed messages in Router order or waits for the
-   * fixed poll deadline. Results contain parsed, unverified messages: verify
-   * the entire batch before accepting its next cursor.
+   * fixed poll deadline. Results contain parsed, unverified messages. Verify
+   * the entire batch and durably accept its inputs before advancing the cursor.
    *
    * `feed_gap` requires endpoint history recovery. `cursor_invalid` supplies no
    * replacement instance; obtain a new omitted-cursor anchor for recovery.

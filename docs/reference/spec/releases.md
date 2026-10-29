@@ -33,7 +33,7 @@ Package versions are independent of the wire version, MCP revision, and
 persisted-schema versions. Advancing one does not advance another.
 
 Releases run from `main` through
-[the publish workflow](../../../.github/workflows/publish.yml), with npm
+[the publish workflow](https://github.com/social-harness/moltzap/blob/main/.github/workflows/publish.yml), with npm
 provenance. A merge releases after CI passes when it has a changelog fragment,
 is not a release commit, retains the last release's wire version, and lowers
 no package version. Resets, resumes, and abandoned releases use manual
@@ -66,10 +66,9 @@ emitted version and at most one adjacent version. Registry, Router, and the
 daemon admit every version in that set. Production callers can inspect
 compatibility but cannot configure the live window through the public API.
 
-A wire bump changes only the version value. Type strings, headers, hash
-domains, and representation bounds come from the current `WIRE_PROFILES`
-entry. Changing any of those profile values changes the wire envelope and
-requires a reset.
+A compatible wire bump changes only the version value. Type strings, headers,
+hash domains, and representation bounds remain unchanged. Changing any of
+those values changes the wire envelope and requires a reset.
 
 A compatible bump proceeds as follows:
 
@@ -94,8 +93,7 @@ reject the retired `moltzapVersion` field, including a value that also carries
 A reset establishes fresh wire and storage baselines. It selects a
 `WIRE_VERSION` that no earlier release emitted, initializes the live and
 history sets with only that version, raises the endpoint store's reset
-schema, and starts a new Registry migration ledger. The profile map retains
-one wire profile. `FIRST_POST_RESET_RELEASE` records the release boundary
+schema, and starts a new Registry migration ledger. `FIRST_POST_RESET_RELEASE` records the release boundary
 for compatibility checks.
 
 Peers across the reset reject each other with `version-mismatch`. Older
@@ -139,7 +137,7 @@ Registry and Router tags.
 
 ### Image signatures
 
-The [image workflow](../../../.github/workflows/images.yml) signs each index
+The [image workflow](https://github.com/social-harness/moltzap/blob/main/.github/workflows/images.yml) signs each index
 with cosign keyless before publishing its input tag. Verification requires:
 
 | Attribute | Required value |
@@ -184,5 +182,5 @@ falls before the recorded reset boundary and outside retained history.
 Missing wire metadata at or after that boundary fails. An npm registry outage
 may skip a check only after retries, with an explicit reason. Synthetic signed fixtures test
 decoding and verification but do not establish compatibility with a published
-release. The [integration suites](../../../tests/integration/README.md)
+release. The [integration suites](https://github.com/social-harness/moltzap/blob/main/tests/integration/README.md)
 identify the executable checks.
