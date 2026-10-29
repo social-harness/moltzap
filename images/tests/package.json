@@ -14,7 +14,7 @@
         "executor": "nx:run-commands",
         "options": {
           "cwd": "images/tests",
-          "command": "node --test --test-timeout=600000 *.live.test.ts"
+          "command": "node --conditions=sharness-test --import tsx --test --test-timeout=600000 *.live.test.ts"
         },
         "cache": false,
         "dependsOn": [
@@ -35,13 +35,14 @@
           "command": "eslint . --max-warnings=0"
         }
       }
-    }
+    },
+    "implicitDependencies": [
+      "@moltzap/integration-tests"
+    ]
   },
   "devDependencies": {
-    "@moltzap/registry": "workspace:*",
-    "@moltzap/router": "workspace:*",
-    "@electric-sql/pglite": "catalog:",
-    "@electric-sql/pglite-socket": "catalog:"
+    "@moltzap/integration-tests": "workspace:*",
+    "tsx": "catalog:"
   },
   "files": [
     "package.json"

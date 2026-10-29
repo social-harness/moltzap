@@ -135,9 +135,6 @@ catalogs:
     oxfmt:
       specifier: ^0.7.0
       version: 0.7.0
-    oxlint:
-      specifier: ^0.16.0
-      version: 0.16.12
     protobufjs:
       specifier: 7.6.5
       version: 7.6.5
@@ -234,9 +231,6 @@ importers:
       oxfmt:
         specifier: 'catalog:'
         version: 0.7.0
-      oxlint:
-        specifier: 'catalog:'
-        version: 0.16.12
       puppeteer:
         specifier: 'catalog:'
         version: 24.43.1(@typescript/typescript6@6.0.2)
@@ -262,13 +256,26 @@ importers:
         specifier: workspace:*
         version: link:../../packages/social-harness
 
-  images/nanoclaw-agent: {}
+  images/nanoclaw-agent:
+    devDependencies:
+      '@moltzap/integration-tests':
+        specifier: workspace:*
+        version: link:../../tests/integration
+      tsx:
+        specifier: 'catalog:'
+        version: 4.21.0
 
   images/openclaw-agent:
     devDependencies:
+      '@moltzap/integration-tests':
+        specifier: workspace:*
+        version: link:../../tests/integration
       openclaw:
         specifier: 'catalog:'
         version: 2026.10.3(@aws-sdk/credential-provider-node@3.972.29)(@cfworker/json-schema@4.1.1)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.12.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.12.0(@opentelemetry/api@1.9.1))
+      tsx:
+        specifier: 'catalog:'
+        version: 4.21.0
 
   images/tests:
     dependencies:
@@ -285,18 +292,12 @@ importers:
         specifier: 3.22.1
         version: 3.22.1
     devDependencies:
-      '@electric-sql/pglite':
-        specifier: 'catalog:'
-        version: 0.4.4
-      '@electric-sql/pglite-socket':
-        specifier: 'catalog:'
-        version: 0.1.4(@electric-sql/pglite@0.4.4)
-      '@moltzap/registry':
+      '@moltzap/integration-tests':
         specifier: workspace:*
-        version: link:../../packages/registry
-      '@moltzap/router':
-        specifier: workspace:*
-        version: link:../../packages/router
+        version: link:../../tests/integration
+      tsx:
+        specifier: 'catalog:'
+        version: 4.21.0
 
   packages/registry:
     dependencies:
@@ -2796,46 +2797,6 @@ packages:
 
   '@oxfmt/win32-x64@0.7.0':
     resolution: {integrity: sha512-5XYLd92vJ56PitPuSqxo9uhxHC/FMBQRlenvhoW61UojZ+zjK5u3brIpuK7h7TvqdtSDgyLavvZWl9HIumHfuA==}
-    cpu: [x64]
-    os: [win32]
-
-  '@oxlint/darwin-arm64@0.16.12':
-    resolution: {integrity: sha512-G7phYhlIA4ke2nW7tHLl+E5+rvdzgGA6830D+e+y1RGllT0w2ONGdKcVTj+2pXGCw6yPmCC5fDsDEn2+RPTfxg==}
-    cpu: [arm64]
-    os: [darwin]
-
-  '@oxlint/darwin-x64@0.16.12':
-    resolution: {integrity: sha512-P/LSOgJ6SzQ3OKEIf3HsebgokZiZ5nDuTgIL4LpNCHlkOLDu/fT8XL9pSkR5y+60v0SOxUF/+aN0Q8EmxblrCw==}
-    cpu: [x64]
-    os: [darwin]
-
-  '@oxlint/linux-arm64-gnu@0.16.12':
-    resolution: {integrity: sha512-0N/ZsW+cL7ZAUvOHbzMp3iApt5b/Q81q2e9RgEzkI6gUDCJK8/blWg0se/i6y9e24WH0ZC4bcxY1+Qz4ZQ+mFw==}
-    cpu: [arm64]
-    os: [linux]
-
-  '@oxlint/linux-arm64-musl@0.16.12':
-    resolution: {integrity: sha512-MoG1SIw4RGowsOsPjm5HjRWymisRZWBea7ewMoXA5xIVQ3eqECifG0KJW0OZp96Ad8DFBEavdlNuImB2uXsMwg==}
-    cpu: [arm64]
-    os: [linux]
-
-  '@oxlint/linux-x64-gnu@0.16.12':
-    resolution: {integrity: sha512-STho8QdMLfn/0lqRU94tGPaYX8lGJccPbqeUcEr3eK5gZ5ZBdXmiHlvkcngXFEXksYC8/5VoJN7Vf3HsmkEskw==}
-    cpu: [x64]
-    os: [linux]
-
-  '@oxlint/linux-x64-musl@0.16.12':
-    resolution: {integrity: sha512-i7pzSoj9nCg/ZzOe8dCZeFWyRRWDylR9tIX04xRTq3G6PBLm6i9VrOdEkxbgM9+pCkRzUc0a9D7rbtCF34TQUA==}
-    cpu: [x64]
-    os: [linux]
-
-  '@oxlint/win32-arm64@0.16.12':
-    resolution: {integrity: sha512-wcxq3IBJ7ZlONlXJxQM+7EMx+LX1nkz3ZS3R0EtDM76EOZaqe8BMkW5cXVhF8jarZTZC18oKAckW4Ng9d8adBg==}
-    cpu: [arm64]
-    os: [win32]
-
-  '@oxlint/win32-x64@0.16.12':
-    resolution: {integrity: sha512-Ae1fx7wmAcMVqzS8rLINaFRpAdh29QzHh133bEYMHzfWBYyK/hLu9g4GLwC/lEIVQu9884b8qutGfdOk6Qia3w==}
     cpu: [x64]
     os: [win32]
 
@@ -7667,11 +7628,6 @@ packages:
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
 
-  oxlint@0.16.12:
-    resolution: {integrity: sha512-1oN3P9bzE90zkbjLTc+uICVLwSR+eQaDaYVipS0BtmtmEd3ccQue0y7npCinb35YqKzIv1LZxhoU9nm5fgmQuw==}
-    engines: {node: '>=8.*'}
-    hasBin: true
-
   p-any@4.0.0:
     resolution: {integrity: sha512-S/B50s+pAVe0wmEZHmBs/9yJXeZ5KhHzOsgKzt0hRdgkoR3DxW9ts46fcsWi/r3VnzsnkKS7q4uimze+zjdryw==}
     engines: {node: '>=12.20'}
@@ -11926,30 +11882,6 @@ snapshots:
     optional: true
 
   '@oxfmt/win32-x64@0.7.0':
-    optional: true
-
-  '@oxlint/darwin-arm64@0.16.12':
-    optional: true
-
-  '@oxlint/darwin-x64@0.16.12':
-    optional: true
-
-  '@oxlint/linux-arm64-gnu@0.16.12':
-    optional: true
-
-  '@oxlint/linux-arm64-musl@0.16.12':
-    optional: true
-
-  '@oxlint/linux-x64-gnu@0.16.12':
-    optional: true
-
-  '@oxlint/linux-x64-musl@0.16.12':
-    optional: true
-
-  '@oxlint/win32-arm64@0.16.12':
-    optional: true
-
-  '@oxlint/win32-x64@0.16.12':
     optional: true
 
   '@parcel/watcher-android-arm64@2.5.6':
@@ -17856,17 +17788,6 @@ snapshots:
       '@oxfmt/linux-x64-musl': 0.7.0
       '@oxfmt/win32-arm64': 0.7.0
       '@oxfmt/win32-x64': 0.7.0
-
-  oxlint@0.16.12:
-    optionalDependencies:
-      '@oxlint/darwin-arm64': 0.16.12
-      '@oxlint/darwin-x64': 0.16.12
-      '@oxlint/linux-arm64-gnu': 0.16.12
-      '@oxlint/linux-arm64-musl': 0.16.12
-      '@oxlint/linux-x64-gnu': 0.16.12
-      '@oxlint/linux-x64-musl': 0.16.12
-      '@oxlint/win32-arm64': 0.16.12
-      '@oxlint/win32-x64': 0.16.12
 
   p-any@4.0.0:
     dependencies:

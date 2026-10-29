@@ -19,8 +19,6 @@
   "files": [
     "dist",
     "bin",
-    "LICENSE",
-    "NOTICE",
     "!dist/*.tsbuildinfo"
   ],
   "main": "./dist/index.js",
@@ -39,15 +37,6 @@
   },
   "bin": {
     "sharness-registry": "./bin/sharness-registry"
-  },
-  "scripts": {
-    "build": "nx run @moltzap/registry:build",
-    "typecheck": "nx run @moltzap/registry:typecheck",
-    "typecheck:tests": "nx run @moltzap/registry:typecheck:tests",
-    "test": "nx run @moltzap/registry:test",
-    "test:integration": "nx run @moltzap/registry:test:integration",
-    "lint": "nx run @moltzap/registry:lint",
-    "arch:check": "nx run @moltzap/registry:arch:check"
   },
   "nx": {
     "targets": {

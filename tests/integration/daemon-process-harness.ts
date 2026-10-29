@@ -3,11 +3,7 @@
 import type { startRegistry } from "@moltzap/registry/test";
 import type { startRouter } from "@moltzap/router/test";
 import { FileSystem, HttpClient } from "@effect/platform";
-import {
-  NodeContext,
-  NodeFileSystem,
-  NodeHttpClient,
-} from "@effect/platform-node";
+import { NodeFileSystem, NodeHttpClient } from "@effect/platform-node";
 import {
   Client,
   ProtocolError,
@@ -35,7 +31,6 @@ import {
   Duration,
   Effect,
   Exit,
-  Fiber,
   Option,
   Redacted,
   Ref,
@@ -48,7 +43,6 @@ import { createRequire } from "node:module";
 import { createServer } from "node:net";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect, type TestContext } from "vitest";
 
 type ManagementRegisterRequest = typeof managementRegisterRequestSchema.Type;
 
@@ -97,6 +91,8 @@ export interface ProcessInfrastructure {
    * `RouterInstanceId` and no envelopes, as a redeployed Router does.
    */
   readonly restartRouter: Effect.Effect<void, ProcessTestError>;
+  /** Pauses the current Router until the returned release function is called. */
+  readonly holdRouter: Effect.Effect<() => void>;
   /** Recreates the empty in-memory Registry database and restarts both network services. */
   readonly resetNetwork: Effect.Effect<void, ProcessTestError>;
 }
@@ -174,13 +170,6 @@ const ADMISSION_CREDENTIAL = "client-process-admission";
 const READY_STATUS = 204;
 
 const SHUTDOWN_TIMEOUT = Duration.seconds(5);
-
-/**
- * Daemon finalizers run in parallel within one shutdown timeout. Infrastructure
- * then stops PGlite, Registry and Router; sixty seconds allows interruption
- * and worker scheduling overhead.
- */
-const TEARDOWN_TIMEOUT_MS = 60_000;
 
 /** A live child must become ready within thirty seconds, with logs on failure. */
 const READINESS_TIMEOUT = Duration.seconds(30);
@@ -636,6 +625,7 @@ export const acquireProcessInfrastructureFrom = (
       registrySignerPublicKeyJson,
       temporaryDirectory,
       restartRouter,
+      holdRouter: pauseRouter(router),
       resetNetwork,
     };
   }).pipe(Effect.withSpan("acquireProcessInfrastructureFrom"));
@@ -874,32 +864,6 @@ export const acquireDaemonManagementClient = (
     return managementOperations(client);
   }).pipe(Effect.withSpan("acquireDaemonManagementClient"));
 
-/**
- * The vitest test function of a real-process trace that must assert. A test
- * that times out is failed without waiting for its body, and the worker can
- * exit before an interrupted trace's scope has stopped its children, which
- * then outlive the run. The trace therefore runs as a fiber that an
- * `onTestFinished` hook interrupts, waiting until its scope has stopped every
- * child.
- * @param trace A trace whose scope owns every process it starts.
- * @returns The test function, whose promise settles with the trace.
- */
-export function processTrace<E>(
-  trace: Effect.Effect<void, E, FileSystem.FileSystem | Scope.Scope>,
-) {
-  return (context: TestContext) => {
-    expect.hasAssertions();
-    const fiber = Effect.runFork(
-      Effect.scoped(trace).pipe(Effect.provide(NodeContext.layer)),
-    );
-    context.onTestFinished(
-      () => Effect.runPromise(Fiber.interrupt(fiber).pipe(Effect.asVoid)),
-      TEARDOWN_TIMEOUT_MS,
-    );
-    return Effect.runPromise(Fiber.join(fiber));
-  };
-}
-
 function startNetworkRegistry(
   input: Effect.Effect.Success<typeof prepareInfrastructure>,
   binaries: NetworkBinaries,
@@ -1050,5 +1014,16 @@ function startPglite(port: number) {
     Effect.tap((running) =>
       awaitReady(running, pgliteListening(running, port), "listening"),
     ),
+  );
+}
+
+function pauseRouter(router: Ref.Ref<RunningProcess>) {
+  return Ref.get(router).pipe(
+    Effect.map((running) => {
+      running.child.kill("SIGSTOP");
+      return () => {
+        running.child.kill("SIGCONT");
+      };
+    }),
   );
 }

@@ -28,9 +28,9 @@ import {
   type FirewallMode,
   makeDaemonProcessFixture,
   makeRegistrationRequest,
-  processTrace,
 } from "./daemon-process-harness.js";
 import { registrationResultKind } from "./expected-contracts.js";
+import { processTrace } from "./process-trace.js";
 import {
   acquireRouterHoldProxy,
   type RouterHoldProxy,

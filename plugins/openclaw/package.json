@@ -33,8 +33,6 @@
     }
   },
   "scripts": {
-    "build": "nx run @moltzap/openclaw-channel:build",
-    "lint": "nx run @moltzap/openclaw-channel:lint",
     "test": "vitest run",
     "typecheck:tests": "tsc -p tsconfig.test.json"
   },

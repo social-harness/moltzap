@@ -34,7 +34,7 @@ export interface Participant {
  * Acquires the endpoint of `fixture`'s running daemon and queues every
  * delivery its subscription receives.
  */
-const joinParticipant = (fixture: DaemonProcessFixture) =>
+export const joinParticipant = (fixture: DaemonProcessFixture) =>
   Effect.gen(function* () {
     const endpoint = yield* acquireHarnessEndpoint(fixture.endpoint);
     const inbox = yield* Queue.unbounded<InboundDelivery>();
@@ -43,9 +43,10 @@ const joinParticipant = (fixture: DaemonProcessFixture) =>
       Effect.forkScoped,
     );
     return { address: directAddress(fixture.agentName), endpoint, inbox };
-  });
+  }).pipe(Effect.withSpan("joinParticipant"));
 
-const registerFixture = (fixture: DaemonProcessFixture) =>
+/** Registers one running daemon through its management endpoint. */
+export const registerFixture = (fixture: DaemonProcessFixture) =>
   Effect.scoped(
     acquireDaemonManagementClient(fixture.endpoint).pipe(
       Effect.flatMap((management) =>

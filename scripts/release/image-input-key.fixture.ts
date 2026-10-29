@@ -153,8 +153,47 @@ export function key(repo: string): string {
   return Effect.runSync(imageInputs(repo, ["router"])).router?.key ?? "";
 }
 
+/** The Client manifest every fixture commits. */
+export function clientManifest(): string {
+  return JSON.stringify({
+    name: "@fixture/core",
+    version: "1",
+    files: [
+      "dist",
+      "!dist/tsconfig.tsbuildinfo",
+      "bin",
+      "LICENSE",
+      "NOTICE",
+      "assets",
+      "!assets/drafts",
+    ],
+    scripts: { lint: "node src/daemon/run.ts" },
+    nx: {
+      targets: {
+        build: {
+          options: {
+            cwd: ".",
+            command: "node tools/image-task.ts && node scripts/build/image.ts",
+          },
+        },
+      },
+    },
+    exports: {
+      ".": { types: "./dist/index.d.ts", default: "./dist/index.js" },
+      "./service": { import: "./dist/daemon/run.js" },
+      "./test": { "sharness-test": { import: "./dist/test.js" } },
+      "./internal": {
+        "sharness-internal": {
+          types: "./dist/internal.d.ts",
+          import: "./dist/internal.js",
+        },
+      },
+    },
+  });
+}
+
 /** Committed build, runtime, and unreachable inputs for the image-key contracts. */
-export function fixtureFiles(
+function fixtureFiles(
   lock: string,
   dockerfile: string,
 ): Record<string, string> {
@@ -199,45 +238,6 @@ export function fixtureFiles(
     "packages/social-harness/src/test.ts": "export const testOnly = 1;\n",
     "packages/social-harness/src/daemon/run.ts": "export const daemon = 1;\n",
   };
-}
-
-/** The Client manifest every fixture commits. */
-export function clientManifest(): string {
-  return JSON.stringify({
-    name: "@fixture/core",
-    version: "1",
-    files: [
-      "dist",
-      "!dist/tsconfig.tsbuildinfo",
-      "bin",
-      "LICENSE",
-      "NOTICE",
-      "assets",
-      "!assets/drafts",
-    ],
-    scripts: { lint: "node src/daemon/run.ts" },
-    nx: {
-      targets: {
-        build: {
-          options: {
-            cwd: ".",
-            command: "node tools/image-task.ts && node scripts/build/image.ts",
-          },
-        },
-      },
-    },
-    exports: {
-      ".": { types: "./dist/index.d.ts", default: "./dist/index.js" },
-      "./service": { import: "./dist/daemon/run.js" },
-      "./test": { "sharness-test": { import: "./dist/test.js" } },
-      "./internal": {
-        "sharness-internal": {
-          types: "./dist/internal.d.ts",
-          import: "./dist/internal.js",
-        },
-      },
-    },
-  });
 }
 
 /** The daemon seeds both runtime dependencies; the host builds from its own context. */

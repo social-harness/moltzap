@@ -5,13 +5,14 @@
  * PGlite server, Registry and Router a run network hosts, the Registry on the
  * single PostgreSQL connection configured by the local fixture.
  */
-import assert from "node:assert/strict";
-import { after, before, test } from "node:test";
 import {
   type Endpoint,
   type Network,
   startNetwork,
-} from "./network-fixture.ts";
+} from "@moltzap/integration-tests/process-network";
+import assert from "node:assert/strict";
+import { after, before, test } from "node:test";
+import { startDaemonContainer } from "./daemon-container.ts";
 
 /**
  * Enough agents registering at once that a Registry on more than one PGlite
@@ -24,7 +25,7 @@ let network: Network;
 let endpoints: readonly Endpoint[];
 
 before(async () => {
-  network = await startNetwork();
+  network = await startNetwork(startDaemonContainer);
   endpoints = await Promise.all(AGENTS.map((name) => network.endpoint(name)));
 });
 

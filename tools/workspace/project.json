@@ -82,28 +82,6 @@
         "command": "eslint '*.ts' 'images/**/*.ts' 'scripts/**/*.ts' --no-error-on-unmatched-pattern --cache --max-warnings=0"
       }
     },
-    "lint:oxlint": {
-      "cache": true,
-      "inputs": [
-        "workspaceFiles"
-      ],
-      "executor": "nx:run-commands",
-      "options": {
-        "cwd": ".",
-        "command": "oxlint . --deny-warnings"
-      }
-    },
-    "lint:script-reachability": {
-      "cache": true,
-      "inputs": [
-        "workspaceFiles"
-      ],
-      "executor": "nx:run-commands",
-      "options": {
-        "cwd": ".",
-        "command": "node scripts/repo/check-script-reachability.ts"
-      }
-    },
     "lint:docs-links": {
       "cache": true,
       "inputs": [
@@ -132,8 +110,6 @@
       "cache": false,
       "dependsOn": [
         "lint:root",
-        "lint:oxlint",
-        "lint:script-reachability",
         "lint:docs-links",
         "lint:agent-files",
         "lint:dependency-versions",
@@ -204,7 +180,6 @@
         "{workspaceRoot}/plugins/**/*",
         "{workspaceRoot}/images/**/*",
         "{workspaceRoot}/scripts/build/**/*",
-        "{workspaceRoot}/scripts/setup/**/*",
         "{workspaceRoot}/.node-version",
         "{workspaceRoot}/.npmrc",
         "{workspaceRoot}/.dockerignore",

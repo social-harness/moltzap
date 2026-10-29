@@ -7,7 +7,7 @@ import { parse } from "yaml";
 import { isJsonObject, objectAt, readJsonObject, stringAt } from "./json.ts";
 
 /** Git could not list the tracked manifests, so the inventory would be blind. */
-export class UnlistedWorkspace extends Data.TaggedError("UnlistedWorkspace")<{
+class UnlistedWorkspace extends Data.TaggedError("UnlistedWorkspace")<{
   readonly message: string;
 }> {}
 

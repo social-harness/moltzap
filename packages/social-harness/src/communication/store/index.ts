@@ -6,23 +6,18 @@ export {
   inspectEndpointStore,
   openEndpointStore,
 } from "./store.js";
-/** Closed non-diagnostic persistence failure categories, and how a store opens. */
-export type { EndpointStoreFailure, StoreOpening } from "./database/index.js";
+/** How a daemon opens its exclusive store. */
+export type { StoreOpening } from "./database/index.js";
 /** Canonical private DTOs and the EndpointStore capability. */
 export type {
   CertifiedRecord,
-  CompletedReanchor,
   ConversationFoundation,
-  ConversationPage,
-  ConversationPosition,
   DisseminationObligation,
   EmptyConversationRestart,
   EndpointRecovery,
   EndpointStore,
   FirewallActivation,
-  FirewallAttempt,
   FirewallAuditEntry,
-  FirewallCommit,
   FirewallCompletion,
   FirewallEvidence,
   FirewallEvidenceSlices,
@@ -36,15 +31,11 @@ export type {
   InboundDeliveryInput,
   InboxEntry,
   InboxPage,
-  InboxSummary,
-  OutboundAttempt,
   OutboundMessageInput,
-  PendingDelivery,
   PostIntent,
   PostIntentBinding,
   ProposalLock,
   ProtocolEvidence,
-  RecoveredReanchor,
   RestartedEmptyConversation,
   StagedReanchor,
   StagedRecord,

@@ -244,6 +244,7 @@ function serviceStage(line: string, service: string): boolean {
   return (
     [
       "COPY --from=build /deploy/ /app/",
+      "COPY --from=build /build/LICENSE /build/NOTICE /app/",
       "WORKDIR /app",
       "USER node",
       'ENV PATH="/app/node_modules/.bin:${PATH}"',

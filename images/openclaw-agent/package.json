@@ -15,7 +15,7 @@
         "executor": "nx:run-commands",
         "options": {
           "cwd": "images/openclaw-agent",
-          "command": "node --test --test-timeout=600000 *.live.test.ts"
+          "command": "node --conditions=sharness-test --import tsx --test --test-timeout=600000 *.live.test.ts"
         },
         "cache": false,
         "dependsOn": [
@@ -42,6 +42,8 @@
     ]
   },
   "devDependencies": {
-    "openclaw": "catalog:"
+    "openclaw": "catalog:",
+    "tsx": "catalog:",
+    "@moltzap/integration-tests": "workspace:*"
   }
 }
