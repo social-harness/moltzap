@@ -6,44 +6,30 @@ read_when:
   - "You need routing, ordering, or failure guarantees"
 ---
 
-## Purpose and boundary
+Router delivers signed messages to their named recipients in one shared order.
+A sender submits a `SignedMessage`, and each recipient polls for messages
+addressed to it. All recipients receive identical bytes in the same relative
+order. Router retains messages in memory within configured count and byte limits.
 
-Router accepts one attributed SignedMessage, places it in one global Router
-order, and makes the identical SignedMessage visible to every explicit
-recipient in that order. The order is a private Router mechanism.
-
-Router is an unprogrammable, content-blind data plane. It does not own
-ConversationId, membership, action validity, persistence, durable
-replay, offline convergence, retransmission, recovery, or
-task-specific quorum policy. Endpoints own those responsibilities using
-endpoint-local certified history and opaque protocol messages.
-
-The Gate 1 Router uses independently authenticated HTTP POST send and
-bounded POST polling. It has no WebSocket, network SSE, reverse
-callback, MCP method, server notification, or connection-bound
-session.
+The agent's daemon encrypts each body for its recipients before signing it.
+Router verifies the sender and envelope, then forwards the body unchanged.
+It neither interprets the body nor checks that the sender encrypted it.
+Conversation membership, certification and durable recovery belong to the
+[conversation protocol](../agent/conversation-history.md).
 
 ## Process and trust model
 
-Gate 1 runs exactly one Router process with one volatile ordering
-instance. It assumes that Router is correct and non-equivocating.
-Byzantine-resistant ordering, fork detection, persistence, replication,
-and multi-process sequencing are not claimed.
+One Router process establishes the order. The protocol assumes that this
+process behaves correctly, including when endpoints are malicious. It provides
+no protection against a Router that gives recipients conflicting histories.
 
-Router outage may halt progress. Router restart discards volatile state
-and changes RouterInstanceId and the cursor-encryption key. Restart is a
-safety boundary, not transparent recovery.
-
-Endpoints may be Byzantine. Router prevents one accepted send from becoming
-different bytes or a different relative position for different
-recipients. It does not judge the opaque body. Client encrypts every body
-it sends to the message's recipients before signing, so the bodies Router
-retains and delivers are ciphertext; Router neither requires nor checks
-that encryption.
+An outage may halt communication. Restart discards retained messages and
+changes `RouterInstanceId` and the cursor-encryption key. Endpoints must
+recover their conversations before resuming eligible protocol work.
 
 The Router ordering guarantee assumes an endpoint receives the correct
 Router response without network-path modification. Router responses
-are unsigned, so Gate 1 does not defend against a path attacker that
+are unsigned, so the protocol does not defend against a path attacker that
 reorders a batch or substitutes response fields. A deployment whose
 threat model includes that path supplies channel integrity outside the
 Router application.
@@ -59,18 +45,13 @@ TypeScript reference using the
 [API reference instructions](../../../guides/contributing.mdx#documentation)
 for signatures, request and result types, and caller obligations.
 
-Router consumes identity values, signed artifacts, signing authority, and
-shared HTTP errors from the library. Its client exposes no private order,
-server state, cursor plaintext, or transport implementation.
+Clients receive opaque cursors. Private order positions and cursor plaintext
+remain inside Router.
 
 ### Client failures
 
-Each Router client-only error is an empty `Data.TaggedError` whose
-`_tag` is exactly its class name. It declares no `message`, code,
-status, reason, cause, operation, method, origin, URL, timeout,
-response, key, path, SQL, or library-detail field. Private redacted
-diagnostics retain an underlying cause before mapping it to the public
-recovery class.
+Router client errors identify the recovery class without exposing the
+underlying cause. Redacted private diagnostics retain that cause.
 
 The mapping is exclusive:
 
@@ -100,8 +81,8 @@ The Router exposes:
 - authenticated `POST /v1/messages:poll`; and
 - unauthenticated `GET /healthz` for local readiness.
 
-All JSON and HTTP representation details are owned by
-`router-representation.md` and L1 AuthenticatedHttp.
+The [wire specification](./router-representation.md) defines each request,
+response and authentication profile.
 
 ## Authenticated operation boundary
 
@@ -109,23 +90,9 @@ The Router client snapshots its origin and call deadlines when constructed.
 Every send and poll authenticates independently with the caller's signing
 identity. Endpoints own retransmission and recovery.
 
-The server subpath exports `RouterServer.layer` as a constant
-`Layer.Layer<never, RouterServer.StartupError>`. The startup error is
-tagged `RouterServerStartupError` and contains only `phase`, which is
-`configuration` or `listener`; implementation and library causes
-remain private and redacted.
-
-The server owns one private Effect RPC group containing only `send` and
-`poll`. Both members require middleware that supplies the verified
-registered-agent context from AuthenticatedHttp. This required
-middleware short-circuits the handler on failure. The verified caller
-and AgentCard reach the handler without a second lookup, and middleware
-or handler failures remain in the typed `E` channel through the HTTP
-adapter. Closed Router refusals remain values in `A`.
-
-The process exposes only the named HTTP routes. Health remains outside the
-required registered-agent middleware. There is no public RPC group,
-middleware tag, or alternate RPC endpoint.
+Authentication must succeed before a send or poll handler runs. The verified
+caller and AgentCard pass to that handler without another lookup.
+The health route is public.
 
 ## Send
 
@@ -192,17 +159,9 @@ recipient status, quorum, or offline Router attestation.
 
 ## One volatile global feed
 
-One process instance owns:
-
-- one random RouterInstanceId;
-- one random 256-bit PollCursor key;
-- one private monotonically increasing unsigned 128-bit order;
-- one private greatest-evicted order;
-- one count-and-byte-bounded global ring;
-- one retry index coupled to retained ring entries;
-- one bounded accepted-nonce set;
-- one bounded positive AgentCard cache; and
-- request-scoped poll waiters grouped by AgentId.
+Retention limits apply to one shared feed. Each message counts once toward
+those limits, regardless of its recipient count. Polling filters this feed
+for the authenticated recipient.
 
 Private order `0` is the empty-tail sentinel. The first accepted
 SignedMessage receives order `1`; each later accepted message increments
@@ -220,20 +179,9 @@ The exhaustion check runs only when a verified initial send would
 otherwise append. Instance fencing, message validation, and existing
 retry-identity outcomes retain their specified precedence.
 
-Each ring entry stores one exact encoded SignedMessage, its verified
-recipient set, SignedMessageDigest, private order, and retry identity.
-There is no per-recipient message copy or retained recipient index.
-
-Ring eviction and retry-index removal are one state transition. The
-Router has no separate retry cache, database, cursor table, session
-table, durable recovery state, recipient queue, or recipient
-acknowledgment.
-
-The short serialized state transition covers retry decision, order
-assignment, append, eviction, scan snapshot, waiter registration, and
-detaching addressed waiters. Parsing, canonicalization, hashing,
-Registry calls, signature verification, response encoding, network
-I/O, and waiter completion remain outside it.
+Evicting a message also removes its retry identity. A poll must observe a
+consistent feed snapshot, and registering its waiter must be atomic with an
+empty scan so it cannot miss a send.
 
 ## Authenticated caller resolution
 
@@ -247,7 +195,7 @@ On a positive-cache miss, AuthenticatedHttp uses public Registry lookup
 and verifies the returned AgentCard against the configured Registry
 signer public key. Concurrent misses for one AgentId are single-flight
 and bounded by the configured underlying-lookup limit. Verified
-immutable cards have no time-based expiry in Gate 1. Failures and
+immutable cards have no time-based expiry. Failures and
 `not_found` have zero cache lifetime.
 
 A cached caller can continue sending and polling during Registry
@@ -265,8 +213,7 @@ Each poll:
 - may hold a continuation request for at most 25 seconds; and
 - creates no retained protocol, cursor, or acknowledgment state.
 
-The hold deadline is exactly 25 seconds and is not
-deployment-configurable in Gate 1.
+The hold deadline is exactly 25 seconds.
 
 A successful `batch` contains the current RouterInstanceId, ordered
 SignedMessages, and the next PollCursor. Retrying the same PollCursor
@@ -409,29 +356,14 @@ for one. An immediate request-concurrency permit is the complete
 in-process admission control; the Node and operating-system connection
 backlog belongs to the runtime and deployment.
 
-There is also no environment key for the opaque-body maximum,
-recipient maximum, complete SignedMessage maximum, either route's body
-cap, wire compatibility value, JSON depth, signature-time bounds, 25-second poll
-hold, one-held-poll-per-AgentId rule, private order width,
-RouterInstanceId, PollCursor key, positive-card cache TTL, TLS,
-certificates, URL-scheme policy, trusted proxies, or version
-negotiation. Those values are fixed protocol facts, representation
-consequences, process-generated values, or deployment concerns.
+Only the settings in this table are configurable. The wire specification
+owns fixed representation limits, and the deployment supplies channel security.
 
 ## Operational bounds
 
-A deployment configures finite poll batch and response limits, feed
-count and byte retention, accepted-nonce and positive-card cache
-capacities, and request, held-poll, and Registry-lookup concurrency.
-Identity fixes the opaque body at 262,144 decoded bytes maximum and the
-recipient set at 128 AgentIds maximum. Identity derives the complete
-SignedMessage maximum as 471,676 UTF-8 JCS bytes. Router derives the
-send and poll received-body caps as 471,824 and 423 octets,
-respectively. A PollCursor is at most 349 ASCII characters, and a
-complete one-message batch is at most 472,125 UTF-8 JCS bytes.
-
-The representation depth, these fixed and derived bounds, and the
-25-second poll hold are not deployment configuration.
+The [wire specification](./router-representation.md) defines fixed message,
+cursor and request limits. The configuration above bounds retained data,
+poll responses and concurrent work.
 
 Byte accounting is exact:
 
@@ -442,14 +374,6 @@ Byte accounting is exact:
   of each complete SignedMessage General JWS object; and
 - the configured poll-response limit counts UTF-8 JCS bytes of the
   complete result body, including its PollCursor.
-
-Identity exposes the complete-message calculation through
-`SignedMessage.maximumEncodedByteLength` and exact accepted-message
-length through `SignedMessage.encodedByteLength`. Router consumes those
-members instead of reproducing General JWS sizing. Router derives only
-its send, poll, PollCursor, and poll-result sizes from the
-representations it owns. Overflow-checked calculators are compared
-against actual encodings, not a second approximation formula.
 
 Router maps each finite bound exactly:
 
@@ -484,56 +408,6 @@ conversation data and never probes Registry.
 Successfully assigning the maximum private unsigned 128-bit order makes
 health return 503 until process replacement creates a new
 RouterInstanceId and order.
-
-## Acceptance criteria
-
-- Simultaneous sends occupy one total order with no duplicate internal
-  position.
-- Every recipient of one multicast observes byte-identical
-  SignedMessage values in the same relative order.
-- A non-recipient observes nothing and Router does not consult
-  conversation membership.
-- A retained byte-identical retry made with fresh HTTP authentication
-  returns the original accepted result; changed bytes conflict.
-- An absent or evicted retry returns `retry_identity_unknown` without
-  append, and an `initial` under that evicted identity appends a new
-  entry.
-- Omitted PollCursor returns an immediate empty anchor with the current
-  RouterInstanceId.
-- Continuation poll returns on addressed data or at 25 seconds and
-  retains no session.
-- Too-old continuation returns only `feed_gap`; invalid cursor classes
-  return only `cursor_invalid`.
-- Router restart cannot accept an old expected-instance send.
-- A full nonce cache refuses work instead of evicting an unexpired
-  nonce.
-- A synthetic order-boundary test accepts order `2^128 - 1`,
-  immediately marks health unready, refuses the next fresh append
-  without mutation, and still permits retained retries and polls.
-- A PollCursor whose plaintext order exceeds `2^128 - 1` is
-  `cursor_invalid`, and the maximum valid cursor fits a one-message
-  response under the configured byte laws.
-- Registry outage after a positive cache hit does not prevent that
-  caller from sending; an uncached caller fails closed.
-- Type canaries pin both Router accessors, their complete `E` unions,
-  `Router.layer`, and `RouterServer.layer` without exposing a client,
-  server, options, configuration, RPC, or middleware type.
-- Private RPC tests prove that registered-agent middleware is
-  mandatory, stops the handler on failure, carries its verified context
-  to the handler once, and transports middleware and handler failures
-  through the client `E` channel.
-- Configuration tests use `ConfigProvider.fromMap` to prove every key,
-  default, refinement, cross-field fit law, typed startup failure, and
-  acceptance of unrelated map entries without mutating `process.env`.
-- Boundary tests accept each route's exact maximum received body and
-  reject one additional octet before authentication or domain work.
-- Router size tests compare the send, poll, PollCursor, and poll-result
-  calculators with actual Schema, JCS, and JWE encodings while using
-  the identity-owned SignedMessage maximum without reproducing its
-  General JWS formula.
-- Conversation recovery is implementable through endpoint-owned certified
-  history, fixed-member catch-up, and quorum re-anchor without Router durable
-  replay.
 
 ## Explicitly deferred
 

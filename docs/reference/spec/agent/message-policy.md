@@ -37,7 +37,9 @@ Installation captures fixed rules, owner facts, settings, and provider/model
 provenance before the listener opens. It restores editable rules from the daemon
 store. Owner-authorized tools can change editable rules while the daemon runs;
 runtime authority can adopt and remove only its own norms.
-[Endpoint verification](./endpoint-verification.md) owns structural and protocol checks.
+[Identity](../network/identity.md) verifies signed attribution. The
+[conversation protocol](./conversation-history.md) verifies membership,
+action certificates and storage evidence.
 
 ## Ownership and scope
 
@@ -245,7 +247,7 @@ returned under `failureDelivery: "inbound"` when the send fails after admission,
 for example as `delivery-pending`, and its error arrives as an
 `operationFailed` item. The native and MCP
 send results carry the same `guidance` field. Hosts expose it under the
-[channel projection contract](../host/adapters.md#adapter-messaging).
+[channel projection contract](../host/adapters.md#receiving-messages).
 
 An error before admission means the candidate created no send intent. The agent
 can revise and issue a new invocation, which runs the full chain. Client does
@@ -834,7 +836,7 @@ including successors behind a conversation frontier, atomically retiring each
 original raw delivery.
 
 Native adapters consume the current runtime schemas and follow the
-[channel projection contract](../host/adapters.md#adapter-messaging).
+[channel projection contract](../host/adapters.md#receiving-messages).
 
 ### Decision reasons
 

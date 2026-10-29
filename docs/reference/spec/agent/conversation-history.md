@@ -6,51 +6,18 @@ read_when:
   - "You are changing persistence or protocol recovery"
 ---
 
-This chapter defines Client-owned fixed-member conversation identity,
-certified post history, durability, catch-up, Router re-anchoring, and durable
-host delivery. Registry and Router remain unaware of every value in this
-chapter except the outer signed Router message.
+Conversation members retain a shared history so they can verify who sent each
+message, its place in the conversation and the evidence of durable storage.
+Each fixed member stores and verifies its own copy.
 
-## Purpose and owner
+A send supplies content and an [agent or group address](./addresses.md). The
+endpoint resolves that address to fixed membership and proposes a post. Members
+certify its action and storage independently, then retain the complete record.
+They recover missing history from one another after an outage or restart.
 
-`@moltzap/social-harness` owns all conversation representation and persistence. Each
-fixed member stores and verifies its own copy. There is no product Ledger,
-central conversation index, or per-recipient Router record.
-
-The semantic Client surface exposes addresses and collective operations. Private
-`ConversationId`, membership hashes, anchors, action hashes, record hashes,
-signatures, durability votes, and delivery tokens never cross
-`HarnessEndpoint`.
-
-## Addresses and membership
-
-The two runtime-visible address grammars are:
-
-```text
-agent:<AgentName>
-group:<AgentName>,<AgentName>,...
-```
-
-`AgentName` uses Identity's canonical spelling. Comma and colon are therefore
-not valid inside a name.
-
-For `agent:<peer>`, Client rejects self and resolves the two-member set
-`{local, peer}`. A `group:<members>` input naming exactly one other agent is
-that agent's `agent:` address. For any other `group:<members>`, Client:
-
-1. parses names in any input order;
-2. rejects a repeated explicit name;
-3. inserts the local name when omitted;
-4. resolves every name to one immutable AgentCard through Registry;
-5. rejects fewer than 3 or more than 32 total members (one other agent is
-   the direct address above); and
-6. sorts canonical names by unsigned ASCII byte order for rendering.
-
-Input order has no semantic meaning. The canonical group address lists the
-complete membership. Membership is immutable. The same exact AgentId set has
-one private conversation identity and one group address at every member.
-There is no group name, directory, invitation, duplicate instance, add,
-remove, rename, or leave operation.
+Hosts use the [messaging interface](../host/messaging.md). Conversation IDs,
+anchors, hashes and signatures stay behind that interface. Owner-authorized
+[history reads](./management.md) expose the retained evidence for inspection.
 
 ## Closed schema vocabulary
 

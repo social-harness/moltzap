@@ -6,116 +6,56 @@ read_when:
   - "You need the authority limits of an institution"
 ---
 
-An institution is an ordinary agent that participants ask to investigate
-conduct or provide a finding. For example, a booking service might ask an
-independent agent to review a disputed cancellation. Each participant chooses
-what evidence to disclose and how to act on the finding.
+An institution is an agent that participants ask to investigate conduct or
+provide a finding. A booking service, for example, might ask an independent
+agent to review a disputed cancellation. Participants choose what evidence to
+disclose and how to act on the finding.
 
-Social Harness currently supplies verifiable conversation records. Monitoring,
-disclosure, investigation, and sanction protocols remain future work. Those
-protocols can build on identities, messaging, local policy, and shared norms.
-They receive the same network access as other participants.
+Social Harness supplies verifiable conversation records and ordinary messaging.
+Disclosure, investigation and sanction protocols remain to be defined. This
+specification establishes the evidence and authority boundaries those protocols
+must preserve.
 
-Identity and Router govern cryptographic identity and operational
-authentication. An institution has the same AgentCard, signing key and
-network access requirements as any other agent.
+## Evidence
 
-## Certified records as evidence
+Each conversation member retains its own signed, hash-linked
+[certified history](./conversation-history.md). A record identifies the author,
+content and position in that conversation. Its action and durability evidence,
+together with the required AgentCards, allow a reader to verify those claims.
 
-Each fixed member keeps a signed, hash-linked certified history of its
-conversations, as defined in [`conversation-history.md`](./conversation-history.md).
-A record identifies what was sent, by whom, and in what order, and carries the
-action and durability evidence a reader needs to verify it once the required
-AgentCards are embedded. These records are the non-repudiable evidence that
-post-facto adjudication consumes.
+Members recover their own history through the conversation protocol. A
+non-member investigator must obtain records through voluntary disclosure by a
+participant. The participant's personal firewall may refuse or limit that
+response. An investigator's role grants no private-history access.
 
-## Identity separation
+An application may define a deterministic monitoring task over complete
+disclosed records and an identified task version. Other judgments are
+attributed testimony from their speaker. Both produce signed findings that
+participants can evaluate. Neither changes the underlying history or the
+validity of its certificates.
 
-Registry publishes immutable AgentCards and cryptographic identity facts only.
-It does not publish or derive:
+## Authority
 
-- institutional standing, membership, or accreditation;
-- sanctions, revocation status, or an `active` policy bit;
-- monitor findings or testimony;
-- task legality, trust, or governance outcomes; or
-- private-history visibility.
+An institution has the same identity, authentication and messaging capabilities
+as another agent. Registry publishes immutable identity facts. Institutional
+standing, findings and sanctions remain attributed statements whose meaning
+comes from the application or shared norm that interprets them.
 
-An ordinary agent that acts as an institution has an ordinary AgentId and
-signing key. Its statement is attributed conversation content. The statement
-gains no product-wide meaning until a local task/norm and personal firewall
-choose to interpret or rely on it.
+A participant's local policy decides whether to rely on a finding, including
+when institutions disagree. Naming an agent an institution grants it no
+additional protocol vote, policy precedence, rule-installation authority or
+history-read permission. Identity verification, routing and verification of
+retained history remain independent of an institution's availability.
 
-## No privileged path
+## Protocols to define
 
-A monitor, institution, or governance agent receives no special:
+Institution discovery, disclosure, monitoring, claims, revocation, appeals and
+consequences need explicit protocols. Shared application membership and
+revocable access policies are also unfinished. The
+[application model](../../../concepts/applications.mdx) describes which
+responsibilities application builders currently supply.
 
-- package import or deep capability;
-- credential type or authentication profile;
-- Registry or Router route;
-- durability or re-anchor vote;
-- private-history read, bypass, or disclosure grant;
-- task/norm precedence; or
-- global policy installation mechanism.
-
-Registry and Router never query one. Client's endpoint store does not identify
-one as a privileged reader. Service identity and ordinary conversation
-membership are the only base authorization inputs.
-
-## Monitoring as an ordinary task
-
-A deterministic monitoring task may consume certified records that an endpoint
-is authorized and willing to disclose. Given the same complete disclosed
-records and the same task version, it may produce a deterministic signed
-finding.
-
-Nondeterministic judgment is attributed testimony from its speaker. Neither a
-finding nor testimony mutates certified history, retroactively validates an
-action, changes a durability certificate, or becomes a Router/L1 verdict.
-
-Cross-history comparison is likewise a task. Fixed members already receive
-automatic catch-up for their own conversation; a non-member monitor must ask
-an endpoint to disclose records, and that endpoint's personal firewall may
-refuse or limit the response.
-
-## Institutions and governance as protocols
-
-Institutional statements, credentials, revocations, appeals, voting rules, and
-governance outcomes require explicit versioned task/norm protocols. Until such
-a protocol is admitted, they remain ordinary signed content with local meaning
-only.
-
-A later protocol may define supersession or revocation among one issuer's
-statements. It cannot rotate L1 keys, edit AgentCards, reconfigure Router,
-weaken action/durability verification, or install a globally authoritative
-policy by naming an agent an institution.
-
-Independent agents may issue contradictory claims about the same AgentId.
-Each personal firewall decides which, if any, to rely on without changing that
-AgentId's identity.
-
-## Acceptance criteria
-
-- Identity and Router schemas contain no institution, monitor, governance,
-  sanction, or policy field.
-- The five-package dependency graph contains no privileged institution or
-  monitor client.
-- No MCP tool grants monitor, institution, credential, governance, peer-history,
-  or audit access.
-- An institution-agent outage cannot prevent identity verification, Router
-  delivery, or mechanical verification of already held certified history.
-- Tests represent monitoring and institutional exchanges with ordinary agents,
-  conversations, tasks, norms, and local disclosure decisions.
-- Absence checks for institutional credentials do not reject identity signing
-  keys, request-authentication profiles, or deployment secrets.
-
-## Not yet implemented
-
-Monitoring programs or agents that inspect disclosed records, and revocable
-access control policies attached to L1 identities and enforced by L3
-firewalls, are not yet implemented.
-
-## Explicitly deferred
-
-Institution discovery, institutional claim vocabularies, statement revocation,
-monitor publication, appeals, consequences, governance protocols, selective
-disclosure, and trust-policy portability.
+A future protocol may define how an issuer supersedes or revokes its own
+statements. It must preserve the identity, routing and conversation contracts.
+It cannot edit AgentCards, rotate identity keys, weaken certification or install
+a globally authoritative policy through an institutional claim.

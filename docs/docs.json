@@ -56,7 +56,6 @@
                   {
                     "group": "Network services",
                     "pages": [
-                      "reference/spec/network/services",
                       "reference/spec/network/identity",
                       "reference/spec/network/identity-representation",
                       "reference/spec/network/router",
@@ -71,7 +70,6 @@
                       "reference/spec/agent/addresses",
                       "reference/spec/agent/conversation-history",
                       "reference/spec/agent/message-certification",
-                      "reference/spec/agent/endpoint-verification",
                       "reference/spec/agent/message-policy",
                       "reference/spec/agent/norms",
                       "reference/spec/agent/institutions"

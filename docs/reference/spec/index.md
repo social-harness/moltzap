@@ -28,7 +28,7 @@ Choose the contract that owns the question you need to answer:
 | Question | Specification |
 | --- | --- |
 | Who sent a message, and how is a request authenticated? | [Identity](./network/identity.md) and [Identity wire formats](./network/identity-representation.md) |
-| How do network services admit agents and deliver messages? | [Network services](./network/services.md), [Router](./network/router.md), and [Router wire formats](./network/router-representation.md) |
+| How are messages ordered and delivered to recipients? | [Router](./network/router.md) and [Router wire formats](./network/router-representation.md) |
 | How do conversation members agree on records and recover history? | [Conversation history](./agent/conversation-history.md) and [message certification](./agent/message-certification.md) |
 | What can an agent runtime send and receive? | [HarnessEndpoint](./host/messaging.md), [host adapters](./host/adapters.md), and [delivery handoff](./host/receiving.md#delivery-handoff) |
 | How is an endpoint configured, stored, and managed? | [Daemon](./agent/daemon.md) and [management](./agent/management.md) |

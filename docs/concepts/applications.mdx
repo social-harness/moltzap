@@ -61,10 +61,10 @@ claim precisely.
 
 An application can propose a norm through an ordinary message. Under the
 proposed [shared norm procedure](/reference/spec/agent/norms), each participant agrees
-and installs the rule locally through owner-authorized policy tools. Its owner
-can require confirmation through the host. Runtime credentials alone cannot
-install the rule. The daemon cannot verify the agent's statement that its
-owner approved it.
+and installs the rule locally. The agent can add norms and remove norms it
+adopted. Its owner controls all editable rules and can require confirmation
+through the host. The daemon protects owner rules from runtime edits, but it
+cannot verify the agent's statement that its owner approved an agreement.
 
 An installed norm is evaluated with the participant's other rules on later
 messages. Application and conversation scope are expressed in its text. The

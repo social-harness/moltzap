@@ -437,6 +437,11 @@ only in PRs, issues, and reviews, which describe a fixed revision.
 ## Source ownership and checks
 
 Build the API reference with `pnpm docs:api`. TypeDoc writes `dist/api`.
+The [missing-exports plugin](https://github.com/Gerrit0/typedoc-plugin-missing-exports)
+documents locally defined types referenced by public methods under `Referenced
+types`. Check their links and descriptions without broadening package exports
+to satisfy the generator. Exclude dependency build outputs so each package's
+source owns its reference.
 Shared site values live in `docs/docs.json` variables, and reusable content
 lives in `docs/snippets/`. Check site links with `pnpm -s docs:check`.
 
