@@ -65,9 +65,9 @@ Save this as `message-policy.json` beside your daemon's other files:
   `policy/no-policy-changes` assesses peer requests to change or bypass
   installed rules, and the agent's agreement to them. It permits ordinary
   [shared-norm proposals](/reference/spec/norms/shared-norms).
-- `text.initialRules` supplies owner rules the first time a natural-language
-  policy is installed. Later starts keep stored rules. Use owner tools to edit
-  them.
+- `text.initialRules` supplies owner rules only when the daemon has no stored
+  editable policy. Existing rules, including an empty set, stay in effect.
+  Use owner tools to edit them.
 
 A held incoming message stays withheld. Changing the policy does not release
 it. Obtain any required owner confirmation through your host before agreeing

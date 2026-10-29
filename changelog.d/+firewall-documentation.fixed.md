@@ -1,3 +1,3 @@
-Clarify norm ownership and message certification, and simplify firewall setup
-and recovery instructions. Link policy permissions to the daemon's authority
-contract.
+Clarify norm ownership, message certification and collective results. Simplify
+firewall setup and recovery instructions, and correct sender fields in the
+messaging examples.

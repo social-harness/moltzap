@@ -1,19 +1,11 @@
 /** @file Collective persistence failures and terminal publication share one boundary. */
-import { Clock, Effect } from "effect";
+import { Effect } from "effect";
+import type { EndpointStoreError } from "../store/index.js";
 import type { InboundItem } from "./inbound.js";
 import type { ResultProvenance } from "./ports.js";
+import type { CollectiveState } from "./state.js";
 import { SendError } from "../conversations/errors.js";
-import { encodeRuntimeValue, EndpointStoreError } from "../store/index.js";
-import {
-  type CollectiveClosure,
-  CollectiveEmitError,
-  type CollectiveId,
-} from "./contracts.js";
-import {
-  type CollectiveState,
-  type OpenGather,
-  readCollectiveSelection,
-} from "./state.js";
+import { CollectiveEmitError, type CollectiveId } from "./contracts.js";
 
 /** Refresh the same retained state on a caller-facing send boundary. */
 export function refreshRetainedSend(
@@ -61,44 +53,6 @@ export function emitTerminal(
           });
     }),
   );
-}
-
-/** Retains the first completion decision. The caller holds the transition permit through selection. */
-export function freezeResult(
-  state: CollectiveState,
-  id: CollectiveId,
-  open: OpenGather,
-): Effect.Effect<CollectiveClosure, CollectiveEmitError> {
-  return durableEmit(
-    state,
-    Effect.gen(function* () {
-      const operation = yield* state.ports.store.readCollectiveOperation(id);
-      if (operation?.canonicalSelection !== undefined) {
-        const selection = yield* readCollectiveSelection(
-          operation.canonicalSelection,
-        );
-        if (selection.kind !== "result") {
-          return yield* new EndpointStoreError({ reason: "corrupt" });
-        }
-        return { closedAt: selection.closedAt, closedBy: selection.closedBy };
-      }
-      const closure: CollectiveClosure = {
-        closedAt: yield* Clock.currentTimeMillis,
-        closedBy:
-          open.outcomes.size === open.members.length ? "settled" : "deadline",
-      };
-      const selection = yield* encodeRuntimeValue({
-        kind: "result",
-        ...closure,
-        answers: [...open.answerHashes].map(([member, recordHash]) => ({
-          member,
-          recordHash,
-        })),
-      });
-      yield* state.ports.store.finalizeCollectiveOperation(id, selection);
-      return closure;
-    }),
-  ).pipe(Effect.withSpan("freezeResult"));
 }
 
 /** Persistence failures stop the daemon before a caller can mistake an uncertain write for a retryable refusal. */

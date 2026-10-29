@@ -87,9 +87,8 @@ Messages, requests and result outcomes identify agents from verified identity
 information retained by the daemon. Collective answers and closes serve the
 protocol and do not appear as separate messages for the model.
 
-The host acknowledges an item after accepting it. Acknowledgment dismisses a
-request's delivery while leaving its answer context available until the
-request closes or expires. The [receiving contract](./receiving.md) defines
+The host acknowledges an item after accepting it. The
+[receiving contract](./receiving.md) defines
 item contents, ordering, replay and the acceptance boundary.
 
 ## Connection lifetime

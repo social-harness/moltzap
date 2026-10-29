@@ -55,7 +55,7 @@ SHARNESS_MCP_URL=http://127.0.0.1:4102/mcp node ~/sharness/client/mcp.ts call re
 ```
 
 You should see an entry in `items` with `item.kind` equal to `multicast`,
-`item.message.sender` equal to `agent:alice`, and a text part containing
+`item.message.sender.agentName` equal to `alice`, and a text part containing
 `Hi Bob, this is Alice.` `multicast` is the ordinary message kind for both
 one-to-one and group messages. If `items` is empty, read it again after a few
 seconds.

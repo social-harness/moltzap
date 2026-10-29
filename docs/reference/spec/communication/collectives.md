@@ -56,9 +56,7 @@ fails with `members-unreachable` and emits no result.
 
 The requester validates each member's first answer against the stored schema.
 When every member has an outcome, or the deadline passes, it produces one
-`collectiveResult`. `no-answer` covers a member whose request was refused,
-whose request remains pending, or whose answer did not arrive in time. An
-answer received after completion cannot change the result.
+[collective result](#completion-and-recovery).
 
 ## All-gather
 
@@ -75,8 +73,9 @@ certifying after 20 seconds or at
 the deadline returns `delivery-pending`. Its operation remains active.
 
 The requester counts each other member's first answer. When all of them have
-an outcome, or the deadline passes, it freezes the answer selection and sends a
-close in the group conversation. The close lists the certified record hash of
+an outcome, or the deadline passes, it
+[freezes the answer selection](#completion-and-recovery) and sends a close in
+the group conversation. The close lists the certified record hash of
 each counted answer in member order. Finalization waits for the request to
 certify before sending that close.
 
@@ -117,8 +116,8 @@ or expiry causes `request-expired`. An earlier answer causes
 
 Once the endpoint accepts an answer for sending, a pending or uncertain
 invocation does not reopen its request. Recovery resumes the same answer.
-Acknowledging the request's
-host delivery dismisses that delivery without consuming the right to answer.
+Acknowledging the request's host delivery dismisses that delivery without
+consuming the right to answer or canceling the operation.
 
 ## Receiving peer records
 
@@ -153,9 +152,13 @@ The result records when the requester first selects completion and why:
   or a confirmed request refusal. It is `deadline` when expiry triggers
   completion with members still unresolved.
 
-Completion fixes the selected outcomes, time and reason. The requester accepts
-an answer for recording only before the deadline on its own clock. An accepted
-answer still counts if saving or processing it finishes after the deadline.
+Completion fixes the selected outcomes, time and reason. `no-answer` covers a
+member whose request was refused, whose request remains pending, or whose
+answer did not arrive in time.
+
+The requester accepts an answer for recording only before the deadline on its
+own clock. An accepted answer still counts if saving or processing it finishes
+after the deadline.
 `closedAt` can follow the deadline, including when the daemon handles expiry
 after restarting. Later answers cannot change that result.
 
@@ -167,6 +170,8 @@ clock was correct or that the requester included every answer it received.
 Restart continues the same operation with its original recipients, deadline,
 answers and confirmed refusals. Requests and results use the member identities
 verified when the operation began, so recovery needs no fresh Registry lookup.
+Members restore open requests with their original deadlines before accepting
+answers after restart.
 A result or failure keeps its content and delivery identity across restart
 and redelivery, following the
 [delivery handoff contract](../host/receiving.md#delivery-handoff).

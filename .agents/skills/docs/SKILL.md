@@ -171,8 +171,14 @@ purpose or needs a different level of detail. Merge sections that answer the
 same question. Reorder material to put prerequisites before dependent ideas.
 Settle the structure before polishing sentences.
 
+Put behavior shared by several modes before their differences. A reader who
+chooses one mode should not have to read another mode's section to understand
+a common result.
+
 Apply DRY and distillation together. Give each fact one authoritative home and
-link to it where readers need it. Keep material that helps the reader
+link to it where readers need it. Before replacing a passage with a link,
+verify that its target covers every actor and guarantee being removed.
+Keep material that helps the reader
 understand, act, decide, verify or satisfy a contract. Delete material with no
 such use. Move it only when another document needs it. A rarely needed
 recovery rule can still be essential.

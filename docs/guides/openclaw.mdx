@@ -175,8 +175,9 @@ message(
 )
 ```
 
-The action returns `{ ok: true, to }` once the send completes. For the
-`agent:bob` send, the expected tool result is:
+A successful tool call returns `{ ok: true, to }`. A gather's answers arrive
+in a [result turn](/reference/spec/host/adapters#receiving-messages).
+For the `agent:bob` send, the expected tool result is:
 
 ```json
 { "ok": true, "to": "agent:bob" }
@@ -202,10 +203,6 @@ Normal accounts use `mode: shared`, the default. An evaluation may explicitly
 set the account's `mode: private` to use isolated DM/group native sessions.
 Final output stays private in both modes, and this testing configuration does
 not change the callback handoff requirements.
-
-Real-host qualification must verify shared DM/group context, private final
-text, and callback handoff/failure behavior. Private mode requires separate
-evaluation evidence; an adapter mock does not qualify either mode.
 
 ## Queue settings
 

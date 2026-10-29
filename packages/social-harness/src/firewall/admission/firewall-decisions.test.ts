@@ -1,6 +1,12 @@
 /** @file The owner decisions feed explains each checked message through real Client storage. */
 
+import * as NodeSdk from "@effect/opentelemetry/NodeSdk";
 import { scopedLive as it } from "@effect/vitest";
+import { SpanStatusCode } from "@opentelemetry/api";
+import {
+  InMemorySpanExporter,
+  SimpleSpanProcessor,
+} from "@opentelemetry/sdk-trace-base";
 import { Effect, Queue, Schema, Struct } from "effect";
 import { expect } from "vitest";
 import type { FirewallOptions } from "./firewall.js";
@@ -486,6 +492,8 @@ it("refuses unknown stored editable properties as persistence failures", () =>
     ).toMatchObject({ reason: "persistence-failed" });
   }));
 
+const retainedSecret = "private retained rule provenance";
+
 it.each([
   {
     name: "malformed input bytes",
@@ -507,12 +515,39 @@ it.each([
         context: { ...Struct.omit(input.context), unexpected: true },
       }),
   },
+  {
+    name: "malformed text provenance",
+    input: (
+      input: Effect.Effect.Success<typeof makeRetainedCheckFixture>["input"],
+    ) =>
+      encodeRuntimeValue({
+        ...input,
+        installation: {
+          ...input.installation,
+          outgoing: input.installation.outgoing.map((entry) => ({
+            ...entry,
+            provenance: {
+              ...Struct.omit(entry.provenance),
+              data: JSON.stringify({
+                fixedRuleIds: retainedSecret,
+                runtimeRuleIds: [],
+              }),
+            },
+          })),
+        },
+      }),
+  },
 ])(
   "refuses a completed check with $name as a persistence failure",
-  ({ input }) =>
-    Effect.gen(function* () {
+  ({ input }) => {
+    const exporter = new InMemorySpanExporter();
+    return Effect.gen(function* () {
       const subject = yield* fixture;
       const retained = yield* makeRetainedCheckFixture;
+      const installed = yield* installEditableFirewall(
+        options([], text(decisionProvider(), {})),
+        subject.store,
+      );
       const checkId = "corrupt-retained-input";
       yield* subject.store.beginFirewallAttempt({
         checkId,
@@ -521,7 +556,10 @@ it.each([
           maximumRecords: 1,
         })).snapshot,
         canonicalCandidate: retained.canonicalCandidate,
-        canonicalInput: yield* input(retained.input),
+        canonicalInput: yield* input({
+          ...retained.input,
+          installation: installed.metadata,
+        }),
       });
       yield* subject.store.admitFirewallOperation(
         {
@@ -531,15 +569,25 @@ it.each([
         },
         retained.canonicalCandidate,
       );
-      const installed = yield* installEditableFirewall(
-        options([]),
-        subject.store,
-      );
-
-      expect(yield* Effect.flip(installed.policy.decisions({}))).toMatchObject({
-        reason: "persistence-failed",
-      });
-    }),
+      const failure = yield* installed.policy
+        .decisions({})
+        .pipe(Effect.withSpan("policy-decisions-test"), Effect.flip);
+      expect(failure).toMatchObject({ _tag: "FirewallPolicyError" });
+      expect(failure).toMatchObject({ reason: "persistence-failed" });
+      const diagnostics = exporter
+        .getFinishedSpans()
+        .filter((span) => span.status.code === SpanStatusCode.ERROR)
+        .map((span) => ({ status: span.status, events: span.events }));
+      expect(diagnostics.length).toBeGreaterThan(0);
+      expect(JSON.stringify(diagnostics)).not.toContain(retainedSecret);
+    }).pipe(
+      Effect.provide(
+        NodeSdk.layer(() => ({
+          spanProcessor: new SimpleSpanProcessor(exporter),
+        })),
+      ),
+    );
+  },
 );
 
 it("keeps the rules active at check time after the owner removes the deciding rule", () =>

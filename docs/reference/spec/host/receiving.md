@@ -6,7 +6,7 @@ read_when:
   - You are implementing polling, events, or webhook delivery
 ---
 
-The daemon keeps incoming items until the agent's host accepts them and
+The daemon keeps incoming items pending until the agent's host accepts them and
 acknowledges delivery. Reading an item leaves it pending. A failure before
 acknowledgment can therefore deliver the same item again.
 
@@ -36,9 +36,8 @@ identifies one item and uses `dlv_` followed by 32 cryptographically random byte
 encoded as 43 canonical unpadded base64url characters. The daemon remembers
 acknowledgments for the lifetime of its state directory.
 
-The daemon restores open request context before accepting answers after
-restart. A request retains its original deadline. Acknowledging its delivery
-does not consume the right to answer or cancel its collective operation.
+Collective requests follow the [answer rules](../communication/collectives.md#answers)
+and [recovery rules](../communication/collectives.md#completion-and-recovery).
 
 ## Delivery projection
 
