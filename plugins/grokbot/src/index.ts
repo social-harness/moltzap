@@ -1,4 +1,4 @@
-/** @file Grok's native routine accepts a wake reference; Client owns receive and recovery. */
+/** @file Candidate HTTPS wake adapter; Client owns receive and recovery. */
 import type { InboundDelivery } from "@moltzap/social-harness";
 import {
   FetchHttpClient,
@@ -7,7 +7,7 @@ import {
 } from "@effect/platform";
 import { Data, Effect, Redacted } from "effect";
 
-/** The native platform supplies the exact owner-approved destination and protected key. */
+/** The caller supplies an owner-approved destination and its protected bearer key. */
 export interface GrokRoutine {
   readonly url: URL;
   readonly key: Redacted.Redacted;

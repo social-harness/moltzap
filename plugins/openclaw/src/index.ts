@@ -1,11 +1,4 @@
-/**
- * @file Package entry for tools that import the extension by package name.
- *
- * OpenClaw loads `dist/plugin.js`, which `openclaw.extensions` in
- * `package.json` names. `dist/index.js`
- * gives other package consumers a stable default export without exposing
- * OpenClaw-specific types.
- */
+/** @file An opaque package entry keeps OpenClaw's host types out of the package import. */
 import plugin from "./plugin.js";
 
 interface OpenClawLoaderEntry {

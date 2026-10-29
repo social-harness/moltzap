@@ -1,52 +1,17 @@
 /**
- * @file Patch the pinned OpenClaw dist so a bot sender's turn makes a visible
- * reply optional in its delivery hint and in its embedded run, and skips the
- * stranded-reply recovery. Every Social Harness sender is a bot: the channel plugin
- * sets `SenderIsBot` on each inbound.
+ * @file Lets bot turns finish silently in the pinned OpenClaw image.
+ * OpenClaw's message-tool hint and empty-reply recovery otherwise prompt an
+ * agent to answer even when it has chosen silence, causing reply loops.
  *
- * Under message-tool-only delivery OpenClaw appends a per-turn hint that asks
- * the model to "send the final user-visible answer", and when the model then
- * withholds a final of two sentences or 280 characters it re-prompts the model
- * once to deliver that text through `message(action=send)`. Neither mechanism
- * reads `SenderIsBot` and neither is configurable. Between two agents each
- * turns a decision to stay silent into a post, and the posts acknowledge each
- * other without end.
+ * Bot turns receive an optional embedded reply expectation unless they are
+ * explicit commands. The terminal and steering expectations stay unchanged
+ * so failures remain visible and queued messages can still enter the turn.
+ * Runs rebuilt without the embedded expectation retain OpenClaw's default
+ * recovery behavior. The CLI runner is outside this patch.
  *
- * It also makes a bot sender's reply optional for the embedded runner alone.
- * `resolveSourceReplyExpectation` makes every direct-chat turn's reply
- * `required` unless it is a room event or a synthetic turn, and the embedded
- * runner recovers a `required` turn that ends with no visible text: it
- * re-prompts once with "The previous attempt did not produce a user-visible
- * answer…" (`resolveEmptyResponseRetryInstruction`), or retries a
- * reasoning-only or missing final, before surfacing an incomplete-turn error.
- * A turn that answers an acknowledgement with `NO_REPLY` is re-prompted into
- * posting one more, which the peer answers in turn. The run built for a
- * channel turn records a second expectation, `embeddedReplyExpectation`,
- * resolved with `botSenderOptional`, which only that call passes: it is
- * `optional` for a bot sender, unless the turn is an explicit command. The
- * embedded runner reads it, so an empty final takes OpenClaw's own silent
- * path (`shouldTreatEmptyAssistantReplyAsSilent`) and none of those
- * recoveries runs. The run's own `terminalReplyExpectation` is unchanged, so
- * the agent runner still reports a failed bot turn with its failure text
- * (`resolveAgentRunFailureText` silences generic failures only for an
- * `optional` run), and the followup drain key reads the same value as
- * before. The embedded run's steering handle advertises that same value,
- * forwarded as `steeringReplyExpectation`, so a message that arrives mid-run
- * still passes the queue's expectation check
- * (`resolveReplyBackendQueueMessageMismatch`) and is injected into the run.
- * A run built without `embeddedReplyExpectation`, by another path or rebuilt
- * after a restart, keeps its own `required` expectation, and the retry can
- * return for that run. The CLI runner is not covered.
- *
- * Firewall guidance reaches the model as quoted text and does not change
- * this bot-sender reply expectation.
- *
- * The script edits the bundled dist in place with exact content anchors. Each
- * anchor must occur exactly once in each of as many files as its edit has
- * copies, and nowhere else under the dist root but the update recovery
- * helper, so a base image whose code moved fails the image build instead of
- * shipping unpatched. Every edited function exists in the normal chunks,
- * the split worker chunks, and the SQLite worker bundle. All copies are edited.
+ * Exact anchors cover gateway chunks, split workers, and the SQLite worker
+ * bundle. A missing or repeated anchor fails before any file is written.
+ * The sealed update recovery helper is excluded because it never runs turns.
  *
  * Usage: `node patch-openclaw.ts DIST_ROOT [--base-image REF] [--marker PATH] [--dry-run]`.
  */
@@ -414,7 +379,7 @@ export interface AnchoredEdit {
   readonly description: string;
   /** Exact text that must occur once in one file under the dist root. */
   readonly before: string;
-  /** The replacement, or a function of the imports it needs from other chunks. */
+  /** Replacement text for the matched anchor. */
   readonly after: string;
 }
 
@@ -481,10 +446,6 @@ export async function applyOpenClawPatch(
   return applied;
 }
 
-/**
- * Patches the dist named on the command line. With `--marker`, records the
- * applied edits and the base image in that file, which the image ships.
- */
 async function main() {
   const { values, positionals } = parseArgs({
     args: process.argv.slice(2),
@@ -538,7 +499,6 @@ function byCodeUnits(left: string, right: string): number {
   return left < right ? -1 : 1;
 }
 
-/** Reads each file and records which anchors it carries. */
 async function scanAnchors(files: readonly string[]): Promise<AnchorScan> {
   const texts = new Map<string, string>();
   const hits = new Map<string, AnchorHit[]>(EDITS.map((edit) => [edit.id, []]));
@@ -555,12 +515,10 @@ async function scanAnchors(files: readonly string[]): Promise<AnchorScan> {
   return { texts, hits };
 }
 
-/** The files that carry `edit`'s anchor, in sorted path order. */
 function hitsOf(scan: AnchorScan, edit: Edit): readonly AnchorHit[] {
   return scan.hits.get(edit.id) ?? [];
 }
 
-/** Why `edit`'s anchor does not match the dist, or nothing when it does. */
 function anchorProblems(
   distRoot: string,
   edit: Edit,
@@ -576,7 +534,6 @@ function anchorProblems(
   return [`${edit.id}: expected the anchor once in one file, found ${found}`];
 }
 
-/** `text` of `file` with every edit whose anchor it carries applied in order. */
 function patchedText(scan: AnchorScan, file: string, text: string): string {
   return EDITS.filter((edit) =>
     hitsOf(scan, edit).some((hit) => hit.file === file),
@@ -586,7 +543,6 @@ function patchedText(scan: AnchorScan, file: string, text: string): string {
   );
 }
 
-/** Non-overlapping occurrences of `needle` in `text`. */
 function occurrences(text: string, needle: string): number {
   let count = 0;
   for (
@@ -599,7 +555,6 @@ function occurrences(text: string, needle: string): number {
   return count;
 }
 
-/** Writes the marker the image ships, creating its directory. */
 async function writeMarker(
   path: string,
   baseImage: string | null,

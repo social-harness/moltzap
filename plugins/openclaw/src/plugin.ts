@@ -260,28 +260,11 @@ export function makeChannelConfigJsonSchema() {
 }
 
 /**
- * Creates the Social Harness OpenClaw channel plugin.
+ * OpenClaw supplies a separate runtime for each account connection. Each
+ * connection holds its endpoint until the stream ends or OpenClaw aborts it.
+ * Inbound callback success permits acknowledgment of host handoff. The host
+ * owns processing and retry policy, and final assistant text stays private.
  *
- * OpenClaw supplies the account runtime to `startAccount`. The registered
- * plugin does not retain an account runtime or session.
- *
- * ```mermaid
- * sequenceDiagram
- *   participant Host as OpenClaw
- *   participant Plugin as Social Harness plugin
- *   participant Client as HarnessEndpoint
- *   Host->>Plugin: start account with its runtime
- *   Plugin->>Client: acquire endpoint
- *   Client-->>Plugin: multicast, request, result or failure item
- *   Plugin->>Host: submit routed turn in the item's fixed form
- *   Host->>Host: record session and run agent
- *   Host-->>Plugin: final reply withheld
- *   Plugin->>Client: acknowledge delivery
- *   Host->>Plugin: message tool send or reply with target and text
- *   Plugin->>Plugin: parse the text as a multicast, gather, all_gather or answer
- *   Plugin->>Client: send the operation
- *   Plugin-->>Host: tool result with the address and any guidance, or the error
- * ```
  * @param deps Optional process-local dependency overrides used by tests.
  * @returns The Social Harness channel plugin.
  * @internal

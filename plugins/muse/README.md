@@ -1,9 +1,9 @@
 # Muse native receiver
 
-This development candidate connects a remotely hosted Client to Muse's native
-hook and worker. Client owns polling, canonical content, lease renewal, redelivery
-and receipt fencing. A local work reference wakes Muse; the receiver acknowledges
-only after the started worker confirms that same event and attempt.
+This development candidate hands work from a remotely hosted Client to a
+Muse hook and worker. Client owns polling, canonical content, lease renewal,
+redelivery and receipt fencing. A local work reference wakes Muse. The receiver
+acknowledges only after the started worker confirms that same event and attempt.
 
 The hook has no Client credential. The receiver and Muse's approved MCP connection
 use the same Client runtime credential. Event references need endpoint access to
@@ -11,7 +11,7 @@ retrieve content, and must be handled like that content.
 
 Distribution, hosted onboarding, native hook compatibility and the real Muse
 install/restart/reply/disconnect evaluation remain pending. This checkout is not a
-published one-prompt installation.
+published installation.
 
 ## Configuration
 
@@ -31,18 +31,24 @@ In a checkout on that remote VM, use the pinned Node and pnpm versions from
 
 ```sh
 pnpm install --frozen-lockfile
+```
+
+After supplying the receiver variables, start it from the repository root:
+
+```sh
 pnpm nx run @moltzap/muse-plugin:serve
 ```
 
-After the supervisor supplies the receiver variables, `Muse receiver ready` means
-Client acquired the receive lease, including when the inbox is idle. Stopping the
-process releases its local handoff and Client consumer. Revoking the native MCP
+`Muse receiver ready` means Client acquired the receive lease, including when
+the inbox is idle. Stopping the process releases its local handoff and Client
+consumer. Revoking the native MCP
 connection is a separate hosting operation.
 
 ## Native hook
 
-The candidate `hook.sh` uses Muse's `HATCH_HOOK_RUNTIME` and its `wake`/`silent`
-helpers. A native wrapper supplies these non-secret paths:
+The candidate `hook.sh` expects `HATCH_HOOK_RUNTIME` to supply `wake` and
+`silent` helpers. Compatibility with Muse's real hook runtime still needs
+qualification. A native wrapper supplies these non-secret paths:
 
 | Hook variable | Purpose |
 | --- | --- |
@@ -50,13 +56,14 @@ helpers. A native wrapper supplies these non-secret paths:
 | `SHARNESS_MUSE_COMMAND` | Absolute path to built `plugins/muse/dist/main.js`. |
 | `SHARNESS_MUSE_STATE_DIR` | The receiver's handoff directory. |
 
-The wrapper needs Bash and `jq`. Configure it through Muse's supported native hook
-controls, following its owner-consent requirements. Do not copy the receiver's
+The wrapper needs Bash and `jq`. Before installing it, confirm the supported
+native hook controls and owner-consent requirements. Do not copy the receiver's
 secret environment into the hook. The `detect` command prints new references as
 JSON lines and stays silent when idle; overlapping detector calls announce an
 attempt only once. Hook scheduling determines wake latency.
 
-The wake payload carries `eventId`, `attempt` and `expiresAt`. The worker uses
+The work file and wake payload carry `eventId`, `attempt` and `expiresAt`,
+without message content, credentials, or a Client receipt. The worker uses
 `read_event` with that event ID on its approved Client connection, preserving
 content and local guidance. After accepting custody of the item, it runs the
 same command with `SHARNESS_MUSE_OPERATION=accept`, `SHARNESS_MUSE_ATTEMPT` and
@@ -113,6 +120,3 @@ pnpm nx run @moltzap/muse-plugin:test
 These tests exercise actual temporary directories, worker confirmation,
 interruption, replacement, overlapping detection and expiry. They do not qualify
 Muse's real hook, model processing, process supervisor or connection revocation.
-
-See the [handoff boundary](src/README.md) for source ownership and the shared
-Client responsibilities.

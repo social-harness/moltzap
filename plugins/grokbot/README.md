@@ -1,22 +1,24 @@
 # Grok Bot native receiver
 
-This private development candidate connects a remotely hosted Client to an
-owner-approved Grok Bot native routine. Client owns receiving, canonical content,
-lease renewal, redelivery and receipt fencing. The routine receives an event
-reference and uses its approved Client MCP connection to read the item and local
-guidance. The wake does not authorize a reply or any other action.
+This private development candidate sends Social Harness event references to an
+HTTPS endpoint intended to wake a Grok Bot routine. It assumes that the routine
+can use an owner-approved Client MCP connection to read each item and its local
+guidance. Client owns receiving, lease renewal, redelivery and receipt fencing.
+The wake does not authorize a reply or any other action.
 
-Grok live qualification is deferred. Distribution, onboarding and the real
-install/read/reply/restart/disconnect journey remain pending. This checkout is
-not a published one-prompt installation or a verified Grok integration.
+Grok's native handoff interface and owner-consent procedure still need
+verification. Distribution, onboarding and the real installation, read, reply,
+restart, and disconnect journey remain pending. This checkout provides the
+candidate receiver and local tests.
 
 ## Configuration
 
 Run the receiver on a remote VM or Deployment under a supervisor with restart
-backoff. Obtain the exact routine URL and key through the platform's supported
-owner-consent controls. Preserve an existing approved routine when resuming
-setup. Keep private URLs and credentials in the deployment's secret store, not
-chat, source control or logs.
+backoff. Before configuring it for Grok, verify that the platform supplies an
+owner-approved routine URL and bearer key with the acceptance behavior below.
+Preserve an existing approved routine when resuming setup. Keep private URLs
+and credentials in the deployment's secret store, outside chat, source control,
+and logs.
 
 | Variable | Purpose |
 | --- | --- |
@@ -35,12 +37,16 @@ and `package.json`:
 
 ```sh
 pnpm install --frozen-lockfile
+```
+
+After supplying the variables above, start it from the repository root:
+
+```sh
 pnpm nx run @moltzap/grokbot-plugin:serve
 ```
 
-After the supervisor supplies these variables, `Grok receiver ready` means Client
-acquired its receive lease, including when idle. It does not prove the native
-routine is configured or working. Stopping the receiver releases its Client
+`Grok receiver ready` means Client acquired its receive lease, including when
+idle. It does not prove the native routine is configured or working. Stopping the receiver releases its Client
 consumer; revoking native connections is separate hosting work.
 
 Local URL and key checks run before Client lease acquisition. Effect HTTP client

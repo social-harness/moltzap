@@ -34,7 +34,6 @@ const STATE_DIRECTORIES = ["data", "groups", "store", "tmp"];
 /** The read-only application surfaces NanoClaw expects beside its state. */
 const APP_SURFACES = ["container", "scripts", "templates", "package.json"];
 
-/** The application configuration supplied by the container caller. */
 interface ApplicationConfig {
   readonly agentName: string;
   readonly stateDirectory: string;
@@ -44,7 +43,6 @@ interface ApplicationConfig {
   readonly mcpServers: readonly McpServer[];
 }
 
-/** The gateway, once it listens, for the signal handlers to close. */
 interface Supervision {
   gateway?: Gateway;
 }
@@ -140,7 +138,6 @@ function decodeMcpServers(value: unknown): readonly McpServer[] {
   return value.map((server: unknown) => decodeMcpServer(server));
 }
 
-/** One MCP server: remote when it has a `url`, otherwise a stdio command. */
 function decodeMcpServer(value: unknown): McpServer {
   if (!isRecord(value) || typeof value.name !== "string") {
     throw new Error(INVALID_CONFIG);
@@ -196,10 +193,6 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/**
- * Create NanoClaw's project layout in the state directory: its writable
- * directories, and links to the image's read-only application surfaces.
- */
 async function materializeProject(
   config: ApplicationConfig,
 ): Promise<undefined> {
@@ -236,7 +229,6 @@ async function ensureLink(target: string, source: string): Promise<undefined> {
   await symlink(source, target);
 }
 
-/** Spawn the host with the preload that registers the image's drivers. */
 function startHost(config: ApplicationConfig): ChildProcess {
   const environment = {
     ...process.env,
@@ -294,7 +286,6 @@ async function waitForSocket(
   );
 }
 
-/** The container's exit code once the host exits; the gateway closes then. */
 function hostExit(host: ChildProcess, gateway: Gateway): Promise<number> {
   return new Promise((resolveExit, reject) => {
     host.once("error", reject);

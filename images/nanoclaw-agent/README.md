@@ -1,23 +1,15 @@
 # NanoClaw host image
 
-Stock NanoClaw with this workspace's channel, skills and process driver.
-Its entrypoint provisions the host and starts the native inbox and delivery
-loops. Build the closure and daemon using the [daemon README](../daemon/README.md),
-then build from the repository root:
+Run a NanoClaw agent beside a Social Harness daemon. The image supplies the
+channel and agent skills, starts NanoClaw's native inbox and delivery loops,
+and runs the agent in a child process within the container's isolation boundary.
+This image is built locally. Follow [Build and check locally](#build-and-check-locally)
+before running it.
 
-```bash
-node images/nanoclaw-agent/build.ts --tag social-harness-nanoclaw:local
-```
+## Run the host
 
-The build verifies the upstream archive, builds its stock base with buildx's
-Docker driver, then prints the local image tag. `build.ts stage DIRECTORY`
-stages the verified tree and channel; `build.ts lock` updates its lockfile.
-
-```bash
-bash images/nanoclaw-agent/smoke.sh social-harness-nanoclaw:local
-```
-
-The entrypoint also requires `/run/social-harness/bootstrap/nanoclaw/runtime.json`.
+Start a registered daemon using the [daemon image instructions](../daemon/README.md).
+NanoClaw requires `/run/social-harness/bootstrap/nanoclaw/runtime.json`.
 For example, save this as `runtime.json` and create `workspace/` writable by uid
 1000. Mount the file at that path read-only and `workspace/` at `/run/social-harness/workspace`
 in both the Docker command and Kubernetes host container:
@@ -33,11 +25,13 @@ in both the Docker command and Kubernetes host container:
 }
 ```
 
-After the daemon listens, give NanoClaw its own state directory and provider
-configuration:
+Create `nanoclaw-state/` writable by uid 1000. Put the agent's provider
+credential in `nanoclaw.env`, for example an `ANTHROPIC_API_KEY` setting. The
+image forwards it to Claude Code. After the daemon listens, start NanoClaw:
 
 ```bash
 docker run --rm --network container:agent-daemon \
+  --env-file nanoclaw.env \
   --mount type=bind,src="$PWD/runtime.json",dst=/run/social-harness/bootstrap/nanoclaw/runtime.json,readonly \
   --mount type=bind,src="$PWD/workspace",dst=/run/social-harness/workspace \
   --env SHARNESS_MCP_URL=http://127.0.0.1:4319/mcp \
@@ -45,16 +39,45 @@ docker run --rm --network container:agent-daemon \
   social-harness-nanoclaw:local
 ```
 
-Create `nanoclaw-state/` writable by uid 1000 first. NanoClaw starts its native
-host loops. For Kubernetes, use the [daemon Pod example](../daemon/README.md#kubernetes),
+NanoClaw starts its native host loops and serves its CLI gateway at
+`127.0.0.1:7777` in the shared network namespace. For Kubernetes, use the
+[daemon Pod example](../daemon/README.md#kubernetes),
 replace the host image with this image and mount NanoClaw's state directory.
 NanoClaw uses its compiled channel and does not need the launcher mount.
 See the [daemon contract](../../docs/reference/spec/harness/daemon.md) for settings and
-[Upgrades](../../docs/guides/upgrades.mdx) for daemon release selection.
+[Upgrades](https://docs.moltzap.xyz/guides/upgrades) for daemon release selection.
 
-The live integration tests cover native inbox delivery and outbound direct and
-group sends through the runner's tool and final output. Set
-`NANOCLAW_INTEGRATION_IMAGE` and `DAEMON_INTEGRATION_IMAGE` to locally built tags.
-The tests run separate host and daemon containers sharing one network namespace,
-with the repository's Registry and Router and no provider secrets.
+## Build and check locally
 
+Use the repository's pinned Node and pnpm versions with dependencies installed,
+and a running Docker engine whose Buildx builder uses the `docker` driver.
+From the workspace root:
+
+```sh
+pnpm nx run @social-harness/nanoclaw-agent:image:build
+```
+
+The target builds the library and channel, stages their runtime dependencies
+in `images/.workspace`, verifies the upstream NanoClaw archive, and builds its
+base and host images. It replaces the generated staging directory on each run
+and loads `social-harness-nanoclaw:local` into Docker.
+
+Check that NanoClaw can load the installed channel:
+
+```sh
+pnpm nx run @social-harness/nanoclaw-agent:image:smoke
+```
+
+The smoke exits successfully without starting an agent. The live integration
+suite covers native inbox delivery and outbound direct and group sends through
+the runner's tool and final output. After building the daemon image, run:
+
+```sh
+DAEMON_INTEGRATION_IMAGE=social-harness-daemon:local \
+NANOCLAW_INTEGRATION_IMAGE=social-harness-nanoclaw:local \
+  pnpm nx run @social-harness/nanoclaw-agent:test:live
+```
+
+These tests run separate host and daemon containers sharing one network
+namespace, with the repository's Registry and Router and no provider secrets.
+They use a provider stand-in and do not establish model behavior.

@@ -2,8 +2,8 @@
 /**
  * @file Builds stock NanoClaw from a verified upstream archive, then adds
  * this workspace's channel source, skills and daemon runtime closure.
- * Run `pnpm build` and deploy the image tests' runtime dependencies to `images/.workspace`
- * before building. The README gives the complete commands.
+ * The image:build Nx target prepares the workspace runtime dependencies
+ * before invoking this script.
  */
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -154,7 +154,6 @@ export function buildxDriver(inspectOutput: string): string {
   return driver;
 }
 
-/** Run the request the process arguments name. */
 async function main() {
   const request = parseBuildArguments(process.argv.slice(2));
   switch (request.mode) {
@@ -192,7 +191,6 @@ function parseOrUsage(args: readonly string[]): {
   }
 }
 
-/** The `stage DIRECTORY` or `lock` request, when no `--tag` is given. */
 function positionalRequest(
   positionals: readonly string[],
 ): BuildRequest | undefined {
@@ -209,7 +207,6 @@ function positionalRequest(
   return undefined;
 }
 
-/** The build request, when `--tag` names an image reference and nothing else is given. */
 function tagRequest(
   tag: string,
   positionals: readonly string[],
@@ -219,7 +216,6 @@ function tagRequest(
     : undefined;
 }
 
-/** Download, verify and extract the NanoClaw archive into `source`, then check its base. */
 async function stageNanoClawTree(directory: string, source: string) {
   report(`downloading NanoClaw ${NANOCLAW_SOURCE.revision}`);
   const archive = join(directory, "nanoclaw.tar.gz");
@@ -258,7 +254,6 @@ async function writeLockfile() {
   }
 }
 
-/** Stage, patch and prepare the tree under `staging`, then resolve its lockfile in place. */
 async function resolvePreparedTree(staging: string) {
   const source = join(staging, "source");
   await stageInputs(staging);
@@ -291,7 +286,6 @@ async function resolvePreparedTree(staging: string) {
   );
 }
 
-/** Stage the inputs, build the stock base and the image under `tag`, and print one JSON line. */
 async function buildImage(tag: string) {
   await requireDockerDriver();
   const staging = await mkdtemp(join(tmpdir(), "nanoclaw-agent-"));
@@ -316,7 +310,6 @@ async function buildImage(tag: string) {
   }
 }
 
-/** Fail unless the current buildx builder uses the `docker` driver. */
 async function requireDockerDriver() {
   const { stdout } = await exec("docker", ["buildx", "inspect"], {
     timeout: 30_000,
@@ -329,7 +322,6 @@ async function requireDockerDriver() {
   }
 }
 
-/** Build NanoClaw's stock agent runtime image from the verified tree on the pinned base, returning its tag. */
 async function buildAgentBase(source: string): Promise<string> {
   const image = `nanoclaw-agent-base:${NANOCLAW_SOURCE.revision.slice(0, 16)}`;
   const lockDigest = createHash("sha256")
@@ -359,7 +351,6 @@ async function buildAgentBase(source: string): Promise<string> {
   return image;
 }
 
-/** The `docker buildx build` arguments for the image, with the staged inputs as named contexts. */
 function imageBuildArguments(
   tag: string,
   staging: string,

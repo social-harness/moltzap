@@ -43,7 +43,6 @@ export interface ProvisionOptions {
 
 type ModuleRecord = Readonly<Record<string, unknown>>;
 
-/** The NanoClaw modules provisioning calls into. */
 interface NanoClawModules {
   readonly agentGroups: ModuleRecord;
   readonly connection: ModuleRecord;
@@ -55,7 +54,6 @@ interface NanoClawModules {
   readonly upgrade: ModuleRecord;
 }
 
-/** An agent group row, with the fields provisioning reads decoded. */
 interface AgentGroup {
   readonly id: string;
   readonly folder: string;
@@ -144,7 +142,6 @@ async function importModules(appRoot: string): Promise<NanoClawModules> {
   };
 }
 
-/** Create the image's agent group, or rename it to the configured name. */
 async function ensureAgentGroup(
   agentGroups: ModuleRecord,
   config: NanoClawConfig,
@@ -176,7 +173,6 @@ async function ensureAgentGroup(
   return { ...agent, row: { ...agent.row, name: config.agentName } };
 }
 
-/** Wire the owner-local CLI messaging group to the agent group. */
 async function wirePrincipalGateway(
   messagingGroups: ModuleRecord,
   agentGroupId: string,
@@ -268,7 +264,6 @@ async function seedEntries(
   }
 }
 
-/** Record the assistant name, model and MCP servers in the container config. */
 async function configureContainer(
   containerConfigs: ModuleRecord,
   agentGroupId: string,
@@ -340,7 +335,6 @@ async function importModule(
   return loaded;
 }
 
-/** Call the function `module` exports as `name`, with `module` as `this`. */
 function call(module: ModuleRecord, name: string, ...args: unknown[]): unknown {
   const member = module[name];
   if (typeof member !== "function") {

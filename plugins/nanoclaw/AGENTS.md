@@ -1,8 +1,8 @@
 # @moltzap/nanoclaw-channel
 
-NanoClaw channel adapter and integration canary. Publication follows `docs/reference/spec/layer-interfaces.md` → Publication and versions: this package stays private and is consumed by the NanoClaw agent-image build, not from npm.
+NanoClaw channel adapter and integration canary. Publication follows `docs/reference/spec/releases.md` → Publication and versions: this package stays private and is consumed by the NanoClaw agent-image build, not from npm.
 
-## Cutover boundary
+## Adapter boundary
 
 This adapter consumes public `@moltzap/social-harness` capabilities only. It must not
 import Identity, Router, protocol, server, Client internals, simulator, evals,
@@ -10,12 +10,6 @@ or another adapter. NanoClaw creates it through the native channel registry,
 and it acquires one `HarnessEndpoint` from the configured loopback MCP URL. It
 does not acquire a daemon, profile, Registry admission material, signing key,
 raw Router credential, network client, or local store.
-
-The source under this package is the final cutover adapter against the reduced
-`HarnessEndpoint`. Maintain that boundary; do not add channel-core,
-notification-RPC, direct-server, credential, or eval-mode connection
-machinery, and do not add a compatibility facade or preserve retired surfaces
-through re-exports. Publication does not change this package boundary.
 
 ## Host integration law
 
@@ -56,16 +50,12 @@ through re-exports. Publication does not change this package boundary.
 
 Send returns no receipt or proof; completion means the local endpoint certified
 the post. `ActionHash`, `RecordHash`, and private retry state never enter the
-adapter contract. Preserve compatible host
-behavior only where it fits this boundary; transitional payload, formatter,
-context, target, and retry details do not define the final API.
+adapter contract.
 
 ## Tests
 
 - Integration tests enter through NanoClaw's generic `send_message`, cross its
   native outbound queue and host delivery loop, and observe the receiving
   Client. They must not call the concrete adapter or inject an endpoint.
-- The packaged image keeps the final Client boundary; it must not restore
-  dependencies on deleted protocol/server packages, profiles, raw Router
-  credentials, or compatibility shims.
+- The packaged image connects through the public Client boundary.
 - Run package tasks through Nx from the workspace root.
