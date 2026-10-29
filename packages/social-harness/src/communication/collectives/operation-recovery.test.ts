@@ -90,18 +90,25 @@ const response = {
 function resume(subject: Fixture, store: EndpointStore, failOutbound = false) {
   return Effect.gen(function* () {
     const engine = yield* resumeEngine(subject, store, failOutbound);
-    return yield* makeCollectiveOperations({
+    const collective = yield* makeCollectiveOperations({
       store,
       self,
       scope: yield* Scope.Scope,
       lookupMember: () => Effect.void,
       sendPost: engine.send,
+      bindPost: engine.bind,
       sendAdmitted: engine.sendAdmitted,
       observePost: engine.observePost,
       reportStorageFault: () =>
         Effect.dieMessage("unexpected collective storage failure"),
       emit: () => Effect.dieMessage("a gather receiver emits no local result"),
     });
+    const pending = yield* engine.readPendingMessages();
+    yield* Effect.forEach(pending, collective.classify, {
+      concurrency: 1,
+      discard: true,
+    });
+    return collective;
   });
 }
 
@@ -370,6 +377,7 @@ function pausedAdmission(mode: "bind" | "gather") {
       scope: yield* Scope.Scope,
       lookupMember: () => Effect.void,
       sendPost: () => Effect.never,
+      bindPost: () => Effect.dieMessage("checked sends use the admission port"),
       sendAdmitted: () => Effect.never,
       observePost: () => Effect.never,
       reportStorageFault: (error) =>
@@ -479,7 +487,7 @@ itOnClock(
     }),
 );
 
-function interruptedBindFixture() {
+function interruptedBindFixture(pause: "before" | "after" = "after") {
   return Effect.gen(function* () {
     const subject = yield* groupSubject(yield* Effect.scoped(engineFixture()));
     const head = yield* seedGroupFirstMessage(subject);
@@ -491,11 +499,15 @@ function interruptedBindFixture() {
     const emitted = yield* Deferred.make<InboundItem>();
     const store: EndpointStore = {
       ...originalStore,
-      bindCheckedPostIntent: (binding, completion) =>
-        originalStore.bindCheckedPostIntent(binding, completion).pipe(
-          Effect.tap(() => Deferred.succeed(bound, undefined)),
-          Effect.tap(() => Deferred.await(release)),
-        ),
+      bindCheckedPostIntent: (binding, completion) => {
+        const bind = originalStore.bindCheckedPostIntent(binding, completion);
+        const barrier = Deferred.succeed(bound, undefined).pipe(
+          Effect.zipRight(Deferred.await(release)),
+        );
+        return pause === "before"
+          ? barrier.pipe(Effect.zipRight(bind))
+          : bind.pipe(Effect.tap(() => barrier));
+      },
     };
     const engine = yield* resumeEngine(subject, store);
     const installed = yield* installation(
@@ -508,6 +520,7 @@ function interruptedBindFixture() {
       scope: yield* Scope.Scope,
       lookupMember: () => Effect.void,
       sendPost: engine.send,
+      bindPost: engine.bind,
       sendAdmitted: engine.sendAdmitted,
       observePost: engine.observePost,
       reportStorageFault: () =>
@@ -832,3 +845,52 @@ function assertOwnAnswer(item: InboundItem) {
     outcome: { kind: "answered", content: { answer: "Monday" } },
   });
 }
+
+itOnClock(
+  "reports an expired request when its close wins before a held response binds",
+  () =>
+    Effect.gen(function* () {
+      const fixture = yield* interruptedBindFixture("before");
+      const request = yield* admittedGroupRequest(fixture);
+      const close = yield* certifyBoundIntent(fixture, request.record, {
+        ...request.record.actionCertifiedRecord.recordCore.action.postIntent,
+        postId: yield* mintPostId(),
+        content: yield* encodeCollectiveContent({
+          kind: "close",
+          id: request.id,
+          included: [],
+        }),
+      });
+      const sending = yield* fixture.layer
+        .send({
+          to: Schema.decodeUnknownSync(MessageAddressInput)(
+            "group:alice,bob,carol",
+          ),
+          collectiveResponse: {
+            id: request.id,
+            action: "accept",
+            content: { answer: "Monday" },
+          },
+        })
+        .pipe(Effect.fork);
+      yield* Deferred.await(fixture.bound);
+      yield* classifyCertified(fixture, close);
+      yield* Deferred.succeed(fixture.release, undefined);
+      const failure = yield* Effect.flip(Fiber.join(sending));
+      expect(
+        failure._tag === "CollectiveError"
+          ? failure.failure
+          : { kind: failure._tag, message: failure.message },
+      ).toEqual({ kind: "request-expired" });
+      expect(
+        yield* fixture.store.readCollectivePosts({
+          operationId: request.id,
+          role: "response",
+        }),
+      ).toEqual([]);
+      expect(yield* Deferred.await(fixture.emitted)).toMatchObject({
+        kind: "collectiveResult",
+        id: request.id,
+      });
+    }),
+);

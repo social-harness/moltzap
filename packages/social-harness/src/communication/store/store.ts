@@ -25,6 +25,7 @@ import {
   publishCollectiveItem,
   putCollectiveOperation,
   readCollectiveAnswers,
+  readCollectiveOperation,
   readCollectiveOperations,
   readCollectivePosts,
   readCollectiveRefusals,
@@ -80,6 +81,7 @@ import {
   enqueueOutbound,
   enqueueOutboundInTransaction,
   readPendingDeliveries,
+  readRetainedDeliveries,
 } from "./queues/index.js";
 import {
   readStoredConversation,
@@ -162,9 +164,12 @@ function makeEndpointStore(state: StoreState): EndpointStore {
       }),
     putCollectiveOperation: (input) =>
       run(() => putCollectiveOperation(state.database, input)),
+    readCollectiveOperation: (id) =>
+      run(() => readCollectiveOperation(state.database, id)),
     readCollectiveOperations: () =>
       run(() => readCollectiveOperations(state.database)),
-    readCollectivePosts: () => run(() => readCollectivePosts(state.database)),
+    readCollectivePosts: (query) =>
+      run(() => readCollectivePosts(state.database, query)),
     finalizeCollectiveOperation: (operationId, selection) =>
       run(() =>
         finalizeCollectiveOperation(state.database, operationId, selection),
@@ -200,6 +205,8 @@ function makeEndpointStore(state: StoreState): EndpointStore {
       run(() => completeReanchor(state.database, reanchor)),
     applyCatchUpReanchor: (reanchor) =>
       run(() => applyCatchUpReanchor(state.database, reanchor)),
+    readRetainedDeliveries: () =>
+      run(() => readRetainedDeliveries(state.database)),
     readPendingDeliveries: () =>
       run(() => readPendingDeliveries(state.database)),
     acknowledgeDelivery: (deliveryToken) =>

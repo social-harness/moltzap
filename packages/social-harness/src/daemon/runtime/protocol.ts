@@ -344,6 +344,7 @@ const makeProtocolCollectives = (
 ): Effect.Effect<CollectiveOperations, EndpointStoreError> => {
   const installed = environment.firewall;
   return makeCollectiveOperations({
+    bindPost: (input, hold) => engine.bind(input, hold),
     store: environment.store,
     observePost: (postId) => engine.observePost(postId),
     sendAdmitted: (input, checkId) => engine.sendAdmitted(input, checkId),

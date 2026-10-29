@@ -247,6 +247,7 @@ const firewallRuntime = (subject: Fixture, installed: InstalledFirewall) =>
       scope,
       lookupMember: (member) => engine.resolveAddress(member),
       sendPost: (input) => engine.send(input),
+      bindPost: (input, hold) => engine.bind(input, hold),
       emit,
       admission: collectiveAdmission(environment, engine),
     });

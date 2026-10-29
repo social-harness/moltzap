@@ -97,6 +97,7 @@ function admissionFixture(mode: "plain" | "firewall") {
         Deferred.succeed(started, undefined).pipe(
           Effect.zipRight(Effect.never),
         ),
+      bindPost: () => Effect.dieMessage("gather uses request fanout"),
       sendAdmitted: () => Effect.never,
       observePost: () => Effect.never,
       reportStorageFault: () => Effect.dieMessage("unexpected storage fault"),

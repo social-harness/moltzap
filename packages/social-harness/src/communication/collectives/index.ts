@@ -51,7 +51,6 @@ import {
 } from "./persistence.js";
 import {
   type AdmittedGather,
-  type AdmittedPost,
   type AuthoredPostError,
   bindAuthoredPost,
   type CertifiedPost,
@@ -63,22 +62,21 @@ import {
 import { type ReceivedRequest, receivedRequest } from "./received-request.js";
 import { recoverCollectives } from "./recovery.js";
 import {
+  fanOutRequests,
   gatherAddress,
-  isAddressRefusal,
-  lookupRefusals,
   operationTimes,
   postRefusal,
+  refuseAddressErrors,
   type RequestRefusal,
-  type RequestSend,
   requestsSoFar,
   requestWait,
   sleepUntil,
+  withinRequestWait,
 } from "./request-sends.js";
 import { respond, restoreResponse } from "./responses.js";
 import {
   type CollectiveResultItem,
   memberOutcomes,
-  type Members,
   type ResponseValue,
 } from "./shared-answers.js";
 import {
@@ -259,7 +257,7 @@ function prepareGather(
       input.op,
     );
     const requestedSchema = yield* formModeSchema(id, input.requestedSchema);
-    yield* refuseAddressErrors(state, members).pipe(
+    yield* refuseAddressErrors(members, state.ports.lookupMember).pipe(
       Effect.mapError((failure) => collectiveFailure(id, failure)),
     );
     const { deadlineAt, waitUntil } = yield* operationTimes(input.deadline);
@@ -319,9 +317,9 @@ function formModeSchema(
 /**
  * Admit a gather, open it, and send its request posts through the sender
  * the check admitted. The admitting check's advice stays with the outcome,
- * and with a refusal that follows admission.
+ * and with a refusal that follows admission. Admission and fanout keep one
+ * scoped owner even if the invoking caller stops waiting.
  */
-/** Admission and fanout keep one scoped owner even if the invoking caller stops waiting. */
 function gatherRequests(
   state: CollectiveState,
   prepared: PreparedGather,
@@ -376,30 +374,7 @@ function admitGather(
     Effect.catchTag("EndpointStoreError", (error) =>
       durableSend(state, Effect.fail(error)),
     ),
-    Effect.tap(() => refreshRetainedSend(state)),
-  );
-}
-
-/**
- * Resolve every member before any post through the engine's address
- * resolution. A malformed or unknown member, or invalid membership, refuses
- * the whole send naming each one; any other lookup failure is left to the
- * post, which reports it as a delivery failure.
- */
-function refuseAddressErrors(
-  state: CollectiveState,
-  members: Members,
-): Effect.Effect<void, CollectiveFailure> {
-  return lookupRefusals(members, state.ports.lookupMember).pipe(
-    Effect.map((refusals) => refusals.filter(isAddressRefusal)),
-    Effect.flatMap(([first, ...rest]) =>
-      first === undefined
-        ? Effect.void
-        : Effect.fail<CollectiveFailure>({
-            kind: "members-unreachable",
-            members: [first, ...rest],
-          }),
-    ),
+    Effect.tap(() => refreshRetainedSend(state, prepared.id)),
   );
 }
 
@@ -419,7 +394,12 @@ function sendRequests(
 ): Effect.Effect<RequestSendOutcome, CollectiveError | SendError> {
   return Effect.gen(function* () {
     const { id, open } = prepared;
-    const sends = yield* fanOutRequests(state, prepared, sendRequest);
+    const sends = yield* fanOutRequests(
+      prepared,
+      sendRequest,
+      state.ports.scope,
+      (refusal) => recordRefusal(state, id, refusal),
+    );
     yield* Fiber.awaitAll(sends).pipe(
       Effect.timeoutOption(yield* requestWait(prepared.waitUntil)),
     );
@@ -431,9 +411,8 @@ function sendRequests(
     if (
       refusal !== undefined &&
       refusals.length + 1 === open.members.length &&
-      state.gathers.has(id)
+      (yield* forgetGather(state, id))
     ) {
-      yield* forgetGather(state, id);
       return yield* collectiveFailure(id, {
         kind: "members-unreachable",
         members: [refusal, ...refusals],
@@ -448,30 +427,9 @@ function sendRequests(
   });
 }
 
-function fanOutRequests(
-  state: CollectiveState,
-  prepared: PreparedGather,
-  sendRequest: PostSender,
-) {
-  const { id, open } = prepared;
-  return Effect.forEach(
-    open.members,
-    (member): Effect.Effect<RequestSend> =>
-      sendRequest({
-        to: member,
-        content: prepared.content,
-        collective: { operationId: id, role: "request", destination: member },
-      }).pipe(
-        Effect.mapError((error) => postRefusal(member, error)),
-        Effect.tapError((refusal) => recordRefusal(state, id, refusal)),
-        Effect.either,
-        Effect.forkIn(state.ports.scope),
-      ),
-    { concurrency: 1 },
-  );
-}
-
-/** Record a member whose request post was refused as `no-answer`. */
+/**
+ * Record a member whose request post was refused as `no-answer`.
+ */
 function recordRefusal(
   state: CollectiveState,
   id: CollectiveId,
@@ -569,9 +527,9 @@ function sendGroupRequest(
           ? Effect.fail(error)
           : abandonGroupRequest(state, prepared, error),
     ),
-    Effect.tap(() => refreshRetainedSend(state)),
+    Effect.tap(() => refreshRetainedSend(state, prepared.id)),
     Effect.flatMap(({ certified, guidance }) =>
-      withinRequestWait(prepared, certified).pipe(
+      withinRequestWait(prepared.waitUntil, certified).pipe(
         Effect.map((post) => ({
           postIds: [post.postId],
           ...(guidance === undefined ? {} : { guidance }),
@@ -582,21 +540,6 @@ function sendGroupRequest(
       ),
     ),
     Effect.onExit(() => armRetainedGather(state, id)),
-  );
-}
-
-/** A request post, failing as uncertified when the send's wait ends first. */
-function withinRequestWait(
-  prepared: PreparedGather,
-  certified: AdmittedPost["certified"],
-) {
-  return requestWait(prepared.waitUntil).pipe(
-    Effect.flatMap((duration) =>
-      Effect.timeoutFail(certified, {
-        duration,
-        onTimeout: () => new SendError({ reason: "delivery-pending" }),
-      }),
-    ),
   );
 }
 
@@ -651,7 +594,7 @@ function releaseUnboundGather(
   state: CollectiveState,
   id: CollectiveId,
 ): Effect.Effect<void> {
-  return durableEmit(state, refreshRetained(state)).pipe(
+  return durableEmit(state, refreshRetained(state, id)).pipe(
     Effect.flatMap(() =>
       state.retained.has(id)
         ? armRetainedGather(state, id)
@@ -661,12 +604,14 @@ function releaseUnboundGather(
   );
 }
 
-/** A retained operation can finalize at its absolute deadline without touching a pre-bind hold. */
+/**
+ * A retained operation can finalize at its absolute deadline without touching a pre-bind hold.
+ */
 function armRetainedGather(
   state: CollectiveState,
   id: CollectiveId,
 ): Effect.Effect<void> {
-  return durableEmit(state, refreshRetained(state)).pipe(
+  return durableEmit(state, refreshRetained(state, id)).pipe(
     Effect.flatMap(() =>
       state.transitions.withPermits(1)(
         Effect.gen(function* () {
@@ -781,6 +726,9 @@ function requestItem(
   post: CertifiedPost,
   value: CollectingValue,
 ): Effect.Effect<Option.Option<InboundItem>, CollectiveEmitError> {
+  if (state.recovering && !retainedRequestMatches(state, post, value.id)) {
+    return Effect.succeed(Option.none());
+  }
   return Effect.gen(function* () {
     const now = yield* Clock.currentTimeMillis;
     const received = receivedRequest(
@@ -816,6 +764,19 @@ function requestItem(
         })
       : Option.none();
   });
+}
+
+/** Recovery restores accepted request identities without admitting consumed or fresh records. */
+function retainedRequestMatches(
+  state: CollectiveState,
+  post: CertifiedPost,
+  id: CollectiveId,
+): boolean {
+  const retained = state.retained.get(id);
+  return (
+    retained?.origin.kind === "remote" &&
+    retained.origin.recordHash === post.recordHash
+  );
 }
 
 function conflictsWithRequest(
@@ -869,7 +830,7 @@ function retainRequest(
         canonicalRequest,
         canonicalDescriptor: yield* encodeRuntimeValue({}),
       });
-      yield* refreshRetained(state);
+      yield* refreshRetained(state, id);
     }),
   );
 }
@@ -1063,7 +1024,9 @@ function retainCountedAnswer(
   });
 }
 
-/** Whether an answer arrived where the operation's answers are sent. */
+/**
+ * Whether an answer arrived where the operation's answers are sent.
+ */
 function answeredInConversation(
   open: OpenGather,
   message: InboundMessage,
@@ -1080,7 +1043,9 @@ function answeredInConversation(
   }
 }
 
-/** Only a confirmed pre-bind refusal abandons a group request. */
+/**
+ * Only a confirmed pre-bind refusal abandons a group request.
+ */
 function groupRequestFailure(
   state: CollectiveState,
   prepared: PreparedGather,
@@ -1092,12 +1057,16 @@ function groupRequestFailure(
   ) {
     return Effect.fail(error);
   }
-  return durableSend(state, state.ports.store.readCollectivePosts()).pipe(
+  return durableSend(
+    state,
+    state.ports.store.readCollectivePosts({
+      operationId: prepared.id,
+      role: "request",
+    }),
+  ).pipe(
     Effect.flatMap(
       (posts): Effect.Effect<never, SendError | CollectiveError> =>
-        posts.some(
-          (post) => post.operationId === prepared.id && post.role === "request",
-        )
+        posts.length > 0
           ? Effect.fail(error)
           : abandonGroupRequest(state, prepared, error),
     ),
@@ -1127,26 +1096,58 @@ function abandonGroupRequest(
   );
 }
 
-/** Retire an invocation whose request posts were all refused before binding. */
+/**
+ * Retirement and deadline selection claim one terminal outcome before either cancels the timer.
+ */
 function forgetGather(
   state: CollectiveState,
   id: CollectiveId,
-): Effect.Effect<void, SendError> {
-  return releaseGather(state, id).pipe(
-    Effect.zipRight(
-      state.retained.has(id)
-        ? durableSend(
+): Effect.Effect<boolean, SendError> {
+  return state.transitions
+    .withPermits(1)(
+      Effect.uninterruptible(
+        Effect.gen(function* () {
+          const operation = yield* durableSend(
             state,
-            encodeRuntimeValue({ kind: "refused" }).pipe(
-              Effect.flatMap((selection) =>
-                state.ports.store.retireCollectiveOperation(id, selection),
+            state.ports.store.readCollectiveOperation(id),
+          );
+          if (operation !== undefined && operation.phase !== "collecting") {
+            return;
+          }
+          if (operation !== undefined) {
+            yield* durableSend(
+              state,
+              encodeRuntimeValue({ kind: "refused" }).pipe(
+                Effect.flatMap((selection) =>
+                  state.ports.store.retireCollectiveOperation(id, selection),
+                ),
               ),
-            ),
-          )
-        : Effect.void,
-    ),
-    Effect.zipRight(markRefused(state, id)),
-  );
+            );
+          }
+          const open = state.gathers.get(id);
+          state.gathers.delete(id);
+          const announced = state.announced.delete(id);
+          return { timer: open?.timer, announced };
+        }),
+      ),
+    )
+    .pipe(
+      Effect.flatMap((retired) => {
+        if (retired === undefined) {
+          return Effect.succeed(false);
+        }
+        return (
+          retired.timer === undefined
+            ? Effect.void
+            : Fiber.interrupt(retired.timer)
+        ).pipe(
+          Effect.zipRight(
+            retired.announced ? closedSpan(id, "refused") : Effect.void,
+          ),
+          Effect.as(true),
+        );
+      }),
+    );
 }
 
 function releaseGather(

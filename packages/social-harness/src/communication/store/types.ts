@@ -431,14 +431,17 @@ export interface EndpointStore {
   readonly putCollectiveOperation: (
     input: CollectiveOperationInput,
   ) => Effect.Effect<StoreMutation, EndpointStoreError>;
+  readonly readCollectiveOperation: (
+    operationId: string,
+  ) => Effect.Effect<StoredCollectiveOperation | undefined, EndpointStoreError>;
   readonly readCollectiveOperations: () => Effect.Effect<
     readonly StoredCollectiveOperation[],
     EndpointStoreError
   >;
-  readonly readCollectivePosts: () => Effect.Effect<
-    readonly StoredCollectivePost[],
-    EndpointStoreError
-  >;
+  readonly readCollectivePosts: (query?: {
+    readonly operationId: string;
+    readonly role?: StoredCollectivePost["role"];
+  }) => Effect.Effect<readonly StoredCollectivePost[], EndpointStoreError>;
   readonly finalizeCollectiveOperation: (
     operationId: string,
     canonicalSelection: Uint8Array,
@@ -608,6 +611,11 @@ export interface EndpointStore {
   readonly applyCatchUpReanchor: (
     reanchor: CompletedReanchor,
   ) => Effect.Effect<StoreMutation, EndpointStoreError>;
+  /** Replay includes acknowledged rows in their original delivery order. */
+  readonly readRetainedDeliveries: () => Effect.Effect<
+    readonly PendingDelivery[],
+    EndpointStoreError
+  >;
   readonly readPendingDeliveries: () => Effect.Effect<
     readonly PendingDelivery[],
     EndpointStoreError

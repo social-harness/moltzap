@@ -26,7 +26,7 @@ import {
   type CollectiveResponse,
   type CollectiveSendOutcome,
 } from "./contracts.js";
-import { durableEmit } from "./persistence.js";
+import { durableEmit, durableSend } from "./persistence.js";
 import {
   bindAuthoredPost,
   type BindHold,
@@ -67,20 +67,7 @@ export function respond(
   return Effect.gen(function* () {
     const { id, request } = yield* openRequest(state, to, response);
     const value: ResponseValue = { ...response, kind: "response", id };
-    const content = yield* responseContent(request, value);
-    const { certified, guidance } = yield* bindAuthoredPost(
-      state.ports,
-      {
-        to: request.to,
-        content,
-        collective: {
-          operationId: id,
-          role: "response",
-          destination: request.to,
-        },
-      },
-      claimRequest(state, request, value),
-    );
+    const { certified, guidance } = yield* bindResponse(state, request, value);
     const { postId } = yield* certified.pipe(
       Effect.tapBoth({
         onFailure: (error) =>
@@ -154,6 +141,35 @@ export function restoreResponse(
       yield* observeResponse(state, request, response, intent.postId);
     }
   }).pipe(Effect.withSpan("restoreResponse"));
+}
+
+/** Response binding confirms a still-open request and distinguishes a close from storage uncertainty. */
+function bindResponse(
+  state: CollectiveState,
+  request: ReceivedRequest,
+  value: ResponseValue,
+) {
+  return Effect.gen(function* () {
+    const id = value.id;
+    const content = yield* responseContent(request, value);
+    return yield* bindAuthoredPost(
+      state.ports,
+      {
+        to: request.to,
+        content,
+        collective: {
+          operationId: id,
+          role: "response",
+          destination: request.to,
+        },
+      },
+      claimRequest(state, request, value),
+    ).pipe(
+      Effect.catchTag("SendError", (error) =>
+        closedResponseFailure(state, request, id, error),
+      ),
+    );
+  });
 }
 
 /**
@@ -241,11 +257,15 @@ function settleUncertifiedAnswer(
   failure?: SendError,
 ): Effect.Effect<void> {
   const id = response.id;
-  return durableEmit(state, state.ports.store.readCollectivePosts()).pipe(
+  return durableEmit(
+    state,
+    state.ports.store.readCollectivePosts({
+      operationId: id,
+      role: "response",
+    }),
+  ).pipe(
     Effect.flatMap((posts) => {
-      const bound = posts.find(
-        (post) => post.operationId === id && post.role === "response",
-      );
+      const [bound] = posts;
       if (bound === undefined) {
         return failure?.reason === "delivery-pending" ||
           failure?.reason === "outcome-unknown"
@@ -318,4 +338,31 @@ function settleAnswer(
       ? Effect.void
       : applyClose(state, { id, request }, held);
   });
+}
+
+/** A close that wins before binding refuses the answer; uncertain commits retain their original outcome. */
+function closedResponseFailure(
+  state: CollectiveState,
+  request: ReceivedRequest,
+  id: CollectiveId,
+  error: SendError,
+): Effect.Effect<never, SendError | CollectiveError> {
+  if (request.state !== "closed" || error.reason !== "persistence-failed") {
+    return Effect.fail(error);
+  }
+  return durableSend(
+    state,
+    state.ports.store.readCollectivePosts({
+      operationId: id,
+      role: "response",
+    }),
+  ).pipe(
+    Effect.flatMap((posts) =>
+      Effect.fail(
+        posts.length === 0
+          ? collectiveFailure(id, { kind: "request-expired" })
+          : error,
+      ),
+    ),
+  );
 }

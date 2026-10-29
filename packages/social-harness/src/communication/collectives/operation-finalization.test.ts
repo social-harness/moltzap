@@ -78,6 +78,7 @@ function delayedAnswerFixture() {
             recordHash: head.actionCertifiedRecord.recordHash,
           })),
         ),
+      bindPost: () => Effect.dieMessage("gather uses request fanout"),
       sendAdmitted: () => Effect.dieMessage("no firewall in this test"),
       observePost: () => Effect.dieMessage("gather owns no close"),
       reportStorageFault: () => Effect.dieMessage("unexpected storage fault"),

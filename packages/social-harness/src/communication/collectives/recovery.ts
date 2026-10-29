@@ -17,7 +17,6 @@ import {
   type CollectiveError,
   CollectiveId,
 } from "./contracts.js";
-import { refreshRetained } from "./persistence.js";
 import {
   postRefusal,
   type RequestRefusal,
@@ -60,23 +59,17 @@ export function recoverCollectives(
   actions: RecoveryActions,
 ): Effect.Effect<void, EndpointStoreError> {
   return Effect.gen(function* () {
-    yield* refreshRetained(state);
+    const operations = yield* state.ports.store.readCollectiveOperations();
+    for (const operation of operations) {
+      const id = yield* storedValue(CollectiveId, operation.operationId);
+      state.retained.set(id, operation);
+    }
     yield* restoreCountedAnswers(state);
     const prepared = yield* restoreOperations(state, actions);
     const posts = yield* state.ports.store.readCollectivePosts();
-    yield* Effect.forEach(
-      posts.filter((post) => post.role === "response"),
-      actions.restoreResponse,
-      { concurrency: 1, discard: true },
-    );
-    const recovery = yield* state.ports.store.recover();
-    yield* Effect.forEach(
-      recovery.pendingDeliveries,
-      (delivery) =>
-        replayMessage(actions, delivery.canonicalMessage, delivery.recordHash),
-      { concurrency: 1, discard: true },
-    );
     const refusals = yield* state.ports.store.readCollectiveRefusals();
+    const claims = claimedRequestDestinations(posts, refusals);
+    yield* replayDeliveries(state, actions, posts);
     yield* restoreRefusals(state, refusals);
     yield* Effect.sync(() => {
       state.recovering = false;
@@ -85,10 +78,74 @@ export function recoverCollectives(
     yield* Effect.forEach(
       [...prepared],
       ([id, operation]) =>
-        resumeRequester(state, actions, { id, operation, posts, refusals }),
+        resumeRequester(state, actions, {
+          id,
+          operation,
+          claimed: claims.get(id) ?? new Set(),
+        }),
       { concurrency: 1, discard: true },
     );
   }).pipe(Effect.withSpan("recoverCollectives"));
+}
+
+/** Remote context appears at its original delivery, so an earlier consumed close stays unknown. */
+function replayDeliveries(
+  state: CollectiveState,
+  actions: RecoveryActions,
+  posts: readonly StoredCollectivePost[],
+) {
+  const requests = new Map(
+    [...state.retained.values()].flatMap((operation) =>
+      operation.origin.kind === "remote"
+        ? [[operation.origin.recordHash, operation] as const]
+        : [],
+    ),
+  );
+  const responses = new Map(
+    posts
+      .filter((post) => post.role === "response")
+      .map((post) => [post.operationId, post]),
+  );
+  return state.ports.store.readRetainedDeliveries().pipe(
+    Effect.flatMap((deliveries) =>
+      Effect.forEach(
+        deliveries,
+        (delivery) =>
+          Effect.gen(function* () {
+            yield* replayMessage(
+              actions,
+              delivery.canonicalMessage,
+              delivery.recordHash,
+            );
+            const request = requests.get(delivery.recordHash);
+            if (request === undefined) {
+              return;
+            }
+            yield* restoreRemote(state, request);
+            const response = responses.get(request.operationId);
+            if (response !== undefined) {
+              yield* actions.restoreResponse(response);
+            }
+          }),
+        { concurrency: 1, discard: true },
+      ),
+    ),
+  );
+}
+
+/** One recovery pass indexes bound and refused destinations before active fanouts resume. */
+function claimedRequestDestinations(
+  posts: readonly StoredCollectivePost[],
+  refusals: readonly CollectiveRequestRefusal[],
+): ReadonlyMap<string, ReadonlySet<string>> {
+  const claims = new Map<string, Set<string>>();
+  const requests = posts.filter((post) => post.role === "request");
+  for (const claim of [...requests, ...refusals]) {
+    const destinations = claims.get(claim.operationId) ?? new Set<string>();
+    destinations.add(claim.destination);
+    claims.set(claim.operationId, destinations);
+  }
+  return claims;
 }
 
 function restoreCountedAnswers(state: CollectiveState) {
@@ -119,8 +176,6 @@ function restoreOperations(state: CollectiveState, actions: RecoveryActions) {
         yield* actions
           .open(operation)
           .pipe(Effect.catchTag("CollectiveError", corruptState));
-      } else {
-        yield* restoreRemote(state, actions, retained);
       }
     }
     return prepared;
@@ -164,18 +219,12 @@ function restoreLocal(
 
 function restoreRemote(
   state: CollectiveState,
-  actions: RecoveryActions,
   retained: StoredCollectiveOperation,
 ) {
   return Effect.gen(function* () {
     if (retained.origin.kind !== "remote") {
       return;
     }
-    yield* replayMessage(
-      actions,
-      retained.canonicalRequest,
-      retained.origin.recordHash,
-    );
     const id = yield* storedValue(CollectiveId, retained.operationId);
     const request = state.requests.get(id);
     if (request === undefined || !retained.origin.requiresAdmission) {
@@ -241,8 +290,7 @@ function resumeHeldCloses(state: CollectiveState, actions: RecoveryActions) {
 interface RecoveredRequester {
   readonly id: CollectiveId;
   readonly operation: PreparedGather;
-  readonly posts: readonly StoredCollectivePost[];
-  readonly refusals: readonly CollectiveRequestRefusal[];
+  readonly claimed: ReadonlySet<string>;
 }
 
 function resumeRequester(
@@ -285,24 +333,14 @@ function resumeFanout(
   actions: RecoveryActions,
   recovered: RecoveredRequester,
 ) {
-  const { id, operation, posts, refusals } = recovered;
+  const { id, operation, claimed } = recovered;
   const checkId = state.retained.get(id)?.admittedCheckId;
   const send: PostSender =
     checkId === undefined
       ? state.ports.sendPost
       : (input) => state.ports.sendAdmitted(input, checkId);
   const pending = operation.open.members.filter(
-    (member) =>
-      !posts.some(
-        (post) =>
-          post.operationId === id &&
-          post.role === "request" &&
-          post.destination === member,
-      ) &&
-      !refusals.some(
-        (refusal) =>
-          refusal.operationId === id && refusal.destination === member,
-      ),
+    (member) => !claimed.has(member),
   );
   return Effect.forEach(
     pending,

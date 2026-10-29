@@ -121,6 +121,14 @@ export interface EnginePendingMessage {
 
 /** Stable private engine capability consumed by daemon composition. */
 export interface EndpointEngine {
+  /** Return a certification wait only after the held intent is durably bound. */
+  readonly bind: <E>(
+    input: EngineSendInput,
+    hold: BindHold<E>,
+  ) => Effect.Effect<
+    { readonly certified: Effect.Effect<EngineSentPost, SendError> },
+    SendError | E
+  >;
   /** Observe one durable local intent without rechecking, rebinding, or sending a replacement. */
   readonly observePost: (
     postId: PostId,
@@ -601,6 +609,12 @@ const abandonVolatileFolds = (
 
 const endpointEngine = (runtime: EngineRuntime): EndpointEngine =>
   Object.freeze({
+    bind: <E>(input: EngineSendInput, hold: BindHold<E>) =>
+      prepareSend(runtime, input, hold).pipe(
+        Effect.map((prepared) => ({
+          certified: finishPreparedSend(runtime, prepared),
+        })),
+      ),
     bindChecked: <E, A>(
       input: EngineSendInput,
       check: PreparedSendCheck<A>,

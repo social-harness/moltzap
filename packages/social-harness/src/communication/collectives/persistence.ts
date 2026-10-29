@@ -1,17 +1,18 @@
 /** @file Collective persistence failures and terminal publication share one boundary. */
-import { Effect, Schema } from "effect";
+import { Effect } from "effect";
 import type { EndpointStoreError } from "../store/index.js";
 import type { InboundItem } from "./inbound.js";
 import type { ResultProvenance } from "./ports.js";
 import type { CollectiveState } from "./state.js";
 import { SendError } from "../conversations/errors.js";
-import { CollectiveEmitError, CollectiveId } from "./contracts.js";
+import { CollectiveEmitError, type CollectiveId } from "./contracts.js";
 
 /** Refresh the same retained state on a caller-facing send boundary. */
 export function refreshRetainedSend(
   state: CollectiveState,
+  id: CollectiveId,
 ): Effect.Effect<void, SendError> {
-  return durableSend(state, refreshRetained(state));
+  return durableSend(state, refreshRetained(state, id));
 }
 
 /** An uncertain persistence outcome cannot authorize a second post. */
@@ -41,7 +42,7 @@ export function emitTerminal(
   >,
   provenance?: ResultProvenance,
 ): Effect.Effect<void, CollectiveEmitError> {
-  return durableEmit(state, refreshRetained(state)).pipe(
+  return durableEmit(state, refreshRetained(state, item.id)).pipe(
     Effect.flatMap(() => {
       const operation = state.retained.get(item.id);
       return operation === undefined
@@ -71,15 +72,15 @@ export function durableEmit<A>(
 /** Reload phase and terminal identity after their atomic store transitions. */
 export function refreshRetained(
   state: CollectiveState,
+  id: CollectiveId,
 ): Effect.Effect<void, EndpointStoreError> {
-  return state.ports.store.readCollectiveOperations().pipe(
-    Effect.tap((operations) =>
+  return state.ports.store.readCollectiveOperation(id).pipe(
+    Effect.tap((operation) =>
       Effect.sync(() => {
-        for (const operation of operations) {
-          state.retained.set(
-            Schema.decodeUnknownSync(CollectiveId)(operation.operationId),
-            operation,
-          );
+        if (operation === undefined) {
+          state.retained.delete(id);
+        } else {
+          state.retained.set(id, operation);
         }
       }),
     ),

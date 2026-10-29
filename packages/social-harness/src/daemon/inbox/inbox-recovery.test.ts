@@ -89,6 +89,8 @@ function makeCollectives(
     scope,
     lookupMember: () => Effect.void,
     sendPost: unavailable,
+    bindPost: (...[, hold]) =>
+      hold.pipe(Effect.as({ certified: unavailable() })),
     sendAdmitted: unavailable,
     observePost: unavailable,
     reportStorageFault: () => Effect.dieMessage("unexpected storage fault"),
@@ -306,6 +308,8 @@ function restoringLayer(
     scope,
     lookupMember: () => Effect.void,
     sendPost: unavailable,
+    bindPost: (...[, hold]) =>
+      hold.pipe(Effect.as({ certified: unavailable() })),
     sendAdmitted: unavailable,
     observePost: unavailable,
     reportStorageFault: () => Effect.dieMessage("unexpected storage fault"),
@@ -472,4 +476,179 @@ function assertAcknowledgedResult(path: string, emitted: InboundItem[]) {
       expect((yield* store.readInbox()).items).toEqual([]);
     }),
   );
+}
+
+itOnClock(
+  "keeps a consumed close before its request unknown after a physical store reopen",
+  () =>
+    Effect.gen(function* () {
+      const path = stateDirectory();
+      const emitted: InboundItem[] = [];
+      const request = Schema.decodeUnknownSync(InboundMessage)({
+        ...(yield* groupRequest()),
+        postId: digest("pst_", 81),
+      });
+      const requestHash = Schema.decodeUnknownSync(RecordHash)(
+        digest("rch_", 82),
+      );
+      const earlyClose = Schema.decodeUnknownSync(InboundMessage)({
+        ...request,
+        postId: record.postId,
+        content: yield* encodeCollectiveContent({
+          kind: "close",
+          id,
+          included: [],
+        }),
+      });
+      const context = { path, emitted, request, requestHash, earlyClose };
+      yield* Effect.scoped(retainCloseBeforeRequest(context));
+      yield* Effect.scoped(assertUnknownCloseAfterReopen(context));
+      expect(emitted).toMatchObject([{ kind: "collectiveResult", id }]);
+    }),
+);
+
+interface OrderedRequest {
+  readonly path: string;
+  readonly emitted: InboundItem[];
+  readonly request: InboundMessage;
+  readonly requestHash: RecordHash;
+  readonly earlyClose: InboundMessage;
+}
+
+function retainCloseBeforeRequest(context: OrderedRequest) {
+  return Effect.gen(function* () {
+    const { path, emitted, request, requestHash, earlyClose } = context;
+    const store = yield* openEndpointStore(path, {
+      liveWireVersions: LIVE_WIRE_VERSIONS,
+    });
+    yield* seedRequest(store, earlyClose);
+    const layer = yield* restoringLayer(store, yield* Scope.Scope, emitted);
+    yield* layer.classify({ message: earlyClose, recordHash });
+    const early = yield* Effect.fromNullable(
+      (yield* store.readPendingDeliveries())[0],
+    );
+    yield* store.acknowledgeDelivery(early.deliveryToken);
+    yield* appendMessage(store, request, requestHash, record.recordHash);
+    expect(
+      Option.isSome(
+        yield* layer.classify({ message: request, recordHash: requestHash }),
+      ),
+    ).toBe(true);
+    const pending = yield* Effect.fromNullable(
+      (yield* store.readPendingDeliveries())[0],
+    );
+    yield* store.acknowledgeDelivery(pending.deliveryToken);
+  });
+}
+
+function assertUnknownCloseAfterReopen(context: OrderedRequest) {
+  return Effect.gen(function* () {
+    const { path, emitted, request, requestHash, earlyClose } = context;
+    const store = yield* openEndpointStore(path, {
+      liveWireVersions: LIVE_WIRE_VERSIONS,
+    });
+    const layer = yield* restoringLayer(store, yield* Scope.Scope, emitted);
+    expect(emitted).toEqual([]);
+    yield* assertAcknowledgedOrder(store, requestHash);
+    expect(
+      yield* Effect.flip(
+        layer.send({
+          ...response,
+          to: request.address,
+          collectiveResponse: { ...response.collectiveResponse, id },
+        }),
+      ),
+    ).toMatchObject({ reason: "network-unavailable" });
+    const close = Schema.decodeUnknownSync(InboundMessage)({
+      ...earlyClose,
+      postId: digest("pst_", 83),
+    });
+    const closeHash = Schema.decodeUnknownSync(RecordHash)(digest("rch_", 84));
+    yield* appendMessage(store, close, closeHash, requestHash);
+    yield* layer.classify({ message: close, recordHash: closeHash });
+  });
+}
+
+itOnClock(
+  "keeps a consumed future-deadline request rejected when restart makes its deadline admissible",
+  () =>
+    Effect.gen(function* () {
+      const path = stateDirectory();
+      const request = Schema.decodeUnknownSync(InboundMessage)({
+        ...(yield* groupRequest()),
+        content: yield* encodeCollectiveContent(
+          {
+            kind: "operation",
+            op: "all_gather",
+            id,
+            nonce,
+            deadlineAt:
+              (yield* Clock.currentTimeMillis) +
+              Duration.toMillis(Duration.days(32)),
+            requestedSchema: { type: "object", properties: {} },
+          },
+          "Too far in the future",
+        ),
+      });
+      yield* Effect.scoped(consumeRejectedRequest(path, request));
+      yield* TestClock.adjust(Duration.days(7));
+      const operations = yield* Effect.scoped(
+        reopenRejectedRequest(path, request),
+      );
+      expect(operations).toEqual([]);
+    }),
+);
+
+function consumeRejectedRequest(path: string, request: InboundMessage) {
+  return Effect.gen(function* () {
+    const store = yield* openEndpointStore(path, {
+      liveWireVersions: LIVE_WIRE_VERSIONS,
+    });
+    yield* seedRequest(store, request);
+    const layer = yield* restoringLayer(store, yield* Scope.Scope, []);
+    expect(
+      Option.isNone(yield* layer.classify({ message: request, recordHash })),
+    ).toBe(true);
+    const pending = yield* Effect.fromNullable(
+      (yield* store.readPendingDeliveries())[0],
+    );
+    yield* store.acknowledgeDelivery(pending.deliveryToken);
+  });
+}
+
+function reopenRejectedRequest(path: string, request: InboundMessage) {
+  return Effect.gen(function* () {
+    const store = yield* openEndpointStore(path, {
+      liveWireVersions: LIVE_WIRE_VERSIONS,
+    });
+    const layer = yield* restoringLayer(store, yield* Scope.Scope, []);
+    expect(yield* store.readCollectiveOperations()).toEqual([]);
+    expect(
+      yield* Effect.flip(
+        layer.send({
+          to: request.address,
+          collectiveResponse: { id, action: "decline" },
+        }),
+      ),
+    ).toMatchObject({ failure: { kind: "request-none" } });
+    return yield* store.readCollectiveOperations();
+  });
+}
+
+function assertAcknowledgedOrder(
+  store: EndpointStore,
+  requestHash: RecordHash,
+) {
+  return Effect.gen(function* () {
+    const retained = yield* store.readRetainedDeliveries();
+    expect(
+      retained.map((delivery) => ({
+        hash: delivery.recordHash,
+        acknowledged: delivery.acknowledged,
+      })),
+    ).toEqual([
+      { hash: recordHash, acknowledged: true },
+      { hash: requestHash, acknowledged: true },
+    ]);
+  });
 }

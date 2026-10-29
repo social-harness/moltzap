@@ -158,6 +158,7 @@ const recordingEngine = (
   observePost: () =>
     Effect.dieMessage("no retained post is observed in this test"),
   send: () => Effect.dieMessage("the daemon sends nothing in this test"),
+  bind: () => Effect.dieMessage("the daemon sends nothing in this test"),
   bindChecked: () => Effect.dieMessage("the daemon sends nothing in this test"),
   sendAdmitted: () =>
     Effect.dieMessage("the daemon sends nothing in this test"),

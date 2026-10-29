@@ -95,6 +95,8 @@ const deliveryFixture = (sendPost: PostSender = unreachable) =>
       self: Schema.decodeUnknownSync(AgentAddress)("agent:alice"),
       lookupMember: () => Effect.void,
       sendPost,
+      bindPost: (input, hold) =>
+        hold.pipe(Effect.as({ certified: sendPost(input) })),
       emit: (item, provenance, terminal) =>
         delivery
           .queueLocalItem(item, provenance, terminal)

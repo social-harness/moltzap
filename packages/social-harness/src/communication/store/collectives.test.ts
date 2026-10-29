@@ -1,4 +1,6 @@
-/** @file Collective ownership and publication stay atomic with their durable post intents. */
+/**
+ * @file Collective ownership and publication stay atomic with their durable post intents.
+ */
 
 import { live as it } from "@effect/vitest";
 import { Effect } from "effect";
@@ -61,6 +63,7 @@ function seed(store: EndpointStore) {
   });
 }
 
+// @agent-code-guard/regression-only: transaction and reopen cases exercise immutable identity, admission, selection, and query boundaries.
 it("binds a collective id to one authenticated origin and exact request bytes across reopen", () =>
   Effect.gen(function* () {
     const path = stateDirectory();
@@ -87,6 +90,64 @@ it("freezes answer references and commits one close and terminal token without r
     const token = yield* withStore(path, freezeAndPublish);
     yield* withStore(path, (store) => assertCompleted(store, token));
   }));
+
+it("reads one retained operation and only the post roles requested for that operation", () =>
+  Effect.gen(function* () {
+    const found = yield* withStore(stateDirectory(), readOperationQueries);
+    expect(found).toMatchObject({
+      local: { ...local, phase: "finalizing" },
+      remote: { operationId: remote.operationId, phase: "collecting" },
+      requests: ["local-request"],
+      localPosts: ["local-request", "first-close"],
+      responses: ["remote-response"],
+    });
+  }));
+
+function readOperationQueries(store: EndpointStore) {
+  return Effect.gen(function* () {
+    const delivery = yield* seed(store);
+    yield* store.putCollectiveOperation(local);
+    yield* store.putCollectiveOperation(remote);
+    yield* store.putInboxItem({
+      deliveryToken: delivery.deliveryToken,
+      canonicalItem: bytes("admitted request"),
+    });
+    yield* store.bindPostIntent({
+      kind: "existing-conversation",
+      intent: intent("local-request"),
+      collective: {
+        operationId: local.operationId,
+        role: "request",
+        destination: "agent:bob",
+      },
+    });
+    yield* store.bindPostIntent({
+      kind: "existing-conversation",
+      intent: intent("remote-response"),
+      collective: {
+        operationId: remote.operationId,
+        role: "response",
+        destination: "agent:bob",
+      },
+    });
+    yield* bindFrozenClose(store);
+    return {
+      local: yield* store.readCollectiveOperation(local.operationId),
+      remote: yield* store.readCollectiveOperation(remote.operationId),
+      requests: (yield* store.readCollectivePosts({
+        operationId: local.operationId,
+        role: "request",
+      })).map((post) => post.intent.postId),
+      localPosts: (yield* store.readCollectivePosts({
+        operationId: local.operationId,
+      })).map((post) => post.intent.postId),
+      responses: (yield* store.readCollectivePosts({
+        operationId: remote.operationId,
+        role: "response",
+      })).map((post) => post.intent.postId),
+    };
+  });
+}
 
 function rejectChangedOrigin(store: EndpointStore) {
   return Effect.gen(function* () {

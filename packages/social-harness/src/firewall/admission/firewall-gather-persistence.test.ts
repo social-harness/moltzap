@@ -88,6 +88,7 @@ function admittingCollectives(
       scope: yield* Scope.Scope,
       lookupMember: (member) => engine.resolveAddress(member),
       sendPost: (input) => engine.send(input),
+      bindPost: (input, hold) => engine.bind(input, hold),
       sendAdmitted: (input, checkId) => engine.sendAdmitted(input, checkId),
       observePost: (postId) => engine.observePost(postId),
       reportStorageFault: (error) =>

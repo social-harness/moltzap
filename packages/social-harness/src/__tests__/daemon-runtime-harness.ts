@@ -378,16 +378,17 @@ function makeEngine(
       Effect.fail(new EngineOutboundError({ reason: "persistence" })),
     ),
   );
+  const certified = Effect.succeed({
+    postId: delivery.pending.message.postId,
+    recordHash: delivery.pending.recordHash,
+  });
   return {
     observePost: () =>
       Effect.dieMessage(
         "no retained post is observed in this lifecycle fixture",
       ),
-    send: () =>
-      Effect.succeed({
-        postId: delivery.pending.message.postId,
-        recordHash: delivery.pending.recordHash,
-      }),
+    send: () => certified,
+    bind: (...[, hold]) => hold.pipe(Effect.as({ certified })),
     bindChecked: () =>
       Effect.dieMessage("this lifecycle fixture installs no firewall"),
     sendAdmitted: () =>

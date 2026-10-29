@@ -24,6 +24,10 @@ export function collectivePersistencePorts(
     ).pipe(Effect.zipRight(sendPost(input)));
   return {
     store,
+    bindPost: <E>(
+      input: Parameters<CollectivePorts["sendPost"]>[0],
+      hold: Effect.Effect<Effect.Effect<void>, E>,
+    ) => hold.pipe(Effect.as({ certified: send(input) })),
     sendPost: send,
     sendAdmitted: (input: Parameters<CollectivePorts["sendAdmitted"]>[0]) =>
       send(input),
@@ -37,6 +41,7 @@ export function collectiveStorageStub(): CollectivePorts["store"] {
   const operations = new Map<string, StoredCollectiveOperation>();
   return {
     putCollectiveOperation: (input) => recordOperation(operations, input),
+    readCollectiveOperation: (id) => Effect.sync(() => operations.get(id)),
     readCollectiveOperations: () => Effect.sync(() => [...operations.values()]),
     readCollectivePosts: () => Effect.succeed([]),
     recordCollectiveAnswer: (answer) => Effect.succeed(answer.recordHash),
@@ -57,21 +62,7 @@ export function collectiveStorageStub(): CollectivePorts["store"] {
         }
       }),
     readFirewallRequestAdmission: () => Effect.succeed(undefined),
-    recover: () =>
-      Effect.succeed({
-        postIntents: [],
-        memberships: [],
-        anchors: [],
-        positions: [],
-        proposalLocks: [],
-        stagedRecords: [],
-        evidence: [],
-        certifiedRecords: [],
-        stagedReanchors: [],
-        pendingDeliveries: [],
-        disseminationObligations: [],
-        outboundMessages: [],
-      }),
+    readRetainedDeliveries: () => Effect.succeed([]),
   };
 }
 

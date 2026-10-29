@@ -6,6 +6,7 @@ import type {
   CollectiveDelivery,
   CollectiveOperationInput,
   CollectiveRequestRefusal,
+  EndpointStore,
   StoredCollectiveOperation,
   StoredCollectivePost,
   StoreMutation,
@@ -50,39 +51,38 @@ export function readCollectiveOperations(
     .map(readCollective);
 }
 
-/** Each recovered claim names the existing intent; recovery never mints its replacement. */
+/** Read the one operation whose phase or delivery identity a live transition needs. */
+export function readCollectiveOperation(
+  database: DatabaseSync,
+  operationId: string,
+): StoredCollectiveOperation | undefined {
+  return findCollective(database, operationId);
+}
+
+/** Recovery reads all claims; live callers select one operation and, when known, its post role. */
 export function readCollectivePosts(
   database: DatabaseSync,
+  query?: Parameters<EndpointStore["readCollectivePosts"]>[0],
 ): readonly StoredCollectivePost[] {
+  const conditions: string[] = [];
+  const values: string[] = [];
+  if (query !== undefined) {
+    conditions.push("c.operation_id = ?");
+    values.push(query.operationId);
+    if (query.role !== undefined) {
+      conditions.push("c.role = ?");
+      values.push(query.role);
+    }
+  }
+  const where =
+    conditions.length === 0 ? "" : `WHERE ${conditions.join(" AND ")}`;
   return database
     .prepare(`
     SELECT c.operation_id, c.role, c.destination, p.* FROM collective_posts c
-    JOIN post_intents p USING (author_agent_id, post_id) ORDER BY c.rowid
+    JOIN post_intents p USING (author_agent_id, post_id) ${where} ORDER BY c.rowid
   `)
-    .all()
-    .map((row) => {
-      const role = readText(row, "role");
-      if (role !== "request" && role !== "response" && role !== "close") {
-        throw new StoreSignal("corrupt");
-      }
-      const completedRecordHash = readOptionalText(
-        row,
-        "completed_record_hash",
-      );
-      return {
-        operationId: readText(row, "operation_id"),
-        role,
-        destination: readText(row, "destination"),
-        intent: {
-          authorAgentId: readText(row, "author_agent_id"),
-          postId: readText(row, "post_id"),
-          conversationId: readText(row, "conversation_id"),
-          membershipHash: readText(row, "membership_hash"),
-          canonicalIntent: readBytes(row, "canonical_intent"),
-          ...(completedRecordHash === undefined ? {} : { completedRecordHash }),
-        },
-      };
-    });
+    .all(...values)
+    .map(readCollectivePost);
 }
 
 /** Freeze counted record references before a close or local result can be published. */
@@ -274,4 +274,27 @@ export function retireCollectiveOperation(
       )
       .run(copyBytes(canonicalSelection), operationId);
   });
+}
+
+function readCollectivePost(
+  row: Readonly<Record<string, unknown>>,
+): StoredCollectivePost {
+  const role = readText(row, "role");
+  if (role !== "request" && role !== "response" && role !== "close") {
+    throw new StoreSignal("corrupt");
+  }
+  const completedRecordHash = readOptionalText(row, "completed_record_hash");
+  return {
+    operationId: readText(row, "operation_id"),
+    role,
+    destination: readText(row, "destination"),
+    intent: {
+      authorAgentId: readText(row, "author_agent_id"),
+      postId: readText(row, "post_id"),
+      conversationId: readText(row, "conversation_id"),
+      membershipHash: readText(row, "membership_hash"),
+      canonicalIntent: readBytes(row, "canonical_intent"),
+      ...(completedRecordHash === undefined ? {} : { completedRecordHash }),
+    },
+  };
 }

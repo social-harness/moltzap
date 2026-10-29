@@ -590,18 +590,25 @@ export interface PreparedSendHandle {
   readonly completion: Deferred.Deferred<RecordHash, SendError>;
 }
 
+const noBindHold = Effect.succeed(Effect.void);
+
 /**
  * Persist an addressed intent and return its durable completion latch.
  * The latch completes when the minted post becomes locally certified.
  */
-export const prepareSend = (
+export const prepareSend = <E = never>(
   runtime: EngineRuntime,
   input: EngineSendInput,
-): Effect.Effect<PreparedSendHandle, SendError> =>
-  prepareBoundSend(runtime, input, (binding) =>
-    runtime.input.store
-      .bindPostIntent(binding)
-      .pipe(Effect.as("admitted" as const)),
+  hold: BindHold<E> = noBindHold,
+): Effect.Effect<PreparedSendHandle, SendError | E> =>
+  prepareBoundSend(
+    runtime,
+    input,
+    (binding) =>
+      runtime.input.store
+        .bindPostIntent(binding)
+        .pipe(Effect.as("admitted" as const)),
+    hold,
   ).pipe(Effect.withSpan("prepareSend"));
 
 /**
@@ -618,26 +625,31 @@ export const prepareAdmittedSend = (
   encodeCanonical(Content, input.content).pipe(
     Effect.mapError(representationFailure),
     Effect.flatMap((canonicalCandidate) =>
-      prepareBoundSend(runtime, input, (binding) =>
-        runtime.input.store.bindAdmittedPostIntent(binding, {
-          checkId,
-          canonicalCandidate,
-        }),
+      prepareBoundSend(
+        runtime,
+        input,
+        (binding) =>
+          runtime.input.store.bindAdmittedPostIntent(binding, {
+            checkId,
+            canonicalCandidate,
+          }),
+        noBindHold,
       ),
     ),
     Effect.withSpan("prepareAdmittedSend"),
   );
 
 /** Persist an addressed intent through `admission`, which decides whether it binds. */
-function prepareBoundSend(
+function prepareBoundSend<E>(
   runtime: EngineRuntime,
   input: EngineSendInput,
   admission: IntentAdmission,
-): Effect.Effect<PreparedSendHandle, SendError> {
+  hold: BindHold<E>,
+): Effect.Effect<PreparedSendHandle, SendError | E> {
   return awaitRouterAttachment(runtime).pipe(
     Effect.zipRight(prepareIntent(runtime, input)),
     Effect.flatMap((prepared) =>
-      activateIntent(runtime, prepared, admission).pipe(
+      activateHeld(runtime, prepared, admission, hold).pipe(
         Effect.flatMap((activation) =>
           activation.kind === "refused"
             ? Effect.fail(representationFailure())

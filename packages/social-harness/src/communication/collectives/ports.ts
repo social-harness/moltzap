@@ -3,7 +3,7 @@
  * daemon, what an installed firewall adds, and the operations it offers.
  */
 
-import { Effect, type Option, Schema, type Scope } from "effect";
+import { type Effect, type Option, Schema, type Scope } from "effect";
 import type {
   CheckedGuidance,
   FirewallSendError,
@@ -11,6 +11,7 @@ import type {
 import type { SendError } from "../conversations/errors.js";
 import type {
   BindHold,
+  EndpointEngine,
   EngineSendInput,
   EngineSentPost,
 } from "../conversations/index.js";
@@ -94,7 +95,7 @@ export interface AdmittedGather {
 /**
  * What an installed firewall adds to the layer: every post the agent
  * authors is checked before it binds, and a gather once before its request
- * posts. Without it the layer takes each hold and sends through `sendPost`.
+ * posts. Without it the engine takes each hold through `bindPost`.
  */
 export interface CollectiveAdmission {
   /**
@@ -121,9 +122,12 @@ export interface CollectiveAdmission {
 
 /** What the collective layer needs from the daemon around it. */
 export interface CollectivePorts {
+  /** Plain authored posts take their hold at the same durable bind boundary as checked posts. */
+  readonly bindPost: EndpointEngine["bind"];
   readonly store: Pick<
     EndpointStore,
     | "putCollectiveOperation"
+    | "readCollectiveOperation"
     | "readCollectiveOperations"
     | "readCollectivePosts"
     | "recordCollectiveAnswer"
@@ -133,7 +137,7 @@ export interface CollectivePorts {
     | "finalizeCollectiveOperation"
     | "retireCollectiveOperation"
     | "readFirewallRequestAdmission"
-    | "recover"
+    | "readRetainedDeliveries"
   >;
   readonly observePost: (
     postId: PostId,
@@ -156,8 +160,8 @@ export interface CollectivePorts {
     member: AgentAddress,
   ) => Effect.Effect<void, SendError>;
   /**
-   * Without a firewall every post goes through it; with one, only a close
-   * does, and the agent's own posts go through `admission`.
+   * Protocol closes and unchecked gather fanout certify through this port.
+   * Authored posts use `bindPost` or the installed admission boundary.
    */
   readonly sendPost: PostSender;
   /**
@@ -227,8 +231,8 @@ export interface CollectiveOperations {
 
 /**
  * Bind one post the agent authored, holding `hold` across the bind: through
- * the firewall's check when one is installed, otherwise by taking the hold
- * and sending through `sendPost`.
+ * the firewall's check when one is installed, otherwise through the engine
+ * bind port. Both return only after the intent is durable.
  */
 export function bindAuthoredPost<E>(
   ports: CollectivePorts,
@@ -237,6 +241,6 @@ export function bindAuthoredPost<E>(
 ): Effect.Effect<AdmittedPost, AuthoredPostError<E>> {
   const { admission } = ports;
   return admission === undefined
-    ? hold.pipe(Effect.as({ certified: ports.sendPost(input) }))
+    ? ports.bindPost(input, hold)
     : admission.bindPost(input, hold);
 }

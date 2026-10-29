@@ -176,17 +176,13 @@ function certifyClose(
   return Effect.gen(function* () {
     const posts = yield* durableEmit(
       state,
-      state.ports.store.readCollectivePosts(),
+      state.ports.store.readCollectivePosts({ operationId: id }),
     );
-    const request = posts.find(
-      (post) => post.operationId === id && post.role === "request",
-    );
+    const request = posts.find((post) => post.role === "request");
     if (request !== undefined) {
       yield* observeBoundPost(state, request);
     }
-    const close = posts.find(
-      (post) => post.operationId === id && post.role === "close",
-    );
+    const close = posts.find((post) => post.role === "close");
     return yield* close === undefined
       ? sendClose(state, open, id)
       : observeBoundPost(state, close);
@@ -225,11 +221,9 @@ function continueBoundClose(
   return Effect.gen(function* () {
     const posts = yield* durableEmit(
       state,
-      state.ports.store.readCollectivePosts(),
+      state.ports.store.readCollectivePosts({ operationId: id, role: "close" }),
     );
-    const bound = posts.find(
-      (post) => post.operationId === id && post.role === "close",
-    );
+    const [bound] = posts;
     if (bound !== undefined) {
       return yield* observeBoundPost(state, bound).pipe(Effect.asVoid);
     }
