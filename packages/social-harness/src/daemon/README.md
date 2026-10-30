@@ -35,7 +35,7 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-  A[Certified message or local result] --> B[Queue incoming item]
+  A[Incoming message or collective result] --> B[Queue incoming item]
   B --> C[Take next item in each idle conversation]
   C --> D[Prepare evidence and run firewall]
   D --> E[Commit decision and host view together]
