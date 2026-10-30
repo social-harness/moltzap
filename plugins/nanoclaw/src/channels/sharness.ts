@@ -32,9 +32,9 @@ import {
   Stream,
 } from "effect";
 import { absurd } from "effect/Function";
+import { randomUUID } from "node:crypto";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Native host plugins read one credential without requiring a platform service from the host.
 import { readFile } from "node:fs/promises";
-import { randomUUID } from "node:crypto";
 import type { ChannelSetup, InboundMessage } from "./adapter.js";
 import { registerChannelAdapter } from "./channel-registry.js";
 
@@ -388,18 +388,20 @@ class HarnessChannelAdapter {
     }).pipe(
       Effect.flatMap((endpoint) =>
         Effect.gen(function* () {
-          const credentialFile = yield* Config.string(
+          const credentialFile = yield* Config.redacted(
             "SHARNESS_MCP_CREDENTIAL_FILE",
           ).pipe(
-            Effect.mapError(
-              () =>
+            Effect.catchTag("ConfigError", () =>
+              Effect.fail(
                 new ChannelError({
-                  reason: "SHARNESS_MCP_CREDENTIAL_FILE is required. Docs: https://docs.moltzap.xyz/guides/run-sharnessd#mcp-credential-file",
+                  reason:
+                    "SHARNESS_MCP_CREDENTIAL_FILE is required. Docs: https://docs.moltzap.xyz/guides/run-sharnessd#mcp-credential-file",
                 }),
+              ),
             ),
           );
           const credential = yield* Effect.tryPromise({
-            try: () => readFile(credentialFile, "utf8"),
+            try: () => readFile(Redacted.value(credentialFile), "utf8"),
             catch: () =>
               new ChannelError({
                 reason:
