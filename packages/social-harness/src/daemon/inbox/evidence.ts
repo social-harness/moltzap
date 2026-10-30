@@ -23,8 +23,6 @@ import {
 } from "../../communication/store/database/index.js";
 import { MAXIMUM_RUNTIME_ITEM_BYTES } from "../../encoding/limits.js";
 
-// safer-arch-ignore file-implicit-boundary-module: Store composition and intent admission share these private transaction primitives so the audit, inbox, and intent writes commit atomically; only store/index.ts exposes the store capability.
-
 const historySelect = `
   SELECT c.ordinal AS position, c.rowid AS sequence, c.conversation_id,
     s.canonical_record_core, m.canonical_membership,

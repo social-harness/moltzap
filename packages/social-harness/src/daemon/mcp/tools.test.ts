@@ -119,9 +119,9 @@ const invalidCalls = [
   {
     name: "policy_update",
     arguments: {
-      add: [{ id: "no-guidance", kind: "norm", text: "Be brief." }],
+      add: [{ id: "missing-direction", text: "Be brief." }],
     },
-    paths: [["add", 0, "guidance"]],
+    paths: [["add", 0, "applies"]],
   },
 ];
 const invalidInvocationCalls = [
@@ -193,7 +193,7 @@ const semanticFailures = [
       add: [
         {
           id: "meeting-booking",
-          kind: "norm",
+          applies: "both",
           text: "Each member holds a slot before confirming it.",
           guidance: "Hold a slot before you confirm one.",
         },

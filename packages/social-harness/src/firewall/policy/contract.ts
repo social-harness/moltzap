@@ -127,7 +127,7 @@ export const firewallDecisionsSchema = exactStruct({
       direction: Schema.Literal("incoming", "outgoing"),
       peer: Schema.NullOr(AgentView),
       outcome: Schema.Literal("allow", "reject", "hold"),
-      disposition: Schema.Literal("stale", "admitted", "withheld"),
+      disposition: Schema.Literal("admitted", "withheld"),
       cause: decisionCause,
       decidedBy: Schema.Array(
         exactStruct({

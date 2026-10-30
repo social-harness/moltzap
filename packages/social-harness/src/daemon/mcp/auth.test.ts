@@ -680,13 +680,13 @@ describe("tunneled MCP event reads for a registered daemon", () => {
 
 /* eslint-enable agent-code-guard/no-hardcoded-assertion-literals -- Restore repository defaults. */
 
-const normEdit = {
+const ruleEdit = {
   name: "policy_update",
   arguments: {
     add: [
       {
         id: "shared",
-        kind: "norm",
+        applies: "both",
         text: "Confirm before booking.",
         guidance: "Confirm first.",
       },
@@ -695,7 +695,7 @@ const normEdit = {
 };
 
 it.each(["modern", "legacy"] as const)(
-  "assigns norm-edit authority from the bearer over %s MCP",
+  "assigns rule-edit authority from the bearer over %s MCP",
   (version) =>
     Effect.gen(function* () {
       const authorities: string[] = [];
@@ -711,7 +711,7 @@ it.each(["modern", "legacy"] as const)(
             }),
         },
       );
-      const params = normEdit;
+      const params = ruleEdit;
       for (const credential of [credentials.runtime, credentials.owner]) {
         if (version === "modern") {
           const response = yield* callTool(handler, params, credential);
