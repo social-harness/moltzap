@@ -385,7 +385,8 @@ function readHistoryPage(input: {
         (candidate) => candidate.completedRecordHash === recordHash &&
           candidate.authorAgentId === input.agentCard.agentId,
       );
-      if (intent !== undefined && author.agentId === input.agentCard.agentId) {
+      const view = views.find((candidate) => candidate.recordHash === recordHash);
+      if (view === undefined && intent !== undefined && author.agentId === input.agentCard.agentId) {
         records.push({
           kind: "sent",
           author: agentViewOf(author),
@@ -393,7 +394,6 @@ function readHistoryPage(input: {
           content: certified.recordCore.action.messageIntent.content,
         });
       }
-      const view = views.find((candidate) => candidate.recordHash === recordHash);
       if (view !== undefined) {
         const item = yield* decodeRuntimeValue(InboundItem, view.canonicalItem).pipe(
           Effect.mapError(persistenceFailure),

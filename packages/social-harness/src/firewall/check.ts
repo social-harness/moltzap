@@ -13,7 +13,8 @@ import {
   type TextRule,
 } from "./config.js";
 
-const textCheckId = "org.social-harness/text";
+/** Identifies retained assessments produced by the configured text rules. */
+export const textCheckId = "org.social-harness/text";
 
 /** Captured policy data is independent of provider acquisition and durable retention. */
 export interface CheckConfiguration {

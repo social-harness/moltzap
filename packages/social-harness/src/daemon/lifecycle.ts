@@ -3,6 +3,8 @@
 import type { Implementation } from "@modelcontextprotocol/server";
 import { NodeFileSystem } from "@effect/platform-node";
 import { SqlClient } from "@effect/sql";
+import { readDecisions } from "../firewall/store/index.js";
+import { FirewallPolicyError } from "../firewall/config.js";
 import { Console, Effect, type Scope } from "effect";
 import type { Router } from "../communication/router/api/client.js";
 import type { Registry } from "../identity/registry/index.js";
@@ -122,11 +124,16 @@ function makeHandler(
   management: DaemonManagementOperations,
   daemon: RunningDaemon,
 ) {
-  return dependencies
-    .makeHandler({
+  return Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    return yield* dependencies.makeHandler({
       implementation: DAEMON_IMPLEMENTATION,
       operations: Object.freeze({
         ...management,
+        readDecisions: (request) => readDecisions(request).pipe(
+          Effect.provideService(SqlClient.SqlClient, sql),
+          Effect.mapError(() => new FirewallPolicyError({reason: "persistence-failed"})),
+        ),
         ...(input.firewall === undefined
           ? {}
           : {
@@ -141,6 +148,7 @@ function makeHandler(
       onSubscriptionActiveChange: daemon.subscriptionChanged,
     })
     .pipe(Effect.mapError(() => runtimeFailure("storage")));
+  });
 }
 
 /** The existing management operation commits and activates a new registration before MCP listens. */
