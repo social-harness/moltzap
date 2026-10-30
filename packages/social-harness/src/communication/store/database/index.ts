@@ -3,6 +3,7 @@
 /** SQLite ownership, transaction, and lifecycle primitives. */
 export {
   closeStoreState,
+  createCommunicationTables,
   inspectStoreState,
   openStoreState,
   runStoreOperation,

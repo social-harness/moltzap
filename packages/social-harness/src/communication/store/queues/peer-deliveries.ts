@@ -226,3 +226,20 @@ function readPendingDelivery(
     acknowledged: acknowledged === 1,
   });
 }
+
+/**
+ * Retire a delivery's raw pending row, so the delivery pass never offers it
+ * again.
+ * @param database The endpoint store.
+ * @param deliveryToken The delivery to retire.
+ */
+export function retirePendingDelivery(
+  database: DatabaseSync,
+  deliveryToken: DeliveryToken,
+): void {
+  database
+    .prepare(
+      "UPDATE pending_deliveries SET acknowledged = 1 WHERE delivery_token = ?",
+    )
+    .run(deliveryToken);
+}

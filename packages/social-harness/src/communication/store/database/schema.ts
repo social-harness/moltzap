@@ -25,12 +25,13 @@ interface HistorySnapshot {
 /** Exclusive SQLite state retained for one Effect scope. */
 export interface StoreState {
   readonly database: DatabaseSync;
+  readonly opening: StoreOpening;
   readonly snapshots: Map<string, HistorySnapshot>;
   closed: boolean;
 }
 
 const DATABASE_NAME = "sharnessd.sqlite3";
-const SCHEMA_VERSION = 15;
+const SCHEMA_VERSION = 16;
 
 /** Only an empty database or the current stored format can be opened. */
 export type StoreOpening = "create" | "reopen";
@@ -181,13 +182,12 @@ function initializeStoreState(
     chmodSync(stateDirectory, 0o700);
     chmodSync(databasePath, 0o600);
     configureDatabase(database);
-    if (disposition === "create") {
-      createStore(database);
-    }
-    database.exec(
-      "UPDATE firewall_checks SET disposition = 'interrupted' WHERE disposition = 'checking'",
-    );
-    return { database, snapshots: new Map(), closed: false };
+    return {
+      database,
+      opening: disposition,
+      snapshots: new Map(),
+      closed: false,
+    };
   } catch (failure) {
     try {
       database?.close();
@@ -357,16 +357,13 @@ const collectiveSchemaSql = `
     origin TEXT NOT NULL CHECK (origin IN ('local', 'remote')),
     request_conversation_id TEXT,
     request_record_hash TEXT,
-    requires_admission INTEGER NOT NULL CHECK (requires_admission IN (0, 1)),
     canonical_request BLOB NOT NULL,
     canonical_descriptor BLOB NOT NULL,
-    admitted_check_id TEXT,
     phase TEXT NOT NULL DEFAULT 'collecting' CHECK (phase IN ('collecting', 'finalizing', 'completed')),
     canonical_selection BLOB,
     delivery_token TEXT NOT NULL UNIQUE,
     FOREIGN KEY (request_conversation_id, request_record_hash)
       REFERENCES certified_records(conversation_id, record_hash),
-    FOREIGN KEY (admitted_check_id) REFERENCES firewall_checks(check_id),
     CHECK ((origin = 'local' AND request_conversation_id IS NULL AND request_record_hash IS NULL)
       OR (origin = 'remote' AND request_conversation_id IS NOT NULL AND request_record_hash IS NOT NULL)),
     CHECK ((phase = 'collecting' AND canonical_selection IS NULL)
@@ -384,65 +381,6 @@ const collectiveSchemaSql = `
   ) STRICT;
   CREATE UNIQUE INDEX collective_one_response ON collective_messages(operation_id) WHERE role = 'response';
   CREATE UNIQUE INDEX collective_one_close ON collective_messages(operation_id) WHERE role = 'close';
-`;
-
-const runtimeSchemaSql = `
-  CREATE TABLE runtime_inbox (
-    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
-    delivery_token TEXT NOT NULL UNIQUE,
-    canonical_item BLOB NOT NULL,
-    canonical_guidance BLOB,
-    acknowledged INTEGER NOT NULL DEFAULT 0 CHECK (acknowledged IN (0, 1))
-  ) STRICT;
-  CREATE INDEX runtime_inbox_unread ON runtime_inbox(sequence) WHERE acknowledged = 0;
-  CREATE TABLE runtime_events (
-    singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
-    canonical_state BLOB NOT NULL
-  ) STRICT;
-`;
-
-const firewallSchemaSql = `
-  CREATE TABLE firewall_incoming (
-    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
-    delivery_token TEXT NOT NULL UNIQUE,
-    conversation TEXT NOT NULL,
-    canonical_item BLOB NOT NULL,
-    canonical_provenance BLOB,
-    anchor INTEGER NOT NULL CHECK (anchor >= 0),
-    check_id TEXT,
-    disposition TEXT NOT NULL DEFAULT 'pending'
-      CHECK (disposition IN ('pending', 'admitted', 'withheld'))
-  ) STRICT;
-  CREATE INDEX firewall_frontiers ON firewall_incoming(conversation, sequence)
-    WHERE disposition = 'pending';
-  CREATE INDEX firewall_pending_sequence ON firewall_incoming(sequence)
-    WHERE disposition = 'pending';
-  CREATE TABLE firewall_checks (
-    check_id TEXT PRIMARY KEY,
-    direction TEXT NOT NULL CHECK (direction IN ('incoming', 'outgoing')),
-    canonical_snapshot BLOB NOT NULL,
-    canonical_candidate BLOB NOT NULL,
-    canonical_input BLOB NOT NULL,
-    canonical_result BLOB,
-    disposition TEXT NOT NULL DEFAULT 'checking'
-      CHECK (disposition IN ('checking', 'interrupted', 'stale', 'admitted', 'withheld'))
-  ) STRICT;
-  CREATE TABLE firewall_local_evidence (
-    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
-    conversation TEXT NOT NULL,
-    anchor INTEGER NOT NULL CHECK (anchor >= 0),
-    canonical_entry BLOB NOT NULL
-  ) STRICT;
-  CREATE INDEX firewall_local_evidence_window
-    ON firewall_local_evidence(conversation, anchor);
-  CREATE TABLE firewall_answers (
-    conversation_id TEXT NOT NULL,
-    record_hash TEXT NOT NULL,
-    admitted INTEGER NOT NULL CHECK (admitted IN (0, 1)),
-    PRIMARY KEY (conversation_id, record_hash),
-    FOREIGN KEY (conversation_id, record_hash)
-      REFERENCES certified_records(conversation_id, record_hash)
-  ) STRICT;
 `;
 
 const schemaSql = `
@@ -584,36 +522,9 @@ const schemaSql = `
   ) STRICT;
 `;
 
-const editablePolicySql = `
-  CREATE TABLE firewall_policy (
-    singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
-    canonical_rules BLOB NOT NULL
-  ) STRICT;
-  CREATE TABLE firewall_activations (
-    sequence INTEGER PRIMARY KEY,
-    activated_at INTEGER NOT NULL,
-    active_revision TEXT NOT NULL,
-    added_rule_ids TEXT NOT NULL,
-    removed_rule_ids TEXT NOT NULL
-  ) STRICT;
-  CREATE INDEX firewall_activations_time ON firewall_activations(activated_at);
-  ALTER TABLE firewall_checks ADD COLUMN decided_at INTEGER;
-  CREATE INDEX firewall_decisions_time ON firewall_checks(decided_at)
-    WHERE decided_at IS NOT NULL;
-`;
-
-/** Creates the current schema atomically in an empty database. */
-function createStore(database: DatabaseSync): void {
-  transaction(
-    database,
-    () => {
-      database.exec(schemaSql);
-      database.exec(runtimeSchemaSql);
-      database.exec(firewallSchemaSql);
-      database.exec(editablePolicySql);
-      database.exec(collectiveSchemaSql);
-      database.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
-    },
-    "EXCLUSIVE",
-  );
+/** Creates protocol tables inside the caller's initial schema transaction. */
+export function createCommunicationTables(database: DatabaseSync): void {
+  database.exec(schemaSql);
+  database.exec(collectiveSchemaSql);
+  database.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
 }

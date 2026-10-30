@@ -5,9 +5,6 @@ import type {
   CompletedReanchor,
   ConversationFoundation,
   EmptyConversationRestart,
-  FirewallAttempt,
-  FirewallCommit,
-  FirewallCompletion,
   IdentityBinding,
   MessageIntent,
   MessageIntentBinding,
@@ -29,7 +26,6 @@ import {
   StoreSignal,
   transaction,
 } from "./database/index.js";
-import { admittedOperation, compareFirewallCheck } from "./firewall.js";
 import {
   findProposalLock,
   findStagedReanchor,
@@ -61,55 +57,6 @@ export function bindMessageIntent(
   return transaction(database, () =>
     bindIntentWithFoundation(database, binding),
   );
-}
-
-/** An assessment cannot authorize different bytes or survive a changed evidence range. */
-export function bindCheckedMessageIntent(
-  database: DatabaseSync,
-  binding: MessageIntentBinding,
-  completion: FirewallCompletion,
-): FirewallCommit {
-  validateMessageIntentBinding(binding);
-  return transaction(database, () => {
-    const disposition = compareFirewallCheck(
-      database,
-      completion,
-      "outgoing",
-      binding.intent.canonicalIntent,
-    );
-    if (disposition === "admitted") {
-      bindIntentWithFoundation(database, binding);
-    }
-    return disposition;
-  });
-}
-
-/**
- * A gather request message binds only against the admitted check of its
- * operation, whose candidate is exactly the message's request content; without
- * one it is withheld and nothing binds.
- * @param database Exclusively owned endpoint database.
- * @param binding Canonical message recovery identity and optional new foundation.
- * @param operation The operation's admitted check.
- * @param operation.checkId The check that admitted the operation.
- * @param operation.canonicalCandidate The canonical request content it admitted.
- * @returns Whether the intent was bound.
- */
-export function bindAdmittedMessageIntent(
-  database: DatabaseSync,
-  binding: MessageIntentBinding,
-  operation: Pick<FirewallAttempt, "checkId" | "canonicalCandidate">,
-): FirewallCommit {
-  validateMessageIntentBinding(binding);
-  requireText(operation.checkId);
-  requireBytes(operation.canonicalCandidate);
-  return transaction(database, () => {
-    if (!admittedOperation(database, operation)) {
-      return "withheld";
-    }
-    bindIntentWithFoundation(database, binding);
-    return "admitted";
-  });
 }
 
 /**

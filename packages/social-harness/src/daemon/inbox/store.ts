@@ -1,8 +1,10 @@
 /** @file Stores host inbox items and tracks delivery and acknowledgment. */
 
+import type { Effect, Schema } from "effect";
 import type { DatabaseSync } from "node:sqlite";
-import { Schema } from "effect";
+import type { ItemProjection } from "../../firewall/store/types.js";
 import {
+  type EndpointStoreError,
   readBytes,
   readInteger,
   readOptionalBytes,
@@ -10,17 +12,17 @@ import {
   requireBytes,
   requireSameBytes,
   requireSameOptionalBytes,
+  runStoreOperation,
   StoreSignal,
+  type StoreState,
   transaction,
-} from "./database/index.js";
+} from "../../communication/store/database/index.js";
+import { retirePendingDelivery } from "../../communication/store/queues/peer-deliveries.js";
 import {
   DeliveryToken,
-  type InboxEntry,
-  type InboxPage,
-  type InboxSummary,
-  MAXIMUM_RUNTIME_ITEM_BYTES,
   type StoreMutation,
-} from "./types.js";
+} from "../../communication/store/types.js";
+import { MAXIMUM_RUNTIME_ITEM_BYTES } from "../../encoding/limits.js";
 
 // safer-arch-ignore file-implicit-boundary-module: Store composition and firewall admission share inbox writes within the caller's transaction; external consumers use the store capability instead of these SQLite primitives.
 
@@ -233,32 +235,6 @@ export function acknowledgeInboxItem(
 }
 
 /**
- * Replace an unavailable request with a newly identified failure without a gap.
- * @param database Exclusively owned endpoint database.
- * @param deliveryToken Original request's delivery identity.
- * @param replacement Failure under a distinct delivery identity.
- * @param retain Optional private admission queue write within the same transaction.
- */
-export function replaceInboxItem(
-  database: DatabaseSync,
-  deliveryToken: DeliveryToken,
-  replacement: Omit<InboxEntry, "sequence">,
-  retain?: () => void,
-): void {
-  if (deliveryToken === replacement.deliveryToken) {
-    throw new StoreSignal("conflict");
-  }
-  transaction(database, () => {
-    retireItem(database, deliveryToken);
-    if (retain === undefined) {
-      putInboxItem(database, replacement);
-    } else {
-      retain();
-    }
-  });
-}
-
-/**
  * Read the runtime-owned event state without interpreting its private format.
  * @param database Exclusively owned endpoint database.
  * @returns Persisted registration and callback delivery state, when present.
@@ -287,24 +263,7 @@ export function writeEventState(
     .run(canonicalState);
 }
 
-/**
- * Retire a delivery's raw pending row, so the delivery pass never offers it
- * again.
- * @param database The endpoint store.
- * @param deliveryToken The delivery to retire.
- */
-export function retirePendingDelivery(
-  database: DatabaseSync,
-  deliveryToken: DeliveryToken,
-): void {
-  database
-    .prepare(
-      "UPDATE pending_deliveries SET acknowledged = 1 WHERE delivery_token = ?",
-    )
-    .run(deliveryToken);
-}
-
-function retireItem(
+export function retireItem(
   database: DatabaseSync,
   deliveryToken: DeliveryToken,
 ): void {
@@ -329,4 +288,103 @@ function guidanceBytes(
 ): Pick<InboxEntry, "canonicalGuidance"> {
   const value = readOptionalBytes(row, "canonical_guidance");
   return value === undefined ? {} : { canonicalGuidance: value };
+}
+
+/** Immutable classified item retained until the host accepts its delivery. */
+export interface InboxEntry extends ItemProjection {
+  readonly sequence: number;
+}
+
+/** A bounded view below a fixed inbox sequence, independent of later arrivals. */
+export interface InboxPage {
+  readonly items: readonly InboxEntry[];
+  readonly through: number;
+  readonly nextAfter?: number;
+}
+
+/** Wakeup bookkeeping contains no peer content or collective protocol state. */
+export interface InboxSummary {
+  readonly pendingCount: number;
+  readonly newestSequence: number;
+}
+
+/** Durable host delivery and consumer state, independent of policy configuration. */
+export interface InboxStore {
+  readonly readInboxItem: (
+    deliveryToken: DeliveryToken,
+  ) => Effect.Effect<
+    (InboxEntry & { readonly acknowledged: boolean }) | undefined,
+    EndpointStoreError
+  >;
+  readonly completeWebhookDelivery: (
+    deliveryToken: DeliveryToken,
+    canonicalState: Uint8Array,
+  ) => Effect.Effect<void, EndpointStoreError>;
+  readonly putInboxItem: (
+    item: Omit<InboxEntry, "sequence">,
+  ) => Effect.Effect<StoreMutation, EndpointStoreError>;
+  readonly readInbox: (input?: {
+    readonly after?: number;
+    readonly through?: number;
+    readonly limit?: number;
+  }) => Effect.Effect<InboxPage, EndpointStoreError>;
+  readonly readInboxSummary: () => Effect.Effect<
+    InboxSummary,
+    EndpointStoreError
+  >;
+  readonly acknowledgeInboxItem: (
+    deliveryToken: DeliveryToken,
+  ) => Effect.Effect<void, EndpointStoreError>;
+  readonly readEventState: () => Effect.Effect<
+    Uint8Array | undefined,
+    EndpointStoreError
+  >;
+  readonly writeEventState: (
+    canonicalState: Uint8Array,
+  ) => Effect.Effect<void, EndpointStoreError>;
+}
+
+/** Called only inside the daemon's initial schema transaction. */
+export function createInboxTables(database: DatabaseSync): void {
+  database.exec(`
+  CREATE TABLE runtime_inbox (
+    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+    delivery_token TEXT NOT NULL UNIQUE,
+    canonical_item BLOB NOT NULL,
+    canonical_guidance BLOB,
+    acknowledged INTEGER NOT NULL DEFAULT 0 CHECK (acknowledged IN (0, 1))
+  ) STRICT;
+  CREATE INDEX runtime_inbox_unread ON runtime_inbox(sequence) WHERE acknowledged = 0;
+  CREATE TABLE runtime_events (
+    singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+    canonical_state BLOB NOT NULL
+  ) STRICT;
+`);
+}
+
+/** A host-only capability over the process-owned SQLite lifetime. */
+export function makeInboxStore(state: StoreState): InboxStore {
+  const run = <A>(operation: () => A) => runStoreOperation(state, operation);
+  return Object.freeze({
+    readInboxItem: (token: DeliveryToken) =>
+      run(() => readInboxItem(state.database, token)),
+    completeWebhookDelivery: (token: DeliveryToken, value: Uint8Array) =>
+      run(() => {
+        completeWebhookDelivery(state.database, token, value);
+      }),
+    putInboxItem: (item: Omit<InboxEntry, "sequence">) =>
+      run(() => putInboxItem(state.database, item)),
+    readInbox: (input?: Parameters<typeof readInbox>[1]) =>
+      run(() => readInbox(state.database, input)),
+    readInboxSummary: () => run(() => readInboxSummary(state.database)),
+    acknowledgeInboxItem: (token: DeliveryToken) =>
+      run(() => {
+        acknowledgeInboxItem(state.database, token);
+      }),
+    readEventState: () => run(() => readEventState(state.database)),
+    writeEventState: (value: Uint8Array) =>
+      run(() => {
+        writeEventState(state.database, value);
+      }),
+  } satisfies InboxStore);
 }
