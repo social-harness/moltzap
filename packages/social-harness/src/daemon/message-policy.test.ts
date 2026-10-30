@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { afterEach, expect } from "vitest";
 import {
   stateDirectory,
-  withStore,
+  withDaemonStore,
 } from "../__tests__/store-schema-fixtures.js";
 import {
   firewallInstallation,
@@ -178,7 +178,7 @@ it.each([
  * installation's failure.
  */
 function reinstall(first: string, second: string) {
-  return withStore(stateDirectory(), (store) =>
+  return withDaemonStore(stateDirectory(), (store) =>
     Effect.gen(function* () {
       yield* installEditableFirewall(yield* installation(first), store);
       return yield* installEditableFirewall(

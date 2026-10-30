@@ -10,7 +10,7 @@ import { describe, expect } from "vitest";
 import type { FirewallStore } from "../store/index.js";
 import {
   stateDirectory,
-  withStore,
+  withDaemonStore,
 } from "../../__tests__/store-schema-fixtures.js";
 import { readCredential } from "../../daemon/credentials.js";
 import { Daemon } from "../../daemon/index.js";
@@ -172,7 +172,7 @@ it(
       },
     ]);
     const configuration = yield* options(path);
-    yield* withStore(stateDirectory(), (store) =>
+    yield* withDaemonStore(stateDirectory(), (store) =>
       Effect.gen(function* () {
         const installed = yield* installEditableFirewall(configuration, store);
         const read = yield* installed.policy.read();
@@ -236,7 +236,7 @@ it(
     const { path, root } = fixture();
     const state = stateDirectory();
     const first = yield* options(path);
-    yield* withStore(state, (store) =>
+    yield* withDaemonStore(state, (store) =>
       Effect.gen(function* () {
         const installed = yield* installEditableFirewall(first, store);
         yield* installed.policy.update(
@@ -250,7 +250,7 @@ it(
       NORM.replace("Ask first.", "Consult the owner first."),
     );
     const next = yield* options(path);
-    yield* withStore(state, (store) =>
+    yield* withDaemonStore(state, (store) =>
       Effect.gen(function* () {
         const restarted = yield* installEditableFirewall(next, store);
         expect((yield* restarted.policy.read()).rules).toEqual([]);
@@ -335,7 +335,7 @@ it(
   Effect.fn(function* () {
     const { path } = seedFixture(255);
     const configuration = yield* options(path);
-    yield* withStore(stateDirectory(), (store) =>
+    yield* withDaemonStore(stateDirectory(), (store) =>
       Effect.gen(function* () {
         const installed = yield* installEditableFirewall(configuration, store);
         expect((yield* installed.policy.read()).rules).toHaveLength(256);
@@ -681,7 +681,7 @@ it("names the fixed behavior colliding with a stored editable rule", () =>
     const { path, root } = fixture();
     const state = stateDirectory();
     const configuration = yield* options(path);
-    yield* withStore(
+    yield* withDaemonStore(
       state,
       Effect.fn(function* (store) {
         const installed = yield* installEditableFirewall(configuration, store);
@@ -702,7 +702,7 @@ it("names the fixed behavior colliding with a stored editable rule", () =>
       readCredential,
     );
     const next = yield* Effect.fromNullable(installation.options);
-    yield* withStore(
+    yield* withDaemonStore(
       state,
       Effect.fn(function* (store) {
         const error = yield* installEditableFirewall(next, store).pipe(
@@ -736,7 +736,7 @@ it(
       readCredential,
     );
     const configuration = yield* Effect.fromNullable(installation.options);
-    yield* withStore(stateDirectory(), (store) =>
+    yield* withDaemonStore(stateDirectory(), (store) =>
       Effect.gen(function* () {
         const error = yield* installEditableFirewall(configuration, store).pipe(
           Effect.flip,
@@ -794,7 +794,7 @@ it(
   "adds a shared norm's BEHAVIOR.md text as the rule its frontmatter and body map to",
   Effect.fn(function* () {
     const configuration = yield* options(fixture().path);
-    yield* withStore(stateDirectory(), (store) =>
+    yield* withDaemonStore(stateDirectory(), (store) =>
       Effect.gen(function* () {
         const installed = yield* installEditableFirewall(configuration, store);
         yield* installed.policy.update(
@@ -914,7 +914,7 @@ it.each(REFUSED_EDITS)(
 function refusedEdit(edit: (typeof REFUSED_EDITS)[number]["edit"]) {
   return Effect.gen(function* () {
     const configuration = yield* options(fixture().path);
-    return yield* withStore(stateDirectory(), (store) =>
+    return yield* withDaemonStore(stateDirectory(), (store) =>
       Effect.gen(function* () {
         const installed = yield* installEditableFirewall(configuration, store);
         const before = yield* installed.policy.read();
@@ -953,10 +953,10 @@ it(
     const configuration = yield* options(fixture().path);
     const path = stateDirectory();
     const adopted = { ...INITIAL, id: "runtime-norm", text: "预约前确认。" };
-    const revision = yield* withStore(path, (store) =>
+    const revision = yield* withDaemonStore(path, (store) =>
       adoptNorm(store, configuration, adopted),
     );
-    yield* withStore(path, (store) =>
+    yield* withDaemonStore(path, (store) =>
       Effect.gen(function* () {
         const installed = yield* installEditableFirewall(configuration, store);
         expect((yield* installed.policy.read()).activeRevision).toBe(revision);
@@ -987,7 +987,7 @@ it(
   "rejects supplied ownership metadata before applying any update",
   Effect.fn(function* () {
     const configuration = yield* options(fixture().path);
-    yield* withStore(stateDirectory(), (store) =>
+    yield* withDaemonStore(stateDirectory(), (store) =>
       Effect.gen(function* () {
         const installed = yield* installEditableFirewall(configuration, store);
         const before = yield* installed.policy.read();

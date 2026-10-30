@@ -21,7 +21,7 @@ import {
 } from "../../__tests__/firewall-runtime-fixtures.js";
 import {
   stateDirectory,
-  withStore,
+  withDaemonStore,
 } from "../../__tests__/store-schema-fixtures.js";
 import { readCredential } from "../../daemon/credentials.js";
 import { firewallInstallation, messagePolicyFirewall } from "./compose.js";
@@ -179,7 +179,7 @@ function expectReopen(
   configuration: FirewallOptions,
   smallerBudget: FirewallOptions,
 ) {
-  return withStore(retained.directory, (store) =>
+  return withDaemonStore(retained.directory, (store) =>
     Effect.gen(function* () {
       const rejected = yield* installEditableFirewall(
         smallerBudget,
@@ -235,7 +235,7 @@ function rejectCatalogFromFile(field: "fixedRules" | "initialRules") {
     if (configuration === undefined) {
       return yield* Effect.dieMessage("expected loaded policy options");
     }
-    yield* withStore(stateDirectory(), (store) =>
+    yield* withDaemonStore(stateDirectory(), (store) =>
       Effect.gen(function* () {
         const error = yield* installEditableFirewall(configuration, store).pipe(
           Effect.flip,

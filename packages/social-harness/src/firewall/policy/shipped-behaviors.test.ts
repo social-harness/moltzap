@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { expect } from "vitest";
 import {
   stateDirectory,
-  withStore,
+  withDaemonStore,
 } from "../../__tests__/store-schema-fixtures.js";
 import { readCredential } from "../../daemon/credentials.js";
 import { firewallInstallation, installEditableFirewall } from "./index.js";
@@ -27,7 +27,7 @@ it(
       readCredential,
     );
     const options = yield* Effect.fromNullable(installation.options);
-    yield* withStore(stateDirectory(), (store) =>
+    yield* withDaemonStore(stateDirectory(), (store) =>
       Effect.gen(function* () {
         const installed = yield* installEditableFirewall(options, store);
         const policy = yield* installed.policy.read();
