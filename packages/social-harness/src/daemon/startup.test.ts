@@ -97,6 +97,10 @@ it.each([
       new Map([
         ["SHARNESS_STATE_DIRECTORY", "/run/social-harness/unused-state"],
         ["SHARNESS_MCP_PORT", "4319"],
+        [
+          "SHARNESS_MCP_CREDENTIAL_FILE",
+          "/run/social-harness/unused-mcp-credential",
+        ],
         ["SHARNESS_REGISTRY_ORIGIN", "https://registry.example"],
         [
           "SHARNESS_REGISTRY_SIGNER_PUBLIC_KEY",

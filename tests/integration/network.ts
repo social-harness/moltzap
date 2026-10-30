@@ -41,6 +41,7 @@ const workspaceRoot = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const imagesRoot = join(workspaceRoot, "images");
 const HOST = "127.0.0.1";
 const MESSAGE = "Hi Bob, this is Alice.";
+const MCP_CREDENTIAL_FILE = "mcp-credential";
 
 /** An unavailable provider exercises configured enforcement without a paid model. */
 const FIREWALL_POLICY = JSON.stringify({
@@ -368,10 +369,9 @@ function startDaemon(
 }
 
 /**
- * Writes the agent's key and admission file, as Run sharnessd does, and
- * answers the daemon's six settings and admission file. A `policy` is saved
- * as `message-policy.json` and named in `SHARNESS_MESSAGE_POLICY_FILE`, as
- * Turn on the message firewall does.
+ * Writes the agent's private key and credentials beside its state directory.
+ * A configured policy is saved as `message-policy.json` and named in
+ * `SHARNESS_MESSAGE_POLICY_FILE`, as Turn on the message firewall does.
  */
 function writeAgentFiles(
   directory: string,
@@ -384,10 +384,16 @@ function writeAgentFiles(
     yield* fs.makeDirectory(join(directory, "state"), { recursive: true });
     const keyFile = join(directory, "agent-key.pem");
     const admissionFile = join(directory, "admission-credential");
+    const mcpCredentialFile = join(directory, MCP_CREDENTIAL_FILE);
     yield* fs.writeFileString(keyFile, makePrivateKeyPem(), { mode: 0o600 });
     yield* fs.writeFileString(admissionFile, network.admissionCredential, {
       mode: 0o600,
     });
+    yield* fs.writeFileString(
+      mcpCredentialFile,
+      randomBytes(32).toString("base64url"),
+      { mode: 0o600 },
+    );
     const policyFile = join(directory, "message-policy.json");
     if (policy !== undefined) {
       yield* fs.writeFileString(policyFile, policy);
@@ -397,6 +403,7 @@ function writeAgentFiles(
         ? {}
         : { SHARNESS_MESSAGE_POLICY_FILE: policyFile }),
       SHARNESS_MCP_PORT: String(port),
+      SHARNESS_MCP_CREDENTIAL_FILE: mcpCredentialFile,
       SHARNESS_STATE_DIRECTORY: join(directory, "state"),
       SHARNESS_REGISTRY_ORIGIN: network.registryOrigin,
       SHARNESS_REGISTRY_SIGNER_PUBLIC_KEY: network.registrySigner,
@@ -454,7 +461,11 @@ function helper(
 ): Effect.Effect<Finished, GateError, CommandExecutor.CommandExecutor> {
   return runProcess(process.execPath, [daemon.helper, ...args], {
     cwd: daemon.directory,
-    env: { SHARNESS_MCP_URL: daemon.mcpUrl, NODE_PATH: "" },
+    env: {
+      SHARNESS_MCP_URL: daemon.mcpUrl,
+      SHARNESS_MCP_CREDENTIAL_FILE: join(daemon.directory, MCP_CREDENTIAL_FILE),
+      NODE_PATH: "",
+    },
   });
 }
 
