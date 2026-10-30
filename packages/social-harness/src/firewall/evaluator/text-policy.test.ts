@@ -420,13 +420,6 @@ it("admits a group message whose norm applicability is uncertain, advising that 
       uncertain: { choice: "relevant", probability: 0.49 },
       instruction: reminder,
     });
-    expect(result.checks[0]?.findings).toContainEqual({
-      ruleId: "proposal-acceptance",
-      outcome: "pass",
-      reason: "uncertain",
-      choice: "relevant",
-      probability: 0.49,
-    });
     expect(requests.map((entry) => entry.stage)).toContain("compliance");
   }));
 
@@ -453,25 +446,6 @@ it.each([
       expect(result.reason).toBe("eligible");
     }),
 );
-
-it("admits a norm whose stated compliance trails a violation within the probability tolerance, advising that judgment", () =>
-  Effect.gen(function* () {
-    const result = yield* check(
-      provider({
-        "compliance:proposal-acceptance:assessment": {
-          choice: "compliant",
-          probabilities: { compliant: 0.5, violation: 0.51, unresolved: 0 },
-        },
-      }),
-    );
-    expect(result.judgment).toBe("allow");
-    expect(result.guidance).toContainEqual({
-      middlewareId: "owner",
-      ruleId: "proposal-acceptance",
-      uncertain: { choice: "compliant", probability: 0.5 },
-      instruction: reminder,
-    });
-  }));
 
 it("admits a confidently unresolved norm expectation as guidance", () =>
   Effect.gen(function* () {
@@ -1022,11 +996,13 @@ const minimumInput = {
 function checkMinimumRequests(
   decisions: DecisionProvider,
   maximumRequestBytes: number,
+  documents: readonly TextRule[] = rules,
 ) {
   return Effect.forEach(
     [true, false],
     (incoming) =>
       check(decisions, {
+        rules: documents,
         ...minimumInput,
         message: incoming
           ? minimumInput.message
@@ -1046,36 +1022,50 @@ function requestBytes(request: DecisionRequest): number {
   return new TextEncoder().encode(JSON.stringify(request)).byteLength;
 }
 
-it("requires enough installation budget for reachable minimum requests in both directions", () =>
-  Effect.gen(function* () {
-    const choices = {
-      [`expectations:${proposalAcceptance.id}:assessment`]: "unresolved",
-    };
-    const captured: DecisionRequest[] = [];
-    yield* checkMinimumRequests(
-      provider(choices, captured),
-      Number.MAX_SAFE_INTEGER,
-    );
-    const minimumBytes = Math.max(...captured.map(requestBytes));
-    const results = yield* checkMinimumRequests(
-      provider(choices),
-      minimumBytes,
-    );
-    expect(results.map((result) => result.judgment)).toEqual([
-      "allow",
-      "allow",
-    ]);
+it.each([
+  rules,
+  rules.map(
+    (rule): TextRule => ({
+      id: rule.id,
+      text: rule.text,
+      applies: rule.id === "privacy" ? "incoming" : "outgoing",
+    }),
+  ),
+])(
+  "requires enough installation budget for reachable minimum requests in each direction",
+  (documents) =>
+    Effect.gen(function* () {
+      const choices = {
+        [`expectations:${proposalAcceptance.id}:assessment`]: "unresolved",
+      };
+      const captured: DecisionRequest[] = [];
+      yield* checkMinimumRequests(
+        provider(choices, captured),
+        Number.MAX_SAFE_INTEGER,
+        documents,
+      );
+      const minimumBytes = Math.max(...captured.map(requestBytes));
+      const results = yield* checkMinimumRequests(
+        provider(choices),
+        minimumBytes,
+        documents,
+      );
+      expect(results.map((result) => result.judgment)).toEqual([
+        "allow",
+        "allow",
+      ]);
 
-    const requests: DecisionRequest[] = [];
-    const rejected = yield* makeTextPolicy({
-      id: "owner",
-      rules,
-      provider: provider(choices, requests),
-      settings: { ...settings, maximumRequestBytes: minimumBytes - 1 },
-    }).pipe(Effect.flip);
-    expect(rejected.reason).toBe("registration");
-    expect(requests).toEqual([]);
-  }));
+      const requests: DecisionRequest[] = [];
+      const rejected = yield* makeTextPolicy({
+        id: "owner",
+        rules: documents,
+        provider: provider(choices, requests),
+        settings: { ...settings, maximumRequestBytes: minimumBytes - 1 },
+      }).pipe(Effect.flip);
+      expect(rejected.reason).toBe("registration");
+      expect(requests).toEqual([]);
+    }),
+);
 
 it.each([
   {

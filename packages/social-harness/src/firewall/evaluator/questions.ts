@@ -96,29 +96,25 @@ export function makeTextRequest(
 export function textPolicyFitsBudget(
   policy: Pick<TextCheck, "rules" | "revision">,
   maximumBytes: number,
+  direction: TextCheck["event"]["direction"],
 ): boolean {
+  if (policy.rules.length === 0) {
+    return true;
+  }
   const stages = ["applicability", "expectations", "compliance"] as const;
-  return (["incoming", "outgoing"] as const).every((direction) =>
-    stages.every((stage) => {
-      const subjects =
-        stage === "expectations" && direction === "incoming"
-          ? [minimumIdentifier]
-          : [];
-      const request = prepareRequest(
-        stage,
-        policyState(policy, minimumEvidence(stage, direction)),
-        allQuestions(
-          stage,
-          policy.rules.filter(
-            (rule) => rule.applies === "both" || rule.applies === direction,
-          ),
-          subjects,
-        ),
-        maximumBytes,
-      );
-      return !("status" in request);
-    }),
-  );
+  return stages.every((stage) => {
+    const subjects =
+      stage === "expectations" && direction === "incoming"
+        ? [minimumIdentifier]
+        : [];
+    const request = prepareRequest(
+      stage,
+      policyState(policy, minimumEvidence(stage, direction)),
+      allQuestions(stage, policy.rules, subjects),
+      maximumBytes,
+    );
+    return !("status" in request);
+  });
 }
 
 function prepareRequest(

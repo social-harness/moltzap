@@ -95,7 +95,7 @@ const firewallActivationSchema = exactStruct({
 
 /**
  * How a decision's outcome came about. `judgment` is a settled natural-language
- * judgment and `uncertain` an unsettled one, admitted or held with guidance.
+ * judgment and `uncertain` an unsettled one admitted with registered advice.
  * `unavailable` is a check that could not run: the decision provider failed
  * or was unreachable, or a middleware failed or timed out. `code` is a code
  * middleware's finding. `endpoint` is a hold Client makes itself without a

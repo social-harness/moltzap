@@ -155,7 +155,7 @@ export interface PlainLanguageOptions {
 export function acknowledgementsPolicy(): MessageMiddleware {
   return {
     id: "org.social-harness/acknowledgements",
-    revision: sha256("org.social-harness/acknowledgements/v3"),
+    revision: sha256("org.social-harness/acknowledgements/v4"),
     rules: [
       {
         id: "acknowledgement",
@@ -182,7 +182,7 @@ export function allowedSendersPolicy(
     id: ALLOWED_SENDERS_ID,
     revision: sha256(
       JSON.stringify({
-        edition: "org.social-harness/allowed-senders/v1",
+        edition: "org.social-harness/allowed-senders/v2",
         agentIds: [...allowed].sort((first, second) =>
           first.localeCompare(second),
         ),
@@ -214,7 +214,7 @@ export function allowedSendersPolicy(
 export function credentialsPolicy(): MessageMiddleware {
   return {
     id: "org.social-harness/credentials",
-    revision: sha256("org.social-harness/credentials/v1"),
+    revision: sha256("org.social-harness/credentials/v2"),
     rules: [
       {
         id: "credentials",
@@ -256,7 +256,7 @@ export function plainLanguagePolicy(
     id: "org.social-harness/plain-language",
     revision: sha256(
       JSON.stringify({
-        edition: "org.social-harness/plain-language/v1",
+        edition: "org.social-harness/plain-language/v2",
         toolNames: options.toolNames,
         toolNamePrefixes: options.toolNamePrefixes,
         invocationToolNames: options.invocationToolNames,

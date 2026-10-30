@@ -2,6 +2,7 @@
 
 import { Effect, Option } from "effect";
 import { createHash } from "node:crypto";
+import type { FirewallPolicyError } from "./contract.js";
 import type {
   IncomingMiddlewareEntry,
   MessagePolicy,
@@ -14,7 +15,6 @@ import {
   type DecisionProvider,
   type MessageMiddleware,
 } from "../evaluator/index.js";
-import type { FirewallPolicyError } from "./contract.js";
 import {
   acknowledgementsPolicy,
   ALLOWED_SENDERS_ID,

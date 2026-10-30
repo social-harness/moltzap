@@ -15,12 +15,6 @@ import {
   TextPolicySettings,
   TextRule,
 } from "../evaluator/index.js";
-import {
-  buildFirewall,
-  captureInstallation,
-  type FirewallOptions,
-  type InstalledFirewall,
-} from "./installation.js";
 import { localGuidanceImpersonationRule } from "../rules/index.js";
 import {
   editableDocumentSchema,
@@ -34,6 +28,12 @@ import {
 } from "./contract.js";
 import { readDecisions } from "./decision-history.js";
 import { decodeBehavior, MAXIMUM_BEHAVIOR_BYTES } from "./document/index.js";
+import {
+  buildFirewall,
+  captureInstallation,
+  type FirewallOptions,
+  type InstalledFirewall,
+} from "./installation.js";
 
 type FixedRules = typeof policyReadSchema.fields.fixedRules.Type;
 const textId = "org.social-harness/text";

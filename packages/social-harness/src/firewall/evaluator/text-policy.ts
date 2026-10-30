@@ -201,7 +201,9 @@ const evaluateCompliance = Effect.fn("TextPolicy.compliance")(function* (
  */
 const checkText = Effect.fn("TextPolicy.check")(function* (
   input: MiddlewareInput,
-  policy: Pick<TextCheck, "rules" | "revision">,
+  policy: Pick<TextCheck, "rules" | "revision"> & {
+    readonly skipped: readonly PolicyFinding[];
+  },
   provider: DecisionProvider,
   settings: TextPolicySettings,
 ): Effect.fn.Return<MiddlewareResult> {
@@ -229,7 +231,10 @@ const checkText = Effect.fn("TextPolicy.check")(function* (
     );
   }
   return {
-    findings: trace.flatMap((stage) => stageFindings(stage, policy.rules)),
+    findings: [
+      ...trace.flatMap((stage) => stageFindings(stage, policy.rules)),
+      ...policy.skipped,
+    ],
     expectations: norms,
     trace: {
       format: "text-policy/v1",
@@ -268,11 +273,6 @@ const captureTextDocuments = Effect.fn("TextPolicy.captureDocuments")(
     }
     const descriptions = yield* ruleDescriptions(rules);
     const revision = textRevision(rules, settings);
-    if (
-      !textPolicyFitsBudget({ rules, revision }, settings.maximumRequestBytes)
-    ) {
-      return yield* new CheckInputError({ reason: "registration" });
-    }
     return { id, rules, settings, descriptions, revision };
   },
 );
@@ -308,6 +308,17 @@ export const makeTextPolicy = Effect.fn("makeTextPolicy")(function* (options: {
     incoming: forDirection(rules, "incoming"),
     outgoing: forDirection(rules, "outgoing"),
   });
+  if (
+    !(["incoming", "outgoing"] as const).every((direction) =>
+      textPolicyFitsBudget(
+        { rules: directions[direction].rules, revision },
+        settings.maximumRequestBytes,
+        direction,
+      ),
+    )
+  ) {
+    return yield* new CheckInputError({ reason: "registration" });
+  }
   const provider = Object.freeze({
     decide: options.provider.decide.bind(options.provider),
   });
@@ -319,18 +330,9 @@ export const makeTextPolicy = Effect.fn("makeTextPolicy")(function* (options: {
     check: (input: MiddlewareInput) =>
       checkText(
         input,
-        { rules: directions[input.event.direction].rules, revision },
+        { ...directions[input.event.direction], revision },
         provider,
         settings,
-      ).pipe(
-        Effect.map((result) => ({
-          expectations: result.expectations,
-          trace: result.trace,
-          findings: [
-            ...result.findings,
-            ...directions[input.event.direction].skipped,
-          ],
-        })),
       ),
   });
 });
