@@ -1,10 +1,22 @@
+/** @file Supplies bounded evidence from protocol history, policy decisions and the retained host view. */
+
 import * as SqlClient from "@effect/sql/SqlClient";
+import { Effect } from "effect";
 import {
   EndpointStoreError,
   storeOperation,
 } from "../../communication/store/database/index.js";
-import { Effect } from "effect";
-/** @file Supplies bounded evidence from protocol history, policy decisions and the retained host view. */
+
+import {
+  readBytes,
+  readInteger,
+  readOptionalBytes,
+  readOptionalText,
+  readText,
+  requireText,
+  transaction,
+} from "../../communication/store/database/index.js";
+import { MAXIMUM_RUNTIME_ITEM_BYTES } from "../../encoding/limits.js";
 import type {
   FirewallEvidence,
   FirewallEvidenceRange,
@@ -14,17 +26,6 @@ import type {
   FirewallLocalEntry,
   FirewallRequestAdmission,
 } from "../../firewall/store/types.js";
-import {
-  readBytes,
-  readInteger,
-  readOptionalBytes,
-  readOptionalText,
-  readText,
-  requireText,
-  StoreSignal,
-  transaction,
-} from "../../communication/store/database/index.js";
-import { MAXIMUM_RUNTIME_ITEM_BYTES } from "../../encoding/limits.js";
 const historySelect = `
   SELECT c.ordinal AS position, c.rowid AS sequence, c.conversation_id,
     s.canonical_record_core, m.canonical_membership,
@@ -65,7 +66,6 @@ export function readFirewallEvidence(
   },
 ): Effect.Effect<FirewallEvidence, EndpointStoreError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
     const { slices } = yield* readFirewallEvidenceSlices({
       ranges: [
         {
@@ -79,7 +79,7 @@ export function readFirewallEvidence(
     });
     const [slice] = slices;
     if (slice === undefined) {
-      throw new StoreSignal("corrupt");
+      return yield* new EndpointStoreError({ reason: "corrupt" });
     }
     return slice;
   }).pipe(storeOperation);
@@ -108,7 +108,6 @@ export function readFirewallEvidenceSlices(input: {
     }),
   );
 }
-
 /**
  * How a received request's admission settled, read by its certified record.
  * The runtime was shown it when it reached the inbox; the check that decided
@@ -160,7 +159,6 @@ function readSlice(
   SqlClient.SqlClient
 > {
   return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
     const candidate = yield* windowCandidate(range);
     if (candidate === undefined) {
       return range.beforeDelivery === undefined &&
@@ -246,7 +244,6 @@ function boundedHistory(window: HistoryWindow) {
     );
   }).pipe(storeOperation);
 }
-
 /**
  * Take entries newest first from both sources until the window is full or
  * its bytes exceed the inbox-item bound.
@@ -301,7 +298,6 @@ function recordEntries(window: HistoryWindow) {
     });
   }).pipe(storeOperation);
 }
-
 /** Reads local result evidence under the same conversation window and bound. */
 function localEntries(window: HistoryWindow) {
   return Effect.gen(function* () {
@@ -325,7 +321,6 @@ function localEntries(window: HistoryWindow) {
     });
   }).pipe(storeOperation);
 }
-
 /** The newer of two window candidates; a local entry follows the record at its anchor. */
 function newer(
   record?: PositionedEntry,

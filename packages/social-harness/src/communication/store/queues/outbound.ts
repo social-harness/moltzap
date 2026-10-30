@@ -1,13 +1,9 @@
-import * as SqlClient from "@effect/sql/SqlClient";
-import { EndpointStoreError, storeOperation } from "../database/index.js";
-import { Effect } from "effect";
 /** @file Durable exact-envelope ownership across Router retries and restart. */
-import type {
-  OutboundAttempt,
-  OutboundMessageInput,
-  StoredOutboundMessage,
-  StoreMutation,
-} from "../types.js";
+
+import * as SqlClient from "@effect/sql/SqlClient";
+import { Effect } from "effect";
+import { EndpointStoreError, storeOperation } from "../database/index.js";
+
 import {
   copyBytes,
   readBytes,
@@ -20,6 +16,12 @@ import {
   StoreSignal,
   transaction,
 } from "../database/index.js";
+import type {
+  OutboundAttempt,
+  OutboundMessageInput,
+  StoredOutboundMessage,
+  StoreMutation,
+} from "../types.js";
 type OutboundDisposition = "accepted" | "discarded" | "pending";
 interface RetainedOutbound {
   readonly outbound: StoredOutboundMessage;
@@ -40,14 +42,8 @@ export function enqueueOutbound(
   SqlClient.SqlClient
 > {
   return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
     validateMessageInput(message);
-    return yield* transaction(
-      (() =>
-        Effect.gen(function* () {
-          return yield* enqueueOutboundInTransaction(message);
-        }))(),
-    );
+    return yield* transaction(enqueueOutboundInTransaction(message));
   }).pipe(storeOperation);
 }
 /**
@@ -107,26 +103,25 @@ export function beginOutbound(
     const database = yield* SqlClient.SqlClient;
     requireText(envelopeId);
     return yield* transaction(
-      (() =>
-        Effect.gen(function* () {
-          const retained = yield* requireOutbound(envelopeId);
-          if (retained.disposition !== "pending") {
-            return Object.freeze({ kind: "inactive" });
-          }
-          const mode = retained.attempted ? "retry" : "initial";
-          if (!retained.attempted) {
-            yield* database.unsafe<Readonly<Record<string, unknown>>>(
-              `UPDATE outbound_messages SET attempted = 1
+      Effect.gen(function* () {
+        const retained = yield* requireOutbound(envelopeId);
+        if (retained.disposition !== "pending") {
+          return Object.freeze({ kind: "inactive" });
+        }
+        const mode = retained.attempted ? "retry" : "initial";
+        if (!retained.attempted) {
+          yield* database.unsafe<Readonly<Record<string, unknown>>>(
+            `UPDATE outbound_messages SET attempted = 1
            WHERE envelope_id = ? AND disposition = 'pending'`,
-              [envelopeId],
-            );
-          }
-          return Object.freeze({
-            kind: "pending",
-            mode,
-            outbound: copyOutbound(retained.outbound),
-          });
-        }))(),
+            [envelopeId],
+          );
+        }
+        return Object.freeze({
+          kind: "pending",
+          mode,
+          outbound: copyOutbound(retained.outbound),
+        });
+      }),
     );
   }).pipe(storeOperation);
 }
@@ -143,28 +138,27 @@ export function completeOutbound(
     const database = yield* SqlClient.SqlClient;
     validateStoredOutbound(outbound);
     return yield* transaction(
-      (() =>
-        Effect.gen(function* () {
-          const retained = yield* requireOutbound(outbound.envelopeId);
-          requireSameOutbound(retained.outbound, outbound);
-          switch (retained.disposition) {
-            case "accepted":
-              return "existing";
-            case "discarded":
-              throw new StoreSignal("conflict");
-            case "pending":
-              yield* database.unsafe<Readonly<Record<string, unknown>>>(
-                `UPDATE outbound_messages SET disposition = 'accepted'
+      Effect.gen(function* () {
+        const retained = yield* requireOutbound(outbound.envelopeId);
+        requireSameOutbound(retained.outbound, outbound);
+        switch (retained.disposition) {
+          case "accepted":
+            return "existing";
+          case "discarded":
+            return yield* new EndpointStoreError({ reason: "conflict" });
+          case "pending":
+            yield* database.unsafe<Readonly<Record<string, unknown>>>(
+              `UPDATE outbound_messages SET disposition = 'accepted'
              WHERE envelope_id = ? AND disposition = 'pending'`,
-                [outbound.envelopeId],
-              );
-              return "inserted";
-            default: {
-              const exhaustive: never = retained.disposition;
-              return exhaustive;
-            }
+              [outbound.envelopeId],
+            );
+            return "inserted";
+          default: {
+            const exhaustive: never = retained.disposition;
+            return exhaustive;
           }
-        }))(),
+        }
+      }),
     );
   }).pipe(storeOperation);
 }
@@ -183,42 +177,41 @@ export function discardOutbound(
     for (const outbound of outbounds) {
       validateStoredOutbound(outbound);
       if (distinctIds.has(outbound.envelopeId)) {
-        throw new StoreSignal("invalid-input");
+        return yield* new EndpointStoreError({ reason: "invalid-input" });
       }
       distinctIds.add(outbound.envelopeId);
     }
     return yield* transaction(
-      (() =>
-        Effect.gen(function* () {
-          const retained = yield* Effect.forEach(outbounds, (outbound) =>
-            Effect.gen(function* () {
-              const row = yield* requireOutbound(outbound.envelopeId);
-              requireSameOutbound(row.outbound, outbound);
-              if (row.disposition === "accepted") {
-                throw new StoreSignal("conflict");
-              }
-              return row;
-            }),
-          );
-          const inserted = retained.some(
-            (outbound) => outbound.disposition === "pending",
-          );
-          for (const outbound of retained) {
-            if (outbound.disposition === "pending") {
-              yield* database.unsafe<Readonly<Record<string, unknown>>>(
-                `UPDATE dissemination_obligations SET envelope_id = NULL
-             WHERE envelope_id = ?`,
-                [outbound.outbound.envelopeId],
-              );
-              yield* database.unsafe<Readonly<Record<string, unknown>>>(
-                `UPDATE outbound_messages SET disposition = 'discarded'
-             WHERE envelope_id = ? AND disposition = 'pending'`,
-                [outbound.outbound.envelopeId],
-              );
+      Effect.gen(function* () {
+        const retained = yield* Effect.forEach(outbounds, (outbound) =>
+          Effect.gen(function* () {
+            const row = yield* requireOutbound(outbound.envelopeId);
+            requireSameOutbound(row.outbound, outbound);
+            if (row.disposition === "accepted") {
+              return yield* new EndpointStoreError({ reason: "conflict" });
             }
+            return row;
+          }),
+        );
+        const inserted = retained.some(
+          (outbound) => outbound.disposition === "pending",
+        );
+        for (const outbound of retained) {
+          if (outbound.disposition === "pending") {
+            yield* database.unsafe<Readonly<Record<string, unknown>>>(
+              `UPDATE dissemination_obligations SET envelope_id = NULL
+             WHERE envelope_id = ?`,
+              [outbound.outbound.envelopeId],
+            );
+            yield* database.unsafe<Readonly<Record<string, unknown>>>(
+              `UPDATE outbound_messages SET disposition = 'discarded'
+             WHERE envelope_id = ? AND disposition = 'pending'`,
+              [outbound.outbound.envelopeId],
+            );
           }
-          return inserted ? "inserted" : "existing";
-        }))(),
+        }
+        return inserted ? "inserted" : "existing";
+      }),
     );
   }).pipe(storeOperation);
 }
@@ -252,10 +245,9 @@ function requireOutbound(
   envelopeId: string,
 ): Effect.Effect<RetainedOutbound, EndpointStoreError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
     const retained = yield* findOutbound(envelopeId);
     if (retained === undefined) {
-      throw new StoreSignal("not-found");
+      return yield* new EndpointStoreError({ reason: "not-found" });
     }
     return retained;
   }).pipe(storeOperation);
@@ -321,7 +313,7 @@ function requireConversation(
         [conversationId],
       ))[0] === undefined
     ) {
-      throw new StoreSignal("not-found");
+      return yield* new EndpointStoreError({ reason: "not-found" });
     }
   }).pipe(storeOperation);
 }
@@ -337,7 +329,7 @@ function requireEnvelopeIdAvailable(
         [envelopeId],
       ))[0] !== undefined
     ) {
-      throw new StoreSignal("conflict");
+      return yield* new EndpointStoreError({ reason: "conflict" });
     }
   }).pipe(storeOperation);
 }

@@ -1,12 +1,9 @@
-import * as SqlClient from "@effect/sql/SqlClient";
-import { EndpointStoreError, storeOperation } from "../database/index.js";
-import { Effect } from "effect";
 /** @file Certified record cores and their separately retained signer evidence. */
-import type {
-  CertifiedRecord,
-  ProtocolEvidence,
-  StagedRecord,
-} from "../types.js";
+
+import * as SqlClient from "@effect/sql/SqlClient";
+import { Effect } from "effect";
+import { EndpointStoreError, storeOperation } from "../database/index.js";
+
 import {
   readBytes,
   readOptionalText,
@@ -15,6 +12,11 @@ import {
   requireSameBytes,
   StoreSignal,
 } from "../database/index.js";
+import type {
+  CertifiedRecord,
+  ProtocolEvidence,
+  StagedRecord,
+} from "../types.js";
 /**
  * Projects one complete certified record and its separate evidence maps.
  *
@@ -25,7 +27,6 @@ export function readCertifiedRecord(
   row: Readonly<Record<string, unknown>>,
 ): Effect.Effect<CertifiedRecord, EndpointStoreError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
     const staged = readStagedRecord(row);
     const actionEvidence = yield* readEvidenceForSubject(
       staged.conversationId,
@@ -38,7 +39,7 @@ export function readCertifiedRecord(
       staged.recordHash,
     );
     if (actionEvidence.length === 0 || durabilityEvidence.length === 0) {
-      throw new StoreSignal("corrupt");
+      return yield* new EndpointStoreError({ reason: "corrupt" });
     }
     return Object.freeze({
       ...staged,

@@ -1,19 +1,9 @@
-import * as SqlClient from "@effect/sql/SqlClient";
-import { EndpointStoreError, storeOperation } from "./database/index.js";
-import { Effect } from "effect";
 /** @file Atomic identity, message-intent, foundation, and Router-anchor transitions. */
-import type {
-  CompletedReanchor,
-  ConversationFoundation,
-  EmptyConversationRestart,
-  IdentityBinding,
-  MessageIntent,
-  MessageIntentBinding,
-  ProposalLock,
-  RestartedEmptyConversation,
-  StagedReanchor,
-  StoreMutation,
-} from "./types.js";
+
+import * as SqlClient from "@effect/sql/SqlClient";
+import { Effect } from "effect";
+import { EndpointStoreError, storeOperation } from "./database/index.js";
+
 import { bindCollectiveMessageInTransaction } from "./collective-claims.js";
 import {
   copyBytes,
@@ -36,7 +26,18 @@ import {
   releaseProposalLock,
   requireSameReanchor,
 } from "./rows/index.js";
-
+import type {
+  CompletedReanchor,
+  ConversationFoundation,
+  EmptyConversationRestart,
+  IdentityBinding,
+  MessageIntent,
+  MessageIntentBinding,
+  ProposalLock,
+  RestartedEmptyConversation,
+  StagedReanchor,
+  StoreMutation,
+} from "./types.js";
 /**
  * Durably binds one author-scoped message to its immutable canonical intent.
  *
@@ -47,14 +48,8 @@ export function bindMessageIntent(
   binding: MessageIntentBinding,
 ): Effect.Effect<StoreMutation, EndpointStoreError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
     validateMessageIntentBinding(binding);
-    return yield* transaction(
-      (() =>
-        Effect.gen(function* () {
-          return yield* bindIntentWithFoundation(binding);
-        }))(),
-    );
+    return yield* transaction(bindIntentWithFoundation(binding));
   }).pipe(storeOperation);
 }
 /**
@@ -66,15 +61,9 @@ export function bindMessageIntent(
 export function putConversationFoundation(
   foundation: ConversationFoundation,
 ): Effect.Effect<StoreMutation, EndpointStoreError, SqlClient.SqlClient> {
-  return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
-    return yield* transaction(
-      (() =>
-        Effect.gen(function* () {
-          return yield* putConversationFoundationInTransaction(foundation);
-        }))(),
-    );
-  }).pipe(storeOperation);
+  return transaction(putConversationFoundationInTransaction(foundation)).pipe(
+    storeOperation,
+  );
 }
 /**
  * Commits the first valid Router-ordered action for one predecessor.
@@ -89,14 +78,8 @@ export function lockProposal(
   proposal: ProposalLock,
 ): Effect.Effect<StoreMutation, EndpointStoreError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
     validateProposalLock(proposal);
-    return yield* transaction(
-      (() =>
-        Effect.gen(function* () {
-          return yield* lockProposalInTransaction(proposal);
-        }))(),
-    );
+    return yield* transaction(lockProposalInTransaction(proposal));
   }).pipe(storeOperation);
 }
 /**
@@ -111,25 +94,23 @@ export function lockFirstMessageProposal(
   proposal: ProposalLock,
 ): Effect.Effect<StoreMutation, EndpointStoreError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
     validateProposalLock(proposal);
     if (
       proposal.previousRecordHash !== undefined ||
       proposal.conversationId !== foundation.conversationId
     ) {
-      throw new StoreSignal("invalid-input");
+      return yield* new EndpointStoreError({ reason: "invalid-input" });
     }
     return yield* transaction(
-      (() =>
-        Effect.gen(function* () {
-          const retainedFoundation =
-            yield* putConversationFoundationInTransaction(foundation);
-          const retainedProposal = yield* lockProposalInTransaction(proposal);
-          return retainedFoundation === "inserted" ||
-            retainedProposal === "inserted"
-            ? "inserted"
-            : "existing";
-        }))(),
+      Effect.gen(function* () {
+        const retainedFoundation =
+          yield* putConversationFoundationInTransaction(foundation);
+        const retainedProposal = yield* lockProposalInTransaction(proposal);
+        return retainedFoundation === "inserted" ||
+          retainedProposal === "inserted"
+          ? "inserted"
+          : "existing";
+      }),
     );
   }).pipe(storeOperation);
 }
@@ -150,21 +131,19 @@ export function restartEmptyConversation(
   SqlClient.SqlClient
 > {
   return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
     validateEmptyConversationRestart(restart);
     return yield* transaction(
-      (() =>
-        Effect.gen(function* () {
-          yield* requireEmptyConversationPosition(restart.expectedFoundation);
-          yield* clearIncompleteConversationState(restart.expectedFoundation);
-          yield* installReplacementFoundation(restart.replacementFoundation);
-          return Object.freeze({
-            foundation: copyFoundation(restart.replacementFoundation),
-            messageIntents: yield* readConversationMessageIntents(
-              restart.replacementFoundation.conversationId,
-            ),
-          });
-        }))(),
+      Effect.gen(function* () {
+        yield* requireEmptyConversationPosition(restart.expectedFoundation);
+        yield* clearIncompleteConversationState(restart.expectedFoundation);
+        yield* installReplacementFoundation(restart.replacementFoundation);
+        return Object.freeze({
+          foundation: copyFoundation(restart.replacementFoundation),
+          messageIntents: yield* readConversationMessageIntents(
+            restart.replacementFoundation.conversationId,
+          ),
+        });
+      }),
     );
   }).pipe(storeOperation);
 }
@@ -181,14 +160,8 @@ export function stageReanchor(
   reanchor: StagedReanchor,
 ): Effect.Effect<StoreMutation, EndpointStoreError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
     validateStagedReanchor(reanchor);
-    return yield* transaction(
-      (() =>
-        Effect.gen(function* () {
-          return yield* stageReanchorInTransaction(reanchor, "vote");
-        }))(),
-    );
+    return yield* transaction(stageReanchorInTransaction(reanchor, "vote"));
   }).pipe(storeOperation);
 }
 /**
@@ -201,14 +174,8 @@ export function completeReanchor(
   reanchor: CompletedReanchor,
 ): Effect.Effect<StoreMutation, EndpointStoreError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
     validateCompletedReanchor(reanchor);
-    return yield* transaction(
-      (() =>
-        Effect.gen(function* () {
-          return yield* completeReanchorInTransaction(reanchor);
-        }))(),
-    );
+    return yield* transaction(completeReanchorInTransaction(reanchor));
   }).pipe(storeOperation);
 }
 /**
@@ -227,18 +194,16 @@ export function applyCatchUpReanchor(
   reanchor: CompletedReanchor,
 ): Effect.Effect<StoreMutation, EndpointStoreError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
     validateCompletedReanchor(reanchor);
     return yield* transaction(
-      (() =>
-        Effect.gen(function* () {
-          yield* retireSupersededCandidates(reanchor);
-          const staged = yield* stageReanchorInTransaction(reanchor, "adopted");
-          const completed = yield* completeReanchorInTransaction(reanchor);
-          return staged === "inserted" || completed === "inserted"
-            ? "inserted"
-            : "existing";
-        }))(),
+      Effect.gen(function* () {
+        yield* retireSupersededCandidates(reanchor);
+        const staged = yield* stageReanchorInTransaction(reanchor, "adopted");
+        const completed = yield* completeReanchorInTransaction(reanchor);
+        return staged === "inserted" || completed === "inserted"
+          ? "inserted"
+          : "existing";
+      }),
     );
   }).pipe(storeOperation);
 }
@@ -262,7 +227,6 @@ function bindIntentWithFoundation(
   binding: MessageIntentBinding,
 ): Effect.Effect<StoreMutation, EndpointStoreError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
     const intent = binding.intent;
     const foundation =
       binding.kind === "new-conversation"
@@ -293,24 +257,23 @@ export function bindIdentity(
     requireText(binding.agentId);
     requireBytes(binding.canonicalAgentCard);
     return yield* transaction(
-      (() =>
-        Effect.gen(function* () {
-          const existing = yield* readStoredIdentity();
-          if (existing !== undefined) {
-            requireEqual(existing.agentId, binding.agentId);
-            requireSameBytes(
-              existing.canonicalAgentCard,
-              binding.canonicalAgentCard,
-            );
-            return yield* Effect.succeed<StoreMutation>("existing");
-          }
-          yield* database.unsafe<Readonly<Record<string, unknown>>>(
-            `INSERT INTO identity_binding
-          (singleton, agent_id, canonical_agent_card) VALUES (1, ?, ?)`,
-            [binding.agentId, copyBytes(binding.canonicalAgentCard)],
+      Effect.gen(function* () {
+        const existing = yield* readStoredIdentity();
+        if (existing !== undefined) {
+          requireEqual(existing.agentId, binding.agentId);
+          requireSameBytes(
+            existing.canonicalAgentCard,
+            binding.canonicalAgentCard,
           );
-          return yield* Effect.succeed<StoreMutation>("inserted");
-        }))(),
+          return yield* Effect.succeed<StoreMutation>("existing");
+        }
+        yield* database.unsafe<Readonly<Record<string, unknown>>>(
+          `INSERT INTO identity_binding
+          (singleton, agent_id, canonical_agent_card) VALUES (1, ?, ?)`,
+          [binding.agentId, copyBytes(binding.canonicalAgentCard)],
+        );
+        return yield* Effect.succeed<StoreMutation>("inserted");
+      }),
     );
   }).pipe(storeOperation);
 }
@@ -321,7 +284,7 @@ function bindMessageIntentInTransaction(
     const database = yield* SqlClient.SqlClient;
     const identity = yield* readStoredIdentity();
     if (identity === undefined) {
-      throw new StoreSignal("not-found");
+      return yield* new EndpointStoreError({ reason: "not-found" });
     }
     requireEqual(identity.agentId, intent.authorAgentId);
     const existing = (yield* database.unsafe<Readonly<Record<string, unknown>>>(
@@ -371,7 +334,6 @@ function putConversationFoundationInTransaction(
   foundation: ConversationFoundation,
 ): Effect.Effect<StoreMutation, EndpointStoreError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
     validateFoundation(foundation);
     const existing = yield* readFoundation(foundation.conversationId);
     if (existing !== undefined) {
@@ -386,10 +348,9 @@ function requireConversationFoundation(
   intent: MessageIntent,
 ): Effect.Effect<StoreMutation, EndpointStoreError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
     const foundation = yield* readFoundation(intent.conversationId);
     if (foundation === undefined) {
-      throw new StoreSignal("not-found");
+      return yield* new EndpointStoreError({ reason: "not-found" });
     }
     requireEqual(foundation.membershipHash, intent.membershipHash);
     return yield* Effect.succeed<StoreMutation>("existing");
@@ -402,7 +363,7 @@ function requireEmptyConversationPosition(
     const database = yield* SqlClient.SqlClient;
     const retained = yield* readFoundation(expected.conversationId);
     if (retained === undefined) {
-      throw new StoreSignal("not-found");
+      return yield* new EndpointStoreError({ reason: "not-found" });
     }
     requireSameFoundation(retained, expected);
     const position = yield* readStoredPosition(expected.conversationId);
@@ -417,7 +378,7 @@ function requireEmptyConversationPosition(
         [expected.conversationId],
       ))[0] !== undefined
     ) {
-      throw new StoreSignal("conflict");
+      return yield* new EndpointStoreError({ reason: "conflict" });
     }
   }).pipe(storeOperation);
 }
@@ -500,7 +461,6 @@ function stageReanchorInTransaction(
   purpose: "vote" | "adopted",
 ): Effect.Effect<StoreMutation, EndpointStoreError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
     const existing = yield* findStagedReanchor(
       reanchor.conversationId,
       reanchor.anchorHash,
@@ -522,13 +482,12 @@ function completeReanchorInTransaction(
   reanchor: CompletedReanchor,
 ): Effect.Effect<StoreMutation, EndpointStoreError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
     const staged = yield* findStagedReanchor(
       reanchor.conversationId,
       reanchor.anchorHash,
     );
     if (staged === undefined) {
-      throw new StoreSignal("not-found");
+      return yield* new EndpointStoreError({ reason: "not-found" });
     }
     requireSameReanchor(staged, reanchor);
     if (yield* hasAnchor(reanchor.conversationId, reanchor.anchorHash)) {
@@ -561,7 +520,6 @@ function releaseSupersededProposal(
   reanchor: CompletedReanchor,
 ): Effect.Effect<void, EndpointStoreError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
     const lock = yield* findProposalLock(
       reanchor.conversationId,
       reanchor.selectedRecordHash,
@@ -629,7 +587,7 @@ function requireUnclaimedReanchorScope(
       ],
     ))[0];
     if (scoped !== undefined) {
-      throw new StoreSignal("conflict");
+      return yield* new EndpointStoreError({ reason: "conflict" });
     }
   }).pipe(storeOperation);
 }
@@ -658,7 +616,7 @@ function requireNoStagedSuccessor(
       ],
     ))[0];
     if (successor !== undefined) {
-      throw new StoreSignal("conflict");
+      return yield* new EndpointStoreError({ reason: "conflict" });
     }
   }).pipe(storeOperation);
 }
@@ -666,7 +624,6 @@ function requireReanchorPosition(
   reanchor: StagedReanchor,
 ): Effect.Effect<void, EndpointStoreError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
     const position = yield* readStoredPosition(reanchor.conversationId);
     requireEqual(position.currentAnchorHash, reanchor.previousAnchorHash);
     requireEqual(position.headRecordHash, reanchor.selectedRecordHash);
@@ -819,7 +776,7 @@ function installReplacementFoundation(
       [replacement.conversationId, replacement.anchorHash],
     ))[0];
     if (retainedReplacement !== undefined) {
-      throw new StoreSignal("conflict");
+      return yield* new EndpointStoreError({ reason: "conflict" });
     }
     yield* database.unsafe<Readonly<Record<string, unknown>>>(
       `INSERT INTO anchors

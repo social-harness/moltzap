@@ -1,15 +1,9 @@
-import * as SqlClient from "@effect/sql/SqlClient";
-import { EndpointStoreError, storeOperation } from "./database/index.js";
-import { Effect } from "effect";
 /** @file Collective recovery, immutable completion selection, and terminal publication. */
-import type {
-  CollectiveAnswerReference,
-  CollectiveOperationInput,
-  CollectiveRequestRefusal,
-  StoredCollectiveMessage,
-  StoredCollectiveOperation,
-  StoreMutation,
-} from "./types.js";
+
+import * as SqlClient from "@effect/sql/SqlClient";
+import { Effect } from "effect";
+import { EndpointStoreError, storeOperation } from "./database/index.js";
+
 import {
   findCollective,
   readCollective,
@@ -27,19 +21,19 @@ import {
   StoreSignal,
   transaction,
 } from "./database/index.js";
+import type {
+  CollectiveAnswerReference,
+  CollectiveOperationInput,
+  CollectiveRequestRefusal,
+  StoredCollectiveMessage,
+  StoredCollectiveOperation,
+  StoreMutation,
+} from "./types.js";
 /** Unchecked local operations and verified remote requests retain their exact descriptor. */
 export function putCollectiveOperation(
   input: CollectiveOperationInput,
 ): Effect.Effect<StoreMutation, EndpointStoreError, SqlClient.SqlClient> {
-  return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
-    return yield* transaction(
-      (() =>
-        Effect.gen(function* () {
-          return yield* retainCollectiveInTransaction(input);
-        }))(),
-    );
-  }).pipe(storeOperation);
+  return transaction(retainCollectiveInTransaction(input)).pipe(storeOperation);
 }
 /** Open and terminal operations are retained across ordinary process restarts. */
 export function readCollectiveOperations(): Effect.Effect<
@@ -63,10 +57,7 @@ export function readCollectiveOperation(
   EndpointStoreError,
   SqlClient.SqlClient
 > {
-  return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
-    return yield* findCollective(operationId);
-  }).pipe(storeOperation);
+  return findCollective(operationId).pipe(storeOperation);
 }
 /** Recovery reads all claims; live callers select one operation and, when known, its message role. */
 export function readCollectiveMessages(query?: {
@@ -110,26 +101,25 @@ export function finalizeCollectiveOperation(
     requireText(operationId);
     requireBytes(canonicalSelection);
     return yield* transaction(
-      (() =>
-        Effect.gen(function* () {
-          const operation = yield* findCollective(operationId);
-          if (operation === undefined) {
-            throw new StoreSignal("not-found");
-          }
-          if (operation.canonicalSelection !== undefined) {
-            requireSameBytes(operation.canonicalSelection, canonicalSelection);
-            return "existing";
-          }
-          requireEqual(operation.phase, "collecting");
-          yield* database.unsafe<Readonly<Record<string, unknown>>>(
-            `
+      Effect.gen(function* () {
+        const operation = yield* findCollective(operationId);
+        if (operation === undefined) {
+          return yield* new EndpointStoreError({ reason: "not-found" });
+        }
+        if (operation.canonicalSelection !== undefined) {
+          requireSameBytes(operation.canonicalSelection, canonicalSelection);
+          return "existing";
+        }
+        requireEqual(operation.phase, "collecting");
+        yield* database.unsafe<Readonly<Record<string, unknown>>>(
+          `
       UPDATE collective_operations SET phase = 'finalizing', canonical_selection = ?
       WHERE operation_id = ?
     `,
-            [copyBytes(canonicalSelection), operationId],
-          );
-          return "inserted";
-        }))(),
+          [copyBytes(canonicalSelection), operationId],
+        );
+        return "inserted";
+      }),
     );
   }).pipe(storeOperation);
 }
@@ -140,41 +130,40 @@ export function recordCollectiveAnswer(
   return Effect.gen(function* () {
     const database = yield* SqlClient.SqlClient;
     return yield* transaction(
-      (() =>
-        Effect.gen(function* () {
-          const operation = yield* findCollective(answer.operationId);
-          if (operation?.phase !== "collecting") {
-            return undefined;
-          }
-          const prior = (yield* database.unsafe<
-            Readonly<Record<string, unknown>>
-          >(
-            "SELECT record_hash FROM collective_answers WHERE operation_id = ? AND member = ?",
-            [answer.operationId, answer.member],
-          ))[0];
-          if (prior !== undefined) {
-            return readText(prior, "record_hash");
-          }
-          const record = (yield* database.unsafe<
-            Readonly<Record<string, unknown>>
-          >(
-            "SELECT conversation_id FROM certified_records WHERE record_hash = ?",
-            [answer.recordHash],
-          ))[0];
-          if (record === undefined) {
-            throw new StoreSignal("not-found");
-          }
-          yield* database.unsafe<Readonly<Record<string, unknown>>>(
-            "INSERT INTO collective_answers (operation_id, member, conversation_id, record_hash) VALUES (?, ?, ?, ?)",
-            [
-              answer.operationId,
-              answer.member,
-              readText(record, "conversation_id"),
-              answer.recordHash,
-            ],
-          );
-          return answer.recordHash;
-        }))(),
+      Effect.gen(function* () {
+        const operation = yield* findCollective(answer.operationId);
+        if (operation?.phase !== "collecting") {
+          return undefined;
+        }
+        const prior = (yield* database.unsafe<
+          Readonly<Record<string, unknown>>
+        >(
+          "SELECT record_hash FROM collective_answers WHERE operation_id = ? AND member = ?",
+          [answer.operationId, answer.member],
+        ))[0];
+        if (prior !== undefined) {
+          return readText(prior, "record_hash");
+        }
+        const record = (yield* database.unsafe<
+          Readonly<Record<string, unknown>>
+        >(
+          "SELECT conversation_id FROM certified_records WHERE record_hash = ?",
+          [answer.recordHash],
+        ))[0];
+        if (record === undefined) {
+          return yield* new EndpointStoreError({ reason: "not-found" });
+        }
+        yield* database.unsafe<Readonly<Record<string, unknown>>>(
+          "INSERT INTO collective_answers (operation_id, member, conversation_id, record_hash) VALUES (?, ?, ?, ?)",
+          [
+            answer.operationId,
+            answer.member,
+            readText(record, "conversation_id"),
+            answer.recordHash,
+          ],
+        );
+        return answer.recordHash;
+      }),
     );
   }).pipe(storeOperation);
 }
@@ -203,43 +192,42 @@ export function recordCollectiveRefusal(
   return Effect.gen(function* () {
     const database = yield* SqlClient.SqlClient;
     yield* transaction(
-      (() =>
-        Effect.gen(function* () {
-          const operation = yield* findCollective(refusal.operationId);
-          if (operation?.phase !== "collecting") {
-            return;
-          }
-          const bound = (yield* database.unsafe<
-            Readonly<Record<string, unknown>>
-          >(
-            "SELECT 1 FROM collective_messages WHERE operation_id = ? AND role = 'request' AND destination = ?",
-            [refusal.operationId, refusal.destination],
-          ))[0];
-          if (bound !== undefined) {
-            throw new StoreSignal("conflict");
-          }
-          const prior = (yield* database.unsafe<
-            Readonly<Record<string, unknown>>
-          >(
-            "SELECT canonical_refusal FROM collective_refusals WHERE operation_id = ? AND destination = ?",
-            [refusal.operationId, refusal.destination],
-          ))[0];
-          if (prior !== undefined) {
-            requireSameBytes(
-              readBytes(prior, "canonical_refusal"),
-              refusal.canonicalRefusal,
-            );
-            return;
-          }
-          yield* database.unsafe<Readonly<Record<string, unknown>>>(
-            "INSERT INTO collective_refusals (operation_id, destination, canonical_refusal) VALUES (?, ?, ?)",
-            [
-              refusal.operationId,
-              refusal.destination,
-              copyBytes(refusal.canonicalRefusal),
-            ],
+      Effect.gen(function* () {
+        const operation = yield* findCollective(refusal.operationId);
+        if (operation?.phase !== "collecting") {
+          return;
+        }
+        const bound = (yield* database.unsafe<
+          Readonly<Record<string, unknown>>
+        >(
+          "SELECT 1 FROM collective_messages WHERE operation_id = ? AND role = 'request' AND destination = ?",
+          [refusal.operationId, refusal.destination],
+        ))[0];
+        if (bound !== undefined) {
+          return yield* new EndpointStoreError({ reason: "conflict" });
+        }
+        const prior = (yield* database.unsafe<
+          Readonly<Record<string, unknown>>
+        >(
+          "SELECT canonical_refusal FROM collective_refusals WHERE operation_id = ? AND destination = ?",
+          [refusal.operationId, refusal.destination],
+        ))[0];
+        if (prior !== undefined) {
+          requireSameBytes(
+            readBytes(prior, "canonical_refusal"),
+            refusal.canonicalRefusal,
           );
-        }))(),
+          return;
+        }
+        yield* database.unsafe<Readonly<Record<string, unknown>>>(
+          "INSERT INTO collective_refusals (operation_id, destination, canonical_refusal) VALUES (?, ?, ?)",
+          [
+            refusal.operationId,
+            refusal.destination,
+            copyBytes(refusal.canonicalRefusal),
+          ],
+        );
+      }),
     );
   }).pipe(storeOperation);
 }
@@ -269,20 +257,19 @@ export function retireCollectiveOperation(
   return Effect.gen(function* () {
     const database = yield* SqlClient.SqlClient;
     yield* transaction(
-      (() =>
-        Effect.gen(function* () {
-          const operation = yield* findCollective(operationId);
-          if (operation === undefined) {
-            throw new StoreSignal("not-found");
-          }
-          if (operation.canonicalSelection !== undefined) {
-            requireSameBytes(operation.canonicalSelection, canonicalSelection);
-          }
-          yield* database.unsafe<Readonly<Record<string, unknown>>>(
-            "UPDATE collective_operations SET phase = 'completed', canonical_selection = ? WHERE operation_id = ?",
-            [copyBytes(canonicalSelection), operationId],
-          );
-        }))(),
+      Effect.gen(function* () {
+        const operation = yield* findCollective(operationId);
+        if (operation === undefined) {
+          return yield* new EndpointStoreError({ reason: "not-found" });
+        }
+        if (operation.canonicalSelection !== undefined) {
+          requireSameBytes(operation.canonicalSelection, canonicalSelection);
+        }
+        yield* database.unsafe<Readonly<Record<string, unknown>>>(
+          "UPDATE collective_operations SET phase = 'completed', canonical_selection = ? WHERE operation_id = ?",
+          [copyBytes(canonicalSelection), operationId],
+        );
+      }),
     );
   }).pipe(storeOperation);
 }
@@ -295,10 +282,10 @@ export function completeCollectiveDelivery(
     const database = yield* SqlClient.SqlClient;
     const operation = yield* findCollective(operationId);
     if (operation === undefined) {
-      throw new StoreSignal("not-found");
+      return yield* new EndpointStoreError({ reason: "not-found" });
     }
     if (operation.phase === "collecting") {
-      throw new StoreSignal("conflict");
+      return yield* new EndpointStoreError({ reason: "conflict" });
     }
     requireEqual(operation.deliveryToken, deliveryToken);
     yield* database.unsafe<Readonly<Record<string, unknown>>>(

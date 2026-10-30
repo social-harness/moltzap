@@ -1,15 +1,9 @@
-import * as SqlClient from "@effect/sql/SqlClient";
-import { EndpointStoreError, storeOperation } from "./database/index.js";
-import { Effect } from "effect";
 /** @file Atomic record-core, evidence, certification, and delivery transitions. */
-import type {
-  CertifiedRecord,
-  InboundDeliveryInput,
-  ProposalLock,
-  ProtocolEvidence,
-  StagedRecord,
-  StoreMutation,
-} from "./types.js";
+
+import * as SqlClient from "@effect/sql/SqlClient";
+import { Effect } from "effect";
+import { EndpointStoreError, storeOperation } from "./database/index.js";
+
 import {
   copyBytes,
   readBytes,
@@ -37,6 +31,14 @@ import {
   releaseProposalLock,
   requireSameRecord,
 } from "./rows/index.js";
+import type {
+  CertifiedRecord,
+  InboundDeliveryInput,
+  ProposalLock,
+  ProtocolEvidence,
+  StagedRecord,
+  StoreMutation,
+} from "./types.js";
 /**
  * Atomically stages an action-certified record and its send obligation.
  *
@@ -47,25 +49,23 @@ export function stageRecordForDissemination(
   record: StagedRecord,
 ): Effect.Effect<StoreMutation, EndpointStoreError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
     validateStagedRecord(record);
     return yield* transaction(
-      (() =>
-        Effect.gen(function* () {
-          if (
-            (yield* findStagedRecord(
-              record.conversationId,
-              record.recordHash,
-            )) === undefined
-          ) {
-            yield* requireNoReanchorAwayFrom(record);
-          }
-          const staged = yield* stageRecordInTransaction(record);
-          const obligation = yield* retainDisseminationInTransaction(record);
-          return staged === "inserted" || obligation === "inserted"
-            ? "inserted"
-            : "existing";
-        }))(),
+      Effect.gen(function* () {
+        if (
+          (yield* findStagedRecord(
+            record.conversationId,
+            record.recordHash,
+          )) === undefined
+        ) {
+          yield* requireNoReanchorAwayFrom(record);
+        }
+        const staged = yield* stageRecordInTransaction(record);
+        const obligation = yield* retainDisseminationInTransaction(record);
+        return staged === "inserted" || obligation === "inserted"
+          ? "inserted"
+          : "existing";
+      }),
     );
   }).pipe(storeOperation);
 }
@@ -79,20 +79,18 @@ export function mergeEvidence(
   evidence: ProtocolEvidence,
 ): Effect.Effect<StoreMutation, EndpointStoreError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
     validateEvidence(evidence);
     return yield* transaction(
-      (() =>
-        Effect.gen(function* () {
-          yield* requireEvidenceSubject(evidence);
-          const existing = yield* findEvidence(evidence);
-          if (existing !== undefined) {
-            requireSameBytes(existing, evidence.canonicalEvidence);
-            return "existing";
-          }
-          yield* requireLocalEvidenceLock(evidence);
-          return yield* mergeEvidenceInTransaction(evidence);
-        }))(),
+      Effect.gen(function* () {
+        yield* requireEvidenceSubject(evidence);
+        const existing = yield* findEvidence(evidence);
+        if (existing !== undefined) {
+          requireSameBytes(existing, evidence.canonicalEvidence);
+          return "existing";
+        }
+        yield* requireLocalEvidenceLock(evidence);
+        return yield* mergeEvidenceInTransaction(evidence);
+      }),
     );
   }).pipe(storeOperation);
 }
@@ -119,31 +117,29 @@ export function supersedeProposalLock(
   certificate: readonly ProtocolEvidence[],
 ): Effect.Effect<StoreMutation, EndpointStoreError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
     validateCertificateEvidence(certificate, {
       conversationId: lock.conversationId,
       kind: "action",
       subjectId: lock.actionHash,
     });
     return yield* transaction(
-      (() =>
-        Effect.gen(function* () {
-          const held = yield* findProposalLock(
-            lock.conversationId,
-            lock.previousRecordHash ?? FIRST_MESSAGE_PREDECESSOR,
-          );
-          if (held !== undefined && held.actionHash !== lock.actionHash) {
-            if (yield* hasStagedAction(held)) {
-              throw new StoreSignal("conflict");
-            }
-            yield* releaseProposalLock(held);
+      Effect.gen(function* () {
+        const held = yield* findProposalLock(
+          lock.conversationId,
+          lock.previousRecordHash ?? FIRST_MESSAGE_PREDECESSOR,
+        );
+        if (held !== undefined && held.actionHash !== lock.actionHash) {
+          if (yield* hasStagedAction(held)) {
+            return yield* new EndpointStoreError({ reason: "conflict" });
           }
-          const mutation = yield* lockProposalInTransaction(lock);
-          for (const evidence of certificate) {
-            yield* mergeEvidenceInTransaction(evidence);
-          }
-          return mutation;
-        }))(),
+          yield* releaseProposalLock(held);
+        }
+        const mutation = yield* lockProposalInTransaction(lock);
+        for (const evidence of certificate) {
+          yield* mergeEvidenceInTransaction(evidence);
+        }
+        return mutation;
+      }),
     );
   }).pipe(storeOperation);
 }
@@ -160,14 +156,8 @@ export function promoteRecord(
   delivery?: InboundDeliveryInput,
 ): Effect.Effect<StoreMutation, EndpointStoreError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
     validateCertifiedRecord(record);
-    return yield* transaction(
-      (() =>
-        Effect.gen(function* () {
-          return yield* promoteRecordInTransaction(record, delivery);
-        }))(),
-    );
+    return yield* transaction(promoteRecordInTransaction(record, delivery));
   }).pipe(storeOperation);
 }
 /**
@@ -189,17 +179,15 @@ export function applyCertifiedRecord(
   delivery?: InboundDeliveryInput,
 ): Effect.Effect<StoreMutation, EndpointStoreError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
     validateCertifiedRecord(record);
     return yield* transaction(
-      (() =>
-        Effect.gen(function* () {
-          const staged = yield* stageRecordInTransaction(record);
-          const promoted = yield* promoteRecordInTransaction(record, delivery);
-          return staged === "inserted" || promoted === "inserted"
-            ? "inserted"
-            : "existing";
-        }))(),
+      Effect.gen(function* () {
+        const staged = yield* stageRecordInTransaction(record);
+        const promoted = yield* promoteRecordInTransaction(record, delivery);
+        return staged === "inserted" || promoted === "inserted"
+          ? "inserted"
+          : "existing";
+      }),
     );
   }).pipe(storeOperation);
 }
@@ -249,13 +237,12 @@ function promoteRecordInTransaction(
   delivery?: InboundDeliveryInput,
 ): Effect.Effect<StoreMutation, EndpointStoreError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
     const staged = yield* findStagedRecord(
       record.conversationId,
       record.recordHash,
     );
     if (staged === undefined) {
-      throw new StoreSignal("not-found");
+      return yield* new EndpointStoreError({ reason: "not-found" });
     }
     requireSameRecord(staged, record);
     const evidenceMutation = yield* mergeCertifiedEvidence(record);
@@ -281,7 +268,6 @@ function mergeCertifiedEvidence(
   record: CertifiedRecord,
 ): Effect.Effect<StoreMutation, EndpointStoreError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
     let mutation: StoreMutation = "existing";
     for (const evidence of [
       ...record.actionEvidence,
@@ -325,7 +311,6 @@ function requireRecordPosition(
   record: StagedRecord,
 ): Effect.Effect<void, EndpointStoreError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
     const position = yield* readStoredPosition(record.conversationId);
     requireEqual(position.membershipHash, record.membershipHash);
     requireEqual(position.currentAnchorHash, record.anchorHash);
@@ -366,11 +351,10 @@ function requireEvidenceSubject(
   evidence: ProtocolEvidence,
 ): Effect.Effect<void, EndpointStoreError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
     yield* requireMembership(evidence.conversationId);
     if (evidence.kind === "action") {
       if (!(yield* hasActionSubject(evidence))) {
-        throw new StoreSignal("not-found");
+        return yield* new EndpointStoreError({ reason: "not-found" });
       }
     }
     if (
@@ -378,7 +362,7 @@ function requireEvidenceSubject(
       (yield* findStagedRecord(evidence.conversationId, evidence.subjectId)) ===
         undefined
     ) {
-      throw new StoreSignal("not-found");
+      return yield* new EndpointStoreError({ reason: "not-found" });
     }
     if (
       evidence.kind === "reanchor" &&
@@ -387,7 +371,7 @@ function requireEvidenceSubject(
         evidence.subjectId,
       )) === undefined
     ) {
-      throw new StoreSignal("not-found");
+      return yield* new EndpointStoreError({ reason: "not-found" });
     }
   }).pipe(storeOperation);
 }
@@ -395,14 +379,13 @@ function requireLocalEvidenceLock(
   evidence: ProtocolEvidence,
 ): Effect.Effect<void, EndpointStoreError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
     const identity = yield* readStoredIdentity();
     if (identity === undefined || evidence.evidenceKey !== identity.agentId) {
       return;
     }
     if (evidence.kind === "action") {
       if (!(yield* hasProposalAction(evidence))) {
-        throw new StoreSignal("not-found");
+        return yield* new EndpointStoreError({ reason: "not-found" });
       }
       return;
     }
@@ -415,13 +398,12 @@ function requireLocalDurabilityEvidenceLock(
   evidence: ProtocolEvidence,
 ): Effect.Effect<void, EndpointStoreError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
     const record = yield* findStagedRecord(
       evidence.conversationId,
       evidence.subjectId,
     );
     if (record === undefined) {
-      throw new StoreSignal("not-found");
+      return yield* new EndpointStoreError({ reason: "not-found" });
     }
     const proposalLock = yield* findProposalLock(
       record.conversationId,
@@ -431,7 +413,7 @@ function requireLocalDurabilityEvidenceLock(
       proposalLock === undefined ||
       proposalLock.actionHash !== record.actionHash
     ) {
-      throw new StoreSignal("not-found");
+      return yield* new EndpointStoreError({ reason: "not-found" });
     }
     yield* requireNoReanchorAwayFrom(record);
   }).pipe(storeOperation);
@@ -457,7 +439,7 @@ function requireNoReanchorAwayFrom(
       [record.conversationId, record.anchorHash],
     ))[0];
     if (left !== undefined) {
-      throw new StoreSignal("conflict");
+      return yield* new EndpointStoreError({ reason: "conflict" });
     }
   }).pipe(storeOperation);
 }
@@ -537,7 +519,7 @@ function completeLocalMessageIntent(
     const database = yield* SqlClient.SqlClient;
     const identity = yield* readStoredIdentity();
     if (identity === undefined) {
-      throw new StoreSignal("not-found");
+      return yield* new EndpointStoreError({ reason: "not-found" });
     }
     if (record.authorAgentId !== identity.agentId) {
       return;
@@ -548,13 +530,13 @@ function completeLocalMessageIntent(
       [record.authorAgentId, record.msgId],
     ))[0];
     if (row === undefined) {
-      throw new StoreSignal("not-found");
+      return yield* new EndpointStoreError({ reason: "not-found" });
     }
     requireEqual(readText(row, "conversation_id"), record.conversationId);
     requireEqual(readText(row, "membership_hash"), record.membershipHash);
     const completed = readOptionalText(row, "completed_record_hash");
     if (completed !== undefined && completed !== record.recordHash) {
-      throw new StoreSignal("conflict");
+      return yield* new EndpointStoreError({ reason: "conflict" });
     }
     yield* database.unsafe<Readonly<Record<string, unknown>>>(
       `UPDATE message_intents SET completed_record_hash = ?
@@ -574,7 +556,7 @@ function requireMembership(
         [conversationId],
       ))[0] === undefined
     ) {
-      throw new StoreSignal("not-found");
+      return yield* new EndpointStoreError({ reason: "not-found" });
     }
   }).pipe(storeOperation);
 }

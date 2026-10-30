@@ -1,21 +1,15 @@
 /** @file Private typed contract for endpoint persistence operations. */
 
-import type { EndpointStoreError } from "./database/values.js";
 import { canonicalIdentifier } from "../../encoding/identifier.js";
-
+import type { EndpointStoreError } from "./database/values.js";
 /* eslint-disable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- The private Effect Schema and decoded nominal value intentionally share one domain name. */
-
 /** Stable opaque identity for one durable inbound delivery. */
 export const DeliveryToken = canonicalIdentifier("DeliveryToken", "dlv_", 32);
-
 /** Strictly decoded private durable delivery identity. */
 export type DeliveryToken = typeof DeliveryToken.Type;
-
 /* eslint-enable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Restore defaults after the private Schema/type pair. */
-
 /** Whether an idempotent mutation inserted state or observed the same state. */
 export type StoreMutation = "inserted" | "existing";
-
 /**
  * Whether a store error refuses the input itself, because it conflicts with
  * durable state or is invalid, rather than reporting a failed store.
@@ -25,13 +19,11 @@ export type StoreMutation = "inserted" | "existing";
 export function isSemanticStoreRejection(error: EndpointStoreError): boolean {
   return error.reason === "conflict" || error.reason === "invalid-input";
 }
-
 /** Canonical bytes bound to the one local identity. */
 export interface IdentityBinding {
   readonly agentId: string;
   readonly canonicalAgentCard: Uint8Array;
 }
-
 /** One locally authored immutable message intent and its completion. */
 export interface MessageIntent {
   readonly conversationId: string;
@@ -41,7 +33,6 @@ export interface MessageIntent {
   readonly canonicalIntent: Uint8Array;
   readonly completedRecordHash?: string;
 }
-
 /** Atomic binding for a message in either retained or newly founded history. */
 export type MessageIntentBinding = {
   readonly collective?: CollectiveMessageBinding;
@@ -56,7 +47,6 @@ export type MessageIntentBinding = {
       intent: MessageIntent;
     }>
 );
-
 /** Immutable membership and initial Router anchor for one conversation. */
 export interface ConversationFoundation {
   readonly conversationId: string;
@@ -65,14 +55,12 @@ export interface ConversationFoundation {
   readonly anchorHash: string;
   readonly canonicalAnchor: Uint8Array;
 }
-
 /** One immutable membership descriptor recovered independently of anchors. */
 export interface StoredMembership {
   readonly conversationId: string;
   readonly membershipHash: string;
   readonly canonicalMembership: Uint8Array;
 }
-
 /** One initial or completed Router-epoch anchor in the retained chain. */
 export interface StoredAnchor {
   readonly conversationId: string;
@@ -81,7 +69,6 @@ export interface StoredAnchor {
   readonly selectedRecordHash?: string;
   readonly canonicalAnchor: Uint8Array;
 }
-
 /** The first Router-ordered action selected for one predecessor. */
 export interface ProposalLock {
   readonly conversationId: string;
@@ -89,7 +76,6 @@ export interface ProposalLock {
   readonly actionHash: string;
   readonly canonicalActionCore: Uint8Array;
 }
-
 /** One exact record core staged before a durability vote. */
 export interface StagedRecord {
   readonly conversationId: string;
@@ -102,7 +88,6 @@ export interface StagedRecord {
   readonly msgId: string;
   readonly canonicalRecordCore: Uint8Array;
 }
-
 /** Mergeable protocol evidence addressed by its stable private identity. */
 export interface ProtocolEvidence {
   readonly conversationId: string;
@@ -111,19 +96,16 @@ export interface ProtocolEvidence {
   readonly evidenceKey: string;
   readonly canonicalEvidence: Uint8Array;
 }
-
 /** One certified record with action and durability evidence kept separate. */
 export interface CertifiedRecord extends StagedRecord {
   readonly actionEvidence: readonly ProtocolEvidence[];
   readonly durabilityEvidence: readonly ProtocolEvidence[];
 }
-
 /** Canonical host message inserted when a remote record becomes certified. */
 export interface InboundDeliveryInput {
   readonly recipientAgentId: string;
   readonly canonicalMessage: Uint8Array;
 }
-
 /** One stable pending runtime delivery, including its retained tombstone. */
 export interface PendingDelivery extends InboundDeliveryInput {
   readonly deliveryToken: DeliveryToken;
@@ -131,7 +113,6 @@ export interface PendingDelivery extends InboundDeliveryInput {
   readonly recordHash: string;
   readonly acknowledged: boolean;
 }
-
 /** Canonical complete outer message before it receives a stable outbox key. */
 export interface OutboundMessageInput {
   readonly wireVersion: string;
@@ -139,10 +120,8 @@ export interface OutboundMessageInput {
   readonly envelopeId: string;
   readonly canonicalSignedMessage: Uint8Array;
 }
-
 /** One immutable signed envelope retained across transport retries. */
 export type StoredOutboundMessage = OutboundMessageInput;
-
 /**
  * A staged action-certified record this endpoint still owes its members,
  * until its outer envelope is attached to an outbox row.
@@ -151,28 +130,26 @@ export interface DisseminationObligation {
   readonly conversationId: string;
   readonly recordHash: string;
 }
-
 /** Durable disposition chosen immediately before one Router attempt. */
 export type OutboundAttempt =
-  | Readonly<{ kind: "inactive" }>
+  | Readonly<{
+      kind: "inactive";
+    }>
   | Readonly<{
       kind: "pending";
       mode: "initial" | "retry";
       outbound: StoredOutboundMessage;
     }>;
-
 /** Exact empty-history Router-anchor replacement guarded by the old foundation. */
 export interface EmptyConversationRestart {
   readonly expectedFoundation: ConversationFoundation;
   readonly replacementFoundation: ConversationFoundation;
 }
-
 /** Durable state retained after an empty conversation changes Router instance. */
 export interface RestartedEmptyConversation {
   readonly foundation: ConversationFoundation;
   readonly messageIntents: readonly MessageIntent[];
 }
-
 /** One staged Router-epoch proposal. */
 export interface StagedReanchor {
   readonly conversationId: string;
@@ -182,17 +159,14 @@ export interface StagedReanchor {
   readonly selectedRecordHash: string;
   readonly canonicalBody: Uint8Array;
 }
-
 /** One completed Router-epoch proposal and its threshold evidence. */
 export interface CompletedReanchor extends StagedReanchor {
   readonly canonicalCompletedReanchor: Uint8Array;
 }
-
 /** One recoverable re-anchor candidate, complete only when evidence is present. */
 export interface RecoveredReanchor extends StagedReanchor {
   readonly canonicalCompletedReanchor?: Uint8Array;
 }
-
 /** One durable current position for a conversation. */
 export interface ConversationPosition {
   readonly conversationId: string;
@@ -200,7 +174,6 @@ export interface ConversationPosition {
   readonly currentAnchorHash: string;
   readonly headRecordHash?: string;
 }
-
 /** Complete private state recovered after opening the endpoint database. */
 export interface EndpointRecovery {
   readonly identity?: IdentityBinding;
@@ -217,27 +190,25 @@ export interface EndpointRecovery {
   readonly disseminationObligations: readonly DisseminationObligation[];
   readonly outboundMessages: readonly StoredOutboundMessage[];
 }
-
 /** One management page over local conversation identifiers. */
 export interface ConversationPage {
   readonly conversationIds: readonly string[];
   readonly hasMore: boolean;
 }
-
 /** One frozen management page of complete certified records. */
 export interface HistoryPage {
   readonly records: readonly CertifiedRecord[];
   readonly continuation: string | null;
 }
-
 /** A remote request is identified by its authenticated certified record. */
 type CollectiveOrigin =
-  | { readonly kind: "local" }
+  | {
+      readonly kind: "local";
+    }
   | {
       readonly kind: "remote";
       readonly recordHash: string;
     };
-
 /** Immutable request identity and the descriptor its collective owner interprets. */
 export interface CollectiveOperationInput {
   readonly operationId: string;
@@ -245,20 +216,28 @@ export interface CollectiveOperationInput {
   readonly canonicalRequest: Uint8Array;
   readonly canonicalDescriptor: Uint8Array;
 }
-
 /** Selection freezes before a close binds; completion commits with its one terminal item. */
 export interface StoredCollectiveOperation extends CollectiveOperationInput {
   readonly creatorAgentId: string;
   readonly origin:
-    | Extract<CollectiveOrigin, { readonly kind: "local" }>
-    | (Extract<CollectiveOrigin, { readonly kind: "remote" }> & {
+    | Extract<
+        CollectiveOrigin,
+        {
+          readonly kind: "local";
+        }
+      >
+    | (Extract<
+        CollectiveOrigin,
+        {
+          readonly kind: "remote";
+        }
+      > & {
         readonly conversationId: string;
       });
   readonly phase: "collecting" | "finalizing" | "completed";
   readonly canonicalSelection?: Uint8Array;
   readonly deliveryToken: DeliveryToken;
 }
-
 /** A collective owns one immutable message per role and destination. */
 export interface CollectiveMessageBinding {
   readonly operationId: string;
@@ -266,19 +245,16 @@ export interface CollectiveMessageBinding {
   readonly destination: string;
   readonly operation?: CollectiveOperationInput;
 }
-
 /** Existing message intents own retries and certified completion across restart. */
 export interface StoredCollectiveMessage extends CollectiveMessageBinding {
   readonly intent: MessageIntent;
 }
-
 /** Counted answers retain certified references; their content remains in certified history. */
 export interface CollectiveAnswerReference {
   readonly operationId: string;
   readonly member: string;
   readonly recordHash: string;
 }
-
 /** A request that bound no intent is terminal for that member of this invocation. */
 export interface CollectiveRequestRefusal {
   readonly operationId: string;

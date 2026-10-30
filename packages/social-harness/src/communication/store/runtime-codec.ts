@@ -3,9 +3,7 @@
 import { Effect, Schema } from "effect";
 import { canonicalBytes } from "../../encoding/canonical-json.js";
 import { EndpointStoreError } from "./database/index.js";
-
 const decoder = new TextDecoder("utf-8", { fatal: true });
-
 /**
  * Encode immutable runtime values before they enter the endpoint store.
  * @param value Validated runtime value without process resources.
@@ -19,7 +17,6 @@ export const encodeRuntimeValue = (
       Effect.fail(new EndpointStoreError({ reason: "invalid-input" })),
     ),
   );
-
 /**
  * Validate stored bytes at their owning runtime boundary before reuse.
  * @param schema Closed schema of the stored runtime value.

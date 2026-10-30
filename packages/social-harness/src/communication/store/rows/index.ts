@@ -1,9 +1,11 @@
-import * as SqlClient from "@effect/sql/SqlClient";
-import { EndpointStoreError, storeOperation } from "../database/index.js";
-import { Effect } from "effect";
 /** @file Detached endpoint state used by store mutations and recovery reads. */
-import type { IdentityBinding } from "../types.js";
+
+import * as SqlClient from "@effect/sql/SqlClient";
+import { Effect } from "effect";
+import { EndpointStoreError, storeOperation } from "../database/index.js";
+
 import { readBytes, readText } from "../database/index.js";
+import type { IdentityBinding } from "../types.js";
 /** First-candidate locks are selected against one durable predecessor. */
 export {
   findProposalLock,

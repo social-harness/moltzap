@@ -1,11 +1,11 @@
+/** @file Stores host inbox items and tracks delivery and acknowledgment. */
+
 import * as SqlClient from "@effect/sql/SqlClient";
 import { storeOperation } from "../../communication/store/database/index.js";
-/** @file Stores host inbox items and tracks delivery and acknowledgment. */
+
 import { Effect, Schema } from "effect";
-import type { ItemProjection } from "../../firewall/store/types.js";
-import type { InboxSummary } from "../../host-protocol/operations.js";
 import {
-  type EndpointStoreError,
+  EndpointStoreError,
   readBytes,
   readInteger,
   readOptionalBytes,
@@ -22,6 +22,8 @@ import {
   type StoreMutation,
 } from "../../communication/store/types.js";
 import { MAXIMUM_RUNTIME_ITEM_BYTES } from "../../encoding/limits.js";
+import type { ItemProjection } from "../../firewall/store/types.js";
+import type { InboxSummary } from "../../host-protocol/operations.js";
 // safer-arch-ignore file-implicit-boundary-module: Store composition and firewall admission share inbox writes within the caller's transaction; external consumers use the store capability instead of these SQLite primitives.
 const MAXIMUM_PAGE_ITEMS = 50;
 interface InboxBounds {
@@ -66,7 +68,6 @@ export interface EventStore {
     state: Uint8Array,
   ) => Effect.Effect<void, EndpointStoreError>;
 }
-
 /** The terminal payload and protocol custody settle with its local publication. */
 export interface CollectiveDelivery {
   readonly operationId: string;
@@ -76,7 +77,6 @@ export interface CollectiveDelivery {
   readonly canonicalProvenance?: Uint8Array;
   readonly firewall: boolean;
 }
-
 /** Called only inside the daemon's initial schema transaction. */
 export function createInboxTables() {
   return Effect.gen(function* () {
@@ -101,7 +101,6 @@ export function createInboxTables() {
       yield* sql.unsafe<Readonly<Record<string, unknown>>>(statement);
   }).pipe(storeOperation);
 }
-
 /** Retained bytes remain readable after handoff or request-context retirement. */
 export function readInboxItem(deliveryToken: DeliveryToken) {
   return Effect.gen(function* () {
@@ -137,7 +136,7 @@ export function putInboxItem(
         (item.canonicalGuidance?.byteLength ?? 0) >
       MAXIMUM_RUNTIME_ITEM_BYTES
     ) {
-      throw new StoreSignal("invalid-input");
+      return yield* new EndpointStoreError({ reason: "invalid-input" });
     }
     const retained = (yield* database.unsafe<Readonly<Record<string, unknown>>>(
       "SELECT canonical_item, canonical_guidance FROM runtime_inbox WHERE delivery_token = ?",
@@ -170,7 +169,7 @@ export function retireItem(
       [deliveryToken],
     ))[0];
     if (retained === undefined) {
-      throw new StoreSignal("not-found");
+      return yield* new EndpointStoreError({ reason: "not-found" });
     }
     yield* database.unsafe<Readonly<Record<string, unknown>>>(
       "UPDATE runtime_inbox SET acknowledged = 1 WHERE delivery_token = ?",
@@ -185,13 +184,11 @@ export function completeWebhookDelivery(
   canonicalState: Uint8Array,
 ): Effect.Effect<void, EndpointStoreError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
     yield* transaction(
-      (() =>
-        Effect.gen(function* () {
-          yield* retireItem(deliveryToken);
-          yield* writeEventState(canonicalState);
-        }))(),
+      Effect.gen(function* () {
+        yield* retireItem(deliveryToken);
+        yield* writeEventState(canonicalState);
+      }),
     );
   }).pipe(storeOperation);
 }
@@ -239,7 +236,7 @@ export function readInboxSummary(): Effect.Effect<
       [],
     ))[0];
     if (row === undefined) {
-      throw new StoreSignal("corrupt");
+      return yield* new EndpointStoreError({ reason: "corrupt" });
     }
     return {
       pendingCount: readInteger(row, "pending"),
@@ -255,12 +252,10 @@ export function acknowledgeInboxItem(
   deliveryToken: DeliveryToken,
 ): Effect.Effect<void, EndpointStoreError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
     yield* transaction(
-      (() =>
-        Effect.gen(function* () {
-          yield* retireItem(deliveryToken);
-        }))(),
+      Effect.gen(function* () {
+        yield* retireItem(deliveryToken);
+      }),
     );
   }).pipe(storeOperation);
 }
@@ -316,7 +311,7 @@ function newestSequence(): Effect.Effect<
       [],
     ))[0];
     if (row === undefined) {
-      throw new StoreSignal("corrupt");
+      return yield* new EndpointStoreError({ reason: "corrupt" });
     }
     return readInteger(row, "newest");
   }).pipe(storeOperation);
@@ -368,7 +363,6 @@ function guidanceBytes(
   const value = readOptionalBytes(row, "canonical_guidance");
   return value === undefined ? {} : { canonicalGuidance: value };
 }
-
 /** A saved host view corresponding to a record in an internally verified history page. */
 export interface HistoryView {
   readonly recordHash: string;

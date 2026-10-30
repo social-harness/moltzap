@@ -1,7 +1,9 @@
-import * as SqlClient from "@effect/sql/SqlClient";
-import { EndpointStoreError, storeOperation } from "../database/index.js";
-import { Effect } from "effect";
 /** @file Stores messages from peers and tracks whether the daemon has consumed them. */
+
+import * as SqlClient from "@effect/sql/SqlClient";
+import { Effect } from "effect";
+import { EndpointStoreError, storeOperation } from "../database/index.js";
+
 import { Either, Schema } from "effect";
 import {
   copyBytes,
@@ -91,28 +93,25 @@ export function acknowledgeDelivery(
       onRight: () => undefined,
     });
     return yield* transaction(
-      (() =>
-        Effect.gen(function* () {
-          const row = (yield* database.unsafe<
-            Readonly<Record<string, unknown>>
-          >(
-            `SELECT ${deliveryColumns} FROM pending_deliveries
+      Effect.gen(function* () {
+        const row = (yield* database.unsafe<Readonly<Record<string, unknown>>>(
+          `SELECT ${deliveryColumns} FROM pending_deliveries
          WHERE delivery_token = ?`,
-            [deliveryToken],
-          ))[0];
-          if (row === undefined) {
-            throw new StoreSignal("not-found");
-          }
-          if (readPendingDelivery(row).acknowledged) {
-            return "existing";
-          }
-          yield* database.unsafe<Readonly<Record<string, unknown>>>(
-            `UPDATE pending_deliveries SET acknowledged = 1
+          [deliveryToken],
+        ))[0];
+        if (row === undefined) {
+          return yield* new EndpointStoreError({ reason: "not-found" });
+        }
+        if (readPendingDelivery(row).acknowledged) {
+          return "existing";
+        }
+        yield* database.unsafe<Readonly<Record<string, unknown>>>(
+          `UPDATE pending_deliveries SET acknowledged = 1
          WHERE delivery_token = ?`,
-            [deliveryToken],
-          );
-          return "inserted";
-        }))(),
+          [deliveryToken],
+        );
+        return "inserted";
+      }),
     );
   }).pipe(storeOperation);
 }
@@ -134,16 +133,16 @@ export function retainDeliveryInTransaction(
     const database = yield* SqlClient.SqlClient;
     const identity = yield* readStoredIdentity();
     if (identity === undefined) {
-      throw new StoreSignal("not-found");
+      return yield* new EndpointStoreError({ reason: "not-found" });
     }
     if (record.authorAgentId === identity.agentId) {
       if (delivery !== undefined) {
-        throw new StoreSignal("conflict");
+        return yield* new EndpointStoreError({ reason: "conflict" });
       }
       return "existing";
     }
     if (delivery === undefined) {
-      throw new StoreSignal("invalid-input");
+      return yield* new EndpointStoreError({ reason: "invalid-input" });
     }
     requireText(delivery.recipientAgentId);
     requireBytes(delivery.canonicalMessage);

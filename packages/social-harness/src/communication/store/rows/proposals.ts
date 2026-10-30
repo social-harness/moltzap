@@ -1,12 +1,9 @@
-import * as SqlClient from "@effect/sql/SqlClient";
-import { EndpointStoreError, storeOperation } from "../database/index.js";
-import { Effect } from "effect";
 /** @file Durable candidate locks and the conversation positions they protect. */
-import type {
-  ConversationPosition,
-  ProposalLock,
-  StoreMutation,
-} from "../types.js";
+
+import * as SqlClient from "@effect/sql/SqlClient";
+import { Effect } from "effect";
+import { EndpointStoreError, storeOperation } from "../database/index.js";
+
 import {
   copyBytes,
   readBytes,
@@ -15,8 +12,12 @@ import {
   readText,
   requireEqual,
   requireSameBytes,
-  StoreSignal,
 } from "../database/index.js";
+import type {
+  ConversationPosition,
+  ProposalLock,
+  StoreMutation,
+} from "../types.js";
 /** The predecessor key of a conversation's first record. */
 export const FIRST_MESSAGE_PREDECESSOR = "";
 /**
@@ -160,7 +161,7 @@ export function readStoredPosition(
       [conversationId],
     ))[0];
     if (row === undefined) {
-      throw new StoreSignal("not-found");
+      return yield* new EndpointStoreError({ reason: "not-found" });
     }
     return Object.freeze({
       ...readConversationPosition(row),

@@ -1,8 +1,9 @@
-import * as SqlClient from "@effect/sql/SqlClient";
-import { EndpointStoreError, storeOperation } from "../database/index.js";
-import { Effect } from "effect";
 /** @file Detached staged and completed re-anchor projections. */
-import type { RecoveredReanchor, StagedReanchor } from "../types.js";
+
+import * as SqlClient from "@effect/sql/SqlClient";
+import { Effect } from "effect";
+import { EndpointStoreError, storeOperation } from "../database/index.js";
+
 import {
   readBytes,
   readOptionalBytes,
@@ -10,6 +11,7 @@ import {
   requireEqual,
   requireSameBytes,
 } from "../database/index.js";
+import type { RecoveredReanchor, StagedReanchor } from "../types.js";
 /**
  * Projects one staged or completed recoverable re-anchor.
  *

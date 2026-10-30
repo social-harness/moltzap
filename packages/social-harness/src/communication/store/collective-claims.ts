@@ -1,7 +1,9 @@
-import * as SqlClient from "@effect/sql/SqlClient";
-import { EndpointStoreError, storeOperation } from "./database/index.js";
-import { Effect } from "effect";
 /** @file Retains a collective operation’s identity and reserves its request, answer and closing messages. */
+
+import * as SqlClient from "@effect/sql/SqlClient";
+import { Effect } from "effect";
+import { EndpointStoreError, storeOperation } from "./database/index.js";
+
 import { Schema } from "effect";
 import {
   copyBytes,
@@ -43,7 +45,7 @@ export function bindCollectiveMessageInTransaction(
     }
     const operation = yield* findCollective(binding.operationId);
     if (operation === undefined) {
-      throw new StoreSignal("not-found");
+      return yield* new EndpointStoreError({ reason: "not-found" });
     }
     const prior = (yield* database.unsafe<Readonly<Record<string, unknown>>>(
       `
@@ -84,7 +86,6 @@ export function retainCollectiveInTransaction(
   input: CollectiveOperationInput,
 ): Effect.Effect<StoreMutation, EndpointStoreError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
     requireText(input.operationId);
     requireBytes(input.canonicalRequest);
     requireBytes(input.canonicalDescriptor);
@@ -154,7 +155,7 @@ function requireOrigin(input: CollectiveOperationInput): Effect.Effect<
     const database = yield* SqlClient.SqlClient;
     const identity = yield* readStoredIdentity();
     if (identity === undefined) {
-      throw new StoreSignal("not-found");
+      return yield* new EndpointStoreError({ reason: "not-found" });
     }
     if (input.origin.kind === "local") {
       return { creatorAgentId: identity.agentId };
@@ -170,11 +171,11 @@ function requireOrigin(input: CollectiveOperationInput): Effect.Effect<
       [input.origin.recordHash],
     ))[0];
     if (row === undefined) {
-      throw new StoreSignal("not-found");
+      return yield* new EndpointStoreError({ reason: "not-found" });
     }
     const creatorAgentId = readText(row, "author_agent_id");
     if (identity.agentId === creatorAgentId) {
-      throw new StoreSignal("conflict");
+      return yield* new EndpointStoreError({ reason: "conflict" });
     }
     requireSameBytes(
       readBytes(row, "canonical_message"),
@@ -251,7 +252,7 @@ function requireMessageState(
         [binding.operationId, binding.destination],
       ))[0] !== undefined
     ) {
-      throw new StoreSignal("conflict");
+      return yield* new EndpointStoreError({ reason: "conflict" });
     }
     if (binding.role === "response") {
       requireRemoteRequest(operation, intent.conversationId);

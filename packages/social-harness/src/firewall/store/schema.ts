@@ -3,7 +3,6 @@
 import * as SqlClient from "@effect/sql/SqlClient";
 import { Effect } from "effect";
 import { storeOperation } from "../../communication/store/database/index.js";
-
 const firewallSchemaSql = `
   CREATE TABLE firewall_incoming (
     sequence INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -62,7 +61,6 @@ const firewallSchemaSql = `
   CREATE INDEX firewall_decisions_time ON firewall_checks(decided_at)
     WHERE decided_at IS NOT NULL;
 `;
-
 /** Policy tables are created alongside protocol and inbox tables in one startup transaction. */
 export function createFirewallTables() {
   return Effect.gen(function* () {

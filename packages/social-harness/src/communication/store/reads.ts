@@ -1,16 +1,9 @@
-import * as SqlClient from "@effect/sql/SqlClient";
-import { EndpointStoreError, storeOperation } from "./database/index.js";
-import { Effect, Schema } from "effect";
 /** @file Recovery and frozen local management reads over certified history. */
-import type {
-  CertifiedRecord,
-  ConversationPage,
-  EndpointRecovery,
-  HistoryPage,
-  MessageIntent,
-  StoredAnchor,
-  StoredMembership,
-} from "./types.js";
+
+import * as SqlClient from "@effect/sql/SqlClient";
+import { Effect, Schema } from "effect";
+import { EndpointStoreError, storeOperation } from "./database/index.js";
+
 import {
   readBytes,
   readInteger,
@@ -33,6 +26,15 @@ import {
   readStagedRecord,
   readStoredIdentity,
 } from "./rows/index.js";
+import type {
+  CertifiedRecord,
+  ConversationPage,
+  EndpointRecovery,
+  HistoryPage,
+  MessageIntent,
+  StoredAnchor,
+  StoredMembership,
+} from "./types.js";
 const HISTORY_PAGE_SIZE = 50;
 const historySelect = `
   SELECT staged.conversation_id, staged.record_hash,
@@ -56,7 +58,6 @@ export function searchStoredConversations(
   }>,
 ): Effect.Effect<ConversationPage, EndpointStoreError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
     const rows = yield* readConversationIdRows(input.afterConversationId);
     const conversationIds = rows
       .slice(0, HISTORY_PAGE_SIZE)
@@ -148,7 +149,7 @@ function readConversationIdRows(
       afterConversationId.length === 0 ||
       afterConversationId.includes("\u0000")
     ) {
-      throw new StoreSignal("invalid-input");
+      return yield* new EndpointStoreError({ reason: "invalid-input" });
     }
     return yield* database.unsafe<Readonly<Record<string, unknown>>>(
       `SELECT conversation_id FROM conversation_state
@@ -281,10 +282,7 @@ function readAllCertifiedRecords(
          ORDER BY certified.conversation_id, certified.ordinal`,
           [...(conversationId === undefined ? [] : [conversationId])],
         ),
-        (row) =>
-          Effect.gen(function* () {
-            return yield* readCertifiedRecord(row);
-          }),
+        (row) => readCertifiedRecord(row),
       ),
     );
   }).pipe(storeOperation);
@@ -303,7 +301,6 @@ function readReanchors(conversationId?: string) {
     );
   }).pipe(storeOperation);
 }
-
 /** History continuations identify immutable positions without retaining a live read session. */
 export const HistoryContinuation = Schema.String.pipe(
   Schema.minLength(1),
@@ -318,12 +315,16 @@ const encodeCursor = Schema.encodeSync(Schema.parseJson(historyCursor));
 const decodeCursor = Schema.decodeUnknown(Schema.parseJson(historyCursor), {
   onExcessProperty: "error",
 });
-
 /** Pages stop at the original certified head and can be replayed after restart. */
 export function readStoredConversation(
   request:
-    | Readonly<{ conversationId: string; afterRecordHash?: string }>
-    | Readonly<{ continuation: string }>,
+    | Readonly<{
+        conversationId: string;
+        afterRecordHash?: string;
+      }>
+    | Readonly<{
+        continuation: string;
+      }>,
 ): Effect.Effect<HistoryPage, EndpointStoreError, SqlClient.SqlClient> {
   return transaction(
     Effect.gen(function* () {
@@ -392,7 +393,6 @@ export function readStoredConversation(
     }),
   );
 }
-
 function decodeHistoryCursor(value: string) {
   return Effect.try({
     try: () => {
@@ -411,7 +411,6 @@ function decodeHistoryCursor(value: string) {
     ),
   );
 }
-
 function historyPosition(
   conversationId: string,
   recordHash: string,

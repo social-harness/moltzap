@@ -21,22 +21,19 @@ export type {
   RestartedEmptyConversation,
   StagedReanchor,
   StagedRecord,
+  StoreMutation,
   StoredAnchor,
   StoredMembership,
   StoredOutboundMessage,
-  StoreMutation,
 } from "./types.js";
 /** Stable opaque durable-delivery identity. */
 export { DeliveryToken } from "./types.js";
 /** Whether a store error refuses its input rather than reporting a failed store. */
 export { isSemanticStoreRejection } from "./types.js";
-
 /** Canonical runtime persistence shares the store error vocabulary. */
 export { decodeRuntimeValue, encodeRuntimeValue } from "./runtime-codec.js";
-
 /** Pending envelopes cannot be re-signed when their live window expires. */
 export { OutboxTooOldError } from "./database/values.js";
-
 /** Immutable collective ownership, existing message claims, and terminal delivery. */
 export type {
   CollectiveMessageBinding,
@@ -45,7 +42,6 @@ export type {
   StoredCollectiveMessage,
   StoredCollectiveOperation,
 } from "./types.js";
-
 /** Protocol writes and reads use the caller's shared SQL environment. */
 export {
   applyCatchUpReanchor,
@@ -86,10 +82,10 @@ export {
 } from "./queues/index.js";
 /** History pages remain anchored while later records are appended. */
 export {
-  readStoredConversation as readConversation,
-  searchStoredConversations as searchConversations,
-  recoverStoredState as recover,
   HistoryContinuation,
+  readStoredConversation as readConversation,
+  recoverStoredState as recover,
+  searchStoredConversations as searchConversations,
 } from "./reads.js";
 /** Record acceptance retains exact bytes and separately attributed evidence. */
 export {

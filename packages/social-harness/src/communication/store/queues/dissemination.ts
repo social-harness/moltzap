@@ -1,22 +1,23 @@
-import { enqueueOutboundInTransaction } from "./outbound.js";
-import * as SqlClient from "@effect/sql/SqlClient";
-import { EndpointStoreError, storeOperation } from "../database/index.js";
-import { Effect } from "effect";
 /** @file Durable action-certified-record send obligations and exact outbox attachment. */
+
+import * as SqlClient from "@effect/sql/SqlClient";
+import { Effect } from "effect";
+import { EndpointStoreError, storeOperation } from "../database/index.js";
+import { enqueueOutboundInTransaction } from "./outbound.js";
+
+import {
+  readOptionalText,
+  readText,
+  requireEqual,
+  requireText,
+  transaction,
+} from "../database/index.js";
 import type {
   DisseminationObligation,
   OutboundMessageInput,
   StoredOutboundMessage,
   StoreMutation,
 } from "../types.js";
-import {
-  readOptionalText,
-  readText,
-  requireEqual,
-  requireText,
-  StoreSignal,
-  transaction,
-} from "../database/index.js";
 /**
  * Retains the send obligation for a staged action-certified record inside
  * the transaction that stages it. The schema's foreign key refuses an
@@ -64,33 +65,32 @@ export function enqueueDisseminationOutbound(
     validateObligation(obligation);
     requireEqual(obligation.conversationId, message.conversationId);
     return yield* transaction(
-      (() =>
-        Effect.gen(function* () {
-          const retained = yield* findObligation(obligation);
-          if (retained === undefined) {
-            throw new StoreSignal("not-found");
-          }
-          const outbound = yield* enqueueOutboundInTransaction(message);
-          if (
-            retained.envelopeId !== undefined &&
-            retained.envelopeId !== outbound.envelopeId
-          ) {
-            throw new StoreSignal("conflict");
-          }
-          if (retained.envelopeId === undefined) {
-            yield* database.unsafe<Readonly<Record<string, unknown>>>(
-              `UPDATE dissemination_obligations SET envelope_id = ?
+      Effect.gen(function* () {
+        const retained = yield* findObligation(obligation);
+        if (retained === undefined) {
+          return yield* new EndpointStoreError({ reason: "not-found" });
+        }
+        const outbound = yield* enqueueOutboundInTransaction(message);
+        if (
+          retained.envelopeId !== undefined &&
+          retained.envelopeId !== outbound.envelopeId
+        ) {
+          return yield* new EndpointStoreError({ reason: "conflict" });
+        }
+        if (retained.envelopeId === undefined) {
+          yield* database.unsafe<Readonly<Record<string, unknown>>>(
+            `UPDATE dissemination_obligations SET envelope_id = ?
            WHERE conversation_id = ? AND record_hash = ?
              AND envelope_id IS NULL`,
-              [
-                outbound.envelopeId,
-                obligation.conversationId,
-                obligation.recordHash,
-              ],
-            );
-          }
-          return outbound;
-        }))(),
+            [
+              outbound.envelopeId,
+              obligation.conversationId,
+              obligation.recordHash,
+            ],
+          );
+        }
+        return outbound;
+      }),
     );
   }).pipe(storeOperation);
 }

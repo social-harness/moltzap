@@ -6,8 +6,8 @@ export type {
   FirewallCompletion,
   FirewallEvidence,
   FirewallEvidenceRange,
-  FirewallEvidenceSlices,
   FirewallEvidenceSlice,
+  FirewallEvidenceSlices,
   FirewallHistoryEntry,
   FirewallInboxEntry,
   FirewallLocalAdmission,
@@ -17,15 +17,15 @@ export type {
 } from "./types.js";
 /** Rules and completed checks share the daemon's SQL client. */
 export {
-  readFirewallPolicy,
-  writeFirewallPolicy,
+  decodeFirewallAuditEntry,
+  queueFirewallItem,
+  readDecisions,
   readFirewallActivations,
   readFirewallDecisions,
-  saveCheckDecision,
+  readFirewallPolicy,
   readNextPendingMessages,
   readPendingFirewallItems,
-  queueFirewallItem,
-  decodeFirewallAuditEntry,
-  readDecisions,
+  saveCheckDecision,
   withoutTraces,
+  writeFirewallPolicy,
 } from "./firewall.js";

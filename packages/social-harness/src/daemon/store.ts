@@ -1,9 +1,9 @@
 /** @file Shares one SQLite lifetime and commits changes spanning communication, policy and delivery. */
 
-import * as FileSystem from "@effect/platform/FileSystem";
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
-import * as SqlClient from "@effect/sql/SqlClient";
+import * as FileSystem from "@effect/platform/FileSystem";
 import * as SqliteClient from "@effect/sql-sqlite-node/SqliteClient";
+import * as SqlClient from "@effect/sql/SqlClient";
 import { Cause, Effect, Layer, Option } from "effect";
 import { join } from "node:path";
 import { completeCollectiveDelivery } from "../communication/store/collectives.js";
@@ -24,8 +24,8 @@ import {
 import { retirePendingDelivery } from "../communication/store/queues/peer-deliveries.js";
 import type { DeliveryToken } from "../communication/store/types.js";
 import {
-  queueFirewallItem as retainQueuedItem,
   requireQueueFrontier,
+  queueFirewallItem as retainQueuedItem,
   retireQueuedItem,
   saveCheckDecision,
   settleLocalItem,
@@ -44,9 +44,7 @@ import {
   readInboxItem,
   type CollectiveDelivery,
 } from "./inbox/store.js";
-
 const DATABASE_NAME = "sharnessd.sqlite3";
-
 /** Startup rejects incompatible state and expired pending bytes before accepting requests. */
 export function layer(options: {
   readonly stateDirectory: string;
@@ -128,7 +126,6 @@ export function layer(options: {
     ),
   );
 }
-
 /** Registration can distinguish a fresh directory without changing its saved state. */
 export function inspectEndpointStore(
   stateDirectory: string,
@@ -144,7 +141,6 @@ export function inspectEndpointStore(
     );
   }).pipe(Effect.provide(NodeFileSystem.layer), storeOperation);
 }
-
 /** Completed operation ownership and its host view commit before notification. */
 export function publishCollectiveItem(delivery: CollectiveDelivery) {
   return transaction(
@@ -158,7 +154,6 @@ export function publishCollectiveItem(delivery: CollectiveDelivery) {
     }),
   );
 }
-
 /** A completed decision and the host's immutable message become durable together. */
 export function saveMessageDecision(
   item: ItemProjection,
@@ -182,7 +177,6 @@ export function saveMessageDecision(
     }),
   );
 }
-
 /** Result text, answer visibility and saved evidence share the same publication. */
 export function saveResultDecision(admission: FirewallLocalAdmission) {
   return transaction(
@@ -193,7 +187,6 @@ export function saveResultDecision(admission: FirewallLocalAdmission) {
     }),
   );
 }
-
 /** An expired request remains protocol context while leaving the pending host queue. */
 export function retireFirewallItem(token: DeliveryToken) {
   return transaction(
@@ -203,7 +196,6 @@ export function retireFirewallItem(token: DeliveryToken) {
     }),
   );
 }
-
 /** A saved host view wins over later attempts to queue the same item. */
 export function queueFirewallItem(item: Omit<FirewallInboxEntry, "sequence">) {
   return Effect.gen(function* () {

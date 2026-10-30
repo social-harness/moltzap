@@ -10,8 +10,9 @@ export {
 } from "./schema.js";
 /** Closed failures and exact canonical-value helpers. */
 export {
-  copyBytes,
   EndpointStoreError,
+  StoreSignal,
+  copyBytes,
   mintDeliveryToken,
   readBytes,
   readInteger,
@@ -23,5 +24,4 @@ export {
   requireSameBytes,
   requireSameOptionalBytes,
   requireText,
-  StoreSignal,
 } from "./values.js";

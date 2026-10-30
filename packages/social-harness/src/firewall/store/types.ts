@@ -1,17 +1,12 @@
 /** @file Policy decisions and the persistence operations required by local assessment. */
 
-import type {
-  DeliveryToken,
-  EndpointStoreError,
-} from "../../communication/store/index.js";
-
+import type { DeliveryToken } from "../../communication/store/index.js";
 /** Immutable bytes offered to the host under one delivery identity. */
 export interface ItemProjection {
   readonly deliveryToken: DeliveryToken;
   readonly canonicalItem: Uint8Array;
   readonly canonicalGuidance?: Uint8Array;
 }
-
 /**
  * A certified evidence row retains its original bytes and local visibility.
  * `answer` says whether an admitted result showed this answer record to the
@@ -23,7 +18,6 @@ export interface FirewallHistoryEntry {
   readonly visible: boolean;
   readonly answer?: "admitted" | "withheld";
 }
-
 /**
  * Evidence of a local item the runtime was shown, such as a collective
  * result, which no certified record carries. Its entry bytes are the
@@ -32,12 +26,10 @@ export interface FirewallHistoryEntry {
 export interface FirewallLocalEntry {
   readonly canonicalEntry: Uint8Array;
 }
-
 /** One local item's evidence: the conversation address it belongs to and its entry. */
 interface FirewallLocalEvidence extends FirewallLocalEntry {
   readonly conversation: string;
 }
-
 /** One conversation's evidence window before one candidate. */
 export interface FirewallEvidenceSlice {
   readonly pendingOutgoing: boolean;
@@ -46,10 +38,8 @@ export interface FirewallEvidenceSlice {
   readonly earlierHistoryOmitted: boolean;
   readonly candidate?: FirewallHistoryEntry;
 }
-
 /** The captured evidence used by one assessment. */
 export type FirewallEvidence = FirewallEvidenceSlice;
-
 /**
  * Where one evidence window ends and which conversation it reads: before an
  * incoming delivery's record, before a certified record, or the whole recent
@@ -62,12 +52,10 @@ export interface FirewallEvidenceRange {
   readonly conversationId?: string;
   readonly conversation?: string;
 }
-
 /** Several windows read in one synchronous capture, one per checked text of a result. */
 export interface FirewallEvidenceSlices {
   readonly slices: readonly FirewallEvidenceSlice[];
 }
-
 /** A private classified item waiting for its conversation's admission frontier. */
 export interface FirewallInboxEntry {
   readonly deliveryToken: DeliveryToken;
@@ -77,7 +65,6 @@ export interface FirewallInboxEntry {
   readonly canonicalProvenance?: Uint8Array;
   readonly sequence: number;
 }
-
 /**
  * How a received request's admission settled: whether the runtime was shown
  * it, and the check that decided, when one ran. A request never queued, or
@@ -88,13 +75,11 @@ export interface FirewallRequestAdmission {
   readonly canonicalResult?: Uint8Array;
   readonly checkId?: string;
 }
-
 /**
  * One local item's admission: the queued bytes it was checked as, the
  * projection and guidance the runtime reads, the checks of its texts, the
  * answer records those checks showed or withheld, and the evidence later
- * checks read. `deterministic` records the one check of an item admitted
- * without inference, begun and completed inside the commit.
+ * checks read.
  */
 export interface FirewallLocalAdmission {
   readonly queuedItem: Uint8Array;
@@ -106,13 +91,11 @@ export interface FirewallLocalAdmission {
   }>;
   readonly evidence: FirewallLocalEvidence;
 }
-
 /** Completed decisions retain the original input and policy judgment. */
 export interface FirewallAuditEntry extends Omit<FirewallCompletion, "admit"> {
   readonly sequence: number;
   readonly disposition: "admitted" | "withheld";
 }
-
 /** Successful owner edits retain metadata even when no check uses the installation. */
 export interface FirewallActivation {
   readonly time: number;
@@ -129,6 +112,5 @@ export interface FirewallCompletion {
   readonly canonicalResult: Uint8Array;
   readonly admit: boolean;
 }
-
 /** The disposition retained for a completed local assessment. */
 export type FirewallCommit = "admitted" | "withheld";

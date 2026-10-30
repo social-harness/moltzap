@@ -7,14 +7,10 @@ import {
   mapStoreFailure,
   readInteger,
   readText,
-  StoreSignal,
 } from "./values.js";
-
 /** Only an empty database or the current stored format can be opened. */
 export type StoreOpening = "create" | "reopen";
-
 const SCHEMA_VERSION = 17;
-
 const collectiveSchemaSql = `
   CREATE TABLE collective_answers (
     operation_id TEXT NOT NULL REFERENCES collective_operations(operation_id),
@@ -61,7 +57,6 @@ const collectiveSchemaSql = `
   CREATE UNIQUE INDEX collective_one_response ON collective_messages(operation_id) WHERE role = 'response';
   CREATE UNIQUE INDEX collective_one_close ON collective_messages(operation_id) WHERE role = 'close';
 `;
-
 const schemaSql = `
   CREATE TABLE identity_binding (
     singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
@@ -200,7 +195,6 @@ const schemaSql = `
     FOREIGN KEY (envelope_id) REFERENCES outbound_messages(envelope_id)
   ) STRICT;
 `;
-
 /** Driver failures and invalid stored values stay inside the closed persistence boundary. */
 export const storeOperation = <A, E, R>(
   operation: Effect.Effect<A, E, R>,
@@ -221,7 +215,6 @@ export const storeOperation = <A, E, R>(
       );
     }),
   );
-
 /** Related domain writes use the driver's connection and transaction context. */
 export const transaction = <A, E, R>(
   operation: Effect.Effect<A, E, R>,
@@ -229,7 +222,6 @@ export const transaction = <A, E, R>(
   Effect.flatMap(SqlClient.SqlClient, (sql) =>
     sql.withTransaction(operation),
   ).pipe(storeOperation);
-
 /** Reads the existing schema before startup can change retained state. */
 export const inspectStoreState = (): Effect.Effect<
   StoreOpening,
@@ -265,7 +257,6 @@ export const inspectStoreState = (): Effect.Effect<
       return yield* new EndpointStoreError({ reason: "incompatible" });
     return "create" as const;
   }).pipe(storeOperation);
-
 /** Fresh databases receive the current protocol layout inside daemon startup's transaction. */
 export const createCommunicationTables = (): Effect.Effect<
   void,

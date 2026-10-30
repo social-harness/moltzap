@@ -1,18 +1,13 @@
+/** @file Retained local checks, editable policies and assessment queue transitions. */
+
 import * as SqlClient from "@effect/sql/SqlClient";
+import * as SqlSchema from "@effect/sql/SqlSchema";
 import {
   EndpointStoreError,
   storeOperation,
 } from "../../communication/store/database/index.js";
-/** @file Retained local checks, editable policies and assessment queue transitions. */
+
 import { Effect, Schema, Struct } from "effect";
-import type {
-  FirewallActivation,
-  FirewallAuditEntry,
-  FirewallCommit,
-  FirewallCompletion,
-  FirewallInboxEntry,
-  FirewallLocalAdmission,
-} from "./types.js";
 import {
   readBytes,
   readInteger,
@@ -22,7 +17,6 @@ import {
   requireSameBytes,
   requireSameOptionalBytes,
   requireText,
-  StoreSignal,
   transaction,
 } from "../../communication/store/database/index.js";
 import { decodeRuntimeValue } from "../../communication/store/runtime-codec.js";
@@ -36,13 +30,29 @@ import {
   firewallCheckSchema,
   Message,
   MessageContext,
-  textPolicyFormat,
   textCheckId,
+  textPolicyFormat,
 } from "../check.js";
 import {
   firewallDecisionsSchema,
   firewallInstallationSchema,
 } from "../config.js";
+import type {
+  FirewallActivation,
+  FirewallAuditEntry,
+  FirewallCommit,
+  FirewallCompletion,
+  FirewallInboxEntry,
+  FirewallLocalAdmission,
+} from "./types.js";
+const ruleIds = Schema.parseJson(Schema.Array(Schema.NonEmptyString));
+const activationRow = Schema.Struct({
+  sequence: Schema.Int,
+  time: Schema.Int,
+  activeRevision: Schema.String,
+  addedRuleIds: ruleIds,
+  removedRuleIds: ruleIds,
+});
 const auditDisposition = Schema.Literal("admitted", "withheld");
 /**
  * A held item is never requeued. Provenance is bound with the item: the same token cannot later
@@ -68,7 +78,7 @@ export function queueFirewallItem(
         item.canonicalProvenance,
       );
       if (readText(prior, "conversation") !== item.conversation) {
-        throw new StoreSignal("conflict");
+        return yield* new EndpointStoreError({ reason: "conflict" });
       }
       return;
     }
@@ -117,7 +127,7 @@ export function readPendingFirewallItems(
   return Effect.gen(function* () {
     const database = yield* SqlClient.SqlClient;
     if (!Number.isSafeInteger(after) || after < 0) {
-      throw new StoreSignal("invalid-input");
+      return yield* new EndpointStoreError({ reason: "invalid-input" });
     }
     return (yield* database.unsafe<Readonly<Record<string, unknown>>>(
       `
@@ -154,55 +164,53 @@ export function writeFirewallPolicy(
     const database = yield* SqlClient.SqlClient;
     requireBytes(rules);
     yield* transaction(
-      (() =>
-        Effect.gen(function* () {
-          yield* database.unsafe<Readonly<Record<string, unknown>>>(
-            `INSERT INTO firewall_policy (singleton, canonical_rules) VALUES (1, ?)
+      Effect.gen(function* () {
+        yield* database.unsafe<Readonly<Record<string, unknown>>>(
+          `INSERT INTO firewall_policy (singleton, canonical_rules) VALUES (1, ?)
       ON CONFLICT(singleton) DO UPDATE SET canonical_rules = excluded.canonical_rules`,
-            [rules],
-          );
-          if (activation !== undefined) {
-            yield* database.unsafe<Readonly<Record<string, unknown>>>(
-              `INSERT INTO firewall_activations
+          [rules],
+        );
+        if (activation !== undefined) {
+          yield* database.unsafe<Readonly<Record<string, unknown>>>(
+            `INSERT INTO firewall_activations
         (activated_at, active_revision, added_rule_ids, removed_rule_ids)
         VALUES (?, ?, ?, ?)`,
-              [
-                activation.time,
-                activation.activeRevision,
-                JSON.stringify(activation.addedRuleIds),
-                JSON.stringify(activation.removedRuleIds),
-              ],
-            );
-          }
-        }))(),
+            [
+              activation.time,
+              activation.activeRevision,
+              Schema.encodeSync(ruleIds)(activation.addedRuleIds),
+              Schema.encodeSync(ruleIds)(activation.removedRuleIds),
+            ],
+          );
+        }
+      }),
     );
   }).pipe(storeOperation);
 }
 /** Recent edits preserve activation order when timestamps coincide. */
 export function readFirewallActivations(request: { readonly since?: number }) {
   return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
+    const sql = yield* SqlClient.SqlClient;
     const since = request.since ?? 0;
-    if (!Number.isSafeInteger(since) || since < 0) {
-      throw new StoreSignal("invalid-input");
-    }
-    return (yield* database.unsafe<Readonly<Record<string, unknown>>>(
-      `SELECT sequence, activated_at, active_revision,
-    added_rule_ids, removed_rule_ids FROM firewall_activations
-    WHERE activated_at >= ? ORDER BY activated_at DESC, sequence DESC LIMIT 100`,
-      [since],
-    )).map((row) => ({
-      sequence: readInteger(row, "sequence"),
-      activation: {
-        time: readInteger(row, "activated_at"),
-        activeRevision: readText(row, "active_revision"),
-        addedRuleIds: Schema.decodeUnknownSync(
-          Schema.parseJson(Schema.Array(Schema.NonEmptyString)),
-        )(readText(row, "added_rule_ids")),
-        removedRuleIds: Schema.decodeUnknownSync(
-          Schema.parseJson(Schema.Array(Schema.NonEmptyString)),
-        )(readText(row, "removed_rule_ids")),
-      },
+    if (!Number.isSafeInteger(since) || since < 0)
+      return yield* new EndpointStoreError({ reason: "invalid-input" });
+    const query = SqlSchema.findAll({
+      Request: Schema.Int,
+      Result: activationRow,
+      execute: (after) =>
+        sql.unsafe(
+          "SELECT sequence,activated_at AS time,active_revision AS activeRevision,added_rule_ids AS addedRuleIds,removed_rule_ids AS removedRuleIds FROM firewall_activations WHERE activated_at>=? ORDER BY activated_at DESC,sequence DESC LIMIT 100",
+          [after],
+        ),
+    });
+    const rows = yield* query(since).pipe(
+      Effect.catchTag("ParseError", () =>
+        Effect.fail(new EndpointStoreError({ reason: "corrupt" })),
+      ),
+    );
+    return rows.map(({ sequence, ...activation }) => ({
+      sequence,
+      activation,
     }));
   }).pipe(storeOperation);
 }
@@ -211,7 +219,7 @@ export function readFirewallDecisions(since = 0) {
   return Effect.gen(function* () {
     const database = yield* SqlClient.SqlClient;
     if (!Number.isSafeInteger(since) || since < 0) {
-      throw new StoreSignal("invalid-input");
+      return yield* new EndpointStoreError({ reason: "invalid-input" });
     }
     return (yield* database.unsafe<Readonly<Record<string, unknown>>>(
       `SELECT rowid AS sequence, check_id, direction,
@@ -254,7 +262,6 @@ export function settleLocalItem(
     yield* settleQueuedItem(deliveryToken, "admitted");
   }).pipe(storeOperation);
 }
-
 /** A settled item cannot be offered for reassessment after restart. */
 export function settleQueuedItem(
   deliveryToken: DeliveryToken,
@@ -284,7 +291,7 @@ export function requireQueueFrontier(
       [deliveryToken],
     ))[0];
     if (queued === undefined) {
-      throw new StoreSignal("conflict");
+      return yield* new EndpointStoreError({ reason: "conflict" });
     }
     requireSameBytes(readBytes(queued, "canonical_item"), canonicalItem);
     const predecessor = (yield* database.unsafe<
@@ -297,7 +304,7 @@ export function requireQueueFrontier(
       [readText(queued, "conversation"), readInteger(queued, "sequence")],
     ))[0];
     if (predecessor !== undefined) {
-      throw new StoreSignal("conflict");
+      return yield* new EndpointStoreError({ reason: "conflict" });
     }
   }).pipe(storeOperation);
 }
@@ -350,7 +357,6 @@ export function saveCheckDecision(
     return disposition;
   }).pipe(storeOperation);
 }
-
 /** Expiry retires a queued message without fabricating a policy assessment. */
 export function retireQueuedItem(
   token: DeliveryToken,
@@ -365,7 +371,6 @@ export function retireQueuedItem(
       return yield* new EndpointStoreError({ reason: "not-found" });
   }).pipe(storeOperation);
 }
-
 /**
  * Returns retained decisions without message content, private inputs,
  * diagnostics or rule text. Includes registered advice only for rules that
@@ -376,7 +381,7 @@ export function readDecisions(request: { readonly since?: number }) {
     const entries = yield* readFirewallDecisions(request.since);
     const rows = yield* Effect.forEach(
       entries,
-      (entry) => decisionRows(entry, textCheckId),
+      (entry) => decisionRows(entry),
       {
         concurrency: 1,
       },
@@ -412,7 +417,6 @@ function markAnswers(
     }
   }).pipe(storeOperation);
 }
-
 function auditEntry(
   row: Readonly<Record<string, unknown>>,
 ): FirewallAuditEntry {
@@ -431,7 +435,6 @@ function auditEntry(
     canonicalResult,
   };
 }
-
 function queuedEntry(
   row: Readonly<Record<string, unknown>>,
 ): FirewallInboxEntry {
@@ -472,15 +475,9 @@ export const decodeFirewallAuditEntry = Effect.fn("decodeFirewallAuditEntry")(
       firewallAuditInput,
       entry.canonicalInput,
     );
-    const result =
-      entry.canonicalResult === undefined
-        ? null
-        : withoutTraces(
-            yield* decodeRuntimeValue(
-              firewallCheckSchema,
-              entry.canonicalResult,
-            ),
-          );
+    const result = withoutTraces(
+      yield* decodeRuntimeValue(firewallCheckSchema, entry.canonicalResult),
+    );
     return {
       checkId: entry.checkId,
       direction: entry.direction,
@@ -495,11 +492,10 @@ function decisionRows(
   entry: FirewallAuditEntry & {
     readonly time: number;
   },
-  editableTextId: string,
 ) {
   return decodeFirewallAuditEntry(entry).pipe(
     Effect.flatMap((check) =>
-      ruleOrigin(check.input.installation[check.direction], textCheckId).pipe(
+      ruleOrigin(check.input.installation[check.direction]).pipe(
         Effect.flatMap((origin) => projectDecision(check, entry.time, origin)),
       ),
     ),
@@ -508,7 +504,7 @@ function decisionRows(
 type DecodedCheck = Effect.Effect.Success<
   ReturnType<typeof decodeFirewallAuditEntry>
 >;
-type DecodedResult = NonNullable<DecodedCheck["result"]>;
+type DecodedResult = DecodedCheck["result"];
 type DecisionRow = (typeof firewallDecisionsSchema.Type.decisions)[number];
 type Registration = DecodedCheck["input"]["installation"]["incoming"][number];
 const textProvenance = Schema.parseJson(
@@ -525,9 +521,6 @@ function projectDecision(
   origin: RuleOrigin,
 ) {
   const result = check.result;
-  if (result === null) {
-    return Effect.succeed([]);
-  }
   const message = check.input.message;
   const peers =
     message === null ? [null] : decisionPeers(message, check.direction);
@@ -586,14 +579,11 @@ function decisionRules(
   return { cause, decidedBy, checkedRuleIds };
 }
 /** Retained installation provenance distinguishes fixed, editable and code rules. */
-function ruleOrigin(
-  registrations: readonly Registration[],
-  editableTextId: string,
-) {
+function ruleOrigin(registrations: readonly Registration[]) {
   return Effect.gen(function* () {
     const text = registrations.find(
       (entry) =>
-        entry.id === editableTextId &&
+        entry.id === textCheckId &&
         entry.provenance.format === textPolicyFormat,
     );
     const recorded =
@@ -609,7 +599,6 @@ function ruleOrigin(
           : { from: "editable" };
   });
 }
-
 function decisionCause(
   result: DecodedResult,
   deciding: readonly DecidingRule[],
