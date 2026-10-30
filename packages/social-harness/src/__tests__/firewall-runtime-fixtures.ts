@@ -3,7 +3,6 @@
 import { Deferred, Effect, Queue, Schema, Scope } from "effect";
 import { generateKeyPairSync } from "node:crypto";
 import type { MessageMiddleware, MiddlewareResult } from "../firewall/check.js";
-import type { FirewallOptions, Firewall } from "../firewall/index.js";
 import type { InboundItem } from "../host-protocol/items.js";
 import type { HarnessMessageReadyEvent } from "../host-protocol/operations.js";
 import { makeEndpointEngine } from "../communication/conversations/index.js";
@@ -24,8 +23,12 @@ import { makeHostDelivery } from "../daemon/inbox/host-delivery.js";
 import { noHistoryExport } from "../daemon/inbox/host-traffic-log.js";
 import { type DaemonStore, openDaemonStore } from "../daemon/store.js";
 import { encodeCanonical } from "../encoding/canonical-json.js";
+import {
+  type Firewall,
+  type FirewallOptions,
+  makeFirewall,
+} from "../firewall/index.js";
 import { decodeFirewallAuditEntry } from "../firewall/store/index.js";
-import { makeFirewall } from "../firewall/index.js";
 import { AgentCard, agentViewOf } from "../identity/cards.js";
 import { Ed25519PublicKey } from "../identity/keys.js";
 import { LIVE_WIRE_VERSIONS, WIRE_VERSION } from "../identity/wire-version.js";

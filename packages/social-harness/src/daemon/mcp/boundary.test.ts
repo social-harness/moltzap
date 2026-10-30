@@ -47,8 +47,8 @@ import {
   DeliveryToken,
   encodeRuntimeValue,
 } from "../../communication/store/index.js";
-import { FirewallSendError } from "../../host-protocol/advice.js";
 import { acquireHarnessEndpoint } from "../../host-client/index.js";
+import { FirewallSendError } from "../../host-protocol/advice.js";
 import { InboundItem } from "../../host-protocol/items.js";
 import {
   HARNESS_SEND_TOOL,

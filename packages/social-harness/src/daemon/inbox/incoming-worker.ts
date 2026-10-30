@@ -5,7 +5,6 @@ import type {
   FirewallInboxEntry,
   FirewallStore,
 } from "../../firewall/store/index.js";
-import type { FirewallEnvironment } from "./message.js";
 import {
   decodeRuntimeValue,
   type DeliveryToken,
@@ -13,8 +12,8 @@ import {
   type EndpointStoreError,
 } from "../../communication/store/index.js";
 import { InboundItem } from "../../host-protocol/items.js";
-import { prepareIncomingCheck } from "./message.js";
 import { checkLocalItem } from "./local-results.js";
+import { type FirewallEnvironment, prepareIncomingCheck } from "./message.js";
 
 /** What the admission worker reads and changes in one service's delivery. */
 export interface AdmissionContext {

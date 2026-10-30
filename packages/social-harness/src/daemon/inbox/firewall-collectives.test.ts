@@ -8,11 +8,10 @@ import type { ResultProvenance } from "../../communication/collectives/index.js"
 import type { CertifiedRecord } from "../../communication/records/index.js";
 import type { MessageAddressInput } from "../../communication/records/values.js";
 import type {
+  DecisionRequest,
   MessageMiddleware,
   MiddlewareInput,
-  DecisionRequest,
 } from "../../firewall/check.js";
-import type { FirewallOptions } from "../../firewall/index.js";
 import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { appendCertifiedMessage } from "../../__tests__/certified-history-fixtures.js";
 import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
@@ -51,13 +50,13 @@ import {
   type DeliveryToken,
   encodeRuntimeValue,
 } from "../../communication/store/index.js";
+import { type FirewallOptions, makeFirewall } from "../../firewall/index.js";
 import { InboundItem } from "../../host-protocol/items.js";
 import {
   renderCollectiveRequest,
   renderCollectiveRequestBody,
   renderOutcome,
 } from "../../host-protocol/render.js";
-import { makeFirewall } from "../../firewall/index.js";
 
 // @agent-code-guard/regression-only: Exercises collective admission, refusal and evidence through SQLite and the protocol engine.
 
@@ -984,9 +983,14 @@ describe("collective operation failures under a firewall", () => {
   );
 });
 
-/** A rule edit during one answer leaves every text of that result under the same captured rules. */
-it("checks an entire result under one rule value while an owner edit completes", () =>
-  Effect.gen(function* () {
+it(
+  "checks an entire result under one rule value while an owner edit completes",
+  capturedResultDuringEdit,
+);
+
+/** A queued second answer retains the same rules as an answer already under assessment. */
+function capturedResultDuringEdit() {
+  return Effect.gen(function* () {
     const subject = yield* fixture;
     const answers = { bob: { slot: "mon" }, carol: { slot: "tue" } };
     const provenance = yield* seedAnswers(subject, answers);
@@ -1002,31 +1006,7 @@ it("checks an entire result under one rule value while an owner edit completes",
             )
           : Effect.succeed(pass),
       ),
-      {
-        maximumConcurrentChecks: 1,
-        text: {
-          provider: {
-            decide: (request) =>
-              Effect.succeed({
-                provider: "test-provider",
-                model: "test-model",
-                usage: {},
-                raw: "",
-                answers: Object.fromEntries(
-                  Object.entries(request.questions).map(([id, question]) => [
-                    id,
-                    batchAnswer(request, question),
-                  ]),
-                ),
-              }),
-          },
-          settings: {
-            minimumProbability: 0.5,
-            maximumRequestBytes: 60_000,
-            timeoutMilliseconds: 5_000,
-          },
-        },
-      },
+      batchOptions(),
       false,
     );
     const textRule = {
@@ -1053,7 +1033,37 @@ it("checks an entire result under one rule value while an owner edit completes",
         { outcome: { kind: "withheld", reason: "rule-violation" } },
       ],
     });
-  }));
+  });
+}
+
+/** One permit leaves the second answer queued while the owner removes the deciding rule. */
+function batchOptions(): Partial<FirewallOptions> {
+  return {
+    maximumConcurrentChecks: 1,
+    text: {
+      provider: {
+        decide: (request) =>
+          Effect.succeed({
+            provider: "test-provider",
+            model: "test-model",
+            usage: {},
+            raw: "",
+            answers: Object.fromEntries(
+              Object.entries(request.questions).map(([id, question]) => [
+                id,
+                batchAnswer(request, question),
+              ]),
+            ),
+          }),
+      },
+      settings: {
+        minimumProbability: 0.5,
+        maximumRequestBytes: 60_000,
+        timeoutMilliseconds: 5_000,
+      },
+    },
+  };
+}
 
 /** Deterministic provider answers isolate active-rule capture from model quality. */
 function batchAnswer(
@@ -1061,12 +1071,8 @@ function batchAnswer(
   question: DecisionRequest["questions"][string],
 ) {
   const choices = Object.keys(question.criteria);
-  const choice =
-    request.stage === "compliance"
-      ? "violation"
-      : choices.includes("relevant")
-        ? "relevant"
-        : "none";
+  const permitting = choices.includes("relevant") ? "relevant" : "none";
+  const choice = request.stage === "compliance" ? "violation" : permitting;
   return {
     choice,
     probabilities: Object.fromEntries(

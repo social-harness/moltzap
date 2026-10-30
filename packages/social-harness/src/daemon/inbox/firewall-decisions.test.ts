@@ -10,7 +10,6 @@ import {
 import { Effect, Queue, Schema, Struct } from "effect";
 import { expect } from "vitest";
 import type { TextRule } from "../../firewall/config.js";
-import type { FirewallOptions } from "../../firewall/index.js";
 import { makeRetainedCheckFixture } from "../../__tests__/firewall-retained-fixtures.js";
 import {
   fixture,
@@ -27,7 +26,6 @@ import {
   decodeRuntimeValue,
   encodeRuntimeValue,
 } from "../../communication/store/index.js";
-import { agentViewOf } from "../../identity/cards.js";
 import {
   type DecisionProvider,
   DecisionProviderError,
@@ -37,7 +35,9 @@ import {
   type MiddlewareInput,
   type MiddlewareResult,
 } from "../../firewall/check.js";
-import { makeFirewall } from "../../firewall/index.js";
+import { type FirewallOptions, makeFirewall } from "../../firewall/index.js";
+import { decodeFirewallAuditEntry } from "../../firewall/store/index.js";
+import { agentViewOf } from "../../identity/cards.js";
 
 // @agent-code-guard/regression-only: Reads decisions retained by real admission through SQLite and the protocol engine.
 
@@ -533,22 +533,22 @@ it.each([
     return Effect.gen(function* () {
       const subject = yield* fixture;
       const retained = yield* makeRetainedCheckFixture;
-      const installed = yield* makeFirewall(
-        options([], text(decisionProvider(), {})),
-        subject.store,
+      const { installed, checked, audit } = yield* retainedTextCheck(
+        subject,
+        retained,
       );
       const checkId = "corrupt-retained-input";
       yield* subject.store.beginFirewallAttempt({
         checkId,
         direction: "outgoing",
         canonicalCandidate: retained.canonicalCandidate,
-        canonicalInput: yield* input(retained.input),
+        canonicalInput: yield* input(audit.input),
       });
       yield* subject.store.completeFirewallAttempt(
         {
           checkId,
           admit: false,
-          canonicalResult: yield* encodeRuntimeValue(retained.result),
+          canonicalResult: checked.completion.canonicalResult,
         },
         "outgoing",
         retained.canonicalCandidate,
@@ -573,6 +573,39 @@ it.each([
     );
   },
 );
+
+/** The unmodified retained text check must be readable before corruption is introduced. */
+function retainedTextCheck(
+  subject: Fixture,
+  retained: Effect.Effect.Success<typeof makeRetainedCheckFixture>,
+) {
+  return Effect.gen(function* () {
+    const installed = yield* makeFirewall(
+      options([], text(decisionProvider(), { initial: [review] })),
+      subject.store,
+    );
+    const checked = yield* installed.check({
+      direction: "outgoing",
+      canonicalCandidate: retained.canonicalCandidate,
+      context: retained.input.context,
+      agents: retained.input.agents,
+      ...(retained.input.message === null
+        ? {}
+        : { message: retained.input.message }),
+    });
+    yield* subject.store.completeFirewallAttempt(
+      checked.completion,
+      "outgoing",
+      retained.canonicalCandidate,
+    );
+    expect((yield* installed.policy.decisions({})).decisions).toHaveLength(1);
+    const original = yield* Effect.fromNullable(
+      (yield* subject.store.readFirewallDecisions())[0],
+    );
+    const audit = yield* decodeFirewallAuditEntry(original);
+    return { installed, checked, audit };
+  });
+}
 
 it("keeps the rules active at check time after the owner removes the deciding rule", () =>
   Effect.gen(function* () {

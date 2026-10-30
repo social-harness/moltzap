@@ -2,7 +2,10 @@
 
 import { Effect, Array as EffectArray, Schema, Struct } from "effect";
 import type { RecordHash } from "../../communication/records/index.js";
-import type { InboundItem } from "../../host-protocol/items.js";
+import type {
+  CheckedMessage,
+  PreparedFirewallCheck,
+} from "../../firewall/index.js";
 import type {
   FirewallEvidence,
   FirewallEvidenceSlices,
@@ -10,6 +13,7 @@ import type {
   FirewallLocalAdmission,
   FirewallRequestAdmission,
 } from "../../firewall/store/index.js";
+import type { InboundItem } from "../../host-protocol/items.js";
 import { ResultProvenance } from "../../communication/collectives/index.js";
 import {
   agentAddressOf,
@@ -22,20 +26,19 @@ import {
 } from "../../communication/store/index.js";
 import { MAXIMUM_RUNTIME_ITEM_BYTES } from "../../encoding/limits.js";
 import {
-  renderCollectiveResult,
-  renderOutcome,
-} from "../../host-protocol/render.js";
-import { AgentView } from "../../identity/cards.js";
-import { firewallCheckSchema, type Message } from "../../firewall/check.js";
-import { ENDPOINT_SENDER } from "../../firewall/check.js";
+  ENDPOINT_SENDER,
+  firewallCheckSchema,
+  type Message,
+} from "../../firewall/check.js";
 import {
   type LocalGuidance,
   refusalReason,
 } from "../../host-protocol/advice.js";
-import type {
-  CheckedMessage,
-  PreparedFirewallCheck,
-} from "../../firewall/index.js";
+import {
+  renderCollectiveResult,
+  renderOutcome,
+} from "../../host-protocol/render.js";
+import { AgentView } from "../../identity/cards.js";
 import {
   contextFrom,
   type DecodedRecord,
@@ -224,11 +227,23 @@ function checkResultTexts(
           ];
     const checks: readonly CheckedMessage[] =
       inputs.length === 0 ? [] : yield* environment.firewall.checkMany(inputs);
-    if (checks.length !== inputs.length) {
+    return yield* checkedResult(texts, checks);
+  }).pipe(Effect.withSpan("checkResultTexts"));
+}
+
+/** Ordered assessments retain the certified identities of each answer and optional question. */
+function checkedResult(
+  texts: ResultTexts,
+  checks: readonly CheckedMessage[],
+): Effect.Effect<CheckedResult, EndpointStoreError> {
+  return Effect.gen(function* () {
+    const expected =
+      texts.answers.length + (texts.question.kind === "check" ? 1 : 0);
+    if (checks.length !== expected) {
       return yield* new EndpointStoreError({ reason: "corrupt" });
     }
     const checkedAnswers = yield* Effect.forEach(
-      answers,
+      texts.answers,
       (answer, index) => {
         const checked = checks[index];
         return checked === undefined
@@ -241,18 +256,18 @@ function checkResultTexts(
       },
       { concurrency: 1 },
     );
-    if (question.kind !== "check") {
+    if (texts.question.kind !== "check") {
       return { answers: checkedAnswers };
     }
-    const checked = checks[answers.length];
+    const checked = checks[texts.answers.length];
     if (checked === undefined) {
       return yield* new EndpointStoreError({ reason: "corrupt" });
     }
     return {
       answers: checkedAnswers,
-      question: { recordHash: question.recordHash, checked },
+      question: { recordHash: texts.question.recordHash, checked },
     };
-  }).pipe(Effect.withSpan("checkResultTexts"));
+  }).pipe(Effect.withSpan("checkedResult"));
 }
 
 /** The commit of a checked result: its projection, advice, checks and evidence. */

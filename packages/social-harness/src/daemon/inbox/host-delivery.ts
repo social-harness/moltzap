@@ -16,6 +16,7 @@ import type {
 } from "../../communication/collectives/index.js";
 import type { EnginePendingMessage } from "../../communication/conversations/index.js";
 import type { EndpointStore } from "../../communication/store/types.js";
+import type { Firewall } from "../../firewall/index.js";
 import type { FirewallStore } from "../../firewall/store/types.js";
 import type { SendResult } from "../../host-protocol/send-result.js";
 import type {
@@ -39,17 +40,10 @@ import {
   encodeRuntimeValue,
   type EndpointStoreError,
 } from "../../communication/store/index.js";
-import type { Firewall } from "../../firewall/index.js";
 import {
   FirewallSendError,
   refusalReason,
 } from "../../host-protocol/advice.js";
-import { type AdmissionContext, runAdmission } from "./incoming-worker.js";
-import {
-  type FirewallEnvironment,
-  type OutgoingCandidate,
-  prepareOutgoingCheck,
-} from "./message.js";
 import { InboundItem } from "../../host-protocol/items.js";
 import {
   decodeHarnessSendRequest,
@@ -73,6 +67,12 @@ import {
   readRuntimeEvent,
   readRuntimeInbox,
 } from "./inbox.js";
+import { type AdmissionContext, runAdmission } from "./incoming-worker.js";
+import {
+  type FirewallEnvironment,
+  type OutgoingCandidate,
+  prepareOutgoingCheck,
+} from "./message.js";
 
 /** Ordinary collective preparation fixes identity before local assessment and protocol acceptance. */
 type ApplicationSender = Pick<CollectiveOperations, "prepare" | "accept">;

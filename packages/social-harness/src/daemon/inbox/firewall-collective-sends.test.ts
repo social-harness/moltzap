@@ -30,9 +30,9 @@ import {
   policy,
   rule,
 } from "../../__tests__/firewall-runtime-fixtures.js";
-import { renderOutcome } from "../../host-protocol/render.js";
-import { FirewallSendError } from "../../host-protocol/advice.js";
 import { decodeFirewallAuditEntry } from "../../firewall/store/index.js";
+import { FirewallSendError } from "../../host-protocol/advice.js";
+import { renderOutcome } from "../../host-protocol/render.js";
 
 // @agent-code-guard/regression-only: Exercises collective refusal and binding through SQLite and the protocol engine.
 

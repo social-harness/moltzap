@@ -3,10 +3,10 @@
 import { Data, Schema } from "effect";
 import { exactStruct } from "../encoding/exact.js";
 import {
-  checkedGuidanceSchema,
   type CheckedGuidance,
-  type FirewallCheck,
+  checkedGuidanceSchema,
   ENDPOINT_SENDER,
+  type FirewallCheck,
   firewallRefusalReasonSchema,
 } from "../firewall/check.js";
 import { nextActionSchema } from "../firewall/config.js";
@@ -102,6 +102,13 @@ export function renderLocalGuidance(
   return `${advice}\n\n${label}:\n${quoteForAgent(quoted.text)}`;
 }
 
+/** A delivery precondition can withhold an otherwise eligible assessment without inventing a violation. */
+export function refusalReason(
+  reason: FirewallCheck["reason"],
+): FirewallSendError["refusal"] {
+  return reason === "eligible" ? "unresolved-evidence" : reason;
+}
+
 function renderInstructions(guidance: CheckedGuidance) {
   return guidance.instructions.map((instruction) => ({
     ruleId: instruction.ruleId,
@@ -174,11 +181,4 @@ export class FirewallSendError extends Data.TaggedError("FirewallSendError")<
     const description = `send withheld (check ${this.checkId}): ${refusalText[this.refusal]}.`;
     return feedback.length === 0 ? description : `${description} ${feedback}`;
   }
-}
-
-/** A delivery precondition can withhold an otherwise eligible assessment without inventing a violation. */
-export function refusalReason(
-  reason: FirewallCheck["reason"],
-): FirewallSendError["refusal"] {
-  return reason === "eligible" ? "unresolved-evidence" : reason;
 }

@@ -9,6 +9,7 @@ import type {
   MessageMiddleware,
   MiddlewareInput,
 } from "../../firewall/check.js";
+import type { TextRule } from "../../firewall/config.js";
 import type { FirewallOptions } from "../../firewall/index.js";
 import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { appendCertifiedMessage } from "../../__tests__/certified-history-fixtures.js";
@@ -33,12 +34,11 @@ import {
   rule,
   seedIncoming,
 } from "../../__tests__/firewall-runtime-fixtures.js";
-import { InboundItem } from "../../host-protocol/items.js";
-import type { TextRule } from "../../firewall/config.js";
 import {
   type LocalGuidance,
   renderLocalGuidance,
 } from "../../host-protocol/advice.js";
+import { InboundItem } from "../../host-protocol/items.js";
 
 // @agent-code-guard/regression-only: Exercises durable admission, replay, interruption and races through SQLite and the protocol engine.
 
@@ -383,13 +383,14 @@ it(
 function installationProvenance() {
   return Effect.gen(function* () {
     const model = "model-one";
+    const replacement = "model-two";
     const registration = {
       ...policy(() => Effect.succeed(block)),
       provenance: { format: "provider", data: model },
     };
     const subject = yield* fixture;
     const first = yield* installation(subject.store, registration);
-    registration.provenance.data = "model-two";
+    registration.provenance.data = replacement;
     const second = yield* installation(subject.store, registration);
     for (const firewall of [first, second]) {
       const delivery = yield* outgoingThrough(subject, firewall);
@@ -404,7 +405,7 @@ function installationProvenance() {
       model,
     );
     expect(checks[1]?.input.installation.incoming[0]?.provenance.data).toBe(
-      "model-two",
+      replacement,
     );
     expect(checks[1]?.input.configurationDigest).not.toBe(
       checks[0]?.input.configurationDigest,

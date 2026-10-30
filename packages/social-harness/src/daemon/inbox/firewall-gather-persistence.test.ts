@@ -3,7 +3,7 @@
 import { live as it } from "@effect/vitest";
 import { Effect, Scope } from "effect";
 import { expect } from "vitest";
-import type { DaemonStore } from "../../daemon/store.js";
+import type { DaemonStore } from "../store.js";
 import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { makeCollectiveOperations } from "../../__tests__/collective-send.js";
 import {

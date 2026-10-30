@@ -13,15 +13,15 @@ import {
 } from "../communication/store/index.js";
 import {
   type FirewallPolicyError,
-  loadMessagePolicy,
   type LoadedMessagePolicy,
+  loadMessagePolicy,
   type MessagePolicyConfigurationError,
   policyConfigurationError,
   policyInstallationError,
 } from "../firewall/config.js";
 import {
-  type FirewallOptions as ManagedFirewallOptions,
   makeFirewall,
+  type FirewallOptions as ManagedFirewallOptions,
 } from "../firewall/index.js";
 import { registrationAdmissionRefusalMessage } from "../host-protocol/index.js";
 import { Registry } from "../identity/registry/index.js";
@@ -57,8 +57,8 @@ const liveWireVersions = wireVersions.liveSet;
 
 /** Offline checking shares the managed owner's exact validation and result contract. */
 export {
-  checkMessage,
   CheckInputError,
+  checkMessage,
   type DecisionProvider,
   DecisionProviderError,
   type DecisionRequest,
@@ -143,24 +143,10 @@ export namespace Daemon {
       const configuration = yield* loadDaemonProcessConfiguration.pipe(
         Effect.mapError(configurationFailure),
       );
-      const configured = yield* loadMessagePolicy(
+      const { loaded, options } = yield* configuredFirewall(
         configuration,
-        readCredential,
-      ).pipe(
-        Effect.mapError(daemonPolicyConfigurationError),
-        Effect.mapError(configurationFailure),
+        composed,
       );
-      if (composed !== undefined && Option.isSome(configured)) {
-        return yield* Effect.fail(
-          configurationFailure(
-            daemonPolicyConfigurationError(
-              policyConfigurationError("message-policy-composed"),
-            ),
-          ),
-        );
-      }
-      const loaded = Option.getOrUndefined(configured);
-      const options = composed ?? loaded;
       const bootstrap = yield* loadDaemonBootstrap(configuration).pipe(
         Effect.mapError(configurationFailure),
       );
@@ -177,7 +163,7 @@ export namespace Daemon {
         options === undefined
           ? undefined
           : yield* makeFirewall(options, store).pipe(
-              Effect.mapError((cause) => installFailure(loaded, cause)),
+              Effect.mapError((cause) => installFailure(cause, loaded)),
             );
       const registration = yield* readDaemonRegistrationState({
         store,
@@ -238,15 +224,35 @@ export namespace Daemon {
     });
   }
 
+  /** A trusted embedding cannot also select an environment policy document. */
+  function configuredFirewall(
+    configuration: DaemonProcessConfiguration,
+    composed?: FirewallOptions,
+  ) {
+    return loadMessagePolicy(configuration, readCredential).pipe(
+      Effect.flatMap((configured) => {
+        if (composed !== undefined && Option.isSome(configured)) {
+          return Effect.fail(
+            policyConfigurationError("message-policy-composed"),
+          );
+        }
+        const loaded = Option.getOrUndefined(configured);
+        return Effect.succeed({ loaded, options: composed ?? loaded });
+      }),
+      Effect.mapError(daemonPolicyConfigurationError),
+      Effect.mapError(configurationFailure),
+    );
+  }
+
   /**
    * A file-described firewall that fails to install names its setting.
-   * @param loaded The configured document and its resolved behavior sources.
    * @param cause The closed installation failure.
+   * @param loaded The configured document and its resolved behavior sources.
    * @returns The configuration-phase startup failure.
    */
   function installFailure(
-    loaded: LoadedMessagePolicy | undefined,
     cause: FirewallPolicyError,
+    loaded?: LoadedMessagePolicy,
   ): StartupError {
     if (loaded !== undefined) {
       return configurationFailure(
