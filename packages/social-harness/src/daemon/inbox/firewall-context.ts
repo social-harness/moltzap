@@ -160,7 +160,7 @@ export const decodeRecord = Effect.fn("decodeFirewallRecord")(function* (
 });
 
 /** Certified local sends are admitted evidence without granting host visibility to owner history. */
-export const contextFrom = Effect.fn("firewallContext")(function* (
+const contextFrom = Effect.fn("firewallContext")(function* (
   environment: FirewallEnvironment,
   evidence: FirewallEvidence,
   candidateCards: readonly AgentCard[],

@@ -82,10 +82,8 @@ export {
 } from "./queues/index.js";
 /** History pages remain anchored while later records are appended. */
 export {
-  HistoryContinuation,
   readStoredConversation as readConversation,
   recoverStoredState as recover,
-  searchStoredConversations as searchConversations,
 } from "./reads.js";
 /** Record acceptance retains exact bytes and separately attributed evidence. */
 export {

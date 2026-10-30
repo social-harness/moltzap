@@ -11,7 +11,6 @@ export {
   completeOutbound,
   discardOutbound,
   enqueueOutbound,
-  enqueueOutboundInTransaction,
   readPendingOutbound,
 } from "./outbound.js";
 export {

@@ -260,7 +260,7 @@ function acceptStubMessage<E>(
 }
 
 /** Classifier tests enter through retained certified delivery, whose verification belongs to communication. */
-export function retainCertifiedInput(
+function retainCertifiedInput(
   database: TestDatabase,
   input: CertifiedMessage,
   recipientAgentId: string,

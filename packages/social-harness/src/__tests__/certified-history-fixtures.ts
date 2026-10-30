@@ -7,7 +7,6 @@ import type { SqlClient } from "@effect/sql";
 import { Effect, Schema } from "effect";
 import type {
   ProtocolEvidence,
-  StoredAnchor,
   CertifiedRecord as StoredCertifiedRecord,
 } from "../communication/store/index.js";
 import type { AgentSigningAuthority } from "../identity/keys.js";
@@ -216,76 +215,6 @@ export function buildCertifiedMessage(
     });
     return record;
   }).pipe(Effect.orDie, Effect.withSpan("buildCertifiedMessage"));
-}
-
-/**
- * `store` as it reads once `signer`'s action evidence row is filed under
- * `claimed`, so the row's key no longer names the member who signed it.
- * Every read that returns the row returns it misfiled: the recovery
- * snapshot's evidence and certified records, and each history page.
- * @param store The store holding the row.
- * @param signer The member whose action evidence row is misfiled.
- * @param claimed The member the row is filed under instead.
- * @returns The store with every read of the row misfiled.
- */
-export function withMisattributedActionEvidence(
-  store: TestStore,
-  signer: string,
-  claimed: string,
-): TestStore {
-  return {
-    ...store,
-    recover: () =>
-      store.recover().pipe(
-        Effect.map((recovery) => ({
-          ...recovery,
-          evidence: recovery.evidence.map((evidence) =>
-            misattributeEvidence(evidence, signer, claimed),
-          ),
-          certifiedRecords: recovery.certifiedRecords.map((record) =>
-            misattributeRecordEvidence(record, signer, claimed),
-          ),
-        })),
-      ),
-    readConversation: (request) =>
-      store.readConversation(request).pipe(
-        Effect.map((page) => ({
-          ...page,
-          records: page.records.map((record) =>
-            misattributeRecordEvidence(record, signer, claimed),
-          ),
-        })),
-      ),
-  };
-}
-
-/**
- * `store` as it reads once its initial anchor rows claim to select
- * `recordHash`, which only a completed re-anchor row does, so the rows'
- * columns no longer match the initial anchor bodies they hold.
- * @param store The store holding the initial anchor rows.
- * @param recordHash The record each initial anchor row claims to select.
- * @returns The store with every initial anchor row selecting `recordHash`.
- */
-export function withInitialAnchorSelecting(
-  store: TestStore,
-  recordHash: string,
-): TestStore {
-  return {
-    ...store,
-    recover: () =>
-      store.recover().pipe(
-        Effect.map((recovery) => ({
-          ...recovery,
-          anchors: recovery.anchors.map(
-            (anchor): StoredAnchor =>
-              anchor.previousAnchorHash === undefined
-                ? { ...anchor, selectedRecordHash: recordHash }
-                : anchor,
-          ),
-        })),
-      ),
-  };
 }
 
 /**
@@ -539,29 +468,6 @@ function remoteMessage(
     record,
     local.agentId,
   );
-}
-
-function misattributeEvidence(
-  evidence: ProtocolEvidence,
-  signer: string,
-  claimed: string,
-): ProtocolEvidence {
-  return evidence.kind === "action" && evidence.evidenceKey === signer
-    ? { ...evidence, evidenceKey: claimed }
-    : evidence;
-}
-
-function misattributeRecordEvidence(
-  record: StoredCertifiedRecord,
-  signer: string,
-  claimed: string,
-): StoredCertifiedRecord {
-  return {
-    ...record,
-    actionEvidence: record.actionEvidence.map((evidence) =>
-      misattributeEvidence(evidence, signer, claimed),
-    ),
-  };
 }
 
 /** Locally certified messages must first have an immutable intent, as the engine requires. */

@@ -190,12 +190,7 @@ export interface EndpointRecovery {
   readonly disseminationObligations: readonly DisseminationObligation[];
   readonly outboundMessages: readonly StoredOutboundMessage[];
 }
-/** One management page over local conversation identifiers. */
-export interface ConversationPage {
-  readonly conversationIds: readonly string[];
-  readonly hasMore: boolean;
-}
-/** One frozen management page of complete certified records. */
+/** Certified records bounded by the conversation head captured for the first page. */
 export interface HistoryPage {
   readonly records: readonly CertifiedRecord[];
   readonly continuation: string | null;

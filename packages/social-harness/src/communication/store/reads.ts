@@ -1,4 +1,4 @@
-/** @file Recovery and frozen local management reads over certified history. */
+/** @file Recovery and fixed-head reads over certified conversation history. */
 
 import * as SqlClient from "@effect/sql/SqlClient";
 import { Effect, Schema } from "effect";
@@ -28,7 +28,6 @@ import {
 } from "./rows/index.js";
 import type {
   CertifiedRecord,
-  ConversationPage,
   EndpointRecovery,
   HistoryPage,
   MessageIntent,
@@ -46,28 +45,6 @@ const historySelect = `
     ON staged.conversation_id = certified.conversation_id
    AND staged.record_hash = certified.record_hash
 `;
-/**
- * Lists locally certified conversation identifiers in canonical order.
- *
- * @param input Optional exclusive canonical lower bound.
- * @returns At most fifty identifiers and whether more remain.
- */
-export function searchStoredConversations(
-  input: Readonly<{
-    afterConversationId?: string;
-  }>,
-): Effect.Effect<ConversationPage, EndpointStoreError, SqlClient.SqlClient> {
-  return Effect.gen(function* () {
-    const rows = yield* readConversationIdRows(input.afterConversationId);
-    const conversationIds = rows
-      .slice(0, HISTORY_PAGE_SIZE)
-      .map((row) => readText(row, "conversation_id"));
-    return Object.freeze({
-      conversationIds: Object.freeze(conversationIds),
-      hasMore: rows.length > HISTORY_PAGE_SIZE,
-    });
-  }).pipe(storeOperation);
-}
 /* eslint-disable agent-code-guard/no-conditional-chaining -- Omission selects all conversations consistently across the SQL readers; a supplied id restricts each read to the same conversation. */
 /**
  * Recovers all durable endpoint state needed to resume protocol work.
@@ -125,37 +102,6 @@ function readPositions(conversationId?: string) {
            ORDER BY conversation_id`,
         [...(conversationId === undefined ? [] : [conversationId])],
       )).map(readConversationPosition),
-    );
-  }).pipe(storeOperation);
-}
-function readConversationIdRows(
-  afterConversationId?: string,
-): Effect.Effect<
-  ReadonlyArray<Readonly<Record<string, unknown>>>,
-  EndpointStoreError,
-  SqlClient.SqlClient
-> {
-  return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
-    if (afterConversationId === undefined) {
-      return yield* database.unsafe<Readonly<Record<string, unknown>>>(
-        `SELECT conversation_id FROM conversation_state
-         WHERE head_record_hash IS NOT NULL
-         ORDER BY conversation_id COLLATE BINARY LIMIT 51`,
-        [],
-      );
-    }
-    if (
-      afterConversationId.length === 0 ||
-      afterConversationId.includes("\u0000")
-    ) {
-      return yield* new EndpointStoreError({ reason: "invalid-input" });
-    }
-    return yield* database.unsafe<Readonly<Record<string, unknown>>>(
-      `SELECT conversation_id FROM conversation_state
-       WHERE head_record_hash IS NOT NULL AND conversation_id > ?
-       ORDER BY conversation_id COLLATE BINARY LIMIT 51`,
-      [afterConversationId],
     );
   }).pipe(storeOperation);
 }
@@ -301,11 +247,6 @@ function readReanchors(conversationId?: string) {
     );
   }).pipe(storeOperation);
 }
-/** History continuations identify immutable positions without retaining a live read session. */
-export const HistoryContinuation = Schema.String.pipe(
-  Schema.minLength(1),
-  Schema.maxLength(4096),
-);
 const historyCursor = Schema.Struct({
   conversationId: Schema.NonEmptyString,
   afterRecordHash: Schema.NonEmptyString,
