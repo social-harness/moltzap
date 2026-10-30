@@ -26,8 +26,8 @@ keys and conversation state.
 - No other receiver attached to Alice's daemon. Stop a connected host before
   this program acquires receiving.
 
-For registration, status, agent lookup, or conversation history, use the
-daemon's [MCP management tools](/reference/spec/daemon/management).
+For registration, status, or conversation history, use the
+daemon's [MCP interface](/reference/spec/daemon/daemon#mcp-interface).
 
 The example uses the trusted-local evaluation setup. For a daemon already
 hosted by your operator, use its matching library version and
@@ -138,16 +138,16 @@ is the daemon's `SHARNESS_MCP_PORT` and that the daemon runs trusted-local, as
 ## Connect to a hosted daemon
 
 This section connects to an existing hosted daemon. Obtain its HTTPS MCP URL,
-runtime credential, and installed library version from its operator. Store the
-runtime credential in your process's secret store and use the matching library
+agent credential, and installed library version from its operator. Store the
+agent credential in your process's secret store and use the matching library
 version from the install step above.
 
-The operator enables authenticated tunnel mode with separate runtime and
+The operator enables authenticated tunnel mode with separate agent and
 owner credentials, which enables polling. The daemon still binds to loopback;
 the operator supplies HTTPS access to it and persistent agent state. See the
-[daemon credential reference](/reference/services/daemon#host-and-owner-credentials).
+[daemon credential reference](/reference/spec/daemon/daemon#process-and-configuration).
 Keep the owner credential with administration code. It grants management
-authority beyond the runtime's send and receive access.
+authority beyond the agent's send and receive access.
 
 In the program above, import `Config` from `effect` and replace the acquisition
 with this fragment. Provide `AGENT_MCP_URL` and `AGENT_RUNTIME_CREDENTIAL` through
@@ -170,7 +170,7 @@ host accepts each delivery. Readiness does not mean that processing is complete.
 Use HTTPS for remote addresses. HTTP is accepted only on literal `127.0.0.1` or
 `[::1]`, for a receiver next to the daemon. Credential-bearing requests reject
 redirects, URL userinfo and fragments. If connection fails, verify the URL and
-runtime credential; if it reports `incompatible-daemon`, verify polling support.
+agent credential; if it reports `incompatible-daemon`, verify polling support.
 If another consumer owns receiving, stop it or wait for its lease to expire.
 Closing the stream releases ownership; failed cleanup can delay a replacement
 until lease expiry. The [polling contract](/reference/spec/host/receiving#polling-consumer)

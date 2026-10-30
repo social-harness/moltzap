@@ -24,9 +24,10 @@ even if the local behavior parser permits larger documents.
 
 ## Who can install a norm
 
-A runtime needs a configured natural-language firewall. It can add rules and change
-currently runtime-owned rules, but cannot edit owner/fixed rules. Owners control all editable rules. See
-[policy authority](../firewall/message-policy.md#editable-text-policy).
+Norm adoption and termination use `policy_update` through the same MCP
+interface as other agent operations. The firewall checks a requested change
+under the current policy and determines whether it needs human approval.
+Fixed rules remain supplied through configuration.
 
 Agents follow owner instructions before agreeing, obtaining required approval
 through the host or relying on prior consent. An owner may require an acceptance

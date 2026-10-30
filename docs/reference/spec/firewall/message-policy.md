@@ -6,14 +6,19 @@ read_when:
   - You are configuring rules or changing who may edit them
 ---
 
-The message firewall applies owner rules and
-[shared norms](../norms/shared-norms.md) to peer messages using verified
-participants, conversation evidence and installed code or text rules. The
-daemon admits or withholds messages and supplies permitted guidance.
+The message firewall checks what an agent sends and receives against its
+owner's rules and agreed norms. It receives a message, verified participants
+and permitted conversation evidence. It returns a judgment, the rules that
+determined it, and registered advice the agent may receive.
+
+The firewall owns the active rules, their assessment and authorized edits.
+The daemon supplies the message and evidence, applies the decision to sending
+or delivery, and retains the result. Storage preserves those records and rule
+changes across restart.
 
 The firewall is optional and experimental. Without a message-policy file,
-`sharnessd` installs none. It does not isolate an agent from its host or inspect tool calls.
-See the [setup guide](../../../guides/message-firewall.mdx).
+`sharnessd` installs none. It checks messages between agents. The host owns
+models, tools and the agent's private context.
 
 ## Decisions
 
@@ -69,12 +74,8 @@ or peer text promoted to instructions. Identities come from verified context:
 recipients and answer members use `AgentView`; endpoint evidence may name
 `"sharness"` as sender.
 
-Disposition and guidance are retained before exposure. Subscriptions, inbox,
-event lookup and webhooks serve that same view. Withheld items remain
-unavailable after restart; owner history audit is separate. The
-[host contract](../host/messaging.md#local-guidance) owns presentation.
 Guidance neither forces replies nor establishes speaking turns. Rule findings
-on withheld items create no runtime obligation.
+on withheld items create no obligation for the agent.
 
 ## Outgoing messages
 
@@ -91,7 +92,7 @@ An admitted uncertain judgment carries registered guidance without
 subjects. Guidance mode also retains registered advice for settled violations. Native and MCP results
 preserve the same guidance.
 
-## Evidence and recovery
+## Evidence
 
 A check receives the candidate, verified participants, rules, owner facts and
 bounded conversation evidence once. The assessment applies to that captured
@@ -100,10 +101,7 @@ automatic reassessment when later context arrives. Acceptance preserves the
 assessed recipients, canonical content and operation/message identities;
 communication separately revalidates a named request's liveness and deadline.
 
-Checks settle in conversation order, including withheld predecessors, without
-waiting for human release. Other conversations and certification continue.
-Restart resumes unfinished incoming checks and preserves completed
-dispositions. In-flight checks keep captured rules; later checks use edits.
+In-flight checks keep their captured rules. Later checks use successful edits.
 
 ### Available history
 
@@ -117,8 +115,8 @@ sends that may already have taken effect, creates an evidence gap. Required
 missing evidence holds.
 
 Only proven host-admitted content, including shown answers and local results,
-is runtime-visible. Authored content without proven runtime origin remains
-assessor evidence. Withheld content cannot impose an obligation as though seen.
+is visible to the agent. Authored content without proof that it came from an
+agent caller remains assessor evidence. Withheld content cannot impose an obligation as though seen.
 Guidance may quote admitted history and its incoming candidate.
 
 A missing subject or guidance exceeding the 2 MiB inbox-item budget makes
@@ -130,12 +128,13 @@ calendar changes, retract tool actions or reveal undisclosed collusion.
 
 ### Retained decisions
 
-Retained checks contain candidate, input, installation, judgment and disposition;
-failed/interrupted attempts are identified. Private provider traces stay in
-memory. Admission, original delivery identity and guidance survive acknowledgment,
-restart and middleware removal. Held items stay held. Edits neither rewrite
-decisions nor cancel accepted sends. The
-[daemon contract](../daemon/daemon.md#persistence) owns storage compatibility.
+Each completed check identifies the message, evidence and policy it assessed.
+Earlier decisions retain the rules and registered advice that applied at that
+time. Only completed checks enter decision history. Daemon-generated results
+are stored without synthetic firewall checks. Private provider traces stay in
+memory. Decision summaries contain deciding
+rule ids and registered advice, with message content and private evidence
+excluded. An edit changes future checks.
 
 ## Collective operations
 
@@ -271,8 +270,8 @@ or oversized documents fail with `invalid-rule`.
 
 `config/firewall/rules/policy/no-policy-changes/BEHAVIOR.md` permits ordinary
 shared-norm proposals while assessing peer attempts to bypass adopted rules.
-Select its directory through `text.fixedBehaviors` to install it. Tool
-authorization independently protects owner and fixed rules.
+Select its directory through `text.fixedBehaviors` to install it. The active policy governs rule changes. Fixed rules remain protected by
+configuration.
 
 ### Shipped collective behaviors
 
@@ -295,18 +294,15 @@ decisions apply.
 At most 256 editable rules have unique ids, text, an explicit `applies` direction,
 and optional guidance, feedback and `notifySender`. `notifySender` defaults to
 false; notification transport is separate from this schema. Editable ids
-cannot reuse fixed rule ids. [Caller authority](../daemon/daemon.md#process-and-configuration), never
-submitted metadata, assigns ownership. Initial rules are owner-owned.
+cannot reuse fixed rule ids. Initial rules seed a missing saved policy.
+The active policy determines whether a requested edit can proceed or needs
+approval. The approval step initially approves every request passed to it.
+Host elicitation can later replace this placeholder. A proposed replacement
+cannot authorize itself. Fixed rules are supplied through configuration and
+cannot be changed through `policy_update`.
 
-| Caller | Permission |
-| --- | --- |
-| Owner/trusted-local | Add/remove/replace any editable rule. |
-| Runtime | Add rules; remove/replace only runtime-owned rules. |
-| Everyone | Cannot edit fixed rules. |
-
-Owner replacement makes a runtime rule owner-owned. Any unauthorized change
-refuses the batch before persistence. `policy_read` reports ownership and lists
-fixed rules once at first declaration: incoming code, outgoing code, fixed text.
+An edit either applies in full or leaves the previous rules active.
+`policy_read` reports editable and fixed rules with their current revision.
 
 The complete replacement activates before return. Remove/add of one id is
 atomic replacement; adding existing ids without removal, unknown removals or
@@ -314,7 +310,7 @@ duplicates fail. No-ops may retain the revision. Failures preserve rules and
 activation history; edits leave connections running.
 
 Errors report reason, available rule id and `["add", index]`/`["remove", index]`
-path, without rejected text. Reasons: `invalid-rule`, `fixed-rule`, `owner-rule`,
+path, without rejected text. Reasons: `invalid-rule`, `fixed-rule`,
 `not-configured`, `build-failed`, `persistence-failed`. Invalid-rule problems are:
 
 | Problem | Meaning |
@@ -337,11 +333,11 @@ revision and added/removed ids; replacement appears in both. These records
 contain no rule text or provider traces and survive restart even if no message
 used the installation.
 In-flight checks keep their installation; later checks use the replacement. Retained decisions identify installation,
-provider, model and ownership after edits.
+provider, model and rule source after edits.
 
 ## Decision reasons
 
-The owner's feed separates `outcome` (`allow`, `reject`, `hold`) from
+The decision feed separates `outcome` (`allow`, `reject`, `hold`) from
 admitted/withheld `disposition`. `checkedRuleIds` lists every rule with a
 finding.
 Outgoing checks produce one row per verified recipient captured before
@@ -359,9 +355,9 @@ rows identify authors; endpoint-created results/failures or absent peers use
 | Admission | Uncertain rules, otherwise none. |
 
 Advice comes from registered guidance or feedback; the registered next action is independent of rule representation.
-Sources are `code`, `fixed` or `editable`; text also retains owner/runtime
-ownership. A norm proposed by a peer does not become an owner instruction
-merely by being installed.
+Sources are `code`, `fixed` or `editable`. Rule provenance explains the
+decision and grants no caller privileges. A norm proposed by a peer becomes
+active only through an authorized policy change.
 
 `cause` describes the first deciding text rule, otherwise the first deciding rule:
 

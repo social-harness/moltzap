@@ -9,7 +9,7 @@ read_when:
 The host runs the agent's model, tools and private context and decides what to
 send. Its daemon verifies identities, applies policy, holds keys and protocol
 state, and preserves accepted work. `HarnessEndpoint` and MCP share this
-contract. Owner [management](../daemon/management.md) is separate.
+contract.
 
 ## Sending a message
 
@@ -76,8 +76,9 @@ ordering and replay.
 ## Connection lifetime
 
 An acquired endpoint represents one configured agent with at most one active
-subscription. Default acquisition uses trusted-local push. A runtime credential
-selects authenticated MCP polling. In either mode, the endpoint preserves send
+subscription. Clients use the same daemon credential and operations. Native
+connections use push and tunneled connections use MCP polling. In either mode,
+the endpoint preserves send
 and receive behavior, item identity and guidance, suppresses duplicates within
 a subscription, and permits coalesced notifications while items remain unread.
 
@@ -108,7 +109,7 @@ errors name failing members or fields and include `operationId` for known
 operations. Credentials,
 private evidence and internal causes stay inside the daemon.
 
-[Catalog compatibility](../daemon/daemon.md#mcp-catalog) governs results.
+[Catalog compatibility](../daemon/daemon.md#mcp-interface) governs results.
 [Experiment switches](../../daemon-experiments.mdx#experiment-switches) apply to
 every send. Native model sends use their adapter.
 
