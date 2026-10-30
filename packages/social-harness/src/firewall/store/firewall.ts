@@ -25,10 +25,7 @@ import {
   StoreSignal,
   transaction,
 } from "../../communication/store/database/index.js";
-import {
-  decodeRuntimeValue,
-  EndpointStoreError,
-} from "../../communication/store/index.js";
+import { decodeRuntimeValue } from "../../communication/store/runtime-codec.js";
 import { DeliveryToken } from "../../communication/store/types.js";
 import { exactStruct } from "../../encoding/exact.js";
 import { AgentView } from "../../identity/cards.js";

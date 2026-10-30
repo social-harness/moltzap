@@ -302,14 +302,14 @@ export function bindIdentity(
               existing.canonicalAgentCard,
               binding.canonicalAgentCard,
             );
-            return "existing";
+            return yield* Effect.succeed<StoreMutation>("existing");
           }
           yield* database.unsafe<Readonly<Record<string, unknown>>>(
             `INSERT INTO identity_binding
           (singleton, agent_id, canonical_agent_card) VALUES (1, ?, ?)`,
             [binding.agentId, copyBytes(binding.canonicalAgentCard)],
           );
-          return "inserted";
+          return yield* Effect.succeed<StoreMutation>("inserted");
         }))(),
     );
   }).pipe(storeOperation);
@@ -392,7 +392,7 @@ function requireConversationFoundation(
       throw new StoreSignal("not-found");
     }
     requireEqual(foundation.membershipHash, intent.membershipHash);
-    return "existing";
+    return yield* Effect.succeed<StoreMutation>("existing");
   }).pipe(storeOperation);
 }
 function requireEmptyConversationPosition(

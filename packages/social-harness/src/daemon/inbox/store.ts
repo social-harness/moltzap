@@ -40,15 +40,30 @@ export interface InboxPage {
   readonly nextAfter?: number;
 }
 /** Callback progress and retained content share the inbox's persistence lifetime. */
-export type EventStore = Pick<
-  InboxStore,
-  | "readEventState"
-  | "writeEventState"
-  | "readInbox"
-  | "readInboxItem"
-  | "readInboxSummary"
-  | "completeWebhookDelivery"
->;
+export interface EventStore {
+  readonly readEventState: () => Effect.Effect<
+    Uint8Array | undefined,
+    EndpointStoreError
+  >;
+  readonly writeEventState: (
+    value: Uint8Array,
+  ) => Effect.Effect<void, EndpointStoreError>;
+  readonly readInbox: (
+    input?: InboxBounds,
+  ) => Effect.Effect<InboxPage, EndpointStoreError>;
+  readonly readInboxItem: (
+    token: DeliveryToken,
+  ) => Effect.Effect<InboxEntry | undefined, EndpointStoreError>;
+  readonly readInboxSummary: () => Effect.Effect<
+    InboxSummary,
+    EndpointStoreError
+  >;
+  readonly completeWebhookDelivery: (
+    token: DeliveryToken,
+    state: Uint8Array,
+  ) => Effect.Effect<void, EndpointStoreError>;
+}
+
 /** The terminal payload and protocol custody settle with its local publication. */
 export interface CollectiveDelivery {
   readonly operationId: string;

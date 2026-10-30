@@ -112,7 +112,7 @@ export function layer(options: {
   ).pipe(
     Layer.provide(NodeFileSystem.layer),
     Layer.catchAllCause(
-      (cause): Layer.Layer<never, EndpointStoreError | OutboxTooOldError> => {
+      (cause): Layer.Layer<unknown, EndpointStoreError | OutboxTooOldError> => {
         if (Cause.isInterruptedOnly(cause))
           return Layer.failCause(Cause.stripFailures(cause));
         const failure = Option.getOrUndefined(Cause.failureOption(cause));
