@@ -81,8 +81,6 @@ function bindsAShadowGatherInGuidanceMode() {
   });
 }
 
-/** The attributes of every finished span named `name`, in finishing order. */
-
 function checksAnAllGatherAsItsQuestion() {
   return Effect.gen(function* () {
     const subject = yield* fixture;
@@ -151,6 +149,45 @@ function keepsARequestOpenAfterARefusedAnswer() {
 /** Both drafts reach assessment before either can claim the request's one answer. */
 function sendsOneOfTwoConcurrentAnswers() {
   return Effect.gen(function* () {
+    const race = yield* concurrentAnswerFixture();
+    const firstChecked = yield* Queue.take(race.assessed);
+    const secondChecked = yield* Queue.take(race.assessed);
+    const operationId = yield* Effect.fromNullable(
+      firstChecked.event.message.operation?.operationId,
+    );
+    expect(secondChecked.event.message.operation?.operationId).toBe(
+      operationId,
+    );
+    expect([
+      firstChecked.event.message.text,
+      secondChecked.event.message.text,
+    ]).toEqual(
+      expect.arrayContaining([
+        renderOutcome({ kind: "answered", content: race.firstAnswer }),
+        renderOutcome({ kind: "answered", content: race.secondAnswer }),
+      ]),
+    );
+    yield* Deferred.succeed(race.release, undefined);
+    const firstFailure = yield* Fiber.join(race.first);
+    const secondFailure = yield* Fiber.join(race.second);
+    expect([firstFailure, secondFailure]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ reason: "delivery-pending" }),
+        expect.objectContaining({ failure: { kind: "request-answered" } }),
+      ]),
+    );
+    const winner =
+      firstFailure._tag === "SendError" &&
+      firstFailure.reason === "delivery-pending"
+        ? race.firstAnswer
+        : race.secondAnswer;
+    yield* expectRetainedAnswer(race.subject, operationId, winner);
+  });
+}
+
+/** The real engine keeps a winner pending while both prepared drafts wait for assessment release. */
+function concurrentAnswerFixture() {
+  return Effect.gen(function* () {
     const subject = yield* engineFixture(() => true);
     yield* seedRequest(subject, Date.now() + 60_000, question);
     const assessed = yield* Queue.unbounded<MiddlewareInput>();
@@ -177,37 +214,25 @@ function sendsOneOfTwoConcurrentAnswers() {
     const second = yield* runtime.delivery.operations
       .send({ input: answerBob(secondAnswer) })
       .pipe(Effect.flip, Effect.forkScoped);
-    const firstChecked = yield* Queue.take(assessed);
-    const secondChecked = yield* Queue.take(assessed);
-    const operationId = yield* Effect.fromNullable(
-      firstChecked.event.message.operation?.operationId,
-    );
-    expect(secondChecked.event.message.operation?.operationId).toBe(
-      operationId,
-    );
-    expect([
-      firstChecked.event.message.text,
-      secondChecked.event.message.text,
-    ]).toEqual(
-      expect.arrayContaining([
-        renderOutcome({ kind: "answered", content: firstAnswer }),
-        renderOutcome({ kind: "answered", content: secondAnswer }),
-      ]),
-    );
-    yield* Deferred.succeed(release, undefined);
-    const firstFailure = yield* Fiber.join(first);
-    const secondFailure = yield* Fiber.join(second);
-    expect([firstFailure, secondFailure]).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ reason: "delivery-pending" }),
-        expect.objectContaining({ failure: { kind: "request-answered" } }),
-      ]),
-    );
-    const winner =
-      firstFailure._tag === "SendError" &&
-      firstFailure.reason === "delivery-pending"
-        ? firstAnswer
-        : secondAnswer;
+    return {
+      subject,
+      assessed,
+      release,
+      first,
+      second,
+      firstAnswer,
+      secondAnswer,
+    };
+  });
+}
+
+/** Durable response identity and content belong to the winning original draft. */
+function expectRetainedAnswer(
+  subject: Fixture,
+  operationId: string,
+  winner: { readonly slot: string },
+) {
+  return Effect.gen(function* () {
     const responses = yield* subject.store.readCollectiveMessages({
       operationId,
       role: "response",
