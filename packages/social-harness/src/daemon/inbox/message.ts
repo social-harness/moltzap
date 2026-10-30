@@ -88,42 +88,37 @@ export interface MessageCheckInput {
  * whose part does not decode, is projected as its raw content and is never
  * runtime-visible.
  */
-export const messageProjection = Effect.fn("firewallMessageProjection")(
-  function* (
-    intent: MessageIntent,
-    cards: readonly AgentCard[],
-    localAgentId: string,
-  ) {
-    const projected = yield* readCollectiveValue(intent.content).pipe(
-      Effect.flatMap((part) =>
-        projectPart(
-          { intent, cards, localAgentId },
-          Option.getOrUndefined(part),
-        ),
-      ),
-      Effect.catchTag("CollectivePartInvalidError", () =>
-        Effect.succeed<ProjectedText>({
-          text: renderContent(intent.content),
-          supported: false,
-        }),
-      ),
-    );
-    return {
-      message: yield* decodeMessage({
-        id: messageId(intent),
-        sender: intent.authorAgentId,
-        recipients: cards
-          .map((card) => card.agentId)
-          .filter((id) => id !== intent.authorAgentId),
-        text: projected.text,
-        ...(projected.operation === undefined
-          ? {}
-          : { operation: projected.operation }),
+const messageProjection = Effect.fn("firewallMessageProjection")(function* (
+  intent: MessageIntent,
+  cards: readonly AgentCard[],
+  localAgentId: string,
+) {
+  const projected = yield* readCollectiveValue(intent.content).pipe(
+    Effect.flatMap((part) =>
+      projectPart({ intent, cards, localAgentId }, Option.getOrUndefined(part)),
+    ),
+    Effect.catchTag("CollectivePartInvalidError", () =>
+      Effect.succeed<ProjectedText>({
+        text: renderContent(intent.content),
+        supported: false,
       }),
-      supported: projected.supported,
-    } satisfies MessageProjection;
-  },
-);
+    ),
+  );
+  return {
+    message: yield* decodeMessage({
+      id: messageId(intent),
+      sender: intent.authorAgentId,
+      recipients: cards
+        .map((card) => card.agentId)
+        .filter((id) => id !== intent.authorAgentId),
+      text: projected.text,
+      ...(projected.operation === undefined
+        ? {}
+        : { operation: projected.operation }),
+    }),
+    supported: projected.supported,
+  } satisfies MessageProjection;
+});
 
 /** Decode one certified record with its members' cards, and project it. */
 export const decodeRecord = Effect.fn("decodeFirewallRecord")(function* (
@@ -206,7 +201,7 @@ export const contextFrom = Effect.fn("firewallContext")(function* (
  * @param item The request as an inbound item.
  * @returns The question's lines, before the answer instructions.
  */
-export function requestText(
+function requestText(
   item: Extract<InboundItem, { readonly kind: "collectiveRequest" }>,
 ): Effect.Effect<string, EndpointStoreError> {
   return encodeRuntimeValue(item).pipe(

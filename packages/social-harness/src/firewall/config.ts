@@ -381,8 +381,7 @@ const POLICY_SPEC =
   "https://docs.moltzap.xyz/reference/spec/firewall/message-policy";
 
 /** The message-firewall guide, whose troubleshooting entries policy failures link. */
-export const FIREWALL_GUIDE =
-  "https://docs.moltzap.xyz/guides/message-firewall";
+const FIREWALL_GUIDE = "https://docs.moltzap.xyz/guides/message-firewall";
 
 /** Each failure's operator text and the troubleshooting entry that matches it. */
 const failureMessages: Readonly<
@@ -534,7 +533,7 @@ const behaviorFrontmatter = Schema.Struct({
 type BehaviorRefusal = "frontmatter" | "schema";
 
 /** Provider construction owns execution; loading returns only its validated parameters. */
-export type LoadedDecisionProvider =
+type LoadedDecisionProvider =
   | { readonly kind: "unavailable" }
   | {
       readonly kind: "jev";
@@ -730,7 +729,7 @@ export function policyConfigurationError(
  * @param link.docs Another entry to link, or empty for none.
  * @returns The message, naming no configured value.
  */
-export function policyFailureMessage(
+function policyFailureMessage(
   reason: MessagePolicyConfigurationFailure,
   detail: string,
   link: { readonly path?: string; readonly docs?: string } = {},

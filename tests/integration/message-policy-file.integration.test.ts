@@ -19,8 +19,8 @@ import {
   makeRegistrationRequest,
 } from "./daemon-process-harness.js";
 import {
-  unavailablePolicyRemedy,
   messagePolicyFileSetting,
+  unavailablePolicyRemedy,
 } from "./expected-contracts.js";
 import { processTrace } from "./process-trace.js";
 import { arrayContaining, objectContaining } from "./test-matchers.js";

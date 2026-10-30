@@ -14,7 +14,7 @@ import {
 import { AgentView } from "../identity/cards.js";
 
 /** Local withholding replaces peer text without changing its certified record. */
-export const withheldText = exactStruct({
+const withheldText = exactStruct({
   kind: Schema.Literal("withheld"),
   checkId: checkedGuidanceSchema.fields.checkId,
   reason: firewallRefusalReasonSchema,
