@@ -42,8 +42,7 @@ export const firewallRefusalReasonSchema = Schema.Literal(
 );
 
 /** A completed assessment either admits or names a closed refusal reason. */
-// eslint-disable-next-line agent-code-guard/no-exported-brand-constructor -- Private evaluation and host projection compose this leaf-owned outcome grammar; package entry points do not export its constructors.
-export const firewallReasonSchema = Schema.Literal(
+const firewallReasonSchema = Schema.Literal(
   "eligible",
   ...firewallRefusalReasonSchema.literals,
 );
@@ -55,8 +54,7 @@ const instruction = {
 };
 
 /** Only registered advice and visible references reach the local agent. */
-// eslint-disable-next-line agent-code-guard/no-exported-brand-constructor -- Private evaluation and host projection compose this leaf-owned outcome grammar; package entry points do not export its constructors.
-export const registeredGuidanceSchema = Schema.Union(
+const registeredGuidanceSchema = Schema.Union(
   exactStruct({
     ...instruction,
     expectation: Schema.Literal("required", "permitted", "wait", "none"),
@@ -223,7 +221,7 @@ export class MiddlewareError extends Data.TaggedError("MiddlewareError")<{
 }> {}
 
 /** Earlier judgments cannot replace evidence or erase another rule's restriction. */
-export class MiddlewareObservation extends Schema.Class<MiddlewareObservation>(
+class MiddlewareObservation extends Schema.Class<MiddlewareObservation>(
   "MiddlewareObservation",
 )({
   middlewareId: identifier,
@@ -276,13 +274,13 @@ export interface MiddlewareCheck extends MiddlewareObservation {
 }
 
 /** Registered local instructions accompany expected response conduct and permitted subjects. */
-export interface ResponseGuidance extends ResponseExpectation {
+interface ResponseGuidance extends ResponseExpectation {
   readonly middlewareId: string;
   readonly instruction: string;
 }
 
 /** One uncertain judgment retains only registered advice and the selected probability. */
-export type UncertainGuidance = Extract<
+type UncertainGuidance = Extract<
   FirewallCheck["guidance"][number],
   { readonly uncertain: unknown }
 >;
@@ -332,7 +330,7 @@ export type FirewallCheck = typeof firewallCheckSchema.Type;
  * Question semantics have a recorded edition independent of rule wording.
  * @inline
  */
-export type PolicyStage = "applicability" | "expectations" | "compliance";
+type PolicyStage = "applicability" | "expectations" | "compliance";
 
 /** Provider input contains explicit questions and state, never execution authority. */
 export interface DecisionRequest {
@@ -401,7 +399,7 @@ export interface DecisionProvider {
 }
 
 /** Returned stages retain failures and uncertainty without inventing an answer. */
-export type PolicyStageTrace = {
+type PolicyStageTrace = {
   readonly stage: PolicyStage;
   readonly elapsedMilliseconds: number;
 } & (
@@ -681,33 +679,6 @@ export function textMetadata(
 }
 
 /**
- * Inspect the full cause before capturing failures so cleanup cannot erase cancellation.
- * @param check One bounded check whose interruption must propagate.
- * @param onDefect Projects an unexpected defect to a closed check failure.
- * @returns The completed result or typed failure, preserving interruption.
- */
-export function captureResult<A, E, R>(
-  check: Effect.Effect<A, E, R>,
-  onDefect: () => E,
-): Effect.Effect<Either.Either<A, E>, never, R> {
-  return Effect.matchCauseEffect(check, {
-    onFailure: (cause) => {
-      if (Cause.isInterrupted(cause)) {
-        return Effect.failCause(Cause.stripFailures(cause));
-      }
-      if (Cause.isDie(cause)) {
-        return Effect.succeed(Either.left(onDefect()));
-      }
-      return Either.match(Cause.failureOrCause(cause), {
-        onLeft: (error) => Effect.succeed(Either.left(error)),
-        onRight: Effect.failCause,
-      });
-    },
-    onSuccess: (value) => Effect.succeed(Either.right(value)),
-  });
-}
-
-/**
  * Copy before freezing so callers and injected policies cannot alter later checks.
  * @param schema Closed evidence grammar used for a detached round trip.
  * @param input Caller-owned evidence whose references must not escape.
@@ -814,6 +785,33 @@ export function decidingRules(
     }
   }
   return [...unique.values()];
+}
+
+/**
+ * Inspect the full cause before capturing failures so cleanup cannot erase cancellation.
+ * @param check One bounded check whose interruption must propagate.
+ * @param onDefect Projects an unexpected defect to a closed check failure.
+ * @returns The completed result or typed failure, preserving interruption.
+ */
+function captureResult<A, E, R>(
+  check: Effect.Effect<A, E, R>,
+  onDefect: () => E,
+): Effect.Effect<Either.Either<A, E>, never, R> {
+  return Effect.matchCauseEffect(check, {
+    onFailure: (cause) => {
+      if (Cause.isInterrupted(cause)) {
+        return Effect.failCause(Cause.stripFailures(cause));
+      }
+      if (Cause.isDie(cause)) {
+        return Effect.succeed(Either.left(onDefect()));
+      }
+      return Either.match(Cause.failureOrCause(cause), {
+        onLeft: (error) => Effect.succeed(Either.left(error)),
+        onRight: Effect.failCause,
+      });
+    },
+    onSuccess: (value) => Effect.succeed(Either.right(value)),
+  });
 }
 
 function freezeData(value: unknown): void {
