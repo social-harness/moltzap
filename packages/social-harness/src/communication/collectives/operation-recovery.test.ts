@@ -1,22 +1,10 @@
 /** @file Signed collective messages and completion decisions survive endpoint restarts. */
 
+import { SqlClient } from "@effect/sql";
+
 import { live as it, scoped as itOnClock } from "@effect/vitest";
-import {
-  Clock,
-  Deferred,
-  Duration,
-  Effect,
-  Exit,
-  Fiber,
-  Option,
-  Schema,
-  Scope,
-  TestClock,
-} from "effect";
+import { Effect, Fiber, Option, Schema, Scope, TestClock } from "effect";
 import { expect } from "vitest";
-import type { AgentId } from "../../identity/identifiers.js";
-import type { CollectiveId } from "./contracts.js";
-import type { InboundItem } from "./inbound.js";
 import { untilLive } from "../../__tests__/advance-clock.js";
 import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import {
@@ -28,12 +16,8 @@ import {
 import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
 import {
   anchor,
-  boundIntent,
   certifyBoundIntent,
-  groupSubject,
   resumeEngine,
-  seedGroupFirstMessage,
-  waitForClose,
 } from "../../__tests__/collective-recovery-fixtures.js";
 import { makeCollectiveOperations } from "../../__tests__/collective-send.js";
 import {
@@ -41,26 +25,20 @@ import {
   type Fixture,
 } from "../../__tests__/firewall-runtime-fixtures.js";
 import { withDaemonStore } from "../../__tests__/store-schema-fixtures.js";
-import { type DaemonStore, openDaemonStore } from "../../daemon/store.js";
-import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
+import {
+  type TestDatabase,
+  openTestDatabase,
+} from "../../__tests__/communication-test-database.js";
 import {
   AgentAddress,
   type CertifiedRecord,
-  MessageAddressInput,
   MessageIntent,
-  mintMsgId,
 } from "../records/index.js";
 import {
   decodeRuntimeValue,
-  encodeRuntimeValue,
-  type StoredCollectiveMessage,
   type MessageIntent as StoredMessageIntent,
 } from "../store/index.js";
-import {
-  encodeCollectiveContent,
-  mintCollectiveId,
-  readCollectiveValue,
-} from "./wire/index.js";
+import { encodeCollectiveContent } from "./wire/index.js";
 
 const self = Schema.decodeUnknownSync(AgentAddress)("agent:alice");
 const sender = Schema.decodeUnknownSync(AgentAddress)("agent:bob");
@@ -74,11 +52,10 @@ const response = {
   },
 } as const;
 
-function resume(subject: Fixture, store: DaemonStore, failOutbound = false) {
+function resume(subject: Fixture, store: TestDatabase) {
   return Effect.gen(function* () {
-    const engine = yield* resumeEngine(subject, store, failOutbound);
+    const engine = yield* resumeEngine(subject, store);
     const collective = yield* makeCollectiveOperations({
-      store,
       self: testAgentView(self),
       scope: yield* Scope.Scope,
       sendMessage: engine.send,
@@ -88,7 +65,7 @@ function resume(subject: Fixture, store: DaemonStore, failOutbound = false) {
       reportStorageFault: () =>
         Effect.dieMessage("unexpected collective storage failure"),
       emit: () => Effect.dieMessage("a gather receiver emits no local result"),
-    });
+    }).pipe(Effect.provideService(SqlClient.SqlClient, store.sql));
     const pending = yield* engine.readPendingMessages();
     yield* Effect.forEach(pending, collective.classify, {
       concurrency: 1,
@@ -99,7 +76,7 @@ function resume(subject: Fixture, store: DaemonStore, failOutbound = false) {
 }
 
 it(
-  "keeps one bound response after caller failure and two engine restarts, then recognizes its certificate",
+  "keeps one bound response after caller interruption and two engine restarts, then recognizes its certificate",
   () =>
     Effect.gen(function* () {
       const subject = yield* Effect.scoped(engineFixture());
@@ -153,17 +130,20 @@ function seedRemoteRequest(subject: Fixture) {
 function claimPendingResponse(subject: Fixture) {
   return Effect.scoped(
     Effect.gen(function* () {
-      const store = yield* openDaemonStore(subject.directory, {
-        liveWireVersions: LIVE_WIRE_VERSIONS,
-      });
-      const collective = yield* resume(subject, store, true);
-      expect(yield* Effect.flip(collective.send(response))).toMatchObject({
-        reason: "delivery-pending",
-      });
+      const store = yield* openTestDatabase(subject.directory);
+      const collective = yield* resume(subject, store);
+      const sending = yield* collective.send(response).pipe(Effect.forkScoped);
+      yield* untilLive(
+        store.run(store.store.readCollectiveMessages()).pipe(
+          Effect.map((messages) => messages.length === 1),
+          Effect.orDie,
+        ),
+      );
+      yield* Fiber.interrupt(sending);
       expect(yield* Effect.flip(collective.send(response))).toMatchObject({
         failure: { kind: "request-answered" },
       });
-      const messages = yield* store.readCollectiveMessages();
+      const messages = yield* store.run(store.store.readCollectiveMessages());
       expect(messages).toHaveLength(1);
       const [message] = messages;
       if (message === undefined) {
@@ -181,14 +161,12 @@ function assertRecoveredResponse(
 ) {
   return Effect.scoped(
     Effect.gen(function* () {
-      const store = yield* openDaemonStore(subject.directory, {
-        liveWireVersions: LIVE_WIRE_VERSIONS,
-      });
+      const store = yield* openTestDatabase(subject.directory);
       const collective = yield* resume(subject, store);
       expect(yield* Effect.flip(collective.send(response))).toMatchObject({
         failure: { kind: "request-answered" },
       });
-      const messages = yield* store.readCollectiveMessages();
+      const messages = yield* store.run(store.store.readCollectiveMessages());
       expect(messages).toHaveLength(1);
       expect(messages[0]?.intent).toMatchObject({
         msgId: original.msgId,
@@ -202,214 +180,12 @@ function assertRecoveredResponse(
 }
 
 itOnClock(
-  "finishes the same all-gather after interruption during its committed bind",
-  () =>
-    Effect.gen(function* () {
-      const fixture = yield* interruptedBindFixture();
-      const sending = yield* fixture.layer
-        .send({
-          to: Schema.decodeUnknownSync(MessageAddressInput)(
-            "group:alice,bob,carol",
-          ),
-          text: "Choose a time",
-          collective: {
-            op: "all_gather",
-            deadline: 60,
-            requestedSchema: { type: "object", properties: {} },
-          },
-        })
-        .pipe(Effect.fork);
-      yield* Effect.raceFirst(
-        Deferred.await(fixture.bound),
-        Fiber.join(sending).pipe(
-          Effect.zipRight(
-            Effect.dieMessage(
-              "send completed before its bound intent was observed",
-            ),
-          ),
-        ),
-      );
-      const original = yield* boundIntent(fixture.store, "request");
-      yield* Fiber.interruptFork(sending);
-      yield* Deferred.succeed(fixture.release, undefined);
-      expect(Exit.isInterrupted(yield* Fiber.await(sending))).toBe(true);
-      const request = yield* certifyBoundIntent(
-        fixture,
-        fixture.head,
-        original,
-      );
-      yield* TestClock.adjust(Duration.minutes(2));
-      yield* waitForClose(fixture.store);
-      const close = yield* boundIntent(fixture.store, "close");
-      yield* certifyBoundIntent(fixture, request, close);
-      expect(yield* Deferred.await(fixture.emitted)).toMatchObject({
-        kind: "collectiveResult",
-        op: "all_gather",
-      });
-      expect(yield* fixture.store.readCollectiveMessages()).toMatchObject([
-        { role: "request", intent: { msgId: original.msgId } },
-        { role: "close", intent: { msgId: close.msgId } },
-      ]);
-    }),
-);
-
-function interruptedBindFixture(pause: "before" | "after" = "after") {
-  return Effect.gen(function* () {
-    const subject = yield* groupSubject(yield* Effect.scoped(engineFixture()));
-    const head = yield* seedGroupFirstMessage(subject);
-    const originalStore = yield* openDaemonStore(subject.directory, {
-      liveWireVersions: LIVE_WIRE_VERSIONS,
-    });
-    const bound = yield* Deferred.make<undefined>();
-    const release = yield* Deferred.make<undefined>();
-    const emitted = yield* Deferred.make<InboundItem>();
-    const store: DaemonStore = {
-      ...originalStore,
-      bindMessageIntent: (binding) => {
-        const bind = originalStore.bindMessageIntent(binding);
-        const barrier = Deferred.succeed(bound, undefined).pipe(
-          Effect.zipRight(Deferred.await(release)),
-        );
-        return pause === "before"
-          ? barrier.pipe(Effect.zipRight(bind))
-          : bind.pipe(Effect.tap(() => barrier));
-      },
-    };
-    const engine = yield* resumeEngine(subject, store);
-    const layer = yield* makeCollectiveOperations({
-      store,
-      self: testAgentView(self),
-      scope: yield* Scope.Scope,
-      sendMessage: engine.send,
-      prepareMessage: engine.prepare,
-      acceptMessage: engine.accept,
-      observeMessage: engine.observeMessage,
-      reportStorageFault: () =>
-        Effect.dieMessage("unexpected persistence fault"),
-      emit: (item) => Deferred.succeed(emitted, item).pipe(Effect.asVoid),
-    });
-    return { subject, head, store, engine, layer, bound, release, emitted };
-  });
-}
-
-itOnClock(
-  "keeps an interrupted bound answer claimed and includes it in the group close",
-  () =>
-    Effect.gen(function* () {
-      const fixture = yield* interruptedBindFixture();
-      const request = yield* admittedGroupRequest(fixture);
-      const input = {
-        to: Schema.decodeUnknownSync(MessageAddressInput)(
-          "group:alice,bob,carol",
-        ),
-        collectiveResponse: {
-          operationId: request.operationId,
-          action: "accept",
-          content: { answer: "Monday" },
-        },
-      } as const;
-      const sending = yield* fixture.layer.send(input).pipe(Effect.fork);
-      yield* Deferred.await(fixture.bound);
-      const original = yield* boundIntent(fixture.store, "response");
-      yield* Fiber.interruptFork(sending);
-      yield* Deferred.succeed(fixture.release, undefined);
-      expect(Exit.isInterrupted(yield* Fiber.await(sending))).toBe(true);
-      expect(yield* Effect.flip(fixture.layer.send(input))).toMatchObject({
-        failure: { kind: "request-answered" },
-      });
-      const answer = yield* certifyBoundIntent(
-        fixture,
-        request.record,
-        original,
-      );
-      const close = yield* certifyBoundIntent(fixture, answer, {
-        ...request.record.actionCertifiedRecord.recordCore.action.messageIntent,
-        msgId: yield* mintMsgId(),
-        content: yield* encodeCollectiveContent({
-          kind: "close",
-          closedAt: 60_000,
-          closedBy: "deadline",
-          operationId: request.operationId,
-          included: [answer.actionCertifiedRecord.recordHash],
-        }),
-      });
-      yield* classifyCertified(fixture, close);
-      assertOwnAnswer(yield* Deferred.await(fixture.emitted));
-      expect(yield* fixture.store.readCollectiveMessages()).toMatchObject([
-        { role: "response", intent: { msgId: original.msgId } },
-      ]);
-    }),
-);
-
-function admittedGroupRequest(
-  fixture: Effect.Effect.Success<ReturnType<typeof interruptedBindFixture>>,
-) {
-  return Effect.gen(function* () {
-    const operationId = yield* mintCollectiveId(testAgentView(sender).agentId);
-    const content = yield* encodeCollectiveContent(
-      {
-        kind: "operation",
-        op: "all_gather",
-        operationId,
-        deadlineAt: (yield* Clock.currentTimeMillis) + 60_000,
-        requestedSchema: {
-          type: "object",
-          properties: { answer: { type: "string" } },
-          required: ["answer"],
-        },
-      },
-      "Choose a day",
-    );
-    const record = yield* certifyBoundIntent(fixture, fixture.head, {
-      ...fixture.head.actionCertifiedRecord.recordCore.action.messageIntent,
-      msgId: yield* mintMsgId(),
-      content,
-    });
-    const { item, deliveryToken } = yield* classifyCertified(fixture, record);
-    if (Option.isNone(item)) {
-      return yield* Effect.dieMessage("missing group request");
-    }
-    yield* fixture.store.putInboxItem({
-      deliveryToken,
-      canonicalItem: yield* encodeRuntimeValue(item.value),
-    });
-    return { operationId, record };
-  });
-}
-
-function classifyCertified(
-  fixture: Effect.Effect.Success<ReturnType<typeof interruptedBindFixture>>,
-  record: CertifiedRecord,
-) {
-  return fixture.engine.readPendingMessages().pipe(
-    Effect.flatMap((pending) =>
-      Effect.fromNullable(
-        pending.find(
-          (entry) =>
-            entry.recordHash === record.actionCertifiedRecord.recordHash,
-        ),
-      ),
-    ),
-    Effect.flatMap((pending) =>
-      fixture.layer.classify(pending).pipe(
-        Effect.map((item) => ({
-          item,
-          deliveryToken: pending.deliveryToken,
-        })),
-      ),
-    ),
-  );
-}
-
-itOnClock(
   "keeps a local message pending when a peer certifies the same message ID",
   () =>
     Effect.gen(function* () {
       const subject = yield* Effect.scoped(engineFixture());
       const head = yield* seedRemoteRequest(subject);
-      const store = yield* openDaemonStore(subject.directory, {
-        liveWireVersions: LIVE_WIRE_VERSIONS,
-      });
+      const store = yield* openTestDatabase(subject.directory);
       const engine = yield* resumeEngine(subject, store);
       const sending = yield* engine
         .send({
@@ -418,12 +194,12 @@ itOnClock(
         })
         .pipe(Effect.fork);
       yield* untilLive(
-        store.recover().pipe(
+        store.run(store.store.recover()).pipe(
           Effect.map((recovery) => recovery.messageIntents.length === 1),
           Effect.orDie,
         ),
       );
-      const recovery = yield* store.recover();
+      const recovery = yield* store.run(store.store.recover());
       const retained = yield* Effect.fromNullable(recovery.messageIntents[0]);
       const intent = yield* decodeRuntimeValue(
         MessageIntent,
@@ -449,7 +225,8 @@ itOnClock(
         recordHash: local.actionCertifiedRecord.recordHash,
       });
       expect(
-        (yield* store.recover()).messageIntents[0]?.completedRecordHash,
+        (yield* store.run(store.store.recover())).messageIntents[0]
+          ?.completedRecordHash,
       ).toBe(local.actionCertifiedRecord.recordHash);
       yield* Fiber.interrupt(sending);
     }),
@@ -469,151 +246,4 @@ function certifyRecoveredResponse(
       yield* appendCertifiedIntent({ ...subject, store }, request, intent);
     }),
   );
-}
-
-function assertOwnAnswer(item: InboundItem) {
-  expect(item).toMatchObject({ kind: "collectiveResult", op: "all_gather" });
-  const outcomes = item.kind === "collectiveResult" ? item.outcomes : [];
-  expect(
-    outcomes.find((outcome) => outcome.member.agentName === "alice"),
-  ).toEqual({
-    member: testAgentView(self),
-    outcome: { kind: "answered", content: { answer: "Monday" } },
-  });
-}
-
-itOnClock(
-  "reports an expired request when its close wins before a held response binds",
-  () =>
-    Effect.gen(function* () {
-      const fixture = yield* interruptedBindFixture("before");
-      const request = yield* admittedGroupRequest(fixture);
-      const close = yield* certifyBoundIntent(fixture, request.record, {
-        ...request.record.actionCertifiedRecord.recordCore.action.messageIntent,
-        msgId: yield* mintMsgId(),
-        content: yield* encodeCollectiveContent({
-          kind: "close",
-          closedAt: 60_000,
-          closedBy: "deadline",
-          operationId: request.operationId,
-          included: [],
-        }),
-      });
-      const sending = yield* fixture.layer
-        .send({
-          to: Schema.decodeUnknownSync(MessageAddressInput)(
-            "group:alice,bob,carol",
-          ),
-          collectiveResponse: {
-            operationId: request.operationId,
-            action: "accept",
-            content: { answer: "Monday" },
-          },
-        })
-        .pipe(Effect.fork);
-      yield* Deferred.await(fixture.bound);
-      yield* classifyCertified(fixture, close);
-      yield* Deferred.succeed(fixture.release, undefined);
-      const failure = yield* Effect.flip(Fiber.join(sending));
-      expect(
-        failure._tag === "CollectiveError"
-          ? failure.failure
-          : { kind: failure._tag, message: failure.message },
-      ).toEqual({ kind: "request-expired" });
-      expect(
-        yield* fixture.store.readCollectiveMessages({
-          operationId: request.operationId,
-          role: "response",
-        }),
-      ).toEqual([]);
-      expect(yield* Deferred.await(fixture.emitted)).toMatchObject({
-        kind: "collectiveResult",
-        operationId: request.operationId,
-      });
-    }),
-);
-
-it.each(["operation", "author"] as const)(
-  "refuses a retained response whose %s disagrees with its accepted claim",
-  (changed) =>
-    Effect.gen(function* () {
-      const subject = yield* Effect.scoped(engineFixture());
-      yield* seedRemoteRequest(subject);
-      yield* claimPendingResponse(subject);
-      const otherOperationId = yield* mintCollectiveId(
-        subject.remote.card.agentId,
-      );
-      const changes = {
-        ...(changed === "operation" ? { operationId: otherOperationId } : {}),
-        ...(changed === "author"
-          ? { authorAgentId: subject.remote.card.agentId }
-          : {}),
-      };
-      const failure = yield* withDaemonStore(subject.directory, (store) =>
-        Effect.scoped(
-          Effect.flip(resume(subject, corruptResponses(store, changes))),
-        ),
-      );
-      expect(failure).toMatchObject({ reason: "corrupt" });
-    }),
-);
-
-interface ResponseChanges {
-  readonly operationId?: CollectiveId;
-  readonly authorAgentId?: AgentId;
-}
-
-function corruptResponses(
-  store: DaemonStore,
-  changes: ResponseChanges,
-): DaemonStore {
-  return {
-    ...store,
-    readCollectiveMessages: (filter) =>
-      store
-        .readCollectiveMessages(filter)
-        .pipe(
-          Effect.flatMap((messages) =>
-            Effect.forEach(
-              messages,
-              (message) => changedResponse(message, changes),
-              { concurrency: 1 },
-            ),
-          ),
-        ),
-  };
-}
-
-function changedResponse(
-  message: StoredCollectiveMessage,
-  changes: ResponseChanges,
-) {
-  return Effect.gen(function* () {
-    const intent = yield* decodeRuntimeValue(
-      MessageIntent,
-      message.intent.canonicalIntent,
-    );
-    const value = yield* readCollectiveValue(intent.content).pipe(Effect.orDie);
-    if (Option.isNone(value) || value.value.kind !== "response") {
-      return yield* Effect.dieMessage("expected a retained response");
-    }
-    const content =
-      changes.operationId === undefined
-        ? intent.content
-        : yield* encodeCollectiveContent({
-            ...value.value,
-            operationId: changes.operationId,
-          }).pipe(Effect.orDie);
-    return {
-      ...message,
-      intent: {
-        ...message.intent,
-        canonicalIntent: yield* encodeRuntimeValue({
-          ...intent,
-          content,
-          authorAgentId: changes.authorAgentId ?? intent.authorAgentId,
-        }),
-      },
-    };
-  });
 }

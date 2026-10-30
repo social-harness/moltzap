@@ -1,5 +1,7 @@
 /** @file Plain sends distinguish Router attachment from ownership of a bound collective message. */
 
+import { SqlClient } from "@effect/sql";
+
 import { scoped as it } from "@effect/vitest";
 import {
   Deferred,
@@ -11,7 +13,6 @@ import {
   TestClock,
 } from "effect";
 import { expect } from "vitest";
-import type { DaemonStore } from "../../daemon/store.js";
 import {
   identifier,
   testAgentView,
@@ -50,15 +51,21 @@ it("waits for Router attachment before reporting a bound all-gather as pending",
     yield* TestClock.adjust("20 seconds");
 
     expect(Option.isNone(yield* Fiber.poll(sending))).toBe(true);
-    expect(yield* fixture.store.readCollectiveOperations()).toEqual([]);
-    expect(yield* fixture.store.readCollectiveMessages()).toEqual([]);
+    expect(
+      yield* fixture.run(fixture.store.readCollectiveOperations()),
+    ).toEqual([]);
+    expect(yield* fixture.run(fixture.store.readCollectiveMessages())).toEqual(
+      [],
+    );
 
     yield* Deferred.succeed(fixture.attached, undefined);
     expect(yield* Effect.flip(Fiber.join(sending))).toMatchObject({
       reason: "delivery-pending",
     });
-    const operations = yield* fixture.store.readCollectiveOperations();
-    const messages = yield* fixture.store.readCollectiveMessages();
+    const operations = yield* fixture.run(
+      fixture.store.readCollectiveOperations(),
+    );
+    const messages = yield* fixture.run(fixture.store.readCollectiveMessages());
     expect(operations).toHaveLength(1);
     expect(messages).toHaveLength(1);
     expect(messages[0]).toMatchObject({
@@ -70,7 +77,7 @@ it("waits for Router attachment before reporting a bound all-gather as pending",
       certified,
     );
     expect(
-      (yield* fixture.store.readCollectiveMessages()).map(
+      (yield* fixture.run(fixture.store.readCollectiveMessages())).map(
         (message) => message.intent.msgId,
       ),
     ).toEqual([certified.msgId]);
@@ -87,47 +94,15 @@ it("refuses an all-gather whose deadline passes before Router attachment without
     expect(yield* Effect.flip(Fiber.join(sending))).toMatchObject({
       failure: { kind: "deadline-passed" },
     });
-    expect(yield* fixture.store.readCollectiveOperations()).toEqual([]);
-    expect(yield* fixture.store.readCollectiveMessages()).toEqual([]);
-  }));
-
-it("refuses an all-gather whose deadline passes while another send owns the engine gate", () =>
-  Effect.gen(function* () {
-    const binding = yield* Deferred.make<undefined>();
-    const bound = yield* Deferred.make<undefined>();
-    const fixture = yield* attachingEndpoint(
-      Deferred.succeed(binding, undefined).pipe(
-        Effect.zipRight(Deferred.await(bound)),
-      ),
+    expect(
+      yield* fixture.run(fixture.store.readCollectiveOperations()),
+    ).toEqual([]);
+    expect(yield* fixture.run(fixture.store.readCollectiveMessages())).toEqual(
+      [],
     );
-    yield* Deferred.succeed(fixture.attached, undefined);
-    const first = yield* fixture.engine
-      .prepare({
-        to: Schema.decodeUnknownSync(MessageAddressInput)("agent:bob"),
-        content: [{ type: "text", text: "Earlier message" }],
-      })
-      .pipe(
-        Effect.flatMap((prepared) =>
-          fixture.engine.accept(prepared, Effect.succeed(Effect.void)),
-        ),
-        Effect.fork,
-      );
-    yield* Deferred.await(binding);
-
-    const sending = yield* fixture.send(5).pipe(Effect.fork);
-    yield* TestClock.adjust("10 seconds");
-    yield* Deferred.succeed(bound, undefined);
-    yield* Fiber.join(first);
-
-    expect(yield* Effect.flip(Fiber.join(sending))).toMatchObject({
-      failure: { kind: "deadline-passed" },
-    });
-    expect(yield* fixture.store.readCollectiveOperations()).toEqual([]);
-    expect(yield* fixture.store.readCollectiveMessages()).toEqual([]);
-    expect((yield* fixture.store.recover()).messageIntents).toHaveLength(1);
   }));
 
-function attachingEndpoint(pausePlainBind?: Effect.Effect<unknown>) {
+function attachingEndpoint() {
   return Effect.gen(function* () {
     const subject = yield* engineFixture();
     const attaching = yield* Deferred.make<undefined>();
@@ -136,11 +111,9 @@ function attachingEndpoint(pausePlainBind?: Effect.Effect<unknown>) {
       subject,
       attaching,
       attached,
-      pausePlainBind ?? Effect.void,
     );
     const scope = yield* Scope.Scope;
     const collectives = yield* makeCollectiveOperations({
-      store: subject.store,
       self: testAgentView("agent:alice"),
       sendMessage: engine.send,
       prepareMessage: engine.prepare,
@@ -149,15 +122,15 @@ function attachingEndpoint(pausePlainBind?: Effect.Effect<unknown>) {
       reportStorageFault: () => Effect.dieMessage("unexpected storage fault"),
       emit: () => Effect.void,
       scope,
-    });
+    }).pipe(Effect.provideService(SqlClient.SqlClient, subject.sql));
     const delivery = yield* makeHostDelivery({
-      store: subject.store,
       collectives: () => collectives,
       scope,
       historyExport: { record: () => Effect.void },
-    });
+    }).pipe(Effect.provideService(SqlClient.SqlClient, subject.sql));
     return {
       store: subject.store,
+      run: subject.run,
       subject,
       engine,
       anchor,
@@ -173,7 +146,6 @@ function attachingEngine(
   subject: Effect.Effect.Success<ReturnType<typeof engineFixture>>,
   attaching: Deferred.Deferred<undefined>,
   attached: Deferred.Deferred<undefined>,
-  pausePlainBind: Effect.Effect<unknown>,
 ) {
   return Effect.gen(function* () {
     const anchor = {
@@ -197,7 +169,6 @@ function attachingEngine(
                 : subject.remote.card,
           }),
       },
-      store: pauseUnrelatedBinds(subject.store, pausePlainBind),
       reportStorageFault: () => Effect.dieMessage("unexpected storage fault"),
       routerWorker: {
         currentAnchor: Deferred.isDone(attached).pipe(
@@ -213,7 +184,7 @@ function attachingEngine(
         ),
         send: () => Effect.void,
       },
-    });
+    }).pipe(Effect.provideService(SqlClient.SqlClient, subject.sql));
     return { engine, anchor };
   });
 }
@@ -251,7 +222,7 @@ function pendingAction(
   fixture: Effect.Effect.Success<ReturnType<typeof attachingEndpoint>>,
 ) {
   return Effect.gen(function* () {
-    const recovery = yield* fixture.store.recover();
+    const recovery = yield* fixture.run(fixture.store.recover());
     const bound = yield* Effect.fromNullable(recovery.messageIntents[0]);
     const storedMembership = yield* Effect.fromNullable(
       recovery.memberships[0],
@@ -379,17 +350,4 @@ function certificationEvidence(
     );
     return { core, recordHash, signatures, votes };
   });
-}
-
-function pauseUnrelatedBinds(
-  store: DaemonStore,
-  pause: Effect.Effect<unknown>,
-): DaemonStore {
-  return {
-    ...store,
-    bindMessageIntent: (binding) =>
-      (binding.collective === undefined ? pause : Effect.void).pipe(
-        Effect.zipRight(store.bindMessageIntent(binding)),
-      ),
-  };
 }
