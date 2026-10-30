@@ -1,4 +1,4 @@
-/** @file Private owner-authorized management over Registry and endpoint state. */
+/** @file Registration, status and saved conversation reads for the daemon MCP interface. */
 
 import { type Context, Data, Effect, Schema } from "effect";
 import type { SendError } from "../../communication/conversations/errors.js";
@@ -17,7 +17,6 @@ import type {
   HarnessMcpOperations,
   ManagementReadConversationResult,
   ManagementRegisterResult,
-  ManagementSearchAgentsResult,
   ManagementSearchConversationsRequest,
   ManagementSearchConversationsResult,
   ManagementStatusResult,
@@ -44,8 +43,6 @@ import {
 } from "../../identity/cards.js";
 import { SignedMessage } from "../../identity/envelope/signed-message.js";
 import {
-  RegistryInvalidResponseError,
-  type RegistryLookupResult,
   type RegistryRegisterResult,
 } from "../../identity/registry/contract.js";
 import { Registry } from "../../identity/registry/index.js";
@@ -61,7 +58,6 @@ import {
 type ManagementOperation =
   | "readStatus"
   | "register"
-  | "searchAgents"
   | "searchConversations"
   | "readConversation";
 
@@ -177,23 +173,6 @@ function encodeStatus(
   );
 }
 
-function encodeLookupResult(
-  result: RegistryLookupResult,
-): Effect.Effect<ManagementSearchAgentsResult, DaemonManagementError> {
-  if (result.kind === "not_found") {
-    return Effect.succeed(result);
-  }
-  return encodeAgentCard(result.agentCard).pipe(
-    Effect.map((agentCard) =>
-      Object.freeze({
-        kind: "found",
-        agentCard,
-        agent: agentViewOf(result.agentCard),
-      }),
-    ),
-  );
-}
-
 function encodeAgentCard(
   agentCard: VerifiedAgentCard,
 ): Effect.Effect<unknown, DaemonManagementError> {
@@ -237,12 +216,6 @@ function mapRegistrationFailure(
       return exhaustive;
     }
   }
-}
-
-function mapRegistryFailure(error: unknown): DaemonManagementError {
-  return error instanceof RegistryInvalidResponseError
-    ? incompatibleDaemon()
-    : managementFailure("dependency-unavailable");
 }
 
 function validateAddressForLocalAgent(
@@ -523,23 +496,6 @@ const registerOperation =
       ),
     );
 
-const searchAgentsOperation =
-  (
-    input: ManagementInput,
-    registry: RegistryService,
-  ): DaemonManagementOperations["searchAgents"] =>
-  (request) =>
-    readActiveCard(input.registration).pipe(
-      Effect.flatMap(() =>
-        registry
-          .lookup(request)
-          .pipe(
-            Effect.mapError(mapRegistryFailure),
-            Effect.flatMap(encodeLookupResult),
-          ),
-      ),
-    );
-
 const searchConversationsOperation =
   (input: ManagementInput): DaemonManagementOperations["searchConversations"] =>
   (request) =>
@@ -607,7 +563,6 @@ export const makeDaemonManagementOperations = (
     const operations: DaemonManagementOperations = {
       readStatus: readStatusOperation(input.registration),
       register: registerOperation(input, registry),
-      searchAgents: searchAgentsOperation(input, registry),
       searchConversations: searchConversationsOperation(input),
       readConversation: readConversationOperation(input, registry),
     };

@@ -55,10 +55,9 @@ const ROUTER_POLL_TIMEOUT = Duration.seconds(35);
 
 const liveWireVersions = wireVersions.liveSet;
 
-/** Offline and managed checking use the firewall's supported public contract. */
+/** Managed firewall configuration and checking contracts for daemon embeddings. */
 export {
   CheckInputError,
-  checkMessage,
   type DecisionProvider,
   DecisionProviderError,
   type DecisionRequest,

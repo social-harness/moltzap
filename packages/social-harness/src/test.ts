@@ -18,3 +18,6 @@ export {
 export { AuthenticatedHttp } from "./identity/request-authentication.js";
 /** Mixed-release process tests compose the installed history compatibility window. */
 export { HISTORY_WIRE_VERSIONS } from "./identity/wire-version.js";
+
+/** Offline evaluation for tests without a running daemon or database. */
+export { checkMessage } from "./firewall/check.js";
