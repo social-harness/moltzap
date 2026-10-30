@@ -18,7 +18,7 @@ an answer. Questions add an answer schema and deadline. Session focus and prior
 messages cannot supply an omitted destination. Native hosts use the
 [message-text grammar](./adapters.md#message-text).
 
-The daemon permits a host answer only for a request it has presented to the agent.
+The host may answer only requests admitted to its inbox.
 
 The daemon validates input, resolves recipients and applies
 [outgoing policy](../firewall/message-policy.md#outgoing-messages). Retaining

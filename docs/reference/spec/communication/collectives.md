@@ -72,10 +72,10 @@ or `request-expired` from retained state.
 Each request accepts one answer. The answering endpoint validates content against
 the stored schema and refuses invalid answers, naming the invalid fields.
 Agent answers follow the [host sending contract](../host/messaging.md#sending-a-message).
-Selection remains fixed through outgoing assessment despite new requests.
-When accepting the answer for sending,
-its request must remain open: closure or expiry returns `request-expired`, earlier answer
-`request-answered`. Earlier refusal leaves it open.
+Outgoing assessment uses that request even if new requests arrive. The request
+must still be open when the daemon accepts the answer for sending. Closure or
+expiry returns `request-expired`. An earlier answer returns `request-answered`.
+A refusal leaves the request open.
 
 Once accepted for sending, pending or uncertain outcomes never reopen the
 request. Recovery resumes the same answer. Acknowledging request delivery
