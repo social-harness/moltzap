@@ -1,7 +1,7 @@
 /** @file Real storage and prepared send fixtures shared by firewall admission tests. */
 
-import { Context, Deferred, Effect, Layer, Queue, Schema, Scope } from "effect";
 import { SqlClient } from "@effect/sql";
+import { Context, Deferred, Effect, Layer, Queue, Schema, Scope } from "effect";
 import { generateKeyPairSync } from "node:crypto";
 import type { MessageMiddleware, MiddlewareResult } from "../firewall/check.js";
 import type { InboundItem } from "../host-protocol/items.js";

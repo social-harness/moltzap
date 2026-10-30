@@ -133,6 +133,19 @@ const projectsRegistryFailures = () =>
     }),
   );
 
+function registryCheckingAdmission(
+  expected: string,
+): Context.Tag.Service<typeof Registry> {
+  return {
+    ...registry({ kind: "name_taken" }),
+    register: ({ admissionCredential }) =>
+      Effect.sync(() => {
+        expect(Redacted.value(admissionCredential)).toBe(expected);
+        return { kind: "name_taken" as const };
+      }),
+  };
+}
+
 const presentsAdmission = () =>
   withDaemonStore(stateDirectory(), () =>
     Effect.gen(function* () {
@@ -140,14 +153,7 @@ const presentsAdmission = () =>
       const expected = Redacted.value(
         yield* fixture.bootstrap.admissionCredential,
       );
-      const service: Context.Tag.Service<typeof Registry> = {
-        ...registry({ kind: "name_taken" }),
-        register: ({ admissionCredential }) =>
-          Effect.sync(() => {
-            expect(Redacted.value(admissionCredential)).toBe(expected);
-            return { kind: "name_taken" as const };
-          }),
-      };
+      const service = registryCheckingAdmission(expected);
       yield* registerDaemonIdentity({
         request: fixture.registerRequest,
         bootstrap: fixture.bootstrap,

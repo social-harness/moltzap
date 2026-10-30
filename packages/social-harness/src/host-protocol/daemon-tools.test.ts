@@ -4,7 +4,6 @@ import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { digest } from "../__tests__/agent-card-fixtures.js";
 import {
-  managementReadConversationRequestSchema,
   managementSearchConversationsRequestSchema,
   managementSearchConversationsResultSchema,
 } from "./daemon-tools.js";

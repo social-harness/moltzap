@@ -1,13 +1,11 @@
 /** @file Private MCP schemas for daemon management and history reads: exact requests, and results a reader decodes additively. */
 
 import { Schema } from "effect";
-import { InboundItem } from "./items.js";
-import { localGuidanceSchema } from "./advice.js";
 import {
   AgentAddress,
+  Content,
   GroupAddress,
   RecordHash,
-  Content,
 } from "../communication/records/index.js";
 import { exactParseOptions, exactStruct } from "../encoding/exact.js";
 import {
@@ -17,6 +15,8 @@ import {
 import { AgentCard, AgentView } from "../identity/cards.js";
 import { AgentName, PrincipalId } from "../identity/identifiers.js";
 import { OperationId } from "../identity/registry/contract.js";
+import { localGuidanceSchema } from "./advice.js";
+import { InboundItem } from "./items.js";
 
 const encodedAgentCard = Schema.encodedSchema(AgentCard);
 

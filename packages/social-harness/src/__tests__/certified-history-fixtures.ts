@@ -3,15 +3,15 @@
  * keeps, and the corrupt reads of those rows stored-history tests start from.
  */
 
+import type { SqlClient } from "@effect/sql";
 import { Effect, Schema } from "effect";
 import type {
   ProtocolEvidence,
   StoredAnchor,
   CertifiedRecord as StoredCertifiedRecord,
 } from "../communication/store/index.js";
-import type { TestStore } from "./store-schema-fixtures.js";
-import type { SqlClient } from "@effect/sql";
 import type { AgentSigningAuthority } from "../identity/keys.js";
+import type { TestStore } from "./store-schema-fixtures.js";
 import {
   inboundDelivery,
   protocolEvidence,

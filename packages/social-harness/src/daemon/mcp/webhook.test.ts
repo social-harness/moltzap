@@ -89,6 +89,13 @@ const verificationPosts = (
     post.headers["webhook-id"]?.startsWith("msg_verification_"),
   );
 
+const rotatedSubscription = {
+  ...input,
+  delivery: {
+    ...input.delivery,
+    secret: `whsec_${Buffer.alloc(32, 2).toString("base64")}`,
+  },
+};
 const signsVerifiesAndRotates = () =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -113,13 +120,7 @@ const signsVerifiesAndRotates = () =>
         },
       );
       expect((yield* events.status).pendingCount).toBe(0);
-      const rotated = {
-        ...input,
-        delivery: {
-          ...input.delivery,
-          secret: `whsec_${Buffer.alloc(32, 2).toString("base64")}`,
-        },
-      };
+      const rotated = rotatedSubscription;
       expect((yield* events.subscribe(rotated)).id).toBe(grant.id);
       test.challenge(false);
       yield* stepClock("11 minutes");

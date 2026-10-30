@@ -1,9 +1,5 @@
 /** @file Argument diagnostics and discoverability through the MCP HTTP interface. */
 
-import {
-  mcpTestCredential,
-  mcpTestHeaders,
-} from "../../__tests__/mcp-http-fixtures.js";
 import { scopedLive as it } from "@effect/vitest";
 import {
   CLIENT_CAPABILITIES_META_KEY,
@@ -14,6 +10,10 @@ import {
 import { Effect, Option, Schema, SchemaAST } from "effect";
 import { describe, expect } from "vitest";
 import { requestId } from "../../__tests__/collective-operation-fixtures.js";
+import {
+  mcpTestCredential,
+  mcpTestHeaders,
+} from "../../__tests__/mcp-http-fixtures.js";
 import { FirewallPolicyError } from "../../firewall/config.js";
 import { decodeHarnessSendErrorData } from "../../host-protocol/operations.js";
 import { AgentName, PrincipalId } from "../../identity/identifiers.js";

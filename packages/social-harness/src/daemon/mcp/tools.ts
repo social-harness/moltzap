@@ -17,9 +17,9 @@ import {
   Either,
   Exit,
   Layer,
-  type Redacted,
   Option,
   type ParseResult,
+  type Redacted,
   type Runtime,
   Schema,
   Scope,
@@ -870,15 +870,18 @@ const toolHandlers = {
 
 /** Registration and installed operations determine one catalog for every client. */
 const currentTools = (operations: HarnessMcpOperations): readonly ToolName[] =>
-  (operations.protocolActive() ? activeTools : inactiveTools).filter((name) =>
-    name === "policy_read"
-      ? operations.readPolicy !== undefined
-      : name === "policy_update"
-        ? operations.updatePolicy !== undefined
-        : name === "firewall_decisions"
-          ? operations.readDecisions !== undefined
-          : true,
-  );
+  (operations.protocolActive() ? activeTools : inactiveTools).filter((name) => {
+    if (name === "policy_read") {
+      return operations.readPolicy !== undefined;
+    }
+    if (name === "policy_update") {
+      return operations.updatePolicy !== undefined;
+    }
+    if (name === "firewall_decisions") {
+      return operations.readDecisions !== undefined;
+    }
+    return true;
+  });
 
 const handleToolCall = async (
   input: ToolCallInput,
@@ -945,10 +948,11 @@ const officialHandler = (
   services: Runtime.Runtime<never>,
 ) =>
   createMcpHandler(
-    () => makeServer(
-      options,
-      runtimeOperations(options.operations, events, requestScope, services),
-    ),
+    () =>
+      makeServer(
+        options,
+        runtimeOperations(options.operations, events, requestScope, services),
+      ),
     { responseMode: "auto", onerror: options.onerror },
   );
 

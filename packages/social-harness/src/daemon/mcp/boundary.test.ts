@@ -1,9 +1,5 @@
 /** @file Pins Events discovery and failure isolation through loopback HTTP. */
 
-import {
-  mcpTestCredential,
-  mcpTestHeaders,
-} from "../../__tests__/mcp-http-fixtures.js";
 import type { Implementation } from "@modelcontextprotocol/server";
 import { FileSystem } from "@effect/platform";
 import { NodeFileSystem } from "@effect/platform-node";
@@ -37,6 +33,10 @@ import { describe, expect } from "vitest";
 import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
 import { requestId } from "../../__tests__/collective-operation-fixtures.js";
+import {
+  mcpTestCredential,
+  mcpTestHeaders,
+} from "../../__tests__/mcp-http-fixtures.js";
 import { localGuidance } from "../../__tests__/message-policy-fixtures.js";
 import {
   CollectiveError,

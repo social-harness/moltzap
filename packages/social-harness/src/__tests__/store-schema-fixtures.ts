@@ -1,23 +1,23 @@
 /** @file Isolated state directories and scoped endpoint store fixtures. */
 
+import type { SqlClient } from "@effect/sql";
 import { Effect } from "effect";
-import { SqlClient } from "@effect/sql";
-import * as Communication from "../communication/store/index.js";
-import * as Firewall from "../firewall/store/index.js";
-import * as Inbox from "../daemon/inbox/store.js";
-import * as Daemon from "../daemon/store.js";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Store tests create and remove real SQLite state directories around independent Effect scopes.
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { onTestFinished } from "vitest";
-import {
-  type CertifiedRecord,
-  type ConversationFoundation,
-  type EndpointStoreError,
-  type OutboxTooOldError,
+import type {
+  CertifiedRecord,
+  ConversationFoundation,
+  EndpointStoreError,
+  OutboxTooOldError,
 } from "../communication/store/index.js";
+import * as Communication from "../communication/store/index.js";
+import * as Inbox from "../daemon/inbox/store.js";
+import * as Daemon from "../daemon/store.js";
 import { layer } from "../daemon/store.js";
+import * as Firewall from "../firewall/store/index.js";
 import { LIVE_WIRE_VERSIONS } from "../identity/wire-version.js";
 import { digest } from "./agent-card-fixtures.js";
 

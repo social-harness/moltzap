@@ -260,21 +260,17 @@ const retainsPermittedHistory = () =>
       Effect.gen(function* () {
         const operations = yield* activeOperations(fixture);
         const page = yield* operations.readConversation(historyRequest);
-        expect(page.records).toEqual([
-          {
-            kind: "received",
-            recordHash: history.record.actionCertifiedRecord.recordHash,
-            item: expected,
-            guidance,
-          },
-          expect.objectContaining({
-            kind: "sent",
-            author: expect.objectContaining({
-              agentName: fixture.cards[0].agentName,
-            }),
-            content: [{ type: "text", text: "Alice's reply" }],
-          }),
-        ]);
+        expect(page.records[0]).toEqual({
+          kind: "received",
+          recordHash: history.record.actionCertifiedRecord.recordHash,
+          item: expected,
+          guidance,
+        });
+        expect(page.records[1]).toMatchObject({
+          kind: "sent",
+          author: { agentName: fixture.cards[0].agentName },
+          content: [{ type: "text", text: "Alice's reply" }],
+        });
         expect(yield* operations.searchConversations({})).toEqual({
           kind: "page",
           addresses: ["agent:bob"],
@@ -332,6 +328,17 @@ function heldRegistry(
   return Layer.succeed(Registry, service);
 }
 
+function registrationPort() {
+  let registration: DaemonRegistrationState = { kind: "unregistered" };
+  return {
+    readRegistration: () => registration,
+    activateRegistered: (agentCard: VerifiedAgentCard) =>
+      Effect.sync(() => {
+        registration = { kind: "active", agentCard };
+      }),
+  };
+}
+
 // @agent-code-guard/regression-only: cancellation cannot strand a successful Registry registration outside durable local identity.
 const finishesCanceledRegistration = () =>
   withDaemonStore(stateDirectory(), (store) =>
@@ -339,16 +346,9 @@ const finishesCanceledRegistration = () =>
       const fixture = yield* makeIdentityFixture;
       const entered = yield* Deferred.make<undefined>();
       const release = yield* Deferred.make<undefined>();
-      let registration: DaemonRegistrationState = { kind: "unregistered" };
       const operations = yield* makeDaemonManagementOperations({
         bootstrap: fixture.bootstrap,
-        registration: {
-          readRegistration: () => registration,
-          activateRegistered: (agentCard) =>
-            Effect.sync(() => {
-              registration = { kind: "active", agentCard };
-            }),
-        },
+        registration: registrationPort(),
       }).pipe(Effect.provide(heldRegistry(fixture, entered, release)));
       const request = Schema.decodeUnknownSync(managementRegisterRequestSchema)(
         {

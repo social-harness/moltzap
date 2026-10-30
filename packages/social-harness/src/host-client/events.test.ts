@@ -12,8 +12,8 @@ import {
 import { Deferred, Duration, Effect, Fiber, Stream, TestClock } from "effect";
 import { describe, expect } from "vitest";
 import {
-  mcpTestCredential,
   loopbackMcpEndpoint,
+  mcpTestCredential,
 } from "../__tests__/mcp-http-fixtures.js";
 import { INBOX_PENDING_EVENT } from "../host-protocol/names.js";
 import { inboxWakeups } from "./events.js";
