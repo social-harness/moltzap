@@ -51,9 +51,10 @@ export interface InboundDelivery {
   readonly acknowledge: Effect.Effect<void, DeliveryAcknowledgeError>;
 }
 
-/** A runtime credential selects authenticated polling instead of trusted-local push. */
+/** Every connection authenticates; native hosts may select streaming reception. */
 export interface HarnessEndpointOptions {
   readonly credential: Redacted.Redacted;
+  readonly receiveMode?: "push" | "poll";
   /**
    * Runs after consumer acquisition and renewal start, including for an empty
    * inbox. Recovery and processing may still be pending. Failure or interruption

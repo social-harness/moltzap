@@ -337,7 +337,7 @@ const poll = (
     }),
   );
 
-/** Validation and receipt commit are serialized with revocation; unbound owner diagnostics remain independent. */
+/** Validation and receipt commit are serialized with revocation; unbound inbox inspection remain independent. */
 const nativeOperation = <A, E>(
   runtime: PollRuntime,
   metadata: unknown,

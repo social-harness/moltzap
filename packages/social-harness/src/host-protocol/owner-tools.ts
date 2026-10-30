@@ -17,10 +17,7 @@ import {
 } from "../encoding/identifier.js";
 import { AgentCard, AgentView } from "../identity/cards.js";
 import { AgentId, AgentName, PrincipalId } from "../identity/identifiers.js";
-import {
-  OperationId,
-  RegistryLookupRequest,
-} from "../identity/registry/contract.js";
+import { OperationId } from "../identity/registry/contract.js";
 
 const encodedAgentCard = Schema.encodedSchema(AgentCard);
 
@@ -112,22 +109,6 @@ export const managementStatusResultSchema = Schema.Union(
   }),
 );
 
-/** Exact Registry lookup selector accepted by `search_agents`. */
-export const managementSearchAgentsRequestSchema = Schema.Union(
-  ...RegistryLookupRequest.members,
-).annotations({ parseOptions: exactParseOptions });
-
-/** Registry lookup result, with the found agent's view from the verified card. */
-// eslint-disable-next-line agent-code-guard/no-exported-brand-constructor -- The MCP catalog projects this result to JSON Schema; readers decode it additively with this schema.
-export const managementSearchAgentsResultSchema = Schema.Union(
-  Schema.Struct({
-    kind: Schema.Literal("found"),
-    agentCard: encodedAgentCard,
-    agent: AgentView,
-  }),
-  Schema.Struct({ kind: Schema.Literal("not_found") }),
-);
-
 /** Canonically ordered local-conversation page selector. */
 export const managementSearchConversationsRequestSchema = exactStruct({
   afterAddress: Schema.optional(messageAddress).annotations({
@@ -185,12 +166,6 @@ export type ManagementRegisterResult =
   typeof managementRegisterResultSchema.Type;
 /** Encoded daemon status crossing MCP. */
 export type ManagementStatusResult = typeof managementStatusResultSchema.Type;
-/** Decoded exact Registry selector crossing MCP. */
-export type ManagementSearchAgentsRequest =
-  typeof managementSearchAgentsRequestSchema.Type;
-/** Encoded exact Registry result crossing MCP. */
-export type ManagementSearchAgentsResult =
-  typeof managementSearchAgentsResultSchema.Type;
 /** Decoded local conversation search request. */
 export type ManagementSearchConversationsRequest =
   typeof managementSearchConversationsRequestSchema.Type;

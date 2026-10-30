@@ -75,7 +75,7 @@ interface EventsOptions {
 
 /** Official SDK request handlers and the daemon's content-free wakeup edge. */
 export interface HarnessEvents {
-  readonly install: (server: McpServer["server"], principal?: string) => void;
+  readonly install: (server: McpServer["server"]) => void;
   readonly hasActiveSubscription: () => boolean;
   readonly notifyPending: () => boolean;
   readonly close: Effect.Effect<void>;
@@ -340,20 +340,6 @@ const descriptor = () => ({
     additionalProperties: false,
   },
 });
-const streamForPrincipal = (
-  runtime: EventsRuntime,
-  input: EventStreamInput,
-  context: ServerContext,
-  principal: string,
-) =>
-  principal === "runtime"
-    ? Effect.fail(
-        new ProtocolError(-32014, "Native inbox streaming is unavailable", {
-          feature: "stream",
-        }),
-      )
-    : stream(runtime, input, context);
-
 const itemDescriptors = (runtime: EventsRuntime) => {
   const delivery = [
     ...(runtime.options.poll === undefined ? [] : ["poll"]),
@@ -417,7 +403,6 @@ const poll = (
 const installReadHandlers = (
   runtime: EventsRuntime,
   server: McpServer["server"],
-  principal = "local",
 ) => {
   server.setRequestHandler(
     "events/list",
@@ -427,10 +412,7 @@ const installReadHandlers = (
         throw new ProtocolError(-32602, "Invalid event catalog cursor");
       }
       return {
-        events: [
-          ...(principal === "runtime" ? [] : [descriptor()]),
-          ...itemDescriptors(runtime),
-        ],
+        events: [descriptor(), ...itemDescriptors(runtime)],
       };
     },
   );
@@ -450,7 +432,7 @@ const installReadHandlers = (
     { params: eventStreamInput },
     (input, context) =>
       runEventOperation(
-        streamForPrincipal(runtime, input, context, principal),
+        stream(runtime, input, context),
         context.mcpReq.signal,
         runtime.lifetime,
         runtime.services,
@@ -460,7 +442,6 @@ const installReadHandlers = (
 const subscribe = (
   runtime: EventsRuntime,
   input: EventSubscribeInput,
-  principal?: string,
 ) => {
   requireProtocolActive(runtime.options);
   if (input.name !== INBOX_ITEM_EVENT) {
@@ -470,7 +451,6 @@ const subscribe = (
   const webhook = runtime.options.webhook;
   if (
     webhook === undefined ||
-    principal === undefined ||
     input.delivery.mode !== "webhook"
   ) {
     throw new ProtocolError(-32014, "Webhook delivery is unavailable", {
@@ -481,7 +461,6 @@ const subscribe = (
   return webhook
     .subscribe(
       input,
-      principal,
       Effect.sync(() => {
         requireAvailable(
           admissionClosed(runtime) ||
@@ -503,18 +482,17 @@ const subscribe = (
 const unsubscribe = (
   runtime: EventsRuntime,
   input: EventUnsubscribeInput,
-  principal?: string,
 ) => {
   if (input.name !== INBOX_ITEM_EVENT) {
     throw new ProtocolError(-32011, "Event not found", { kind: "event" });
   }
   const webhook = runtime.options.webhook;
-  if (webhook === undefined || principal === undefined) {
+  if (webhook === undefined) {
     throw new ProtocolError(-32011, "Subscription not found", {
       kind: "subscription",
     });
   }
-  return webhook.unsubscribe(input, principal).pipe(
+  return webhook.unsubscribe(input).pipe(
     Effect.tap(() =>
       Effect.sync(() => {
         reportOwnership(runtime);
@@ -526,15 +504,14 @@ const unsubscribe = (
 const install = (
   runtime: EventsRuntime,
   server: McpServer["server"],
-  principal = "local",
 ) => {
-  installReadHandlers(runtime, server, principal);
+  installReadHandlers(runtime, server);
   server.setRequestHandler(
     "events/subscribe",
     { params: eventSubscribeInput },
     (input, context) =>
       runEventOperation(
-        subscribe(runtime, input, principal),
+        subscribe(runtime, input),
         context.mcpReq.signal,
         runtime.lifetime,
         runtime.services,
@@ -545,7 +522,7 @@ const install = (
     { params: eventUnsubscribeInput },
     (input, context) =>
       runEventOperation(
-        unsubscribe(runtime, input, principal),
+        unsubscribe(runtime, input),
         context.mcpReq.signal,
         runtime.lifetime,
         runtime.services,
@@ -593,7 +570,7 @@ const revoke = (runtime: EventsRuntime) =>
       }),
   );
 
-/** Owner diagnostics remain usable without a poll consumer; native receipts are fenced. */
+/** Inbox inspection remains usable without a poll consumer; native receipts are fenced. */
 const nativeOperation = <A, E>(
   runtime: EventsRuntime,
   metadata: unknown,
@@ -611,8 +588,8 @@ const nativeOperation = <A, E>(
     ),
   );
 const assembled = (runtime: EventsRuntime): HarnessEvents => ({
-  install: (server, principal) => {
-    install(runtime, server, principal);
+  install: (server) => {
+    install(runtime, server);
   },
   hasActiveSubscription: () => hasConsumer(runtime),
   notifyPending: () => {

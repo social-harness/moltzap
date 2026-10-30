@@ -44,7 +44,6 @@ const outboxSchema = Schema.Struct({
 });
 const registrationSchema = Schema.Struct({
   id: Schema.String,
-  principal: Schema.String,
   url: Schema.String,
   secret: Schema.String,
   expiresAt: Schema.NonNegativeInt,
@@ -65,9 +64,9 @@ const persistenceFailure = () =>
   new ProtocolError(-32603, "Event persistence failed");
 const callbackFailure = (reason: WebhookFailureReason) =>
   new ProtocolError(-32015, "Callback verification failed", { reason });
-const subscriptionId = (principal: string, url: string) =>
+const subscriptionId = (url: string) =>
   `sub_${createHash("sha256")
-    .update(JSON.stringify([principal, url, INBOX_ITEM_EVENT, {}]))
+    .update(JSON.stringify([url, INBOX_ITEM_EVENT, {}]))
     .digest("hex")}`;
 
 interface WebhookRuntime {
@@ -290,7 +289,6 @@ const refresh = (
 });
 const initialRegistration = (input: {
   readonly id: string;
-  readonly principal: string;
   readonly url: string;
   readonly secret: string;
   readonly expiresAt: number;
@@ -320,7 +318,6 @@ const checkRegistration = (runtime: WebhookRuntime, id: string) =>
 const activateRegistration = (
   runtime: WebhookRuntime,
   input: EventSubscribeInput,
-  principal: string,
   verification: {
     readonly generation: number;
     readonly authorize: Effect.Effect<void, ProtocolError>;
@@ -330,7 +327,7 @@ const activateRegistration = (
     Effect.gen(function* () {
       yield* verification.authorize;
       const { url, secret } = input.delivery;
-      const id = subscriptionId(principal, url);
+      const id = subscriptionId(url);
       yield* checkRegistration(runtime, id);
       if (verification.generation !== runtime.generation) {
         return yield* Effect.fail(
@@ -344,7 +341,7 @@ const activateRegistration = (
       yield* save(
         runtime,
         previous === null
-          ? initialRegistration({ id, principal, url, secret, expiresAt })
+          ? initialRegistration({ id, url, secret, expiresAt })
           : refresh(previous, secret, expiresAt, now(runtime)),
       );
       runtime.generation += 1;
@@ -360,7 +357,6 @@ const activateRegistration = (
 const subscribe = (
   runtime: WebhookRuntime,
   input: EventSubscribeInput,
-  principal: string,
   authorize: Effect.Effect<void, ProtocolError>,
 ) =>
   Effect.gen(function* () {
@@ -370,7 +366,7 @@ const subscribe = (
         new ProtocolError(-32602, "Invalid webhook URL or secret"),
       );
     }
-    const id = subscriptionId(principal, url);
+    const id = subscriptionId(url);
     const generation = yield* runtime.gate.withPermits(1)(
       authorize.pipe(
         Effect.zipRight(checkRegistration(runtime, id)),
@@ -378,7 +374,7 @@ const subscribe = (
       ),
     );
     yield* verify(runtime, { id, url, secret });
-    return yield* activateRegistration(runtime, input, principal, {
+    return yield* activateRegistration(runtime, input, {
       generation,
       authorize,
     });
@@ -587,12 +583,12 @@ const resume = (runtime: WebhookRuntime) =>
       outbox: resetAttempt(registration, now(runtime)),
     });
   });
-const unsubscribe = (runtime: WebhookRuntime, url: string, principal: string) =>
+const unsubscribe = (runtime: WebhookRuntime, url: string) =>
   Effect.suspend(() => {
     const registration = runtime.state.registration;
     if (
       registration === null ||
-      registration.id !== subscriptionId(principal, url)
+      registration.id !== subscriptionId(url)
     ) {
       return Effect.fail(
         new ProtocolError(-32011, "Subscription not found", {
@@ -605,11 +601,11 @@ const unsubscribe = (runtime: WebhookRuntime, url: string, principal: string) =>
 
 const webhookOperations = (runtime: WebhookRuntime): HarnessWebhookEvents => ({
   hasActiveSubscription: () => active(runtime),
-  subscribe: (input, principal, authorize) =>
-    subscribe(runtime, input, principal, authorize ?? Effect.void),
-  unsubscribe: (input, principal) =>
+  subscribe: (input, authorize) =>
+    subscribe(runtime, input, authorize ?? Effect.void),
+  unsubscribe: (input) =>
     runtime.gate.withPermits(1)(
-      unsubscribe(runtime, input.delivery.url, principal),
+      unsubscribe(runtime, input.delivery.url),
     ),
   observe: () => observe(runtime),
   status: runtime.gate.withPermits(1)(

@@ -25,7 +25,6 @@ import {
   loadSigningAuthority,
   readCredential,
 } from "./credentials.js";
-import { credentialMatches, type HarnessMcpCredentials } from "./mcp/index.js";
 
 const canonicalUnsignedDecimal = Schema.String.pipe(
   Schema.pattern(/^(?:0|[1-9]\d*)$/u),
@@ -114,16 +113,7 @@ const configurationFields = {
     "",
   ),
   historyExport: setting("SHARNESS_HISTORY_EXPORT", configuredPath, undefined),
-  mcpRuntimeCredentialFile: setting(
-    "SHARNESS_MCP_RUNTIME_CREDENTIAL_FILE",
-    configuredPath,
-    undefined,
-  ),
-  mcpOwnerCredentialFile: setting(
-    "SHARNESS_MCP_OWNER_CREDENTIAL_FILE",
-    configuredPath,
-    undefined,
-  ),
+  mcpCredentialFile: setting("SHARNESS_MCP_CREDENTIAL_FILE", configuredPath),
   messagePolicyFile: setting(
     "SHARNESS_MESSAGE_POLICY_FILE",
     configuredPath,
@@ -153,7 +143,7 @@ export const processHelp = [
   "Usage: sharnessd [--help]",
   "",
   "Environment:",
-  "  Admission credential: required only before registration; MCP credential files: supply both or neither.",
+  "  Admission credential: required only before registration; MCP credential file: required.",
   "  Message policy: unset, no firewall; the decision-provider key applies only with it.",
   ...Object.values(configurationFields).map((field) => `  ${field.usage}`),
   "",
@@ -191,16 +181,12 @@ const secretFileFailures: Readonly<
     text: "SHARNESS_ADMISSION_CREDENTIAL_FILE must contain a valid admission credential",
     docs: `${RUN_SHARNESSD}#admission-credential`,
   },
-  "mcp-runtime-credential-file": {
-    text: "SHARNESS_MCP_RUNTIME_CREDENTIAL_FILE must name a readable file",
-    docs: `${RUN_SHARNESSD}#mcp-credential-file`,
-  },
-  "mcp-owner-credential-file": {
-    text: "SHARNESS_MCP_OWNER_CREDENTIAL_FILE must name a readable file",
+  "mcp-credential-file": {
+    text: "SHARNESS_MCP_CREDENTIAL_FILE must name a readable file",
     docs: `${RUN_SHARNESSD}#mcp-credential-file`,
   },
   "mcp-credential": {
-    text: "SHARNESS_MCP_RUNTIME_CREDENTIAL_FILE and SHARNESS_MCP_OWNER_CREDENTIAL_FILE must both be supplied and contain distinct valid tokens of at least 32 characters",
+    text: "SHARNESS_MCP_CREDENTIAL_FILE must contain a valid token of at least 32 characters",
     docs: `${RUN_SHARNESSD}#mcp-credential`,
   },
 };
@@ -245,14 +231,7 @@ export const loadDaemonProcessConfiguration: Effect.Effect<
             configuration.admissionCredentialFile === ""
               ? undefined
               : Redacted.make(configuration.admissionCredentialFile),
-          mcpRuntimeCredentialFile:
-            configuration.mcpRuntimeCredentialFile === undefined
-              ? undefined
-              : Redacted.make(configuration.mcpRuntimeCredentialFile),
-          mcpOwnerCredentialFile:
-            configuration.mcpOwnerCredentialFile === undefined
-              ? undefined
-              : Redacted.make(configuration.mcpOwnerCredentialFile),
+          mcpCredentialFile: Redacted.make(configuration.mcpCredentialFile),
           decisionProviderKeyFile:
             configuration.decisionProviderKeyFile === undefined
               ? undefined
@@ -324,33 +303,10 @@ const credentialFailure =
 
 const mcpCredential = credentialText.pipe(Schema.minLength(32));
 
-const loadMcpCredentials = (
-  configuration: DaemonProcessConfiguration,
-): Effect.Effect<HarnessMcpCredentials | undefined, DaemonConfigurationError> =>
-  Effect.gen(function* () {
-    const runtimePath = configuration.mcpRuntimeCredentialFile;
-    const ownerPath = configuration.mcpOwnerCredentialFile;
-    if (runtimePath === undefined && ownerPath === undefined) {
-      return undefined;
-    }
-    if (runtimePath === undefined || ownerPath === undefined) {
-      return yield* Effect.fail(configurationError("mcp-credential"));
-    }
-    const runtime = yield* readCredential(runtimePath, mcpCredential).pipe(
-      Effect.mapError(
-        credentialFailure("mcp-runtime-credential-file", "mcp-credential"),
-      ),
-    );
-    const owner = yield* readCredential(ownerPath, mcpCredential).pipe(
-      Effect.mapError(
-        credentialFailure("mcp-owner-credential-file", "mcp-credential"),
-      ),
-    );
-    if (credentialMatches(Redacted.value(runtime), owner)) {
-      return yield* Effect.fail(configurationError("mcp-credential"));
-    }
-    return { runtime, owner };
-  });
+const loadMcpCredential = (configuration: DaemonProcessConfiguration) =>
+  readCredential(configuration.mcpCredentialFile, mcpCredential).pipe(
+    Effect.mapError(credentialFailure("mcp-credential-file", "mcp-credential")),
+  );
 
 const loadConfiguredAdmissionCredential = (
   configuration: DaemonProcessConfiguration,
@@ -369,8 +325,8 @@ const loadConfiguredAdmissionCredential = (
 /**
  * Reads the agent private key and constructs the configured Ed25519 authority.
  *
- * @param configuration Validated process configuration and optional authority paths.
- * @returns Opaque signing authority, MCP credentials, and deferred admission credential.
+ * @param configuration Validated process configuration and redacted credential paths.
+ * @returns Opaque signing authority, the MCP credential, and deferred admission credential.
  */
 export const loadDaemonBootstrap = (
   configuration: DaemonProcessConfiguration,
@@ -386,13 +342,13 @@ export const loadDaemonBootstrap = (
     const admissionCredential = yield* Effect.cached(
       loadConfiguredAdmissionCredential(configuration),
     );
-    const mcpCredentials = yield* loadMcpCredentials(configuration);
+    const mcpCredential = yield* loadMcpCredential(configuration);
     return Object.freeze({
       configuration,
       signingAuthority,
       agentPublicKey: AgentSigningAuthority.publicKey(signingAuthority),
       admissionCredential,
-      ...(mcpCredentials === undefined ? {} : { mcpCredentials }),
+      mcpCredential,
     });
   }).pipe(Effect.withSpan("loadDaemonBootstrap"));
 

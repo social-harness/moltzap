@@ -61,20 +61,20 @@ const CLIENT_IMPLEMENTATION = {
 class CloseError extends Data.TaggedError("CloseError") {}
 
 /**
- * Connect to one registered daemon for the caller's scope. A credential-bearing
+ * Connect to one registered daemon for the caller's scope. The daemon's
  * URL must use HTTPS or HTTP on literal `127.0.0.1` or `[::1]`, without userinfo
  * or a fragment. The URL is copied before execution, and authenticated requests
  * refuse redirects. Acquisition verifies support for the selected receive mode.
  * @param endpoint Explicit MCP URL for the configured endpoint daemon.
- * @param options Runtime credential selects polling; omission preserves trusted-local push.
+ * @param options Bearer credential and receive mode; polling is the default.
  * @returns An endpoint whose resources remain live for the caller's scope.
  */
 export function acquireHarnessEndpoint(
   endpoint: URL,
-  options?: HarnessEndpointOptions,
+  options: HarnessEndpointOptions,
 ): Effect.Effect<HarnessEndpoint, ConnectError, Scope.Scope> {
   const address = new URL(endpoint.href);
-  if (options !== undefined && !safeCredentialEndpoint(address)) {
+  if (!safeCredentialEndpoint(address)) {
     return Effect.fail(new ConnectError({ reason: "transport-failed" }));
   }
   return acquireEndpoint(address, options).pipe(
@@ -93,7 +93,7 @@ function closeQuietly(close: () => Promise<void>): Effect.Effect<void> {
 }
 
 /**
- * Runtime credentials travel over TLS or literal loopback.
+ * Daemon credentials travel over TLS or literal loopback.
  * @param endpoint Caller-owned address, copied before the effect runs.
  * @returns Whether the address can carry a credential without userinfo or fragments.
  */
@@ -270,7 +270,7 @@ function supportsInboxEvents(
 function acquireConnection(
   client: Client,
   endpoint: URL,
-  options?: HarnessEndpointOptions,
+  options: HarnessEndpointOptions,
 ): Effect.Effect<Client, ConnectError, Scope.Scope> {
   return Effect.uninterruptibleMask((restore) =>
     Effect.gen(function* () {
@@ -284,28 +284,23 @@ function acquireConnection(
 function connect(
   client: Client,
   endpoint: URL,
-  options?: HarnessEndpointOptions,
+  options: HarnessEndpointOptions,
 ): Effect.Effect<Client, ConnectError> {
   return Effect.tryPromise({
     try: (signal) =>
       client.connect(
         new StreamableHTTPClientTransport(endpoint, {
-          requestInit:
-            options === undefined
-              ? {}
-              : {
-                  headers: {
-                    Authorization: `Bearer ${Redacted.value(options.credential)}`,
-                  },
-                  redirect: "error",
-                },
+          requestInit: {
+            headers: { Authorization: `Bearer ${Redacted.value(options.credential)}` },
+            redirect: "error",
+          },
         }),
         { signal },
       ),
     catch: () => new ConnectError({ reason: "transport-failed" }),
   }).pipe(
     Effect.flatMap(() =>
-      supportsInboxEvents(client, options !== undefined).pipe(
+      supportsInboxEvents(client, options.receiveMode !== "push").pipe(
         Effect.flatMap((supported) =>
           supported
             ? Effect.succeed(client)
@@ -478,7 +473,7 @@ function messages(
   client: Client,
   listenerActive: Ref.Ref<boolean>,
   endpoint: URL,
-  options?: HarnessEndpointOptions,
+  options: HarnessEndpointOptions,
 ): Stream.Stream<InboundDelivery, ListenError> {
   return Stream.unwrapScoped(
     Effect.gen(function* () {
@@ -491,8 +486,8 @@ function messages(
       yield* Effect.addFinalizer(() => fence);
       const seen = new Set<DeliveryToken>();
       const wakeups =
-        options === undefined
-          ? inboxWakeups(endpoint).pipe(Stream.as({}))
+        options.receiveMode === "push"
+          ? inboxWakeups(endpoint, options.credential, options.onReady).pipe(Stream.as({}))
           : pollWakeups(client, fence, options.onReady ?? Effect.void);
       return wakeups.pipe(
         Stream.flatMap((metadata) =>
@@ -512,7 +507,7 @@ function makeMcpClient(): Client {
 
 function acquireEndpoint(
   endpoint: URL,
-  options?: HarnessEndpointOptions,
+  options: HarnessEndpointOptions,
 ): Effect.Effect<HarnessEndpoint, ConnectError, Scope.Scope> {
   return Effect.gen(function* () {
     const client = makeMcpClient();
