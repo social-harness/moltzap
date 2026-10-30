@@ -21,7 +21,7 @@ import {
 import { makeJevDecisionProvider } from "./jev.js";
 import { makeProtocolCheck } from "./protocol-check.js";
 import { makeProtocolForm } from "./protocol-form.js";
-import { makeProtocolState } from "./protocol-state.js";
+import { codeFixedParameters, makeProtocolState } from "./protocol-state.js";
 
 /**
  * After the code checks pass, the decision provider judges only what the
@@ -29,7 +29,7 @@ import { makeProtocolState } from "./protocol-state.js";
  */
 const VALUES_QUESTION = {
   instructions: (ruleId: string) =>
-    `Under rule "${ruleId}", the message under review is a well-formed act sent at a point the rule allows; code has already checked its form and the conversation state. Judge only its parameter values against their descriptions and the rule's values section: does every value carry only what its description asks for?`,
+    `Under rule "${ruleId}", the message under review is a well-formed act sent at a point the rule allows; code has already checked its form, the conversation state, and the values it fixes, which are left out. Judge only the values shown against their descriptions and the rule's values section: does every value carry only what its description asks for? Do not judge whether a booking or slot exists, is free, belongs to the student, or suits anyone; that is not this check's concern.`,
   criteria: {
     allowed: "Every value carries only what its description asks for.",
     violation:
@@ -170,6 +170,7 @@ live(
         rules: [rule],
         provider,
         question: VALUES_QUESTION,
+        hiddenParameters: codeFixedParameters(rule.text),
       });
       const checks =
         process.env.OH_CHECK === "staged"

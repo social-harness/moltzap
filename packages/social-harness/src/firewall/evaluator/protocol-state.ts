@@ -1,11 +1,12 @@
 /**
  * @file Experiment: checks the conversation state of structured protocol
  * messages in code. Under each act the protocol text declares "when" lines
- * (alternative conditions for sending it), "check" lines (mechanical checks on
- * its values) and "effect" lines (how it changes the Student's bookings), in
- * the fixed vocabulary its "state" section defines. This check replays the
- * conversation's acts against those declarations and refuses a message they
- * do not allow. What values mean is left to the decision provider.
+ * (alternative conditions for sending it) and "check" lines (mechanical checks
+ * on its values), in the fixed vocabulary its "state" section defines. This
+ * check replays the conversation's acts against those declarations and
+ * refuses a message they do not allow. It knows only what the messages say,
+ * never the calendar; what free-text values carry is left to the decision
+ * provider.
  */
 
 import { Effect } from "effect";
@@ -15,7 +16,7 @@ import type {
   MiddlewareResult,
   RuleDescription,
 } from "./contract/index.js";
-import { parseAct } from "./protocol-form.js";
+import { declaredActs, parseAct } from "./protocol-form.js";
 
 type Condition =
   | {
@@ -41,15 +42,14 @@ type Check =
       readonly act: string;
       readonly q: string;
     }
+  | { readonly kind: "matches-accepted"; readonly p: string }
   | {
-      readonly kind: "time-order" | "matches-accepted" | "booked";
+      readonly kind: "item-count";
       readonly p: string;
+      readonly min: number;
+      readonly max: number;
     }
-  | {
-      readonly kind: "no-shared-slot";
-      readonly p: string;
-      readonly act: string;
-    }
+  | { readonly kind: "ends-with"; readonly p: string; readonly suffix: string }
   | {
       readonly kind: "present-when";
       readonly p: string;
@@ -57,14 +57,9 @@ type Check =
       readonly value: string;
     };
 
-type Change =
-  | { readonly kind: "books" | "unbooks"; readonly p: string }
-  | { readonly kind: "unbooks-opener"; readonly p: string };
-
 interface Declaration {
   readonly when: Condition[][];
   readonly checks: Array<{ readonly after?: string; readonly check: Check }>;
-  readonly effects: Change[];
 }
 
 const names = (text: string) =>
@@ -118,25 +113,22 @@ function parseCheck(text: string): Check | undefined {
       q: numberIn[3] ?? "",
     };
   }
-  const simple =
-    /^:([a-z-]+) (is in time order|matches the accepted option|is booked)$/u.exec(
-      part,
-    );
-  if (simple !== null) {
-    const kinds = {
-      "is in time order": "time-order",
-      "matches the accepted option": "matches-accepted",
-      "is booked": "booked",
-    } as const;
+  const accepted = /^:([a-z-]+) matches the accepted option$/u.exec(part);
+  if (accepted !== null) {
+    return { kind: "matches-accepted", p: accepted[1] ?? "" };
+  }
+  const count = /^:([a-z-]+) has (\d+) to (\d+) items$/u.exec(part);
+  if (count !== null) {
     return {
-      kind: kinds[simple[2] as keyof typeof kinds],
-      p: simple[1] ?? "",
+      kind: "item-count",
+      p: count[1] ?? "",
+      min: Number(count[2]),
+      max: Number(count[3]),
     };
   }
-  const shared =
-    /^:([a-z-]+) shares no slot with the previous ([a-z-]+)$/u.exec(part);
-  if (shared !== null) {
-    return { kind: "no-shared-slot", p: shared[1] ?? "", act: shared[2] ?? "" };
+  const ending = /^:([a-z-]+) ends with (\S+)$/u.exec(part);
+  if (ending !== null) {
+    return { kind: "ends-with", p: ending[1] ?? "", suffix: ending[2] ?? "" };
   }
   const present =
     /^:([a-z-]+) is present exactly when :([a-z-]+) is (\S+)$/u.exec(part);
@@ -151,23 +143,7 @@ function parseCheck(text: string): Check | undefined {
   return undefined;
 }
 
-function parseEffect(text: string): Change | undefined {
-  const part = text.trim();
-  const opener = /^unbooks the request's :([a-z-]+)$/u.exec(part);
-  if (opener !== null) {
-    return { kind: "unbooks-opener", p: opener[1] ?? "" };
-  }
-  const change = /^(books|unbooks) :([a-z-]+)$/u.exec(part);
-  if (change !== null) {
-    return {
-      kind: change[1] === "books" ? "books" : "unbooks",
-      p: change[2] ?? "",
-    };
-  }
-  return undefined;
-}
-
-/** The "when", "check" and "effect" lines a protocol text declares under each act. */
+/** The "when" and "check" lines a protocol text declares under each act. */
 export function declaredStates(
   protocol: string,
 ): ReadonlyMap<string, Declaration> {
@@ -185,7 +161,7 @@ export function declaredStates(
     }
     const start = /^\s+\(([a-z][a-z-]*)\s*$/u.exec(line);
     if (start !== null) {
-      current = { when: [], checks: [], effects: [] };
+      current = { when: [], checks: [] };
       declarations.set(start[1] ?? "", current);
       continue;
     }
@@ -208,17 +184,34 @@ export function declaredStates(
       if (parsed !== undefined) {
         current.checks.push({ after: check[1], check: parsed });
       }
-      continue;
-    }
-    const effect = /^\s+effect (.+)$/u.exec(line);
-    if (effect !== null) {
-      const parsed = parseEffect(effect[1] ?? "");
-      if (parsed !== undefined) {
-        current.effects.push(parsed);
-      }
     }
   }
   return declarations;
+}
+
+/**
+ * The parameters of each act whose values code fixes completely: the request
+ * id, "one of" values, and option numbers a check resolves. The decision
+ * provider is not asked about them.
+ * @param protocol The protocol text.
+ * @returns For each act, the names of those parameters.
+ */
+export function codeFixedParameters(
+  protocol: string,
+): ReadonlyMap<string, ReadonlySet<string>> {
+  const idParameter = /id in :([a-z-]+)/u.exec(protocol)?.[1] ?? "request";
+  const states = declaredStates(protocol);
+  const fixed = new Map<string, ReadonlySet<string>>();
+  for (const [name, act] of declaredActs(protocol)) {
+    const numbered = (states.get(name)?.checks ?? []).flatMap(({ check }) =>
+      check.kind === "number-in" ? [check.p] : [],
+    );
+    const enumerated = [...act.parameters]
+      .filter(([, parameter]) => parameter.allowed !== undefined)
+      .map(([parameter]) => parameter);
+    fixed.set(name, new Set([idParameter, ...numbered, ...enumerated]));
+  }
+  return fixed;
 }
 
 interface SentAct {
@@ -237,8 +230,6 @@ interface Request {
 interface State {
   readonly requests: Map<string, Request>;
   open?: Request;
-  /** The Student's bookings, keyed by their start. */
-  readonly bookings: Set<string>;
 }
 
 const listItems = (value: string | undefined): string[] => {
@@ -258,46 +249,6 @@ const slotKey = (slot: string) =>
     .replace(/\s+/gu, " ")
     .trim()
     .toLowerCase();
-
-const months = [
-  "jan",
-  "feb",
-  "mar",
-  "apr",
-  "may",
-  "jun",
-  "jul",
-  "aug",
-  "sep",
-  "oct",
-  "nov",
-  "dec",
-];
-
-/** Minutes into the year at which a "<day> <month> <date> <start>[–<end>] AM|PM" slot starts, if it parses. */
-function slotStart(slot: string): number | undefined {
-  const match =
-    /([a-z]{3})[a-z]*\.?\s+(\d{1,2}),?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?[^a-z]*?(am|pm)/u.exec(
-      slotKey(slot),
-    );
-  if (match === null) {
-    return undefined;
-  }
-  const month = months.indexOf(match[1] ?? "");
-  if (month < 0) {
-    return undefined;
-  }
-  const hour =
-    (Number(match[3]) % 12) + ((match[5] ?? match[6]) === "pm" ? 12 : 0);
-  return (
-    ((month * 31 + Number(match[2])) * 24 + hour) * 60 + Number(match[4] ?? "0")
-  );
-}
-
-const startKey = (slot: string | undefined) => {
-  const start = slot === undefined ? undefined : slotStart(slot);
-  return start === undefined ? undefined : String(start);
-};
 
 const canonical = (act: SentAct) =>
   JSON.stringify([act.sender, act.name, [...act.values].sort()]);
@@ -382,28 +333,6 @@ function checkErrors(
           ? []
           : [`:${check.p} is not a number in the latest ${check.act}`];
       }
-      case "time-order": {
-        const starts = listItems(act.values.get(check.p)).map(slotStart);
-        if (starts.some((start) => start === undefined)) {
-          return [];
-        }
-        return starts.every(
-          (start, index) =>
-            index === 0 || (starts[index - 1] ?? 0) <= (start ?? 0),
-        )
-          ? []
-          : [`:${check.p} is not in time order`];
-      }
-      case "no-shared-slot": {
-        const previous = new Set(
-          listItems(latest(check.act)?.values.get(check.p)).map(slotKey),
-        );
-        return listItems(act.values.get(check.p)).some((item) =>
-          previous.has(slotKey(item)),
-        )
-          ? [`:${check.p} repeats a slot of the previous ${check.act}`]
-          : [];
-      }
       case "matches-accepted": {
         if (last?.name !== "accept-proposal") {
           return [];
@@ -417,12 +346,18 @@ function checkErrors(
           ? []
           : [`:${check.p} is not the accepted option`];
       }
-      case "booked": {
-        const key = startKey(act.values.get(check.p));
-        return key !== undefined && state.bookings.has(key)
+      case "item-count": {
+        const count = listItems(act.values.get(check.p)).length;
+        return count >= check.min && count <= check.max
           ? []
-          : [`:${check.p} names none of the Student's bookings`];
+          : [
+              `:${check.p} has ${String(count)} items, not ${String(check.min)} to ${String(check.max)}`,
+            ];
       }
+      case "ends-with":
+        return (act.values.get(check.p) ?? "").trim().endsWith(check.suffix)
+          ? []
+          : [`:${check.p} does not end with ${check.suffix}`];
       case "present-when": {
         const present = act.values.has(check.p);
         const expected = (act.values.get(check.q) ?? "").trim() === check.value;
@@ -450,7 +385,7 @@ function matchingWhen(
   );
 }
 
-/** Apply an act's declared effects to the replayed state. */
+/** Apply a replayed act to the conversation's requests. */
 function apply(
   declaration: Declaration | undefined,
   act: SentAct,
@@ -462,22 +397,6 @@ function apply(
       (condition) => condition.kind,
     ),
   );
-  const opener = state.open?.acts[0];
-  for (const change of declaration?.effects ?? []) {
-    const key = startKey(
-      change.kind === "unbooks-opener"
-        ? opener?.values.get(change.p)
-        : act.values.get(change.p),
-    );
-    if (key === undefined) {
-      continue;
-    }
-    if (change.kind === "books") {
-      state.bookings.add(key);
-    } else {
-      state.bookings.delete(key);
-    }
-  }
   const id = act.values.get(idParameter) ?? "";
   if (kinds.has("resend") && state.open !== undefined) {
     state.open.resent = true;
@@ -521,11 +440,11 @@ export function makeProtocolState(options: {
   };
   return {
     id: options.id,
-    revision: "protocol-state-v1",
+    revision: "protocol-state-v2",
     rules: [{ id, kind, guidance, feedback }],
     check: (input: MiddlewareInput) =>
       Effect.sync(() => {
-        const state: State = { requests: new Map(), bookings: new Set() };
+        const state: State = { requests: new Map() };
         for (const entry of input.context.history) {
           const act =
             entry.admission === "admitted"
@@ -567,7 +486,7 @@ export function makeProtocolState(options: {
           ],
           expectations: [],
           trace: {
-            format: "protocol-state/v1",
+            format: "protocol-state/v2",
             data: JSON.stringify({ errors }),
           },
         };

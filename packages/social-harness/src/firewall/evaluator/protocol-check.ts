@@ -6,6 +6,7 @@
  */
 
 import { Effect } from "effect";
+import { parseAct } from "./protocol-form.js";
 import {
   type DecisionProvider,
   type DecisionRequest,
@@ -45,6 +46,30 @@ const verdictCriteria = {
 };
 
 /**
+ * The message under review as the decision provider sees it: its text, or,
+ * when `hidden` is given and the text is one act, the act and only the values
+ * code does not already fix.
+ */
+function shownMessage(
+  message: MiddlewareInput["event"]["message"],
+  hidden?: ReadonlyMap<string, ReadonlySet<string>>,
+) {
+  const base = { id: message.id, from: message.sender, to: message.recipients };
+  const parsed = hidden === undefined ? "unused" : parseAct(message.text);
+  if (typeof parsed === "string") {
+    return { ...base, text: message.text };
+  }
+  const skip = hidden?.get(parsed.name) ?? new Set<string>();
+  return {
+    ...base,
+    act: parsed.name,
+    values: Object.fromEntries(
+      parsed.values.filter(([name]) => !skip.has(name)),
+    ),
+  };
+}
+
+/**
  * One request per message: one verdict question per rule, plus a role
  * question for every participant under each rule that lists its roles.
  */
@@ -55,6 +80,7 @@ function requestFor(
     readonly instructions: (ruleId: string) => string;
     readonly criteria: Readonly<Record<string, string>>;
   },
+  hidden?: ReadonlyMap<string, ReadonlySet<string>>,
 ): DecisionRequest {
   const { message } = input.event;
   const { context } = input;
@@ -80,12 +106,7 @@ function requestFor(
         to: recipients,
         text,
       })),
-    message: {
-      id: message.id,
-      from: message.sender,
-      to: message.recipients,
-      text: message.text,
-    },
+    message: shownMessage(message, hidden),
   };
   const questions: Record<string, DecisionRequest["questions"][string]> = {};
   rules.forEach((rule, ruleIndex) => {
@@ -170,6 +191,11 @@ export function makeProtocolCheck(options: {
   readonly rules: readonly ProtocolRule[];
   readonly provider: DecisionProvider;
   readonly minimumProbability?: number;
+  /**
+   * For each act, parameters code already fixes; the message under review is
+   * shown as its act and remaining values, without them.
+   */
+  readonly hiddenParameters?: ReadonlyMap<string, ReadonlySet<string>>;
   /** Replaces the verdict question, e.g. to judge only parameter values. */
   readonly question?: {
     readonly instructions: (ruleId: string) => string;
@@ -189,7 +215,12 @@ export function makeProtocolCheck(options: {
     })),
     check: (input) =>
       Effect.gen(function* () {
-        const request = requestFor(rules, input, options.question);
+        const request = requestFor(
+          rules,
+          input,
+          options.question,
+          options.hiddenParameters,
+        );
         const response = yield* options.provider
           .decide(request)
           .pipe(
