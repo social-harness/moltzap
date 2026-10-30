@@ -21,6 +21,7 @@ import { AgentView } from "../identity/cards.js";
 const identifier = Schema.NonEmptyTrimmedString;
 
 /** Registered feedback names one repair action independently of a judgment. */
+// eslint-disable-next-line agent-code-guard/no-exported-brand-constructor -- Checking and host projection share this configuration-owned action grammar; public entries do not expose its constructor.
 export const nextActionSchema = Schema.Literal(
   "revise",
   "wait",
@@ -322,23 +323,6 @@ export class FirewallPolicyError extends Data.TaggedError(
   }
 }
 
-/**
- * The failing rule as a refusal names it: its place in the update, then its id.
- * @param path The rule's place in the update, when the refusal has one.
- * @param ruleId The rule's id, when the refusal has one.
- * @returns The subject, or undefined when the refusal names neither.
- */
-function editSubject(
-  path?: FirewallPolicyError["path"],
-  ruleId?: string,
-): string | undefined {
-  const place = path === undefined ? undefined : `${path[0]}[${path[1]}]`;
-  const rule = ruleId === undefined ? undefined : `rule ${ruleId}`;
-  return place !== undefined && rule !== undefined
-    ? `${place} (${rule})`
-    : (place ?? rule);
-}
-
 /** The authenticated authority limits edits without delegating owner read access. */
 export interface FirewallPolicyOperations {
   readonly read: () => Effect.Effect<
@@ -428,66 +412,6 @@ const failureMessages: Readonly<
     docs: `${FIREWALL_GUIDE}#decision-provider-key`,
   },
 };
-
-/**
- * The configuration failure for a message-policy setting, with its fixed
- * operator message.
- * @param reason Why the setting cannot start the daemon.
- * @param path The indexed behavior entry, if one fails.
- * @param behaviorReason The closed behavior failure category.
- * @returns The failure, naming no configured value.
- */
-export function policyConfigurationError(
-  reason: MessagePolicyConfigurationFailure,
-  path = "",
-  behaviorReason?: BehaviorFailure,
-): MessagePolicyConfigurationError {
-  const category = behaviorReason === undefined ? "" : ` (${behaviorReason})`;
-  return new MessagePolicyConfigurationError({
-    reason,
-    behaviorReason,
-    message: policyFailureMessage(
-      reason,
-      path === "" ? "" : `; invalid at ${path}${category}`,
-      { path },
-    ),
-  });
-}
-
-/**
- * The operator message for a message-policy failure: its text, any detail,
- * and one `Docs:` link. An entry under a behavior list links the behavior
- * rules, `docs` replaces the failure's own troubleshooting entry, and an
- * empty `docs` leaves the link out for a failure with no fix to point at.
- * @param reason The closed failure.
- * @param detail Text after the failure's own, starting with `; `.
- * @param link The entry to link in place of the failure's own.
- * @param link.path The failing policy entry, which links the behavior rules
- *     when it names a behavior list.
- * @param link.docs Another entry to link, or empty for none.
- * @returns The message, naming no configured value.
- */
-export function policyFailureMessage(
-  reason: MessagePolicyConfigurationFailure,
-  detail: string,
-  link: { readonly path?: string; readonly docs?: string } = {},
-): string {
-  const docs = failureDocs(reason, link);
-  return docs === ""
-    ? `${failureMessages[reason].text}${detail}`
-    : `${failureMessages[reason].text}${detail}. Docs: ${docs}`;
-}
-
-function failureDocs(
-  reason: MessagePolicyConfigurationFailure,
-  link: { readonly path?: string; readonly docs?: string },
-): string {
-  const path = link.path ?? "";
-  if (/^text\.(?:fixed|initial)Behaviors\./u.test(path)) {
-    return `${POLICY_SPEC}#behaviors`;
-  }
-  return link.docs ?? failureMessages[reason].docs;
-}
 
 /** The `format` every message-policy document names. */
 const messagePolicyFormat = "org.social-harness/message-policy/v2";
@@ -609,89 +533,6 @@ const behaviorFrontmatter = Schema.Struct({
 /** The closed categories a `BEHAVIOR.md` that does not map to a rule fails with. */
 type BehaviorRefusal = "frontmatter" | "schema";
 
-/**
- * Maps one `BEHAVIOR.md` to its editable natural-language rule. YAML parser
- * diagnostics stay private; only a closed category reaches `refused`, which
- * builds the caller's own failure.
- * @param bytes The behavior's bytes; callers bound them by {@link MAXIMUM_BEHAVIOR_BYTES}.
- * @param refused The caller's failure for a closed category.
- * @returns The rule.
- */
-export function decodeBehavior<Failure>(
-  bytes: Buffer,
-  refused: (reason: BehaviorRefusal) => Failure,
-) {
-  return Effect.gen(function* () {
-    const parts = /^---\r?\n([\s\S]*?)^---[ \t]*(?:\r?\n|$)([\s\S]*)/mu.exec(
-      bytes.toString("utf8").replace(/^\uFEFF/u, ""),
-    );
-    if (
-      parts?.[1] === undefined ||
-      parts[2] === undefined ||
-      parts.index !== 0
-    ) {
-      return yield* Effect.fail(refused("frontmatter"));
-    }
-    const frontmatter = yield* decodeFrontmatter(parts[1], refused);
-    const metadata = frontmatter.metadata["social-harness"];
-    const rules = yield* Schema.decodeUnknown(editableDocumentSchema)([
-      {
-        id: frontmatter.name,
-        text: parts[2].trim(),
-        ...metadata,
-      },
-    ]).pipe(Effect.mapError(() => refused("schema")));
-    return yield* Effect.fromNullable(rules[0]).pipe(
-      Effect.mapError(() => refused("schema")),
-    );
-  }).pipe(Effect.withSpan("decodeBehavior"));
-}
-
-function uniqueTextRuleIds(policy: typeof document.Type): boolean {
-  const ids = [
-    ...(policy.text?.fixedRules ?? []),
-    ...(policy.text?.initialRules ?? []),
-  ].map((rule) => rule.id);
-  return new Set(ids).size === ids.length;
-}
-
-/**
- * Decodes the YAML between a behavior's `---` lines. Parser diagnostics,
- * including unresolved tags, stay inside this boundary.
- * @param text The frontmatter YAML.
- * @param refused The caller's failure for a closed category.
- * @returns The frontmatter fields.
- */
-function decodeFrontmatter<Failure>(
-  text: string,
-  refused: (reason: BehaviorRefusal) => Failure,
-) {
-  return Effect.gen(function* () {
-    const doc = yield* Effect.try({
-      try: () =>
-        parseDocument(text, {
-          schema: "core",
-          resolveKnownTags: false,
-          logLevel: "error",
-        }),
-      catch: () => refused("frontmatter"),
-    });
-    if (doc.errors.length !== 0 || doc.warnings.length !== 0) {
-      return yield* Effect.fail(refused("frontmatter"));
-    }
-    return yield* Effect.try({
-      try: (): unknown => doc.toJS(),
-      catch: () => refused("frontmatter"),
-    }).pipe(
-      Effect.flatMap((value) =>
-        Schema.decodeUnknown(behaviorFrontmatter)(value).pipe(
-          Effect.mapError(() => refused("schema")),
-        ),
-      ),
-    );
-  });
-}
-
 /** Provider construction owns execution; loading returns only its validated parameters. */
 export type LoadedDecisionProvider =
   | { readonly kind: "unavailable" }
@@ -762,6 +603,205 @@ export const loadMessagePolicy = (
       ),
     });
   }).pipe(Effect.withSpan("loadMessagePolicy"));
+
+interface BehaviorState {
+  readonly root: string;
+  readonly ids: Set<string>;
+  readonly behaviorRulePaths: Map<string, string>;
+  readonly initialRuleCount: number;
+}
+
+/** Operational evidence limits are part of the installed policy identity. */
+// eslint-disable-next-line agent-code-guard/no-exported-brand-constructor -- Installation validates fixed settings with the same grammar retained audits decode.
+export const firewallConfigurationSchema = Schema.Struct({
+  mode: Schema.Literal("guidance", "enforcement"),
+  facts: Schema.Array(OwnerFact),
+  codeDigest: Schema.String.pipe(Schema.pattern(/^[a-f0-9]{64}$/u)),
+  maximumHistoryRecords: Schema.Int.pipe(Schema.between(1, 1024)),
+  maximumConcurrentChecks: Schema.Int.pipe(Schema.between(1, 32)),
+});
+
+/** Registration provenance is retained without giving it execution authority. */
+const firewallRegistrationSchema = Schema.Struct({
+  id: Schema.NonEmptyTrimmedString,
+  revision: Schema.NonEmptyTrimmedString,
+  rules: Schema.Array(RuleDescription),
+  provenance: PrivateCheckTrace,
+});
+
+/** The exact installation used by an attempt survives later process configuration. */
+// eslint-disable-next-line agent-code-guard/no-exported-brand-constructor -- Retained audit decoding composes the exact installation grammar owned by policy.
+export const firewallInstallationSchema = Schema.Struct({
+  configuration: firewallConfigurationSchema,
+  settings: FirewallSettings,
+  incoming: Schema.Array(firewallRegistrationSchema),
+  outgoing: Schema.Array(firewallRegistrationSchema),
+});
+
+/** Evidence limits and fixed facts are immutable for a process installation. */
+export type FirewallConfiguration = typeof firewallConfigurationSchema.Type;
+/** Each retained check identifies the exact rule registrations it assessed. */
+export type FirewallInstallation = typeof firewallInstallationSchema.Type;
+
+/**
+ * The configuration failure for a message-policy setting, with its fixed
+ * operator message.
+ * @param reason Why the setting cannot start the daemon.
+ * @param path The indexed behavior entry, if one fails.
+ * @param behaviorReason The closed behavior failure category.
+ * @returns The failure, naming no configured value.
+ */
+export function policyConfigurationError(
+  reason: MessagePolicyConfigurationFailure,
+  path = "",
+  behaviorReason?: BehaviorFailure,
+): MessagePolicyConfigurationError {
+  const category = behaviorReason === undefined ? "" : ` (${behaviorReason})`;
+  return new MessagePolicyConfigurationError({
+    reason,
+    behaviorReason,
+    message: policyFailureMessage(
+      reason,
+      path === "" ? "" : `; invalid at ${path}${category}`,
+      { path },
+    ),
+  });
+}
+
+/**
+ * The operator message for a message-policy failure: its text, any detail,
+ * and one `Docs:` link. An entry under a behavior list links the behavior
+ * rules, `docs` replaces the failure's own troubleshooting entry, and an
+ * empty `docs` leaves the link out for a failure with no fix to point at.
+ * @param reason The closed failure.
+ * @param detail Text after the failure's own, starting with `; `.
+ * @param link The entry to link in place of the failure's own.
+ * @param link.path The failing policy entry, which links the behavior rules
+ *     when it names a behavior list.
+ * @param link.docs Another entry to link, or empty for none.
+ * @returns The message, naming no configured value.
+ */
+export function policyFailureMessage(
+  reason: MessagePolicyConfigurationFailure,
+  detail: string,
+  link: { readonly path?: string; readonly docs?: string } = {},
+): string {
+  const docs = failureDocs(reason, link);
+  return docs === ""
+    ? `${failureMessages[reason].text}${detail}`
+    : `${failureMessages[reason].text}${detail}. Docs: ${docs}`;
+}
+
+/**
+ * Maps one `BEHAVIOR.md` to its editable natural-language rule. YAML parser
+ * diagnostics stay private; only a closed category reaches `refused`, which
+ * builds the caller's own failure.
+ * @param bytes The behavior's bytes; callers bound them by {@link MAXIMUM_BEHAVIOR_BYTES}.
+ * @param refused The caller's failure for a closed category.
+ * @returns The rule.
+ */
+export function decodeBehavior<Failure>(
+  bytes: Buffer,
+  refused: (reason: BehaviorRefusal) => Failure,
+) {
+  return Effect.gen(function* () {
+    const parts = /^---\r?\n([\s\S]*?)^---[ \t]*(?:\r?\n|$)([\s\S]*)/mu.exec(
+      bytes.toString("utf8").replace(/^\uFEFF/u, ""),
+    );
+    if (
+      parts?.[1] === undefined ||
+      parts[2] === undefined ||
+      parts.index !== 0
+    ) {
+      return yield* Effect.fail(refused("frontmatter"));
+    }
+    const frontmatter = yield* decodeFrontmatter(parts[1], refused);
+    const metadata = frontmatter.metadata["social-harness"];
+    const rules = yield* Schema.decodeUnknown(editableDocumentSchema)([
+      {
+        id: frontmatter.name,
+        text: parts[2].trim(),
+        ...metadata,
+      },
+    ]).pipe(Effect.mapError(() => refused("schema")));
+    return yield* Effect.fromNullable(rules[0]).pipe(
+      Effect.mapError(() => refused("schema")),
+    );
+  }).pipe(Effect.withSpan("decodeBehavior"));
+}
+
+/**
+ * The failing rule as a refusal names it: its place in the update, then its id.
+ * @param path The rule's place in the update, when the refusal has one.
+ * @param ruleId The rule's id, when the refusal has one.
+ * @returns The subject, or undefined when the refusal names neither.
+ */
+function editSubject(
+  path?: FirewallPolicyError["path"],
+  ruleId?: string,
+): string | undefined {
+  const place = path === undefined ? undefined : `${path[0]}[${path[1]}]`;
+  const rule = ruleId === undefined ? undefined : `rule ${ruleId}`;
+  return place !== undefined && rule !== undefined
+    ? `${place} (${rule})`
+    : (place ?? rule);
+}
+
+function failureDocs(
+  reason: MessagePolicyConfigurationFailure,
+  link: { readonly path?: string; readonly docs?: string },
+): string {
+  const path = link.path ?? "";
+  if (/^text\.(?:fixed|initial)Behaviors\./u.test(path)) {
+    return `${POLICY_SPEC}#behaviors`;
+  }
+  return link.docs ?? failureMessages[reason].docs;
+}
+
+function uniqueTextRuleIds(policy: typeof document.Type): boolean {
+  const ids = [
+    ...(policy.text?.fixedRules ?? []),
+    ...(policy.text?.initialRules ?? []),
+  ].map((rule) => rule.id);
+  return new Set(ids).size === ids.length;
+}
+
+/**
+ * Decodes the YAML between a behavior's `---` lines. Parser diagnostics,
+ * including unresolved tags, stay inside this boundary.
+ * @param text The frontmatter YAML.
+ * @param refused The caller's failure for a closed category.
+ * @returns The frontmatter fields.
+ */
+function decodeFrontmatter<Failure>(
+  text: string,
+  refused: (reason: BehaviorRefusal) => Failure,
+) {
+  return Effect.gen(function* () {
+    const doc = yield* Effect.try({
+      try: () =>
+        parseDocument(text, {
+          schema: "core",
+          resolveKnownTags: false,
+          logLevel: "error",
+        }),
+      catch: () => refused("frontmatter"),
+    });
+    if (doc.errors.length !== 0 || doc.warnings.length !== 0) {
+      return yield* Effect.fail(refused("frontmatter"));
+    }
+    return yield* Effect.try({
+      try: (): unknown => doc.toJS(),
+      catch: () => refused("frontmatter"),
+    }).pipe(
+      Effect.flatMap((value) =>
+        Schema.decodeUnknown(behaviorFrontmatter)(value).pipe(
+          Effect.mapError(() => refused("schema")),
+        ),
+      ),
+    );
+  });
+}
 
 /** Reports only the policy entry; YAML diagnostics may contain private file content. */
 function invalidBehavior(path: string, reason: BehaviorFailure) {
@@ -856,13 +896,6 @@ function loadFixedBehaviors(
   state: BehaviorState,
 ) {
   return loadBehaviors(text.fixedBehaviors ?? [], "fixedBehaviors", state);
-}
-
-interface BehaviorState {
-  readonly root: string;
-  readonly ids: Set<string>;
-  readonly behaviorRulePaths: Map<string, string>;
-  readonly initialRuleCount: number;
 }
 
 function loadBehaviors(
@@ -1034,35 +1067,3 @@ function jevKey(
         ),
       );
 }
-
-/** Operational evidence limits are part of the installed policy identity. */
-// eslint-disable-next-line agent-code-guard/no-exported-brand-constructor -- Installation validates fixed settings with the same grammar retained audits decode.
-export const firewallConfigurationSchema = Schema.Struct({
-  mode: Schema.Literal("guidance", "enforcement"),
-  facts: Schema.Array(OwnerFact),
-  codeDigest: Schema.String.pipe(Schema.pattern(/^[a-f0-9]{64}$/u)),
-  maximumHistoryRecords: Schema.Int.pipe(Schema.between(1, 1024)),
-  maximumConcurrentChecks: Schema.Int.pipe(Schema.between(1, 32)),
-});
-
-/** Registration provenance is retained without giving it execution authority. */
-const firewallRegistrationSchema = Schema.Struct({
-  id: Schema.NonEmptyTrimmedString,
-  revision: Schema.NonEmptyTrimmedString,
-  rules: Schema.Array(RuleDescription),
-  provenance: PrivateCheckTrace,
-});
-
-/** The exact installation used by an attempt survives later process configuration. */
-// eslint-disable-next-line agent-code-guard/no-exported-brand-constructor -- Retained audit decoding composes the exact installation grammar owned by policy.
-export const firewallInstallationSchema = Schema.Struct({
-  configuration: firewallConfigurationSchema,
-  settings: FirewallSettings,
-  incoming: Schema.Array(firewallRegistrationSchema),
-  outgoing: Schema.Array(firewallRegistrationSchema),
-});
-
-/** Evidence limits and fixed facts are immutable for a process installation. */
-export type FirewallConfiguration = typeof firewallConfigurationSchema.Type;
-/** Each retained check identifies the exact rule registrations it assessed. */
-export type FirewallInstallation = typeof firewallInstallationSchema.Type;

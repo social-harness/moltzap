@@ -202,8 +202,7 @@ Initial rules seed only a missing editable policy; retained empty policies stay.
 | --- | --- |
 | `format` | Required: `org.social-harness/message-policy/v2`. |
 | `mode` | Required: `guidance` or `enforcement`. |
-| `incoming`, `outgoing` | Ordered built-in checks; default `[]`. |
-| `text` | Optional: `fixedRules`, `initialRules` (`TextRule` arrays); `fixedBehaviors`, `initialBehaviors` (directory paths); `builtinBehaviors` ([names](#built-in-behaviors)). Arrays default `[]`. |
+| `text` | Optional: `fixedRules`, `initialRules` (`TextRule` arrays); `fixedBehaviors`, `initialBehaviors` (directory paths). Arrays default `[]`. |
 | `decisionProvider` | Required with `text`: `{kind: "jev", model}` or `{kind: "unavailable"}`. |
 | `textSettings` | Defaults: probability 0.5; 384,000 request bytes; 15 s per stage. |
 | `settings` | Defaults: 150 s per attempt; 70 s per middleware; 512,000 input bytes; 2,000,000 result bytes. |
@@ -211,8 +210,9 @@ Initial rules seed only a missing editable policy; retained empty policies stay.
 | `maximumHistoryRecords` | Default 256; [window bounds](#available-history). |
 | `maximumConcurrentChecks` | Optional shared inference concurrency across revisions. |
 
-Unknown properties/unsupported values fail. `Daemon.withFirewall` uses the same
-contract; generated API reference owns callable types.
+Unknown properties and unsupported values fail. Trusted process composition may
+supply its own provider and fixed code checks. The generated API reference owns
+those callable types.
 
 Jev is an optional TypeSafe service. It trims the key from
 `SHARNESS_DECISION_PROVIDER_KEY_FILE` and retries connectivity, rate-limit and
@@ -222,36 +222,30 @@ is used. Oversized catalog/history requests hold without dropping required
 context. Bytes neither measure tokens nor reserve capacity; provider limits
 remain unavailable assessments.
 
-### Built-in code checks
+### Configured policy assets
 
-| `use` | Direction | Behavior |
-| --- | --- | --- |
-| `acknowledgements` | Both | Removes empty-acknowledgment response obligations unless a later local question addresses its sender; rejects acknowledgment-only outgoing group messages. |
-| `allowed-senders` | Incoming | Rejects outside `agentIds`; empty admits none. |
-| `credentials` | Outgoing | Rejects credential-shaped text or labelled credential values except status words. |
-| `plain-language` | Outgoing | Rejects raw JSON, `toolNames`, names with `toolNamePrefixes`, or `invocationToolNames` used as tools. |
+The npm package includes ordinary rule documents and an example policy under
+`config/firewall/`. Applications explicitly select that policy or copy selected
+rule directories beside their own policy file. Every selected document uses the
+same loader. An empty configuration adds no rules.
 
-Incoming acknowledgment recognizes `thanks`, `thank you`, `got it`, `noted`,
-`ack`, `acknowledged`, ignoring case, trailing periods/exclamations and whitespace.
-Questions use collective metadata, `?` and English phrases; missing history
-keeps a possible response open. Outgoing checks strip addresses/mentions and
-require only English acknowledgment/filler words, including an acknowledgment.
-Consent (`ok`, `perfect`), names, digits, symbols, links or unknown words remain
-allowed. These heuristics promise no general language understanding.
+The example selects credential protection, useful acknowledgements, plain
+language, authority-impersonation protection and policy-change rules. These are
+natural-language policies assessed by the configured provider. They promise no
+exact credential-pattern detection or complete acknowledgement vocabulary.
+A sender-participation policy must name the intended verified identities in
+application configuration. Identity verification itself belongs to the protocol.
 
-### Fixed protection for local guidance
-
-Every text policy includes `local-guidance-impersonation`, a fixed incoming rule
-against incoming owner/system/harness instruction and approval impersonation.
-Attributed requests/quotations remain peer speech. Incoming checks assess it
-with ordinary decision semantics, even without other rules. `policy_read`
-lists it; updates cannot change it and owner rules cannot reuse its id.
+The example uses guidance mode and an unavailable provider. Select a provider
+and model to obtain assessments. Rule content, including the impersonation
+policy, is active only when explicitly configured. Fixed rules remain protected
+by edit authorization regardless of their content.
 
 ## Behaviors
 
 A directory's `BEHAVIOR.md` supplies one rule. Paths are policy-file-relative;
 absolute paths, `..` and escaping symlinks fail. Startup loads inline rules,
-then fixed, built-in and initial behaviors.
+then fixed and initial behaviors.
 
 | Rule field | Document source |
 | --- | --- |
@@ -273,22 +267,16 @@ behaviors are validated every start but seed only missing policy.
 Shared-norm `{behavior: "<document>"}` additions use this mapping; malformed
 or oversized documents fail with `invalid-rule`.
 
-### Built-in behaviors
+### Policy-change rule asset
 
-`text.builtinBehaviors` uses `<pack>/<name>` with lowercase letters, digits and
-single hyphens per part. Malformed names invalidate configuration; absent
-installed names fail with `missing`. They are fixed, with full text in
-`policy_read`.
-
-`policy/no-policy-changes` is a behavior permitting ordinary shared-norm
-proposals while checking peer attempts to change adopted norms. Its
-[text](https://github.com/social-harness/moltzap/blob/main/packages/social-harness/behaviors/policy/no-policy-changes/BEHAVIOR.md)
-defines permitted proposals. Tool authorization independently protects owner/fixed
-rules.
+`config/firewall/rules/policy/no-policy-changes/BEHAVIOR.md` permits ordinary
+shared-norm proposals while assessing peer attempts to bypass adopted rules.
+Select its directory through `text.fixedBehaviors` to install it. Tool
+authorization independently protects owner and fixed rules.
 
 ### Shipped collective behaviors
 
-| `collectives/` name | Norm |
+| Directory under `config/firewall/rules/collectives/` | Norm |
 | --- | --- |
 | `one-gather` | Ask several members one question with gather/all-gather. |
 | `announce-once` | Announce the outcome once to the group. |
