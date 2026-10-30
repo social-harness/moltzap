@@ -293,7 +293,8 @@ Regenerate the reference after source edits and read the result.
 
 Review correctness separately from readability. Check implementation claims
 against source and public contracts, including guarantees affected by cuts or
-moves. Use the Social Harness paper to resolve questions of intent, and bring
+moves. Check numerical examples and derived limits against their defining
+representation. Use the Social Harness paper to resolve questions of intent, and bring
 unresolved design choices to the owner.
 
 Load the installed Google guides that address the area under review:
