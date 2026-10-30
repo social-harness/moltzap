@@ -51,6 +51,10 @@ const verdictCriteria = {
 function requestFor(
   rules: readonly ProtocolRule[],
   input: MiddlewareInput,
+  question?: {
+    readonly instructions: (ruleId: string) => string;
+    readonly criteria: Readonly<Record<string, string>>;
+  },
 ): DecisionRequest {
   const { message } = input.event;
   const { context } = input;
@@ -109,8 +113,10 @@ function requestFor(
     questions[`verdict-${String(ruleIndex)}`] = {
       ruleId: rule.id,
       purpose: "assessment",
-      instructions: `Under rule "${rule.id}", with each participant in the role its conduct shows, may the sender send the message under review to its recipients at this point in the conversation? Judge only what the rule says; do not add requirements it does not state.`,
-      criteria: verdictCriteria,
+      instructions:
+        question?.instructions(rule.id) ??
+        `Under rule "${rule.id}", with each participant in the role its conduct shows, may the sender send the message under review to its recipients at this point in the conversation? Judge only what the rule says; do not add requirements it does not state.`,
+      criteria: question?.criteria ?? verdictCriteria,
     };
   });
   return {
@@ -164,6 +170,11 @@ export function makeProtocolCheck(options: {
   readonly rules: readonly ProtocolRule[];
   readonly provider: DecisionProvider;
   readonly minimumProbability?: number;
+  /** Replaces the verdict question, e.g. to judge only parameter values. */
+  readonly question?: {
+    readonly instructions: (ruleId: string) => string;
+    readonly criteria: Readonly<Record<string, string>>;
+  };
 }): MessageMiddleware {
   const minimumProbability = options.minimumProbability ?? 0.5;
   const rules = options.rules;
@@ -178,7 +189,7 @@ export function makeProtocolCheck(options: {
     })),
     check: (input) =>
       Effect.gen(function* () {
-        const request = requestFor(rules, input);
+        const request = requestFor(rules, input, options.question);
         const response = yield* options.provider
           .decide(request)
           .pipe(

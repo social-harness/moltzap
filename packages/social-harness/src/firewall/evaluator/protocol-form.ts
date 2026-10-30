@@ -19,6 +19,8 @@ import type {
 interface Parameter {
   readonly optional: boolean;
   readonly allowed?: readonly string[];
+  /** Declared as "a list", written [first | second]; "or none" also admits none. */
+  readonly list?: "list" | "list-or-none";
 }
 
 interface Act {
@@ -46,8 +48,14 @@ export function declaredActs(protocol: string): ReadonlyMap<string, Act> {
     if (parameter !== null && current !== undefined && role !== undefined) {
       const description = parameter[2] ?? "";
       const oneOf = /one of ([^:;]+)/u.exec(description);
+      const list = /\ba list\b/u.test(description);
       current.parameters.set(parameter[1] ?? "", {
         optional: description.startsWith("optional"),
+        list: list
+          ? /\bor none\b/u.test(description)
+            ? "list-or-none"
+            : "list"
+          : undefined,
         allowed: oneOf?.[1]
           ?.split(/,\s*|\s+or\s+/u)
           .map((value) => value.trim())
@@ -118,6 +126,12 @@ function formErrors(
       !parameter.allowed.includes(value)
     ) {
       errors.push(`${name} is not one of ${parameter.allowed.join(", ")}`);
+    } else if (
+      parameter.list !== undefined &&
+      !/^\[.*\]$/u.test(value) &&
+      !(parameter.list === "list-or-none" && value === "none")
+    ) {
+      errors.push(`${name} is not a list`);
     }
     seen.add(name);
   }

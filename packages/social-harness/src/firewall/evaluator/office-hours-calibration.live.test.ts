@@ -3,8 +3,9 @@
  * rule text in `OH_RULE`, `OH_RUNS` times each, and writes one JSONL line per
  * judgment to `OH_RESULTS` with the provider's probability of a violation.
  * `OH_CHECK` picks the one-call verdict check (`verdict`, the default), the
- * staged text policy (`staged`), the structured-form check (`form`) or both
- * the form and verdict checks (`form+verdict`). Needs a Jev key in the file named by
+ * staged text policy (`staged`), the structured-form check (`form`), the form
+ * and verdict checks (`form+verdict`), the form and state checks
+ * (`form+state`), or the chain of form, state and values checks (`chain`). Needs a Jev key in the file named by
  * `JEV_KEY_FILE`; skipped otherwise.
  */
 
@@ -20,6 +21,22 @@ import {
 import { makeJevDecisionProvider } from "./jev.js";
 import { makeProtocolCheck } from "./protocol-check.js";
 import { makeProtocolForm } from "./protocol-form.js";
+import { makeProtocolState } from "./protocol-state.js";
+
+/**
+ * After the code checks pass, the decision provider judges only what the
+ * act's parameter values carry.
+ */
+const VALUES_QUESTION = {
+  instructions: (ruleId: string) =>
+    `Under rule "${ruleId}", the message under review is a well-formed act sent at a point the rule allows; code has already checked its form and the conversation state. Judge only its parameter values against their descriptions and the rule's values section: does every value carry only what its description asks for?`,
+  criteria: {
+    allowed: "Every value carries only what its description asks for.",
+    violation:
+      "Some value carries something its description does not ask for or that the values section forbids, or the act is a request about another student's booking.",
+    unclear: "The conversation does not show enough to decide.",
+  },
+};
 
 const PROF = "agt_Q7mZr2LkVx9pTb4nWc1hYs";
 const STUDENT = "agt_d3FjK8uNe5RtA0gHqP6yMw";
@@ -69,18 +86,23 @@ function contextOf(c: Case) {
 }
 
 /** The provider's probability of a violation, from whichever check ran. */
-/** The form check's errors, when it ran. */
-function formErrorsOf(result: FirewallCheck): readonly string[] | undefined {
-  const data = result.checks.find((check) => check.middlewareId === "form")
-    ?.trace?.data;
+/** The errors a code check reported, when it ran. */
+function errorsOf(
+  result: FirewallCheck,
+  middlewareId: string,
+): readonly string[] | undefined {
+  const data = result.checks.find(
+    (check) => check.middlewareId === middlewareId,
+  )?.trace?.data;
   return data === undefined
     ? undefined
     : (JSON.parse(data) as { errors: string[] }).errors;
 }
 
 function violationProbability(result: FirewallCheck): number | undefined {
-  const data = result.checks.find((check) => check.middlewareId !== "form")
-    ?.trace?.data;
+  const data = result.checks.find(
+    (check) => check.middlewareId !== "form" && check.middlewareId !== "state",
+  )?.trace?.data;
   if (data === undefined) {
     return undefined;
   }
@@ -139,6 +161,16 @@ live(
         id: "form",
         rule: { ...rule, id: `${rule.id}-form` },
       });
+      const state = makeProtocolState({
+        id: "state",
+        rule: { ...rule, id: `${rule.id}-state` },
+      });
+      const values = makeProtocolCheck({
+        id: "protocol",
+        rules: [rule],
+        provider,
+        question: VALUES_QUESTION,
+      });
       const checks =
         process.env.OH_CHECK === "staged"
           ? [
@@ -153,7 +185,11 @@ live(
             ? [form]
             : process.env.OH_CHECK === "form+verdict"
               ? [form, verdict]
-              : [verdict];
+              : process.env.OH_CHECK === "chain"
+                ? [form, state, values]
+                : process.env.OH_CHECK === "form+state"
+                  ? [form, state]
+                  : [verdict];
       const firewall = yield* makeFirewall({
         incoming: checks,
         outgoing: checks,
@@ -184,7 +220,10 @@ live(
             const result = yield* c.direction === "outgoing"
               ? firewall.checkOutgoing(message, contextOf(c))
               : firewall.checkIncoming(message, contextOf(c));
-            const formErrors = formErrorsOf(result);
+            const formErrors = [
+              ...(errorsOf(result, "form") ?? []),
+              ...(errorsOf(result, "state") ?? []),
+            ];
             appendFileSync(
               output,
               `${JSON.stringify({
