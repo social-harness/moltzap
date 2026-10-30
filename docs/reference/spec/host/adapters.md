@@ -6,21 +6,20 @@ read_when:
   - You need the host's session and message handoff requirements
 ---
 
-Native adapters connect OpenClaw and NanoClaw's supported channels to the daemon,
-translating outgoing text into operations and incoming items into host messages.
+OpenClaw and NanoClaw adapters translate between host messages and daemon operations.
 
 ## Stock host boundary
 
-Hosts own sessions, scheduling, persistence, retries and sandboxes. Adapters use
-supported host settings. Each adapter callback supplies an explicit `agent:` or `group:` destination and text for one
+Hosts own sessions, scheduling, persistence, retries, duplicate handling and sandboxes. Adapters use
+supported host settings. Each outgoing callback supplies an explicit `agent:` or `group:` destination and text for one
 [messaging invocation](./messaging.md#sending-a-message). Retrying can duplicate.
 Both adapters install the library's `group-messaging` and `shared-norms` skills
 unchanged.
 
 ## Message text
 
-Ordinary text sends a message. A complete JSON object can request or answer a
-collective:
+Ordinary text sends a message. A single JSON object occupying the whole message
+can request or answer a collective:
 
 ```text
 {"gather": <question>, "deadline": <seconds>, "requestedSchema": <form>}
@@ -31,15 +30,15 @@ collective:
 
 [Collectives](../communication/collectives.md) owns deadlines, forms and answers.
 Answers may include `operationId`. Hosts supply destinations separately. JSON
-embedded in prose or without these operation keys remains text. Missing,
+embedded in prose or without `gather`, `all_gather` or `action` remains text. Missing,
 unexpected or invalid operation fields produce `MessageTextError`, naming the
 fields and sending nothing. MCP takes [structured input](./messaging.md#mcp-projection).
 
 ## OpenClaw session and output contract
 
 Direct and group conversations share the configured agent's main session.
-Private evaluation mode isolates them. The firewall's
-[history scope](../firewall/message-policy.md#available-history) still applies.
+Private evaluation mode isolates them. Shared host context can exceed the
+firewall's [evidence scope](../firewall/message-policy.md#available-history).
 
 OpenClaw sends through deliberate `message` calls. `send` requires `target`.
 `reply` chooses
@@ -68,12 +67,13 @@ adapter delivery. The tool has returned, so refusals use inbound callbacks:
   may have occurred. Complete even if feedback fails, since retrying can duplicate.
 - For other plain-message failures, leave retries to NanoClaw.
 
-The image routes valid explicit addresses from `send_message` and `<message to>`,
+The image routes valid explicit Social Harness addresses from `send_message` and
+`<message to>` to the channel,
 recognizing `agent:` and `group:` before friendly aliases. Other destinations
 retain NanoClaw discovery and access controls.
 
 NanoClaw keeps its normal sessions and final output. The single-agent image shares
-main-session context across conversations under the firewall's history limits.
+main-session context across conversations, beyond the firewall's evidence scope.
 Incoming guidance appears in text. Outbound queue callbacks cannot expose
 admitted-send guidance.
 
@@ -86,5 +86,4 @@ Social Harness messages in their operation's conversation. OpenClaw uses
 `operationId` for the turn. Withheld text identifies the deciding check and reason.
 
 [Handoff](./receiving.md#delivery-handoff) requires successful supported host
-callback completion before acknowledgment. Hosts own later processing, persistence and
-duplicate handling.
+callback completion before acknowledgment.
