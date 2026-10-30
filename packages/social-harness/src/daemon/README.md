@@ -31,22 +31,6 @@ flowchart LR
   D --> E[Activate communication and host service]
 ```
 
-## Outgoing message
-
-```mermaid
-flowchart LR
-  A[Host send request] --> B[Prepare message and recipients]
-  B --> C[Read conversation evidence]
-  C --> D[Firewall checks draft]
-  D --> E[Retain policy outcome]
-  E --> F{Admitted by policy?}
-  F -->|Yes| G[Communication accepts send]
-  F -->|No| H[Return refusal]
-```
-
-Communication still checks that a named request is open when accepting an
-answer. A passing firewall judgment does not establish that acceptance.
-
 ## Incoming message
 
 ```mermaid
@@ -62,6 +46,22 @@ A collective result commits its question and answer decisions together. The
 store retains the text the host may read and which answers it showed. Future
 checks use that retained visibility. A withheld item finishes its check so
 the next item in its conversation can proceed.
+
+## Outgoing message
+
+```mermaid
+flowchart LR
+  A[Host send request] --> B[Prepare message and recipients]
+  B --> C[Read conversation evidence]
+  C --> D[Firewall checks draft]
+  D --> E[Retain policy outcome]
+  E --> F{Admitted by policy?}
+  F -->|Yes| G[Communication accepts send]
+  F -->|No| H[Return refusal]
+```
+
+Communication still checks that a named request is open when accepting an
+answer. A passing firewall judgment does not establish that acceptance.
 
 ## Proposed store exports
 
