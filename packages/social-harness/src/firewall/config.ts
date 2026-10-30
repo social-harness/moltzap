@@ -644,6 +644,55 @@ export type FirewallConfiguration = typeof firewallConfigurationSchema.Type;
 export type FirewallInstallation = typeof firewallInstallationSchema.Type;
 
 /**
+ * Where a rule installation failure's fix is written: the rules-not-installed
+ * entry covers invalid rules and catalogs that exceed the request budget.
+ * Storage failures have no policy-document fix to link.
+ */
+const installationDocs: Readonly<
+  Record<Exclude<FirewallPolicyError["reason"], "not-configured">, string>
+> = {
+  "invalid-rule": `${FIREWALL_GUIDE}#rules-not-installed`,
+  "fixed-rule": `${FIREWALL_GUIDE}#rules-not-installed`,
+  "owner-rule": `${FIREWALL_GUIDE}#rules-not-installed`,
+  "build-failed": `${FIREWALL_GUIDE}#rules-not-installed`,
+  "persistence-failed": "",
+};
+
+/**
+ * The configuration failure for a document whose rules the daemon could not
+ * install against its store, such as an initial rule reusing a code rule's
+ * id. `not-configured` here means the store holds editable natural-language rules
+ * that a document without `text` cannot install; the document itself is
+ * valid, so that message names the stored rules instead.
+ * @param cause The closed installation failure.
+ * @param behaviorRulePaths The source entry for each file-loaded behavior.
+ * @returns The failure naming `SHARNESS_MESSAGE_POLICY_FILE` and the reason.
+ */
+export function policyInstallationError(
+  cause: FirewallPolicyError,
+  behaviorRulePaths?: ReadonlyMap<string, string>,
+): MessagePolicyConfigurationError {
+  const path =
+    cause.ruleId === undefined
+      ? undefined
+      : behaviorRulePaths?.get(cause.ruleId);
+  const location =
+    path === undefined ? "" : `; invalid at ${path} (duplicate-id)`;
+  return new MessagePolicyConfigurationError({
+    reason: "message-policy",
+    behaviorReason: path === undefined ? undefined : "duplicate-id",
+    message:
+      cause.reason === "not-configured"
+        ? `SHARNESS_MESSAGE_POLICY_FILE configures no natural-language policy, but the state directory holds natural-language rules an earlier policy added; restore the text block, remove those rules with policy_update, then remove the block. Docs: ${FIREWALL_GUIDE}#stored-text-rules`
+        : policyFailureMessage(
+            "message-policy",
+            `; its rules could not be installed (${cause.reason})${location}`,
+            { path: path ?? "", docs: installationDocs[cause.reason] },
+          ),
+  });
+}
+
+/**
  * The configuration failure for a message-policy setting, with its fixed
  * operator message.
  * @param reason Why the setting cannot start the daemon.
