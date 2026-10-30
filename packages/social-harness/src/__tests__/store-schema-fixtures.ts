@@ -14,6 +14,7 @@ import {
   openEndpointStore,
   type OutboxTooOldError,
 } from "../communication/store/index.js";
+import { type DaemonStore, openDaemonStore } from "../daemon/store.js";
 import { LIVE_WIRE_VERSIONS } from "../identity/wire-version.js";
 import { digest } from "./agent-card-fixtures.js";
 
@@ -36,6 +37,18 @@ export function withStore<Value, Failure>(
 ): Effect.Effect<Value, Failure | EndpointStoreError | OutboxTooOldError> {
   return Effect.scoped(
     openEndpointStore(directory, { liveWireVersions: LIVE_WIRE_VERSIONS }).pipe(
+      Effect.flatMap(use),
+    ),
+  );
+}
+
+/** Run daemon persistence against a real database, closed before the result returns. */
+export function withDaemonStore<Value, Failure>(
+  directory: string,
+  use: (store: DaemonStore) => Effect.Effect<Value, Failure>,
+): Effect.Effect<Value, Failure | EndpointStoreError | OutboxTooOldError> {
+  return Effect.scoped(
+    openDaemonStore(directory, { liveWireVersions: LIVE_WIRE_VERSIONS }).pipe(
       Effect.flatMap(use),
     ),
   );

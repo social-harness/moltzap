@@ -4,22 +4,24 @@
  */
 
 import { NodeHttpClient } from "@effect/platform-node";
-import { Data, Duration, Effect, Layer } from "effect";
+import { Data, Duration, Effect, Layer, Option } from "effect";
 import { Router } from "../communication/router/api/client.js";
 import {
   type EndpointStoreError,
   inspectEndpointStore,
-  openEndpointStore,
   type OutboxTooOldError,
 } from "../communication/store/index.js";
 import {
-  type FirewallInstallation,
-  firewallInstallation,
   type FirewallPolicyError,
-  type FirewallOptions as InstalledFirewallOptions,
-  installEditableFirewall,
+  type LoadedMessagePolicy,
+  loadMessagePolicy,
   type MessagePolicyConfigurationError,
+  policyConfigurationError,
   policyInstallationError,
+} from "../firewall/config.js";
+import {
+  makeFirewall,
+  type FirewallOptions as ManagedFirewallOptions,
 } from "../firewall/index.js";
 import { registrationAdmissionRefusalMessage } from "../host-protocol/index.js";
 import { Registry } from "../identity/registry/index.js";
@@ -42,6 +44,7 @@ import {
   requireAdmission,
   requireAdmissionToCreate,
 } from "./registration/index.js";
+import { openDaemonStore } from "./store.js";
 import { spanExport } from "./telemetry.js";
 
 // safer-arch-ignore no-large-public-surface: Daemon process composition, firewall installation and the actual Registry and Router client tags with their operation values share the trusted service embedding boundary.
@@ -52,24 +55,24 @@ const ROUTER_POLL_TIMEOUT = Duration.seconds(35);
 
 const liveWireVersions = wireVersions.liveSet;
 
-/** Policy composition exposes checking factories, owner documents, and their validated contracts. */
+/** Offline and managed checking use the firewall's supported public contract. */
 export {
   CheckInputError,
+  checkMessage,
   type DecisionProvider,
   DecisionProviderError,
   type DecisionRequest,
   type DecisionResponse,
   decodeMessagePolicy,
   type Firewall,
-  FirewallPolicyError,
+  type FirewallOptions,
   type FirewallSettings,
+  loadMessagePolicy,
   makeFirewall,
-  makeTextPolicy,
   type Message,
   type MessageContext,
   type MessageMiddleware,
   MessagePolicy,
-  messagePolicyFirewall,
   MiddlewareError,
   type MiddlewareInput,
   type MiddlewareResult,
@@ -87,7 +90,7 @@ export namespace Daemon {
    * Trusted composition fixes code and evidence while owner tools edit natural-language rules.
    * See {@link withFirewall} for the composition fields.
    */
-  export type FirewallOptions = InstalledFirewallOptions;
+  export type FirewallOptions = ManagedFirewallOptions;
 
   /** Closed startup phase with sanitized configuration details. */
   export class StartupError extends Data.TaggedError("DaemonStartupError")<{
@@ -129,18 +132,14 @@ export namespace Daemon {
     }
   }
 
-  const runDaemon = (composed?: FirewallInstallation) =>
+  const runDaemon = (composed?: FirewallOptions) =>
     Effect.gen(function* () {
       const configuration = yield* loadDaemonProcessConfiguration.pipe(
         Effect.mapError(configurationFailure),
       );
-      const installation = yield* firewallInstallation(
+      const { loaded, options } = yield* configuredFirewall(
         configuration,
-        readCredential,
         composed,
-      ).pipe(
-        Effect.mapError(daemonPolicyConfigurationError),
-        Effect.mapError(configurationFailure),
       );
       const bootstrap = yield* loadDaemonBootstrap(configuration).pipe(
         Effect.mapError(configurationFailure),
@@ -151,14 +150,14 @@ export namespace Daemon {
       yield* requireAdmissionToCreate(opening, bootstrap).pipe(
         Effect.mapError(configurationFailure),
       );
-      const store = yield* openEndpointStore(configuration.stateDirectory, {
+      const store = yield* openDaemonStore(configuration.stateDirectory, {
         liveWireVersions: yield* liveWireVersions,
       }).pipe(Effect.mapError(storageFailure));
       const firewall =
-        installation.options === undefined
+        options === undefined
           ? undefined
-          : yield* installEditableFirewall(installation.options, store).pipe(
-              Effect.mapError((cause) => installFailure(installation, cause)),
+          : yield* makeFirewall(options, store).pipe(
+              Effect.mapError((cause) => installFailure(cause, loaded)),
             );
       const registration = yield* readDaemonRegistrationState({
         store,
@@ -202,7 +201,7 @@ export namespace Daemon {
   export const withFirewall = (
     options: FirewallOptions,
   ): Layer.Layer<never, StartupError> => {
-    return Layer.scopedDiscard(runDaemon({ options })).pipe(
+    return Layer.scopedDiscard(runDaemon(options)).pipe(
       Layer.provide(telemetry),
     );
   };
@@ -219,20 +218,40 @@ export namespace Daemon {
     });
   }
 
+  /** A trusted embedding cannot also select an environment policy document. */
+  function configuredFirewall(
+    configuration: DaemonProcessConfiguration,
+    composed?: FirewallOptions,
+  ) {
+    return loadMessagePolicy(configuration, readCredential).pipe(
+      Effect.flatMap((configured) => {
+        if (composed !== undefined && Option.isSome(configured)) {
+          return Effect.fail(
+            policyConfigurationError("message-policy-composed"),
+          );
+        }
+        const loaded = Option.getOrUndefined(configured);
+        return Effect.succeed({ loaded, options: composed ?? loaded });
+      }),
+      Effect.mapError(daemonPolicyConfigurationError),
+      Effect.mapError(configurationFailure),
+    );
+  }
+
   /**
    * A file-described firewall that fails to install names its setting.
-   * @param installation What the daemon was installing, and from where.
    * @param cause The closed installation failure.
+   * @param loaded The configured document and its resolved behavior sources.
    * @returns The configuration-phase startup failure.
    */
   function installFailure(
-    installation: FirewallInstallation,
     cause: FirewallPolicyError,
+    loaded?: LoadedMessagePolicy,
   ): StartupError {
-    if (installation.fromPolicyFile === true) {
+    if (loaded !== undefined) {
       return configurationFailure(
         daemonPolicyConfigurationError(
-          policyInstallationError(cause, installation.behaviorRulePaths),
+          policyInstallationError(cause, loaded.behaviorRulePaths),
         ),
       );
     }

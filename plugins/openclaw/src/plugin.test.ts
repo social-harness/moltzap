@@ -31,7 +31,11 @@ import { Effect, Either, Encoding, Fiber, Schema, Stream } from "effect";
 import { join } from "node:path";
 import { beforeAll, describe, expect, vi, it as vitestIt } from "vitest";
 import { openClawTestStateDirectory } from "../vitest.setup.js";
-import { testAgentView, testGuidance } from "./__tests__/guidance-fixtures.js";
+import {
+  replyGuidanceCases,
+  testAgentView,
+  testGuidance,
+} from "./__tests__/guidance-fixtures.js";
 import {
   ACCOUNT_ID,
   type DispatchObservation,
@@ -132,8 +136,8 @@ describe("OpenClaw message tool send and reply actions", () => {
     "sends gather text as a gather and returns only its address",
     messageToolSendReturnsOnlyItsAddress,
   );
-  it(
-    "sends answer text from reply to the target conversation and returns the firewall's guidance",
+  it.each(replyGuidanceCases)(
+    "sends answer text to its named conversation and preserves $name",
     messageToolReplySendsAnswer,
   );
   it(
@@ -233,7 +237,7 @@ function guidanceRemainsLocal() {
 function messageToolSurfacesNormRefusal() {
   const refusal = new FirewallSendError({
     checkId: `chk_${Encoding.encodeHex(new Uint8Array(32).fill(2))}`,
-    refusal: "norm-violation",
+    refusal: "rule-violation",
     feedback: [
       { nextAction: "revise", text: "Include Carol in the scheduling reply." },
     ],
@@ -568,32 +572,37 @@ function messageToolSendReturnsOnlyItsAddress() {
   );
 }
 
-function messageToolReplySendsAnswer() {
-  const guidance = testGuidance("mon");
+function messageToolReplySendsAnswer({
+  guidance,
+  instructions,
+}: (typeof replyGuidanceCases)[number]) {
   return withConnectedSend(
     (plugin) =>
       handleMessageAction(plugin, "reply", {
         to: "agent:alice",
-        message: '{"action":"accept","content":{"slot":"mon"}}',
+        message: JSON.stringify({
+          operationId: OPERATION_ID,
+          action: "accept",
+          content: { slot: "mon" },
+        }),
       }),
     (sends, result) => {
       expect(sends).toEqual([
         {
           to: "agent:alice",
-          collectiveResponse: { action: "accept", content: { slot: "mon" } },
+          collectiveResponse: {
+            operationId: OPERATION_ID,
+            action: "accept",
+            content: { slot: "mon" },
+          },
         },
       ]);
-      expect(result.details).toEqual({
+      expect(result.details).toStrictEqual({
         ok: true,
         to: "agent:alice",
         guidance: {
           ...guidance,
-          instructions: guidance.instructions.map((instruction) => ({
-            ruleId: instruction.ruleId,
-            expectation: "required",
-            subjects: ["candidate"],
-            instruction: instruction.instruction,
-          })),
+          instructions,
         },
       });
     },
@@ -850,7 +859,7 @@ function rendersWithheldAnswersWithResultGuidance() {
 /** A gather result with Bob's answer and the question withheld, and advice on Carol's answer. */
 function withheldResultDelivery() {
   const checkId = `chk_${Encoding.encodeHex(new Uint8Array(32).fill(3))}`;
-  const withheld = { kind: "withheld", checkId, reason: "prohibited" };
+  const withheld = { kind: "withheld", checkId, reason: "rule-violation" };
   const item = Schema.decodeUnknownSync(InboundItem)({
     kind: "collectiveResult",
     closedAt: 0,

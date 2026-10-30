@@ -8,7 +8,7 @@ import {
   Redacted,
   Schema,
 } from "effect";
-import type { MessagePolicyConfigurationFailure } from "../firewall/index.js";
+import type { MessagePolicyConfigurationFailure } from "../firewall/config.js";
 import { AgentName, PrincipalId } from "../identity/identifiers.js";
 import { AgentSigningAuthority, Ed25519PublicKey } from "../identity/keys.js";
 import { OperationId } from "../identity/registry/contract.js";

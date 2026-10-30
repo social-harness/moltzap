@@ -1,45 +1,15 @@
-/** @file Registry configuration, private RPC, client, and server composition contract tests. */
+/** @file Registry configuration and server startup contract tests. */
 
-import {
-  AgentName,
-  AgentSigningAuthority,
-  PrincipalId,
-} from "@moltzap/social-harness";
-import { httpErrors, registryContract } from "@moltzap/social-harness/internal";
-import {
-  ConfigProvider,
-  Effect,
-  Either,
-  Layer,
-  Redacted,
-  Ref,
-  Schema,
-} from "effect";
-import { generateKeyPairSync } from "node:crypto";
+import { ConfigProvider, Effect, Either, Layer, Redacted } from "effect";
 import { describe, expect, it } from "vitest";
-import type { RegistryStorage } from "../storage.js";
 
-import {
-  makeRegistryRpcClient,
-  makeRegistryRpcHandlersLayer,
-  registryAdmissionLayer,
-  withBootstrapAdmission,
-} from "../rpc.js";
 import {
   loadRegistryConfiguration,
   layer as registryServerLayer,
   StartupError,
 } from "../server.js";
 
-/* eslint-disable @typescript-eslint/naming-convention -- Closed HTTP error constructors retain their class names when bound from the service capability. */
-const { UnavailableError } = httpErrors;
-/* eslint-enable @typescript-eslint/naming-convention -- Restore variable naming after binding error constructors. */
-
 const CONFIGURATION_PHASE = "configuration";
-const AUTHENTICATION_FAILED_TAG = "AuthenticationFailedError";
-const UNAVAILABLE_TAG = "UnavailableError";
-const NAME_TAKEN_KIND = "name_taken";
-const NOT_FOUND_KIND = "not_found";
 
 const requiredConfiguration = new Map([
   ["SHARNESS_REGISTRY_PORT", "4317"],
@@ -97,41 +67,6 @@ const invalidConfigurationOverrides = [
   new Map([["SHARNESS_REGISTRY_SQL_POOL_SIZE", "0"]]),
   new Map([["SHARNESS_REGISTRY_SQL_OPERATION_TIMEOUT_MS", "1e3"]]),
 ];
-
-const makePrivateKeyPem = (): string => {
-  const { privateKey } = generateKeyPairSync("ed25519");
-  return privateKey.export({ format: "pem", type: "pkcs8" });
-};
-
-const makeRequest = (name: string) =>
-  Schema.decodeUnknownSync(registryContract.RegistryRegisterRequest)({
-    operationId: Schema.decodeUnknownSync(registryContract.OperationId)(
-      "opn_AAAAAAAAAAAAAAAAAAAAAA",
-    ),
-    principalId: Schema.decodeUnknownSync(PrincipalId)(
-      "prn_AAAAAAAAAAAAAAAAAAAAAA",
-    ),
-    agentName: Schema.decodeUnknownSync(AgentName)(name),
-    publicKey: {
-      crv: "Ed25519",
-      kty: "OKP",
-      x: "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
-    },
-  });
-
-const makeRpcStorage = (calls: Ref.Ref<number>): RegistryStorage => ({
-  checkReadiness: () => Effect.void,
-  claimRegistrationNonce: () => Effect.succeed("claimed"),
-  register: ({ request }) =>
-    Ref.updateAndGet(calls, (current) => current + 1).pipe(
-      Effect.flatMap(() =>
-        request.agentName === "rpc-failure"
-          ? Effect.fail(new UnavailableError())
-          : Effect.succeed(Object.freeze({ kind: NAME_TAKEN_KIND })),
-      ),
-    ),
-  lookup: () => Effect.succeed(Object.freeze({ kind: NOT_FOUND_KIND })),
-});
 
 const assertDefaultConfiguration = Effect.gen(function* () {
   const configuration = yield* loadConfiguration();
@@ -193,59 +128,9 @@ const configurationBehavior = Effect.gen(function* () {
   yield* assertTypedStartupFailure;
 });
 
-const failureTag = <A, E extends { readonly _tag: string }, R>(
-  effect: Effect.Effect<A, E, R>,
-) =>
-  effect.pipe(
-    Effect.flip,
-    Effect.map((error) => error._tag),
-  );
-
-const rpcBehavior = Effect.gen(function* () {
-  const calls = yield* Ref.make(0);
-  const storage = makeRpcStorage(calls);
-  const registrySigningAuthority = yield* AgentSigningAuthority.fromPkcs8(
-    Redacted.make(makePrivateKeyPem()),
-  );
-  const handlers = makeRegistryRpcHandlersLayer({
-    storage,
-    registrySigningAuthority,
-  });
-  const client = yield* makeRegistryRpcClient.pipe(
-    Effect.provide(handlers),
-    Effect.provide(registryAdmissionLayer),
-  );
-
-  const unauthenticatedTag = yield* failureTag(
-    client.register(makeRequest("rpc-refusal")),
-  );
-  expect(unauthenticatedTag).toBe(AUTHENTICATION_FAILED_TAG);
-  expect(yield* Ref.get(calls)).toBe(0);
-
-  const refusal = yield* withBootstrapAdmission(
-    client.register(makeRequest("rpc-refusal")),
-  );
-  expect(refusal.kind).toBe(NAME_TAKEN_KIND);
-
-  const unavailableTag = yield* failureTag(
-    withBootstrapAdmission(client.register(makeRequest("rpc-failure"))),
-  );
-  expect(unavailableTag).toBe(UNAVAILABLE_TAG);
-  expect(yield* Ref.get(calls)).toBe(2);
-
-  const lookup = yield* client.lookup({
-    agentName: Schema.decodeUnknownSync(AgentName)("rpc-lookup"),
-  });
-  expect(lookup.kind).toBe(NOT_FOUND_KIND);
-});
-
 describe("Registry private contracts", () => {
   it("loads exact refined redacted configuration from an isolated provider", () => {
     expect.hasAssertions();
     return Effect.runPromise(configurationBehavior);
-  });
-  it("enforces private RPC admission and preserves typed channels", () => {
-    expect.hasAssertions();
-    return Effect.runPromise(rpcBehavior.pipe(Effect.scoped));
   });
 });

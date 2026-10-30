@@ -45,6 +45,7 @@ import {
   corruptSignature,
   pollCursor as fixturePollCursor,
 } from "../../../__tests__/router-worker-fixtures.js";
+import { type DaemonStore, openDaemonStore } from "../../../daemon/store.js";
 import {
   decodeCanonical,
   encodeCanonical,
@@ -110,9 +111,7 @@ import {
 } from "../../router/index.js";
 import {
   type EndpointRecovery,
-  type EndpointStore,
   EndpointStoreError,
-  openEndpointStore,
   type StoredOutboundMessage,
 } from "../../store/index.js";
 import { acceptEngineRecoveryIngress } from "../certification/index.js";
@@ -152,7 +151,7 @@ vi.setConfig({ testTimeout: TRACE_TIMEOUT_MS });
 interface RecoveryFixture {
   readonly engine: EndpointEngine;
   readonly input: EndpointEngineInput;
-  readonly store: EndpointStore;
+  readonly store: DaemonStore;
   readonly local: SigningIdentity;
   readonly remote: SigningIdentity;
   readonly registryKeys: RegistryKeyPair;
@@ -206,7 +205,7 @@ interface N4PartialHistory {
  * `normalOutbound`, so a test reads each stream on its own.
  */
 interface FixtureRouterContext {
-  readonly store: EndpointStore;
+  readonly store: DaemonStore;
   readonly local: SigningIdentity;
   readonly normalOutbound: Queue.Queue<SignedMessage>;
   readonly recoveryOutbound: Queue.Queue<SignedMessage>;
@@ -406,7 +405,7 @@ const openFirstMessageStore = (
       return yield* Effect.dieMessage("first message fixture lost its anchor");
     }
     const fileSystem = yield* FileSystem.FileSystem;
-    const store = yield* openEndpointStore(
+    const store = yield* openDaemonStore(
       yield* fileSystem.makeTempDirectoryScoped({ prefix }),
       { liveWireVersions: LIVE_WIRE_VERSIONS },
     );
@@ -1554,7 +1553,7 @@ const tamperCertifiedRecords =
  * columns that disagree with the row's own bytes are a persistence failure,
  * and bytes that do not decode are a representation failure. The other
  * restart traces start only from snapshots the endpoint wrote itself. The
- * snapshot is changed through the `EndpointStore` port the engine already
+ * snapshot is changed through the `DaemonStore` port the engine already
  * takes, over a real store.
  * @param tamper Changes the snapshot the restarted engine reads.
  * @returns `"started"`, or the error the restart failed with.
@@ -1563,7 +1562,7 @@ const restartOverTamperedSnapshot = (tamper: SnapshotTamper) =>
   Effect.gen(function* () {
     const fixture = yield* makeFixture;
     yield* retainCertifiedRecord(fixture);
-    const store: EndpointStore = {
+    const store: DaemonStore = {
       ...fixture.store,
       recover: () => fixture.store.recover().pipe(Effect.flatMap(tamper)),
     };
@@ -5629,7 +5628,7 @@ const adoptsReanchorCompletedWhileItWasDown = () =>
 const failsWhenTheStoreFailsWhilePersistingAPeerVote = () =>
   Effect.gen(function* () {
     const fixture = yield* makeFixture;
-    const failingStore: EndpointStore = {
+    const failingStore: DaemonStore = {
       ...fixture.store,
       mergeEvidence: (evidence) =>
         evidence.kind === "reanchor" &&
@@ -5665,7 +5664,7 @@ const failsWhenTheStoreFailsWhilePersistingAPeerVote = () =>
 const failsWhenTheStoreRefusesItsOwnFreshVote = () =>
   Effect.gen(function* () {
     const fixture = yield* makeFixture;
-    const refusingStore: EndpointStore = {
+    const refusingStore: DaemonStore = {
       ...fixture.store,
       mergeEvidence: (evidence) =>
         evidence.kind === "reanchor" &&
@@ -5804,12 +5803,12 @@ const answersCatchUpThroughAStoredCompletedReanchor = () =>
  * @returns The wrapped store, the arm switch, the signal that a read is
  *     held, and the release.
  */
-const holdNextStoreRead = (store: EndpointStore) =>
+const holdNextStoreRead = (store: DaemonStore) =>
   Effect.gen(function* () {
     const armed = yield* Ref.make(false);
     const held = yield* Deferred.make<undefined>();
     const release = yield* Deferred.make<undefined>();
-    const gated: EndpointStore = {
+    const gated: DaemonStore = {
       ...store,
       recover: () =>
         Ref.getAndSet(armed, false).pipe(
@@ -5997,7 +5996,7 @@ const relayRecoveryTraffic = (
  * @param oldAnchor Anchor the conversation held before the restart.
  * @returns The store's positions once the conversation re-anchored.
  */
-const awaitReanchoredFrom = (store: EndpointStore, oldAnchor: string) =>
+const awaitReanchoredFrom = (store: DaemonStore, oldAnchor: string) =>
   store.recover().pipe(
     Effect.map(({ positions }) => positions),
     Effect.filterOrFail(
@@ -6080,7 +6079,7 @@ const failsWhenTheStoreFailsWhileApplyingACaughtUpReanchor = () =>
   Effect.gen(function* () {
     const fixture = yield* makeFixture;
     yield* retainCertifiedRecord(fixture);
-    const failingStore: EndpointStore = {
+    const failingStore: DaemonStore = {
       ...fixture.store,
       applyCatchUpReanchor: () =>
         Effect.fail(new EndpointStoreError({ reason: "persistence" })),
@@ -9138,7 +9137,7 @@ const refuseSuccessorBehindStagedCandidate = (fixture: RecoveryFixture) =>
     const history = yield* buildN4PartialHistory(fixture, n4);
     const successorHash =
       history.certifiedSuccessor.actionCertifiedRecord.recordHash;
-    const refusingStore: EndpointStore = {
+    const refusingStore: DaemonStore = {
       ...fixture.store,
       applyCertifiedRecord: (record, delivery) =>
         record.recordHash === successorHash
@@ -9236,7 +9235,7 @@ const failsToStartWhenTheStoreFailsToStageASuccessorBehindItsCandidate = () =>
   Effect.gen(function* () {
     const fixture = yield* makeFixture;
     yield* refuseSuccessorBehindStagedCandidate(fixture);
-    const failingStore: EndpointStore = {
+    const failingStore: DaemonStore = {
       ...fixture.store,
       stageRecordForDissemination: () =>
         Effect.fail(new EndpointStoreError({ reason: "persistence" })),

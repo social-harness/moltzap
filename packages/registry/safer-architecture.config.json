@@ -27,10 +27,6 @@
       "reason": "Condition-only Registry process composition for compatibility tests"
     },
     {
-      "file": "rpc.ts",
-      "reason": "Correlated in-process RPC boundary between HTTP admission and storage operations"
-    },
-    {
       "file": "server.ts",
       "reason": "Private Registry process composition used by the operator executable and process fixtures"
     },

@@ -1,14 +1,16 @@
 /** @file Acquisition and supervision of the protocol one daemon identity runs. */
 
 import { Cause, type Context, Deferred, Effect, Option, Scope } from "effect";
+import type { ListenError } from "../../communication/conversations/errors.js";
 import type {
   DeliveryToken,
-  EndpointStore,
   EndpointStoreError,
   StoredMembership,
 } from "../../communication/store/index.js";
+import type { Firewall } from "../../firewall/index.js";
 import type { AgentId } from "../../identity/identifiers.js";
 import type { DaemonBootstrap } from "../bootstrap.js";
+import type { DaemonStore } from "../store.js";
 import {
   type CollectiveEmitError,
   type CollectiveOperations,
@@ -16,10 +18,6 @@ import {
   makeCollectiveOperations,
   type ResultProvenance,
 } from "../../communication/collectives/index.js";
-import {
-  type ListenError,
-  SendError,
-} from "../../communication/conversations/errors.js";
 import {
   type EndpointEngine,
   type EndpointEngineInput,
@@ -31,7 +29,6 @@ import {
   decodeOuterBody,
   type OuterBodyReader,
 } from "../../communication/records/index.js";
-import { agentAddressOf } from "../../communication/records/values.js";
 import {
   Router,
   type RouterWorker,
@@ -43,10 +40,6 @@ import {
 } from "../../communication/router/index.js";
 import { encodeCanonical, sameBytes } from "../../encoding/canonical-json.js";
 import { compareAscii } from "../../encoding/identifier.js";
-import {
-  collectiveAdmission,
-  type InstalledFirewall,
-} from "../../firewall/index.js";
 import {
   AgentCard,
   agentViewOf,
@@ -84,14 +77,14 @@ export interface ActiveProtocol {
 
 /** The daemon resources a protocol is acquired from and supervised in. */
 export interface ProtocolEnvironment {
-  readonly store: EndpointStore;
+  readonly store: DaemonStore;
   readonly bootstrap: DaemonBootstrap;
   readonly edges: ProtocolEdges;
   readonly registry: Context.Tag.Service<typeof Registry>;
   readonly router: Context.Tag.Service<typeof Router>;
   readonly daemonScope: Scope.Scope;
   readonly fatal: Deferred.Deferred<never, DaemonRuntimeError>;
-  readonly firewall?: InstalledFirewall;
+  readonly firewall?: Firewall;
 }
 
 /** How an acquired protocol reaches back into the daemon that runs it. */
@@ -341,40 +334,16 @@ const makeProtocolCollectives = (
   agentCard: VerifiedAgentCard,
   engine: EndpointEngine,
 ): Effect.Effect<CollectiveOperations, EndpointStoreError> => {
-  const installed = environment.firewall;
   return makeCollectiveOperations({
-    bindMessage: (input, hold) => engine.bind(input, hold),
     store: environment.store,
     observeMessage: (msgId) => engine.observeMessage(msgId),
-    sendAdmitted: (input, checkId) => engine.sendAdmitted(input, checkId),
+    prepareMessage: (input) => engine.prepare(input),
+    acceptMessage: (prepared, hold) => engine.accept(prepared, hold),
     reportStorageFault: (error) => reportStorageFault(environment, error),
     self: agentViewOf(agentCard),
-    lookupMember: (member) =>
-      engine.resolveConversation(member).pipe(
-        Effect.flatMap((resolved) => {
-          const card = resolved.memberCards.find(
-            (candidate) => agentAddressOf(candidate) === member,
-          );
-          return card === undefined
-            ? Effect.fail(new SendError({ reason: "unknown-agent" }))
-            : Effect.succeed(agentViewOf(card));
-        }),
-      ),
     sendMessage: (input) => engine.send(input),
     emit,
     scope: environment.daemonScope,
-    ...(installed === undefined
-      ? {}
-      : {
-          admission: collectiveAdmission(
-            {
-              store: environment.store,
-              installed,
-              localAgentCard: agentCard,
-            },
-            engine,
-          ),
-        }),
   });
 };
 

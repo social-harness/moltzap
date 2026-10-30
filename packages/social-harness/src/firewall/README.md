@@ -1,16 +1,16 @@
 # Personal message firewall
 
-The firewall connects policy assessment to the daemon's send and receive
-boundaries. A change to what a rule concludes belongs in evaluation. A change
-to when a message becomes visible or an intent becomes durable belongs in
-admission. Keeping those responsibilities separate lets offline experiments
-exercise the same evaluator without acquiring endpoint state.
+The firewall assesses exact prepared messages against explicitly configured
+rules. A check captures its rules and permitted evidence once. Construction
+owns the active rule value and durable edits, while daemon delivery owns when
+an assessed message becomes visible or an accepted intent becomes durable.
+Offline checking uses the same evaluation operation with an injected provider.
 
-When adding assessment data, follow it through both retained audit and host
-projection. The host-facing outcome must select permitted advice explicitly,
-because the evaluator also handles evidence that the host may not receive.
-Policy loading decides which rules and provider are installed, rather than
-giving the evaluator access to configuration files or credentials.
+Configuration files and rule documents are package assets under `config/firewall/`.
+Applications select them explicitly or supply their own files. The evaluator
+receives validated data and cannot acquire provider credentials or read policy
+files. Agent-visible advice selects registered text and permitted references;
+private assessment evidence stays private.
 
 The [message policy contract](../../../../docs/reference/spec/firewall/message-policy.md)
 owns assessment, admission and visibility guarantees.

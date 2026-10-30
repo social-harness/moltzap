@@ -5,11 +5,11 @@
 
 import { Effect, Schema } from "effect";
 import type {
-  EndpointStore,
   ProtocolEvidence,
   StoredAnchor,
   CertifiedRecord as StoredCertifiedRecord,
 } from "../communication/store/index.js";
+import type { DaemonStore } from "../daemon/store.js";
 import type { AgentSigningAuthority } from "../identity/keys.js";
 import {
   inboundDelivery,
@@ -116,7 +116,7 @@ export const buildCertifiedFirstMessage = (
  * @returns Completion once every write is durable.
  */
 export const storeCertifiedFirstMessage = (
-  store: EndpointStore,
+  store: DaemonStore,
   local: VerifiedAgentCard,
   membership: VerifiedMembership,
   record: CertifiedRecord,
@@ -136,7 +136,7 @@ export const storeCertifiedFirstMessage = (
 
 /** The real endpoint store and the two members that certify each history extension. */
 export interface HistoryEndpoint {
-  readonly store: EndpointStore;
+  readonly store: DaemonStore;
   readonly local: SigningIdentity;
   readonly remote: SigningIdentity;
   readonly membership: VerifiedMembership;
@@ -228,10 +228,10 @@ export function buildCertifiedMessage(
  * @returns The store with every read of the row misfiled.
  */
 export function withMisattributedActionEvidence(
-  store: EndpointStore,
+  store: DaemonStore,
   signer: string,
   claimed: string,
-): EndpointStore {
+): DaemonStore {
   return {
     ...store,
     recover: () =>
@@ -267,9 +267,9 @@ export function withMisattributedActionEvidence(
  * @returns The store with every initial anchor row selecting `recordHash`.
  */
 export function withInitialAnchorSelecting(
-  store: EndpointStore,
+  store: DaemonStore,
   recordHash: string,
-): EndpointStore {
+): DaemonStore {
   return {
     ...store,
     recover: () =>
@@ -441,7 +441,7 @@ function certifiedRecord(parts: CertifiedRecordParts): CertifiedRecord {
 }
 
 function lockFirstMessage(
-  store: EndpointStore,
+  store: DaemonStore,
   membership: VerifiedMembership,
   record: CertifiedRecord,
 ) {
@@ -565,7 +565,7 @@ function misattributeRecordEvidence(
 
 /** Locally certified messages must first have an immutable intent, as the engine requires. */
 function bindLocalIntent(
-  store: EndpointStore,
+  store: DaemonStore,
   local: VerifiedAgentCard,
   membership: VerifiedMembership,
   record: CertifiedRecord,

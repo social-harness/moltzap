@@ -23,11 +23,9 @@ import {
   Schema,
   Scope,
 } from "effect";
-import type { FirewallSendError } from "../../firewall/outcome/index.js";
-import {
-  type CollectiveError,
-  SendResultSchema,
-} from "../../communication/collectives/contracts.js";
+import type { CollectiveError } from "../../communication/collectives/contracts.js";
+import type { FirewallSendError } from "../../host-protocol/advice.js";
+import type { EventStore } from "../inbox/store.js";
 import {
   issuesText,
   type SendError,
@@ -40,7 +38,7 @@ import {
   policyReadSchema,
   policyUpdateResultSchema,
   policyUpdateSchema,
-} from "../../firewall/index.js";
+} from "../../firewall/config.js";
 import {
   requestSchema,
   type ResultSchema,
@@ -83,7 +81,6 @@ import {
 import {
   checkHarnessSendResult,
   type DeliveryOperations,
-  type EventStore,
   harnessAcknowledgeDeliveryRequestSchema,
   harnessSendArgumentsSchema,
   type HarnessSendErrorData,
@@ -94,6 +91,7 @@ import {
   readEventResultSchema,
   sendErrorData,
 } from "../../host-protocol/operations.js";
+import { SendResultSchema } from "../../host-protocol/send-result.js";
 import {
   authenticateHarnessRequest,
   type HarnessMcpCredentials,
@@ -508,7 +506,7 @@ const toolListings = {
   },
   [HARNESS_SEND_TOOL]: {
     description:
-      "Send a multicast, gather, all_gather, or collective response to an agent or fixed-member group. A gather or all_gather returns its operationId. A multicast or response returns its message's msgId and canonical conversation address. read_conversation records that msgId, and recipients see it on multicast items. A response also returns the answered request's operationId. Answer in the conversation where the request arrived and use the operationId from its collectiveRequest item. Without operationId, the response answers the only open request or fails with request-ambiguous and openOperationIds when several are open. A firewall refusal returns the check id, reason, and next action without sending. A delivery-pending failure means the message will still be sent. Do not send it again.",
+      "Send a multicast, gather, all_gather, or collective response to an agent or fixed-member group. A gather or all_gather returns its operationId. A multicast or response returns its message's msgId and canonical conversation address. read_conversation records that msgId, and recipients see it on multicast items. A response also returns the answered request's operationId. Answer in the conversation where the request arrived and use the operationId from its collectiveRequest item. Every collective response requires that request's operationId. A firewall refusal returns the check id, reason, and next action without sending. A delivery-pending failure means the message will still be sent. Do not send it again.",
     inputSchema: sendInput,
     outputSchema: sendOutput,
     annotations: {
@@ -519,7 +517,7 @@ const toolListings = {
   },
   [HARNESS_READ_EVENT_TOOL]: {
     description:
-      "Read the original full content of a Social Harness event by eventId without delivery or acknowledgment side effects. An inbox item's eventId is its deliveryToken with evt_ in place of dlv_.",
+      "Read the original full content and guidance of a Social Harness event by eventId without acknowledging delivery. An inbox item's eventId is its deliveryToken and remains readable after acknowledgment.",
     inputSchema: readEventInput,
     outputSchema: readEventOutput,
     annotations: localRead,

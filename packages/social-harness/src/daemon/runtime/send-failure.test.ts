@@ -21,16 +21,14 @@ import { pollCursor } from "../../__tests__/router-worker-fixtures.js";
 import { stateDirectory } from "../../__tests__/store-schema-fixtures.js";
 import { makeEndpointEngine } from "../../communication/conversations/index.js";
 import { RouterInstanceId } from "../../communication/router/api/contract.js";
-import {
-  EndpointStoreError,
-  openEndpointStore,
-} from "../../communication/store/index.js";
+import { EndpointStoreError } from "../../communication/store/index.js";
 import { encodeCanonical } from "../../encoding/canonical-json.js";
 import { AgentCard } from "../../identity/cards.js";
 import { Ed25519PublicKey } from "../../identity/keys.js";
 import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { SendInput } from "../../index.js";
 import { acquireHarnessMcpHttpServer } from "../mcp/index.js";
+import { openDaemonStore } from "../store.js";
 
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- Exact HTTP statuses and closed diagnostic reasons are boundary contracts; secret sentinels verify redaction. */
 // @agent-code-guard/regression-only: failure injection pins send replies and secret-safe storage diagnostics during daemon shutdown.
@@ -92,7 +90,7 @@ const proposalAnchor = {
 const proposalFailureFixture = Effect.gen(function* () {
   const { fixture, remoteCard } = yield* proposalIdentities;
   const original = yield* makeHarness(fixture, "none");
-  const store = yield* openEndpointStore(stateDirectory(), {
+  const store = yield* openDaemonStore(stateDirectory(), {
     liveWireVersions: LIVE_WIRE_VERSIONS,
   });
   yield* store.bindIdentity({

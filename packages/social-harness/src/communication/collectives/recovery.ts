@@ -1,11 +1,12 @@
 /** @file Rebuild collective working state from retained decisions and certified history. */
 import { Clock, Effect, Fiber, Option, Schema } from "effect";
-import type { CollectiveOperations, MessageSender } from "./ports.js";
+import type { MessageClassifier } from "./ports.js";
 import type { OpenRequest, ReceivedRequest } from "./received-request.js";
 import type { HeldClose } from "./shared-answers.js";
+import { AgentCard, AgentView } from "../../identity/cards.js";
+import { preparedSendData } from "../conversations/index.js";
 import { InboundMessage } from "../conversations/message.js";
-import { AgentAddress, RecordHash } from "../records/index.js";
-import { agentAddressOf } from "../records/values.js";
+import { AgentAddress, Content, RecordHash } from "../records/index.js";
 import {
   type CollectiveRequestRefusal,
   decodeRuntimeValue,
@@ -29,14 +30,18 @@ import {
   readCollectiveSelection,
   readLocalCollective,
 } from "./state.js";
-import { collectiveRequesterOf, readCollectiveValue } from "./wire/index.js";
+import {
+  collectiveRequesterOf,
+  type CollectiveValue,
+  readCollectiveValue,
+} from "./wire/index.js";
 
 /** Recovery invokes the same transitions used by live delivery and certification. */
 export interface RecoveryActions {
   readonly open: (
     prepared: PreparedGather,
   ) => Effect.Effect<void, CollectiveError>;
-  readonly classify: CollectiveOperations["classify"];
+  readonly classify: MessageClassifier;
   readonly restoreResponse: (
     message: StoredCollectiveMessage,
   ) => Effect.Effect<void, EndpointStoreError>;
@@ -134,7 +139,6 @@ function replayDeliveries(
             if (request === undefined) {
               return;
             }
-            yield* restoreRemote(state, request);
             const response = responses.get(request.operationId);
             if (response !== undefined) {
               yield* actions.restoreResponse(response);
@@ -229,10 +233,11 @@ function restoreLocal(
       Option.isNone(value) ||
       value.value.kind !== "operation" ||
       value.value.op === "multicast" ||
-      value.value.operationId !== operationId
+      !matchesRetainedOperation(value.value, operationId, descriptor)
     ) {
       return yield* corruptState();
     }
+    yield* validatePreparedRequests(state, descriptor);
     return {
       operationId,
       open: { ...descriptor, outcomes: new Map(), answerHashes: new Map() },
@@ -240,31 +245,87 @@ function restoreLocal(
       deadlineAt: descriptor.deadlineAt,
       waitUntil: descriptor.waitUntil,
       durable: retained,
+      requests: descriptor.requests,
     } satisfies PreparedGather;
   });
 }
 
-function restoreRemote(
+function matchesRetainedOperation(
+  value: Extract<
+    CollectiveValue,
+    { readonly kind: "operation"; readonly op: "gather" | "all_gather" }
+  >,
+  operationId: CollectiveId,
+  descriptor: Effect.Effect.Success<ReturnType<typeof readLocalCollective>>,
+) {
+  return (
+    value.operationId === operationId &&
+    value.op === descriptor.op &&
+    value.deadlineAt === descriptor.deadlineAt
+  );
+}
+
+/** Retained fanout preparations must still name the descriptor's exact content, author and peers. */
+function validatePreparedRequests(
   state: CollectiveState,
-  retained: StoredCollectiveOperation,
+  descriptor: Effect.Effect.Success<ReturnType<typeof readLocalCollective>>,
+) {
+  const destinations =
+    descriptor.op === "gather"
+      ? descriptor.members.map((member) => `agent:${member.agentName}`)
+      : [descriptor.to];
+  if (
+    descriptor.requests.length !== destinations.length ||
+    new Set(descriptor.requests.map(({ to }) => to)).size !==
+      destinations.length ||
+    descriptor.requests.some(({ to }) => !destinations.includes(to))
+  ) {
+    return corruptState();
+  }
+  return Effect.forEach(
+    descriptor.requests,
+    (request) => validatePreparedRequest(state, descriptor, request),
+    { concurrency: 1, discard: true },
+  );
+}
+
+function validatePreparedRequest(
+  state: CollectiveState,
+  descriptor: Effect.Effect.Success<ReturnType<typeof readLocalCollective>>,
+  request: PreparedGather["requests"][number],
 ) {
   return Effect.gen(function* () {
-    if (retained.origin.kind !== "remote") {
-      return;
-    }
-    const operationId = yield* storedValue(CollectiveId, retained.operationId);
-    const request = state.requests.get(operationId);
-    if (request === undefined || !retained.origin.requiresAdmission) {
-      return;
-    }
-    const admission = yield* state.ports.store.readFirewallRequestAdmission(
-      retained.origin.recordHash,
+    const { intent, descriptor: membership } = yield* preparedSendData(
+      request.message,
+    ).pipe(Effect.catchTag("SendError", corruptState));
+    const cards = yield* Effect.forEach(
+      membership.members,
+      (card) =>
+        Schema.decodeUnknown(AgentCard)(card).pipe(
+          Effect.catchTag("ParseError", corruptState),
+        ),
+      { concurrency: 1 },
     );
-    if (admission?.presented) {
-      request.state = "open";
-    } else {
-      request.state =
-        admission?.checkId === undefined ? "unadmitted" : "withheld";
+    const members = [
+      state.ports.self,
+      ...descriptor.members.filter(
+        (member) =>
+          descriptor.op === "all_gather" ||
+          `agent:${member.agentName}` === request.to,
+      ),
+    ];
+    if (
+      intent.authorAgentId !== state.ports.self.agentId ||
+      !Schema.equivalence(Content)(intent.content, descriptor.content) ||
+      cards.length !== members.length ||
+      cards.some(
+        (card) =>
+          !members.some((member) =>
+            Schema.equivalence(AgentView)(AgentView.make(card), member),
+          ),
+      )
+    ) {
+      return yield* corruptState();
     }
   });
 }
@@ -363,27 +424,28 @@ function resumeFanout(
   recovered: RecoveredRequester,
 ) {
   const { operationId, operation, claimed } = recovered;
-  const checkId = state.retained.get(operationId)?.admittedCheckId;
-  const send: MessageSender =
-    checkId === undefined
-      ? state.ports.sendMessage
-      : (input) => state.ports.sendAdmitted(input, checkId);
-  const pending = operation.open.members
-    .map(agentAddressOf)
-    .filter((member) => !claimed.has(member));
+  const pending = operation.requests.filter(({ to }) => !claimed.has(to));
   return Effect.forEach(
     pending,
-    (member) =>
-      send({
-        to: member,
-        content: operation.content,
-        collective: { operationId, role: "request", destination: member },
-      }).pipe(
-        Effect.catchAll((error) =>
-          actions.refuse(operationId, messageRefusal(member, error)),
+    ({ to, message }) =>
+      state.ports
+        .acceptMessage(
+          {
+            ...message,
+            collective: { operationId, role: "request", destination: to },
+          },
+          Effect.succeed(Effect.void),
+        )
+        .pipe(
+          Effect.flatMap(({ certified }) => certified),
+          Effect.catchAll((error) =>
+            actions.refuse(
+              operationId,
+              messageRefusal(Schema.decodeUnknownSync(AgentAddress)(to), error),
+            ),
+          ),
+          Effect.forkIn(state.ports.scope),
         ),
-        Effect.forkIn(state.ports.scope),
-      ),
     { concurrency: 1, discard: true },
   );
 }

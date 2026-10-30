@@ -1,5 +1,6 @@
 /** @file Authenticated Registry HTTP routes, bounded framing, and exact envelopes. */
 
+import type { AgentSigningAuthority } from "@moltzap/social-harness";
 import {
   HttpRouter,
   HttpServerRequest,
@@ -14,7 +15,6 @@ import {
 import { Cause, Effect, Option } from "effect";
 import type { RegistryStorage } from "./storage.js";
 import { verifyBootstrapRegistration } from "./admission.js";
-import { type RegistryRpcClient, withBootstrapAdmission } from "./rpc.js";
 
 /* eslint-disable @typescript-eslint/naming-convention -- Closed HTTP error constructors retain their class names when bound from the service capability. */
 const {
@@ -30,7 +30,7 @@ const {
 /* eslint-enable @typescript-eslint/naming-convention -- Restore variable naming after binding error constructors. */
 
 type RegistryHttpAppInput = Readonly<{
-  client: RegistryRpcClient;
+  registrySigningAuthority: AgentSigningAuthority;
   storage: RegistryStorage;
   admissionCredential: Parameters<
     typeof verifyBootstrapRegistration
@@ -43,8 +43,8 @@ type RegistryHttpAppInput = Readonly<{
  * Builds the complete Registry HTTP application.
  *
  * @param input Complete Registry boundary dependencies.
- * @param input.client In-process RPC client for domain operations.
- * @param input.storage Durable registration nonce storage.
+ * @param input.registrySigningAuthority Issuer of registered agent cards.
+ * @param input.storage Durable registrations, lookups, and bootstrap nonces.
  * @param input.admissionCredential Bootstrap admission secret.
  * @param input.nonceCapacity Maximum live bootstrap nonces.
  * @param input.requestSemaphore Immediate global request admission.
@@ -139,9 +139,18 @@ function registerHandler(input: RegistryHttpAppInput) {
             nonceCapacity: input.nonceCapacity,
             storage: input.storage,
           });
-          const result = yield* withBootstrapAdmission(
-            input.client.register(registration),
-          );
+          const requestBytes =
+            yield* registryContract.registryRegisterCodec.request
+              .encode(registration)
+              .pipe(
+                // eslint-disable-next-line agent-code-guard/no-effect-error-coalescing -- Business request serialization is an internal boundary with no client-actionable detail.
+                Effect.mapError(() => new InternalServerError()),
+              );
+          const result = yield* input.storage.register({
+            request: registration,
+            requestBytes,
+            registrySigningAuthority: input.registrySigningAuthority,
+          });
           return yield* resultResponse(
             registryContract.registryRegisterCodec.response.encode(result),
           );
@@ -180,7 +189,7 @@ function lookupHandler(input: RegistryHttpAppInput) {
               // eslint-disable-next-line agent-code-guard/no-effect-error-coalescing -- Every canonical body or request-schema failure has the same public malformed-request meaning.
               Effect.mapError(() => new MalformedRequestError()),
             );
-          const result = yield* input.client.lookup(decoded);
+          const result = yield* input.storage.lookup(decoded);
           return yield* resultResponse(
             registryContract.registryLookupCodec.response.encode(result),
           );

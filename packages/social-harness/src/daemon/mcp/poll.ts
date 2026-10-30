@@ -3,8 +3,7 @@
 import { ProtocolError } from "@modelcontextprotocol/server";
 import { type Clock, Effect, Encoding, Schema } from "effect";
 import { randomUUID } from "node:crypto";
-import type { InboxPage } from "../../communication/store/index.js";
-import type { EventStore } from "../../host-protocol/operations.js";
+import type { EventStore, InboxPage } from "../inbox/store.js";
 import {
   type ConsumerMetadata,
   decodeConsumerMetadata,

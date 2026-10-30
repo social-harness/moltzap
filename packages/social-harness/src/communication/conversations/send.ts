@@ -1,23 +1,12 @@
 /** @file Address resolution, immutable intent binding, and proposal creation. */
 
-import {
-  Deferred,
-  Duration,
-  Effect,
-  Exit,
-  Option,
-  Schedule,
-  Schema,
-} from "effect";
-import type { FirewallSendError } from "../../firewall/outcome/index.js";
+import { Deferred, Duration, Effect, Exit, Schedule, Schema } from "effect";
 import type { MessageAddressInput } from "../records/values.js";
 import type { RouterWorkerUnavailableError } from "../router/index.js";
 import type {
   CollectiveMessageBinding,
   ConversationFoundation,
   EndpointStoreError,
-  FirewallCompletion,
-  MessageIntentBinding,
   MessageIntent as StoredMessageIntent,
 } from "../store/index.js";
 import type {
@@ -26,7 +15,10 @@ import type {
   EngineOutboxError,
   EngineRuntime,
 } from "./engine-context.js";
-import { encodeCanonical } from "../../encoding/canonical-json.js";
+import {
+  decodeCanonical,
+  encodeCanonical,
+} from "../../encoding/canonical-json.js";
 import { AgentCard, type VerifiedAgentCard } from "../../identity/cards.js";
 import {
   type ActionCore,
@@ -46,7 +38,11 @@ import {
   type VerifiedMembership,
   verifyMembershipDescriptor,
 } from "../records/index.js";
-import { resolveMessageAddress } from "./address.js";
+import {
+  prepareMessageAddress,
+  type RecipientResolutionError,
+  resolveMessageAddress,
+} from "./address.js";
 import { SendError } from "./errors.js";
 import { anchorHashAtHead } from "./history/index.js";
 import { markRetries, type RetryOutcome } from "./retry-markers.js";
@@ -137,9 +133,6 @@ const representationFailure = (): SendError =>
  */
 const ROUTER_ATTACH_TIMEOUT = Duration.seconds(45);
 
-/** A check's attempts: the first, one fresh recheck, and one terminal. */
-const CHECK_ATTEMPTS = 3;
-
 type ResolvedAddress = Effect.Effect.Success<
   ReturnType<typeof resolveMessageAddress>
 >;
@@ -227,9 +220,11 @@ export const resolveConversation = (
   }).pipe(Effect.withSpan("resolveConversation"));
 
 const resolveMembership = (runtime: EngineRuntime, input: EngineSendInput) =>
-  resolveCards(runtime, input.to).pipe(
-    Effect.flatMap((resolved) => membershipFor(runtime, resolved)),
-  );
+  prepareMessageAddress({
+    localAgentCard: runtime.input.localAgentCard,
+    registry: runtime.input.registry,
+    to: input.to,
+  }).pipe(Effect.flatMap((resolved) => membershipFor(runtime, resolved)));
 
 const proposalAction = (
   conversation: EngineConversation,
@@ -590,228 +585,115 @@ export interface PreparedSendHandle {
 
 const noBindHold = Effect.succeed(Effect.void);
 
-/**
- * Persist an addressed intent and return its durable completion latch.
- * The latch completes when the minted message becomes locally certified.
- */
-export const prepareSend = <E = never>(
-  runtime: EngineRuntime,
-  input: EngineSendInput,
-  hold: BindHold<E> = noBindHold,
-): Effect.Effect<PreparedSendHandle, SendError | E> =>
-  prepareBoundSend(
-    runtime,
-    input,
-    (binding) =>
-      runtime.input.store
-        .bindMessageIntent(binding)
-        .pipe(Effect.as("admitted" as const)),
-    hold,
-  ).pipe(Effect.withSpan("prepareSend"));
-
-/**
- * Persist a gather request message's intent only against its operation's
- * admitted check, whose candidate is the canonical request content this message
- * carries. A message whose content the check did not admit binds nothing and
- * fails as `certification-unavailable`.
- */
-export const prepareAdmittedSend = (
-  runtime: EngineRuntime,
-  input: EngineSendInput,
-  checkId: string,
-): Effect.Effect<PreparedSendHandle, SendError> =>
-  encodeCanonical(Content, input.content).pipe(
-    Effect.mapError(representationFailure),
-    Effect.flatMap((canonicalCandidate) =>
-      prepareBoundSend(
-        runtime,
-        input,
-        (binding) =>
-          runtime.input.store.bindAdmittedMessageIntent(binding, {
-            checkId,
-            canonicalCandidate,
-          }),
-        noBindHold,
-      ),
-    ),
-    Effect.withSpan("prepareAdmittedSend"),
-  );
-
-/** Persist an addressed intent through `admission`, which decides whether it binds. */
-function prepareBoundSend<E>(
-  runtime: EngineRuntime,
-  input: EngineSendInput,
-  admission: IntentAdmission,
-  hold: BindHold<E>,
-): Effect.Effect<PreparedSendHandle, SendError | E> {
-  return awaitRouterAttachment(runtime).pipe(
-    Effect.zipRight(prepareIntent(runtime, input)),
-    Effect.flatMap((prepared) =>
-      activateHeld(runtime, prepared, admission, hold).pipe(
-        Effect.flatMap((activation) =>
-          activation.kind === "refused"
-            ? Effect.fail(representationFailure())
-            : Effect.succeed({
-                msgId: prepared.intent.msgId,
-                completion: activation.completion,
-              }),
-        ),
-      ),
-    ),
-  );
-}
-
-/** Prepared data has no execution authority until the atomic store transition succeeds. */
+/** Canonical strings preserve prepared bytes without exposing mutable buffers or caller values. */
 export interface PreparedSend {
-  readonly membership: VerifiedMembership;
-  readonly intent: MessageIntent;
-  readonly canonicalIntent: EngineMessageIntent["canonicalIntent"];
+  readonly canonicalMembership: string;
+  readonly canonicalIntent: string;
   readonly collective?: CollectiveMessageBinding;
 }
 
-/**
- * The application boundary supplies checking without gaining engine
- * capabilities. `admitted` is opaque to the engine: the value of the check
- * that admits the message returns with it.
- */
-export type PreparedSendCheck<A> = (
-  prepared: PreparedSend,
-  terminal: boolean,
-) => Effect.Effect<
-  {
-    readonly completion: FirewallCompletion;
-    readonly refusal: FirewallSendError;
-    readonly admitted: A;
-  },
-  EndpointStoreError
->;
-
-/**
- * A precondition a caller holds across one bind attempt. Running it
- * re-establishes the precondition just before the intent binds and yields
- * the effect that gives it up. The engine gives it up when the attempt binds
- * nothing. A bound intent keeps it, including one whose activation fails:
- * that intent reports `delivery-pending` through its completion latch, since
- * its message may still certify later. A failure refuses the send before
- * anything binds. Only a check that admits takes it, so a refused send never
- * establishes it.
- */
+/** Request claims are acquired at binding and released only when no intent binds. */
 export type BindHold<E> = Effect.Effect<Effect.Effect<void>, E>;
 
-/**
- * Check and commit until a commit is fresh. A stale capture gets one fresh
- * attempt; a second gets a terminal attempt, which holds without inference
- * and so commits.
- * @param attempt One check and its commit, told whether it is terminal.
- * @returns The first fresh commit, or none if every attempt was stale.
- */
-export const untilFresh = <A, E>(
-  attempt: (terminal: boolean) => Effect.Effect<A | "stale", E>,
-): Effect.Effect<Option.Option<A>, E> => {
-  const from = (index: number): Effect.Effect<Option.Option<A>, E> =>
-    index === CHECK_ATTEMPTS
-      ? Effect.succeed(Option.none())
-      : attempt(index === CHECK_ATTEMPTS - 1).pipe(
-          Effect.flatMap((committed) =>
-            committed === "stale"
-              ? from(index + 1)
-              : Effect.succeed(Option.some(committed)),
-          ),
-        );
-  return from(0);
-};
+interface PreparedIntent {
+  readonly membership: VerifiedMembership;
+  readonly intent: MessageIntent;
+  readonly canonicalIntent: Uint8Array;
+  readonly collective?: CollectiveMessageBinding;
+}
 
-/**
- * Each attempt checks first, then commits: an admitting check takes `hold`
- * and binds, so a caller's precondition is re-established after the check
- * and held only across the bind. One stale capture gets one fresh recheck,
- * and a second a terminal attempt.
- */
-export const prepareCheckedSend = <E, A>(
+/** Decode only retained preparation data; resolving names or minting another identity is forbidden here. */
+export const preparedSendData = (prepared: PreparedSend) =>
+  Effect.all({
+    descriptor: decodeCanonical(
+      MembershipDescriptorSchema,
+      new TextEncoder().encode(prepared.canonicalMembership),
+    ),
+    intent: decodeCanonical(
+      MessageIntentSchema,
+      new TextEncoder().encode(prepared.canonicalIntent),
+    ),
+  }).pipe(Effect.mapError(representationFailure));
+
+/** Resolve and capture one exact message without creating outgoing ownership. */
+export const prepareSend = (
   runtime: EngineRuntime,
   input: EngineSendInput,
-  check: PreparedSendCheck<A>,
-  hold: BindHold<E>,
-): Effect.Effect<
-  PreparedSendHandle & { readonly admitted: A },
-  SendError | FirewallSendError | E
-> =>
+): Effect.Effect<PreparedSend, SendError | RecipientResolutionError> =>
   Effect.gen(function* () {
     yield* awaitRouterAttachment(runtime);
-    const prepared = yield* prepareIntent(runtime, input);
-    const committed = yield* untilFresh((terminal) =>
-      check(prepared, terminal).pipe(
-        Effect.mapError(storeFailure),
-        Effect.flatMap((checked) =>
-          commitCheck(runtime, prepared, checked, hold),
-        ),
-      ),
+    const canonicalContent = yield* encodeCanonical(
+      Content,
+      input.content,
+    ).pipe(Effect.mapError(representationFailure));
+    const content = yield* decodeCanonical(Content, canonicalContent).pipe(
+      Effect.mapError(representationFailure),
     );
-    return Option.isSome(committed)
-      ? committed.value
-      : yield* Effect.fail(representationFailure());
-  }).pipe(Effect.withSpan("prepareCheckedSend"));
+    const membership = yield* resolveMembership(runtime, input);
+    const msgId = yield* mintMsgId().pipe(
+      Effect.mapError(representationFailure),
+    );
+    const intent = yield* Schema.decodeUnknown(MessageIntentSchema)({
+      sharnessVersion: runtime.wireVersion,
+      kind: "message_intent",
+      conversationId: membership.descriptor.conversationId,
+      membershipHash: membership.hash,
+      authorAgentId: runtime.input.localAgentCard.agentId,
+      msgId,
+      content,
+    }).pipe(Effect.mapError(representationFailure));
+    const canonicalIntent = yield* encodeCanonical(
+      MessageIntentSchema,
+      intent,
+    ).pipe(Effect.mapError(representationFailure));
+    const canonicalMembership = yield* encodeCanonical(
+      MembershipDescriptorSchema,
+      membership.descriptor,
+    ).pipe(Effect.mapError(representationFailure));
+    return Object.freeze({
+      canonicalIntent: new TextDecoder().decode(canonicalIntent),
+      canonicalMembership: new TextDecoder().decode(canonicalMembership),
+      ...(input.collective === undefined
+        ? {}
+        : { collective: Object.freeze({ ...input.collective }) }),
+    });
+  }).pipe(Effect.withSpan("prepareSend"));
 
-/**
- * Commit one check of a prepared message. A withholding check binds nothing and
- * takes no hold. An admitting check takes `hold` just before the intent
- * binds; when the hold refuses, the check commits withheld, so its judgment
- * is retained, and the send fails with the hold's refusal.
- */
-function commitCheck<E, A>(
+/** Bind the exact captured identity after the caller's protocol claim succeeds. */
+export const acceptSend = <E = never>(
   runtime: EngineRuntime,
   prepared: PreparedSend,
-  checked: Effect.Effect.Success<ReturnType<PreparedSendCheck<A>>>,
-  hold: BindHold<E>,
-): Effect.Effect<
-  (PreparedSendHandle & { readonly admitted: A }) | "stale",
-  SendError | FirewallSendError | E
-> {
-  return Effect.gen(function* () {
-    const { completion } = checked;
-    const withhold = bindChecked(runtime, { ...completion, admit: false });
-    const activation = completion.admit
-      ? yield* activateHeld(
-          runtime,
-          prepared,
-          bindChecked(runtime, completion),
-          hold.pipe(
-            Effect.tapError(() =>
-              bindPreparedIntent(runtime, prepared, withhold, Effect.void),
-            ),
-          ),
-        )
-      : yield* activateIntent(runtime, prepared, withhold, Effect.void);
-    if (activation.kind === "ready") {
-      return {
-        msgId: prepared.intent.msgId,
-        completion: activation.completion,
-        admitted: checked.admitted,
-      };
+  hold: BindHold<E> = noBindHold,
+): Effect.Effect<PreparedSendHandle, SendError | E> =>
+  Effect.gen(function* () {
+    const { descriptor, intent } = yield* preparedSendData(prepared);
+    const membership = yield* verifyMembershipDescriptor(
+      descriptor,
+      runtime.input.registrySignerPublicKey,
+    ).pipe(Effect.mapError(representationFailure));
+    if (
+      intent.conversationId !== descriptor.conversationId ||
+      intent.membershipHash !== membership.hash ||
+      intent.authorAgentId !== runtime.input.localAgentCard.agentId
+    ) {
+      return yield* representationFailure();
     }
-    return activation.disposition === "withheld"
-      ? yield* checked.refusal
-      : activation.disposition;
-  });
-}
+    const value: PreparedIntent = {
+      membership,
+      intent,
+      canonicalIntent: new TextEncoder().encode(prepared.canonicalIntent),
+      ...(prepared.collective === undefined
+        ? {}
+        : { collective: prepared.collective }),
+    };
+    const activation = yield* activateHeld(runtime, value, hold);
+    return { msgId: intent.msgId, completion: activation.completion };
+  }).pipe(Effect.withSpan("acceptSend"));
 
-function bindChecked(
-  runtime: EngineRuntime,
-  completion: FirewallCompletion,
-): IntentAdmission {
-  return (binding) =>
-    runtime.input.store.bindCheckedMessageIntent(binding, completion);
-}
-
-/**
- * Take the hold at the durable bind after gate and recovery waits. The outer
- * release survives interruption after the bind commits, allowing a collective
- * to recover custody of that same intent before the caller exits.
- */
+/** The release survives interruption and preserves custody when an intent was durably accepted. */
 function activateHeld<E>(
   runtime: EngineRuntime,
-  prepared: PreparedSend,
-  bind: IntentAdmission,
+  prepared: PreparedIntent,
   hold: BindHold<E>,
 ): Effect.Effect<
   Exclude<IntentActivation, { kind: "waiting" }>,
@@ -827,50 +709,13 @@ function activateHeld<E>(
       ),
       Effect.asVoid,
     );
-    return restore(activateIntent(runtime, prepared, bind, acquire)).pipe(
-      Effect.onExit((exit) =>
-        Exit.isSuccess(exit) && exit.value.kind === "ready"
-          ? Effect.void
-          : release,
-      ),
+    return restore(activateIntent(runtime, prepared, acquire)).pipe(
+      Effect.onExit((exit) => (Exit.isSuccess(exit) ? Effect.void : release)),
     );
   });
 }
 
-function prepareIntent(
-  runtime: EngineRuntime,
-  input: EngineSendInput,
-): Effect.Effect<PreparedSend, SendError> {
-  return Effect.gen(function* () {
-    const membership = yield* resolveMembership(runtime, input);
-    const msgId = yield* mintMsgId().pipe(
-      Effect.mapError(representationFailure),
-    );
-    const intent = yield* Schema.decodeUnknown(MessageIntentSchema)({
-      sharnessVersion: runtime.wireVersion,
-      kind: "message_intent",
-      conversationId: membership.descriptor.conversationId,
-      membershipHash: membership.hash,
-      authorAgentId: runtime.input.localAgentCard.agentId,
-      msgId,
-      content: input.content,
-    }).pipe(Effect.mapError(representationFailure));
-    const canonicalIntent = yield* encodeCanonical(
-      MessageIntentSchema,
-      intent,
-    ).pipe(Effect.mapError(representationFailure));
-    return {
-      membership,
-      intent,
-      canonicalIntent,
-      ...(input.collective === undefined
-        ? {}
-        : { collective: input.collective }),
-    };
-  });
-}
-
-function storedIntent(prepared: PreparedSend): StoredMessageIntent {
+function storedIntent(prepared: PreparedIntent): StoredMessageIntent {
   return {
     conversationId: prepared.intent.conversationId,
     membershipHash: prepared.intent.membershipHash,
@@ -882,10 +727,9 @@ function storedIntent(prepared: PreparedSend): StoredMessageIntent {
 
 function bindPreparedIntent<E>(
   runtime: EngineRuntime,
-  prepared: PreparedSend,
-  bind: IntentAdmission,
+  prepared: PreparedIntent,
   acquire: Effect.Effect<void, E>,
-): Effect.Effect<"admitted" | "withheld" | "stale", SendError | E> {
+): Effect.Effect<void, SendError | E> {
   return Effect.gen(function* () {
     const message = {
       intent: storedIntent(prepared),
@@ -899,56 +743,48 @@ function bindPreparedIntent<E>(
         return yield* new SendError({ reason: "certification-unavailable" });
       }
       yield* acquire;
-      return yield* bind({
-        kind: "existing-conversation",
+      return yield* runtime.input.store
+        .bindMessageIntent({
+          kind: "existing-conversation",
+          ...message,
+        })
+        .pipe(
+          Effect.catchTag("EndpointStoreError", (error) =>
+            failBind(runtime, error),
+          ),
+          Effect.asVoid,
+        );
+    }
+    const created = yield* createConversation(runtime, prepared.membership);
+    yield* acquire;
+    yield* runtime.input.store
+      .bindMessageIntent({
+        kind: "new-conversation",
+        foundation: created.foundation,
         ...message,
-      }).pipe(
+      })
+      .pipe(
         Effect.catchTag("EndpointStoreError", (error) =>
           failBind(runtime, error),
         ),
       );
-    }
-    const created = yield* createConversation(runtime, prepared.membership);
-    yield* acquire;
-    const disposition = yield* bind({
-      kind: "new-conversation",
-      foundation: created.foundation,
-      ...message,
-    }).pipe(
-      Effect.catchTag("EndpointStoreError", (error) =>
-        failBind(runtime, error),
-      ),
-    );
-    if (disposition !== "admitted") {
-      return disposition;
-    }
     runtime.conversations.set(
       created.conversation.conversationId,
       created.conversation,
     );
-    return disposition;
   });
 }
 
-type IntentAdmission = (
-  binding: MessageIntentBinding,
-) => Effect.Effect<"admitted" | "withheld" | "stale", EndpointStoreError>;
-
 type IntentActivation =
-  | Readonly<{ kind: "refused"; disposition: "withheld" | "stale" }>
   | Readonly<{
       kind: "ready";
       completion: Deferred.Deferred<RecordHash, SendError>;
     }>
-  | Readonly<{
-      kind: "waiting";
-      barrier: Deferred.Deferred<undefined>;
-    }>;
+  | Readonly<{ kind: "waiting"; barrier: Deferred.Deferred<undefined> }>;
 
 function activateIntent<E>(
   runtime: EngineRuntime,
-  prepared: PreparedSend,
-  bind: IntentAdmission,
+  prepared: PreparedIntent,
   acquire: Effect.Effect<void, E>,
 ): Effect.Effect<
   Exclude<IntentActivation, { kind: "waiting" }>,
@@ -956,24 +792,19 @@ function activateIntent<E>(
 > {
   return runtime.gate
     .withPermits(1)(
-      Effect.uninterruptible(
-        activateIntentOnce(runtime, prepared, bind, acquire),
-      ),
+      Effect.uninterruptible(activateIntentOnce(runtime, prepared, acquire)),
     )
     .pipe(
       Effect.flatMap((activation) => {
         switch (activation.kind) {
           case "ready":
-          case "refused":
             return Effect.succeed(activation);
           case "waiting":
             return runtime.phases
               .rearmCatchUp(runtime, prepared.intent.conversationId)
               .pipe(
                 Effect.zipRight(Deferred.await(activation.barrier)),
-                Effect.zipRight(
-                  activateIntent(runtime, prepared, bind, acquire),
-                ),
+                Effect.zipRight(activateIntent(runtime, prepared, acquire)),
               );
           default: {
             const exhaustive: never = activation;
@@ -986,8 +817,7 @@ function activateIntent<E>(
 
 function activateIntentOnce<E>(
   runtime: EngineRuntime,
-  prepared: PreparedSend,
-  bind: IntentAdmission,
+  prepared: PreparedIntent,
   acquire: Effect.Effect<void, E>,
 ): Effect.Effect<IntentActivation, SendError | E> {
   const { intent } = prepared;
@@ -996,15 +826,7 @@ function activateIntentOnce<E>(
     if (barrier !== undefined) {
       return { kind: "waiting", barrier } satisfies IntentActivation;
     }
-    const disposition = yield* bindPreparedIntent(
-      runtime,
-      prepared,
-      bind,
-      acquire,
-    );
-    if (disposition !== "admitted") {
-      return { kind: "refused", disposition } satisfies IntentActivation;
-    }
+    yield* bindPreparedIntent(runtime, prepared, acquire);
     return yield* activateBoundIntent(runtime, prepared);
   });
 }
@@ -1023,7 +845,7 @@ function activateIntentOnce<E>(
  */
 function activateBoundIntent(
   runtime: EngineRuntime,
-  prepared: PreparedSend,
+  prepared: PreparedIntent,
 ): Effect.Effect<IntentActivation, SendError> {
   const { canonicalIntent, intent } = prepared;
   return Effect.gen(function* () {

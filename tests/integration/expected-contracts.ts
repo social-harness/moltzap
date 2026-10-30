@@ -27,8 +27,9 @@ export const resetReleaseDocsAnchor = "guides/upgrades#apply-a-reset-release";
 /** Daemon startup names this setting when its message-policy document is invalid. */
 export const messagePolicyFileSetting = "SHARNESS_MESSAGE_POLICY_FILE";
 
-/** The daemon send_message tool returns this remedy when its code rule refuses credential-shaped text. */
-export const credentialRefusalRemedy = "Remove credential-shaped text";
+/** An unavailable required decision provider tells the sender why its message was held. */
+export const unavailablePolicyRemedy =
+  "A required policy check is unavailable.";
 
 /** A Router authentication rejection after reset stops the daemon at its listener boundary. */
 export const agentNotAdmittedDiagnostic =

@@ -1,14 +1,14 @@
 /** @file Retains a collective operation’s identity and reserves its request, answer and closing messages. */
 
 import type { DatabaseSync } from "node:sqlite";
+
 import { Schema } from "effect";
+
 import {
   copyBytes,
   mintDeliveryToken,
   readBytes,
-  readInteger,
   readOptionalBytes,
-  readOptionalText,
   readText,
   requireBytes,
   requireEqual,
@@ -31,7 +31,7 @@ interface OriginIdentity {
   readonly conversationId?: string;
 }
 
-/** The claimed slot and its intent commit together, including against a request's admission. */
+/** The claimed slot and its intent commit together, with its protocol identity. */
 export function bindCollectiveMessageInTransaction(
   database: DatabaseSync,
   binding: CollectiveMessageBinding,
@@ -121,7 +121,6 @@ export function readCollective(
   ) {
     throw new StoreSignal("corrupt");
   }
-  const admittedCheckId = readOptionalText(row, "admitted_check_id");
   const canonicalSelection = readOptionalBytes(row, "canonical_selection");
   return {
     operationId: readText(row, "operation_id"),
@@ -129,7 +128,6 @@ export function readCollective(
     origin,
     canonicalRequest: readBytes(row, "canonical_request"),
     canonicalDescriptor: readBytes(row, "canonical_descriptor"),
-    ...(admittedCheckId === undefined ? {} : { admittedCheckId }),
     phase,
     ...(canonicalSelection === undefined ? {} : { canonicalSelection }),
     deliveryToken: Schema.decodeUnknownSync(DeliveryToken)(
@@ -178,14 +176,9 @@ function requireSameOperation(
   requireEqual(prior.origin.kind, input.origin.kind);
   requireSameBytes(prior.canonicalRequest, input.canonicalRequest);
   requireSameBytes(prior.canonicalDescriptor, input.canonicalDescriptor);
-  requireEqual(prior.admittedCheckId, input.admittedCheckId);
   if (prior.origin.kind === "remote" && input.origin.kind === "remote") {
     requireEqual(prior.origin.conversationId, origin.conversationId);
     requireEqual(prior.origin.recordHash, input.origin.recordHash);
-    requireEqual(
-      prior.origin.requiresAdmission,
-      input.origin.requiresAdmission,
-    );
   }
 }
 
@@ -198,9 +191,9 @@ function insertCollective(
     .prepare(`
     INSERT INTO collective_operations
       (operation_id, creator_agent_id, origin, request_conversation_id,
-       request_record_hash, requires_admission, canonical_request,
-       canonical_descriptor, admitted_check_id, delivery_token)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       request_record_hash, canonical_request,
+       canonical_descriptor, delivery_token)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `)
     .run(
       input.operationId,
@@ -208,20 +201,17 @@ function insertCollective(
       input.origin.kind,
       origin.conversationId ?? null,
       input.origin.kind === "remote" ? input.origin.recordHash : null,
-      input.origin.kind === "remote" && input.origin.requiresAdmission ? 1 : 0,
       copyBytes(input.canonicalRequest),
       copyBytes(input.canonicalDescriptor),
-      input.admittedCheckId ?? null,
       mintDeliveryToken(
         (token) =>
           database
             .prepare(`
       SELECT 1 AS retained FROM collective_operations WHERE delivery_token = ?
       UNION ALL SELECT 1 FROM pending_deliveries WHERE delivery_token = ?
-      UNION ALL SELECT 1 FROM runtime_inbox WHERE delivery_token = ?
-      UNION ALL SELECT 1 FROM firewall_incoming WHERE delivery_token = ? LIMIT 1
+      LIMIT 1
     `)
-            .get(token, token, token, token) !== undefined,
+            .get(token, token) !== undefined,
       ),
     );
 }
@@ -243,7 +233,7 @@ function requireMessageState(
     throw new StoreSignal("conflict");
   }
   if (binding.role === "response") {
-    requireRemoteRequestAdmission(database, operation, intent.conversationId);
+    requireRemoteRequest(operation, intent.conversationId);
   } else {
     requireEqual(operation.origin.kind, "local");
     requireEqual(operation.creatorAgentId, intent.authorAgentId);
@@ -254,8 +244,7 @@ function requireMessageState(
   );
 }
 
-function requireRemoteRequestAdmission(
-  database: DatabaseSync,
+function requireRemoteRequest(
   operation: StoredCollectiveOperation,
   conversationId: string,
 ): void {
@@ -263,19 +252,6 @@ function requireRemoteRequestAdmission(
     throw new StoreSignal("conflict");
   }
   requireEqual(operation.origin.conversationId, conversationId);
-  if (!operation.origin.requiresAdmission) {
-    return;
-  }
-  const shown = database
-    .prepare(`
-    SELECT 1 AS presented FROM pending_deliveries d
-    JOIN runtime_inbox i USING (delivery_token)
-    WHERE d.conversation_id = ? AND d.record_hash = ?
-  `)
-    .get(operation.origin.conversationId, operation.origin.recordHash);
-  if (shown === undefined) {
-    throw new StoreSignal("conflict");
-  }
 }
 
 function readOrigin(
@@ -292,6 +268,5 @@ function readOrigin(
     kind: "remote",
     conversationId: readText(row, "request_conversation_id"),
     recordHash: readText(row, "request_record_hash"),
-    requiresAdmission: readInteger(row, "requires_admission") === 1,
   };
 }

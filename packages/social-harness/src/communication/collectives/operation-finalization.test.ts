@@ -1,4 +1,5 @@
 /** @file A retained answer survives delayed storage responses and endpoint restart. */
+
 import { scoped as it } from "@effect/vitest";
 import { Deferred, Effect, Fiber, Schema, Scope, TestClock } from "effect";
 import { expect } from "vitest";
@@ -9,22 +10,19 @@ import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { appendCertifiedMessage } from "../../__tests__/certified-history-fixtures.js";
 import { retainingEmitter } from "../../__tests__/collective-recovery-fixtures.js";
 import {
+  type TestCollectiveOperations as CollectiveOperations,
+  makeCollectiveOperations,
+} from "../../__tests__/collective-send.js";
+import { collectivePersistencePorts } from "../../__tests__/collective-storage-stub.js";
+import {
   engineFixture,
   seedIncoming,
 } from "../../__tests__/firewall-runtime-fixtures.js";
+import { type DaemonStore, openDaemonStore } from "../../daemon/store.js";
 import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { InboundMessage } from "../conversations/message.js";
 import { AgentAddress, mintMsgId } from "../records/index.js";
-import {
-  decodeRuntimeValue,
-  type EndpointStore,
-  EndpointStoreError,
-  openEndpointStore,
-} from "../store/index.js";
-import {
-  type CollectiveOperations,
-  makeCollectiveOperations,
-} from "./index.js";
+import { decodeRuntimeValue, EndpointStoreError } from "../store/index.js";
 import { encodeCollectiveContent } from "./wire/index.js";
 
 it("includes the answer retained before the deadline even when its store response is delayed", () =>
@@ -76,7 +74,7 @@ it("restores a retained answer before choosing settled completion after an offli
       }),
     );
     yield* TestClock.adjust("2 minutes");
-    const store = yield* openEndpointStore(interrupted.subject.directory, {
+    const store = yield* openDaemonStore(interrupted.subject.directory, {
       liveWireVersions: LIVE_WIRE_VERSIONS,
     });
     const emitted = yield* Deferred.make<InboundItem>();
@@ -112,22 +110,20 @@ function delayedAnswerFixture(failAfterRetain = false) {
       release,
       failAfterRetain,
     );
+    const persistence = yield* collectivePersistencePorts(() =>
+      mintMsgId().pipe(
+        Effect.orDie,
+        Effect.map((msgId) => ({
+          msgId,
+          recordHash: head.actionCertifiedRecord.recordHash,
+        })),
+      ),
+    );
     const ports: CollectivePorts = {
+      ...persistence,
       store,
       self: testAgentView("agent:alice"),
       scope: yield* Scope.Scope,
-      lookupMember: (member) => Effect.succeed(testAgentView(member)),
-      sendMessage: () =>
-        mintMsgId().pipe(
-          Effect.orDie,
-          Effect.map((msgId) => ({
-            msgId,
-            recordHash: head.actionCertifiedRecord.recordHash,
-          })),
-        ),
-      bindMessage: () => Effect.dieMessage("gather uses request fanout"),
-      sendAdmitted: () => Effect.dieMessage("no firewall in this test"),
-      observeMessage: () => Effect.dieMessage("gather owns no close"),
       reportStorageFault: (fault) =>
         Effect.sync(() => {
           faults.push(fault);
@@ -201,11 +197,11 @@ function certifiedAnswer(
 }
 
 function delayedAnswerStore(
-  store: EndpointStore,
+  store: DaemonStore,
   entered: Deferred.Deferred<undefined>,
   release: Deferred.Deferred<undefined>,
   failAfterRetain: boolean,
-): EndpointStore {
+): DaemonStore {
   return {
     ...store,
     recordCollectiveAnswer: (answer) =>

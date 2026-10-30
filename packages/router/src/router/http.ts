@@ -9,11 +9,13 @@ import {
   AuthenticatedHttp,
   httpErrors,
   routerContract,
+  type VerifiedAgentRequest,
 } from "@moltzap/social-harness/internal";
 import canonicalize from "canonicalize";
 import { Cause, Effect, Option, Schema } from "effect";
 import type { RouterFeed } from "./feed.js";
-import { type RouterRpcClient, withVerifiedRouterRequest } from "./rpc.js";
+import type { RouterPoll } from "./poll.js";
+import type { RouterSend } from "./send.js";
 
 /* eslint-disable @typescript-eslint/naming-convention -- Closed HTTP error constructors retain their class names when bound from the service capability. */
 const {
@@ -28,7 +30,8 @@ const {
 /* eslint-enable @typescript-eslint/naming-convention -- Restore variable naming after binding error constructors. */
 
 interface RouterHttpInput {
-  readonly client: RouterRpcClient;
+  readonly send: RouterSend;
+  readonly poll: RouterPoll;
   readonly feed: RouterFeed;
   readonly requestSemaphore: Effect.Semaphore;
 }
@@ -36,8 +39,9 @@ interface RouterHttpInput {
 /**
  * Builds the complete Router HTTP application over private capabilities.
  *
- * @param input Correlated operations, readiness, and admission capability.
- * @param input.client Private correlated operations.
+ * @param input Domain operations, readiness, and admission capability.
+ * @param input.send Authenticated message admission.
+ * @param input.poll Authenticated feed polling.
  * @param input.feed Feed readiness state.
  * @param input.requestSemaphore Immediate active-request admission.
  * @returns The complete named-route HTTP application.
@@ -258,10 +262,9 @@ interface DomainRequestInput<Request, RequestEncoded, Result, ResultEncoded> {
   readonly resultSchema: Schema.Schema<Result, ResultEncoded>;
   readonly bodyCap: number;
   readonly invoke: (
-    client: RouterRpcClient,
     request: Request,
+    verifiedRequest: VerifiedAgentRequest,
   ) => Effect.Effect<Result, { readonly _tag: string }>;
-  readonly client: RouterRpcClient;
   readonly requestSemaphore: Effect.Semaphore;
 }
 
@@ -291,10 +294,7 @@ const runAdmittedDomainRequest = <
         Effect.fail(new MalformedRequestError()),
       ),
     );
-    const result = yield* withVerifiedRouterRequest(
-      verifiedRequest,
-      input.invoke(input.client, request),
-    );
+    const result = yield* input.invoke(request, verifiedRequest);
     return yield* resultResponse(input.resultSchema, result);
   });
 
@@ -327,8 +327,8 @@ function sendRoute(input: RouterHttpInput) {
       outerRequestSchema: routerContract.RawRouterSendRequest,
       resultSchema: routerContract.RouterSendResult,
       bodyCap: routerContract.routerRepresentationLimits.sendRequestBodyBytes,
-      invoke: (client, request) => client.send({ request }),
-      client: input.client,
+      invoke: (request, verifiedRequest) =>
+        input.send.handle(request, verifiedRequest),
       requestSemaphore: input.requestSemaphore,
     }),
   );
@@ -342,7 +342,7 @@ function pollRoute(input: RouterHttpInput) {
       outerRequestSchema: rawPollRequest,
       resultSchema: routerContract.RouterPollResult,
       bodyCap: routerContract.routerRepresentationLimits.pollRequestBodyBytes,
-      invoke: (client, request) =>
+      invoke: (request, verifiedRequest) =>
         Schema.decodeUnknown(routerContract.RouterPollRequest)(request, {
           exact: true,
           onExcessProperty: "error",
@@ -350,10 +350,9 @@ function pollRoute(input: RouterHttpInput) {
           Effect.matchEffect({
             onFailure: () =>
               Effect.succeed({ kind: "cursor_invalid" } as const),
-            onSuccess: (decoded) => client.poll({ request: decoded }),
+            onSuccess: (decoded) => input.poll.handle(decoded, verifiedRequest),
           }),
         ),
-      client: input.client,
       requestSemaphore: input.requestSemaphore,
     }),
   );

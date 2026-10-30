@@ -38,6 +38,7 @@ import {
   Option,
   Schema,
   Stream,
+  Struct,
 } from "effect";
 import { absurd } from "effect/Function";
 import { jsonResult } from "openclaw/plugin-sdk/channel-actions";
@@ -383,18 +384,7 @@ function handleMessageAction(
               guidance: {
                 ...result.guidance,
                 instructions: result.guidance.instructions.map((instruction) =>
-                  "uncertain" in instruction
-                    ? {
-                        ruleId: instruction.ruleId,
-                        uncertain: instruction.uncertain,
-                        instruction: instruction.instruction,
-                      }
-                    : {
-                        ruleId: instruction.ruleId,
-                        expectation: instruction.expectation,
-                        subjects: instruction.subjects,
-                        instruction: instruction.instruction,
-                      },
+                  Struct.omit(instruction, "middlewareId"),
                 ),
               },
             }),

@@ -2,13 +2,9 @@
 
 import { Deferred, Effect, Queue, Schema, Scope } from "effect";
 import { generateKeyPairSync } from "node:crypto";
-import type { InboundItem } from "../communication/collectives/inbound.js";
-import type {
-  MessageMiddleware,
-  MiddlewareResult,
-} from "../firewall/evaluator/contract/index.js";
+import type { MessageMiddleware, MiddlewareResult } from "../firewall/check.js";
+import type { InboundItem } from "../host-protocol/items.js";
 import type { HarnessMessageReadyEvent } from "../host-protocol/operations.js";
-import { makeCollectiveOperations } from "../communication/collectives/index.js";
 import { makeEndpointEngine } from "../communication/conversations/index.js";
 import { InboundMessage } from "../communication/conversations/message.js";
 import {
@@ -21,44 +17,37 @@ import {
 import { RouterInstanceId } from "../communication/router/api/contract.js";
 import {
   decodeRuntimeValue,
-  DeliveryToken,
-  encodeRuntimeValue,
-  type EndpointStore,
   EndpointStoreError,
-  openEndpointStore,
 } from "../communication/store/index.js";
 import { makeHostDelivery } from "../daemon/inbox/host-delivery.js";
 import { noHistoryExport } from "../daemon/inbox/host-traffic-log.js";
+import { type DaemonStore, openDaemonStore } from "../daemon/store.js";
 import { encodeCanonical } from "../encoding/canonical-json.js";
 import {
-  collectiveAdmission,
-  decodeFirewallAuditEntry,
+  type Firewall,
   type FirewallOptions,
-  type InstalledFirewall,
-} from "../firewall/admission/index.js";
-import { installEditableFirewall } from "../firewall/index.js";
+  makeFirewall,
+} from "../firewall/index.js";
+import { decodeFirewallAuditEntry } from "../firewall/store/index.js";
 import { AgentCard, agentViewOf } from "../identity/cards.js";
 import { Ed25519PublicKey } from "../identity/keys.js";
 import { LIVE_WIRE_VERSIONS, WIRE_VERSION } from "../identity/wire-version.js";
 import {
-  digest,
   identifier,
   issueTestCard,
   makeTestAuthority,
-  testAgentView,
 } from "./agent-card-fixtures.js";
 import {
   buildCertifiedFirstMessage,
   storeCertifiedFirstMessage,
 } from "./certified-history-fixtures.js";
-import { collectiveOperationId } from "./collective-id-fixtures.js";
+import { makeCollectiveOperations } from "./collective-send.js";
 import { pollCursor } from "./router-worker-fixtures.js";
 import { stateDirectory } from "./store-schema-fixtures.js";
 
 /** A communication norm shares its guidance and repair text across traces. */
 export const rule = {
   id: "communication",
-  kind: "norm",
   guidance: "Answer the open scheduling question.",
   feedback: {
     nextAction: "revise",
@@ -72,18 +61,14 @@ export const pass: MiddlewareResult = {
 };
 /** A semantic rejection with no response obligation. */
 export const block: MiddlewareResult = {
-  findings: [{ ruleId: rule.id, outcome: "block" }],
+  findings: [{ ruleId: rule.id, outcome: "violation" }],
   expectations: [],
 };
 /** A norm violation that returns the registered repair advice. */
 export const revise: MiddlewareResult = {
-  findings: [{ ruleId: rule.id, outcome: "revise" }],
+  findings: [{ ruleId: rule.id, outcome: "violation" }],
   expectations: [],
 };
-/** An unresolved check tells the runtime to wait. */
-export const waitAction = "wait";
-/** The textual error projection retains the next action. */
-export const renderedWaitAction = `Next action: ${waitAction}.`;
 /** Budgets leave room for real storage and scheduling on loaded test hosts. */
 export const settings = {
   timeoutMilliseconds: 10_000,
@@ -110,7 +95,7 @@ const identities = Effect.gen(function* () {
   );
   const membership = yield* directMembership([local.card, remote.card], signer);
   const directory = stateDirectory();
-  const store = yield* openEndpointStore(directory, {
+  const store = yield* openDaemonStore(directory, {
     liveWireVersions: LIVE_WIRE_VERSIONS,
   });
   yield* store.bindIdentity({
@@ -196,11 +181,11 @@ export const auditChecks = (subject: Fixture) =>
 
 /** Fixed registration and settings are captured before delivery operations run. */
 export const installation = (
-  store: EndpointStore,
+  store: DaemonStore,
   middleware: MessageMiddleware,
   overrides: Partial<FirewallOptions> = {},
 ) =>
-  installEditableFirewall(
+  makeFirewall(
     {
       incoming: [middleware],
       outgoing: [middleware],
@@ -218,10 +203,10 @@ export const installation = (
  * built over it, as the daemon composes them. Requests the layer classifies
  * wait for admission; items it emits are queued privately and recorded.
  */
-const firewallRuntime = (subject: Fixture, installed: InstalledFirewall) =>
+const firewallRuntime = (subject: Fixture, firewall: Firewall) =>
   Effect.gen(function* () {
     const { local, store, engine } = subject;
-    const environment = { installed, store, localAgentCard: local.card };
+    const environment = { firewall, store, localAgentCard: local.card };
     const scope = yield* Scope.Scope;
     const emitted: InboundItem[] = [];
     const slot: {
@@ -243,22 +228,20 @@ const firewallRuntime = (subject: Fixture, installed: InstalledFirewall) =>
     const collectives = yield* makeCollectiveOperations({
       store,
       observeMessage: (msgId) => engine.observeMessage(msgId),
-      sendAdmitted: (input, checkId) => engine.sendAdmitted(input, checkId),
+      prepareMessage: (input) => engine.prepare(input),
+      acceptMessage: (prepared, hold) => engine.accept(prepared, hold),
       reportStorageFault: () => Effect.void,
       self: agentViewOf(local.card),
       scope,
-      lookupMember: (member) => resolvedMemberView(engine, member),
       sendMessage: (input) => engine.send(input),
-      bindMessage: (input, hold) => engine.bind(input, hold),
       emit,
-      admission: collectiveAdmission(environment, engine),
     });
     const delivery = yield* makeHostDelivery({
       store,
       historyExport: noHistoryExport,
       collectives: () => collectives,
       scope,
-      firewall: installed,
+      firewall,
       firewallEnvironment: () => environment,
     });
     slot.delivery = delivery;
@@ -266,18 +249,18 @@ const firewallRuntime = (subject: Fixture, installed: InstalledFirewall) =>
   }).pipe(Effect.withSpan("firewallRuntime"));
 
 /**
- * The incoming fixture over an installed firewall, such as an editable one
+ * The incoming fixture over an firewall firewall, such as an editable one
  * whose checks read its active installation.
  */
 export const incomingThrough = (
   subject: Fixture,
-  installed: InstalledFirewall,
+  firewall: Firewall,
   seed = true,
 ) =>
   Effect.gen(function* () {
     yield* Effect.when(seedIncoming(subject), () => seed);
     const { environment, delivery, collectives, emitted } =
-      yield* firewallRuntime(subject, installed);
+      yield* firewallRuntime(subject, firewall);
     const published: HarnessMessageReadyEvent[] = [];
     const readPending = pendingMessages(subject.store);
     const runPass = delivery.runPass(() => ({
@@ -317,7 +300,7 @@ export const incomingFixture = (
   seed = true,
 ) =>
   installation(subject.store, middleware, overrides).pipe(
-    Effect.flatMap((installed) => incomingThrough(subject, installed, seed)),
+    Effect.flatMap((firewall) => incomingThrough(subject, firewall, seed)),
   );
 
 /** Runtime send operations use the real checked-send path before the Router barrier. */
@@ -327,17 +310,14 @@ export function outgoingFixture(
   overrides: Partial<FirewallOptions> = {},
 ) {
   return installation(subject.store, middleware, overrides).pipe(
-    Effect.flatMap((installed) => outgoingThrough(subject, installed)),
+    Effect.flatMap((firewall) => outgoingThrough(subject, firewall)),
     Effect.withSpan("outgoingFixture"),
   );
 }
 
-/** Runtime send operations over an installed firewall, such as an editable one. */
-export function outgoingThrough(
-  subject: Fixture,
-  installed: InstalledFirewall,
-) {
-  return firewallRuntime(subject, installed).pipe(
+/** Runtime send operations share the managed firewall with owner edits. */
+export function outgoingThrough(subject: Fixture, firewall: Firewall) {
+  return firewallRuntime(subject, firewall).pipe(
     Effect.map((runtime) => runtime.delivery),
     Effect.withSpan("outgoingThrough"),
   );
@@ -370,50 +350,6 @@ export function addConversation(subject: Fixture, authoredLocally = false) {
   }).pipe(Effect.withSpan("addConversation"));
 }
 
-/**
- * Delayed local admissions change the captured conversation on every check.
- * The writer owns its prequeued items; the admission worker sees only the
- * subject under test. Queueing before certification keeps the new evidence
- * inside incoming windows as well as outgoing windows.
- */
-export const churnPolicy = Effect.fn("churnPolicy")(function* (
-  subject: Fixture,
-  conversation?: string,
-) {
-  const target = conversation ?? "agent:bob";
-  const items = yield* delayedEvidence(subject, target);
-  const tokens = new Set(items.map((item) => item.deliveryToken));
-  let calls = 0;
-  return {
-    subject: {
-      ...subject,
-      store: {
-        ...subject.store,
-        readFirewallFrontiers: () =>
-          subject.store
-            .readFirewallFrontiers()
-            .pipe(
-              Effect.map((entries) =>
-                entries.filter((entry) => !tokens.has(entry.deliveryToken)),
-              ),
-            ),
-      },
-    },
-    count: () => calls,
-    middleware: policy(() =>
-      Effect.gen(function* () {
-        const item = items[calls];
-        calls += 1;
-        if (item === undefined) {
-          return yield* Effect.dieMessage("unexpected extra check");
-        }
-        yield* admitDelayedEvidence(subject, item, target);
-        return pass;
-      }).pipe(Effect.orDie, Effect.withSpan("churnPolicy")),
-    ),
-  };
-});
-
 /** A complete registered norm delegates only its assessment to the test. */
 export function policy(check: MessageMiddleware["check"]): MessageMiddleware {
   return { id: "communication", revision: "test-v1", rules: [rule], check };
@@ -434,83 +370,7 @@ export function seedIncoming(subject: Fixture, authoredLocally = false) {
   }).pipe(Effect.withSpan("seedIncoming"));
 }
 
-/** Resolve a member through the engine before a test accepts collective work. */
-export function resolvedMemberView(
-  engine: Effect.Effect.Success<ReturnType<typeof makeEndpointEngine>>,
-  member: typeof AgentAddress.Type,
-) {
-  return engine.resolveConversation(member).pipe(
-    Effect.flatMap((conversation) => {
-      const card = conversation.memberCards.find(
-        (candidate) => `agent:${candidate.agentName}` === member,
-      );
-      return card === undefined
-        ? Effect.dieMessage("resolved conversation lacks its requested member")
-        : Effect.succeed(agentViewOf(card));
-    }),
-  );
-}
-
-function delayedEvidence(subject: Fixture, conversation: string) {
-  return Effect.forEach(
-    [1, 2, 3, 4],
-    (index) =>
-      Effect.gen(function* () {
-        const item = {
-          deliveryToken: Schema.decodeUnknownSync(DeliveryToken)(
-            digest("dlv_", 120 + index),
-          ),
-          canonicalItem: yield* encodeRuntimeValue({
-            kind: "operationFailed",
-            operationId: collectiveOperationId(
-              testAgentView("agent:alice").agentId,
-              index,
-            ),
-            to: conversation,
-            error: "Prior local result",
-          }),
-        };
-        yield* subject.store.queueFirewallItem({
-          ...item,
-          conversation: "fixture:delayed-evidence",
-        });
-        return item;
-      }),
-    { concurrency: 1 },
-  );
-}
-
-function admitDelayedEvidence(
-  subject: Fixture,
-  item: {
-    readonly deliveryToken: DeliveryToken;
-    readonly canonicalItem: Uint8Array;
-  },
-  conversation: string,
-) {
-  return Effect.gen(function* () {
-    yield* subject.store.admitFirewallLocalItem({
-      queuedItem: item.canonicalItem,
-      item,
-      completions: [],
-      answers: [],
-      evidence: {
-        conversation,
-        canonicalEntry: yield* encodeRuntimeValue({
-          id: item.deliveryToken,
-          sender: subject.local.card.agentId,
-          recipients: [subject.remote.card.agentId],
-          text: "Prior local result",
-          visibility: "runtime",
-          admission: "admitted",
-        }),
-      },
-    });
-    yield* subject.store.acknowledgeInboxItem(item.deliveryToken);
-  });
-}
-
-function pendingMessages(store: EndpointStore) {
+function pendingMessages(store: DaemonStore) {
   return store.readPendingDeliveries().pipe(
     Effect.flatMap((entries) =>
       Effect.forEach(

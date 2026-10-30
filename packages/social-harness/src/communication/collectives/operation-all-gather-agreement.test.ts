@@ -31,7 +31,6 @@ import {
 import { describe, expect } from "vitest";
 import type { EngineSentMessage } from "../conversations/index.js";
 import type { CollectiveMemberOutcome, InboundItem } from "./inbound.js";
-import type { CollectiveOperations } from "./ports.js";
 import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import {
   alice,
@@ -42,12 +41,15 @@ import {
   recordHashOf,
   slotSchema,
 } from "../../__tests__/collective-operation-fixtures.js";
+import {
+  type TestCollectiveOperations as CollectiveOperations,
+  makeCollectiveOperations,
+} from "../../__tests__/collective-send.js";
 import { collectivePersistencePorts } from "../../__tests__/collective-storage-stub.js";
 import { InboundMessage } from "../conversations/message.js";
 import { Content } from "../records/index.js";
 import { AgentAddress } from "../records/values.js";
 import { SendInput } from "./contracts.js";
-import { makeCollectiveOperations } from "./index.js";
 import { type CollectiveValue, readCollectiveValue } from "./wire/index.js";
 
 const group = "group:alice,bob,carol,dave";
@@ -179,12 +181,13 @@ const makeEndpoint = (harness: Harness, self: AgentAddress) =>
     const answerQueued = yield* Deferred.make<undefined>();
     const layer = yield* makeCollectiveOperations({
       self: testAgentView(self),
-      lookupMember: (member) => Effect.succeed(testAgentView(member)),
-      ...collectivePersistencePorts((input) =>
-        self === alice
-          ? append(harness, self, input.content).pipe(Effect.map(certified))
-          : queueAnswer(harness, self, input.content, answerQueued),
-      ),
+      ...(yield* collectivePersistencePorts(
+        (input) =>
+          self === alice
+            ? append(harness, self, input.content).pipe(Effect.map(certified))
+            : queueAnswer(harness, self, input.content, answerQueued),
+        self,
+      )),
       emit: (item) =>
         Effect.sync(() => {
           emitted.push(item);
@@ -299,8 +302,7 @@ function redeliverySteps(harness: Harness): Step[] {
 }
 
 /**
- * The answer a member's host gives, naming no request: carol sometimes
- * declines.
+ * Members choose a meeting slot, with Carol sometimes declining.
  */
 const drawResponse = (member: AgentAddress, random: () => number) =>
   member === carol && random() < 0.3
@@ -308,15 +310,14 @@ const drawResponse = (member: AgentAddress, random: () => number) =>
     : { action: "accept", content: { slot: random() < 0.5 ? "mon" : "tue" } };
 
 /**
- * Each member that has seen the request and not answered answers in the
- * group's conversation, where its endpoint finds the one open request. The
- * step ends once the answer is queued at the send port or the send has
- * already been refused.
+ * Members answer the named request in its group conversation once their
+ * hosts receive it.
  */
 function answerSteps(
   harness: Harness,
   random: () => number,
   scope: Scope.Scope,
+  operationId: string,
 ): Step[] {
   return harness.endpoints
     .filter(
@@ -334,7 +335,7 @@ function answerSteps(
             .send(
               Schema.decodeUnknownSync(SendInput)({
                 to: group,
-                collectiveResponse: response,
+                collectiveResponse: { ...response, operationId },
               }),
             )
             .pipe(Effect.either, Effect.forkIn(scope));
@@ -622,7 +623,7 @@ const runSchedule = (seed: number, coverage: Coverage) =>
       const step = pickStep(
         [
           ...deliverySteps(harness),
-          ...answerSteps(harness, random, scope),
+          ...answerSteps(harness, random, scope, operationId),
           ...pendingSteps(harness),
           ...daveSteps(harness, operationId),
           ...secondCloseSteps(harness, operationId),

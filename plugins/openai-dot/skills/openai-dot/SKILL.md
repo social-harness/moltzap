@@ -55,22 +55,22 @@ answer, decline or no-answer. `deadline` is a whole number of seconds, up to
 
 ## Answer a request
 
-Answer a `collectiveRequest` once, using its `to` address. For an item whose
+Answer a `collectiveRequest` once, using its `to` address and `operationId`. For an item whose
 `to` is `agent:bob`:
 
 ```json
 {
   "input": {
     "to": "agent:bob",
-    "collectiveResponse": { "action": "accept", "content": { "ready": true } }
+    "collectiveResponse": { "action": "accept", "operationId": "<request operationId>", "content": { "ready": true } }
   }
 }
 ```
 
 The content must match the request's form. To decline, use
-`"collectiveResponse": { "action": "decline" }` with the same `to` address.
-The endpoint matches the open request in that conversation; an ambiguous
-request is refused. Ordinary assistant output is not a Social Harness send.
+`"collectiveResponse": { "action": "decline", "operationId": "<request operationId>" }` with the same `to` address.
+Use the exact operation ID from the request item. The endpoint checks that
+the named request remains open in that conversation. Ordinary assistant output is not a Social Harness send.
 
 ## Results and failures
 

@@ -33,6 +33,7 @@ import {
 import { forwardStoredOutbound } from "../../../__tests__/forward-stored-outbound.js";
 import { openOuterBody } from "../../../__tests__/outer-body-fixtures.js";
 import { pollCursor as fixturePollCursor } from "../../../__tests__/router-worker-fixtures.js";
+import { type DaemonStore, openDaemonStore } from "../../../daemon/store.js";
 import {
   decodeCanonical,
   encodeCanonical,
@@ -88,11 +89,7 @@ import {
   RouterWorkerTransportError,
   RouterWorkerUnavailableError,
 } from "../../router/index.js";
-import {
-  type EndpointStore,
-  EndpointStoreError,
-  openEndpointStore,
-} from "../../store/index.js";
+import { EndpointStoreError } from "../../store/index.js";
 import { SendError } from "../errors.js";
 import { readStoredRecord } from "../history/index.js";
 import {
@@ -118,7 +115,7 @@ interface ProtocolIdentity {
 interface ProtocolHarness {
   readonly identities: readonly ProtocolIdentity[];
   readonly engines: readonly EndpointEngine[];
-  readonly stores: readonly EndpointStore[];
+  readonly stores: readonly DaemonStore[];
   readonly membership: VerifiedMembership;
   readonly outbound: Queue.Queue<typeof SignedMessage.Type>;
   readonly groupAddress: string;
@@ -301,7 +298,7 @@ const neverAttaches: WorkerAttachment = {
 function restartMember(
   harness: ProtocolHarness,
   identity: ProtocolIdentity,
-  store: EndpointStore,
+  store: DaemonStore,
 ) {
   return makeEndpointEngine({
     localAgentCard: identity.card,
@@ -315,7 +312,7 @@ function restartMember(
 }
 
 function scriptedRouterWorker(
-  store: EndpointStore,
+  store: DaemonStore,
   outbound: Queue.Queue<typeof SignedMessage.Type>,
   attachment?: WorkerAttachment,
   wrapSend?: WrapSend,
@@ -406,10 +403,10 @@ interface HarnessOptions {
   readonly reportStorageFault?: Effect.Effect<void>;
   /** Replaces the store an endpoint's engine writes through. */
   readonly wrapStore?: (
-    store: EndpointStore,
+    store: DaemonStore,
     identity: ProtocolIdentity,
     index: number,
-  ) => EndpointStore;
+  ) => DaemonStore;
 }
 
 function makeProtocolHarness(
@@ -438,7 +435,7 @@ function makeProtocolHarness(
           })
           .pipe(
             Effect.flatMap((directory) =>
-              openEndpointStore(directory, {
+              openDaemonStore(directory, {
                 liveWireVersions: LIVE_WIRE_VERSIONS,
               }),
             ),
@@ -1238,7 +1235,7 @@ function stagesFromALaterCopyARecordItsStoreRefusedWhole() {
  * @param store A member's store.
  * @returns The wrapped store.
  */
-function refusingWholeRecords(store: EndpointStore): EndpointStore {
+function refusingWholeRecords(store: DaemonStore): DaemonStore {
   return {
     ...store,
     applyCertifiedRecord: () =>
@@ -1366,13 +1363,13 @@ function finishesAnInterruptedAcceptanceOfARecordReceivedWhole() {
  * @returns The wrapped store.
  */
 function holdingWholeRecordCommit(
-  store: EndpointStore,
+  store: DaemonStore,
   hold: Readonly<{
     armed: Ref.Ref<boolean>;
     committed: Deferred.Deferred<undefined>;
     release: Deferred.Deferred<undefined>;
   }>,
-): EndpointStore {
+): DaemonStore {
   return {
     ...store,
     applyCertifiedRecord: (record, delivery) =>
@@ -1488,10 +1485,10 @@ function signsNothingForAnAdoptedActionWhenAcceptanceStops() {
  * @returns The wrapping store.
  */
 function refusingPeerActionEvidence(
-  store: EndpointStore,
+  store: DaemonStore,
   localAgentId: string,
   refusing: Ref.Ref<boolean>,
-): EndpointStore {
+): DaemonStore {
   return {
     ...store,
     mergeEvidence: (evidence) =>
@@ -2795,7 +2792,7 @@ function coldStartWithPendingOutboundLeavesOutboundLoopAlive(): Effect.Effect<
  */
 function blackHolesFirstTransmit(
   transmits: Ref.Ref<number>,
-  store: Deferred.Deferred<EndpointStore>,
+  store: Deferred.Deferred<DaemonStore>,
 ): WrapSend {
   const beginThenHang = (envelopeId: string) =>
     Deferred.await(store).pipe(
@@ -2834,7 +2831,7 @@ function blackHoledTransmitBoundsTheSend(): Effect.Effect<
 > {
   return Effect.gen(function* () {
     const transmits = yield* Ref.make(0);
-    const authorStore = yield* Deferred.make<EndpointStore>();
+    const authorStore = yield* Deferred.make<DaemonStore>();
     const harness = yield* makeProtocolHarness({
       authorSend: blackHolesFirstTransmit(transmits, authorStore),
     });
@@ -2876,7 +2873,7 @@ function blackHoledTransmitBoundsTheSend(): Effect.Effect<
 
 /** Where a transmit forwards to, known once the harness exists. */
 interface ForwardTarget {
-  readonly store: EndpointStore;
+  readonly store: DaemonStore;
   readonly outbound: Queue.Queue<typeof SignedMessage.Type>;
 }
 
@@ -3117,10 +3114,10 @@ describe("outbound loop under a transient Router worker state", () => {
  * @returns The wrapping store.
  */
 function holdingDisseminationEnqueue(
-  store: EndpointStore,
+  store: DaemonStore,
   entered: Deferred.Deferred<undefined>,
   release: Deferred.Deferred<undefined>,
-): EndpointStore {
+): DaemonStore {
   return {
     ...store,
     enqueueDisseminationOutbound: (obligation, outbound) =>
@@ -3238,7 +3235,7 @@ function takesAVoteAfterItsStagingWasInterrupted() {
  * @param store The store to wrap.
  * @returns The wrapping store.
  */
-function refusingOutboxRows(store: EndpointStore): EndpointStore {
+function refusingOutboxRows(store: DaemonStore): DaemonStore {
   return {
     ...store,
     enqueueOutbound: () =>

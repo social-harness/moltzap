@@ -1,4 +1,5 @@
 /** @file Signed all-gather completion survives interruption at each retained transition. */
+
 import { scoped as it } from "@effect/vitest";
 import {
   Deferred,
@@ -11,7 +12,7 @@ import {
 } from "effect";
 import { expect } from "vitest";
 import type { EndpointEngine } from "../conversations/index.js";
-import type { CollectiveOperations, CollectivePorts } from "./ports.js";
+import type { CollectivePorts } from "./ports.js";
 import { untilLive } from "../../__tests__/advance-clock.js";
 import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import {
@@ -24,10 +25,15 @@ import {
   waitForClose,
 } from "../../__tests__/collective-recovery-fixtures.js";
 import {
+  type TestCollectiveOperations as CollectiveOperations,
+  makeCollectiveOperations,
+} from "../../__tests__/collective-send.js";
+import {
   engineFixture,
   type Fixture,
 } from "../../__tests__/firewall-runtime-fixtures.js";
-import { withStore } from "../../__tests__/store-schema-fixtures.js";
+import { withDaemonStore } from "../../__tests__/store-schema-fixtures.js";
+import { type DaemonStore, openDaemonStore } from "../../daemon/store.js";
 import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import {
   AgentAddress,
@@ -36,13 +42,8 @@ import {
   MessageIntent,
   mintMsgId,
 } from "../records/index.js";
-import {
-  decodeRuntimeValue,
-  type EndpointStore,
-  openEndpointStore,
-} from "../store/index.js";
+import { decodeRuntimeValue } from "../store/index.js";
 import { InboundItem } from "./inbound.js";
-import { makeCollectiveOperations } from "./index.js";
 import { encodeCollectiveContent, readCollectiveValue } from "./wire/index.js";
 const self = Schema.decodeUnknownSync(AgentAddress)("agent:alice");
 const closureCheckpoints = [
@@ -73,7 +74,7 @@ it.each(closureCheckpoints)(
 );
 
 function closurePorts(
-  store: EndpointStore,
+  store: DaemonStore,
   engine: EndpointEngine,
   scope: Scope.Scope,
 ): Omit<CollectivePorts, "emit"> {
@@ -81,10 +82,9 @@ function closurePorts(
     store,
     self: testAgentView(self),
     scope,
-    lookupMember: (member) => Effect.succeed(testAgentView(member)),
     sendMessage: engine.send,
-    bindMessage: engine.bind,
-    sendAdmitted: engine.sendAdmitted,
+    prepareMessage: engine.prepare,
+    acceptMessage: engine.accept,
     observeMessage: engine.observeMessage,
     reportStorageFault: () => Effect.dieMessage("unexpected persistence fault"),
   };
@@ -96,7 +96,7 @@ function interruptClosure(
   checkpoint: ClosureCheckpoint,
 ) {
   return Effect.gen(function* () {
-    const store = yield* openEndpointStore(subject.directory, {
+    const store = yield* openDaemonStore(subject.directory, {
       liveWireVersions: LIVE_WIRE_VERSIONS,
     });
     const engine = yield* resumeEngine(subject, store);
@@ -134,7 +134,7 @@ type InterruptedClosure = Effect.Effect.Success<
 >;
 interface ClosureFixture {
   readonly subject: Fixture;
-  readonly store: EndpointStore;
+  readonly store: DaemonStore;
   readonly engine: EndpointEngine;
   readonly layer: CollectiveOperations;
 }
@@ -219,7 +219,7 @@ function reachClosureCheckpoint(
 
 function recoverClosure(subject: Fixture, interrupted: InterruptedClosure) {
   return Effect.gen(function* () {
-    const store = yield* openEndpointStore(subject.directory, {
+    const store = yield* openDaemonStore(subject.directory, {
       liveWireVersions: LIVE_WIRE_VERSIONS,
     });
     const engine = yield* resumeEngine(subject, store);
@@ -291,7 +291,7 @@ function verifyCompletedRestart(
   interrupted: InterruptedClosure,
   recovered: Effect.Effect.Success<ReturnType<typeof recoverClosure>>,
 ) {
-  return withStore(subject.directory, (store) =>
+  return withDaemonStore(subject.directory, (store) =>
     Effect.gen(function* () {
       const engine = yield* resumeEngine(subject, store);
       yield* makeCollectiveOperations({

@@ -4,22 +4,15 @@
  */
 
 import { Cause, Deferred, Effect, Option, Queue, Scope } from "effect";
-import type { SendInput } from "../../communication/collectives/contracts.js";
-import type {
-  EndpointStore,
-  EndpointStoreError,
-} from "../../communication/store/index.js";
-import type { InstalledFirewall } from "../../firewall/index.js";
+import type { EndpointStoreError } from "../../communication/store/index.js";
+import type { Firewall } from "../../firewall/index.js";
 import type { VerifiedAgentCard } from "../../identity/cards.js";
-import type {
-  DaemonBootstrap,
-  DaemonProcessConfiguration,
-} from "../bootstrap.js";
+import type { DaemonBootstrap } from "../bootstrap.js";
 import type { HistoryExportPort } from "../inbox/host-traffic-log.js";
 import type { HarnessMcpEventHandler } from "../mcp/index.js";
 import type { DaemonRegistrationState } from "../registration/index.js";
+import type { DaemonStore } from "../store.js";
 import { CollectiveEmitError } from "../../communication/collectives/index.js";
-import { SendError } from "../../communication/conversations/errors.js";
 import { Router } from "../../communication/router/index.js";
 import { Registry } from "../../identity/registry/index.js";
 import {
@@ -43,10 +36,10 @@ export type { ProtocolEdges };
 
 /** The state one daemon starts from, read once before the network layers. */
 export interface DaemonStartup {
-  readonly store: EndpointStore;
+  readonly store: DaemonStore;
   readonly bootstrap: DaemonBootstrap;
   readonly registration: DaemonRegistrationState;
-  readonly firewall?: InstalledFirewall;
+  readonly firewall?: Firewall;
 }
 
 /** The running daemon the lifecycle composes into MCP operations. */
@@ -449,57 +442,6 @@ export const makeDaemon = (
     });
   }).pipe(Effect.withSpan("makeDaemon"));
 
-/** What the agent reads for each capability an evaluation hides. */
-const hiddenFeatures = {
-  groups:
-    "group addresses are not available; message each agent at its agent: address",
-  collectives:
-    "gather, all_gather and answers are not available; send plain text instead",
-};
-
-/**
- * The refusal of a send that uses a hidden capability, linked to the page that
- * lists the experiment switches.
- * @param feature The hidden capability the send uses.
- * @returns The send error every send route returns.
- */
-export const hiddenFeatureRefusal = (
-  feature: keyof typeof hiddenFeatures,
-): SendError =>
-  new SendError({
-    reason: "content-invalid",
-    detail: `${hiddenFeatures[feature]}. Docs: https://docs.moltzap.xyz/reference/daemon-experiments#experiment-switches`,
-  });
-
-/**
- * Refuse hidden capabilities before any send dispatch, with groups taking precedence.
- * @param configuration The switches captured at daemon startup.
- * @param input The semantic send supplied by any daemon caller.
- * @returns Nothing for an available send, or its refusal.
- */
-function checkExperimentSend(
-  configuration: DaemonProcessConfiguration,
-  input: SendInput,
-): Effect.Effect<void, SendError> {
-  let feature: keyof typeof hiddenFeatures | undefined;
-  if (configuration.hideGroups && input.to.startsWith("group:")) {
-    feature = "groups";
-  } else if (configuration.hideCollectives && isCollectiveSend(input)) {
-    feature = "collectives";
-  }
-  return feature === undefined
-    ? Effect.void
-    : Effect.fail(hiddenFeatureRefusal(feature));
-}
-
-function isCollectiveSend(input: SendInput): boolean {
-  return (
-    "collectiveResponse" in input ||
-    input.collective?.op === "gather" ||
-    input.collective?.op === "all_gather"
-  );
-}
-
 function daemonDelivery(
   input: DaemonInput,
   state: DaemonState,
@@ -508,18 +450,12 @@ function daemonDelivery(
   return makeHostDelivery({
     store: input.store,
     historyExport: input.historyExport,
+    experiments: input.bootstrap.configuration,
     collectives: () => {
       if (state.identity.kind !== "running") {
         return undefined;
       }
-      const { collectives } = state.identity.protocol;
-      return {
-        ...collectives,
-        send: (request) =>
-          checkExperimentSend(input.bootstrap.configuration, request).pipe(
-            Effect.zipRight(collectives.send(request)),
-          ),
-      };
+      return state.identity.protocol.collectives;
     },
     ...(input.firewall === undefined
       ? {}
@@ -531,7 +467,7 @@ function daemonDelivery(
               ? undefined
               : {
                   store: input.store,
-                  installed: input.firewall,
+                  firewall: input.firewall,
                   localAgentCard: state.identity.protocol.agentCard,
                 };
           },

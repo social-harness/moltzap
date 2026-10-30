@@ -7,7 +7,8 @@ import {
   PROTOCOL_VERSION_META_KEY,
 } from "@modelcontextprotocol/server";
 import { type Context, Deferred, Duration, Effect } from "effect";
-import type { EventStore } from "../host-protocol/operations.js";
+import type { EventStore } from "../daemon/inbox/store.js";
+import type { DaemonStore } from "../daemon/store.js";
 import type { Fixture } from "./daemon-runtime-fixtures.js";
 import { resolveMessageAddress } from "../communication/conversations/address.js";
 import {
@@ -15,10 +16,14 @@ import {
   ListenError,
 } from "../communication/conversations/errors.js";
 import {
+  type BindHold,
   type EndpointEngine,
   type EndpointEngineInput,
   EngineOutboundError,
   type EnginePendingMessage,
+  type EngineSentMessage,
+  type PreparedSend,
+  preparedSendData,
 } from "../communication/conversations/index.js";
 import {
   deriveConversationId,
@@ -32,7 +37,6 @@ import {
 import {
   type DeliveryToken,
   type EndpointRecovery,
-  type EndpointStore,
   EndpointStoreError,
   type IdentityBinding,
 } from "../communication/store/index.js";
@@ -52,7 +56,10 @@ import { sameBytes } from "../encoding/canonical-json.js";
 import { INBOX_PENDING_EVENT } from "../host-protocol/names.js";
 import { Registry } from "../identity/registry/index.js";
 import { AuthenticationFailedError } from "../identity/signing/http-errors.js";
-import { collectiveStorageStub } from "./collective-storage-stub.js";
+import {
+  collectivePersistencePorts,
+  collectiveStorageStub,
+} from "./collective-storage-stub.js";
 import { unusedEndpointStore } from "./unused-endpoint-store.js";
 
 /** The MCP handler the daemon installed; throws before installation. */
@@ -198,7 +205,7 @@ const makeInboxStore = (onAcknowledge: () => void) => {
         onAcknowledge();
       }),
   } satisfies Pick<
-    EndpointStore,
+    DaemonStore,
     "readInbox" | "readInboxSummary" | "putInboxItem" | "acknowledgeInboxItem"
   >;
 };
@@ -211,7 +218,7 @@ export function makeStore(
   fixture: Fixture,
   active: boolean,
   delivery?: DeliveryState,
-): EndpointStore {
+): DaemonStore {
   const onAcknowledge = () => {
     if (delivery !== undefined) {
       delivery.acknowledged = true;
@@ -324,7 +331,12 @@ function makeRuntimeDependencies(
         if (input.blockEngine) {
           yield* Deferred.await(input.signals.engineRelease);
         }
-        return makeEngine(input, engineInput);
+        const preparation = yield* collectivePersistencePorts(
+          () => Effect.dieMessage("preparation sends no messages"),
+          `agent:${engineInput.localAgentCard.agentName}`,
+          1,
+        );
+        return makeEngine(input, engineInput, preparation.prepareMessage);
       }),
     makeHandler: (options) =>
       Effect.sync(() => {
@@ -388,6 +400,7 @@ const readPending = (delivery: DeliveryState) =>
 function makeEngine(
   input: RuntimeDependenciesInput,
   engineInput: EndpointEngineInput,
+  prepare: EndpointEngine["prepare"],
 ): EndpointEngine {
   const { delivery } = input;
   const failure = Deferred.await(input.signals.failure).pipe(
@@ -405,11 +418,9 @@ function makeEngine(
         "no retained message is observed in this lifecycle fixture",
       ),
     send: () => certified,
-    bind: (...[, hold]) => hold.pipe(Effect.as({ certified })),
-    bindChecked: () =>
-      Effect.dieMessage("this lifecycle fixture installs no firewall"),
-    sendAdmitted: () =>
-      Effect.dieMessage("this lifecycle fixture installs no firewall"),
+    prepare,
+    accept: (prepared, hold) =>
+      acceptHarnessMessage(engineInput, prepared, hold, certified),
     resolveAddress: (to) =>
       resolveHarnessConversation(engineInput, to).pipe(Effect.asVoid),
     resolveConversation: (to) => resolveHarnessConversation(engineInput, to),
@@ -429,6 +440,28 @@ function makeEngine(
     abandonVolatileFolds: () => Effect.void,
     rearmCatchUp: Effect.void,
   };
+}
+
+function acceptHarnessMessage<E>(
+  engineInput: EndpointEngineInput,
+  prepared: PreparedSend,
+  hold: BindHold<E>,
+  certified: Effect.Effect<EngineSentMessage>,
+) {
+  return Effect.gen(function* () {
+    yield* hold;
+    const { intent } = yield* preparedSendData(prepared);
+    if (prepared.collective?.operation !== undefined) {
+      yield* engineInput.store
+        .putCollectiveOperation(prepared.collective.operation)
+        .pipe(Effect.orDie);
+    }
+    return {
+      certified: certified.pipe(
+        Effect.map((result) => ({ ...result, msgId: intent.msgId })),
+      ),
+    };
+  });
 }
 
 /** Uses signed fixture cards and the ordinary address rules without sending. */
@@ -492,7 +525,7 @@ export const makeHarness = (
  */
 export const run = (
   fixture: Fixture,
-  store: EndpointStore,
+  store: DaemonStore,
   harness: RuntimeHarness,
   refusal?: Exclude<Registration, "registered">,
 ) => {

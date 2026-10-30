@@ -27,27 +27,27 @@ export {
 export { HistoryExportRecord } from "./daemon/inbox/host-traffic-log.js";
 /** Local message refusal and advice expose no private assessment evidence. */
 export {
-  type CheckedGuidance,
   FirewallSendError,
   type GuidanceBodyOrigin,
   type LocalGuidance,
   renderLocalGuidance,
-} from "./firewall/outcome/index.js";
+} from "./host-protocol/advice.js";
+/** Registered advice carries only permitted message references. */
+export type { CheckedGuidance } from "./firewall/check.js";
 /** Send input and the closed error of a refused collective send. */
 export {
   CollectiveError,
   SendInput,
-  type SendResult,
 } from "./communication/collectives/contracts.js";
 /** The items an endpoint delivers to its host. */
-export { InboundItem } from "./communication/collectives/inbound.js";
+export { InboundItem } from "./host-protocol/items.js";
 /** The text a host's model reads for each delivered message, question and result. */
 export {
   groupMembers,
   renderCollectiveRequest,
   renderCollectiveResult,
   renderContent,
-} from "./communication/collectives/render.js";
+} from "./host-protocol/render.js";
 /** The operation a native host's message text states. */
 export {
   MessageTextError,
@@ -98,3 +98,6 @@ export {
   SignedMessage,
   type VerifiedSignedMessage,
 } from "./identity/envelope/signed-message.js";
+
+/** Successful host sends retain their local guidance beside the protocol outcome. */
+export type { SendResult } from "./host-protocol/send-result.js";

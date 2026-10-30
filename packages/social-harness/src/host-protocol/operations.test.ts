@@ -5,7 +5,6 @@ import { describe, expect, it } from "vitest";
 import type { InboundMessage } from "../communication/conversations/message.js";
 import { testAgentView } from "../__tests__/agent-card-fixtures.js";
 import {
-  CollectiveError,
   CollectiveId,
   SendInput,
 } from "../communication/collectives/contracts.js";
@@ -19,7 +18,6 @@ import {
   decodeHarnessReadInboxResult,
   decodeHarnessSendErrorData,
   decodeHarnessSendResult,
-  sendErrorData,
 } from "./operations.js";
 
 const deliveryToken = Schema.decodeUnknownSync(DeliveryToken)(
@@ -40,10 +38,6 @@ const content = Schema.decodeUnknownSync(Content)([
 const collectiveId = Schema.decodeUnknownSync(CollectiveId)(
   `col_${"A".repeat(64)}`,
 );
-const openOperationIds = [
-  Schema.decodeUnknownSync(CollectiveId)(`col_${"B".repeat(64)}`),
-  Schema.decodeUnknownSync(CollectiveId)(`col_${"C".repeat(64)}`),
-];
 
 function decodesExactOperationRequests(): void {
   const operation = {
@@ -332,11 +326,6 @@ describe("Harness send refusal data", () => {
   it.each([
     { reason: "firewall-refused", checkId: "chk_x" },
     { reason: "collective-failed" },
-    {
-      reason: "collective-failed",
-      operationId: collectiveId,
-      failure: { kind: "request-ambiguous" },
-    },
   ])(
     "refuses a firewall or collective refusal missing its fields: %j",
     (data) => {
@@ -345,34 +334,6 @@ describe("Harness send refusal data", () => {
       ).toBe(true);
     },
   );
-  it.each([{ ids: [] }, { ids: [collectiveId] }])(
-    "refuses an ambiguous answer with fewer than two openOperationIds: $ids",
-    ({ ids }) => {
-      expect(
-        Exit.isFailure(
-          Effect.runSyncExit(
-            decodeHarnessSendErrorData({
-              reason: "collective-failed",
-              operationId: collectiveId,
-              failure: { kind: "request-ambiguous", openOperationIds: ids },
-            }),
-          ),
-        ),
-      ).toBe(true);
-    },
-  );
-  it("carries the openOperationIds of an answer that named none of several open requests", () => {
-    const refused = new CollectiveError({
-      failure: { kind: "request-ambiguous", openOperationIds },
-    });
-    const data = sendErrorData(refused);
-
-    expect(data).toEqual({
-      reason: "collective-failed",
-      failure: { kind: "request-ambiguous", openOperationIds },
-    });
-    expect(Effect.runSync(decodeHarnessSendErrorData(data))).toEqual(data);
-  });
 });
 
 const directItem = {

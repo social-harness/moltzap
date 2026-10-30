@@ -1,7 +1,7 @@
 /** @file Shared values and helpers for the collective-operation firewall suites: alice's members, Bob's requests and the sends alice makes. */
 
 import { Effect, Queue, Schema } from "effect";
-import type { MiddlewareInput } from "../firewall/evaluator/contract/index.js";
+import type { MiddlewareInput } from "../firewall/check.js";
 import { SendInput } from "../communication/collectives/contracts.js";
 import {
   decodeCollectiveValue,
@@ -35,8 +35,6 @@ export const group = Schema.decodeUnknownSync(MessageAddressInput)(
 export const marker = "[hold]";
 /** The question the suites ask. */
 export const question = "Which day works?";
-/** How many captures a check makes before its third attempt holds without inference. */
-export const STALE_CAPTURES = 2;
 /** The form the suites' requests ask for. */
 export const formSchema = {
   type: "object",
@@ -156,7 +154,11 @@ export function unfinishedIntents(subject: Fixture) {
 export function answerBob(content: object) {
   return sendInput({
     to: bob,
-    collectiveResponse: { action: "accept", content },
+    collectiveResponse: {
+      operationId: collectiveOperationId(testAgentView(bob).agentId),
+      action: "accept",
+      content,
+    },
   });
 }
 

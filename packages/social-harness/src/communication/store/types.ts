@@ -1,16 +1,13 @@
 /** @file Private typed contract for endpoint persistence operations. */
 
-import { type Effect, Schema } from "effect";
+import type { Effect } from "effect";
 import type { EndpointStoreError } from "./database/values.js";
-import { isCanonicalIdentifier } from "../../encoding/identifier.js";
+import { canonicalIdentifier } from "../../encoding/identifier.js";
 
 /* eslint-disable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- The private Effect Schema and decoded nominal value intentionally share one domain name. */
 
 /** Stable opaque identity for one durable inbound delivery. */
-export const DeliveryToken = Schema.String.pipe(
-  Schema.filter((value) => isCanonicalIdentifier("dlv_", value)),
-  Schema.brand("DeliveryToken"),
-);
+export const DeliveryToken = canonicalIdentifier("DeliveryToken", "dlv_", 32);
 
 /** Strictly decoded private durable delivery identity. */
 export type DeliveryToken = typeof DeliveryToken.Type;
@@ -29,179 +26,6 @@ export type StoreMutation = "inserted" | "existing";
 export function isSemanticStoreRejection(error: EndpointStoreError): boolean {
   return error.reason === "conflict" || error.reason === "invalid-input";
 }
-
-/** Immutable classified item retained until the host accepts its delivery. */
-export interface InboxEntry {
-  readonly deliveryToken: DeliveryToken;
-  readonly canonicalItem: Uint8Array;
-  readonly canonicalGuidance?: Uint8Array;
-  readonly sequence: number;
-}
-
-/** A bounded view below a fixed inbox sequence, independent of later arrivals. */
-export interface InboxPage {
-  readonly items: readonly InboxEntry[];
-  readonly through: number;
-  readonly nextAfter?: number;
-}
-
-/** Wakeup bookkeeping contains no peer content or collective protocol state. */
-export interface InboxSummary {
-  readonly pendingCount: number;
-  readonly newestSequence: number;
-}
-
-/**
- * A certified evidence row retains its original bytes and local visibility.
- * `answer` says whether an admitted result showed this answer record to the
- * runtime or withheld it; it is absent for every other record.
- */
-export interface FirewallHistoryEntry {
-  readonly canonicalRecordCore: Uint8Array;
-  readonly canonicalMembership: Uint8Array;
-  readonly visible: boolean;
-  readonly answer?: "admitted" | "withheld";
-}
-
-/**
- * Evidence of a local item the runtime was shown, such as a collective
- * result, which no certified record carries. Its entry bytes are the
- * delivery layer's own history projection.
- */
-export interface FirewallLocalEntry {
-  readonly canonicalEntry: Uint8Array;
-}
-
-/** One local item's evidence: the conversation address it belongs to and its entry. */
-interface FirewallLocalEvidence extends FirewallLocalEntry {
-  readonly conversation: string;
-}
-
-/** One retained runtime item, including its local guidance, fits in an inbox page. */
-export const MAXIMUM_RUNTIME_ITEM_BYTES = 2 * 1024 * 1024;
-
-/** One conversation's evidence window before one candidate. */
-export interface FirewallEvidenceSlice {
-  readonly pendingOutgoing: boolean;
-  readonly history: ReadonlyArray<FirewallHistoryEntry | FirewallLocalEntry>;
-  readonly overflow: boolean;
-  readonly earlierHistoryOmitted: boolean;
-  readonly candidate?: FirewallHistoryEntry;
-}
-
-/** Older records outside the window are distinct from a byte-bound evidence gap. */
-export interface FirewallEvidence extends FirewallEvidenceSlice {
-  readonly snapshot: FirewallEvidenceSnapshot;
-}
-
-/**
- * Where one evidence window ends and which conversation it reads: before an
- * incoming delivery's record, before a certified record, or the whole recent
- * window of a conversation for an outgoing candidate. `conversation` is the
- * conversation's canonical address, under which local evidence is kept.
- */
-export interface FirewallEvidenceRange {
-  readonly beforeDelivery?: DeliveryToken;
-  readonly beforeRecord?: string;
-  readonly conversationId?: string;
-  readonly conversation?: string;
-}
-
-/** Bounded conversation queries and their observed facts are compared atomically at admission. */
-export interface FirewallEvidenceSnapshot {
-  readonly ranges: readonly FirewallEvidenceRange[];
-  readonly maximumRecords: number;
-  readonly digest: string;
-}
-
-/** Several windows read in one synchronous capture, one per checked text of a result. */
-export interface FirewallEvidenceSlices {
-  readonly snapshot: FirewallEvidenceSnapshot;
-  readonly slices: readonly FirewallEvidenceSlice[];
-}
-
-/** A private classified item waiting for its conversation's admission frontier. */
-export interface FirewallInboxEntry {
-  readonly deliveryToken: DeliveryToken;
-  readonly conversation: string;
-  readonly canonicalItem: Uint8Array;
-  /** Private facts the item's producer kept beside it, such as which records a result's answers came from. */
-  readonly canonicalProvenance?: Uint8Array;
-  readonly sequence: number;
-}
-
-/**
- * How a received request's admission settled: whether the runtime was shown
- * it, and the check that decided, when one ran. A request never queued, or
- * retired without a check, has neither.
- */
-export interface FirewallRequestAdmission {
-  readonly presented: boolean;
-  readonly canonicalResult?: Uint8Array;
-  readonly checkId?: string;
-}
-
-/**
- * One local item's admission: the queued bytes it was checked as, the
- * projection and guidance the runtime reads, the checks of its texts, the
- * answer records those checks showed or withheld, and the evidence later
- * checks read. `deterministic` records the one check of an item admitted
- * without inference, begun and completed inside the commit.
- */
-export interface FirewallLocalAdmission {
-  readonly queuedItem: Uint8Array;
-  readonly item: Omit<InboxEntry, "sequence">;
-  readonly completions: readonly FirewallCompletion[];
-  readonly deterministic?: Omit<FirewallAttempt, "snapshot"> & {
-    readonly canonicalResult: Uint8Array;
-  };
-  readonly answers: ReadonlyArray<{
-    readonly recordHash: string;
-    readonly admitted: boolean;
-  }>;
-  readonly evidence: FirewallLocalEvidence;
-}
-
-/** Candidate and evidence bytes are immutable before inference starts. */
-export interface FirewallAttempt {
-  readonly checkId: string;
-  readonly direction: "incoming" | "outgoing";
-  readonly snapshot: FirewallEvidenceSnapshot;
-  readonly canonicalCandidate: Uint8Array;
-  readonly canonicalInput: Uint8Array;
-}
-
-/** One retained attempt, including a missing result when inference did not finish. */
-export interface FirewallAuditEntry extends FirewallAttempt {
-  readonly sequence: number;
-  readonly disposition:
-    | "checking"
-    | "interrupted"
-    | "stale"
-    | "admitted"
-    | "withheld";
-  readonly canonicalResult?: Uint8Array;
-}
-
-/** Successful owner edits retain metadata even when no check uses the installation. */
-export interface FirewallActivation {
-  readonly time: number;
-  readonly activeRevision: string;
-  readonly addedRuleIds: readonly string[];
-  readonly removedRuleIds: readonly string[];
-}
-
-/** The store records applied disposition separately from the policy judgment. */
-export interface FirewallCompletion {
-  readonly checkId: string;
-  readonly canonicalResult: Uint8Array;
-  readonly admit: boolean;
-  /** A terminal guidance-only observation admits without using any stale advice. */
-  readonly shadow?: true;
-}
-
-/** A stale check has no execution authority and remains in private audit. */
-export type FirewallCommit = "admitted" | "withheld" | "stale";
 
 /** Canonical bytes bound to the one local identity. */
 export interface IdentityBinding {
@@ -446,123 +270,6 @@ export interface EndpointStore {
     operationId: string,
     canonicalSelection: Uint8Array,
   ) => Effect.Effect<StoreMutation, EndpointStoreError>;
-  readonly publishCollectiveItem: (
-    delivery: CollectiveDelivery,
-  ) => Effect.Effect<void, EndpointStoreError>;
-
-  readonly queueFirewallItem: (
-    item: Omit<FirewallInboxEntry, "sequence">,
-  ) => Effect.Effect<void, EndpointStoreError>;
-  readonly readFirewallFrontiers: () => Effect.Effect<
-    readonly FirewallInboxEntry[],
-    EndpointStoreError
-  >;
-  readonly readPendingFirewallItems: (
-    after: number,
-  ) => Effect.Effect<readonly FirewallInboxEntry[], EndpointStoreError>;
-  readonly readFirewallEvidence: (
-    input: FirewallEvidenceRange & { readonly maximumRecords: number },
-  ) => Effect.Effect<FirewallEvidence, EndpointStoreError>;
-  readonly readFirewallEvidenceSlices: (input: {
-    readonly ranges: readonly FirewallEvidenceRange[];
-    readonly maximumRecords: number;
-  }) => Effect.Effect<FirewallEvidenceSlices, EndpointStoreError>;
-  readonly readFirewallRequestAdmission: (
-    recordHash: string,
-  ) => Effect.Effect<FirewallRequestAdmission | undefined, EndpointStoreError>;
-  readonly beginFirewallAttempt: (
-    attempt: FirewallAttempt,
-  ) => Effect.Effect<void, EndpointStoreError>;
-  /** Editable documents are opaque to storage and interpreted by delivery. */
-  readonly readFirewallPolicy: () => Effect.Effect<
-    Uint8Array | undefined,
-    EndpointStoreError
-  >;
-  readonly writeFirewallPolicy: (
-    rules: Uint8Array,
-    activation?: FirewallActivation,
-  ) => Effect.Effect<void, EndpointStoreError>;
-  /** Recent edits ordered by activation time, newest first. */
-  readonly readFirewallActivations: (request: {
-    readonly since?: number;
-  }) => Effect.Effect<
-    ReadonlyArray<{
-      readonly sequence: number;
-      readonly activation: FirewallActivation;
-    }>,
-    EndpointStoreError
-  >;
-  /** Bounded recent completed checks, ordered by completion time. */
-  readonly readFirewallDecisions: (
-    since?: number,
-  ) => Effect.Effect<
-    ReadonlyArray<FirewallAuditEntry & { readonly time: number }>,
-    EndpointStoreError
-  >;
-  /** Store test seam for retained attempts, including checks in progress. */
-  readonly readFirewallAuditPage: (
-    after: number,
-  ) => Effect.Effect<readonly FirewallAuditEntry[], EndpointStoreError>;
-  readonly admitFirewallItem: (
-    item: Omit<InboxEntry, "sequence">,
-    completion: FirewallCompletion,
-  ) => Effect.Effect<FirewallCommit, EndpointStoreError>;
-  readonly admitFirewallLocalItem: (
-    admission: FirewallLocalAdmission,
-  ) => Effect.Effect<FirewallCommit, EndpointStoreError>;
-  readonly retireFirewallItem: (
-    deliveryToken: DeliveryToken,
-  ) => Effect.Effect<void, EndpointStoreError>;
-  readonly admitFirewallOperation: (
-    completion: FirewallCompletion,
-    canonicalCandidate: Uint8Array,
-    collective?: CollectiveOperationInput,
-  ) => Effect.Effect<FirewallCommit, EndpointStoreError>;
-  readonly bindCheckedMessageIntent: (
-    binding: MessageIntentBinding,
-    completion: FirewallCompletion,
-  ) => Effect.Effect<FirewallCommit, EndpointStoreError>;
-  readonly bindAdmittedMessageIntent: (
-    binding: MessageIntentBinding,
-    operation: Pick<FirewallAttempt, "checkId" | "canonicalCandidate">,
-  ) => Effect.Effect<FirewallCommit, EndpointStoreError>;
-  readonly readInboxItem: (
-    deliveryToken: DeliveryToken,
-  ) => Effect.Effect<
-    (InboxEntry & { readonly acknowledged: boolean }) | undefined,
-    EndpointStoreError
-  >;
-  readonly completeWebhookDelivery: (
-    deliveryToken: DeliveryToken,
-    canonicalState: Uint8Array,
-  ) => Effect.Effect<void, EndpointStoreError>;
-  readonly putInboxItem: (
-    item: Omit<InboxEntry, "sequence">,
-  ) => Effect.Effect<StoreMutation, EndpointStoreError>;
-  readonly readInbox: (input?: {
-    readonly after?: number;
-    readonly through?: number;
-    readonly limit?: number;
-  }) => Effect.Effect<InboxPage, EndpointStoreError>;
-  readonly readInboxSummary: () => Effect.Effect<
-    InboxSummary,
-    EndpointStoreError
-  >;
-  readonly acknowledgeInboxItem: (
-    deliveryToken: DeliveryToken,
-  ) => Effect.Effect<void, EndpointStoreError>;
-  readonly replaceInboxItem: (
-    deliveryToken: DeliveryToken,
-    replacement: Omit<InboxEntry, "sequence">,
-    pendingConversation?: string,
-  ) => Effect.Effect<void, EndpointStoreError>;
-  readonly readEventState: () => Effect.Effect<
-    Uint8Array | undefined,
-    EndpointStoreError
-  >;
-  readonly writeEventState: (
-    canonicalState: Uint8Array,
-  ) => Effect.Effect<void, EndpointStoreError>;
   readonly readIdentity: () => Effect.Effect<
     IdentityBinding | undefined,
     EndpointStoreError
@@ -668,7 +375,6 @@ type CollectiveOrigin =
   | {
       readonly kind: "remote";
       readonly recordHash: string;
-      readonly requiresAdmission: boolean;
     };
 
 /** Immutable request identity and the descriptor its collective owner interprets. */
@@ -677,7 +383,6 @@ export interface CollectiveOperationInput {
   readonly origin: CollectiveOrigin;
   readonly canonicalRequest: Uint8Array;
   readonly canonicalDescriptor: Uint8Array;
-  readonly admittedCheckId?: string;
 }
 
 /** Selection freezes before a close binds; completion commits with its one terminal item. */
@@ -704,16 +409,6 @@ export interface CollectiveMessageBinding {
 /** Existing message intents own retries and certified completion across restart. */
 export interface StoredCollectiveMessage extends CollectiveMessageBinding {
   readonly intent: MessageIntent;
-}
-
-/** The terminal payload and collective phase become durable in one transaction. */
-export interface CollectiveDelivery {
-  readonly operationId: string;
-  readonly deliveryToken: DeliveryToken;
-  readonly canonicalItem: Uint8Array;
-  readonly conversation: string;
-  readonly canonicalProvenance?: Uint8Array;
-  readonly firewall: boolean;
 }
 
 /** Counted answers retain certified references; their content remains in certified history. */

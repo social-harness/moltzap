@@ -2,39 +2,34 @@
 
 import { Effect, Encoding, Schema } from "effect";
 import { randomBytes } from "node:crypto";
-import { InboundItem } from "../../communication/collectives/inbound.js";
+import type {
+  HarnessMessageReadyEvent,
+  HarnessReadInboxRequest,
+  HarnessReadInboxResult,
+} from "../../host-protocol/operations.js";
+import type { InboxEntry, InboxStore } from "./store.js";
 import {
   decodeRuntimeValue,
   DeliveryToken,
   encodeRuntimeValue,
-  type EndpointStore,
   EndpointStoreError,
-  type InboxEntry,
 } from "../../communication/store/index.js";
 import { exactStruct } from "../../encoding/exact.js";
-import { localGuidanceSchema } from "../../firewall/outcome/index.js";
-import {
-  eventIdSchema,
-  type HarnessMessageReadyEvent,
-  type HarnessReadInboxRequest,
-  type HarnessReadInboxResult,
-} from "../../host-protocol/operations.js";
+import { localGuidanceSchema } from "../../host-protocol/advice.js";
+import { InboundItem } from "../../host-protocol/items.js";
 
 /**
- * Invalid aliases cannot address the same retained item under another event id.
+ * Lookup retains the original content and guidance after acknowledgment.
  * @param store Retained immutable classified inbox.
  * @param eventId Canonical event identity carried by a webhook.
  * @returns The original item or a closed lookup failure.
  */
 export const readRuntimeEvent = (
-  store: Pick<EndpointStore, "readInboxItem">,
+  store: Pick<InboxStore, "readInboxItem">,
   eventId: string,
 ) =>
   Effect.gen(function* () {
-    yield* Schema.decodeUnknown(eventIdSchema)(eventId);
-    const token = yield* Schema.decodeUnknown(DeliveryToken)(
-      `dlv_${eventId.slice(4)}`,
-    );
+    const token = yield* Schema.decodeUnknown(DeliveryToken)(eventId);
     const retained = yield* store.readInboxItem(token);
     if (retained === undefined) {
       return yield* Effect.fail({ reason: "unknown-event" });
@@ -83,7 +78,7 @@ const cursorSchema = exactStruct({
  * @returns Completion once the immutable token binding is durable.
  */
 export const persistInboxItem = (
-  store: EndpointStore,
+  store: InboxStore,
   event: HarnessMessageReadyEvent,
 ): Effect.Effect<void, EndpointStoreError> =>
   Effect.gen(function* () {
@@ -127,7 +122,7 @@ const decodeCursor = (
  * @returns An inbox page and the continuation within that same snapshot.
  */
 export const readRuntimeInbox = (
-  store: EndpointStore,
+  store: InboxStore,
   input: HarnessReadInboxRequest,
 ): Effect.Effect<HarnessReadInboxResult, EndpointStoreError> =>
   Effect.gen(function* () {

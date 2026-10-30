@@ -31,7 +31,7 @@ const frames: ReadonlyArray<
   [
     "notifications/events/event",
     {
-      eventId: "evt_test",
+      eventId: "dlv_test",
       name: INBOX_PENDING_EVENT,
       timestamp: "2026-09-30T00:00:00Z",
       data: { pendingCount: 1 },

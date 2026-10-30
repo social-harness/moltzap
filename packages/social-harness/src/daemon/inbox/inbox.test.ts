@@ -3,6 +3,7 @@
 import { scopedLive as it } from "@effect/vitest";
 import { Effect, Array as EffectArray, Schema, Scope } from "effect";
 import { describe, expect } from "vitest";
+import type { HarnessMessageReadyEvent } from "../../host-protocol/operations.js";
 import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
 import { localGuidance } from "../../__tests__/message-policy-fixtures.js";
@@ -14,19 +15,15 @@ import {
 } from "../../__tests__/pending-delivery-fixtures.js";
 import {
   stateDirectory,
-  withStore,
+  withDaemonStore,
 } from "../../__tests__/store-schema-fixtures.js";
-import { InboundItem } from "../../communication/collectives/inbound.js";
 import {
   DeliveryToken,
   encodeRuntimeValue,
-  openEndpointStore,
 } from "../../communication/store/index.js";
-import {
-  eventIdOf,
-  type HarnessMessageReadyEvent,
-} from "../../host-protocol/operations.js";
+import { InboundItem } from "../../host-protocol/items.js";
 import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
+import { openDaemonStore } from "../store.js";
 import { makeHostDelivery } from "./host-delivery.js";
 import { noHistoryExport } from "./host-traffic-log.js";
 import { persistInboxItem, readRuntimeInbox } from "./inbox.js";
@@ -60,8 +57,8 @@ const request = Schema.decodeUnknownSync(InboundItem)({
 
 /** A collective layer this file's deliveries never send through. */
 const unusedCollectives = {
-  send: () => Effect.dieMessage("unexpected send"),
-  settleRequest: () => Effect.void,
+  prepare: () => Effect.dieMessage("unexpected send"),
+  accept: () => Effect.dieMessage("unexpected send"),
 };
 
 const preservesTokenBindings = () => {
@@ -69,7 +66,7 @@ const preservesTokenBindings = () => {
   return Effect.gen(function* () {
     yield* Effect.scoped(
       Effect.gen(function* () {
-        const store = yield* openEndpointStore(path, {
+        const store = yield* openDaemonStore(path, {
           liveWireVersions: LIVE_WIRE_VERSIONS,
         });
         yield* store.putInboxItem({
@@ -82,7 +79,7 @@ const preservesTokenBindings = () => {
     );
     yield* Effect.scoped(
       Effect.gen(function* () {
-        const store = yield* openEndpointStore(path, {
+        const store = yield* openDaemonStore(path, {
           liveWireVersions: LIVE_WIRE_VERSIONS,
         });
         yield* store.acknowledgeInboxItem(token(1));
@@ -103,7 +100,7 @@ const preservesTokenBindings = () => {
 
 const freezesPagesAcrossArrivalsAndAcknowledgments = () =>
   Effect.gen(function* () {
-    const store = yield* openEndpointStore(stateDirectory(), {
+    const store = yield* openDaemonStore(stateDirectory(), {
       liveWireVersions: LIVE_WIRE_VERSIONS,
     });
     yield* Effect.forEach(
@@ -141,7 +138,7 @@ const commitsReceiptAtomically = () => {
   return Effect.gen(function* () {
     yield* Effect.scoped(
       Effect.gen(function* () {
-        const store = yield* openEndpointStore(path, {
+        const store = yield* openDaemonStore(path, {
           liveWireVersions: LIVE_WIRE_VERSIONS,
         });
         yield* persistInboxItem(store, {
@@ -165,7 +162,7 @@ const commitsReceiptAtomically = () => {
     );
     yield* Effect.scoped(
       Effect.gen(function* () {
-        const store = yield* openEndpointStore(path, {
+        const store = yield* openDaemonStore(path, {
           liveWireVersions: LIVE_WIRE_VERSIONS,
         });
         expect((yield* store.readInboxItem(token(1)))?.acknowledged).toBe(true);
@@ -184,14 +181,14 @@ it("replays the admitted envelope across restart and retains it after acknowledg
   return Effect.gen(function* () {
     const canonicalItem = yield* encodeRuntimeValue(item);
     const canonicalGuidance = yield* encodeRuntimeValue(guidance);
-    yield* withStore(path, (store) =>
+    yield* withDaemonStore(path, (store) =>
       store.putInboxItem({
         deliveryToken: event.deliveryToken,
         canonicalItem,
         canonicalGuidance,
       }),
     );
-    const store = yield* openEndpointStore(path, {
+    const store = yield* openDaemonStore(path, {
       liveWireVersions: LIVE_WIRE_VERSIONS,
     });
     const delivery = yield* makeHostDelivery({
@@ -219,7 +216,7 @@ it("replays the admitted envelope across restart and retains it after acknowledg
     expect(yield* delivery.operations.readInbox({})).toEqual({ items: [] });
     expect(
       yield* delivery.operations.readEvent({
-        eventId: eventIdOf(event.deliveryToken),
+        eventId: event.deliveryToken,
       }),
     ).toEqual({ item, guidance });
   });

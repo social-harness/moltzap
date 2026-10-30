@@ -28,7 +28,7 @@ const routine = {
   ),
   key: Redacted.make("test-routine-key"),
 };
-const eventId = `evt_${"A".repeat(43)}`;
+const eventId = `dlv_${"A".repeat(43)}`;
 const wakeSchema = Schema.parseJson(
   Schema.Struct({ eventId: Schema.String, instruction: Schema.String }),
 );
@@ -210,7 +210,7 @@ describe("Grok routine acceptance", () => {
     "preserves opaque references through HTTP acceptance",
     {
       reference: FastCheck.uint8Array({ minLength: 32, maxLength: 32 }).map(
-        (bytes) => `evt_${Buffer.from(bytes).toString("base64url")}`,
+        (bytes) => `dlv_${Buffer.from(bytes).toString("base64url")}`,
       ),
     },
     ({ reference }) => acceptsStatus(202, reference),

@@ -16,24 +16,10 @@ export type {
   EmptyConversationRestart,
   EndpointRecovery,
   EndpointStore,
-  FirewallActivation,
-  FirewallAuditEntry,
-  FirewallCompletion,
-  FirewallEvidence,
-  FirewallEvidenceSlices,
-  FirewallEvidenceSnapshot,
-  FirewallHistoryEntry,
-  FirewallInboxEntry,
-  FirewallLocalAdmission,
-  FirewallLocalEntry,
-  FirewallRequestAdmission,
   HistoryPage,
   IdentityBinding,
   InboundDeliveryInput,
-  InboxEntry,
-  InboxPage,
   MessageIntent,
-  MessageIntentBinding,
   OutboundMessageInput,
   ProposalLock,
   ProtocolEvidence,
@@ -46,7 +32,7 @@ export type {
   StoreMutation,
 } from "./types.js";
 /** Stable opaque durable-delivery identity. */
-export { DeliveryToken, MAXIMUM_RUNTIME_ITEM_BYTES } from "./types.js";
+export { DeliveryToken } from "./types.js";
 /** Whether a store error refuses its input rather than reporting a failed store. */
 export { isSemanticStoreRejection } from "./types.js";
 

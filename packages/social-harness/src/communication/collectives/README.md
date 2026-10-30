@@ -9,7 +9,8 @@ encoding, and answer checking so the request and its answers agree.
 
 Hosts can import the value and rendering entrypoints without loading the
 operation layer. The daemon composes that layer through [index.ts](index.ts)
-and supplies its communication and firewall capabilities through
-[ports.ts](ports.ts). Keep shared value handling independent of those live
+and supplies its protocol capabilities through [ports.ts](ports.ts).
+Host rendering lives in [host-protocol](../../host-protocol/render.ts), where
+local visibility and guidance stay separate from canonical collective results. Keep shared value handling independent of those live
 capabilities. The [collective contract](../../../../../docs/reference/spec/communication/collectives.md)
 owns operation behavior and completion rules.

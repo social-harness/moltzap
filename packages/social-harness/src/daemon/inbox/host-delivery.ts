@@ -10,21 +10,26 @@ import {
   Struct,
 } from "effect";
 import type {
-  CollectiveEmitError,
-  CollectiveSendOutcome,
-  SendInput,
-  SendResult,
-} from "../../communication/collectives/contracts.js";
-import type {
   CollectiveOperations,
+  PreparedCollective,
   ResultProvenance,
 } from "../../communication/collectives/index.js";
 import type { EnginePendingMessage } from "../../communication/conversations/index.js";
+import type { EndpointStore } from "../../communication/store/types.js";
+import type { Firewall } from "../../firewall/index.js";
+import type { FirewallStore } from "../../firewall/store/types.js";
+import type { SendResult } from "../../host-protocol/send-result.js";
 import type {
   HistoryExportPort,
   HistoryExportRecord,
 } from "./host-traffic-log.js";
-import { InboundItem } from "../../communication/collectives/inbound.js";
+import type { CollectiveDelivery, EventStore, InboxStore } from "./store.js";
+import {
+  type CollectiveEmitError,
+  CollectiveError,
+  type CollectiveSendOutcome,
+  type SendInput,
+} from "../../communication/collectives/contracts.js";
 import {
   DeliveryAcknowledgeError,
   SendError,
@@ -33,19 +38,16 @@ import {
   decodeRuntimeValue,
   type DeliveryToken,
   encodeRuntimeValue,
-  type EndpointStore,
   type EndpointStoreError,
 } from "../../communication/store/index.js";
 import {
-  type AdmissionContext,
-  type FirewallEnvironment,
-  type InstalledFirewall,
-  runAdmission,
-} from "../../firewall/index.js";
+  FirewallSendError,
+  refusalReason,
+} from "../../host-protocol/advice.js";
+import { InboundItem } from "../../host-protocol/items.js";
 import {
   decodeHarnessSendRequest,
   type DeliveryOperations,
-  type EventStore,
   type HarnessMessageReadyEvent,
   type HarnessReadInboxRequest,
   type HarnessSendRequest,
@@ -65,20 +67,37 @@ import {
   readRuntimeEvent,
   readRuntimeInbox,
 } from "./inbox.js";
+import { type AdmissionContext, runAdmission } from "./incoming-worker.js";
+import {
+  type FirewallEnvironment,
+  type OutgoingCandidate,
+  prepareOutgoingCheck,
+} from "./message.js";
 
-/**
- * The collective layer as delivery uses it: the application send, which
- * includes local refusal, and the settling of a request's admission.
- */
-type ApplicationSender = Pick<CollectiveOperations, "send" | "settleRequest">;
+/** Ordinary collective preparation fixes identity before local assessment and protocol acceptance. */
+type ApplicationSender = Pick<CollectiveOperations, "prepare" | "accept">;
+
+/** Host delivery declares its persistence needs without acquiring a database. */
+export interface HostDeliveryStore
+  extends FirewallStore,
+    InboxStore,
+    Pick<EndpointStore, "readCollectiveOperation"> {
+  readonly publishCollectiveItem: (
+    delivery: CollectiveDelivery,
+  ) => Effect.Effect<void, EndpointStoreError>;
+}
 
 /** What one service's delivery reads and writes. */
 export interface HostDeliveryInput {
-  readonly store: EndpointStore;
+  readonly store: HostDeliveryStore;
+  readonly experiments?: {
+    readonly hideGroups: boolean;
+    readonly hideCollectives: boolean;
+  };
   readonly historyExport: HistoryExportPort;
   /** The active collective layer, absent while the service is unregistered. */
   readonly collectives: () => ApplicationSender | undefined;
-  readonly firewall?: InstalledFirewall;
+  readonly firewall?: Firewall;
   readonly firewallEnvironment?: () => FirewallEnvironment | undefined;
   /** Service lifetime, independent of any host request. */
   readonly scope: Scope.Scope;
@@ -159,7 +178,22 @@ const sendDecoded = (input: DeliveryContext, request: HarnessSendRequest) =>
     if (collectives === undefined) {
       return Effect.fail(new SendError({ reason: "not-registered" }));
     }
-    return collectives.send(request.input).pipe(
+    return Effect.gen(function* () {
+      yield* checkExperimentSend(input.experiments, request.input);
+      yield* requirePresentedResponse(input, request.input);
+      const prepared = yield* collectives.prepare(request.input);
+      const environment = input.firewallEnvironment?.();
+      const guidance =
+        environment === undefined
+          ? undefined
+          : yield* checkOutgoing(environment, outgoingCandidate(prepared)).pipe(
+              Effect.catchTag("EndpointStoreError", () =>
+                Effect.fail(new SendError({ reason: "persistence-failed" })),
+              ),
+            );
+      const outcome = yield* collectives.accept(prepared);
+      return { ...outcome, ...(guidance === undefined ? {} : { guidance }) };
+    }).pipe(
       Effect.tapBoth({
         onFailure: (error) =>
           exportSend(input.historyExport, request.input, {
@@ -177,7 +211,149 @@ const sendDecoded = (input: DeliveryContext, request: HarnessSendRequest) =>
     );
   });
 
-function publicSendResult(result: CollectiveSendOutcome): SendResult {
+/** Outgoing assessment is retained before acceptance; a refusal creates no protocol intent. */
+function checkOutgoing(
+  environment: FirewallEnvironment,
+  candidate: OutgoingCandidate,
+) {
+  return Effect.gen(function* () {
+    const prepared = yield* prepareOutgoingCheck(environment, candidate);
+    const checked = yield* environment.firewall.check(prepared);
+    yield* environment.store.completeFirewallAttempt(
+      checked.completion,
+      "outgoing",
+      prepared.canonicalCandidate,
+    );
+    if (!checked.completion.admit) {
+      return yield* new FirewallSendError({
+        checkId: checked.completion.checkId,
+        refusal: refusalReason(checked.result.reason),
+        feedback: checked.result.feedback,
+      });
+    }
+    return checked.guidance;
+  });
+}
+
+function outgoingCandidate(prepared: PreparedCollective): OutgoingCandidate {
+  switch (prepared.kind) {
+    case "multicast":
+      return {
+        to: prepared.to,
+        gather: false,
+        messages: [
+          {
+            canonicalIntent: prepared.message.canonicalIntent,
+            canonicalMembership: prepared.message.canonicalMembership,
+          },
+        ],
+      };
+    case "response":
+      return {
+        to: prepared.response.request.to,
+        gather: false,
+        messages: [
+          {
+            canonicalIntent: prepared.response.message.canonicalIntent,
+            canonicalMembership: prepared.response.message.canonicalMembership,
+          },
+        ],
+      };
+    case "collective":
+      return {
+        to: prepared.gather.open.to,
+        gather: prepared.gather.open.op === "gather",
+        messages: prepared.gather.requests.map(({ message }) => ({
+          canonicalIntent: message.canonicalIntent,
+          canonicalMembership: message.canonicalMembership,
+        })),
+      };
+    default:
+      return prepared satisfies never;
+  }
+}
+
+/** What the agent reads for each capability an evaluation hides. */
+const hiddenFeatures = {
+  groups:
+    "group addresses are not available; message each agent at its agent: address",
+  collectives:
+    "gather, all_gather and answers are not available; send plain text instead",
+};
+
+/**
+ * The refusal of a send that uses a hidden capability, linked to the page that
+ * lists the experiment switches.
+ * @param feature The hidden capability the send uses.
+ * @returns The send error every send route returns.
+ */
+export const hiddenFeatureRefusal = (
+  feature: keyof typeof hiddenFeatures,
+): SendError =>
+  new SendError({
+    reason: "content-invalid",
+    detail: `${hiddenFeatures[feature]}. Docs: https://docs.moltzap.xyz/reference/daemon-experiments#experiment-switches`,
+  });
+
+/**
+ * Refuse hidden capabilities before any send dispatch, with groups taking precedence.
+ * @param configuration The switches captured at daemon startup.
+ * @param input The semantic send supplied by any daemon caller.
+ * @returns Nothing for an available send, or its refusal.
+ */
+function checkExperimentSend(
+  configuration: HostDeliveryInput["experiments"],
+  input: SendInput,
+): Effect.Effect<void, SendError> {
+  let feature: keyof typeof hiddenFeatures | undefined;
+  if (configuration?.hideGroups && input.to.startsWith("group:")) {
+    feature = "groups";
+  } else if (configuration?.hideCollectives && isCollectiveSend(input)) {
+    feature = "collectives";
+  }
+  return feature === undefined
+    ? Effect.void
+    : Effect.fail(hiddenFeatureRefusal(feature));
+}
+
+function isCollectiveSend(input: SendInput): boolean {
+  return (
+    "collectiveResponse" in input ||
+    input.collective?.op === "gather" ||
+    input.collective?.op === "all_gather"
+  );
+}
+
+/** Retained visibility is monotonic; hidden identities never reach protocol selection or diagnostics. */
+function requirePresentedResponse(input: DeliveryContext, send: SendInput) {
+  if (!("collectiveResponse" in send)) {
+    return Effect.void;
+  }
+  return Effect.gen(function* () {
+    const operation = yield* input.store.readCollectiveOperation(
+      send.collectiveResponse.operationId,
+    );
+    const admission =
+      operation?.origin.kind === "remote"
+        ? yield* input.store.readFirewallRequestAdmission(
+            operation.origin.recordHash,
+          )
+        : undefined;
+    if (admission?.presented !== true) {
+      return yield* new CollectiveError({ failure: { kind: "request-none" } });
+    }
+  }).pipe(
+    Effect.catchTag("EndpointStoreError", () =>
+      Effect.fail(new SendError({ reason: "persistence-failed" })),
+    ),
+  );
+}
+
+function publicSendResult(
+  result: CollectiveSendOutcome & {
+    readonly guidance?: SendResult["guidance"];
+  },
+): SendResult {
   switch (result.kind) {
     case "collective":
       return Struct.omit(result, "msgIds");
@@ -274,7 +450,7 @@ const readAndExportInbox = (
 /** The webhook's raw page, decoding each stored item only to export it. */
 const readWebhookInbox = (
   input: DeliveryContext,
-  bounds: Parameters<EndpointStore["readInbox"]>[0],
+  bounds: Parameters<InboxStore["readInbox"]>[0],
 ) =>
   readExported(input, input.store.readInbox(bounds), (entry) =>
     decodeRuntimeValue(InboundItem, entry.canonicalItem),
@@ -426,8 +602,8 @@ const runPass = <E>(
  * ```mermaid
  * flowchart LR
  *   C[Certified message] --> Q[Private conversation queue]
- *   Q --> F[Run full incoming middleware chain]
- *   F --> A[Compare evidence and commit disposition]
+ *   Q --> F[Check the captured incoming message]
+ *   F --> A[Commit the captured assessment disposition]
  *   A -->|admit| V[Inbox with original item and local guidance]
  *   A -->|hold| H[Retain privately for inspection]
  *   V --> R[Native subscription, read-event, inbox and webhook]

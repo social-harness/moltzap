@@ -79,10 +79,6 @@
       "reason": "Attributed envelope representation parameters read by host-loaded SignedMessage schemas"
     },
     {
-      "file": "firewall/evaluator/contract/index.ts",
-      "reason": "Data-only firewall check schemas shared by evaluation and host-safe refusal projections"
-    },
-    {
       "file": "communication/router/api/index.ts",
       "reason": "Opaque Router operation schemas and client capability entry"
     },
@@ -197,6 +193,86 @@
     {
       "file": "communication/store/collectives.ts",
       "reason": "Atomic collective ownership, answer selection and terminal publication in the endpoint store"
+    },
+    {
+      "file": "encoding/limits.ts",
+      "reason": "Shared stored-item bounds for host delivery and local policy evidence"
+    },
+    {
+      "file": "communication/store/database/index.ts",
+      "reason": "Scoped SQLite lifetime and synchronous transaction primitives used by persistence owners"
+    },
+    {
+      "file": "communication/store/queues/peer-deliveries.ts",
+      "reason": "Protocol delivery retirement participates in host acknowledgment transactions"
+    },
+    {
+      "file": "communication/store/store.ts",
+      "reason": "Protocol persistence capability constructed by the daemon on its existing connection"
+    },
+    {
+      "file": "firewall/store/types.ts",
+      "reason": "Policy persistence requirements declared for daemon composition"
+    },
+    {
+      "file": "firewall/store/firewall.ts",
+      "reason": "Whole policy-owned operations called within daemon-composed transactions"
+    },
+    {
+      "file": "firewall/store/schema.ts",
+      "reason": "Policy initialization belongs to the shared daemon startup transaction"
+    },
+    {
+      "file": "daemon/store.ts",
+      "reason": "Initializes persistence owners and composes their named transactions on one scoped SQLite connection"
+    },
+    {
+      "file": "daemon/inbox/store.ts",
+      "reason": "Host persistence capability and whole inbox operations shared by delivery and daemon composition"
+    },
+    {
+      "file": "daemon/inbox/evidence.ts",
+      "reason": "Daemon-owned evidence reads combine protocol, policy and inbox state"
+    },
+    {
+      "file": "host-protocol/items.ts",
+      "reason": "Classified host items and withholding values independent of collective execution"
+    },
+    {
+      "file": "host-protocol/render.ts",
+      "reason": "Host message rendering shared by adapters and policy evidence"
+    },
+    {
+      "file": "host-protocol/send-result.ts",
+      "reason": "Host send result schemas independent of protocol execution"
+    },
+    {
+      "file": "daemon/inbox/host-delivery.ts",
+      "reason": "Host delivery declares its persistence requirements and coordinates sends and inbox handoff"
+    },
+    {
+      "file": "communication/collectives/prepared.ts",
+      "reason": "Exact operation data shared by preparation, assessment projection and acceptance"
+    },
+    {
+      "file": "firewall/check.ts",
+      "reason": "Message assessment and the safe result contracts consumed by host presentation"
+    },
+    {
+      "file": "firewall/config.ts",
+      "reason": "Explicit rule configuration, loading and authenticated edit contracts"
+    },
+    {
+      "file": "host-protocol/advice.ts",
+      "reason": "Host refusal wrappers and shared presentation of registered local advice"
+    },
+    {
+      "file": "daemon/inbox/incoming-worker.ts",
+      "reason": "Ordered incoming admission started by daemon runtime composition"
+    },
+    {
+      "file": "daemon/inbox/message.ts",
+      "reason": "Verified protocol and history projections assembled for firewall checks"
     }
   ],
   "compositionRoots": [
@@ -219,6 +295,10 @@
     {
       "path": "package.json",
       "reason": "Package metadata whose version the loopback MCP peers report"
+    },
+    {
+      "path": "src/daemon/store.ts",
+      "reason": "Initializes persistence owners and composes their named transactions on one scoped SQLite connection"
     }
   ],
   "domains": [
@@ -230,7 +310,8 @@
       "entrypoints": [
         "src/encoding/exact.ts",
         "src/encoding/canonical-json.ts",
-        "src/encoding/identifier.ts"
+        "src/encoding/identifier.ts",
+        "src/encoding/limits.ts"
       ],
       "reason": "Leaf codecs depending only on Effect and canonicalize"
     },
@@ -278,27 +359,6 @@
       "reason": "Client package release metadata used by MCP peers, policy provenance and telemetry"
     },
     {
-      "name": "firewall-evaluator",
-      "roots": [
-        "src/firewall/evaluator"
-      ],
-      "entrypoints": [
-        "src/firewall/evaluator/index.ts",
-        "src/firewall/evaluator/contract/index.ts"
-      ],
-      "reason": "Code and Text evaluation and their shared evidence and check contracts"
-    },
-    {
-      "name": "firewall-outcome",
-      "roots": [
-        "src/firewall/outcome"
-      ],
-      "entrypoints": [
-        "src/firewall/outcome/index.ts"
-      ],
-      "reason": "Closed refusal and guidance schemas hosts and communication decode without loading policy evaluation or provider clients"
-    },
-    {
       "name": "router-api",
       "roots": [
         "src/communication/router/api"
@@ -328,9 +388,11 @@
       ],
       "entrypoints": [
         "src/communication/store/index.ts",
-        "src/communication/store/types.ts"
+        "src/communication/store/types.ts",
+        "src/communication/store/database/index.ts",
+        "src/communication/store/queues/peer-deliveries.ts"
       ],
-      "reason": "The one SQLite replica: certified history, outbox, deliveries, and the host inbox and send records as opaque bytes"
+      "reason": "Protocol persistence: certified history, immutable message claims, outbox and pending peer deliveries"
     },
     {
       "name": "router",
@@ -378,7 +440,11 @@
         "src/host-protocol/index.ts",
         "src/host-protocol/operations.ts",
         "src/host-protocol/names.ts",
-        "src/host-protocol/catalog-schemas.ts"
+        "src/host-protocol/catalog-schemas.ts",
+        "src/host-protocol/items.ts",
+        "src/host-protocol/render.ts",
+        "src/host-protocol/send-result.ts",
+        "src/host-protocol/advice.ts"
       ],
       "reason": "The loopback MCP tools, events and results both peers speak"
     },
@@ -398,9 +464,15 @@
         "src/firewall"
       ],
       "entrypoints": [
-        "src/firewall/index.ts"
+        "src/firewall/index.ts",
+        "src/firewall/check.ts",
+        "src/firewall/config.ts",
+        "src/firewall/store/index.ts",
+        "src/firewall/store/types.ts",
+        "src/firewall/store/firewall.ts",
+        "src/firewall/store/schema.ts"
       ],
-      "reason": "Personal firewall evaluation, rules, policy, admission and retained checks above communication collectives"
+      "reason": "One personal firewall owns configured rules, message checks, edits and retained decisions"
     },
     {
       "name": "daemon-inbox",
@@ -409,7 +481,11 @@
       ],
       "entrypoints": [
         "src/daemon/inbox/index.ts",
-        "src/daemon/inbox/host-traffic-log.ts"
+        "src/daemon/inbox/host-traffic-log.ts",
+        "src/daemon/inbox/store.ts",
+        "src/daemon/inbox/evidence.ts",
+        "src/daemon/inbox/message.ts",
+        "src/daemon/inbox/incoming-worker.ts"
       ],
       "reason": "The admitted host inbox, delivery handoff and host traffic log"
     },
@@ -474,13 +550,6 @@
       "reason": "The admitted host inbox, delivery handoff and host traffic log"
     },
     {
-      "name": "firewall",
-      "folders": [
-        "firewall"
-      ],
-      "reason": "Personal firewall evaluation, rules, policy, admission and retained checks above communication collectives"
-    },
-    {
       "name": "host-client",
       "folders": [
         "host-client"
@@ -493,6 +562,13 @@
         "host-protocol"
       ],
       "reason": "The loopback MCP tools, events and results both peers speak"
+    },
+    {
+      "name": "firewall",
+      "folders": [
+        "firewall"
+      ],
+      "reason": "Configured rules, message checking, owner edits and policy persistence"
     },
     {
       "name": "collectives",
@@ -520,7 +596,7 @@
       "folders": [
         "communication/store"
       ],
-      "reason": "The one SQLite replica: certified history, outbox, deliveries, and the host inbox and send records as opaque bytes"
+      "reason": "Protocol persistence: certified history, immutable message claims, outbox and pending peer deliveries"
     },
     {
       "name": "records",
@@ -535,20 +611,6 @@
         "communication/router/api"
       ],
       "reason": "Opaque Router values and HTTP client below endpoint protocol records"
-    },
-    {
-      "name": "firewall-outcome",
-      "folders": [
-        "firewall/outcome"
-      ],
-      "reason": "Closed refusal and guidance schemas hosts and communication decode without loading policy evaluation or provider clients"
-    },
-    {
-      "name": "firewall-evaluator",
-      "folders": [
-        "firewall/evaluator"
-      ],
-      "reason": "Code and Text evaluation and their shared evidence and check contracts"
     },
     {
       "name": "release",

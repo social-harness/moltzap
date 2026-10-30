@@ -59,6 +59,17 @@ const sealingSigner = {
   },
 };
 
+/** Message schemas and their ordered assessment share one checking boundary. */
+const messageCheckRules = {
+  files: ["src/firewall/check.ts"],
+  rules: {
+    "max-lines": [
+      "error",
+      { max: 1700, skipBlankLines: true, skipComments: true },
+    ],
+  },
+};
+
 export default [
   ...packageEslintConfig({
     projects: ["./tsconfig.json", "./tsconfig.test.json"],
@@ -70,4 +81,5 @@ export default [
   },
   soleOuterSigner,
   sealingSigner,
+  messageCheckRules,
 ];

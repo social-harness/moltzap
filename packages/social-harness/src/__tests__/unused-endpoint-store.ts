@@ -1,7 +1,7 @@
 /** @file An endpoint store whose every operation dies, for tests that override the few they use. */
 
 import { Effect } from "effect";
-import type { EndpointStore } from "../communication/store/index.js";
+import type { DaemonStore } from "../daemon/store.js";
 
 /**
  * A store whose every operation dies naming `label`, so a test spreads it and
@@ -10,7 +10,7 @@ import type { EndpointStore } from "../communication/store/index.js";
  * @param label The test that owns the store, named in the defect.
  * @returns A complete store with no usable operation.
  */
-export function unusedEndpointStore(label: string): EndpointStore {
+export function unusedEndpointStore(label: string): DaemonStore {
   const unused = () => Effect.dieMessage(`store operation outside ${label}`);
   return {
     ...unusedFirewallOperations(unused),
@@ -59,7 +59,6 @@ function unusedFirewallOperations(unused: () => Effect.Effect<never>) {
     queueFirewallItem: unused,
     readFirewallFrontiers: unused,
     readPendingFirewallItems: unused,
-    readFirewallAuditPage: unused,
     readFirewallPolicy: unused,
     writeFirewallPolicy: unused,
     readFirewallDecisions: unused,
@@ -71,9 +70,7 @@ function unusedFirewallOperations(unused: () => Effect.Effect<never>) {
     admitFirewallItem: unused,
     admitFirewallLocalItem: unused,
     retireFirewallItem: unused,
-    admitFirewallOperation: unused,
-    bindCheckedMessageIntent: unused,
-    bindAdmittedMessageIntent: unused,
+    completeFirewallAttempt: unused,
   };
 }
 

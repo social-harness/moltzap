@@ -9,7 +9,7 @@ import {
 } from "@modelcontextprotocol/server";
 import { Effect, Redacted, Schema } from "effect";
 import { describe, expect } from "vitest";
-import type { EventStore } from "../../host-protocol/operations.js";
+import type { EventStore } from "../inbox/store.js";
 import { digest } from "../../__tests__/agent-card-fixtures.js";
 import { connectInProcessClient } from "../../__tests__/mcp-http-fixtures.js";
 import { makeFixture } from "../../__tests__/router-worker-fixtures.js";
@@ -19,9 +19,9 @@ import {
   input,
   scriptedWebhook,
 } from "../../__tests__/webhook-fixtures.js";
-import { openEndpointStore } from "../../communication/store/index.js";
 import { AgentCard, agentViewOf } from "../../identity/cards.js";
 import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
+import { openDaemonStore } from "../store.js";
 import {
   type HarnessMcpOperations,
   makeHarnessMcpHttpHandler,
@@ -145,7 +145,7 @@ const rejectedBearers = [
 ];
 const unknownEvent = {
   name: "read_event",
-  arguments: { eventId: digest("evt_", 1) },
+  arguments: { eventId: digest("dlv_", 1) },
 };
 
 /** The tools each credential role sees, sorted, before and after registration. */
@@ -585,7 +585,7 @@ const admittedCalls = [
  * inbox item terminally with 410 Gone, which only an owner revoke clears.
  */
 const terminallyStalledWebhookStore = Effect.gen(function* () {
-  const store = yield* openEndpointStore(stateDirectory(), {
+  const store = yield* openDaemonStore(stateDirectory(), {
     liveWireVersions: LIVE_WIRE_VERSIONS,
   });
   const callback = scriptedWebhook(store);
@@ -680,13 +680,13 @@ describe("tunneled MCP event reads for a registered daemon", () => {
 
 /* eslint-enable agent-code-guard/no-hardcoded-assertion-literals -- Restore repository defaults. */
 
-const normEdit = {
+const ruleEdit = {
   name: "policy_update",
   arguments: {
     add: [
       {
         id: "shared",
-        kind: "norm",
+        applies: "both",
         text: "Confirm before booking.",
         guidance: "Confirm first.",
       },
@@ -695,7 +695,7 @@ const normEdit = {
 };
 
 it.each(["modern", "legacy"] as const)(
-  "assigns norm-edit authority from the bearer over %s MCP",
+  "assigns rule-edit authority from the bearer over %s MCP",
   (version) =>
     Effect.gen(function* () {
       const authorities: string[] = [];
@@ -711,7 +711,7 @@ it.each(["modern", "legacy"] as const)(
             }),
         },
       );
-      const params = normEdit;
+      const params = ruleEdit;
       for (const credential of [credentials.runtime, credentials.owner]) {
         if (version === "modern") {
           const response = yield* callTool(handler, params, credential);

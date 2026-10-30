@@ -11,15 +11,14 @@ import {
   TestClock,
 } from "effect";
 import { expect } from "vitest";
+import type { DaemonStore } from "../../daemon/store.js";
 import {
   identifier,
   testAgentView,
 } from "../../__tests__/agent-card-fixtures.js";
 import { signEvidence } from "../../__tests__/certified-history-fixtures.js";
-import {
-  engineFixture,
-  resolvedMemberView,
-} from "../../__tests__/firewall-runtime-fixtures.js";
+import { makeCollectiveOperations } from "../../__tests__/collective-send.js";
+import { engineFixture } from "../../__tests__/firewall-runtime-fixtures.js";
 import { pollCursor } from "../../__tests__/router-worker-fixtures.js";
 import { makeHostDelivery } from "../../daemon/inbox/host-delivery.js";
 import { WIRE_VERSION } from "../../identity/wire-version.js";
@@ -41,8 +40,7 @@ import {
 } from "../records/index.js";
 import { RouterInstanceId } from "../router/api/contract.js";
 import { RouterWorkerUnavailableError } from "../router/index.js";
-import { decodeRuntimeValue, type EndpointStore } from "../store/index.js";
-import { makeCollectiveOperations } from "./index.js";
+import { decodeRuntimeValue } from "../store/index.js";
 
 it("waits for Router attachment before reporting a bound all-gather as pending", () =>
   Effect.gen(function* () {
@@ -104,14 +102,16 @@ it("refuses an all-gather whose deadline passes while another send owns the engi
     );
     yield* Deferred.succeed(fixture.attached, undefined);
     const first = yield* fixture.engine
-      .bind(
-        {
-          to: Schema.decodeUnknownSync(MessageAddressInput)("agent:bob"),
-          content: [{ type: "text", text: "Earlier message" }],
-        },
-        Effect.succeed(Effect.void),
-      )
-      .pipe(Effect.fork);
+      .prepare({
+        to: Schema.decodeUnknownSync(MessageAddressInput)("agent:bob"),
+        content: [{ type: "text", text: "Earlier message" }],
+      })
+      .pipe(
+        Effect.flatMap((prepared) =>
+          fixture.engine.accept(prepared, Effect.succeed(Effect.void)),
+        ),
+        Effect.fork,
+      );
     yield* Deferred.await(binding);
 
     const sending = yield* fixture.send(5).pipe(Effect.fork);
@@ -142,10 +142,9 @@ function attachingEndpoint(pausePlainBind?: Effect.Effect<unknown>) {
     const collectives = yield* makeCollectiveOperations({
       store: subject.store,
       self: testAgentView("agent:alice"),
-      lookupMember: (member) => resolvedMemberView(engine, member),
       sendMessage: engine.send,
-      bindMessage: engine.bind,
-      sendAdmitted: engine.sendAdmitted,
+      prepareMessage: engine.prepare,
+      acceptMessage: engine.accept,
       observeMessage: engine.observeMessage,
       reportStorageFault: () => Effect.dieMessage("unexpected storage fault"),
       emit: () => Effect.void,
@@ -383,9 +382,9 @@ function certificationEvidence(
 }
 
 function pauseUnrelatedBinds(
-  store: EndpointStore,
+  store: DaemonStore,
   pause: Effect.Effect<unknown>,
-): EndpointStore {
+): DaemonStore {
   return {
     ...store,
     bindMessageIntent: (binding) =>

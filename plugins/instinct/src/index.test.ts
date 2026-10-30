@@ -26,7 +26,7 @@ const sender = {
   inboxId: "sender+fixture@example.test",
   recipient: "instinct@example.test",
 };
-const eventId = `evt_${"A".repeat(43)}`;
+const eventId = `dlv_${"A".repeat(43)}`;
 const emailSchema = Schema.parseJson(
   Schema.Struct({
     to: Schema.Array(Schema.String),
@@ -211,7 +211,7 @@ describe("Instinct email handoff", () => {
     "preserves each opaque reference through accepted handoff",
     {
       reference: FastCheck.uint8Array({ minLength: 32, maxLength: 32 }).map(
-        (bytes) => `evt_${Buffer.from(bytes).toString("base64url")}`,
+        (bytes) => `dlv_${Buffer.from(bytes).toString("base64url")}`,
       ),
     },
     ({ reference }) => carriesReference(reference),

@@ -17,9 +17,9 @@ import type { HarnessMessageReadyEvent } from "../../host-protocol/operations.js
 import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { loopbackMcpEndpoint } from "../../__tests__/mcp-http-fixtures.js";
 import { localGuidance } from "../../__tests__/message-policy-fixtures.js";
-import { InboundItem } from "../../communication/collectives/inbound.js";
 import { DeliveryToken } from "../../communication/store/index.js";
 import { acquireHarnessEndpoint } from "../../host-client/index.js";
+import { InboundItem } from "../../host-protocol/items.js";
 import { INBOX_PENDING_EVENT } from "../../host-protocol/names.js";
 import { type HarnessEvents, makeHarnessEvents } from "./events.js";
 import {

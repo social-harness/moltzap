@@ -46,7 +46,13 @@ const gather = (
     to: groupAddress([requester, ...members]),
     text: question,
     collective: { op: "gather", deadline, requestedSchema: slotSchema },
-  });
+  }).pipe(
+    Effect.flatMap((result) =>
+      result.kind === "collective"
+        ? Effect.succeed(result)
+        : Effect.dieMessage("expected a gather operation"),
+    ),
+  );
 
 /**
  * Each test starts PGlite, the Registry, the Router and three daemons, and the
@@ -121,7 +127,11 @@ const allAnsweredBehavior = Effect.gen(function* () {
   const participants = yield* acquireThree;
   yield* expectUnreachableGatherRefused(participants);
   const started = yield* startGatherAndExpectRequests(participants);
-  yield* expectInvalidAnswerRefused(participants.first, participants.requester);
+  yield* expectInvalidAnswerRefused(
+    participants.first,
+    participants.requester,
+    started.operationId,
+  );
   yield* answerGatherAndExpectResult(participants, started.operationId);
 }).pipe(Effect.scoped);
 
@@ -140,7 +150,11 @@ const silentMemberBehavior = Effect.gen(function* () {
   yield* Effect.all([nextItem(first), nextItem(second)], { concurrency: 2 });
   yield* send(first, {
     to: requester.address,
-    collectiveResponse: { action: "accept", content: { slot: "mon" } },
+    collectiveResponse: {
+      action: "accept",
+      operationId: started.operationId,
+      content: { slot: "mon" },
+    },
   });
 
   expect(yield* nextItem(requester)).toMatchObject({
@@ -157,7 +171,7 @@ const silentMemberBehavior = Effect.gen(function* () {
   });
   const late = yield* send(second, {
     to: requester.address,
-    collectiveResponse: { action: "decline" },
+    collectiveResponse: { action: "decline", operationId: started.operationId },
   }).pipe(Effect.flip);
   expect(late).toMatchObject({ failure: { kind: "request-expired" } });
 }).pipe(Effect.scoped);
@@ -177,11 +191,16 @@ it(
 function expectInvalidAnswerRefused(
   first: Participant,
   requester: Participant,
+  operationId: string,
 ) {
   return Effect.gen(function* () {
     const invalid = yield* send(first, {
       to: requester.address,
-      collectiveResponse: { action: "accept", content: { slot: "sun" } },
+      collectiveResponse: {
+        action: "accept",
+        operationId,
+        content: { slot: "sun" },
+      },
     }).pipe(Effect.flip);
     expect(invalid).toMatchObject({
       failure: { kind: "answer-invalid", fields: [{ field: "slot" }] },
@@ -191,16 +210,20 @@ function expectInvalidAnswerRefused(
 
 function answerGatherAndExpectResult(
   { requester, first, second }: GatherParticipants,
-  operationId?: string,
+  operationId: string,
 ) {
   return Effect.gen(function* () {
     yield* send(first, {
       to: requester.address,
-      collectiveResponse: { action: "accept", content: { slot: "tue" } },
+      collectiveResponse: {
+        action: "accept",
+        operationId,
+        content: { slot: "tue" },
+      },
     });
     yield* send(second, {
       to: requester.address,
-      collectiveResponse: { action: "decline" },
+      collectiveResponse: { action: "decline", operationId },
     });
     expect(yield* nextItem(requester)).toEqual({
       kind: "collectiveResult",

@@ -9,7 +9,8 @@ import {
 } from "@modelcontextprotocol/server";
 import { Effect, Option, Schema, SchemaAST } from "effect";
 import { describe, expect } from "vitest";
-import { FirewallPolicyError } from "../../firewall/index.js";
+import { requestId } from "../../__tests__/collective-operation-fixtures.js";
+import { FirewallPolicyError } from "../../firewall/config.js";
 import { decodeHarnessSendErrorData } from "../../host-protocol/operations.js";
 import { AgentName, PrincipalId } from "../../identity/identifiers.js";
 import { OperationId } from "../../identity/registry/contract.js";
@@ -118,9 +119,11 @@ const invalidCalls = [
   {
     name: "policy_update",
     arguments: {
-      add: [{ id: "no-guidance", kind: "norm", text: "Be brief." }],
+      add: [
+        { id: "invalid-direction", applies: "sideways", text: "Be brief." },
+      ],
     },
-    paths: [["add", 0, "guidance"]],
+    paths: [["add", 0, "applies"]],
   },
 ];
 const invalidInvocationCalls = [
@@ -139,7 +142,11 @@ const invalidInvocationCalls = [
     arguments: {
       input: {
         to: "agent:bob",
-        collectiveResponse: { action: "accept", content: { choices: [1] } },
+        collectiveResponse: {
+          operationId: requestId,
+          action: "accept",
+          content: { choices: [1] },
+        },
       },
     },
     paths: [["input", "collectiveResponse", "content", "choices", 0]],
@@ -188,7 +195,7 @@ const semanticFailures = [
       add: [
         {
           id: "meeting-booking",
-          kind: "norm",
+          applies: "both",
           text: "Each member holds a slot before confirming it.",
           guidance: "Hold a slot before you confirm one.",
         },

@@ -44,7 +44,13 @@ const allGather = (requester: Participant, to: string, deadline: number) =>
     to,
     text: question,
     collective: { op: "all_gather", deadline, requestedSchema: slotSchema },
-  });
+  }).pipe(
+    Effect.flatMap((result) =>
+      result.kind === "collective"
+        ? Effect.succeed(result)
+        : Effect.dieMessage("expected an all_gather operation"),
+    ),
+  );
 
 /** The group's canonical spelling, its names in ASCII order, as requests and results carry it. */
 const group =
@@ -66,10 +72,10 @@ const ALL_GATHER_TEST_TIMEOUT_MS = 300_000;
  */
 const ANSWERED_DEADLINE_SECONDS = ALL_GATHER_TEST_TIMEOUT_MS / 1000;
 
-const answer = (member: Participant, slot: string) =>
+const answer = (member: Participant, operationId: string, slot: string) =>
   send(member, {
     to: group,
-    collectiveResponse: { action: "accept", content: { slot } },
+    collectiveResponse: { action: "accept", operationId, content: { slot } },
   });
 
 interface AllGatherParticipants {
@@ -155,9 +161,15 @@ const silentMemberBehavior = Effect.gen(function* () {
   yield* Effect.all([nextItem(first), nextItem(second), nextItem(third)], {
     concurrency: 3,
   });
-  yield* Effect.all([answer(first, "mon"), answer(second, "mon")], {
-    concurrency: 2,
-  });
+  yield* Effect.all(
+    [
+      answer(first, started.operationId, "mon"),
+      answer(second, started.operationId, "mon"),
+    ],
+    {
+      concurrency: 2,
+    },
+  );
 
   const requesterResult = yield* nextItem(requester);
   expect(requesterResult).toMatchObject({
@@ -189,14 +201,14 @@ it(
 
 function answerAllGatherAndExpectSharedResult(
   { requester, first, second, third }: AllGatherParticipants,
-  operationId?: string,
+  operationId: string,
 ) {
   return Effect.gen(function* () {
-    yield* answer(first, "tue");
-    yield* answer(second, "mon");
+    yield* answer(first, operationId, "tue");
+    yield* answer(second, operationId, "mon");
     yield* send(third, {
       to: group,
-      collectiveResponse: { action: "decline" },
+      collectiveResponse: { action: "decline", operationId },
     });
     const requesterResult = yield* nextItem(requester);
     expect(requesterResult).toEqual({

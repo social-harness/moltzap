@@ -9,11 +9,23 @@ import {
   Option,
   Schema,
 } from "effect";
-import type { MessageAddressInput } from "../records/index.js";
+import type { AgentAddress, MessageAddressInput } from "../records/index.js";
 import type { InboundItem } from "./inbound.js";
-import { encodeCanonical } from "../../encoding/canonical-json.js";
+import type {
+  CertifiedMessage,
+  CollectivePorts,
+  CollectiveSendError,
+  MessageClassifier,
+} from "./ports.js";
+import type { PreparedCollective } from "./prepared.js";
+import {
+  decodeCanonical,
+  encodeCanonical,
+} from "../../encoding/canonical-json.js";
+import { AgentCard, AgentView } from "../../identity/cards.js";
 import { canonicalMessageAddress } from "../conversations/address.js";
 import { SendError } from "../conversations/errors.js";
+import { preparedSendData, resolutionFailure } from "../conversations/index.js";
 import { InboundMessage } from "../conversations/message.js";
 import { agentAddressOf } from "../records/values.js";
 import { encodeRuntimeValue, EndpointStoreError } from "../store/index.js";
@@ -37,7 +49,7 @@ import {
   type CollectiveOperation,
   type CollectiveSendOutcome,
   describeIssues,
-  type SendInput,
+  SendInput,
 } from "./contracts.js";
 import {
   durableEmit,
@@ -45,16 +57,6 @@ import {
   refreshRetained,
   refreshRetainedSend,
 } from "./persistence.js";
-import {
-  type AdmittedGather,
-  type AuthoredMessageError,
-  bindAuthoredMessage,
-  type CertifiedMessage,
-  type CollectiveOperations,
-  type CollectivePorts,
-  type CollectiveSendError,
-  type MessageSender,
-} from "./ports.js";
 import { type ReceivedRequest, receivedRequest } from "./received-request.js";
 import { recoverCollectives } from "./recovery.js";
 import {
@@ -64,10 +66,13 @@ import {
   operationTimes,
   requestsSoFar,
   requestWait,
-  resolveMembers,
   withinRequestWait,
 } from "./request-sends.js";
-import { respond, restoreResponse } from "./responses.js";
+import {
+  acceptResponse,
+  prepareResponse,
+  restoreResponse,
+} from "./responses.js";
 import {
   type CollectiveState,
   encodeLocalCollective,
@@ -83,10 +88,24 @@ import {
   withoutCollectivePart,
 } from "./wire/index.js";
 
+/** The daemon's collective layer for one active identity. */
+export interface CollectiveOperations {
+  /** Validate an operation and capture its exact destinations, content and message identities. */
+  readonly prepare: (
+    input: SendInput,
+  ) => Effect.Effect<PreparedCollective, CollectiveSendError>;
+  /** Take protocol custody of the captured operation while its request and deadline remain live. */
+  readonly accept: (
+    prepared: PreparedCollective,
+  ) => Effect.Effect<CollectiveSendOutcome, CollectiveSendError>;
+  /** Certified traffic is classified without exposing host-local presentation state. */
+  readonly classify: MessageClassifier;
+}
+
 type MessageContent = InboundMessage["content"];
 
 /** Request fanout returns only messages certified during this invocation. */
-type RequestSendOutcome = Pick<CollectiveSendOutcome, "msgIds" | "guidance">;
+type RequestSendOutcome = Pick<CollectiveSendOutcome, "msgIds">;
 
 type CollectingOperation = Extract<
   CollectiveOperation,
@@ -134,103 +153,101 @@ export const makeCollectiveOperations = (
         recordRefusal(state, operationId, refusal),
     });
     return {
-      send: (input) =>
-        "collectiveResponse" in input
-          ? respond(state, input.to, input.collectiveResponse)
-          : sendOperation(state, input),
+      prepare: (input) => prepareOperation(state, input),
+      accept: (prepared) => acceptOperation(state, prepared),
       classify: (message) => classify(state, message),
-      settleRequest: (operationId, presented) =>
-        Effect.sync(() => {
-          const request = state.requests.get(operationId);
-          if (request?.state === "unadmitted") {
-            request.state = presented ? "open" : "withheld";
-          }
-        }),
     } satisfies CollectiveOperations;
   }).pipe(Effect.withSpan("makeCollectiveOperations"));
 
-function sendOperation(
+function prepareOperation(
   state: CollectiveState,
-  input: Extract<SendInput, { readonly text: string }>,
-): Effect.Effect<CollectiveSendOutcome, CollectiveSendError> {
-  const operation = input.collective ?? {};
-  switch (operation.op) {
-    case undefined:
-    case "multicast":
-      return multicast(state, input.to, input.text);
-    case "gather":
-    case "all_gather":
-      return gather(state, input.to, input.text, operation);
-    default: {
-      const exhaustive: never = operation;
-      return exhaustive;
-    }
-  }
+  input: SendInput,
+): Effect.Effect<PreparedCollective, CollectiveSendError> {
+  return encodeCanonical(SendInput, input).pipe(
+    Effect.flatMap((bytes) => decodeCanonical(SendInput, bytes)),
+    Effect.mapError(contentInvalid),
+    Effect.flatMap((captured) => prepareCapturedOperation(state, captured)),
+  );
 }
 
-function multicast(
+function prepareCapturedOperation(
   state: CollectiveState,
-  to: MessageAddressInput,
-  text: string,
-): Effect.Effect<CollectiveSendOutcome, AuthoredMessageError<never>> {
+  input: SendInput,
+): Effect.Effect<PreparedCollective, CollectiveSendError> {
+  if ("collectiveResponse" in input) {
+    return prepareResponse(state, input.to, input.collectiveResponse).pipe(
+      Effect.map((response) => ({ kind: "response", response })),
+    );
+  }
+  if (
+    input.collective?.op === "gather" ||
+    input.collective?.op === "all_gather"
+  ) {
+    return prepareGather(state, input.to, input.text, input.collective).pipe(
+      Effect.map((gather) => ({ kind: "collective", gather })),
+    );
+  }
   return Effect.gen(function* () {
     const content = yield* encodeCollectiveContent(
       { kind: "operation", op: "multicast" },
-      text,
+      input.text,
     ).pipe(Effect.mapError(contentInvalid));
-    const self = state.ports.self.agentName;
-    const { address } = yield* canonicalMessageAddress(to, self);
-    const { certified, guidance } = yield* bindAuthoredMessage(
-      state.ports,
-      { to, content },
-      Effect.succeed(Effect.void),
+    const { address } = yield* canonicalMessageAddress(
+      input.to,
+      state.ports.self.agentName,
     );
-    const { msgId } = yield* certified;
+    const message = yield* state.ports
+      .prepareMessage({ to: address, content })
+      .pipe(
+        Effect.catchTag("RecipientResolutionError", (error) =>
+          Effect.fail(resolutionFailure(error)),
+        ),
+      );
     return {
       kind: "multicast",
-      msgIds: [msgId],
-      msgId,
-      address,
-      ...(guidance === undefined ? {} : { guidance }),
-    };
+      to: address,
+      message,
+    } satisfies PreparedCollective;
   });
 }
 
-/**
- * Start a gather or all_gather. A gather is checked once by an installed
- * firewall before anything else; its deadline timer then starts, it opens so
- * answers can be recorded while its requests are still being sent, and its
- * request messages go out through the sender the check admitted. An
- * all_gather's one group message is checked as the agent's message. Matching state
- * opens before binding; its timer starts only after durable ownership. A firewall refusal is the
- * send's own failure, never routed inbound.
- */
-function gather(
+function acceptOperation(
   state: CollectiveState,
-  requestedTo: MessageAddressInput,
-  question: string,
-  operation: CollectingOperation,
+  prepared: PreparedCollective,
 ): Effect.Effect<CollectiveSendOutcome, CollectiveSendError> {
-  return Effect.gen(function* () {
-    const prepared = yield* prepareGather(
-      state,
-      requestedTo,
-      question,
-      operation,
-    );
-    const sent = yield* prepared.open.op === "gather"
-      ? gatherRequests(state, prepared)
-      : sendGroupRequest(state, prepared);
-    return { ...sent, kind: "collective", operationId: prepared.operationId };
-  });
+  switch (prepared.kind) {
+    case "response":
+      return acceptResponse(state, prepared.response);
+    case "multicast":
+      return state.ports
+        .acceptMessage(prepared.message, Effect.succeed(Effect.void))
+        .pipe(
+          Effect.flatMap(({ certified }) => certified),
+          Effect.map(({ msgId }) => ({
+            kind: "multicast",
+            msgId,
+            msgIds: [msgId],
+            address: prepared.to,
+          })),
+        );
+    case "collective":
+      return (
+        prepared.gather.open.op === "gather"
+          ? gatherRequests(state, prepared.gather)
+          : sendGroupRequest(state, prepared.gather)
+      ).pipe(
+        Effect.map((sent) => ({
+          ...sent,
+          kind: "collective",
+          operationId: prepared.gather.operationId,
+        })),
+      );
+    default:
+      return prepared satisfies never;
+  }
 }
 
-/**
- * Validate a gather or all_gather before any message: mint its operationId, check its
- * schema against the form-mode grammar, name and resolve its members, fix
- * its absolute deadline, and build the request content within the content
- * limit.
- */
+/** All request identities and memberships are fixed before local assessment. */
 function prepareGather(
   state: CollectiveState,
   requestedTo: MessageAddressInput,
@@ -238,7 +255,7 @@ function prepareGather(
   input: CollectingOperation,
 ): Effect.Effect<PreparedGather, SendError | CollectiveError> {
   return Effect.gen(function* () {
-    const { self, lookupMember } = state.ports;
+    const { self } = state.ports;
     const { op, deadline, requestedSchema: schema } = input;
     const operationId = yield* mintCollectiveId(self.agentId);
     const { to, members: addresses } = yield* gatherAddress(
@@ -247,38 +264,168 @@ function prepareGather(
       op,
     );
     const requestedSchema = yield* formModeSchema(operationId, schema);
-    const members = yield* resolveMembers(addresses, lookupMember).pipe(
-      Effect.mapError((failure) => collectiveFailure(operationId, failure)),
-    );
     const times = yield* operationTimes(deadline);
-    const content = yield* encodeCollectiveContent(
-      {
-        kind: "operation",
-        op,
-        operationId,
-        deadlineAt: times.deadlineAt,
-        requestedSchema,
-      },
+    const content = yield* requestContent(
+      operationId,
+      { op, deadlineAt: times.deadlineAt, requestedSchema },
       question,
-    ).pipe(Effect.mapError(contentInvalid));
-    const descriptor = {
+    );
+    const requests = yield* prepareRequests(state, {
+      operationId,
       op,
       to,
-      question,
-      members,
-      requestedSchema,
+      addresses,
       content,
-      ...times,
-    };
+    });
+    const ordered = yield* preparedMembers(state, requests, addresses);
+    const [head, ...tail] = ordered;
+    if (head === undefined) {
+      return yield* contentInvalid();
+    }
+    return yield* retainPreparedGather(
+      operationId,
+      {
+        op,
+        to,
+        question,
+        members: [head, ...tail] as const,
+        requestedSchema,
+        content,
+        ...times,
+        requests: retainedRequests(requests),
+      },
+      requests,
+    );
+  });
+}
+
+function requestContent(
+  operationId: CollectiveId,
+  input: {
+    readonly op: "gather" | "all_gather";
+    readonly deadlineAt: number;
+    readonly requestedSchema: FormModeSchema;
+  },
+  question: string,
+) {
+  return encodeCollectiveContent(
+    { kind: "operation", operationId, ...input },
+    question,
+  ).pipe(Effect.mapError(contentInvalid));
+}
+
+function retainedRequests(requests: PreparedGather["requests"]) {
+  return requests.map(({ to, message }) => ({
+    to,
+    message: {
+      canonicalIntent: message.canonicalIntent,
+      canonicalMembership: message.canonicalMembership,
+    },
+  }));
+}
+
+function retainPreparedGather(
+  operationId: CollectiveId,
+  descriptor: Parameters<typeof encodeLocalCollective>[1],
+  requests: PreparedGather["requests"],
+) {
+  return Effect.gen(function* () {
     return {
       operationId,
-      content,
-      ...times,
+      content: descriptor.content,
+      deadlineAt: descriptor.deadlineAt,
+      waitUntil: descriptor.waitUntil,
+      requests,
       durable: yield* encodeLocalCollective(operationId, descriptor).pipe(
         Effect.mapError(contentInvalid),
       ),
       open: { ...descriptor, outcomes: new Map(), answerHashes: new Map() },
-    };
+    } satisfies PreparedGather;
+  });
+}
+
+interface RequestPreparation {
+  readonly operationId: CollectiveId;
+  readonly op: "gather" | "all_gather";
+  readonly to: MessageAddressInput;
+  readonly addresses: readonly AgentAddress[];
+  readonly content: MessageContent;
+}
+
+function prepareRequests(state: CollectiveState, input: RequestPreparation) {
+  const { operationId, op, to, addresses, content } = input;
+  const destinations = op === "gather" ? addresses : [to];
+  return Effect.validateAll(
+    destinations,
+    (destination) =>
+      state.ports
+        .prepareMessage({
+          to: destination,
+          content,
+          collective: { operationId, role: "request", destination },
+        })
+        .pipe(
+          Effect.map((message) => ({ to: destination, message })),
+          Effect.mapError((error) =>
+            error._tag === "RecipientResolutionError"
+              ? error.failures.map(({ member, cause }) =>
+                  messageRefusal(member, cause),
+                )
+              : addresses
+                  .filter(
+                    (address) => op === "all_gather" || address === destination,
+                  )
+                  .map((member) => messageRefusal(member, error)),
+          ),
+        ),
+    { concurrency: 8 },
+  ).pipe(
+    Effect.catchAll((failures) => {
+      const [first, ...rest] = failures.flat();
+      return first === undefined
+        ? Effect.dieMessage("failed preparation has no recipient")
+        : Effect.fail(
+            collectiveFailure(operationId, {
+              kind: "members-unreachable",
+              members: [first, ...rest],
+            }),
+          );
+    }),
+  );
+}
+
+function preparedMembers(
+  state: CollectiveState,
+  requests: PreparedGather["requests"],
+  addresses: readonly AgentAddress[],
+) {
+  return Effect.gen(function* () {
+    const memberships = yield* Effect.forEach(
+      requests,
+      ({ message }) =>
+        preparedSendData(message).pipe(
+          Effect.map(({ descriptor }) => descriptor.members),
+        ),
+      { concurrency: 1 },
+    );
+    const cards = yield* Effect.forEach(
+      memberships.flat(),
+      (card) =>
+        Schema.decodeUnknown(AgentCard)(card).pipe(
+          Effect.mapError(contentInvalid),
+        ),
+      { concurrency: 1 },
+    );
+    const distinct = new Map(
+      cards
+        .filter((card) => card.agentId !== state.ports.self.agentId)
+        .map((card) => [card.agentId, AgentView.make(card)]),
+    );
+    return addresses.flatMap((address) =>
+      [...distinct.values()].filter(
+        (member) => agentAddressOf(member) === address,
+      ),
+    );
   });
 }
 
@@ -303,66 +450,39 @@ function formModeSchema(
 }
 
 /**
- * Admit a gather, open it, and send its request messages through the sender
- * the check admitted. The admitting check's advice stays with the outcome,
- * and with a refusal that follows admission. Admission and fanout keep one
- * scoped owner even if the invoking caller stops waiting.
+ * Durable request custody owns fanout and deadline work after the invoking caller stops waiting.
+ * A deadline refusal retires unopened custody so recovery cannot later publish a refused operation.
  */
 function gatherRequests(
   state: CollectiveState,
   prepared: PreparedGather,
 ): Effect.Effect<RequestSendOutcome, CollectiveSendError> {
-  return admitGather(state, prepared).pipe(
-    Effect.flatMap(({ sendRequest, guidance }) =>
-      openGather(state, prepared, false).pipe(
+  return Effect.uninterruptibleMask((restore) =>
+    Effect.gen(function* () {
+      if ((yield* Clock.currentTimeMillis) >= prepared.deadlineAt) {
+        return yield* collectiveFailure(prepared.operationId, {
+          kind: "deadline-passed",
+        });
+      }
+      yield* durableSend(
+        state,
+        state.ports.store.putCollectiveOperation(prepared.durable),
+      );
+      yield* refreshRetainedSend(state, prepared.operationId);
+      yield* openGather(state, prepared, false).pipe(
         Effect.catchTag("CollectiveError", (error) =>
           forgetGather(state, prepared.operationId).pipe(
             Effect.zipRight(Effect.fail(error)),
           ),
         ),
-        Effect.tap(() => armRetainedGather(state, prepared.operationId)),
-        Effect.zipRight(sendRequests(state, prepared, sendRequest)),
-        Effect.map((sent) => ({
-          ...sent,
-          ...(guidance === undefined ? {} : { guidance }),
-        })),
-      ),
-    ),
-    Effect.interruptible,
-    Effect.forkIn(state.ports.scope),
-    Effect.flatMap(Fiber.join),
-  );
-}
-
-/**
- * The sender a gather's request messages go through, with the advice of the
- * firewall's check that admitted the gather, or the plain message sender without
- * a firewall.
- */
-function admitGather(
-  state: CollectiveState,
-  prepared: PreparedGather,
-): Effect.Effect<AdmittedGather, AuthoredMessageError<never>> {
-  const { admission } = state.ports;
-  const admitted: Effect.Effect<
-    AdmittedGather,
-    AuthoredMessageError<never> | EndpointStoreError
-  > =
-    admission === undefined
-      ? durableSend(
-          state,
-          state.ports.store.putCollectiveOperation(prepared.durable),
-        ).pipe(Effect.as({ sendRequest: state.ports.sendMessage }))
-      : admission.admitGather({
-          to: prepared.open.to,
-          content: prepared.content,
-          operation: prepared.durable,
-        });
-  return admitted.pipe(
-    Effect.catchTag("EndpointStoreError", (error) =>
-      durableSend(state, Effect.fail(error)),
-    ),
-    Effect.tap(() => refreshRetainedSend(state, prepared.operationId)),
+      );
+      yield* armRetainedGather(state, prepared.operationId);
+      const sender = yield* sendRequests(state, prepared).pipe(
+        Effect.interruptible,
+        Effect.forkIn(state.ports.scope),
+      );
+      return yield* restore(Fiber.join(sender));
+    }),
   );
 }
 
@@ -378,13 +498,12 @@ function admitGather(
 function sendRequests(
   state: CollectiveState,
   prepared: PreparedGather,
-  sendRequest: MessageSender,
 ): Effect.Effect<RequestSendOutcome, CollectiveError | SendError> {
   return Effect.gen(function* () {
     const { operationId, open } = prepared;
     const sends = yield* fanOutRequests(
       prepared,
-      sendRequest,
+      state.ports.acceptMessage,
       state.ports.scope,
       (refusal) => recordRefusal(state, operationId, refusal),
     );
@@ -424,24 +543,8 @@ function sendGroupRequest(
   state: CollectiveState,
   prepared: PreparedGather,
 ): Effect.Effect<RequestSendOutcome, CollectiveSendError> {
-  const { operationId, open } = prepared;
-  const hold = openGather(state, prepared, true).pipe(
-    Effect.as(releaseUnboundGather(state, operationId)),
-  );
-  return bindAuthoredMessage(
-    state.ports,
-    {
-      to: open.to,
-      content: prepared.content,
-      collective: {
-        operationId,
-        role: "request",
-        destination: open.to,
-        operation: prepared.durable,
-      },
-    },
-    hold,
-  ).pipe(
+  const { operationId } = prepared;
+  return acceptGroupRequest(state, prepared).pipe(
     Effect.onExit((exit) =>
       Exit.isSuccess(exit) || state.gathers.has(operationId)
         ? Effect.void
@@ -456,11 +559,10 @@ function sendGroupRequest(
           : abandonGroupRequest(state, prepared, error),
     ),
     Effect.tap(() => refreshRetainedSend(state, prepared.operationId)),
-    Effect.flatMap(({ certified, guidance }) =>
+    Effect.flatMap(({ certified }) =>
       withinRequestWait(prepared.waitUntil, certified).pipe(
         Effect.map((message) => ({
           msgIds: [message.msgId],
-          ...(guidance === undefined ? {} : { guidance }),
         })),
         Effect.catchTag("SendError", (error) =>
           groupRequestFailure(state, prepared, error),
@@ -468,6 +570,29 @@ function sendGroupRequest(
       ),
     ),
     Effect.onExit(() => armRetainedGather(state, operationId)),
+  );
+}
+
+function acceptGroupRequest(state: CollectiveState, prepared: PreparedGather) {
+  const { operationId } = prepared;
+  const hold = openGather(state, prepared, true).pipe(
+    Effect.as(releaseUnboundGather(state, operationId)),
+  );
+  const message = prepared.requests[0]?.message;
+  if (message === undefined) {
+    return Effect.fail(contentInvalid());
+  }
+  return state.ports.acceptMessage(
+    {
+      ...message,
+      collective: {
+        operationId,
+        role: "request",
+        destination: prepared.open.to,
+        operation: prepared.durable,
+      },
+    },
+    hold,
   );
 }
 
@@ -569,12 +694,7 @@ function requestItem(
   }
   return Effect.gen(function* () {
     const now = yield* Clock.currentTimeMillis;
-    const received = receivedRequest(
-      message,
-      value,
-      now,
-      state.ports.admission === undefined ? "open" : "unadmitted",
-    );
+    const received = receivedRequest(message, value, now);
     if (
       Option.isNone(received) ||
       conflictsWithRequest(state, message, value.operationId)
@@ -666,7 +786,6 @@ function retainRequest(
         origin: {
           kind: "remote",
           recordHash: message.recordHash,
-          requiresAdmission: state.ports.admission !== undefined,
         },
         canonicalRequest,
         canonicalDescriptor: yield* encodeRuntimeValue({}),
@@ -754,14 +873,10 @@ function abandonGroupRequest(
   );
 }
 
-/** The ports the layer runs on, what a firewall adds, and the operations it offers. */
-export {
-  type AdmittedGather,
-  type CollectiveAdmission,
-  type CollectiveOperations,
-  type GatherCandidate,
-  ResultProvenance,
-} from "./ports.js";
+/** Certified references accompany canonical results for upper-layer projection. */
+export { ResultProvenance } from "./ports.js";
+/** Prepared operation identities are private daemon integration data. */
+export type { PreparedCollective } from "./prepared.js";
 /** The failure an emit port returns when the service cannot keep an item. */
 export { CollectiveEmitError } from "./contracts.js";
 /** The items those operations emit. */

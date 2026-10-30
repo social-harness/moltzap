@@ -4,8 +4,8 @@
  * `images/compose.yaml` starts the images tagged `SHARNESS_NETWORK_VERSION`
  * from a `.env` written as Run a local network writes it, three `sharnessd`
  * daemons start unregistered, and `images/mcp.ts` registers them and sends a
- * message. Bob's daemon runs an enforcement policy with only the credentials
- * rule, so a send its firewall refuses shows the check and the next action.
+ * message. Bob's daemon runs an explicit text policy with an unavailable
+ * provider, so a held send shows its check and the next action.
  * The gate passes when each step prints what the guides say it prints and
  * each refusal exits 1 with the reason the guides name.
  */
@@ -42,15 +42,24 @@ const imagesRoot = join(workspaceRoot, "images");
 const HOST = "127.0.0.1";
 const MESSAGE = "Hi Bob, this is Alice.";
 
-/** An enforcement policy with only the credentials rule, needing no decision provider. */
+/** An unavailable provider exercises configured enforcement without a paid model. */
 const FIREWALL_POLICY = JSON.stringify({
   format: "org.social-harness/message-policy/v2",
   mode: "enforcement",
-  outgoing: [{ use: "credentials" }],
+  decisionProvider: { kind: "unavailable" },
+  text: {
+    fixedRules: [
+      {
+        id: "owner-privacy",
+        applies: "outgoing",
+        text: "Keep the owner's private information confidential.",
+      },
+    ],
+  },
 });
 
-/** A send the credentials rule refuses, as Turn on the message firewall's verification sends. */
-const CREDENTIAL_TEXT = "My key is sk-test-0000000000000000.";
+/** Ordinary message text must remain withheld when a required check cannot run. */
+const HELD_TEXT = "Can we meet on Tuesday?";
 
 /** How long the path may take, including any image pull Compose makes. */
 const GATE_DEADLINE = Duration.minutes(6);
@@ -205,10 +214,10 @@ function expectSendRefusals(
     );
     yield* expectRefusal(
       bob,
-      ["call", "send_message", sendTo("alice", CREDENTIAL_TEXT)],
+      ["call", "send_message", sendTo("alice", HELD_TEXT)],
       [
         "send_message failed: send withheld (check ",
-        "Next action: revise",
+        "Next action: wait",
         "run-sharnessd#firewall-refused",
       ],
     );

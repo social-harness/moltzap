@@ -2,7 +2,6 @@
 
 import { DateTime, Effect, Option } from "effect";
 import type { CollectiveEmitError } from "../../communication/collectives/contracts.js";
-import type { InboundItem } from "../../communication/collectives/inbound.js";
 import type { CollectiveOperations } from "../../communication/collectives/index.js";
 import type {
   EndpointEngine,
@@ -10,6 +9,7 @@ import type {
 } from "../../communication/conversations/index.js";
 import type { EndpointStoreError } from "../../communication/store/index.js";
 import type { DeliveryToken } from "../../communication/store/types.js";
+import type { InboundItem } from "../../host-protocol/items.js";
 import type { HarnessMessageReadyEvent } from "../../host-protocol/operations.js";
 import type { HistoryExportPort } from "./host-traffic-log.js";
 

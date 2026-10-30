@@ -17,6 +17,7 @@ import {
   newObserved,
   type Observed,
   questionText,
+  requestId,
   send,
   startGather,
   unkeptEmit,
@@ -362,7 +363,7 @@ function failsASendWithItsRefusalWhenTheInboundCopyCannotBeKept() {
     const failure = yield* Effect.flip(
       send(layer, {
         to: "agent:bob",
-        collectiveResponse: { action: "decline" },
+        collectiveResponse: { operationId: requestId, action: "decline" },
       }),
     );
 

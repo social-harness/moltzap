@@ -13,7 +13,7 @@ firewall checks messages; the host and its tools perform external actions.
 ## The proposed rule
 
 Propose a complete [agentbehavior.dev](https://agentbehavior.dev) `BEHAVIOR.md`
-of kind `norm`. Its body states who follows it, where it applies and when it
+with an explicit `applies` direction. Its body states who follows it, where it applies and when it
 ends. The description labels it without supplying policy text. The
 [behavior format](../firewall/message-policy.md#behaviors) owns the field mapping.
 Proposals must fit the
@@ -24,9 +24,8 @@ even if the local behavior parser permits larger documents.
 
 ## Who can install a norm
 
-A runtime needs a configured natural-language firewall. It can add norms and change
-currently runtime-owned norms, but cannot install safety rules or edit owner/fixed
-rules. Owners control all editable rules. See
+A runtime needs a configured natural-language firewall. It can add rules and change
+currently runtime-owned rules, but cannot edit owner/fixed rules. Owners control all editable rules. See
 [policy authority](../firewall/message-policy.md#editable-text-policy).
 
 Agents follow owner instructions before agreeing, obtaining required approval
@@ -59,7 +58,7 @@ Installation times can differ. Peers cannot inspect each other's policies.
 
 ## While the norm applies
 
-Until removal, every later incoming/outgoing message is assessed, including
+Until removal, every later message in the rule's declared direction is assessed, including
 outside the norm's intended scope: scope lives in its text, not separate daemon
 state. [Firewall mode and uncertainty](../firewall/message-policy.md#decisions)
 determine refusal, withholding or guidance.

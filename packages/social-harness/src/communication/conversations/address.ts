@@ -1,6 +1,6 @@
 /** @file Private address resolution from runtime names to immutable cards. */
 
-import { type Context, Effect, type ParseResult, Schema } from "effect";
+import { type Context, Data, Effect, type ParseResult, Schema } from "effect";
 import type { VerifiedAgentCard } from "../../identity/cards.js";
 import type { Registry } from "../../identity/registry/index.js";
 import { compareAscii } from "../../encoding/identifier.js";
@@ -52,17 +52,41 @@ interface ResolveMessageAddressInput {
   readonly to: MessageAddressInput;
 }
 
-/**
- * Resolve one explicit runtime destination to canonical immutable membership.
- * @param input Local verified identity, Registry lookup, and validated input.
- * @returns The canonical runtime address and AgentId-ordered verified cards.
- */
+/** Failed Registry lookups retain their named recipients for collective diagnostics. */
+export class RecipientResolutionError extends Data.TaggedError(
+  "RecipientResolutionError",
+)<{
+  readonly failures: readonly [
+    { readonly member: AgentAddress; readonly cause: SendError },
+    ...Array<{ readonly member: AgentAddress; readonly cause: SendError }>,
+  ];
+}> {}
+
+/** Ordinary address inspection shares the same resolution and public failure projection. */
 export function resolveMessageAddress(
   input: ResolveMessageAddressInput,
 ): Effect.Effect<ResolvedMessageAddress, SendError> {
+  return prepareMessageAddress(input).pipe(
+    Effect.catchTag("RecipientResolutionError", (error) =>
+      Effect.fail(resolutionFailure(error)),
+    ),
+  );
+}
+
+/** Ordinary sends expose the original first failure without private recipient bookkeeping. */
+export function resolutionFailure(error: RecipientResolutionError): SendError {
+  return error.failures[0].cause;
+}
+
+/** Resolve canonical membership once while retaining every failed recipient. */
+export function prepareMessageAddress(
+  input: ResolveMessageAddressInput,
+): Effect.Effect<ResolvedMessageAddress, SendError | RecipientResolutionError> {
   return canonicalMessageAddress(input.to, input.localAgentCard.agentName).pipe(
     Effect.flatMap(
-      (canonical): Effect.Effect<ResolvedMessageAddress, SendError> =>
+      (
+        canonical,
+      ): Effect.Effect<ResolvedMessageAddress, RecipientResolutionError> =>
         canonical.kind === "direct"
           ? resolveDirect(input, canonical)
           : resolveGroup(input, canonical),
@@ -243,9 +267,20 @@ function canonicalGroup(
 function resolveDirect(
   input: ResolveMessageAddressInput,
   canonical: Extract<CanonicalMessageAddress, { readonly kind: "direct" }>,
-): Effect.Effect<ResolvedDirectAddress, SendError> {
+): Effect.Effect<ResolvedDirectAddress, RecipientResolutionError> {
   return Effect.gen(function* () {
-    const remoteCard = yield* lookupCard(input.registry, canonical.remoteName);
+    const remoteCard = yield* lookupCard(
+      input.registry,
+      canonical.remoteName,
+    ).pipe(
+      Effect.catchTag("SendError", (cause) =>
+        Effect.fail(
+          new RecipientResolutionError({
+            failures: [{ member: canonical.address, cause }],
+          }),
+        ),
+      ),
+    );
     const ordered = orderMemberCards([input.localAgentCard, remoteCard]);
     const first = ordered[0];
     const second = ordered[1];
@@ -263,16 +298,23 @@ function resolveDirect(
 function resolveGroup(
   input: ResolveMessageAddressInput,
   canonical: Extract<CanonicalMessageAddress, { readonly kind: "group" }>,
-): Effect.Effect<ResolvedGroupAddress, SendError> {
+): Effect.Effect<ResolvedGroupAddress, RecipientResolutionError> {
   return Effect.gen(function* () {
-    const resolved = yield* Effect.forEach(
+    const resolved = yield* Effect.validateAll(
       canonical.memberNames,
       (agentName) =>
         agentName === input.localAgentCard.agentName
           ? Effect.succeed(input.localAgentCard)
-          : lookupCard(input.registry, agentName),
-      { concurrency: 1 },
-    );
+          : lookupCard(input.registry, agentName).pipe(
+              Effect.mapError((cause) => ({
+                member: Schema.decodeUnknownSync(AgentAddress)(
+                  `${AGENT_ADDRESS_PREFIX}${agentName}`,
+                ),
+                cause,
+              })),
+            ),
+      { concurrency: 8 },
+    ).pipe(Effect.mapError(recipientFailures));
     const ordered = orderMemberCards(resolved);
     const first = ordered[0];
     const second = ordered[1];
@@ -286,4 +328,10 @@ function resolveGroup(
       memberCards: [first, second, third, ...ordered.slice(3)],
     };
   });
+}
+
+function recipientFailures(
+  failures: RecipientResolutionError["failures"],
+): RecipientResolutionError {
+  return new RecipientResolutionError({ failures });
 }

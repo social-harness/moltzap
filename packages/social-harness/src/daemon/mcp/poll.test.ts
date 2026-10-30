@@ -15,19 +15,18 @@ import { describe, expect, it } from "vitest";
 import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
 import { stateDirectory } from "../../__tests__/store-schema-fixtures.js";
-import { InboundItem } from "../../communication/collectives/inbound.js";
 import {
   DeliveryToken,
   encodeRuntimeValue,
   EndpointStoreError,
-  openEndpointStore,
 } from "../../communication/store/index.js";
+import { InboundItem } from "../../host-protocol/items.js";
 import {
   HARNESS_CONSUMER_META_KEY,
   INBOX_ITEM_EVENT,
 } from "../../host-protocol/names.js";
-import { eventIdOf } from "../../host-protocol/operations.js";
 import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
+import { openDaemonStore } from "../store.js";
 import { makeHarnessPollEvents } from "./poll.js";
 
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- External protocol codes, closed lifecycle errors and retained inbox counts are conformance expectations. */
@@ -43,7 +42,7 @@ const item = (text: string) =>
     error: text,
   });
 const acquireFixture = Effect.gen(function* () {
-  const store = yield* openEndpointStore(stateDirectory(), {
+  const store = yield* openDaemonStore(stateDirectory(), {
     liveWireVersions: LIVE_WIRE_VERSIONS,
   });
   const gate = yield* Effect.makeSemaphore(1);
@@ -110,7 +109,7 @@ const doesNotAcknowledgeCursors = () =>
       const first = yield* next(fixture, started);
       expect(first.events).toMatchObject([
         {
-          eventId: eventIdOf(token(1)),
+          eventId: token(1),
           data: { kind: "item", item: item("item 1") },
         },
       ]);
@@ -136,7 +135,7 @@ const referencesLargeContent = () =>
       const delivered = yield* next(fixture, started);
       expect(delivered.events).toMatchObject([
         {
-          eventId: eventIdOf(token(1)),
+          eventId: token(1),
           data: { kind: "reference", itemKind: "operationFailed" },
         },
       ]);
@@ -337,9 +336,7 @@ const paginatesWithoutAcceptance = () =>
               expect(position.events.length).toBeLessThanOrEqual(limit);
               observed.push(...position.events.map((event) => event.eventId));
             } while (position.hasMore);
-            expect(observed).toEqual(
-              bytes.map((byte) => eventIdOf(token(byte))),
-            );
+            expect(observed).toEqual(bytes.map((byte) => token(byte)));
             expect((yield* fixture.store.readInboxSummary()).pendingCount).toBe(
               count,
             );
@@ -363,9 +360,7 @@ const ignoresAcknowledgedReplayRows = () =>
       yield* fixture.add(2);
       const replay = yield* next(fixture, started);
       expect(replay.truncated).toBe(false);
-      expect(replay.events.map((event) => event.eventId)).toEqual([
-        eventIdOf(token(2)),
-      ]);
+      expect(replay.events.map((event) => event.eventId)).toEqual([token(2)]);
     }),
   );
 
@@ -397,17 +392,11 @@ const keepsSnapshotBound = () =>
       const first = yield* next(fixture, started, 1);
       yield* fixture.add(3);
       const last = yield* next(fixture, first, 1);
-      expect(first.events.map((event) => event.eventId)).toEqual([
-        eventIdOf(token(1)),
-      ]);
-      expect(last.events.map((event) => event.eventId)).toEqual([
-        eventIdOf(token(2)),
-      ]);
+      expect(first.events.map((event) => event.eventId)).toEqual([token(1)]);
+      expect(last.events.map((event) => event.eventId)).toEqual([token(2)]);
       expect(last.hasMore).toBe(false);
       const arrival = yield* next(fixture, last, 1);
-      expect(arrival.events.map((event) => event.eventId)).toEqual([
-        eventIdOf(token(3)),
-      ]);
+      expect(arrival.events.map((event) => event.eventId)).toEqual([token(3)]);
       expect((yield* fixture.store.readInboxSummary()).pendingCount).toBe(3);
     }),
   );

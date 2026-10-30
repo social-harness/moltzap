@@ -1,5 +1,6 @@
 /** @file Collective working state and its retained canonical descriptors. */
 import { Effect, type Fiber, Schema } from "effect";
+import type { PreparedSend } from "../conversations/index.js";
 import type { CollectiveMemberOutcome } from "./inbound.js";
 import type { CollectivePorts } from "./ports.js";
 import type { ReceivedRequest } from "./received-request.js";
@@ -33,6 +34,15 @@ const localCollectiveDescriptor = exactStruct({
   content: Content,
   deadlineAt: EpochMillis,
   waitUntil: EpochMillis,
+  requests: Schema.Array(
+    exactStruct({
+      to: MessageAddressInput,
+      message: exactStruct({
+        canonicalIntent: Schema.String,
+        canonicalMembership: Schema.String,
+      }),
+    }),
+  ),
 });
 
 /** Finalization freezes certified references; certified history continues to own answer content. */
@@ -110,6 +120,10 @@ export interface PreparedGather {
   readonly deadlineAt: number;
   readonly waitUntil: number;
   readonly durable: CollectiveOperationInput;
+  readonly requests: ReadonlyArray<{
+    readonly to: MessageAddressInput;
+    readonly message: PreparedSend;
+  }>;
 }
 
 /** Decode the requester's immutable descriptor before rebuilding its working state. */

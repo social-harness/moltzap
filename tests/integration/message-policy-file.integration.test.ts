@@ -1,10 +1,4 @@
-/**
- * @file Stock `sharnessd` installs the firewall its message-policy file
- * describes: the owner tools list the document's rules, a send its code
- * rules refuse returns the refusal while an ordinary send certifies, the
- * decisions feed reports both checks, and an invalid document stops startup
- * naming the setting.
- */
+/** @file A configured text policy loads through the stock daemon and holds sends when its provider is unavailable. */
 
 import { FileSystem } from "@effect/platform";
 import {
@@ -25,8 +19,8 @@ import {
   makeRegistrationRequest,
 } from "./daemon-process-harness.js";
 import {
-  credentialRefusalRemedy,
   messagePolicyFileSetting,
+  unavailablePolicyRemedy,
 } from "./expected-contracts.js";
 import { processTrace } from "./process-trace.js";
 import { arrayContaining, objectContaining } from "./test-matchers.js";
@@ -61,8 +55,16 @@ const acquirePolicyFileScenario = Effect.gen(function* () {
     JSON.stringify({
       format: FORMAT,
       mode: "enforcement",
-      incoming: [{ use: "acknowledgements" }],
-      outgoing: [{ use: "credentials" }],
+      decisionProvider: { kind: "unavailable" },
+      text: {
+        fixedRules: [
+          {
+            id: "owner-privacy",
+            applies: "outgoing",
+            text: "Keep the owner's private information confidential.",
+          },
+        ],
+      },
     }),
     { mode: 0o600 },
   );
@@ -76,26 +78,25 @@ const acquirePolicyFileScenario = Effect.gen(function* () {
   return { client, endpoint: alice.endpoint };
 });
 
-const CREDENTIAL = "sk-proj-integrationCredential1234";
-
 const fixedRulesSchema = Schema.Struct({
   fixedRules: Schema.Array(
     Schema.Struct({ from: Schema.String, id: Schema.String }),
   ),
 });
 
-const enforcedCodeRules = Effect.gen(function* () {
+const unavailableTextPolicy = Effect.gen(function* () {
   const scenario = yield* acquirePolicyFileScenario;
   yield* expectDocumentRulesPublished(scenario.client);
-  yield* expectCredentialSendRefused(scenario.client);
+  yield* expectUnavailableSendHeld(scenario.client);
   const feed = yield* call(scenario.client, "firewall_decisions");
   expect(feed).toMatchObject({
     decisions: [
-      { direction: "outgoing", outcome: "allow" },
       {
         direction: "outgoing",
-        outcome: "revise",
-        decidedBy: [{ ruleId: "credentials", from: "code" }],
+        outcome: "hold",
+        disposition: "withheld",
+        cause: "unavailable",
+        decidedBy: [{ ruleId: "owner-privacy", from: "fixed" }],
       },
     ],
   });
@@ -113,10 +114,7 @@ const olderMcpClient = Effect.gen(function* () {
     Effect.flatMap(Schema.decodeUnknown(fixedRulesSchema)),
   );
   expect(policy.fixedRules).toEqual(
-    arrayContaining([
-      objectContaining({ from: "code", id: "credentials" }),
-      objectContaining({ from: "code", id: "acknowledgement" }),
-    ]),
+    arrayContaining([objectContaining({ from: "text", id: "owner-privacy" })]),
   );
 });
 
@@ -147,8 +145,8 @@ describe("stock sharnessd with a message-policy file", () => {
   );
 
   it(
-    "enforces the document's code rules",
-    processTrace(enforcedCodeRules.pipe(Effect.scoped)),
+    "holds a send when the configured decision provider is unavailable",
+    processTrace(unavailableTextPolicy.pipe(Effect.scoped)),
     60_000,
   );
 
@@ -166,22 +164,18 @@ function expectDocumentRulesPublished(client: Client) {
     );
     expect(policy.fixedRules).toEqual(
       arrayContaining([
-        objectContaining({ from: "code", id: "credentials" }),
-        objectContaining({ from: "code", id: "acknowledgement" }),
+        objectContaining({ from: "text", id: "owner-privacy" }),
       ]),
     );
   });
 }
 
-function expectCredentialSendRefused(client: Client) {
+function expectUnavailableSendHeld(client: Client) {
   return Effect.gen(function* () {
     const refused = yield* call(client, "send_message", {
-      input: { to: "agent:bob", text: `my key is ${CREDENTIAL}` },
+      input: { to: "agent:bob", text: "Can we meet on Tuesday?" },
     }).pipe(Effect.flip);
-    expect(JSON.stringify(refused)).toContain(credentialRefusalRemedy);
-    yield* call(client, "send_message", {
-      input: { to: "agent:bob", text: "See you on Tuesday." },
-    });
+    expect(JSON.stringify(refused)).toContain(unavailablePolicyRemedy);
   });
 }
 

@@ -7,28 +7,17 @@ import {
   CollectiveId,
   decodeCollectiveFailure,
   SendInput,
-  type SendResult,
-  SendResultSchema,
 } from "../communication/collectives/contracts.js";
-import { InboundItem } from "../communication/collectives/inbound.js";
-import { AgentAddress, GroupAddress } from "../communication/records/index.js";
-import {
-  DeliveryToken,
-  type EndpointStore,
-  type InboxSummary,
-} from "../communication/store/types.js";
+import { DeliveryToken } from "../communication/store/types.js";
 import { exactParseOptions, exactStruct } from "../encoding/exact.js";
 import {
   firewallRefusalSchema,
   type FirewallSendError,
   localGuidanceSchema,
-} from "../firewall/outcome/index.js";
+} from "./advice.js";
+import { InboundItem } from "./items.js";
 import { HARNESS_CONSUMER_META_KEY, INBOX_ITEM_EVENT } from "./names.js";
-
-/** Canonical event identities reuse the immutable inbox binding's random bytes. */
-export const eventIdSchema = Schema.String.pipe(
-  Schema.pattern(/^evt_[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/u),
-);
+import { type SendResult, SendResultSchema } from "./send-result.js";
 
 const consumerMetadataSchema = exactStruct({
   generation: Schema.UUID,
@@ -55,7 +44,7 @@ const itemEventDataSchema = Schema.Union(
   }),
 );
 const itemEventSchema = Schema.Struct({
-  eventId: eventIdSchema,
+  eventId: Schema.encodedBoundSchema(DeliveryToken),
   name: Schema.Literal(INBOX_ITEM_EVENT),
   timestamp: Schema.String,
   data: itemEventDataSchema,
@@ -91,7 +80,9 @@ export const decodePollResult = Schema.decodeUnknown(pollResultSchema);
 
 /** Read-only content lookup never acknowledges or retries delivery. */
 export const readEventRequestSchema = exactStruct({
-  eventId: Schema.propertySignature(eventIdSchema).annotations({
+  eventId: Schema.propertySignature(
+    Schema.encodedBoundSchema(DeliveryToken),
+  ).annotations({
     description:
       "The eventId of an org.social-harness/inbox.item event, or one a host's wakeup carries from an inbox item; retained content remains readable after acknowledgment.",
   }),
@@ -158,10 +149,8 @@ const invocationValidationErrorSchema = Schema.Struct({
  * with the detail naming its specific cause, or a refused collective send
  * with its selected operationId and the failure naming each
  * unreachable member or failing field, which `decodeCollectiveFailure`
- * validates. An ambiguous answer's failure names its open request IDs. For
- * a `request-none`, `request-answered` or
- * `request-expired` refusal, `openElsewhere`, the questions open in other
- * conversations. Fields a newer daemon adds are ignored; a firewall or
+ * validates. Named-request refusals disclose no unrelated request or
+ * conversation. Fields a newer daemon adds are ignored; a firewall or
  * collective refusal that misses its own fields never decodes as a plain
  * reason.
  */
@@ -175,15 +164,6 @@ const harnessSendErrorDataSchema = Schema.Union(
     reason: Schema.Literal("collective-failed"),
     operationId: Schema.optionalWith(CollectiveId, { exact: true }),
     failure: Schema.Unknown,
-    openElsewhere: Schema.optionalWith(
-      Schema.Array(
-        Schema.Struct({
-          operationId: CollectiveId,
-          to: Schema.Union(AgentAddress, GroupAddress),
-        }),
-      ),
-      { exact: true },
-    ),
   }),
   Schema.Struct({
     reason: Schema.String.pipe(
@@ -233,7 +213,6 @@ export type HarnessSendErrorData =
       failure: Effect.Effect.Success<
         ReturnType<typeof decodeCollectiveFailure>
       >;
-      openElsewhere?: CollectiveError["openElsewhere"];
     }>;
 
 /**
@@ -262,9 +241,6 @@ export function sendErrorData(
         ? {}
         : { operationId: error.operationId }),
       failure: error.failure,
-      ...(error.openElsewhere === undefined
-        ? {}
-        : { openElsewhere: error.openElsewhere }),
     };
   }
   if (error.detail === undefined) {
@@ -345,21 +321,6 @@ export function checkHarnessSendResult(
   return Schema.decodeUnknown(SendResultSchema)(value, exactParseOptions);
 }
 
-/** The existing endpoint store owns both callback progress and immutable inbox items. */
-export type EventStore = Pick<
-  EndpointStore,
-  | "readEventState"
-  | "writeEventState"
-  | "readInbox"
-  | "readInboxItem"
-  | "readInboxSummary"
-  | "completeWebhookDelivery"
->;
-
-/** Reversible naming keeps lookup independent of subscription and retry state. */
-export const eventIdOf = (token: DeliveryToken): string =>
-  `evt_${token.slice(4)}`;
-
 type ClosedOperationError = Readonly<{ readonly reason: string }>;
 
 /** The delivery operations a host calls: inbox and event reads, sends, and acknowledgments. */
@@ -387,5 +348,8 @@ export interface DeliveryOperations {
 
 /** Store-owned delivery identity shared across the loopback boundary. */
 export { DeliveryToken } from "../communication/store/types.js";
-/** Store-owned pending-inbox summary shared across the loopback boundary. */
-export type { InboxSummary } from "../communication/store/types.js";
+/** Wakeup bookkeeping contains no peer content or collective protocol state. */
+export interface InboxSummary {
+  readonly pendingCount: number;
+  readonly newestSequence: number;
+}

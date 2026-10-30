@@ -2,6 +2,7 @@
 
 import { Either, FastCheck as fc, Schema } from "effect";
 import { describe, expect, it } from "vitest";
+import { requestId } from "../../__tests__/collective-operation-fixtures.js";
 import { MessageAddressInput } from "../records/values.js";
 import { MAXIMUM_DEADLINE_SECONDS } from "./contracts.js";
 import { type MessageTextError, parseMessageText } from "./message-text.js";
@@ -150,13 +151,27 @@ function readsQuestions() {
 }
 
 function readsAnswers() {
-  expect(parsed('{"action": "accept", "content": {"slot": "mon"}}')).toEqual({
+  expect(
+    parsed(
+      JSON.stringify({
+        operationId: requestId,
+        action: "accept",
+        content: { slot: "mon" },
+      }),
+    ),
+  ).toEqual({
     to: group,
-    collectiveResponse: { action: "accept", content: { slot: "mon" } },
+    collectiveResponse: {
+      operationId: requestId,
+      action: "accept",
+      content: { slot: "mon" },
+    },
   });
-  expect(parsed('{"action": "decline"}')).toEqual({
+  expect(
+    parsed(JSON.stringify({ operationId: requestId, action: "decline" })),
+  ).toEqual({
     to: group,
-    collectiveResponse: { action: "decline" },
+    collectiveResponse: { operationId: requestId, action: "decline" },
   });
 }
 

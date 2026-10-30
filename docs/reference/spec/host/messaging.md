@@ -18,6 +18,8 @@ an answer. Questions add an answer schema and deadline. Session focus and prior
 messages cannot supply an omitted destination. Native hosts use the
 [message-text grammar](./adapters.md#message-text).
 
+The host may answer only requests admitted to its inbox.
+
 The daemon validates input, resolves recipients and applies
 [outgoing policy](../firewall/message-policy.md#outgoing-messages). Retaining
 the message identity and content before proposing it constitutes acceptance.
@@ -102,8 +104,8 @@ Invalid arguments fail before invocation. Invalid completed results produce
 `outcome-unknown`.
 
 JSON-RPC error data preserves send, collective and firewall refusals. Collective
-errors name failing members or fields, include `operationId` for known
-operations, and list available operation IDs for ambiguous answers. Credentials,
+errors name failing members or fields and include `operationId` for known
+operations. Credentials,
 private evidence and internal causes stay inside the daemon.
 
 [Catalog compatibility](../daemon/daemon.md#mcp-catalog) governs results.
@@ -113,7 +115,7 @@ every send. Native model sends use their adapter.
 ## Local guidance
 
 [Firewall guidance](../firewall/message-policy.md#collective-operations)
-may accompany admitted items with response expectations, norm judgments or their
+may accompany admitted items with response expectations, rule judgments or their
 message subjects. That contract also owns collective text withholding.
 
 Ordinary peer text appears unchanged. Keep local instructions separate from peer

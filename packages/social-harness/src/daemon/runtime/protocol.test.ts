@@ -158,10 +158,8 @@ const recordingEngine = (
   observeMessage: () =>
     Effect.dieMessage("no retained message is observed in this test"),
   send: () => Effect.dieMessage("the daemon sends nothing in this test"),
-  bind: () => Effect.dieMessage("the daemon sends nothing in this test"),
-  bindChecked: () => Effect.dieMessage("the daemon sends nothing in this test"),
-  sendAdmitted: () =>
-    Effect.dieMessage("the daemon sends nothing in this test"),
+  prepare: () => Effect.dieMessage("the daemon sends nothing in this test"),
+  accept: () => Effect.dieMessage("the daemon sends nothing in this test"),
   resolveAddress: () => Effect.dieMessage("no address is resolved here"),
   resolveConversation: () => Effect.dieMessage("no address is resolved here"),
   readPendingMessages: () => Effect.succeed([]),

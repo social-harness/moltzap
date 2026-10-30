@@ -4,13 +4,13 @@
  * Message-policy writers share the rule kinds the installed firewall evaluates.
  */
 
-import type { Effect, Layer, Types } from "effect";
+import type { Effect, Layer, Option, Types } from "effect";
 import type {
-  CheckInputError,
+  checkMessage,
   Daemon,
-  decodeMessagePolicy,
+  loadMessagePolicy,
+  makeFirewall,
   MessagePolicy,
-  messagePolicyFirewall,
 } from "./index.js";
 
 type Expect<Value extends true> = Value;
@@ -59,26 +59,24 @@ type PolicyModeIsExact = Expect<
   Types.Equals<MessagePolicy["mode"], "guidance" | "enforcement">
 >;
 type EncodedText = NonNullable<(typeof MessagePolicy.Encoded)["text"]>;
-type PolicyWriterKindsAreExact = Expect<
+type PolicyWriterDirectionsAreExact = Expect<
   Types.Equals<
-    NonNullable<EncodedText["fixedRules"]>[number]["kind"],
-    "safety" | "norm"
+    NonNullable<EncodedText["fixedRules"]>[number]["applies"],
+    "incoming" | "outgoing" | "both"
   >
 >;
-/** A decoded inline document installs through the same options as `withFirewall`. */
-type PolicyInstallsAsFirewall = Expect<
-  Types.Equals<
-    ReturnType<typeof messagePolicyFirewall>,
-    Effect.Effect<Daemon.FirewallOptions, CheckInputError>
-  >
+/** Loaded policy parameters enter the same constructor as trusted code configuration. */
+type LoadedPolicyInstalls = Expect<
+  Effect.Effect.Success<
+    ReturnType<typeof loadMessagePolicy>
+  > extends Option.Option<Parameters<typeof makeFirewall>[0]>
+    ? true
+    : false
 >;
 
-/** Decoder output composes directly, so inline policies need no conversion. */
-type DecodedPolicyComposes = Expect<
-  Types.Equals<
-    Effect.Effect.Success<ReturnType<typeof decodeMessagePolicy>>,
-    Parameters<typeof messagePolicyFirewall>[0]
-  >
+/** Offline evaluation consumes its explicit inputs without a daemon service requirement. */
+type OfflineCheckNeedsNoService = Expect<
+  Types.Equals<Effect.Effect.Context<ReturnType<typeof checkMessage>>, never>
 >;
 
 /** Inline-only Text blocks remain valid trusted composition inputs. */
@@ -101,8 +99,8 @@ export type DaemonCanaries = [
   HelpIsExact,
   LayerIsExact,
   PolicyModeIsExact,
-  PolicyWriterKindsAreExact,
-  PolicyInstallsAsFirewall,
-  DecodedPolicyComposes,
+  PolicyWriterDirectionsAreExact,
+  LoadedPolicyInstalls,
+  OfflineCheckNeedsNoService,
   InlineTextIsAssignable,
 ];

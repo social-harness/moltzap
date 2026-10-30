@@ -233,31 +233,37 @@ it(
 
 function completeGather({ requester, member, held, group }: MarkerScenario) {
   return Effect.gen(function* () {
-    const gathered = yield* gatherFrom(requester, group, "gather");
+    yield* gatherFrom(requester, group, "gather");
     const gatherRequest = yield* nextItem(member);
+    if (gatherRequest.kind !== "collectiveRequest") {
+      return yield* Effect.dieMessage("expected a gather request");
+    }
     yield* nextItem(held);
     yield* send(member, {
       to: requester.address,
-      collectiveResponse: { action: "accept", content: { slot: "mon" } },
+      collectiveResponse: {
+        action: "accept",
+        operationId: gatherRequest.operationId,
+        content: { slot: "mon" },
+      },
     });
     yield* send(held, {
       to: requester.address,
-      collectiveResponse: { action: "decline" },
+      collectiveResponse: {
+        action: "decline",
+        operationId: gatherRequest.operationId,
+      },
     });
     yield* nextItem(requester);
-    return { id: gathered.operationId ?? "", request: gatherRequest };
+    return { id: gatherRequest.operationId, request: gatherRequest };
   });
 }
 
 function completeAllGather(scenario: MarkerScenario) {
   return Effect.gen(function* () {
-    const allGathered = yield* gatherFrom(
-      scenario.requester,
-      scenario.group,
-      "all_gather",
-    );
+    yield* gatherFrom(scenario.requester, scenario.group, "all_gather");
     const request = yield* answerAllGather(scenario);
-    return { id: allGathered.operationId ?? "", request };
+    return { id: request.operationId, request };
   });
 }
 

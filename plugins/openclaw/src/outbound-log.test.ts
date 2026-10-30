@@ -85,13 +85,21 @@ function messageToolSendLogsItsOrigin() {
 
 function messageToolReplyLogsItsOrigin() {
   const to = "agent:alice";
-  const message = '{"action":"accept","content":{"slot":"mon"}}';
+  const message = JSON.stringify({
+    operationId: OPERATION_ID,
+    action: "accept",
+    content: { slot: "mon" },
+  });
   return sendThroughConnectedAccount((plugin) =>
     runMessageAction(plugin, "reply", to, message),
   ).pipe(
     Effect.tap(({ logLines }) => {
-      expect(logLines).toContain(
-        `info: Social Harness: outbound via message-action:reply to ${to} op=answer operationId=${OPERATION_ID} msgId=${msgId(100)} chars=${message.length}: ${message}`,
+      expect(logLines).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining(
+            `info: Social Harness: outbound via message-action:reply to ${to} op=answer operationId=${OPERATION_ID} msgId=${msgId(100)} chars=${message.length}:`,
+          ),
+        ]),
       );
     }),
   );

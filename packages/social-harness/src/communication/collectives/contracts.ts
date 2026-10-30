@@ -4,7 +4,6 @@ import { Data, ParseResult, Schema } from "effect";
 import type { AgentView } from "../../identity/cards.js";
 import { exactStruct } from "../../encoding/exact.js";
 import { canonicalIdentifier } from "../../encoding/identifier.js";
-import { checkedGuidanceSchema } from "../../firewall/outcome/index.js";
 import {
   issuesText,
   type SendError,
@@ -136,7 +135,7 @@ export type CollectiveOperation = typeof CollectiveOperation.Type;
 
 /** The request an answer names: the `col_` operationId its `collectiveRequest` item carries. */
 const answeredRequest = {
-  operationId: Schema.optionalWith(CollectiveId, { exact: true }),
+  operationId: CollectiveId,
 };
 
 /** An `accept` answer, the only one that carries content. */
@@ -155,9 +154,8 @@ export const DeclineResponse = exactStruct({
 /**
  * A member's answer to a request open in the conversation it is sent to: the
  * requester's direct conversation for a gather, the group for an all_gather.
- * `operationId` names the request; without it the answer goes to the one request open
- * there. It is MCP's `ElicitResult`; only `accept` carries content, valid
- * against the request's schema.
+ * `operationId` names the received request. Only `accept` carries content,
+ * which must satisfy that request's answer schema.
  */
 const CollectiveResponse = Schema.Union(AcceptResponse, DeclineResponse);
 /** A validated collective response. */
@@ -181,7 +179,8 @@ export const SendInput = Schema.Union(
   }),
 ).annotations({ identifier: "SendInput" });
 /**
- * Validated input for one send.
+ * Answers use a received request's `operationId` and original conversation.
+ * Question deadlines are in seconds and include policy assessment time.
  * @useDeclaredType
  */
 export type SendInput = typeof SendInput.Type;
@@ -194,11 +193,6 @@ const unreachableMembers = Schema.NonEmptyArray(
     detail: Schema.optionalWith(Schema.String, { exact: true }),
   }),
 );
-
-/** The local firewall's advice accompanies any successful invocation it admitted. */
-const sendGuidance = {
-  guidance: Schema.optionalWith(checkedGuidanceSchema, { exact: true }),
-};
 
 /** Owned fields from a different result kind cannot accompany this result. */
 const absentResultField = Schema.Never.annotations({
@@ -219,28 +213,25 @@ export const SendResultSchema = Schema.Union(
     msgId: MsgId,
     address: Schema.Union(AgentAddress, GroupAddress),
     operationId: Schema.optionalWith(absentResultField, { exact: true }),
-    ...sendGuidance,
   }),
   Schema.Struct({
     kind: Schema.Literal("response"),
     operationId: CollectiveId,
     msgId: MsgId,
     address: Schema.Union(AgentAddress, GroupAddress),
-    ...sendGuidance,
   }),
   Schema.Struct({
     kind: Schema.Literal("collective"),
     operationId: CollectiveId,
     msgId: Schema.optionalWith(absentResultField, { exact: true }),
     address: Schema.optionalWith(absentResultField, { exact: true }),
-    ...sendGuidance,
   }),
 ).annotations({ identifier: "SendResult" });
 /**
  * A certified message, a certified answer or an accepted collective operation.
  * @useDeclaredType
  */
-export type SendResult = typeof SendResultSchema.Type;
+type SendResult = typeof SendResultSchema.Type;
 
 /** Private completion retains the messages certified before the invocation returned. */
 export type CollectiveSendOutcome = SendResult & {
@@ -273,10 +264,6 @@ const collectiveFailure = Schema.Union(
     ),
   }),
   exactStruct({ kind: Schema.Literal("request-none") }),
-  exactStruct({
-    kind: Schema.Literal("request-ambiguous"),
-    openOperationIds: Schema.Array(CollectiveId).pipe(Schema.minItems(2)),
-  }),
   exactStruct({ kind: Schema.Literal("request-answered") }),
   exactStruct({ kind: Schema.Literal("request-expired") }),
   exactStruct({ kind: Schema.Literal("deadline-passed") }),
@@ -346,10 +333,7 @@ export function answerFieldsText(fields: AnswerFieldFailures): string {
 /** A failure that carries nothing beyond its kind. */
 type FixedFailureKind = Exclude<
   CollectiveFailure["kind"],
-  | "members-unreachable"
-  | "schema-invalid"
-  | "answer-invalid"
-  | "request-ambiguous"
+  "members-unreachable" | "schema-invalid" | "answer-invalid"
 >;
 
 /** The text of each failure that carries nothing beyond its kind. */
@@ -378,8 +362,6 @@ function describeCollectiveFailure(failure: CollectiveFailure): string {
       return `send failed: the form is invalid (${failure.detail})`;
     case "answer-invalid":
       return `reply failed: ${answerFieldsText(failure.fields)}`;
-    case "request-ambiguous":
-      return `reply failed: several questions are open in this conversation. Set collectiveResponse.operationId to one of: ${failure.openOperationIds.join(", ")}. Docs: https://github.com/social-harness/moltzap/blob/main/docs/reference/spec/communication/collectives.md#answers`;
     default: {
       const exhaustive: never = failure;
       return exhaustive;
@@ -403,16 +385,6 @@ export class CollectiveEmitError extends Data.TaggedError(
 ) {}
 
 /**
- * A question open in a conversation other than the one an answer went to,
- * and where to answer it.
- * @inline
- */
-export interface OpenElsewhere {
-  readonly operationId: CollectiveId;
-  readonly to: AgentAddress | GroupAddress;
-}
-
-/**
  * A gather, all_gather or answer was refused. The message is what a host
  * hands its model as the tool error: the failed action and its cause, naming
  * each unreachable member or failing field. For an answer that named no
@@ -424,15 +396,9 @@ export interface OpenElsewhere {
 export class CollectiveError extends Data.TaggedError("CollectiveError")<{
   readonly operationId?: CollectiveId;
   readonly failure: CollectiveFailure;
-  readonly openElsewhere?: readonly OpenElsewhere[];
 }> {
   override get message(): string {
-    const text = describeCollectiveFailure(this.failure);
-    return this.openElsewhere === undefined
-      ? text
-      : `${text}; open in other conversations: ${this.openElsewhere
-          .map(({ operationId, to }) => `${operationId} in ${to}`)
-          .join(", ")}`;
+    return describeCollectiveFailure(this.failure);
   }
 }
 

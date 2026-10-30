@@ -19,7 +19,7 @@ const routine = {
   url: new URL(`https://routine.example.test/private?route=${privateQuery}`),
   key: Redacted.make("synthetic-key"),
 };
-const eventId = `evt_${"A".repeat(43)}`;
+const eventId = `dlv_${"A".repeat(43)}`;
 const privateHeader = "private-provider-header";
 
 function collectTracing() {

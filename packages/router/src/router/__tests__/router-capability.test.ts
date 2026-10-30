@@ -6,13 +6,11 @@ import {
   type AgentId as AgentIdValue,
   AgentName,
   AgentSigningAuthority,
-  type AgentSigningAuthority as AgentSigningAuthorityValue,
   EnvelopeId,
   type EnvelopeId as EnvelopeIdValue,
   PrincipalId,
   SignedMessage,
   type SignedMessage as SignedMessageValue,
-  type VerifiedAgentCard,
   WIRE_VERSION,
 } from "@moltzap/social-harness";
 import {
@@ -30,7 +28,6 @@ import {
   Encoding,
   Layer,
   Redacted,
-  Ref,
   Schema,
 } from "effect";
 import { calculateJwkThumbprintUri, GeneralSign, importPKCS8 } from "jose";
@@ -44,12 +41,7 @@ import { RouterServer } from "../../server.js";
 import { loadRouterConfiguration } from "../configuration.js";
 import { makeRouterFeedAtOrder, maximumPrivateOrder } from "../feed.js";
 import { makePollWaiters } from "../poll-waiters.js";
-import { makeRouterRpcClient, withVerifiedRouterRequest } from "../rpc.js";
 import { makeRouterSend } from "../send.js";
-
-/* eslint-disable @typescript-eslint/naming-convention -- Closed HTTP error constructors retain their class names when bound from the service capability. */
-const { InternalServerError } = httpErrors;
-/* eslint-enable @typescript-eslint/naming-convention -- Restore variable naming after binding error constructors. */
 
 /* eslint sonarjs/no-empty-test-file: "off" -- Effect's scoped registrations are invisible to Sonar's direct Vitest-call detector. */
 /* eslint-disable max-lines-per-function, sonarjs/max-lines-per-function, max-nested-callbacks, agent-code-guard/no-hardcoded-assertion-literals -- Each scenario observes the deep capability at its public or private call boundary. */
@@ -256,129 +248,6 @@ const releaseOccupiedListener = (
       resume(Effect.succeed(undefined));
     });
   });
-
-const makeVerifiedRequestFixture = (
-  signingAuthority: AgentSigningAuthorityValue,
-): VerifiedAgentRequest => {
-  const verifiedCard = Brand.nominal<VerifiedAgentCard>()(
-    Object.freeze({
-      agentId: sender,
-      principalId: Schema.decodeUnknownSync(PrincipalId)(
-        `prn_${identifierPayload(6)}`,
-      ),
-      agentName: Schema.decodeUnknownSync(AgentName)("rpc-context"),
-      publicKey: AgentSigningAuthority.publicKey(signingAuthority),
-      issuedAt: "2026-07-30T12:00:00Z",
-    }),
-  );
-  return Brand.nominal<VerifiedAgentRequest>()(
-    Object.freeze({
-      callerAgentId: sender,
-      agentCard: verifiedCard,
-      request: Object.freeze({}),
-    }),
-  );
-};
-
-describe("private RPC behavior", () => {
-  it.scoped("requires proof and preserves context and typed failures", () =>
-    Effect.gen(function* () {
-      const pollCallers = yield* Ref.make<readonly AgentIdValue[]>([]);
-      const sendRequests = yield* Ref.make<readonly VerifiedAgentRequest[]>([]);
-      const client = yield* makeRouterRpcClient({
-        send: {
-          handle: (request, verifiedRequest) =>
-            Effect.sync(() => {
-              expect(request.expectedRouterInstanceId).toBe(
-                makeRouterInstanceId(1),
-              );
-              expect(verifiedRequest.callerAgentId).toBe(sender);
-            }).pipe(
-              Effect.zipRight(
-                Ref.update(sendRequests, (requests) => [
-                  ...requests,
-                  verifiedRequest,
-                ]),
-              ),
-              Effect.zipRight(Effect.fail(new InternalServerError())),
-            ),
-        },
-        poll: {
-          handle: (request, verifiedRequest) =>
-            Effect.sync(() => {
-              expect(request).toEqual({});
-            }).pipe(
-              Effect.zipRight(
-                Ref.update(pollCallers, (callers) => [
-                  ...callers,
-                  verifiedRequest.callerAgentId,
-                ]),
-              ),
-              Effect.as({ kind: "cursor_invalid" } as const),
-            ),
-        },
-      });
-      const rpcSendRequest = {
-        expectedRouterInstanceId: makeRouterInstanceId(1),
-        mode: "initial",
-        signedMessage: makeSignedMessage({
-          senderAgentId: sender,
-          recipientAgentIds: [recipient],
-          envelopeId: makeEnvelopeId(1),
-          body: "rpc-context",
-        }),
-      } as const;
-      const missingSendProof = yield* client
-        .send({ request: rpcSendRequest })
-        .pipe(Effect.either);
-      const missingPollProof = yield* client
-        .poll({ request: {} })
-        .pipe(Effect.either);
-      Either.match(missingSendProof, {
-        onLeft: (error) => {
-          expect(error).toBeInstanceOf(httpErrors.AuthenticationFailedError);
-        },
-        onRight: () => {
-          expect.fail("send RPC ran without registered-agent proof");
-        },
-      });
-      Either.match(missingPollProof, {
-        onLeft: (error) => {
-          expect(error).toBeInstanceOf(httpErrors.AuthenticationFailedError);
-        },
-        onRight: () => {
-          expect.fail("poll RPC ran without registered-agent proof");
-        },
-      });
-      expect(yield* Ref.get(sendRequests)).toEqual([]);
-      expect(yield* Ref.get(pollCallers)).toEqual([]);
-
-      const signingAuthority = yield* makeSigningAuthority();
-      const verifiedRequest = makeVerifiedRequestFixture(signingAuthority);
-      expect(
-        yield* withVerifiedRouterRequest(
-          verifiedRequest,
-          client.poll({ request: {} }),
-        ),
-      ).toEqual({ kind: "cursor_invalid" });
-      expect(yield* Ref.get(pollCallers)).toEqual([sender]);
-
-      const handlerFailure = yield* withVerifiedRouterRequest(
-        verifiedRequest,
-        client.send({ request: rpcSendRequest }),
-      ).pipe(Effect.either);
-      Either.match(handlerFailure, {
-        onLeft: (error) => {
-          expect(error).toBeInstanceOf(httpErrors.InternalServerError);
-        },
-        onRight: () => {
-          expect.fail("handler failure was converted into success");
-        },
-      });
-      expect(yield* Ref.get(sendRequests)).toEqual([verifiedRequest]);
-    }),
-  );
-});
 
 describe("send exhaustion behavior", () => {
   it.effect(

@@ -1,9 +1,9 @@
 /** @file Collective recovery, immutable completion selection, and terminal publication. */
 
 import type { DatabaseSync } from "node:sqlite";
+
 import type {
   CollectiveAnswerReference,
-  CollectiveDelivery,
   CollectiveOperationInput,
   CollectiveRequestRefusal,
   EndpointStore,
@@ -11,6 +11,7 @@ import type {
   StoredCollectiveOperation,
   StoreMutation,
 } from "./types.js";
+
 import {
   findCollective,
   readCollective,
@@ -28,8 +29,6 @@ import {
   StoreSignal,
   transaction,
 } from "./database/index.js";
-import { queueFirewallItem } from "./firewall.js";
-import { putInboxItem } from "./host-inbox.js";
 
 /** Unchecked local operations and verified remote requests retain their exact descriptor. */
 export function putCollectiveOperation(
@@ -110,33 +109,6 @@ export function finalizeCollectiveOperation(
     `)
       .run(copyBytes(canonicalSelection), operationId);
     return "inserted";
-  });
-}
-
-/** One terminal payload and its delivery identity commit with the completed phase. */
-export function publishCollectiveItem(
-  database: DatabaseSync,
-  delivery: CollectiveDelivery,
-): void {
-  transaction(database, () => {
-    const operation = findCollective(database, delivery.operationId);
-    if (operation === undefined) {
-      throw new StoreSignal("not-found");
-    }
-    if (operation.phase === "collecting") {
-      throw new StoreSignal("conflict");
-    }
-    requireEqual(operation.deliveryToken, delivery.deliveryToken);
-    if (delivery.firewall) {
-      queueFirewallItem(database, delivery);
-    } else {
-      putInboxItem(database, delivery);
-    }
-    database
-      .prepare(
-        "UPDATE collective_operations SET phase = 'completed' WHERE operation_id = ?",
-      )
-      .run(delivery.operationId);
   });
 }
 
@@ -274,6 +246,27 @@ export function retireCollectiveOperation(
       )
       .run(copyBytes(canonicalSelection), operationId);
   });
+}
+
+/** Completes protocol custody in the caller's terminal-publication transaction. */
+export function completeCollectiveDelivery(
+  database: DatabaseSync,
+  operationId: string,
+  deliveryToken: string,
+): void {
+  const operation = findCollective(database, operationId);
+  if (operation === undefined) {
+    throw new StoreSignal("not-found");
+  }
+  if (operation.phase === "collecting") {
+    throw new StoreSignal("conflict");
+  }
+  requireEqual(operation.deliveryToken, deliveryToken);
+  database
+    .prepare(
+      "UPDATE collective_operations SET phase = 'completed' WHERE operation_id = ?",
+    )
+    .run(operationId);
 }
 
 function readCollectiveMessage(

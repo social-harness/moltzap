@@ -54,7 +54,7 @@ const gatherText = (operation: "gather" | "all_gather") =>
     requestedSchema: SLOT_SCHEMA,
   });
 
-const acceptText = (slot: string, operationId?: string) =>
+const acceptText = (slot: string, operationId: string) =>
   JSON.stringify({ action: "accept", operationId, content: { slot } });
 
 interface AllGatherContext {
@@ -148,7 +148,7 @@ function runOpenClawGatherScenario() {
         messageTool,
       });
 
-      const { operationId } = yield* caller.send({
+      const started = yield* caller.send({
         to: targetAddress,
         text: GATHER_QUESTION,
         collective: {
@@ -157,6 +157,7 @@ function runOpenClawGatherScenario() {
           requestedSchema: SLOT_SCHEMA,
         },
       });
+      const operationId = yield* Effect.fromNullable(started.operationId);
       const requestTurn = yield* nextTurn(turns);
       expect(requestTurn.From).toBe(callerAddress);
       const answered = yield* messageTool("reply", {
@@ -327,11 +328,14 @@ function receiveAllGather(context: AllGatherContext) {
     );
     yield* peer.send({
       to: group,
-      collectiveResponse: { action: "decline" },
+      collectiveResponse: {
+        action: "decline",
+        operationId: peerRequest.operationId,
+      },
     });
     const answered = yield* messageTool("reply", {
       to: group,
-      message: acceptText("tue"),
+      message: acceptText("tue", peerRequest.operationId),
     });
     expect(answered.details).toMatchObject({ ok: true });
     yield* assertReceivedAllGather(context, peerRequest.operationId);
@@ -339,33 +343,32 @@ function receiveAllGather(context: AllGatherContext) {
 }
 
 function sendAllGather(context: AllGatherContext) {
-  const {
-    caller,
-    peer,
-    peerAddress,
-    callerAddress,
-    callerAgent,
-    peerAgent,
-    group,
-    turns,
-    messageTool,
-  } = context;
+  const { caller, peer, group, turns, messageTool } = context;
   return Effect.gen(function* () {
     yield* sendQuestion(messageTool, group, "all_gather");
     const callerRequest = yield* nextItem(caller.messages).pipe(
       Effect.flatMap(requireRequest),
     );
-    yield* nextItem(peer.messages);
+    const peerRequest = yield* nextItem(peer.messages).pipe(
+      Effect.flatMap(requireRequest),
+    );
     yield* caller.send({
       to: group,
-      collectiveResponse: { action: "accept", content: { slot: "mon" } },
+      collectiveResponse: {
+        action: "accept",
+        operationId: callerRequest.operationId,
+        content: { slot: "mon" },
+      },
     });
     yield* peer.send({
       to: group,
-      collectiveResponse: { action: "decline" },
+      collectiveResponse: {
+        action: "decline",
+        operationId: peerRequest.operationId,
+      },
     });
     expect(yield* nextTurn(turns)).toMatchObject({
-      Body: `all_gather result for the question sent to ${group}: "${GATHER_QUESTION}"\n- ${callerAddress}: answered {"slot":"mon"}\n- ${peerAddress}: declined`,
+      Body: `all_gather result for the question sent to ${group}: "${GATHER_QUESTION}"\n- ${context.callerAddress}: answered {"slot":"mon"}\n- ${context.peerAddress}: declined`,
       SenderName: "Social Harness",
     });
     const memberResult = yield* nextItem(caller.messages);
@@ -375,10 +378,10 @@ function sendAllGather(context: AllGatherContext) {
       to: group,
       outcomes: [
         {
-          member: callerAgent,
+          member: context.callerAgent,
           outcome: { kind: "answered", content: { slot: "mon" } },
         },
-        { member: peerAgent, outcome: { kind: "declined" } },
+        { member: context.peerAgent, outcome: { kind: "declined" } },
       ],
     });
     expect(yield* nextItem(peer.messages)).toEqual(memberResult);
@@ -396,14 +399,7 @@ function sendGather(
     | "messageTool"
   >,
 ) {
-  const {
-    caller,
-    callerAddress,
-    targetAddress,
-    targetAgent,
-    turns,
-    messageTool,
-  } = context;
+  const { caller, callerAddress, messageTool } = context;
   return Effect.gen(function* () {
     const started = yield* messageTool("send", {
       to: callerAddress,
@@ -418,15 +414,19 @@ function sendGather(
     });
     expect(request).toMatchObject({
       kind: "collectiveRequest",
-      from: targetAgent,
+      from: context.targetAgent,
       question: GATHER_QUESTION,
       requestedSchema: SLOT_SCHEMA,
     });
     yield* caller.send({
-      to: targetAddress,
-      collectiveResponse: { action: "accept", content: { slot: "mon" } },
+      to: context.targetAddress,
+      collectiveResponse: {
+        action: "accept",
+        operationId: request.operationId,
+        content: { slot: "mon" },
+      },
     });
-    const resultTurn = yield* nextTurn(turns);
+    const resultTurn = yield* nextTurn(context.turns);
     expect(resultTurn).toMatchObject({
       Body: `gather result for the question sent to ${callerAddress}: "${GATHER_QUESTION}"\n- ${callerAddress}: answered {"slot":"mon"}`,
       SenderName: "Social Harness",

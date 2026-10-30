@@ -32,33 +32,35 @@ import {
 import { describe, expect } from "vitest";
 import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
+import { requestId } from "../../__tests__/collective-operation-fixtures.js";
 import { localGuidance } from "../../__tests__/message-policy-fixtures.js";
 import {
   CollectiveError,
   CollectiveId,
   SendInput,
-  SendResultSchema,
 } from "../../communication/collectives/contracts.js";
-import { InboundItem } from "../../communication/collectives/inbound.js";
 import {
   ListenError,
   SendError,
 } from "../../communication/conversations/errors.js";
-import { AgentAddress } from "../../communication/records/values.js";
 import {
   DeliveryToken,
   encodeRuntimeValue,
-  openEndpointStore,
 } from "../../communication/store/index.js";
-import { FirewallSendError } from "../../firewall/outcome/index.js";
 import { acquireHarnessEndpoint } from "../../host-client/index.js";
+import { FirewallSendError } from "../../host-protocol/advice.js";
+import { InboundItem } from "../../host-protocol/items.js";
 import {
   HARNESS_SEND_TOOL,
   INBOX_PENDING_EVENT,
 } from "../../host-protocol/names.js";
-import { eventIdOf } from "../../host-protocol/operations.js";
+import {
+  type SendResult,
+  SendResultSchema,
+} from "../../host-protocol/send-result.js";
 import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { readRuntimeEvent } from "../inbox/inbox.js";
+import { openDaemonStore } from "../store.js";
 import { acquireHarnessMcpHttpServer } from "./http.js";
 import {
   type HarnessMcpOperations,
@@ -371,6 +373,39 @@ const sendResult = Schema.decodeUnknownSync(SendResultSchema)({
   address: "agent:bob",
 });
 
+const SENDS_WITH_GUIDANCE: readonly SendResult[] = [
+  { ...sendResult, guidance: localGuidance(14) },
+  Schema.decodeUnknownSync(SendResultSchema)({
+    kind: "response",
+    msgId: digest("msg_", 15),
+    address: "agent:bob",
+    operationId: collectiveOperationId(
+      testAgentView("agent:alice").agentId,
+      16,
+    ),
+    guidance: localGuidance(15),
+  }),
+  {
+    kind: "collective",
+    operationId: collectiveOperationId(
+      testAgentView("agent:alice").agentId,
+      16,
+    ),
+    guidance: localGuidance(16),
+  },
+];
+
+function preservesAdmittedSendGuidance(result: SendResult) {
+  return Effect.gen(function* () {
+    const endpoint = yield* acquireSendEndpoint({
+      protocolActive: () => true,
+      send: () => Effect.succeed(result),
+    });
+
+    expect(yield* endpoint.send(sendInput)).toEqual(result);
+  });
+}
+
 /**
  * Bounds a hang in a boundary trace that starts servers and endpoints and
  * makes MCP requests one after another; no assertion depends on it. The
@@ -386,7 +421,7 @@ const distinguishesSendValidationFailures = () =>
   Effect.gen(function* () {
     const inactive = yield* acquireSendEndpoint(operations);
     expect(yield* inactive.send(sendInput).pipe(Effect.flip)).toMatchObject({
-      reason: "network-unavailable",
+      reason: "outcome-unknown",
     });
     const refused = yield* acquireSendEndpoint({
       ...operations,
@@ -434,31 +469,18 @@ const carriesARefusalDetailAcrossTheDaemonBoundary = (
 /** Refusals name a send's failure, the openOperationIds of an answer that named no request, or the questions open in other conversations. */
 const DETAILED_REFUSALS = [
   new SendError({
+    reason: "content-invalid",
+    detail: "the answer does not match the requested form",
+  }),
+  new SendError({
     reason: "unknown-agent",
     detail: "agent:dana is not a known agent",
-  }),
-  new CollectiveError({
-    failure: {
-      kind: "request-ambiguous",
-      openOperationIds: [
-        Schema.decodeUnknownSync(CollectiveId)(`col_${"B".repeat(64)}`),
-        Schema.decodeUnknownSync(CollectiveId)(`col_${"C".repeat(64)}`),
-      ],
-    },
   }),
   new CollectiveError({
     operationId: Schema.decodeUnknownSync(CollectiveId)(
       `col_${"A".repeat(64)}`,
     ),
     failure: { kind: "request-expired" },
-    openElsewhere: [
-      {
-        operationId: Schema.decodeUnknownSync(CollectiveId)(
-          `col_${"D".repeat(64)}`,
-        ),
-        to: Schema.decodeUnknownSync(AgentAddress)("agent:bob"),
-      },
-    ],
   }),
 ];
 
@@ -564,6 +586,86 @@ function answerSendWithStatus(status: number): MockAgent {
   return agent;
 }
 
+const rpcCallSchema = Schema.parseJson(
+  Schema.Struct({ id: Schema.Union(Schema.String, Schema.Number) }),
+);
+
+function answerSendWithMessage(
+  message: Readonly<Record<string, unknown>>,
+): MockAgent {
+  const agent = new MockAgent();
+  agent.enableNetConnect();
+  agent
+    .get(/^http:\/\/127\.0\.0\.1:\d+$/)
+    .intercept({
+      path: "/mcp",
+      method: "POST",
+      body: (body) => body.includes(`"${HARNESS_SEND_TOOL}"`),
+    })
+    .reply(
+      200,
+      ({ body }) => ({
+        jsonrpc: "2.0",
+        id: Schema.decodeUnknownSync(rpcCallSchema)(body).id,
+        ...message,
+      }),
+      { headers: { "content-type": "application/json" } },
+    );
+  return agent;
+}
+
+function reportsAmbiguousSendAnswer(
+  message: Readonly<Record<string, unknown>>,
+) {
+  return Effect.gen(function* () {
+    const endpoint = yield* acquireSendEndpoint({
+      protocolActive: () => true,
+      send: () => Effect.succeed(sendResult),
+    });
+    yield* routeRequestsThrough(answerSendWithMessage(message));
+
+    const error = yield* endpoint.send(sendInput).pipe(Effect.flip);
+
+    expect(error).toStrictEqual(new SendError({ reason: "outcome-unknown" }));
+  });
+}
+
+const AMBIGUOUS_SEND_ANSWERS = [
+  {
+    name: "a JSON-RPC error without refusal data",
+    message: { error: { code: -32602, message: "Invalid completed result" } },
+  },
+  {
+    name: "a JSON-RPC error with malformed refusal data",
+    message: {
+      error: { code: -32602, message: "Invalid completed result", data: false },
+    },
+  },
+  {
+    name: "a JSON-RPC error with an unknown refusal reason",
+    message: {
+      error: {
+        code: -32603,
+        message: "Unrecognized failure",
+        data: { reason: "unrecognized-failure" },
+      },
+    },
+  },
+  {
+    name: "an untyped tool error",
+    message: { result: { content: [], isError: true } },
+  },
+  {
+    name: "a malformed successful result",
+    message: {
+      result: {
+        content: [],
+        structuredContent: { kind: "collective", operationId: false },
+      },
+    },
+  },
+];
+
 const classifiesAnHttpAnswerToASend = (
   status: number,
   reason: SendError["reason"],
@@ -658,7 +760,11 @@ const checksSemanticSendSchema = (client: Client) =>
       },
       {
         to: "agent:bob",
-        collectiveResponse: { action: "accept", content: { ready: true } },
+        collectiveResponse: {
+          operationId: requestId,
+          action: "accept",
+          content: { ready: true },
+        },
       },
     ]) {
       expect(
@@ -709,10 +815,9 @@ function rejectsSendBookkeepingArguments() {
 function readsRetainedEventThroughSdk() {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
-    const store = yield* openEndpointStore(
-      yield* fs.makeTempDirectoryScoped(),
-      { liveWireVersions: LIVE_WIRE_VERSIONS },
-    );
+    const store = yield* openDaemonStore(yield* fs.makeTempDirectoryScoped(), {
+      liveWireVersions: LIVE_WIRE_VERSIONS,
+    });
     const deliveryToken = Schema.decodeUnknownSync(DeliveryToken)(
       digest("dlv_", 7),
     );
@@ -742,7 +847,7 @@ function readsRetainedEventThroughSdk() {
     const result = yield* Effect.tryPromise(() =>
       client.callTool({
         name: "read_event",
-        arguments: { eventId: eventIdOf(deliveryToken) },
+        arguments: { eventId: deliveryToken },
       }),
     );
     expect(result.structuredContent).toEqual({ item, guidance });
@@ -752,6 +857,10 @@ function readsRetainedEventThroughSdk() {
 
 // @agent-code-guard/regression-only: this boundary pins the exact capability and closed transport failures.
 describe("Harness MCP HTTP boundary", () => {
+  it.each(SENDS_WITH_GUIDANCE)(
+    "preserves admitted $kind identity and local guidance through MCP",
+    preservesAdmittedSendGuidance,
+  );
   it(
     "keeps dispatch and invalid output distinct from rejected send input",
     distinguishesSendValidationFailures,
@@ -800,7 +909,7 @@ function preservesFirewallRefusal() {
   return Effect.gen(function* () {
     const refusal = new FirewallSendError({
       checkId: `chk_${"1f".repeat(32)}`,
-      refusal: "norm-violation",
+      refusal: "rule-violation",
       feedback: [{ nextAction: "revise", text: "Include Carol in the reply." }],
     });
     const endpoint = yield* acquireSendEndpoint({
@@ -819,6 +928,10 @@ function preservesFirewallRefusal() {
 }
 
 describe("a refused send across the daemon boundary", () => {
+  it.each(AMBIGUOUS_SEND_ANSWERS)(
+    "reports outcome-unknown for $name",
+    ({ message }) => reportsAmbiguousSendAnswer(message),
+  );
   it(
     "preserves the typed firewall refusal and check reference through MCP",
     preservesFirewallRefusal,

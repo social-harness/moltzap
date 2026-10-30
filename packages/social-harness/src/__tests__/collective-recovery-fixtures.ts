@@ -1,8 +1,10 @@
 /** @file Real signed records and reopened stores support collective recovery tests. */
+
 import { Deferred, Effect, Schema } from "effect";
 import { expect } from "vitest";
 import type { InboundItem } from "../communication/collectives/inbound.js";
 import type { CollectivePorts } from "../communication/collectives/ports.js";
+import type { DaemonStore } from "../daemon/store.js";
 import type { Fixture } from "./firewall-runtime-fixtures.js";
 import {
   type EndpointEngine,
@@ -20,7 +22,6 @@ import { RouterInstanceId } from "../communication/router/api/contract.js";
 import {
   decodeRuntimeValue,
   encodeRuntimeValue,
-  type EndpointStore,
   EndpointStoreError,
 } from "../communication/store/index.js";
 import { AgentCard } from "../identity/cards.js";
@@ -34,7 +35,7 @@ import {
   storeCertifiedFirstMessage,
 } from "./certified-history-fixtures.js";
 import { pollCursor } from "./router-worker-fixtures.js";
-import { withStore } from "./store-schema-fixtures.js";
+import { withDaemonStore } from "./store-schema-fixtures.js";
 /** A fixed anchor keeps records verifiable after each fixture restart. */
 export const anchor = {
   routerInstanceId: Schema.decodeUnknownSync(RouterInstanceId)(
@@ -45,7 +46,7 @@ export const anchor = {
 /** Uses the same verified peer cards and Router anchor when reopening a real store. */
 export function resumeEngine(
   subject: Fixture,
-  store: EndpointStore,
+  store: DaemonStore,
   failOutbound = false,
 ) {
   return Effect.gen(function* () {
@@ -117,7 +118,7 @@ export function groupSubject(subject: Fixture) {
 
 /** Seeds a signed group head before the test binds its first operation. */
 export function seedGroupFirstMessage(subject: Fixture) {
-  return withStore(subject.directory, (store) =>
+  return withDaemonStore(subject.directory, (store) =>
     Effect.gen(function* () {
       const partial = yield* buildCertifiedFirstMessage(
         subject.local,
@@ -139,7 +140,7 @@ export function seedGroupFirstMessage(subject: Fixture) {
 
 /** Reads the exact durable intent that the resumed endpoint must continue. */
 export function boundIntent(
-  store: EndpointStore,
+  store: DaemonStore,
   role: "request" | "response" | "close",
 ) {
   return store.readCollectiveMessages().pipe(
@@ -169,7 +170,7 @@ export function certifyBoundIntent(
 }
 
 /** Waits until the requester has durably bound its close message. */
-export function waitForClose(store: EndpointStore) {
+export function waitForClose(store: DaemonStore) {
   return untilLive(
     store.readCollectiveMessages().pipe(
       Effect.map((messages) =>
@@ -182,7 +183,7 @@ export function waitForClose(store: EndpointStore) {
 
 /** Publishes a terminal result with the operation’s retained delivery identity. */
 export function retainingEmitter(
-  store: EndpointStore,
+  store: DaemonStore,
   emitted: Deferred.Deferred<InboundItem>,
 ): CollectivePorts["emit"] {
   return (item, ...[, terminal]) =>

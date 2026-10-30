@@ -59,9 +59,8 @@ consumers cannot acknowledge replacement work.
 
 ## Event lookup
 
-`read_event({eventId})` returns retained item and guidance. Replace `dlv_` with
-`evt_` in its token for the canonical event id. Protect this opaque reference
-like its content.
+`read_event({eventId})` returns retained item and guidance. An item's event id
+is its delivery token. Protect this opaque reference like its content.
 
 Runtime, owner or trusted-local access permits lookup after acknowledgment,
 revocation and restart. Missing ids return `unknown-event`. Malformed ids return
