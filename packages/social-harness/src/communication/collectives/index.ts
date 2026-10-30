@@ -449,7 +449,10 @@ function formModeSchema(
   );
 }
 
-/** Durable request custody owns fanout and deadline work after the invoking caller stops waiting. */
+/**
+ * Durable request custody owns fanout and deadline work after the invoking caller stops waiting.
+ * A deadline refusal retires unopened custody so recovery cannot later publish a refused operation.
+ */
 function gatherRequests(
   state: CollectiveState,
   prepared: PreparedGather,
@@ -466,7 +469,13 @@ function gatherRequests(
         state.ports.store.putCollectiveOperation(prepared.durable),
       );
       yield* refreshRetainedSend(state, prepared.operationId);
-      yield* openGather(state, prepared, false);
+      yield* openGather(state, prepared, false).pipe(
+        Effect.catchTag("CollectiveError", (error) =>
+          forgetGather(state, prepared.operationId).pipe(
+            Effect.zipRight(Effect.fail(error)),
+          ),
+        ),
+      );
       yield* armRetainedGather(state, prepared.operationId);
       const sender = yield* sendRequests(state, prepared).pipe(
         Effect.interruptible,
