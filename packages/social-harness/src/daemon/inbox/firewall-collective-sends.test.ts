@@ -1,13 +1,14 @@
 /** @file Collective sends retain exact policy decisions before ordinary protocol binding. */
 
 import { scopedLive as it } from "@effect/vitest";
-import { Deferred, Duration, Effect, Fiber } from "effect";
+import { Deferred, Duration, Effect, Fiber, Queue } from "effect";
 import { describe, expect } from "vitest";
 import type { MiddlewareInput } from "../../firewall/check.js";
 import {
   admitPending,
   answerBob,
   bob,
+  collectiveContent,
   formSchema,
   gatherSend,
   group,
@@ -30,6 +31,8 @@ import {
   policy,
   rule,
 } from "../../__tests__/firewall-runtime-fixtures.js";
+import { MessageIntent } from "../../communication/records/index.js";
+import { decodeRuntimeValue } from "../../communication/store/index.js";
 import { decodeFirewallAuditEntry } from "../../firewall/store/index.js";
 import { FirewallSendError } from "../../host-protocol/advice.js";
 import { renderOutcome } from "../../host-protocol/render.js";
@@ -142,6 +145,93 @@ function keepsARequestOpenAfterARefusedAnswer() {
     ]);
     expect(yield* unfinishedIntents(subject)).toHaveLength(1);
     yield* Fiber.interrupt(answering);
+  });
+}
+
+/** Both drafts reach assessment before either can claim the request's one answer. */
+function sendsOneOfTwoConcurrentAnswers() {
+  return Effect.gen(function* () {
+    const subject = yield* engineFixture(() => true);
+    yield* seedRequest(subject, Date.now() + 60_000, question);
+    const assessed = yield* Queue.unbounded<MiddlewareInput>();
+    const release = yield* Deferred.make<undefined>();
+    const runtime = yield* incomingFixture(
+      subject,
+      policy((input) =>
+        input.event.direction === "outgoing"
+          ? Queue.offer(assessed, input).pipe(
+              Effect.zipRight(Deferred.await(release)),
+              Effect.as(pass),
+            )
+          : Effect.succeed(pass),
+      ),
+      {},
+      false,
+    );
+    yield* admitPending(runtime);
+    const firstAnswer = { slot: "mon" };
+    const secondAnswer = { slot: "tue" };
+    const first = yield* runtime.delivery.operations
+      .send({ input: answerBob(firstAnswer) })
+      .pipe(Effect.flip, Effect.forkScoped);
+    const second = yield* runtime.delivery.operations
+      .send({ input: answerBob(secondAnswer) })
+      .pipe(Effect.flip, Effect.forkScoped);
+    const firstChecked = yield* Queue.take(assessed);
+    const secondChecked = yield* Queue.take(assessed);
+    const operationId = yield* Effect.fromNullable(
+      firstChecked.event.message.operation?.operationId,
+    );
+    expect(secondChecked.event.message.operation?.operationId).toBe(
+      operationId,
+    );
+    expect([
+      firstChecked.event.message.text,
+      secondChecked.event.message.text,
+    ]).toEqual(
+      expect.arrayContaining([
+        renderOutcome({ kind: "answered", content: firstAnswer }),
+        renderOutcome({ kind: "answered", content: secondAnswer }),
+      ]),
+    );
+    yield* Deferred.succeed(release, undefined);
+    const firstFailure = yield* Fiber.join(first);
+    const secondFailure = yield* Fiber.join(second);
+    expect([firstFailure, secondFailure]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ reason: "delivery-pending" }),
+        expect.objectContaining({ failure: { kind: "request-answered" } }),
+      ]),
+    );
+    const winner =
+      firstFailure._tag === "SendError" &&
+      firstFailure.reason === "delivery-pending"
+        ? firstAnswer
+        : secondAnswer;
+    const responses = yield* subject.store.readCollectiveMessages({
+      operationId,
+      role: "response",
+    });
+    expect(responses).toHaveLength(1);
+    const retained = yield* Effect.fromNullable(responses[0]);
+    const original = yield* decodeRuntimeValue(
+      MessageIntent,
+      retained.intent.canonicalIntent,
+    );
+    expect(original.content).toEqual(
+      yield* collectiveContent({
+        kind: "response",
+        operationId: retained.operationId,
+        action: "accept",
+        content: winner,
+      }),
+    );
+    expect(yield* unfinishedIntents(subject)).toMatchObject([
+      {
+        msgId: original.msgId,
+        canonicalIntent: retained.intent.canonicalIntent,
+      },
+    ]);
   });
 }
 
@@ -380,6 +470,10 @@ describe("collective sends under a firewall", () => {
   it(
     "keeps a request open after its answer is refused",
     keepsARequestOpenAfterARefusedAnswer,
+  );
+  it(
+    "retains one original answer when two assessed drafts race for the same request",
+    sendsOneOfTwoConcurrentAnswers,
   );
   it(
     "refuses an answer whose request expires during its check, keeping the check's judgment",
