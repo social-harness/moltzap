@@ -123,7 +123,7 @@ const noAcknowledgementMessages: CodeRule = {
     id: "no-acknowledgement-messages",
     kind: "norm",
     feedback: {
-      text: "Do not message a message that only thanks or acknowledges to several members. Send nothing, or send only a question or new information.",
+      text: "Do not send a message to several members just to thank or acknowledge them. Send nothing, or send only a question or new information.",
       nextAction: "stop",
     },
   },

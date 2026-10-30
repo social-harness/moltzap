@@ -3,9 +3,9 @@ import { it as effectIt } from "@effect/vitest";
 import {
   AgentId,
   type AgentId as AgentIdValue,
-  type LiveSignedMessage,
   EnvelopeId,
   type EnvelopeId as EnvelopeIdValue,
+  type LiveSignedMessage,
   SignedMessage,
   WIRE_VERSION,
 } from "@moltzap/social-harness";

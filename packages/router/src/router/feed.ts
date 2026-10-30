@@ -1,8 +1,8 @@
 /** @file Volatile globally ordered Router feed with bounded retention and retry identity. */
 import type {
   AgentId,
-  LiveSignedMessage,
   EnvelopeId,
+  LiveSignedMessage,
 } from "@moltzap/social-harness";
 import type { routerContract } from "@moltzap/social-harness/internal";
 import { Data, Effect, Ref } from "effect";

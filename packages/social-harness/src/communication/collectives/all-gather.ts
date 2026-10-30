@@ -36,7 +36,7 @@ type CloseValue = Extract<CollectiveValue, { readonly kind: "close" }>;
 const contentInvalid = () => new SendError({ reason: "content-invalid" });
 
 /**
- * Message an all_gather's close, listing the certified record of every answer
+ * Send an all_gather's close, listing the certified record of every answer
  * its result counts, and emit the result once the close is certified. A close
  * already bound stays pending on its original message until certification.
  * `close` records the operation's `collective.closed` span once

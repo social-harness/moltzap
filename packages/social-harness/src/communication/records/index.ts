@@ -48,7 +48,6 @@ export {
 } from "./schemas.js";
 export {
   AgentAddress,
-  agentNameOf,
   compareAgentIds,
   Content,
   GroupAddress,

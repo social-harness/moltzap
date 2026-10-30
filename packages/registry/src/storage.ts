@@ -403,7 +403,10 @@ function runStorageInitialization(input: {
         COALESCE(bool_or(relname = ${LEDGER_TABLE} AND relkind = 'r'), false) AS "currentLedger",
         count(*) > 0 AS occupied
       FROM pg_catalog.pg_class
-      WHERE relnamespace = current_schema()::regnamespace
+      WHERE relnamespace = (
+        SELECT oid FROM pg_catalog.pg_namespace
+        WHERE nspname = current_schema()
+      )
     `;
     const [schema] = yield* Schema.decodeUnknown(Schema.Tuple(schemaStateRow))(
       rows,

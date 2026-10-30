@@ -155,7 +155,7 @@ function sendFailure(
 /**
  * A refused collective send rebuilt from its error data.
  * @param decoded The `collective-failed` error data.
- * @returns The error, with the open ids or the questions open elsewhere it names.
+ * @returns The error, with the openOperationIds or the questions open elsewhere it names.
  */
 function collectiveRefusal(
   decoded: Extract<

@@ -431,7 +431,7 @@ const carriesARefusalDetailAcrossTheDaemonBoundary = (
     expect(error).toStrictEqual(refusal);
   });
 
-/** Refusals whose message names what failed: a send's detail, the open ids of an answer that named no request, and the questions open in other conversations. */
+/** Refusals name a send's failure, the openOperationIds of an answer that named no request, or the questions open in other conversations. */
 const DETAILED_REFUSALS = [
   new SendError({
     reason: "unknown-agent",

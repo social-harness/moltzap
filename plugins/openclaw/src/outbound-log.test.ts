@@ -24,8 +24,8 @@ import { describe, expect, vi } from "vitest";
 
 import {
   endpointResult,
-  OPERATION_ID,
   msgId,
+  OPERATION_ID,
 } from "./__tests__/send-results.js";
 import { createChannelPlugin } from "./plugin.js";
 

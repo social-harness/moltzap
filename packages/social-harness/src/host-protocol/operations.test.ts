@@ -346,7 +346,7 @@ describe("Harness send refusal data", () => {
     },
   );
   it.each([{ ids: [] }, { ids: [collectiveId] }])(
-    "refuses an ambiguous answer with fewer than two open ids: $ids",
+    "refuses an ambiguous answer with fewer than two openOperationIds: $ids",
     ({ ids }) => {
       expect(
         Exit.isFailure(
@@ -361,7 +361,7 @@ describe("Harness send refusal data", () => {
       ).toBe(true);
     },
   );
-  it("carries the open ids of an answer that named none of several open requests", () => {
+  it("carries the openOperationIds of an answer that named none of several open requests", () => {
     const refused = new CollectiveError({
       failure: { kind: "request-ambiguous", openOperationIds },
     });

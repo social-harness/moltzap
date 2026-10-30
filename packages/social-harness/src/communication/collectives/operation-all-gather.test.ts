@@ -235,7 +235,7 @@ function saysEveryMemberIsStillSentAQueuedGroupMessage() {
   });
 }
 
-function refusesAnAllGatherWithAnUnknownMemberBeforeMessageing() {
+function refusesAnAllGatherWithAnUnknownMemberBeforeSending() {
   const observed = newObserved();
 
   return Effect.gen(function* () {
@@ -999,7 +999,7 @@ describe("all_gather at the requester", () => {
   );
   itOnTestClock(
     "refuses an all_gather with an unknown member before sending",
-    refusesAnAllGatherWithAnUnknownMemberBeforeMessageing,
+    refusesAnAllGatherWithAnUnknownMemberBeforeSending,
   );
   itOnTestClock(
     "closes with the record hash of each counted answer",

@@ -307,7 +307,7 @@ export const collectiveFailureOf = <A>(
   );
 
 /**
- * The operation operationId a completed send names; dies when it names none.
+ * The operationId returned by a completed collective send. Dies if absent.
  * @param outcome What the send returned.
  * @param outcome.operationId The collective operationId, absent for a multicast.
  * @returns The operationId, for a test that goes on to answer or complete the operation.

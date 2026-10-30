@@ -899,27 +899,42 @@ const registryBinaryBehavior = Effect.gen(function* () {
   Effect.provide(NodeHttpClient.layer),
 );
 
+// @agent-code-guard/regression-only: These process scenarios cover first boot, restart, and refusal of occupied schemas, including quoted-name case collisions.
 it("preserves Registry contracts across first boot, concurrency, and restart", () => {
   expect.hasAssertions();
   return Effect.runPromise(registryBinaryBehavior);
 }, 120_000);
 
 it.each([
-  { state: "preceding reset", table: "sharness_registry_ledger_20261029" },
-  { state: "unrecognized", table: "unrecognized_state" },
+  {
+    state: "preceding reset",
+    table: "sharness_registry_ledger_20261029",
+    schema: "public",
+  },
+  { state: "unrecognized", table: "unrecognized_state", schema: "public" },
+  {
+    state: "preceding reset",
+    table: "sharness_registry_ledger_20261029",
+    schema: "Registry",
+  },
+  { state: "unrecognized", table: "unrecognized_state", schema: "Registry" },
 ])(
-  "refuses $state storage without changing its tables",
-  ({ table }) =>
+  "refuses $state storage in $schema without changing its tables",
+  ({ table, schema }) =>
     Effect.runPromise(
       Effect.gen(function* () {
         const infrastructure = yield* setupRegistryInfrastructure;
         const sql = yield* PgClient.make({
           url: Redacted.make(infrastructure.postgresqlUrl),
+          maxConnections: 1,
         }).pipe(Effect.provide(Reactivity.layer));
+        yield* sql`CREATE SCHEMA IF NOT EXISTS ${sql(schema)}`;
+        yield* sql`CREATE SCHEMA registry`;
+        yield* sql`SET search_path TO ${sql(schema)}`;
         yield* sql`CREATE TABLE ${sql(table)} (retained integer PRIMARY KEY)`;
         yield* sql`INSERT INTO ${sql(table)} VALUES (1)`;
         const tables =
-          yield* sql`SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = 'public' ORDER BY tablename`;
+          yield* sql`SELECT schemaname, tablename FROM pg_catalog.pg_tables WHERE schemaname IN ('public', 'Registry', 'registry') ORDER BY schemaname, tablename`;
         const process = yield* managedProcess(
           REGISTRY_BINARY,
           [],
@@ -928,12 +943,58 @@ it.each([
         yield* expectStartupFailure(process);
         expect(process.logs()).toContain(PRE_RESET_REASON);
         expect(
-          yield* sql`SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = 'public' ORDER BY tablename`,
+          yield* sql`SELECT schemaname, tablename FROM pg_catalog.pg_tables WHERE schemaname IN ('public', 'Registry', 'registry') ORDER BY schemaname, tablename`,
         ).toEqual(tables);
         expect(yield* sql`SELECT retained FROM ${sql(table)}`).toEqual([
           { retained: 1 },
         ]);
       }).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
+    ),
+  30_000,
+);
+
+it(
+  "initializes and reopens a quoted Registry schema independently of registry",
+  () =>
+    Effect.runPromise(
+      Effect.gen(function* () {
+        const infrastructure = yield* setupRegistryInfrastructure;
+        const sql = yield* PgClient.make({
+          url: Redacted.make(infrastructure.postgresqlUrl),
+          maxConnections: 1,
+        }).pipe(Effect.provide(Reactivity.layer));
+        yield* sql`CREATE SCHEMA "Registry"`;
+        yield* sql`CREATE SCHEMA registry`;
+        yield* sql`SET search_path TO "Registry"`;
+        const registry = yield* startReadyRegistry(
+          infrastructure.environment,
+          infrastructure.origin,
+        );
+        const run = makeRegistryRunner(
+          infrastructure.origin,
+          infrastructure.registrySignerPublicKey,
+        );
+        const registered = yield* registerAgent("quoted-schema-agent", run);
+        yield* stopProcess(registry);
+        yield* startReadyRegistry(
+          infrastructure.environment,
+          infrastructure.origin,
+        );
+        const lookup = yield* run(
+          Registry.lookup({ agentId: registered.agentCard.agentId }),
+        );
+        expect(lookup.kind).toBe(FOUND_KIND);
+        if (lookup.kind === FOUND_KIND) {
+          yield* expectExactCard(lookup.agentCard, registered.agentCard);
+        }
+        expect(
+          yield* sql`SELECT DISTINCT schemaname FROM pg_catalog.pg_tables WHERE schemaname IN ('public', 'Registry', 'registry') ORDER BY schemaname`,
+        ).toEqual([{ schemaname: "Registry" }]);
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(NodeFileSystem.layer),
+        Effect.provide(NodeHttpClient.layer),
+      ),
     ),
   30_000,
 );
