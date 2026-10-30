@@ -6,19 +6,14 @@ read_when:
   - "You need to validate a Router request or response"
 ---
 
-This chapter defines the exact bytes and validation rules for Router requests,
-responses, and polling cursors. The [Router contract](./router.md) defines their
-ordering, retention, and recovery semantics. Router uses Identity's
-[authenticated requests](../identity/representation.md#http-message-signatures)
-and [signed messages](../identity/representation.md#signedmessage).
+This reference defines Router requests, results and polling cursors. The
+[Router contract](./router.md) owns ordering, retention and recovery.
 
 ## Canonical JSON
 
-Router requests and results follow Identity's
-[canonical JSON rules](../identity/representation.md#canonical-json), including
-closed fields, Unicode validity and depth bounds. Router applies each route's
-body limit before authentication. Examples below use readable key order.
-Transmitted bytes use JCS key order.
+Requests and results follow Identity's [closed canonical JSON rules](../identity/representation.md#canonical-json),
+including Unicode and depth bounds. Apply route caps before authentication.
+Examples use readable key order. Wire bytes use JCS.
 
 ## Refined values
 
@@ -29,19 +24,17 @@ Transmitted bytes use JCS key order.
 | `PollCursor` | `plc_` plus the exact Compact JWE below |
 
 Identity's [base64url rules](../identity/representation.md#base64url) apply.
-The three values are distinct and cannot substitute for one another.
+These values cannot substitute for each other.
 
 `SignedMessageDigest` is SHA-256 over the UTF-8 JCS bytes of the
 complete SignedMessage General JWS object, prefixed as specified above.
-It is an equality receipt for one retained live entry, not an order or
-delivery proof.
+It confirms equality for a retained entry, without proving order or delivery.
 
 ## PollCursor
 
-PollCursor is an opaque client-held value. After removing `plc_`, the
-remainder is one Compact JWE with five base64url segments.
+An opaque PollCursor consists of `plc_` and a five-segment Compact JWE.
 
-The protected header JCS value is exactly:
+Exact JCS protected header:
 
 ```json
 {
@@ -51,12 +44,9 @@ The protected header JCS value is exactly:
 }
 ```
 
-There is no JWE unprotected header, shared header, recipient header,
-additional authenticated data, compression, key ID, or extension
-member. `alg: dir` uses the process's random 256-bit key directly.
-`enc: A256GCM` uses a fresh 96-bit IV for every cursor encryption and a
-128-bit authentication tag. The Compact JWE encrypted-key segment is
-empty as required by `dir`.
+The process's random 256-bit key encrypts directly, with a fresh 96-bit IV,
+128-bit tag and empty encrypted-key segment. No other header, additional
+authenticated data, compression, key ID or extension is permitted.
 
 The encrypted plaintext is the JCS UTF-8 representation of exactly:
 
@@ -69,56 +59,28 @@ The encrypted plaintext is the JCS UTF-8 representation of exactly:
 ```
 
 `lastScannedOrder` matches `0|[1-9][0-9]*` and its decoded value is at
-most `2^128 - 1`. It has no sign, leading zero, whitespace, exponent,
-fraction, or numeric JSON representation. The decimal is a private
-Router value and never leaves the encrypted plaintext. Order `0` is
+most `2^128 - 1`. The decimal remains private inside encrypted plaintext. Order `0` is
 the empty-tail sentinel, the first accepted SignedMessage has order
 `1`, and later accepted messages increment by one within the process
 instance.
 
-The protected header, two fixed-width identifiers, unsigned 128-bit
-order, IV, and authentication tag bound a complete prefixed PollCursor
-to at most 349 ASCII characters.
+A complete prefixed PollCursor is at most 349 ASCII characters.
 
-Compact-JWE parse failure, noncanonical protected header or plaintext,
-authentication failure, wrong caller or instance, an order above the
-unsigned 128-bit range, future order, and a previous process key all
-become `cursor_invalid`.
+Parsing, canonicality, authentication, caller, instance, range and future-order
+failures all return `cursor_invalid`, including use of a previous process key.
 
 ## Authenticated request envelope
 
-Send and poll use Identity's
-[normal HTTP signature profile](../identity/representation.md#normal-profile).
-Their outer body is:
-
-```json
-{
-  "callerAgentId": "agt_<22-character-base64url>",
-  "request": {}
-}
-```
-
-`callerAgentId` is both the HTTP-authentication identity and the poll
-recipient. For send it must also equal the verified SignedMessage
-sender.
-
-Examples use `WIRE_VERSION` in place of the emitted wire-version string.
-Requests use `Content-Type: application/json`,
-`Sharness-Version: WIRE_VERSION`, exact Content-Digest, and the
-`sharness-request-v1` HTTP message-signature profile. Application code
-imposes no URL scheme or TLS requirement.
-
-The `kind` field identifies the result. A valid authenticated request returns
-status 200 for an operation result. Request validation, overload and
-infrastructure failures use the [failure mapping](#envelope-failure-mapping).
+Send and poll use Identity's [normal signed HTTP envelope](../identity/representation.md#normal-profile)
+and framing rules. `callerAgentId` identifies the poll recipient and must equal
+the verified sender on send. Deployment owns URL schemes and TLS.
+Authenticated domain results return HTTP 200. Other failures follow the
+[envelope mapping](#envelope-failure-mapping).
 
 ## Representation limits
 
-Identity fixes the decoded opaque-body maximum at 262,144 bytes and
-the SignedMessage recipient maximum at 128. A complete SignedMessage General
-JWS has a maximum JCS encoding of 471,677 bytes.
-
-Router derives one received-body cap from each closed authenticated
+Identity's [SignedMessage bounds](../identity/representation.md#signedmessage)
+apply. Router derives one received-body cap from each closed authenticated
 request representation:
 
 | Route | Maximum received body |
@@ -126,23 +88,18 @@ request representation:
 | `POST /v1/messages:send` | 471,825 octets |
 | `POST /v1/messages:poll` | 423 octets |
 
-The poll cap admits the maximum 349-character PollCursor. The maximum
-complete one-message `batch`, including a maximum PollCursor, is
+A complete one-message `batch`, including the maximum cursor, is at most
 472,126 UTF-8 JCS bytes.
 
-These bounds follow from the closed representations and are independent of
-operator configuration.
+These fixed bounds are independent of operator configuration.
 
-The HTTP reader rejects a route body above its own cap before parsing.
-The SignedMessage must also satisfy Identity's artifact limits. A poll result
-counts its complete UTF-8 JCS bytes, including the cursor, and stops before
-the first message that would exceed the configured response limit.
+Enforce route caps before parsing and Identity artifact bounds afterward. Poll
+limits count complete UTF-8 JCS bytes, including the cursor, stopping before the
+first message that would overflow.
 
 ## Send
 
 `POST /v1/messages:send`
-
-The exact body is:
 
 ```json
 {
@@ -158,7 +115,7 @@ The exact body is:
 `mode` is exactly `initial` or `retry`. `signedMessage` is the complete
 General JWS object defined by [Identity](../identity/representation.md#signedmessage).
 
-The exact results are:
+Results are:
 
 ```json
 {
@@ -215,7 +172,7 @@ A continuation has:
 }
 ```
 
-The exact results are:
+Results are:
 
 ```json
 {
@@ -259,22 +216,6 @@ Registry status.
 
 ## Envelope failure mapping
 
-Before a domain result, Router uses the exact AuthenticatedHttp order
-and mapping; `supported` lists the server's live wire versions:
-
-| Status | Exact body |
-|---:|---|
-| 400 | `{"error":"malformed"}` |
-| 401 | `{"error":"authentication_failed"}` |
-| 404 | `{"error":"not_found"}` |
-| 405 | `{"error":"method_not_allowed"}` |
-| 412 | `{"error":"version_mismatch","supported":[...]}` |
-| 413 | `{"error":"payload_too_large"}` |
-| 415 | `{"error":"unsupported_media_type"}` |
-| 429 | `{"error":"overloaded"}` |
-| 503 | `{"error":"unavailable"}` |
-| 500 | `{"error":"internal"}` |
-
-Registry lookup infrastructure failure during AuthenticatedHttp
-verification is 503 `unavailable`. A missing identity is an
-authentication failure at the L1 boundary.
+Router uses Identity's exact [authentication order and failure bodies](../identity/representation.md#exact-envelope-precedence).
+Version failures list the live set. Registry lookup infrastructure failures return
+503 `unavailable`; absent callers return 401 `authentication_failed`.
