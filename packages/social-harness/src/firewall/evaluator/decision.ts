@@ -227,7 +227,7 @@ function registeredAdvice(
   rule?: RuleDescription,
 ): string | undefined {
   if (reason === "eligible") {
-    return rule?.guidance;
+    return rule?.guidance ?? rule?.feedback?.text;
   }
   return rule?.feedback?.text ?? rule?.guidance;
 }
