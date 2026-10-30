@@ -11,7 +11,7 @@ import type { DaemonBootstrap } from "../bootstrap.js";
 import type { HistoryExportPort } from "../inbox/host-traffic-log.js";
 import type { HarnessMcpEventHandler } from "../mcp/index.js";
 import type { DaemonRegistrationState } from "../registration/index.js";
-import type { DaemonStore } from "../store.js";
+import { SqlClient } from "@effect/sql";
 import { CollectiveEmitError } from "../../communication/collectives/index.js";
 import { Router } from "../../communication/router/index.js";
 import { Registry } from "../../identity/registry/index.js";
@@ -36,7 +36,6 @@ export type { ProtocolEdges };
 
 /** The state one daemon starts from, read once before the network layers. */
 export interface DaemonStartup {
-  readonly store: DaemonStore;
   readonly bootstrap: DaemonBootstrap;
   readonly registration: DaemonRegistrationState;
   readonly firewall?: Firewall;
@@ -397,10 +396,11 @@ export const makeDaemon = (
 ): Effect.Effect<
   RunningDaemon,
   DaemonRuntimeError,
-  Registry | Router | Scope.Scope
+  Registry | Router | Scope.Scope | SqlClient.SqlClient
 > =>
   Effect.gen(function* () {
     const daemonScope = yield* Scope.Scope;
+    const sql = yield* SqlClient.SqlClient;
     const activationGate = yield* Effect.makeSemaphore(1);
     const changes = yield* Queue.unbounded<boolean>();
     const state: DaemonState = {
@@ -412,7 +412,7 @@ export const makeDaemon = (
     };
     const delivery = yield* daemonDelivery(input, state, daemonScope);
     const environment: DaemonEnvironment = {
-      store: input.store,
+      sql,
       bootstrap: input.bootstrap,
       edges: input.edges,
       registry: yield* Registry,
@@ -444,8 +444,9 @@ function daemonDelivery(
   state: DaemonState,
   scope: Scope.Scope,
 ) {
-  return makeHostDelivery({
-    store: input.store,
+  return Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  return yield* makeHostDelivery({
     historyExport: input.historyExport,
     experiments: input.bootstrap.configuration,
     collectives: () => {
@@ -463,7 +464,7 @@ function daemonDelivery(
               input.firewall === undefined
               ? undefined
               : {
-                  store: input.store,
+                  sql,
                   firewall: input.firewall,
                   localAgentCard: state.identity.protocol.agentCard,
                 };
@@ -471,4 +472,5 @@ function daemonDelivery(
         }),
     scope,
   }).pipe(Effect.mapError(() => runtimeFailure("storage")));
+  });
 }

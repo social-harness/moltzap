@@ -1,13 +1,13 @@
 /** @file Private MCP schemas for daemon management and history reads: exact requests, and results a reader decodes additively. */
 
 import { Schema } from "effect";
+import { InboundItem } from "./items.js";
+import { localGuidanceSchema } from "./advice.js";
 import {
   AgentAddress,
-  compareAgentIds,
   GroupAddress,
-  RecordCore,
   RecordHash,
-  RouterAnchor,
+  Content,
 } from "../communication/records/index.js";
 import { exactParseOptions, exactStruct } from "../encoding/exact.js";
 import {
@@ -16,7 +16,7 @@ import {
   isStrictlyAscending,
 } from "../encoding/identifier.js";
 import { AgentCard, AgentView } from "../identity/cards.js";
-import { AgentId, AgentName, PrincipalId } from "../identity/identifiers.js";
+import { AgentName, PrincipalId } from "../identity/identifiers.js";
 import { OperationId } from "../identity/registry/contract.js";
 
 const encodedAgentCard = Schema.encodedSchema(AgentCard);
@@ -33,41 +33,25 @@ function canonicalBase64UrlBytes(value: string, byteLength: number): boolean {
   return decodeCanonicalBase64Url(value)?.byteLength === byteLength;
 }
 
-function agentIdsAreOrdered(agentIds: readonly AgentId[]): boolean {
-  return isStrictlyAscending(agentIds, compareAgentIds);
-}
-
 const historyContinuation = Schema.String.pipe(
   Schema.pattern(/^[A-Za-z0-9_-]{43}$/u),
   Schema.filter((value) => canonicalBase64UrlBytes(value, 32)),
 );
 
-const ed25519Signature = Schema.String.pipe(
-  Schema.pattern(/^[A-Za-z0-9_-]{86}$/u),
-  Schema.filter((value) => canonicalBase64UrlBytes(value, 64)),
+const historyRecord = Schema.Union(
+  Schema.Struct({
+    kind: Schema.Literal("sent"),
+    author: AgentView,
+    recordHash: RecordHash,
+    content: Content,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("received"),
+    recordHash: RecordHash,
+    item: InboundItem,
+    guidance: Schema.optionalWith(localGuidanceSchema, { exact: true }),
+  }),
 );
-
-const signerEvidence = exactStruct({
-  signerAgentId: AgentId,
-  signature: ed25519Signature,
-});
-
-const orderedSignerEvidence = Schema.NonEmptyArray(signerEvidence).pipe(
-  Schema.maxItems(32),
-  Schema.filter((evidence) =>
-    agentIdsAreOrdered(evidence.map((item) => item.signerAgentId)),
-  ),
-);
-
-const historyRecord = Schema.Struct({
-  /** The record's author, from its conversation's verified membership and outside the signed bytes. */
-  author: AgentView,
-  recordHash: RecordHash,
-  recordCore: RecordCore,
-  routerAnchor: RouterAnchor,
-  actionSignatures: orderedSignerEvidence,
-  durabilityVotes: orderedSignerEvidence,
-});
 
 /** Closed local registration input; configured secrets are never tool fields. */
 export const managementRegisterRequestSchema = exactStruct({
@@ -150,7 +134,7 @@ export const managementReadConversationRequestSchema = Schema.Union(
   }),
 ).annotations({ parseOptions: exactParseOptions });
 
-/** Complete proof-bearing local certified-history page. */
+/** Saved permitted messages and locally authored content for one conversation. */
 // eslint-disable-next-line agent-code-guard/no-exported-brand-constructor -- The MCP catalog projects this result to JSON Schema; readers decode it additively with this schema.
 export const managementReadConversationResultSchema = Schema.Struct({
   kind: Schema.Literal("page"),

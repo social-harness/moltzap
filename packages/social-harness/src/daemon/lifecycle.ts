@@ -2,6 +2,7 @@
 
 import type { Implementation } from "@modelcontextprotocol/server";
 import { NodeFileSystem } from "@effect/platform-node";
+import { SqlClient } from "@effect/sql";
 import { Console, Effect, type Scope } from "effect";
 import type { Router } from "../communication/router/api/client.js";
 import type { Registry } from "../identity/registry/index.js";
@@ -73,7 +74,7 @@ const productionDependencies: DaemonRuntimeDependencies = {
 export const runDaemonRuntime = (
   input: DaemonStartup,
   dependencies: DaemonRuntimeDependencies = productionDependencies,
-): Effect.Effect<never, DaemonRuntimeError, Registry | Router | Scope.Scope> =>
+): Effect.Effect<never, DaemonRuntimeError, Registry | Router | Scope.Scope | SqlClient.SqlClient> =>
   Effect.gen(function* () {
     const historyExport = yield* openHistoryExport(input, dependencies);
     const daemon = yield* makeDaemon({
@@ -82,7 +83,6 @@ export const runDaemonRuntime = (
       edges: dependencies,
     });
     const management = yield* makeDaemonManagementOperations({
-      store: input.store,
       bootstrap: input.bootstrap,
       registration: daemon,
     });
@@ -127,13 +127,16 @@ function makeHandler(
       implementation: DAEMON_IMPLEMENTATION,
       operations: Object.freeze({
         ...management,
-        ...(input.firewall?.policy === undefined
+        ...(input.firewall === undefined
           ? {}
-          : { policy: input.firewall.policy }),
+          : {
+              readPolicy: input.firewall.readPolicy,
+              updatePolicy: input.firewall.updatePolicy,
+            }),
         ...daemon.deliveryOperations,
         protocolActive: daemon.protocolActive,
       }),
-      credentials: input.bootstrap.mcpCredentials,
+      credential: input.bootstrap.mcpCredential,
       eventStore: daemon.eventStore,
       onSubscriptionActiveChange: daemon.subscriptionChanged,
     })

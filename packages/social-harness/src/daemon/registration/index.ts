@@ -1,5 +1,6 @@
 /** @file Crash-recoverable daemon identity binding over Registry and endpoint storage. */
 
+import { SqlClient } from "@effect/sql";
 import { Data, Effect, Fiber, Schema } from "effect";
 import type { StoreOpening } from "../../communication/store/index.js";
 import type { VerifiedAgentCard } from "../../identity/cards.js";
@@ -20,7 +21,6 @@ import {
   DaemonRegistrationPersistenceError,
   DaemonRegistrationRepresentationError,
   type DaemonRegistrationState,
-  type DaemonRegistrationStore,
   readDaemonRegistrationState,
   representationFailure,
 } from "./binding.js";
@@ -33,7 +33,6 @@ export {
   DaemonRegistrationPersistenceError,
   DaemonRegistrationRepresentationError,
   type DaemonRegistrationState,
-  type DaemonRegistrationStore,
   readDaemonRegistrationState,
 };
 
@@ -147,14 +146,12 @@ const registerWithRegistry = (
  *
  * @param input Complete registration dependencies.
  * @param input.request Closed caller-supplied registration fields.
- * @param input.store Minimal durable identity store.
  * @param input.bootstrap Configured public key, signer, and deferred admission
  *   credential, whose load failure refuses registration before Registry is called.
  * @returns The exact Registry result after any successful binding is durable.
  */
 export const registerDaemonIdentity = (input: {
   readonly request: RegistrationRequest;
-  readonly store: DaemonRegistrationStore;
   readonly bootstrap: DaemonBootstrap;
 }): Effect.Effect<
   RegistryRegisterResult,
@@ -163,7 +160,7 @@ export const registerDaemonIdentity = (input: {
   | DaemonRegistrationPersistenceError
   | DaemonRegistrationRepresentationError
   | DaemonConfigurationError,
-  Registry
+  Registry | SqlClient.SqlClient
 > =>
   Effect.gen(function* () {
     const request = yield* makeRegistryRequest(input);
@@ -185,7 +182,7 @@ export const registerDaemonIdentity = (input: {
       ) {
         return yield* representationFailure();
       }
-      yield* bindCard(input.store, result.agentCard);
+      yield* bindCard(result.agentCard);
     }
     return result;
   }).pipe(Effect.withSpan("registerDaemonIdentity"));
