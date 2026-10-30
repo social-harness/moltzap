@@ -27,12 +27,13 @@ export {
 export { HistoryExportRecord } from "./daemon/inbox/host-traffic-log.js";
 /** Local message refusal and advice expose no private assessment evidence. */
 export {
-  type CheckedGuidance,
   FirewallSendError,
   type GuidanceBodyOrigin,
   type LocalGuidance,
   renderLocalGuidance,
-} from "./firewall/outcome/index.js";
+} from "./host-protocol/advice.js";
+/** Registered advice carries only permitted message references. */
+export type { CheckedGuidance } from "./firewall/check.js";
 /** Send input and the closed error of a refused collective send. */
 export {
   CollectiveError,

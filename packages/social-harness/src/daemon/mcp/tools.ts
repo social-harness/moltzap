@@ -38,7 +38,7 @@ import {
   policyReadSchema,
   policyUpdateResultSchema,
   policyUpdateSchema,
-} from "../../firewall/index.js";
+} from "../../firewall/config.js";
 import {
   requestSchema,
   type ResultSchema,

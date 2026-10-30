@@ -10,7 +10,7 @@ import {
 import { Effect, Option, Schema, SchemaAST } from "effect";
 import { describe, expect } from "vitest";
 import { requestId } from "../../__tests__/collective-operation-fixtures.js";
-import { FirewallPolicyError } from "../../firewall/index.js";
+import { FirewallPolicyError } from "../../firewall/config.js";
 import { decodeHarnessSendErrorData } from "../../host-protocol/operations.js";
 import { AgentName, PrincipalId } from "../../identity/identifiers.js";
 import { OperationId } from "../../identity/registry/contract.js";

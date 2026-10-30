@@ -22,6 +22,7 @@ export type {
   FirewallActivation,
   FirewallAuditEntry,
   FirewallCompletion,
+  FirewallCommit,
   FirewallEvidence,
   FirewallEvidenceSlices,
   FirewallHistoryEntry,
@@ -81,3 +82,10 @@ export function makeFirewallStore(
       ),
   } satisfies FirewallStore);
 }
+
+/** Owner queries decode retained inputs without exposing message content or provider traces. */
+export {
+  decodeFirewallAuditEntry,
+  readDecisions,
+  withoutTraces,
+} from "./firewall.js";

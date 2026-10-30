@@ -1,7 +1,7 @@
 /** @file Installation budgets preserve usable policy and durable state across edits and startup. */
 
 import { scopedLive as it } from "@effect/vitest";
-import { Effect, Array as EffectArray, Queue } from "effect";
+import { Effect, Array as EffectArray, Option, Queue } from "effect";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Configuration regressions compare exact owner-file bytes before and after installation.
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -10,23 +10,24 @@ import type {
   DecisionProvider,
   DecisionRequest,
   DecisionResponse,
-  TextRule,
-} from "../evaluator/index.js";
-import type { FirewallOptions, InstalledFirewall } from "./installation.js";
+} from "./check.js";
+import { makeFirewall, type FirewallOptions, type Firewall } from "./index.js";
+import {
+  loadMessagePolicy,
+  decodeMessagePolicy,
+  type TextRule,
+} from "./config.js";
 import {
   addConversation,
   fixture,
   type Fixture,
   incomingThrough,
-} from "../../__tests__/firewall-runtime-fixtures.js";
+} from "../__tests__/firewall-runtime-fixtures.js";
 import {
   stateDirectory,
   withDaemonStore,
-} from "../../__tests__/store-schema-fixtures.js";
-import { readCredential } from "../../daemon/credentials.js";
-import { firewallInstallation, messagePolicyFirewall } from "./compose.js";
-import { decodeMessagePolicy } from "./document/index.js";
-import { installEditableFirewall } from "./editable.js";
+} from "../__tests__/store-schema-fixtures.js";
+import { readCredential } from "../daemon/credentials.js";
 
 // @agent-code-guard/regression-only: Real SQLite, loaded documents and delivery exercise the installation boundary with deterministic provider judgments.
 
@@ -90,17 +91,25 @@ function answer([id, question]: [
 function options(requests: DecisionRequest[], maximumRequestBytes?: number) {
   return Effect.gen(function* () {
     const policy = yield* decodeMessagePolicy(JSON.stringify(document));
-    return yield* messagePolicyFirewall(
-      {
-        ...policy,
-        textSettings: {
+    const text = yield* Effect.fromNullable(policy.text);
+    return {
+      mode: policy.mode,
+      incoming: [],
+      outgoing: [],
+      facts: policy.facts,
+      settings: policy.settings,
+      codeDigest: "a".repeat(64),
+      text: {
+        fixedRules: text.fixedRules,
+        initialRules: text.initialRules,
+        settings: {
           ...policy.textSettings,
           maximumRequestBytes:
             maximumRequestBytes ?? policy.textSettings.maximumRequestBytes,
         },
+        provider: provider(requests),
       },
-      provider(requests),
-    );
+    } satisfies FirewallOptions;
   });
 }
 
@@ -114,10 +123,7 @@ function exerciseRuntimeEdit(
 ) {
   return Effect.gen(function* () {
     const subject = yield* fixture;
-    const installed = yield* installEditableFirewall(
-      configuration,
-      subject.store,
-    );
+    const installed = yield* makeFirewall(configuration, subject.store);
     yield* Effect.forEach(
       EffectArray.range(0, 5),
       (index) =>
@@ -150,7 +156,7 @@ function exerciseRuntimeEdit(
 
 function expectDelivery(
   subject: Fixture,
-  installed: InstalledFirewall,
+  installed: Firewall,
   requests: readonly DecisionRequest[],
 ) {
   return Effect.gen(function* () {
@@ -181,16 +187,15 @@ function expectReopen(
 ) {
   return withDaemonStore(retained.directory, (store) =>
     Effect.gen(function* () {
-      const rejected = yield* installEditableFirewall(
-        smallerBudget,
-        store,
-      ).pipe(Effect.flip);
+      const rejected = yield* makeFirewall(smallerBudget, store).pipe(
+        Effect.flip,
+      );
       expect(rejected.reason).toBe(buildFailure);
       expect(yield* store.readFirewallPolicy()).toEqual(retained.bytes);
       expect(yield* store.readFirewallActivations({})).toEqual(
         retained.activations,
       );
-      const reopened = yield* installEditableFirewall(configuration, store);
+      const reopened = yield* makeFirewall(configuration, store);
       expect(yield* reopened.policy.read()).toEqual(retained.before);
     }),
   );
@@ -227,17 +232,17 @@ function rejectCatalogFromFile(field: "fixedRules" | "initialRules") {
       },
     });
     writeFileSync(path, contents);
-    const loaded = yield* firewallInstallation(
+    const loaded = yield* loadMessagePolicy(
       { messagePolicyFile: path },
       readCredential,
     );
-    const configuration = loaded.options;
-    if (configuration === undefined) {
-      return yield* Effect.dieMessage("expected loaded policy options");
-    }
+    const configuration = yield* Option.match(loaded, {
+      onNone: () => Effect.dieMessage("expected loaded policy options"),
+      onSome: Effect.succeed,
+    });
     yield* withDaemonStore(stateDirectory(), (store) =>
       Effect.gen(function* () {
-        const error = yield* installEditableFirewall(configuration, store).pipe(
+        const error = yield* makeFirewall(configuration, store).pipe(
           Effect.flip,
         );
         expect(error.reason).toBe(buildFailure);

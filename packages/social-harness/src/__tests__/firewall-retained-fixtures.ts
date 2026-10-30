@@ -3,11 +3,9 @@
 import { Effect, Schema } from "effect";
 import { MessageIntent } from "../communication/records/index.js";
 import { encodeRuntimeValue } from "../communication/store/index.js";
-import {
-  installEditableFirewall,
-  Message,
-  MessageContext,
-} from "../firewall/index.js";
+import { Message, MessageContext } from "../firewall/check.js";
+import { makeFirewall } from "../firewall/index.js";
+import { decodeFirewallAuditEntry } from "../firewall/store/index.js";
 import { WIRE_VERSION } from "../identity/wire-version.js";
 import { digest, identifier, testAgentView } from "./agent-card-fixtures.js";
 import { stateDirectory, withDaemonStore } from "./store-schema-fixtures.js";
@@ -55,7 +53,7 @@ const candidate = Schema.decodeUnknown(MessageIntent)({
 export const makeRetainedCheckFixture = Effect.suspend(() =>
   withDaemonStore(stateDirectory(), (store) =>
     Effect.gen(function* () {
-      const installed = yield* installEditableFirewall(policyOptions, store);
+      const installed = yield* makeFirewall(policyOptions, store);
       const outgoing = yield* candidate;
       const message = new Message({
         id: "candidate",
@@ -71,18 +69,28 @@ export const makeRetainedCheckFixture = Effect.suspend(() =>
         facts: [],
         gaps: [],
       });
-      const input = {
-        configurationDigest: installed.configurationDigest,
-        installation: installed.metadata,
+      const canonicalCandidate = yield* encodeRuntimeValue(outgoing);
+      const checked = yield* installed.check({
+        direction: "outgoing",
+        canonicalCandidate,
         context,
         agents: [testAgentView("alice"), testAgentView("bob")],
         message,
-      };
-      const result = yield* installed.firewall.checkOutgoing(message, context);
+      });
+      yield* store.completeFirewallAttempt(
+        checked.completion,
+        "outgoing",
+        canonicalCandidate,
+      );
+      const entry = yield* Effect.fromNullable(
+        (yield* store.readFirewallDecisions())[0],
+      );
+      const retained = yield* decodeFirewallAuditEntry(entry);
+
       return {
-        input,
-        result,
-        canonicalCandidate: yield* encodeRuntimeValue(outgoing),
+        input: retained.input,
+        result: checked.result,
+        canonicalCandidate,
       };
     }),
   ),
