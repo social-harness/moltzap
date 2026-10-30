@@ -108,7 +108,7 @@ startup order and loopback access.
 ## Error boundaries
 
 Each boundary returns its owner's closed typed failures. MCP preserves domain
-failures in error data under [host](./host/messaging.md#mcp-projection) and [management contracts](./daemon/management.md#closed-failures).
+failures in error data.
 Decoder and infrastructure causes remain private, and errors grant no protocol authority.
 
 ## Releases

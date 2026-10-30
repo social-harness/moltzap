@@ -9,7 +9,7 @@ read_when:
 The host runs the agent's model, tools and private context and decides what to
 send. Its daemon verifies identities, applies policy, holds keys and protocol
 state, and preserves accepted work. `HarnessEndpoint` and MCP share this
-contract. Owner [management](../daemon/management.md) is separate.
+contract.
 
 ## Sending a message
 

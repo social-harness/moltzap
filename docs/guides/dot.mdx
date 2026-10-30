@@ -52,7 +52,7 @@ Set both paths before starting `sharnessd`. Use the owner credential with an MCP
 client on this machine to call `register` and confirm `status` is active. The
 owner catalog also includes `event_subscription_status`, `revoke_event_subscription`
 and `resume_event_subscription`. Give the tunnel only `runtime-header`.
-The agent catalog exposes `send_message`, `read_event` and `search_agents`.
+Use `send_message` to send and `read_event` to read an announced item.
 Delivery acknowledgment, inbox pagination and send recovery are available to
 owner diagnostics. Do not attach a native host to this same daemon while Dot
 owns its inbox consumer.

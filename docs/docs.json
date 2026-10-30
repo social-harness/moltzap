@@ -96,8 +96,7 @@
                   {
                     "group": "Daemon",
                     "pages": [
-                      "reference/spec/daemon/daemon",
-                      "reference/spec/daemon/management"
+                      "reference/spec/daemon/daemon"
                     ]
                   },
                   {

@@ -31,7 +31,8 @@ Local clients and tunneled clients use the same operations and policy.
 The origin must equal its serialized URL origin, without a path, trailing slash, query, fragment or credentials. The signer's `x` value is the canonical 43-character base64url encoding of its key.
 Missing or invalid settings stop startup.
 
-An unregistered daemon can accept registration after it starts, or register automatically before listening. Automatic registration requires all three settings below:
+An unregistered daemon accepts `register` and `status`. Automatic registration
+runs before listening and requires all three settings below:
 
 | Setting | Value |
 | --- | --- |
@@ -39,9 +40,14 @@ An unregistered daemon can accept registration after it starts, or register auto
 | `SHARNESS_REGISTRATION_OPERATION_ID` | The registration retry identity, an `opn_` identifier |
 | `SHARNESS_REGISTRATION_PRINCIPAL_ID` | The principal's `prn_` identifier |
 
+Status reports the saved identity. Registration returns after that identity is
+active. Canceling the request does not undo a registration that succeeds.
+
 ## Firewalls
 
 `SHARNESS_MESSAGE_POLICY_FILE` installs the message firewall before host calls are accepted. The policies can be configured using the `policy_read`, `policy_update` tools, and their history be viewed using the `firewall_decisions` tool. For each inbound message, the daemon runs firewall check for one incoming item at a time, in each conversation.  A withheld item finishes that check so later items can proceed. Other conversations can continue independently. A request that expires before checking retires without a check. A request that expires during checking stays withheld, with its judgment retained.
+
+<a id="persistence"></a>
 
 ## Stored state
 
@@ -60,6 +66,19 @@ failed save keeps the previous rules active. An edit takes effect for later
 checks after its save succeeds. Running checks keep the policy they started
 with. Edits preserve earlier decisions and accepted communication work.
 
+## Conversation history
+
+The store lists conversations and returns the message view retained for the
+agent, preserving recorded visibility across rule edits and restart.
+
+A history read fixes the certified head at its start. Later appends remain
+outside that read. Pages contain at most 50 entries. Continuations retain
+that snapshot, are single-use, and expire with it or on restart. An invalid
+continuation does not silently start a new read.
+
+The daemon verifies returned records and returns no records from an invalid
+page. Reading history neither acknowledges delivery nor authorizes a send.
+
 ## MCP compatibility
 
 Serve MCP `2026-07-28` over Streamable HTTP, also negotiating older revisions
@@ -68,7 +87,7 @@ supported by the server dependency. Validate outputs with JSON Schema 2020-12. `
 ## MCP interface
 
 The daemon exposes one tool catalog for registration, status, messaging,
-identity lookup, history, policy and delivery. One authenticated connection
+history, policy and delivery. One authenticated connection
 can call every operation. Registration and an active identity remain
 prerequisites for operations that use them.
 

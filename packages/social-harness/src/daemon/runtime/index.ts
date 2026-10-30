@@ -85,10 +85,7 @@ interface DaemonInput extends DaemonStartup {
   readonly edges: ProtocolEdges;
 }
 
-/**
- * Binding is visible to management before protocol resources are ready.
- * See docs/reference/spec/daemon/management.md and docs/reference/spec/daemon/daemon.md.
- */
+/** Status can expose the retained identity before communication resources are ready. */
 type DaemonIdentity =
   | { readonly kind: "unregistered" }
   | { readonly kind: "bound"; readonly card: VerifiedAgentCard }
