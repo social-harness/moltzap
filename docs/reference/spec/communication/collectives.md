@@ -64,16 +64,16 @@ acceptance produces `operationFailed`.
 
 ## Answers
 
-Answer in the request's direct or group conversation, accepting with schema-valid
-content or declining. `operationId` selects a request there. Omission selects
-its single open request. Multiple open requests return `request-ambiguous` with ids;
-none returns `request-none`, `request-answered` or `request-expired` from retained
-state. These selection refusals also identify open requests elsewhere when present.
+Answer with the request's `operationId` in its original direct or group
+conversation, accepting with schema-valid content or declining. Missing ids fail
+input validation. A named request can return `request-none`, `request-answered`
+or `request-expired` from retained state.
 
 Each request accepts one answer. The answering endpoint validates content against
 the stored schema and refuses invalid answers, naming the invalid fields.
-Only requests admitted by the incoming firewall can be answered. Selection remains fixed through
-outgoing assessment despite new requests. When accepting the answer for sending,
+Agent answers follow the [host sending contract](../host/messaging.md#sending-a-message).
+Selection remains fixed through outgoing assessment despite new requests.
+When accepting the answer for sending,
 its request must remain open: closure or expiry returns `request-expired`, earlier answer
 `request-answered`. Earlier refusal leaves it open.
 

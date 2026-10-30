@@ -59,8 +59,7 @@ the process and provide no isolation, so service code and dependencies must be t
 ## Representation ownership
 
 Identity, Router and conversation boundaries validate their closed
-representations. Process-private RPC stays outside network contracts and package
-exports. The owning specifications define these guarantees and exact representations:
+representations. The owning specifications define these guarantees and exact representations:
 
 | Owning contract | Guarantees |
 |---|---|

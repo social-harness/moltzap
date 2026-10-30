@@ -354,7 +354,7 @@ provider, model and ownership after edits.
 ## Decision reasons
 
 The owner's feed separates `outcome` (`allow`, `reject`, `hold`) from
-admitted/withheld/stale `disposition`. `checkedRuleIds` lists every rule with a
+admitted/withheld `disposition`. `checkedRuleIds` lists every rule with a
 finding.
 Outgoing checks produce one row per verified recipient captured before
 assessment, including refused first messages without a conversation. Incoming

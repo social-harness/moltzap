@@ -24,12 +24,12 @@ can request or answer a collective:
 ```text
 {"gather": <question>, "deadline": <seconds>, "requestedSchema": <form>}
 {"all_gather": <question>, "deadline": <seconds>, "requestedSchema": <form>}
-{"action": "accept", "content": {...}}
-{"action": "decline"}
+{"action": "accept", "operationId": "<request id>", "content": {...}}
+{"action": "decline", "operationId": "<request id>"}
 ```
 
 [Collectives](../communication/collectives.md) owns deadlines, forms and answers.
-Answers may include `operationId`. Hosts supply destinations separately. JSON
+Answers require the request's `operationId`. Hosts supply destinations separately. JSON
 embedded in prose or without `gather`, `all_gather` or `action` remains text. Missing,
 unexpected or invalid operation fields produce `MessageTextError`, naming the
 fields and sending nothing. MCP takes [structured input](./messaging.md#mcp-projection).
