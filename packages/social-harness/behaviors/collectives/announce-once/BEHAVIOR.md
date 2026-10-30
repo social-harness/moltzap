@@ -3,7 +3,7 @@ name: announce-once
 description: An outcome is announced to the group once; do not announce or confirm it again.
 metadata:
   social-harness:
-    kind: norm
+    applies: outgoing
     guidance: "An outcome is announced to the group once; do not announce or confirm it again."
     feedback:
       text: "This outcome was already announced in this conversation. Do not announce or confirm it again; send only new information."

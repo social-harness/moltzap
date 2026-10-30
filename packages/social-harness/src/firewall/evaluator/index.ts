@@ -1,7 +1,7 @@
 /** @file Personal firewall composition for code and natural-language policies. */
 
 import { Effect } from "effect";
-import { makeChain } from "./chain.js";
+import { makeCapturedChain, makeChain } from "./chain.js";
 import {
   CheckInputError,
   decodeFrozen,
@@ -54,7 +54,7 @@ export type {
 
 /**
  * Runs every installed check in order within the budget. Refusals accumulate;
- * only Client can apply the result to an exact candidate with fresh evidence.
+ * the host applies the result to the exact assessed candidate.
  * Cancellation propagates, so an interrupted check never returns permission.
  *
  * ```mermaid
@@ -80,29 +80,35 @@ export const makeFirewall = Effect.fn("makeFirewall")(function* (options: {
   const outgoing = yield* makeChain(options.outgoing, settings);
   return Object.freeze({
     checkIncoming: (message: Message, context: MessageContext) =>
-      incoming({ direction: "incoming", message }, context).pipe(
-        Effect.flatMap((result) =>
-          result.judgment === "revise"
-            ? Effect.fail(new CheckInputError({ reason: "message" }))
-            : Effect.succeed({ ...result, judgment: result.judgment }),
-        ),
-      ),
+      incoming({ direction: "incoming", message }, context),
     checkOutgoing: (message: Message, context: MessageContext) =>
       outgoing({ direction: "outgoing", message }, context),
   });
 });
 
-/** Owner management values grant no runtime messaging capability. */
-export {
-  editableDocumentSchema,
-  firewallDecisionsRequestSchema,
-  firewallDecisionsSchema,
-  FirewallPolicyError,
-  type FirewallPolicyOperations,
-  MAXIMUM_EDITABLE_RULES,
-  type PolicyAuthority,
-  type PolicyProblem,
-  policyReadSchema,
-  policyUpdateResultSchema,
-  policyUpdateSchema,
-} from "./contract/index.js";
+/** Installation reuses already detached registrations while public construction validates its inputs. */
+export const makeCapturedFirewall = Effect.fn("makeCapturedFirewall")(
+  function* (options: {
+    readonly incoming: readonly MessageMiddleware[];
+    readonly outgoing: readonly MessageMiddleware[];
+    readonly settings: FirewallSettings;
+  }): Effect.fn.Return<Firewall, CheckInputError> {
+    const incoming = yield* makeCapturedChain(
+      options.incoming,
+      options.settings,
+    );
+    const outgoing = yield* makeCapturedChain(
+      options.outgoing,
+      options.settings,
+    );
+    return Object.freeze({
+      checkIncoming: (message: Message, context: MessageContext) =>
+        incoming({ direction: "incoming", message }, context),
+      checkOutgoing: (message: Message, context: MessageContext) =>
+        outgoing({ direction: "outgoing", message }, context),
+    });
+  },
+);
+
+/** Fixed code registration is shared by installation and public construction. */
+export { captureRegistration } from "./chain.js";

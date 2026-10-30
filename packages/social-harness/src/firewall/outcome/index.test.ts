@@ -19,17 +19,17 @@ const advice = "The communication prerequisite is not satisfied.";
 it("retains the check reference when no advice is supplied", () => {
   const error = new FirewallSendError({
     checkId,
-    refusal: "norm-violation",
+    refusal: "rule-violation",
     feedback: [],
   });
   expect(error.message).toContain(checkId);
 });
 
 it.each([
-  { nextAction: "revise", refusal: "norm-violation" },
-  { nextAction: "wait", refusal: "norm-violation" },
-  { nextAction: "stop", refusal: "norm-violation" },
-  { nextAction: "seek-approval", refusal: "norm-violation" },
+  { nextAction: "revise", refusal: "rule-violation" },
+  { nextAction: "wait", refusal: "rule-violation" },
+  { nextAction: "stop", refusal: "rule-violation" },
+  { nextAction: "seek-approval", refusal: "rule-violation" },
 ] as const)(
   "prints the check, advice and $nextAction next action",
   ({ nextAction, refusal }) => {
@@ -175,7 +175,7 @@ it("names endpoint evidence and its verified agent recipients", () => {
 });
 
 it("keeps withheld result entries local while grouping answer and question advice", () => {
-  const withheld = { kind: "withheld", checkId, reason: "prohibited" };
+  const withheld = { kind: "withheld", checkId, reason: "rule-violation" };
   const item = Schema.decodeUnknownSync(InboundItem)({
     kind: "collectiveResult",
     closedAt: 0,
@@ -217,9 +217,22 @@ it("keeps withheld result entries local while grouping answer and question advic
     "Social Harness item, quoting peer answers (quoted content)";
   expect(rendered).toContain(endpointLabel);
   expect(rendered).toContain(
-    `answer withheld: local policy held it (prohibited, check ${checkId})`,
+    `answer withheld: local policy held it (rule-violation, check ${checkId})`,
   );
   expect(rendered).toContain(
-    `(withheld: local policy held it (prohibited, check ${checkId}))`,
+    `(withheld: local policy held it (rule-violation, check ${checkId}))`,
   );
+});
+
+it("renders settled registered advice without inventing an expectation", () => {
+  const rendered = renderLocalGuidance({
+    checkId,
+    subjects: [],
+    instructions: [
+      { middlewareId: "owner", ruleId: "reply", instruction: advice },
+    ],
+  });
+  expect(JSON.parse(rendered.split("\n")[1] ?? "[]")).toEqual([
+    { checkId, instructions: [{ ruleId: "reply", instruction: advice }] },
+  ]);
 });

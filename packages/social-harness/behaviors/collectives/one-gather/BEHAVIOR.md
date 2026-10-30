@@ -3,7 +3,7 @@ name: one-gather
 description: Ask several members the same question with one gather or all_gather to all of them, not with a plain message or separate direct messages; the group-messaging skill shows how.
 metadata:
   social-harness:
-    kind: norm
+    applies: outgoing
     guidance: "Ask several members the same question with one gather or all_gather to all of them, not with a plain message or separate direct messages; the group-messaging skill shows how."
     feedback:
       text: "Ask everyone this question at once instead of collecting replies by hand: start one gather or all_gather if you are the facilitator, or ask the facilitator to. The group-messaging skill shows the format."

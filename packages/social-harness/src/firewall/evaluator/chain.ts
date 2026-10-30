@@ -13,17 +13,20 @@ import {
   MiddlewareError,
   MiddlewareInput,
   MiddlewareResult,
-  type PolicyFinding,
+  PrivateCheckTrace,
   RuleDescription,
 } from "./contract/index.js";
 import { composeDecision } from "./decision.js";
 
 const utf8 = new TextEncoder();
-const registration = Schema.Struct({
+/** Metadata is copied before code or retained audit can observe it. */
+const middlewareRegistrationSchema = Schema.Struct({
   id: Schema.NonEmptyTrimmedString,
   revision: Schema.NonEmptyTrimmedString,
   rules: Schema.NonEmptyArray(RuleDescription),
+  provenance: Schema.optional(PrivateCheckTrace),
 });
+
 const failureReason = Schema.Literal(
   "unavailable",
   "timeout",
@@ -32,30 +35,34 @@ const failureReason = Schema.Literal(
   "defect",
 );
 
-const captureEntry = Effect.fn("Firewall.captureEntry")(function* (
-  entry: MessageMiddleware,
-) {
-  const metadata = yield* decodeFrozen(registration, {
-    id: entry.id,
-    revision: entry.revision,
-    rules: entry.rules,
-  }).pipe(
-    Effect.catchTag("ParseError", () =>
-      Effect.fail(new CheckInputError({ reason: "registration" })),
-    ),
-  );
-  if (
-    new Set(metadata.rules.map((rule) => rule.id)).size !==
-    metadata.rules.length
-  ) {
-    return yield* new CheckInputError({ reason: "registration" });
-  }
-  const check = yield* Effect.try({
-    try: () => entry.check.bind(entry),
-    catch: () => new CheckInputError({ reason: "registration" }),
-  });
-  return Object.freeze({ ...metadata, check });
-});
+/** Capture executable registration without retaining caller-owned metadata. */
+export const captureRegistration = Effect.fn("Firewall.captureEntry")(
+  function* (entry: MessageMiddleware) {
+    const metadata = yield* decodeFrozen(middlewareRegistrationSchema, {
+      id: entry.id,
+      revision: entry.revision,
+      rules: entry.rules,
+      ...(entry.provenance === undefined
+        ? {}
+        : { provenance: entry.provenance }),
+    }).pipe(
+      Effect.catchTag("ParseError", () =>
+        Effect.fail(new CheckInputError({ reason: "registration" })),
+      ),
+    );
+    if (
+      new Set(metadata.rules.map((rule) => rule.id)).size !==
+      metadata.rules.length
+    ) {
+      return yield* new CheckInputError({ reason: "registration" });
+    }
+    const check = yield* Effect.try({
+      try: () => entry.check.bind(entry),
+      catch: () => new CheckInputError({ reason: "registration" }),
+    });
+    return Object.freeze({ ...metadata, check });
+  },
+);
 
 const captureInput = Effect.fn("Firewall.captureInput")(function* (
   event: MessageEvent,
@@ -122,36 +129,16 @@ function validResult(
   }
   return (
     middleware.rules.every((rule) => covered.has(rule.id)) &&
-    result.findings.every((finding) =>
-      validFinding(finding, input.event, rules.get(finding.ruleId)),
-    ) &&
+    result.findings.every((finding) => rules.has(finding.ruleId)) &&
     new Set(result.expectations.map((norm) => norm.ruleId)).size ===
       result.expectations.length &&
     result.expectations.every(
       (norm) =>
-        rules.get(norm.ruleId)?.kind === "norm" &&
+        rules.has(norm.ruleId) &&
         new Set(norm.subjects).size === norm.subjects.length &&
         norm.subjects.every((subject) => subjects.has(subject)),
     )
   );
-}
-
-/** Only a norm may pass uncertain; any other unsettled rule must hold. */
-function validFinding(
-  finding: PolicyFinding,
-  event: MessageEvent,
-  rule?: RuleDescription,
-): boolean {
-  if (rule === undefined) {
-    return false;
-  }
-  if ("choice" in finding) {
-    return rule.kind === "norm";
-  }
-  if (finding.outcome === "revise") {
-    return event.direction === "outgoing" && rule.kind === "norm";
-  }
-  return true;
 }
 
 const invokeMiddleware = Effect.fn("Firewall.invokeMiddleware")(function* (
@@ -264,6 +251,22 @@ const checkMessage = Effect.fn("Firewall.check")(function* (
   return composeDecision(captured.context, middleware, checks);
 });
 
+/** Captured chains retain fixed executable registrations across policy activations. */
+export const makeCapturedChain = Effect.fn("Firewall.makeCapturedChain")(
+  function* (
+    middleware: readonly MessageMiddleware[],
+    settings: FirewallSettings,
+  ) {
+    if (
+      new Set(middleware.map((entry) => entry.id)).size !== middleware.length
+    ) {
+      return yield* new CheckInputError({ reason: "registration" });
+    }
+    return (event: MessageEvent, context: MessageContext) =>
+      checkMessage(event, context, middleware, settings);
+  },
+);
+
 /** Captures one direction's ordered checks without exposing mutable registration. */
 export const makeChain = Effect.fn("Firewall.makeChain")(function* (
   entries: readonly MessageMiddleware[],
@@ -272,10 +275,8 @@ export const makeChain = Effect.fn("Firewall.makeChain")(function* (
   if (new Set(entries.map((entry) => entry.id)).size !== entries.length) {
     return yield* new CheckInputError({ reason: "registration" });
   }
-  const captured = yield* Effect.forEach(entries, captureEntry, {
+  const captured = yield* Effect.forEach(entries, captureRegistration, {
     concurrency: 1,
   });
-  const middleware = Object.freeze(captured);
-  return (event: MessageEvent, context: MessageContext) =>
-    checkMessage(event, context, middleware, settings);
+  return yield* makeCapturedChain(Object.freeze(captured), settings);
 });

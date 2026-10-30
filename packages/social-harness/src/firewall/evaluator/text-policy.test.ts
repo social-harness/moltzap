@@ -10,7 +10,6 @@ import {
   FastCheck as fc,
   Fiber,
   Schema,
-  TestClock,
 } from "effect";
 import { expect } from "vitest";
 import {
@@ -66,7 +65,7 @@ const context: typeof MessageContext.Encoded = {
 };
 const proposalAcceptance: TextRule = {
   id: "proposal-acceptance",
-  kind: "norm",
+  applies: "both",
   text: "Availability is not acceptance. Everyone must accept the same concrete proposal before it is finalized.",
   guidance: reminder,
   feedback: { text: repair, nextAction: "revise" },
@@ -74,7 +73,7 @@ const proposalAcceptance: TextRule = {
 const rules: readonly TextRule[] = [
   {
     id: "privacy",
-    kind: "safety",
+    applies: "both",
     text: "Do not disclose unrelated private appointments.",
   },
   proposalAcceptance,
@@ -297,7 +296,7 @@ const malformedAnswers: ReadonlyArray<{
   {
     name: "unknown choice",
     choice: "allow-everything",
-    probabilities: { compliant: 1, prohibited: 0, unresolved: 0 },
+    probabilities: { compliant: 1, violation: 0, unresolved: 0 },
   },
   {
     name: "missing option",
@@ -307,22 +306,22 @@ const malformedAnswers: ReadonlyArray<{
   {
     name: "negative probability",
     choice: "compliant",
-    probabilities: { compliant: 1, prohibited: -0.1, unresolved: 0.1 },
+    probabilities: { compliant: 1, violation: -0.1, unresolved: 0.1 },
   },
   {
     name: "wrong sum",
     choice: "compliant",
-    probabilities: { compliant: 0.9, prohibited: 0.9, unresolved: 0.9 },
+    probabilities: { compliant: 0.9, violation: 0.9, unresolved: 0.9 },
   },
   {
     name: "nonmaximal selection",
     choice: "compliant",
-    probabilities: { compliant: 0.1, prohibited: 0.8, unresolved: 0.1 },
+    probabilities: { compliant: 0.1, violation: 0.8, unresolved: 0.1 },
   },
   {
     name: "selection below the maximum by more than the probability tolerance",
     choice: "compliant",
-    probabilities: { compliant: 0.47, prohibited: 0.5, unresolved: 0.03 },
+    probabilities: { compliant: 0.47, violation: 0.5, unresolved: 0.03 },
   },
 ];
 
@@ -331,7 +330,9 @@ it.each(malformedAnswers)(
   ({ choice, probabilities }) =>
     Effect.gen(function* () {
       const result = yield* check(
-        provider({ "safety:privacy:assessment": { choice, probabilities } }),
+        provider({
+          "compliance:privacy:assessment": { choice, probabilities },
+        }),
       );
       expect(result.reason).toBe("check-unavailable");
       expect(result.guidance).toEqual([]);
@@ -358,7 +359,9 @@ it("keeps an invalid answer's usage in the trace", () =>
     const result = yield* check({
       decide: (request) =>
         Effect.succeed({
-          ...responseFor(request, { "safety:privacy:assessment": "unknown" }),
+          ...responseFor(request, {
+            "compliance:privacy:assessment": "unknown",
+          }),
           usage,
         }),
     });
@@ -366,7 +369,9 @@ it("keeps an invalid answer's usage in the trace", () =>
     const { stages } = Schema.decodeUnknownSync(stageFailures)(
       result.checks[0]?.trace?.data,
     );
-    expect(stages.find((entry) => entry.stage === "safety")?.failure).toEqual({
+    expect(
+      stages.find((entry) => entry.stage === "compliance")?.failure,
+    ).toEqual({
       reason: "invalid-response",
       accounting: { provider: "test-decisions", model: "test-model", usage },
     });
@@ -378,12 +383,12 @@ const nearTie = {
   probabilities: { relevant: 0.49, irrelevant: 0.5, unresolved: 0.01 },
 };
 
-it("accepts a near-tie and holds a safety rule whose applicability it leaves uncertain", () =>
+it("accepts a near-tie and admits an unsettled applicability judgment", () =>
   Effect.gen(function* () {
     const result = yield* check(
       provider({ "applicability:privacy:assessment": nearTie }),
     );
-    expect(result.reason).toBe("unresolved-evidence");
+    expect(result.reason).toBe("eligible");
     expect(result.checks[0]?.trace?.data).toContain(
       JSON.stringify(nearTie.probabilities),
     );
@@ -422,41 +427,38 @@ it("admits a group message whose norm applicability is uncertain, advising that 
       choice: "relevant",
       probability: 0.49,
     });
-    expect(requests.map((entry) => entry.stage)).toContain("conformance");
+    expect(requests.map((entry) => entry.stage)).toContain("compliance");
   }));
 
 it.each([
   {
     name: "a restrictive choice",
-    choice: "prohibited",
-    probabilities: { compliant: 0.51, prohibited: 0.5, unresolved: 0 },
+    choice: "violation",
+    probabilities: { compliant: 0.51, violation: 0.5, unresolved: 0 },
   },
   {
     name: "a permissive choice",
     choice: "compliant",
-    probabilities: { compliant: 0.5, prohibited: 0.51, unresolved: 0 },
-  },
-  {
-    name: "a choice with more than two decimal places",
-    choice: "compliant",
-    probabilities: { compliant: 0.4999, prohibited: 0.5001, unresolved: 0 },
+    probabilities: { compliant: 0.5, violation: 0.51, unresolved: 0 },
   },
 ])(
-  "holds a safety rule whose stated choice trails another option within the probability tolerance: $name",
+  "admits a rule whose stated choice trails another option within the probability tolerance: $name",
   ({ choice, probabilities }) =>
     Effect.gen(function* () {
       const result = yield* check(
-        provider({ "safety:privacy:assessment": { choice, probabilities } }),
+        provider({
+          "compliance:privacy:assessment": { choice, probabilities },
+        }),
       );
-      expect(result.reason).toBe("unresolved-evidence");
+      expect(result.reason).toBe("eligible");
     }),
 );
 
-it("admits a norm whose stated conformance trails a violation within the probability tolerance, advising that judgment", () =>
+it("admits a norm whose stated compliance trails a violation within the probability tolerance, advising that judgment", () =>
   Effect.gen(function* () {
     const result = yield* check(
       provider({
-        "conformance:proposal-acceptance:assessment": {
+        "compliance:proposal-acceptance:assessment": {
           choice: "compliant",
           probabilities: { compliant: 0.5, violation: 0.51, unresolved: 0 },
         },
@@ -487,12 +489,12 @@ it("admits a confidently unresolved norm expectation as guidance", () =>
 
 const replyRule: TextRule = {
   id: "reply-once",
-  kind: "norm",
+  applies: "both",
   text: "Reply once to a direct question.",
   guidance: "Reply once.",
 };
 
-it("admits an unsettled expectation as guidance and assesses conformance against the settled ones", () =>
+it("admits an unsettled expectation as guidance and assesses compliance against the settled ones", () =>
   Effect.gen(function* () {
     const requests: DecisionRequest[] = [];
     const result = yield* check(
@@ -514,7 +516,7 @@ it("admits an unsettled expectation as guidance and assesses conformance against
       ),
       { rules: [...rules, replyRule] },
     );
-    const conformance = requests.find((entry) => entry.stage === "conformance");
+    const compliance = requests.find((entry) => entry.stage === "compliance");
 
     expect(result.judgment).toBe("allow");
     expect(result.guidance).toContainEqual({
@@ -531,28 +533,8 @@ it("admits an unsettled expectation as guidance and assesses conformance against
       probability: 0.4,
     });
     expect(
-      Schema.decodeUnknownSync(statedNorms)(conformance?.state).norms,
-    ).toEqual([{ ruleId: "reply-once" }]);
-  }));
-
-it("admits an unsettled conformance answer as guidance", () =>
-  Effect.gen(function* () {
-    const result = yield* check(
-      provider({
-        "conformance:proposal-acceptance:assessment": {
-          choice: "violation",
-          probabilities: { compliant: 0.3, violation: 0.4, unresolved: 0.3 },
-        },
-      }),
-    );
-
-    expect(result.judgment).toBe("allow");
-    expect(result.guidance).toContainEqual({
-      middlewareId: "owner",
-      ruleId: "proposal-acceptance",
-      uncertain: { choice: "violation", probability: 0.4 },
-      instruction: reminder,
-    });
+      Schema.decodeUnknownSync(statedNorms)(compliance?.state).norms,
+    ).toEqual([{ ruleId: "privacy" }, { ruleId: "reply-once" }]);
   }));
 
 it("holds a failed expectations decision as check-unavailable", () =>
@@ -569,7 +551,7 @@ it("holds a failed expectations decision as check-unavailable", () =>
     });
 
     expect(result.reason).toBe("check-unavailable");
-    expect(requests.some((entry) => entry.stage === "conformance")).toBe(false);
+    expect(requests.some((entry) => entry.stage === "compliance")).toBe(false);
   }));
 
 it("captures evidence before asynchronous inference", () =>
@@ -594,74 +576,44 @@ it("captures evidence before asynchronous inference", () =>
     message.text = "Replacement after capture";
     yield* Deferred.succeed(release, undefined);
     yield* Fiber.join(running);
-    expect(requests.find((entry) => entry.stage === "safety")?.state).toContain(
-      draft.text,
-    );
+    expect(
+      requests.find((entry) => entry.stage === "compliance")?.state,
+    ).toContain(draft.text);
   }));
 
 it("returns norm repair with only registered feedback", () =>
   Effect.gen(function* () {
     const result = yield* check(
       provider({
-        "conformance:proposal-acceptance:assessment": "violation",
+        "compliance:proposal-acceptance:assessment": "violation",
       }),
     );
-    expect(result.judgment).toBe("revise");
+    expect(result.judgment).toBe("reject");
     expect(result.feedback).toEqual([{ nextAction: "revise", text: repair }]);
-    expect(result.guidance).toEqual([]);
+    expect(result.guidance).toContainEqual({
+      middlewareId: "owner",
+      ruleId: proposalAcceptance.id,
+      instruction: reminder,
+    });
   }));
 
-it.each(["failure", "defect", "timeout"])(
-  "retains a prohibition through a later provider %s",
-  (fault) =>
-    Effect.gen(function* () {
-      const requests: DecisionRequest[] = [];
-      const started = yield* Deferred.make<undefined>();
-      const decisions: DecisionProvider = {
-        decide: (request) =>
-          Effect.gen(function* () {
-            requests.push(request);
-            if (request.stage === "conformance") {
-              if (fault === "failure") {
-                return yield* new DecisionProviderError({
-                  reason: "http",
-                  status: 503,
-                });
-              }
-              if (fault === "defect") {
-                return yield* Effect.die(privateEvidence);
-              }
-              yield* Deferred.succeed(started, undefined);
-              return yield* Effect.never;
-            }
-            return responseFor(request, {
-              "safety:privacy:assessment": "prohibited",
-            });
-          }),
-      };
-      const running = yield* check(decisions).pipe(Effect.fork);
-      if (fault === "timeout") {
-        yield* Deferred.await(started);
-        yield* TestClock.adjust(settings.timeoutMilliseconds);
-      }
-      const result = yield* Fiber.join(running);
-      expect(result.judgment).toBe("block");
-      expect(result.checks[0]?.findings).toContainEqual({
-        ruleId: "proposal-acceptance",
-        outcome: "hold",
-        reason: "check-unavailable",
-      });
-      expect(requests.some((entry) => entry.stage === "conformance")).toBe(
-        true,
-      );
-      expect(
-        JSON.stringify({
-          feedback: result.feedback,
-          guidance: result.guidance,
-        }),
-      ).not.toContain(privateEvidence);
-    }),
-);
+it("retains a settled violation beside another rule's valid uncertainty", () =>
+  Effect.gen(function* () {
+    const result = yield* check(
+      provider({
+        "compliance:privacy:assessment": "violation",
+        "compliance:proposal-acceptance:assessment": "unresolved",
+      }),
+    );
+    expect(result.reason).toBe("rule-violation");
+    expect(result.checks[0]?.findings).toContainEqual({
+      ruleId: "privacy",
+      outcome: "violation",
+    });
+    expect(
+      JSON.stringify({ feedback: result.feedback, guidance: result.guidance }),
+    ).not.toContain(privateEvidence);
+  }));
 
 it.each([
   { name: "plain", cancellation: Effect.interrupt },
@@ -707,27 +659,27 @@ it("does not prune a safety rule labeled irrelevant", () =>
     const result = yield* check(
       provider({
         "applicability:privacy:assessment": "irrelevant",
-        "safety:privacy:assessment": "prohibited",
+        "compliance:privacy:assessment": "violation",
       }),
     );
-    expect(result.judgment).toBe("block");
+    expect(result.judgment).toBe("reject");
   }));
 
 it.each([
   {
     name: "rounded",
-    probabilities: { compliant: 0.71, prohibited: 0.2, unresolved: 0.1 },
+    probabilities: { compliant: 0.71, violation: 0.2, unresolved: 0.1 },
   },
   {
     name: "unrounded",
-    probabilities: { compliant: 0.7125, prohibited: 0.1875, unresolved: 0.1 },
+    probabilities: { compliant: 0.7125, violation: 0.1875, unresolved: 0.1 },
   },
 ])(
   "preserves $name distributions and routes by selected probability",
   ({ probabilities }) =>
     Effect.gen(function* () {
       const decisions = provider({
-        "safety:privacy:assessment": {
+        "compliance:privacy:assessment": {
           choice: "compliant",
           probabilities,
         },
@@ -740,7 +692,7 @@ it.each([
       expect(allowed.checks[0]?.trace?.data).toContain(
         JSON.stringify(probabilities),
       );
-      expect(held.reason).toBe("unresolved-evidence");
+      expect(held.reason).toBe("eligible");
     }),
 );
 
@@ -802,7 +754,7 @@ it("projects incoming advice using only admitted visible subjects", () =>
         instruction: reminder,
       },
     ]);
-    expect(requests.some((entry) => entry.stage === "conformance")).toBe(false);
+    expect(requests.some((entry) => entry.stage === "compliance")).toBe(true);
     expect(JSON.stringify(result.guidance)).not.toContain(privateEvidence);
   }));
 
@@ -844,13 +796,71 @@ it("holds a model-selected private subject instead of projecting it", () =>
     expect(result.guidance).toEqual([]);
   }));
 
+it("routes each text rule without consulting the provider for the opposite direction", () =>
+  Effect.gen(function* () {
+    const requests: DecisionRequest[] = [];
+    const incomingOnly: TextRule = {
+      id: proposalAcceptance.id,
+      text: proposalAcceptance.text,
+      guidance: reminder,
+      applies: "incoming",
+    };
+    const result = yield* check(provider({}, requests), {
+      rules: [incomingOnly],
+    });
+    expect(result.judgment).toBe("allow");
+    expect(requests).toEqual([]);
+    expect(result.checks[0]?.findings).toEqual([
+      { ruleId: incomingOnly.id, outcome: "not-applicable" },
+    ]);
+  }));
+
+it("checks incoming peer content without imposing local response expectations", () =>
+  Effect.gen(function* () {
+    const requests: DecisionRequest[] = [];
+    const message = {
+      ...draft,
+      sender: "participant-agent",
+      recipients: [context.agentId],
+    };
+    const result = yield* check(
+      provider(
+        { "expectations:proposal-acceptance:assessment": "required" },
+        requests,
+      ),
+      { incoming: true, message },
+    );
+    const compliance = requests.find(
+      (request) => request.stage === "compliance",
+    );
+    expect(
+      Schema.decodeUnknownSync(statedNorms)(compliance?.state).norms,
+    ).toEqual([]);
+    expect(result.judgment).toBe("allow");
+    expect(result.guidance).toContainEqual({
+      middlewareId: "owner",
+      ruleId: proposalAcceptance.id,
+      expectation: "required",
+      subjects: ["availability", draft.id],
+      instruction: reminder,
+    });
+  }));
+
 it("submits a complete request at its UTF-8 byte limit and holds one byte below it", () =>
   Effect.gen(function* () {
     const captured: DecisionRequest[] = [];
     const options = {
       context: { ...context, history: [], facts: [] },
       message: { ...draft, text: "Tuesday works. 🗓️" },
-      rules: rules.filter((rule) => rule.kind === "safety"),
+      rules: rules
+        .filter((rule) => rule.id === "privacy")
+        .map(
+          (rule): TextRule => ({
+            id: rule.id,
+            text: rule.text,
+            applies: "outgoing",
+          }),
+        ),
     };
     yield* check(provider({}, captured), {
       ...options,
@@ -880,7 +890,7 @@ const accumulatedNorms: readonly TextRule[] = EffectArray.makeBy(
   8,
   (index) => ({
     id: `norm-${index}`,
-    kind: "norm",
+    applies: "both",
     text: `Address open request number ${index} before changing the subject.`,
   }),
 );
@@ -950,7 +960,7 @@ it("bounds large policy-history products without submitting partial requests", (
     const result = yield* check(provider({}, requests), {
       rules: EffectArray.makeBy(20, (index) => ({
         id: `norm-${index}`,
-        kind: "norm",
+        applies: "both",
         text: "Speak only about open requests.",
       })),
       context: {
@@ -1073,7 +1083,7 @@ it.each([
     documents: [
       {
         id: proposalAcceptance.id,
-        kind: proposalAcceptance.kind,
+        applies: proposalAcceptance.applies,
         text: "x".repeat(60_000),
       },
     ],
@@ -1083,7 +1093,7 @@ it.each([
     content: "mandatory questions",
     documents: EffectArray.makeBy(100, (index) => ({
       id: `norm-${index}`,
-      kind: proposalAcceptance.kind,
+      applies: proposalAcceptance.applies,
       text: "Follow the timetable.",
     })),
     fittingBudget: 200_000,

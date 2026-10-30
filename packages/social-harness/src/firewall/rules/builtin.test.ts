@@ -120,7 +120,7 @@ it.each([
   Effect.gen(function* () {
     const firewall = yield* firewallFor(CONTENT);
     const result = yield* firewall.checkOutgoing(message(text), SENDING);
-    expect(result.judgment).toBe("revise");
+    expect(result.judgment).toBe("reject");
     expect(result.feedback.map((item) => item.nextAction)).toEqual(["revise"]);
   }),
 );
@@ -139,7 +139,7 @@ it.each([
   Effect.gen(function* () {
     const firewall = yield* firewallFor(CONTENT);
     const result = yield* firewall.checkOutgoing(message(text), SENDING);
-    expect(result.judgment).toBe("revise");
+    expect(result.judgment).toBe("reject");
     expect(JSON.stringify(result.feedback)).not.toContain("dummyPlatform");
   }),
 );
@@ -159,7 +159,7 @@ it.prop(
         message(`${prefix}sk-${secret} thanks`),
         SENDING,
       );
-      expect(result.judgment).toBe("revise");
+      expect(result.judgment).toBe("reject");
       expect(JSON.stringify(result.feedback)).not.toContain(secret);
     }),
   { timeout: propertyTimeoutMilliseconds },
@@ -183,7 +183,7 @@ it("checks only what the agent sends", () =>
     const candidate = message('{"key":"sk-proj-dummyCredential1234"}');
     const sent = yield* firewall.checkOutgoing(candidate, SENDING);
     const received = yield* firewall.checkIncoming(candidate, CONTEXT);
-    expect(sent.judgment).toBe("revise");
+    expect(sent.judgment).toBe("reject");
     expect(sent.feedback).toHaveLength(2);
     expect(received.judgment).toBe("allow");
   }));
@@ -208,7 +208,7 @@ it("reads a collective request as Client renders it, so only its credentials are
       SENDING,
     );
     expect(rendered.judgment).toBe("allow");
-    expect(leaking.judgment).toBe("revise");
+    expect(leaking.judgment).toBe("reject");
   }));
 
 it.prop(
@@ -224,7 +224,7 @@ it.prop(
         CONTEXT,
       );
       expect(result.judgment).toBe(
-        agentIds.includes(sender) ? "allow" : "block",
+        agentIds.includes(sender) ? "allow" : "reject",
       );
     }),
   { timeout: propertyTimeoutMilliseconds },
@@ -331,7 +331,7 @@ it.prop(
         { ...message(`${text}, room 2`), recipients: ["alice", "bob"] },
         SENDING,
       );
-      expect(bare.judgment).toBe("revise");
+      expect(bare.judgment).toBe("reject");
       expect(bare.feedback).toEqual([
         expect.objectContaining({ nextAction: "stop" }),
       ]);
@@ -384,125 +384,6 @@ it("sends a direct acknowledgement and a collective answer", () =>
     );
     expect(direct.judgment).toBe("allow");
     expect(answer.judgment).toBe("allow");
-  }));
-
-const NOW = 1_792_000_000_000;
-const OPEN_REQUEST = {
-  ...entry("prior-request", MEMBER, "concierge-id", "Which day?"),
-  operation: {
-    kind: "request",
-    op: "all_gather",
-    operationId: "col_open",
-    deadlineAt: NOW + 60_000,
-  },
-} as const;
-const NEXT_REQUEST = {
-  ...message("Which time?"),
-  operation: {
-    kind: "request",
-    op: "gather",
-    operationId: "col_next",
-    deadlineAt: NOW + 120_000,
-  },
-} as const;
-
-it("refuses a second request while its first is open in the conversation", () =>
-  Effect.gen(function* () {
-    const firewall = yield* firewallFor({
-      outgoing: [{ use: "open-requests" }],
-    });
-    const result = yield* firewall.checkOutgoing(NEXT_REQUEST, {
-      ...SENDING,
-      now: NOW,
-      history: [OPEN_REQUEST],
-    });
-    expect(result.judgment).toBe("revise");
-    expect(result.feedback).toEqual([
-      expect.objectContaining({ nextAction: "wait" }),
-    ]);
-  }));
-
-it.each([
-  { kind: "result", op: "all_gather", operationId: "col_open" },
-  { kind: "failure", operationId: "col_open" },
-] as const)("opens another request after a $kind", (operation) =>
-  Effect.gen(function* () {
-    const firewall = yield* firewallFor({
-      outgoing: [{ use: "open-requests" }],
-    });
-    const result = yield* firewall.checkOutgoing(NEXT_REQUEST, {
-      ...SENDING,
-      now: NOW,
-      history: [
-        OPEN_REQUEST,
-        {
-          ...entry("closed", "concierge-id", MEMBER, "Done"),
-          operation,
-        },
-      ],
-    });
-    expect(result.judgment).toBe("allow");
-  }),
-);
-
-it("opens another request after the deadline", () =>
-  Effect.gen(function* () {
-    const firewall = yield* firewallFor({
-      outgoing: [{ use: "open-requests" }],
-    });
-    const result = yield* firewall.checkOutgoing(NEXT_REQUEST, {
-      ...SENDING,
-      now: OPEN_REQUEST.operation.deadlineAt,
-      history: [OPEN_REQUEST],
-    });
-    expect(result.judgment).toBe("allow");
-  }));
-
-function afterAnswer(op: "gather" | "all_gather") {
-  return firewallFor({ outgoing: [{ use: "open-requests" }] }).pipe(
-    Effect.flatMap((firewall) =>
-      firewall.checkOutgoing(NEXT_REQUEST, {
-        ...SENDING,
-        now: NOW,
-        history: [
-          { ...OPEN_REQUEST, operation: { ...OPEN_REQUEST.operation, op } },
-          {
-            ...entry("answer", "concierge-id", MEMBER, "Tuesday"),
-            operation: { kind: "answer", op, operationId: "col_open" },
-          },
-        ],
-      }),
-    ),
-  );
-}
-
-it("opens another request once its gather is answered", () =>
-  Effect.gen(function* () {
-    expect((yield* afterAnswer("gather")).judgment).toBe("allow");
-  }));
-
-it("keeps an all_gather open after one member answers", () =>
-  Effect.gen(function* () {
-    expect((yield* afterAnswer("all_gather")).judgment).toBe("revise");
-  }));
-
-it("opens a request while a peer's own request is open", () =>
-  Effect.gen(function* () {
-    const firewall = yield* firewallFor({
-      outgoing: [{ use: "open-requests" }],
-    });
-    const result = yield* firewall.checkOutgoing(NEXT_REQUEST, {
-      ...SENDING,
-      now: NOW,
-      history: [
-        {
-          ...OPEN_REQUEST,
-          ...entry("peer-request", "concierge-id", MEMBER, "Which day?"),
-          operation: OPEN_REQUEST.operation,
-        },
-      ],
-    });
-    expect(result.judgment).toBe("allow");
   }));
 
 function received(candidate: typeof Message.Encoded, context: MessageContext) {

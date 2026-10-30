@@ -6,13 +6,13 @@ import { Effect, Array as EffectArray, Queue } from "effect";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect } from "vitest";
-import type { FirewallOptions, InstalledFirewall } from "../admission/index.js";
 import type {
   DecisionProvider,
   DecisionRequest,
   DecisionResponse,
   TextRule,
 } from "../evaluator/index.js";
+import type { FirewallOptions, InstalledFirewall } from "./installation.js";
 import {
   addConversation,
   fixture,
@@ -32,7 +32,7 @@ import { installEditableFirewall } from "./editable.js";
 
 const ownerSafety: TextRule = {
   id: "owner-privacy",
-  kind: "safety",
+  applies: "both",
   text: "Protect the owner's private information.",
 };
 const document = {
@@ -105,7 +105,7 @@ function options(requests: DecisionRequest[], maximumRequestBytes?: number) {
 }
 
 function behavior(index: number) {
-  return `---\nname: shared-${index}\ndescription: The agreed timetable.\nmetadata:\n  social-harness:\n    guidance: Follow the timetable.\n---\n${body}\n`;
+  return `---\nname: shared-${index}\ndescription: The agreed timetable.\nmetadata:\n  social-harness:\n    applies: both\n    guidance: Follow the timetable.\n---\n${body}\n`;
 }
 
 function exerciseRuntimeEdit(
@@ -167,7 +167,7 @@ function expectDelivery(
 
 function hasOwnerSafetyQuestion(request: DecisionRequest): boolean {
   return (
-    request.stage === "safety" &&
+    request.stage === "compliance" &&
     Object.values(request.questions).some(
       (question) => question.ruleId === ownerSafety.id,
     )
@@ -220,7 +220,7 @@ function rejectCatalogFromFile(field: "fixedRules" | "initialRules") {
       text: {
         [field]: EffectArray.makeBy(7, (index) => ({
           id: `shared-${index}`,
-          kind: "norm",
+          applies: "both",
           text: body,
           guidance: "Follow the timetable.",
         })),

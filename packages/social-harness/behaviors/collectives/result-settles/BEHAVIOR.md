@@ -3,7 +3,7 @@ name: result-settles
 description: A collective result settles the question it asked; act on the result rather than asking again.
 metadata:
   social-harness:
-    kind: norm
+    applies: outgoing
     guidance: "A collective result settles the question it asked; act on the result rather than asking again."
     feedback:
       text: "A collective result already answered this question. Act on that result instead of asking again."

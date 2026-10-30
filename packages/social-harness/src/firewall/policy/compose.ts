@@ -2,38 +2,35 @@
 
 import { Effect, Option } from "effect";
 import { createHash } from "node:crypto";
-import type { FirewallOptions } from "../admission/index.js";
 import type {
   IncomingMiddlewareEntry,
   MessagePolicy,
   OutgoingMiddlewareEntry,
 } from "./document/index.js";
+import type { FirewallOptions } from "./installation.js";
 import { packageVersion } from "../../release/index.js";
 import {
   CheckInputError,
   type DecisionProvider,
-  type FirewallPolicyError,
   type MessageMiddleware,
 } from "../evaluator/index.js";
+import type { FirewallPolicyError } from "./contract.js";
 import {
   acknowledgementsPolicy,
   ALLOWED_SENDERS_ID,
   allowedSendersPolicy,
   credentialsPolicy,
-  openRequestsPolicy,
   plainLanguagePolicy,
 } from "../rules/index.js";
 import {
   type CredentialReader,
+  FIREWALL_GUIDE,
   MessagePolicyConfigurationError,
   type PolicyConfiguration,
-} from "./configuration.js";
-import {
-  FIREWALL_GUIDE,
-  loadMessagePolicy,
   policyConfigurationError,
   policyFailureMessage,
-} from "./load.js";
+} from "./configuration.js";
+import { loadMessagePolicy } from "./load.js";
 
 /**
  * The firewall a daemon installs, if any.
@@ -237,7 +234,20 @@ function armDigest(
         registrations: registrations.map(({ id, revision }) =>
           id === ALLOWED_SENDERS_ID ? { id } : { id, revision },
         ),
-        fixedRules: policy.text?.fixedRules ?? null,
+        fixedRules:
+          policy.text?.fixedRules.map(
+            ({ id, text, applies, guidance, feedback, notifySender }) => ({
+              id,
+              text,
+              applies,
+              guidance,
+              notifySender,
+              feedback:
+                feedback === undefined
+                  ? undefined
+                  : { text: feedback.text, nextAction: feedback.nextAction },
+            }),
+          ) ?? null,
         ...(fixedBehaviorDigests.length === 0 ? {} : { fixedBehaviorDigests }),
         decisionProvider: policy.decisionProvider ?? null,
         textSettings: policy.textSettings,
@@ -282,8 +292,6 @@ function outgoing(entry: OutgoingMiddlewareEntry): MessageMiddleware {
       return credentialsPolicy();
     case "plain-language":
       return plainLanguagePolicy(entry);
-    case "open-requests":
-      return openRequestsPolicy();
     case "acknowledgements":
       return acknowledgementsPolicy();
     default:

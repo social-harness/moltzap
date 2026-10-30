@@ -1,18 +1,15 @@
 /** @file Reads retained firewall checks into the owner's decision feed. */
 
 import { Effect, Schema } from "effect";
-import {
-  type EndpointStore,
-  EndpointStoreError,
-  type FirewallAuditEntry,
-} from "../../communication/store/index.js";
+import type { FirewallAuditEntry, FirewallStore } from "../store/index.js";
+import { EndpointStoreError } from "../../communication/store/index.js";
 import { decodeFirewallAuditEntry } from "../admission/index.js";
 import {
   type DecidingRule,
   decidingRules,
-  firewallDecisionsSchema,
   textPolicyFormat,
 } from "../evaluator/index.js";
+import { firewallDecisionsSchema } from "./contract.js";
 
 /**
  * Returns retained decisions without message content, private inputs,
@@ -20,7 +17,7 @@ import {
  * determined the decision.
  */
 export function readDecisions(
-  store: EndpointStore,
+  store: FirewallStore,
   request: { readonly since?: number },
   editableTextId: string,
 ) {

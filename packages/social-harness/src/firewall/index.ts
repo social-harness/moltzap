@@ -8,10 +8,6 @@ export {
   type DecisionRequest,
   type DecisionResponse,
   type Firewall,
-  firewallDecisionsRequestSchema,
-  firewallDecisionsSchema,
-  FirewallPolicyError,
-  type FirewallPolicyOperations,
   FirewallSettings,
   makeFirewall,
   makeTextPolicy,
@@ -21,20 +17,25 @@ export {
   MiddlewareError,
   type MiddlewareInput,
   type MiddlewareResult,
-  policyReadSchema,
-  policyUpdateResultSchema,
-  policyUpdateSchema,
   RuleDescription,
   TextPolicySettings,
   TextRule,
 } from "./evaluator/index.js";
-/** Trusted composition installs policy before admitting application traffic. */
+/** Authenticated policy management shares one owned grammar. */
 export {
-  collectiveAdmission,
-  type FirewallOptions,
-} from "./admission/index.js";
-/** The daemon retains one installed admission capability. */
-export type { InstalledFirewall } from "./admission/index.js";
+  firewallDecisionsRequestSchema,
+  firewallDecisionsSchema,
+  FirewallPolicyError,
+  type FirewallPolicyOperations,
+  policyReadSchema,
+  policyUpdateResultSchema,
+  policyUpdateSchema,
+} from "./policy/contract.js";
+/** Trusted construction and its process lifetime belong to policy. */
+export type {
+  FirewallOptions,
+  InstalledFirewall,
+} from "./policy/installation.js";
 /** Owner edits preserve the daemon resource lifetime. */
 export { installEditableFirewall } from "./policy/index.js";
 /** Policy documents and their composition share one firewall boundary. */

@@ -3,7 +3,7 @@ name: empty-acknowledgement
 description: No response is needed to an acknowledgement that answers nothing you asked and asks for nothing.
 metadata:
   social-harness:
-    kind: norm
+    applies: incoming
     guidance: "No response is needed to an acknowledgement that answers nothing you asked and asks for nothing."
 ---
 

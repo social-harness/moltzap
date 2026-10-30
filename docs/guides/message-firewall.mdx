@@ -44,7 +44,7 @@ Save this as `message-policy.json` beside your daemon's other files:
     "initialRules": [
       {
         "id": "owner.weekday-meetings",
-        "kind": "norm",
+        "applies": "outgoing",
         "text": "Propose meetings only on weekdays.",
         "guidance": "Offer a weekday time instead."
       }
@@ -130,8 +130,8 @@ The file is not a valid policy. The error lists the path of each invalid part:
   a `decisionProvider`, and a text rule id can appear only once across
   `fixedRules` and `initialRules`. Add the provider or rename the repeated id.
 - `text.initialRules` names initial rules the daemon cannot install: a
-  `norm` rule without `guidance`, or more than 256 rules. Give each norm its
-  guidance, or trim the list.
+  rule without a valid `applies` direction, or more than 256 rules. Set its
+  direction to `incoming`, `outgoing` or `both`, or trim the list.
 
 <a id="rules-not-installed" />
 

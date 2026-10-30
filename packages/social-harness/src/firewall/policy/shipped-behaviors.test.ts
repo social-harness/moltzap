@@ -45,7 +45,7 @@ it(
             expect.objectContaining({
               from: "text",
               id: name.split("/")[1],
-              kind: /kind: (\w+)/u.exec(source)?.[1],
+              applies: /applies: (\w+)/u.exec(source)?.[1],
               text,
             }),
           );
@@ -62,7 +62,7 @@ function writePolicy() {
     JSON.stringify({
       format: "org.social-harness/message-policy/v2",
       mode: "guidance",
-      outgoing: [{ use: "open-requests" }, { use: "acknowledgements" }],
+      outgoing: [{ use: "acknowledgements" }],
       incoming: [{ use: "acknowledgements" }],
       decisionProvider: { kind: "unavailable" },
       text: {

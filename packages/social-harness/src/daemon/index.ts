@@ -61,7 +61,6 @@ export {
   type DecisionResponse,
   decodeMessagePolicy,
   type Firewall,
-  FirewallPolicyError,
   type FirewallSettings,
   makeFirewall,
   makeTextPolicy,

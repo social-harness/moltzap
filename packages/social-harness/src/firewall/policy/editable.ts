@@ -1,36 +1,37 @@
 /** @file Serialized policy edits replace immutable chains without replacing daemon resources. */
 
 import { Clock, Effect, Schema, Struct } from "effect";
+import type { FirewallActivation, FirewallStore } from "../store/index.js";
 import {
   decodeRuntimeValue,
   encodeRuntimeValue,
-  type EndpointStore,
-  type FirewallActivation,
 } from "../../communication/store/index.js";
 import { exactStruct } from "../../encoding/exact.js";
 import {
-  buildFirewall,
-  captureRegistration,
-  type FirewallOptions,
-  type InstalledFirewall,
-} from "../admission/index.js";
-import {
   decodeFrozen,
-  editableDocumentSchema,
-  FirewallPolicyError,
-  type FirewallPolicyOperations,
   makeTextPolicy,
-  MAXIMUM_EDITABLE_RULES,
-  type PolicyAuthority,
-  type PolicyProblem,
-  policyReadSchema,
-  policyUpdateSchema,
   PrivateCheckTrace,
   type RuleDescription,
   TextPolicySettings,
   TextRule,
 } from "../evaluator/index.js";
+import {
+  buildFirewall,
+  captureInstallation,
+  type FirewallOptions,
+  type InstalledFirewall,
+} from "./installation.js";
 import { localGuidanceImpersonationRule } from "../rules/index.js";
+import {
+  editableDocumentSchema,
+  FirewallPolicyError,
+  type FirewallPolicyOperations,
+  MAXIMUM_EDITABLE_RULES,
+  type PolicyAuthority,
+  type PolicyProblem,
+  policyReadSchema,
+  policyUpdateSchema,
+} from "./contract.js";
 import { readDecisions } from "./decision-history.js";
 import { decodeBehavior, MAXIMUM_BEHAVIOR_BYTES } from "./document/index.js";
 
@@ -101,25 +102,9 @@ const captureText = Effect.fn("captureTextOptions")(function* (
 const captureOptions = Effect.fn("capturePolicyOptions")(function* (
   options: FirewallOptions,
 ) {
-  const incoming = yield* Effect.forEach(
-    options.incoming,
-    captureRegistration,
-    { concurrency: 1 },
-  );
-  const outgoing = yield* Effect.forEach(
-    options.outgoing,
-    captureRegistration,
-    { concurrency: 1 },
-  );
-  const base = yield* buildFirewall({ ...options, incoming, outgoing });
+  const fixed = yield* captureInstallation(options);
   return {
-    base,
-    fixed: {
-      ...base.configuration,
-      settings: base.metadata.settings,
-      incoming,
-      outgoing,
-    },
+    fixed,
     text: yield* captureText(options.text),
   };
 });
@@ -134,7 +119,11 @@ function buildPolicy(options: CapturedOptions, rules: readonly OwnedRule[]) {
       ...rules.map(Struct.omit("owner")),
     ];
     if (documents.length === 0) {
-      return options.base;
+      return yield* buildFirewall(
+        options.fixed,
+        options.fixed.incoming,
+        options.fixed.outgoing,
+      );
     }
     if (options.text === undefined) {
       return yield* new FirewallPolicyError({ reason: "not-configured" });
@@ -149,11 +138,11 @@ function buildPolicy(options: CapturedOptions, rules: readonly OwnedRule[]) {
         .filter((rule) => rule.owner === "runtime")
         .map((rule) => rule.id),
     });
-    return yield* buildFirewall({
-      ...options.fixed,
-      incoming: [...options.fixed.incoming, text],
-      outgoing: [...options.fixed.outgoing, text],
-    });
+    return yield* buildFirewall(
+      options.fixed,
+      [...options.fixed.incoming, text],
+      [...options.fixed.outgoing, text],
+    );
   }).pipe(
     Effect.catchTag("CheckInputError", () =>
       Effect.fail(new FirewallPolicyError({ reason: "build-failed" })),
@@ -167,7 +156,9 @@ function buildPolicy(options: CapturedOptions, rules: readonly OwnedRule[]) {
 function described(rule: RuleDescription) {
   return {
     id: rule.id,
-    kind: rule.kind,
+    ...(rule.notifySender === undefined
+      ? {}
+      : { notifySender: rule.notifySender }),
     ...(rule.guidance === undefined ? {} : { guidance: rule.guidance }),
     ...(rule.feedback === undefined ? {} : { feedback: rule.feedback }),
   };
@@ -193,6 +184,7 @@ function fixedRules(options: CapturedOptions): FixedRules {
       from: "text" as const,
       ...described(rule),
       text: rule.text,
+      applies: rule.applies,
     })),
   ];
   const first = new Map<string, FixedRules[number]>();
@@ -230,7 +222,7 @@ interface PolicyState {
 
 /** Persist-before-swap is uninterruptible; cancellation cannot split desired and active state. */
 export const installEditableFirewall = Effect.fn("installEditableFirewall")(
-  function* (options: FirewallOptions, store: EndpointStore) {
+  function* (options: FirewallOptions, store: FirewallStore) {
     const captured = yield* captureOptions(options).pipe(
       Effect.catchTags({
         CheckInputError: () =>
@@ -274,20 +266,18 @@ export const installEditableFirewall = Effect.fn("installEditableFirewall")(
           Effect.mapError(persistenceFailure),
         ),
     };
-    return liveInstallation(state, captured.base.permits, policy);
+    return liveInstallation(state, policy);
   },
 );
 
 /** Live handles follow policy edits; captured handles keep one installation throughout a check. */
 function liveInstallation(
   state: PolicyState,
-  permits: Effect.Semaphore,
   policy: FirewallPolicyOperations,
 ): InstalledFirewall {
   const current = (): InstalledFirewall => {
     const snapshot: InstalledFirewall = Object.freeze({
       ...state.active,
-      permits,
       current: () => snapshot,
       policy,
     });
@@ -297,7 +287,7 @@ function liveInstallation(
 }
 
 function persistRules(
-  store: EndpointStore,
+  store: FirewallStore,
   rules: readonly OwnedRule[],
   activation?: FirewallActivation,
 ) {
@@ -326,20 +316,13 @@ function resolvedChange(change: typeof policyUpdateSchema.Type) {
   );
 }
 
-/** A shared norm is kind `norm`, so a peer's text never adds a rule that holds uncertain messages. */
+/** A behavior supplies the same direction and registered advice as an inline rule. */
 function behaviorRule(text: string, path: PolicyEditPath) {
   const bytes = Buffer.from(text, "utf8");
   if (bytes.length > MAXIMUM_BEHAVIOR_BYTES) {
     return Effect.fail(invalidRule("too-large", { path }));
   }
-  return decodeBehavior(bytes, (problem) =>
-    invalidRule(problem, { path }),
-  ).pipe(
-    Effect.filterOrFail(
-      (rule) => rule.kind === "norm",
-      (rule) => invalidRule("not-norm", { path, ruleId: rule.id }),
-    ),
-  );
+  return decodeBehavior(bytes, (problem) => invalidRule(problem, { path }));
 }
 
 /**
@@ -369,16 +352,6 @@ function editedRules(
     );
     if (kept.length + add.length > MAXIMUM_EDITABLE_RULES) {
       return yield* invalidRule("editable-limit");
-    }
-    if (authority === "runtime") {
-      const invalidIndex = add.findIndex((rule) => rule.kind !== "norm");
-      const invalid = add[invalidIndex];
-      if (invalid !== undefined) {
-        return yield* invalidRule("not-norm", {
-          path: ["add", invalidIndex],
-          ruleId: invalid.id,
-        });
-      }
     }
     return yield* decodeFrozen(ownedRulesSchema, [
       ...kept,
@@ -436,7 +409,7 @@ function addable(
 
 function updatePolicy(
   captured: CapturedOptions,
-  store: EndpointStore,
+  store: FirewallStore,
   state: PolicyState,
   {
     request,

@@ -14,9 +14,9 @@ import {
 } from "../../__tests__/store-schema-fixtures.js";
 import { readCredential } from "../../daemon/credentials.js";
 import { Daemon } from "../../daemon/index.js";
-import { FirewallPolicyError } from "../evaluator/index.js";
 import { localGuidanceImpersonationRule } from "../rules/index.js";
 import { policyInstallationError } from "./compose.js";
+import { FirewallPolicyError } from "./contract.js";
 import { MAXIMUM_BEHAVIOR_BYTES } from "./document/index.js";
 import {
   decodeMessagePolicy,
@@ -33,12 +33,12 @@ const FORMAT = "org.social-harness/message-policy/v2";
 const BODY = "Start conversations during working hours.";
 const FIXED = {
   id: "inline-fixed",
-  kind: "safety",
+  applies: "both",
   text: "Protect owner data.",
 } as const;
 const INITIAL = {
   id: "inline-initial",
-  kind: "norm",
+  applies: "both",
   text: "Be brief.",
   guidance: "Keep it brief.",
 } as const;
@@ -49,7 +49,7 @@ license: MIT
 metadata:
   another-consumer: ignored
   social-harness:
-    kind: safety
+    applies: both
     feedback:
       text: Wait until working hours.
       nextAction: wait
@@ -63,6 +63,7 @@ name: ask-first
 description: Ask before starting a conversation.
 metadata:
   social-harness:
+    applies: both
     guidance: Ask first.
 ---
 Ask before starting a conversation.
@@ -72,7 +73,7 @@ name: meeting-booking
 description: How members book a meeting.
 metadata:
   social-harness:
-    kind: norm
+    applies: both
     guidance: Hold a slot before you confirm one.
     feedback:
       text: Hold the slot first.
@@ -156,7 +157,7 @@ it(
       FIXED,
       {
         id: "working-hours",
-        kind: "safety",
+        applies: "both",
         text: BODY,
         feedback: { text: "Wait until working hours.", nextAction: "wait" },
       },
@@ -165,7 +166,7 @@ it(
       INITIAL,
       {
         id: "ask-first",
-        kind: "norm",
+        applies: "both",
         text: "Ask before starting a conversation.",
         guidance: "Ask first.",
       },
@@ -365,7 +366,9 @@ it("attributes an invalid inline seed to initialRules before reading behaviors",
         ...document,
         text: {
           ...document.text,
-          initialRules: [{ id: INITIAL.id, kind: "norm", text: INITIAL.text }],
+          initialRules: [
+            { id: INITIAL.id, applies: "invalid", text: INITIAL.text },
+          ],
           fixedBehaviors: ["absent"],
         },
       }),
@@ -423,8 +426,8 @@ const INVALID_BEHAVIORS = [
     "schema",
     "fixed",
     BEHAVIOR.replace(
-      "    kind: safety",
-      "    private-invalid-behavior: true\n    kind: safety",
+      "    applies: both",
+      "    private-invalid-behavior: true\n    applies: both",
     ),
   ],
   [
@@ -434,16 +437,10 @@ const INVALID_BEHAVIORS = [
     "---\nname: valid\ndescription: Valid\n---\nText",
   ],
   [
-    "invalid kind",
+    "invalid direction",
     "schema",
     "fixed",
-    BEHAVIOR.replace("kind: safety", "kind: private-invalid-behavior"),
-  ],
-  [
-    "norm without guidance",
-    "schema",
-    "fixed",
-    BEHAVIOR.replace("kind: safety", "kind: norm"),
+    BEHAVIOR.replace("applies: both", "applies: private-invalid-behavior"),
   ],
   [
     "invalid feedback",
@@ -806,7 +803,7 @@ it(
         );
         expect((yield* installed.policy.read()).rules).toContainEqual({
           id: "meeting-booking",
-          kind: "norm",
+          applies: "both",
           text: "Each member holds a slot before confirming it.",
           owner: "owner",
           guidance: "Hold a slot before you confirm one.",
@@ -873,17 +870,6 @@ const REFUSED_EDITS = [
   },
   {
     edit: {
-      add: [{ behavior: SHARED.replace("kind: norm", "kind: safety") }],
-    },
-    refusal: {
-      reason: "invalid-rule",
-      problem: "not-norm",
-      ruleId: "meeting-booking",
-      path: ["add", 0],
-    },
-  },
-  {
-    edit: {
       add: [{ behavior: "Each member holds a slot before confirming it." }],
     },
     refusal: {
@@ -896,10 +882,7 @@ const REFUSED_EDITS = [
     edit: {
       add: [
         {
-          behavior: SHARED.replace(
-            "    guidance: Hold a slot before you confirm one.\n",
-            "",
-          ),
+          behavior: SHARED.replace("    applies: both\n", ""),
         },
       ],
     },
@@ -1053,14 +1036,6 @@ function adoptNorm(
       )
       .pipe(Effect.flip);
     expect(refused.reason).toBe("owner-rule");
-    expect(yield* installed.policy.read()).toEqual(own);
-    const safety = yield* installed.policy
-      .update({ add: [{ ...FIXED, id: "runtime-safety" }] }, "runtime")
-      .pipe(Effect.flip);
-    expect(safety).toMatchObject({
-      reason: "invalid-rule",
-      problem: "not-norm",
-    });
     expect(yield* installed.policy.read()).toEqual(own);
     return changed.activeRevision;
   });

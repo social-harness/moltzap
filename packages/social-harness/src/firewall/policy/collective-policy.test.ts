@@ -72,7 +72,7 @@ it.each([false, true])(
         ...context,
         facts: options.facts,
       });
-      expect(result.judgment).toBe(unavailable ? "hold" : "revise");
+      expect(result.judgment).toBe("reject");
       expect(
         result.checks
           .flatMap((check) => check.findings)
@@ -81,8 +81,7 @@ it.each([false, true])(
       const first = yield* Effect.fromNullable(selected.requests[0]);
       const stated = yield* Schema.decodeUnknown(policyState)(first.state);
       expect(stated.policy.rules.map((rule) => rule.id)).toEqual([
-        ...behaviorNames,
-        "local-guidance-impersonation",
+        ...behaviorNames.filter((name) => name !== "empty-acknowledgement"),
       ]);
       expect(first.state).toContain(facilitatorFact.text);
     }),
@@ -124,7 +123,7 @@ it("honors the fixed guidance-impersonation safety assessment", () =>
       },
       context,
     );
-    expect(result.judgment).toBe("block");
+    expect(result.judgment).toBe("reject");
   }));
 
 it("admits a send in guidance mode when text assessment is unavailable", () =>
@@ -186,8 +185,8 @@ function answers(request: DecisionRequest, prohibitedRule?: string) {
     Object.entries(request.questions).map(([id, question]) => {
       const choices = Object.keys(question.criteria);
       const choice =
-        request.stage === "safety" && question.ruleId === prohibitedRule
-          ? "prohibited"
+        request.stage === "compliance" && question.ruleId === prohibitedRule
+          ? "violation"
           : (["relevant", "compliant", "permitted"].find((value) =>
               choices.includes(value),
             ) ?? "unresolved");
@@ -234,7 +233,7 @@ function installation(selected: DecisionProvider) {
         format: "org.social-harness/message-policy/v2",
         mode: "enforcement",
         incoming: [{ use: "acknowledgements" }],
-        outgoing: [{ use: "open-requests" }, { use: "acknowledgements" }],
+        outgoing: [{ use: "acknowledgements" }],
         text: { fixedRules },
         facts: [facilitatorFact],
         decisionProvider: { kind: "jev", model: "fixture" },

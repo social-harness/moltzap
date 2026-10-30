@@ -17,18 +17,17 @@ type Reason = FirewallCheck["reason"];
 
 const judgments: Readonly<Record<Reason, FirewallCheck["judgment"]>> = {
   eligible: "allow",
-  prohibited: "block",
+  "rule-violation": "reject",
   "unresolved-evidence": "hold",
   "check-unavailable": "hold",
-  "norm-violation": "revise",
 };
 
 const defaultFeedback: Readonly<Record<Reason, FirewallCheck["feedback"]>> = {
   eligible: [],
-  prohibited: [
+  "rule-violation": [
     {
-      nextAction: "stop",
-      text: "This message is prohibited by the owner's policy.",
+      nextAction: "revise",
+      text: "Revise the message to satisfy the local message policy before making a new send attempt.",
     },
   ],
   "unresolved-evidence": [
@@ -43,17 +42,10 @@ const defaultFeedback: Readonly<Record<Reason, FirewallCheck["feedback"]>> = {
       text: "A required policy check is unavailable. The message was not admitted. Wait for the check to become available and resend, or revise the message.",
     },
   ],
-  "norm-violation": [
-    {
-      nextAction: "revise",
-      text: "Revise the message to satisfy the owner's communication norms before making a new send attempt.",
-    },
-  ],
 };
 
 /**
- * A pass cannot erase another policy's findings; prohibition, unavailable
- * evidence and norm repair take priority.
+ * Settled violations and operational holds survive later permissive findings.
  */
 export function composeDecision(
   context: MessageContext,
@@ -65,7 +57,10 @@ export function composeDecision(
     judgment: judgments[reason],
     reason,
     feedback: projectFeedback(middleware, checks, reason),
-    guidance: reason === "eligible" ? projectGuidance(middleware, checks) : [],
+    guidance:
+      reason === "eligible" || reason === "rule-violation"
+        ? projectGuidance(middleware, checks)
+        : [],
     checks,
   };
 }
@@ -83,9 +78,7 @@ export function projectFeedback(
         ?.findings.filter((finding) => matchesReason(finding, reason))
         .map((finding) => finding.ruleId) ?? [];
     return entry.rules.flatMap((rule) =>
-      selected.includes(rule.id) &&
-      rule.feedback !== undefined &&
-      validNextAction(reason, rule.feedback.nextAction)
+      selected.includes(rule.id) && rule.feedback !== undefined
         ? [{ ...rule.feedback }]
         : [],
     );
@@ -120,7 +113,7 @@ type Observation = Pick<
 
 /**
  * The rules that produced `reason`, once each in chain order. An admission
- * is decided by the norms assessed as uncertain, which admit with guidance, and
+ * is decided by the rules assessed as uncertain, which admit with guidance, and
  * by no rule otherwise. An unavailable check is decided by every rule it
  * registers; a hold on unresolved evidence by its holding rules and any
  * conflicting expectations. Every other reason is decided by the findings
@@ -157,17 +150,14 @@ function selectReason(
   checks: readonly MiddlewareCheck[],
 ): Reason {
   const findings = checks.flatMap((check) => check.findings);
-  if (findings.some((finding) => finding.outcome === "block")) {
-    return "prohibited";
+  if (findings.some((finding) => finding.outcome === "violation")) {
+    return "rule-violation";
   }
   if (unavailableCheck(checks, findings)) {
     return "check-unavailable";
   }
   if (unresolvedCheck(context, checks, findings)) {
     return "unresolved-evidence";
-  }
-  if (findings.some((finding) => finding.outcome === "revise")) {
-    return "norm-violation";
   }
   return "eligible";
 }
@@ -239,10 +229,7 @@ function registeredAdvice(
   if (reason === "eligible") {
     return rule?.guidance;
   }
-  return rule?.feedback !== undefined &&
-    validNextAction(reason, rule.feedback.nextAction)
-    ? rule.feedback.text
-    : undefined;
+  return rule?.feedback?.text ?? rule?.guidance;
 }
 
 function unavailableCheck(
@@ -320,8 +307,7 @@ function matchesReason(finding: PolicyFinding, reason: Reason): boolean {
   const findingReasons = {
     pass: "eligible",
     "not-applicable": "eligible",
-    block: "prohibited",
-    revise: "norm-violation",
+    violation: "rule-violation",
   } satisfies Record<Exclude<PolicyFinding["outcome"], "hold">, Reason>;
   if (reason === "eligible") {
     return false;
@@ -345,7 +331,8 @@ function projectGuidance(
       (candidate) => candidate.id === check.middlewareId,
     );
     const instructionFor = (ruleId: string) =>
-      entry?.rules.find((rule) => rule.id === ruleId)?.guidance;
+      entry?.rules.find((rule) => rule.id === ruleId)?.guidance ??
+      entry?.rules.find((rule) => rule.id === ruleId)?.feedback?.text;
     const expected = check.expectations.flatMap((norm): NormGuidance[] => {
       const instruction = instructionFor(norm.ruleId);
       return instruction === undefined
@@ -381,17 +368,28 @@ function projectGuidance(
             ];
       },
     );
-    return [...expected, ...uncertain];
+    return [...expected, ...uncertain, ...settledGuidance(check, entry)];
   });
 }
 
-/** A template cannot invite approval of a prohibition or suppress needed repair. */
-function validNextAction(
-  reason: Reason,
-  action: FirewallCheck["feedback"][number]["nextAction"],
-): boolean {
-  return (
-    reason === "norm-violation" ||
-    action === defaultFeedback[reason][0]?.nextAction
-  );
+/** Settled violations retain registered advice when guidance mode admits the candidate. */
+function settledGuidance(check: MiddlewareCheck, entry?: MessageMiddleware) {
+  return check.findings.flatMap((finding) => {
+    if (finding.outcome !== "violation") {
+      return [];
+    }
+    const rule = entry?.rules.find(
+      (registered) => registered.id === finding.ruleId,
+    );
+    const instruction = rule?.guidance ?? rule?.feedback?.text;
+    return instruction === undefined
+      ? []
+      : [
+          {
+            middlewareId: check.middlewareId,
+            ruleId: finding.ruleId,
+            instruction,
+          },
+        ];
+  });
 }

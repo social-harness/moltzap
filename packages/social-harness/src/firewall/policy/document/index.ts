@@ -5,12 +5,12 @@ import { parseDocument } from "yaml";
 import { exactStruct } from "../../../encoding/exact.js";
 import { AgentId } from "../../../identity/identifiers.js";
 import {
-  editableDocumentSchema,
   FirewallSettings,
   MessageContext,
   TextPolicySettings,
   TextRule,
 } from "../../evaluator/index.js";
+import { editableDocumentSchema } from "../contract.js";
 
 /** The `format` every message-policy document names. */
 const messagePolicyFormat = "org.social-harness/message-policy/v2";
@@ -45,7 +45,6 @@ const outgoingMiddleware = Schema.Union(
     toolNamePrefixes: toolNames,
     invocationToolNames: toolNames,
   }),
-  Schema.Struct({ use: Schema.Literal("open-requests") }),
   Schema.Struct({ use: Schema.Literal("acknowledgements") }),
 );
 
@@ -173,9 +172,8 @@ const behaviorFrontmatter = Schema.Struct({
   description: Schema.NonEmptyString,
   metadata: Schema.Struct({
     "social-harness": exactStruct({
-      kind: Schema.optionalWith(TextRule.fields.kind, {
-        default: () => "norm" as const,
-      }),
+      applies: TextRule.fields.applies,
+      notifySender: TextRule.fields.notifySender,
       guidance: TextRule.fields.guidance,
       feedback: TextRule.fields.feedback,
     }),

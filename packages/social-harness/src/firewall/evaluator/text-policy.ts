@@ -160,20 +160,24 @@ function unsettled(
 }
 
 /**
- * Conformance assesses the draft against the expectations the decision
- * provider settled;
- * the unsettled ones reach the agent as guidance instead. Only a failed
- * expectations stage leaves conformance unavailable.
+ * Compliance assesses outgoing drafts against independently settled expectations;
+ * incoming peer candidates are assessed without local recipient expectations.
+ * The unsettled ones reach the agent as guidance instead. Only a failed
+ * expectations stage leaves outgoing compliance unavailable.
  */
-const evaluateConformance = Effect.fn("TextPolicy.conformance")(function* (
+const evaluateCompliance = Effect.fn("TextPolicy.compliance")(function* (
   snapshot: TextCheck,
   expectations: PolicyStageTrace,
   provider: DecisionProvider,
   settings: TextPolicySettings,
 ): Effect.fn.Return<PolicyStageTrace> {
-  if (expectations.status !== "empty" && expectations.status !== "answered") {
+  if (
+    snapshot.event.direction === "outgoing" &&
+    expectations.status !== "empty" &&
+    expectations.status !== "answered"
+  ) {
     return {
-      stage: "conformance",
+      stage: "compliance",
       status: "unavailable",
       dependency: "expectations",
       elapsedMilliseconds: 0,
@@ -181,10 +185,10 @@ const evaluateConformance = Effect.fn("TextPolicy.conformance")(function* (
   }
   return yield* runStage(
     makeTextRequest(
-      "conformance",
+      "compliance",
       snapshot,
       settings.maximumRequestBytes,
-      readNorms(expectations),
+      snapshot.event.direction === "outgoing" ? readNorms(expectations) : [],
     ),
     provider,
     settings,
@@ -192,7 +196,7 @@ const evaluateConformance = Effect.fn("TextPolicy.conformance")(function* (
 });
 
 /**
- * Outgoing expectations use authorized history and facts before conformance
+ * Outgoing expectations use authorized history and facts before compliance
  * assesses the draft against those independently established expectations.
  */
 const checkText = Effect.fn("TextPolicy.check")(function* (
@@ -208,7 +212,7 @@ const checkText = Effect.fn("TextPolicy.check")(function* (
     revision: policy.revision,
   };
   const trace: PolicyStageTrace[] = [];
-  for (const stage of ["applicability", "safety", "expectations"] as const) {
+  for (const stage of ["applicability", "expectations"] as const) {
     trace.push(
       yield* runStage(
         makeTextRequest(stage, check, settings.maximumRequestBytes),
@@ -219,9 +223,9 @@ const checkText = Effect.fn("TextPolicy.check")(function* (
   }
   const expectations = trace.find((entry) => entry.stage === "expectations");
   const norms = expectations === undefined ? [] : readNorms(expectations);
-  if (check.event.direction === "outgoing" && expectations !== undefined) {
+  if (expectations !== undefined) {
     trace.push(
-      yield* evaluateConformance(check, expectations, provider, settings),
+      yield* evaluateCompliance(check, expectations, provider, settings),
     );
   }
   return {
@@ -233,6 +237,45 @@ const checkText = Effect.fn("TextPolicy.check")(function* (
     },
   };
 });
+
+const captureTextDocuments = Effect.fn("TextPolicy.captureDocuments")(
+  function* (options: {
+    readonly id: string;
+    readonly rules: readonly TextRule[];
+    readonly settings: unknown;
+  }) {
+    const settings = yield* decodeFrozen(
+      TextPolicySettings,
+      options.settings,
+    ).pipe(
+      Effect.catchTag("ParseError", () =>
+        Effect.fail(new CheckInputError({ reason: "settings" })),
+      ),
+    );
+    const { id, rules } = yield* decodeFrozen(
+      Schema.Struct({
+        id: Schema.NonEmptyTrimmedString,
+        rules: Schema.NonEmptyArray(TextRule),
+      }),
+      { id: options.id, rules: options.rules },
+    ).pipe(
+      Effect.catchTag("ParseError", () =>
+        Effect.fail(new CheckInputError({ reason: "registration" })),
+      ),
+    );
+    if (new Set(rules.map((rule) => rule.id)).size !== rules.length) {
+      return yield* new CheckInputError({ reason: "registration" });
+    }
+    const descriptions = yield* ruleDescriptions(rules);
+    const revision = textRevision(rules, settings);
+    if (
+      !textPolicyFitsBudget({ rules, revision }, settings.maximumRequestBytes)
+    ) {
+      return yield* new CheckInputError({ reason: "registration" });
+    }
+    return { id, rules, settings, descriptions, revision };
+  },
+);
 
 /**
  * Freezes natural-language documents and provider settings for repeated checks in either
@@ -246,9 +289,8 @@ const checkText = Effect.fn("TextPolicy.check")(function* (
  * ```mermaid
  * flowchart TD
  *   I[Original message and context] --> A[Applicability]
- *   A --> S[Personal trust]
- *   S --> N[Norm expectations from permitted evidence]
- *   N --> C[Outgoing conformance against the settled expectations]
+ *   A --> N[Local response expectations from permitted evidence]
+ *   N --> C[Candidate compliance with actor-correct expectations]
  *   C --> R[Return all findings and private stage trace]
  * ```
  */
@@ -260,35 +302,12 @@ export const makeTextPolicy = Effect.fn("makeTextPolicy")(function* (options: {
   readonly fixedRuleIds?: readonly string[];
   readonly runtimeRuleIds?: readonly string[];
 }): Effect.fn.Return<MessageMiddleware, CheckInputError> {
-  const settings = yield* decodeFrozen(
-    TextPolicySettings,
-    options.settings,
-  ).pipe(
-    Effect.catchTag("ParseError", () =>
-      Effect.fail(new CheckInputError({ reason: "settings" })),
-    ),
-  );
-  const { id, rules } = yield* decodeFrozen(
-    Schema.Struct({
-      id: Schema.NonEmptyTrimmedString,
-      rules: Schema.NonEmptyArray(TextRule),
-    }),
-    { id: options.id, rules: options.rules },
-  ).pipe(
-    Effect.catchTag("ParseError", () =>
-      Effect.fail(new CheckInputError({ reason: "registration" })),
-    ),
-  );
-  if (new Set(rules.map((rule) => rule.id)).size !== rules.length) {
-    return yield* new CheckInputError({ reason: "registration" });
-  }
-  const descriptions = yield* ruleDescriptions(rules);
-  const revision = textRevision(rules, settings);
-  if (
-    !textPolicyFitsBudget({ rules, revision }, settings.maximumRequestBytes)
-  ) {
-    return yield* new CheckInputError({ reason: "registration" });
-  }
+  const { id, rules, settings, descriptions, revision } =
+    yield* captureTextDocuments(options);
+  const directions = Object.freeze({
+    incoming: forDirection(rules, "incoming"),
+    outgoing: forDirection(rules, "outgoing"),
+  });
   const provider = Object.freeze({
     decide: options.provider.decide.bind(options.provider),
   });
@@ -298,9 +317,46 @@ export const makeTextPolicy = Effect.fn("makeTextPolicy")(function* (options: {
     rules: descriptions,
     provenance: textProvenance(rules, settings, options.provider, options),
     check: (input: MiddlewareInput) =>
-      checkText(input, { rules, revision }, provider, settings),
+      checkText(
+        input,
+        { rules: directions[input.event.direction].rules, revision },
+        provider,
+        settings,
+      ).pipe(
+        Effect.map((result) => ({
+          expectations: result.expectations,
+          trace: result.trace,
+          findings: [
+            ...result.findings,
+            ...directions[input.event.direction].skipped,
+          ],
+        })),
+      ),
   });
 });
+
+function forDirection(
+  rules: readonly TextRule[],
+  direction: MiddlewareInput["event"]["direction"],
+) {
+  return Object.freeze({
+    rules: Object.freeze(
+      rules.filter(
+        (rule) => rule.applies === "both" || rule.applies === direction,
+      ),
+    ),
+    skipped: Object.freeze(
+      rules
+        .filter((rule) => rule.applies !== "both" && rule.applies !== direction)
+        .map(
+          (rule): PolicyFinding => ({
+            ruleId: rule.id,
+            outcome: "not-applicable",
+          }),
+        ),
+    ),
+  });
+}
 
 function ruleDescriptions(rules: readonly TextRule[]) {
   return Schema.decodeUnknown(Schema.Array(RuleDescription))(rules).pipe(
@@ -390,19 +446,6 @@ function readNorms(trace: PolicyStageTrace): readonly NormExpectation[] {
   });
 }
 
-function stageIncludes(
-  rule: TextRule,
-  stage: PolicyStageTrace["stage"],
-): boolean {
-  if (stage === "applicability" || rule.kind === stage) {
-    return true;
-  }
-  return (
-    rule.kind === "norm" &&
-    (stage === "expectations" || stage === "conformance")
-  );
-}
-
 function stageFindings(
   trace: PolicyStageTrace,
   rules: readonly TextRule[],
@@ -412,25 +455,19 @@ function stageFindings(
       return [];
     case "failed":
     case "unavailable":
-      return rules
-        .filter((rule) => stageIncludes(rule, trace.stage))
-        .map((rule) => ({
-          ruleId: rule.id,
-          outcome: "hold",
-          reason:
-            trace.status === "failed"
-              ? "check-unavailable"
-              : "unresolved-evidence",
-        }));
+      return rules.map((rule) => ({
+        ruleId: rule.id,
+        outcome: "hold",
+        reason:
+          trace.status === "failed"
+            ? "check-unavailable"
+            : "unresolved-evidence",
+      }));
     case "answered": {
       const uncertain = new Set(trace.uncertainQuestions);
-      const norms = new Set(
-        rules.filter((rule) => rule.kind === "norm").map((rule) => rule.id),
-      );
       return Object.entries(trace.request.questions).map(([id, question]) =>
         questionFinding(
           question,
-          norms.has(question.ruleId),
           uncertain.has(id),
           trace.response.answers[id],
         ),
@@ -442,24 +479,18 @@ function stageFindings(
 }
 
 /**
- * One answered question's finding. An unsettled answer about a safety
- * rule holds. One about a norm never holds: its applicability,
- * expectation or conformance passes with the decision provider's choice and
- * probability, so the norm is still assessed and the agent advised, and an unsettled
- * reference only drops out of its expectation.
+ * Valid unsettled judgments admit with registered advice and preserve the
+ * provider's choice and probability. Unsettled references are omitted from
+ * response expectations without erasing another stage's settled violation.
  */
 function questionFinding(
   question: DecisionRequest["questions"][string],
-  norm: boolean,
   uncertain: boolean,
   answer?: DecisionResponse["answers"][string],
 ): PolicyFinding {
   const { ruleId } = question;
   if (!uncertain) {
     return { ruleId, outcome: answerOutcome(answer?.choice) };
-  }
-  if (!norm) {
-    return { ruleId, outcome: "hold", reason: "unresolved-evidence" };
   }
   if (question.purpose === "subject" || answer === undefined) {
     return { ruleId, outcome: "pass" };
@@ -479,10 +510,8 @@ function answerOutcome(
   switch (choice) {
     case undefined:
       return "pass";
-    case "prohibited":
-      return "block";
     case "violation":
-      return "revise";
+      return "violation";
     default:
       return "pass";
   }

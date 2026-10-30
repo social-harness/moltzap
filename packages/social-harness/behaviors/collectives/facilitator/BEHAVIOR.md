@@ -3,7 +3,7 @@ name: facilitator
 description: Only the conversation's facilitator asks several members a collective question.
 metadata:
   social-harness:
-    kind: norm
+    applies: outgoing
     guidance: Ask the facilitator named in the owner facts to start a gather or all_gather that asks several members.
     feedback:
       text: Only the conversation's facilitator starts a gather or all_gather that asks several members. Send your question or proposal to the facilitator instead, or ask one member what only that member can answer.

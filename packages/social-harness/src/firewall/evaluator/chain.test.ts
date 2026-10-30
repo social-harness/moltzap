@@ -71,11 +71,10 @@ const settings: typeof FirewallSettings.Encoded = {
 const propertyTimeoutMilliseconds = 15_000;
 const rule: typeof RuleDescription.Encoded = {
   id: "rule",
-  kind: "norm",
   guidance: "Respond only to the open request.",
 };
 const pass: PolicyFinding = { ruleId: rule.id, outcome: "pass" };
-const block: PolicyFinding = { ruleId: rule.id, outcome: "block" };
+const block: PolicyFinding = { ruleId: rule.id, outcome: "violation" };
 
 function policy(
   id: string,
@@ -112,7 +111,7 @@ it.prop(
       );
       const result = yield* firewall.checkOutgoing(draft, context);
       expect(result.judgment).toBe(
-        prohibitions.some(Boolean) ? "block" : "allow",
+        prohibitions.some(Boolean) ? "reject" : "allow",
       );
     }),
   { timeout: propertyTimeoutMilliseconds },
@@ -139,7 +138,7 @@ it("keeps captured evidence immutable between middleware", () =>
     const firewall = yield* firewallFor([tampering, policy("later", [block])]);
     const result = yield* firewall.checkIncoming(incoming, context);
     expect(result.checks[0]?.findings).toEqual([pass]);
-    expect(result.judgment).toBe("block");
+    expect(result.judgment).toBe("reject");
   }));
 
 it("isolates returned findings from mutation while later middleware waits", () =>
@@ -167,7 +166,7 @@ it("isolates returned findings from mutation while later middleware waits", () =
     result.findings.splice(0, 1, pass);
     yield* Deferred.succeed(release, undefined);
     const checked = yield* Fiber.join(running);
-    expect(checked.judgment).toBe("block");
+    expect(checked.judgment).toBe("reject");
     expect(checked.checks[0]?.findings).toEqual([block, pass]);
   }));
 
@@ -181,7 +180,7 @@ it("runs distinct incoming and outgoing code chains without a provider", () =>
     const received = yield* firewall.checkIncoming(incoming, context);
     const sent = yield* firewall.checkOutgoing(draft, context);
     expect(received.judgment).toBe("allow");
-    expect(sent.judgment).toBe("block");
+    expect(sent.judgment).toBe("reject");
     expect(received.checks.map((entry) => entry.middlewareId)).toEqual([
       "receive",
     ]);
@@ -220,7 +219,7 @@ it.each(["failure", "defect", "timeout"])(
         yield* TestClock.adjust(settings.middlewareTimeoutMilliseconds);
       }
       const result = yield* Fiber.join(running);
-      expect(result.judgment).toBe("block");
+      expect(result.judgment).toBe("reject");
       expect(result.checks.map((entry) => entry.status)).toEqual([
         "completed",
         "unavailable",
@@ -365,7 +364,7 @@ it("rejects missing or unknown rule findings and unregistered advice", () =>
     }
   }));
 
-it("lets only a norm pass with its judgment unsettled", () =>
+it("admits an unsettled registered judgment with its advice", () =>
   Effect.gen(function* () {
     const unsettled: PolicyFinding = {
       ruleId: rule.id,
@@ -374,27 +373,27 @@ it("lets only a norm pass with its judgment unsettled", () =>
       choice: "none",
       probability: 0.3,
     };
-    const norm = yield* firewallFor([policy("norm", [unsettled])]);
-    const safety = yield* firewallFor([
-      {
-        ...policy("safety", [unsettled]),
-        rules: [{ ...rule, kind: "safety" }],
-      },
-    ]);
-    expect((yield* norm.checkOutgoing(draft, context)).judgment).toBe("allow");
-    expect((yield* safety.checkOutgoing(draft, context)).reason).toBe(
-      "check-unavailable",
-    );
+    const firewall = yield* firewallFor([policy("advice", [unsettled])]);
+    const result = yield* firewall.checkOutgoing(draft, context);
+    expect(result.judgment).toBe("allow");
+    expect(result.guidance).toContainEqual({
+      middlewareId: "advice",
+      ruleId: rule.id,
+      instruction: rule.guidance,
+      uncertain: { choice: "none", probability: 0.3 },
+    });
   }));
 
-it("does not ask an incoming sender to revise", () =>
+it("rejects incoming violations with registered local advice", () =>
   Effect.gen(function* () {
-    const repair = yield* firewallFor([
-      policy("repair", [{ ruleId: rule.id, outcome: "revise" }]),
-    ]);
-    expect((yield* repair.checkIncoming(incoming, context)).reason).toBe(
-      "check-unavailable",
-    );
+    const firewall = yield* firewallFor([policy("rule", [block])]);
+    const result = yield* firewall.checkIncoming(incoming, context);
+    expect(result.reason).toBe("rule-violation");
+    expect(result.guidance).toContainEqual({
+      middlewareId: "rule",
+      ruleId: rule.id,
+      instruction: rule.guidance,
+    });
   }));
 
 it("holds opposing expectations about the same subject", () =>
@@ -441,16 +440,16 @@ it("projects seek-approval as norm feedback", () =>
     };
     const firewall = yield* firewallFor([
       {
-        ...policy("owner-consent", [{ ruleId: rule.id, outcome: "revise" }]),
+        ...policy("owner-consent", [{ ruleId: rule.id, outcome: "violation" }]),
         rules: [{ ...rule, feedback }],
       },
     ]);
     const result = yield* firewall.checkOutgoing(draft, context);
-    expect(result.judgment).toBe("revise");
+    expect(result.judgment).toBe("reject");
     expect(result.feedback).toEqual([feedback]);
   }));
 
-it("uses stop feedback for a prohibition with an incompatible template", () =>
+it("preserves a registered next action for a settled violation", () =>
   Effect.gen(function* () {
     const blocked = yield* firewallFor([
       {
@@ -464,8 +463,8 @@ it("uses stop feedback for a prohibition with an incompatible template", () =>
       },
     ]);
     const result = yield* blocked.checkOutgoing(draft, context);
-    expect(result.judgment).toBe("block");
-    expect(result.feedback[0]?.nextAction).toBe("stop");
+    expect(result.judgment).toBe("reject");
+    expect(result.feedback[0]?.nextAction).toBe("seek-approval");
   }));
 
 it("bounds input and results without converting skipped checks into passes", () =>

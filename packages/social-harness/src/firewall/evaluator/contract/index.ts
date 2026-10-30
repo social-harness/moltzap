@@ -2,12 +2,15 @@
 
 import { Cause, Data, Effect, Either, Schema } from "effect";
 import { exactStruct } from "../../../encoding/exact.js";
-import { AgentView } from "../../../identity/cards.js";
+import {
+  firewallReasonSchema,
+  nextActionSchema,
+  registeredGuidanceSchema,
+} from "../../outcome/contract.js";
 
 const identifier = Schema.NonEmptyTrimmedString;
 const visibility = Schema.Literal("runtime", "assessor");
 const probability = Schema.Number.pipe(Schema.between(0, 1));
-const nextAction = Schema.Literal("revise", "wait", "stop", "seek-approval");
 
 const collectingOp = Schema.Literal("gather", "all_gather");
 
@@ -108,12 +111,12 @@ export class RuleDescription extends Schema.Class<RuleDescription>(
   "RuleDescription",
 )({
   id: identifier,
-  kind: Schema.Literal("safety", "norm"),
   guidance: Schema.optional(Schema.NonEmptyString),
+  notifySender: Schema.optional(Schema.Boolean),
   feedback: Schema.optional(
     Schema.Struct({
       text: Schema.NonEmptyString,
-      nextAction,
+      nextAction: nextActionSchema,
     }),
   ),
 }) {}
@@ -122,19 +125,19 @@ export class RuleDescription extends Schema.Class<RuleDescription>(
  * The decision provider interprets the rule as natural-language text.
  * Validation requires nonempty text and imposes no language restriction.
  * Guidance is registered advice for the agent; feedback supplies refusal and
- * repair text. Norms in `initialRules` or `policy_update` require nonempty
- * guidance. Fixed rules and direct `makeTextPolicy` construction do not.
+ * repair text. Direction is explicit for every natural-language rule.
  * See the [editable policy contract](https://docs.moltzap.xyz/reference/spec/firewall/message-policy#editable-text-policy)
  * for installation identifiers, ownership and edit validation.
  */
 export class TextRule extends Schema.Class<TextRule>("TextRule")({
   ...RuleDescription.fields,
   text: Schema.NonEmptyString,
+  applies: Schema.Literal("incoming", "outgoing", "both"),
 }) {}
 
 /**
  * Pass is local to one rule; only the complete firewall may return allow. An
- * uncertain pass is a norm judgment the decision provider could not settle:
+ * uncertain pass is a judgment the decision provider could not settle:
  * it admits, and keeps the provider's choice and probability so the agent is advised and
  * the audit can count it. It precedes plain pass, which would otherwise
  * decode it without those fields.
@@ -149,7 +152,7 @@ const policyFinding = Schema.Union(
   }),
   Schema.Struct({
     ruleId: identifier,
-    outcome: Schema.Literal("pass", "not-applicable", "block", "revise"),
+    outcome: Schema.Literal("pass", "not-applicable", "violation"),
   }),
   Schema.Struct({
     ruleId: identifier,
@@ -266,42 +269,20 @@ export interface NormGuidance extends NormExpectation {
   readonly instruction: string;
 }
 
-/* eslint-disable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- The guidance Schema shares its domain name with the value it decodes. */
-
-/** A rule's registered guidance beside the decision provider's unsettled choice and probability. */
-export const UncertainNormGuidance = Schema.Struct({
-  middlewareId: identifier,
-  ruleId: identifier,
-  uncertain: Schema.Struct({ choice: identifier, probability }),
-  instruction: Schema.NonEmptyString,
-}).annotations({ identifier: "UncertainNormGuidance" });
-
-/** One uncertain norm judgment as composition projects it. */
-export type UncertainNormGuidance = typeof UncertainNormGuidance.Type;
-
-/* eslint-enable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Restore naming after the Schema/type pair. */
+/** One uncertain judgment retains only registered advice and the selected probability. */
+export type UncertainNormGuidance = Extract<
+  FirewallCheck["guidance"][number],
+  { readonly uncertain: unknown }
+>;
 
 /** Private audit is separate from the only fields intended for a runtime. */
 export const firewallCheckSchema = exactStruct({
-  judgment: Schema.Literal("allow", "block", "hold", "revise"),
-  reason: Schema.Literal(
-    "eligible",
-    "prohibited",
-    "unresolved-evidence",
-    "check-unavailable",
-    "norm-violation",
+  judgment: Schema.Literal("allow", "reject", "hold"),
+  reason: firewallReasonSchema,
+  feedback: Schema.Array(
+    Schema.Struct({ nextAction: nextActionSchema, text: Schema.String }),
   ),
-  feedback: Schema.Array(Schema.Struct({ nextAction, text: Schema.String })),
-  guidance: Schema.Array(
-    Schema.Union(
-      Schema.Struct({
-        ...NormExpectation.fields,
-        middlewareId: Schema.String,
-        instruction: Schema.String,
-      }),
-      UncertainNormGuidance,
-    ),
-  ),
+  guidance: Schema.Array(registeredGuidanceSchema),
   checks: Schema.Array(
     Schema.Struct({
       ...MiddlewareObservation.fields,
@@ -335,20 +316,12 @@ export const firewallCheckSchema = exactStruct({
 /** The complete check keeps private traces distinct from runtime advice. */
 export type FirewallCheck = typeof firewallCheckSchema.Type;
 
-/**
- * Incoming checks can guide the recipient but cannot ask the sender to revise.
- * @inline
- */
-interface IncomingCheck extends FirewallCheck {
-  readonly judgment: "allow" | "block" | "hold";
-}
-
-/** Checking returns data; Client separately owns fresh, atomic send/delivery admission. */
+/** Checking returns data; the host separately owns enforcement and communication acceptance. */
 export interface Firewall {
   readonly checkIncoming: (
     message: Message,
     context: MessageContext,
-  ) => Effect.Effect<IncomingCheck, CheckInputError>;
+  ) => Effect.Effect<FirewallCheck, CheckInputError>;
   readonly checkOutgoing: (
     draft: Message,
     context: MessageContext,
@@ -368,11 +341,7 @@ export class TextPolicySettings extends Schema.Class<TextPolicySettings>(
  * Question semantics have a recorded edition independent of rule wording.
  * @inline
  */
-export type PolicyStage =
-  | "applicability"
-  | "safety"
-  | "expectations"
-  | "conformance";
+export type PolicyStage = "applicability" | "expectations" | "compliance";
 
 /** Provider input contains explicit questions and state, never execution authority. */
 export interface DecisionRequest {
@@ -526,299 +495,4 @@ function freezeData(value: unknown): void {
     freezeData(child);
   }
   Object.freeze(value);
-}
-
-const ruleFields = {
-  id: TextRule.fields.id,
-  text: TextRule.fields.text,
-  feedback: TextRule.fields.feedback,
-};
-
-/** Norm instructions must have a registered template before owners can activate them. */
-const editableNormSchema = exactStruct({
-  ...ruleFields,
-  kind: Schema.Literal("norm"),
-  guidance: Schema.NonEmptyString,
-});
-const editableSafetySchema = exactStruct({
-  ...ruleFields,
-  kind: Schema.Literal("safety"),
-  guidance: TextRule.fields.guidance,
-});
-const editableRuleSchema = Schema.Union(
-  editableNormSchema,
-  editableSafetySchema,
-);
-
-const policyAuthority = Schema.Literal("owner", "runtime");
-
-/** The daemon derives edit authority from its authenticated local caller. */
-export type PolicyAuthority = typeof policyAuthority.Type;
-
-/** Ownership is assigned by the daemon and never accepted in an edit request. */
-const ownedRuleSchema = Schema.Union(
-  exactStruct({ ...editableNormSchema.fields, owner: policyAuthority }),
-  exactStruct({
-    ...editableSafetySchema.fields,
-    owner: Schema.Literal("owner"),
-  }),
-);
-
-/** The most editable natural-language rules one daemon holds, across seeding, persistence and updates. */
-export const MAXIMUM_EDITABLE_RULES = 256;
-
-/** The complete editable document. */
-export const editableDocumentSchema = Schema.Array(editableRuleSchema).pipe(
-  Schema.maxItems(MAXIMUM_EDITABLE_RULES),
-);
-
-/**
- * A shared norm's `BEHAVIOR.md` exactly as proposed, mapped to its rule as a
- * policy file's behaviors are: docs/reference/spec/firewall/message-policy.md#behaviors.
- */
-const behaviorAddition = exactStruct({ behavior: Schema.String });
-
-/** Removing and adding the same editable id replaces it in one activation. */
-export const policyUpdateSchema = exactStruct({
-  add: Schema.optional(
-    Schema.Array(Schema.Union(editableRuleSchema, behaviorAddition)).pipe(
-      Schema.maxItems(MAXIMUM_EDITABLE_RULES),
-    ),
-  ),
-  remove: Schema.optional(
-    Schema.Array(TextRule.fields.id).pipe(
-      Schema.maxItems(MAXIMUM_EDITABLE_RULES),
-    ),
-  ),
-});
-
-const describedFields = {
-  id: RuleDescription.fields.id,
-  kind: RuleDescription.fields.kind,
-  guidance: RuleDescription.fields.guidance,
-  feedback: RuleDescription.fields.feedback,
-};
-
-/**
- * A fixed rule as trusted composition installed it: natural-language text, or the
- * description a code middleware declares for a rule it checks in code.
- */
-const fixedRuleSchema = Schema.Union(
-  exactStruct({
-    from: Schema.Literal("code"),
-    middleware: Schema.NonEmptyString,
-    ...describedFields,
-  }),
-  exactStruct({
-    from: Schema.Literal("text"),
-    ...describedFields,
-    text: TextRule.fields.text,
-  }),
-);
-
-/** The digest identifies the entire active installation, including fixed policy. */
-export const policyReadSchema = exactStruct({
-  rules: Schema.Array(ownedRuleSchema),
-  fixedRules: Schema.Array(fixedRuleSchema),
-  activeRevision: Schema.NonEmptyString,
-});
-
-/** Activation acknowledges future checks only; retained dispositions are unchanged. */
-export const policyUpdateResultSchema = exactStruct({
-  activeRevision: Schema.NonEmptyString,
-});
-
-/** Inclusive Unix milliseconds permit polling across checks completed out of start order. */
-export const firewallDecisionsRequestSchema = exactStruct({
-  since: Schema.optional(Schema.NonNegativeInt),
-});
-
-/** Activation metadata contains rule ids only, never their text or templates. */
-const firewallActivationSchema = exactStruct({
-  time: Schema.NonNegativeInt,
-  activeRevision: Schema.NonEmptyString,
-  addedRuleIds: Schema.Array(Schema.NonEmptyString),
-  removedRuleIds: Schema.Array(Schema.NonEmptyString),
-});
-
-/**
- * How a decision's outcome came about. `judgment` is a settled natural-language
- * judgment and `uncertain` an unsettled one, admitted or held with guidance.
- * `unavailable` is a check that could not run: the decision provider failed
- * or was unreachable, or a middleware failed or timed out. `code` is a code
- * middleware's finding. `endpoint` is a hold Client makes itself without a
- * deciding rule, and `default` an admission no rule qualified.
- */
-const decisionCause = Schema.Literal(
-  "judgment",
-  "uncertain",
-  "unavailable",
-  "code",
-  "endpoint",
-  "default",
-);
-
-/**
- * One row per peer contains no message content or provider traces. The only
- * text is `decidedBy[].advice`, the deciding rule's own registered feedback,
- * or its guidance for an admission. `decidedBy[].from` says where the rule is
- * defined, as `policy_read` lists it: a code middleware, a fixed natural-language rule,
- * or an owner-editable natural-language rule. `checkedRuleIds` lists every rule with a
- * finding in the completed chain.
- */
-export const firewallDecisionsSchema = exactStruct({
-  activations: Schema.Array(firewallActivationSchema),
-  decisions: Schema.Array(
-    exactStruct({
-      checkId: Schema.NonEmptyString,
-      time: Schema.NonNegativeInt,
-      direction: Schema.Literal("incoming", "outgoing"),
-      peer: Schema.NullOr(AgentView),
-      outcome: Schema.Literal("allow", "block", "hold", "revise"),
-      disposition: Schema.Literal("stale", "admitted", "withheld"),
-      cause: decisionCause,
-      decidedBy: Schema.Array(
-        exactStruct({
-          ruleId: Schema.NonEmptyString,
-          from: Schema.Literal("code", "fixed", "editable"),
-          owner: Schema.optional(policyAuthority),
-          advice: Schema.optional(Schema.NonEmptyString),
-        }),
-      ),
-      checkedRuleIds: Schema.Array(Schema.NonEmptyString),
-      activeRevision: Schema.NonEmptyString,
-    }),
-  ),
-});
-
-/**
- * What made an edit's rule invalid. A `BEHAVIOR.md` addition fails as
- * `frontmatter`, `schema`, `too-large` or `not-norm`; an edit as
- * `duplicate-id`, `unknown-id` or `editable-limit`.
- * @inline
- */
-export type PolicyProblem =
-  | "duplicate-id"
-  | "unknown-id"
-  | "editable-limit"
-  | "frontmatter"
-  | "schema"
-  | "too-large"
-  | "not-norm";
-
-const policyProblemText: Readonly<Record<PolicyProblem, string>> = {
-  "duplicate-id":
-    "its id is already in the policy; remove that rule in the same update to replace it, or use another id",
-  "unknown-id":
-    "no editable rule has this id; policy_read lists the editable rules",
-  "editable-limit": `the update would leave more than ${String(MAXIMUM_EDITABLE_RULES)} editable rules; remove some rules first`,
-  frontmatter:
-    "the BEHAVIOR.md needs valid YAML frontmatter between --- lines (no code fence or other text before it)",
-  schema:
-    "it does not map to an editable rule: a norm needs guidance, and a BEHAVIOR.md needs name, description and metadata.social-harness.guidance, with no metadata.social-harness keys other than kind, guidance and feedback",
-  "too-large": "the BEHAVIOR.md is over 64 KiB",
-  "not-norm": "the BEHAVIOR.md is not kind norm; a shared norm is kind norm",
-};
-
-const policyReasonText: Readonly<
-  Record<FirewallPolicyError["reason"], string>
-> = {
-  "not-configured": "the message policy has no text block",
-  "invalid-rule": "the update is invalid",
-  "fixed-rule":
-    "it is a fixed rule of the owner's policy, which policy_update cannot add, remove or replace",
-  "owner-rule":
-    "it belongs to the owner; runtime policy_update can change only norms the runtime adopted",
-  "build-failed": "the new rules could not be installed",
-  "persistence-failed": "the rules could not be stored",
-};
-
-const editRefusalDocs =
-  "Docs: https://docs.moltzap.xyz/reference/spec/firewall/message-policy#editable-text-policy";
-
-/**
- * A failed edit never replaces the active installation or retained editable
- * document. `ruleId` and `path` name the failing rule when the edit had one:
- * `path` is its place in the update, such as `["add", 0]`. `problem` says why
- * an `invalid-rule` edit failed. The message names all three, and never the
- * text of a rejected `BEHAVIOR.md`.
- */
-export class FirewallPolicyError extends Data.TaggedError(
-  "FirewallPolicyError",
-)<{
-  readonly ruleId?: string;
-  readonly problem?: PolicyProblem;
-  readonly path?: readonly [field: "add" | "remove", index: number];
-  readonly reason:
-    | "not-configured"
-    | "invalid-rule"
-    | "fixed-rule"
-    | "owner-rule"
-    | "build-failed"
-    | "persistence-failed";
-}> {
-  override get message(): string {
-    const subject = editSubject(this.path, this.ruleId);
-    const cause =
-      this.problem === undefined
-        ? policyReasonText[this.reason]
-        : policyProblemText[this.problem];
-    const text = subject === undefined ? cause : `${subject}: ${cause}`;
-    return [
-      "invalid-rule",
-      "fixed-rule",
-      "owner-rule",
-      "build-failed",
-    ].includes(this.reason)
-      ? `${text}. ${editRefusalDocs}`
-      : text;
-  }
-
-  /**
-   * The fields a refusal's error data carries beside its reason.
-   * @returns `ruleId`, `path` and `problem`, each when the refusal has it.
-   */
-  get data(): Readonly<{
-    ruleId?: string;
-    path?: readonly [field: "add" | "remove", index: number];
-    problem?: PolicyProblem;
-  }> {
-    return {
-      ...(this.ruleId === undefined ? {} : { ruleId: this.ruleId }),
-      ...(this.path === undefined ? {} : { path: this.path }),
-      ...(this.problem === undefined ? {} : { problem: this.problem }),
-    };
-  }
-}
-
-/**
- * The failing rule as a refusal names it: its place in the update, then its id.
- * @param path The rule's place in the update, when the refusal has one.
- * @param ruleId The rule's id, when the refusal has one.
- * @returns The subject, or undefined when the refusal names neither.
- */
-function editSubject(
-  path?: FirewallPolicyError["path"],
-  ruleId?: string,
-): string | undefined {
-  const place = path === undefined ? undefined : `${path[0]}[${path[1]}]`;
-  const rule = ruleId === undefined ? undefined : `rule ${ruleId}`;
-  return place !== undefined && rule !== undefined
-    ? `${place} (${rule})`
-    : (place ?? rule);
-}
-
-/** The authenticated authority limits edits without delegating owner read access. */
-export interface FirewallPolicyOperations {
-  readonly read: () => Effect.Effect<
-    typeof policyReadSchema.Type,
-    FirewallPolicyError
-  >;
-  readonly update: (
-    request: typeof policyUpdateSchema.Type,
-    authority: PolicyAuthority,
-  ) => Effect.Effect<typeof policyUpdateResultSchema.Type, FirewallPolicyError>;
-  readonly decisions: (
-    request: typeof firewallDecisionsRequestSchema.Type,
-  ) => Effect.Effect<typeof firewallDecisionsSchema.Type, FirewallPolicyError>;
 }

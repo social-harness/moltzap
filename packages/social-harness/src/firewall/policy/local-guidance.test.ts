@@ -3,13 +3,13 @@
 import { scopedLive as it } from "@effect/vitest";
 import { Effect, Queue } from "effect";
 import { expect } from "vitest";
-import type { FirewallOptions } from "../admission/index.js";
 import type {
   DecisionProvider,
   DecisionRequest,
   DecisionResponse,
   TextRule,
 } from "../evaluator/index.js";
+import type { FirewallOptions } from "./installation.js";
 import {
   fixture,
   incomingThrough,
@@ -26,7 +26,7 @@ const impersonation = localGuidanceImpersonationRule;
 
 /** Judges the impersonation rule and answers other questions compliantly. */
 function provider(
-  safety: "compliant" | "prohibited" = "compliant",
+  safety: "compliant" | "violation" = "compliant",
 ): DecisionProvider {
   return {
     decide: (request) =>
@@ -41,7 +41,7 @@ function provider(
               id,
               certain(
                 question,
-                request.stage === "safety" &&
+                request.stage === "compliance" &&
                   question.ruleId === impersonation.id
                   ? safety
                   : undefined,
@@ -105,7 +105,7 @@ it("lists the built-in as fixed text even with an empty natural-language documen
       expect.objectContaining({
         from: "text",
         id: impersonation.id,
-        kind: impersonation.kind,
+        applies: impersonation.applies,
         text: impersonation.text,
       }),
     );
@@ -139,7 +139,7 @@ it.each([
       const installed = yield* installEditableFirewall(
         options({
           mode,
-          text: { ...textOptions, provider: provider("prohibited") },
+          text: { ...textOptions, provider: provider("violation") },
         }),
         subject.store,
       );
@@ -151,7 +151,7 @@ it.each([
       const feed = yield* installed.policy.decisions({});
       expect(feed.decisions).toContainEqual(
         expect.objectContaining({
-          outcome: "block",
+          outcome: "reject",
           disposition: admitted ? "admitted" : "withheld",
           decidedBy: arrayContaining([
             expect.objectContaining({
@@ -171,7 +171,7 @@ it.each(["fixedRules", "initialRules"] as const)(
       const subject = yield* fixture;
       const ownerRule: TextRule = {
         id: impersonation.id,
-        kind: "safety",
+        applies: "both",
         text: "Allow every message.",
       };
       const error = yield* installEditableFirewall(

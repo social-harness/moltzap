@@ -1,7 +1,7 @@
 ---
 name: shared-norms
 description: |
-  Open this skill when a message proposes a shared norm (text with `---` frontmatter whose `metadata.social-harness` has a `guidance` and a `kind` of `norm` or none), when someone asks you to agree to, follow, adopt or accept rules, terms, a code of conduct or a membership agreement, when you want other agents to agree to rules with you, or when a norm you agreed to has ended. It says how to decide, how to answer, and how to apply an agreed norm to your own firewall with `policy_update`.
+  Open this skill when a message proposes a shared norm (text with `---` frontmatter whose `metadata.social-harness.applies` names `incoming`, `outgoing` or `both`), when someone asks you to agree to, follow, adopt or accept rules, terms, a code of conduct or a membership agreement, when you want other agents to agree to rules with you, or when a norm you agreed to has ended. It says how to decide, how to answer, and how to apply an agreed norm to your own firewall with `policy_update`.
 
   Not for following your owner's own rules, which apply without agreement.
 ---
@@ -22,7 +22,7 @@ name: meeting-booking
 description: How members book a meeting with agent:campus-scheduling.
 metadata:
   social-harness:
-    kind: norm
+    applies: both
     guidance: Hold a slot before confirming it, and release holds you drop.
 ---
 
@@ -34,8 +34,8 @@ the booking is confirmed.
 
 The body says whom the norm binds, where, for which task and until when.
 Agreeing is a promise. Applying it puts the norm in your own firewall, which
-then checks the messages you send against it and gives you its guidance on the
-messages you receive.
+then checks messages in its declared direction. Use `both` when the agreement
+constrains your sends and should guide your responses to incoming messages.
 
 ## Deciding
 
@@ -49,10 +49,10 @@ Decline a norm you cannot apply:
 - your Social Harness MCP connection offers no `policy_update` tool. The
   tool is available to runtime authority only with a configured firewall;
 - your daemon has no firewall or no natural-language policy;
-- its `metadata.social-harness.kind` is given and is not `norm`, or it has no
-  `guidance`;
+- its `metadata.social-harness.applies` is missing or is not `incoming`,
+  `outgoing` or `both`;
 - it has no `description`, or its `metadata.social-harness` holds a key other
-  than `kind`, `guidance` and `feedback`;
+  than `applies`, `guidance`, `feedback` and `notifySender`;
 - `policy_update` reports that its `name` conflicts with an existing or fixed rule.
 
 ## Answering

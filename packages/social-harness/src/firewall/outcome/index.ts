@@ -3,7 +3,11 @@
 import { Data, Schema } from "effect";
 import { exactStruct } from "../../encoding/exact.js";
 import { AgentView } from "../../identity/cards.js";
-import { firewallCheckSchema } from "../evaluator/contract/index.js";
+import {
+  firewallRefusalReasonSchema,
+  nextActionSchema,
+  registeredGuidanceSchema,
+} from "./contract.js";
 
 /** Endpoint-authored evidence uses one sender identity across producers and rendering. */
 export const ENDPOINT_SENDER = "sharness";
@@ -14,8 +18,8 @@ const checkIdSchema = Schema.String.pipe(Schema.pattern(/^chk_[a-f0-9]{64}$/u));
 /**
  * Only registered instructions and runtime-visible subjects cross into a
  * host. An instruction names either the expectation the decision provider settled and
- * the messages it refers to, or the choice and probability of a norm
- * judgment the decision provider left unsettled.
+ * the messages it refers to, the choice and probability of an unsettled judgment, or registered advice
+ * for a settled violation admitted in guidance mode.
  */
 const checkedGuidance = {
   checkId: checkIdSchema,
@@ -27,26 +31,7 @@ const checkedGuidance = {
       text: Schema.String,
     }),
   ),
-  instructions: Schema.Array(
-    Schema.Union(
-      exactStruct({
-        middlewareId: Schema.NonEmptyTrimmedString,
-        ruleId: Schema.NonEmptyTrimmedString,
-        expectation: Schema.Literal("required", "permitted", "wait", "none"),
-        subjects: Schema.Array(Schema.NonEmptyTrimmedString),
-        instruction: Schema.NonEmptyString,
-      }),
-      exactStruct({
-        middlewareId: Schema.NonEmptyTrimmedString,
-        ruleId: Schema.NonEmptyTrimmedString,
-        uncertain: exactStruct({
-          choice: Schema.NonEmptyTrimmedString,
-          probability: Schema.Number.pipe(Schema.between(0, 1)),
-        }),
-        instruction: Schema.NonEmptyString,
-      }),
-    ),
-  ),
+  instructions: Schema.Array(registeredGuidanceSchema),
 };
 
 /** Exact decoding of one check's guidance, wherever a host receives it. */
@@ -144,14 +129,24 @@ export function renderLocalGuidance(
 function renderInstructions(guidance: CheckedGuidance) {
   return guidance.instructions.map((instruction) => ({
     ruleId: instruction.ruleId,
-    ...("uncertain" in instruction
-      ? { uncertain: instruction.uncertain }
-      : {
-          expectation: instruction.expectation,
-          subjects: instruction.subjects,
-        }),
+    ...instructionDetails(instruction),
     instruction: instruction.instruction,
   }));
+}
+
+function instructionDetails(
+  instruction: CheckedGuidance["instructions"][number],
+) {
+  if ("uncertain" in instruction) {
+    return { uncertain: instruction.uncertain };
+  }
+  if ("expectation" in instruction) {
+    return {
+      expectation: instruction.expectation,
+      subjects: instruction.subjects,
+    };
+  }
+  return {};
 }
 
 function subjectAddress(identity: AgentView | typeof ENDPOINT_SENDER): string {
@@ -172,11 +167,7 @@ function quoteForAgent(value: unknown): string {
 }
 
 /** Why a local check holds a text: the same closed set for a refused send and a withheld incoming text. */
-const firewallRefusal = Schema.Literal(
-  ...firewallCheckSchema.fields.reason.literals.filter(
-    (reason) => reason !== "eligible",
-  ),
-);
+const firewallRefusal = firewallRefusalReasonSchema;
 
 /**
  * Text the local firewall withheld from the runtime, in place of a peer's
@@ -195,17 +186,16 @@ export const firewallRefusalSchema = exactStruct({
   refusal: firewallRefusal,
   feedback: Schema.Array(
     exactStruct({
-      nextAction: firewallCheckSchema.fields.feedback.value.fields.nextAction,
+      nextAction: nextActionSchema,
       text: Schema.NonEmptyString,
     }),
   ),
 });
 
 const refusalText = {
-  prohibited: "local policy prohibits this message",
+  "rule-violation": "the message violates local policy",
   "unresolved-evidence": "local policy needs more evidence",
   "check-unavailable": "the message policy check could not complete",
-  "norm-violation": "the message does not satisfy local norms",
 } as const;
 
 /**
