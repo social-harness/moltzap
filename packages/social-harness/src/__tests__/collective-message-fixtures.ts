@@ -1,16 +1,12 @@
 /** @file Scripted message ports retain their bindings and classifier inputs in real SQL. */
 
-import { Effect, Schema } from "effect";
 import { SqlClient } from "@effect/sql";
-import {
-  openTestDatabase,
-  type TestDatabase,
-} from "./communication-test-database.js";
-import { testStore, storedConversation } from "./store-schema-fixtures.js";
-import { encodeRuntimeValue } from "../communication/store/index.js";
-import type { CertifiedMessage } from "../communication/collectives/ports.js";
+import { Effect, Schema } from "effect";
 import { generateKeyPairSync } from "node:crypto";
-import type { CollectivePorts } from "../communication/collectives/ports.js";
+import type {
+  CertifiedMessage,
+  CollectivePorts,
+} from "../communication/collectives/ports.js";
 import { canonicalMessageAddress } from "../communication/conversations/address.js";
 import { SendError } from "../communication/conversations/errors.js";
 import {
@@ -27,7 +23,10 @@ import {
   MessageIntent,
 } from "../communication/records/index.js";
 import { compareAgentIds } from "../communication/records/values.js";
-import { type CollectiveMessageBinding } from "../communication/store/index.js";
+import {
+  type CollectiveMessageBinding,
+  encodeRuntimeValue,
+} from "../communication/store/index.js";
 import { encodeCanonical } from "../encoding/canonical-json.js";
 import { AgentCard, type VerifiedAgentCard } from "../identity/cards.js";
 import { WIRE_VERSION } from "../identity/wire-version.js";
@@ -36,11 +35,19 @@ import {
   issueTestCard,
   makeTestAuthority,
 } from "./agent-card-fixtures.js";
+import {
+  openTestDatabase,
+  type TestDatabase,
+} from "./communication-test-database.js";
+import { storedConversation, testStore } from "./store-schema-fixtures.js";
+
+type Certification = ReturnType<CollectivePorts["observeMessage"]>;
 
 interface StubEngine {
   readonly database: TestDatabase;
   readonly cards: readonly VerifiedAgentCard[];
   readonly local: VerifiedAgentCard;
+  readonly certifications: Map<string, Certification>;
   nextMessage: number;
 }
 
@@ -62,13 +69,16 @@ export function collectivePersistencePorts(
       sql: engine.database.sql,
       run: engine.database.run,
       certifyInput: (message: CertifiedMessage) =>
-        retainCertifiedInput(engine.database, message, engine.local.agentId),
+        retainCertifiedInput(engine, message),
       prepareMessage: (input: EngineSendInput) =>
         prepareStubMessage(engine, input),
       acceptMessage: <E>(prepared: PreparedSend, hold: BindHold<E>) =>
         acceptStubMessage(engine, send, prepared, hold),
       sendMessage: send,
-      observeMessage: () => Effect.never,
+      observeMessage: (
+        msgId: Parameters<CollectivePorts["observeMessage"]>[0],
+      ) =>
+        Effect.suspend(() => engine.certifications.get(msgId) ?? Effect.never),
       reportStorageFault: () => Effect.void,
     };
   }).pipe(Effect.withSpan("collectivePersistencePorts"));
@@ -118,6 +128,7 @@ function stubEngine(
       cards,
       local,
       nextMessage: firstMessageByte,
+      certifications: new Map<string, Certification>(),
     } satisfies StubEngine;
   });
 }
@@ -205,29 +216,9 @@ function acceptStubMessage<E>(
 ) {
   return Effect.gen(function* () {
     const { descriptor, intent } = yield* preparedSendData(prepared);
-    const decoded = yield* Effect.forEach(
-      descriptor.members,
-      (card) => Schema.decodeUnknown(AgentCard)(card).pipe(Effect.orDie),
-      { concurrency: 1 },
-    );
-    const to =
-      decoded.length === 2
-        ? `agent:${decoded.find((card) => card.agentId !== engine.local.agentId)?.agentName ?? "unknown"}`
-        : `group:${decoded.map((card) => card.agentName).join(",")}`;
-    const canonical = yield* canonicalMessageAddress(
-      Schema.decodeUnknownSync(MessageAddressInput)(to),
-      engine.local.agentName,
-    );
+    const canonical = yield* messageAddress(engine, descriptor);
     const release = yield* hold;
-    const foundation = {
-      conversationId: intent.conversationId,
-      membershipHash: intent.membershipHash,
-      canonicalMembership: new TextEncoder().encode(
-        prepared.canonicalMembership,
-      ),
-      anchorHash: `anchor:${intent.conversationId}`,
-      canonicalAnchor: new TextEncoder().encode("recording message foundation"),
-    };
+    const foundation = yield* messageFoundation(descriptor);
     yield* testStore
       .bindMessageIntent({
         kind: "new-conversation",
@@ -245,46 +236,98 @@ function acceptStubMessage<E>(
       })
       .pipe(
         Effect.onError(() => release),
-        Effect.mapError(() => new SendError({ reason: "persistence-failed" })),
+        Effect.catchTag("EndpointStoreError", () =>
+          Effect.fail(new SendError({ reason: "persistence-failed" })),
+        ),
       );
-    return {
-      certified: send({
+    const certified = yield* Effect.cached(
+      send({
         to: canonical.address,
         content: intent.content,
         ...(prepared.collective === undefined
           ? {}
           : { collective: prepared.collective }),
       }).pipe(Effect.map((result) => ({ ...result, msgId: intent.msgId }))),
-    };
+    );
+    engine.certifications.set(intent.msgId, certified);
+    return { certified };
   }).pipe(Effect.provideService(SqlClient.SqlClient, engine.database.sql));
 }
 
 /** Classifier tests enter through retained certified delivery, whose verification belongs to communication. */
-function retainCertifiedInput(
-  database: TestDatabase,
-  input: CertifiedMessage,
-  recipientAgentId: string,
-) {
-  return database.run(
+function retainCertifiedInput(engine: StubEngine, input: CertifiedMessage) {
+  return engine.database.run(
     Effect.gen(function* () {
-      const fixture = storedConversation(input.recordHash);
-      const canonicalMessage = yield* encodeRuntimeValue(input.message);
-      const record = {
-        ...fixture.record,
+      const descriptor = yield* stubMembership(engine, {
+        to: input.message.address,
+        content: input.message.content,
+      });
+      const foundation = yield* messageFoundation(descriptor);
+      yield* testStore.putConversationFoundation(foundation);
+      const recovery = yield* testStore.recover();
+      const prior = recovery.certifiedRecords.find(
+        (record) => record.recordHash === input.recordHash,
+      );
+      const previousRecordHash = recovery.positions.find(
+        (position) => position.conversationId === descriptor.conversationId,
+      )?.headRecordHash;
+      const fixture = storedConversation(input.recordHash).record;
+      const record = prior ?? {
+        ...fixture,
+        ...foundation,
+        ...(previousRecordHash === undefined ? {} : { previousRecordHash }),
         recordHash: input.recordHash,
         authorAgentId: input.message.sender.agentId,
         msgId: input.message.msgId,
-        canonicalRecordCore: canonicalMessage,
-        durabilityEvidence: fixture.record.durabilityEvidence.map((row) => ({
+        canonicalRecordCore: yield* encodeRuntimeValue(input.message),
+        actionEvidence: fixture.actionEvidence.map((row) => ({
           ...row,
+          conversationId: descriptor.conversationId,
+        })),
+        durabilityEvidence: fixture.durabilityEvidence.map((row) => ({
+          ...row,
+          conversationId: descriptor.conversationId,
           subjectId: input.recordHash,
         })),
       };
-      yield* testStore.putConversationFoundation(fixture.foundation);
       yield* testStore.applyCertifiedRecord(record, {
-        recipientAgentId,
-        canonicalMessage,
+        recipientAgentId: engine.local.agentId,
+        canonicalMessage: yield* encodeRuntimeValue(input.message),
       });
     }).pipe(Effect.orDie),
   );
+}
+
+function messageAddress(engine: StubEngine, descriptor: MembershipDescriptor) {
+  return Effect.gen(function* () {
+    const decoded = yield* Effect.forEach(
+      descriptor.members,
+      (card) => Schema.decodeUnknown(AgentCard)(card).pipe(Effect.orDie),
+      { concurrency: 1 },
+    );
+    const to =
+      decoded.length === 2
+        ? `agent:${decoded.find((card) => card.agentId !== engine.local.agentId)?.agentName ?? "unknown"}`
+        : `group:${decoded.map((card) => card.agentName).join(",")}`;
+    const canonical = yield* canonicalMessageAddress(
+      Schema.decodeUnknownSync(MessageAddressInput)(to),
+      engine.local.agentName,
+    );
+    return canonical;
+  });
+}
+
+function messageFoundation(descriptor: MembershipDescriptor) {
+  return Effect.gen(function* () {
+    return {
+      conversationId: descriptor.conversationId,
+      membershipHash: yield* hashMembershipDescriptor(descriptor),
+      canonicalMembership: yield* encodeCanonical(
+        MembershipDescriptor,
+        descriptor,
+      ),
+      anchorHash: `anchor:${descriptor.conversationId}`,
+      canonicalAnchor: new TextEncoder().encode("recording message foundation"),
+    };
+  }).pipe(Effect.orDie);
 }
