@@ -302,8 +302,7 @@ function redeliverySteps(harness: Harness): Step[] {
 }
 
 /**
- * The answer a member's host gives, naming no request: carol sometimes
- * declines.
+ * Members choose a meeting slot, with Carol sometimes declining.
  */
 const drawResponse = (member: AgentAddress, random: () => number) =>
   member === carol && random() < 0.3
@@ -311,10 +310,8 @@ const drawResponse = (member: AgentAddress, random: () => number) =>
     : { action: "accept", content: { slot: random() < 0.5 ? "mon" : "tue" } };
 
 /**
- * Each member that has seen the request and not answered answers in the
- * group's conversation, where its endpoint finds the one open request. The
- * step ends once the answer is queued at the send port or the send has
- * already been refused.
+ * Members answer the named request in its group conversation once their
+ * hosts receive it.
  */
 function answerSteps(
   harness: Harness,

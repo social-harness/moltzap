@@ -2,10 +2,8 @@
  * @file The requests a member endpoint received, and which one an answer
  * answers.
  *
- * The model sends an answer to the conversation its request arrived in. An
- * answer that names its request's operationId answers that request; one that names
- * none answers the one request open there, and is refused rather than
- * guessed when several are open.
+ * The model names the request's operationId and sends its answer to the
+ * conversation in which that request arrived.
  */
 
 import { Duration, Either, Option } from "effect";
@@ -105,18 +103,7 @@ const RECEIVED_DEADLINE_HORIZON = Duration.toMillis(
   ),
 );
 
-/**
- * Find the request an answer answers, open in its conversation: received,
- * not yet answered, and before its deadline and close. An answer with `operationId`
- * answers the request with that operationId; one without, the one request open there.
- * @param requests Every request this endpoint holds, by operationId.
- * @param conversation The canonical address the answer is sent to.
- * @param now The current time in epoch milliseconds.
- * @param answer The request the answer names, if any.
- * @param answer.operationId The operationId of the request it names, if it names one.
- * @returns The open request, or why none takes the answer: several are open,
- *   one was already answered, none was received, or each has expired.
- */
+/** A named request accepts one answer in its original conversation before expiry or close. */
 export const matchOpenRequest = <Request extends RequestStatus>(
   requests: ReadonlyMap<CollectiveId, Request>,
   conversation: MessageAddressInput,

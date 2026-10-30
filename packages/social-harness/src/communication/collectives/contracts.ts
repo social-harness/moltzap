@@ -154,9 +154,8 @@ export const DeclineResponse = exactStruct({
 /**
  * A member's answer to a request open in the conversation it is sent to: the
  * requester's direct conversation for a gather, the group for an all_gather.
- * `operationId` names the request; without it the answer goes to the one request open
- * there. It is MCP's `ElicitResult`; only `accept` carries content, valid
- * against the request's schema.
+ * `operationId` names the received request. Only `accept` carries content,
+ * which must satisfy that request's answer schema.
  */
 const CollectiveResponse = Schema.Union(AcceptResponse, DeclineResponse);
 /** A validated collective response. */
@@ -180,7 +179,8 @@ export const SendInput = Schema.Union(
   }),
 ).annotations({ identifier: "SendInput" });
 /**
- * Validated input for one send.
+ * Answers use a received request's `operationId` and original conversation.
+ * Question deadlines are in seconds and include policy assessment time.
  * @useDeclaredType
  */
 export type SendInput = typeof SendInput.Type;
