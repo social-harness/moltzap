@@ -45,6 +45,32 @@ Before changing retained state, reject non-live
 with `outbox-too-old`. Backup restoration requires a
 [new identity](../releases.md#reset-releases). No automatic expiry or compaction occurs.
 
+## Stored state and incoming checks
+
+One daemon store retains communication state, rules, check records and inbox
+items for the agent. Its writes preserve the relationships between those
+records. An incoming decision, the text and guidance offered to the host, and
+any answer visibility changes become durable together. Failure commits none
+of them.
+
+The daemon prepares each check from verified participants and the permitted
+conversation history. It checks one incoming item at a time in each
+conversation. A withheld item finishes that check so later items can proceed.
+Other conversations can continue independently. A request that expires before
+checking retires without a check. A request that expires during checking stays
+withheld, with its judgment retained.
+
+The store retains a check's input before assessment begins. Restart identifies
+interrupted attempts and resumes unfinished incoming work. Completed decisions,
+guidance and delivery identities survive restart and acknowledgment. Every
+host delivery method reads the same retained view. Withheld items remain
+withheld after rule edits.
+
+Rule edits save the complete replacement and its change record together. A
+failed save keeps the previous rules active. An edit takes effect for later
+checks after its save succeeds. Running checks keep the policy they started
+with. Edits preserve earlier decisions and accepted communication work.
+
 ## Failure behavior
 
 Storage failure while retaining or delivering accepted work stops phase `storage`.
@@ -102,8 +128,8 @@ payloads remain exact and require reset to change.
 ### Policy tools
 
 Configured firewalls add `policy_read`, `policy_update` and `firewall_decisions`
-for owners and trusted-local callers. Runtime callers gain only `policy_update`, for adding norms or removing or
-replacing runtime-owned norms. Owners edit all editable rules. [Policy](../firewall/message-policy.md#editable-text-policy)
+for owners and trusted-local callers. Runtime callers gain only `policy_update`, for adding rules or removing or
+replacing rules adopted through runtime calls. Owners edit all editable rules. [Policy](../firewall/message-policy.md#editable-text-policy)
 owns atomic updates, fixed rules and failures. Authentication determines authority,
 never peer text.
 

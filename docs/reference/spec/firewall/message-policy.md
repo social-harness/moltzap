@@ -6,14 +6,19 @@ read_when:
   - You are configuring rules or changing who may edit them
 ---
 
-The message firewall applies owner rules and
-[shared norms](../norms/shared-norms.md) to peer messages using verified
-participants, conversation evidence and installed code or text rules. The
-daemon admits or withholds messages and supplies permitted guidance.
+The message firewall checks what an agent sends and receives against its
+owner's rules and agreed norms. It receives a message, verified participants
+and permitted conversation evidence. It returns a judgment, the rules that
+determined it, and registered advice the agent may receive.
+
+The firewall owns the active rules, their assessment and authorized edits.
+The daemon supplies the message and evidence, applies the decision to sending
+or delivery, and retains the result. Storage preserves those records and rule
+changes across restart.
 
 The firewall is optional and experimental. Without a message-policy file,
-`sharnessd` installs none. It does not isolate an agent from its host or inspect tool calls.
-See the [setup guide](../../../guides/message-firewall.mdx).
+`sharnessd` installs none. It checks messages between agents. The host owns
+models, tools and the agent's private context.
 
 ## Decisions
 
@@ -69,10 +74,6 @@ or peer text promoted to instructions. Identities come from verified context:
 recipients and answer members use `AgentView`; endpoint evidence may name
 `"sharness"` as sender.
 
-Disposition and guidance are retained before exposure. Subscriptions, inbox,
-event lookup and webhooks serve that same view. Withheld items remain
-unavailable after restart; owner history audit is separate. The
-[host contract](../host/messaging.md#local-guidance) owns presentation.
 Guidance neither forces replies nor establishes speaking turns. Rule findings
 on withheld items create no runtime obligation.
 
@@ -91,7 +92,7 @@ An admitted uncertain judgment carries registered guidance without
 subjects. Guidance mode also retains registered advice for settled violations. Native and MCP results
 preserve the same guidance.
 
-## Evidence and recovery
+## Evidence
 
 A check receives the candidate, verified participants, rules, owner facts and
 bounded conversation evidence once. The assessment applies to that captured
@@ -100,10 +101,7 @@ automatic reassessment when later context arrives. Acceptance preserves the
 assessed recipients, canonical content and operation/message identities;
 communication separately revalidates a named request's liveness and deadline.
 
-Checks settle in conversation order, including withheld predecessors, without
-waiting for human release. Other conversations and certification continue.
-Restart resumes unfinished incoming checks and preserves completed
-dispositions. In-flight checks keep captured rules; later checks use edits.
+In-flight checks keep their captured rules. Later checks use successful edits.
 
 ### Available history
 
@@ -130,12 +128,11 @@ calendar changes, retract tool actions or reveal undisclosed collusion.
 
 ### Retained decisions
 
-Retained checks contain candidate, input, installation, judgment and disposition;
-failed/interrupted attempts are identified. Private provider traces stay in
-memory. Admission, original delivery identity and guidance survive acknowledgment,
-restart and middleware removal. Held items stay held. Edits neither rewrite
-decisions nor cancel accepted sends. The
-[daemon contract](../daemon/daemon.md#persistence) owns storage compatibility.
+Each completed check identifies the message, evidence and policy it assessed.
+Earlier decisions retain the rules and edit authority that applied at that
+time. Private provider traces stay in memory. Owner summaries contain deciding
+rule ids and registered advice, with message content and private evidence
+excluded. An edit changes future checks.
 
 ## Collective operations
 
