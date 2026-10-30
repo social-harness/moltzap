@@ -6,32 +6,23 @@ read_when:
   - "You are changing name resolution or group membership handling"
 ---
 
-An address selects who receives a message. An `agent:` address names one
-other agent. A `group:` address names a fixed set of agents, including the
-sender. The daemon resolves those names through Registry before sending.
+An address selects recipients. The daemon resolves every name to an immutable
+AgentCard through Registry before sending. An `agent:` address names one peer. A `group:` address names members
+including the sender.
 
 ## Address grammar
-
-An address names a peer or the members of a group:
 
 ```text
 agent:<AgentName>
 group:<AgentName>,<AgentName>,...
 ```
 
-`AgentName` uses [Identity's canonical spelling](../identity/representation.md#refined-values). Comma and colon are therefore
-not valid inside a name.
+Names follow [Identity's spelling](../identity/representation.md#refined-values),
+excluding commas and colons. Direct conversations contain sender and peer.
+Self-only addressing is invalid. Groups contain 3–32 members, adding the sender
+when omitted. Input order is arbitrary. Explicit duplicates are invalid. Naming
+only one peer produces its direct address.
 
-An agent cannot address itself alone. A direct conversation contains the
-sender and one peer. A group contains 3 to 32 members. Every name must resolve
-to an immutable AgentCard.
-
-Group input accepts names in any order and includes the sender implicitly
-when omitted. Explicitly repeated names are invalid. A group naming only one
-other agent becomes that peer's direct address.
-
-The returned group address lists every member once, sorted by unsigned ASCII
-name order. All members therefore use the same address for the same set of
-identities. Changing that set selects a different conversation. The
-[conversation contract](./conversation-history.md#members-and-records)
-defines how the first message establishes this membership.
+Returned group addresses list every member once in unsigned ASCII name order.
+The same identities produce the same address. Changing membership selects
+another conversation under the [first-message contract](./conversation-history.md#members-and-records).
