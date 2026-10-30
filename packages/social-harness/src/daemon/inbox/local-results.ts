@@ -1,4 +1,5 @@
 /** @file Checks collective result text and admits operation failures for host delivery. */
+// safer-arch-ignore no-fat-orchestrator: One collective result is checked and saved with its question and answers under one captured policy.
 
 import * as SqlClient from "@effect/sql/SqlClient";
 import { Effect, Array as EffectArray, Schema, Struct } from "effect";

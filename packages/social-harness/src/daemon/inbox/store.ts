@@ -24,7 +24,7 @@ import {
   type StoreMutation,
 } from "../../communication/store/types.js";
 import { MAXIMUM_RUNTIME_ITEM_BYTES } from "../../encoding/limits.js";
-// safer-arch-ignore file-implicit-boundary-module: Store composition and firewall admission share inbox writes within the caller's transaction; external consumers use the store capability instead of these SQLite primitives.
+// safer-arch-ignore file-implicit-boundary-module: Daemon publication and host delivery share inbox operations within the caller’s SQL transaction.
 const MAXIMUM_PAGE_ITEMS = 50;
 interface InboxBounds {
   readonly after?: number;

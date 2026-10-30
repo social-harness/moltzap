@@ -4,7 +4,7 @@
   "facadeFiles": [
     {
       "file": "communication/store/collective-claims.ts",
-      "reason": "Atomic collective identity and post claims shared by store transactions"
+      "reason": "Atomic collective identity and message claims shared by store transactions"
     },
     {
       "file": "encoding/exact.ts",
@@ -96,7 +96,7 @@
     },
     {
       "file": "communication/records/values.ts",
-      "reason": "Addresses, post ids, content, and member limits hosts decode without loading signing, verification, or the Router client"
+      "reason": "Addresses, message identifiers, content, and member limits hosts decode without loading signing, verification, or the Router client"
     },
     {
       "file": "communication/store/types.ts",
@@ -200,15 +200,11 @@
     },
     {
       "file": "communication/store/database/index.ts",
-      "reason": "Scoped SQLite lifetime and synchronous transaction primitives used by persistence owners"
+      "reason": "Effect SQL transaction and persistence error primitives shared by state owners"
     },
     {
       "file": "communication/store/queues/peer-deliveries.ts",
       "reason": "Protocol delivery retirement participates in host acknowledgment transactions"
-    },
-    {
-      "file": "communication/store/store.ts",
-      "reason": "Protocol persistence capability constructed by the daemon on its existing connection"
     },
     {
       "file": "firewall/store/types.ts",
@@ -271,8 +267,12 @@
       "reason": "Ordered incoming admission started by daemon runtime composition"
     },
     {
-      "file": "daemon/inbox/message.ts",
-      "reason": "Verified protocol and history projections assembled for firewall checks"
+      "file": "communication/store/queues/outbound.ts",
+      "reason": "Outbox writes share the caller’s SQL transaction with protocol state changes"
+    },
+    {
+      "file": "daemon/inbox/firewall-context.ts",
+      "reason": "The daemon prepares messages and permitted history for incoming, outgoing and collective checks"
     }
   ],
   "compositionRoots": [
@@ -484,7 +484,7 @@
         "src/daemon/inbox/host-traffic-log.ts",
         "src/daemon/inbox/store.ts",
         "src/daemon/inbox/evidence.ts",
-        "src/daemon/inbox/message.ts",
+        "src/daemon/inbox/firewall-context.ts",
         "src/daemon/inbox/incoming-worker.ts"
       ],
       "reason": "The admitted host inbox, delivery handoff and host traffic log"
@@ -533,21 +533,7 @@
       "folders": [
         "daemon"
       ],
-      "reason": "The always-on process: configuration, registration, supervision, and wiring"
-    },
-    {
-      "name": "daemon-mcp",
-      "folders": [
-        "daemon/mcp"
-      ],
-      "reason": "The daemon's loopback MCP server, authentication and event delivery"
-    },
-    {
-      "name": "daemon-inbox",
-      "folders": [
-        "daemon/inbox"
-      ],
-      "reason": "The admitted host inbox, delivery handoff and host traffic log"
+      "reason": "One agent process owns configuration, registration, persistence, MCP serving and message delivery"
     },
     {
       "name": "host-client",
@@ -568,7 +554,7 @@
       "folders": [
         "firewall"
       ],
-      "reason": "Configured rules, message checking, owner edits and policy persistence"
+      "reason": "Configured rules, message checking, rule edits and policy persistence"
     },
     {
       "name": "collectives",
@@ -642,6 +628,10 @@
     }
   ],
   "publicTypePackages": [
+    {
+      "package": "@effect/sql",
+      "reason": "The firewall acquires the daemon’s shared SqlClient through its Effect environment"
+    },
     {
       "package": "effect",
       "reason": "Foundational Effect runtime; intentionally part of the public contract"

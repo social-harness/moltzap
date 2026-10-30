@@ -202,7 +202,7 @@ const provide = <A, E, R>(
 
 const withOutbox = <Value, Failure, Requirements>(
   use: (store: TestStore) => Effect.Effect<Value, Failure, Requirements>,
-) => withDaemonStore(stateDirectory(), () => use());
+) => withDaemonStore(stateDirectory(), use);
 
 function prepareOutbound(
   store: TestStore,

@@ -1,4 +1,5 @@
 /** @file Address resolution, immutable intent binding, and proposal creation. */
+// safer-arch-ignore no-fat-orchestrator: Prepared sends and durable acceptance form one operation whose dependencies come from the conversation engine.
 
 import type * as SqlClient from "@effect/sql/SqlClient";
 import { Deferred, Duration, Effect, Exit, Schedule, Schema } from "effect";

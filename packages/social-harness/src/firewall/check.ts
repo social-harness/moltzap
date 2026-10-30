@@ -190,7 +190,7 @@ const policyFinding = Schema.Union(
 );
 
 /** Rule findings accumulate independently of their text or code representation. */
-export type PolicyFinding = typeof policyFinding.Type;
+type PolicyFinding = typeof policyFinding.Type;
 
 /** Local response conduct under a rule, with subjects restricted to admitted visible messages or the incoming event. */
 export class ResponseExpectation extends Schema.Class<ResponseExpectation>(

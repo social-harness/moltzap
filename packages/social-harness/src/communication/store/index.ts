@@ -1,4 +1,5 @@
 /** @file Communication state operations using the daemon’s shared SQL client. */
+// safer-arch-ignore no-inventory-barrel: Named SQL operations expose the communication state contract through one boundary without a second store interface.
 
 /** Failures exposed by communication persistence. */
 export { EndpointStoreError } from "./database/values.js";
@@ -21,7 +22,6 @@ export type {
   RestartedEmptyConversation,
   StagedReanchor,
   StagedRecord,
-  StoredAnchor,
   StoredMembership,
   StoredOutboundMessage,
   StoreMutation,
