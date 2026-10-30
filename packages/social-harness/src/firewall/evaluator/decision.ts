@@ -392,6 +392,7 @@ function validNextAction(
 ): boolean {
   return (
     reason === "norm-violation" ||
+    reason === "prohibited" ||
     action === defaultFeedback[reason][0]?.nextAction
   );
 }

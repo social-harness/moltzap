@@ -450,7 +450,7 @@ it("projects seek-approval as norm feedback", () =>
     expect(result.feedback).toEqual([feedback]);
   }));
 
-it("uses stop feedback for a prohibition with an incompatible template", () =>
+it("gives a prohibition the deciding rule's own notice and next action", () =>
   Effect.gen(function* () {
     const blocked = yield* firewallFor([
       {
@@ -465,7 +465,9 @@ it("uses stop feedback for a prohibition with an incompatible template", () =>
     ]);
     const result = yield* blocked.checkOutgoing(draft, context);
     expect(result.judgment).toBe("block");
-    expect(result.feedback[0]?.nextAction).toBe("stop");
+    expect(result.feedback).toEqual([
+      { text: "Ask for approval", nextAction: "seek-approval" },
+    ]);
   }));
 
 it("bounds input and results without converting skipped checks into passes", () =>

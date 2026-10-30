@@ -799,8 +799,28 @@ it("projects incoming advice using only admitted visible subjects", () =>
         instruction: reminder,
       },
     ]);
-    expect(requests.some((entry) => entry.stage === "conformance")).toBe(false);
+    expect(requests.some((entry) => entry.stage === "conformance")).toBe(true);
     expect(JSON.stringify(result.guidance)).not.toContain(privateEvidence);
+  }));
+
+it("rejects an incoming message that violates a norm, with the rule's notice for the sender", () =>
+  Effect.gen(function* () {
+    const result = yield* check(
+      provider({
+        "conformance:proposal-acceptance:assessment": "violation",
+      }),
+      {
+        incoming: true,
+        message: {
+          id: "proposal",
+          sender: "participant-agent",
+          recipients: [context.agentId],
+          text: "Can we meet Tuesday?",
+        },
+      },
+    );
+    expect(result.judgment).toBe("block");
+    expect(result.feedback).toEqual([{ nextAction: "revise", text: repair }]);
   }));
 
 it("leaves an unsettled reference out of an incoming expectation", () =>

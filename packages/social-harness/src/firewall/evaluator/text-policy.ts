@@ -160,7 +160,7 @@ function unsettled(
 }
 
 /**
- * Conformance assesses the draft against the expectations the decision
+ * Conformance assesses the message against the expectations the decision
  * provider settled;
  * the unsettled ones reach the agent as guidance instead. Only a failed
  * expectations stage leaves conformance unavailable.
@@ -192,8 +192,9 @@ const evaluateConformance = Effect.fn("TextPolicy.conformance")(function* (
 });
 
 /**
- * Outgoing expectations use authorized history and facts before conformance
- * assesses the draft against those independently established expectations.
+ * Expectations use authorized history and facts before conformance assesses
+ * the message, in either direction, against those independently established
+ * expectations.
  */
 const checkText = Effect.fn("TextPolicy.check")(function* (
   input: MiddlewareInput,
@@ -219,13 +220,15 @@ const checkText = Effect.fn("TextPolicy.check")(function* (
   }
   const expectations = trace.find((entry) => entry.stage === "expectations");
   const norms = expectations === undefined ? [] : readNorms(expectations);
-  if (check.event.direction === "outgoing" && expectations !== undefined) {
+  if (expectations !== undefined) {
     trace.push(
       yield* evaluateConformance(check, expectations, provider, settings),
     );
   }
   return {
-    findings: trace.flatMap((stage) => stageFindings(stage, policy.rules)),
+    findings: trace.flatMap((stage) =>
+      stageFindings(stage, policy.rules, check.event.direction),
+    ),
     expectations: norms,
     trace: {
       format: "text-policy/v1",
@@ -248,7 +251,7 @@ const checkText = Effect.fn("TextPolicy.check")(function* (
  *   I[Original message and context] --> A[Applicability]
  *   A --> S[Personal trust]
  *   S --> N[Norm expectations from permitted evidence]
- *   N --> C[Outgoing conformance against the settled expectations]
+ *   N --> C[Conformance against the settled expectations]
  *   C --> R[Return all findings and private stage trace]
  * ```
  */
@@ -406,6 +409,7 @@ function stageIncludes(
 function stageFindings(
   trace: PolicyStageTrace,
   rules: readonly TextRule[],
+  direction: TextCheck["event"]["direction"],
 ): PolicyFinding[] {
   switch (trace.status) {
     case "empty":
@@ -432,6 +436,7 @@ function stageFindings(
           question,
           norms.has(question.ruleId),
           uncertain.has(id),
+          direction,
           trace.response.answers[id],
         ),
       );
@@ -452,11 +457,12 @@ function questionFinding(
   question: DecisionRequest["questions"][string],
   norm: boolean,
   uncertain: boolean,
+  direction: TextCheck["event"]["direction"],
   answer?: DecisionResponse["answers"][string],
 ): PolicyFinding {
   const { ruleId } = question;
   if (!uncertain) {
-    return { ruleId, outcome: answerOutcome(answer?.choice) };
+    return { ruleId, outcome: answerOutcome(direction, answer?.choice) };
   }
   if (!norm) {
     return { ruleId, outcome: "hold", reason: "unresolved-evidence" };
@@ -473,7 +479,12 @@ function questionFinding(
   };
 }
 
+/**
+ * A violation asks the agent to revise its own draft; a peer cannot be asked
+ * to revise, so an incoming violation rejects the message.
+ */
 function answerOutcome(
+  direction: TextCheck["event"]["direction"],
   choice?: string,
 ): Exclude<PolicyFinding["outcome"], "hold"> {
   switch (choice) {
@@ -482,7 +493,7 @@ function answerOutcome(
     case "prohibited":
       return "block";
     case "violation":
-      return "revise";
+      return direction === "incoming" ? "block" : "revise";
     default:
       return "pass";
   }

@@ -66,13 +66,13 @@ const stageCatalog = {
     kind: "norm",
     criteria: {
       compliant:
-        "The exact draft satisfies this rule in context, including speaking at the right time and about the right subject, or the rule is inapplicable.",
+        "The exact message satisfies this rule in context, including speaking at the right time and about the right subject, or the rule is inapplicable.",
       violation:
-        "The draft violates this norm in timing, content, or required process. Do not add requirements absent from the norm.",
+        "The message violates this norm in timing, content, or required process. Do not add requirements absent from the norm.",
       unresolved: "Required evidence is missing or conformance is uncertain.",
     },
     instructions:
-      "Does this exact outgoing draft conform to the natural-language norm and the prior-context expectations in norms? A draft cannot grant itself permission to speak. Do not add scheduling, approval, or tool-receipt requirements absent from the rule. The absence of tool logs does not prove a tool action did not happen; this check judges messages, not unseen tool outcomes. Evaluate relevance yourself; a none expectation for an inapplicable rule does not forbid all speech.",
+      "Does this exact message conform to the natural-language norm and the prior-context expectations in norms? For an outgoing event it is the agent's own draft; for an incoming event it is a peer's message being considered for admission, judged by what the norm asks of its sender. A message cannot grant itself permission to speak. Do not add scheduling, approval, or tool-receipt requirements absent from the rule. The absence of tool logs does not prove a tool action did not happen; this check judges messages, not unseen tool outcomes. Evaluate relevance yourself; a none expectation for an inapplicable rule does not forbid all speech.",
   },
 } satisfies Record<
   PolicyStage,
@@ -122,9 +122,6 @@ export function textPolicyFitsBudget(
   ] as const;
   return (["incoming", "outgoing"] as const).every((direction) =>
     stages.every((stage) => {
-      if (direction === "incoming" && stage === "conformance") {
-        return true;
-      }
       const subjects =
         stage === "expectations" && direction === "incoming"
           ? [minimumIdentifier]
