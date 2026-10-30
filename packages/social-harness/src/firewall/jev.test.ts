@@ -4,7 +4,7 @@ import { FetchHttpClient } from "@effect/platform";
 import { effect as it } from "@effect/vitest";
 import { Effect, FastCheck as fc, Redacted } from "effect";
 import { expect } from "vitest";
-import type { DecisionRequest } from "../../daemon/index.js";
+import type { DecisionRequest } from "./check.js";
 import { makeJevDecisionProvider } from "./jev.js";
 
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- HTTP status, redaction and closed provider failures are the adapter contract under test. */
