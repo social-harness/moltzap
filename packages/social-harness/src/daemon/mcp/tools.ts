@@ -519,7 +519,7 @@ const toolListings = {
   },
   [HARNESS_READ_EVENT_TOOL]: {
     description:
-      "Read the original full content of a Social Harness event by eventId without delivery or acknowledgment side effects. An inbox item's eventId is its deliveryToken with evt_ in place of dlv_.",
+      "Read the original full content and guidance of a Social Harness event by eventId without acknowledging delivery. An inbox item's eventId is its deliveryToken and remains readable after acknowledgment.",
     inputSchema: readEventInput,
     outputSchema: readEventOutput,
     annotations: localRead,

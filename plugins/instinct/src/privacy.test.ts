@@ -41,7 +41,7 @@ it("keeps the sender URL and provider headers out of exported spans", () =>
     );
     const { tracer, spans } = yield* collectTracing();
     yield* deliverToInstinct(sender, {
-      eventId: `evt_${"A".repeat(43)}`,
+      eventId: `dlv_${"A".repeat(43)}`,
       acknowledge: Effect.void,
     }).pipe(
       Effect.provide(FetchHttpClient.layer),

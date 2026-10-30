@@ -26,7 +26,7 @@ import {
   HARNESS_CONSUMER_META_KEY,
   INBOX_ITEM_EVENT,
 } from "../../host-protocol/names.js";
-import { eventIdOf } from "../../host-protocol/operations.js";
+
 import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { makeHarnessPollEvents } from "./poll.js";
 
@@ -110,7 +110,7 @@ const doesNotAcknowledgeCursors = () =>
       const first = yield* next(fixture, started);
       expect(first.events).toMatchObject([
         {
-          eventId: eventIdOf(token(1)),
+          eventId: token(1),
           data: { kind: "item", item: item("item 1") },
         },
       ]);
@@ -136,7 +136,7 @@ const referencesLargeContent = () =>
       const delivered = yield* next(fixture, started);
       expect(delivered.events).toMatchObject([
         {
-          eventId: eventIdOf(token(1)),
+          eventId: token(1),
           data: { kind: "reference", itemKind: "operationFailed" },
         },
       ]);
@@ -337,9 +337,7 @@ const paginatesWithoutAcceptance = () =>
               expect(position.events.length).toBeLessThanOrEqual(limit);
               observed.push(...position.events.map((event) => event.eventId));
             } while (position.hasMore);
-            expect(observed).toEqual(
-              bytes.map((byte) => eventIdOf(token(byte))),
-            );
+            expect(observed).toEqual(bytes.map((byte) => token(byte)));
             expect((yield* fixture.store.readInboxSummary()).pendingCount).toBe(
               count,
             );
@@ -363,9 +361,7 @@ const ignoresAcknowledgedReplayRows = () =>
       yield* fixture.add(2);
       const replay = yield* next(fixture, started);
       expect(replay.truncated).toBe(false);
-      expect(replay.events.map((event) => event.eventId)).toEqual([
-        eventIdOf(token(2)),
-      ]);
+      expect(replay.events.map((event) => event.eventId)).toEqual([token(2)]);
     }),
   );
 
@@ -397,17 +393,11 @@ const keepsSnapshotBound = () =>
       const first = yield* next(fixture, started, 1);
       yield* fixture.add(3);
       const last = yield* next(fixture, first, 1);
-      expect(first.events.map((event) => event.eventId)).toEqual([
-        eventIdOf(token(1)),
-      ]);
-      expect(last.events.map((event) => event.eventId)).toEqual([
-        eventIdOf(token(2)),
-      ]);
+      expect(first.events.map((event) => event.eventId)).toEqual([token(1)]);
+      expect(last.events.map((event) => event.eventId)).toEqual([token(2)]);
       expect(last.hasMore).toBe(false);
       const arrival = yield* next(fixture, last, 1);
-      expect(arrival.events.map((event) => event.eventId)).toEqual([
-        eventIdOf(token(3)),
-      ]);
+      expect(arrival.events.map((event) => event.eventId)).toEqual([token(3)]);
       expect((yield* fixture.store.readInboxSummary()).pendingCount).toBe(3);
     }),
   );

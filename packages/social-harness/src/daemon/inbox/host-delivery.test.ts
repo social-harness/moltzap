@@ -107,7 +107,7 @@ const refusesUntilRegistered = () =>
       reason: "not-registered",
     });
     expect(
-      yield* Effect.flip(operations.readEvent({ eventId: "evt_absent" })),
+      yield* Effect.flip(operations.readEvent({ eventId: "dlv_absent" })),
     ).toEqual({ reason: "not-registered" });
     expect(
       (yield* Effect.flip(operations.acknowledgeDelivery(unboundToken))).reason,

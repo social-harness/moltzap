@@ -16,7 +16,7 @@ import { join } from "node:path";
 import { describe, expect } from "vitest";
 import { acceptMuseWork, detectMuseWork, makeMuseWakeup } from "./index.js";
 
-const eventId = `evt_${"A".repeat(43)}`;
+const eventId = `dlv_${"A".repeat(43)}`;
 const fixture = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const directory = yield* fs.makeTempDirectoryScoped({

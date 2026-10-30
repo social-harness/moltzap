@@ -56,7 +56,7 @@ import {
   HARNESS_SEND_TOOL,
   INBOX_PENDING_EVENT,
 } from "../../host-protocol/names.js";
-import { eventIdOf } from "../../host-protocol/operations.js";
+
 import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { readRuntimeEvent } from "../inbox/inbox.js";
 import { acquireHarnessMcpHttpServer } from "./http.js";
@@ -742,7 +742,7 @@ function readsRetainedEventThroughSdk() {
     const result = yield* Effect.tryPromise(() =>
       client.callTool({
         name: "read_event",
-        arguments: { eventId: eventIdOf(deliveryToken) },
+        arguments: { eventId: deliveryToken },
       }),
     );
     expect(result.structuredContent).toEqual({ item, guidance });

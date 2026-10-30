@@ -40,7 +40,6 @@ import {
   decodeHarnessSendErrorData,
   decodeHarnessSendResult,
   type DeliveryToken,
-  eventIdOf,
   type HarnessSendErrorData,
 } from "../host-protocol/operations.js";
 import { packageVersion } from "../release/index.js";
@@ -388,7 +387,7 @@ const unseenDeliveries = (
     }
     seen.add(entry.deliveryToken);
     deliveries.push({
-      eventId: eventIdOf(entry.deliveryToken),
+      eventId: entry.deliveryToken,
       item: entry.item,
       acknowledge: callAcknowledgeDelivery(
         client,

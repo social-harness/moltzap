@@ -25,11 +25,6 @@ import {
 } from "../firewall/outcome/index.js";
 import { HARNESS_CONSUMER_META_KEY, INBOX_ITEM_EVENT } from "./names.js";
 
-/** Canonical event identities reuse the immutable inbox binding's random bytes. */
-export const eventIdSchema = Schema.String.pipe(
-  Schema.pattern(/^evt_[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/u),
-);
-
 const consumerMetadataSchema = exactStruct({
   generation: Schema.UUID,
   release: Schema.optionalWith(Schema.Boolean, { exact: true }),
@@ -55,7 +50,7 @@ const itemEventDataSchema = Schema.Union(
   }),
 );
 const itemEventSchema = Schema.Struct({
-  eventId: eventIdSchema,
+  eventId: Schema.encodedSchema(DeliveryToken),
   name: Schema.Literal(INBOX_ITEM_EVENT),
   timestamp: Schema.String,
   data: itemEventDataSchema,
@@ -91,7 +86,9 @@ export const decodePollResult = Schema.decodeUnknown(pollResultSchema);
 
 /** Read-only content lookup never acknowledges or retries delivery. */
 export const readEventRequestSchema = exactStruct({
-  eventId: Schema.propertySignature(eventIdSchema).annotations({
+  eventId: Schema.propertySignature(
+    Schema.encodedSchema(DeliveryToken),
+  ).annotations({
     description:
       "The eventId of an org.social-harness/inbox.item event, or one a host's wakeup carries from an inbox item; retained content remains readable after acknowledgment.",
   }),
@@ -355,10 +352,6 @@ export type EventStore = Pick<
   | "readInboxSummary"
   | "completeWebhookDelivery"
 >;
-
-/** Reversible naming keeps lookup independent of subscription and retry state. */
-export const eventIdOf = (token: DeliveryToken): string =>
-  `evt_${token.slice(4)}`;
 
 type ClosedOperationError = Readonly<{ readonly reason: string }>;
 

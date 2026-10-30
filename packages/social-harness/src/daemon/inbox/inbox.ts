@@ -14,14 +14,13 @@ import {
 import { exactStruct } from "../../encoding/exact.js";
 import { localGuidanceSchema } from "../../firewall/outcome/index.js";
 import {
-  eventIdSchema,
   type HarnessMessageReadyEvent,
   type HarnessReadInboxRequest,
   type HarnessReadInboxResult,
 } from "../../host-protocol/operations.js";
 
 /**
- * Invalid aliases cannot address the same retained item under another event id.
+ * Lookup retains the original content and guidance after acknowledgment.
  * @param store Retained immutable classified inbox.
  * @param eventId Canonical event identity carried by a webhook.
  * @returns The original item or a closed lookup failure.
@@ -31,10 +30,7 @@ export const readRuntimeEvent = (
   eventId: string,
 ) =>
   Effect.gen(function* () {
-    yield* Schema.decodeUnknown(eventIdSchema)(eventId);
-    const token = yield* Schema.decodeUnknown(DeliveryToken)(
-      `dlv_${eventId.slice(4)}`,
-    );
+    const token = yield* Schema.decodeUnknown(DeliveryToken)(eventId);
     const retained = yield* store.readInboxItem(token);
     if (retained === undefined) {
       return yield* Effect.fail({ reason: "unknown-event" });

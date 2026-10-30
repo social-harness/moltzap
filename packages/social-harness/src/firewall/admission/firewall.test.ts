@@ -30,7 +30,7 @@ import {
   waitAction,
 } from "../../__tests__/firewall-runtime-fixtures.js";
 import { InboundItem } from "../../communication/collectives/inbound.js";
-import { eventIdOf } from "../../host-protocol/operations.js";
+
 import {
   type DecisionProvider,
   type DecisionRequest,
@@ -69,7 +69,7 @@ function withheldIncoming() {
     expect(
       yield* Effect.flip(
         runtime.delivery.operations.readEvent({
-          eventId: eventIdOf(runtime.candidate.deliveryToken),
+          eventId: runtime.candidate.deliveryToken,
         }),
       ),
     ).toEqual({ reason: "unknown-event" });
@@ -145,7 +145,7 @@ function guidanceIncoming() {
     });
     expect(
       (yield* runtime.delivery.operations.readEvent({
-        eventId: eventIdOf(runtime.candidate.deliveryToken),
+        eventId: runtime.candidate.deliveryToken,
       })).guidance,
     ).toEqual(page.items[0]?.guidance);
   });
@@ -548,7 +548,7 @@ function staleIncoming(mode: FirewallOptions["mode"]) {
     yield* runtime.runPass;
     yield* Queue.take(runtime.completed);
     const event = yield* runtime.delivery.operations
-      .readEvent({ eventId: eventIdOf(runtime.candidate.deliveryToken) })
+      .readEvent({ eventId: runtime.candidate.deliveryToken })
       .pipe(Effect.either);
     expect(event._tag).toBe(mode === "guidance" ? "Right" : "Left");
     expect(churn.count()).toBe(2);

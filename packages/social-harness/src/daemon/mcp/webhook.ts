@@ -20,7 +20,7 @@ import {
   type WebhookStatus,
 } from "../../host-protocol/index.js";
 import { INBOX_ITEM_EVENT } from "../../host-protocol/names.js";
-import { eventIdOf, type EventStore } from "../../host-protocol/operations.js";
+import { type EventStore } from "../../host-protocol/operations.js";
 import {
   readWebhookChallenge,
   sendWebhook,
@@ -526,7 +526,7 @@ const prepareOccurrence = (runtime: WebhookRuntime) =>
         ...registration,
         outbox: {
           deliveryToken: entry.deliveryToken,
-          id: eventIdOf(entry.deliveryToken),
+          id: entry.deliveryToken,
           body,
           attempts: 0,
           firstAttemptAt: timestamp,

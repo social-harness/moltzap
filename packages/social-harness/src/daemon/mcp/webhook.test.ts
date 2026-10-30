@@ -26,7 +26,7 @@ import {
   openEndpointStore,
 } from "../../communication/store/index.js";
 import { maximumEventBytes } from "../../host-protocol/index.js";
-import { eventIdOf } from "../../host-protocol/operations.js";
+
 import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { readRuntimeEvent } from "../inbox/inbox.js";
 import {
@@ -83,8 +83,7 @@ const onSteppedClock = <Value, Failure>(
 const eventPosts = (
   posts: ReturnType<typeof scriptedWebhook>["posts"],
   byte: number,
-) =>
-  posts.filter((post) => post.headers["webhook-id"] === eventIdOf(token(byte)));
+) => posts.filter((post) => post.headers["webhook-id"] === token(byte));
 
 /** Verification challenges have their own signed identity prefix. */
 const verificationPosts = (
@@ -139,9 +138,7 @@ const signsVerifiesAndRotates = () =>
           .pipe(Effect.flip)).code,
       ).toBe(-32011);
       yield* events.unsubscribe({ ...input, delivery: { url } }, "runtime");
-      expect(
-        (yield* readRuntimeEvent(store, eventIdOf(token(1)))).item,
-      ).toEqual(item());
+      expect((yield* readRuntimeEvent(store, token(1))).item).toEqual(item());
     }),
   ).pipe(onSteppedClock);
 
@@ -199,9 +196,9 @@ it("delivers local guidance and its subject map through a signed webhook", () =>
           guidance,
         },
       );
-      expect(
-        (yield* readRuntimeEvent(store, eventIdOf(token(1)))).guidance,
-      ).toEqual(guidance);
+      expect((yield* readRuntimeEvent(store, token(1))).guidance).toEqual(
+        guidance,
+      );
     }),
   ).pipe(onSteppedClock));
 
@@ -254,9 +251,7 @@ const permitsReadAndRevokeDuringDelivery = () =>
       );
       const delivery = yield* events.observe().pipe(Effect.fork);
       yield* Deferred.await(entered);
-      expect(
-        (yield* readRuntimeEvent(store, eventIdOf(token(1)))).item,
-      ).toEqual(item());
+      expect((yield* readRuntimeEvent(store, token(1))).item).toEqual(item());
       yield* events.revoke;
       yield* Deferred.succeed(release, undefined);
       yield* Fiber.join(delivery);
@@ -366,7 +361,7 @@ const retriesAcrossRestart = () => {
         yield* events.observe();
         expect(eventPosts(test.posts, 1)[0]?.body).toBe(original);
         expect(eventPosts(test.posts, 1)[0]?.headers["webhook-id"]).toBe(
-          eventIdOf(token(1)),
+          token(1),
         );
         expect((yield* store.readInboxSummary()).pendingCount).toBe(0);
         yield* stepClock("10 minutes");
@@ -379,9 +374,7 @@ const retriesAcrossRestart = () => {
         const store = yield* openEndpointStore(path, {
           liveWireVersions: LIVE_WIRE_VERSIONS,
         });
-        expect(
-          (yield* readRuntimeEvent(store, eventIdOf(token(1)))).item,
-        ).toEqual(item());
+        expect((yield* readRuntimeEvent(store, token(1))).item).toEqual(item());
       }),
     );
   }).pipe(onSteppedClock);
@@ -428,7 +421,7 @@ const settledMarker = (id: string, outcome: string) => ({
 const marksADeliveryBusyUntilItsReceipt = () => {
   const path = stateDirectory();
   const exporter = new InMemorySpanExporter();
-  const id = eventIdOf(token(1));
+  const id = token(1);
   const pending = pendingMarker(id);
   const settled = (outcome: string) => settledMarker(id, outcome);
   return Effect.gen(function* () {
@@ -472,7 +465,7 @@ const marksADeliveryBusyUntilItsReceipt = () => {
  */
 const settlesALapsedDeliveryAsGivenUp = () => {
   const exporter = new InMemorySpanExporter();
-  const id = eventIdOf(token(1));
+  const id = token(1);
   return Effect.scoped(
     Effect.gen(function* () {
       const store = yield* openEndpointStore(stateDirectory(), {
@@ -501,7 +494,7 @@ const settlesALapsedDeliveryAsGivenUp = () => {
  */
 const settlesARevokedDeliveryAsInterrupted = () => {
   const exporter = new InMemorySpanExporter();
-  const id = eventIdOf(token(1));
+  const id = token(1);
   return Effect.scoped(
     Effect.gen(function* () {
       const store = yield* openEndpointStore(stateDirectory(), {
@@ -576,15 +569,15 @@ const boundsPayloadAndDrains = () =>
       yield* events.observe();
       expect(
         test.posts.filter((post) =>
-          post.headers["webhook-id"]?.startsWith("evt_"),
+          post.headers["webhook-id"]?.startsWith("dlv_"),
         ),
       ).toHaveLength(54);
       const body = eventPosts(test.posts, 1)[0]?.body ?? "";
       expect(Buffer.byteLength(body)).toBeLessThanOrEqual(maximumEventBytes);
       expect(decodeOccurrence(body).data.kind).toBe("reference");
-      expect(
-        (yield* readRuntimeEvent(store, eventIdOf(token(1)))).item,
-      ).toEqual(item(large));
+      expect((yield* readRuntimeEvent(store, token(1))).item).toEqual(
+        item(large),
+      );
       expect((yield* store.readInboxSummary()).pendingCount).toBe(0);
       yield* enqueue(store, 55);
       yield* stepClock("1 day");
@@ -617,16 +610,13 @@ const removesRetiredOccurrence = () =>
       yield* restarted.observe();
       expect(eventPosts(test.posts, 1)).toHaveLength(1);
       expect(eventPosts(test.posts, 2)).toHaveLength(1);
+      expect((yield* readRuntimeEvent(store, token(1))).item).toEqual(item());
       expect(
-        (yield* readRuntimeEvent(store, eventIdOf(token(1)))).item,
-      ).toEqual(item());
-      expect(
-        (yield* readRuntimeEvent(store, "evt_invalid").pipe(Effect.flip))
+        (yield* readRuntimeEvent(store, "dlv_invalid").pipe(Effect.flip))
           .reason,
       ).toBe("invalid-event");
       expect(
-        (yield* readRuntimeEvent(store, eventIdOf(token(3))).pipe(Effect.flip))
-          .reason,
+        (yield* readRuntimeEvent(store, token(3)).pipe(Effect.flip)).reason,
       ).toBe("unknown-event");
     }),
   ).pipe(onSteppedClock);
@@ -649,7 +639,7 @@ const rejectsUnsafeCallbacks = () =>
     const request = {
       url: "https://127.0.0.1/private",
       secret,
-      messageId: "evt_test",
+      messageId: "dlv_test",
       subscriptionId: "sub_test",
       body: "{}",
       timestamp: 0,

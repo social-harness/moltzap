@@ -22,10 +22,7 @@ import {
   encodeRuntimeValue,
   openEndpointStore,
 } from "../../communication/store/index.js";
-import {
-  eventIdOf,
-  type HarnessMessageReadyEvent,
-} from "../../host-protocol/operations.js";
+import { type HarnessMessageReadyEvent } from "../../host-protocol/operations.js";
 import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { makeHostDelivery } from "./host-delivery.js";
 import { noHistoryExport } from "./host-traffic-log.js";
@@ -219,7 +216,7 @@ it("replays the admitted envelope across restart and retains it after acknowledg
     expect(yield* delivery.operations.readInbox({})).toEqual({ items: [] });
     expect(
       yield* delivery.operations.readEvent({
-        eventId: eventIdOf(event.deliveryToken),
+        eventId: event.deliveryToken,
       }),
     ).toEqual({ item, guidance });
   });

@@ -58,7 +58,7 @@ import {
   type DeliveryToken,
   encodeRuntimeValue,
 } from "../../communication/store/index.js";
-import { eventIdOf } from "../../host-protocol/operations.js";
+
 import { installEditableFirewall } from "../policy/editable.js";
 
 // @agent-code-guard/regression-only: Exercises collective admission, refusal and evidence through SQLite and the protocol engine.
@@ -194,7 +194,7 @@ function readEventItem(runtime: IncomingRuntime, token?: DeliveryToken) {
     Effect.orDie,
     Effect.flatMap((deliveryToken) =>
       runtime.delivery.operations.readEvent({
-        eventId: eventIdOf(deliveryToken),
+        eventId: deliveryToken,
       }),
     ),
     Effect.map((event) => event.item),

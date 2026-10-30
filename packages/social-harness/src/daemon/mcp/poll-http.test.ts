@@ -27,7 +27,7 @@ import {
   INBOX_ITEM_EVENT,
   INBOX_PENDING_EVENT,
 } from "../../host-protocol/names.js";
-import { eventIdOf } from "../../host-protocol/operations.js";
+
 import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { makeHostDelivery } from "../inbox/host-delivery.js";
 import { noHistoryExport } from "../inbox/host-traffic-log.js";
@@ -185,13 +185,13 @@ const deliversAdmittedItems = () =>
     const delivered = yield* poll(endpoint, started);
     expect(delivered.events).toMatchObject([
       {
-        eventId: eventIdOf(token(2)),
+        eventId: token(2),
         data: { kind: "item", item: item("admitted"), guidance },
       },
     ]);
     expect((yield* store.readInboxSummary()).pendingCount).toBe(2);
     expect(
-      yield* call(endpoint, "read_event", { eventId: eventIdOf(token(3)) }),
+      yield* call(endpoint, "read_event", { eventId: token(3) }),
     ).toMatchObject({
       error: { data: { reason: "unknown-event" } },
     });

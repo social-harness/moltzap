@@ -145,7 +145,7 @@ const rejectedBearers = [
 ];
 const unknownEvent = {
   name: "read_event",
-  arguments: { eventId: digest("evt_", 1) },
+  arguments: { eventId: digest("dlv_", 1) },
 };
 
 /** The tools each credential role sees, sorted, before and after registration. */
