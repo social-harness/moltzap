@@ -1,7 +1,6 @@
 /** @file Plain sends distinguish Router attachment from ownership of a bound collective message. */
 
 import { SqlClient } from "@effect/sql";
-
 import { scoped as it } from "@effect/vitest";
 import {
   Deferred,

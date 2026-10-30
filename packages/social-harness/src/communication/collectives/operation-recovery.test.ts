@@ -1,7 +1,6 @@
 /** @file Signed collective messages and completion decisions survive endpoint restarts. */
 
 import { SqlClient } from "@effect/sql";
-
 import { live as it, scoped as itOnClock } from "@effect/vitest";
 import { Effect, Fiber, Option, Schema, Scope, TestClock } from "effect";
 import { expect } from "vitest";
@@ -21,14 +20,14 @@ import {
 } from "../../__tests__/collective-recovery-fixtures.js";
 import { makeCollectiveOperations } from "../../__tests__/collective-send.js";
 import {
+  openTestDatabase,
+  type TestDatabase,
+} from "../../__tests__/communication-test-database.js";
+import {
   engineFixture,
   type Fixture,
 } from "../../__tests__/firewall-runtime-fixtures.js";
 import { withDaemonStore } from "../../__tests__/store-schema-fixtures.js";
-import {
-  type TestDatabase,
-  openTestDatabase,
-} from "../../__tests__/communication-test-database.js";
 import {
   AgentAddress,
   type CertifiedRecord,

@@ -1,10 +1,10 @@
 /** @file Real signed records and reopened stores support collective recovery tests. */
 
+import { SqlClient } from "@effect/sql";
 import { Deferred, Effect, Schema } from "effect";
 import { expect } from "vitest";
 import type { InboundItem } from "../communication/collectives/inbound.js";
 import type { CollectivePorts } from "../communication/collectives/ports.js";
-import { SqlClient } from "@effect/sql";
 import type { TestDatabase } from "./communication-test-database.js";
 import type { Fixture } from "./firewall-runtime-fixtures.js";
 import {

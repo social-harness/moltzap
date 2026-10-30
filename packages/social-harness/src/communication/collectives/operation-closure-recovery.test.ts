@@ -1,5 +1,6 @@
 /** @file Signed all-gather completion survives interruption at each retained transition. */
 
+import { SqlClient } from "@effect/sql";
 import { scoped as it } from "@effect/vitest";
 import {
   Deferred,
@@ -29,14 +30,13 @@ import {
   makeCollectiveOperations,
 } from "../../__tests__/collective-send.js";
 import {
+  openTestDatabase,
+  type TestDatabase,
+} from "../../__tests__/communication-test-database.js";
+import {
   engineFixture,
   type Fixture,
 } from "../../__tests__/firewall-runtime-fixtures.js";
-import { SqlClient } from "@effect/sql";
-import {
-  type TestDatabase,
-  openTestDatabase,
-} from "../../__tests__/communication-test-database.js";
 import {
   AgentAddress,
   type CertifiedRecord,

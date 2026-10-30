@@ -14,8 +14,8 @@ import { expect } from "vitest";
 
 import type { InboundItem } from "./inbound.js";
 import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
-import { makeCollectiveOperations } from "../../__tests__/collective-send.js";
 import { collectivePersistencePorts } from "../../__tests__/collective-message-fixtures.js";
+import { makeCollectiveOperations } from "../../__tests__/collective-send.js";
 import { AgentAddress } from "../records/index.js";
 
 it("keeps accepted gather custody when its caller is interrupted during fanout", () =>
