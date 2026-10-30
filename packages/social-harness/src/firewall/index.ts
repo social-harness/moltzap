@@ -16,15 +16,16 @@ import { exactStruct } from "../encoding/exact.js";
 import { MAXIMUM_RUNTIME_ITEM_BYTES } from "../encoding/limits.js";
 import { AgentView } from "../identity/cards.js";
 import {
+  captureInput,
   captureRegistration,
   type CheckedGuidance,
-  checkMessage,
+  checkCapturedMessage,
   type DecisionProvider,
   DecisionProviderError,
   decodeFrozen,
   ENDPOINT_SENDER,
   type FirewallCheck,
-  Message,
+  type Message,
   MessageContext,
   type MessageMiddleware,
   projectFeedback,
@@ -590,34 +591,43 @@ function isTransient(error: DecisionProviderError): boolean {
   );
 }
 
-/** The retained input and the evaluator receive the same captured message and evidence. */
+/** The evaluator and retained decision receive the same detached message and context. */
 function capturePrepared(
   configuration: FirewallConfiguration,
   input: PreparedFirewallCheck,
 ) {
   return Effect.gen(function* () {
-    const context = yield* decodeFrozen(MessageContext, {
+    const context = {
       ...Struct.omit(input.context),
       facts: configuration.facts,
-    });
-    const message =
+    };
+    const evidence =
       input.message === undefined
-        ? undefined
-        : yield* decodeFrozen(Message, input.message);
-    const agents = yield* decodeFrozen(Schema.Array(AgentView), input.agents);
+        ? {
+            event: undefined,
+            context: yield* decodeFrozen(MessageContext, context),
+          }
+        : yield* captureInput(
+            { direction: input.direction, message: input.message },
+            context,
+          );
     return {
       direction: input.direction,
       canonicalCandidate: input.canonicalCandidate.slice(),
-      context,
-      agents,
-      ...(message === undefined ? {} : { message }),
+      evidence,
+      agents: yield* decodeFrozen(Schema.Array(AgentView), input.agents),
     };
   }).pipe(
-    Effect.catchTag("ParseError", () =>
-      Effect.fail(new EndpointStoreError({ reason: "corrupt" })),
-    ),
+    Effect.catchTags({
+      CheckInputError: () =>
+        Effect.fail(new EndpointStoreError({ reason: "corrupt" })),
+      ParseError: () =>
+        Effect.fail(new EndpointStoreError({ reason: "corrupt" })),
+    }),
   );
 }
+
+type CapturedCheck = Effect.Effect.Success<ReturnType<typeof capturePrepared>>;
 
 /** Completed checks carry the exact policy and evidence that delivery commits. */
 function assess(
@@ -662,36 +672,38 @@ function assess(
 function evaluateMessage(
   options: CapturedOptions,
   active: ActiveRules,
-  input: PreparedFirewallCheck,
+  input: CapturedCheck,
 ) {
-  return input.message === undefined
+  const evidence = input.evidence;
+  return evidence.event === undefined
     ? Effect.succeed(unavailable())
-    : checkMessage({
-        event: { direction: input.direction, message: input.message },
-        context: input.context,
-        code: options[input.direction],
-        rules: active.rules,
-        settings: options.settings,
-        revision: active.revision,
-        fixedRuleIds: active.fixedRuleIds,
-        ...(options.text === undefined
-          ? {}
-          : {
-              textSettings: options.text.settings,
-              provider: options.text.provider,
-            }),
-      }).pipe(
+    : checkCapturedMessage(
+        {
+          code: options[input.direction],
+          rules: active.rules,
+          settings: options.settings,
+          revision: active.revision,
+          fixedRuleIds: active.fixedRuleIds,
+          ...(options.text === undefined
+            ? {}
+            : {
+                textSettings: options.text.settings,
+                provider: options.text.provider,
+              }),
+        },
+        evidence,
+      ).pipe(
         Effect.catchTag("CheckInputError", () => Effect.succeed(unavailable())),
       );
 }
 
-function retainedInput(active: ActiveRules, input: PreparedFirewallCheck) {
+function retainedInput(active: ActiveRules, input: CapturedCheck) {
   return encodeRuntimeValue({
     configurationDigest: active.configurationDigest,
     installation: active.metadata,
-    context: input.context,
+    context: input.evidence.context,
     agents: input.agents,
-    message: input.message ?? null,
+    message: input.evidence.event?.message ?? null,
   });
 }
 
@@ -714,7 +726,7 @@ function unavailable(): FirewallCheck {
 /** Registered advice includes only the message references already visible to this agent. */
 function guidanceProjection(
   result: FirewallCheck,
-  input: PreparedFirewallCheck,
+  input: CapturedCheck,
   capture: {
     readonly mode: "guidance" | "enforcement";
     readonly checkId: string;
@@ -750,18 +762,20 @@ function guidanceProjection(
 
 function guidanceSubjects(
   selected: ReadonlySet<string>,
-  input: PreparedFirewallCheck,
+  input: CapturedCheck,
 ): CheckedGuidance["subjects"] {
   const agents = new Map<string, AgentView>(
     input.agents.map((agent) => [agent.agentId, agent]),
   );
-  const available = input.context.history.filter(
+  const available = input.evidence.context.history.filter(
     (entry) => entry.visibility === "runtime" && entry.admission === "admitted",
   );
+  const message = input.evidence.event?.message;
   const subjects = new Map(
-    [...available, ...(input.message === undefined ? [] : [input.message])].map(
-      (entry) => [entry.id, entry],
-    ),
+    [...available, ...(message === undefined ? [] : [message])].map((entry) => [
+      entry.id,
+      entry,
+    ]),
   );
   return [...subjects.values()]
     .filter((entry) => selected.has(entry.id))
