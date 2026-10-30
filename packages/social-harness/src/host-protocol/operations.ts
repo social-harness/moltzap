@@ -14,7 +14,7 @@ import {
   firewallRefusalSchema,
   type FirewallSendError,
   localGuidanceSchema,
-} from "../firewall/outcome/index.js";
+} from "./advice.js";
 import { InboundItem } from "./items.js";
 import { HARNESS_CONSUMER_META_KEY, INBOX_ITEM_EVENT } from "./names.js";
 import { type SendResult, SendResultSchema } from "./send-result.js";

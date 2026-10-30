@@ -25,7 +25,7 @@ import {
   SendError,
   sendFailureReasons,
 } from "../communication/conversations/errors.js";
-import { FirewallSendError } from "../firewall/outcome/index.js";
+import { FirewallSendError } from "../host-protocol/advice.js";
 import {
   HARNESS_ACKNOWLEDGE_DELIVERY_TOOL,
   HARNESS_READ_INBOX_TOOL,

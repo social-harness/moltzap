@@ -39,16 +39,17 @@ import {
   encodeRuntimeValue,
   type EndpointStoreError,
 } from "../../communication/store/index.js";
+import type { Firewall } from "../../firewall/index.js";
 import {
-  checkOutgoing,
-  type OutgoingCandidate,
-} from "../../firewall/admission/firewall.js";
+  FirewallSendError,
+  refusalReason,
+} from "../../host-protocol/advice.js";
+import { type AdmissionContext, runAdmission } from "./incoming-worker.js";
 import {
-  type AdmissionContext,
   type FirewallEnvironment,
-  type InstalledFirewall,
-  runAdmission,
-} from "../../firewall/index.js";
+  type OutgoingCandidate,
+  prepareOutgoingCheck,
+} from "./message.js";
 import { InboundItem } from "../../host-protocol/items.js";
 import {
   decodeHarnessSendRequest,
@@ -73,10 +74,7 @@ import {
   readRuntimeInbox,
 } from "./inbox.js";
 
-/**
- * The collective layer as delivery uses it: the application send, which
- * includes local refusal, and the settling of a request's admission.
- */
+/** Ordinary collective preparation fixes identity before local assessment and protocol acceptance. */
 type ApplicationSender = Pick<CollectiveOperations, "prepare" | "accept">;
 
 /** Host delivery declares its persistence needs without acquiring a database. */
@@ -99,7 +97,7 @@ export interface HostDeliveryInput {
   readonly historyExport: HistoryExportPort;
   /** The active collective layer, absent while the service is unregistered. */
   readonly collectives: () => ApplicationSender | undefined;
-  readonly firewall?: InstalledFirewall;
+  readonly firewall?: Firewall;
   readonly firewallEnvironment?: () => FirewallEnvironment | undefined;
   /** Service lifetime, independent of any host request. */
   readonly scope: Scope.Scope;
@@ -212,6 +210,30 @@ const sendDecoded = (input: DeliveryContext, request: HarnessSendRequest) =>
       Effect.map(publicSendResult),
     );
   });
+
+/** Outgoing assessment is retained before acceptance; a refusal creates no protocol intent. */
+function checkOutgoing(
+  environment: FirewallEnvironment,
+  candidate: OutgoingCandidate,
+) {
+  return Effect.gen(function* () {
+    const prepared = yield* prepareOutgoingCheck(environment, candidate);
+    const checked = yield* environment.firewall.check(prepared);
+    yield* environment.store.completeFirewallAttempt(
+      checked.completion,
+      "outgoing",
+      prepared.canonicalCandidate,
+    );
+    if (!checked.completion.admit) {
+      return yield* new FirewallSendError({
+        checkId: checked.completion.checkId,
+        refusal: refusalReason(checked.result.reason),
+        feedback: checked.result.feedback,
+      });
+    }
+    return checked.guidance;
+  });
+}
 
 function outgoingCandidate(prepared: PreparedCollective): OutgoingCandidate {
   switch (prepared.kind) {
@@ -580,8 +602,8 @@ const runPass = <E>(
  * ```mermaid
  * flowchart LR
  *   C[Certified message] --> Q[Private conversation queue]
- *   Q --> F[Run full incoming middleware chain]
- *   F --> A[Compare evidence and commit disposition]
+ *   Q --> F[Check the captured incoming message]
+ *   F --> A[Commit the captured assessment disposition]
  *   A -->|admit| V[Inbox with original item and local guidance]
  *   A -->|hold| H[Retain privately for inspection]
  *   V --> R[Native subscription, read-event, inbox and webhook]

@@ -5,7 +5,7 @@
 
 import { Cause, Deferred, Effect, Option, Queue, Scope } from "effect";
 import type { EndpointStoreError } from "../../communication/store/index.js";
-import type { InstalledFirewall } from "../../firewall/index.js";
+import type { Firewall } from "../../firewall/index.js";
 import type { VerifiedAgentCard } from "../../identity/cards.js";
 import type { DaemonBootstrap } from "../bootstrap.js";
 import type { HistoryExportPort } from "../inbox/host-traffic-log.js";
@@ -39,7 +39,7 @@ export interface DaemonStartup {
   readonly store: DaemonStore;
   readonly bootstrap: DaemonBootstrap;
   readonly registration: DaemonRegistrationState;
-  readonly firewall?: InstalledFirewall;
+  readonly firewall?: Firewall;
 }
 
 /** The running daemon the lifecycle composes into MCP operations. */
@@ -467,7 +467,7 @@ function daemonDelivery(
               ? undefined
               : {
                   store: input.store,
-                  installed: input.firewall,
+                  firewall: input.firewall,
                   localAgentCard: state.identity.protocol.agentCard,
                 };
           },

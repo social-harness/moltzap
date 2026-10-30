@@ -13,7 +13,7 @@ import type {
 import type {
   FirewallSendError,
   LocalGuidance,
-} from "../firewall/outcome/index.js";
+} from "../host-protocol/advice.js";
 import type { InboundItem } from "../host-protocol/items.js";
 import type { SendResult } from "../host-protocol/send-result.js";
 

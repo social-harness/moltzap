@@ -7,8 +7,18 @@ import {
 } from "../communication/collectives/inbound.js";
 import { wellFormedString } from "../communication/records/values.js";
 import { exactStruct } from "../encoding/exact.js";
-import { withheldText } from "../firewall/outcome/index.js";
+import {
+  checkedGuidanceSchema,
+  firewallRefusalReasonSchema,
+} from "../firewall/check.js";
 import { AgentView } from "../identity/cards.js";
+
+/** Local withholding replaces peer text without changing its certified record. */
+export const withheldText = exactStruct({
+  kind: Schema.Literal("withheld"),
+  checkId: checkedGuidanceSchema.fields.checkId,
+  reason: firewallRefusalReasonSchema,
+});
 
 /* eslint-disable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Schema values share their boundary type names. */
 

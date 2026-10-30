@@ -24,7 +24,7 @@ import {
   Scope,
 } from "effect";
 import type { CollectiveError } from "../../communication/collectives/contracts.js";
-import type { FirewallSendError } from "../../firewall/outcome/index.js";
+import type { FirewallSendError } from "../../host-protocol/advice.js";
 import type { EventStore } from "../inbox/store.js";
 import {
   issuesText,

@@ -15,7 +15,7 @@ import {
   EndpointStoreError,
 } from "../../communication/store/index.js";
 import { exactStruct } from "../../encoding/exact.js";
-import { localGuidanceSchema } from "../../firewall/outcome/index.js";
+import { localGuidanceSchema } from "../../host-protocol/advice.js";
 import { InboundItem } from "../../host-protocol/items.js";
 
 /**

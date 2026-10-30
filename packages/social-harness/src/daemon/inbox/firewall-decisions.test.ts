@@ -9,7 +9,8 @@ import {
 } from "@opentelemetry/sdk-trace-base";
 import { Effect, Queue, Schema, Struct } from "effect";
 import { expect } from "vitest";
-import type { FirewallOptions } from "../policy/installation.js";
+import type { TextRule } from "../../firewall/config.js";
+import type { FirewallOptions } from "../../firewall/index.js";
 import { makeRetainedCheckFixture } from "../../__tests__/firewall-retained-fixtures.js";
 import {
   fixture,
@@ -35,9 +36,8 @@ import {
   MiddlewareError,
   type MiddlewareInput,
   type MiddlewareResult,
-  type TextRule,
-} from "../evaluator/contract/index.js";
-import { installEditableFirewall } from "../policy/editable.js";
+} from "../../firewall/check.js";
+import { makeFirewall } from "../../firewall/index.js";
 
 // @agent-code-guard/regression-only: Reads decisions retained by real admission through SQLite and the protocol engine.
 
@@ -218,10 +218,7 @@ function text(
 function decideIncoming(configure: (subject: Fixture) => FirewallOptions) {
   return Effect.gen(function* () {
     const subject = yield* fixture;
-    const editable = yield* installEditableFirewall(
-      configure(subject),
-      subject.store,
-    );
+    const editable = yield* makeFirewall(configure(subject), subject.store);
     const runtime = yield* incomingThrough(subject, editable);
     yield* runtime.runPass;
     yield* Queue.take(runtime.completed);
@@ -455,8 +452,8 @@ it("refuses unknown stored editable properties as persistence failures", () =>
       [],
       text(decisionProvider(), { initial: [review] }),
     );
-    yield* installEditableFirewall(configured, subject.store);
-    const reopened = yield* installEditableFirewall(configured, subject.store);
+    yield* makeFirewall(configured, subject.store);
+    const reopened = yield* makeFirewall(configured, subject.store);
     expect((yield* reopened.policy.read()).rules).toContainEqual(
       expect.objectContaining(review),
     );
@@ -480,7 +477,7 @@ it("refuses unknown stored editable properties as persistence failures", () =>
       }),
     );
     expect(
-      yield* Effect.flip(installEditableFirewall(configured, subject.store)),
+      yield* Effect.flip(makeFirewall(configured, subject.store)),
     ).toMatchObject({ reason: "persistence-failed" });
   }));
 
@@ -536,7 +533,7 @@ it.each([
     return Effect.gen(function* () {
       const subject = yield* fixture;
       const retained = yield* makeRetainedCheckFixture;
-      const installed = yield* installEditableFirewall(
+      const installed = yield* makeFirewall(
         options([], text(decisionProvider(), {})),
         subject.store,
       );
@@ -545,10 +542,7 @@ it.each([
         checkId,
         direction: "outgoing",
         canonicalCandidate: retained.canonicalCandidate,
-        canonicalInput: yield* input({
-          ...retained.input,
-          installation: installed.metadata,
-        }),
+        canonicalInput: yield* input(retained.input),
       });
       yield* subject.store.completeFirewallAttempt(
         {
@@ -584,7 +578,7 @@ it("keeps the rules active at check time after the owner removes the deciding ru
   Effect.gen(function* () {
     const subject = yield* fixture;
     const provider = decisionProvider([privacy], "violation");
-    const editable = yield* installEditableFirewall(
+    const editable = yield* makeFirewall(
       options([], text(provider, {})),
       subject.store,
     );
@@ -594,7 +588,7 @@ it("keeps the rules active at check time after the owner removes the deciding ru
     yield* Queue.take(runtime.completed);
     yield* editable.policy.update({ remove: [privacy.id] }, "owner");
 
-    const restarted = yield* installEditableFirewall(
+    const restarted = yield* makeFirewall(
       options([], text(provider, { fixed: [privacy] })),
       subject.store,
     );
@@ -616,7 +610,7 @@ it("keeps the rules active at check time after the owner removes the deciding ru
 it("retains a runtime norm's ownership when the owner later replaces it", () =>
   Effect.gen(function* () {
     const subject = yield* fixture;
-    const editable = yield* installEditableFirewall(
+    const editable = yield* makeFirewall(
       options([], text(nearTieProvider, {})),
       subject.store,
     );
@@ -628,7 +622,7 @@ it("retains a runtime norm's ownership when the owner later replaces it", () =>
       { remove: [announce.id], add: [announce] },
       "owner",
     );
-    const restarted = yield* installEditableFirewall(
+    const restarted = yield* makeFirewall(
       options([], text(nearTieProvider, {})),
       subject.store,
     );
@@ -653,10 +647,7 @@ function arrayContaining(values: readonly unknown[]): unknown {
 function readRefusedDecisions(directory: string, reviser: MessageMiddleware) {
   return withDaemonStore(directory, (store) =>
     Effect.gen(function* () {
-      const editable = yield* installEditableFirewall(
-        options([reviser]),
-        store,
-      );
+      const editable = yield* makeFirewall(options([reviser]), store);
       const { decisions } = yield* editable.policy.decisions({});
       const { memberships } = yield* store.recover();
       return { decisions, memberships };
@@ -667,10 +658,7 @@ function readRefusedDecisions(directory: string, reviser: MessageMiddleware) {
 function refuseFirstGroupMessage(reviser: MessageMiddleware) {
   return Effect.gen(function* () {
     const subject = yield* fixture;
-    const editable = yield* installEditableFirewall(
-      options([reviser]),
-      subject.store,
-    );
+    const editable = yield* makeFirewall(options([reviser]), subject.store);
     const delivery = yield* outgoingThrough(subject, editable);
     yield* Effect.flip(
       delivery.operations.send({

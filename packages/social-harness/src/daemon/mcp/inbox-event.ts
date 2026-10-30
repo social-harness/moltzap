@@ -3,7 +3,7 @@
 import { Effect } from "effect";
 import type { InboxEntry } from "../inbox/store.js";
 import { decodeRuntimeValue } from "../../communication/store/index.js";
-import { localGuidanceSchema } from "../../firewall/outcome/index.js";
+import { localGuidanceSchema } from "../../host-protocol/advice.js";
 import { maximumEventBytes } from "../../host-protocol/index.js";
 import { InboundItem } from "../../host-protocol/items.js";
 import { INBOX_ITEM_EVENT } from "../../host-protocol/names.js";

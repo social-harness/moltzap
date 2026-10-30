@@ -2,14 +2,14 @@
 
 import { Encoding, Schema } from "effect";
 import { expect, it } from "vitest";
-import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
+import { testAgentView } from "../__tests__/agent-card-fixtures.js";
 import {
   type CheckedGuidance,
   FirewallSendError,
   InboundItem,
   renderCollectiveResult,
   renderLocalGuidance,
-} from "../../index.js";
+} from "../index.js";
 
 // @agent-code-guard/regression-only: These examples pin the public text projection and quoted peer attribution for hosts.
 

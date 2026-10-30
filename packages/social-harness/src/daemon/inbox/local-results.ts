@@ -9,7 +9,7 @@ import type {
   FirewallInboxEntry,
   FirewallLocalAdmission,
   FirewallRequestAdmission,
-} from "../store/index.js";
+} from "../../firewall/store/index.js";
 import { ResultProvenance } from "../../communication/collectives/index.js";
 import {
   agentAddressOf,
@@ -25,18 +25,18 @@ import {
   renderCollectiveResult,
   renderOutcome,
 } from "../../host-protocol/render.js";
-import { AgentView, agentViewOf } from "../../identity/cards.js";
+import { AgentView } from "../../identity/cards.js";
+import { firewallCheckSchema, type Message } from "../../firewall/check.js";
+import { ENDPOINT_SENDER } from "../../firewall/check.js";
 import {
-  type FirewallCheck,
-  firewallCheckSchema,
-  type Message,
-} from "../evaluator/index.js";
-import { ENDPOINT_SENDER, type LocalGuidance } from "../outcome/index.js";
+  type LocalGuidance,
+  refusalReason,
+} from "../../host-protocol/advice.js";
+import type {
+  CheckedMessage,
+  PreparedFirewallCheck,
+} from "../../firewall/index.js";
 import {
-  assess,
-  attemptInput,
-  captureEnvironment,
-  type CheckedMessage,
   contextFrom,
   type DecodedRecord,
   decodeMessage,
@@ -44,9 +44,8 @@ import {
   type FirewallEnvironment,
   hashedId,
   messageFields,
-  mintCheckId,
-  refusalReason,
-} from "./firewall-checks.js";
+  prepareMessageCheck,
+} from "./message.js";
 /** The window of a check with no history: a result's missing record, or a failure. */
 const EMPTY_WINDOW = {
   pendingOutgoing: false,
@@ -190,10 +189,7 @@ function resultAdmission(
   }).pipe(Effect.withSpan("resultAdmission"));
 }
 
-/**
- * Check every counted answer, and the question when it is checked, each
- * against its own window of one evidence capture.
- */
+/** One evidence capture and one managed rule capture cover every checked text of this result. */
 function checkResultTexts(
   environment: FirewallEnvironment,
   result: ResultCheck,
@@ -203,33 +199,55 @@ function checkResultTexts(
     const { answers, question } = texts;
     const captured = yield* environment.store.readFirewallEvidenceSlices({
       ranges: resultRanges(result.item, texts),
-      maximumRecords: environment.installed.configuration.maximumHistoryRecords,
+      maximumRecords: environment.firewall.configuration.maximumHistoryRecords,
     });
-    const answerChecks = Effect.forEach(
+    const answerInputs = yield* Effect.forEach(
       answers,
       (answer, index) =>
-        checkAnswer(environment, {
-          ...result,
-          evidence: sliceEvidence(captured, index),
-          answer,
-        }),
-      {
-        concurrency:
-          environment.installed.configuration.maximumConcurrentChecks,
+        prepareRecordText(
+          environment,
+          { ...result, evidence: sliceEvidence(captured, index) },
+          (candidate) => answerMessage(candidate, answer, result.item),
+        ),
+      { concurrency: 1 },
+    );
+    const inputs =
+      question.kind !== "check"
+        ? answerInputs
+        : [
+            ...answerInputs,
+            yield* prepareRecordText(
+              environment,
+              { ...result, evidence: sliceEvidence(captured, answers.length) },
+              (candidate) => requestMessage(candidate, result.item),
+            ),
+          ];
+    const checks: readonly CheckedMessage[] =
+      inputs.length === 0 ? [] : yield* environment.firewall.checkMany(inputs);
+    if (checks.length !== inputs.length) {
+      return yield* new EndpointStoreError({ reason: "corrupt" });
+    }
+    const checkedAnswers = yield* Effect.forEach(
+      answers,
+      (answer, index) => {
+        const checked = checks[index];
+        return checked === undefined
+          ? Effect.fail(new EndpointStoreError({ reason: "corrupt" }))
+          : Effect.succeed({
+              member: answer.member,
+              recordHash: answer.recordHash,
+              checked,
+            });
       },
+      { concurrency: 1 },
     );
     if (question.kind !== "check") {
-      return { answers: yield* answerChecks };
+      return { answers: checkedAnswers };
     }
-    const questionCheck = checkRecordText(
-      environment,
-      { ...result, evidence: sliceEvidence(captured, answers.length) },
-      (candidate) => requestMessage(candidate, result.item),
-    );
-    const [checkedAnswers, checked] = yield* Effect.all(
-      [answerChecks, questionCheck],
-      { concurrency: 2 },
-    );
+    const checked = checks[answers.length];
+    if (checked === undefined) {
+      return yield* new EndpointStoreError({ reason: "corrupt" });
+    }
     return {
       answers: checkedAnswers,
       question: { recordHash: question.recordHash, checked },
@@ -308,7 +326,7 @@ function questionAdmission(
           return Effect.succeed({ kind: "shown" });
         }
         const enforced =
-          environment.installed.configuration.mode === "enforcement";
+          environment.firewall.configuration.mode === "enforcement";
         return (
           enforced ? withheldBy(admission) : Effect.succeed(undefined)
         ).pipe(
@@ -337,26 +355,6 @@ function resultRanges(item: ResultItem, texts: ResultTexts) {
       ? [{ beforeRecord: texts.question.recordHash, conversation: item.to }]
       : []),
   ];
-}
-
-/** Check one counted answer as its line of the result. */
-function checkAnswer(
-  environment: FirewallEnvironment,
-  check: ResultCheck & {
-    readonly evidence: FirewallEvidence;
-    readonly answer: CountedAnswer;
-  },
-): Effect.Effect<CheckedAnswer, EndpointStoreError> {
-  const { answer } = check;
-  return checkRecordText(environment, check, (candidate) =>
-    answerMessage(candidate, answer, check.item),
-  ).pipe(
-    Effect.map((checked) => ({
-      member: answer.member,
-      recordHash: answer.recordHash,
-      checked,
-    })),
-  );
 }
 
 /** The inbox entry of a result's projection, with its advice when it fits the item budget. */
@@ -433,37 +431,32 @@ function sliceEvidence(
   };
 }
 
-/**
- * Check one record's text of a result against its slice of the capture.
- * A slice whose record is missing has no message, and holds unavailable.
- */
-function checkRecordText(
+/** A missing candidate remains missing evidence rather than inferred peer text. */
+function prepareRecordText(
   environment: FirewallEnvironment,
   check: ResultCheck & { readonly evidence: FirewallEvidence },
   project: (
     candidate: DecodedRecord,
   ) => Effect.Effect<Message, EndpointStoreError>,
-): Effect.Effect<CheckedMessage, EndpointStoreError> {
-  return environment.installed.permits.withPermits(1)(
-    Effect.gen(function* () {
-      const candidate =
-        check.evidence.candidate === undefined
-          ? undefined
-          : yield* decodeRecord(
-              check.evidence.candidate,
-              environment.localAgentCard.agentId,
-            );
-      const message =
-        candidate === undefined ? undefined : yield* project(candidate);
-      return yield* assess(environment, {
-        direction: "incoming",
-        evidence: check.evidence,
-        canonicalCandidate: check.entry.canonicalItem,
-        ...(message === undefined ? {} : { message }),
-        cards: candidate?.cards ?? [],
-      });
-    }),
-  );
+): Effect.Effect<PreparedFirewallCheck, EndpointStoreError> {
+  return Effect.gen(function* () {
+    const candidate =
+      check.evidence.candidate === undefined
+        ? undefined
+        : yield* decodeRecord(
+            check.evidence.candidate,
+            environment.localAgentCard.agentId,
+          );
+    const message =
+      candidate === undefined ? undefined : yield* project(candidate);
+    return yield* prepareMessageCheck(environment, {
+      direction: "incoming",
+      evidence: check.evidence,
+      canonicalCandidate: check.entry.canonicalItem,
+      ...(message === undefined ? {} : { message }),
+      cards: candidate?.cards ?? [],
+    });
+  });
 }
 
 /**
@@ -613,35 +606,20 @@ function localEvidence(conversation: MessageAddressInput, message: Message) {
   }).pipe(Effect.map((canonicalEntry) => ({ conversation, canonicalEntry })));
 }
 
-/**
- * The audit record of an item admitted without inference: its input, with an
- * empty capture, and an allowing result with no middleware checks.
- */
+/** The managed owner supplies audit bytes; local publication inserts them atomically with the item. */
 function deterministicCheck(
-  liveEnvironment: FirewallEnvironment,
+  environment: FirewallEnvironment,
   entry: FirewallInboxEntry,
   message: Message,
 ) {
-  const environment = captureEnvironment(liveEnvironment);
   return Effect.gen(function* () {
     const { context } = yield* contextFrom(environment, EMPTY_WINDOW, []);
-    const allowed: FirewallCheck = {
-      judgment: "allow",
-      reason: "eligible",
-      feedback: [],
-      guidance: [],
-      checks: [],
-    };
-    return {
-      checkId: mintCheckId(),
-      direction: "incoming" as const,
+    return yield* environment.firewall.recordEndpoint({
+      direction: "incoming",
       canonicalCandidate: entry.canonicalItem,
-      canonicalInput: yield* attemptInput(environment, {
-        context,
-        agents: [agentViewOf(environment.localAgentCard)],
-        message,
-      }),
-      canonicalResult: yield* encodeRuntimeValue(allowed),
-    };
+      context,
+      agents: [AgentView.make(environment.localAgentCard)],
+      message,
+    });
   }).pipe(Effect.withSpan("deterministicCheck"));
 }

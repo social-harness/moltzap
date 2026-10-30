@@ -2,7 +2,7 @@
 
 import { Schema } from "effect";
 import { SendResultSchema as ProtocolResult } from "../communication/collectives/contracts.js";
-import { checkedGuidanceSchema } from "../firewall/outcome/index.js";
+import { checkedGuidanceSchema } from "../firewall/check.js";
 /* eslint-disable @typescript-eslint/naming-convention -- Schema values share their boundary type names. */
 
 const [multicast, response, collective] = ProtocolResult.members;

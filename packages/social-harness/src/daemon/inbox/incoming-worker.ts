@@ -1,8 +1,11 @@
 /** @file Checks queued incoming items and records whether the host may receive them. */
 
 import { Cause, Clock, Deferred, Effect, Queue, type Scope } from "effect";
-import type { FirewallInboxEntry, FirewallStore } from "../store/index.js";
-import type { FirewallEnvironment } from "./firewall-checks.js";
+import type {
+  FirewallInboxEntry,
+  FirewallStore,
+} from "../../firewall/store/index.js";
+import type { FirewallEnvironment } from "./message.js";
 import {
   decodeRuntimeValue,
   type DeliveryToken,
@@ -10,7 +13,7 @@ import {
   type EndpointStoreError,
 } from "../../communication/store/index.js";
 import { InboundItem } from "../../host-protocol/items.js";
-import { checkIncoming } from "./firewall.js";
+import { prepareIncomingCheck } from "./message.js";
 import { checkLocalItem } from "./local-results.js";
 
 /** What the admission worker reads and changes in one service's delivery. */
@@ -25,7 +28,7 @@ export interface AdmissionContext {
     item: InboundItem,
     disposition: "admitted" | "withheld",
   ) => Effect.Effect<void>;
-  /** The active collective layer, absent while the service is unregistered. */
+  /** Local attribution becomes available after the daemon activates. */
 
   readonly firewallEnvironment?: () => FirewallEnvironment | undefined;
   /** Service lifetime; each conversation's check runs as a fiber in it. */
@@ -66,7 +69,7 @@ function drainAdmission(input: AdmissionContext, publish: Effect.Effect<void>) {
     for (const entry of entries) {
       if (
         input.activeConversations.size >=
-        environment.installed.configuration.maximumConcurrentChecks
+        environment.firewall.configuration.maximumConcurrentChecks
       ) {
         return;
       }
@@ -110,7 +113,11 @@ function admitItem(
       case "collectiveRequest": {
         if ((yield* Clock.currentTimeMillis) >= item.deadlineAt) {
           yield* input.store.retireFirewallItem(entry.deliveryToken);
-          return yield* publishDisposition(input, entry, item, "withheld");
+          return yield* input.showDisposition(
+            entry.deliveryToken,
+            item,
+            "withheld",
+          );
         }
         return yield* admitRecordItem(input, environment, entry, item);
       }
@@ -135,7 +142,9 @@ function admitRecordItem(
   >,
 ) {
   return Effect.gen(function* () {
-    const checked = yield* checkIncoming(environment, entry);
+    const checked = yield* prepareIncomingCheck(environment, entry).pipe(
+      Effect.flatMap((prepared) => environment.firewall.check(prepared)),
+    );
     const expired =
       item.kind === "collectiveRequest" &&
       (yield* Clock.currentTimeMillis) >= item.deadlineAt;
@@ -149,7 +158,7 @@ function admitRecordItem(
       },
       expired ? { ...checked.completion, admit: false } : checked.completion,
     );
-    yield* publishDisposition(input, entry, item, disposition);
+    yield* input.showDisposition(entry.deliveryToken, item, disposition);
   });
 }
 
@@ -170,23 +179,15 @@ function admitLocalItem(
           Effect.flatMap((disposition) =>
             decodeRuntimeValue(InboundItem, admission.item.canonicalItem).pipe(
               Effect.flatMap((projected) =>
-                publishDisposition(input, entry, projected, disposition),
+                input.showDisposition(
+                  entry.deliveryToken,
+                  projected,
+                  disposition,
+                ),
               ),
             ),
           ),
         ),
     ),
   );
-}
-
-/** Settle a request's admission in the collective layer, then show the disposition. */
-function publishDisposition(
-  input: AdmissionContext,
-  entry: FirewallInboxEntry,
-  item: InboundItem,
-  disposition: "admitted" | "withheld",
-) {
-  return Effect.gen(function* () {
-    yield* input.showDisposition(entry.deliveryToken, item, disposition);
-  });
 }

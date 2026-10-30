@@ -3,7 +3,7 @@
 import { scopedLive as it } from "@effect/vitest";
 import { Deferred, Duration, Effect, Fiber } from "effect";
 import { describe, expect } from "vitest";
-import type { MiddlewareInput } from "../evaluator/contract/index.js";
+import type { MiddlewareInput } from "../../firewall/check.js";
 import {
   admitPending,
   answerBob,
@@ -31,8 +31,8 @@ import {
   rule,
 } from "../../__tests__/firewall-runtime-fixtures.js";
 import { renderOutcome } from "../../host-protocol/render.js";
-import { FirewallSendError } from "../outcome/index.js";
-import { decodeFirewallAuditEntry } from "./audit-records.js";
+import { FirewallSendError } from "../../host-protocol/advice.js";
+import { decodeFirewallAuditEntry } from "../../firewall/store/index.js";
 
 // @agent-code-guard/regression-only: Exercises collective refusal and binding through SQLite and the protocol engine.
 

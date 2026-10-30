@@ -8,9 +8,8 @@ import type {
   DecisionRequest,
   MessageMiddleware,
   MiddlewareInput,
-  TextRule,
-} from "../evaluator/contract/index.js";
-import type { FirewallOptions } from "../policy/installation.js";
+} from "../../firewall/check.js";
+import type { FirewallOptions } from "../../firewall/index.js";
 import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { appendCertifiedMessage } from "../../__tests__/certified-history-fixtures.js";
 import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
@@ -27,6 +26,7 @@ import {
   incomingFixture,
   installation,
   outgoingFixture,
+  outgoingThrough,
   pass,
   policy,
   revise,
@@ -34,8 +34,11 @@ import {
   seedIncoming,
 } from "../../__tests__/firewall-runtime-fixtures.js";
 import { InboundItem } from "../../host-protocol/items.js";
-import { makeTextPolicy } from "../evaluator/index.js";
-import { type LocalGuidance, renderLocalGuidance } from "../outcome/index.js";
+import type { TextRule } from "../../firewall/config.js";
+import {
+  type LocalGuidance,
+  renderLocalGuidance,
+} from "../../host-protocol/advice.js";
 
 // @agent-code-guard/regression-only: Exercises durable admission, replay, interruption and races through SQLite and the protocol engine.
 
@@ -234,7 +237,8 @@ function uncertainNormApplicability() {
     const subject = yield* fixture;
     const delivery = yield* outgoingFixture(
       subject,
-      yield* nearTiePolicy(announceOnce),
+      policy(() => Effect.succeed(pass)),
+      nearTiePolicy(announceOnce),
     );
     const sending = yield* delivery.operations
       .send({
@@ -249,7 +253,7 @@ function uncertainNormApplicability() {
       result: { judgment: "allow" },
     });
     expect(checked?.result?.guidance).toContainEqual({
-      middlewareId: "owner",
+      middlewareId: "org.social-harness/text",
       ruleId: announceOnce.id,
       uncertain: { choice: "relevant", probability: 0.49 },
       instruction: announceOnce.guidance,
@@ -260,16 +264,17 @@ function uncertainNormApplicability() {
 
 /** A text policy of one rule, decided by `nearTieProvider`. */
 function nearTiePolicy(rule: TextRule) {
-  return makeTextPolicy({
-    id: "owner",
-    rules: [rule],
-    provider: nearTieProvider(rule),
-    settings: {
-      minimumProbability: 0.5,
-      maximumRequestBytes: 60_000,
-      timeoutMilliseconds: 5_000,
+  return {
+    text: {
+      initialRules: [rule],
+      provider: nearTieProvider(rule),
+      settings: {
+        minimumProbability: 0.5,
+        maximumRequestBytes: 60_000,
+        timeoutMilliseconds: 5_000,
+      },
     },
-  });
+  };
 }
 
 /** A decision provider certain of everything but `rule`'s applicability, which it answers with a near-tie. */
@@ -379,15 +384,31 @@ function installationProvenance() {
   return Effect.gen(function* () {
     const model = "model-one";
     const registration = {
-      ...policy(() => Effect.succeed(pass)),
+      ...policy(() => Effect.succeed(block)),
       provenance: { format: "provider", data: model },
     };
     const subject = yield* fixture;
-    const installed = yield* installation(subject.store, registration);
+    const first = yield* installation(subject.store, registration);
     registration.provenance.data = "model-two";
-    const changed = yield* installation(subject.store, registration);
-    expect(installed.metadata.incoming[0]?.provenance.data).toBe(model);
-    expect(changed.configurationDigest).not.toBe(installed.configurationDigest);
+    const second = yield* installation(subject.store, registration);
+    for (const firewall of [first, second]) {
+      const delivery = yield* outgoingThrough(subject, firewall);
+      yield* Effect.flip(
+        delivery.operations.send({
+          input: { to: destination, text: "Retained decision" },
+        }),
+      );
+    }
+    const checks = yield* auditChecks(subject);
+    expect(checks[0]?.input.installation.incoming[0]?.provenance.data).toBe(
+      model,
+    );
+    expect(checks[1]?.input.installation.incoming[0]?.provenance.data).toBe(
+      "model-two",
+    );
+    expect(checks[1]?.input.configurationDigest).not.toBe(
+      checks[0]?.input.configurationDigest,
+    );
   });
 }
 

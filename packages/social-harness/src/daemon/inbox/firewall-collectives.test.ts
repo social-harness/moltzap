@@ -10,8 +10,9 @@ import type { MessageAddressInput } from "../../communication/records/values.js"
 import type {
   MessageMiddleware,
   MiddlewareInput,
-} from "../evaluator/contract/index.js";
-import type { FirewallOptions } from "../policy/installation.js";
+  DecisionRequest,
+} from "../../firewall/check.js";
+import type { FirewallOptions } from "../../firewall/index.js";
 import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { appendCertifiedMessage } from "../../__tests__/certified-history-fixtures.js";
 import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
@@ -56,7 +57,7 @@ import {
   renderCollectiveRequestBody,
   renderOutcome,
 } from "../../host-protocol/render.js";
-import { installEditableFirewall } from "../policy/editable.js";
+import { makeFirewall } from "../../firewall/index.js";
 
 // @agent-code-guard/regression-only: Exercises collective admission, refusal and evidence through SQLite and the protocol engine.
 
@@ -843,7 +844,7 @@ function namesNoPeerForAFailureInTheDecisionsFeed() {
     yield* admitPending(runtime);
     yield* runtime.delivery.queueLocalItem(allGatherFailure("failed"));
     yield* admitPending(runtime);
-    const editable = yield* installEditableFirewall(
+    const editable = yield* makeFirewall(
       {
         incoming: [holdMarked()],
         outgoing: [holdMarked()],
@@ -982,3 +983,95 @@ describe("collective operation failures under a firewall", () => {
     keepsTwoFailuresOfOneOperationApart,
   );
 });
+
+/** A rule edit during one answer leaves every text of that result under the same captured rules. */
+it("checks an entire result under one rule value while an owner edit completes", () =>
+  Effect.gen(function* () {
+    const subject = yield* fixture;
+    const answers = { bob: { slot: "mon" }, carol: { slot: "tue" } };
+    const provenance = yield* seedAnswers(subject, answers);
+    const entered = yield* Deferred.make<undefined>();
+    const release = yield* Deferred.make<undefined>();
+    const runtime = yield* incomingFixture(
+      subject,
+      policy((input) =>
+        input.event.message.operation?.kind === "answer"
+          ? Deferred.succeed(entered, undefined).pipe(
+              Effect.zipRight(Deferred.await(release)),
+              Effect.as(pass),
+            )
+          : Effect.succeed(pass),
+      ),
+      {
+        maximumConcurrentChecks: 1,
+        text: {
+          provider: {
+            decide: (request) =>
+              Effect.succeed({
+                provider: "test-provider",
+                model: "test-model",
+                usage: {},
+                raw: "",
+                answers: Object.fromEntries(
+                  Object.entries(request.questions).map(([id, question]) => [
+                    id,
+                    batchAnswer(request, question),
+                  ]),
+                ),
+              }),
+          },
+          settings: {
+            minimumProbability: 0.5,
+            maximumRequestBytes: 60_000,
+            timeoutMilliseconds: 5_000,
+          },
+        },
+      },
+      false,
+    );
+    yield* admitPending(runtime);
+    const textRule = {
+      id: "answer-review",
+      applies: "both",
+      text: "Require owner review for answers.",
+    } as const;
+    yield* runtime.firewall.policy.update({ add: [textRule] }, "owner");
+    yield* runtime.delivery.queueLocalItem(
+      gatherResult(answered(answers)),
+      provenance,
+    );
+    yield* runtime.runPass;
+    yield* Deferred.await(entered);
+    yield* runtime.firewall.policy.update({ remove: [textRule.id] }, "owner");
+    yield* Deferred.succeed(release, undefined);
+    yield* Queue.take(runtime.completed);
+    const result = (yield* runtime.delivery.operations.readInbox(
+      {},
+    )).items.find((entry) => entry.item.kind === "collectiveResult");
+    expect(result?.item).toMatchObject({
+      outcomes: [
+        { outcome: { kind: "withheld", reason: "rule-violation" } },
+        { outcome: { kind: "withheld", reason: "rule-violation" } },
+      ],
+    });
+  }));
+
+/** Deterministic provider answers isolate active-rule capture from model quality. */
+function batchAnswer(
+  request: DecisionRequest,
+  question: DecisionRequest["questions"][string],
+) {
+  const choices = Object.keys(question.criteria);
+  const choice =
+    request.stage === "compliance"
+      ? "violation"
+      : choices.includes("relevant")
+        ? "relevant"
+        : "none";
+  return {
+    choice,
+    probabilities: Object.fromEntries(
+      choices.map((entry) => [entry, entry === choice ? 1 : 0]),
+    ),
+  };
+}

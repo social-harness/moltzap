@@ -7,7 +7,7 @@ import type {
   EndpointStoreError,
   StoredMembership,
 } from "../../communication/store/index.js";
-import type { InstalledFirewall } from "../../firewall/index.js";
+import type { Firewall } from "../../firewall/index.js";
 import type { AgentId } from "../../identity/identifiers.js";
 import type { DaemonBootstrap } from "../bootstrap.js";
 import type { DaemonStore } from "../store.js";
@@ -84,7 +84,7 @@ export interface ProtocolEnvironment {
   readonly router: Context.Tag.Service<typeof Router>;
   readonly daemonScope: Scope.Scope;
   readonly fatal: Deferred.Deferred<never, DaemonRuntimeError>;
-  readonly firewall?: InstalledFirewall;
+  readonly firewall?: Firewall;
 }
 
 /** How an acquired protocol reaches back into the daemon that runs it. */

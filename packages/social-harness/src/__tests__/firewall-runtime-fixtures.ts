@@ -2,14 +2,8 @@
 
 import { Deferred, Effect, Queue, Schema, Scope } from "effect";
 import { generateKeyPairSync } from "node:crypto";
-import type {
-  MessageMiddleware,
-  MiddlewareResult,
-} from "../firewall/evaluator/contract/index.js";
-import type {
-  FirewallOptions,
-  InstalledFirewall,
-} from "../firewall/policy/installation.js";
+import type { MessageMiddleware, MiddlewareResult } from "../firewall/check.js";
+import type { FirewallOptions, Firewall } from "../firewall/index.js";
 import type { InboundItem } from "../host-protocol/items.js";
 import type { HarnessMessageReadyEvent } from "../host-protocol/operations.js";
 import { makeEndpointEngine } from "../communication/conversations/index.js";
@@ -30,8 +24,8 @@ import { makeHostDelivery } from "../daemon/inbox/host-delivery.js";
 import { noHistoryExport } from "../daemon/inbox/host-traffic-log.js";
 import { type DaemonStore, openDaemonStore } from "../daemon/store.js";
 import { encodeCanonical } from "../encoding/canonical-json.js";
-import { decodeFirewallAuditEntry } from "../firewall/admission/index.js";
-import { installEditableFirewall } from "../firewall/index.js";
+import { decodeFirewallAuditEntry } from "../firewall/store/index.js";
+import { makeFirewall } from "../firewall/index.js";
 import { AgentCard, agentViewOf } from "../identity/cards.js";
 import { Ed25519PublicKey } from "../identity/keys.js";
 import { LIVE_WIRE_VERSIONS, WIRE_VERSION } from "../identity/wire-version.js";
@@ -188,7 +182,7 @@ export const installation = (
   middleware: MessageMiddleware,
   overrides: Partial<FirewallOptions> = {},
 ) =>
-  installEditableFirewall(
+  makeFirewall(
     {
       incoming: [middleware],
       outgoing: [middleware],
@@ -206,10 +200,10 @@ export const installation = (
  * built over it, as the daemon composes them. Requests the layer classifies
  * wait for admission; items it emits are queued privately and recorded.
  */
-const firewallRuntime = (subject: Fixture, installed: InstalledFirewall) =>
+const firewallRuntime = (subject: Fixture, firewall: Firewall) =>
   Effect.gen(function* () {
     const { local, store, engine } = subject;
-    const environment = { installed, store, localAgentCard: local.card };
+    const environment = { firewall, store, localAgentCard: local.card };
     const scope = yield* Scope.Scope;
     const emitted: InboundItem[] = [];
     const slot: {
@@ -244,7 +238,7 @@ const firewallRuntime = (subject: Fixture, installed: InstalledFirewall) =>
       historyExport: noHistoryExport,
       collectives: () => collectives,
       scope,
-      firewall: installed,
+      firewall,
       firewallEnvironment: () => environment,
     });
     slot.delivery = delivery;
@@ -252,18 +246,18 @@ const firewallRuntime = (subject: Fixture, installed: InstalledFirewall) =>
   }).pipe(Effect.withSpan("firewallRuntime"));
 
 /**
- * The incoming fixture over an installed firewall, such as an editable one
+ * The incoming fixture over an firewall firewall, such as an editable one
  * whose checks read its active installation.
  */
 export const incomingThrough = (
   subject: Fixture,
-  installed: InstalledFirewall,
+  firewall: Firewall,
   seed = true,
 ) =>
   Effect.gen(function* () {
     yield* Effect.when(seedIncoming(subject), () => seed);
     const { environment, delivery, collectives, emitted } =
-      yield* firewallRuntime(subject, installed);
+      yield* firewallRuntime(subject, firewall);
     const published: HarnessMessageReadyEvent[] = [];
     const readPending = pendingMessages(subject.store);
     const runPass = delivery.runPass(() => ({
@@ -303,7 +297,7 @@ export const incomingFixture = (
   seed = true,
 ) =>
   installation(subject.store, middleware, overrides).pipe(
-    Effect.flatMap((installed) => incomingThrough(subject, installed, seed)),
+    Effect.flatMap((firewall) => incomingThrough(subject, firewall, seed)),
   );
 
 /** Runtime send operations use the real checked-send path before the Router barrier. */
@@ -313,17 +307,14 @@ export function outgoingFixture(
   overrides: Partial<FirewallOptions> = {},
 ) {
   return installation(subject.store, middleware, overrides).pipe(
-    Effect.flatMap((installed) => outgoingThrough(subject, installed)),
+    Effect.flatMap((firewall) => outgoingThrough(subject, firewall)),
     Effect.withSpan("outgoingFixture"),
   );
 }
 
-/** Runtime send operations over an installed firewall, such as an editable one. */
-export function outgoingThrough(
-  subject: Fixture,
-  installed: InstalledFirewall,
-) {
-  return firewallRuntime(subject, installed).pipe(
+/** Runtime send operations share the managed firewall with owner edits. */
+export function outgoingThrough(subject: Fixture, firewall: Firewall) {
+  return firewallRuntime(subject, firewall).pipe(
     Effect.map((runtime) => runtime.delivery),
     Effect.withSpan("outgoingThrough"),
   );

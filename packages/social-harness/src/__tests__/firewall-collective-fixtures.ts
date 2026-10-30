@@ -1,7 +1,7 @@
 /** @file Shared values and helpers for the collective-operation firewall suites: alice's members, Bob's requests and the sends alice makes. */
 
 import { Effect, Queue, Schema } from "effect";
-import type { MiddlewareInput } from "../firewall/evaluator/contract/index.js";
+import type { MiddlewareInput } from "../firewall/check.js";
 import { SendInput } from "../communication/collectives/contracts.js";
 import {
   decodeCollectiveValue,

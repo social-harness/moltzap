@@ -5,10 +5,7 @@ import type {
   MessageAddressInput,
 } from "../communication/records/values.js";
 import type { InboundItem } from "./items.js";
-import {
-  type LocalGuidance,
-  renderLocalGuidance,
-} from "../firewall/outcome/index.js";
+import { type LocalGuidance, renderLocalGuidance } from "./advice.js";
 
 type CollectiveRequestItem = Extract<
   InboundItem,

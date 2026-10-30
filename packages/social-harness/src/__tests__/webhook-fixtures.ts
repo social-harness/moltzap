@@ -12,7 +12,7 @@ import {
   encodeRuntimeValue,
 } from "../communication/store/index.js";
 import { makeWebhookEvents } from "../daemon/mcp/webhook.js";
-import { localGuidanceSchema } from "../firewall/outcome/index.js";
+import { localGuidanceSchema } from "../host-protocol/advice.js";
 import { InboundItem } from "../host-protocol/items.js";
 import { INBOX_ITEM_EVENT } from "../host-protocol/names.js";
 import { digest, testAgentView } from "./agent-card-fixtures.js";
