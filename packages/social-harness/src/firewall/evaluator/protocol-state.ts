@@ -1,11 +1,11 @@
 /**
  * @file Experiment: checks the conversation state of structured protocol
- * messages in code. The protocol text declares, under each act, "when" lines
- * (alternative conditions for sending it) and "check" lines (mechanical
- * checks on its values) in a fixed vocabulary; this check replays the
- * conversation's acts against those declarations and refuses a message the
- * declarations do not allow. What values mean is left to the decision
- * provider.
+ * messages in code. Under each act the protocol text declares "when" lines
+ * (alternative conditions for sending it), "check" lines (mechanical checks on
+ * its values) and "effect" lines (how it changes the Student's bookings), in
+ * the fixed vocabulary its "state" section defines. This check replays the
+ * conversation's acts against those declarations and refuses a message they
+ * do not allow. What values mean is left to the decision provider.
  */
 
 import { Effect } from "effect";
@@ -18,8 +18,15 @@ import type {
 import { parseAct } from "./protocol-form.js";
 
 type Condition =
-  | { readonly kind: "opens" | "answers" | "final" | "unprompted" }
-  | { readonly kind: "names-escalated" }
+  | {
+      readonly kind:
+        | "opens"
+        | "resend"
+        | "answers"
+        | "final"
+        | "unprompted"
+        | "names-escalated";
+    }
   | { readonly kind: "after" | "opened-by"; readonly acts: readonly string[] }
   | {
       readonly kind: "count-is" | "count-below";
@@ -34,17 +41,30 @@ type Check =
       readonly act: string;
       readonly q: string;
     }
-  | { readonly kind: "time-order"; readonly p: string }
+  | {
+      readonly kind: "time-order" | "matches-accepted" | "booked";
+      readonly p: string;
+    }
   | {
       readonly kind: "no-shared-slot";
       readonly p: string;
       readonly act: string;
     }
-  | { readonly kind: "matches-accepted"; readonly p: string };
+  | {
+      readonly kind: "present-when";
+      readonly p: string;
+      readonly q: string;
+      readonly value: string;
+    };
+
+type Change =
+  | { readonly kind: "books" | "unbooks"; readonly p: string }
+  | { readonly kind: "unbooks-opener"; readonly p: string };
 
 interface Declaration {
   readonly when: Condition[][];
   readonly checks: Array<{ readonly after?: string; readonly check: Check }>;
+  readonly effects: Change[];
 }
 
 const names = (text: string) =>
@@ -55,16 +75,17 @@ const names = (text: string) =>
 
 function parseCondition(text: string): Condition | undefined {
   const part = text.trim();
-  if (
-    part === "opens" ||
-    part === "answers" ||
-    part === "final" ||
-    part === "unprompted"
-  ) {
-    return { kind: part };
-  }
-  if (part === "names an escalated request") {
-    return { kind: "names-escalated" };
+  switch (part) {
+    case "opens":
+    case "resend":
+    case "answers":
+    case "final":
+    case "unprompted":
+      return { kind: part };
+    case "names an escalated request":
+      return { kind: "names-escalated" };
+    default:
+      break;
   }
   const after = /^after (.+)$/u.exec(part);
   if (after !== null) {
@@ -97,23 +118,56 @@ function parseCheck(text: string): Check | undefined {
       q: numberIn[3] ?? "",
     };
   }
-  const order = /^:([a-z-]+) is in time order$/u.exec(part);
-  if (order !== null) {
-    return { kind: "time-order", p: order[1] ?? "" };
+  const simple =
+    /^:([a-z-]+) (is in time order|matches the accepted option|is booked)$/u.exec(
+      part,
+    );
+  if (simple !== null) {
+    const kinds = {
+      "is in time order": "time-order",
+      "matches the accepted option": "matches-accepted",
+      "is booked": "booked",
+    } as const;
+    return {
+      kind: kinds[simple[2] as keyof typeof kinds],
+      p: simple[1] ?? "",
+    };
   }
   const shared =
     /^:([a-z-]+) shares no slot with the previous ([a-z-]+)$/u.exec(part);
   if (shared !== null) {
     return { kind: "no-shared-slot", p: shared[1] ?? "", act: shared[2] ?? "" };
   }
-  const accepted = /^:([a-z-]+) matches the accepted option$/u.exec(part);
-  if (accepted !== null) {
-    return { kind: "matches-accepted", p: accepted[1] ?? "" };
+  const present =
+    /^:([a-z-]+) is present exactly when :([a-z-]+) is (\S+)$/u.exec(part);
+  if (present !== null) {
+    return {
+      kind: "present-when",
+      p: present[1] ?? "",
+      q: present[2] ?? "",
+      value: present[3] ?? "",
+    };
   }
   return undefined;
 }
 
-/** The "when" and "check" lines a protocol text declares under each act. */
+function parseEffect(text: string): Change | undefined {
+  const part = text.trim();
+  const opener = /^unbooks the request's :([a-z-]+)$/u.exec(part);
+  if (opener !== null) {
+    return { kind: "unbooks-opener", p: opener[1] ?? "" };
+  }
+  const change = /^(books|unbooks) :([a-z-]+)$/u.exec(part);
+  if (change !== null) {
+    return {
+      kind: change[1] === "books" ? "books" : "unbooks",
+      p: change[2] ?? "",
+    };
+  }
+  return undefined;
+}
+
+/** The "when", "check" and "effect" lines a protocol text declares under each act. */
 export function declaredStates(
   protocol: string,
 ): ReadonlyMap<string, Declaration> {
@@ -131,12 +185,15 @@ export function declaredStates(
     }
     const start = /^\s+\(([a-z][a-z-]*)\s*$/u.exec(line);
     if (start !== null) {
-      current = { when: [], checks: [] };
+      current = { when: [], checks: [], effects: [] };
       declarations.set(start[1] ?? "", current);
       continue;
     }
+    if (current === undefined) {
+      continue;
+    }
     const when = /^\s+when (.+)$/u.exec(line);
-    if (when !== null && current !== undefined) {
+    if (when !== null) {
       current.when.push(
         (when[1] ?? "")
           .split(";")
@@ -146,10 +203,18 @@ export function declaredStates(
       continue;
     }
     const check = /^\s+check (?:after ([a-z-]+): )?(.+)$/u.exec(line);
-    if (check !== null && current !== undefined) {
+    if (check !== null) {
       const parsed = parseCheck(check[2] ?? "");
       if (parsed !== undefined) {
         current.checks.push({ after: check[1], check: parsed });
+      }
+      continue;
+    }
+    const effect = /^\s+effect (.+)$/u.exec(line);
+    if (effect !== null) {
+      const parsed = parseEffect(effect[1] ?? "");
+      if (parsed !== undefined) {
+        current.effects.push(parsed);
       }
     }
   }
@@ -172,7 +237,8 @@ interface Request {
 interface State {
   readonly requests: Map<string, Request>;
   open?: Request;
-  readonly sent: Array<{ readonly sender: string; readonly key: string }>;
+  /** The Student's bookings, keyed by their start. */
+  readonly bookings: Set<string>;
 }
 
 const listItems = (value: string | undefined): string[] => {
@@ -208,33 +274,33 @@ const months = [
   "dec",
 ];
 
-/** Minutes since the start of the year for a "<day> <date> <start>–<end> PM" slot, if it parses. */
+/** Minutes into the year at which a "<day> <month> <date> <start>[–<end>] AM|PM" slot starts, if it parses. */
 function slotStart(slot: string): number | undefined {
   const match =
-    /([A-Za-z]{3})[a-z]*\.?\s+(\d{1,2}),?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?[^a-z]*?(am|pm)/iu.exec(
+    /([a-z]{3})[a-z]*\.?\s+(\d{1,2}),?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?[^a-z]*?(am|pm)/u.exec(
       slotKey(slot),
     );
   if (match === null) {
     return undefined;
   }
-  const month = months.indexOf((match[1] ?? "").toLowerCase());
+  const month = months.indexOf(match[1] ?? "");
   if (month < 0) {
     return undefined;
   }
-  const meridiem = (match[5] ?? match[6] ?? "").toLowerCase();
-  let hour = Number(match[3]) % 12;
-  if (meridiem === "pm") {
-    hour += 12;
-  }
+  const hour =
+    (Number(match[3]) % 12) + ((match[5] ?? match[6]) === "pm" ? 12 : 0);
   return (
     ((month * 31 + Number(match[2])) * 24 + hour) * 60 + Number(match[4] ?? "0")
   );
 }
 
-const canonical = (act: {
-  name: string;
-  values: ReadonlyMap<string, string>;
-}) => JSON.stringify([act.name, [...act.values].sort()]);
+const startKey = (slot: string | undefined) => {
+  const start = slot === undefined ? undefined : slotStart(slot);
+  return start === undefined ? undefined : String(start);
+};
+
+const canonical = (act: SentAct) =>
+  JSON.stringify([act.sender, act.name, [...act.values].sort()]);
 
 function holds(
   condition: Condition,
@@ -249,6 +315,14 @@ function holds(
       return (
         open === undefined &&
         !state.requests.has(act.values.get(idParameter) ?? "")
+      );
+    case "resend":
+      return (
+        open !== undefined &&
+        !open.resent &&
+        open.acts.length === 1 &&
+        open.acts[0] !== undefined &&
+        canonical(open.acts[0]) === canonical(act)
       );
     case "answers":
       return open !== undefined && act.values.get(idParameter) === open.id;
@@ -271,17 +345,17 @@ function holds(
         condition.acts.includes(open.acts[0].name)
       );
     case "count-is":
+    case "count-below": {
+      const count =
+        open?.acts.filter((earlier) => earlier.name === condition.act).length ??
+        0;
       return (
         open !== undefined &&
-        open.acts.filter((earlier) => earlier.name === condition.act).length ===
-          condition.n
+        (condition.kind === "count-is"
+          ? count === condition.n
+          : count < condition.n)
       );
-    case "count-below":
-      return (
-        open !== undefined &&
-        open.acts.filter((earlier) => earlier.name === condition.act).length <
-          condition.n
-      );
+    }
     default:
       return condition satisfies never;
   }
@@ -343,86 +417,78 @@ function checkErrors(
           ? []
           : [`:${check.p} is not the accepted option`];
       }
+      case "booked": {
+        const key = startKey(act.values.get(check.p));
+        return key !== undefined && state.bookings.has(key)
+          ? []
+          : [`:${check.p} names none of the Student's bookings`];
+      }
+      case "present-when": {
+        const present = act.values.has(check.p);
+        const expected = (act.values.get(check.q) ?? "").trim() === check.value;
+        return present === expected
+          ? []
+          : [
+              `:${check.p} must appear exactly when :${check.q} is ${check.value}`,
+            ];
+      }
       default:
         return check satisfies never;
     }
   });
 }
 
-/**
- * The reasons `act` may not be sent now. `undefined` declarations mean the
- * act is unknown, which the form check reports.
- */
-function stateErrors(
-  declarations: ReadonlyMap<string, Declaration>,
+/** The way `act` may be sent now, if any. */
+function matchingWhen(
+  declaration: Declaration | undefined,
   act: SentAct,
   state: State,
   idParameter: string,
-): string[] {
-  const declaration = declarations.get(act.name);
-  if (declaration === undefined) {
-    return [];
-  }
-  const open = state.open;
-  const opener = open?.acts[0];
-  const isResend =
-    opener !== undefined &&
-    opener.sender === act.sender &&
-    canonical(opener) === canonical(act);
-  if (isResend) {
-    return open?.resent === true ? ["a second resend of the open request"] : [];
-  }
-  const key = canonical(act);
-  if (
-    state.sent.some(
-      (earlier) => earlier.sender === act.sender && earlier.key === key,
-    )
-  ) {
-    return ["repeats an act its sender already sent"];
-  }
-  const allowed = declaration.when.some((conditions) =>
+): Condition[] | undefined {
+  return declaration?.when.find((conditions) =>
     conditions.every((condition) => holds(condition, act, state, idParameter)),
   );
-  return [
-    ...(allowed ? [] : [`${act.name} may not be sent at this point`]),
-    ...checkErrors(declaration, act, state),
-  ];
 }
 
 /** Apply an act's declared effects to the replayed state. */
 function apply(
-  declarations: ReadonlyMap<string, Declaration>,
+  declaration: Declaration | undefined,
   act: SentAct,
   state: State,
   idParameter: string,
 ): void {
-  const declaration = declarations.get(act.name);
-  const id = act.values.get(idParameter) ?? "";
+  const kinds = new Set(
+    (matchingWhen(declaration, act, state, idParameter) ?? []).map(
+      (condition) => condition.kind,
+    ),
+  );
   const opener = state.open?.acts[0];
-  if (
-    opener !== undefined &&
-    opener.sender === act.sender &&
-    canonical(opener) === canonical(act) &&
-    state.open !== undefined
-  ) {
+  for (const change of declaration?.effects ?? []) {
+    const key = startKey(
+      change.kind === "unbooks-opener"
+        ? opener?.values.get(change.p)
+        : act.values.get(change.p),
+    );
+    if (key === undefined) {
+      continue;
+    }
+    if (change.kind === "books") {
+      state.bookings.add(key);
+    } else {
+      state.bookings.delete(key);
+    }
+  }
+  const id = act.values.get(idParameter) ?? "";
+  if (kinds.has("resend") && state.open !== undefined) {
     state.open.resent = true;
     return;
   }
-  state.sent.push({ sender: act.sender, key: canonical(act) });
-  const conditions =
-    (declaration?.when ?? []).find((line) =>
-      line.every((condition) => holds(condition, act, state, idParameter)),
-    ) ??
-    declaration?.when[0] ??
-    [];
-  const kinds = new Set(conditions.map((condition) => condition.kind));
   if (kinds.has("opens")) {
     const request: Request = { id, acts: [act], resent: false };
     state.requests.set(id, request);
     state.open = request;
     return;
   }
-  const named = state.requests.get(id);
   if (kinds.has("answers") && state.open !== undefined) {
     state.open.acts.push(act);
     if (kinds.has("final")) {
@@ -431,7 +497,7 @@ function apply(
     }
     return;
   }
-  named?.acts.push(act);
+  state.requests.get(id)?.acts.push(act);
 }
 
 /**
@@ -455,28 +521,38 @@ export function makeProtocolState(options: {
   };
   return {
     id: options.id,
-    revision: "protocol-state-v0",
+    revision: "protocol-state-v1",
     rules: [{ id, kind, guidance, feedback }],
     check: (input: MiddlewareInput) =>
       Effect.sync(() => {
-        const state: State = { requests: new Map(), sent: [] };
+        const state: State = { requests: new Map(), bookings: new Set() };
         for (const entry of input.context.history) {
           const act =
             entry.admission === "admitted"
               ? actOf(entry.text, entry.sender)
               : undefined;
           if (act !== undefined) {
-            apply(declarations, act, state, idParameter);
+            apply(declarations.get(act.name), act, state, idParameter);
           }
         }
         const candidate = actOf(
           input.event.message.text,
           input.event.message.sender,
         );
-        const errors =
+        const declaration =
           candidate === undefined
+            ? undefined
+            : declarations.get(candidate.name);
+        const errors =
+          candidate === undefined || declaration === undefined
             ? []
-            : stateErrors(declarations, candidate, state, idParameter);
+            : [
+                ...(matchingWhen(declaration, candidate, state, idParameter) ===
+                undefined
+                  ? [`${candidate.name} may not be sent at this point`]
+                  : []),
+                ...checkErrors(declaration, candidate, state),
+              ];
         const result: MiddlewareResult = {
           findings: [
             {
@@ -491,7 +567,7 @@ export function makeProtocolState(options: {
           ],
           expectations: [],
           trace: {
-            format: "protocol-state/v0",
+            format: "protocol-state/v1",
             data: JSON.stringify({ errors }),
           },
         };
