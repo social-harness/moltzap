@@ -3,6 +3,8 @@
 import { Effect, Schema } from "effect";
 import { randomBytes } from "node:crypto";
 import type { CollectivePorts } from "../communication/collectives/ports.js";
+import { CollectiveId } from "../communication/collectives/contracts.js";
+import { collectiveRequesterOf } from "../communication/collectives/wire/index.js";
 import {
   type CollectiveOperationInput,
   DeliveryToken,
@@ -12,49 +14,50 @@ import {
 
 /** The test engine certifies synchronously and records the operation attached at binding. */
 export function collectivePersistencePorts(
-  sendPost: CollectivePorts["sendPost"],
+  sendMessage: CollectivePorts["sendMessage"],
 ) {
   const store = collectiveStorageStub();
-  const send: CollectivePorts["sendPost"] = (input) =>
+  const send: CollectivePorts["sendMessage"] = (input) =>
     (input.collective?.operation === undefined
       ? Effect.void
       : store
           .putCollectiveOperation(input.collective.operation)
           .pipe(Effect.orDie)
-    ).pipe(Effect.zipRight(sendPost(input)));
+    ).pipe(Effect.zipRight(sendMessage(input)));
   return {
     store,
-    bindPost: <E>(
-      input: Parameters<CollectivePorts["sendPost"]>[0],
+    bindMessage: <E>(
+      input: Parameters<CollectivePorts["sendMessage"]>[0],
       hold: Effect.Effect<Effect.Effect<void>, E>,
     ) => hold.pipe(Effect.as({ certified: send(input) })),
-    sendPost: send,
+    sendMessage: send,
     sendAdmitted: (input: Parameters<CollectivePorts["sendAdmitted"]>[0]) =>
       send(input),
-    observePost: () => Effect.never,
+    observeMessage: () => Effect.never,
     reportStorageFault: () => Effect.void,
   };
 }
 
-/** A recording store for classifier-only fixtures whose posts bypass the real certification engine. */
+/** A recording store for classifier-only fixtures whose messages bypass the real certification engine. */
 export function collectiveStorageStub(): CollectivePorts["store"] {
   const operations = new Map<string, StoredCollectiveOperation>();
   return {
     putCollectiveOperation: (input) => recordOperation(operations, input),
-    readCollectiveOperation: (id) => Effect.sync(() => operations.get(id)),
+    readCollectiveOperation: (operationId) =>
+      Effect.sync(() => operations.get(operationId)),
     readCollectiveOperations: () => Effect.sync(() => [...operations.values()]),
-    readCollectivePosts: () => Effect.succeed([]),
+    readCollectiveMessages: () => Effect.succeed([]),
     recordCollectiveAnswer: (answer) => Effect.succeed(answer.recordHash),
     readCollectiveAnswers: () => Effect.succeed([]),
     recordCollectiveRefusal: () => Effect.void,
     readCollectiveRefusals: () => Effect.succeed([]),
-    finalizeCollectiveOperation: (id, selection) =>
-      finalizeOperation(operations, id, selection),
-    retireCollectiveOperation: (id, canonicalSelection) =>
+    finalizeCollectiveOperation: (operationId, selection) =>
+      finalizeOperation(operations, operationId, selection),
+    retireCollectiveOperation: (operationId, canonicalSelection) =>
       Effect.sync(() => {
-        const operation = operations.get(id);
+        const operation = operations.get(operationId);
         if (operation !== undefined) {
-          operations.set(id, {
+          operations.set(operationId, {
             ...operation,
             canonicalSelection,
             phase: "completed",
@@ -76,7 +79,9 @@ function recordOperation(
     }
     operations.set(input.operationId, {
       ...input,
-      creatorAgentId: "fixture-author",
+      creatorAgentId: collectiveRequesterOf(
+        Schema.decodeUnknownSync(CollectiveId)(input.operationId),
+      ),
       origin:
         input.origin.kind === "local"
           ? input.origin
@@ -92,15 +97,15 @@ function recordOperation(
 
 function finalizeOperation(
   operations: Map<string, StoredCollectiveOperation>,
-  id: string,
+  operationId: string,
   canonicalSelection: Uint8Array,
 ) {
   return Effect.suspend(() => {
-    const operation = operations.get(id);
+    const operation = operations.get(operationId);
     if (operation === undefined) {
       return Effect.fail(new EndpointStoreError({ reason: "not-found" }));
     }
-    operations.set(id, {
+    operations.set(operationId, {
       ...operation,
       canonicalSelection,
       phase: "finalizing",

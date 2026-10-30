@@ -171,7 +171,7 @@ const exportBehavior = Effect.gen(function* () {
  * so it runs `Daemon.withFirewall` and the firewall's checks admit its
  * collectives. It names its service through `OTEL_RESOURCE_ATTRIBUTES`. The
  * third daemon reaches the Router through a hold proxy. In a three-member
- * group every post needs every member, so holding that member keeps the
+ * group every message needs every member, so holding that member keeps the
  * requester's proposals uncertified. A restarted Router is a new instance, so
  * afterwards every conversation catches up.
  */
@@ -271,20 +271,23 @@ function answerAllGather({ requester, member, held, group }: MarkerScenario) {
     yield* send(member, {
       to: group,
       collectiveResponse: {
-        id: allGatherRequest.id,
+        operationId: allGatherRequest.operationId,
         action: "accept",
         content: { slot: "tue" },
       },
     });
     yield* send(held, {
       to: group,
-      collectiveResponse: { id: allGatherRequest.id, action: "decline" },
+      collectiveResponse: {
+        operationId: allGatherRequest.operationId,
+        action: "decline",
+      },
     });
     const result = yield* nextItem(requester);
     expect(result).toEqual({
       kind: "collectiveResult",
       op: "all_gather",
-      id: allGatherRequest.id,
+      operationId: allGatherRequest.operationId,
       closedAt: anyNumber,
       closedBy: "settled",
       to: allGatherRequest.to,
@@ -365,13 +368,17 @@ function expectProposalCertifiedAndCollectiveClosed(
       receiver,
       (received) =>
         markers(received, "retry.settled", "id", pendingId).length > 0 &&
-        markers(received, "collective.closed", "operationId", request.id)
-          .length > 0,
+        markers(
+          received,
+          "collective.closed",
+          "operationId",
+          request.operationId,
+        ).length > 0,
     );
     expect(
       attributesOf(markers(settled, "retry.settled", "id", pendingId)),
     ).toEqual([{ kind: "proposal", id: pendingId, outcome: "certified" }]);
-    expectMarked(settled, request.id, request, "all_gather");
+    expectMarked(settled, request.operationId, request, "all_gather");
   });
 }
 
@@ -431,7 +438,7 @@ function withEnvironment(
 
 /**
  * Every `retry.pending` span still unsettled. Each settled span settles one
- * pending span with its kind and id, from the same daemon: a re-proposed post
+ * pending span with its kind and id, from the same daemon: a re-proposed message
  * starts a second schedule under the same id, and every daemon's outbox
  * drains under one id.
  */
@@ -473,7 +480,7 @@ function expectMarked(
   ]);
   expect(request).toMatchObject({
     kind: "collectiveRequest",
-    id,
+    operationId: id,
     deadlineAt: opened[0]?.attributes.deadlineAt,
   });
   expect(opened[0]?.startTimeUnixNano).toBeLessThan(

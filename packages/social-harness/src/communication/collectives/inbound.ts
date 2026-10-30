@@ -7,7 +7,7 @@ import { AgentView } from "../../identity/cards.js";
 import { InboundMessage } from "../conversations/message.js";
 import {
   MessageAddressInput,
-  PostId,
+  MsgId,
   wellFormedString,
 } from "../records/values.js";
 import {
@@ -21,7 +21,7 @@ import {
 /* eslint-disable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Effect Schemas share their domain names with the nominal values they decode. */
 
 /**
- * A multicast delivered to this endpoint. The message content is the post's
+ * A multicast delivered to this endpoint. The message content is the message's
  * content without the collective layer's part.
  */
 const multicastItem = exactStruct({
@@ -33,16 +33,16 @@ const multicastItem = exactStruct({
 const collectingOp = Schema.Literal("gather", "all_gather");
 
 /**
- * A question another agent asked this one. `postId` is the certified request
- * post's and `to` the conversation it arrived in: the requester's `agent:`
+ * A question another agent asked this one. `msgId` is the certified request
+ * message's and `to` the conversation it arrived in: the requester's `agent:`
  * address for a gather, the group's `group:` address for an all_gather. The
  * member answers once with a `collectiveResponse` sent to `to`.
  */
 const collectiveRequestItem = exactStruct({
   kind: Schema.Literal("collectiveRequest"),
   op: collectingOp,
-  id: CollectiveId,
-  postId: PostId,
+  operationId: CollectiveId,
+  msgId: MsgId,
   from: AgentView,
   to: MessageAddressInput,
   question: wellFormedString,
@@ -53,7 +53,7 @@ const collectiveRequestItem = exactStruct({
 /**
  * One member's outcome in a completed gather or all_gather, discriminated by
  * `kind`. `no-answer` covers every member that did not answer: one whose
- * request post was refused or not certified in time, and one silent at the
+ * request message was refused or not certified in time, and one silent at the
  * deadline. `withheld` replaces an answer the endpoint's firewall withheld
  * from the runtime; only the local projection carries it, never the shared
  * result.
@@ -83,7 +83,7 @@ export type CollectiveMemberOutcome = typeof memberOutcome.Type;
 const collectiveResultItem = exactStruct({
   kind: Schema.Literal("collectiveResult"),
   op: collectingOp,
-  id: CollectiveId,
+  operationId: CollectiveId,
   ...collectiveClosure.fields,
   to: MessageAddressInput,
   question: Schema.Union(wellFormedString, withheldText),
@@ -99,16 +99,16 @@ const collectiveResultItem = exactStruct({
  */
 const operationFailedItem = exactStruct({
   kind: Schema.Literal("operationFailed"),
-  id: CollectiveId,
+  operationId: CollectiveId,
   to: MessageAddressInput,
   error: Schema.String,
 });
 
 /**
  * One inbound item, discriminated by `kind`. The endpoint consumes the
- * collective layer's protocol posts, posts whose collective part is malformed
+ * collective layer's protocol messages, messages whose collective part is malformed
  * or duplicated, and multicasts that carry nothing besides that part; every
- * other certified post becomes one item, and the endpoint itself emits
+ * other certified message becomes one item, and the endpoint itself emits
  * results and failures.
  */
 export const InboundItem = Schema.Union(

@@ -56,8 +56,7 @@ const IDEMPOTENCY_CONFLICT_KIND = "idempotency_conflict";
 const KEY_ALREADY_REGISTERED_KIND = "key_already_registered";
 const NAME_TAKEN_KIND = "name_taken";
 const FOUND_KIND = "found";
-const NEWER_SCHEMA_REASON = "newer-schema";
-const PRE_RESET_REASON = "pre-reset";
+const INCOMPATIBLE_STORAGE_REASON = "incompatible";
 const OK_STATUS = 200;
 const NO_CONTENT_STATUS = 204;
 const BAD_REQUEST_STATUS = 400;
@@ -824,7 +823,6 @@ const setupRegistryInfrastructure = Effect.gen(function* () {
 const assertStartupContracts = (input: {
   readonly environment: Readonly<Record<string, string>>;
   readonly wrongKeyPath: string;
-  readonly addUnknownMigration: Effect.Effect<unknown, unknown>;
 }) =>
   Effect.gen(function* () {
     yield* assertStartupRejection({
@@ -835,14 +833,6 @@ const assertStartupContracts = (input: {
       ...input.environment,
       SHARNESS_REGISTRY_SIGNING_PRIVATE_KEY_PATH: input.wrongKeyPath,
     });
-    yield* input.addUnknownMigration;
-    const process = yield* managedProcess(
-      REGISTRY_BINARY,
-      [],
-      input.environment,
-    );
-    yield* expectStartupFailure(process);
-    expect(process.logs()).toContain(NEWER_SCHEMA_REASON);
   });
 
 const registryBinaryBehavior = Effect.gen(function* () {
@@ -888,10 +878,6 @@ const registryBinaryBehavior = Effect.gen(function* () {
   yield* assertStartupContracts({
     environment: infrastructure.environment,
     wrongKeyPath: infrastructure.wrongKeyPath,
-    addUnknownMigration: sql`
-      INSERT INTO sharness_registry_ledger_20261029 (migration_id, name)
-      VALUES (9999, 'future')
-    `,
   });
 }).pipe(
   Effect.scoped,
@@ -899,38 +885,89 @@ const registryBinaryBehavior = Effect.gen(function* () {
   Effect.provide(NodeHttpClient.layer),
 );
 
+// @agent-code-guard/regression-only: These process scenarios cover first boot, restart, and refusal of occupied schemas, including quoted-name case collisions.
 it("preserves Registry contracts across first boot, concurrency, and restart", () => {
   expect.hasAssertions();
   return Effect.runPromise(registryBinaryBehavior);
 }, 120_000);
 
-it(
-  "refuses the preceding reset's database without changing its tables",
-  () =>
+it.each(["public", "Registry"])(
+  "refuses unrecognized storage in %s without changing its tables",
+  (schema) =>
     Effect.runPromise(
       Effect.gen(function* () {
         const infrastructure = yield* setupRegistryInfrastructure;
         const sql = yield* PgClient.make({
           url: Redacted.make(infrastructure.postgresqlUrl),
+          maxConnections: 1,
         }).pipe(Effect.provide(Reactivity.layer));
-        yield* sql`CREATE TABLE sharness_registry_ledger_20261026 (migration_id integer PRIMARY KEY)`;
-        yield* sql`INSERT INTO sharness_registry_ledger_20261026 VALUES (1)`;
+        yield* sql`CREATE SCHEMA IF NOT EXISTS ${sql(schema)}`;
+        yield* sql`CREATE SCHEMA registry`;
+        yield* sql`SET search_path TO ${sql(schema)}`;
+        yield* sql`CREATE TABLE unrecognized_state (retained integer PRIMARY KEY)`;
+        yield* sql`INSERT INTO unrecognized_state VALUES (1)`;
         const tables =
-          yield* sql`SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = 'public' ORDER BY tablename`;
+          yield* sql`SELECT schemaname, tablename FROM pg_catalog.pg_tables WHERE schemaname IN ('public', 'Registry', 'registry') ORDER BY schemaname, tablename`;
         const process = yield* managedProcess(
           REGISTRY_BINARY,
           [],
           infrastructure.environment,
         );
         yield* expectStartupFailure(process);
-        expect(process.logs()).toContain(PRE_RESET_REASON);
+        expect(process.logs()).toContain(INCOMPATIBLE_STORAGE_REASON);
         expect(
-          yield* sql`SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = 'public' ORDER BY tablename`,
+          yield* sql`SELECT schemaname, tablename FROM pg_catalog.pg_tables WHERE schemaname IN ('public', 'Registry', 'registry') ORDER BY schemaname, tablename`,
         ).toEqual(tables);
-        expect(
-          yield* sql`SELECT migration_id FROM sharness_registry_ledger_20261026`,
-        ).toEqual([{ migration_id: 1 }]);
+        expect(yield* sql`SELECT retained FROM unrecognized_state`).toEqual([
+          { retained: 1 },
+        ]);
       }).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
+    ),
+  30_000,
+);
+
+it(
+  "initializes and reopens a quoted Registry schema independently of registry",
+  () =>
+    Effect.runPromise(
+      Effect.gen(function* () {
+        const infrastructure = yield* setupRegistryInfrastructure;
+        const sql = yield* PgClient.make({
+          url: Redacted.make(infrastructure.postgresqlUrl),
+          maxConnections: 1,
+        }).pipe(Effect.provide(Reactivity.layer));
+        yield* sql`CREATE SCHEMA "Registry"`;
+        yield* sql`CREATE SCHEMA registry`;
+        yield* sql`SET search_path TO "Registry"`;
+        const registry = yield* startReadyRegistry(
+          infrastructure.environment,
+          infrastructure.origin,
+        );
+        const run = makeRegistryRunner(
+          infrastructure.origin,
+          infrastructure.registrySignerPublicKey,
+        );
+        const registered = yield* registerAgent("quoted-schema-agent", run);
+        yield* stopProcess(registry);
+        yield* startReadyRegistry(
+          infrastructure.environment,
+          infrastructure.origin,
+        );
+        const lookup = yield* run(
+          Registry.lookup({ agentId: registered.agentCard.agentId }),
+        );
+        expect(lookup.kind).toBe(FOUND_KIND);
+        if (lookup.kind === FOUND_KIND) {
+          yield* expectExactCard(lookup.agentCard, registered.agentCard);
+        }
+        expect(
+          yield* sql`SELECT DISTINCT schemaname FROM pg_catalog.pg_tables WHERE schemaname IN ('public', 'Registry', 'registry') ORDER BY schemaname`,
+        ).toEqual([{ schemaname: "Registry" }]);
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(NodeFileSystem.layer),
+        Effect.provide(NodeHttpClient.layer),
+      ),
     ),
   30_000,
 );

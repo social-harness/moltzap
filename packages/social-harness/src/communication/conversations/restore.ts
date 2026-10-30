@@ -55,8 +55,10 @@ interface RecoveredEngineState {
   readonly conversations: Map<ConversationIdValue, EngineConversation>;
   readonly actionFolds: Map<ActionHash, EngineActionFold>;
   readonly recordFolds: Map<RecordHashValue, EngineActionFold>;
-  readonly completedPosts: Map<string, RecordHashValue>;
-  readonly postIntents: ReadonlyArray<EndpointRecovery["postIntents"][number]>;
+  readonly completedMessages: Map<string, RecordHashValue>;
+  readonly messageIntents: ReadonlyArray<
+    EndpointRecovery["messageIntents"][number]
+  >;
   readonly outboundMessages: readonly StoredOutboundMessage[];
 }
 
@@ -64,7 +66,7 @@ interface RecoveredEngineState {
  * Rebuild only state whose hashes, signatures, and cross-fields still verify.
  * @param input Engine dependencies used to verify persisted representation.
  * @param recovery Complete store snapshot captured before engine startup.
- * @returns Verified conversations, folds, and durable post intents.
+ * @returns Verified conversations, folds, and durable message intents.
  */
 export const recoverEngineState = (
   input: EndpointEngineInput,
@@ -101,13 +103,13 @@ export const recoverEngineState = (
       actionFolds,
       recordFolds,
     });
-    const completedPosts = yield* recoverCompletedPosts(recovery);
+    const completedMessages = yield* recoverCompletedMessages(recovery);
     return {
       conversations,
       actionFolds,
       recordFolds,
-      completedPosts,
-      postIntents: recovery.postIntents,
+      completedMessages,
+      messageIntents: recovery.messageIntents,
       outboundMessages,
     };
   }).pipe(Effect.withSpan("recoverEngineState"));
@@ -427,19 +429,19 @@ function completeRecoveredFold(
   fold.certified = true;
 }
 
-function recoverCompletedPosts(
+function recoverCompletedMessages(
   recovery: EndpointRecovery,
 ): Effect.Effect<Map<string, RecordHashValue>, ParseResult.ParseError> {
   return Effect.forEach(
-    recovery.postIntents.flatMap((intent) =>
+    recovery.messageIntents.flatMap((intent) =>
       intent.completedRecordHash === undefined
         ? []
-        : [{ postId: intent.postId, recordHash: intent.completedRecordHash }],
+        : [{ msgId: intent.msgId, recordHash: intent.completedRecordHash }],
     ),
     (completed) =>
       Schema.decodeUnknown(RecordHash)(completed.recordHash).pipe(
         Effect.map((recordHash): [string, RecordHashValue] => [
-          completed.postId,
+          completed.msgId,
           recordHash,
         ]),
       ),

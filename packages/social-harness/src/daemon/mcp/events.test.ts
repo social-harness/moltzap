@@ -36,7 +36,7 @@ const delivery = (byte: number): HarnessMessageReadyEvent => ({
     kind: "multicast",
     message: {
       kind: "direct",
-      postId: digest("pst_", byte),
+      msgId: digest("msg_", byte),
       address: "agent:bob",
       sender: testAgentView("agent:bob"),
       content: [{ type: "text", text: `item ${String(byte)}` }],

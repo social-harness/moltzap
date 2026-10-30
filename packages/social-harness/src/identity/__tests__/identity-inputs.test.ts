@@ -4,9 +4,9 @@ import { HttpClient } from "@effect/platform";
 import { Duration, Effect, Either, Layer, Redacted, Schema } from "effect";
 import { expect, it } from "vitest";
 import {
+  envelopeIdOf,
   type Group,
   makeGroup,
-  messageIdOf,
   plaintext,
   sealFrom,
   signBody,
@@ -79,7 +79,7 @@ it.each<EntryPointCase>([
           {
             senderAgentId: group.sender.agentCard.agentId,
             recipientAgentCards: group.recipients.map((r) => r.agentCard),
-            messageId: messageIdOf(1),
+            envelopeId: envelopeIdOf(1),
             plaintext,
           },
           member,
@@ -125,7 +125,7 @@ it.each<EntryPointCase>([
             agentCard: group.sender.agentCard,
             signingAuthority: group.sender.authority,
             recipientAgentIds: new Set([group.peer.agentCard.agentId]),
-            messageId: messageIdOf(1),
+            envelopeId: envelopeIdOf(1),
             body: plaintext,
           },
           member,

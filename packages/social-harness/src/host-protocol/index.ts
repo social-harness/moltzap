@@ -49,5 +49,6 @@ export {
   harnessEmptyResultSchema,
   harnessFailureReasons,
   registrationAdmissionRefusalMessage,
-  validationIssues,
 } from "./schemas.js";
+/** Field diagnostics expose schema expectations without submitted values. */
+export { validationIssues } from "./validation-errors.js";

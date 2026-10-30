@@ -88,7 +88,7 @@ The [SignedMessage](./identity.md#signed-messages) payload is exactly:
   "recipientAgentIds": [
     "agt_<22-character-base64url>"
   ],
-  "messageId": "msg_<22-character-base64url>",
+  "envelopeId": "env_<22-character-base64url>",
   "body": "<canonical unpadded base64url>"
 }
 ```
@@ -121,7 +121,7 @@ to the same immutable identity.
 
 [Router wire formats](../communication/router-representation.md) defines SignedMessageDigest.
 
-The maximum complete General JWS is 471,676 UTF-8 JCS bytes under the
+The maximum complete General JWS is 471,677 UTF-8 JCS bytes under the
 recipient and body bounds.
 
 ## SealedBody
@@ -159,14 +159,14 @@ Its decoded protected header is exactly:
   "alg": "ECDH-ES+A256KW",
   "enc": "A256GCM",
   "org.social-harness/commitment": "<base64url of 32 bytes>",
-  "org.social-harness/message-id": "msg_<22-character-base64url>",
+  "org.social-harness/envelope-id": "env_<22-character-base64url>",
   "org.social-harness/sender": "agt_<22-character-base64url>"
 }
 ```
 
-`org.social-harness/sender` and `org.social-harness/message-id` are the `senderAgentId`
-and `messageId` of the SignedMessage that carries the body. An opener
-refuses a body whose header sender or MessageId differs from those of
+`org.social-harness/sender` and `org.social-harness/envelope-id` are the `senderAgentId`
+and `envelopeId` of the SignedMessage that carries the body. An opener
+refuses a body whose header sender or EnvelopeId differs from those of
 the verified SignedMessage.
 
 The JWE plaintext is a fresh 32-byte random salt followed by the
@@ -219,14 +219,14 @@ exactly:
 
 | Recipients | Sealed bytes |
 |---|---|
-| R = 1 | `ceil(4(N + 32) / 3) + 605` |
-| R ≥ 2 | `ceil(4(N + 32) / 3) + 417 + 171R` |
+| R = 1 | `ceil(4(N + 32) / 3) + 607` |
+| R ≥ 2 | `ceil(4(N + 32) / 3) + 418 + 171R` |
 
-The second recipient adds 154 bytes, because a single recipient's
+The second recipient adds 153 bytes, because a single recipient's
 ephemeral key moves from the protected header into its entry. Each
 recipient after that adds 171 bytes. At 32 recipients the fixed part is
-5,861 bytes, so the largest plaintext whose sealed body fits the
-262,144-byte SignedMessage body cap is 192,180 bytes, which seals to
+5,890 bytes, so the largest plaintext whose sealed body fits the
+262,144-byte SignedMessage body cap is 192,158 bytes, which seals to
 exactly 262,144 bytes.
 
 ## Registry routes
@@ -616,7 +616,7 @@ lists the server's live wire versions.
 | `AgentId` | `agt_` plus the 22-character canonical base64url encoding of 16 bytes |
 | `PrincipalId` | `prn_` plus the 22-character canonical base64url encoding of 16 bytes |
 | `OperationId` | `opn_` plus the 22-character canonical base64url encoding of 16 bytes |
-| `MessageId` | `msg_` plus the 22-character canonical base64url encoding of 16 bytes |
+| `EnvelopeId` | `env_` plus the 22-character canonical base64url encoding of 16 bytes |
 | `AgentCardDigest` | `acd_` plus the 43-character canonical base64url encoding of 32 bytes |
 | `AgentName` | 3 to 32 ASCII characters matching `^[a-z0-9]+(-[a-z0-9]+)*$` |
 | `issuedAt` | whole-second UTC matching `YYYY-MM-DDTHH:mm:ssZ` |

@@ -17,8 +17,8 @@ import {
   type RouterSendResult,
 } from "../communication/router/api/contract.js";
 import {
+  EnvelopeId,
   type LiveSignedMessage,
-  MessageId,
   SignedMessage,
 } from "../identity/envelope/signed-message.js";
 import { Registry } from "../identity/registry/index.js";
@@ -82,12 +82,12 @@ export const unreachableOutbox: RouterWorkerInput<TestPayload>["outbox"] =
   });
 
 /**
- * Construct a deterministic test MessageId.
+ * Construct a deterministic test EnvelopeId.
  * @param byte Repeated identifier byte.
- * @returns Decoded MessageId.
+ * @returns Decoded EnvelopeId.
  */
-const messageId = (byte: number) =>
-  Schema.decodeUnknownSync(MessageId)(identifier("msg_", byte));
+const envelopeId = (byte: number) =>
+  Schema.decodeUnknownSync(EnvelopeId)(identifier("env_", byte));
 
 /**
  * Construct a deterministic test RouterInstanceId.
@@ -143,7 +143,7 @@ export const signMessage = (
     agentCard: input.card,
     signingAuthority: input.authority,
     recipientAgentIds: new Set([input.recipient]),
-    messageId: messageId(input.id),
+    envelopeId: envelopeId(input.id),
     body: new TextEncoder().encode(input.body),
   }).pipe(Effect.orDie, Effect.withSpan("signMessage"));
 

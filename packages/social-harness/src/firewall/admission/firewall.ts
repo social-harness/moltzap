@@ -24,7 +24,7 @@ import {
   untilFresh,
 } from "../../communication/conversations/index.js";
 import { Content } from "../../communication/records/index.js";
-import { PostId } from "../../communication/records/values.js";
+import { MsgId } from "../../communication/records/values.js";
 import {
   decodeRuntimeValue,
   encodeRuntimeValue,
@@ -65,7 +65,7 @@ import {
   decodeRecord,
   type FirewallEnvironment,
   hashedId,
-  postProjection,
+  messageProjection,
   refusedSend,
   requestText,
 } from "./firewall-checks.js";
@@ -73,12 +73,12 @@ import {
 // safer-arch-ignore file-implicit-boundary-module: Firewall composition and its admission worker share one immutable installation and evidence pipeline; this private implementation is exposed only through admission/index.ts.
 
 /**
- * The post id a gather's question is rendered under before any of its posts
+ * The message id a gather's question is rendered under before any of its messages
  * exist; the rendering does not show it.
  */
-const unpostedRequest = Schema.decodeUnknown(PostId)(
-  `pst_${"A".repeat(43)}`,
-).pipe(Effect.orDie);
+const unsentRequest = Schema.decodeUnknown(MsgId)(`msg_${"A".repeat(43)}`).pipe(
+  Effect.orDie,
+);
 
 /**
  * Code, facts and provider settings stay fixed for this process. Owner tools
@@ -154,10 +154,10 @@ export function captureRegistration(entry: MessageMiddleware) {
 }
 
 /**
- * The firewall's part in the collective layer. Every post the agent authors
+ * The firewall's part in the collective layer. Every message the agent authors
  * is checked as its own candidate and binds in the transaction that compares
  * the check's evidence. A gather is checked once; its admission commits in
- * the transaction that compares its evidence, and each request post binds
+ * the transaction that compares its evidence, and each request message binds
  * only against that admitted check. The advice an admitting check gives the
  * agent returns with the send.
  *
@@ -166,8 +166,8 @@ export function captureRegistration(entry: MessageMiddleware) {
  *   D[Agent's send: multicast, all_gather, answer or gather] --> C[Capture local evidence]
  *   C --> F[Run full outgoing middleware chain]
  *   F --> A[Compare evidence atomically]
- *   A -->|post allowed| I[Take the layer's hold and bind the intent]
- *   A -->|gather allowed| G[Admit the operation; request posts bind against it]
+ *   A -->|message allowed| I[Take the layer's hold and bind the intent]
+ *   A -->|gather allowed| G[Admit the operation; request messages bind against it]
  *   A -->|refused| E[Return send error and registered feedback]
  *   A -->|stale once| C
  * ```
@@ -182,15 +182,15 @@ export const collectiveAdmission = (
     "bindChecked" | "sendAdmitted" | "resolveConversation"
   >,
 ): CollectiveAdmission => ({
-  bindPost: (input, hold) => bindPost(environment, engine, input, hold),
+  bindMessage: (input, hold) => bindMessage(environment, engine, input, hold),
   admitGather: (candidate) => admitGather(environment, engine, candidate),
 });
 
 /**
- * Check and bind one authored post. The bound post carries the guidance of
+ * Check and bind one authored message. The bound message carries the guidance of
  * the check that admitted it, whether or not it certifies.
  */
-function bindPost<E>(
+function bindMessage<E>(
   environment: FirewallEnvironment,
   engine: Pick<EndpointEngine, "bindChecked">,
   input: EngineSendInput,
@@ -325,7 +325,7 @@ function checkPrepared(
           maximumRecords:
             environment.installed.configuration.maximumHistoryRecords,
         });
-        const projection = yield* postProjection(
+        const projection = yield* messageProjection(
           prepared.intent,
           cards,
           localAgentId,
@@ -345,7 +345,7 @@ function checkPrepared(
 
 /**
  * Check a gather, rechecking once on stale evidence, and return the sender
- * its request posts bind through with the advice its admitting check gave.
+ * its request messages bind through with the advice its admitting check gave.
  * A store failure preserves uncertainty about committed collective ownership.
  */
 function admitGather(
@@ -400,7 +400,7 @@ function commitGather(
   });
 }
 
-/** The sender an admitted gather's posts bind through and its check's advice, or the refusal of one withheld. */
+/** The sender an admitted gather's messages bind through and its check's advice, or the refusal of one withheld. */
 function admittedSender(
   engine: Pick<EndpointEngine, "sendAdmitted">,
   checked: CheckedMessage,
@@ -468,7 +468,7 @@ function gatherMessage(local: VerifiedAgentCard, gather: GatherCheck) {
       return yield* new EndpointStoreError({ reason: "invalid-input" });
     }
     return yield* decodeMessage({
-      id: hashedId(`${local.agentId}:${value.id}`),
+      id: hashedId(`${local.agentId}:${value.operationId}`),
       sender: local.agentId,
       recipients: gather.conversation.memberCards
         .map((card) => card.agentId)
@@ -476,8 +476,8 @@ function gatherMessage(local: VerifiedAgentCard, gather: GatherCheck) {
       text: yield* requestText({
         kind: "collectiveRequest",
         op: "gather",
-        id: value.id,
-        postId: yield* unpostedRequest,
+        operationId: value.operationId,
+        msgId: yield* unsentRequest,
         from: agentViewOf(local),
         to: gather.conversation.address,
         question: questionText(gather.candidate.content),
@@ -487,7 +487,7 @@ function gatherMessage(local: VerifiedAgentCard, gather: GatherCheck) {
       operation: {
         kind: "request",
         op: "gather",
-        id: value.id,
+        operationId: value.operationId,
         deadlineAt: value.deadlineAt,
       },
     });
@@ -519,7 +519,7 @@ function sameMulticast(
     candidate.supported && candidate.message.operation === undefined;
   return (
     plainMessage &&
-    samePost(item.message, candidate) &&
+    sameMessage(item.message, candidate) &&
     renderContent(item.message.content) === candidate.message.text &&
     sameAudience(item.message, candidate.cards)
   );
@@ -532,24 +532,24 @@ function sameRequest(
   const operation = candidate.message.operation;
   const sameOperation =
     operation?.kind === "request" &&
-    operation.id === item.id &&
+    operation.operationId === item.operationId &&
     operation.op === item.op;
   return (
     sameOperation &&
-    samePost({ postId: item.postId, sender: item.from }, candidate)
+    sameMessage({ msgId: item.msgId, sender: item.from }, candidate)
   );
 }
 
-function samePost(
-  post: { readonly postId: string; readonly sender: AgentView },
+function sameMessage(
+  message: { readonly msgId: string; readonly sender: AgentView },
   candidate: DecodedRecord,
 ): boolean {
   return (
-    post.postId === candidate.intent.postId &&
+    message.msgId === candidate.intent.msgId &&
     candidate.cards.some(
       (card) =>
         card.agentId === candidate.intent.authorAgentId &&
-        Schema.equivalence(AgentView)(AgentView.make(card), post.sender),
+        Schema.equivalence(AgentView)(AgentView.make(card), message.sender),
     )
   );
 }

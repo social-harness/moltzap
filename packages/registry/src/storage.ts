@@ -1,7 +1,6 @@
 /** @file Durable Registry persistence for admission, immutable cards, and idempotent operations. */
 
 import type { SqlError } from "@effect/sql/SqlError";
-import * as Migrator from "@effect/sql/Migrator";
 import { SqlClient } from "@effect/sql/SqlClient";
 import {
   AgentCard,
@@ -19,7 +18,7 @@ import {
 import { Clock, Data, Effect, Schema } from "effect";
 import { randomBytes } from "node:crypto";
 import { AgentCardIssuedAt, issueAgentCard } from "./issuance.js";
-import { registryMigration } from "./migrations/0001_registry.js";
+import { createRegistrySchema } from "./schema.js";
 
 /* eslint-disable @typescript-eslint/naming-convention -- Closed HTTP error constructors retain their class names when bound from the service capability. */
 const { InternalServerError, UnavailableError } = httpErrors;
@@ -30,26 +29,10 @@ const ed25519PublicKeyThumbprintUri = agentCardSigning.publicKeyId;
 export class RegistryStorageInitializationError extends Data.TaggedError(
   "RegistryStorageInitializationError",
 )<{
-  readonly reason:
-    | "pre-reset"
-    | "newer-schema"
-    | "signer-mismatch"
-    | "unavailable";
+  readonly reason: "incompatible" | "signer-mismatch" | "unavailable";
 }> {}
 
-const LEDGER_TABLE = "sharness_registry_ledger_20261029";
-
-/**
- * Ledgers written by releases before the current reset. Their databases hold
- * AgentCards signed under a wire version outside the retained history, so
- * startup refuses them instead of serving those cards.
- */
-const PRE_RESET_LEDGERS = [
-  "moltzap_registry_migrations",
-  "sharness_registry_migrations",
-  "sharness_registry_ledger",
-  "sharness_registry_ledger_20261026",
-] as const;
+const LEDGER_TABLE = "sharness_registry_ledger_20261029_3";
 
 type StorageError =
   | InstanceType<typeof httpErrors.UnavailableError>
@@ -93,7 +76,7 @@ export interface RegistryStorage {
 }
 
 /**
- * Refuses unknown applied migrations and binds the configured signer to storage.
+ * Initializes an empty schema or validates the current format and its signer.
  *
  * @param input Initialization dependencies.
  * @param input.sql Exclusive SQL capability for this Registry process.
@@ -160,15 +143,15 @@ const exactStruct = <Fields extends Schema.Struct.Fields>(fields: Fields) =>
   });
 
 const AGENT_ID_MINT_ATTEMPTS = 8;
-const migrations = Migrator.fromRecord({
-  "0001_registry": registryMigration,
-});
-
 const metadataRow = exactStruct({
   signerThumbprint: Schema.String,
 });
 const ledgerRow = exactStruct({
-  migrationId: Schema.Int,
+  migrationId: Schema.Literal(1),
+});
+const schemaStateRow = exactStruct({
+  currentLedger: Schema.Boolean,
+  occupied: Schema.Boolean,
 });
 const cardRow = exactStruct({
   agentCardBytes: Schema.Uint8ArrayFromSelf,
@@ -341,31 +324,30 @@ function makeCheckReadiness(
     );
 }
 
-/** The PGlite socket closes after Migrator's missing-table probe. */
-const ensureMigrationTable = (sql: SqlClient) =>
+/** The format marker commits with the current schema in the initialization transaction. */
+const createFormatMarker = (sql: SqlClient) =>
   sql`
-    CREATE TABLE IF NOT EXISTS ${sql(LEDGER_TABLE)} (
+    CREATE TABLE ${sql(LEDGER_TABLE)} (
       migration_id integer PRIMARY KEY,
       created_at timestamp with time zone NOT NULL DEFAULT now(),
       name text NOT NULL
     )
   `;
 
-/** Migrator skips known ids below the ledger maximum without rejecting unknown ids. */
-function checkLedger(sql: SqlClient) {
+/** An initialized schema has exactly one current-format marker. */
+function requireCurrentFormat(sql: SqlClient) {
   return Effect.gen(function* () {
     yield* sql`LOCK TABLE ${sql(LEDGER_TABLE)} IN ACCESS EXCLUSIVE MODE`;
-    const known = yield* migrations;
     const rows = yield* sql`
       SELECT migration_id AS "migrationId" FROM ${sql(LEDGER_TABLE)}
     `;
-    const applied = yield* Schema.decodeUnknown(Schema.Array(ledgerRow))(rows);
-    const knownIds = new Set(known.map(([id]) => id));
-    if (applied.some((row) => !knownIds.has(row.migrationId))) {
-      return yield* new RegistryStorageInitializationError({
-        reason: "newer-schema",
-      });
-    }
+    yield* Schema.decodeUnknown(Schema.Tuple(ledgerRow))(rows).pipe(
+      Effect.catchTag("ParseError", () =>
+        Effect.fail(
+          new RegistryStorageInitializationError({ reason: "incompatible" }),
+        ),
+      ),
+    );
   });
 }
 
@@ -400,37 +382,50 @@ const bindStorageMetadata = (input: {
     }),
   );
 
-/** The ledger lock covers preflight and Migrator's transactional batch together. */
+/** Only an empty namespace can initialize; an existing namespace must carry the current format. */
 function runStorageInitialization(input: {
   readonly sql: SqlClient;
   readonly registrySignerPublicKey: Ed25519PublicKey;
 }) {
   return Effect.gen(function* () {
-    const legacy = yield* Effect.forEach(
-      PRE_RESET_LEDGERS,
-      (ledger) =>
-        input.sql`SELECT to_regclass(${ledger}::text)::text AS legacy`,
-      { concurrency: 1 },
+    const rows = yield* input.sql`
+      SELECT
+        COALESCE(bool_or(relname = ${LEDGER_TABLE} AND relkind = 'r'), false) AS "currentLedger",
+        count(*) > 0 AS occupied
+      FROM pg_catalog.pg_class
+      WHERE relnamespace = (
+        SELECT oid FROM pg_catalog.pg_namespace
+        WHERE nspname = current_schema()
+      )
+    `;
+    const [schema] = yield* Schema.decodeUnknown(Schema.Tuple(schemaStateRow))(
+      rows,
     );
-    if (legacy.flat().some((row) => row.legacy !== null)) {
+    if (schema.occupied && !schema.currentLedger) {
       return yield* new RegistryStorageInitializationError({
-        reason: "pre-reset",
+        reason: "incompatible",
       });
     }
-    yield* ensureMigrationTable(input.sql);
-    yield* input.sql.withTransaction(
-      Effect.gen(function* () {
-        yield* checkLedger(input.sql);
-        yield* Migrator.make({})({
-          loader: migrations,
-          table: LEDGER_TABLE,
-        }).pipe(Effect.provideService(SqlClient, input.sql));
-      }),
-    );
     const signerThumbprint = yield* ed25519PublicKeyThumbprintUri(
       input.registrySignerPublicKey,
     );
-    yield* bindStorageMetadata({ sql: input.sql, signerThumbprint });
+    yield* input.sql.withTransaction(
+      Effect.gen(function* () {
+        if (schema.occupied) {
+          yield* requireCurrentFormat(input.sql);
+        } else {
+          yield* createRegistrySchema.pipe(
+            Effect.provideService(SqlClient, input.sql),
+          );
+          yield* createFormatMarker(input.sql);
+          yield* input.sql`
+            INSERT INTO ${input.sql(LEDGER_TABLE)} (migration_id, name)
+            VALUES (1, 'registry')
+          `;
+        }
+        yield* bindStorageMetadata({ sql: input.sql, signerThumbprint });
+      }),
+    );
   });
 }
 

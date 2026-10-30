@@ -33,19 +33,19 @@ import {
   type CertifiedRecord,
   type CompletedReanchor,
   deriveConversationId,
-  deriveEvidenceMessageId,
+  deriveEvidenceEnvelopeId,
   DirectPacket,
   EvidenceStatement,
   hashAction,
   hashAnchor,
-  hashPostIntent,
+  hashMessageIntent,
   hashRecord,
   type InitialAnchorBody,
   maximumContentBytes,
   maximumMembers,
   MembershipDescriptor as MembershipDescriptorSchema,
-  mintPostId,
-  type PostIntent,
+  type MessageIntent,
+  mintMsgId,
   quorumThreshold,
   type ReanchorBody,
   RecordCore as RecordCoreSchema,
@@ -282,13 +282,13 @@ const buildRecord = (input: {
 const buildFirstMessage = (fixture: ProtocolFixture, content: ContentValue) =>
   Effect.gen(function* () {
     const firstIdentity = at(fixture.identities, 0);
-    const postIntent: PostIntent = {
+    const messageIntent: MessageIntent = {
       sharnessVersion: WIRE_VERSION,
-      kind: "post_intent",
+      kind: "message_intent",
       conversationId: fixture.membership.descriptor.conversationId,
       membershipHash: fixture.membership.hash,
       authorAgentId: firstIdentity.card.agentId,
-      postId: yield* mintPostId(),
+      msgId: yield* mintMsgId(),
       content,
     };
     const anchor: InitialAnchorBody = {
@@ -305,8 +305,8 @@ const buildFirstMessage = (fixture: ProtocolFixture, content: ContentValue) =>
       membership: fixture.membership.descriptor,
       anchor,
       previousRecordHash: null,
-      postIntent,
-      postIntentHash: yield* hashPostIntent(postIntent),
+      messageIntent,
+      messageIntentHash: yield* hashMessageIntent(messageIntent),
     };
     return yield* buildRecord({ fixture, action, routerAnchor: anchor });
   });
@@ -323,13 +323,13 @@ const buildMessage = (
 ) =>
   Effect.gen(function* () {
     const firstIdentity = at(fixture.identities, 0);
-    const postIntent: PostIntent = {
+    const messageIntent: MessageIntent = {
       sharnessVersion: WIRE_VERSION,
-      kind: "post_intent",
+      kind: "message_intent",
       conversationId: fixture.membership.descriptor.conversationId,
       membershipHash: fixture.membership.hash,
       authorAgentId: firstIdentity.card.agentId,
-      postId: yield* mintPostId(),
+      msgId: yield* mintMsgId(),
       content,
     };
     const action: ActionCore = {
@@ -341,8 +341,8 @@ const buildMessage = (
         reanchored?.anchorHash ??
         firstMessage.actionCertifiedRecord.recordCore.anchorHash,
       previousRecordHash: firstMessage.actionCertifiedRecord.recordHash,
-      postIntent,
-      postIntentHash: yield* hashPostIntent(postIntent),
+      messageIntent,
+      messageIntentHash: yield* hashMessageIntent(messageIntent),
     };
     return yield* buildRecord({
       fixture,
@@ -474,7 +474,7 @@ const enforcesFirstMessageAndMessageEvidence = () =>
     );
 
     const message = yield* buildMessage(fixture, firstMessage, [
-      { type: "text", text: "ordinary post" },
+      { type: "text", text: "ordinary message" },
     ]);
     const thresholdMessage: ActionCertifiedRecord = {
       ...message.actionCertifiedRecord,
@@ -542,7 +542,7 @@ const verifiesRecordsAgainstTheHeldMembership = () =>
       { type: "text", text: "first message" },
     ]);
     const message = yield* buildMessage(fixture, firstMessage, [
-      { type: "text", text: "ordinary post" },
+      { type: "text", text: "ordinary message" },
     ]);
 
     yield* verifyCertifiedRecord({
@@ -1047,7 +1047,7 @@ const rejectsSubstitutedEvidenceStatements = () =>
       agentCard: signer.card,
       signingAuthority: signer.authority,
       recipientAgentIds: new Set([signer.card.agentId]),
-      messageId: yield* deriveEvidenceMessageId(statement),
+      envelopeId: yield* deriveEvidenceEnvelopeId(statement),
       body: yield* encodeCanonical(EvidenceStatement, {
         ...statement,
         request: {
@@ -1114,7 +1114,7 @@ describe("Client protocol acceptance", () => {
     verifiesRecordsAgainstTheHeldMembership,
   );
   it(
-    "requires the proposal envelope sender to be the post author",
+    "requires the proposal envelope sender to be the message author",
     verifiesProposalEnvelopeAttribution,
   );
   it(

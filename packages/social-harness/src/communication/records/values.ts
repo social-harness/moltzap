@@ -1,4 +1,4 @@
-/** @file Message values every layer above the wire encodes: addresses, post ids, content, and member limits and order. */
+/** @file Message values every layer above the wire encodes: addresses, message ids, content, and member limits and order. */
 
 import canonicalize from "canonicalize";
 import { Either, Schema } from "effect";
@@ -26,7 +26,6 @@ export const compareAgentIds: (left: AgentId, right: AgentId) => number =
 export const wireProfiles = {
   [WIRE_VERSION]: {
     clientHashDomain: "org.social-harness/client/v2/",
-    collectiveIdDomain: "org.social-harness/collective-id",
     collectiveDataKey: "org.social-harness/collective",
     maximumContentBytes: 32_768,
     maximumMembers: 32,
@@ -39,22 +38,22 @@ export const maximumContentBytes =
 const utf8Encoder = new TextEncoder();
 
 /**
- * One author-scoped post identity. Retrying a persisted post reuses it;
- * a new post receives a fresh identity.
+ * One author-scoped message identity. Retrying a persisted message reuses it;
+ * a new message receives a fresh identity.
  */
-export const PostId = Schema.String.pipe(
-  Schema.filter((value) => isCanonicalIdentifier("pst_", value), {
-    identifier: "PostId",
-    description: "Canonical author-scoped post identity",
+export const MsgId = Schema.String.pipe(
+  Schema.filter((value) => isCanonicalIdentifier("msg_", value), {
+    identifier: "MsgId",
+    description: "Canonical author-scoped message identity",
   }),
-  Schema.brand("PostId"),
-  Schema.annotations({ identifier: "PostId" }),
+  Schema.brand("MsgId"),
+  Schema.annotations({ identifier: "MsgId" }),
 );
 /**
- * A validated author-scoped post identity.
+ * A validated author-scoped message identity.
  * @useDeclaredType
  */
-export type PostId = typeof PostId.Type;
+export type MsgId = typeof MsgId.Type;
 
 /** A string without lone surrogates, so it survives canonical JSON. */
 export const wellFormedString = Schema.String.pipe(

@@ -4,7 +4,7 @@ import { Either, Schema } from "effect";
 import * as fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { AgentCardDigest } from "../cards.js";
-import { MessageId } from "../envelope/signed-message.js";
+import { EnvelopeId } from "../envelope/signed-message.js";
 import { AgentId, AgentName, PrincipalId } from "../identifiers.js";
 import { OperationId } from "../registry/contract.js";
 import { AgentCardIssuedAt } from "./agent-card-fixtures.js";
@@ -53,9 +53,9 @@ const identifierRoundTrips: ReadonlyArray<
     },
   ],
   [
-    "msg_",
+    "env_",
     (encoded) => {
-      expectCanonicalRoundTrip(MessageId, encoded);
+      expectCanonicalRoundTrip(EnvelopeId, encoded);
     },
   ],
 ] as const;

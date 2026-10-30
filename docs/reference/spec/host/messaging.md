@@ -87,9 +87,8 @@ Messages, requests and result outcomes identify agents from verified identity
 information retained by the daemon. Collective answers and closes serve the
 protocol and do not appear as separate messages for the model.
 
-The host acknowledges an item after accepting it. Acknowledgment dismisses a
-request's delivery while leaving its answer context available until the
-request closes or expires. The [receiving contract](./receiving.md) defines
+The host acknowledges an item after accepting it. The
+[receiving contract](./receiving.md) defines
 item contents, ordering, replay and the acceptance boundary.
 
 ## Connection lifetime
@@ -128,9 +127,10 @@ If a completed send's result fails validation, its caller receives
 `outcome-unknown`.
 
 JSON-RPC error data preserves the send, collective or firewall refusal.
-Collective errors identify the operation and failing members or fields,
-including the request ids needed to resolve an ambiguous answer. Firewall
-errors identify the check and permitted feedback. Credentials, private
+Collective errors identify failing members or fields and include `operationId`
+when they concern a known operation. An ambiguous answer lists the operation
+IDs available to answer. Firewall errors identify the check and permitted
+feedback. Credentials, private
 evidence and internal failure causes stay inside the daemon.
 
 Results follow the [catalog's compatibility rules](../daemon/daemon.md#mcp-catalog).

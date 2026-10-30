@@ -1,5 +1,5 @@
 /**
- * @file SealedBody round trips, sender and MessageId binding, commitment,
+ * @file SealedBody round trips, sender and EnvelopeId binding, commitment,
  * header exactness, and refusals.
  */
 
@@ -34,6 +34,7 @@ import {
   sealTwoKeyCollision,
 } from "./forged-sealed-bodies.js";
 import {
+  envelopeIdOf,
   FIXTURE_CONCURRENCY,
   type Group,
   issueCard,
@@ -41,7 +42,6 @@ import {
   makeGroup,
   makeMember,
   type Member,
-  messageIdOf,
   openAs,
   plaintext,
   sealFrom,
@@ -49,7 +49,7 @@ import {
 } from "./sealed-body-fixtures.js";
 
 const SENDER_HEADER = "org.social-harness/sender";
-const MESSAGE_ID_HEADER = "org.social-harness/message-id";
+const ENVELOPE_ID_HEADER = "org.social-harness/envelope-id";
 const COMMITMENT_HEADER = "org.social-harness/commitment";
 const SALT_BYTES = 32;
 
@@ -129,14 +129,14 @@ const freshSalt = () => crypto.getRandomValues(new Uint8Array(SALT_BYTES));
 /**
  * Spells a protected header exactly as `SealedBody.seal` does for two or more
  * recipients, from the base64url SHA-256 of the salted plaintext, the
- * MessageId `signBody` uses by default, and the sender.
+ * EnvelopeId `signBody` uses by default, and the sender.
  */
 const honestHeaderText = (commitment: string, sender: Member) =>
   JSON.stringify({
     alg: "ECDH-ES+A256KW",
     enc: "A256GCM",
     [COMMITMENT_HEADER]: commitment,
-    [MESSAGE_ID_HEADER]: messageIdOf(1),
+    [ENVELOPE_ID_HEADER]: envelopeIdOf(1),
     [SENDER_HEADER]: sender.agentCard.agentId,
   });
 
@@ -172,7 +172,7 @@ const sealWithSharedEphemeralKey = (sender: Member, peer: Member) =>
             alg: "ECDH-ES+A256KW",
             enc: "A256GCM",
             [COMMITMENT_HEADER]: commitment,
-            [MESSAGE_ID_HEADER]: messageIdOf(1),
+            [ENVELOPE_ID_HEADER]: envelopeIdOf(1),
             [SENDER_HEADER]: sender.agentCard.agentId,
             epk: {
               x: ephemeralPublicKey.x,
@@ -725,7 +725,7 @@ it.each([
   },
   {
     body: "canonical JSON that is not a JWE",
-    make: () => encodeCanonicalJson({ kind: "post", text: "hello" }),
+    make: () => encodeCanonicalJson({ kind: "message", text: "hello" }),
   },
   {
     body: "a sealed body with an added aad member",
@@ -834,7 +834,7 @@ const sealWithProtectedMembers = (
             alg: "ECDH-ES+A256KW",
             enc: "A256GCM",
             [COMMITMENT_HEADER]: commitment,
-            [MESSAGE_ID_HEADER]: messageIdOf(1),
+            [ENVELOPE_ID_HEADER]: envelopeIdOf(1),
             [SENDER_HEADER]: sender.agentCard.agentId,
             ...addedMembers,
           })
@@ -932,7 +932,7 @@ it.each<HeaderSpellingCase>([
         enc: "A256GCM",
         alg: "ECDH-ES+A256KW",
         [COMMITMENT_HEADER]: commitment,
-        [MESSAGE_ID_HEADER]: messageIdOf(1),
+        [ENVELOPE_ID_HEADER]: envelopeIdOf(1),
         [SENDER_HEADER]: group.sender.agentCard.agentId,
       }),
     expected: Either.left(new SealedBodyOpeningError()),
@@ -1128,33 +1128,33 @@ it("refuses a two-key body whose entries wrap different content keys over one co
     }),
   ));
 
-interface OuterMessageIdCase {
+interface OuterEnvelopeIdCase {
   readonly outer: string;
-  readonly outerMessageIdByte: number;
+  readonly outerEnvelopeIdByte: number;
   readonly result: string;
   readonly expected: Either.Either<Uint8Array, SealedBodyOpeningError>;
 }
 
 /**
- * The sender can sign unchanged sealed bytes under another MessageId. Opening
+ * The sender can sign unchanged sealed bytes under another EnvelopeId. Opening
  * must bind the protected-header id to the verified outer message.
  */
-it.each<OuterMessageIdCase>([
+it.each<OuterEnvelopeIdCase>([
   {
-    outer: "the MessageId they were sealed for",
-    outerMessageIdByte: 2,
+    outer: "the EnvelopeId they were sealed for",
+    outerEnvelopeIdByte: 2,
     result: "the plaintext",
     expected: Either.right(plaintext),
   },
   {
-    outer: "a different MessageId",
-    outerMessageIdByte: 3,
+    outer: "a different EnvelopeId",
+    outerEnvelopeIdByte: 3,
     result: "SealedBodyOpeningError",
     expected: Either.left(new SealedBodyOpeningError()),
   },
 ])(
   "returns $result for sealed bytes their sender signs under $outer",
-  ({ outerMessageIdByte, expected }) =>
+  ({ outerEnvelopeIdByte, expected }) =>
     Effect.runPromise(
       Effect.gen(function* () {
         const group = yield* makeGroup(3);
@@ -1168,13 +1168,13 @@ it.each<OuterMessageIdCase>([
           group.sender,
           group.recipients,
           sealed,
-          outerMessageIdByte,
+          outerEnvelopeIdByte,
         );
         const received = yield* receive(signedMessage, group.sender.agentCard);
 
         const outcome = yield* openAs(group.peer, received).pipe(Effect.either);
 
-        expect(received.messageId).toBe(messageIdOf(outerMessageIdByte));
+        expect(received.envelopeId).toBe(envelopeIdOf(outerEnvelopeIdByte));
         expect(outcome).toStrictEqual(expected);
       }),
     ),
@@ -1231,7 +1231,7 @@ it("refuses to seal to an AgentCard key that is not an Ed25519 curve point", () 
       const outcome = yield* SealedBody.seal({
         senderAgentId: group.sender.agentCard.agentId,
         recipientAgentCards: [group.sender.agentCard, offCurveCard],
-        messageId: messageIdOf(1),
+        envelopeId: envelopeIdOf(1),
         plaintext,
       }).pipe(Effect.either);
 

@@ -33,7 +33,7 @@ interface RetainedOutbound {
  *
  * @param database Exclusively owned endpoint database.
  * @param message Canonical complete signed envelope.
- * @returns The retained envelope under its message identity.
+ * @returns The retained envelope under its envelope identity.
  */
 export function enqueueOutbound(
   database: DatabaseSync,
@@ -49,7 +49,7 @@ export function enqueueOutbound(
  * Retains one validated envelope inside a caller-owned SQLite transaction.
  * @param database Exclusively owned endpoint database.
  * @param message Canonical complete signed envelope.
- * @returns The retained envelope under its message identity.
+ * @returns The retained envelope under its envelope identity.
  */
 export function enqueueOutboundInTransaction(
   database: DatabaseSync,
@@ -57,7 +57,7 @@ export function enqueueOutboundInTransaction(
 ): StoredOutboundMessage {
   validateMessageInput(message);
   requireConversation(database, message.conversationId);
-  const existing = findOutbound(database, message.messageId);
+  const existing = findOutbound(database, message.envelopeId);
   if (existing !== undefined) {
     requireEqual(existing.outbound.conversationId, message.conversationId);
     requireEqual(existing.outbound.wireVersion, message.wireVersion);
@@ -67,17 +67,17 @@ export function enqueueOutboundInTransaction(
     );
     return copyOutbound(existing.outbound);
   }
-  requireMessageIdAvailable(database, message.messageId);
+  requireEnvelopeIdAvailable(database, message.envelopeId);
   database
     .prepare(
       `INSERT INTO outbound_messages
-        (conversation_id, message_id,
+        (conversation_id, envelope_id,
          canonical_signed_message, wire_version, attempted, disposition)
        VALUES (?, ?, ?, ?, 0, 'pending')`,
     )
     .run(
       message.conversationId,
-      message.messageId,
+      message.envelopeId,
       copyBytes(message.canonicalSignedMessage),
       message.wireVersion,
     );
@@ -90,16 +90,16 @@ export function enqueueOutboundInTransaction(
  * Selects the exact durable envelope and retry mode for one Router attempt.
  *
  * @param database Exclusively owned endpoint database.
- * @param messageId Stable identity of the signed envelope.
+ * @param envelopeId Stable identity of the signed envelope.
  * @returns The current stored bytes, or an inactive terminal disposition.
  */
 export function beginOutbound(
   database: DatabaseSync,
-  messageId: string,
+  envelopeId: string,
 ): OutboundAttempt {
-  requireText(messageId);
+  requireText(envelopeId);
   return transaction(database, () => {
-    const retained = requireOutbound(database, messageId);
+    const retained = requireOutbound(database, envelopeId);
     if (retained.disposition !== "pending") {
       return Object.freeze({ kind: "inactive" });
     }
@@ -108,9 +108,9 @@ export function beginOutbound(
       database
         .prepare(
           `UPDATE outbound_messages SET attempted = 1
-           WHERE message_id = ? AND disposition = 'pending'`,
+           WHERE envelope_id = ? AND disposition = 'pending'`,
         )
-        .run(messageId);
+        .run(envelopeId);
     }
     return Object.freeze({
       kind: "pending",
@@ -133,7 +133,7 @@ export function completeOutbound(
 ): StoreMutation {
   validateStoredOutbound(outbound);
   return transaction(database, () => {
-    const retained = requireOutbound(database, outbound.messageId);
+    const retained = requireOutbound(database, outbound.envelopeId);
     requireSameOutbound(retained.outbound, outbound);
     switch (retained.disposition) {
       case "accepted":
@@ -144,9 +144,9 @@ export function completeOutbound(
         database
           .prepare(
             `UPDATE outbound_messages SET disposition = 'accepted'
-             WHERE message_id = ? AND disposition = 'pending'`,
+             WHERE envelope_id = ? AND disposition = 'pending'`,
           )
-          .run(outbound.messageId);
+          .run(outbound.envelopeId);
         return "inserted";
       default: {
         const exhaustive: never = retained.disposition;
@@ -170,14 +170,14 @@ export function discardOutbound(
   const distinctIds = new Set<string>();
   for (const outbound of outbounds) {
     validateStoredOutbound(outbound);
-    if (distinctIds.has(outbound.messageId)) {
+    if (distinctIds.has(outbound.envelopeId)) {
       throw new StoreSignal("invalid-input");
     }
-    distinctIds.add(outbound.messageId);
+    distinctIds.add(outbound.envelopeId);
   }
   return transaction(database, () => {
     const retained = outbounds.map((outbound) => {
-      const row = requireOutbound(database, outbound.messageId);
+      const row = requireOutbound(database, outbound.envelopeId);
       requireSameOutbound(row.outbound, outbound);
       if (row.disposition === "accepted") {
         throw new StoreSignal("conflict");
@@ -191,16 +191,16 @@ export function discardOutbound(
       if (outbound.disposition === "pending") {
         database
           .prepare(
-            `UPDATE dissemination_obligations SET message_id = NULL
-             WHERE message_id = ?`,
+            `UPDATE dissemination_obligations SET envelope_id = NULL
+             WHERE envelope_id = ?`,
           )
-          .run(outbound.outbound.messageId);
+          .run(outbound.outbound.envelopeId);
         database
           .prepare(
             `UPDATE outbound_messages SET disposition = 'discarded'
-             WHERE message_id = ? AND disposition = 'pending'`,
+             WHERE envelope_id = ? AND disposition = 'pending'`,
           )
-          .run(outbound.outbound.messageId);
+          .run(outbound.outbound.envelopeId);
       }
     }
     return inserted ? "inserted" : "existing";
@@ -221,7 +221,7 @@ export function readPendingOutbound(
   return Object.freeze(
     database
       .prepare(
-        `SELECT conversation_id, message_id,
+        `SELECT conversation_id, envelope_id,
                 canonical_signed_message, wire_version, attempted, disposition
          FROM outbound_messages WHERE disposition = 'pending' ${conversationId === undefined ? "" : "AND conversation_id = ?"}
          ORDER BY outbound_sequence`,
@@ -233,9 +233,9 @@ export function readPendingOutbound(
 
 function requireOutbound(
   database: DatabaseSync,
-  messageId: string,
+  envelopeId: string,
 ): RetainedOutbound {
-  const retained = findOutbound(database, messageId);
+  const retained = findOutbound(database, envelopeId);
   if (retained === undefined) {
     throw new StoreSignal("not-found");
   }
@@ -244,15 +244,15 @@ function requireOutbound(
 
 function findOutbound(
   database: DatabaseSync,
-  messageId: string,
+  envelopeId: string,
 ): RetainedOutbound | undefined {
   const row = database
     .prepare(
-      `SELECT conversation_id, message_id,
+      `SELECT conversation_id, envelope_id,
               canonical_signed_message, wire_version, attempted, disposition
-       FROM outbound_messages WHERE message_id = ?`,
+       FROM outbound_messages WHERE envelope_id = ?`,
     )
-    .get(messageId);
+    .get(envelopeId);
   return row === undefined ? undefined : readOutbound(row);
 }
 
@@ -266,7 +266,7 @@ function readOutbound(
   return Object.freeze({
     outbound: Object.freeze({
       conversationId: readText(row, "conversation_id"),
-      messageId: readText(row, "message_id"),
+      envelopeId: readText(row, "envelope_id"),
       wireVersion: readText(row, "wire_version"),
       canonicalSignedMessage: readBytes(row, "canonical_signed_message"),
     }),
@@ -305,31 +305,31 @@ function requireConversation(
   }
 }
 
-function requireMessageIdAvailable(
+function requireEnvelopeIdAvailable(
   database: DatabaseSync,
-  messageId: string,
+  envelopeId: string,
 ): void {
   if (
     database
       .prepare(
         `SELECT 1 AS retained FROM outbound_messages
-         WHERE message_id = ? LIMIT 1`,
+         WHERE envelope_id = ? LIMIT 1`,
       )
-      .get(messageId) !== undefined
+      .get(envelopeId) !== undefined
   ) {
     throw new StoreSignal("conflict");
   }
 }
 
 function validateStoredOutbound(outbound: StoredOutboundMessage): void {
-  requireText(outbound.messageId);
+  requireText(outbound.envelopeId);
   validateMessageInput(outbound);
 }
 
 function validateMessageInput(message: OutboundMessageInput): void {
   requireText(message.wireVersion);
   requireText(message.conversationId);
-  requireText(message.messageId);
+  requireText(message.envelopeId);
   requireBytes(message.canonicalSignedMessage);
 }
 
@@ -338,7 +338,7 @@ function requireSameOutbound(
   right: StoredOutboundMessage,
 ): void {
   requireEqual(left.conversationId, right.conversationId);
-  requireEqual(left.messageId, right.messageId);
+  requireEqual(left.envelopeId, right.envelopeId);
   requireEqual(left.wireVersion, right.wireVersion);
   requireSameBytes(left.canonicalSignedMessage, right.canonicalSignedMessage);
 }

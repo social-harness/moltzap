@@ -1,5 +1,5 @@
 /**
- * @file How Client projects posts for its firewall, builds a check's context
+ * @file How Client projects messages for its firewall, builds a check's context
  * from captured evidence, and runs one check. Outgoing and incoming
  * admission share these; neither holds a protocol or delivery lock.
  */
@@ -26,7 +26,7 @@ import {
 import {
   type Content,
   MembershipDescriptor,
-  type PostIntent,
+  type MessageIntent,
   RecordCore,
 } from "../../communication/records/index.js";
 import {
@@ -98,15 +98,15 @@ export interface CheckedMessage {
   readonly guidance?: CheckedGuidance;
 }
 
-/** A post as the firewall reads it, and whether the runtime can be shown it. */
-interface PostProjection {
+/** A message as the firewall reads it, and whether the runtime can be shown it. */
+interface MessageProjection {
   readonly message: Message;
   readonly supported: boolean;
 }
 
 /** A certified record decoded with its members' cards, its author's address and its projection. */
-export interface DecodedRecord extends PostProjection {
-  readonly intent: PostIntent;
+export interface DecodedRecord extends MessageProjection {
+  readonly intent: MessageIntent;
   readonly cards: readonly AgentCard[];
   readonly author: AgentAddress;
 }
@@ -130,43 +130,48 @@ interface AttemptFacts {
 }
 
 /**
- * Project one post by its collective part: a multicast as its text, a request
+ * Project one message by its collective part: a multicast as its text, a request
  * as exactly the question a member's model reads before the answer
- * instructions, and an answer as its line of a result. A close, or a post
+ * instructions, and an answer as its line of a result. A close, or a message
  * whose part does not decode, is projected as its raw content and is never
  * runtime-visible.
  */
-export const postProjection = Effect.fn("firewallPostProjection")(function* (
-  intent: PostIntent,
-  cards: readonly AgentCard[],
-  localAgentId: string,
-) {
-  const projected = yield* readCollectiveValue(intent.content).pipe(
-    Effect.flatMap((part) =>
-      projectPart({ intent, cards, localAgentId }, Option.getOrUndefined(part)),
-    ),
-    Effect.catchTag("CollectivePartInvalidError", () =>
-      Effect.succeed<ProjectedText>({
-        text: renderContent(intent.content),
-        supported: false,
+export const messageProjection = Effect.fn("firewallMessageProjection")(
+  function* (
+    intent: MessageIntent,
+    cards: readonly AgentCard[],
+    localAgentId: string,
+  ) {
+    const projected = yield* readCollectiveValue(intent.content).pipe(
+      Effect.flatMap((part) =>
+        projectPart(
+          { intent, cards, localAgentId },
+          Option.getOrUndefined(part),
+        ),
+      ),
+      Effect.catchTag("CollectivePartInvalidError", () =>
+        Effect.succeed<ProjectedText>({
+          text: renderContent(intent.content),
+          supported: false,
+        }),
+      ),
+    );
+    return {
+      message: yield* decodeMessage({
+        id: messageId(intent),
+        sender: intent.authorAgentId,
+        recipients: cards
+          .map((card) => card.agentId)
+          .filter((id) => id !== intent.authorAgentId),
+        text: projected.text,
+        ...(projected.operation === undefined
+          ? {}
+          : { operation: projected.operation }),
       }),
-    ),
-  );
-  return {
-    message: yield* decodeMessage({
-      id: messageId(intent),
-      sender: intent.authorAgentId,
-      recipients: cards
-        .map((card) => card.agentId)
-        .filter((id) => id !== intent.authorAgentId),
-      text: projected.text,
-      ...(projected.operation === undefined
-        ? {}
-        : { operation: projected.operation }),
-    }),
-    supported: projected.supported,
-  } satisfies PostProjection;
-});
+      supported: projected.supported,
+    } satisfies MessageProjection;
+  },
+);
 
 /** Decode one certified record with its members' cards, and project it. */
 export const decodeRecord = Effect.fn("decodeFirewallRecord")(function* (
@@ -190,14 +195,14 @@ export const decodeRecord = Effect.fn("decodeFirewallRecord")(function* (
       Effect.fail(new EndpointStoreError({ reason: "corrupt" })),
     ),
   );
-  const intent = record.action.postIntent;
+  const intent = record.action.messageIntent;
   const authorCard = cards.find(
     (card) => card.agentId === intent.authorAgentId,
   );
   if (authorCard === undefined) {
     return yield* new EndpointStoreError({ reason: "corrupt" });
   }
-  const projection = yield* postProjection(intent, cards, localAgentId);
+  const projection = yield* messageProjection(intent, cards, localAgentId);
   return {
     ...projection,
     intent,
@@ -455,31 +460,31 @@ export function refusalReason(
   return reason === "eligible" ? "unresolved-evidence" : reason;
 }
 
-/** A projected post's text and operation, before attribution. */
+/** A projected message's text and operation, before attribution. */
 interface ProjectedText {
   readonly text: string;
   readonly operation?: Message["operation"];
   readonly supported: boolean;
 }
 
-/** The post a projection reads, and the local side it is read from. */
-interface ProjectedPost {
-  readonly intent: PostIntent;
+/** The message a projection reads, and the local side it is read from. */
+interface ProjectedMessage {
+  readonly intent: MessageIntent;
   readonly cards: readonly AgentCard[];
   readonly localAgentId: string;
 }
 
 /**
- * Project a post's collective part; a post with none is plain text. An
+ * Project a message's collective part; a message with none is plain text. An
  * answer's operation follows from its conversation: a gather's answers
  * travel in direct conversations, and an all_gather's in its group, which
  * always has at least three members.
  */
 function projectPart(
-  post: ProjectedPost,
+  message: ProjectedMessage,
   value?: CollectiveValue,
 ): Effect.Effect<ProjectedText, EndpointStoreError> {
-  const { intent, cards } = post;
+  const { intent, cards } = message;
   if (value === undefined) {
     return Effect.succeed({ text: textOf(intent.content), supported: true });
   }
@@ -490,7 +495,7 @@ function projectPart(
             text: textOf(withoutCollectivePart(intent.content)),
             supported: true,
           })
-        : projectRequest(post, value);
+        : projectRequest(message, value);
     case "response":
       return Effect.succeed({
         text: renderOutcome(
@@ -501,7 +506,7 @@ function projectPart(
         operation: {
           kind: "answer",
           op: cards.length === 2 ? "gather" : "all_gather",
-          id: value.id,
+          operationId: value.operationId,
         },
         supported: true,
       });
@@ -527,15 +532,15 @@ function textOf(content: ReadonlyArray<Content[number]>): string {
   return first === undefined ? "" : renderContent([first, ...rest]);
 }
 
-/** A request post's question, as the members it asks read it. */
+/** A request message's question, as the members it asks read it. */
 function projectRequest(
-  post: ProjectedPost,
+  message: ProjectedMessage,
   value: Extract<
     CollectiveValue,
     { readonly kind: "operation"; readonly op: "gather" | "all_gather" }
   >,
 ): Effect.Effect<ProjectedText, EndpointStoreError> {
-  const { intent, cards, localAgentId } = post;
+  const { intent, cards, localAgentId } = message;
   const author = cards.find((card) => card.agentId === intent.authorAgentId);
   if (author === undefined) {
     return Effect.fail(new EndpointStoreError({ reason: "corrupt" }));
@@ -548,8 +553,8 @@ function projectRequest(
       requestText({
         kind: "collectiveRequest",
         op: value.op,
-        id: value.id,
-        postId: intent.postId,
+        operationId: value.operationId,
+        msgId: intent.msgId,
         from,
         to,
         question: questionText(intent.content),
@@ -563,7 +568,7 @@ function projectRequest(
         operation: {
           kind: "request",
           op: value.op,
-          id: value.id,
+          operationId: value.operationId,
           deadlineAt: value.deadlineAt,
         },
         supported: true,
@@ -572,8 +577,8 @@ function projectRequest(
   );
 }
 
-function messageId(intent: PostIntent): string {
-  return hashedId(`${intent.authorAgentId}:${intent.postId}`);
+function messageId(intent: MessageIntent): string {
+  return hashedId(`${intent.authorAgentId}:${intent.msgId}`);
 }
 
 /** One history entry and the cards its attribution needs. */

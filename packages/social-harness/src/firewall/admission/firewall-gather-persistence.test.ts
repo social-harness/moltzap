@@ -1,8 +1,9 @@
 /** @file A committed gather admission remains ambiguous to its caller when the store response fails. */
 
 import { live as it } from "@effect/vitest";
-import { Effect, Schema, Scope } from "effect";
+import { Effect, Scope } from "effect";
 import { expect } from "vitest";
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import {
   gatherSend,
   question,
@@ -17,7 +18,6 @@ import {
 } from "../../__tests__/firewall-runtime-fixtures.js";
 import { withStore } from "../../__tests__/store-schema-fixtures.js";
 import { makeCollectiveOperations } from "../../communication/collectives/index.js";
-import { AgentAddress } from "../../communication/records/index.js";
 import {
   type CollectiveOperationInput,
   type EndpointStore,
@@ -67,7 +67,7 @@ function committedGatherFailure() {
       phase: "collecting",
       origin: { kind: "local" },
     });
-    expect(yield* store.readCollectivePosts()).toEqual([]);
+    expect(yield* store.readCollectiveMessages()).toEqual([]);
     return { directory: subject.directory, retained };
   });
 }
@@ -85,13 +85,13 @@ function admittingCollectives(
     const { engine } = subject;
     return yield* makeCollectiveOperations({
       store,
-      self: yield* Schema.decodeUnknown(AgentAddress)("agent:alice"),
+      self: testAgentView("agent:alice"),
       scope: yield* Scope.Scope,
       lookupMember: (member) => resolvedMemberView(engine, member),
-      sendPost: (input) => engine.send(input),
-      bindPost: (input, hold) => engine.bind(input, hold),
+      sendMessage: (input) => engine.send(input),
+      bindMessage: (input, hold) => engine.bind(input, hold),
       sendAdmitted: (input, checkId) => engine.sendAdmitted(input, checkId),
-      observePost: (postId) => engine.observePost(postId),
+      observeMessage: (msgId) => engine.observeMessage(msgId),
       reportStorageFault: (error) =>
         Effect.sync(() => {
           reported.push(error);

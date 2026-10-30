@@ -84,7 +84,7 @@ function bindOutbox(state: OutboxState): EngineOutbox {
       ),
     enqueueSigned: (conversationId, message) =>
       enqueueSigned(state, conversationId, message),
-    resume: (messageIds) => push(state, messageIds),
+    resume: (envelopeIds) => push(state, envelopeIds),
     clear: () => {
       state.queued.length = 0;
     },
@@ -132,7 +132,7 @@ function enqueueSigned(
     Effect.flatMap((canonicalSignedMessage) => {
       const input = {
         conversationId,
-        messageId: message.messageId,
+        envelopeId: message.envelopeId,
         wireVersion: SignedMessage.wireVersion(message),
         canonicalSignedMessage,
       };
@@ -140,18 +140,18 @@ function enqueueSigned(
         ? state.input.store.enqueueOutbound(input)
         : state.input.store.enqueueDisseminationOutbound(obligation, input);
     }),
-    Effect.flatMap((outbound) => push(state, [outbound.messageId])),
+    Effect.flatMap((outbound) => push(state, [outbound.envelopeId])),
   );
 }
 
 function push(
   state: OutboxState,
-  messageIds: Iterable<string>,
+  envelopeIds: Iterable<string>,
 ): Effect.Effect<void> {
   return Effect.sync(() => {
-    for (const messageId of messageIds) {
-      if (!state.queued.includes(messageId)) {
-        state.queued.push(messageId);
+    for (const envelopeId of envelopeIds) {
+      if (!state.queued.includes(envelopeId)) {
+        state.queued.push(envelopeId);
       }
     }
   }).pipe(Effect.zipRight(Queue.offer(state.signal, undefined)), Effect.asVoid);
@@ -209,11 +209,11 @@ function run(state: OutboxState): Effect.Effect<never, RouterWorkerSendError> {
  */
 function drain(state: OutboxState): Effect.Effect<void, RouterWorkerSendError> {
   return Effect.gen(function* () {
-    let messageId = yield* peek(state);
-    while (messageId !== undefined) {
-      yield* state.input.routerWorker.send(messageId);
-      yield* shift(state, messageId);
-      messageId = yield* peek(state);
+    let envelopeId = yield* peek(state);
+    while (envelopeId !== undefined) {
+      yield* state.input.routerWorker.send(envelopeId);
+      yield* shift(state, envelopeId);
+      envelopeId = yield* peek(state);
     }
   });
 }
@@ -222,10 +222,10 @@ function peek(state: OutboxState): Effect.Effect<string | undefined> {
   return state.gate.withPermits(1)(Effect.sync(() => state.queued[0]));
 }
 
-function shift(state: OutboxState, messageId: string): Effect.Effect<void> {
+function shift(state: OutboxState, envelopeId: string): Effect.Effect<void> {
   return state.gate.withPermits(1)(
     Effect.sync(() => {
-      if (state.queued[0] === messageId) {
+      if (state.queued[0] === envelopeId) {
         state.queued.shift();
       }
     }),

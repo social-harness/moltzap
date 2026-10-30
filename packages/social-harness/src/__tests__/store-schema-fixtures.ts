@@ -74,7 +74,7 @@ export function storedConversation(label: string): StoredConversation {
       recordHash,
       actionHash: `ach_${label}`,
       authorAgentId: "agent:bob",
-      postId: digest("pst_", 1),
+      msgId: digest("msg_", 1),
       canonicalRecordCore: bytes("record"),
       actionEvidence: [
         {

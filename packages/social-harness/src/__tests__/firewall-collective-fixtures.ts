@@ -4,7 +4,6 @@ import { Effect, Queue, Schema } from "effect";
 import type { MiddlewareInput } from "../firewall/evaluator/contract/index.js";
 import { SendInput } from "../communication/collectives/contracts.js";
 import {
-  collectiveIdOf,
   decodeCollectiveValue,
   encodeCollectiveContent,
 } from "../communication/collectives/wire/index.js";
@@ -12,7 +11,9 @@ import {
   AgentAddress,
   MessageAddressInput,
 } from "../communication/records/values.js";
-import { appendCertifiedPost } from "./certified-history-fixtures.js";
+import { testAgentView } from "./agent-card-fixtures.js";
+import { appendCertifiedMessage } from "./certified-history-fixtures.js";
+import { collectiveOperationId } from "./collective-id-fixtures.js";
 import {
   block,
   type Fixture,
@@ -30,8 +31,6 @@ export const carol = Schema.decodeUnknownSync(AgentAddress)("agent:carol");
 export const group = Schema.decodeUnknownSync(MessageAddressInput)(
   "group:alice,bob,carol",
 );
-/** The nonce Bob's requests use, so their id is `collectiveIdOf(bob, nonce)`. */
-export const nonce = "N".repeat(43);
 /** Text a `holdMarked` policy holds. */
 export const marker = "[hold]";
 /** The question the suites ask. */
@@ -72,15 +71,14 @@ export function holdMarked(seen: MiddlewareInput[] = []) {
  * Bob's gather request to alice, closing at `deadlineAt`.
  * @param deadlineAt The request's absolute deadline in epoch milliseconds.
  * @param text The question's text.
- * @returns The request post's content.
+ * @returns The request message's content.
  */
 export function gatherRequestContent(deadlineAt: number, text: string) {
   return collectiveContent(
     {
       kind: "operation",
       op: "gather",
-      id: collectiveIdOf(bob, nonce),
-      nonce,
+      operationId: collectiveOperationId(testAgentView(bob).agentId),
       deadlineAt,
       requestedSchema: formSchema,
     },
@@ -103,7 +101,7 @@ export function seedRequest(
 ) {
   return Effect.gen(function* () {
     const firstMessage = yield* seedIncoming(subject, true);
-    return yield* appendCertifiedPost(
+    return yield* appendCertifiedMessage(
       subject,
       firstMessage,
       yield* gatherRequestContent(deadlineAt, text),
@@ -114,8 +112,8 @@ export function seedRequest(
 /**
  * Content carrying one collective value, decoded as a peer would send it.
  * @param value The undecoded part value, as it travels.
- * @param text The post's text part, if any.
- * @returns The post's content.
+ * @param text The message's text part, if any.
+ * @returns The message's content.
  */
 export function collectiveContent(value: object, text?: string) {
   return decodeCollectiveValue(value).pipe(
@@ -134,7 +132,7 @@ export function admitPending(runtime: IncomingRuntime) {
 }
 
 /**
- * The post intents a test's sends bound, which no certified record completes yet.
+ * The message intents a test's sends bound, which no certified record completes yet.
  * @param subject The fixture whose store is read.
  * @returns Every bound intent without a certified record.
  */
@@ -142,8 +140,8 @@ export function unfinishedIntents(subject: Fixture) {
   return subject.store
     .recover()
     .pipe(
-      Effect.map(({ postIntents }) =>
-        postIntents.filter(
+      Effect.map(({ messageIntents }) =>
+        messageIntents.filter(
           (intent) => intent.completedRecordHash === undefined,
         ),
       ),

@@ -5,24 +5,18 @@ import {
   decodeRuntimeValue,
   encodeRuntimeValue,
   type EndpointStore,
-  EndpointStoreError,
   type FirewallActivation,
-  type FirewallAuditEntry,
 } from "../../communication/store/index.js";
 import { exactStruct } from "../../encoding/exact.js";
 import {
   buildFirewall,
   captureRegistration,
-  decodeFirewallAuditEntry,
   type FirewallOptions,
   type InstalledFirewall,
 } from "../admission/index.js";
 import {
-  type DecidingRule,
-  decidingRules,
   decodeFrozen,
   editableDocumentSchema,
-  firewallDecisionsSchema,
   FirewallPolicyError,
   type FirewallPolicyOperations,
   makeTextPolicy,
@@ -33,11 +27,11 @@ import {
   policyUpdateSchema,
   PrivateCheckTrace,
   type RuleDescription,
-  textPolicyFormat,
   TextPolicySettings,
   TextRule,
 } from "../evaluator/index.js";
 import { localGuidanceImpersonationRule } from "../rules/index.js";
+import { readDecisions } from "./decision-history.js";
 import { decodeBehavior, MAXIMUM_BEHAVIOR_BYTES } from "./document/index.js";
 
 type FixedRules = typeof policyReadSchema.fields.fixedRules.Type;
@@ -275,7 +269,10 @@ export const installEditableFirewall = Effect.fn("installEditableFirewall")(
         gate.withPermits(1)(
           updatePolicy(captured, store, state, { request, authority }),
         ),
-      decisions: (request) => readDecisions(store, request),
+      decisions: (request) =>
+        readDecisions(store, request, textId).pipe(
+          Effect.mapError(persistenceFailure),
+        ),
     };
     return liveInstallation(state, captured.base.permits, policy);
   },
@@ -478,201 +475,4 @@ function updatePolicy(
       ),
     );
   }).pipe(Effect.withSpan("updateFirewallPolicy"));
-}
-
-/** Explicit projection prevents message content, private input, diagnostics and rule text escaping through this feed; only deciding rules' registered advice is projected. */
-function readDecisions(
-  store: EndpointStore,
-  request: { readonly since?: number },
-) {
-  return Effect.gen(function* () {
-    const entries = yield* store.readFirewallDecisions(request.since);
-    const rows = yield* Effect.forEach(entries, decisionRows, {
-      concurrency: 1,
-    });
-    return yield* Schema.decodeUnknown(firewallDecisionsSchema)({
-      decisions: rows.flat(),
-      activations: (yield* store.readFirewallActivations(request)).map(
-        (entry) => entry.activation,
-      ),
-    });
-  }).pipe(Effect.mapError(persistenceFailure));
-}
-
-function decisionRows(entry: FirewallAuditEntry & { readonly time: number }) {
-  return decodeFirewallAuditEntry(entry).pipe(
-    Effect.flatMap((check) =>
-      ruleOrigin(check.input.installation[check.direction]).pipe(
-        Effect.flatMap((origin) => projectDecision(check, entry.time, origin)),
-      ),
-    ),
-  );
-}
-
-type DecodedCheck = Effect.Effect.Success<
-  ReturnType<typeof decodeFirewallAuditEntry>
->;
-type DecodedResult = NonNullable<DecodedCheck["result"]>;
-
-type DecisionRow = (typeof firewallDecisionsSchema.Type.decisions)[number];
-type Registration = DecodedCheck["input"]["installation"]["incoming"][number];
-
-const textProvenance = Schema.parseJson(
-  Schema.Struct({
-    fixedRuleIds: Schema.Array(Schema.String),
-    runtimeRuleIds: Schema.Array(Schema.String),
-  }),
-);
-
-type RuleOrigin = (
-  rule: DecidingRule,
-) => Pick<DecisionRow["decidedBy"][number], "from" | "owner">;
-
-function projectDecision(
-  check: DecodedCheck,
-  time: number,
-  origin: RuleOrigin,
-) {
-  const result = check.result;
-  if (
-    result === null ||
-    check.disposition === "checking" ||
-    check.disposition === "interrupted"
-  ) {
-    return Effect.succeed([]);
-  }
-  const message = check.input.message;
-  const peers =
-    message === null ? [null] : decisionPeers(message, check.direction);
-  const rules = decisionRules(
-    result,
-    check.input.installation[check.direction],
-    origin,
-  );
-  return Effect.forEach(
-    peers,
-    (peerAgentId) => {
-      const peer =
-        peerAgentId === null
-          ? null
-          : check.input.agents.find((agent) => agent.agentId === peerAgentId);
-      return peer === undefined
-        ? Effect.fail(new EndpointStoreError({ reason: "corrupt" }))
-        : Effect.succeed({
-            checkId: check.checkId,
-            time,
-            direction: check.direction,
-            peer,
-            outcome: result.judgment,
-            disposition: check.disposition,
-            ...rules,
-            activeRevision: check.input.configurationDigest,
-          });
-    },
-    { concurrency: 1 },
-  );
-}
-
-function decisionRules(
-  result: DecodedResult,
-  registrations: readonly Registration[],
-  origin: RuleOrigin,
-) {
-  const checkedRuleIds = [
-    ...new Set(
-      result.checks.flatMap((middleware) =>
-        middleware.findings.map((finding) => finding.ruleId),
-      ),
-    ),
-  ];
-  const deciding = decidingRules(result.reason, registrations, result.checks);
-  const text = new Set(
-    registrations
-      .filter((entry) => entry.provenance.format === textPolicyFormat)
-      .map((entry) => entry.id),
-  );
-  const cause = decisionCause(result, deciding, text);
-  const decidedBy = deciding.map((rule) => ({
-    ruleId: rule.ruleId,
-    ...origin(rule),
-    ...(rule.advice === undefined ? {} : { advice: rule.advice }),
-  }));
-  return { cause, decidedBy, checkedRuleIds };
-}
-
-/**
- * Where a deciding rule is defined, as `policy_read` lists it: a rule of the
- * editable text middleware is `fixed` or `editable`, and any other is
- * `code`. The fixed ids come from the installation the check retained. Runtime ownership is
- * also captured there, so later edits cannot rewrite an earlier decision.
- */
-function ruleOrigin(registrations: readonly Registration[]) {
-  return Effect.gen(function* () {
-    const text = registrations.find(
-      (entry) =>
-        entry.id === textId && entry.provenance.format === textPolicyFormat,
-    );
-    const recorded =
-      text === undefined
-        ? { fixedRuleIds: [], runtimeRuleIds: [] }
-        : yield* Schema.decodeUnknown(textProvenance)(text.provenance.data);
-    const fixed = new Set(recorded.fixedRuleIds);
-    const runtime = new Set(recorded.runtimeRuleIds);
-    return (rule: DecidingRule): ReturnType<RuleOrigin> => {
-      if (rule.middlewareId !== text?.id) {
-        return { from: "code" };
-      }
-      return fixed.has(rule.ruleId)
-        ? { from: "fixed", owner: "owner" }
-        : {
-            from: "editable",
-            owner: runtime.has(rule.ruleId) ? "runtime" : "owner",
-          };
-    };
-  });
-}
-
-function decisionCause(
-  result: DecodedResult,
-  deciding: readonly DecidingRule[],
-  text: ReadonlySet<string>,
-): DecisionRow["cause"] {
-  const first =
-    deciding.find((rule) => text.has(rule.middlewareId)) ?? deciding[0];
-  if (first === undefined) {
-    return emptyCause(result);
-  }
-  if (first.finding === "unavailable") {
-    return "unavailable";
-  }
-  if (!text.has(first.middlewareId)) {
-    return "code";
-  }
-  return first.finding === "uncertain" ? "uncertain" : "judgment";
-}
-
-function emptyCause(result: DecodedResult): DecisionRow["cause"] {
-  if (
-    result.reason === "check-unavailable" &&
-    result.checks.some((check) => check.status === "unavailable")
-  ) {
-    return "unavailable";
-  }
-  return result.judgment === "allow" ? "default" : "endpoint";
-}
-
-/**
- * The agents a check's decision rows name: each recipient of an outgoing
- * message, the verified author of an incoming one, and no agent for a result
- * or failure, whose text is the endpoint's own.
- */
-function decisionPeers(
-  message: NonNullable<DecodedCheck["input"]["message"]>,
-  direction: "incoming" | "outgoing",
-): ReadonlyArray<string | null> {
-  if (direction === "outgoing") {
-    return message.recipients;
-  }
-  const kind = message.operation?.kind;
-  return kind === "result" || kind === "failure" ? [null] : [message.sender];
 }

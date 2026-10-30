@@ -17,7 +17,7 @@ import {
 } from "../../encoding/canonical-json.js";
 import { SealedBody } from "../../identity/envelope/sealed-body.js";
 import {
-  MessageId,
+  EnvelopeId,
   SignedMessage,
 } from "../../identity/envelope/signed-message.js";
 import { AgentId } from "../../identity/identifiers.js";
@@ -30,10 +30,10 @@ import {
   ConversationId,
   decodeOuterBody,
   deriveConversationId,
-  deriveEvidenceMessageId,
+  deriveEvidenceEnvelopeId,
   maximumContentBytes,
   MembershipHash,
-  mintPostId,
+  mintMsgId,
   signOuterPacket,
 } from "./index.js";
 
@@ -132,9 +132,9 @@ const derivesPrivateIdentifiers = () =>
       deriveConversationId([secondAgentId, firstAgentId] as const),
     );
 
-    const firstPostId = yield* mintPostId();
-    const secondPostId = yield* mintPostId();
-    expect(secondPostId).not.toBe(firstPostId);
+    const firstMsgId = yield* mintMsgId();
+    const secondMsgId = yield* mintMsgId();
+    expect(secondMsgId).not.toBe(firstMsgId);
   });
 
 const enforcesContentBounds = () =>
@@ -161,8 +161,8 @@ const derivesStableEvidenceIdentity = () =>
         identifier("ach_", 32, 5),
       ),
     });
-    const first = yield* deriveEvidenceMessageId(statement);
-    const retry = yield* deriveEvidenceMessageId(statement);
+    const first = yield* deriveEvidenceEnvelopeId(statement);
+    const retry = yield* deriveEvidenceEnvelopeId(statement);
     expect(retry).toBe(first);
   });
 
@@ -218,7 +218,9 @@ const refusesPlaintextOuterBody = () =>
         sender.agentCard.agentId,
         receiver.agentCard.agentId,
       ]),
-      messageId: Schema.decodeUnknownSync(MessageId)(identifier("msg_", 16, 6)),
+      envelopeId: Schema.decodeUnknownSync(EnvelopeId)(
+        identifier("env_", 16, 6),
+      ),
       body: yield* encodeCanonical(CatchUpRequest, catchUpRequest),
     });
 
@@ -232,13 +234,13 @@ const refusesSealedBodyHoldingNoClientValue = () =>
     const registryKeys = generateKeyPairSync("ed25519");
     const sender = yield* makeMember(1, registryKeys);
     const receiver = yield* makeMember(2, registryKeys);
-    const messageId = Schema.decodeUnknownSync(MessageId)(
-      identifier("msg_", 16, 7),
+    const envelopeId = Schema.decodeUnknownSync(EnvelopeId)(
+      identifier("env_", 16, 7),
     );
     const sealed = yield* SealedBody.seal({
       senderAgentId: sender.agentCard.agentId,
       recipientAgentCards: [sender.agentCard, receiver.agentCard],
-      messageId,
+      envelopeId,
       plaintext: utf8Encoder.encode("{}"),
     });
 
@@ -249,7 +251,7 @@ const refusesSealedBodyHoldingNoClientValue = () =>
         sender.agentCard.agentId,
         receiver.agentCard.agentId,
       ]),
-      messageId,
+      envelopeId,
       body: sealed,
     });
 
@@ -265,7 +267,7 @@ describe("Client protocol representation", () => {
     verifiesCanonicalClosure,
   );
   it.live(
-    "derives stable conversation and author-scoped post identities",
+    "derives stable conversation and author-scoped message identities",
     derivesPrivateIdentifiers,
   );
   it.live(
@@ -273,7 +275,7 @@ describe("Client protocol representation", () => {
     enforcesContentBounds,
   );
   it.live(
-    "derives a stable inner evidence message identity",
+    "derives a stable inner evidence envelope identity",
     derivesStableEvidenceIdentity,
   );
   it.live(

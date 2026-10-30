@@ -1,6 +1,6 @@
 /**
  * @file Sealed SignedMessage bodies: multi-recipient JWE bound to the sender
- * AgentId and outer MessageId and committed to one plaintext.
+ * AgentId and outer EnvelopeId and committed to one plaintext.
  */
 
 import { Data, Effect, Either, Encoding, Option, Schema } from "effect";
@@ -26,17 +26,17 @@ import {
 } from "../keys.js";
 import { WIRE_VERSION } from "../wire-version.js";
 import {
+  EnvelopeId,
   isParsedSignedMessage,
   MAXIMUM_BODY_BYTES,
   MAXIMUM_RECIPIENTS,
-  MessageId,
   type VerifiedSignedMessage,
 } from "./signed-message.js";
 import { WIRE_PROFILES } from "./wire-profile.js";
 
 const CONTENT_ENCRYPTION_ALGORITHM = "A256GCM";
 const COMMITMENT_HEADER = WIRE_PROFILES[WIRE_VERSION].commitmentHeader;
-const MESSAGE_ID_HEADER = WIRE_PROFILES[WIRE_VERSION].messageIdHeader;
+const ENVELOPE_ID_HEADER = WIRE_PROFILES[WIRE_VERSION].envelopeIdHeader;
 const SENDER_HEADER = WIRE_PROFILES[WIRE_VERSION].senderHeader;
 const COMMITMENT_BYTES = 32;
 const IV_BYTES = 12;
@@ -89,7 +89,7 @@ const protectedHeader = exactStruct({
   enc: Schema.Literal(CONTENT_ENCRYPTION_ALGORITHM),
   epk: Schema.optional(ephemeralPublicKey),
   [COMMITMENT_HEADER]: encodedCommitment,
-  [MESSAGE_ID_HEADER]: MessageId,
+  [ENVELOPE_ID_HEADER]: EnvelopeId,
   [SENDER_HEADER]: AgentId,
 });
 
@@ -103,19 +103,19 @@ const protectedHeaderJson = Schema.parseJson(protectedHeader);
  * spelling.
  *
  * @param commitment Base64url SHA-256 of the salted plaintext.
- * @param messageId Outer SignedMessage MessageId bound by the header.
+ * @param envelopeId Outer SignedMessage EnvelopeId bound by the header.
  * @param senderAgentId Sender bound by the header.
  * @returns The members in serialization order.
  */
 const protectedHeaderMembers = (
   commitment: string,
-  messageId: MessageId,
+  envelopeId: EnvelopeId,
   senderAgentId: AgentIdValue,
 ) => ({
   alg: SEALED_BODY_KEY_MANAGEMENT_ALGORITHM,
   enc: CONTENT_ENCRYPTION_ALGORITHM,
   [COMMITMENT_HEADER]: commitment,
-  [MESSAGE_ID_HEADER]: messageId,
+  [ENVELOPE_ID_HEADER]: envelopeId,
   [SENDER_HEADER]: senderAgentId,
 });
 
@@ -130,7 +130,7 @@ const sealedRepresentationSizes = (() => {
   };
   const header = protectedHeaderMembers(
     encoded(COMMITMENT_BYTES),
-    Schema.decodeUnknownSync(MessageId)(`msg_${encoded(16)}`),
+    Schema.decodeUnknownSync(EnvelopeId)(`env_${encoded(16)}`),
     Schema.decodeUnknownSync(AgentId)(`agt_${encoded(16)}`),
   );
   const bytes = (value: object) =>
@@ -199,7 +199,7 @@ const openingFailure = (): SealedBodyOpeningError =>
 interface SealInput {
   readonly senderAgentId: AgentIdValue;
   readonly recipientAgentCards: readonly VerifiedAgentCard[];
-  readonly messageId: MessageId;
+  readonly envelopeId: EnvelopeId;
   readonly plaintext: Uint8Array;
 }
 
@@ -243,7 +243,7 @@ const snapshotRecipients = (
 
 /**
  * Encrypts one plaintext to every recipient's AgentCard key, binds the sender
- * AgentId and the outer MessageId in the protected header, and commits the
+ * AgentId and the outer EnvelopeId in the protected header, and commits the
  * header to the salted plaintext.
  *
  * Each recipient entry carries its own ephemeral key, which is the layout
@@ -251,11 +251,11 @@ const snapshotRecipients = (
  *
  * Recipient entries follow the canonical SignedMessage recipient order, so the
  * caller signs the returned bytes as a SignedMessage body from the same sender
- * under the same MessageId to exactly these recipients. A sender that must
+ * under the same EnvelopeId to exactly these recipients. A sender that must
  * read its own body includes its card among the recipients.
  *
  * @param input Sender AgentId, 1 to 128 distinct verified recipient cards,
- * the MessageId the caller passes to `SignedMessage.sign`, and the plaintext
+ * the EnvelopeId the caller passes to `SignedMessage.sign`, and the plaintext
  * to seal.
  * @returns The canonical JSON bytes of the General JWE.
  */
@@ -269,12 +269,12 @@ const snapshotSealInput = (
 ): Effect.Effect<SealInput, SealedBodySealingError> =>
   Effect.try({
     try: () => {
-      const { recipientAgentCards, senderAgentId, messageId, plaintext } =
+      const { recipientAgentCards, senderAgentId, envelopeId, plaintext } =
         input;
       return {
         recipientAgentCards,
         senderAgentId,
-        messageId,
+        envelopeId,
         plaintext: new Uint8Array(plaintext),
       };
     },
@@ -305,7 +305,7 @@ const seal = (
     const encryption = new GeneralEncrypt(saltedPlaintext).setProtectedHeader(
       protectedHeaderMembers(
         commitment,
-        sealing.messageId,
+        sealing.envelopeId,
         sealing.senderAgentId,
       ),
     );
@@ -332,7 +332,7 @@ const seal = (
 const expectedHeaderText = (header: ProtectedHeader): string => {
   const members = protectedHeaderMembers(
     header[COMMITMENT_HEADER],
-    header[MESSAGE_ID_HEADER],
+    header[ENVELOPE_ID_HEADER],
     header[SENDER_HEADER],
   );
   return JSON.stringify(
@@ -466,13 +466,13 @@ const snapshotOpenInput = (
  * to any key, and an Ed25519 key and its negation share one X25519 key.
  *
  * It then refuses a body that is not an exact sealed body, a protected-header
- * sender or MessageId that differs from the verified SignedMessage sender or
- * MessageId, an entry count that differs from the SignedMessage recipient
+ * sender or EnvelopeId that differs from the verified SignedMessage sender or
+ * EnvelopeId, an entry count that differs from the SignedMessage recipient
  * count, an agent the SignedMessage does not name, any authentication failure,
  * and a decryption that does not match the header commitment. Every recipient
  * that opens a given body therefore obtains the same plaintext, but a sender
  * can still make a body open for some recipients and not others. The sealed
- * bytes open only inside a SignedMessage from the sender and MessageId they
+ * bytes open only inside a SignedMessage from the sender and EnvelopeId they
  * were sealed for.
  *
  * @param input The local agent's AgentCard and authority, and the verified
@@ -501,7 +501,7 @@ const open = (
     );
     if (
       header[SENDER_HEADER] !== opening.signedMessage.senderAgentId ||
-      header[MESSAGE_ID_HEADER] !== opening.signedMessage.messageId
+      header[ENVELOPE_ID_HEADER] !== opening.signedMessage.envelopeId
     ) {
       return yield* new SealedBodyOpeningError();
     }

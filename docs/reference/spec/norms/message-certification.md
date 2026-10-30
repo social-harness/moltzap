@@ -46,7 +46,7 @@ of the message they certify.
 ## Signing conditions
 
 Before signing, a member verifies the author's identity, the fixed membership,
-the content and post identity, and the message's position in the conversation.
+the content and message identity, and the message's position in the conversation.
 The proposal must extend the certified head under the current Router anchor.
 The member signs only the candidate selected by the
 [competing-message rule](../communication/conversation-history.md#competing-messages).

@@ -1,6 +1,6 @@
 /**
- * @file Who a gather's request posts go to, how long its send waits for
- * them, the posts while they are sent, and how each one is settled when the
+ * @file Who a gather's request messages go to, how long its send waits for
+ * them, the messages while they are sent, and how each one is settled when the
  * requester stops waiting.
  */
 
@@ -15,13 +15,17 @@ import {
   Schema,
   type Scope,
 } from "effect";
-import type { EngineSentPost } from "../conversations/index.js";
+import type { EngineSentMessage } from "../conversations/index.js";
 import type {
   CollectiveFailure,
   CollectiveOperation,
   Members,
 } from "./contracts.js";
-import type { AdmittedPost, CollectivePorts, PostSender } from "./ports.js";
+import type {
+  AdmittedMessage,
+  CollectivePorts,
+  MessageSender,
+} from "./ports.js";
 import type { PreparedGather } from "./state.js";
 import { canonicalMessageAddress } from "../conversations/address.js";
 import { SendError } from "../conversations/errors.js";
@@ -33,7 +37,7 @@ import {
 } from "../records/values.js";
 
 /**
- * A member whose request post was refused, and why.
+ * A member whose request message was refused, and why.
  */
 export type RequestRefusal = Readonly<{
   member: AgentAddress;
@@ -42,12 +46,12 @@ export type RequestRefusal = Readonly<{
 }>;
 
 /**
- * The refusal of a member whose post failed with `error`.
- * @param member The member the post was for.
- * @param error The post's send failure.
+ * The refusal of a member whose message failed with `error`.
+ * @param member The member the message was for.
+ * @param error The message's send failure.
  * @returns The member with the failure's reason and any detail.
  */
-export const postRefusal = (
+export const messageRefusal = (
   member: AgentAddress,
   error: SendError,
 ): RequestRefusal =>
@@ -101,22 +105,22 @@ export function gatherAddress(
 }
 
 /**
- * How long a collecting operation's send waits for its request posts before
+ * How long a collecting operation's send waits for its request messages before
  * returning. A gather's request still uncertified then is left running: its
  * member answers or is reported as no-answer at the deadline. An all_gather's
- * bound group post returns delivery-pending when it is still uncertified;
- * that same post remains accepted work. The wait stays under the MCP
+ * bound group message returns delivery-pending when it is still uncertified;
+ * that same message remains accepted work. The wait stays under the MCP
  * SDK's request timeout so a waiting host receives the result rather than a
  * transport timeout. It runs from the send's start, so a firewall's check of
  * the operation comes out of it. Only certification of a durably bound
- * all_gather post is timed; attachment and binding retain their own failure
+ * all_gather message is timed; attachment and binding retain their own failure
  * boundaries.
  */
 const REQUEST_SEND_WAIT = Duration.seconds(20);
 
 /**
  * An operation's absolute deadline, and when its send stops waiting for
- * request posts.
+ * request messages.
  * @param deadlineSeconds The operation's deadline, in seconds from now.
  * @returns Both times in milliseconds since the epoch.
  */
@@ -139,11 +143,11 @@ export function operationTimes(deadlineSeconds: number): Effect.Effect<{
 }
 
 /**
- * A request post, failing as uncertified when the send's wait ends first.
+ * A request message, failing as uncertified when the send's wait ends first.
  */
 export function withinRequestWait(
   waitUntil: number,
-  certified: AdmittedPost["certified"],
+  certified: AdmittedMessage["certified"],
 ) {
   return requestWait(waitUntil).pipe(
     Effect.flatMap((duration) =>
@@ -156,7 +160,7 @@ export function withinRequestWait(
 }
 
 /**
- * How long a send still waits for request posts: until its wait ends, never
+ * How long a send still waits for request messages: until its wait ends, never
  * past the deadline.
  * @param waitUntil When the send stops waiting, from {@link operationTimes}.
  * @returns The remaining wait, zero once it has passed.
@@ -169,9 +173,9 @@ export function requestWait(
   );
 }
 
-/** A request post in flight, resolving to the member's refusal, if any. */
+/** A request message in flight, resolving to the member's refusal, if any. */
 export type RequestSend = Fiber.RuntimeFiber<
-  Either.Either<EngineSentPost, RequestRefusal>
+  Either.Either<EngineSentMessage, RequestRefusal>
 >;
 
 /** How many Registry lookups run at once; a group has at most 32 members. */
@@ -186,7 +190,7 @@ export function resolveMembers(
     members,
     (member) =>
       lookup(member).pipe(
-        Effect.mapError((error) => postRefusal(member, error)),
+        Effect.mapError((error) => messageRefusal(member, error)),
       ),
     { concurrency: MEMBER_LOOKUP_CONCURRENCY },
   ).pipe(
@@ -205,16 +209,16 @@ export function resolveMembers(
 }
 
 /**
- * Where a gather's request posts stand when the send stops waiting: each
- * certified post and each member refused. A send still pending keeps
+ * Where a gather's request messages stand when the send stops waiting: each
+ * certified message and each member refused. A send still pending keeps
  * running and is in neither.
  * @param sends Each member's request send.
- * @returns The posts and refusals, in member order.
+ * @returns The messages and refusals, in member order.
  */
 export const requestsSoFar = (
   sends: readonly RequestSend[],
 ): Effect.Effect<{
-  readonly posts: EngineSentPost[];
+  readonly messages: EngineSentMessage[];
   readonly refused: RequestRefusal[];
 }> =>
   Effect.forEach(
@@ -230,7 +234,7 @@ export const requestsSoFar = (
     { concurrency: 1 },
   ).pipe(
     Effect.map((states) => ({
-      posts: states.flatMap((result) =>
+      messages: states.flatMap((result) =>
         Option.toArray(Option.flatMap(result, Either.getRight)),
       ),
       refused: states.flatMap((result) =>
@@ -261,20 +265,20 @@ export function sleepUntil(at: number): Effect.Effect<void> {
 /** Each destination transfers to the endpoint scope before the caller waits on its outcome. */
 export function fanOutRequests(
   prepared: PreparedGather,
-  sendRequest: PostSender,
+  sendRequest: MessageSender,
   scope: Scope.Scope,
   refuse: (refusal: RequestRefusal) => Effect.Effect<void>,
 ) {
-  const { id, open } = prepared;
+  const { operationId, open } = prepared;
   return Effect.forEach(
     open.members.map(agentAddressOf),
     (member): Effect.Effect<RequestSend> =>
       sendRequest({
         to: member,
         content: prepared.content,
-        collective: { operationId: id, role: "request", destination: member },
+        collective: { operationId, role: "request", destination: member },
       }).pipe(
-        Effect.mapError((error) => postRefusal(member, error)),
+        Effect.mapError((error) => messageRefusal(member, error)),
         Effect.tapError(refuse),
         Effect.either,
         Effect.forkIn(scope),

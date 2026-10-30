@@ -1,14 +1,6 @@
 /** @file Acquisition and supervision of the protocol one daemon identity runs. */
 
-import {
-  Cause,
-  type Context,
-  Deferred,
-  Effect,
-  Option,
-  Schema,
-  Scope,
-} from "effect";
+import { Cause, type Context, Deferred, Effect, Option, Scope } from "effect";
 import type {
   DeliveryToken,
   EndpointStore,
@@ -39,10 +31,7 @@ import {
   decodeOuterBody,
   type OuterBodyReader,
 } from "../../communication/records/index.js";
-import {
-  AgentAddress,
-  agentAddressOf,
-} from "../../communication/records/values.js";
+import { agentAddressOf } from "../../communication/records/values.js";
 import {
   Router,
   type RouterWorker,
@@ -341,10 +330,10 @@ const acquireProtocolEngine = (
     );
 
 /**
- * The collective layer for the active identity: it certifies posts through
+ * The collective layer for the active identity: it certifies messages through
  * the engine and hands the items it emits to the daemon. With a firewall
- * installed, every post the agent authors, and every gather, passes its
- * checks before anything binds; protocol posts never do.
+ * installed, every message the agent authors, and every gather, passes its
+ * checks before anything binds; protocol messages never do.
  */
 const makeProtocolCollectives = (
   environment: ProtocolEnvironment,
@@ -354,14 +343,12 @@ const makeProtocolCollectives = (
 ): Effect.Effect<CollectiveOperations, EndpointStoreError> => {
   const installed = environment.firewall;
   return makeCollectiveOperations({
-    bindPost: (input, hold) => engine.bind(input, hold),
+    bindMessage: (input, hold) => engine.bind(input, hold),
     store: environment.store,
-    observePost: (postId) => engine.observePost(postId),
+    observeMessage: (msgId) => engine.observeMessage(msgId),
     sendAdmitted: (input, checkId) => engine.sendAdmitted(input, checkId),
     reportStorageFault: (error) => reportStorageFault(environment, error),
-    self: Schema.decodeUnknownSync(AgentAddress)(
-      `agent:${agentCard.agentName}`,
-    ),
+    self: agentViewOf(agentCard),
     lookupMember: (member) =>
       engine.resolveConversation(member).pipe(
         Effect.flatMap((resolved) => {
@@ -373,7 +360,7 @@ const makeProtocolCollectives = (
             : Effect.succeed(agentViewOf(card));
         }),
       ),
-    sendPost: (input) => engine.send(input),
+    sendMessage: (input) => engine.send(input),
     emit,
     scope: environment.daemonScope,
     ...(installed === undefined

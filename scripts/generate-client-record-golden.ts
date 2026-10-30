@@ -22,12 +22,12 @@ import {
   hashAction,
   hashAnchor,
   hashMembershipDescriptor,
-  hashPostIntent,
+  hashMessageIntent,
   hashRecord,
   InitialAnchorBody,
   MembershipDescriptor,
-  PostId,
-  PostIntent,
+  MessageIntent,
+  MsgId,
   quorumThreshold,
   ReanchorBody,
   RecordCore,
@@ -157,20 +157,20 @@ function signSet(
 }
 
 /** The same intent representation is shared by first and successor messages. */
-function postIntent(fixture: Fixture, input: MessageInput) {
+function messageIntent(fixture: Fixture, input: MessageInput) {
   return Effect.gen(function* () {
     const [author] = fixture.identities;
     if (author === undefined) {
       return yield* Effect.dieMessage("missing golden author");
     }
-    return yield* Schema.decodeUnknown(PostIntent)({
+    return yield* Schema.decodeUnknown(MessageIntent)({
       sharnessVersion,
-      kind: "post_intent",
+      kind: "message_intent",
       conversationId: fixture.descriptor.conversationId,
       membershipHash: fixture.membershipHash,
       authorAgentId: author.card.agentId,
-      postId: yield* Schema.decodeUnknown(PostId)(
-        `pst_${Buffer.alloc(32, input.byte).toString("base64url")}`,
+      msgId: yield* Schema.decodeUnknown(MsgId)(
+        `msg_${Buffer.alloc(32, input.byte).toString("base64url")}`,
       ),
       content: [{ type: "text", text: input.name }],
     });
@@ -180,13 +180,13 @@ function postIntent(fixture: Fixture, input: MessageInput) {
 /** A first message embeds membership; successors bind its retained hashes. */
 function messageAction(fixture: Fixture, input: MessageInput) {
   return Effect.gen(function* () {
-    const intent = yield* postIntent(fixture, input);
+    const intent = yield* messageIntent(fixture, input);
     const common = {
       sharnessVersion,
       conversationId: fixture.descriptor.conversationId,
       previousRecordHash: input.previousRecordHash,
-      postIntent: intent,
-      postIntentHash: yield* hashPostIntent(intent),
+      messageIntent: intent,
+      messageIntentHash: yield* hashMessageIntent(intent),
     };
     return yield* Schema.decodeUnknown(ActionCore)(
       input.previousRecordHash === null

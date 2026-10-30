@@ -32,9 +32,9 @@ export type {
   InboundDeliveryInput,
   InboxEntry,
   InboxPage,
+  MessageIntent,
+  MessageIntentBinding,
   OutboundMessageInput,
-  PostIntent,
-  PostIntentBinding,
   ProposalLock,
   ProtocolEvidence,
   RestartedEmptyConversation,
@@ -56,11 +56,11 @@ export { decodeRuntimeValue, encodeRuntimeValue } from "./runtime-codec.js";
 /** Pending envelopes cannot be re-signed when their live window expires. */
 export { OutboxTooOldError } from "./database/values.js";
 
-/** Immutable collective ownership, existing post claims, and terminal delivery. */
+/** Immutable collective ownership, existing message claims, and terminal delivery. */
 export type {
+  CollectiveMessageBinding,
   CollectiveOperationInput,
-  CollectivePostBinding,
   CollectiveRequestRefusal,
+  StoredCollectiveMessage,
   StoredCollectiveOperation,
-  StoredCollectivePost,
 } from "./types.js";

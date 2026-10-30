@@ -3,9 +3,10 @@
 import { scopedLive as it } from "@effect/vitest";
 import { Chunk, Effect, Schema, Scope, Stream } from "effect";
 import { describe, expect } from "vitest";
-import type { PostSender } from "../../communication/collectives/ports.js";
+import type { MessageSender } from "../../communication/collectives/ports.js";
 import type { EndpointEngine } from "../../communication/conversations/index.js";
-import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
+import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
 import { makeToolCallRequest } from "../../__tests__/daemon-runtime-harness.js";
 import { loopbackMcpEndpoint } from "../../__tests__/mcp-http-fixtures.js";
 import { pendingMessage } from "../../__tests__/pending-delivery-fixtures.js";
@@ -74,7 +75,7 @@ const callTool =
     );
 
 /** Real delivery, collective classification and storage behind the MCP boundary. */
-const deliveryFixture = (sendPost: PostSender = unreachable) =>
+const deliveryFixture = (sendMessage: MessageSender = unreachable) =>
   Effect.gen(function* () {
     const store = yield* openEndpointStore(stateDirectory(), {
       liveWireVersions: LIVE_WIRE_VERSIONS,
@@ -89,14 +90,14 @@ const deliveryFixture = (sendPost: PostSender = unreachable) =>
     });
     const collectives = yield* makeCollectiveOperations({
       store,
-      observePost: unreachable,
+      observeMessage: unreachable,
       sendAdmitted: unreachable,
       reportStorageFault: () => Effect.void,
-      self: Schema.decodeUnknownSync(AgentAddress)("agent:alice"),
+      self: testAgentView("agent:alice"),
       lookupMember: (member) => Effect.succeed(testAgentView(member)),
-      sendPost,
-      bindPost: (input, hold) =>
-        hold.pipe(Effect.as({ certified: sendPost(input) })),
+      sendMessage,
+      bindMessage: (input, hold) =>
+        hold.pipe(Effect.as({ certified: sendMessage(input) })),
       emit: (item, provenance, terminal) =>
         delivery
           .queueLocalItem(item, provenance, terminal)
@@ -130,7 +131,7 @@ it("returns a collective layer success without advice through the MCP writer", (
   Effect.gen(function* () {
     const test = yield* deliveryFixture(() =>
       Effect.succeed({
-        postId: pending.message.postId,
+        msgId: pending.message.msgId,
         recordHash: pending.recordHash,
       }),
     );
@@ -139,7 +140,7 @@ it("returns a collective layer success without advice through the MCP writer", (
     });
     expect(sent.structuredContent).toEqual({
       kind: "multicast",
-      postId: pending.message.postId,
+      msgId: pending.message.msgId,
       address: "agent:bob",
     });
   }));
@@ -150,7 +151,9 @@ const consumesAnswers = () =>
     const answer = pendingMessage(2);
     const content = yield* encodeCollectiveContent({
       kind: "response",
-      id: Schema.decodeUnknownSync(CollectiveId)(digest("col_", 2)),
+      operationId: Schema.decodeUnknownSync(CollectiveId)(
+        collectiveOperationId(testAgentView("agent:alice").agentId, 2),
+      ),
       action: "decline",
     });
     yield* test.deliver([
@@ -172,7 +175,9 @@ const continuesAfterAnswerAcknowledgmentFails = () =>
     const answer = pendingMessage(2);
     const content = yield* encodeCollectiveContent({
       kind: "response",
-      id: Schema.decodeUnknownSync(CollectiveId)(digest("col_", 2)),
+      operationId: Schema.decodeUnknownSync(CollectiveId)(
+        collectiveOperationId(testAgentView("agent:alice").agentId, 2),
+      ),
       action: "decline",
     });
     yield* test.deliver(

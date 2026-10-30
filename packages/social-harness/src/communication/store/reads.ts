@@ -6,7 +6,7 @@ import type {
   ConversationPage,
   EndpointRecovery,
   HistoryPage,
-  PostIntent,
+  MessageIntent,
   StoredAnchor,
   StoredMembership,
 } from "./types.js";
@@ -41,7 +41,7 @@ const historySelect = `
   SELECT staged.conversation_id, staged.record_hash,
          staged.previous_record_hash, staged.membership_hash,
          staged.anchor_hash, staged.action_hash, staged.author_agent_id,
-         staged.post_id, staged.canonical_record_core
+         staged.msg_id, staged.canonical_record_core
   FROM certified_records AS certified
   JOIN staged_records AS staged
     ON staged.conversation_id = certified.conversation_id
@@ -118,7 +118,7 @@ export function recoverStoredState(
   const identity = readStoredIdentity(database);
   return Object.freeze({
     ...(identity === undefined ? {} : { identity }),
-    postIntents: readPostIntents(database, conversationId),
+    messageIntents: readMessageIntents(database, conversationId),
     memberships: readMemberships(database, conversationId),
     anchors: readAnchors(database, conversationId),
     positions: readPositions(database, conversationId),
@@ -137,7 +137,7 @@ export function recoverStoredState(
         .prepare(
           `SELECT conversation_id, record_hash, previous_record_hash,
                   membership_hash, anchor_hash, action_hash, author_agent_id,
-                  post_id, canonical_record_core
+                  msg_id, canonical_record_core
            FROM staged_records ${conversationId === undefined ? "" : "WHERE conversation_id = ?"} ORDER BY conversation_id, rowid`,
         )
         .all(...(conversationId === undefined ? [] : [conversationId]))
@@ -318,16 +318,16 @@ function copyEvidence(
   );
 }
 
-function readPostIntents(
+function readMessageIntents(
   database: DatabaseSync,
   conversationId?: string,
-): readonly PostIntent[] {
+): readonly MessageIntent[] {
   return Object.freeze(
     database
       .prepare(
-        `SELECT conversation_id, membership_hash, author_agent_id, post_id,
+        `SELECT conversation_id, membership_hash, author_agent_id, msg_id,
                 canonical_intent, completed_record_hash
-         FROM post_intents ${conversationId === undefined ? "" : "WHERE conversation_id = ?"} ORDER BY author_agent_id, post_id`,
+         FROM message_intents ${conversationId === undefined ? "" : "WHERE conversation_id = ?"} ORDER BY author_agent_id, msg_id`,
       )
       .all(...(conversationId === undefined ? [] : [conversationId]))
       .map((row) => {
@@ -339,7 +339,7 @@ function readPostIntents(
           conversationId: readText(row, "conversation_id"),
           membershipHash: readText(row, "membership_hash"),
           authorAgentId: readText(row, "author_agent_id"),
-          postId: readText(row, "post_id"),
+          msgId: readText(row, "msg_id"),
           canonicalIntent: readBytes(row, "canonical_intent"),
           ...(completedRecordHash === undefined ? {} : { completedRecordHash }),
         });

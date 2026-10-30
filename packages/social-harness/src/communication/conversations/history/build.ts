@@ -126,7 +126,7 @@ export const makeActionCertifiedRecord = (
     const recordCore: RecordCore =
       fold.action.kind === "FIRST_MESSAGE"
         ? {
-            sharnessVersion: fold.action.postIntent.sharnessVersion,
+            sharnessVersion: fold.action.messageIntent.sharnessVersion,
             kind: "record_core",
             membership: fold.conversation.membership.descriptor,
             anchorHash,
@@ -134,7 +134,7 @@ export const makeActionCertifiedRecord = (
             actionHash: fold.actionHash,
           }
         : {
-            sharnessVersion: fold.action.postIntent.sharnessVersion,
+            sharnessVersion: fold.action.messageIntent.sharnessVersion,
             kind: "record_core",
             membershipHash: fold.conversation.membership.hash,
             anchorHash,
@@ -181,12 +181,12 @@ export const stagedRecord = (
         : { previousRecordHash: action.previousRecordHash }),
       membershipHash:
         action.kind === "FIRST_MESSAGE"
-          ? action.postIntent.membershipHash
+          ? action.messageIntent.membershipHash
           : action.membershipHash,
       anchorHash: record.recordCore.anchorHash,
       actionHash: record.recordCore.actionHash,
-      authorAgentId: action.postIntent.authorAgentId,
-      postId: action.postIntent.postId,
+      authorAgentId: action.messageIntent.authorAgentId,
+      msgId: action.messageIntent.msgId,
       canonicalRecordCore,
     })),
   );
@@ -233,7 +233,7 @@ export const storedCertifiedRecord = (
 
 const projectGroupMessage = (
   conversation: EngineConversation,
-  intent: RecordCore["action"]["postIntent"],
+  intent: RecordCore["action"]["messageIntent"],
   sender: AgentView,
 ): Effect.Effect<InboundMessageValue, ClientRepresentationError> =>
   Effect.gen(function* () {
@@ -251,7 +251,7 @@ const projectGroupMessage = (
     }
     return {
       kind: "group",
-      postId: intent.postId,
+      msgId: intent.msgId,
       address: group.address,
       sender,
       members: [first, second, third, ...members.slice(3)],
@@ -270,7 +270,7 @@ const projectInboundMessage = (
   record: CertifiedRecord,
 ): Effect.Effect<InboundMessageValue, ClientRepresentationError> =>
   Effect.gen(function* () {
-    const intent = record.actionCertifiedRecord.recordCore.action.postIntent;
+    const intent = record.actionCertifiedRecord.recordCore.action.messageIntent;
     const author = conversation.membership.members.find(
       (member) => member.agentId === intent.authorAgentId,
     );
@@ -281,7 +281,7 @@ const projectInboundMessage = (
     if (conversation.membership.members.length === 2) {
       const directMessage: InboundMessageValue = {
         kind: "direct",
-        postId: intent.postId,
+        msgId: intent.msgId,
         address: agentAddressOf(sender),
         sender,
         content: intent.content,

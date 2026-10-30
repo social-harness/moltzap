@@ -19,9 +19,8 @@ export const decodeCanonicalBase64Url = (
   });
 
 /**
- * Tests a hash-derived identifier: the prefix followed by canonical base64url
- * for a 32-byte hash. Registry-minted AgentIds use a separate 16-byte format.
- * @param prefix The identifier's kind prefix, such as `pst_`.
+ * Tests a prefix followed by canonical base64url for 32 bytes.
+ * @param prefix The identifier's kind prefix, such as `msg_`.
  * @param value The candidate identifier.
  * @returns Whether the value is canonical for that prefix.
  */

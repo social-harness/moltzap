@@ -224,7 +224,7 @@ function prepareOutbound(
       store
         .enqueueOutbound({
           conversationId,
-          messageId: message.messageId,
+          envelopeId: message.envelopeId,
           canonicalSignedMessage,
           wireVersion: SignedMessage.wireVersion(message),
         })
@@ -318,7 +318,7 @@ function slowOriginalRouter() {
           Map<string, SignedMessageValue>,
         ] => {
           const message = request.signedMessage;
-          const entry = entries.get(message.messageId);
+          const entry = entries.get(message.envelopeId);
           if (request.mode === "retry") {
             return entry === undefined
               ? [Effect.succeed({ kind: "retry_identity_unknown" }), entries]
@@ -327,7 +327,7 @@ function slowOriginalRouter() {
           return entry === undefined
             ? [
                 acceptedResult(scriptedSendInstance, message),
-                new Map(entries).set(message.messageId, message),
+                new Map(entries).set(message.envelopeId, message),
               ]
             : [Effect.succeed({ kind: "idempotency_conflict" }), entries];
         },
@@ -392,7 +392,7 @@ function sendThroughScript(answers: readonly ScriptedSendAnswer[]) {
         fixture,
       );
       const failure = yield* provide(
-        worker.send(outbound.messageId).pipe(Effect.flip, Effect.option),
+        worker.send(outbound.envelopeId).pipe(Effect.flip, Effect.option),
         router.layer,
         fixture,
       );
@@ -574,7 +574,7 @@ const resentInitialLosesRaceToSlowOriginal = () =>
     expect(result.failure).toEqual(Option.none());
     expect(result.modes).toEqual(["initial", "retry", "initial", "retry"]);
     expect(result.sentBytes).toEqual([stored, stored, stored, stored]);
-    expect([...retained.keys()]).toEqual([result.outbound.messageId]);
+    expect([...retained.keys()]).toEqual([result.outbound.envelopeId]);
     expect(result.pending).toEqual([]);
   });
 
@@ -678,7 +678,7 @@ const restartedSendRecoversBeforeReturning = () =>
         fixture,
       );
       const error = yield* provide(
-        worker.send(outbound.messageId).pipe(Effect.flip),
+        worker.send(outbound.envelopeId).pipe(Effect.flip),
         router.layer,
         fixture,
       );
@@ -887,7 +887,7 @@ const normalSendWaitsForRecovery = () =>
       );
       yield* Deferred.await(recoveryStarted);
       const sending = yield* provide(
-        Effect.fork(worker.send(outbound.messageId)),
+        Effect.fork(worker.send(outbound.envelopeId)),
         router.layer,
         fixture,
       );
@@ -1193,7 +1193,7 @@ const outageDetachesAndReattaches = () =>
             new RouterWorkerUnavailableError(),
           );
           expect(
-            yield* worker.send(outbound.messageId).pipe(Effect.flip),
+            yield* worker.send(outbound.envelopeId).pipe(Effect.flip),
           ).toStrictEqual(new RouterWorkerUnavailableError());
 
           yield* Ref.set(reachable, true);
@@ -1206,7 +1206,7 @@ const outageDetachesAndReattaches = () =>
             expect.arrayContaining([expect.stringContaining("reattached")]),
           );
           expect(yield* Ref.get(events)).toEqual(["reattached"]);
-          yield* worker.send(outbound.messageId);
+          yield* worker.send(outbound.envelopeId);
           expect((yield* store.recover()).outboundMessages).toEqual([]);
           yield* Fiber.interrupt(polling);
         }),
@@ -1375,7 +1375,7 @@ const staleFailureKeepsNewGenerationAttached = () =>
           const polling = yield* Effect.fork(worker.run);
           yield* Deferred.await(staleIssued);
           expect(
-            yield* worker.send(outbound.messageId).pipe(Effect.flip),
+            yield* worker.send(outbound.envelopeId).pipe(Effect.flip),
           ).toStrictEqual(new RouterWorkerDiscontinuityError());
           const recovered = {
             routerInstanceId: second,
@@ -1455,7 +1455,7 @@ const outageDuringRecoveryRecovers = () =>
             routerInstanceId: restarted,
             pollCursor: outageCursor,
           });
-          yield* worker.send(outbound.messageId);
+          yield* worker.send(outbound.envelopeId);
           expect((yield* store.recover()).outboundMessages).toEqual([]);
           yield* Fiber.interrupt(polling);
         }),
@@ -1526,7 +1526,7 @@ const coldStartWithRouterDownRecovers = () =>
               expect.stringContaining("recovery complete"),
             ]),
           );
-          yield* worker.send(outbound.messageId);
+          yield* worker.send(outbound.envelopeId);
           expect((yield* store.recover()).outboundMessages).toEqual([]);
           yield* Fiber.interrupt(polling);
         }),

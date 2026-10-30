@@ -8,7 +8,7 @@ import { SignedMessage } from "../../identity/envelope/signed-message.js";
 import { AgentId } from "../../identity/identifiers.js";
 import { wireVersions } from "../../identity/wire-version.js";
 import { RouterInstanceId } from "../router/api/contract.js";
-import { Content, maximumMembers, PostId } from "./values.js";
+import { Content, maximumMembers, MsgId } from "./values.js";
 
 /* eslint-disable jsdoc/require-jsdoc -- These package-private Schema names are the exact closed protocol vocabulary. */
 
@@ -39,8 +39,11 @@ export const ConversationId = canonicalIdentifier("ConversationId", "cnv_");
 export type ConversationId = typeof ConversationId.Type;
 export const MembershipHash = canonicalIdentifier("MembershipHash", "mbr_");
 export type MembershipHash = typeof MembershipHash.Type;
-export const PostIntentHash = canonicalIdentifier("PostIntentHash", "pit_");
-export type PostIntentHash = typeof PostIntentHash.Type;
+export const MessageIntentHash = canonicalIdentifier(
+  "MessageIntentHash",
+  "mit_",
+);
+export type MessageIntentHash = typeof MessageIntentHash.Type;
 export const AnchorHash = canonicalIdentifier("AnchorHash", "anc_");
 export type AnchorHash = typeof AnchorHash.Type;
 export const ActionHash = canonicalIdentifier("ActionHash", "ach_");
@@ -74,15 +77,15 @@ export const MembershipDescriptor = exactStruct({
 });
 export type MembershipDescriptor = typeof MembershipDescriptor.Type;
 
-export const PostIntent = exactStruct({
-  ...versionAndKind("post_intent"),
+export const MessageIntent = exactStruct({
+  ...versionAndKind("message_intent"),
   conversationId: ConversationId,
   membershipHash: MembershipHash,
   authorAgentId: AgentId,
-  postId: PostId,
+  msgId: MsgId,
   content: Content,
 });
-export type PostIntent = typeof PostIntent.Type;
+export type MessageIntent = typeof MessageIntent.Type;
 
 export const InitialAnchorBody = exactStruct({
   ...versionAndKind("initial_anchor_body"),
@@ -112,8 +115,8 @@ export const FirstMessageActionCore = exactStruct({
   membership: MembershipDescriptor,
   anchor: InitialAnchorBody,
   previousRecordHash: Schema.Null,
-  postIntent: PostIntent,
-  postIntentHash: PostIntentHash,
+  messageIntent: MessageIntent,
+  messageIntentHash: MessageIntentHash,
 });
 export type FirstMessageActionCore = typeof FirstMessageActionCore.Type;
 
@@ -123,8 +126,8 @@ export const MessageActionCore = exactStruct({
   membershipHash: MembershipHash,
   anchorHash: AnchorHash,
   previousRecordHash: RecordHash,
-  postIntent: PostIntent,
-  postIntentHash: PostIntentHash,
+  messageIntent: MessageIntent,
+  messageIntentHash: MessageIntentHash,
 });
 export type MessageActionCore = typeof MessageActionCore.Type;
 

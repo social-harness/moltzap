@@ -139,7 +139,7 @@ export function supersedeProposalLock(
 
 /**
  * Atomically promotes a complete record, advances its head, and retains its
- * local post completion or remote host delivery.
+ * local message completion or remote host delivery.
  *
  * @param database Exclusively owned endpoint database.
  * @param record Verified complete certified record.
@@ -159,7 +159,7 @@ export function promoteRecord(
 
 /**
  * Atomically stages and promotes a record received whole, with its
- * certificates' evidence and its local post completion or remote host
+ * certificates' evidence and its local message completion or remote host
  * delivery. A crash therefore never leaves its core staged without its
  * certification, where a restart could not tell it from a record this
  * endpoint staged for its own durability vote. This endpoint casts no vote
@@ -211,7 +211,7 @@ function stageRecordInTransaction(
     .prepare(
       `INSERT INTO staged_records
         (conversation_id, record_hash, previous_record_hash,
-         membership_hash, anchor_hash, action_hash, author_agent_id, post_id,
+         membership_hash, anchor_hash, action_hash, author_agent_id, msg_id,
          canonical_record_core)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
@@ -223,7 +223,7 @@ function stageRecordInTransaction(
       record.anchorHash,
       record.actionHash,
       record.authorAgentId,
-      record.postId,
+      record.msgId,
       copyBytes(record.canonicalRecordCore),
     );
   return "inserted";
@@ -259,7 +259,7 @@ function promoteRecordInTransaction(
   requireEqual(position.currentAnchorHash, record.anchorHash);
   requireEqual(position.headRecordHash, record.previousRecordHash);
   insertCertifiedRecord(database, record, position.headOrdinal + 1);
-  completeLocalPostIntent(database, record);
+  completeLocalMessageIntent(database, record);
   retainDeliveryInTransaction(database, record, delivery);
   return "inserted";
 }
@@ -511,7 +511,7 @@ function insertCertifiedRecord(
     .run(record.recordHash, ordinal, record.conversationId);
 }
 
-function completeLocalPostIntent(
+function completeLocalMessageIntent(
   database: DatabaseSync,
   record: CertifiedRecord,
 ): void {
@@ -525,9 +525,9 @@ function completeLocalPostIntent(
   const row = database
     .prepare(
       `SELECT conversation_id, membership_hash, completed_record_hash
-       FROM post_intents WHERE author_agent_id = ? AND post_id = ?`,
+       FROM message_intents WHERE author_agent_id = ? AND msg_id = ?`,
     )
-    .get(record.authorAgentId, record.postId);
+    .get(record.authorAgentId, record.msgId);
   if (row === undefined) {
     throw new StoreSignal("not-found");
   }
@@ -539,10 +539,10 @@ function completeLocalPostIntent(
   }
   database
     .prepare(
-      `UPDATE post_intents SET completed_record_hash = ?
-       WHERE author_agent_id = ? AND post_id = ?`,
+      `UPDATE message_intents SET completed_record_hash = ?
+       WHERE author_agent_id = ? AND msg_id = ?`,
     )
-    .run(record.recordHash, record.authorAgentId, record.postId);
+    .run(record.recordHash, record.authorAgentId, record.msgId);
 }
 
 function requireMembership(
@@ -625,7 +625,7 @@ function validateStagedRecord(record: StagedRecord): void {
   requireText(record.anchorHash);
   requireText(record.actionHash);
   requireText(record.authorAgentId);
-  requireText(record.postId);
+  requireText(record.msgId);
   requireBytes(record.canonicalRecordCore);
 }
 

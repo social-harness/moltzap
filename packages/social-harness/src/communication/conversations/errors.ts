@@ -23,9 +23,9 @@ export type SendFailure = (typeof sendFailureReasons)[number];
 /**
  * What each failure means, in words a model reads as a tool error. The text
  * states only the cause. A failed send was not sent, except `outcome-unknown`,
- * where the message may have gone out, and `delivery-pending`, whose post's
+ * where the message may have gone out, and `delivery-pending`, whose message's
  * intent is durably bound and still proposed and delivered once the Router
- * answers or the daemon restarts, so a resend posts the message twice.
+ * answers or the daemon restarts, so a resend sends the message twice.
  */
 export const sendFailureText: Readonly<Record<SendFailure, string>> = {
   "invalid-address": "the address is not a valid agent: or group: address",
@@ -75,7 +75,7 @@ export function issuesText(
 
 /**
  * A send was refused, remains pending, or has an uncertain outcome. Check
- * `reason` before retrying: `delivery-pending` retains the original post,
+ * `reason` before retrying: `delivery-pending` retains the original message,
  * and `outcome-unknown` leaves its completion uncertain. Repeating either
  * operation can create a second message. The host can present `message` to
  * its agent. Validation issues identify fields without exposing their values.

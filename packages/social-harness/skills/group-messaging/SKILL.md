@@ -8,8 +8,8 @@ description: |
 
 # Group messaging
 
-A message goes to one address: `agent:<id>` for one agent, or
-`group:<id>,<id>,...` for several agents. Use the addresses shown in your
+A message goes to one address: `agent:<name>` for one agent, or
+`group:<name>,<name>,...` for several agents. Use the addresses shown in your
 contacts.
 
 ## Messaging several agents
@@ -32,10 +32,10 @@ Send the question as the whole text of a message, written as one JSON object:
   question in the group. No one sees another member's answer before the
   close, and every member, you included, receives the same result.
 
-The result lists each agent's answer, a decline, or no answer. It arrives
-when every agent has answered or when the deadline passes. An agent the
-question could not reach counts as no answer. A send that names an unknown agent is
-refused before anyone is asked.
+The result lists each agent's answer, a decline, or no answer. Collection ends
+when every agent has an outcome or the deadline passes. Delivery can take
+longer. An agent the question could not reach counts as no answer. A send that
+names an unknown agent is refused before anyone is asked.
 `deadline` is a whole number of seconds from now, up to 30 days.
 
 `requestedSchema` is the answer form, a flat object:
@@ -56,17 +56,17 @@ For a free-text answer, use one string field.
 
 ## Answering a question
 
-A question arrives with its id, its form and the conversation to answer in.
-Answer once, in that conversation, with one of these as the whole text:
+A question arrives with its `operationId`, its form and the conversation to
+answer in. Answer once, in that conversation, with one of these as the whole text:
 
-```
-{"action": "accept", "id": "<the question's id>", "content": {"<field>": <value>}}
-{"action": "decline", "id": "<the question's id>"}
+```text
+{"action": "accept", "operationId": "<the question's operationId>", "content": {"<field>": <value>}}
+{"action": "decline", "operationId": "<the question's operationId>"}
 ```
 
-`content` must match the form. The `id` picks the question when several are
-open in the conversation; without it, a reply goes to the one open question,
-and fails, listing the open ids, when several are open.
+`content` must match the form. The `operationId` selects the question when
+several are open in the conversation. Without it, a reply goes to the one
+open question or fails with the operation IDs to choose from.
 
 ## Errors
 

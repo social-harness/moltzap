@@ -1,4 +1,4 @@
-/** @file Pins the posts each collective send certifies, what it returns, and how it is refused. */
+/** @file Pins the messages each collective send certifies, what it returns, and how it is refused. */
 
 import { scoped as it } from "@effect/vitest";
 import { Duration, Effect, Fiber, TestClock } from "effect";
@@ -6,18 +6,18 @@ import { describe, expect } from "vitest";
 import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import {
   alice,
-  answerPost,
-  classifyPost,
+  answerMessage,
+  classifyMessage,
   collectiveFailureOf,
   collectiveKey,
   firstRequestOf,
   gatherInput,
-  latePostDelay,
+  lateMessageDelay,
   makeLayer,
+  msgId,
   multicastPart,
   newObserved,
   operationIdOf,
-  postId,
   questionText,
   requestSendWait,
   send,
@@ -25,7 +25,7 @@ import {
   startGather,
 } from "../../__tests__/collective-operation-fixtures.js";
 import { SendError } from "../conversations/errors.js";
-import { collectiveIdOf } from "./wire/index.js";
+import { collectiveRequesterOf } from "./wire/index.js";
 
 function certifiesAMulticastAsItsTextAndAnExplicitMulticastPart() {
   const observed = newObserved();
@@ -65,16 +65,19 @@ function failsAMulticastWhoseTextAndPartExceedTheContentLimit() {
   });
 }
 
-function fansAGatherOutAsOneRequestPostPerMemberButTheRequester() {
+function fansAGatherOutAsOneRequestMessagePerMemberButTheRequester() {
   const observed = newObserved();
 
   return Effect.gen(function* () {
     const layer = yield* makeLayer(observed);
-    const id = yield* startGather(layer);
-    const { nonce } = yield* firstRequestOf(observed);
+    const operationId = yield* startGather(layer);
+    const request = yield* firstRequestOf(observed);
 
-    expect(collectiveIdOf(alice, nonce)).toBe(id);
-    expect(observed.sent.map((post) => post.to)).toEqual([
+    expect(request.operationId).toBe(operationId);
+    expect(collectiveRequesterOf(operationId)).toBe(
+      testAgentView(alice).agentId,
+    );
+    expect(observed.sent.map((message) => message.to)).toEqual([
       "agent:bob",
       "agent:carol",
     ]);
@@ -86,8 +89,7 @@ function fansAGatherOutAsOneRequestPostPerMemberButTheRequester() {
           [collectiveKey]: {
             kind: "operation",
             op: "gather",
-            id,
-            nonce,
+            operationId,
             deadlineAt: 60_000,
             requestedSchema: slotSchema,
           },
@@ -97,7 +99,7 @@ function fansAGatherOutAsOneRequestPostPerMemberButTheRequester() {
   });
 }
 
-function refusesAGatherWithAnUnknownMemberBeforeAnyPost() {
+function refusesAGatherWithAnUnknownMemberBeforeAnyMessage() {
   const observed = newObserved();
 
   return Effect.gen(function* () {
@@ -115,7 +117,7 @@ function refusesAGatherWithAnUnknownMemberBeforeAnyPost() {
 }
 
 /**
- * A refused post makes its member `no-answer`; a post still certifying when
+ * A refused message makes its member `no-answer`; a message still certifying when
  * the send returns leaves its member `no-answer` only if it is still pending
  * at the deadline. The send reports neither: the result does.
  */
@@ -131,18 +133,18 @@ function continuesAGatherPastMembersItCouldNotReach() {
     );
     yield* TestClock.adjust(requestSendWait);
     const outcome = yield* Fiber.join(sending);
-    const { id } = yield* firstRequestOf(observed);
+    const { operationId } = yield* firstRequestOf(observed);
 
     expect(outcome).toEqual({
       kind: "collective",
-      postIds: [postId(101)],
-      operationId: id,
+      msgIds: [msgId(101)],
+      operationId,
     });
-    expect(observed.sent.map((post) => post.to)).toEqual(["agent:bob"]);
+    expect(observed.sent.map((message) => message.to)).toEqual(["agent:bob"]);
 
-    yield* classifyPost(
+    yield* classifyMessage(
       layer,
-      answerPost("agent:bob", id, { action: "decline" }),
+      answerMessage("agent:bob", operationId, { action: "decline" }),
     );
 
     expect(observed.emitted).toEqual([]);
@@ -155,7 +157,7 @@ function continuesAGatherPastMembersItCouldNotReach() {
         closedAt: 60_000,
         closedBy: "deadline",
         op: "gather",
-        id,
+        operationId,
         to: "group:alice,bob,carol,dave",
         question: questionText,
         outcomes: [
@@ -174,8 +176,8 @@ function continuesAGatherPastMembersItCouldNotReach() {
   });
 }
 
-/** A post certified after the send stopped waiting still asks its member. */
-function countsAnAnswerToAPostCertifiedAfterTheWait() {
+/** A message certified after the send stopped waiting still asks its member. */
+function countsAnAnswerToAMessageCertifiedAfterTheWait() {
   const observed = newObserved();
 
   return Effect.gen(function* () {
@@ -185,21 +187,21 @@ function countsAnAnswerToAPostCertifiedAfterTheWait() {
     const sending = yield* Effect.fork(send(layer, gatherInput()));
     yield* TestClock.adjust(requestSendWait);
     const outcome = yield* Fiber.join(sending);
-    yield* TestClock.adjust(latePostDelay);
-    const id = yield* operationIdOf(outcome);
-    yield* classifyPost(
+    yield* TestClock.adjust(lateMessageDelay);
+    const operationId = yield* operationIdOf(outcome);
+    yield* classifyMessage(
       layer,
-      answerPost("agent:bob", id, { action: "decline" }),
+      answerMessage("agent:bob", operationId, { action: "decline" }),
     );
-    yield* classifyPost(
+    yield* classifyMessage(
       layer,
-      answerPost("agent:carol", id, {
+      answerMessage("agent:carol", operationId, {
         action: "accept",
         content: { slot: "tue" },
       }),
     );
 
-    expect(observed.sent.map((post) => post.to)).toEqual([
+    expect(observed.sent.map((message) => message.to)).toEqual([
       "agent:bob",
       "agent:carol",
     ]);
@@ -219,7 +221,7 @@ function countsAnAnswerToAPostCertifiedAfterTheWait() {
   });
 }
 
-function failsAGatherNoneOfWhosePostsWasDelivered() {
+function failsAGatherNoneOfWhoseMessagesWasDelivered() {
   const observed = newObserved();
 
   return Effect.gen(function* () {
@@ -244,21 +246,21 @@ function failsAGatherNoneOfWhosePostsWasDelivered() {
 }
 
 /**
- * Request posts that failed after they were queued still reach their
+ * Request messages that failed after they were queued still reach their
  * members, so the refusal says so rather than that they were not sent.
  */
-function saysEachMemberIsStillSentAQueuedRequestPost() {
+function saysEachMemberIsStillSentAQueuedRequestMessage() {
   return Effect.gen(function* () {
     const observed = newObserved();
     const layer = yield* makeLayer(observed, {
-      sendPost: () =>
+      sendMessage: () =>
         Effect.fail(new SendError({ reason: "delivery-pending" })),
     });
     const outcome = yield* send(layer, gatherInput());
     expect(outcome).toMatchObject({ kind: "collective" });
     yield* TestClock.adjust(Duration.seconds(60));
     expect(observed.emitted).toMatchObject([
-      { kind: "collectiveResult", id: outcome.operationId },
+      { kind: "collectiveResult", operationId: outcome.operationId },
     ]);
   });
 }
@@ -359,11 +361,11 @@ function asksTheOneAgentOfAGroupAddressNamingOneOtherAgent() {
     const layer = yield* makeLayer(observed);
     yield* send(layer, { ...gatherInput(), to: "group:bob" });
 
-    expect(observed.sent.map((post) => post.to)).toEqual(["agent:bob"]);
+    expect(observed.sent.map((message) => message.to)).toEqual(["agent:bob"]);
   });
 }
 
-// @agent-code-guard/regression-only: examples pin the posts each operation certifies.
+// @agent-code-guard/regression-only: examples pin the messages each operation certifies.
 describe("collective sends", () => {
   it(
     "certifies a multicast as its text and an explicit multicast part",
@@ -376,29 +378,29 @@ describe("collective sends", () => {
   );
 
   it(
-    "fans a gather out as one request post per member but the requester",
-    fansAGatherOutAsOneRequestPostPerMemberButTheRequester,
+    "fans a gather out as one request message per member but the requester",
+    fansAGatherOutAsOneRequestMessagePerMemberButTheRequester,
   );
 
   it(
-    "refuses a gather with an unknown member before posting to anyone",
-    refusesAGatherWithAnUnknownMemberBeforeAnyPost,
+    "refuses a gather with an unknown member before sending to anyone",
+    refusesAGatherWithAnUnknownMemberBeforeAnyMessage,
   );
   it(
     "continues a gather past refused and pending members, which end as no-answer",
     continuesAGatherPastMembersItCouldNotReach,
   );
   it(
-    "counts an answer to a request post certified after the wait",
-    countsAnAnswerToAPostCertifiedAfterTheWait,
+    "counts an answer to a request message certified after the wait",
+    countsAnAnswerToAMessageCertifiedAfterTheWait,
   );
   it(
-    "fails a gather none of whose request posts was delivered",
-    failsAGatherNoneOfWhosePostsWasDelivered,
+    "fails a gather none of whose request messages was delivered",
+    failsAGatherNoneOfWhoseMessagesWasDelivered,
   );
   it(
-    "says each member is still sent a request post that failed once queued",
-    saysEachMemberIsStillSentAQueuedRequestPost,
+    "says each member is still sent a request message that failed once queued",
+    saysEachMemberIsStillSentAQueuedRequestMessage,
   );
 
   it(

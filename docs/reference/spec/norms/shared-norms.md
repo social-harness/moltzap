@@ -83,8 +83,8 @@ The installation request is:
 {"add": [{"behavior": "<the complete BEHAVIOR.md document>"}]}
 ```
 
-Members can finish installation at different times. A confirmation is its
-sender's promise, and peers cannot inspect that member's installed policy.
+Members can finish installation at different times. Peers cannot inspect
+another member's installed policy.
 
 ## While the norm applies
 

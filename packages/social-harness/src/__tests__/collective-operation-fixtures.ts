@@ -1,4 +1,4 @@
-/** @file Recording ports, post builders and send helpers shared by the collective operation tests. */
+/** @file Recording ports, message builders and send helpers shared by the collective operation tests. */
 
 import { Duration, Effect, Schema, type Scope } from "effect";
 import type { InboundItem } from "../communication/collectives/inbound.js";
@@ -16,15 +16,13 @@ import {
   SendInput,
 } from "../communication/collectives/contracts.js";
 import { makeCollectiveOperations } from "../communication/collectives/index.js";
-import {
-  collectiveIdOf,
-  readCollectiveValue,
-} from "../communication/collectives/wire/index.js";
+import { readCollectiveValue } from "../communication/collectives/wire/index.js";
 import { SendError } from "../communication/conversations/errors.js";
 import { InboundMessage } from "../communication/conversations/message.js";
-import { PostId, RecordHash } from "../communication/records/index.js";
+import { MsgId, RecordHash } from "../communication/records/index.js";
 import { AgentAddress } from "../communication/records/values.js";
 import { digest, testAgentView } from "./agent-card-fixtures.js";
+import { collectiveOperationId } from "./collective-id-fixtures.js";
 import { collectivePersistencePorts } from "./collective-storage-stub.js";
 
 /** The agent a layer `makeLayer` builds runs as unless told otherwise. */
@@ -32,7 +30,7 @@ export const alice = Schema.decodeUnknownSync(AgentAddress)("agent:alice");
 
 const bob = Schema.decodeUnknownSync(AgentAddress)("agent:bob");
 
-/** The data-part key a post carries its collective value under. */
+/** The data-part key a message carries its collective value under. */
 export const collectiveKey = "org.social-harness/collective";
 
 /** The explicit collective part every multicast an endpoint authors carries. */
@@ -48,11 +46,8 @@ export const slotSchema = {
   required: ["slot"],
 };
 
-/** The nonce Bob's gather request carries. */
-export const requestNonce = "N".repeat(43);
-
-/** The id Bob's gather request derives from `requestNonce`, so it names Bob as its requester. */
-export const requestId = collectiveIdOf(bob, requestNonce);
+/** Bob's gather request identity. */
+export const requestId = collectiveOperationId(testAgentView(bob).agentId);
 
 /** The question every gather and all_gather in these tests asks. */
 export const questionText = "Which day works?";
@@ -68,22 +63,22 @@ export const gatherTo = "group:alice,bob,carol";
 export const recordHashOf = (byte: number) =>
   Schema.decodeUnknownSync(RecordHash)(digest("rch_", byte));
 
-/** The record hash every post `classifyPost` classifies carries. */
+/** The record hash every message `classifyMessage` classifies carries. */
 const recordHash = recordHashOf(0);
 
-/** What a layer's ports saw: the posts it certified and the items it emitted, in order. */
+/** What a layer's ports saw: the messages it certified and the items it emitted, in order. */
 export interface Observed {
   readonly sent: EngineSendInput[];
   readonly emitted: InboundItem[];
 }
 
 /**
- * A PostId whose 32 bytes are all `byte`.
+ * A MsgId whose 32 bytes are all `byte`.
  * @param byte The repeated byte.
- * @returns The decoded PostId.
+ * @returns The decoded MsgId.
  */
-export const postId = (byte: number) =>
-  Schema.decodeUnknownSync(PostId)(digest("pst_", byte));
+export const msgId = (byte: number) =>
+  Schema.decodeUnknownSync(MsgId)(digest("msg_", byte));
 
 /**
  * A recorder that has seen nothing yet.
@@ -98,37 +93,37 @@ export const newObserved = (): Observed => ({ sent: [], emitted: [] });
 export const unkeptEmit = () => Effect.fail(new CollectiveEmitError());
 
 /**
- * Record a post and certify it as the engine does, under its own PostId and
- * record hash: the nth post recorded gets byte `100 + n` for both, so neither
- * collides with the bytes below 100 a test gives the posts it classifies.
- * @param observed Where the post is recorded.
- * @param input The post being certified.
- * @returns The certified post's PostId and record hash.
+ * Record a message and certify it as the engine does, under its own MsgId and
+ * record hash: the nth message recorded gets byte `100 + n` for both, so neither
+ * collides with the bytes below 100 a test gives the messages it classifies.
+ * @param observed Where the message is recorded.
+ * @param input The message being certified.
+ * @returns The certified message's MsgId and record hash.
  */
 export const certifyNext = (observed: Observed, input: EngineSendInput) =>
   Effect.sync(() => {
     observed.sent.push({ to: input.to, content: input.content });
     const byte = 100 + observed.sent.length;
-    return { postId: postId(byte), recordHash: recordHashOf(byte) };
+    return { msgId: msgId(byte), recordHash: recordHashOf(byte) };
   });
 
 /**
- * The send's wait for its request posts, mirroring the private
+ * The send's wait for its request messages, mirroring the private
  * `request-sends.ts → REQUEST_SEND_WAIT`. Tests advance the test clock by it to
  * end that wait, so a change to the production bound is made here too.
  */
 export const requestSendWait = Duration.seconds(20);
 
-/** How long after the send's wait ends a `late` post certifies. */
-export const latePostDelay = Duration.seconds(5);
+/** How long after the send's wait ends a `late` message certifies. */
+export const lateMessageDelay = Duration.seconds(5);
 
 /** What a test layer varies from ports that resolve, certify and keep everything. */
 interface LayerOptions {
   /** The agent the layer runs as, `alice` by default. */
   readonly self?: string;
   /**
-   * Addresses whose post is not passed to `sendPost` at once: refused with the
-   * reason given, held forever for `slow`, or passed on `latePostDelay` after
+   * Addresses whose message is not passed to `sendMessage` at once: refused with the
+   * reason given, held forever for `slow`, or passed on `lateMessageDelay` after
    * the send's `requestSendWait` ends for `late`.
    */
   readonly refused?: Readonly<
@@ -136,8 +131,8 @@ interface LayerOptions {
   >;
   /** Members whose lookup fails as an unknown agent. */
   readonly unknown?: readonly string[];
-  /** Certifies each post `refused` lets through; `certifyNext` by default. */
-  readonly sendPost?: CollectivePorts["sendPost"];
+  /** Certifies each message `refused` lets through; `certifyNext` by default. */
+  readonly sendMessage?: CollectivePorts["sendMessage"];
   /** Keeps each item the layer emits; by default it records the item. */
   readonly emit?: CollectivePorts["emit"];
   /** An installed firewall's checks; none by default. */
@@ -146,14 +141,14 @@ interface LayerOptions {
 
 /**
  * A collective layer over recording ports in the caller's scope. Its send
- * waits `requestSendWait` for request posts, so a test that needs that wait
+ * waits `requestSendWait` for request messages, so a test that needs that wait
  * to end advances the test clock by it.
- * @param observed Where the default ports record certified posts and emitted items.
+ * @param observed Where the default ports record certified messages and emitted items.
  * @param options The agent the layer runs as, and the ports that differ from the recording defaults.
  * @param options.self The agent the layer runs as, `alice` by default.
- * @param options.refused Addresses whose post does not certify at once, and how it fares.
+ * @param options.refused Addresses whose message does not certify at once, and how it fares.
  * @param options.unknown Members whose lookup fails as an unknown agent.
- * @param options.sendPost Certifies each post `refused` lets through.
+ * @param options.sendMessage Certifies each message `refused` lets through.
  * @param options.emit Keeps each item the layer emits.
  * @param options.admission An installed firewall's checks.
  * @returns The layer, scoped to the caller.
@@ -164,7 +159,7 @@ export const makeLayer = (
     self = alice,
     refused = {},
     unknown = [],
-    sendPost = (input) => certifyNext(observed, input),
+    sendMessage = (input) => certifyNext(observed, input),
     emit = (item) =>
       Effect.sync(() => {
         observed.emitted.push(item);
@@ -176,15 +171,15 @@ export const makeLayer = (
     const persistence = collectivePersistencePorts((input) => {
       const reason = refused[input.to];
       if (reason === undefined) {
-        return sendPost(input);
+        return sendMessage(input);
       }
       if (reason === "slow") {
         return Effect.never;
       }
       if (reason === "late") {
-        return Effect.sleep(Duration.sum(requestSendWait, latePostDelay)).pipe(
-          Effect.zipRight(sendPost(input)),
-        );
+        return Effect.sleep(
+          Duration.sum(requestSendWait, lateMessageDelay),
+        ).pipe(Effect.zipRight(sendMessage(input)));
       }
       return Effect.fail(new SendError({ reason }));
     });
@@ -192,7 +187,7 @@ export const makeLayer = (
     return makeCollectiveOperations({
       ...persistence,
       ...(checked === undefined ? {} : { admission: checked }),
-      self: Schema.decodeUnknownSync(AgentAddress)(self),
+      self: testAgentView(self),
       lookupMember: (member) =>
         unknown.includes(member)
           ? Effect.fail(new SendError({ reason: "unknown-agent" }))
@@ -203,29 +198,29 @@ export const makeLayer = (
   }).pipe(Effect.orDie);
 
 /**
- * A post in the direct conversation with `sender`.
- * @param sender The agent that authored the post.
- * @param content The post's parts.
+ * A message in the direct conversation with `sender`.
+ * @param sender The agent that authored the message.
+ * @param content The message's parts.
  * @returns The decoded inbound message.
  */
-export const directPost = (sender: string, content: unknown) =>
+export const directMessage = (sender: string, content: unknown) =>
   Schema.decodeUnknownSync(InboundMessage)({
     kind: "direct",
-    postId: postId(9),
+    msgId: msgId(9),
     address: sender,
     sender: testAgentView(sender),
     content,
   });
 
 /**
- * A gather request post naming Bob's `requestId` and asking `questionText`
- * with `slotSchema` under `requestNonce`.
+ * A gather request message naming Bob's `requestId` and asking `questionText`
+ * with `slotSchema`.
  * @param sender The agent that authored the request.
  * @param deadlineAt The absolute deadline it states, in epoch milliseconds.
  * @returns The decoded inbound message.
  */
-export const requestPost = (sender: string, deadlineAt: number) =>
-  directPost(sender, [
+export const requestMessage = (sender: string, deadlineAt: number) =>
+  directMessage(sender, [
     { type: "text", text: questionText },
     {
       type: "data",
@@ -233,8 +228,7 @@ export const requestPost = (sender: string, deadlineAt: number) =>
         [collectiveKey]: {
           kind: "operation",
           op: "gather",
-          id: requestId,
-          nonce: requestNonce,
+          operationId: requestId,
           deadlineAt,
           requestedSchema: slotSchema,
         },
@@ -243,27 +237,33 @@ export const requestPost = (sender: string, deadlineAt: number) =>
   ]);
 
 /**
- * A response post answering the operation `id`.
+ * A response message answering the operation `operationId`.
  * @param sender The member that answers.
- * @param id The operation the response names.
+ * @param operationId The operation the response names.
  * @param response The action and any content.
  * @returns The decoded inbound message.
  */
-export const answerPost = (sender: string, id: string, response: object) =>
-  directPost(sender, [
+export const answerMessage = (
+  sender: string,
+  operationId: string,
+  response: object,
+) =>
+  directMessage(sender, [
     {
       type: "data",
-      value: { [collectiveKey]: { kind: "response", id, ...response } },
+      value: {
+        [collectiveKey]: { kind: "response", operationId, ...response },
+      },
     },
   ]);
 
 /**
- * Classify one post as certified under the shared record hash.
+ * Classify one message as certified under the shared record hash.
  * @param layer The layer that classifies it.
- * @param message The post, as the store delivered it.
- * @returns The item the layer delivers, or none when it consumes the post.
+ * @param message The message, as the store delivered it.
+ * @returns The item the layer delivers, or none when it consumes the message.
  */
-export const classifyPost = (
+export const classifyMessage = (
   layer: CollectiveOperations,
   message: InboundMessage,
 ) => layer.classify({ message, recordHash });
@@ -307,10 +307,10 @@ export const collectiveFailureOf = <A>(
   );
 
 /**
- * The operation id a completed send names; dies when it names none.
+ * The operationId returned by a completed collective send. Dies if absent.
  * @param outcome What the send returned.
- * @param outcome.operationId The collective id, absent for a multicast.
- * @returns The id, for a test that goes on to answer or complete the operation.
+ * @param outcome.operationId The collective operationId, absent for a multicast.
+ * @returns The operationId, for a test that goes on to answer or complete the operation.
  */
 export const operationIdOf = (outcome: {
   readonly operationId?: CollectiveId;
@@ -320,27 +320,33 @@ export const operationIdOf = (outcome: {
   );
 
 /**
- * Start the gather `gatherInput` describes; dies when the send names no id.
+ * Start the gather `gatherInput` describes; dies when the send names no operationId.
  * @param layer The requester's layer.
- * @returns The gather's id.
+ * @returns The gather's operationId.
  */
 export const startGather = (layer: CollectiveOperations) =>
   send(layer, gatherInput()).pipe(Effect.flatMap(operationIdOf));
 
 /**
- * The request the first recorded post carries; dies when that post carries
+ * The request the first recorded message carries; dies when that message carries
  * no gather or all_gather request.
  * @param observed What the layer's ports recorded.
- * @returns The request's collective value, with its id and nonce.
+ * @returns The request's collective value, with its operationId.
  */
 export const firstRequestOf = (observed: Observed) =>
   Effect.fromNullable(observed.sent[0]).pipe(
-    Effect.flatMap((post) => readCollectiveValue(post.content)),
+    Effect.flatMap((message) => readCollectiveValue(message.content)),
     Effect.flatten,
     Effect.flatMap((value) =>
-      Effect.fromNullable("nonce" in value ? value : undefined),
+      Effect.fromNullable(
+        value.kind === "operation" && value.op !== "multicast"
+          ? value
+          : undefined,
+      ),
     ),
-    Effect.orElse(() => Effect.dieMessage("the first post carries no request")),
+    Effect.orElse(() =>
+      Effect.dieMessage("the first message carries no request"),
+    ),
   );
 
 function recordingAdmission(
@@ -350,9 +356,9 @@ function recordingAdmission(
   return admission === undefined
     ? undefined
     : {
-        bindPost: (input, hold) =>
+        bindMessage: (input, hold) =>
           admission
-            .bindPost(input, hold)
+            .bindMessage(input, hold)
             .pipe(
               Effect.tap(() =>
                 input.collective?.operation === undefined

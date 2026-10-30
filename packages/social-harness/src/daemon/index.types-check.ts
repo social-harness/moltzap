@@ -35,8 +35,7 @@ type StartupReasonIsExact = Expect<
   Types.Equals<
     StartupValue["reason"],
     | "outbox-too-old"
-    | "newer-schema"
-    | "pre-reset"
+    | "incompatible"
     | "agent-not-admitted"
     | "admission-refused"
     | "name_taken"

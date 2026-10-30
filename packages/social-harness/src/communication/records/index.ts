@@ -7,13 +7,13 @@ export {
   type DecodedOuterBody,
   decodeOuterBody,
   deriveConversationId,
-  deriveEvidenceMessageId,
+  deriveEvidenceEnvelopeId,
   hashAction,
   hashAnchor,
   hashMembershipDescriptor,
-  hashPostIntent,
+  hashMessageIntent,
   hashRecord,
-  mintPostId,
+  mintMsgId,
   type OuterBodyReader,
   signEvidenceMessage,
   signOuterEvidence,
@@ -39,7 +39,7 @@ export {
   MembershipDescriptor,
   MembershipHash,
   MessageActionCore,
-  PostIntent,
+  MessageIntent,
   ReanchorBody,
   ReanchorVoteStatement,
   RecordCore,
@@ -48,14 +48,13 @@ export {
 } from "./schemas.js";
 export {
   AgentAddress,
-  agentNameOf,
   compareAgentIds,
   Content,
   GroupAddress,
   maximumContentBytes,
   maximumMembers,
   MessageAddressInput,
-  PostId,
+  MsgId,
 } from "./values.js";
 
 export {

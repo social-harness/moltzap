@@ -45,11 +45,13 @@ import {
   identifier,
   issueTestCard,
   makeTestAuthority,
+  testAgentView,
 } from "./agent-card-fixtures.js";
 import {
   buildCertifiedFirstMessage,
   storeCertifiedFirstMessage,
 } from "./certified-history-fixtures.js";
+import { collectiveOperationId } from "./collective-id-fixtures.js";
 import { pollCursor } from "./router-worker-fixtures.js";
 import { stateDirectory } from "./store-schema-fixtures.js";
 
@@ -130,7 +132,7 @@ const identities = Effect.gen(function* () {
 /**
  * Real storage and send preparation run with a suspended Router send. Before
  * each outbound write the engine asks `failWrite`: a write it fails fails the
- * bound post's activation, and the storage fault it reports is ignored.
+ * bound message's activation, and the storage fault it reports is ignored.
  * @param failWrite Whether the next outbound write fails; none fails by default.
  * @returns The fixture's identities, storage, engine and Router barrier.
  */
@@ -240,14 +242,14 @@ const firewallRuntime = (subject: Fixture, installed: InstalledFirewall) =>
       });
     const collectives = yield* makeCollectiveOperations({
       store,
-      observePost: (postId) => engine.observePost(postId),
+      observeMessage: (msgId) => engine.observeMessage(msgId),
       sendAdmitted: (input, checkId) => engine.sendAdmitted(input, checkId),
       reportStorageFault: () => Effect.void,
-      self: Schema.decodeUnknownSync(AgentAddress)("agent:alice"),
+      self: agentViewOf(local.card),
       scope,
       lookupMember: (member) => resolvedMemberView(engine, member),
-      sendPost: (input) => engine.send(input),
-      bindPost: (input, hold) => engine.bind(input, hold),
+      sendMessage: (input) => engine.send(input),
+      bindMessage: (input, hold) => engine.bind(input, hold),
       emit,
       admission: collectiveAdmission(environment, engine),
     });
@@ -460,7 +462,10 @@ function delayedEvidence(subject: Fixture, conversation: string) {
           ),
           canonicalItem: yield* encodeRuntimeValue({
             kind: "operationFailed",
-            id: digest("col_", index),
+            operationId: collectiveOperationId(
+              testAgentView("agent:alice").agentId,
+              index,
+            ),
             to: conversation,
             error: "Prior local result",
           }),

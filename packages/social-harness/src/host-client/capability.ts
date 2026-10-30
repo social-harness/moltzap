@@ -64,7 +64,7 @@ export interface HarnessEndpointOptions {
 
 /**
  * Connects one configured agent to a host for the connection's scope. Each send
- * creates a new invocation. Retrying an unknown outcome can create another post.
+ * creates a new invocation. Retrying an unknown outcome can create another message.
  *
  * Every host receives the invocation's result or typed refusal. The host
  * presents refusals through its supported tool or message callback. The daemon

@@ -95,7 +95,8 @@ before removing its only useful explanation elsewhere.
 Explain the actor, event and evidence behind a value when its type leaves
 those unclear. A timestamp needs the event and clock it records. A signed
 decision needs a clear distinction between what its author asserts and what
-the signature proves.
+the signature proves. Describe permissions by current authority, not by an
+object's origin or who used to control it.
 
 Document implementation only when the explanation adds something a reader
 cannot obtain from clear code. Implementation comments explain what the code
@@ -170,8 +171,14 @@ purpose or needs a different level of detail. Merge sections that answer the
 same question. Reorder material to put prerequisites before dependent ideas.
 Settle the structure before polishing sentences.
 
+Put behavior shared by several modes before their differences. A reader who
+chooses one mode should not have to read another mode's section to understand
+a common result.
+
 Apply DRY and distillation together. Give each fact one authoritative home and
-link to it where readers need it. Keep material that helps the reader
+link to it where readers need it. Before replacing a passage with a link,
+verify that its target covers every actor and guarantee being removed.
+Keep material that helps the reader
 understand, act, decide, verify or satisfy a contract. Delete material with no
 such use. Move it only when another document needs it. A rarely needed
 recovery rule can still be essential.
@@ -196,6 +203,12 @@ paragraph of explanation. Prefer plain words and direct verbs over elaborate
 phrases. Apply this care to headings, files, folders, classes, methods,
 variables, and APIs as well as prose. Keep distinct concepts distinct, and
 give the same concept the same name wherever readers encounter it.
+
+Carry a concept rename through its fields, types, examples and prose. Check
+neighboring layers for a name that already means something else. Describe the
+responsibility that distinguishes each value before inventing another synonym.
+When two fields repeat one value, question the representation before writing
+an explanation for the duplication.
 
 Read as someone arriving from the Social Harness paper. Connect its concepts
 to the implemented system using consistent terms. Explain a necessary

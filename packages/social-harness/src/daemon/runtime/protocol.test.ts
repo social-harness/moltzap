@@ -42,8 +42,8 @@ import {
 import { encodeCanonical } from "../../encoding/canonical-json.js";
 import { SealedBody } from "../../identity/envelope/sealed-body.js";
 import {
+  EnvelopeId,
   type LiveSignedMessage,
-  MessageId,
   SignedMessage,
 } from "../../identity/envelope/signed-message.js";
 import { Registry } from "../../identity/registry/index.js";
@@ -59,9 +59,9 @@ interface Members {
 
 /**
  * An envelope addressed to the daemon and the peer that the daemon must not
- * open: the peer seals the plaintext to `sealedTo` under MessageId byte
+ * open: the peer seals the plaintext to `sealedTo` under EnvelopeId byte
  * `sealedAs`, or leaves it plaintext when `sealedTo` is absent, and `signer`
- * signs the result under MessageId byte `signedAs`.
+ * signs the result under EnvelopeId byte `signedAs`.
  */
 interface RefusedEnvelope {
   readonly sealedTo?: (members: Members) => readonly VerifiedAgentCard[];
@@ -72,8 +72,8 @@ interface RefusedEnvelope {
 
 const instance = routerInstanceId(21);
 
-const messageId = (byte: number) =>
-  Schema.decodeUnknownSync(MessageId)(identifier("msg_", byte));
+const envelopeId = (byte: number) =>
+  Schema.decodeUnknownSync(EnvelopeId)(identifier("env_", byte));
 
 const catchUpRequestFrom = (requester: VerifiedAgentCard): CatchUpRequest => ({
   sharnessVersion: WIRE_VERSION,
@@ -97,7 +97,7 @@ const buildRefusedEnvelope = (
       : SealedBody.seal({
           senderAgentId: members.peer.card.agentId,
           recipientAgentCards: refused.sealedTo(members),
-          messageId: messageId(refused.sealedAs),
+          envelopeId: envelopeId(refused.sealedAs),
           plaintext,
         });
   return body.pipe(
@@ -109,7 +109,7 @@ const buildRefusedEnvelope = (
           members.local.card.agentId,
           members.peer.card.agentId,
         ]),
-        messageId: messageId(refused.signedAs),
+        envelopeId: envelopeId(refused.signedAs),
         body: sealed,
       }),
     ),
@@ -155,8 +155,8 @@ const routerFeeding = (input: {
 const recordingEngine = (
   accepted: Queue.Queue<DecodedOuterBody>,
 ): EndpointEngine => ({
-  observePost: () =>
-    Effect.dieMessage("no retained post is observed in this test"),
+  observeMessage: () =>
+    Effect.dieMessage("no retained message is observed in this test"),
   send: () => Effect.dieMessage("the daemon sends nothing in this test"),
   bind: () => Effect.dieMessage("the daemon sends nothing in this test"),
   bindChecked: () => Effect.dieMessage("the daemon sends nothing in this test"),
@@ -300,7 +300,7 @@ describe("daemon ingress of outer bodies", () => {
       },
     },
     {
-      body: "a sealed body re-signed under another MessageId",
+      body: "a sealed body re-signed under another EnvelopeId",
       refused: {
         sealedTo: ({ local, peer }) => [local.card, peer.card],
         sealedAs: 34,

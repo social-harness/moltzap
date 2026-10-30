@@ -9,7 +9,7 @@ import {
   CollectiveId,
   SendInput,
 } from "../communication/collectives/contracts.js";
-import { Content, PostId } from "../communication/records/index.js";
+import { Content, MsgId } from "../communication/records/index.js";
 import { AgentAddress, GroupAddress } from "../communication/records/values.js";
 import { DeliveryToken } from "../communication/store/index.js";
 import { exactParseOptions } from "../encoding/exact.js";
@@ -32,17 +32,17 @@ const outsiderAddress = Schema.decodeUnknownSync(AgentAddress)("agent:dave");
 const groupAddress = Schema.decodeUnknownSync(GroupAddress)(
   "group:alice,bob,carol",
 );
-const postId = Schema.decodeUnknownSync(PostId)(`pst_${"A".repeat(43)}`);
+const msgId = Schema.decodeUnknownSync(MsgId)(`msg_${"A".repeat(43)}`);
 const content = Schema.decodeUnknownSync(Content)([
   { type: "text", text: "meeting invite sent" },
 ]);
 
 const collectiveId = Schema.decodeUnknownSync(CollectiveId)(
-  `col_${"A".repeat(43)}`,
+  `col_${"A".repeat(64)}`,
 );
-const openIds = [
-  Schema.decodeUnknownSync(CollectiveId)(`col_${"B".repeat(42)}A`),
-  Schema.decodeUnknownSync(CollectiveId)(`col_${"C".repeat(42)}A`),
+const openOperationIds = [
+  Schema.decodeUnknownSync(CollectiveId)(`col_${"B".repeat(64)}`),
+  Schema.decodeUnknownSync(CollectiveId)(`col_${"C".repeat(64)}`),
 ];
 
 function decodesExactOperationRequests(): void {
@@ -73,7 +73,7 @@ function decodesExactOperationRequests(): void {
 function decodesCanonicalDirectDelivery(): void {
   const message: InboundMessage = {
     kind: "direct",
-    postId,
+    msgId,
     address: senderAddress,
     sender: testAgentView(senderAddress),
     content,
@@ -99,7 +99,7 @@ function decodesCanonicalDirectDelivery(): void {
 function unreachableFailure(reason: string) {
   return {
     reason: "collective-failed",
-    id: collectiveId,
+    operationId: collectiveId,
     failure: {
       kind: "members-unreachable",
       members: [{ member: peerAddress, reason }],
@@ -110,7 +110,7 @@ function unreachableFailure(reason: string) {
 function rejectsAnUntaggedMessage(): void {
   const message: InboundMessage = {
     kind: "direct",
-    postId,
+    msgId,
     address: senderAddress,
     sender: testAgentView(senderAddress),
     content,
@@ -129,7 +129,7 @@ function rejectsAnUntaggedMessage(): void {
 function decodesCanonicalGroupDelivery(): void {
   const message: InboundMessage = {
     kind: "group",
-    postId,
+    msgId,
     address: groupAddress,
     sender: testAgentView(peerAddress),
     members: [
@@ -151,7 +151,7 @@ const inconsistentDeliveries = [
     case: "a sender whose principal differs from its member identity",
     message: {
       kind: "group",
-      postId,
+      msgId,
       address: groupAddress,
       sender: {
         ...testAgentView(peerAddress),
@@ -166,10 +166,10 @@ const inconsistentDeliveries = [
     },
   },
   {
-    case: "one agent id repeated under different member names",
+    case: "one agent operationId repeated under different member names",
     message: {
       kind: "group",
-      postId,
+      msgId,
       address: groupAddress,
       sender: testAgentView(peerAddress),
       members: [
@@ -187,7 +187,7 @@ const inconsistentDeliveries = [
     case: "a direct address that is not the sender",
     message: {
       kind: "direct",
-      postId,
+      msgId,
       address: peerAddress,
       sender: testAgentView(senderAddress),
       content,
@@ -197,7 +197,7 @@ const inconsistentDeliveries = [
     case: "group members out of canonical order",
     message: {
       kind: "group",
-      postId,
+      msgId,
       address: groupAddress,
       sender: testAgentView(peerAddress),
       members: [peerAddress, senderAddress, thirdAddress].map(testAgentView),
@@ -208,7 +208,7 @@ const inconsistentDeliveries = [
     case: "a repeated group member",
     message: {
       kind: "group",
-      postId,
+      msgId,
       address: groupAddress,
       sender: testAgentView(peerAddress),
       members: [senderAddress, peerAddress, peerAddress].map(testAgentView),
@@ -219,7 +219,7 @@ const inconsistentDeliveries = [
     case: "a sender outside the group",
     message: {
       kind: "group",
-      postId,
+      msgId,
       address: groupAddress,
       sender: testAgentView(outsiderAddress),
       members: [
@@ -334,7 +334,7 @@ describe("Harness send refusal data", () => {
     { reason: "collective-failed" },
     {
       reason: "collective-failed",
-      id: collectiveId,
+      operationId: collectiveId,
       failure: { kind: "request-ambiguous" },
     },
   ])(
@@ -346,32 +346,30 @@ describe("Harness send refusal data", () => {
     },
   );
   it.each([{ ids: [] }, { ids: [collectiveId] }])(
-    "refuses an ambiguous answer with fewer than two open ids: $ids",
+    "refuses an ambiguous answer with fewer than two openOperationIds: $ids",
     ({ ids }) => {
       expect(
         Exit.isFailure(
           Effect.runSyncExit(
             decodeHarnessSendErrorData({
               reason: "collective-failed",
-              id: collectiveId,
-              failure: { kind: "request-ambiguous", openIds: ids },
+              operationId: collectiveId,
+              failure: { kind: "request-ambiguous", openOperationIds: ids },
             }),
           ),
         ),
       ).toBe(true);
     },
   );
-  it("carries the open ids of an answer that named none of several open requests", () => {
+  it("carries the openOperationIds of an answer that named none of several open requests", () => {
     const refused = new CollectiveError({
-      id: collectiveId,
-      failure: { kind: "request-ambiguous", openIds },
+      failure: { kind: "request-ambiguous", openOperationIds },
     });
     const data = sendErrorData(refused);
 
     expect(data).toEqual({
       reason: "collective-failed",
-      id: collectiveId,
-      failure: { kind: "request-ambiguous", openIds },
+      failure: { kind: "request-ambiguous", openOperationIds },
     });
     expect(Effect.runSync(decodeHarnessSendErrorData(data))).toEqual(data);
   });
@@ -381,7 +379,7 @@ const directItem = {
   kind: "multicast",
   message: {
     kind: "direct",
-    postId,
+    msgId,
     address: senderAddress,
     sender: testAgentView(senderAddress),
     content,

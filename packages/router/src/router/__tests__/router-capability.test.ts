@@ -7,8 +7,8 @@ import {
   AgentName,
   AgentSigningAuthority,
   type AgentSigningAuthority as AgentSigningAuthorityValue,
-  MessageId,
-  type MessageId as MessageIdValue,
+  EnvelopeId,
+  type EnvelopeId as EnvelopeIdValue,
   PrincipalId,
   SignedMessage,
   type SignedMessage as SignedMessageValue,
@@ -61,8 +61,8 @@ const identifierPayload = (seed: number): string =>
 const makeAgentId = (seed: number): AgentIdValue =>
   Schema.decodeUnknownSync(AgentId)(`agt_${identifierPayload(seed)}`);
 
-const makeMessageId = (seed: number): MessageIdValue =>
-  Schema.decodeUnknownSync(MessageId)(`msg_${identifierPayload(seed)}`);
+const makeEnvelopeId = (seed: number): EnvelopeIdValue =>
+  Schema.decodeUnknownSync(EnvelopeId)(`env_${identifierPayload(seed)}`);
 
 const makeRouterInstanceId = (
   seed: number,
@@ -85,7 +85,7 @@ const encodedCanonicalJson = (value: unknown): string =>
 const makeSignedMessage = (input: {
   readonly senderAgentId: AgentIdValue;
   readonly recipientAgentIds: readonly AgentIdValue[];
-  readonly messageId: MessageIdValue;
+  readonly envelopeId: EnvelopeIdValue;
   readonly body: string;
 }): SignedMessageValue =>
   Schema.decodeUnknownSync(SignedMessage)({
@@ -95,7 +95,7 @@ const makeSignedMessage = (input: {
       senderAgentId: input.senderAgentId,
       agentCardDigest: `acd_${Encoding.encodeBase64Url(new Uint8Array(32).fill(9))}`,
       recipientAgentIds: input.recipientAgentIds,
-      messageId: input.messageId,
+      envelopeId: input.envelopeId,
       body: Encoding.encodeBase64Url(utf8Encoder.encode(input.body)),
     }),
     signatures: [
@@ -324,7 +324,7 @@ describe("private RPC behavior", () => {
         signedMessage: makeSignedMessage({
           senderAgentId: sender,
           recipientAgentIds: [recipient],
-          messageId: makeMessageId(1),
+          envelopeId: makeEnvelopeId(1),
           body: "rpc-context",
         }),
       } as const;
@@ -402,7 +402,7 @@ describe("send exhaustion behavior", () => {
           agentCard: senderFixture.verifiedRequest.agentCard,
           signingAuthority: senderFixture.signingAuthority,
           recipientAgentIds: new Set([recipient]),
-          messageId: makeMessageId(1),
+          envelopeId: makeEnvelopeId(1),
           body: utf8Encoder.encode("final-position"),
         });
         const finalRequest = {
@@ -438,7 +438,7 @@ describe("send exhaustion behavior", () => {
                 makeSignedMessage({
                   senderAgentId: sender,
                   recipientAgentIds: [recipient],
-                  messageId: makeMessageId(2),
+                  envelopeId: makeEnvelopeId(2),
                   body: "invalid-signature",
                 }),
               ),
@@ -460,7 +460,7 @@ describe("send exhaustion behavior", () => {
           agentCard: senderFixture.verifiedRequest.agentCard,
           signingAuthority: senderFixture.signingAuthority,
           recipientAgentIds: new Set([recipient]),
-          messageId: makeMessageId(2),
+          envelopeId: makeEnvelopeId(2),
           body: utf8Encoder.encode("past-final-position"),
         });
         const exhausted = yield* send

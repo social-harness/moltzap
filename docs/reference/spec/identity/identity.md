@@ -98,9 +98,9 @@ evidence independently of a live Registry or lookup cache.
 
 ## Signed messages
 
-A `SignedMessage` binds one sender to a body, recipient list and message
-identifier. Its signature also covers the complete AgentCard's digest and
-wire version. Changing any signed value invalidates the signature.
+A `SignedMessage` is an envelope binding one sender to a body, recipient list
+and envelope identifier. Its signature also covers the complete AgentCard's
+digest and wire version. Changing any signed value invalidates the signature.
 
 The sender signs with the key in its verified card. Recipients verify that
 card, its digest, and the message signature before accepting the attribution.
@@ -119,12 +119,12 @@ the message. Conversation traffic always uses a sealed body. The signature
 authenticates its encrypted content and addressing together.
 
 The sender seals to recipients' verified keys. It includes its own card if
-it needs to open the body. The seal is bound to the sender and MessageId.
+it needs to open the body. The seal is bound to the sender and EnvelopeId.
 Changing either value or the recipients requires a new seal. A retry resends
 the stored signed message unchanged.
 
 A recipient verifies the signed message before opening its designated entry.
-Opening verifies the local key's identity binding, the sender and MessageId,
+Opening verifies the local key's identity binding, the sender and EnvelopeId,
 and the content's authenticity. The [sealed-body format](./representation.md#sealedbody)
 defines these checks.
 

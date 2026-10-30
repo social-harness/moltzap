@@ -25,7 +25,8 @@ import { describe, expect, vi } from "vitest";
 import type { EnginePendingMessage } from "../communication/conversations/index.js";
 import type { EventStore } from "../host-protocol/operations.js";
 import type { HarnessMcpEventHandler } from "./mcp/tools.js";
-import { digest } from "../__tests__/agent-card-fixtures.js";
+import { digest, testAgentView } from "../__tests__/agent-card-fixtures.js";
+import { collectiveOperationId } from "../__tests__/collective-id-fixtures.js";
 import {
   type Fixture,
   makeFixture,
@@ -126,7 +127,10 @@ const opensConfiguredHistoryExport = () =>
     yield* awaitStage(Deferred.await(harness.listenerReady), "listener");
     const item = Schema.decodeUnknownSync(InboundItem)({
       kind: "operationFailed",
-      id: digest("col_", 8),
+      operationId: collectiveOperationId(
+        testAgentView("agent:alice").agentId,
+        8,
+      ),
       to: "agent:bob",
       error: "retained failure",
     });

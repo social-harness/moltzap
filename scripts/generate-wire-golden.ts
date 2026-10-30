@@ -18,7 +18,7 @@ import {
   digestAgentCard,
 } from "../packages/social-harness/dist/identity/cards.js";
 import {
-  MessageId,
+  EnvelopeId,
   SignedMessage,
 } from "../packages/social-harness/dist/identity/envelope/signed-message.js";
 import {
@@ -92,7 +92,7 @@ const cofactoredMessage = (
           senderAgentId: card.agentId,
           agentCardDigest: cardDigest,
           recipientAgentIds: [identifier("agt_", 0)],
-          messageId: identifier("msg_", 1),
+          envelopeId: identifier("env_", 1),
           body: Buffer.from(bodyText).toString("base64url"),
         }),
       );
@@ -176,7 +176,7 @@ const generate = Effect.gen(function* () {
     agentCard,
     signingAuthority,
     recipientAgentIds: new Set([agentCard.agentId]),
-    messageId: Schema.decodeUnknownSync(MessageId)(identifier("msg_", 2)),
+    envelopeId: Schema.decodeUnknownSync(EnvelopeId)(identifier("env_", 2)),
     body: new TextEncoder().encode("retained golden evidence"),
   });
   return {

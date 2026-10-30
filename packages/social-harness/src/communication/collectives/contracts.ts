@@ -3,7 +3,7 @@
 import { Data, ParseResult, Schema } from "effect";
 import type { AgentView } from "../../identity/cards.js";
 import { exactStruct } from "../../encoding/exact.js";
-import { isCanonicalIdentifier } from "../../encoding/identifier.js";
+import { canonicalIdentifier } from "../../encoding/identifier.js";
 import { checkedGuidanceSchema } from "../../firewall/outcome/index.js";
 import {
   issuesText,
@@ -16,7 +16,7 @@ import {
   GroupAddress,
   JsonValue,
   MessageAddressInput,
-  PostId,
+  MsgId,
   wellFormedString,
 } from "../records/values.js";
 
@@ -27,18 +27,11 @@ export type Members = readonly [AgentView, ...AgentView[]];
 
 /**
  * Identity of one gather or all_gather, minted by the requesting endpoint.
- * The request, each member's answer post, an all_gather's close, the result
- * and any failure carry it. An answer that matches no single open request is
- * refused under an id minted for the refusal, so its failure is named too.
+ * The request, each member's answer message, an all_gather's close, the result
+ * and any failure after selecting an operation carry it.
  */
-export const CollectiveId = Schema.String.pipe(
-  Schema.filter((value) => isCanonicalIdentifier("col_", value), {
-    description:
-      "A collective operation id: col_ followed by 43 base64url characters",
-  }),
-  Schema.brand("CollectiveId"),
-);
-/** A validated collective operation id. */
+export const CollectiveId = canonicalIdentifier("CollectiveId", "col_", 48);
+/** A validated operation identity that includes its requester. */
 export type CollectiveId = typeof CollectiveId.Type;
 
 /** One property of a form-mode schema as a caller states it. */
@@ -47,7 +40,7 @@ const formProperty = Schema.Record({ key: Schema.String, value: JsonValue });
 /**
  * The MCP form-mode `requestedSchema` of a collecting operation: a flat object
  * of primitive properties. This schema fixes its outline; the sending endpoint
- * checks each property against the MCP form-mode grammar before any post.
+ * checks each property against the MCP form-mode grammar before any message.
  */
 export const RequestedSchema = exactStruct({
   $schema: Schema.optionalWith(Schema.String, { exact: true }),
@@ -109,7 +102,7 @@ export const collectiveClosure = exactStruct({
 export type CollectiveClosure = typeof collectiveClosure.Type;
 
 /**
- * Multicast: one post to the `to` address, complete when certified. `op`
+ * Multicast: one message to the `to` address, complete when certified. `op`
  * defaults to multicast, so an omitted `op` and an omitted `collective` mean
  * the same operation.
  */
@@ -119,9 +112,9 @@ const multicastOperation = exactStruct({
 
 /**
  * A collecting operation: the text is a question to every member of `to`.
- * A gather sends one request post to each member, in that member's direct
+ * A gather sends one request message to each member, in that member's direct
  * conversation with the requester, and only the requester receives the
- * result. An all_gather sends one request post to the `group:` conversation
+ * result. An all_gather sends one request message to the `group:` conversation
  * `to` names; members answer there, no model sees a peer's answer before the
  * requester's close, and every member receives the same result. The deadline
  * is relative, in whole seconds; the sending endpoint converts it to an
@@ -141,9 +134,9 @@ const CollectiveOperation = Schema.Union(
 /** A validated collective operation. */
 export type CollectiveOperation = typeof CollectiveOperation.Type;
 
-/** The request an answer names: the `col_` id its `collectiveRequest` item carries. */
+/** The request an answer names: the `col_` operationId its `collectiveRequest` item carries. */
 const answeredRequest = {
-  id: Schema.optionalWith(CollectiveId, { exact: true }),
+  operationId: Schema.optionalWith(CollectiveId, { exact: true }),
 };
 
 /** An `accept` answer, the only one that carries content. */
@@ -162,7 +155,7 @@ export const DeclineResponse = exactStruct({
 /**
  * A member's answer to a request open in the conversation it is sent to: the
  * requester's direct conversation for a gather, the group for an all_gather.
- * `id` names the request; without it the answer goes to the one request open
+ * `operationId` names the request; without it the answer goes to the one request open
  * there. It is MCP's `ElicitResult`; only `accept` carries content, valid
  * against the request's schema.
  */
@@ -214,7 +207,7 @@ const absentResultField = Schema.Never.annotations({
 
 /**
  * A successful invocation identifies its operation explicitly. Multicasts
- * and responses name their certified post and canonical conversation address.
+ * and responses name their certified message and canonical conversation address.
  * Collecting operations name the operation whose result arrives in the inbox.
  * A response also names the request it answered. Refusals use the error channel.
  * Readers may ignore future fields, but fields owned by another result kind
@@ -223,7 +216,7 @@ const absentResultField = Schema.Never.annotations({
 export const SendResultSchema = Schema.Union(
   Schema.Struct({
     kind: Schema.Literal("multicast"),
-    postId: PostId,
+    msgId: MsgId,
     address: Schema.Union(AgentAddress, GroupAddress),
     operationId: Schema.optionalWith(absentResultField, { exact: true }),
     ...sendGuidance,
@@ -231,14 +224,14 @@ export const SendResultSchema = Schema.Union(
   Schema.Struct({
     kind: Schema.Literal("response"),
     operationId: CollectiveId,
-    postId: PostId,
+    msgId: MsgId,
     address: Schema.Union(AgentAddress, GroupAddress),
     ...sendGuidance,
   }),
   Schema.Struct({
     kind: Schema.Literal("collective"),
     operationId: CollectiveId,
-    postId: Schema.optionalWith(absentResultField, { exact: true }),
+    msgId: Schema.optionalWith(absentResultField, { exact: true }),
     address: Schema.optionalWith(absentResultField, { exact: true }),
     ...sendGuidance,
   }),
@@ -249,15 +242,15 @@ export const SendResultSchema = Schema.Union(
  */
 export type SendResult = typeof SendResultSchema.Type;
 
-/** Private completion retains the posts certified before the invocation returned. */
+/** Private completion retains the messages certified before the invocation returned. */
 export type CollectiveSendOutcome = SendResult & {
-  readonly postIds: readonly PostId[];
+  readonly msgIds: readonly MsgId[];
 };
 
 /**
  * Why a collective send was refused, discriminated by `kind`: a gather or
  * all_gather whose schema is outside the form-mode grammar, whose request
- * post some member could not receive, or whose deadline passed while its
+ * message some member could not receive, or whose deadline passed while its
  * check ran; or a response the member's endpoint cannot send.
  */
 const collectiveFailure = Schema.Union(
@@ -282,7 +275,7 @@ const collectiveFailure = Schema.Union(
   exactStruct({ kind: Schema.Literal("request-none") }),
   exactStruct({
     kind: Schema.Literal("request-ambiguous"),
-    openIds: Schema.Array(CollectiveId).pipe(Schema.minItems(2)),
+    openOperationIds: Schema.Array(CollectiveId).pipe(Schema.minItems(2)),
   }),
   exactStruct({ kind: Schema.Literal("request-answered") }),
   exactStruct({ kind: Schema.Literal("request-expired") }),
@@ -303,7 +296,7 @@ export const decodeCollectiveFailure = Schema.decodeUnknown(collectiveFailure);
  * no result. A close refused before it was queued reaches no member; a
  * `delivery-pending` close reaches them once Social Harness is reachable, and its
  * text says so.
- * @param error Why the close post failed.
+ * @param error Why the close message failed.
  * @returns The `operationFailed` text the asker's model reads.
  */
 export function closeFailureText(error: SendError): string {
@@ -365,7 +358,7 @@ const fixedFailureText: Record<FixedFailureKind, string> = {
   "request-answered": "reply failed: the question was already answered",
   "request-expired": "reply failed: the question's deadline has passed",
   "deadline-passed":
-    "send failed: the deadline passed before the question was posted",
+    "send failed: the deadline passed before the question was sent",
 };
 
 function describeCollectiveFailure(failure: CollectiveFailure): string {
@@ -386,7 +379,7 @@ function describeCollectiveFailure(failure: CollectiveFailure): string {
     case "answer-invalid":
       return `reply failed: ${answerFieldsText(failure.fields)}`;
     case "request-ambiguous":
-      return `reply failed: several questions are open in this conversation. Set collectiveResponse.id to one of: ${failure.openIds.join(", ")}. Docs: https://github.com/social-harness/moltzap/blob/main/docs/reference/spec/communication/collectives.md#answers`;
+      return `reply failed: several questions are open in this conversation. Set collectiveResponse.operationId to one of: ${failure.openOperationIds.join(", ")}. Docs: https://github.com/social-harness/moltzap/blob/main/docs/reference/spec/communication/collectives.md#answers`;
     default: {
       const exhaustive: never = failure;
       return exhaustive;
@@ -415,7 +408,7 @@ export class CollectiveEmitError extends Data.TaggedError(
  * @inline
  */
 export interface OpenElsewhere {
-  readonly id: CollectiveId;
+  readonly operationId: CollectiveId;
   readonly to: AgentAddress | GroupAddress;
 }
 
@@ -423,13 +416,13 @@ export interface OpenElsewhere {
  * A gather, all_gather or answer was refused. The message is what a host
  * hands its model as the tool error: the failed action and its cause, naming
  * each unreachable member or failing field. For an answer that named no
- * request while several were open, it names each open request's id; for a
+ * request while several were open, it names each open request's operationId; for a
  * `request-none`, `request-answered` or `request-expired` refusal, the
  * questions open in other conversations and where each is answered. The
- * operation id stays in the error's data, not its message.
+ * operationId is present only after the invocation selects an operation.
  */
 export class CollectiveError extends Data.TaggedError("CollectiveError")<{
-  readonly id: CollectiveId;
+  readonly operationId?: CollectiveId;
   readonly failure: CollectiveFailure;
   readonly openElsewhere?: readonly OpenElsewhere[];
 }> {
@@ -438,7 +431,7 @@ export class CollectiveError extends Data.TaggedError("CollectiveError")<{
     return this.openElsewhere === undefined
       ? text
       : `${text}; open in other conversations: ${this.openElsewhere
-          .map(({ id, to }) => `${id} in ${to}`)
+          .map(({ operationId, to }) => `${operationId} in ${to}`)
           .join(", ")}`;
   }
 }

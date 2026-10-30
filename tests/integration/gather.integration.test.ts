@@ -50,7 +50,7 @@ const gather = (
 
 /**
  * Each test starts PGlite, the Registry, the Router and three daemons, and the
- * silent member's test waits out a deadline of several measured post rounds.
+ * silent member's test waits out a deadline of several measured message rounds.
  * Beside a second full Client suite (load average 31 to 49 on 8 cores) that
  * test has taken 176 to 188 seconds, most of it process startup. Apart from
  * that measured deadline, the limit is the only wall-clock bound these traces
@@ -70,7 +70,7 @@ interface GatherParticipants {
   readonly second: Participant;
 }
 
-/** A refused gather posts nothing, so the following request is each member's first item. */
+/** A refused gather sends nothing, so the following request is each member's first item. */
 function expectUnreachableGatherRefused({ requester }: GatherParticipants) {
   return Effect.gen(function* () {
     const unreachable = yield* send(requester, {
@@ -104,15 +104,15 @@ function startGatherAndExpectRequests({
     expect(firstRequest).toEqual({
       kind: "collectiveRequest",
       op: "gather",
-      id: started.operationId,
-      postId: anyString,
+      operationId: started.operationId,
+      msgId: anyString,
       from: requester.agent,
       to: requester.address,
       question,
       requestedSchema: slotSchema,
       deadlineAt: anyNumber,
     });
-    expect(secondRequest).toMatchObject({ id: started.operationId });
+    expect(secondRequest).toMatchObject({ operationId: started.operationId });
     return started;
   });
 }
@@ -126,8 +126,8 @@ const allAnsweredBehavior = Effect.gen(function* () {
 }).pipe(Effect.scoped);
 
 /**
- * The deadline is measured on a post to the group of every participant. The
- * gather's requests go to direct conversations, which that post leaves
+ * The deadline is measured on a message to the group of every participant. The
+ * gather's requests go to direct conversations, which that message leaves
  * untouched.
  */
 const silentMemberBehavior = Effect.gen(function* () {
@@ -146,7 +146,7 @@ const silentMemberBehavior = Effect.gen(function* () {
   expect(yield* nextItem(requester)).toMatchObject({
     kind: "collectiveResult",
     op: "gather",
-    id: started.operationId,
+    operationId: started.operationId,
     outcomes: [
       {
         member: first.agent,
@@ -205,7 +205,7 @@ function answerGatherAndExpectResult(
     expect(yield* nextItem(requester)).toEqual({
       kind: "collectiveResult",
       op: "gather",
-      id: operationId,
+      operationId,
       closedAt: anyNumber,
       closedBy: "settled",
       to: "group:gather-member-a,gather-member-b,gather-requester",

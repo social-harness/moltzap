@@ -24,8 +24,8 @@ import { describe, expect, vi } from "vitest";
 
 import {
   endpointResult,
+  msgId,
   OPERATION_ID,
-  postId,
 } from "./__tests__/send-results.js";
 import { createChannelPlugin } from "./plugin.js";
 
@@ -77,7 +77,7 @@ function messageToolSendLogsItsOrigin() {
   ).pipe(
     Effect.tap(({ logLines }) => {
       expect(logLines).toContain(
-        `info: Social Harness: outbound via message-action:send to ${GROUP} op=gather operationId=${OPERATION_ID} postId=- chars=${message.length}: ${message.slice(0, 80)}`,
+        `info: Social Harness: outbound via message-action:send to ${GROUP} op=gather operationId=${OPERATION_ID} msgId=- chars=${message.length}: ${message.slice(0, 80)}`,
       );
     }),
   );
@@ -91,7 +91,7 @@ function messageToolReplyLogsItsOrigin() {
   ).pipe(
     Effect.tap(({ logLines }) => {
       expect(logLines).toContain(
-        `info: Social Harness: outbound via message-action:reply to ${to} op=answer operationId=${OPERATION_ID} postId=${postId(100)} chars=${message.length}: ${message}`,
+        `info: Social Harness: outbound via message-action:reply to ${to} op=answer operationId=${OPERATION_ID} msgId=${msgId(100)} chars=${message.length}: ${message}`,
       );
     }),
   );
@@ -105,7 +105,7 @@ function sendTextLogsItsOrigin() {
   ).pipe(
     Effect.tap(({ logLines }) => {
       expect(logLines).toContain(
-        `info: Social Harness: outbound via send.text to ${to} op=plain operationId=- postId=${postId(100)} chars=${text.length}: ${text}`,
+        `info: Social Harness: outbound via send.text to ${to} op=plain operationId=- msgId=${msgId(100)} chars=${text.length}: ${text}`,
       );
     }),
   );
@@ -113,7 +113,7 @@ function sendTextLogsItsOrigin() {
 
 function refusedSendLogsTheFailure() {
   const refusal = new CollectiveError({
-    id: collectiveId(),
+    operationId: collectiveId(),
     failure: { kind: "schema-invalid", detail: "type must be object" },
   });
   const message = JSON.stringify({
@@ -278,17 +278,17 @@ function runSendText(plugin: Plugin, to: string, text: string) {
 }
 
 /** A collective id as the Client brands it, read from an item that carries one. */
-function collectiveId(): CollectiveError["id"] {
+function collectiveId(): NonNullable<CollectiveError["operationId"]> {
   const item = Schema.decodeUnknownSync(InboundItem)({
     kind: "operationFailed",
-    id: OPERATION_ID,
+    operationId: OPERATION_ID,
     to: "agent:alice",
     error: "unused",
   });
   if (item.kind !== "operationFailed") {
     throw new Error("expected an operationFailed item");
   }
-  return item.id;
+  return item.operationId;
 }
 
 function testError(operation: string, cause: unknown): OutboundLogTestError {

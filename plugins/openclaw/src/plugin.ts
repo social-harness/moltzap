@@ -148,8 +148,8 @@ interface TurnSender {
 
 /**
  * One OpenClaw turn rendered from one inbound item. `id` is the certified
- * post's `PostId` for a multicast or a request, and a turn id derived from
- * the operation id for a result or a failure, which no post carries.
+ * message's `MsgId` for a multicast or a request, and a turn id derived from
+ * the operation id for a result or a failure, which no message carries.
  * `address` is the conversation the turn belongs to and replies go to.
  */
 interface HostTurn {
@@ -693,7 +693,7 @@ function inboundItemTurn(item: InboundItem): HostTurn {
     case "collectiveRequest":
       return addressedTurn(
         {
-          id: item.postId,
+          id: item.msgId,
           origin: "peer",
           sender: agentSender(item.from),
         },
@@ -702,12 +702,12 @@ function inboundItemTurn(item: InboundItem): HostTurn {
       );
     case "collectiveResult":
       return endpointTurn(
-        `${item.id}:result`,
+        `${item.operationId}:result`,
         item.to,
         renderCollectiveResult(item),
       );
     case "operationFailed":
-      return endpointTurn(`${item.id}:failed`, item.to, item.error);
+      return endpointTurn(`${item.operationId}:failed`, item.to, item.error);
     default:
       return absurd(item);
   }
@@ -720,7 +720,7 @@ function requestAnswerInstructions(to: MessageAddressInputValue): string {
 
 function multicastTurn(message: InboundMessage): HostTurn {
   const base = {
-    id: message.postId,
+    id: message.msgId,
     origin: "peer" as const,
     address: message.address,
     sender: agentSender(message.sender),
@@ -939,7 +939,7 @@ function inboundGroupFacts(turn: HostTurn) {
 }
 
 /**
- * Final assistant text never becomes a Social Harness post. A launcher's OpenClaw
+ * Final assistant text never becomes a Social Harness message. A launcher's OpenClaw
  * configuration selects tool-only visible replies, and this callback withholds
  * anything that still reaches it, so the `message` tool with an explicit
  * target is the only send path. Non-empty text reaching here means OpenClaw
@@ -1023,7 +1023,7 @@ function sendText(
           onSuccess: (result) =>
             logOutbound(
               connectedAccount,
-              `${outboundLogPrefix(origin, params, outboundOperation(input))} operationId=${result.operationId ?? "-"} postId=${result.postId ?? "-"} chars=${textLength(params)}: ${textPreview(params)}`,
+              `${outboundLogPrefix(origin, params, outboundOperation(input))} operationId=${result.operationId ?? "-"} msgId=${result.msgId ?? "-"} chars=${textLength(params)}: ${textPreview(params)}`,
             ),
         }),
         Effect.map((result) => ({ input, result })),
@@ -1121,17 +1121,17 @@ function readSendInput({
 
 /**
  * OpenClaw's result for one Client send, identified by a Social Harness id so
- * OpenClaw records the send as sent. A multicast or answer reports the post
- * it created: a multicast's `postId` is the id recipients see as `MessageSid`,
- * and `read_conversation` shows either post by it; its conversation is
+ * OpenClaw records the send as sent. A multicast or answer reports the message
+ * it created: a multicast's `msgId` is the id recipients see as `MessageSid`,
+ * and `read_conversation` shows either message by it; its conversation is
  * routing metadata. A gather or all_gather reports its `operationId`: a
- * gather posts to each member, and the Client does not return the id of an
- * all_gather's one group post.
+ * gather sends a message to each member, and the Client does not return the id of an
+ * all_gather's one group message.
  * @param result The Client's send result.
  * @returns The send result OpenClaw records.
  */
 function makeMessageSendResult(result: SendResult): ChannelMessageSendResult {
-  const messageId = result.postId ?? result.operationId;
+  const messageId = result.msgId ?? result.operationId;
   return {
     ...(messageId === undefined ? {} : { messageId }),
     receipt: createMessageReceiptFromOutboundResults({

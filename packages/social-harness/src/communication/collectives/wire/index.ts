@@ -1,5 +1,5 @@
 /**
- * @file Collective-layer values carried inside a certified post's content.
+ * @file Collective-layer values carried inside a certified message's content.
  *
  * A collective value travels as one `data` part whose value is an object with
  * the key `COLLECTIVE_DATA_KEY`. `Content` stays a generic container; only
@@ -9,10 +9,11 @@
  */
 
 import { Data, Effect, Option, Schema } from "effect";
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { exactStruct } from "../../../encoding/exact.js";
+import { AgentId } from "../../../identity/identifiers.js";
 import { WIRE_VERSION } from "../../../identity/wire-version.js";
-import { type AgentAddress, Content, RecordHash } from "../../records/index.js";
+import { Content, RecordHash } from "../../records/index.js";
 import { wireProfiles } from "../../records/values.js";
 import {
   AcceptResponse,
@@ -29,7 +30,7 @@ export type { FormField } from "./answer-fields.js";
 
 /* eslint-disable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Effect Schemas share their domain names with the values they decode. */
 
-type PostContent = typeof Content.Type;
+type MessageContent = typeof Content.Type;
 
 /** The `data` part key under which the collective layer carries its value. */
 export const COLLECTIVE_DATA_KEY = wireProfiles[WIRE_VERSION].collectiveDataKey;
@@ -64,68 +65,56 @@ export const FormModeSchema = exactStruct({
 /** A validated form-mode schema for one collective question. */
 export type FormModeSchema = typeof FormModeSchema.Type;
 
-/** 32 random bytes in base64url, which a requester binds its collective id to. */
-const CollectiveNonce = Schema.String.pipe(
-  Schema.pattern(/^[A-Za-z0-9_-]{43}$/),
-);
-
 const decodeCollectiveId = Schema.decodeUnknownSync(CollectiveId);
+const decodeAgentId = Schema.decodeUnknownSync(AgentId);
 
 /**
- * The collective id a requester's nonce names: `col_` and the base64url
- * SHA-256 of a domain tag, the requester's address and the nonce. A member
- * accepts a request only when its id derives from the request's certified
- * sender, so no agent can reuse an id another requester minted.
- * @param requester The agent that minted the id.
- * @param nonce The request's nonce.
- * @returns The id the pair names.
+ * Read the requester embedded in an operation ID. Request admission compares
+ * this identity with the certified author before accepting the operation.
  */
-export const collectiveIdOf = (
-  requester: AgentAddress,
-  nonce: string,
-): CollectiveId =>
-  decodeCollectiveId(
-    `col_${createHash("sha256")
-      .update(
-        `${wireProfiles[WIRE_VERSION].collectiveIdDomain}\0${requester}\0${nonce}`,
-      )
-      .digest("base64url")}`,
+export const collectiveRequesterOf = (operationId: CollectiveId): AgentId =>
+  decodeAgentId(
+    `agt_${Buffer.from(operationId.slice(4), "base64url")
+      .subarray(0, 16)
+      .toString("base64url")}`,
   );
 
-/**
- * A fresh nonce and the id it binds to the requester.
- * @param requester The address the id names as the operation's requester.
- * @returns The nonce and the collective id derived from it.
- */
-export const mintCollectiveId = (requester: AgentAddress) =>
-  Effect.sync(() => {
-    const nonce = randomBytes(32).toString("base64url");
-    return { id: collectiveIdOf(requester, nonce), nonce };
-  });
+/** Distinct requesters retain distinct operation IDs even when their random bytes match. */
+export const mintCollectiveId = (requester: AgentId) =>
+  Effect.sync(() =>
+    decodeCollectiveId(
+      `col_${Buffer.concat([
+        Buffer.from(requester.slice(4), "base64url"),
+        randomBytes(32),
+      ]).toString("base64url")}`,
+    ),
+  );
 
-/** A plain post: multicast carries neither a deadline nor a schema. */
+/** A plain message: multicast carries neither a deadline nor a schema. */
 const MulticastOperation = exactStruct({
   kind: Schema.Literal("operation"),
   op: Schema.Literal("multicast"),
 });
 
 /**
- * A question to every member. `id` derives from the requester and `nonce`
- * through `collectiveIdOf`. `deadlineAt` is absolute epoch milliseconds: the
+ * A question to every member. `operationId` embeds the requester's immutable
+ * identity. `deadlineAt` is absolute epoch milliseconds: the
  * sending endpoint converts the model's relative duration at send, and
  * endpoints assume zero clock skew.
  */
 const CollectingOperation = exactStruct({
   kind: Schema.Literal("operation"),
   op: Schema.Literal("gather", "all_gather"),
-  id: CollectiveId,
-  nonce: CollectiveNonce,
+  operationId: CollectiveId,
   deadlineAt: EpochMillis,
   requestedSchema: FormModeSchema,
 });
 
 /** The request a member's reply answers. */
-const responseHead = { kind: Schema.Literal("response"), id: CollectiveId };
+const responseHead = {
+  kind: Schema.Literal("response"),
+  operationId: CollectiveId,
+};
 
 /** A member's reply to one request; only `accept` carries content. */
 const CollectiveResponse = Schema.Union(
@@ -140,7 +129,7 @@ const CollectiveResponse = Schema.Union(
 /** The requester's completion decision and counted answers, identified by certified record hash. */
 const CollectiveClose = exactStruct({
   kind: Schema.Literal("close"),
-  id: CollectiveId,
+  operationId: CollectiveId,
   ...collectiveClosure.fields,
   included: Schema.Array(RecordHash),
 });
@@ -155,7 +144,7 @@ const CollectiveValue = Schema.Union(
 /** A validated collective value. */
 export type CollectiveValue = typeof CollectiveValue.Type;
 
-/** An accepted or declined answer carried in a certified post. */
+/** An accepted or declined answer carried in a certified message. */
 export type ResponseValue = Extract<
   CollectiveValue,
   { readonly kind: "response" }
@@ -182,7 +171,7 @@ const CollectiveCarrier = Schema.Struct({
 }).annotations({ parseOptions: { exact: true } });
 
 function collectivePartValue(
-  part: PostContent[number],
+  part: MessageContent[number],
 ): Option.Option<unknown> {
   return part.type === "data"
     ? Schema.decodeUnknownOption(CollectiveCarrier)(part.value).pipe(
@@ -192,14 +181,14 @@ function collectivePartValue(
 }
 
 /**
- * Remove the collective part from post content, keeping every other part in
+ * Remove the collective part from message content, keeping every other part in
  * order.
- * @param content Certified post content.
+ * @param content Certified message content.
  * @returns The remaining parts, empty when the collective part was the only one.
  */
 export const withoutCollectivePart = (
-  content: PostContent,
-): ReadonlyArray<PostContent[number]> =>
+  content: MessageContent,
+): ReadonlyArray<MessageContent[number]> =>
   content.filter((part) => Option.isNone(collectivePartValue(part)));
 
 /**
@@ -210,12 +199,12 @@ export const withoutCollectivePart = (
 export const decodeCollectiveValue = Schema.decodeUnknown(CollectiveValue);
 
 /**
- * Find and decode the collective value in one post's content.
- * @param content Certified post content.
+ * Find and decode the collective value in one message's content.
+ * @param content Certified message content.
  * @returns The decoded value, or none when the content carries no collective part.
  */
 export const readCollectiveValue = (
-  content: PostContent,
+  content: MessageContent,
 ): Effect.Effect<
   Option.Option<CollectiveValue>,
   CollectivePartInvalidError
@@ -238,7 +227,7 @@ export const readCollectiveValue = (
 };
 
 /**
- * Build post content from a collective value and optional message text. The
+ * Build message content from a collective value and optional message text. The
  * public `Content` schema applies the one canonical size limit.
  * @param value The collective value to carry in the data part.
  * @param text The message body; for gather and all_gather, the question.
@@ -247,7 +236,7 @@ export const readCollectiveValue = (
 export const encodeCollectiveContent = (
   value: CollectiveValue,
   text?: string,
-): Effect.Effect<PostContent, CollectiveContentError> =>
+): Effect.Effect<MessageContent, CollectiveContentError> =>
   Schema.encode(CollectiveValue)(value).pipe(
     Effect.flatMap((encoded) =>
       Schema.decodeUnknown(Content)([

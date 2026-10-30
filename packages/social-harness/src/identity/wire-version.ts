@@ -9,7 +9,7 @@ export const WIRE_VERSION_PATTERN = /^\d{4}\.\d{3,4}\.\d+$/;
  * The version emitted by new artifacts. The {@link LIVE_WIRE_VERSIONS} window
  * determines which versions peers admit, independently of package publication versions.
  */
-export const WIRE_VERSION = "2026.1029.2";
+export const WIRE_VERSION = "2026.1029.3";
 
 /**
  * The emitted version, then at most one adjacent version. Holding two lets

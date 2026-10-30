@@ -171,7 +171,7 @@ const activationStopped = (
 /**
  * Classify newly durable deliveries and publish what a subscriber can take.
  * The pass runs with or without a subscriber, so the collective layer
- * consumes protocol posts even while no host is attached. The active protocol
+ * consumes protocol messages even while no host is attached. The active protocol
  * and subscriber are read once the delivery gate is held. A failed pass
  * releases the gate, signals the storage failure, and fails with it, so
  * startup and registration stop there instead of continuing.

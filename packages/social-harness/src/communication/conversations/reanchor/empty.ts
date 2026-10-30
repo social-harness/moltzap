@@ -4,7 +4,7 @@ import { Effect } from "effect";
 import type {
   ConversationFoundation,
   EndpointRecovery,
-  PostIntent as StoredPostIntent,
+  MessageIntent as StoredMessageIntent,
 } from "../../store/index.js";
 import type { EngineRuntime } from "../engine-context.js";
 import {
@@ -68,7 +68,7 @@ export function restartEmptyPosition(
             conversationId: membership.descriptor.conversationId,
             expected: replacement.foundation,
             retained: restarted.foundation,
-            postIntents: restarted.postIntents,
+            messageIntents: restarted.messageIntents,
           })
         ) {
           return yield* Effect.fail(persistenceFailure());
@@ -77,7 +77,7 @@ export function restartEmptyPosition(
           runtime,
           membership.descriptor.conversationId,
           replacement.anchor,
-          restarted.postIntents,
+          restarted.messageIntents,
         );
       }),
     );
@@ -172,11 +172,11 @@ interface RestartedEmptyState {
   readonly conversationId: ConversationIdValue;
   readonly expected: ConversationFoundation;
   readonly retained: ConversationFoundation;
-  readonly postIntents: readonly StoredPostIntent[];
+  readonly messageIntents: readonly StoredMessageIntent[];
 }
 
 function restartedEmptyStateMatches(input: RestartedEmptyState): boolean {
-  const { conversationId, expected, postIntents, retained, runtime } = input;
+  const { conversationId, expected, messageIntents, retained, runtime } = input;
   const conversation = runtime.conversations.get(conversationId);
   const runtimeIntents = [...runtime.intents.values()].filter(
     (pending) => pending.intent.conversationId === expected.conversationId,
@@ -193,20 +193,20 @@ function restartedEmptyStateMatches(input: RestartedEmptyState): boolean {
   ].every((matches) => matches);
   return (
     foundationMatches &&
-    runtimeIntents.length === postIntents.length &&
-    postIntents.every((stored) => storedIntentMatches(runtime, stored))
+    runtimeIntents.length === messageIntents.length &&
+    messageIntents.every((stored) => storedIntentMatches(runtime, stored))
   );
 }
 
 function storedIntentMatches(
   runtime: EngineRuntime,
-  stored: StoredPostIntent,
+  stored: StoredMessageIntent,
 ): boolean {
-  const pending = runtime.intents.get(stored.postId);
+  const pending = runtime.intents.get(stored.msgId);
   if (
     pending === undefined ||
     stored.completedRecordHash !== undefined ||
-    runtime.completedPosts.has(stored.postId)
+    runtime.completedMessages.has(stored.msgId)
   ) {
     return false;
   }
@@ -214,7 +214,7 @@ function storedIntentMatches(
     pending.intent.conversationId === stored.conversationId,
     pending.intent.membershipHash === stored.membershipHash,
     pending.intent.authorAgentId === stored.authorAgentId,
-    pending.intent.postId === stored.postId,
+    pending.intent.msgId === stored.msgId,
     sameBytes(pending.canonicalIntent, stored.canonicalIntent),
   ].every((matches) => matches);
 }
@@ -223,12 +223,12 @@ function resetEmptyConversationRuntime(
   runtime: EngineRuntime,
   conversationId: ConversationIdValue,
   anchor: InitialAnchorBodyValue,
-  postIntents: readonly StoredPostIntent[],
+  messageIntents: readonly StoredMessageIntent[],
 ): Effect.Effect<void> {
   return Effect.sync(() => {
     replaceRuntimeAnchor(runtime, conversationId, anchor);
     discardConversationFolds(runtime, conversationId);
-    clearIntentProposals(runtime, postIntents);
+    clearIntentProposals(runtime, messageIntents);
   });
 }
 
@@ -262,10 +262,10 @@ function discardConversationFolds(
 
 function clearIntentProposals(
   runtime: EngineRuntime,
-  postIntents: readonly StoredPostIntent[],
+  messageIntents: readonly StoredMessageIntent[],
 ): void {
-  for (const stored of postIntents) {
-    const pending = runtime.intents.get(stored.postId);
+  for (const stored of messageIntents) {
+    const pending = runtime.intents.get(stored.msgId);
     if (pending !== undefined) {
       pending.proposedActionHash = undefined;
     }

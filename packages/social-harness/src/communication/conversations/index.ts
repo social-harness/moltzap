@@ -31,8 +31,8 @@ import { wireVersions } from "../../identity/wire-version.js";
 import {
   type DecodedOuterBody,
   type MessageAddressInput,
-  type PostId,
-  PostIntent,
+  MessageIntent,
+  type MsgId,
   RecordHash,
 } from "../records/index.js";
 import {
@@ -56,7 +56,7 @@ import {
 import {
   type BindHold,
   type EngineSendInput,
-  type EngineSentPost,
+  type EngineSentMessage,
   prepareAdmittedSend,
   prepareCheckedSend,
   type PreparedSendCheck,
@@ -70,10 +70,10 @@ import {
 /** Private engine dependencies retained behind the daemon boundary. */
 export type { EndpointEngineInput } from "./engine-context.js";
 /** The send input and result the collective layer exchanges with the engine. */
-export type { EngineSendInput, EngineSentPost } from "./send.js";
+export type { EngineSendInput, EngineSentMessage } from "./send.js";
 /** How a caller holds a precondition across a checked bind, and how a check is retried while stale. */
 export { type BindHold, untilFresh } from "./send.js";
-/** The prepared post a checked send hands its check, and the conversation an address resolves to. */
+/** The prepared message a checked send hands its check, and the conversation an address resolves to. */
 export type { PreparedSend, ResolvedConversation } from "./send.js";
 /** The marker spans that bracket daemon work in flight, shared with the layers above. */
 export {
@@ -108,7 +108,7 @@ export class EngineOutboundError extends Data.TaggedError(
 
 /**
  * One durable delivery decoded for the daemon's sole subscriber. `message` is
- * the certified post with its complete content, collective part included; the
+ * the certified message with its complete content, collective part included; the
  * daemon's classifier turns it into the item the subscriber receives.
  * `recordHash` names the certified record the delivery derives from; it stays
  * inside the daemon and never reaches the MCP event.
@@ -126,20 +126,20 @@ export interface EndpointEngine {
     input: EngineSendInput,
     hold: BindHold<E>,
   ) => Effect.Effect<
-    { readonly certified: Effect.Effect<EngineSentPost, SendError> },
+    { readonly certified: Effect.Effect<EngineSentMessage, SendError> },
     SendError | E
   >;
   /** Observe one durable local intent without rechecking, rebinding, or sending a replacement. */
-  readonly observePost: (
-    postId: PostId,
-  ) => Effect.Effect<EngineSentPost, SendError>;
+  readonly observeMessage: (
+    msgId: MsgId,
+  ) => Effect.Effect<EngineSentMessage, SendError>;
 
   /**
-   * Check and bind one application post. Inference completes outside
+   * Check and bind one application message. Inference completes outside
    * protocol locks, then `hold` is taken, then the intent binds atomically
-   * with the check's evidence comparison. A bound post returns the
+   * with the check's evidence comparison. A bound message returns the
    * `admitted` value of the check that admitted it at once, and `certified`
-   * completes once the post is certified, so a caller can bound that wait
+   * completes once the message is certified, so a caller can bound that wait
    * apart from the check.
    */
   readonly bindChecked: <E, A>(
@@ -148,33 +148,33 @@ export interface EndpointEngine {
     hold: BindHold<E>,
   ) => Effect.Effect<
     {
-      readonly certified: Effect.Effect<EngineSentPost, SendError>;
+      readonly certified: Effect.Effect<EngineSentMessage, SendError>;
       readonly admitted: A;
     },
     SendError | FirewallSendError | E
   >;
   /**
-   * Certify one gather request post against its operation's admitted check;
-   * a post whose content the check did not admit binds nothing.
+   * Certify one gather request message against its operation's admitted check;
+   * a message whose content the check did not admit binds nothing.
    */
   readonly sendAdmitted: (
     input: EngineSendInput,
     checkId: string,
-  ) => Effect.Effect<EngineSentPost, SendError>;
-  /** Completes once the minted post's certified record is stored locally. */
+  ) => Effect.Effect<EngineSentMessage, SendError>;
+  /** Completes once the minted message's certified record is stored locally. */
   readonly send: (
     input: EngineSendInput,
-  ) => Effect.Effect<EngineSentPost, SendError>;
+  ) => Effect.Effect<EngineSentMessage, SendError>;
   /**
    * Resolve an address through the Registry as a send would, without
    * sending; the collective layer uses it to name the unreachable members of
-   * a refused group post.
+   * a refused group message.
    */
   readonly resolveAddress: (
     to: MessageAddressInput,
   ) => Effect.Effect<void, SendError>;
   /**
-   * Resolve an address to the conversation a send to it posts in, with its
+   * Resolve an address to the conversation a send uses, with its
    * members' verified cards, without sending; the firewall attributes a
    * gather's recipients and reads its evidence through it.
    */
@@ -215,8 +215,6 @@ const initializationReasonByStoreReason = {
   conflict: "identity",
   corrupt: "persistence",
   incompatible: "persistence",
-  "pre-reset": "persistence",
-  "newer-schema": "persistence",
   "invalid-continuation": "persistence",
   "invalid-input": "persistence",
   "not-found": "persistence",
@@ -230,8 +228,6 @@ const listenReasonByStoreReason = {
   conflict: "decode-failed",
   corrupt: "decode-failed",
   incompatible: "incompatible-daemon",
-  "pre-reset": "incompatible-daemon",
-  "newer-schema": "incompatible-daemon",
   "invalid-continuation": "decode-failed",
   "invalid-input": "decode-failed",
   "not-found": "decode-failed",
@@ -245,8 +241,6 @@ const acknowledgeReasonByStoreReason = {
   conflict: "delivery-conflict",
   corrupt: "persistence-failed",
   incompatible: "persistence-failed",
-  "pre-reset": "persistence-failed",
-  "newer-schema": "persistence-failed",
   "invalid-continuation": "persistence-failed",
   "invalid-input": "persistence-failed",
   "not-found": "unknown-delivery",
@@ -393,16 +387,16 @@ function resumeFoldFailure(): EngineInitializationError {
 const LOCAL_DRAIN_TIMEOUT = Duration.seconds(10);
 
 /**
- * Bind, queue and certify one post. Once `prepareSend` returns, the post is
+ * Bind, queue and certify one message. Once `prepareSend` returns, the message is
  * durably queued, so a drain that fails or outlasts `LOCAL_DRAIN_TIMEOUT`
  * fails the send as `delivery-pending` whatever the cause: a worker failure
  * that ends once the Router answers leaves the background drain to deliver
- * the post, and any other stops the daemon, whose recovery resumes the post
+ * the message, and any other stops the daemon, whose recovery resumes the message
  * when it restarts. A completion already settled, such as an activation that
- * failed, returns at once rather than waiting on other posts' drain.
+ * failed, returns at once rather than waiting on other messages' drain.
  * @param runtime The engine that sends.
- * @param prepared The durable post identity and its certified completion.
- * @returns The post's id and certified record hash.
+ * @param prepared The durable message identity and its certified completion.
+ * @returns The message's id and certified record hash.
  */
 const finishPreparedSend = (
   runtime: EngineRuntime,
@@ -412,18 +406,18 @@ const finishPreparedSend = (
     if (!(yield* Deferred.isDone(prepared.completion))) {
       yield* runtime.outbox.drain.pipe(
         Effect.timeout(LOCAL_DRAIN_TIMEOUT),
-        // eslint-disable-next-line agent-code-guard/no-effect-error-coalescing -- Every drain failure, the timeout included, leaves the post queued and still delivered, as this function's JSDoc explains.
+        // eslint-disable-next-line agent-code-guard/no-effect-error-coalescing -- Every drain failure, the timeout included, leaves the message queued and still delivered, as this function's JSDoc explains.
         Effect.mapError(() => new SendError({ reason: "delivery-pending" })),
       );
     }
     const recordHash = yield* Deferred.await(prepared.completion);
-    return { postId: prepared.postId, recordHash };
+    return { msgId: prepared.msgId, recordHash };
   });
 
 const send = (
   runtime: EngineRuntime,
   input: EngineSendInput,
-): Effect.Effect<EngineSentPost, SendError> =>
+): Effect.Effect<EngineSentMessage, SendError> =>
   Effect.gen(function* () {
     const prepared = yield* prepareSend(runtime, input);
     return yield* finishPreparedSend(runtime, prepared);
@@ -506,42 +500,42 @@ const makeRuntime = (
       wireVersion: yield* wireVersions.emitted,
       conversations: recovered.conversations,
       intents: new Map(),
-      completedPosts: recovered.completedPosts,
+      completedMessages: recovered.completedMessages,
       actionFolds: recovered.actionFolds,
       recordFolds: recovered.recordFolds,
       gate: yield* Effect.makeSemaphore(1),
       outbox: yield* makeOutbox(
         input,
-        recovered.outboundMessages.map((message) => message.messageId),
+        recovered.outboundMessages.map((message) => message.envelopeId),
       ),
       phases: enginePhases,
       scope,
     };
   });
 
-const hydratePostIntents = (
+const hydrateMessageIntents = (
   runtime: EngineRuntime,
-  postIntents: Effect.Effect.Success<
+  messageIntents: Effect.Effect.Success<
     ReturnType<typeof recoverEngineState>
-  >["postIntents"],
+  >["messageIntents"],
 ): Effect.Effect<void, EngineInitializationError> =>
   Effect.forEach(
-    postIntents,
+    messageIntents,
     (stored) =>
       Effect.gen(function* () {
         const intent = yield* decodeCanonical(
-          PostIntent,
+          MessageIntent,
           stored.canonicalIntent,
         ).pipe(Effect.mapError(representationInitializationFailure));
         const completion = yield* Deferred.make<RecordHash, SendError>();
         yield* Effect.sync(() => {
-          runtime.intents.set(intent.postId, {
+          runtime.intents.set(intent.msgId, {
             intent,
             canonicalIntent: stored.canonicalIntent,
             completion,
           });
         });
-        const completedRecordHash = runtime.completedPosts.get(intent.postId);
+        const completedRecordHash = runtime.completedMessages.get(intent.msgId);
         if (completedRecordHash !== undefined) {
           yield* Deferred.succeed(completion, completedRecordHash);
         }
@@ -562,7 +556,7 @@ const initializeRuntime = (
       Effect.mapError(recoveryInitializationFailure),
     );
     const runtime = yield* makeRuntime(input, recovered, yield* Effect.scope);
-    yield* hydratePostIntents(runtime, recovered.postIntents);
+    yield* hydrateMessageIntents(runtime, recovered.messageIntents);
     return runtime;
   });
 
@@ -575,7 +569,7 @@ const resumeRuntime = (runtime: EngineRuntime) =>
     yield* Effect.forEach(
       runtime.intents.values(),
       (intent) =>
-        runtime.completedPosts.has(intent.intent.postId)
+        runtime.completedMessages.has(intent.intent.msgId)
           ? Effect.void
           : proposeIntent(runtime, intent).pipe(
               Effect.asVoid,
@@ -630,7 +624,7 @@ const endpointEngine = (runtime: EngineRuntime): EndpointEngine =>
       prepareAdmittedSend(runtime, input, checkId).pipe(
         Effect.flatMap((prepared) => finishPreparedSend(runtime, prepared)),
       ),
-    observePost: (postId: PostId) => observePost(runtime, postId),
+    observeMessage: (msgId: MsgId) => observeMessage(runtime, msgId),
     send: (sendInput: Parameters<EndpointEngine["send"]>[0]) =>
       send(runtime, sendInput),
     resolveAddress: (to: Parameters<EndpointEngine["resolveAddress"]>[0]) =>
@@ -673,20 +667,20 @@ export const makeEndpointEngine = (
 /**
  * Observe the retained local intent without preparing or binding a replacement.
  * @param runtime The active engine whose completion latches retain local ownership.
- * @param postId The already-bound local post to observe.
- * @returns The original post and its certificate, or its retained send failure.
+ * @param msgId The already-bound local message to observe.
+ * @returns The original message and its certificate, or its retained send failure.
  */
-function observePost(runtime: EngineRuntime, postId: PostId) {
+function observeMessage(runtime: EngineRuntime, msgId: MsgId) {
   return Effect.suspend(() => {
-    const complete = runtime.completedPosts.get(postId);
+    const complete = runtime.completedMessages.get(msgId);
     if (complete !== undefined) {
-      return Effect.succeed({ postId, recordHash: complete });
+      return Effect.succeed({ msgId, recordHash: complete });
     }
-    const retained = runtime.intents.get(postId);
+    const retained = runtime.intents.get(msgId);
     return retained === undefined
       ? Effect.fail(new SendError({ reason: "certification-unavailable" }))
       : Deferred.await(retained.completion).pipe(
-          Effect.map((recordHash) => ({ postId, recordHash })),
+          Effect.map((recordHash) => ({ msgId, recordHash })),
         );
   });
 }

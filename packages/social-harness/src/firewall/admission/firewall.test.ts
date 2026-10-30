@@ -4,8 +4,9 @@ import { scopedLive as it } from "@effect/vitest";
 import { Deferred, Effect, Fiber, Queue, Schema } from "effect";
 import { expect } from "vitest";
 import type { FirewallOptions } from "./firewall.js";
-import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
-import { appendCertifiedPost } from "../../__tests__/certified-history-fixtures.js";
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
+import { appendCertifiedMessage } from "../../__tests__/certified-history-fixtures.js";
+import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
 import {
   group,
   sendInput,
@@ -388,13 +389,13 @@ function recheckedSend() {
       .send({ input: { to: destination, text: "Draft before new evidence" } })
       .pipe(Effect.forkScoped);
     yield* Deferred.await(entered);
-    yield* subject.store.bindPostIntent({
+    yield* subject.store.bindMessageIntent({
       kind: "existing-conversation",
       intent: {
         conversationId: subject.membership.descriptor.conversationId,
         membershipHash: subject.membership.hash,
         authorAgentId: subject.local.card.agentId,
-        postId: "pst_concurrent",
+        msgId: "msg_concurrent",
         canonicalIntent: new Uint8Array([1]),
       },
     });
@@ -405,10 +406,10 @@ function recheckedSend() {
     expect(seen).toHaveLength(2);
     expect(seen[1]?.event).toEqual(seen[0]?.event);
     expect(
-      (yield* subject.store.recover()).postIntents
+      (yield* subject.store.recover()).messageIntents
         .filter((intent) => intent.completedRecordHash === undefined)
-        .map((intent) => intent.postId),
-    ).toEqual(["pst_concurrent"]);
+        .map((intent) => intent.msgId),
+    ).toEqual(["msg_concurrent"]);
   });
 }
 
@@ -441,7 +442,7 @@ function interruptedSend() {
       .pipe(Effect.forkScoped);
     yield* Deferred.await(entered);
     yield* Fiber.interrupt(sending);
-    expect((yield* subject.store.recover()).postIntents).toEqual([]);
+    expect((yield* subject.store.recover()).messageIntents).toEqual([]);
     expect(
       yield* Effect.flip(
         delivery.operations.send({
@@ -502,7 +503,7 @@ function concurrentSends() {
     );
     expect(refusal).toMatchObject({ refusal: "check-unavailable" });
     expect((yield* Queue.take(entered)).context.gaps).not.toEqual([]);
-    expect((yield* subject.store.recover()).postIntents).toHaveLength(1);
+    expect((yield* subject.store.recover()).messageIntents).toHaveLength(1);
     yield* Fiber.interrupt(first);
     yield* Fiber.interrupt(second);
   });
@@ -527,10 +528,10 @@ function staleOutgoing(mode: FirewallOptions["mode"]) {
         refusal: "unresolved-evidence",
         feedback: [{ nextAction: waitAction }],
       });
-      expect((yield* subject.store.recover()).postIntents).toEqual([]);
+      expect((yield* subject.store.recover()).messageIntents).toEqual([]);
     } else {
       yield* Deferred.await(subject.outbound);
-      expect((yield* subject.store.recover()).postIntents).toHaveLength(1);
+      expect((yield* subject.store.recover()).messageIntents).toHaveLength(1);
       yield* Fiber.interrupt(sending);
     }
     expect(churn.count()).toBe(2);
@@ -599,7 +600,10 @@ function independentConversations() {
     yield* Queue.take(runtime.completed);
     const later = Schema.decodeUnknownSync(InboundItem)({
       kind: "operationFailed",
-      id: digest("col_", 84),
+      operationId: collectiveOperationId(
+        testAgentView("agent:alice").agentId,
+        84,
+      ),
       to: "agent:carol",
       error: "Another operation completed.",
     });
@@ -663,7 +667,7 @@ function ownerHistoryStaysPrivate() {
   return Effect.gen(function* () {
     const subject = yield* fixture;
     const previous = yield* seedIncoming(subject, true);
-    yield* appendCertifiedPost(subject, previous, "Can we meet?");
+    yield* appendCertifiedMessage(subject, previous, "Can we meet?");
     const seen: MiddlewareInput[] = [];
     const middleware = policy((input) =>
       Effect.sync(() => {

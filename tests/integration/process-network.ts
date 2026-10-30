@@ -180,7 +180,7 @@ function readContents(fixture: DaemonProcessFixture, address: string) {
       ),
       Effect.map((result) =>
         result.records.map(
-          (record) => record.recordCore.action.postIntent.content,
+          (record) => record.recordCore.action.messageIntent.content,
         ),
       ),
     ),

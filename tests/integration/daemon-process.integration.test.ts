@@ -42,11 +42,8 @@ import {
   agentResetDocsLink,
   completedReanchorKind,
   configurationStartupPhase,
-  newerSchemaReason,
   outboxTooOldReason,
   outboxTooOldRemedy,
-  preResetReason,
-  preResetRemedy,
   registeredDaemonStatus,
   registrationResultKind,
   resetReleaseDocsAnchor,
@@ -91,7 +88,7 @@ const registerFixture = (fixture: DaemonProcessFixture) =>
     }),
   );
 
-/** Sends one addressed post with `send` and waits for the peer to receive it. */
+/** Sends one addressed message with `send` and waits for the peer to receive it. */
 const deliverDirect = (input: {
   readonly from: RegisteredFixture;
   readonly to: DaemonProcessFixture;
@@ -123,7 +120,7 @@ const deliverDirect = (input: {
 
 const beforeRestartText = "sent before the daemon restarts";
 
-/** Sends one post as a host does, failing on any send failure. */
+/** Sends one message as a host does, failing on any send failure. */
 const certifiedSend = (endpoint: HarnessEndpoint, input: SendInput) =>
   endpoint.send(input).pipe(Effect.asVoid);
 
@@ -370,9 +367,9 @@ const toRestartedText = "sent to the restarted daemon";
 
 /**
  * Either send after the restart may fail as queued, so each is confirmed by
- * its delivery. The restarted daemon's delivery of the peer's post shows it
+ * its delivery. The restarted daemon's delivery of the peer's message shows it
  * stored that record, and an endpoint stores a record only after the one it
- * extends, so its durable history then holds all three posts.
+ * extends, so its durable history then holds all three messages.
  */
 const singleRestartBehavior = Effect.gen(function* () {
   const scenario = yield* acquireRestartPair;
@@ -423,7 +420,7 @@ const routerRestartBehavior = Effect.gen(function* () {
 const processBehavior = Effect.gen(function* () {
   const scenario = yield* acquireProcessPair;
   yield* expectRetiredConversationIdentifierRefused(scenario.callerFixture);
-  yield* exchangeInitialPostsAndExpectDelivery(scenario);
+  yield* exchangeInitialMessagesAndExpectDelivery(scenario);
   yield* expectInitialHistoriesMatch(scenario);
   yield* restartRecipientAndExpectRetainedHistory(scenario);
   yield* deliverDirect({
@@ -579,7 +576,7 @@ const refusesStaleOutbox = Effect.scoped(
     expect(failed.logs).toContain(outboxTooOldReason);
     expect(failed.logs).toContain(outboxTooOldRemedy);
     expect(failed.logs).toContain(resetReleaseDocsAnchor);
-    const after = yield* storedSchema(local.stateDirectory);
+    const after = yield* readStoredDatabase(local.stateDirectory);
     expect(after).toEqual(before);
   }),
 );
@@ -611,7 +608,7 @@ it(
 );
 
 it(
-  "certifies fresh posts in both directions after one daemon restarts",
+  "certifies fresh messages in both directions after one daemon restarts",
   processTrace(processBehavior),
   PROCESS_TEST_TIMEOUT_MS,
 );
@@ -643,70 +640,8 @@ it(
 );
 
 it(
-  "reports outbox-too-old at the process boundary without changing schema or backups",
+  "reports outbox-too-old at the process boundary without changing retained state",
   processTrace(refusesStaleOutbox),
-  PROCESS_TEST_TIMEOUT_MS,
-);
-
-it(
-  "reports newer-schema in stderr before changing a newer database",
-  processTrace(
-    Effect.scoped(
-      Effect.gen(function* () {
-        const infrastructure = yield* acquireProcessInfrastructure;
-        const local = yield* makeDaemonProcessFixture(
-          infrastructure,
-          "newer-schema",
-        );
-        const path = join(local.stateDirectory, "sharnessd.sqlite3");
-        const database = new DatabaseSync(path);
-        database.exec("PRAGMA user_version = 2147483647");
-        database.close();
-        const before = yield* storedSchema(local.stateDirectory);
-
-        const failed = yield* awaitDaemonStartupFailure(local);
-
-        expect(failed.exitCode).not.toBe(0);
-        expect(failed.logs).toContain(storageStartupPhase);
-        expect(failed.logs).toContain(newerSchemaReason);
-        expect(yield* storedSchema(local.stateDirectory)).toEqual(before);
-      }),
-    ),
-  ),
-  PROCESS_TEST_TIMEOUT_MS,
-);
-
-it(
-  "reports pre-reset for legacy filenames and every populated earlier schema without creating a replacement store",
-  processTrace(
-    Effect.scoped(
-      Effect.gen(function* () {
-        const infrastructure = yield* acquireProcessInfrastructure;
-        for (const [name, filename, schema] of [
-          ["legacy-file", "moltzapd.sqlite3", 8],
-          ["legacy-schema", "sharnessd.sqlite3", 9],
-          ["unversioned-schema", "sharnessd.sqlite3", 0],
-        ] as const) {
-          const local = yield* makeDaemonProcessFixture(infrastructure, name);
-          const database = new DatabaseSync(
-            join(local.stateDirectory, filename),
-          );
-          database.exec(
-            `CREATE TABLE retained (value TEXT); PRAGMA user_version = ${schema}`,
-          );
-          database.close();
-          const fs = yield* FileSystem.FileSystem;
-          const before = yield* fs.readDirectory(local.stateDirectory);
-          const failed = yield* awaitDaemonStartupFailure(local);
-          expect(failed.exitCode).not.toBe(0);
-          expect(failed.logs).toContain(preResetReason);
-          expect(failed.logs).toContain(preResetRemedy);
-          expect(failed.logs).toContain(resetReleaseDocsAnchor);
-          expect(yield* fs.readDirectory(local.stateDirectory)).toEqual(before);
-        }
-      }),
-    ),
-  ),
   PROCESS_TEST_TIMEOUT_MS,
 );
 
@@ -728,7 +663,7 @@ function expectRestartedRecipientHistory(state: RestartScenario) {
     ).toEqual(["FIRST_MESSAGE", "MESSAGE", "MESSAGE"]);
     expect(
       history.records.map(
-        ({ recordCore }) => recordCore.action.postIntent.content[0],
+        ({ recordCore }) => recordCore.action.messageIntent.content[0],
       ),
     ).toEqual([
       { type: "text", text: beforeRestartText },
@@ -784,7 +719,7 @@ function expectRecoveredRouterHistory(state: RouterRestartScenario) {
       directAddress(conciergeFixture.agentName),
     );
     const texts = history.records.map(
-      ({ recordCore }) => recordCore.action.postIntent.content[0],
+      ({ recordCore }) => recordCore.action.messageIntent.content[0],
     );
     expect(texts.slice(0, 2)).toEqual(
       arrayContaining([
@@ -813,7 +748,7 @@ function expectRecoveredRouterHistory(state: RouterRestartScenario) {
   });
 }
 
-function exchangeInitialPostsAndExpectDelivery(state: ProcessScenario) {
+function exchangeInitialMessagesAndExpectDelivery(state: ProcessScenario) {
   return Effect.gen(function* () {
     const { callerFixture, targetFixture, callerAddress, targetAddress } =
       state;
@@ -838,7 +773,7 @@ function exchangeInitialPostsAndExpectDelivery(state: ProcessScenario) {
           kind: "multicast",
           message: {
             kind: "direct",
-            postId: sent.postId,
+            msgId: sent.msgId,
             address: callerAddress,
             sender: callerFixture.agent,
             content: [{ type: "text", text: initialText }],
@@ -880,7 +815,7 @@ function expectInitialHistoriesMatch(state: ProcessScenario) {
     ).toEqual(["FIRST_MESSAGE", "MESSAGE"]);
     expect(
       callerHistory.records.map(
-        ({ recordCore }) => recordCore.action.postIntent.content,
+        ({ recordCore }) => recordCore.action.messageIntent.content,
       ),
     ).toEqual([initialContent, responseContent]);
     expect(targetHistory.continuation).toBeNull();
@@ -890,7 +825,7 @@ function expectInitialHistoriesMatch(state: ProcessScenario) {
     ).toEqual(["FIRST_MESSAGE", "MESSAGE"]);
     expect(
       targetHistory.records.map(
-        ({ recordCore }) => recordCore.action.postIntent.content,
+        ({ recordCore }) => recordCore.action.messageIntent.content,
       ),
     ).toEqual([initialContent, responseContent]);
   });
@@ -951,16 +886,16 @@ function requireDelivery(
 }
 
 /**
- * Sends one post from `endpoint` after a daemon restart. A send whose own
+ * Sends one message from `endpoint` after a daemon restart. A send whose own
  * outbox drain outlasts its bound or loses the Router fails with
- * `delivery-pending`: the post is durably queued, and the daemon delivers it
+ * `delivery-pending`: the message is durably queued, and the daemon delivers it
  * once its Router worker answers. Under load that happens while the restarted
  * daemon and its peer exchange recovery traffic, so the trace takes that
- * failure as queued and confirms the post by the peer's delivery. Any other
+ * failure as queued and confirms the message by the peer's delivery. Any other
  * failure fails the trace.
  * @param endpoint Endpoint that sends.
- * @param input The post.
- * @returns Completion once the post is certified or queued.
+ * @param input The message.
+ * @returns Completion once the message is certified or queued.
  */
 function sendOrQueue(endpoint: HarnessEndpoint, input: SendInput) {
   return endpoint.send(input).pipe(
@@ -981,7 +916,7 @@ function markStoredOutboundPending(directory: string) {
       try {
         const result = database
           .prepare(
-            "UPDATE outbound_messages SET disposition = 'pending' WHERE message_id = (SELECT message_id FROM outbound_messages LIMIT 1)",
+            "UPDATE outbound_messages SET disposition = 'pending' WHERE envelope_id = (SELECT envelope_id FROM outbound_messages LIMIT 1)",
           )
           .run();
         if (result.changes !== 1) {
@@ -996,33 +931,12 @@ function markStoredOutboundPending(directory: string) {
         message: "could not prepare retired outbox",
         cause,
       }),
-  }).pipe(Effect.zipRight(storedSchema(directory)));
+  }).pipe(Effect.zipRight(readStoredDatabase(directory)));
 }
 
-/** Capture schema and backup state without depending on a particular schema number. */
-function storedSchema(directory: string) {
-  return Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const snapshot = yield* Effect.sync(() => {
-      const database = new DatabaseSync(join(directory, "sharnessd.sqlite3"), {
-        readOnly: true,
-      });
-      try {
-        return {
-          schema: database.prepare("PRAGMA user_version").get(),
-          objects: database
-            .prepare("SELECT sql FROM sqlite_schema ORDER BY name")
-            .all(),
-        };
-      } finally {
-        database.close();
-      }
-    });
-    return {
-      ...snapshot,
-      backups: (yield* fs.readDirectory(directory)).filter((name) =>
-        name.includes(".backup"),
-      ),
-    };
-  });
+/** A refused startup must leave the retained database byte for byte unchanged. */
+function readStoredDatabase(directory: string) {
+  return FileSystem.FileSystem.pipe(
+    Effect.flatMap((fs) => fs.readFile(join(directory, "sharnessd.sqlite3"))),
+  );
 }

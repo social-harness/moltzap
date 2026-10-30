@@ -399,8 +399,8 @@ export function retireFirewallItem(
 
 /**
  * Admit a gather operation: its check's evidence comparison and the admitted
- * row its request posts later bind against share one transaction. The row is
- * the check itself, whose candidate is the request content every post
+ * row its request messages later bind against share one transaction. The row is
+ * the check itself, whose candidate is the request content every message
  * carries.
  */
 export function admitFirewallOperation(
@@ -428,8 +428,8 @@ export function admitFirewallOperation(
 }
 
 /**
- * Whether an admitted gather operation's check authorizes a request post with
- * exactly this content. A post intent binds against it in the caller's
+ * Whether an admitted gather operation's check authorizes a request message with
+ * exactly this content. A message intent binds against it in the caller's
  * transaction.
  */
 export function admittedOperation(
@@ -767,7 +767,7 @@ function unresolvedSend(
   return (
     database
       .prepare(
-        "SELECT 1 AS pending FROM post_intents WHERE conversation_id = ? AND completed_record_hash IS NULL LIMIT 1",
+        "SELECT 1 AS pending FROM message_intents WHERE conversation_id = ? AND completed_record_hash IS NULL LIMIT 1",
       )
       .get(conversationId) !== undefined
   );

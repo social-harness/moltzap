@@ -22,6 +22,7 @@ import type {
   ResultProvenance,
 } from "./ports.js";
 import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
+import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
 import {
   alice,
   certifyNext,
@@ -29,15 +30,14 @@ import {
   collectiveKey,
   gatherInput,
   makeLayer,
+  msgId,
   newObserved,
   type Observed,
   operationIdOf,
-  postId,
   questionText,
   recordHashOf,
   requestId,
-  requestNonce,
-  requestPost,
+  requestMessage,
   requestSendWait,
   send,
   slotSchema,
@@ -49,14 +49,12 @@ import {
 } from "../../firewall/outcome/index.js";
 import { SendError } from "../conversations/errors.js";
 import { InboundMessage } from "../conversations/message.js";
-import { AgentAddress } from "../records/values.js";
-import { collectiveIdOf } from "./wire/index.js";
 
 // @agent-code-guard/regression-only: Each case drives one ordering of check, claim, close and deadline that the admission ports allow.
 
 const group = "group:alice,bob,carol";
 const groupMembers = ["agent:alice", "agent:bob", "agent:carol"];
-const allGatherId = collectiveIdOf(alice, requestNonce);
+const allGatherId = collectiveOperationId(testAgentView(alice).agentId);
 const answer = { action: "accept", content: { slot: "mon" } } as const;
 
 /** The refusal every refusing check in these tests returns. */
@@ -73,20 +71,20 @@ interface CheckGate {
 }
 
 /**
- * How a firewall double decides: which posts it refuses, whether it refuses
- * gathers, a gate on its post checks and one on its gather checks, whether
- * a gather's request posts never certify, the advice an admitting check
- * gives, and whether an admitted post fails before it binds (`bindFails`)
- * or after (`postFails`).
+ * How a firewall double decides: which messages it refuses, whether it refuses
+ * gathers, a gate on its message checks and one on its gather checks, whether
+ * a gather's request messages never certify, the advice an admitting check
+ * gives, and whether an admitted message fails before it binds (`bindFails`)
+ * or after (`messageFails`).
  */
 interface DoubleOptions {
-  readonly refusePost?: (input: EngineSendInput) => boolean;
+  readonly refuseMessage?: (input: EngineSendInput) => boolean;
   readonly refuseGather?: boolean;
   readonly gate?: CheckGate;
   readonly gatherGate?: CheckGate;
   readonly requestsHang?: boolean;
   readonly guidance?: CheckedGuidance;
-  readonly postFails?: SendError;
+  readonly messageFails?: SendError;
   readonly bindFails?: SendError;
 }
 
@@ -95,14 +93,14 @@ interface FirewallDouble {
   readonly admission: CollectiveAdmission;
   readonly checked: EngineSendInput[];
   readonly gathers: GatherCandidate[];
-  readonly admittedPosts: EngineSendInput[];
+  readonly admittedMessages: EngineSendInput[];
 }
 
 /**
- * A firewall double with the real admission's order: each post is checked
- * first; an admitted post then takes the layer's hold and binds, and a
+ * A firewall double with the real admission's order: each message is checked
+ * first; an admitted message then takes the layer's hold and binds, and a
  * refused one takes no hold. A gather is admitted unless `refuseGather`, and
- * its posts go through the sender the admission returns.
+ * its messages go through the sender the admission returns.
  */
 function firewallDouble(
   observed: Observed,
@@ -110,43 +108,43 @@ function firewallDouble(
 ): FirewallDouble {
   const checked: EngineSendInput[] = [];
   const gathers: GatherCandidate[] = [];
-  const admittedPosts: EngineSendInput[] = [];
-  const double = { checked, gathers, admittedPosts };
+  const admittedMessages: EngineSendInput[] = [];
+  const double = { checked, gathers, admittedMessages };
   return {
     ...double,
     admission: {
-      bindPost: (input, hold) =>
-        checkPost(observed, double.checked, options, { input, hold }),
+      bindMessage: (input, hold) =>
+        checkMessage(observed, double.checked, options, { input, hold }),
       admitGather: (candidate) =>
         admitGather(observed, double, options, candidate),
     },
   };
 }
 
-function checkPost<E>(
+function checkMessage<E>(
   observed: Observed,
   checked: EngineSendInput[],
   options: DoubleOptions,
-  post: { readonly input: EngineSendInput; readonly hold: BindHold<E> },
+  message: { readonly input: EngineSendInput; readonly hold: BindHold<E> },
 ) {
   return Effect.gen(function* () {
-    checked.push(post.input);
+    checked.push(message.input);
     if (options.gate !== undefined) {
       yield* Deferred.succeed(options.gate.entered, undefined);
       yield* Deferred.await(options.gate.open);
     }
-    if (options.refusePost?.(post.input) === true) {
+    if (options.refuseMessage?.(message.input) === true) {
       return yield* refusal;
     }
     if (options.bindFails !== undefined) {
       return yield* options.bindFails;
     }
-    yield* post.hold;
+    yield* message.hold;
     return {
       certified:
-        options.postFails === undefined
-          ? certifyNext(observed, post.input)
-          : Effect.fail(options.postFails),
+        options.messageFails === undefined
+          ? certifyNext(observed, message.input)
+          : Effect.fail(options.messageFails),
       guidance: options.guidance,
     };
   });
@@ -154,13 +152,13 @@ function checkPost<E>(
 
 function admitGather(
   observed: Observed,
-  double: Pick<FirewallDouble, "gathers" | "admittedPosts">,
+  double: Pick<FirewallDouble, "gathers" | "admittedMessages">,
   options: DoubleOptions,
   candidate: GatherCandidate,
 ) {
   double.gathers.push(candidate);
   const sender = (input: EngineSendInput) => {
-    double.admittedPosts.push({ to: input.to, content: input.content });
+    double.admittedMessages.push({ to: input.to, content: input.content });
     return options.requestsHang === true
       ? Effect.never
       : certifyNext(observed, input);
@@ -188,8 +186,7 @@ function admitGather(
 const allGatherRequest = {
   kind: "operation",
   op: "all_gather",
-  id: allGatherId,
-  nonce: requestNonce,
+  operationId: allGatherId,
   deadlineAt: 60_000,
   requestedSchema: slotSchema,
 };
@@ -198,7 +195,7 @@ const allGatherRequest = {
 function receiveGatherRequest(layer: CollectiveOperations, presented: boolean) {
   return layer
     .classify({
-      message: requestPost("agent:bob", 60_000),
+      message: requestMessage("agent:bob", 60_000),
       recordHash: recordHashOf(1),
     })
     .pipe(Effect.tap(() => layer.settleRequest(requestId, presented)));
@@ -206,16 +203,15 @@ function receiveGatherRequest(layer: CollectiveOperations, presented: boolean) {
 
 /** Classify a second gather request from Bob to alice, open for a minute, and show it. */
 function receiveSecondGatherRequest(layer: CollectiveOperations) {
-  const nonce = "S".repeat(43);
-  const id = collectiveIdOf(
-    Schema.decodeUnknownSync(AgentAddress)("agent:bob"),
-    nonce,
+  const operationId = collectiveOperationId(
+    testAgentView("agent:bob").agentId,
+    1,
   );
   return layer
     .classify({
       message: Schema.decodeUnknownSync(InboundMessage)({
         kind: "direct",
-        postId: postId(2),
+        msgId: msgId(2),
         address: "agent:bob",
         sender: testAgentView("agent:bob"),
         content: [
@@ -226,8 +222,7 @@ function receiveSecondGatherRequest(layer: CollectiveOperations) {
               [collectiveKey]: {
                 ...allGatherRequest,
                 op: "gather",
-                id,
-                nonce,
+                operationId,
               },
             },
           },
@@ -235,7 +230,7 @@ function receiveSecondGatherRequest(layer: CollectiveOperations) {
       }),
       recordHash: recordHashOf(2),
     })
-    .pipe(Effect.tap(() => layer.settleRequest(id, true)));
+    .pipe(Effect.tap(() => layer.settleRequest(operationId, true)));
 }
 
 /** Classify alice's all_gather request at Bob and settle its admission. */
@@ -243,13 +238,13 @@ function receiveAllGatherRequest(
   layer: CollectiveOperations,
   presented: boolean,
 ) {
-  return classifyGroupPost(layer, "agent:alice", 10, allGatherRequest).pipe(
+  return classifyGroupMessage(layer, "agent:alice", 10, allGatherRequest).pipe(
     Effect.tap(() => layer.settleRequest(allGatherId, presented)),
   );
 }
 
-/** Classify one group post from `sender` under the record hash of `byte`. */
-function classifyGroupPost(
+/** Classify one group message from `sender` under the record hash of `byte`. */
+function classifyGroupMessage(
   layer: CollectiveOperations,
   sender: string,
   byte: number,
@@ -258,7 +253,7 @@ function classifyGroupPost(
   return layer.classify({
     message: Schema.decodeUnknownSync(InboundMessage)({
       kind: "group",
-      postId: postId(byte),
+      msgId: msgId(byte),
       address: group,
       sender: testAgentView(sender),
       members: groupMembers.map(testAgentView),
@@ -310,7 +305,7 @@ function refusesAGatherOnTheToolCall() {
   });
 }
 
-function sendsGatherPostsThroughTheAdmittedSender() {
+function sendsGatherMessagesThroughTheAdmittedSender() {
   return Effect.gen(function* () {
     const observed = newObserved();
     const firewall = firewallDouble(observed);
@@ -322,7 +317,7 @@ function sendsGatherPostsThroughTheAdmittedSender() {
 
     const [admitted] = firewall.gathers;
     expect(admitted?.to).toBe(group);
-    expect(firewall.admittedPosts).toEqual([
+    expect(firewall.admittedMessages).toEqual([
       { to: "agent:bob", content: admitted?.content },
       { to: "agent:carol", content: admitted?.content },
     ]);
@@ -345,12 +340,12 @@ function returnsTheAdmittingChecksAdvice() {
       collectiveResponse: answer,
     });
     const gathered = yield* send(layer, gatherInput());
-    const posted = yield* send(layer, { to: "agent:bob", text: "Tuesday." });
+    const sent = yield* send(layer, { to: "agent:bob", text: "Tuesday." });
     const allGathered = yield* send(layer, allGatherInput);
 
     expect(answered).toMatchObject({ guidance: advice });
     expect(gathered).toMatchObject({ guidance: advice });
-    expect(posted).toMatchObject({ guidance: advice });
+    expect(sent).toMatchObject({ guidance: advice });
     expect(allGathered).toMatchObject({ guidance: advice });
   });
 }
@@ -361,7 +356,7 @@ function returnsAnAdmittedAnswersFailure() {
     const observed = newObserved();
     const firewall = firewallDouble(observed, {
       guidance: advice,
-      postFails: new SendError({ reason: "network-unavailable" }),
+      messageFails: new SendError({ reason: "network-unavailable" }),
     });
     const layer = yield* makeLayer(observed, {
       admission: firewall.admission,
@@ -384,7 +379,7 @@ function returnsAnAdmittedAllGathersFailure() {
     const layer = yield* makeLayer(observed, {
       admission: firewallDouble(observed, {
         guidance: advice,
-        postFails: new SendError({ reason: "network-unavailable" }),
+        messageFails: new SendError({ reason: "network-unavailable" }),
       }).admission,
     });
 
@@ -448,7 +443,7 @@ function refusesAnAllGatherWhoseBindFailsNamingEveryMember() {
 function refusesAnAllGatherOnTheToolCall() {
   return Effect.gen(function* () {
     const observed = newObserved();
-    const firewall = firewallDouble(observed, { refusePost: () => true });
+    const firewall = firewallDouble(observed, { refuseMessage: () => true });
     const layer = yield* makeLayer(observed, {
       admission: firewall.admission,
     });
@@ -468,7 +463,7 @@ function keepsARequestOpenAfterARefusedAnswer() {
     const observed = newObserved();
     const refusals = { remaining: 1 };
     const firewall = firewallDouble(observed, {
-      refusePost: () => {
+      refuseMessage: () => {
         refusals.remaining -= 1;
         return refusals.remaining >= 0;
       },
@@ -498,7 +493,7 @@ function takesNoAnswerUntilShown() {
     const response = { to: "agent:bob", collectiveResponse: answer };
 
     const item = yield* layer.classify({
-      message: requestPost("agent:bob", 60_000),
+      message: requestMessage("agent:bob", 60_000),
       recordHash: recordHashOf(1),
     });
     const beforeAdmission = yield* collectiveFailureOf(send(layer, response));
@@ -509,7 +504,7 @@ function takesNoAnswerUntilShown() {
 
     expect(Option.getOrNull(item)).toMatchObject({
       kind: "collectiveRequest",
-      id: requestId,
+      operationId: requestId,
     });
     expect(beforeAdmission).toEqual({ kind: "request-none" });
     expect(afterWithholding).toEqual({ kind: "request-none" });
@@ -547,23 +542,23 @@ function closesAWithheldAllGatherAtAMember() {
     });
     yield* receiveAllGatherRequest(layer, false);
 
-    yield* classifyGroupPost(layer, "agent:carol", 13, {
+    yield* classifyGroupMessage(layer, "agent:carol", 13, {
       kind: "response",
-      id: allGatherId,
+      operationId: allGatherId,
       ...answer,
     });
-    yield* classifyGroupPost(layer, "agent:alice", 14, {
+    yield* classifyGroupMessage(layer, "agent:alice", 14, {
       kind: "close",
       closedAt: 60_000,
       closedBy: "deadline",
-      id: allGatherId,
+      operationId: allGatherId,
       included: [recordHashOf(13)],
     });
 
     expect(observed.emitted).toMatchObject([
       {
         kind: "collectiveResult",
-        id: allGatherId,
+        operationId: allGatherId,
         question: questionText,
         outcomes: [
           {
@@ -586,7 +581,7 @@ function closesAWithheldAllGatherAtAMember() {
   });
 }
 
-function postsNothingWhenTheAllGatherClosesDuringTheCheck() {
+function sendsNothingWhenTheAllGatherClosesDuringTheCheck() {
   return Effect.gen(function* () {
     const observed = newObserved();
     const gate = {
@@ -604,11 +599,11 @@ function postsNothingWhenTheAllGatherClosesDuringTheCheck() {
       collectiveResponse: answer,
     }).pipe(Effect.either, Effect.fork);
     yield* Deferred.await(gate.entered);
-    yield* classifyGroupPost(layer, "agent:alice", 14, {
+    yield* classifyGroupMessage(layer, "agent:alice", 14, {
       kind: "close",
       closedAt: 60_000,
       closedBy: "deadline",
-      id: allGatherId,
+      operationId: allGatherId,
       included: [],
     });
     yield* Deferred.succeed(gate.open, undefined);
@@ -636,7 +631,7 @@ function postsNothingWhenTheAllGatherClosesDuringTheCheck() {
   });
 }
 
-function postsNothingWhenTheDeadlinePassesDuringTheCheck() {
+function sendsNothingWhenTheDeadlinePassesDuringTheCheck() {
   return Effect.gen(function* () {
     const observed = newObserved();
     const gate = {
@@ -689,7 +684,11 @@ function answersTheMatchedRequestWhenAnotherOpensDuringTheCheck() {
       {
         to: "agent:bob",
         content: [
-          { value: { [collectiveKey]: { kind: "response", id: requestId } } },
+          {
+            value: {
+              [collectiveKey]: { kind: "response", operationId: requestId },
+            },
+          },
         ],
       },
     ]);
@@ -758,20 +757,22 @@ function carriesCountedAnswersWithAGatherResult() {
       admission: firewallDouble(observed).admission,
       ...recordProvenance(observed, provenance),
     });
-    const id = yield* send(layer, gatherInput()).pipe(
+    const operationId = yield* send(layer, gatherInput()).pipe(
       Effect.flatMap(operationIdOf),
     );
 
     yield* layer.classify({
       message: Schema.decodeUnknownSync(InboundMessage)({
         kind: "direct",
-        postId: postId(21),
+        msgId: msgId(21),
         address: "agent:carol",
         sender: testAgentView("agent:carol"),
         content: [
           {
             type: "data",
-            value: { [collectiveKey]: { kind: "response", id, ...answer } },
+            value: {
+              [collectiveKey]: { kind: "response", operationId, ...answer },
+            },
           },
         ],
       }),
@@ -813,11 +814,11 @@ function leavesAMemberOwnAnswerOutOfItsProvenance() {
     yield* send(layer, { to: group, collectiveResponse: answer });
     const ownRecord = recordHashOf(100 + observed.sent.length);
 
-    yield* classifyGroupPost(layer, "agent:alice", 14, {
+    yield* classifyGroupMessage(layer, "agent:alice", 14, {
       kind: "close",
       closedAt: 60_000,
       closedBy: "deadline",
-      id: allGatherId,
+      operationId: allGatherId,
       included: [ownRecord],
     });
 
@@ -838,19 +839,19 @@ function leavesAMemberOwnAnswerOutOfItsProvenance() {
 
 describe("collective sends under a firewall", () => {
   it(
-    "returns a refused gather on the tool call, posting nothing and leaving no deadline",
+    "returns a refused gather on the tool call, sending nothing and leaving no deadline",
     refusesAGatherOnTheToolCall,
   );
   it(
-    "sends a gather's request posts only through the sender its admission returned",
-    sendsGatherPostsThroughTheAdmittedSender,
+    "sends a gather's request messages only through the sender its admission returned",
+    sendsGatherMessagesThroughTheAdmittedSender,
   );
   it(
     "returns once the send's wait has passed, counting the gather's check against it",
     countsTheCheckAgainstTheSendWait,
   );
   it(
-    "returns a refused all_gather on the tool call, posting nothing and closing nothing at its deadline",
+    "returns a refused all_gather on the tool call, sending nothing and closing nothing at its deadline",
     refusesAnAllGatherOnTheToolCall,
   );
   it(
@@ -893,12 +894,12 @@ describe("received requests under a firewall", () => {
 
 describe("answers checked before their request is claimed", () => {
   it(
-    "posts nothing when the all_gather closes during the answer's check",
-    postsNothingWhenTheAllGatherClosesDuringTheCheck,
+    "sends nothing when the all_gather closes during the answer's check",
+    sendsNothingWhenTheAllGatherClosesDuringTheCheck,
   );
   it(
-    "posts nothing when the deadline passes during the answer's check",
-    postsNothingWhenTheDeadlinePassesDuringTheCheck,
+    "sends nothing when the deadline passes during the answer's check",
+    sendsNothingWhenTheDeadlinePassesDuringTheCheck,
   );
   it(
     "sends one of two answers checked at once and refuses the other as answered",

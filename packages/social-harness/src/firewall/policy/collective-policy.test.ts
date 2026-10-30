@@ -77,7 +77,7 @@ it.each([false, true])(
         result.checks
           .flatMap((check) => check.findings)
           .map((finding) => finding.ruleId),
-      ).toContain("no-acknowledgement-posts");
+      ).toContain("no-acknowledgement-messages");
       const first = yield* Effect.fromNullable(selected.requests[0]);
       const stated = yield* Schema.decodeUnknown(policyState)(first.state);
       expect(stated.policy.rules.map((rule) => rule.id)).toEqual([

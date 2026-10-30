@@ -7,7 +7,7 @@
 import type {
   AgentId,
   AgentName,
-  MessageId,
+  EnvelopeId,
   PrincipalId,
 } from "../../index.js";
 import type { AgentCardDigest } from "../cards.js";
@@ -31,7 +31,7 @@ type IdentityValue =
   | PrincipalId
   | AgentName
   | OperationId
-  | MessageId
+  | EnvelopeId
   | AgentCardDigest
   | AgentCardIssuedAt;
 
@@ -41,26 +41,26 @@ type RawStringsCannotConstructValues = ExpectFalse<
 
 type AgentAndPrincipalDiffer = ExpectFalse<Crosses<AgentId, PrincipalId>>;
 type AgentAndOperationDiffer = ExpectFalse<Crosses<AgentId, OperationId>>;
-type AgentAndMessageDiffer = ExpectFalse<Crosses<AgentId, MessageId>>;
+type AgentAndEnvelopeDiffer = ExpectFalse<Crosses<AgentId, EnvelopeId>>;
 type AgentAndCardDigestDiffer = ExpectFalse<Crosses<AgentId, AgentCardDigest>>;
 type AgentAndNameDiffer = ExpectFalse<Crosses<AgentId, AgentName>>;
 type PrincipalAndNameDiffer = ExpectFalse<Crosses<PrincipalId, AgentName>>;
 type PrincipalAndOperationDiffer = ExpectFalse<
   Crosses<PrincipalId, OperationId>
 >;
-type PrincipalAndMessageDiffer = ExpectFalse<Crosses<PrincipalId, MessageId>>;
+type PrincipalAndEnvelopeDiffer = ExpectFalse<Crosses<PrincipalId, EnvelopeId>>;
 type PrincipalAndCardDigestDiffer = ExpectFalse<
   Crosses<PrincipalId, AgentCardDigest>
 >;
 type NameAndOperationDiffer = ExpectFalse<Crosses<AgentName, OperationId>>;
-type NameAndMessageDiffer = ExpectFalse<Crosses<AgentName, MessageId>>;
+type NameAndEnvelopeDiffer = ExpectFalse<Crosses<AgentName, EnvelopeId>>;
 type NameAndCardDigestDiffer = ExpectFalse<Crosses<AgentName, AgentCardDigest>>;
-type OperationAndMessageDiffer = ExpectFalse<Crosses<OperationId, MessageId>>;
+type OperationAndEnvelopeDiffer = ExpectFalse<Crosses<OperationId, EnvelopeId>>;
 type OperationAndCardDigestDiffer = ExpectFalse<
   Crosses<OperationId, AgentCardDigest>
 >;
-type MessageAndCardDigestDiffer = ExpectFalse<
-  Crosses<MessageId, AgentCardDigest>
+type EnvelopeAndCardDigestDiffer = ExpectFalse<
+  Crosses<EnvelopeId, AgentCardDigest>
 >;
 type IssuedAtAndAgentDiffer = ExpectFalse<Crosses<AgentCardIssuedAt, AgentId>>;
 type IssuedAtAndPrincipalDiffer = ExpectFalse<
@@ -70,8 +70,8 @@ type IssuedAtAndNameDiffer = ExpectFalse<Crosses<AgentCardIssuedAt, AgentName>>;
 type IssuedAtAndOperationDiffer = ExpectFalse<
   Crosses<AgentCardIssuedAt, OperationId>
 >;
-type IssuedAtAndMessageDiffer = ExpectFalse<
-  Crosses<AgentCardIssuedAt, MessageId>
+type IssuedAtAndEnvelopeDiffer = ExpectFalse<
+  Crosses<AgentCardIssuedAt, EnvelopeId>
 >;
 type IssuedAtAndCardDigestDiffer = ExpectFalse<
   Crosses<AgentCardIssuedAt, AgentCardDigest>
@@ -85,24 +85,24 @@ export type IdentityValueCanaries = [
   RawStringsCannotConstructValues,
   AgentAndPrincipalDiffer,
   AgentAndOperationDiffer,
-  AgentAndMessageDiffer,
+  AgentAndEnvelopeDiffer,
   AgentAndCardDigestDiffer,
   AgentAndNameDiffer,
   PrincipalAndNameDiffer,
   PrincipalAndOperationDiffer,
-  PrincipalAndMessageDiffer,
+  PrincipalAndEnvelopeDiffer,
   PrincipalAndCardDigestDiffer,
   NameAndOperationDiffer,
-  NameAndMessageDiffer,
+  NameAndEnvelopeDiffer,
   NameAndCardDigestDiffer,
-  OperationAndMessageDiffer,
+  OperationAndEnvelopeDiffer,
   OperationAndCardDigestDiffer,
-  MessageAndCardDigestDiffer,
+  EnvelopeAndCardDigestDiffer,
   IssuedAtAndAgentDiffer,
   IssuedAtAndPrincipalDiffer,
   IssuedAtAndNameDiffer,
   IssuedAtAndOperationDiffer,
-  IssuedAtAndMessageDiffer,
+  IssuedAtAndEnvelopeDiffer,
   IssuedAtAndCardDigestDiffer,
   RefinedValuesRemainStrings,
 ];

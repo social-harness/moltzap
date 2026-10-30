@@ -6,8 +6,8 @@ import {
   AgentName,
   AgentSigningAuthority,
   type AgentSigningAuthority as AgentSigningAuthorityValue,
+  EnvelopeId,
   type LiveSignedMessage,
-  MessageId,
   PrincipalId,
   SignedMessage,
   type SignedMessage as SignedMessageValue,
@@ -129,8 +129,8 @@ const makeOperationId = () =>
 const makePrincipalId = () =>
   Schema.decodeUnknownSync(PrincipalId)(`prn_${randomIdentifierPayload()}`);
 
-const makeMessageId = () =>
-  Schema.decodeUnknownSync(MessageId)(`msg_${randomIdentifierPayload()}`);
+const makeEnvelopeId = () =>
+  Schema.decodeUnknownSync(EnvelopeId)(`env_${randomIdentifierPayload()}`);
 
 const signAuthenticatedRequest = (
   origin: URL,
@@ -443,7 +443,7 @@ const signMessage = (
       agents.firstRecipient.agentCard.agentId,
       agents.secondRecipient.agentCard.agentId,
     ]),
-    messageId: makeMessageId(),
+    envelopeId: makeEnvelopeId(),
     body: new TextEncoder().encode("opaque-registry-router-e2e"),
   });
 

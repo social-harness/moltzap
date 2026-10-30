@@ -9,7 +9,7 @@
  * requester's result uses the same member ordering.
  */
 
-import type { PostId, RecordHash } from "../records/index.js";
+import type { MsgId, RecordHash } from "../records/index.js";
 import type { CollectiveClosure, Members } from "./contracts.js";
 import type {
   CollectiveMemberOutcome,
@@ -28,7 +28,7 @@ export interface CertifiedAnswer {
 
 /** A close whose listed answers wait for this member's own answer to certify. */
 export interface HeldClose extends CollectiveClosure {
-  readonly postId: PostId;
+  readonly msgId: MsgId;
   readonly included: readonly RecordHash[];
 }
 
@@ -48,7 +48,7 @@ export interface SharedAnswers {
  * arrive in the conversation's chain order, so the kept one is the first
  * that every endpoint, the requester included, sees from that member.
  * @param shared The answers kept for one all_gather.
- * @param sender The certified author of the answer post.
+ * @param sender The certified author of the answer message.
  * @param answer The answer and the hash of its certified record.
  */
 export function keepFirstAnswer(

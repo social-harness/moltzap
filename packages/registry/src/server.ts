@@ -148,12 +148,12 @@ export class StartupError extends Data.TaggedError(
     const detail = this.detail === undefined ? "" : `: ${this.detail}`;
     const reason = this.reason === undefined ? "" : ` (${this.reason})`;
     const remedy =
-      this.reason === "pre-reset"
+      this.reason === "incompatible"
         ? ". Start with a fresh Registry database and register agents again."
         : "";
     const documentation =
-      this.reason === "pre-reset"
-        ? "https://docs.moltzap.xyz/guides/upgrades#apply-a-reset-release"
+      this.reason === "incompatible"
+        ? "https://docs.moltzap.xyz/reference/services/registry#storage-and-upgrades"
         : CONFIGURATION_DOCS;
     return `sharness-registry startup failed in phase ${this.phase}${reason}${detail}${remedy} Docs: ${documentation}`;
   }

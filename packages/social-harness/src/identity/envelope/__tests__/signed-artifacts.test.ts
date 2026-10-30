@@ -1,13 +1,6 @@
 /** @file AgentCard and SignedMessage immutability, representation, bounds, and signature tests. */
 
-import {
-  Effect,
-  Either,
-  Encoding,
-  ParseResult,
-  Redacted,
-  Schema,
-} from "effect";
+import { Effect, Either, Encoding, Redacted, Schema } from "effect";
 import * as fc from "fast-check";
 import { generateKeyPairSync } from "node:crypto";
 import { expect, it } from "vitest";
@@ -39,7 +32,7 @@ import {
   ed25519PublicKeyThumbprintUri,
 } from "../../keys.js";
 import {
-  MessageId,
+  EnvelopeId,
   SignedMessage,
   SignedMessageSigningError,
   type SignedMessage as SignedMessageValue,
@@ -50,22 +43,6 @@ const MAXIMUM_BODY_BYTES = 262_144;
 const MAXIMUM_RECIPIENTS = 128;
 
 const MIXED_ORDER_PUBLIC_KEY_X = "lZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZk";
-
-/**
- * A Registry-signed pre-reset card is outside retained-history admission.
- */
-const priorVersionAgentCard = {
-  payload:
-    "eyJhZ2VudElkIjoiYWd0Xy12cjYtdnI2LXZyNi12cjYtdnI2LWciLCJhZ2VudE5hbWUiOiJtaXhlZC1vcmRlci1zZW5kZXIiLCJpc3N1ZWRBdCI6IjIwMjYtMDctMzBUMTI6MDA6MDBaIiwia2luZCI6ImFnZW50Q2FyZCIsIm1vbHR6YXBWZXJzaW9uIjoiMjAyNi44MjcuMSIsInByaW5jaXBhbElkIjoicHJuXy1mbjUtZm41LWZuNS1mbjUtZm41LVEiLCJwdWJsaWNLZXkiOnsiY3J2IjoiRWQyNTUxOSIsImt0eSI6Ik9LUCIsIngiOiJsWm1abVptWm1abVptWm1abVptWm1abVptWm1abVptWm1abVptWm1abVprIn19",
-  signatures: [
-    {
-      protected:
-        "eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoidXJuOmlldGY6cGFyYW1zOm9hdXRoOmp3ay10aHVtYnByaW50OnNoYS0yNTY6a1ByS19xbXhWV2FZVkE5d3dCRjZJdW8zdlZ6ejdUeEhDVHdYQnlnclM0ayIsInR5cCI6ImFwcGxpY2F0aW9uL3ZuZC5tb2x0emFwLmFnZW50LWNhcmQrandzIn0",
-      signature:
-        "foMLtTx77cf-oM7B5634ShB7tMno9EAtidOMnXIM1FArtOmsFPkegrOxj6FdqD3Etg3zCk1wUnISQON9fijFBg",
-    },
-  ],
-};
 
 const rawSignature = Schema.Struct({
   protected: Schema.String,
@@ -81,7 +58,7 @@ const rawPayload = Schema.Struct({
   senderAgentId: Schema.String,
   agentCardDigest: Schema.String,
   recipientAgentIds: Schema.Array(Schema.String),
-  messageId: Schema.String,
+  envelopeId: Schema.String,
   body: Schema.String,
 });
 const rawProtectedHeader = Schema.Struct({
@@ -139,8 +116,8 @@ const makeIdentityFixture = Effect.gen(function* () {
 const makeAgentId = (byte: number) =>
   Schema.decodeUnknownSync(AgentId)(identifier("agt_", byte));
 
-const makeMessageId = (byte: number) =>
-  Schema.decodeUnknownSync(MessageId)(identifier("msg_", byte));
+const makeEnvelopeId = (byte: number) =>
+  Schema.decodeUnknownSync(EnvelopeId)(identifier("env_", byte));
 
 const recipientSet = (count: number): ReadonlySet<AgentIdValue> => {
   const recipients = new Set<AgentIdValue>();
@@ -154,13 +131,13 @@ const signMessage = (
   fixture: IdentityFixture,
   body: Uint8Array,
   recipients: ReadonlySet<AgentIdValue>,
-  messageIdByte: number,
+  envelopeIdByte: number,
 ) =>
   SignedMessage.sign({
     agentCard: fixture.agentCard,
     signingAuthority: fixture.agentSigningAuthority,
     recipientAgentIds: recipients,
-    messageId: makeMessageId(messageIdByte),
+    envelopeId: makeEnvelopeId(envelopeIdByte),
     body,
   });
 
@@ -330,14 +307,14 @@ const assertLengthInvariant = (
   fixture: IdentityFixture,
   body: Uint8Array,
   recipientCount: number,
-  messageIdByte: number,
+  envelopeIdByte: number,
 ) =>
   Effect.gen(function* () {
     const signedMessage = yield* signMessage(
       fixture,
       body,
       recipientSet(recipientCount),
-      messageIdByte,
+      envelopeIdByte,
     );
     const representation = yield* messageRepresentation(signedMessage);
     const parsed = yield* Schema.decodeUnknown(SignedMessage)(representation);
@@ -375,7 +352,7 @@ const payloadMutations = (representation: RawRepresentation) =>
       "message ID",
       mutatePayload(representation, (value) => ({
         ...value,
-        messageId: makeMessageId(202),
+        envelopeId: makeEnvelopeId(202),
       })),
     ),
     namedMutation(
@@ -446,9 +423,9 @@ const parsedLengthProperty = (fixture: IdentityFixture) =>
     fc.uint8Array({ maxLength: 4096 }),
     fc.integer({ min: 1, max: MAXIMUM_RECIPIENTS }),
     fc.integer({ min: 0, max: 247 }),
-    (body, recipientCount, messageIdByte) =>
+    (body, recipientCount, envelopeIdByte) =>
       Effect.runPromise(
-        assertLengthInvariant(fixture, body, recipientCount, messageIdByte),
+        assertLengthInvariant(fixture, body, recipientCount, envelopeIdByte),
       ),
   );
 
@@ -617,7 +594,7 @@ it("fails signing with its typed error when the sender's AgentCard cannot be rea
         agentCard,
         signingAuthority: fixture.agentSigningAuthority,
         recipientAgentIds: recipientSet(1),
-        messageId: makeMessageId(1),
+        envelopeId: makeEnvelopeId(1),
         body: Uint8Array.from([1]),
       }).pipe(Effect.either);
 
@@ -695,17 +672,6 @@ it("rejects a signature accepted only by cofactored Ed25519 verification", () =>
         agentCard,
       }).pipe(Effect.either);
       expect(wasRejected(result)).toBe(true);
-    }),
-  ));
-
-it("refuses an AgentCard the Registry signed under the prior Social Harness version", () =>
-  Effect.runPromise(
-    Effect.gen(function* () {
-      const refusal = yield* Schema.decodeUnknown(AgentCard)(
-        priorVersionAgentCard,
-      ).pipe(Effect.flip);
-
-      expect(refusal).toBeInstanceOf(ParseResult.ParseError);
     }),
   ));
 

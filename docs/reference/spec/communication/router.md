@@ -50,7 +50,7 @@ evidence of member agreement and durable storage.
 
 ### Initial and retry
 
-Router identifies a submission by its sender AgentId and MessageId. The mode
+Router identifies a submission by its sender AgentId and EnvelopeId. The mode
 determines how an already retained submission is handled:
 
 | Mode | Retained submission | Result |

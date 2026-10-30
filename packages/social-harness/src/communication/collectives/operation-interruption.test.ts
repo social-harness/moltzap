@@ -96,16 +96,16 @@ function admissionFixture(mode: "plain" | "firewall") {
     const admission = yield* installedAdmission(subject, store, mode);
     const collective = yield* makeCollectiveOperations({
       store,
-      self: Schema.decodeUnknownSync(AgentAddress)("agent:alice"),
+      self: testAgentView("agent:alice"),
       scope: yield* Scope.Scope,
       lookupMember: (member) => Effect.succeed(testAgentView(member)),
-      sendPost: () =>
+      sendMessage: () =>
         Deferred.succeed(started, undefined).pipe(
           Effect.zipRight(Effect.never),
         ),
-      bindPost: () => Effect.dieMessage("gather uses request fanout"),
+      bindMessage: () => Effect.dieMessage("gather uses request fanout"),
       sendAdmitted: () => Effect.never,
-      observePost: () => Effect.never,
+      observeMessage: () => Effect.never,
       reportStorageFault: () => Effect.dieMessage("unexpected storage fault"),
       emit: (item) =>
         Effect.sync(() => {
@@ -150,8 +150,10 @@ function installedAdmission(
 
 function waitForRequest(store: EndpointStore) {
   return untilLive(
-    store.readCollectivePosts().pipe(
-      Effect.map((posts) => posts.some((post) => post.role === "request")),
+    store.readCollectiveMessages().pipe(
+      Effect.map((messages) =>
+        messages.some((message) => message.role === "request"),
+      ),
       Effect.orDie,
     ),
   );

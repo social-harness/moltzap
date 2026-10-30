@@ -3,13 +3,14 @@
 import { scoped as it } from "@effect/vitest";
 import { Effect, Exit, Struct } from "effect";
 import { describe, expect } from "vitest";
-import { digest } from "../__tests__/agent-card-fixtures.js";
+import { digest, testAgentView } from "../__tests__/agent-card-fixtures.js";
+import { collectiveOperationId } from "../__tests__/collective-id-fixtures.js";
 import {
-  classifyPost,
+  classifyMessage,
   gatherInput,
   makeLayer,
   newObserved,
-  requestPost,
+  requestMessage,
   send,
 } from "../__tests__/collective-operation-fixtures.js";
 import {
@@ -17,13 +18,16 @@ import {
   decodeHarnessSendResult,
 } from "./operations.js";
 
-const postId = digest("pst_", 11);
-const operationId = digest("col_", 12);
+const msgId = digest("msg_", 11);
+const operationId = collectiveOperationId(
+  testAgentView("agent:alice").agentId,
+  12,
+);
 const address = "agent:bob";
 
 const results = [
-  { kind: "multicast", postId, address },
-  { kind: "response", operationId, postId, address },
+  { kind: "multicast", msgId, address },
+  { kind: "response", operationId, msgId, address },
   { kind: "collective", operationId },
 ];
 
@@ -42,10 +46,10 @@ describe("send results", () => {
 
   it.each([
     {},
-    { kind: "multicast", postId },
-    { kind: "response", postId, address },
-    { kind: "collective", operationId, postId },
-    { kind: "multicast", postId, address, operationId },
+    { kind: "multicast", msgId },
+    { kind: "response", msgId, address },
+    { kind: "collective", operationId, msgId },
+    { kind: "multicast", msgId, address, operationId },
   ])("rejects an incomplete or contradictory result: %j", (result) =>
     Effect.gen(function* () {
       const decoded = yield* Effect.either(decodeHarnessSendResult(result));
@@ -55,10 +59,10 @@ describe("send results", () => {
 
   it("ignores a future result field at the reader and refuses it at the writer", () =>
     Effect.gen(function* () {
-      const result = { kind: "multicast", postId, address, future: true };
+      const result = { kind: "multicast", msgId, address, future: true };
       expect(yield* decodeHarnessSendResult(result)).toEqual({
         kind: "multicast",
-        postId,
+        msgId,
         address,
       });
       expect(
@@ -70,7 +74,7 @@ describe("send results", () => {
 function acceptsProducedResults() {
   return Effect.gen(function* () {
     const layer = yield* makeLayer(newObserved());
-    yield* classifyPost(layer, requestPost("agent:bob", 60_000));
+    yield* classifyMessage(layer, requestMessage("agent:bob", 60_000));
     const response = yield* send(layer, {
       to: "agent:bob",
       collectiveResponse: { action: "decline" },
@@ -85,7 +89,7 @@ function assertProducedResult(
   result: Effect.Effect.Success<ReturnType<typeof send>>,
 ) {
   return Effect.gen(function* () {
-    const publicResult = Struct.omit(result, "postIds");
+    const publicResult = Struct.omit(result, "msgIds");
     expect(yield* checkHarnessSendResult(publicResult)).toEqual(publicResult);
     expect(Object.hasOwn(publicResult, "guidance")).toBe(false);
   });

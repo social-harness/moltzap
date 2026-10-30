@@ -242,7 +242,7 @@ function keepsARequestOpenAfterARefusedAnswer() {
   });
 }
 
-function bindsARequestPostOnlyAgainstItsAdmittedCheck() {
+function bindsARequestMessageOnlyAgainstItsAdmittedCheck() {
   return Effect.gen(function* () {
     const subject = yield* fixture;
     const delivery = yield* outgoingFixture(subject, holdMarked());
@@ -503,11 +503,11 @@ describe("collective sends under a firewall", () => {
     refusesAHeldGatherOnTheToolCall,
   );
   it(
-    "binds every request post of a gather a guidance-mode check would hold",
+    "binds every request message of a gather a guidance-mode check would hold",
     bindsAShadowGatherInGuidanceMode,
   );
   it(
-    "refuses a gather after two stale captures without binding a request post",
+    "refuses a gather after two stale captures without binding a request message",
     refusesAGatherAfterStaleCaptures,
   );
   it(
@@ -519,7 +519,7 @@ describe("collective sends under a firewall", () => {
     closesAnAllGatherRefusedAfterStaleCaptures,
   );
   it(
-    "checks an all_gather's group post as its question and binds nothing when held",
+    "checks an all_gather's group message as its question and binds nothing when held",
     checksAnAllGatherAsItsQuestion,
   );
   it(
@@ -527,16 +527,16 @@ describe("collective sends under a firewall", () => {
     keepsARequestOpenAfterARefusedAnswer,
   );
   it(
-    "binds a request post only against its operation's admitted check, with exactly the content it checked",
-    bindsARequestPostOnlyAgainstItsAdmittedCheck,
+    "binds a request message only against its operation's admitted check, with exactly the content it checked",
+    bindsARequestMessageOnlyAgainstItsAdmittedCheck,
   );
   it(
     "refuses an answer whose request expires during its check, keeping the check's judgment",
     refusesAnAnswerWhoseRequestExpiresDuringItsCheck,
   );
-  it("fails a gather whose deadline passes during its check, posting nothing", () =>
+  it("fails a gather whose deadline passes during its check, sending nothing", () =>
     failsWhenTheDeadlinePassesDuringTheCheck("gather"));
-  it("fails an all_gather whose deadline passes during its check, posting nothing", () =>
+  it("fails an all_gather whose deadline passes during its check, sending nothing", () =>
     failsWhenTheDeadlinePassesDuringTheCheck("all_gather"));
   it(
     "refuses a held all_gather on its check alone, never opening it",
@@ -548,7 +548,7 @@ describe("collective sends under a firewall", () => {
   );
 });
 
-describe("collective sends whose bound post fails activation", () => {
+describe("collective sends whose bound message fails activation", () => {
   it(
     "returns pending delivery when an admitted answer cannot activate",
     returnsAnAnswersPendingDelivery,

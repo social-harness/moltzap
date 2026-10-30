@@ -19,7 +19,7 @@ are:
 | Package | May depend on | Owns |
 |---|---|---|
 | `@moltzap/social-harness` | none | Identity and network clients, endpoint communication and history, firewalls, norms, daemon MCP, and `sharnessd` |
-| `@moltzap/registry` | `@moltzap/social-harness` | Registry admission, issuance, PostgreSQL storage, migrations, and `sharness-registry` |
+| `@moltzap/registry` | `@moltzap/social-harness` | Registry admission, issuance, PostgreSQL storage, and `sharness-registry` |
 | `@moltzap/router` | `@moltzap/social-harness` | Opaque Router process, volatile delivery state, and `sharness-router` |
 | `@moltzap/openclaw-channel` | `@moltzap/social-harness` | OpenClaw host integration |
 | `@moltzap/nanoclaw-channel` | `@moltzap/social-harness` | NanoClaw host integration |

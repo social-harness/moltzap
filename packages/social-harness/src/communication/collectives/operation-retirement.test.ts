@@ -18,7 +18,7 @@ import type { CollectivePorts } from "./ports.js";
 import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { engineFixture } from "../../__tests__/firewall-runtime-fixtures.js";
 import { SendError } from "../conversations/errors.js";
-import { AgentAddress, MessageAddressInput } from "../records/index.js";
+import { MessageAddressInput } from "../records/index.js";
 import {
   encodeRuntimeValue,
   type EndpointStore,
@@ -53,7 +53,7 @@ it("keeps the deadline result when all request refusals finish during finalizati
     expect(fixture.emitted).toMatchObject([
       {
         kind: "collectiveResult",
-        id: result.operationId,
+        operationId: result.operationId,
         closedAt: 60_000,
         closedBy: "settled",
       },
@@ -78,15 +78,15 @@ function refusalRace() {
     const emitted: InboundItem[] = [];
     const collective = yield* makeCollectiveOperations({
       store,
-      self: Schema.decodeUnknownSync(AgentAddress)("agent:alice"),
+      self: testAgentView("agent:alice"),
       lookupMember: (member) => Effect.succeed(testAgentView(member)),
-      sendPost: () => {
+      sendMessage: () => {
         controls.time.requestsStarted = true;
         return Effect.fail(new SendError({ reason: "network-unavailable" }));
       },
-      bindPost: () => Effect.dieMessage("gather uses request fanout"),
+      bindMessage: () => Effect.dieMessage("gather uses request fanout"),
       sendAdmitted: () => Effect.never,
-      observePost: () => Effect.never,
+      observeMessage: () => Effect.never,
       reportStorageFault: (fault) =>
         Effect.sync(() => {
           faults.push(fault);
@@ -173,8 +173,8 @@ function racedStore(store: EndpointStore, controls: Controls): EndpointStore {
       store
         .recordCollectiveRefusal(refusal)
         .pipe(Effect.tap(() => Deferred.succeed(controls.refused, undefined))),
-    finalizeCollectiveOperation: (id, selection) =>
-      store.finalizeCollectiveOperation(id, selection).pipe(
+    finalizeCollectiveOperation: (operationId, selection) =>
+      store.finalizeCollectiveOperation(operationId, selection).pipe(
         Effect.tap(() => Deferred.succeed(controls.frozen, undefined)),
         Effect.tap(() => Deferred.await(controls.release)),
       ),

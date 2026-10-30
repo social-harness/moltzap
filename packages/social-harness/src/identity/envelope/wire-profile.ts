@@ -11,7 +11,7 @@ export const WIRE_PROFILES = {
   [WIRE_VERSION]: {
     signedMessageType: "application/vnd.sharness.signed-message+jws",
     commitmentHeader: "org.social-harness/commitment",
-    messageIdHeader: "org.social-harness/message-id",
+    envelopeIdHeader: "org.social-harness/envelope-id",
     senderHeader: "org.social-harness/sender",
     maximumBodyBytes: 262_144,
     maximumRecipients: 128,

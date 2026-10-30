@@ -42,38 +42,19 @@ survive restart alongside the certified conversation history. Startup verifies
 stored history and restores [collective context](../communication/collectives.md#completion-and-recovery)
 before signing or accepting host operations.
 
-An absent or empty database initializes at the current schema, 14. An
-unversioned database is empty only if it has no user-created tables, indexes,
-views or triggers. Existing state is handled as follows:
+An absent or empty database initializes in the current format. A database is
+empty only when it has no user-created tables, indexes, views or triggers.
+Startup opens existing state only in the current format and refuses incompatible
+state with `incompatible` before changing its schema, permissions or journaling
+mode. It never converts or resets stored data automatically.
 
-| State | Startup result |
-| --- | --- |
-| Current schema | Reopen after validation. |
-| Supported schema below the current version | Apply forward migrations. |
-| Newer schema | Refuse with `newer-schema`. |
-| Schema below the reset baseline, or a directory containing `moltzapd.sqlite3` | Refuse with `pre-reset`. |
-| Unrecognized nonempty database | Refuse with `incompatible`. |
-
-Unsupported state is refused before changing its schema, permissions or
-journaling mode. Startup never resets it automatically. The
-[reset contract](../releases.md#reset-releases) requires fresh state and
-registration.
-
-Before a migration or backup, the daemon checks that every pending outbound
-message uses a live wire version. A retired message causes `outbox-too-old`
-without changing storage. Drain that outbox on an earlier release before
-upgrading. A pending message is otherwise replayed byte for byte with its
+Before changing retained state, the daemon checks that every pending outbound
+message uses a live wire version. An unsupported version causes `outbox-too-old`
+without changing storage. A pending message replays byte for byte with its
 original identity, and its recorded version must agree with the signed bytes.
 
-Before each migration from schema N, the daemon creates a consistent, durable
-backup named `sharnessd.sqlite3.schema-N.backup` with mode 0600. A retry replaces
-it with a fresh copy. Backup failure stops startup in `storage` before any
-migration. Each migration commits its data and schema version together.
-Failure preserves the preceding schema, and retry resumes from the last
-committed step. Startup verifies database integrity and history before signing.
-
-A backup can safely restore a migration that failed before the daemon signed
-anything. Restoring state after a successful start instead follows the
+Startup verifies database integrity and history before signing. Restoring a
+backup can erase signing decisions and follows the
 [new-identity rule](../releases.md#reset-releases). The daemon performs no
 automatic retention expiry or compaction.
 

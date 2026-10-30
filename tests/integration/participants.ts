@@ -136,7 +136,7 @@ export const groupAddress = (participants: readonly Participant[]): string =>
     .join(",")}`;
 
 /**
- * A post from `requester` to its group with `members`, received by each
+ * A message from `requester` to its group with `members`, received by each
  * member: the round `measuredDeadlineSeconds` times.
  */
 export const groupRound = (
@@ -152,9 +152,9 @@ export const groupRound = (
 
 /**
  * How many measured rounds a silent-member trace's collecting operation waits
- * before its deadline. Before it, the request posts certify and reach the
+ * before its deadline. Before it, the request messages certify and reach the
  * members and the answers certify; an all_gather's two answers extend one
- * group head and certify one after the other, so that work is several post
+ * group head and certify one after the other, so that work is several message
  * rounds. The remaining rounds absorb load that changes between the
  * measurement and the operation, and every round lengthens the test.
  */
@@ -172,7 +172,7 @@ const MINIMUM_DEADLINE_SECONDS = 15;
  * runs of `round` on this host as loaded now, and at least
  * `MINIMUM_DEADLINE_SECONDS`. It scales with the host's load, as the
  * certification work before the deadline does.
- * @param round One post that every asked member receives, as a trace sends it.
+ * @param round One message that every asked member receives, as a trace sends it.
  * @returns The deadline in seconds, rounded up.
  */
 export const measuredDeadlineSeconds = <E, R>(

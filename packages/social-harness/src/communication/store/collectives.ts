@@ -7,8 +7,8 @@ import type {
   CollectiveOperationInput,
   CollectiveRequestRefusal,
   EndpointStore,
+  StoredCollectiveMessage,
   StoredCollectiveOperation,
-  StoredCollectivePost,
   StoreMutation,
 } from "./types.js";
 import {
@@ -59,11 +59,11 @@ export function readCollectiveOperation(
   return findCollective(database, operationId);
 }
 
-/** Recovery reads all claims; live callers select one operation and, when known, its post role. */
-export function readCollectivePosts(
+/** Recovery reads all claims; live callers select one operation and, when known, its message role. */
+export function readCollectiveMessages(
   database: DatabaseSync,
-  query?: Parameters<EndpointStore["readCollectivePosts"]>[0],
-): readonly StoredCollectivePost[] {
+  query?: Parameters<EndpointStore["readCollectiveMessages"]>[0],
+): readonly StoredCollectiveMessage[] {
   const conditions: string[] = [];
   const values: string[] = [];
   if (query !== undefined) {
@@ -78,11 +78,11 @@ export function readCollectivePosts(
     conditions.length === 0 ? "" : `WHERE ${conditions.join(" AND ")}`;
   return database
     .prepare(`
-    SELECT c.operation_id, c.role, c.destination, p.* FROM collective_posts c
-    JOIN post_intents p USING (author_agent_id, post_id) ${where} ORDER BY c.rowid
+    SELECT c.operation_id, c.role, c.destination, p.* FROM collective_messages c
+    JOIN message_intents p USING (author_agent_id, msg_id) ${where} ORDER BY c.rowid
   `)
     .all(...values)
-    .map(readCollectivePost);
+    .map(readCollectiveMessage);
 }
 
 /** Freeze counted record references before a close or local result can be published. */
@@ -208,7 +208,7 @@ export function recordCollectiveRefusal(
     }
     const bound = database
       .prepare(
-        "SELECT 1 FROM collective_posts WHERE operation_id = ? AND role = 'request' AND destination = ?",
+        "SELECT 1 FROM collective_messages WHERE operation_id = ? AND role = 'request' AND destination = ?",
       )
       .get(refusal.operationId, refusal.destination);
     if (bound !== undefined) {
@@ -276,9 +276,9 @@ export function retireCollectiveOperation(
   });
 }
 
-function readCollectivePost(
+function readCollectiveMessage(
   row: Readonly<Record<string, unknown>>,
-): StoredCollectivePost {
+): StoredCollectiveMessage {
   const role = readText(row, "role");
   if (role !== "request" && role !== "response" && role !== "close") {
     throw new StoreSignal("corrupt");
@@ -290,7 +290,7 @@ function readCollectivePost(
     destination: readText(row, "destination"),
     intent: {
       authorAgentId: readText(row, "author_agent_id"),
-      postId: readText(row, "post_id"),
+      msgId: readText(row, "msg_id"),
       conversationId: readText(row, "conversation_id"),
       membershipHash: readText(row, "membership_hash"),
       canonicalIntent: readBytes(row, "canonical_intent"),

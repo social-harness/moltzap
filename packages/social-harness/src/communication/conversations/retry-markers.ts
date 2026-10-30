@@ -68,7 +68,7 @@ export function exitOutcome(
 /**
  * Record the short `retry.pending` span that opens a marked wait.
  * @param kind What waits.
- * @param id What the wait is for: a post, conversation or delivery id, a
+ * @param id What the wait is for: a message, conversation or delivery id, a
  *     check's direction, or `outbox`. A reader pairs pending and settled
  *     spans by count per kind and id, so a reused id pairs correctly.
  * @returns Completion once the span is recorded.

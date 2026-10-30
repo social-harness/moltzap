@@ -8,16 +8,16 @@ import {
   Content,
   GroupAddress,
   maximumMembers,
+  MsgId,
   parseAgentAddress,
   parseGroupAddress,
-  PostId,
 } from "../records/values.js";
 
 /* eslint-disable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Effect Schemas share their domain names with the nominal values they decode. */
 
 const directMessageStructure = exactStruct({
   kind: Schema.Literal("direct"),
-  postId: PostId,
+  msgId: MsgId,
   address: AgentAddress,
   sender: AgentView,
   content: Content,
@@ -41,7 +41,7 @@ const groupMembers = Schema.Tuple(
 
 const groupMessageStructure = exactStruct({
   kind: Schema.Literal("group"),
-  postId: PostId,
+  msgId: MsgId,
   address: GroupAddress,
   sender: AgentView,
   members: groupMembers,
@@ -89,13 +89,13 @@ export type DirectMessage = typeof directMessage.Type;
  */
 export type GroupMessage = typeof groupMessage.Type;
 
-/** One certified remote-authored post, direct or to a fixed group. */
+/** One certified remote-authored message, direct or to a fixed group. */
 export const InboundMessage = Schema.Union(
   directMessage,
   groupMessage,
 ).annotations({ identifier: "InboundMessage" });
 /**
- * A peer's certified post with verified sender and conversation membership.
+ * A peer's certified message with verified sender and conversation membership.
  * @useDeclaredType
  */
 export type InboundMessage = typeof InboundMessage.Type;

@@ -21,15 +21,15 @@ const messageOperation = Schema.Union(
   Schema.Struct({
     kind: Schema.Literal("request"),
     op: collectingOp,
-    id: identifier,
+    operationId: identifier,
     deadlineAt: Schema.Int.pipe(Schema.positive()),
   }),
   Schema.Struct({
     kind: Schema.Literal("answer", "result"),
     op: collectingOp,
-    id: identifier,
+    operationId: identifier,
   }),
-  Schema.Struct({ kind: Schema.Literal("failure"), id: identifier }),
+  Schema.Struct({ kind: Schema.Literal("failure"), operationId: identifier }),
 );
 
 /**

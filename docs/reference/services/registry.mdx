@@ -67,18 +67,15 @@ Registry stores immutable identity and replay evidence in PostgreSQL:
 Lookup returns the same complete card after restart. Accepted nonce claims
 survive Registry restart through expiry.
 
-Before migrating, Registry checks applied migration IDs against those its
-binary supports. An unknown applied ID fails startup with `newer-schema`.
-Migrations and their ledger entries commit atomically, so a failed migration
-rolls back. Operators run `pg_dump` before upgrading. Downgrades are
-unsupported.
+Registry initializes a PostgreSQL schema with no relations or reopens its
+current storage format. Schema creation, its format marker and signer binding
+commit atomically. Incompatible state fails startup with `incompatible` before
+any storage change. A configured signer that differs from database metadata
+fails with `signer-mismatch`. Other initialization failures carry `unavailable`.
+Registry never converts or resets stored data automatically.
 
-A pre-reset migration ledger fails startup with `pre-reset`. A configured
-signer that differs from database metadata fails with `signer-mismatch`.
-Other storage initialization failures carry `unavailable`.
-
-Registry reports ready only when configuration, signer, metadata, migrations,
-database access, and listener are ready. The
+Registry reports ready after validating configuration, signer metadata and
+storage, acquiring database access, and starting the listener. The
 [health route](/reference/spec/identity/representation#health) reports that state.
 
 ## Startup failures
@@ -88,10 +85,10 @@ Registry startup failures identify one of three phases:
 | Phase | Failure |
 | --- | --- |
 | `configuration` | Invalid or missing settings, or an unreadable or invalid signing key |
-| `storage` | Pool acquisition, migration, signer metadata, or readiness |
+| `storage` | Pool acquisition, format validation, signer metadata, or readiness |
 | `listener` | Listener acquisition or serving startup |
 
-Storage reasons are `pre-reset`, `newer-schema`, `signer-mismatch`, and
+Storage reasons are `incompatible`, `signer-mismatch`, and
 `unavailable`. The process writes the failure message to stderr and exits
 unsuccessfully. The message includes the phase and any reason or diagnostic
 detail. Configuration details identify the setting and its constraint without

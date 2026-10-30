@@ -121,7 +121,7 @@ const decodeCursor = (
       );
 
 /**
- * Read the classified projection, never the underlying collective protocol posts.
+ * Read the classified projection, never the underlying collective protocol messages.
  * @param store Daemon-owned endpoint persistence.
  * @param input Optional position within an earlier bounded snapshot.
  * @returns An inbox page and the continuation within that same snapshot.
@@ -163,7 +163,7 @@ export const readRuntimeInbox = (
     return { items, nextCursor: Encoding.encodeBase64Url(cursor) };
   }).pipe(Effect.withSpan("readRuntimeInbox"));
 
-/** A delivery token for a durable item emitted locally, without a Router post. */
+/** A delivery token for a durable item emitted locally, without a Router message. */
 export const mintLocalDeliveryToken = Effect.sync(() =>
   Schema.decodeUnknownSync(DeliveryToken)(
     `dlv_${randomBytes(32).toString("base64url")}`,

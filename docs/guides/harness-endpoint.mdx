@@ -100,12 +100,12 @@ The connection stays open for the enclosing Effect scope. Keep it inside
 This example treats printing as acceptance. In an application, handle each
 item and acknowledge it only after the host accepts it. Unacknowledged
 items can be delivered again after a reconnect or daemon restart. The
-[runtime reference](/reference/spec/host/messaging#receiving-items) defines the
+[host interface](/reference/spec/host/messaging#receiving-items) defines the
 item kinds, and the [delivery contract](/reference/spec/host/receiving#delivery-handoff)
 defines acceptance and replay.
 
 Every call to `send` creates a new send. Retrying the same text can create a
-second post. Use the [send contract](/reference/spec/host/messaging#sending-a-message) when
+second message. Use the [send contract](/reference/spec/host/messaging#sending-a-message) when
 choosing your application's retry policy.
 
 ### 3. Run the program
@@ -116,9 +116,9 @@ Run from the same project directory with Node.js:
 node send-and-receive.ts
 ```
 
-The first output includes the message's `postId` and `"address": "agent:bob"`.
+The first output includes the message's `msgId` and `"address": "agent:bob"`.
 The program then keeps listening to Alice's inbox. It can print earlier
-unacknowledged items before new ones. Alice's own sent posts do not appear in
+unacknowledged items before new ones. Alice's own sent messages do not appear in
 her incoming stream.
 
 In another terminal, have Bob reply through his daemon:
@@ -127,12 +127,9 @@ In another terminal, have Bob reply through his daemon:
 SHARNESS_MCP_URL=http://127.0.0.1:4102/mcp node ~/sharness/client/mcp.ts call send_message '{"input":{"to":"agent:alice","text":"Hi Alice."}}'
 ```
 
-Your program prints a `multicast` item whose `message.sender` is `agent:bob`
-and whose content contains `Hi Alice.` `multicast` is the ordinary message
-kind for both one-to-one and group messages. The stream also carries
-structured questions, their collected answers, and operation failures when
-those operations are used. The [inbound-item contract](/reference/spec/host/messaging#receiving-items)
-defines their meanings.
+Your program prints a `multicast` item with `message.sender.agentName` equal
+to `bob` and a text part containing `Hi Alice.` This kind covers ordinary
+messages to one agent or a group.
 
 Stop the listener with Ctrl+C. If acquisition fails, check that the URL's port
 is the daemon's `SHARNESS_MCP_PORT` and that the daemon runs trusted-local, as

@@ -18,10 +18,10 @@ import {
 } from "./database/index.js";
 import { readStoredIdentity } from "./rows/index.js";
 import {
+  type CollectiveMessageBinding,
   type CollectiveOperationInput,
-  type CollectivePostBinding,
   DeliveryToken,
-  type PostIntent,
+  type MessageIntent,
   type StoredCollectiveOperation,
   type StoreMutation,
 } from "./types.js";
@@ -32,10 +32,10 @@ interface OriginIdentity {
 }
 
 /** The claimed slot and its intent commit together, including against a request's admission. */
-export function bindCollectivePostInTransaction(
+export function bindCollectiveMessageInTransaction(
   database: DatabaseSync,
-  binding: CollectivePostBinding,
-  intent: PostIntent,
+  binding: CollectiveMessageBinding,
+  intent: MessageIntent,
 ): StoreMutation {
   requireText(binding.operationId);
   requireText(binding.destination);
@@ -49,20 +49,20 @@ export function bindCollectivePostInTransaction(
   }
   const prior = database
     .prepare(`
-    SELECT author_agent_id, post_id, destination FROM collective_posts
+    SELECT author_agent_id, msg_id, destination FROM collective_messages
     WHERE operation_id = ? AND role = ? AND (role <> 'request' OR destination = ?)
   `)
     .get(binding.operationId, binding.role, binding.destination);
   if (prior !== undefined) {
     requireEqual(readText(prior, "author_agent_id"), intent.authorAgentId);
-    requireEqual(readText(prior, "post_id"), intent.postId);
+    requireEqual(readText(prior, "msg_id"), intent.msgId);
     requireEqual(readText(prior, "destination"), binding.destination);
     return "existing";
   }
-  requirePostState(database, binding, intent, operation);
+  requireMessageState(database, binding, intent, operation);
   database
     .prepare(`
-    INSERT INTO collective_posts (operation_id, role, destination, author_agent_id, post_id)
+    INSERT INTO collective_messages (operation_id, role, destination, author_agent_id, msg_id)
     VALUES (?, ?, ?, ?, ?)
   `)
     .run(
@@ -70,7 +70,7 @@ export function bindCollectivePostInTransaction(
       binding.role,
       binding.destination,
       intent.authorAgentId,
-      intent.postId,
+      intent.msgId,
     );
   return "inserted";
 }
@@ -226,10 +226,10 @@ function insertCollective(
     );
 }
 
-function requirePostState(
+function requireMessageState(
   database: DatabaseSync,
-  binding: CollectivePostBinding,
-  intent: PostIntent,
+  binding: CollectiveMessageBinding,
+  intent: MessageIntent,
   operation: StoredCollectiveOperation,
 ): void {
   if (

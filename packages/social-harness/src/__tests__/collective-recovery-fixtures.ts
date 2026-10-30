@@ -12,7 +12,7 @@ import {
   type CertifiedRecord,
   deriveConversationId,
   MembershipDescriptor,
-  PostIntent,
+  MessageIntent,
   signOuterPacket,
   verifyMembershipDescriptor,
 } from "../communication/records/index.js";
@@ -29,7 +29,7 @@ import { untilLive } from "./advance-clock.js";
 import { identifier } from "./agent-card-fixtures.js";
 import {
   buildCertifiedFirstMessage,
-  buildCertifiedPost,
+  buildCertifiedMessage,
   signEvidence,
   storeCertifiedFirstMessage,
 } from "./certified-history-fixtures.js";
@@ -142,12 +142,12 @@ export function boundIntent(
   store: EndpointStore,
   role: "request" | "response" | "close",
 ) {
-  return store.readCollectivePosts().pipe(
-    Effect.flatMap((posts) =>
-      Effect.fromNullable(posts.find((post) => post.role === role)),
+  return store.readCollectiveMessages().pipe(
+    Effect.flatMap((messages) =>
+      Effect.fromNullable(messages.find((message) => message.role === role)),
     ),
-    Effect.flatMap((post) =>
-      decodeRuntimeValue(PostIntent, post.intent.canonicalIntent),
+    Effect.flatMap((message) =>
+      decodeRuntimeValue(MessageIntent, message.intent.canonicalIntent),
     ),
   );
 }
@@ -156,9 +156,9 @@ export function boundIntent(
 export function certifyBoundIntent(
   fixture: { readonly subject: Fixture; readonly engine: EndpointEngine },
   previous: CertifiedRecord,
-  intent: PostIntent,
+  intent: MessageIntent,
 ) {
-  return buildCertifiedPost(fixture.subject, previous, intent).pipe(
+  return buildCertifiedMessage(fixture.subject, previous, intent).pipe(
     Effect.flatMap((record) =>
       completeGroupCertificate(fixture.subject, record),
     ),
@@ -168,11 +168,13 @@ export function certifyBoundIntent(
   );
 }
 
-/** Waits until the requester has durably bound its close post. */
+/** Waits until the requester has durably bound its close message. */
 export function waitForClose(store: EndpointStore) {
   return untilLive(
-    store.readCollectivePosts().pipe(
-      Effect.map((posts) => posts.some((post) => post.role === "close")),
+    store.readCollectiveMessages().pipe(
+      Effect.map((messages) =>
+        messages.some((message) => message.role === "close"),
+      ),
       Effect.orDie,
     ),
   );

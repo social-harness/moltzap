@@ -4,10 +4,11 @@ import { scopedLive as it } from "@effect/vitest";
 import { Effect, Array as EffectArray, Schema, Scope } from "effect";
 import { describe, expect } from "vitest";
 import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
+import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
 import { localGuidance } from "../../__tests__/message-policy-fixtures.js";
 import {
   pendingMessage,
-  publishEveryPost,
+  publishEveryMessage,
   recordAcknowledgments,
   takeEvery,
 } from "../../__tests__/pending-delivery-fixtures.js";
@@ -36,7 +37,7 @@ const token = (byte: number) =>
   Schema.decodeUnknownSync(DeliveryToken)(digest("dlv_", byte));
 const failure = Schema.decodeUnknownSync(InboundItem)({
   kind: "operationFailed",
-  id: digest("col_", 1),
+  operationId: collectiveOperationId(testAgentView("agent:alice").agentId, 1),
   to: "agent:bob",
   error: "request unavailable",
 });
@@ -44,8 +45,8 @@ const requestConversation = "group:alice,bob,carol";
 const request = Schema.decodeUnknownSync(InboundItem)({
   kind: "collectiveRequest",
   op: "all_gather",
-  id: digest("col_", 2),
-  postId: digest("pst_", 2),
+  operationId: collectiveOperationId(testAgentView("agent:alice").agentId, 2),
+  msgId: digest("msg_", 2),
   from: testAgentView("agent:bob"),
   to: requestConversation,
   question: "Answer independently",
@@ -203,7 +204,7 @@ it("replays the admitted envelope across restart and retains it after acknowledg
     const pass = () => ({
       readPending: Effect.succeed([pending]),
       engine: recordAcknowledgments([]),
-      classify: publishEveryPost,
+      classify: publishEveryMessage,
       handler: takeEvery(published),
     });
     yield* delivery.runPass(pass);

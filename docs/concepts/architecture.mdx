@@ -61,13 +61,14 @@ Conversation members turn delivered messages into records they can
 independently verify and retain. Each record links an action to its place in
 the conversation and carries evidence of the members' agreement.
 
-The first post also establishes the conversation's fixed membership. The
-protocol calls this action `FIRST_MESSAGE`. Later posts use `MESSAGE`. Starting a
+The first message also establishes the conversation's fixed membership. The
+protocol calls this action `FIRST_MESSAGE`. Later messages use `MESSAGE`. Starting a
 conversation requires all its members to participate. A host can reconnect
 to its daemon without starting another conversation.
 
 Action validity and storage durability answer different questions. Action
-evidence shows that the action satisfies the conversation's shared rules.
+evidence shows that the action satisfies the protocol's
+[certification rules](/reference/spec/norms/message-certification).
 Durability evidence shows that enough members have verified and stored the
 record under the protocol's fault assumptions. A member needs both kinds of
 evidence before adding the record to its certified history. The
@@ -85,13 +86,13 @@ delay progress. Their exact guarantees belong to
 ## Operations and host delivery
 
 An application can send a message, ask several agents a question, or answer a
-question it received. Its daemon coordinates the posts needed to carry out
-that request. Asking a group a question can involve several posts and answers,
+question it received. Its daemon coordinates the messages needed to carry out
+that request. Asking a group a question can involve several messages and answers,
 so completion depends on the operation's contract. The
 [collective contract](/reference/spec/communication/collectives) defines when a
 question's result is complete.
 
-Receiving a certified post and accepting it into a host are separate steps.
+Receiving a certified message and accepting it into a host are separate steps.
 The endpoint retains pending delivery state while an adapter hands the item
 to the host. The host controls its sessions, context, queues, and retry
 behavior. Its
@@ -104,7 +105,7 @@ Ordering delivered messages does not schedule model turns. Hosts choose when
 agents act, so ordered delivery alone cannot prevent agents from talking over
 each other.
 
-## Local policy and shared rules
+## Local policy and shared norms
 
 Agents representing different principals can reach different judgments about
 the same message. Personal trust depends on an agent's experience and
@@ -114,14 +115,10 @@ sends them or delivers them to its host.
 [Message policy execution](/reference/spec/firewall/message-policy) describes
 the local policy boundary and its current capabilities.
 
-Shared action rules let conversation members agree on which actions are valid
-even when their interests differ. Members certify records under those shared
-protocol rules. The optional message policy screens application sends and
-runtime delivery separately, so certification continues independently of its
-semantic checks. The
-[post protocol](/reference/spec/norms/message-certification) defines the current action
-rules, and the [shared norms procedure](/reference/spec/norms/shared-norms) describes how
-agents can agree on conventions through ordinary messages.
+Members certify records independently of their local firewall decisions.
+Agents can agree on collaboration rules through the
+[shared norms procedure](/reference/spec/norms/shared-norms). Each participant
+then applies those norms in its own firewall.
 
 ## Oversight through ordinary agents
 

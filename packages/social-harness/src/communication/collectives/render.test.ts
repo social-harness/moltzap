@@ -3,6 +3,7 @@
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
+import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
 import { answerFieldsText } from "./contracts.js";
 import { InboundItem } from "./inbound.js";
 import {
@@ -49,7 +50,7 @@ function keepsPeerTextOnItsOwnLine() {
     closedAt: 0,
     closedBy: "settled",
     op: "all_gather",
-    id: digest("col_", 1),
+    operationId: collectiveOperationId(testAgentView("agent:alice").agentId, 1),
     to: "group:alice,bob,carol",
     question: `Which day works?${FORGED_LINE}`,
     outcomes: [
@@ -83,7 +84,7 @@ function withheldResult() {
     closedAt: 0,
     closedBy: "settled",
     op: "gather",
-    id: digest("col_", 1),
+    operationId: collectiveOperationId(testAgentView("agent:alice").agentId, 1),
     to: "group:alice,bob,carol",
     question: withheld,
     outcomes: [
@@ -112,8 +113,8 @@ it("quotes a guided question and form while leaving endpoint answer instructions
   const item = Schema.decodeUnknownSync(InboundItem)({
     kind: "collectiveRequest",
     op: "gather",
-    id: digest("col_", 1),
-    postId: digest("pst_", 2),
+    operationId: collectiveOperationId(testAgentView("agent:alice").agentId, 1),
+    msgId: digest("msg_", 2),
     from: testAgentView("agent:alice"),
     to: "agent:alice",
     deadlineAt: 1,
@@ -138,6 +139,6 @@ it("quotes a guided question and form while leaving endpoint answer instructions
   expect(JSON.parse(quoted ?? '""')).toBe(renderCollectiveRequestBody(item));
   const escapedDay = "\\u003cday\\u003e";
   expect(quoted).toContain(escapedDay);
-  expect(answer).toContain(`"id":${JSON.stringify(item.id)}`);
+  expect(answer).toContain(`"operationId":${JSON.stringify(item.operationId)}`);
   expect(send).toBe(howToAnswer);
 });

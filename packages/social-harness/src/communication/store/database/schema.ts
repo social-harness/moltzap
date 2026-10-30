@@ -1,4 +1,4 @@
-/** @file SQLite ownership, version preflight, and closed persistence primitives. */
+/** @file SQLite ownership, current-format validation, and closed persistence primitives. */
 
 import { Effect } from "effect";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Ownership requires synchronous permission changes before the database escapes acquisition.
@@ -6,12 +6,6 @@ import { chmodSync, existsSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { CertifiedRecord } from "../types.js";
-import {
-  migrateStore,
-  migrations,
-  type MigrationSteps,
-  RESET_SCHEMA,
-} from "./migrations.js";
 import {
   EndpointStoreError,
   mapStoreFailure,
@@ -36,32 +30,26 @@ export interface StoreState {
 }
 
 const DATABASE_NAME = "sharnessd.sqlite3";
+const SCHEMA_VERSION = 15;
 
-/** An empty database is created, the current schema reopens, and an admitted older schema migrates. */
-export type StoreOpening = "create" | "reopen" | "migrate";
+/** Only an empty database or the current stored format can be opened. */
+export type StoreOpening = "create" | "reopen";
 
 /**
- * Acquires one endpoint database and finishes admitted upgrades before use.
+ * Acquires one endpoint database after validating its current format.
  * @param stateDirectory Exclusive persistent state directory.
- * @param options Explicit live window and optional injected forward migration steps.
+ * @param options Explicit live window for retained outbound messages.
  * @param options.liveWireVersions Versions accepted for pending outbound envelopes.
- * @param options.migrations Destination-indexed forward steps, defaulting to the binary's table.
  * @returns Acquired database state after integrity and compatibility checks.
  */
 export const openStoreState = (
   stateDirectory: string,
   options: {
     readonly liveWireVersions: readonly string[];
-    readonly migrations?: MigrationSteps;
   },
 ): Effect.Effect<StoreState, EndpointStoreError | OutboxTooOldError> =>
   Effect.try({
-    try: () =>
-      initializeStoreState(
-        stateDirectory,
-        options.liveWireVersions,
-        options.migrations,
-      ),
+    try: () => initializeStoreState(stateDirectory, options.liveWireVersions),
     catch: (failure) =>
       failure instanceof OutboxTooOldError
         ? failure
@@ -80,7 +68,6 @@ export const inspectStoreState = (
   Effect.try({
     try: () => {
       requireText(stateDirectory);
-      requireResetDirectory(stateDirectory);
       const databasePath = resolve(stateDirectory, DATABASE_NAME);
       return inspectExistingDatabase(databasePath);
     },
@@ -177,30 +164,25 @@ function rollback(database: DatabaseSync): boolean {
 function initializeStoreState(
   stateDirectory: string,
   liveWireVersions: readonly string[],
-  steps: MigrationSteps = migrations,
 ): StoreState {
   requireText(stateDirectory);
-  requireResetDirectory(stateDirectory);
   mkdirSync(stateDirectory, { recursive: true, mode: 0o700 });
   const databasePath = resolve(stateDirectory, DATABASE_NAME);
-  const expected = inspectExistingDatabase(databasePath, steps);
+  const expected = inspectExistingDatabase(databasePath);
   let database: DatabaseSync | undefined;
   try {
     database = openWritableDatabase(databasePath);
     database.exec("PRAGMA locking_mode = EXCLUSIVE; BEGIN EXCLUSIVE; COMMIT");
-    const disposition = preflightDatabase(database, steps);
+    const disposition = preflightDatabase(database);
     requireExpectedOpening(disposition, expected);
     if (disposition !== "create") {
       requireLiveOutbox(database, liveWireVersions);
-    }
-    if (disposition === "migrate") {
-      upgradeDatabase(database, liveWireVersions, databasePath, steps);
     }
     chmodSync(stateDirectory, 0o700);
     chmodSync(databasePath, 0o600);
     configureDatabase(database);
     if (disposition === "create") {
-      createStore(database, steps);
+      createStore(database);
     }
     database.exec(
       "UPDATE firewall_checks SET disposition = 'interrupted' WHERE disposition = 'checking'",
@@ -224,21 +206,7 @@ function requireExpectedOpening(
   }
 }
 
-function upgradeDatabase(
-  database: DatabaseSync,
-  liveWireVersions: readonly string[],
-  databasePath: string,
-  steps: MigrationSteps,
-): void {
-  requireLiveOutbox(database, liveWireVersions);
-  migrateStore(database, readSchemaVersion(database), databasePath, steps);
-  requireHealthyDatabase(database);
-}
-
-function inspectExistingDatabase(
-  databasePath: string,
-  steps: MigrationSteps = migrations,
-): StoreOpening {
+function inspectExistingDatabase(databasePath: string): StoreOpening {
   if (!existsSync(databasePath)) {
     return "create";
   }
@@ -250,7 +218,7 @@ function inspectExistingDatabase(
     timeout: 0,
   });
   try {
-    return preflightDatabase(database, steps);
+    return preflightDatabase(database);
   } finally {
     database.close();
   }
@@ -265,26 +233,17 @@ function openWritableDatabase(databasePath: string): DatabaseSync {
   });
 }
 
-function preflightDatabase(
-  database: DatabaseSync,
-  steps: MigrationSteps,
-): StoreOpening {
+function preflightDatabase(database: DatabaseSync): StoreOpening {
   const version = readSchemaVersion(database);
-  if (version > schemaVersion(steps)) {
-    throw new StoreSignal("newer-schema");
-  }
-  if (version === 0) {
-    if (hasUserSchemaObjects(database)) {
-      throw new StoreSignal("pre-reset");
-    }
+  if (version === 0 && !hasUserSchemaObjects(database)) {
     requireHealthyDatabase(database);
     return "create";
   }
-  if (version < RESET_SCHEMA) {
-    throw new StoreSignal("pre-reset");
+  if (version !== SCHEMA_VERSION) {
+    throw new StoreSignal("incompatible");
   }
   requireHealthyDatabase(database);
-  return version === schemaVersion(steps) ? "reopen" : "migrate";
+  return "reopen";
 }
 
 function readSchemaVersion(database: DatabaseSync): number {
@@ -295,12 +254,7 @@ function readSchemaVersion(database: DatabaseSync): number {
   return readInteger(row, "user_version");
 }
 
-/** The highest registered destination is the schema created by this binary. */
-function schemaVersion(steps: MigrationSteps): number {
-  return Math.max(RESET_SCHEMA, ...Object.keys(steps).map(Number));
-}
-
-/** Pending envelopes must remain live before any schema step or backup is written. */
+/** Pending envelopes must remain live before startup changes retained state. */
 function requireLiveOutbox(
   database: DatabaseSync,
   liveWireVersions: readonly string[],
@@ -418,18 +372,18 @@ const collectiveSchemaSql = `
     CHECK ((phase = 'collecting' AND canonical_selection IS NULL)
       OR (phase IN ('finalizing', 'completed') AND canonical_selection IS NOT NULL))
   ) STRICT;
-  CREATE TABLE collective_posts (
+  CREATE TABLE collective_messages (
     operation_id TEXT NOT NULL REFERENCES collective_operations(operation_id),
     role TEXT NOT NULL CHECK (role IN ('request', 'response', 'close')),
     destination TEXT NOT NULL,
     author_agent_id TEXT NOT NULL,
-    post_id TEXT NOT NULL,
+    msg_id TEXT NOT NULL,
     PRIMARY KEY (operation_id, role, destination),
-    UNIQUE (author_agent_id, post_id),
-    FOREIGN KEY (author_agent_id, post_id) REFERENCES post_intents(author_agent_id, post_id)
+    UNIQUE (author_agent_id, msg_id),
+    FOREIGN KEY (author_agent_id, msg_id) REFERENCES message_intents(author_agent_id, msg_id)
   ) STRICT;
-  CREATE UNIQUE INDEX collective_one_response ON collective_posts(operation_id) WHERE role = 'response';
-  CREATE UNIQUE INDEX collective_one_close ON collective_posts(operation_id) WHERE role = 'close';
+  CREATE UNIQUE INDEX collective_one_response ON collective_messages(operation_id) WHERE role = 'response';
+  CREATE UNIQUE INDEX collective_one_close ON collective_messages(operation_id) WHERE role = 'close';
 `;
 
 const runtimeSchemaSql = `
@@ -497,18 +451,18 @@ const schemaSql = `
     agent_id TEXT NOT NULL,
     canonical_agent_card BLOB NOT NULL
   ) STRICT;
-  CREATE TABLE post_intents (
+  CREATE TABLE message_intents (
     author_agent_id TEXT NOT NULL,
-    post_id TEXT NOT NULL,
+    msg_id TEXT NOT NULL,
     conversation_id TEXT NOT NULL,
     membership_hash TEXT NOT NULL,
     canonical_intent BLOB NOT NULL,
     completed_record_hash TEXT,
-    PRIMARY KEY (author_agent_id, post_id),
+    PRIMARY KEY (author_agent_id, msg_id),
     FOREIGN KEY (conversation_id, membership_hash)
       REFERENCES memberships(conversation_id, membership_hash)
   ) STRICT;
-  CREATE INDEX post_intents_unresolved ON post_intents(conversation_id)
+  CREATE INDEX message_intents_unresolved ON message_intents(conversation_id)
     WHERE completed_record_hash IS NULL;
   CREATE TABLE memberships (
     conversation_id TEXT PRIMARY KEY,
@@ -553,7 +507,7 @@ const schemaSql = `
     anchor_hash TEXT NOT NULL,
     action_hash TEXT NOT NULL,
     author_agent_id TEXT NOT NULL,
-    post_id TEXT NOT NULL,
+    msg_id TEXT NOT NULL,
     canonical_record_core BLOB NOT NULL,
     PRIMARY KEY (conversation_id, record_hash),
     FOREIGN KEY (conversation_id, anchor_hash)
@@ -610,7 +564,7 @@ const schemaSql = `
   CREATE TABLE outbound_messages (
     outbound_sequence INTEGER PRIMARY KEY,
     conversation_id TEXT NOT NULL REFERENCES memberships(conversation_id),
-    message_id TEXT NOT NULL UNIQUE,
+    envelope_id TEXT NOT NULL UNIQUE,
     canonical_signed_message BLOB NOT NULL,
     wire_version TEXT NOT NULL,
     attempted INTEGER NOT NULL CHECK (attempted IN (0, 1)),
@@ -622,11 +576,11 @@ const schemaSql = `
     obligation_sequence INTEGER PRIMARY KEY,
     conversation_id TEXT NOT NULL,
     record_hash TEXT NOT NULL,
-    message_id TEXT UNIQUE,
+    envelope_id TEXT UNIQUE,
     UNIQUE (conversation_id, record_hash),
     FOREIGN KEY (conversation_id, record_hash)
       REFERENCES staged_records(conversation_id, record_hash),
-    FOREIGN KEY (message_id) REFERENCES outbound_messages(message_id)
+    FOREIGN KEY (envelope_id) REFERENCES outbound_messages(envelope_id)
   ) STRICT;
 `;
 
@@ -649,7 +603,7 @@ const editablePolicySql = `
 `;
 
 /** Creates the current schema atomically in an empty database. */
-function createStore(database: DatabaseSync, steps: MigrationSteps): void {
+function createStore(database: DatabaseSync): void {
   transaction(
     database,
     () => {
@@ -658,15 +612,8 @@ function createStore(database: DatabaseSync, steps: MigrationSteps): void {
       database.exec(firewallSchemaSql);
       database.exec(editablePolicySql);
       database.exec(collectiveSchemaSql);
-      database.exec(`PRAGMA user_version = ${schemaVersion(steps)}`);
+      database.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
     },
     "EXCLUSIVE",
   );
-}
-
-/** Legacy state must never silently create a fresh identity beside its old database. */
-function requireResetDirectory(stateDirectory: string): void {
-  if (existsSync(resolve(stateDirectory, "moltzapd.sqlite3"))) {
-    throw new StoreSignal("pre-reset");
-  }
 }

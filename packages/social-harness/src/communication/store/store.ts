@@ -9,10 +9,10 @@ import type { OutboxTooOldError } from "./database/values.js";
 import type { EndpointStore } from "./types.js";
 import {
   applyCatchUpReanchor,
-  bindAdmittedPostIntent,
-  bindCheckedPostIntent,
+  bindAdmittedMessageIntent,
+  bindCheckedMessageIntent,
   bindIdentity,
-  bindPostIntent,
+  bindMessageIntent,
   completeReanchor,
   lockFirstMessageProposal,
   lockProposal,
@@ -25,9 +25,9 @@ import {
   publishCollectiveItem,
   putCollectiveOperation,
   readCollectiveAnswers,
+  readCollectiveMessages,
   readCollectiveOperation,
   readCollectiveOperations,
-  readCollectivePosts,
   readCollectiveRefusals,
   recordCollectiveAnswer,
   recordCollectiveRefusal,
@@ -37,7 +37,6 @@ import {
   closeStoreState,
   EndpointStoreError,
   inspectStoreState,
-  type MigrationSteps,
   openStoreState,
   runStoreOperation,
   type StoreOpening,
@@ -101,7 +100,7 @@ import {
 export { EndpointStoreError };
 
 /**
- * Reports whether opening the state directory creates, reopens, or migrates
+ * Reports whether opening the state directory creates or reopens
  * its store without changing it. Creating a store leaves the daemon
  * unregistered.
  *
@@ -120,9 +119,8 @@ export const inspectEndpointStore = (
  * Opens the one SQLite store owned by a daemon state directory.
  *
  * @param stateDirectory Exclusive persistent state directory.
- * @param options Explicit live window and optional injected forward migration steps.
+ * @param options Explicit live window for retained outbound messages.
  * @param options.liveWireVersions Versions accepted for pending outbound envelopes.
- * @param options.migrations Destination-indexed forward steps, defaulting to the binary's table.
  * @returns A scoped private endpoint-store capability.
  * @failure EndpointStoreError when the directory or database cannot be owned.
  */
@@ -130,7 +128,6 @@ export const openEndpointStore = (
   stateDirectory: string,
   options: {
     readonly liveWireVersions: readonly string[];
-    readonly migrations?: MigrationSteps;
   },
 ): Effect.Effect<
   EndpointStore,
@@ -168,8 +165,8 @@ function makeEndpointStore(state: StoreState): EndpointStore {
       run(() => readCollectiveOperation(state.database, id)),
     readCollectiveOperations: () =>
       run(() => readCollectiveOperations(state.database)),
-    readCollectivePosts: (query) =>
-      run(() => readCollectivePosts(state.database, query)),
+    readCollectiveMessages: (query) =>
+      run(() => readCollectiveMessages(state.database, query)),
     finalizeCollectiveOperation: (operationId, selection) =>
       run(() =>
         finalizeCollectiveOperation(state.database, operationId, selection),
@@ -181,8 +178,8 @@ function makeEndpointStore(state: StoreState): EndpointStore {
     readIdentity: () => run(() => bindIdentity.read(state.database)),
     bindIdentity: (binding) =>
       run(() => bindIdentity.write(state.database, binding)),
-    bindPostIntent: (binding) =>
-      run(() => bindPostIntent(state.database, binding)),
+    bindMessageIntent: (binding) =>
+      run(() => bindMessageIntent(state.database, binding)),
     putConversationFoundation: (foundation) =>
       run(() => putConversationFoundation(state.database, foundation)),
     lockProposal: (proposal) =>
@@ -222,8 +219,8 @@ function makeEndpointStore(state: StoreState): EndpointStore {
           enqueueOutboundInTransaction,
         ),
       ),
-    beginOutbound: (messageId) =>
-      run(() => beginOutbound(state.database, messageId)),
+    beginOutbound: (envelopeId) =>
+      run(() => beginOutbound(state.database, envelopeId)),
     completeOutbound: (outbound) =>
       run(() => completeOutbound(state.database, outbound)),
     discardOutbound: (outbounds) =>
@@ -319,10 +316,10 @@ function makeEndpointStore(state: StoreState): EndpointStore {
           collective,
         ),
       ),
-    bindCheckedPostIntent: (binding, completion) =>
-      run(() => bindCheckedPostIntent(state.database, binding, completion)),
-    bindAdmittedPostIntent: (binding, operation) =>
-      run(() => bindAdmittedPostIntent(state.database, binding, operation)),
+    bindCheckedMessageIntent: (binding, completion) =>
+      run(() => bindCheckedMessageIntent(state.database, binding, completion)),
+    bindAdmittedMessageIntent: (binding, operation) =>
+      run(() => bindAdmittedMessageIntent(state.database, binding, operation)),
   };
   return Object.freeze(store);
 }

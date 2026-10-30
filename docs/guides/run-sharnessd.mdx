@@ -601,7 +601,7 @@ SHARNESS_MCP_URL=http://127.0.0.1:4101/mcp node ~/sharness/client/mcp.ts call re
 Replace the port and address for your send. The result's `records` contain
 the certified history. When `continuation` is non-null, request the next
 page with `'{"continuation":"<returned token>"}'` in place of the address
-argument. An absent post does not prove an unresolved send will not arrive
+argument. An absent message does not prove an unresolved send will not arrive
 later. The [send contract](/reference/spec/host/messaging#failed-or-uncertain-sends)
 defines these outcomes.
 

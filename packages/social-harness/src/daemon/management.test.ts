@@ -179,7 +179,7 @@ const makeRecovery = (
         agentId: fixture.cards[0].agentId,
         canonicalAgentCard,
       },
-      postIntents: [],
+      messageIntents: [],
       memberships: [
         {
           conversationId: membership.conversationId,
@@ -389,7 +389,7 @@ const returnsCertificateSignersForAudit = () =>
       "alice precedes bob in AgentId order",
     ).toBeLessThan(0);
     expect(
-      certified.recordCore.action.postIntent.authorAgentId,
+      certified.recordCore.action.messageIntent.authorAgentId,
       "bob authored the first message",
     ).toBe(bob.agentId);
     expect(page.records, "alice's history with bob").toEqual([

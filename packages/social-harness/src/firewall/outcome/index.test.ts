@@ -181,7 +181,7 @@ it("keeps withheld result entries local while grouping answer and question advic
     closedAt: 0,
     closedBy: "settled",
     op: "gather",
-    id: `col_${"A".repeat(43)}`,
+    operationId: `col_${"A".repeat(64)}`,
     to: "group:alice,bob,carol",
     question: withheld,
     outcomes: [

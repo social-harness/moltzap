@@ -6,7 +6,7 @@ import type { CollectiveId } from "./contracts.js";
 import type { InboundItem } from "./inbound.js";
 import type { CollectivePorts } from "./ports.js";
 import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
-import { appendCertifiedPost } from "../../__tests__/certified-history-fixtures.js";
+import { appendCertifiedMessage } from "../../__tests__/certified-history-fixtures.js";
 import { retainingEmitter } from "../../__tests__/collective-recovery-fixtures.js";
 import {
   engineFixture,
@@ -14,7 +14,7 @@ import {
 } from "../../__tests__/firewall-runtime-fixtures.js";
 import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { InboundMessage } from "../conversations/message.js";
-import { AgentAddress, mintPostId } from "../records/index.js";
+import { AgentAddress, mintMsgId } from "../records/index.js";
 import {
   decodeRuntimeValue,
   type EndpointStore,
@@ -30,14 +30,14 @@ import { encodeCollectiveContent } from "./wire/index.js";
 it("includes the answer retained before the deadline even when its store response is delayed", () =>
   Effect.gen(function* () {
     const fixture = yield* delayedAnswerFixture();
-    const id = yield* beginGather(fixture.collective);
-    const answer = yield* certifiedAnswer(fixture, id);
+    const operationId = yield* beginGather(fixture.collective);
+    const answer = yield* certifiedAnswer(fixture, operationId);
     const classifying = yield* fixture.collective
       .classify(answer)
       .pipe(Effect.fork);
     yield* Deferred.await(fixture.entered);
     expect(yield* fixture.store.readCollectiveAnswers()).toMatchObject([
-      { operationId: id, recordHash: answer.recordHash },
+      { operationId, recordHash: answer.recordHash },
     ]);
     yield* TestClock.adjust("2 minutes");
     yield* Deferred.succeed(fixture.release, undefined);
@@ -61,8 +61,8 @@ it("restores a retained answer before choosing settled completion after an offli
     const interrupted = yield* Effect.scoped(
       Effect.gen(function* () {
         const fixture = yield* delayedAnswerFixture(true);
-        const id = yield* beginGather(fixture.collective);
-        const answer = yield* certifiedAnswer(fixture, id);
+        const operationId = yield* beginGather(fixture.collective);
+        const answer = yield* certifiedAnswer(fixture, operationId);
         expect(
           yield* Effect.flip(fixture.collective.classify(answer)),
         ).toMatchObject({
@@ -114,20 +114,20 @@ function delayedAnswerFixture(failAfterRetain = false) {
     );
     const ports: CollectivePorts = {
       store,
-      self: Schema.decodeUnknownSync(AgentAddress)("agent:alice"),
+      self: testAgentView("agent:alice"),
       scope: yield* Scope.Scope,
       lookupMember: (member) => Effect.succeed(testAgentView(member)),
-      sendPost: () =>
-        mintPostId().pipe(
+      sendMessage: () =>
+        mintMsgId().pipe(
           Effect.orDie,
-          Effect.map((postId) => ({
-            postId,
+          Effect.map((msgId) => ({
+            msgId,
             recordHash: head.actionCertifiedRecord.recordHash,
           })),
         ),
-      bindPost: () => Effect.dieMessage("gather uses request fanout"),
+      bindMessage: () => Effect.dieMessage("gather uses request fanout"),
       sendAdmitted: () => Effect.dieMessage("no firewall in this test"),
-      observePost: () => Effect.dieMessage("gather owns no close"),
+      observeMessage: () => Effect.dieMessage("gather owns no close"),
       reportStorageFault: (fault) =>
         Effect.sync(() => {
           faults.push(fault);
@@ -173,16 +173,16 @@ function beginGather(collective: CollectiveOperations) {
 
 function certifiedAnswer(
   fixture: Effect.Effect.Success<ReturnType<typeof delayedAnswerFixture>>,
-  id: CollectiveId,
+  operationId: CollectiveId,
 ) {
   return Effect.gen(function* () {
     const content = yield* encodeCollectiveContent({
       kind: "response",
-      id,
+      operationId,
       action: "accept",
       content: { answer: "yes" },
     });
-    const answer = yield* appendCertifiedPost(
+    const answer = yield* appendCertifiedMessage(
       fixture.subject,
       fixture.head,
       content,

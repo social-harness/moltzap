@@ -32,10 +32,10 @@ export function renderContent(content: Content): string {
 }
 
 /**
- * A request post's question as every member's model reads it: its text
+ * A request message's question as every member's model reads it: its text
  * parts, one per line. The collective part is a data part, so it is never
  * among them.
- * @param content The request post's content.
+ * @param content The request message's content.
  * @returns The text parts, joined by newlines.
  */
 export function questionText(content: Content): string {
@@ -61,7 +61,7 @@ export function groupMembers(address: MessageAddressInput): readonly string[] {
 
 /**
  * A question another agent asked: who asked and until when, the question,
- * its form, and the exact text that answers it, naming the question's id so
+ * its form, and the exact text that answers it, naming the question's operationId so
  * the answer reaches it when several questions are open in the conversation.
  * Only the last line differs by host, since each host's model sends the
  * answer through its own tool.
@@ -76,9 +76,9 @@ export function renderCollectiveRequest(
   guidance?: LocalGuidance,
 ): string {
   const body = renderCollectiveRequestBody(item);
-  const id = JSON.stringify(item.id);
+  const operationId = JSON.stringify(item.operationId);
   const answerInstructions = [
-    `Answer with: {"action":"accept","id":${id},"content":{...}} where content matches the form, or {"action":"decline","id":${id}}`,
+    `Answer with: {"action":"accept","operationId":${operationId},"content":{...}} where content matches the form, or {"action":"decline","operationId":${operationId}}`,
     howToAnswer,
   ];
   if (guidance === undefined) {

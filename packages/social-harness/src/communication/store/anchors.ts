@@ -1,4 +1,4 @@
-/** @file Atomic identity, post-intent, foundation, and Router-anchor transitions. */
+/** @file Atomic identity, message-intent, foundation, and Router-anchor transitions. */
 
 import type { DatabaseSync } from "node:sqlite";
 import type {
@@ -9,14 +9,14 @@ import type {
   FirewallCommit,
   FirewallCompletion,
   IdentityBinding,
-  PostIntent,
-  PostIntentBinding,
+  MessageIntent,
+  MessageIntentBinding,
   ProposalLock,
   RestartedEmptyConversation,
   StagedReanchor,
   StoreMutation,
 } from "./types.js";
-import { bindCollectivePostInTransaction } from "./collective-claims.js";
+import { bindCollectiveMessageInTransaction } from "./collective-claims.js";
 import {
   copyBytes,
   readBytes,
@@ -47,29 +47,29 @@ export const bindIdentity = Object.freeze({
 });
 
 /**
- * Durably binds one author-scoped post to its immutable canonical intent.
+ * Durably binds one author-scoped message to its immutable canonical intent.
  *
  * @param database Exclusively owned endpoint database.
- * @param binding Canonical post recovery identity and optional new foundation.
+ * @param binding Canonical message recovery identity and optional new foundation.
  * @returns Whether the same binding was inserted or already durable.
  */
-export function bindPostIntent(
+export function bindMessageIntent(
   database: DatabaseSync,
-  binding: PostIntentBinding,
+  binding: MessageIntentBinding,
 ): StoreMutation {
-  validatePostIntentBinding(binding);
+  validateMessageIntentBinding(binding);
   return transaction(database, () =>
     bindIntentWithFoundation(database, binding),
   );
 }
 
 /** An assessment cannot authorize different bytes or survive a changed evidence range. */
-export function bindCheckedPostIntent(
+export function bindCheckedMessageIntent(
   database: DatabaseSync,
-  binding: PostIntentBinding,
+  binding: MessageIntentBinding,
   completion: FirewallCompletion,
 ): FirewallCommit {
-  validatePostIntentBinding(binding);
+  validateMessageIntentBinding(binding);
   return transaction(database, () => {
     const disposition = compareFirewallCheck(
       database,
@@ -85,22 +85,22 @@ export function bindCheckedPostIntent(
 }
 
 /**
- * A gather request post binds only against the admitted check of its
- * operation, whose candidate is exactly the post's request content; without
+ * A gather request message binds only against the admitted check of its
+ * operation, whose candidate is exactly the message's request content; without
  * one it is withheld and nothing binds.
  * @param database Exclusively owned endpoint database.
- * @param binding Canonical post recovery identity and optional new foundation.
+ * @param binding Canonical message recovery identity and optional new foundation.
  * @param operation The operation's admitted check.
  * @param operation.checkId The check that admitted the operation.
  * @param operation.canonicalCandidate The canonical request content it admitted.
  * @returns Whether the intent was bound.
  */
-export function bindAdmittedPostIntent(
+export function bindAdmittedMessageIntent(
   database: DatabaseSync,
-  binding: PostIntentBinding,
+  binding: MessageIntentBinding,
   operation: Pick<FirewallAttempt, "checkId" | "canonicalCandidate">,
 ): FirewallCommit {
-  validatePostIntentBinding(binding);
+  validateMessageIntentBinding(binding);
   requireText(operation.checkId);
   requireBytes(operation.canonicalCandidate);
   return transaction(database, () => {
@@ -188,7 +188,7 @@ export function lockFirstMessageProposal(
  *
  * @param database Exclusively owned endpoint database.
  * @param restart Expected old and verified replacement initial foundations.
- * @returns The replacement foundation and immutable retained post intents.
+ * @returns The replacement foundation and immutable retained message intents.
  */
 export function restartEmptyConversation(
   database: DatabaseSync,
@@ -201,7 +201,7 @@ export function restartEmptyConversation(
     installReplacementFoundation(database, restart.replacementFoundation);
     return Object.freeze({
       foundation: copyFoundation(restart.replacementFoundation),
-      postIntents: readConversationPostIntents(
+      messageIntents: readConversationMessageIntents(
         database,
         restart.replacementFoundation.conversationId,
       ),
@@ -274,12 +274,12 @@ export function applyCatchUpReanchor(
   });
 }
 
-function validatePostIntentBinding(binding: PostIntentBinding): void {
+function validateMessageIntentBinding(binding: MessageIntentBinding): void {
   const intent = binding.intent;
   requireText(intent.conversationId);
   requireText(intent.membershipHash);
   requireText(intent.authorAgentId);
-  requireText(intent.postId);
+  requireText(intent.msgId);
   requireBytes(intent.canonicalIntent);
   if (intent.completedRecordHash !== undefined) {
     throw new StoreSignal("invalid-input");
@@ -293,18 +293,18 @@ function validatePostIntentBinding(binding: PostIntentBinding): void {
 
 function bindIntentWithFoundation(
   database: DatabaseSync,
-  binding: PostIntentBinding,
+  binding: MessageIntentBinding,
 ): StoreMutation {
   const intent = binding.intent;
   const foundation =
     binding.kind === "new-conversation"
       ? putConversationFoundationInTransaction(database, binding.foundation)
       : requireConversationFoundation(database, intent);
-  const postIntent = bindPostIntentInTransaction(database, intent);
+  const messageIntent = bindMessageIntentInTransaction(database, intent);
   if (binding.collective !== undefined) {
-    bindCollectivePostInTransaction(database, binding.collective, intent);
+    bindCollectiveMessageInTransaction(database, binding.collective, intent);
   }
-  return foundation === "inserted" || postIntent === "inserted"
+  return foundation === "inserted" || messageIntent === "inserted"
     ? "inserted"
     : "existing";
 }
@@ -341,9 +341,9 @@ function writeIdentity(
   });
 }
 
-function bindPostIntentInTransaction(
+function bindMessageIntentInTransaction(
   database: DatabaseSync,
-  intent: PostIntent,
+  intent: MessageIntent,
 ): StoreMutation {
   const identity = readStoredIdentity(database);
   if (identity === undefined) {
@@ -353,9 +353,9 @@ function bindPostIntentInTransaction(
   const existing = database
     .prepare(
       `SELECT conversation_id, membership_hash, canonical_intent
-       FROM post_intents WHERE author_agent_id = ? AND post_id = ?`,
+       FROM message_intents WHERE author_agent_id = ? AND msg_id = ?`,
     )
-    .get(intent.authorAgentId, intent.postId);
+    .get(intent.authorAgentId, intent.msgId);
   if (existing !== undefined) {
     requireEqual(readText(existing, "conversation_id"), intent.conversationId);
     requireEqual(readText(existing, "membership_hash"), intent.membershipHash);
@@ -367,14 +367,14 @@ function bindPostIntentInTransaction(
   }
   database
     .prepare(
-      `INSERT INTO post_intents
-        (author_agent_id, post_id, conversation_id, membership_hash,
+      `INSERT INTO message_intents
+        (author_agent_id, msg_id, conversation_id, membership_hash,
          canonical_intent)
        VALUES (?, ?, ?, ?, ?)`,
     )
     .run(
       intent.authorAgentId,
-      intent.postId,
+      intent.msgId,
       intent.conversationId,
       intent.membershipHash,
       copyBytes(intent.canonicalIntent),
@@ -406,7 +406,7 @@ function putConversationFoundationInTransaction(
 
 function requireConversationFoundation(
   database: DatabaseSync,
-  intent: PostIntent,
+  intent: MessageIntent,
 ): StoreMutation {
   const foundation = readFoundation(database, intent.conversationId);
   if (foundation === undefined) {
@@ -864,17 +864,17 @@ function installReplacementFoundation(
     .run(replacement.conversationId, replacement.anchorHash);
 }
 
-function readConversationPostIntents(
+function readConversationMessageIntents(
   database: DatabaseSync,
   conversationId: string,
-): readonly PostIntent[] {
+): readonly MessageIntent[] {
   return Object.freeze(
     database
       .prepare(
-        `SELECT conversation_id, membership_hash, author_agent_id, post_id,
+        `SELECT conversation_id, membership_hash, author_agent_id, msg_id,
                 canonical_intent, completed_record_hash
-         FROM post_intents WHERE conversation_id = ?
-         ORDER BY author_agent_id, post_id`,
+         FROM message_intents WHERE conversation_id = ?
+         ORDER BY author_agent_id, msg_id`,
       )
       .all(conversationId)
       .map((row) => {
@@ -886,7 +886,7 @@ function readConversationPostIntents(
           conversationId: readText(row, "conversation_id"),
           membershipHash: readText(row, "membership_hash"),
           authorAgentId: readText(row, "author_agent_id"),
-          postId: readText(row, "post_id"),
+          msgId: readText(row, "msg_id"),
           canonicalIntent: readBytes(row, "canonical_intent"),
           ...(completedRecordHash === undefined ? {} : { completedRecordHash }),
         });

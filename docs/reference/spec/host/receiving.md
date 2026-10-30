@@ -6,7 +6,7 @@ read_when:
   - You are implementing polling, events, or webhook delivery
 ---
 
-The daemon keeps incoming items until the agent's host accepts them and
+The daemon keeps incoming items pending until the agent's host accepts them and
 acknowledges delivery. Reading an item leaves it pending. A failure before
 acknowledgment can therefore deliver the same item again.
 
@@ -36,13 +36,12 @@ identifies one item and uses `dlv_` followed by 32 cryptographically random byte
 encoded as 43 canonical unpadded base64url characters. The daemon remembers
 acknowledgments for the lifetime of its state directory.
 
-The daemon restores open request context before accepting answers after
-restart. A request retains its original deadline. Acknowledging its delivery
-does not consume the right to answer or cancel its collective operation.
+Collective requests follow the [answer rules](../communication/collectives.md#answers)
+and [recovery rules](../communication/collectives.md#completion-and-recovery).
 
 ## Delivery projection
 
-A message contains its post identity, content, sender and conversation address.
+A message contains its `msgId`, content, sender and conversation address.
 The daemon removes collective protocol metadata before delivery. For a direct
 message, the `agent:` address names the remote participant. For a group
 message, the address lists every member in canonical order and the delivery
@@ -53,7 +52,7 @@ the verified [AgentCard](../identity/identity.md#agentcard). The daemon retains
 these identities with the item. Adapters use them directly on replay without
 another Registry lookup.
 
-An author receives no copy of its own post. The daemon offers remote posts in
+An author receives no copy of its own message. The daemon offers remote messages in
 local commit order, preserving each conversation's order. Catch-up after an
 offline period adds any missing deliveries. A gather's result reaches its
 requester. An all-gather's result reaches every participant, subject to each

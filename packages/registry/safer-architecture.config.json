@@ -39,8 +39,8 @@
       "reason": "Durable Registry storage capability and PostgreSQL implementation boundary"
     },
     {
-      "file": "migrations/0001_registry.ts",
-      "reason": "Ordered PostgreSQL schema migration seam owned by Registry storage"
+      "file": "schema.ts",
+      "reason": "Current PostgreSQL schema owned by Registry storage"
     }
   ]
 }

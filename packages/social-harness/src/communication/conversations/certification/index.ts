@@ -52,7 +52,7 @@ import {
 import {
   type EngineActionFold,
   type EngineConversation,
-  type EnginePostIntent,
+  type EngineMessageIntent,
   type EngineRuntime,
   evidenceMatchesFold,
   type EvidenceRoute,
@@ -377,7 +377,7 @@ function hasActionThreshold(fold: EngineActionFold): boolean {
       : count >= quorumThreshold(memberCount);
   return (
     thresholdReached &&
-    fold.actionEvidence.has(fold.action.postIntent.authorAgentId)
+    fold.actionEvidence.has(fold.action.messageIntent.authorAgentId)
   );
 }
 
@@ -444,16 +444,16 @@ const applyPromotionState = (
       record,
     };
     if (
-      fold.action.postIntent.authorAgentId !==
+      fold.action.messageIntent.authorAgentId !==
       runtime.input.localAgentCard.agentId
     ) {
       return undefined;
     }
-    runtime.completedPosts.set(
-      fold.action.postIntent.postId,
+    runtime.completedMessages.set(
+      fold.action.messageIntent.msgId,
       record.actionCertifiedRecord.recordHash,
     );
-    return runtime.intents.get(fold.action.postIntent.postId);
+    return runtime.intents.get(fold.action.messageIntent.msgId);
   });
 
 function completePromotion(
@@ -493,7 +493,7 @@ const reproposalDispositionByReason = {
 
 const reproposePendingIntent = (
   runtime: EngineRuntime,
-  pending: EnginePostIntent,
+  pending: EngineMessageIntent,
 ): Effect.Effect<void, RouterWorkerPersistenceError> =>
   runtime.phases.proposeIntent(runtime, pending).pipe(
     Effect.asVoid,
@@ -505,14 +505,14 @@ const reproposePendingIntent = (
   );
 
 /**
- * Propose a conversation's uncertified posts again at its new head. A
+ * Propose a conversation's uncertified messages again at its new head. A
  * conversation still recovering proposes nothing here: its endpoint ignores
  * the Router's echo of a proposal while fenced, so the proposal would be
  * signed by members but never by its author, and its recovery proposes the
- * posts at the head it settles on.
- * @param runtime Engine whose pending posts are rebased.
+ * messages at the head it settles on.
+ * @param runtime Engine whose pending messages are rebased.
  * @param conversationId Conversation whose head moved.
- * @returns Completion once each pending post is proposed again.
+ * @returns Completion once each pending message is proposed again.
  */
 const rebasePendingIntents = (
   runtime: EngineRuntime,
@@ -524,7 +524,7 @@ const rebasePendingIntents = (
         runtime.intents.values(),
         (pending) =>
           pending.intent.conversationId === conversationId &&
-          !runtime.completedPosts.has(pending.intent.postId)
+          !runtime.completedMessages.has(pending.intent.msgId)
             ? reproposePendingIntent(runtime, pending)
             : Effect.void,
         { concurrency: 1, discard: true },
@@ -533,12 +533,12 @@ const rebasePendingIntents = (
 /**
  * The store rows of a fold's complete certified record: the record with the
  * fold's action signatures and the given durability votes, and, for another
- * member's post, its inbound delivery.
+ * member's message, its inbound delivery.
  * @param runtime Engine whose agent the delivery is for.
  * @param fold Fold of the record's action.
  * @param record The complete certified record.
  * @param votes Durability votes stored with the record.
- * @returns The stored record, and the delivery of a remote post.
+ * @returns The stored record, and the delivery of a remote message.
  */
 const certifiedRecordRows = (
   runtime: EngineRuntime,
@@ -554,7 +554,7 @@ const certifiedRecordRows = (
       votes,
     );
     const delivery =
-      fold.action.postIntent.authorAgentId === localAgentId
+      fold.action.messageIntent.authorAgentId === localAgentId
         ? undefined
         : yield* inboundDelivery(fold.conversation, record, localAgentId);
     return { stored, delivery };
@@ -564,11 +564,11 @@ const certifiedRecordRows = (
  * Store a fold's complete record as certified and install it as its
  * conversation's head in one uninterruptible step. An interruption between
  * the two would leave the store holding the record certified while the fold,
- * the conversation's head and the local post's completion still lag it.
+ * the conversation's head and the local message's completion still lag it.
  * @param runtime Engine whose store and conversation take the record.
  * @param fold Fold of the record's action, holding its votes.
  * @param record The complete certified record.
- * @returns Completion once the record is installed and pending posts rebased.
+ * @returns Completion once the record is installed and pending messages rebased.
  */
 const promote = (
   runtime: EngineRuntime,
