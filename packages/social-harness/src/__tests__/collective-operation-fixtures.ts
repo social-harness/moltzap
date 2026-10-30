@@ -21,11 +21,11 @@ import { MsgId, RecordHash } from "../communication/records/index.js";
 import { AgentAddress } from "../communication/records/values.js";
 import { digest, testAgentView } from "./agent-card-fixtures.js";
 import { collectiveOperationId } from "./collective-id-fixtures.js";
+import { collectivePersistencePorts } from "./collective-message-fixtures.js";
 import {
   type TestCollectiveOperations as CollectiveOperations,
   makeCollectiveOperations,
 } from "./collective-send.js";
-import { collectivePersistencePorts } from "./collective-message-fixtures.js";
 
 /** The agent a layer `makeLayer` builds runs as unless told otherwise. */
 export const alice = Schema.decodeUnknownSync(AgentAddress)("agent:alice");
@@ -162,44 +162,43 @@ export const makeLayer = (
       }),
   }: LayerOptions = {},
 ): Effect.Effect<CollectiveOperations, never, Scope.Scope> =>
-  Effect.flatMap(Effect.scope, (scope) =>
-    Effect.gen(function* () {
-      const persistence = yield* collectivePersistencePorts((input) => {
-        const reason = refused[input.to];
-        if (reason === undefined) {
-          return sendMessage(input);
-        }
-        if (reason === "slow") {
-          return Effect.never;
-        }
-        if (reason === "late") {
-          return Effect.sleep(
-            Duration.sum(requestSendWait, lateMessageDelay),
-          ).pipe(Effect.zipRight(sendMessage(input)));
-        }
-        return Effect.fail(new SendError({ reason }));
-      }, self);
-      const operations = yield* persistence.run(
-        makeCollectiveOperations({
-          ...persistence,
-          self: testAgentView(self),
-          prepareMessage: prepareKnownMembers(
-            persistence.prepareMessage,
-            unknown,
-          ),
-          emit,
-          scope,
-        }),
-      );
-      return {
-        ...operations,
-        classify: (message: Parameters<CollectiveOperations["classify"]>[0]) =>
-          persistence
-            .certifyInput(message)
-            .pipe(Effect.zipRight(operations.classify(message))),
-      };
-    }),
-  ).pipe(Effect.orDie, Effect.withSpan("makeLayer"));
+  Effect.gen(function* () {
+    const scope = yield* Effect.scope;
+    const persistence = yield* collectivePersistencePorts((input) => {
+      const reason = refused[input.to];
+      if (reason === undefined) {
+        return sendMessage(input);
+      }
+      if (reason === "slow") {
+        return Effect.never;
+      }
+      if (reason === "late") {
+        return Effect.sleep(
+          Duration.sum(requestSendWait, lateMessageDelay),
+        ).pipe(Effect.zipRight(sendMessage(input)));
+      }
+      return Effect.fail(new SendError({ reason }));
+    }, self);
+    const operations = yield* persistence.run(
+      makeCollectiveOperations({
+        ...persistence,
+        self: testAgentView(self),
+        prepareMessage: prepareKnownMembers(
+          persistence.prepareMessage,
+          unknown,
+        ),
+        emit,
+        scope,
+      }),
+    );
+    return {
+      ...operations,
+      classify: (message: Parameters<CollectiveOperations["classify"]>[0]) =>
+        persistence
+          .certifyInput(message)
+          .pipe(Effect.zipRight(operations.classify(message))),
+    };
+  }).pipe(Effect.orDie, Effect.withSpan("makeLayer"));
 
 /**
  * A message in the direct conversation with `sender`.

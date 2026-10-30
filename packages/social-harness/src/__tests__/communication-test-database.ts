@@ -22,7 +22,7 @@ export const openTestDatabase = (directory?: string) =>
       run: <A, E, R>(effect: Effect.Effect<A, E, R>) =>
         effect.pipe(Effect.provideService(SqlClient.SqlClient, sql)),
     };
-  });
+  }).pipe(Effect.withSpan("openTestDatabase"));
 
 /** A database lifetime and one generic operation runner, without a storage facade. */
 export type TestDatabase = Effect.Effect.Success<

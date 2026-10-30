@@ -2,10 +2,10 @@
 
 import { SqlClient } from "@effect/sql";
 import { Effect, Layer } from "effect";
-import { layer, queueFirewallItem } from "../daemon/store.js";
 import { makeHostDelivery } from "../daemon/inbox/host-delivery.js";
 import { noHistoryExport } from "../daemon/inbox/host-traffic-log.js";
 import { acknowledgeInboxItem, putInboxItem } from "../daemon/inbox/store.js";
+import { layer, queueFirewallItem } from "../daemon/store.js";
 import { LIVE_WIRE_VERSIONS } from "../identity/wire-version.js";
 
 /** Test events use the production inbox and receiver callbacks over one database. */

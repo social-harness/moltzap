@@ -7,7 +7,6 @@ import {
 } from "@effect/platform";
 import { Effect, Match, Schema } from "effect";
 import type { openInboxFixture } from "./inbox-fixture.js";
-type InboxFixture = Effect.Effect.Success<ReturnType<typeof openInboxFixture>>;
 import {
   DeliveryToken,
   encodeRuntimeValue,
@@ -18,6 +17,7 @@ import { InboundItem } from "../host-protocol/items.js";
 import { INBOX_ITEM_EVENT } from "../host-protocol/names.js";
 import { digest, testAgentView } from "./agent-card-fixtures.js";
 import { collectiveOperationId } from "./collective-id-fixtures.js";
+type InboxFixture = Effect.Effect.Success<ReturnType<typeof openInboxFixture>>;
 
 /** The signing secret of the scripted subscription. */
 export const secret = `whsec_${Buffer.alloc(32, 1).toString("base64")}`;

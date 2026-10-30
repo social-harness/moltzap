@@ -2,9 +2,9 @@
 
 import { type Duration, Effect, Queue } from "effect";
 import type { TestDatabase } from "./communication-test-database.js";
-import { testStore } from "./store-schema-fixtures.js";
 import { decodeCanonical } from "../encoding/canonical-json.js";
 import { SignedMessage } from "../identity/envelope/signed-message.js";
+import { testStore } from "./store-schema-fixtures.js";
 
 /**
  * Transmit one outbox row the way the Router worker does: begin it, complete
