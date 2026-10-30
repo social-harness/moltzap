@@ -1,6 +1,7 @@
 /** @file Installation budgets preserve usable policy and durable state across edits and startup. */
 
 import { scopedLive as it } from "@effect/vitest";
+import * as SqlClient from "@effect/sql/SqlClient";
 import { Effect, Array as EffectArray, Option, Queue } from "effect";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Configuration regressions compare exact owner-file bytes before and after installation.
 import { readFileSync, writeFileSync } from "node:fs";
@@ -28,6 +29,7 @@ import {
   type TextRule,
 } from "./config.js";
 import { type Firewall, type FirewallOptions, makeFirewall } from "./index.js";
+import { readFirewallPolicy, readFirewallActivations } from "./store/index.js";
 
 // @agent-code-guard/regression-only: Real SQLite, loaded documents and delivery exercise the installation boundary with deterministic provider judgments.
 
@@ -123,31 +125,40 @@ function exerciseRuntimeEdit(
 ) {
   return Effect.gen(function* () {
     const subject = yield* fixture;
-    const installed = yield* makeFirewall(configuration, subject.store);
+    const installed = yield* makeFirewall(configuration).pipe(
+      Effect.provideService(SqlClient.SqlClient, subject.sql),
+    );
     yield* Effect.forEach(
       EffectArray.range(0, 5),
       (index) =>
-        installed.policy.update(
-          { add: [{ behavior: behavior(index) }] },
-          "runtime",
-        ),
+        installed.updatePolicy({ add: [{ behavior: behavior(index) }] }),
       { concurrency: 1 },
     );
-    const before = yield* installed.policy.read();
-    const bytes = yield* subject.store.readFirewallPolicy();
-    const activations = yield* subject.store.readFirewallActivations({});
+    const before = yield* installed.readPolicy();
+    const bytes = yield* readFirewallPolicy().pipe(
+      Effect.provideService(SqlClient.SqlClient, subject.sql),
+    );
+    const activations = yield* readFirewallActivations({}).pipe(
+      Effect.provideService(SqlClient.SqlClient, subject.sql),
+    );
 
-    const rejected = yield* installed.policy
-      .update({ add: [{ behavior: behavior(6) }] }, "runtime")
+    const rejected = yield* installed
+      .updatePolicy({ add: [{ behavior: behavior(6) }] })
       .pipe(Effect.flip);
 
     expect(rejected.reason).toBe(buildFailure);
     expect(rejected.message).toContain(editDocs);
-    expect(yield* installed.policy.read()).toEqual(before);
-    expect(yield* subject.store.readFirewallPolicy()).toEqual(bytes);
-    expect(yield* subject.store.readFirewallActivations({})).toEqual(
-      activations,
-    );
+    expect(yield* installed.readPolicy()).toEqual(before);
+    expect(
+      yield* readFirewallPolicy().pipe(
+        Effect.provideService(SqlClient.SqlClient, subject.sql),
+      ),
+    ).toEqual(bytes);
+    expect(
+      yield* readFirewallActivations({}).pipe(
+        Effect.provideService(SqlClient.SqlClient, subject.sql),
+      ),
+    ).toEqual(activations);
     expect(requests).toEqual([]);
     yield* expectDelivery(subject, installed, requests);
     return { directory: subject.directory, before, bytes, activations };
@@ -185,18 +196,14 @@ function expectReopen(
   configuration: FirewallOptions,
   smallerBudget: FirewallOptions,
 ) {
-  return withDaemonStore(retained.directory, (store) =>
+  return withDaemonStore(retained.directory, () =>
     Effect.gen(function* () {
-      const rejected = yield* makeFirewall(smallerBudget, store).pipe(
-        Effect.flip,
-      );
+      const rejected = yield* makeFirewall(smallerBudget).pipe(Effect.flip);
       expect(rejected.reason).toBe(buildFailure);
-      expect(yield* store.readFirewallPolicy()).toEqual(retained.bytes);
-      expect(yield* store.readFirewallActivations({})).toEqual(
-        retained.activations,
-      );
-      const reopened = yield* makeFirewall(configuration, store);
-      expect(yield* reopened.policy.read()).toEqual(retained.before);
+      expect(yield* readFirewallPolicy()).toEqual(retained.bytes);
+      expect(yield* readFirewallActivations({})).toEqual(retained.activations);
+      const reopened = yield* makeFirewall(configuration);
+      expect(yield* reopened.readPolicy()).toEqual(retained.before);
     }),
   );
 }
@@ -240,13 +247,11 @@ function rejectCatalogFromFile(field: "fixedRules" | "initialRules") {
       onNone: () => Effect.dieMessage("expected loaded policy options"),
       onSome: Effect.succeed,
     });
-    yield* withDaemonStore(stateDirectory(), (store) =>
+    yield* withDaemonStore(stateDirectory(), () =>
       Effect.gen(function* () {
-        const error = yield* makeFirewall(configuration, store).pipe(
-          Effect.flip,
-        );
+        const error = yield* makeFirewall(configuration).pipe(Effect.flip);
         expect(error.reason).toBe(buildFailure);
-        expect(yield* store.readFirewallPolicy()).toBeUndefined();
+        expect(yield* readFirewallPolicy()).toBeUndefined();
         expect(readFileSync(path, "utf8")).toBe(contents);
       }),
     );

@@ -1,5 +1,6 @@
 /** @file Classified inbox paging and stable runtime delivery identities. */
 
+import type * as SqlClient from "@effect/sql/SqlClient";
 import { Effect, Encoding, Schema } from "effect";
 import { randomBytes } from "node:crypto";
 import type {
@@ -7,7 +8,12 @@ import type {
   HarnessReadInboxRequest,
   HarnessReadInboxResult,
 } from "../../host-protocol/operations.js";
-import type { InboxEntry, InboxStore } from "./store.js";
+import {
+  type InboxEntry,
+  readInbox,
+  readInboxItem,
+  putInboxItem,
+} from "./store.js";
 import {
   decodeRuntimeValue,
   DeliveryToken,
@@ -20,17 +26,13 @@ import { InboundItem } from "../../host-protocol/items.js";
 
 /**
  * Lookup retains the original content and guidance after acknowledgment.
- * @param store Retained immutable classified inbox.
  * @param eventId Canonical event identity carried by a webhook.
  * @returns The original item or a closed lookup failure.
  */
-export const readRuntimeEvent = (
-  store: Pick<InboxStore, "readInboxItem">,
-  eventId: string,
-) =>
+export const readRuntimeEvent = (eventId: string) =>
   Effect.gen(function* () {
     const token = yield* Schema.decodeUnknown(DeliveryToken)(eventId);
-    const retained = yield* store.readInboxItem(token);
+    const retained = yield* readInboxItem(token);
     if (retained === undefined) {
       return yield* Effect.fail({ reason: "unknown-event" });
     }
@@ -73,18 +75,16 @@ const cursorSchema = exactStruct({
 /**
  * Persist a classified item before any host can observe its delivery identity.
  * Reclassification retains guidance admitted under an earlier daemon composition.
- * @param store Daemon-owned endpoint persistence.
  * @param event Stable delivery identity and classified payload.
  * @returns Completion once the immutable token binding is durable.
  */
 export const persistInboxItem = (
-  store: InboxStore,
   event: HarnessMessageReadyEvent,
-): Effect.Effect<void, EndpointStoreError> =>
+): Effect.Effect<void, EndpointStoreError, SqlClient.SqlClient> =>
   Effect.gen(function* () {
     const canonicalItem = yield* encodeRuntimeValue(event.item);
-    const retained = yield* store.readInboxItem(event.deliveryToken);
-    yield* store.putInboxItem({
+    const retained = yield* readInboxItem(event.deliveryToken);
+    yield* putInboxItem({
       deliveryToken: event.deliveryToken,
       canonicalItem,
       ...(retained?.canonicalGuidance === undefined
@@ -117,17 +117,19 @@ const decodeCursor = (
 
 /**
  * Read the classified projection, never the underlying collective protocol messages.
- * @param store Daemon-owned endpoint persistence.
  * @param input Optional position within an earlier bounded snapshot.
  * @returns An inbox page and the continuation within that same snapshot.
  */
 export const readRuntimeInbox = (
-  store: InboxStore,
   input: HarnessReadInboxRequest,
-): Effect.Effect<HarnessReadInboxResult, EndpointStoreError> =>
+): Effect.Effect<
+  HarnessReadInboxResult,
+  EndpointStoreError,
+  SqlClient.SqlClient
+> =>
   Effect.gen(function* () {
     const page = yield* decodeCursor(input.cursor).pipe(
-      Effect.flatMap((bounds) => store.readInbox(bounds)),
+      Effect.flatMap((bounds) => readInbox(bounds)),
     );
     const items = yield* Effect.forEach(
       page.items,

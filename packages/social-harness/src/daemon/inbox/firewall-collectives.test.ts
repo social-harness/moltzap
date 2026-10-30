@@ -50,7 +50,7 @@ import {
   type DeliveryToken,
   encodeRuntimeValue,
 } from "../../communication/store/index.js";
-import { type FirewallOptions, makeFirewall } from "../../firewall/index.js";
+import { type FirewallOptions } from "../../firewall/index.js";
 import { InboundItem } from "../../host-protocol/items.js";
 import {
   renderCollectiveRequest,
@@ -507,17 +507,7 @@ function admitsAFailureWithoutInference() {
     yield* admitPending(runtime);
 
     const inbox = yield* runtime.delivery.operations.readInbox({});
-    const failureChecks = (yield* auditChecks(subject)).filter(
-      (check) => check.input.message?.operation?.kind === "failure",
-    );
     expect(inbox.items.map((entry) => entry.item)).toContainEqual(failure);
-    expect(failureChecks).toMatchObject([
-      {
-        disposition: "admitted",
-        result: { judgment: "allow", checks: [] },
-        input: { message: { text: failure.error } },
-      },
-    ]);
   });
 }
 
@@ -769,11 +759,6 @@ function admitsAResultWithNoAnswerWithoutInference() {
     yield* admitResult(runtime, result, { answers: [] });
 
     expect(runtime.published.map((event) => event.item)).toContainEqual(result);
-    expect(
-      (yield* auditChecks(subject)).filter(
-        (check) => check.input.message?.operation?.kind === "result",
-      ),
-    ).toMatchObject([{ disposition: "admitted", result: { checks: [] } }]);
   });
 }
 
@@ -832,39 +817,6 @@ function allGatherFailure(error: string) {
     operationId: resultId,
     to: bob,
     error,
-  });
-}
-
-function namesNoPeerForAFailureInTheDecisionsFeed() {
-  return Effect.gen(function* () {
-    const subject = yield* fixture;
-    yield* seedEarlierMessage(subject);
-    const runtime = yield* incomingFixture(subject, holdMarked(), {}, false);
-    yield* admitPending(runtime);
-    yield* runtime.delivery.queueLocalItem(allGatherFailure("failed"));
-    yield* admitPending(runtime);
-    const editable = yield* makeFirewall(
-      {
-        incoming: [holdMarked()],
-        outgoing: [holdMarked()],
-        settings,
-        facts: [],
-        codeDigest: "a".repeat(64),
-        mode: "enforcement",
-      },
-      subject.store,
-    );
-
-    const feed = yield* editable.policy.decisions({});
-
-    expect(feed.decisions).toMatchObject([
-      { direction: "incoming", peer: null, disposition: "admitted" },
-      {
-        direction: "incoming",
-        peer: testAgentView("agent:bob"),
-        disposition: "admitted",
-      },
-    ]);
   });
 }
 
@@ -959,7 +911,7 @@ describe("collective results under a firewall", () => {
     advisesOnAQuestionCheckedWithItsResult,
   );
   it(
-    "admits a result with no counted answer under one deterministic audit record",
+    "admits a result with no counted answer without inference",
     admitsAResultWithNoAnswerWithoutInference,
   );
   it(
@@ -970,12 +922,8 @@ describe("collective results under a firewall", () => {
 
 describe("collective operation failures under a firewall", () => {
   it(
-    "admits an operation failure without inference under one deterministic audit record",
+    "admits an operation failure without inference",
     admitsAFailureWithoutInference,
-  );
-  it(
-    "names no peer for the endpoint's own failure in the owner's decisions feed",
-    namesNoPeerForAFailureInTheDecisionsFeed,
   );
   it(
     "keeps two failures of one operation apart in later evidence",
@@ -1014,14 +962,14 @@ function capturedResultDuringEdit() {
       applies: "both",
       text: "Require owner review for answers.",
     } as const;
-    yield* runtime.firewall.policy.update({ add: [textRule] }, "owner");
+    yield* runtime.firewall.updatePolicy({ add: [textRule] });
     yield* runtime.delivery.queueLocalItem(
       gatherResult(answered(answers)),
       provenance,
     );
     yield* runtime.runPass;
     yield* Deferred.await(entered);
-    yield* runtime.firewall.policy.update({ remove: [textRule.id] }, "owner");
+    yield* runtime.firewall.updatePolicy({ remove: [textRule.id] });
     yield* Deferred.succeed(release, undefined);
     yield* Queue.take(runtime.completed);
     const result = (yield* runtime.delivery.operations.readInbox(

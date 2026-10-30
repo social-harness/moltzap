@@ -30,7 +30,6 @@ export interface CheckMessageInput extends CheckConfiguration {
   readonly code: readonly MessageMiddleware[];
   readonly provider?: DecisionProvider;
   readonly fixedRuleIds?: readonly string[];
-  readonly runtimeRuleIds?: readonly string[];
 }
 
 /** Operational holds remain distinct from a settled rule violation. */
@@ -652,12 +651,7 @@ export const validateChecks = Effect.fn("Firewall.validateChecks")(function* (
 export function textMetadata(
   input: Pick<
     CheckMessageInput,
-    | "rules"
-    | "revision"
-    | "textSettings"
-    | "provider"
-    | "fixedRuleIds"
-    | "runtimeRuleIds"
+    "rules" | "revision" | "textSettings" | "provider" | "fixedRuleIds"
   >,
 ) {
   return {
@@ -672,7 +666,6 @@ export function textMetadata(
         settings: input.textSettings,
         provider: input.provider?.provenance ?? null,
         fixedRuleIds: input.fixedRuleIds ?? [],
-        runtimeRuleIds: input.runtimeRuleIds ?? [],
       }),
     },
   };

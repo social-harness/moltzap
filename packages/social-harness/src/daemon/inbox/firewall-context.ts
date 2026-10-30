@@ -1,5 +1,6 @@
 /** @file Verified message and history projections supply the exact text a host can observe. */
 
+import * as SqlClient from "@effect/sql/SqlClient";
 import { Clock, Effect, Option, Schema } from "effect";
 import { createHash } from "node:crypto";
 import type { Firewall, PreparedFirewallCheck } from "../../firewall/index.js";
@@ -8,7 +9,6 @@ import type {
   FirewallHistoryEntry,
   FirewallInboxEntry,
   FirewallLocalEntry,
-  FirewallStore,
 } from "../../firewall/store/index.js";
 import {
   type CollectiveValue,
@@ -40,6 +40,7 @@ import {
 import { compareAgentIds } from "../../encoding/identifier.js";
 import { HistoryEntry, Message, MessageContext } from "../../firewall/check.js";
 import { InboundItem } from "../../host-protocol/items.js";
+import { readFirewallEvidence } from "./evidence.js";
 import {
   questionText,
   renderCollectiveRequestBody,
@@ -54,7 +55,7 @@ import {
 
 /** The daemon supplies verified attribution and its existing durable evidence capability. */
 export interface FirewallEnvironment {
-  readonly store: FirewallStore;
+  readonly sql: SqlClient.SqlClient;
   readonly firewall: Firewall;
   readonly localAgentCard: VerifiedAgentCard;
 }
@@ -695,11 +696,11 @@ export const prepareOutgoingCheck = Effect.fn("prepareOutgoingCheck")(
   ): Effect.fn.Return<PreparedFirewallCheck, EndpointStoreError> {
     const { intent, cards, conversationId, canonicalCandidate } =
       yield* captureOutgoing(candidate);
-    const evidence = yield* environment.store.readFirewallEvidence({
+    const evidence = yield* readFirewallEvidence({
       conversationId,
       conversation: candidate.to,
       maximumRecords: environment.firewall.configuration.maximumHistoryRecords,
-    });
+    }).pipe(Effect.provideService(SqlClient.SqlClient, environment.sql));
     const message = candidate.gather
       ? yield* gatherMessage(
           environment.localAgentCard,
@@ -728,11 +729,11 @@ export const prepareIncomingCheck = Effect.fn("prepareIncomingCheck")(
     environment: FirewallEnvironment,
     entry: FirewallInboxEntry,
   ): Effect.fn.Return<PreparedFirewallCheck, EndpointStoreError> {
-    const evidence = yield* environment.store.readFirewallEvidence({
+    const evidence = yield* readFirewallEvidence({
       beforeDelivery: entry.deliveryToken,
       conversation: entry.conversation,
       maximumRecords: environment.firewall.configuration.maximumHistoryRecords,
-    });
+    }).pipe(Effect.provideService(SqlClient.SqlClient, environment.sql));
     const record =
       evidence.candidate === undefined
         ? undefined

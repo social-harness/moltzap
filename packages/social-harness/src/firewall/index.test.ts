@@ -1,11 +1,10 @@
-/** @file Managed policy edits retain fixed protection, authority and complete state across restart. */
+/** @file Editable policies retain fixed-rule protection and complete state across restart. */
 import { live as it } from "@effect/vitest";
 import { Effect, Option } from "effect";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Tests create exact operator configuration and rule files around real persistent edits.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect } from "vitest";
-import type { FirewallStore } from "./store/index.js";
 import {
   stateDirectory,
   withDaemonStore,
@@ -17,7 +16,7 @@ import {
   policyInstallationError,
 } from "./config.js";
 import { makeFirewall } from "./index.js";
-/* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- Indexed safe errors, assigned authority and atomic policy state are the public edit contract. */
+/* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- Indexed safe errors and atomic policy state are the public edit contract. */
 
 const FORMAT = "org.social-harness/message-policy/v2";
 
@@ -162,10 +161,10 @@ it(
       },
     ]);
     const configuration = yield* options(path);
-    yield* withDaemonStore(stateDirectory(), (store) =>
+    yield* withDaemonStore(stateDirectory(), () =>
       Effect.gen(function* () {
-        const installed = yield* makeFirewall(configuration, store);
-        const read = yield* installed.policy.read();
+        const installed = yield* makeFirewall(configuration);
+        const read = yield* installed.readPolicy();
         expect(read.fixedRules).toEqual(
           expect.arrayContaining([
             expect.objectContaining({ id: FIXED.id }),
@@ -173,19 +172,15 @@ it(
           ]),
         );
         expect(read.rules).toMatchObject(policy.text?.initialRules ?? []);
-        expect(read.rules).toMatchObject([
-          { owner: "owner" },
-          { owner: "owner" },
-        ]);
-        const error = yield* installed.policy
-          .update({ remove: ["working-hours"] }, "owner")
+        const error = yield* installed
+          .updatePolicy({ remove: ["working-hours"] })
           .pipe(Effect.flip);
         expect(error).toMatchObject({
           reason: "fixed-rule",
           ruleId: "working-hours",
           path: ["remove", 0],
         });
-        expect(yield* installed.policy.read()).toEqual(read);
+        expect(yield* installed.readPolicy()).toEqual(read);
       }),
     );
   }),
@@ -197,13 +192,10 @@ it(
     const { path, root } = fixture();
     const state = stateDirectory();
     const first = yield* options(path);
-    yield* withDaemonStore(state, (store) =>
+    yield* withDaemonStore(state, () =>
       Effect.gen(function* () {
-        const installed = yield* makeFirewall(first, store);
-        yield* installed.policy.update(
-          { remove: [INITIAL.id, "ask-first"] },
-          "owner",
-        );
+        const installed = yield* makeFirewall(first);
+        yield* installed.updatePolicy({ remove: [INITIAL.id, "ask-first"] });
       }),
     );
     writeFileSync(
@@ -211,10 +203,10 @@ it(
       NORM.replace("Ask first.", "Consult the owner first."),
     );
     const next = yield* options(path);
-    yield* withDaemonStore(state, (store) =>
+    yield* withDaemonStore(state, () =>
       Effect.gen(function* () {
-        const restarted = yield* makeFirewall(next, store);
-        expect((yield* restarted.policy.read()).rules).toEqual([]);
+        const restarted = yield* makeFirewall(next);
+        expect((yield* restarted.readPolicy()).rules).toEqual([]);
       }),
     );
     writeFileSync(
@@ -231,10 +223,10 @@ it(
   Effect.fn(function* () {
     const { path } = seedFixture(255);
     const configuration = yield* options(path);
-    yield* withDaemonStore(stateDirectory(), (store) =>
+    yield* withDaemonStore(stateDirectory(), () =>
       Effect.gen(function* () {
-        const installed = yield* makeFirewall(configuration, store);
-        expect((yield* installed.policy.read()).rules).toHaveLength(256);
+        const installed = yield* makeFirewall(configuration);
+        expect((yield* installed.readPolicy()).rules).toHaveLength(256);
       }),
     );
   }),
@@ -257,14 +249,11 @@ it("names the fixed behavior colliding with a stored editable rule", () =>
     const configuration = yield* options(path);
     yield* withDaemonStore(
       state,
-      Effect.fn(function* (store) {
-        const installed = yield* makeFirewall(configuration, store);
-        yield* installed.policy.update(
-          {
-            add: [{ ...FIXED, id: "new-fixed" }],
-          },
-          "owner",
-        );
+      Effect.fn(function* () {
+        const installed = yield* makeFirewall(configuration);
+        yield* installed.updatePolicy({
+          add: [{ ...FIXED, id: "new-fixed" }],
+        });
       }),
     );
     writeFileSync(
@@ -274,10 +263,8 @@ it("names the fixed behavior colliding with a stored editable rule", () =>
     const installation = yield* options(path);
     yield* withDaemonStore(
       state,
-      Effect.fn(function* (store) {
-        const error = yield* makeFirewall(installation, store).pipe(
-          Effect.flip,
-        );
+      Effect.fn(function* () {
+        const error = yield* makeFirewall(installation).pipe(Effect.flip);
         const startup = policyInstallationError(
           error,
           installation.behaviorRulePaths,
@@ -296,28 +283,17 @@ it(
   "adds a shared norm's BEHAVIOR.md text as the rule its frontmatter and body map to",
   Effect.fn(function* () {
     const configuration = yield* options(fixture().path);
-    yield* withDaemonStore(stateDirectory(), (store) =>
+    yield* withDaemonStore(stateDirectory(), () =>
       Effect.gen(function* () {
-        const installed = yield* makeFirewall(configuration, store);
-        yield* installed.policy.update(
-          { add: [{ behavior: SHARED }] },
-          "owner",
-        );
-        expect((yield* installed.policy.read()).rules).toContainEqual({
+        const installed = yield* makeFirewall(configuration);
+        yield* installed.updatePolicy({ add: [{ behavior: SHARED }] });
+        expect((yield* installed.readPolicy()).rules).toContainEqual({
           id: "meeting-booking",
           applies: "both",
           text: "Each member holds a slot before confirming it.",
-          owner: "owner",
           guidance: "Hold a slot before you confirm one.",
           feedback: { text: "Hold the slot first.", nextAction: "revise" },
         });
-        const { activations } = yield* installed.policy.decisions({});
-        expect(activations).toEqual([
-          expect.objectContaining({
-            addedRuleIds: ["meeting-booking"],
-            removedRuleIds: [],
-          }),
-        ]);
       }),
     );
   }),
@@ -416,110 +392,38 @@ it.each(REFUSED_EDITS)(
 function refusedEdit(edit: (typeof REFUSED_EDITS)[number]["edit"]) {
   return Effect.gen(function* () {
     const configuration = yield* options(fixture().path);
-    return yield* withDaemonStore(stateDirectory(), (store) =>
+    return yield* withDaemonStore(stateDirectory(), () =>
       Effect.gen(function* () {
-        const installed = yield* makeFirewall(configuration, store);
-        const before = yield* installed.policy.read();
-        const error = yield* installed.policy
-          .update(edit, "owner")
-          .pipe(Effect.flip);
-        return { error, before, after: yield* installed.policy.read() };
+        const installed = yield* makeFirewall(configuration);
+        const before = yield* installed.readPolicy();
+        const error = yield* installed.updatePolicy(edit).pipe(Effect.flip);
+        return { error, before, after: yield* installed.readPolicy() };
       }),
     );
   });
 }
 
-it(
-  "limits runtime edits to its own rules and preserves ownership across restart",
-  Effect.fn(function* () {
+it("persists replacement of an initial rule across restart", () =>
+  Effect.gen(function* () {
     const configuration = yield* options(fixture().path);
-    const path = stateDirectory();
-    const adopted = { ...INITIAL, id: "runtime-norm", text: "预约前确认。" };
-    const revision = yield* withDaemonStore(path, (store) =>
-      adoptNorm(store, configuration, adopted),
-    );
-    yield* withDaemonStore(path, (store) =>
+    const directory = stateDirectory();
+    const replacement = { ...INITIAL, text: "Ask before booking a meeting." };
+    yield* withDaemonStore(directory, () =>
       Effect.gen(function* () {
-        const installed = yield* makeFirewall(configuration, store);
-        expect((yield* installed.policy.read()).activeRevision).toBe(revision);
-        yield* installed.policy.update(
-          { remove: [adopted.id], add: [{ ...adopted, text: "确认后预订。" }] },
-          "runtime",
-        );
-        yield* installed.policy.update(
-          { remove: [adopted.id], add: [adopted] },
-          "owner",
-        );
-        expect((yield* installed.policy.read()).rules).toContainEqual({
-          ...adopted,
-          owner: "owner",
+        const installed = yield* makeFirewall(configuration);
+        yield* installed.updatePolicy({
+          remove: [INITIAL.id],
+          add: [replacement],
         });
-        expect(
-          (yield* installed.policy
-            .update({ remove: [adopted.id] }, "runtime")
-            .pipe(Effect.flip)).reason,
-        ).toBe("owner-rule");
-        yield* installed.policy.update({ remove: [adopted.id] }, "owner");
       }),
     );
-  }),
-);
-
-it(
-  "rejects supplied ownership metadata before applying any update",
-  Effect.fn(function* () {
-    const configuration = yield* options(fixture().path);
-    yield* withDaemonStore(stateDirectory(), (store) =>
+    yield* withDaemonStore(directory, () =>
       Effect.gen(function* () {
-        const installed = yield* makeFirewall(configuration, store);
-        const before = yield* installed.policy.read();
-        const forged = { ...INITIAL, id: "forged", owner: "runtime" };
-        const error = yield* installed.policy
-          .update({ add: [forged] }, "runtime")
-          .pipe(Effect.flip);
-        expect(error).toMatchObject({
-          reason: "invalid-rule",
-          problem: "schema",
-        });
-        expect(yield* installed.policy.read()).toEqual(before);
+        const reopened = yield* makeFirewall(configuration);
+        expect((yield* reopened.readPolicy()).rules).toContainEqual(
+          replacement,
+        );
       }),
     );
-  }),
-);
-
-function adoptNorm(
-  store: FirewallStore,
-  configuration: Effect.Effect.Success<ReturnType<typeof options>>,
-  adopted: Omit<typeof INITIAL, "id" | "text"> & {
-    readonly id: string;
-    readonly text: string;
-  },
-) {
-  return Effect.gen(function* () {
-    const installed = yield* makeFirewall(configuration, store);
-    const before = yield* installed.policy.read();
-    expect(before.rules).toMatchObject([
-      { owner: "owner" },
-      { owner: "owner" },
-    ]);
-    const changed = yield* installed.policy.update(
-      { add: [adopted] },
-      "runtime",
-    );
-    const own = yield* installed.policy.read();
-    expect(own.rules).toContainEqual({ ...adopted, owner: "runtime" });
-    const refused = yield* installed.policy
-      .update(
-        {
-          remove: [INITIAL.id, adopted.id],
-          add: [{ ...adopted, id: "replacement" }],
-        },
-        "runtime",
-      )
-      .pipe(Effect.flip);
-    expect(refused.reason).toBe("owner-rule");
-    expect(yield* installed.policy.read()).toEqual(own);
-    return changed.activeRevision;
-  });
-}
+  }));
 /* eslint-enable agent-code-guard/no-hardcoded-assertion-literals -- Restore defaults after policy edit contract assertions. */
