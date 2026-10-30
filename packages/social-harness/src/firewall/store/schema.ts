@@ -68,7 +68,8 @@ export function createFirewallTables() {
     for (const statement of firewallSchemaSql
       .split(";")
       .map((part) => part.trim())
-      .filter((part) => part.length > 0))
+      .filter((part) => part.length > 0)) {
       yield* sql.unsafe<Readonly<Record<string, unknown>>>(statement);
-  }).pipe(storeOperation);
+    }
+  }).pipe(storeOperation, Effect.withSpan("createFirewallTables"));
 }

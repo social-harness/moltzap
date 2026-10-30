@@ -2,22 +2,22 @@
 
 import * as SqlClient from "@effect/sql/SqlClient";
 import { Effect } from "effect";
-import { EndpointStoreError, storeOperation } from "../database/index.js";
-import { enqueueOutboundInTransaction } from "./outbound.js";
-
-import {
-  readOptionalText,
-  readText,
-  requireEqual,
-  requireText,
-  transaction,
-} from "../database/index.js";
 import type {
   DisseminationObligation,
   OutboundMessageInput,
   StoredOutboundMessage,
   StoreMutation,
 } from "../types.js";
+import {
+  EndpointStoreError,
+  readOptionalText,
+  readText,
+  requireEqual,
+  requireText,
+  storeOperation,
+  transaction,
+} from "../database/index.js";
+import { enqueueOutboundInTransaction } from "./outbound.js";
 /**
  * Retains the send obligation for a staged action-certified record inside
  * the transaction that stages it. The schema's foreign key refuses an
@@ -41,15 +41,13 @@ export function retainDisseminationInTransaction(
       [obligation.conversationId, obligation.recordHash],
     );
     return "inserted";
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("retainDisseminationInTransaction"));
 }
 /**
- * Atomically attaches one send obligation to its exact outbox row.
+ * Commits a send obligation and its exact outbox row together.
  *
  * @param obligation Expected durable send obligation.
  * @param message Complete canonical outer envelope.
- * @param enqueueInTransaction The outbox insert, run inside this transaction
- * so the obligation and its envelope commit together.
  * @returns The current durable envelope under its stable outbox identity.
  */
 export function enqueueDisseminationOutbound(
@@ -92,7 +90,7 @@ export function enqueueDisseminationOutbound(
         return outbound;
       }),
     );
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("enqueueDisseminationOutbound"));
 }
 /**
  * Reads unattached obligations in their durable insertion order.
@@ -121,7 +119,7 @@ export function readPendingDissemination(
         }),
       ),
     );
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("readPendingDissemination"));
 }
 interface RetainedDissemination {
   readonly envelopeId?: string;

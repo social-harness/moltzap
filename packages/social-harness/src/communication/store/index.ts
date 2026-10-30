@@ -21,10 +21,10 @@ export type {
   RestartedEmptyConversation,
   StagedReanchor,
   StagedRecord,
-  StoreMutation,
   StoredAnchor,
   StoredMembership,
   StoredOutboundMessage,
+  StoreMutation,
 } from "./types.js";
 /** Stable opaque durable-delivery identity. */
 export { DeliveryToken } from "./types.js";

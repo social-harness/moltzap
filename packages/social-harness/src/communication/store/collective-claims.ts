@@ -1,12 +1,10 @@
 /** @file Retains a collective operation’s identity and reserves its request, answer and closing messages. */
 
 import * as SqlClient from "@effect/sql/SqlClient";
-import { Effect } from "effect";
-import { EndpointStoreError, storeOperation } from "./database/index.js";
-
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
 import {
   copyBytes,
+  EndpointStoreError,
   mintDeliveryToken,
   readBytes,
   readOptionalBytes,
@@ -15,6 +13,7 @@ import {
   requireEqual,
   requireSameBytes,
   requireText,
+  storeOperation,
   StoreSignal,
 } from "./database/index.js";
 import { readStoredIdentity } from "./rows/index.js";
@@ -75,7 +74,10 @@ export function bindCollectiveMessageInTransaction(
       ],
     );
     return "inserted";
-  }).pipe(storeOperation);
+  }).pipe(
+    storeOperation,
+    Effect.withSpan("bindCollectiveMessageInTransaction"),
+  );
 }
 /**
  * Retain one exact origin/request binding in the caller's transaction. Remote
@@ -97,7 +99,7 @@ export function retainCollectiveInTransaction(
     }
     yield* insertCollective(input, origin);
     return "inserted";
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("retainCollectiveInTransaction"));
 }
 /** The decoded immutable descriptor and its current terminal phase. */
 export function findCollective(
@@ -114,7 +116,7 @@ export function findCollective(
       [operationId],
     ))[0];
     return row === undefined ? undefined : readCollective(row);
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("findCollective"));
 }
 /** Private row decoding preserves the closed lifecycle vocabulary. */
 export function readCollective(

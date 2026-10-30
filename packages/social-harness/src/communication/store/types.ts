@@ -1,7 +1,7 @@
 /** @file Private typed contract for endpoint persistence operations. */
 
-import { canonicalIdentifier } from "../../encoding/identifier.js";
 import type { EndpointStoreError } from "./database/values.js";
+import { canonicalIdentifier } from "../../encoding/identifier.js";
 /* eslint-disable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- The private Effect Schema and decoded nominal value intentionally share one domain name. */
 /** Stable opaque identity for one durable inbound delivery. */
 export const DeliveryToken = canonicalIdentifier("DeliveryToken", "dlv_", 32);

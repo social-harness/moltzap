@@ -2,21 +2,6 @@
 
 import * as SqlClient from "@effect/sql/SqlClient";
 import { Effect } from "effect";
-import {
-  EndpointStoreError,
-  storeOperation,
-} from "../../communication/store/database/index.js";
-
-import {
-  readBytes,
-  readInteger,
-  readOptionalBytes,
-  readOptionalText,
-  readText,
-  requireText,
-  transaction,
-} from "../../communication/store/database/index.js";
-import { MAXIMUM_RUNTIME_ITEM_BYTES } from "../../encoding/limits.js";
 import type {
   FirewallEvidence,
   FirewallEvidenceRange,
@@ -26,6 +11,19 @@ import type {
   FirewallLocalEntry,
   FirewallRequestAdmission,
 } from "../../firewall/store/types.js";
+
+import {
+  EndpointStoreError,
+  readBytes,
+  readInteger,
+  readOptionalBytes,
+  readOptionalText,
+  readText,
+  requireText,
+  storeOperation,
+  transaction,
+} from "../../communication/store/database/index.js";
+import { MAXIMUM_RUNTIME_ITEM_BYTES } from "../../encoding/limits.js";
 const historySelect = `
   SELECT c.ordinal AS position, c.rowid AS sequence, c.conversation_id,
     s.canonical_record_core, m.canonical_membership,
@@ -82,7 +80,7 @@ export function readFirewallEvidence(
       return yield* new EndpointStoreError({ reason: "corrupt" });
     }
     return slice;
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("readFirewallEvidence"));
 }
 /** A transaction gives every text of one result the same captured evidence. */
 export function readFirewallEvidenceSlices(input: {
@@ -99,14 +97,17 @@ export function readFirewallEvidenceSlices(input: {
         !Number.isSafeInteger(input.maximumRecords) ||
         input.maximumRecords < 1 ||
         input.maximumRecords > 1024
-      )
+      ) {
         return yield* new EndpointStoreError({ reason: "invalid-input" });
-      const slices = yield* Effect.forEach(input.ranges, (range) =>
-        readSlice(range, input.maximumRecords),
+      }
+      const slices = yield* Effect.forEach(
+        input.ranges,
+        (range) => readSlice(range, input.maximumRecords),
+        { concurrency: 1 },
       );
       return { slices };
     }),
-  );
+  ).pipe(Effect.withSpan("readFirewallEvidenceSlices"));
 }
 /**
  * How a received request's admission settled, read by its certified record.
@@ -144,7 +145,7 @@ export function readFirewallRequestAdmission(
       ...(checkId === undefined ? {} : { checkId }),
       ...(canonicalResult === undefined ? {} : { canonicalResult }),
     };
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("readFirewallRequestAdmission"));
 }
 /**
  * One conversation's window before a candidate. A delivery or record that

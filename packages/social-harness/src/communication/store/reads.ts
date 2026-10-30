@@ -2,13 +2,22 @@
 
 import * as SqlClient from "@effect/sql/SqlClient";
 import { Effect, Schema } from "effect";
-import { EndpointStoreError, storeOperation } from "./database/index.js";
+import type {
+  CertifiedRecord,
+  EndpointRecovery,
+  HistoryPage,
+  MessageIntent,
+  StoredAnchor,
+  StoredMembership,
+} from "./types.js";
 
 import {
+  EndpointStoreError,
   readBytes,
   readInteger,
   readOptionalText,
   readText,
+  storeOperation,
   StoreSignal,
   transaction,
 } from "./database/index.js";
@@ -26,14 +35,6 @@ import {
   readStagedRecord,
   readStoredIdentity,
 } from "./rows/index.js";
-import type {
-  CertifiedRecord,
-  EndpointRecovery,
-  HistoryPage,
-  MessageIntent,
-  StoredAnchor,
-  StoredMembership,
-} from "./types.js";
 const HISTORY_PAGE_SIZE = 50;
 const historySelect = `
   SELECT staged.conversation_id, staged.record_hash,
@@ -45,7 +46,16 @@ const historySelect = `
     ON staged.conversation_id = certified.conversation_id
    AND staged.record_hash = certified.record_hash
 `;
-/* eslint-disable agent-code-guard/no-conditional-chaining -- Omission selects all conversations consistently across the SQL readers; a supplied id restricts each read to the same conversation. */
+const historyCursor = Schema.Struct({
+  conversationId: Schema.NonEmptyString,
+  afterRecordHash: Schema.NonEmptyString,
+  throughRecordHash: Schema.NonEmptyString,
+});
+const encodeCursor = Schema.encodeSync(Schema.parseJson(historyCursor));
+const decodeCursor = Schema.decodeUnknown(Schema.parseJson(historyCursor), {
+  onExcessProperty: "error",
+});
+
 /**
  * Recovers all durable endpoint state needed to resume protocol work.
  *
@@ -88,9 +98,49 @@ export function recoverStoredState(
       disseminationObligations: yield* readPendingDissemination(conversationId),
       outboundMessages: yield* readPendingOutbound(conversationId),
     });
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("recoverStoredState"));
 }
-/* eslint-enable agent-code-guard/no-conditional-chaining -- Other reads resolve their own optional inputs. */
+
+/** Pages stop at the original certified head and can be replayed after restart. */
+export function readStoredConversation(
+  request:
+    | Readonly<{
+        conversationId: string;
+        afterRecordHash?: string;
+      }>
+    | Readonly<{
+        continuation: string;
+      }>,
+): Effect.Effect<HistoryPage, EndpointStoreError, SqlClient.SqlClient> {
+  return transaction(
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const { conversationId, after, through, throughRecordHash } =
+        yield* resolveHistoryWindow(request);
+      const rows = yield* sql.unsafe<Readonly<Record<string, unknown>>>(
+        historySelect +
+          " WHERE certified.conversation_id=? AND certified.ordinal>? AND certified.ordinal<=? ORDER BY certified.ordinal LIMIT ?",
+        [conversationId, after, through, HISTORY_PAGE_SIZE + 1],
+      );
+      const selected = rows.slice(0, HISTORY_PAGE_SIZE);
+      const records = yield* Effect.forEach(selected, readCertifiedRecord, {
+        concurrency: 1,
+      });
+      const last = selected.at(-1);
+      const continuation =
+        rows.length > HISTORY_PAGE_SIZE && last !== undefined
+          ? Buffer.from(
+              encodeCursor({
+                conversationId,
+                afterRecordHash: readText(last, "record_hash"),
+                throughRecordHash,
+              }),
+            ).toString("base64url")
+          : null;
+      return { records, continuation };
+    }),
+  ).pipe(Effect.withSpan("readStoredConversation"));
+}
 function readPositions(conversationId?: string) {
   return Effect.gen(function* () {
     const database = yield* SqlClient.SqlClient;
@@ -229,6 +279,7 @@ function readAllCertifiedRecords(
           [...(conversationId === undefined ? [] : [conversationId])],
         ),
         (row) => readCertifiedRecord(row),
+        { concurrency: 1 },
       ),
     );
   }).pipe(storeOperation);
@@ -247,101 +298,75 @@ function readReanchors(conversationId?: string) {
     );
   }).pipe(storeOperation);
 }
-const historyCursor = Schema.Struct({
-  conversationId: Schema.NonEmptyString,
-  afterRecordHash: Schema.NonEmptyString,
-  throughRecordHash: Schema.NonEmptyString,
-});
-const encodeCursor = Schema.encodeSync(Schema.parseJson(historyCursor));
-const decodeCursor = Schema.decodeUnknown(Schema.parseJson(historyCursor), {
-  onExcessProperty: "error",
-});
-/** Pages stop at the original certified head and can be replayed after restart. */
-export function readStoredConversation(
-  request:
-    | Readonly<{
-        conversationId: string;
-        afterRecordHash?: string;
-      }>
-    | Readonly<{
-        continuation: string;
-      }>,
-): Effect.Effect<HistoryPage, EndpointStoreError, SqlClient.SqlClient> {
-  return transaction(
-    Effect.gen(function* () {
-      const sql = yield* SqlClient.SqlClient;
-      const resumed =
-        "continuation" in request
-          ? yield* decodeHistoryCursor(request.continuation)
-          : undefined;
-      const conversationId =
-        resumed?.conversationId ??
-        ("conversationId" in request ? request.conversationId : "");
-      if (conversationId.length === 0)
-        return yield* new EndpointStoreError({ reason: "invalid-input" });
-      const heads = yield* sql.unsafe<Readonly<Record<string, unknown>>>(
-        "SELECT record_hash,ordinal FROM certified_records WHERE conversation_id=? ORDER BY ordinal DESC LIMIT 1",
-        [conversationId],
-      );
-      const head = heads[0];
-      if (head === undefined)
-        return yield* new EndpointStoreError({
-          reason: resumed === undefined ? "not-found" : "invalid-continuation",
-        });
-      const throughRecordHash =
-        resumed?.throughRecordHash ?? readText(head, "record_hash");
-      const through = yield* historyPosition(
-        conversationId,
-        throughRecordHash,
-        resumed !== undefined,
-      );
-      const afterRecordHash =
-        resumed?.afterRecordHash ??
-        ("afterRecordHash" in request ? request.afterRecordHash : undefined);
-      const after =
-        afterRecordHash === undefined
-          ? -1
-          : yield* historyPosition(
-              conversationId,
-              afterRecordHash,
-              resumed !== undefined,
-            );
-      if (after > through)
-        return yield* new EndpointStoreError({
-          reason: "invalid-continuation",
-        });
-      const rows = yield* sql.unsafe<Readonly<Record<string, unknown>>>(
-        historySelect +
-          " WHERE certified.conversation_id=? AND certified.ordinal>? AND certified.ordinal<=? ORDER BY certified.ordinal LIMIT ?",
-        [conversationId, after, through, HISTORY_PAGE_SIZE + 1],
-      );
-      const selected = rows.slice(0, HISTORY_PAGE_SIZE);
-      const records = yield* Effect.forEach(selected, (row) =>
-        readCertifiedRecord(row),
-      );
-      const last = selected.at(-1);
-      const continuation =
-        rows.length > HISTORY_PAGE_SIZE && last !== undefined
-          ? Buffer.from(
-              encodeCursor({
-                conversationId,
-                afterRecordHash: readText(last, "record_hash"),
-                throughRecordHash,
-              }),
-            ).toString("base64url")
-          : null;
-      return { records, continuation };
-    }),
-  );
+
+function resolveHistoryWindow(
+  request: Parameters<typeof readStoredConversation>[0],
+) {
+  return Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const selected = yield* resolveHistoryRequest(request);
+    const conversationId = selected.conversationId;
+    if (conversationId.length === 0) {
+      return yield* new EndpointStoreError({ reason: "invalid-input" });
+    }
+    const [head] = yield* sql.unsafe<Readonly<Record<string, unknown>>>(
+      "SELECT record_hash,ordinal FROM certified_records WHERE conversation_id=? ORDER BY ordinal DESC LIMIT 1",
+      [conversationId],
+    );
+    if (head === undefined) {
+      return yield* new EndpointStoreError({
+        reason: selected.resumed ? "invalid-continuation" : "not-found",
+      });
+    }
+    const throughRecordHash =
+      selected.throughRecordHash ?? readText(head, "record_hash");
+    const through = yield* historyPosition(
+      conversationId,
+      throughRecordHash,
+      selected.resumed,
+    );
+    const after =
+      selected.afterRecordHash === undefined
+        ? -1
+        : yield* historyPosition(
+            conversationId,
+            selected.afterRecordHash,
+            selected.resumed,
+          );
+    if (after > through) {
+      return yield* new EndpointStoreError({ reason: "invalid-continuation" });
+    }
+    return { conversationId, after, through, throughRecordHash };
+  });
+}
+function resolveHistoryRequest(
+  request: Parameters<typeof readStoredConversation>[0],
+): Effect.Effect<
+  {
+    readonly conversationId: string;
+    readonly afterRecordHash?: string;
+    readonly throughRecordHash?: string;
+    readonly resumed: boolean;
+  },
+  EndpointStoreError
+> {
+  if ("continuation" in request) {
+    return decodeHistoryCursor(request.continuation).pipe(
+      Effect.map((cursor) => ({ ...cursor, resumed: true })),
+    );
+  }
+  return Effect.succeed({ ...request, resumed: false });
 }
 function decodeHistoryCursor(value: string) {
   return Effect.try({
     try: () => {
-      if (value.length > 4096 || !/^[A-Za-z0-9_-]+$/u.test(value))
+      if (value.length > 4096 || !/^[A-Za-z0-9_-]+$/u.test(value)) {
         throw new StoreSignal("invalid-continuation");
+      }
       const bytes = Buffer.from(value, "base64url");
-      if (bytes.toString("base64url") !== value)
+      if (bytes.toString("base64url") !== value) {
         throw new StoreSignal("invalid-continuation");
+      }
       return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
     },
     catch: () => new EndpointStoreError({ reason: "invalid-continuation" }),
@@ -363,10 +388,11 @@ function historyPosition(
       "SELECT ordinal FROM certified_records WHERE conversation_id=? AND record_hash=?",
       [conversationId, recordHash],
     ))[0];
-    if (row === undefined)
+    if (row === undefined) {
       return yield* new EndpointStoreError({
         reason: continuation ? "invalid-continuation" : "not-found",
       });
+    }
     return readInteger(row, "ordinal");
   }).pipe(storeOperation);
 }

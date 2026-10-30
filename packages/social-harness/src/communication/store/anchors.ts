@@ -2,30 +2,6 @@
 
 import * as SqlClient from "@effect/sql/SqlClient";
 import { Effect } from "effect";
-import { EndpointStoreError, storeOperation } from "./database/index.js";
-
-import { bindCollectiveMessageInTransaction } from "./collective-claims.js";
-import {
-  copyBytes,
-  readBytes,
-  readOptionalText,
-  readText,
-  requireBytes,
-  requireEqual,
-  requireSameBytes,
-  requireText,
-  StoreSignal,
-  transaction,
-} from "./database/index.js";
-import {
-  findProposalLock,
-  findStagedReanchor,
-  lockProposalInTransaction,
-  readStoredIdentity,
-  readStoredPosition,
-  releaseProposalLock,
-  requireSameReanchor,
-} from "./rows/index.js";
 import type {
   CompletedReanchor,
   ConversationFoundation,
@@ -38,6 +14,31 @@ import type {
   StagedReanchor,
   StoreMutation,
 } from "./types.js";
+
+import { bindCollectiveMessageInTransaction } from "./collective-claims.js";
+import {
+  copyBytes,
+  EndpointStoreError,
+  readBytes,
+  readOptionalText,
+  readText,
+  requireBytes,
+  requireEqual,
+  requireSameBytes,
+  requireText,
+  storeOperation,
+  StoreSignal,
+  transaction,
+} from "./database/index.js";
+import {
+  findProposalLock,
+  findStagedReanchor,
+  lockProposalInTransaction,
+  readStoredIdentity,
+  readStoredPosition,
+  releaseProposalLock,
+  requireSameReanchor,
+} from "./rows/index.js";
 /**
  * Durably binds one author-scoped message to its immutable canonical intent.
  *
@@ -50,7 +51,7 @@ export function bindMessageIntent(
   return Effect.gen(function* () {
     validateMessageIntentBinding(binding);
     return yield* transaction(bindIntentWithFoundation(binding));
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("bindMessageIntent"));
 }
 /**
  * Atomically persists the immutable membership and initial Router anchor.
@@ -80,7 +81,7 @@ export function lockProposal(
   return Effect.gen(function* () {
     validateProposalLock(proposal);
     return yield* transaction(lockProposalInTransaction(proposal));
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("lockProposal"));
 }
 /**
  * Atomically retains a verified FIRST_MESSAGE foundation and its first-candidate lock.
@@ -112,7 +113,7 @@ export function lockFirstMessageProposal(
           : "existing";
       }),
     );
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("lockFirstMessageProposal"));
 }
 /**
  * Replaces an uncommitted conversation's Router-instance foundation.
@@ -145,7 +146,7 @@ export function restartEmptyConversation(
         });
       }),
     );
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("restartEmptyConversation"));
 }
 /**
  * Durably stages at most one re-anchor proposal for one Router-instance scope,
@@ -162,7 +163,7 @@ export function stageReanchor(
   return Effect.gen(function* () {
     validateStagedReanchor(reanchor);
     return yield* transaction(stageReanchorInTransaction(reanchor, "vote"));
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("stageReanchor"));
 }
 /**
  * Atomically makes a staged threshold-complete Router anchor current.
@@ -176,7 +177,7 @@ export function completeReanchor(
   return Effect.gen(function* () {
     validateCompletedReanchor(reanchor);
     return yield* transaction(completeReanchorInTransaction(reanchor));
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("completeReanchor"));
 }
 /**
  * Atomically stages and completes one member's verified completed re-anchor.
@@ -205,7 +206,36 @@ export function applyCatchUpReanchor(
           : "existing";
       }),
     );
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("applyCatchUpReanchor"));
+}
+/** One database retains the same agent card across reopen and retries. */
+export function bindIdentity(
+  binding: IdentityBinding,
+): Effect.Effect<StoreMutation, EndpointStoreError, SqlClient.SqlClient> {
+  return Effect.gen(function* () {
+    const database = yield* SqlClient.SqlClient;
+    requireText(binding.agentId);
+    requireBytes(binding.canonicalAgentCard);
+    return yield* transaction(
+      Effect.gen(function* () {
+        const existing = yield* readStoredIdentity();
+        if (existing !== undefined) {
+          requireEqual(existing.agentId, binding.agentId);
+          requireSameBytes(
+            existing.canonicalAgentCard,
+            binding.canonicalAgentCard,
+          );
+          return yield* Effect.succeed<StoreMutation>("existing");
+        }
+        yield* database.unsafe<Readonly<Record<string, unknown>>>(
+          `INSERT INTO identity_binding
+          (singleton, agent_id, canonical_agent_card) VALUES (1, ?, ?)`,
+          [binding.agentId, copyBytes(binding.canonicalAgentCard)],
+        );
+        return yield* Effect.succeed<StoreMutation>("inserted");
+      }),
+    );
+  }).pipe(storeOperation, Effect.withSpan("bindIdentity"));
 }
 function validateMessageIntentBinding(binding: MessageIntentBinding): void {
   const intent = binding.intent;
@@ -249,34 +279,7 @@ function validateProposalLock(proposal: ProposalLock): void {
   requireText(proposal.actionHash);
   requireBytes(proposal.canonicalActionCore);
 }
-export function bindIdentity(
-  binding: IdentityBinding,
-): Effect.Effect<StoreMutation, EndpointStoreError, SqlClient.SqlClient> {
-  return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
-    requireText(binding.agentId);
-    requireBytes(binding.canonicalAgentCard);
-    return yield* transaction(
-      Effect.gen(function* () {
-        const existing = yield* readStoredIdentity();
-        if (existing !== undefined) {
-          requireEqual(existing.agentId, binding.agentId);
-          requireSameBytes(
-            existing.canonicalAgentCard,
-            binding.canonicalAgentCard,
-          );
-          return yield* Effect.succeed<StoreMutation>("existing");
-        }
-        yield* database.unsafe<Readonly<Record<string, unknown>>>(
-          `INSERT INTO identity_binding
-          (singleton, agent_id, canonical_agent_card) VALUES (1, ?, ?)`,
-          [binding.agentId, copyBytes(binding.canonicalAgentCard)],
-        );
-        return yield* Effect.succeed<StoreMutation>("inserted");
-      }),
-    );
-  }).pipe(storeOperation);
-}
+
 function bindMessageIntentInTransaction(
   intent: MessageIntent,
 ): Effect.Effect<StoreMutation, EndpointStoreError, SqlClient.SqlClient> {

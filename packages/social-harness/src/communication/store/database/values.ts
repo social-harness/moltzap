@@ -52,10 +52,12 @@ export function mintDeliveryToken<E, R>(
   return Effect.gen(function* () {
     for (let attempt = 0; attempt < 8; attempt += 1) {
       const token = `dlv_${randomBytes(32).toString("base64url")}`;
-      if (!(yield* isRetained(token))) return token;
+      if (!(yield* isRetained(token))) {
+        return token;
+      }
     }
     return yield* new EndpointStoreError({ reason: "persistence" });
-  });
+  }).pipe(Effect.withSpan("mintDeliveryToken"));
 }
 /**
  * Reads and copies one nullable SQLite BLOB.

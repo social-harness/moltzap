@@ -2,22 +2,23 @@
 
 import * as SqlClient from "@effect/sql/SqlClient";
 import { Effect } from "effect";
-import { EndpointStoreError, storeOperation } from "../database/index.js";
+import type {
+  ConversationPosition,
+  ProposalLock,
+  StoreMutation,
+} from "../types.js";
 
 import {
   copyBytes,
+  EndpointStoreError,
   readBytes,
   readInteger,
   readOptionalText,
   readText,
   requireEqual,
   requireSameBytes,
+  storeOperation,
 } from "../database/index.js";
-import type {
-  ConversationPosition,
-  ProposalLock,
-  StoreMutation,
-} from "../types.js";
 /** The predecessor key of a conversation's first record. */
 export const FIRST_MESSAGE_PREDECESSOR = "";
 /**
@@ -57,7 +58,7 @@ export function lockProposalInTransaction(
       ],
     );
     return "inserted";
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("lockProposalInTransaction"));
 }
 /**
  * Deletes one proposal lock inside a caller-owned transaction, with the
@@ -93,7 +94,7 @@ export function releaseProposalLock(
         { 1: lock.conversationId, 2: lock.actionHash },
       ]);
     }
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("releaseProposalLock"));
 }
 /**
  * Reads an optional proposal lock for one predecessor.
@@ -120,7 +121,7 @@ export function findProposalLock(
       [conversationId, predecessorKey],
     ))[0];
     return row === undefined ? undefined : readProposalLock(row);
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("findProposalLock"));
 }
 /**
  * Projects one durable proposal lock.
@@ -167,7 +168,7 @@ export function readStoredPosition(
       ...readConversationPosition(row),
       headOrdinal: readInteger(row, "head_ordinal"),
     });
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("readStoredPosition"));
 }
 /**
  * Projects one durable position row without its local ordinal.

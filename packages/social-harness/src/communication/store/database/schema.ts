@@ -201,8 +201,9 @@ export const storeOperation = <A, E, R>(
 ): Effect.Effect<A, EndpointStoreError, R> =>
   operation.pipe(
     Effect.catchAllCause((cause) => {
-      if (Cause.isInterruptedOnly(cause))
+      if (Cause.isInterruptedOnly(cause)) {
         return Effect.failCause(Cause.stripFailures(cause));
+      }
       const failure = Cause.failureOption(cause);
       const defect = Cause.dieOption(cause);
       return Effect.fail(
@@ -234,8 +235,9 @@ export const inspectStoreState = (): Effect.Effect<
       "PRAGMA user_version",
     );
     const row = rows[0];
-    if (row === undefined)
+    if (row === undefined) {
       return yield* new EndpointStoreError({ reason: "corrupt" });
+    }
     const version = readInteger(row, "user_version");
     if (version === SCHEMA_VERSION) {
       const checks =
@@ -246,17 +248,19 @@ export const inspectStoreState = (): Effect.Effect<
         checks.length !== 1 ||
         checks[0] === undefined ||
         readText(checks[0], "quick_check") !== "ok"
-      )
+      ) {
         return yield* new EndpointStoreError({ reason: "corrupt" });
+      }
       return "reopen" as const;
     }
     const objects = yield* sql.unsafe<Readonly<Record<string, unknown>>>(
       "SELECT 1 FROM sqlite_schema WHERE type IN ('table','index','view','trigger') AND name NOT LIKE 'sqlite_%' LIMIT 1",
     );
-    if (version !== 0 || objects.length !== 0)
+    if (version !== 0 || objects.length !== 0) {
       return yield* new EndpointStoreError({ reason: "incompatible" });
+    }
     return "create" as const;
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("inspectStoreState"));
 /** Fresh databases receive the current protocol layout inside daemon startup's transaction. */
 export const createCommunicationTables = (): Effect.Effect<
   void,
@@ -268,9 +272,10 @@ export const createCommunicationTables = (): Effect.Effect<
     for (const statement of (schemaSql + collectiveSchemaSql)
       .split(";")
       .map((part) => part.trim())
-      .filter((part) => part.length > 0))
+      .filter((part) => part.length > 0)) {
       yield* sql.unsafe<Readonly<Record<string, unknown>>>(statement);
+    }
     yield* sql.unsafe<Readonly<Record<string, unknown>>>(
       `PRAGMA user_version = ${SCHEMA_VERSION}`,
     );
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("createCommunicationTables"));

@@ -4,15 +4,14 @@
 export {
   createCommunicationTables,
   inspectStoreState,
+  type StoreOpening,
   storeOperation,
   transaction,
-  type StoreOpening,
 } from "./schema.js";
 /** Closed failures and exact canonical-value helpers. */
 export {
-  EndpointStoreError,
-  StoreSignal,
   copyBytes,
+  EndpointStoreError,
   mintDeliveryToken,
   readBytes,
   readInteger,
@@ -24,4 +23,5 @@ export {
   requireSameBytes,
   requireSameOptionalBytes,
   requireText,
+  StoreSignal,
 } from "./values.js";

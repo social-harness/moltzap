@@ -1,5 +1,5 @@
-import type { TestStore } from "../../__tests__/store-schema-fixtures.js";
 /** @file Exact preflight, proposal-lock, certification, and delivery tests. */
+
 import { live as it } from "@effect/vitest";
 import { Effect } from "effect";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Tests create and inspect exact real-SQLite permission fixtures around the scoped Effect resource.
@@ -10,12 +10,10 @@ import {
   bytes,
   databasePath,
   stateDirectory,
+  type TestStore,
   withDaemonStore,
 } from "../../__tests__/store-schema-fixtures.js";
-import {
-  LIVE_WIRE_VERSIONS,
-  WIRE_VERSION,
-} from "../../identity/wire-version.js";
+import { WIRE_VERSION } from "../../identity/wire-version.js";
 import {
   type CertifiedRecord,
   type ConversationFoundation,
@@ -31,7 +29,6 @@ import {
   type RestartedEmptyConversation,
   type StagedReanchor,
   type StagedRecord,
-  type StoredOutboundMessage,
   type StoreMutation,
 } from "./index.js";
 const DATABASE_FILE_MODE = 0o600;

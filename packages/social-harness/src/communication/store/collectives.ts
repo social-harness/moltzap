@@ -2,25 +2,6 @@
 
 import * as SqlClient from "@effect/sql/SqlClient";
 import { Effect } from "effect";
-import { EndpointStoreError, storeOperation } from "./database/index.js";
-
-import {
-  findCollective,
-  readCollective,
-  retainCollectiveInTransaction,
-} from "./collective-claims.js";
-import {
-  copyBytes,
-  readBytes,
-  readOptionalText,
-  readText,
-  requireBytes,
-  requireEqual,
-  requireSameBytes,
-  requireText,
-  StoreSignal,
-  transaction,
-} from "./database/index.js";
 import type {
   CollectiveAnswerReference,
   CollectiveOperationInput,
@@ -29,6 +10,26 @@ import type {
   StoredCollectiveOperation,
   StoreMutation,
 } from "./types.js";
+
+import {
+  findCollective,
+  readCollective,
+  retainCollectiveInTransaction,
+} from "./collective-claims.js";
+import {
+  copyBytes,
+  EndpointStoreError,
+  readBytes,
+  readOptionalText,
+  readText,
+  requireBytes,
+  requireEqual,
+  requireSameBytes,
+  requireText,
+  storeOperation,
+  StoreSignal,
+  transaction,
+} from "./database/index.js";
 /** Unchecked local operations and verified remote requests retain their exact descriptor. */
 export function putCollectiveOperation(
   input: CollectiveOperationInput,
@@ -47,7 +48,7 @@ export function readCollectiveOperations(): Effect.Effect<
       "SELECT * FROM collective_operations ORDER BY rowid",
       [],
     )).map(readCollective);
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("readCollectiveOperations"));
 }
 /** Read the one operation whose phase or delivery identity a live transition needs. */
 export function readCollectiveOperation(
@@ -89,7 +90,7 @@ export function readCollectiveMessages(query?: {
   `,
       [...values],
     )).map(readCollectiveMessage);
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("readCollectiveMessages"));
 }
 /** Freeze counted record references before a close or local result can be published. */
 export function finalizeCollectiveOperation(
@@ -121,7 +122,7 @@ export function finalizeCollectiveOperation(
         return "inserted";
       }),
     );
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("finalizeCollectiveOperation"));
 }
 /** Retain the first counted answer while the operation still collects. */
 export function recordCollectiveAnswer(
@@ -165,7 +166,7 @@ export function recordCollectiveAnswer(
         return answer.recordHash;
       }),
     );
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("recordCollectiveAnswer"));
 }
 /** Stable answer references survive loss of the classifier's memory. */
 export function readCollectiveAnswers(): Effect.Effect<
@@ -183,7 +184,7 @@ export function readCollectiveAnswers(): Effect.Effect<
       member: readText(row, "member"),
       recordHash: readText(row, "record_hash"),
     }));
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("readCollectiveAnswers"));
 }
 /** Confirmed pre-bind failures never turn into a new request on restart. */
 export function recordCollectiveRefusal(
@@ -229,7 +230,7 @@ export function recordCollectiveRefusal(
         );
       }),
     );
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("recordCollectiveRefusal"));
 }
 /** Only unbound request destinations can have retained refusals. */
 export function readCollectiveRefusals(): Effect.Effect<
@@ -247,7 +248,7 @@ export function readCollectiveRefusals(): Effect.Effect<
       destination: readText(row, "destination"),
       canonicalRefusal: readBytes(row, "canonical_refusal"),
     }));
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("readCollectiveRefusals"));
 }
 /** A refused invocation or invalid remote close ends without inventing an inbox item. */
 export function retireCollectiveOperation(
@@ -271,7 +272,7 @@ export function retireCollectiveOperation(
         );
       }),
     );
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("retireCollectiveOperation"));
 }
 /** Completes protocol custody in the caller's terminal-publication transaction. */
 export function completeCollectiveDelivery(
@@ -292,7 +293,7 @@ export function completeCollectiveDelivery(
       "UPDATE collective_operations SET phase = 'completed' WHERE operation_id = ?",
       [operationId],
     );
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("completeCollectiveDelivery"));
 }
 function readCollectiveMessage(
   row: Readonly<Record<string, unknown>>,

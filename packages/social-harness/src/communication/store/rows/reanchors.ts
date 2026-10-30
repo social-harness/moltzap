@@ -2,16 +2,17 @@
 
 import * as SqlClient from "@effect/sql/SqlClient";
 import { Effect } from "effect";
-import { EndpointStoreError, storeOperation } from "../database/index.js";
+import type { RecoveredReanchor, StagedReanchor } from "../types.js";
 
 import {
+  type EndpointStoreError,
   readBytes,
   readOptionalBytes,
   readText,
   requireEqual,
   requireSameBytes,
+  storeOperation,
 } from "../database/index.js";
-import type { RecoveredReanchor, StagedReanchor } from "../types.js";
 /**
  * Projects one staged or completed recoverable re-anchor.
  *
@@ -56,7 +57,7 @@ export function findStagedReanchor(
       [conversationId, anchorHash],
     ))[0];
     return row === undefined ? undefined : readStagedReanchor(row);
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("findStagedReanchor"));
 }
 /**
  * Requires two re-anchors with one hash to have identical body bindings.

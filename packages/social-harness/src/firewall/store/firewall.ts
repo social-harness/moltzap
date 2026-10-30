@@ -2,13 +2,18 @@
 
 import * as SqlClient from "@effect/sql/SqlClient";
 import * as SqlSchema from "@effect/sql/SqlSchema";
+import { Effect, Schema, Struct } from "effect";
+
+import type {
+  FirewallActivation,
+  FirewallAuditEntry,
+  FirewallCommit,
+  FirewallCompletion,
+  FirewallInboxEntry,
+  FirewallLocalAdmission,
+} from "./types.js";
 import {
   EndpointStoreError,
-  storeOperation,
-} from "../../communication/store/database/index.js";
-
-import { Effect, Schema, Struct } from "effect";
-import {
   readBytes,
   readInteger,
   readOptionalBytes,
@@ -17,6 +22,7 @@ import {
   requireSameBytes,
   requireSameOptionalBytes,
   requireText,
+  storeOperation,
   transaction,
 } from "../../communication/store/database/index.js";
 import { decodeRuntimeValue } from "../../communication/store/index.js";
@@ -37,14 +43,6 @@ import {
   firewallDecisionsSchema,
   firewallInstallationSchema,
 } from "../config.js";
-import type {
-  FirewallActivation,
-  FirewallAuditEntry,
-  FirewallCommit,
-  FirewallCompletion,
-  FirewallInboxEntry,
-  FirewallLocalAdmission,
-} from "./types.js";
 const ruleIds = Schema.parseJson(Schema.Array(Schema.NonEmptyString));
 const activationRow = Schema.Struct({
   sequence: Schema.Int,
@@ -91,7 +89,7 @@ export function queueFirewallItem(
         item.canonicalProvenance ?? null,
       ],
     );
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("queueFirewallItem"));
 }
 /** One unsettled predecessor per conversation is eligible for checking. */
 export function readNextPendingMessages(): Effect.Effect<
@@ -114,7 +112,7 @@ export function readNextPendingMessages(): Effect.Effect<
   `,
       [],
     )).map(queuedEntry);
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("readNextPendingMessages"));
 }
 /** Restart recovery visits every private item, including successors behind a held frontier. */
 export function readPendingFirewallItems(
@@ -138,7 +136,7 @@ export function readPendingFirewallItems(
     `,
       [after],
     )).map(queuedEntry);
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("readPendingFirewallItems"));
 }
 /** Missing policy means initial rules have never been seeded, distinct from an empty list. */
 export function readFirewallPolicy(): Effect.Effect<
@@ -153,7 +151,7 @@ export function readFirewallPolicy(): Effect.Effect<
       [],
     ))[0];
     return row === undefined ? undefined : readBytes(row, "canonical_rules");
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("readFirewallPolicy"));
 }
 /** The editable document and its activation either both commit or neither does. */
 export function writeFirewallPolicy(
@@ -185,15 +183,16 @@ export function writeFirewallPolicy(
         }
       }),
     );
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("writeFirewallPolicy"));
 }
 /** Recent edits preserve activation order when timestamps coincide. */
 export function readFirewallActivations(request: { readonly since?: number }) {
   return Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     const since = request.since ?? 0;
-    if (!Number.isSafeInteger(since) || since < 0)
+    if (!Number.isSafeInteger(since) || since < 0) {
       return yield* new EndpointStoreError({ reason: "invalid-input" });
+    }
     const query = SqlSchema.findAll({
       Request: Schema.Int,
       Result: activationRow,
@@ -212,7 +211,7 @@ export function readFirewallActivations(request: { readonly since?: number }) {
       sequence,
       activation,
     }));
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("readFirewallActivations"));
 }
 /** Completion time includes checks that started before a caller's previous poll. */
 export function readFirewallDecisions(since = 0) {
@@ -231,7 +230,7 @@ export function readFirewallDecisions(since = 0) {
       ...auditEntry(row),
       time: readInteger(row, "decided_at"),
     }));
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("readFirewallDecisions"));
 }
 /** Local result decisions and evidence settle with the caller's host publication transaction. */
 export function settleLocalItem(
@@ -244,8 +243,9 @@ export function settleLocalItem(
     requireBytes(admission.evidence.canonicalEntry);
     yield* requireQueueFrontier(deliveryToken, admission.queuedItem);
     for (const completion of admission.completions) {
-      if (completion.direction !== "incoming")
+      if (completion.direction !== "incoming") {
         return yield* new EndpointStoreError({ reason: "conflict" });
+      }
       requireSameBytes(completion.canonicalCandidate, admission.queuedItem);
       yield* saveCheckDecision(completion);
     }
@@ -260,7 +260,7 @@ export function settleLocalItem(
       ],
     );
     yield* settleQueuedItem(deliveryToken, "admitted");
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("settleLocalItem"));
 }
 /** A settled item cannot be offered for reassessment after restart. */
 export function settleQueuedItem(
@@ -274,7 +274,7 @@ export function settleQueuedItem(
       "UPDATE firewall_incoming SET disposition = ?, check_id = ? WHERE delivery_token = ?",
       [disposition, checkId ?? null, deliveryToken],
     );
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("settleQueuedItem"));
 }
 /** A conversation commits its unsettled predecessor before later host items. */
 export function requireQueueFrontier(
@@ -306,7 +306,7 @@ export function requireQueueFrontier(
     if (predecessor !== undefined) {
       return yield* new EndpointStoreError({ reason: "conflict" });
     }
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("requireQueueFrontier"));
 }
 /** Saves one completed assessment; interruption before completion leaves no audit row. */
 export function saveCheckDecision(
@@ -327,8 +327,9 @@ export function saveCheckDecision(
       if (
         readText(prior, "direction") !== completion.direction ||
         readText(prior, "disposition") !== disposition
-      )
+      ) {
         return yield* new EndpointStoreError({ reason: "conflict" });
+      }
       requireSameBytes(
         readBytes(prior, "canonical_candidate"),
         completion.canonicalCandidate,
@@ -355,7 +356,7 @@ export function saveCheckDecision(
       ],
     );
     return disposition;
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("saveCheckDecision"));
 }
 /** Expiry retires a queued message without fabricating a policy assessment. */
 export function retireQueuedItem(
@@ -367,9 +368,10 @@ export function retireQueuedItem(
       "UPDATE firewall_incoming SET disposition='withheld' WHERE delivery_token=? AND disposition='pending' RETURNING sequence",
       [token],
     );
-    if (rows.length !== 1)
+    if (rows.length !== 1) {
       return yield* new EndpointStoreError({ reason: "not-found" });
-  }).pipe(storeOperation);
+    }
+  }).pipe(storeOperation, Effect.withSpan("retireQueuedItem"));
 }
 /**
  * Returns retained decisions without message content, private inputs,
@@ -412,8 +414,9 @@ function markAnswers(
         "INSERT INTO firewall_answers(conversation_id,record_hash,admitted,delivery_token) SELECT conversation_id,record_hash,?,? FROM certified_records WHERE record_hash=? ON CONFLICT(conversation_id,record_hash) DO UPDATE SET admitted=excluded.admitted,delivery_token=excluded.delivery_token RETURNING record_hash",
         [answer.admitted ? 1 : 0, deliveryToken, answer.recordHash],
       );
-      if (rows.length !== 1)
+      if (rows.length !== 1) {
         return yield* new EndpointStoreError({ reason: "conflict" });
+      }
     }
   }).pipe(storeOperation);
 }
@@ -591,12 +594,12 @@ function ruleOrigin(registrations: readonly Registration[]) {
         ? { fixedRuleIds: [] }
         : yield* Schema.decodeUnknown(textProvenance)(text.provenance.data);
     const fixed = new Set(recorded.fixedRuleIds);
-    return (rule: DecidingRule): ReturnType<RuleOrigin> =>
-      rule.middlewareId !== text?.id
-        ? { from: "code" }
-        : fixed.has(rule.ruleId)
-          ? { from: "fixed" }
-          : { from: "editable" };
+    return (rule: DecidingRule): ReturnType<RuleOrigin> => {
+      if (rule.middlewareId !== text?.id) {
+        return { from: "code" };
+      }
+      return fixed.has(rule.ruleId) ? { from: "fixed" } : { from: "editable" };
+    };
   });
 }
 function decisionCause(

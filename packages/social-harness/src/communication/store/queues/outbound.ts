@@ -2,10 +2,16 @@
 
 import * as SqlClient from "@effect/sql/SqlClient";
 import { Effect } from "effect";
-import { EndpointStoreError, storeOperation } from "../database/index.js";
+import type {
+  OutboundAttempt,
+  OutboundMessageInput,
+  StoredOutboundMessage,
+  StoreMutation,
+} from "../types.js";
 
 import {
   copyBytes,
+  EndpointStoreError,
   readBytes,
   readInteger,
   readText,
@@ -13,15 +19,10 @@ import {
   requireEqual,
   requireSameBytes,
   requireText,
+  storeOperation,
   StoreSignal,
   transaction,
 } from "../database/index.js";
-import type {
-  OutboundAttempt,
-  OutboundMessageInput,
-  StoredOutboundMessage,
-  StoreMutation,
-} from "../types.js";
 type OutboundDisposition = "accepted" | "discarded" | "pending";
 interface RetainedOutbound {
   readonly outbound: StoredOutboundMessage;
@@ -44,7 +45,7 @@ export function enqueueOutbound(
   return Effect.gen(function* () {
     validateMessageInput(message);
     return yield* transaction(enqueueOutboundInTransaction(message));
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("enqueueOutbound"));
 }
 /**
  * Retains one validated envelope inside a caller-owned SQLite transaction.
@@ -88,7 +89,7 @@ export function enqueueOutboundInTransaction(
     return copyOutbound({
       ...message,
     });
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("enqueueOutboundInTransaction"));
 }
 /**
  * Selects the exact durable envelope and retry mode for one Router attempt.
@@ -123,7 +124,7 @@ export function beginOutbound(
         });
       }),
     );
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("beginOutbound"));
 }
 /**
  * Marks one exact stored envelope complete after Router accepts its bytes.
@@ -160,7 +161,7 @@ export function completeOutbound(
         }
       }),
     );
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("completeOutbound"));
 }
 /**
  * Atomically invalidates exact pending envelopes before protocol regeneration.
@@ -183,16 +184,15 @@ export function discardOutbound(
     }
     return yield* transaction(
       Effect.gen(function* () {
-        const retained = yield* Effect.forEach(outbounds, (outbound) =>
-          Effect.gen(function* () {
-            const row = yield* requireOutbound(outbound.envelopeId);
-            requireSameOutbound(row.outbound, outbound);
-            if (row.disposition === "accepted") {
-              return yield* new EndpointStoreError({ reason: "conflict" });
-            }
-            return row;
-          }),
-        );
+        const retained = [];
+        for (const outbound of outbounds) {
+          const row = yield* requireOutbound(outbound.envelopeId);
+          requireSameOutbound(row.outbound, outbound);
+          if (row.disposition === "accepted") {
+            return yield* new EndpointStoreError({ reason: "conflict" });
+          }
+          retained.push(row);
+        }
         const inserted = retained.some(
           (outbound) => outbound.disposition === "pending",
         );
@@ -213,7 +213,7 @@ export function discardOutbound(
         return inserted ? "inserted" : "existing";
       }),
     );
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("discardOutbound"));
 }
 /**
  * Reads every pending stored envelope in durable insertion order.
@@ -239,7 +239,7 @@ export function readPendingOutbound(
         [...(conversationId === undefined ? [] : [conversationId])],
       )).map((row) => copyOutbound(readOutbound(row).outbound)),
     );
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("readPendingOutbound"));
 }
 function requireOutbound(
   envelopeId: string,

@@ -1,12 +1,10 @@
 /** @file Stores messages from peers and tracks whether the daemon has consumed them. */
 
 import * as SqlClient from "@effect/sql/SqlClient";
-import { Effect } from "effect";
-import { EndpointStoreError, storeOperation } from "../database/index.js";
-
-import { Either, Schema } from "effect";
+import { Effect, Either, Schema } from "effect";
 import {
   copyBytes,
+  EndpointStoreError,
   mintDeliveryToken,
   readBytes,
   readInteger,
@@ -15,6 +13,7 @@ import {
   requireEqual,
   requireSameBytes,
   requireText,
+  storeOperation,
   StoreSignal,
   transaction,
 } from "../database/index.js";
@@ -49,7 +48,7 @@ export function readPendingDeliveries(): Effect.Effect<
         [],
       )).map(readPendingDelivery),
     );
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("readPendingDeliveries"));
 }
 /**
  * Reads every retained delivery, including acknowledged tombstones.
@@ -73,7 +72,7 @@ export function readRetainedDeliveries(
         [...(conversationId === undefined ? [] : [conversationId])],
       )).map(readPendingDelivery),
     );
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("readRetainedDeliveries"));
 }
 /**
  * Durably acknowledges one delivery without deleting its collision tombstone.
@@ -113,7 +112,7 @@ export function acknowledgeDelivery(
         return "inserted";
       }),
     );
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("acknowledgeDelivery"));
 }
 /**
  * Creates or validates the delivery coupled to one certified record.
@@ -171,7 +170,7 @@ export function retainDeliveryInTransaction(
       ],
     );
     return "inserted";
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("retainDeliveryInTransaction"));
 }
 /**
  * Retire a delivery's raw pending row, so the delivery pass never offers it
@@ -187,7 +186,7 @@ export function retirePendingDelivery(
       "UPDATE pending_deliveries SET acknowledged = 1 WHERE delivery_token = ?",
       [deliveryToken],
     );
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("retirePendingDelivery"));
 }
 function findRetainedDelivery(
   conversationId: string,

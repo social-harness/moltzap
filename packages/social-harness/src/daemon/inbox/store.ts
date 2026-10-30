@@ -1,9 +1,10 @@
 /** @file Stores host inbox items and tracks delivery and acknowledgment. */
 
 import * as SqlClient from "@effect/sql/SqlClient";
-import { storeOperation } from "../../communication/store/database/index.js";
-
 import { Effect, Schema } from "effect";
+
+import type { ItemProjection } from "../../firewall/store/types.js";
+import type { InboxSummary } from "../../host-protocol/operations.js";
 import {
   EndpointStoreError,
   readBytes,
@@ -13,6 +14,7 @@ import {
   requireBytes,
   requireSameBytes,
   requireSameOptionalBytes,
+  storeOperation,
   StoreSignal,
   transaction,
 } from "../../communication/store/database/index.js";
@@ -22,8 +24,6 @@ import {
   type StoreMutation,
 } from "../../communication/store/types.js";
 import { MAXIMUM_RUNTIME_ITEM_BYTES } from "../../encoding/limits.js";
-import type { ItemProjection } from "../../firewall/store/types.js";
-import type { InboxSummary } from "../../host-protocol/operations.js";
 // safer-arch-ignore file-implicit-boundary-module: Store composition and firewall admission share inbox writes within the caller's transaction; external consumers use the store capability instead of these SQLite primitives.
 const MAXIMUM_PAGE_ITEMS = 50;
 interface InboxBounds {
@@ -97,9 +97,10 @@ export function createInboxTables() {
 `
       .split(";")
       .map((part) => part.trim())
-      .filter((part) => part.length > 0))
+      .filter((part) => part.length > 0)) {
       yield* sql.unsafe<Readonly<Record<string, unknown>>>(statement);
-  }).pipe(storeOperation);
+    }
+  }).pipe(storeOperation, Effect.withSpan("createInboxTables"));
 }
 /** Retained bytes remain readable after handoff or request-context retirement. */
 export function readInboxItem(deliveryToken: DeliveryToken) {
@@ -118,7 +119,7 @@ export function readInboxItem(deliveryToken: DeliveryToken) {
           ...guidanceBytes(row),
           acknowledged: readInteger(row, "acknowledged") === 1,
         };
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("readInboxItem"));
 }
 /**
  * Bind a delivery token to exactly one classified payload, including after ack.
@@ -156,7 +157,7 @@ export function putInboxItem(
       [item.deliveryToken, item.canonicalItem, item.canonicalGuidance ?? null],
     );
     return "inserted";
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("putInboxItem"));
 }
 /** Acknowledgment preserves the immutable host binding and retires its raw delivery. */
 export function retireItem(
@@ -176,7 +177,7 @@ export function retireItem(
       [deliveryToken],
     );
     yield* retirePendingDelivery(deliveryToken);
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("retireItem"));
 }
 /** Receipt retirement and callback progress commit together across crashes. */
 export function completeWebhookDelivery(
@@ -190,7 +191,7 @@ export function completeWebhookDelivery(
         yield* writeEventState(canonicalState);
       }),
     );
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("completeWebhookDelivery"));
 }
 /**
  * Read an inbox page without allowing concurrent arrivals to extend its snapshot.
@@ -218,7 +219,7 @@ export function readInbox(
         ? { nextAfter: last.sequence }
         : {}),
     };
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("readInbox"));
 }
 /**
  * Read counters for notification coalescing without disclosing inbox contents.
@@ -242,7 +243,7 @@ export function readInboxSummary(): Effect.Effect<
       pendingCount: readInteger(row, "pending"),
       newestSequence: yield* newestSequence(),
     };
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("readInboxSummary"));
 }
 /**
  * Retire the host projection and any underlying pending protocol row atomically.
@@ -257,7 +258,7 @@ export function acknowledgeInboxItem(
         yield* retireItem(deliveryToken);
       }),
     );
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("acknowledgeInboxItem"));
 }
 /**
  * Read the runtime-owned event state without interpreting its private format.
@@ -275,7 +276,7 @@ export function readEventState(): Effect.Effect<
       [],
     ))[0];
     return row === undefined ? undefined : readBytes(row, "canonical_state");
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("readEventState"));
 }
 /**
  * Atomically replace the one runtime consumer's durable event state.
@@ -291,7 +292,44 @@ export function writeEventState(
       "INSERT INTO runtime_events (singleton, canonical_state) VALUES (1, ?) ON CONFLICT(singleton) DO UPDATE SET canonical_state = excluded.canonical_state",
       [canonicalState],
     );
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("writeEventState"));
+}
+/** Returns only retained permitted views, including acknowledged messages and admitted answers. */
+export function readHistoryViews(
+  records: ReadonlyArray<{
+    readonly conversationId: string;
+    readonly recordHash: string;
+  }>,
+): Effect.Effect<
+  readonly HistoryView[],
+  EndpointStoreError,
+  SqlClient.SqlClient
+> {
+  return Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const views: HistoryView[] = [];
+    for (const record of records) {
+      const rows = yield* sql.unsafe<Readonly<Record<string, unknown>>>(
+        `SELECT i.canonical_item,i.canonical_guidance FROM runtime_inbox i JOIN pending_deliveries d USING(delivery_token) WHERE d.conversation_id=? AND d.record_hash=?
+ UNION ALL SELECT i.canonical_item,i.canonical_guidance FROM runtime_inbox i JOIN firewall_answers a USING(delivery_token) WHERE a.conversation_id=? AND a.record_hash=? AND a.admitted=1 LIMIT 1`,
+        [
+          record.conversationId,
+          record.recordHash,
+          record.conversationId,
+          record.recordHash,
+        ],
+      );
+      const row = rows[0];
+      if (row !== undefined) {
+        views.push({
+          recordHash: record.recordHash,
+          canonicalItem: readBytes(row, "canonical_item"),
+          ...guidanceBytes(row),
+        });
+      }
+    }
+    return views;
+  }).pipe(storeOperation, Effect.withSpan("readHistoryViews"));
 }
 function requireSequence(value: number): number {
   if (!Number.isSafeInteger(value) || value < 0) {
@@ -368,40 +406,4 @@ export interface HistoryView {
   readonly recordHash: string;
   readonly canonicalItem: Uint8Array;
   readonly canonicalGuidance?: Uint8Array;
-}
-/** Returns only retained permitted views, including acknowledged messages and admitted answers. */
-export function readHistoryViews(
-  records: readonly {
-    readonly conversationId: string;
-    readonly recordHash: string;
-  }[],
-): Effect.Effect<
-  readonly HistoryView[],
-  EndpointStoreError,
-  SqlClient.SqlClient
-> {
-  return Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient;
-    const views: HistoryView[] = [];
-    for (const record of records) {
-      const rows = yield* sql.unsafe<Readonly<Record<string, unknown>>>(
-        `SELECT i.canonical_item,i.canonical_guidance FROM runtime_inbox i JOIN pending_deliveries d USING(delivery_token) WHERE d.conversation_id=? AND d.record_hash=?
- UNION ALL SELECT i.canonical_item,i.canonical_guidance FROM runtime_inbox i JOIN firewall_answers a USING(delivery_token) WHERE a.conversation_id=? AND a.record_hash=? AND a.admitted=1 LIMIT 1`,
-        [
-          record.conversationId,
-          record.recordHash,
-          record.conversationId,
-          record.recordHash,
-        ],
-      );
-      const row = rows[0];
-      if (row !== undefined)
-        views.push({
-          recordHash: record.recordHash,
-          canonicalItem: readBytes(row, "canonical_item"),
-          ...guidanceBytes(row),
-        });
-    }
-    return views;
-  }).pipe(storeOperation);
 }

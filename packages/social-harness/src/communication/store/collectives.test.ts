@@ -1,7 +1,7 @@
-import type { TestStore } from "../../__tests__/store-schema-fixtures.js";
 /**
  * @file Collective identities and message claims survive protocol store reopening.
  */
+
 import { live as it } from "@effect/vitest";
 import { Effect } from "effect";
 import { expect } from "vitest";
@@ -10,6 +10,7 @@ import {
   bytes,
   stateDirectory,
   storedConversation,
+  type TestStore,
   withDaemonStore,
 } from "../../__tests__/store-schema-fixtures.js";
 const { foundation, record } = storedConversation("collective-request");

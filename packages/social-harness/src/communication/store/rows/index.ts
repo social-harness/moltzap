@@ -2,10 +2,14 @@
 
 import * as SqlClient from "@effect/sql/SqlClient";
 import { Effect } from "effect";
-import { EndpointStoreError, storeOperation } from "../database/index.js";
-
-import { readBytes, readText } from "../database/index.js";
 import type { IdentityBinding } from "../types.js";
+
+import {
+  type EndpointStoreError,
+  readBytes,
+  readText,
+  storeOperation,
+} from "../database/index.js";
 /** First-candidate locks are selected against one durable predecessor. */
 export {
   findProposalLock,
@@ -52,5 +56,5 @@ export function readStoredIdentity(): Effect.Effect<
           agentId: readText(row, "agent_id"),
           canonicalAgentCard: readBytes(row, "canonical_agent_card"),
         });
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("readStoredIdentity"));
 }

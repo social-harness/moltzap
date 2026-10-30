@@ -2,10 +2,18 @@
 
 import * as SqlClient from "@effect/sql/SqlClient";
 import { Effect } from "effect";
-import { EndpointStoreError, storeOperation } from "./database/index.js";
+import type {
+  CertifiedRecord,
+  InboundDeliveryInput,
+  ProposalLock,
+  ProtocolEvidence,
+  StagedRecord,
+  StoreMutation,
+} from "./types.js";
 
 import {
   copyBytes,
+  EndpointStoreError,
   readBytes,
   readOptionalText,
   readText,
@@ -13,6 +21,7 @@ import {
   requireEqual,
   requireSameBytes,
   requireText,
+  storeOperation,
   StoreSignal,
   transaction,
 } from "./database/index.js";
@@ -31,14 +40,6 @@ import {
   releaseProposalLock,
   requireSameRecord,
 } from "./rows/index.js";
-import type {
-  CertifiedRecord,
-  InboundDeliveryInput,
-  ProposalLock,
-  ProtocolEvidence,
-  StagedRecord,
-  StoreMutation,
-} from "./types.js";
 /**
  * Atomically stages an action-certified record and its send obligation.
  *
@@ -67,7 +68,7 @@ export function stageRecordForDissemination(
           : "existing";
       }),
     );
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("stageRecordForDissemination"));
 }
 /**
  * Merges one stable evidence item without replacing a conflicting value.
@@ -92,7 +93,7 @@ export function mergeEvidence(
         return yield* mergeEvidenceInTransaction(evidence);
       }),
     );
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("mergeEvidence"));
 }
 /**
  * Atomically replaces the lock this endpoint holds on another action at a
@@ -141,7 +142,7 @@ export function supersedeProposalLock(
         return mutation;
       }),
     );
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("supersedeProposalLock"));
 }
 /**
  * Atomically promotes a complete record, advances its head, and retains its
@@ -158,7 +159,7 @@ export function promoteRecord(
   return Effect.gen(function* () {
     validateCertifiedRecord(record);
     return yield* transaction(promoteRecordInTransaction(record, delivery));
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("promoteRecord"));
 }
 /**
  * Atomically stages and promotes a record received whole, with its
@@ -189,7 +190,7 @@ export function applyCertifiedRecord(
           : "existing";
       }),
     );
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("applyCertifiedRecord"));
 }
 /**
  * Retain one verified record core without authorizing a local signature.
@@ -233,7 +234,7 @@ function stageRecordInTransaction(
 }
 function promoteRecordInTransaction(
   record: CertifiedRecord,
-  // eslint-disable-next-line agent-code-guard/no-conditional-chaining -- Delivery retention resolves absence against the stored author identity inside this transaction.
+
   delivery?: InboundDeliveryInput,
 ): Effect.Effect<StoreMutation, EndpointStoreError, SqlClient.SqlClient> {
   return Effect.gen(function* () {

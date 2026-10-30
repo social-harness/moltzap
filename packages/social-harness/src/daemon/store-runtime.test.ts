@@ -1,6 +1,5 @@
-import * as Evidence from "./inbox/evidence.js";
-import type { TestStore } from "../__tests__/store-schema-fixtures.js";
 /** @file Runtime state and bounded conversation evidence survive store restart. */
+
 import { live as it } from "@effect/vitest";
 import { Array, Effect, Schema } from "effect";
 import { describe, expect } from "vitest";
@@ -8,12 +7,12 @@ import type {
   FirewallHistoryEntry,
   FirewallLocalEntry,
 } from "../firewall/store/types.js";
-import { inspectEndpointStore } from "./store.js";
 import { digest } from "../__tests__/agent-card-fixtures.js";
 import {
   bytes,
   stateDirectory,
   storedConversation,
+  type TestStore,
   withDaemonStore,
 } from "../__tests__/store-schema-fixtures.js";
 import {
@@ -21,6 +20,8 @@ import {
   DeliveryToken,
 } from "../communication/store/index.js";
 import { WIRE_VERSION } from "../identity/wire-version.js";
+import * as Evidence from "./inbox/evidence.js";
+import { inspectEndpointStore } from "./store.js";
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- Store mutation outcomes and recovery state are the contract under test. */
 const token = Schema.decodeUnknownSync(DeliveryToken)(digest("dlv_", 1));
 const identity = {

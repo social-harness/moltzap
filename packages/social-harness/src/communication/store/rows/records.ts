@@ -2,21 +2,22 @@
 
 import * as SqlClient from "@effect/sql/SqlClient";
 import { Effect } from "effect";
-import { EndpointStoreError, storeOperation } from "../database/index.js";
-
-import {
-  readBytes,
-  readOptionalText,
-  readText,
-  requireEqual,
-  requireSameBytes,
-  StoreSignal,
-} from "../database/index.js";
 import type {
   CertifiedRecord,
   ProtocolEvidence,
   StagedRecord,
 } from "../types.js";
+
+import {
+  EndpointStoreError,
+  readBytes,
+  readOptionalText,
+  readText,
+  requireEqual,
+  requireSameBytes,
+  storeOperation,
+  StoreSignal,
+} from "../database/index.js";
 /**
  * Projects one complete certified record and its separate evidence maps.
  *
@@ -46,7 +47,7 @@ export function readCertifiedRecord(
       actionEvidence,
       durabilityEvidence,
     });
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("readCertifiedRecord"));
 }
 /**
  * Reads an optional staged record by stable private hash.
@@ -73,7 +74,7 @@ export function findStagedRecord(
       [conversationId, recordHash],
     ))[0];
     return row === undefined ? undefined : readStagedRecord(row);
-  }).pipe(storeOperation);
+  }).pipe(storeOperation, Effect.withSpan("findStagedRecord"));
 }
 /**
  * Projects one exact staged record core.
