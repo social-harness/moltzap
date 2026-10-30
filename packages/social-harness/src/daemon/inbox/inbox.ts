@@ -2,6 +2,11 @@
 
 import { Effect, Encoding, Schema } from "effect";
 import { randomBytes } from "node:crypto";
+import type {
+  HarnessMessageReadyEvent,
+  HarnessReadInboxRequest,
+  HarnessReadInboxResult,
+} from "../../host-protocol/operations.js";
 import type { InboxEntry, InboxStore } from "./store.js";
 import {
   decodeRuntimeValue,
@@ -12,11 +17,6 @@ import {
 import { exactStruct } from "../../encoding/exact.js";
 import { localGuidanceSchema } from "../../firewall/outcome/index.js";
 import { InboundItem } from "../../host-protocol/items.js";
-import {
-  type HarnessMessageReadyEvent,
-  type HarnessReadInboxRequest,
-  type HarnessReadInboxResult,
-} from "../../host-protocol/operations.js";
 
 /**
  * Lookup retains the original content and guidance after acknowledgment.

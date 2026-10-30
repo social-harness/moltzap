@@ -3,6 +3,7 @@
 import { scopedLive as it } from "@effect/vitest";
 import { Effect, Array as EffectArray, Schema, Scope } from "effect";
 import { describe, expect } from "vitest";
+import type { HarnessMessageReadyEvent } from "../../host-protocol/operations.js";
 import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
 import { localGuidance } from "../../__tests__/message-policy-fixtures.js";
@@ -21,7 +22,6 @@ import {
   encodeRuntimeValue,
 } from "../../communication/store/index.js";
 import { InboundItem } from "../../host-protocol/items.js";
-import { type HarnessMessageReadyEvent } from "../../host-protocol/operations.js";
 import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { openDaemonStore } from "../store.js";
 import { makeHostDelivery } from "./host-delivery.js";

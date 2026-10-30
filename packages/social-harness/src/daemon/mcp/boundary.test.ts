@@ -55,7 +55,6 @@ import {
   HARNESS_SEND_TOOL,
   INBOX_PENDING_EVENT,
 } from "../../host-protocol/names.js";
-
 import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { readRuntimeEvent } from "../inbox/inbox.js";
 import { openDaemonStore } from "../store.js";

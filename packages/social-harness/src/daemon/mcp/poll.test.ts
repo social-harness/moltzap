@@ -25,7 +25,6 @@ import {
   HARNESS_CONSUMER_META_KEY,
   INBOX_ITEM_EVENT,
 } from "../../host-protocol/names.js";
-
 import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { openDaemonStore } from "../store.js";
 import { makeHarnessPollEvents } from "./poll.js";

@@ -24,7 +24,6 @@ import {
   INBOX_ITEM_EVENT,
   INBOX_PENDING_EVENT,
 } from "../../host-protocol/names.js";
-
 import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { makeHostDelivery } from "../inbox/host-delivery.js";
 import { noHistoryExport } from "../inbox/host-traffic-log.js";

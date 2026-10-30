@@ -23,7 +23,6 @@ import {
 } from "../../__tests__/webhook-fixtures.js";
 import { encodeRuntimeValue } from "../../communication/store/index.js";
 import { maximumEventBytes } from "../../host-protocol/index.js";
-
 import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { readRuntimeEvent } from "../inbox/inbox.js";
 import { openDaemonStore } from "../store.js";
