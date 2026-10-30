@@ -239,7 +239,7 @@ const statedTimeAndCandidate = Schema.parseJson(
   Schema.Struct({
     now: Schema.optional(Schema.Number),
     candidate: Schema.Struct({
-      operation: Schema.optional(Schema.Struct({ id: Schema.String })),
+      operation: Schema.optional(Schema.Struct({ operationId: Schema.String })),
     }),
   }),
 );
@@ -265,7 +265,8 @@ it("states the capture time and each message's collective operation to the provi
     expect(states.every((state) => state.now === 1_000)).toBe(true);
     expect(
       states.some(
-        (state) => state.candidate.operation?.id === operation.operationId,
+        (state) =>
+          state.candidate.operation?.operationId === operation.operationId,
       ),
     ).toBe(true);
   }));
