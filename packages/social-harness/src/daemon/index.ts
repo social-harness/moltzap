@@ -55,7 +55,7 @@ const ROUTER_POLL_TIMEOUT = Duration.seconds(35);
 
 const liveWireVersions = wireVersions.liveSet;
 
-/** Offline checking shares the managed owner's exact validation and result contract. */
+/** Offline and managed checking use the firewall's supported public contract. */
 export {
   CheckInputError,
   checkMessage,
@@ -63,28 +63,22 @@ export {
   DecisionProviderError,
   type DecisionRequest,
   type DecisionResponse,
+  decodeMessagePolicy,
+  type Firewall,
+  type FirewallOptions,
+  type FirewallSettings,
+  loadMessagePolicy,
+  makeFirewall,
   type Message,
   type MessageContext,
   type MessageMiddleware,
+  MessagePolicy,
   MiddlewareError,
   type MiddlewareInput,
   type MiddlewareResult,
-} from "../firewall/check.js";
-/** Trusted configuration validates owner documents before acquiring a provider. */
-export {
-  decodeMessagePolicy,
-  type FirewallSettings,
-  loadMessagePolicy,
-  MessagePolicy,
   type RuleDescription,
   type TextPolicySettings,
   type TextRule,
-} from "../firewall/config.js";
-/** Managed checking retains attempts and owns live editable rules. */
-export {
-  type Firewall,
-  type FirewallOptions,
-  makeFirewall,
 } from "../firewall/index.js";
 
 // eslint-disable-next-line @typescript-eslint/no-namespace -- The published service subpath intentionally merges its runtime values with the closed startup-error type.

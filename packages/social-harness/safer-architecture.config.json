@@ -79,10 +79,6 @@
       "reason": "Attributed envelope representation parameters read by host-loaded SignedMessage schemas"
     },
     {
-      "file": "firewall/evaluator/contract/index.ts",
-      "reason": "Data-only firewall check schemas shared by evaluation and host-safe refusal projections"
-    },
-    {
       "file": "communication/router/api/index.ts",
       "reason": "Opaque Router operation schemas and client capability entry"
     },
@@ -215,18 +211,6 @@
       "reason": "Protocol persistence capability constructed by the daemon on its existing connection"
     },
     {
-      "file": "firewall/outcome/contract.ts",
-      "reason": "Leaf refusal and registered advice grammar shared by evaluation and host projection"
-    },
-    {
-      "file": "firewall/policy/contract.ts",
-      "reason": "Owner and runtime editing values and decision-history contracts"
-    },
-    {
-      "file": "firewall/policy/installation.ts",
-      "reason": "One captured installation shared by owner editing and admission"
-    },
-    {
       "file": "firewall/store/types.ts",
       "reason": "Policy persistence requirements declared for daemon composition"
     },
@@ -267,12 +251,28 @@
       "reason": "Host delivery declares its persistence requirements and coordinates sends and inbox handoff"
     },
     {
-      "file": "firewall/admission/firewall.ts",
-      "reason": "Local assessment prepares the safe projection before ordinary protocol acceptance"
-    },
-    {
       "file": "communication/collectives/prepared.ts",
       "reason": "Exact operation data shared by preparation, assessment projection and acceptance"
+    },
+    {
+      "file": "firewall/check.ts",
+      "reason": "Message assessment and the safe result contracts consumed by host presentation"
+    },
+    {
+      "file": "firewall/config.ts",
+      "reason": "Explicit rule configuration, loading and authenticated edit contracts"
+    },
+    {
+      "file": "host-protocol/advice.ts",
+      "reason": "Host refusal wrappers and shared presentation of registered local advice"
+    },
+    {
+      "file": "daemon/inbox/incoming-worker.ts",
+      "reason": "Ordered incoming admission started by daemon runtime composition"
+    },
+    {
+      "file": "daemon/inbox/message.ts",
+      "reason": "Verified protocol and history projections assembled for firewall checks"
     }
   ],
   "compositionRoots": [
@@ -359,28 +359,6 @@
       "reason": "Client package release metadata used by MCP peers, policy provenance and telemetry"
     },
     {
-      "name": "firewall-evaluator",
-      "roots": [
-        "src/firewall/evaluator"
-      ],
-      "entrypoints": [
-        "src/firewall/evaluator/index.ts",
-        "src/firewall/evaluator/contract/index.ts"
-      ],
-      "reason": "Code and Text evaluation and their shared evidence and check contracts"
-    },
-    {
-      "name": "firewall-outcome",
-      "roots": [
-        "src/firewall/outcome"
-      ],
-      "entrypoints": [
-        "src/firewall/outcome/index.ts",
-        "src/firewall/outcome/contract.ts"
-      ],
-      "reason": "Closed refusal and guidance values independent of policy evaluation or provider clients"
-    },
-    {
       "name": "router-api",
       "roots": [
         "src/communication/router/api"
@@ -465,7 +443,8 @@
         "src/host-protocol/catalog-schemas.ts",
         "src/host-protocol/items.ts",
         "src/host-protocol/render.ts",
-        "src/host-protocol/send-result.ts"
+        "src/host-protocol/send-result.ts",
+        "src/host-protocol/advice.ts"
       ],
       "reason": "The loopback MCP tools, events and results both peers speak"
     },
@@ -486,11 +465,14 @@
       ],
       "entrypoints": [
         "src/firewall/index.ts",
-        "src/firewall/admission/firewall.ts",
-        "src/firewall/policy/contract.ts",
-        "src/firewall/policy/installation.ts"
+        "src/firewall/check.ts",
+        "src/firewall/config.ts",
+        "src/firewall/store/index.ts",
+        "src/firewall/store/types.ts",
+        "src/firewall/store/firewall.ts",
+        "src/firewall/store/schema.ts"
       ],
-      "reason": "Personal firewall evaluation, rules, policy, admission and retained checks above communication collectives"
+      "reason": "One personal firewall owns configured rules, message checks, edits and retained decisions"
     },
     {
       "name": "daemon-inbox",
@@ -501,7 +483,9 @@
         "src/daemon/inbox/index.ts",
         "src/daemon/inbox/host-traffic-log.ts",
         "src/daemon/inbox/store.ts",
-        "src/daemon/inbox/evidence.ts"
+        "src/daemon/inbox/evidence.ts",
+        "src/daemon/inbox/message.ts",
+        "src/daemon/inbox/incoming-worker.ts"
       ],
       "reason": "The admitted host inbox, delivery handoff and host traffic log"
     },
@@ -534,17 +518,6 @@
         "src/daemon/launcher/index.ts"
       ],
       "reason": "The daemon launcher: chooses, verifies and installs the release each start runs, then starts its sharnessd as a child process"
-    },
-    {
-      "name": "firewall-store",
-      "roots": [
-        "src/firewall/store"
-      ],
-      "entrypoints": [
-        "src/firewall/store/index.ts",
-        "src/firewall/store/types.ts"
-      ],
-      "reason": "Policy persistence requirements and operations, composed over the daemon connection"
     }
   ],
   "layers": [
@@ -577,13 +550,6 @@
       "reason": "The admitted host inbox, delivery handoff and host traffic log"
     },
     {
-      "name": "firewall",
-      "folders": [
-        "firewall"
-      ],
-      "reason": "Personal firewall evaluation, rules, policy, admission and retained checks above communication collectives"
-    },
-    {
       "name": "host-client",
       "folders": [
         "host-client"
@@ -596,6 +562,13 @@
         "host-protocol"
       ],
       "reason": "The loopback MCP tools, events and results both peers speak"
+    },
+    {
+      "name": "firewall",
+      "folders": [
+        "firewall"
+      ],
+      "reason": "Configured rules, message checking, owner edits and policy persistence"
     },
     {
       "name": "collectives",
@@ -619,13 +592,6 @@
       "reason": "The Router attach, poll, send, and outage worker"
     },
     {
-      "name": "firewall-store",
-      "folders": [
-        "firewall/store"
-      ],
-      "reason": "Policy persistence over protocol records without depending on host delivery"
-    },
-    {
       "name": "store",
       "folders": [
         "communication/store"
@@ -645,20 +611,6 @@
         "communication/router/api"
       ],
       "reason": "Opaque Router values and HTTP client below endpoint protocol records"
-    },
-    {
-      "name": "firewall-evaluator",
-      "folders": [
-        "firewall/evaluator"
-      ],
-      "reason": "Code and Text evaluation and their shared evidence and check contracts"
-    },
-    {
-      "name": "firewall-outcome",
-      "folders": [
-        "firewall/outcome"
-      ],
-      "reason": "Closed refusal and guidance values independent of policy evaluation or provider clients"
     },
     {
       "name": "release",

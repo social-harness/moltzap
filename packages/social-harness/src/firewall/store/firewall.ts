@@ -27,12 +27,11 @@ import {
   StoreSignal,
   transaction,
 } from "../../communication/store/database/index.js";
-import { DeliveryToken } from "../../communication/store/types.js";
-
 import {
   decodeRuntimeValue,
   EndpointStoreError,
 } from "../../communication/store/index.js";
+import { DeliveryToken } from "../../communication/store/types.js";
 import { exactStruct } from "../../encoding/exact.js";
 import { AgentView } from "../../identity/cards.js";
 import {
@@ -346,6 +345,39 @@ export function retireQueuedItem(
 }
 
 /** Record whether an admitted result showed or withheld each answer record. */
+/**
+ * Returns retained decisions without message content, private inputs,
+ * diagnostics or rule text. Includes registered advice only for rules that
+ * determined the decision.
+ */
+export function readDecisions(
+  store: FirewallStore,
+  request: { readonly since?: number },
+  editableTextId: string,
+) {
+  return Effect.gen(function* () {
+    const entries = yield* store.readFirewallDecisions(request.since);
+    const rows = yield* Effect.forEach(
+      entries,
+      (entry) => decisionRows(entry, editableTextId),
+      {
+        concurrency: 1,
+      },
+    );
+    return yield* Schema.decodeUnknown(firewallDecisionsSchema)({
+      decisions: rows.flat(),
+      activations: (yield* store.readFirewallActivations(request)).map(
+        (entry) => entry.activation,
+      ),
+    });
+  }).pipe(
+    Effect.catchTag("ParseError", () =>
+      Effect.fail(new EndpointStoreError({ reason: "corrupt" })),
+    ),
+    Effect.withSpan("readDecisions"),
+  );
+}
+
 function markAnswers(
   database: DatabaseSync,
   answers: FirewallLocalAdmission["answers"],
@@ -486,39 +518,6 @@ export const decodeFirewallAuditEntry = Effect.fn("decodeFirewallAuditEntry")(
     };
   },
 );
-
-/**
- * Returns retained decisions without message content, private inputs,
- * diagnostics or rule text. Includes registered advice only for rules that
- * determined the decision.
- */
-export function readDecisions(
-  store: FirewallStore,
-  request: { readonly since?: number },
-  editableTextId: string,
-) {
-  return Effect.gen(function* () {
-    const entries = yield* store.readFirewallDecisions(request.since);
-    const rows = yield* Effect.forEach(
-      entries,
-      (entry) => decisionRows(entry, editableTextId),
-      {
-        concurrency: 1,
-      },
-    );
-    return yield* Schema.decodeUnknown(firewallDecisionsSchema)({
-      decisions: rows.flat(),
-      activations: (yield* store.readFirewallActivations(request)).map(
-        (entry) => entry.activation,
-      ),
-    });
-  }).pipe(
-    Effect.catchTag("ParseError", () =>
-      Effect.fail(new EndpointStoreError({ reason: "corrupt" })),
-    ),
-    Effect.withSpan("readDecisions"),
-  );
-}
 
 function decisionRows(
   entry: FirewallAuditEntry & { readonly time: number },

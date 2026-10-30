@@ -3,25 +3,24 @@
 import { Clock, Effect, Schedule, Schema, Struct } from "effect";
 import { createHash, randomBytes } from "node:crypto";
 import {
+  exitOutcome,
+  markRetries,
+} from "../communication/conversations/index.js";
+import {
   decodeRuntimeValue,
   encodeRuntimeValue,
   EndpointStoreError,
 } from "../communication/store/index.js";
-import {
-  exitOutcome,
-  markRetries,
-} from "../communication/conversations/index.js";
 import { exactStruct } from "../encoding/exact.js";
 import { MAXIMUM_RUNTIME_ITEM_BYTES } from "../encoding/limits.js";
 import { AgentView } from "../identity/cards.js";
 import {
   captureRegistration,
-  checkMessage,
-  CheckInputError,
   type CheckedGuidance,
-  decodeFrozen,
+  checkMessage,
   type DecisionProvider,
   DecisionProviderError,
+  decodeFrozen,
   ENDPOINT_SENDER,
   type FirewallCheck,
   Message,
@@ -48,15 +47,14 @@ import {
   policyReadSchema,
   policyUpdateSchema,
   PrivateCheckTrace,
-  type RuleDescription,
   TextPolicySettings,
   TextRule,
 } from "./config.js";
 import { makeJevDecisionProvider } from "./jev.js";
 import {
   type FirewallActivation,
-  type FirewallLocalAdmission,
   type FirewallCompletion,
+  type FirewallLocalAdmission,
   type FirewallStore,
   readDecisions,
   withoutTraces,
@@ -151,47 +149,77 @@ export const makeFirewall = Effect.fn("makeFirewall")(function* (
       Effect.fail(new FirewallPolicyError({ reason: "build-failed" })),
     ),
   );
-  const fixed = yield* decodeFrozen(
-    policyReadSchema.fields.fixedRules,
-    fixedRules(captured),
-  ).pipe(
-    Effect.mapError(() => new FirewallPolicyError({ reason: "build-failed" })),
-  );
-  const fixedRuleIds = fixed.map((rule) => rule.id);
-  const stored = yield* store
-    .readFirewallPolicy()
-    .pipe(Effect.mapError(persistenceFailure));
-  const loadedRules =
-    stored === undefined
-      ? (captured.text?.initialRules ?? []).map((rule) => ({
-          ...rule,
-          owner: "owner" as const,
-        }))
-      : yield* decodeRuntimeValue(storedPolicySchema, stored).pipe(
-          Effect.map((value) => value.rules),
-          Effect.mapError(persistenceFailure),
-        );
-  const rules = yield* decodeFrozen(ownedRulesSchema, loadedRules).pipe(
-    Effect.mapError(
-      () =>
-        new FirewallPolicyError({
-          reason: stored === undefined ? "build-failed" : "persistence-failed",
-        }),
-    ),
-  );
-  yield* validateIds(rules, fixedRuleIds);
-  const active = yield* buildPolicy(captured, rules);
-  const state: PolicyState = { rules, active, fixedRuleIds };
-  if (stored === undefined) yield* persistRules(store, rules);
+  const state = yield* initializeRules(captured, store);
   const edits = yield* Effect.makeSemaphore(1);
   const permits = yield* Effect.makeSemaphore(
     captured.configuration.maximumConcurrentChecks,
   );
+  return firewallOperations(captured, state, store, {
+    permits,
+    policy: policyOperations(captured, state, store, edits),
+  });
+});
+
+function initializeRules(captured: CapturedOptions, store: FirewallStore) {
+  return Effect.gen(function* () {
+    const fixed = yield* decodeFrozen(
+      policyReadSchema.fields.fixedRules,
+      fixedRules(captured),
+    ).pipe(
+      Effect.catchTag("ParseError", () =>
+        Effect.fail(new FirewallPolicyError({ reason: "build-failed" })),
+      ),
+    );
+    const fixedRuleIds = fixed.map((rule) => rule.id);
+    const stored = yield* store
+      .readFirewallPolicy()
+      .pipe(Effect.mapError(persistenceFailure));
+    const loadedRules =
+      stored === undefined
+        ? (captured.text?.initialRules ?? []).map((rule) => ({
+            ...Struct.omit(rule),
+            owner: "owner" as const,
+          }))
+        : yield* decodeRuntimeValue(storedPolicySchema, stored).pipe(
+            Effect.map((value) => value.rules),
+            Effect.mapError(persistenceFailure),
+          );
+    const rules = yield* decodeFrozen(ownedRulesSchema, loadedRules).pipe(
+      Effect.catchTag("ParseError", () =>
+        Effect.fail(
+          new FirewallPolicyError({
+            reason:
+              stored === undefined ? "build-failed" : "persistence-failed",
+          }),
+        ),
+      ),
+    );
+    yield* validateIds(rules, fixedRuleIds);
+    const active = yield* buildPolicy(captured, rules);
+    const state: PolicyState = {
+      rules,
+      active,
+      fixedRuleIds,
+      fixedRules: fixed,
+    };
+    if (stored === undefined) {
+      yield* persistRules(store, rules);
+    }
+    return state;
+  });
+}
+
+function policyOperations(
+  captured: CapturedOptions,
+  state: PolicyState,
+  store: FirewallStore,
+  edits: Effect.Semaphore,
+): FirewallPolicyOperations {
   const policy: FirewallPolicyOperations = {
     read: () =>
       Effect.sync(() => ({
         rules: state.rules,
-        fixedRules: fixed,
+        fixedRules: state.fixedRules,
         activeRevision: state.active.configurationDigest,
       })),
     update: (request, authority) =>
@@ -203,13 +231,27 @@ export const makeFirewall = Effect.fn("makeFirewall")(function* (
         Effect.mapError(persistenceFailure),
       ),
   };
+  return policy;
+}
+
+function firewallOperations(
+  captured: CapturedOptions,
+  state: PolicyState,
+  store: FirewallStore,
+  resources: {
+    readonly permits: Effect.Semaphore;
+    readonly policy: FirewallPolicyOperations;
+  },
+): Firewall {
   const firewall: Firewall = {
     configuration: captured.configuration,
-    policy,
+    policy: resources.policy,
     check: (input) =>
       Effect.suspend(() => {
         const current = state.active;
-        return permits.withPermits(1)(assess(captured, current, store, input));
+        return resources.permits.withPermits(1)(
+          assess(captured, current, store, input),
+        );
       }),
     checkMany: (inputs) =>
       Effect.suspend(() => {
@@ -217,7 +259,9 @@ export const makeFirewall = Effect.fn("makeFirewall")(function* (
         return Effect.forEach(
           inputs,
           (input) =>
-            permits.withPermits(1)(assess(captured, current, store, input)),
+            resources.permits.withPermits(1)(
+              assess(captured, current, store, input),
+            ),
           { concurrency: captured.configuration.maximumConcurrentChecks },
         );
       }),
@@ -225,7 +269,7 @@ export const makeFirewall = Effect.fn("makeFirewall")(function* (
       Effect.suspend(() => endpointRecord(captured, state.active, input)),
   };
   return Object.freeze(firewall);
-});
+}
 
 function configuredOptions(loaded: LoadedMessagePolicy) {
   return Effect.gen(function* () {
@@ -241,10 +285,10 @@ function configuredOptions(loaded: LoadedMessagePolicy) {
         maximumConcurrentChecks: policy.maximumConcurrentChecks ?? null,
         fixedRules: policy.text?.fixedRules ?? [],
       },
-      fixedBehaviorDigests: loaded.fixedBehaviorDigests ?? [],
+      fixedBehaviorDigests: loaded.fixedBehaviorDigests,
     }).pipe(
-      Effect.mapError(
-        () => new FirewallPolicyError({ reason: "build-failed" }),
+      Effect.catchTag("EndpointStoreError", () =>
+        Effect.fail(new FirewallPolicyError({ reason: "build-failed" })),
       ),
     );
     const provider: DecisionProvider =
@@ -261,22 +305,17 @@ function configuredOptions(loaded: LoadedMessagePolicy) {
       settings: policy.settings,
       facts: policy.facts,
       codeDigest,
-      ...(policy.maximumHistoryRecords === undefined
-        ? {}
-        : { maximumHistoryRecords: policy.maximumHistoryRecords }),
-      ...(policy.maximumConcurrentChecks === undefined
-        ? {}
-        : { maximumConcurrentChecks: policy.maximumConcurrentChecks }),
-      ...(policy.text === undefined
-        ? {}
-        : {
-            text: {
+      maximumHistoryRecords: policy.maximumHistoryRecords,
+      maximumConcurrentChecks: policy.maximumConcurrentChecks,
+      text:
+        policy.text === undefined
+          ? undefined
+          : {
               fixedRules: policy.text.fixedRules,
               initialRules: policy.text.initialRules,
               settings: policy.textSettings,
               provider,
             },
-          }),
     } satisfies FirewallOptions;
   });
 }
@@ -301,112 +340,56 @@ function captureOptions(options: FirewallOptions) {
       captureRegistration,
       { concurrency: 1 },
     );
-    const selected = options.text;
     const text =
-      selected === undefined
-        ? undefined
-        : {
-            fixedRules: yield* decodeFrozen(
-              Schema.Array(TextRule),
-              selected.fixedRules ?? [],
-            ),
-            initialRules: yield* decodeFrozen(
-              editableDocumentSchema,
-              selected.initialRules ?? [],
-            ),
-            settings: yield* decodeFrozen(
-              TextPolicySettings,
-              selected.settings,
-            ),
-            provider: {
-              decide: selected.provider.decide.bind(selected.provider),
-              ...(selected.provider.provenance === undefined
-                ? {}
-                : {
-                    provenance: yield* decodeFrozen(
-                      PrivateCheckTrace,
-                      selected.provider.provenance,
-                    ),
-                  }),
-            },
-          };
+      options.text === undefined ? undefined : yield* captureText(options.text);
     return { configuration, settings, incoming, outgoing, text };
+  });
+}
+function captureText(selected: NonNullable<FirewallOptions["text"]>) {
+  return Effect.gen(function* () {
+    return {
+      fixedRules: yield* decodeFrozen(
+        Schema.Array(TextRule),
+        selected.fixedRules ?? [],
+      ),
+      initialRules: yield* decodeFrozen(
+        editableDocumentSchema,
+        selected.initialRules ?? [],
+      ),
+      settings: yield* decodeFrozen(TextPolicySettings, selected.settings),
+      provider: {
+        decide: selected.provider.decide.bind(selected.provider),
+        ...(selected.provider.provenance === undefined
+          ? {}
+          : {
+              provenance: yield* decodeFrozen(
+                PrivateCheckTrace,
+                selected.provider.provenance,
+              ),
+            }),
+      },
+    };
   });
 }
 type CapturedOptions = Effect.Effect.Success<ReturnType<typeof captureOptions>>;
 
 function buildPolicy(options: CapturedOptions, rules: readonly OwnedRule[]) {
   return Effect.gen(function* () {
-    const documents = [
-      ...(options.text?.fixedRules ?? []),
-      ...rules.map(Struct.omit("owner")),
-    ];
-    if (documents.length > 0 && options.text === undefined)
-      return yield* new FirewallPolicyError({ reason: "not-configured" });
-    const revision = yield* digest({
-      rules: documents,
-      settings: options.text?.settings ?? null,
-    });
-    const fixedRuleIds = (options.text?.fixedRules ?? []).map(
-      (rule) => rule.id,
-    );
-    const runtimeRuleIds = rules
-      .filter((rule) => rule.owner === "runtime")
-      .map((rule) => rule.id);
+    const text = yield* textRules(options, rules);
     yield* validateChecks({
+      ...text,
       incoming: options.incoming,
       outgoing: options.outgoing,
-      rules: documents,
       settings: options.settings,
-      revision,
-      ...(options.text === undefined
-        ? {}
-        : { textSettings: options.text.settings }),
     });
-    const text =
-      documents.length === 0
-        ? undefined
-        : textMetadata({
-            rules: documents,
-            textSettings: options.text?.settings,
-            provider: options.text?.provider,
-            revision,
-            fixedRuleIds,
-            runtimeRuleIds,
-          });
-    const describe = ({
-      id,
-      revision,
-      rules,
-      provenance,
-    }: MessageMiddleware) => ({
-      id,
-      revision,
-      rules,
-      provenance: provenance ?? {
-        format: "unavailable",
-        data: "No descriptive provenance was declared.",
-      },
-    });
-    const metadata: FirewallInstallation = {
-      configuration: options.configuration,
-      settings: options.settings,
-      incoming: [
-        ...options.incoming.map(describe),
-        ...(text === undefined ? [] : [text]),
-      ],
-      outgoing: [
-        ...options.outgoing.map(describe),
-        ...(text === undefined ? [] : [text]),
-      ],
-    };
+    const metadata = installationMetadata(
+      options,
+      text.rules.length === 0 ? undefined : textMetadata(text),
+    );
     return {
       metadata,
       configurationDigest: yield* digest(metadata),
-      rules: documents,
-      revision,
-      fixedRuleIds,
-      runtimeRuleIds,
+      ...Struct.omit(text, "provider", "textSettings"),
     };
   }).pipe(
     Effect.catchTags({
@@ -420,10 +403,67 @@ function buildPolicy(options: CapturedOptions, rules: readonly OwnedRule[]) {
     ),
   );
 }
+function textRules(options: CapturedOptions, rules: readonly OwnedRule[]) {
+  return Effect.gen(function* () {
+    const fixed = options.text?.fixedRules ?? [];
+    const settings = options.text?.settings;
+    const documents = [...fixed, ...rules.map(Struct.omit("owner"))];
+    if (documents.length > 0 && options.text === undefined) {
+      return yield* new FirewallPolicyError({ reason: "not-configured" });
+    }
+    return {
+      rules: documents,
+      revision: yield* digest({
+        rules: documents,
+        settings: settings ?? null,
+      }),
+      fixedRuleIds: fixed.map((rule) => rule.id),
+      runtimeRuleIds: rules
+        .filter((rule) => rule.owner === "runtime")
+        .map((rule) => rule.id),
+      textSettings: settings,
+      provider: options.text?.provider,
+    };
+  });
+}
+
+function installationMetadata(
+  options: CapturedOptions,
+  text?: ReturnType<typeof textMetadata>,
+): FirewallInstallation {
+  const describe = ({
+    id,
+    revision,
+    rules,
+    provenance,
+  }: MessageMiddleware) => ({
+    id,
+    revision,
+    rules,
+    provenance: provenance ?? {
+      format: "unavailable",
+      data: "No descriptive provenance was declared.",
+    },
+  });
+  const metadata: FirewallInstallation = {
+    configuration: options.configuration,
+    settings: options.settings,
+    incoming: [
+      ...options.incoming.map(describe),
+      ...(text === undefined ? [] : [text]),
+    ],
+    outgoing: [
+      ...options.outgoing.map(describe),
+      ...(text === undefined ? [] : [text]),
+    ],
+  };
+  return metadata;
+}
 type ActiveRules = Effect.Effect.Success<ReturnType<typeof buildPolicy>>;
 interface PolicyState {
   rules: readonly OwnedRule[];
   readonly fixedRuleIds: readonly string[];
+  readonly fixedRules: FixedRules;
   active: ActiveRules;
 }
 
@@ -431,17 +471,6 @@ function digest(value: unknown) {
   return encodeRuntimeValue(value).pipe(
     Effect.map((bytes) => createHash("sha256").update(bytes).digest("hex")),
   );
-}
-
-function described(rule: RuleDescription) {
-  return {
-    id: rule.id,
-    ...(rule.notifySender === undefined
-      ? {}
-      : { notifySender: rule.notifySender }),
-    ...(rule.guidance === undefined ? {} : { guidance: rule.guidance }),
-    ...(rule.feedback === undefined ? {} : { feedback: rule.feedback }),
-  };
 }
 
 /**
@@ -456,14 +485,12 @@ function fixedRules(options: CapturedOptions): FixedRules {
       middleware.rules.map((rule) => ({
         from: "code" as const,
         middleware: middleware.id,
-        ...described(rule),
+        ...Struct.omit(rule),
       })),
     ),
     ...(options.text?.fixedRules ?? []).map((rule) => ({
       from: "text" as const,
-      ...described(rule),
-      text: rule.text,
-      applies: rule.applies,
+      ...Struct.omit(rule),
     })),
   ];
   const first = new Map<string, FixedRules[number]>();
@@ -670,13 +697,18 @@ function retryingTransientFailures(
         Effect.retry({
           times: 2,
           schedule: Schedule.exponential("250 millis"),
-          while: (error) =>
-            error.reason === "transport" ||
-            (error.reason === "http" &&
-              ((error.status ?? 0) === 429 || (error.status ?? 0) >= 500)),
+          while: isTransient,
         }),
       ),
   };
+}
+
+function isTransient(error: DecisionProviderError): boolean {
+  const status = error.status ?? 0;
+  return (
+    error.reason === "transport" ||
+    (error.reason === "http" && (status === 429 || status >= 500))
+  );
 }
 
 /** The retained input and the evaluator receive the same captured message and evidence. */
@@ -686,7 +718,7 @@ function capturePrepared(
 ) {
   return Effect.gen(function* () {
     const context = yield* decodeFrozen(MessageContext, {
-      ...input.context,
+      ...Struct.omit(input.context),
       facts: configuration.facts,
     });
     const message =
@@ -709,69 +741,75 @@ function capturePrepared(
 }
 
 /** Recording starts before inference; the daemon commits the returned disposition with delivery. */
-const assess = Effect.fn("assessMessage")(function* (
+function assess(
   options: CapturedOptions,
   active: ActiveRules,
   store: FirewallStore,
   requested: PreparedFirewallCheck,
 ) {
-  const input = yield* capturePrepared(options.configuration, requested);
-  const checkId = mintCheckId();
-  yield* store.beginFirewallAttempt({
-    checkId,
-    direction: input.direction,
-    canonicalCandidate: input.canonicalCandidate,
-    canonicalInput: yield* retainedInput(active, input),
-  });
-  const assessed = yield* (
-    input.message === undefined
-      ? Effect.succeed(unavailable())
-      : checkMessage({
-          event: { direction: input.direction, message: input.message },
-          context: input.context,
-          code: options[input.direction],
-          rules: active.rules,
-          settings: options.settings,
-          revision: active.revision,
-          fixedRuleIds: active.fixedRuleIds,
-          runtimeRuleIds: active.runtimeRuleIds,
-          ...(options.text === undefined
-            ? {}
-            : {
-                textSettings: options.text.settings,
-                provider: options.text.provider,
-              }),
-        }).pipe(
-          Effect.catchTag("CheckInputError", () =>
-            Effect.succeed(unavailable()),
-          ),
-        )
-  ).pipe(
-    markRetries("firewall-check", input.direction, (exit) =>
-      exitOutcome(exit, "checked"),
-    ),
-  );
-  const projection = yield* guidanceProjection(assessed, input, {
-    mode: options.configuration.mode,
-    checkId,
-  });
-  const admit =
-    options.configuration.mode === "guidance" ||
-    projection.result.judgment === "allow";
-  return {
-    result: projection.result,
-    completion: {
+  return Effect.gen(function* () {
+    const input = yield* capturePrepared(options.configuration, requested);
+    const checkId = mintCheckId();
+    yield* store.beginFirewallAttempt({
       checkId,
-      admit,
-      canonicalResult: yield* encodeRuntimeValue(
-        withoutTraces(projection.result),
+      direction: input.direction,
+      canonicalCandidate: input.canonicalCandidate,
+      canonicalInput: yield* retainedInput(active, input),
+    });
+    const assessed = yield* evaluateMessage(options, active, input).pipe(
+      markRetries("firewall-check", input.direction, (exit) =>
+        exitOutcome(exit, "checked"),
       ),
-    },
-    ...(admit && projection.guidance !== undefined
-      ? { guidance: projection.guidance }
-      : {}),
-  } satisfies CheckedMessage;
-});
+    );
+    const projection = yield* guidanceProjection(assessed, input, {
+      mode: options.configuration.mode,
+      checkId,
+    });
+    const admit =
+      options.configuration.mode === "guidance" ||
+      projection.result.judgment === "allow";
+    return {
+      result: projection.result,
+      completion: {
+        checkId,
+        admit,
+        canonicalResult: yield* encodeRuntimeValue(
+          withoutTraces(projection.result),
+        ),
+      },
+      ...(admit && projection.guidance !== undefined
+        ? { guidance: projection.guidance }
+        : {}),
+    } satisfies CheckedMessage;
+  }).pipe(Effect.withSpan("assessMessage"));
+}
+
+function evaluateMessage(
+  options: CapturedOptions,
+  active: ActiveRules,
+  input: PreparedFirewallCheck,
+) {
+  return input.message === undefined
+    ? Effect.succeed(unavailable())
+    : checkMessage({
+        event: { direction: input.direction, message: input.message },
+        context: input.context,
+        code: options[input.direction],
+        rules: active.rules,
+        settings: options.settings,
+        revision: active.revision,
+        fixedRuleIds: active.fixedRuleIds,
+        runtimeRuleIds: active.runtimeRuleIds,
+        ...(options.text === undefined
+          ? {}
+          : {
+              textSettings: options.text.settings,
+              provider: options.text.provider,
+            }),
+      }).pipe(
+        Effect.catchTag("CheckInputError", () => Effect.succeed(unavailable())),
+      );
+}
 
 /** Endpoint-authored local items retain an audit in the caller's atomic publication transaction. */
 function endpointRecord(
@@ -837,7 +875,9 @@ function guidanceProjection(
       input.direction === "incoming" || capture.mode === "guidance"
         ? result.guidance
         : result.guidance.filter((entry) => "uncertain" in entry);
-    if (instructions.length === 0) return { result };
+    if (instructions.length === 0) {
+      return { result };
+    }
     const selected = new Set(
       instructions.flatMap((entry) =>
         "subjects" in entry ? entry.subjects : [],
@@ -890,3 +930,29 @@ function guidanceSubjects(
         : [{ id: entry.id, sender, recipients, text: entry.text }];
     });
 }
+
+/** The firewall's supported offline and managed callers share these check contracts. */
+export {
+  CheckInputError,
+  checkMessage,
+  type DecisionProvider,
+  DecisionProviderError,
+  type DecisionRequest,
+  type DecisionResponse,
+  type Message,
+  type MessageContext,
+  type MessageMiddleware,
+  MiddlewareError,
+  type MiddlewareInput,
+  type MiddlewareResult,
+} from "./check.js";
+/** Owner configuration and rule schemas belong to the same firewall boundary. */
+export {
+  decodeMessagePolicy,
+  type FirewallSettings,
+  loadMessagePolicy,
+  MessagePolicy,
+  type RuleDescription,
+  type TextPolicySettings,
+  type TextRule,
+} from "./config.js";

@@ -21,8 +21,8 @@ import {
 export type {
   FirewallActivation,
   FirewallAuditEntry,
-  FirewallCompletion,
   FirewallCommit,
+  FirewallCompletion,
   FirewallEvidence,
   FirewallEvidenceSlices,
   FirewallHistoryEntry,

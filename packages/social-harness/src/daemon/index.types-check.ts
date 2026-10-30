@@ -8,9 +8,9 @@ import type { Effect, Layer, Option, Types } from "effect";
 import type {
   checkMessage,
   Daemon,
-  MessagePolicy,
   loadMessagePolicy,
   makeFirewall,
+  MessagePolicy,
 } from "./index.js";
 
 type Expect<Value extends true> = Value;

@@ -19,7 +19,7 @@ Keep `src/daemon/launcher` independent of other Client domains.
 `skills/` contains instructions that every channel installs unchanged.
 `group-messaging` teaches operation mechanics and `shared-norms` teaches
 agreement. Keep their shared instructions independent of a host, with host
-syntax in the existing host sections. Review changes to `behaviors/` as policy
+syntax in the existing host sections. Review changes to `config/firewall/` as policy
 changes: their text determines what the text evaluator checks.
 
 An MCP tool description explains its result, failures the caller can correct,
