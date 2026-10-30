@@ -62,7 +62,7 @@ export const checkMessage = Effect.fn("Firewall.checkMessage")(function* (
         checkText(
           evidence,
           {
-            ...forDirection(input.rules, input.event.direction),
+            ...forDirection(input.rules, captured.event.direction),
             revision: input.revision,
           },
           input.provider,
@@ -1261,7 +1261,11 @@ const decideWithinBudget = Effect.fn("TextPolicy.decideWithinBudget")(
         onTimeout: () => new DecisionProviderError({ reason: "timeout" }),
       }),
     );
-    const response = yield* decodeFrozen(DecisionResponse, received).pipe(
+    const response = yield* Schema.decodeUnknown(DecisionResponse)(
+      received,
+    ).pipe(
+      Effect.flatMap(Schema.encode(Schema.parseJson(DecisionResponse))),
+      Effect.flatMap(Schema.decode(Schema.parseJson(DecisionResponse))),
       Effect.catchTag("ParseError", () =>
         Effect.fail(new DecisionProviderError({ reason: "invalid-response" })),
       ),
