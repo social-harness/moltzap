@@ -1042,6 +1042,7 @@ it("checks an entire result under one rule value while an owner edit completes",
     );
     yield* runtime.runPass;
     yield* Deferred.await(entered);
+    yield* Queue.takeAll(runtime.completed);
     yield* runtime.firewall.policy.update({ remove: [textRule.id] }, "owner");
     yield* Deferred.succeed(release, undefined);
     yield* Queue.take(runtime.completed);
