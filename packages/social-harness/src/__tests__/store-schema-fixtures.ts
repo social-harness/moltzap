@@ -1,6 +1,11 @@
 /** @file Isolated state directories and scoped endpoint store fixtures. */
 
 import { Effect } from "effect";
+import { SqlClient } from "@effect/sql";
+import * as Communication from "../communication/store/index.js";
+import * as Firewall from "../firewall/store/index.js";
+import * as Inbox from "../daemon/inbox/store.js";
+import * as Daemon from "../daemon/store.js";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Store tests create and remove real SQLite state directories around independent Effect scopes.
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -9,12 +14,10 @@ import { onTestFinished } from "vitest";
 import {
   type CertifiedRecord,
   type ConversationFoundation,
-  type EndpointStore,
   type EndpointStoreError,
-  openEndpointStore,
   type OutboxTooOldError,
 } from "../communication/store/index.js";
-import { type DaemonStore, openDaemonStore } from "../daemon/store.js";
+import { layer } from "../daemon/store.js";
 import { LIVE_WIRE_VERSIONS } from "../identity/wire-version.js";
 import { digest } from "./agent-card-fixtures.js";
 
@@ -30,29 +33,34 @@ export function stateDirectory(): string {
   return directory;
 }
 
-/** Run `use` against the store in `directory`, opened for that call alone and closed before the result returns. */
-export function withStore<Value, Failure>(
+/** Test callbacks can name operations together while production keeps them with their owners. */
+export const testStore = { ...Communication, ...Firewall, ...Inbox, ...Daemon };
+/** Namespace used by storage fixtures inside a supplied SQL environment. */
+export type TestStore = typeof testStore;
+
+/** Opens a real database for the callback and closes it before returning. */
+export function withDaemonStore<Value, Failure, Requirements>(
   directory: string,
-  use: (store: EndpointStore) => Effect.Effect<Value, Failure>,
-): Effect.Effect<Value, Failure | EndpointStoreError | OutboxTooOldError> {
+  use: (store: TestStore) => Effect.Effect<Value, Failure, Requirements>,
+): Effect.Effect<
+  Value,
+  Failure | EndpointStoreError | OutboxTooOldError,
+  Exclude<Requirements, SqlClient.SqlClient>
+> {
   return Effect.scoped(
-    openEndpointStore(directory, { liveWireVersions: LIVE_WIRE_VERSIONS }).pipe(
-      Effect.flatMap(use),
+    use(testStore).pipe(
+      Effect.provide(
+        layer({
+          stateDirectory: directory,
+          liveWireVersions: LIVE_WIRE_VERSIONS,
+        }),
+      ),
     ),
   );
 }
 
-/** Run daemon persistence against a real database, closed before the result returns. */
-export function withDaemonStore<Value, Failure>(
-  directory: string,
-  use: (store: DaemonStore) => Effect.Effect<Value, Failure>,
-): Effect.Effect<Value, Failure | EndpointStoreError | OutboxTooOldError> {
-  return Effect.scoped(
-    openDaemonStore(directory, { liveWireVersions: LIVE_WIRE_VERSIONS }).pipe(
-      Effect.flatMap(use),
-    ),
-  );
-}
+/** Communication tests use the same database lifetime as the daemon. */
+export const withStore = withDaemonStore;
 
 /** The SQLite file the endpoint store keeps inside a state directory. */
 export function databasePath(directory: string): string {
