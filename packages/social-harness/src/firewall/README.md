@@ -49,9 +49,10 @@ A failed save leaves the old policy active. In-flight checks keep their policy.
 
 ## Proposed exports
 
-The main exports are `makeFirewall`, `Firewall`, `checkMessage` and the
-`FirewallPersistence` interface implemented by the daemon store. Rule,
-message, provider and result types retain their owning schemas.
+`makeFirewall` obtains the shared `SqlClient` from the Effect environment.
+The daemon provides its SQLite layer at startup. `checkMessage` remains the
+offline evaluator. Rule, message, provider and result types retain their
+owning schemas.
 
 ```typescript
 /**
@@ -94,8 +95,7 @@ export interface Firewall {
  */
 export declare function makeFirewall(
   configuration: FirewallOptions | LoadedMessagePolicy,
-  persistence: FirewallPersistence,
-): Effect.Effect<Firewall, FirewallPolicyError>;
+): Effect.Effect<Firewall, FirewallPolicyError, SqlClient.SqlClient>;
 
 /**
  * Checks supplied rules and verified evidence with an injected provider.
@@ -116,27 +116,8 @@ The MCP interface authenticates one agent. A rule change is checked under the
 current policy. Required human confirmation is obtained before the change is
 saved. Fixed rules remain supplied by configuration.
 
-## Storage required by the firewall
+## Persistence
 
-This interface describes the persistence the firewall uses. Its implementation
-belongs to `daemon/store.ts`. Queue, inbox and publication operations belong
-to the daemon's store interface.
-
-```typescript
-/** Saves policy changes and the evidence needed to explain earlier checks. */
-export interface FirewallPersistence {
-  /** Returns the saved document, preserving absence as distinct from an empty policy. */
-  readEditableRules(): Effect.Effect<Uint8Array | undefined, EndpointStoreError>;
-
-  /** Saves the complete document and any change record in one transaction. */
-  saveEditableRules(
-    rules: Uint8Array,
-    change?: FirewallActivation,
-  ): Effect.Effect<void, EndpointStoreError>;
-
-  /** Retains the exact candidate and assessment input before any check runs. */
-  beginCheck(attempt: FirewallAttempt): Effect.Effect<void, EndpointStoreError>;
-}
-```
-
-Storage retains each check’s original input and completed disposition.
+The firewall uses the shared SQL client to load editable rules, save approved
+changes and retain check inputs. The daemon saves completed decisions with the
+messages they permit. Decision-history reads belong to the stored history.

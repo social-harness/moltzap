@@ -16,15 +16,14 @@ This draft describes the daemon boundary under review.
 | Store | Durable state, retained visibility, history reads and atomic publication |
 | Host | Model execution, tools and acknowledgment after accepting delivery |
 
-`daemon/store.ts` opens one database and supplies the operations those owners
-need. Incoming work, evidence windows and publication belong to this store.
-The firewall receives only rule and check persistence operations.
+The daemon provides one SQLite layer for its lifetime. Communication, firewall
+and delivery operations share its `SqlClient` through the Effect environment.
 
 ## Startup
 
 ```mermaid
 flowchart LR
-  A[Load configuration] --> B[Open agent store]
+  A[Load configuration] --> B[Provide SQLite layer]
   B --> C[Restore identity and unfinished work]
   C --> D[Build firewall from configured and saved rules]
   D --> E[Activate communication and host service]
@@ -53,3 +52,21 @@ flowchart LR
   F -->|Yes| G[Send approved message]
   F -->|No| H[Return refusal]
 ```
+
+## Persistence with Effect
+
+The SQLite layer opens the agent's database and closes it when the daemon
+stops. Startup prepares the schema and restores unfinished work before serving
+requests. The same layer instance supplies `SqlClient` to every component.
+
+Database operations stay with the code that uses them. They require
+`SqlClient` in their Effect environment instead of receiving a combined
+`DaemonStore` object. The daemon supplies that dependency at startup.
+
+Use `sql.withTransaction` when an operation changes records that must stay
+consistent. Saving an incoming decision and the message the agent may read is
+one such operation. Reads return the saved view, without another firewall check.
+
+Effect Schema and `SqlSchema` decode database rows. Table definitions and
+schema generation remain a separate choice from connection ownership and
+transactions.
