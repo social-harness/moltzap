@@ -91,7 +91,6 @@ export function layer(options: {
         }),
       );
       const filesystem = yield* FileSystem.FileSystem;
-      yield* filesystem.chmod(options.stateDirectory, 0o700);
       yield* filesystem.chmod(
         join(options.stateDirectory, DATABASE_NAME),
         0o600,
@@ -105,6 +104,7 @@ export function layer(options: {
         recursive: true,
         mode: 0o700,
       });
+      yield* filesystem.chmod(options.stateDirectory, 0o700);
       return initialized.pipe(Layer.provideMerge(connection));
     }),
   ).pipe(
