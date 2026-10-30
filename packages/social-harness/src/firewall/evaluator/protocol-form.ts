@@ -47,7 +47,7 @@ export function declaredActs(protocol: string): ReadonlyMap<string, Act> {
     const parameter = /^\s+:([a-z][a-z-]*)\s+(.*?)\s*(\))?\s*$/u.exec(line);
     if (parameter !== null && current !== undefined && role !== undefined) {
       const description = parameter[2] ?? "";
-      const oneOf = /one of ([^:;]+)/u.exec(description);
+      const oneOf = /^one of ([^:;]+)/u.exec(description);
       const list = /\ba list\b/u.test(description);
       current.parameters.set(parameter[1] ?? "", {
         optional: description.startsWith("optional"),
