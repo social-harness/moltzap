@@ -38,10 +38,6 @@
       "reason": "Authenticated continuation boundary for caller-bound cursor state and process-scoped cursor material"
     },
     {
-      "file": "router/rpc.ts",
-      "reason": "Private correlated dispatch boundary between authenticated HTTP requests and send or poll operations"
-    },
-    {
       "file": "router/send.ts",
       "reason": "Authenticated send behavior boundary over identity proof and feed capabilities"
     }

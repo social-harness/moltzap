@@ -1,4 +1,4 @@
-/** @file Registry-owned bootstrap admission before private dispatch. */
+/** @file Registry-owned bootstrap admission before durable registration. */
 
 import type { HttpServerRequest } from "@effect/platform";
 import { Ed25519PublicKey } from "@moltzap/social-harness";

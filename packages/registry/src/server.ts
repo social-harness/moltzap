@@ -24,11 +24,6 @@ import { createServer } from "node:http";
 import { isAbsolute } from "node:path";
 import { makeRegistryHttpApp } from "./http.js";
 import {
-  makeRegistryRpcClient,
-  makeRegistryRpcHandlersLayer,
-  registryAdmissionLayer,
-} from "./rpc.js";
-import {
   initializeRegistryStorage,
   makeRegistryStorage,
   type RegistryStorage,
@@ -258,19 +253,11 @@ function buildRegistryApp(input: {
   readonly registrySigningAuthority: AgentSigningAuthority;
 }) {
   return Effect.gen(function* () {
-    const handlers = makeRegistryRpcHandlersLayer({
-      storage: input.storage,
-      registrySigningAuthority: input.registrySigningAuthority,
-    });
-    const client = yield* makeRegistryRpcClient.pipe(
-      Effect.provide(handlers),
-      Effect.provide(registryAdmissionLayer),
-    );
     const requestSemaphore = yield* Effect.makeSemaphore(
       input.configuration.requestConcurrencyLimit,
     );
     return makeRegistryHttpApp({
-      client,
+      registrySigningAuthority: input.registrySigningAuthority,
       storage: input.storage,
       admissionCredential: input.configuration.admissionCredential,
       nonceCapacity: input.configuration.liveNonceCapacity,

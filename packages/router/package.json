@@ -115,7 +115,6 @@
   "dependencies": {
     "@effect/platform": "catalog:",
     "@effect/platform-node": "catalog:",
-    "@effect/rpc": "catalog:",
     "canonicalize": "catalog:",
     "effect": "catalog:",
     "jose": "catalog:",

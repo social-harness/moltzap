@@ -1,6 +1,10 @@
 /** @file Closed Router wire values, requests, results, bounds, and client failures. */
 import canonicalize from "canonicalize";
 import { Data, Effect, Either, Encoding, Option, Schema } from "effect";
+import {
+  canonicalIdentifier,
+  hasCanonicalBase64UrlLength,
+} from "../../../encoding/identifier.js";
 import { SignedMessage } from "../../../identity/envelope/signed-message.js";
 import { AgentId } from "../../../identity/identifiers.js";
 import {
@@ -58,7 +62,7 @@ const pollCursorPrefix = "plc_";
  */
 
 /** Identifies one volatile Router process instance. */
-export const RouterInstanceId = canonicalValue(
+export const RouterInstanceId = canonicalIdentifier(
   "RouterInstanceId",
   "rti_",
   INSTANCE_BYTE_LENGTH,
@@ -70,7 +74,7 @@ export const RouterInstanceId = canonicalValue(
 export type RouterInstanceId = typeof RouterInstanceId.Type;
 
 /** Equality receipt for one complete retained SignedMessage. */
-export const SignedMessageDigest = canonicalValue(
+export const SignedMessageDigest = canonicalIdentifier(
   "SignedMessageDigest",
   "smd_",
   DIGEST_BYTE_LENGTH,
@@ -590,18 +594,6 @@ function segmentAt(segments: readonly string[], index: number): string {
   return segments[index] ?? "";
 }
 
-function hasCanonicalBase64UrlLength(
-  value: string,
-  byteLength: number,
-): boolean {
-  return Either.match(Encoding.decodeBase64Url(value), {
-    onLeft: () => false,
-    onRight: (decoded) =>
-      decoded.byteLength === byteLength &&
-      Encoding.encodeBase64Url(decoded) === value,
-  });
-}
-
 function hasCanonicalCiphertext(ciphertext: string): boolean {
   return Either.match(Encoding.decodeBase64Url(ciphertext), {
     onLeft: () => false,
@@ -609,32 +601,6 @@ function hasCanonicalCiphertext(ciphertext: string): boolean {
       decoded.byteLength > 0 &&
       Encoding.encodeBase64Url(decoded) === ciphertext,
   });
-}
-
-function canonicalValue<const Name extends string>(
-  name: Name,
-  prefix: string,
-  byteLength: number,
-) {
-  return Schema.String.pipe(
-    Schema.filter(
-      (value) => {
-        return (
-          value.startsWith(prefix) &&
-          hasCanonicalBase64UrlLength(value.slice(prefix.length), byteLength)
-        );
-      },
-      {
-        identifier: name,
-        description: `${name} canonical representation`,
-      },
-    ),
-    Schema.brand(name),
-    Schema.annotations({
-      identifier: name,
-      description: `${name} canonical representation`,
-    }),
-  );
 }
 
 /** Router processes and clients share these exact routes, representation limits, request and result schemas, cursor encodings, and HTTP error projection. */

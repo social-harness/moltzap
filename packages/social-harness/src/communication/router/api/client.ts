@@ -7,12 +7,12 @@ import {
 import { Context, Duration, Effect, Layer, Option, Schema } from "effect";
 import type { AgentId } from "../../../identity/identifiers.js";
 import type { AgentSigningAuthority } from "../../../identity/keys.js";
+import { decodeCanonical } from "../../../encoding/canonical-json.js";
 import {
   AgentSigningError,
   AuthenticatedHttp,
 } from "../../../identity/index.js";
 import {
-  isCanonicalRouterJson,
   type RouterClientError,
   RouterConnectionError,
   type RouterHttpEnvelopeError,
@@ -134,25 +134,6 @@ const decodeUtf8 = (
     catch: invalidResponse,
   });
 
-const decodeCanonicalResult = <A, I>(
-  schema: Schema.Schema<A, I>,
-  bytes: Uint8Array,
-): Effect.Effect<A, RouterInvalidResponseError> =>
-  Effect.gen(function* () {
-    const text = yield* decodeUtf8(bytes);
-    const result = yield* Schema.decodeUnknown(Schema.parseJson(schema))(text, {
-      exact: true,
-      onExcessProperty: "error",
-    }).pipe(Effect.mapError(invalidResponse));
-    const encoded = yield* Schema.encode(schema)(result).pipe(
-      Effect.mapError(invalidResponse),
-    );
-    if (!isCanonicalRouterJson(text, encoded)) {
-      return yield* Effect.fail(invalidResponse());
-    }
-    return result;
-  });
-
 /**
  * Gateway statuses an intermediary answers with while the Router behind it is
  * down or restarting.
@@ -192,7 +173,9 @@ const decodeResponse = <A, I>(
       return yield* Effect.fail(invalidResponse());
     }
     if (response.status === 200) {
-      return yield* decodeCanonicalResult(schema, bytes);
+      return yield* decodeCanonical(schema, bytes).pipe(
+        Effect.mapError(invalidResponse),
+      );
     }
     const text = yield* decodeUtf8(bytes);
     const recognized = routerHttpErrorFromResponse(response.status, text);

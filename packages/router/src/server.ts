@@ -25,7 +25,6 @@ import {
 } from "./router/poll-cursor.js";
 import { makePollWaiters } from "./router/poll-waiters.js";
 import { makeRouterPoll } from "./router/poll.js";
-import { makeRouterRpcClient } from "./router/rpc.js";
 import { makeRouterSend } from "./router/send.js";
 
 // eslint-disable-next-line @typescript-eslint/no-namespace -- The namespace keeps the process layer and its closed startup error under one RouterServer capability.
@@ -113,7 +112,8 @@ export namespace RouterServer {
         pollResponseByteLimit: configuration.pollResponseByteLimit,
       });
       return makeRouterHttpApp({
-        client: yield* makeRouterRpcClient({ send, poll }),
+        send,
+        poll,
         feed,
         requestSemaphore: yield* Effect.makeSemaphore(
           configuration.requestConcurrencyLimit,
