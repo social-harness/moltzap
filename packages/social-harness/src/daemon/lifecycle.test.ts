@@ -23,7 +23,7 @@ import {
 import { join } from "node:path";
 import { describe, expect, vi } from "vitest";
 import type { EnginePendingMessage } from "../communication/conversations/index.js";
-import type { EventStore } from "../host-protocol/operations.js";
+import type { EventStore } from "./inbox/store.js";
 import type { HarnessMcpEventHandler } from "./mcp/tools.js";
 import type { DaemonStore } from "./store.js";
 import { digest, testAgentView } from "../__tests__/agent-card-fixtures.js";

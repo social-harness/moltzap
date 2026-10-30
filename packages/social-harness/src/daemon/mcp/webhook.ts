@@ -4,6 +4,7 @@ import { HttpClient } from "@effect/platform";
 import { ProtocolError } from "@modelcontextprotocol/server";
 import { type Clock, Effect, Schema, type Scope } from "effect";
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
+import type { EventStore } from "../inbox/store.js";
 import {
   retryPending,
   retrySettled,
@@ -20,7 +21,6 @@ import {
   type WebhookStatus,
 } from "../../host-protocol/index.js";
 import { INBOX_ITEM_EVENT } from "../../host-protocol/names.js";
-import { type EventStore } from "../../host-protocol/operations.js";
 import {
   readWebhookChallenge,
   sendWebhook,

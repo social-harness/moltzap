@@ -15,13 +15,14 @@ import type {
   ResultProvenance,
 } from "../../communication/collectives/index.js";
 import type { EnginePendingMessage } from "../../communication/conversations/index.js";
+import type { EndpointStore } from "../../communication/store/types.js";
+import type { FirewallStore } from "../../firewall/store/types.js";
 import type { SendResult } from "../../host-protocol/send-result.js";
-import type { DaemonStore } from "../store.js";
 import type {
   HistoryExportPort,
   HistoryExportRecord,
 } from "./host-traffic-log.js";
-import type { InboxStore } from "./store.js";
+import type { CollectiveDelivery, EventStore, InboxStore } from "./store.js";
 import {
   type CollectiveEmitError,
   CollectiveError,
@@ -52,7 +53,6 @@ import { InboundItem } from "../../host-protocol/items.js";
 import {
   decodeHarnessSendRequest,
   type DeliveryOperations,
-  type EventStore,
   type HarnessMessageReadyEvent,
   type HarnessReadInboxRequest,
   type HarnessSendRequest,
@@ -79,9 +79,19 @@ import {
  */
 type ApplicationSender = Pick<CollectiveOperations, "prepare" | "accept">;
 
+/** Host delivery declares its persistence needs without acquiring a database. */
+export interface HostDeliveryStore
+  extends FirewallStore,
+    InboxStore,
+    Pick<EndpointStore, "readCollectiveOperation"> {
+  readonly publishCollectiveItem: (
+    delivery: CollectiveDelivery,
+  ) => Effect.Effect<void, EndpointStoreError>;
+}
+
 /** What one service's delivery reads and writes. */
 export interface HostDeliveryInput {
-  readonly store: DaemonStore;
+  readonly store: HostDeliveryStore;
   readonly historyExport: HistoryExportPort;
   /** The active collective layer, absent while the service is unregistered. */
   readonly collectives: () => ApplicationSender | undefined;

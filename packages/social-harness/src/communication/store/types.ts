@@ -1,16 +1,13 @@
 /** @file Private typed contract for endpoint persistence operations. */
 
-import { type Effect, Schema } from "effect";
+import type { Effect } from "effect";
 import type { EndpointStoreError } from "./database/values.js";
-import { isCanonicalIdentifier } from "../../encoding/identifier.js";
+import { canonicalIdentifier } from "../../encoding/identifier.js";
 
 /* eslint-disable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- The private Effect Schema and decoded nominal value intentionally share one domain name. */
 
 /** Stable opaque identity for one durable inbound delivery. */
-export const DeliveryToken = Schema.String.pipe(
-  Schema.filter((value) => isCanonicalIdentifier("dlv_", value)),
-  Schema.brand("DeliveryToken"),
-);
+export const DeliveryToken = canonicalIdentifier("DeliveryToken", "dlv_", 32);
 
 /** Strictly decoded private durable delivery identity. */
 export type DeliveryToken = typeof DeliveryToken.Type;

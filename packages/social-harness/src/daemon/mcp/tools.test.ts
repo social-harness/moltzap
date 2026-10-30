@@ -119,7 +119,9 @@ const invalidCalls = [
   {
     name: "policy_update",
     arguments: {
-      add: [{ id: "missing-direction", text: "Be brief." }],
+      add: [
+        { id: "invalid-direction", applies: "sideways", text: "Be brief." },
+      ],
     },
     paths: [["add", 0, "applies"]],
   },

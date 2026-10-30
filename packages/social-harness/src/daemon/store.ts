@@ -7,7 +7,7 @@ import type {
   DeliveryToken,
   EndpointStore,
 } from "../communication/store/types.js";
-
+import type { HostDeliveryStore } from "./inbox/host-delivery.js";
 import { completeCollectiveDelivery } from "../communication/store/collectives.js";
 import {
   closeStoreState,
@@ -31,7 +31,6 @@ import {
   settleQueuedItem,
 } from "../firewall/store/firewall.js";
 import {
-  type FirewallStore,
   type ItemProjection,
   makeFirewallStore,
 } from "../firewall/store/index.js";
@@ -45,29 +44,16 @@ import {
   readFirewallRequestAdmission,
 } from "./inbox/evidence.js";
 import {
+  type CollectiveDelivery,
   createInboxTables,
-  type InboxStore,
   makeInboxStore,
   putInboxItem,
   readInboxItem,
   retireItem,
 } from "./inbox/store.js";
 
-/** The terminal payload and protocol custody settle with its local publication. */
-export interface CollectiveDelivery {
-  readonly operationId: string;
-  readonly deliveryToken: DeliveryToken;
-  readonly canonicalItem: Uint8Array;
-  readonly conversation: string;
-  readonly canonicalProvenance?: Uint8Array;
-  readonly firewall: boolean;
-}
-
 /** Only daemon composition combines these owners and their cross-owner transactions. */
-export interface DaemonStore extends EndpointStore, FirewallStore, InboxStore {
-  readonly publishCollectiveItem: (
-    delivery: CollectiveDelivery,
-  ) => Effect.Effect<void, EndpointStoreError>;
+export interface DaemonStore extends EndpointStore, HostDeliveryStore {
   readonly replaceInboxItem: (
     token: DeliveryToken,
     replacement: ItemProjection,

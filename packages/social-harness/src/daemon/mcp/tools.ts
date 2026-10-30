@@ -24,6 +24,7 @@ import {
   Scope,
 } from "effect";
 import type { FirewallSendError } from "../../firewall/outcome/index.js";
+import type { EventStore } from "../inbox/store.js";
 import {
   type CollectiveError,
   SendResultSchema,
@@ -83,7 +84,6 @@ import {
 import {
   checkHarnessSendResult,
   type DeliveryOperations,
-  type EventStore,
   harnessAcknowledgeDeliveryRequestSchema,
   harnessSendArgumentsSchema,
   type HarnessSendErrorData,

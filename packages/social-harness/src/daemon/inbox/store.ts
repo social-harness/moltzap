@@ -5,6 +5,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { type Effect, Schema } from "effect";
 
 import type { ItemProjection } from "../../firewall/store/types.js";
+import type { InboxSummary } from "../../host-protocol/operations.js";
 
 import {
   type EndpointStoreError,
@@ -49,10 +50,25 @@ export interface InboxPage {
   readonly nextAfter?: number;
 }
 
-/** Wakeup bookkeeping contains no peer content or collective protocol state. */
-export interface InboxSummary {
-  readonly pendingCount: number;
-  readonly newestSequence: number;
+/** Callback progress and retained content share the inbox's persistence lifetime. */
+export type EventStore = Pick<
+  InboxStore,
+  | "readEventState"
+  | "writeEventState"
+  | "readInbox"
+  | "readInboxItem"
+  | "readInboxSummary"
+  | "completeWebhookDelivery"
+>;
+
+/** The terminal payload and protocol custody settle with its local publication. */
+export interface CollectiveDelivery {
+  readonly operationId: string;
+  readonly deliveryToken: DeliveryToken;
+  readonly canonicalItem: Uint8Array;
+  readonly conversation: string;
+  readonly canonicalProvenance?: Uint8Array;
+  readonly firewall: boolean;
 }
 
 /** Durable host delivery and consumer state, independent of policy configuration. */

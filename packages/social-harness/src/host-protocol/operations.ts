@@ -2,7 +2,6 @@
 
 import { Effect, JSONSchema, type ParseResult, Schema } from "effect";
 import type { SendError } from "../communication/conversations/errors.js";
-import type { InboxStore, InboxSummary } from "../daemon/inbox/store.js";
 import {
   type CollectiveError,
   CollectiveId,
@@ -45,7 +44,7 @@ const itemEventDataSchema = Schema.Union(
   }),
 );
 const itemEventSchema = Schema.Struct({
-  eventId: Schema.encodedSchema(DeliveryToken),
+  eventId: Schema.encodedBoundSchema(DeliveryToken),
   name: Schema.Literal(INBOX_ITEM_EVENT),
   timestamp: Schema.String,
   data: itemEventDataSchema,
@@ -82,7 +81,7 @@ export const decodePollResult = Schema.decodeUnknown(pollResultSchema);
 /** Read-only content lookup never acknowledges or retries delivery. */
 export const readEventRequestSchema = exactStruct({
   eventId: Schema.propertySignature(
-    Schema.encodedSchema(DeliveryToken),
+    Schema.encodedBoundSchema(DeliveryToken),
   ).annotations({
     description:
       "The eventId of an org.social-harness/inbox.item event, or one a host's wakeup carries from an inbox item; retained content remains readable after acknowledgment.",
@@ -324,17 +323,6 @@ export function checkHarnessSendResult(
   return Schema.decodeUnknown(SendResultSchema)(value, exactParseOptions);
 }
 
-/** The existing endpoint store owns both callback progress and immutable inbox items. */
-export type EventStore = Pick<
-  InboxStore,
-  | "readEventState"
-  | "writeEventState"
-  | "readInbox"
-  | "readInboxItem"
-  | "readInboxSummary"
-  | "completeWebhookDelivery"
->;
-
 type ClosedOperationError = Readonly<{ readonly reason: string }>;
 
 /** The delivery operations a host calls: inbox and event reads, sends, and acknowledgments. */
@@ -362,5 +350,8 @@ export interface DeliveryOperations {
 
 /** Store-owned delivery identity shared across the loopback boundary. */
 export { DeliveryToken } from "../communication/store/types.js";
-/** Store-owned pending-inbox summary shared across the loopback boundary. */
-export type { InboxSummary } from "../daemon/inbox/store.js";
+/** Wakeup bookkeeping contains no peer content or collective protocol state. */
+export interface InboxSummary {
+  readonly pendingCount: number;
+  readonly newestSequence: number;
+}

@@ -9,7 +9,7 @@ import {
 } from "@modelcontextprotocol/server";
 import { Effect, Redacted, Schema } from "effect";
 import { describe, expect } from "vitest";
-import type { EventStore } from "../../host-protocol/operations.js";
+import type { EventStore } from "../inbox/store.js";
 import { digest } from "../../__tests__/agent-card-fixtures.js";
 import { connectInProcessClient } from "../../__tests__/mcp-http-fixtures.js";
 import { makeFixture } from "../../__tests__/router-worker-fixtures.js";

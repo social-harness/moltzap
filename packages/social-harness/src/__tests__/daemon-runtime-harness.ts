@@ -7,8 +7,8 @@ import {
   PROTOCOL_VERSION_META_KEY,
 } from "@modelcontextprotocol/server";
 import { type Context, Deferred, Duration, Effect } from "effect";
+import type { EventStore } from "../daemon/inbox/store.js";
 import type { DaemonStore } from "../daemon/store.js";
-import type { EventStore } from "../host-protocol/operations.js";
 import type { Fixture } from "./daemon-runtime-fixtures.js";
 import { resolveMessageAddress } from "../communication/conversations/address.js";
 import {
