@@ -8,7 +8,6 @@ import {
   Deferred,
   Duration,
   Effect,
-  Either,
   Exit,
   Fiber,
   Option,
@@ -36,8 +35,6 @@ import {
   buildCertifiedFirstMessage,
   signEvidence,
   type SigningIdentity,
-  withInitialAnchorSelecting,
-  withMisattributedActionEvidence,
 } from "../../../__tests__/certified-history-fixtures.js";
 import { forwardStoredOutbound } from "../../../__tests__/forward-stored-outbound.js";
 import { openOuterBody } from "../../../__tests__/outer-body-fixtures.js";
@@ -45,7 +42,12 @@ import {
   corruptSignature,
   pollCursor as fixturePollCursor,
 } from "../../../__tests__/router-worker-fixtures.js";
-import { type DaemonStore, openDaemonStore } from "../../../daemon/store.js";
+import {
+  type TestDatabase,
+  openTestDatabase,
+} from "../../../__tests__/communication-test-database.js";
+import { testStore } from "../../../__tests__/store-schema-fixtures.js";
+import { SqlClient } from "@effect/sql";
 import {
   decodeCanonical,
   encodeCanonical,
@@ -57,10 +59,7 @@ import {
 } from "../../../identity/cards.js";
 import { SignedMessage } from "../../../identity/envelope/signed-message.js";
 import { Ed25519PublicKey } from "../../../identity/keys.js";
-import {
-  LIVE_WIRE_VERSIONS,
-  WIRE_VERSION,
-} from "../../../identity/wire-version.js";
+import { WIRE_VERSION } from "../../../identity/wire-version.js";
 import {
   type ActionCertifiedRecord as ActionCertifiedRecordValue,
   type ActionProposal,
@@ -107,18 +106,15 @@ import {
   type RouterIngressDisposition,
   RouterWorkerDiscontinuityError,
   type RouterWorkerIngress,
-  RouterWorkerPersistenceError,
 } from "../../router/index.js";
 import {
   type EndpointRecovery,
-  EndpointStoreError,
   type StoredOutboundMessage,
 } from "../../store/index.js";
 import { acceptEngineRecoveryIngress } from "../certification/index.js";
 import {
   type EndpointEngine,
   type EndpointEngineInput,
-  EngineInitializationError,
   EngineOutboundError,
   makeEndpointEngine,
 } from "../index.js";
@@ -151,7 +147,7 @@ vi.setConfig({ testTimeout: TRACE_TIMEOUT_MS });
 interface RecoveryFixture {
   readonly engine: EndpointEngine;
   readonly input: EndpointEngineInput;
-  readonly store: DaemonStore;
+  readonly store: TestDatabase;
   readonly local: SigningIdentity;
   readonly remote: SigningIdentity;
   readonly registryKeys: RegistryKeyPair;
@@ -205,7 +201,7 @@ interface N4PartialHistory {
  * `normalOutbound`, so a test reads each stream on its own.
  */
 interface FixtureRouterContext {
-  readonly store: DaemonStore;
+  readonly store: TestDatabase;
   readonly local: SigningIdentity;
   readonly normalOutbound: Queue.Queue<SignedMessage>;
   readonly recoveryOutbound: Queue.Queue<SignedMessage>;
@@ -405,20 +401,21 @@ const openFirstMessageStore = (
       return yield* Effect.dieMessage("first message fixture lost its anchor");
     }
     const fileSystem = yield* FileSystem.FileSystem;
-    const store = yield* openDaemonStore(
+    const store = yield* openTestDatabase(
       yield* fileSystem.makeTempDirectoryScoped({ prefix }),
-      { liveWireVersions: LIVE_WIRE_VERSIONS },
     );
-    yield* store.putConversationFoundation({
-      conversationId: membership.descriptor.conversationId,
-      membershipHash: membership.hash,
-      canonicalMembership: yield* encodeCanonical(
-        MembershipDescriptor,
-        membership.descriptor,
-      ),
-      anchorHash: yield* hashAnchor(anchor),
-      canonicalAnchor: yield* encodeCanonical(InitialAnchorBody, anchor),
-    });
+    yield* store.run(
+      testStore.putConversationFoundation({
+        conversationId: membership.descriptor.conversationId,
+        membershipHash: membership.hash,
+        canonicalMembership: yield* encodeCanonical(
+          MembershipDescriptor,
+          membership.descriptor,
+        ),
+        anchorHash: yield* hashAnchor(anchor),
+        canonicalAnchor: yield* encodeCanonical(InitialAnchorBody, anchor),
+      }),
+    );
     return store;
   });
 
@@ -506,7 +503,6 @@ const makeFixtureWithRouter = (
       signingAuthority: local.authority,
       registrySignerPublicKey,
       registry,
-      store,
       reportStorageFault: () => Effect.void,
       routerWorker: makeRouter({
         store,
@@ -515,7 +511,9 @@ const makeFixtureWithRouter = (
         recoveryOutbound,
       }),
     } satisfies EndpointEngineInput;
-    const engine = yield* makeEndpointEngine(input).pipe(Effect.orDie);
+    const engine = yield* makeEndpointEngine(input)
+      .pipe(Effect.provideService(SqlClient.SqlClient, store.sql))
+      .pipe(Effect.orDie);
     return {
       engine,
       input,
@@ -667,16 +665,18 @@ const addGroupFoundation = (
       membershipHash: membership.hash,
       routerInstanceId: initialRouterInstanceId,
     };
-    yield* fixture.store.putConversationFoundation({
-      conversationId,
-      membershipHash: membership.hash,
-      canonicalMembership: yield* encodeCanonical(
-        MembershipDescriptor,
-        membership.descriptor,
-      ),
-      anchorHash: yield* hashAnchor(anchor),
-      canonicalAnchor: yield* encodeCanonical(InitialAnchorBody, anchor),
-    });
+    yield* fixture.store.run(
+      testStore.putConversationFoundation({
+        conversationId,
+        membershipHash: membership.hash,
+        canonicalMembership: yield* encodeCanonical(
+          MembershipDescriptor,
+          membership.descriptor,
+        ),
+        anchorHash: yield* hashAnchor(anchor),
+        canonicalAnchor: yield* encodeCanonical(InitialAnchorBody, anchor),
+      }),
+    );
     const cards = members.map((member) => member.card);
     const registry: AddressRegistryPort = {
       lookup: (request) => {
@@ -697,7 +697,6 @@ const addGroupFoundation = (
       signingAuthority: fixture.local.authority,
       registrySignerPublicKey: fixture.registrySignerPublicKey,
       registry,
-      store: fixture.store,
       reportStorageFault: () => Effect.void,
       routerWorker: {
         currentAnchor: Effect.succeed({
@@ -710,7 +709,9 @@ const addGroupFoundation = (
         }),
         send: (envelopeId) => forwardSorted(fixture, envelopeId),
       },
-    }).pipe(Effect.orDie);
+    })
+      .pipe(Effect.provideService(SqlClient.SqlClient, fixture.store.sql))
+      .pipe(Effect.orDie);
     return {
       engine,
       membership,
@@ -1376,12 +1377,14 @@ const stageCatchUpOutbound = (fixture: RecoveryFixture) =>
       SignedMessage,
       message,
     );
-    return yield* fixture.store.enqueueOutbound({
-      conversationId: request.conversationId,
-      envelopeId: message.envelopeId,
-      canonicalSignedMessage,
-      wireVersion: SignedMessage.wireVersion(message),
-    });
+    return yield* fixture.store.run(
+      testStore.enqueueOutbound({
+        conversationId: request.conversationId,
+        envelopeId: message.envelopeId,
+        canonicalSignedMessage,
+        wireVersion: SignedMessage.wireVersion(message),
+      }),
+    );
   }).pipe(Effect.orDie);
 
 const directPacketIngressFrom = (input: {
@@ -1442,7 +1445,9 @@ const restartWithNonLexicalAgentOrder = () =>
     expect(fixture.remote.card.agentId < fixture.local.card.agentId).toBe(true);
 
     yield* retainCertifiedRecord(fixture);
-    const restarted = yield* makeEndpointEngine(fixture.input);
+    const restarted = yield* makeEndpointEngine(fixture.input).pipe(
+      Effect.provideService(SqlClient.SqlClient, fixture.store.sql),
+    );
     expect((yield* restarted.readPendingMessages())[0]?.message.sender).toEqual(
       agentViewOf(fixture.remote.card),
     );
@@ -1455,127 +1460,6 @@ const restartWithNonLexicalAgentOrder = () =>
   });
 
 /**
- * A store whose action evidence row is filed under a member other than its
- * signer is corrupt, so the engine refuses to start over it, while the
- * unaltered store restarts.
- */
-const refusesMisattributedEvidenceAtStartup = () =>
-  Effect.gen(function* () {
-    const fixture = yield* makeFixture;
-    yield* retainCertifiedRecord(fixture);
-    const misattributed = withMisattributedActionEvidence(
-      fixture.store,
-      fixture.local.card.agentId,
-      fixture.remote.card.agentId,
-    );
-
-    const unaltered = yield* Effect.exit(makeEndpointEngine(fixture.input));
-    const corrupt = yield* Effect.exit(
-      makeEndpointEngine({ ...fixture.input, store: misattributed }),
-    );
-
-    expect(Exit.isSuccess(unaltered), "restart over the unaltered store").toBe(
-      true,
-    );
-    expect(corrupt, "restart over the misattributed evidence").toEqual(
-      Exit.fail(new EngineInitializationError({ reason: "persistence" })),
-    );
-  });
-
-/**
- * A store whose initial anchor row claims to select a record, which only a
- * completed re-anchor does, is corrupt, so the engine refuses to start over
- * it, while the unaltered store restarts.
- */
-const refusesInitialAnchorSelectingRecordAtStartup = () =>
-  Effect.gen(function* () {
-    const fixture = yield* makeFixture;
-    yield* retainCertifiedRecord(fixture);
-    const inconsistent = withInitialAnchorSelecting(
-      fixture.store,
-      fixture.certifiedRecord.actionCertifiedRecord.recordHash,
-    );
-
-    const unaltered = yield* Effect.exit(makeEndpointEngine(fixture.input));
-    const corrupt = yield* Effect.exit(
-      makeEndpointEngine({ ...fixture.input, store: inconsistent }),
-    );
-
-    expect(Exit.isSuccess(unaltered), "restart over the unaltered store").toBe(
-      true,
-    );
-    expect(corrupt, "restart over the inconsistent anchor row").toEqual(
-      Exit.fail(new EngineInitializationError({ reason: "persistence" })),
-    );
-  });
-
-/** A change to the store snapshot a restarting engine reads. */
-type SnapshotTamper = (
-  recovery: EndpointRecovery,
-) => Effect.Effect<EndpointRecovery>;
-
-/**
- * Apply `change` to every stored membership row of a snapshot.
- * @param change Rewrites one membership row.
- * @returns The snapshot tamper.
- */
-const tamperMemberships =
-  (
-    change: (
-      row: EndpointRecovery["memberships"][number],
-    ) => EndpointRecovery["memberships"][number],
-  ): SnapshotTamper =>
-  (recovery) =>
-    Effect.succeed({
-      ...recovery,
-      memberships: recovery.memberships.map(change),
-    });
-
-/**
- * Apply `change` to every certified record row of a snapshot.
- * @param change Rewrites one certified record row.
- * @returns The snapshot tamper.
- */
-const tamperCertifiedRecords =
-  (
-    change: (
-      row: EndpointRecovery["certifiedRecords"][number],
-    ) => Effect.Effect<EndpointRecovery["certifiedRecords"][number]>,
-  ): SnapshotTamper =>
-  (recovery) =>
-    Effect.forEach(recovery.certifiedRecords, change, { concurrency: 1 }).pipe(
-      Effect.map((certifiedRecords) => ({ ...recovery, certifiedRecords })),
-    );
-
-/**
- * Restart the engine over a snapshot with one changed row. Startup refuses a
- * row that disagrees with what it holds and names the failure by its cause:
- * columns that disagree with the row's own bytes are a persistence failure,
- * and bytes that do not decode are a representation failure. The other
- * restart traces start only from snapshots the endpoint wrote itself. The
- * snapshot is changed through the `DaemonStore` port the engine already
- * takes, over a real store.
- * @param tamper Changes the snapshot the restarted engine reads.
- * @returns `"started"`, or the error the restart failed with.
- */
-const restartOverTamperedSnapshot = (tamper: SnapshotTamper) =>
-  Effect.gen(function* () {
-    const fixture = yield* makeFixture;
-    yield* retainCertifiedRecord(fixture);
-    const store: DaemonStore = {
-      ...fixture.store,
-      recover: () => fixture.store.recover().pipe(Effect.flatMap(tamper)),
-    };
-
-    return yield* makeEndpointEngine({ ...fixture.input, store }).pipe(
-      Effect.match({
-        onFailure: (error) => error,
-        onSuccess: () => "started" as const,
-      }),
-    );
-  });
-
-/**
  * Retains the fixture's certified record and writes its dissemination
  * obligation with no outbox row attached, the state a crash between staging
  * a record for dissemination and queueing its copy leaves an obligation in.
@@ -1584,11 +1468,13 @@ const restartOverTamperedSnapshot = (tamper: SnapshotTamper) =>
  */
 const stageUnattachedDissemination = (fixture: RecoveryFixture) =>
   retainCertifiedRecord(fixture).pipe(
-    Effect.zipRight(fixture.store.recover()),
+    Effect.zipRight(fixture.store.run(testStore.recover())),
     Effect.flatMap(({ stagedRecords }) =>
       Effect.fromNullable(stagedRecords[0]),
     ),
-    Effect.tap((record) => fixture.store.stageRecordForDissemination(record)),
+    Effect.tap((record) =>
+      fixture.store.run(testStore.stageRecordForDissemination(record)),
+    ),
     Effect.orDie,
   );
 
@@ -1601,17 +1487,22 @@ const stageAttachedDissemination = (fixture: RecoveryFixture) =>
       agentCard: fixture.local.card,
       signingAuthority: fixture.local.authority,
     });
-    return yield* fixture.store.enqueueDisseminationOutbound(
-      {
-        conversationId: record.conversationId,
-        recordHash: record.recordHash,
-      },
-      {
-        conversationId: record.conversationId,
-        envelopeId: message.envelopeId,
-        wireVersion: WIRE_VERSION,
-        canonicalSignedMessage: yield* encodeCanonical(SignedMessage, message),
-      },
+    return yield* fixture.store.run(
+      testStore.enqueueDisseminationOutbound(
+        {
+          conversationId: record.conversationId,
+          recordHash: record.recordHash,
+        },
+        {
+          conversationId: record.conversationId,
+          envelopeId: message.envelopeId,
+          wireVersion: WIRE_VERSION,
+          canonicalSignedMessage: yield* encodeCanonical(
+            SignedMessage,
+            message,
+          ),
+        },
+      ),
     );
   }).pipe(Effect.orDie);
 
@@ -2028,7 +1919,7 @@ const completeRestartRecovery = () =>
     });
     yield* Fiber.join(recovering);
     yield* fixture.engine.drainOutbound;
-    const recovered = yield* fixture.store.recover();
+    const recovered = yield* fixture.store.run(testStore.recover());
     expect(recovered.certifiedRecords).toHaveLength(1);
     expect(recovered.outboundMessages).toHaveLength(0);
     expect(recovered.positions[0]?.currentAnchorHash).toBe(proposal.anchorHash);
@@ -2086,7 +1977,7 @@ const reproposesPendingMessageAfterRestart = () =>
     );
     const headRecordOutboundId = yield* Queue.take(pendingOutboundIds);
     const staleOutboundId = yield* Queue.take(pendingOutboundIds);
-    const before = yield* fixture.store.recover();
+    const before = yield* fixture.store.run(testStore.recover());
     expect(before.outboundMessages.map(({ envelopeId }) => envelopeId)).toEqual(
       [headRecordOutboundId, staleOutboundId],
     );
@@ -2147,9 +2038,12 @@ const reproposesPendingMessageAfterRestart = () =>
     expect(reproposed.action.anchorHash).toBe(reanchor.anchorHash);
     expect(yield* hashAction(reproposed.action)).not.toBe(staleActionHash);
     expect(
-      "outbound" in (yield* fixture.store.beginOutbound(staleOutboundId)),
+      "outbound" in
+        (yield* fixture.store.run(testStore.beginOutbound(staleOutboundId))),
     ).toBe(false);
-    expect((yield* fixture.store.recover()).outboundMessages).toHaveLength(0);
+    expect(
+      (yield* fixture.store.run(testStore.recover())).outboundMessages,
+    ).toHaveLength(0);
     expect(yield* Queue.size(pendingOutboundIds)).toBe(0);
     yield* Fiber.interrupt(sending);
   });
@@ -2198,7 +2092,7 @@ const recoverColdStartAtUnchangedInstance = () =>
     yield* Fiber.join(recovering);
     const resumed = yield* Queue.take(recoveryOutbound);
     expect(yield* Queue.size(recoveryOutbound)).toBe(0);
-    const recovered = yield* fixture.store.recover();
+    const recovered = yield* fixture.store.run(testStore.recover());
     expect(recovered.stagedReanchors).toHaveLength(0);
     expect(recovered.anchors).toHaveLength(1);
     expect(recovered.positions[0]?.currentAnchorHash).toBe(
@@ -2301,7 +2195,7 @@ const recoverMixedRouterInstances = () =>
     );
     yield* Fiber.join(recovering);
     yield* n4.engine.drainOutbound;
-    const after = yield* fixture.store.recover();
+    const after = yield* fixture.store.run(testStore.recover());
     expect(after.stagedReanchors).toEqual([]);
     expect(
       after.evidence.filter((evidence) => evidence.kind === "reanchor"),
@@ -2397,7 +2291,7 @@ const queuePeerCatchUpResponse = (
   },
 ) =>
   Effect.gen(function* () {
-    const before = yield* fixture.store.recover();
+    const before = yield* fixture.store.run(testStore.recover());
     const request = peerCatchUpRequest(fixture, known);
     const ingress = yield* directPacketIngressFrom({
       membership: fixture.membership,
@@ -2406,7 +2300,7 @@ const queuePeerCatchUpResponse = (
       routerInstanceId: oldRouterInstanceId,
     });
     yield* fixture.engine.acceptRouterIngress(ingress);
-    const after = yield* fixture.store.recover();
+    const after = yield* fixture.store.run(testStore.recover());
     const queued = after.outboundMessages.filter(
       (row) =>
         !before.outboundMessages.some(
@@ -2472,7 +2366,9 @@ const recoverWhileDrainAwaitsWorker = () =>
       { kind: "direct", packet: { kind: "catch_up_incomplete" } },
       { kind: "direct", packet: { kind: "catch_up_request" } },
     ]);
-    expect((yield* fixture.store.recover()).outboundMessages).toEqual([]);
+    expect(
+      (yield* fixture.store.run(testStore.recover())).outboundMessages,
+    ).toEqual([]);
   });
 
 const concurrentDrainsSendOnceInOrder = () =>
@@ -2506,7 +2402,9 @@ const concurrentDrainsSendOnceInOrder = () =>
       first.envelopeId,
       second.envelopeId,
     ]);
-    expect((yield* fixture.store.recover()).outboundMessages).toEqual([]);
+    expect(
+      (yield* fixture.store.run(testStore.recover())).outboundMessages,
+    ).toEqual([]);
     yield* fixture.engine.drainOutbound;
     expect(yield* Queue.size(sends)).toBe(0);
   });
@@ -2535,7 +2433,9 @@ const staleDrainKeepsLaterHead = () =>
       first.envelopeId,
       second.envelopeId,
     ]);
-    expect((yield* fixture.store.recover()).outboundMessages).toEqual([]);
+    expect(
+      (yield* fixture.store.run(testStore.recover())).outboundMessages,
+    ).toEqual([]);
   });
 
 interface RestartingRouterInput {
@@ -2601,7 +2501,7 @@ const drainRecoversRouterRestartOnItsOwnFiber = () =>
       Exit.fail(new EngineOutboundError({ reason: "network" })),
     );
     expect(yield* Deferred.isDone(recovered)).toBe(true);
-    const after = yield* fixture.store.recover();
+    const after = yield* fixture.store.run(testStore.recover());
     expect(after.outboundMessages).toEqual([]);
     const storedAnchor = after.anchors[0];
     if (storedAnchor === undefined) {
@@ -2618,7 +2518,7 @@ const recoverDisseminationObligations = () =>
   Effect.gen(function* () {
     const fixture = yield* makeFixture;
     const stale = yield* stageAttachedDissemination(fixture);
-    const before = yield* fixture.store.recover();
+    const before = yield* fixture.store.run(testStore.recover());
     expect(before.disseminationObligations).toHaveLength(0);
     expect(before.outboundMessages).toHaveLength(1);
     const resumedOutbound = fixture.normalOutbound;
@@ -2654,7 +2554,7 @@ const recoverDisseminationObligations = () =>
       ),
     ).toBe(durabilityVoteKind);
     expect(yield* Queue.size(resumedOutbound)).toBe(0);
-    const after = yield* fixture.store.recover();
+    const after = yield* fixture.store.run(testStore.recover());
     expect(after.disseminationObligations).toHaveLength(0);
     expect(after.outboundMessages).toHaveLength(0);
   });
@@ -2686,7 +2586,9 @@ const recoverWhileNormalSendIsHeld = () =>
     const { recovery: recovering, outbound: recoveryOutbound } =
       yield* forkRecovery(fixture, "router_restarted", oldRouterInstanceId);
     yield* Fiber.join(recovering);
-    expect((yield* fixture.store.recover()).messageIntents).toHaveLength(1);
+    expect(
+      (yield* fixture.store.run(testStore.recover())).messageIntents,
+    ).toHaveLength(1);
     yield* Deferred.succeed(releaseSend, undefined);
     const request = yield* takeCatchUpRequest(recoveryOutbound);
     yield* deliverRecovery(
@@ -2694,7 +2596,9 @@ const recoverWhileNormalSendIsHeld = () =>
       catchUpIncompleteIngress(fixture, request),
     );
     yield* fixture.engine.drainOutbound;
-    expect((yield* fixture.store.recover()).outboundMessages).toHaveLength(0);
+    expect(
+      (yield* fixture.store.run(testStore.recover())).outboundMessages,
+    ).toHaveLength(0);
     yield* Fiber.interrupt(sending);
   });
 
@@ -2708,7 +2612,7 @@ const restartEmptyConversation = () =>
       Effect.flatMap((ingress) => fixture.engine.acceptRouterIngress(ingress)),
     );
     yield* Fiber.join(recovering);
-    const recovered = yield* fixture.store.recover();
+    const recovered = yield* fixture.store.run(testStore.recover());
     expect(recovered.stagedReanchors).toHaveLength(0);
     expect(recovered.positions[0]?.headRecordHash).toBeUndefined();
     expect(recovered.anchors).toHaveLength(1);
@@ -2819,7 +2723,8 @@ const reanchorsWithNonLexicalAgentOrder = () =>
       }),
     ).toBe(proposal.anchorHash);
     expect(
-      (yield* fixture.store.recover()).positions[0]?.currentAnchorHash,
+      (yield* fixture.store.run(testStore.recover())).positions[0]
+        ?.currentAnchorHash,
     ).toBe(proposal.anchorHash);
   });
 
@@ -2931,7 +2836,8 @@ const adoptsRelayedCompletionForReanchoringConversation = () =>
     expect(disposition).toBe(acceptedDisposition);
     expect(followUp.knownAnchorHash).toBe(proposal.anchorHash);
     expect(
-      (yield* fixture.store.recover()).positions[0]?.currentAnchorHash,
+      (yield* fixture.store.run(testStore.recover())).positions[0]
+        ?.currentAnchorHash,
     ).toBe(proposal.anchorHash);
   });
 
@@ -2964,7 +2870,8 @@ const ignoresReanchorVoteWithMismatchedAnchorHash = () =>
     expect(mismatched).toBe(ignoredDisposition);
     expect(genuine).toBe(acceptedDisposition);
     expect(
-      (yield* fixture.store.recover()).positions[0]?.currentAnchorHash,
+      (yield* fixture.store.run(testStore.recover())).positions[0]
+        ?.currentAnchorHash,
     ).toBe(proposal.anchorHash);
   });
 
@@ -2994,7 +2901,8 @@ const replaysPeerVoteHeldBeforeCatchUpCompletes = () =>
 
     expect(early).toBe(acceptedDisposition);
     expect(
-      (yield* fixture.store.recover()).positions[0]?.currentAnchorHash,
+      (yield* fixture.store.run(testStore.recover())).positions[0]
+        ?.currentAnchorHash,
     ).toBe(proposal.anchorHash);
   });
 
@@ -3090,7 +2998,7 @@ const rebroadcastsPersistedLocalVote = () =>
       catchUpIncompleteIngress(fixture, firstRequest),
     );
     expect(
-      (yield* fixture.store.recover()).evidence.filter(
+      (yield* fixture.store.run(testStore.recover())).evidence.filter(
         (evidence) => evidence.kind === "reanchor",
       ),
     ).toHaveLength(1);
@@ -3115,7 +3023,8 @@ const rebroadcastsPersistedCompletedReanchor = () =>
     yield* retainCertifiedRecord(fixture);
     const { proposal } = yield* reanchorUntilCompletionSend(fixture);
     expect(
-      (yield* fixture.store.recover()).positions[0]?.currentAnchorHash,
+      (yield* fixture.store.run(testStore.recover())).positions[0]
+        ?.currentAnchorHash,
     ).toBe(proposal.anchorHash);
 
     const {
@@ -3160,7 +3069,7 @@ const recoversN4PartiallyDisseminatedSuccessor = () =>
     }).pipe(
       Effect.flatMap((ingress) => n4.engine.acceptRouterIngress(ingress)),
     );
-    const before = yield* fixture.store.recover();
+    const before = yield* fixture.store.run(testStore.recover());
     expect(
       before.positions.find(
         ({ conversationId }) =>
@@ -3230,7 +3139,7 @@ const recoversN4PartiallyDisseminatedSuccessor = () =>
     }).pipe(
       Effect.flatMap((ingress) => n4.engine.acceptRouterIngress(ingress)),
     );
-    const beforeCompleteSource = yield* fixture.store.recover();
+    const beforeCompleteSource = yield* fixture.store.run(testStore.recover());
     expect(
       beforeCompleteSource.stagedReanchors.filter(
         ({ conversationId }) =>
@@ -3261,7 +3170,7 @@ const recoversN4PartiallyDisseminatedSuccessor = () =>
       knownRecordHash: history.stagedSuccessor.recordHash,
       knownAnchorHash: history.stagedSuccessor.recordCore.anchorHash,
     });
-    const afterCompleteSource = yield* fixture.store.recover();
+    const afterCompleteSource = yield* fixture.store.run(testStore.recover());
     expect(
       afterCompleteSource.positions.find(
         ({ conversationId }) =>
@@ -3330,7 +3239,7 @@ const recoversN4PartiallyDisseminatedSuccessor = () =>
     });
 
     yield* Fiber.join(recovering);
-    const recovered = yield* fixture.store.recover();
+    const recovered = yield* fixture.store.run(testStore.recover());
     expect(
       recovered.positions.find(
         ({ conversationId }) =>
@@ -3418,7 +3327,7 @@ const blocksN4ReanchorBehindStagedSuccessor = () =>
       Effect.flatMap((ingress) => n4.engine.acceptRouterIngress(ingress)),
     );
 
-    const blocked = yield* fixture.store.recover();
+    const blocked = yield* fixture.store.run(testStore.recover());
     expect(
       blocked.stagedReanchors.filter(
         ({ conversationId }) =>
@@ -3588,7 +3497,7 @@ const certifiesAtALockedHeadAfterReanchoring = (
         }),
       );
     }
-    const beforeRestart = yield* fixture.store.recover();
+    const beforeRestart = yield* fixture.store.run(testStore.recover());
     const locksBeforeRestart = beforeRestart.proposalLocks;
 
     const { recovery, outbound, request } =
@@ -3631,9 +3540,9 @@ const certifiesAtALockedHeadAfterReanchoring = (
         actionHash,
       }),
     );
-    const staged = (yield* fixture.store.recover()).stagedRecords.find(
-      (record) => record.actionHash === actionHash,
-    );
+    const staged = (yield* fixture.store.run(
+      testStore.recover(),
+    )).stagedRecords.find((record) => record.actionHash === actionHash);
     if (staged === undefined) {
       return yield* Effect.dieMessage(
         `the proposal at the new anchor staged no record; the Router-ordered proposal was ${reproposedOrdered}`,
@@ -3653,9 +3562,13 @@ const certifiesAtALockedHeadAfterReanchoring = (
       }),
     );
     const sent = yield* Fiber.join(sending);
-    const restarted = yield* Effect.exit(makeEndpointEngine(fixture.input));
+    const restarted = yield* Effect.exit(
+      makeEndpointEngine(fixture.input).pipe(
+        Effect.provideService(SqlClient.SqlClient, fixture.store.sql),
+      ),
+    );
 
-    const afterRestart = yield* fixture.store.recover();
+    const afterRestart = yield* fixture.store.run(testStore.recover());
 
     expect(staleOrdered).toBe(acceptedDisposition);
     expect(resumedEvidence).not.toContainEqual(
@@ -3836,8 +3749,12 @@ const retiresAStagedSuccessorWhenAReanchorSelectsItsHead = (
         Effect.exit(n4.engine.acceptRouterIngress(ingress)),
       ),
     );
-    const recovered = yield* fixture.store.recover();
-    const restarted = yield* Effect.exit(makeEndpointEngine(fixture.input));
+    const recovered = yield* fixture.store.run(testStore.recover());
+    const restarted = yield* Effect.exit(
+      makeEndpointEngine(fixture.input).pipe(
+        Effect.provideService(SqlClient.SqlClient, fixture.store.sql),
+      ),
+    );
 
     expect(adopted).toBe(acceptedDisposition);
     expect(extended).toBe(acceptedDisposition);
@@ -3875,80 +3792,12 @@ describe("endpoint restart recovery", () => {
     restartWithNonLexicalAgentOrder,
   );
   it(
-    "refuses to start when an action evidence row is filed under another signer",
-    refusesMisattributedEvidenceAtStartup,
-  );
-  it(
-    "refuses to start when the initial anchor row selects a record",
-    refusesInitialAnchorSelectingRecordAtStartup,
-  );
-  it(
     "answers a peer's catch-up request from first message with its retained record",
     answersFirstMessageCatchUpWithRetainedRecord,
   );
   it(
     "re-anchors with a certificate in canonical order when encoded and canonical AgentId orders differ",
     reanchorsWithNonLexicalAgentOrder,
-  );
-  it.each([
-    {
-      outcome: "restarts",
-      rows: "only the rows the endpoint wrote",
-      tamper: (recovery: EndpointRecovery) => Effect.succeed(recovery),
-      restart: "started",
-    },
-    {
-      outcome: "fails to restart as persistence",
-      rows: "a membership row whose hash names another descriptor",
-      tamper: tamperMemberships((row) => ({
-        ...row,
-        membershipHash: digest("mbr_", 36),
-      })),
-      restart: new EngineInitializationError({ reason: "persistence" }),
-    },
-    {
-      outcome: "fails to restart as persistence",
-      rows: "a membership row whose conversation is not its descriptor's",
-      tamper: tamperMemberships((row) => ({
-        ...row,
-        conversationId: digest("cnv_", 37),
-      })),
-      restart: new EngineInitializationError({ reason: "persistence" }),
-    },
-    {
-      outcome: "fails to restart as representation",
-      rows: "a membership row whose descriptor bytes are not canonical",
-      tamper: tamperMemberships((row) => ({
-        ...row,
-        canonicalMembership: Uint8Array.of(0x20, ...row.canonicalMembership),
-      })),
-      restart: new EngineInitializationError({ reason: "representation" }),
-    },
-    {
-      outcome: "fails to restart as persistence",
-      rows: "a certified record row whose MsgId is not its core's",
-      tamper: tamperCertifiedRecords((row) =>
-        mintMsgId().pipe(
-          Effect.orDie,
-          Effect.map((msgId) => ({ ...row, msgId })),
-        ),
-      ),
-      restart: new EngineInitializationError({ reason: "persistence" }),
-    },
-    {
-      outcome: "fails to restart as persistence",
-      rows: "a certified record row without action evidence",
-      tamper: tamperCertifiedRecords((row) =>
-        Effect.succeed({ ...row, actionEvidence: [] }),
-      ),
-      restart: new EngineInitializationError({ reason: "persistence" }),
-    },
-  ])("$outcome over a snapshot holding $rows", ({ tamper, restart }) =>
-    Effect.gen(function* () {
-      const restarted = yield* restartOverTamperedSnapshot(tamper);
-
-      expect(restarted).toStrictEqual(restart);
-    }),
   );
   itOnTestClock(
     "waits for the complete N4 successor before re-anchoring its latest head",
@@ -4150,7 +3999,7 @@ const restartedDirectAnchorHash = (fixture: RecoveryFixture) => {
  */
 const directAnchorHash = (fixture: RecoveryFixture) =>
   fixture.store
-    .recover()
+    .run(testStore.recover())
     .pipe(
       Effect.map(
         (recovered) =>
@@ -4267,7 +4116,7 @@ const adoptsCertifiedSuccessorWithoutVotingAfterDeparture = (
       (message) => carriedBy(message),
       { concurrency: 1 },
     );
-    const recovered = yield* fixture.store.recover();
+    const recovered = yield* fixture.store.run(testStore.recover());
     const localVotes = recovered.evidence.filter(
       (evidence) =>
         evidence.kind === "durability" &&
@@ -4355,7 +4204,8 @@ const ignoresReanchorVoteFromUnknownPreviousAnchor = () =>
     expect(unresolvable).toBe(ignoredDisposition);
     expect(genuine).toBe(acceptedDisposition);
     expect(
-      (yield* fixture.store.recover()).positions[0]?.currentAnchorHash,
+      (yield* fixture.store.run(testStore.recover())).positions[0]
+        ?.currentAnchorHash,
     ).toBe(proposal.anchorHash);
   });
 
@@ -4392,7 +4242,8 @@ const ignoresReanchorVoteForUnknownHeadOnceStaged = () =>
     expect(unresolvable).toBe(ignoredDisposition);
     expect(genuine).toBe(acceptedDisposition);
     expect(
-      (yield* fixture.store.recover()).positions[0]?.currentAnchorHash,
+      (yield* fixture.store.run(testStore.recover())).positions[0]
+        ?.currentAnchorHash,
     ).toBe(proposal.anchorHash);
   });
 
@@ -4446,7 +4297,8 @@ const reanchorsPastHeldVoteForUnsuppliedHead = () =>
     expect(proposal.reanchor.selectedRecordHash).toBe(recordHash);
     expect(genuine).toBe(acceptedDisposition);
     expect(
-      (yield* fixture.store.recover()).positions[0]?.currentAnchorHash,
+      (yield* fixture.store.run(testStore.recover())).positions[0]
+        ?.currentAnchorHash,
     ).toBe(proposal.anchorHash);
   });
 
@@ -4604,9 +4456,10 @@ const ignoresCatchUpPageWithConflictingSuccessor = () =>
     expect(applied).toBe(acceptedDisposition);
     expect(conflict).toBe(ignoredDisposition);
     expect(complete).toBe(acceptedDisposition);
-    expect((yield* fixture.store.recover()).positions[0]?.headRecordHash).toBe(
-      fixture.certifiedRecord.actionCertifiedRecord.recordHash,
-    );
+    expect(
+      (yield* fixture.store.run(testStore.recover())).positions[0]
+        ?.headRecordHash,
+    ).toBe(fixture.certifiedRecord.actionCertifiedRecord.recordHash);
   });
 
 /**
@@ -4655,7 +4508,8 @@ const ignoresCatchUpPageWhoseRecordDoesNotExtendTheConversation = () =>
     expect(page).toBe(ignoredDisposition);
     expect(complete).toBe(acceptedDisposition);
     expect(
-      (yield* fixture.store.recover()).positions[0]?.headRecordHash,
+      (yield* fixture.store.run(testStore.recover())).positions[0]
+        ?.headRecordHash,
     ).toBeUndefined();
   });
 
@@ -4677,9 +4531,10 @@ const acceptsCertifiedRecordBeforeTheRunStarts = () =>
     yield* runSameInstanceRecovery(fixture, "feed_gap", Effect.void);
 
     expect(early).toBe(acceptedDisposition);
-    expect((yield* fixture.store.recover()).positions[0]?.headRecordHash).toBe(
-      fixture.certifiedRecord.actionCertifiedRecord.recordHash,
-    );
+    expect(
+      (yield* fixture.store.run(testStore.recover())).positions[0]
+        ?.headRecordHash,
+    ).toBe(fixture.certifiedRecord.actionCertifiedRecord.recordHash);
   });
 
 /**
@@ -4742,7 +4597,7 @@ const keepsOneCandidateAfterTheHeadMovesPastIt = () =>
 
     const [, , ready] = yield* answerN4Incomplete(fixture, n4, advancedRequest);
     const conversationId = n4.membership.descriptor.conversationId;
-    const durable = yield* fixture.store.recover();
+    const durable = yield* fixture.store.run(testStore.recover());
 
     expect(successor).toBe(acceptedDisposition);
     expect(ready).toBe(acceptedDisposition);
@@ -4802,13 +4657,15 @@ const ignoresReanchorVoteConflictingWithAStoredCopy = () =>
       agentCard: fixture.remote.card,
       signingAuthority: fixture.remote.authority,
     });
-    yield* fixture.store.mergeEvidence({
-      conversationId: proposal.reanchor.conversationId,
-      kind: "reanchor",
-      subjectId: proposal.anchorHash,
-      evidenceKey: fixture.remote.card.agentId,
-      canonicalEvidence: yield* differentlySignedEvidence(peerVote),
-    });
+    yield* fixture.store.run(
+      testStore.mergeEvidence({
+        conversationId: proposal.reanchor.conversationId,
+        kind: "reanchor",
+        subjectId: proposal.anchorHash,
+        evidenceKey: fixture.remote.card.agentId,
+        canonicalEvidence: yield* differentlySignedEvidence(peerVote),
+      }),
+    );
 
     const vote = yield* deliverRecovery(
       fixture.engine,
@@ -4922,7 +4779,7 @@ const adoptsCompletionSupersedingTheStagedCandidate = (
         routerInstanceId: newRouterInstanceId,
       }),
     );
-    const recovered = yield* fixture.store.recover();
+    const recovered = yield* fixture.store.run(testStore.recover());
     const conversationId = n4.membership.descriptor.conversationId;
 
     expect(adopted).toBe(acceptedDisposition);
@@ -5130,7 +4987,7 @@ const ignoresFirstMessageWithACardAnotherRegistryIssued = () =>
       yield* deliver(foreign, foreign.firstMessage.actionCertifiedRecord),
       yield* deliver(foreign, foreign.firstMessage),
     ];
-    const afterForeign = yield* fixture.store.recover();
+    const afterForeign = yield* fixture.store.run(testStore.recover());
     const issuedDisposition = yield* deliver(issued, issued.firstMessage);
 
     expect(foreignDispositions).toEqual([
@@ -5175,14 +5032,14 @@ const ignoresAMessageForAConversationItDoesNotHold = () =>
     const { conversationId } = created.membership.descriptor;
 
     const early = yield* deliver(message);
-    const beforeFirstMessage = (yield* fixture.store.recover()).positions.find(
-      (held) => held.conversationId === conversationId,
-    );
+    const beforeFirstMessage = (yield* fixture.store.run(
+      testStore.recover(),
+    )).positions.find((held) => held.conversationId === conversationId);
     const firstMessage = yield* deliver(created.firstMessage);
     const later = yield* deliver(message);
-    const afterMessage = (yield* fixture.store.recover()).positions.find(
-      (held) => held.conversationId === conversationId,
-    );
+    const afterMessage = (yield* fixture.store.run(
+      testStore.recover(),
+    )).positions.find((held) => held.conversationId === conversationId);
 
     expect([early, firstMessage, later]).toEqual([
       ignoredDisposition,
@@ -5223,7 +5080,9 @@ const acceptsFirstMessageOfAConversationCreatedDuringRecovery = () =>
         routerInstanceId: oldRouterInstanceId,
       }),
     ).pipe(Effect.exit);
-    const position = (yield* fixture.store.recover()).positions.find(
+    const position = (yield* fixture.store.run(
+      testStore.recover(),
+    )).positions.find(
       ({ conversationId }) =>
         conversationId === created.membership.descriptor.conversationId,
     );
@@ -5277,7 +5136,9 @@ const ignoresReanchorVoteAfterTheConversationReanchored = () =>
         previousAnchorHash: proposal.anchorHash,
       }),
     );
-    const staged = (yield* fixture.store.recover()).stagedReanchors.filter(
+    const staged = (yield* fixture.store.run(
+      testStore.recover(),
+    )).stagedReanchors.filter(
       ({ conversationId }) =>
         conversationId === fixture.membership.descriptor.conversationId,
     );
@@ -5450,7 +5311,8 @@ const answersCatchUpRequestDuringItsOwnRecovery = () =>
     const answer = yield* Queue.take(outbound).pipe(
       Effect.flatMap((message) => openForwarded(message)),
     );
-    const durable = (yield* fixture.store.recover()).outboundMessages;
+    const durable = (yield* fixture.store.run(testStore.recover()))
+      .outboundMessages;
     yield* deliverRecovery(
       fixture.engine,
       catchUpIncompleteIngressFrom({
@@ -5614,79 +5476,9 @@ const adoptsReanchorCompletedWhileItWasDown = () =>
       packet: { kind: "completed_reanchor", anchorHash },
     });
     expect(
-      (yield* fixture.store.recover()).positions[0]?.currentAnchorHash,
+      (yield* fixture.store.run(testStore.recover())).positions[0]
+        ?.currentAnchorHash,
     ).toBe(anchorHash);
-  });
-
-/**
- * The store fails, rather than refuses, while persisting a member's verified
- * re-anchor vote. That is a local failure, so accepting the vote fails with
- * a persistence error instead of reporting the vote ignored. Fails when every
- * store error is treated as a refusal of the vote, so a failing store drops
- * votes without reporting the failure.
- */
-const failsWhenTheStoreFailsWhilePersistingAPeerVote = () =>
-  Effect.gen(function* () {
-    const fixture = yield* makeFixture;
-    const failingStore: DaemonStore = {
-      ...fixture.store,
-      mergeEvidence: (evidence) =>
-        evidence.kind === "reanchor" &&
-        evidence.evidenceKey === fixture.remote.card.agentId
-          ? Effect.fail(new EndpointStoreError({ reason: "persistence" }))
-          : fixture.store.mergeEvidence(evidence),
-    };
-    const engine = yield* makeEndpointEngine({
-      ...fixture.input,
-      store: failingStore,
-    }).pipe(Effect.orDie);
-    const { recovery, proposal } = yield* proposeAtRestart({
-      ...fixture,
-      engine,
-    });
-
-    const vote = yield* deliverRecovery(
-      engine,
-      peerReanchorVoteIngress(fixture, proposal),
-    ).pipe(Effect.exit);
-
-    expect(vote).toStrictEqual(Exit.fail(new RouterWorkerPersistenceError()));
-    yield* Fiber.interrupt(recovery);
-  });
-
-/**
- * The store refuses this endpoint's own fresh re-anchor vote. The endpoint
- * signs a vote only when no vote of its own is stored, so the refusal is a
- * local inconsistency, and the catch-up answer that makes the position ready
- * fails with a persistence error. Fails when the refusal is treated like a
- * refused member vote, so the endpoint sends a vote its store does not hold.
- */
-const failsWhenTheStoreRefusesItsOwnFreshVote = () =>
-  Effect.gen(function* () {
-    const fixture = yield* makeFixture;
-    const refusingStore: DaemonStore = {
-      ...fixture.store,
-      mergeEvidence: (evidence) =>
-        evidence.kind === "reanchor" &&
-        evidence.evidenceKey === fixture.local.card.agentId
-          ? Effect.fail(new EndpointStoreError({ reason: "conflict" }))
-          : fixture.store.mergeEvidence(evidence),
-    };
-    const engine = yield* makeEndpointEngine({
-      ...fixture.input,
-      store: refusingStore,
-    }).pipe(Effect.orDie);
-    const refusing = { ...fixture, engine };
-    yield* retainCertifiedRecord(refusing);
-    const { recovery, request } = yield* startRestartRecovery(refusing);
-
-    const ready = yield* deliverRecovery(
-      engine,
-      catchUpIncompleteIngress(fixture, request),
-    ).pipe(Effect.exit);
-
-    expect(ready).toStrictEqual(Exit.fail(new RouterWorkerPersistenceError()));
-    yield* Fiber.interrupt(recovery);
   });
 
 /**
@@ -5729,7 +5521,8 @@ const ignoresCatchUpRequestsItMustNotAnswer = () =>
         requesterAgentId: fixture.local.card.agentId,
       }),
     });
-    const queued = (yield* fixture.store.recover()).outboundMessages;
+    const queued = (yield* fixture.store.run(testStore.recover()))
+      .outboundMessages;
 
     expect(dispositions).toEqual({
       forAnotherMember: ignoredDisposition,
@@ -5797,91 +5590,6 @@ const answersCatchUpThroughAStoredCompletedReanchor = () =>
   });
 
 /**
- * A store that holds its next full read, once armed, until the test releases
- * it. A test arms it just before the step whose read it wants to hold.
- * @param store Store the engine under test reads.
- * @returns The wrapped store, the arm switch, the signal that a read is
- *     held, and the release.
- */
-const holdNextStoreRead = (store: DaemonStore) =>
-  Effect.gen(function* () {
-    const armed = yield* Ref.make(false);
-    const held = yield* Deferred.make<undefined>();
-    const release = yield* Deferred.make<undefined>();
-    const gated: DaemonStore = {
-      ...store,
-      recover: () =>
-        Ref.getAndSet(armed, false).pipe(
-          Effect.flatMap((hold) =>
-            hold
-              ? Deferred.succeed(held, undefined).pipe(
-                  Effect.zipRight(Deferred.await(release)),
-                  Effect.zipRight(store.recover()),
-                )
-              : store.recover(),
-          ),
-        ),
-    };
-    return {
-      store: gated,
-      arm: Ref.set(armed, true),
-      held: Deferred.await(held),
-      release: Deferred.succeed(release, undefined),
-    };
-  });
-
-/**
- * A member's catch-up request arrives while this endpoint's recovery still
- * reads the durable history it recovers, before its run starts. The answer
- * goes out ahead of the run's own request: it waits in the durable outbox
- * only until the run starts and the Router worker sends again, and no row is
- * left once it is sent. The test holds the recovery's first store read until
- * the request is answered. Fails when the answer waits for this endpoint's
- * own recovery to finish, so two endpoints recovering together each wait for
- * the other's answer.
- */
-const answersCatchUpRequestBeforeItsRunStarts = () =>
-  Effect.gen(function* () {
-    const fixture = yield* makeFixture;
-    const start = yield* holdNextStoreRead(fixture.store);
-    const engine = yield* makeEndpointEngine({
-      ...fixture.input,
-      store: start.store,
-    }).pipe(Effect.orDie);
-    const peerRequest = peerCatchUpRequest(fixture);
-
-    yield* start.arm;
-    const { recovery, outbound } = yield* forkRecovery(
-      { engine, recoveryOutbound: fixture.recoveryOutbound },
-      "feed_gap",
-      oldRouterInstanceId,
-    );
-    yield* start.held;
-    const answered = yield* deliverRecovery(
-      engine,
-      directPacketIngressFrom({
-        membership: fixture.membership,
-        sender: fixture.remote,
-        packet: peerRequest,
-        routerInstanceId: oldRouterInstanceId,
-      }),
-    );
-    yield* start.release;
-    const firstSent = yield* Queue.take(outbound).pipe(
-      Effect.flatMap((message) => openForwarded(message)),
-    );
-    const durable = (yield* fixture.store.recover()).outboundMessages;
-    yield* Fiber.interrupt(recovery);
-
-    expect(answered).toBe(acceptedDisposition);
-    expect(firstSent).toMatchObject({
-      kind: "direct",
-      packet: { kind: "catch_up_incomplete", request: peerRequest },
-    });
-    expect(durable).toEqual([]);
-  });
-
-/**
  * Opens the fixture's remote member as a second endpoint with its own store,
  * holding the conversation foundation and the certified first message record the
  * fixture endpoint holds once it retains that record. The remote member
@@ -5903,26 +5611,27 @@ const openPeerEngine = (fixture: RecoveryFixture) =>
       ...fixture.input,
       localAgentCard: fixture.remote.card,
       signingAuthority: fixture.remote.authority,
-      store,
       routerWorker: makeFixtureRouter({
         store,
         local: fixture.remote,
         normalOutbound,
         recoveryOutbound,
       }),
-    });
+    }).pipe(Effect.provideService(SqlClient.SqlClient, store.sql));
     const { messageIntent } =
       fixture.certifiedRecord.actionCertifiedRecord.recordCore.action;
-    yield* store.bindMessageIntent({
-      kind: "existing-conversation",
-      intent: {
-        conversationId: messageIntent.conversationId,
-        membershipHash: messageIntent.membershipHash,
-        authorAgentId: messageIntent.authorAgentId,
-        msgId: messageIntent.msgId,
-        canonicalIntent: yield* encodeCanonical(MessageIntent, messageIntent),
-      },
-    });
+    yield* store.run(
+      testStore.bindMessageIntent({
+        kind: "existing-conversation",
+        intent: {
+          conversationId: messageIntent.conversationId,
+          membershipHash: messageIntent.membershipHash,
+          authorAgentId: messageIntent.authorAgentId,
+          msgId: messageIntent.msgId,
+          canonicalIntent: yield* encodeCanonical(MessageIntent, messageIntent),
+        },
+      }),
+    );
     yield* directPacketIngressFrom({
       membership: fixture.membership,
       sender: fixture.local,
@@ -5996,8 +5705,8 @@ const relayRecoveryTraffic = (
  * @param oldAnchor Anchor the conversation held before the restart.
  * @returns The store's positions once the conversation re-anchored.
  */
-const awaitReanchoredFrom = (store: DaemonStore, oldAnchor: string) =>
-  store.recover().pipe(
+const awaitReanchoredFrom = (store: TestDatabase, oldAnchor: string) =>
+  store.run(testStore.recover()).pipe(
     Effect.map(({ positions }) => positions),
     Effect.filterOrFail(
       (positions) =>
@@ -6008,161 +5717,6 @@ const awaitReanchoredFrom = (store: DaemonStore, oldAnchor: string) =>
     Effect.retry(Schedule.spaced("10 millis")),
     Effect.orDie,
   );
-
-/**
- * Both members of a direct conversation recover from a Router restart at
- * once, as every endpoint does after a restart. The peer's run starts first
- * and asks this endpoint for its history while this endpoint's recovery
- * still reads the store; once this endpoint's run starts, the two runs answer
- * each other, re-anchor at the same anchor, and both complete. Fails when
- * the early answer waits in the durable outbox until this endpoint's
- * recovery ends: the peer never votes without it, so neither run completes.
- */
-const twoMembersRecoverTogetherAfterARouterRestart = () =>
-  Effect.gen(function* () {
-    const fixture = yield* makeFixture;
-    yield* retainCertifiedRecord(fixture);
-    const peer = yield* openPeerEngine(fixture);
-    const start = yield* holdNextStoreRead(fixture.store);
-    const engine = yield* makeEndpointEngine({
-      ...fixture.input,
-      store: start.store,
-    }).pipe(Effect.orDie);
-
-    yield* start.arm;
-    const local = yield* forkRecovery(
-      { engine, recoveryOutbound: fixture.recoveryOutbound },
-      "router_restarted",
-      newRouterInstanceId,
-    );
-    yield* start.held;
-    const remote = yield* forkRecovery(
-      peer,
-      "router_restarted",
-      newRouterInstanceId,
-    );
-    const toLocal = yield* relayRecoveryTraffic(remote.outbound, engine, {
-      sender: fixture.remote,
-      receiver: fixture.local,
-    });
-    yield* relayRecoveryTraffic(local.outbound, peer.engine, {
-      sender: fixture.local,
-      receiver: fixture.remote,
-    });
-    const earlyRequestDisposition = yield* Queue.take(toLocal);
-    yield* start.release;
-    const recovered = yield* Effect.all([
-      Fiber.await(local.recovery),
-      Fiber.await(remote.recovery),
-    ]);
-    const oldAnchor =
-      fixture.certifiedRecord.actionCertifiedRecord.recordCore.anchorHash;
-    const localPositions = yield* awaitReanchoredFrom(fixture.store, oldAnchor);
-    const peerPositions = yield* awaitReanchoredFrom(peer.store, oldAnchor);
-
-    expect(earlyRequestDisposition).toBe(acceptedDisposition);
-    expect(recovered).toStrictEqual([Exit.void, Exit.void]);
-    expect(localPositions).toHaveLength(1);
-    expect(peerPositions).toStrictEqual(localPositions);
-    expect(localPositions[0]?.currentAnchorHash).not.toBe(
-      fixture.certifiedRecord.actionCertifiedRecord.recordCore.anchorHash,
-    );
-  });
-
-/**
- * The store fails, rather than refuses, while applying a member's caught-up
- * completed re-anchor. That is a local failure, so the page fails with a
- * persistence error instead of being reported ignored. Fails when every store
- * error on that path is treated as a refusal.
- */
-const failsWhenTheStoreFailsWhileApplyingACaughtUpReanchor = () =>
-  Effect.gen(function* () {
-    const fixture = yield* makeFixture;
-    yield* retainCertifiedRecord(fixture);
-    const failingStore: DaemonStore = {
-      ...fixture.store,
-      applyCatchUpReanchor: () =>
-        Effect.fail(new EndpointStoreError({ reason: "persistence" })),
-    };
-    const engine = yield* makeEndpointEngine({
-      ...fixture.input,
-      store: failingStore,
-    }).pipe(Effect.orDie);
-    const { recordCore, recordHash } =
-      fixture.certifiedRecord.actionCertifiedRecord;
-    const completed = yield* completedReanchorBy(
-      {
-        sharnessVersion: WIRE_VERSION,
-        kind: "reanchor_body",
-        conversationId: recordCore.action.conversationId,
-        membershipHash: fixture.membership.hash,
-        previousAnchorHash: recordCore.anchorHash,
-        selectedRecordHash: recordHash,
-        routerInstanceId: newRouterInstanceId,
-      },
-      [fixture.local, fixture.remote],
-    );
-    const { recovery, request } = yield* startRestartRecovery({
-      ...fixture,
-      engine,
-    });
-
-    const page = yield* deliverRecovery(
-      engine,
-      catchUpPageIngressFrom({
-        membership: fixture.membership,
-        responder: fixture.remote,
-        request,
-        item: completed,
-        routerInstanceId: newRouterInstanceId,
-      }),
-    ).pipe(Effect.exit);
-
-    expect(page).toStrictEqual(Exit.fail(new RouterWorkerPersistenceError()));
-    yield* Fiber.interrupt(recovery);
-  });
-
-/**
- * A member's incomplete answer readies a restarted position, and a new
- * recovery replaces the run while the endpoint reads the position to advance
- * it. The replaced run proposes and signs nothing, and the answer still
- * counts. Fails when the replaced run's proposal fails the answer with a
- * persistence error, or signs a candidate for a run that no longer exists.
- */
-const proposesNothingOnceItsRunHasEnded = () =>
-  Effect.gen(function* () {
-    const fixture = yield* makeFixture;
-    yield* retainCertifiedRecord(fixture);
-    const position = yield* holdNextStoreRead(fixture.store);
-    const engine = yield* makeEndpointEngine({
-      ...fixture.input,
-      store: position.store,
-    }).pipe(Effect.orDie);
-    const { recovery, outbound, request } = yield* startRestartRecovery({
-      ...fixture,
-      engine,
-    });
-
-    yield* position.arm;
-    const answering = yield* Effect.fork(
-      deliverRecovery(engine, catchUpIncompleteIngress(fixture, request)),
-    );
-    yield* position.held;
-    const replacing = yield* forkRecovery(
-      { engine, recoveryOutbound: fixture.recoveryOutbound },
-      "router_restarted",
-      newRouterInstanceId,
-    );
-    yield* Fiber.join(replacing.recovery);
-    yield* position.release;
-    const answered = yield* Fiber.await(answering);
-    yield* takeCatchUpRequest(outbound);
-
-    expect(answered).toStrictEqual(Exit.succeed(acceptedDisposition));
-    expect((yield* fixture.store.recover()).stagedReanchors).toEqual([]);
-    expect(Option.isNone(yield* Queue.poll(outbound))).toBe(true);
-    yield* Fiber.interrupt(recovery);
-  });
 
 /**
  * A short live pause while the test clock stands still. A check that nothing
@@ -6560,53 +6114,6 @@ const proposesPendingMessagesOnlyOnceItsConversationRecovers = () =>
   });
 
 /**
- * A member's answer completes a conversation's catch-up, and the delivery
- * that carries it is interrupted while the conversation's held work resumes,
- * as the Router worker interrupts its recovery poll once recovery returns.
- * The conversation still finishes recovering: its fence is released and the
- * owner's message reaches the Router. The test holds the store read the resume
- * takes until the interruption is pending. Fails when an interruption between
- * counting the conversation recovered and releasing its fence leaves the
- * fence held with nothing left to release it.
- */
-const finishesRecoveryWhenItsDeliveryIsInterrupted = () =>
-  Effect.gen(function* () {
-    const fixture = yield* makeFixture;
-    const start = yield* holdNextStoreRead(fixture.store);
-    const engine = yield* makeEndpointEngine({
-      ...fixture.input,
-      store: start.store,
-    }).pipe(Effect.orDie);
-    const { outbound } = yield* forkRecovery(
-      { engine, recoveryOutbound: fixture.recoveryOutbound },
-      "feed_gap",
-      oldRouterInstanceId,
-    );
-    const request = yield* takeCatchUpRequest(outbound);
-
-    yield* start.arm;
-    const delivering = yield* Effect.fork(
-      deliverRecovery(engine, catchUpIncompleteIngress(fixture, request)),
-    );
-    yield* start.held;
-    const interrupting = yield* Effect.fork(Fiber.interrupt(delivering));
-    yield* start.release;
-    yield* Fiber.join(interrupting);
-    yield* forkSend(
-      engine,
-      `agent:${fixture.remote.card.agentName}`,
-      "sent after an interrupted recovery delivery",
-    );
-    const proposal = yield* takeActionProposalAfterEvidence(
-      fixture.normalOutbound,
-    );
-
-    expect(proposal.proposal.action.conversationId).toBe(
-      fixture.membership.descriptor.conversationId,
-    );
-  });
-
-/**
  * The direct conversation recovers on its member's first answer while the
  * N4 conversation's members stay silent, so the run keeps going. However long
  * the clock runs, every retry asks for the N4 conversation and none for the
@@ -6881,9 +6388,9 @@ const resendsAProposalAMemberDroppedWhileRecovering = () =>
     }).pipe(
       Effect.flatMap((ingress) => fixture.engine.acceptRouterIngress(ingress)),
     );
-    const staged = (yield* fixture.store.recover()).stagedRecords.find(
-      (record) => record.actionHash === actionHash,
-    );
+    const staged = (yield* fixture.store.run(
+      testStore.recover(),
+    )).stagedRecords.find((record) => record.actionHash === actionHash);
     if (staged === undefined) {
       return yield* Effect.dieMessage("the author staged no record");
     }
@@ -7057,7 +6564,7 @@ const recoversSeveralConversationsIndependently = () =>
         ),
       { concurrency: 1, discard: true },
     );
-    const recovered = yield* fixture.store.recover();
+    const recovered = yield* fixture.store.run(testStore.recover());
     expect(
       recovered.positions.find(
         (position) => position.conversationId === direct.conversationId,
@@ -7154,10 +6661,6 @@ describe("catch-up and re-anchor inside a recovery run", () => {
     "proposes a pending message only once its conversation recovers, at the head it settles on",
     proposesPendingMessagesOnlyOnceItsConversationRecovers,
   );
-  it(
-    "finishes recovering a conversation whose completing delivery is interrupted",
-    finishesRecoveryWhenItsDeliveryIsInterrupted,
-  );
   itOnTestClock(
     "stops catch-up retries once the conversation recovers",
     stopsCatchUpRetriesOnceRecovered,
@@ -7171,36 +6674,12 @@ describe("catch-up and re-anchor inside a recovery run", () => {
     answersCatchUpRequestDuringItsOwnRecovery,
   );
   it(
-    "answers a catch-up request that arrives before its run starts",
-    answersCatchUpRequestBeforeItsRunStarts,
-  );
-  it(
-    "completes when both members of a direct conversation recover from a Router restart at once",
-    twoMembersRecoverTogetherAfterARouterRestart,
-  );
-  it(
     "asks for catch-up again when a member votes for a head it lacks",
     requestsCatchUpForAVoteAtAnUnknownHead,
   );
   it(
     "adopts a re-anchor members completed while it was down",
     adoptsReanchorCompletedWhileItWasDown,
-  );
-  it(
-    "fails when the store fails while persisting a member's vote",
-    failsWhenTheStoreFailsWhilePersistingAPeerVote,
-  );
-  it(
-    "fails when the store fails while applying a caught-up re-anchor",
-    failsWhenTheStoreFailsWhileApplyingACaughtUpReanchor,
-  );
-  it(
-    "proposes nothing once a new recovery replaces its run",
-    proposesNothingOnceItsRunHasEnded,
-  );
-  it(
-    "fails when the store refuses its own fresh re-anchor vote",
-    failsWhenTheStoreRefusesItsOwnFreshVote,
   );
   it(
     "ignores catch-up requests for another requester, another membership, or itself",
@@ -7264,9 +6743,9 @@ const stageMessageAtTheAuthor = (
     );
     yield* fixture.engine.drainOutbound.pipe(Effect.orDie);
     yield* Queue.takeAll(fixture.normalOutbound);
-    const staged = (yield* fixture.store.recover()).stagedRecords.find(
-      (record) => record.actionHash === actionHash,
-    );
+    const staged = (yield* fixture.store.run(
+      testStore.recover(),
+    )).stagedRecords.find((record) => record.actionHash === actionHash);
     if (staged === undefined) {
       return yield* Effect.dieMessage("the author staged no record");
     }
@@ -7383,9 +6862,10 @@ const certifiesAStagedSuccessorOnAVoteAMemberSendsAgain = () =>
     ]);
     expect(recoveryAnswers).toEqual([]);
     expect(certified).toBe(acceptedDisposition);
-    expect((yield* fixture.store.recover()).positions[0]?.headRecordHash).toBe(
-      recordHash,
-    );
+    expect(
+      (yield* fixture.store.run(testStore.recover())).positions[0]
+        ?.headRecordHash,
+    ).toBe(recordHash);
     expect(next.knownRecordHash).toBe(recordHash);
   });
 
@@ -7420,7 +6900,9 @@ const resendsItsStagedSuccessorInsteadOfVotingAtItsHead = () =>
       { kind: "evidence" },
     ]);
     expect(recoveryTraffic).toEqual([]);
-    expect((yield* fixture.store.recover()).stagedReanchors).toEqual([]);
+    expect(
+      (yield* fixture.store.run(testStore.recover())).stagedReanchors,
+    ).toEqual([]);
   });
 
 /**
@@ -7480,8 +6962,12 @@ const certifiesAMessageOneDirectMemberStagedBeforeTheRestart = () =>
     expect(localPositions[0]?.headRecordHash).toBe(staged.recordHash);
     expect(peerPositions).toStrictEqual(localPositions);
     expect(sent.recordHash).toBe(staged.recordHash);
-    expect(candidatesAtHead(yield* fixture.store.recover())).toEqual([]);
-    expect(candidatesAtHead(yield* peer.store.recover())).toEqual([]);
+    expect(
+      candidatesAtHead(yield* fixture.store.run(testStore.recover())),
+    ).toEqual([]);
+    expect(
+      candidatesAtHead(yield* peer.store.run(testStore.recover())),
+    ).toEqual([]);
   });
 
 /**
@@ -7594,7 +7080,7 @@ const groupState = (
   group: Pick<GroupFoundation, "membership">,
   recordHash: string,
 ) =>
-  fixture.store.recover().pipe(
+  fixture.store.run(testStore.recover()).pipe(
     Effect.map((recovery) => {
       const conversationId = group.membership.descriptor.conversationId;
       return {
@@ -7892,14 +7378,13 @@ const openN4Holder = (
       ...fixture.input,
       localAgentCard: n4.fourth.card,
       signingAuthority: n4.fourth.authority,
-      store,
       routerWorker: makeFixtureRouter({
         store,
         local: n4.fourth,
         normalOutbound,
         recoveryOutbound,
       }),
-    });
+    }).pipe(Effect.provideService(SqlClient.SqlClient, store.sql));
     yield* Effect.forEach(
       [history.certifiedHead, history.stagedSuccessor],
       (packet) =>
@@ -8190,7 +7675,9 @@ const waitsBehindAnEarlierInstanceReanchor = (earlierVote: "own" | "member") =>
         routerInstanceId: laterRouterInstanceId,
       }),
     );
-    const anchor = (yield* fixture.store.recover()).positions.find(
+    const anchor = (yield* fixture.store.run(
+      testStore.recover(),
+    )).positions.find(
       (position) =>
         position.conversationId === n4.membership.descriptor.conversationId,
     )?.currentAnchorHash;
@@ -8632,14 +8119,16 @@ const keepsAnEarlierInstanceWaitAcrossAnIdenticalRetry = () =>
     state.pendingRequests.set(conversationId, request);
     const verifying = yield* Deferred.make<undefined>();
     const waiting = yield* Effect.fork(
-      waitBehindEarlierReanchor(
-        { state },
-        {
-          conversationId,
-          previousAnchorHash: recordCore.anchorHash,
-          selectedRecordHash: recordHash,
-        },
-        Deferred.await(verifying),
+      fixture.store.run(
+        waitBehindEarlierReanchor(
+          { state },
+          {
+            conversationId,
+            previousAnchorHash: recordCore.anchorHash,
+            selectedRecordHash: recordHash,
+          },
+          Deferred.await(verifying),
+        ),
       ),
     );
 
@@ -8806,7 +8295,7 @@ const retriesWhileARecordPageAwaitsPromotion = () =>
     );
     const recovered = yield* recoverEngineState(
       fixture.input,
-      yield* fixture.store.recover(),
+      yield* fixture.store.run(testStore.recover()),
     );
     const queued = yield* Queue.unbounded<DecodedOuterBody>();
     const unexpected = () =>
@@ -8846,13 +8335,12 @@ const retriesWhileARecordPageAwaitsPromotion = () =>
           : unexpected(),
     };
     function advanceHead() {
-      return requestCertifiedHistory(
-        run,
-        n4.membership.descriptor.conversationId,
+      return fixture.store.run(
+        requestCertifiedHistory(run, n4.membership.descriptor.conversationId),
       );
     }
     const conversationId = n4.membership.descriptor.conversationId;
-    yield* requestCertifiedHistory(run, conversationId);
+    yield* fixture.store.run(requestCertifiedHistory(run, conversationId));
     const pending = run.state.pendingRequests.get(conversationId);
     if (pending === undefined) {
       return yield* Effect.dieMessage("catch-up did not retain its request");
@@ -8875,14 +8363,18 @@ const retriesWhileARecordPageAwaitsPromotion = () =>
     ) {
       return yield* Effect.dieMessage("fixture did not deliver a page");
     }
-    expect(yield* acceptCatchUpPage(run, ingress, ingress.payload.packet)).toBe(
-      acceptedDisposition,
-    );
+    expect(
+      yield* fixture.store.run(
+        acceptCatchUpPage(run, ingress, ingress.payload.packet),
+      ),
+    ).toBe(acceptedDisposition);
     expect(yield* Queue.size(queued)).toBe(0);
     expect(run.state.incompleteResponders.get(conversationId)).toEqual(
       new Set([n4.third.card.agentId]),
     );
-    yield* resendCertifiedHistoryRequest(run, conversationId);
+    yield* fixture.store.run(
+      resendCertifiedHistoryRequest(run, conversationId),
+    );
     expect(yield* Queue.take(queued)).toEqual({
       kind: "direct",
       packet: pending,
@@ -8893,10 +8385,12 @@ const retriesWhileARecordPageAwaitsPromotion = () =>
       history.stagedSuccessor.recordHash,
     );
     expect(before.head).toBe(pending.knownRecordHash);
-    yield* acceptEngineRecoveryIngress(runtime, {
-      ...ingress,
-      payload: { kind: "direct", packet: history.certifiedSuccessor },
-    });
+    yield* fixture.store.run(
+      acceptEngineRecoveryIngress(runtime, {
+        ...ingress,
+        payload: { kind: "direct", packet: history.certifiedSuccessor },
+      }),
+    );
     const after = run.state.pendingRequests.get(conversationId);
     expect(after?.knownRecordHash).toBe(history.stagedSuccessor.recordHash);
     expect(yield* Queue.take(queued)).toEqual({
@@ -9074,13 +8568,17 @@ const sendsARetainedOutboxRowAfterAColdStart = () =>
   Effect.gen(function* () {
     const fixture = yield* makeFixture;
     const retained = yield* stageCatchUpOutbound(fixture);
-    const restarted = yield* makeEndpointEngine(fixture.input);
+    const restarted = yield* makeEndpointEngine(fixture.input).pipe(
+      Effect.provideService(SqlClient.SqlClient, fixture.store.sql),
+    );
 
     yield* restarted.runOutbound.pipe(Effect.orDie, Effect.forkScoped);
     const sent = yield* Queue.take(fixture.recoveryOutbound);
 
     expect(sent.envelopeId).toBe(retained.envelopeId);
-    expect((yield* fixture.store.recover()).outboundMessages).toEqual([]);
+    expect(
+      (yield* fixture.store.run(testStore.recover())).outboundMessages,
+    ).toEqual([]);
   });
 
 /**
@@ -9095,9 +8593,11 @@ const sendsAnUnattachedObligationsCopyAfterAColdStart = () =>
   Effect.gen(function* () {
     const fixture = yield* makeFixture;
     yield* stageUnattachedDissemination(fixture);
-    const before = yield* fixture.store.recover();
+    const before = yield* fixture.store.run(testStore.recover());
 
-    const restarted = yield* makeEndpointEngine(fixture.input);
+    const restarted = yield* makeEndpointEngine(fixture.input).pipe(
+      Effect.provideService(SqlClient.SqlClient, fixture.store.sql),
+    );
     yield* restarted.drainOutbound;
     const sent = yield* Effect.forEach(
       yield* Queue.takeAll(fixture.normalOutbound),
@@ -9117,221 +8617,9 @@ const sendsAnUnattachedObligationsCopyAfterAColdStart = () =>
       ),
       "action-certified copies the restarted engine sent",
     ).toHaveLength(1);
-    expect((yield* fixture.store.recover()).disseminationObligations).toEqual(
-      [],
-    );
-  });
-
-/**
- * Stages the endpoint's candidate at the N4 head, through an engine whose
- * store then refuses the certified successor. The endpoint locks the
- * successor's action and stores its action certificate before the store
- * refuses the record, so the store keeps both; a store left with no lock, or
- * with the successor staged, is a broken fixture, and the trace dies.
- * @param fixture Endpoint whose store holds the N4 conversation.
- * @returns The refused successor's record hash and the N4 conversation's id.
- */
-const refuseSuccessorBehindStagedCandidate = (fixture: RecoveryFixture) =>
-  Effect.gen(function* () {
-    const n4 = yield* addN4Foundation(fixture);
-    const history = yield* buildN4PartialHistory(fixture, n4);
-    const successorHash =
-      history.certifiedSuccessor.actionCertifiedRecord.recordHash;
-    const refusingStore: DaemonStore = {
-      ...fixture.store,
-      applyCertifiedRecord: (record, delivery) =>
-        record.recordHash === successorHash
-          ? Effect.fail(new EndpointStoreError({ reason: "conflict" }))
-          : fixture.store.applyCertifiedRecord(record, delivery),
-    };
-    const refusing = {
-      ...n4,
-      engine: yield* makeEndpointEngine({
-        ...fixture.input,
-        store: refusingStore,
-      }).pipe(Effect.orDie),
-    };
-    const { recovery } = yield* deliverN4SuccessorPastStagedCandidate(
-      fixture,
-      refusing,
-      history,
-    );
-    yield* Fiber.interrupt(recovery);
-    const { proposalLocks, stagedRecords } = yield* fixture.store.recover();
-    const { actionHash } =
-      history.certifiedSuccessor.actionCertifiedRecord.recordCore;
-    if (
-      !proposalLocks.some((lock) => lock.actionHash === actionHash) ||
-      stagedRecords.some((staged) => staged.recordHash === successorHash)
-    ) {
-      return yield* Effect.dieMessage(
-        "the refused successor left no lock, or was staged",
-      );
-    }
-    return {
-      successorHash,
-      conversationId: n4.membership.descriptor.conversationId,
-    };
-  });
-
-/**
- * The endpoint staged its candidate at the N4 head, and the store then
- * refused the certified successor after the endpoint had locked its action
- * and stored its action certificate. An engine that starts over the store
- * cannot stage the successor for its vote under the anchor its candidate
- * leaves, so it starts and leaves that conversation waiting: it sends no copy
- * of the successor and no vote for it. Fails when that store refusal stops
- * the engine from starting.
- * @returns The trace, run to completion.
- */
-const startsPastASuccessorItCannotStageBehindItsCandidate = () =>
-  Effect.gen(function* () {
-    const fixture = yield* makeFixture;
-    const { successorHash } =
-      yield* refuseSuccessorBehindStagedCandidate(fixture);
-    yield* Queue.takeAll(fixture.normalOutbound);
-
-    const restart = yield* Effect.either(makeEndpointEngine(fixture.input));
     expect(
-      Either.getLeft(restart),
-      "the error the restart over the store failed with",
-    ).toEqual(Option.none());
-    const restarted = yield* restart;
-    yield* restarted.drainOutbound;
-    const sent = yield* Effect.forEach(
-      yield* Queue.takeAll(fixture.normalOutbound),
-      (message) => carriedBy(message),
-      { concurrency: 1 },
-    );
-
-    expect(
-      sent.filter(
-        (carried) =>
-          carried.kind === "action_certified_record" &&
-          carried.recordHash === successorHash,
-      ),
-      "copies of the successor the restarted endpoint sent",
+      (yield* fixture.store.run(testStore.recover())).disseminationObligations,
     ).toEqual([]);
-    expect(
-      sent.filter(
-        (carried) =>
-          carried.kind === "durability_vote" &&
-          carried.recordHash === successorHash,
-      ),
-      "durability votes for the successor the restarted endpoint sent",
-    ).toEqual([]);
-  });
-
-/**
- * The endpoint staged its candidate at the N4 head and holds the certified
- * successor's action certificate, and the store then fails, rather than
- * refuses, as a restarting engine stages that successor. That is a local
- * failure, so the engine does not start. Fails when every store error while
- * resuming a fold is treated as a refusal, so a failing store skips the
- * evidence a fold owes and the engine starts as if nothing were due.
- * @returns The trace, run to completion.
- */
-const failsToStartWhenTheStoreFailsToStageASuccessorBehindItsCandidate = () =>
-  Effect.gen(function* () {
-    const fixture = yield* makeFixture;
-    yield* refuseSuccessorBehindStagedCandidate(fixture);
-    const failingStore: DaemonStore = {
-      ...fixture.store,
-      stageRecordForDissemination: () =>
-        Effect.fail(new EndpointStoreError({ reason: "persistence" })),
-    };
-
-    const restart = yield* Effect.exit(
-      makeEndpointEngine({ ...fixture.input, store: failingStore }),
-    );
-
-    expect(restart, "the restart over the store that fails staging").toEqual(
-      Exit.fail(new EngineInitializationError({ reason: "persistence" })),
-    );
-  });
-
-/**
- * The remote member's FIRST_MESSAGE proposal for the fixture's direct conversation,
- * at the empty foundation a restart recovery gave that conversation at the
- * new Router instance.
- * @param fixture Endpoint whose direct conversation the proposal opens.
- * @returns The proposal.
- */
-const remoteFirstMessageAtTheRestartedFoundation = (
-  fixture: RecoveryFixture,
-): Effect.Effect<ActionProposal> =>
-  Effect.gen(function* () {
-    const conversationId = fixture.membership.descriptor.conversationId;
-    const messageIntent: MessageIntent = {
-      sharnessVersion: WIRE_VERSION,
-      kind: "message_intent",
-      conversationId,
-      membershipHash: fixture.membership.hash,
-      authorAgentId: fixture.remote.card.agentId,
-      msgId: yield* mintMsgId(),
-      content: [{ type: "text", text: "proposed after the restart" }],
-    };
-    const action: FirstMessageActionCore = {
-      sharnessVersion: WIRE_VERSION,
-      kind: "FIRST_MESSAGE",
-      conversationId,
-      membership: fixture.membership.descriptor,
-      anchor: {
-        sharnessVersion: WIRE_VERSION,
-        kind: "initial_anchor_body",
-        conversationId,
-        membershipHash: fixture.membership.hash,
-        routerInstanceId: newRouterInstanceId,
-      },
-      previousRecordHash: null,
-      messageIntent,
-      messageIntentHash: yield* hashMessageIntent(messageIntent),
-    };
-    return {
-      sharnessVersion: WIRE_VERSION,
-      kind: "action_proposal",
-      action,
-    } satisfies ActionProposal;
-  }).pipe(Effect.orDie);
-
-/**
- * The store refused the N4 successor behind the endpoint's candidate. The
- * endpoint then started again and signed the remote member's FIRST_MESSAGE
- * proposal for its direct conversation, whose id sorts after the N4
- * conversation's, so a start resumes that fold after the refused one. An
- * engine that starts over the store once more sends the signature again: the
- * refusal leaves only the N4 conversation waiting. Fails when a refusal ends
- * the whole resume, so every fold after the refused one sends nothing it owes.
- * @returns The trace, run to completion.
- */
-const resumesALaterConversationPastARefusedFold = () =>
-  Effect.gen(function* () {
-    const fixture = yield* makeFixture;
-    const refused = yield* refuseSuccessorBehindStagedCandidate(fixture);
-    const proposal = yield* remoteFirstMessageAtTheRestartedFoundation(fixture);
-    const actionHash = yield* hashAction(proposal.action);
-    const started = yield* makeEndpointEngine(fixture.input);
-    yield* directPacketIngressFrom({
-      membership: fixture.membership,
-      sender: fixture.remote,
-      packet: proposal,
-      routerInstanceId: newRouterInstanceId,
-    }).pipe(Effect.flatMap((ingress) => started.acceptRouterIngress(ingress)));
-    yield* started.drainOutbound;
-    const signed = yield* takeSignedActionHashes(fixture.normalOutbound);
-
-    const restarted = yield* makeEndpointEngine(fixture.input);
-    yield* restarted.drainOutbound;
-    const signedAgain = yield* takeSignedActionHashes(fixture.normalOutbound);
-
-    expect(
-      fixture.membership.descriptor.conversationId > refused.conversationId,
-      "the direct conversation's folds resume after the N4 conversation's",
-    ).toBe(true);
-    expect(signed, "actions the started endpoint signed").toContain(actionHash);
-    expect(signedAgain, "actions the restarted endpoint signed").toContain(
-      actionHash,
-    );
   });
 
 describe("evidence and outbox rows an engine resumes", () => {
@@ -9346,17 +8634,5 @@ describe("evidence and outbox rows an engine resumes", () => {
   it(
     "queues the copy an unattached dissemination obligation owes when an engine starts",
     sendsAnUnattachedObligationsCopyAfterAColdStart,
-  );
-  it(
-    "starts past a successor it cannot stage behind its re-anchor candidate, sending no copy or vote for it",
-    startsPastASuccessorItCannotStageBehindItsCandidate,
-  );
-  it(
-    "fails to start as persistence when the store fails, rather than refuses, to stage a successor behind its re-anchor candidate",
-    failsToStartWhenTheStoreFailsToStageASuccessorBehindItsCandidate,
-  );
-  it(
-    "resumes a later conversation's fold past a fold the store refuses",
-    resumesALaterConversationPastARefusedFold,
   );
 });

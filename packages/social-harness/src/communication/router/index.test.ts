@@ -33,9 +33,13 @@ import {
   signMessage,
   type TestPayload,
   unavailableRegistryLayer,
-  unreachableOutbox,
 } from "../../__tests__/router-worker-fixtures.js";
-import { stateDirectory } from "../../__tests__/store-schema-fixtures.js";
+import {
+  stateDirectory,
+  withDaemonStore,
+  type TestStore,
+} from "../../__tests__/store-schema-fixtures.js";
+import { SqlClient } from "@effect/sql";
 import { encodeCanonical } from "../../encoding/canonical-json.js";
 import {
   SignedMessage,
@@ -47,11 +51,8 @@ import {
   UnavailableError,
   VersionMismatchError,
 } from "../../identity/signing/http-errors.js";
-import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import {
   type ConversationFoundation,
-  type EndpointStore,
-  openEndpointStore,
   type StoredOutboundMessage,
 } from "../store/index.js";
 import { Router } from "./api/client.js";
@@ -148,13 +149,11 @@ const callbacks = (input?: {
 const makeInput = (
   fixture: Fixture,
   workerCallbacks: RouterWorkerCallbacks<TestPayload>,
-  outbox: RouterWorkerInput<TestPayload>["outbox"] = unreachableOutbox,
 ): RouterWorkerInput<TestPayload> => ({
   callerAgentId: fixture.localCard.agentId,
   callerAgentCard: fixture.localCard,
   pinnedSenderCards: [fixture.localCard],
   signingAuthority: fixture.localAuthority,
-  outbox,
   callbacks: workerCallbacks,
 });
 
@@ -202,21 +201,14 @@ const provide = <A, E, R>(
   );
 
 const withOutbox = <Value, Failure, Requirements>(
-  use: (store: EndpointStore) => Effect.Effect<Value, Failure, Requirements>,
-) =>
-  Effect.scoped(
-    Effect.suspend(() =>
-      openEndpointStore(stateDirectory(), {
-        liveWireVersions: LIVE_WIRE_VERSIONS,
-      }),
-    ).pipe(Effect.flatMap(use)),
-  );
+  use: (store: TestStore) => Effect.Effect<Value, Failure, Requirements>,
+) => withDaemonStore(stateDirectory(), use);
 
 function prepareOutbound(
-  store: EndpointStore,
+  store: TestStore,
   conversationId: string,
   message: SignedMessageValue,
-): Effect.Effect<StoredOutboundMessage> {
+): Effect.Effect<StoredOutboundMessage, never, SqlClient.SqlClient> {
   return store.putConversationFoundation(routerFoundation(conversationId)).pipe(
     Effect.orDie,
     Effect.zipRight(encodeCanonical(SignedMessage, message).pipe(Effect.orDie)),
@@ -387,7 +379,7 @@ function sendThroughScript(answers: readonly ScriptedSendAnswer[]) {
         sends: answers,
       });
       const worker = yield* provide(
-        makeActiveRouterWorker(makeInput(fixture, callbacks(), store)),
+        makeActiveRouterWorker(makeInput(fixture, callbacks())),
         router.layer,
         fixture,
       );
@@ -671,9 +663,7 @@ const restartedSendRecoversBeforeReturning = () =>
         sends: [{ kind: "router_restarted", routerInstanceId: newInstance }],
       });
       const worker = yield* provide(
-        makeActiveRouterWorker(
-          makeInput(fixture, callbacks({ events }), store),
-        ),
+        makeActiveRouterWorker(makeInput(fixture, callbacks({ events }))),
         router.layer,
         fixture,
       );
@@ -874,7 +864,6 @@ const normalSendWaitsForRecovery = () =>
                   Effect.zipRight(Deferred.await(releaseRecovery)),
                 ),
             }),
-            store,
           ),
         ),
         router.layer,
@@ -1089,10 +1078,14 @@ const countLogged = (lines: LogLines, text: string): number =>
  */
 const onTestClock = (
   lines: LogLines,
-  scenario: Effect.Effect<void, unknown, Router | Registry>,
+  scenario: Effect.Effect<
+    void,
+    unknown,
+    Router | Registry | SqlClient.SqlClient
+  >,
   routerLayer: Layer.Layer<Router>,
   fixture: Fixture,
-): Effect.Effect<void> =>
+): Effect.Effect<void, never, SqlClient.SqlClient> =>
   provide(scenario, routerLayer, fixture).pipe(
     Effect.orDie,
     Effect.provide(captureLogs(lines)),
@@ -1172,7 +1165,7 @@ const outageDetachesAndReattaches = () =>
             outgoing,
           );
           const worker = yield* makeActiveRouterWorker(
-            makeInput(fixture, callbacks({ events }), store),
+            makeInput(fixture, callbacks({ events })),
           );
           const polling = yield* Effect.fork(worker.run);
 
@@ -1370,7 +1363,7 @@ const staleFailureKeepsNewGenerationAttached = () =>
             outgoing,
           );
           const worker = yield* makeActiveRouterWorker(
-            makeInput(fixture, callbacks(), store),
+            makeInput(fixture, callbacks()),
           );
           const polling = yield* Effect.fork(worker.run);
           yield* Deferred.await(staleIssued);
@@ -1432,7 +1425,7 @@ const outageDuringRecoveryRecovers = () =>
             }),
           );
           const worker = yield* makeActiveRouterWorker(
-            makeInput(fixture, callbacks({ recover }), store),
+            makeInput(fixture, callbacks({ recover })),
           );
           const polling = yield* Effect.fork(worker.run);
           yield* Ref.set(tail, restarted);
@@ -1492,7 +1485,7 @@ const coldStartWithRouterDownRecovers = () =>
             }),
           );
           const worker = yield* makeRouterWorker(
-            makeInput(fixture, callbacks(), store),
+            makeInput(fixture, callbacks()),
           );
           const polling = yield* Effect.fork(worker.run);
           const attached = yield* Effect.fork(worker.awaitAnchor);
@@ -1615,34 +1608,43 @@ const persistenceFaultEndsPollLoop = () =>
 
 // @agent-code-guard/regression-only: these scenarios pin the endpoint cursor and recovery safety boundary.
 describe("private Router worker", () => {
-  it(
-    "recovers certified history before activating a cold worker",
-    coldStartRecoversBeforeActivation,
-  );
-  it(
-    "verifies a complete batch before dispatching any item",
-    batchVerificationIsAtomic,
-  );
-  it(
-    "accepts or ignores in order before advancing the cursor",
-    orderedCursorCommit,
-  );
-  it(
-    "retains the prior cursor when durable acceptance fails",
-    persistenceRetainsCursor,
-  );
-  it(
-    "retries an ambiguous send with the original envelope",
-    ambiguousSendRetriesSameBytes,
-  );
-  it(
-    "resends the stored envelope as initial after retry identity loss",
-    retryUnknownResendsStoredBytes,
-  );
-  it(
-    "asks again as retry when a resent initial loses the race to its slow original",
-    resentInitialLosesRaceToSlowOriginal,
-  );
+  it("recovers certified history before activating a cold worker", (...args: Parameters<
+    typeof coldStartRecoversBeforeActivation
+  >) =>
+    withDaemonStore(stateDirectory(), () =>
+      coldStartRecoversBeforeActivation(...args),
+    ));
+  it("verifies a complete batch before dispatching any item", (...args: Parameters<
+    typeof batchVerificationIsAtomic
+  >) =>
+    withDaemonStore(stateDirectory(), () =>
+      batchVerificationIsAtomic(...args),
+    ));
+  it("accepts or ignores in order before advancing the cursor", (...args: Parameters<
+    typeof orderedCursorCommit
+  >) => withDaemonStore(stateDirectory(), () => orderedCursorCommit(...args)));
+  it("retains the prior cursor when durable acceptance fails", (...args: Parameters<
+    typeof persistenceRetainsCursor
+  >) =>
+    withDaemonStore(stateDirectory(), () => persistenceRetainsCursor(...args)));
+  it("retries an ambiguous send with the original envelope", (...args: Parameters<
+    typeof ambiguousSendRetriesSameBytes
+  >) =>
+    withDaemonStore(stateDirectory(), () =>
+      ambiguousSendRetriesSameBytes(...args),
+    ));
+  it("resends the stored envelope as initial after retry identity loss", (...args: Parameters<
+    typeof retryUnknownResendsStoredBytes
+  >) =>
+    withDaemonStore(stateDirectory(), () =>
+      retryUnknownResendsStoredBytes(...args),
+    ));
+  it("asks again as retry when a resent initial loses the race to its slow original", (...args: Parameters<
+    typeof resentInitialLosesRaceToSlowOriginal
+  >) =>
+    withDaemonStore(stateDirectory(), () =>
+      resentInitialLosesRaceToSlowOriginal(...args),
+    ));
   it.each<FailClosedRow>([
     {
       result: "a retry conflicts",
@@ -1659,91 +1661,138 @@ describe("private Router worker", () => {
       answers: [messageInvalid, acceptsSentBytes],
       modes: ["initial"],
     },
-  ])("fails closed and retains the envelope when $result", resultFailsClosed);
-  it(
-    "leaves the envelope for the next drain once Router alternation spends every attempt",
-    alternatingConflictAndLossStopsAtTheBound,
+  ])(
+    "fails closed and retains the envelope when $result",
+    (...args: Parameters<typeof resultFailsClosed>) =>
+      withDaemonStore(stateDirectory(), () => resultFailsClosed(...args)),
   );
-  it(
-    "retains an envelope when Router acceptance names different bytes",
-    mismatchedAcceptedDigestRetainsOutbound,
-  );
-  it(
-    "recovers a fresh tail before returning a Router-restarted send",
-    restartedSendRecoversBeforeReturning,
-  );
-  it(
-    "promotes an omitted-tail instance change before recovery",
-    restartOrdersTailBeforeRecovery,
-  );
-  it(
-    "recovers again on the new instance when the next poll after a recovery names one",
-    recoveryRetryPromotesChangedTailToRestart,
-  );
-  it(
-    "holds normal sends until recovery activates its Router generation",
-    normalSendWaitsForRecovery,
-  );
-  it(
-    "accepts traffic the Router held during recovery once the worker is active",
-    ingressHeldDuringRecoveryIsAcceptedOnceActive,
-  );
-  it(
-    "authenticates pinned history senders while Registry is unavailable",
-    pinnedCardsSurviveRegistryOutage,
-  );
-  it(
-    "answers awaitAnchor once cold-start recovery activates the worker",
-    awaitAnchorResolvesOnActivation,
-  );
+  it("leaves the envelope for the next drain once Router alternation spends every attempt", (...args: Parameters<
+    typeof alternatingConflictAndLossStopsAtTheBound
+  >) =>
+    withDaemonStore(stateDirectory(), () =>
+      alternatingConflictAndLossStopsAtTheBound(...args),
+    ));
+  it("retains an envelope when Router acceptance names different bytes", (...args: Parameters<
+    typeof mismatchedAcceptedDigestRetainsOutbound
+  >) =>
+    withDaemonStore(stateDirectory(), () =>
+      mismatchedAcceptedDigestRetainsOutbound(...args),
+    ));
+  it("recovers a fresh tail before returning a Router-restarted send", (...args: Parameters<
+    typeof restartedSendRecoversBeforeReturning
+  >) =>
+    withDaemonStore(stateDirectory(), () =>
+      restartedSendRecoversBeforeReturning(...args),
+    ));
+  it("promotes an omitted-tail instance change before recovery", (...args: Parameters<
+    typeof restartOrdersTailBeforeRecovery
+  >) =>
+    withDaemonStore(stateDirectory(), () =>
+      restartOrdersTailBeforeRecovery(...args),
+    ));
+  it("recovers again on the new instance when the next poll after a recovery names one", (...args: Parameters<
+    typeof recoveryRetryPromotesChangedTailToRestart
+  >) =>
+    withDaemonStore(stateDirectory(), () =>
+      recoveryRetryPromotesChangedTailToRestart(...args),
+    ));
+  it("holds normal sends until recovery activates its Router generation", (...args: Parameters<
+    typeof normalSendWaitsForRecovery
+  >) =>
+    withDaemonStore(stateDirectory(), () =>
+      normalSendWaitsForRecovery(...args),
+    ));
+  it("accepts traffic the Router held during recovery once the worker is active", (...args: Parameters<
+    typeof ingressHeldDuringRecoveryIsAcceptedOnceActive
+  >) =>
+    withDaemonStore(stateDirectory(), () =>
+      ingressHeldDuringRecoveryIsAcceptedOnceActive(...args),
+    ));
+  it("authenticates pinned history senders while Registry is unavailable", (...args: Parameters<
+    typeof pinnedCardsSurviveRegistryOutage
+  >) =>
+    withDaemonStore(stateDirectory(), () =>
+      pinnedCardsSurviveRegistryOutage(...args),
+    ));
+  it("answers awaitAnchor once cold-start recovery activates the worker", (...args: Parameters<
+    typeof awaitAnchorResolvesOnActivation
+  >) =>
+    withDaemonStore(stateDirectory(), () =>
+      awaitAnchorResolvesOnActivation(...args),
+    ));
   it(
     "detaches through a Router outage, warns while it lasts, and reattaches",
-    outageDetachesAndReattaches,
+    (...args: Parameters<typeof outageDetachesAndReattaches>) =>
+      withDaemonStore(stateDirectory(), () =>
+        outageDetachesAndReattaches(...args),
+      ),
     30_000,
   );
   it(
     "stays up and warns when the Router drops out after a recovery",
-    outageDuringRecoveryRecovers,
+    (...args: Parameters<typeof outageDuringRecoveryRecovers>) =>
+      withDaemonStore(stateDirectory(), () =>
+        outageDuringRecoveryRecovers(...args),
+      ),
     30_000,
   );
   it(
     "cold-starts with the Router down, warns, and recovers when it answers",
-    coldStartWithRouterDownRecovers,
+    (...args: Parameters<typeof coldStartWithRouterDownRecovers>) =>
+      withDaemonStore(stateDirectory(), () =>
+        coldStartWithRouterDownRecovers(...args),
+      ),
     30_000,
   );
   it(
     "recovers from a restart a detached worker's probe discovers",
-    detachedRestartRecovers,
+    (...args: Parameters<typeof detachedRestartRecovers>) =>
+      withDaemonStore(stateDirectory(), () => detachedRestartRecovers(...args)),
     30_000,
   );
   it("retries a 503 within the poll without detaching", () =>
-    shortBlipKeepsWorkerAttached([
-      new UnavailableError(),
-      new UnavailableError(),
-    ]));
+    withDaemonStore(stateDirectory(), () =>
+      shortBlipKeepsWorkerAttached([
+        new UnavailableError(),
+        new UnavailableError(),
+      ]),
+    ));
   it("retries a 429 within the poll without detaching", () =>
-    shortBlipKeepsWorkerAttached([
-      new OverloadedError(),
-      new OverloadedError(),
-    ]));
+    withDaemonStore(stateDirectory(), () =>
+      shortBlipKeepsWorkerAttached([
+        new OverloadedError(),
+        new OverloadedError(),
+      ]),
+    ));
   it("retries a dropped connection within the poll without detaching", () =>
-    shortBlipKeepsWorkerAttached([new RouterConnectionError()]));
+    withDaemonStore(stateDirectory(), () =>
+      shortBlipKeepsWorkerAttached([new RouterConnectionError()]),
+    ));
   it(
     "keeps a generation recovery re-activated attached after a stale failure",
-    staleFailureKeepsNewGenerationAttached,
+    (...args: Parameters<typeof staleFailureKeepsNewGenerationAttached>) =>
+      withDaemonStore(stateDirectory(), () =>
+        staleFailureKeepsNewGenerationAttached(...args),
+      ),
     30_000,
   );
   it("logs why and ends the poll loop when the Router rejects the endpoint's authentication", () =>
-    rejectionEndsThePollLoop(
-      new AuthenticationFailedError(),
-      "authentication",
+    withDaemonStore(stateDirectory(), () =>
+      rejectionEndsThePollLoop(
+        new AuthenticationFailedError(),
+        "authentication",
+      ),
     ));
   it("logs why and ends the poll loop when the Router rejects the endpoint's version", () =>
-    rejectionEndsThePollLoop(new VersionMismatchError(), "version"));
-  it(
-    "ends the poll loop on a persistence fault without retrying",
-    persistenceFaultEndsPollLoop,
-  );
+    withDaemonStore(stateDirectory(), () =>
+      rejectionEndsThePollLoop(new VersionMismatchError(), "version"),
+    ));
+  it("ends the poll loop on a persistence fault without retrying", (...args: Parameters<
+    typeof persistenceFaultEndsPollLoop
+  >) =>
+    withDaemonStore(stateDirectory(), () =>
+      persistenceFaultEndsPollLoop(...args),
+    ));
 });
 
 /* eslint-enable max-lines, max-lines-per-function, sonarjs/max-lines-per-function, @typescript-eslint/no-invalid-void-type -- Restore repository defaults. */

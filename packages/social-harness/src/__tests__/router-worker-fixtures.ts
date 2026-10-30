@@ -2,7 +2,6 @@
 
 import { type Context, Effect, Encoding, Layer, Ref, Schema } from "effect";
 import { generateKeyPairSync } from "node:crypto";
-import type { RouterWorkerInput } from "../communication/router/index.js";
 import type { VerifiedAgentCard } from "../identity/cards.js";
 import type { AgentId as AgentIdValue } from "../identity/identifiers.js";
 import type { AgentSigningAuthority as AgentSigningAuthorityValue } from "../identity/keys.js";
@@ -72,14 +71,6 @@ export interface Fixture {
   readonly localCard: VerifiedAgentCard;
   readonly localAuthority: AgentSigningAuthorityValue;
 }
-
-/** Fails any unexpected store-backed outbound operation. */
-export const unreachableOutbox: RouterWorkerInput<TestPayload>["outbox"] =
-  Object.freeze({
-    enqueueOutbound: () => Effect.die("outbox must not be used"),
-    beginOutbound: () => Effect.die("outbox must not be used"),
-    completeOutbound: () => Effect.die("outbox must not be used"),
-  });
 
 /**
  * Construct a deterministic test EnvelopeId.

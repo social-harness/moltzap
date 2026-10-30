@@ -1,7 +1,8 @@
 /** @file A scripted Router transmit over an endpoint store's durable outbox. */
 
 import { type Duration, Effect, Queue } from "effect";
-import type { DaemonStore } from "../daemon/store.js";
+import type { TestDatabase } from "./communication-test-database.js";
+import { testStore } from "./store-schema-fixtures.js";
 import { decodeCanonical } from "../encoding/canonical-json.js";
 import { SignedMessage } from "../identity/envelope/signed-message.js";
 
@@ -16,37 +17,39 @@ import { SignedMessage } from "../identity/envelope/signed-message.js";
  * @returns Completion once the row is handled.
  */
 export function forwardStoredOutbound(
-  store: DaemonStore,
+  store: TestDatabase,
   outbound: Queue.Queue<SignedMessage>,
   envelopeId: string,
   transit?: Duration.DurationInput,
 ): Effect.Effect<void> {
-  return store.beginOutbound(envelopeId).pipe(
-    Effect.flatMap((attempt) => {
-      switch (attempt.kind) {
-        case "inactive":
-          return Effect.void;
-        case "pending":
-          return decodeCanonical(
-            SignedMessage,
-            attempt.outbound.canonicalSignedMessage,
-          ).pipe(
-            Effect.tap(() =>
-              transit === undefined ? Effect.void : Effect.sleep(transit),
-            ),
-            Effect.flatMap((message) =>
-              store
-                .completeOutbound(attempt.outbound)
-                .pipe(Effect.zipRight(Queue.offer(outbound, message))),
-            ),
-            Effect.asVoid,
-          );
-        default: {
-          const exhaustive: never = attempt;
-          return exhaustive;
+  return store.run(
+    testStore.beginOutbound(envelopeId).pipe(
+      Effect.flatMap((attempt) => {
+        switch (attempt.kind) {
+          case "inactive":
+            return Effect.void;
+          case "pending":
+            return decodeCanonical(
+              SignedMessage,
+              attempt.outbound.canonicalSignedMessage,
+            ).pipe(
+              Effect.tap(() =>
+                transit === undefined ? Effect.void : Effect.sleep(transit),
+              ),
+              Effect.flatMap((message) =>
+                testStore
+                  .completeOutbound(attempt.outbound)
+                  .pipe(Effect.zipRight(Queue.offer(outbound, message))),
+              ),
+              Effect.asVoid,
+            );
+          default: {
+            const exhaustive: never = attempt;
+            return exhaustive;
+          }
         }
-      }
-    }),
-    Effect.orDie,
+      }),
+      Effect.orDie,
+    ),
   );
 }

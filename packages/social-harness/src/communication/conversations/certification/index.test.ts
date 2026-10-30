@@ -8,7 +8,6 @@ import {
   Deferred,
   Duration,
   Effect,
-  Exit,
   Fiber,
   Option,
   Queue,
@@ -33,7 +32,12 @@ import {
 import { forwardStoredOutbound } from "../../../__tests__/forward-stored-outbound.js";
 import { openOuterBody } from "../../../__tests__/outer-body-fixtures.js";
 import { pollCursor as fixturePollCursor } from "../../../__tests__/router-worker-fixtures.js";
-import { type DaemonStore, openDaemonStore } from "../../../daemon/store.js";
+import {
+  type TestDatabase,
+  openTestDatabase,
+} from "../../../__tests__/communication-test-database.js";
+import { testStore } from "../../../__tests__/store-schema-fixtures.js";
+import { SqlClient } from "@effect/sql";
 import {
   decodeCanonical,
   encodeCanonical,
@@ -89,7 +93,6 @@ import {
   RouterWorkerTransportError,
   RouterWorkerUnavailableError,
 } from "../../router/index.js";
-import { EndpointStoreError } from "../../store/index.js";
 import { SendError } from "../errors.js";
 import { readStoredRecord } from "../history/index.js";
 import {
@@ -115,7 +118,7 @@ interface ProtocolIdentity {
 interface ProtocolHarness {
   readonly identities: readonly ProtocolIdentity[];
   readonly engines: readonly EndpointEngine[];
-  readonly stores: readonly DaemonStore[];
+  readonly stores: readonly TestDatabase[];
   readonly membership: VerifiedMembership;
   readonly outbound: Queue.Queue<typeof SignedMessage.Type>;
   readonly groupAddress: string;
@@ -298,21 +301,20 @@ const neverAttaches: WorkerAttachment = {
 function restartMember(
   harness: ProtocolHarness,
   identity: ProtocolIdentity,
-  store: DaemonStore,
+  store: TestDatabase,
 ) {
   return makeEndpointEngine({
     localAgentCard: identity.card,
     signingAuthority: identity.authority,
     registrySignerPublicKey: harness.registrySignerPublicKey,
     registry: harness.registry,
-    store,
     reportStorageFault: () => Effect.void,
     routerWorker: scriptedRouterWorker(store, harness.outbound),
-  });
+  }).pipe(Effect.provideService(SqlClient.SqlClient, store.sql));
 }
 
 function scriptedRouterWorker(
-  store: DaemonStore,
+  store: TestDatabase,
   outbound: Queue.Queue<typeof SignedMessage.Type>,
   attachment?: WorkerAttachment,
   wrapSend?: WrapSend,
@@ -401,12 +403,6 @@ interface HarnessOptions {
   readonly authorSend?: WrapSend;
   /** Receives the author engine's storage-fault reports. */
   readonly reportStorageFault?: Effect.Effect<void>;
-  /** Replaces the store an endpoint's engine writes through. */
-  readonly wrapStore?: (
-    store: DaemonStore,
-    identity: ProtocolIdentity,
-    index: number,
-  ) => DaemonStore;
 }
 
 function makeProtocolHarness(
@@ -433,13 +429,7 @@ function makeProtocolHarness(
           .makeTempDirectoryScoped({
             prefix: `sharness-engine-protocol-${index}-`,
           })
-          .pipe(
-            Effect.flatMap((directory) =>
-              openDaemonStore(directory, {
-                liveWireVersions: LIVE_WIRE_VERSIONS,
-              }),
-            ),
-          ),
+          .pipe(Effect.flatMap((directory) => openTestDatabase(directory))),
       { concurrency: 1 },
     );
     const outbound = yield* Queue.unbounded<typeof SignedMessage.Type>();
@@ -467,7 +457,6 @@ function makeProtocolHarness(
               signingAuthority: identity.authority,
               registrySignerPublicKey,
               registry,
-              store: options.wrapStore?.(store, identity, index) ?? store,
               reportStorageFault: ports.reportStorageFault,
               routerWorker: scriptedRouterWorker(
                 store,
@@ -475,13 +464,15 @@ function makeProtocolHarness(
                 ports.attachment,
                 ports.authorSend,
               ),
-            }).pipe(
-              Effect.provideService(WireVersions, {
-                emitted: options.emittedVersions?.[index] ?? WIRE_VERSION,
-                live: options.emittedVersions ?? LIVE_WIRE_VERSIONS,
-                history: options.emittedVersions ?? LIVE_WIRE_VERSIONS,
-              }),
-            );
+            })
+              .pipe(Effect.provideService(SqlClient.SqlClient, store.sql))
+              .pipe(
+                Effect.provideService(WireVersions, {
+                  emitted: options.emittedVersions?.[index] ?? WIRE_VERSION,
+                  live: options.emittedVersions ?? LIVE_WIRE_VERSIONS,
+                  history: options.emittedVersions ?? LIVE_WIRE_VERSIONS,
+                }),
+              );
           }),
         ),
       { concurrency: 1 },
@@ -683,7 +674,7 @@ function certifiedRecordCounts(
   return Effect.forEach(
     harness.stores,
     (store) =>
-      store.recover().pipe(
+      store.run(testStore.recover()).pipe(
         Effect.orDie,
         Effect.map(({ certifiedRecords }) => certifiedRecords.length),
       ),
@@ -897,15 +888,17 @@ function restartOverPersistedDurabilityVote(
       signingAuthority: voter.authority,
     }).pipe(Effect.orDie);
     yield* authorStore
-      .mergeEvidence({
-        conversationId: harness.membership.descriptor.conversationId,
-        kind: "durability",
-        subjectId: actionRecord.recordHash,
-        evidenceKey: keyMember.card.agentId,
-        canonicalEvidence: yield* encodeCanonical(SignedMessage, vote).pipe(
-          Effect.orDie,
-        ),
-      })
+      .run(
+        testStore.mergeEvidence({
+          conversationId: harness.membership.descriptor.conversationId,
+          kind: "durability",
+          subjectId: actionRecord.recordHash,
+          evidenceKey: keyMember.card.agentId,
+          canonicalEvidence: yield* encodeCanonical(SignedMessage, vote).pipe(
+            Effect.orDie,
+          ),
+        }),
+      )
       .pipe(Effect.orDie);
     yield* Fiber.interrupt(sending);
 
@@ -976,7 +969,9 @@ function adoptsAnActionCertificateOverItsOwnLock() {
       [{ type: "text", text: "open group" }],
       [{ type: "text", text: "winner" }],
     ]);
-    const recovered = yield* laggingStore.recover().pipe(Effect.orDie);
+    const recovered = yield* laggingStore
+      .run(testStore.recover())
+      .pipe(Effect.orDie);
     expect(recovered.certifiedRecords).toHaveLength(3);
     const releasedSignature = yield* messagesOfKind(
       harness,
@@ -1021,7 +1016,7 @@ function certifiedRecordPacket(
   return Effect.gen(function* () {
     const index = harness.identities.indexOf(author);
     const store = yield* requireAt(harness.stores, index, "endpoint store");
-    const recovery = yield* store.recover();
+    const recovery = yield* store.run(testStore.recover());
     const stored = recovery.certifiedRecords
       .filter(({ previousRecordHash }) => previousRecordHash !== undefined)
       .at(-1);
@@ -1104,7 +1099,9 @@ function adoptsACertifiedRecordOverItsOwnLock() {
       [{ type: "text", text: "open group" }],
       [{ type: "text", text: "winner" }],
     ]);
-    const recovered = yield* laggingStore.recover().pipe(Effect.orDie);
+    const recovered = yield* laggingStore
+      .run(testStore.recover())
+      .pipe(Effect.orDie);
     expect(recovered.certifiedRecords).toHaveLength(3);
   });
 }
@@ -1139,108 +1136,6 @@ function restartSignsNoVoteForARecordAcceptedWhole() {
     expect(accepted).toEqual(["accepted"]);
     expect(votes).toMatchObject([{ recordHash: firstMessageRecordHash }]);
   });
-}
-
-/**
- * Members 1, 2 and 3 certify a message that member 4 misses, and member 4's store
- * refuses member 1's whole CertifiedRecord of it, as a crash before the store
- * commits the record leaves it. Every store refuses records received whole,
- * and member 4's is the only one that receives one. Member 4 keeps the message's
- * action certificate it verified on the way, so once restarted over its store
- * it resends its first message signature and vote, then stages the message from that
- * certificate and sends its own action-certified copy of the message before its
- * vote. Fails when the record's core is stored apart from its durability
- * certificate: a restart cannot tell that core from one staged for this
- * member's own vote, and votes for it with no copy first.
- * @returns Completion once member 4's restart traffic is checked.
- */
-function restartSendsItsCopyBeforeVotingForARecordItsStoreRefused() {
-  return Effect.gen(function* () {
-    const harness = yield* makeProtocolHarness({
-      wrapStore: (store) => refusingWholeRecords(store),
-    });
-    yield* certifyFirstMessage(harness);
-    const authorIdentity = yield* requireAt(harness.identities, 0, "identity");
-    yield* certifyAMessageMember4Misses(harness, "refused by member 4's store");
-    const refused = yield* harness.deliver(
-      [yield* certifiedRecordPacket(harness, authorIdentity)],
-      [3],
-    );
-    yield* harness.drain([3]);
-    yield* takeQueued(harness);
-
-    const resent = yield* restartMember4(harness);
-    const kinds = yield* Effect.forEach(
-      resent,
-      (message) => protocolMessageKind(harness, message),
-      { concurrency: 1 },
-    );
-
-    expect(refused).toEqual(["ignored"]);
-    expect(kinds).toEqual([
-      "action_signature",
-      "durability_vote",
-      "action_certified_record",
-      "durability_vote",
-    ]);
-  });
-}
-
-/**
- * Members 1, 2 and 3 certify a message that member 4 misses, and member 4's store
- * refuses member 1's whole CertifiedRecord of it. Without a restart, member 4
- * then receives member 1's action-certified copy of the message: it stages the
- * message from that copy and sends its own copy before its vote. Fails when
- * member 4's fold takes the refused record or its promotion ahead of the
- * store's commit, so the copy finds the message staged or certified only in
- * memory and draws no copy or no vote from member 4.
- */
-function stagesFromALaterCopyARecordItsStoreRefusedWhole() {
-  return Effect.gen(function* () {
-    const harness = yield* makeProtocolHarness({
-      wrapStore: (store) => refusingWholeRecords(store),
-    });
-    yield* certifyFirstMessage(harness);
-    const authorIdentity = yield* requireAt(harness.identities, 0, "identity");
-    const absentIdentity = yield* requireAt(harness.identities, 3, "identity");
-    const authorCopy = yield* certifyAMessageMember4Misses(
-      harness,
-      "copied after member 4's store refused it whole",
-    );
-    const refused = yield* harness.deliver(
-      [yield* certifiedRecordPacket(harness, authorIdentity)],
-      [3],
-    );
-    yield* harness.drain([3]);
-    yield* takeQueued(harness);
-
-    const answer = yield* harness.deliver(authorCopy, [3]);
-    yield* harness.drain([3]);
-    const kinds = yield* Effect.forEach(
-      (yield* takeQueued(harness)).filter(
-        ({ senderAgentId }) => senderAgentId === absentIdentity.card.agentId,
-      ),
-      (message) => protocolMessageKind(harness, message),
-      { concurrency: 1 },
-    );
-
-    expect(refused).toEqual(["ignored"]);
-    expect(answer).toEqual(["accepted"]);
-    expect(kinds).toEqual(["action_certified_record", "durability_vote"]);
-  });
-}
-
-/**
- * `store`, refusing every record received whole.
- * @param store A member's store.
- * @returns The wrapped store.
- */
-function refusingWholeRecords(store: DaemonStore): DaemonStore {
-  return {
-    ...store,
-    applyCertifiedRecord: () =>
-      Effect.fail(new EndpointStoreError({ reason: "conflict" })),
-  };
 }
 
 /**
@@ -1296,212 +1191,6 @@ function restartMember4(harness: ProtocolHarness) {
       ({ senderAgentId }) => senderAgentId === identity.card.agentId,
     );
   });
-}
-
-/**
- * Members 1, 2 and 3 certify a message that member 4 misses. Member 4's acceptance
- * of member 1's whole CertifiedRecord is interrupted right after its store
- * commits the message, as a Router worker that loses its generation does. The
- * acceptance still completes, so member 4 holds the message as its head: a later
- * action-certified copy of the message is ignored and draws no durability vote.
- * @returns Completion once member 4's answer to the copy is checked.
- */
-function finishesAnInterruptedAcceptanceOfARecordReceivedWhole() {
-  return Effect.gen(function* () {
-    const hold = {
-      armed: yield* Ref.make(false),
-      committed: yield* Deferred.make<undefined>(),
-      release: yield* Deferred.make<undefined>(),
-    };
-    const harness = yield* makeProtocolHarness({
-      wrapStore: (store) => holdingWholeRecordCommit(store, hold),
-    });
-    yield* certifyFirstMessage(harness);
-    const authorIdentity = yield* requireAt(harness.identities, 0, "identity");
-    const absentIdentity = yield* requireAt(harness.identities, 3, "identity");
-    const authorCopy = yield* certifyAMessageMember4Misses(
-      harness,
-      "accepted whole",
-    );
-
-    yield* Ref.set(hold.armed, true);
-    const accepting = yield* Effect.fork(
-      harness.deliver(
-        [yield* certifiedRecordPacket(harness, authorIdentity)],
-        [3],
-      ),
-    );
-    yield* Deferred.await(hold.committed);
-    const interrupting = yield* Effect.fork(Fiber.interrupt(accepting));
-    yield* Deferred.succeed(hold.release, undefined);
-    yield* Fiber.join(interrupting);
-    yield* harness.drain([3]);
-    yield* takeQueued(harness);
-    const answer = yield* harness.deliver(authorCopy, [3]);
-    yield* harness.drain([3]);
-    const votes = yield* sentOfKind(
-      harness,
-      yield* takeQueued(harness),
-      absentIdentity,
-      "durability_vote",
-    );
-
-    expect(answer).toEqual(["ignored"]);
-    expect(votes).toEqual([]);
-  });
-}
-
-/**
- * `store`, which, once `hold.armed` is set, signals `hold.committed` after it
- * commits a record received whole and then waits for `hold.release`: the
- * point an interruption right after the commit reaches.
- * @param store A member's store.
- * @param hold The switch and the two signals of the held commit.
- * @param hold.armed Whether commits are held.
- * @param hold.committed Completed once a held commit is done.
- * @param hold.release Awaited before a held commit returns.
- * @returns The wrapped store.
- */
-function holdingWholeRecordCommit(
-  store: DaemonStore,
-  hold: Readonly<{
-    armed: Ref.Ref<boolean>;
-    committed: Deferred.Deferred<undefined>;
-    release: Deferred.Deferred<undefined>;
-  }>,
-): DaemonStore {
-  return {
-    ...store,
-    applyCertifiedRecord: (record, delivery) =>
-      store
-        .applyCertifiedRecord(record, delivery)
-        .pipe(
-          Effect.tap(() =>
-            Ref.get(hold.armed).pipe(
-              Effect.flatMap((armed) =>
-                armed
-                  ? Deferred.succeed(hold.committed, undefined).pipe(
-                      Effect.zipRight(Deferred.await(hold.release)),
-                    )
-                  : Effect.void,
-              ),
-            ),
-          ),
-        ),
-  };
-}
-
-/**
- * Member 2 locks its own message at the first message head while members 1, 3 and 4
- * lock and sign member 1's. Member 2's store then starts refusing every other
- * member's action signature, so its acceptance of member 1's action-certified
- * record stops right after the lock is superseded, as an interruption there
- * would leave it. When member 1's proposal then reaches member 2, member 2 sends no
- * signature for the action it adopted.
- * @returns Completion once member 2's traffic is checked.
- */
-function signsNothingForAnAdoptedActionWhenAcceptanceStops() {
-  return Effect.gen(function* () {
-    const refusing = yield* Ref.make(false);
-    const harness = yield* makeProtocolHarness({
-      wrapStore: (store, identity, index) =>
-        index === 1
-          ? refusingPeerActionEvidence(store, identity.card.agentId, refusing)
-          : store,
-    });
-    yield* certifyFirstMessage(harness);
-    const winnerAuthor = yield* requireAt(
-      harness.engines,
-      0,
-      "endpoint engine",
-    );
-    const winnerAuthorIdentity = yield* requireAt(
-      harness.identities,
-      0,
-      "identity",
-    );
-    const lagging = yield* requireAt(harness.engines, 1, "endpoint engine");
-    const laggingIdentity = yield* requireAt(harness.identities, 1, "identity");
-    const winning = yield* Effect.fork(
-      winnerAuthor.send(yield* sendInput(harness, "winner")),
-    );
-    const winnerBatch = yield* takeReadyBatch(harness);
-    const winnerActionHash = yield* requireAt(
-      winnerBatch,
-      1,
-      "winning proposal",
-    ).pipe(
-      Effect.flatMap((message) => decodeActionProposal(harness, message)),
-      Effect.flatMap((proposal) =>
-        hashAction(proposal.action).pipe(Effect.orDie),
-      ),
-    );
-    yield* Effect.forkScoped(
-      lagging.send(yield* sendInput(harness, "member 2 message")),
-    );
-    const loserBatch = yield* takeReadyBatch(harness);
-
-    yield* harness.deliver(winnerBatch, [0, 2, 3]);
-    yield* harness.deliver(loserBatch);
-    yield* harness.drain();
-    yield* harness.deliver(yield* takeQueued(harness));
-    yield* harness.drain();
-    const winnerCertificate = (yield* messagesOfKind(
-      harness,
-      yield* takeQueued(harness),
-      "action_certified_record",
-    )).filter(
-      (message) => message.senderAgentId === winnerAuthorIdentity.card.agentId,
-    );
-    yield* Ref.set(refusing, true);
-    const stopped = yield* harness.deliver(winnerCertificate, [1]);
-    yield* harness.deliver(winnerBatch, [1]);
-    yield* harness.drain([1]);
-    const sent = (yield* messagesOfKind(
-      harness,
-      yield* takeQueued(harness),
-      "action_signature",
-    )).filter(
-      (message) => message.senderAgentId === laggingIdentity.card.agentId,
-    );
-    const signedHashes = yield* Effect.forEach(
-      sent,
-      (message) => decodeActionSignatureHash(harness, message),
-      { concurrency: 1 },
-    );
-
-    expect(stopped).toEqual(["ignored"]);
-    expect(signedHashes).not.toContain(winnerActionHash);
-    yield* Fiber.interrupt(winning);
-  });
-}
-
-/**
- * Wraps a store so that, while `refusing` holds, it refuses as a conflict
- * every action signature another member made.
- * @param store The store to wrap.
- * @param localAgentId The member whose own signatures the store still takes.
- * @param refusing Whether the store refuses those signatures now.
- * @returns The wrapping store.
- */
-function refusingPeerActionEvidence(
-  store: DaemonStore,
-  localAgentId: string,
-  refusing: Ref.Ref<boolean>,
-): DaemonStore {
-  return {
-    ...store,
-    mergeEvidence: (evidence) =>
-      Ref.get(refusing).pipe(
-        Effect.flatMap((refuse) =>
-          refuse &&
-          evidence.kind === "action" &&
-          evidence.evidenceKey !== localAgentId
-            ? Effect.fail(new EndpointStoreError({ reason: "conflict" }))
-            : store.mergeEvidence(evidence),
-        ),
-      ),
-  };
 }
 
 /**
@@ -1567,7 +1256,9 @@ function refusesASecondCertificateOverAStagedAction() {
     yield* harness.deliver(signatures, [0, 1, 2, 3]);
     yield* harness.drain();
     yield* takeQueued(harness);
-    const beforeRefusal = yield* stagingStore.recover().pipe(Effect.orDie);
+    const beforeRefusal = yield* stagingStore
+      .run(testStore.recover())
+      .pipe(Effect.orDie);
     const staged = beforeRefusal.stagedRecords.filter(
       ({ actionHash }) => actionHash === stagedActionHash,
     );
@@ -1598,8 +1289,9 @@ function refusesASecondCertificateOverAStagedAction() {
     const sentByStaging = (yield* takeQueued(harness)).filter(
       (message) => message.senderAgentId === staging.card.agentId,
     );
-    const locks = (yield* stagingStore.recover().pipe(Effect.orDie))
-      .proposalLocks;
+    const locks = (yield* stagingStore
+      .run(testStore.recover())
+      .pipe(Effect.orDie)).proposalLocks;
 
     expect(staged).toHaveLength(1);
     expect(ownVotes.map(({ subjectId }) => subjectId)).toContain(
@@ -1826,7 +1518,9 @@ function certifiesOrdinaryN4Message() {
       ),
     ).toBe(true);
 
-    const staged = yield* authorStore.recover().pipe(Effect.orDie);
+    const staged = yield* authorStore
+      .run(testStore.recover())
+      .pipe(Effect.orDie);
     expect(
       staged.stagedRecords.some(
         ({ recordHash }) => recordHash === actionRecord.recordHash,
@@ -1867,7 +1561,9 @@ function certifiesOrdinaryN4Message() {
       yield* harness.deliver([wrongConversationVote, wrongMembershipVote], [0]),
     ).toEqual(["ignored", "ignored"]);
 
-    const afterHostileVotes = yield* authorStore.recover().pipe(Effect.orDie);
+    const afterHostileVotes = yield* authorStore
+      .run(testStore.recover())
+      .pipe(Effect.orDie);
     expect(
       afterHostileVotes.certifiedRecords.some(
         ({ recordHash }) => recordHash === actionRecord.recordHash,
@@ -1898,7 +1594,7 @@ function certifiesOrdinaryN4Message() {
       "accepted",
     ]);
     const afterFirstRemoteVote = yield* authorStore
-      .recover()
+      .run(testStore.recover())
       .pipe(Effect.orDie);
     expect(
       afterFirstRemoteVote.certifiedRecords.some(
@@ -1910,7 +1606,9 @@ function certifiesOrdinaryN4Message() {
       "accepted",
     ]);
     yield* Fiber.join(sending).pipe(Effect.orDie);
-    const certified = yield* authorStore.recover().pipe(Effect.orDie);
+    const certified = yield* authorStore
+      .run(testStore.recover())
+      .pipe(Effect.orDie);
     const storedMessage = certified.certifiedRecords.find(
       ({ recordHash }) => recordHash === actionRecord.recordHash,
     );
@@ -2009,7 +1707,9 @@ function ordersCompetingProposalsBeforeActionVotes(input: {
     );
     expect(new Set(signatureHashes)).toEqual(new Set([firstActionHash]));
 
-    const recovery = yield* observingStore.recover().pipe(Effect.orDie);
+    const recovery = yield* observingStore
+      .run(testStore.recover())
+      .pipe(Effect.orDie);
     const successorLocks = recovery.proposalLocks.filter(
       ({ previousRecordHash }) =>
         previousRecordHash === firstProposal.action.previousRecordHash,
@@ -2054,41 +1754,6 @@ function givesIdenticalHostInvocationsDistinctMsgIds() {
     expect(secondProposal.action.messageIntent.msgId).not.toBe(
       firstProposal.action.messageIntent.msgId,
     );
-  });
-}
-
-function retainsInterruptedDurableSend() {
-  return Effect.gen(function* () {
-    const queueEntered = yield* Deferred.make<undefined>();
-    const releaseQueue = yield* Deferred.make<undefined>();
-    const harness = yield* makeProtocolHarness({
-      wrapStore: (store) => ({
-        ...store,
-        enqueueOutbound: (input) =>
-          Deferred.succeed(queueEntered, undefined).pipe(
-            Effect.zipRight(Deferred.await(releaseQueue)),
-            Effect.zipRight(store.enqueueOutbound(input)),
-          ),
-      }),
-    });
-    const author = yield* requireAt(harness.engines, 0, "endpoint engine");
-    const sending = yield* Effect.fork(
-      author.send(yield* sendInput(harness, "retained send")),
-    );
-    yield* Deferred.await(queueEntered);
-    const interrupting = yield* Effect.fork(Fiber.interrupt(sending));
-    yield* Effect.yieldNow();
-    yield* Deferred.succeed(releaseQueue, undefined);
-    yield* Fiber.join(interrupting);
-
-    yield* author.drainOutbound.pipe(Effect.orDie);
-    const proposal = yield* takeReadyBatch(harness).pipe(
-      Effect.flatMap((messages) => requireAt(messages, 0, "retained proposal")),
-      Effect.flatMap((message) => decodeActionProposal(harness, message)),
-    );
-    expect(proposal.action.messageIntent.content).toEqual([
-      { type: "text", text: "retained send" },
-    ]);
   });
 }
 
@@ -2137,7 +1802,9 @@ function sendReturnsTheStoredCertifiedRecordHash() {
     const recordHash = yield* certifyFirstMessage(harness);
     const authorStore = yield* requireAt(harness.stores, 0, "store");
 
-    const recovery = yield* authorStore.recover().pipe(Effect.orDie);
+    const recovery = yield* authorStore
+      .run(testStore.recover())
+      .pipe(Effect.orDie);
 
     expect(
       recovery.messageIntents.map((intent) => intent.completedRecordHash),
@@ -2299,26 +1966,6 @@ describe("fixed-message endpoint protocol", () => {
     TEST_TIMEOUT_MS,
   );
   it(
-    "sends its own copy before its vote on restart for a record received whole that its store refused",
-    restartSendsItsCopyBeforeVotingForARecordItsStoreRefused,
-    TEST_TIMEOUT_MS,
-  );
-  it(
-    "stages from a later copy, sending its own copy before its vote, a record received whole that its store refused",
-    stagesFromALaterCopyARecordItsStoreRefusedWhole,
-    TEST_TIMEOUT_MS,
-  );
-  it(
-    "finishes an interrupted acceptance of a record received whole, so a later copy of it draws no durability vote",
-    finishesAnInterruptedAcceptanceOfARecordReceivedWhole,
-    TEST_TIMEOUT_MS,
-  );
-  it(
-    "signs nothing for an adopted action when its record's acceptance stops",
-    signsNothingForAnAdoptedActionWhenAcceptanceStops,
-    TEST_TIMEOUT_MS,
-  );
-  it(
     "refuses a second action certificate over an action it staged",
     refusesASecondCertificateOverAStagedAction,
     TEST_TIMEOUT_MS,
@@ -2417,11 +2064,6 @@ describe("fixed-message endpoint protocol", () => {
     TEST_TIMEOUT_MS,
   );
   it(
-    "retains a durably bound send when its caller is interrupted",
-    retainsInterruptedDurableSend,
-    TEST_TIMEOUT_MS,
-  );
-  it(
     "holds one message when Router appends its outer messages twice",
     reappendedOuterMessagesYieldOneMessage,
     TEST_TIMEOUT_MS,
@@ -2469,7 +2111,7 @@ function concurrentFirstSends(firstVersion: string, secondVersion: string) {
     yield* Fiber.join(secondSend).pipe(Effect.orDie);
     const recoveries = yield* Effect.forEach(
       harness.stores,
-      (store) => store.recover().pipe(Effect.orDie),
+      (store) => store.run(testStore.recover()).pipe(Effect.orDie),
       { concurrency: 1 },
     );
     expect(recoveries[0]?.certifiedRecords).toEqual(
@@ -2761,7 +2403,6 @@ function coldStartWithPendingOutboundLeavesOutboundLoopAlive(): Effect.Effect<
       signingAuthority: identity.authority,
       registrySignerPublicKey: harness.registrySignerPublicKey,
       registry: harness.registry,
-      store,
       reportStorageFault: () => Effect.void,
       routerWorker: scriptedRouterWorker(
         store,
@@ -2769,7 +2410,9 @@ function coldStartWithPendingOutboundLeavesOutboundLoopAlive(): Effect.Effect<
         attachesWhenResolved(attached),
         failsThenForwards(new RouterWorkerUnavailableError(), attempts),
       ),
-    }).pipe(Effect.orDie);
+    })
+      .pipe(Effect.provideService(SqlClient.SqlClient, store.sql))
+      .pipe(Effect.orDie);
     const fatal = yield* Deferred.make<never, EngineOutboundError>();
     yield* superviseOutbound(restarted, fatal);
     yield* advanceClock(OUTAGE_SPAN);
@@ -2792,11 +2435,13 @@ function coldStartWithPendingOutboundLeavesOutboundLoopAlive(): Effect.Effect<
  */
 function blackHolesFirstTransmit(
   transmits: Ref.Ref<number>,
-  store: Deferred.Deferred<DaemonStore>,
+  store: Deferred.Deferred<TestDatabase>,
 ): WrapSend {
   const beginThenHang = (envelopeId: string) =>
     Deferred.await(store).pipe(
-      Effect.flatMap((author) => author.beginOutbound(envelopeId)),
+      Effect.flatMap((author) =>
+        author.run(testStore.beginOutbound(envelopeId)),
+      ),
       Effect.orDie,
       Effect.zipRight(Effect.never),
     );
@@ -2831,7 +2476,7 @@ function blackHoledTransmitBoundsTheSend(): Effect.Effect<
 > {
   return Effect.gen(function* () {
     const transmits = yield* Ref.make(0);
-    const authorStore = yield* Deferred.make<DaemonStore>();
+    const authorStore = yield* Deferred.make<TestDatabase>();
     const harness = yield* makeProtocolHarness({
       authorSend: blackHolesFirstTransmit(transmits, authorStore),
     });
@@ -2843,7 +2488,8 @@ function blackHoledTransmitBoundsTheSend(): Effect.Effect<
       author.send(yield* sendInput(harness, "black-holed transmit")),
     );
     yield* untilLive(Ref.get(transmits).pipe(Effect.map((count) => count > 0)));
-    const [held] = (yield* store.recover().pipe(Effect.orDie)).outboundMessages;
+    const [held] = (yield* store.run(testStore.recover()).pipe(Effect.orDie))
+      .outboundMessages;
     if (held === undefined) {
       return yield* Effect.dieMessage(
         "the black-holed envelope was not stored",
@@ -2865,7 +2511,8 @@ function blackHoledTransmitBoundsTheSend(): Effect.Effect<
       ),
     ).toHaveLength(1);
     expect(
-      (yield* store.recover().pipe(Effect.orDie)).outboundMessages,
+      (yield* store.run(testStore.recover()).pipe(Effect.orDie))
+        .outboundMessages,
     ).toEqual([]);
     expect(yield* Deferred.poll(fatal)).toEqual(Option.none());
   });
@@ -2873,7 +2520,7 @@ function blackHoledTransmitBoundsTheSend(): Effect.Effect<
 
 /** Where a transmit forwards to, known once the harness exists. */
 interface ForwardTarget {
-  readonly store: DaemonStore;
+  readonly store: TestDatabase;
   readonly outbound: Queue.Queue<typeof SignedMessage.Type>;
 }
 
@@ -2944,7 +2591,8 @@ function concurrentDrainsSendEachOutboxOnce(): Effect.Effect<
     yield* untilLive(
       Ref.get(transmits).pipe(Effect.map((count) => count >= 2)),
     );
-    const [held] = (yield* store.recover().pipe(Effect.orDie)).outboundMessages;
+    const [held] = (yield* store.run(testStore.recover()).pipe(Effect.orDie))
+      .outboundMessages;
     if (held === undefined) {
       return yield* Effect.dieMessage("the raced envelope was not stored");
     }
@@ -2956,7 +2604,8 @@ function concurrentDrainsSendEachOutboxOnce(): Effect.Effect<
       held.envelopeId,
     ]);
     expect(
-      (yield* store.recover().pipe(Effect.orDie)).outboundMessages,
+      (yield* store.run(testStore.recover()).pipe(Effect.orDie))
+        .outboundMessages,
     ).toEqual([]);
     expect(yield* Deferred.poll(fatal)).toEqual(Option.none());
     yield* Fiber.interrupt(sending);
@@ -3104,221 +2753,8 @@ describe("outbound loop under a transient Router worker state", () => {
   );
 });
 
-/**
- * Wraps a store so that a dissemination enqueue writes its outbox row, then
- * completes `entered` and waits for `release`, as a store slow to return
- * would. Once `release` is done, enqueues pass straight through.
- * @param store The store to wrap.
- * @param entered Completed once an enqueue has written its row.
- * @param release Ends the wait.
- * @returns The wrapping store.
- */
-function holdingDisseminationEnqueue(
-  store: DaemonStore,
-  entered: Deferred.Deferred<undefined>,
-  release: Deferred.Deferred<undefined>,
-): DaemonStore {
-  return {
-    ...store,
-    enqueueDisseminationOutbound: (obligation, outbound) =>
-      store
-        .enqueueDisseminationOutbound(obligation, outbound)
-        .pipe(
-          Effect.tap(() =>
-            Deferred.succeed(entered, undefined).pipe(
-              Effect.zipRight(Deferred.await(release)),
-            ),
-          ),
-        ),
-  };
-}
-
-/**
- * Member 1 sends a FIRST_MESSAGE message, every member signs its proposal, and member
- * 2 receives every action signature but member 4's.
- * @param harness Engines of the four members.
- * @returns Every member's action signature, and member 4's on its own.
- */
-function signFirstMessageShortOfMember4(harness: ProtocolHarness) {
-  return Effect.gen(function* () {
-    const author = yield* requireAt(harness.engines, 0, "endpoint engine");
-    const fourth = yield* requireAt(harness.identities, 3, "identity");
-    yield* Effect.forkScoped(
-      author.send(yield* sendInput(harness, "open group")),
-    );
-    yield* harness.deliver([yield* Queue.take(harness.outbound)]);
-    yield* harness.drain();
-    const signatures = yield* takeQueued(harness);
-    yield* harness.deliver(
-      signatures.filter(
-        ({ senderAgentId }) => senderAgentId !== fourth.card.agentId,
-      ),
-      [1],
-    );
-    return {
-      signatures,
-      fourths: signatures.filter(
-        ({ senderAgentId }) => senderAgentId === fourth.card.agentId,
-      ),
-    };
-  });
-}
-
-/**
- * Members 1, 3 and 4 receive every action signature of the FIRST_MESSAGE message, so
- * each stages its record and votes for it.
- * @param harness Engines of the four members.
- * @param signatures Every member's action signature.
- * @returns Member 3's durability vote.
- */
-function voteOfMember3(
-  harness: ProtocolHarness,
-  signatures: ReadonlyArray<typeof SignedMessage.Type>,
-) {
-  return Effect.gen(function* () {
-    const voter = yield* requireAt(harness.identities, 2, "identity");
-    yield* harness.deliver(signatures, [0, 2, 3]);
-    yield* harness.drain([0, 2, 3]);
-    return yield* sentOfKind(
-      harness,
-      yield* takeQueued(harness),
-      voter,
-      "durability_vote",
-    );
-  });
-}
-
-/**
- * Member 2 holds three of the four FIRST_MESSAGE action signatures, and member 4's
- * completes the action certificate, so member 2 stages the record and queues
- * its action-certified copy. Its acceptance of that signature is interrupted
- * while the store writes the copy's outbox row, the first dissemination row
- * any member writes. The row and the fold's record hash commit together, so
- * member 3's durability vote for the record still reaches the fold. Fails
- * when the copy is queued interruptibly, or when the fold takes the record
- * hash outside that step: the row is written, the fold never learns the
- * record, and the vote is ignored.
- * @returns Completion once member 2 has answered the vote.
- */
-function takesAVoteAfterItsStagingWasInterrupted() {
-  return Effect.gen(function* () {
-    const entered = yield* Deferred.make<undefined>();
-    const release = yield* Deferred.make<undefined>();
-    const harness = yield* makeProtocolHarness({
-      wrapStore: (store) =>
-        holdingDisseminationEnqueue(store, entered, release),
-    });
-    const { signatures, fourths } =
-      yield* signFirstMessageShortOfMember4(harness);
-    const accepting = yield* Effect.fork(harness.deliver(fourths, [1]));
-    yield* Deferred.await(entered);
-
-    yield* Fiber.interruptAsFork(accepting, yield* Effect.fiberId);
-    yield* Deferred.succeed(release, undefined);
-    const accepted = yield* Fiber.await(accepting);
-    const answered = yield* harness.deliver(
-      yield* voteOfMember3(harness, signatures),
-      [1],
-    );
-
-    expect(
-      Exit.isInterrupted(accepted),
-      "member 2's acceptance of member 4's signature was interrupted",
-    ).toBe(true);
-    expect(answered).toEqual(["accepted"]);
-  });
-}
-
-/**
- * Wraps a store so that it refuses every plain outbox row as a persistence
- * failure.
- * @param store The store to wrap.
- * @returns The wrapping store.
- */
-function refusingOutboxRows(store: DaemonStore): DaemonStore {
-  return {
-    ...store,
-    enqueueOutbound: () =>
-      Effect.fail(new EndpointStoreError({ reason: "persistence" })),
-  };
-}
-
 /** The outbound failure that ends the loop on a storage fault. */
 const outboundPersistence: EngineOutboundError["reason"] = "persistence";
-
-/**
- * Every member's store refuses plain outbox rows, and the first one any
- * member needs is the author's FIRST_MESSAGE proposal. The author bound the message's
- * intent before that refusal, so the intent is proposed again later and the
- * send fails as `delivery-pending` and the author's engine reports one
- * storage fault. Fails when the refusal reports the message as not sent, escapes
- * the send as a defect, or is not reported to the host.
- * @returns The scenario, before its scope closes.
- */
-function failsASendWhoseBoundProposalTheStoreRefuses(): Effect.Effect<
-  void,
-  never,
-  Scope.Scope
-> {
-  return Effect.gen(function* () {
-    const faults = yield* Ref.make(0);
-    const harness = yield* makeProtocolHarness({
-      wrapStore: (store) => refusingOutboxRows(store),
-      reportStorageFault: Ref.update(faults, (count) => count + 1),
-    });
-    const author = yield* requireAt(harness.engines, 0, "endpoint engine");
-
-    const failure = yield* author
-      .send(yield* sendInput(harness, "refused proposal"))
-      .pipe(Effect.flip, Effect.orDie);
-
-    expect(failure).toStrictEqual(
-      new SendError({ reason: "delivery-pending" }),
-    );
-    expect(yield* Ref.get(faults), "storage faults reported").toBe(1);
-  });
-}
-
-/**
- * The author's store fails the intent bind itself with `reason`. A raw
- * persistence failure can follow the bind's commit, so whether the intent is
- * durable is unknown; a store refusal rolls the bind back, so nothing was
- * queued, and only the first is reported to the host as a storage fault.
- * Fails when either reports the other's outcome or fault count.
- * @param reason The store failure the bind meets.
- * @param expected The send's failure for it.
- * @param expectedFaults Storage faults the author's engine reports for it.
- * @param commitOutcome Evidence that the failed bind did not commit.
- * @returns The scenario, before its scope closes.
- */
-function failsASendWhoseBindTheStoreFails(
-  reason: EndpointStoreError["reason"],
-  expected: SendError["reason"],
-  expectedFaults: number,
-  commitOutcome?: EndpointStoreError["commitOutcome"],
-): Effect.Effect<void, never, Scope.Scope> {
-  return Effect.gen(function* () {
-    const faults = yield* Ref.make(0);
-    const harness = yield* makeProtocolHarness({
-      wrapStore: (store) => ({
-        ...store,
-        bindMessageIntent: () =>
-          Effect.fail(new EndpointStoreError({ reason, commitOutcome })),
-      }),
-      reportStorageFault: Ref.update(faults, (count) => count + 1),
-    });
-    const author = yield* requireAt(harness.engines, 0, "endpoint engine");
-
-    const failure = yield* author
-      .send(yield* sendInput(harness, "unbound intent"))
-      .pipe(Effect.flip, Effect.orDie);
-
-    expect(failure).toStrictEqual(new SendError({ reason: expected }));
-    expect(yield* Ref.get(faults), "storage faults reported").toBe(
-      expectedFaults,
-    );
-  });
-}
 
 /**
  * The author's worker fails every transmit with a persistence failure, which
@@ -3386,44 +2822,7 @@ function failedRecoveryFailsASendAsDeliveryPending(): Effect.Effect<
   });
 }
 
-const bindFailureCases = [
-  {
-    reason: "persistence",
-    commitOutcome: undefined,
-    expected: "outcome-unknown",
-    faults: 1,
-  },
-  {
-    reason: "persistence",
-    commitOutcome: "not-committed",
-    expected: "persistence-failed",
-    faults: 0,
-  },
-  {
-    reason: "conflict",
-    commitOutcome: undefined,
-    expected: "persistence-failed",
-    faults: 0,
-  },
-] as const;
-
 describe("engine faults while staging and sending", () => {
-  it(
-    "keeps a staged record's copy and fold together when its acceptance is interrupted",
-    takesAVoteAfterItsStagingWasInterrupted,
-    TEST_TIMEOUT_MS,
-  );
-  it(
-    "fails a send as delivery-pending when the store refuses its bound proposal",
-    failsASendWhoseBoundProposalTheStoreRefuses,
-    TEST_TIMEOUT_MS,
-  );
-  it.each(bindFailureCases)(
-    "fails a send whose intent bind meets a $reason ($commitOutcome) store failure as $expected",
-    ({ reason, expected, faults, commitOutcome }) =>
-      failsASendWhoseBindTheStoreFails(reason, expected, faults, commitOutcome),
-    TEST_TIMEOUT_MS,
-  );
   itOnTestClock(
     "ends the outbound loop with a persistence failure the worker cannot retry",
     persistenceFailureEndsTheOutboundLoop,
