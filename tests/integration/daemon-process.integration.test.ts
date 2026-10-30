@@ -42,11 +42,8 @@ import {
   agentResetDocsLink,
   completedReanchorKind,
   configurationStartupPhase,
-  newerSchemaReason,
   outboxTooOldReason,
   outboxTooOldRemedy,
-  preResetReason,
-  preResetRemedy,
   registeredDaemonStatus,
   registrationResultKind,
   resetReleaseDocsAnchor,
@@ -579,7 +576,7 @@ const refusesStaleOutbox = Effect.scoped(
     expect(failed.logs).toContain(outboxTooOldReason);
     expect(failed.logs).toContain(outboxTooOldRemedy);
     expect(failed.logs).toContain(resetReleaseDocsAnchor);
-    const after = yield* storedSchema(local.stateDirectory);
+    const after = yield* readStoredDatabase(local.stateDirectory);
     expect(after).toEqual(before);
   }),
 );
@@ -643,70 +640,8 @@ it(
 );
 
 it(
-  "reports outbox-too-old at the process boundary without changing schema or backups",
+  "reports outbox-too-old at the process boundary without changing retained state",
   processTrace(refusesStaleOutbox),
-  PROCESS_TEST_TIMEOUT_MS,
-);
-
-it(
-  "reports newer-schema in stderr before changing a newer database",
-  processTrace(
-    Effect.scoped(
-      Effect.gen(function* () {
-        const infrastructure = yield* acquireProcessInfrastructure;
-        const local = yield* makeDaemonProcessFixture(
-          infrastructure,
-          "newer-schema",
-        );
-        const path = join(local.stateDirectory, "sharnessd.sqlite3");
-        const database = new DatabaseSync(path);
-        database.exec("PRAGMA user_version = 2147483647");
-        database.close();
-        const before = yield* storedSchema(local.stateDirectory);
-
-        const failed = yield* awaitDaemonStartupFailure(local);
-
-        expect(failed.exitCode).not.toBe(0);
-        expect(failed.logs).toContain(storageStartupPhase);
-        expect(failed.logs).toContain(newerSchemaReason);
-        expect(yield* storedSchema(local.stateDirectory)).toEqual(before);
-      }),
-    ),
-  ),
-  PROCESS_TEST_TIMEOUT_MS,
-);
-
-it(
-  "reports pre-reset for legacy filenames and every populated earlier schema without creating a replacement store",
-  processTrace(
-    Effect.scoped(
-      Effect.gen(function* () {
-        const infrastructure = yield* acquireProcessInfrastructure;
-        for (const [name, filename, schema] of [
-          ["legacy-file", "moltzapd.sqlite3", 8],
-          ["legacy-schema", "sharnessd.sqlite3", 9],
-          ["unversioned-schema", "sharnessd.sqlite3", 0],
-        ] as const) {
-          const local = yield* makeDaemonProcessFixture(infrastructure, name);
-          const database = new DatabaseSync(
-            join(local.stateDirectory, filename),
-          );
-          database.exec(
-            `CREATE TABLE retained (value TEXT); PRAGMA user_version = ${schema}`,
-          );
-          database.close();
-          const fs = yield* FileSystem.FileSystem;
-          const before = yield* fs.readDirectory(local.stateDirectory);
-          const failed = yield* awaitDaemonStartupFailure(local);
-          expect(failed.exitCode).not.toBe(0);
-          expect(failed.logs).toContain(preResetReason);
-          expect(failed.logs).toContain(preResetRemedy);
-          expect(failed.logs).toContain(resetReleaseDocsAnchor);
-          expect(yield* fs.readDirectory(local.stateDirectory)).toEqual(before);
-        }
-      }),
-    ),
-  ),
   PROCESS_TEST_TIMEOUT_MS,
 );
 
@@ -996,33 +931,12 @@ function markStoredOutboundPending(directory: string) {
         message: "could not prepare retired outbox",
         cause,
       }),
-  }).pipe(Effect.zipRight(storedSchema(directory)));
+  }).pipe(Effect.zipRight(readStoredDatabase(directory)));
 }
 
-/** Capture schema and backup state without depending on a particular schema number. */
-function storedSchema(directory: string) {
-  return Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const snapshot = yield* Effect.sync(() => {
-      const database = new DatabaseSync(join(directory, "sharnessd.sqlite3"), {
-        readOnly: true,
-      });
-      try {
-        return {
-          schema: database.prepare("PRAGMA user_version").get(),
-          objects: database
-            .prepare("SELECT sql FROM sqlite_schema ORDER BY name")
-            .all(),
-        };
-      } finally {
-        database.close();
-      }
-    });
-    return {
-      ...snapshot,
-      backups: (yield* fs.readDirectory(directory)).filter((name) =>
-        name.includes(".backup"),
-      ),
-    };
-  });
+/** A refused startup must leave the retained database byte for byte unchanged. */
+function readStoredDatabase(directory: string) {
+  return FileSystem.FileSystem.pipe(
+    Effect.flatMap((fs) => fs.readFile(join(directory, "sharnessd.sqlite3"))),
+  );
 }

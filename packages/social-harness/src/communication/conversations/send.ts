@@ -110,8 +110,6 @@ const sendReasonByStoreReason = {
   incompatible: "persistence-failed",
   "invalid-continuation": "persistence-failed",
   "invalid-input": "persistence-failed",
-  "newer-schema": "persistence-failed",
-  "pre-reset": "persistence-failed",
   "not-found": "persistence-failed",
   persistence: "persistence-failed",
 } as const satisfies Readonly<

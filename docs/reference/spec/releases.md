@@ -86,15 +86,14 @@ reject the retired `moltzapVersion` field, including a value that also carries
 
 ## Reset releases
 
-A reset establishes fresh wire and storage baselines. It selects a
-wire version that no earlier release emitted, initializes the live and
-history sets with only that version, raises the endpoint store's reset
-schema, and starts a new Registry migration ledger. Compatibility checks use
-the first release under that baseline as their reset boundary.
+A reset establishes fresh wire and storage baselines. It selects a wire
+version that no earlier release emitted and initializes the live and history
+sets with only that version. Compatibility checks use the first release under
+that baseline as their reset boundary.
 
-Peers across the reset reject each other with `version-mismatch`. Older
-state fails with `pre-reset`. Operators must use a fresh Registry database
-and fresh endpoint state directories, and register every agent again.
+Peers across the reset reject each other with `version-mismatch`. Operators
+must use a fresh Registry database and fresh endpoint state directories, and
+register every agent again.
 Certified history does not migrate across a reset. The
 [daemon format rules](./daemon/daemon.md#current-formats) and
 [Registry persistence rules](../services/registry.mdx#storage-and-upgrades) define the

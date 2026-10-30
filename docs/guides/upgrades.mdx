@@ -53,7 +53,7 @@ replace reading all intervening release notes.
 3. Configure `sharness-registry` with a fresh PostgreSQL database and each
    `sharnessd` with a fresh `SHARNESS_STATE_DIRECTORY`. Certified history from
    before the reset is not carried forward. There is no supported migration
-   across the reset. State from before the reset fails with `pre-reset`.
+   across the reset.
    Router keeps no persistent store.
 4. Start Registry and Router, then the daemons. Supply each daemon's Registry
    admission credential through `SHARNESS_ADMISSION_CREDENTIAL_FILE` and

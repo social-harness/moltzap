@@ -94,8 +94,7 @@ export namespace Daemon {
     readonly phase: "configuration" | "storage" | "listener" | "registration";
     readonly reason?:
       | "outbox-too-old"
-      | "newer-schema"
-      | "pre-reset"
+      | "incompatible"
       | "agent-not-admitted"
       | "admission-refused"
       | "name_taken"
@@ -119,15 +118,12 @@ export namespace Daemon {
           ". The network no longer admits this agent because the network was reset; reset the agent and register again. Docs: https://docs.moltzap.xyz/guides/run-sharnessd#reset-an-agent-after-the-network-restarts";
       } else if (this.reason === "admission-refused") {
         remedy = `. ${registrationAdmissionRefusalMessage}`;
-      } else if (this.reason === "pre-reset") {
+      } else if (this.reason === "incompatible") {
         remedy =
-          ". Start with a fresh state directory and register again. Docs: https://docs.moltzap.xyz/guides/upgrades#apply-a-reset-release";
+          ". Use a fresh state directory and register again. Docs: https://docs.moltzap.xyz/reference/spec/daemon/daemon#persistence";
       } else if (this.reason === "outbox-too-old") {
         remedy =
           ". Drain the outbox on the previous release before upgrading, or apply a reset release. Docs: https://docs.moltzap.xyz/guides/upgrades#apply-a-reset-release";
-      } else if (this.reason === "newer-schema") {
-        remedy =
-          ". A newer release wrote this state directory; run that release or a later one. Docs: https://docs.moltzap.xyz/guides/upgrades#upgrade-daemons-on-restart";
       }
       return `sharnessd startup failed in phase ${this.phase}${reason}${detail}${remedy}`;
     }
@@ -265,14 +261,12 @@ export namespace Daemon {
     });
   }
 
-  /** Operational failures keep their storage phase; only reset boundaries add a reason. */
+  /** Format refusal retains its reason at the process boundary. */
   const storeStartupReasons = {
-    "pre-reset": "pre-reset",
-    "newer-schema": "newer-schema",
     closed: undefined,
     conflict: undefined,
     corrupt: undefined,
-    incompatible: undefined,
+    incompatible: "incompatible",
     "invalid-continuation": undefined,
     "invalid-input": undefined,
     "not-found": undefined,
