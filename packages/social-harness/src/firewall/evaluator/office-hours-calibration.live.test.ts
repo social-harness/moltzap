@@ -2,8 +2,9 @@
  * @file Calibration run: judges every case in `OH_CASES` (JSONL) against the
  * rule text in `OH_RULE`, `OH_RUNS` times each, and writes one JSONL line per
  * judgment to `OH_RESULTS` with the provider's probability of a violation.
- * `OH_CHECK` picks the one-call verdict check (`verdict`, the default) or the
- * staged text policy (`staged`). Needs a Jev key in the file named by
+ * `OH_CHECK` picks the one-call verdict check (`verdict`, the default), the
+ * staged text policy (`staged`), the structured-form check (`form`) or both
+ * the form and verdict checks (`form+verdict`). Needs a Jev key in the file named by
  * `JEV_KEY_FILE`; skipped otherwise.
  */
 
@@ -18,6 +19,7 @@ import {
 } from "./index.js";
 import { makeJevDecisionProvider } from "./jev.js";
 import { makeProtocolCheck } from "./protocol-check.js";
+import { makeProtocolForm } from "./protocol-form.js";
 
 const PROF = "agt_Q7mZr2LkVx9pTb4nWc1hYs";
 const STUDENT = "agt_d3FjK8uNe5RtA0gHqP6yMw";
@@ -67,8 +69,18 @@ function contextOf(c: Case) {
 }
 
 /** The provider's probability of a violation, from whichever check ran. */
+/** The form check's errors, when it ran. */
+function formErrorsOf(result: FirewallCheck): readonly string[] | undefined {
+  const data = result.checks.find((check) => check.middlewareId === "form")
+    ?.trace?.data;
+  return data === undefined
+    ? undefined
+    : (JSON.parse(data) as { errors: string[] }).errors;
+}
+
 function violationProbability(result: FirewallCheck): number | undefined {
-  const data = result.checks[0]?.trace?.data;
+  const data = result.checks.find((check) => check.middlewareId !== "form")
+    ?.trace?.data;
   if (data === undefined) {
     return undefined;
   }
@@ -118,18 +130,33 @@ live(
           nextAction: "revise",
         },
       });
-      const check =
+      const verdict = makeProtocolCheck({
+        id: "protocol",
+        rules: [rule],
+        provider,
+      });
+      const form = makeProtocolForm({
+        id: "form",
+        rule: { ...rule, id: `${rule.id}-form` },
+      });
+      const checks =
         process.env.OH_CHECK === "staged"
-          ? yield* makeTextPolicy({
-              id: "owner",
-              rules: [rule],
-              provider,
-              settings: TEXT_SETTINGS,
-            })
-          : makeProtocolCheck({ id: "protocol", rules: [rule], provider });
+          ? [
+              yield* makeTextPolicy({
+                id: "owner",
+                rules: [rule],
+                provider,
+                settings: TEXT_SETTINGS,
+              }),
+            ]
+          : process.env.OH_CHECK === "form"
+            ? [form]
+            : process.env.OH_CHECK === "form+verdict"
+              ? [form, verdict]
+              : [verdict];
       const firewall = yield* makeFirewall({
-        incoming: [check],
-        outgoing: [check],
+        incoming: checks,
+        outgoing: checks,
         settings: FIREWALL_SETTINGS,
       });
       const cases = readFileSync(process.env.OH_CASES ?? "", "utf8")
@@ -157,6 +184,7 @@ live(
             const result = yield* c.direction === "outgoing"
               ? firewall.checkOutgoing(message, contextOf(c))
               : firewall.checkIncoming(message, contextOf(c));
+            const formErrors = formErrorsOf(result);
             appendFileSync(
               output,
               `${JSON.stringify({
@@ -164,7 +192,12 @@ live(
                 run,
                 judgment: result.judgment,
                 reason: result.reason,
-                pViolation: violationProbability(result) ?? null,
+                formErrors,
+                pViolation:
+                  formErrors !== undefined && formErrors.length > 0
+                    ? 1
+                    : (violationProbability(result) ??
+                      (result.judgment === "allow" ? 0 : 1)),
               })}\n`,
             );
           }),
