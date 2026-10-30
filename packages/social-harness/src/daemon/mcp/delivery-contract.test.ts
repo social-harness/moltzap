@@ -90,12 +90,15 @@ const deliveryFixture = (sendMessage: MessageSender = unreachable) =>
       historyExport: { record: () => Effect.void },
       collectives: () => slot.active,
     });
-    const persistence = yield* collectivePersistencePorts(sendMessage);
+    const persistence = yield* collectivePersistencePorts(
+      sendMessage,
+      "agent:alice",
+      1,
+    );
     const collectives = yield* makeCollectiveOperations({
       ...persistence,
       store,
       observeMessage: unreachable,
-      reportStorageFault: () => Effect.void,
       self: testAgentView("agent:alice"),
       sendMessage,
       emit: (item, provenance, terminal) =>

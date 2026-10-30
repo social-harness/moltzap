@@ -168,31 +168,7 @@ it(
 function preservesQueuedRequest() {
   return Effect.gen(function* () {
     const path = stateDirectory();
-    const queued = yield* Effect.scoped(
-      Effect.gen(function* () {
-        const store = yield* openDaemonStore(path, {
-          liveWireVersions: LIVE_WIRE_VERSIONS,
-        });
-        const request = message();
-        yield* seedRequest(store, request);
-        const layer = yield* makeCollectives(store, yield* Scope.Scope);
-        const classified = yield* layer.classify({
-          message: request,
-          recordHash,
-        });
-        const [pending] = yield* store.readPendingDeliveries();
-        if (Option.isNone(classified) || pending === undefined) {
-          return yield* Effect.dieMessage("missing request");
-        }
-        const item = {
-          deliveryToken: pending.deliveryToken,
-          conversation: sender,
-          canonicalItem: yield* encodeRuntimeValue(classified.value),
-        };
-        yield* store.queueFirewallItem(item);
-        return item;
-      }),
-    );
+    const queued = yield* retainQueuedRequest(path);
     yield* Effect.scoped(
       Effect.gen(function* () {
         const store = yield* openDaemonStore(path, {
@@ -241,6 +217,34 @@ const answerHash = digest("rch_", 41);
 type DelayedHistory = Effect.Effect.Success<
   ReturnType<typeof delayedCloseHistory>
 >;
+
+function retainQueuedRequest(path: string) {
+  return Effect.scoped(
+    Effect.gen(function* () {
+      const store = yield* openDaemonStore(path, {
+        liveWireVersions: LIVE_WIRE_VERSIONS,
+      });
+      const request = message();
+      yield* seedRequest(store, request);
+      const layer = yield* makeCollectives(store, yield* Scope.Scope);
+      const classified = yield* layer.classify({
+        message: request,
+        recordHash,
+      });
+      const [pending] = yield* store.readPendingDeliveries();
+      if (Option.isNone(classified) || pending === undefined) {
+        return yield* Effect.dieMessage("missing request");
+      }
+      const item = {
+        deliveryToken: pending.deliveryToken,
+        conversation: sender,
+        canonicalItem: yield* encodeRuntimeValue(classified.value),
+      };
+      yield* store.queueFirewallItem(item);
+      return item;
+    }),
+  );
+}
 
 function groupRequest() {
   return Effect.gen(function* () {

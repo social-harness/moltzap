@@ -48,9 +48,10 @@ interface StubEngine {
 export function collectivePersistencePorts(
   sendMessage: CollectivePorts["sendMessage"],
   self = "agent:alice",
+  firstMessageByte = 101,
 ) {
   return Effect.gen(function* () {
-    const engine = yield* stubEngine(self);
+    const engine = yield* stubEngine(self, firstMessageByte);
     const send: CollectivePorts["sendMessage"] = (input) =>
       retainStubOperation(engine, input.collective).pipe(
         Effect.zipRight(sendMessage(input)),
@@ -98,7 +99,7 @@ export function collectiveStorageStub(): CollectivePorts["store"] {
   };
 }
 
-function stubEngine(self: string) {
+function stubEngine(self: string, firstMessageByte: number) {
   return Effect.gen(function* () {
     const registryKeys = generateKeyPairSync("ed25519");
     const cards = yield* Effect.forEach(
@@ -120,7 +121,7 @@ function stubEngine(self: string) {
       store: collectiveStorageStub(),
       cards,
       local,
-      nextMessage: 0,
+      nextMessage: firstMessageByte,
     } satisfies StubEngine;
   });
 }
@@ -148,7 +149,7 @@ function prepareStubMessage(engine: StubEngine, input: EngineSendInput) {
       conversationId: descriptor.conversationId,
       membershipHash,
       authorAgentId: engine.local.agentId,
-      msgId: digest("msg_", 101 + engine.nextMessage++),
+      msgId: digest("msg_", engine.nextMessage++),
       content: input.content,
     }).pipe(Effect.orDie);
     return {

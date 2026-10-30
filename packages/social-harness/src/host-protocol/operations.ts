@@ -149,10 +149,8 @@ const invocationValidationErrorSchema = Schema.Struct({
  * with the detail naming its specific cause, or a refused collective send
  * with its selected operationId and the failure naming each
  * unreachable member or failing field, which `decodeCollectiveFailure`
- * validates. An ambiguous answer's failure names its open request IDs. For
- * a `request-none`, `request-answered` or
- * `request-expired` refusal, `openElsewhere`, the questions open in other
- * conversations. Fields a newer daemon adds are ignored; a firewall or
+ * validates. Named-request refusals disclose no unrelated request or
+ * conversation. Fields a newer daemon adds are ignored; a firewall or
  * collective refusal that misses its own fields never decodes as a plain
  * reason.
  */

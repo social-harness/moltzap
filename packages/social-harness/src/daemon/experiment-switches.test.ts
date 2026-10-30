@@ -17,7 +17,7 @@ import {
   run,
 } from "../__tests__/daemon-runtime-harness.js";
 import { HistoryExportRecord, SendInput } from "../index.js";
-import { hiddenFeatureRefusal } from "./runtime/index.js";
+import { hiddenFeatureRefusal } from "./inbox/host-delivery.js";
 
 // @agent-code-guard/regression-only: These regressions pin daemon-owned experiment refusals, switched-off behavior and history exports through MCP.
 

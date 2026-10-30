@@ -93,12 +93,9 @@ function drainAdmission(input: AdmissionContext, publish: Effect.Effect<void>) {
 }
 
 /**
- * Check one queued item and commit its disposition, rechecking once on stale
- * evidence. A message or request is checked as its certified record; a
- * result or failure as the local item it is. A request whose deadline has
- * passed is never presented: one past it before its check retires without
- * one, and one past it once checked commits withheld. Either way the
- * collective layer learns whether the runtime was shown it.
+ * Check one queued item against one captured context and retain its disposition.
+ * A request that expires before assessment retires without checking; expiry
+ * during assessment withholds host presentation while preserving its result.
  */
 function admitItem(
   input: AdmissionContext,

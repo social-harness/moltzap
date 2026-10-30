@@ -16,10 +16,14 @@ import {
   ListenError,
 } from "../communication/conversations/errors.js";
 import {
+  type BindHold,
+  type PreparedSend,
+  type EngineSentMessage,
   type EndpointEngine,
   type EndpointEngineInput,
   EngineOutboundError,
   type EnginePendingMessage,
+  preparedSendData,
 } from "../communication/conversations/index.js";
 import {
   deriveConversationId,
@@ -52,7 +56,10 @@ import { sameBytes } from "../encoding/canonical-json.js";
 import { INBOX_PENDING_EVENT } from "../host-protocol/names.js";
 import { Registry } from "../identity/registry/index.js";
 import { AuthenticationFailedError } from "../identity/signing/http-errors.js";
-import { collectiveStorageStub } from "./collective-storage-stub.js";
+import {
+  collectivePersistencePorts,
+  collectiveStorageStub,
+} from "./collective-storage-stub.js";
 import { unusedEndpointStore } from "./unused-endpoint-store.js";
 
 /** The MCP handler the daemon installed; throws before installation. */
@@ -324,7 +331,12 @@ function makeRuntimeDependencies(
         if (input.blockEngine) {
           yield* Deferred.await(input.signals.engineRelease);
         }
-        return makeEngine(input, engineInput);
+        const preparation = yield* collectivePersistencePorts(
+          () => Effect.dieMessage("preparation sends no messages"),
+          `agent:${engineInput.localAgentCard.agentName}`,
+          1,
+        );
+        return makeEngine(input, engineInput, preparation.prepareMessage);
       }),
     makeHandler: (options) =>
       Effect.sync(() => {
@@ -388,6 +400,7 @@ const readPending = (delivery: DeliveryState) =>
 function makeEngine(
   input: RuntimeDependenciesInput,
   engineInput: EndpointEngineInput,
+  prepare: EndpointEngine["prepare"],
 ): EndpointEngine {
   const { delivery } = input;
   const failure = Deferred.await(input.signals.failure).pipe(
@@ -405,9 +418,9 @@ function makeEngine(
         "no retained message is observed in this lifecycle fixture",
       ),
     send: () => certified,
-    prepare: () =>
-      Effect.dieMessage("this lifecycle fixture does not author messages"),
-    accept: (...[, hold]) => hold.pipe(Effect.as({ certified })),
+    prepare,
+    accept: (prepared, hold) =>
+      acceptHarnessMessage(engineInput, prepared, hold, certified),
     resolveAddress: (to) =>
       resolveHarnessConversation(engineInput, to).pipe(Effect.asVoid),
     resolveConversation: (to) => resolveHarnessConversation(engineInput, to),
@@ -427,6 +440,28 @@ function makeEngine(
     abandonVolatileFolds: () => Effect.void,
     rearmCatchUp: Effect.void,
   };
+}
+
+function acceptHarnessMessage<E>(
+  engineInput: EndpointEngineInput,
+  prepared: PreparedSend,
+  hold: BindHold<E>,
+  certified: Effect.Effect<EngineSentMessage>,
+) {
+  return Effect.gen(function* () {
+    yield* hold;
+    const { intent } = yield* preparedSendData(prepared);
+    if (prepared.collective?.operation !== undefined) {
+      yield* engineInput.store
+        .putCollectiveOperation(prepared.collective.operation)
+        .pipe(Effect.orDie);
+    }
+    return {
+      certified: certified.pipe(
+        Effect.map((result) => ({ ...result, msgId: intent.msgId })),
+      ),
+    };
+  });
 }
 
 /** Uses signed fixture cards and the ordinary address rules without sending. */

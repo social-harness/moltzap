@@ -326,11 +326,6 @@ describe("Harness send refusal data", () => {
   it.each([
     { reason: "firewall-refused", checkId: "chk_x" },
     { reason: "collective-failed" },
-    {
-      reason: "collective-failed",
-      operationId: collectiveId,
-      failure: { kind: "request-ambiguous" },
-    },
   ])(
     "refuses a firewall or collective refusal missing its fields: %j",
     (data) => {

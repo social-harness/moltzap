@@ -1,6 +1,5 @@
 /** @file Collective sends retain exact policy decisions before ordinary protocol binding. */
 
-import type { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
 import { scopedLive as it } from "@effect/vitest";
 import { Deferred, Duration, Effect, Fiber } from "effect";
 import { describe, expect } from "vitest";

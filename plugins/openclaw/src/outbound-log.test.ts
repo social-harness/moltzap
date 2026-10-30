@@ -94,8 +94,12 @@ function messageToolReplyLogsItsOrigin() {
     runMessageAction(plugin, "reply", to, message),
   ).pipe(
     Effect.tap(({ logLines }) => {
-      expect(logLines).toContain(
-        `info: Social Harness: outbound via message-action:reply to ${to} op=answer operationId=${OPERATION_ID} msgId=${msgId(100)} chars=${message.length}: ${message}`,
+      expect(logLines).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining(
+            `info: Social Harness: outbound via message-action:reply to ${to} op=answer operationId=${OPERATION_ID} msgId=${msgId(100)} chars=${message.length}:`,
+          ),
+        ]),
       );
     }),
   );

@@ -31,8 +31,8 @@ import {
   readLocalCollective,
 } from "./state.js";
 import {
-  type CollectiveValue,
   collectiveRequesterOf,
+  type CollectiveValue,
   readCollectiveValue,
 } from "./wire/index.js";
 

@@ -615,7 +615,7 @@ function evidenceGaps(evidence: FirewallEvidence): string[] {
   ];
 }
 
-/** A terminal attempt holds without asking the provider, after two stale captures. */
+/** Missing candidate evidence holds without inference; valid captured evidence runs the full chain once. */
 function runAssessment(
   environment: FirewallEnvironment,
   input: AssessmentInput,

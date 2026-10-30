@@ -77,8 +77,7 @@ type WithheldText = Extract<
  * its request and no check withheld it. An answer or question a check does
  * not admit becomes `withheld` in the projection the runtime reads.
  * @param environment The store, installation and local identity.
- * @param local The queued entry with its provenance, its decoded item, and
- * whether the stale budget is spent, so checks hold without inference.
+ * @param local The queued entry with its provenance and decoded item.
  * @returns The commit the store applies.
  */
 export const checkLocalItem = (
@@ -103,7 +102,7 @@ const retainedJudgment = Schema.Struct(
   Struct.pick(firewallCheckSchema.fields, "judgment", "reason"),
 );
 
-/** One result being admitted, and whether its stale budget is spent. */
+/** One queued result and its immutable canonical item. */
 interface ResultCheck {
   readonly entry: FirewallInboxEntry;
   readonly item: ResultItem;
