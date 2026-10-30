@@ -1,6 +1,6 @@
 /**
- * @file The ports the collective layer runs on: what it needs from the
- * daemon and the protocol operations it offers.
+ * @file The communication, lifetime and result-publication ports required by
+ * collective algorithms.
  */
 
 import { type Effect, type Option, Schema, type Scope } from "effect";
@@ -17,28 +17,16 @@ import type {
   EndpointStore,
   EndpointStoreError,
 } from "../store/index.js";
-import type {
-  CollectiveEmitError,
-  CollectiveError,
-  CollectiveSendOutcome,
-  SendInput,
-} from "./contracts.js";
+import type { CollectiveEmitError, CollectiveError } from "./contracts.js";
 import type { InboundItem } from "./inbound.js";
-import type { PreparedCollective } from "./prepared.js";
 import { exactStruct } from "../../encoding/exact.js";
 import { type MsgId, RecordHash } from "../records/index.js";
 import { AgentAddress } from "../records/values.js";
 
 // safer-arch-ignore file-implicit-boundary-module: The operation layer and its received-request state run on these ports; communication/collectives/index.ts is the one boundary that exposes them.
 
-/** The engine's message vocabulary the ports exchange. */
-export type { BindHold, EngineSendInput } from "../conversations/index.js";
-
-/** How binding an authored message fails: before it binds, or by its caller's hold. */
-export type AuthoredMessageError<E> = SendError | E;
-
 /** A collective send may fail during preparation, protocol selection or certification. */
-export type CollectiveSendError = AuthoredMessageError<CollectiveError>;
+export type CollectiveSendError = SendError | CollectiveError;
 
 /* eslint-disable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- The provenance Schema shares its domain name with the value it decodes. */
 
@@ -59,14 +47,9 @@ export type ResultProvenance = typeof ResultProvenance.Type;
 /* eslint-enable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Restore naming after the Schema/type pair. */
 
 /** Ordinary protocol traffic completes after local certification. */
-export type MessageSender = (
+type MessageSender = (
   input: EngineSendInput,
 ) => Effect.Effect<EngineSentMessage, SendError>;
-/** A bound intent preserves custody while its caller waits for certification. */
-export interface AcceptedMessage {
-  readonly certified: Effect.Effect<EngineSentMessage, SendError>;
-}
-
 /** What the collective layer needs from the daemon around it. */
 export interface CollectivePorts {
   /** Preparation captures canonical bytes before the caller decides whether to accept them. */
@@ -125,25 +108,7 @@ export interface CertifiedMessage {
   readonly recordHash: RecordHash;
 }
 
-/** The daemon's collective layer for one active identity. */
-export interface CollectiveOperations {
-  /** Validate an operation and capture its exact destinations, content and message identities. */
-  readonly prepare: (
-    input: SendInput,
-  ) => Effect.Effect<PreparedCollective, CollectiveSendError>;
-  /** Take protocol custody of the captured operation while its request and deadline remain live. */
-  readonly accept: (
-    prepared: PreparedCollective,
-  ) => Effect.Effect<CollectiveSendOutcome, CollectiveSendError>;
-  /**
-   * Classify one certified remote message. Answers are recorded and consumed,
-   * every other protocol message is consumed, and each remaining message becomes
-   * one item. Classifying a message again yields the same result, so the daemon
-   * may run it on every pass over pending deliveries. It fails with
-   * `CollectiveEmitError` when a result or failure the message completes cannot
-   * be kept, which ends the pass classifying it.
-   */
-  readonly classify: (
-    message: CertifiedMessage,
-  ) => Effect.Effect<Option.Option<InboundItem>, CollectiveEmitError>;
-}
+/** Classify certified protocol traffic and emit canonical communication items. */
+export type MessageClassifier = (
+  message: CertifiedMessage,
+) => Effect.Effect<Option.Option<InboundItem>, CollectiveEmitError>;

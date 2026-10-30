@@ -13,9 +13,9 @@ import type { AgentAddress, MessageAddressInput } from "../records/index.js";
 import type { InboundItem } from "./inbound.js";
 import type {
   CertifiedMessage,
-  CollectiveOperations,
   CollectivePorts,
   CollectiveSendError,
+  MessageClassifier,
 } from "./ports.js";
 import type { PreparedCollective } from "./prepared.js";
 import {
@@ -87,6 +87,20 @@ import {
   type ResponseValue,
   withoutCollectivePart,
 } from "./wire/index.js";
+
+/** The daemon's collective layer for one active identity. */
+export interface CollectiveOperations {
+  /** Validate an operation and capture its exact destinations, content and message identities. */
+  readonly prepare: (
+    input: SendInput,
+  ) => Effect.Effect<PreparedCollective, CollectiveSendError>;
+  /** Take protocol custody of the captured operation while its request and deadline remain live. */
+  readonly accept: (
+    prepared: PreparedCollective,
+  ) => Effect.Effect<CollectiveSendOutcome, CollectiveSendError>;
+  /** Certified traffic is classified without exposing host-local presentation state. */
+  readonly classify: MessageClassifier;
+}
 
 type MessageContent = InboundMessage["content"];
 
@@ -850,8 +864,8 @@ function abandonGroupRequest(
   );
 }
 
-/** The private protocol operations and retained result evidence. */
-export { type CollectiveOperations, ResultProvenance } from "./ports.js";
+/** Certified references accompany canonical results for upper-layer projection. */
+export { ResultProvenance } from "./ports.js";
 /** Prepared operation identities are private daemon integration data. */
 export type { PreparedCollective } from "./prepared.js";
 /** The failure an emit port returns when the service cannot keep an item. */

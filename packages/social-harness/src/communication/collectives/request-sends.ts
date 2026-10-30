@@ -17,7 +17,7 @@ import {
 } from "effect";
 import type { EngineSentMessage } from "../conversations/index.js";
 import type { CollectiveOperation } from "./contracts.js";
-import type { AcceptedMessage, CollectivePorts } from "./ports.js";
+import type { CollectivePorts } from "./ports.js";
 import type { PreparedGather } from "./state.js";
 import { canonicalMessageAddress } from "../conversations/address.js";
 import { SendError } from "../conversations/errors.js";
@@ -138,7 +138,7 @@ export function operationTimes(deadlineSeconds: number): Effect.Effect<{
  */
 export function withinRequestWait(
   waitUntil: number,
-  certified: AcceptedMessage["certified"],
+  certified: Effect.Effect<EngineSentMessage, SendError>,
 ) {
   return requestWait(waitUntil).pipe(
     Effect.flatMap((duration) =>

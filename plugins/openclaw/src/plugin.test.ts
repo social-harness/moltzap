@@ -31,7 +31,11 @@ import { Effect, Either, Encoding, Fiber, Schema, Stream } from "effect";
 import { join } from "node:path";
 import { beforeAll, describe, expect, vi, it as vitestIt } from "vitest";
 import { openClawTestStateDirectory } from "../vitest.setup.js";
-import { testAgentView, testGuidance } from "./__tests__/guidance-fixtures.js";
+import {
+  replyGuidanceCases,
+  testAgentView,
+  testGuidance,
+} from "./__tests__/guidance-fixtures.js";
 import {
   ACCOUNT_ID,
   type DispatchObservation,
@@ -132,13 +136,9 @@ describe("OpenClaw message tool send and reply actions", () => {
     "sends gather text as a gather and returns only its address",
     messageToolSendReturnsOnlyItsAddress,
   );
-  it(
-    "sends answer text from reply to the target conversation and returns the firewall's guidance",
+  it.each(replyGuidanceCases)(
+    "sends answer text to its named conversation and preserves $name",
     messageToolReplySendsAnswer,
-  );
-  it(
-    "retains registered advice without inventing response expectations",
-    messageToolKeepsRegisteredAdvice,
   );
   it(
     "refuses an invalid operation text naming the field, sending nothing",
@@ -572,8 +572,10 @@ function messageToolSendReturnsOnlyItsAddress() {
   );
 }
 
-function messageToolReplySendsAnswer() {
-  const guidance = testGuidance("mon");
+function messageToolReplySendsAnswer({
+  guidance,
+  instructions,
+}: (typeof replyGuidanceCases)[number]) {
   return withConnectedSend(
     (plugin) =>
       handleMessageAction(plugin, "reply", {
@@ -595,50 +597,12 @@ function messageToolReplySendsAnswer() {
           },
         },
       ]);
-      expect(result.details).toEqual({
-        ok: true,
-        to: "agent:alice",
-        guidance: {
-          ...guidance,
-          instructions: guidance.instructions.map((instruction) => ({
-            ruleId: instruction.ruleId,
-            expectation: "required",
-            subjects: ["candidate"],
-            instruction: instruction.instruction,
-          })),
-        },
-      });
-    },
-    (input, index) =>
-      endpointResult(input, index).pipe(
-        Effect.map((result) => ({ ...result, guidance })),
-      ),
-  );
-}
-
-function messageToolKeepsRegisteredAdvice() {
-  const advice = {
-    middlewareId: "owner",
-    ruleId: "participants",
-    instruction: "Check participants before sending.",
-  };
-  const guidance = { ...testGuidance("mon"), instructions: [advice] };
-  return withConnectedSend(
-    (plugin) =>
-      handleMessageAction(plugin, "send", {
-        to: "agent:alice",
-        message: "Hello",
-      }),
-    (sends, result) => {
-      expect(sends).toHaveLength(1);
       expect(result.details).toStrictEqual({
         ok: true,
         to: "agent:alice",
         guidance: {
           ...guidance,
-          instructions: [
-            { ruleId: advice.ruleId, instruction: advice.instruction },
-          ],
+          instructions,
         },
       });
     },

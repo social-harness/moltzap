@@ -3,7 +3,7 @@
 import { scopedLive as it } from "@effect/vitest";
 import { Chunk, Effect, Schema, Scope, Stream } from "effect";
 import { describe, expect } from "vitest";
-import type { MessageSender } from "../../communication/collectives/ports.js";
+import type { CollectivePorts } from "../../communication/collectives/ports.js";
 import type { EndpointEngine } from "../../communication/conversations/index.js";
 import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
@@ -77,7 +77,9 @@ const callTool =
     );
 
 /** Real delivery, collective classification and storage behind the MCP boundary. */
-const deliveryFixture = (sendMessage: MessageSender = unreachable) =>
+const deliveryFixture = (
+  sendMessage: CollectivePorts["sendMessage"] = unreachable,
+) =>
   Effect.gen(function* () {
     const store = yield* openDaemonStore(stateDirectory(), {
       liveWireVersions: LIVE_WIRE_VERSIONS,
@@ -98,9 +100,7 @@ const deliveryFixture = (sendMessage: MessageSender = unreachable) =>
     const collectives = yield* makeCollectiveOperations({
       ...persistence,
       store,
-      observeMessage: unreachable,
       self: testAgentView("agent:alice"),
-      sendMessage,
       emit: (item, provenance, terminal) =>
         delivery
           .queueLocalItem(item, provenance, terminal)

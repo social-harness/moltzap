@@ -1,12 +1,14 @@
 /** @file One retained response claim stays attached to its original certified message. */
+
 import { Clock, Effect, Either, Option, Schema } from "effect";
-import type { BindHold, CollectiveSendError } from "./ports.js";
+import type { CollectiveSendError } from "./ports.js";
+import type { PreparedResponse } from "./prepared.js";
 import type { CertifiedAnswer } from "./shared-answers.js";
 import type { CollectiveState } from "./state.js";
 import { canonicalMessageAddress } from "../conversations/address.js";
 import { SendError } from "../conversations/errors.js";
 import {
-  type PreparedSend,
+  type BindHold,
   preparedSendData,
   resolutionFailure,
 } from "../conversations/index.js";
@@ -51,14 +53,6 @@ const collectiveFailure = (
   operationId: CollectiveId,
   failure: CollectiveFailure,
 ) => new CollectiveError({ operationId, failure });
-
-/** Request validation precedes assessment; the protocol claim waits until acceptance. */
-export interface PreparedResponse {
-  readonly operationId: CollectiveId;
-  readonly request: ReceivedRequest;
-  readonly value: ResponseValue;
-  readonly message: PreparedSend;
-}
 
 /** Capture the exact schema-valid answer and its original request before assessment. */
 export function prepareResponse(

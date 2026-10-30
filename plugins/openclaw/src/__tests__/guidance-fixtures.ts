@@ -37,3 +37,36 @@ export function testAgentView(name: string): AgentView {
     principalId: `prn_${suffix}`,
   });
 }
+
+const expectationGuidance = testGuidance("mon");
+const registeredInstruction = {
+  middlewareId: "owner",
+  ruleId: "participants",
+  instruction: "Check participants before sending.",
+};
+
+/** Tool results retain each registered instruction without synthesizing an expectation. */
+export const replyGuidanceCases = [
+  {
+    name: "response expectations",
+    guidance: expectationGuidance,
+    instructions: [
+      {
+        ruleId: "participants",
+        expectation: "required",
+        subjects: ["candidate"],
+        instruction: "Include Carol in the scheduling reply.",
+      },
+    ],
+  },
+  {
+    name: "registered advice",
+    guidance: { ...expectationGuidance, instructions: [registeredInstruction] },
+    instructions: [
+      {
+        ruleId: registeredInstruction.ruleId,
+        instruction: registeredInstruction.instruction,
+      },
+    ],
+  },
+] as const;

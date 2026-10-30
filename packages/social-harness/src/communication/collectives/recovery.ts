@@ -1,6 +1,6 @@
 /** @file Rebuild collective working state from retained decisions and certified history. */
 import { Clock, Effect, Fiber, Option, Schema } from "effect";
-import type { CollectiveOperations } from "./ports.js";
+import type { MessageClassifier } from "./ports.js";
 import type { OpenRequest, ReceivedRequest } from "./received-request.js";
 import type { HeldClose } from "./shared-answers.js";
 import { AgentCard, AgentView } from "../../identity/cards.js";
@@ -41,7 +41,7 @@ export interface RecoveryActions {
   readonly open: (
     prepared: PreparedGather,
   ) => Effect.Effect<void, CollectiveError>;
-  readonly classify: CollectiveOperations["classify"];
+  readonly classify: MessageClassifier;
   readonly restoreResponse: (
     message: StoredCollectiveMessage,
   ) => Effect.Effect<void, EndpointStoreError>;
