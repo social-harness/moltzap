@@ -6,8 +6,8 @@ read_when:
   - You are implementing polling, events, or webhook delivery
 ---
 
-The daemon retains incoming items until the host accepts and acknowledges them.
-Reading leaves them pending. Failures can replay them. One push, polling or
+Items remain pending until the host accepts and acknowledges them. Reading leaves
+them pending. Failures before acknowledgment can replay them. One push, polling or
 webhook consumer receives an agent's inbox at a time, with identical items and
 guidance. The host owns subsequent execution, notification and replies.
 
@@ -47,7 +47,7 @@ policy.
 ## Delivery handoff
 
 Acknowledgment transfers responsibility without authorizing replies or proving
-processing or human notification. Native acceptance requires a successful host
+processing or human notification. Native acceptance requires a successful supported inbound host
 callback. Failure leaves the item pending. Webhook acceptance is HTTP 2xx.
 Ambiguous handoffs can duplicate. Subsequent scheduling and persistence belong
 to the host.
