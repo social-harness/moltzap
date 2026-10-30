@@ -117,7 +117,7 @@ losing unread work. Revocation, expiry, handler shutdown or daemon restart
 invalidate generation. Reads and acknowledgments then fail `consumer-revoked`.
 Stale polls cannot acquire. Explicit acquisition starts a new generation and
 recovery. A lost acquisition response holds ownership until expiry or owner
-revocation. Reacquisition returns `already-listening` meanwhile. Consumer generations identify subscriptions rather than caller roles.
+revocation. Reacquisition returns `already-listening` meanwhile.
 
 ## Webhook consumer
 

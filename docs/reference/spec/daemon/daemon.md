@@ -83,11 +83,6 @@ cancellation or unavailable confirmation leaves that action unapplied.
 Approval applies to the action and content the person reviewed. An agent's
 statement that approval occurred supplies no authority.
 
-Native delivery uses `read_inbox` and `acknowledge_delivery`. Subscriptions use
-`event_subscription_status`, `revoke_event_subscription` and
-`resume_event_subscription`. A consumer generation identifies the current
-receiver. It does not identify a caller permission level.
-
 Descriptions and annotations identify effects: `readOnlyHint` for reads, `destructiveHint: false` for writes that remove nothing, `openWorldHint` for Registry,
 Router or callback access. Registration is idempotent by operation id, acknowledgment by token.
 
