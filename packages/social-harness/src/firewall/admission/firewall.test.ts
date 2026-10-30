@@ -3,7 +3,14 @@
 import { scopedLive as it } from "@effect/vitest";
 import { Deferred, Effect, Fiber, Queue, Schema } from "effect";
 import { expect } from "vitest";
-import type { FirewallOptions } from "./firewall.js";
+import type {
+  DecisionProvider,
+  DecisionRequest,
+  MessageMiddleware,
+  MiddlewareInput,
+  TextRule,
+} from "../evaluator/contract/index.js";
+import type { FirewallOptions } from "../policy/installation.js";
 import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { appendCertifiedMessage } from "../../__tests__/certified-history-fixtures.js";
 import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
@@ -15,7 +22,6 @@ import {
   addConversation,
   auditChecks,
   block,
-  churnPolicy,
   destination,
   fixture,
   incomingFixture,
@@ -23,22 +29,11 @@ import {
   outgoingFixture,
   pass,
   policy,
-  renderedWaitAction,
   revise,
   rule,
   seedIncoming,
-  waitAction,
 } from "../../__tests__/firewall-runtime-fixtures.js";
-import { InboundItem } from "../../communication/collectives/inbound.js";
-
-import {
-  type DecisionProvider,
-  type DecisionRequest,
-  type MessageMiddleware,
-  MiddlewareError,
-  type MiddlewareInput,
-  type TextRule,
-} from "../evaluator/contract/index.js";
+import { InboundItem } from "../../host-protocol/items.js";
 import { makeTextPolicy } from "../evaluator/index.js";
 import { type LocalGuidance, renderLocalGuidance } from "../outcome/index.js";
 
@@ -224,13 +219,13 @@ const nearTie = {
 
 const announceOnce: TextRule = {
   id: "announce-once",
-  kind: "norm",
+  applies: "both",
   text: "Announce the final meeting time once.",
   guidance: "Announce the final time once.",
 };
 
 it(
-  "admits a group message under enforcement when a norm's applicability is uncertain, advising that judgment",
+  "admits valid uncertainty with the registered rule guidance",
   uncertainNormApplicability,
 );
 
@@ -260,31 +255,6 @@ function uncertainNormApplicability() {
       instruction: announceOnce.guidance,
     });
     yield* Fiber.interrupt(sending);
-  });
-}
-
-it(
-  "holds a group message under enforcement when a safety rule's applicability is uncertain",
-  uncertainSafetyApplicability,
-);
-
-function uncertainSafetyApplicability() {
-  return Effect.gen(function* () {
-    const subject = yield* fixture;
-    const delivery = yield* outgoingFixture(
-      subject,
-      yield* nearTiePolicy({
-        id: "privacy",
-        kind: "safety",
-        text: "Do not disclose private appointments.",
-      }),
-    );
-    const refusal = yield* Effect.flip(
-      delivery.operations.send({
-        input: sendInput({ to: group, text: "The meeting is Tuesday." }),
-      }),
-    );
-    expect(refusal).toMatchObject({ refusal: "unresolved-evidence" });
   });
 }
 
@@ -355,61 +325,9 @@ function shadowIncoming() {
     expect(runtime.published.map((event) => event.item)).toEqual([
       { kind: "multicast", message: runtime.candidate.message },
     ]);
-    expect(runtime.published[0]?.guidance).toBeUndefined();
-  });
-}
-
-it(
-  "rechecks an allow after evidence changes and then refuses the same unsent candidate",
-  recheckedSend,
-);
-
-function recheckedSend() {
-  return Effect.gen(function* () {
-    const subject = yield* fixture;
-    yield* seedIncoming(subject, true);
-    const entered = yield* Deferred.make<undefined>();
-    const release = yield* Deferred.make<undefined>();
-    const seen: MiddlewareInput[] = [];
-    const delivery = yield* outgoingFixture(
-      subject,
-      policy((input) =>
-        Effect.gen(function* () {
-          seen.push(input);
-          if (seen.length === 1) {
-            yield* Deferred.succeed(entered, undefined);
-            yield* Deferred.await(release);
-            return pass;
-          }
-          return block;
-        }),
-      ),
-    );
-    const sending = yield* delivery.operations
-      .send({ input: { to: destination, text: "Draft before new evidence" } })
-      .pipe(Effect.forkScoped);
-    yield* Deferred.await(entered);
-    yield* subject.store.bindMessageIntent({
-      kind: "existing-conversation",
-      intent: {
-        conversationId: subject.membership.descriptor.conversationId,
-        membershipHash: subject.membership.hash,
-        authorAgentId: subject.local.card.agentId,
-        msgId: "msg_concurrent",
-        canonicalIntent: new Uint8Array([1]),
-      },
+    expect(runtime.published[0]?.guidance).toMatchObject({
+      instructions: [{ instruction: rule.guidance }],
     });
-    yield* Deferred.succeed(release, undefined);
-    expect(yield* Effect.flip(Fiber.join(sending))).toMatchObject({
-      refusal: "prohibited",
-    });
-    expect(seen).toHaveLength(2);
-    expect(seen[1]?.event).toEqual(seen[0]?.event);
-    expect(
-      (yield* subject.store.recover()).messageIntents
-        .filter((intent) => intent.completedRecordHash === undefined)
-        .map((intent) => intent.msgId),
-    ).toEqual(["msg_concurrent"]);
   });
 }
 
@@ -449,114 +367,13 @@ function interruptedSend() {
           input: { to: destination, text: "Another draft" },
         }),
       ),
-    ).toMatchObject({ refusal: "prohibited" });
+    ).toMatchObject({ refusal: "rule-violation" });
   });
 }
-
-it(
-  "holds a concurrent send when its evidence is incomplete and its recheck is unavailable",
-  concurrentSends,
-);
-it("holds outgoing admission after two stale checks", () =>
-  staleOutgoing("enforcement"));
-it("admits an outgoing shadow after two stale checks without running a third inference", () =>
-  staleOutgoing("guidance"));
-it("holds incoming admission after two stale checks", () =>
-  staleIncoming("enforcement"));
-it("admits an incoming shadow after two stale checks without stale guidance", () =>
-  staleIncoming("guidance"));
 it(
   "captures immutable installation provenance and distinguishes provider model changes",
   installationProvenance,
 );
-
-function concurrentSends() {
-  return Effect.gen(function* () {
-    const subject = yield* fixture;
-    const entered = yield* Queue.unbounded<MiddlewareInput>();
-    const release = yield* Deferred.make<undefined>();
-    const delivery = yield* outgoingFixture(
-      subject,
-      policy((input) =>
-        Queue.offer(entered, input).pipe(
-          Effect.zipRight(
-            input.context.gaps.length === 0
-              ? Deferred.await(release).pipe(Effect.as(pass))
-              : Effect.fail(new MiddlewareError({ reason: "unavailable" })),
-          ),
-        ),
-      ),
-    );
-    const first = yield* delivery.operations
-      .send({ input: { to: destination, text: "First proposal" } })
-      .pipe(Effect.forkScoped);
-    const second = yield* delivery.operations
-      .send({ input: { to: destination, text: "Second proposal" } })
-      .pipe(Effect.forkScoped);
-    yield* Queue.take(entered);
-    yield* Queue.take(entered);
-    yield* Deferred.succeed(release, undefined);
-    yield* Deferred.await(subject.outbound);
-    const refusal = yield* Effect.race(
-      Effect.flip(Fiber.join(first)),
-      Effect.flip(Fiber.join(second)),
-    );
-    expect(refusal).toMatchObject({ refusal: "check-unavailable" });
-    expect((yield* Queue.take(entered)).context.gaps).not.toEqual([]);
-    expect((yield* subject.store.recover()).messageIntents).toHaveLength(1);
-    yield* Fiber.interrupt(first);
-    yield* Fiber.interrupt(second);
-  });
-}
-
-function staleOutgoing(mode: FirewallOptions["mode"]) {
-  return Effect.gen(function* () {
-    const subject = yield* fixture;
-    const churn = yield* churnPolicy(subject);
-    const delivery = yield* outgoingFixture(churn.subject, churn.middleware, {
-      mode,
-    });
-    const sending = yield* delivery.operations
-      .send({
-        input: { to: destination, text: "Draft while evidence changes" },
-      })
-      .pipe(Effect.forkScoped);
-    if (mode === "enforcement") {
-      const refusal = yield* Effect.flip(Fiber.join(sending));
-      expect(refusal.message).toContain(renderedWaitAction);
-      expect(refusal).toMatchObject({
-        refusal: "unresolved-evidence",
-        feedback: [{ nextAction: waitAction }],
-      });
-      expect((yield* subject.store.recover()).messageIntents).toEqual([]);
-    } else {
-      yield* Deferred.await(subject.outbound);
-      expect((yield* subject.store.recover()).messageIntents).toHaveLength(1);
-      yield* Fiber.interrupt(sending);
-    }
-    expect(churn.count()).toBe(2);
-  });
-}
-
-function staleIncoming(mode: FirewallOptions["mode"]) {
-  return Effect.gen(function* () {
-    const subject = yield* fixture;
-    const churn = yield* churnPolicy(subject);
-    const runtime = yield* incomingFixture(churn.subject, churn.middleware, {
-      mode,
-    });
-    yield* runtime.runPass;
-    yield* Queue.take(runtime.completed);
-    const event = yield* runtime.delivery.operations
-      .readEvent({ eventId: runtime.candidate.deliveryToken })
-      .pipe(Effect.either);
-    expect(event._tag).toBe(mode === "guidance" ? "Right" : "Left");
-    expect(churn.count()).toBe(2);
-    expect(
-      runtime.published.every((entry) => entry.guidance === undefined),
-    ).toBe(true);
-  });
-}
 
 function installationProvenance() {
   return Effect.gen(function* () {
@@ -708,4 +525,61 @@ function ownerHistoryStaysPrivate() {
       ],
     });
   });
+}
+
+it("keeps one captured assessment and exact draft while retained visibility changes", () =>
+  Effect.gen(function* () {
+    const subject = yield* fixture;
+    yield* seedIncoming(subject, true);
+    const entered = yield* Deferred.make<undefined>();
+    const release = yield* Deferred.make<undefined>();
+    const seen: MiddlewareInput[] = [];
+    const delivery = yield* outgoingFixture(
+      subject,
+      policy(captureAndWait(seen, entered, release)),
+    );
+    const originalText = "Captured original draft";
+    const changedText = "Caller changed the draft";
+    const draft = { to: destination, text: originalText };
+    const sending = yield* delivery.operations
+      .send({ input: draft })
+      .pipe(Effect.forkScoped);
+    yield* Deferred.await(entered);
+    draft.text = changedText;
+    yield* delivery.queueLocalItem({
+      kind: "operationFailed",
+      operationId: collectiveOperationId(subject.local.card.agentId),
+      to: destination,
+      error: "A later local result",
+    });
+    yield* Deferred.succeed(release, undefined);
+    yield* Deferred.await(subject.outbound);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.event.message?.text).toBe(originalText);
+    const pending = (yield* subject.store.recover()).messageIntents.filter(
+      (intent) => intent.completedRecordHash === undefined,
+    );
+    expect(pending).toHaveLength(1);
+    const retained = yield* Effect.fromNullable(pending[0]);
+    expect(new TextDecoder().decode(retained.canonicalIntent)).toContain(
+      originalText,
+    );
+    expect(new TextDecoder().decode(retained.canonicalIntent)).not.toContain(
+      changedText,
+    );
+    yield* Fiber.interrupt(sending);
+  }));
+
+function captureAndWait(
+  seen: MiddlewareInput[],
+  entered: Deferred.Deferred<undefined>,
+  release: Deferred.Deferred<undefined>,
+) {
+  return (input: MiddlewareInput) =>
+    Effect.gen(function* () {
+      seen.push(input);
+      yield* Deferred.succeed(entered, undefined);
+      yield* Deferred.await(release);
+      return pass;
+    });
 }

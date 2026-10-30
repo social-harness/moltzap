@@ -2,7 +2,6 @@
 
 import { Schema } from "effect";
 import { exactStruct } from "../../encoding/exact.js";
-import { withheldText } from "../../firewall/outcome/index.js";
 import { AgentView } from "../../identity/cards.js";
 import { InboundMessage } from "../conversations/message.js";
 import {
@@ -54,19 +53,16 @@ const collectiveRequestItem = exactStruct({
  * One member's outcome in a completed gather or all_gather, discriminated by
  * `kind`. `no-answer` covers every member that did not answer: one whose
  * request message was refused or not certified in time, and one silent at the
- * deadline. `withheld` replaces an answer the endpoint's firewall withheld
- * from the runtime; only the local projection carries it, never the shared
- * result.
+ * deadline.
  */
 const memberOutcome = Schema.Union(
   exactStruct({ kind: Schema.Literal("answered"), content: AnswerContent }),
   exactStruct({ kind: Schema.Literal("declined") }),
   exactStruct({ kind: Schema.Literal("invalid"), reason: Schema.String }),
   exactStruct({ kind: Schema.Literal("no-answer") }),
-  withheldText,
 );
 /**
- * One member's outcome after the local firewall limits the text the host may see.
+ * One member's canonical protocol outcome.
  * @useDeclaredType
  */
 export type CollectiveMemberOutcome = typeof memberOutcome.Type;
@@ -76,17 +72,15 @@ export type CollectiveMemberOutcome = typeof memberOutcome.Type;
  * endpoint started or was asked: exactly one outcome per member, in member
  * order. `to` is the address the operation named. Every member's all_gather
  * result is built from exactly the answers the requester's close lists.
- * Each endpoint derives the same shared result before its local firewall
- * projection. The question is the requester's text, or `withheld` where
- * this endpoint's firewall withheld the request.
+ * The question is the requester's original text.
  */
-const collectiveResultItem = exactStruct({
+export const collectiveResultItem = exactStruct({
   kind: Schema.Literal("collectiveResult"),
   op: collectingOp,
   operationId: CollectiveId,
   ...collectiveClosure.fields,
   to: MessageAddressInput,
-  question: Schema.Union(wellFormedString, withheldText),
+  question: wellFormedString,
   outcomes: Schema.NonEmptyArray(
     exactStruct({ member: AgentView, outcome: memberOutcome }),
   ),
@@ -133,44 +127,5 @@ export type CollectiveResultItem = Extract<
   InboundItem,
   { readonly kind: "collectiveResult" }
 >;
-
-/** Archived run ledgers map approval refusals to the current evidence hold. */
-const archivedWithheldText = exactStruct({
-  ...withheldText.fields,
-  reason: Schema.transform(
-    Schema.Union(
-      withheldText.fields.reason,
-      Schema.Literal("approval-required"),
-    ),
-    withheldText.fields.reason,
-    {
-      strict: true,
-      decode: (reason) =>
-        reason === "approval-required"
-          ? ("unresolved-evidence" as const)
-          : reason,
-      encode: (reason) => reason,
-    },
-  ),
-});
-
-/**
- * An inbound item as a history export holds it. Archived run ledgers decode
- * independently of live endpoint stores, so a collective result's withheld
- * text may also carry an `approval-required` refusal.
- */
-export const historyExportItem = Schema.Union(
-  InboundItem,
-  exactStruct({
-    ...collectiveResultItem.fields,
-    question: Schema.Union(wellFormedString, archivedWithheldText),
-    outcomes: Schema.NonEmptyArray(
-      exactStruct({
-        member: AgentView,
-        outcome: Schema.Union(memberOutcome, archivedWithheldText),
-      }),
-    ),
-  }),
-).annotations({ identifier: "HistoryExportItem" });
 
 /* eslint-enable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Restore the package naming rules after the Schema/type pairs. */

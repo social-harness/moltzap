@@ -17,9 +17,9 @@ import {
   TestClock,
 } from "effect";
 import { describe, expect } from "vitest";
+import type { TestCollectiveOperations as CollectiveOperations } from "../../__tests__/collective-send.js";
+import type { InboundItem } from "../../host-protocol/items.js";
 import type { EngineSendInput } from "../conversations/index.js";
-import type { InboundItem } from "./inbound.js";
-import type { CollectiveOperations } from "./ports.js";
 import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
 import {
@@ -40,11 +40,10 @@ import {
   slotSchema,
   unkeptEmit,
 } from "../../__tests__/collective-operation-fixtures.js";
-import { localGuidance } from "../../__tests__/message-policy-fixtures.js";
 import { SendError } from "../conversations/errors.js";
 import { InboundMessage } from "../conversations/message.js";
 import { CollectiveEmitError } from "./contracts.js";
-import { collectiveRequesterOf } from "./wire/index.js";
+import { collectiveRequesterOf, readCollectiveValue } from "./wire/index.js";
 
 const group = "group:alice,bob,carol";
 const groupMembers = ["agent:alice", "agent:bob", "agent:carol"];
@@ -148,7 +147,11 @@ const startAllGather = (layer: CollectiveOperations) =>
 const respond = (layer: CollectiveOperations, slot: string) =>
   send(layer, {
     to: group,
-    collectiveResponse: { action: "accept", content: { slot } },
+    collectiveResponse: {
+      operationId: requestId,
+      action: "accept",
+      content: { slot },
+    },
   });
 
 function sendsOneRequestMessageToTheGroup() {
@@ -285,25 +288,13 @@ function namesEveryMemberWhenTheGroupMessageIsNotCertifiedInTime() {
  */
 function endsInItsResultAloneWhenTheDeadlinePassesBeforeTheGroupMessageCertifies() {
   const observed = newObserved();
-  const advice = localGuidance(9);
 
   return Effect.gen(function* () {
     const emitted = yield* Deferred.make<undefined>();
     const bound: EngineSendInput[] = [];
     const layer = yield* makeLayer(observed, {
       ...signalEmitted(observed, emitted),
-      admission: {
-        bindMessage: (input, hold) =>
-          hold.pipe(
-            Effect.zipLeft(
-              Effect.sync(() => {
-                bound.push(input);
-              }),
-            ),
-            Effect.as({ certified: Effect.never, guidance: advice }),
-          ),
-        admitGather: () => Effect.dieMessage("an all_gather admits no gather"),
-      },
+      sendMessage: recordUncertifiedRequest(bound, observed),
     });
     const completed = yield* Effect.flip(
       send(layer, {
@@ -323,6 +314,23 @@ function endsInItsResultAloneWhenTheDeadlinePassesBeforeTheGroupMessageCertifies
       { kind: "collectiveResult", to: group },
     ]);
   }).pipe(Effect.scoped);
+}
+
+function recordUncertifiedRequest(
+  bound: EngineSendInput[],
+  observed: Observed,
+) {
+  return (input: EngineSendInput) =>
+    readCollectiveValue(input.content).pipe(
+      Effect.orDie,
+      Effect.flatMap((value) => {
+        if (Option.isSome(value) && value.value.kind === "operation") {
+          bound.push(input);
+          return Effect.never;
+        }
+        return certifyNext(observed, input);
+      }),
+    );
 }
 
 function closesWithTheRecordHashOfEachCountedAnswer() {
@@ -907,42 +915,36 @@ function ignoresACloseForAnUnknownId() {
 
 /**
  * An admitted answer whose message fails after binding settles unanswered with
- * its advice, applying the close held while it was in flight: that close
+ * applying the close held while it was in flight: that close
  * lists the answer this member will not hold, so it ends the request
  * without a result.
  */
 function appliesAHeldCloseWhenAnAdmittedAnswerFailsAfterBinding() {
   const observed = newObserved();
-  const advice = localGuidance(4);
 
   return Effect.gen(function* () {
     const attempted = yield* Deferred.make<undefined>();
     const failing = yield* Deferred.make<undefined>();
     const layer = yield* makeLayer(observed, {
       self: "agent:bob",
-      admission: {
-        bindMessage: (input, hold) =>
-          hold.pipe(
-            Effect.as({
-              certified: Deferred.succeed(attempted, undefined).pipe(
-                Effect.zipRight(Deferred.await(failing)),
-                Effect.zipRight(
-                  Effect.fail(new SendError({ reason: "delivery-pending" })),
-                ),
-                Effect.zipLeft(Effect.sync(() => observed.sent.push(input))),
-              ),
-              guidance: advice,
-            }),
+      sendMessage: (input) =>
+        Deferred.succeed(attempted, undefined).pipe(
+          Effect.zipRight(Deferred.await(failing)),
+          Effect.zipRight(
+            Effect.fail(new SendError({ reason: "delivery-pending" })),
           ),
-        admitGather: () => Effect.dieMessage("a member admits no gather"),
-      },
+          Effect.zipLeft(Effect.sync(() => observed.sent.push(input))),
+        ),
     });
     yield* classify(layer, "agent:alice", 10, requestValue);
-    yield* layer.settleRequest(requestId, true);
     const answering = yield* Effect.fork(
       send(layer, {
         to: group,
-        collectiveResponse: { action: "accept", content: { slot: "mon" } },
+        collectiveResponse: {
+          operationId: requestId,
+          action: "accept",
+          content: { slot: "mon" },
+        },
       }),
     );
     yield* Deferred.await(attempted);
@@ -971,7 +973,7 @@ function ignoresACloseListingAnAnswerTheMemberDoesNotHold() {
 
 describe("an admitted answer whose message fails after binding", () => {
   itOnTestClock(
-    "settles unanswered with its advice and applies the close held meanwhile",
+    "settles unanswered and applies the close held meanwhile",
     appliesAHeldCloseWhenAnAdmittedAnswerFailsAfterBinding,
   );
 });
@@ -1126,15 +1128,6 @@ itOnTestClock(
         ...requestValue,
         operationId: bobOperationId,
       });
-
-      const ambiguous = yield* Effect.flip(respond(layer, "mon"));
-      expect(ambiguous).toMatchObject({
-        failure: {
-          kind: "request-ambiguous",
-          openOperationIds: [requestId, bobOperationId],
-        },
-      });
-      expect("operationId" in ambiguous).toBe(false);
 
       yield* send(layer, {
         to: group,

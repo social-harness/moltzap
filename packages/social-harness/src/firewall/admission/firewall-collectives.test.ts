@@ -11,7 +11,7 @@ import type {
   MessageMiddleware,
   MiddlewareInput,
 } from "../evaluator/contract/index.js";
-import type { FirewallOptions } from "./firewall.js";
+import type { FirewallOptions } from "../policy/installation.js";
 import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { appendCertifiedMessage } from "../../__tests__/certified-history-fixtures.js";
 import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
@@ -31,13 +31,11 @@ import {
   question,
   seedRequest,
   sendInput,
-  STALE_CAPTURES,
   unfinishedIntents,
 } from "../../__tests__/firewall-collective-fixtures.js";
 import {
   addConversation,
   auditChecks,
-  churnPolicy,
   fixture,
   type Fixture,
   incomingFixture,
@@ -48,17 +46,16 @@ import {
   settings,
 } from "../../__tests__/firewall-runtime-fixtures.js";
 import { bytes } from "../../__tests__/store-schema-fixtures.js";
-import { InboundItem } from "../../communication/collectives/inbound.js";
-import {
-  renderCollectiveRequest,
-  renderCollectiveRequestBody,
-  renderOutcome,
-} from "../../communication/collectives/render.js";
 import {
   type DeliveryToken,
   encodeRuntimeValue,
 } from "../../communication/store/index.js";
-
+import { InboundItem } from "../../host-protocol/items.js";
+import {
+  renderCollectiveRequest,
+  renderCollectiveRequestBody,
+  renderOutcome,
+} from "../../host-protocol/render.js";
 import { installEditableFirewall } from "../policy/editable.js";
 
 // @agent-code-guard/regression-only: Exercises collective admission, refusal and evidence through SQLite and the protocol engine.
@@ -335,7 +332,7 @@ function withholdsOneAnswerFromEveryRuntimeRead() {
           outcome: {
             kind: "withheld",
             checkId: bobCheck?.checkId,
-            reason: "prohibited",
+            reason: "rule-violation",
           },
         },
         carolOutcome,
@@ -447,7 +444,7 @@ function checksAnInvalidAnswerAsItsLine() {
     ).toMatchObject({
       outcomes: [
         { outcome: { kind: "answered" } },
-        { outcome: { kind: "withheld", reason: "prohibited" } },
+        { outcome: { kind: "withheld", reason: "rule-violation" } },
       ],
     });
   });
@@ -483,31 +480,6 @@ function showsEveryAnswerWithItsAdvice() {
           subjects: [{ sender: testAgentView(carol) }],
         },
       ],
-    });
-  });
-}
-
-function staleResult(mode: FirewallOptions["mode"]) {
-  return Effect.gen(function* () {
-    const subject = yield* fixture;
-    const answers = { bob: { slot: "mon" }, carol: { slot: "tue" } };
-    const churn = yield* churnPolicy(subject);
-    const provenance = yield* seedAnswers(subject, answers);
-    const runtime = yield* incomingFixture(
-      churn.subject,
-      churn.middleware,
-      { mode },
-      false,
-    );
-    yield* admitResult(runtime, gatherResult(answered(answers)), provenance);
-
-    const outcome =
-      mode === "guidance"
-        ? { kind: "answered" }
-        : { kind: "withheld", reason: "unresolved-evidence" };
-    expect(churn.count()).toBe(STALE_CAPTURES * provenance.answers.length);
-    expect(runtime.published[0]?.item).toMatchObject({
-      outcomes: [{ outcome }, { outcome }],
     });
   });
 }
@@ -755,7 +727,7 @@ function withholdsAQuestionCheckedWithItsResult() {
       op: "gather",
     });
     expect(delivery?.item).toMatchObject({
-      question: { kind: "withheld", reason: "prohibited" },
+      question: { kind: "withheld", reason: "rule-violation" },
     });
   });
 }
@@ -974,10 +946,6 @@ describe("collective results under a firewall", () => {
     "shows every answer in guidance mode, each with its own advice",
     showsEveryAnswerWithItsAdvice,
   );
-  it("withholds every answer after two stale captures in enforcement, without a third inference", () =>
-    staleResult("enforcement"));
-  it("shows every answer after two stale captures in guidance mode, without a third inference", () =>
-    staleResult("guidance"));
   it(
     "leaves the shown result and its answers' admission in later evidence",
     leavesTheResultInLaterEvidence,

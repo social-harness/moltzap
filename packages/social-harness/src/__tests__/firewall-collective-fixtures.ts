@@ -156,7 +156,11 @@ export function unfinishedIntents(subject: Fixture) {
 export function answerBob(content: object) {
   return sendInput({
     to: bob,
-    collectiveResponse: { action: "accept", content },
+    collectiveResponse: {
+      operationId: collectiveOperationId(testAgentView(bob).agentId),
+      action: "accept",
+      content,
+    },
   });
 }
 

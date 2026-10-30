@@ -3,7 +3,9 @@
 import { live as it } from "@effect/vitest";
 import { Effect, Scope } from "effect";
 import { expect } from "vitest";
+import type { DaemonStore } from "../../daemon/store.js";
 import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
+import { makeCollectiveOperations } from "../../__tests__/collective-send.js";
 import {
   gatherSend,
   question,
@@ -11,19 +13,12 @@ import {
 import {
   fixture,
   type Fixture,
-  installation,
-  pass,
-  policy,
-  resolvedMemberView,
 } from "../../__tests__/firewall-runtime-fixtures.js";
-import { withStore } from "../../__tests__/store-schema-fixtures.js";
-import { makeCollectiveOperations } from "../../communication/collectives/index.js";
+import { withDaemonStore } from "../../__tests__/store-schema-fixtures.js";
 import {
   type CollectiveOperationInput,
-  type EndpointStore,
   EndpointStoreError,
 } from "../../communication/store/index.js";
-import { collectiveAdmission } from "./index.js";
 
 // @agent-code-guard/regression-only: Fault injection after the real admission transaction proves error classification and durable operation identity across reopen.
 
@@ -33,7 +28,9 @@ it("retains the admitted gather when its store response fails and reports outcom
       committedGatherFailure(),
     );
     expect(
-      yield* withStore(directory, (store) => store.readCollectiveOperations()),
+      yield* withDaemonStore(directory, (store) =>
+        store.readCollectiveOperations(),
+      ),
     ).toEqual(retained);
   }));
 
@@ -43,12 +40,12 @@ function committedGatherFailure() {
     const fault = new EndpointStoreError({ reason: "persistence" });
     const reported: EndpointStoreError[] = [];
     let original: CollectiveOperationInput | undefined;
-    const store: EndpointStore = {
+    const store: DaemonStore = {
       ...subject.store,
-      admitFirewallOperation: (completion, candidate, operation) => {
+      putCollectiveOperation: (operation) => {
         original = operation;
         return subject.store
-          .admitFirewallOperation(completion, candidate, operation)
+          .putCollectiveOperation(operation)
           .pipe(Effect.zipRight(Effect.fail(fault)));
       },
     };
@@ -74,33 +71,25 @@ function committedGatherFailure() {
 
 function admittingCollectives(
   subject: Fixture,
-  store: EndpointStore,
+  store: DaemonStore,
   reported: EndpointStoreError[],
 ) {
   return Effect.gen(function* () {
-    const installed = yield* installation(
-      store,
-      policy(() => Effect.succeed(pass)),
-    );
     const { engine } = subject;
     return yield* makeCollectiveOperations({
       store,
       self: testAgentView("agent:alice"),
       scope: yield* Scope.Scope,
-      lookupMember: (member) => resolvedMemberView(engine, member),
       sendMessage: (input) => engine.send(input),
-      bindMessage: (input, hold) => engine.bind(input, hold),
-      sendAdmitted: (input, checkId) => engine.sendAdmitted(input, checkId),
+
+      prepareMessage: (input) => engine.prepare(input),
+      acceptMessage: (prepared, hold) => engine.accept(prepared, hold),
       observeMessage: (msgId) => engine.observeMessage(msgId),
       reportStorageFault: (error) =>
         Effect.sync(() => {
           reported.push(error);
         }),
       emit: () => Effect.dieMessage("no result precedes gather request fanout"),
-      admission: collectiveAdmission(
-        { installed, store, localAgentCard: subject.local.card },
-        engine,
-      ),
     });
   });
 }

@@ -32,6 +32,7 @@ import {
 import { describe, expect } from "vitest";
 import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
+import { requestId } from "../../__tests__/collective-operation-fixtures.js";
 import { localGuidance } from "../../__tests__/message-policy-fixtures.js";
 import {
   CollectiveError,
@@ -39,19 +40,17 @@ import {
   SendInput,
   SendResultSchema,
 } from "../../communication/collectives/contracts.js";
-import { InboundItem } from "../../communication/collectives/inbound.js";
 import {
   ListenError,
   SendError,
 } from "../../communication/conversations/errors.js";
-import { AgentAddress } from "../../communication/records/values.js";
 import {
   DeliveryToken,
   encodeRuntimeValue,
-  openEndpointStore,
 } from "../../communication/store/index.js";
 import { FirewallSendError } from "../../firewall/outcome/index.js";
 import { acquireHarnessEndpoint } from "../../host-client/index.js";
+import { InboundItem } from "../../host-protocol/items.js";
 import {
   HARNESS_SEND_TOOL,
   INBOX_PENDING_EVENT,
@@ -59,6 +58,7 @@ import {
 
 import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { readRuntimeEvent } from "../inbox/inbox.js";
+import { openDaemonStore } from "../store.js";
 import { acquireHarnessMcpHttpServer } from "./http.js";
 import {
   type HarnessMcpOperations,
@@ -438,27 +438,10 @@ const DETAILED_REFUSALS = [
     detail: "agent:dana is not a known agent",
   }),
   new CollectiveError({
-    failure: {
-      kind: "request-ambiguous",
-      openOperationIds: [
-        Schema.decodeUnknownSync(CollectiveId)(`col_${"B".repeat(64)}`),
-        Schema.decodeUnknownSync(CollectiveId)(`col_${"C".repeat(64)}`),
-      ],
-    },
-  }),
-  new CollectiveError({
     operationId: Schema.decodeUnknownSync(CollectiveId)(
       `col_${"A".repeat(64)}`,
     ),
     failure: { kind: "request-expired" },
-    openElsewhere: [
-      {
-        operationId: Schema.decodeUnknownSync(CollectiveId)(
-          `col_${"D".repeat(64)}`,
-        ),
-        to: Schema.decodeUnknownSync(AgentAddress)("agent:bob"),
-      },
-    ],
   }),
 ];
 
@@ -658,7 +641,11 @@ const checksSemanticSendSchema = (client: Client) =>
       },
       {
         to: "agent:bob",
-        collectiveResponse: { action: "accept", content: { ready: true } },
+        collectiveResponse: {
+          operationId: requestId,
+          action: "accept",
+          content: { ready: true },
+        },
       },
     ]) {
       expect(
@@ -709,10 +696,9 @@ function rejectsSendBookkeepingArguments() {
 function readsRetainedEventThroughSdk() {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
-    const store = yield* openEndpointStore(
-      yield* fs.makeTempDirectoryScoped(),
-      { liveWireVersions: LIVE_WIRE_VERSIONS },
-    );
+    const store = yield* openDaemonStore(yield* fs.makeTempDirectoryScoped(), {
+      liveWireVersions: LIVE_WIRE_VERSIONS,
+    });
     const deliveryToken = Schema.decodeUnknownSync(DeliveryToken)(
       digest("dlv_", 7),
     );
@@ -800,7 +786,7 @@ function preservesFirewallRefusal() {
   return Effect.gen(function* () {
     const refusal = new FirewallSendError({
       checkId: `chk_${"1f".repeat(32)}`,
-      refusal: "norm-violation",
+      refusal: "rule-violation",
       feedback: [{ nextAction: "revise", text: "Include Carol in the reply." }],
     });
     const endpoint = yield* acquireSendEndpoint({

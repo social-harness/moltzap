@@ -10,6 +10,7 @@ import {
   gatherInput,
   makeLayer,
   newObserved,
+  requestId,
   requestMessage,
   send,
 } from "../__tests__/collective-operation-fixtures.js";
@@ -77,7 +78,7 @@ function acceptsProducedResults() {
     yield* classifyMessage(layer, requestMessage("agent:bob", 60_000));
     const response = yield* send(layer, {
       to: "agent:bob",
-      collectiveResponse: { action: "decline" },
+      collectiveResponse: { operationId: requestId, action: "decline" },
     });
     const gather = yield* send(layer, gatherInput());
     yield* assertProducedResult(response);

@@ -17,10 +17,8 @@ import {
   type Scope,
   Stream,
 } from "effect";
-import {
-  CollectiveError,
-  type SendResult,
-} from "../communication/collectives/contracts.js";
+import type { SendResult } from "../host-protocol/send-result.js";
+import { CollectiveError } from "../communication/collectives/contracts.js";
 import {
   DeliveryAcknowledgeError,
   ListenError,
@@ -167,9 +165,6 @@ function collectiveRefusal(
       ? {}
       : { operationId: decoded.operationId }),
     failure: decoded.failure,
-    ...(decoded.openElsewhere === undefined
-      ? {}
-      : { openElsewhere: decoded.openElsewhere }),
   });
 }
 

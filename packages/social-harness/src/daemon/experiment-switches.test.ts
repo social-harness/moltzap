@@ -6,6 +6,7 @@ import { scopedLive as it } from "@effect/vitest";
 import { Deferred, Effect, Schema } from "effect";
 import { join } from "node:path";
 import { expect } from "vitest";
+import { requestId } from "../__tests__/collective-operation-fixtures.js";
 import { makeFixture } from "../__tests__/daemon-runtime-fixtures.js";
 import {
   awaitStage,
@@ -57,13 +58,20 @@ const answers = [
     feature: "collectives",
     input: {
       to: direct,
-      collectiveResponse: { action: "accept", content: {} },
+      collectiveResponse: {
+        operationId: requestId,
+        action: "accept",
+        content: {},
+      },
     },
   },
   {
     name: "decline answer",
     feature: "collectives",
-    input: { to: direct, collectiveResponse: { action: "decline" } },
+    input: {
+      to: direct,
+      collectiveResponse: { operationId: requestId, action: "decline" },
+    },
   },
 ] as const;
 const sends = [...messages, ...answers];

@@ -4,9 +4,7 @@ import { Data, type Effect, type Redacted, type Stream } from "effect";
 import type {
   CollectiveError,
   SendInput,
-  SendResult,
 } from "../communication/collectives/contracts.js";
-import type { InboundItem } from "../communication/collectives/inbound.js";
 import type {
   DeliveryAcknowledgeError,
   ListenError,
@@ -16,6 +14,8 @@ import type {
   FirewallSendError,
   LocalGuidance,
 } from "../firewall/outcome/index.js";
+import type { InboundItem } from "../host-protocol/items.js";
+import type { SendResult } from "../host-protocol/send-result.js";
 
 /** @inline */
 type ConnectFailure =

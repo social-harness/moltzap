@@ -1,24 +1,18 @@
 /**
  * @file The ports the collective layer runs on: what it needs from the
- * daemon, what an installed firewall adds, and the operations it offers.
+ * daemon and the protocol operations it offers.
  */
 
 import { type Effect, type Option, Schema, type Scope } from "effect";
-import type {
-  CheckedGuidance,
-  FirewallSendError,
-} from "../../firewall/outcome/index.js";
 import type { AgentView } from "../../identity/cards.js";
 import type { SendError } from "../conversations/errors.js";
 import type {
-  BindHold,
   EndpointEngine,
   EngineSendInput,
   EngineSentMessage,
 } from "../conversations/index.js";
 import type { InboundMessage } from "../conversations/message.js";
 import type {
-  CollectiveOperationInput,
   DeliveryToken,
   EndpointStore,
   EndpointStoreError,
@@ -26,14 +20,14 @@ import type {
 import type {
   CollectiveEmitError,
   CollectiveError,
-  CollectiveId,
   CollectiveSendOutcome,
   SendInput,
 } from "./contracts.js";
 import type { InboundItem } from "./inbound.js";
+import type { PreparedCollective } from "./prepared.js";
 import { exactStruct } from "../../encoding/exact.js";
 import { type MsgId, RecordHash } from "../records/index.js";
-import { AgentAddress, type MessageAddressInput } from "../records/values.js";
+import { AgentAddress } from "../records/values.js";
 
 // safer-arch-ignore file-implicit-boundary-module: The operation layer and its received-request state run on these ports; communication/collectives/index.ts is the one boundary that exposes them.
 
@@ -41,16 +35,15 @@ import { AgentAddress, type MessageAddressInput } from "../records/values.js";
 export type { BindHold, EngineSendInput } from "../conversations/index.js";
 
 /** How binding an authored message fails: before it binds, or by its caller's hold. */
-export type AuthoredMessageError<E> = SendError | FirewallSendError | E;
+export type AuthoredMessageError<E> = SendError | E;
 
-/** Every way a collective send fails: before sending, by a collective refusal, or by the firewall. */
+/** A collective send may fail during preparation, protocol selection or certification. */
 export type CollectiveSendError = AuthoredMessageError<CollectiveError>;
 
 /* eslint-disable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- The provenance Schema shares its domain name with the value it decodes. */
 
 /**
- * Private facts about an emitted result that the endpoint's firewall checks
- * it with: the certified record of each counted answer but the endpoint's
+ * Certified provenance of an emitted result: the certified record of each counted answer but the endpoint's
  * own, in member order, and, at a member, the certified request message it was
  * asked by. Nothing outside Client reads them.
  */
@@ -65,66 +58,20 @@ export type ResultProvenance = typeof ResultProvenance.Type;
 
 /* eslint-enable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Restore naming after the Schema/type pair. */
 
-/** A gather the firewall checks once, before any of its request messages. */
-export interface GatherCandidate {
-  readonly to: MessageAddressInput;
-  readonly content: InboundMessage["content"];
-  readonly operation?: CollectiveOperationInput;
-}
-
-/** Certify one message and complete once it is stored locally. */
+/** Ordinary protocol traffic completes after local certification. */
 export type MessageSender = (
   input: EngineSendInput,
 ) => Effect.Effect<EngineSentMessage, SendError>;
-
-/**
- * A bound message the agent authored: the advice its admitting check gave,
- * known once the check admits it, and the effect that completes once the
- * message is certified.
- */
-export interface AdmittedMessage {
+/** A bound intent preserves custody while its caller waits for certification. */
+export interface AcceptedMessage {
   readonly certified: Effect.Effect<EngineSentMessage, SendError>;
-  readonly guidance?: CheckedGuidance;
-}
-
-/** The only sender an admitted gather's request messages bind through, with the advice its check gave. */
-export interface AdmittedGather {
-  readonly sendRequest: MessageSender;
-  readonly guidance?: CheckedGuidance;
-}
-
-/**
- * What an installed firewall adds to the layer: every message the agent
- * authors is checked before it binds, and a gather once before its request
- * messages. Without it the engine takes each hold through `bindMessage`.
- */
-export interface CollectiveAdmission {
-  /**
-   * Check and bind one message the agent authored: a multicast, an all_gather
-   * request or an answer. `hold` is taken after the check, just before the
-   * bind, and given up when nothing binds.
-   */
-  readonly bindMessage: <E>(
-    input: EngineSendInput,
-    hold: BindHold<E>,
-  ) => Effect.Effect<AdmittedMessage, AuthoredMessageError<E>>;
-  /**
-   * Check a gather, then return the only sender its request messages bind
-   * through, each against the admitted check of exactly this content, with
-   * the advice that check gave.
-   */
-  readonly admitGather: (
-    gather: GatherCandidate,
-  ) => Effect.Effect<
-    AdmittedGather,
-    SendError | FirewallSendError | EndpointStoreError
-  >;
 }
 
 /** What the collective layer needs from the daemon around it. */
 export interface CollectivePorts {
-  /** Plain authored messages take their hold at the same durable bind boundary as checked messages. */
-  readonly bindMessage: EndpointEngine["bind"];
+  /** Preparation captures canonical bytes before the caller decides whether to accept them. */
+  readonly prepareMessage: EndpointEngine["prepare"];
+  readonly acceptMessage: EndpointEngine["accept"];
   readonly store: Pick<
     EndpointStore,
     | "putCollectiveOperation"
@@ -137,15 +84,10 @@ export interface CollectivePorts {
     | "readCollectiveRefusals"
     | "finalizeCollectiveOperation"
     | "retireCollectiveOperation"
-    | "readFirewallRequestAdmission"
     | "readRetainedDeliveries"
   >;
   readonly observeMessage: (
     msgId: MsgId,
-  ) => Effect.Effect<EngineSentMessage, SendError>;
-  readonly sendAdmitted: (
-    input: EngineSendInput,
-    checkId: string,
   ) => Effect.Effect<EngineSentMessage, SendError>;
   readonly reportStorageFault: (
     error: EndpointStoreError,
@@ -154,15 +96,8 @@ export interface CollectivePorts {
   /** The local agent: a group gather or all_gather asks every member but this one. */
   readonly self: AgentView;
   /**
-   * Resolve and retain one verified identity before accepting a collecting
-   * operation. Results use this view even when later delivery fails.
-   */
-  readonly lookupMember: (
-    member: AgentAddress,
-  ) => Effect.Effect<AgentView, SendError>;
-  /**
-   * Protocol closes and unchecked gather fanout certify through this port.
-   * Authored messages use `bindMessage` or the installed admission boundary.
+   * Protocol closes certify through this port. Request fanout accepts each
+   * retained preparation through `acceptMessage`.
    */
   readonly sendMessage: MessageSender;
   /**
@@ -182,11 +117,6 @@ export interface CollectivePorts {
   ) => Effect.Effect<void, CollectiveEmitError>;
   /** Owns deadline timers and request sends that outlive their send call. */
   readonly scope: Scope.Scope;
-  /**
-   * The installed firewall's checks. With it a received request waits
-   * `unadmitted`, unanswerable, until `settleRequest`.
-   */
-  readonly admission?: CollectiveAdmission;
 }
 
 /** One certified remote message with the hash of its certified record. */
@@ -197,15 +127,13 @@ export interface CertifiedMessage {
 
 /** The daemon's collective layer for one active identity. */
 export interface CollectiveOperations {
-  /**
-   * Return a gather's operationId after the bounded request wait; pending messages keep
-   * certifying. An all_gather waits for its group message to certify unless
-   * its deadline already completed the operation. Multicasts and responses
-   * wait for their message's certification. A response must match an open
-   * request in its conversation and satisfy that request's schema.
-   */
-  readonly send: (
+  /** Validate an operation and capture its exact destinations, content and message identities. */
+  readonly prepare: (
     input: SendInput,
+  ) => Effect.Effect<PreparedCollective, CollectiveSendError>;
+  /** Take protocol custody of the captured operation while its request and deadline remain live. */
+  readonly accept: (
+    prepared: PreparedCollective,
   ) => Effect.Effect<CollectiveSendOutcome, CollectiveSendError>;
   /**
    * Classify one certified remote message. Answers are recorded and consumed,
@@ -218,30 +146,4 @@ export interface CollectiveOperations {
   readonly classify: (
     message: CertifiedMessage,
   ) => Effect.Effect<Option.Option<InboundItem>, CollectiveEmitError>;
-  /**
-   * Settle the admission of a request the firewall checked: answerable when
-   * the runtime was shown it, otherwise never answerable, though an
-   * all_gather member still applies its close. Only an `unadmitted` request
-   * changes.
-   */
-  readonly settleRequest: (
-    operationId: CollectiveId,
-    presented: boolean,
-  ) => Effect.Effect<void>;
-}
-
-/**
- * Bind one message the agent authored, holding `hold` across the bind: through
- * the firewall's check when one is installed, otherwise through the engine
- * bind port. Both return only after the intent is durable.
- */
-export function bindAuthoredMessage<E>(
-  ports: CollectivePorts,
-  input: EngineSendInput,
-  hold: BindHold<E>,
-): Effect.Effect<AdmittedMessage, AuthoredMessageError<E>> {
-  const { admission } = ports;
-  return admission === undefined
-    ? ports.bindMessage(input, hold)
-    : admission.bindMessage(input, hold);
 }

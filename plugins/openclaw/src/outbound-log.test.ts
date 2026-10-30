@@ -85,7 +85,11 @@ function messageToolSendLogsItsOrigin() {
 
 function messageToolReplyLogsItsOrigin() {
   const to = "agent:alice";
-  const message = '{"action":"accept","content":{"slot":"mon"}}';
+  const message = JSON.stringify({
+    operationId: OPERATION_ID,
+    action: "accept",
+    content: { slot: "mon" },
+  });
   return sendThroughConnectedAccount((plugin) =>
     runMessageAction(plugin, "reply", to, message),
   ).pipe(

@@ -19,9 +19,9 @@ import {
   input,
   scriptedWebhook,
 } from "../../__tests__/webhook-fixtures.js";
-import { openEndpointStore } from "../../communication/store/index.js";
 import { AgentCard, agentViewOf } from "../../identity/cards.js";
 import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
+import { openDaemonStore } from "../store.js";
 import {
   type HarnessMcpOperations,
   makeHarnessMcpHttpHandler,
@@ -585,7 +585,7 @@ const admittedCalls = [
  * inbox item terminally with 410 Gone, which only an owner revoke clears.
  */
 const terminallyStalledWebhookStore = Effect.gen(function* () {
-  const store = yield* openEndpointStore(stateDirectory(), {
+  const store = yield* openDaemonStore(stateDirectory(), {
     liveWireVersions: LIVE_WIRE_VERSIONS,
   });
   const callback = scriptedWebhook(store);

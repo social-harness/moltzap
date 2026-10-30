@@ -14,10 +14,7 @@ import { loopbackMcpEndpoint } from "../../__tests__/mcp-http-fixtures.js";
 import { localGuidance } from "../../__tests__/message-policy-fixtures.js";
 import { stateDirectory } from "../../__tests__/store-schema-fixtures.js";
 import { enqueue, item, token } from "../../__tests__/webhook-fixtures.js";
-import {
-  encodeRuntimeValue,
-  openEndpointStore,
-} from "../../communication/store/index.js";
+import { encodeRuntimeValue } from "../../communication/store/index.js";
 import {
   decodePollResult,
   type PollResult,
@@ -31,6 +28,7 @@ import {
 import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { makeHostDelivery } from "../inbox/host-delivery.js";
 import { noHistoryExport } from "../inbox/host-traffic-log.js";
+import { openDaemonStore } from "../store.js";
 import { makeHarnessMcpHttpHandler } from "./tools.js";
 
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- HTTP/JSON-RPC refusal codes and receipt counts are external behavior. */
@@ -57,13 +55,13 @@ const beforeReceive = <A, E>(
     : operation;
 const acquireFixture = (block?: BlockedOperation) =>
   Effect.gen(function* () {
-    const store = yield* openEndpointStore(stateDirectory(), {
+    const store = yield* openDaemonStore(stateDirectory(), {
       liveWireVersions: LIVE_WIRE_VERSIONS,
     });
     const delivery = yield* makeHostDelivery({
       store,
       scope: yield* Effect.scope,
-      collectives: () => ({ send: unreachable, settleRequest: unreachable }),
+      collectives: () => ({ prepare: unreachable, accept: unreachable }),
       historyExport: noHistoryExport,
     });
     const handler = yield* makeHarnessMcpHttpHandler({

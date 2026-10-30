@@ -8,7 +8,7 @@
 import { scopedLive as it } from "@effect/vitest";
 import { Deferred, Effect, Exit, Fiber, Ref, Schema, Scope } from "effect";
 import { describe, expect } from "vitest";
-import type { CollectiveOperations } from "../../communication/collectives/index.js";
+import type { TestCollectiveOperations as CollectiveOperations } from "../../__tests__/collective-send.js";
 import type { HarnessMessageReadyEvent } from "../../host-protocol/operations.js";
 import type { HistoryExportRecord } from "./host-traffic-log.js";
 import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
@@ -26,16 +26,15 @@ import {
   CollectiveId,
   SendInput,
 } from "../../communication/collectives/contracts.js";
-import { InboundItem } from "../../communication/collectives/inbound.js";
 import { SendError } from "../../communication/conversations/errors.js";
 import { AgentAddress, MsgId } from "../../communication/records/index.js";
 import {
   DeliveryToken,
-  type EndpointStore,
   EndpointStoreError,
-  openEndpointStore,
 } from "../../communication/store/index.js";
+import { InboundItem } from "../../host-protocol/items.js";
 import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
+import { type DaemonStore, openDaemonStore } from "../store.js";
 import { makeHostDelivery } from "./host-delivery.js";
 
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- Closed error reasons and export record kinds are the contract under test. */
@@ -63,10 +62,10 @@ const unboundToken = Schema.decodeUnknownSync(DeliveryToken)(digest("dlv_", 9));
  * Build one delivery over a fresh store, optionally adjusted, whose active
  * collective layer the test sets and replaces through the returned slot.
  */
-const makeFixture = (adjust: (store: EndpointStore) => EndpointStore) =>
+const makeFixture = (adjust: (store: DaemonStore) => DaemonStore) =>
   Effect.gen(function* () {
     const store = adjust(
-      yield* openEndpointStore(stateDirectory(), {
+      yield* openDaemonStore(stateDirectory(), {
         liveWireVersions: LIVE_WIRE_VERSIONS,
       }),
     );
@@ -83,7 +82,17 @@ const makeFixture = (adjust: (store: EndpointStore) => EndpointStore) =>
       collectives: () =>
         slot.collectives === undefined
           ? undefined
-          : { ...slot.collectives, settleRequest: () => Effect.void },
+          : {
+              prepare: () =>
+                Effect.succeed({
+                  kind: "multicast" as const,
+                  to: bob,
+                  message: { canonicalIntent: "{}", canonicalMembership: "{}" },
+                }),
+              accept: () =>
+                slot.collectives?.send(input) ??
+                Effect.dieMessage("missing fixture sender"),
+            },
       scope: yield* Scope.Scope,
     });
     return { delivery, records, slot };

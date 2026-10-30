@@ -9,8 +9,8 @@ import { describe, expect } from "vitest";
 import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
 import { SendInput } from "../../communication/collectives/contracts.js";
-import { InboundItem } from "../../communication/collectives/inbound.js";
 import { MsgId } from "../../communication/records/index.js";
+import { InboundItem } from "../../host-protocol/items.js";
 import { HistoryExportRecord, makeHistoryExport } from "./host-traffic-log.js";
 
 const decodeLine = Schema.decodeUnknownSync(
@@ -129,7 +129,7 @@ describe("history export", () => {
   );
 });
 
-it("reads historical withheld results and encodes current refusal values", () =>
+it("round trips retained results with locally withheld text", () =>
   Effect.gen(function* () {
     const historical = {
       kind: "inbound",
@@ -147,7 +147,7 @@ it("reads historical withheld results and encodes current refusal values", () =>
         question: {
           kind: "withheld",
           checkId: `chk_${"a".repeat(64)}`,
-          reason: "approval-required",
+          reason: "unresolved-evidence",
         },
         outcomes: [
           { member: testAgentView("agent:bob"), outcome: { kind: "declined" } },

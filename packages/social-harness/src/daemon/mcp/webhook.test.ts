@@ -21,14 +21,12 @@ import {
   token,
   url,
 } from "../../__tests__/webhook-fixtures.js";
-import {
-  encodeRuntimeValue,
-  openEndpointStore,
-} from "../../communication/store/index.js";
+import { encodeRuntimeValue } from "../../communication/store/index.js";
 import { maximumEventBytes } from "../../host-protocol/index.js";
 
 import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { readRuntimeEvent } from "../inbox/inbox.js";
+import { openDaemonStore } from "../store.js";
 import {
   isPublicWebhookAddress,
   sendWebhook,
@@ -96,7 +94,7 @@ const verificationPosts = (
 const signsVerifiesAndRotates = () =>
   Effect.scoped(
     Effect.gen(function* () {
-      const store = yield* openEndpointStore(stateDirectory(), {
+      const store = yield* openDaemonStore(stateDirectory(), {
         liveWireVersions: LIVE_WIRE_VERSIONS,
       });
       const test = scriptedWebhook(store);
@@ -146,7 +144,7 @@ const retainsTerminalRejections = () =>
   Effect.scoped(
     Effect.gen(function* () {
       for (const status of [410, 413]) {
-        const store = yield* openEndpointStore(stateDirectory(), {
+        const store = yield* openDaemonStore(stateDirectory(), {
           liveWireVersions: LIVE_WIRE_VERSIONS,
         });
         const test = scriptedWebhook(store);
@@ -176,7 +174,7 @@ const retainsTerminalRejections = () =>
 it("delivers local guidance and its subject map through a signed webhook", () =>
   Effect.scoped(
     Effect.gen(function* () {
-      const store = yield* openEndpointStore(stateDirectory(), {
+      const store = yield* openDaemonStore(stateDirectory(), {
         liveWireVersions: LIVE_WIRE_VERSIONS,
       });
       const test = scriptedWebhook(store);
@@ -205,7 +203,7 @@ it("delivers local guidance and its subject map through a signed webhook", () =>
 const verifiesRotatedSecret = () =>
   Effect.scoped(
     Effect.gen(function* () {
-      const store = yield* openEndpointStore(stateDirectory(), {
+      const store = yield* openDaemonStore(stateDirectory(), {
         liveWireVersions: LIVE_WIRE_VERSIONS,
       });
       const test = scriptedWebhook(store);
@@ -234,7 +232,7 @@ const verifiesRotatedSecret = () =>
 const permitsReadAndRevokeDuringDelivery = () =>
   Effect.scoped(
     Effect.gen(function* () {
-      const store = yield* openEndpointStore(stateDirectory(), {
+      const store = yield* openDaemonStore(stateDirectory(), {
         liveWireVersions: LIVE_WIRE_VERSIONS,
       });
       const test = scriptedWebhook(store);
@@ -264,7 +262,7 @@ const permitsReadAndRevokeDuringDelivery = () =>
 const refusesExpiredReceipt = () =>
   Effect.scoped(
     Effect.gen(function* () {
-      const store = yield* openEndpointStore(stateDirectory(), {
+      const store = yield* openDaemonStore(stateDirectory(), {
         liveWireVersions: LIVE_WIRE_VERSIONS,
       });
       const test = scriptedWebhook(store);
@@ -304,7 +302,7 @@ it(
 const refreshPreservesTerminalReceipt = () =>
   Effect.scoped(
     Effect.gen(function* () {
-      const store = yield* openEndpointStore(stateDirectory(), {
+      const store = yield* openDaemonStore(stateDirectory(), {
         liveWireVersions: LIVE_WIRE_VERSIONS,
       });
       const test = scriptedWebhook(store);
@@ -337,7 +335,7 @@ const retriesAcrossRestart = () => {
   return Effect.gen(function* () {
     yield* Effect.scoped(
       Effect.gen(function* () {
-        const store = yield* openEndpointStore(path, {
+        const store = yield* openDaemonStore(path, {
           liveWireVersions: LIVE_WIRE_VERSIONS,
         });
         const test = scriptedWebhook(store);
@@ -353,7 +351,7 @@ const retriesAcrossRestart = () => {
     yield* stepClock("3 seconds");
     yield* Effect.scoped(
       Effect.gen(function* () {
-        const store = yield* openEndpointStore(path, {
+        const store = yield* openDaemonStore(path, {
           liveWireVersions: LIVE_WIRE_VERSIONS,
         });
         const test = scriptedWebhook(store);
@@ -371,7 +369,7 @@ const retriesAcrossRestart = () => {
     );
     yield* Effect.scoped(
       Effect.gen(function* () {
-        const store = yield* openEndpointStore(path, {
+        const store = yield* openDaemonStore(path, {
           liveWireVersions: LIVE_WIRE_VERSIONS,
         });
         expect((yield* readRuntimeEvent(store, token(1))).item).toEqual(item());
@@ -427,7 +425,7 @@ const marksADeliveryBusyUntilItsReceipt = () => {
   return Effect.gen(function* () {
     yield* Effect.scoped(
       Effect.gen(function* () {
-        const store = yield* openEndpointStore(path, {
+        const store = yield* openDaemonStore(path, {
           liveWireVersions: LIVE_WIRE_VERSIONS,
         });
         const test = scriptedWebhook(store);
@@ -442,7 +440,7 @@ const marksADeliveryBusyUntilItsReceipt = () => {
     yield* stepClock("3 seconds");
     yield* Effect.scoped(
       Effect.gen(function* () {
-        const store = yield* openEndpointStore(path, {
+        const store = yield* openDaemonStore(path, {
           liveWireVersions: LIVE_WIRE_VERSIONS,
         });
         const events = yield* scriptedWebhook(store).acquire;
@@ -468,7 +466,7 @@ const settlesALapsedDeliveryAsGivenUp = () => {
   const id = token(1);
   return Effect.scoped(
     Effect.gen(function* () {
-      const store = yield* openEndpointStore(stateDirectory(), {
+      const store = yield* openDaemonStore(stateDirectory(), {
         liveWireVersions: LIVE_WIRE_VERSIONS,
       });
       const test = scriptedWebhook(store);
@@ -497,7 +495,7 @@ const settlesARevokedDeliveryAsInterrupted = () => {
   const id = token(1);
   return Effect.scoped(
     Effect.gen(function* () {
-      const store = yield* openEndpointStore(stateDirectory(), {
+      const store = yield* openDaemonStore(stateDirectory(), {
         liveWireVersions: LIVE_WIRE_VERSIONS,
       });
       const test = scriptedWebhook(store);
@@ -519,7 +517,7 @@ const settlesARevokedDeliveryAsInterrupted = () => {
 const resumesExhaustedCallbacks = () =>
   Effect.scoped(
     Effect.gen(function* () {
-      const store = yield* openEndpointStore(stateDirectory(), {
+      const store = yield* openDaemonStore(stateDirectory(), {
         liveWireVersions: LIVE_WIRE_VERSIONS,
       });
       const test = scriptedWebhook(store);
@@ -555,7 +553,7 @@ const resumesExhaustedCallbacks = () =>
 const boundsPayloadAndDrains = () =>
   Effect.scoped(
     Effect.gen(function* () {
-      const store = yield* openEndpointStore(stateDirectory(), {
+      const store = yield* openDaemonStore(stateDirectory(), {
         liveWireVersions: LIVE_WIRE_VERSIONS,
       });
       const test = scriptedWebhook(store);
@@ -591,7 +589,7 @@ const boundsPayloadAndDrains = () =>
 const removesRetiredOccurrence = () =>
   Effect.scoped(
     Effect.gen(function* () {
-      const store = yield* openEndpointStore(stateDirectory(), {
+      const store = yield* openDaemonStore(stateDirectory(), {
         liveWireVersions: LIVE_WIRE_VERSIONS,
       });
       const test = scriptedWebhook(store);
@@ -655,7 +653,7 @@ const rejectsUnsafeCallbacks = () =>
     }).pipe(Effect.provide(webhookHttpClientLayer), Effect.flip);
     expect(dnsBlocked.reason).toBe("connection_refused");
     const test = scriptedWebhook(
-      yield* openEndpointStore(stateDirectory(), {
+      yield* openDaemonStore(stateDirectory(), {
         liveWireVersions: LIVE_WIRE_VERSIONS,
       }),
     );

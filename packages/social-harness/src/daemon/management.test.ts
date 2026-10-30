@@ -43,9 +43,7 @@ import {
 import { compareAgentIds } from "../communication/records/values.js";
 import {
   type EndpointRecovery,
-  type EndpointStore,
   EndpointStoreError,
-  openEndpointStore,
 } from "../communication/store/index.js";
 import { encodeCanonical } from "../encoding/canonical-json.js";
 import {
@@ -70,6 +68,7 @@ import {
   makeDaemonManagementOperations,
 } from "./management/index.js";
 import { makeHarnessMcpHttpHandler } from "./mcp/tools.js";
+import { type DaemonStore, openDaemonStore } from "./store.js";
 
 interface IdentityFixture {
   readonly bootstrap: DaemonBootstrap;
@@ -217,7 +216,7 @@ interface StoreInput {
   readonly historyFailure?: EndpointStoreError;
 }
 
-function makeStore(input: StoreInput): EndpointStore {
+function makeStore(input: StoreInput): DaemonStore {
   return {
     ...unusedEndpointStore("management test"),
     readConversation: () =>
@@ -278,7 +277,7 @@ const makeCertifiedHistory = Effect.gen(function* () {
     routerInstanceId(8),
   );
   const fileSystem = yield* FileSystem.FileSystem;
-  const store = yield* openEndpointStore(
+  const store = yield* openDaemonStore(
     yield* fileSystem.makeTempDirectoryScoped({
       prefix: "sharness-management-",
     }),
@@ -294,7 +293,7 @@ const makeCertifiedHistory = Effect.gen(function* () {
 }).pipe(Effect.provide(NodeFileSystem.layer));
 
 /** Alice's first history page of her conversation with bob over `store`. */
-const readBobHistory = (fixture: IdentityFixture, store: EndpointStore) =>
+const readBobHistory = (fixture: IdentityFixture, store: DaemonStore) =>
   makeDaemonManagementOperations({
     store,
     bootstrap: fixture.bootstrap,
@@ -311,7 +310,7 @@ const readBobHistory = (fixture: IdentityFixture, store: EndpointStore) =>
   );
 
 /** The record hashes of alice's read of her conversation with bob over `store`. */
-const readBobRecordHashes = (fixture: IdentityFixture, store: EndpointStore) =>
+const readBobRecordHashes = (fixture: IdentityFixture, store: DaemonStore) =>
   readBobHistory(fixture, store).pipe(
     Effect.map((page) => page.records.map((record) => record.recordHash)),
     Effect.exit,
@@ -341,9 +340,9 @@ const signerEvidence = (
  * rows' columns no longer match the descriptors they hold.
  */
 function withMembershipRowsNaming(
-  store: EndpointStore,
+  store: DaemonStore,
   membershipHash: string,
-): EndpointStore {
+): DaemonStore {
   return {
     ...store,
     recover: () =>
@@ -725,7 +724,7 @@ describe("owner history read over stored rows", () => {
 function makeRegisteringOperations(fixture: IdentityFixture) {
   return Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
-    const store = yield* openEndpointStore(
+    const store = yield* openDaemonStore(
       yield* fileSystem.makeTempDirectoryScoped({
         prefix: "sharness-registration-",
       }),

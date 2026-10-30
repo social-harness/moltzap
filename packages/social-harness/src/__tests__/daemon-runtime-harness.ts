@@ -7,6 +7,7 @@ import {
   PROTOCOL_VERSION_META_KEY,
 } from "@modelcontextprotocol/server";
 import { type Context, Deferred, Duration, Effect } from "effect";
+import type { DaemonStore } from "../daemon/store.js";
 import type { EventStore } from "../host-protocol/operations.js";
 import type { Fixture } from "./daemon-runtime-fixtures.js";
 import { resolveMessageAddress } from "../communication/conversations/address.js";
@@ -32,7 +33,6 @@ import {
 import {
   type DeliveryToken,
   type EndpointRecovery,
-  type EndpointStore,
   EndpointStoreError,
   type IdentityBinding,
 } from "../communication/store/index.js";
@@ -198,7 +198,7 @@ const makeInboxStore = (onAcknowledge: () => void) => {
         onAcknowledge();
       }),
   } satisfies Pick<
-    EndpointStore,
+    DaemonStore,
     "readInbox" | "readInboxSummary" | "putInboxItem" | "acknowledgeInboxItem"
   >;
 };
@@ -211,7 +211,7 @@ export function makeStore(
   fixture: Fixture,
   active: boolean,
   delivery?: DeliveryState,
-): EndpointStore {
+): DaemonStore {
   const onAcknowledge = () => {
     if (delivery !== undefined) {
       delivery.acknowledged = true;
@@ -405,11 +405,9 @@ function makeEngine(
         "no retained message is observed in this lifecycle fixture",
       ),
     send: () => certified,
-    bind: (...[, hold]) => hold.pipe(Effect.as({ certified })),
-    bindChecked: () =>
-      Effect.dieMessage("this lifecycle fixture installs no firewall"),
-    sendAdmitted: () =>
-      Effect.dieMessage("this lifecycle fixture installs no firewall"),
+    prepare: () =>
+      Effect.dieMessage("this lifecycle fixture does not author messages"),
+    accept: (...[, hold]) => hold.pipe(Effect.as({ certified })),
     resolveAddress: (to) =>
       resolveHarnessConversation(engineInput, to).pipe(Effect.asVoid),
     resolveConversation: (to) => resolveHarnessConversation(engineInput, to),
@@ -492,7 +490,7 @@ export const makeHarness = (
  */
 export const run = (
   fixture: Fixture,
-  store: EndpointStore,
+  store: DaemonStore,
   harness: RuntimeHarness,
   refusal?: Exclude<Registration, "registered">,
 ) => {

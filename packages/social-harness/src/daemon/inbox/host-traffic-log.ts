@@ -6,9 +6,9 @@ import {
   CollectiveId,
   SendInput,
 } from "../../communication/collectives/contracts.js";
-import { historyExportItem } from "../../communication/collectives/inbound.js";
 import { MsgId } from "../../communication/records/values.js";
 import { exactStruct } from "../../encoding/exact.js";
+import { historyExportItem } from "../../host-protocol/items.js";
 
 /* eslint-disable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Effect Schemas share their domain names with the nominal values they decode. */
 

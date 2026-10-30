@@ -233,7 +233,7 @@ function guidanceRemainsLocal() {
 function messageToolSurfacesNormRefusal() {
   const refusal = new FirewallSendError({
     checkId: `chk_${Encoding.encodeHex(new Uint8Array(32).fill(2))}`,
-    refusal: "norm-violation",
+    refusal: "rule-violation",
     feedback: [
       { nextAction: "revise", text: "Include Carol in the scheduling reply." },
     ],
@@ -574,13 +574,21 @@ function messageToolReplySendsAnswer() {
     (plugin) =>
       handleMessageAction(plugin, "reply", {
         to: "agent:alice",
-        message: '{"action":"accept","content":{"slot":"mon"}}',
+        message: JSON.stringify({
+          operationId: OPERATION_ID,
+          action: "accept",
+          content: { slot: "mon" },
+        }),
       }),
     (sends, result) => {
       expect(sends).toEqual([
         {
           to: "agent:alice",
-          collectiveResponse: { action: "accept", content: { slot: "mon" } },
+          collectiveResponse: {
+            operationId: OPERATION_ID,
+            action: "accept",
+            content: { slot: "mon" },
+          },
         },
       ]);
       expect(result.details).toEqual({
@@ -850,7 +858,7 @@ function rendersWithheldAnswersWithResultGuidance() {
 /** A gather result with Bob's answer and the question withheld, and advice on Carol's answer. */
 function withheldResultDelivery() {
   const checkId = `chk_${Encoding.encodeHex(new Uint8Array(32).fill(3))}`;
-  const withheld = { kind: "withheld", checkId, reason: "prohibited" };
+  const withheld = { kind: "withheld", checkId, reason: "rule-violation" };
   const item = Schema.decodeUnknownSync(InboundItem)({
     kind: "collectiveResult",
     closedAt: 0,

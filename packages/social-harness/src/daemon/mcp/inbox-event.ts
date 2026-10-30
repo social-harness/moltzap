@@ -1,13 +1,11 @@
 /** @file Builds host events from retained inbox items, using references for oversized payloads. */
 
 import { Effect } from "effect";
-import { InboundItem } from "../../communication/collectives/inbound.js";
-import {
-  decodeRuntimeValue,
-  type InboxEntry,
-} from "../../communication/store/index.js";
+import type { InboxEntry } from "../inbox/store.js";
+import { decodeRuntimeValue } from "../../communication/store/index.js";
 import { localGuidanceSchema } from "../../firewall/outcome/index.js";
 import { maximumEventBytes } from "../../host-protocol/index.js";
+import { InboundItem } from "../../host-protocol/items.js";
 import { INBOX_ITEM_EVENT } from "../../host-protocol/names.js";
 
 // safer-arch-ignore file-implicit-boundary-module: Polling and webhook delivery share this one item formatter and envelope bound; nothing outside daemon/mcp reads them.

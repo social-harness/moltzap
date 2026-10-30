@@ -2,28 +2,23 @@
 
 import { Effect, JSONSchema, type ParseResult, Schema } from "effect";
 import type { SendError } from "../communication/conversations/errors.js";
+import type { InboxStore, InboxSummary } from "../daemon/inbox/store.js";
 import {
   type CollectiveError,
   CollectiveId,
   decodeCollectiveFailure,
   SendInput,
-  type SendResult,
-  SendResultSchema,
 } from "../communication/collectives/contracts.js";
-import { InboundItem } from "../communication/collectives/inbound.js";
-import { AgentAddress, GroupAddress } from "../communication/records/index.js";
-import {
-  DeliveryToken,
-  type EndpointStore,
-  type InboxSummary,
-} from "../communication/store/types.js";
+import { DeliveryToken } from "../communication/store/types.js";
 import { exactParseOptions, exactStruct } from "../encoding/exact.js";
 import {
   firewallRefusalSchema,
   type FirewallSendError,
   localGuidanceSchema,
 } from "../firewall/outcome/index.js";
+import { InboundItem } from "./items.js";
 import { HARNESS_CONSUMER_META_KEY, INBOX_ITEM_EVENT } from "./names.js";
+import { type SendResult, SendResultSchema } from "./send-result.js";
 
 const consumerMetadataSchema = exactStruct({
   generation: Schema.UUID,
@@ -172,15 +167,6 @@ const harnessSendErrorDataSchema = Schema.Union(
     reason: Schema.Literal("collective-failed"),
     operationId: Schema.optionalWith(CollectiveId, { exact: true }),
     failure: Schema.Unknown,
-    openElsewhere: Schema.optionalWith(
-      Schema.Array(
-        Schema.Struct({
-          operationId: CollectiveId,
-          to: Schema.Union(AgentAddress, GroupAddress),
-        }),
-      ),
-      { exact: true },
-    ),
   }),
   Schema.Struct({
     reason: Schema.String.pipe(
@@ -230,7 +216,6 @@ export type HarnessSendErrorData =
       failure: Effect.Effect.Success<
         ReturnType<typeof decodeCollectiveFailure>
       >;
-      openElsewhere?: CollectiveError["openElsewhere"];
     }>;
 
 /**
@@ -259,9 +244,6 @@ export function sendErrorData(
         ? {}
         : { operationId: error.operationId }),
       failure: error.failure,
-      ...(error.openElsewhere === undefined
-        ? {}
-        : { openElsewhere: error.openElsewhere }),
     };
   }
   if (error.detail === undefined) {
@@ -344,7 +326,7 @@ export function checkHarnessSendResult(
 
 /** The existing endpoint store owns both callback progress and immutable inbox items. */
 export type EventStore = Pick<
-  EndpointStore,
+  InboxStore,
   | "readEventState"
   | "writeEventState"
   | "readInbox"
@@ -381,4 +363,4 @@ export interface DeliveryOperations {
 /** Store-owned delivery identity shared across the loopback boundary. */
 export { DeliveryToken } from "../communication/store/types.js";
 /** Store-owned pending-inbox summary shared across the loopback boundary. */
-export type { InboxSummary } from "../communication/store/types.js";
+export type { InboxSummary } from "../daemon/inbox/store.js";

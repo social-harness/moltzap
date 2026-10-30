@@ -11,15 +11,16 @@ import {
   TestClock,
 } from "effect";
 import { expect } from "vitest";
-import type { InboundItem } from "../../communication/collectives/inbound.js";
+import type { InboundItem } from "../../host-protocol/items.js";
 import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
+import { makeCollectiveOperations } from "../../__tests__/collective-send.js";
+import { collectivePersistencePorts } from "../../__tests__/collective-storage-stub.js";
 import {
   bytes,
   stateDirectory,
   storedConversation,
 } from "../../__tests__/store-schema-fixtures.js";
-import { makeCollectiveOperations } from "../../communication/collectives/index.js";
 import { encodeCollectiveContent } from "../../communication/collectives/wire/index.js";
 import { SendError } from "../../communication/conversations/errors.js";
 import { InboundMessage } from "../../communication/conversations/message.js";
@@ -28,11 +29,12 @@ import { AgentAddress } from "../../communication/records/values.js";
 import {
   type DeliveryToken,
   encodeRuntimeValue,
-  type EndpointStore,
-  openEndpointStore,
 } from "../../communication/store/index.js";
 import { encodeCanonical } from "../../encoding/canonical-json.js";
 import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
+import { type DaemonStore, openDaemonStore } from "../store.js";
+import { makeHostDelivery } from "./host-delivery.js";
+import { noHistoryExport } from "./host-traffic-log.js";
 import { readRuntimeInbox } from "./inbox.js";
 
 const self = Schema.decodeUnknownSync(AgentAddress)("agent:alice");
@@ -68,43 +70,32 @@ const message = () =>
   });
 const response = {
   to: sender,
-  collectiveResponse: { action: "accept", content: { answer: "yes" } },
+  collectiveResponse: {
+    operationId,
+    action: "accept",
+    content: { answer: "yes" },
+  },
 } as const;
 const unavailable = () =>
   Effect.fail(new SendError({ reason: "network-unavailable" }));
 
-function makeCollectives(
-  store: EndpointStore,
-  scope: Scope.Scope,
-  firewall = false,
-) {
-  return makeCollectiveOperations({
-    store,
-    self: testAgentView(self),
-    scope,
-    lookupMember: (member) => Effect.succeed(testAgentView(member)),
-    sendMessage: unavailable,
-    bindMessage: (...[, hold]) =>
-      hold.pipe(Effect.as({ certified: unavailable() })),
-    sendAdmitted: unavailable,
-    observeMessage: unavailable,
-    reportStorageFault: () => Effect.dieMessage("unexpected storage fault"),
-    emit: () => Effect.dieMessage("a request emits no local result"),
-    ...(firewall
-      ? {
-          admission: {
-            bindMessage: <E>(
-              ...[, hold]: [unknown, Effect.Effect<Effect.Effect<void>, E>]
-            ) => hold.pipe(Effect.as({ certified: unavailable() })),
-            admitGather: () =>
-              Effect.dieMessage("the receiver starts no gather"),
-          },
-        }
-      : {}),
+function makeCollectives(store: DaemonStore, scope: Scope.Scope) {
+  return Effect.gen(function* () {
+    const persistence = yield* collectivePersistencePorts(unavailable, self);
+    return yield* makeCollectiveOperations({
+      ...persistence,
+      store,
+      self: testAgentView(self),
+      scope,
+      sendMessage: unavailable,
+      observeMessage: unavailable,
+      reportStorageFault: () => Effect.dieMessage("unexpected storage fault"),
+      emit: () => Effect.dieMessage("a request emits no local result"),
+    });
   });
 }
 
-function seedRequest(store: EndpointStore, request: InboundMessage) {
+function seedRequest(store: DaemonStore, request: InboundMessage) {
   return Effect.gen(function* () {
     yield* store.bindIdentity({
       agentId: testAgentView(self).agentId,
@@ -126,7 +117,7 @@ it("restores an acknowledged request's answer context with its original delivery
   return Effect.gen(function* () {
     const token = yield* Effect.scoped(
       Effect.gen(function* () {
-        const store = yield* openEndpointStore(path, {
+        const store = yield* openDaemonStore(path, {
           liveWireVersions: LIVE_WIRE_VERSIONS,
         });
         const request = message();
@@ -151,7 +142,7 @@ it("restores an acknowledged request's answer context with its original delivery
     );
     yield* Effect.scoped(
       Effect.gen(function* () {
-        const store = yield* openEndpointStore(path, {
+        const store = yield* openDaemonStore(path, {
           liveWireVersions: LIVE_WIRE_VERSIONS,
         });
         const layer = yield* makeCollectives(store, yield* Scope.Scope);
@@ -169,17 +160,22 @@ it("restores an acknowledged request's answer context with its original delivery
   });
 });
 
-it("preserves a request awaiting admission and keeps it unanswerable after restart", () => {
-  const path = stateDirectory();
+it(
+  "preserves a request awaiting admission and keeps it unanswerable after restart",
+  preservesQueuedRequest,
+);
+
+function preservesQueuedRequest() {
   return Effect.gen(function* () {
+    const path = stateDirectory();
     const queued = yield* Effect.scoped(
       Effect.gen(function* () {
-        const store = yield* openEndpointStore(path, {
+        const store = yield* openDaemonStore(path, {
           liveWireVersions: LIVE_WIRE_VERSIONS,
         });
         const request = message();
         yield* seedRequest(store, request);
-        const layer = yield* makeCollectives(store, yield* Scope.Scope, true);
+        const layer = yield* makeCollectives(store, yield* Scope.Scope);
         const classified = yield* layer.classify({
           message: request,
           recordHash,
@@ -199,13 +195,19 @@ it("preserves a request awaiting admission and keeps it unanswerable after resta
     );
     yield* Effect.scoped(
       Effect.gen(function* () {
-        const store = yield* openEndpointStore(path, {
+        const store = yield* openDaemonStore(path, {
           liveWireVersions: LIVE_WIRE_VERSIONS,
         });
-        const layer = yield* makeCollectives(store, yield* Scope.Scope, true);
-        expect(yield* Effect.flip(layer.send(response))).toMatchObject({
-          failure: { kind: "request-none" },
+        const layer = yield* makeCollectives(store, yield* Scope.Scope);
+        const delivery = yield* makeHostDelivery({
+          store,
+          scope: yield* Scope.Scope,
+          historyExport: noHistoryExport,
+          collectives: () => layer,
         });
+        expect(
+          yield* Effect.flip(delivery.operations.send({ input: response })),
+        ).toMatchObject({ failure: { kind: "request-none" } });
         expect(yield* store.readFirewallFrontiers()).toEqual([
           { ...queued, sequence: 1 },
         ]);
@@ -215,7 +217,7 @@ it("preserves a request awaiting admission and keeps it unanswerable after resta
       }),
     );
   });
-});
+}
 
 itOnClock(
   "reconstructs acknowledged group context and publishes a delayed close once after restart",
@@ -297,42 +299,42 @@ function delayedCloseHistory() {
 }
 
 function restoringLayer(
-  store: EndpointStore,
+  store: DaemonStore,
   scope: Scope.Scope,
   emitted: InboundItem[],
 ) {
-  return makeCollectiveOperations({
-    store,
-    self: testAgentView(self),
-    scope,
-    lookupMember: (member) => Effect.succeed(testAgentView(member)),
-    sendMessage: unavailable,
-    bindMessage: (...[, hold]) =>
-      hold.pipe(Effect.as({ certified: unavailable() })),
-    sendAdmitted: unavailable,
-    observeMessage: unavailable,
-    reportStorageFault: () => Effect.dieMessage("unexpected storage fault"),
-    emit: (item, provenance, terminal) =>
-      Effect.gen(function* () {
-        if (terminal === undefined) {
-          return yield* Effect.dieMessage("missing terminal binding");
-        }
-        yield* store.publishCollectiveItem({
-          ...terminal,
-          conversation: group,
-          canonicalItem: yield* encodeRuntimeValue(item),
-          ...(provenance === undefined
-            ? {}
-            : { canonicalProvenance: yield* encodeRuntimeValue(provenance) }),
-          firewall: false,
-        });
-        emitted.push(item);
-      }).pipe(Effect.orDie),
+  return Effect.gen(function* () {
+    const persistence = yield* collectivePersistencePorts(unavailable, self);
+    return yield* makeCollectiveOperations({
+      ...persistence,
+      store,
+      self: testAgentView(self),
+      scope,
+      sendMessage: unavailable,
+      observeMessage: unavailable,
+      reportStorageFault: () => Effect.dieMessage("unexpected storage fault"),
+      emit: (item, provenance, terminal) =>
+        Effect.gen(function* () {
+          if (terminal === undefined) {
+            return yield* Effect.dieMessage("missing terminal binding");
+          }
+          yield* store.publishCollectiveItem({
+            ...terminal,
+            conversation: group,
+            canonicalItem: yield* encodeRuntimeValue(item),
+            ...(provenance === undefined
+              ? {}
+              : { canonicalProvenance: yield* encodeRuntimeValue(provenance) }),
+            firewall: false,
+          });
+          emitted.push(item);
+        }).pipe(Effect.orDie),
+    });
   });
 }
 
 function appendMessage(
-  store: EndpointStore,
+  store: DaemonStore,
   message: InboundMessage,
   hash: string,
   previousRecordHash: string,
@@ -371,7 +373,7 @@ function acknowledgeGroupRequest(
 ) {
   return Effect.scoped(
     Effect.gen(function* () {
-      const store = yield* openEndpointStore(path, {
+      const store = yield* openDaemonStore(path, {
         liveWireVersions: LIVE_WIRE_VERSIONS,
       });
       yield* seedRequest(store, history.request);
@@ -411,7 +413,7 @@ function receiveDelayedClose(
 ) {
   return Effect.scoped(
     Effect.gen(function* () {
-      const store = yield* openEndpointStore(path, {
+      const store = yield* openDaemonStore(path, {
         liveWireVersions: LIVE_WIRE_VERSIONS,
       });
       yield* appendMessage(
@@ -452,7 +454,7 @@ function assertRetainedResult(
 ) {
   return Effect.scoped(
     Effect.gen(function* () {
-      const store = yield* openEndpointStore(path, {
+      const store = yield* openDaemonStore(path, {
         liveWireVersions: LIVE_WIRE_VERSIONS,
       });
       yield* restoringLayer(store, yield* Scope.Scope, emitted);
@@ -470,7 +472,7 @@ function assertRetainedResult(
 function assertAcknowledgedResult(path: string, emitted: InboundItem[]) {
   return Effect.scoped(
     Effect.gen(function* () {
-      const store = yield* openEndpointStore(path, {
+      const store = yield* openDaemonStore(path, {
         liveWireVersions: LIVE_WIRE_VERSIONS,
       });
       yield* restoringLayer(store, yield* Scope.Scope, emitted);
@@ -523,7 +525,7 @@ interface OrderedRequest {
 function retainCloseBeforeRequest(context: OrderedRequest) {
   return Effect.gen(function* () {
     const { path, emitted, request, requestHash, earlyClose } = context;
-    const store = yield* openEndpointStore(path, {
+    const store = yield* openDaemonStore(path, {
       liveWireVersions: LIVE_WIRE_VERSIONS,
     });
     yield* seedRequest(store, earlyClose);
@@ -549,7 +551,7 @@ function retainCloseBeforeRequest(context: OrderedRequest) {
 function assertUnknownCloseAfterReopen(context: OrderedRequest) {
   return Effect.gen(function* () {
     const { path, emitted, request, requestHash, earlyClose } = context;
-    const store = yield* openEndpointStore(path, {
+    const store = yield* openDaemonStore(path, {
       liveWireVersions: LIVE_WIRE_VERSIONS,
     });
     const layer = yield* restoringLayer(store, yield* Scope.Scope, emitted);
@@ -605,7 +607,7 @@ itOnClock(
 
 function consumeRejectedRequest(path: string, request: InboundMessage) {
   return Effect.gen(function* () {
-    const store = yield* openEndpointStore(path, {
+    const store = yield* openDaemonStore(path, {
       liveWireVersions: LIVE_WIRE_VERSIONS,
     });
     yield* seedRequest(store, request);
@@ -622,7 +624,7 @@ function consumeRejectedRequest(path: string, request: InboundMessage) {
 
 function reopenRejectedRequest(path: string, request: InboundMessage) {
   return Effect.gen(function* () {
-    const store = yield* openEndpointStore(path, {
+    const store = yield* openDaemonStore(path, {
       liveWireVersions: LIVE_WIRE_VERSIONS,
     });
     const layer = yield* restoringLayer(store, yield* Scope.Scope, []);
@@ -639,10 +641,7 @@ function reopenRejectedRequest(path: string, request: InboundMessage) {
   });
 }
 
-function assertAcknowledgedOrder(
-  store: EndpointStore,
-  requestHash: RecordHash,
-) {
+function assertAcknowledgedOrder(store: DaemonStore, requestHash: RecordHash) {
   return Effect.gen(function* () {
     const retained = yield* store.readRetainedDeliveries();
     expect(

@@ -37,17 +37,16 @@ export {
 export {
   CollectiveError,
   SendInput,
-  type SendResult,
 } from "./communication/collectives/contracts.js";
 /** The items an endpoint delivers to its host. */
-export { InboundItem } from "./communication/collectives/inbound.js";
+export { InboundItem } from "./host-protocol/items.js";
 /** The text a host's model reads for each delivered message, question and result. */
 export {
   groupMembers,
   renderCollectiveRequest,
   renderCollectiveResult,
   renderContent,
-} from "./communication/collectives/render.js";
+} from "./host-protocol/render.js";
 /** The operation a native host's message text states. */
 export {
   MessageTextError,
@@ -98,3 +97,6 @@ export {
   SignedMessage,
   type VerifiedSignedMessage,
 } from "./identity/envelope/signed-message.js";
+
+/** Successful host sends retain their local guidance beside the protocol outcome. */
+export type { SendResult } from "./host-protocol/send-result.js";

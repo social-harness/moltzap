@@ -1,13 +1,16 @@
 /** @file Checks collective result text and admits operation failures for host delivery. */
 
 import { Effect, Array as EffectArray, Schema, Struct } from "effect";
-import type { InboundItem } from "../../communication/collectives/inbound.js";
 import type { RecordHash } from "../../communication/records/index.js";
+import type { InboundItem } from "../../host-protocol/items.js";
+import type {
+  FirewallEvidence,
+  FirewallEvidenceSlices,
+  FirewallInboxEntry,
+  FirewallLocalAdmission,
+  FirewallRequestAdmission,
+} from "../store/index.js";
 import { ResultProvenance } from "../../communication/collectives/index.js";
-import {
-  renderCollectiveResult,
-  renderOutcome,
-} from "../../communication/collectives/render.js";
 import {
   agentAddressOf,
   type MessageAddressInput,
@@ -16,13 +19,12 @@ import {
   decodeRuntimeValue,
   encodeRuntimeValue,
   EndpointStoreError,
-  type FirewallEvidence,
-  type FirewallEvidenceSlices,
-  type FirewallInboxEntry,
-  type FirewallLocalAdmission,
-  type FirewallRequestAdmission,
-  MAXIMUM_RUNTIME_ITEM_BYTES,
 } from "../../communication/store/index.js";
+import { MAXIMUM_RUNTIME_ITEM_BYTES } from "../../encoding/limits.js";
+import {
+  renderCollectiveResult,
+  renderOutcome,
+} from "../../host-protocol/render.js";
 import { AgentView, agentViewOf } from "../../identity/cards.js";
 import {
   type FirewallCheck,
@@ -60,7 +62,6 @@ type FailureItem = Extract<InboundItem, { readonly kind: "operationFailed" }>;
 interface LocalItemCheck {
   readonly entry: FirewallInboxEntry;
   readonly item: ResultItem | FailureItem;
-  readonly terminal: boolean;
 }
 type WithheldText = Extract<
   ResultItem["question"],
@@ -84,12 +85,12 @@ export const checkLocalItem = (
   environment: FirewallEnvironment,
   local: LocalItemCheck,
 ): Effect.Effect<FirewallLocalAdmission, EndpointStoreError> => {
-  const { entry, item, terminal } = local;
+  const { entry, item } = local;
   switch (item.kind) {
     case "operationFailed":
       return failureAdmission(environment, entry, item);
     case "collectiveResult":
-      return resultAdmission(environment, { entry, item, terminal });
+      return resultAdmission(environment, { entry, item });
     default: {
       const exhaustive: never = item;
       return exhaustive;
@@ -106,7 +107,6 @@ const retainedJudgment = Schema.Struct(
 interface ResultCheck {
   readonly entry: FirewallInboxEntry;
   readonly item: ResultItem;
-  readonly terminal: boolean;
 }
 
 /** One answer of a result the firewall checks: its member, its record and its outcome. */
@@ -430,7 +430,6 @@ function sliceEvidence(
   index: number,
 ): FirewallEvidence {
   return {
-    snapshot: captured.snapshot,
     ...(captured.slices[index] ?? EMPTY_WINDOW),
   };
 }
@@ -463,7 +462,6 @@ function checkRecordText(
         canonicalCandidate: check.entry.canonicalItem,
         ...(message === undefined ? {} : { message }),
         cards: candidate?.cards ?? [],
-        terminal: check.terminal,
       });
     }),
   );
@@ -627,7 +625,7 @@ function deterministicCheck(
 ) {
   const environment = captureEnvironment(liveEnvironment);
   return Effect.gen(function* () {
-    const context = yield* contextFrom(environment, EMPTY_WINDOW, []);
+    const { context } = yield* contextFrom(environment, EMPTY_WINDOW, []);
     const allowed: FirewallCheck = {
       judgment: "allow",
       reason: "eligible",
@@ -643,7 +641,6 @@ function deterministicCheck(
         context,
         agents: [agentViewOf(environment.localAgentCard)],
         message,
-        terminal: false,
       }),
       canonicalResult: yield* encodeRuntimeValue(allowed),
     };

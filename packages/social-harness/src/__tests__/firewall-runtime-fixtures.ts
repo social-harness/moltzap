@@ -2,13 +2,16 @@
 
 import { Deferred, Effect, Queue, Schema, Scope } from "effect";
 import { generateKeyPairSync } from "node:crypto";
-import type { InboundItem } from "../communication/collectives/inbound.js";
 import type {
   MessageMiddleware,
   MiddlewareResult,
 } from "../firewall/evaluator/contract/index.js";
+import type {
+  FirewallOptions,
+  InstalledFirewall,
+} from "../firewall/policy/installation.js";
+import type { InboundItem } from "../host-protocol/items.js";
 import type { HarnessMessageReadyEvent } from "../host-protocol/operations.js";
-import { makeCollectiveOperations } from "../communication/collectives/index.js";
 import { makeEndpointEngine } from "../communication/conversations/index.js";
 import { InboundMessage } from "../communication/conversations/message.js";
 import {
@@ -23,19 +26,13 @@ import {
   decodeRuntimeValue,
   DeliveryToken,
   encodeRuntimeValue,
-  type EndpointStore,
   EndpointStoreError,
-  openEndpointStore,
 } from "../communication/store/index.js";
 import { makeHostDelivery } from "../daemon/inbox/host-delivery.js";
 import { noHistoryExport } from "../daemon/inbox/host-traffic-log.js";
+import { type DaemonStore, openDaemonStore } from "../daemon/store.js";
 import { encodeCanonical } from "../encoding/canonical-json.js";
-import {
-  collectiveAdmission,
-  decodeFirewallAuditEntry,
-  type FirewallOptions,
-  type InstalledFirewall,
-} from "../firewall/admission/index.js";
+import { decodeFirewallAuditEntry } from "../firewall/admission/index.js";
 import { installEditableFirewall } from "../firewall/index.js";
 import { AgentCard, agentViewOf } from "../identity/cards.js";
 import { Ed25519PublicKey } from "../identity/keys.js";
@@ -52,13 +49,13 @@ import {
   storeCertifiedFirstMessage,
 } from "./certified-history-fixtures.js";
 import { collectiveOperationId } from "./collective-id-fixtures.js";
+import { makeCollectiveOperations } from "./collective-send.js";
 import { pollCursor } from "./router-worker-fixtures.js";
 import { stateDirectory } from "./store-schema-fixtures.js";
 
 /** A communication norm shares its guidance and repair text across traces. */
 export const rule = {
   id: "communication",
-  kind: "norm",
   guidance: "Answer the open scheduling question.",
   feedback: {
     nextAction: "revise",
@@ -72,12 +69,12 @@ export const pass: MiddlewareResult = {
 };
 /** A semantic rejection with no response obligation. */
 export const block: MiddlewareResult = {
-  findings: [{ ruleId: rule.id, outcome: "block" }],
+  findings: [{ ruleId: rule.id, outcome: "violation" }],
   expectations: [],
 };
 /** A norm violation that returns the registered repair advice. */
 export const revise: MiddlewareResult = {
-  findings: [{ ruleId: rule.id, outcome: "revise" }],
+  findings: [{ ruleId: rule.id, outcome: "violation" }],
   expectations: [],
 };
 /** An unresolved check tells the runtime to wait. */
@@ -110,7 +107,7 @@ const identities = Effect.gen(function* () {
   );
   const membership = yield* directMembership([local.card, remote.card], signer);
   const directory = stateDirectory();
-  const store = yield* openEndpointStore(directory, {
+  const store = yield* openDaemonStore(directory, {
     liveWireVersions: LIVE_WIRE_VERSIONS,
   });
   yield* store.bindIdentity({
@@ -196,7 +193,7 @@ export const auditChecks = (subject: Fixture) =>
 
 /** Fixed registration and settings are captured before delivery operations run. */
 export const installation = (
-  store: EndpointStore,
+  store: DaemonStore,
   middleware: MessageMiddleware,
   overrides: Partial<FirewallOptions> = {},
 ) =>
@@ -243,15 +240,13 @@ const firewallRuntime = (subject: Fixture, installed: InstalledFirewall) =>
     const collectives = yield* makeCollectiveOperations({
       store,
       observeMessage: (msgId) => engine.observeMessage(msgId),
-      sendAdmitted: (input, checkId) => engine.sendAdmitted(input, checkId),
+      prepareMessage: (input) => engine.prepare(input),
+      acceptMessage: (prepared, hold) => engine.accept(prepared, hold),
       reportStorageFault: () => Effect.void,
       self: agentViewOf(local.card),
       scope,
-      lookupMember: (member) => resolvedMemberView(engine, member),
       sendMessage: (input) => engine.send(input),
-      bindMessage: (input, hold) => engine.bind(input, hold),
       emit,
-      admission: collectiveAdmission(environment, engine),
     });
     const delivery = yield* makeHostDelivery({
       store,
@@ -510,7 +505,7 @@ function admitDelayedEvidence(
   });
 }
 
-function pendingMessages(store: EndpointStore) {
+function pendingMessages(store: DaemonStore) {
   return store.readPendingDeliveries().pipe(
     Effect.flatMap((entries) =>
       Effect.forEach(

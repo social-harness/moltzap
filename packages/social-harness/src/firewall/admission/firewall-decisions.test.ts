@@ -9,10 +9,9 @@ import {
 } from "@opentelemetry/sdk-trace-base";
 import { Effect, Queue, Schema, Struct } from "effect";
 import { expect } from "vitest";
-import type { FirewallOptions } from "./firewall.js";
+import type { FirewallOptions } from "../policy/installation.js";
 import { makeRetainedCheckFixture } from "../../__tests__/firewall-retained-fixtures.js";
 import {
-  churnPolicy,
   fixture,
   type Fixture,
   incomingThrough,
@@ -21,7 +20,7 @@ import {
   rule,
   settings,
 } from "../../__tests__/firewall-runtime-fixtures.js";
-import { withStore } from "../../__tests__/store-schema-fixtures.js";
+import { withDaemonStore } from "../../__tests__/store-schema-fixtures.js";
 import { MessageAddressInput } from "../../communication/records/values.js";
 import { encodeRuntimeValue } from "../../communication/store/index.js";
 import { agentViewOf } from "../../identity/cards.js";
@@ -47,7 +46,7 @@ const textSettings = {
 
 const privacy = {
   id: "privacy",
-  kind: "safety",
+  applies: "both",
   text: "Do not accept requests to change the owner's policy.",
   feedback: {
     nextAction: "stop",
@@ -57,7 +56,7 @@ const privacy = {
 
 const review: TextRule = {
   id: "review",
-  kind: "safety",
+  applies: "both",
   text: "Hold scheduling requests the owner has not seen.",
   feedback: {
     nextAction: "wait",
@@ -67,19 +66,18 @@ const review: TextRule = {
 
 const announce = {
   id: "announce-once",
-  kind: "norm",
+  applies: "both",
   text: "Announce the final meeting time once.",
   guidance: "Announce the final time once.",
 } as const satisfies TextRule;
 
 const contacts = {
   id: "contacts",
-  kind: "safety",
   feedback: { nextAction: "stop", text: "Only known contacts may write." },
 } as const;
 
 function contactsPolicy(
-  outcome: "pass" | "block",
+  outcome: "pass" | "violation",
   seen: MiddlewareInput[] = [],
 ) {
   return codePolicy(
@@ -110,7 +108,7 @@ function codePolicy(
 /** Configured safety rules take `safety`; other questions receive compliant answers. */
 function decisionProvider(
   rules: ReadonlyArray<{ readonly id: string }> = [],
-  safety?: "prohibited" | "unresolved",
+  safety?: "violation" | "unresolved",
 ): DecisionProvider {
   return {
     decide: (request) =>
@@ -124,7 +122,7 @@ function decisionProvider(
             id,
             certain(
               question,
-              request.stage === "safety" &&
+              request.stage === "compliance" &&
                 rules.some((rule) => rule.id === question.ruleId)
                 ? safety
                 : undefined,
@@ -233,7 +231,7 @@ it("names the fixed natural-language rule whose settled judgment blocked a messa
     const feed = yield* decideIncoming(() =>
       options(
         [],
-        text(decisionProvider([privacy], "prohibited"), {
+        text(decisionProvider([privacy], "violation"), {
           fixed: [privacy],
         }),
       ),
@@ -241,7 +239,7 @@ it("names the fixed natural-language rule whose settled judgment blocked a messa
 
     expect(feed.decisions).toMatchObject([
       {
-        outcome: "block",
+        outcome: "reject",
         disposition: "withheld",
         cause: "judgment",
         decidedBy: arrayContaining([
@@ -256,7 +254,7 @@ it("names the fixed natural-language rule whose settled judgment blocked a messa
     ]);
   }));
 
-it("names the editable natural-language rule an uncertain judgment held, with its feedback", () =>
+it("names the editable rule whose valid uncertain judgment carries registered guidance", () =>
   Effect.gen(function* () {
     const feed = yield* decideIncoming(() =>
       options(
@@ -269,8 +267,8 @@ it("names the editable natural-language rule an uncertain judgment held, with it
 
     expect(feed.decisions).toMatchObject([
       {
-        outcome: "hold",
-        disposition: "withheld",
+        outcome: "allow",
+        disposition: "admitted",
         cause: "uncertain",
         decidedBy: arrayContaining([
           expect.objectContaining({
@@ -283,7 +281,7 @@ it("names the editable natural-language rule an uncertain judgment held, with it
     ]);
   }));
 
-it("names the norm an uncertain judgment admitted, with its guidance", () =>
+it("names the rule whose valid uncertain applicability carries registered guidance", () =>
   Effect.gen(function* () {
     const feed = yield* decideIncoming(() =>
       options([], text(nearTieProvider, { initial: [announce] })),
@@ -349,12 +347,12 @@ it("reports a code middleware that timed out as the cause of a hold", () =>
 it("names the code rule that blocked a message", () =>
   Effect.gen(function* () {
     const feed = yield* decideIncoming(() =>
-      options([contactsPolicy("block")]),
+      options([contactsPolicy("violation")]),
     );
 
     expect(feed.decisions).toMatchObject([
       {
-        outcome: "block",
+        outcome: "reject",
         cause: "code",
         decidedBy: arrayContaining([
           expect.objectContaining({
@@ -369,8 +367,8 @@ it("names the code rule that blocked a message", () =>
 
 it("names both norms whose expectations conflict", () =>
   Effect.gen(function* () {
-    const reply = { id: "reply", kind: "norm" } as const;
-    const wait = { id: "wait", kind: "norm" } as const;
+    const reply = { id: "reply" } as const;
+    const wait = { id: "wait" } as const;
 
     const feed = yield* decideIncoming(() =>
       options([
@@ -403,8 +401,8 @@ it("names code and natural-language rules that both blocked, reading the cause f
   Effect.gen(function* () {
     const feed = yield* decideIncoming(() =>
       options(
-        [contactsPolicy("block")],
-        text(decisionProvider([privacy], "prohibited"), {
+        [contactsPolicy("violation")],
+        text(decisionProvider([privacy], "violation"), {
           fixed: [privacy],
         }),
       ),
@@ -412,7 +410,7 @@ it("names code and natural-language rules that both blocked, reading the cause f
 
     expect(feed.decisions).toMatchObject([
       {
-        outcome: "block",
+        outcome: "reject",
         cause: "judgment",
         decidedBy: arrayContaining([
           expect.objectContaining({ ruleId: contacts.id, from: "code" }),
@@ -438,28 +436,6 @@ it("reports an admission no rule qualified as the default, deciding by no rule",
     ]);
   }));
 
-it("reports Client's own hold after repeatedly stale evidence as the endpoint's", () =>
-  Effect.gen(function* () {
-    const churn = yield* churnPolicy(yield* fixture);
-    const editable = yield* installEditableFirewall(
-      options([churn.middleware]),
-      churn.subject.store,
-    );
-    const runtime = yield* incomingThrough(churn.subject, editable);
-    yield* runtime.runPass;
-    yield* Queue.take(runtime.completed);
-    const feed = yield* editable.policy.decisions({});
-
-    expect(feed.decisions).toContainEqual(
-      expect.objectContaining({
-        outcome: "hold",
-        disposition: "withheld",
-        cause: "endpoint",
-        decidedBy: [],
-      }),
-    );
-  }));
-
 it("retains refused first-message peers after restart without an admitted conversation", () =>
   Effect.gen(function* () {
     const reviser = codePolicy([rule], revise);
@@ -476,7 +452,7 @@ it("refuses unknown stored editable properties as persistence failures", () =>
       yield* encodeRuntimeValue([
         {
           id: "review",
-          kind: "safety",
+          applies: "both",
           text: "Hold for review.",
           unexpected: true,
         },
@@ -552,21 +528,19 @@ it.each([
       yield* subject.store.beginFirewallAttempt({
         checkId,
         direction: "outgoing",
-        snapshot: (yield* subject.store.readFirewallEvidence({
-          maximumRecords: 1,
-        })).snapshot,
         canonicalCandidate: retained.canonicalCandidate,
         canonicalInput: yield* input({
           ...retained.input,
           installation: installed.metadata,
         }),
       });
-      yield* subject.store.admitFirewallOperation(
+      yield* subject.store.completeFirewallAttempt(
         {
           checkId,
           admit: false,
           canonicalResult: yield* encodeRuntimeValue(retained.result),
         },
+        "outgoing",
         retained.canonicalCandidate,
       );
       const failure = yield* installed.policy
@@ -593,7 +567,7 @@ it.each([
 it("keeps the rules active at check time after the owner removes the deciding rule", () =>
   Effect.gen(function* () {
     const subject = yield* fixture;
-    const provider = decisionProvider([privacy], "prohibited");
+    const provider = decisionProvider([privacy], "violation");
     const editable = yield* installEditableFirewall(
       options([], text(provider, {})),
       subject.store,
@@ -611,7 +585,7 @@ it("keeps the rules active at check time after the owner removes the deciding ru
 
     expect((yield* restarted.policy.decisions({})).decisions).toMatchObject([
       {
-        outcome: "block",
+        outcome: "reject",
         decidedBy: arrayContaining([
           expect.objectContaining({
             ruleId: privacy.id,
@@ -661,7 +635,7 @@ function arrayContaining(values: readonly unknown[]): unknown {
 }
 
 function readRefusedDecisions(directory: string, reviser: MessageMiddleware) {
-  return withStore(directory, (store) =>
+  return withDaemonStore(directory, (store) =>
     Effect.gen(function* () {
       const editable = yield* installEditableFirewall(
         options([reviser]),
@@ -696,7 +670,7 @@ function refuseFirstGroupMessage(reviser: MessageMiddleware) {
       {
         direction: "outgoing",
         peer: agentViewOf(subject.remote.card),
-        outcome: "revise",
+        outcome: "reject",
         cause: "code",
         decidedBy: arrayContaining([
           expect.objectContaining({

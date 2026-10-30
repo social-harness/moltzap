@@ -20,7 +20,6 @@ import {
   slotSchema,
 } from "../../__tests__/collective-operation-fixtures.js";
 import { AgentAddress } from "../records/values.js";
-import { CollectiveError } from "./contracts.js";
 
 const bob = Schema.decodeUnknownSync(AgentAddress)("agent:bob");
 
@@ -56,7 +55,11 @@ function sendsAValidAnswerToTheRequesterSDirectConversation() {
     yield* classifyMessage(layer, requestMessage("agent:bob", 60_000));
     yield* send(layer, {
       to: "agent:bob",
-      collectiveResponse: { action: "accept", content: { slot: "mon" } },
+      collectiveResponse: {
+        operationId: requestId,
+        action: "accept",
+        content: { slot: "mon" },
+      },
     });
 
     expect(observed.sent).toEqual([
@@ -88,7 +91,7 @@ function returnsTheAnswerSMessageAndTheRequestItAnswered() {
     yield* classifyMessage(layer, requestMessage("agent:bob", 60_000));
     const sent = yield* send(layer, {
       to: "agent:bob",
-      collectiveResponse: { action: "decline" },
+      collectiveResponse: { operationId: requestId, action: "decline" },
     });
 
     expect(sent).toMatchObject({
@@ -108,7 +111,11 @@ function refusesAnAnswerThatFailsTheRequestSSchemaNamingTheField() {
     const failure = yield* collectiveFailureOf(
       send(layer, {
         to: "agent:bob",
-        collectiveResponse: { action: "accept", content: { slot: "sun" } },
+        collectiveResponse: {
+          operationId: requestId,
+          action: "accept",
+          content: { slot: "sun" },
+        },
       }),
     );
 
@@ -126,7 +133,7 @@ function refusesASecondAnswerToTheSameRequest() {
     yield* classifyMessage(layer, requestMessage("agent:bob", 60_000));
     const decline = {
       to: "agent:bob",
-      collectiveResponse: { action: "decline" },
+      collectiveResponse: { operationId: requestId, action: "decline" },
     };
     yield* send(layer, decline);
 
@@ -144,7 +151,7 @@ function refusesAnAnswerWithoutAnOpenRequest() {
     const failure = yield* collectiveFailureOf(
       send(layer, {
         to: "agent:bob",
-        collectiveResponse: { action: "decline" },
+        collectiveResponse: { operationId: requestId, action: "decline" },
       }),
     );
 
@@ -163,7 +170,10 @@ function answersEachOfTwoOpenRequestsByItsId() {
     yield* classifyMessage(layer, secondRequestMessage);
     yield* send(layer, {
       to: "agent:bob",
-      collectiveResponse: { action: "decline", operationId: secondRequestId },
+      collectiveResponse: {
+        operationId: secondRequestId,
+        action: "decline",
+      },
     });
     yield* send(layer, {
       to: "agent:bob",
@@ -189,27 +199,6 @@ function answersEachOfTwoOpenRequestsByItsId() {
         ],
       },
     ]);
-  });
-}
-
-function refusesAnAnswerNamingNoRequestWhileTwoAreOpen() {
-  const observed = newObserved();
-
-  return Effect.gen(function* () {
-    const layer = yield* makeLayer(observed);
-    yield* classifyMessage(layer, requestMessage("agent:bob", 60_000));
-    yield* classifyMessage(layer, secondRequestMessage);
-    const refused = yield* Effect.flip(
-      send(layer, {
-        to: "agent:bob",
-        collectiveResponse: { action: "decline" },
-      }),
-    );
-
-    expect(refused).toBeInstanceOf(CollectiveError);
-    expect(refused.message).toContain(requestId);
-    expect(refused.message).toContain(secondRequestId);
-    expect(observed.sent).toEqual([]);
   });
 }
 
@@ -243,10 +232,5 @@ describe("collective responses", () => {
   it(
     "answers each of two open requests in one conversation by its operationId",
     answersEachOfTwoOpenRequestsByItsId,
-  );
-
-  it(
-    "refuses an answer that names no request while two are open, listing both ids",
-    refusesAnAnswerNamingNoRequestWhileTwoAreOpen,
   );
 });

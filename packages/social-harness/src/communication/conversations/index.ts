@@ -4,7 +4,6 @@
  */
 
 import { Data, Deferred, Duration, Effect, Schema, type Scope } from "effect";
-import type { FirewallSendError } from "../../firewall/outcome/index.js";
 import type {
   RouterDiscontinuityReason,
   RouterIngressDisposition,
@@ -35,6 +34,7 @@ import {
   type MsgId,
   RecordHash,
 } from "../records/index.js";
+import { type RecipientResolutionError, resolutionFailure } from "./address.js";
 import {
   acceptEngineIngress,
   acceptEngineRecoveryIngress,
@@ -54,12 +54,11 @@ import {
   recoveryHeadAdvanced,
 } from "./router-recovery/index.js";
 import {
+  acceptSend,
   type BindHold,
   type EngineSendInput,
   type EngineSentMessage,
-  prepareAdmittedSend,
-  prepareCheckedSend,
-  type PreparedSendCheck,
+  type PreparedSend,
   prepareSend,
   proposeIntent,
   resolveAddress,
@@ -71,9 +70,9 @@ import {
 export type { EndpointEngineInput } from "./engine-context.js";
 /** The send input and result the collective layer exchanges with the engine. */
 export type { EngineSendInput, EngineSentMessage } from "./send.js";
-/** How a caller holds a precondition across a checked bind, and how a check is retried while stale. */
-export { type BindHold, untilFresh } from "./send.js";
-/** The prepared message a checked send hands its check, and the conversation an address resolves to. */
+/** How a caller holds a protocol claim across durable binding. */
+export { type BindHold, preparedSendData } from "./send.js";
+/** Canonical message preparation and resolved conversation attribution. */
 export type { PreparedSend, ResolvedConversation } from "./send.js";
 /** The marker spans that bracket daemon work in flight, shared with the layers above. */
 export {
@@ -121,46 +120,23 @@ export interface EnginePendingMessage {
 
 /** Stable private engine capability consumed by daemon composition. */
 export interface EndpointEngine {
-  /** Return a certification wait only after the held intent is durably bound. */
-  readonly bind: <E>(
-    input: EngineSendInput,
-    hold: BindHold<E>,
-  ) => Effect.Effect<
-    { readonly certified: Effect.Effect<EngineSentMessage, SendError> },
-    SendError | E
-  >;
   /** Observe one durable local intent without rechecking, rebinding, or sending a replacement. */
   readonly observeMessage: (
     msgId: MsgId,
   ) => Effect.Effect<EngineSentMessage, SendError>;
 
-  /**
-   * Check and bind one application message. Inference completes outside
-   * protocol locks, then `hold` is taken, then the intent binds atomically
-   * with the check's evidence comparison. A bound message returns the
-   * `admitted` value of the check that admitted it at once, and `certified`
-   * completes once the message is certified, so a caller can bound that wait
-   * apart from the check.
-   */
-  readonly bindChecked: <E, A>(
+  /** Capture canonical content, membership and identity before assessment or binding. */
+  readonly prepare: (
     input: EngineSendInput,
-    check: PreparedSendCheck<A>,
+  ) => Effect.Effect<PreparedSend, SendError | RecipientResolutionError>;
+  /** Accept captured bytes without resolving names or minting another message identity. */
+  readonly accept: <E>(
+    prepared: PreparedSend,
     hold: BindHold<E>,
   ) => Effect.Effect<
-    {
-      readonly certified: Effect.Effect<EngineSentMessage, SendError>;
-      readonly admitted: A;
-    },
-    SendError | FirewallSendError | E
+    { readonly certified: Effect.Effect<EngineSentMessage, SendError> },
+    SendError | E
   >;
-  /**
-   * Certify one gather request message against its operation's admitted check;
-   * a message whose content the check did not admit binds nothing.
-   */
-  readonly sendAdmitted: (
-    input: EngineSendInput,
-    checkId: string,
-  ) => Effect.Effect<EngineSentMessage, SendError>;
   /** Completes once the minted message's certified record is stored locally. */
   readonly send: (
     input: EngineSendInput,
@@ -400,7 +376,7 @@ const LOCAL_DRAIN_TIMEOUT = Duration.seconds(10);
  */
 const finishPreparedSend = (
   runtime: EngineRuntime,
-  prepared: Effect.Effect.Success<ReturnType<typeof prepareSend>>,
+  prepared: Effect.Effect.Success<ReturnType<typeof acceptSend>>,
 ) =>
   Effect.gen(function* () {
     if (!(yield* Deferred.isDone(prepared.completion))) {
@@ -419,8 +395,13 @@ const send = (
   input: EngineSendInput,
 ): Effect.Effect<EngineSentMessage, SendError> =>
   Effect.gen(function* () {
-    const prepared = yield* prepareSend(runtime, input);
-    return yield* finishPreparedSend(runtime, prepared);
+    const prepared = yield* prepareSend(runtime, input).pipe(
+      Effect.catchTag("RecipientResolutionError", (error) =>
+        Effect.fail(resolutionFailure(error)),
+      ),
+    );
+    const accepted = yield* acceptSend(runtime, prepared);
+    return yield* finishPreparedSend(runtime, accepted);
   }).pipe(Effect.withSpan("EndpointEngine.send"));
 
 const readPendingMessages = (
@@ -603,26 +584,12 @@ const abandonVolatileFolds = (
 
 const endpointEngine = (runtime: EngineRuntime): EndpointEngine =>
   Object.freeze({
-    bind: <E>(input: EngineSendInput, hold: BindHold<E>) =>
-      prepareSend(runtime, input, hold).pipe(
-        Effect.map((prepared) => ({
-          certified: finishPreparedSend(runtime, prepared),
+    prepare: (input: EngineSendInput) => prepareSend(runtime, input),
+    accept: <E>(prepared: PreparedSend, hold: BindHold<E>) =>
+      acceptSend(runtime, prepared, hold).pipe(
+        Effect.map((accepted) => ({
+          certified: finishPreparedSend(runtime, accepted),
         })),
-      ),
-    bindChecked: <E, A>(
-      input: EngineSendInput,
-      check: PreparedSendCheck<A>,
-      hold: BindHold<E>,
-    ) =>
-      prepareCheckedSend(runtime, input, check, hold).pipe(
-        Effect.map((prepared) => ({
-          certified: finishPreparedSend(runtime, prepared),
-          admitted: prepared.admitted,
-        })),
-      ),
-    sendAdmitted: (input: EngineSendInput, checkId: string) =>
-      prepareAdmittedSend(runtime, input, checkId).pipe(
-        Effect.flatMap((prepared) => finishPreparedSend(runtime, prepared)),
       ),
     observeMessage: (msgId: MsgId) => observeMessage(runtime, msgId),
     send: (sendInput: Parameters<EndpointEngine["send"]>[0]) =>
@@ -684,3 +651,6 @@ function observeMessage(runtime: EngineRuntime, msgId: MsgId) {
         );
   });
 }
+
+/** Named resolution failures remain private to authored-message preparation. */
+export { RecipientResolutionError, resolutionFailure } from "./address.js";

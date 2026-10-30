@@ -1,28 +1,29 @@
 /** @file Recording ports, message builders and send helpers shared by the collective operation tests. */
 
 import { Duration, Effect, Schema, type Scope } from "effect";
-import type { InboundItem } from "../communication/collectives/inbound.js";
-import type {
-  CollectiveAdmission,
-  CollectiveOperations,
-  CollectivePorts,
-} from "../communication/collectives/ports.js";
-import type { EngineSendInput } from "../communication/conversations/index.js";
-import type { FirewallSendError } from "../firewall/outcome/index.js";
+import type { CollectivePorts } from "../communication/collectives/ports.js";
+import type { InboundItem } from "../host-protocol/items.js";
 import {
   CollectiveEmitError,
   CollectiveError,
   type CollectiveId,
   SendInput,
 } from "../communication/collectives/contracts.js";
-import { makeCollectiveOperations } from "../communication/collectives/index.js";
 import { readCollectiveValue } from "../communication/collectives/wire/index.js";
 import { SendError } from "../communication/conversations/errors.js";
+import {
+  type EngineSendInput,
+  RecipientResolutionError,
+} from "../communication/conversations/index.js";
 import { InboundMessage } from "../communication/conversations/message.js";
 import { MsgId, RecordHash } from "../communication/records/index.js";
 import { AgentAddress } from "../communication/records/values.js";
 import { digest, testAgentView } from "./agent-card-fixtures.js";
 import { collectiveOperationId } from "./collective-id-fixtures.js";
+import {
+  type TestCollectiveOperations as CollectiveOperations,
+  makeCollectiveOperations,
+} from "./collective-send.js";
 import { collectivePersistencePorts } from "./collective-storage-stub.js";
 
 /** The agent a layer `makeLayer` builds runs as unless told otherwise. */
@@ -135,8 +136,6 @@ interface LayerOptions {
   readonly sendMessage?: CollectivePorts["sendMessage"];
   /** Keeps each item the layer emits; by default it records the item. */
   readonly emit?: CollectivePorts["emit"];
-  /** An installed firewall's checks; none by default. */
-  readonly admission?: CollectiveAdmission;
 }
 
 /**
@@ -150,7 +149,6 @@ interface LayerOptions {
  * @param options.unknown Members whose lookup fails as an unknown agent.
  * @param options.sendMessage Certifies each message `refused` lets through.
  * @param options.emit Keeps each item the layer emits.
- * @param options.admission An installed firewall's checks.
  * @returns The layer, scoped to the caller.
  */
 export const makeLayer = (
@@ -164,38 +162,37 @@ export const makeLayer = (
       Effect.sync(() => {
         observed.emitted.push(item);
       }),
-    admission,
   }: LayerOptions = {},
 ): Effect.Effect<CollectiveOperations, never, Scope.Scope> =>
-  Effect.flatMap(Effect.scope, (scope) => {
-    const persistence = collectivePersistencePorts((input) => {
-      const reason = refused[input.to];
-      if (reason === undefined) {
-        return sendMessage(input);
-      }
-      if (reason === "slow") {
-        return Effect.never;
-      }
-      if (reason === "late") {
-        return Effect.sleep(
-          Duration.sum(requestSendWait, lateMessageDelay),
-        ).pipe(Effect.zipRight(sendMessage(input)));
-      }
-      return Effect.fail(new SendError({ reason }));
-    });
-    const checked = recordingAdmission(persistence.store, admission);
-    return makeCollectiveOperations({
-      ...persistence,
-      ...(checked === undefined ? {} : { admission: checked }),
-      self: testAgentView(self),
-      lookupMember: (member) =>
-        unknown.includes(member)
-          ? Effect.fail(new SendError({ reason: "unknown-agent" }))
-          : Effect.succeed(testAgentView(member)),
-      emit,
-      scope,
-    });
-  }).pipe(Effect.orDie);
+  Effect.flatMap(Effect.scope, (scope) =>
+    Effect.gen(function* () {
+      const persistence = yield* collectivePersistencePorts((input) => {
+        const reason = refused[input.to];
+        if (reason === undefined) {
+          return sendMessage(input);
+        }
+        if (reason === "slow") {
+          return Effect.never;
+        }
+        if (reason === "late") {
+          return Effect.sleep(
+            Duration.sum(requestSendWait, lateMessageDelay),
+          ).pipe(Effect.zipRight(sendMessage(input)));
+        }
+        return Effect.fail(new SendError({ reason }));
+      }, self);
+      return yield* makeCollectiveOperations({
+        ...persistence,
+        self: testAgentView(self),
+        prepareMessage: prepareKnownMembers(
+          persistence.prepareMessage,
+          unknown,
+        ),
+        emit,
+        scope,
+      });
+    }),
+  ).pipe(Effect.orDie, Effect.withSpan("makeLayer"));
 
 /**
  * A message in the direct conversation with `sender`.
@@ -275,7 +272,9 @@ export const classifyMessage = (
  * @returns The send's outcome.
  */
 export const send = (layer: CollectiveOperations, input: unknown) =>
-  layer.send(Schema.decodeUnknownSync(SendInput)(input));
+  layer
+    .prepare(Schema.decodeUnknownSync(SendInput)(input))
+    .pipe(Effect.flatMap((prepared) => layer.accept(prepared)));
 
 /**
  * A gather to `gatherTo` asking `questionText`.
@@ -298,7 +297,7 @@ export const gatherInput = (
  * @returns A collective failure's own value, or the send error itself.
  */
 export const collectiveFailureOf = <A>(
-  effect: Effect.Effect<A, SendError | CollectiveError | FirewallSendError>,
+  effect: Effect.Effect<A, SendError | CollectiveError>,
 ) =>
   Effect.flip(effect).pipe(
     Effect.map((error) =>
@@ -349,36 +348,27 @@ export const firstRequestOf = (observed: Observed) =>
     ),
   );
 
-function recordingAdmission(
-  store: ReturnType<typeof collectivePersistencePorts>["store"],
-  admission?: CollectiveAdmission,
-): CollectiveAdmission | undefined {
-  return admission === undefined
-    ? undefined
-    : {
-        bindMessage: (input, hold) =>
-          admission
-            .bindMessage(input, hold)
-            .pipe(
-              Effect.tap(() =>
-                input.collective?.operation === undefined
-                  ? Effect.void
-                  : store
-                      .putCollectiveOperation(input.collective.operation)
-                      .pipe(Effect.orDie),
-              ),
-            ),
-        admitGather: (candidate) =>
-          admission
-            .admitGather(candidate)
-            .pipe(
-              Effect.tap(() =>
-                candidate.operation === undefined
-                  ? Effect.void
-                  : store
-                      .putCollectiveOperation(candidate.operation)
-                      .pipe(Effect.orDie),
-              ),
-            ),
-      };
+function prepareKnownMembers(
+  prepare: CollectivePorts["prepareMessage"],
+  unknown: readonly string[],
+): CollectivePorts["prepareMessage"] {
+  return (input) => {
+    const missing = unknown
+      .filter(
+        (member) =>
+          input.to === member ||
+          (input.to.startsWith("group:") &&
+            input.to.slice(6).split(",").includes(member.slice(6))),
+      )
+      .map((member) => ({
+        member: Schema.decodeUnknownSync(AgentAddress)(member),
+        cause: new SendError({ reason: "unknown-agent" }),
+      }));
+    const [first, ...rest] = missing;
+    return first === undefined
+      ? prepare(input)
+      : Effect.fail(
+          new RecipientResolutionError({ failures: [first, ...rest] }),
+        );
+  };
 }

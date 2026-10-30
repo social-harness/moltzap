@@ -79,9 +79,9 @@ type ExpectedCollectiveResponse =
   | Readonly<{
       action: "accept";
       content: ExpectedAnswerContent;
-      operationId?: CollectiveId;
+      operationId: CollectiveId;
     }>
-  | Readonly<{ action: "decline"; operationId?: CollectiveId }>;
+  | Readonly<{ action: "decline"; operationId: CollectiveId }>;
 type ExpectedSendInput =
   | Readonly<{
       to: MessageAddressInput;
@@ -132,11 +132,7 @@ type ExpectedGroupMessage = Readonly<{
 type ExpectedWithheld = Readonly<{
   kind: "withheld";
   checkId: string;
-  reason:
-    | "prohibited"
-    | "unresolved-evidence"
-    | "check-unavailable"
-    | "norm-violation";
+  reason: "rule-violation" | "unresolved-evidence" | "check-unavailable";
 }>;
 type ExpectedMemberOutcome =
   | Readonly<{ kind: "answered"; content: ExpectedAnswerContent }>
@@ -184,6 +180,7 @@ type ExpectedGuidanceSubject = Readonly<{
   text: string;
 }>;
 type ExpectedGuidanceInstruction =
+  | Readonly<{ middlewareId: string; ruleId: string; instruction: string }>
   | Readonly<{
       middlewareId: string;
       ruleId: string;
@@ -324,7 +321,6 @@ type CollectiveFailureKindsAreExact = Expect<
     | "schema-invalid"
     | "answer-invalid"
     | "request-none"
-    | "request-ambiguous"
     | "request-answered"
     | "request-expired"
     | "deadline-passed"

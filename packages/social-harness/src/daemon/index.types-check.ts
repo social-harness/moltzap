@@ -59,10 +59,10 @@ type PolicyModeIsExact = Expect<
   Types.Equals<MessagePolicy["mode"], "guidance" | "enforcement">
 >;
 type EncodedText = NonNullable<(typeof MessagePolicy.Encoded)["text"]>;
-type PolicyWriterKindsAreExact = Expect<
+type PolicyWriterDirectionsAreExact = Expect<
   Types.Equals<
-    NonNullable<EncodedText["fixedRules"]>[number]["kind"],
-    "safety" | "norm"
+    NonNullable<EncodedText["fixedRules"]>[number]["applies"],
+    "incoming" | "outgoing" | "both"
   >
 >;
 /** A decoded inline document installs through the same options as `withFirewall`. */
@@ -101,7 +101,7 @@ export type DaemonCanaries = [
   HelpIsExact,
   LayerIsExact,
   PolicyModeIsExact,
-  PolicyWriterKindsAreExact,
+  PolicyWriterDirectionsAreExact,
   PolicyInstallsAsFirewall,
   DecodedPolicyComposes,
   InlineTextIsAssignable,

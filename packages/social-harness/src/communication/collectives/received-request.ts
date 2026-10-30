@@ -24,7 +24,6 @@ import {
   type CollectiveFailure,
   type CollectiveId,
   MAXIMUM_DEADLINE_SECONDS,
-  type OpenElsewhere,
 } from "./contracts.js";
 import { questionText } from "./render.js";
 import {
@@ -37,21 +36,12 @@ import {
  * What matching reads of a received request: `to` is the canonical address
  * of the conversation it arrived in. `sending` holds the one answer in
  * flight, so a member answers at most once; an all_gather request becomes
- * `closed` at its close. With a firewall installed a request starts
- * `unadmitted` and becomes `open` once the runtime is shown it, or `withheld`
- * when it is not; matching passes over both, as though the request had not
- * arrived.
+ * `closed` at its close.
  */
 export interface RequestStatus {
   readonly to: AgentAddress | GroupAddress;
   readonly deadlineAt: number;
-  readonly state:
-    | "unadmitted"
-    | "open"
-    | "sending"
-    | "answered"
-    | "closed"
-    | "withheld";
+  readonly state: "open" | "sending" | "answered" | "closed";
 }
 
 /** The one request an answer answers, with its operationId. */
@@ -60,31 +50,12 @@ export interface OpenRequest<Request extends RequestStatus> {
   readonly request: Request;
 }
 
-/**
- * Why no single request takes an answer: several are open, with their ids,
- * when the answer named none; or none was received, it was answered, or it
- * has expired, with the requests open in other conversations.
- */
-type UnmatchedAnswer =
-  | AmbiguousAnswer
-  | {
-      readonly kind: UnansweredKind;
-      readonly operationId?: CollectiveId;
-      readonly openElsewhere: readonly OpenElsewhere[];
-    };
-
-/** Why an answer matches nothing in its own conversation. */
-type ConversationRefusal =
-  | AmbiguousAnswer
-  | {
-      readonly kind: UnansweredKind;
-      readonly operationId?: CollectiveId;
-    };
-
-interface AmbiguousAnswer {
-  readonly kind: "request-ambiguous";
-  readonly openOperationIds: readonly CollectiveId[];
+/** Named request refusal reveals no unrelated conversation or request identity. */
+interface UnmatchedAnswer {
+  readonly kind: UnansweredKind;
+  readonly operationId?: CollectiveId;
 }
+type ConversationRefusal = UnmatchedAnswer;
 
 type UnansweredKind = Extract<
   CollectiveFailure["kind"],
@@ -150,48 +121,18 @@ export const matchOpenRequest = <Request extends RequestStatus>(
   requests: ReadonlyMap<CollectiveId, Request>,
   conversation: MessageAddressInput,
   now: number,
-  answer: { readonly operationId?: CollectiveId },
-): Either.Either<OpenRequest<Request>, UnmatchedAnswer> => {
-  const matched =
-    answer.operationId === undefined
-      ? onlyOpenRequest(requests, conversation, now)
-      : namedRequest(requests, conversation, now, answer.operationId);
-  return Either.mapLeft(
-    matched,
-    (unmatched): UnmatchedAnswer =>
-      unmatched.kind === "request-ambiguous"
-        ? unmatched
-        : {
-            ...unmatched,
-            openElsewhere: openElsewhere(requests, conversation, now),
-          },
-  );
-};
+  answer: { readonly operationId: CollectiveId },
+): Either.Either<OpenRequest<Request>, UnmatchedAnswer> =>
+  namedRequest(requests, conversation, now, answer.operationId);
 
-/**
- * The refusal of an answer no request takes; it names the open requests' ids
- * when the answer named none and several are open, and otherwise the
- * questions open in other conversations.
- * @param unmatched Why no request takes the answer.
- * @returns The error the answer fails with.
- */
+/** A named refusal never discloses requests the caller did not select. */
 export const unmatchedAnswerError = (unmatched: UnmatchedAnswer) =>
-  unmatched.kind === "request-ambiguous"
-    ? new CollectiveError({
-        failure: {
-          kind: unmatched.kind,
-          openOperationIds: unmatched.openOperationIds,
-        },
-      })
-    : new CollectiveError({
-        ...(unmatched.operationId === undefined
-          ? {}
-          : { operationId: unmatched.operationId }),
-        failure: { kind: unmatched.kind },
-        ...(unmatched.openElsewhere.length === 0
-          ? {}
-          : { openElsewhere: unmatched.openElsewhere }),
-      });
+  new CollectiveError({
+    ...(unmatched.operationId === undefined
+      ? {}
+      : { operationId: unmatched.operationId }),
+    failure: { kind: unmatched.kind },
+  });
 
 /**
  * The request state a request message opens, when it arrived where its
@@ -199,19 +140,16 @@ export const unmatchedAnswerError = (unmatched: UnmatchedAnswer) =>
  * member's direct conversation with the requester before its deadline, an
  * all_gather's in a group conversation, whose other members are the ones
  * asked. The request remains available for close processing after its deadline. A deadline beyond
- * `RECEIVED_DEADLINE_HORIZON` opens nothing. Under a firewall the request
- * starts `unadmitted`.
+ * `RECEIVED_DEADLINE_HORIZON` opens nothing.
  * @param certified The request message and its certified record.
  * @param value The request's collective part.
  * @param now The current time in epoch milliseconds.
- * @param initial The state the request starts in.
  * @returns The request to hold, or none when the message opens nothing.
  */
 export function receivedRequest(
   certified: CertifiedMessage,
   value: CollectingValue,
   now: number,
-  initial: "open" | "unadmitted",
 ): Option.Option<ReceivedRequest> {
   const { message } = certified;
   if (!trustedRequest(message, value, now)) {
@@ -225,7 +163,7 @@ export function receivedRequest(
     question: questionText(message.content),
     requestedSchema: value.requestedSchema,
     deadlineAt: value.deadlineAt,
-    state: initial,
+    state: "open",
   };
   if (value.op === "gather") {
     return message.kind === "direct"
@@ -250,63 +188,6 @@ export function receivedRequest(
       });
 }
 
-/** The requests the runtime was shown that are open outside `conversation`, where an answer meant for them belongs. */
-function openElsewhere(
-  requests: ReadonlyMap<CollectiveId, RequestStatus>,
-  conversation: MessageAddressInput,
-  now: number,
-): readonly OpenElsewhere[] {
-  return [...requests].flatMap(([operationId, request]) =>
-    request.to !== conversation &&
-    requestShown(request.state) &&
-    requestUnavailable(request, now) === undefined
-      ? [{ operationId, to: request.to }]
-      : [],
-  );
-}
-
-/** The one request open in `conversation`, or why no single request is. */
-function onlyOpenRequest<Request extends RequestStatus>(
-  requests: ReadonlyMap<CollectiveId, Request>,
-  conversation: MessageAddressInput,
-  now: number,
-): Either.Either<OpenRequest<Request>, ConversationRefusal> {
-  const asked = [...requests]
-    .filter(
-      ([, request]) =>
-        request.to === conversation && requestShown(request.state),
-    )
-    .map(([operationId, request]) => ({
-      operationId,
-      request,
-      unavailable: requestUnavailable(request, now),
-    }));
-  const open = asked.filter(({ unavailable }) => unavailable === undefined);
-  const [only] = open;
-  if (only !== undefined && open.length === 1) {
-    return Either.right({
-      operationId: only.operationId,
-      request: only.request,
-    });
-  }
-  if (open.length > 1) {
-    return Either.left({
-      kind: "request-ambiguous",
-      openOperationIds: open.map(({ operationId }) => operationId),
-    });
-  }
-  const [onlyUnavailable] = asked;
-  const unanswered = asked.length === 0 ? "request-none" : "request-expired";
-  return Either.left({
-    kind: asked.some(({ unavailable }) => unavailable === "request-answered")
-      ? "request-answered"
-      : unanswered,
-    ...(asked.length === 1 && onlyUnavailable !== undefined
-      ? { operationId: onlyUnavailable.operationId }
-      : {}),
-  });
-}
-
 /**
  * The request with operationId `named`, when the runtime was shown it in
  * `conversation` and it is still open; otherwise why it takes no answer, as
@@ -319,11 +200,7 @@ function namedRequest<Request extends RequestStatus>(
   named: CollectiveId,
 ): Either.Either<OpenRequest<Request>, ConversationRefusal> {
   const request = requests.get(named);
-  if (
-    request === undefined ||
-    request.to !== conversation ||
-    !requestShown(request.state)
-  ) {
+  if (request === undefined || request.to !== conversation) {
     return Either.left({ kind: "request-none" });
   }
   const unavailable = requestUnavailable(request, now);
@@ -350,29 +227,9 @@ function requestUnavailable(
     case "answered":
       return "request-answered";
     case "closed":
-    case "unadmitted":
-    case "withheld":
       return "request-expired";
     default: {
       const exhaustive: never = request.state;
-      return exhaustive;
-    }
-  }
-}
-
-/** Whether the runtime was shown a request, so that answers can match it. */
-function requestShown(state: RequestStatus["state"]): boolean {
-  switch (state) {
-    case "unadmitted":
-    case "withheld":
-      return false;
-    case "open":
-    case "sending":
-    case "answered":
-    case "closed":
-      return true;
-    default: {
-      const exhaustive: never = state;
       return exhaustive;
     }
   }

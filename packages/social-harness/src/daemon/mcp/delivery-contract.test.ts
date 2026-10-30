@@ -7,6 +7,12 @@ import type { MessageSender } from "../../communication/collectives/ports.js";
 import type { EndpointEngine } from "../../communication/conversations/index.js";
 import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
+import { requestId } from "../../__tests__/collective-operation-fixtures.js";
+import {
+  type TestCollectiveOperations as CollectiveOperations,
+  makeCollectiveOperations,
+} from "../../__tests__/collective-send.js";
+import { collectivePersistencePorts } from "../../__tests__/collective-storage-stub.js";
 import { makeToolCallRequest } from "../../__tests__/daemon-runtime-harness.js";
 import { loopbackMcpEndpoint } from "../../__tests__/mcp-http-fixtures.js";
 import { pendingMessage } from "../../__tests__/pending-delivery-fixtures.js";
@@ -15,18 +21,14 @@ import {
   CollectiveEmitError,
   CollectiveId,
 } from "../../communication/collectives/contracts.js";
-import {
-  type CollectiveOperations,
-  makeCollectiveOperations,
-} from "../../communication/collectives/index.js";
 import { encodeCollectiveContent } from "../../communication/collectives/wire/index.js";
 import { DeliveryAcknowledgeError } from "../../communication/conversations/errors.js";
 import { AgentAddress } from "../../communication/records/index.js";
-import { openEndpointStore } from "../../communication/store/index.js";
 import { acquireHarnessEndpoint } from "../../host-client/index.js";
 import { decodeHarnessReadInboxResult } from "../../host-protocol/operations.js";
 import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { type HostDelivery, makeHostDelivery } from "../inbox/host-delivery.js";
+import { openDaemonStore } from "../store.js";
 import { makeHarnessMcpHttpHandler } from "./tools.js";
 
 const unreachable = () =>
@@ -77,7 +79,7 @@ const callTool =
 /** Real delivery, collective classification and storage behind the MCP boundary. */
 const deliveryFixture = (sendMessage: MessageSender = unreachable) =>
   Effect.gen(function* () {
-    const store = yield* openEndpointStore(stateDirectory(), {
+    const store = yield* openDaemonStore(stateDirectory(), {
       liveWireVersions: LIVE_WIRE_VERSIONS,
     });
     const scope = yield* Scope.Scope;
@@ -88,16 +90,14 @@ const deliveryFixture = (sendMessage: MessageSender = unreachable) =>
       historyExport: { record: () => Effect.void },
       collectives: () => slot.active,
     });
+    const persistence = yield* collectivePersistencePorts(sendMessage);
     const collectives = yield* makeCollectiveOperations({
+      ...persistence,
       store,
       observeMessage: unreachable,
-      sendAdmitted: unreachable,
       reportStorageFault: () => Effect.void,
       self: testAgentView("agent:alice"),
-      lookupMember: (member) => Effect.succeed(testAgentView(member)),
       sendMessage,
-      bindMessage: (input, hold) =>
-        hold.pipe(Effect.as({ certified: sendMessage(input) })),
       emit: (item, provenance, terminal) =>
         delivery
           .queueLocalItem(item, provenance, terminal)
@@ -222,7 +222,7 @@ const returnsACollectiveRefusal = () =>
     const failure = yield* Effect.flip(
       endpoint.send({
         to: Schema.decodeUnknownSync(AgentAddress)("agent:bob"),
-        collectiveResponse: { action: "decline" },
+        collectiveResponse: { operationId: requestId, action: "decline" },
       }),
     );
     expect(failure).toMatchObject({

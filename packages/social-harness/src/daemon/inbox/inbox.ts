@@ -2,17 +2,16 @@
 
 import { Effect, Encoding, Schema } from "effect";
 import { randomBytes } from "node:crypto";
-import { InboundItem } from "../../communication/collectives/inbound.js";
+import type { InboxEntry, InboxStore } from "./store.js";
 import {
   decodeRuntimeValue,
   DeliveryToken,
   encodeRuntimeValue,
-  type EndpointStore,
   EndpointStoreError,
-  type InboxEntry,
 } from "../../communication/store/index.js";
 import { exactStruct } from "../../encoding/exact.js";
 import { localGuidanceSchema } from "../../firewall/outcome/index.js";
+import { InboundItem } from "../../host-protocol/items.js";
 import {
   type HarnessMessageReadyEvent,
   type HarnessReadInboxRequest,
@@ -26,7 +25,7 @@ import {
  * @returns The original item or a closed lookup failure.
  */
 export const readRuntimeEvent = (
-  store: Pick<EndpointStore, "readInboxItem">,
+  store: Pick<InboxStore, "readInboxItem">,
   eventId: string,
 ) =>
   Effect.gen(function* () {
@@ -79,7 +78,7 @@ const cursorSchema = exactStruct({
  * @returns Completion once the immutable token binding is durable.
  */
 export const persistInboxItem = (
-  store: EndpointStore,
+  store: InboxStore,
   event: HarnessMessageReadyEvent,
 ): Effect.Effect<void, EndpointStoreError> =>
   Effect.gen(function* () {
@@ -123,7 +122,7 @@ const decodeCursor = (
  * @returns An inbox page and the continuation within that same snapshot.
  */
 export const readRuntimeInbox = (
-  store: EndpointStore,
+  store: InboxStore,
   input: HarnessReadInboxRequest,
 ): Effect.Effect<HarnessReadInboxResult, EndpointStoreError> =>
   Effect.gen(function* () {

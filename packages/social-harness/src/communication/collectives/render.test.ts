@@ -4,19 +4,23 @@ import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
-import { answerFieldsText } from "./contracts.js";
-import { InboundItem } from "./inbound.js";
+import { InboundItem } from "../../host-protocol/items.js";
 import {
   renderCollectiveRequest,
   renderCollectiveRequestBody,
   renderCollectiveResult,
   renderOutcome,
-} from "./render.js";
+} from "../../host-protocol/render.js";
+import { answerFieldsText } from "./contracts.js";
 
 // @agent-code-guard/regression-only: The rendered lines are the fixed form every host shows its model.
 
 const checkId = `chk_${"a".repeat(64)}`;
-const withheld = { kind: "withheld", checkId, reason: "prohibited" } as const;
+const withheld = {
+  kind: "withheld",
+  checkId,
+  reason: "rule-violation",
+} as const;
 
 function namesTheCheckThatWithheldAnAnswer() {
   const line = renderOutcome(withheld);

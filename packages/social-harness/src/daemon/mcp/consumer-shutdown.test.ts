@@ -15,12 +15,12 @@ import { expect } from "vitest";
 import type { PollResult } from "../../host-protocol/index.js";
 import { loopbackMcpEndpoint } from "../../__tests__/mcp-http-fixtures.js";
 import { stateDirectory } from "../../__tests__/store-schema-fixtures.js";
-import { openEndpointStore } from "../../communication/store/index.js";
 import {
   INBOX_ITEM_EVENT,
   INBOX_PENDING_EVENT,
 } from "../../host-protocol/names.js";
 import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
+import { openDaemonStore } from "../store.js";
 import {
   type HarnessEvents,
   makeHarnessEvents,
@@ -115,7 +115,7 @@ const blockedReceive = Effect.gen(function* () {
 const acquireFixture = Effect.fn("acquireConsumerFixture")(function* (
   blockedPoll: boolean,
 ) {
-  const store = yield* openEndpointStore(stateDirectory(), {
+  const store = yield* openDaemonStore(stateDirectory(), {
     liveWireVersions: LIVE_WIRE_VERSIONS,
   });
   const held = yield* blockedReceive;

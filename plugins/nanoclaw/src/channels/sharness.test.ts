@@ -537,8 +537,11 @@ it.each([
   },
   {
     to: "agent:alice",
-    text: '{"action":"decline"}',
-    input: { to: "agent:alice", collectiveResponse: { action: "decline" } },
+    text: JSON.stringify({ operationId: OPERATION_ID, action: "decline" }),
+    input: {
+      to: "agent:alice",
+      collectiveResponse: { operationId: OPERATION_ID, action: "decline" },
+    },
   },
 ])(
   "sends the operation its text states: $text",

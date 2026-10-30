@@ -21,10 +21,10 @@ it("retains a completed judgment without the provider trace", () =>
     const runtime = yield* outgoingFixture(subject, {
       id: "privacy",
       revision: "v1",
-      rules: [{ id: "privacy", kind: "safety" }],
+      rules: [{ id: "privacy" }],
       check: () =>
         Effect.succeed({
-          findings: [{ ruleId: "privacy", outcome: "block" as const }],
+          findings: [{ ruleId: "privacy", outcome: "violation" as const }],
           expectations: [],
           trace: { format: "test-provider/v1", data: "private response" },
         }),
@@ -43,7 +43,7 @@ it("retains a completed judgment without the provider trace", () =>
     expect(stored.checks).toHaveLength(1);
     expect(stored.checks[0]).not.toHaveProperty("trace");
     expect(stored.checks[0]).toMatchObject({
-      findings: [{ ruleId: "privacy", outcome: "block" }],
+      findings: [{ ruleId: "privacy", outcome: "violation" }],
     });
   }));
 
@@ -56,18 +56,16 @@ it("decodes an older retained trace while projecting only the judgment", () =>
     yield* subject.store.beginFirewallAttempt({
       checkId,
       direction: "outgoing",
-      snapshot: (yield* subject.store.readFirewallEvidence({
-        maximumRecords: 1,
-      })).snapshot,
       canonicalCandidate: retained.canonicalCandidate,
       canonicalInput: yield* encodeRuntimeValue(retained.input),
     });
-    yield* subject.store.admitFirewallOperation(
+    yield* subject.store.completeFirewallAttempt(
       {
         checkId,
         admit: false,
         canonicalResult: yield* encodeRuntimeValue(retained.result),
       },
+      "outgoing",
       retained.canonicalCandidate,
     );
 
@@ -78,9 +76,9 @@ it("decodes an older retained trace while projecting only the judgment", () =>
     }
     const decoded = yield* decodeFirewallAuditEntry(entry);
     expect(decoded.result).toMatchObject({
-      judgment: "block",
-      reason: "prohibited",
-      checks: [{ findings: [{ ruleId: "privacy", outcome: "block" }] }],
+      judgment: "reject",
+      reason: "rule-violation",
+      checks: [{ findings: [{ ruleId: "privacy", outcome: "violation" }] }],
     });
     expect(decoded.result?.checks[0]).not.toHaveProperty("trace");
   }));

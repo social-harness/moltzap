@@ -6,14 +6,14 @@ import {
   HttpClientResponse,
 } from "@effect/platform";
 import { Effect, Match, Schema } from "effect";
-import { InboundItem } from "../communication/collectives/inbound.js";
+import type { DaemonStore } from "../daemon/store.js";
 import {
   DeliveryToken,
   encodeRuntimeValue,
-  type EndpointStore,
 } from "../communication/store/index.js";
 import { makeWebhookEvents } from "../daemon/mcp/webhook.js";
 import { localGuidanceSchema } from "../firewall/outcome/index.js";
+import { InboundItem } from "../host-protocol/items.js";
 import { INBOX_ITEM_EVENT } from "../host-protocol/names.js";
 import { digest, testAgentView } from "./agent-card-fixtures.js";
 import { collectiveOperationId } from "./collective-id-fixtures.js";
@@ -125,7 +125,7 @@ export const item = (text = "failed request") =>
  * @param text The failure the item reports.
  * @returns The store's mutation.
  */
-export const enqueue = (store: EndpointStore, byte: number, text?: string) =>
+export const enqueue = (store: DaemonStore, byte: number, text?: string) =>
   encodeRuntimeValue(item(text ?? "failed request")).pipe(
     Effect.flatMap((canonicalItem) =>
       store.putInboxItem({ deliveryToken: token(byte), canonicalItem }),
@@ -139,7 +139,7 @@ export const enqueue = (store: EndpointStore, byte: number, text?: string) =>
  * @param store The store the webhook reads.
  * @returns The scripted callback's controls and the events to acquire.
  */
-export const scriptedWebhook = (store: EndpointStore) => {
+export const scriptedWebhook = (store: DaemonStore) => {
   const gate = Effect.unsafeMakeSemaphore(1);
   let status = 200;
   let challengeValid = true;

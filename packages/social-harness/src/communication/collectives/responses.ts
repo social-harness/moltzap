@@ -1,9 +1,15 @@
 /** @file One retained response claim stays attached to its original certified message. */
 import { Clock, Effect, Either, Option, Schema } from "effect";
+import type { BindHold, CollectiveSendError } from "./ports.js";
 import type { CertifiedAnswer } from "./shared-answers.js";
 import type { CollectiveState } from "./state.js";
 import { canonicalMessageAddress } from "../conversations/address.js";
 import { SendError } from "../conversations/errors.js";
+import {
+  type PreparedSend,
+  preparedSendData,
+  resolutionFailure,
+} from "../conversations/index.js";
 import {
   type Content,
   type MessageAddressInput,
@@ -28,11 +34,6 @@ import {
 } from "./contracts.js";
 import { durableEmit, durableSend } from "./persistence.js";
 import {
-  bindAuthoredMessage,
-  type BindHold,
-  type CollectiveSendError,
-} from "./ports.js";
-import {
   matchOpenRequest,
   type OpenRequest,
   type ReceivedRequest,
@@ -51,25 +52,66 @@ const collectiveFailure = (
   failure: CollectiveFailure,
 ) => new CollectiveError({ operationId, failure });
 
-/**
- * Answer a request open in the conversation `to` names: the one the answer's
- * `operationId` names, or without one the one request open there; when no request is
- * matched, nothing is sent. An installed firewall checks the answer before
- * `claimRequest` claims the matched request by its operationId, so a close or the
- * deadline landing during the check refuses the answer without sending, and a
- * request opening during it does not change which one is answered. When the
- * item that settling the answer emits cannot be kept, the answer keeps its own
- * outcome, its message or its refusal.
- */
-export function respond(
+/** Request validation precedes assessment; the protocol claim waits until acceptance. */
+export interface PreparedResponse {
+  readonly operationId: CollectiveId;
+  readonly request: ReceivedRequest;
+  readonly value: ResponseValue;
+  readonly message: PreparedSend;
+}
+
+/** Capture the exact schema-valid answer and its original request before assessment. */
+export function prepareResponse(
   state: CollectiveState,
   to: MessageAddressInput,
   response: CollectiveResponse,
-): Effect.Effect<CollectiveSendOutcome, CollectiveSendError> {
+) {
   return Effect.gen(function* () {
     const { operationId, request } = yield* openRequest(state, to, response);
     const value: ResponseValue = { ...response, kind: "response", operationId };
-    const { certified, guidance } = yield* bindResponse(state, request, value);
+    const content = yield* responseContent(request, value);
+    const message = yield* state.ports
+      .prepareMessage({
+        to: request.to,
+        content,
+        collective: { operationId, role: "response", destination: request.to },
+      })
+      .pipe(
+        Effect.catchTag("RecipientResolutionError", (error) =>
+          Effect.fail(resolutionFailure(error)),
+        ),
+      );
+    const snapshot = yield* readCollectiveValue(
+      (yield* preparedSendData(message)).intent.content,
+    ).pipe(
+      Effect.catchTag("CollectivePartInvalidError", () => contentInvalid()),
+    );
+    if (Option.isNone(snapshot) || snapshot.value.kind !== "response") {
+      return yield* contentInvalid();
+    }
+    return {
+      operationId,
+      request,
+      value: snapshot.value,
+      message,
+    } satisfies PreparedResponse;
+  }).pipe(Effect.withSpan("prepareResponse"));
+}
+
+/** Claim and bind the prepared answer only while its original request remains live. */
+export function acceptResponse(
+  state: CollectiveState,
+  prepared: PreparedResponse,
+): Effect.Effect<CollectiveSendOutcome, CollectiveSendError> {
+  return Effect.gen(function* () {
+    const { operationId, request, value, message } = prepared;
+    const { certified } = yield* state.ports
+      .acceptMessage(message, claimRequest(state, request, value))
+      .pipe(
+        Effect.catchTag("SendError", (error) =>
+          closedResponseFailure(state, request, operationId, error),
+        ),
+      );
     const { msgId } = yield* certified.pipe(
       Effect.tapBoth({
         onFailure: (error) =>
@@ -92,9 +134,8 @@ export function respond(
       msgIds: [msgId],
       msgId,
       address: request.to,
-      ...(guidance === undefined ? {} : { guidance }),
     } satisfies CollectiveSendOutcome;
-  }).pipe(Effect.withSpan("respond"));
+  }).pipe(Effect.withSpan("acceptResponse"));
 }
 
 /** A retained response claim stays unavailable while its original intent certifies. */
@@ -146,35 +187,6 @@ export function restoreResponse(
       yield* observeResponse(state, request, response, intent.msgId);
     }
   }).pipe(Effect.withSpan("restoreResponse"));
-}
-
-/** Response binding confirms a still-open request and distinguishes a close from storage uncertainty. */
-function bindResponse(
-  state: CollectiveState,
-  request: ReceivedRequest,
-  value: ResponseValue,
-) {
-  return Effect.gen(function* () {
-    const operationId = value.operationId;
-    const content = yield* responseContent(request, value);
-    return yield* bindAuthoredMessage(
-      state.ports,
-      {
-        to: request.to,
-        content,
-        collective: {
-          operationId,
-          role: "response",
-          destination: request.to,
-        },
-      },
-      claimRequest(state, request, value),
-    ).pipe(
-      Effect.catchTag("SendError", (error) =>
-        closedResponseFailure(state, request, operationId, error),
-      ),
-    );
-  });
 }
 
 /**

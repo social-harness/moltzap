@@ -16,22 +16,13 @@ import {
   type Scope,
 } from "effect";
 import type { EngineSentMessage } from "../conversations/index.js";
-import type {
-  CollectiveFailure,
-  CollectiveOperation,
-  Members,
-} from "./contracts.js";
-import type {
-  AdmittedMessage,
-  CollectivePorts,
-  MessageSender,
-} from "./ports.js";
+import type { CollectiveOperation } from "./contracts.js";
+import type { AcceptedMessage, CollectivePorts } from "./ports.js";
 import type { PreparedGather } from "./state.js";
 import { canonicalMessageAddress } from "../conversations/address.js";
 import { SendError } from "../conversations/errors.js";
 import {
   AgentAddress,
-  agentAddressOf,
   agentNameOf,
   type MessageAddressInput,
 } from "../records/values.js";
@@ -147,7 +138,7 @@ export function operationTimes(deadlineSeconds: number): Effect.Effect<{
  */
 export function withinRequestWait(
   waitUntil: number,
-  certified: AdmittedMessage["certified"],
+  certified: AcceptedMessage["certified"],
 ) {
   return requestWait(waitUntil).pipe(
     Effect.flatMap((duration) =>
@@ -177,36 +168,6 @@ export function requestWait(
 export type RequestSend = Fiber.RuntimeFiber<
   Either.Either<EngineSentMessage, RequestRefusal>
 >;
-
-/** How many Registry lookups run at once; a group has at most 32 members. */
-const MEMBER_LOOKUP_CONCURRENCY = 8;
-
-/** Resolve every identity before accepting work, retaining requested-member order. */
-export function resolveMembers(
-  members: readonly [AgentAddress, ...AgentAddress[]],
-  lookup: CollectivePorts["lookupMember"],
-): Effect.Effect<Members, CollectiveFailure> {
-  return Effect.validateAll(
-    members,
-    (member) =>
-      lookup(member).pipe(
-        Effect.mapError((error) => messageRefusal(member, error)),
-      ),
-    { concurrency: MEMBER_LOOKUP_CONCURRENCY },
-  ).pipe(
-    Effect.mapError(
-      (refusals): CollectiveFailure => ({
-        kind: "members-unreachable",
-        members: refusals,
-      }),
-    ),
-    Effect.flatMap(([first, ...rest]) =>
-      first === undefined
-        ? Effect.dieMessage("a collecting operation has no resolved members")
-        : Effect.succeed([first, ...rest] satisfies Members),
-    ),
-  );
-}
 
 /**
  * Where a gather's request messages stand when the send stops waiting: each
@@ -265,20 +226,25 @@ export function sleepUntil(at: number): Effect.Effect<void> {
 /** Each destination transfers to the endpoint scope before the caller waits on its outcome. */
 export function fanOutRequests(
   prepared: PreparedGather,
-  sendRequest: MessageSender,
+  acceptRequest: CollectivePorts["acceptMessage"],
   scope: Scope.Scope,
   refuse: (refusal: RequestRefusal) => Effect.Effect<void>,
 ) {
-  const { operationId, open } = prepared;
+  const { operationId } = prepared;
   return Effect.forEach(
-    open.members.map(agentAddressOf),
-    (member): Effect.Effect<RequestSend> =>
-      sendRequest({
-        to: member,
-        content: prepared.content,
-        collective: { operationId, role: "request", destination: member },
-      }).pipe(
-        Effect.mapError((error) => messageRefusal(member, error)),
+    prepared.requests,
+    ({ to, message }): Effect.Effect<RequestSend> =>
+      acceptRequest(
+        {
+          ...message,
+          collective: { operationId, role: "request", destination: to },
+        },
+        Effect.succeed(Effect.void),
+      ).pipe(
+        Effect.flatMap(({ certified }) => certified),
+        Effect.mapError((error) =>
+          messageRefusal(Schema.decodeUnknownSync(AgentAddress)(to), error),
+        ),
         Effect.tapError(refuse),
         Effect.either,
         Effect.forkIn(scope),

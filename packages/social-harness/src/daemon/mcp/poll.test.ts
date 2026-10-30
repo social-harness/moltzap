@@ -15,19 +15,19 @@ import { describe, expect, it } from "vitest";
 import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
 import { stateDirectory } from "../../__tests__/store-schema-fixtures.js";
-import { InboundItem } from "../../communication/collectives/inbound.js";
 import {
   DeliveryToken,
   encodeRuntimeValue,
   EndpointStoreError,
-  openEndpointStore,
 } from "../../communication/store/index.js";
+import { InboundItem } from "../../host-protocol/items.js";
 import {
   HARNESS_CONSUMER_META_KEY,
   INBOX_ITEM_EVENT,
 } from "../../host-protocol/names.js";
 
 import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
+import { openDaemonStore } from "../store.js";
 import { makeHarnessPollEvents } from "./poll.js";
 
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- External protocol codes, closed lifecycle errors and retained inbox counts are conformance expectations. */
@@ -43,7 +43,7 @@ const item = (text: string) =>
     error: text,
   });
 const acquireFixture = Effect.gen(function* () {
-  const store = yield* openEndpointStore(stateDirectory(), {
+  const store = yield* openDaemonStore(stateDirectory(), {
     liveWireVersions: LIVE_WIRE_VERSIONS,
   });
   const gate = yield* Effect.makeSemaphore(1);

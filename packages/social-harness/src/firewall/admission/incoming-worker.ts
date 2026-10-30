@@ -1,32 +1,21 @@
 /** @file Checks queued incoming items and records whether the host may receive them. */
 
-import {
-  Cause,
-  Clock,
-  Deferred,
-  Effect,
-  Option,
-  Queue,
-  type Scope,
-} from "effect";
-import type { CollectiveOperations } from "../../communication/collectives/index.js";
+import { Cause, Clock, Deferred, Effect, Queue, type Scope } from "effect";
+import type { FirewallInboxEntry, FirewallStore } from "../store/index.js";
 import type { FirewallEnvironment } from "./firewall-checks.js";
-import { InboundItem } from "../../communication/collectives/inbound.js";
-import { untilFresh } from "../../communication/conversations/index.js";
 import {
   decodeRuntimeValue,
   type DeliveryToken,
   encodeRuntimeValue,
-  type EndpointStore,
   type EndpointStoreError,
-  type FirewallInboxEntry,
 } from "../../communication/store/index.js";
+import { InboundItem } from "../../host-protocol/items.js";
 import { checkIncoming } from "./firewall.js";
 import { checkLocalItem } from "./local-results.js";
 
 /** What the admission worker reads and changes in one service's delivery. */
 export interface AdmissionContext {
-  readonly store: EndpointStore;
+  readonly store: FirewallStore;
   /**
    * Make a committed disposition current in delivery: an admitted item joins
    * the local items, a withheld one is forgotten.
@@ -37,9 +26,7 @@ export interface AdmissionContext {
     disposition: "admitted" | "withheld",
   ) => Effect.Effect<void>;
   /** The active collective layer, absent while the service is unregistered. */
-  readonly collectives: () =>
-    | Pick<CollectiveOperations, "settleRequest">
-    | undefined;
+
   readonly firewallEnvironment?: () => FirewallEnvironment | undefined;
   /** Service lifetime; each conversation's check runs as a fiber in it. */
   readonly scope: Scope.Scope;
@@ -150,34 +137,23 @@ function admitRecordItem(
     { readonly kind: "multicast" | "collectiveRequest" }
   >,
 ) {
-  return untilFresh((terminal) =>
-    Effect.gen(function* () {
-      const checked = yield* checkIncoming(environment, entry, terminal);
-      const expired =
-        item.kind === "collectiveRequest" &&
-        (yield* Clock.currentTimeMillis) >= item.deadlineAt;
-      return yield* input.store.admitFirewallItem(
-        {
-          deliveryToken: entry.deliveryToken,
-          canonicalItem: entry.canonicalItem,
-          ...(checked.guidance === undefined || expired
-            ? {}
-            : {
-                canonicalGuidance: yield* encodeRuntimeValue(checked.guidance),
-              }),
-        },
-        expired ? { ...checked.completion, admit: false } : checked.completion,
-      );
-    }),
-  ).pipe(
-    Effect.flatMap(
-      Option.match({
-        onNone: () => Effect.void,
-        onSome: (disposition) =>
-          publishDisposition(input, entry, item, disposition),
-      }),
-    ),
-  );
+  return Effect.gen(function* () {
+    const checked = yield* checkIncoming(environment, entry);
+    const expired =
+      item.kind === "collectiveRequest" &&
+      (yield* Clock.currentTimeMillis) >= item.deadlineAt;
+    const disposition = yield* input.store.admitFirewallItem(
+      {
+        deliveryToken: entry.deliveryToken,
+        canonicalItem: entry.canonicalItem,
+        ...(checked.guidance === undefined || expired
+          ? {}
+          : { canonicalGuidance: yield* encodeRuntimeValue(checked.guidance) }),
+      },
+      expired ? { ...checked.completion, admit: false } : checked.completion,
+    );
+    yield* publishDisposition(input, entry, item, disposition);
+  });
 }
 
 function admitLocalItem(
@@ -189,31 +165,19 @@ function admitLocalItem(
     { readonly kind: "collectiveResult" | "operationFailed" }
   >,
 ) {
-  return untilFresh((terminal) =>
-    checkLocalItem(environment, { entry, item, terminal }).pipe(
-      Effect.flatMap((admission) =>
-        input.store
-          .admitFirewallLocalItem(admission)
-          .pipe(
-            Effect.map((disposition) =>
-              disposition === "stale"
-                ? disposition
-                : { disposition, shown: admission.item.canonicalItem },
+  return checkLocalItem(environment, { entry, item }).pipe(
+    Effect.flatMap((admission) =>
+      input.store
+        .admitFirewallLocalItem(admission)
+        .pipe(
+          Effect.flatMap((disposition) =>
+            decodeRuntimeValue(InboundItem, admission.item.canonicalItem).pipe(
+              Effect.flatMap((projected) =>
+                publishDisposition(input, entry, projected, disposition),
+              ),
             ),
           ),
-      ),
-    ),
-  ).pipe(
-    Effect.flatMap(
-      Option.match({
-        onNone: () => Effect.void,
-        onSome: ({ disposition, shown }) =>
-          decodeRuntimeValue(InboundItem, shown).pipe(
-            Effect.flatMap((projected) =>
-              publishDisposition(input, entry, projected, disposition),
-            ),
-          ),
-      }),
+        ),
     ),
   );
 }
@@ -226,14 +190,6 @@ function publishDisposition(
   disposition: "admitted" | "withheld",
 ) {
   return Effect.gen(function* () {
-    if (item.kind === "collectiveRequest") {
-      yield* (
-        input
-          .collectives()
-          ?.settleRequest(item.operationId, disposition === "admitted") ??
-          Effect.void
-      );
-    }
     yield* input.showDisposition(entry.deliveryToken, item, disposition);
   });
 }

@@ -1,4 +1,5 @@
 /** @file Signed collective messages and completion decisions survive endpoint restarts. */
+
 import { live as it, scoped as itOnClock } from "@effect/vitest";
 import {
   Clock,
@@ -16,12 +17,6 @@ import { expect } from "vitest";
 import type { AgentId } from "../../identity/identifiers.js";
 import type { CollectiveId } from "./contracts.js";
 import type { InboundItem } from "./inbound.js";
-import type {
-  BindHold,
-  CollectiveAdmission,
-  CollectivePorts,
-  EngineSendInput,
-} from "./ports.js";
 import { untilLive } from "../../__tests__/advance-clock.js";
 import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import {
@@ -30,6 +25,7 @@ import {
   buildCertifiedFirstMessage,
   storeCertifiedFirstMessage,
 } from "../../__tests__/certified-history-fixtures.js";
+import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
 import {
   anchor,
   boundIntent,
@@ -39,17 +35,14 @@ import {
   seedGroupFirstMessage,
   waitForClose,
 } from "../../__tests__/collective-recovery-fixtures.js";
+import { makeCollectiveOperations } from "../../__tests__/collective-send.js";
 import {
   engineFixture,
   type Fixture,
-  installation,
-  pass,
-  policy,
 } from "../../__tests__/firewall-runtime-fixtures.js";
-import { withStore } from "../../__tests__/store-schema-fixtures.js";
-import { collectiveAdmission } from "../../firewall/admission/index.js";
+import { withDaemonStore } from "../../__tests__/store-schema-fixtures.js";
+import { type DaemonStore, openDaemonStore } from "../../daemon/store.js";
 import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
-import { SendError } from "../conversations/errors.js";
 import {
   AgentAddress,
   type CertifiedRecord,
@@ -60,13 +53,9 @@ import {
 import {
   decodeRuntimeValue,
   encodeRuntimeValue,
-  type EndpointStore,
-  type EndpointStoreError,
-  openEndpointStore,
   type StoredCollectiveMessage,
   type MessageIntent as StoredMessageIntent,
 } from "../store/index.js";
-import { makeCollectiveOperations } from "./index.js";
 import {
   encodeCollectiveContent,
   mintCollectiveId,
@@ -75,22 +64,26 @@ import {
 
 const self = Schema.decodeUnknownSync(AgentAddress)("agent:alice");
 const sender = Schema.decodeUnknownSync(AgentAddress)("agent:bob");
+const operationId = collectiveOperationId(testAgentView(sender).agentId);
 const response = {
   to: sender,
-  collectiveResponse: { action: "accept", content: { answer: "yes" } },
+  collectiveResponse: {
+    operationId,
+    action: "accept",
+    content: { answer: "yes" },
+  },
 } as const;
 
-function resume(subject: Fixture, store: EndpointStore, failOutbound = false) {
+function resume(subject: Fixture, store: DaemonStore, failOutbound = false) {
   return Effect.gen(function* () {
     const engine = yield* resumeEngine(subject, store, failOutbound);
     const collective = yield* makeCollectiveOperations({
       store,
       self: testAgentView(self),
       scope: yield* Scope.Scope,
-      lookupMember: (member) => Effect.succeed(testAgentView(member)),
       sendMessage: engine.send,
-      bindMessage: engine.bind,
-      sendAdmitted: engine.sendAdmitted,
+      prepareMessage: engine.prepare,
+      acceptMessage: engine.accept,
       observeMessage: engine.observeMessage,
       reportStorageFault: () =>
         Effect.dieMessage("unexpected collective storage failure"),
@@ -120,7 +113,7 @@ it(
 );
 
 function seedRemoteRequest(subject: Fixture) {
-  return withStore(subject.directory, (store) =>
+  return withDaemonStore(subject.directory, (store) =>
     Effect.gen(function* () {
       const firstMessage = yield* buildCertifiedFirstMessage(
         subject.local,
@@ -133,9 +126,6 @@ function seedRemoteRequest(subject: Fixture) {
         subject.local.card,
         subject.membership,
         firstMessage,
-      );
-      const operationId = yield* mintCollectiveId(
-        testAgentView(sender).agentId,
       );
       const content = yield* encodeCollectiveContent(
         {
@@ -163,7 +153,7 @@ function seedRemoteRequest(subject: Fixture) {
 function claimPendingResponse(subject: Fixture) {
   return Effect.scoped(
     Effect.gen(function* () {
-      const store = yield* openEndpointStore(subject.directory, {
+      const store = yield* openDaemonStore(subject.directory, {
         liveWireVersions: LIVE_WIRE_VERSIONS,
       });
       const collective = yield* resume(subject, store, true);
@@ -191,7 +181,7 @@ function assertRecoveredResponse(
 ) {
   return Effect.scoped(
     Effect.gen(function* () {
-      const store = yield* openEndpointStore(subject.directory, {
+      const store = yield* openDaemonStore(subject.directory, {
         liveWireVersions: LIVE_WIRE_VERSIONS,
       });
       const collective = yield* resume(subject, store);
@@ -209,162 +199,6 @@ function assertRecoveredResponse(
       );
     }),
   );
-}
-
-itOnClock(
-  "does not finalize an all-gather while its bind hold has no durable operation",
-  () =>
-    Effect.gen(function* () {
-      const fixture = yield* pausedAdmission("bind");
-      const sending = yield* fixture.layer
-        .send({
-          to: fixture.group,
-          text: "Choose a time",
-          collective: {
-            op: "all_gather",
-            deadline: 60,
-            requestedSchema: fixture.schema,
-          },
-        })
-        .pipe(Effect.fork);
-      yield* Deferred.await(fixture.entered);
-      yield* TestClock.adjust(Duration.minutes(2));
-      expect(fixture.faults).toEqual([]);
-      expect(fixture.emitted).toEqual([]);
-      expect(yield* fixture.subject.store.readCollectiveOperations()).toEqual(
-        [],
-      );
-      yield* Deferred.succeed(fixture.release, undefined);
-      expect(yield* Effect.flip(Fiber.join(sending))).toMatchObject({
-        failure: { kind: "members-unreachable" },
-      });
-    }),
-);
-
-itOnClock(
-  "retires a gather refused after delayed admission so restart cannot publish it",
-  () =>
-    Effect.gen(function* () {
-      const fixture = yield* Effect.scoped(retireDelayedGather());
-      const store = yield* openEndpointStore(fixture.directory, {
-        liveWireVersions: LIVE_WIRE_VERSIONS,
-      });
-      yield* makeCollectiveOperations({
-        ...fixture.ports,
-        store,
-        scope: yield* Scope.Scope,
-      });
-      expect(fixture.emitted).toEqual([]);
-    }),
-);
-
-function retireDelayedGather() {
-  return Effect.gen(function* () {
-    const fixture = yield* pausedAdmission("gather");
-    const sending = yield* fixture.layer
-      .send({
-        to: sender,
-        text: "Choose a time",
-        collective: {
-          op: "gather",
-          deadline: 60,
-          requestedSchema: fixture.schema,
-        },
-      })
-      .pipe(Effect.fork);
-    yield* Deferred.await(fixture.entered);
-    yield* TestClock.adjust(Duration.minutes(2));
-    yield* Deferred.succeed(fixture.release, undefined);
-    expect(yield* Effect.flip(Fiber.join(sending))).toMatchObject({
-      failure: { kind: "deadline-passed" },
-    });
-    expect(
-      yield* fixture.subject.store.readCollectiveOperations(),
-    ).toMatchObject([{ phase: "completed" }]);
-    return {
-      directory: fixture.subject.directory,
-      ports: fixture.ports,
-      emitted: fixture.emitted,
-    };
-  });
-}
-
-function pausedAdmission(mode: "bind" | "gather") {
-  return Effect.gen(function* () {
-    const subject = yield* engineFixture();
-    const entered = yield* Deferred.make<undefined>();
-    const release = yield* Deferred.make<undefined>();
-    const faults: EndpointStoreError[] = [];
-    const emitted: InboundItem[] = [];
-    const admission = pausedAdmissionPorts(
-      subject.store,
-      mode,
-      entered,
-      release,
-    );
-    const ports: CollectivePorts = {
-      store: subject.store,
-      self: testAgentView(self),
-      scope: yield* Scope.Scope,
-      lookupMember: (member) => Effect.succeed(testAgentView(member)),
-      sendMessage: () => Effect.never,
-      bindMessage: () =>
-        Effect.dieMessage("checked sends use the admission port"),
-      sendAdmitted: () => Effect.never,
-      observeMessage: () => Effect.never,
-      reportStorageFault: (error) =>
-        Effect.sync(() => {
-          faults.push(error);
-        }),
-      emit: (item) =>
-        Effect.sync(() => {
-          emitted.push(item);
-        }),
-      admission,
-    };
-    return {
-      subject,
-      ports,
-      entered,
-      release,
-      faults,
-      emitted,
-      layer: yield* makeCollectiveOperations(ports),
-      group: Schema.decodeUnknownSync(MessageAddressInput)(
-        "group:alice,bob,carol",
-      ),
-      schema: { type: "object" as const, properties: {} },
-    };
-  });
-}
-
-function pausedAdmissionPorts(
-  store: EndpointStore,
-  mode: "bind" | "gather",
-  entered: Deferred.Deferred<undefined>,
-  release: Deferred.Deferred<undefined>,
-): CollectiveAdmission {
-  const barrier = Deferred.succeed(entered, undefined).pipe(
-    Effect.zipRight(Deferred.await(release)),
-  );
-  return {
-    bindMessage: <E>(...args: [EngineSendInput, BindHold<E>]) =>
-      Effect.gen(function* () {
-        const giveUp = yield* args[1];
-        yield* barrier;
-        yield* giveUp;
-        return yield* new SendError({ reason: "network-unavailable" });
-      }),
-    admitGather: (candidate) =>
-      Effect.gen(function* () {
-        if (mode !== "gather" || candidate.operation === undefined) {
-          return yield* Effect.dieMessage("unexpected gather admission");
-        }
-        yield* store.putCollectiveOperation(candidate.operation);
-        yield* barrier;
-        return { sendRequest: () => Effect.never };
-      }),
-  };
 }
 
 itOnClock(
@@ -423,19 +257,16 @@ function interruptedBindFixture(pause: "before" | "after" = "after") {
   return Effect.gen(function* () {
     const subject = yield* groupSubject(yield* Effect.scoped(engineFixture()));
     const head = yield* seedGroupFirstMessage(subject);
-    const originalStore = yield* openEndpointStore(subject.directory, {
+    const originalStore = yield* openDaemonStore(subject.directory, {
       liveWireVersions: LIVE_WIRE_VERSIONS,
     });
     const bound = yield* Deferred.make<undefined>();
     const release = yield* Deferred.make<undefined>();
     const emitted = yield* Deferred.make<InboundItem>();
-    const store: EndpointStore = {
+    const store: DaemonStore = {
       ...originalStore,
-      bindCheckedMessageIntent: (binding, completion) => {
-        const bind = originalStore.bindCheckedMessageIntent(
-          binding,
-          completion,
-        );
+      bindMessageIntent: (binding) => {
+        const bind = originalStore.bindMessageIntent(binding);
         const barrier = Deferred.succeed(bound, undefined).pipe(
           Effect.zipRight(Deferred.await(release)),
         );
@@ -445,26 +276,17 @@ function interruptedBindFixture(pause: "before" | "after" = "after") {
       },
     };
     const engine = yield* resumeEngine(subject, store);
-    const installed = yield* installation(
-      store,
-      policy(() => Effect.succeed(pass)),
-    );
     const layer = yield* makeCollectiveOperations({
       store,
       self: testAgentView(self),
       scope: yield* Scope.Scope,
-      lookupMember: (member) => Effect.succeed(testAgentView(member)),
       sendMessage: engine.send,
-      bindMessage: engine.bind,
-      sendAdmitted: engine.sendAdmitted,
+      prepareMessage: engine.prepare,
+      acceptMessage: engine.accept,
       observeMessage: engine.observeMessage,
       reportStorageFault: () =>
         Effect.dieMessage("unexpected persistence fault"),
       emit: (item) => Deferred.succeed(emitted, item).pipe(Effect.asVoid),
-      admission: collectiveAdmission(
-        { installed, store, localAgentCard: subject.local.card },
-        engine,
-      ),
     });
     return { subject, head, store, engine, layer, bound, release, emitted };
   });
@@ -480,7 +302,11 @@ itOnClock(
         to: Schema.decodeUnknownSync(MessageAddressInput)(
           "group:alice,bob,carol",
         ),
-        collectiveResponse: { action: "accept", content: { answer: "Monday" } },
+        collectiveResponse: {
+          operationId: request.operationId,
+          action: "accept",
+          content: { answer: "Monday" },
+        },
       } as const;
       const sending = yield* fixture.layer.send(input).pipe(Effect.fork);
       yield* Deferred.await(fixture.bound);
@@ -547,7 +373,6 @@ function admittedGroupRequest(
       deliveryToken,
       canonicalItem: yield* encodeRuntimeValue(item.value),
     });
-    yield* fixture.layer.settleRequest(operationId, true);
     return { operationId, record };
   });
 }
@@ -582,7 +407,7 @@ itOnClock(
     Effect.gen(function* () {
       const subject = yield* Effect.scoped(engineFixture());
       const head = yield* seedRemoteRequest(subject);
-      const store = yield* openEndpointStore(subject.directory, {
+      const store = yield* openDaemonStore(subject.directory, {
         liveWireVersions: LIVE_WIRE_VERSIONS,
       });
       const engine = yield* resumeEngine(subject, store);
@@ -635,7 +460,7 @@ function certifyRecoveredResponse(
   request: CertifiedRecord,
   original: StoredMessageIntent,
 ) {
-  return withStore(subject.directory, (store) =>
+  return withDaemonStore(subject.directory, (store) =>
     Effect.gen(function* () {
       const intent = yield* decodeRuntimeValue(
         MessageIntent,
@@ -724,7 +549,7 @@ it.each(["operation", "author"] as const)(
           ? { authorAgentId: subject.remote.card.agentId }
           : {}),
       };
-      const failure = yield* withStore(subject.directory, (store) =>
+      const failure = yield* withDaemonStore(subject.directory, (store) =>
         Effect.scoped(
           Effect.flip(resume(subject, corruptResponses(store, changes))),
         ),
@@ -739,9 +564,9 @@ interface ResponseChanges {
 }
 
 function corruptResponses(
-  store: EndpointStore,
+  store: DaemonStore,
   changes: ResponseChanges,
-): EndpointStore {
+): DaemonStore {
   return {
     ...store,
     readCollectiveMessages: (filter) =>

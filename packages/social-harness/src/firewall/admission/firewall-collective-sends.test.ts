@@ -1,11 +1,7 @@
-/** @file A firewall's checks of what the agent sends in a collective operation, through real Client storage and send preparation. */
+/** @file Collective sends retain exact policy decisions before ordinary protocol binding. */
 
-import * as NodeSdk from "@effect/opentelemetry/NodeSdk";
+import type { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
 import { scopedLive as it } from "@effect/vitest";
-import {
-  InMemorySpanExporter,
-  SimpleSpanProcessor,
-} from "@opentelemetry/sdk-trace-base";
 import { Deferred, Duration, Effect, Fiber } from "effect";
 import { describe, expect } from "vitest";
 import type { MiddlewareInput } from "../evaluator/contract/index.js";
@@ -14,7 +10,6 @@ import {
   answerBob,
   bob,
   formSchema,
-  gatherRequestContent,
   gatherSend,
   group,
   holdMarked,
@@ -22,13 +17,11 @@ import {
   question,
   seedRequest,
   sendInput,
-  STALE_CAPTURES,
   unfinishedIntents,
 } from "../../__tests__/firewall-collective-fixtures.js";
 import {
   auditChecks,
   block,
-  churnPolicy,
   engineFixture,
   fixture,
   type Fixture,
@@ -38,7 +31,7 @@ import {
   policy,
   rule,
 } from "../../__tests__/firewall-runtime-fixtures.js";
-import { renderOutcome } from "../../communication/collectives/render.js";
+import { renderOutcome } from "../../host-protocol/render.js";
 import { FirewallSendError } from "../outcome/index.js";
 import { decodeFirewallAuditEntry } from "./audit-records.js";
 
@@ -56,7 +49,7 @@ function refusesAHeldGatherOnTheToolCall() {
     );
 
     expect(refusal).toBeInstanceOf(FirewallSendError);
-    expect(refusal).toMatchObject({ refusal: "prohibited" });
+    expect(refusal).toMatchObject({ refusal: "rule-violation" });
     expect(yield* unfinishedIntents(subject)).toEqual([]);
     expect((yield* delivery.operations.readInbox({})).items).toEqual([]);
     expect(yield* auditChecks(subject)).toMatchObject([
@@ -86,96 +79,7 @@ function bindsAShadowGatherInGuidanceMode() {
   });
 }
 
-function refusesAGatherAfterStaleCaptures() {
-  return Effect.gen(function* () {
-    const subject = yield* fixture;
-    const churn = yield* churnPolicy(subject, group);
-    const delivery = yield* outgoingFixture(churn.subject, churn.middleware);
-
-    const refusal = yield* Effect.flip(
-      delivery.operations.send({ input: gatherSend(question) }),
-    );
-
-    expect(refusal).toMatchObject({ refusal: "unresolved-evidence" });
-    expect(churn.count()).toBe(STALE_CAPTURES);
-    expect(yield* unfinishedIntents(subject)).toEqual([]);
-  });
-}
-
 /** The attributes of every finished span named `name`, in finishing order. */
-function finished(exporter: InMemorySpanExporter, name: string) {
-  return exporter
-    .getFinishedSpans()
-    .filter((span) => span.name === name)
-    .map((span) => span.attributes);
-}
-
-/**
- * A stale capture gives the all_gather's bind hold up and the recheck takes
- * it again, reopening the operation; a trace reader still sees it opened
- * once and not closed.
- */
-function opensAnAllGatherOnceAcrossAStaleCapture() {
-  const exporter = new InMemorySpanExporter();
-  return Effect.gen(function* () {
-    const subject = yield* fixture;
-    const churn = yield* churnPolicy(subject, group);
-    const staleOnce = policy((input) =>
-      churn.count() === 0
-        ? churn.middleware.check(input)
-        : Effect.succeed(pass),
-    );
-    const delivery = yield* outgoingFixture(churn.subject, staleOnce);
-
-    const sending = yield* delivery.operations
-      .send({ input: gatherSend(question, "all_gather") })
-      .pipe(Effect.forkScoped);
-    yield* awaitBoundIntents(subject, 1);
-
-    expect(churn.count()).toBe(1);
-    const opened = finished(exporter, "collective.opened");
-    expect(opened).toHaveLength(1);
-    expect(opened[0]).toMatchObject({ op: "all_gather" });
-    expect(finished(exporter, "collective.closed")).toEqual([]);
-    yield* Fiber.interrupt(sending);
-  }).pipe(
-    Effect.provide(
-      NodeSdk.layer(() => ({
-        spanProcessor: new SimpleSpanProcessor(exporter),
-      })),
-    ),
-  );
-}
-
-/**
- * Every recheck of the all_gather's bind finds its capture stale, so the
- * send is refused after its hold was given up; a trace reader sees it opened
- * once and closed once as refused.
- */
-function closesAnAllGatherRefusedAfterStaleCaptures() {
-  const exporter = new InMemorySpanExporter();
-  return Effect.gen(function* () {
-    const subject = yield* fixture;
-    const churn = yield* churnPolicy(subject, group);
-    const delivery = yield* outgoingFixture(churn.subject, churn.middleware);
-
-    const refusal = yield* Effect.flip(
-      delivery.operations.send({ input: gatherSend(question, "all_gather") }),
-    );
-
-    expect(refusal).toMatchObject({ refusal: "unresolved-evidence" });
-    expect(finished(exporter, "collective.opened")).toHaveLength(1);
-    expect(finished(exporter, "collective.closed")).toMatchObject([
-      { outcome: "refused" },
-    ]);
-  }).pipe(
-    Effect.provide(
-      NodeSdk.layer(() => ({
-        spanProcessor: new SimpleSpanProcessor(exporter),
-      })),
-    ),
-  );
-}
 
 function checksAnAllGatherAsItsQuestion() {
   return Effect.gen(function* () {
@@ -189,7 +93,7 @@ function checksAnAllGatherAsItsQuestion() {
       }),
     );
 
-    expect(refusal).toMatchObject({ refusal: "prohibited" });
+    expect(refusal).toMatchObject({ refusal: "rule-violation" });
     expect(seen[0]?.event.message).toMatchObject({
       sender: subject.local.card.agentId,
       operation: { kind: "request", op: "all_gather" },
@@ -242,42 +146,6 @@ function keepsARequestOpenAfterARefusedAnswer() {
   });
 }
 
-function bindsARequestMessageOnlyAgainstItsAdmittedCheck() {
-  return Effect.gen(function* () {
-    const subject = yield* fixture;
-    const delivery = yield* outgoingFixture(subject, holdMarked());
-    const sending = yield* delivery.operations
-      .send({ input: gatherSend(question) })
-      .pipe(Effect.forkScoped);
-    yield* Deferred.await(subject.outbound);
-    const bound = yield* awaitBoundIntents(subject, 2);
-    const [gatherCheck] = yield* auditChecks(subject);
-    const other = yield* gatherRequestContent(Date.now() + 60_000, question);
-
-    const otherContent = yield* Effect.flip(
-      subject.engine.sendAdmitted(
-        { to: bob, content: other },
-        gatherCheck?.checkId ?? "",
-      ),
-    );
-    const unknownCheck = yield* Effect.flip(
-      subject.engine.sendAdmitted(
-        { to: bob, content: other },
-        `chk_${"0".repeat(64)}`,
-      ),
-    );
-
-    expect(otherContent).toMatchObject({
-      reason: "certification-unavailable",
-    });
-    expect(unknownCheck).toMatchObject({
-      reason: "certification-unavailable",
-    });
-    expect(yield* unfinishedIntents(subject)).toEqual(bound);
-    yield* Fiber.interrupt(sending);
-  });
-}
-
 function refusesAnAnswerWhoseRequestExpiresDuringItsCheck() {
   return Effect.gen(function* () {
     const subject = yield* fixture;
@@ -303,7 +171,7 @@ function refusesAnAnswerWhoseRequestExpiresDuringItsCheck() {
     expect(yield* unfinishedIntents(subject)).toEqual([]);
     expect((yield* auditChecks(subject)).at(-1)).toMatchObject({
       direction: "outgoing",
-      disposition: "withheld",
+      disposition: "admitted",
       result: { judgment: "allow" },
     });
   });
@@ -388,13 +256,13 @@ function bindsNothingWhenStoppedDuringAGatherCheck() {
     yield* Fiber.interrupt(sending);
 
     expect(yield* unfinishedIntents(subject)).toEqual([]);
-    const attempts = yield* subject.store.readFirewallAuditPage(0);
+    const attempts = yield* subject.store.readFirewallDecisions();
     const checks = yield* Effect.forEach(
       attempts,
       (entry) => decodeFirewallAuditEntry(entry),
       { concurrency: 1 },
     );
-    expect(checks).toMatchObject([{ disposition: "checking", result: null }]);
+    expect(checks).toEqual([]);
   });
 }
 
@@ -507,28 +375,12 @@ describe("collective sends under a firewall", () => {
     bindsAShadowGatherInGuidanceMode,
   );
   it(
-    "refuses a gather after two stale captures without binding a request message",
-    refusesAGatherAfterStaleCaptures,
-  );
-  it(
-    "opens an all_gather once when a stale capture makes it take its bind hold again",
-    opensAnAllGatherOnceAcrossAStaleCapture,
-  );
-  it(
-    "closes an all_gather as refused once stale captures refuse its bind",
-    closesAnAllGatherRefusedAfterStaleCaptures,
-  );
-  it(
     "checks an all_gather's group message as its question and binds nothing when held",
     checksAnAllGatherAsItsQuestion,
   );
   it(
     "keeps a request open after its answer is refused",
     keepsARequestOpenAfterARefusedAnswer,
-  );
-  it(
-    "binds a request message only against its operation's admitted check, with exactly the content it checked",
-    bindsARequestMessageOnlyAgainstItsAdmittedCheck,
   );
   it(
     "refuses an answer whose request expires during its check, keeping the check's judgment",

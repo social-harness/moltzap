@@ -1,7 +1,7 @@
 /** @file A scripted Router transmit over an endpoint store's durable outbox. */
 
 import { type Duration, Effect, Queue } from "effect";
-import type { EndpointStore } from "../communication/store/index.js";
+import type { DaemonStore } from "../daemon/store.js";
 import { decodeCanonical } from "../encoding/canonical-json.js";
 import { SignedMessage } from "../identity/envelope/signed-message.js";
 
@@ -16,7 +16,7 @@ import { SignedMessage } from "../identity/envelope/signed-message.js";
  * @returns Completion once the row is handled.
  */
 export function forwardStoredOutbound(
-  store: EndpointStore,
+  store: DaemonStore,
   outbound: Queue.Queue<SignedMessage>,
   envelopeId: string,
   transit?: Duration.DurationInput,

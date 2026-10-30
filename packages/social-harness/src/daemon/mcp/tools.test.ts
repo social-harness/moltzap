@@ -9,6 +9,7 @@ import {
 } from "@modelcontextprotocol/server";
 import { Effect, Option, Schema, SchemaAST } from "effect";
 import { describe, expect } from "vitest";
+import { requestId } from "../../__tests__/collective-operation-fixtures.js";
 import { FirewallPolicyError } from "../../firewall/index.js";
 import { decodeHarnessSendErrorData } from "../../host-protocol/operations.js";
 import { AgentName, PrincipalId } from "../../identity/identifiers.js";
@@ -139,7 +140,11 @@ const invalidInvocationCalls = [
     arguments: {
       input: {
         to: "agent:bob",
-        collectiveResponse: { action: "accept", content: { choices: [1] } },
+        collectiveResponse: {
+          operationId: requestId,
+          action: "accept",
+          content: { choices: [1] },
+        },
       },
     },
     paths: [["input", "collectiveResponse", "content", "choices", 0]],

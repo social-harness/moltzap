@@ -5,10 +5,7 @@
 
 import { Cause, Deferred, Effect, Option, Queue, Scope } from "effect";
 import type { SendInput } from "../../communication/collectives/contracts.js";
-import type {
-  EndpointStore,
-  EndpointStoreError,
-} from "../../communication/store/index.js";
+import type { EndpointStoreError } from "../../communication/store/index.js";
 import type { InstalledFirewall } from "../../firewall/index.js";
 import type { VerifiedAgentCard } from "../../identity/cards.js";
 import type {
@@ -18,6 +15,7 @@ import type {
 import type { HistoryExportPort } from "../inbox/host-traffic-log.js";
 import type { HarnessMcpEventHandler } from "../mcp/index.js";
 import type { DaemonRegistrationState } from "../registration/index.js";
+import type { DaemonStore } from "../store.js";
 import { CollectiveEmitError } from "../../communication/collectives/index.js";
 import { SendError } from "../../communication/conversations/errors.js";
 import { Router } from "../../communication/router/index.js";
@@ -43,7 +41,7 @@ export type { ProtocolEdges };
 
 /** The state one daemon starts from, read once before the network layers. */
 export interface DaemonStartup {
-  readonly store: EndpointStore;
+  readonly store: DaemonStore;
   readonly bootstrap: DaemonBootstrap;
   readonly registration: DaemonRegistrationState;
   readonly firewall?: InstalledFirewall;
@@ -515,9 +513,9 @@ function daemonDelivery(
       const { collectives } = state.identity.protocol;
       return {
         ...collectives,
-        send: (request) =>
+        prepare: (request) =>
           checkExperimentSend(input.bootstrap.configuration, request).pipe(
-            Effect.zipRight(collectives.send(request)),
+            Effect.zipRight(collectives.prepare(request)),
           ),
       };
     },

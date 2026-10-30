@@ -25,6 +25,7 @@ import { describe, expect, vi } from "vitest";
 import type { EnginePendingMessage } from "../communication/conversations/index.js";
 import type { EventStore } from "../host-protocol/operations.js";
 import type { HarnessMcpEventHandler } from "./mcp/tools.js";
+import type { DaemonStore } from "./store.js";
 import { digest, testAgentView } from "../__tests__/agent-card-fixtures.js";
 import { collectiveOperationId } from "../__tests__/collective-id-fixtures.js";
 import {
@@ -57,7 +58,6 @@ import { RouterWorkerTransportError } from "../communication/router/index.js";
 import {
   DeliveryToken,
   encodeRuntimeValue,
-  type EndpointStore,
   EndpointStoreError,
 } from "../communication/store/index.js";
 import { INBOX_PENDING_EVENT } from "../host-protocol/names.js";
@@ -228,7 +228,7 @@ const closesWhileReceiptWaitsOnFailedPersistence = () =>
       yield* Deferred.make<Fiber.RuntimeFiber<void, EndpointStoreError>>();
     const harness = withReceiptFinalizer(original, receipt);
     let commits = 0;
-    const store: EndpointStore = {
+    const store: DaemonStore = {
       ...makeStore(fixture, true),
       putInboxItem: () =>
         Deferred.succeed(entered, undefined).pipe(
@@ -690,7 +690,7 @@ const refusesTheInboxStreamUntilTheProtocolIsUp = () =>
 /** A fault a daemon hits, and the phase the daemon stops in. */
 interface DaemonFault {
   readonly fault: string;
-  readonly store: (store: EndpointStore) => EndpointStore;
+  readonly store: (store: DaemonStore) => DaemonStore;
   readonly harness: (harness: RuntimeHarness) => RuntimeHarness;
   readonly phase: DaemonRuntimeError["phase"];
 }

@@ -6,18 +6,19 @@
 
 import { Clock, Effect, Option, Schema } from "effect";
 import { createHash, randomBytes } from "node:crypto";
-import { InboundItem } from "../../communication/collectives/inbound.js";
+import type { InstalledFirewall } from "../policy/installation.js";
+import type {
+  FirewallCompletion,
+  FirewallEvidence,
+  FirewallHistoryEntry,
+  FirewallLocalEntry,
+  FirewallStore,
+} from "../store/index.js";
 import {
   type CollectiveValue,
   readCollectiveValue,
   withoutCollectivePart,
 } from "../../communication/collectives/index.js";
-import {
-  questionText,
-  renderCollectiveRequestBody,
-  renderContent,
-  renderOutcome,
-} from "../../communication/collectives/render.js";
 import { renderGroupAddress } from "../../communication/conversations/address.js";
 import {
   exitOutcome,
@@ -37,23 +38,23 @@ import {
 import {
   decodeRuntimeValue,
   encodeRuntimeValue,
-  type EndpointStore,
   EndpointStoreError,
-  type FirewallCompletion,
-  type FirewallEvidence,
-  type FirewallHistoryEntry,
-  type FirewallLocalEntry,
-  MAXIMUM_RUNTIME_ITEM_BYTES,
 } from "../../communication/store/index.js";
+import { MAXIMUM_RUNTIME_ITEM_BYTES } from "../../encoding/limits.js";
+import { InboundItem } from "../../host-protocol/items.js";
+import {
+  questionText,
+  renderCollectiveRequestBody,
+  renderContent,
+  renderOutcome,
+} from "../../host-protocol/render.js";
 import {
   AgentCard,
   AgentView,
   type VerifiedAgentCard,
 } from "../../identity/cards.js";
 import {
-  type Firewall,
   type FirewallCheck,
-  type FirewallPolicyOperations,
   HistoryEntry,
   Message,
   MessageContext,
@@ -64,29 +65,13 @@ import {
   ENDPOINT_SENDER,
   FirewallSendError,
 } from "../outcome/index.js";
-import {
-  type FirewallConfiguration,
-  type FirewallInstallation,
-  withoutTraces,
-} from "./audit-records.js";
+import { withoutTraces } from "./audit-records.js";
 
 // safer-arch-ignore file-implicit-boundary-module: Outgoing and incoming admission share this one projection and assessment pipeline; admission/index.ts exposes only the installation and its admission ports.
 
-/** Private immutable installation with one inference limit shared by both directions. */
-export interface InstalledFirewall {
-  /** Read once at the check boundary so an in-flight attempt retains its installation. */
-  readonly current: () => InstalledFirewall;
-  readonly policy: FirewallPolicyOperations;
-  readonly configuration: FirewallConfiguration;
-  readonly configurationDigest: string;
-  readonly metadata: FirewallInstallation;
-  readonly firewall: Firewall;
-  readonly permits: Effect.Semaphore;
-}
-
 /** Store and verified local attribution remain outside middleware's data-only interface. */
 export interface FirewallEnvironment {
-  readonly store: EndpointStore;
+  readonly store: FirewallStore;
   readonly installed: InstalledFirewall;
   readonly localAgentCard: VerifiedAgentCard;
 }
@@ -118,7 +103,6 @@ export interface AssessmentInput {
   readonly canonicalCandidate: Uint8Array;
   readonly message?: Message;
   readonly cards: readonly AgentCard[];
-  readonly terminal: boolean;
 }
 
 /** What an attempt's audit input records beside the installation. */
@@ -126,7 +110,6 @@ interface AttemptFacts {
   readonly context: MessageContext;
   readonly agents: readonly AgentView[];
   readonly message: Message | null;
-  readonly terminal: boolean;
 }
 
 /**
@@ -214,7 +197,7 @@ export const decodeRecord = Effect.fn("decodeFirewallRecord")(function* (
 /** Certified local sends are admitted evidence without granting host visibility to owner history. */
 export const contextFrom = Effect.fn("firewallContext")(function* (
   environment: FirewallEnvironment,
-  evidence: Omit<FirewallEvidence, "snapshot">,
+  evidence: FirewallEvidence,
   candidateCards: readonly AgentCard[],
 ) {
   const localAgentId = environment.localAgentCard.agentId;
@@ -231,7 +214,7 @@ export const contextFrom = Effect.fn("firewallContext")(function* (
   ]) {
     cards.set(card.agentId, card);
   }
-  return new MessageContext({
+  const context = new MessageContext({
     agentId: localAgentId,
     principal: environment.localAgentCard.principalId,
     participants: [...cards.values()].map((card) => ({
@@ -244,6 +227,7 @@ export const contextFrom = Effect.fn("firewallContext")(function* (
     facts: environment.installed.configuration.facts,
     gaps: evidenceGaps(evidence),
   });
+  return { context, cards: [...cards.values()] };
 });
 
 /**
@@ -258,20 +242,17 @@ export const assess = Effect.fn("assessMessage")(function* (
   input: AssessmentInput,
 ) {
   const environment = captureEnvironment(liveEnvironment);
-  const context = yield* contextFrom(environment, input.evidence, input.cards);
+  const captured = yield* contextFrom(environment, input.evidence, input.cards);
+  const { context } = captured;
   const checkId = mintCheckId();
   yield* environment.store.beginFirewallAttempt({
     checkId,
     direction: input.direction,
-    snapshot: input.evidence.snapshot,
     canonicalCandidate: input.canonicalCandidate,
     canonicalInput: yield* attemptInput(environment, {
       context,
-      agents: [environment.localAgentCard, ...input.cards].map((card) =>
-        AgentView.make(card),
-      ),
+      agents: captured.cards.map((card) => AgentView.make(card)),
       message: input.message ?? null,
-      terminal: input.terminal,
     }),
   });
   const assessed = yield* runAssessment(environment, input, context).pipe(
@@ -280,6 +261,8 @@ export const assess = Effect.fn("assessMessage")(function* (
     ),
   );
   const projection = yield* guidanceProjection(assessed, input, context, {
+    mode: environment.installed.configuration.mode,
+    cards: captured.cards,
     checkId,
     localAgentCard: environment.localAgentCard,
   });
@@ -293,9 +276,6 @@ export const assess = Effect.fn("assessMessage")(function* (
       canonicalResult: yield* encodeRuntimeValue(
         withoutTraces(projection.result),
       ),
-      ...(input.terminal && mode === "guidance"
-        ? ({ shadow: true } as const)
-        : {}),
     },
     ...(admit && projection.guidance !== undefined
       ? { guidance: projection.guidance }
@@ -305,7 +285,7 @@ export const assess = Effect.fn("assessMessage")(function* (
 
 /**
  * The exact input an attempt's audit record retains: the installation, the
- * context, the checked message and whether the attempt is terminal.
+ * context and the exact candidate.
  * @param environment The environment whose installation the check runs.
  * @param attempt The context, the message or null for none, and terminality.
  * @returns The canonical bytes the attempt is begun with.
@@ -624,7 +604,7 @@ function decodeHistory(
   }).pipe(Effect.withSpan("decodeFirewallHistory"));
 }
 
-function evidenceGaps(evidence: Omit<FirewallEvidence, "snapshot">): string[] {
+function evidenceGaps(evidence: FirewallEvidence): string[] {
   return [
     ...(evidence.overflow
       ? ["Authorized earlier history exceeds the 2 MiB evidence byte bound."]
@@ -641,9 +621,6 @@ function runAssessment(
   input: AssessmentInput,
   context: MessageContext,
 ) {
-  if (input.terminal) {
-    return Effect.succeed(unavailable("unresolved-evidence"));
-  }
   if (input.message === undefined) {
     return Effect.succeed(unavailable("check-unavailable"));
   }
@@ -668,14 +645,19 @@ function guidanceProjection(
   result: FirewallCheck,
   input: AssessmentInput,
   context: MessageContext,
-  capture: { readonly checkId: string; readonly localAgentCard: AgentCard },
+  capture: {
+    readonly checkId: string;
+    readonly localAgentCard: AgentCard;
+    readonly mode: "guidance" | "enforcement";
+    readonly cards: readonly AgentCard[];
+  },
 ): Effect.Effect<
   { readonly result: FirewallCheck; readonly guidance?: CheckedGuidance },
   EndpointStoreError
 > {
   return Effect.gen(function* () {
     const instructions =
-      input.direction === "incoming"
+      input.direction === "incoming" || capture.mode === "guidance"
         ? result.guidance
         : result.guidance.filter((entry) => "uncertain" in entry);
     if (instructions.length === 0) {
@@ -683,19 +665,10 @@ function guidanceProjection(
     }
     const selected = new Set(
       instructions.flatMap((entry) =>
-        "uncertain" in entry ? [] : entry.subjects,
+        "subjects" in entry ? entry.subjects : [],
       ),
     );
-    const history = yield* Effect.forEach(
-      input.evidence.history,
-      (entry) => decodeHistory(entry, capture.localAgentCard.agentId),
-      { concurrency: 1 },
-    );
-    const subjects = guidanceSubjects(selected, input, context, [
-      ...history.flatMap((entry) => entry.cards),
-      ...input.cards,
-      capture.localAgentCard,
-    ]);
+    const subjects = guidanceSubjects(selected, input, context, capture.cards);
     const guidance: CheckedGuidance = {
       checkId: capture.checkId,
       instructions,

@@ -508,7 +508,7 @@ const toolListings = {
   },
   [HARNESS_SEND_TOOL]: {
     description:
-      "Send a multicast, gather, all_gather, or collective response to an agent or fixed-member group. A gather or all_gather returns its operationId. A multicast or response returns its message's msgId and canonical conversation address. read_conversation records that msgId, and recipients see it on multicast items. A response also returns the answered request's operationId. Answer in the conversation where the request arrived and use the operationId from its collectiveRequest item. Without operationId, the response answers the only open request or fails with request-ambiguous and openOperationIds when several are open. A firewall refusal returns the check id, reason, and next action without sending. A delivery-pending failure means the message will still be sent. Do not send it again.",
+      "Send a multicast, gather, all_gather, or collective response to an agent or fixed-member group. A gather or all_gather returns its operationId. A multicast or response returns its message's msgId and canonical conversation address. read_conversation records that msgId, and recipients see it on multicast items. A response also returns the answered request's operationId. Answer in the conversation where the request arrived and use the operationId from its collectiveRequest item. Every collective response requires that request's operationId. A firewall refusal returns the check id, reason, and next action without sending. A delivery-pending failure means the message will still be sent. Do not send it again.",
     inputSchema: sendInput,
     outputSchema: sendOutput,
     annotations: {

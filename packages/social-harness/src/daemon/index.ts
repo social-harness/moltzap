@@ -9,7 +9,6 @@ import { Router } from "../communication/router/api/client.js";
 import {
   type EndpointStoreError,
   inspectEndpointStore,
-  openEndpointStore,
   type OutboxTooOldError,
 } from "../communication/store/index.js";
 import {
@@ -42,6 +41,7 @@ import {
   requireAdmission,
   requireAdmissionToCreate,
 } from "./registration/index.js";
+import { openDaemonStore } from "./store.js";
 import { spanExport } from "./telemetry.js";
 
 // safer-arch-ignore no-large-public-surface: Daemon process composition, firewall installation and the actual Registry and Router client tags with their operation values share the trusted service embedding boundary.
@@ -150,7 +150,7 @@ export namespace Daemon {
       yield* requireAdmissionToCreate(opening, bootstrap).pipe(
         Effect.mapError(configurationFailure),
       );
-      const store = yield* openEndpointStore(configuration.stateDirectory, {
+      const store = yield* openDaemonStore(configuration.stateDirectory, {
         liveWireVersions: yield* liveWireVersions,
       }).pipe(Effect.mapError(storageFailure));
       const firewall =
