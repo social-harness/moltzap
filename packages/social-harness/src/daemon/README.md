@@ -55,18 +55,42 @@ flowchart LR
 
 ## Persistence with Effect
 
-The SQLite layer opens the agent's database and closes it when the daemon
-stops. Startup prepares the schema and restores unfinished work before serving
-requests. The same layer instance supplies `SqlClient` to every component.
+The daemon provides one SQLite layer for its lifetime. Communication, policy
+and delivery operations obtain the same `SqlClient` from the Effect
+environment. The layer opens the database, prepares its schema and closes it
+when the daemon stops. Recovery finishes before the daemon serves requests.
 
-Database operations stay with the code that uses them. They require
-`SqlClient` in their Effect environment instead of receiving a combined
-`DaemonStore` object. The daemon supplies that dependency at startup.
+Persist each record using its owning Effect Schema. Keep signed records and
+messages in their original byte representation. Readers select saved objects
+by identity, conversation or pending status. Acknowledging delivery changes
+its status without removing the saved message.
 
-Use `sql.withTransaction` when an operation changes records that must stay
-consistent. Saving an incoming decision and the message the agent may read is
-one such operation. Reads return the saved view, without another firewall check.
+### Proposed store interface
 
-Effect Schema and `SqlSchema` decode database rows. Table definitions and
-schema generation remain a separate choice from connection ownership and
-transactions.
+The store exposes Effect SQL's existing `SqlClient` service. The proposed
+export from `daemon/store.ts` builds the layer:
+
+```typescript
+/**
+ * Opens one agent's database and provides it for the daemon's lifetime.
+ * Maps initialization failures to startup errors. Closing the layer closes the database.
+ */
+export declare function layer(
+  options: {
+    readonly stateDirectory: string;
+    readonly liveWireVersions: readonly string[];
+  },
+): Layer.Layer<
+  SqlClient.SqlClient,
+  EndpointStoreError | OutboxTooOldError
+>;
+```
+
+`SqlClient` comes from `@effect/sql/SqlClient`. Database operations return
+schema-decoded values and declare that service in their Effect environment.
+Use `SqlSchema` for query results and `sql.withTransaction` for related writes.
+A saved check decision and the message it permits share one transaction.
+History reads use the saved decisions.
+
+Record grouping, indexes, schema generation and the SQLite driver remain
+to be selected before implementation.

@@ -51,10 +51,16 @@ active. Canceling the request does not undo a registration that succeeds.
 
 ## Stored state
 
-One daemon store retains communication state, rules, check records and inbox
-items for the agent. Its writes preserve the relationships between those
-records. An incoming decision, the text and guidance offered to the host, and
-any answer visibility changes become durable together.
+The store preserves one agent's identity, communication, rules, check records
+and delivery progress across restarts. It accepts state changes and returns
+saved records for recovery and history reads.
+
+Persistent values use their owning schemas. Signed messages, records and
+evidence retain their exact bytes.
+
+Related changes become durable together. An incoming decision, the text and
+guidance offered to the agent, and any answer visibility changes form one
+change. Acknowledgment records delivery progress and preserves that saved view.
 
 The store retains a check's input before assessment begins. Restart identifies
 interrupted attempts and resumes unfinished incoming work. Completed decisions,
