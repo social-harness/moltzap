@@ -13,8 +13,6 @@ export type EndpointStoreFailure =
   | "incompatible"
   | "invalid-continuation"
   | "invalid-input"
-  | "newer-schema"
-  | "pre-reset"
   | "not-found"
   | "persistence";
 

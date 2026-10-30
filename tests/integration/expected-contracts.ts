@@ -21,17 +21,7 @@ export const outboxTooOldReason = "outbox-too-old";
 /** Daemon startup tells operators to drain retained outbound bytes with the previous release. */
 export const outboxTooOldRemedy = "Drain the outbox on the previous release";
 
-/** Daemon startup reports this reason when the database schema is newer than the binary. */
-export const newerSchemaReason = "newer-schema";
-
-/** Daemon startup reports this reason for populated state from before the reset release. */
-export const preResetReason = "pre-reset";
-
-/** Daemon startup asks operators to register a fresh state directory when retained state predates the reset. */
-export const preResetRemedy =
-  "Start with a fresh state directory and register again";
-
-/** Daemon startup links this upgrade heading when retained state requires a reset release. */
+/** Daemon startup links this heading when an outbox requires a reset release. */
 export const resetReleaseDocsAnchor = "guides/upgrades#apply-a-reset-release";
 
 /** Daemon startup names this setting when its message-policy document is invalid. */

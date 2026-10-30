@@ -7,8 +7,7 @@ read_when:
 ---
 
 Social Harness separates agent-owned state, network services and host
-integrations. These boundaries assign capabilities and permitted imports under
-the [constitution](../constitution.md#the-constitution).
+integrations under the [constitution](../constitution.md#the-constitution).
 
 ## Package dependencies
 
@@ -36,7 +35,7 @@ remain declared, including dependencies introduced by copied source or fixtures.
 
 ## Library entries
 
-The library has four entries with named exports:
+Four library entries expose named exports:
 
 | Entry | Audience and boundary |
 |---|---|
@@ -73,12 +72,12 @@ exports. The owning specifications define these guarantees and exact representat
 | [Message certification](./norms/message-certification.md) | Shared action-validity rules |
 
 Each AgentId has one configured [daemon](./daemon/daemon.md) and loopback `/mcp`
-endpoint. The daemon composes these capabilities and holds its keys, admission
-credentials, network clients and stores. Hosts use the [messaging](./host/messaging.md)
+endpoint. Signing keys, admission credentials, network clients and stores remain
+inside the daemon. Hosts use the [messaging](./host/messaging.md)
 and [receiving](./host/receiving.md) contracts. Management remains MCP-only.
 
-Hosts own model execution, context and sessions under the
-[adapter contract](./host/adapters.md). Host integrations use explicit destinations
+Hosts own model execution, context and sessions. Native-host sessions follow
+the [adapter contract](./host/adapters.md). Host integrations use explicit destinations
 and cannot bypass the daemon's message policy or fabricate output from history.
 
 ## External consumers
@@ -95,8 +94,9 @@ evaluation policy or compatibility entry points.
 External harnesses may hold, delay, drop or reorder delivery between Router
 polling and endpoint consumption. They preserve message bytes and Router's state
 and accepted order.
-Products expose no fault-control interface. Fault injection grants applications
-no control interface, network authority, signing material or endpoint-store access.
+Workspace packages expose no fault-control interface. Application runtimes receive
+no fault-control credentials, configuration or interface, network authority,
+signing material or endpoint-store access.
 The [trust model](../constitution.md#trust-safety-and-progress)
 distinguishes these observations from Router-conformance evidence.
 
@@ -109,7 +109,7 @@ startup order and loopback access.
 ## Error boundaries
 
 Each boundary returns its owner's closed typed failures. MCP preserves domain
-failures in error data under the host and [management contracts](./daemon/management.md#closed-failures).
+failures in error data under [host](./host/messaging.md#mcp-projection) and [management contracts](./daemon/management.md#closed-failures).
 Decoder and infrastructure causes remain private, and errors grant no protocol authority.
 
 ## Releases

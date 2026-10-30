@@ -37,7 +37,6 @@ import {
   closeStoreState,
   EndpointStoreError,
   inspectStoreState,
-  type MigrationSteps,
   openStoreState,
   runStoreOperation,
   type StoreOpening,
@@ -101,7 +100,7 @@ import {
 export { EndpointStoreError };
 
 /**
- * Reports whether opening the state directory creates, reopens, or migrates
+ * Reports whether opening the state directory creates or reopens
  * its store without changing it. Creating a store leaves the daemon
  * unregistered.
  *
@@ -120,9 +119,8 @@ export const inspectEndpointStore = (
  * Opens the one SQLite store owned by a daemon state directory.
  *
  * @param stateDirectory Exclusive persistent state directory.
- * @param options Explicit live window and optional injected forward migration steps.
+ * @param options Explicit live window for retained outbound messages.
  * @param options.liveWireVersions Versions accepted for pending outbound envelopes.
- * @param options.migrations Destination-indexed forward steps, defaulting to the binary's table.
  * @returns A scoped private endpoint-store capability.
  * @failure EndpointStoreError when the directory or database cannot be owned.
  */
@@ -130,7 +128,6 @@ export const openEndpointStore = (
   stateDirectory: string,
   options: {
     readonly liveWireVersions: readonly string[];
-    readonly migrations?: MigrationSteps;
   },
 ): Effect.Effect<
   EndpointStore,

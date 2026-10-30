@@ -1,10 +1,10 @@
-/** @file Initial PostgreSQL schema for Registry metadata, cards, operations, and replay nonces. */
+/** @file Current PostgreSQL schema for Registry metadata, cards, operations, and replay nonces. */
 
 import { SqlClient } from "@effect/sql/SqlClient";
 import { Effect } from "effect";
 
-/** Canonical initial Registry schema exercised by Effect Migrator. */
-export const registryMigration = Effect.gen(function* () {
+/** Created atomically with the format marker and signer binding in an empty namespace. */
+export const createRegistrySchema = Effect.gen(function* () {
   const sql = yield* SqlClient;
   yield* sql.unsafe(`
     CREATE TABLE sharness_registry_metadata (
@@ -32,4 +32,4 @@ export const registryMigration = Effect.gen(function* () {
     CREATE INDEX sharness_registry_nonces_expiry
       ON sharness_registry_nonces (expires_at);
   `);
-}).pipe(Effect.withSpan("registryMigration"));
+}).pipe(Effect.withSpan("createRegistrySchema"));

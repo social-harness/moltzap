@@ -122,7 +122,7 @@ offline. Failure stops startup. It then considers a candidate release:
   window. Any newer release in that window is eligible. Resets require an
   explicit choice.
 - An exact pin may move backward or cross a wire change. Storage compatibility
-  still applies, including `newer-schema` rejection.
+  still requires the current format.
 
 Every selection must include `@moltzap/social-harness`. Release tags and sibling
 pins must be calendar versions of `@moltzap/*` packages before download.

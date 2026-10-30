@@ -79,7 +79,7 @@ function rejectsNonemptyDatabaseWithoutInitialization() {
         Effect.dieMessage("unexpected pending outbox"),
       ),
     ),
-    "pre-reset",
+    "incompatible",
   ).pipe(
     Effect.tap(() =>
       Effect.sync(() => {

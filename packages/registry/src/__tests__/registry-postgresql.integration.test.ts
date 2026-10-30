@@ -67,7 +67,6 @@ const sameKeyContenders = (
     ...first,
     request: { ...first.request, operationId: makeOperationId() },
   }));
-const NEWER_SCHEMA_REASON = "newer-schema";
 
 const stopPostgreSql = (container: StartedPostgreSqlContainer) =>
   Effect.tryPromise({
@@ -301,52 +300,6 @@ it.each([{ mismatch: "signer", reason: "signer-mismatch" }])(
   180_000,
 );
 
-it("refuses an unknown applied migration with newer-schema through storage and process startup", () => {
-  expect.hasAssertions();
-  return Effect.runPromise(
-    Effect.gen(function* () {
-      const setup = yield* makePostgreSqlRegistrySetup;
-      const sql = yield* PgClient.make({
-        url: Redacted.make(setup.container.getConnectionUri()),
-      }).pipe(Effect.provide(Reactivity.layer));
-      yield* initializeRegistryStorage({
-        sql,
-        registrySignerPublicKey: setup.registrySignerPublicKey,
-      });
-      yield* sql`INSERT INTO sharness_registry_ledger_20261029_3 (migration_id, name) VALUES (9999, 'future')`;
-
-      const initialized = yield* initializeRegistryStorage({
-        sql,
-        registrySignerPublicKey: setup.registrySignerPublicKey,
-      }).pipe(Effect.either);
-      Either.match(initialized, {
-        onLeft: (error) => {
-          expect(error.reason).toBe(NEWER_SCHEMA_REASON);
-        },
-        onRight: () => {
-          expect.fail("Registry accepted an unknown applied migration");
-        },
-      });
-      const process = yield* managedProcess(
-        REGISTRY_BINARY,
-        [],
-        setup.environment,
-      );
-      yield* waitForExit(process).pipe(
-        Effect.timeoutFail({
-          duration: Duration.seconds(10),
-          onTimeout: () =>
-            processTestError(
-              `Registry did not refuse the newer schema\n${process.logs()}`,
-            ),
-        }),
-      );
-      expect(process.child.exitCode).not.toBe(0);
-      expect(process.logs()).toContain(NEWER_SCHEMA_REASON);
-    }).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
-  );
-}, 180_000);
-
 it(
   "refuses an occupied schema without the current ledger before changing any table",
   () =>
@@ -364,13 +317,13 @@ it(
           sql,
           registrySignerPublicKey: setup.registrySignerPublicKey,
         }).pipe(Effect.either);
-        const preResetReason = "pre-reset";
+        const incompatibleReason = "incompatible";
         expect(
           Either.match(initialized, {
             onLeft: (error) => error.reason,
             onRight: () => undefined,
           }),
-        ).toBe(preResetReason);
+        ).toBe(incompatibleReason);
         expect(
           yield* sql`SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = current_schema() ORDER BY tablename`,
         ).toEqual(tables);
@@ -384,7 +337,7 @@ it(
         );
         yield* waitForExit(process);
         expect(process.child.exitCode).not.toBe(0);
-        expect(process.logs()).toContain(preResetReason);
+        expect(process.logs()).toContain(incompatibleReason);
       }).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
     ),
   180_000,

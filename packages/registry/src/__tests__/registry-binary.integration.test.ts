@@ -56,8 +56,7 @@ const IDEMPOTENCY_CONFLICT_KIND = "idempotency_conflict";
 const KEY_ALREADY_REGISTERED_KIND = "key_already_registered";
 const NAME_TAKEN_KIND = "name_taken";
 const FOUND_KIND = "found";
-const NEWER_SCHEMA_REASON = "newer-schema";
-const PRE_RESET_REASON = "pre-reset";
+const INCOMPATIBLE_STORAGE_REASON = "incompatible";
 const OK_STATUS = 200;
 const NO_CONTENT_STATUS = 204;
 const BAD_REQUEST_STATUS = 400;
@@ -824,7 +823,6 @@ const setupRegistryInfrastructure = Effect.gen(function* () {
 const assertStartupContracts = (input: {
   readonly environment: Readonly<Record<string, string>>;
   readonly wrongKeyPath: string;
-  readonly addUnknownMigration: Effect.Effect<unknown, unknown>;
 }) =>
   Effect.gen(function* () {
     yield* assertStartupRejection({
@@ -835,14 +833,6 @@ const assertStartupContracts = (input: {
       ...input.environment,
       SHARNESS_REGISTRY_SIGNING_PRIVATE_KEY_PATH: input.wrongKeyPath,
     });
-    yield* input.addUnknownMigration;
-    const process = yield* managedProcess(
-      REGISTRY_BINARY,
-      [],
-      input.environment,
-    );
-    yield* expectStartupFailure(process);
-    expect(process.logs()).toContain(NEWER_SCHEMA_REASON);
   });
 
 const registryBinaryBehavior = Effect.gen(function* () {
@@ -888,10 +878,6 @@ const registryBinaryBehavior = Effect.gen(function* () {
   yield* assertStartupContracts({
     environment: infrastructure.environment,
     wrongKeyPath: infrastructure.wrongKeyPath,
-    addUnknownMigration: sql`
-      INSERT INTO sharness_registry_ledger_20261029_3 (migration_id, name)
-      VALUES (9999, 'future')
-    `,
   });
 }).pipe(
   Effect.scoped,
@@ -905,22 +891,9 @@ it("preserves Registry contracts across first boot, concurrency, and restart", (
   return Effect.runPromise(registryBinaryBehavior);
 }, 120_000);
 
-it.each([
-  {
-    state: "preceding reset",
-    table: "sharness_registry_ledger_20261029",
-    schema: "public",
-  },
-  { state: "unrecognized", table: "unrecognized_state", schema: "public" },
-  {
-    state: "preceding reset",
-    table: "sharness_registry_ledger_20261029",
-    schema: "Registry",
-  },
-  { state: "unrecognized", table: "unrecognized_state", schema: "Registry" },
-])(
-  "refuses $state storage in $schema without changing its tables",
-  ({ table, schema }) =>
+it.each(["public", "Registry"])(
+  "refuses unrecognized storage in %s without changing its tables",
+  (schema) =>
     Effect.runPromise(
       Effect.gen(function* () {
         const infrastructure = yield* setupRegistryInfrastructure;
@@ -931,8 +904,8 @@ it.each([
         yield* sql`CREATE SCHEMA IF NOT EXISTS ${sql(schema)}`;
         yield* sql`CREATE SCHEMA registry`;
         yield* sql`SET search_path TO ${sql(schema)}`;
-        yield* sql`CREATE TABLE ${sql(table)} (retained integer PRIMARY KEY)`;
-        yield* sql`INSERT INTO ${sql(table)} VALUES (1)`;
+        yield* sql`CREATE TABLE unrecognized_state (retained integer PRIMARY KEY)`;
+        yield* sql`INSERT INTO unrecognized_state VALUES (1)`;
         const tables =
           yield* sql`SELECT schemaname, tablename FROM pg_catalog.pg_tables WHERE schemaname IN ('public', 'Registry', 'registry') ORDER BY schemaname, tablename`;
         const process = yield* managedProcess(
@@ -941,11 +914,11 @@ it.each([
           infrastructure.environment,
         );
         yield* expectStartupFailure(process);
-        expect(process.logs()).toContain(PRE_RESET_REASON);
+        expect(process.logs()).toContain(INCOMPATIBLE_STORAGE_REASON);
         expect(
           yield* sql`SELECT schemaname, tablename FROM pg_catalog.pg_tables WHERE schemaname IN ('public', 'Registry', 'registry') ORDER BY schemaname, tablename`,
         ).toEqual(tables);
-        expect(yield* sql`SELECT retained FROM ${sql(table)}`).toEqual([
+        expect(yield* sql`SELECT retained FROM unrecognized_state`).toEqual([
           { retained: 1 },
         ]);
       }).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
