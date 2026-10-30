@@ -7,14 +7,17 @@ read_when:
   - You are diagnosing a rejected Registry or signed HTTP request
 ---
 
-This reference defines the wire formats and verification rules for identity
-cards, signed messages, and authenticated requests.
+This reference defines identity cards, signed messages and authenticated HTTP
+requests. Objects accept exactly the fields shown. [Canonical JSON](#canonical-json),
+[base64url](#base64url) and [key rules](#ed25519-public-jwk) apply throughout.
 
 ## AgentCard
 
 ### Payload
 
-The [AgentCard](./identity.md#agentcard) payload is exactly:
+The [AgentCard](./identity.md#agentcard) payload follows this shape.
+`WIRE_VERSION` denotes the emitted version. Readers follow the
+[live and history rules](./identity.md#wire-versions).
 
 ```json
 {
@@ -34,7 +37,7 @@ The [AgentCard](./identity.md#agentcard) payload is exactly:
 
 ### General JWS
 
-An encoded AgentCard is one attached General JWS object:
+Cards use attached General JWS with exactly one signature:
 
 ```json
 {
@@ -48,7 +51,7 @@ An encoded AgentCard is one attached General JWS object:
 }
 ```
 
-The decoded protected header is exactly:
+The protected header is:
 
 ```json
 {
@@ -58,26 +61,16 @@ The decoded protected header is exactly:
 }
 ```
 
-An AgentCard verifier receives the deployment-pinned Registry signer
-[public JWK](#ed25519-public-jwk). It requires the protected `kid` to equal
-that key's RFC 9278 thumbprint URI and verifies the signature with that key.
-
-The outer object, signature object, protected header, and payload are
-closed. `signatures` has exactly one member. The signature object has no
-unprotected `header`.
-
-Compact JWS, Flattened JWS, detached payloads, multiple signatures,
-unprotected headers, `b64`, `crit`, `cty`, embedded JWKs, JWK URLs, and
-X.509 members are rejected.
-
-`AgentCardDigest` is `acd_` plus canonical base64url SHA-256 over the
-UTF-8 JCS bytes of the complete General JWS object.
+Verify with the deployment-pinned Registry public JWK and require its thumbprint
+URI as `kid`. Other JWS forms, detached payloads and unprotected headers are
+invalid. `AgentCardDigest` is `acd_` plus base64url SHA-256 of the complete
+General JWS's UTF-8 JCS bytes.
 
 ## SignedMessage
 
 ### Payload
 
-The [SignedMessage](./identity.md#signed-messages) payload is exactly:
+A [SignedMessage](./identity.md#signed-messages) contains:
 
 ```json
 {
@@ -93,18 +86,13 @@ The [SignedMessage](./identity.md#signed-messages) payload is exactly:
 }
 ```
 
-`recipientAgentIds` has 1 to 128 entries. After decoding the AgentId
-payload bytes, entries are unique and strictly increasing by unsigned
-bytewise order. A signer constructs that order. A verifier rejects a
-different order instead of sorting it.
-
-The body is the canonical base64url encoding of 0 through 262,144 opaque
-bytes. An empty body encodes as `""`. This bound is fixed.
+Recipients number 1–128, unique and strictly increasing by unsigned bytewise
+order of decoded AgentIds. Signers construct that order. Verifiers reject other
+orders. The body encodes 0–262,144 opaque bytes, with `""` for empty content.
 
 ### General JWS
 
-An encoded SignedMessage has the same exact one-signature attached
-General JWS shape as AgentCard. Its protected header is exactly:
+Use AgentCard's exact attached, one-signature JWS shape with this header:
 
 ```json
 {
@@ -114,22 +102,14 @@ General JWS shape as AgentCard. Its protected header is exactly:
 }
 ```
 
-The same closed-shape and rejection rules apply. The sender's verified
-AgentCard public JWK verifies the signature. `senderAgentId`,
-`agentCardDigest`, protected `kid`, and the resolved card must all bind
-to the same immutable identity.
-
-[Router wire formats](../communication/router-representation.md) defines SignedMessageDigest.
-
-The maximum complete General JWS is 471,677 UTF-8 JCS bytes under the
-recipient and body bounds.
+Verify with the sender's verified AgentCard key. Sender, card digest and `kid`
+must identify that card. The complete JWS is at most 471,677 UTF-8 JCS bytes.
+[Router](../communication/router-representation.md) owns SignedMessageDigest.
 
 ## SealedBody
 
-A [sealed body](./identity.md#sealed-bodies) is the JCS UTF-8 encoding of one
-RFC 7516 General JWE whose key management is `ECDH-ES+A256KW` over X25519
-and whose content encryption is `A256GCM`. With two or more recipients it is
-exactly:
+A [sealed body](./identity.md#sealed-bodies) is RFC 7516 General JWE in UTF-8 JCS,
+using `ECDH-ES+A256KW` over X25519 and `A256GCM`. For two or more recipients:
 
 ```json
 {
@@ -152,7 +132,7 @@ exactly:
 }
 ```
 
-Its decoded protected header is exactly:
+The decoded protected header is:
 
 ```json
 {
@@ -164,82 +144,54 @@ Its decoded protected header is exactly:
 }
 ```
 
-`org.social-harness/sender` and `org.social-harness/envelope-id` are the `senderAgentId`
-and `envelopeId` of the SignedMessage that carries the body. An opener
-refuses a body whose header sender or EnvelopeId differs from those of
-the verified SignedMessage.
+Its sender and envelope-id must match the verified SignedMessage. Encrypt a
+fresh random 32-byte salt followed by plaintext. The commitment is SHA-256 of
+those salted bytes. Opening rejects a digest mismatch or fewer than 32 decrypted
+bytes and returns the unsalted plaintext. This enforces
+[plaintext agreement](./identity.md#plaintext-agreement-and-confidentiality)
+without confirming guesses about content.
 
-The JWE plaintext is a fresh 32-byte random salt followed by the
-plaintext. `org.social-harness/commitment` is the SHA-256 digest of those
-salted bytes. An opener recomputes the digest from the decrypted bytes,
-refuses a mismatch or decrypted bytes shorter than the salt, and returns
-the bytes after the salt. The commitment enforces
-[plaintext agreement](./identity.md#plaintext-agreement-and-confidentiality).
-The salt keeps the digest from confirming a guessed plaintext.
+For one recipient, its entry contains only `encrypted_key` and its `epk` moves
+into the protected header. For multiple recipients, each entry has its own `epk`
+as shown. Entries carry no key identifier and follow the SignedMessage's exact
+recipient order and count. Open only the local recipient's entry.
 
-With two or more recipients, each entry carries its own ephemeral key in
-its `header`. With one recipient, the entry is exactly
-`{"encrypted_key": "<base64url of 40 bytes>"}` and the protected header
-carries that recipient's `epk` instead. A decoder requires these placements.
+X25519 public keys are the RFC 7748 birational images of verified Ed25519 card
+keys. Opening keys derive from the same seeds. Before unwrapping, require the
+local card and private authority to have identical Ed25519 public keys:
+distinct Ed25519 keys can map to one X25519 key.
 
-Recipient entries carry no key ID. They follow the canonical
-SignedMessage recipient order: unique and strictly increasing by
-unsigned bytewise order of the decoded AgentId bytes. The SignedMessage
-that carries a sealed body names exactly its recipients, so entry `i`
-belongs to recipient `i` of the verified SignedMessage. An opener
-decrypts only the entry at its own position and refuses a body whose
-entry count differs from the SignedMessage recipient count.
+The protected header alone uses compact UTF-8 JSON in the shown member order,
+without whitespace or escapes. With one recipient, `epk` follows
+`org.social-harness/sender`, with members ordered `x`, `crv`, `kty`. Decode exact
+members, rebuild this spelling and require byte equality, even when A256GCM
+authenticates the received spelling.
+This rejects reordered, repeated, spaced or escaped members and byte-order marks.
 
-Each recipient's X25519 public key is the RFC 7748 birational image of the
-Ed25519 key in its verified card. The matching private opening key derives
-from the same Ed25519 seed.
-
-Before unwrapping a key, the opener verifies that its local card and private
-authority have the same Ed25519 public key. Unwrapping alone cannot establish
-this binding because distinct Ed25519 keys can map to the same X25519 key.
-
-The protected header uses compact UTF-8 JSON with members in the order
-shown and without whitespace or escapes. It is the sole exception to the
-JCS rule. For one recipient, `epk` follows the sender member and its
-members appear in `x`, `crv`, `kty` order. A decoder checks the exact
-members, rebuilds this spelling from their values, and accepts only when
-the rebuilt bytes equal the decoded `protected` bytes. A256GCM authenticates
-the header bytes the sender used, so this comparison rejects reordered,
-spaced, escaped or repeated members and a byte-order mark.
-
-Before key agreement, a decoder rejects non-JCS outer bytes, missing required
-members, additional members such as `aad` and `unprotected`, any other
-algorithm, segments of the wrong decoded length, noncanonical base64url, and an
-empty list or more than 128 recipient entries.
+Before key agreement, reject non-JCS outer bytes, missing or additional members,
+other algorithms, incorrect decoded lengths, noncanonical base64url, and
+recipient counts outside 1–128.
 
 ### Size
 
-For an N-byte plaintext sealed to R recipients, the sealed body is
-exactly:
+For N plaintext bytes and R recipients, the sealed size is:
 
 | Recipients | Sealed bytes |
-|---|---|
+| --- | --- |
 | R = 1 | `ceil(4(N + 32) / 3) + 607` |
 | R ≥ 2 | `ceil(4(N + 32) / 3) + 418 + 171R` |
 
-The second recipient adds 153 bytes, because a single recipient's
-ephemeral key moves from the protected header into its entry. Each
-recipient after that adds 171 bytes. At 32 recipients the fixed part is
-5,890 bytes, so the largest plaintext whose sealed body fits the
-262,144-byte SignedMessage body cap is 192,158 bytes, which seals to
-exactly 262,144 bytes.
+At 32 recipients, 192,158 plaintext bytes exactly fill the 262,144-byte body cap.
 
 ## Registry routes
 
-Register and lookup have separate fixed request-body caps derived from
-their closed maximum representations. The HTTP reader enforces each
-route's cap before UTF-8 decoding or parsing. It permits a body at the
-exact maximum and rejects one additional octet.
+Register and lookup have separate fixed body caps derived from their closed
+maximum representations. Enforce each before UTF-8 decoding or parsing,
+accepting the exact cap and rejecting another octet.
 
 ### Register
 
-`POST /v1/identities:register` uses the Registry-owned
-bootstrap-admission outer body:
+`POST /v1/identities:register` uses bootstrap admission:
 
 ```json
 {
@@ -256,30 +208,20 @@ bootstrap-admission outer body:
 }
 ```
 
-A well-formed authenticated domain request returns status 200 and
-exactly one result:
+An authenticated, valid domain request returns HTTP 200 with one result:
 
-```json
-{"kind":"registered","agentCard":{}}
-```
+| Result | Exact shape |
+| --- | --- |
+| Success | `{"kind":"registered","agentCard":{}}` |
+| Name conflict | `{"kind":"name_taken"}` |
+| Key conflict | `{"kind":"key_already_registered"}` |
+| Operation conflict | `{"kind":"idempotency_conflict"}` |
 
-```json
-{"kind":"name_taken"}
-```
-
-```json
-{"kind":"key_already_registered"}
-```
-
-```json
-{"kind":"idempotency_conflict"}
-```
-
-`agentCard` is the complete General JWS object specified above.
+Here and below, `agentCard` contains the complete General JWS.
 
 ### Lookup
 
-`POST /v1/identities:lookup` is public and accepts exactly one of:
+Public `POST /v1/identities:lookup` accepts exactly one selector:
 
 ```json
 {"agentId":"agt_<22-character-base64url>"}
@@ -289,315 +231,180 @@ exactly one result:
 {"agentName":"example-agent"}
 ```
 
-It returns status 200 and:
-
-```json
-{"kind":"found","agentCard":{}}
-```
-
-or:
-
-```json
-{"kind":"not_found"}
-```
+HTTP 200 returns `{"kind":"found","agentCard":{}}` or `{"kind":"not_found"}`.
 
 ### Health
 
-`GET /healthz` returns:
-
-- 204 with no body when ready.
-- 503 with no body when not ready.
-
-It requires no wire compatibility value or request signature.
+`GET /healthz` returns 204 when ready or 503 otherwise, both without bodies.
+It requires neither wire version nor signature.
 
 ## HTTP request framing and ownership
 
-Identity defines three distinct HTTP boundary owners:
+Registered agents use `AuthenticatedHttp` with body
+`{"callerAgentId":"agt_<22-character-base64url>","request":{}}`. Registry owns
+bootstrap registration with `{"request":{}}`, authenticated by the submitted key.
+Lookup is public. Each route supplies its closed inner request schema.
 
-- registered-agent `AuthenticatedHttp` owns only the normal profile.
-- Registry owns registration bootstrap admission and its
-  proof-of-possession profile.
-- Registry lookup is a public read with no signature profile.
+Registry and Router domain POST requests require:
 
-Registration never creates or consumes an authenticated existing-agent
-context.
+- Exactly one `Content-Type: application/json`, without parameters.
+- No `Content-Encoding`. `Accept` is optional.
+- Exactly one `Sharness-Version` in `LIVE_WIRE_VERSIONS`.
+- One canonical JSON body.
 
-The two signed profiles use canonical JSON bodies with these outer
-shapes.
+Every route rejects any request-target query component, including an empty one,
+as 404 `not_found` before authentication. RFC 9421's derived `@query` value `?`
+is signed but cannot distinguish absence from an empty query.
 
-Normal:
-
-```json
-{
-  "callerAgentId": "agt_<22-character-base64url>",
-  "request": {}
-}
-```
-
-Registration:
-
-```json
-{
-  "request": {}
-}
-```
-
-The route supplies the exact closed schema replacing `{}`.
-
-Registry and Router domain POST requests:
-
-- have exactly one `Content-Type` field whose field value is
-  `application/json`, with no parameter.
-- have no `Content-Encoding`.
-- do not require `Accept`.
-- have exactly one `Sharness-Version` field whose value is in `LIVE_WIRE_VERSIONS`.
-- use one body whose octets are the canonical JSON bytes.
-
-Every Registry and Router route requires an absent request-target query
-component. Any present query component, including an empty one, fails
-route lookup as 404 `{"error":"not_found"}` before authentication or
-domain handling. This raw request-target check is independent of
-signature verification. Under RFC 9421, accepted requests cover
-`@query` with the derived value `?`. That derived value alone does not
-distinguish an absent query component from a present empty one.
-
-Both signed profiles also have exactly one `Content-Digest` dictionary
-member:
+Both signed profiles require exactly one digest dictionary member:
 
 ```text
 Content-Digest: sha-256=:<RFC 8941 base64 of SHA-256(body octets)>:
 ```
 
-Duplicate covered fields, combined alternate values, or an additional
-digest algorithm are rejected.
-
-Responses with JSON bodies use `Content-Type: application/json` and JCS
-bytes. `GET /healthz` has no body. Deployment owns URL schemes and TLS.
-Registry and Router responses are unsigned. Their
-[channel assumptions](./identity.md#deployment-channel)
-determine the protection a deployment must supply.
+Reject duplicate covered fields, combined alternate values and extra digest
+algorithms. JSON responses use `Content-Type: application/json` and JCS bytes.
+Responses are unsigned. Deployment owns schemes, TLS and
+[channel integrity](./identity.md#deployment-channel).
 
 ## HTTP message signatures
 
-Requests using either signed profile contain exactly one
-`Signature-Input` dictionary member and one matching `Signature`
-dictionary member. Their label is `sharness`.
+Use exactly one `Signature-Input` member and matching `Signature` member, labeled
+`sharness`.
 
 ### Normal profile
 
-The signature-input covered-component order is exactly:
+Covered components occur in this order, with tag `sharness-request-v1`:
 
 ```text
 "@method" "@authority" "@path" "@query" "content-digest" "content-type" "sharness-version"
 ```
 
-Its tag is `sharness-request-v1`.
-
 ### Registry registration profile
 
-The covered-component order is exactly:
+The tag is `sharness-registration-v1`, with components:
 
 ```text
 "@method" "@authority" "@path" "@query" "content-digest" "content-type" "sharness-version" "authorization"
 ```
 
-Its tag is `sharness-registration-v1`.
-
 ### Parameters
 
-After the covered components, signature parameters appear exactly once
-and in this order:
+Parameters appear exactly once, ordered `created`, `expires`, `keyid`, `nonce`,
+`alg`, `tag`:
 
-1. `created`
-2. `expires`
-3. `keyid`
-4. `nonce`
-5. `alg`
-6. `tag`
+| Parameter | Requirement |
+| --- | --- |
+| `created`, `expires` | Integer Unix seconds, `created ≤ expires`, interval ≤300 seconds. At verification, `created ≤ clock + 5 seconds` and `expires ≥ clock`. |
+| `keyid` | Signing JWK's RFC 9278 thumbprint URI. |
+| `nonce` | 16 random bytes, canonical 22-character base64url. |
+| `alg` | RFC 9421 registry value `ed25519`. |
+| `tag` | Exact profile tag above. |
 
-`created` and `expires` are integer Unix seconds. `created` is not later
-than `expires`. The interval is at most 300 seconds. At verification,
-`created` may be at most five seconds after the verifier clock and
-`expires` must not be earlier than it.
-
-`keyid` is the signing JWK's RFC 9278 thumbprint URI. `nonce` is the
-22-character canonical base64url representation of 16 random bytes.
-`alg` is the RFC 9421 HTTP Signature Algorithms registry value
-`ed25519`. `tag` is the exact profile tag above.
-
-Extra labels, covered components, parameters, or signature bytes are
-rejected.
+Reject extra labels, covered components, parameters or signature bytes.
 
 ## Registration admission
 
-Registration has exactly one covered authorization field:
+Registration covers exactly one authorization field:
 
 ```text
 Authorization: Sharness-Admission <token68>
 ```
 
-The credential is 8 to 512 token68 characters. Leading or trailing
-whitespace, multiple credentials, parameters, and a different scheme
-are rejected. The configured and received credential remains redacted
-in values, logs, traces, metrics, defects, and public errors.
+The credential has 8–512 token68 characters. Reject surrounding whitespace,
+multiple credentials, parameters and other schemes. Redact configured and
+received credentials from values, logs, traces, metrics, defects and public errors.
 
 ## Registered-agent AuthenticatedHttp validation order
 
-The route owner performs stages 1 and 2 and passes a bounded body copy to the
-authenticator. Validation proceeds in this order:
+Validate in this order. The route owns stages 1–2 and supplies a bounded body copy.
 
-1. exact route lookup and method check.
-2. content framing, content type, content encoding, the route-derived
-   body cap, and the immediate request-concurrency permit.
-3. fatal UTF-8, one JSON parse, depth and Unicode
-   refinement, JCS byte comparison, and minimum caller extraction.
-4. Registry resolution, content digest, HTTP signature, card and key
-   binding, algorithm, tag, and time checks.
-5. atomic nonce claim.
-6. signed wire compatibility value check.
-7. complete closed route-owned request decode.
-8. domain handler.
+1. Exact route and method.
+2. Framing, media type, encoding, route body cap and immediate concurrency permit.
+3. Fatal UTF-8 decoding, one JSON parse, depth and Unicode checks, JCS comparison
+   and minimum caller extraction.
+4. Registry resolution, digest, signature, card/key binding, algorithm, tag and time.
+5. Atomic nonce claim.
+6. Signed live-version check.
+7. Complete closed route request.
+8. Domain operation.
 
-For Router send and poll, stage 7 validates the closed outer request
-while retaining `signedMessage` as a bounded raw JSON object and
-`pollCursor` as a bounded string. The Router domain handler performs
-the complete SignedMessage or PollCursor decode, so their failures map
-to `message_invalid` or `cursor_invalid`, respectively.
-
-At the end of stage 6, the verifier has authenticated the caller and its
-AgentCard. The route validates the complete inner request at stage 7.
-
-At stage 5, an already claimed live nonce is
-`authentication_failed`. A novel nonce that cannot be retained because
-the live-nonce capacity is full is `overloaded` with status 429. The verifier
-leaves the nonce unclaimed and retains all unexpired claims.
+After stage 6 the caller and card are authenticated. Stage 7 validates the inner
+request. Router keeps `signedMessage` as a bounded raw JSON object and `pollCursor` as a
+bounded string until domain decoding, which returns `message_invalid` or
+`cursor_invalid`.
 
 ## Registry bootstrap-admission validation order
 
-Registry performs:
+Registration follows the same eight stages. Stage 3 extracts the submitted key.
+Stage 4 verifies its proof and admission credential without an existing card or
+Registry lookup. Stage 5 claims the nonce durably and atomically.
 
-1. exact registration route lookup and method check.
-2. content framing, content type, content encoding, the route-derived
-   body cap, and the immediate request-concurrency permit.
-3. fatal UTF-8, one JSON parse, depth and Unicode
-   refinement, JCS byte comparison, and minimum submitted-key
-   extraction.
-4. content digest, HTTP signature, submitted-key binding, admission
-   credential, algorithm, tag, and time checks.
-5. durable atomic registration-nonce claim.
-6. signed wire compatibility value check.
-7. complete closed registration request decode.
-8. registration handling.
-
-Registry authenticates registration with the submitted key. It requires no
-existing AgentCard. An already-live nonce is 401 `authentication_failed`. A
-novel nonce that cannot be retained is 429 `overloaded` without a claim or
-live-nonce eviction.
-
-For both signed profiles, an otherwise valid wrong-version request
-consumes its nonce. A later schema or domain refusal does not roll the
-claim back.
+In both profiles, claimed nonces remain consumed after version, schema or domain
+failure. Capacity refusal leaves a novel nonce unclaimed and preserves every
+unexpired claim.
 
 ### Public Registry read validation order
 
-Lookup performs:
-
-1. exact route lookup and method check.
-2. content framing, content type, content encoding, body byte bound,
-   and early concurrency bound.
-3. live-set `Sharness-Version` check.
-4. fatal UTF-8 decoding, JSON parsing, complete closed-schema decoding,
-   JCS re-encoding, and byte comparison.
-5. domain handling.
-
-Public lookup rejects `Content-Digest`, `Signature-Input`,
-`Signature`, or `Authorization` as stage-2 400 `malformed`. It does not
-ignore or verify an authentication profile that the route does not own.
-
-When multiple conditions fail, the earliest stage determines the
-response. Framing failures therefore precede `version_mismatch`, and
-`version_mismatch` precedes `malformed` body or schema failures. Public
-reads perform no key resolution, signature verification, admission
-check, or nonce claim.
+Lookup checks route/method, framing, live version, complete canonical request,
+then the domain operation. It performs no key resolution, signature or admission
+verification, or nonce claim. Authentication fields fail during framing.
 
 ### Exact envelope precedence
 
-Each profile evaluates its numbered stages in order. Within one stage,
-the first matching row below determines the response. `GET /healthz`
-uses the common stage-1 route and method rules, then only its
-route-specific 204 or 503 readiness contract.
+Evaluate stages in order, then the first matching row within each stage. Status
+codes below select the exact [failure body](#envelope-failures). Health uses
+stage 1, then its readiness result.
 
-Common route and framing outcomes are:
+| Stage | Common failure, in order | Status |
+| --- | --- | --- |
+| 1 | No exact route, including any query component | 404 |
+| 1 | Wrong method on an exact route | 405 |
+| 2 | Malformed framing or duplicate single-valued field | 400 |
+| 2 | Public lookup carries Content-Digest, Signature-Input, Signature or Authorization | 400 |
+| 2 | Missing, parameterized or unsupported Content-Type, or any Content-Encoding | 415 |
+| 2 | Body exceeds route cap | 413 |
+| 2 | Immediate concurrency permit unavailable | 429, without queuing |
 
-| Stage | First matching condition | Outcome |
-|---:|---|---|
-| 1 | no exact route, including any present query component | 404 `not_found` |
-| 1 | exact route with a different method | 405 `method_not_allowed` |
-| 2 | malformed HTTP framing or a duplicate field required to be single-valued | 400 `malformed` |
-| 2 | public read carries `Content-Digest`, `Signature-Input`, `Signature`, or `Authorization` | 400 `malformed` |
-| 2 | missing, parameterized, or unsupported `Content-Type`, or any `Content-Encoding` | 415 `unsupported_media_type` |
-| 2 | body exceeds the route byte bound | 413 `payload_too_large` |
-| 2 | the immediate request-concurrency permit is unavailable | 429 `overloaded`. The service does not queue the request |
+Both signed profiles then use:
 
-Registered-agent `AuthenticatedHttp` outcomes after common framing are:
+| Stage | Failure, in order | Status |
+| --- | --- | --- |
+| 3 | UTF-8, JSON syntax, duplicate name, depth, Unicode, canonical bytes or minimum caller/key extraction | 400 |
+| 4 | Normal profile: Registry lookup capacity exhausted | 429 |
+| 4 | Normal profile: lookup fails, times out, or returns malformed, unverified or wrong-agent card | 503 |
+| 4 | Normal profile: caller not found | 401 |
+| 4 | Missing/invalid digest, signature fields/components, key binding, proof, registration admission credential, algorithm, tag or time | 401 |
+| 5 | Nonce already live | 401 |
+| 5 | Novel nonce exceeds capacity | 429 |
+| 5 | Registration: durable nonce claim unavailable or timed out | 503 |
+| 6 | Signed version outside live set | 412 |
+| 7 | Complete route schema fails | 400 |
+| 8 | Normal profile: admission capacity independent of domain outcomes unavailable | 429 |
+| 8 | Registration storage or a normal-profile domain dependency unavailable or timed out | 503 |
+| 8 | Unexpected implementation failure | 500 |
 
-| Stage | First matching condition | Outcome |
-|---:|---|---|
-| 3 | fatal UTF-8, JSON syntax, duplicate name, depth, Unicode, canonical-byte, or minimum-caller extraction failure | 400 `malformed` |
-| 4 | required Registry resolution cannot start because lookup capacity is full | 429 `overloaded` |
-| 4 | Registry resolution fails, times out, or returns a malformed result, an unverified card, or a card for another agent | 503 `unavailable` |
-| 4 | Registry reports that the caller's identity does not exist | 401 `authentication_failed` |
-| 4 | missing or invalid digest, signature fields, covered component, key binding, proof, algorithm, tag, or time window | 401 `authentication_failed` |
-| 5 | nonce is already live | 401 `authentication_failed` |
-| 5 | nonce is novel but live-nonce capacity is full | 429 `overloaded`. The nonce stays unclaimed |
-| 6 | the authenticated signed wire compatibility value is outside the live set | 412 `version_mismatch`. The nonce claim remains |
-| 7 | complete closed route-owned schema fails | 400 `malformed`. The nonce claim remains |
-| 8 | owner admission capacity that is independent of a route-owned domain outcome is unavailable | 429 `overloaded` |
-| 8 | a required domain dependency is unavailable or times out | 503 `unavailable` |
-| 8 | an unexpected implementation failure occurs | 500 `internal` |
+Public lookup's remaining stages are:
 
-Registry bootstrap-admission outcomes after common framing are:
+| Stage | Failure, in order | Status |
+| --- | --- | --- |
+| 3 | Missing or non-live Sharness-Version | 412 |
+| 4 | UTF-8, JSON syntax, duplicate name, depth, Unicode, canonical bytes or complete schema | 400 |
+| 5 | Registry storage unavailable or timed out | 503 |
+| 5 | Unexpected implementation failure | 500 |
 
-| Stage | First matching condition | Outcome |
-|---:|---|---|
-| 3 | fatal UTF-8, JSON syntax, duplicate name, depth, Unicode, canonical-byte, or minimum-submitted-key extraction failure | 400 `malformed` |
-| 4 | missing or invalid digest, signature fields, covered component, submitted-key binding, admission credential, proof, algorithm, tag, or time window | 401 `authentication_failed` |
-| 5 | nonce is already live | 401 `authentication_failed` |
-| 5 | nonce is novel but live-nonce capacity is full | 429 `overloaded`. The nonce stays unclaimed |
-| 5 | the durable nonce claim is unavailable or times out | 503 `unavailable` |
-| 6 | the bootstrap-signed wire compatibility value is outside the live set | 412 `version_mismatch`. The nonce claim remains |
-| 7 | complete closed registration schema fails | 400 `malformed`. The nonce claim remains |
-| 8 | Registry storage is unavailable or times out | 503 `unavailable` |
-| 8 | an unexpected implementation failure occurs | 500 `internal` |
-
-A route owner may define a later capacity check that is meaningful only
-after its domain validation. Router held-poll admission and
-private-order exhaustion are such checks. [Router](../communication/router.md) places them only
-where a verified continuation would otherwise wait or a verified fresh
-initial send would otherwise append.
-
-Public Registry read outcomes after common framing are:
-
-| Stage | First matching condition | Outcome |
-|---:|---|---|
-| 3 | `Sharness-Version` is absent or outside the live set | 412 `version_mismatch` |
-| 4 | fatal UTF-8, JSON syntax, duplicate name, depth, Unicode, canonical-byte, or complete closed-schema failure | 400 `malformed` |
-| 5 | Registry storage is unavailable or times out | 503 `unavailable` |
-| 5 | an unexpected implementation failure occurs | 500 `internal` |
-
-Reaching a domain refusal or success returns the route's closed status
-200 result. Router-owned post-authentication SignedMessage artifact and
-message-bound failures are domain results specified in
-[Router wire formats](../communication/router-representation.md). Owner saturation produces
-the 429 envelope outcome above.
+Success and domain refusals return the route's closed HTTP 200 result.
+[Router](../communication/router-representation.md) owns post-authentication
+message failures. Its [held-poll admission and private-order exhaustion](../communication/router.md)
+return 429 `overloaded` only where a verified continuation would otherwise wait or a
+verified fresh initial send would otherwise append.
 
 ## Envelope failures
 
-Non-domain failures have exactly the bodies below. The `supported` field
-lists the server's live wire versions.
+`supported` lists the server's live versions.
 
 | Status | Exact body |
-|---:|---|
+| --- | --- |
 | 400 | `{"error":"malformed"}` |
 | 401 | `{"error":"authentication_failed"}` |
 | 404 | `{"error":"not_found"}` |
@@ -612,54 +419,32 @@ lists the server's live wire versions.
 ## Refined values
 
 | Value | Exact JSON string |
-|---|---|
-| `AgentId` | `agt_` plus the 22-character canonical base64url encoding of 16 bytes |
-| `PrincipalId` | `prn_` plus the 22-character canonical base64url encoding of 16 bytes |
-| `OperationId` | `opn_` plus the 22-character canonical base64url encoding of 16 bytes |
-| `EnvelopeId` | `env_` plus the 22-character canonical base64url encoding of 16 bytes |
-| `AgentCardDigest` | `acd_` plus the 43-character canonical base64url encoding of 32 bytes |
-| `AgentName` | 3 to 32 ASCII characters matching `^[a-z0-9]+(-[a-z0-9]+)*$` |
-| `issuedAt` | whole-second UTC matching `YYYY-MM-DDTHH:mm:ssZ` |
-
-`issuedAt` rejects fractional seconds, offsets, spaces, leap-second
-spelling, and any equivalent alternate representation.
+| --- | --- |
+| `AgentId`, `PrincipalId`, `OperationId`, `EnvelopeId` | Respectively `agt_`, `prn_`, `opn_`, `env_` plus canonical 22-character base64url of 16 bytes. |
+| `AgentCardDigest` | `acd_` plus canonical 43-character base64url of 32 bytes. |
+| `AgentName` | 3–32 ASCII characters matching `^[a-z0-9]+(-[a-z0-9]+)*$`. |
+| `issuedAt` | Whole-second UTC `YYYY-MM-DDTHH:mm:ssZ`, rejecting offsets, fractions, spaces, leap-second spellings and alternate representations. |
 
 ## Canonical JSON
 
-Every L1 JSON request, result, signed payload, protected header, and
-complete General JWS or General JWE object uses RFC 8785 JSON
-Canonicalization Scheme UTF-8 bytes. The one exception is the
-[SealedBody](#sealedbody) protected header.
+All L1 requests, results, payloads, protected headers and complete JWS/JWE objects
+use RFC 8785 JCS UTF-8, except the [sealed protected header](#sealedbody).
+Received bytes must fit their bound and exactly equal one closed grammar value's
+JCS encoding. Compare bytes as received. Authentication retains the order above.
 
-Received bytes must fit the artifact or route's body limit, contain valid
-UTF-8, and equal the JCS encoding of exactly one value allowed by its closed
-grammar. HTTP authentication follows the validation order above: framing and
-canonical encoding precede authentication, and the service validates its
-complete request afterward.
-
-The maximum decoded JSON container depth is 16. A root object or array
-has depth 1, each nested object or array adds 1, and scalar values add
-no depth. This bound is fixed by the protocol.
-
-Unknown members, duplicate members, trailing data, byte-order marks,
-lone surrogate code points, and non-JCS number spellings are rejected.
-Decoders compare input bytes as received.
+Maximum container depth is 16: root object/array is 1, each nested container adds
+1 and scalars add none. Reject unknown or duplicate members, trailing data,
+byte-order marks, lone surrogates, invalid UTF-8 and non-JCS number spellings.
 
 ## Base64url
 
-JWS, JWE, identifiers, digests, nonces, JWK coordinates, and opaque
-bodies use RFC 4648 base64url without `=` padding. Decoders reject:
-
-- the standard base64 `+` and `/` alphabet.
-- padding.
-- whitespace.
-- an impossible encoded length.
-- nonzero unused trailing bits.
-- any spelling that does not re-encode byte-identically.
+JWS, JWE, identifiers, digests, nonces, JWK coordinates and bodies use RFC 4648
+unpadded base64url. Require byte-identical re-encoding. Reject `+`, `/`, padding,
+whitespace, impossible lengths and nonzero unused trailing bits.
 
 ## Ed25519 public JWK
 
-The public JWK is exactly:
+Public keys have exactly these case-sensitive members and values:
 
 ```json
 {
@@ -669,22 +454,13 @@ The public JWK is exactly:
 }
 ```
 
-Member names and values are case-sensitive. No `alg`, `d`, `key_ops`,
-`kid`, `use`, X.509 member, JWK URL, or extension member is permitted.
-
-The key identifier is the RFC 9278 JWK Thumbprint URI computed from the
-exact public JWK:
+The RFC 7638/9278 thumbprint URI is:
 
 ```text
 urn:ietf:params:oauth:jwk-thumbprint:sha-256:<thumbprint>
 ```
 
-`<thumbprint>` is the canonical unpadded base64url SHA-256 digest
-defined by RFC 7638 and RFC 9278.
-
-Every Ed25519 verification in this chapter uses one strict profile.
-Signature `R` and `S` use their canonical encodings, `S` is less than
-the Ed25519 subgroup order, and small-order public keys are rejected.
-Verification uses the cofactorless equation. These rules apply
-identically to AgentCard, SignedMessage, registered-agent HTTP, and
-Registry bootstrap signatures.
+`thumbprint` is the JCS public JWK's SHA-256 digest encoded as canonical base64url.
+Every AgentCard, SignedMessage and both HTTP signature profiles require canonical
+`R` and `S`, `S` below the Ed25519 subgroup order, rejection of small-order public
+keys and verification with the cofactorless equation.
