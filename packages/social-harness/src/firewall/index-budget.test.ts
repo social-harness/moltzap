@@ -11,12 +11,6 @@ import type {
   DecisionRequest,
   DecisionResponse,
 } from "./check.js";
-import { makeFirewall, type FirewallOptions, type Firewall } from "./index.js";
-import {
-  loadMessagePolicy,
-  decodeMessagePolicy,
-  type TextRule,
-} from "./config.js";
 import {
   addConversation,
   fixture,
@@ -28,6 +22,12 @@ import {
   withDaemonStore,
 } from "../__tests__/store-schema-fixtures.js";
 import { readCredential } from "../daemon/credentials.js";
+import {
+  decodeMessagePolicy,
+  loadMessagePolicy,
+  type TextRule,
+} from "./config.js";
+import { type Firewall, type FirewallOptions, makeFirewall } from "./index.js";
 
 // @agent-code-guard/regression-only: Real SQLite, loaded documents and delivery exercise the installation boundary with deterministic provider judgments.
 

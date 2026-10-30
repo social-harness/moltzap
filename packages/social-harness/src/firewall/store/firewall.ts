@@ -344,7 +344,6 @@ export function retireQueuedItem(
   }
 }
 
-/** Record whether an admitted result showed or withheld each answer record. */
 /**
  * Returns retained decisions without message content, private inputs,
  * diagnostics or rule text. Includes registered advice only for rules that

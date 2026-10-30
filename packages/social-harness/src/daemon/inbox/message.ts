@@ -195,26 +195,6 @@ export const contextFrom = Effect.fn("firewallContext")(function* (
 });
 
 /**
- * A request's question exactly as a model reads it: the item's form after the
- * canonical round trip the inbox gives every stored item, so the schema's
- * keys are in the order the runtime renders.
- * @param item The request as an inbound item.
- * @returns The question's lines, before the answer instructions.
- */
-function requestText(
-  item: Extract<InboundItem, { readonly kind: "collectiveRequest" }>,
-): Effect.Effect<string, EndpointStoreError> {
-  return encodeRuntimeValue(item).pipe(
-    Effect.flatMap((bytes) => decodeRuntimeValue(InboundItem, bytes)),
-    Effect.flatMap((stored) =>
-      stored.kind === "collectiveRequest"
-        ? Effect.succeed(renderCollectiveRequestBody(stored))
-        : Effect.fail(new EndpointStoreError({ reason: "corrupt" })),
-    ),
-  );
-}
-
-/**
  * Validate a checked message, failing as corrupt when Client's own
  * projection does not decode.
  * @param value The message's fields.
@@ -255,6 +235,26 @@ export function messageFields(message: Message) {
  */
 export function hashedId(identity: string): string {
   return `msg_${createHash("sha256").update(identity).digest("hex")}`;
+}
+
+/**
+ * A request's question exactly as a model reads it: the item's form after the
+ * canonical round trip the inbox gives every stored item, so the schema's
+ * keys are in the order the runtime renders.
+ * @param item The request as an inbound item.
+ * @returns The question's lines, before the answer instructions.
+ */
+function requestText(
+  item: Extract<InboundItem, { readonly kind: "collectiveRequest" }>,
+): Effect.Effect<string, EndpointStoreError> {
+  return encodeRuntimeValue(item).pipe(
+    Effect.flatMap((bytes) => decodeRuntimeValue(InboundItem, bytes)),
+    Effect.flatMap((stored) =>
+      stored.kind === "collectiveRequest"
+        ? Effect.succeed(renderCollectiveRequestBody(stored))
+        : Effect.fail(new EndpointStoreError({ reason: "corrupt" })),
+    ),
+  );
 }
 
 /** A projected message's text and operation, before attribution. */

@@ -717,30 +717,6 @@ export function policyConfigurationError(
 }
 
 /**
- * The operator message for a message-policy failure: its text, any detail,
- * and one `Docs:` link. An entry under a behavior list links the behavior
- * rules, `docs` replaces the failure's own troubleshooting entry, and an
- * empty `docs` leaves the link out for a failure with no fix to point at.
- * @param reason The closed failure.
- * @param detail Text after the failure's own, starting with `; `.
- * @param link The entry to link in place of the failure's own.
- * @param link.path The failing policy entry, which links the behavior rules
- *     when it names a behavior list.
- * @param link.docs Another entry to link, or empty for none.
- * @returns The message, naming no configured value.
- */
-function policyFailureMessage(
-  reason: MessagePolicyConfigurationFailure,
-  detail: string,
-  link: { readonly path?: string; readonly docs?: string } = {},
-): string {
-  const docs = failureDocs(reason, link);
-  return docs === ""
-    ? `${failureMessages[reason].text}${detail}`
-    : `${failureMessages[reason].text}${detail}. Docs: ${docs}`;
-}
-
-/**
  * Maps one `BEHAVIOR.md` to its editable natural-language rule. YAML parser
  * diagnostics stay private; only a closed category reaches `refused`, which
  * builds the caller's own failure.
@@ -776,34 +752,6 @@ export function decodeBehavior<Failure>(
       Effect.mapError(() => refused("schema")),
     );
   }).pipe(Effect.withSpan("decodeBehavior"));
-}
-
-/**
- * The failing rule as a refusal names it: its place in the update, then its id.
- * @param path The rule's place in the update, when the refusal has one.
- * @param ruleId The rule's id, when the refusal has one.
- * @returns The subject, or undefined when the refusal names neither.
- */
-function editSubject(
-  path?: FirewallPolicyError["path"],
-  ruleId?: string,
-): string | undefined {
-  const place = path === undefined ? undefined : `${path[0]}[${path[1]}]`;
-  const rule = ruleId === undefined ? undefined : `rule ${ruleId}`;
-  return place !== undefined && rule !== undefined
-    ? `${place} (${rule})`
-    : (place ?? rule);
-}
-
-function failureDocs(
-  reason: MessagePolicyConfigurationFailure,
-  link: { readonly path?: string; readonly docs?: string },
-): string {
-  const path = link.path ?? "";
-  if (/^text\.(?:fixed|initial)Behaviors\./u.test(path)) {
-    return `${POLICY_SPEC}#behaviors`;
-  }
-  return link.docs ?? failureMessages[reason].docs;
 }
 
 function uniqueTextRuleIds(policy: typeof document.Type): boolean {
@@ -1078,6 +1026,58 @@ function invalidPolicy(
       `; invalid at ${paths.join(", ")}`,
     ),
   });
+}
+
+/**
+ * The operator message for a message-policy failure: its text, any detail,
+ * and one `Docs:` link. An entry under a behavior list links the behavior
+ * rules, `docs` replaces the failure's own troubleshooting entry, and an
+ * empty `docs` leaves the link out for a failure with no fix to point at.
+ * @param reason The closed failure.
+ * @param detail Text after the failure's own, starting with `; `.
+ * @param link The entry to link in place of the failure's own.
+ * @param link.path The failing policy entry, which links the behavior rules
+ *     when it names a behavior list.
+ * @param link.docs Another entry to link, or empty for none.
+ * @returns The message, naming no configured value.
+ */
+function policyFailureMessage(
+  reason: MessagePolicyConfigurationFailure,
+  detail: string,
+  link: { readonly path?: string; readonly docs?: string } = {},
+): string {
+  const docs = failureDocs(reason, link);
+  return docs === ""
+    ? `${failureMessages[reason].text}${detail}`
+    : `${failureMessages[reason].text}${detail}. Docs: ${docs}`;
+}
+
+/**
+ * The failing rule as a refusal names it: its place in the update, then its id.
+ * @param path The rule's place in the update, when the refusal has one.
+ * @param ruleId The rule's id, when the refusal has one.
+ * @returns The subject, or undefined when the refusal names neither.
+ */
+function editSubject(
+  path?: FirewallPolicyError["path"],
+  ruleId?: string,
+): string | undefined {
+  const place = path === undefined ? undefined : `${path[0]}[${path[1]}]`;
+  const rule = ruleId === undefined ? undefined : `rule ${ruleId}`;
+  return place !== undefined && rule !== undefined
+    ? `${place} (${rule})`
+    : (place ?? rule);
+}
+
+function failureDocs(
+  reason: MessagePolicyConfigurationFailure,
+  link: { readonly path?: string; readonly docs?: string },
+): string {
+  const path = link.path ?? "";
+  if (/^text\.(?:fixed|initial)Behaviors\./u.test(path)) {
+    return `${POLICY_SPEC}#behaviors`;
+  }
+  return link.docs ?? failureMessages[reason].docs;
 }
 
 function loadDecisionProvider(
