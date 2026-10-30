@@ -1,5 +1,6 @@
-/** @file Runtime state and interrupted admission checks survive store restart. */
-
+import * as Evidence from "./inbox/evidence.js";
+import type { TestStore } from "../__tests__/store-schema-fixtures.js";
+/** @file Runtime state and bounded conversation evidence survive store restart. */
 import { live as it } from "@effect/vitest";
 import { Array, Effect, Schema } from "effect";
 import { describe, expect } from "vitest";
@@ -7,7 +8,7 @@ import type {
   FirewallHistoryEntry,
   FirewallLocalEntry,
 } from "../firewall/store/types.js";
-import type { DaemonStore } from "./store.js";
+import { inspectEndpointStore } from "./store.js";
 import { digest } from "../__tests__/agent-card-fixtures.js";
 import {
   bytes,
@@ -18,14 +19,10 @@ import {
 import {
   type CertifiedRecord,
   DeliveryToken,
-  inspectEndpointStore,
 } from "../communication/store/index.js";
 import { WIRE_VERSION } from "../identity/wire-version.js";
-
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- Store mutation outcomes and recovery state are the contract under test. */
-
 const token = Schema.decodeUnknownSync(DeliveryToken)(digest("dlv_", 1));
-
 const identity = {
   agentId: "agent:alice",
   canonicalAgentCard: new Uint8Array([1, 2, 3]),
@@ -33,14 +30,13 @@ const identity = {
 const { foundation, record } = storedConversation("restart");
 const eventState = bytes('{"subscription":"private"}');
 const inboxItem = bytes('{"kind":"operationFailed"}');
-
 /**
  * Give the store Alice's identity, one certified conversation with a pending
  * delivery, a proposal lock, a message intent and a queued envelope, plus the
  * host's inbox and event state, and return the queued envelope's
  * outbox identity.
  */
-const seedState = (store: DaemonStore) =>
+const seedState = (store: TestStore) =>
   Effect.gen(function* () {
     yield* store.bindIdentity(identity);
     yield* store.putConversationFoundation(foundation);
@@ -76,21 +72,18 @@ const seedState = (store: DaemonStore) =>
     });
     return outbound.envelopeId;
   });
-
 function reportsHowCurrentStoreOpens() {
   const path = stateDirectory();
   return Effect.gen(function* () {
     const absent = yield* inspectEndpointStore(path);
     yield* withDaemonStore(path, seedState);
     const current = yield* inspectEndpointStore(path);
-
     expect([absent, current]).toEqual(["create", "reopen"]);
     expect(
       yield* withDaemonStore(path, (store) => store.readIdentity()),
     ).toEqual(identity);
   });
 }
-
 function preservesStateAcrossRestart() {
   const path = stateDirectory();
   return Effect.gen(function* () {
@@ -105,7 +98,7 @@ function preservesStateAcrossRestart() {
           inboxItem,
         );
         expect(
-          (yield* store.readFirewallEvidence({
+          (yield* Evidence.readFirewallEvidence({
             conversationId: foundation.conversationId,
             maximumRecords: 10,
           })).pendingOutgoing,
@@ -114,7 +107,6 @@ function preservesStateAcrossRestart() {
     );
   });
 }
-
 function scopesUnresolvedSendEvidenceToEachSlicesConversation() {
   const other = storedConversation("other-slice");
   const otherRecord = {
@@ -133,15 +125,15 @@ function scopesUnresolvedSendEvidenceToEachSlicesConversation() {
         recipientAgentId: identity.agentId,
         canonicalMessage: bytes("delivery"),
       });
-      const own = yield* store.readFirewallEvidence({
+      const own = yield* Evidence.readFirewallEvidence({
         conversationId: foundation.conversationId,
         maximumRecords: 10,
       });
-      const elsewhere = yield* store.readFirewallEvidence({
+      const elsewhere = yield* Evidence.readFirewallEvidence({
         conversationId: other.foundation.conversationId,
         maximumRecords: 10,
       });
-      const captured = yield* store.readFirewallEvidenceSlices({
+      const captured = yield* Evidence.readFirewallEvidenceSlices({
         ranges: [
           { beforeRecord: record.recordHash },
           { beforeRecord: otherRecord.recordHash },
@@ -150,7 +142,6 @@ function scopesUnresolvedSendEvidenceToEachSlicesConversation() {
         ],
         maximumRecords: 10,
       });
-
       expect(own.pendingOutgoing).toBe(true);
       expect(elsewhere.pendingOutgoing).toBe(false);
       expect(captured.slices[1]?.candidate).toBeDefined();
@@ -163,52 +154,11 @@ function scopesUnresolvedSendEvidenceToEachSlicesConversation() {
     }),
   );
 }
-
-function invalidatesInterruptedChecks() {
-  const path = stateDirectory();
-  const checkId = "interrupted-check";
-  const completion = { checkId, admit: true, canonicalResult: bytes("allow") };
-  return Effect.gen(function* () {
-    yield* withDaemonStore(path, (store) =>
-      Effect.gen(function* () {
-        yield* seedState(store);
-        yield* store.beginFirewallAttempt({
-          checkId,
-          direction: "outgoing",
-          canonicalCandidate: bytes("draft"),
-          canonicalInput: bytes("fixed policy and evidence"),
-        });
-      }),
-    );
-    yield* withDaemonStore(path, (store) =>
-      Effect.gen(function* () {
-        expect(
-          (yield* store.readFirewallEvidence({
-            conversationId: foundation.conversationId,
-            maximumRecords: 10,
-          })).pendingOutgoing,
-        ).toBe(true);
-        expect(
-          yield* Effect.flip(
-            store.completeFirewallAttempt(
-              completion,
-              "outgoing",
-              bytes("draft"),
-            ),
-          ),
-        ).toMatchObject({ reason: "conflict" });
-        expect((yield* store.recover()).messageIntents).toHaveLength(1);
-      }),
-    );
-  });
-}
-
 const local = bytes("local item");
 const historyDelivery = {
   recipientAgentId: identity.agentId,
   canonicalMessage: bytes("delivery"),
 };
-
 function historyRecord(ordinal: number): CertifiedRecord {
   const { record } = storedConversation("history-window");
   const recordHash = `rch_history:${ordinal}`;
@@ -232,14 +182,12 @@ function historyRecord(ordinal: number): CertifiedRecord {
     })),
   };
 }
-
 /** A window entry's bytes: a record's core, or a local entry's projection. */
 function entryBytes(entry: FirewallHistoryEntry | FirewallLocalEntry) {
   return "canonicalRecordCore" in entry
     ? entry.canonicalRecordCore
     : entry.canonicalEntry;
 }
-
 function selectsRecentHistoryFromALongConversation() {
   const { foundation } = storedConversation("history-window");
   const other = storedConversation("other-history");
@@ -251,7 +199,7 @@ function selectsRecentHistoryFromALongConversation() {
       yield* store.applyCertifiedRecord(other.record, delivery);
       yield* store.putConversationFoundation(foundation);
       yield* Effect.forEach(
-        Array.range(0, 1_003),
+        Array.range(0, 1003),
         (ordinal) =>
           store.applyCertifiedRecord(historyRecord(ordinal), delivery),
         { concurrency: 1, discard: true },
@@ -259,17 +207,16 @@ function selectsRecentHistoryFromALongConversation() {
       const candidate = (yield* store.readPendingDeliveries()).find(
         (item) => item.recordHash === "rch_history:1002",
       );
-      const incoming = yield* store.readFirewallEvidence({
+      const incoming = yield* Evidence.readFirewallEvidence({
         beforeDelivery: yield* Effect.fromNullable(
           candidate?.deliveryToken,
         ).pipe(Effect.orDie),
         maximumRecords: 2,
       });
-      const outgoing = yield* store.readFirewallEvidence({
+      const outgoing = yield* Evidence.readFirewallEvidence({
         conversationId: foundation.conversationId,
         maximumRecords: 2,
       });
-
       expect(incoming.history.map(entryBytes)).toEqual([
         bytes("history:1000"),
         bytes("history:1001"),
@@ -288,7 +235,6 @@ function selectsRecentHistoryFromALongConversation() {
     }),
   );
 }
-
 /** Whether a window omitted older entries, and whether it hit the byte bound. */
 function windowBounds(window: {
   readonly earlierHistoryOmitted: boolean;
@@ -299,7 +245,6 @@ function windowBounds(window: {
     overflow: window.overflow,
   };
 }
-
 /**
  * A local item's evidence is kept under its conversation's address and
  * follows the certified records that preceded its admission, so a window
@@ -311,7 +256,7 @@ function anchorsLocalEvidenceInItsConversation() {
     Effect.gen(function* () {
       const later = yield* seedLocalEvidenceBetweenRecords(store);
       const window = (maximumRecords: number, conversation = "agent:bob") =>
-        store.readFirewallEvidence({
+        Evidence.readFirewallEvidence({
           conversationId: foundation.conversationId,
           conversation,
           maximumRecords,
@@ -319,12 +264,11 @@ function anchorsLocalEvidenceInItsConversation() {
       const whole = yield* window(10);
       const recent = yield* window(3);
       const elsewhere = yield* window(10, "agent:carol");
-      const beforeLater = yield* store.readFirewallEvidence({
+      const beforeLater = yield* Evidence.readFirewallEvidence({
         beforeDelivery: later,
         conversation: "agent:bob",
         maximumRecords: 10,
       });
-
       const records = [0, 1, 2, 3].map((ordinal) =>
         bytes(`history:${ordinal}`),
       );
@@ -350,7 +294,6 @@ function anchorsLocalEvidenceInItsConversation() {
     }),
   );
 }
-
 /**
  * Two records, then a local item queued with evidence under `agent:bob`, a
  * third record certified before the item is admitted, and a fourth after.
@@ -358,7 +301,7 @@ function anchorsLocalEvidenceInItsConversation() {
  * @param store The store to seed.
  * @returns The delivery of the first record after the local item.
  */
-function seedLocalEvidenceBetweenRecords(store: DaemonStore) {
+function seedLocalEvidenceBetweenRecords(store: TestStore) {
   const { foundation } = storedConversation("history-window");
   return Effect.gen(function* () {
     yield* store.bindIdentity(identity);
@@ -376,17 +319,10 @@ function seedLocalEvidenceBetweenRecords(store: DaemonStore) {
     });
     yield* store.applyCertifiedRecord(historyRecord(2), historyDelivery);
     expect(
-      yield* store.admitFirewallLocalItem({
+      yield* store.saveResultDecision({
         queuedItem: local,
         item: { deliveryToken: token, canonicalItem: bytes("projection") },
         completions: [],
-        deterministic: {
-          checkId: "local-check",
-          direction: "incoming",
-          canonicalCandidate: local,
-          canonicalInput: bytes("fixed policy"),
-          canonicalResult: bytes("allow"),
-        },
         answers: [],
         evidence: {
           conversation: "agent:bob",
@@ -400,7 +336,6 @@ function seedLocalEvidenceBetweenRecords(store: DaemonStore) {
     return yield* Effect.fromNullable(later?.deliveryToken).pipe(Effect.orDie);
   });
 }
-
 describe("endpoint runtime state", () => {
   it(
     "preserves identity, protocol and admitted runtime state across restart",
@@ -411,22 +346,17 @@ describe("endpoint runtime state", () => {
     scopesUnresolvedSendEvidenceToEachSlicesConversation,
   );
   it(
-    "invalidates interrupted checks while preserving unresolved intent evidence",
-    invalidatesInterruptedChecks,
-  );
-  it(
     "reports creation and reopening without changing stored identity",
     reportsHowCurrentStoreOpens,
   );
   it(
     "selects recent incoming and outgoing windows from a long conversation",
     selectsRecentHistoryFromALongConversation,
-    { timeout: 30_000 },
+    { timeout: 30000 },
   );
   it(
     "orders a local item's evidence where it was queued, before records certified while it waited",
     anchorsLocalEvidenceInItsConversation,
   );
 });
-
 /* eslint-enable agent-code-guard/no-hardcoded-assertion-literals -- Restore repository defaults. */

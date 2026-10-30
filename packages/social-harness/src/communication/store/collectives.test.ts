@@ -1,22 +1,17 @@
+import type { TestStore } from "../../__tests__/store-schema-fixtures.js";
 /**
  * @file Collective identities and message claims survive protocol store reopening.
  */
-
 import { live as it } from "@effect/vitest";
 import { Effect } from "effect";
 import { expect } from "vitest";
-import type {
-  CollectiveOperationInput,
-  EndpointStore,
-  MessageIntent,
-} from "./index.js";
+import type { CollectiveOperationInput, MessageIntent } from "./index.js";
 import {
   bytes,
   stateDirectory,
   storedConversation,
-  withStore,
+  withDaemonStore,
 } from "../../__tests__/store-schema-fixtures.js";
-
 const { foundation, record } = storedConversation("collective-request");
 const request = bytes("authenticated request bytes");
 const remote: CollectiveOperationInput = {
@@ -41,8 +36,7 @@ const intent = (msgId: string): MessageIntent => ({
   membershipHash: foundation.membershipHash,
   canonicalIntent: bytes(msgId),
 });
-
-function seed(store: EndpointStore) {
+function seed(store: TestStore) {
   return Effect.gen(function* () {
     yield* store.bindIdentity({
       agentId: "agent:alice",
@@ -60,21 +54,19 @@ function seed(store: EndpointStore) {
     return delivery;
   });
 }
-
 // @agent-code-guard/regression-only: transaction and reopen cases exercise immutable identity, selection, and query boundaries.
 it("binds a collective id to one authenticated origin and exact request bytes across reopen", () =>
   Effect.gen(function* () {
     const path = stateDirectory();
-    yield* withStore(path, rejectChangedOrigin);
-    const retained = yield* withStore(path, assertRetainedOrigins);
+    yield* withDaemonStore(path, rejectChangedOrigin);
+    const retained = yield* withDaemonStore(path, assertRetainedOrigins);
     expect(retained).toHaveLength(2);
   }));
-
 it("requires an accepted request before atomically claiming one response intent", () =>
   Effect.gen(function* () {
     const path = stateDirectory();
-    yield* withStore(path, claimAnswer);
-    const messages = yield* withStore(path, (store) =>
+    yield* withDaemonStore(path, claimAnswer);
+    const messages = yield* withDaemonStore(path, (store) =>
       store.readCollectiveMessages(),
     );
     expect(
@@ -84,10 +76,12 @@ it("requires an accepted request before atomically claiming one response intent"
       })),
     ).toEqual([{ role: "response", msgId: "first-answer" }]);
   }));
-
 it("reads one retained operation and only the message roles requested for that operation", () =>
   Effect.gen(function* () {
-    const found = yield* withStore(stateDirectory(), readOperationQueries);
+    const found = yield* withDaemonStore(
+      stateDirectory(),
+      readOperationQueries,
+    );
     expect(found).toMatchObject({
       local: { ...local, phase: "finalizing" },
       remote: { operationId: remote.operationId, phase: "collecting" },
@@ -96,8 +90,7 @@ it("reads one retained operation and only the message roles requested for that o
       responses: ["remote-response"],
     });
   }));
-
-function readOperationQueries(store: EndpointStore) {
+function readOperationQueries(store: TestStore) {
   return Effect.gen(function* () {
     yield* seed(store);
     yield* store.putCollectiveOperation(local);
@@ -138,8 +131,7 @@ function readOperationQueries(store: EndpointStore) {
     };
   });
 }
-
-function rejectChangedOrigin(store: EndpointStore) {
+function rejectChangedOrigin(store: TestStore) {
   return Effect.gen(function* () {
     yield* seed(store);
     yield* store.putCollectiveOperation(local);
@@ -162,8 +154,7 @@ function rejectChangedOrigin(store: EndpointStore) {
     yield* store.putCollectiveOperation(remote);
   });
 }
-
-function assertRetainedOrigins(store: EndpointStore) {
+function assertRetainedOrigins(store: TestStore) {
   return Effect.gen(function* () {
     yield* store.putCollectiveOperation(local);
     yield* store.putCollectiveOperation(remote);
@@ -186,8 +177,7 @@ function assertRetainedOrigins(store: EndpointStore) {
     return yield* store.readCollectiveOperations();
   });
 }
-
-function claimAnswer(store: EndpointStore) {
+function claimAnswer(store: TestStore) {
   return Effect.gen(function* () {
     yield* seed(store);
     const binding = {
@@ -221,8 +211,7 @@ function claimAnswer(store: EndpointStore) {
     ).toEqual(["first-answer"]);
   });
 }
-
-function bindFrozenClose(store: EndpointStore) {
+function bindFrozenClose(store: TestStore) {
   return Effect.gen(function* () {
     const close = {
       kind: "existing-conversation",

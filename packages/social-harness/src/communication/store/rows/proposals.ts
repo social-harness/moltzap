@@ -89,8 +89,7 @@ export function releaseProposalLock(
      WHERE conversation_id = ?1 AND action_hash = ?2`,
     ]) {
       yield* database.unsafe<Readonly<Record<string, unknown>>>(statement, [
-        lock.conversationId,
-        lock.actionHash,
+        { 1: lock.conversationId, 2: lock.actionHash },
       ]);
     }
   }).pipe(storeOperation);
