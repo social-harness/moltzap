@@ -12,7 +12,7 @@ import {
   recordHashOf,
 } from "../../__tests__/collective-operation-fixtures.js";
 import { makeCollectiveOperations } from "../../__tests__/collective-send.js";
-import { collectivePersistencePorts } from "../../__tests__/collective-storage-stub.js";
+import { collectivePersistencePorts } from "../../__tests__/collective-message-fixtures.js";
 import { engineFixture } from "../../__tests__/firewall-runtime-fixtures.js";
 import {
   stateDirectory,

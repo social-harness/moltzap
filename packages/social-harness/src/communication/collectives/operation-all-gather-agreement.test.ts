@@ -45,7 +45,7 @@ import {
   type TestCollectiveOperations as CollectiveOperations,
   makeCollectiveOperations,
 } from "../../__tests__/collective-send.js";
-import { collectivePersistencePorts } from "../../__tests__/collective-storage-stub.js";
+import { collectivePersistencePorts } from "../../__tests__/collective-message-fixtures.js";
 import { InboundMessage } from "../conversations/message.js";
 import { Content } from "../records/index.js";
 import { AgentAddress } from "../records/values.js";

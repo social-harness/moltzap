@@ -13,7 +13,7 @@ import {
   type TestCollectiveOperations as CollectiveOperations,
   makeCollectiveOperations,
 } from "../../__tests__/collective-send.js";
-import { collectivePersistencePorts } from "../../__tests__/collective-storage-stub.js";
+import { collectivePersistencePorts } from "../../__tests__/collective-message-fixtures.js";
 import {
   engineFixture,
   seedIncoming,

@@ -1,6 +1,7 @@
 /** @file Recording ports, message builders and send helpers shared by the collective operation tests. */
 
 import { Duration, Effect, Schema, type Scope } from "effect";
+import { createHash } from "node:crypto";
 import type { CollectivePorts } from "../communication/collectives/ports.js";
 import type { InboundItem } from "../host-protocol/items.js";
 import {
@@ -24,7 +25,7 @@ import {
   type TestCollectiveOperations as CollectiveOperations,
   makeCollectiveOperations,
 } from "./collective-send.js";
-import { collectivePersistencePorts } from "./collective-storage-stub.js";
+import { collectivePersistencePorts } from "./collective-message-fixtures.js";
 
 /** The agent a layer `makeLayer` builds runs as unless told otherwise. */
 export const alice = Schema.decodeUnknownSync(AgentAddress)("agent:alice");
@@ -63,9 +64,6 @@ export const gatherTo = "group:alice,bob,carol";
  */
 export const recordHashOf = (byte: number) =>
   Schema.decodeUnknownSync(RecordHash)(digest("rch_", byte));
-
-/** The record hash every message `classifyMessage` classifies carries. */
-const recordHash = recordHashOf(0);
 
 /** What a layer's ports saw: the messages it certified and the items it emitted, in order. */
 export interface Observed {
@@ -181,16 +179,25 @@ export const makeLayer = (
         }
         return Effect.fail(new SendError({ reason }));
       }, self);
-      return yield* makeCollectiveOperations({
-        ...persistence,
-        self: testAgentView(self),
-        prepareMessage: prepareKnownMembers(
-          persistence.prepareMessage,
-          unknown,
-        ),
-        emit,
-        scope,
-      });
+      const operations = yield* persistence.run(
+        makeCollectiveOperations({
+          ...persistence,
+          self: testAgentView(self),
+          prepareMessage: prepareKnownMembers(
+            persistence.prepareMessage,
+            unknown,
+          ),
+          emit,
+          scope,
+        }),
+      );
+      return {
+        ...operations,
+        classify: (message: Parameters<CollectiveOperations["classify"]>[0]) =>
+          persistence
+            .certifyInput(message)
+            .pipe(Effect.zipRight(operations.classify(message))),
+      };
     }),
   ).pipe(Effect.orDie, Effect.withSpan("makeLayer"));
 
@@ -263,7 +270,13 @@ export const answerMessage = (
 export const classifyMessage = (
   layer: CollectiveOperations,
   message: InboundMessage,
-) => layer.classify({ message, recordHash });
+) =>
+  layer.classify({
+    message,
+    recordHash: Schema.decodeUnknownSync(RecordHash)(
+      `rch_${createHash("sha256").update(JSON.stringify(message)).digest("base64url")}`,
+    ),
+  });
 
 /**
  * Send an unvalidated input through the layer, decoding it first.
