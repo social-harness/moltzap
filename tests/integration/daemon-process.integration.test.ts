@@ -59,7 +59,7 @@ interface RegisteredFixture extends DaemonProcessFixture {
 const registerFixture = (fixture: DaemonProcessFixture) =>
   Effect.scoped(
     Effect.gen(function* () {
-      const management = yield* acquireDaemonManagementClient(fixture.endpoint);
+      const management = yield* acquireDaemonManagementClient(fixture);
       expect(yield* management.status()).toEqual({ kind: "unregistered" });
 
       const registered = yield* management
@@ -97,8 +97,14 @@ const deliverDirect = (input: {
 }) =>
   Effect.scoped(
     Effect.gen(function* () {
-      const sender = yield* acquireHarnessEndpoint(input.from.endpoint);
-      const receiver = yield* acquireHarnessEndpoint(input.to.endpoint);
+      const sender = yield* acquireHarnessEndpoint(input.from.endpoint, {
+        credential: input.from.mcpCredential,
+        receiveMode: "push",
+      });
+      const receiver = yield* acquireHarnessEndpoint(input.to.endpoint, {
+        credential: input.to.mcpCredential,
+        receiveMode: "push",
+      });
       const delivery = yield* Effect.forkScoped(
         nextDelivery(receiver.messages),
       );
@@ -239,9 +245,7 @@ function expectRetiredConversationIdentifierRefused(
   return Effect.gen(function* () {
     yield* Effect.scoped(
       Effect.gen(function* () {
-        const management = yield* acquireDaemonManagementClient(
-          callerFixture.endpoint,
-        );
+        const management = yield* acquireDaemonManagementClient(callerFixture);
         const retiredIdentifier = "retired-public-identifier";
         const malformed = yield* management.callExpectingProtocolError(
           "read_conversation",
@@ -273,7 +277,7 @@ const withoutAdmissionCredential = (
 const readActiveStatus = (fixture: DaemonProcessFixture) =>
   Effect.scoped(
     Effect.gen(function* () {
-      const management = yield* acquireDaemonManagementClient(fixture.endpoint);
+      const management = yield* acquireDaemonManagementClient(fixture);
       return yield* management.status();
     }),
   );
@@ -347,7 +351,7 @@ const readDurableHistory = (
 ) =>
   Effect.scoped(
     Effect.gen(function* () {
-      const management = yield* acquireDaemonManagementClient(fixture.endpoint);
+      const management = yield* acquireDaemonManagementClient(fixture);
       expect(yield* management.searchConversations()).toEqual({
         kind: "page",
         addresses: [address],
@@ -754,8 +758,14 @@ function exchangeInitialMessagesAndExpectDelivery(state: ProcessScenario) {
       state;
     yield* Effect.scoped(
       Effect.gen(function* () {
-        const caller = yield* acquireHarnessEndpoint(callerFixture.endpoint);
-        const target = yield* acquireHarnessEndpoint(targetFixture.endpoint);
+        const caller = yield* acquireHarnessEndpoint(callerFixture.endpoint, {
+          credential: callerFixture.mcpCredential,
+          receiveMode: "push",
+        });
+        const target = yield* acquireHarnessEndpoint(targetFixture.endpoint, {
+          credential: targetFixture.mcpCredential,
+          receiveMode: "push",
+        });
         const callerDelivery = yield* Effect.forkScoped(
           nextDelivery(caller.messages),
         );

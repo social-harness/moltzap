@@ -91,7 +91,7 @@ const awaitParkedResponse = (parkedResponses: Effect.Effect<number>) =>
 const readHistory = (fixture: DaemonProcessFixture, address: AgentAddress) =>
   Effect.scoped(
     Effect.gen(function* () {
-      const management = yield* acquireDaemonManagementClient(fixture.endpoint);
+      const management = yield* acquireDaemonManagementClient(fixture);
       const history = yield* management.readConversation(address);
 
       expectEveryMemberSigned(history.records, [
@@ -220,8 +220,14 @@ function waitForHeldDelivery(pair: HeldPair) {
       pair;
     const senderAddress = directAddress(senderFixture.agentName);
     const targetAddress = directAddress(targetFixture.agentName);
-    const sender = yield* acquireHarnessEndpoint(senderFixture.endpoint);
-    const target = yield* acquireHarnessEndpoint(targetFixture.endpoint);
+    const sender = yield* acquireHarnessEndpoint(senderFixture.endpoint, {
+      credential: senderFixture.mcpCredential,
+      receiveMode: "push",
+    });
+    const target = yield* acquireHarnessEndpoint(targetFixture.endpoint, {
+      credential: targetFixture.mcpCredential,
+      receiveMode: "push",
+    });
     const senderInbox = yield* collectDeliveries(sender.messages);
     const targetInbox = yield* collectDeliveries(target.messages);
 

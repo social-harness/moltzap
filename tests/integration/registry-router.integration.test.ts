@@ -923,9 +923,7 @@ const concurrentRegistration = Effect.gen(function* () {
     fixtures,
     (fixture) =>
       Effect.gen(function* () {
-        const management = yield* acquireDaemonManagementClient(
-          fixture.endpoint,
-        );
+        const management = yield* acquireDaemonManagementClient(fixture);
         const registered = yield* management.register(
           makeRegistrationRequest(fixture),
         );

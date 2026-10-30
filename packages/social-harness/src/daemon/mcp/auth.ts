@@ -7,7 +7,7 @@ const digest = (value: string): Uint8Array =>
   createHash("sha256").update(value).digest();
 
 /** Compares fixed-size digests without disclosing credential bytes or lengths. */
-export const credentialMatches = (
+const credentialMatches = (
   supplied: string,
   expected: Redacted.Redacted,
 ): boolean =>
@@ -19,6 +19,9 @@ export const authenticateHarnessRequest = (
   credential: Redacted.Redacted,
 ): boolean => {
   const authorization = request.headers.get("authorization");
-  return authorization !== null && authorization.startsWith("Bearer ") &&
-    credentialMatches(authorization.slice("Bearer ".length), credential);
+  return (
+    authorization !== null &&
+    authorization.startsWith("Bearer ") &&
+    credentialMatches(authorization.slice("Bearer ".length), credential)
+  );
 };

@@ -95,7 +95,7 @@ const eventHandler = (events: HarnessEvents) =>
     () => {
       const capabilities = { events: {}, logging: {} };
       const server = new McpServer(info, { capabilities });
-      events.install(server.server, "owner");
+      events.install(server.server);
       return server;
     },
     { legacy: "reject", responseMode: "auto" },
@@ -156,7 +156,7 @@ const acquireFixture = Effect.fn("acquireConsumerFixture")(function* (
   };
 });
 
-it("closes a native request when a later owner revocation waits for its gate", () =>
+it("closes a native request when a later consumer revocation waits for its gate", () =>
   Effect.gen(function* () {
     const fixture = yield* acquireFixture(false);
     const grant = yield* fixture.poll.poll(
@@ -165,7 +165,7 @@ it("closes a native request when a later owner revocation waits for its gate", (
       Effect.void,
     );
     const native = yield* fixture.events
-      .nativeOperation(grant._meta, fixture.blocked, true)
+      .nativeOperation(grant._meta, fixture.blocked)
       .pipe(Effect.forkIn(fixture.requests));
     yield* Deferred.await(fixture.entered);
     fixture.observe();
@@ -179,7 +179,7 @@ it("closes a native request when a later owner revocation waits for its gate", (
     yield* Fiber.await(revoke);
   }));
 
-it("rejects a bound renewal queued before owner revocation without renewing its lease", () =>
+it("rejects a bound renewal queued before consumer revocation without renewing its lease", () =>
   Effect.gen(function* () {
     const fixture = yield* acquireFixture(false);
     const grant = yield* fixture.poll.poll(
@@ -188,7 +188,7 @@ it("rejects a bound renewal queued before owner revocation without renewing its 
       Effect.void,
     );
     const native = yield* fixture.events
-      .nativeOperation(grant._meta, fixture.blocked, true)
+      .nativeOperation(grant._meta, fixture.blocked)
       .pipe(Effect.forkIn(fixture.requests));
     yield* Deferred.await(fixture.entered);
     fixture.observe();

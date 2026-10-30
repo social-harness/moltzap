@@ -6,7 +6,7 @@ redelivery and receipt fencing. A local work reference wakes Muse. The receiver
 acknowledges only after the started worker confirms that same event and attempt.
 
 The hook has no Client credential. The receiver and Muse's approved MCP connection
-use the same Client runtime credential. Event references need endpoint access to
+use the same daemon MCP credential. Event references need endpoint access to
 retrieve content, and must be handled like that content.
 
 Distribution, hosted onboarding, native hook compatibility and the real Muse
@@ -22,7 +22,7 @@ the VM's supported process supervisor with restart backoff.
 | Receiver variable | Purpose |
 | --- | --- |
 | `SHARNESS_MCP_URL` | Client endpoint; authenticated polling accepts HTTPS or literal loopback HTTP. |
-| `SHARNESS_RUNTIME_TOKEN` | The installation's Client credential from its secret store. |
+| `SHARNESS_MCP_TOKEN` | The installation's Client credential from its secret store. |
 | `SHARNESS_MUSE_STATE_DIR` | Absolute persistent handoff directory. New directories use mode 0700; reference files use 0600. |
 | `SHARNESS_MUSE_OPERATION` | `receive` by default; `detect` and `accept` run the native commands below. |
 

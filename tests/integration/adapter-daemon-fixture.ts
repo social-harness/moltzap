@@ -539,7 +539,7 @@ export function startOpenClawGateway(
   return Effect.gen(function* () {
     const cfg = openClawConfig(target.stateDirectory);
     const connected = yield* Deferred.make<undefined>();
-    yield* useDaemonEndpoint(target.endpoint.href);
+    yield* useDaemonEndpoint(target);
 
     const abortController = new AbortController();
     yield* Effect.addFinalizer(() =>
@@ -720,7 +720,7 @@ function isStableOpenClawEntry(value: unknown): value is StableOpenClawEntry {
 function registerFixture(fixture: DaemonProcessFixture) {
   return Effect.scoped(
     Effect.gen(function* () {
-      const management = yield* acquireDaemonManagementClient(fixture.endpoint);
+      const management = yield* acquireDaemonManagementClient(fixture);
       expect(yield* management.status()).toEqual({ kind: "unregistered" });
       const registered = yield* management
         .register(makeRegistrationRequest(fixture))
@@ -746,7 +746,7 @@ function assertFixtureHistory(
 ) {
   return Effect.scoped(
     Effect.gen(function* () {
-      const management = yield* acquireDaemonManagementClient(fixture.endpoint);
+      const management = yield* acquireDaemonManagementClient(fixture);
       expect(yield* management.searchConversations()).toEqual({
         kind: "page",
         addresses: [peerAddress],
@@ -928,9 +928,10 @@ function dispatchOpenClawReply(
 }
 
 /** Restores the process-global endpoint after the serial OpenClaw acceptance scope. */
-function useDaemonEndpoint(endpoint: string) {
+function useDaemonEndpoint(fixture: DaemonProcessFixture) {
   return Effect.gen(function* () {
-    vi.stubEnv("SHARNESS_MCP_URL", endpoint);
+    vi.stubEnv("SHARNESS_MCP_URL", fixture.endpoint.href);
+    vi.stubEnv("SHARNESS_MCP_CREDENTIAL_FILE", fixture.mcpCredentialFile);
 
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {

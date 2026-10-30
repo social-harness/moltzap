@@ -84,7 +84,10 @@ function runOpenClawScenario() {
   return Effect.scoped(
     Effect.gen(function* () {
       const scenario = yield* acquireScenario("openclaw");
-      const caller = yield* acquireHarnessEndpoint(scenario.caller.endpoint);
+      const caller = yield* acquireHarnessEndpoint(scenario.caller.endpoint, {
+        credential: scenario.caller.mcpCredential,
+        receiveMode: "push",
+      });
       const callerAddress = directAddress(scenario.caller.agentName);
       const targetAddress = directAddress(scenario.target.agentName);
       const {
@@ -130,7 +133,10 @@ function runOpenClawGatherScenario() {
   return Effect.scoped(
     Effect.gen(function* () {
       const scenario = yield* acquireScenario("openclaw-gather");
-      const caller = yield* acquireHarnessEndpoint(scenario.caller.endpoint);
+      const caller = yield* acquireHarnessEndpoint(scenario.caller.endpoint, {
+        credential: scenario.caller.mcpCredential,
+        receiveMode: "push",
+      });
       const callerAddress = directAddress(scenario.caller.agentName);
       const targetAddress = directAddress(scenario.target.agentName);
       const cfg = openClawConfig(scenario.target.stateDirectory);
@@ -184,8 +190,14 @@ function runOpenClawAllGatherScenario() {
   return Effect.scoped(
     Effect.gen(function* () {
       const scenario = yield* acquireGroupScenario("openclaw-all-gather");
-      const caller = yield* acquireHarnessEndpoint(scenario.caller.endpoint);
-      const peer = yield* acquireHarnessEndpoint(scenario.peer.endpoint);
+      const caller = yield* acquireHarnessEndpoint(scenario.caller.endpoint, {
+        credential: scenario.caller.mcpCredential,
+        receiveMode: "push",
+      });
+      const peer = yield* acquireHarnessEndpoint(scenario.peer.endpoint, {
+        credential: scenario.peer.mcpCredential,
+        receiveMode: "push",
+      });
       const callerAddress = directAddress(scenario.caller.agentName);
       const peerAddress = directAddress(scenario.peer.agentName);
       const targetAddress = directAddress(scenario.target.agentName);

@@ -85,7 +85,6 @@ export interface HarnessEvents {
   readonly nativeOperation: <A, E>(
     metadata: unknown,
     operation: Effect.Effect<A, E>,
-    required: boolean,
   ) => Effect.Effect<A, E | ProtocolError>;
 }
 
@@ -439,20 +438,14 @@ const installReadHandlers = (
       ),
   );
 };
-const subscribe = (
-  runtime: EventsRuntime,
-  input: EventSubscribeInput,
-) => {
+const subscribe = (runtime: EventsRuntime, input: EventSubscribeInput) => {
   requireProtocolActive(runtime.options);
   if (input.name !== INBOX_ITEM_EVENT) {
     throw new ProtocolError(-32011, "Event not found", { kind: "event" });
   }
   requireNoReplay(input.cursor);
   const webhook = runtime.options.webhook;
-  if (
-    webhook === undefined ||
-    input.delivery.mode !== "webhook"
-  ) {
+  if (webhook === undefined || input.delivery.mode !== "webhook") {
     throw new ProtocolError(-32014, "Webhook delivery is unavailable", {
       feature: "deliveryMode",
       value: input.delivery.mode,
@@ -479,10 +472,7 @@ const subscribe = (
       ),
     );
 };
-const unsubscribe = (
-  runtime: EventsRuntime,
-  input: EventUnsubscribeInput,
-) => {
+const unsubscribe = (runtime: EventsRuntime, input: EventUnsubscribeInput) => {
   if (input.name !== INBOX_ITEM_EVENT) {
     throw new ProtocolError(-32011, "Event not found", { kind: "event" });
   }
@@ -501,10 +491,7 @@ const unsubscribe = (
     Effect.as({}),
   );
 };
-const install = (
-  runtime: EventsRuntime,
-  server: McpServer["server"],
-) => {
+const install = (runtime: EventsRuntime, server: McpServer["server"]) => {
   installReadHandlers(runtime, server);
   server.setRequestHandler(
     "events/subscribe",
@@ -575,16 +562,13 @@ const nativeOperation = <A, E>(
   runtime: EventsRuntime,
   metadata: unknown,
   operation: Effect.Effect<A, E>,
-  required: boolean,
 ) =>
-  runtime.options.poll?.nativeOperation(metadata, operation, required) ??
+  runtime.options.poll?.nativeOperation(metadata, operation) ??
   decodeConsumerMetadata(metadata).pipe(
     Effect.catchTag("ParseError", () => Effect.fail(invalidMetadata())),
     Effect.flatMap(
       (binding): Effect.Effect<A, E | ProtocolError> =>
-        required || binding !== undefined
-          ? Effect.fail(consumerLost())
-          : operation,
+        binding !== undefined ? Effect.fail(consumerLost()) : operation,
     ),
   );
 const assembled = (runtime: EventsRuntime): HarnessEvents => ({
@@ -602,8 +586,8 @@ const assembled = (runtime: EventsRuntime): HarnessEvents => ({
   close: close(runtime),
   status: status(runtime),
   revoke: revoke(runtime),
-  nativeOperation: (metadata, operation, required) =>
-    nativeOperation(runtime, metadata, operation, required),
+  nativeOperation: (metadata, operation) =>
+    nativeOperation(runtime, metadata, operation),
   resume: (runtime.options.webhook?.resume ?? Effect.void).pipe(
     Effect.tap(() => Effect.sync(() => runtime.wakeups.unsafeOffer(true))),
   ),

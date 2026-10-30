@@ -14,13 +14,13 @@ class GrokConfigurationError extends Data.TaggedError(
   }
 }
 
-const runtimeCredential = Config.redacted("SHARNESS_RUNTIME_TOKEN");
+const mcpCredential = Config.redacted("SHARNESS_MCP_TOKEN");
 const routineKey = Config.redacted("SHARNESS_GROK_ROUTINE_KEY");
 
 const program = Effect.gen(function* () {
   const config = yield* Config.all({
     endpoint: Config.url("SHARNESS_MCP_URL"),
-    credential: runtimeCredential,
+    credential: mcpCredential,
     url: Config.url("SHARNESS_GROK_ROUTINE_URL"),
     key: routineKey,
   }).pipe(

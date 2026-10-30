@@ -48,7 +48,11 @@ const SLOT_SCHEMA = {
 };
 
 /** The parts of a network endpoint the cases use. */
-interface Endpoint extends Pick<NetworkEndpoint, "address" | "mcp" | "agent"> {
+interface Endpoint
+  extends Pick<
+    NetworkEndpoint,
+    "address" | "mcp" | "agent" | "mcpCredentialFile"
+  > {
   send(input: object): Promise<{ readonly operationId?: string }>;
   next(count: number): Promise<readonly unknown[]>;
   history(address: string): Promise<readonly unknown[]>;
@@ -126,7 +130,7 @@ async function routesThroughNativeBoundaries({
   const callerReceived = caller.next(2);
   const peerReceived = peer.next(1);
   await runProbe(
-    target.mcp,
+    target,
     [
       { to: caller.address, text: DIRECT_REPLY },
       { to: shared, text: GROUP_REPLY, final: true },
@@ -194,7 +198,7 @@ async function answersAndStartsGather({
   const operationId = started.operationId ?? "";
   const received = caller.next(1);
   await runProbe(
-    target.mcp,
+    target,
     [
       { to: caller.address, text: acceptText("tue") },
       { to: caller.address, text: gatherText("gather") },
@@ -254,7 +258,7 @@ async function answersAndStartsAllGather(endpoints: Trio): Promise<undefined> {
   const group = groupAddress([caller, target, peer]);
   const operationId = await startDeclinedAllGather(endpoints, group);
   await runProbe(
-    target.mcp,
+    target,
     [
       { to: group, text: acceptText("tue") },
       { to: group, text: gatherText("all_gather") },
@@ -391,7 +395,7 @@ async function completesPendingSendOnce(
   await caller.send({ to: target.address, text: INBOUND });
   await awaitRecordedLast(target, caller.address, INBOUND);
   const delivery = await whileRouterHeld(network, () =>
-    probeDelivery(target.mcp, [{ to: caller.address, text: PENDING_SEND }], {
+    probeDelivery(target, [{ to: caller.address, text: PENDING_SEND }], {
       platformId: caller.address,
       sender: caller.address,
       text: INBOUND,
@@ -529,12 +533,12 @@ function multicastSummary(item: unknown): Readonly<Record<string, unknown>> {
  * delivery pass completed every send, leaving none for a retry.
  */
 async function runProbe(
-  mcp: URL,
+  daemon: Pick<Endpoint, "mcp" | "mcpCredentialFile">,
   destinations: readonly Destination[],
   inbound: ExpectedInbound,
 ): Promise<undefined> {
   const { delivered, retried } = await probeDelivery(
-    mcp,
+    daemon,
     destinations,
     inbound,
   );
@@ -549,7 +553,7 @@ async function runProbe(
  * at `mcp`, and return its report once it exits 0.
  */
 async function probeDelivery(
-  mcp: URL,
+  daemon: Pick<Endpoint, "mcp" | "mcpCredentialFile">,
   destinations: readonly Destination[],
   inbound: ExpectedInbound,
 ): Promise<ProbeReport> {
@@ -559,10 +563,14 @@ async function probeDelivery(
       "run",
       "--rm",
       "--pull=never",
-      `--network=container:${mcp.port ? "sharness-daemon-" + mcp.port : ""}`,
+      `--network=container:${daemon.mcp.port ? "sharness-daemon-" + daemon.mcp.port : ""}`,
       "--entrypoint=node",
       "--env",
-      `SHARNESS_MCP_URL=${mcp.href}`,
+      `SHARNESS_MCP_URL=${daemon.mcp.href}`,
+      "--env",
+      "SHARNESS_MCP_CREDENTIAL_FILE=/run/sharness-mcp-credential",
+      "--volume",
+      `${daemon.mcpCredentialFile}:/run/sharness-mcp-credential:ro`,
       "--env",
       `NANOCLAW_DESTINATIONS_JSON=${JSON.stringify(destinations)}`,
       "--env",

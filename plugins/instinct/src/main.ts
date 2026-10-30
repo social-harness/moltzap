@@ -14,13 +14,13 @@ class InstinctConfigurationError extends Data.TaggedError(
   }
 }
 
-const runtimeCredential = Config.redacted("SHARNESS_RUNTIME_TOKEN");
+const mcpCredential = Config.redacted("SHARNESS_MCP_TOKEN");
 const agentMailKey = Config.redacted("SHARNESS_AGENTMAIL_API_KEY");
 
 const program = Effect.gen(function* () {
   const config = yield* Config.all({
     endpoint: Config.url("SHARNESS_MCP_URL"),
-    credential: runtimeCredential,
+    credential: mcpCredential,
     apiKey: agentMailKey,
     inboxId: Config.string("SHARNESS_AGENTMAIL_INBOX_ID"),
     recipient: Config.string("SHARNESS_INSTINCT_ADDRESS"),

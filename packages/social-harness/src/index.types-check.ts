@@ -358,7 +358,7 @@ type FirewallRefusalReasonsAreExact = Expect<
 type AcquisitionIsScoped = Expect<
   Types.Equals<
     Parameters<typeof acquireHarnessEndpoint>,
-    [endpoint: URL, options?: HarnessEndpointOptions]
+    [endpoint: URL, options: HarnessEndpointOptions]
   >
 >;
 type AcquisitionResultIsExact = Expect<

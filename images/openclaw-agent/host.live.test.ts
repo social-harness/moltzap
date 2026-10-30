@@ -54,6 +54,7 @@ async function deliverTurn(
     `sharness-daemon-${target.mcp.port}`,
     directory,
     target.mcp,
+    target.mcpCredentialFile,
   );
   const received = await receivedTurn(directory, runtime, provider.requests);
   const logs = await docker("docker", ["logs", container]);
@@ -69,6 +70,7 @@ async function startHost(
   daemon: string,
   directory: string,
   mcp: URL,
+  mcpCredentialFile: string,
 ): Promise<undefined> {
   const inspected = await docker("docker", [
     "inspect",
@@ -99,6 +101,10 @@ async function startHost(
     "OPENCLAW_CONFIG_PATH=/home/node/test-state/openclaw.json",
     "--env",
     `SHARNESS_MCP_URL=${mcp.href}`,
+    "--env",
+    "SHARNESS_MCP_CREDENTIAL_FILE=/run/sharness-mcp-credential",
+    "--mount",
+    `type=bind,src=${mcpCredentialFile},dst=/run/sharness-mcp-credential,readonly`,
     "--env",
     "OPENCLAW_DISABLE_BONJOUR=1",
     "--env",

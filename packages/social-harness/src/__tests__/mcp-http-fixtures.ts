@@ -6,8 +6,17 @@ import {
   type ClientOptions,
   StreamableHTTPClientTransport,
 } from "@modelcontextprotocol/client";
-import { Effect, type Scope } from "effect";
+import { Effect, Redacted, type Scope } from "effect";
 import { acquireHarnessMcpHttpServer } from "../daemon/mcp/http.js";
+
+/** Authenticated MCP fixtures use the same opaque token on both ends. */
+export const mcpTestCredential = Redacted.make(
+  "mcp-test-credential-0000000000000001",
+);
+/** Request headers for the shared authenticated MCP fixtures. */
+export const mcpTestHeaders = {
+  Authorization: `Bearer ${Redacted.value(mcpTestCredential)}`,
+};
 
 /**
  * Serve `handler` on an ephemeral loopback port and return the server's `/mcp`
@@ -35,7 +44,7 @@ export function loopbackMcpEndpoint(
 export function connectInProcessClient(
   handler: McpHttpHandler,
   options: ClientOptions,
-  headers: Readonly<Record<string, string>> = {},
+  headers: Readonly<Record<string, string>> = mcpTestHeaders,
 ): Effect.Effect<Client, unknown, Scope.Scope> {
   // eslint-disable-next-line agent-code-guard/acquire-release-requires-scope -- The returned effect requires Scope, so the caller's scope releases the client.
   return Effect.acquireRelease(

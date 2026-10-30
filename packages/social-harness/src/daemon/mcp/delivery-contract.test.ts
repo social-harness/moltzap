@@ -1,5 +1,9 @@
 /** @file Durable delivery behaviour through the loopback MCP tools and native endpoint. */
 
+import {
+  mcpTestCredential,
+  mcpTestHeaders,
+} from "../../__tests__/mcp-http-fixtures.js";
 import { scopedLive as it } from "@effect/vitest";
 import { Chunk, Effect, Schema, Scope, Stream } from "effect";
 import { describe, expect } from "vitest";
@@ -53,6 +57,7 @@ const deliveryHandler = (
   operations: Parameters<typeof makeHarnessMcpHttpHandler>[0]["operations"],
 ) =>
   makeHarnessMcpHttpHandler({
+    credential: mcpTestCredential,
     implementation: { name: "delivery-contract", version: "1" },
     operations,
   });
@@ -60,11 +65,15 @@ const deliveryHandler = (
 const callTool =
   (handler: Parameters<typeof loopbackMcpEndpoint>[0]) =>
   (name: string, args: Readonly<Record<string, unknown>> = {}) =>
-    Effect.tryPromise(() =>
-      handler.fetch(
-        makeToolCallRequest({ id: "delivery", name, toolArguments: args }),
-      ),
-    ).pipe(
+    Effect.tryPromise(() => {
+      const request = makeToolCallRequest({
+        id: "delivery",
+        name,
+        toolArguments: args,
+      });
+      request.headers.set("Authorization", mcpTestHeaders.Authorization);
+      return handler.fetch(request);
+    }).pipe(
       Effect.flatMap((response) => Effect.tryPromise(() => response.json())),
       Effect.flatMap(
         Schema.decodeUnknown(
@@ -117,7 +126,6 @@ const deliveryFixture = (
       protocolActive: () => true,
       readStatus: unreachable,
       register: unreachable,
-      searchAgents: unreachable,
       searchConversations: unreachable,
       readConversation: unreachable,
     });
@@ -221,7 +229,10 @@ const replaysUntilAcknowledged = () =>
 const returnsACollectiveRefusal = () =>
   Effect.gen(function* () {
     const test = yield* fixture;
-    const endpoint = yield* acquireHarnessEndpoint(test.url);
+    const endpoint = yield* acquireHarnessEndpoint(test.url, {
+      credential: mcpTestCredential,
+      receiveMode: "push",
+    });
     const failure = yield* Effect.flip(
       endpoint.send({
         to: Schema.decodeUnknownSync(AgentAddress)("agent:bob"),
@@ -239,7 +250,10 @@ const retainsEventReference = () =>
   Effect.gen(function* () {
     const test = yield* fixture;
     yield* test.deliver();
-    const endpoint = yield* acquireHarnessEndpoint(test.url);
+    const endpoint = yield* acquireHarnessEndpoint(test.url, {
+      credential: mcpTestCredential,
+      receiveMode: "push",
+    });
     const first = yield* endpoint.messages.pipe(
       Stream.take(1),
       Stream.runCollect,
@@ -266,7 +280,10 @@ const retainsFailedHandoff = () =>
     const test = yield* fixture;
     const later = pendingMessage(2);
     yield* test.deliver([pending, later]);
-    const endpoint = yield* acquireHarnessEndpoint(test.url);
+    const endpoint = yield* acquireHarnessEndpoint(test.url, {
+      credential: mcpTestCredential,
+      receiveMode: "push",
+    });
     const failure = new Error("host refused handoff");
     const outcome = yield* endpoint.messages.pipe(
       Stream.mapEffect((entry) => Effect.fail({ failure, item: entry.item })),

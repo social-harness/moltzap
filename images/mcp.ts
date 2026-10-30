@@ -305,26 +305,59 @@ function forgetRequest(): Effect.Effect<
   );
 }
 
-function connect(url: URL): Effect.Effect<Client, CommandError, Scope.Scope> {
-  const client = new Client(
-    { name: "sharness-mcp", version: "1.0.0" },
-    {
-      capabilities: {},
-      versionNegotiation: { mode: { pin: MCP_PROTOCOL_VERSION } },
-    },
-  );
-  return Effect.acquireRelease(
-    Effect.tryPromise({
-      try: (signal) =>
-        client.connect(new StreamableHTTPClientTransport(url), { signal }),
-      catch: () =>
+function connect(
+  url: URL,
+): Effect.Effect<Client, CommandError, Scope.Scope | FileSystem.FileSystem> {
+  return Effect.gen(function* () {
+    const credentialFile = yield* Config.string(
+      "SHARNESS_MCP_CREDENTIAL_FILE",
+    ).pipe(
+      Effect.mapError(() =>
         commandError(
-          `could not connect to ${url.href}; check that sharnessd is running and that SHARNESS_MCP_URL names its port`,
-          "could-not-connect",
+          "SHARNESS_MCP_CREDENTIAL_FILE must name a readable file",
+          "mcp-credential-file",
         ),
-    }).pipe(Effect.as(client)),
-    () => Effect.tryPromise(() => client.close()).pipe(Effect.ignore),
-  );
+      ),
+    );
+    const fs = yield* FileSystem.FileSystem;
+    const credential = yield* fs
+      .readFileString(credentialFile)
+      .pipe(
+        Effect.mapError(() =>
+          commandError(
+            "SHARNESS_MCP_CREDENTIAL_FILE must name a readable file",
+            "mcp-credential-file",
+          ),
+        ),
+      );
+    const client = new Client(
+      { name: "sharness-mcp", version: "1.0.0" },
+      {
+        capabilities: {},
+        versionNegotiation: { mode: { pin: MCP_PROTOCOL_VERSION } },
+      },
+    );
+    return yield* Effect.acquireRelease(
+      Effect.tryPromise({
+        try: (signal) =>
+          client.connect(
+            new StreamableHTTPClientTransport(url, {
+              requestInit: {
+                headers: { Authorization: `Bearer ${credential}` },
+                redirect: "error",
+              },
+            }),
+            { signal },
+          ),
+        catch: () =>
+          commandError(
+            `could not connect to ${url.href}; check that sharnessd is running and that SHARNESS_MCP_URL names its port`,
+            "could-not-connect",
+          ),
+      }).pipe(Effect.as(client)),
+      () => Effect.tryPromise(() => client.close()).pipe(Effect.ignore),
+    );
+  });
 }
 
 function callTool(

@@ -1,5 +1,9 @@
 /** @file Argument diagnostics and discoverability through the MCP HTTP interface. */
 
+import {
+  mcpTestCredential,
+  mcpTestHeaders,
+} from "../../__tests__/mcp-http-fixtures.js";
 import { scopedLive as it } from "@effect/vitest";
 import {
   CLIENT_CAPABILITIES_META_KEY,
@@ -26,7 +30,6 @@ const operations: HarnessMcpOperations = {
   readInboxSummary: () =>
     Effect.succeed({ pendingCount: 0, newestSequence: 0 }),
   register: unused,
-  searchAgents: unused,
   searchConversations: unused,
   readConversation: unused,
   readEvent: unused,
@@ -38,6 +41,7 @@ const operations: HarnessMcpOperations = {
 const acquireHandler = (selected: HarnessMcpOperations) =>
   Effect.gen(function* () {
     const handler = yield* makeHarnessMcpHttpHandler({
+      credential: mcpTestCredential,
       implementation: { name: "tool-contract-test", version: "1" },
       operations: selected,
     });
@@ -73,6 +77,7 @@ function request(
       new Request("http://127.0.0.1/mcp", {
         method: "POST",
         headers: {
+          ...mcpTestHeaders,
           accept: "application/json, text/event-stream",
           "content-type": "application/json",
           "mcp-method": method,
@@ -107,12 +112,6 @@ function request(
 
 /** Malformed calls and every field their diagnostics name: only the union arm the input selects. */
 const invalidCalls = [
-  { name: "search_agents", arguments: {}, paths: [["agentId"], ["agentName"]] },
-  {
-    name: "search_agents",
-    arguments: { agentId: `agt_${"A".repeat(22)}`, agentName: "bob" },
-    paths: [["agentName"], ["agentId"]],
-  },
   { name: "status", arguments: { unexpected: true }, paths: [["unexpected"]] },
   { name: "read_event", arguments: { eventId: "bad" }, paths: [["eventId"]] },
   { name: "acknowledge_delivery", arguments: {}, paths: [["deliveryToken"]] },
@@ -381,7 +380,9 @@ describe("MCP structural argument diagnostics", () => {
       const handler = yield* acquireHandler({
         ...operations,
         protocolActive: () => true,
-        policy: { read: unused, update: unused, decisions: unused },
+        readPolicy: unused,
+        updatePolicy: unused,
+        readDecisions: unused,
       });
       const response = yield* request(handler, "tools/call", {
         name: call.name,
@@ -447,11 +448,9 @@ describe("MCP semantic failures", () => {
         protocolActive: () => true,
         readConversation: () => Effect.fail({ reason: "invalid-continuation" }),
         searchConversations: () => Effect.fail({ reason: "invalid-address" }),
-        policy: {
-          read: unused,
-          update: () => Effect.fail(refusedPolicyEdit),
-          decisions: unused,
-        },
+        readPolicy: unused,
+        updatePolicy: () => Effect.fail(refusedPolicyEdit),
+        readDecisions: unused,
       });
       const response = yield* request(handler, "tools/call", {
         name: call.name,
@@ -470,41 +469,8 @@ const fieldDescriptionsSchema = Schema.Record({
   value: Schema.Struct({ description: Schema.String }),
 });
 
-const checksInlineLookupSelector = () =>
-  Effect.gen(function* () {
-    const handler = yield* acquireHandler({
-      ...operations,
-      protocolActive: () => true,
-    });
-    const response = yield* request(handler, "tools/list", {});
-    const catalog = yield* Schema.decodeUnknown(catalogSchema)(response.result);
-    const search = catalog.tools.find((tool) => tool.name === "search_agents");
-
-    expect(search?.inputSchema).not.toHaveProperty("$ref");
-    const alternatives = yield* Schema.decodeUnknown(
-      Schema.Array(
-        Schema.Struct({
-          type: Schema.Literal("object"),
-          required: Schema.Array(Schema.String),
-        }),
-      ),
-    )(search?.inputSchema.anyOf);
-    expect(alternatives).toHaveLength(2);
-    expect(alternatives.map((schema) => schema.required)).toContainEqual([
-      "agentId",
-    ]);
-    expect(alternatives.map((schema) => schema.required)).toContainEqual([
-      "agentName",
-    ]);
-  });
-
 // @agent-code-guard/regression-only: descriptions expose identifier, retry and pagination intent to tool consumers.
 describe("MCP tool discoverability", () => {
-  it(
-    "lists an inline exact lookup selector for search_agents",
-    checksInlineLookupSelector,
-  );
-
   it("describes every tool and the key input fields", () =>
     Effect.gen(function* () {
       const inactive = yield* acquireHandler(operations);

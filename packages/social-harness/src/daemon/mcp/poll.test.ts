@@ -269,7 +269,7 @@ const fencesRestart = () =>
     }),
   );
 
-const rejectsMissingOrMalformedBinding = (metadata: unknown, code: number) =>
+const rejectsMalformedBinding = (metadata: unknown, code: number) =>
   run(
     Effect.gen(function* () {
       const fixture = yield* acquireFixture;
@@ -364,7 +364,7 @@ const ignoresAcknowledgedReplayRows = () =>
     }),
   );
 
-const permitsUnboundOwnerDiagnostics = () =>
+const permitsUnboundInboxReads = () =>
   run(
     Effect.gen(function* () {
       const fixture = yield* acquireFixture;
@@ -374,7 +374,7 @@ const permitsUnboundOwnerDiagnostics = () =>
         fixture.gate.release(1),
       );
       const inbox = yield* fixture.poll
-        .nativeOperation({}, fixture.store.readInbox(), false)
+        .nativeOperation({}, fixture.store.readInbox())
         .pipe(Effect.timeout("2 seconds"));
       expect(inbox.items.map((entry) => entry.deliveryToken)).toEqual([
         token(1),
@@ -476,8 +476,8 @@ const serializesReceiptAndRevocation = () =>
 
 describe("polling replay and receipt races", () => {
   it(
-    "keeps unbound owner diagnostics independent of the consumer gate",
-    permitsUnboundOwnerDiagnostics,
+    "keeps unbound inbox inspection independent of the consumer gate",
+    permitsUnboundInboxReads,
   );
   it(
     "skips acknowledged arrivals without forcing unread recovery",
@@ -525,10 +525,8 @@ describe("draft polling and native receipt lifecycle", () => {
     "fences old generations after daemon restart while retaining unread work",
     fencesRestart,
   );
-  it("rejects missing metadata before a receipt operation runs", () =>
-    rejectsMissingOrMalformedBinding({}, -32012));
   it("rejects malformed metadata before a receipt operation runs", () =>
-    rejectsMissingOrMalformedBinding(
+    rejectsMalformedBinding(
       { [HARNESS_CONSUMER_META_KEY]: { generation: "not-a-generation" } },
       -32602,
     ));

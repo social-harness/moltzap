@@ -1,7 +1,7 @@
 # Scoped endpoint client
 
 The endpoint client gives a host one scoped send capability and delivery
-stream. Trusted-local event reception and authenticated polling converge on
+stream. Authenticated event reception and polling converge on
 the same inbox decoding and receipt lifetime. When changing reception, check
 both modes, including cleanup while a host callback is still running.
 

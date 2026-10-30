@@ -6,7 +6,7 @@ import {
   type ClientOptions,
   StreamableHTTPClientTransport,
 } from "@modelcontextprotocol/client";
-import { Effect, Schema } from "effect";
+import { Effect, Redacted, Schema } from "effect";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -43,7 +43,7 @@ const acquirePolicyFileScenario = Effect.gen(function* () {
   const infrastructure = yield* acquireProcessInfrastructure;
   const bob = yield* makeDaemonProcessFixture(infrastructure, "bob");
   yield* acquireDaemonProcess(bob);
-  const bobManagement = yield* acquireDaemonManagementClient(bob.endpoint);
+  const bobManagement = yield* acquireDaemonManagementClient(bob);
   yield* bobManagement.register(makeRegistrationRequest(bob));
   const stock = yield* makeDaemonProcessFixture(infrastructure, "alice");
   const fs = yield* FileSystem.FileSystem;
@@ -72,9 +72,9 @@ const acquirePolicyFileScenario = Effect.gen(function* () {
     SHARNESS_MESSAGE_POLICY_FILE: policyFile,
   });
   yield* acquireDaemonProcess(alice);
-  const management = yield* acquireDaemonManagementClient(alice.endpoint);
+  const management = yield* acquireDaemonManagementClient(alice);
   yield* management.register(makeRegistrationRequest(alice));
-  const client = yield* connect(alice.endpoint);
+  const client = yield* connect(alice);
   return { client, endpoint: alice.endpoint };
 });
 
@@ -104,7 +104,7 @@ const unavailableTextPolicy = Effect.gen(function* () {
 
 const olderMcpClient = Effect.gen(function* () {
   const scenario = yield* acquirePolicyFileScenario;
-  const client = yield* connect(scenario.endpoint, OLDER_CLIENT);
+  const client = yield* connect(scenario, OLDER_CLIENT);
   const catalog = yield* Effect.tryPromise(() => client.listTools());
   expect(catalog.tools).toEqual(
     arrayContaining([objectContaining({ name: "policy_read" })]),
@@ -190,7 +190,7 @@ function withPolicy(
   };
 }
 
-function connect(endpoint: URL, negotiation = CURRENT_CLIENT) {
+function connect(fixture: DaemonProcessFixture, negotiation = CURRENT_CLIENT) {
   return Effect.acquireRelease(
     Effect.gen(function* () {
       const client = new Client(
@@ -198,7 +198,16 @@ function connect(endpoint: URL, negotiation = CURRENT_CLIENT) {
         { capabilities: {}, ...negotiation },
       );
       yield* Effect.tryPromise(() =>
-        client.connect(new StreamableHTTPClientTransport(endpoint)),
+        client.connect(
+          new StreamableHTTPClientTransport(fixture.endpoint, {
+            requestInit: {
+              headers: {
+                Authorization: `Bearer ${Redacted.value(fixture.mcpCredential)}`,
+              },
+              redirect: "error",
+            },
+          }),
+        ),
       );
       return client;
     }),

@@ -109,9 +109,16 @@ type ClosedOperationError = Readonly<{ readonly reason: string }>;
 
 /** Structural daemon operations projected onto the loopback MCP boundary. */
 export interface HarnessMcpOperations extends DeliveryOperations {
-  readonly readPolicy?: () => Effect.Effect<typeof policyReadSchema.Type, FirewallPolicyError>;
-  readonly updatePolicy?: (request: typeof policyUpdateSchema.Type) => Effect.Effect<typeof policyUpdateResultSchema.Type, FirewallPolicyError>;
-  readonly readDecisions?: (request: typeof firewallDecisionsRequestSchema.Type) => Effect.Effect<typeof firewallDecisionsSchema.Type, FirewallPolicyError>;
+  readonly readPolicy?: () => Effect.Effect<
+    typeof policyReadSchema.Type,
+    FirewallPolicyError
+  >;
+  readonly updatePolicy?: (
+    request: typeof policyUpdateSchema.Type,
+  ) => Effect.Effect<typeof policyUpdateResultSchema.Type, FirewallPolicyError>;
+  readonly readDecisions?: (
+    request: typeof firewallDecisionsRequestSchema.Type,
+  ) => Effect.Effect<typeof firewallDecisionsSchema.Type, FirewallPolicyError>;
   /**
    * Whether the daemon's protocol is up. The catalog lists the
    * post-registration tools, and admits their calls and the inbox
@@ -471,7 +478,7 @@ const toolListings = {
   },
   [READ_CONVERSATION_TOOL]: {
     description:
-      "Read a frozen page of verified local conversation history by address or single-use continuation; each record names its author as author (agentId, agentName, principalId), and its message text is at recordCore.action.messageIntent.content, beside the signatures that verify it. For new messages not yet handled, use read_inbox.",
+      "Read a frozen page of retained conversation messages with their recorded visibility and guidance. For pending deliveries, use read_inbox.",
     inputSchema: readConversationInput,
     outputSchema: readConversationOutput,
     annotations: { readOnlyHint: true, openWorldHint: true },
@@ -706,7 +713,6 @@ const makeToolHandler =
         ? operations.events.nativeOperation(
             input.metadata,
             options.execute(operations, request),
-            false,
           )
         : options.execute(operations, request),
       ...requestRuntime(input),
@@ -735,7 +741,9 @@ const toolHandlers = {
     policyUpdateSchema,
     policyUpdateOutput,
     {
-      execute: (operations, request) => operations.updatePolicy?.(request) ?? Effect.fail({ reason: "not-configured" }),
+      execute: (operations, request) =>
+        operations.updatePolicy?.(request) ??
+        Effect.fail({ reason: "not-configured" }),
       label: "Policy update",
       allowedReasons: POLICY_REASONS,
       fallbackReason: "build-failed",
@@ -863,9 +871,13 @@ const toolHandlers = {
 /** Registration and installed operations determine one catalog for every client. */
 const currentTools = (operations: HarnessMcpOperations): readonly ToolName[] =>
   (operations.protocolActive() ? activeTools : inactiveTools).filter((name) =>
-    name === "policy_read" ? operations.readPolicy !== undefined :
-    name === "policy_update" ? operations.updatePolicy !== undefined :
-    name === "firewall_decisions" ? operations.readDecisions !== undefined : true,
+    name === "policy_read"
+      ? operations.readPolicy !== undefined
+      : name === "policy_update"
+        ? operations.updatePolicy !== undefined
+        : name === "firewall_decisions"
+          ? operations.readDecisions !== undefined
+          : true,
   );
 
 const handleToolCall = async (
@@ -933,21 +945,13 @@ const officialHandler = (
   services: Runtime.Runtime<never>,
 ) =>
   createMcpHandler(
-    (context) => {
-      const request = context.requestInfo;
-      if (request === undefined) {
-        throw new ProtocolError(-32012, "Authentication required");
-      }
-      if (!authenticateHarnessRequest(request, options.credential)) {
-        throw new ProtocolError(-32012, "Authentication required");
-      }
-      return makeServer(
-        options,
-        runtimeOperations(options.operations, events, requestScope, services),
-        );
-    },
+    () => makeServer(
+      options,
+      runtimeOperations(options.operations, events, requestScope, services),
+    ),
     { responseMode: "auto", onerror: options.onerror },
   );
+
 const guardedHandler = (
   options: HarnessMcpHandlerOptions,
   delegate: McpHttpHandler,

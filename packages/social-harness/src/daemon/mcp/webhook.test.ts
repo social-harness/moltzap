@@ -98,7 +98,7 @@ const signsVerifiesAndRotates = () =>
       });
       const test = scriptedWebhook(store);
       const events = yield* test.acquire;
-      const grant = yield* events.subscribe(input, "runtime");
+      const grant = yield* events.subscribe(input);
       const control = test.posts[0];
       expect(control?.headers["webhook-id"]).toMatch(/^msg_verification_/u);
       const expected = createHmac("sha256", Buffer.alloc(32, 1))
@@ -123,18 +123,21 @@ const signsVerifiesAndRotates = () =>
           secret: `whsec_${Buffer.alloc(32, 2).toString("base64")}`,
         },
       };
-      expect((yield* events.subscribe(rotated, "runtime")).id).toBe(grant.id);
+      expect((yield* events.subscribe(rotated)).id).toBe(grant.id);
       test.challenge(false);
       yield* stepClock("11 minutes");
-      expect(
-        (yield* events.subscribe(input, "runtime").pipe(Effect.flip)).code,
-      ).toBe(-32015);
+      expect((yield* events.subscribe(input).pipe(Effect.flip)).code).toBe(
+        -32015,
+      );
       expect(
         (yield* events
-          .unsubscribe({ ...input, delivery: { url } }, "owner")
+          .unsubscribe({
+            ...input,
+            delivery: { url: "https://other.example/events" },
+          })
           .pipe(Effect.flip)).code,
       ).toBe(-32011);
-      yield* events.unsubscribe({ ...input, delivery: { url } }, "runtime");
+      yield* events.unsubscribe({ ...input, delivery: { url } });
       expect((yield* readRuntimeEvent(store, token(1))).item).toEqual(item());
     }),
   ).pipe(onSteppedClock);
@@ -149,21 +152,21 @@ const retainsTerminalRejections = () =>
         const test = scriptedWebhook(store);
         const events = yield* test.acquire;
         yield* enqueue(store, 1);
-        yield* events.subscribe(input, "runtime");
+        yield* events.subscribe(input);
         test.status(status);
         yield* events.observe();
         expect((yield* events.status).stalled).toBe("terminal");
         const restarted = yield* test.acquire;
         test.status(200);
-        yield* restarted.subscribe(input, "runtime");
+        yield* restarted.subscribe(input);
         expect((yield* restarted.resume.pipe(Effect.flip)).code).toBe(-32014);
         yield* stepClock("1 day");
-        yield* restarted.subscribe(input, "runtime");
+        yield* restarted.subscribe(input);
         yield* restarted.observe();
         expect(eventPosts(test.posts, 1)).toHaveLength(1);
         expect((yield* store.readInboxSummary()).pendingCount).toBe(1);
         yield* restarted.revoke;
-        yield* restarted.subscribe(input, "runtime");
+        yield* restarted.subscribe(input);
         yield* restarted.observe();
         expect((yield* store.readInboxSummary()).pendingCount).toBe(0);
       }
@@ -184,7 +187,7 @@ it("delivers local guidance and its subject map through a signed webhook", () =>
         canonicalItem: yield* encodeRuntimeValue(item()),
         canonicalGuidance: yield* encodeRuntimeValue(guidance),
       });
-      yield* events.subscribe(input, "runtime");
+      yield* events.subscribe(input);
       yield* events.observe();
       expect(decodeOccurrence(eventPosts(test.posts, 1)[0]?.body).data).toEqual(
         {
@@ -207,7 +210,7 @@ const verifiesRotatedSecret = () =>
       });
       const test = scriptedWebhook(store);
       const events = yield* test.acquire;
-      const grant = yield* events.subscribe(input, "runtime");
+      const grant = yield* events.subscribe(input);
       const rotated = {
         ...input,
         delivery: {
@@ -216,14 +219,14 @@ const verifiesRotatedSecret = () =>
         },
       };
       test.challenge(false);
-      expect(
-        (yield* events.subscribe(rotated, "runtime").pipe(Effect.flip)).code,
-      ).toBe(-32015);
+      expect((yield* events.subscribe(rotated).pipe(Effect.flip)).code).toBe(
+        -32015,
+      );
       expect(verificationPosts(test.posts)).toHaveLength(2);
       test.challenge(true);
-      expect((yield* events.subscribe(rotated, "runtime")).id).toBe(grant.id);
+      expect((yield* events.subscribe(rotated)).id).toBe(grant.id);
       expect(verificationPosts(test.posts)).toHaveLength(3);
-      yield* events.subscribe(rotated, "runtime");
+      yield* events.subscribe(rotated);
       expect(verificationPosts(test.posts)).toHaveLength(3);
     }),
   ).pipe(onSteppedClock);
@@ -237,7 +240,7 @@ const permitsReadAndRevokeDuringDelivery = () =>
       const test = scriptedWebhook(store);
       const events = yield* test.acquire;
       yield* enqueue(store, 1);
-      yield* events.subscribe(input, "runtime");
+      yield* events.subscribe(input);
       const entered = yield* Deferred.make<undefined>();
       const release = yield* Deferred.make<undefined>();
       test.onEvent(
@@ -267,7 +270,7 @@ const refusesExpiredReceipt = () =>
       const test = scriptedWebhook(store);
       const events = yield* test.acquire;
       yield* enqueue(store, 1);
-      yield* events.subscribe({ ...input, ttlMs: 60_000 }, "runtime");
+      yield* events.subscribe({ ...input, ttlMs: 60_000 });
       const entered = yield* Deferred.make<undefined>();
       const release = yield* Deferred.make<undefined>();
       test.onEvent(
@@ -307,7 +310,7 @@ const refreshPreservesTerminalReceipt = () =>
       const test = scriptedWebhook(store);
       const events = yield* test.acquire;
       yield* enqueue(store, 1);
-      yield* events.subscribe(input, "runtime");
+      yield* events.subscribe(input);
       const entered = yield* Deferred.make<undefined>();
       const release = yield* Deferred.make<undefined>();
       test.status(413);
@@ -319,7 +322,7 @@ const refreshPreservesTerminalReceipt = () =>
       );
       const delivery = yield* events.observe().pipe(Effect.fork);
       yield* Deferred.await(entered);
-      yield* events.subscribe(input, "runtime");
+      yield* events.subscribe(input);
       yield* events.resume;
       yield* Deferred.succeed(release, undefined);
       yield* Fiber.join(delivery);
@@ -340,7 +343,7 @@ const retriesAcrossRestart = () => {
         const test = scriptedWebhook(store);
         const events = yield* test.acquire;
         yield* enqueue(store, 1);
-        yield* events.subscribe(input, "runtime");
+        yield* events.subscribe(input);
         test.status(503);
         yield* events.observe();
         original = eventPosts(test.posts, 1)[0]?.body;
@@ -430,7 +433,7 @@ const marksADeliveryBusyUntilItsReceipt = () => {
         const test = scriptedWebhook(store);
         const events = yield* test.acquire;
         yield* enqueue(store, 1);
-        yield* events.subscribe(input, "runtime");
+        yield* events.subscribe(input);
         test.status(503);
         yield* events.observe();
       }),
@@ -471,7 +474,7 @@ const settlesALapsedDeliveryAsGivenUp = () => {
       const test = scriptedWebhook(store);
       const events = yield* test.acquire;
       yield* enqueue(store, 1);
-      yield* events.subscribe(input, "runtime");
+      yield* events.subscribe(input);
       test.status(503);
       yield* events.observe();
       yield* stepClock("25 hours");
@@ -500,7 +503,7 @@ const settlesARevokedDeliveryAsInterrupted = () => {
       const test = scriptedWebhook(store);
       const events = yield* test.acquire;
       yield* enqueue(store, 1);
-      yield* events.subscribe(input, "runtime");
+      yield* events.subscribe(input);
       test.status(503);
       yield* events.observe();
       yield* events.revoke;
@@ -522,7 +525,7 @@ const resumesExhaustedCallbacks = () =>
       const test = scriptedWebhook(store);
       const events = yield* test.acquire;
       yield* enqueue(store, 1);
-      yield* events.subscribe(input, "runtime");
+      yield* events.subscribe(input);
       test.status(503);
       yield* Effect.replicateEffect(
         events.observe().pipe(Effect.zipRight(stepClock("5 minutes"))),
@@ -562,7 +565,7 @@ const boundsPayloadAndDrains = () =>
       for (let index = 2; index < 55; index += 1) {
         yield* enqueue(store, index);
       }
-      yield* events.subscribe(input, "runtime");
+      yield* events.subscribe(input);
       yield* events.observe();
       expect(
         test.posts.filter((post) =>
@@ -594,14 +597,12 @@ const removesRetiredOccurrence = () =>
       const test = scriptedWebhook(store);
       const events = yield* test.acquire;
       yield* enqueue(store, 1);
-      yield* events.subscribe(input, "runtime");
+      yield* events.subscribe(input);
       test.status(503);
       yield* events.observe();
       const canonicalItem = yield* encodeRuntimeValue(item("replacement"));
-      yield* store.replaceInboxItem(token(1), {
-        deliveryToken: token(2),
-        canonicalItem,
-      });
+      yield* store.acknowledgeInboxItem(token(1));
+      yield* store.putInboxItem({ deliveryToken: token(2), canonicalItem });
       const restarted = yield* test.acquire;
       test.status(200);
       yield* restarted.observe();
@@ -658,9 +659,9 @@ const rejectsUnsafeCallbacks = () =>
     );
     test.status(302);
     const events = yield* test.acquire;
-    expect(
-      (yield* events.subscribe(input, "runtime").pipe(Effect.flip)).code,
-    ).toBe(-32015);
+    expect((yield* events.subscribe(input).pipe(Effect.flip)).code).toBe(
+      -32015,
+    );
     expect(verificationPosts(test.posts)).toHaveLength(1);
     expect(events.hasActiveSubscription()).toBe(false);
   }).pipe(Effect.scoped);
@@ -688,11 +689,11 @@ describe("local Dot webhook conformance", () => {
     retainsTerminalRejections,
   );
   it(
-    "allows callback inbox reads and ignores a receipt after owner revocation",
+    "allows callback inbox reads and ignores a receipt after consumer revocation",
     permitsReadAndRevokeDuringDelivery,
   );
   it(
-    "verifies signed callbacks, rotates secrets and enforces the subscription principal",
+    "verifies signed callbacks, rotates secrets and binds subscriptions to the verified callback",
     signsVerifiesAndRotates,
   );
   it(

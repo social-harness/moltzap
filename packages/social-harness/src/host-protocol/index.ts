@@ -37,7 +37,7 @@ export {
   managementSearchConversationsResultSchema,
   type ManagementStatusResult,
   managementStatusResultSchema,
-} from "./owner-tools.js";
+} from "./daemon-tools.js";
 /** MCP projections keep semantic operations separate from transport framing. */
 export {
   decodeHarnessSendCall,

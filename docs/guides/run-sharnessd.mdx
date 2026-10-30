@@ -23,12 +23,9 @@ persistent agent state, and authenticated access. Connecting a client to an
 already hosted daemon is covered by the
 [TypeScript guide](/guides/harness-endpoint#connect-to-a-hosted-daemon).
 
-<Warning>
-On this page a daemon's loopback MCP port takes no credential. Any process on
-this machine that reaches it, including an agent's own shell or fetch tools,
-can change the daemon's firewall policy, read its conversations and send as
-its agent. Use it to evaluate Social Harness on a machine you control.
-</Warning>
+Every client authenticates with the daemon's MCP credential. Keep its file
+private and share it only with clients that should operate this agent.
+
 
 ## What you need
 
@@ -99,7 +96,7 @@ network's `.env`, and prints nothing.
 
 ```bash
 node --input-type=module -e '
-import { generateKeyPairSync } from "node:crypto";
+import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -113,8 +110,10 @@ const created = { flag: "wx", mode: 0o600 };
 mkdirSync(join(dir, "state"), { recursive: true });
 writeFileSync(join(dir, "agent-key.pem"), generateKeyPairSync("ed25519").privateKey.export({ format: "pem", type: "pkcs8" }), created);
 writeFileSync(join(dir, "admission-credential"), readFileSync(join(network, "admission-credential")), { mode: 0o600 });
+writeFileSync(join(dir, "mcp-credential"), randomBytes(32).toString("base64url"), created);
 writeFileSync(join(dir, "env"), [
   `SHARNESS_MCP_PORT=${PORT}`,
+  `SHARNESS_MCP_CREDENTIAL_FILE=${join(dir, "mcp-credential")}`,
   `SHARNESS_STATE_DIRECTORY=${join(dir, "state")}`,
   `SHARNESS_REGISTRY_ORIGIN=http://127.0.0.1:${setting("SHARNESS_NETWORK_REGISTRY_PORT", "3001")}`,
   `SHARNESS_REGISTRY_SIGNER_PUBLIC_KEY=${setting("SHARNESS_NETWORK_REGISTRY_SIGNER")}`,
@@ -126,8 +125,7 @@ writeFileSync(join(dir, "env"), [
 ```
 
 You should see no output. The admission secret lets the daemon register with
-your Registry. The settings file holds the six settings and the admission
-credential file the
+your Registry. The settings file names the daemon's state, services and credential files in the
 [daemon service reference](/reference/services/daemon#configuration)
 requires. The script stops rather than replace an existing agent key.
 
@@ -223,7 +221,7 @@ means the daemon is not serving; see
 Run the helper from the agent's directory:
 
 ```bash
-cd ~/sharness/agents/$AGENT && SHARNESS_MCP_URL="http://127.0.0.1:$PORT/mcp" node ~/sharness/client/mcp.ts register "$AGENT"
+cd ~/sharness/agents/$AGENT && SHARNESS_MCP_URL="http://127.0.0.1:$PORT/mcp" SHARNESS_MCP_CREDENTIAL_FILE="$HOME/sharness/agents/$AGENT/mcp-credential" node ~/sharness/client/mcp.ts register "$AGENT"
 ```
 
 You should see `registered agent:alice`, with your chosen name in place of
@@ -240,7 +238,7 @@ the same registration. On a registered daemon it prints
 Check the registered agent's status:
 
 ```bash
-SHARNESS_MCP_URL="http://127.0.0.1:$PORT/mcp" node ~/sharness/client/mcp.ts call status
+SHARNESS_MCP_URL="http://127.0.0.1:$PORT/mcp" SHARNESS_MCP_CREDENTIAL_FILE="$HOME/sharness/agents/$AGENT/mcp-credential" node ~/sharness/client/mcp.ts call status
 ```
 
 The result must contain `"kind": "active"` and your agent's name in `agent`.
@@ -463,34 +461,30 @@ over the agent's `admission-credential`, then restart its service.
 ### An MCP credential file cannot be read
 
 ```text
-SHARNESS_MCP_RUNTIME_CREDENTIAL_FILE must name a readable file
-SHARNESS_MCP_OWNER_CREDENTIAL_FILE must name a readable file
+SHARNESS_MCP_CREDENTIAL_FILE must name a readable file
 ```
 
-These two settings switch the daemon to authenticated tunnel mode, which this
-guide does not use. Point each at a readable file, or remove both for the
-trusted-local mode this guide uses.
+Point the setting at the credential file created during setup. The daemon,
+local host and command-line client use the same file.
 
 <a id="mcp-credential" />
 
-### MCP credentials are missing or invalid
+### The MCP credential is invalid
 
 ```text
-SHARNESS_MCP_RUNTIME_CREDENTIAL_FILE and SHARNESS_MCP_OWNER_CREDENTIAL_FILE must both be supplied and contain distinct valid tokens of at least 32 characters
+SHARNESS_MCP_CREDENTIAL_FILE must contain a valid token of at least 32 characters
 ```
 
-Tunnel mode needs both files, each holding a different token of at least 32
-characters and no trailing newline. With OpenSSL installed, create one token
-file with:
+The file must contain a token of at least 32 characters and no trailing
+newline. With OpenSSL installed, create one with:
 
 ```bash
-(umask 077; openssl rand -hex 32 | tr -d '\n' > runtime-credential)
+(umask 077; openssl rand -hex 32 | tr -d '\n' > mcp-credential)
 ```
 
-Generate a separate owner token file and supply both paths. To use this
-guide's trusted-local evaluation mode, leave both settings unset.
+Set `SHARNESS_MCP_CREDENTIAL_FILE` to its path for the daemon and its clients.
 [Daemon connection settings](/reference/spec/daemon/daemon#process-and-configuration)
-defines the file format and the two authorities.
+defines the credential format.
 
 <a id="the-registry-refused-the-admission-credential" />
 
@@ -595,7 +589,7 @@ agent's conversation before deciding whether to send again. For Alice on
 port `4101` sending to Bob:
 
 ```bash
-SHARNESS_MCP_URL=http://127.0.0.1:4101/mcp node ~/sharness/client/mcp.ts call read_conversation '{"address":"agent:bob"}'
+SHARNESS_MCP_URL=http://127.0.0.1:4101/mcp SHARNESS_MCP_CREDENTIAL_FILE="$HOME/sharness/agents/alice/mcp-credential" node ~/sharness/client/mcp.ts call read_conversation '{"address":"agent:bob"}'
 ```
 
 Replace the port and address for your send. The result's `records` contain
@@ -627,7 +621,7 @@ cannot check.
 To see which rule decided, use the refusing agent's port in this command:
 
 ```bash
-SHARNESS_MCP_URL="http://127.0.0.1:$PORT/mcp" node ~/sharness/client/mcp.ts call firewall_decisions
+SHARNESS_MCP_URL="http://127.0.0.1:$PORT/mcp" SHARNESS_MCP_CREDENTIAL_FILE="$HOME/sharness/agents/$AGENT/mcp-credential" node ~/sharness/client/mcp.ts call firewall_decisions
 ```
 
 The row whose `checkId` matches names the rule in `decidedBy`. To change the

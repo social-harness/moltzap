@@ -10,7 +10,7 @@ import { LIVE_WIRE_VERSIONS } from "../identity/wire-version.js";
 import { loopbackMcpEndpoint } from "./mcp-http-fixtures.js";
 import { stateDirectory } from "./store-schema-fixtures.js";
 
-/** Synthetic runtime authority accepted only by the local fixture. */
+/** Bearer credential accepted only by the local fixture. */
 export const nativeCredential = Redacted.make(
   "local-native-receiver-test-credential",
 );
@@ -33,10 +33,7 @@ export const nativePollFixture = Effect.fn("nativePollFixture")(function* (
   });
   const handler = yield* makeHarnessMcpHttpHandler({
     implementation: { name: "native-receiver-test", version: "1" },
-    credentials: {
-      runtime: nativeCredential,
-      owner: Redacted.make("local-native-owner-test-credential"),
-    },
+    credential: nativeCredential,
     eventStore: {
       ...delivery.eventStore,
       readInboxSummary: () =>
@@ -49,7 +46,6 @@ export const nativePollFixture = Effect.fn("nativePollFixture")(function* (
       protocolActive: () => true,
       readStatus: unused,
       register: unused,
-      searchAgents: unused,
       searchConversations: unused,
       readConversation: unused,
     },

@@ -1,5 +1,9 @@
 /** @file Pins Events discovery and failure isolation through loopback HTTP. */
 
+import {
+  mcpTestCredential,
+  mcpTestHeaders,
+} from "../../__tests__/mcp-http-fixtures.js";
 import type { Implementation } from "@modelcontextprotocol/server";
 import { FileSystem } from "@effect/platform";
 import { NodeFileSystem } from "@effect/platform-node";
@@ -83,7 +87,6 @@ const operations: HarnessMcpOperations = {
   readInbox: () => Effect.succeed({ items: [] }),
   readStatus: () => Effect.succeed({ kind: "unregistered" }),
   register: () => unusedOperation,
-  searchAgents: () => unusedOperation,
   searchConversations: () => unusedOperation,
   readConversation: () => unusedOperation,
   send: () => unusedOperation,
@@ -97,6 +100,7 @@ function acquireBoundaryServer(
 ) {
   return Effect.gen(function* () {
     const handler = yield* makeHarnessMcpHttpHandler({
+      credential: mcpTestCredential,
       implementation: IMPLEMENTATION,
       operations: selectedOperations,
       ...(onSubscriptionActiveChange === undefined
@@ -128,6 +132,7 @@ function acquireProtocolClient(port: number, name: string) {
           client.connect(
             new StreamableHTTPClientTransport(
               new URL(`http://127.0.0.1:${port}/mcp`),
+              { requestInit: { headers: mcpTestHeaders } },
             ),
             { signal },
           ),
@@ -348,6 +353,7 @@ function observeListeningSubscription(keepAliveMillis?: number) {
     );
     const endpoint = yield* acquireHarnessEndpoint(
       new URL(`http://127.0.0.1:${port}/mcp`),
+      { credential: mcpTestCredential, receiveMode: "push" },
     );
     const receive = yield* endpoint.messages.pipe(
       Stream.runHead,
@@ -524,6 +530,7 @@ const reportsOutcomeUnknownWhenTheConnectionDropsMidSend = () =>
     });
     const endpoint = yield* acquireHarnessEndpoint(
       new URL(`http://127.0.0.1:${port}/mcp`),
+      { credential: mcpTestCredential, receiveMode: "push" },
     );
     const sending = yield* Effect.fork(
       endpoint.send(sendInput).pipe(Effect.flip),
@@ -677,6 +684,7 @@ const classifiesAnHttpAnswerToASend = (
     });
     const endpoint = yield* acquireHarnessEndpoint(
       new URL(`http://127.0.0.1:${port}/mcp`),
+      { credential: mcpTestCredential, receiveMode: "push" },
     );
     yield* routeRequestsThrough(answerSendWithStatus(status));
 
@@ -700,6 +708,7 @@ const keepsARefusedConnectionNetworkUnavailable = () =>
     }).pipe(Scope.extend(serverScope));
     const endpoint = yield* acquireHarnessEndpoint(
       new URL(`http://127.0.0.1:${port}/mcp`),
+      { credential: mcpTestCredential, receiveMode: "push" },
     );
     yield* Scope.close(serverScope, Exit.void);
 
@@ -720,6 +729,7 @@ function acquireSendEndpoint(
     });
     return yield* acquireHarnessEndpoint(
       new URL(`http://127.0.0.1:${port}/mcp`),
+      { credential: mcpTestCredential, receiveMode: "push" },
     );
   });
 }
