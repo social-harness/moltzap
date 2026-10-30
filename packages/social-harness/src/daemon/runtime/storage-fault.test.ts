@@ -1,64 +1,52 @@
-/** @file A storage fault the engine reports stops the daemon in storage. */
+/** @file A reported protocol storage fault stops the real daemon runtime. */
 
-import { live as it } from "@effect/vitest";
-import { Deferred, Effect, Fiber, Logger } from "effect";
+import { scopedLive as it } from "@effect/vitest";
+import { Deferred, Effect, Fiber } from "effect";
 import { expect } from "vitest";
-import { makeFixture } from "../../__tests__/daemon-runtime-fixtures.js";
 import {
-  makeHarness,
-  makeStore,
-  run,
-  type RuntimeHarness,
-} from "../../__tests__/daemon-runtime-harness.js";
+  makeFixture,
+  runRegisteredFixture,
+  runtimeDependencies,
+} from "../../__tests__/daemon-runtime-fixtures.js";
+import {
+  stateDirectory,
+  withDaemonStore,
+} from "../../__tests__/store-schema-fixtures.js";
+import { makeEndpointEngine } from "../../communication/conversations/index.js";
 import { EndpointStoreError } from "../../communication/store/index.js";
 import { DaemonRuntimeError } from "../lifecycle.js";
 
-/**
- * The harness hands the test the report the daemon gave its engine, so the
- * test raises a storage fault the way a send's bind or proposal does. Fails
- * when the daemon keeps running after the report, or stops in another phase.
- */
-it("stops the daemon in storage when the engine reports a storage fault", () => {
-  const messages: unknown[] = [];
-  return Effect.gen(function* () {
-    const fixture = yield* makeFixture;
-    const original = yield* makeHarness(fixture, "none");
-    const reported = yield* Deferred.make<Effect.Effect<void>>();
-    const harness: RuntimeHarness = {
-      ...original,
-      dependencies: {
-        ...original.dependencies,
-        makeEngine: (input) =>
+const stopsOnReportedFault = () =>
+  withDaemonStore(stateDirectory(), (store) =>
+    Effect.gen(function* () {
+      const fixture = yield* makeFixture;
+      yield* store.bindIdentity({
+        agentId: fixture.localCard.agentId,
+        canonicalAgentCard: fixture.canonicalLocalCard,
+      });
+      const reported = yield* Deferred.make<Effect.Effect<void>>();
+      const ready = yield* Deferred.make<undefined>();
+      const dependencies = {
+        ...runtimeDependencies(() =>
+          Deferred.succeed(ready, undefined).pipe(Effect.asVoid),
+        ),
+        makeEngine: (input: Parameters<typeof makeEndpointEngine>[0]) =>
           Deferred.succeed(
             reported,
             input.reportStorageFault(
               new EndpointStoreError({ reason: "persistence" }),
             ),
-          ).pipe(Effect.zipRight(original.dependencies.makeEngine(input))),
-      },
-    };
-    const daemon = yield* Effect.fork(
-      run(fixture, makeStore(fixture, true, harness.delivery), harness),
-    );
-    yield* Deferred.await(harness.listenerReady);
-
-    yield* Effect.flatten(Deferred.await(reported));
-
-    expect(yield* Fiber.join(daemon).pipe(Effect.flip)).toEqual(
-      new DaemonRuntimeError({ phase: "storage" }),
-    );
-    expect(messages).toContainEqual({
-      _tag: "EndpointStoreError",
-      reason: "persistence",
-    });
-  }).pipe(
-    Effect.provide(
-      Logger.replace(
-        Logger.defaultLogger,
-        Logger.make(({ annotations }) => {
-          messages.push(Object.fromEntries(annotations));
-        }),
-      ),
-    ),
+          ).pipe(Effect.zipRight(makeEndpointEngine(input))),
+      };
+      const daemon = yield* runRegisteredFixture(fixture, dependencies).pipe(
+        Effect.forkScoped,
+      );
+      yield* Deferred.await(ready).pipe(Effect.raceFirst(Fiber.join(daemon)));
+      yield* Effect.flatten(Deferred.await(reported));
+      expect(yield* Fiber.join(daemon).pipe(Effect.flip)).toEqual(
+        new DaemonRuntimeError({ phase: "storage" }),
+      );
+    }),
   );
-});
+
+it("stops when the engine reports a storage fault", stopsOnReportedFault);

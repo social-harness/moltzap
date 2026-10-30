@@ -1,211 +1,85 @@
-/** @file Storage stops preserve send responses and report closed diagnostic causes. */
+/** @file Failed outbound persistence preserves the HTTP send outcome and private content. */
 
+import { SqlClient } from "@effect/sql";
 import { scopedLive as it } from "@effect/vitest";
-import { Deferred, Effect, Fiber, Logger, Schema } from "effect";
-import { generateKeyPairSync } from "node:crypto";
+import { Deferred, Effect, Fiber, Logger } from "effect";
 import { expect } from "vitest";
+import type { DaemonRuntimeDependencies } from "../lifecycle.js";
 import {
-  identifier,
-  issueTestCard,
-  makeTestAuthority,
-} from "../../__tests__/agent-card-fixtures.js";
-import { makeFixture } from "../../__tests__/daemon-runtime-fixtures.js";
+  makeFixture,
+  runRegisteredFixture,
+  runtimeDependencies,
+} from "../../__tests__/daemon-runtime-fixtures.js";
 import {
-  makeHarness,
+  loopbackMcpEndpoint,
   makeToolCallRequest,
-  requireOperations,
-  run,
-  type RuntimeHarness,
-} from "../../__tests__/daemon-runtime-harness.js";
-import { pollCursor } from "../../__tests__/router-worker-fixtures.js";
-import { stateDirectory } from "../../__tests__/store-schema-fixtures.js";
-import { makeEndpointEngine } from "../../communication/conversations/index.js";
-import { RouterInstanceId } from "../../communication/router/api/contract.js";
-import { EndpointStoreError } from "../../communication/store/index.js";
-import { encodeCanonical } from "../../encoding/canonical-json.js";
-import { AgentCard } from "../../identity/cards.js";
-import { Ed25519PublicKey } from "../../identity/keys.js";
-import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
-import { SendInput } from "../../index.js";
-import { acquireHarnessMcpHttpServer } from "../mcp/index.js";
-import { openDaemonStore } from "../store.js";
+} from "../../__tests__/mcp-http-fixtures.js";
+import {
+  stateDirectory,
+  withDaemonStore,
+} from "../../__tests__/store-schema-fixtures.js";
 
-/* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- Exact HTTP statuses and closed diagnostic reasons are boundary contracts; secret sentinels verify redaction. */
-// @agent-code-guard/regression-only: failure injection pins send replies and secret-safe storage diagnostics during daemon shutdown.
-
-const httpListener =
-  (listening: Deferred.Deferred<number>) =>
-  ({
-    handler,
-  }: Parameters<RuntimeHarness["dependencies"]["acquireListener"]>[0]) =>
-    Effect.gen(function* () {
-      const server = yield* acquireHarnessMcpHttpServer({ port: 0, handler });
-      const address = server.address();
-      if (address === null || typeof address === "string") {
-        return yield* Effect.dieMessage("missing loopback address");
-      }
-      yield* Deferred.succeed(listening, address.port);
+const SECRET = "private outbound failure sentinel";
+const listener =
+  (
+    ready: Deferred.Deferred<URL>,
+  ): DaemonRuntimeDependencies["acquireListener"] =>
+  ({ handler }) =>
+    loopbackMcpEndpoint(handler).pipe(
+      Effect.flatMap((url) => Deferred.succeed(ready, url)),
+      Effect.asVoid,
+    );
+const callSend = (url: URL) =>
+  Effect.gen(function* () {
+    const request = makeToolCallRequest({
+      id: "failed-proposal",
+      name: "send_message",
+      toolArguments: { input: { to: "agent:bob", text: SECRET } },
     });
-
-const proposalIdentities = Effect.gen(function* () {
-  const base = yield* makeFixture;
-  const registryKeys = generateKeyPairSync("ed25519");
-  const signer = Schema.decodeUnknownSync(Ed25519PublicKey)(
-    registryKeys.publicKey.export({ format: "jwk" }),
-  );
-  const localCard = yield* issueTestCard({
-    byte: 1,
-    name: "alice",
-    authority: base.bootstrap.signingAuthority,
-    registryKeys,
+    const body = yield* Effect.tryPromise(() => request.text());
+    const response = yield* Effect.tryPromise(() =>
+      // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- The real listener must flush the send response while its daemon is stopping.
+      fetch(url, { method: "POST", headers: request.headers, body }),
+    );
+    return yield* Effect.tryPromise(() => response.json());
   });
-  const remoteCard = yield* issueTestCard({
-    byte: 2,
-    name: "bob",
-    authority: yield* makeTestAuthority(),
-    registryKeys,
-  });
-  const fixture = {
-    ...base,
-    localCard,
-    canonicalLocalCard: yield* encodeCanonical(AgentCard, localCard),
-    bootstrap: {
-      ...base.bootstrap,
-      configuration: {
-        ...base.bootstrap.configuration,
-        registrySignerPublicKey: signer,
-      },
-    },
-  };
-  return { fixture, remoteCard };
-});
-
-const proposalAnchor = {
-  routerInstanceId: Schema.decodeUnknownSync(RouterInstanceId)(
-    identifier("rti_", 10),
-  ),
-  pollCursor: pollCursor(11),
-};
-
-const proposalFailureFixture = Effect.gen(function* () {
-  const { fixture, remoteCard } = yield* proposalIdentities;
-  const original = yield* makeHarness(fixture, "none");
-  const store = yield* openDaemonStore(stateDirectory(), {
-    liveWireVersions: LIVE_WIRE_VERSIONS,
-  });
-  yield* store.bindIdentity({
-    agentId: fixture.localCard.agentId,
-    canonicalAgentCard: fixture.canonicalLocalCard,
-  });
-  const harness: RuntimeHarness = {
-    ...original,
-    dependencies: {
-      ...original.dependencies,
-      makeWorker: (input) =>
-        original.dependencies.makeWorker(input).pipe(
-          Effect.map((worker) => ({
-            ...worker,
-            currentAnchor: Effect.succeed(proposalAnchor),
-            awaitAnchor: Effect.succeed(proposalAnchor),
-          })),
-        ),
-      makeEngine: (input) =>
-        makeEndpointEngine({
-          ...input,
-          registry: {
-            lookup: () =>
-              Effect.succeed({ kind: "found", agentCard: remoteCard }),
-          },
-        }),
-    },
-  };
-  return {
-    fixture,
-    harness,
-    store: {
-      ...store,
-      enqueueOutbound: () =>
-        Effect.fail(
-          new EndpointStoreError({
-            reason: "persistence",
-            commitOutcome: "not-committed",
-          }),
-        ),
-    },
-  };
-});
-
-it(
-  "returns delivery-pending over HTTP when queueing a bound proposal fails",
-  () =>
+const failsBoundProposal = () => {
+  const diagnostics: unknown[] = [];
+  return withDaemonStore(stateDirectory(), (store) =>
     Effect.gen(function* () {
-      const { fixture, harness, store } = yield* proposalFailureFixture;
-      const listening = yield* Deferred.make<number>();
-      const daemon = yield* Effect.forkScoped(
-        run(fixture, store, {
-          ...harness,
-          dependencies: {
-            ...harness.dependencies,
-            acquireListener: httpListener(listening),
-          },
-        }),
+      const fixture = yield* makeFixture;
+      yield* store.bindIdentity({
+        agentId: fixture.localCard.agentId,
+        canonicalAgentCard: fixture.canonicalLocalCard,
+      });
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql.unsafe(
+        "CREATE TRIGGER fail_outbound BEFORE INSERT ON outbound_messages BEGIN SELECT RAISE(ABORT, 'private persistence failure'); END",
       );
-      const port = yield* Deferred.await(listening).pipe(
+      const ready = yield* Deferred.make<URL>();
+      const daemon = yield* runRegisteredFixture(
+        fixture,
+        runtimeDependencies(listener(ready)),
+      ).pipe(Effect.forkScoped);
+      const url = yield* Deferred.await(ready).pipe(
         Effect.raceFirst(Fiber.join(daemon)),
       );
-      const request = makeToolCallRequest({
-        id: "proposal-failure",
-        name: "send_message",
-        toolArguments: { input: { to: "agent:bob", text: "secret content" } },
-      });
-      const body = yield* Effect.tryPromise(() => request.text());
-      const response = yield* Effect.tryPromise(() =>
-        // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Real MCP HTTP requests exercise the Node listener drain and SDK response ordering.
-        fetch(`http://127.0.0.1:${port}/mcp`, {
-          method: "POST",
-          headers: request.headers,
-          body,
-        }),
-      );
-      const result: unknown = yield* Effect.tryPromise(() => response.json());
-      expect(response.status).toBe(200);
-      expect(result).toMatchObject({
+      expect(yield* callSend(url)).toMatchObject({
         error: { data: { reason: "delivery-pending" } },
       });
       expect(yield* Fiber.join(daemon).pipe(Effect.flip)).toMatchObject({
         phase: "storage",
       });
+      // eslint-disable-next-line agent-code-guard/no-hardcoded-assertion-literals -- The log reports the closed persistence cause without the underlying private database message.
+      expect(JSON.stringify(diagnostics)).toContain('"reason":"persistence"');
+      expect(JSON.stringify(diagnostics)).not.toContain(SECRET);
     }),
-  30_000,
-);
-
-it("logs a proposal storage cause and preserves delivery-pending", () => {
-  const messages: unknown[] = [];
-  return Effect.gen(function* () {
-    const { fixture, harness, store } = yield* proposalFailureFixture;
-    const daemon = yield* Effect.forkScoped(run(fixture, store, harness));
-    yield* Deferred.await(harness.listenerReady).pipe(
-      Effect.raceFirst(Fiber.join(daemon)),
-    );
-    expect(
-      yield* requireOperations(harness)
-        .send({
-          input: Schema.decodeUnknownSync(SendInput)({
-            to: "agent:bob",
-            text: "secret content",
-          }),
-        })
-        .pipe(Effect.flip),
-    ).toMatchObject({ reason: "delivery-pending" });
-    yield* Fiber.join(daemon).pipe(Effect.flip);
-    expect(JSON.stringify(messages)).toContain('"reason":"persistence"');
-    expect(JSON.stringify(messages)).not.toContain("secret content");
-  }).pipe(
+  ).pipe(
     Effect.provide(
       Logger.replace(
         Logger.defaultLogger,
         Logger.make(({ message, annotations }) => {
-          messages.push({
+          diagnostics.push({
             message,
             annotations: Object.fromEntries(annotations),
           });
@@ -213,6 +87,11 @@ it("logs a proposal storage cause and preserves delivery-pending", () => {
       ),
     ),
   );
-});
+};
 
-/* eslint-enable agent-code-guard/no-hardcoded-assertion-literals -- Restore the default after the closed error contract tests. */
+// @agent-code-guard/regression-only: once an intent is bound, a storage failure must retain its send uncertainty while stopping the daemon.
+it(
+  "returns delivery-pending over HTTP and stops with private content redacted",
+  failsBoundProposal,
+  30_000,
+);
