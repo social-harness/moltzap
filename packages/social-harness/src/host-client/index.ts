@@ -82,6 +82,21 @@ export function acquireHarnessEndpoint(
   );
 }
 
+/**
+ * Daemon credentials travel over TLS or literal loopback.
+ * @param endpoint Address checked before a client sends its bearer.
+ * @returns Whether the address can carry a credential without userinfo or fragments.
+ */
+export function safeCredentialEndpoint(endpoint: URL): boolean {
+  const secure = endpoint.protocol === "https:";
+  const loopback =
+    endpoint.protocol === "http:" &&
+    (endpoint.hostname === "127.0.0.1" || endpoint.hostname === "[::1]");
+  const plainAddress =
+    !endpoint.username && !endpoint.password && !endpoint.hash;
+  return (secure || loopback) && plainAddress;
+}
+
 function closeClient(client: Client): Effect.Effect<void> {
   return closeQuietly(() => client.close());
 }
@@ -90,21 +105,6 @@ function closeQuietly(close: () => Promise<void>): Effect.Effect<void> {
   return Effect.tryPromise({ try: close, catch: () => new CloseError() }).pipe(
     Effect.ignore,
   );
-}
-
-/**
- * Daemon credentials travel over TLS or literal loopback.
- * @param endpoint Caller-owned address, copied before the effect runs.
- * @returns Whether the address can carry a credential without userinfo or fragments.
- */
-function safeCredentialEndpoint(endpoint: URL): boolean {
-  const secure = endpoint.protocol === "https:";
-  const loopback =
-    endpoint.protocol === "http:" &&
-    (endpoint.hostname === "127.0.0.1" || endpoint.hostname === "[::1]");
-  const plainAddress =
-    !endpoint.username && !endpoint.password && !endpoint.hash;
-  return (secure || loopback) && plainAddress;
 }
 
 /**
@@ -291,7 +291,9 @@ function connect(
       client.connect(
         new StreamableHTTPClientTransport(endpoint, {
           requestInit: {
-            headers: { Authorization: `Bearer ${Redacted.value(options.credential)}` },
+            headers: {
+              Authorization: `Bearer ${Redacted.value(options.credential)}`,
+            },
             redirect: "error",
           },
         }),
@@ -487,7 +489,9 @@ function messages(
       const seen = new Set<DeliveryToken>();
       const wakeups =
         options.receiveMode === "push"
-          ? inboxWakeups(endpoint, options.credential, options.onReady).pipe(Stream.as({}))
+          ? inboxWakeups(endpoint, options.credential, options.onReady).pipe(
+              Stream.as({}),
+            )
           : pollWakeups(client, fence, options.onReady ?? Effect.void);
       return wakeups.pipe(
         Stream.flatMap((metadata) =>

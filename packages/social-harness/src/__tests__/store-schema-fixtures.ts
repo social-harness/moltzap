@@ -59,9 +59,6 @@ export function withDaemonStore<Value, Failure, Requirements>(
   );
 }
 
-/** Communication tests use the same database lifetime as the daemon. */
-export const withStore = withDaemonStore;
-
 /** The SQLite file the endpoint store keeps inside a state directory. */
 export function databasePath(directory: string): string {
   return join(directory, "sharnessd.sqlite3");

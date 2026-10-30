@@ -19,11 +19,12 @@ import {
   Layer,
   Option,
   type ParseResult,
-  type Redacted,
+  Redacted,
   type Runtime,
   Schema,
   Scope,
 } from "effect";
+import { createHash, timingSafeEqual } from "node:crypto";
 import type { CollectiveError } from "../../communication/collectives/contracts.js";
 import type { FirewallSendError } from "../../host-protocol/advice.js";
 import type { EventStore } from "../inbox/store.js";
@@ -87,7 +88,6 @@ import {
   sendErrorData,
 } from "../../host-protocol/operations.js";
 import { SendResultSchema } from "../../host-protocol/send-result.js";
-import { authenticateHarnessRequest } from "./auth.js";
 import {
   type HarnessEvents,
   makeHarnessEvents,
@@ -99,6 +99,25 @@ import {
 } from "./events.js";
 
 /* eslint-disable agent-code-guard/async-keyword -- Official MCP factories and callbacks are Promise-native. */
+
+const credentialDigest = (value: string): Uint8Array =>
+  createHash("sha256").update(value).digest();
+
+/** Every HTTP request authenticates before discovery, SDK parsing or event dispatch. */
+const authenticateHarnessRequest = (
+  request: Request,
+  credential: Redacted.Redacted,
+): boolean => {
+  const authorization = request.headers.get("authorization");
+  return (
+    authorization !== null &&
+    authorization.startsWith("Bearer ") &&
+    timingSafeEqual(
+      credentialDigest(authorization.slice("Bearer ".length)),
+      credentialDigest(Redacted.value(credential)),
+    )
+  );
+};
 
 const REGISTER_TOOL = "register";
 const STATUS_TOOL = "status";

@@ -22,6 +22,7 @@ import {
   ProtocolError,
   StreamableHTTPClientTransport,
 } from "@modelcontextprotocol/client";
+import { safeCredentialEndpoint } from "@moltzap/social-harness";
 import {
   Config,
   Console,
@@ -29,6 +30,7 @@ import {
   Effect,
   Match,
   Option,
+  Redacted,
   Schema,
   type Scope,
 } from "effect";
@@ -222,7 +224,7 @@ function call(
   url: URL,
   tool: string,
   json: string,
-): Effect.Effect<void, CommandError, Scope.Scope> {
+): Effect.Effect<void, CommandError, Scope.Scope | FileSystem.FileSystem> {
   return Effect.gen(function* () {
     const parsed = yield* Schema.decode(toolArguments)(json).pipe(
       Effect.mapError(() =>
@@ -305,13 +307,22 @@ function forgetRequest(): Effect.Effect<
   );
 }
 
-function connect(
-  url: URL,
-): Effect.Effect<Client, CommandError, Scope.Scope | FileSystem.FileSystem> {
-  return Effect.gen(function* () {
-    const credentialFile = yield* Config.string(
-      "SHARNESS_MCP_CREDENTIAL_FILE",
-    ).pipe(
+/** Secret file paths and contents stay redacted outside the authenticated transport. */
+const readMcpCredential = Effect.gen(function* () {
+  const credentialFile = yield* Config.redacted(
+    "SHARNESS_MCP_CREDENTIAL_FILE",
+  ).pipe(
+    Effect.mapError(() =>
+      commandError(
+        "SHARNESS_MCP_CREDENTIAL_FILE must name a readable file",
+        "mcp-credential-file",
+      ),
+    ),
+  );
+  const fs = yield* FileSystem.FileSystem;
+  const credential = yield* fs
+    .readFileString(Redacted.value(credentialFile))
+    .pipe(
       Effect.mapError(() =>
         commandError(
           "SHARNESS_MCP_CREDENTIAL_FILE must name a readable file",
@@ -319,17 +330,20 @@ function connect(
         ),
       ),
     );
-    const fs = yield* FileSystem.FileSystem;
-    const credential = yield* fs
-      .readFileString(credentialFile)
-      .pipe(
-        Effect.mapError(() =>
-          commandError(
-            "SHARNESS_MCP_CREDENTIAL_FILE must name a readable file",
-            "mcp-credential-file",
-          ),
-        ),
+  return Redacted.make(credential);
+});
+
+function connect(
+  url: URL,
+): Effect.Effect<Client, CommandError, Scope.Scope | FileSystem.FileSystem> {
+  return Effect.gen(function* () {
+    if (!safeCredentialEndpoint(url)) {
+      return yield* commandError(
+        "MCP URL must use HTTPS or literal HTTP loopback without embedded credentials or fragments",
+        "could-not-connect",
       );
+    }
+    const credential = yield* readMcpCredential;
     const client = new Client(
       { name: "sharness-mcp", version: "1.0.0" },
       {
@@ -343,7 +357,9 @@ function connect(
           client.connect(
             new StreamableHTTPClientTransport(url, {
               requestInit: {
-                headers: { Authorization: `Bearer ${credential}` },
+                headers: {
+                  Authorization: `Bearer ${Redacted.value(credential)}`,
+                },
                 redirect: "error",
               },
             }),

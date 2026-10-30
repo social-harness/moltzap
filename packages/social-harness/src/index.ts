@@ -11,7 +11,10 @@ export {
   type InboundDelivery,
 } from "./host-client/index.js";
 /** Acquire the structural endpoint for one configured daemon endpoint. */
-export { acquireHarnessEndpoint } from "./host-client/index.js";
+export {
+  acquireHarnessEndpoint,
+  safeCredentialEndpoint,
+} from "./host-client/index.js";
 /**
  * Decoders of the daemon's MCP tool results, refusal data and
  * pending-delivery event. They ignore fields they do not name, so a newer
