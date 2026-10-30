@@ -3,23 +3,24 @@
 import { live as it } from "@effect/vitest";
 import { Array, Effect, Schema } from "effect";
 import { describe, expect } from "vitest";
-import { digest } from "../../__tests__/agent-card-fixtures.js";
+import type {
+  FirewallHistoryEntry,
+  FirewallLocalEntry,
+} from "../firewall/store/types.js";
+import type { DaemonStore } from "./store.js";
+import { digest } from "../__tests__/agent-card-fixtures.js";
 import {
   bytes,
   stateDirectory,
   storedConversation,
-  withStore,
-} from "../../__tests__/store-schema-fixtures.js";
-import { WIRE_VERSION } from "../../identity/wire-version.js";
+  withDaemonStore,
+} from "../__tests__/store-schema-fixtures.js";
 import {
   type CertifiedRecord,
   DeliveryToken,
-  type EndpointStore,
-  type FirewallEvidenceSnapshot,
-  type FirewallHistoryEntry,
-  type FirewallLocalEntry,
   inspectEndpointStore,
-} from "./index.js";
+} from "../communication/store/index.js";
+import { WIRE_VERSION } from "../identity/wire-version.js";
 
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- Store mutation outcomes and recovery state are the contract under test. */
 
@@ -39,7 +40,7 @@ const inboxItem = bytes('{"kind":"operationFailed"}');
  * host's inbox and event state, and return the queued envelope's
  * outbox identity.
  */
-const seedState = (store: EndpointStore) =>
+const seedState = (store: DaemonStore) =>
   Effect.gen(function* () {
     yield* store.bindIdentity(identity);
     yield* store.putConversationFoundation(foundation);
@@ -80,22 +81,22 @@ function reportsHowCurrentStoreOpens() {
   const path = stateDirectory();
   return Effect.gen(function* () {
     const absent = yield* inspectEndpointStore(path);
-    yield* withStore(path, seedState);
+    yield* withDaemonStore(path, seedState);
     const current = yield* inspectEndpointStore(path);
 
     expect([absent, current]).toEqual(["create", "reopen"]);
-    expect(yield* withStore(path, (store) => store.readIdentity())).toEqual(
-      identity,
-    );
+    expect(
+      yield* withDaemonStore(path, (store) => store.readIdentity()),
+    ).toEqual(identity);
   });
 }
 
 function preservesStateAcrossRestart() {
   const path = stateDirectory();
   return Effect.gen(function* () {
-    yield* withStore(path, seedState);
-    const before = yield* withStore(path, (store) => store.recover());
-    yield* withStore(path, (store) =>
+    yield* withDaemonStore(path, seedState);
+    const before = yield* withDaemonStore(path, (store) => store.recover());
+    yield* withDaemonStore(path, (store) =>
       Effect.gen(function* () {
         expect(yield* store.readIdentity()).toEqual(identity);
         expect(yield* store.recover()).toEqual(before);
@@ -124,7 +125,7 @@ function scopesUnresolvedSendEvidenceToEachSlicesConversation() {
       subjectId: digest("rch_", 4),
     })),
   };
-  return withStore(stateDirectory(), (store) =>
+  return withDaemonStore(stateDirectory(), (store) =>
     Effect.gen(function* () {
       yield* seedState(store);
       yield* store.putConversationFoundation(other.foundation);
@@ -168,22 +169,18 @@ function invalidatesInterruptedChecks() {
   const checkId = "interrupted-check";
   const completion = { checkId, admit: true, canonicalResult: bytes("allow") };
   return Effect.gen(function* () {
-    yield* withStore(path, (store) =>
+    yield* withDaemonStore(path, (store) =>
       Effect.gen(function* () {
         yield* seedState(store);
-        const evidence = yield* store.readFirewallEvidence({
-          maximumRecords: 10,
-        });
         yield* store.beginFirewallAttempt({
           checkId,
           direction: "outgoing",
-          snapshot: evidence.snapshot,
           canonicalCandidate: bytes("draft"),
           canonicalInput: bytes("fixed policy and evidence"),
         });
       }),
     );
-    yield* withStore(path, (store) =>
+    yield* withDaemonStore(path, (store) =>
       Effect.gen(function* () {
         expect(
           (yield* store.readFirewallEvidence({
@@ -193,7 +190,11 @@ function invalidatesInterruptedChecks() {
         ).toBe(true);
         expect(
           yield* Effect.flip(
-            store.admitFirewallOperation(completion, bytes("draft")),
+            store.completeFirewallAttempt(
+              completion,
+              "outgoing",
+              bytes("draft"),
+            ),
           ),
         ).toMatchObject({ reason: "conflict" });
         expect((yield* store.recover()).messageIntents).toHaveLength(1);
@@ -243,7 +244,7 @@ function selectsRecentHistoryFromALongConversation() {
   const { foundation } = storedConversation("history-window");
   const other = storedConversation("other-history");
   const delivery = historyDelivery;
-  return withStore(stateDirectory(), (store) =>
+  return withDaemonStore(stateDirectory(), (store) =>
     Effect.gen(function* () {
       yield* store.bindIdentity(identity);
       yield* store.putConversationFoundation(other.foundation);
@@ -306,7 +307,7 @@ function windowBounds(window: {
  */
 function anchorsLocalEvidenceInItsConversation() {
   const { foundation } = storedConversation("history-window");
-  return withStore(stateDirectory(), (store) =>
+  return withDaemonStore(stateDirectory(), (store) =>
     Effect.gen(function* () {
       const later = yield* seedLocalEvidenceBetweenRecords(store);
       const window = (maximumRecords: number, conversation = "agent:bob") =>
@@ -357,7 +358,7 @@ function anchorsLocalEvidenceInItsConversation() {
  * @param store The store to seed.
  * @returns The delivery of the first record after the local item.
  */
-function seedLocalEvidenceBetweenRecords(store: EndpointStore) {
+function seedLocalEvidenceBetweenRecords(store: DaemonStore) {
   const { foundation } = storedConversation("history-window");
   return Effect.gen(function* () {
     yield* store.bindIdentity(identity);
@@ -427,169 +428,5 @@ describe("endpoint runtime state", () => {
     anchorsLocalEvidenceInItsConversation,
   );
 });
-
-/** A retained operation check exercises the same transaction comparison as message admission. */
-function startedCheck(
-  store: EndpointStore,
-  snapshot: FirewallEvidenceSnapshot,
-  checkId: string,
-) {
-  return store.beginFirewallAttempt({
-    checkId,
-    direction: "outgoing",
-    snapshot,
-    canonicalCandidate: bytes("draft"),
-    canonicalInput: bytes("captured input"),
-  });
-}
-
-it("keeps a capture fresh during unrelated certification, inbox and intent activity", () =>
-  withStore(stateDirectory(), (store) =>
-    Effect.gen(function* () {
-      const elsewhere = storedConversation("unrelated");
-      yield* store.bindIdentity(identity);
-      const captured = yield* store.readFirewallEvidence({
-        conversationId: foundation.conversationId,
-        conversation: "agent:bob",
-        maximumRecords: 2,
-      });
-      yield* startedCheck(store, captured.snapshot, "unrelated");
-      yield* store.putConversationFoundation(elsewhere.foundation);
-      yield* store.applyCertifiedRecord(elsewhere.record, historyDelivery);
-      yield* store.bindMessageIntent({
-        kind: "existing-conversation",
-        intent: {
-          conversationId: elsewhere.foundation.conversationId,
-          membershipHash: elsewhere.foundation.membershipHash,
-          authorAgentId: identity.agentId,
-          msgId: "msg_unrelated",
-          canonicalIntent: bytes("pending"),
-        },
-      });
-      yield* store.putInboxItem({ deliveryToken: token, canonicalItem: local });
-      expect(
-        yield* store.admitFirewallOperation(
-          {
-            checkId: "unrelated",
-            admit: true,
-            canonicalResult: bytes("allow"),
-          },
-          bytes("draft"),
-        ),
-      ).toBe("admitted");
-    }),
-  ));
-
-it("stales a capture when its absent record candidate becomes present", () =>
-  withStore(stateDirectory(), (store) =>
-    Effect.gen(function* () {
-      yield* store.bindIdentity(identity);
-      const captured = yield* store.readFirewallEvidence({
-        beforeRecord: record.recordHash,
-        maximumRecords: 2,
-      });
-      expect(captured.candidate).toBeUndefined();
-      yield* startedCheck(store, captured.snapshot, "absent");
-      yield* store.putConversationFoundation(foundation);
-      yield* store.applyCertifiedRecord(record, historyDelivery);
-      expect(
-        yield* store.admitFirewallOperation(
-          { checkId: "absent", admit: true, canonicalResult: bytes("allow") },
-          bytes("draft"),
-        ),
-      ).toBe("stale");
-    }),
-  ));
-
-it.each(["visibility", "pending", "answer", "local"] as const)(
-  "stales every range of a result when captured %s evidence changes",
-  (change) =>
-    withStore(stateDirectory(), (store) =>
-      Effect.gen(function* () {
-        yield* store.bindIdentity(identity);
-        yield* store.putConversationFoundation(foundation);
-        yield* store.applyCertifiedRecord(record, historyDelivery);
-        const captured = yield* store.readFirewallEvidenceSlices({
-          ranges: [
-            { conversation: "agent:unrelated" },
-            {
-              conversationId: foundation.conversationId,
-              conversation: "agent:bob",
-            },
-          ],
-          maximumRecords: 2,
-        });
-        yield* startedCheck(store, captured.snapshot, change);
-        yield* changeEvidence(store, change);
-        expect(
-          yield* store.admitFirewallOperation(
-            { checkId: change, admit: true, canonicalResult: bytes("allow") },
-            bytes("draft"),
-          ),
-        ).toBe("stale");
-      }),
-    ),
-);
-
-function changeEvidence(
-  store: EndpointStore,
-  change: "visibility" | "pending" | "answer" | "local",
-) {
-  return Effect.gen(function* () {
-    switch (change) {
-      case "visibility": {
-        const delivery = (yield* store.readPendingDeliveries())[0];
-        const deliveryToken = yield* Effect.fromNullable(
-          delivery?.deliveryToken,
-        ).pipe(Effect.orDie);
-        yield* store.putInboxItem({ deliveryToken, canonicalItem: local });
-        break;
-      }
-      case "pending":
-        yield* store.bindMessageIntent({
-          kind: "existing-conversation",
-          intent: {
-            conversationId: foundation.conversationId,
-            membershipHash: foundation.membershipHash,
-            authorAgentId: identity.agentId,
-            msgId: "msg_later",
-            canonicalIntent: bytes("pending"),
-          },
-        });
-        break;
-      case "answer":
-      case "local":
-        yield* changeLocalEvidence(store, change);
-        break;
-      default: {
-        const exhaustive: never = change;
-        return exhaustive;
-      }
-    }
-  });
-}
-
-function changeLocalEvidence(store: EndpointStore, change: "answer" | "local") {
-  return Effect.gen(function* () {
-    yield* store.queueFirewallItem({
-      deliveryToken: token,
-      conversation: "agent:bob",
-      canonicalItem: local,
-    });
-    yield* store.admitFirewallLocalItem({
-      queuedItem: local,
-      item: { deliveryToken: token, canonicalItem: local },
-      completions: [],
-      answers:
-        change === "answer"
-          ? [{ recordHash: record.recordHash, admitted: false }]
-          : [],
-      evidence: {
-        conversation: change === "local" ? "agent:bob" : "agent:unrelated",
-        canonicalEntry: bytes("new evidence"),
-      },
-    });
-  });
-}
 
 /* eslint-enable agent-code-guard/no-hardcoded-assertion-literals -- Restore repository defaults. */

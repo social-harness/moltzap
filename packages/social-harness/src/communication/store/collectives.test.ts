@@ -1,5 +1,5 @@
 /**
- * @file Collective ownership and publication stay atomic with their durable message intents.
+ * @file Collective identities and message claims survive protocol store reopening.
  */
 
 import { live as it } from "@effect/vitest";
@@ -7,7 +7,6 @@ import { Effect } from "effect";
 import { expect } from "vitest";
 import type {
   CollectiveOperationInput,
-  DeliveryToken,
   EndpointStore,
   MessageIntent,
 } from "./index.js";
@@ -25,7 +24,6 @@ const remote: CollectiveOperationInput = {
   origin: {
     kind: "remote",
     recordHash: record.recordHash,
-    requiresAdmission: true,
   },
   canonicalRequest: request,
   canonicalDescriptor: bytes("received request"),
@@ -63,7 +61,7 @@ function seed(store: EndpointStore) {
   });
 }
 
-// @agent-code-guard/regression-only: transaction and reopen cases exercise immutable identity, admission, selection, and query boundaries.
+// @agent-code-guard/regression-only: transaction and reopen cases exercise immutable identity, selection, and query boundaries.
 it("binds a collective id to one authenticated origin and exact request bytes across reopen", () =>
   Effect.gen(function* () {
     const path = stateDirectory();
@@ -72,10 +70,10 @@ it("binds a collective id to one authenticated origin and exact request bytes ac
     expect(retained).toHaveLength(2);
   }));
 
-it("requires an accepted request and admission before atomically claiming one response intent", () =>
+it("requires an accepted request before atomically claiming one response intent", () =>
   Effect.gen(function* () {
     const path = stateDirectory();
-    yield* withStore(path, claimAdmittedAnswer);
+    yield* withStore(path, claimAnswer);
     const messages = yield* withStore(path, (store) =>
       store.readCollectiveMessages(),
     );
@@ -85,13 +83,6 @@ it("requires an accepted request and admission before atomically claiming one re
         msgId: message.intent.msgId,
       })),
     ).toEqual([{ role: "response", msgId: "first-answer" }]);
-  }));
-
-it("freezes answer references and commits one close and terminal token without resurrection after acknowledgment", () =>
-  Effect.gen(function* () {
-    const path = stateDirectory();
-    const token = yield* withStore(path, freezeAndPublish);
-    yield* withStore(path, (store) => assertCompleted(store, token));
   }));
 
 it("reads one retained operation and only the message roles requested for that operation", () =>
@@ -108,13 +99,9 @@ it("reads one retained operation and only the message roles requested for that o
 
 function readOperationQueries(store: EndpointStore) {
   return Effect.gen(function* () {
-    const delivery = yield* seed(store);
+    yield* seed(store);
     yield* store.putCollectiveOperation(local);
     yield* store.putCollectiveOperation(remote);
-    yield* store.putInboxItem({
-      deliveryToken: delivery.deliveryToken,
-      canonicalItem: bytes("admitted request"),
-    });
     yield* store.bindMessageIntent({
       kind: "existing-conversation",
       intent: intent("local-request"),
@@ -200,9 +187,9 @@ function assertRetainedOrigins(store: EndpointStore) {
   });
 }
 
-function claimAdmittedAnswer(store: EndpointStore) {
+function claimAnswer(store: EndpointStore) {
   return Effect.gen(function* () {
-    const delivery = yield* seed(store);
+    yield* seed(store);
     const binding = {
       kind: "existing-conversation",
       intent: intent("first-answer"),
@@ -216,14 +203,6 @@ function claimAdmittedAnswer(store: EndpointStore) {
       reason: "not-found",
     });
     yield* store.putCollectiveOperation(remote);
-    expect(yield* Effect.flip(store.bindMessageIntent(binding))).toMatchObject({
-      reason: "conflict",
-    });
-    expect((yield* store.recover()).messageIntents).toEqual([]);
-    yield* store.putInboxItem({
-      deliveryToken: delivery.deliveryToken,
-      canonicalItem: bytes("admitted request"),
-    });
     yield* store.bindMessageIntent(binding);
     expect(
       yield* Effect.flip(
@@ -240,40 +219,6 @@ function claimAdmittedAnswer(store: EndpointStore) {
     expect(
       (yield* store.recover()).messageIntents.map(({ msgId }) => msgId),
     ).toEqual(["first-answer"]);
-  });
-}
-
-function freezeAndPublish(store: EndpointStore) {
-  return Effect.gen(function* () {
-    yield* seed(store);
-    yield* store.putCollectiveOperation(local);
-    expect(
-      yield* store.recordCollectiveAnswer({
-        operationId: local.operationId,
-        member: "agent:bob",
-        recordHash: record.recordHash,
-      }),
-    ).toBe(record.recordHash);
-    yield* bindFrozenClose(store);
-    const [operation] = yield* store.readCollectiveOperations();
-    if (operation === undefined) {
-      return yield* Effect.dieMessage("missing operation");
-    }
-    const terminal = terminalItem(operation.deliveryToken);
-    expect(
-      yield* Effect.flip(
-        store.publishCollectiveItem({
-          ...terminal,
-          canonicalItem: new Uint8Array(2 * 1024 * 1024 + 1),
-        }),
-      ),
-    ).toMatchObject({ reason: "invalid-input" });
-    expect((yield* store.readCollectiveOperations())[0]).toMatchObject({
-      phase: "finalizing",
-    });
-    yield* store.publishCollectiveItem(terminal);
-    yield* store.acknowledgeInboxItem(operation.deliveryToken);
-    return operation.deliveryToken;
   });
 }
 
@@ -302,31 +247,4 @@ function bindFrozenClose(store: EndpointStore) {
       ),
     ).toMatchObject({ reason: "conflict" });
   });
-}
-
-function assertCompleted(store: EndpointStore, token: DeliveryToken) {
-  return Effect.gen(function* () {
-    yield* store.publishCollectiveItem(terminalItem(token));
-    expect((yield* store.readCollectiveOperations())[0]).toMatchObject({
-      phase: "completed",
-      deliveryToken: token,
-    });
-    expect((yield* store.readInboxItem(token))?.acknowledged).toBe(true);
-    expect((yield* store.readInbox()).items).toEqual([]);
-    expect(
-      (yield* store.readCollectiveMessages()).map(
-        (message) => message.intent.msgId,
-      ),
-    ).toEqual(["first-close"]);
-  });
-}
-
-function terminalItem(deliveryToken: DeliveryToken) {
-  return {
-    operationId: local.operationId,
-    deliveryToken,
-    canonicalItem: bytes("terminal result"),
-    conversation: "group:alice,bob,carol",
-    firewall: false,
-  };
 }
