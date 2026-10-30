@@ -2,7 +2,7 @@
 
 The firewall checks incoming messages and outgoing drafts against configured
 rules. It returns a judgment and registered advice, and manages authorized
-changes to editable rules. Policy determines when human approval is required.
+changes to editable rules.
 
 This is an interface draft for review. The declarations below propose the next
 boundary. Runtime code remains unchanged by this draft.
@@ -13,7 +13,7 @@ boundary. Runtime code remains unchanged by this draft.
 | --- | --- |
 | Message, verified participants and permitted history | A judgment and advice restricted to visible evidence |
 | Initial rules and previously saved editable rules | One active policy |
-| Rule change and any required human confirmation | A complete saved replacement, or a refusal preserving the old policy |
+| Rule change and approval | A complete saved replacement, or a refusal preserving the old policy |
 
 The daemon prepares conversation evidence and decides when to send or deliver.
 The store saves rules and check records. A check uses one policy and one input
@@ -24,8 +24,7 @@ throughout its assessment.
 ```mermaid
 flowchart LR
   A[Message and permitted evidence] --> B[Capture input and active policy]
-  B --> C[Retain check input]
-  C --> D[Run code checks]
+  B --> D[Run code checks]
   D --> E[Assess text rules]
   E --> F[Combine findings and select advice]
   F --> G[Return judgment and check record]
@@ -41,8 +40,9 @@ host may see.
 ```mermaid
 flowchart LR
   A[Requested rule change] --> B[Validate complete replacement]
-  B --> C[Save permitted replacement and change record]
-  C --> D[Replace active policy]
+  B --> C[Approval placeholder approves]
+  C --> D[Save replacement and change record]
+  D --> E[Replace active policy]
 ```
 
 A failed save leaves the old policy active. In-flight checks keep their policy.
@@ -51,7 +51,7 @@ A failed save leaves the old policy active. In-flight checks keep their policy.
 
 `makeFirewall` obtains the shared `SqlClient` from the Effect environment.
 The daemon provides its SQLite layer at startup. `checkMessage` remains the
-offline evaluator. Rule, message, provider and result types retain their
+test-only evaluator. Rule, message, provider and result types retain their
 owning schemas.
 
 ```typescript
@@ -75,18 +75,13 @@ export interface Firewall {
   ): Effect.Effect<PolicyUpdateResult, FirewallPolicyError>;
 
   /**
-   * Retains the input, checks it once and returns a result for delivery to commit.
-   * Cancellation leaves an unfinished attempt. Storage failure returns an error.
+   * Checks all inputs under one policy and returns results in input order.
+   * The caller saves completed decisions with the messages they permit.
+   * Cancellation creates no completed decision.
    */
-  check(input: CheckInput): Effect.Effect<CheckedMessage, EndpointStoreError>;
-
-  /**
-   * Checks inputs in bounded parallelism under one policy, returning input order.
-   * The caller commits their delivery effects together when they form one result.
-   */
-  checkMany(
+  check(
     inputs: readonly CheckInput[],
-  ): Effect.Effect<readonly CheckedMessage[], EndpointStoreError>;
+  ): Effect.Effect<readonly CheckedMessage[], CheckInputError>;
 }
 
 /**
@@ -96,14 +91,6 @@ export interface Firewall {
 export declare function makeFirewall(
   configuration: FirewallOptions | LoadedMessagePolicy,
 ): Effect.Effect<Firewall, FirewallPolicyError, SqlClient.SqlClient>;
-
-/**
- * Checks supplied rules and verified evidence with an injected provider.
- * This offline operation performs no storage writes or configuration reads.
- */
-export declare function checkMessage(
-  input: CheckMessageInput,
-): Effect.Effect<FirewallCheck, CheckInputError>;
 ```
 
 `CheckInput` contains direction, the exact candidate bytes, its message,
@@ -112,12 +99,29 @@ an unavailable check. `CheckedMessage` contains the judgment, permitted
 guidance and a completion record. The caller saves that completion with the
 message's delivery outcome. These are values, rather than live check handles.
 
-The MCP interface authenticates one agent. A rule change is checked under the
-current policy. Required human confirmation is obtained before the change is
-saved. Fixed rules remain supplied by configuration.
+A rule change is checked under the current policy. An approval step initially
+approves every edit automatically. That step can later use host elicitation.
+Fixed rules remain supplied by configuration.
 
 ## Persistence
 
-The firewall uses the shared SQL client to load editable rules, save approved
-changes and retain check inputs. The daemon saves completed decisions with the
-messages they permit. Decision-history reads belong to the stored history.
+The firewall uses the shared SQL client to load editable rules and save
+approved changes. The daemon saves completed decisions with the messages they
+permit. Interrupted checks leave their messages pending for recovery.
+Daemon-generated results are saved as results, without synthetic firewall
+checks. Decision-history reads belong to the stored history.
+
+## Test-only evaluator
+
+`checkMessage` moves to the package's existing test-only entry. It uses
+supplied rules and evidence without storage or configuration reads.
+
+```typescript
+/**
+ * Checks supplied rules and verified evidence with an injected provider.
+ * This offline operation performs no storage writes or configuration reads.
+ */
+export declare function checkMessage(
+  input: CheckMessageInput,
+): Effect.Effect<FirewallCheck, CheckInputError>;
+```

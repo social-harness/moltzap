@@ -62,10 +62,11 @@ Related changes become durable together. An incoming decision, the text and
 guidance offered to the agent, and any answer visibility changes form one
 change. Acknowledgment records delivery progress and preserves that saved view.
 
-The store retains a check's input before assessment begins. Restart identifies
-interrupted attempts and resumes unfinished incoming work. Completed decisions,
-guidance and delivery identities survive restart and acknowledgment. Every
-host delivery method reads the same retained view.
+The store saves completed checks. Interrupted checks leave their incoming
+messages pending for recovery. Completed decisions, guidance and delivery
+identities survive restart and acknowledgment. Daemon-generated results are
+saved without synthetic firewall checks. Every host delivery method reads
+the same retained view.
 
 Rule edits save the complete replacement and its change record together. A
 failed save keeps the previous rules active. An edit takes effect for later
@@ -78,9 +79,10 @@ The store lists conversations and returns the message view retained for the
 agent, preserving recorded visibility across rule edits and restart.
 
 A history read fixes the certified head at its start. Later appends remain
-outside that read. Pages contain at most 50 entries. Continuations retain
-that snapshot, are single-use, and expire with it or on restart. An invalid
-continuation does not silently start a new read.
+outside that read. Pages contain at most 50 entries. Continuations identify
+the read position and its fixed head. They can be reused and remain valid
+after restart while that history is retained. An invalid continuation does
+not silently start a new read.
 
 The daemon verifies returned records and returns no records from an invalid
 page. Reading history neither acknowledges delivery nor authorizes a send.
@@ -101,12 +103,9 @@ The firewall checks new messages and rule changes. The store retains message
 visibility and serves the permitted history view. Reading history uses those
 stored decisions without running the firewall again.
 
-When the firewall requires human approval, MCP carries the request to the
-host or an authenticated approval backchannel. The firewall evaluates the
-confirmation for the requested action before the daemon executes it. Decline,
-cancellation or unavailable confirmation leaves that action unapplied.
-Approval applies to the action and content the person reviewed. An agent's
-statement that approval occurred supplies no authority.
+Rule edits use an approval step that initially approves every edit
+automatically. Host elicitation can later replace that placeholder. This step
+does not establish human confirmation.
 
 ### Local policy and diagnostics
 

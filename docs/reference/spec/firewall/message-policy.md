@@ -130,7 +130,9 @@ calendar changes, retract tool actions or reveal undisclosed collusion.
 
 Each completed check identifies the message, evidence and policy it assessed.
 Earlier decisions retain the rules and registered advice that applied at that
-time. Private provider traces stay in memory. Owner summaries contain deciding
+time. Only completed checks enter decision history. Daemon-generated results
+are stored without synthetic firewall checks. Private provider traces stay in
+memory. Decision summaries contain deciding
 rule ids and registered advice, with message content and private evidence
 excluded. An edit changes future checks.
 
@@ -293,11 +295,11 @@ At most 256 editable rules have unique ids, text, an explicit `applies` directio
 and optional guidance, feedback and `notifySender`. `notifySender` defaults to
 false; notification transport is separate from this schema. Editable ids
 cannot reuse fixed rule ids. Initial rules seed a missing saved policy.
-The active policy determines whether a requested edit can proceed or requires
-human approval. The daemon obtains any required confirmation through the
-host before applying the change. A proposed replacement cannot authorize
-itself. Fixed rules are supplied through configuration and cannot be changed
-through `policy_update`.
+The active policy determines whether a requested edit can proceed or needs
+approval. The approval step initially approves every request passed to it.
+Host elicitation can later replace this placeholder. A proposed replacement
+cannot authorize itself. Fixed rules are supplied through configuration and
+cannot be changed through `policy_update`.
 
 An edit either applies in full or leaves the previous rules active.
 `policy_read` reports editable and fixed rules with their current revision.
