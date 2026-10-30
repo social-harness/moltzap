@@ -226,10 +226,12 @@ function registeredAdvice(
   reason: Reason,
   rule?: RuleDescription,
 ): string | undefined {
-  if (reason === "eligible") {
-    return rule?.guidance ?? rule?.feedback?.text;
+  if (rule === undefined) {
+    return undefined;
   }
-  return rule?.feedback?.text ?? rule?.guidance;
+  return reason === "eligible"
+    ? (rule.guidance ?? rule.feedback?.text)
+    : (rule.feedback?.text ?? rule.guidance);
 }
 
 function unavailableCheck(
