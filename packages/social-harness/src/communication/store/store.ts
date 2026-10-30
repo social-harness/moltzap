@@ -100,7 +100,7 @@ import {
 export { EndpointStoreError };
 
 /**
- * Reports whether opening the state directory creates, reopens, or migrates
+ * Reports whether opening the state directory creates or reopens
  * its store without changing it. Creating a store leaves the daemon
  * unregistered.
  *

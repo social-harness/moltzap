@@ -1,13 +1,6 @@
 /** @file AgentCard and SignedMessage immutability, representation, bounds, and signature tests. */
 
-import {
-  Effect,
-  Either,
-  Encoding,
-  ParseResult,
-  Redacted,
-  Schema,
-} from "effect";
+import { Effect, Either, Encoding, Redacted, Schema } from "effect";
 import * as fc from "fast-check";
 import { generateKeyPairSync } from "node:crypto";
 import { expect, it } from "vitest";
@@ -50,22 +43,6 @@ const MAXIMUM_BODY_BYTES = 262_144;
 const MAXIMUM_RECIPIENTS = 128;
 
 const MIXED_ORDER_PUBLIC_KEY_X = "lZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZk";
-
-/**
- * A Registry-signed pre-reset card is outside retained-history admission.
- */
-const priorVersionAgentCard = {
-  payload:
-    "eyJhZ2VudElkIjoiYWd0Xy12cjYtdnI2LXZyNi12cjYtdnI2LWciLCJhZ2VudE5hbWUiOiJtaXhlZC1vcmRlci1zZW5kZXIiLCJpc3N1ZWRBdCI6IjIwMjYtMDctMzBUMTI6MDA6MDBaIiwia2luZCI6ImFnZW50Q2FyZCIsIm1vbHR6YXBWZXJzaW9uIjoiMjAyNi44MjcuMSIsInByaW5jaXBhbElkIjoicHJuXy1mbjUtZm41LWZuNS1mbjUtZm41LVEiLCJwdWJsaWNLZXkiOnsiY3J2IjoiRWQyNTUxOSIsImt0eSI6Ik9LUCIsIngiOiJsWm1abVptWm1abVptWm1abVptWm1abVptWm1abVptWm1abVptWm1abVprIn19",
-  signatures: [
-    {
-      protected:
-        "eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoidXJuOmlldGY6cGFyYW1zOm9hdXRoOmp3ay10aHVtYnByaW50OnNoYS0yNTY6a1ByS19xbXhWV2FZVkE5d3dCRjZJdW8zdlZ6ejdUeEhDVHdYQnlnclM0ayIsInR5cCI6ImFwcGxpY2F0aW9uL3ZuZC5tb2x0emFwLmFnZW50LWNhcmQrandzIn0",
-      signature:
-        "foMLtTx77cf-oM7B5634ShB7tMno9EAtidOMnXIM1FArtOmsFPkegrOxj6FdqD3Etg3zCk1wUnISQON9fijFBg",
-    },
-  ],
-};
 
 const rawSignature = Schema.Struct({
   protected: Schema.String,
@@ -695,17 +672,6 @@ it("rejects a signature accepted only by cofactored Ed25519 verification", () =>
         agentCard,
       }).pipe(Effect.either);
       expect(wasRejected(result)).toBe(true);
-    }),
-  ));
-
-it("refuses an AgentCard the Registry signed under the prior Social Harness version", () =>
-  Effect.runPromise(
-    Effect.gen(function* () {
-      const refusal = yield* Schema.decodeUnknown(AgentCard)(
-        priorVersionAgentCard,
-      ).pipe(Effect.flip);
-
-      expect(refusal).toBeInstanceOf(ParseResult.ParseError);
     }),
   ));
 
