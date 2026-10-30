@@ -53,7 +53,7 @@ const candidate = Schema.decodeUnknown(MessageIntent)({
 export const makeRetainedCheckFixture = Effect.suspend(() =>
   withDaemonStore(stateDirectory(), (store) =>
     Effect.gen(function* () {
-      const installed = yield* makeFirewall(policyOptions, store);
+      const installed = yield* makeFirewall(policyOptions);
       const outgoing = yield* candidate;
       const message = new Message({
         id: "candidate",
@@ -70,18 +70,17 @@ export const makeRetainedCheckFixture = Effect.suspend(() =>
         gaps: [],
       });
       const canonicalCandidate = yield* encodeRuntimeValue(outgoing);
-      const checked = yield* installed.check({
-        direction: "outgoing",
-        canonicalCandidate,
-        context,
-        agents: [testAgentView("alice"), testAgentView("bob")],
-        message,
-      });
-      yield* store.completeFirewallAttempt(
-        checked.completion,
-        "outgoing",
-        canonicalCandidate,
-      );
+      const checks = yield* installed.check([
+        {
+          direction: "outgoing",
+          canonicalCandidate,
+          context,
+          agents: [testAgentView("alice"), testAgentView("bob")],
+          message,
+        },
+      ]);
+      const checked = yield* Effect.fromNullable(checks[0]);
+      yield* store.saveCheckDecision(checked.completion);
       const entry = yield* Effect.fromNullable(
         (yield* store.readFirewallDecisions())[0],
       );

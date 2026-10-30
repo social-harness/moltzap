@@ -1,6 +1,7 @@
 /** @file Verified identity and durable-message fixtures for daemon runtime tests. */
 
 import { Effect, Redacted, Schema } from "effect";
+import { mcpTestCredential } from "./mcp-http-fixtures.js";
 import { generateKeyPairSync } from "node:crypto";
 import type { EnginePendingMessage } from "../communication/conversations/index.js";
 import type { DaemonBootstrap } from "../daemon/bootstrap.js";
@@ -74,6 +75,7 @@ export const makeFixture = Effect.gen(function* () {
     configuration: {
       stateDirectory: "/var/lib/social-harness",
       mcpPort: 4319,
+      mcpCredentialFile: Redacted.make("/run/secrets/mcp-credential"),
       registryOrigin: new URL("https://registry.example"),
       registrySignerPublicKey,
       routerOrigin: new URL("https://router.example"),
@@ -83,6 +85,7 @@ export const makeFixture = Effect.gen(function* () {
       hideCollectives: false,
     },
     signingAuthority,
+    mcpCredential: mcpTestCredential,
     agentPublicKey: AgentSigningAuthority.publicKey(signingAuthority),
     admissionCredential: Effect.succeed(Redacted.make("bootstrap-token=")),
   });

@@ -1,6 +1,7 @@
 /** @file Real storage and prepared send fixtures shared by firewall admission tests. */
 
-import { Deferred, Effect, Queue, Schema, Scope } from "effect";
+import { Context, Deferred, Effect, Layer, Queue, Schema, Scope } from "effect";
+import { SqlClient } from "@effect/sql";
 import { generateKeyPairSync } from "node:crypto";
 import type { MessageMiddleware, MiddlewareResult } from "../firewall/check.js";
 import type { InboundItem } from "../host-protocol/items.js";
@@ -15,13 +16,10 @@ import {
   verifyMembershipDescriptor,
 } from "../communication/records/index.js";
 import { RouterInstanceId } from "../communication/router/api/contract.js";
-import {
-  decodeRuntimeValue,
-  EndpointStoreError,
-} from "../communication/store/index.js";
+import { decodeRuntimeValue } from "../communication/store/index.js";
 import { makeHostDelivery } from "../daemon/inbox/host-delivery.js";
 import { noHistoryExport } from "../daemon/inbox/host-traffic-log.js";
-import { type DaemonStore, openDaemonStore } from "../daemon/store.js";
+import { layer } from "../daemon/store.js";
 import { encodeCanonical } from "../encoding/canonical-json.js";
 import {
   type Firewall,
@@ -43,7 +41,7 @@ import {
 } from "./certified-history-fixtures.js";
 import { makeCollectiveOperations } from "./collective-send.js";
 import { pollCursor } from "./router-worker-fixtures.js";
-import { stateDirectory } from "./store-schema-fixtures.js";
+import { stateDirectory, testStore } from "./store-schema-fixtures.js";
 
 /** A communication norm shares its guidance and repair text across traces. */
 export const rule = {
@@ -95,13 +93,19 @@ const identities = Effect.gen(function* () {
   );
   const membership = yield* directMembership([local.card, remote.card], signer);
   const directory = stateDirectory();
-  const store = yield* openDaemonStore(directory, {
-    liveWireVersions: LIVE_WIRE_VERSIONS,
-  });
-  yield* store.bindIdentity({
-    agentId: local.card.agentId,
-    canonicalAgentCard: yield* encodeCanonical(AgentCard, local.card),
-  });
+  const context = yield* Layer.build(
+    layer({ stateDirectory: directory, liveWireVersions: LIVE_WIRE_VERSIONS }),
+  );
+  const sql = Context.get(context, SqlClient.SqlClient);
+  const run = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    effect.pipe(Effect.provideService(SqlClient.SqlClient, sql));
+  const store = testStore;
+  yield* run(
+    store.bindIdentity({
+      agentId: local.card.agentId,
+      canonicalAgentCard: yield* encodeCanonical(AgentCard, local.card),
+    }),
+  );
   return {
     local,
     remote,
@@ -109,22 +113,18 @@ const identities = Effect.gen(function* () {
     membership,
     directory,
     store,
+    sql,
+    run,
     registryKeys,
     signer,
   };
 });
 
-/**
- * Real storage and send preparation run with a suspended Router send. Before
- * each outbound write the engine asks `failWrite`: a write it fails fails the
- * bound message's activation, and the storage fault it reports is ignored.
- * @param failWrite Whether the next outbound write fails; none fails by default.
- * @returns The fixture's identities, storage, engine and Router barrier.
- */
-export const engineFixture = (failWrite?: () => boolean) =>
+/** Real storage and send preparation suspend network delivery at the Router boundary. */
+export const engineFixture = () =>
   Effect.gen(function* () {
     const known = yield* identities;
-    const { local, remote, third, store, signer } = known;
+    const { local, remote, third, signer } = known;
     const outbound = yield* Deferred.make<undefined>();
     const engine = yield* makeEndpointEngine({
       localAgentCard: local.card,
@@ -141,17 +141,7 @@ export const engineFixture = (failWrite?: () => boolean) =>
                 : remote.card,
           }),
       },
-      store: {
-        ...store,
-        enqueueOutbound: (input) =>
-          failWrite?.() === true
-            ? Effect.fail(new EndpointStoreError({ reason: "persistence" }))
-            : store.enqueueOutbound(input),
-      },
-      reportStorageFault: () =>
-        failWrite === undefined
-          ? Effect.dieMessage("unexpected store fault")
-          : Effect.void,
+      reportStorageFault: () => Effect.dieMessage("unexpected store fault"),
       routerWorker: {
         currentAnchor: Effect.succeed(anchor),
         awaitAnchor: Effect.succeed(anchor),
@@ -160,7 +150,7 @@ export const engineFixture = (failWrite?: () => boolean) =>
             Effect.zipRight(Effect.never),
           ),
       },
-    });
+    }).pipe(Effect.provideService(SqlClient.SqlClient, known.sql));
     return { ...known, engine, outbound };
   }).pipe(Effect.withSpan("fixture"));
 /** The fixture whose engine signs every proposal. */
@@ -177,26 +167,26 @@ export const auditChecks = (subject: Fixture) =>
       (entry) => decodeFirewallAuditEntry(entry),
       { concurrency: 1 },
     );
-  }).pipe(Effect.withSpan("auditChecks"));
+  }).pipe(
+    Effect.provideService(SqlClient.SqlClient, subject.sql),
+    Effect.withSpan("auditChecks"),
+  );
 
 /** Fixed registration and settings are captured before delivery operations run. */
 export const installation = (
-  store: DaemonStore,
+  sql: SqlClient.SqlClient,
   middleware: MessageMiddleware,
   overrides: Partial<FirewallOptions> = {},
 ) =>
-  makeFirewall(
-    {
-      incoming: [middleware],
-      outgoing: [middleware],
-      settings,
-      facts: [],
-      codeDigest: "a".repeat(64),
-      mode: "enforcement",
-      ...overrides,
-    },
-    store,
-  );
+  makeFirewall({
+    incoming: [middleware],
+    outgoing: [middleware],
+    settings,
+    facts: [],
+    codeDigest: "a".repeat(64),
+    mode: "enforcement",
+    ...overrides,
+  }).pipe(Effect.provideService(SqlClient.SqlClient, sql));
 
 /**
  * One collective layer with the firewall's admission ports and the delivery
@@ -205,8 +195,12 @@ export const installation = (
  */
 const firewallRuntime = (subject: Fixture, firewall: Firewall) =>
   Effect.gen(function* () {
-    const { local, store, engine } = subject;
-    const environment = { firewall, store, localAgentCard: local.card };
+    const { local, engine } = subject;
+    const environment = {
+      firewall,
+      sql: subject.sql,
+      localAgentCard: local.card,
+    };
     const scope = yield* Scope.Scope;
     const emitted: InboundItem[] = [];
     const slot: {
@@ -226,7 +220,6 @@ const firewallRuntime = (subject: Fixture, firewall: Firewall) =>
               .pipe(Effect.orDie);
       });
     const collectives = yield* makeCollectiveOperations({
-      store,
       observeMessage: (msgId) => engine.observeMessage(msgId),
       prepareMessage: (input) => engine.prepare(input),
       acceptMessage: (prepared, hold) => engine.accept(prepared, hold),
@@ -237,7 +230,6 @@ const firewallRuntime = (subject: Fixture, firewall: Firewall) =>
       emit,
     });
     const delivery = yield* makeHostDelivery({
-      store,
       historyExport: noHistoryExport,
       collectives: () => collectives,
       scope,
@@ -246,7 +238,10 @@ const firewallRuntime = (subject: Fixture, firewall: Firewall) =>
     });
     slot.delivery = delivery;
     return { environment, delivery, collectives, emitted };
-  }).pipe(Effect.withSpan("firewallRuntime"));
+  }).pipe(
+    Effect.provideService(SqlClient.SqlClient, subject.sql),
+    Effect.withSpan("firewallRuntime"),
+  );
 
 /**
  * The incoming fixture over an firewall firewall, such as an editable one
@@ -262,7 +257,7 @@ export const incomingThrough = (
     const { environment, delivery, collectives, emitted } =
       yield* firewallRuntime(subject, firewall);
     const published: HarnessMessageReadyEvent[] = [];
-    const readPending = pendingMessages(subject.store);
+    const readPending = pendingMessages(subject);
     const runPass = delivery.runPass(() => ({
       readPending,
       classify: collectives.classify,
@@ -299,7 +294,7 @@ export const incomingFixture = (
   overrides: Partial<FirewallOptions> = {},
   seed = true,
 ) =>
-  installation(subject.store, middleware, overrides).pipe(
+  installation(subject.sql, middleware, overrides).pipe(
     Effect.flatMap((firewall) => incomingThrough(subject, firewall, seed)),
   );
 
@@ -309,13 +304,13 @@ export function outgoingFixture(
   middleware: MessageMiddleware,
   overrides: Partial<FirewallOptions> = {},
 ) {
-  return installation(subject.store, middleware, overrides).pipe(
+  return installation(subject.sql, middleware, overrides).pipe(
     Effect.flatMap((firewall) => outgoingThrough(subject, firewall)),
     Effect.withSpan("outgoingFixture"),
   );
 }
 
-/** Runtime send operations share the managed firewall with owner edits. */
+/** Runtime send operations share the active firewall. */
 export function outgoingThrough(subject: Fixture, firewall: Firewall) {
   return firewallRuntime(subject, firewall).pipe(
     Effect.map((runtime) => runtime.delivery),
@@ -347,7 +342,10 @@ export function addConversation(subject: Fixture, authoredLocally = false) {
       record,
     );
     return { membership, record, remote: { card, authority } };
-  }).pipe(Effect.withSpan("addConversation"));
+  }).pipe(
+    Effect.provideService(SqlClient.SqlClient, subject.sql),
+    Effect.withSpan("addConversation"),
+  );
 }
 
 /** A complete registered norm delegates only its assessment to the test. */
@@ -367,11 +365,14 @@ export function seedIncoming(subject: Fixture, authoredLocally = false) {
     );
     yield* storeCertifiedFirstMessage(store, local.card, membership, record);
     return record;
-  }).pipe(Effect.withSpan("seedIncoming"));
+  }).pipe(
+    Effect.provideService(SqlClient.SqlClient, subject.sql),
+    Effect.withSpan("seedIncoming"),
+  );
 }
 
-function pendingMessages(store: DaemonStore) {
-  return store.readPendingDeliveries().pipe(
+function pendingMessages(subject: Fixture) {
+  return subject.run(subject.store.readPendingDeliveries()).pipe(
     Effect.flatMap((entries) =>
       Effect.forEach(
         entries,

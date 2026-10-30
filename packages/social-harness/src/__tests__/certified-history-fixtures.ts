@@ -9,7 +9,8 @@ import type {
   StoredAnchor,
   CertifiedRecord as StoredCertifiedRecord,
 } from "../communication/store/index.js";
-import type { DaemonStore } from "../daemon/store.js";
+import type { TestStore } from "./store-schema-fixtures.js";
+import type { SqlClient } from "@effect/sql";
 import type { AgentSigningAuthority } from "../identity/keys.js";
 import {
   inboundDelivery,
@@ -116,11 +117,11 @@ export const buildCertifiedFirstMessage = (
  * @returns Completion once every write is durable.
  */
 export const storeCertifiedFirstMessage = (
-  store: DaemonStore,
+  store: TestStore,
   local: VerifiedAgentCard,
   membership: VerifiedMembership,
   record: CertifiedRecord,
-): Effect.Effect<void> =>
+): Effect.Effect<void, never, SqlClient.SqlClient> =>
   Effect.gen(function* () {
     yield* store.bindIdentity({
       agentId: local.agentId,
@@ -136,7 +137,7 @@ export const storeCertifiedFirstMessage = (
 
 /** The real endpoint store and the two members that certify each history extension. */
 export interface HistoryEndpoint {
-  readonly store: DaemonStore;
+  readonly store: TestStore;
   readonly local: SigningIdentity;
   readonly remote: SigningIdentity;
   readonly membership: VerifiedMembership;
@@ -151,7 +152,7 @@ export function appendCertifiedMessage(
   previous: CertifiedRecord,
   text: string | MessageIntent["content"],
   authoredLocally = false,
-): Effect.Effect<CertifiedRecord> {
+): Effect.Effect<CertifiedRecord, never, SqlClient.SqlClient> {
   return Effect.gen(function* () {
     const messageIntent: MessageIntent = {
       ...previous.actionCertifiedRecord.recordCore.action.messageIntent,
@@ -169,7 +170,7 @@ export function appendCertifiedIntent(
   endpoint: HistoryEndpoint,
   previous: CertifiedRecord,
   intent: MessageIntent,
-): Effect.Effect<CertifiedRecord> {
+): Effect.Effect<CertifiedRecord, never, SqlClient.SqlClient> {
   return Effect.gen(function* () {
     const record = yield* buildCertifiedMessage(endpoint, previous, intent);
     yield* storeCertifiedMessage(
@@ -228,10 +229,10 @@ export function buildCertifiedMessage(
  * @returns The store with every read of the row misfiled.
  */
 export function withMisattributedActionEvidence(
-  store: DaemonStore,
+  store: TestStore,
   signer: string,
   claimed: string,
-): DaemonStore {
+): TestStore {
   return {
     ...store,
     recover: () =>
@@ -267,9 +268,9 @@ export function withMisattributedActionEvidence(
  * @returns The store with every initial anchor row selecting `recordHash`.
  */
 export function withInitialAnchorSelecting(
-  store: DaemonStore,
+  store: TestStore,
   recordHash: string,
-): DaemonStore {
+): TestStore {
   return {
     ...store,
     recover: () =>
@@ -441,7 +442,7 @@ function certifiedRecord(parts: CertifiedRecordParts): CertifiedRecord {
 }
 
 function lockFirstMessage(
-  store: DaemonStore,
+  store: TestStore,
   membership: VerifiedMembership,
   record: CertifiedRecord,
 ) {
@@ -565,7 +566,7 @@ function misattributeRecordEvidence(
 
 /** Locally certified messages must first have an immutable intent, as the engine requires. */
 function bindLocalIntent(
-  store: DaemonStore,
+  store: TestStore,
   local: VerifiedAgentCard,
   membership: VerifiedMembership,
   record: CertifiedRecord,
