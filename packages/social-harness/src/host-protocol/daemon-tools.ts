@@ -12,7 +12,6 @@ import {
 import { exactParseOptions, exactStruct } from "../encoding/exact.js";
 import {
   compareAscii,
-  decodeCanonicalBase64Url,
   isStrictlyAscending,
 } from "../encoding/identifier.js";
 import { AgentCard, AgentView } from "../identity/cards.js";
@@ -29,14 +28,7 @@ function addressesAreOrdered(addresses: readonly string[]): boolean {
   return isStrictlyAscending(addresses, compareAscii);
 }
 
-function canonicalBase64UrlBytes(value: string, byteLength: number): boolean {
-  return decodeCanonicalBase64Url(value)?.byteLength === byteLength;
-}
-
-const historyContinuation = Schema.String.pipe(
-  Schema.pattern(/^[A-Za-z0-9_-]{43}$/u),
-  Schema.filter((value) => canonicalBase64UrlBytes(value, 32)),
-);
+const historyContinuation = Schema.NonEmptyString;
 
 const historyRecord = Schema.Union(
   Schema.Struct({
@@ -114,7 +106,7 @@ export const managementSearchConversationsResultSchema = Schema.Struct({
   ),
 );
 
-/** Frozen certified-history page selector or process-local continuation. */
+/** Starts a fixed-head history read or resumes its saved position. */
 export const managementReadConversationRequestSchema = Schema.Union(
   exactStruct({
     address: Schema.propertySignature(messageAddress).annotations({
@@ -129,7 +121,7 @@ export const managementReadConversationRequestSchema = Schema.Union(
   exactStruct({
     continuation: Schema.propertySignature(historyContinuation).annotations({
       description:
-        "Single-use token from the previous history page; use alone and only within this daemon process.",
+        "Continuation from the previous history page; reusable while that history is retained, including after restart.",
     }),
   }),
 ).annotations({ parseOptions: exactParseOptions });

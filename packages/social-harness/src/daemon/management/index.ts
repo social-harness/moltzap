@@ -103,11 +103,27 @@ class DaemonManagementError extends Data.TaggedError("DaemonManagementError")<{
   readonly reason: ManagementFailure;
 }> {}
 
-/** Closed management-only projection consumed by the MCP presentation. */
+/** Registration and history operations presented through MCP. */
 export type DaemonManagementOperations = Pick<
   HarnessMcpOperations,
   ManagementOperation
 >;
+
+/** Captures Registry and database dependencies for registration and saved history reads. */
+export const makeDaemonManagementOperations = (
+  input: ManagementInput,
+): Effect.Effect<DaemonManagementOperations, never, Registry | SqlClient.SqlClient> =>
+  Effect.gen(function* () {
+    const registry = yield* Registry;
+    const sql = yield* SqlClient.SqlClient;
+    const operations: DaemonManagementOperations = {
+      readStatus: readStatusOperation(input.registration),
+      register: registerOperation(input, registry, sql),
+      searchConversations: searchConversationsOperation(input, sql),
+      readConversation: readConversationOperation(input, registry, sql),
+    };
+    return Object.freeze(operations);
+  }).pipe(Effect.withSpan("makeDaemonManagementOperations"));
 
 const historyFailureReasons = {
   "invalid-continuation": "invalid-continuation",
@@ -123,9 +139,7 @@ const historyFailureReasons = {
 >;
 
 /**
- * The register tool's closed reason for an activation failure: a local
- * storage fault is persistence-failed; an upstream or representation fault
- * is dependency-unavailable.
+ * Maps activation failures to the caller-visible registration result.
  */
 const activationFailureReasons = {
   persistence: "persistence-failed",
@@ -513,27 +527,3 @@ const readConversationOperation =
         agentCard: localAgentCard,
       });
     }).pipe(Effect.provideService(SqlClient.SqlClient, sql));
-
-/**
- * Builds management operations with one captured Registry service. Status
- * and the registered check read the daemon's registration state, never the
- * store.
- *
- * @param input The daemon's exclusively owned store, its fixed identity and
- *   service configuration, and its registration port.
- * @returns Closed operations ready for the loopback MCP presentation.
- */
-export const makeDaemonManagementOperations = (
-  input: ManagementInput,
-): Effect.Effect<DaemonManagementOperations, never, Registry | SqlClient.SqlClient> =>
-  Effect.gen(function* () {
-    const registry = yield* Registry;
-    const sql = yield* SqlClient.SqlClient;
-    const operations: DaemonManagementOperations = {
-      readStatus: readStatusOperation(input.registration),
-      register: registerOperation(input, registry, sql),
-      searchConversations: searchConversationsOperation(input, sql),
-      readConversation: readConversationOperation(input, registry, sql),
-    };
-    return Object.freeze(operations);
-  }).pipe(Effect.withSpan("makeDaemonManagementOperations"));
