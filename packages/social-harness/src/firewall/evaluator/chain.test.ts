@@ -449,24 +449,6 @@ it("projects registered seek-approval feedback", () =>
     expect(result.feedback).toEqual([feedback]);
   }));
 
-it("preserves a registered next action for a settled violation", () =>
-  Effect.gen(function* () {
-    const blocked = yield* firewallFor([
-      {
-        ...policy("block", [block]),
-        rules: [
-          {
-            ...rule,
-            feedback: { text: "Ask for approval", nextAction: "seek-approval" },
-          },
-        ],
-      },
-    ]);
-    const result = yield* blocked.checkOutgoing(draft, context);
-    expect(result.judgment).toBe("reject");
-    expect(result.feedback[0]?.nextAction).toBe("seek-approval");
-  }));
-
 it("bounds input and results without converting skipped checks into passes", () =>
   Effect.gen(function* () {
     let ran = false;

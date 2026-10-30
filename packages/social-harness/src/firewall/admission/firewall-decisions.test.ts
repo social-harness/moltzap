@@ -22,7 +22,10 @@ import {
 } from "../../__tests__/firewall-runtime-fixtures.js";
 import { withDaemonStore } from "../../__tests__/store-schema-fixtures.js";
 import { MessageAddressInput } from "../../communication/records/values.js";
-import { encodeRuntimeValue } from "../../communication/store/index.js";
+import {
+  decodeRuntimeValue,
+  encodeRuntimeValue,
+} from "../../communication/store/index.js";
 import { agentViewOf } from "../../identity/cards.js";
 import {
   type DecisionProvider,
@@ -448,23 +451,36 @@ it("retains refused first-message peers after restart without an admitted conver
 it("refuses unknown stored editable properties as persistence failures", () =>
   Effect.gen(function* () {
     const subject = yield* fixture;
+    const configured = options(
+      [],
+      text(decisionProvider(), { initial: [review] }),
+    );
+    yield* installEditableFirewall(configured, subject.store);
+    const reopened = yield* installEditableFirewall(configured, subject.store);
+    expect((yield* reopened.policy.read()).rules).toContainEqual(
+      expect.objectContaining(review),
+    );
+    const bytes = yield* Effect.fromNullable(
+      yield* subject.store.readFirewallPolicy(),
+    );
+    const saved = yield* decodeRuntimeValue(
+      Schema.Struct({
+        format: Schema.String,
+        rules: Schema.Array(
+          Schema.Record({ key: Schema.String, value: Schema.Unknown }),
+        ),
+      }),
+      bytes,
+    );
+    const first = yield* Effect.fromNullable(saved.rules[0]);
     yield* subject.store.writeFirewallPolicy(
-      yield* encodeRuntimeValue([
-        {
-          id: "review",
-          applies: "both",
-          text: "Hold for review.",
-          unexpected: true,
-        },
-      ]),
+      yield* encodeRuntimeValue({
+        ...saved,
+        rules: [{ ...first, unexpected: true }, ...saved.rules.slice(1)],
+      }),
     );
     expect(
-      yield* Effect.flip(
-        installEditableFirewall(
-          options([], text(decisionProvider(), {})),
-          subject.store,
-        ),
-      ),
+      yield* Effect.flip(installEditableFirewall(configured, subject.store)),
     ).toMatchObject({ reason: "persistence-failed" });
   }));
 
