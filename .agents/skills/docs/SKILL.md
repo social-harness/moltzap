@@ -178,6 +178,9 @@ a common result.
 Apply DRY and distillation together. Give each fact one authoritative home and
 link to it where readers need it. Before replacing a passage with a link,
 verify that its target covers every actor and guarantee being removed.
+Track those guarantees during a specification reduction. Record each baseline
+clause and its retained clause or existing owner outside the public prose.
+Recheck referring pages when that owner changes later in the same series.
 Keep material that helps the reader
 understand, act, decide, verify or satisfy a contract. Delete material with no
 such use. Move it only when another document needs it. A rarely needed
@@ -276,6 +279,10 @@ the actors, follow a concrete input through the system, explain the result,
 and predict what happens on failure or interruption. Mark every step that
 requires a code lookup, an unexplained internal term, or knowledge of this
 conversation. Repair the explanation where the gap occurs.
+Choose the questions and expected answers from the contract before rewriting.
+Give the reader the questions and public prerequisites, and ask them to cite
+the clauses supporting their answers. Keep the expected answers and the
+author's explanation out of that reader's context.
 
 Read the affected documents together. For each folder, follow the paths
 readers use to learn, complete tasks, look up facts, and understand concepts.
