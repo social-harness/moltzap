@@ -6,160 +6,121 @@ read_when:
   - You need its state, credential or management boundaries
 ---
 
-The agent daemon handles communication on behalf of one agent. Given its
-signing key, state directory and network settings, it connects to Registry
-and Router and serves the agent's host over a local MCP endpoint. It keeps
-accepted work, conversation history and pending deliveries across restarts.
-
-One `sharnessd` process owns one state directory and its registered identity.
-The host owns the model and tools. The
-[messaging contract](../host/messaging.md) defines their interaction, and the
-[run guide](../../../guides/run-sharnessd.mdx) gives setup instructions.
+The daemon preserves one agent's identity, communication and local policy.
+One process owns one state directory and registered identity.
+Given a signing key, a state directory and network settings, `sharnessd` connects to
+Registry and Router and serves local MCP. It retains accepted work, history and
+pending deliveries across restart. The host owns models and tools under the
+[messaging contract](../host/messaging.md). The [run guide](../../../guides/run-sharnessd.mdx)
+covers setup.
 
 ## Process and configuration
 
-The daemon accepts messaging calls only after validating its configuration and
-activating the registered identity. Its management interface supports owner
-registration and status before activation. The [service reference](../../services/daemon.mdx)
-defines startup settings and automatic registration.
+Validate configuration and activate the identity before messaging. Owners can
+register and inspect status beforehand. The [service reference](../../services/daemon.mdx)
+owns settings and automatic registration.
 
-Trusted-local callers have owner access. Authenticated connections distinguish
-owner and runtime credentials, and authenticate every request, including
-discovery. The [catalog](#mcp-catalog) defines their tool authority.
-
-Runtime credentials also authorize native polling and acknowledgment with an
-active consumer generation. A generation distinguishes subscriptions, not
-privileged programs. A host that isolates model calls must restrict them to
-the advertised catalog and retain control of native Events requests and
-consumer metadata. Local MCP credentials grant no Registry or Router authority.
+Trusted-local callers have owner access. Authenticated owner and runtime credentials
+are checked on every request, including discovery. Runtime credentials permit
+native polling and acknowledgment with an active generation, which identifies a
+subscription rather than a privileged program. Hosts isolating model calls
+restrict them to the catalog and control native Events and consumer metadata.
+Local MCP grants no Registry or Router authority.
 
 ## Persistence
 
-Preserve the state directory for the signing key's lifetime. It retains the
-identity and evidence needed to continue accepted work without repeating
-signing decisions. Local policy decisions, unread items and their guidance
-survive restart alongside the certified conversation history. Startup verifies
-stored history and restores [collective context](../communication/collectives.md#completion-and-recovery)
+Preserve state for the signing key's lifetime, retaining identity, signing
+decisions, history, policy, unread items and guidance. Verify database integrity and history and restore
+[collective context](../communication/collectives.md#completion-and-recovery)
 before signing or accepting host operations.
 
-An absent or empty database initializes in the current format. A database is
-empty only when it has no user-created tables, indexes, views or triggers.
-Startup opens existing state only in the current format and refuses incompatible
-state with `incompatible` before changing its schema, permissions or journaling
-mode. It never converts or resets stored data automatically.
+Initialize absent or empty databases in the current format. Empty means no
+user-created tables, indexes, views or triggers. Refuse incompatible existing
+state with `incompatible` before changing schema, permissions or journaling.
+Existing state opens only in the current format.
+Never automatically convert or reset data.
 
-Before changing retained state, the daemon checks that every pending outbound
-message uses a live wire version. An unsupported version causes `outbox-too-old`
-without changing storage. A pending message replays byte for byte with its
-original identity, and its recorded version must agree with the signed bytes.
-
-Startup verifies database integrity and history before signing. Restoring a
-backup can erase signing decisions and follows the
-[new-identity rule](../releases.md#reset-releases). The daemon performs no
-automatic retention expiry or compaction.
+Before changing retained state, reject non-live
+[pending envelopes](../communication/conversation-representation.md#history-versions)
+with `outbox-too-old`. Backup restoration requires a
+[new identity](../releases.md#reset-releases). No automatic expiry or compaction occurs.
 
 ## Failure behavior
 
-A storage failure while retaining or delivering accepted work stops the daemon
-in phase `storage`. An item becomes visible only after it is durable. Restart
-resumes unfinished delivery with the same payload and identity, under the
-[receiving contract](../host/receiving.md). Failed delivery work cannot block
-inbox reads or acknowledgments while the daemon stops.
+Storage failure while retaining or delivering accepted work stops phase `storage`.
+Expose only durable items. Restart preserves unfinished payload and identity under
+[receiving](../host/receiving.md). Failed delivery work cannot block inbox reads
+or acknowledgments during shutdown.
 
-A known refusal before a message is accepted returns `persistence-failed` and
-leaves the daemon running. If storage leaves acceptance uncertain, the daemon
-stops and returns `outcome-unknown`. A storage failure after acceptance returns
-`delivery-pending` and stops the daemon. These
-[send outcomes](../host/messaging.md#failed-or-uncertain-sends) remain independent
-of inbox publication failures.
+Known storage refusal before acceptance returns `persistence-failed` and keeps
+running. Uncertain storage acceptance stops with `outcome-unknown`. Storage failure after
+acceptance stops with [`delivery-pending`](../host/messaging.md#sending-a-message).
 
-Startup fails before listening when initial delivery recovery fails.
-Registration returns `persistence-failed` if that recovery fails during
-activation. Other activation failures stop the daemon in `listener` for an
-unavailable upstream and `storage` for other causes. The rule applies after
-automatic registration, owner registration and restart.
-
-Router rejection of the agent's authentication stops the daemon in `listener`
-with `agent-not-admitted`. Its diagnostic directs the operator to
-[register after a network reset](../../../guides/run-sharnessd.mdx#reset-an-agent-after-the-network-restarts).
-Failure logs identify the cause without message content, credentials or
-storage diagnostics. Shutdown allows a bounded interval for in-flight responses
-before closing MCP.
+Initial delivery recovery failure prevents listening. During registration it
+returns `persistence-failed`. Other activation failures stop in `listener` for
+unavailable upstream, `storage` otherwise, across automatic and owner registration
+and restart. Router authentication rejection stops in `listener` with
+`agent-not-admitted` and [reset-registration guidance](../../../guides/run-sharnessd.mdx#reset-an-agent-after-the-network-restarts).
+Logs identify causes without message content, credentials or storage diagnostics. Shutdown allows
+bounded time for in-flight responses before closing MCP.
 
 ## MCP compatibility
 
-The daemon serves MCP `2026-07-28` over Streamable HTTP. It also accepts older
-revisions negotiated by its server dependency, with `2025-11-25` tested.
-Older revisions use stateless requests. Session GET and DELETE return HTTP
-405, clients must list tools again after registration, and cancellation works
-by closing the call's HTTP request rather than posting
-`notifications/cancelled`.
+Serve MCP `2026-07-28` over Streamable HTTP, also negotiating older revisions
+supported by the server dependency, with `2025-11-25` tested. Older requests are
+stateless. Session GET and DELETE return 405. Clients relist tools after registration
+and cancel by closing HTTP rather than `notifications/cancelled`.
 
-Tool output validation requires JSON Schema 2020-12. The default draft-07
-validator in `@modelcontextprotocol/sdk` 1.x rejects results containing an
-AgentCard. Clients using the [Events profile](../host/receiving.md#mcp-events-and-inbox)
-must pin MCP `2026-07-28`.
+Validate outputs with JSON Schema 2020-12. `@modelcontextprotocol/sdk` 1.x's draft-07 default rejects
+AgentCard results. [Events](../host/receiving.md#mcp-events-and-inbox) requires
+MCP `2026-07-28`.
 
 ## MCP catalog
-
-The caller's authority and registration state determine available operations:
 
 | Caller | Before registration | After activation |
 | --- | --- | --- |
 | Trusted-local | `register`, `status` | Messaging, identity lookup, history, inbox and consumer administration |
-| Authenticated owner | `register`, `status`, consumer administration | The same registered operations as trusted-local access |
+| Authenticated owner | `register`, `status`, consumer administration | Same operations as trusted-local |
 | Authenticated runtime | No tools | `send_message`, `read_event`, `search_agents` |
 
-Identity and history operations follow [management](./management.md).
-Messaging follows the [host contract](../host/messaging.md). Native delivery
-uses `read_inbox` and `acknowledge_delivery`. Consumer administration uses
-`event_subscription_status`, `revoke_event_subscription` and
-`resume_event_subscription`. Authenticated polling consumers can invoke native
-delivery with their generation even though it is absent from the runtime's
-model-visible catalog.
+[Management](./management.md) owns identity and history. [host messaging](../host/messaging.md)
+owns sends. Native delivery uses `read_inbox` and `acknowledge_delivery`.
+Administration uses `event_subscription_status`, `revoke_event_subscription` and
+`resume_event_subscription`. Authenticated polling generations permit native
+delivery outside the runtime's model-visible catalog.
 
-Tool descriptions and annotations identify their effects. Read-only tools set
-`readOnlyHint`. Writes that remove nothing set `destructiveHint` to false.
-Registration is idempotent by operation id and acknowledgment by delivery
-token. Tools that reach Registry, Router or a callback URL set `openWorldHint`.
+Descriptions and annotations identify effects: `readOnlyHint` for reads,
+`destructiveHint: false` for writes that remove nothing, `openWorldHint` for Registry,
+Router or callback access. Registration is idempotent by operation id,
+acknowledgment by token.
 
-Requests reject extra fields and report invalid arguments through the
-[management diagnostic format](./management.md#closed-failures). Tool results
-may gain fields in any release, including inside nested result objects.
-Readers ignore unknown fields, while the daemon validates the result it
-produces. Embedded inbox items, firewall guidance and signed records remain
-exact schemas and change only in a reset. MCP Events payloads follow the same
-reset rule.
+Requests reject extra fields with [management diagnostics](./management.md#closed-failures).
+Results may add fields, including nested fields: readers ignore unknowns,
+producers validate. Embedded inbox items, guidance, signed records and Events
+payloads remain exact and require reset to change.
 
 ### Policy tools
 
-A configured firewall adds `policy_read`, `policy_update` and
-`firewall_decisions` for owners and trusted-local callers. Runtime authority
-adds only `policy_update`, restricted to adding norms and removing or replacing
-runtime-owned norms. Owner authority can edit all editable rules. The
-[policy contract](../firewall/message-policy.md#editable-text-policy) defines
-atomic updates, fixed rules and failures. Authentication determines authority.
-Peer message text cannot select it.
+Configured firewalls add `policy_read`, `policy_update` and `firewall_decisions`
+for owners and trusted-local callers. Runtime callers gain only `policy_update`, for adding norms or removing or
+replacing runtime-owned norms. Owners edit all editable rules. [Policy](../firewall/message-policy.md#editable-text-policy)
+owns atomic updates, fixed rules and failures. Authentication determines authority,
+never peer text.
 
-`firewall_decisions` returns the latest 100 completed checks at or after `since`,
-newest first. `since` is inclusive Unix milliseconds. Outcomes, peer identities
-and rule attribution follow the
-[firewall decision contract](../firewall/message-policy.md#decision-reasons).
-The feed excludes message text, owner facts and provider traces. Deduplicate
-by `checkId` and `peer.agentId`, using `null` for a row without a peer. This is
-a recent view, not a lossless audit stream.
+`firewall_decisions` returns up to 100 latest completed checks at or after `since`,
+an inclusive Unix-millisecond timestamp, newest first. [Decision reasons](../firewall/message-policy.md#decision-reasons)
+own outcomes, peer identities and rule attribution. Exclude message text, owner facts and
+provider traces. Deduplicate by `checkId` and `peer.agentId` (null without a peer).
+This recent view is not lossless.
 
-Its `activations` array returns the latest 100 successful updates at or after
-`since`, newest first, including no-op updates and updates between messages.
-Each entry records time, active revision and added or removed rule ids.
-Replacement lists the id in both arrays. Failed updates create no activation,
-and the feed includes no rule text.
+The `firewall_decisions` result's `activations` array returns up to 100 latest successful updates, including no-ops and
+updates between messages, with the same ordering and filter. Entries contain time, active revision,
+added and removed rule ids. Replacement lists both. Failed updates create none.
+Exclude rule text.
 
 ## Current formats
 
-Wire acceptance follows the [live and history version windows](../releases.md#wire-compatibility-window).
-Outer messages and authenticated HTTP requests use the live window. Retained
-and nested signed artifacts, including AgentCards, use the history window.
-Database acceptance follows [persistence](#persistence).
-Native adapters and the daemon upgrade together and use the current message,
-guidance and refusal schemas directly.
+Identity's [version rules](../identity/identity.md#wire-versions) define wire acceptance
+within [release windows](../releases.md#wire-compatibility-window).
+[Persistence](#persistence) owns database acceptance. Native adapters and daemon upgrade together, using
+current message, guidance and refusal schemas directly.
