@@ -73,11 +73,6 @@ export interface Firewall {
     change: PolicyUpdate,
   ): Effect.Effect<PolicyUpdateResult, FirewallPolicyError>;
 
-  /** Returns recent decision summaries without message content or provider traces. */
-  readDecisions(
-    query: DecisionsQuery,
-  ): Effect.Effect<DecisionHistory, FirewallPolicyError>;
-
   /**
    * Retains the input, checks it once and returns a result for delivery to commit.
    * Cancellation leaves an unfinished attempt. Storage failure returns an error.
@@ -141,19 +136,7 @@ export interface FirewallPersistence {
 
   /** Retains the exact candidate and assessment input before any check runs. */
   beginCheck(attempt: FirewallAttempt): Effect.Effect<void, EndpointStoreError>;
-
-  /** Returns up to 100 completed check records since an inclusive Unix-millisecond time. */
-  readChecks(
-    since?: number,
-  ): Effect.Effect<readonly StoredCheck[], EndpointStoreError>;
-
-  /** Returns up to 100 saved rule changes, newest first, with the same time filter. */
-  readRuleChanges(
-    since?: number,
-  ): Effect.Effect<readonly StoredRuleChange[], EndpointStoreError>;
 }
 ```
 
-A stored check includes its original input and completed disposition. Owner
-summaries are produced by the firewall from those records. Storage treats
-encoded rules and assessment data as opaque values.
+Storage retains each check’s original input and completed disposition.

@@ -96,6 +96,16 @@ implementation details.
  */
 export interface DaemonStore
   extends EndpointStore, InboxStore, FirewallPersistence {
+  /** Returns decision summaries without message content, private evidence or provider traces. */
+  readDecisions(
+    query: DecisionsQuery,
+  ): Effect.Effect<DecisionHistory, EndpointStoreError>;
+
+  /** Returns up to 100 saved rule changes, newest first, since an inclusive Unix-millisecond time. */
+  readRuleChanges(
+    since?: number,
+  ): Effect.Effect<readonly StoredRuleChange[], EndpointStoreError>;
+
   /** Queues an immutable item once under its delivery identity and conversation. */
   queueIncoming(item: QueuedItem): Effect.Effect<void, EndpointStoreError>;
 
