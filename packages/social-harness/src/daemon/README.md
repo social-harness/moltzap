@@ -21,25 +21,6 @@ boundary before further runtime changes.
 need. Incoming work, evidence windows and publication belong to this store.
 The firewall receives only rule and check persistence operations.
 
-## One MCP interface
-
-Every client uses the same catalog and credential. New messages are checked
-by the firewall. History reads return the view recorded by the store.
-MCP carries human confirmation when a message or rule change requires it.
-
-```mermaid
-flowchart LR
-  A[New message] --> B[Firewall checks message]
-  B --> C[Store records decision and visibility]
-  D[History request] --> E[Store reads retained agent view]
-  E --> F[Return history to agent]
-```
-
-[MCP elicitation](https://modelcontextprotocol.io/specification/2026-07-28/client/elicitation)
-is an interaction mechanism. The confirmation must come from
-the trusted host or a verified backchannel outside agent-controlled text.
-The exact mechanism and its client support remain to be chosen before coding.
-
 ## Startup
 
 ```mermaid
