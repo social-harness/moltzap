@@ -6,6 +6,7 @@ import { describe, expect } from "vitest";
 import type { HarnessMessageReadyEvent } from "../../host-protocol/operations.js";
 import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
+import { openTestDatabase } from "../../__tests__/communication-test-database.js";
 import { localGuidance } from "../../__tests__/message-policy-fixtures.js";
 import {
   pendingMessage,
@@ -22,8 +23,6 @@ import {
   encodeRuntimeValue,
 } from "../../communication/store/index.js";
 import { InboundItem } from "../../host-protocol/items.js";
-import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
-import { openDaemonStore } from "../store.js";
 import { makeHostDelivery } from "./host-delivery.js";
 import { noHistoryExport } from "./host-traffic-log.js";
 import { persistInboxItem, readRuntimeInbox } from "./inbox.js";
@@ -65,109 +64,108 @@ const preservesTokenBindings = () => {
   const path = stateDirectory();
   return Effect.gen(function* () {
     yield* Effect.scoped(
-      Effect.gen(function* () {
-        const store = yield* openDaemonStore(path, {
-          liveWireVersions: LIVE_WIRE_VERSIONS,
-        });
-        yield* store.putInboxItem({
-          deliveryToken: token(1),
-          canonicalItem: yield* encodeRuntimeValue(failure),
-          canonicalGuidance: yield* encodeRuntimeValue(localGuidance(1)),
-        });
-        yield* store.acknowledgeInboxItem(token(1));
-      }),
+      withDaemonStore(path, (store) =>
+        Effect.gen(function* () {
+          yield* store.putInboxItem({
+            deliveryToken: token(1),
+            canonicalItem: yield* encodeRuntimeValue(failure),
+            canonicalGuidance: yield* encodeRuntimeValue(localGuidance(1)),
+          });
+          yield* store.acknowledgeInboxItem(token(1));
+        }),
+      ),
     );
     yield* Effect.scoped(
-      Effect.gen(function* () {
-        const store = yield* openDaemonStore(path, {
-          liveWireVersions: LIVE_WIRE_VERSIONS,
-        });
-        yield* store.acknowledgeInboxItem(token(1));
-        yield* persistInboxItem(store, {
-          deliveryToken: token(1),
-          item: failure,
-        });
-        expect((yield* readRuntimeInbox(store, {})).items).toEqual([]);
-        const changed = yield* persistInboxItem(store, {
-          deliveryToken: token(1),
-          item: request,
-        }).pipe(Effect.flip);
-        expect(changed.reason).toBe("conflict");
-      }),
+      withDaemonStore(path, (store) =>
+        Effect.gen(function* () {
+          yield* store.acknowledgeInboxItem(token(1));
+          yield* persistInboxItem({
+            deliveryToken: token(1),
+            item: failure,
+          });
+          expect((yield* readRuntimeInbox({})).items).toEqual([]);
+          const changed = yield* persistInboxItem({
+            deliveryToken: token(1),
+            item: request,
+          }).pipe(Effect.flip);
+          expect(changed.reason).toBe("conflict");
+        }),
+      ),
     );
   });
 };
 
 const freezesPagesAcrossArrivalsAndAcknowledgments = () =>
-  Effect.gen(function* () {
-    const store = yield* openDaemonStore(stateDirectory(), {
-      liveWireVersions: LIVE_WIRE_VERSIONS,
-    });
-    yield* Effect.forEach(
-      EffectArray.range(1, 51),
-      (index) =>
-        persistInboxItem(store, {
-          deliveryToken: token(index),
-          item: failure,
-        }),
-      { concurrency: 1, discard: true },
-    );
-    const first = yield* readRuntimeInbox(store, {});
-    expect(first.items).toHaveLength(50);
-    expect(first.nextCursor).toBeDefined();
-    yield* persistInboxItem(store, {
-      deliveryToken: token(52),
-      item: failure,
-    });
-    yield* store.acknowledgeInboxItem(token(1));
-    const second = yield* readRuntimeInbox(store, {
-      cursor: first.nextCursor,
-    });
-    expect(second.items.map((item) => item.deliveryToken)).toEqual([token(51)]);
-    expect(second.nextCursor).toBeUndefined();
-    expect((yield* store.readInboxSummary()).pendingCount).toBe(51);
-    const invalid = yield* readRuntimeInbox(store, {
-      cursor: "invalid",
-    }).pipe(Effect.flip);
-    expect(invalid.reason).toBe("invalid-continuation");
-  });
+  withDaemonStore(stateDirectory(), (store) =>
+    Effect.gen(function* () {
+      yield* Effect.forEach(
+        EffectArray.range(1, 51),
+        (index) =>
+          persistInboxItem({
+            deliveryToken: token(index),
+            item: failure,
+          }),
+        { concurrency: 1, discard: true },
+      );
+      const first = yield* readRuntimeInbox({});
+      expect(first.items).toHaveLength(50);
+      expect(first.nextCursor).toBeDefined();
+      yield* persistInboxItem({
+        deliveryToken: token(52),
+        item: failure,
+      });
+      yield* store.acknowledgeInboxItem(token(1));
+      const second = yield* readRuntimeInbox({
+        cursor: first.nextCursor,
+      });
+      expect(second.items.map((item) => item.deliveryToken)).toEqual([
+        token(51),
+      ]);
+      expect(second.nextCursor).toBeUndefined();
+      expect((yield* store.readInboxSummary()).pendingCount).toBe(51);
+      const invalid = yield* readRuntimeInbox({
+        cursor: "invalid",
+      }).pipe(Effect.flip);
+      expect(invalid.reason).toBe("invalid-continuation");
+    }),
+  );
 
 const commitsReceiptAtomically = () => {
   const path = stateDirectory();
   const state = new TextEncoder().encode('{"registration":null}');
   return Effect.gen(function* () {
     yield* Effect.scoped(
-      Effect.gen(function* () {
-        const store = yield* openDaemonStore(path, {
-          liveWireVersions: LIVE_WIRE_VERSIONS,
-        });
-        yield* persistInboxItem(store, {
-          deliveryToken: token(1),
-          item: failure,
-        });
-        yield* store.writeEventState(state);
-        const error = yield* store
-          .completeWebhookDelivery(token(1), new Uint8Array())
-          .pipe(Effect.flip);
-        expect(error.reason).toBe("invalid-input");
-        expect((yield* store.readInboxSummary()).pendingCount).toBe(1);
-        expect(yield* store.readEventState()).toEqual(state);
-        const next = new TextEncoder().encode(
-          '{"registration":{"outbox":null}}',
-        );
-        yield* store.completeWebhookDelivery(token(1), next);
-        expect((yield* store.readInboxSummary()).pendingCount).toBe(0);
-        expect(yield* store.readEventState()).toEqual(next);
-      }),
+      withDaemonStore(path, (store) =>
+        Effect.gen(function* () {
+          yield* persistInboxItem({
+            deliveryToken: token(1),
+            item: failure,
+          });
+          yield* store.writeEventState(state);
+          const error = yield* store
+            .completeWebhookDelivery(token(1), new Uint8Array())
+            .pipe(Effect.flip);
+          expect(error.reason).toBe("invalid-input");
+          expect((yield* store.readInboxSummary()).pendingCount).toBe(1);
+          expect(yield* store.readEventState()).toEqual(state);
+          const next = new TextEncoder().encode(
+            '{"registration":{"outbox":null}}',
+          );
+          yield* store.completeWebhookDelivery(token(1), next);
+          expect((yield* store.readInboxSummary()).pendingCount).toBe(0);
+          expect(yield* store.readEventState()).toEqual(next);
+        }),
+      ),
     );
     yield* Effect.scoped(
-      Effect.gen(function* () {
-        const store = yield* openDaemonStore(path, {
-          liveWireVersions: LIVE_WIRE_VERSIONS,
-        });
-        expect((yield* store.readInboxItem(token(1)))?.acknowledged).toBe(true);
-        expect((yield* store.readInboxSummary()).pendingCount).toBe(0);
-      }),
+      withDaemonStore(path, (store) =>
+        Effect.gen(function* () {
+          expect((yield* store.readInboxItem(token(1)))?.acknowledged).toBe(
+            true,
+          );
+          expect((yield* store.readInboxSummary()).pendingCount).toBe(0);
+        }),
+      ),
     );
   });
 };
@@ -188,15 +186,12 @@ it("replays the admitted envelope across restart and retains it after acknowledg
         canonicalGuidance,
       }),
     );
-    const store = yield* openDaemonStore(path, {
-      liveWireVersions: LIVE_WIRE_VERSIONS,
-    });
+    const database = yield* openTestDatabase(path);
     const delivery = yield* makeHostDelivery({
-      store,
       historyExport: noHistoryExport,
       collectives: () => unusedCollectives,
       scope: yield* Scope.Scope,
-    });
+    }).pipe(database.run);
     const published: HarnessMessageReadyEvent[] = [];
     const pass = () => ({
       readPending: Effect.succeed([pending]),
