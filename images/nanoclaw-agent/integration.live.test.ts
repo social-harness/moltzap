@@ -191,7 +191,7 @@ async function answersAndStartsGather({
     text: GATHER_QUESTION,
     collective: { op: "gather", deadline: 120, requestedSchema: SLOT_SCHEMA },
   });
-  const id = started.operationId ?? "";
+  const operationId = started.operationId ?? "";
   const received = caller.next(1);
   await runProbe(
     target.mcp,
@@ -206,7 +206,7 @@ async function answersAndStartsGather({
     },
   );
 
-  assert.match(id, /^col_/u);
+  assert.match(operationId, /^col_/u);
   const results = (await received).map(asRecord);
   const [result] = results;
   assert.ok(result);
@@ -215,7 +215,7 @@ async function answersAndStartsGather({
     {
       kind: "collectiveResult",
       op: "gather",
-      id,
+      operationId,
       to: target.address,
       question: GATHER_QUESTION,
       closedAt: result.closedAt,
@@ -252,7 +252,7 @@ function assertGatherRequest(
 async function answersAndStartsAllGather(endpoints: Trio): Promise<undefined> {
   const { caller, target, peer } = endpoints;
   const group = groupAddress([caller, target, peer]);
-  const id = await startDeclinedAllGather(endpoints, group);
+  const operationId = await startDeclinedAllGather(endpoints, group);
   await runProbe(
     target.mcp,
     [
@@ -265,7 +265,11 @@ async function answersAndStartsAllGather(endpoints: Trio): Promise<undefined> {
       textPrefix: `all_gather from ${caller.address} to ${group}, open until`,
     },
   );
-  const nanoClawRequest = await assertAllGatherAnswered(endpoints, group, id);
+  const nanoClawRequest = await assertAllGatherAnswered(
+    endpoints,
+    group,
+    operationId,
+  );
   await assertNanoClawAllGather(endpoints, group, nanoClawRequest);
 }
 
@@ -283,12 +287,12 @@ async function startDeclinedAllGather(
       requestedSchema: SLOT_SCHEMA,
     },
   });
-  const id = started.operationId ?? "";
+  const operationId = started.operationId ?? "";
   const peerRequest = asRecord((await peer.next(1))[0]);
   assert.equal(peerRequest.kind, "collectiveRequest");
-  assert.equal(peerRequest.id, id);
+  assert.equal(peerRequest.operationId, operationId);
   await peer.send({ to: group, collectiveResponse: { action: "decline" } });
-  return id;
+  return operationId;
 }
 
 /**
@@ -298,7 +302,7 @@ async function startDeclinedAllGather(
 async function assertAllGatherAnswered(
   { caller, target, peer }: Trio,
   group: string,
-  id: string,
+  operationId: string,
 ): Promise<Readonly<Record<string, unknown>>> {
   const callerItems = (await caller.next(2)).map(asRecord);
   const result = callerItems.find(({ kind }) => kind === "collectiveResult");
@@ -311,7 +315,7 @@ async function assertAllGatherAnswered(
   assert.deepEqual(result, {
     kind: "collectiveResult",
     op: "all_gather",
-    id,
+    operationId,
     to: group,
     question: GATHER_QUESTION,
     closedAt: result.closedAt,
@@ -357,7 +361,7 @@ async function assertNanoClawAllGather(
   const result = asRecord(received);
   assert.equal(result.kind, "collectiveResult");
   assert.equal(result.op, "all_gather");
-  assert.equal(result.id, request.id);
+  assert.equal(result.operationId, request.operationId);
   assert.equal(result.to, group);
   assert.equal(typeof result.closedAt, "number");
   assert.equal(result.closedBy, "settled");

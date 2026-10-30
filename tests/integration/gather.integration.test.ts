@@ -104,7 +104,7 @@ function startGatherAndExpectRequests({
     expect(firstRequest).toEqual({
       kind: "collectiveRequest",
       op: "gather",
-      id: started.operationId,
+      operationId: started.operationId,
       msgId: anyString,
       from: requester.agent,
       to: requester.address,
@@ -112,7 +112,7 @@ function startGatherAndExpectRequests({
       requestedSchema: slotSchema,
       deadlineAt: anyNumber,
     });
-    expect(secondRequest).toMatchObject({ id: started.operationId });
+    expect(secondRequest).toMatchObject({ operationId: started.operationId });
     return started;
   });
 }
@@ -146,7 +146,7 @@ const silentMemberBehavior = Effect.gen(function* () {
   expect(yield* nextItem(requester)).toMatchObject({
     kind: "collectiveResult",
     op: "gather",
-    id: started.operationId,
+    operationId: started.operationId,
     outcomes: [
       {
         member: first.agent,
@@ -205,7 +205,7 @@ function answerGatherAndExpectResult(
     expect(yield* nextItem(requester)).toEqual({
       kind: "collectiveResult",
       op: "gather",
-      id: operationId,
+      operationId,
       closedAt: anyNumber,
       closedBy: "settled",
       to: "group:gather-member-a,gather-member-b,gather-requester",

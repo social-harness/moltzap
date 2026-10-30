@@ -271,20 +271,23 @@ function answerAllGather({ requester, member, held, group }: MarkerScenario) {
     yield* send(member, {
       to: group,
       collectiveResponse: {
-        id: allGatherRequest.id,
+        operationId: allGatherRequest.operationId,
         action: "accept",
         content: { slot: "tue" },
       },
     });
     yield* send(held, {
       to: group,
-      collectiveResponse: { id: allGatherRequest.id, action: "decline" },
+      collectiveResponse: {
+        operationId: allGatherRequest.operationId,
+        action: "decline",
+      },
     });
     const result = yield* nextItem(requester);
     expect(result).toEqual({
       kind: "collectiveResult",
       op: "all_gather",
-      id: allGatherRequest.id,
+      operationId: allGatherRequest.operationId,
       closedAt: anyNumber,
       closedBy: "settled",
       to: allGatherRequest.to,
@@ -365,13 +368,17 @@ function expectProposalCertifiedAndCollectiveClosed(
       receiver,
       (received) =>
         markers(received, "retry.settled", "id", pendingId).length > 0 &&
-        markers(received, "collective.closed", "operationId", request.id)
-          .length > 0,
+        markers(
+          received,
+          "collective.closed",
+          "operationId",
+          request.operationId,
+        ).length > 0,
     );
     expect(
       attributesOf(markers(settled, "retry.settled", "id", pendingId)),
     ).toEqual([{ kind: "proposal", id: pendingId, outcome: "certified" }]);
-    expectMarked(settled, request.id, request, "all_gather");
+    expectMarked(settled, request.operationId, request, "all_gather");
   });
 }
 
@@ -473,7 +480,7 @@ function expectMarked(
   ]);
   expect(request).toMatchObject({
     kind: "collectiveRequest",
-    id,
+    operationId: id,
     deadlineAt: opened[0]?.attributes.deadlineAt,
   });
   expect(opened[0]?.startTimeUnixNano).toBeLessThan(

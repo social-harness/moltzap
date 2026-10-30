@@ -114,7 +114,7 @@ function startAllGatherAndExpectRequests({
     const request = {
       kind: "collectiveRequest",
       op: "all_gather",
-      id: started.operationId,
+      operationId: started.operationId,
       msgId: anyString,
       from: requester.agent,
       to: group,
@@ -163,7 +163,7 @@ const silentMemberBehavior = Effect.gen(function* () {
   expect(requesterResult).toMatchObject({
     kind: "collectiveResult",
     op: "all_gather",
-    id: started.operationId,
+    operationId: started.operationId,
     outcomes: [
       { member: first.agent, outcome: { kind: "answered" } },
       { member: second.agent, outcome: { kind: "answered" } },
@@ -202,7 +202,7 @@ function answerAllGatherAndExpectSharedResult(
     expect(requesterResult).toEqual({
       kind: "collectiveResult",
       op: "all_gather",
-      id: operationId,
+      operationId,
       closedAt: anyNumber,
       closedBy: "settled",
       to: group,

@@ -54,8 +54,8 @@ const gatherText = (operation: "gather" | "all_gather") =>
     requestedSchema: SLOT_SCHEMA,
   });
 
-const acceptText = (slot: string, id?: string) =>
-  JSON.stringify({ action: "accept", id, content: { slot } });
+const acceptText = (slot: string, operationId?: string) =>
+  JSON.stringify({ action: "accept", operationId, content: { slot } });
 
 interface AllGatherContext {
   readonly caller: Effect.Effect.Success<
@@ -334,7 +334,7 @@ function receiveAllGather(context: AllGatherContext) {
       message: acceptText("tue"),
     });
     expect(answered.details).toMatchObject({ ok: true });
-    yield* assertReceivedAllGather(context, peerRequest.id);
+    yield* assertReceivedAllGather(context, peerRequest.operationId);
   });
 }
 
@@ -371,7 +371,7 @@ function sendAllGather(context: AllGatherContext) {
     const memberResult = yield* nextItem(caller.messages);
     expect(memberResult).toMatchObject({
       kind: "collectiveResult",
-      id: callerRequest.id,
+      operationId: callerRequest.operationId,
       to: group,
       outcomes: [
         {
@@ -482,7 +482,7 @@ function assertReceivedAllGather(context: AllGatherContext, requestId: string) {
     const callerResult = yield* nextItem(caller.messages);
     expect(callerResult).toMatchObject({
       kind: "collectiveResult",
-      id: requestId,
+      operationId: requestId,
       to: group,
       outcomes: [
         { member: peerAgent, outcome: { kind: "declined" } },
