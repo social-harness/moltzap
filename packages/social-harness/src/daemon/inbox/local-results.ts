@@ -1,5 +1,4 @@
 /** @file Checks collective result text and admits operation failures for host delivery. */
-// safer-arch-ignore no-fat-orchestrator: One collective result is checked and saved with its question and answers under one captured policy.
 
 import * as SqlClient from "@effect/sql/SqlClient";
 import { Effect, Array as EffectArray, Schema, Struct } from "effect";
@@ -54,6 +53,8 @@ import {
   messageFields,
   prepareMessageCheck,
 } from "./firewall-context.js";
+
+// safer-arch-ignore no-fat-orchestrator: One collective result is checked and saved with its question and answers under one captured policy.
 /** The window of a check with no history: a result's missing record, or a failure. */
 const EMPTY_WINDOW = {
   pendingOutgoing: false,

@@ -586,10 +586,7 @@ const resume = (runtime: WebhookRuntime) =>
 const unsubscribe = (runtime: WebhookRuntime, url: string) =>
   Effect.suspend(() => {
     const registration = runtime.state.registration;
-    if (
-      registration === null ||
-      registration.id !== subscriptionId(url)
-    ) {
+    if (registration === null || registration.id !== subscriptionId(url)) {
       return Effect.fail(
         new ProtocolError(-32011, "Subscription not found", {
           kind: "subscription",
@@ -604,9 +601,7 @@ const webhookOperations = (runtime: WebhookRuntime): HarnessWebhookEvents => ({
   subscribe: (input, authorize) =>
     subscribe(runtime, input, authorize ?? Effect.void),
   unsubscribe: (input) =>
-    runtime.gate.withPermits(1)(
-      unsubscribe(runtime, input.delivery.url),
-    ),
+    runtime.gate.withPermits(1)(unsubscribe(runtime, input.delivery.url)),
   observe: () => observe(runtime),
   status: runtime.gate.withPermits(1)(
     runtime.store.readInboxSummary().pipe(

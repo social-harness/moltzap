@@ -3,7 +3,10 @@
 import { Effect, Redacted, Schema } from "effect";
 import { generateKeyPairSync } from "node:crypto";
 import type { DaemonBootstrap } from "../daemon/bootstrap.js";
-import { type EnginePendingMessage, makeEndpointEngine  } from "../communication/conversations/index.js";
+import {
+  type EnginePendingMessage,
+  makeEndpointEngine,
+} from "../communication/conversations/index.js";
 import { InboundMessage } from "../communication/conversations/message.js";
 import { RecordHash } from "../communication/records/index.js";
 import { makeRouterWorker, Router } from "../communication/router/index.js";

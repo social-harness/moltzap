@@ -8,10 +8,7 @@ import {
   RecordHash,
 } from "../communication/records/index.js";
 import { exactParseOptions, exactStruct } from "../encoding/exact.js";
-import {
-  compareAscii,
-  isStrictlyAscending,
-} from "../encoding/identifier.js";
+import { compareAscii, isStrictlyAscending } from "../encoding/identifier.js";
 import { AgentCard, AgentView } from "../identity/cards.js";
 import { AgentName, PrincipalId } from "../identity/identifiers.js";
 import { OperationId } from "../identity/registry/contract.js";

@@ -49,7 +49,10 @@ import {
   SignedMessage,
 } from "../../identity/envelope/signed-message.js";
 import { Registry } from "../../identity/registry/index.js";
-import { LIVE_WIRE_VERSIONS, WIRE_VERSION  } from "../../identity/wire-version.js";
+import {
+  LIVE_WIRE_VERSIONS,
+  WIRE_VERSION,
+} from "../../identity/wire-version.js";
 import { layer } from "../store.js";
 import { acquireProtocol } from "./protocol.js";
 
@@ -189,8 +192,13 @@ interface RunningProtocol {
  * poll after it, and an engine that records every payload it accepts.
  */
 const acquireSql = Effect.gen(function* () {
-  const context = yield* Layer.build(layer({stateDirectory:stateDirectory(),liveWireVersions:LIVE_WIRE_VERSIONS}));
-  return Context.get(context,SqlClient.SqlClient);
+  const context = yield* Layer.build(
+    layer({
+      stateDirectory: stateDirectory(),
+      liveWireVersions: LIVE_WIRE_VERSIONS,
+    }),
+  );
+  return Context.get(context, SqlClient.SqlClient);
 });
 
 const runProtocol = (input: {

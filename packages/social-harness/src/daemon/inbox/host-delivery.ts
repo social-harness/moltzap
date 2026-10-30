@@ -1,5 +1,4 @@
 /** @file Connects host sends, inbox reads and acknowledgments to the daemon. */
-// safer-arch-ignore no-fat-orchestrator: One daemon handoff coordinates message checks, inbox publication and host acknowledgments.
 
 import * as SqlClient from "@effect/sql/SqlClient";
 import {
@@ -86,6 +85,8 @@ import {
   completeWebhookDelivery as saveWebhookDelivery,
   writeEventState,
 } from "./store.js";
+
+// safer-arch-ignore no-fat-orchestrator: One daemon handoff coordinates message checks, inbox publication and host acknowledgments.
 
 /** Ordinary collective preparation fixes identity before local assessment and protocol acceptance. */
 type ApplicationSender = Pick<CollectiveOperations, "prepare" | "accept">;
