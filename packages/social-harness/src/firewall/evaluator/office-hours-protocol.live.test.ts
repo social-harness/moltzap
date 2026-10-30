@@ -14,8 +14,13 @@ import { decodeMessagePolicy } from "../policy/index.js";
 import { makeFirewall, makeTextPolicy } from "./index.js";
 import { makeJevDecisionProvider } from "./jev.js";
 
-const PROF = "agt_professor";
-const STUDENT = "agt_student_tapan";
+/**
+ * Opaque, registry-shaped ids, as in production: the ids say nothing about
+ * roles, so the owner fact in `contextOf` is the only link from an id to
+ * "Prof. Mahajan's agent".
+ */
+const PROF = "agt_Q7mZr2LkVx9pTb4nWc1hYs";
+const STUDENT = "agt_d3FjK8uNe5RtA0gHqP6yMw";
 
 const PROTOCOL = `Prof. Mahajan's agent books CSE 561 office hours for students' agents over Social Harness. This rule governs every message between Prof. Mahajan's agent and a student's agent, in both directions; each part names whose messages it governs.
 
@@ -209,10 +214,10 @@ const CASES: readonly Case[] = [
 function contextOf(c: Case) {
   return {
     agentId: PROF,
-    principal: "prn_professor",
+    principal: "prn_Hc2Wq9Ls0Xa7Ve4Rn1Bt5k",
     participants: [
-      { agentId: PROF, principal: "prn_professor" },
-      { agentId: STUDENT, principal: "prn_student" },
+      { agentId: PROF, principal: "prn_Hc2Wq9Ls0Xa7Ve4Rn1Bt5k" },
+      { agentId: STUDENT, principal: "prn_m8Ty3Gd6Jp1Zu0Ks7Ef2Qx" },
     ],
     history: c.history.map((turn, index) => ({
       id: `msg_${String(index)}`,
@@ -222,7 +227,14 @@ function contextOf(c: Case) {
       visibility: "runtime" as const,
       admission: "admitted" as const,
     })),
-    facts: [],
+    facts: [
+      {
+        id: "roles",
+        source: "owner",
+        text: `${PROF} is Prof. Mahajan's agent. Every other participant is a student's agent.`,
+        visibility: "assessor" as const,
+      },
+    ],
     gaps: [],
   };
 }
