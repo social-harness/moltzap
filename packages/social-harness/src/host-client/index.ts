@@ -108,11 +108,10 @@ function safeCredentialEndpoint(endpoint: URL): boolean {
 }
 
 /**
- * Rebuild the typed error of a refused send from its JSON-RPC error data: a
- * collective failure with its id and detail, or a closed send reason. A
- * rejection that is not the daemon's answer, such as a timeout or a dropped
- * connection, can follow the daemon queueing the message, so it is
- * `outcome-unknown` unless the request never reached the daemon.
+ * Rebuild a typed refusal from validated JSON-RPC error data. An unrecognized
+ * response, timeout or dropped connection can follow the daemon queueing the
+ * message, so it is `outcome-unknown` unless the request never reached the
+ * daemon.
  * @param cause Upstream rejection at the MCP tool boundary.
  * @returns A closed send failure without transport details.
  */
@@ -137,14 +136,12 @@ function sendFailure(
       return new SendError({
         reason: isReason(decoded.reason, sendFailureReasons)
           ? decoded.reason
-          : "network-unavailable",
+          : "outcome-unknown",
         ...(decoded.detail === undefined ? {} : { detail: decoded.detail }),
         ...("issues" in decoded ? { issues: decoded.issues } : {}),
       });
     }),
-    Effect.orElseSucceed(
-      () => new SendError({ reason: "network-unavailable" }),
-    ),
+    Effect.orElseSucceed(() => new SendError({ reason: "outcome-unknown" })),
     Effect.runSync,
   );
 }
@@ -212,10 +209,10 @@ function callSend(
   }).pipe(
     Effect.flatMap((result) =>
       result.isError === true
-        ? Effect.fail(new SendError({ reason: "network-unavailable" }))
+        ? Effect.fail(new SendError({ reason: "outcome-unknown" }))
         : decodeHarnessSendResult(result.structuredContent).pipe(
             Effect.catchTag("ParseError", () =>
-              Effect.fail(new SendError({ reason: "network-unavailable" })),
+              Effect.fail(new SendError({ reason: "outcome-unknown" })),
             ),
           ),
     ),

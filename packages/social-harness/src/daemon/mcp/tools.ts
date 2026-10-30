@@ -23,12 +23,9 @@ import {
   Schema,
   Scope,
 } from "effect";
+import type { CollectiveError } from "../../communication/collectives/contracts.js";
 import type { FirewallSendError } from "../../firewall/outcome/index.js";
 import type { EventStore } from "../inbox/store.js";
-import {
-  type CollectiveError,
-  SendResultSchema,
-} from "../../communication/collectives/contracts.js";
 import {
   issuesText,
   type SendError,
@@ -94,6 +91,7 @@ import {
   readEventResultSchema,
   sendErrorData,
 } from "../../host-protocol/operations.js";
+import { SendResultSchema } from "../../host-protocol/send-result.js";
 import {
   authenticateHarnessRequest,
   type HarnessMcpCredentials,
