@@ -269,6 +269,10 @@
     {
       "file": "firewall/admission/firewall.ts",
       "reason": "Local assessment prepares the safe projection before ordinary protocol acceptance"
+    },
+    {
+      "file": "communication/collectives/prepared.ts",
+      "reason": "Exact operation data shared by preparation, assessment projection and acceptance"
     }
   ],
   "compositionRoots": [
