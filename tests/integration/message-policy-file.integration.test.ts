@@ -75,7 +75,7 @@ const acquirePolicyFileScenario = Effect.gen(function* () {
   const management = yield* acquireDaemonManagementClient(alice);
   yield* management.register(makeRegistrationRequest(alice));
   const client = yield* connect(alice);
-  return { client, endpoint: alice.endpoint };
+  return { client, fixture: alice };
 });
 
 const fixedRulesSchema = Schema.Struct({
@@ -104,7 +104,7 @@ const unavailableTextPolicy = Effect.gen(function* () {
 
 const olderMcpClient = Effect.gen(function* () {
   const scenario = yield* acquirePolicyFileScenario;
-  const client = yield* connect(scenario, OLDER_CLIENT);
+  const client = yield* connect(scenario.fixture, OLDER_CLIENT);
   const catalog = yield* Effect.tryPromise(() => client.listTools());
   expect(catalog.tools).toEqual(
     arrayContaining([objectContaining({ name: "policy_read" })]),

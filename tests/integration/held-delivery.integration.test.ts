@@ -20,7 +20,6 @@ import {
   Stream,
 } from "effect";
 import { expect, it } from "vitest";
-import { expectEveryMemberSigned } from "./certified-history.js";
 import {
   acquireDaemonManagementClient,
   acquireDaemonProcess,
@@ -35,6 +34,7 @@ import {
   acquireRouterHoldProxy,
   type RouterHoldProxy,
 } from "./router-hold-proxy.js";
+import { historyMessageContent } from "./saved-history.js";
 
 /**
  * The test starts PGlite, the Registry, the Router, a hold proxy and two
@@ -93,11 +93,6 @@ const readHistory = (fixture: DaemonProcessFixture, address: AgentAddress) =>
     Effect.gen(function* () {
       const management = yield* acquireDaemonManagementClient(fixture);
       const history = yield* management.readConversation(address);
-
-      expectEveryMemberSigned(history.records, [
-        fixture.agentName,
-        address.slice("agent:".length),
-      ]);
       return history;
     }),
   );
@@ -342,14 +337,13 @@ function readHeldHistory(pair: HeldPair) {
       yield* readHistory(targetFixture, senderAddress),
     ]) {
       expect(history.continuation).toBeNull();
-      expect(
-        history.records.map(({ recordCore }) => recordCore.action.kind),
-      ).toEqual(["FIRST_MESSAGE", "MESSAGE", "MESSAGE"]);
-      expect(
-        history.records.map(
-          ({ recordCore }) => recordCore.action.messageIntent.content,
+      expect(history.records.map(historyMessageContent)).toEqual(
+        expectedContents.map((content, index) =>
+          history.records[index]?.kind === "sent"
+            ? content
+            : content.slice(0, -1),
         ),
-      ).toEqual(expectedContents);
+      );
     }
   });
 }

@@ -154,36 +154,56 @@ function runOpenClawGatherScenario() {
         messageTool,
       });
 
-      const started = yield* caller.send({
-        to: targetAddress,
-        text: GATHER_QUESTION,
-        collective: {
-          op: "gather",
-          deadline: 60,
-          requestedSchema: SLOT_SCHEMA,
-        },
-      });
-      const operationId = yield* Effect.fromNullable(started.operationId);
-      const requestTurn = yield* nextTurn(turns);
-      expect(requestTurn.From).toBe(callerAddress);
-      const answered = yield* messageTool("reply", {
-        to: callerAddress,
-        message: acceptText("tue", operationId),
-      });
-      expect(answered.details).toMatchObject({ ok: true });
-      expect(yield* nextItem(caller.messages)).toMatchObject({
-        kind: "collectiveResult",
-        outcomes: [
-          {
-            member: scenario.target.agent,
-            outcome: { kind: "answered", content: { slot: "tue" } },
-          },
-        ],
+      yield* receiveGather({
+        caller,
+        callerAddress,
+        targetAddress,
+        targetAgent: scenario.target.agent,
+        turns,
+        messageTool,
       });
 
       yield* stopGateway(abortController, runningGateway);
     }),
   );
+}
+
+function receiveGather({
+  caller,
+  callerAddress,
+  targetAddress,
+  targetAgent,
+  turns,
+  messageTool,
+}: Parameters<typeof sendGather>[0]) {
+  return Effect.gen(function* () {
+    const started = yield* caller.send({
+      to: targetAddress,
+      text: GATHER_QUESTION,
+      collective: {
+        op: "gather",
+        deadline: 60,
+        requestedSchema: SLOT_SCHEMA,
+      },
+    });
+    const operationId = yield* Effect.fromNullable(started.operationId);
+    const requestTurn = yield* nextTurn(turns);
+    expect(requestTurn.From).toBe(callerAddress);
+    const answered = yield* messageTool("reply", {
+      to: callerAddress,
+      message: acceptText("tue", operationId),
+    });
+    expect(answered.details).toMatchObject({ ok: true });
+    expect(yield* nextItem(caller.messages)).toMatchObject({
+      kind: "collectiveResult",
+      outcomes: [
+        {
+          member: targetAgent,
+          outcome: { kind: "answered", content: { slot: "tue" } },
+        },
+      ],
+    });
+  });
 }
 
 function runOpenClawAllGatherScenario() {

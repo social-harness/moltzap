@@ -173,15 +173,19 @@ async function assertRepliesRecorded(
   { caller, target, peer }: Trio,
   shared: string,
 ): Promise<undefined> {
-  const directHistory = [
+  assert.deepEqual(await caller.history(target.address), [
     multicastContent(INBOUND),
+    [{ type: "text", text: DIRECT_REPLY }],
+  ]);
+  assert.deepEqual(await target.history(caller.address), [
+    [{ type: "text", text: INBOUND }],
     multicastContent(DIRECT_REPLY),
-  ];
-  assert.deepEqual(await caller.history(target.address), directHistory);
-  assert.deepEqual(await target.history(caller.address), directHistory);
+  ]);
   for (const endpoint of [caller, target, peer]) {
     assert.deepEqual(await endpoint.history(shared), [
-      multicastContent(GROUP_REPLY),
+      endpoint === target
+        ? multicastContent(GROUP_REPLY)
+        : [{ type: "text", text: GROUP_REPLY }],
     ]);
   }
 }
@@ -412,7 +416,11 @@ async function completesPendingSendOnce(
       delivered: 1,
       retried: 0,
       endpointMessages: [PENDING_REPORT],
-      posts: [INBOUND, PENDING_SEND, FENCE].map(multicastContent),
+      posts: [
+        multicastContent(INBOUND),
+        [{ type: "text", text: PENDING_SEND }],
+        [{ type: "text", text: FENCE }],
+      ],
     },
   );
 }
@@ -441,7 +449,7 @@ async function awaitRecordedLast(
   address: string,
   text: string,
 ): Promise<readonly unknown[]> {
-  const expected = multicastContent(text);
+  const expected = [{ type: "text", text }];
   const deadline = Date.now() + RECORD_TIMEOUT_MILLIS;
   let lastRead: HistoryRead = { failure: "no read" };
   while (Date.now() < deadline) {

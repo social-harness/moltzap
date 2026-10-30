@@ -20,7 +20,6 @@ import {
   Stream,
 } from "effect";
 import { expect, vi } from "vitest";
-import { expectEveryMemberSigned } from "./certified-history.js";
 import {
   acquireDaemonManagementClient,
   acquireDaemonProcess,
@@ -31,6 +30,7 @@ import {
   ProcessTestError,
 } from "./daemon-process-harness.js";
 import { registrationResultKind } from "./expected-contracts.js";
+import { historyMessageContent } from "./saved-history.js";
 
 interface RegisteredFixture extends DaemonProcessFixture {
   readonly agent: AgentView;
@@ -753,27 +753,17 @@ function assertFixtureHistory(
         hasMore: false,
       });
       const history = yield* management.readConversation(peerAddress);
-
-      expectEveryMemberSigned(history.records, [
-        fixture.agentName,
-        peerAddress.slice("agent:".length),
-      ]);
       expect(history.continuation).toBeNull();
       expect(history.records).toHaveLength(1 + replies.length);
-      expect(
-        history.records.map(({ recordCore }) => recordCore.action.kind),
-      ).toEqual(["FIRST_MESSAGE", ...replies.map(() => "MESSAGE" as const)]);
-      expect(
-        history.records.map(
-          ({ recordCore }) => recordCore.action.messageIntent.content,
+      expect(history.records.map(historyMessageContent)).toEqual(
+        [initial, ...replies].map((content, index) =>
+          history.records[index]?.kind === "sent"
+            ? content
+            : content.slice(0, -1),
         ),
-      ).toEqual([initial, ...replies]);
+      );
       expect(
-        new Set(
-          history.records.map(
-            ({ recordCore }) => recordCore.action.messageIntent.msgId,
-          ),
-        ).size,
+        new Set(history.records.map(({ recordHash }) => recordHash)).size,
       ).toBe(history.records.length);
     }),
   );

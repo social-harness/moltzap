@@ -658,14 +658,12 @@ export const makeDaemonProcessFixture = (
     const stateDirectory = join(directory, "state");
     const keyPath = join(directory, "agent-key.pem");
     const credentialPath = join(directory, "admission.txt");
-    const mcpCredentialFile = join(directory, "mcp-credential");
-    const mcpCredential = Redacted.make(randomBytes(32).toString("base64url"));
     yield* makeDirectory(stateDirectory);
+    const credentials = yield* makeMcpCredential(directory);
     yield* Effect.all(
       [
         writePrivateFile(keyPath, makePrivateKeyPem()),
         writePrivateFile(credentialPath, ADMISSION_CREDENTIAL),
-        writePrivateFile(mcpCredentialFile, Redacted.value(mcpCredential)),
       ] as const,
       { concurrency: 2, discard: true },
     );
@@ -675,12 +673,11 @@ export const makeDaemonProcessFixture = (
       stateDirectory,
       agentPrivateKeyFile: keyPath,
       admissionCredentialFile: credentialPath,
-      mcpCredentialFile,
-      mcpCredential,
+      ...credentials,
       environment: {
         SHARNESS_STATE_DIRECTORY: stateDirectory,
         SHARNESS_MCP_PORT: String(port),
-        SHARNESS_MCP_CREDENTIAL_FILE: mcpCredentialFile,
+        SHARNESS_MCP_CREDENTIAL_FILE: credentials.mcpCredentialFile,
         SHARNESS_REGISTRY_ORIGIN: infrastructure.registryOrigin.origin,
         SHARNESS_REGISTRY_SIGNER_PUBLIC_KEY:
           infrastructure.registrySignerPublicKeyJson,
@@ -694,6 +691,15 @@ export const makeDaemonProcessFixture = (
       ...(firewall === undefined ? {} : { firewall }),
     };
   }).pipe(Effect.withSpan("makeDaemonProcessFixture"));
+
+function makeMcpCredential(directory: string) {
+  return Effect.gen(function* () {
+    const mcpCredentialFile = join(directory, "mcp-credential");
+    const mcpCredential = Redacted.make(randomBytes(32).toString("base64url"));
+    yield* writePrivateFile(mcpCredentialFile, Redacted.value(mcpCredential));
+    return { mcpCredentialFile, mcpCredential };
+  });
+}
 
 /** The command that runs one fixture's daemon. */
 const daemonCommand = (

@@ -424,11 +424,9 @@ function start(
   );
 }
 
-function connect(
-  fixture: DaemonProcessFixture,
-  bearer: string = Redacted.value(fixture.mcpCredential),
-) {
+function connect(fixture: DaemonProcessFixture, bearer?: string) {
   return Effect.gen(function* () {
+    const credential = bearer ?? Redacted.value(fixture.mcpCredential);
     const client = new Client(
       { name: "policy-test", version: "1" },
       { capabilities: {}, versionNegotiation: { mode: { pin: "2026-07-28" } } },
@@ -437,7 +435,7 @@ function connect(
       Effect.tryPromise(() =>
         client.connect(
           new StreamableHTTPClientTransport(fixture.endpoint, {
-            requestInit: { headers: { authorization: `Bearer ${bearer}` } },
+            requestInit: { headers: { authorization: `Bearer ${credential}` } },
           }),
         ),
       ).pipe(

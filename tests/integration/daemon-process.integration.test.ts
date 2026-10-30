@@ -21,7 +21,6 @@ import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
-import { expectEveryMemberSigned } from "./certified-history.js";
 import {
   acquireDaemonManagementClient,
   acquireDaemonProcess,
@@ -40,7 +39,6 @@ import {
   agentNotAdmittedDiagnostic,
   agentNotAdmittedRemedy,
   agentResetDocsLink,
-  completedReanchorKind,
   configurationStartupPhase,
   outboxTooOldReason,
   outboxTooOldRemedy,
@@ -50,6 +48,7 @@ import {
   storageStartupPhase,
 } from "./expected-contracts.js";
 import { processTrace } from "./process-trace.js";
+import { historyMessageContent } from "./saved-history.js";
 import { arrayContaining } from "./test-matchers.js";
 
 interface RegisteredFixture extends DaemonProcessFixture {
@@ -358,11 +357,6 @@ const readDurableHistory = (
         hasMore: false,
       });
       const history = yield* management.readConversation(address);
-
-      expectEveryMemberSigned(history.records, [
-        fixture.agentName,
-        address.slice("agent:".length),
-      ]);
       return history;
     }),
   );
@@ -663,12 +657,7 @@ function expectRestartedRecipientHistory(state: RestartScenario) {
       directAddress(peerFixture.agentName),
     );
     expect(
-      history.records.map(({ recordCore }) => recordCore.action.kind),
-    ).toEqual(["FIRST_MESSAGE", "MESSAGE", "MESSAGE"]);
-    expect(
-      history.records.map(
-        ({ recordCore }) => recordCore.action.messageIntent.content[0],
-      ),
+      history.records.map((record) => historyMessageContent(record)[0]),
     ).toEqual([
       { type: "text", text: beforeRestartText },
       { type: "text", text: fromRestartedText },
@@ -723,7 +712,7 @@ function expectRecoveredRouterHistory(state: RouterRestartScenario) {
       directAddress(conciergeFixture.agentName),
     );
     const texts = history.records.map(
-      ({ recordCore }) => recordCore.action.messageIntent.content[0],
+      (record) => historyMessageContent(record)[0],
     );
     expect(texts.slice(0, 2)).toEqual(
       arrayContaining([
@@ -739,71 +728,62 @@ function expectRecoveredRouterHistory(state: RouterRestartScenario) {
       conciergeFixture,
       directAddress(memberFixture.agentName),
     );
-    expect(peerHistory.records.map(({ recordCore }) => recordCore)).toEqual(
-      history.records.map(({ recordCore }) => recordCore),
+    expect(peerHistory.records.map(({ recordHash }) => recordHash)).toEqual(
+      history.records.map(({ recordHash }) => recordHash),
     );
-    const restartedAnchor = history.records[2]?.routerAnchor;
-    expect(restartedAnchor?.kind).toBe(completedReanchorKind);
-    if (restartedAnchor?.kind === completedReanchorKind) {
-      expect(restartedAnchor.reanchor?.sharnessVersion).toBe(
-        history.records[1]?.recordCore.sharnessVersion,
-      );
-    }
   });
 }
 
 function exchangeInitialMessagesAndExpectDelivery(state: ProcessScenario) {
-  return Effect.gen(function* () {
-    const { callerFixture, targetFixture, callerAddress, targetAddress } =
-      state;
-    yield* Effect.scoped(
-      Effect.gen(function* () {
-        const caller = yield* acquireHarnessEndpoint(callerFixture.endpoint, {
-          credential: callerFixture.mcpCredential,
-          receiveMode: "push",
-        });
-        const target = yield* acquireHarnessEndpoint(targetFixture.endpoint, {
-          credential: targetFixture.mcpCredential,
-          receiveMode: "push",
-        });
-        const callerDelivery = yield* Effect.forkScoped(
-          nextDelivery(caller.messages),
-        );
-        const targetDelivery = yield* Effect.forkScoped(
-          nextDelivery(target.messages),
-        );
+  return Effect.scoped(
+    Effect.gen(function* () {
+      const { callerFixture, targetFixture, callerAddress, targetAddress } =
+        state;
+      const caller = yield* acquireHarnessEndpoint(callerFixture.endpoint, {
+        credential: callerFixture.mcpCredential,
+        receiveMode: "push",
+      });
+      const target = yield* acquireHarnessEndpoint(targetFixture.endpoint, {
+        credential: targetFixture.mcpCredential,
+        receiveMode: "push",
+      });
+      const callerDelivery = yield* Effect.forkScoped(
+        nextDelivery(caller.messages),
+      );
+      const targetDelivery = yield* Effect.forkScoped(
+        nextDelivery(target.messages),
+      );
 
-        const sent = yield* caller.send({
-          to: targetAddress,
-          text: initialText,
-        });
-        const targetInbound = yield* Fiber.join(targetDelivery);
-        expect(sent).toMatchObject({ address: targetAddress });
-        expect(targetInbound.item).toMatchObject({
-          kind: "multicast",
-          message: {
-            kind: "direct",
-            msgId: sent.msgId,
-            address: callerAddress,
-            sender: callerFixture.agent,
-            content: [{ type: "text", text: initialText }],
-          },
-        });
+      const sent = yield* caller.send({
+        to: targetAddress,
+        text: initialText,
+      });
+      const targetInbound = yield* Fiber.join(targetDelivery);
+      expect(sent).toMatchObject({ address: targetAddress });
+      expect(targetInbound.item).toMatchObject({
+        kind: "multicast",
+        message: {
+          kind: "direct",
+          msgId: sent.msgId,
+          address: callerAddress,
+          sender: callerFixture.agent,
+          content: [{ type: "text", text: initialText }],
+        },
+      });
 
-        yield* target.send({ to: callerAddress, text: responseText });
-        const callerInbound = yield* Fiber.join(callerDelivery);
-        expect(callerInbound.item).toMatchObject({
-          kind: "multicast",
-          message: {
-            kind: "direct",
-            address: targetAddress,
-            sender: targetFixture.agent,
-            content: [{ type: "text", text: responseText }],
-          },
-        });
-      }),
-    );
-  });
+      yield* target.send({ to: callerAddress, text: responseText });
+      const callerInbound = yield* Fiber.join(callerDelivery);
+      expect(callerInbound.item).toMatchObject({
+        kind: "multicast",
+        message: {
+          kind: "direct",
+          address: targetAddress,
+          sender: targetFixture.agent,
+          content: [{ type: "text", text: responseText }],
+        },
+      });
+    }),
+  );
 }
 
 function expectInitialHistoriesMatch(state: ProcessScenario) {
@@ -819,25 +799,23 @@ function expectInitialHistoriesMatch(state: ProcessScenario) {
       callerAddress,
     );
     expect(callerHistory.continuation).toBeNull();
-    expect(callerHistory.records).toHaveLength(2);
-    expect(
-      callerHistory.records.map(({ recordCore }) => recordCore.action.kind),
-    ).toEqual(["FIRST_MESSAGE", "MESSAGE"]);
-    expect(
-      callerHistory.records.map(
-        ({ recordCore }) => recordCore.action.messageIntent.content,
-      ),
-    ).toEqual([initialContent, responseContent]);
+    expect(callerHistory.records.map(({ kind }) => kind)).toEqual([
+      "sent",
+      "received",
+    ]);
+    expect(callerHistory.records.map(historyMessageContent)).toEqual([
+      initialContent,
+      [{ type: "text", text: responseText }],
+    ]);
     expect(targetHistory.continuation).toBeNull();
-    expect(targetHistory.records).toHaveLength(2);
-    expect(
-      targetHistory.records.map(({ recordCore }) => recordCore.action.kind),
-    ).toEqual(["FIRST_MESSAGE", "MESSAGE"]);
-    expect(
-      targetHistory.records.map(
-        ({ recordCore }) => recordCore.action.messageIntent.content,
-      ),
-    ).toEqual([initialContent, responseContent]);
+    expect(targetHistory.records.map(({ kind }) => kind)).toEqual([
+      "received",
+      "sent",
+    ]);
+    expect(targetHistory.records.map(historyMessageContent)).toEqual([
+      [{ type: "text", text: initialText }],
+      responseContent,
+    ]);
   });
 }
 
