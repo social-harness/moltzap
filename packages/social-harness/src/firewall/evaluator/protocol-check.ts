@@ -18,13 +18,14 @@ import {
 } from "./contract/index.js";
 
 /**
- * A rule whose text defines `roles` by what each one does. Role names are
- * the provider's choices when it assigns participants, so they must be short
+ * A rule whose text defines its roles by what each one does. Listing them in
+ * `roles` also asks the provider which role each participant plays, recorded
+ * in the trace only; the names become its choices, so they must be short
  * identifiers such as `Professor`.
  */
 export interface ProtocolRule extends RuleDescription {
   readonly text: string;
-  readonly roles: readonly string[];
+  readonly roles?: readonly string[];
 }
 
 const instructions =
@@ -44,9 +45,8 @@ const verdictCriteria = {
 };
 
 /**
- * One request per message: a role question for every participant under every
- * rule, and one verdict question per rule. Roles are asked in the same call
- * and recorded in the trace, so a wrong verdict can be traced to a wrong role.
+ * One request per message: one verdict question per rule, plus a role
+ * question for every participant under each rule that lists its roles.
  */
 function requestFor(
   rules: readonly ProtocolRule[],
@@ -85,24 +85,27 @@ function requestFor(
   };
   const questions: Record<string, DecisionRequest["questions"][string]> = {};
   rules.forEach((rule, ruleIndex) => {
-    participants.forEach((participant, participantIndex) => {
-      questions[`role-${String(ruleIndex)}-${String(participantIndex)}`] = {
-        ruleId: rule.id,
-        purpose: "subject",
-        subject: participant,
-        instructions: `Under rule "${rule.id}", which role does participant "${participant}" play in this conversation?`,
-        criteria: {
-          ...Object.fromEntries(
-            rule.roles.map((role) => [
-              role,
-              `"${participant}" plays ${role} as the rule defines it.`,
-            ]),
-          ),
-          none: `"${participant}" plays no role in this rule.`,
-          unclear: "The conversation does not show which role it plays.",
-        },
-      };
-    });
+    const roles = rule.roles ?? [];
+    (roles.length === 0 ? [] : participants).forEach(
+      (participant, participantIndex) => {
+        questions[`role-${String(ruleIndex)}-${String(participantIndex)}`] = {
+          ruleId: rule.id,
+          purpose: "subject",
+          subject: participant,
+          instructions: `Under rule "${rule.id}", which role does participant "${participant}" play in this conversation?`,
+          criteria: {
+            ...Object.fromEntries(
+              roles.map((role) => [
+                role,
+                `"${participant}" plays ${role} as the rule defines it.`,
+              ]),
+            ),
+            none: `"${participant}" plays no role in this rule.`,
+            unclear: "The conversation does not show which role it plays.",
+          },
+        };
+      },
+    );
     questions[`verdict-${String(ruleIndex)}`] = {
       ruleId: rule.id,
       purpose: "assessment",

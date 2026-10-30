@@ -2,8 +2,9 @@
  * @file Experiment: one complete office-hours protocol, as a single norm in
  * Prof. Mahajan's agent's enforcement-mode firewall, judged against messages
  * from the CSE 561 pilot in both directions. The rule defines its own roles,
- * and no owner fact says which agent plays which; each case runs through the
- * staged text policy and the one-call protocol check, and prints both
+ * and no owner fact says which agent plays which. Each case runs through the
+ * staged text policy, the one-call protocol check with role questions, and
+ * the one-call check with only its verdict question, and prints all three
  * judgments beside the one the protocol calls for. Needs a Jev key in the
  * file named by `JEV_KEY_FILE`.
  */
@@ -297,9 +298,14 @@ live(
         provider,
         settings: options.text?.settings,
       });
-      const protocol = makeProtocolCheck({
+      const withRoles = makeProtocolCheck({
         id: "protocol",
         rules: rules.map((rule) => ({ ...rule, roles: ROLES })),
+        provider,
+      });
+      const verdictOnly = makeProtocolCheck({
+        id: "protocol",
+        rules,
         provider,
       });
       const staged = yield* makeFirewall({
@@ -308,8 +314,13 @@ live(
         settings: options.settings,
       });
       const oneCall = yield* makeFirewall({
-        incoming: [protocol],
-        outgoing: [protocol],
+        incoming: [withRoles],
+        outgoing: [withRoles],
+        settings: options.settings,
+      });
+      const oneQuestion = yield* makeFirewall({
+        incoming: [verdictOnly],
+        outgoing: [verdictOnly],
         settings: options.settings,
       });
       const rows = yield* Effect.forEach(
@@ -324,8 +335,8 @@ live(
               ],
               text: c.text,
             };
-            const [first, second] = yield* Effect.all(
-              [staged, oneCall].map((firewall) =>
+            const [first, second, third] = yield* Effect.all(
+              [staged, oneCall, oneQuestion].map((firewall) =>
                 c.direction === "outgoing"
                   ? firewall.checkOutgoing(message, contextOf(c))
                   : firewall.checkIncoming(message, contextOf(c)),
@@ -338,7 +349,8 @@ live(
             return {
               staged: mark(first),
               oneCall: mark(second),
-              line: `${mark(first)} ${mark(second)}  ${c.direction.padEnd(8)} expected ${c.expected.padEnd(6)} staged ${first.judgment.padEnd(6)} one-call ${second.judgment.padEnd(6)} ${c.name}\n      roles: ${rolesOf(second)}`,
+              oneQuestion: mark(third),
+              line: `${mark(first)} ${mark(second)} ${mark(third)}  ${c.direction.padEnd(8)} expected ${c.expected.padEnd(6)} staged ${first.judgment.padEnd(6)} roles+verdict ${second.judgment.padEnd(6)} verdict ${third.judgment.padEnd(6)} ${c.name}\n      roles: ${rolesOf(second)}`,
             };
           }),
         { concurrency: 4 },
@@ -348,9 +360,9 @@ live(
       console.log(
         [
           "",
-          "staged one-call",
+          "staged, one call with role questions, one call with only the verdict",
           ...rows.map((row) => row.line),
-          `staged ${count((row) => row.staged)}, one-call ${count((row) => row.oneCall)} as the protocol calls for`,
+          `staged ${count((row) => row.staged)}, roles+verdict ${count((row) => row.oneCall)}, verdict ${count((row) => row.oneQuestion)} as the protocol calls for`,
         ].join("\n"),
       );
     }),
