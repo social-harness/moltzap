@@ -5,11 +5,11 @@
 
 import { NodeHttpClient } from "@effect/platform-node";
 import { Data, Duration, Effect, Layer, Option } from "effect";
-import { Router } from "../communication/router/api/client.js";
-import {
-  type EndpointStoreError,
-  type OutboxTooOldError,
+import type {
+  EndpointStoreError,
+  OutboxTooOldError,
 } from "../communication/store/index.js";
+import { Router } from "../communication/router/api/client.js";
 import {
   type FirewallPolicyError,
   type LoadedMessagePolicy,
@@ -148,23 +148,31 @@ export namespace Daemon {
       yield* requireAdmissionToCreate(opening, bootstrap).pipe(
         Effect.mapError(configurationFailure),
       );
-      const persistence = yield* Layer.build(storageLayer({
-        stateDirectory: configuration.stateDirectory,
-        liveWireVersions: yield* liveWireVersions,
-      })).pipe(Effect.mapError(storageFailure));
+      const persistence = yield* Layer.build(
+        storageLayer({
+          stateDirectory: configuration.stateDirectory,
+          liveWireVersions: yield* liveWireVersions,
+        }),
+      ).pipe(Effect.mapError(storageFailure));
       return yield* Effect.gen(function* () {
-        const firewall = options === undefined ? undefined :
-          yield* makeFirewall(options).pipe(
-            Effect.mapError((cause) => installFailure(cause, loaded)),
-          );
-        const registration = yield* readDaemonRegistrationState({bootstrap}).pipe(
-          Effect.mapError(storageFailure),
-        );
+        const firewall =
+          options === undefined
+            ? undefined
+            : yield* makeFirewall(options).pipe(
+                Effect.mapError((cause) => installFailure(cause, loaded)),
+              );
+        const registration = yield* readDaemonRegistrationState({
+          bootstrap,
+        }).pipe(Effect.mapError(storageFailure));
         yield* requireAdmission(registration, bootstrap).pipe(
           Effect.mapError(configurationFailure),
         );
         const network = yield* Layer.build(networkLayer(configuration));
-        return yield* runDaemonRuntime({bootstrap, registration, firewall}).pipe(
+        return yield* runDaemonRuntime({
+          bootstrap,
+          registration,
+          firewall,
+        }).pipe(
           Effect.provide(network),
           Effect.mapError(runtimeStartupFailure),
         );

@@ -5,14 +5,13 @@
  */
 
 import type { Effect, Layer, Option, Types } from "effect";
+import type { checkMessage } from "../test.js";
 import type {
   Daemon,
   loadMessagePolicy,
   makeFirewall,
   MessagePolicy,
 } from "./index.js";
-
-import type { checkMessage } from "../test.js";
 
 type Expect<Value extends true> = Value;
 

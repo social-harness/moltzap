@@ -2,25 +2,27 @@
 
 import * as SqlClient from "@effect/sql/SqlClient";
 import { Cause, Clock, Deferred, Effect, Queue, type Scope } from "effect";
-import type { FirewallInboxEntry } from "../../firewall/store/index.js";
 import {
   decodeRuntimeValue,
   type DeliveryToken,
   encodeRuntimeValue,
   EndpointStoreError,
 } from "../../communication/store/index.js";
+import {
+  type FirewallInboxEntry,
+  readNextPendingMessages,
+} from "../../firewall/store/index.js";
 import { InboundItem } from "../../host-protocol/items.js";
-import { readNextPendingMessages } from "../../firewall/store/index.js";
 import {
   retireFirewallItem,
   saveMessageDecision,
   saveResultDecision,
 } from "../store.js";
-import { checkLocalItem } from "./local-results.js";
 import {
   type FirewallEnvironment,
   prepareIncomingCheck,
 } from "./firewall-context.js";
+import { checkLocalItem } from "./local-results.js";
 
 /** What the admission worker reads and changes in one service's delivery. */
 export interface AdmissionContext {

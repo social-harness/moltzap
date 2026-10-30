@@ -33,6 +33,7 @@ import { describe, expect } from "vitest";
 import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
 import { requestId } from "../../__tests__/collective-operation-fixtures.js";
+import { openInboxFixture } from "../../__tests__/inbox-fixture.js";
 import {
   mcpTestCredential,
   mcpTestHeaders,
@@ -63,7 +64,6 @@ import {
   SendResultSchema,
 } from "../../host-protocol/send-result.js";
 import { readRuntimeEvent } from "../inbox/inbox.js";
-import { openInboxFixture } from "../../__tests__/inbox-fixture.js";
 import { acquireHarnessMcpHttpServer } from "./http.js";
 import {
   type HarnessMcpOperations,

@@ -9,6 +9,7 @@ import {
 import { Clock, Context, Deferred, Duration, Effect, Fiber } from "effect";
 import { createHmac } from "node:crypto";
 import { describe, expect } from "vitest";
+import { openInboxFixture } from "../../__tests__/inbox-fixture.js";
 import { localGuidance } from "../../__tests__/message-policy-fixtures.js";
 import { stateDirectory } from "../../__tests__/store-schema-fixtures.js";
 import {
@@ -24,7 +25,6 @@ import {
 import { encodeRuntimeValue } from "../../communication/store/index.js";
 import { maximumEventBytes } from "../../host-protocol/index.js";
 import { readRuntimeEvent } from "../inbox/inbox.js";
-import { openInboxFixture } from "../../__tests__/inbox-fixture.js";
 import {
   isPublicWebhookAddress,
   sendWebhook,

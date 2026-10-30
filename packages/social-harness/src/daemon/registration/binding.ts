@@ -1,12 +1,13 @@
 /** @file The daemon's durable identity row: read, verify and bind. */
 
+import type { SqlClient } from "@effect/sql";
 import { Data, Effect } from "effect";
-import { SqlClient } from "@effect/sql";
-import { readIdentity, bindIdentity } from "../../communication/store/index.js";
-import type {
-  IdentityBinding,
-} from "../../communication/store/index.js";
 import type { DaemonBootstrap } from "../bootstrap.js";
+import {
+  bindIdentity,
+  type IdentityBinding,
+  readIdentity,
+} from "../../communication/store/index.js";
 import {
   decodeCanonical,
   encodeCanonical,
@@ -104,8 +105,9 @@ export const bindCard = (
   encodeCanonical(AgentCard, agentCard).pipe(
     Effect.mapError(representationFailure),
     Effect.flatMap((canonicalAgentCard) =>
-      bindIdentity({ agentId: agentCard.agentId, canonicalAgentCard })
-        .pipe(Effect.mapError(persistenceFailure)),
+      bindIdentity({ agentId: agentCard.agentId, canonicalAgentCard }).pipe(
+        Effect.mapError(persistenceFailure),
+      ),
     ),
     Effect.asVoid,
   );

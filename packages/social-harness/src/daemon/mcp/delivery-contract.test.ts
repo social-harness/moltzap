@@ -7,15 +7,16 @@ import type { CollectivePorts } from "../../communication/collectives/ports.js";
 import type { EndpointEngine } from "../../communication/conversations/index.js";
 import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
+import { collectivePersistencePorts } from "../../__tests__/collective-message-fixtures.js";
 import { requestId } from "../../__tests__/collective-operation-fixtures.js";
 import {
   type TestCollectiveOperations as CollectiveOperations,
   makeCollectiveOperations,
 } from "../../__tests__/collective-send.js";
-import { collectivePersistencePorts } from "../../__tests__/collective-message-fixtures.js";
-import { makeToolCallRequest } from "../../__tests__/mcp-http-fixtures.js";
+import { openInboxFixture } from "../../__tests__/inbox-fixture.js";
 import {
   loopbackMcpEndpoint,
+  makeToolCallRequest,
   mcpTestCredential,
   mcpTestHeaders,
 } from "../../__tests__/mcp-http-fixtures.js";
@@ -31,7 +32,6 @@ import { AgentAddress } from "../../communication/records/index.js";
 import { acquireHarnessEndpoint } from "../../host-client/index.js";
 import { decodeHarnessReadInboxResult } from "../../host-protocol/operations.js";
 import { type HostDelivery, makeHostDelivery } from "../inbox/host-delivery.js";
-import { openInboxFixture } from "../../__tests__/inbox-fixture.js";
 import { makeHarnessMcpHttpHandler } from "./tools.js";
 
 const unreachable = () =>

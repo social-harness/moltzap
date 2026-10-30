@@ -3,6 +3,7 @@
  * subscriptions, delivery passes and the fatal signal that stops it.
  */
 
+import { SqlClient } from "@effect/sql";
 import { Cause, Deferred, Effect, Option, Queue, Scope } from "effect";
 import type { EndpointStoreError } from "../../communication/store/index.js";
 import type { Firewall } from "../../firewall/index.js";
@@ -11,7 +12,6 @@ import type { DaemonBootstrap } from "../bootstrap.js";
 import type { HistoryExportPort } from "../inbox/host-traffic-log.js";
 import type { HarnessMcpEventHandler } from "../mcp/index.js";
 import type { DaemonRegistrationState } from "../registration/index.js";
-import { SqlClient } from "@effect/sql";
 import { CollectiveEmitError } from "../../communication/collectives/index.js";
 import { Router } from "../../communication/router/index.js";
 import { Registry } from "../../identity/registry/index.js";
@@ -445,32 +445,32 @@ function daemonDelivery(
   scope: Scope.Scope,
 ) {
   return Effect.gen(function* () {
-  const sql = yield* SqlClient.SqlClient;
-  return yield* makeHostDelivery({
-    historyExport: input.historyExport,
-    experiments: input.bootstrap.configuration,
-    collectives: () => {
-      if (state.identity.kind !== "running") {
-        return undefined;
-      }
-      return state.identity.protocol.collectives;
-    },
-    ...(input.firewall === undefined
-      ? {}
-      : {
-          firewall: input.firewall,
-          firewallEnvironment: () => {
-            return state.identity.kind !== "running" ||
-              input.firewall === undefined
-              ? undefined
-              : {
-                  sql,
-                  firewall: input.firewall,
-                  localAgentCard: state.identity.protocol.agentCard,
-                };
-          },
-        }),
-    scope,
-  }).pipe(Effect.mapError(() => runtimeFailure("storage")));
+    const sql = yield* SqlClient.SqlClient;
+    return yield* makeHostDelivery({
+      historyExport: input.historyExport,
+      experiments: input.bootstrap.configuration,
+      collectives: () => {
+        if (state.identity.kind !== "running") {
+          return undefined;
+        }
+        return state.identity.protocol.collectives;
+      },
+      ...(input.firewall === undefined
+        ? {}
+        : {
+            firewall: input.firewall,
+            firewallEnvironment: () => {
+              return state.identity.kind !== "running" ||
+                input.firewall === undefined
+                ? undefined
+                : {
+                    sql,
+                    firewall: input.firewall,
+                    localAgentCard: state.identity.protocol.agentCard,
+                  };
+            },
+          }),
+      scope,
+    }).pipe(Effect.mapError(() => runtimeFailure("storage")));
   });
 }

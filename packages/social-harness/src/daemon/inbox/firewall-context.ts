@@ -40,7 +40,6 @@ import {
 import { compareAgentIds } from "../../encoding/identifier.js";
 import { HistoryEntry, Message, MessageContext } from "../../firewall/check.js";
 import { InboundItem } from "../../host-protocol/items.js";
-import { readFirewallEvidence } from "./evidence.js";
 import {
   questionText,
   renderCollectiveRequestBody,
@@ -52,6 +51,7 @@ import {
   AgentView,
   type VerifiedAgentCard,
 } from "../../identity/cards.js";
+import { readFirewallEvidence } from "./evidence.js";
 
 /** The daemon supplies verified attribution and its existing durable evidence capability. */
 export interface FirewallEnvironment {

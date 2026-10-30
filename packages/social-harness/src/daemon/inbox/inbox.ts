@@ -9,12 +9,6 @@ import type {
   HarnessReadInboxResult,
 } from "../../host-protocol/operations.js";
 import {
-  type InboxEntry,
-  readInbox,
-  readInboxItem,
-  putInboxItem,
-} from "./store.js";
-import {
   decodeRuntimeValue,
   DeliveryToken,
   encodeRuntimeValue,
@@ -23,6 +17,12 @@ import {
 import { exactStruct } from "../../encoding/exact.js";
 import { localGuidanceSchema } from "../../host-protocol/advice.js";
 import { InboundItem } from "../../host-protocol/items.js";
+import {
+  type InboxEntry,
+  putInboxItem,
+  readInbox,
+  readInboxItem,
+} from "./store.js";
 
 /**
  * Lookup retains the original content and guidance after acknowledgment.

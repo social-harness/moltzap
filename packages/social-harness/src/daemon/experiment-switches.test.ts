@@ -6,8 +6,8 @@ import { scopedLive as it } from "@effect/vitest";
 import { Effect, Schema } from "effect";
 import { join } from "node:path";
 import { expect } from "vitest";
-import { collectiveOperationId } from "../__tests__/collective-id-fixtures.js";
 import { testAgentView } from "../__tests__/agent-card-fixtures.js";
+import { collectiveOperationId } from "../__tests__/collective-id-fixtures.js";
 import {
   stateDirectory,
   withDaemonStore,
@@ -90,12 +90,7 @@ function refusedSend(
     Effect.gen(function* () {
       const delivery = yield* makeHostDelivery({
         scope: yield* Effect.scope,
-        collectives: () => ({
-          prepare: () =>
-            Effect.dieMessage("hidden sends must not reach dispatch"),
-          accept: () =>
-            Effect.dieMessage("hidden sends must not reach dispatch"),
-        }),
+        collectives: hiddenSendDispatcher,
         experiments: {
           hideGroups: experiments.hideGroups ?? false,
           hideCollectives: experiments.hideCollectives ?? false,
@@ -153,8 +148,11 @@ it("saves a hidden send's refusal in the traffic log", () =>
     });
     const error = yield* refusedSend(input, { hideGroups: true }, path);
     const contents = yield* filesystem.readFileString(path);
-    const records = yield* Effect.forEach(contents.trim().split("\n"), (line) =>
-      Schema.decodeUnknown(Schema.parseJson(HistoryExportRecord))(line),
+    const records = yield* Effect.forEach(
+      contents.trim().split("\n"),
+      (line) =>
+        Schema.decodeUnknown(Schema.parseJson(HistoryExportRecord))(line),
+      { concurrency: 1 },
     );
     expect(records).toEqual(
       expect.arrayContaining([
@@ -166,3 +164,11 @@ it("saves a hidden send's refusal in the traffic log", () =>
       ]),
     );
   }).pipe(Effect.provide(NodeFileSystem.layer)));
+
+function hiddenSendDispatcher() {
+  return { prepare: rejectHiddenDispatch, accept: rejectHiddenDispatch };
+}
+
+function rejectHiddenDispatch() {
+  return Effect.dieMessage("hidden sends must not reach dispatch");
+}

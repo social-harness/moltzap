@@ -22,19 +22,6 @@ import type {
   HistoryExportPort,
   HistoryExportRecord,
 } from "./host-traffic-log.js";
-import type { EventStore } from "./store.js";
-import {
-  readInbox,
-  readInboxItem,
-  readInboxSummary,
-  readEventState,
-  writeEventState,
-  acknowledgeInboxItem,
-  completeWebhookDelivery as saveWebhookDelivery,
-} from "./store.js";
-import { saveCheckDecision } from "../../firewall/store/index.js";
-import { readFirewallRequestAdmission } from "./evidence.js";
-import { queueFirewallItem, publishCollectiveItem } from "../store.js";
 import {
   type CollectiveEmitError,
   CollectiveError,
@@ -46,12 +33,13 @@ import {
   SendError,
 } from "../../communication/conversations/errors.js";
 import {
-  readCollectiveOperation,
   decodeRuntimeValue,
   type DeliveryToken,
   encodeRuntimeValue,
   EndpointStoreError,
+  readCollectiveOperation,
 } from "../../communication/store/index.js";
+import { saveCheckDecision } from "../../firewall/store/index.js";
 import {
   FirewallSendError,
   refusalReason,
@@ -64,6 +52,7 @@ import {
   type HarnessReadInboxRequest,
   type HarnessSendRequest,
 } from "../../host-protocol/operations.js";
+import { publishCollectiveItem, queueFirewallItem } from "../store.js";
 import {
   type DeliveryState,
   exportOnce,
@@ -72,6 +61,12 @@ import {
   offerPendingMessages,
   type PendingOffer,
 } from "./deliver-pending.js";
+import { readFirewallRequestAdmission } from "./evidence.js";
+import {
+  type FirewallEnvironment,
+  type OutgoingCandidate,
+  prepareOutgoingCheck,
+} from "./firewall-context.js";
 import {
   decodeInboxEntry,
   mintLocalDeliveryToken,
@@ -81,10 +76,15 @@ import {
 } from "./inbox.js";
 import { type AdmissionContext, runAdmission } from "./incoming-worker.js";
 import {
-  type FirewallEnvironment,
-  type OutgoingCandidate,
-  prepareOutgoingCheck,
-} from "./firewall-context.js";
+  acknowledgeInboxItem,
+  type EventStore,
+  readEventState,
+  readInbox,
+  readInboxItem,
+  readInboxSummary,
+  completeWebhookDelivery as saveWebhookDelivery,
+  writeEventState,
+} from "./store.js";
 
 /** Ordinary collective preparation fixes identity before local assessment and protocol acceptance. */
 type ApplicationSender = Pick<CollectiveOperations, "prepare" | "accept">;
@@ -640,27 +640,6 @@ export const makeHostDelivery = (
       admissionFailure: yield* Deferred.make<never, EndpointStoreError>(),
       activeConversations: new Set(),
     };
-    const eventStore: EventStore = {
-      readEventState: () =>
-        readEventState().pipe(
-          Effect.provideService(SqlClient.SqlClient, input.sql),
-        ),
-      writeEventState: (bytes) =>
-        writeEventState(bytes).pipe(
-          Effect.provideService(SqlClient.SqlClient, input.sql),
-        ),
-      readInboxItem: (token) =>
-        readInboxItem(token).pipe(
-          Effect.provideService(SqlClient.SqlClient, input.sql),
-        ),
-      readInboxSummary: () =>
-        readInboxSummary().pipe(
-          Effect.provideService(SqlClient.SqlClient, input.sql),
-        ),
-      readInbox: (bounds) => readWebhookInbox(input, bounds),
-      completeWebhookDelivery: (token, bytes) =>
-        completeWebhookDelivery(input, token, bytes),
-    };
     return {
       detach: Effect.sync(() => {
         input.state.publishedDeliveries.clear();
@@ -670,24 +649,52 @@ export const makeHostDelivery = (
       queueLocalItem: queueLocalItem(input),
       runAdmission: (publish: Effect.Effect<void>) =>
         runAdmission(admissionContext(input), publish),
-      operations: Object.freeze({
-        send: sendOperation(input),
-        readInboxSummary: () =>
-          readInboxSummary().pipe(
-            Effect.provideService(SqlClient.SqlClient, input.sql),
-          ),
-        readEvent: ({ eventId }: { readonly eventId: string }) =>
-          input.collectives() === undefined
-            ? notRegistered
-            : readRuntimeEvent(eventId).pipe(
-                Effect.provideService(SqlClient.SqlClient, input.sql),
-              ),
-        readInbox: (request: HarnessReadInboxRequest) =>
-          input.collectives() === undefined
-            ? notRegistered
-            : readAndExportInbox(input, request),
-        acknowledgeDelivery: acknowledgeDelivery(input),
-      }),
-      eventStore,
+      operations: deliveryOperations(input),
+      eventStore: eventOperations(input),
     };
   }).pipe(Effect.withSpan("makeHostDelivery"));
+
+function eventOperations(input: DeliveryContext): EventStore {
+  return {
+    readEventState: () =>
+      readEventState().pipe(
+        Effect.provideService(SqlClient.SqlClient, input.sql),
+      ),
+    writeEventState: (bytes) =>
+      writeEventState(bytes).pipe(
+        Effect.provideService(SqlClient.SqlClient, input.sql),
+      ),
+    readInboxItem: (token) =>
+      readInboxItem(token).pipe(
+        Effect.provideService(SqlClient.SqlClient, input.sql),
+      ),
+    readInboxSummary: () =>
+      readInboxSummary().pipe(
+        Effect.provideService(SqlClient.SqlClient, input.sql),
+      ),
+    readInbox: (bounds) => readWebhookInbox(input, bounds),
+    completeWebhookDelivery: (token, bytes) =>
+      completeWebhookDelivery(input, token, bytes),
+  };
+}
+
+function deliveryOperations(input: DeliveryContext): DeliveryOperations {
+  return Object.freeze({
+    send: sendOperation(input),
+    readInboxSummary: () =>
+      readInboxSummary().pipe(
+        Effect.provideService(SqlClient.SqlClient, input.sql),
+      ),
+    readEvent: ({ eventId }: { readonly eventId: string }) =>
+      input.collectives() === undefined
+        ? notRegistered
+        : readRuntimeEvent(eventId).pipe(
+            Effect.provideService(SqlClient.SqlClient, input.sql),
+          ),
+    readInbox: (request: HarnessReadInboxRequest) =>
+      input.collectives() === undefined
+        ? notRegistered
+        : readAndExportInbox(input, request),
+    acknowledgeDelivery: acknowledgeDelivery(input),
+  });
+}

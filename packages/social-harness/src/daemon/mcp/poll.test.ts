@@ -14,6 +14,7 @@ import {
 import { describe, expect, it } from "vitest";
 import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
+import { openInboxFixture } from "../../__tests__/inbox-fixture.js";
 import { stateDirectory } from "../../__tests__/store-schema-fixtures.js";
 import {
   DeliveryToken,
@@ -25,7 +26,6 @@ import {
   HARNESS_CONSUMER_META_KEY,
   INBOX_ITEM_EVENT,
 } from "../../host-protocol/names.js";
-import { openInboxFixture } from "../../__tests__/inbox-fixture.js";
 import { makeHarnessPollEvents } from "./poll.js";
 
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- External protocol codes, closed lifecycle errors and retained inbox counts are conformance expectations. */

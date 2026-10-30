@@ -1,14 +1,9 @@
 /** @file Registration, status and saved conversation reads for the daemon MCP interface. */
 
 import { SqlClient } from "@effect/sql";
-import * as Store from "../../communication/store/index.js";
 import { type Context, Data, Effect, Schema } from "effect";
 import type { SendError } from "../../communication/conversations/errors.js";
-import type {
-  EndpointRecovery,
-  EndpointStoreError,
-  HistoryPage,
-} from "../../communication/store/index.js";
+import type { RegistryRegisterResult } from "../../identity/registry/contract.js";
 import type {
   DaemonBootstrap,
   DaemonConfigurationError,
@@ -35,18 +30,23 @@ import {
   type VerifiedMembership,
 } from "../../communication/records/index.js";
 import { AgentAddress } from "../../communication/records/values.js";
+import {
+  decodeRuntimeValue,
+  type EndpointRecovery,
+  type EndpointStoreError,
+  type HistoryPage,
+} from "../../communication/store/index.js";
+import * as Store from "../../communication/store/index.js";
 import { compareAscii } from "../../encoding/identifier.js";
+import { localGuidanceSchema } from "../../host-protocol/advice.js";
+import { InboundItem } from "../../host-protocol/items.js";
 import {
   AgentCard,
   agentViewOf,
   type VerifiedAgentCard,
 } from "../../identity/cards.js";
-import { decodeRuntimeValue } from "../../communication/store/index.js";
-import { InboundItem } from "../../host-protocol/items.js";
-import { localGuidanceSchema } from "../../host-protocol/advice.js";
-import { readHistoryViews } from "../inbox/store.js";
-import { type RegistryRegisterResult } from "../../identity/registry/contract.js";
 import { Registry } from "../../identity/registry/index.js";
+import { readHistoryViews } from "../inbox/store.js";
 import {
   type DaemonRegistrationPersistenceError,
   type DaemonRegistrationRefusedError,
@@ -422,27 +422,33 @@ function readHistoryPage(input: {
         });
       }
       if (view !== undefined) {
-        const item = yield* decodeRuntimeValue(
-          InboundItem,
-          view.canonicalItem,
-        ).pipe(Effect.mapError(persistenceFailure));
-        const guidance =
-          view.canonicalGuidance === undefined
-            ? undefined
-            : yield* decodeRuntimeValue(
-                localGuidanceSchema,
-                view.canonicalGuidance,
-              ).pipe(Effect.mapError(persistenceFailure));
-        records.push({
-          kind: "received",
-          recordHash,
-          item,
-          ...(guidance === undefined ? {} : { guidance }),
-        });
+        records.push(yield* receivedHistoryRecord(view, recordHash));
       }
     }
     return { kind: "page", records, continuation: input.page.continuation };
   });
+}
+
+function receivedHistoryRecord(
+  view: Effect.Effect.Success<ReturnType<typeof readHistoryViews>>[number],
+  recordHash: HistoryRecord["recordHash"],
+): Effect.Effect<HistoryRecord, DaemonManagementError> {
+  return Effect.gen(function* () {
+    const item = yield* decodeRuntimeValue(InboundItem, view.canonicalItem);
+    const guidance =
+      view.canonicalGuidance === undefined
+        ? undefined
+        : yield* decodeRuntimeValue(
+            localGuidanceSchema,
+            view.canonicalGuidance,
+          );
+    return {
+      kind: "received" as const,
+      recordHash,
+      item,
+      ...(guidance === undefined ? {} : { guidance }),
+    };
+  }).pipe(Effect.mapError(persistenceFailure));
 }
 
 function persistenceFailure(): DaemonManagementError {
@@ -457,10 +463,12 @@ function managementFailure(reason: ManagementFailure): DaemonManagementError {
   return new DaemonManagementError({ reason });
 }
 
-const readStatusOperation =
-  (registration: RegistrationPort): DaemonManagementOperations["readStatus"] =>
-  () =>
+function readStatusOperation(
+  registration: RegistrationPort,
+): DaemonManagementOperations["readStatus"] {
+  return () =>
     Effect.suspend(() => encodeStatus(registration.readRegistration()));
+}
 
 /**
  * Registration and the activation it starts run as one uninterruptible step,
@@ -468,17 +476,13 @@ const readStatusOperation =
  * the daemon's switch to active and the protocol activation finish. The
  * Registry call still ends at its own deadline, because
  * `registerDaemonIdentity` runs it in a detached interruptible fiber.
- * @param input Exclusive store, fixed bootstrap, and registration activation port.
- * @param registry Captured immutable Registry capability used for registration.
- * @returns The cancellation-safe registration operation.
  */
-const registerOperation =
-  (
-    input: ManagementInput,
-    registry: RegistryService,
-    sql: SqlClient.SqlClient,
-  ): DaemonManagementOperations["register"] =>
-  (request) =>
+function registerOperation(
+  input: ManagementInput,
+  registry: RegistryService,
+  sql: SqlClient.SqlClient,
+): DaemonManagementOperations["register"] {
+  return (request) =>
     Effect.uninterruptible(
       registerDaemonIdentity({
         request,
@@ -498,13 +502,13 @@ const registerOperation =
         Effect.flatMap(encodeRegisterResult),
       ),
     );
+}
 
-const searchConversationsOperation =
-  (
-    input: ManagementInput,
-    sql: SqlClient.SqlClient,
-  ): DaemonManagementOperations["searchConversations"] =>
-  (request) =>
+function searchConversationsOperation(
+  input: ManagementInput,
+  sql: SqlClient.SqlClient,
+): DaemonManagementOperations["searchConversations"] {
+  return (request) =>
     Effect.gen(function* () {
       const localAgentCard = yield* readActiveCard(input.registration);
       const recovery = yield* Store.recover().pipe(
@@ -517,14 +521,14 @@ const searchConversationsOperation =
         localAgentCard,
       });
     }).pipe(Effect.provideService(SqlClient.SqlClient, sql));
+}
 
-const readConversationOperation =
-  (
-    input: ManagementInput,
-    registry: RegistryService,
-    sql: SqlClient.SqlClient,
-  ): DaemonManagementOperations["readConversation"] =>
-  (request) =>
+function readConversationOperation(
+  input: ManagementInput,
+  registry: RegistryService,
+  sql: SqlClient.SqlClient,
+): DaemonManagementOperations["readConversation"] {
+  return (request) =>
     Effect.gen(function* () {
       const localAgentCard = yield* readActiveCard(input.registration);
       const storeRequest =
@@ -553,3 +557,4 @@ const readConversationOperation =
         agentCard: localAgentCard,
       });
     }).pipe(Effect.provideService(SqlClient.SqlClient, sql));
+}

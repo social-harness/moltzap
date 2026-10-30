@@ -3,13 +3,13 @@
 import type { Implementation } from "@modelcontextprotocol/server";
 import { NodeFileSystem } from "@effect/platform-node";
 import { SqlClient } from "@effect/sql";
-import { readDecisions } from "../firewall/store/index.js";
-import { FirewallPolicyError } from "../firewall/config.js";
 import { Console, Effect, type Scope } from "effect";
 import type { Router } from "../communication/router/api/client.js";
 import type { Registry } from "../identity/registry/index.js";
 import { makeEndpointEngine } from "../communication/conversations/index.js";
 import { makeRouterWorker } from "../communication/router/index.js";
+import { FirewallPolicyError } from "../firewall/config.js";
+import { readDecisions } from "../firewall/store/index.js";
 import { WIRE_VERSION } from "../identity/wire-version.js";
 import { packageVersion } from "../release/index.js";
 import { DaemonRuntimeError, runtimeFailure } from "./errors.js";
@@ -138,8 +138,10 @@ function makeHandler(
           readDecisions: (request: { readonly since?: number }) =>
             readDecisions(request).pipe(
               Effect.provideService(SqlClient.SqlClient, sql),
-              Effect.mapError(
-                () => new FirewallPolicyError({ reason: "persistence-failed" }),
+              Effect.catchTag("EndpointStoreError", () =>
+                Effect.fail(
+                  new FirewallPolicyError({ reason: "persistence-failed" }),
+                ),
               ),
             ),
           ...(input.firewall === undefined

@@ -1,17 +1,11 @@
 /** @file Acquisition and supervision of the protocol one daemon identity runs. */
 
+import { SqlClient } from "@effect/sql";
 import { Cause, type Context, Deferred, Effect, Option, Scope } from "effect";
 import type { ListenError } from "../../communication/conversations/errors.js";
-import type {
-  DeliveryToken,
-  EndpointStoreError,
-  StoredMembership,
-} from "../../communication/store/index.js";
 import type { Firewall } from "../../firewall/index.js";
 import type { AgentId } from "../../identity/identifiers.js";
 import type { DaemonBootstrap } from "../bootstrap.js";
-import { SqlClient } from "@effect/sql";
-import { recover } from "../../communication/store/index.js";
 import {
   type CollectiveEmitError,
   type CollectiveOperations,
@@ -39,6 +33,12 @@ import {
   RouterWorkerRejectedError,
   type RouterWorkerTransportError,
 } from "../../communication/router/index.js";
+import {
+  type DeliveryToken,
+  type EndpointStoreError,
+  recover,
+  type StoredMembership,
+} from "../../communication/store/index.js";
 import { encodeCanonical, sameBytes } from "../../encoding/canonical-json.js";
 import { compareAscii } from "../../encoding/identifier.js";
 import {
@@ -65,7 +65,11 @@ export interface ProtocolEdges {
   >;
   readonly makeEngine: (
     input: EndpointEngineInput,
-  ) => Effect.Effect<EndpointEngine, EngineInitializationError, Scope.Scope | SqlClient.SqlClient>;
+  ) => Effect.Effect<
+    EndpointEngine,
+    EngineInitializationError,
+    Scope.Scope | SqlClient.SqlClient
+  >;
 }
 
 /** Engine, Router worker and collective layer active for the daemon's identity. */
@@ -172,8 +176,10 @@ const recoverPinnedSenderCards = (
   localAgentCard: VerifiedAgentCard,
 ): Effect.Effect<readonly VerifiedAgentCard[], DaemonActivationError> =>
   Effect.gen(function* () {
-    const recovery = yield* recover()
-      .pipe(Effect.provideService(SqlClient.SqlClient, environment.sql), Effect.mapError(() => activationFailure("persistence")));
+    const recovery = yield* recover().pipe(
+      Effect.provideService(SqlClient.SqlClient, environment.sql),
+      Effect.mapError(() => activationFailure("persistence")),
+    );
     const pinned: PinnedCards = new Map();
     yield* retainPinnedCard(pinned, localAgentCard);
     yield* Effect.forEach(
@@ -379,7 +385,10 @@ export const acquireProtocol = (
       hooks.emit,
       agentCard,
       engine,
-    ).pipe(Effect.provideService(SqlClient.SqlClient, environment.sql), Effect.mapError(() => activationFailure("persistence")));
+    ).pipe(
+      Effect.provideService(SqlClient.SqlClient, environment.sql),
+      Effect.mapError(() => activationFailure("persistence")),
+    );
     hooks.retain({
       agentCard,
       worker,

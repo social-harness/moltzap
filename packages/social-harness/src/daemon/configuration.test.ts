@@ -392,3 +392,5 @@ describe("MCP credential configuration", () => {
   );
   it("reports an unreadable credential file", rejectsMissingCredential);
 });
+
+/* eslint-enable agent-code-guard/no-hardcoded-assertion-literals -- Restore defaults after configuration contract assertions. */

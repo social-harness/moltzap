@@ -1,13 +1,12 @@
 /** @file Collective sends retain exact policy decisions before ordinary protocol binding. */
 
 import { scopedLive as it } from "@effect/vitest";
-import { Deferred, Duration, Effect, Fiber, Queue } from "effect";
+import { Deferred, Duration, Effect, Fiber } from "effect";
 import { describe, expect } from "vitest";
 import type { MiddlewareInput } from "../../firewall/check.js";
 import {
   admitPending,
   answerBob,
-  bob,
   formSchema,
   gatherSend,
   group,
@@ -27,7 +26,6 @@ import {
   outgoingFixture,
   pass,
   policy,
-  rule,
 } from "../../__tests__/firewall-runtime-fixtures.js";
 import { decodeFirewallAuditEntry } from "../../firewall/store/index.js";
 import { FirewallSendError } from "../../host-protocol/advice.js";

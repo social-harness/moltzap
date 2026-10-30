@@ -1,6 +1,6 @@
 /** @file Crash-recoverable daemon identity binding over Registry and endpoint storage. */
 
-import { SqlClient } from "@effect/sql";
+import type { SqlClient } from "@effect/sql";
 import { Data, Effect, Fiber, Schema } from "effect";
 import type { StoreOpening } from "../../communication/store/index.js";
 import type { VerifiedAgentCard } from "../../identity/cards.js";

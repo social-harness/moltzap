@@ -10,6 +10,7 @@ import {
 } from "@modelcontextprotocol/server";
 import { Deferred, Effect, Fiber, Redacted, Schema } from "effect";
 import { describe, expect } from "vitest";
+import { openInboxFixture } from "../../__tests__/inbox-fixture.js";
 import { loopbackMcpEndpoint } from "../../__tests__/mcp-http-fixtures.js";
 import { localGuidance } from "../../__tests__/message-policy-fixtures.js";
 import { stateDirectory } from "../../__tests__/store-schema-fixtures.js";
@@ -26,7 +27,6 @@ import {
 } from "../../host-protocol/names.js";
 import { makeHostDelivery } from "../inbox/host-delivery.js";
 import { noHistoryExport } from "../inbox/host-traffic-log.js";
-import { openInboxFixture } from "../../__tests__/inbox-fixture.js";
 import { makeHarnessMcpHttpHandler } from "./tools.js";
 
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- HTTP/JSON-RPC refusal codes and receipt counts are external behavior. */

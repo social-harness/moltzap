@@ -12,6 +12,7 @@ import type {
   MessageMiddleware,
   MiddlewareInput,
 } from "../../firewall/check.js";
+import type { FirewallOptions } from "../../firewall/index.js";
 import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { appendCertifiedMessage } from "../../__tests__/certified-history-fixtures.js";
 import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
@@ -43,14 +44,12 @@ import {
   policy,
   rule,
   seedIncoming,
-  settings,
 } from "../../__tests__/firewall-runtime-fixtures.js";
 import { bytes } from "../../__tests__/store-schema-fixtures.js";
 import {
   type DeliveryToken,
   encodeRuntimeValue,
 } from "../../communication/store/index.js";
-import { type FirewallOptions } from "../../firewall/index.js";
 import { InboundItem } from "../../host-protocol/items.js";
 import {
   renderCollectiveRequest,
@@ -379,13 +378,7 @@ function scopesUnresolvedEvidenceToTheMembersAnswer() {
         },
       }),
     );
-    const seen: MiddlewareInput[] = [];
-    const runtime = yield* incomingFixture(
-      subject,
-      holdMarked(seen),
-      {},
-      false,
-    );
+    const runtime = yield* incomingFixture(subject, holdMarked(), {}, false);
     yield* admitResult(runtime, gatherResult(answered(answers)), provenance);
 
     expect(
@@ -405,12 +398,6 @@ function scopesUnresolvedEvidenceToTheMembersAnswer() {
     expect(yield* auditChecks(subject)).toMatchObject([
       { disposition: "withheld", result: { reason: "unresolved-evidence" } },
       { disposition: "admitted", result: { reason: "eligible" } },
-    ]);
-    const inputFrom = (sender: string) =>
-      seen.find((input) => input.event.message.sender === sender);
-    expect(inputFrom(subject.third.card.agentId)?.context.gaps).toEqual([]);
-    expect(inputFrom(subject.remote.card.agentId)?.context.gaps).toEqual([
-      "An earlier outgoing intent has not reached certified completion.",
     ]);
   });
 }

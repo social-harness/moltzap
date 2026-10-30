@@ -202,17 +202,6 @@ function installation(path: string) {
   );
 }
 
-/** A file holding `content`, JSON-encoded unless it is already text. */
-function file(content: unknown): string {
-  const path = join(directory(), "file");
-  writeFileSync(
-    path,
-    typeof content === "string" ? content : JSON.stringify(content),
-    { mode: 0o600 },
-  );
-  return path;
-}
-
 /** A complete daemon environment whose agent key file does not exist. */
 function environment(extra: Readonly<Record<string, string>>) {
   const root = directory();
@@ -230,6 +219,17 @@ function environment(extra: Readonly<Record<string, string>>) {
       }),
     ),
   );
+}
+
+/** A file holding `content`, JSON-encoded unless it is already text. */
+function file(content: unknown): string {
+  const path = join(directory(), "file");
+  writeFileSync(
+    path,
+    typeof content === "string" ? content : JSON.stringify(content),
+    { mode: 0o600 },
+  );
+  return path;
 }
 
 function directory(): string {
