@@ -121,7 +121,7 @@ to the same immutable identity.
 
 [Router wire formats](../communication/router-representation.md) defines SignedMessageDigest.
 
-The maximum complete General JWS is 471,676 UTF-8 JCS bytes under the
+The maximum complete General JWS is 471,677 UTF-8 JCS bytes under the
 recipient and body bounds.
 
 ## SealedBody
@@ -219,14 +219,14 @@ exactly:
 
 | Recipients | Sealed bytes |
 |---|---|
-| R = 1 | `ceil(4(N + 32) / 3) + 605` |
-| R ≥ 2 | `ceil(4(N + 32) / 3) + 417 + 171R` |
+| R = 1 | `ceil(4(N + 32) / 3) + 607` |
+| R ≥ 2 | `ceil(4(N + 32) / 3) + 418 + 171R` |
 
-The second recipient adds 154 bytes, because a single recipient's
+The second recipient adds 153 bytes, because a single recipient's
 ephemeral key moves from the protected header into its entry. Each
 recipient after that adds 171 bytes. At 32 recipients the fixed part is
-5,861 bytes, so the largest plaintext whose sealed body fits the
-262,144-byte SignedMessage body cap is 192,180 bytes, which seals to
+5,890 bytes, so the largest plaintext whose sealed body fits the
+262,144-byte SignedMessage body cap is 192,158 bytes, which seals to
 exactly 262,144 bytes.
 
 ## Registry routes

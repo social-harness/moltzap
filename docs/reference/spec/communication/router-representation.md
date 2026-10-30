@@ -116,19 +116,19 @@ infrastructure failures use the [failure mapping](#envelope-failure-mapping).
 
 Identity fixes the decoded opaque-body maximum at 262,144 bytes and
 the SignedMessage recipient maximum at 128. A complete SignedMessage General
-JWS has a maximum JCS encoding of 471,676 bytes.
+JWS has a maximum JCS encoding of 471,677 bytes.
 
 Router derives one received-body cap from each closed authenticated
 request representation:
 
 | Route | Maximum received body |
 |---|---:|
-| `POST /v1/messages:send` | 471,824 octets |
+| `POST /v1/messages:send` | 471,825 octets |
 | `POST /v1/messages:poll` | 423 octets |
 
 The poll cap admits the maximum 349-character PollCursor. The maximum
 complete one-message `batch`, including a maximum PollCursor, is
-472,125 UTF-8 JCS bytes.
+472,126 UTF-8 JCS bytes.
 
 These bounds follow from the closed representations and are independent of
 operator configuration.
