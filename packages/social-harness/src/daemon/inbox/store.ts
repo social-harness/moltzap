@@ -53,7 +53,10 @@ export interface EventStore {
   ) => Effect.Effect<InboxPage, EndpointStoreError>;
   readonly readInboxItem: (
     token: DeliveryToken,
-  ) => Effect.Effect<InboxEntry | undefined, EndpointStoreError>;
+  ) => Effect.Effect<
+    (InboxEntry & { readonly acknowledged: boolean }) | undefined,
+    EndpointStoreError
+  >;
   readonly readInboxSummary: () => Effect.Effect<
     InboxSummary,
     EndpointStoreError

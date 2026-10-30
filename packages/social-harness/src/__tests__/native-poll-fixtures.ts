@@ -5,8 +5,7 @@ import { Effect, Redacted } from "effect";
 import { makeHostDelivery } from "../daemon/inbox/host-delivery.js";
 import { noHistoryExport } from "../daemon/inbox/host-traffic-log.js";
 import { makeHarnessMcpHttpHandler } from "../daemon/mcp/tools.js";
-import { openDaemonStore } from "../daemon/store.js";
-import { LIVE_WIRE_VERSIONS } from "../identity/wire-version.js";
+import { openInboxFixture } from "./inbox-fixture.js";
 import { loopbackMcpEndpoint } from "./mcp-http-fixtures.js";
 import { stateDirectory } from "./store-schema-fixtures.js";
 
@@ -22,15 +21,12 @@ export const nativePollFixture = Effect.fn("nativePollFixture")(function* (
   wrap?: (handler: McpHttpHandler) => McpHttpHandler,
   beforeBootstrap?: Effect.Effect<void>,
 ) {
-  const store = yield* openDaemonStore(stateDirectory(), {
-    liveWireVersions: LIVE_WIRE_VERSIONS,
-  });
+  const store = yield* openInboxFixture(stateDirectory());
   const delivery = yield* makeHostDelivery({
-    store,
     scope: yield* Effect.scope,
     collectives: () => ({ prepare: unused, accept: unused }),
     historyExport: noHistoryExport,
-  });
+  }).pipe(store.run);
   const handler = yield* makeHarnessMcpHttpHandler({
     implementation: { name: "native-receiver-test", version: "1" },
     credential: nativeCredential,

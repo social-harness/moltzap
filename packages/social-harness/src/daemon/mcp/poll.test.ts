@@ -25,8 +25,7 @@ import {
   HARNESS_CONSUMER_META_KEY,
   INBOX_ITEM_EVENT,
 } from "../../host-protocol/names.js";
-import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
-import { openDaemonStore } from "../store.js";
+import { openInboxFixture } from "../../__tests__/inbox-fixture.js";
 import { makeHarnessPollEvents } from "./poll.js";
 
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- External protocol codes, closed lifecycle errors and retained inbox counts are conformance expectations. */
@@ -42,9 +41,7 @@ const item = (text: string) =>
     error: text,
   });
 const acquireFixture = Effect.gen(function* () {
-  const store = yield* openDaemonStore(stateDirectory(), {
-    liveWireVersions: LIVE_WIRE_VERSIONS,
-  });
+  const store = yield* openInboxFixture(stateDirectory());
   const gate = yield* Effect.makeSemaphore(1);
   const poll = yield* makeHarnessPollEvents(store, gate);
   const add = (byte: number, text?: string) =>

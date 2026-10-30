@@ -62,9 +62,8 @@ import {
   type SendResult,
   SendResultSchema,
 } from "../../host-protocol/send-result.js";
-import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { readRuntimeEvent } from "../inbox/inbox.js";
-import { openDaemonStore } from "../store.js";
+import { openInboxFixture } from "../../__tests__/inbox-fixture.js";
 import { acquireHarnessMcpHttpServer } from "./http.js";
 import {
   type HarnessMcpOperations,
@@ -825,9 +824,7 @@ function rejectsSendBookkeepingArguments() {
 function readsRetainedEventThroughSdk() {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
-    const store = yield* openDaemonStore(yield* fs.makeTempDirectoryScoped(), {
-      liveWireVersions: LIVE_WIRE_VERSIONS,
-    });
+    const store = yield* openInboxFixture(yield* fs.makeTempDirectoryScoped());
     const deliveryToken = Schema.decodeUnknownSync(DeliveryToken)(
       digest("dlv_", 7),
     );

@@ -19,8 +19,7 @@ import {
   INBOX_ITEM_EVENT,
   INBOX_PENDING_EVENT,
 } from "../../host-protocol/names.js";
-import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
-import { openDaemonStore } from "../store.js";
+import { openInboxFixture } from "../../__tests__/inbox-fixture.js";
 import {
   type HarnessEvents,
   makeHarnessEvents,
@@ -115,9 +114,7 @@ const blockedReceive = Effect.gen(function* () {
 const acquireFixture = Effect.fn("acquireConsumerFixture")(function* (
   blockedPoll: boolean,
 ) {
-  const store = yield* openDaemonStore(stateDirectory(), {
-    liveWireVersions: LIVE_WIRE_VERSIONS,
-  });
+  const store = yield* openInboxFixture(stateDirectory());
   const held = yield* blockedReceive;
   const waiting = yield* Deferred.make<undefined>();
   const gate = observedGate(waiting);

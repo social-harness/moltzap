@@ -76,7 +76,11 @@ const productionDependencies: DaemonRuntimeDependencies = {
 export const runDaemonRuntime = (
   input: DaemonStartup,
   dependencies: DaemonRuntimeDependencies = productionDependencies,
-): Effect.Effect<never, DaemonRuntimeError, Registry | Router | Scope.Scope | SqlClient.SqlClient> =>
+): Effect.Effect<
+  never,
+  DaemonRuntimeError,
+  Registry | Router | Scope.Scope | SqlClient.SqlClient
+> =>
   Effect.gen(function* () {
     const historyExport = yield* openHistoryExport(input, dependencies);
     const daemon = yield* makeDaemon({
@@ -126,28 +130,32 @@ function makeHandler(
 ) {
   return Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
-    return yield* dependencies.makeHandler({
-      implementation: DAEMON_IMPLEMENTATION,
-      operations: Object.freeze({
-        ...management,
-        readDecisions: (request) => readDecisions(request).pipe(
-          Effect.provideService(SqlClient.SqlClient, sql),
-          Effect.mapError(() => new FirewallPolicyError({reason: "persistence-failed"})),
-        ),
-        ...(input.firewall === undefined
-          ? {}
-          : {
-              readPolicy: input.firewall.readPolicy,
-              updatePolicy: input.firewall.updatePolicy,
-            }),
-        ...daemon.deliveryOperations,
-        protocolActive: daemon.protocolActive,
-      }),
-      credential: input.bootstrap.mcpCredential,
-      eventStore: daemon.eventStore,
-      onSubscriptionActiveChange: daemon.subscriptionChanged,
-    })
-    .pipe(Effect.mapError(() => runtimeFailure("storage")));
+    return yield* dependencies
+      .makeHandler({
+        implementation: DAEMON_IMPLEMENTATION,
+        operations: Object.freeze({
+          ...management,
+          readDecisions: (request: { readonly since?: number }) =>
+            readDecisions(request).pipe(
+              Effect.provideService(SqlClient.SqlClient, sql),
+              Effect.mapError(
+                () => new FirewallPolicyError({ reason: "persistence-failed" }),
+              ),
+            ),
+          ...(input.firewall === undefined
+            ? {}
+            : {
+                readPolicy: input.firewall.readPolicy,
+                updatePolicy: input.firewall.updatePolicy,
+              }),
+          ...daemon.deliveryOperations,
+          protocolActive: daemon.protocolActive,
+        }),
+        credential: input.bootstrap.mcpCredential,
+        eventStore: daemon.eventStore,
+        onSubscriptionActiveChange: daemon.subscriptionChanged,
+      })
+      .pipe(Effect.mapError(() => runtimeFailure("storage")));
   });
 }
 

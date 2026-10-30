@@ -16,7 +16,8 @@ import { collectivePersistencePorts } from "../../__tests__/collective-storage-s
 import { makeToolCallRequest } from "../../__tests__/mcp-http-fixtures.js";
 import {
   loopbackMcpEndpoint,
-  mcpTestCredential, mcpTestHeaders 
+  mcpTestCredential,
+  mcpTestHeaders,
 } from "../../__tests__/mcp-http-fixtures.js";
 import { pendingMessage } from "../../__tests__/pending-delivery-fixtures.js";
 import { stateDirectory } from "../../__tests__/store-schema-fixtures.js";
@@ -29,9 +30,8 @@ import { DeliveryAcknowledgeError } from "../../communication/conversations/erro
 import { AgentAddress } from "../../communication/records/index.js";
 import { acquireHarnessEndpoint } from "../../host-client/index.js";
 import { decodeHarnessReadInboxResult } from "../../host-protocol/operations.js";
-import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { type HostDelivery, makeHostDelivery } from "../inbox/host-delivery.js";
-import { openDaemonStore } from "../store.js";
+import { openInboxFixture } from "../../__tests__/inbox-fixture.js";
 import { makeHarnessMcpHttpHandler } from "./tools.js";
 
 const unreachable = () =>
@@ -89,25 +89,21 @@ const deliveryFixture = (
   sendMessage: CollectivePorts["sendMessage"] = unreachable,
 ) =>
   Effect.gen(function* () {
-    const store = yield* openDaemonStore(stateDirectory(), {
-      liveWireVersions: LIVE_WIRE_VERSIONS,
-    });
+    const store = yield* openInboxFixture(stateDirectory());
     const scope = yield* Scope.Scope;
     const slot: { active?: CollectiveOperations } = {};
     const delivery = yield* makeHostDelivery({
-      store,
       scope,
       historyExport: { record: () => Effect.void },
       collectives: () => slot.active,
-    });
+    }).pipe(store.run);
     const persistence = yield* collectivePersistencePorts(
       sendMessage,
       "agent:alice",
       1,
-    );
+    ).pipe(store.run);
     const collectives = yield* makeCollectiveOperations({
       ...persistence,
-      store,
       self: testAgentView("agent:alice"),
       emit: (item, provenance, terminal) =>
         delivery
@@ -118,7 +114,7 @@ const deliveryFixture = (
             ),
           ),
       scope,
-    });
+    }).pipe(store.run);
     slot.active = collectives;
     const handler = yield* deliveryHandler({
       ...delivery.operations,

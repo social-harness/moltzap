@@ -24,10 +24,9 @@ import {
   INBOX_ITEM_EVENT,
   INBOX_PENDING_EVENT,
 } from "../../host-protocol/names.js";
-import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { makeHostDelivery } from "../inbox/host-delivery.js";
 import { noHistoryExport } from "../inbox/host-traffic-log.js";
-import { openDaemonStore } from "../store.js";
+import { openInboxFixture } from "../../__tests__/inbox-fixture.js";
 import { makeHarnessMcpHttpHandler } from "./tools.js";
 
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- HTTP/JSON-RPC refusal codes and receipt counts are external behavior. */
@@ -51,15 +50,12 @@ const beforeReceive = <A, E>(
     : operation;
 const acquireFixture = (block?: BlockedOperation) =>
   Effect.gen(function* () {
-    const store = yield* openDaemonStore(stateDirectory(), {
-      liveWireVersions: LIVE_WIRE_VERSIONS,
-    });
+    const store = yield* openInboxFixture(stateDirectory());
     const delivery = yield* makeHostDelivery({
-      store,
       scope: yield* Effect.scope,
       collectives: () => ({ prepare: unreachable, accept: unreachable }),
       historyExport: noHistoryExport,
-    });
+    }).pipe(store.run);
     const handler = yield* makeHarnessMcpHttpHandler({
       implementation: info,
       credential,
