@@ -32,7 +32,6 @@ import {
   acknowledgeInboxItem,
   completeWebhookDelivery as saveWebhookDelivery,
 } from "./store.js";
-import { readCollectiveOperation } from "../../communication/store/collectives.js";
 import { saveCheckDecision } from "../../firewall/store/index.js";
 import { readFirewallRequestAdmission } from "./evidence.js";
 import { queueFirewallItem, publishCollectiveItem } from "../store.js";
@@ -47,6 +46,7 @@ import {
   SendError,
 } from "../../communication/conversations/errors.js";
 import {
+  readCollectiveOperation,
   decodeRuntimeValue,
   type DeliveryToken,
   encodeRuntimeValue,

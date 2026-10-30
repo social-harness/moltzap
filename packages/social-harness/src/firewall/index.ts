@@ -60,7 +60,7 @@ import {
   withoutTraces,
 } from "./store/index.js";
 
-/** Fixed code and provider resources live for the process; owner tools edit only text rules. */
+/** Code checks and provider resources remain fixed while text rules can change. */
 export interface FirewallOptions {
   readonly mode: "guidance" | "enforcement";
   readonly incoming: readonly MessageMiddleware[];
@@ -87,23 +87,26 @@ export interface PreparedFirewallCheck {
   readonly agents: readonly AgentView[];
 }
 
-/** The caller commits the completion with the message's delivery disposition. */
+/** A completed assessment includes the evidence needed to retain its decision. */
 export interface CheckedMessage {
   readonly completion: FirewallCompletion;
   readonly result: FirewallCheck;
   readonly guidance?: CheckedGuidance;
 }
 
-/** Every batch checks one captured policy; delivery commits the returned records. */
+/** Checks capture one policy for all supplied messages. */
 export interface Firewall {
   readonly configuration: FirewallConfiguration;
+  /** Returns fixed and editable rules with the active policy revision. */
   readonly readPolicy: () => Effect.Effect<
     typeof policyReadSchema.Type,
     FirewallPolicyError
   >;
+  /** Saves and activates the requested change. Failure preserves the active policy. */
   readonly updatePolicy: (
     request: typeof policyUpdateSchema.Type,
   ) => Effect.Effect<typeof policyUpdateResultSchema.Type, FirewallPolicyError>;
+  /** Returns completed assessments in input order. The caller saves their decisions. */
   readonly check: (
     inputs: readonly PreparedFirewallCheck[],
   ) => Effect.Effect<readonly CheckedMessage[], EndpointStoreError>;

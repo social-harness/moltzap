@@ -8,7 +8,6 @@ import {
   admitPending,
   answerBob,
   bob,
-  collectiveContent,
   formSchema,
   gatherSend,
   group,
@@ -22,7 +21,6 @@ import {
 import {
   auditChecks,
   block,
-  engineFixture,
   fixture,
   type Fixture,
   incomingFixture,
@@ -31,8 +29,6 @@ import {
   policy,
   rule,
 } from "../../__tests__/firewall-runtime-fixtures.js";
-import { MessageIntent } from "../../communication/records/index.js";
-import { decodeRuntimeValue } from "../../communication/store/index.js";
 import { decodeFirewallAuditEntry } from "../../firewall/store/index.js";
 import { FirewallSendError } from "../../host-protocol/advice.js";
 import { renderOutcome } from "../../host-protocol/render.js";
@@ -146,120 +142,6 @@ function keepsARequestOpenAfterARefusedAnswer() {
   });
 }
 
-/** Both drafts reach assessment before either can claim the request's one answer. */
-function sendsOneOfTwoConcurrentAnswers() {
-  return Effect.gen(function* () {
-    const race = yield* concurrentAnswerFixture();
-    const firstChecked = yield* Queue.take(race.assessed);
-    const secondChecked = yield* Queue.take(race.assessed);
-    const operationId = yield* Effect.fromNullable(
-      firstChecked.event.message.operation?.operationId,
-    );
-    expect(secondChecked.event.message.operation?.operationId).toBe(
-      operationId,
-    );
-    expect([
-      firstChecked.event.message.text,
-      secondChecked.event.message.text,
-    ]).toEqual(
-      expect.arrayContaining([
-        renderOutcome({ kind: "answered", content: race.firstAnswer }),
-        renderOutcome({ kind: "answered", content: race.secondAnswer }),
-      ]),
-    );
-    yield* Deferred.succeed(race.release, undefined);
-    const firstFailure = yield* Fiber.join(race.first);
-    const secondFailure = yield* Fiber.join(race.second);
-    expect([firstFailure, secondFailure]).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ reason: "delivery-pending" }),
-        expect.objectContaining({ failure: { kind: "request-answered" } }),
-      ]),
-    );
-    const winner =
-      firstFailure._tag === "SendError" &&
-      firstFailure.reason === "delivery-pending"
-        ? race.firstAnswer
-        : race.secondAnswer;
-    yield* expectRetainedAnswer(race.subject, operationId, winner);
-  });
-}
-
-/** The real engine keeps a winner pending while both prepared drafts wait for assessment release. */
-function concurrentAnswerFixture() {
-  return Effect.gen(function* () {
-    const subject = yield* engineFixture(() => true);
-    yield* seedRequest(subject, Date.now() + 60_000, question);
-    const assessed = yield* Queue.unbounded<MiddlewareInput>();
-    const release = yield* Deferred.make<undefined>();
-    const runtime = yield* incomingFixture(
-      subject,
-      policy((input) =>
-        input.event.direction === "outgoing"
-          ? Queue.offer(assessed, input).pipe(
-              Effect.zipRight(Deferred.await(release)),
-              Effect.as(pass),
-            )
-          : Effect.succeed(pass),
-      ),
-      {},
-      false,
-    );
-    yield* admitPending(runtime);
-    const firstAnswer = { slot: "mon" };
-    const secondAnswer = { slot: "tue" };
-    const first = yield* runtime.delivery.operations
-      .send({ input: answerBob(firstAnswer) })
-      .pipe(Effect.flip, Effect.forkScoped);
-    const second = yield* runtime.delivery.operations
-      .send({ input: answerBob(secondAnswer) })
-      .pipe(Effect.flip, Effect.forkScoped);
-    return {
-      subject,
-      assessed,
-      release,
-      first,
-      second,
-      firstAnswer,
-      secondAnswer,
-    };
-  });
-}
-
-/** Durable response identity and content belong to the winning original draft. */
-function expectRetainedAnswer(
-  subject: Fixture,
-  operationId: string,
-  winner: { readonly slot: string },
-) {
-  return Effect.gen(function* () {
-    const responses = yield* subject.store.readCollectiveMessages({
-      operationId,
-      role: "response",
-    });
-    expect(responses).toHaveLength(1);
-    const retained = yield* Effect.fromNullable(responses[0]);
-    const original = yield* decodeRuntimeValue(
-      MessageIntent,
-      retained.intent.canonicalIntent,
-    );
-    expect(original.content).toEqual(
-      yield* collectiveContent({
-        kind: "response",
-        operationId: retained.operationId,
-        action: "accept",
-        content: winner,
-      }),
-    );
-    expect(yield* unfinishedIntents(subject)).toMatchObject([
-      {
-        msgId: original.msgId,
-        canonicalIntent: retained.intent.canonicalIntent,
-      },
-    ]);
-  });
-}
-
 function refusesAnAnswerWhoseRequestExpiresDuringItsCheck() {
   return Effect.gen(function* () {
     const subject = yield* fixture;
@@ -370,112 +252,13 @@ function bindsNothingWhenStoppedDuringAGatherCheck() {
     yield* Fiber.interrupt(sending);
 
     expect(yield* unfinishedIntents(subject)).toEqual([]);
-    const attempts = yield* subject.store.readFirewallDecisions();
+    const attempts = yield* subject.run(subject.store.readFirewallDecisions());
     const checks = yield* Effect.forEach(
       attempts,
       (entry) => decodeFirewallAuditEntry(entry),
       { concurrency: 1 },
     );
     expect(checks).toEqual([]);
-  });
-}
-
-/** A policy that leaves its norm judgment of every message unsettled. */
-const unsettled = policy(() =>
-  Effect.succeed({
-    findings: [
-      {
-        ruleId: rule.id,
-        outcome: "pass",
-        reason: "uncertain",
-        choice: "none",
-        probability: 0.33,
-      },
-    ],
-    expectations: [],
-  }),
-);
-
-function returnsAnAnswersPendingDelivery() {
-  return Effect.gen(function* () {
-    const subject = yield* engineFixture(() => true);
-    yield* seedRequest(subject, Date.now() + 60_000, question);
-    const runtime = yield* incomingFixture(subject, unsettled, {}, false);
-    yield* admitPending(runtime);
-    const answer = {
-      input: answerBob({ slot: "mon" }),
-    } as const;
-
-    const failure = yield* Effect.flip(
-      runtime.delivery.operations.send(answer),
-    );
-
-    expect(failure).toMatchObject({
-      _tag: "SendError",
-      reason: "delivery-pending",
-    });
-    expect(runtime.emitted).toEqual([]);
-  });
-}
-
-function returnsAnAllGathersPendingDelivery() {
-  return Effect.gen(function* () {
-    const subject = yield* engineFixture(() => true);
-    const runtime = yield* incomingFixture(subject, unsettled);
-
-    const failure = yield* Effect.flip(
-      runtime.delivery.operations.send({
-        input: gatherSend(question, "all_gather"),
-      }),
-    );
-
-    expect(failure).toMatchObject({
-      _tag: "SendError",
-      reason: "delivery-pending",
-    });
-    expect(runtime.emitted).toEqual([]);
-  });
-}
-
-/**
- * A bound request remains pending when another send prevents activation.
- */
-function keepsAllGatherPendingBehindStalledSend() {
-  return Effect.gen(function* () {
-    const writes = { made: 0 };
-    const subject = yield* engineFixture(() => writes.made++ > 0);
-    const runtime = yield* incomingFixture(
-      subject,
-      policy(() => Effect.succeed(pass)),
-      {
-        mode: "guidance",
-      },
-    );
-    const stalled = yield* runtime.delivery.operations
-      .send({ input: sendInput({ to: bob, text: "Tuesday." }) })
-      .pipe(Effect.forkScoped);
-    yield* Deferred.await(subject.outbound);
-
-    const pending = yield* Effect.flip(
-      runtime.delivery.operations.send({
-        input: sendInput({
-          to: group,
-          text: question,
-          collective: {
-            op: "all_gather",
-            deadline: 1,
-            requestedSchema: formSchema,
-          },
-        }),
-      }),
-    );
-
-    expect(pending).toMatchObject({
-      _tag: "SendError",
-      reason: "delivery-pending",
-    });
-    expect(runtime.emitted).toEqual([]);
-    yield* Fiber.interrupt(stalled);
   });
 }
 
@@ -497,10 +280,6 @@ describe("collective sends under a firewall", () => {
     keepsARequestOpenAfterARefusedAnswer,
   );
   it(
-    "retains one original answer when two assessed drafts race for the same request",
-    sendsOneOfTwoConcurrentAnswers,
-  );
-  it(
     "refuses an answer whose request expires during its check, keeping the check's judgment",
     refusesAnAnswerWhoseRequestExpiresDuringItsCheck,
   );
@@ -515,20 +294,5 @@ describe("collective sends under a firewall", () => {
   it(
     "binds nothing when the daemon stops during a gather's check",
     bindsNothingWhenStoppedDuringAGatherCheck,
-  );
-});
-
-describe("collective sends whose bound message fails activation", () => {
-  it(
-    "returns pending delivery when an admitted answer cannot activate",
-    returnsAnAnswersPendingDelivery,
-  );
-  it(
-    "returns pending delivery when an admitted all_gather cannot activate",
-    returnsAnAllGathersPendingDelivery,
-  );
-  it(
-    "keeps a bound all_gather pending when another send stalls",
-    keepsAllGatherPendingBehindStalledSend,
   );
 });

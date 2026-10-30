@@ -41,13 +41,11 @@ import {
   agentViewOf,
   type VerifiedAgentCard,
 } from "../../identity/cards.js";
-import { decodeRuntimeValue } from "../../communication/store/runtime-codec.js";
+import { decodeRuntimeValue } from "../../communication/store/index.js";
 import { InboundItem } from "../../host-protocol/items.js";
 import { localGuidanceSchema } from "../../host-protocol/advice.js";
 import { readHistoryViews } from "../inbox/store.js";
-import {
-  type RegistryRegisterResult,
-} from "../../identity/registry/contract.js";
+import { type RegistryRegisterResult } from "../../identity/registry/contract.js";
 import { Registry } from "../../identity/registry/index.js";
 import {
   type DaemonRegistrationPersistenceError,
@@ -112,7 +110,11 @@ export type DaemonManagementOperations = Pick<
 /** Captures Registry and database dependencies for registration and saved history reads. */
 export const makeDaemonManagementOperations = (
   input: ManagementInput,
-): Effect.Effect<DaemonManagementOperations, never, Registry | SqlClient.SqlClient> =>
+): Effect.Effect<
+  DaemonManagementOperations,
+  never,
+  Registry | SqlClient.SqlClient
+> =>
   Effect.gen(function* () {
     const registry = yield* Registry;
     const sql = yield* SqlClient.SqlClient;
@@ -381,7 +383,11 @@ function readHistoryPage(input: {
   readonly recovery: EndpointRecovery;
   readonly bootstrap: DaemonBootstrap;
   readonly agentCard: VerifiedAgentCard;
-}): Effect.Effect<ManagementReadConversationResult, DaemonManagementError, SqlClient.SqlClient> {
+}): Effect.Effect<
+  ManagementReadConversationResult,
+  DaemonManagementError,
+  SqlClient.SqlClient
+> {
   return Effect.gen(function* () {
     const verified = yield* readStoredHistory(
       input.bootstrap.configuration.registrySignerPublicKey,
@@ -396,11 +402,18 @@ function readHistoryPage(input: {
       const certified = record.actionCertifiedRecord;
       const recordHash = certified.recordHash;
       const intent = input.recovery.messageIntents.find(
-        (candidate) => candidate.completedRecordHash === recordHash &&
+        (candidate) =>
+          candidate.completedRecordHash === recordHash &&
           candidate.authorAgentId === input.agentCard.agentId,
       );
-      const view = views.find((candidate) => candidate.recordHash === recordHash);
-      if (view === undefined && intent !== undefined && author.agentId === input.agentCard.agentId) {
+      const view = views.find(
+        (candidate) => candidate.recordHash === recordHash,
+      );
+      if (
+        view === undefined &&
+        intent !== undefined &&
+        author.agentId === input.agentCard.agentId
+      ) {
         records.push({
           kind: "sent",
           author: agentViewOf(author),
@@ -409,19 +422,26 @@ function readHistoryPage(input: {
         });
       }
       if (view !== undefined) {
-        const item = yield* decodeRuntimeValue(InboundItem, view.canonicalItem).pipe(
-          Effect.mapError(persistenceFailure),
-        );
-        const guidance = view.canonicalGuidance === undefined ? undefined :
-          yield* decodeRuntimeValue(localGuidanceSchema, view.canonicalGuidance).pipe(
-            Effect.mapError(persistenceFailure),
-          );
-        records.push({kind: "received", recordHash, item,
-          ...(guidance === undefined ? {} : {guidance}),
+        const item = yield* decodeRuntimeValue(
+          InboundItem,
+          view.canonicalItem,
+        ).pipe(Effect.mapError(persistenceFailure));
+        const guidance =
+          view.canonicalGuidance === undefined
+            ? undefined
+            : yield* decodeRuntimeValue(
+                localGuidanceSchema,
+                view.canonicalGuidance,
+              ).pipe(Effect.mapError(persistenceFailure));
+        records.push({
+          kind: "received",
+          recordHash,
+          item,
+          ...(guidance === undefined ? {} : { guidance }),
         });
       }
     }
-    return {kind: "page", records, continuation: input.page.continuation};
+    return { kind: "page", records, continuation: input.page.continuation };
   });
 }
 
@@ -462,7 +482,7 @@ const registerOperation =
     Effect.uninterruptible(
       registerDaemonIdentity({
         request,
-          bootstrap: input.bootstrap,
+        bootstrap: input.bootstrap,
       }).pipe(
         Effect.provideService(Registry, registry),
         Effect.provideService(SqlClient.SqlClient, sql),
@@ -480,12 +500,16 @@ const registerOperation =
     );
 
 const searchConversationsOperation =
-  (input: ManagementInput, sql: SqlClient.SqlClient): DaemonManagementOperations["searchConversations"] =>
+  (
+    input: ManagementInput,
+    sql: SqlClient.SqlClient,
+  ): DaemonManagementOperations["searchConversations"] =>
   (request) =>
     Effect.gen(function* () {
       const localAgentCard = yield* readActiveCard(input.registration);
-      const recovery = yield* Store.recover()
-        .pipe(Effect.mapError(persistenceFailure));
+      const recovery = yield* Store.recover().pipe(
+        Effect.mapError(persistenceFailure),
+      );
       return yield* searchConversationAddresses({
         recovery,
         request,
@@ -516,10 +540,12 @@ const readConversationOperation =
                 ? {}
                 : { afterRecordHash: request.afterRecordHash }),
             };
-      const page = yield* Store.readConversation(storeRequest)
-        .pipe(Effect.mapError(mapHistoryStoreFailure));
-      const recovery = yield* Store.recover()
-        .pipe(Effect.mapError(persistenceFailure));
+      const page = yield* Store.readConversation(storeRequest).pipe(
+        Effect.mapError(mapHistoryStoreFailure),
+      );
+      const recovery = yield* Store.recover().pipe(
+        Effect.mapError(persistenceFailure),
+      );
       return yield* readHistoryPage({
         page,
         recovery,

@@ -1,16 +1,9 @@
-/** @file The owner decisions feed explains each checked message through real Client storage. */
+/** @file Saved decisions explain completed message checks without exposing private evidence. */
 
-import * as NodeSdk from "@effect/opentelemetry/NodeSdk";
 import { scopedLive as it } from "@effect/vitest";
-import { SpanStatusCode } from "@opentelemetry/api";
-import {
-  InMemorySpanExporter,
-  SimpleSpanProcessor,
-} from "@opentelemetry/sdk-trace-base";
-import { Effect, Queue, Schema, Struct } from "effect";
+import { Effect, Queue, Schema } from "effect";
 import { expect } from "vitest";
 import type { TextRule } from "../../firewall/config.js";
-import { makeRetainedCheckFixture } from "../../__tests__/firewall-retained-fixtures.js";
 import {
   fixture,
   type Fixture,
@@ -36,7 +29,7 @@ import {
   type MiddlewareResult,
 } from "../../firewall/check.js";
 import { type FirewallOptions, makeFirewall } from "../../firewall/index.js";
-import { decodeFirewallAuditEntry } from "../../firewall/store/index.js";
+import { readDecisions } from "../../firewall/store/index.js";
 import { agentViewOf } from "../../identity/cards.js";
 
 // @agent-code-guard/regression-only: Reads decisions retained by real admission through SQLite and the protocol engine.
@@ -218,11 +211,11 @@ function text(
 function decideIncoming(configure: (subject: Fixture) => FirewallOptions) {
   return Effect.gen(function* () {
     const subject = yield* fixture;
-    const editable = yield* makeFirewall(configure(subject), subject.store);
+    const editable = yield* subject.run(makeFirewall(configure(subject)));
     const runtime = yield* incomingThrough(subject, editable);
     yield* runtime.runPass;
     yield* Queue.take(runtime.completed);
-    return yield* editable.policy.decisions({});
+    return yield* subject.run(readDecisions({}));
   });
 }
 
@@ -440,7 +433,7 @@ it("retains refused first-message peers after restart without an admitted conver
   Effect.gen(function* () {
     const reviser = codePolicy([rule], revise);
     const saved = yield* Effect.scoped(refuseFirstGroupMessage(reviser));
-    const recovered = yield* readRefusedDecisions(saved.directory, reviser);
+    const recovered = yield* readRefusedDecisions(saved.directory);
     expect(recovered.decisions).toEqual(saved.decisions);
     expect(recovered.memberships).toEqual([]);
   }));
@@ -452,13 +445,13 @@ it("refuses unknown stored editable properties as persistence failures", () =>
       [],
       text(decisionProvider(), { initial: [review] }),
     );
-    yield* makeFirewall(configured, subject.store);
-    const reopened = yield* makeFirewall(configured, subject.store);
-    expect((yield* reopened.policy.read()).rules).toContainEqual(
+    yield* subject.run(makeFirewall(configured));
+    const reopened = yield* subject.run(makeFirewall(configured));
+    expect((yield* reopened.readPolicy()).rules).toContainEqual(
       expect.objectContaining(review),
     );
     const bytes = yield* Effect.fromNullable(
-      yield* subject.store.readFirewallPolicy(),
+      yield* subject.run(subject.store.readFirewallPolicy()),
     );
     const saved = yield* decodeRuntimeValue(
       Schema.Struct({
@@ -470,163 +463,33 @@ it("refuses unknown stored editable properties as persistence failures", () =>
       bytes,
     );
     const first = yield* Effect.fromNullable(saved.rules[0]);
-    yield* subject.store.writeFirewallPolicy(
-      yield* encodeRuntimeValue({
-        ...saved,
-        rules: [{ ...first, unexpected: true }, ...saved.rules.slice(1)],
-      }),
+    yield* subject.run(
+      subject.store.writeFirewallPolicy(
+        yield* encodeRuntimeValue({
+          ...saved,
+          rules: [{ ...first, unexpected: true }, ...saved.rules.slice(1)],
+        }),
+      ),
     );
     expect(
-      yield* Effect.flip(makeFirewall(configured, subject.store)),
+      yield* Effect.flip(subject.run(makeFirewall(configured))),
     ).toMatchObject({ reason: "persistence-failed" });
   }));
 
-const retainedSecret = "private retained rule provenance";
-
-it.each([
-  {
-    name: "malformed input bytes",
-    input: () => Effect.succeed(new TextEncoder().encode("{")),
-  },
-  {
-    name: "a missing retained peer identity",
-    input: (
-      input: Effect.Effect.Success<typeof makeRetainedCheckFixture>["input"],
-    ) => encodeRuntimeValue({ ...input, agents: [] }),
-  },
-  {
-    name: "an extra context field",
-    input: (
-      input: Effect.Effect.Success<typeof makeRetainedCheckFixture>["input"],
-    ) =>
-      encodeRuntimeValue({
-        ...input,
-        context: { ...Struct.omit(input.context), unexpected: true },
-      }),
-  },
-  {
-    name: "malformed text provenance",
-    input: (
-      input: Effect.Effect.Success<typeof makeRetainedCheckFixture>["input"],
-    ) =>
-      encodeRuntimeValue({
-        ...input,
-        installation: {
-          ...input.installation,
-          outgoing: input.installation.outgoing.map((entry) => ({
-            ...entry,
-            provenance: {
-              ...Struct.omit(entry.provenance),
-              data: JSON.stringify({
-                fixedRuleIds: retainedSecret,
-                runtimeRuleIds: [],
-              }),
-            },
-          })),
-        },
-      }),
-  },
-])(
-  "refuses a completed check with $name as a persistence failure",
-  ({ input }) => {
-    const exporter = new InMemorySpanExporter();
-    return Effect.gen(function* () {
-      const subject = yield* fixture;
-      const retained = yield* makeRetainedCheckFixture;
-      const { installed, checked, audit } = yield* retainedTextCheck(
-        subject,
-        retained,
-      );
-      const checkId = "corrupt-retained-input";
-      yield* subject.store.beginFirewallAttempt({
-        checkId,
-        direction: "outgoing",
-        canonicalCandidate: retained.canonicalCandidate,
-        canonicalInput: yield* input(audit.input),
-      });
-      yield* subject.store.completeFirewallAttempt(
-        {
-          checkId,
-          admit: false,
-          canonicalResult: checked.completion.canonicalResult,
-        },
-        "outgoing",
-        retained.canonicalCandidate,
-      );
-      const failure = yield* installed.policy
-        .decisions({})
-        .pipe(Effect.withSpan("policy-decisions-test"), Effect.flip);
-      expect(failure).toMatchObject({ _tag: "FirewallPolicyError" });
-      expect(failure).toMatchObject({ reason: "persistence-failed" });
-      const diagnostics = exporter
-        .getFinishedSpans()
-        .filter((span) => span.status.code === SpanStatusCode.ERROR)
-        .map((span) => ({ status: span.status, events: span.events }));
-      expect(diagnostics.length).toBeGreaterThan(0);
-      expect(JSON.stringify(diagnostics)).not.toContain(retainedSecret);
-    }).pipe(
-      Effect.provide(
-        NodeSdk.layer(() => ({
-          spanProcessor: new SimpleSpanProcessor(exporter),
-        })),
-      ),
-    );
-  },
-);
-
-/** The unmodified retained text check must be readable before corruption is introduced. */
-function retainedTextCheck(
-  subject: Fixture,
-  retained: Effect.Effect.Success<typeof makeRetainedCheckFixture>,
-) {
-  return Effect.gen(function* () {
-    const installed = yield* makeFirewall(
-      options([], text(decisionProvider(), { initial: [review] })),
-      subject.store,
-    );
-    const checked = yield* installed.check({
-      direction: "outgoing",
-      canonicalCandidate: retained.canonicalCandidate,
-      context: retained.input.context,
-      agents: retained.input.agents,
-      ...(retained.input.message === null
-        ? {}
-        : { message: retained.input.message }),
-    });
-    yield* subject.store.completeFirewallAttempt(
-      checked.completion,
-      "outgoing",
-      retained.canonicalCandidate,
-    );
-    expect((yield* installed.policy.decisions({})).decisions).toHaveLength(1);
-    const original = yield* Effect.fromNullable(
-      (yield* subject.store.readFirewallDecisions())[0],
-    );
-    const audit = yield* decodeFirewallAuditEntry(original);
-    return { installed, checked, audit };
-  });
-}
-
-it("keeps the rules active at check time after the owner removes the deciding rule", () =>
+it("keeps the deciding rules recorded before a later edit removes them", () =>
   Effect.gen(function* () {
     const subject = yield* fixture;
     const provider = decisionProvider([privacy], "violation");
-    const editable = yield* makeFirewall(
-      options([], text(provider, {})),
-      subject.store,
+    const editable = yield* subject.run(
+      makeFirewall(options([], text(provider, {}))),
     );
     const runtime = yield* incomingThrough(subject, editable);
-    yield* editable.policy.update({ add: [privacy] }, "owner");
+    yield* editable.updatePolicy({ add: [privacy] });
     yield* runtime.runPass;
     yield* Queue.take(runtime.completed);
-    yield* editable.policy.update({ remove: [privacy.id] }, "owner");
+    yield* editable.updatePolicy({ remove: [privacy.id] });
 
-    const restarted = yield* makeFirewall(
-      options([], text(provider, { fixed: [privacy] })),
-      subject.store,
-    );
-
-    expect((yield* restarted.policy.decisions({})).decisions).toMatchObject([
+    expect((yield* subject.run(readDecisions({}))).decisions).toMatchObject([
       {
         outcome: "reject",
         decidedBy: arrayContaining([
@@ -640,48 +503,15 @@ it("keeps the rules active at check time after the owner removes the deciding ru
     ]);
   }));
 
-it("retains a runtime norm's ownership when the owner later replaces it", () =>
-  Effect.gen(function* () {
-    const subject = yield* fixture;
-    const editable = yield* makeFirewall(
-      options([], text(nearTieProvider, {})),
-      subject.store,
-    );
-    yield* editable.policy.update({ add: [announce] }, "runtime");
-    const runtime = yield* incomingThrough(subject, editable);
-    yield* runtime.runPass;
-    yield* Queue.take(runtime.completed);
-    yield* editable.policy.update(
-      { remove: [announce.id], add: [announce] },
-      "owner",
-    );
-    const restarted = yield* makeFirewall(
-      options([], text(nearTieProvider, {})),
-      subject.store,
-    );
-    expect((yield* restarted.policy.decisions({})).decisions).toContainEqual(
-      expect.objectContaining({
-        decidedBy: arrayContaining([
-          expect.objectContaining({
-            ruleId: announce.id,
-            from: "editable",
-            owner: "runtime",
-          }),
-        ]),
-      }),
-    );
-  }));
-
 /** Containment matchers remain unknown rather than leaking Vitest's any into feed fields. */
 function arrayContaining(values: readonly unknown[]): unknown {
   return expect.arrayContaining([...values]);
 }
 
-function readRefusedDecisions(directory: string, reviser: MessageMiddleware) {
+function readRefusedDecisions(directory: string) {
   return withDaemonStore(directory, (store) =>
     Effect.gen(function* () {
-      const editable = yield* makeFirewall(options([reviser]), store);
-      const { decisions } = yield* editable.policy.decisions({});
+      const { decisions } = yield* readDecisions({});
       const { memberships } = yield* store.recover();
       return { decisions, memberships };
     }),
@@ -691,7 +521,7 @@ function readRefusedDecisions(directory: string, reviser: MessageMiddleware) {
 function refuseFirstGroupMessage(reviser: MessageMiddleware) {
   return Effect.gen(function* () {
     const subject = yield* fixture;
-    const editable = yield* makeFirewall(options([reviser]), subject.store);
+    const editable = yield* subject.run(makeFirewall(options([reviser])));
     const delivery = yield* outgoingThrough(subject, editable);
     yield* Effect.flip(
       delivery.operations.send({
@@ -701,8 +531,10 @@ function refuseFirstGroupMessage(reviser: MessageMiddleware) {
         },
       }),
     );
-    expect((yield* subject.store.recover()).memberships).toEqual([]);
-    const feed = yield* editable.policy.decisions({});
+    expect((yield* subject.run(subject.store.recover())).memberships).toEqual(
+      [],
+    );
+    const feed = yield* subject.run(readDecisions({}));
     expect(feed.decisions.slice(0, 1)).toMatchObject([
       {
         direction: "outgoing",

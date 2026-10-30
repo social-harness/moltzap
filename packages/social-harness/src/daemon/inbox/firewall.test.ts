@@ -71,7 +71,9 @@ function withheldIncoming() {
         }),
       ),
     ).toEqual({ reason: "unknown-event" });
-    expect(yield* subject.store.readPendingDeliveries()).toEqual([]);
+    expect(yield* subject.run(subject.store.readPendingDeliveries())).toEqual(
+      [],
+    );
     const seen: MiddlewareInput[] = [];
     const outgoing = yield* outgoingFixture(
       subject,
@@ -365,7 +367,9 @@ function interruptedSend() {
       .pipe(Effect.forkScoped);
     yield* Deferred.await(entered);
     yield* Fiber.interrupt(sending);
-    expect((yield* subject.store.recover()).messageIntents).toEqual([]);
+    expect(
+      (yield* subject.run(subject.store.recover())).messageIntents,
+    ).toEqual([]);
     expect(
       yield* Effect.flip(
         delivery.operations.send({
@@ -389,9 +393,9 @@ function installationProvenance() {
       provenance: { format: "provider", data: model },
     };
     const subject = yield* fixture;
-    const first = yield* installation(subject.store, registration);
+    const first = yield* installation(subject.sql, registration);
     registration.provenance.data = replacement;
-    const second = yield* installation(subject.store, registration);
+    const second = yield* installation(subject.sql, registration);
     for (const firewall of [first, second]) {
       const delivery = yield* outgoingThrough(subject, firewall);
       yield* Effect.flip(
@@ -455,7 +459,7 @@ function independentConversations() {
       ),
     ).toContainEqual(later);
     expect(
-      (yield* subject.store.readFirewallFrontiers()).map(
+      (yield* subject.run(subject.store.readNextPendingMessages())).map(
         (entry) => entry.conversation,
       ),
     ).toEqual(["agent:bob"]);
@@ -489,7 +493,8 @@ function oversizedAdvice(mode: FirewallOptions["mode"]) {
           ],
         }),
     };
-    const runtime = yield* incomingFixture(yield* fixture, middleware, {
+    const subject = yield* fixture;
+    const runtime = yield* incomingFixture(subject, middleware, {
       mode,
     });
     yield* runtime.runPass;
@@ -498,7 +503,9 @@ function oversizedAdvice(mode: FirewallOptions["mode"]) {
     expect(
       runtime.published.every((entry) => entry.guidance === undefined),
     ).toBe(true);
-    expect(yield* runtime.store.readFirewallFrontiers()).toEqual([]);
+    expect(yield* subject.run(subject.store.readNextPendingMessages())).toEqual(
+      [],
+    );
   });
 }
 
@@ -506,7 +513,9 @@ function ownerHistoryStaysPrivate() {
   return Effect.gen(function* () {
     const subject = yield* fixture;
     const previous = yield* seedIncoming(subject, true);
-    yield* appendCertifiedMessage(subject, previous, "Can we meet?");
+    yield* subject.run(
+      appendCertifiedMessage(subject, previous, "Can we meet?"),
+    );
     const seen: MiddlewareInput[] = [];
     const middleware = policy((input) =>
       Effect.sync(() => {
@@ -578,7 +587,9 @@ it("keeps one captured assessment and exact draft while retained visibility chan
     yield* Deferred.await(subject.outbound);
     expect(seen).toHaveLength(1);
     expect(seen[0]?.event.message?.text).toBe(originalText);
-    const pending = (yield* subject.store.recover()).messageIntents.filter(
+    const pending = (yield* subject.run(
+      subject.store.recover(),
+    )).messageIntents.filter(
       (intent) => intent.completedRecordHash === undefined,
     );
     expect(pending).toHaveLength(1);

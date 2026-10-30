@@ -12,7 +12,7 @@ import {
   type TestCollectiveOperations as CollectiveOperations,
   makeCollectiveOperations,
 } from "../../__tests__/collective-send.js";
-import { collectivePersistencePorts } from "../../__tests__/collective-storage-stub.js";
+import { collectivePersistencePorts } from "../../__tests__/collective-message-fixtures.js";
 import { makeToolCallRequest } from "../../__tests__/mcp-http-fixtures.js";
 import {
   loopbackMcpEndpoint,
@@ -101,6 +101,7 @@ const deliveryFixture = (
       sendMessage,
       "agent:alice",
       1,
+      store.sql,
     ).pipe(store.run);
     const collectives = yield* makeCollectiveOperations({
       ...persistence,

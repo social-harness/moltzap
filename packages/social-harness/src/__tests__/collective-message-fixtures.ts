@@ -49,9 +49,10 @@ export function collectivePersistencePorts(
   sendMessage: CollectivePorts["sendMessage"],
   self = "agent:alice",
   firstMessageByte = 101,
+  sql?: SqlClient.SqlClient,
 ) {
   return Effect.gen(function* () {
-    const engine = yield* stubEngine(self, firstMessageByte);
+    const engine = yield* stubEngine(self, firstMessageByte, sql);
     const send: CollectivePorts["sendMessage"] = (input) =>
       engine.database
         .run(retainStubOperation(input.collective))
@@ -73,7 +74,11 @@ export function collectivePersistencePorts(
   }).pipe(Effect.withSpan("collectivePersistencePorts"));
 }
 
-function stubEngine(self: string, firstMessageByte: number) {
+function stubEngine(
+  self: string,
+  firstMessageByte: number,
+  sql?: SqlClient.SqlClient,
+) {
   return Effect.gen(function* () {
     const registryKeys = generateKeyPairSync("ed25519");
     const cards = yield* Effect.forEach(
@@ -91,7 +96,15 @@ function stubEngine(self: string, firstMessageByte: number) {
     if (local === undefined) {
       return yield* Effect.dieMessage("unknown test member");
     }
-    const database = yield* openTestDatabase();
+    const database =
+      sql === undefined
+        ? yield* openTestDatabase()
+        : {
+            sql,
+            store: testStore,
+            run: <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+              effect.pipe(Effect.provideService(SqlClient.SqlClient, sql)),
+          };
     yield* database.run(
       testStore.bindIdentity({
         agentId: local.agentId,

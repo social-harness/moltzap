@@ -19,7 +19,7 @@ import {
   requireText,
   transaction,
 } from "../../communication/store/database/index.js";
-import { decodeRuntimeValue } from "../../communication/store/runtime-codec.js";
+import { decodeRuntimeValue } from "../../communication/store/index.js";
 import { DeliveryToken } from "../../communication/store/types.js";
 import { exactStruct } from "../../encoding/exact.js";
 import { AgentView } from "../../identity/cards.js";

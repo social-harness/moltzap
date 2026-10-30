@@ -1,10 +1,10 @@
-/** @file Private typed facade for one daemon-owned endpoint store. */
+/** @file Communication state operations using the daemon’s shared SQL client. */
 
-/** Closed error value and scoped store acquisition. */
+/** Failures exposed by communication persistence. */
 export { EndpointStoreError } from "./database/values.js";
 /** How a daemon opens its exclusive store. */
 export type { StoreOpening } from "./database/index.js";
-/** Canonical private DTOs and the EndpointStore capability. */
+/** Saved communication records and recovery state. */
 export type {
   CertifiedRecord,
   ConversationFoundation,

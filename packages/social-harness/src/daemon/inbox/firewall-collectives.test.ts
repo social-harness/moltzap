@@ -116,16 +116,20 @@ function answerContent(content: object) {
 function seedAnswers(subject: Fixture, answers: PerMember<AnswerContent>) {
   return Effect.gen(function* () {
     const bobFirstMessage = yield* seedIncoming(subject, true);
-    const bobAnswer = yield* appendCertifiedMessage(
-      subject,
-      bobFirstMessage,
-      yield* answerContent(answers.bob),
+    const bobAnswer = yield* subject.run(
+      appendCertifiedMessage(
+        subject,
+        bobFirstMessage,
+        yield* answerContent(answers.bob),
+      ),
     );
     const other = yield* addConversation(subject, true);
-    const carolAnswer = yield* appendCertifiedMessage(
-      { ...subject, ...other },
-      other.record,
-      yield* answerContent(answers.carol),
+    const carolAnswer = yield* subject.run(
+      appendCertifiedMessage(
+        { ...subject, ...other },
+        other.record,
+        yield* answerContent(answers.carol),
+      ),
     );
     return provenanceOf({ bob: bobAnswer, carol: carolAnswer });
   });
@@ -256,10 +260,12 @@ function checksARequestAsItsQuestion() {
     const subject = yield* fixture;
     const deadlineAt = Date.now() + 60_000;
     const firstMessage = yield* seedIncoming(subject, true);
-    yield* appendCertifiedMessage(subject, firstMessage, [
-      ...(yield* gatherRequestContent(deadlineAt, question)),
-      { type: "data", value: { agenda: ["mon", "tue"] } },
-    ]);
+    yield* subject.run(
+      appendCertifiedMessage(subject, firstMessage, [
+        ...(yield* gatherRequestContent(deadlineAt, question)),
+        { type: "data", value: { agenda: ["mon", "tue"] } },
+      ]),
+    );
     const seen: MiddlewareInput[] = [];
     const runtime = yield* incomingFixture(
       subject,
@@ -361,16 +367,18 @@ function scopesUnresolvedEvidenceToTheMembersAnswer() {
     const subject = yield* fixture;
     const answers = { bob: { slot: "mon" }, carol: { slot: "tue" } };
     const provenance = yield* seedAnswers(subject, answers);
-    yield* subject.store.bindMessageIntent({
-      kind: "existing-conversation",
-      intent: {
-        conversationId: subject.membership.descriptor.conversationId,
-        membershipHash: subject.membership.hash,
-        authorAgentId: subject.local.card.agentId,
-        msgId: "msg_unresolved",
-        canonicalIntent: bytes("pending send to Bob"),
-      },
-    });
+    yield* subject.run(
+      subject.store.bindMessageIntent({
+        kind: "existing-conversation",
+        intent: {
+          conversationId: subject.membership.descriptor.conversationId,
+          membershipHash: subject.membership.hash,
+          authorAgentId: subject.local.card.agentId,
+          msgId: "msg_unresolved",
+          canonicalIntent: bytes("pending send to Bob"),
+        },
+      }),
+    );
     const seen: MiddlewareInput[] = [];
     const runtime = yield* incomingFixture(
       subject,
@@ -488,7 +496,7 @@ function admitsAFailureWithoutInference() {
   return Effect.gen(function* () {
     const subject = yield* fixture;
     const firstMessage = yield* seedIncoming(subject, true);
-    yield* appendCertifiedMessage(subject, firstMessage, question);
+    yield* subject.run(appendCertifiedMessage(subject, firstMessage, question));
     const runtime = yield* incomingFixture(
       subject,
       policy(() => Effect.dieMessage("a failure is never inferred")),
@@ -564,22 +572,26 @@ function leavesTheResultInLaterEvidence() {
 function seedUnrenderableRequest(subject: Fixture) {
   return Effect.gen(function* () {
     const firstMessage = yield* seedIncoming(subject, true);
-    const hostile = yield* appendCertifiedMessage(subject, firstMessage, [
-      { type: "text", text: question },
-      {
-        type: "data",
-        value: {
-          [collectiveKey]: {
-            kind: "operation",
-            op: "gather",
-            operationId: collectiveOperationId(testAgentView(bob).agentId),
-            deadlineAt: 9_000_000_000_000_000,
-            requestedSchema: formSchema,
+    const hostile = yield* subject.run(
+      appendCertifiedMessage(subject, firstMessage, [
+        { type: "text", text: question },
+        {
+          type: "data",
+          value: {
+            [collectiveKey]: {
+              kind: "operation",
+              op: "gather",
+              operationId: collectiveOperationId(testAgentView(bob).agentId),
+              deadlineAt: 9_000_000_000_000_000,
+              requestedSchema: formSchema,
+            },
           },
         },
-      },
-    ]);
-    return yield* appendCertifiedMessage(subject, hostile, "A later message");
+      ]),
+    );
+    return yield* subject.run(
+      appendCertifiedMessage(subject, hostile, "A later message"),
+    );
   }).pipe(Effect.withSpan("seedUnrenderableRequest"));
 }
 
@@ -614,15 +626,15 @@ function retiresARequestThatExpiresBeforeItsCheck() {
     const subject = yield* fixture;
     const deadlineAt = Date.now() + 3_000;
     const firstMessage = yield* seedIncoming(subject, true);
-    const earlier = yield* appendCertifiedMessage(
-      subject,
-      firstMessage,
-      "Earlier",
+    const earlier = yield* subject.run(
+      appendCertifiedMessage(subject, firstMessage, "Earlier"),
     );
-    yield* appendCertifiedMessage(
-      subject,
-      earlier,
-      yield* gatherRequestContent(deadlineAt, question),
+    yield* subject.run(
+      appendCertifiedMessage(
+        subject,
+        earlier,
+        yield* gatherRequestContent(deadlineAt, question),
+      ),
     );
     const runtime = yield* incomingFixture(
       subject,
@@ -805,7 +817,9 @@ function keepsAnInvalidAnswerFromLaterRuntimeHistory() {
 function seedEarlierMessage(subject: Fixture) {
   return seedIncoming(subject, true).pipe(
     Effect.flatMap((firstMessage) =>
-      appendCertifiedMessage(subject, firstMessage, "An earlier message"),
+      subject.run(
+        appendCertifiedMessage(subject, firstMessage, "An earlier message"),
+      ),
     ),
   );
 }

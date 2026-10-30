@@ -848,7 +848,7 @@ function readsRetainedEventThroughSdk() {
     const { port } = yield* acquireBoundaryServer({
       ...operations,
       protocolActive: () => true,
-      readEvent: ({ eventId }) => readRuntimeEvent(store, eventId),
+      readEvent: ({ eventId }) => readRuntimeEvent(eventId).pipe(store.run),
     });
     const client = yield* acquireProtocolClient(port, "retained-event-client");
     const result = yield* Effect.tryPromise(() =>

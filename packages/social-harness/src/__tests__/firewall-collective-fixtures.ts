@@ -104,7 +104,7 @@ export function seedRequest(
       firstMessage,
       yield* gatherRequestContent(deadlineAt, text),
     );
-  }).pipe(Effect.withSpan("seedRequest"));
+  }).pipe(subject.run, Effect.withSpan("seedRequest"));
 }
 
 /**
@@ -135,8 +135,8 @@ export function admitPending(runtime: IncomingRuntime) {
  * @returns Every bound intent without a certified record.
  */
 export function unfinishedIntents(subject: Fixture) {
-  return subject.store
-    .recover()
+  return subject
+    .run(subject.store.recover())
     .pipe(
       Effect.map(({ messageIntents }) =>
         messageIntents.filter(
