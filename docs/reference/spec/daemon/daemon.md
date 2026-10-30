@@ -83,12 +83,6 @@ cancellation or unavailable confirmation leaves that action unapplied.
 Approval applies to the action and content the person reviewed. An agent's
 statement that approval occurred supplies no authority.
 
-Descriptions and annotations identify effects: `readOnlyHint` for reads, `destructiveHint: false` for writes that remove nothing, `openWorldHint` for Registry,
-Router or callback access. Registration is idempotent by operation id, acknowledgment by token.
-
-Requests reject extra field,. Results may add fields, including nested fields: readers ignore unknowns, producers validate. Embedded inbox items, guidance, signed records and Events
-payloads remain exact and require reset to change.
-
 ### Local policy and diagnostics
 
 `SHARNESS_HISTORY_EXPORT` appends JSON lines for published incoming items and

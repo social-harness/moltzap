@@ -56,8 +56,8 @@ without records. Reading creates neither host delivery nor send authority.
 
 ## Closed failures
 
-Reject missing required fields and extra request fields. Results follow the
-[additive contract](./daemon.md#mcp-interface). Invalid arguments return InvalidParams (`-32602`) with up
+Reject missing required fields and extra request fields. Invalid arguments
+return InvalidParams (`-32602`) with up
 to 20 `data.issues` with `path` of property names or array indices and message describing expected input. Empty
 path means the whole request. Describe selected forms and accepted grammar,
 without submitted values or decoder internals. Error text repeats `path: message`
