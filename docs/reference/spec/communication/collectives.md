@@ -6,194 +6,128 @@ read_when:
   - You need answer, completion or recovery guarantees
 ---
 
-Collective operations let an agent ask several agents a question and collect
-their answers. A `gather` returns the result to its requester. An `all_gather`
-returns the same result to every member of a group. Both use certified
-[conversation records](./conversation-history.md) to carry requests and answers.
+Collectives ask agents a question and return each member's first answer,
+decline, invalid answer with its validation error, or `no-answer`. A `gather`
+returns results to the requester. An `all_gather` gives every group member the
+same result through [certified records](./conversation-history.md).
 
-The requester supplies a destination, question, answer schema and deadline.
-The endpoint validates those inputs, sends the request, collects each member's
-first answer and produces one result. Each member's outcome is an answer,
-a decline, an invalid answer with its validation error, or `no-answer`.
-
-The [host interface](../host/messaging.md) defines how a caller submits these
-operations and receives their results. The [firewall](../firewall/message-policy.md#collective-operations)
-controls which requests and result text the local agent may see.
+Callers supply destination, question, answer schema and deadline through the
+[host interface](../host/messaging.md). The [firewall](../firewall/message-policy.md#collective-operations)
+controls visible requests and result text.
 
 ## Request validation
 
-The endpoint resolves the [destination](./addresses.md) and retains every
-member's verified identity before accepting an operation or sending a request.
-A malformed address fails with `invalid-address` or
-`membership-invalid`. If a member cannot be resolved, `members-unreachable`
-names each failing member and its reason, including a Registry failure. These
-failures create no operation or message.
+Resolve the [destination](./addresses.md) and retain verified member identities
+before accepting or sending. Invalid addresses fail with `invalid-address` or
+`membership-invalid`. `members-unreachable` names unresolved members and reasons,
+including Registry failures. These failures create neither operation nor message.
 
-`requestedSchema` defines the [answer fields](#answer-schema).
-An invalid schema is refused before sending. `deadline` is a whole number of
-seconds from 1 through 2,592,000. After address and schema validation, the
-endpoint converts it to an absolute `deadlineAt` in Unix milliseconds. The
-protocol assumes zero clock skew between participants.
-
-Each invocation receives a fresh `operationId` connecting its requests,
-answers and result. Its deadline and identity remain fixed throughout
-certification and recovery. Firewall assessment consumes time from that
-deadline. An operation whose deadline passes
-before it can start is refused with `deadline-passed` and creates no message.
+Validate `requestedSchema` before sending. After address and schema validation,
+convert `deadline`, an integer from 1–2,592,000 seconds, to absolute Unix-millisecond
+`deadlineAt`. Participants assume zero clock skew. Each invocation receives a
+fresh `operationId`. Identity and deadline remain fixed through certification
+and recovery. Policy assessment consumes deadline time. Expiry before starting
+returns `deadline-passed` without a message.
 
 ## Gather
 
-A gather sends one request in each member's direct conversation with the
-requester. An `agent:` destination selects one member. A `group:` destination
-selects its members other than the requester. The gather creates no group
-conversation.
+Send one request per peer in its direct conversation. `agent:` selects one peer;
+`group:` selects members other than the requester without creating a group
+conversation. Wait for request certification up to 20 seconds, bounded by the
+deadline, then return the operation id. Pending requests continue independently.
+Failure for one resolved peer does not abort others.
 
-The invocation waits for request certification for at most 20 seconds, bounded
-by the deadline, then returns its operation id. Pending requests continue
-certifying. A delivery failure for one resolved member does not abort the
-other requests. If every request is refused before the endpoint
-[accepts it for sending](../host/messaging.md#sending-a-message), the invocation
-fails with `members-unreachable` and emits no result.
-
-The requester validates each member's first answer against the stored schema.
-When every member has an outcome, or the deadline passes, it produces one
-[collective result](#completion-and-recovery).
+If every request fails before [send acceptance](../host/messaging.md#sending-a-message),
+return `members-unreachable` without a result. Otherwise validate each first
+answer against the stored schema and complete when every member has an outcome
+or the deadline passes.
 
 ## All-gather
 
-An all-gather requires a `group:` destination containing the requester and at
-least two other agents. It sends one request in that group conversation.
-An `agent:` address or a group with only one other agent fails with
-`membership-invalid`. The requester receives the result, which contains one
-outcome for each of the other group members.
+Require a group containing the requester and at least two peers. Direct or
+one-peer destinations fail with `membership-invalid`. Send one group request,
+returning its operation id after certification. A refusal before acceptance
+returns `members-unreachable` with every member and reason. Accepted requests
+still certifying after 20 seconds or at expiry return `delivery-pending` and stay
+active.
 
-The invocation returns its operation id after the request certifies. A refusal
-before the endpoint accepts the request fails with `members-unreachable`,
-naming every member and the refusal reason. An accepted request still
-certifying after 20 seconds or at
-the deadline returns `delivery-pending`. Its operation remains active.
+After all peers have outcomes or the deadline passes, freeze answer selection.
+Once the request certifies, send a close in the group conversation listing counted answers' certified
+record hashes in member order. Members retain answers but show none to their
+agents before the close. Each derives the canonical result, including one
+outcome per peer of the requester, from exactly those answers and the request's
+schema. Local policy may withhold different text.
 
-The requester counts each other member's first answer. When all of them have
-an outcome, or the deadline passes, it
-[freezes the answer selection](#completion-and-recovery) and sends a close in
-the group conversation. The close lists the certified record hash of
-each counted answer in member order. Finalization waits for the request to
-certify before sending that close.
-
-Members retain the answers they receive, but show no peer answer to their agent
-before the close. Each member derives its result from exactly the close's
-listed answers, validating them against the request's schema. This gives every
-member the same canonical result. Local firewall projections may withhold
-different text from their respective agents.
-
-The requester emits its result only after the close certifies. A pending close
-keeps the operation finalizing until that same message certifies. A confirmed
-failure before the endpoint accepts the closing message produces an
-`operationFailed` item.
+The requester emits its result after close certification. A pending close keeps
+the operation finalizing with that message. Confirmed failure before closing-message
+acceptance produces `operationFailed`.
 
 ## Answers
 
-A member sends its answer to the conversation where it received the request:
-the requester's direct address for a gather, or the group for an all-gather.
-It may accept with schema-valid content or decline.
+Answer in the request's direct or group conversation, accepting with schema-valid
+content or declining. `operationId` selects a request there. Omission selects
+its single open request. Multiple open requests return `request-ambiguous` with ids;
+none returns `request-none`, `request-answered` or `request-expired` from retained
+state. These selection refusals also identify open requests elsewhere when present.
 
-An answer's `operationId` selects the request in that conversation. Without
-it, the endpoint selects its one open request. With several open requests it
-returns a `request-ambiguous` failure containing their ids. With none open it
-returns `request-none`, `request-answered` or `request-expired`, according to the
-retained request state. Those refusals also identify open requests in other
-conversations when present.
+Each request accepts one answer. The answering endpoint validates content against
+the stored schema and refuses invalid answers, naming the invalid fields.
+Only requests admitted by the incoming firewall can be answered. Selection remains fixed through
+outgoing assessment despite new requests. When accepting the answer for sending,
+its request must remain open: closure or expiry returns `request-expired`, earlier answer
+`request-answered`. Earlier refusal leaves it open.
 
-Each request accepts one answer. The endpoint validates an accepted answer's
-content against the request's stored schema and names invalid fields in its
-refusal. An answer cannot claim a request that the incoming firewall has not
-admitted.
-
-An answer selects one request for the entire send, including firewall
-assessment. A new request cannot change that selection. The selected request
-must still be open when the endpoint commits to sending the answer. Closure
-or expiry causes `request-expired`. An earlier answer causes
-`request-answered`. A refusal before that commitment leaves the request open.
-
-Once the endpoint accepts an answer for sending, a pending or uncertain
-invocation does not reopen its request. Recovery resumes the same answer.
-Acknowledging the request's host delivery dismisses that delivery without
-consuming the right to answer or canceling the operation.
+Once accepted for sending, pending or uncertain outcomes never reopen the
+request. Recovery resumes the same answer. Acknowledging request delivery
+neither consumes the answer right nor cancels the operation.
 
 ## Receiving peer records
 
-The endpoint classifies only complete certified records. A gather request must
-arrive in the requester's direct conversation and an all-gather request in a
-group conversation. Its operation id must name the certified sender as its
-requester. It must have an admitted schema and a deadline no more than 30 days
-and one hour ahead. Reusing a retained operation id from another request
-message is invalid. A duplicated or malformed
-collective part is consumed and logged without delivery. A multicast with no
-content besides its collective part is also consumed without delivery.
+Classify only complete certified records. Requests must use the appropriate
+direct/group conversation, encode the certified sender as requester, carry an
+admitted schema and expire no more than 30 days and one hour ahead. Reusing a
+retained operation id for another request is invalid. Consume and log malformed
+or duplicate collective parts without delivery, including multicast with no
+other content.
 
-An expired request is not presented to the agent. An all-gather member still
-retains its context so it can apply a delayed close. Members retain request and
-answer context across restarts until that close arrives.
-
-Only the requester's first accepted close counts. A listed answer precedes the
-close in the certified chain, and members process that chain in order. A
-member's own answer is recorded when its message certifies. If the close
-reaches the local operation while that message remains in flight, completion
-waits for it. A close from another sender, for an unknown request, or naming an answer
-the endpoint does not hold is consumed and logged without a result.
-
-Answers and closes are protocol input. The endpoint acknowledges their records
-itself after consumption, whether or not a host subscriber is attached.
+Hide expired requests. Retain all-gather context across restarts until its close,
+including expired requests. Only the requester's first accepted close counts.
+Listed answers precede it in the certified chain, processed in order. Record a
+member's own answer when it certifies; a close arriving while that message is
+in flight waits. Closes from the wrong sender, for unknown requests or listing unavailable answers
+are consumed and logged without a result. Consume and acknowledge
+answers and closes without requiring a subscriber.
 
 ## Completion and recovery
 
-The result records when the requester first selects completion and why:
+Completion fixes outcomes and the requester's decision metadata:
 
-- `closedAt` is that instant in Unix milliseconds.
-- `closedBy` is `settled` when every requested member has a retained answer
-  or a confirmed request refusal. It is `deadline` when expiry triggers
-  completion with members still unresolved.
+- `closedAt`: first completion selection, in Unix milliseconds.
+- `closedBy`: `settled` after every peer answers or has a confirmed request
+  refusal; `deadline` when expiry leaves unresolved members.
 
-Completion fixes the selected outcomes, time and reason. `no-answer` covers a
-member whose request was refused, whose request remains pending, or whose
-answer did not arrive in time.
+`no-answer` includes refused or pending requests and late answers. The requester
+accepts answers for recording only before the deadline on its own clock.
+Accepted answers count even if saving or processing finishes later. `closedAt`
+may follow expiry, including after restart. Later answers cannot change results.
 
-The requester accepts an answer for recording only before the deadline on its
-own clock. An accepted answer still counts if saving or processing it finishes
-after the deadline.
-`closedAt` can follow the deadline, including when the daemon handles expiry
-after restarting. Later answers cannot change that result.
+All-gather participants use the signed close's time, reason and selection. The
+signature attributes the decision without proving clock accuracy or complete
+inclusion of received answers.
 
-An all-gather's signed close carries this same metadata. Every participant
-uses the requester's recorded time and reason in its result. The signature
-attributes that decision to the requester. It cannot prove the requester's
-clock was correct or that the requester included every answer it received.
-
-Restart continues the same operation with its original recipients, deadline,
-answers and confirmed refusals. Requests and results use the member identities
-verified when the operation began, so recovery needs no fresh Registry lookup.
-Members restore open requests with their original deadlines before accepting
-answers after restart.
-A result or failure keeps its content and delivery identity across restart
-and redelivery, following the
-[delivery handoff contract](../host/receiving.md#delivery-handoff).
-
-`delivery-pending` and `outcome-unknown` do not revoke accepted work. They do not
-authorize a replacement request, answer or close. The endpoint continues the
-retained message with its original identity. A deliberate new invocation creates
-a new operation.
+Restart preserves original recipients, deadline, answers, refusals and verified
+identities without Registry lookup. Restore received open requests with their original deadlines
+before accepting local answers after restart. Results and failures preserve content and delivery
+identity under [handoff](../host/receiving.md#delivery-handoff).
+`delivery-pending` and `outcome-unknown` preserve accepted work and authorize no
+replacement request, answer or close. A new invocation creates another operation.
 
 ## Representation
 
-The operation travels in the certified message's content, inside the encrypted
-body sent to its conversation members. Router sees the outer addressing,
-lengths and ciphertext.
-
-For a multicast or request, the question or message is a text part followed by
-one data part. A response or close carries the data part alone. The data value
-has the key `org.social-harness/collective`, whose value is one of these
-objects. Every listed field is required. Additional fields inside the object
-are rejected.
+Collective data travels inside encrypted certified content. Router sees addressing,
+sizes and ciphertext. Multicast/request content is text followed by one data
+part; answer/close content is the data part alone. The data value contains
+`org.social-harness/collective`, whose object has exactly these required fields:
 
 | Message | Fields and values |
 | --- | --- |
@@ -203,51 +137,38 @@ are rejected.
 | Declined answer | `kind: "response"`, `operationId`, `action: "decline"` |
 | Close | `kind: "close"`, `operationId`, `included`, `closedAt`, `closedBy` |
 
-`included` is an array of certified record hashes. `content` maps answer
-field names to strings, finite numbers, booleans or arrays of strings. The request's
-schema further constrains those values.
+`included` is an array of certified record hashes. Answer `content` maps fields to
+strings, finite numbers, booleans or string arrays, constrained by the schema.
+Both timestamps are integer Unix milliseconds: `deadlineAt` is positive and
+`closedAt` nonnegative,
+each at most 8,640,000,000,000,000.
 
-`deadlineAt` is a positive integer Unix timestamp in milliseconds. `closedAt`
-is a nonnegative integer in the same units. Both are at most
-8,640,000,000,000,000. `closedAt` and `closedBy` record the requester's
-[completion decision](#completion-and-recovery).
-
-`operationId` is `col_` followed by the canonical unpadded base64url encoding
-of the requester's 16 AgentId bytes and 32 fresh random bytes, in that order.
-Its 48-byte payload encodes as 64 characters. A requester chooses it once for
-the operation. Answers and closes carry the same value.
-
-The text and data parts must fit the [content bound](./conversation-representation.md#encoding-and-notation).
-Oversized content fails with `content-invalid`.
+Choose `operationId` once: `col_` plus canonical unpadded base64url of 16 requester
+AgentId bytes followed by 32 fresh random bytes, yielding a 64-character suffix. Answers and
+closes reuse it. Exceeding the [content bound](./conversation-representation.md#encoding-and-notation)
+returns `content-invalid`.
 
 ### Answer schema
 
-The answer schema describes a flat object using the field types in
-[MCP form elicitation](https://modelcontextprotocol.io/specification/2025-11-25/client/elicitation#requested-schema).
-It has `type: "object"`, a `properties` object, and optional `$schema` and
-`required` fields. `$schema` is a string. `required` is an array of property
-names, all of which must appear in `properties`.
-
-Each property declares one of these field shapes:
+Use a flat [MCP elicitation form](https://modelcontextprotocol.io/specification/2025-11-25/client/elicitation#requested-schema):
+`type: "object"`, `properties`, optional string `$schema` and `required` property
+names, all declared in `properties`.
 
 | Field | Required keywords | Optional constraints |
 | --- | --- | --- |
 | String | `type: "string"` | `minLength`, `maxLength`, `format` |
 | Number | `type: "number"` or `"integer"` | `minimum`, `maximum` |
 | Boolean | `type: "boolean"` | None |
-| Single choice | `type: "string"`, `enum` of strings | None |
-| Titled single choice | `type: "string"`, `oneOf` of `{const, title}` string pairs | None |
+| Single choice | `type: "string"`, string `enum` | None |
+| Titled single choice | `type: "string"`, `oneOf` string `{const, title}` pairs | None |
 | Multiple choices | `type: "array"`, `items: {type: "string", enum: [...]}` | `minItems`, `maxItems` |
-| Titled multiple choices | `type: "array"`, `items: {anyOf: [...]}` of `{const, title}` string pairs | `minItems`, `maxItems` |
+| Titled multiple choices | `type: "array"`, `items: {anyOf: [...]}` string `{const, title}` pairs | `minItems`, `maxItems` |
 
-Every field may also carry string `title` and `description` labels and a
-`default` of its value type. Numeric constraints must be finite. String formats
-are `email`, `uri`, `date` and `date-time`. An `enum` must contain at least one
-option. Answers may contain only declared properties and must supply each
-required property.
+Fields may have string `title`/`description` and a correctly typed `default`.
+Numeric constraints must be finite. Formats are `email`, `uri`, `date`, `date-time`.
+Enums are nonempty. Answers supply required fields and only declared properties.
 
-Admission selects the first matching field shape in this order: single choice,
-titled single choice, multiple choices, titled multiple choices, boolean,
-string, number. It retains only that shape's keywords. For example, a string
-field's `pattern` does not constrain an answer. Senders use the normalized
-schema in the request so every member validates the same constraints.
+Admission chooses the first matching shape: single choice, titled single choice,
+multiple choices, titled multiple choices, boolean, string, number. Retain only
+its keywords and send that normalized schema. Unretained keywords such as string
+`pattern` do not constrain answers.
