@@ -12,7 +12,7 @@ boundary before further runtime changes.
 | Component | Owns |
 | --- | --- |
 | Communication | Verified records, accepted sends and collective operation state |
-| Firewall | Active rules, assessment, permitted advice and authorized edits |
+| Firewall | Message and disclosure policy, rule changes and approval decisions |
 | Daemon | Evidence preparation, checking order and application of judgments |
 | Store | Durable state and atomic changes spanning those records |
 | Host | Model execution, tools and acknowledgment after accepting delivery |
@@ -20,6 +20,28 @@ boundary before further runtime changes.
 `daemon/store.ts` opens one database and supplies the operations those owners
 need. Incoming work, evidence windows and publication belong to this store.
 The firewall receives only rule and check persistence operations.
+
+## One MCP interface
+
+Every client uses the same catalog and credential. The firewall governs the
+requested disclosure or change. MCP provides the interaction through which
+human confirmation is obtained when policy requires it.
+
+```mermaid
+flowchart LR
+  A[MCP request] --> B[Firewall checks request and approval]
+  B -->|Allowed| C[Daemon applies action]
+  B -->|Refused| D[Return without applying action]
+  B -->|Human approval required| E[MCP or host asks the person]
+  E -->|Confirmed| B
+  E -->|Declined or unavailable| D
+  C --> F[Store retains the result]
+```
+
+[MCP elicitation](https://modelcontextprotocol.io/specification/2026-07-28/client/elicitation)
+is an interaction mechanism. The confirmation must come from
+the trusted host or a verified backchannel outside agent-controlled text.
+The exact mechanism and its client support remain to be chosen before coding.
 
 ## Startup
 

@@ -6,147 +6,98 @@ read_when:
   - You need its state, credential or management boundaries
 ---
 
-The daemon preserves one agent's identity, communication and local policy.
-One process owns one state directory and registered identity.
-Given a signing key, a state directory and network settings, `sharnessd` connects to
-Registry and Router and serves local MCP. It retains accepted work, history and
-pending deliveries across restart. The host owns models and tools under the
-[messaging contract](../host/messaging.md). The [run guide](../../../guides/run-sharnessd.mdx)
-covers setup.
+The social harness daemon (`sharnessd`) manages an agent's identity, communication and firewall policies. It connects to the Registry and Router services, and serves an MCP server the the agent host connects to. The daemon recieves and sends messages, and manages conversation history across restarts.
 
 ## Process and configuration
 
-Validate configuration and activate the identity before messaging. Owners can
-register and inspect status beforehand. The [service reference](../../services/daemon.mdx)
-owns settings and automatic registration.
+`sharnessd` runs with an agent's key, persistent state and network settings.
 
-Trusted-local callers have owner access. Authenticated owner and runtime credentials
-are checked on every request, including discovery. Runtime credentials permit
-native polling and acknowledgment with an active generation, which identifies a
-subscription rather than a privileged program. Hosts isolating model calls
-restrict them to the catalog and control native Events and consumer metadata.
-Local MCP grants no Registry or Router authority.
+The daemon requires these environment settings:
 
-## Persistence
+| Setting | Accepted value |
+| --- | --- |
+| `SHARNESS_STATE_DIRECTORY` | Directory holding identity, history and delivery state |
+| `SHARNESS_MCP_PORT` | Decimal integer from 1 to 65535, without leading zeros, sign, whitespace or exponent |
+| `SHARNESS_REGISTRY_ORIGIN` | HTTP(S) origin, such as `https://registry.example.com` |
+| `SHARNESS_REGISTRY_SIGNER_PUBLIC_KEY` | Compact Ed25519 public JWK, exactly `{"crv":"Ed25519","kty":"OKP","x":"..."}` in that key order |
+| `SHARNESS_ROUTER_ORIGIN` | HTTP(S) origin in the same form as the Registry origin |
+| `SHARNESS_AGENT_PRIVATE_KEY_FILE` | Readable file containing the agent's unencrypted Ed25519 PKCS#8 PEM key |
+| `SHARNESS_MCP_CREDENTIAL_FILE` | File containing the MCP bearer credential used by clients |
 
-Preserve state for the signing key's lifetime, retaining identity, signing
-decisions, history, policy, unread items and guidance. Verify database integrity and history and restore
-[collective context](../communication/collectives.md#completion-and-recovery)
-before signing or accepting host operations.
+MCP listens at `127.0.0.1:<SHARNESS_MCP_PORT>/mcp`. Authenticated connections
+use one bearer credential, supplied through `SHARNESS_MCP_CREDENTIAL_FILE`.
+Local clients and tunneled clients use the same operations and policy.
 
-Initialize absent or empty databases in the current format. Empty means no
-user-created tables, indexes, views or triggers. Refuse incompatible existing
-state with `incompatible` before changing schema, permissions or journaling.
-Existing state opens only in the current format.
-Never automatically convert or reset data.
+The origin must equal its serialized URL origin, without a path, trailing slash, query, fragment or credentials. The signer's `x` value is the canonical 43-character base64url encoding of its key.
+Missing or invalid settings stop startup.
 
-Before changing retained state, reject non-live
-[pending envelopes](../communication/conversation-representation.md#history-versions)
-with `outbox-too-old`. Backup restoration requires a
-[new identity](../releases.md#reset-releases). No automatic expiry or compaction occurs.
+An unregistered daemon can accept registration after it starts, or register automatically before listening. Automatic registration requires all three settings below:
 
-## Stored state and incoming checks
+| Setting | Value |
+| --- | --- |
+| `SHARNESS_REGISTRATION_AGENT_NAME` | The agent's immutable name |
+| `SHARNESS_REGISTRATION_OPERATION_ID` | The registration retry identity, an `opn_` identifier |
+| `SHARNESS_REGISTRATION_PRINCIPAL_ID` | The principal's `prn_` identifier |
+
+## Firewalls
+
+`SHARNESS_MESSAGE_POLICY_FILE` installs the message firewall before host calls are accepted. The policies can be configured using the `policy_read`, `policy_update` tools, and their history be viewed using the `firewall_decisions` tool. For each inbound message, the daemon runs firewall check for one incoming item at a time, in each conversation.  A withheld item finishes that check so later items can proceed. Other conversations can continue independently. A request that expires before checking retires without a check. A request that expires during checking stays withheld, with its judgment retained.
+
+## Stored state
 
 One daemon store retains communication state, rules, check records and inbox
 items for the agent. Its writes preserve the relationships between those
 records. An incoming decision, the text and guidance offered to the host, and
-any answer visibility changes become durable together. Failure commits none
-of them.
-
-The daemon prepares each check from verified participants and the permitted
-conversation history. It checks one incoming item at a time in each
-conversation. A withheld item finishes that check so later items can proceed.
-Other conversations can continue independently. A request that expires before
-checking retires without a check. A request that expires during checking stays
-withheld, with its judgment retained.
+any answer visibility changes become durable together.
 
 The store retains a check's input before assessment begins. Restart identifies
 interrupted attempts and resumes unfinished incoming work. Completed decisions,
 guidance and delivery identities survive restart and acknowledgment. Every
-host delivery method reads the same retained view. Withheld items remain
-withheld after rule edits.
+host delivery method reads the same retained view.
 
 Rule edits save the complete replacement and its change record together. A
 failed save keeps the previous rules active. An edit takes effect for later
 checks after its save succeeds. Running checks keep the policy they started
 with. Edits preserve earlier decisions and accepted communication work.
 
-## Failure behavior
-
-Storage failure while retaining or delivering accepted work stops phase `storage`.
-Expose only durable items. Restart preserves unfinished payload and identity under
-[receiving](../host/receiving.md). Failed delivery work cannot block inbox reads
-or acknowledgments during shutdown.
-
-Known storage refusal before acceptance returns `persistence-failed` and keeps
-running. Uncertain storage acceptance stops with `outcome-unknown`. Storage failure after
-acceptance stops with [`delivery-pending`](../host/messaging.md#sending-a-message).
-
-Initial delivery recovery failure prevents listening. During registration it
-returns `persistence-failed`. Other activation failures stop in `listener` for
-unavailable upstream, `storage` otherwise, across automatic and owner registration
-and restart. Router authentication rejection stops in `listener` with
-`agent-not-admitted` and [reset-registration guidance](../../../guides/run-sharnessd.mdx#reset-an-agent-after-the-network-restarts).
-Logs identify causes without message content, credentials or storage diagnostics. Shutdown allows
-bounded time for in-flight responses before closing MCP.
-
 ## MCP compatibility
 
 Serve MCP `2026-07-28` over Streamable HTTP, also negotiating older revisions
-supported by the server dependency, with `2025-11-25` tested. Older requests are
-stateless. Session GET and DELETE return 405. Clients relist tools after registration
-and cancel by closing HTTP rather than `notifications/cancelled`.
+supported by the server dependency. Validate outputs with JSON Schema 2020-12. `@modelcontextprotocol/sdk`.
 
-Validate outputs with JSON Schema 2020-12. `@modelcontextprotocol/sdk` 1.x's draft-07 default rejects
-AgentCard results. [Events](../host/receiving.md#mcp-events-and-inbox) requires
-MCP `2026-07-28`.
+## MCP interface
 
-## MCP catalog
+The daemon exposes one tool catalog for registration, status, messaging,
+identity lookup, history, policy and delivery. One authenticated connection
+can call every operation. Registration and an active identity remain
+prerequisites for operations that use them.
 
-| Caller | Before registration | After activation |
-| --- | --- | --- |
-| Trusted-local | `register`, `status` | Messaging, identity lookup, history, inbox and consumer administration |
-| Authenticated owner | `register`, `status`, consumer administration | Same operations as trusted-local |
-| Authenticated runtime | No tools | `send_message`, `read_event`, `search_agents` |
+The firewall decides which requested changes and disclosures may proceed.
+Reading history passes through the same disclosure policy as receiving a
+message. A history query cannot bypass a decision to withhold content.
 
-[Management](./management.md) owns identity and history. [host messaging](../host/messaging.md)
-owns sends. Native delivery uses `read_inbox` and `acknowledge_delivery`.
-Administration uses `event_subscription_status`, `revoke_event_subscription` and
-`resume_event_subscription`. Authenticated polling generations permit native
-delivery outside the runtime's model-visible catalog.
+When the firewall requires human approval, MCP carries the request to the
+host or an authenticated approval backchannel. The firewall evaluates the
+confirmation for the requested action before the daemon executes it. Decline,
+cancellation or unavailable confirmation leaves that action unapplied.
+Approval applies to the action and content the person reviewed. An agent's
+statement that approval occurred supplies no authority.
 
-Descriptions and annotations identify effects: `readOnlyHint` for reads,
-`destructiveHint: false` for writes that remove nothing, `openWorldHint` for Registry,
-Router or callback access. Registration is idempotent by operation id,
-acknowledgment by token.
+Native delivery uses `read_inbox` and `acknowledge_delivery`. Subscriptions use
+`event_subscription_status`, `revoke_event_subscription` and
+`resume_event_subscription`. A consumer generation identifies the current
+receiver. It does not identify a caller permission level.
 
-Requests reject extra fields with [management diagnostics](./management.md#closed-failures).
-Results may add fields, including nested fields: readers ignore unknowns,
-producers validate. Embedded inbox items, guidance, signed records and Events
+Descriptions and annotations identify effects: `readOnlyHint` for reads, `destructiveHint: false` for writes that remove nothing, `openWorldHint` for Registry,
+Router or callback access. Registration is idempotent by operation id, acknowledgment by token.
+
+Requests reject extra field,. Results may add fields, including nested fields: readers ignore unknowns, producers validate. Embedded inbox items, guidance, signed records and Events
 payloads remain exact and require reset to change.
 
-### Policy tools
+### Local policy and diagnostics
 
-Configured firewalls add `policy_read`, `policy_update` and `firewall_decisions`
-for owners and trusted-local callers. Runtime callers gain only `policy_update`, for adding rules or removing or
-replacing rules adopted through runtime calls. Owners edit all editable rules. [Policy](../firewall/message-policy.md#editable-text-policy)
-owns atomic updates, fixed rules and failures. Authentication determines authority,
-never peer text.
-
-`firewall_decisions` returns up to 100 latest completed checks at or after `since`,
-an inclusive Unix-millisecond timestamp, newest first. [Decision reasons](../firewall/message-policy.md#decision-reasons)
-own outcomes, peer identities and rule attribution. Exclude message text, owner facts and
-provider traces. Deduplicate by `checkId` and `peer.agentId` (null without a peer).
-This recent view is not lossless.
-
-The `firewall_decisions` result's `activations` array returns up to 100 latest successful updates, including no-ops and
-updates between messages, with the same ordering and filter. Entries contain time, active revision,
-added and removed rule ids. Replacement lists both. Failed updates create none.
-Exclude rule text.
-
-## Current formats
-
-Identity's [version rules](../identity/identity.md#wire-versions) define wire acceptance
-within [release windows](../releases.md#wire-compatibility-window).
-[Persistence](#persistence) owns database acceptance. Native adapters and daemon upgrade together, using
-current message, guidance and refusal schemas directly.
+`SHARNESS_HISTORY_EXPORT` appends JSON lines for published incoming items and
+completed send invocations. Incoming items appear once per process, before
+delivery to the subscriber. Sends record their input and result or refusal.
+Export adds no delivery or management authority. On an append failure, the
+daemon emits one `export-failed` diagnostic, stops exporting and keeps serving.

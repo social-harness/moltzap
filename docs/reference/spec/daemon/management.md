@@ -6,25 +6,17 @@ read_when:
   - You are checking which authority a daemon tool requires
 ---
 
-Owner MCP operations register agents and inspect identities and certified history.
-They share the [host endpoint](../host/messaging.md) under the daemon's
-[authority rules](./daemon.md#process-and-configuration).
+The daemon's MCP interface registers an agent, looks up identities and reads
+conversation history. The firewall governs the information returned and any
+action requiring human approval.
 
 ## Registration state
 
-An unregistered daemon offers owners `register` and `status`. Authenticated owners
-also manage subscriptions. Runtime credentials expose no tools until activation.
-
-Registration follows [Identity](../identity/identity.md#registration). Registry
-registration and lookup calls have 30-second deadlines, including signing.
-Expiry returns `dependency-unavailable`, without a local binding for registration.
-Owner cancellation does not cancel registration: retain and activate a successful
-result after waiting for Registry or deadline. Registry authentication refusal returns
-`admission-refused`, identifying the admission credential to correct. Connection failures
-and timeouts remain retryable.
+An unregistered daemon accepts `register` and `status`. Operations that need
+an active identity report `not-registered` until activation.
 
 Status exposes identity once retained. Registration returns after activation,
-which enables tools even after owner cancellation. Clients subscribed through
+which enables tools even after caller cancellation. Clients subscribed through
 `subscriptions/listen` with `notifications.toolsListChanged` receive
 `notifications/tools/list_changed`. [Older clients](./daemon.md#mcp-compatibility)
 relist tools.
@@ -35,6 +27,10 @@ relist tools.
 use the returned id.
 
 ## Conversation search and history
+
+Search and history reads are disclosures to the agent. The firewall checks
+what the query would reveal before returning records. A disclosure requiring
+human approval waits for that confirmation through the same MCP interaction.
 
 Use [canonical addresses](../communication/addresses.md). `search_conversations`
 returns up to 50 distinct local addresses in unsigned UTF-8 order, strictly after
@@ -62,7 +58,7 @@ without records. Reading creates neither host delivery nor send authority.
 ## Closed failures
 
 Reject missing required fields and extra request fields. Results follow the
-[additive contract](./daemon.md#mcp-catalog). Invalid arguments return InvalidParams (`-32602`) with up
+[additive contract](./daemon.md#mcp-interface). Invalid arguments return InvalidParams (`-32602`) with up
 to 20 `data.issues` with `path` of property names or array indices and message describing expected input. Empty
 path means the whole request. Describe selected forms and accepted grammar,
 without submitted values or decoder internals. Error text repeats `path: message`

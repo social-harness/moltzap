@@ -2,7 +2,8 @@
 
 The firewall checks incoming messages and outgoing drafts against configured
 rules. It returns a judgment and registered advice, and manages authorized
-changes to editable rules.
+changes to editable rules. It also governs disclosures returned by history
+operations and decides when an action requires human approval.
 
 This is an interface draft for review. The declarations below propose the next
 boundary. Runtime code remains unchanged by this draft.
@@ -13,7 +14,7 @@ boundary. Runtime code remains unchanged by this draft.
 | --- | --- |
 | Message, verified participants and permitted history | A judgment and advice restricted to visible evidence |
 | Initial rules and previously saved editable rules | One active policy |
-| Rule change and authenticated caller authority | A complete saved replacement, or a refusal preserving the old policy |
+| Rule change and any required human confirmation | A complete saved replacement, or a refusal preserving the old policy |
 
 The daemon prepares conversation evidence and decides when to send or deliver.
 The store saves rules and check records. A check uses one policy and one input
@@ -40,8 +41,8 @@ host may see.
 
 ```mermaid
 flowchart LR
-  A[Change and caller authority] --> B[Validate complete replacement]
-  B --> C[Save rules and change record]
+  A[Requested rule change] --> B[Validate complete replacement]
+  B --> C[Save permitted replacement and change record]
   C --> D[Replace active policy]
 ```
 
@@ -62,7 +63,7 @@ export interface Firewall {
   /** Fixed mode, owner facts and history/concurrency limits for this process. */
   readonly configuration: FirewallConfiguration;
 
-  /** Returns fixed and editable rules with their current revision and authority. */
+  /** Returns fixed and editable rules with their current revision and source. */
   readPolicy(): Effect.Effect<PolicyRead, FirewallPolicyError>;
 
   /**
@@ -71,7 +72,6 @@ export interface Firewall {
    */
   updatePolicy(
     change: PolicyUpdate,
-    authority: PolicyAuthority,
   ): Effect.Effect<PolicyUpdateResult, FirewallPolicyError>;
 
   /** Returns recent decision summaries without message content or provider traces. */
@@ -118,9 +118,14 @@ an unavailable check. `CheckedMessage` contains the judgment, permitted
 guidance and a completion record. The caller saves that completion with the
 message's delivery outcome. These are values, rather than live check handles.
 
-`PolicyAuthority` comes from the authenticated local caller. Owners can edit
-any editable rule. An agent caller can change only rules adopted through agent
-calls. Fixed rules remain fixed.
+The MCP interface authenticates one agent. Policy governs changes and
+protected disclosures. Human confirmation is evidence for the firewall's
+decision about that action. Fixed rules remain supplied by configuration.
+
+The next interface decision is how `CheckInput` represents a history
+disclosure or rule change alongside message checks. These inputs must name
+the information or effect being considered and any verified confirmation.
+The current message-only input is insufficient for this wider responsibility.
 
 ## Storage required by the firewall
 

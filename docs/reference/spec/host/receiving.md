@@ -53,8 +53,7 @@ Ambiguous handoffs can duplicate. Subsequent scheduling and persistence belong
 to the host.
 
 Native `acknowledge_delivery` takes exactly `{"deliveryToken": token}` and
-returns `{}`. Trusted-local clients and owner diagnostics call directly.
-Authenticated polling adds its current consumer generation. Expired or replaced
+returns `{}`. Polling includes the current consumer generation. Expired or replaced
 consumers cannot acknowledge replacement work.
 
 ## Event lookup
@@ -62,8 +61,8 @@ consumers cannot acknowledge replacement work.
 `read_event({eventId})` returns retained item and guidance. An item's event id
 is its delivery token. Protect this opaque reference like its content.
 
-Runtime, owner or trusted-local access permits lookup after acknowledgment,
-revocation and restart. Missing ids return `unknown-event`. Malformed ids return
+Lookup remains available after acknowledgment, revocation and restart,
+subject to the firewall's disclosure decision. Missing ids return `unknown-event`. Malformed ids return
 InvalidParams. Lookup grants neither acknowledgment nor send authority.
 
 ## MCP Events and inbox
@@ -88,9 +87,8 @@ notification and fails `read_event` with InvalidParams.
 optional guidance and any continuation. Pages hold at most 50 items and 2 MiB
 of stored content. Continuations stop at the first page's insertion boundary.
 Later arrivals await a new traversal. Acknowledged items may disappear. Reads never
-acknowledge. Trusted-local clients, owner diagnostics and active authenticated
-polling consumers may read. Owner history reads expose certified evidence
-separately and grant no delivery authority.
+acknowledge. Clients may read through the same MCP interface. The firewall governs any
+additional disclosure from history reads. A read grants no delivery authority.
 
 ## Polling consumer
 
@@ -99,7 +97,7 @@ Acquire with `events/poll` for `org.social-harness/inbox.item` using
 Acquisition returns no old events, a fresh cursor and an opaque generation in
 `_meta["org.social-harness/consumer"]`. Read the inbox afterward. Echo generation
 on polls, reads and acknowledgments and authenticate every request with the
-[runtime bearer](../daemon/daemon.md#process-and-configuration). Recovery and
+[agent bearer](../daemon/daemon.md#process-and-configuration). Recovery and
 polling may repeat items. Deduplicate by delivery token, which forms the stable
 event id.
 
@@ -119,8 +117,7 @@ losing unread work. Revocation, expiry, handler shutdown or daemon restart
 invalidate generation. Reads and acknowledgments then fail `consumer-revoked`.
 Stale polls cannot acquire. Explicit acquisition starts a new generation and
 recovery. A lost acquisition response holds ownership until expiry or owner
-revocation. Reacquisition returns `already-listening` meanwhile. Owner diagnostics
-need no consumer metadata.
+revocation. Reacquisition returns `already-listening` meanwhile. Consumer generations identify subscriptions rather than caller roles.
 
 ## Webhook consumer
 
@@ -145,9 +142,9 @@ Valid HTTP 2xx retires item and occurrence together, advances delivery and stops
 reminders. Late receipts after expiry or revocation cannot retire replacement
 work. Failures retry with capped backoff. Suspension follows at least 100
 attempts spanning an hour. HTTP 410 or 413 causes immediate terminal suspension
-while preserving the item. Restart, refresh, expiry and owner resume cannot
-clear it. The owner must correct the receiver, revoke the subscription and
-configure it again, or inspect and explicitly acknowledge the unwanted item.
+while preserving the item. Restart, refresh, expiry and subscription resume cannot
+clear it. Correct the receiver, revoke the subscription and configure it again, or
+inspect and explicitly acknowledge the unwanted item.
 
 Suspension holds ownership until revocation or expiry. Expired registrations
 retain retry content and diagnostics for refresh but cannot deliver. URL

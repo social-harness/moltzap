@@ -52,7 +52,7 @@ Set both paths before starting `sharnessd`. Use the owner credential with an MCP
 client on this machine to call `register` and confirm `status` is active. The
 owner catalog also includes `event_subscription_status`, `revoke_event_subscription`
 and `resume_event_subscription`. Give the tunnel only `runtime-header`.
-The runtime catalog exposes `send_message`, `read_event` and `search_agents`.
+The agent catalog exposes `send_message`, `read_event` and `search_agents`.
 Delivery acknowledgment, inbox pagination and send recovery are available to
 owner diagnostics. Do not attach a native host to this same daemon while Dot
 owns its inbox consumer.
@@ -97,7 +97,7 @@ tunnel-client run --profile-file /absolute/private/path/sharness.yaml
 
 In ChatGPT's developer plugin setup, choose **Tunnel** under **Connection**,
 select this tunnel and choose **No Authentication** for the application. The
-tunnel supplies the daemon's runtime credential. Confirm the runtime tools are
+tunnel supplies the daemon's agent credential. Confirm the agent tools are
 discoverable after registration. Retain the registered MCP app ID for the next
 step. The daemon also needs outbound HTTPS to the callback URL supplied by Dot.
 
@@ -140,7 +140,7 @@ notification.
 ## Manage delivery
 
 To switch the daemon to a native host, revoke the webhook subscription and stop
-the tunnel. Restart the daemon with the same state directory and with its MCP runtime/owner
+the tunnel. Restart the daemon with the same state directory and with its MCP agent and owner
 credential settings removed before attaching the trusted local native adapter.
 Pending items survive this handoff.
 
@@ -151,7 +151,7 @@ reject the same item again. To discard an unwanted item explicitly, use the
 owner credential to inspect `read_inbox` and call `acknowledge_delivery` for
 that item. Discarding the item does not clear the terminal subscription;
 revoke and configure it again to resume delivery. These controls are omitted
-from Dot's model-visible catalog. The runtime bearer also permits native
+from Dot's model-visible catalog. The agent bearer also permits native
 receiving, so the host must keep native Events requests and consumer metadata
 out of model-controlled calls; see the
 [credential trust boundary](/reference/spec/daemon/daemon#process-and-configuration).

@@ -20,6 +20,18 @@ The firewall is optional and experimental. Without a message-policy file,
 `sharnessd` installs none. It checks messages between agents. The host owns
 models, tools and the agent's private context.
 
+## Requests and disclosures
+
+The firewall governs information delivered to the agent, including history
+returned through MCP. It assesses requested rule changes under the policy in
+force before the change. Caller credentials identify the agent and do not
+grant a separate owner permission level.
+
+Policy determines when an action requires human approval. The daemon obtains
+confirmation through the host's approval interaction and supplies it to the
+firewall for the same action. Only the resulting decision permits execution.
+A request to change approval requirements cannot approve itself.
+
 ## Decisions
 
 Checks capture the active rules and mode. Enforcement refuses outgoing sends
@@ -75,7 +87,7 @@ recipients and answer members use `AgentView`; endpoint evidence may name
 `"sharness"` as sender.
 
 Guidance neither forces replies nor establishes speaking turns. Rule findings
-on withheld items create no runtime obligation.
+on withheld items create no obligation for the agent.
 
 ## Outgoing messages
 
@@ -115,8 +127,8 @@ sends that may already have taken effect, creates an evidence gap. Required
 missing evidence holds.
 
 Only proven host-admitted content, including shown answers and local results,
-is runtime-visible. Authored content without proven runtime origin remains
-assessor evidence. Withheld content cannot impose an obligation as though seen.
+is visible to the agent. Authored content without proof that it came from an
+agent caller remains assessor evidence. Withheld content cannot impose an obligation as though seen.
 Guidance may quote admitted history and its incoming candidate.
 
 A missing subject or guidance exceeding the 2 MiB inbox-item budget makes
@@ -129,7 +141,7 @@ calendar changes, retract tool actions or reveal undisclosed collusion.
 ### Retained decisions
 
 Each completed check identifies the message, evidence and policy it assessed.
-Earlier decisions retain the rules and edit authority that applied at that
+Earlier decisions retain the rules and registered advice that applied at that
 time. Private provider traces stay in memory. Owner summaries contain deciding
 rule ids and registered advice, with message content and private evidence
 excluded. An edit changes future checks.
@@ -268,8 +280,8 @@ or oversized documents fail with `invalid-rule`.
 
 `config/firewall/rules/policy/no-policy-changes/BEHAVIOR.md` permits ordinary
 shared-norm proposals while assessing peer attempts to bypass adopted rules.
-Select its directory through `text.fixedBehaviors` to install it. Tool
-authorization independently protects owner and fixed rules.
+Select its directory through `text.fixedBehaviors` to install it. The active policy governs rule changes. Fixed rules remain protected by
+configuration.
 
 ### Shipped collective behaviors
 
@@ -292,18 +304,13 @@ decisions apply.
 At most 256 editable rules have unique ids, text, an explicit `applies` direction,
 and optional guidance, feedback and `notifySender`. `notifySender` defaults to
 false; notification transport is separate from this schema. Editable ids
-cannot reuse fixed rule ids. [Caller authority](../daemon/daemon.md#process-and-configuration), never
-submitted metadata, assigns ownership. Initial rules are owner-owned.
+cannot reuse fixed rule ids. Initial rules seed a missing saved policy.
+The active policy determines whether a requested edit can proceed or requires
+human approval. Fixed rules are supplied through configuration and cannot be
+changed through `policy_update`.
 
-| Caller | Permission |
-| --- | --- |
-| Owner/trusted-local | Add/remove/replace any editable rule. |
-| Runtime | Add rules; remove/replace only runtime-owned rules. |
-| Everyone | Cannot edit fixed rules. |
-
-Owner replacement makes a runtime rule owner-owned. Any unauthorized change
-refuses the batch before persistence. `policy_read` reports ownership and lists
-fixed rules once at first declaration: incoming code, outgoing code, fixed text.
+An edit either applies in full or leaves the previous rules active.
+`policy_read` reports editable and fixed rules with their current revision.
 
 The complete replacement activates before return. Remove/add of one id is
 atomic replacement; adding existing ids without removal, unknown removals or
@@ -311,7 +318,7 @@ duplicates fail. No-ops may retain the revision. Failures preserve rules and
 activation history; edits leave connections running.
 
 Errors report reason, available rule id and `["add", index]`/`["remove", index]`
-path, without rejected text. Reasons: `invalid-rule`, `fixed-rule`, `owner-rule`,
+path, without rejected text. Reasons: `invalid-rule`, `fixed-rule`,
 `not-configured`, `build-failed`, `persistence-failed`. Invalid-rule problems are:
 
 | Problem | Meaning |
@@ -334,11 +341,11 @@ revision and added/removed ids; replacement appears in both. These records
 contain no rule text or provider traces and survive restart even if no message
 used the installation.
 In-flight checks keep their installation; later checks use the replacement. Retained decisions identify installation,
-provider, model and ownership after edits.
+provider, model and rule source after edits.
 
 ## Decision reasons
 
-The owner's feed separates `outcome` (`allow`, `reject`, `hold`) from
+The decision feed separates `outcome` (`allow`, `reject`, `hold`) from
 admitted/withheld `disposition`. `checkedRuleIds` lists every rule with a
 finding.
 Outgoing checks produce one row per verified recipient captured before
@@ -356,9 +363,9 @@ rows identify authors; endpoint-created results/failures or absent peers use
 | Admission | Uncertain rules, otherwise none. |
 
 Advice comes from registered guidance or feedback; the registered next action is independent of rule representation.
-Sources are `code`, `fixed` or `editable`; text also retains owner/runtime
-ownership. A norm proposed by a peer does not become an owner instruction
-merely by being installed.
+Sources are `code`, `fixed` or `editable`. Rule provenance explains the
+decision and grants no caller privileges. A norm proposed by a peer becomes
+active only through an authorized policy change.
 
 `cause` describes the first deciding text rule, otherwise the first deciding rule:
 

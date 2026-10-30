@@ -159,7 +159,7 @@ Startup, owner history reads and catch-up replies verify that records agree with
 retained metadata, including every signature. Corruption prevents startup or fails the read and cannot form
 a reply. Storage changes preserve logical records, hashes and evidence.
 
-[Daemon persistence](../daemon/daemon.md#persistence) owns storage lifecycle and
+[Daemon persistence](../daemon/daemon.md#stored-state) owns storage lifecycle and
 restoration. [History versions](./conversation-representation.md#history-versions)
 own old signatures and pending traffic. [Wire formats](./conversation-representation.md)
 own exact content, bounds, preimages and validation.
