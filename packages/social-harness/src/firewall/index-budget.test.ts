@@ -1,7 +1,7 @@
 /** @file Installation budgets preserve usable policy and durable state across edits and startup. */
 
-import { scopedLive as it } from "@effect/vitest";
 import * as SqlClient from "@effect/sql/SqlClient";
+import { scopedLive as it } from "@effect/vitest";
 import { Effect, Array as EffectArray, Option, Queue } from "effect";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Configuration regressions compare exact owner-file bytes before and after installation.
 import { readFileSync, writeFileSync } from "node:fs";
@@ -29,7 +29,7 @@ import {
   type TextRule,
 } from "./config.js";
 import { type Firewall, type FirewallOptions, makeFirewall } from "./index.js";
-import { readFirewallPolicy, readFirewallActivations } from "./store/index.js";
+import { readFirewallActivations, readFirewallPolicy } from "./store/index.js";
 
 // @agent-code-guard/regression-only: Real SQLite, loaded documents and delivery exercise the installation boundary with deterministic provider judgments.
 

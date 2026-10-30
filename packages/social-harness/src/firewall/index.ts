@@ -18,8 +18,8 @@ import { AgentView } from "../identity/cards.js";
 import {
   captureInput,
   captureRegistration,
-  type CheckedGuidance,
   checkCapturedMessage,
+  type CheckedGuidance,
   type DecisionProvider,
   DecisionProviderError,
   decodeFrozen,
@@ -45,7 +45,7 @@ import {
   MAXIMUM_EDITABLE_RULES,
   type PolicyProblem,
   policyReadSchema,
-  policyUpdateResultSchema,
+  type policyUpdateResultSchema,
   policyUpdateSchema,
   PrivateCheckTrace,
   TextPolicySettings,
@@ -56,8 +56,8 @@ import {
   type FirewallActivation,
   type FirewallCompletion,
   readFirewallPolicy,
-  writeFirewallPolicy,
   withoutTraces,
+  writeFirewallPolicy,
 } from "./store/index.js";
 
 /** Code checks and provider resources remain fixed while text rules can change. */
@@ -127,111 +127,179 @@ const invalidRule = (
 ) => new FirewallPolicyError({ reason: "invalid-rule", problem, ...at });
 
 /** Construction validates the complete policy before seeding a missing document. */
-export const makeFirewall = Effect.fn("makeFirewall")(function* (
+export function makeFirewall(
   source: FirewallOptions | LoadedMessagePolicy,
-): Effect.fn.Return<Firewall, FirewallPolicyError, SqlClient.SqlClient> {
-  const sql = yield* SqlClient.SqlClient;
-  const options =
-    "policy" in source ? yield* configuredOptions(source) : source;
-  const captured = yield* captureOptions(options).pipe(
-    Effect.catchTags({
-      CheckInputError: () =>
+): Effect.Effect<Firewall, FirewallPolicyError, SqlClient.SqlClient> {
+  return Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const { captured, fixed, active } = yield* initialPolicy(source);
+    return yield* liveFirewall(sql, captured, fixed, active);
+  }).pipe(Effect.withSpan("makeFirewall"));
+}
+
+function initialPolicy(source: FirewallOptions | LoadedMessagePolicy) {
+  return Effect.gen(function* () {
+    const options =
+      "policy" in source ? yield* configuredOptions(source) : source;
+    const captured = yield* captureOptions(options).pipe(
+      Effect.catchTags({
+        CheckInputError: () =>
+          Effect.fail(new FirewallPolicyError({ reason: "build-failed" })),
+        ParseError: () =>
+          Effect.fail(new FirewallPolicyError({ reason: "build-failed" })),
+      }),
+      Effect.catchAllDefect(() =>
         Effect.fail(new FirewallPolicyError({ reason: "build-failed" })),
-      ParseError: () =>
+      ),
+    );
+    const fixed = yield* decodeFrozen(
+      policyReadSchema.fields.fixedRules,
+      fixedRules(captured),
+    ).pipe(
+      Effect.catchTag("ParseError", () =>
         Effect.fail(new FirewallPolicyError({ reason: "build-failed" })),
-    }),
-    Effect.catchAllDefect(() =>
-      Effect.fail(new FirewallPolicyError({ reason: "build-failed" })),
-    ),
-  );
-  const fixed = yield* decodeFrozen(
-    policyReadSchema.fields.fixedRules,
-    fixedRules(captured),
-  ).pipe(
-    Effect.mapError(() => new FirewallPolicyError({ reason: "build-failed" })),
-  );
-  const fixedIds = fixed.map((rule) => rule.id);
-  const stored = yield* readFirewallPolicy().pipe(
-    Effect.provideService(SqlClient.SqlClient, sql),
-    Effect.mapError(persistenceFailure),
-  );
-  const rules = yield* decodeFrozen(
-    editableDocumentSchema,
-    stored === undefined
-      ? (captured.text?.initialRules ?? [])
-      : (yield* decodeRuntimeValue(storedPolicySchema, stored).pipe(
-          Effect.mapError(persistenceFailure),
-        )).rules,
-  ).pipe(
-    Effect.mapError(
-      () =>
-        new FirewallPolicyError({
-          reason: stored === undefined ? "build-failed" : "persistence-failed",
-        }),
-    ),
-  );
-  yield* validateIds(rules, fixedIds);
-  let active = yield* buildPolicy(captured, rules);
-  if (stored === undefined) {
-    yield* persistRules(sql, rules);
-  }
-  const edits = yield* Effect.makeSemaphore(1);
-  const permits = yield* Effect.makeSemaphore(
-    captured.configuration.maximumConcurrentChecks,
-  );
-  const firewall: Firewall = {
-    configuration: captured.configuration,
-    readPolicy: () =>
-      Effect.sync(() => ({
-        rules: active.editableRules,
-        fixedRules: fixed,
-        activeRevision: active.configurationDigest,
-      })),
-    updatePolicy: (request) =>
-      edits.withPermits(1)(
+      ),
+    );
+    const { stored, rules } = yield* loadRules(captured);
+    yield* validateIds(
+      rules,
+      fixed.map((rule) => rule.id),
+    );
+    const active = yield* buildPolicy(captured, rules);
+    if (stored === undefined) {
+      yield* persistRules(rules);
+    }
+    return { captured, fixed, active };
+  });
+}
+
+function loadRules(options: CapturedOptions) {
+  return Effect.gen(function* () {
+    const stored = yield* readFirewallPolicy().pipe(
+      Effect.catchTag("EndpointStoreError", () =>
+        Effect.fail(persistenceFailure()),
+      ),
+    );
+    const selected =
+      stored === undefined
+        ? (options.text?.initialRules ?? [])
+        : (yield* decodeRuntimeValue(storedPolicySchema, stored).pipe(
+            Effect.catchTag("EndpointStoreError", () =>
+              Effect.fail(persistenceFailure()),
+            ),
+          )).rules;
+    const rules = yield* decodeFrozen(editableDocumentSchema, selected).pipe(
+      Effect.catchTag("ParseError", () =>
+        Effect.fail(
+          new FirewallPolicyError({
+            reason:
+              stored === undefined ? "build-failed" : "persistence-failed",
+          }),
+        ),
+      ),
+    );
+    return { stored, rules };
+  });
+}
+
+function liveFirewall(
+  sql: SqlClient.SqlClient,
+  options: CapturedOptions,
+  fixed: FixedRules,
+  initial: ActiveRules,
+) {
+  return Effect.gen(function* () {
+    let active = initial;
+    const fixedIds = fixed.map((rule) => rule.id);
+    const edits = yield* Effect.makeSemaphore(1);
+    const permits = yield* Effect.makeSemaphore(
+      options.configuration.maximumConcurrentChecks,
+    );
+    function activate(replacement: ActiveRules) {
+      active = replacement;
+    }
+    function updatePolicy(request: typeof policyUpdateSchema.Type) {
+      return edits.withPermits(1)(
         Effect.gen(function* () {
-          const change = yield* decodeFrozen(policyUpdateSchema, request).pipe(
-            Effect.mapError(() => invalidRule("schema")),
-            Effect.flatMap(resolvedChange),
-          );
-          const next = yield* editedRules(
+          const change = yield* preparePolicyChange(
+            options,
             active.editableRules,
             fixedIds,
-            change,
+            request,
           );
-          const replacement = yield* buildPolicy(captured, next);
-          yield* approveRuleChange();
-          return yield* Effect.uninterruptible(
-            persistRules(sql, next, {
-              time: yield* Clock.currentTimeMillis,
-              activeRevision: replacement.configurationDigest,
-              addedRuleIds: change.add.map((rule) => rule.id),
-              removedRuleIds: change.remove,
-            }).pipe(
-              Effect.zipRight(
-                Effect.sync(() => {
-                  active = replacement;
-                  return { activeRevision: active.configurationDigest };
-                }),
-              ),
-            ),
-          );
+          return yield* activatePolicy(sql, change, activate);
         }),
-      ),
-    check: (inputs) =>
-      Effect.suspend(() => {
-        const policy = active;
-        return Effect.forEach(
-          inputs,
-          (input) => permits.withPermits(1)(assess(captured, policy, input)),
-          {
-            concurrency: captured.configuration.maximumConcurrentChecks,
-          },
-        );
-      }),
-  };
-  return Object.freeze(firewall);
-});
+      );
+    }
+    const firewall: Firewall = {
+      configuration: options.configuration,
+      readPolicy: () =>
+        Effect.sync(() => ({
+          rules: active.editableRules,
+          fixedRules: fixed,
+          activeRevision: active.configurationDigest,
+        })),
+      updatePolicy,
+      check: (inputs) =>
+        Effect.suspend(() => checkBatch(options, active, permits, inputs)),
+    };
+    return Object.freeze(firewall);
+  });
+}
+
+function checkBatch(
+  options: CapturedOptions,
+  policy: ActiveRules,
+  permits: Effect.Semaphore,
+  inputs: readonly PreparedFirewallCheck[],
+) {
+  return Effect.forEach(
+    inputs,
+    (input) => permits.withPermits(1)(assess(options, policy, input)),
+    {
+      concurrency: options.configuration.maximumConcurrentChecks,
+    },
+  );
+}
+
+function preparePolicyChange(
+  options: CapturedOptions,
+  rules: readonly TextRule[],
+  fixedIds: readonly string[],
+  request: typeof policyUpdateSchema.Type,
+) {
+  return Effect.gen(function* () {
+    const change = yield* decodeFrozen(policyUpdateSchema, request).pipe(
+      Effect.catchTag("ParseError", () => Effect.fail(invalidRule("schema"))),
+      Effect.flatMap(resolvedChange),
+    );
+    const next = yield* editedRules(rules, fixedIds, change);
+    const replacement = yield* buildPolicy(options, next);
+    yield* approveRuleChange();
+    return { change, rules: next, replacement };
+  });
+}
+
+/** Persistence and the sole active-policy assignment complete in one interruption boundary. */
+function activatePolicy(
+  sql: SqlClient.SqlClient,
+  prepared: Effect.Effect.Success<ReturnType<typeof preparePolicyChange>>,
+  activate: (replacement: ActiveRules) => void,
+) {
+  return Effect.uninterruptible(
+    Effect.gen(function* () {
+      const { rules, replacement, change } = prepared;
+      yield* persistRules(rules, {
+        time: yield* Clock.currentTimeMillis,
+        activeRevision: replacement.configurationDigest,
+        addedRuleIds: change.add.map((rule) => rule.id),
+        removedRuleIds: change.remove,
+      });
+      activate(replacement);
+      return { activeRevision: replacement.configurationDigest };
+    }),
+  ).pipe(Effect.provideService(SqlClient.SqlClient, sql));
+}
 
 /** Approval remains permissive until the host's human-confirmation boundary is implemented. */
 function approveRuleChange(): Effect.Effect<void, FirewallPolicyError> {
@@ -479,14 +547,14 @@ function validateIds(
 }
 
 function persistRules(
-  sql: SqlClient.SqlClient,
   rules: readonly TextRule[],
   activation?: FirewallActivation,
 ) {
   return encodeRuntimeValue({ format: storedPolicyFormat, rules }).pipe(
     Effect.flatMap((bytes) => writeFirewallPolicy(bytes, activation)),
-    Effect.provideService(SqlClient.SqlClient, sql),
-    Effect.mapError(persistenceFailure),
+    Effect.catchTag("EndpointStoreError", () =>
+      Effect.fail(persistenceFailure()),
+    ),
   );
 }
 
@@ -529,20 +597,7 @@ function editedRules(
   { add, remove }: RuleChange,
 ) {
   return Effect.gen(function* () {
-    for (const [index, ruleId] of remove.entries()) {
-      const path: PolicyEditPath = ["remove", index];
-      if (fixedRuleIds.includes(ruleId)) {
-        return yield* new FirewallPolicyError({
-          reason: "fixed-rule",
-          ruleId,
-          path,
-        });
-      }
-      if (!rules.some((rule) => rule.id === ruleId)) {
-        return yield* invalidRule("unknown-id", { ruleId, path });
-      }
-    }
-    const kept = rules.filter((rule) => !remove.includes(rule.id));
+    const kept = yield* rulesAfterRemovals(rules, fixedRuleIds, remove);
     const ids = new Set(kept.map((rule) => rule.id));
     for (const [index, rule] of add.entries()) {
       const path: PolicyEditPath = ["add", index];
@@ -564,6 +619,29 @@ function editedRules(
     return yield* decodeFrozen(editableDocumentSchema, [...kept, ...add]).pipe(
       Effect.mapError(() => invalidRule("schema")),
     );
+  });
+}
+
+function rulesAfterRemovals(
+  rules: readonly TextRule[],
+  fixedRuleIds: readonly string[],
+  remove: readonly string[],
+) {
+  return Effect.gen(function* () {
+    for (const [index, ruleId] of remove.entries()) {
+      const path: PolicyEditPath = ["remove", index];
+      if (fixedRuleIds.includes(ruleId)) {
+        return yield* new FirewallPolicyError({
+          reason: "fixed-rule",
+          ruleId,
+          path,
+        });
+      }
+      if (!rules.some((rule) => rule.id === ruleId)) {
+        return yield* invalidRule("unknown-id", { ruleId, path });
+      }
+    }
+    return rules.filter((rule) => !remove.includes(rule.id));
   });
 }
 

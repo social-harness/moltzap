@@ -408,6 +408,15 @@ it("persists replacement of an initial rule across restart", () =>
     const configuration = yield* options(fixture().path);
     const directory = stateDirectory();
     const replacement = { ...INITIAL, text: "Ask before booking a meeting." };
+    const read = yield* replaceAndReopen(directory, configuration, replacement);
+    expect(read.rules).toContainEqual(replacement);
+  }));
+function replaceAndReopen(
+  directory: string,
+  configuration: Parameters<typeof makeFirewall>[0],
+  replacement: Omit<typeof INITIAL, "text"> & { readonly text: string },
+) {
+  return Effect.gen(function* () {
     yield* withDaemonStore(directory, () =>
       Effect.gen(function* () {
         const installed = yield* makeFirewall(configuration);
@@ -417,13 +426,12 @@ it("persists replacement of an initial rule across restart", () =>
         });
       }),
     );
-    yield* withDaemonStore(directory, () =>
+    return yield* withDaemonStore(directory, () =>
       Effect.gen(function* () {
         const reopened = yield* makeFirewall(configuration);
-        expect((yield* reopened.readPolicy()).rules).toContainEqual(
-          replacement,
-        );
+        return yield* reopened.readPolicy();
       }),
     );
-  }));
+  });
+}
 /* eslint-enable agent-code-guard/no-hardcoded-assertion-literals -- Restore defaults after policy edit contract assertions. */

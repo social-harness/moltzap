@@ -278,35 +278,12 @@ export const checkMessage = Effect.fn("Firewall.checkMessage")(function* (
 });
 
 /** Assessment and retained decisions share one validated, detached input. */
-export const checkCapturedMessage = Effect.fn("Firewall.checkCapturedMessage")(
-  function* (
-    input: Omit<CheckMessageInput, "event" | "context">,
-    captured: MiddlewareInput,
-  ): Effect.fn.Return<FirewallCheck, CheckInputError> {
-    const { event, context } = captured;
-    const message = event.message;
-    const references = [
-      message.id,
-      ...context.history.map((entry) => entry.id),
-      ...context.facts.map((entry) => entry.id),
-    ];
-    const attribution =
-      event.direction === "outgoing"
-        ? message.sender === context.agentId
-        : message.recipients.includes(context.agentId);
-    if (
-      !attribution ||
-      new Set(message.recipients).size !== message.recipients.length
-    ) {
-      return yield* new CheckInputError({ reason: "message" });
-    }
-    if (
-      new Set(references).size !== references.length ||
-      new Set(context.participants.map((participant) => participant.agentId))
-        .size !== context.participants.length
-    ) {
-      return yield* new CheckInputError({ reason: "context" });
-    }
+export function checkCapturedMessage(
+  input: Omit<CheckMessageInput, "event" | "context">,
+  captured: MiddlewareInput,
+): Effect.Effect<FirewallCheck, CheckInputError> {
+  return Effect.gen(function* () {
+    yield* validateEvidence(captured);
     const deadline =
       (yield* Clock.currentTimeMillis) + input.settings.timeoutMilliseconds;
     const checks: MiddlewareCheck[] = [];
@@ -337,8 +314,8 @@ export const checkCapturedMessage = Effect.fn("Firewall.checkCapturedMessage")(
       );
     }
     return composeDecision(captured.context, middleware, checks);
-  },
-);
+  }).pipe(Effect.withSpan("Firewall.checkCapturedMessage"));
+}
 
 /** Every installed entry is attributed, including a skipped or failed check. */
 export interface MiddlewareCheck extends MiddlewareObservation {
@@ -813,6 +790,26 @@ export function decidingRules(
   return [...unique.values()];
 }
 
+/** Detaches and freezes message evidence before assessment or retention can observe it. */
+export function captureInput(event: MessageEvent, context: MessageContext) {
+  return Effect.gen(function* () {
+    const capturedEvent = yield* decodeFrozen(
+      MiddlewareInput.fields.event,
+      event,
+    ).pipe(
+      Effect.catchTag("ParseError", () =>
+        Effect.fail(new CheckInputError({ reason: "message" })),
+      ),
+    );
+    const capturedContext = yield* decodeFrozen(MessageContext, context).pipe(
+      Effect.catchTag("ParseError", () =>
+        Effect.fail(new CheckInputError({ reason: "context" })),
+      ),
+    );
+    return Object.freeze({ event: capturedEvent, context: capturedContext });
+  }).pipe(Effect.withSpan("Firewall.captureInput"));
+}
+
 /**
  * Inspect the full cause before capturing failures so cleanup cannot erase cancellation.
  * @param check One bounded check whose interruption must propagate.
@@ -850,24 +847,32 @@ function freezeData(value: unknown): void {
   Object.freeze(value);
 }
 
-/** Detaches and freezes message evidence before assessment or retention can observe it. */
-export function captureInput(event: MessageEvent, context: MessageContext) {
-  return Effect.gen(function* () {
-    const capturedEvent = yield* decodeFrozen(
-      MiddlewareInput.fields.event,
-      event,
-    ).pipe(
-      Effect.catchTag("ParseError", () =>
-        Effect.fail(new CheckInputError({ reason: "message" })),
-      ),
-    );
-    const capturedContext = yield* decodeFrozen(MessageContext, context).pipe(
-      Effect.catchTag("ParseError", () =>
-        Effect.fail(new CheckInputError({ reason: "context" })),
-      ),
-    );
-    return Object.freeze({ event: capturedEvent, context: capturedContext });
-  }).pipe(Effect.withSpan("Firewall.captureInput"));
+/** Attribution and reference identity are checked once against the captured evidence. */
+function validateEvidence({ event, context }: MiddlewareInput) {
+  const { message } = event;
+  const references = [
+    message.id,
+    ...context.history.map((entry) => entry.id),
+    ...context.facts.map((entry) => entry.id),
+  ];
+  const attributed =
+    event.direction === "outgoing"
+      ? message.sender === context.agentId
+      : message.recipients.includes(context.agentId);
+  if (
+    !attributed ||
+    new Set(message.recipients).size !== message.recipients.length
+  ) {
+    return Effect.fail(new CheckInputError({ reason: "message" }));
+  }
+  if (
+    new Set(references).size !== references.length ||
+    new Set(context.participants.map((participant) => participant.agentId))
+      .size !== context.participants.length
+  ) {
+    return Effect.fail(new CheckInputError({ reason: "context" }));
+  }
+  return Effect.void;
 }
 
 /** Code policies receive exactly the same reference and advice validation as text. */
@@ -1446,27 +1451,12 @@ function checkText(
       provider,
     );
     const responseExpectations = readResponseExpectations(expectations);
-    const compliance = yield* (
-      check.event.direction === "outgoing" &&
-      expectations.status !== "empty" &&
-      expectations.status !== "answered"
-        ? Effect.succeed<PolicyStageTrace>({
-            stage: "compliance",
-            status: "unavailable",
-            dependency: "expectations",
-            elapsedMilliseconds: 0,
-          })
-        : assessQuestions(
-            makeTextRequest(
-              "compliance",
-              check,
-              settings.maximumRequestBytes,
-              check.event.direction === "outgoing" ? responseExpectations : [],
-            ),
-            settings,
-            provider,
-          )
-    ).pipe(Effect.withSpan("TextPolicy.compliance"));
+    const compliance = yield* assessCompliance(
+      check,
+      { trace: expectations, responses: responseExpectations },
+      settings,
+      provider,
+    );
     const trace = [applicability, expectations, compliance];
     return {
       findings: [
@@ -1480,6 +1470,43 @@ function checkText(
       },
     };
   }).pipe(Effect.withSpan("TextPolicy.check"));
+}
+
+function assessCompliance(
+  check: TextCheck,
+  expectations: {
+    readonly trace: PolicyStageTrace;
+    readonly responses: readonly ResponseExpectation[];
+  },
+  settings: TextPolicySettings,
+  provider?: DecisionProvider,
+) {
+  return Effect.suspend(() => {
+    if (
+      check.event.direction === "outgoing" &&
+      expectations.trace.status !== "empty" &&
+      expectations.trace.status !== "answered"
+    ) {
+      return Effect.succeed<PolicyStageTrace>({
+        stage: "compliance",
+        status: "unavailable",
+        dependency: "expectations",
+        elapsedMilliseconds: 0,
+      });
+    }
+    const expected =
+      check.event.direction === "outgoing" ? expectations.responses : [];
+    return assessQuestions(
+      makeTextRequest(
+        "compliance",
+        check,
+        settings.maximumRequestBytes,
+        expected,
+      ),
+      settings,
+      provider,
+    );
+  }).pipe(Effect.withSpan("TextPolicy.compliance"));
 }
 
 function forDirection(
