@@ -1,5 +1,7 @@
 /** @file Recovery of durable action-certified-record send obligations. */
 
+import type * as SqlClient from "@effect/sql/SqlClient";
+import * as Store from "../../store/index.js";
 import { Effect, Schema } from "effect";
 import type { DisseminationObligation } from "../../store/index.js";
 import type { EngineActionFold, EngineRuntime } from "../engine-context.js";
@@ -20,11 +22,11 @@ import {
 export function resumeDisseminationObligations(
   runtime: EngineRuntime,
   conversationId?: string,
-): Effect.Effect<void, RouterWorkerPersistenceError> {
+): Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient> {
   return runtime.gate.withPermits(1)(
     (conversationId === undefined
-      ? runtime.input.store.recover()
-      : runtime.input.store.recover(conversationId)
+      ? Store.recover()
+      : Store.recover(conversationId)
     ).pipe(
       Effect.mapError(persistenceFailure),
       Effect.flatMap((recovery) =>
@@ -43,7 +45,7 @@ export function resumeDisseminationObligations(
 function attachObligation(
   runtime: EngineRuntime,
   obligation: DisseminationObligation,
-): Effect.Effect<void, RouterWorkerPersistenceError> {
+): Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
     const fold = yield* obligationFold(runtime, obligation);
     const packet = yield* packetForObligation(fold);
@@ -58,7 +60,11 @@ function attachObligation(
 function obligationFold(
   runtime: EngineRuntime,
   obligation: DisseminationObligation,
-): Effect.Effect<EngineActionFold, RouterWorkerPersistenceError> {
+): Effect.Effect<
+  EngineActionFold,
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> {
   return Schema.decodeUnknown(RecordHash)(obligation.recordHash).pipe(
     Effect.mapError(persistenceFailure),
     Effect.flatMap((recordHash) => {
@@ -73,7 +79,11 @@ function obligationFold(
 
 function packetForObligation(
   fold: EngineActionFold,
-): Effect.Effect<ActionCertifiedRecord, RouterWorkerPersistenceError> {
+): Effect.Effect<
+  ActionCertifiedRecord,
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> {
   return recordAnchorHash(fold).pipe(
     Effect.flatMap((anchorHash) => makeActionCertifiedRecord(fold, anchorHash)),
     Effect.mapError(persistenceFailure),

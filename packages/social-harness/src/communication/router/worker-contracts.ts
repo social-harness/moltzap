@@ -16,7 +16,6 @@ import type {
 import type { AgentId } from "../../identity/identifiers.js";
 import type { Registry } from "../../identity/index.js";
 import type { AgentSigningAuthority } from "../../identity/keys.js";
-import type { EndpointStore } from "../store/index.js";
 import type { Router } from "./api/client.js";
 import type { PollCursor, RouterInstanceId } from "./api/contract.js";
 
@@ -132,12 +131,6 @@ export interface RouterWorkerRecovery {
   readonly anchor: RouterTailAnchor;
 }
 
-/** Durable operations required by the Router transport and no other worker path. */
-type RouterWorkerOutbox = Pick<
-  EndpointStore,
-  "enqueueOutbound" | "beginOutbound" | "completeOutbound"
->;
-
 /** Private endpoint callbacks around the Router worker's ordering boundary. */
 export interface RouterWorkerCallbacks<Payload> {
   readonly pinSenderCard: (
@@ -166,7 +159,6 @@ export interface RouterWorkerInput<Payload> {
   /** Durable membership cards available before Registry connectivity. */
   readonly pinnedSenderCards: readonly VerifiedAgentCard[];
   readonly signingAuthority: AgentSigningAuthority;
-  readonly outbox: RouterWorkerOutbox;
   readonly callbacks: RouterWorkerCallbacks<Payload>;
 }
 

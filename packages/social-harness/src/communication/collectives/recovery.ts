@@ -1,6 +1,10 @@
 /** @file Rebuild collective working state from retained decisions and certified history. */
+
+import type * as SqlClient from "@effect/sql/SqlClient";
+import * as Store from "../store/index.js";
 import { Clock, Effect, Fiber, Option, Schema } from "effect";
-import type { MessageClassifier } from "./ports.js";
+import type { CertifiedMessage } from "./ports.js";
+import type { InboundItem } from "./inbound.js";
 import type { OpenRequest, ReceivedRequest } from "./received-request.js";
 import type { HeldClose } from "./shared-answers.js";
 import { AgentCard, AgentView } from "../../identity/cards.js";
@@ -40,33 +44,39 @@ import {
 export interface RecoveryActions {
   readonly open: (
     prepared: PreparedGather,
-  ) => Effect.Effect<void, CollectiveError>;
-  readonly classify: MessageClassifier;
+  ) => Effect.Effect<void, CollectiveError, SqlClient.SqlClient>;
+  readonly classify: (
+    message: CertifiedMessage,
+  ) => Effect.Effect<
+    Option.Option<InboundItem>,
+    CollectiveEmitError,
+    SqlClient.SqlClient
+  >;
   readonly restoreResponse: (
     message: StoredCollectiveMessage,
-  ) => Effect.Effect<void, EndpointStoreError>;
+  ) => Effect.Effect<void, EndpointStoreError, SqlClient.SqlClient>;
   readonly close: (
     asked: OpenRequest<
       Extract<ReceivedRequest, { readonly kind: "all_gather" }>
     >,
     close: HeldClose,
-  ) => Effect.Effect<void, CollectiveEmitError>;
+  ) => Effect.Effect<void, CollectiveEmitError, SqlClient.SqlClient>;
   readonly complete: (
     operationId: CollectiveId,
-  ) => Effect.Effect<void, CollectiveEmitError>;
+  ) => Effect.Effect<void, CollectiveEmitError, SqlClient.SqlClient>;
   readonly refuse: (
     operationId: CollectiveId,
     refusal: RequestRefusal,
-  ) => Effect.Effect<void>;
+  ) => Effect.Effect<void, never, SqlClient.SqlClient>;
 }
 
 /** Recover decisions before deadlines, close processing, or host sends resume. */
 export function recoverCollectives(
   state: CollectiveState,
   actions: RecoveryActions,
-): Effect.Effect<void, EndpointStoreError> {
+): Effect.Effect<void, EndpointStoreError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
-    const operations = yield* state.ports.store.readCollectiveOperations();
+    const operations = yield* Store.readCollectiveOperations();
     for (const operation of operations) {
       const operationId = yield* storedValue(
         CollectiveId,
@@ -84,8 +94,8 @@ export function recoverCollectives(
     }
     yield* restoreCountedAnswers(state);
     const prepared = yield* restoreOperations(state, actions);
-    const messages = yield* state.ports.store.readCollectiveMessages();
-    const refusals = yield* state.ports.store.readCollectiveRefusals();
+    const messages = yield* Store.readCollectiveMessages();
+    const refusals = yield* Store.readCollectiveRefusals();
     const claims = claimedRequestDestinations(messages, refusals);
     yield* replayDeliveries(state, actions, messages);
     yield* restoreRefusals(state, refusals);
@@ -124,7 +134,7 @@ function replayDeliveries(
       .filter((message) => message.role === "response")
       .map((message) => [message.operationId, message]),
   );
-  return state.ports.store.readRetainedDeliveries().pipe(
+  return Store.readRetainedDeliveries().pipe(
     Effect.flatMap((deliveries) =>
       Effect.forEach(
         deliveries,
@@ -167,7 +177,7 @@ function claimedRequestDestinations(
 
 function restoreCountedAnswers(state: CollectiveState) {
   return Effect.gen(function* () {
-    const answers = yield* state.ports.store.readCollectiveAnswers();
+    const answers = yield* Store.readCollectiveAnswers();
     for (const reference of answers) {
       const operationId = yield* storedValue(
         CollectiveId,

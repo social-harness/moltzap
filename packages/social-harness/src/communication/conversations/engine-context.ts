@@ -4,6 +4,7 @@
  * phase can depend on it without depending on another phase.
  */
 
+import type * as SqlClient from "@effect/sql/SqlClient";
 import type { Deferred, Effect, Scope } from "effect";
 import type { ClientRepresentationError } from "../../encoding/canonical-json.js";
 import type { VerifiedAgentCard } from "../../identity/cards.js";
@@ -35,7 +36,7 @@ import type {
   RouterWorkerPersistenceError,
   RouterWorkerSendError,
 } from "../router/index.js";
-import type { EndpointStore, EndpointStoreError } from "../store/index.js";
+import type { EndpointStoreError } from "../store/index.js";
 import type { AddressRegistryPort } from "./address.js";
 import type { SendError } from "./errors.js";
 
@@ -51,7 +52,6 @@ export interface EndpointEngineInput {
   readonly signingAuthority: AgentSigningAuthority;
   readonly registrySignerPublicKey: Ed25519PublicKey;
   readonly registry: AddressRegistryPort;
-  readonly store: EndpointStore;
   readonly routerWorker: EngineRouterPort;
   /**
    * Report a store failure that may leave a message's intent bound but not
@@ -173,12 +173,12 @@ export interface EngineOutbox {
   readonly queuePacket: (
     conversation: EngineConversation,
     packet: DirectPacket,
-  ) => Effect.Effect<void, EngineOutboxError>;
+  ) => Effect.Effect<void, EngineOutboxError, SqlClient.SqlClient>;
   /** Relay stable inner evidence; its signer attribution is unchanged. */
   readonly queueEvidence: (
     conversation: EngineConversation,
     evidence: SignedMessage,
-  ) => Effect.Effect<void, EngineOutboxError>;
+  ) => Effect.Effect<void, EngineOutboxError, SqlClient.SqlClient>;
   /**
    * Send an action-certified record and attach its envelope to the durable
    * obligation staged with it, so a restart resends it only when unattached.
@@ -186,7 +186,7 @@ export interface EngineOutbox {
   readonly queueActionCertifiedRecord: (
     conversation: EngineConversation,
     packet: ActionCertifiedRecord,
-  ) => Effect.Effect<void, EngineOutboxError>;
+  ) => Effect.Effect<void, EngineOutboxError, SqlClient.SqlClient>;
   /**
    * Stage an envelope that `sign` returned; any other `SignedMessage` would
    * skip the outbox's signing.
@@ -194,7 +194,7 @@ export interface EngineOutbox {
   readonly enqueueSigned: (
     conversationId: ConversationId,
     message: SignedMessage,
-  ) => Effect.Effect<void, EngineOutboxError>;
+  ) => Effect.Effect<void, EngineOutboxError, SqlClient.SqlClient>;
   readonly resume: (envelopeIds: readonly string[]) => Effect.Effect<void>;
   /** Forget every queued identity; the store keeps the envelopes. */
   readonly clear: () => void;
@@ -202,9 +202,17 @@ export interface EngineOutbox {
   readonly serialized: <A, E, R>(
     effect: Effect.Effect<A, E, R>,
   ) => Effect.Effect<A, E, R>;
-  readonly drain: Effect.Effect<void, RouterWorkerSendError>;
+  readonly drain: Effect.Effect<
+    void,
+    RouterWorkerSendError,
+    SqlClient.SqlClient
+  >;
   /** Drain on every wake; ends only with a fatal worker failure. */
-  readonly run: Effect.Effect<never, RouterWorkerSendError>;
+  readonly run: Effect.Effect<
+    never,
+    RouterWorkerSendError,
+    SqlClient.SqlClient
+  >;
 }
 
 /**
@@ -216,36 +224,44 @@ export interface EnginePhases {
   readonly proposeIntent: (
     runtime: EngineRuntime,
     intent: EngineMessageIntent,
-  ) => Effect.Effect<ActionHash, SendError>;
+  ) => Effect.Effect<ActionHash, SendError, SqlClient.SqlClient>;
   readonly acceptIngress: (
     runtime: EngineRuntime,
     ingress: RouterWorkerIngress<DecodedOuterBody>,
     statement?: EvidenceStatement,
-  ) => Effect.Effect<RouterIngressDisposition, RouterWorkerPersistenceError>;
+  ) => Effect.Effect<
+    RouterIngressDisposition,
+    RouterWorkerPersistenceError,
+    SqlClient.SqlClient
+  >;
   readonly acceptRecoveryIngress: (
     runtime: EngineRuntime,
     ingress: RouterWorkerIngress<DecodedOuterBody>,
-  ) => Effect.Effect<RouterIngressDisposition, RouterWorkerPersistenceError>;
+  ) => Effect.Effect<
+    RouterIngressDisposition,
+    RouterWorkerPersistenceError,
+    SqlClient.SqlClient
+  >;
   /** Resume the evidence work of one recovered conversation's folds. */
   readonly resumeFolds: (
     runtime: EngineRuntime,
     conversationId: ConversationId,
-  ) => Effect.Effect<void, RouterWorkerPersistenceError>;
+  ) => Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient>;
   /** Re-attach one recovered conversation's dissemination obligations. */
   readonly resumeDissemination: (
     runtime: EngineRuntime,
     conversationId: ConversationId,
-  ) => Effect.Effect<void, RouterWorkerPersistenceError>;
+  ) => Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient>;
   /** Arm catch-up again for a conversation whose retries ran out. */
   readonly rearmCatchUp: (
     runtime: EngineRuntime,
     conversationId: ConversationId,
-  ) => Effect.Effect<void>;
+  ) => Effect.Effect<void, never, SqlClient.SqlClient>;
   /** Restart recovery after either form of certification promotes a fenced head. */
   readonly headAdvanced: (
     runtime: EngineRuntime,
     conversationId: ConversationId,
-  ) => Effect.Effect<void, RouterWorkerPersistenceError>;
+  ) => Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient>;
   /** Whether a conversation is still fenced while it recovers. */
   readonly isRecovering: (
     runtime: EngineRuntime,

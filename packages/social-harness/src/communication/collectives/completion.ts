@@ -1,4 +1,7 @@
 /** @file Records answers and completes collective operations this endpoint starts. */
+
+import type * as SqlClient from "@effect/sql/SqlClient";
+import * as Store from "../store/index.js";
 import { Clock, Effect, Exit, Fiber } from "effect";
 import type { SendError } from "../conversations/errors.js";
 import type { InboundMessage } from "../conversations/message.js";
@@ -38,7 +41,7 @@ export function recordRefusal(
   state: CollectiveState,
   operationId: CollectiveId,
   refusal: RequestRefusal,
-): Effect.Effect<void> {
+): Effect.Effect<void, never, SqlClient.SqlClient> {
   if (
     refusal.reason === "delivery-pending" ||
     refusal.reason === "outcome-unknown"
@@ -57,7 +60,7 @@ export function recordRefusal(
             state,
             encodeRuntimeValue(refusal).pipe(
               Effect.flatMap((canonicalRefusal) =>
-                state.ports.store.recordCollectiveRefusal({
+                Store.recordCollectiveRefusal({
                   operationId,
                   destination: refusal.member,
                   canonicalRefusal,
@@ -88,7 +91,7 @@ export function updateGather(
   state: CollectiveState,
   operationId: CollectiveId,
   change: (open: OpenGather) => void,
-): Effect.Effect<void, CollectiveEmitError> {
+): Effect.Effect<void, CollectiveEmitError, SqlClient.SqlClient> {
   return state.transitions
     .withPermits(1)(
       Effect.sync(() => {
@@ -109,7 +112,7 @@ export function openGather(
   state: CollectiveState,
   prepared: PreparedGather,
   requestsSettled: boolean,
-): Effect.Effect<void, CollectiveError> {
+): Effect.Effect<void, CollectiveError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
     if (
       !state.recovering &&
@@ -151,7 +154,7 @@ export function openGather(
 export function releaseUnboundGather(
   state: CollectiveState,
   operationId: CollectiveId,
-): Effect.Effect<void> {
+): Effect.Effect<void, never, SqlClient.SqlClient> {
   return durableEmit(state, refreshRetained(state, operationId)).pipe(
     Effect.flatMap(() =>
       state.retained.has(operationId)
@@ -168,7 +171,7 @@ export function releaseUnboundGather(
 export function armRetainedGather(
   state: CollectiveState,
   operationId: CollectiveId,
-): Effect.Effect<void> {
+): Effect.Effect<void, never, SqlClient.SqlClient> {
   return durableEmit(state, refreshRetained(state, operationId)).pipe(
     Effect.flatMap(() =>
       state.transitions.withPermits(1)(
@@ -201,7 +204,7 @@ export function recordCountedAnswer(
   open: OpenGather,
   certified: CertifiedMessage,
   value: ResponseValue,
-): Effect.Effect<void, CollectiveEmitError> {
+): Effect.Effect<void, CollectiveEmitError, SqlClient.SqlClient> {
   return state.transitions
     .withPermits(1)(
       Effect.uninterruptible(
@@ -248,7 +251,7 @@ export function recordCountedAnswer(
 export function completeGather(
   state: CollectiveState,
   operationId: CollectiveId,
-): Effect.Effect<void, CollectiveEmitError> {
+): Effect.Effect<void, CollectiveEmitError, SqlClient.SqlClient> {
   return Effect.uninterruptibleMask((restore) =>
     state.transitions
       .withPermits(1)(takeGatherCompletion(state, operationId))
@@ -276,15 +279,14 @@ export function completeGather(
 export function forgetGather(
   state: CollectiveState,
   operationId: CollectiveId,
-): Effect.Effect<boolean, SendError> {
-  const { store } = state.ports;
+): Effect.Effect<boolean, SendError, SqlClient.SqlClient> {
   return state.transitions
     .withPermits(1)(
       Effect.uninterruptible(
         Effect.gen(function* () {
           const operation = yield* durableSend(
             state,
-            store.readCollectiveOperation(operationId),
+            Store.readCollectiveOperation(operationId),
           );
           if (operation !== undefined && operation.phase !== "collecting") {
             return;
@@ -296,7 +298,7 @@ export function forgetGather(
             );
             yield* durableSend(
               state,
-              store.retireCollectiveOperation(operationId, selection),
+              Store.retireCollectiveOperation(operationId, selection),
             );
           }
           const open = state.gathers.get(operationId);
@@ -331,7 +333,7 @@ export function forgetGather(
 export function markRefused(
   state: CollectiveState,
   operationId: CollectiveId,
-): Effect.Effect<void> {
+): Effect.Effect<void, never, SqlClient.SqlClient> {
   return Effect.suspend(() =>
     state.announced.delete(operationId)
       ? closedSpan(operationId, "refused")
@@ -342,7 +344,7 @@ export function markRefused(
 function completeAnsweredGather(
   state: CollectiveState,
   operationId: CollectiveId,
-): Effect.Effect<void, CollectiveEmitError> {
+): Effect.Effect<void, CollectiveEmitError, SqlClient.SqlClient> {
   return Effect.suspend(() => {
     const open = state.gathers.get(operationId);
     if (open === undefined) {
@@ -384,12 +386,11 @@ function freezeResult(
   state: CollectiveState,
   operationId: CollectiveId,
   open: OpenGather,
-): Effect.Effect<CollectiveClosure, CollectiveEmitError> {
+): Effect.Effect<CollectiveClosure, CollectiveEmitError, SqlClient.SqlClient> {
   return durableEmit(
     state,
     Effect.gen(function* () {
-      const operation =
-        yield* state.ports.store.readCollectiveOperation(operationId);
+      const operation = yield* Store.readCollectiveOperation(operationId);
       if (operation?.canonicalSelection !== undefined) {
         const selection = yield* readCollectiveSelection(
           operation.canonicalSelection,
@@ -412,10 +413,7 @@ function freezeResult(
           recordHash,
         })),
       });
-      yield* state.ports.store.finalizeCollectiveOperation(
-        operationId,
-        selection,
-      );
+      yield* Store.finalizeCollectiveOperation(operationId, selection);
       return closure;
     }),
   ).pipe(Effect.withSpan("freezeResult"));
@@ -433,7 +431,7 @@ function finishGather(
     readonly announced: boolean;
     readonly closure: CollectiveClosure;
   },
-): Effect.Effect<void, CollectiveEmitError> {
+): Effect.Effect<void, CollectiveEmitError, SqlClient.SqlClient> {
   const close = (outcome: ClosedOutcome) =>
     announced ? closedSpan(operationId, outcome) : Effect.void;
   const result: CollectiveResultItem = {
@@ -481,10 +479,8 @@ function retainCountedAnswer(
       return false;
     }
     return (
-      (yield* durableEmit(
-        state,
-        state.ports.store.recordCollectiveAnswer(answer),
-      )) === answer.recordHash
+      (yield* durableEmit(state, Store.recordCollectiveAnswer(answer))) ===
+      answer.recordHash
     );
   });
 }
@@ -508,7 +504,7 @@ function answeredInConversation(
 function releaseGather(
   state: CollectiveState,
   operationId: CollectiveId,
-): Effect.Effect<void> {
+): Effect.Effect<void, never, SqlClient.SqlClient> {
   return Effect.suspend(() => {
     const open = state.gathers.get(operationId);
     state.gathers.delete(operationId);

@@ -3,6 +3,8 @@
  * composition, and the assembly that binds the phases into one engine.
  */
 
+import * as SqlClient from "@effect/sql/SqlClient";
+import * as Store from "../store/index.js";
 import { Data, Deferred, Duration, Effect, Schema, type Scope } from "effect";
 import type {
   RouterDiscontinuityReason,
@@ -393,7 +395,7 @@ const finishPreparedSend = (
 const send = (
   runtime: EngineRuntime,
   input: EngineSendInput,
-): Effect.Effect<EngineSentMessage, SendError> =>
+): Effect.Effect<EngineSentMessage, SendError, SqlClient.SqlClient> =>
   Effect.gen(function* () {
     const prepared = yield* prepareSend(runtime, input).pipe(
       Effect.catchTag("RecipientResolutionError", (error) =>
@@ -404,10 +406,12 @@ const send = (
     return yield* finishPreparedSend(runtime, accepted);
   }).pipe(Effect.withSpan("EndpointEngine.send"));
 
-const readPendingMessages = (
-  runtime: EngineRuntime,
-): Effect.Effect<readonly EnginePendingMessage[], ListenError> =>
-  runtime.input.store.readPendingDeliveries().pipe(
+const readPendingMessages = (): Effect.Effect<
+  readonly EnginePendingMessage[],
+  ListenError,
+  SqlClient.SqlClient
+> =>
+  Store.readPendingDeliveries().pipe(
     Effect.mapError(listenStoreFailure),
     Effect.flatMap((deliveries) =>
       Effect.forEach(
@@ -430,12 +434,12 @@ const readPendingMessages = (
   );
 
 const acknowledgeMessage = (
-  runtime: EngineRuntime,
   deliveryToken: DeliveryToken,
-): Effect.Effect<void, DeliveryAcknowledgeError> =>
-  runtime.input.store
-    .acknowledgeDelivery(deliveryToken)
-    .pipe(Effect.mapError(acknowledgeStoreFailure), Effect.asVoid);
+): Effect.Effect<void, DeliveryAcknowledgeError, SqlClient.SqlClient> =>
+  Store.acknowledgeDelivery(deliveryToken).pipe(
+    Effect.mapError(acknowledgeStoreFailure),
+    Effect.asVoid,
+  );
 
 const validateLocalIdentity = (
   input: EndpointEngineInput,
@@ -447,10 +451,10 @@ const validateLocalIdentity = (
 
 const bindLocalIdentity = (
   input: EndpointEngineInput,
-): Effect.Effect<void, EngineInitializationError> =>
+): Effect.Effect<void, EngineInitializationError, SqlClient.SqlClient> =>
   encodeCanonical(AgentCard, input.localAgentCard).pipe(
     Effect.flatMap((canonicalAgentCard) =>
-      input.store.bindIdentity({
+      Store.bindIdentity({
         agentId: input.localAgentCard.agentId,
         canonicalAgentCard,
       }),
@@ -474,7 +478,7 @@ const makeRuntime = (
   input: EndpointEngineInput,
   recovered: Effect.Effect.Success<ReturnType<typeof recoverEngineState>>,
   scope: Scope.Scope,
-): Effect.Effect<EngineRuntime> =>
+): Effect.Effect<EngineRuntime, never, SqlClient.SqlClient> =>
   Effect.gen(function* () {
     return {
       input,
@@ -499,7 +503,7 @@ const hydrateMessageIntents = (
   messageIntents: Effect.Effect.Success<
     ReturnType<typeof recoverEngineState>
   >["messageIntents"],
-): Effect.Effect<void, EngineInitializationError> =>
+): Effect.Effect<void, EngineInitializationError, SqlClient.SqlClient> =>
   Effect.forEach(
     messageIntents,
     (stored) =>
@@ -526,13 +530,17 @@ const hydrateMessageIntents = (
 
 const initializeRuntime = (
   input: EndpointEngineInput,
-): Effect.Effect<EngineRuntime, EngineInitializationError, Scope.Scope> =>
+): Effect.Effect<
+  EngineRuntime,
+  EngineInitializationError,
+  Scope.Scope | SqlClient.SqlClient
+> =>
   Effect.gen(function* () {
     yield* validateLocalIdentity(input);
     yield* bindLocalIdentity(input);
-    const recovery = yield* input.store
-      .recover()
-      .pipe(Effect.mapError(initializationStoreFailure));
+    const recovery = yield* Store.recover().pipe(
+      Effect.mapError(initializationStoreFailure),
+    );
     const recovered = yield* recoverEngineState(input, recovery).pipe(
       Effect.mapError(recoveryInitializationFailure),
     );
@@ -563,7 +571,7 @@ const resumeRuntime = (runtime: EngineRuntime) =>
 const abandonVolatileFolds = (
   runtime: EngineRuntime,
   reason: RouterDiscontinuityReason,
-): Effect.Effect<void> =>
+): Effect.Effect<void, never, SqlClient.SqlClient> =>
   runtime.gate
     .withPermits(1)(
       Effect.gen(function* () {
@@ -582,53 +590,64 @@ const abandonVolatileFolds = (
     )
     .pipe(Effect.withSpan("abandonVolatileFolds", { attributes: { reason } }));
 
-const endpointEngine = (runtime: EngineRuntime): EndpointEngine =>
-  Object.freeze({
-    prepare: (input: EngineSendInput) => prepareSend(runtime, input),
+const endpointEngine = (
+  runtime: EngineRuntime,
+  sql: SqlClient.SqlClient,
+): EndpointEngine => {
+  const provideSql = Effect.provideService(SqlClient.SqlClient, sql);
+  return Object.freeze({
+    prepare: (input: EngineSendInput) =>
+      prepareSend(runtime, input).pipe(provideSql),
     accept: <E>(prepared: PreparedSend, hold: BindHold<E>) =>
       acceptSend(runtime, prepared, hold).pipe(
         Effect.map((accepted) => ({
-          certified: finishPreparedSend(runtime, accepted),
+          certified: finishPreparedSend(runtime, accepted).pipe(provideSql),
         })),
+        provideSql,
       ),
     observeMessage: (msgId: MsgId) => observeMessage(runtime, msgId),
-    send: (sendInput: Parameters<EndpointEngine["send"]>[0]) =>
-      send(runtime, sendInput),
-    resolveAddress: (to: Parameters<EndpointEngine["resolveAddress"]>[0]) =>
-      resolveAddress(runtime, to),
-    resolveConversation: (
-      to: Parameters<EndpointEngine["resolveConversation"]>[0],
-    ) => resolveConversation(runtime, to),
-    readPendingMessages: () => readPendingMessages(runtime),
-    acknowledgeMessage: (
-      deliveryToken: Parameters<EndpointEngine["acknowledgeMessage"]>[0],
-    ) => acknowledgeMessage(runtime, deliveryToken),
-    acceptRouterIngress: (
-      ingress: Parameters<EndpointEngine["acceptRouterIngress"]>[0],
-    ) => acceptEngineIngressWithRecovery(runtime, ingress),
-    recoverCertifiedHistory: (
-      recovery: Parameters<EndpointEngine["recoverCertifiedHistory"]>[0],
-    ) => recoverCertifiedHistory(runtime, recovery),
-    drainOutbound: runtime.outbox.drain.pipe(Effect.mapError(outboundFailure)),
-    runOutbound: runtime.outbox.run.pipe(Effect.mapError(outboundFailure)),
-    abandonVolatileFolds: (
-      reason: Parameters<EndpointEngine["abandonVolatileFolds"]>[0],
-    ) => abandonVolatileFolds(runtime, reason),
-    rearmCatchUp: rearmPausedCatchUp(runtime),
+    send: (input: EngineSendInput) => send(runtime, input).pipe(provideSql),
+    resolveAddress: (to: MessageAddressInput) =>
+      resolveAddress(runtime, to).pipe(provideSql),
+    resolveConversation: (to: MessageAddressInput) =>
+      resolveConversation(runtime, to).pipe(provideSql),
+    readPendingMessages: () => readPendingMessages().pipe(provideSql),
+    acknowledgeMessage: (token: DeliveryToken) =>
+      acknowledgeMessage(token).pipe(provideSql),
+    acceptRouterIngress: (ingress: RouterWorkerIngress<DecodedOuterBody>) =>
+      acceptEngineIngressWithRecovery(runtime, ingress).pipe(provideSql),
+    recoverCertifiedHistory: (recovery: RouterWorkerRecovery) =>
+      recoverCertifiedHistory(runtime, recovery).pipe(provideSql),
+    drainOutbound: runtime.outbox.drain.pipe(
+      Effect.mapError(outboundFailure),
+      provideSql,
+    ),
+    runOutbound: runtime.outbox.run.pipe(
+      Effect.mapError(outboundFailure),
+      provideSql,
+    ),
+    abandonVolatileFolds: (reason: RouterDiscontinuityReason) =>
+      abandonVolatileFolds(runtime, reason).pipe(provideSql),
+    rearmCatchUp: rearmPausedCatchUp(runtime).pipe(provideSql),
   });
+};
 
 /**
  * Build one coherent private engine over registered identity and durable state.
- * @param input Verified identity, storage, Registry, and Router dependencies.
+ * @param input Verified identity, Registry and Router dependencies.
  * @returns A scoped engine whose recovered state is ready for protocol work.
  */
 export const makeEndpointEngine = (
   input: EndpointEngineInput,
-): Effect.Effect<EndpointEngine, EngineInitializationError, Scope.Scope> =>
+): Effect.Effect<
+  EndpointEngine,
+  EngineInitializationError,
+  Scope.Scope | SqlClient.SqlClient
+> =>
   Effect.gen(function* () {
     const runtime = yield* initializeRuntime(input);
     yield* resumeRuntime(runtime);
-    return endpointEngine(runtime);
+    return endpointEngine(runtime, yield* SqlClient.SqlClient);
   }).pipe(Effect.withSpan("makeEndpointEngine"));
 
 /**

@@ -4,6 +4,7 @@
  * one per conversation that run has not recovered.
  */
 
+import type * as SqlClient from "@effect/sql/SqlClient";
 import { Deferred, Effect } from "effect";
 import type { ConversationId } from "../../records/index.js";
 import type { EngineRuntime } from "../engine-context.js";
@@ -29,7 +30,7 @@ const recoveryFences = new WeakMap<EngineRuntime, RecoveryFences>();
  */
 export function installRecoveryBarrier(
   runtime: EngineRuntime,
-): Effect.Effect<void> {
+): Effect.Effect<void, never, SqlClient.SqlClient> {
   return Effect.suspend(() => {
     if (fencesOf(runtime).engine !== undefined) {
       return Effect.void;
@@ -66,7 +67,7 @@ export function currentRecoveryBarrier(
 export function completeRecoveryBarrier(
   runtime: EngineRuntime,
   barrier: Deferred.Deferred<undefined>,
-): Effect.Effect<void> {
+): Effect.Effect<void, never, SqlClient.SqlClient> {
   return Effect.suspend(() => {
     const fences = recoveryFences.get(runtime);
     if (fences?.engine !== barrier) {
@@ -87,7 +88,7 @@ export function completeRecoveryBarrier(
 export function fenceConversation(
   runtime: EngineRuntime,
   conversationId: ConversationId,
-): Effect.Effect<void> {
+): Effect.Effect<void, never, SqlClient.SqlClient> {
   return Deferred.make<undefined>().pipe(
     Effect.flatMap((fence) =>
       Effect.sync(() => {
@@ -110,7 +111,7 @@ export function fenceConversation(
 export function releaseConversation(
   runtime: EngineRuntime,
   conversationId: ConversationId,
-): Effect.Effect<void> {
+): Effect.Effect<void, never, SqlClient.SqlClient> {
   return Effect.suspend(() => {
     const fences = recoveryFences.get(runtime);
     const fence = fences?.conversations.get(conversationId);

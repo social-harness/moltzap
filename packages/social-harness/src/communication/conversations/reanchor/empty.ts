@@ -1,5 +1,7 @@
 /** @file Empty-conversation foundation replacement after a Router restart. */
 
+import type * as SqlClient from "@effect/sql/SqlClient";
+import * as Store from "../../store/index.js";
 import { Effect } from "effect";
 import type {
   ConversationFoundation,
@@ -41,7 +43,7 @@ interface EmptyPositionRestartInput {
  */
 export function restartEmptyPosition(
   input: EmptyPositionRestartInput,
-): Effect.Effect<void, RouterWorkerPersistenceError> {
+): Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient> {
   const { membership, position, recovery, routerInstanceId, runtime } = input;
   return Effect.gen(function* () {
     const expectedFoundation = yield* emptyConversationFoundation(
@@ -56,12 +58,10 @@ export function restartEmptyPosition(
     );
     yield* Effect.uninterruptible(
       Effect.gen(function* () {
-        const restarted = yield* runtime.input.store
-          .restartEmptyConversation({
-            expectedFoundation,
-            replacementFoundation: replacement.foundation,
-          })
-          .pipe(Effect.mapError(persistenceFailure));
+        const restarted = yield* Store.restartEmptyConversation({
+          expectedFoundation,
+          replacementFoundation: replacement.foundation,
+        }).pipe(Effect.mapError(persistenceFailure));
         if (
           !restartedEmptyStateMatches({
             runtime,
@@ -88,7 +88,11 @@ function emptyConversationFoundation(
   recovery: EndpointRecovery,
   membership: VerifiedMembership,
   position: EndpointRecovery["positions"][number],
-): Effect.Effect<ConversationFoundation, RouterWorkerPersistenceError> {
+): Effect.Effect<
+  ConversationFoundation,
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> {
   const conversationId = membership.descriptor.conversationId;
   const storedMemberships = recovery.memberships.filter(
     (stored) => stored.conversationId === conversationId,
@@ -135,7 +139,11 @@ function replacementEmptyFoundation(
   routerInstanceId: InitialAnchorBodyValue["routerInstanceId"],
   membership: VerifiedMembership,
   expected: ConversationFoundation,
-): Effect.Effect<ReplacementEmptyFoundation, RouterWorkerPersistenceError> {
+): Effect.Effect<
+  ReplacementEmptyFoundation,
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> {
   return Effect.gen(function* () {
     const preceding = yield* decodeCanonical(
       InitialAnchorBody,
@@ -224,7 +232,7 @@ function resetEmptyConversationRuntime(
   conversationId: ConversationIdValue,
   anchor: InitialAnchorBodyValue,
   messageIntents: readonly StoredMessageIntent[],
-): Effect.Effect<void> {
+): Effect.Effect<void, never, SqlClient.SqlClient> {
   return Effect.sync(() => {
     replaceRuntimeAnchor(runtime, conversationId, anchor);
     discardConversationFolds(runtime, conversationId);

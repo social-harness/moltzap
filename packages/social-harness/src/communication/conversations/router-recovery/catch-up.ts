@@ -3,6 +3,8 @@
  * after its durable position, and any endpoint answers such requests.
  */
 
+import type * as SqlClient from "@effect/sql/SqlClient";
+import * as Store from "../../store/index.js";
 import { Effect, Schema } from "effect";
 import type { AgentId } from "../../../identity/identifiers.js";
 import type { EndpointRecovery, StagedRecord } from "../../store/index.js";
@@ -90,7 +92,7 @@ export interface CatchUpRun {
   readonly queue: (
     membership: VerifiedMembership,
     body: DecodedOuterBody,
-  ) => Effect.Effect<void, RouterWorkerPersistenceError>;
+  ) => Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient>;
   /** The Router instance the run recovers at. */
   readonly routerInstanceId: RouterWorkerRecovery["anchor"]["routerInstanceId"];
   /**
@@ -99,7 +101,7 @@ export interface CatchUpRun {
    */
   readonly onPositionReady: (
     conversationId: ConversationIdValue,
-  ) => Effect.Effect<void, RouterWorkerPersistenceError>;
+  ) => Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient>;
 }
 
 /**
@@ -138,7 +140,7 @@ export function makeCatchUpState(): CatchUpState {
 export const requestCertifiedHistory = (
   run: CatchUpRun,
   conversationId: ConversationIdValue,
-): Effect.Effect<void, RouterWorkerPersistenceError> =>
+): Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient> =>
   queueCatchUpRequest(run, conversationId, "restart").pipe(
     Effect.withSpan("requestCertifiedHistory"),
   );
@@ -154,7 +156,7 @@ export const requestCertifiedHistory = (
 export const resendCertifiedHistoryRequest = (
   run: CatchUpRun,
   conversationId: ConversationIdValue,
-): Effect.Effect<void, RouterWorkerPersistenceError> =>
+): Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient> =>
   queueCatchUpRequest(run, conversationId, "keep").pipe(
     Effect.withSpan("resendCertifiedHistoryRequest"),
   );
@@ -200,8 +202,8 @@ export function waitBehindEarlierReanchor<E>(
     ReanchorBody,
     "conversationId" | "previousAnchorHash" | "selectedRecordHash"
   >,
-  verified: Effect.Effect<unknown, E>,
-): Effect.Effect<void, E> {
+  verified: Effect.Effect<unknown, E, SqlClient.SqlClient>,
+): Effect.Effect<void, E, SqlClient.SqlClient> {
   const { conversationId } = vote;
   const undecided = () => {
     const pending = run.state.pendingRequests.get(conversationId);
@@ -240,7 +242,7 @@ export function queueStagedSuccessor(
   sender: Pick<CatchUpResponder, "runtime" | "queue">,
   membership: VerifiedMembership,
   staged: StagedRecord,
-): Effect.Effect<void, RouterWorkerPersistenceError> {
+): Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient> {
   return Schema.decodeUnknown(RecordHash)(staged.recordHash).pipe(
     Effect.mapError(persistenceFailure),
     Effect.flatMap((recordHash) => {
@@ -273,7 +275,11 @@ export function acceptCatchUpRequest(
   responder: CatchUpResponder,
   ingress: RouterWorkerIngress<DecodedOuterBody>,
   request: CatchUpRequestValue,
-): Effect.Effect<RouterIngressDisposition, RouterWorkerPersistenceError> {
+): Effect.Effect<
+  RouterIngressDisposition,
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> {
   const membership = responder.membership(request.conversationId);
   if (membership === undefined) {
     return Effect.succeed(ignoredDisposition);
@@ -337,7 +343,11 @@ export function acceptCatchUpPage(
   run: CatchUpRun,
   ingress: RouterWorkerIngress<DecodedOuterBody>,
   page: CatchUpPage,
-): Effect.Effect<RouterIngressDisposition, RouterWorkerPersistenceError> {
+): Effect.Effect<
+  RouterIngressDisposition,
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> {
   const context = pendingCatchUpContext(
     run,
     page.request,
@@ -392,7 +402,11 @@ export function acceptCatchUpIncomplete(
   run: CatchUpRun,
   ingress: RouterWorkerIngress<DecodedOuterBody>,
   incomplete: CatchUpIncomplete,
-): Effect.Effect<RouterIngressDisposition, RouterWorkerPersistenceError> {
+): Effect.Effect<
+  RouterIngressDisposition,
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> {
   const context = pendingCatchUpContext(
     run,
     incomplete.request,
@@ -448,7 +462,7 @@ function continueAfterPage(
   page: CatchUpPage,
   key: string,
   successor: RecordHashValue | AnchorHashValue,
-): Effect.Effect<void, RouterWorkerPersistenceError> {
+): Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient> {
   return Effect.sync(() => {
     run.state.acceptedSuccessors.set(key, successor);
   }).pipe(
@@ -470,7 +484,7 @@ function queueCatchUpRequest(
   run: CatchUpRun,
   conversationId: ConversationIdValue,
   held: HeldAttestations,
-): Effect.Effect<void, RouterWorkerPersistenceError> {
+): Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
     const membership = run.membership(conversationId);
     if (!run.isActive() || membership === undefined) {
@@ -484,10 +498,7 @@ function queueCatchUpRequest(
     ) {
       return yield* run.queue(membership, { kind: "direct", packet: pending });
     }
-    const { position, recovery } = yield* durablePosition(
-      run.runtime,
-      conversationId,
-    );
+    const { position, recovery } = yield* durablePosition(conversationId);
     if (position === undefined) {
       return yield* Effect.fail(persistenceFailure());
     }
@@ -525,7 +536,7 @@ function queueCatchUpRequest(
 function requestMatchesCurrentPosition(
   runtime: EngineRuntime,
   request: CatchUpRequestValue,
-): Effect.Effect<boolean, RouterWorkerPersistenceError> {
+): Effect.Effect<boolean, RouterWorkerPersistenceError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
     const conversation = runtime.conversations.get(request.conversationId);
     if (conversation === undefined) {
@@ -573,12 +584,12 @@ function respondToCatchUp(
     request: CatchUpRequestValue;
     routerInstanceId: RouterWorkerIngress<DecodedOuterBody>["routerInstanceId"];
   }>,
-): Effect.Effect<void, RouterWorkerPersistenceError> {
+): Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient> {
   const { request } = delivered;
   return Effect.gen(function* () {
-    const recovery = yield* responder.runtime.input.store
-      .recover(request.conversationId)
-      .pipe(Effect.mapError(persistenceFailure));
+    const recovery = yield* Store.recover(request.conversationId).pipe(
+      Effect.mapError(persistenceFailure),
+    );
     const successor = yield* decodeCatchUpSuccessor(
       membership,
       recovery,
@@ -655,7 +666,11 @@ function heldReanchorVotes(
     request: CatchUpRequestValue;
     routerInstanceId: RouterWorkerIngress<DecodedOuterBody>["routerInstanceId"];
   }>,
-): Effect.Effect<readonly SignedMessage[], RouterWorkerPersistenceError> {
+): Effect.Effect<
+  readonly SignedMessage[],
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> {
   const { request, routerInstanceId } = delivered;
   const candidates = new Set(
     heldReanchorCandidates(recovery, request)
@@ -704,7 +719,11 @@ function decodeCatchUpSuccessor(
   membership: VerifiedMembership,
   recovery: EndpointRecovery,
   request: CatchUpRequestValue,
-): Effect.Effect<CatchUpSuccessor | undefined, RouterWorkerPersistenceError> {
+): Effect.Effect<
+  CatchUpSuccessor | undefined,
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> {
   return Effect.gen(function* () {
     const rows = successorRows(recovery, request);
     if (rows.length > 1) {
@@ -789,7 +808,11 @@ function nextRequest(
 function successorBodies(
   runtime: EngineRuntime,
   fold: EngineActionFold,
-): Effect.Effect<readonly DecodedOuterBody[], ClientRepresentationError> {
+): Effect.Effect<
+  readonly DecodedOuterBody[],
+  ClientRepresentationError,
+  SqlClient.SqlClient
+> {
   return recordAnchorHash(fold).pipe(
     Effect.flatMap((anchorHash) => makeActionCertifiedRecord(fold, anchorHash)),
     Effect.map((record): readonly DecodedOuterBody[] => {
@@ -821,7 +844,7 @@ function sendCatchUpIncomplete(
   membership: VerifiedMembership,
   request: CatchUpRequestValue,
   votes: readonly SignedMessage[],
-): Effect.Effect<void, RouterWorkerPersistenceError> {
+): Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
     const attestation = yield* signCatchUpAttestation(
       responder.runtime,
@@ -850,7 +873,7 @@ function sendCatchUpPage(
   membership: VerifiedMembership,
   request: CatchUpRequestValue,
   successor: CatchUpSuccessor,
-): Effect.Effect<void, RouterWorkerPersistenceError> {
+): Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
     const hash =
       successor.item.kind === "certified_record"
@@ -923,7 +946,11 @@ function applyCatchUpPage(
   runtime: EngineRuntime,
   ingress: RouterWorkerIngress<DecodedOuterBody>,
   page: CatchUpPage,
-): Effect.Effect<RouterIngressDisposition, RouterWorkerPersistenceError> {
+): Effect.Effect<
+  RouterIngressDisposition,
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> {
   if (page.item.kind === "completed_reanchor") {
     return applyCompletedReanchor(runtime, page.item).pipe(
       Effect.map((applied) =>
@@ -1067,7 +1094,11 @@ function makeCatchUpRequest(
   membership: VerifiedMembership,
   knownRecordHash: RecordHashValue | null,
   knownAnchorHash: AnchorHashValue | null,
-): Effect.Effect<CatchUpRequestValue, RouterWorkerPersistenceError> {
+): Effect.Effect<
+  CatchUpRequestValue,
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> {
   return Schema.decodeUnknown(CatchUpRequest)({
     sharnessVersion: runtime.wireVersion,
     kind: "catch_up_request",
@@ -1081,7 +1112,11 @@ function makeCatchUpRequest(
 
 function decodeKnownRecordHash(
   position: EndpointRecovery["positions"][number],
-): Effect.Effect<RecordHashValue | null, RouterWorkerPersistenceError> {
+): Effect.Effect<
+  RecordHashValue | null,
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> {
   if (position.headRecordHash === undefined) {
     return Effect.succeed(null);
   }
@@ -1092,7 +1127,11 @@ function decodeKnownRecordHash(
 
 function decodeKnownAnchorHash(
   position: EndpointRecovery["positions"][number],
-): Effect.Effect<AnchorHashValue | null, RouterWorkerPersistenceError> {
+): Effect.Effect<
+  AnchorHashValue | null,
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> {
   if (position.headRecordHash === undefined) {
     return Effect.succeed(null);
   }

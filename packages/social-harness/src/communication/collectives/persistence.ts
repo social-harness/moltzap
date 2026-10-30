@@ -1,4 +1,7 @@
 /** @file Collective persistence failures and terminal publication share one boundary. */
+
+import type * as SqlClient from "@effect/sql/SqlClient";
+import * as Store from "../store/index.js";
 import { Effect } from "effect";
 import type { EndpointStoreError } from "../store/index.js";
 import type { InboundItem } from "./inbound.js";
@@ -11,15 +14,15 @@ import { CollectiveEmitError, type CollectiveId } from "./contracts.js";
 export function refreshRetainedSend(
   state: CollectiveState,
   operationId: CollectiveId,
-): Effect.Effect<void, SendError> {
+): Effect.Effect<void, SendError, SqlClient.SqlClient> {
   return durableSend(state, refreshRetained(state, operationId));
 }
 
 /** An uncertain persistence outcome cannot authorize a second message. */
-export function durableSend<A>(
+export function durableSend<A, R>(
   state: CollectiveState,
-  effect: Effect.Effect<A, EndpointStoreError>,
-): Effect.Effect<A, SendError> {
+  effect: Effect.Effect<A, EndpointStoreError, R>,
+): Effect.Effect<A, SendError, R> {
   return effect.pipe(
     Effect.catchTag("EndpointStoreError", (error) =>
       state.ports
@@ -41,7 +44,7 @@ export function emitTerminal(
     { readonly kind: "collectiveResult" | "operationFailed" }
   >,
   provenance?: ResultProvenance,
-): Effect.Effect<void, CollectiveEmitError> {
+): Effect.Effect<void, CollectiveEmitError, SqlClient.SqlClient> {
   return durableEmit(state, refreshRetained(state, item.operationId)).pipe(
     Effect.flatMap(() => {
       const operation = state.retained.get(item.operationId);
@@ -56,10 +59,10 @@ export function emitTerminal(
 }
 
 /** Persistence failures stop the daemon before a caller can mistake an uncertain write for a retryable refusal. */
-export function durableEmit<A>(
+export function durableEmit<A, R>(
   state: CollectiveState,
-  effect: Effect.Effect<A, EndpointStoreError>,
-): Effect.Effect<A, CollectiveEmitError> {
+  effect: Effect.Effect<A, EndpointStoreError, R>,
+): Effect.Effect<A, CollectiveEmitError, R> {
   return effect.pipe(
     Effect.catchTag("EndpointStoreError", (error) =>
       state.ports
@@ -73,8 +76,8 @@ export function durableEmit<A>(
 export function refreshRetained(
   state: CollectiveState,
   operationId: CollectiveId,
-): Effect.Effect<void, EndpointStoreError> {
-  return state.ports.store.readCollectiveOperation(operationId).pipe(
+): Effect.Effect<void, EndpointStoreError, SqlClient.SqlClient> {
+  return Store.readCollectiveOperation(operationId).pipe(
     Effect.tap((operation) =>
       Effect.sync(() => {
         if (operation === undefined) {

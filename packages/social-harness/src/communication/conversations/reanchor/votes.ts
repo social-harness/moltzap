@@ -4,6 +4,8 @@
  * completed re-anchor they certify.
  */
 
+import type * as SqlClient from "@effect/sql/SqlClient";
+import * as Store from "../../store/index.js";
 import { Effect, Schema } from "effect";
 import type { AgentId } from "../../../identity/identifiers.js";
 import type { EngineActionFold, EngineRuntime } from "../engine-context.js";
@@ -30,7 +32,6 @@ import {
 import { RouterWorkerPersistenceError } from "../../router/index.js";
 import {
   type EndpointRecovery,
-  type EndpointStore,
   isSemanticStoreRejection,
 } from "../../store/index.js";
 import { orderedSignatures, protocolEvidence } from "../history/index.js";
@@ -59,7 +60,7 @@ export type ReanchorVotes = Map<
 export function rememberReanchorVote(
   votes: ReanchorVotes,
   vote: PendingReanchorVote,
-): Effect.Effect<void> {
+): Effect.Effect<void, never, SqlClient.SqlClient> {
   return Effect.sync(() => {
     const conversationId = vote.statement.reanchor.conversationId;
     const candidates =
@@ -106,21 +107,19 @@ export function reanchorVoteIsRemembered(
  * One statement has more than one valid signature, so a member can send a
  * second, differently signed copy of a vote the store already holds. The
  * store refuses that copy, and it does not count.
- * @param runtime Engine whose store keeps the evidence.
  * @param vote Verified vote to persist.
  * @returns Whether the vote is durable; false when the store refused it.
  */
 export function persistReanchorVote(
-  runtime: EngineRuntime,
   vote: PendingReanchorVote,
-): Effect.Effect<boolean, RouterWorkerPersistenceError> {
+): Effect.Effect<boolean, RouterWorkerPersistenceError, SqlClient.SqlClient> {
   return protocolEvidence(
     vote.statement.reanchor.conversationId,
     "reanchor",
     vote.statement.anchorHash,
     vote.message,
   ).pipe(
-    Effect.flatMap((evidence) => runtime.input.store.mergeEvidence(evidence)),
+    Effect.flatMap((evidence) => Store.mergeEvidence(evidence)),
     Effect.as(true),
     Effect.catchTag("EndpointStoreError", (error) =>
       isSemanticStoreRejection(error)
@@ -133,19 +132,21 @@ export function persistReanchorVote(
 
 /**
  * Read and verify every stored vote for one candidate anchor.
- * @param runtime Engine whose store keeps the votes.
  * @param membership Verified membership the votes must verify under.
  * @param body Re-anchor body every stored vote must name.
  * @param anchorHash Candidate anchor the votes are for.
  * @returns The stored votes, one per signer.
  */
 export function decodeReanchorVotes(
-  runtime: EngineRuntime,
   membership: VerifiedMembership,
   body: ReanchorBodyValue,
   anchorHash: AnchorHashValue,
-): Effect.Effect<readonly SignedMessageValue[], RouterWorkerPersistenceError> {
-  return runtime.input.store.recover(body.conversationId).pipe(
+): Effect.Effect<
+  readonly SignedMessageValue[],
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> {
+  return Store.recover(body.conversationId).pipe(
     Effect.mapError(persistenceFailure),
     Effect.flatMap((recovery) =>
       Effect.forEach(
@@ -177,7 +178,11 @@ export function assembleCompletedReanchor(
   body: ReanchorBodyValue,
   anchorHash: AnchorHashValue,
   votes: readonly SignedMessageValue[],
-): Effect.Effect<CompletedReanchorValue, RouterWorkerPersistenceError> {
+): Effect.Effect<
+  CompletedReanchorValue,
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> {
   return orderedSignatures(votes).pipe(
     Effect.mapError(persistenceFailure),
     Effect.flatMap((ordered) => {
@@ -210,12 +215,10 @@ export function assembleCompletedReanchor(
 export function persistCompletedReanchor(
   runtime: EngineRuntime,
   completed: CompletedReanchorValue,
-): Effect.Effect<void, RouterWorkerPersistenceError> {
-  return storeAndAdoptReanchor(
-    runtime,
-    completed,
-    runtime.input.store.completeReanchor,
-  ).pipe(Effect.mapError(persistenceFailure));
+): Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient> {
+  return storeAndAdoptReanchor(runtime, completed, Store.completeReanchor).pipe(
+    Effect.mapError(persistenceFailure),
+  );
 }
 
 /**
@@ -234,11 +237,11 @@ export function persistCompletedReanchor(
 export function applyCompletedReanchor(
   runtime: EngineRuntime,
   completed: CompletedReanchorValue,
-): Effect.Effect<boolean, RouterWorkerPersistenceError> {
+): Effect.Effect<boolean, RouterWorkerPersistenceError, SqlClient.SqlClient> {
   return storeAndAdoptReanchor(
     runtime,
     completed,
-    runtime.input.store.applyCatchUpReanchor,
+    Store.applyCatchUpReanchor,
   ).pipe(
     Effect.as(true),
     Effect.catchTag("EndpointStoreError", (error) =>
@@ -251,8 +254,8 @@ export function applyCompletedReanchor(
 }
 
 type WriteReanchor =
-  | EndpointStore["completeReanchor"]
-  | EndpointStore["applyCatchUpReanchor"];
+  | typeof Store.completeReanchor
+  | typeof Store.applyCatchUpReanchor;
 
 /**
  * The durable row and its in-memory adoption form one interruption boundary,
@@ -352,7 +355,11 @@ function verifyStoredReanchorVote(
   membership: VerifiedMembership,
   body: ReanchorBodyValue,
   anchorHash: AnchorHashValue,
-): Effect.Effect<SignedMessageValue, RouterWorkerPersistenceError> {
+): Effect.Effect<
+  SignedMessageValue,
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> {
   return decodeCanonical(SignedMessage, evidence.canonicalEvidence).pipe(
     Effect.flatMap((message) => Schema.encode(SignedMessage)(message)),
     Effect.flatMap((representation) =>

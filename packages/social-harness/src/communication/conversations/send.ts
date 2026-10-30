@@ -1,5 +1,7 @@
 /** @file Address resolution, immutable intent binding, and proposal creation. */
 
+import type * as SqlClient from "@effect/sql/SqlClient";
+import * as Store from "../store/index.js";
 import { Deferred, Duration, Effect, Exit, Schedule, Schema } from "effect";
 import type { MessageAddressInput } from "../records/values.js";
 import type { RouterWorkerUnavailableError } from "../router/index.js";
@@ -71,9 +73,8 @@ export interface EngineSentMessage {
 /**
  * Fail a send whose intent bind did not complete. A store refusal is raised
  * before the bind commits and rolls it back, so nothing was queued. A raw
- * persistence failure leaves durability unknown unless the store confirms
- * no commit. An uncertain failure is reported as a storage fault, since a durable
- * intent outside `runtime.intents` waits for a restart.
+ * persistence failure leaves durability unknown and is reported as a storage
+ * fault, since a durable intent outside `runtime.intents` waits for a restart.
  * @param runtime The engine whose daemon hears of the fault.
  * @param error The store's failure.
  * @returns The send's failure.
@@ -82,12 +83,6 @@ function failBind(
   runtime: EngineRuntime,
   error: EndpointStoreError,
 ): Effect.Effect<never, SendError> {
-  if (
-    error.reason === "persistence" &&
-    error.commitOutcome === "not-committed"
-  ) {
-    return Effect.fail(storeFailure(error));
-  }
   return error.reason === "persistence"
     ? runtime.input
         .reportStorageFault(error)
@@ -229,7 +224,7 @@ const resolveMembership = (runtime: EngineRuntime, input: EngineSendInput) =>
 const proposalAction = (
   conversation: EngineConversation,
   intent: MessageIntent,
-): Effect.Effect<ActionCore, SendError> =>
+): Effect.Effect<ActionCore, SendError, SqlClient.SqlClient> =>
   Effect.gen(function* () {
     const messageIntentHash = yield* hashMessageIntent(intent).pipe(
       Effect.mapError(representationFailure),
@@ -274,7 +269,7 @@ const proposalAction = (
 export const proposeIntent = (
   runtime: EngineRuntime,
   localIntent: EngineMessageIntent,
-): Effect.Effect<ActionHash, SendError> =>
+): Effect.Effect<ActionHash, SendError, SqlClient.SqlClient> =>
   Effect.gen(function* () {
     const conversation = runtime.conversations.get(
       localIntent.intent.conversationId,
@@ -328,7 +323,7 @@ const proposalResendSchedule = catchUpRetrySchedule.pipe(
 function queueLocalProposal(
   runtime: EngineRuntime,
   proposal: LocalProposal,
-): Effect.Effect<void, SendError> {
+): Effect.Effect<void, SendError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
     yield* Effect.uninterruptible(
       queueProposal(runtime, proposal).pipe(
@@ -402,7 +397,7 @@ function resendOutcome(
 function queueProposal(
   runtime: EngineRuntime,
   proposal: LocalProposal,
-): Effect.Effect<void, EngineOutboxError> {
+): Effect.Effect<void, EngineOutboxError, SqlClient.SqlClient> {
   const head = proposal.conversation.head;
   const queueHead =
     head === undefined
@@ -435,12 +430,16 @@ function queueProposal(
 function resendProposal(
   runtime: EngineRuntime,
   proposal: LocalProposal,
-): Effect.Effect<boolean> {
+): Effect.Effect<boolean, never, SqlClient.SqlClient> {
   const { action } = proposal;
   return runtime.gate
     .withPermits(1)(
       Effect.suspend(
-        (): Effect.Effect<boolean | Deferred.Deferred<undefined>> => {
+        (): Effect.Effect<
+          boolean | Deferred.Deferred<undefined>,
+          never,
+          SqlClient.SqlClient
+        > => {
           const conversation = runtime.conversations.get(action.conversationId);
           if (
             conversation === undefined ||
@@ -593,7 +592,11 @@ export interface PreparedSend {
 }
 
 /** Request claims are acquired at binding and released only when no intent binds. */
-export type BindHold<E> = Effect.Effect<Effect.Effect<void>, E>;
+export type BindHold<E> = Effect.Effect<
+  Effect.Effect<void, never, SqlClient.SqlClient>,
+  E,
+  SqlClient.SqlClient
+>;
 
 interface PreparedIntent {
   readonly membership: VerifiedMembership;
@@ -619,7 +622,11 @@ export const preparedSendData = (prepared: PreparedSend) =>
 export const prepareSend = (
   runtime: EngineRuntime,
   input: EngineSendInput,
-): Effect.Effect<PreparedSend, SendError | RecipientResolutionError> =>
+): Effect.Effect<
+  PreparedSend,
+  SendError | RecipientResolutionError,
+  SqlClient.SqlClient
+> =>
   Effect.gen(function* () {
     yield* awaitRouterAttachment(runtime);
     const canonicalContent = yield* encodeCanonical(
@@ -664,7 +671,7 @@ export const acceptSend = <E = never>(
   runtime: EngineRuntime,
   prepared: PreparedSend,
   hold: BindHold<E> = noBindHold,
-): Effect.Effect<PreparedSendHandle, SendError | E> =>
+): Effect.Effect<PreparedSendHandle, SendError | E, SqlClient.SqlClient> =>
   Effect.gen(function* () {
     const { descriptor, intent } = yield* preparedSendData(prepared);
     const membership = yield* verifyMembershipDescriptor(
@@ -697,10 +704,11 @@ function activateHeld<E>(
   hold: BindHold<E>,
 ): Effect.Effect<
   Exclude<IntentActivation, { kind: "waiting" }>,
-  SendError | E
+  SendError | E,
+  SqlClient.SqlClient
 > {
   return Effect.uninterruptibleMask((restore) => {
-    let release = Effect.void;
+    let release: Effect.Effect<void, never, SqlClient.SqlClient> = Effect.void;
     const acquire = hold.pipe(
       Effect.tap((held) =>
         Effect.sync(() => {
@@ -728,8 +736,8 @@ function storedIntent(prepared: PreparedIntent): StoredMessageIntent {
 function bindPreparedIntent<E>(
   runtime: EngineRuntime,
   prepared: PreparedIntent,
-  acquire: Effect.Effect<void, E>,
-): Effect.Effect<void, SendError | E> {
+  acquire: Effect.Effect<void, E, SqlClient.SqlClient>,
+): Effect.Effect<void, SendError | E, SqlClient.SqlClient> {
   return Effect.gen(function* () {
     const message = {
       intent: storedIntent(prepared),
@@ -743,31 +751,27 @@ function bindPreparedIntent<E>(
         return yield* new SendError({ reason: "certification-unavailable" });
       }
       yield* acquire;
-      return yield* runtime.input.store
-        .bindMessageIntent({
-          kind: "existing-conversation",
-          ...message,
-        })
-        .pipe(
-          Effect.catchTag("EndpointStoreError", (error) =>
-            failBind(runtime, error),
-          ),
-          Effect.asVoid,
-        );
-    }
-    const created = yield* createConversation(runtime, prepared.membership);
-    yield* acquire;
-    yield* runtime.input.store
-      .bindMessageIntent({
-        kind: "new-conversation",
-        foundation: created.foundation,
+      return yield* Store.bindMessageIntent({
+        kind: "existing-conversation",
         ...message,
-      })
-      .pipe(
+      }).pipe(
         Effect.catchTag("EndpointStoreError", (error) =>
           failBind(runtime, error),
         ),
+        Effect.asVoid,
       );
+    }
+    const created = yield* createConversation(runtime, prepared.membership);
+    yield* acquire;
+    yield* Store.bindMessageIntent({
+      kind: "new-conversation",
+      foundation: created.foundation,
+      ...message,
+    }).pipe(
+      Effect.catchTag("EndpointStoreError", (error) =>
+        failBind(runtime, error),
+      ),
+    );
     runtime.conversations.set(
       created.conversation.conversationId,
       created.conversation,
@@ -785,10 +789,11 @@ type IntentActivation =
 function activateIntent<E>(
   runtime: EngineRuntime,
   prepared: PreparedIntent,
-  acquire: Effect.Effect<void, E>,
+  acquire: Effect.Effect<void, E, SqlClient.SqlClient>,
 ): Effect.Effect<
   Exclude<IntentActivation, { kind: "waiting" }>,
-  SendError | E
+  SendError | E,
+  SqlClient.SqlClient
 > {
   return runtime.gate
     .withPermits(1)(
@@ -818,8 +823,8 @@ function activateIntent<E>(
 function activateIntentOnce<E>(
   runtime: EngineRuntime,
   prepared: PreparedIntent,
-  acquire: Effect.Effect<void, E>,
-): Effect.Effect<IntentActivation, SendError | E> {
+  acquire: Effect.Effect<void, E, SqlClient.SqlClient>,
+): Effect.Effect<IntentActivation, SendError | E, SqlClient.SqlClient> {
   const { intent } = prepared;
   return Effect.gen(function* () {
     const barrier = pendingRecoveryFence(runtime, intent.conversationId);
@@ -846,7 +851,7 @@ function activateIntentOnce<E>(
 function activateBoundIntent(
   runtime: EngineRuntime,
   prepared: PreparedIntent,
-): Effect.Effect<IntentActivation, SendError> {
+): Effect.Effect<IntentActivation, SendError, SqlClient.SqlClient> {
   const { canonicalIntent, intent } = prepared;
   return Effect.gen(function* () {
     const retained = runtime.intents.get(intent.msgId);
@@ -885,7 +890,7 @@ function activateBoundIntent(
  * A bound intent's activation after its proposal failed: still ready, with a
  * latch that fails as `delivery-pending`.
  */
-function pendingActivation(): Effect.Effect<IntentActivation> {
+function pendingActivation(): Effect.Effect<IntentActivation, never> {
   return Deferred.make<RecordHash, SendError>().pipe(
     Effect.tap((completion) =>
       Deferred.fail(completion, new SendError({ reason: "delivery-pending" })),

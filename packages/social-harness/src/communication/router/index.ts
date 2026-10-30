@@ -1,5 +1,7 @@
 /** @file Private Router polling, authenticated ingress, and retry coordination. */
 
+import * as SqlClient from "@effect/sql/SqlClient";
+import * as Store from "../store/index.js";
 import {
   Effect,
   Encoding,
@@ -180,7 +182,11 @@ function resendInMode<Payload>(
   input: TransmitInput,
   mode: TransmitInput["mode"],
   spent: 0 | 1,
-): Effect.Effect<RouterWorkerSendOutcome, OutboundTransportError> {
+): Effect.Effect<
+  RouterWorkerSendOutcome,
+  OutboundTransportError,
+  SqlClient.SqlClient
+> {
   const attemptsRemaining = input.attemptsRemaining - spent;
   if (input.mode === mode) {
     return Effect.fail(new RouterWorkerProtocolError());
@@ -205,11 +211,14 @@ function digestCanonicalSignedMessage(
   );
 }
 
-function completeAcceptedOutbound<Payload>(
-  runtime: RouterWorkerRuntime<Payload>,
+function completeAcceptedOutbound(
   input: TransmitInput,
   result: Extract<RouterSendResult, { readonly kind: "accepted" }>,
-): Effect.Effect<RouterWorkerSendOutcome, OutboundTransportError> {
+): Effect.Effect<
+  RouterWorkerSendOutcome,
+  OutboundTransportError,
+  SqlClient.SqlClient
+> {
   return Effect.gen(function* () {
     if (result.routerInstanceId !== input.instance) {
       return yield* Effect.fail(new RouterWorkerProtocolError());
@@ -220,9 +229,9 @@ function completeAcceptedOutbound<Payload>(
     if (result.signedMessageDigest !== expectedDigest) {
       return yield* Effect.fail(new RouterWorkerProtocolError());
     }
-    yield* runtime.input.outbox
-      .completeOutbound(input.outbound)
-      .pipe(Effect.mapError(mapPersistenceError));
+    yield* Store.completeOutbound(input.outbound).pipe(
+      Effect.mapError(mapPersistenceError),
+    );
     return { kind: "accepted" };
   });
 }
@@ -231,10 +240,14 @@ const interpretSendResult = <Payload>(
   runtime: RouterWorkerRuntime<Payload>,
   input: TransmitInput,
   result: RouterSendResult,
-): Effect.Effect<RouterWorkerSendOutcome, OutboundTransportError> => {
+): Effect.Effect<
+  RouterWorkerSendOutcome,
+  OutboundTransportError,
+  SqlClient.SqlClient
+> => {
   switch (result.kind) {
     case "accepted":
-      return completeAcceptedOutbound(runtime, input, result);
+      return completeAcceptedOutbound(input, result);
     case "router_restarted":
       return Effect.succeed({ kind: "restarted" });
     case "retry_identity_unknown":
@@ -260,7 +273,11 @@ const interpretSendResult = <Payload>(
 function transmitOuter<Payload>(
   runtime: RouterWorkerRuntime<Payload>,
   input: TransmitInput,
-): Effect.Effect<RouterWorkerSendOutcome, OutboundTransportError> {
+): Effect.Effect<
+  RouterWorkerSendOutcome,
+  OutboundTransportError,
+  SqlClient.SqlClient
+> {
   return runtime.router
     .send({
       request: {
@@ -320,8 +337,12 @@ function transmitOutbound<Payload>(
   runtime: RouterWorkerRuntime<Payload>,
   envelopeId: string,
   instance: RouterInstanceId,
-): Effect.Effect<RouterWorkerSendOutcome, OutboundTransportError> {
-  return runtime.input.outbox.beginOutbound(envelopeId).pipe(
+): Effect.Effect<
+  RouterWorkerSendOutcome,
+  OutboundTransportError,
+  SqlClient.SqlClient
+> {
+  return Store.beginOutbound(envelopeId).pipe(
     Effect.mapError(mapPersistenceError),
     Effect.flatMap((attempt) => {
       switch (attempt.kind) {
@@ -763,7 +784,7 @@ const makePollOnce = <Payload>(
 const makeSend = <Payload>(
   runtime: RouterWorkerRuntime<Payload>,
   envelopeId: string,
-): Effect.Effect<void, RouterWorkerSendError> =>
+): Effect.Effect<void, RouterWorkerSendError, SqlClient.SqlClient> =>
   Effect.gen(function* () {
     const result = yield* runtime.recoveryGate.withPermits(1)(
       Effect.gen(function* () {
@@ -796,8 +817,10 @@ const activeAnchor = (
 
 const makeWorker = <Payload>(
   runtime: RouterWorkerRuntime<Payload>,
+  sql: SqlClient.SqlClient,
 ): RouterWorker => {
-  const pollOnce = makePollOnce(runtime);
+  const provideSql = Effect.provideService(SqlClient.SqlClient, sql);
+  const pollOnce = makePollOnce(runtime).pipe(provideSql);
   return Object.freeze({
     currentAnchor: Ref.get(runtime.state).pipe(
       Effect.flatMap((state) =>
@@ -829,7 +852,8 @@ const makeWorker = <Payload>(
       ),
       { concurrent: true },
     ).pipe(Effect.interruptible),
-    send: (envelopeId: string) => makeSend(runtime, envelopeId),
+    send: (envelopeId: string) =>
+      makeSend(runtime, envelopeId).pipe(provideSql),
   });
 };
 
@@ -843,7 +867,7 @@ export const makeRouterWorker = <Payload>(
 ): Effect.Effect<
   RouterWorker,
   RouterWorkerTransportError | RouterWorkerProtocolError,
-  Registry | Router
+  Registry | Router | SqlClient.SqlClient
 > =>
   Effect.gen(function* () {
     if (input.callerAgentCard.agentId !== input.callerAgentId) {
@@ -869,7 +893,7 @@ export const makeRouterWorker = <Payload>(
       stateGate: yield* Effect.makeSemaphore(1),
       recoveryGate: yield* Effect.makeSemaphore(1),
     };
-    return makeWorker(runtime);
+    return makeWorker(runtime, yield* SqlClient.SqlClient);
   }).pipe(Effect.withSpan("makeRouterWorker"));
 
 /** Daemon composition installs the Router HTTP client behind the worker. */

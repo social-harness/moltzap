@@ -1,5 +1,7 @@
 /** @file One retained response claim stays attached to its original certified message. */
 
+import type * as SqlClient from "@effect/sql/SqlClient";
+import * as Store from "../store/index.js";
 import { Clock, Effect, Either, Option, Schema } from "effect";
 import type { CollectiveSendError } from "./ports.js";
 import type { PreparedResponse } from "./prepared.js";
@@ -96,7 +98,11 @@ export function prepareResponse(
 export function acceptResponse(
   state: CollectiveState,
   prepared: PreparedResponse,
-): Effect.Effect<CollectiveSendOutcome, CollectiveSendError> {
+): Effect.Effect<
+  CollectiveSendOutcome,
+  CollectiveSendError,
+  SqlClient.SqlClient
+> {
   return Effect.gen(function* () {
     const { operationId, request, value, message } = prepared;
     const { certified } = yield* state.ports
@@ -136,7 +142,7 @@ export function acceptResponse(
 export function restoreResponse(
   state: CollectiveState,
   message: StoredCollectiveMessage,
-): Effect.Effect<void, EndpointStoreError> {
+): Effect.Effect<void, EndpointStoreError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
     const { canonicalIntent, completedRecordHash } = message.intent;
     const intent = yield* decodeRuntimeValue(MessageIntent, canonicalIntent);
@@ -190,7 +196,11 @@ function openRequest(
   state: CollectiveState,
   to: MessageAddressInput,
   response: CollectiveResponse,
-): Effect.Effect<OpenRequest<ReceivedRequest>, SendError | CollectiveError> {
+): Effect.Effect<
+  OpenRequest<ReceivedRequest>,
+  SendError | CollectiveError,
+  SqlClient.SqlClient
+> {
   return Effect.gen(function* () {
     const now = yield* Clock.currentTimeMillis;
     const self = state.ports.self.agentName;
@@ -208,7 +218,11 @@ function openRequest(
 function responseContent(
   request: ReceivedRequest,
   response: ResponseValue,
-): Effect.Effect<MessageContent, SendError | CollectiveError> {
+): Effect.Effect<
+  MessageContent,
+  SendError | CollectiveError,
+  SqlClient.SqlClient
+> {
   const validated =
     response.action === "accept"
       ? validateAnswer(request.requestedSchema, response.content).pipe(
@@ -266,11 +280,11 @@ function settleUncertifiedAnswer(
   request: ReceivedRequest,
   response: ResponseValue,
   failure?: SendError,
-): Effect.Effect<void> {
+): Effect.Effect<void, never, SqlClient.SqlClient> {
   const operationId = response.operationId;
   return durableEmit(
     state,
-    state.ports.store.readCollectiveMessages({
+    Store.readCollectiveMessages({
       operationId,
       role: "response",
     }),
@@ -299,7 +313,7 @@ function observeResponse(
   request: ReceivedRequest,
   response: ResponseValue,
   msgId: MsgId,
-): Effect.Effect<void> {
+): Effect.Effect<void, never, SqlClient.SqlClient> {
   return state.ports.observeMessage(msgId).pipe(
     Effect.flatMap((sent) =>
       settleAnswer(
@@ -330,7 +344,7 @@ function settleAnswer(
   operationId: CollectiveId,
   request: ReceivedRequest,
   certified: Option.Option<CertifiedAnswer>,
-): Effect.Effect<void, CollectiveEmitError> {
+): Effect.Effect<void, CollectiveEmitError, SqlClient.SqlClient> {
   return Effect.suspend(() => {
     if (request.state === "closed") {
       return Effect.void;
@@ -357,13 +371,13 @@ function closedResponseFailure(
   request: ReceivedRequest,
   operationId: CollectiveId,
   error: SendError,
-): Effect.Effect<never, SendError | CollectiveError> {
+): Effect.Effect<never, SendError | CollectiveError, SqlClient.SqlClient> {
   if (request.state !== "closed" || error.reason !== "persistence-failed") {
     return Effect.fail(error);
   }
   return durableSend(
     state,
-    state.ports.store.readCollectiveMessages({
+    Store.readCollectiveMessages({
       operationId,
       role: "response",
     }),
