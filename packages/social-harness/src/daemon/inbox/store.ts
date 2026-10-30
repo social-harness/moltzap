@@ -177,7 +177,7 @@ export function retireItem(
   }).pipe(storeOperation);
 }
 /** Receipt retirement and callback progress commit together across crashes. */
-function completeWebhookDelivery(
+export function completeWebhookDelivery(
   deliveryToken: DeliveryToken,
   canonicalState: Uint8Array,
 ): Effect.Effect<void, EndpointStoreError, SqlClient.SqlClient> {
@@ -197,7 +197,7 @@ function completeWebhookDelivery(
  * @param input Sequence bounds and maximum item count.
  * @returns Pending items and an optional next position within the same snapshot.
  */
-function readInbox(
+export function readInbox(
   input: InboxBounds = {},
 ): Effect.Effect<InboxPage, EndpointStoreError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
@@ -224,7 +224,7 @@ function readInbox(
  * Read counters for notification coalescing without disclosing inbox contents.
  * @returns Current unread count and monotonic insertion position.
  */
-function readInboxSummary(): Effect.Effect<
+export function readInboxSummary(): Effect.Effect<
   InboxSummary,
   EndpointStoreError,
   SqlClient.SqlClient
@@ -248,7 +248,7 @@ function readInboxSummary(): Effect.Effect<
  * Retire the host projection and any underlying pending protocol row atomically.
  * @param deliveryToken Stable delivered identity, including an existing tombstone.
  */
-function acknowledgeInboxItem(
+export function acknowledgeInboxItem(
   deliveryToken: DeliveryToken,
 ): Effect.Effect<void, EndpointStoreError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
@@ -265,7 +265,7 @@ function acknowledgeInboxItem(
  * Read the runtime-owned event state without interpreting its private format.
  * @returns Persisted registration and callback delivery state, when present.
  */
-function readEventState(): Effect.Effect<
+export function readEventState(): Effect.Effect<
   Uint8Array | undefined,
   EndpointStoreError,
   SqlClient.SqlClient
@@ -283,7 +283,7 @@ function readEventState(): Effect.Effect<
  * Atomically replace the one runtime consumer's durable event state.
  * @param canonicalState Runtime-validated registration and delivery state.
  */
-function writeEventState(
+export function writeEventState(
   canonicalState: Uint8Array,
 ): Effect.Effect<void, EndpointStoreError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
