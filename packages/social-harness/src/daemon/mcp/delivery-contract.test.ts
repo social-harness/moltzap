@@ -1,9 +1,5 @@
 /** @file Durable delivery behaviour through the loopback MCP tools and native endpoint. */
 
-import {
-  mcpTestCredential,
-  mcpTestHeaders,
-} from "../../__tests__/mcp-http-fixtures.js";
 import { scopedLive as it } from "@effect/vitest";
 import { Chunk, Effect, Schema, Scope, Stream } from "effect";
 import { describe, expect } from "vitest";
@@ -17,8 +13,11 @@ import {
   makeCollectiveOperations,
 } from "../../__tests__/collective-send.js";
 import { collectivePersistencePorts } from "../../__tests__/collective-storage-stub.js";
-import { makeToolCallRequest } from "../../__tests__/daemon-runtime-harness.js";
-import { loopbackMcpEndpoint } from "../../__tests__/mcp-http-fixtures.js";
+import { makeToolCallRequest } from "../../__tests__/mcp-http-fixtures.js";
+import {
+  loopbackMcpEndpoint,
+  mcpTestCredential, mcpTestHeaders 
+} from "../../__tests__/mcp-http-fixtures.js";
 import { pendingMessage } from "../../__tests__/pending-delivery-fixtures.js";
 import { stateDirectory } from "../../__tests__/store-schema-fixtures.js";
 import {
