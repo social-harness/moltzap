@@ -25,7 +25,7 @@ import {
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- Public judgments, findings and feedback are the behavior under test. */
 
 type PolicyFinding = MiddlewareResult["findings"][number];
-type NormExpectation = MiddlewareResult["expectations"][number];
+type ResponseExpectation = MiddlewareResult["expectations"][number];
 
 const draft: typeof Message.Encoded = {
   id: "draft",
@@ -79,7 +79,7 @@ const block: PolicyFinding = { ruleId: rule.id, outcome: "violation" };
 function policy(
   id: string,
   findings: readonly PolicyFinding[] = [pass],
-  expectations: readonly NormExpectation[] = [],
+  expectations: readonly ResponseExpectation[] = [],
 ): MessageMiddleware {
   return {
     id,
@@ -432,7 +432,7 @@ it("holds missing context and publishes no incoming advice", () =>
     expect(result.guidance).toEqual([]);
   }));
 
-it("projects seek-approval as norm feedback", () =>
+it("projects registered seek-approval feedback", () =>
   Effect.gen(function* () {
     const feedback = {
       text: "Ask your owner with ask_user before committing.",

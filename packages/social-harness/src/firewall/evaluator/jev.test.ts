@@ -16,16 +16,16 @@ const provider = makeJevDecisionProvider({
   model,
 });
 const request: DecisionRequest = {
-  stage: "safety",
+  stage: "compliance",
   state: '{"candidate":"test"}',
   questions: {
-    safety: {
+    compliance: {
       ruleId: "privacy",
       purpose: "assessment",
       instructions: "Does this disclose private data?",
       criteria: {
         compliant: "No disclosure.",
-        prohibited: "Private data disclosed.",
+        violation: "Private data disclosed.",
         unresolved: "Missing evidence.",
       },
     },
@@ -34,10 +34,10 @@ const request: DecisionRequest = {
 const wire = {
   model,
   answers: {
-    safety: {
+    compliance: {
       type: "choice",
       choice: "compliant",
-      probabilities: { compliant: 0.71, prohibited: 0.2, unresolved: 0.1 },
+      probabilities: { compliant: 0.71, violation: 0.2, unresolved: 0.1 },
       confidence: 0.43,
     },
   },
@@ -91,8 +91,8 @@ it("preserves reported probabilities, model, usage and raw response", () =>
       .decide(request)
       .pipe(Effect.provideService(FetchHttpClient.Fetch, fetch));
     expect(response.model).toBe(model);
-    expect(response.answers.safety?.probabilities).toEqual(
-      wire.answers.safety.probabilities,
+    expect(response.answers.compliance?.probabilities).toEqual(
+      wire.answers.compliance.probabilities,
     );
     expect(JSON.parse(response.raw)).toEqual(wire);
     expect(response.usage).toEqual(wire.usage);
@@ -159,14 +159,16 @@ it.each([
     name: "untrimmed answer id",
     body: JSON.stringify({
       ...wire,
-      answers: { " safety ": wire.answers.safety },
+      answers: { " compliance ": wire.answers.compliance },
     }),
   },
   {
     name: "untrimmed choice",
     body: JSON.stringify({
       ...wire,
-      answers: { safety: { ...wire.answers.safety, choice: " compliant " } },
+      answers: {
+        compliance: { ...wire.answers.compliance, choice: " compliant " },
+      },
     }),
   },
   {
@@ -174,7 +176,10 @@ it.each([
     body: JSON.stringify({
       ...wire,
       answers: {
-        safety: { ...wire.answers.safety, probabilities: { " compliant ": 1 } },
+        compliance: {
+          ...wire.answers.compliance,
+          probabilities: { " compliant ": 1 },
+        },
       },
     }),
   },
@@ -190,7 +195,7 @@ it.each([
     name: "wrong answer primitive",
     body: JSON.stringify({
       ...wire,
-      answers: { safety: { type: "noul", noul: 1 } },
+      answers: { compliance: { type: "noul", noul: 1 } },
     }),
   },
   {
@@ -198,7 +203,10 @@ it.each([
     body: JSON.stringify({
       ...wire,
       answers: {
-        safety: { ...wire.answers.safety, probabilities: { compliant: 2 } },
+        compliance: {
+          ...wire.answers.compliance,
+          probabilities: { compliant: 2 },
+        },
       },
     }),
   },
@@ -225,7 +233,7 @@ it("keeps the usage a failed call's body reported, and none for a body without i
     const accounting = { provider: "typesafe", model, usage: wire.usage };
 
     const malformed = yield* decideWith(
-      JSON.stringify({ ...wire, answers: { safety: { type: "noul" } } }),
+      JSON.stringify({ ...wire, answers: { compliance: { type: "noul" } } }),
     );
     const unavailable = yield* decideWith(
       JSON.stringify({ model, usage: wire.usage }),

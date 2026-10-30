@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect } from "vitest";
-import type { EndpointStore } from "../../communication/store/index.js";
+import type { FirewallStore } from "../store/index.js";
 import {
   stateDirectory,
   withStore,
@@ -948,7 +948,7 @@ it(
 );
 
 it(
-  "limits runtime edits to its own norms and preserves ownership across restart",
+  "limits runtime edits to its own rules and preserves ownership across restart",
   Effect.fn(function* () {
     const configuration = yield* options(fixture().path);
     const path = stateDirectory();
@@ -1006,7 +1006,7 @@ it(
 );
 
 function adoptNorm(
-  store: EndpointStore,
+  store: FirewallStore,
   configuration: Effect.Effect.Success<ReturnType<typeof options>>,
   adopted: Omit<typeof INITIAL, "id" | "text"> & {
     readonly id: string;

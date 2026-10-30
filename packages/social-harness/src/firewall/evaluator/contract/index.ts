@@ -164,9 +164,9 @@ const policyFinding = Schema.Union(
 /** Rule findings accumulate independently of their text or code representation. */
 export type PolicyFinding = typeof policyFinding.Type;
 
-/** Subjects refer only to admitted runtime-visible messages or the incoming event. */
-export class NormExpectation extends Schema.Class<NormExpectation>(
-  "NormExpectation",
+/** Local response conduct under a rule, with subjects restricted to admitted visible messages or the incoming event. */
+export class ResponseExpectation extends Schema.Class<ResponseExpectation>(
+  "ResponseExpectation",
 )({
   ruleId: identifier,
   expectation: Schema.Literal("required", "permitted", "wait", "none"),
@@ -186,7 +186,7 @@ export class MiddlewareResult extends Schema.Class<MiddlewareResult>(
   "MiddlewareResult",
 )({
   findings: Schema.Array(policyFinding),
-  expectations: Schema.Array(NormExpectation),
+  expectations: Schema.Array(ResponseExpectation),
   trace: Schema.optional(PrivateCheckTrace),
 }) {}
 
@@ -208,7 +208,7 @@ export class MiddlewareObservation extends Schema.Class<MiddlewareObservation>(
   revision: identifier,
   status: Schema.Literal("completed", "unavailable"),
   findings: Schema.Array(policyFinding),
-  expectations: Schema.Array(NormExpectation),
+  expectations: Schema.Array(ResponseExpectation),
 }) {}
 
 /** Each invocation gets immutable message evidence and authorized context. */
@@ -263,14 +263,14 @@ export interface MiddlewareCheck extends MiddlewareObservation {
   readonly trace?: PrivateCheckTrace;
 }
 
-/** Templates are projected only after the complete chain permits admission. */
-export interface NormGuidance extends NormExpectation {
+/** Registered local instructions accompany expected response conduct and permitted subjects. */
+export interface ResponseGuidance extends ResponseExpectation {
   readonly middlewareId: string;
   readonly instruction: string;
 }
 
 /** One uncertain judgment retains only registered advice and the selected probability. */
-export type UncertainNormGuidance = Extract<
+export type UncertainGuidance = Extract<
   FirewallCheck["guidance"][number],
   { readonly uncertain: unknown }
 >;

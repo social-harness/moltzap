@@ -73,7 +73,7 @@ Disposition and guidance are retained before exposure. Subscriptions, inbox,
 event lookup and webhooks serve that same view. Withheld items remain
 unavailable after restart; owner history audit is separate. The
 [host contract](../host/messaging.md#local-guidance) owns presentation.
-Guidance neither forces replies nor establishes speaking turns. Norm findings
+Guidance neither forces replies nor establishes speaking turns. Rule findings
 on withheld items create no runtime obligation.
 
 ## Outgoing messages
@@ -270,7 +270,7 @@ path and `missing`, `too-large`, `not-a-file`, `frontmatter`, `schema`,
 
 Fixed behaviors cannot be edited or collide with retained editable ids. Initial
 behaviors are validated every start but seed only missing policy.
-Shared-norm `{behavior: "<document>"}` additions use this mapping; malformed,
+Shared-norm `{behavior: "<document>"}` additions use this mapping; malformed
 or oversized documents fail with `invalid-rule`.
 
 ### Built-in behaviors
@@ -367,7 +367,7 @@ rows identify authors; endpoint-created results/failures or absent peers use
 | --- | --- |
 | Rule violation | Violated rules. |
 | Unavailable | Rules in checks that could not run, plus unavailable judgments. |
-| Unresolved evidence | Holding rules and norms with conflicting expectations. |
+| Unresolved evidence | Rules reporting unresolved evidence or conflicting response expectations. |
 | Admission | Uncertain rules, otherwise none. |
 
 Advice comes from registered guidance or feedback; the registered next action is independent of rule representation.

@@ -156,10 +156,12 @@ function provider(
 
 const defaultProvider = provider();
 
-/** The norms a request's state hands the decision provider. */
-const statedNorms = Schema.parseJson(
+/** Local response expectations supplied to candidate compliance. */
+const statedResponseExpectations = Schema.parseJson(
   Schema.Struct({
-    norms: Schema.Array(Schema.Struct({ ruleId: Schema.String })),
+    responseExpectations: Schema.Array(
+      Schema.Struct({ ruleId: Schema.String }),
+    ),
   }),
 );
 
@@ -394,7 +396,7 @@ it("accepts a near-tie and admits an unsettled applicability judgment", () =>
     );
   }));
 
-it("admits a group message whose norm applicability is uncertain, advising that judgment", () =>
+it("admits a group message whose rule applicability is uncertain, advising that judgment", () =>
   Effect.gen(function* () {
     const requests: DecisionRequest[] = [];
     const result = yield* check(
@@ -447,7 +449,7 @@ it.each([
     }),
 );
 
-it("admits a confidently unresolved norm expectation as guidance", () =>
+it("admits a confidently unresolved response expectation as guidance", () =>
   Effect.gen(function* () {
     const result = yield* check(
       provider({ "expectations:proposal-acceptance:assessment": "unresolved" }),
@@ -507,7 +509,8 @@ it("admits an unsettled expectation as guidance and assesses compliance against 
       probability: 0.4,
     });
     expect(
-      Schema.decodeUnknownSync(statedNorms)(compliance?.state).norms,
+      Schema.decodeUnknownSync(statedResponseExpectations)(compliance?.state)
+        .responseExpectations,
     ).toEqual([{ ruleId: "privacy" }, { ruleId: "reply-once" }]);
   }));
 
@@ -555,7 +558,7 @@ it("captures evidence before asynchronous inference", () =>
     ).toContain(draft.text);
   }));
 
-it("returns norm repair with only registered feedback", () =>
+it("returns rule repair with only registered feedback", () =>
   Effect.gen(function* () {
     const result = yield* check(
       provider({
@@ -628,7 +631,7 @@ it.each([
   }),
 );
 
-it("does not prune a safety rule labeled irrelevant", () =>
+it("does not prune a rule labeled irrelevant", () =>
   Effect.gen(function* () {
     const result = yield* check(
       provider({
@@ -792,7 +795,7 @@ it("routes each text rule without consulting the provider for the opposite direc
 it("checks incoming peer content without imposing local response expectations", () =>
   Effect.gen(function* () {
     const requests: DecisionRequest[] = [];
-    const message = {
+    const message: typeof Message.Encoded = {
       ...draft,
       sender: "participant-agent",
       recipients: [context.agentId],
@@ -808,7 +811,8 @@ it("checks incoming peer content without imposing local response expectations", 
       (request) => request.stage === "compliance",
     );
     expect(
-      Schema.decodeUnknownSync(statedNorms)(compliance?.state).norms,
+      Schema.decodeUnknownSync(statedResponseExpectations)(compliance?.state)
+        .responseExpectations,
     ).toEqual([]);
     expect(result.judgment).toBe("allow");
     expect(result.guidance).toContainEqual({
@@ -860,10 +864,10 @@ it("submits a complete request at its UTF-8 byte limit and holds one byte below 
     );
   }));
 
-const accumulatedNorms: readonly TextRule[] = EffectArray.makeBy(
+const accumulatedRules: readonly TextRule[] = EffectArray.makeBy(
   8,
   (index) => ({
-    id: `norm-${index}`,
+    id: `rule-${index}`,
     applies: "both",
     text: `Address open request number ${index} before changing the subject.`,
   }),
@@ -879,7 +883,7 @@ const longHistory: MessageContext["history"] = EffectArray.makeBy(
 );
 
 it.each([false, true])(
-  "assesses every norm over a long window within the default budget (incoming: %s)",
+  "assesses every rule over a long window within the default budget (incoming: %s)",
   (incoming) =>
     Effect.gen(function* () {
       const requests: DecisionRequest[] = [];
@@ -899,7 +903,7 @@ it.each([false, true])(
               recipients: [context.agentId],
             }
           : draft,
-        rules: accumulatedNorms,
+        rules: accumulatedRules,
         context: { ...context, history: longHistory },
         settings: { ...settings, maximumRequestBytes },
       });
@@ -914,14 +918,14 @@ it.each([false, true])(
           (question) => question.purpose === "subject",
         ),
       ).toHaveLength(
-        accumulatedNorms.length * (longHistory.length + Number(incoming)),
+        accumulatedRules.length * (longHistory.length + Number(incoming)),
       );
       for (const request of requests) {
         const serialized = JSON.stringify(request);
         expect(
           new TextEncoder().encode(serialized).byteLength,
         ).toBeLessThanOrEqual(maximumRequestBytes);
-        for (const rule of accumulatedNorms) {
+        for (const rule of accumulatedRules) {
           expect(serialized.split(rule.text)).toHaveLength(2);
         }
       }
@@ -933,7 +937,7 @@ it("bounds large policy-history products without submitting partial requests", (
     const requests: DecisionRequest[] = [];
     const result = yield* check(provider({}, requests), {
       rules: EffectArray.makeBy(20, (index) => ({
-        id: `norm-${index}`,
+        id: `rule-${index}`,
         applies: "both",
         text: "Speak only about open requests.",
       })),
@@ -1082,7 +1086,7 @@ it.each([
   {
     content: "mandatory questions",
     documents: EffectArray.makeBy(100, (index) => ({
-      id: `norm-${index}`,
+      id: `rule-${index}`,
       applies: proposalAcceptance.applies,
       text: "Follow the timetable.",
     })),

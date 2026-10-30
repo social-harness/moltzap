@@ -3,9 +3,9 @@
 import {
   DecisionProviderError,
   type DecisionRequest,
-  type NormExpectation,
   type PolicyStage,
   type PolicyStageTrace,
+  type ResponseExpectation,
   type TextCheck,
 } from "./contract/index.js";
 
@@ -45,7 +45,7 @@ const stageCatalog = {
         "Required evidence is missing or the expected behavior is uncertain.",
     },
     instructions:
-      "What is the agent expected to do now under this norm? Outgoing expectations depend on prior evidence, never on an unsent draft. For incoming events, assess expectations conditional on admission. Do not treat withheld or assessor-only messages as delivered requests.",
+      "What is the agent expected to do now under this rule? Outgoing expectations depend on prior evidence, never on an unsent draft. For incoming events, assess expectations conditional on admission. Do not treat withheld or assessor-only messages as delivered requests.",
   },
   compliance: {
     criteria: {
@@ -53,10 +53,10 @@ const stageCatalog = {
         "The exact candidate complies with this rule in context, or the rule is inapplicable.",
       violation:
         "The candidate violates this rule in timing, content, or required process. Do not add requirements absent from the rule.",
-      unresolved: "Required evidence is missing or conformance is uncertain.",
+      unresolved: "Required evidence is missing or compliance is uncertain.",
     },
     instructions:
-      "Does this exact candidate comply with the rule? For outgoing drafts, assess the local agent against independently settled expectations in norms; a draft cannot grant itself permission to speak. For incoming messages, assess the peer sender and peer-authored candidate against the rule, never against the local recipient's response expectations. Do not add scheduling, approval, or tool-receipt requirements absent from the rule. Missing tool logs do not prove a tool action did not happen. Evaluate relevance yourself; a none expectation for an inapplicable rule does not forbid speech.",
+      "Does this exact candidate comply with the rule? For outgoing drafts, assess the local agent against independently settled expectations in state.responseExpectations; a draft cannot grant itself permission to speak. For incoming messages, assess the peer sender and peer-authored candidate against the rule, never against the local recipient's response expectations. Do not add scheduling, approval, or tool-receipt requirements absent from the rule. Missing tool logs do not prove a tool action did not happen. Evaluate relevance yourself; a none expectation for an inapplicable rule does not forbid speech.",
   },
 } satisfies Record<
   PolicyStage,
@@ -74,11 +74,11 @@ export function makeTextRequest(
   stage: PolicyStage,
   check: TextCheck,
   maximumBytes: number,
-  norms: readonly NormExpectation[] = [],
+  responseExpectations: readonly ResponseExpectation[] = [],
 ): DecisionRequest | Extract<PolicyStageTrace, { readonly status: "failed" }> {
   return prepareRequest(
     stage,
-    policyState(check, requestEvidence(stage, check, norms)),
+    policyState(check, requestEvidence(stage, check, responseExpectations)),
     allQuestions(
       stage,
       check.rules,
@@ -142,8 +142,15 @@ function policyState(
   evidence: ReturnType<typeof requestEvidence>,
 ): string {
   const { policy: catalog, ...common } = catalogState(policy);
-  const { history, earlierHistoryOmitted, now, facts, gaps, norms, ...event } =
-    evidence;
+  const {
+    history,
+    earlierHistoryOmitted,
+    now,
+    facts,
+    gaps,
+    responseExpectations,
+    ...event
+  } = evidence;
   return JSON.stringify({
     ...common,
     ...event,
@@ -153,14 +160,14 @@ function policyState(
     now,
     facts,
     gaps,
-    norms,
+    responseExpectations,
   });
 }
 
 function requestEvidence(
   stage: PolicyStage,
   check: TextCheck,
-  norms: readonly NormExpectation[],
+  responseExpectations: readonly ResponseExpectation[],
 ) {
   return {
     agentId: check.context.agentId,
@@ -176,14 +183,14 @@ function requestEvidence(
     now: check.context.now,
     facts: check.context.facts,
     gaps: check.context.gaps,
-    norms,
+    responseExpectations,
   };
 }
 
 /**
  * Size only the serialized slots: one recipient and one byte per required
  * identifier, with empty unrestricted text and arrays. Optional evidence can
- * be absent; uncertain assessments can leave settled norms empty. No check,
+ * be absent; uncertain assessments can leave settled response expectations empty. No check,
  * Message or MessageContext is synthesized or passed to a provider.
  */
 function minimumEvidence(
@@ -210,7 +217,7 @@ function minimumEvidence(
     now: undefined,
     facts: [],
     gaps: [],
-    norms: [],
+    responseExpectations: [],
   };
 }
 
@@ -312,12 +319,12 @@ function* subjectQuestions(
         ruleId,
         purpose: "subject",
         subject,
-        instructions: `Apply state.instructions first. Under norm ${JSON.stringify(ruleId)}, does runtime-visible message ${JSON.stringify(subject)} help establish what the agent should address or why it should wait or remain silent? Assess this message independently; multiple messages may be relevant. A relevant reference does not itself create an obligation to reply.`,
+        instructions: `Apply state.instructions first. Under rule ${JSON.stringify(ruleId)}, does runtime-visible message ${JSON.stringify(subject)} help establish what the agent should address or why it should wait or remain silent? Assess this message independently; multiple messages may be relevant. A relevant reference does not itself create an obligation to reply.`,
         criteria: {
           relevant:
-            "This message bears on the subject or conversation state addressed by this norm.",
+            "This message bears on the subject or conversation state addressed by this rule.",
           irrelevant:
-            "This message does not bear on the subject or conversation state addressed by this norm.",
+            "This message does not bear on the subject or conversation state addressed by this rule.",
           unresolved:
             "Required evidence is missing or relevance cannot be determined.",
         },

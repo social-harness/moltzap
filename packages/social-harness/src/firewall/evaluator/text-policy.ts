@@ -13,9 +13,9 @@ import {
   type MessageMiddleware,
   type MiddlewareInput,
   type MiddlewareResult,
-  NormExpectation,
   type PolicyFinding,
   type PolicyStageTrace,
+  ResponseExpectation,
   RuleDescription,
   type TextCheck,
   TextPolicySettings,
@@ -188,7 +188,9 @@ const evaluateCompliance = Effect.fn("TextPolicy.compliance")(function* (
       "compliance",
       snapshot,
       settings.maximumRequestBytes,
-      snapshot.event.direction === "outgoing" ? readNorms(expectations) : [],
+      snapshot.event.direction === "outgoing"
+        ? readResponseExpectations(expectations)
+        : [],
     ),
     provider,
     settings,
@@ -224,7 +226,8 @@ const checkText = Effect.fn("TextPolicy.check")(function* (
     );
   }
   const expectations = trace.find((entry) => entry.stage === "expectations");
-  const norms = expectations === undefined ? [] : readNorms(expectations);
+  const responseExpectations =
+    expectations === undefined ? [] : readResponseExpectations(expectations);
   if (expectations !== undefined) {
     trace.push(
       yield* evaluateCompliance(check, expectations, provider, settings),
@@ -235,7 +238,7 @@ const checkText = Effect.fn("TextPolicy.check")(function* (
       ...trace.flatMap((stage) => stageFindings(stage, policy.rules)),
       ...policy.skipped,
     ],
-    expectations: norms,
+    expectations: responseExpectations,
     trace: {
       format: "text-policy/v1",
       data: JSON.stringify({ questionEdition, settings, stages: trace }),
@@ -410,7 +413,9 @@ function textRevision(
  * as relevant. An unsettled expectation reaches the agent as guidance
  * instead, and an unsettled reference is left out.
  */
-function readNorms(trace: PolicyStageTrace): readonly NormExpectation[] {
+function readResponseExpectations(
+  trace: PolicyStageTrace,
+): readonly ResponseExpectation[] {
   if (trace.status !== "answered") {
     return [];
   }
@@ -434,7 +439,7 @@ function readNorms(trace: PolicyStageTrace): readonly NormExpectation[] {
     if (
       question.purpose !== "assessment" ||
       !settled(id) ||
-      !Schema.is(NormExpectation.fields.expectation)(expectation)
+      !Schema.is(ResponseExpectation.fields.expectation)(expectation)
     ) {
       return [];
     }

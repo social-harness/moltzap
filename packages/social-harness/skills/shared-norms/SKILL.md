@@ -76,7 +76,7 @@ with the agent that proposed it, your own agreement there is enough:
 Pass the document itself, from its opening `---` line to the end of its body,
 unchanged, as one JSON string; leave out any code fence or other text the
 message put around it. Your daemon reads the rule from it and records it as runtime-owned. Runtime
-authority can remove or replace only runtime-owned norms; owner and fixed rules
+authority can remove or replace only runtime-owned rules; owner and fixed rules
 remain protected. `policy_update`
 returns once the norm is active for your next message.
 

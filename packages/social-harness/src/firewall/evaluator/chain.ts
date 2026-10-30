@@ -130,13 +130,13 @@ function validResult(
   return (
     middleware.rules.every((rule) => covered.has(rule.id)) &&
     result.findings.every((finding) => rules.has(finding.ruleId)) &&
-    new Set(result.expectations.map((norm) => norm.ruleId)).size ===
-      result.expectations.length &&
+    new Set(result.expectations.map((expectation) => expectation.ruleId))
+      .size === result.expectations.length &&
     result.expectations.every(
-      (norm) =>
-        rules.has(norm.ruleId) &&
-        new Set(norm.subjects).size === norm.subjects.length &&
-        norm.subjects.every((subject) => subjects.has(subject)),
+      (expectation) =>
+        rules.has(expectation.ruleId) &&
+        new Set(expectation.subjects).size === expectation.subjects.length &&
+        expectation.subjects.every((subject) => subjects.has(subject)),
     )
   );
 }

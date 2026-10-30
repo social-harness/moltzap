@@ -6,11 +6,11 @@ import type {
   MessageMiddleware,
   MiddlewareCheck,
   MiddlewareObservation,
-  NormExpectation,
-  NormGuidance,
   PolicyFinding,
+  ResponseExpectation,
+  ResponseGuidance,
   RuleDescription,
-  UncertainNormGuidance,
+  UncertainGuidance,
 } from "./contract/index.js";
 
 type Reason = FirewallCheck["reason"];
@@ -267,25 +267,29 @@ function conflictingExpectations(
   >,
 ): ReadonlyArray<{ readonly middlewareId: string; readonly ruleId: string }> {
   const expectations = checks.flatMap((check) =>
-    check.expectations.map((norm) => ({
+    check.expectations.map((expectation) => ({
       middlewareId: check.middlewareId,
-      ruleId: norm.ruleId,
-      expectation: norm.expectation,
-      subjects: norm.subjects,
+      ruleId: expectation.ruleId,
+      expectation: expectation.expectation,
+      subjects: expectation.subjects,
     })),
   );
   return expectations
-    .filter((norm) =>
+    .filter((expectation) =>
       expectations.some(
-        (other) => opposing(norm, other) && overlapping(norm, other),
+        (other) =>
+          opposing(expectation, other) && overlapping(expectation, other),
       ),
     )
-    .map((norm) => ({ middlewareId: norm.middlewareId, ruleId: norm.ruleId }));
+    .map((expectation) => ({
+      middlewareId: expectation.middlewareId,
+      ruleId: expectation.ruleId,
+    }));
 }
 
 function opposing(
-  left: Pick<NormExpectation, "expectation">,
-  right: Pick<NormExpectation, "expectation">,
+  left: Pick<ResponseExpectation, "expectation">,
+  right: Pick<ResponseExpectation, "expectation">,
 ): boolean {
   const pair = new Set([left.expectation, right.expectation]);
   return pair.has("required") && pair.has("wait");
@@ -293,8 +297,8 @@ function opposing(
 
 /** An expectation without subjects covers every subject. */
 function overlapping(
-  left: Pick<NormExpectation, "subjects">,
-  right: Pick<NormExpectation, "subjects">,
+  left: Pick<ResponseExpectation, "subjects">,
+  right: Pick<ResponseExpectation, "subjects">,
 ): boolean {
   return (
     left.subjects.length === 0 ||
@@ -333,41 +337,41 @@ function projectGuidance(
     const instructionFor = (ruleId: string) =>
       entry?.rules.find((rule) => rule.id === ruleId)?.guidance ??
       entry?.rules.find((rule) => rule.id === ruleId)?.feedback?.text;
-    const expected = check.expectations.flatMap((norm): NormGuidance[] => {
-      const instruction = instructionFor(norm.ruleId);
-      return instruction === undefined
-        ? []
-        : [
-            {
-              ruleId: norm.ruleId,
-              expectation: norm.expectation,
-              subjects: [...norm.subjects],
-              middlewareId: check.middlewareId,
-              instruction,
-            },
-          ];
-    });
-    const uncertain = check.findings.flatMap(
-      (finding): UncertainNormGuidance[] => {
-        if (!("choice" in finding)) {
-          return [];
-        }
-        const instruction = instructionFor(finding.ruleId);
+    const expected = check.expectations.flatMap(
+      (expectation): ResponseGuidance[] => {
+        const instruction = instructionFor(expectation.ruleId);
         return instruction === undefined
           ? []
           : [
               {
+                ruleId: expectation.ruleId,
+                expectation: expectation.expectation,
+                subjects: [...expectation.subjects],
                 middlewareId: check.middlewareId,
-                ruleId: finding.ruleId,
-                uncertain: {
-                  choice: finding.choice,
-                  probability: finding.probability,
-                },
                 instruction,
               },
             ];
       },
     );
+    const uncertain = check.findings.flatMap((finding): UncertainGuidance[] => {
+      if (!("choice" in finding)) {
+        return [];
+      }
+      const instruction = instructionFor(finding.ruleId);
+      return instruction === undefined
+        ? []
+        : [
+            {
+              middlewareId: check.middlewareId,
+              ruleId: finding.ruleId,
+              uncertain: {
+                choice: finding.choice,
+                probability: finding.probability,
+              },
+              instruction,
+            },
+          ];
+    });
     return [...expected, ...uncertain, ...settledGuidance(check, entry)];
   });
 }
