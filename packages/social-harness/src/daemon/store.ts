@@ -31,6 +31,7 @@ import {
   settleQueuedItem,
 } from "../firewall/store/firewall.js";
 import {
+  type FirewallStore,
   type ItemProjection,
   makeFirewallStore,
 } from "../firewall/store/index.js";
